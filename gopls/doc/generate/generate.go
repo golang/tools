@@ -490,6 +490,7 @@ func typeDoc(arg *commandmeta.Field, level int) string {
 	return types.TypeString(under, nil)
 }
 
+// TODO(adonovan): this format is strange; it's not Go, nor JSON, nor LSP. Rethink.
 func structDoc(fields []*commandmeta.Field, level int) string {
 	var b strings.Builder
 	b.WriteString("{\n")

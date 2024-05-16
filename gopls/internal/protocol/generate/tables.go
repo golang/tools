@@ -85,7 +85,7 @@ var renameProp = map[prop]string{
 	// slightly tricky
 	{"ServerCapabilities", "textDocumentSync"}: "interface{}",
 	{"TextDocumentSyncOptions", "save"}:        "SaveOptions",
-	{"WorkspaceEdit", "documentChanges"}:       "[]DocumentChanges",
+	{"WorkspaceEdit", "documentChanges"}:       "[]DocumentChange",
 }
 
 // which entries of renameProp were used

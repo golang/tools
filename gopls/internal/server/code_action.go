@@ -217,7 +217,7 @@ func codeActionsForDiagnostic(ctx context.Context, snapshot *cache.Snapshot, sd 
 		if !want[fix.ActionKind] {
 			continue
 		}
-		var changes []protocol.DocumentChanges
+		var changes []protocol.DocumentChange
 		for uri, edits := range fix.Edits {
 			fh, err := snapshot.ReadFile(ctx, uri)
 			if err != nil {

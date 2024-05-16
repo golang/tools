@@ -38,7 +38,7 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 		return nil, err
 	}
 
-	var changes []protocol.DocumentChanges
+	var changes []protocol.DocumentChange
 	for uri, e := range edits {
 		fh, err := snapshot.ReadFile(ctx, uri)
 		if err != nil {

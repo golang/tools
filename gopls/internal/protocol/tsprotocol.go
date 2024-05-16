@@ -5880,7 +5880,7 @@ type WorkspaceEdit struct {
 	//
 	// If a client neither supports `documentChanges` nor `workspace.workspaceEdit.resourceOperations` then
 	// only plain `TextEdit`s using the `changes` property are supported.
-	DocumentChanges []DocumentChanges `json:"documentChanges,omitempty"`
+	DocumentChanges []DocumentChange `json:"documentChanges,omitempty"`
 	// A map of change annotations that can be referenced in `AnnotatedTextEdit`s or create, rename and
 	// delete file / folder operations.
 	//

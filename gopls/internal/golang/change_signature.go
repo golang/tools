@@ -40,7 +40,7 @@ import (
 //   - Improve the extra newlines in output.
 //   - Stream type checking via ForEachPackage.
 //   - Avoid unnecessary additional type checking.
-func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot *cache.Snapshot) ([]protocol.DocumentChanges, error) {
+func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot *cache.Snapshot) ([]protocol.DocumentChange, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
@@ -158,7 +158,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 	}
 
 	// Translate the resulting state into document changes.
-	var changes []protocol.DocumentChanges
+	var changes []protocol.DocumentChange
 	for uri, after := range newContent {
 		fh, err := snapshot.ReadFile(ctx, uri)
 		if err != nil {

@@ -111,14 +111,14 @@ type fileHandle interface {
 // NewWorkspaceEdit constructs a WorkspaceEdit from a list of document changes.
 //
 // Any ChangeAnnotations must be added after.
-func NewWorkspaceEdit(changes ...DocumentChanges) *WorkspaceEdit {
+func NewWorkspaceEdit(changes ...DocumentChange) *WorkspaceEdit {
 	return &WorkspaceEdit{DocumentChanges: changes}
 }
 
 // DocumentChangeEdit constructs a DocumentChange containing a
 // TextDocumentEdit from a file.Handle and a list of TextEdits.
-func DocumentChangeEdit(fh fileHandle, textedits []TextEdit) DocumentChanges {
-	return DocumentChanges{
+func DocumentChangeEdit(fh fileHandle, textedits []TextEdit) DocumentChange {
+	return DocumentChange{
 		TextDocumentEdit: &TextDocumentEdit{
 			TextDocument: OptionalVersionedTextDocumentIdentifier{
 				Version:                fh.Version(),
@@ -130,31 +130,12 @@ func DocumentChangeEdit(fh fileHandle, textedits []TextEdit) DocumentChanges {
 }
 
 // DocumentChangeRename constructs a DocumentChange that renames a file.
-func DocumentChangeRename(src, dst DocumentURI) DocumentChanges {
-	return DocumentChanges{
+func DocumentChangeRename(src, dst DocumentURI) DocumentChange {
+	return DocumentChange{
 		RenameFile: &RenameFile{
 			Kind:   "rename",
 			OldURI: src,
 			NewURI: dst,
 		},
 	}
-}
-
-// Valid reports whether the DocumentChange sum-type value is valid,
-// that is, exactly one of create, delete, edit, or rename.
-func (ch DocumentChanges) Valid() bool {
-	n := 0
-	if ch.TextDocumentEdit != nil {
-		n++
-	}
-	if ch.CreateFile != nil {
-		n++
-	}
-	if ch.RenameFile != nil {
-		n++
-	}
-	if ch.DeleteFile != nil {
-		n++
-	}
-	return n == 1
 }

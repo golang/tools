@@ -1726,7 +1726,7 @@ func rename(env *integration.Env, loc protocol.Location, newName string) (map[st
 //     implementation of this operation used in normal testing.
 //   - cmdClient.applyWorkspaceEdit in ../../../cmd/cmd.go for the
 //     CLI variant.
-func changedFiles(env *integration.Env, changes []protocol.DocumentChanges) (map[string][]byte, error) {
+func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[string][]byte, error) {
 	uriToPath := env.Sandbox.Workdir.URIToPath
 
 	// latest maps each updated file name to a mapper holding its
@@ -1971,7 +1971,7 @@ func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Ran
 // specified location and kind, and captures the resulting document changes.
 // If diag is non-nil, it is used as the code action context.
 // If titles is non-empty, the code action title must be present among the provided titles.
-func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) ([]protocol.DocumentChanges, error) {
+func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) ([]protocol.DocumentChange, error) {
 	// Request all code actions that apply to the diagnostic.
 	// (The protocol supports filtering using Context.Only={actionKind}
 	// but we can give a better error if we don't filter.)
@@ -2067,7 +2067,7 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 		// whose WorkspaceEditFunc hook temporarily gathers the edits
 		// instead of applying them.
 
-		var changes []protocol.DocumentChanges
+		var changes []protocol.DocumentChange
 		cli := env.Editor.Client()
 		restore := cli.SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
 			changes = append(changes, wsedit.DocumentChanges...)

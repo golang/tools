@@ -9,19 +9,38 @@ import (
 	"fmt"
 )
 
-// DocumentChanges is a union of various file edit operations.
-// At most one field of this struct is non-nil.
-// (TODO(adonovan): rename to DocumentChange.)
+// DocumentChange is a union of various file edit operations.
+//
+// Exactly one field of this struct is non-nil; see [DocumentChange.Valid].
 //
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#resourceChanges
-type DocumentChanges struct {
+type DocumentChange struct {
 	TextDocumentEdit *TextDocumentEdit
 	CreateFile       *CreateFile
 	RenameFile       *RenameFile
 	DeleteFile       *DeleteFile
 }
 
-func (d *DocumentChanges) UnmarshalJSON(data []byte) error {
+// Valid reports whether the DocumentChange sum-type value is valid,
+// that is, exactly one of create, delete, edit, or rename.
+func (ch DocumentChange) Valid() bool {
+	n := 0
+	if ch.TextDocumentEdit != nil {
+		n++
+	}
+	if ch.CreateFile != nil {
+		n++
+	}
+	if ch.RenameFile != nil {
+		n++
+	}
+	if ch.DeleteFile != nil {
+		n++
+	}
+	return n == 1
+}
+
+func (d *DocumentChange) UnmarshalJSON(data []byte) error {
 	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
 		return err
@@ -48,7 +67,7 @@ func (d *DocumentChanges) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("DocumentChanges: unexpected kind: %q", kind)
 }
 
-func (d *DocumentChanges) MarshalJSON() ([]byte, error) {
+func (d *DocumentChange) MarshalJSON() ([]byte, error) {
 	if d.TextDocumentEdit != nil {
 		return json.Marshal(d.TextDocumentEdit)
 	} else if d.CreateFile != nil {

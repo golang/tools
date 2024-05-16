@@ -368,7 +368,7 @@ func getRewriteCodeActions(ctx context.Context, pkg *cache.Package, snapshot *ca
 	}
 
 	for _, diag := range fillswitch.Diagnose(pgf.File, start, end, pkg.Types(), pkg.TypesInfo()) {
-		changes, err := suggestedFixToDocumentChanges(ctx, snapshot, pkg.FileSet(), &diag.SuggestedFixes[0])
+		changes, err := suggestedFixToDocumentChange(ctx, snapshot, pkg.FileSet(), &diag.SuggestedFixes[0])
 		if err != nil {
 			return nil, err
 		}

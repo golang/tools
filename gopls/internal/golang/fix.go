@@ -83,7 +83,7 @@ const (
 // impossible to distinguish. It would more precise if there was a
 // SuggestedFix.Category field, or some other way to squirrel metadata
 // in the fix.
-func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.DocumentChanges, error) {
+func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.DocumentChange, error) {
 	// This can't be expressed as an entry in the fixer table below
 	// because it operates in the protocol (not go/{token,ast}) domain.
 	// (Sigh; perhaps it was a mistake to factor out the
@@ -130,11 +130,11 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 	if suggestion == nil {
 		return nil, nil
 	}
-	return suggestedFixToDocumentChanges(ctx, snapshot, fixFset, suggestion)
+	return suggestedFixToDocumentChange(ctx, snapshot, fixFset, suggestion)
 }
 
-// suggestedFixToDocumentChanges converts the suggestion's edits from analysis form into protocol form.
-func suggestedFixToDocumentChanges(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]protocol.DocumentChanges, error) {
+// suggestedFixToDocumentChange converts the suggestion's edits from analysis form into protocol form.
+func suggestedFixToDocumentChange(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]protocol.DocumentChange, error) {
 	type fileInfo struct {
 		fh     file.Handle
 		mapper *protocol.Mapper
@@ -175,7 +175,7 @@ func suggestedFixToDocumentChanges(ctx context.Context, snapshot *cache.Snapshot
 			NewText: string(edit.NewText),
 		})
 	}
-	var changes []protocol.DocumentChanges
+	var changes []protocol.DocumentChange
 	for _, info := range files {
 		change := protocol.DocumentChangeEdit(info.fh, info.edits)
 		changes = append(changes, change)

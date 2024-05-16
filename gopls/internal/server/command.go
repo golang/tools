@@ -772,7 +772,7 @@ func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot *cache.Sna
 		return err
 	}
 
-	var changes []protocol.DocumentChanges
+	var changes []protocol.DocumentChange
 	if modChange.Valid() {
 		changes = append(changes, modChange)
 	}
@@ -791,18 +791,18 @@ func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot *cache.Sna
 //
 // TODO(rfindley): fix this API asymmetry. It should be up to the caller to
 // write the file or apply the edits.
-func computeEditChange(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, newContent []byte) (protocol.DocumentChanges, error) {
+func computeEditChange(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, newContent []byte) (protocol.DocumentChange, error) {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
-		return protocol.DocumentChanges{}, err
+		return protocol.DocumentChange{}, err
 	}
 	oldContent, err := fh.Content()
 	if err != nil && !os.IsNotExist(err) {
-		return protocol.DocumentChanges{}, err
+		return protocol.DocumentChange{}, err
 	}
 
 	if bytes.Equal(oldContent, newContent) {
-		return protocol.DocumentChanges{}, nil // note: result is !Valid()
+		return protocol.DocumentChange{}, nil // note: result is !Valid()
 	}
 
 	// Sending a workspace edit to a closed file causes VS Code to open the
@@ -810,19 +810,19 @@ func computeEditChange(ctx context.Context, snapshot *cache.Snapshot, uri protoc
 	// especially to go.sum, which should be mostly invisible to the user.
 	if !snapshot.IsOpen(uri) {
 		err := os.WriteFile(uri.Path(), newContent, 0666)
-		return protocol.DocumentChanges{}, err
+		return protocol.DocumentChange{}, err
 	}
 
 	m := protocol.NewMapper(fh.URI(), oldContent)
 	diff := diff.Bytes(oldContent, newContent)
 	textedits, err := protocol.EditsFromDiffEdits(m, diff)
 	if err != nil {
-		return protocol.DocumentChanges{}, err
+		return protocol.DocumentChange{}, err
 	}
 	return protocol.DocumentChangeEdit(fh, textedits), nil
 }
 
-func applyChanges(ctx context.Context, cli protocol.Client, changes []protocol.DocumentChanges) error {
+func applyChanges(ctx context.Context, cli protocol.Client, changes []protocol.DocumentChange) error {
 	if len(changes) == 0 {
 		return nil
 	}
