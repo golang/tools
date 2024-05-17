@@ -118,7 +118,7 @@ func Test(t *testing.T) {
 				t.Skipf("skipping on %s due to -skip_goos", runtime.GOOS)
 			}
 			if slices.Contains(test.skipGOARCH, runtime.GOARCH) {
-				t.Skipf("skipping on %s due to -skip_goos", runtime.GOOS)
+				t.Skipf("skipping on %s due to -skip_goarch", runtime.GOARCH)
 			}
 
 			// TODO(rfindley): it may be more useful to have full support for build

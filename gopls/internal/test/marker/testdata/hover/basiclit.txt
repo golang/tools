@@ -1,5 +1,12 @@
 This test checks gopls behavior when hovering over basic literals.
 
+Skipped on ppc64 due to https://github.com/golang/go/issues/65072#issuecomment-2111425245.
+The unit test gopls/internal/golang.TestHoverLit_Issue65072 attempts to narrow
+down that bug on aix-ppc64.
+
+-- flags --
+-skip_goarch=ppc64
+
 -- basiclit.go --
 package basiclit
 
