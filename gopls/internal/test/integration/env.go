@@ -55,8 +55,10 @@ func NewAwaiter(workdir *fake.Workdir) *Awaiter {
 	return &Awaiter{
 		workdir: workdir,
 		state: State{
-			diagnostics: make(map[string]*protocol.PublishDiagnosticsParams),
-			work:        make(map[protocol.ProgressToken]*workProgress),
+			diagnostics:   make(map[string]*protocol.PublishDiagnosticsParams),
+			work:          make(map[protocol.ProgressToken]*workProgress),
+			startedWork:   make(map[string]uint64),
+			completedWork: make(map[string]uint64),
 		},
 		waiters: make(map[int]*condition),
 	}
@@ -91,35 +93,16 @@ type State struct {
 	unregistrations        []*protocol.UnregistrationParams
 
 	// outstandingWork is a map of token->work summary. All tokens are assumed to
-	// be string, though the spec allows for numeric tokens as well.  When work
-	// completes, it is deleted from this map.
-	work map[protocol.ProgressToken]*workProgress
-}
-
-// completedWork counts complete work items by title.
-func (s State) completedWork() map[string]uint64 {
-	completed := make(map[string]uint64)
-	for _, work := range s.work {
-		if work.complete {
-			completed[work.title]++
-		}
-	}
-	return completed
-}
-
-// startedWork counts started (and possibly complete) work items.
-func (s State) startedWork() map[string]uint64 {
-	started := make(map[string]uint64)
-	for _, work := range s.work {
-		started[work.title]++
-	}
-	return started
+	// be string, though the spec allows for numeric tokens as well.
+	work          map[protocol.ProgressToken]*workProgress
+	startedWork   map[string]uint64 // title -> count of 'begin'
+	completedWork map[string]uint64 // title -> count of 'end'
 }
 
 type workProgress struct {
 	title, msg, endMsg string
 	percent            float64
-	complete           bool // seen 'end'.
+	complete           bool // seen 'end'
 }
 
 // This method, provided for debugging, accesses mutable fields without a lock,
@@ -157,7 +140,7 @@ func (s State) String() string {
 		fmt.Fprintf(&b, "\t%s: %.2f\n", name, state.percent)
 	}
 	b.WriteString("#### completed work:\n")
-	for name, count := range s.completedWork() {
+	for name, count := range s.completedWork {
 		fmt.Fprintf(&b, "\t%s: %d\n", name, count)
 	}
 	return b.String()
@@ -236,6 +219,7 @@ func (a *Awaiter) onProgress(_ context.Context, m *protocol.ProgressParams) erro
 	switch kind := v["kind"]; kind {
 	case "begin":
 		work.title = v["title"].(string)
+		a.state.startedWork[work.title]++
 		if msg, ok := v["message"]; ok {
 			work.msg = msg.(string)
 		}
@@ -248,6 +232,7 @@ func (a *Awaiter) onProgress(_ context.Context, m *protocol.ProgressParams) erro
 		}
 	case "end":
 		work.complete = true
+		a.state.completedWork[work.title]++
 		if msg, ok := v["message"]; ok {
 			work.endMsg = msg.(string)
 		}

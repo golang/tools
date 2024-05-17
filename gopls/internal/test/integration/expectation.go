@@ -407,7 +407,7 @@ func (e *Env) DoneWithClose() Expectation {
 // See CompletedWork.
 func StartedWork(title string, atLeast uint64) Expectation {
 	check := func(s State) Verdict {
-		if s.startedWork()[title] >= atLeast {
+		if s.startedWork[title] >= atLeast {
 			return Met
 		}
 		return Unmet
@@ -424,8 +424,8 @@ func StartedWork(title string, atLeast uint64) Expectation {
 // progress notification title to identify the work we expect to be completed.
 func CompletedWork(title string, count uint64, atLeast bool) Expectation {
 	check := func(s State) Verdict {
-		completed := s.completedWork()
-		if completed[title] == count || atLeast && completed[title] > count {
+		completed := s.completedWork[title]
+		if completed == count || atLeast && completed > count {
 			return Met
 		}
 		return Unmet
