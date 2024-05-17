@@ -223,7 +223,7 @@ func testPkg(t *testing.T, fset *token.FileSet, version int, pkg *types.Package,
 	}
 }
 
-// TestVeryLongFile tests the position of an import object declared in
+// TestIExportData_long tests the position of an import object declared in
 // a very long input file.  Line numbers greater than maxlines are
 // reported as line 1, not garbage or token.NoPos.
 func TestIExportData_long(t *testing.T) {

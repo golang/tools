@@ -20,7 +20,7 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
-// TestStd type-checks the standard library using shallow export data.
+// TestShallowStd type-checks the standard library using shallow export data.
 func TestShallowStd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping in short mode; too slow (https://golang.org/issue/14113)")

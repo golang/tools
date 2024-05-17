@@ -1505,7 +1505,7 @@ type LabelDuration struct {
 	Duration time.Duration
 }
 
-// AnalyzerTimes returns the accumulated time spent in each Analyzer's
+// AnalyzerRunTimes returns the accumulated time spent in each Analyzer's
 // Run function since process start, in descending order.
 func AnalyzerRunTimes() []LabelDuration {
 	analyzerRunTimesMu.Lock()

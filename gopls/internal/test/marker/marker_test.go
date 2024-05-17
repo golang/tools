@@ -885,7 +885,7 @@ func (c *marker) sprintf(format string, args ...any) string {
 	return fmt.Sprintf(format, args2...)
 }
 
-// fmtLoc formats the given pos in the context of the test, using
+// fmtPos formats the given pos in the context of the test, using
 // archive-relative paths for files and including the line number in the full
 // archive file.
 func (run *markerTestRun) fmtPos(pos token.Pos) string {

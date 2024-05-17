@@ -202,7 +202,7 @@ func (d *viewDefinition) GOOS() string {
 	return d.folder.Env.GOOS
 }
 
-// GOOS returns the effective GOARCH value for this view definition, accounting
+// GOARCH returns the effective GOARCH value for this view definition, accounting
 // for its env overlay.
 func (d *viewDefinition) GOARCH() string {
 	if goarch, ok := d.envOverlay["GOARCH"]; ok {
