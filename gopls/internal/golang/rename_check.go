@@ -167,18 +167,20 @@ func (r *renamer) checkInPackageBlock(from types.Object) {
 		}
 	}
 
-	// Check for conflicts between package block and all file blocks.
-	for _, f := range r.pkg.Syntax() {
-		fileScope := r.pkg.TypesInfo().Scopes[f]
-		b, prev := fileScope.LookupParent(r.to, token.NoPos)
-		if b == fileScope {
-			r.errorf(from.Pos(), "renaming this %s %q to %q would conflict", objectKind(from), from.Name(), r.to)
-			var prevPos token.Pos
-			if prev != nil {
-				prevPos = prev.Pos()
+	// In the declaring package, check for conflicts between the
+	// package block and all file blocks.
+	if from.Pkg() == r.pkg.Types() {
+		for _, f := range r.pkg.Syntax() {
+			fileScope := r.pkg.TypesInfo().Scopes[f]
+			if fileScope == nil {
+				continue // type error? (golang/go#40835)
 			}
-			r.errorf(prevPos, "\twith this %s", objectKind(prev))
-			return // since checkInPackageBlock would report redundant errors
+			b, prev := fileScope.LookupParent(r.to, token.NoPos)
+			if b == fileScope {
+				r.errorf(from.Pos(), "renaming this %s %q to %q would conflict", objectKind(from), from.Name(), r.to)
+				r.errorf(prev.Pos(), "\twith this %s", objectKind(prev))
+				return // since checkInPackageBlock would report redundant errors
+			}
 		}
 	}
 
@@ -436,7 +438,6 @@ func (r *renamer) checkLabel(label *types.Label) {
 // checkStructField checks that the field renaming will not cause
 // conflicts at its declaration, or ambiguity or changes to any selection.
 func (r *renamer) checkStructField(from *types.Var) {
-
 	// If this is the declaring package, check that the struct
 	// declaration is free of field conflicts, and field/method
 	// conflicts.
