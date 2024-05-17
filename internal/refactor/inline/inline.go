@@ -273,6 +273,32 @@ func (st *state) inline() (*Result, error) {
 		}
 	}
 
+	// Delete imports referenced only by caller.Call.Fun.
+	//
+	// (We can't let imports.Process take care of it as it may
+	// mistake obsolete imports for missing new imports when the
+	// names are similar, as is common during a package migration.)
+	for _, specToDelete := range res.oldImports {
+		for _, decl := range f.Decls {
+			if decl, ok := decl.(*ast.GenDecl); ok && decl.Tok == token.IMPORT {
+				decl.Specs = slicesDeleteFunc(decl.Specs, func(spec ast.Spec) bool {
+					imp := spec.(*ast.ImportSpec)
+					// Since we re-parsed the file, we can't match by identity;
+					// instead look for syntactic equivalence.
+					return imp.Path.Value == specToDelete.Path.Value &&
+						(imp.Name != nil) == (specToDelete.Name != nil) &&
+						(imp.Name == nil || imp.Name.Name == specToDelete.Name.Name)
+				})
+
+				// Edge case: import "foo" => import ().
+				if !decl.Lparen.IsValid() {
+					decl.Lparen = decl.TokPos + token.Pos(len("import"))
+					decl.Rparen = decl.Lparen + 1
+				}
+			}
+		}
+	}
+
 	var out bytes.Buffer
 	if err := format.Node(&out, caller.Fset, f); err != nil {
 		return nil, err
@@ -357,7 +383,9 @@ type newImport struct {
 }
 
 type inlineCallResult struct {
-	newImports []newImport
+	newImports []newImport       // to add
+	oldImports []*ast.ImportSpec // to remove
+
 	// If elideBraces is set, old is an ast.Stmt and new is an ast.BlockStmt to
 	// be spliced in. This allows the inlining analysis to assert that inlining
 	// the block is OK; if elideBraces is unset and old is an ast.Stmt and new is
@@ -456,6 +484,8 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		}
 	}
 
+	var oldImports []*ast.ImportSpec // imports referenced only caller.Call.Fun
+
 	// localImportName returns the local name for a given imported package path.
 	var newImports []newImport
 	localImportName := func(obj *object) string {
@@ -481,6 +511,38 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 			return false
 		}
 
+		// shadowedInCaller reports whether a candidate package name
+		// already refers to a declaration in the caller.
+		shadowedInCaller := func(name string) bool {
+			existing := caller.lookup(name)
+
+			// If the candidate refers to a PkgName p whose sole use is
+			// in caller.Call.Fun of the form p.F(...), where p.F is a
+			// qualified identifier, the p import will be deleted,
+			// so it's safe (and better) to recycle the name.
+			//
+			// Only the qualified identifier case matters, as other
+			// references to imported package names in the Call.Fun
+			// expression (e.g. x.after(3*time.Second).f()
+			// or time.Second.String()) will remain after
+			// inlining, as arguments.
+			if pkgName, ok := existing.(*types.PkgName); ok {
+				if sel, ok := astutil.Unparen(caller.Call.Fun).(*ast.SelectorExpr); ok {
+					if sole := soleUse(caller.Info, pkgName); sole == sel.X {
+						for _, spec := range caller.File.Imports {
+							pkgName2, ok := importedPkgName(caller.Info, spec)
+							if ok && pkgName2 == pkgName {
+								oldImports = append(oldImports, spec)
+								return false
+							}
+						}
+					}
+				}
+			}
+
+			return existing != nil
+		}
+
 		// import added by callee
 		//
 		// Choose local PkgName based on last segment of
@@ -494,7 +556,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		// here?
 		base := obj.PkgName
 		name := base
-		for n := 0; obj.Shadow[name] || caller.lookup(name) != nil || newlyAdded(name) || name == "init"; n++ {
+		for n := 0; obj.Shadow[name] || shadowedInCaller(name) || newlyAdded(name) || name == "init"; n++ {
 			name = fmt.Sprintf("%s%d", base, n)
 		}
 
@@ -600,6 +662,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 
 	res := &inlineCallResult{
 		newImports: newImports,
+		oldImports: oldImports,
 	}
 
 	// Parse callee function declaration.
@@ -3178,4 +3241,49 @@ func hasNonTrivialReturn(returnInfo [][]returnOperandFlags) bool {
 	return false
 }
 
+// soleUse returns the ident that refers to obj, if there is exactly one.
+func soleUse(info *types.Info, obj types.Object) (sole *ast.Ident) {
+	// This is not efficient, but it is called infrequently.
+	for id, obj2 := range info.Uses {
+		if obj2 == obj {
+			if sole != nil {
+				return nil // not unique
+			}
+			sole = id
+		}
+	}
+	return sole
+}
+
 type unit struct{} // for representing sets as maps
+
+// slicesDeleteFunc removes any elements from s for which del returns true,
+// returning the modified slice.
+// slicesDeleteFunc zeroes the elements between the new length and the original length.
+// TODO(adonovan): use go1.21 slices.DeleteFunc
+func slicesDeleteFunc[S ~[]E, E any](s S, del func(E) bool) S {
+	i := slicesIndexFunc(s, del)
+	if i == -1 {
+		return s
+	}
+	// Don't start copying elements until we find one to delete.
+	for j := i + 1; j < len(s); j++ {
+		if v := s[j]; !del(v) {
+			s[i] = v
+			i++
+		}
+	}
+	//	clear(s[i:]) // zero/nil out the obsolete elements, for GC
+	return s[:i]
+}
+
+// slicesIndexFunc returns the first index i satisfying f(s[i]),
+// or -1 if none do.
+func slicesIndexFunc[S ~[]E, E any](s S, f func(E) bool) int {
+	for i := range s {
+		if f(s[i]) {
+			return i
+		}
+	}
+	return -1
+}
