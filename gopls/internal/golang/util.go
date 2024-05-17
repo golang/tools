@@ -81,20 +81,6 @@ func adjustedObjEnd(obj types.Object) token.Pos {
 //	https://golang.org/s/generatedcode
 var generatedRx = regexp.MustCompile(`// .*DO NOT EDIT\.?`)
 
-// nodeAtPos returns the index and the node whose position is contained inside
-// the node list.
-func nodeAtPos(nodes []ast.Node, pos token.Pos) (ast.Node, int) {
-	if nodes == nil {
-		return nil, -1
-	}
-	for i, node := range nodes {
-		if node.Pos() <= pos && pos <= node.End() {
-			return node, i
-		}
-	}
-	return nil, -1
-}
-
 // FormatNode returns the "pretty-print" output for an ast node.
 func FormatNode(fset *token.FileSet, n ast.Node) string {
 	var buf strings.Builder

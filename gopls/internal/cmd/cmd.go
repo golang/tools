@@ -31,7 +31,6 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	bugpkg "golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/constraints"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/tool"
@@ -572,10 +571,6 @@ func (cli *cmdClient) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
 		}
 	}
 	return nil
-}
-
-func sortSlice[T constraints.Ordered](slice []T) {
-	sort.Slice(slice, func(i, j int) bool { return slice[i] < slice[j] })
 }
 
 // applyTextEdits applies a list of edits to the mapper file content,

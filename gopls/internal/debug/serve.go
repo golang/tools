@@ -308,10 +308,6 @@ func (i *Instance) getServer(r *http.Request) interface{} {
 	return nil
 }
 
-func (i *Instance) getView(r *http.Request) interface{} {
-	return i.State.View(path.Base(r.URL.Path))
-}
-
 func (i *Instance) getFile(r *http.Request) interface{} {
 	identifier := path.Base(r.URL.Path)
 	sid := path.Base(path.Dir(r.URL.Path))

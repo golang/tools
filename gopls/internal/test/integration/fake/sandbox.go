@@ -145,22 +145,6 @@ func NewSandbox(config *SandboxConfig) (_ *Sandbox, err error) {
 	return sb, nil
 }
 
-// Tempdir creates a new temp directory with the given txtar-encoded files. It
-// is the responsibility of the caller to call os.RemoveAll on the returned
-// file path when it is no longer needed.
-func Tempdir(files map[string][]byte) (string, error) {
-	dir, err := os.MkdirTemp("", "gopls-tempdir-")
-	if err != nil {
-		return "", err
-	}
-	for name, data := range files {
-		if err := writeFileData(name, data, RelativeTo(dir)); err != nil {
-			return "", fmt.Errorf("writing to tempdir: %w", err)
-		}
-	}
-	return dir, nil
-}
-
 func UnpackTxt(txt string) map[string][]byte {
 	dataMap := make(map[string][]byte)
 	archive := txtar.Parse([]byte(txt))
