@@ -1294,7 +1294,7 @@
 		{
 			"Name": "copylocks",
 			"Doc": "check for locks erroneously passed by value\n\nInadvertently copying a value containing a lock, such as sync.Mutex or\nsync.WaitGroup, may cause both copies to malfunction. Generally such\nvalues should be referred to through a pointer.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/copylocks",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/copylock",
 			"Default": true
 		},
 		{
@@ -1402,7 +1402,7 @@
 		{
 			"Name": "noresultvalues",
 			"Doc": "suggested fixes for unexpected return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"no result values expected\" or \"too many return values\".\nFor example:\n\n\tfunc z() { return nil }\n\nwill turn into\n\n\tfunc z() { return }",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/noresultvars",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/noresultvalues",
 			"Default": true
 		},
 		{

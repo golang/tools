@@ -31,7 +31,7 @@ values should be referred to through a pointer.`
 var Analyzer = &analysis.Analyzer{
 	Name:             "copylocks",
 	Doc:              Doc,
-	URL:              "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/copylocks",
+	URL:              "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/copylock",
 	Requires:         []*analysis.Analyzer{inspect.Analyzer},
 	RunDespiteErrors: true,
 	Run:              run,

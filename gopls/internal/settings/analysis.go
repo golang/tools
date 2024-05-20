@@ -136,8 +136,8 @@ func init() {
 		suppressOnRangeOverFunc(buildir)
 	}
 
-	// The traditional vet suite:
 	analyzers := []*Analyzer{
+		// The traditional vet suite:
 		{analyzer: appends.Analyzer, enabled: true},
 		{analyzer: asmdecl.Analyzer, enabled: true},
 		{analyzer: assign.Analyzer, enabled: true},
@@ -162,39 +162,43 @@ func init() {
 		{analyzer: sigchanyzer.Analyzer, enabled: true},
 		{analyzer: slog.Analyzer, enabled: true},
 		{analyzer: stdmethods.Analyzer, enabled: true},
+		{analyzer: stdversion.Analyzer, enabled: true},
 		{analyzer: stringintconv.Analyzer, enabled: true},
 		{analyzer: structtag.Analyzer, enabled: true},
+		{analyzer: testinggoroutine.Analyzer, enabled: true},
 		{analyzer: tests.Analyzer, enabled: true},
+		{analyzer: timeformat.Analyzer, enabled: true},
 		{analyzer: unmarshal.Analyzer, enabled: true},
 		{analyzer: unreachable.Analyzer, enabled: true},
 		{analyzer: unsafeptr.Analyzer, enabled: true},
 		{analyzer: unusedresult.Analyzer, enabled: true},
 
-		// Non-vet analyzers:
-		// - some (nilness, unusedwrite) use go/ssa;
-		// - some (unusedwrite) report bad code but not always a bug,
-		//   so are not suitable for vet.
+		// not suitable for vet:
+		// - some (nilness) use go/ssa; see #59714.
+		// - others don't meet the "frequency" criterion;
+		//   see GOROOT/src/cmd/vet/README.
 		{analyzer: atomicalign.Analyzer, enabled: true},
 		{analyzer: deepequalerrors.Analyzer, enabled: true},
-		{analyzer: fieldalignment.Analyzer, enabled: false},
-		{analyzer: nilness.Analyzer, enabled: true},
-		{analyzer: shadow.Analyzer, enabled: false},
+		{analyzer: nilness.Analyzer, enabled: true}, // uses go/ssa
 		{analyzer: sortslice.Analyzer, enabled: true},
-		{analyzer: testinggoroutine.Analyzer, enabled: true},
-		{analyzer: unusedparams.Analyzer, enabled: true},
-		{analyzer: unusedwrite.Analyzer, enabled: true},
-		{analyzer: useany.Analyzer, enabled: false},
-		{analyzer: infertypeargs.Analyzer, enabled: true, severity: protocol.SeverityHint},
-		{analyzer: timeformat.Analyzer, enabled: true},
 		{analyzer: embeddirective.Analyzer, enabled: true},
 
+		// disabled due to high false positives
+		{analyzer: fieldalignment.Analyzer, enabled: false}, // never a bug
+		{analyzer: shadow.Analyzer, enabled: false},         // very noisy
+		{analyzer: useany.Analyzer, enabled: false},         // never a bug
+
+		// "simplifiers": analyzers that offer mere style fixes
 		// gofmt -s suite:
 		{analyzer: simplifycompositelit.Analyzer, enabled: true, actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix}},
 		{analyzer: simplifyrange.Analyzer, enabled: true, actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix}},
 		{analyzer: simplifyslice.Analyzer, enabled: true, actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix}},
-		{analyzer: stdversion.Analyzer, enabled: true},
+		// other simplifiers:
+		{analyzer: infertypeargs.Analyzer, enabled: true, severity: protocol.SeverityHint},
+		{analyzer: unusedparams.Analyzer, enabled: true},
+		{analyzer: unusedwrite.Analyzer, enabled: true}, // uses go/ssa
 
-		// Type error analyzers.
+		// type-error analyzers
 		// These analyzers enrich go/types errors with suggested fixes.
 		{analyzer: fillreturns.Analyzer, enabled: true},
 		{analyzer: nonewvars.Analyzer, enabled: true},

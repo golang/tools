@@ -28,7 +28,7 @@ var Analyzer = &analysis.Analyzer{
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedparams",
 }
 
-const FixCategory = "unusedparam" // recognized by gopls ApplyFix
+const FixCategory = "unusedparams" // recognized by gopls ApplyFix
 
 func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)

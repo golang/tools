@@ -857,17 +857,25 @@ func rewriteCommands(prevContent []byte, api *doc.API) ([]byte, error) {
 func rewriteAnalyzers(prevContent []byte, api *doc.API) ([]byte, error) {
 	var buf bytes.Buffer
 	for _, analyzer := range api.Analyzers {
-		fmt.Fprintf(&buf, "## **%v**\n\n", analyzer.Name)
-		fmt.Fprintf(&buf, "%s: %s\n\n", analyzer.Name, analyzer.Doc)
+		fmt.Fprintf(&buf, "<a id='%s'></a>\n", analyzer.Name)
+		title, doc, _ := strings.Cut(analyzer.Doc, "\n")
+		title = strings.TrimPrefix(title, analyzer.Name+": ")
+		fmt.Fprintf(&buf, "## `%s`: %s\n\n", analyzer.Name, title)
+		fmt.Fprintf(&buf, "%s\n\n", doc)
+		fmt.Fprintf(&buf, "Default: %s.", onOff(analyzer.Default))
+		if !analyzer.Default {
+			fmt.Fprintf(&buf, " Enable by setting `\"analyses\": {\"%s\": true}`.", analyzer.Name)
+		}
+		fmt.Fprintf(&buf, "\n\n")
 		if analyzer.URL != "" {
-			fmt.Fprintf(&buf, "[Full documentation](%s)\n\n", analyzer.URL)
+			// TODO(adonovan): currently the URL provides the same information
+			// as 'doc' above, though that may change due to
+			// https://github.com/golang/go/issues/61315#issuecomment-1841350181.
+			// In that case, update this to something like "Complete documentation".
+			fmt.Fprintf(&buf, "Package documentation: [%s](%s)\n\n",
+				analyzer.Name, analyzer.URL)
 		}
-		switch analyzer.Default {
-		case true:
-			fmt.Fprintf(&buf, "**Enabled by default.**\n\n")
-		case false:
-			fmt.Fprintf(&buf, "**Disabled by default. Enable it by setting `\"analyses\": {\"%s\": true}`.**\n\n", analyzer.Name)
-		}
+
 	}
 	return replaceSection(prevContent, "Analyzers", buf.Bytes())
 }

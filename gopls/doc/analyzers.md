@@ -1,14 +1,38 @@
 # Analyzers
 
-This document describes the analyzers that `gopls` uses inside the editor.
+<!-- No Table of Contents: GitHub's Markdown renderer synthesizes it. -->
 
-Details about how to enable/disable these analyses can be found
+Gopls contains a driver for pluggable, modular static
+[analyzers](https://pkg.go.dev/golang.org/x/tools/go/analysis#hdr-Analyzer),
+such as those used by [go vet](https://pkg.go.dev/cmd/vet).
+
+Most analyzers report mistakes in your code;
+some suggest "quick fixes" that can be directly applied in your editor.
+Every time you edit your code, gopls re-runs its analyzers.
+Analyzer diagnostics help you detect bugs sooner,
+before you run your tests, or even before you save your files.
+
+This document describes the suite of analyzers available in gopls,
+which aggregates analyzers from a variety of sources:
+
+- all the usual bug-finding analyzers from the `go vet` suite;
+- a number of analyzers with more substantial dependencies that prevent them from being used in `go vet`;
+- analyzers that augment compilation errors by suggesting quick fixes to common mistakes; and
+- a handful of analyzers that suggest possible style improvements.
+
+More details about how to enable and disable analyzers can be found
 [here](settings.md#analyses).
 
-<!-- BEGIN Analyzers: DO NOT MANUALLY EDIT THIS SECTION -->
-## **appends**
+In addition, gopls includes the [`staticcheck` suite](https://staticcheck.dev/docs/checks),
+though these analyzers are off by default.
+Use the [`staticcheck`](settings.md#staticcheck`) setting to enable them,
+and consult staticcheck's documentation for analyzer details.
 
-appends: check for missing values after append
+
+<!-- BEGIN Analyzers: DO NOT MANUALLY EDIT THIS SECTION -->
+<a id='appends'></a>
+## `appends`: check for missing values after append
+
 
 This checker reports calls to append that pass
 no values to be appended to the slice.
@@ -19,33 +43,34 @@ no values to be appended to the slice.
 Such calls are always no-ops and often indicate an
 underlying mistake.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/appends)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [appends](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/appends)
 
-## **asmdecl**
+<a id='asmdecl'></a>
+## `asmdecl`: report mismatches between assembly files and Go declarations
 
-asmdecl: report mismatches between assembly files and Go declarations
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/asmdecl)
 
-**Enabled by default.**
+Default: on.
 
-## **assign**
+Package documentation: [asmdecl](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/asmdecl)
 
-assign: check for useless assignments
+<a id='assign'></a>
+## `assign`: check for useless assignments
+
 
 This checker reports assignments of the form x = x or a[i] = a[i].
 These are almost always useless, and even when they aren't they are
 usually a mistake.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/assign)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [assign](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/assign)
 
-## **atomic**
+<a id='atomic'></a>
+## `atomic`: check for common mistakes using the sync/atomic package
 
-atomic: check for common mistakes using the sync/atomic package
 
 The atomic checker looks for assignment statements of the form:
 
@@ -53,37 +78,40 @@ The atomic checker looks for assignment statements of the form:
 
 which are not atomic.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomic)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [atomic](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomic)
 
-## **atomicalign**
+<a id='atomicalign'></a>
+## `atomicalign`: check for non-64-bits-aligned arguments to sync/atomic functions
 
-atomicalign: check for non-64-bits-aligned arguments to sync/atomic functions
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomicalign)
 
-**Enabled by default.**
+Default: on.
 
-## **bools**
+Package documentation: [atomicalign](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/atomicalign)
 
-bools: check for common mistakes involving boolean operators
+<a id='bools'></a>
+## `bools`: check for common mistakes involving boolean operators
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/bools)
 
-**Enabled by default.**
 
-## **buildtag**
+Default: on.
 
-buildtag: check //go:build and // +build directives
+Package documentation: [bools](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/bools)
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/buildtag)
+<a id='buildtag'></a>
+## `buildtag`: check //go:build and // +build directives
 
-**Enabled by default.**
 
-## **cgocall**
 
-cgocall: detect some violations of the cgo pointer passing rules
+Default: on.
+
+Package documentation: [buildtag](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/buildtag)
+
+<a id='cgocall'></a>
+## `cgocall`: detect some violations of the cgo pointer passing rules
+
 
 Check for invalid cgo pointer passing.
 This looks for code that uses cgo to call C code passing values
@@ -92,13 +120,13 @@ sharing rules.
 Specifically, it warns about attempts to pass a Go chan, map, func,
 or slice to C, either directly, or via a pointer, array, or struct.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/cgocall)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [cgocall](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/cgocall)
 
-## **composites**
+<a id='composites'></a>
+## `composites`: check for unkeyed composite literals
 
-composites: check for unkeyed composite literals
 
 This analyzer reports a diagnostic for composite literals of struct
 types imported from another package that do not use the field-keyed
@@ -114,25 +142,25 @@ should be replaced by:
 	err = &net.DNSConfigError{Err: err}
 
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/composite)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [composites](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/composite)
 
-## **copylocks**
+<a id='copylocks'></a>
+## `copylocks`: check for locks erroneously passed by value
 
-copylocks: check for locks erroneously passed by value
 
 Inadvertently copying a value containing a lock, such as sync.Mutex or
 sync.WaitGroup, may cause both copies to malfunction. Generally such
 values should be referred to through a pointer.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/copylocks)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [copylocks](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/copylock)
 
-## **deepequalerrors**
+<a id='deepequalerrors'></a>
+## `deepequalerrors`: check for calls of reflect.DeepEqual on error values
 
-deepequalerrors: check for calls of reflect.DeepEqual on error values
 
 The deepequalerrors checker looks for calls of the form:
 
@@ -141,13 +169,13 @@ The deepequalerrors checker looks for calls of the form:
 where err1 and err2 are errors. Using reflect.DeepEqual to compare
 errors is discouraged.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/deepequalerrors)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [deepequalerrors](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/deepequalerrors)
 
-## **defers**
+<a id='defers'></a>
+## `defers`: report common mistakes in defer statements
 
-defers: report common mistakes in defer statements
 
 The defers analyzer reports a diagnostic when a defer statement would
 result in a non-deferred call to time.Since, as experience has shown
@@ -163,13 +191,13 @@ The correct code is:
 
 	defer func() { recordLatency(time.Since(start)) }()
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/defers)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [defers](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/defers)
 
-## **deprecated**
+<a id='deprecated'></a>
+## `deprecated`: check for use of deprecated identifiers
 
-deprecated: check for use of deprecated identifiers
 
 The deprecated analyzer looks for deprecated symbols and package
 imports.
@@ -177,13 +205,13 @@ imports.
 See https://go.dev/wiki/Deprecated to learn about Go's convention
 for documenting and signaling deprecated identifiers.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/deprecated)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [deprecated](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/deprecated)
 
-## **directive**
+<a id='directive'></a>
+## `directive`: check Go toolchain directives such as //go:debug
 
-directive: check Go toolchain directives such as //go:debug
 
 This analyzer checks for problems with known Go toolchain directives
 in all Go source files in a package directory, even those excluded by
@@ -199,13 +227,13 @@ This analyzer does not check //go:build, which is handled by the
 buildtag analyzer.
 
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/directive)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [directive](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/directive)
 
-## **embed**
+<a id='embed'></a>
+## `embed`: check //go:embed directive usage
 
-embed: check //go:embed directive usage
 
 This analyzer checks that the embed package is imported if //go:embed
 directives are present, providing a suggested fix to add the import if
@@ -214,24 +242,24 @@ it is missing.
 This analyzer also checks that //go:embed directives precede the
 declaration of a single variable.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/embeddirective)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [embed](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/embeddirective)
 
-## **errorsas**
+<a id='errorsas'></a>
+## `errorsas`: report passing non-pointer or non-error values to errors.As
 
-errorsas: report passing non-pointer or non-error values to errors.As
 
 The errorsas analysis reports calls to errors.As where the type
 of the second argument is not a pointer to a type implementing error.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/errorsas)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [errorsas](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/errorsas)
 
-## **fieldalignment**
+<a id='fieldalignment'></a>
+## `fieldalignment`: find structs that would use less memory if their fields were sorted
 
-fieldalignment: find structs that would use less memory if their fields were sorted
 
 This analyzer find structs that can be rearranged to use less memory, and provides
 a suggested edit with the most compact order.
@@ -259,13 +287,13 @@ to occupy the same CPU cache line, inducing a form of memory contention
 known as "false sharing" that slows down both goroutines.
 
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/fieldalignment)
+Default: off. Enable by setting `"analyses": {"fieldalignment": true}`.
 
-**Disabled by default. Enable it by setting `"analyses": {"fieldalignment": true}`.**
+Package documentation: [fieldalignment](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/fieldalignment)
 
-## **fillreturns**
+<a id='fillreturns'></a>
+## `fillreturns`: suggest fixes for errors due to an incorrect number of return values
 
-fillreturns: suggest fixes for errors due to an incorrect number of return values
 
 This checker provides suggested fixes for type errors of the
 type "wrong number of return values (want %d, got %d)". For example:
@@ -282,21 +310,22 @@ will turn into
 
 This functionality is similar to https://github.com/sqs/goreturns.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillreturns)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [fillreturns](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillreturns)
 
-## **framepointer**
+<a id='framepointer'></a>
+## `framepointer`: report assembly that clobbers the frame pointer before saving it
 
-framepointer: report assembly that clobbers the frame pointer before saving it
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/framepointer)
 
-**Enabled by default.**
+Default: on.
 
-## **httpresponse**
+Package documentation: [framepointer](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/framepointer)
 
-httpresponse: check for mistakes using HTTP responses
+<a id='httpresponse'></a>
+## `httpresponse`: check for mistakes using HTTP responses
+
 
 A common mistake when using the net/http package is to defer a function
 call to close the http.Response Body before checking the error that
@@ -312,13 +341,13 @@ determines whether the response is valid:
 This checker helps uncover latent nil dereference bugs by reporting a
 diagnostic for such mistakes.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/httpresponse)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [httpresponse](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/httpresponse)
 
-## **ifaceassert**
+<a id='ifaceassert'></a>
+## `ifaceassert`: detect impossible interface-to-interface type assertions
 
-ifaceassert: detect impossible interface-to-interface type assertions
 
 This checker flags type assertions v.(T) and corresponding type-switch cases
 in which the static type V of v is an interface that cannot possibly implement
@@ -333,13 +362,13 @@ name but different signatures. Example:
 The Read method in v has a different signature than the Read method in
 io.Reader, so this assertion cannot succeed.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/ifaceassert)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [ifaceassert](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/ifaceassert)
 
-## **infertypeargs**
+<a id='infertypeargs'></a>
+## `infertypeargs`: check for unnecessary type arguments in call expressions
 
-infertypeargs: check for unnecessary type arguments in call expressions
 
 Explicit type arguments may be omitted from call expressions if they can be
 inferred from function arguments, or from other type arguments:
@@ -351,13 +380,13 @@ inferred from function arguments, or from other type arguments:
 	}
 
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [infertypeargs](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs)
 
-## **loopclosure**
+<a id='loopclosure'></a>
+## `loopclosure`: check references to loop variables from within nested functions
 
-loopclosure: check references to loop variables from within nested functions
 
 This analyzer reports places where a function literal references the
 iteration variable of an enclosing loop, and the loop calls the function
@@ -423,36 +452,36 @@ statements such as if, switch, and select.)
 
 See: https://golang.org/doc/go_faq.html#closures_and_goroutines
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/loopclosure)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [loopclosure](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/loopclosure)
 
-## **lostcancel**
+<a id='lostcancel'></a>
+## `lostcancel`: check cancel func returned by context.WithCancel is called
 
-lostcancel: check cancel func returned by context.WithCancel is called
 
 The cancellation function returned by context.WithCancel, WithTimeout,
 and WithDeadline must be called or the new context will remain live
 until its parent context is cancelled.
 (The background context is never cancelled.)
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/lostcancel)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [lostcancel](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/lostcancel)
 
-## **nilfunc**
+<a id='nilfunc'></a>
+## `nilfunc`: check for useless comparisons between functions and nil
 
-nilfunc: check for useless comparisons between functions and nil
 
 A useless comparison is one like f == nil as opposed to f() == nil.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/nilfunc)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [nilfunc](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/nilfunc)
 
-## **nilness**
+<a id='nilness'></a>
+## `nilness`: check for redundant or impossible nil comparisons
 
-nilness: check for redundant or impossible nil comparisons
 
 The nilness checker inspects the control-flow graph of each function in
 a package and reports nil pointer dereferences, degenerate nil
@@ -514,13 +543,13 @@ nil. The intervening loop is just a distraction.
 
 ...
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/nilness)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [nilness](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/nilness)
 
-## **nonewvars**
+<a id='nonewvars'></a>
+## `nonewvars`: suggested fixes for "no new vars on left side of :="
 
-nonewvars: suggested fixes for "no new vars on left side of :="
 
 This checker provides suggested fixes for type errors of the
 type "no new vars on left side of :=". For example:
@@ -533,13 +562,13 @@ will turn into
 	z := 1
 	z = 2
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/nonewvars)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [nonewvars](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/nonewvars)
 
-## **noresultvalues**
+<a id='noresultvalues'></a>
+## `noresultvalues`: suggested fixes for unexpected return values
 
-noresultvalues: suggested fixes for unexpected return values
 
 This checker provides suggested fixes for type errors of the
 type "no result values expected" or "too many return values".
@@ -551,13 +580,13 @@ will turn into
 
 	func z() { return }
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/noresultvars)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [noresultvalues](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/noresultvalues)
 
-## **printf**
+<a id='printf'></a>
+## `printf`: check consistency of Printf format strings and arguments
 
-printf: check consistency of Printf format strings and arguments
 
 The check applies to calls of the formatting functions such as
 [fmt.Printf] and [fmt.Sprintf], as well as any detected wrappers of
@@ -568,13 +597,13 @@ mistakes such as syntax errors in the format string and mismatches
 See the documentation of the fmt package for the complete set of
 format operators and their operand types.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/printf)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [printf](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/printf)
 
-## **shadow**
+<a id='shadow'></a>
+## `shadow`: check for possible unintended shadowing of variables
 
-shadow: check for possible unintended shadowing of variables
 
 This analyzer check for shadowed variables.
 A shadowed variable is a variable declared in an inner scope
@@ -599,21 +628,22 @@ For example:
 		return err
 	}
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/shadow)
+Default: off. Enable by setting `"analyses": {"shadow": true}`.
 
-**Disabled by default. Enable it by setting `"analyses": {"shadow": true}`.**
+Package documentation: [shadow](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/shadow)
 
-## **shift**
+<a id='shift'></a>
+## `shift`: check for shifts that equal or exceed the width of the integer
 
-shift: check for shifts that equal or exceed the width of the integer
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/shift)
 
-**Enabled by default.**
+Default: on.
 
-## **sigchanyzer**
+Package documentation: [shift](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/shift)
 
-sigchanyzer: check for unbuffered channel of os.Signal
+<a id='sigchanyzer'></a>
+## `sigchanyzer`: check for unbuffered channel of os.Signal
+
 
 This checker reports call expression of the form
 
@@ -621,13 +651,13 @@ This checker reports call expression of the form
 
 where c is an unbuffered channel, which can be at risk of missing the signal.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sigchanyzer)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [sigchanyzer](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sigchanyzer)
 
-## **simplifycompositelit**
+<a id='simplifycompositelit'></a>
+## `simplifycompositelit`: check for composite literal simplifications
 
-simplifycompositelit: check for composite literal simplifications
 
 An array, slice, or map composite literal of the form:
 
@@ -639,13 +669,13 @@ will be simplified to:
 
 This is one of the simplifications that "gofmt -s" applies.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifycompositelit)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [simplifycompositelit](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifycompositelit)
 
-## **simplifyrange**
+<a id='simplifyrange'></a>
+## `simplifyrange`: check for range statement simplifications
 
-simplifyrange: check for range statement simplifications
 
 A range of the form:
 
@@ -665,13 +695,13 @@ will be simplified to:
 
 This is one of the simplifications that "gofmt -s" applies.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyrange)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [simplifyrange](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyrange)
 
-## **simplifyslice**
+<a id='simplifyslice'></a>
+## `simplifyslice`: check for slice simplifications
 
-simplifyslice: check for slice simplifications
 
 A slice expression of the form:
 
@@ -683,13 +713,13 @@ will be simplified to:
 
 This is one of the simplifications that "gofmt -s" applies.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyslice)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [simplifyslice](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyslice)
 
-## **slog**
+<a id='slog'></a>
+## `slog`: check for invalid structured logging calls
 
-slog: check for invalid structured logging calls
 
 The slog checker looks for calls to functions from the log/slog
 package that take alternating key-value pairs. It reports calls
@@ -703,24 +733,24 @@ and
 
 	slog.Info("message", "k1", v1, "k2") // call to slog.Info missing a final value
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/slog)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [slog](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/slog)
 
-## **sortslice**
+<a id='sortslice'></a>
+## `sortslice`: check the argument type of sort.Slice
 
-sortslice: check the argument type of sort.Slice
 
 sort.Slice requires an argument of a slice type. Check that
 the interface{} value passed to sort.Slice is actually a slice.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sortslice)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [sortslice](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sortslice)
 
-## **stdmethods**
+<a id='stdmethods'></a>
+## `stdmethods`: check signature of methods of well-known interfaces
 
-stdmethods: check signature of methods of well-known interfaces
 
 Sometimes a type may be intended to satisfy an interface but may fail to
 do so because of a mistake in its method signature.
@@ -741,13 +771,13 @@ Checked method names include:
 	UnmarshalJSON UnreadByte UnreadRune WriteByte
 	WriteTo
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/stdmethods)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [stdmethods](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/stdmethods)
 
-## **stdversion**
+<a id='stdversion'></a>
+## `stdversion`: report uses of too-new standard library symbols
 
-stdversion: report uses of too-new standard library symbols
 
 The stdversion analyzer reports references to symbols in the standard
 library that were introduced by a Go release higher than the one in
@@ -761,13 +791,13 @@ have false positives, for example if fields or methods are accessed
 through a type alias that is guarded by a Go version constraint.
 
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/stdversion)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [stdversion](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/stdversion)
 
-## **stringintconv**
+<a id='stringintconv'></a>
+## `stringintconv`: check for string(int) conversions
 
-stringintconv: check for string(int) conversions
 
 This checker flags conversions of the form string(x) where x is an integer
 (but not byte or rune) type. Such conversions are discouraged because they
@@ -779,23 +809,23 @@ For conversions that intend on using the code point, consider replacing them
 with string(rune(x)). Otherwise, strconv.Itoa and its equivalents return the
 string representation of the value in the desired base.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/stringintconv)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [stringintconv](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/stringintconv)
 
-## **structtag**
+<a id='structtag'></a>
+## `structtag`: check that struct field tags conform to reflect.StructTag.Get
 
-structtag: check that struct field tags conform to reflect.StructTag.Get
 
 Also report certain struct tags (json, xml) used with unexported fields.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/structtag)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [structtag](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/structtag)
 
-## **stubmethods**
+<a id='stubmethods'></a>
+## `stubmethods`: detect missing methods and fix with stub implementations
 
-stubmethods: detect missing methods and fix with stub implementations
 
 This analyzer detects type-checking errors due to missing methods
 in assignments from concrete types to interface types, and offers
@@ -825,13 +855,13 @@ This analyzer will suggest a fix to declare this method:
 doesn't use the SuggestedFix mechanism and the stub is created by
 logic in gopls's golang.stub function.)
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [stubmethods](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods)
 
-## **testinggoroutine**
+<a id='testinggoroutine'></a>
+## `testinggoroutine`: report calls to (*testing.T).Fatal from goroutines started by a test
 
-testinggoroutine: report calls to (*testing.T).Fatal from goroutines started by a test
 
 Functions that abruptly terminate a test, such as the Fatal, Fatalf, FailNow, and
 Skip{,f,Now} methods of *testing.T, must be called from the test goroutine itself.
@@ -844,13 +874,13 @@ started by the test. For example:
 	    }()
 	}
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/testinggoroutine)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [testinggoroutine](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/testinggoroutine)
 
-## **tests**
+<a id='tests'></a>
+## `tests`: check for common mistaken usages of tests and examples
 
-tests: check for common mistaken usages of tests and examples
 
 The tests checker walks Test, Benchmark, Fuzzing and Example functions checking
 malformed names, wrong signatures and examples documenting non-existent
@@ -859,25 +889,25 @@ identifiers.
 Please see the documentation for package testing in golang.org/pkg/testing
 for the conventions that are enforced for Tests, Benchmarks, and Examples.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/tests)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [tests](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/tests)
 
-## **timeformat**
+<a id='timeformat'></a>
+## `timeformat`: check for calls of (time.Time).Format or time.Parse with 2006-02-01
 
-timeformat: check for calls of (time.Time).Format or time.Parse with 2006-02-01
 
 The timeformat checker looks for time formats with the 2006-02-01 (yyyy-dd-mm)
 format. Internationally, "yyyy-dd-mm" does not occur in common calendar date
 standards, and so it is more likely that 2006-01-02 (yyyy-mm-dd) was intended.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/timeformat)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [timeformat](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/timeformat)
 
-## **undeclaredname**
+<a id='undeclaredname'></a>
+## `undeclaredname`: suggested fixes for "undeclared name: <>"
 
-undeclaredname: suggested fixes for "undeclared name: <>"
 
 This checker provides suggested fixes for type errors of the
 type "undeclared name: <>". It will either insert a new statement,
@@ -891,36 +921,36 @@ or a new function declaration, such as:
 		panic("implement me!")
 	}
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/undeclaredname)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [undeclaredname](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/undeclaredname)
 
-## **unmarshal**
+<a id='unmarshal'></a>
+## `unmarshal`: report passing non-pointer or non-interface values to unmarshal
 
-unmarshal: report passing non-pointer or non-interface values to unmarshal
 
 The unmarshal analysis reports calls to functions such as json.Unmarshal
 in which the argument type is not a pointer or an interface.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unmarshal)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [unmarshal](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unmarshal)
 
-## **unreachable**
+<a id='unreachable'></a>
+## `unreachable`: check for unreachable code
 
-unreachable: check for unreachable code
 
 The unreachable analyzer finds statements that execution can never reach
 because they are preceded by an return statement, a call to panic, an
 infinite loop, or similar constructs.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unreachable)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [unreachable](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unreachable)
 
-## **unsafeptr**
+<a id='unsafeptr'></a>
+## `unsafeptr`: check for invalid conversions of uintptr to unsafe.Pointer
 
-unsafeptr: check for invalid conversions of uintptr to unsafe.Pointer
 
 The unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer
 to convert integers to pointers. A conversion from uintptr to
@@ -928,13 +958,13 @@ unsafe.Pointer is invalid if it implies that there is a uintptr-typed
 word in memory that holds a pointer value, because that word will be
 invisible to stack copying and to the garbage collector.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unsafeptr)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [unsafeptr](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unsafeptr)
 
-## **unusedparams**
+<a id='unusedparams'></a>
+## `unusedparams`: check for unused parameters of functions
 
-unusedparams: check for unused parameters of functions
 
 The unusedparams analyzer checks functions to see if there are
 any parameters that are not being used.
@@ -959,13 +989,13 @@ arguments at call sites, while taking care to preserve any side
 effects in the argument expressions; see
 https://github.com/golang/tools/releases/tag/gopls%2Fv0.14.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedparams)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [unusedparams](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedparams)
 
-## **unusedresult**
+<a id='unusedresult'></a>
+## `unusedresult`: check for unused results of calls to some functions
 
-unusedresult: check for unused results of calls to some functions
 
 Some functions like fmt.Errorf return a result and have no side
 effects, so it is always a mistake to discard the result. Other
@@ -975,21 +1005,22 @@ functions like these when the result of the call is ignored.
 
 The set of functions may be controlled using flags.
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unusedresult)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [unusedresult](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unusedresult)
 
-## **unusedvariable**
+<a id='unusedvariable'></a>
+## `unusedvariable`: check for unused variables and suggest fixes
 
-unusedvariable: check for unused variables and suggest fixes
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedvariable)
 
-**Disabled by default. Enable it by setting `"analyses": {"unusedvariable": true}`.**
+Default: off. Enable by setting `"analyses": {"unusedvariable": true}`.
 
-## **unusedwrite**
+Package documentation: [unusedvariable](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedvariable)
 
-unusedwrite: checks for unused writes
+<a id='unusedwrite'></a>
+## `unusedwrite`: checks for unused writes
+
 
 The analyzer reports instances of writes to struct fields and
 arrays that are never read. Specifically, when a struct object
@@ -1015,16 +1046,17 @@ Another example is about non-pointer receiver:
 		t.x = i  // unused write to field x
 	}
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unusedwrite)
+Default: on.
 
-**Enabled by default.**
+Package documentation: [unusedwrite](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unusedwrite)
 
-## **useany**
+<a id='useany'></a>
+## `useany`: check for constraints that could be simplified to "any"
 
-useany: check for constraints that could be simplified to "any"
 
-[Full documentation](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/useany)
 
-**Disabled by default. Enable it by setting `"analyses": {"useany": true}`.**
+Default: off. Enable by setting `"analyses": {"useany": true}`.
+
+Package documentation: [useany](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/useany)
 
 <!-- END Analyzers: DO NOT MANUALLY EDIT THIS SECTION -->
