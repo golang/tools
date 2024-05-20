@@ -55,6 +55,16 @@ func TestFreeRefs(t *testing.T) {
 			[]string{"file pkgname errors.New"},
 		},
 		{
+			// struct field (regression test for overzealous dot import logic)
+			`package p; import "net/url"; var _ = «url.URL{Host: ""}»`,
+			[]string{"file pkgname url.URL"},
+		},
+		{
+			// dot imports (another regression test of same)
+			`package p; import . "net/url"; var _ = «URL{Host: ""}»`,
+			[]string{"file pkgname url.URL"},
+		},
+		{
 			// dot import of unsafe (a corner case)
 			`package p; import . "unsafe"; var _ « Pointer»`,
 			[]string{"file pkgname unsafe.Pointer"},
