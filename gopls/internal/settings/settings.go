@@ -168,10 +168,8 @@ type UIOptions struct {
 	DiagnosticOptions
 	InlayHintOptions
 
-	// Codelenses overrides the enabled/disabled state of code lenses. See the
-	// "Code Lenses" section of the
-	// [Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#code-lenses)
-	// for the list of supported lenses.
+	// Codelenses overrides the enabled/disabled state of each of gopls'
+	// sources of [Code Lenses](codelenses.md).
 	//
 	// Example Usage:
 	//
@@ -722,7 +720,11 @@ func validateDirectoryFilter(ifilter string) (string, error) {
 }
 
 func (o *Options) set(name string, value any, seen map[string]struct{}) OptionResult {
-	// Flatten the name in case we get options with a hierarchy.
+	// Use only the last segment of a dotted name such as
+	// ui.navigation.symbolMatcher. The other segments
+	// are discarded, even without validation (!).
+	// (They are supported to enable hierarchical names
+	// in the VS Code graphical configuration UI.)
 	split := strings.Split(name, ".")
 	name = split[len(split)-1]
 

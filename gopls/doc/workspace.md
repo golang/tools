@@ -121,9 +121,9 @@ match the system default operating system (`GOOS`) or architecture (`GOARCH`).
 However, per the caveats listed in that section, this automatic behavior comes
 with limitations. Customize your gopls environment by setting `GOOS` or
 `GOARCH` in your
-[`"build.env"`](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#env-mapstringstring)
+[`"build.env"`](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#env)
 or `-tags=...` in your"
-["build.buildFlags"](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags-string)
+["build.buildFlags"](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags)
 when:
 
 - You want to modify the default build environment.

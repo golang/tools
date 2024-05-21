@@ -100,8 +100,12 @@ const (
 	// function in a `*_test.go` file with a command to run it.
 	//
 	// This source is off by default because VS Code has
-	// a more sophisticated client-side Test Explorer.
-	// See golang/go#67400 for a discussion of this feature.
+	// a client-side custom UI for testing, and because progress
+	// notifications are not a great UX for streamed test output.
+	// See:
+	// - golang/go#67400 for a discussion of this feature.
+	// - https://github.com/joaotavora/eglot/discussions/1402
+	//   for an alternative approach.
 	CodeLensTest CodeLensSource = "test"
 
 	// Tidy go.mod file

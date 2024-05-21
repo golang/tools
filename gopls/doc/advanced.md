@@ -74,7 +74,7 @@ on how to use generics in Go!
 
 ### Known issues
 
-  * [`staticcheck`](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#staticcheck-bool)
+  * [`staticcheck`](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#staticcheck)
     on generic code is not supported yet.
 
 [Go project]: https://go.googlesource.com/go

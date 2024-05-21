@@ -87,6 +87,7 @@ func doMain(write bool) (bool, error) {
 	}{
 		{"internal/doc/api.json", rewriteAPI},
 		{"doc/settings.md", rewriteSettings},
+		{"doc/codelenses.md", rewriteCodeLenses},
 		{"doc/commands.md", rewriteCommands},
 		{"doc/analyzers.md", rewriteAnalyzers},
 		{"doc/inlayHints.md", rewriteInlayHints},
@@ -660,7 +661,7 @@ func rewriteAPI(_ []byte, api *doc.API) ([]byte, error) {
 
 type optionsGroup struct {
 	title   string // dotted path (e.g. "ui.documentation")
-	final   string // finals segment of title (e.g. "documentation")
+	final   string // final segment of title (e.g. "documentation")
 	level   int
 	options []*doc.Option
 }
@@ -684,17 +685,18 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 			}
 		}
 
-		// Currently, the settings document has a title and a subtitle, so
-		// start at level 3 for a header beginning with "###".
+		// Section titles are h2, options are h3.
+		// This is independent of the option hierarchy.
+		// (Nested options should not be smaller!)
 		fmt.Fprintln(&buf)
-		baseLevel := 3
 		for _, h := range groups {
-			level := baseLevel + h.level
 			title := h.final
 			if title != "" {
-				fmt.Fprintf(&buf, "%s %s\n\n",
-					strings.Repeat("#", level),
-					capitalize(title))
+				// Emit HTML anchor as GitHub markdown doesn't support
+				// "# Heading {#anchor}" syntax.
+				fmt.Fprintf(&buf, "<a id='%s'></a>\n", strings.ToLower(title))
+
+				fmt.Fprintf(&buf, "## %s\n\n", capitalize(title))
 			}
 			for _, opt := range h.options {
 				// Emit HTML anchor as GitHub markdown doesn't support
@@ -707,10 +709,18 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 				// heading
 				// (The blob helps the reader see the start of each item,
 				// which is otherwise hard to discern in GitHub markdown.)
-				fmt.Fprintf(&buf, "%s ⬤ **%v** *%v*\n\n",
-					strings.Repeat("#", level+1),
-					opt.Name,
-					opt.Type)
+				//
+				// TODO(adonovan): We should display not the Go type (e.g.
+				// `time.Duration`, `map[Enum]bool`) for each setting,
+				// but its JSON type, since that's the actual interface.
+				// We need a better way to derive accurate JSON type descriptions
+				// from Go types. eg. "a string parsed as if by
+				// `time.Duration.Parse`". (`time.Duration` is an integer, not
+				// a string!)
+				//
+				// We do not display the undocumented dotted-path alias
+				// (h.title + "." + opt.Name) used by VS Code only.
+				fmt.Fprintf(&buf, "### ⬤ `%s` *%v*\n\n", opt.Name, opt.Type)
 
 				// status
 				switch opt.Status {
@@ -729,6 +739,10 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 				buf.WriteString(opt.Doc)
 
 				// enums
+				//
+				// TODO(adonovan): `CodeLensSource` should be treated as an enum,
+				// but loadEnums considers only the `settings` package,
+				// not `protocol`.
 				write := func(name, doc string) {
 					if doc != "" {
 						unbroken := parBreakRE.ReplaceAllString(doc, "\\\n")
@@ -759,16 +773,7 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 		}
 		content = newContent
 	}
-
-	// Replace the lenses section.
-	var buf bytes.Buffer
-	for _, lens := range api.Lenses {
-		fmt.Fprintf(&buf, "### ⬤ `%s`: %s\n\n", lens.Lens, lens.Title)
-		fmt.Fprintf(&buf, "%s\n\n", lens.Doc)
-		fmt.Fprintf(&buf, "Default: %v\n\n", onOff(lens.Default))
-		fmt.Fprintf(&buf, "File type: %s\n\n", lens.FileType)
-	}
-	return replaceSection(content, "Lenses", buf.Bytes())
+	return content, nil
 }
 
 var parBreakRE = regexp.MustCompile("\n{2,}")
@@ -838,6 +843,17 @@ func hardcodedEnumKeys(name string) bool {
 
 func capitalize(s string) string {
 	return string(unicode.ToUpper(rune(s[0]))) + s[1:]
+}
+
+func rewriteCodeLenses(prevContent []byte, api *doc.API) ([]byte, error) {
+	var buf bytes.Buffer
+	for _, lens := range api.Lenses {
+		fmt.Fprintf(&buf, "## ⬤ `%s`: %s\n\n", lens.Lens, lens.Title)
+		fmt.Fprintf(&buf, "%s\n\n", lens.Doc)
+		fmt.Fprintf(&buf, "Default: %v\n\n", onOff(lens.Default))
+		fmt.Fprintf(&buf, "File type: %s\n\n", lens.FileType)
+	}
+	return replaceSection(prevContent, "Lenses", buf.Bytes())
 }
 
 func rewriteCommands(prevContent []byte, api *doc.API) ([]byte, error) {

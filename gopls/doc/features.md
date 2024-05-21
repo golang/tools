@@ -27,7 +27,7 @@ Gopls provides some support for Go template files, that is, files that
 are parsed by `text/template` or `html/template`.
 Gopls recognizes template files based on their file extension, which may be
 configured by the
-[`templateExtensions`](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#templateextensions-string) setting.
+[`templateExtensions`](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#templateextensions) setting.
 Making this list empty turns off template support.
 
 In template files, template support works inside

@@ -800,7 +800,7 @@
 			{
 				"Name": "codelenses",
 				"Type": "map[golang.org/x/tools/gopls/internal/protocol.CodeLensSource]bool",
-				"Doc": "codelenses overrides the enabled/disabled state of code lenses. See the\n\"Code Lenses\" section of the\n[Settings page](https://github.com/golang/tools/blob/master/gopls/doc/settings.md#code-lenses)\nfor the list of supported lenses.\n\nExample Usage:\n\n```json5\n\"gopls\": {\n...\n  \"codelenses\": {\n    \"generate\": false,  // Don't show the `go generate` lens.\n    \"gc_details\": true  // Show a code lens toggling the display of gc's choices.\n  }\n...\n}\n```\n",
+				"Doc": "codelenses overrides the enabled/disabled state of each of gopls'\nsources of [Code Lenses](codelenses.md).\n\nExample Usage:\n\n```json5\n\"gopls\": {\n...\n  \"codelenses\": {\n    \"generate\": false,  // Don't show the `go generate` lens.\n    \"gc_details\": true  // Show a code lens toggling the display of gc's choices.\n  }\n...\n}\n```\n",
 				"EnumKeys": {
 					"ValueType": "bool",
 					"Keys": [
@@ -821,7 +821,7 @@
 						},
 						{
 							"Name": "\"test\"",
-							"Doc": "\nThis codelens source annotates each `Test` and `Benchmark`\nfunction in a `*_test.go` file with a command to run it.\n\nThis source is off by default because VS Code has\na more sophisticated client-side Test Explorer.\nSee golang/go#67400 for a discussion of this feature.\n",
+							"Doc": "\nThis codelens source annotates each `Test` and `Benchmark`\nfunction in a `*_test.go` file with a command to run it.\n\nThis source is off by default because VS Code has\na client-side custom UI for testing, and because progress\nnotifications are not a great UX for streamed test output.\nSee:\n- golang/go#67400 for a discussion of this feature.\n- https://github.com/joaotavora/eglot/discussions/1402\n  for an alternative approach.\n",
 							"Default": "false"
 						},
 						{
@@ -1204,7 +1204,7 @@
 			"FileType": "Go",
 			"Lens": "test",
 			"Title": "Run tests and benchmarks",
-			"Doc": "\nThis codelens source annotates each `Test` and `Benchmark`\nfunction in a `*_test.go` file with a command to run it.\n\nThis source is off by default because VS Code has\na more sophisticated client-side Test Explorer.\nSee golang/go#67400 for a discussion of this feature.\n",
+			"Doc": "\nThis codelens source annotates each `Test` and `Benchmark`\nfunction in a `*_test.go` file with a command to run it.\n\nThis source is off by default because VS Code has\na client-side custom UI for testing, and because progress\nnotifications are not a great UX for streamed test output.\nSee:\n- golang/go#67400 for a discussion of this feature.\n- https://github.com/joaotavora/eglot/discussions/1402\n  for an alternative approach.\n",
 			"Default": false
 		},
 		{
