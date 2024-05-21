@@ -342,9 +342,14 @@ func (e *Env) DoneDiagnosingChanges() Expectation {
 
 // AfterChange expects that the given expectations will be met after all
 // state-changing notifications have been processed by the server.
-//
-// It awaits the completion of all anticipated work before checking the given
-// expectations.
+// Specifically, it awaits the awaits completion of the process of diagnosis
+// after the following notifications, before checking the given expectations:
+//   - textDocument/didOpen
+//   - textDocument/didChange
+//   - textDocument/didSave
+//   - textDocument/didClose
+//   - workspace/didChangeWatchedFiles
+//   - workspace/didChangeConfiguration
 func (e *Env) AfterChange(expectations ...Expectation) {
 	e.T.Helper()
 	e.OnceMet(

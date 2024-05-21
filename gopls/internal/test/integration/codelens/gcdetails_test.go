@@ -49,11 +49,14 @@ func main() {
 		env.OpenFile("main.go")
 		env.ExecuteCodeLensCommand("main.go", command.GCDetails, nil)
 
-		env.AfterChange(Diagnostics(
-			ForFile("main.go"),
-			WithMessage("42 escapes"),
-			WithSeverityTags("optimizer details", protocol.SeverityInformation, nil),
-		))
+		env.OnceMet(
+			CompletedWork(server.DiagnosticWorkTitle(server.FromToggleGCDetails), 1, true),
+			Diagnostics(
+				ForFile("main.go"),
+				WithMessage("42 escapes"),
+				WithSeverityTags("optimizer details", protocol.SeverityInformation, nil),
+			),
+		)
 
 		// GCDetails diagnostics should be reported even on unsaved
 		// edited buffers, thanks to the magic of overlays.
