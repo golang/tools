@@ -49,7 +49,15 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 
 		// Explicit Code Actions are opt-in and shouldn't be
 		// returned to the client unless requested using Only.
-		// TODO: Add other CodeLenses such as GoGenerate, RegenerateCgo, etc..
+		//
+		// This mechanim exists to avoid a distracting
+		// lightbulb (code action) on each Test function.
+		// These actions are unwanted in VS Code because it
+		// has Test Explorer, and in other editors because
+		// the UX of executeCommand is unsatisfactory for tests:
+		// it doesn't show the complete streaming output.
+		// See https://github.com/joaotavora/eglot/discussions/1402
+		// for a better solution.
 		explicit := map[protocol.CodeActionKind]bool{
 			protocol.GoTest: true,
 		}
@@ -101,16 +109,29 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		return actions, nil
 
 	case file.Go:
+		// diagnostic-associated code actions (problematic code)
+		//
+		// The diagnostics already have a UI presence (e.g. squiggly underline);
+		// the associated action may additionally show (in VS Code) as a lightbulb.
 		actions, err := s.codeActionsMatchingDiagnostics(ctx, uri, snapshot, params.Context.Diagnostics, want)
 		if err != nil {
 			return nil, err
 		}
 
-		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, want)
-		if err != nil {
-			return nil, err
+		// non-diagnostic code actions (non-problematic)
+		//
+		// Don't report these for mere cursor motion (trigger=Automatic), only
+		// when the menu is opened, to avoid a distracting lightbulb in VS Code.
+		// (See protocol/codeactionkind.go for background.)
+		//
+		// Some clients (e.g. eglot) do not set TriggerKind at all.
+		if k := params.Context.TriggerKind; k == nil || *k != protocol.CodeActionAutomatic {
+			moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, want)
+			if err != nil {
+				return nil, err
+			}
+			actions = append(actions, moreActions...)
 		}
-		actions = append(actions, moreActions...)
 
 		// Don't suggest fixes for generated files, since they are generally
 		// not useful and some editors may apply them automatically on save.
@@ -177,16 +198,16 @@ func (s *server) ResolveCodeAction(ctx context.Context, ca *protocol.CodeAction)
 	return ca, nil
 }
 
-// codeActionsMatchingDiagnostics fetches code actions for the provided
-// diagnostics, by first attempting to unmarshal code actions directly from the
-// bundled protocol.Diagnostic.Data field, and failing that by falling back on
-// fetching a matching Diagnostic from the set of stored diagnostics for
-// this file.
+// codeActionsMatchingDiagnostics creates code actions for the
+// provided diagnostics, by unmarshalling actions bundled in the
+// protocol.Diagnostic.Data field or, if there were none, by creating
+// actions from edits associated with a matching Diagnostic from the
+// set of stored diagnostics for this file.
 func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri protocol.DocumentURI, snapshot *cache.Snapshot, pds []protocol.Diagnostic, want map[protocol.CodeActionKind]bool) ([]protocol.CodeAction, error) {
 	var actions []protocol.CodeAction
 	var unbundled []protocol.Diagnostic // diagnostics without bundled code actions in their Data field
 	for _, pd := range pds {
-		bundled := cache.BundledQuickFixes(pd)
+		bundled := cache.BundledLazyFixes(pd)
 		if len(bundled) > 0 {
 			for _, fix := range bundled {
 				if want[fix.Kind] {

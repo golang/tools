@@ -1547,7 +1547,7 @@ https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags.`
 				Message:        msg,
 				SuggestedFixes: suggestedFixes,
 			}
-			if ok := bundleQuickFixes(d); !ok {
+			if ok := bundleLazyFixes(d); !ok {
 				bug.Reportf("failed to bundle quick fixes for %v", d)
 			}
 			// Only report diagnostics if we detect an actual exclusion.

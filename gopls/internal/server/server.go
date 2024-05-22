@@ -105,7 +105,7 @@ type server struct {
 	watchedGlobPatterns    map[protocol.RelativePattern]unit
 	watchRegistrationCount int
 
-	diagnosticsMu sync.Mutex
+	diagnosticsMu sync.Mutex // guards map and its values
 	diagnostics   map[protocol.DocumentURI]*fileDiagnostics
 
 	// diagnosticsSema limits the concurrency of diagnostics runs, which can be

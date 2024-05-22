@@ -1770,7 +1770,7 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 					Message:        fmt.Sprintf("error while importing %v: %v", item, depErr.Err),
 					SuggestedFixes: goGetQuickFixes(mp.Module != nil, imp.cgf.URI, item),
 				}
-				if !bundleQuickFixes(diag) {
+				if !bundleLazyFixes(diag) {
 					bug.Reportf("failed to bundle fixes for diagnostic %q", diag.Message)
 				}
 				errors = append(errors, diag)
@@ -1813,7 +1813,7 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 				Message:        fmt.Sprintf("error while importing %v: %v", item, depErr.Err),
 				SuggestedFixes: goGetQuickFixes(true, pm.URI, item),
 			}
-			if !bundleQuickFixes(diag) {
+			if !bundleLazyFixes(diag) {
 				bug.Reportf("failed to bundle fixes for diagnostic %q", diag.Message)
 			}
 			errors = append(errors, diag)
