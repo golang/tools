@@ -129,7 +129,7 @@ func TestVtaGraph(t *testing.T) {
 		{n3, 1},
 		{n4, 0},
 	} {
-		if sl := len(g.successors(test.n)); sl != test.l {
+		if sl := len(g[test.n]); sl != test.l {
 			t.Errorf("want %d successors; got %d", test.l, sl)
 		}
 	}

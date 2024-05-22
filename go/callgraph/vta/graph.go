@@ -249,16 +249,6 @@ func (g vtaGraph) addEdge(x, y node) {
 	succs[y] = true
 }
 
-// successors returns all of n's immediate successors in the graph.
-// The order of successor nodes is arbitrary.
-func (g vtaGraph) successors(n node) []node {
-	var succs []node
-	for succ := range g[n] {
-		succs = append(succs, succ)
-	}
-	return succs
-}
-
 // typePropGraph builds a VTA graph for a set of `funcs` and initial
 // `callgraph` needed to establish interprocedural edges. Returns the
 // graph and a map for unique type representatives.
