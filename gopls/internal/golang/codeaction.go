@@ -223,7 +223,7 @@ func getExtractCodeActions(pgf *parsego.File, rng protocol.Range, options *setti
 	}
 	puri := pgf.URI
 	var commands []protocol.Command
-	if _, ok, methodOk, _ := CanExtractFunction(pgf.Tok, start, end, pgf.Src, pgf.File); ok {
+	if _, ok, methodOk, _ := canExtractFunction(pgf.Tok, start, end, pgf.Src, pgf.File); ok {
 		cmd, err := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
 			Fix:          fixExtractFunction,
 			URI:          puri,
@@ -247,7 +247,7 @@ func getExtractCodeActions(pgf *parsego.File, rng protocol.Range, options *setti
 			commands = append(commands, cmd)
 		}
 	}
-	if _, _, ok, _ := CanExtractVariable(start, end, pgf.File); ok {
+	if _, _, ok, _ := canExtractVariable(start, end, pgf.File); ok {
 		cmd, err := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
 			Fix:          fixExtractVariable,
 			URI:          puri,
@@ -460,7 +460,7 @@ func getInlineCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Ra
 
 	// If range is within call expression, offer to inline the call.
 	var commands []protocol.Command
-	if _, fn, err := EnclosingStaticCall(pkg, pgf, start, end); err == nil {
+	if _, fn, err := enclosingStaticCall(pkg, pgf, start, end); err == nil {
 		cmd, err := command.NewApplyFixCommand(fmt.Sprintf("Inline call to %s", fn.Name()), command.ApplyFixArgs{
 			Fix:          fixInlineCall,
 			URI:          pgf.URI,

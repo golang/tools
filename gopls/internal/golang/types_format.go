@@ -342,7 +342,7 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 
 	// If the request came from a different package than the one in which the
 	// types are defined, we may need to modify the qualifiers.
-	return FormatNodeFile(targetpgf.Tok, expr), nil
+	return formatNodeFile(targetpgf.Tok, expr), nil
 }
 
 // qualifyTypeExpr clones the type expression expr after re-qualifying type

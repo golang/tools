@@ -608,7 +608,7 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 		}
 	}
 
-	signature := FormatNodeFile(pgf.Tok, node)
+	signature := formatNodeFile(pgf.Tok, node)
 	// Replace fake types with their common equivalent.
 	// TODO(rfindley): we should instead use obj.Type(), which would have the
 	// *actual* types of the builtin call.
@@ -955,7 +955,7 @@ func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file 
 				for i, name := range spec.Names {
 					if declPos == name.Pos() {
 						if i < len(spec.Values) {
-							originalDeclaration := FormatNodeFile(file, spec.Values[i])
+							originalDeclaration := formatNodeFile(file, spec.Values[i])
 							if originalDeclaration != declaration {
 								comment = declaration
 								declaration = originalDeclaration

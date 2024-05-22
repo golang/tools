@@ -23,9 +23,9 @@ import (
 // As such it indicates that other definitions could be worth checking.
 var ErrNoLinkname = errors.New("no linkname directive found")
 
-// LinknameDefinition finds the definition of the linkname directive in m at pos.
+// linknameDefinition finds the definition of the linkname directive in m at pos.
 // If there is no linkname directive at pos, returns ErrNoLinkname.
-func LinknameDefinition(ctx context.Context, snapshot *cache.Snapshot, m *protocol.Mapper, from protocol.Position) ([]protocol.Location, error) {
+func linknameDefinition(ctx context.Context, snapshot *cache.Snapshot, m *protocol.Mapper, from protocol.Position) ([]protocol.Location, error) {
 	pkgPath, name, _ := parseLinkname(m, from)
 	if pkgPath == "" {
 		return nil, ErrNoLinkname

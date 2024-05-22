@@ -64,13 +64,13 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	// Handle the case where the cursor is in a linkname directive.
-	locations, err := LinknameDefinition(ctx, snapshot, pgf.Mapper, position)
+	locations, err := linknameDefinition(ctx, snapshot, pgf.Mapper, position)
 	if !errors.Is(err, ErrNoLinkname) {
 		return locations, err // may be success or failure
 	}
 
 	// Handle the case where the cursor is in an embed directive.
-	locations, err = EmbedDefinition(pgf.Mapper, position)
+	locations, err = embedDefinition(pgf.Mapper, position)
 	if !errors.Is(err, ErrNoEmbed) {
 		return locations, err // may be success or failure
 	}

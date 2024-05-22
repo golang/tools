@@ -24,10 +24,10 @@ var ErrNoEmbed = errors.New("no embed directive found")
 
 var errStopWalk = errors.New("stop walk")
 
-// EmbedDefinition finds a file matching the embed directive at pos in the mapped file.
+// embedDefinition finds a file matching the embed directive at pos in the mapped file.
 // If there is no embed directive at pos, returns ErrNoEmbed.
 // If multiple files match the embed pattern, one is picked at random.
-func EmbedDefinition(m *protocol.Mapper, pos protocol.Position) ([]protocol.Location, error) {
+func embedDefinition(m *protocol.Mapper, pos protocol.Position) ([]protocol.Location, error) {
 	pattern, _ := parseEmbedDirective(m, pos)
 	if pattern == "" {
 		return nil, ErrNoEmbed

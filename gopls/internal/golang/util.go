@@ -92,9 +92,9 @@ func FormatNode(fset *token.FileSet, n ast.Node) string {
 	return buf.String()
 }
 
-// FormatNodeFile is like FormatNode, but requires only the token.File for the
+// formatNodeFile is like FormatNode, but requires only the token.File for the
 // syntax containing the given ast node.
-func FormatNodeFile(file *token.File, n ast.Node) string {
+func formatNodeFile(file *token.File, n ast.Node) string {
 	fset := tokeninternal.FileSetFor(file)
 	return FormatNode(fset, n)
 }
