@@ -50,6 +50,14 @@ func TestMarker(t *testing.T) {
 				"βMarker": "require golang.org/modfile v0.0.0",
 			},
 		},
+		{
+			filename:    "testdata/go.fake.work",
+			expectNotes: 2,
+			expectMarkers: map[string]string{
+				"αMarker": "1.23.0",
+				"βMarker": "αβ",
+			},
+		},
 	} {
 		t.Run(tt.filename, func(t *testing.T) {
 			content, err := os.ReadFile(tt.filename)

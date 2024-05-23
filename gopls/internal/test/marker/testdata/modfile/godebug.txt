@@ -1,0 +1,43 @@
+This test basic gopls functionality in a workspace with a godebug
+directive in its modfile.
+
+-- flags --
+-min_go=go1.23
+
+-- go.mod --
+module example.com/m
+
+go 1.23
+
+godebug (
+	gotypesalias=0
+)
+godebug gotypesalias=1
+
+-- a/a.go --
+package a
+
+import "example.com/m/b"
+
+const A = b.B //@def("B", B)
+
+-- b/b.go --
+package b
+
+const B = 42 //@loc(B, "B")
+
+-- format/go.mod --
+module example.com/m/format //@format(formatted)
+
+godebug (
+gotypesalias=0
+)
+godebug      gotypesalias=1
+-- @formatted --
+module example.com/m/format //@format(formatted)
+
+godebug (
+	gotypesalias=0
+)
+
+godebug gotypesalias=1

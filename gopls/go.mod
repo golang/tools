@@ -5,7 +5,7 @@ go 1.19 // => default GODEBUG has gotypesalias=0
 require (
 	github.com/google/go-cmp v0.6.0
 	github.com/jba/templatecheck v0.7.0
-	golang.org/x/mod v0.17.0
+	golang.org/x/mod v0.17.1-0.20240514174713-c0bdc7bd01c9
 	golang.org/x/sync v0.7.0
 	golang.org/x/telemetry v0.0.0-20240521205824-bda55230c457
 	golang.org/x/text v0.15.0

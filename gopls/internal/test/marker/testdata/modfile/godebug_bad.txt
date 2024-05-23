@@ -1,0 +1,17 @@
+This test checks that we surface the error for unexpected godebug values.
+
+TODO(golang/go#67623): the diagnostic should be on the bad godebug value.
+
+-- flags --
+-min_go=go1.23
+-errors_ok
+
+-- go.mod --
+module example.com/m //@diag("module", re`unknown godebug "gotypealias"`)
+
+go 1.23
+
+godebug (
+	gotypealias=0 // misspelled
+)
+godebug gotypesalias=1
