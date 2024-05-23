@@ -222,6 +222,8 @@ func duplicableConversion(from, to types.Type) bool {
 			return !isString
 		}
 		return true
+
+	default:
+		return false
 	}
-	return false
 }
