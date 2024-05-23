@@ -1,0 +1,21 @@
+// Copyright 2024 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package testdata
+
+import "iter"
+
+func _(seq1 iter.Seq[int], seq2 iter.Seq2[int, int]) {
+	for range "" { // want "simplify range expression"
+	}
+
+	// silence
+	for _ = range seq1 {
+	}
+	for _, v := range seq2 {
+		_ = v
+	}
+	for _, _ = range seq2 {
+	}
+}
