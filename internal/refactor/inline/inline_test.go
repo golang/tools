@@ -1474,7 +1474,7 @@ func TestSubstitutionPreservesParameterType(t *testing.T) {
 func TestRedundantConversions(t *testing.T) {
 	runTests(t, []testcase{
 		{
-			"Conversion must not be added if the constant is typed",
+			"Type conversion must not be added if the constant is typed.",
 			`func f(i int32) { print(i) }`,
 			`func _() { f(int32(1))  }`,
 			`func _() { print(int32(1)) }`,
