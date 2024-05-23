@@ -2222,9 +2222,14 @@ func duplicable(info *types.Info, e ast.Expr) bool {
 		return false
 
 	case *ast.CallExpr:
-		// Treat conversions as duplicable if they do not observably allocate.
+		// Treat type conversions as duplicable if they do not observably allocate.
 		// The only cases of observable allocations are
 		// the `[]byte(string)` and `[]rune(string)` conversions.
+		//
+		// Duplicating string([]byte) conversions increases
+		// allocation but doesn't change behavior, but the
+		// reverse, []byte(string), allocates a distinct array,
+		// which is observable.
 
 		if len(e.Args) != 1 { // type conversions always have 1 argument
 			return false
