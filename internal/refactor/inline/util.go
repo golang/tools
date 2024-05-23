@@ -190,3 +190,38 @@ func effectiveReceiver(seln *types.Selection) (types.Type, bool) {
 	}
 	return t, indirect
 }
+
+// duplicableConversion checks if expression from(to) is a conversion and can be considered as duplicable.
+// If the expression is not a conversion, then it is either
+// a builtin function call (*types.Basic with invalid type) or a non-builtin function call (*types.Signature).
+//
+// All type conversions except []byte(string) and []rune(string) are duplicable.
+func duplicableConversion(from, to types.Type) bool {
+	from = from.Underlying() // unwrap Named types
+	to = to.Underlying()     // unwrap Named types
+
+	switch t := to.(type) {
+	case *types.Basic: // basic types and built-in functions
+		isDuplicableType := types.IsBoolean | types.IsNumeric | types.IsString
+		return t.Info()&isDuplicableType != 0
+
+	case *types.Struct,
+		*types.Interface,
+		*types.Array,
+		*types.Chan,
+		*types.Map,
+		*types.Pointer:
+		return true
+
+	case *types.Slice:
+		// Do not mark []byte(string) and []rune(string) as duplicable.
+		elem, ok := t.Elem().Underlying().(*types.Basic)
+		if ok && (elem.Kind() == types.Rune || elem.Kind() == types.Byte) {
+			from, ok := from.(*types.Basic)
+			isString := ok && from.Info()&types.IsString != 0
+			return !isString
+		}
+		return true
+	}
+	return false
+}

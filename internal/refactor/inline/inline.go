@@ -1437,7 +1437,23 @@ next:
 			// other arguments are given explicit types in either
 			// a binding decl or when using the literalization
 			// strategy.
-			if len(param.info.Refs) > 0 && !trivialConversion(args[i].constant, args[i].typ, params[i].obj.Type()) {
+
+			// Check if the types are identical to eliminate redundant type conversion.
+			//
+			// As trivialConversion is unable to distinguish between typed and untyped constants,
+			// it leads to redundant conversions:
+			//	A callee:
+			//		func f1(i int32) { print(i) }
+			//  Called from:
+			//		func f() { f1(int32(1)) }
+			//  Will be inlined as:
+			//		func f() { print(int32(int32(1)))
+			//
+			// However, at this point arg.typ includes information regarding constants being typed or untyped.
+			// This happens due to state.arguments() performing re-typechecking.
+			// Hence, the redundant conversion can be eliminated by making a check if types are identical at this stage.
+			typesIdentical := types.Identical(arg.typ, param.obj.Type())
+			if len(param.info.Refs) > 0 && !typesIdentical && !trivialConversion(args[i].constant, args[i].typ, params[i].obj.Type()) {
 				arg.expr = convert(params[i].fieldType, arg.expr)
 				logf("param %q: adding explicit %s -> %s conversion around argument",
 					param.info.Name, args[i].typ, params[i].obj.Type())
@@ -2206,16 +2222,18 @@ func duplicable(info *types.Info, e ast.Expr) bool {
 		return false
 
 	case *ast.CallExpr:
-		// Don't treat a conversion T(x) as duplicable even
-		// if x is duplicable because it could duplicate
-		// allocations.
-		//
-		// TODO(adonovan): there are cases to tease apart here:
-		// duplicating string([]byte) conversions increases
-		// allocation but doesn't change behavior, but the
-		// reverse, []byte(string), allocates a distinct array,
-		// which is observable
-		return false
+		// Treat conversions as duplicable if they do not observably allocate.
+		// The only cases of observable allocations are
+		// the `[]byte(string)` and `[]rune(string)` conversions.
+
+		if len(e.Args) != 1 { // type conversions always have 1 argument
+			return false
+		}
+
+		from := info.TypeOf(e.Args[0])
+		to := info.TypeOf(e.Fun)
+
+		return duplicableConversion(from, to)
 
 	case *ast.SelectorExpr:
 		if seln, ok := info.Selections[e]; ok {
