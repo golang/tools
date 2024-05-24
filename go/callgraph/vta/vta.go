@@ -121,18 +121,35 @@ func (c *constructor) callees(call ssa.CallInstruction) []*ssa.Function {
 	}
 
 	// Cover the case of dynamic higher-order and interface calls.
-	return intersect(resolve(call, c.types, c.cache), siteCallees(call, c.initial))
+	var res []*ssa.Function
+	resolved := resolve(call, c.types, c.cache)
+	siteCallees(call, c.initial)(func(f *ssa.Function) bool {
+		if _, ok := resolved[f]; ok {
+			res = append(res, f)
+		}
+		return true
+	})
+	return res
 }
 
 // resolve returns a set of functions `c` resolves to based on the
 // type propagation results in `types`.
-func resolve(c ssa.CallInstruction, types propTypeMap, cache methodCache) []*ssa.Function {
+func resolve(c ssa.CallInstruction, types propTypeMap, cache methodCache) (fns map[*ssa.Function]struct{}) {
 	n := local{val: c.Common().Value}
-	var funcs []*ssa.Function
-	for _, p := range types.propTypes(n) {
-		funcs = append(funcs, propFunc(p, c, cache)...)
-	}
-	return funcs
+	types.propTypes(n)(func(p propType) bool {
+		pfs := propFunc(p, c, cache)
+		if len(pfs) == 0 {
+			return true
+		}
+		if fns == nil {
+			fns = make(map[*ssa.Function]struct{})
+		}
+		for _, f := range pfs {
+			fns[f] = struct{}{}
+		}
+		return true
+	})
+	return fns
 }
 
 // propFunc returns the functions modeled with the propagation type `p`

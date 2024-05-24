@@ -586,9 +586,10 @@ func (b *builder) call(c ssa.CallInstruction) {
 		return
 	}
 
-	for _, f := range siteCallees(c, b.callGraph) {
+	siteCallees(c, b.callGraph)(func(f *ssa.Function) bool {
 		addArgumentFlows(b, c, f)
-	}
+		return true
+	})
 }
 
 func addArgumentFlows(b *builder, c ssa.CallInstruction, f *ssa.Function) {
