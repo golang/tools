@@ -257,6 +257,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 			an = &analysisNode{
 				fset:        fset,
 				fsource:     struct{ file.Source }{s}, // expose only ReadFile
+				viewType:    s.View().Type(),
 				mp:          mp,
 				analyzers:   facty, // all nodes run at least the facty analyzers
 				allDeps:     make(map[PackagePath]*analysisNode),
@@ -522,6 +523,7 @@ func (an *analysisNode) decrefPreds() {
 type analysisNode struct {
 	fset            *token.FileSet              // file set shared by entire batch (DAG)
 	fsource         file.Source                 // Snapshot.ReadFile, for use by Pass.ReadFile
+	viewType        ViewType                    // type of view
 	mp              *metadata.Package           // metadata for this package
 	files           []file.Handle               // contents of CompiledGoFiles
 	analyzers       []*analysis.Analyzer        // set of analyzers to run
@@ -742,6 +744,8 @@ func (an *analysisNode) cacheKey() [sha256.Size]byte {
 	// package metadata
 	mp := an.mp
 	fmt.Fprintf(hasher, "package: %s %s %s\n", mp.ID, mp.Name, mp.PkgPath)
+	fmt.Fprintf(hasher, "viewtype: %s\n", an.viewType) // (affects diagnostics)
+
 	// We can ignore m.DepsBy{Pkg,Import}Path: although the logic
 	// uses those fields, we account for them by hashing vdeps.
 
@@ -1023,7 +1027,7 @@ func (an *analysisNode) typeCheck(parsed []*parsego.File) *analysisPackage {
 			}
 
 			// (Duplicates logic from check.go.)
-			if !metadata.IsValidImport(an.mp.PkgPath, dep.mp.PkgPath) {
+			if !metadata.IsValidImport(an.mp.PkgPath, dep.mp.PkgPath, an.viewType != GoPackagesDriverView) {
 				return nil, fmt.Errorf("invalid use of internal package %s", importPath)
 			}
 

@@ -46,3 +46,40 @@ func f() {
 		)
 	})
 }
+
+func TestValidImportCheck_GoPackagesDriver(t *testing.T) {
+	const files = `
+-- go.work --
+use .
+
+-- go.mod --
+module example.com
+go 1.0
+
+-- a/a.go --
+package a
+import _ "example.com/b/internal/c"
+
+-- b/internal/c/c.go --
+package c
+`
+
+	// Note that 'go list' produces an error ("use of internal package %q not allowed")
+	// and gopls produces another ("invalid use of internal package %q") with source=compiler.
+	// Here we assert that the second one is not reported with a go/packages driver.
+	// (We don't assert that the first is missing, because the test driver wraps go list!)
+
+	// go list
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		env.AfterChange(Diagnostics(WithMessage(`invalid use of internal package "example.com/b/internal/c"`)))
+	})
+
+	// test driver
+	WithOptions(
+		FakeGoPackagesDriver(t),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		env.AfterChange(NoDiagnostics(WithMessage(`invalid use of internal package "example.com/b/internal/c"`)))
+	})
+}

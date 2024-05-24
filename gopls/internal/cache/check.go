@@ -1632,7 +1632,7 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 				// e.g. missing metadata for dependencies in buildPackageHandle
 				return nil, missingPkgError(inputs.id, path, inputs.viewType)
 			}
-			if !metadata.IsValidImport(inputs.pkgPath, depPH.mp.PkgPath) {
+			if !metadata.IsValidImport(inputs.pkgPath, depPH.mp.PkgPath, inputs.viewType != GoPackagesDriverView) {
 				return nil, fmt.Errorf("invalid use of internal package %q", path)
 			}
 			return b.getImportPackage(ctx, id)

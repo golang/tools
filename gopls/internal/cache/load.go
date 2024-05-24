@@ -262,7 +262,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		if allFilesExcluded(pkg.GoFiles, filterFunc) {
 			continue
 		}
-		buildMetadata(newMetadata, pkg, cfg.Dir, standalone)
+		buildMetadata(newMetadata, pkg, cfg.Dir, standalone, s.view.typ != GoPackagesDriverView)
 	}
 
 	s.mu.Lock()
@@ -354,7 +354,7 @@ func (m *moduleErrorMap) Error() string {
 // Returns the metadata.Package that was built (or which was already present in
 // updates), or nil if the package could not be built. Notably, the resulting
 // metadata.Package may have an ID that differs from pkg.ID.
-func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Package, loadDir string, standalone bool) *metadata.Package {
+func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Package, loadDir string, standalone, goListView bool) *metadata.Package {
 	// Allow for multiple ad-hoc packages in the workspace (see #47584).
 	pkgPath := PackagePath(pkg.PkgPath)
 	id := PackageID(pkg.ID)
@@ -520,7 +520,7 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 			continue
 		}
 
-		dep := buildMetadata(updates, imported, loadDir, false) // only top level packages can be standalone
+		dep := buildMetadata(updates, imported, loadDir, false, goListView) // only top level packages can be standalone
 
 		// Don't record edges to packages with no name, as they cause trouble for
 		// the importer (golang/go#60952).

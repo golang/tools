@@ -76,7 +76,7 @@ func KnownPackagePaths(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 			continue
 		}
 		// make sure internal packages are importable by the file
-		if !metadata.IsValidImport(current.PkgPath, knownPkg.PkgPath) {
+		if !metadata.IsValidImport(current.PkgPath, knownPkg.PkgPath, snapshot.View().Type() != cache.GoPackagesDriverView) {
 			continue
 		}
 		// naive check on cyclical imports

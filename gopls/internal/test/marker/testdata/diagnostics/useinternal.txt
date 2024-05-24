@@ -2,6 +2,9 @@ This test checks a diagnostic for invalid use of internal packages.
 
 This list error changed in Go 1.21.
 
+See TestValidImportCheck_GoPackagesDriver for a test that no diagnostic
+is produced when using a GOPACKAGESDRIVER (such as for Bazel).
+
 -- flags --
 -min_go=go1.21
 
