@@ -34,8 +34,8 @@ type DriverRequest struct {
 	// Tests specifies whether the patterns should also return test packages.
 	Tests bool `json:"tests"`
 
-	// Overlay maps file paths (relative to the driver's working directory) to the byte contents
-	// of overlay files.
+	// Overlay maps file paths (relative to the driver's working directory)
+	// to the contents of overlay files (see Config.Overlay).
 	Overlay map[string][]byte `json:"overlay"`
 }
 
