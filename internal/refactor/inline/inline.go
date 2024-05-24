@@ -2235,15 +2235,15 @@ func duplicable(info *types.Info, e ast.Expr) bool {
 			return false
 		}
 
-		fun := info.TypeOf(e.Fun).Underlying()
-		arg := info.TypeOf(e.Args[0]).Underlying()
+		fun := info.TypeOf(e.Fun)
+		arg := info.TypeOf(e.Args[0])
 
-		switch t := fun.(type) {
+		switch fun := fun.Underlying().(type) {
 		case *types.Slice:
 			// Do not mark []byte(string) and []rune(string) as duplicable.
-			elem, ok := t.Elem().Underlying().(*types.Basic)
+			elem, ok := fun.Elem().Underlying().(*types.Basic)
 			if ok && (elem.Kind() == types.Rune || elem.Kind() == types.Byte) {
-				from, ok := arg.(*types.Basic)
+				from, ok := arg.Underlying().(*types.Basic)
 				isString := ok && from.Info()&types.IsString != 0
 				return !isString
 			}
