@@ -41,30 +41,30 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	if err != nil {
 		return nil, err
 	}
-	fns, err := testsAndBenchmarks(pkg, pgf)
+	testFuncs, benchFuncs, err := testsAndBenchmarks(pkg.TypesInfo(), pgf)
 	if err != nil {
 		return nil, err
 	}
 	puri := fh.URI()
-	for _, fn := range fns.Tests {
-		cmd, err := command.NewTestCommand("run test", puri, []string{fn.Name}, nil)
+	for _, fn := range testFuncs {
+		cmd, err := command.NewTestCommand("run test", puri, []string{fn.name}, nil)
 		if err != nil {
 			return nil, err
 		}
-		rng := protocol.Range{Start: fn.Rng.Start, End: fn.Rng.Start}
+		rng := protocol.Range{Start: fn.rng.Start, End: fn.rng.Start}
 		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: &cmd})
 	}
 
-	for _, fn := range fns.Benchmarks {
-		cmd, err := command.NewTestCommand("run benchmark", puri, nil, []string{fn.Name})
+	for _, fn := range benchFuncs {
+		cmd, err := command.NewTestCommand("run benchmark", puri, nil, []string{fn.name})
 		if err != nil {
 			return nil, err
 		}
-		rng := protocol.Range{Start: fn.Rng.Start, End: fn.Rng.Start}
+		rng := protocol.Range{Start: fn.rng.Start, End: fn.rng.Start}
 		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: &cmd})
 	}
 
-	if len(fns.Benchmarks) > 0 {
+	if len(benchFuncs) > 0 {
 		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 		if err != nil {
 			return nil, err
@@ -75,8 +75,8 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 			return nil, err
 		}
 		var benches []string
-		for _, fn := range fns.Benchmarks {
-			benches = append(benches, fn.Name)
+		for _, fn := range benchFuncs {
+			benches = append(benches, fn.name)
 		}
 		cmd, err := command.NewTestCommand("run file benchmarks", puri, nil, benches)
 		if err != nil {
@@ -87,21 +87,16 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	return codeLens, nil
 }
 
-type TestFn struct {
-	Name string
-	Rng  protocol.Range
+type testFunc struct {
+	name string
+	rng  protocol.Range // of *ast.FuncDecl
 }
 
-type TestFns struct {
-	Tests      []TestFn
-	Benchmarks []TestFn
-}
-
-func testsAndBenchmarks(pkg *cache.Package, pgf *parsego.File) (TestFns, error) {
-	var out TestFns
-
+// testsAndBenchmarks returns all Test and Benchmark functions in the
+// specified file.
+func testsAndBenchmarks(info *types.Info, pgf *parsego.File) (tests, benchmarks []testFunc, _ error) {
 	if !strings.HasSuffix(pgf.URI.Path(), "_test.go") {
-		return out, nil
+		return nil, nil, nil // empty
 	}
 
 	for _, d := range pgf.File.Decls {
@@ -112,28 +107,21 @@ func testsAndBenchmarks(pkg *cache.Package, pgf *parsego.File) (TestFns, error) 
 
 		rng, err := pgf.NodeRange(fn)
 		if err != nil {
-			return out, err
+			return nil, nil, err
 		}
 
-		if matchTestFunc(fn, pkg, testRe, "T") {
-			out.Tests = append(out.Tests, TestFn{fn.Name.Name, rng})
-		}
-
-		if matchTestFunc(fn, pkg, benchmarkRe, "B") {
-			out.Benchmarks = append(out.Benchmarks, TestFn{fn.Name.Name, rng})
+		if matchTestFunc(fn, info, testRe, "T") {
+			tests = append(tests, testFunc{fn.Name.Name, rng})
+		} else if matchTestFunc(fn, info, benchmarkRe, "B") {
+			benchmarks = append(benchmarks, testFunc{fn.Name.Name, rng})
 		}
 	}
-
-	return out, nil
+	return
 }
 
-func matchTestFunc(fn *ast.FuncDecl, pkg *cache.Package, nameRe *regexp.Regexp, paramID string) bool {
+func matchTestFunc(fn *ast.FuncDecl, info *types.Info, nameRe *regexp.Regexp, paramID string) bool {
 	// Make sure that the function name matches a test function.
 	if !nameRe.MatchString(fn.Name.Name) {
-		return false
-	}
-	info := pkg.TypesInfo()
-	if info == nil {
 		return false
 	}
 	obj, ok := info.ObjectOf(fn.Name).(*types.Func)

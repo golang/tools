@@ -58,30 +58,30 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		return nil, fmt.Errorf("can't change signatures for packages with parse or type errors: (e.g. %s)", sample)
 	}
 
-	info, err := FindParam(pgf, rng)
+	info, err := findParam(pgf, rng)
 	if err != nil {
 		return nil, err // e.g. invalid range
 	}
-	if info.Field == nil {
+	if info.field == nil {
 		return nil, fmt.Errorf("failed to find field")
 	}
 
 	// Create the new declaration, which is a copy of the original decl with the
 	// unnecessary parameter removed.
-	newDecl := internalastutil.CloneNode(info.Decl)
-	if info.Name != nil {
-		names := remove(newDecl.Type.Params.List[info.FieldIndex].Names, info.NameIndex)
-		newDecl.Type.Params.List[info.FieldIndex].Names = names
+	newDecl := internalastutil.CloneNode(info.decl)
+	if info.name != nil {
+		names := remove(newDecl.Type.Params.List[info.fieldIndex].Names, info.nameIndex)
+		newDecl.Type.Params.List[info.fieldIndex].Names = names
 	}
-	if len(newDecl.Type.Params.List[info.FieldIndex].Names) == 0 {
+	if len(newDecl.Type.Params.List[info.fieldIndex].Names) == 0 {
 		// Unnamed, or final name was removed: in either case, remove the field.
-		newDecl.Type.Params.List = remove(newDecl.Type.Params.List, info.FieldIndex)
+		newDecl.Type.Params.List = remove(newDecl.Type.Params.List, info.fieldIndex)
 	}
 
 	// Compute inputs into building a wrapper function around the modified
 	// signature.
 	var (
-		params   = internalastutil.CloneNode(info.Decl.Type.Params) // "_" names will be modified
+		params   = internalastutil.CloneNode(info.decl.Type.Params) // "_" names will be modified
 		args     []ast.Expr                                         // arguments to delegate
 		variadic = false                                            // whether the signature is variadic
 	)
@@ -97,7 +97,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		blanks := 0
 		for i, fld := range params.List {
 			for j, n := range fld.Names {
-				if i == info.FieldIndex && j == info.NameIndex {
+				if i == info.fieldIndex && j == info.nameIndex {
 					continue
 				}
 				if n.Name == "_" {
@@ -125,7 +125,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		snapshot: snapshot,
 		pkg:      pkg,
 		pgf:      pgf,
-		origDecl: info.Decl,
+		origDecl: info.decl,
 		newDecl:  newDecl,
 		params:   params,
 		callArgs: args,
@@ -140,7 +140,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 	// of the inlining should have changed the location of the original
 	// declaration.
 	{
-		idx := findDecl(pgf.File, info.Decl)
+		idx := findDecl(pgf.File, info.decl)
 		if idx < 0 {
 			return nil, bug.Errorf("didn't find original decl")
 		}
@@ -237,17 +237,17 @@ func rewriteSignature(fset *token.FileSet, declIdx int, src0 []byte, newDecl *as
 	return newSrc, nil
 }
 
-// ParamInfo records information about a param identified by a position.
-type ParamInfo struct {
-	Decl       *ast.FuncDecl // enclosing func decl (non-nil)
-	FieldIndex int           // index of Field in Decl.Type.Params, or -1
-	Field      *ast.Field    // enclosing field of Decl, or nil if range not among parameters
-	NameIndex  int           // index of Name in Field.Names, or nil
-	Name       *ast.Ident    // indicated name (either enclosing, or Field.Names[0] if len(Field.Names) == 1)
+// paramInfo records information about a param identified by a position.
+type paramInfo struct {
+	decl       *ast.FuncDecl // enclosing func decl (non-nil)
+	fieldIndex int           // index of Field in Decl.Type.Params, or -1
+	field      *ast.Field    // enclosing field of Decl, or nil if range not among parameters
+	nameIndex  int           // index of Name in Field.Names, or nil
+	name       *ast.Ident    // indicated name (either enclosing, or Field.Names[0] if len(Field.Names) == 1)
 }
 
-// FindParam finds the parameter information spanned by the given range.
-func FindParam(pgf *parsego.File, rng protocol.Range) (*ParamInfo, error) {
+// findParam finds the parameter information spanned by the given range.
+func findParam(pgf *parsego.File, rng protocol.Range) (*paramInfo, error) {
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
@@ -275,25 +275,25 @@ func FindParam(pgf *parsego.File, rng protocol.Range) (*ParamInfo, error) {
 	if decl == nil {
 		return nil, fmt.Errorf("range is not within a function declaration")
 	}
-	info := &ParamInfo{
-		FieldIndex: -1,
-		NameIndex:  -1,
-		Decl:       decl,
+	info := &paramInfo{
+		fieldIndex: -1,
+		nameIndex:  -1,
+		decl:       decl,
 	}
 	for fi, f := range decl.Type.Params.List {
 		if f == field {
-			info.FieldIndex = fi
-			info.Field = f
+			info.fieldIndex = fi
+			info.field = f
 			for ni, n := range f.Names {
 				if n == id {
-					info.NameIndex = ni
-					info.Name = n
+					info.nameIndex = ni
+					info.name = n
 					break
 				}
 			}
-			if info.Name == nil && len(info.Field.Names) == 1 {
-				info.NameIndex = 0
-				info.Name = info.Field.Names[0]
+			if info.name == nil && len(info.field.Names) == 1 {
+				info.nameIndex = 0
+				info.name = info.field.Names[0]
 			}
 			break
 		}

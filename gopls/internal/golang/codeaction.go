@@ -416,33 +416,33 @@ func canRemoveParameter(pkg *cache.Package, pgf *parsego.File, rng protocol.Rang
 	if perrors, terrors := pkg.ParseErrors(), pkg.TypeErrors(); len(perrors) > 0 || len(terrors) > 0 {
 		return false // can't remove parameters from packages with errors
 	}
-	info, err := FindParam(pgf, rng)
+	info, err := findParam(pgf, rng)
 	if err != nil {
 		return false // e.g. invalid range
 	}
-	if info.Field == nil {
+	if info.field == nil {
 		return false // range does not span a parameter
 	}
-	if info.Decl.Body == nil {
+	if info.decl.Body == nil {
 		return false // external function
 	}
-	if len(info.Field.Names) == 0 {
+	if len(info.field.Names) == 0 {
 		return true // no names => field is unused
 	}
-	if info.Name == nil {
+	if info.name == nil {
 		return false // no name is indicated
 	}
-	if info.Name.Name == "_" {
+	if info.name.Name == "_" {
 		return true // trivially unused
 	}
 
-	obj := pkg.TypesInfo().Defs[info.Name]
+	obj := pkg.TypesInfo().Defs[info.name]
 	if obj == nil {
 		return false // something went wrong
 	}
 
 	used := false
-	ast.Inspect(info.Decl.Body, func(node ast.Node) bool {
+	ast.Inspect(info.decl.Body, func(node ast.Node) bool {
 		if n, ok := node.(*ast.Ident); ok && pkg.TypesInfo().Uses[n] == obj {
 			used = true
 		}
@@ -483,23 +483,21 @@ func getInlineCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Ra
 
 // getGoTestCodeActions returns any "run this test/benchmark" code actions for the selection.
 func getGoTestCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Range) ([]protocol.CodeAction, error) {
-	fns, err := testsAndBenchmarks(pkg, pgf)
+	testFuncs, benchFuncs, err := testsAndBenchmarks(pkg.TypesInfo(), pgf)
 	if err != nil {
 		return nil, err
 	}
 
 	var tests, benchmarks []string
-	for _, fn := range fns.Tests {
-		if !protocol.Intersect(fn.Rng, rng) {
-			continue
+	for _, fn := range testFuncs {
+		if protocol.Intersect(fn.rng, rng) {
+			tests = append(tests, fn.name)
 		}
-		tests = append(tests, fn.Name)
 	}
-	for _, fn := range fns.Benchmarks {
-		if !protocol.Intersect(fn.Rng, rng) {
-			continue
+	for _, fn := range benchFuncs {
+		if protocol.Intersect(fn.rng, rng) {
+			benchmarks = append(benchmarks, fn.name)
 		}
-		benchmarks = append(benchmarks, fn.Name)
 	}
 
 	if len(tests) == 0 && len(benchmarks) == 0 {
