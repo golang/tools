@@ -68,14 +68,19 @@ func within(pos token.Pos, n ast.Node) bool {
 //
 // trivialConversion under-approximates trivial conversions, as unfortunately
 // go/types does not record the type of an expression *before* it is implicitly
-// converted, and therefore it cannot distinguish typed constant constant
+// converted, and therefore it cannot distinguish typed constant
 // expressions from untyped constant expressions. For example, in the
 // expression `c + 2`, where c is a uint32 constant, trivialConversion does not
-// detect that the default type of this express is actually uint32, not untyped
+// detect that the default type of this expression is actually uint32, not untyped
 // int.
 //
 // We could, of course, do better here by reverse engineering some of go/types'
-// constant handling. That may or may not be worthwhile..
+// constant handling. That may or may not be worthwhile.
+//
+// Example: in func f() int32 { return 0 },
+// the type recorded for 0 is int32, not untyped int;
+// although it is Identical to the result var,
+// the conversion is non-trivial.
 func trivialConversion(fromValue constant.Value, from, to types.Type) bool {
 	if fromValue != nil {
 		var defaultType types.Type
