@@ -2231,14 +2231,26 @@ func duplicable(info *types.Info, e ast.Expr) bool {
 		// reverse, []byte(string), allocates a distinct array,
 		// which is observable.
 
-		if len(e.Args) != 1 { // type conversions always have 1 argument
+		if !info.Types[e.Fun].IsType() { // check whether e.Fun is a type conversion
 			return false
 		}
 
-		from := info.TypeOf(e.Args[0])
-		to := info.TypeOf(e.Fun)
+		fun := info.TypeOf(e.Fun).Underlying()
+		arg := info.TypeOf(e.Args[0]).Underlying()
 
-		return duplicableConversion(from, to)
+		switch t := fun.(type) {
+		case *types.Slice:
+			// Do not mark []byte(string) and []rune(string) as duplicable.
+			elem, ok := t.Elem().Underlying().(*types.Basic)
+			if ok && (elem.Kind() == types.Rune || elem.Kind() == types.Byte) {
+				from, ok := arg.(*types.Basic)
+				isString := ok && from.Info()&types.IsString != 0
+				return !isString
+			}
+		case *types.TypeParam:
+			return false // be conservative
+		}
+		return true
 
 	case *ast.SelectorExpr:
 		if seln, ok := info.Selections[e]; ok {

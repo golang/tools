@@ -571,6 +571,12 @@ func f1(i int) int { return i + 1 }`,
 	print(i, i)
 }`,
 			},
+			{
+				"Conversions between function types are duplicable.",
+				`func f(i F) { print(i, i) }; type F func(); func f1() {}`,
+				`func _() { f(F(f1))  }`,
+				`func _() { print(F(f1), F(f1)) }`,
+			},
 		})
 
 	})
