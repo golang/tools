@@ -49,6 +49,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						protocol.RefactorRewrite:       true,
 						protocol.RefactorInline:        true,
 						protocol.RefactorExtract:       true,
+						protocol.GoAssembly:            true,
 						protocol.GoDoc:                 true,
 						protocol.GoFreeSymbols:         true,
 					},

@@ -104,7 +104,7 @@ type commandConfig struct {
 // be populated, depending on which configuration is set. See comments in-line
 // for details.
 type commandDeps struct {
-	snapshot *cache.Snapshot    // present if cfg.forURI was set
+	snapshot *cache.Snapshot    // present if cfg.forURI or forView was set
 	fh       file.Handle        // present if cfg.forURI was set
 	work     *progress.WorkDone // present if cfg.progress was set
 }
@@ -1466,6 +1466,9 @@ func (c *commandHandler) Views(ctx context.Context) ([]command.View, error) {
 }
 
 func (c *commandHandler) FreeSymbols(ctx context.Context, uri protocol.DocumentURI, rng protocol.Range) error {
+	// TODO(adonovan): simplify, following Assembly, by putting the
+	// viewID in the command so that c.run isn't necessary.
+	// (freesymbolsURL needs only a viewID, not a view.)
 	return c.run(ctx, commandConfig{
 		forURI: uri,
 	}, func(ctx context.Context, deps commandDeps) error {
@@ -1480,4 +1483,14 @@ func (c *commandHandler) FreeSymbols(ctx context.Context, uri protocol.DocumentU
 		openClientBrowser(ctx, c.s.client, url)
 		return nil
 	})
+}
+
+func (c *commandHandler) Assembly(ctx context.Context, viewID, packageID, symbol string) error {
+	web, err := c.s.getWeb()
+	if err != nil {
+		return err
+	}
+	url := web.assemblyURL(viewID, packageID, symbol)
+	openClientBrowser(ctx, c.s.client, url)
+	return nil
 }

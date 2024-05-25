@@ -9,12 +9,14 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	. "golang.org/x/tools/gopls/internal/test/integration"
+	"golang.org/x/tools/internal/testenv"
 )
 
 // TestWebServer exercises the web server created on demand
@@ -292,6 +294,81 @@ func f(buf bytes.Buffer, greeting string) {
 		checkMatch(t, true, report, `<li>func <a .*>WriteString</a>  func\(s string\) \(n int, err error\)</li>`)
 		checkMatch(t, false, report, `<li>func <a .*>Write</a>`) // not in selection
 		checkMatch(t, true, report, `<li>var <a .*>greeting</a>  string</li>`)
+	})
+}
+
+// TestAssembly is a basic test of the web-based assembly listing.
+func TestAssembly(t *testing.T) {
+	testenv.NeedsGo1Point(t, 22) // for up-to-date assembly listing
+
+	const files = `
+-- go.mod --
+module example.com
+
+-- a/a.go --
+package a
+
+func f() {
+	println("hello")
+	defer println("world")
+}
+
+func g() {
+	println("goodbye")
+}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+
+		// Invoke the "Show assembly" code action to start the server.
+		loc := env.RegexpSearch("a/a.go", "println")
+		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil)
+		if err != nil {
+			t.Fatalf("CodeAction: %v", err)
+		}
+		const wantTitle = "Show " + runtime.GOARCH + " assembly for f"
+		var action *protocol.CodeAction
+		for _, a := range actions {
+			if a.Title == wantTitle {
+				action = &a
+				break
+			}
+		}
+		if action == nil {
+			t.Fatalf("can't find action with Title %s, only %#v",
+				wantTitle, actions)
+		}
+
+		// Execute the command.
+		// Its side effect should be a single showDocument request.
+		params := &protocol.ExecuteCommandParams{
+			Command:   action.Command.Command,
+			Arguments: action.Command.Arguments,
+		}
+		var result command.DebuggingResult
+		env.ExecuteCommand(params, &result)
+		doc := shownDocument(t, env, "http:")
+		if doc == nil {
+			t.Fatalf("no showDocument call had 'file:' prefix")
+		}
+		t.Log("showDocument(package doc) URL:", doc.URI)
+
+		// Get the report and do some minimal checks for sensible results.
+		// Use only portable instructions below!
+		report := get(t, doc.URI)
+		checkMatch(t, true, report, `TEXT.*example.com/a.f`)
+		checkMatch(t, true, report, `CALL	runtime.printlock`)
+		checkMatch(t, true, report, `CALL	runtime.printstring`)
+		checkMatch(t, true, report, `CALL	runtime.printunlock`)
+		checkMatch(t, true, report, `CALL	example.com/a.f.deferwrap1`)
+		checkMatch(t, true, report, `RET`)
+		checkMatch(t, true, report, `CALL	runtime.morestack_noctxt`)
+
+		// Nested functions are also shown.
+		checkMatch(t, true, report, `TEXT.*example.com/a.f.deferwrap1`)
+
+		// But other functions are not.
+		checkMatch(t, false, report, `TEXT.*example.com/a.g`)
 	})
 }
 

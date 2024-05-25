@@ -205,6 +205,8 @@ func (s *server) WorkDoneProgressCancel(ctx context.Context, params *protocol.Wo
 //
 //	open?file=%s&line=%d&col=%d       - open a file
 //	pkg/PKGPATH?view=%s               - show doc for package in a given view
+//	assembly?pkg=%s&view=%s&symbol=%s - show assembly of specified func symbol
+//	freesymbols?file=%s&range=%d:%d:%d:%d:&view=%s - show report of free symbols
 type web struct {
 	server *http.Server
 	addr   url.URL // "http://127.0.0.1:PORT/gopls/SECRET"
@@ -315,7 +317,7 @@ func (s *server) initWeb() (*web, error) {
 		// Get snapshot of specified view.
 		view, err := s.session.View(req.Form.Get("view"))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
 		snapshot, release, err := view.Snapshot()
@@ -410,6 +412,55 @@ func (s *server) initWeb() (*web, error) {
 		w.Write(html)
 	})
 
+	// The /assembly?pkg=...&view=...&symbol=... handler shows
+	// the assembly of the current function.
+	webMux.HandleFunc("/assembly", func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		if err := req.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Get parameters.
+		var (
+			viewID = req.Form.Get("view")
+			pkgID  = metadata.PackageID(req.Form.Get("pkg"))
+			symbol = req.Form.Get("symbol")
+		)
+		if viewID == "" || pkgID == "" || symbol == "" {
+			http.Error(w, "/assembly requires view, pkg, symbol", http.StatusBadRequest)
+			return
+		}
+
+		// Get snapshot of specified view.
+		view, err := s.session.View(viewID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		snapshot, release, err := view.Snapshot()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer release()
+
+		pkgs, err := snapshot.TypeCheck(ctx, pkgID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pkg := pkgs[0]
+
+		// Produce report.
+		html, err := golang.AssemblyHTML(ctx, snapshot, pkg, symbol, web.openURL)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write(html)
+	})
+
 	return web, nil
 }
 
@@ -453,6 +504,17 @@ func (w *web) freesymbolsURL(v *cache.View, loc protocol.Location) protocol.URI 
 			loc.Range.End.Line,
 			loc.Range.End.Character,
 			url.QueryEscape(v.ID())),
+		"")
+}
+
+// assemblyURL returns the URL of an assembly listing of the specified function symbol.
+func (w *web) assemblyURL(viewID, packageID, symbol string) protocol.URI {
+	return w.url(
+		"assembly",
+		fmt.Sprintf("view=%s&pkg=%s&symbol=%s",
+			url.QueryEscape(viewID),
+			url.QueryEscape(packageID),
+			url.QueryEscape(symbol)),
 		"")
 }
 

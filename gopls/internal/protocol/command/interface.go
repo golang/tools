@@ -252,6 +252,13 @@ type Interface interface {
 	// block of code depends on, perhaps as a precursor to
 	// extracting it into a separate function.
 	FreeSymbols(context.Context, protocol.DocumentURI, protocol.Range) error
+
+	// Assembly: Show disassembly of current function.
+	//
+	// This command opens a web-based disassembly listing of the
+	// specified function symbol (plus any nested lambdas and defers).
+	// The machine architecture is determined by the view.
+	Assembly(_ context.Context, viewID, packageID, symbol string) error
 }
 
 type RunTestsArgs struct {

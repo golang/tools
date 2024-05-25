@@ -140,6 +140,20 @@ Result:
 }
 ```
 
+## `gopls.assembly`: **Show disassembly of current function.**
+
+This command opens a web-based disassembly listing of the
+specified function symbol (plus any nested lambdas and defers).
+The machine architecture is determined by the view.
+
+Args:
+
+```
+string,
+string,
+string
+```
+
 ## `gopls.change_signature`: **Perform a "change signature" refactoring**
 
 This command is experimental, currently only supporting parameter removal.
