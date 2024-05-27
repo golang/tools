@@ -6,6 +6,8 @@ package integration
 
 import (
 	"encoding/json"
+	"errors"
+	"os"
 	"path"
 
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -114,16 +116,25 @@ func (e *Env) SetBufferContent(name string, content string) {
 	}
 }
 
-// ReadFile returns the file content for name that applies to the current
+// FileContent returns the file content for name that applies to the current
 // editing session: if the file is open, it returns its buffer content,
-// otherwise it returns on disk content.
+// otherwise it returns on disk content, if the file does not exist,
+// it returns an empty string.
 func (e *Env) FileContent(name string) string {
 	e.T.Helper()
 	text, ok := e.Editor.BufferText(name)
 	if ok {
 		return text
 	}
-	return e.ReadWorkspaceFile(name)
+	content, err := e.Sandbox.Workdir.ReadFile(name)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ""
+		} else {
+			e.T.Fatal(err)
+		}
+	}
+	return string(content)
 }
 
 // RegexpSearch returns the starting position of the first match for re in the

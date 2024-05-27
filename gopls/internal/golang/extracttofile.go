@@ -7,6 +7,7 @@ package golang
 // This file defines the code action "Extract declarations to new file".
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -26,6 +27,8 @@ import (
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
+var ErrDotImport = errors.New("\"extract to new file\" does not support files containing dot imports")
+
 // canExtractToNewFile reports whether the code in the given range can be extracted to a new file.
 func canExtractToNewFile(pgf *parsego.File, start, end token.Pos) bool {
 	_, _, _, ok := selectedToplevelDecls(pgf, start, end)
@@ -35,8 +38,8 @@ func canExtractToNewFile(pgf *parsego.File, start, end token.Pos) bool {
 // findImportEdits finds imports specs that needs to be added to the new file
 // or deleted from the old file if the range is extracted to a new file.
 //
-// TODO: handle dot imports
-func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (adds []*ast.ImportSpec, deletes []*ast.ImportSpec) {
+// TODO: handle dot imports.
+func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (adds []*ast.ImportSpec, deletes []*ast.ImportSpec, _ error) {
 	// make a map from a pkgName to its references
 	pkgNameReferences := make(map[*types.PkgName][]*ast.Ident)
 	for ident, use := range info.Uses {
@@ -47,9 +50,12 @@ func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (ad
 
 	// PkgName referenced in the extracted selection must be
 	// imported in the new file.
-	// PkgName only refereced in the extracted selection must be
+	// PkgName only referenced in the extracted selection must be
 	// deleted from the original file.
 	for _, spec := range file.Imports {
+		if spec.Name != nil && spec.Name.Name == "." {
+			return nil, nil, ErrDotImport
+		}
 		pkgName, ok := typesutil.ImportedPkgName(info, spec)
 		if !ok {
 			continue
@@ -57,7 +63,7 @@ func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (ad
 		usedInSelection := false
 		usedInNonSelection := false
 		for _, ident := range pkgNameReferences[pkgName] {
-			if contain(start, end, ident.Pos(), ident.End()) {
+			if posRangeContains(start, end, ident.Pos(), ident.End()) {
 				usedInSelection = true
 			} else {
 				usedInNonSelection = true
@@ -71,16 +77,11 @@ func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (ad
 		}
 	}
 
-	return adds, deletes
+	return adds, deletes, nil
 }
 
 // ExtractToNewFile moves selected declarations into a new file.
-func ExtractToNewFile(
-	ctx context.Context,
-	snapshot *cache.Snapshot,
-	fh file.Handle,
-	rng protocol.Range,
-) (*protocol.WorkspaceEdit, error) {
+func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (*protocol.WorkspaceEdit, error) {
 	errorPrefix := "ExtractToNewFile"
 
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
@@ -93,19 +94,24 @@ func ExtractToNewFile(
 		return nil, fmt.Errorf("%s: %w", errorPrefix, err)
 	}
 
-	start, end, filename, ok := selectedToplevelDecls(pgf, start, end)
+	start, end, firstSymbol, ok := selectedToplevelDecls(pgf, start, end)
 	if !ok {
 		return nil, bug.Errorf("precondition unmet")
 	}
 
-	end = skipWhiteSpaces(pgf, end)
+	// select trailing empty lines
+	rest := pgf.Src[pgf.Tok.Offset(end):]
+	end += token.Pos(len(rest) - len(bytes.TrimLeft(rest, " \t\n")))
 
 	replaceRange, err := pgf.PosRange(start, end)
 	if err != nil {
 		return nil, bug.Errorf("findRangeAndFilename returned invalid range: %v", err)
 	}
 
-	adds, deletes := findImportEdits(pgf.File, pkg.TypesInfo(), start, end)
+	adds, deletes, err := findImportEdits(pgf.File, pkg.TypesInfo(), start, end)
+	if err != nil {
+		return nil, err
+	}
 
 	var importDeletes []protocol.TextEdit
 	// For unparenthesised declarations like `import "fmt"` we remove
@@ -123,45 +129,45 @@ func ExtractToNewFile(
 		}
 	}
 
-	importAdds := ""
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "package %s\n", pgf.File.Name.Name)
 	if len(adds) > 0 {
-		importAdds += "import ("
+		buf.WriteString("import (")
 		for _, importSpec := range adds {
 			if importSpec.Name != nil {
-				importAdds += importSpec.Name.Name + " " + importSpec.Path.Value + "\n"
+				fmt.Fprintf(&buf, "%s %s\n", importSpec.Name.Name, importSpec.Path.Value)
 			} else {
-				importAdds += importSpec.Path.Value + "\n"
+				fmt.Fprintf(&buf, "%s\n", importSpec.Path.Value)
 			}
 		}
-		importAdds += ")"
+		buf.WriteString(")\n")
 	}
 
-	newFileURI, err := resolveNewFileURI(ctx, snapshot, pgf.URI.Dir().Path(), filename)
+	newFile, err := chooseNewFileURI(ctx, snapshot, pgf.URI.Dir().Path(), firstSymbol)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", errorPrefix, err)
 	}
 
+	buf.Write(pgf.Src[start-pgf.File.FileStart : end-pgf.File.FileStart])
+
 	// TODO: attempt to duplicate the copyright header, if any.
-	newFileContent, err := format.Source([]byte(
-		"package " + pgf.File.Name.Name + "\n" +
-			importAdds + "\n" +
-			string(pgf.Src[start-pgf.File.FileStart:end-pgf.File.FileStart]),
-	))
+	newFileContent, err := format.Source(buf.Bytes())
 	if err != nil {
 		return nil, err
 	}
 
 	return protocol.NewWorkspaceEdit(
-		// original file edits
+		// edit the original file
 		protocol.DocumentChangeEdit(fh, append(importDeletes, protocol.TextEdit{Range: replaceRange, NewText: ""})),
-		protocol.DocumentChangeCreate(newFileURI),
-		// created file edits
-		protocol.DocumentChangeEdit(&uriVersion{uri: newFileURI, version: 0}, []protocol.TextEdit{
+		// create a new file
+		protocol.DocumentChangeCreate(newFile.URI()),
+		// edit the created file
+		protocol.DocumentChangeEdit(&uriVersion{uri: newFile.URI(), version: 0}, []protocol.TextEdit{
 			{Range: protocol.Range{}, NewText: string(newFileContent)},
 		})), nil
 }
 
-// uriVersion implements protocol.fileHandle
+// uriVersion is the simplest struct that implements protocol.fileHandle.
 type uriVersion struct {
 	uri     protocol.DocumentURI
 	version int32
@@ -174,40 +180,37 @@ func (fh *uriVersion) Version() int32 {
 	return fh.version
 }
 
-// resolveNewFileURI checks that basename.go does not exists in dir, otherwise
-// select basename.{1,2,3,4,5}.go as filename.
-func resolveNewFileURI(ctx context.Context, snapshot *cache.Snapshot, dir string, basename string) (protocol.DocumentURI, error) {
-	basename = strings.ToLower(basename)
+// chooseNewFileURI chooses a new filename in dir, based on the name of the
+// first extracted symbol, and if necessary to disambiguate, a numeric suffix.
+func chooseNewFileURI(ctx context.Context, snapshot *cache.Snapshot, dir string, firstSymbol string) (file.Handle, error) {
+	basename := strings.ToLower(firstSymbol)
 	newPath := protocol.URIFromPath(filepath.Join(dir, basename+".go"))
-	for count := 1; ; count++ {
+	for count := 1; count < 5; count++ {
 		fh, err := snapshot.ReadFile(ctx, newPath)
 		if err != nil {
-			return "", nil
+			return nil, err // canceled
 		}
 		if _, err := fh.Content(); errors.Is(err, os.ErrNotExist) {
-			break
-		}
-		if count >= 5 {
-			return "", fmt.Errorf("resolveNewFileURI: exceeded retry limit")
+			return fh, nil
 		}
 		filename := fmt.Sprintf("%s.%d.go", basename, count)
 		newPath = protocol.URIFromPath(filepath.Join(dir, filename))
 	}
-	return newPath, nil
+	return nil, fmt.Errorf("chooseNewFileURI: exceeded retry limit")
 }
 
 // selectedToplevelDecls returns the lexical extent of the top-level
 // declarations enclosed by [start, end), along with the name of the
 // first declaration. The returned boolean reports whether the selection
-// should be offered code action.
+// should be offered a code action to extract the declarations.
 func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, token.Pos, string, bool) {
 	// selection cannot intersect a package declaration
-	if intersect(start, end, pgf.File.Package, pgf.File.Name.End()) {
+	if posRangeIntersects(start, end, pgf.File.Package, pgf.File.Name.End()) {
 		return 0, 0, "", false
 	}
 	firstName := ""
 	for _, decl := range pgf.File.Decls {
-		if intersect(start, end, decl.Pos(), decl.End()) {
+		if posRangeIntersects(start, end, decl.Pos(), decl.End()) {
 			var id *ast.Ident
 			switch v := decl.(type) {
 			case *ast.BadDecl:
@@ -215,7 +218,7 @@ func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, 
 			case *ast.FuncDecl:
 				// if only selecting keyword "func" or function name, extend selection to the
 				// whole function
-				if contain(v.Pos(), v.Name.End(), start, end) {
+				if posRangeContains(v.Pos(), v.Name.End(), start, end) {
 					start, end = v.Pos(), v.End()
 				}
 				id = v.Name
@@ -226,9 +229,9 @@ func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, 
 				}
 				// if only selecting keyword "type", "const", or "var", extend selection to the
 				// whole declaration
-				if v.Tok == token.TYPE && contain(v.Pos(), v.Pos()+4, start, end) ||
-					v.Tok == token.CONST && contain(v.Pos(), v.Pos()+5, start, end) ||
-					v.Tok == token.VAR && contain(v.Pos(), v.Pos()+3, start, end) {
+				if v.Tok == token.TYPE && posRangeContains(v.Pos(), v.Pos()+token.Pos(len("type")), start, end) ||
+					v.Tok == token.CONST && posRangeContains(v.Pos(), v.Pos()+token.Pos(len("const")), start, end) ||
+					v.Tok == token.VAR && posRangeContains(v.Pos(), v.Pos()+token.Pos(len("var")), start, end) {
 					start, end = v.Pos(), v.End()
 				}
 				if len(v.Specs) > 0 {
@@ -241,7 +244,7 @@ func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, 
 				}
 			}
 			// selection cannot partially intersect a node
-			if !contain(start, end, decl.Pos(), decl.End()) {
+			if !posRangeContains(start, end, decl.Pos(), decl.End()) {
 				return 0, 0, "", false
 			}
 			if id != nil && firstName == "" {
@@ -261,8 +264,8 @@ func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, 
 		}
 	}
 	for _, comment := range pgf.File.Comments {
-		if intersect(start, end, comment.Pos(), comment.End()) {
-			if !contain(start, end, comment.Pos(), comment.End()) {
+		if posRangeIntersects(start, end, comment.Pos(), comment.End()) {
+			if !posRangeContains(start, end, comment.Pos(), comment.End()) {
 				// selection cannot partially intersect a comment
 				return 0, 0, "", false
 			}
@@ -272,17 +275,6 @@ func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, 
 		return 0, 0, "", false
 	}
 	return start, end, firstName, true
-}
-
-func skipWhiteSpaces(pgf *parsego.File, pos token.Pos) token.Pos {
-	i := pos
-	for ; i-pgf.File.FileStart < token.Pos(len(pgf.Src)); i++ {
-		c := pgf.Src[i-pgf.File.FileStart]
-		if !(c == ' ' || c == '\t' || c == '\n') {
-			break
-		}
-	}
-	return i
 }
 
 func findParenthesisFreeImports(pgf *parsego.File) map[*ast.ImportSpec]*ast.GenDecl {
@@ -299,18 +291,21 @@ func findParenthesisFreeImports(pgf *parsego.File) map[*ast.ImportSpec]*ast.GenD
 	return decls
 }
 
-// removeNode returns a TextEdit that removes the node
+// removeNode returns a TextEdit that removes the node.
 func removeNode(pgf *parsego.File, node ast.Node) protocol.TextEdit {
-	rng, _ := pgf.PosRange(node.Pos(), node.End())
+	rng, err := pgf.PosRange(node.Pos(), node.End())
+	if err != nil {
+		bug.Reportf("removeNode: %v", err)
+	}
 	return protocol.TextEdit{Range: rng, NewText: ""}
 }
 
-// intersect checks if [a, b) and [c, d) intersect, assuming a <= b and c <= d
-func intersect(a, b, c, d token.Pos) bool {
+// posRangeIntersects checks if [a, b) and [c, d) intersects, assuming a <= b and c <= d.
+func posRangeIntersects(a, b, c, d token.Pos) bool {
 	return !(b <= c || d <= a)
 }
 
-// contain checks if [a, b) contains [c, d), assuming a <= b and c <= d
-func contain(a, b, c, d token.Pos) bool {
+// posRangeContains checks if [a, b) contains [c, d), assuming a <= b and c <= d.
+func posRangeContains(a, b, c, d token.Pos) bool {
 	return a <= c && d <= b
 }

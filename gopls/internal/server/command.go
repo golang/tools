@@ -947,10 +947,18 @@ func (c *commandHandler) ExtractToNewFile(ctx context.Context, args command.Extr
 	}, func(ctx context.Context, deps commandDeps) error {
 		edit, err := golang.ExtractToNewFile(ctx, deps.snapshot, deps.fh, args.Range)
 		if err != nil {
+			if errors.Is(err, golang.ErrDotImport) {
+				showMessage(ctx, c.s.client, protocol.Info, err.Error())
+				return nil
+			}
 			return err
 		}
-		if _, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{Edit: *edit}); err != nil {
+		resp, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{Edit: *edit})
+		if err != nil {
 			return fmt.Errorf("could not apply edits: %v", err)
+		}
+		if !resp.Applied {
+			return fmt.Errorf("edits not applied: %s", resp.FailureReason)
 		}
 		return nil
 	})
