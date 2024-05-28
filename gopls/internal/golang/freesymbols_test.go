@@ -12,6 +12,7 @@ import (
 	"go/token"
 	"go/types"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -20,6 +21,10 @@ import (
 
 // TestFreeRefs is a unit test of the free-references algorithm.
 func TestFreeRefs(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("some test imports are unsupported on js")
+	}
+
 	for i, test := range []struct {
 		src  string
 		want []string // expected list of "scope kind dotted-path" triples
