@@ -878,7 +878,7 @@ func (s *Snapshot) fileWatchingGlobPatterns() map[protocol.RelativePattern]unit 
 	watchGoFiles := fmt.Sprintf("**/*.{%s}", extensions)
 
 	var dirs []string
-	if s.view.moduleMode() {
+	if s.view.typ.usesModules() {
 		if s.view.typ == GoWorkView {
 			workVendorDir := filepath.Join(s.view.gowork.Dir().Path(), "vendor")
 			workVendorURI := protocol.URIFromPath(workVendorDir)

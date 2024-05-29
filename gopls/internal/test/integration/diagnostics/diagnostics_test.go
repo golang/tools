@@ -43,7 +43,13 @@ func TestDiagnosticErrorInEditedFile(t *testing.T) {
 	// This test is very basic: start with a clean Go program, make an error, and
 	// get a diagnostic for that error. However, it also demonstrates how to
 	// combine Expectations to await more complex state in the editor.
-	Run(t, exampleProgram, func(t *testing.T, env *Env) {
+	RunMultiple{
+		{"golist", WithOptions(Modes(Default))},
+		{"gopackages", WithOptions(
+			Modes(Default),
+			FakeGoPackagesDriver(t),
+		)},
+	}.Run(t, exampleProgram, func(t *testing.T, env *Env) {
 		// Deleting the 'n' at the end of Println should generate a single error
 		// diagnostic.
 		env.OpenFile("main.go")
@@ -84,7 +90,15 @@ func TestDiagnosticErrorInNewFile(t *testing.T) {
 
 const Foo = "abc
 `
-	Run(t, brokenFile, func(t *testing.T, env *Env) {
+	RunMultiple{
+		{"golist", WithOptions(Modes(Default))},
+		// Since this test requires loading an overlay,
+		// it verifies that the fake go/packages driver honors overlays.
+		{"gopackages", WithOptions(
+			Modes(Default),
+			FakeGoPackagesDriver(t),
+		)},
+	}.Run(t, brokenFile, func(t *testing.T, env *Env) {
 		env.CreateBuffer("broken.go", brokenFile)
 		env.AfterChange(Diagnostics(env.AtRegexp("broken.go", "\"abc")))
 	})
@@ -559,7 +573,7 @@ func f() {
 			NoOutstandingWork(IgnoreTelemetryPromptWork),
 			Diagnostics(
 				env.AtRegexp("a.go", `"mod.com`),
-				WithMessage("GOROOT or GOPATH"),
+				WithMessage("in GOROOT"),
 			),
 		)
 		// Deleting the import dismisses the warning.

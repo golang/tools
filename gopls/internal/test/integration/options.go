@@ -5,8 +5,12 @@
 package integration
 
 import (
+	"strings"
+	"testing"
+
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
+	"golang.org/x/tools/internal/drivertest"
 )
 
 type runConfig struct {
@@ -159,6 +163,18 @@ func (e EnvVars) set(opts *runConfig) {
 	for k, v := range e {
 		opts.editor.Env[k] = v
 	}
+}
+
+// FakeGoPackagesDriver configures gopls to run with a fake GOPACKAGESDRIVER
+// environment variable.
+func FakeGoPackagesDriver(t *testing.T) RunOption {
+	env := drivertest.Env(t)
+	vars := make(EnvVars)
+	for _, e := range env {
+		kv := strings.SplitN(e, "=", 2)
+		vars[kv[0]] = kv[1]
+	}
+	return vars
 }
 
 // InGOPATH configures the workspace working directory to be GOPATH, rather

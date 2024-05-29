@@ -1356,9 +1356,9 @@ type typeCheckInputs struct {
 	// TODO(rfindley): consider storing less data in gobDiagnostics, and
 	// interpreting each diagnostic in the context of a fixed set of options.
 	// Then these fields need not be part of the type checking inputs.
-	relatedInformation bool
-	linkTarget         string
-	moduleMode         bool
+	supportsRelatedInformation bool
+	linkTarget                 string
+	viewType                   ViewType
 }
 
 func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (typeCheckInputs, error) {
@@ -1396,9 +1396,9 @@ func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (t
 		depsByImpPath:   mp.DepsByImpPath,
 		goVersion:       goVersion,
 
-		relatedInformation: s.Options().RelatedInformationSupported,
-		linkTarget:         s.Options().LinkTarget,
-		moduleMode:         s.view.moduleMode(),
+		supportsRelatedInformation: s.Options().RelatedInformationSupported,
+		linkTarget:                 s.Options().LinkTarget,
+		viewType:                   s.view.typ,
 	}, nil
 }
 
@@ -1455,9 +1455,9 @@ func localPackageKey(inputs typeCheckInputs) file.Hash {
 	maxAlign := inputs.sizes.Alignof(types.NewPointer(types.Typ[types.Int64]))
 	fmt.Fprintf(hasher, "sizes: %d %d\n", wordSize, maxAlign)
 
-	fmt.Fprintf(hasher, "relatedInformation: %t\n", inputs.relatedInformation)
+	fmt.Fprintf(hasher, "relatedInformation: %t\n", inputs.supportsRelatedInformation)
 	fmt.Fprintf(hasher, "linkTarget: %s\n", inputs.linkTarget)
-	fmt.Fprintf(hasher, "moduleMode: %t\n", inputs.moduleMode)
+	fmt.Fprintf(hasher, "viewType: %d\n", inputs.viewType)
 
 	var hash [sha256.Size]byte
 	hasher.Sum(hash[:0])
@@ -1595,7 +1595,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 		}
 	}
 
-	diags := typeErrorsToDiagnostics(pkg, pkg.typeErrors, inputs.linkTarget, inputs.moduleMode, inputs.relatedInformation)
+	diags := typeErrorsToDiagnostics(pkg, inputs, pkg.typeErrors)
 	for _, diag := range diags {
 		// If the file didn't parse cleanly, it is highly likely that type
 		// checking errors will be confusing or redundant. But otherwise, type
@@ -1630,7 +1630,7 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 			depPH := b.handles[id]
 			if depPH == nil {
 				// e.g. missing metadata for dependencies in buildPackageHandle
-				return nil, missingPkgError(inputs.id, path, inputs.moduleMode)
+				return nil, missingPkgError(inputs.id, path, inputs.viewType)
 			}
 			if !metadata.IsValidImport(inputs.pkgPath, depPH.mp.PkgPath) {
 				return nil, fmt.Errorf("invalid use of internal package %q", path)
@@ -1825,20 +1825,23 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 
 // missingPkgError returns an error message for a missing package that varies
 // based on the user's workspace mode.
-func missingPkgError(from PackageID, pkgPath string, moduleMode bool) error {
-	// TODO(rfindley): improve this error. Previous versions of this error had
-	// access to the full snapshot, and could provide more information (such as
-	// the initialization error).
-	if moduleMode {
+func missingPkgError(from PackageID, pkgPath string, viewType ViewType) error {
+	switch viewType {
+	case GoModView, GoWorkView:
 		if metadata.IsCommandLineArguments(from) {
 			return fmt.Errorf("current file is not included in a workspace module")
 		} else {
 			// Previously, we would present the initialization error here.
 			return fmt.Errorf("no required module provides package %q", pkgPath)
 		}
-	} else {
-		// Previously, we would list the directories in GOROOT and GOPATH here.
+	case AdHocView:
+		return fmt.Errorf("cannot find package %q in GOROOT", pkgPath)
+	case GoPackagesDriverView:
+		return fmt.Errorf("go/packages driver could not load %q", pkgPath)
+	case GOPATHView:
 		return fmt.Errorf("cannot find package %q in GOROOT or GOPATH", pkgPath)
+	default:
+		return fmt.Errorf("unable to load package")
 	}
 }
 
@@ -1852,9 +1855,8 @@ func missingPkgError(from PackageID, pkgPath string, moduleMode bool) error {
 // to the previous error in the errs slice (such as if they were printed in
 // sequence to a terminal).
 //
-// The linkTarget, moduleMode, and supportsRelatedInformation parameters affect
-// the construction of protocol objects (see the code for details).
-func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget string, moduleMode, supportsRelatedInformation bool) []*Diagnostic {
+// Fields in typeCheckInputs may affect the resulting diagnostics.
+func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs typeCheckInputs, errs []types.Error) []*Diagnostic {
 	var result []*Diagnostic
 
 	// batch records diagnostics for a set of related types.Errors.
@@ -1944,7 +1946,7 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 			}
 			msg := related[0].Msg // primary
 			if i > 0 {
-				if supportsRelatedInformation {
+				if inputs.supportsRelatedInformation {
 					msg += " (see details)"
 				} else {
 					msg += fmt.Sprintf(" (this error: %v)", e.Msg)
@@ -1959,16 +1961,16 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 			}
 			if code != 0 {
 				diag.Code = code.String()
-				diag.CodeHref = typesCodeHref(linkTarget, code)
+				diag.CodeHref = typesCodeHref(inputs.linkTarget, code)
 			}
 			if code == typesinternal.UnusedVar || code == typesinternal.UnusedImport {
 				diag.Tags = append(diag.Tags, protocol.Unnecessary)
 			}
 			if match := importErrorRe.FindStringSubmatch(e.Msg); match != nil {
-				diag.SuggestedFixes = append(diag.SuggestedFixes, goGetQuickFixes(moduleMode, pgf.URI, match[1])...)
+				diag.SuggestedFixes = append(diag.SuggestedFixes, goGetQuickFixes(inputs.viewType.usesModules(), pgf.URI, match[1])...)
 			}
 			if match := unsupportedFeatureRe.FindStringSubmatch(e.Msg); match != nil {
-				diag.SuggestedFixes = append(diag.SuggestedFixes, editGoDirectiveQuickFix(moduleMode, pgf.URI, match[1])...)
+				diag.SuggestedFixes = append(diag.SuggestedFixes, editGoDirectiveQuickFix(inputs.viewType.usesModules(), pgf.URI, match[1])...)
 			}
 
 			// Link up related information. For the primary error, all related errors

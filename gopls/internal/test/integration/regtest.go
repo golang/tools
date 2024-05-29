@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cmd"
+	"golang.org/x/tools/internal/drivertest"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/testenv"
@@ -45,12 +46,6 @@ func defaultTimeout() time.Duration {
 
 var runner *Runner
 
-// The integrationTestRunner interface abstracts the Run operation,
-// enables decorators for various optional features.
-type integrationTestRunner interface {
-	Run(t *testing.T, files string, f TestFunc)
-}
-
 func Run(t *testing.T, files string, f TestFunc) {
 	runner.Run(t, files, f)
 }
@@ -79,9 +74,15 @@ func (r configuredRunner) Run(t *testing.T, files string, f TestFunc) {
 	runner.Run(t, files, f, r.opts...)
 }
 
+// RunMultiple runs a test multiple times, with different options.
+// The runner should be constructed with [WithOptions].
+//
+// TODO(rfindley): replace Modes with selective use of RunMultiple.
 type RunMultiple []struct {
 	Name   string
-	Runner integrationTestRunner
+	Runner interface {
+		Run(t *testing.T, files string, f TestFunc)
+	}
 }
 
 func (r RunMultiple) Run(t *testing.T, files string, f TestFunc) {
@@ -112,6 +113,9 @@ var runFromMain = false // true if Main has been called
 
 // Main sets up and tears down the shared integration test state.
 func Main(m *testing.M) (code int) {
+	// Provide an entrypoint for tests that use a fake go/packages driver.
+	drivertest.RunIfChild()
+
 	defer func() {
 		if runner != nil {
 			if err := runner.Close(); err != nil {

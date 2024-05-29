@@ -676,7 +676,7 @@ func isWorkspacePackageLocked(ctx context.Context, s *Snapshot, meta *metadata.G
 	//
 	// For module views (of type GoMod or GoWork), packages must in any case be
 	// in a workspace module (enforced below).
-	if !s.view.moduleMode() || !s.Options().ExpandWorkspaceToModule {
+	if !s.view.typ.usesModules() || !s.Options().ExpandWorkspaceToModule {
 		folder := s.view.folder.Dir.Path()
 		inFolder := false
 		for uri := range uris {
@@ -692,7 +692,7 @@ func isWorkspacePackageLocked(ctx context.Context, s *Snapshot, meta *metadata.G
 
 	// In module mode, a workspace package must be contained in a workspace
 	// module.
-	if s.view.moduleMode() {
+	if s.view.typ.usesModules() {
 		var modURI protocol.DocumentURI
 		if pkg.Module != nil {
 			modURI = protocol.URIFromPath(pkg.Module.GoMod)

@@ -129,9 +129,9 @@ func parseErrorDiagnostics(pkg *syntaxPackage, errList scanner.ErrorList) ([]*Di
 var importErrorRe = regexp.MustCompile(`could not import ([^\s]+)`)
 var unsupportedFeatureRe = regexp.MustCompile(`.*require.* go(\d+\.\d+) or later`)
 
-func goGetQuickFixes(moduleMode bool, uri protocol.DocumentURI, pkg string) []SuggestedFix {
+func goGetQuickFixes(haveModule bool, uri protocol.DocumentURI, pkg string) []SuggestedFix {
 	// Go get only supports module mode for now.
-	if !moduleMode {
+	if !haveModule {
 		return nil
 	}
 	title := fmt.Sprintf("go get package %v", pkg)
@@ -147,9 +147,9 @@ func goGetQuickFixes(moduleMode bool, uri protocol.DocumentURI, pkg string) []Su
 	return []SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)}
 }
 
-func editGoDirectiveQuickFix(moduleMode bool, uri protocol.DocumentURI, version string) []SuggestedFix {
+func editGoDirectiveQuickFix(haveModule bool, uri protocol.DocumentURI, version string) []SuggestedFix {
 	// Go mod edit only supports module mode.
-	if !moduleMode {
+	if !haveModule {
 		return nil
 	}
 	title := fmt.Sprintf("go mod edit -go=%s", version)

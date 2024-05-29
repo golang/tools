@@ -72,8 +72,19 @@ type GoEnv struct {
 	GoVersionOutput string // complete go version output
 
 	// OS environment variables (notably not go env).
-	GOWORK           string
-	GOPACKAGESDRIVER string
+
+	// ExplicitGOWORK is the GOWORK value set explicitly in the environment. This
+	// may differ from `go env GOWORK` when the GOWORK value is implicit from the
+	// working directory.
+	ExplicitGOWORK string
+
+	// EffectiveGOPACKAGESDRIVER is the effective go/packages driver binary that
+	// will be used. This may be set via GOPACKAGESDRIVER, or may be discovered
+	// via os.LookPath("gopackagesdriver"). The latter functionality is
+	// undocumented and may be removed in the future.
+	//
+	// If GOPACKAGESDRIVER is set to "off", EffectiveGOPACKAGESDRIVER is "".
+	EffectiveGOPACKAGESDRIVER string
 }
 
 // View represents a single build for a workspace.
@@ -315,9 +326,9 @@ func (t ViewType) String() string {
 	}
 }
 
-// moduleMode reports whether the view uses Go modules.
-func (w viewDefinition) moduleMode() bool {
-	switch w.typ {
+// usesModules reports whether the view uses Go modules.
+func (typ ViewType) usesModules() bool {
+	switch typ {
 	case GoModView, GoWorkView:
 		return true
 	default:
@@ -829,9 +840,9 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 	var err error
 	dirURI := protocol.URIFromPath(dir)
 	goworkFromEnv := false
-	if folder.Env.GOWORK != "off" && folder.Env.GOWORK != "" {
+	if folder.Env.ExplicitGOWORK != "off" && folder.Env.ExplicitGOWORK != "" {
 		goworkFromEnv = true
-		def.gowork = protocol.URIFromPath(folder.Env.GOWORK)
+		def.gowork = protocol.URIFromPath(folder.Env.ExplicitGOWORK)
 	} else {
 		def.gowork, err = findRootPattern(ctx, dirURI, "go.work", fs)
 		if err != nil {
@@ -855,20 +866,10 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 	//  - def.envOverlay.
 
 	// If GOPACKAGESDRIVER is set it takes precedence.
-	{
-		// The value of GOPACKAGESDRIVER is not returned through the go command.
-		gopackagesdriver := os.Getenv("GOPACKAGESDRIVER")
-		// A user may also have a gopackagesdriver binary on their machine, which
-		// works the same way as setting GOPACKAGESDRIVER.
-		//
-		// TODO(rfindley): remove this call to LookPath. We should not support this
-		// undocumented method of setting GOPACKAGESDRIVER.
-		tool, err := exec.LookPath("gopackagesdriver")
-		if gopackagesdriver != "off" && (gopackagesdriver != "" || (err == nil && tool != "")) {
-			def.typ = GoPackagesDriverView
-			def.root = dirURI
-			return def, nil
-		}
+	if def.folder.Env.EffectiveGOPACKAGESDRIVER != "" {
+		def.typ = GoPackagesDriverView
+		def.root = dirURI
+		return def, nil
 	}
 
 	// From go.dev/ref/mod, module mode is active if GO111MODULE=on, or
@@ -894,7 +895,7 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 
 	// Prefer a go.work file if it is available and contains the module relevant
 	// to forURI.
-	if def.adjustedGO111MODULE() != "off" && folder.Env.GOWORK != "off" && def.gowork != "" {
+	if def.adjustedGO111MODULE() != "off" && folder.Env.ExplicitGOWORK != "off" && def.gowork != "" {
 		def.typ = GoWorkView
 		if goworkFromEnv {
 			// The go.work file could be anywhere, which can lead to confusing error
@@ -997,18 +998,20 @@ func FetchGoEnv(ctx context.Context, folder protocol.DocumentURI, opts *settings
 
 	// The value of GOPACKAGESDRIVER is not returned through the go command.
 	if driver, ok := opts.Env["GOPACKAGESDRIVER"]; ok {
-		env.GOPACKAGESDRIVER = driver
-	} else {
-		env.GOPACKAGESDRIVER = os.Getenv("GOPACKAGESDRIVER")
+		if driver != "off" {
+			env.EffectiveGOPACKAGESDRIVER = driver
+		}
+	} else if driver := os.Getenv("GOPACKAGESDRIVER"); driver != "off" {
+		env.EffectiveGOPACKAGESDRIVER = driver
 		// A user may also have a gopackagesdriver binary on their machine, which
 		// works the same way as setting GOPACKAGESDRIVER.
 		//
 		// TODO(rfindley): remove this call to LookPath. We should not support this
 		// undocumented method of setting GOPACKAGESDRIVER.
-		if env.GOPACKAGESDRIVER == "" {
+		if env.EffectiveGOPACKAGESDRIVER == "" {
 			tool, err := exec.LookPath("gopackagesdriver")
 			if err == nil && tool != "" {
-				env.GOPACKAGESDRIVER = tool
+				env.EffectiveGOPACKAGESDRIVER = tool
 			}
 		}
 	}
@@ -1017,9 +1020,9 @@ func FetchGoEnv(ctx context.Context, folder protocol.DocumentURI, opts *settings
 	// between an explicit GOWORK value and one which is implicit from the file
 	// system. The former doesn't change unless the environment changes.
 	if gowork, ok := opts.Env["GOWORK"]; ok {
-		env.GOWORK = gowork
+		env.ExplicitGOWORK = gowork
 	} else {
-		env.GOWORK = os.Getenv("GOWORK")
+		env.ExplicitGOWORK = os.Getenv("GOWORK")
 	}
 	return env, nil
 }
