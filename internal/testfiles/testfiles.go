@@ -122,17 +122,28 @@ func ExtractTxtar(dstdir string, ar *txtar.Archive) error {
 	return nil
 }
 
-// ExtractTxtarToTmp read a txtar archive on a given path,
+// ExtractTxtarFileToTmp read a txtar archive on a given path,
 // extracts it to a temporary directory, and returns the
 // temporary directory.
-func ExtractTxtarToTmp(t testing.TB, archive string) string {
-	ar, err := txtar.ParseFile(archive)
+func ExtractTxtarFileToTmp(t testing.TB, archiveFile string) string {
+	ar, err := txtar.ParseFile(archiveFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	dir := t.TempDir()
 	err = ExtractTxtar(dir, ar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// ExtractTxtarToTmp extracts the given archive to a temp directory, and
+// returns that temporary directory.
+func ExtractTxtarToTmp(t testing.TB, ar *txtar.Archive) string {
+	dir := t.TempDir()
+	err := ExtractTxtar(dir, ar)
 	if err != nil {
 		t.Fatal(err)
 	}

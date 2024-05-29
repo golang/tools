@@ -643,6 +643,7 @@ func (p *Package) UnmarshalJSON(b []byte) error {
 		OtherFiles:      flat.OtherFiles,
 		EmbedFiles:      flat.EmbedFiles,
 		EmbedPatterns:   flat.EmbedPatterns,
+		IgnoredFiles:    flat.IgnoredFiles,
 		ExportFile:      flat.ExportFile,
 	}
 	if len(flat.Imports) > 0 {

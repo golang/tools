@@ -173,7 +173,7 @@ func main() {
 func TestNoIndirectCreatePackage(t *testing.T) {
 	testenv.NeedsGoBuild(t) // for go/packages
 
-	dir := testfiles.ExtractTxtarToTmp(t, filepath.Join(analysistest.TestData(), "indirect.txtar"))
+	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "indirect.txtar"))
 	pkgs, err := loadPackages(dir, "testdata/a")
 	if err != nil {
 		t.Fatal(err)

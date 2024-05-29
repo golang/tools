@@ -19,7 +19,7 @@ func Test(t *testing.T) {
 	// itself requires the go1.22 implementation of versions.FileVersions.
 	testenv.NeedsGo1Point(t, 22)
 
-	dir := testfiles.ExtractTxtarToTmp(t, filepath.Join(analysistest.TestData(), "test.txtar"))
+	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "test.txtar"))
 	analysistest.Run(t, dir, stdversion.Analyzer,
 		"example.com/a",
 		"example.com/sub",
