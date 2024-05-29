@@ -43,6 +43,13 @@ package lib
 
 	dir := testfiles.ExtractTxtarToTmp(t, txtar.Parse([]byte(workspace)))
 
+	// TODO(rfindley): on mac, this is required to fix symlink path mismatches.
+	// But why? Where is the symlink being evaluated in go/packages?
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	baseConfig := packages.Config{
 		Dir: dir,
 		Mode: packages.NeedName |
