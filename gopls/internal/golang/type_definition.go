@@ -12,7 +12,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -42,13 +41,8 @@ func TypeDefinition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 	if tname == nil {
 		return nil, fmt.Errorf("no type definition for %s", obj.Name())
 	}
-
-	if !tname.Pos().IsValid() {
-		// The only defined types with no position are error and comparable.
-		if tname.Name() != "error" && tname.Name() != "comparable" {
-			bug.Reportf("unexpected type name with no position: %s", tname)
-		}
-		return nil, nil
+	if isBuiltin(tname) {
+		return nil, nil // built-ins (error, comparable) have no position
 	}
 
 	loc, err := mapPosition(ctx, pkg.FileSet(), snapshot, tname.Pos(), tname.Pos()+token.Pos(len(tname.Name())))

@@ -87,8 +87,8 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return nil, nil
 	}
 
-	// Handle objects with no position: builtin, unsafe.
-	if !obj.Pos().IsValid() {
+	// Built-ins have no position.
+	if isBuiltin(obj) {
 		return builtinDefinition(ctx, snapshot, obj)
 	}
 

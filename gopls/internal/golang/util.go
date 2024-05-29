@@ -350,3 +350,7 @@ func embeddedIdent(x ast.Expr) *ast.Ident {
 type ImporterFunc func(path string) (*types.Package, error)
 
 func (f ImporterFunc) Import(path string) (*types.Package, error) { return f(path) }
+
+// isBuiltin reports whether obj is a built-in symbol (e.g. append, iota, error.Error, unsafe.Slice).
+// All other symbols have a valid position and a valid package.
+func isBuiltin(obj types.Object) bool { return !obj.Pos().IsValid() }

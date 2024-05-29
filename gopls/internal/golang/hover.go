@@ -169,12 +169,14 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 
 	// Handle hovering over a doc link
 	if obj, rng, _ := parseDocLink(pkg, pgf, pos); obj != nil {
-		hoverRange = &rng
-		// Handle builtins, which don't have a package or position.
-		if !obj.Pos().IsValid() {
+		// Built-ins have no position.
+		if isBuiltin(obj) {
 			h, err := hoverBuiltin(ctx, snapshot, obj)
-			return *hoverRange, h, err
+			return rng, h, err
 		}
+
+		// Find position in declaring file.
+		hoverRange = &rng
 		objURI := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
 		pkg, pgf, err = NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(objURI.Filename))
 		if err != nil {
@@ -240,8 +242,8 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		}, nil
 	}
 
-	// Handle builtins, which don't have a package or position.
-	if !obj.Pos().IsValid() {
+	if isBuiltin(obj) {
+		// Built-ins have no position.
 		h, err := hoverBuiltin(ctx, snapshot, obj)
 		return *hoverRange, h, err
 	}

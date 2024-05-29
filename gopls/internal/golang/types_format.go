@@ -283,7 +283,7 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 		return types.TypeString(obj.Type(), qf), nil
 	}
 
-	if obj.Pkg() == nil || !obj.Pos().IsValid() {
+	if isBuiltin(obj) {
 		// This is defensive, though it is extremely unlikely we'll ever have a
 		// builtin var.
 		return types.TypeString(obj.Type(), qf), nil

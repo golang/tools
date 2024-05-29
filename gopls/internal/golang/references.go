@@ -252,14 +252,8 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	}
 
 	// nil, error, error.Error, iota, or other built-in?
-	if obj.Pkg() == nil {
+	if isBuiltin(obj) {
 		return nil, fmt.Errorf("references to builtin %q are not supported", obj.Name())
-	}
-	if !obj.Pos().IsValid() {
-		if obj.Pkg().Path() != "unsafe" {
-			bug.Reportf("references: object %v has no position", obj)
-		}
-		return nil, fmt.Errorf("references to unsafe.%s are not supported", obj.Name())
 	}
 
 	// Find metadata of all packages containing the object's defining file.

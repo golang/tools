@@ -99,9 +99,7 @@ FindCall:
 	case *ast.SelectorExpr:
 		obj = info.ObjectOf(t.Sel)
 	}
-
-	// Call to built-in?
-	if obj != nil && !obj.Pos().IsValid() {
+	if obj != nil && isBuiltin(obj) {
 		// function?
 		if obj, ok := obj.(*types.Builtin); ok {
 			return builtinSignature(ctx, snapshot, callExpr, obj.Name(), pos)

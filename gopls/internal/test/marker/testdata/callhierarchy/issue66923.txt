@@ -1,0 +1,15 @@
+Regression test for a crash (#66923) in outgoing calls
+to a built-in function (unsafe.Slice).
+
+-- go.mod --
+module example.com
+go 1.17
+
+-- a/a.go --
+package a
+
+import "unsafe"
+
+func A() []int {			 //@ loc(A, "A")
+	return unsafe.Slice(new(int), 1) //@ outgoingcalls(A)
+}

@@ -201,13 +201,8 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		return nil, nil
 	}
 
-	// Skip builtins.
-	if obj.Pkg() == nil {
-		return nil, nil
-	}
-
-	if !obj.Pos().IsValid() {
-		return nil, bug.Errorf("internal error: object %s.%s missing position", obj.Pkg().Path(), obj.Name())
+	if isBuiltin(obj) {
+		return nil, nil // built-ins have no position
 	}
 
 	declFile := pkg.FileSet().File(obj.Pos())
@@ -271,10 +266,8 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		if obj == nil {
 			continue
 		}
-
-		// ignore calls to builtin functions
-		if obj.Pkg() == nil {
-			continue
+		if isBuiltin(obj) {
+			continue // built-ins have no position
 		}
 
 		outgoingCall, ok := outgoingCalls[obj.Pos()]
