@@ -3024,3 +3024,38 @@ func TestLoadEitherSucceedsOrFails(t *testing.T) {
 		t.Errorf("Load returned %d packages (want 1) and no error", len(initial))
 	}
 }
+
+// TestLoadOverlayGoMod ensures that overlays containing go.mod files
+// are effective for all 'go list' calls made by go/packages (#67644).
+func TestLoadOverlayGoMod(t *testing.T) {
+	testenv.NeedsGoBuild(t)
+
+	cwd, _ := os.Getwd()
+
+	// This test ensures that the overlaid go.mod file is seen by
+	// all runs of 'go list', in particular the early run that
+	// enumerates the modules: if the go.mod file were absent,
+	// it would ascend to the parent directory (x/tools) and
+	// then (falsely) report inconsistent vendoring.
+	//
+	// (Ideally the testdata would be constructed from nothing
+	// rather than rely on the go/packages source tree, but it is
+	// turned out to a bigger project than bargained for.)
+	cfg := &packages.Config{
+		Mode: packages.LoadSyntax,
+		Overlay: map[string][]byte{
+			filepath.Join(cwd, "go.mod"): []byte("module example.com\ngo 1.0"),
+		},
+		Env: append(os.Environ(), "GOFLAGS=-mod=vendor", "GOWORK=off"),
+	}
+
+	pkgs, err := packages.Load(cfg, "./testdata")
+	if err != nil {
+		t.Fatal(err) // (would previously fail here with "inconsistent vendoring")
+	}
+	got := fmt.Sprint(pkgs)
+	want := `[./testdata]`
+	if got != want {
+		t.Errorf("Load: got %s, want %v", got, want)
+	}
+}

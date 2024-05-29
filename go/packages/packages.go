@@ -133,7 +133,14 @@ const (
 
 // A Config specifies details about how packages should be loaded.
 // The zero value is a valid configuration.
+//
 // Calls to Load do not modify this struct.
+//
+// TODO(adonovan): #67702: this is currently false: in fact,
+// calls to [Load] do not modify the public fields of this struct, but
+// may modify hidden fields, so concurrent calls to [Load] must not
+// use the same Config. But perhaps we should reestablish the
+// documented invariant.
 type Config struct {
 	// Mode controls the level of information returned for each package.
 	Mode LoadMode
@@ -222,6 +229,10 @@ type Config struct {
 	// consistent package metadata about unsaved files. However,
 	// drivers may vary in their level of support for overlays.
 	Overlay map[string][]byte
+
+	// goListOverlayFile is the JSON file that encodes the Overlay
+	// mapping, used by 'go list -overlay=...'
+	goListOverlayFile string
 }
 
 // Load loads and returns the Go packages named by the given patterns.
@@ -315,6 +326,17 @@ func defaultDriver(cfg *Config, patterns ...string) (*DriverResponse, bool, erro
 		}
 		// (fall through)
 	}
+
+	// go list fallback
+	//
+	// Write overlays once, as there are many calls
+	// to 'go list' (one per chunk plus others too).
+	overlay, cleanupOverlay, err := gocommand.WriteOverlays(cfg.Overlay)
+	if err != nil {
+		return nil, false, err
+	}
+	defer cleanupOverlay()
+	cfg.goListOverlayFile = overlay
 
 	response, err := callDriverOnChunks(goListDriver, cfg, chunks)
 	if err != nil {

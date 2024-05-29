@@ -841,6 +841,7 @@ func (state *golistState) cfgInvocation() gocommand.Invocation {
 		Env:        cfg.Env,
 		Logf:       cfg.Logf,
 		WorkingDir: cfg.Dir,
+		Overlay:    cfg.goListOverlayFile,
 	}
 }
 
@@ -849,18 +850,6 @@ func (state *golistState) invokeGo(verb string, args ...string) (*bytes.Buffer, 
 	cfg := state.cfg
 
 	inv := state.cfgInvocation()
-
-	// Since go1.16, `go list` accepts overlays directly via the
-	// -overlay flag. (The check for "list" avoids unnecessarily
-	// writing the overlay file for a 'go env' command.)
-	if verb == "list" {
-		overlay, cleanup, err := gocommand.WriteOverlays(cfg.Overlay)
-		if err != nil {
-			return nil, err
-		}
-		defer cleanup()
-		inv.Overlay = overlay
-	}
 	inv.Verb = verb
 	inv.Args = args
 	gocmdRunner := cfg.gocmdRunner
