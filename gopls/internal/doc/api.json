@@ -854,13 +854,13 @@
 			{
 				"Name": "semanticTokens",
 				"Type": "bool",
-				"Doc": "semanticTokens controls whether the LSP server will send\nsemantic tokens to the client. If false, gopls will send empty semantic\ntokens.\n",
+				"Doc": "semanticTokens controls whether the LSP server will send\nsemantic tokens to the client.\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null
 				},
 				"EnumValues": null,
-				"Default": "true",
+				"Default": "false",
 				"Status": "experimental",
 				"Hierarchy": "ui"
 			},

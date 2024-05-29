@@ -5,6 +5,11 @@ links and output tokens according to the referenced object types, so that the
 editor can highlight them. This will help in checking the doc link errors and
 reading comments in the code.
 
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
 -- a.go --
 package p
 

@@ -109,7 +109,6 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						protocol.CodeLensVendor:            true,
 						protocol.CodeLensRunGovulncheck:    false, // TODO(hyangah): enable
 					},
-					SemanticTokens: true,
 				},
 			},
 			InternalOptions: InternalOptions{

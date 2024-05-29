@@ -206,10 +206,9 @@ Default: `{"gc_details":false,"generate":true,"regenerate_cgo":true,"run_govulnc
 **This setting is experimental and may be deleted.**
 
 semanticTokens controls whether the LSP server will send
-semantic tokens to the client. If false, gopls will send empty semantic
-tokens.
+semantic tokens to the client.
 
-Default: `true`.
+Default: `false`.
 
 <a id='noSemanticString'></a>
 ### ⬤ `noSemanticString` *bool*

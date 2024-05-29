@@ -187,8 +187,7 @@ type UIOptions struct {
 	Codelenses map[protocol.CodeLensSource]bool
 
 	// SemanticTokens controls whether the LSP server will send
-	// semantic tokens to the client. If false, gopls will send empty semantic
-	// tokens.
+	// semantic tokens to the client.
 	SemanticTokens bool `status:"experimental"`
 
 	// NoSemanticString turns off the sending of the semantic token 'string'

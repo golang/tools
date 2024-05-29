@@ -2,6 +2,11 @@ This test checks the output of textDocument/semanticTokens/range.
 
 TODO: add more assertions.
 
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
 -- a.go --
 package p //@token("package", "keyword", "")
 
