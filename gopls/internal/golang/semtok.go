@@ -356,9 +356,9 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 		tv.token(n.OpPos, len(n.Op.String()), semtok.TokOperator, nil)
 	case *ast.BlockStmt:
 	case *ast.BranchStmt:
-		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokKeyword, nil)
+		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokKeyword, []string{"controlFlow"})
 		if n.Label != nil {
-			tv.token(n.Label.Pos(), len(n.Label.Name), semtok.TokLabel, nil)
+			tv.token(n.Label.Pos(), len(n.Label.Name), semtok.TokLabel, []string{"controlFlow"})
 		}
 	case *ast.CallExpr:
 		if n.Ellipsis.IsValid() {
@@ -369,7 +369,7 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 		if n.List == nil {
 			iam = "default"
 		}
-		tv.token(n.Case, len(iam), semtok.TokKeyword, nil)
+		tv.token(n.Case, len(iam), semtok.TokKeyword, []string{"controlFlow"})
 	case *ast.ChanType:
 		// chan | chan <- | <- chan
 		switch {
@@ -392,7 +392,7 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 	case *ast.CompositeLit:
 	case *ast.DeclStmt:
 	case *ast.DeferStmt:
-		tv.token(n.Defer, len("defer"), semtok.TokKeyword, nil)
+		tv.token(n.Defer, len("defer"), semtok.TokKeyword, []string{"controlFlow"})
 	case *ast.Ellipsis:
 		tv.token(n.Ellipsis, len("..."), semtok.TokOperator, nil)
 	case *ast.EmptyStmt:
@@ -400,7 +400,7 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 	case *ast.Field:
 	case *ast.FieldList:
 	case *ast.ForStmt:
-		tv.token(n.For, len("for"), semtok.TokKeyword, nil)
+		tv.token(n.For, len("for"), semtok.TokKeyword, []string{"controlFlow"})
 	case *ast.FuncDecl:
 	case *ast.FuncLit:
 	case *ast.FuncType:
@@ -410,15 +410,15 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 	case *ast.GenDecl:
 		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokKeyword, nil)
 	case *ast.GoStmt:
-		tv.token(n.Go, len("go"), semtok.TokKeyword, nil)
+		tv.token(n.Go, len("go"), semtok.TokKeyword, []string{"controlFlow"})
 	case *ast.Ident:
 		tv.ident(n)
 	case *ast.IfStmt:
-		tv.token(n.If, len("if"), semtok.TokKeyword, nil)
+		tv.token(n.If, len("if"), semtok.TokKeyword, []string{"controlFlow"})
 		if n.Else != nil {
 			// x.Body.End() or x.Body.End()+1, not that it matters
 			pos := tv.findKeyword("else", n.Body.End(), n.Else.Pos())
-			tv.token(pos, len("else"), semtok.TokKeyword, nil)
+			tv.token(pos, len("else"), semtok.TokKeyword, []string{"controlFlow"})
 		}
 	case *ast.ImportSpec:
 		tv.importSpec(n)
@@ -436,28 +436,28 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 		tv.token(n.Map, len("map"), semtok.TokKeyword, nil)
 	case *ast.ParenExpr:
 	case *ast.RangeStmt:
-		tv.token(n.For, len("for"), semtok.TokKeyword, nil)
+		tv.token(n.For, len("for"), semtok.TokKeyword, []string{"controlFlow"})
 		// x.TokPos == token.NoPos is legal (for range foo {})
 		offset := n.TokPos
 		if offset == token.NoPos {
 			offset = n.For
 		}
 		pos := tv.findKeyword("range", offset, n.X.Pos())
-		tv.token(pos, len("range"), semtok.TokKeyword, nil)
+		tv.token(pos, len("range"), semtok.TokKeyword, []string{"controlFlow"})
 	case *ast.ReturnStmt:
-		tv.token(n.Return, len("return"), semtok.TokKeyword, nil)
+		tv.token(n.Return, len("return"), semtok.TokKeyword, []string{"controlFlow"})
 	case *ast.SelectStmt:
-		tv.token(n.Select, len("select"), semtok.TokKeyword, nil)
+		tv.token(n.Select, len("select"), semtok.TokKeyword, []string{"controlFlow"})
 	case *ast.SelectorExpr:
 	case *ast.SendStmt:
-		tv.token(n.Arrow, len("<-"), semtok.TokOperator, nil)
+		tv.token(n.Arrow, len("<-"), semtok.TokOperator, []string{"controlFlow"})
 	case *ast.SliceExpr:
 	case *ast.StarExpr:
 		tv.token(n.Star, len("*"), semtok.TokOperator, nil)
 	case *ast.StructType:
 		tv.token(n.Struct, len("struct"), semtok.TokKeyword, nil)
 	case *ast.SwitchStmt:
-		tv.token(n.Switch, len("switch"), semtok.TokKeyword, nil)
+		tv.token(n.Switch, len("switch"), semtok.TokKeyword, []string{"controlFlow"})
 	case *ast.TypeAssertExpr:
 		if n.Type == nil {
 			pos := tv.findKeyword("type", n.Lparen, n.Rparen)
@@ -465,7 +465,7 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 		}
 	case *ast.TypeSpec:
 	case *ast.TypeSwitchStmt:
-		tv.token(n.Switch, len("switch"), semtok.TokKeyword, nil)
+		tv.token(n.Switch, len("switch"), semtok.TokKeyword, []string{"controlFlow"})
 	case *ast.UnaryExpr:
 		tv.token(n.OpPos, len(n.Op.String()), semtok.TokOperator, nil)
 	case *ast.ValueSpec:
