@@ -853,19 +853,19 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 		allViews = append(allViews, view)
 	}
 
-	// Only report diagnostics from the best views for a file. This avoids
+	// Only report diagnostics from relevant views for a file. This avoids
 	// spurious import errors when a view has only a partial set of dependencies
 	// for a package (golang/go#66425).
 	//
 	// It's ok to use the session to derive the eligible views, because we
-	// publish diagnostics following any state change, so the set of best views
-	// is eventually consistent.
-	bestViews, err := cache.BestViews(ctx, s.session, uri, allViews)
+	// publish diagnostics following any state change, so the set of relevant
+	// views is eventually consistent.
+	relevantViews, err := cache.RelevantViews(ctx, s.session, uri, allViews)
 	if err != nil {
 		return err
 	}
 
-	if len(bestViews) == 0 {
+	if len(relevantViews) == 0 {
 		// If we have no preferred diagnostics for a given file (i.e., the file is
 		// not naturally nested within a view), then all diagnostics should be
 		// considered valid.
@@ -873,10 +873,10 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 		// This could arise if the user jumps to definition outside the workspace.
 		// There is no view that owns the file, so its diagnostics are valid from
 		// any view.
-		bestViews = allViews
+		relevantViews = allViews
 	}
 
-	for _, view := range bestViews {
+	for _, view := range relevantViews {
 		viewDiags := f.byView[view]
 		// Compute the view's suffix (e.g. " [darwin,arm64]").
 		var suffix string

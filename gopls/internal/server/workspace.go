@@ -29,7 +29,7 @@ func (s *server) DidChangeWorkspaceFolders(ctx context.Context, params *protocol
 		if err != nil {
 			return fmt.Errorf("invalid folder %q: %v", folder.URI, err)
 		}
-		if !s.session.RemoveView(dir) {
+		if !s.session.RemoveView(ctx, dir) {
 			return fmt.Errorf("view %q for %v not found", folder.Name, folder.URI)
 		}
 	}
