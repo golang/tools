@@ -12,6 +12,7 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
+	"regexp"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -29,14 +30,19 @@ var Analyzer = &analysis.Analyzer{
 	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedvariable",
 }
 
-// The suffix for this error message changed in Go 1.20.
-var unusedVariableSuffixes = []string{" declared and not used", " declared but not used"}
+// The suffix for this error message changed in Go 1.20 and Go 1.23.
+var unusedVariableRegexp = []*regexp.Regexp{
+	regexp.MustCompile("^(.*) declared but not used$"),
+	regexp.MustCompile("^(.*) declared and not used$"),  // Go 1.20+
+	regexp.MustCompile("^declared and not used: (.*)$"), // Go 1.23+
+}
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	for _, typeErr := range pass.TypeErrors {
-		for _, suffix := range unusedVariableSuffixes {
-			if strings.HasSuffix(typeErr.Msg, suffix) {
-				varName := strings.TrimSuffix(typeErr.Msg, suffix)
+		for _, re := range unusedVariableRegexp {
+			match := re.FindStringSubmatch(typeErr.Msg)
+			if len(match) > 0 {
+				varName := match[1]
 				// Beginning in Go 1.23, go/types began quoting vars as `v'.
 				varName = strings.Trim(varName, "'`'")
 
