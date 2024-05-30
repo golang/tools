@@ -296,17 +296,10 @@ func seedCache(t *testing.T, cache *cache.Cache) {
 	// The the doc string for details on how this seed was produced.
 	seed := `package p
 import (
-	"net/http"
-	"sort"
-	"go/types"
-	"testing"
-)
-
-var (
-	_ = http.Serve
-	_ = sort.Slice
-	_ types.Type
-	_ testing.T
+	_ "net/http"
+	_ "sort"
+	_ "go/types"
+	_ "testing"
 )
 `
 
