@@ -36,6 +36,14 @@ func _() {
 	fmt.Println(undef) //@diag("undef", re"undefined|undeclared")
 }
 
+-- mod1/a/tagged.go --
+//go:build tag1
+
+// golang/go#60776: verify that we get an accurate error about build tags
+// here, rather than an inaccurate error suggesting to add a go.work
+// file (which won't help).
+package a //@diag(re`package (a)`, re`excluded due to its build tags`)
+
 -- mod1/b/b.go --
 package b
 

@@ -427,11 +427,12 @@ func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Sn
 // we have no view containing a file.
 var errNoViews = errors.New("no views")
 
-// viewOfLocked wraps bestViewForURI, memoizing its result.
+// viewOfLocked evaluates the best view for uri, memoizing its result in
+// s.viewMap.
 //
 // Precondition: caller holds s.viewMu lock.
 //
-// May return (nil, nil).
+// May return (nil, nil) if no best view can be determined.
 func (s *Session) viewOfLocked(ctx context.Context, uri protocol.DocumentURI) (*View, error) {
 	v, hit := s.viewMap[uri]
 	if !hit {
@@ -440,9 +441,18 @@ func (s *Session) viewOfLocked(ctx context.Context, uri protocol.DocumentURI) (*
 		if err != nil {
 			return nil, err
 		}
-		v, err = bestView(ctx, s, fh, s.views)
+		bestViews, err := BestViews(ctx, s, fh.URI(), s.views)
 		if err != nil {
 			return nil, err
+		}
+		v = matchingView(fh, bestViews)
+		if v == nil && len(bestViews) > 0 {
+			// If we have candidate views, but none of them matched the file's build
+			// constraints, then we are still better off using one of them here.
+			// Otherwise, logic may fall back to an inferior view, which lacks
+			// relevant module information, leading to misleading diagnostics.
+			// (as in golang/go#60776).
+			v = bestViews[0]
 		}
 		if s.viewMap == nil {
 			return nil, errors.New("session is shut down")
@@ -517,12 +527,13 @@ checkFiles:
 		if err != nil {
 			return nil, err
 		}
-		def, err := bestView(ctx, fs, fh, defs)
+		bestViews, err := BestViews(ctx, fs, fh.URI(), defs)
 		if err != nil {
 			// We should never call selectViewDefs with a cancellable context, so
 			// this should never fail.
 			return nil, bug.Errorf("failed to find best view for open file: %v", err)
 		}
+		def := matchingView(fh, bestViews)
 		if def != nil {
 			continue // file covered by an existing view
 		}
@@ -646,30 +657,28 @@ func BestViews[V viewDefiner](ctx context.Context, fs file.Source, uri protocol.
 	return bestViews, nil
 }
 
-// bestView returns the best View or viewDefinition that contains the
-// given file, or (nil, nil) if no matching view is found.
-//
-// bestView only returns an error in the event of context cancellation.
+// matchingView returns the View or viewDefinition out of bestViews that
+// matches the given file's build constraints, or nil if no match is found.
 //
 // Making this function generic is convenient so that we can avoid mapping view
 // definitions back to views inside Session.DidModifyFiles, where performance
 // matters. It is, however, not the cleanest application of generics.
 //
 // Note: keep this function in sync with defineView.
-func bestView[V viewDefiner](ctx context.Context, fs file.Source, fh file.Handle, views []V) (V, error) {
+func matchingView[V viewDefiner](fh file.Handle, bestViews []V) V {
 	var zero V
-	bestViews, err := BestViews(ctx, fs, fh.URI(), views)
-	if err != nil || len(bestViews) == 0 {
-		return zero, err
+
+	if len(bestViews) == 0 {
+		return zero
 	}
 
 	content, err := fh.Content()
+
 	// Port matching doesn't apply to non-go files, or files that no longer exist.
 	// Note that the behavior here on non-existent files shouldn't matter much,
-	// since there will be a subsequent failure. But it is simpler to preserve
-	// the invariant that bestView only fails on context cancellation.
+	// since there will be a subsequent failure.
 	if fileKind(fh) != file.Go || err != nil {
-		return bestViews[0], nil
+		return bestViews[0]
 	}
 
 	// Find the first view that matches constraints.
@@ -680,11 +689,11 @@ func bestView[V viewDefiner](ctx context.Context, fs file.Source, fh file.Handle
 		def := v.definition()
 		viewPort := port{def.GOOS(), def.GOARCH()}
 		if viewPort.matches(path, content) {
-			return v, nil
+			return v
 		}
 	}
 
-	return zero, nil // no view found
+	return zero // no view found
 }
 
 // updateViewLocked recreates the view with the given options.

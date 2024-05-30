@@ -1424,11 +1424,18 @@ searchOverlays:
 		if initialErr != nil {
 			msg = fmt.Sprintf("initialization failed: %v", initialErr.MainError)
 		} else if goMod, err := nearestModFile(ctx, fh.URI(), s); err == nil && goMod != "" {
+			// Check if the file's module should be loadable by considering both
+			// loaded modules and workspace modules. The former covers cases where
+			// the file is outside of a workspace folder. The latter covers cases
+			// where the file is inside a workspace module, but perhaps no packages
+			// were loaded for that module.
+			_, loadedMod := loadedModFiles[goMod]
+			_, workspaceMod := s.view.viewDefinition.workspaceModFiles[goMod]
 			// If we have a relevant go.mod file, check whether the file is orphaned
 			// due to its go.mod file being inactive. We could also offer a
-			// prescriptive diagnostic in the case that there is no go.mod file, but it
-			// is harder to be precise in that case, and less important.
-			if _, ok := loadedModFiles[goMod]; !ok {
+			// prescriptive diagnostic in the case that there is no go.mod file, but
+			// it is harder to be precise in that case, and less important.
+			if !(loadedMod || workspaceMod) {
 				modDir := filepath.Dir(goMod.Path())
 				viewDir := s.view.folder.Dir.Path()
 
