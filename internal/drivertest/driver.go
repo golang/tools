@@ -17,7 +17,6 @@ import (
 	"flag"
 	"log"
 	"os"
-	"testing"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -37,7 +36,9 @@ func RunIfChild() {
 
 // Env returns additional environment variables for use in [packages.Config]
 // to enable the use of drivertest as the driver.
-func Env(t *testing.T) []string {
+//
+// t abstracts a *testing.T or log.Default().
+func Env(t interface{ Fatal(...any) }) []string {
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)

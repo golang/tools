@@ -14,16 +14,19 @@ import (
 	"flag"
 	"fmt"
 	"go/types"
+	"log"
 	"os"
 	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/drivertest"
 	"golang.org/x/tools/internal/tool"
 )
 
 func main() {
+	drivertest.RunIfChild()
 	tool.Main(context.Background(), &application{Mode: "imports"}, os.Args[1:])
 }
 
@@ -37,6 +40,7 @@ type application struct {
 	Private    bool            `flag:"private" help:"show non-exported declarations too (if -mode=syntax)"`
 	PrintJSON  bool            `flag:"json" help:"print package in JSON form"`
 	BuildFlags stringListValue `flag:"buildflag" help:"pass argument to underlying build system (may be repeated)"`
+	Driver     bool            `flag:"driver" help:"use golist passthrough driver (for debugging driver issues)"`
 }
 
 // Name implements tool.Application returning the binary name.
@@ -82,11 +86,17 @@ func (app *application) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("not enough arguments")
 	}
 
+	env := os.Environ()
+	if app.Driver {
+		env = append(env, drivertest.Env(log.Default())...)
+	}
+
 	// Load, parse, and type-check the packages named on the command line.
 	cfg := &packages.Config{
 		Mode:       packages.LoadSyntax,
 		Tests:      app.Test,
 		BuildFlags: app.BuildFlags,
+		Env:        env,
 	}
 
 	// -mode flag

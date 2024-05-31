@@ -259,12 +259,15 @@ func (i *Invocation) run(ctx context.Context, stdout, stderr io.Writer) error {
 		waitDelay.Set(reflect.ValueOf(30 * time.Second))
 	}
 
-	// On darwin the cwd gets resolved to the real path, which breaks anything that
-	// expects the working directory to keep the original path, including the
+	// The cwd gets resolved to the real path. On Darwin, where
+	// /tmp is a symlink, this breaks anything that expects the
+	// working directory to keep the original path, including the
 	// go command when dealing with modules.
-	// The Go stdlib has a special feature where if the cwd and the PWD are the
-	// same node then it trusts the PWD, so by setting it in the env for the child
-	// process we fix up all the paths returned by the go command.
+	//
+	// os.Getwd has a special feature where if the cwd and the PWD
+	// are the same node then it trusts the PWD, so by setting it
+	// in the env for the child process we fix up all the paths
+	// returned by the go command.
 	if !i.CleanEnv {
 		cmd.Env = os.Environ()
 	}
@@ -474,7 +477,7 @@ func cmdDebugStr(cmd *exec.Cmd) string {
 }
 
 // WriteOverlays writes each value in the overlay (see the Overlay
-// field of go/packages.Cfg) to a temporary file and returns the name
+// field of go/packages.Config) to a temporary file and returns the name
 // of a JSON file describing the mapping that is suitable for the "go
 // list -overlay" flag.
 //
