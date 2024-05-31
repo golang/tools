@@ -27,7 +27,7 @@ func _() {
 	x := 2
 }
 `
-	Run(t, files, func(_ *testing.T, env *Env) { // Create a new workspace-level directory and empty file.
+	Run(t, files, func(t *testing.T, env *Env) { // Create a new workspace-level directory and empty file.
 		env.OpenFile("main.go")
 		var afterOpen protocol.PublishDiagnosticsParams
 		env.AfterChange(
@@ -70,7 +70,7 @@ func _() {
 // Irrelevant comment #0
 `
 
-	Run(t, files, func(_ *testing.T, env *Env) { // Create a new workspace-level directory and empty file.
+	Run(t, files, func(t *testing.T, env *Env) { // Create a new workspace-level directory and empty file.
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.AfterChange(
@@ -102,5 +102,40 @@ func _() {
 				t.Errorf("after change, got message %q, want %q", newMsg, msg)
 			}
 		}
+	})
+}
+
+func TestCreatingPackageInvalidatesDiagnostics_Issue66384(t *testing.T) {
+	const files = `
+-- go.mod --
+module example.com
+
+go 1.15
+-- main.go --
+package main
+
+import "example.com/pkg"
+
+func main() {
+	var _ pkg.Thing
+}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OnceMet(
+			InitialWorkspaceLoad,
+			Diagnostics(env.AtRegexp("main.go", `"example.com/pkg"`)),
+		)
+		// In order for this test to reproduce golang/go#66384, we have to create
+		// the buffer, wait for loads, and *then* "type out" the contents. Doing so
+		// reproduces the conditions of the bug report, that typing the package
+		// name itself doesn't invalidate the broken import.
+		env.CreateBuffer("pkg/pkg.go", "")
+		env.AfterChange()
+		env.EditBuffer("pkg/pkg.go", protocol.TextEdit{NewText: "package pkg\ntype Thing struct{}\n"})
+		env.AfterChange()
+		env.SaveBuffer("pkg/pkg.go")
+		env.AfterChange(NoDiagnostics())
+		env.SetBufferContent("pkg/pkg.go", "package pkg")
+		env.AfterChange(Diagnostics(env.AtRegexp("main.go", "Thing")))
 	})
 }

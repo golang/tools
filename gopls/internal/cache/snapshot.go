@@ -1775,7 +1775,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	// Compute invalidations based on file changes.
 	anyImportDeleted := false      // import deletions can resolve cycles
 	anyFileOpenedOrClosed := false // opened files affect workspace packages
-	anyFileAdded := false          // adding a file can resolve missing dependencies
+	anyPkgFileChanged := false     // adding a file to a package can resolve missing dependencies
 
 	for uri, newFH := range changedFiles {
 		// The original FileHandle for this URI is cached on the snapshot.
@@ -1783,8 +1783,10 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		_, oldOpen := oldFH.(*overlay)
 		_, newOpen := newFH.(*overlay)
 
+		// TODO(rfindley): consolidate with 'metadataChanges' logic below, which
+		// also considers existential changes.
 		anyFileOpenedOrClosed = anyFileOpenedOrClosed || (oldOpen != newOpen)
-		anyFileAdded = anyFileAdded || (oldFH == nil || !fileExists(oldFH)) && fileExists(newFH)
+		anyPkgFileChanged = anyPkgFileChanged || (oldFH == nil || !fileExists(oldFH)) && fileExists(newFH)
 
 		// If uri is a Go file, check if it has changed in a way that would
 		// invalidate metadata. Note that we can't use s.view.FileKind here,
@@ -1802,6 +1804,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 
 		invalidateMetadata = invalidateMetadata || reinit
 		anyImportDeleted = anyImportDeleted || importDeleted
+		anyPkgFileChanged = anyPkgFileChanged || pkgFileChanged
 
 		// Mark all of the package IDs containing the given file.
 		filePackageIDs := invalidatedPackageIDs(uri, s.meta.IDs, pkgFileChanged)
@@ -1878,7 +1881,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	// We could be smart here and try to guess which packages may have been
 	// fixed, but until that proves necessary, just invalidate metadata for any
 	// package with missing dependencies.
-	if anyFileAdded {
+	if anyPkgFileChanged {
 		for id, mp := range s.meta.Packages {
 			for _, impID := range mp.DepsByImpPath {
 				if impID == "" { // missing import
