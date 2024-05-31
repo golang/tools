@@ -117,9 +117,8 @@ func (e *Env) SetBufferContent(name string, content string) {
 }
 
 // FileContent returns the file content for name that applies to the current
-// editing session: if the file is open, it returns its buffer content,
-// otherwise it returns on disk content, if the file does not exist,
-// it returns an empty string.
+// editing session: it returns the buffer content for an open file, the
+// on-disk content for an unopened file, or "" for a non-existent file.
 func (e *Env) FileContent(name string) string {
 	e.T.Helper()
 	text, ok := e.Editor.BufferText(name)

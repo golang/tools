@@ -285,7 +285,7 @@ func getExtractCodeActions(pgf *parsego.File, rng protocol.Range, options *setti
 	if canExtractToNewFile(pgf, start, end) {
 		cmd, err := command.NewExtractToNewFileCommand(
 			"Extract declarations to new file",
-			command.ExtractToNewFileArgs{URI: pgf.URI, Range: rng},
+			protocol.Location{URI: pgf.URI, Range: rng},
 		)
 		if err != nil {
 			return nil, err

@@ -940,17 +940,13 @@ func (c *commandHandler) AddImport(ctx context.Context, args command.AddImportAr
 	})
 }
 
-func (c *commandHandler) ExtractToNewFile(ctx context.Context, args command.ExtractToNewFileArgs) error {
+func (c *commandHandler) ExtractToNewFile(ctx context.Context, args protocol.Location) error {
 	return c.run(ctx, commandConfig{
 		progress: "Extract to a new file",
 		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		edit, err := golang.ExtractToNewFile(ctx, deps.snapshot, deps.fh, args.Range)
 		if err != nil {
-			if errors.Is(err, golang.ErrDotImport) {
-				showMessage(ctx, c.s.client, protocol.Info, err.Error())
-				return nil
-			}
 			return err
 		}
 		resp, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{Edit: *edit})

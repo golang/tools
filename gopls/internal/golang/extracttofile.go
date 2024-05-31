@@ -27,8 +27,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
-var ErrDotImport = errors.New("\"extract to new file\" does not support files containing dot imports")
-
 // canExtractToNewFile reports whether the code in the given range can be extracted to a new file.
 func canExtractToNewFile(pgf *parsego.File, start, end token.Pos) bool {
 	_, _, _, ok := selectedToplevelDecls(pgf, start, end)
@@ -39,7 +37,7 @@ func canExtractToNewFile(pgf *parsego.File, start, end token.Pos) bool {
 // or deleted from the old file if the range is extracted to a new file.
 //
 // TODO: handle dot imports.
-func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (adds []*ast.ImportSpec, deletes []*ast.ImportSpec, _ error) {
+func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (adds, deletes []*ast.ImportSpec, _ error) {
 	// make a map from a pkgName to its references
 	pkgNameReferences := make(map[*types.PkgName][]*ast.Ident)
 	for ident, use := range info.Uses {
@@ -54,7 +52,8 @@ func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (ad
 	// deleted from the original file.
 	for _, spec := range file.Imports {
 		if spec.Name != nil && spec.Name.Name == "." {
-			return nil, nil, ErrDotImport
+			// TODO: support dot imports.
+			return nil, nil, errors.New("\"extract to new file\" does not support files containing dot imports")
 		}
 		pkgName, ok := typesutil.ImportedPkgName(info, spec)
 		if !ok {
@@ -96,7 +95,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 
 	start, end, firstSymbol, ok := selectedToplevelDecls(pgf, start, end)
 	if !ok {
-		return nil, bug.Errorf("precondition unmet")
+		return nil, bug.Errorf("invalid selection")
 	}
 
 	// select trailing empty lines
@@ -105,7 +104,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 
 	replaceRange, err := pgf.PosRange(start, end)
 	if err != nil {
-		return nil, bug.Errorf("findRangeAndFilename returned invalid range: %v", err)
+		return nil, bug.Errorf("invalid range: %v", err)
 	}
 
 	adds, deletes, err := findImportEdits(pgf.File, pkg.TypesInfo(), start, end)
@@ -120,9 +119,9 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	// For parenthesised declarations like `import ("fmt"\n "log")`
 	// we only remove the ImportSpec, because removing the whole declaration
 	// might remove other ImportsSpecs we don't want to touch.
-	parenthesisFreeImports := findParenthesisFreeImports(pgf)
+	unparenthesizedImports := unparenthesizedImports(pgf)
 	for _, importSpec := range deletes {
-		if decl := parenthesisFreeImports[importSpec]; decl != nil {
+		if decl := unparenthesizedImports[importSpec]; decl != nil {
 			importDeletes = append(importDeletes, removeNode(pgf, decl))
 		} else {
 			importDeletes = append(importDeletes, removeNode(pgf, importSpec))
@@ -143,7 +142,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		buf.WriteString(")\n")
 	}
 
-	newFile, err := chooseNewFileURI(ctx, snapshot, pgf.URI.Dir().Path(), firstSymbol)
+	newFile, err := chooseNewFile(ctx, snapshot, pgf.URI.Dir().Path(), firstSymbol)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", errorPrefix, err)
 	}
@@ -162,27 +161,14 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		// create a new file
 		protocol.DocumentChangeCreate(newFile.URI()),
 		// edit the created file
-		protocol.DocumentChangeEdit(&uriVersion{uri: newFile.URI(), version: 0}, []protocol.TextEdit{
+		protocol.DocumentChangeEdit(newFile, []protocol.TextEdit{
 			{Range: protocol.Range{}, NewText: string(newFileContent)},
 		})), nil
 }
 
-// uriVersion is the simplest struct that implements protocol.fileHandle.
-type uriVersion struct {
-	uri     protocol.DocumentURI
-	version int32
-}
-
-func (fh *uriVersion) URI() protocol.DocumentURI {
-	return fh.uri
-}
-func (fh *uriVersion) Version() int32 {
-	return fh.version
-}
-
-// chooseNewFileURI chooses a new filename in dir, based on the name of the
+// chooseNewFile chooses a new filename in dir, based on the name of the
 // first extracted symbol, and if necessary to disambiguate, a numeric suffix.
-func chooseNewFileURI(ctx context.Context, snapshot *cache.Snapshot, dir string, firstSymbol string) (file.Handle, error) {
+func chooseNewFile(ctx context.Context, snapshot *cache.Snapshot, dir string, firstSymbol string) (file.Handle, error) {
 	basename := strings.ToLower(firstSymbol)
 	newPath := protocol.URIFromPath(filepath.Join(dir, basename+".go"))
 	for count := 1; count < 5; count++ {
@@ -248,6 +234,7 @@ func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, 
 				return 0, 0, "", false
 			}
 			if id != nil && firstName == "" {
+				// may be "_"
 				firstName = id.Name
 			}
 			// extends selection to docs comments
@@ -277,15 +264,13 @@ func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, 
 	return start, end, firstName, true
 }
 
-func findParenthesisFreeImports(pgf *parsego.File) map[*ast.ImportSpec]*ast.GenDecl {
+// unparenthesizedImports returns a map from each unparenthesized ImportSpec
+// to its enclosing declaration (which may need to be deleted too).
+func unparenthesizedImports(pgf *parsego.File) map[*ast.ImportSpec]*ast.GenDecl {
 	decls := make(map[*ast.ImportSpec]*ast.GenDecl)
 	for _, decl := range pgf.File.Decls {
-		if g, ok := decl.(*ast.GenDecl); ok {
-			if !g.Lparen.IsValid() && len(g.Specs) > 0 {
-				if v, ok := g.Specs[0].(*ast.ImportSpec); ok {
-					decls[v] = g
-				}
-			}
+		if decl, ok := decl.(*ast.GenDecl); ok && decl.Tok == token.IMPORT && !decl.Lparen.IsValid() {
+			decls[decl.Specs[0].(*ast.ImportSpec)] = decl
 		}
 	}
 	return decls
@@ -293,7 +278,7 @@ func findParenthesisFreeImports(pgf *parsego.File) map[*ast.ImportSpec]*ast.GenD
 
 // removeNode returns a TextEdit that removes the node.
 func removeNode(pgf *parsego.File, node ast.Node) protocol.TextEdit {
-	rng, err := pgf.PosRange(node.Pos(), node.End())
+	rng, err := pgf.NodeRange(node)
 	if err != nil {
 		bug.Reportf("removeNode: %v", err)
 	}

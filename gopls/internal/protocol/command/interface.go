@@ -163,7 +163,7 @@ type Interface interface {
 	// ExtractToNewFile: Move selected declarations to a new file
 	//
 	// Used by the code action of the same name.
-	ExtractToNewFile(context.Context, ExtractToNewFileArgs) error
+	ExtractToNewFile(context.Context, protocol.Location) error
 
 	// StartDebugging: Start the gopls debug server
 	//
@@ -370,12 +370,6 @@ type AddImportArgs struct {
 	// URI is the file that the ImportPath should be
 	// added to
 	URI protocol.DocumentURI
-}
-
-type ExtractToNewFileArgs struct {
-	// URI of the file
-	URI   protocol.DocumentURI
-	Range protocol.Range
 }
 
 type ListKnownPackagesResult struct {

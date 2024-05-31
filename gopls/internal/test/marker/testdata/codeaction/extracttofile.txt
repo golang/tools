@@ -71,12 +71,6 @@ package main
 import _ "fmt"
 func F() {} //@codeactionedit("func", "refactor.extract", blank_import)
 
--- dot_import.go --
-// This case is not yet implemented, it aborts and shows a message to the client. 
-package main
-import . "fmt"
-func F() { Println() } //@codeactionedit("func", "refactor.extract", dot_import)
-
 
 
 -- @blank_import/blank_import.go --
