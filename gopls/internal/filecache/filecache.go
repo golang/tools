@@ -426,8 +426,6 @@ func gc(goplsDir string) {
 	// /usr/bin/find achieves only about 25,000 stats per second
 	// at full speed (no pause between items), meaning a large
 	// cache may take several minutes to scan.
-	// We must ensure that short-lived processes (crucially,
-	// tests) are able to make progress sweeping garbage.
 	//
 	// (gopls' caches should never actually get this big in
 	// practice: the example mentioned above resulted from a bug
@@ -439,6 +437,11 @@ func gc(goplsDir string) {
 	dirs := make(map[string]bool)
 
 	for {
+		// Wait unconditionally for the minimum period.
+		// We do this even on the first run so that tests
+		// don't (all) run the GC.
+		time.Sleep(minPeriod)
+
 		// Enumerate all files in the cache.
 		type item struct {
 			path  string
@@ -459,8 +462,6 @@ func gc(goplsDir string) {
 				}
 			} else {
 				// Unconditionally delete files we haven't used in ages.
-				// (We do this here, not in the second loop, so that we
-				// perform age-based collection even in short-lived processes.)
 				age := time.Since(stat.ModTime())
 				if age > maxAge {
 					if debug {
@@ -502,9 +503,6 @@ func gc(goplsDir string) {
 			total -= file.size
 		}
 		files = nil // release memory before sleep
-
-		// Wait unconditionally for the minimum period.
-		time.Sleep(minPeriod)
 
 		// Once only, delete all directories.
 		// This will succeed only for the empty ones,
