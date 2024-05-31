@@ -7,8 +7,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"golang.org/x/telemetry"
@@ -23,13 +25,32 @@ import (
 // crash).
 const promptTimeout = 24 * time.Hour
 
+// gracePeriod is the amount of time we wait before sufficient telemetry data
+// is accumulated in the local directory, so users can have time to review
+// what kind of information will be collected and uploaded when prompting starts.
+const gracePeriod = 7 * 24 * time.Hour
+
+// samplesPerMille is the prompt probability.
+// Token is an integer between [1, 1000] and is assigned when maybePromptForTelemetry
+// is called first time. Only the user with a token ∈ [1, samplesPerMille]
+// will be considered for prompting.
+const samplesPerMille = 10 // 1% sample rate
+
 // The following constants are used for testing telemetry integration.
 const (
 	TelemetryPromptWorkTitle    = "Checking telemetry prompt"     // progress notification title, for awaiting in tests
 	GoplsConfigDirEnvvar        = "GOPLS_CONFIG_DIR"              // overridden for testing
 	FakeTelemetryModefileEnvvar = "GOPLS_FAKE_TELEMETRY_MODEFILE" // overridden for testing
+	FakeSamplesPerMille         = "GOPLS_FAKE_SAMPLES_PER_MILLE"  // overridden for testing
 	TelemetryYes                = "Yes, I'd like to help."
 	TelemetryNo                 = "No, thanks."
+)
+
+// The following environment variables may be set by the client.
+// Exported for testing telemetry integration.
+const (
+	GoTelemetryGoplsClientStartTimeEnvvar = "GOTELEMETRY_GOPLS_CLIENT_START_TIME" // telemetry start time recored in client
+	GoTelemetryGoplsClientTokenEnvvar     = "GOTELEMETRY_GOPLS_CLIENT_TOKEN"      // sampling token
 )
 
 // getenv returns the effective environment variable value for the provided
@@ -119,31 +140,37 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 
 	// prompt states, to be written to the prompt file
 	const (
-		pYes     = "yes"     // user said yes
-		pNo      = "no"      // user said no
-		pPending = "pending" // current prompt is still pending
-		pFailed  = "failed"  // prompt was asked but failed
+		pUnknown  = ""        // first time
+		pNotReady = "-"       // user is not asked yet (either not sampled or not past the grace period)
+		pYes      = "yes"     // user said yes
+		pNo       = "no"      // user said no
+		pPending  = "pending" // current prompt is still pending
+		pFailed   = "failed"  // prompt was asked but failed
 	)
 	validStates := map[string]bool{
-		pYes:     true,
-		pNo:      true,
-		pPending: true,
-		pFailed:  true,
+		pNotReady: true,
+		pYes:      true,
+		pNo:       true,
+		pPending:  true,
+		pFailed:   true,
 	}
 
-	// parse the current prompt file
+	// Parse the current prompt file.
 	var (
-		state    string
+		state    = pUnknown
 		attempts = 0 // number of times we've asked already
+
+		// the followings are recorded after gopls v0.17+.
+		token        = 0   // valid token is [1, 1000]
+		creationTime int64 // unix time sec
 	)
 	if content, err := os.ReadFile(promptFile); err == nil {
-		if _, err := fmt.Sscanf(string(content), "%s %d", &state, &attempts); err == nil && validStates[state] {
-			if state == pYes || state == pNo {
-				// Prompt has been answered. Nothing to do.
-				return
-			}
+		if n, _ := fmt.Sscanf(string(content), "%s %d %d %d", &state, &attempts, &creationTime, &token); (n == 2 || n == 4) && validStates[state] {
+			// successfully parsed!
+			//  ~ v0.16: must have only two fields, state and attempts.
+			//  v0.17 ~: must have all four fields.
 		} else {
-			state, attempts = "", 0
+			state, attempts, creationTime, token = pUnknown, 0, 0, 0
 			errorf("malformed prompt result %q", string(content))
 		}
 	} else if !os.IsNotExist(err) {
@@ -153,19 +180,58 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 		return
 	}
 
-	if attempts >= 5 {
+	// Terminal conditions.
+	if state == pYes || state == pNo {
+		// Prompt has been answered. Nothing to do.
+		return
+	}
+	if attempts >= 5 { // pPending or pFailed
 		// We've tried asking enough; give up.
 		return
 	}
-	if attempts == 0 {
-		// First time asking the prompt; we may need to make the prompt dir.
+
+	// Transition: pUnknown -> pNotReady
+	if state == pUnknown {
+		// First time; we need to make the prompt dir.
 		if err := os.MkdirAll(promptDir, 0777); err != nil {
 			errorf("creating prompt dir: %v", err)
 			return
 		}
+		state = pNotReady
 	}
 
-	// Acquire the lock and write "pending" to the prompt file before actually
+	// Correct missing values.
+	if creationTime == 0 {
+		creationTime = time.Now().Unix()
+		if v := s.getenv(GoTelemetryGoplsClientStartTimeEnvvar); v != "" {
+			if sec, err := strconv.ParseInt(v, 10, 64); err == nil && sec > 0 {
+				creationTime = sec
+			}
+		}
+	}
+	if token == 0 {
+		token = rand.Intn(1000) + 1
+		if v := s.getenv(GoTelemetryGoplsClientTokenEnvvar); v != "" {
+			if tok, err := strconv.Atoi(v); err == nil && 1 <= tok && tok <= 1000 {
+				token = tok
+			}
+		}
+	}
+
+	// Transition: pNotReady -> pPending if sampled
+	if state == pNotReady {
+		threshold := samplesPerMille
+		if v := s.getenv(FakeSamplesPerMille); v != "" {
+			if t, err := strconv.Atoi(v); err == nil {
+				threshold = t
+			}
+		}
+		if token <= threshold && time.Now().Unix()-creationTime > gracePeriod.Milliseconds()/1000 {
+			state = pPending
+		}
+	}
+
+	// Acquire the lock and write the updated state to the prompt file before actually
 	// prompting.
 	//
 	// This ensures that the prompt file is writeable, and that we increment the
@@ -178,16 +244,22 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 		return
 	}
 	if !ok {
-		// Another prompt is currently pending.
+		// Another process is making decision.
 		return
 	}
 	defer release()
 
-	attempts++
+	if state != pNotReady { // pPending or pFailed
+		attempts++
+	}
 
-	pendingContent := []byte(fmt.Sprintf("%s %d", pPending, attempts))
+	pendingContent := []byte(fmt.Sprintf("%s %d %d %d", state, attempts, creationTime, token))
 	if err := os.WriteFile(promptFile, pendingContent, 0666); err != nil {
 		errorf("writing pending state: %v", err)
+		return
+	}
+
+	if state == pNotReady {
 		return
 	}
 
@@ -249,7 +321,7 @@ Would you like to enable Go telemetry?
 			message(protocol.Error, fmt.Sprintf("Unrecognized response %q", item.Title))
 		}
 	}
-	resultContent := []byte(fmt.Sprintf("%s %d", result, attempts))
+	resultContent := []byte(fmt.Sprintf("%s %d %d %d", result, attempts, creationTime, token))
 	if err := os.WriteFile(promptFile, resultContent, 0666); err != nil {
 		errorf("error writing result state to prompt file: %v", err)
 	}
