@@ -40,7 +40,9 @@ var Supported = []Support{
 	{15, "", "v0.9.5"},
 	{16, "", "v0.11.0"},
 	{17, "", "v0.11.0"},
-	{18, "v0.16.0", "v0.14.2"},
+	{18, "", "v0.14.2"},
+	{19, "v0.17.0", "v0.15.3"},
+	{20, "v0.17.0", "v0.15.3"},
 }
 
 // OldestSupported is the last X in Go 1.X that this version of gopls

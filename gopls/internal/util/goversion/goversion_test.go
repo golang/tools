@@ -40,20 +40,18 @@ func TestMessage(t *testing.T) {
 		}
 	}
 
-	tests := []struct {
-		goVersion    int
-		fromBuild    bool
-		wantContains []string // string fragments that we expect to see
-		wantIsError  bool     // an error, not a mere warning
-	}{
+	tests := []test{
 		{-1, false, nil, false},
 		deprecated(12, "v0.7.5"),
 		deprecated(13, "v0.9.5"),
 		deprecated(15, "v0.9.5"),
 		deprecated(16, "v0.11.0"),
 		deprecated(17, "v0.11.0"),
-		{18, false, []string{"Found Go version 1.18", "unsupported by gopls v0.16.0", "upgrade to Go 1.19", "install gopls v0.14.2"}, false},
-		{18, true, []string{"Gopls was built with Go version 1.18", "unsupported by gopls v0.16.0", "upgrade to Go 1.19", "install gopls v0.14.2"}, false},
+		deprecated(18, "v0.14.2"),
+		{19, false, []string{"Found Go version 1.19", "unsupported by gopls v0.17.0", "upgrade to Go 1.21", "install gopls v0.15.3"}, false},
+		{19, true, []string{"Gopls was built with Go version 1.19", "unsupported by gopls v0.17.0", "upgrade to Go 1.21", "install gopls v0.15.3"}, false},
+		{20, false, []string{"Found Go version 1.20", "unsupported by gopls v0.17.0", "upgrade to Go 1.21", "install gopls v0.15.3"}, false},
+		{20, true, []string{"Gopls was built with Go version 1.20", "unsupported by gopls v0.17.0", "upgrade to Go 1.21", "install gopls v0.15.3"}, false},
 	}
 
 	for _, test := range tests {
