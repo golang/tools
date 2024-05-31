@@ -188,10 +188,6 @@ func targetedBlock(f *Function, tok token.Token) *BasicBlock {
 
 // addResultVar adds a result for a variable v to f.results and v to f.returnVars.
 func (f *Function) addResultVar(v *types.Var) {
-	name := v.Name()
-	if name == "" {
-		name = fmt.Sprintf("res%d", len(f.results))
-	}
 	result := emitLocalVar(f, v)
 	f.results = append(f.results, result)
 	f.returnVars = append(f.returnVars, v)
