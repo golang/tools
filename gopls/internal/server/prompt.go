@@ -162,6 +162,7 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 			//  v0.17 ~: must have all four fields.
 		} else {
 			state, attempts, creationTime, token = pUnknown, 0, 0, 0
+			// TODO(hyangah): why do we want to present this as an error to user?
 			errorf("malformed prompt result %q", string(content))
 		}
 	} else if !os.IsNotExist(err) {

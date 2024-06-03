@@ -256,7 +256,11 @@ func (h *commandHandler) Packages(ctx context.Context, args command.PackagesArgs
 }
 
 func (h *commandHandler) MaybePromptForTelemetry(ctx context.Context) error {
-	go h.s.maybePromptForTelemetry(ctx, true)
+	// if the server's TelemetryPrompt is true, it's likely the server already
+	// handled prompting for it. Don't try to prompt again.
+	if !h.s.options.TelemetryPrompt {
+		go h.s.maybePromptForTelemetry(ctx, true)
+	}
 	return nil
 }
 
