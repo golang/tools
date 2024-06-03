@@ -240,7 +240,10 @@ func lockPathRhs(pass *analysis.Pass, x ast.Expr) typePath {
 			return nil
 		}
 	}
-	return lockPath(pass.Pkg, pass.TypesInfo.Types[x].Type, nil)
+	if tv, ok := pass.TypesInfo.Types[x]; ok && tv.IsValue() {
+		return lockPath(pass.Pkg, tv.Type, nil)
+	}
+	return nil
 }
 
 // lockPath returns a typePath describing the location of a lock value

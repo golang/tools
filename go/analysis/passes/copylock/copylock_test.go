@@ -13,5 +13,5 @@ import (
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.Run(t, testdata, copylock.Analyzer, "a", "typeparams")
+	analysistest.Run(t, testdata, copylock.Analyzer, "a", "typeparams", "issue67787")
 }
