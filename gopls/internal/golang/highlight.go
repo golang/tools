@@ -19,7 +19,7 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.Range, error) {
+func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.DocumentHighlight, error) {
 	ctx, done := event.Start(ctx, "golang.Highlight")
 	defer done()
 
@@ -50,25 +50,33 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, po
 			}
 		}
 	}
-	result, err := highlightPath(path, pgf.File, pkg.TypesInfo())
+	result, writeResult, err := highlightPath(path, pgf.File, pkg.TypesInfo())
 	if err != nil {
 		return nil, err
 	}
-	var ranges []protocol.Range
+	var ranges []protocol.DocumentHighlight
 	for rng := range result {
-		rng, err := pgf.PosRange(rng.start, rng.end)
+		protocolRng, err := pgf.PosRange(rng.start, rng.end)
 		if err != nil {
 			return nil, err
 		}
-		ranges = append(ranges, rng)
+		kind := protocol.Read
+		if _, ok := writeResult[rng]; ok {
+			kind = protocol.Write
+		}
+		ranges = append(ranges, protocol.DocumentHighlight{
+			Range: protocolRng,
+			Kind:  kind,
+		})
 	}
 	return ranges, nil
 }
 
 // highlightPath returns ranges to highlight for the given enclosing path,
 // which should be the result of astutil.PathEnclosingInterval.
-func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRange]struct{}, error) {
+func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRange]struct{}, map[posRange]struct{}, error) {
 	result := make(map[posRange]struct{})
+	writeResult := make(map[posRange]struct{})
 	switch node := path[0].(type) {
 	case *ast.BasicLit:
 		// Import path string literal?
@@ -91,7 +99,7 @@ func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRa
 						return true
 					})
 				}
-				return result, nil
+				return result, writeResult, nil
 			}
 		}
 		highlightFuncControlFlow(path, result)
@@ -100,7 +108,7 @@ func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRa
 	case *ast.Ident:
 		// Check if ident is inside return or func decl.
 		highlightFuncControlFlow(path, result)
-		highlightIdentifier(node, file, info, result)
+		highlightIdentifier(node, file, info, result, writeResult)
 	case *ast.ForStmt, *ast.RangeStmt:
 		highlightLoopControlFlow(path, info, result)
 	case *ast.SwitchStmt, *ast.TypeSwitchStmt:
@@ -126,9 +134,10 @@ func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRa
 		}
 	default:
 		// If the cursor is in an unidentified area, return empty results.
-		return nil, nil
+		return nil, nil, nil
 	}
-	return result, nil
+
+	return result, writeResult, nil
 }
 
 type posRange struct {
@@ -496,7 +505,7 @@ Outer:
 	})
 }
 
-func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result map[posRange]struct{}) {
+func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result, writeResult map[posRange]struct{}) {
 	highlight := func(n ast.Node) {
 		result[posRange{start: n.Pos(), end: n.End()}] = struct{}{}
 	}
@@ -506,8 +515,54 @@ func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result
 	// to match other undefined Idents of the same name.
 	obj := info.ObjectOf(id)
 
+	highlightWrite := func(n *ast.Ident) {
+		if n.Name == id.Name && info.ObjectOf(n) == obj {
+			writeResult[posRange{start: n.Pos(), end: n.End()}] = struct{}{}
+		}
+	}
+	var highlightExpr func(expr ast.Expr)
+	highlightExpr = func(expr ast.Expr) {
+		switch expr := expr.(type) {
+		case *ast.Ident:
+			highlightWrite(expr)
+		case *ast.SelectorExpr:
+			highlightWrite(expr.Sel)
+		case *ast.StarExpr:
+			highlightExpr(expr.X)
+		case *ast.ParenExpr:
+			highlightExpr(expr.X)
+		}
+	}
+
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch n := n.(type) {
+		case *ast.AssignStmt:
+			for _, s := range n.Lhs {
+				highlightExpr(s)
+			}
+		case *ast.GenDecl:
+			if n.Tok == token.CONST || n.Tok == token.VAR {
+				for _, spec := range n.Specs {
+					if spec, ok := spec.(*ast.ValueSpec); ok {
+						for _, ele := range spec.Names {
+							highlightWrite(ele)
+						}
+					}
+				}
+			}
+		case *ast.IncDecStmt:
+			highlightExpr(n.X)
+		case *ast.SendStmt:
+			highlightExpr(n.Chan)
+		case *ast.CompositeLit:
+			for _, expr := range n.Elts {
+				if expr, ok := (expr).(*ast.KeyValueExpr); ok {
+					highlightExpr(expr.Key)
+				}
+			}
+		case *ast.RangeStmt:
+			highlightExpr(n.Key)
+			highlightExpr(n.Value)
 		case *ast.Ident:
 			if n.Name == id.Name && info.ObjectOf(n) == obj {
 				highlight(n)
