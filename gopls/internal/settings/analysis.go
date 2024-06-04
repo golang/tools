@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/defers"
 	"golang.org/x/tools/go/analysis/passes/directive"
 	"golang.org/x/tools/go/analysis/passes/errorsas"
-	"golang.org/x/tools/go/analysis/passes/fieldalignment"
 	"golang.org/x/tools/go/analysis/passes/framepointer"
 	"golang.org/x/tools/go/analysis/passes/httpresponse"
 	"golang.org/x/tools/go/analysis/passes/ifaceassert"
@@ -184,9 +183,9 @@ func init() {
 		{analyzer: embeddirective.Analyzer, enabled: true},
 
 		// disabled due to high false positives
-		{analyzer: fieldalignment.Analyzer, enabled: false}, // never a bug
-		{analyzer: shadow.Analyzer, enabled: false},         // very noisy
-		{analyzer: useany.Analyzer, enabled: false},         // never a bug
+		{analyzer: shadow.Analyzer, enabled: false}, // very noisy
+		{analyzer: useany.Analyzer, enabled: false}, // never a bug
+		// fieldalignment is not even off-by-default; see #67762.
 
 		// "simplifiers": analyzers that offer mere style fixes
 		// gofmt -s suite:

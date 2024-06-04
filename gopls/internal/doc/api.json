@@ -448,11 +448,6 @@
 							"Default": "true"
 						},
 						{
-							"Name": "\"fieldalignment\"",
-							"Doc": "find structs that would use less memory if their fields were sorted\n\nThis analyzer find structs that can be rearranged to use less memory, and provides\na suggested edit with the most compact order.\n\nNote that there are two different diagnostics reported. One checks struct size,\nand the other reports \"pointer bytes\" used. Pointer bytes is how many bytes of the\nobject that the garbage collector has to potentially scan for pointers, for example:\n\n\tstruct { uint32; string }\n\nhave 16 pointer bytes because the garbage collector has to scan up through the string's\ninner pointer.\n\n\tstruct { string; *uint32 }\n\nhas 24 pointer bytes because it has to scan further through the *uint32.\n\n\tstruct { string; uint32 }\n\nhas 8 because it can stop immediately after the string pointer.\n\nBe aware that the most compact order is not always the most efficient.\nIn rare cases it may cause two variables each updated by its own goroutine\nto occupy the same CPU cache line, inducing a form of memory contention\nknown as \"false sharing\" that slows down both goroutines.\n",
-							"Default": "false"
-						},
-						{
 							"Name": "\"fillreturns\"",
 							"Doc": "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\n\nwill turn into\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.",
 							"Default": "true"
@@ -1359,12 +1354,6 @@
 			"Doc": "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analysis reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/errorsas",
 			"Default": true
-		},
-		{
-			"Name": "fieldalignment",
-			"Doc": "find structs that would use less memory if their fields were sorted\n\nThis analyzer find structs that can be rearranged to use less memory, and provides\na suggested edit with the most compact order.\n\nNote that there are two different diagnostics reported. One checks struct size,\nand the other reports \"pointer bytes\" used. Pointer bytes is how many bytes of the\nobject that the garbage collector has to potentially scan for pointers, for example:\n\n\tstruct { uint32; string }\n\nhave 16 pointer bytes because the garbage collector has to scan up through the string's\ninner pointer.\n\n\tstruct { string; *uint32 }\n\nhas 24 pointer bytes because it has to scan further through the *uint32.\n\n\tstruct { string; uint32 }\n\nhas 8 because it can stop immediately after the string pointer.\n\nBe aware that the most compact order is not always the most efficient.\nIn rare cases it may cause two variables each updated by its own goroutine\nto occupy the same CPU cache line, inducing a form of memory contention\nknown as \"false sharing\" that slows down both goroutines.\n",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/fieldalignment",
-			"Default": false
 		},
 		{
 			"Name": "fillreturns",

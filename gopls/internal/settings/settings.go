@@ -1010,7 +1010,12 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 			DefinitionShortcut)
 
 	case "analyses":
-		return setBoolMap(&o.Analyses, value)
+		if err := setBoolMap(&o.Analyses, value); err != nil {
+			return err
+		}
+		if o.Analyses["fieldalignment"] {
+			return deprecatedError("the 'fieldalignment' analyzer was removed in gopls/v0.17.0; instead, hover over struct fields to see size/offset information (https://go.dev/issue/66861)")
+		}
 
 	case "hints":
 		return setBoolMap(&o.Hints, value)
