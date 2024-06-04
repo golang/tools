@@ -200,12 +200,14 @@ func (i *Invocation) runWithFriendlyError(ctx context.Context, stdout, stderr io
 	return
 }
 
-func (i *Invocation) run(ctx context.Context, stdout, stderr io.Writer) error {
-	log := i.Logf
-	if log == nil {
-		log = func(string, ...interface{}) {}
+// logf logs if i.Logf is non-nil.
+func (i *Invocation) logf(format string, args ...any) {
+	if i.Logf != nil {
+		i.Logf(format, args...)
 	}
+}
 
+func (i *Invocation) run(ctx context.Context, stdout, stderr io.Writer) error {
 	goArgs := []string{i.Verb}
 
 	appendModFile := func() {
@@ -277,7 +279,12 @@ func (i *Invocation) run(ctx context.Context, stdout, stderr io.Writer) error {
 		cmd.Dir = i.WorkingDir
 	}
 
-	defer func(start time.Time) { log("%s for %v", time.Since(start), cmdDebugStr(cmd)) }(time.Now())
+	debugStr := cmdDebugStr(cmd)
+	i.logf("starting %v", debugStr)
+	start := time.Now()
+	defer func() {
+		i.logf("%s for %v", time.Since(start), debugStr)
+	}()
 
 	return runCmdContext(ctx, cmd)
 }

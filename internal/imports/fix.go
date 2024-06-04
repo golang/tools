@@ -365,9 +365,7 @@ func (p *pass) load() ([]*ImportFix, bool) {
 	if p.loadRealPackageNames {
 		err := p.loadPackageNames(append(imports, p.candidates...))
 		if err != nil {
-			if p.env.Logf != nil {
-				p.env.Logf("loading package names: %v", err)
-			}
+			p.env.logf("loading package names: %v", err)
 			return nil, false
 		}
 	}
@@ -580,9 +578,7 @@ func getFixes(ctx context.Context, fset *token.FileSet, f *ast.File, filename st
 		return nil, err
 	}
 	srcDir := filepath.Dir(abs)
-	if env.Logf != nil {
-		env.Logf("fixImports(filename=%q), abs=%q, srcDir=%q ...", filename, abs, srcDir)
-	}
+	env.logf("fixImports(filename=%q), abs=%q, srcDir=%q ...", filename, abs, srcDir)
 
 	// First pass: looking only at f, and using the naive algorithm to
 	// derive package names from import paths, see if the file is already
@@ -1014,14 +1010,24 @@ func (e *ProcessEnv) GetResolver() (Resolver, error) {
 		// already know the view type.
 		if len(e.Env["GOMOD"]) == 0 && len(e.Env["GOWORK"]) == 0 {
 			e.resolver = newGopathResolver(e)
+			e.logf("created gopath resolver")
 		} else if r, err := newModuleResolver(e, e.ModCache); err != nil {
 			e.resolverErr = err
+			e.logf("failed to create module resolver: %v", err)
 		} else {
 			e.resolver = Resolver(r)
+			e.logf("created module resolver")
 		}
 	}
 
 	return e.resolver, e.resolverErr
+}
+
+// logf logs if e.Logf is non-nil.
+func (e *ProcessEnv) logf(format string, args ...any) {
+	if e.Logf != nil {
+		e.Logf(format, args...)
+	}
 }
 
 // buildContext returns the build.Context to use for matching files.
@@ -1610,9 +1616,7 @@ func loadExportsFromFiles(ctx context.Context, env *ProcessEnv, dir string, incl
 		fullFile := filepath.Join(dir, fi.Name())
 		f, err := parser.ParseFile(fset, fullFile, nil, 0)
 		if err != nil {
-			if env.Logf != nil {
-				env.Logf("error parsing %v: %v", fullFile, err)
-			}
+			env.logf("error parsing %v: %v", fullFile, err)
 			continue
 		}
 		if f.Name.Name == "documentation" {
@@ -1648,9 +1652,7 @@ func loadExportsFromFiles(ctx context.Context, env *ProcessEnv, dir string, incl
 	}
 	sortSymbols(exports)
 
-	if env.Logf != nil {
-		env.Logf("loaded exports in dir %v (package %v): %v", dir, pkgName, exports)
-	}
+	env.logf("loaded exports in dir %v (package %v): %v", dir, pkgName, exports)
 	return pkgName, exports, nil
 }
 
@@ -1710,16 +1712,12 @@ func findImport(ctx context.Context, pass *pass, candidates []pkgDistance, pkgNa
 					wg.Done()
 				}()
 
-				if pass.env.Logf != nil {
-					pass.env.Logf("loading exports in dir %s (seeking package %s)", c.pkg.dir, pkgName)
-				}
+				pass.env.logf("loading exports in dir %s (seeking package %s)", c.pkg.dir, pkgName)
 				// If we're an x_test, load the package under test's test variant.
 				includeTest := strings.HasSuffix(pass.f.Name.Name, "_test") && c.pkg.dir == pass.srcDir
 				_, exports, err := resolver.loadExports(ctx, c.pkg, includeTest)
 				if err != nil {
-					if pass.env.Logf != nil {
-						pass.env.Logf("loading exports in dir %s (seeking package %s): %v", c.pkg.dir, pkgName, err)
-					}
+					pass.env.logf("loading exports in dir %s (seeking package %s): %v", c.pkg.dir, pkgName, err)
 					resc <- nil
 					return
 				}

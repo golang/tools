@@ -119,8 +119,7 @@ type importsState struct {
 // newImportsState constructs a new imports state for running goimports
 // functions via [runProcessEnvFunc].
 //
-// The returned state will automatically refresh itself following a call to
-// runProcessEnvFunc.
+// The returned state will automatically refresh itself following a delay.
 func newImportsState(backgroundCtx context.Context, modCache *sharedModCache, env *imports.ProcessEnv) *importsState {
 	s := &importsState{
 		ctx:        backgroundCtx,
@@ -128,6 +127,7 @@ func newImportsState(backgroundCtx context.Context, modCache *sharedModCache, en
 		processEnv: env,
 	}
 	s.refreshTimer = newRefreshTimer(s.refreshProcessEnv)
+	s.refreshTimer.schedule()
 	return s
 }
 
@@ -210,20 +210,22 @@ func (s *importsState) refreshProcessEnv() {
 	resolver, err := s.processEnv.GetResolver()
 	s.mu.Unlock()
 	if err != nil {
+		event.Error(s.ctx, "failed to get import resolver", err)
 		return
 	}
 
 	event.Log(s.ctx, "background imports cache refresh starting")
+	resolver2 := resolver.ClearForNewScan()
 
 	// Prime the new resolver before updating the processEnv, so that gopls
 	// doesn't wait on an unprimed cache.
-	if err := imports.PrimeCache(context.Background(), resolver); err == nil {
+	if err := imports.PrimeCache(context.Background(), resolver2); err == nil {
 		event.Log(ctx, fmt.Sprintf("background refresh finished after %v", time.Since(start)))
 	} else {
 		event.Log(ctx, fmt.Sprintf("background refresh finished after %v", time.Since(start)), keys.Err.Of(err))
 	}
 
 	s.mu.Lock()
-	s.processEnv.UpdateResolver(resolver)
+	s.processEnv.UpdateResolver(resolver2)
 	s.mu.Unlock()
 }
