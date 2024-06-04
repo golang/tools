@@ -30,24 +30,12 @@ import (
 )
 
 func main() {
-	// Read and parse the GOROOT/api manifests.
-	symRE := regexp.MustCompile(`^pkg (\S+).*?, (var|func|type|const|method \([^)]*\)) ([A-Z]\w*)(.*)`)
 	pkgs := make(map[string]map[string]symInfo) // package -> symbol -> info
-	for minor := 0; ; minor++ {
-		base := "go1.txt"
-		if minor > 0 {
-			base = fmt.Sprintf("go1.%d.txt", minor)
-		}
-		filename := filepath.Join(runtime.GOROOT(), "api", base)
-		data, err := os.ReadFile(filename)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				break // all caught up
-			}
-			log.Fatal(err)
-		}
+	symRE := regexp.MustCompile(`^pkg (\S+).*?, (var|func|type|const|method \([^)]*\)) ([\pL\p{Nd}_]+)(.*)`)
 
-		// parse
+	// parse parses symbols out of GOROOT/api/*.txt data, with the specified minor version.
+	// Errors are reported against filename.
+	parse := func(filename string, data []byte, minor int) {
 		for linenum, line := range strings.Split(string(data), "\n") {
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
@@ -101,6 +89,40 @@ func main() {
 				symbols[sym] = symInfo{kind, minor}
 			}
 		}
+	}
+
+	// Read and parse the GOROOT/api manifests.
+	for minor := 0; ; minor++ {
+		base := "go1.txt"
+		if minor > 0 {
+			base = fmt.Sprintf("go1.%d.txt", minor)
+		}
+		filename := filepath.Join(runtime.GOROOT(), "api", base)
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				// All caught up.
+				// Synthesize one final file from any api/next/*.txt fragments.
+				// (They are consolidated into a go1.%d file some time between
+				// the freeze and the first release candidate.)
+				filenames, err := filepath.Glob(filepath.Join(runtime.GOROOT(), "api/next/*.txt"))
+				if err != nil {
+					log.Fatal(err)
+				}
+				var next bytes.Buffer
+				for _, filename := range filenames {
+					data, err := os.ReadFile(filename)
+					if err != nil {
+						log.Fatal(err)
+					}
+					next.Write(data)
+				}
+				parse(filename, next.Bytes(), minor) // (filename is a lie)
+				break
+			}
+			log.Fatal(err)
+		}
+		parse(filename, data, minor)
 	}
 
 	// The APIs of the syscall/js and unsafe packages need to be computed explicitly,
