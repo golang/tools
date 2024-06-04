@@ -358,6 +358,7 @@ func runCmdContext(ctx context.Context, cmd *exec.Cmd) (err error) {
 		}
 	}
 
+	startTime := time.Now()
 	err = cmd.Start()
 	if stdoutW != nil {
 		// The child process has inherited the pipe file,
@@ -384,7 +385,7 @@ func runCmdContext(ctx context.Context, cmd *exec.Cmd) (err error) {
 		case err := <-resChan:
 			return err
 		case <-timer.C:
-			HandleHangingGoCommand(cmd.Process)
+			HandleHangingGoCommand(startTime, cmd)
 		case <-ctx.Done():
 		}
 	} else {
@@ -418,7 +419,7 @@ func runCmdContext(ctx context.Context, cmd *exec.Cmd) (err error) {
 	return <-resChan
 }
 
-func HandleHangingGoCommand(proc *os.Process) {
+func HandleHangingGoCommand(start time.Time, cmd *exec.Cmd) {
 	switch runtime.GOOS {
 	case "linux", "darwin", "freebsd", "netbsd":
 		fmt.Fprintln(os.Stderr, `DETECTED A HANGING GO COMMAND
@@ -451,7 +452,7 @@ See golang/go#54461 for more details.`)
 			panic(fmt.Sprintf("running %s: %v", listFiles, err))
 		}
 	}
-	panic(fmt.Sprintf("detected hanging go command (pid %d): see golang/go#54461 for more details", proc.Pid))
+	panic(fmt.Sprintf("detected hanging go command (golang/go#54461); waited %s\n\tcommand:%s\n\tpid:%d", time.Since(start), cmd, cmd.Process.Pid))
 }
 
 func cmdDebugStr(cmd *exec.Cmd) string {
