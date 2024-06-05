@@ -264,7 +264,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 	case *ssa.Defer:
 		fn, args := prepareCall(fr, &instr.Call)
 		defers := &fr.defers
-		if into := fr.get(deferStack(instr)); into != nil {
+		if into := fr.get(instr.DeferStack); into != nil {
 			defers = into.(**deferred)
 		}
 		*defers = &deferred{
@@ -723,8 +723,3 @@ func Interpret(mainpkg *ssa.Package, mode Mode, sizes types.Sizes, filename stri
 	}
 	return
 }
-
-// TODO(taking): Hack while proposal #66601 is being finalized.
-//
-//go:linkname deferStack golang.org/x/tools/go/ssa.deferStack
-func deferStack(i *ssa.Defer) ssa.Value

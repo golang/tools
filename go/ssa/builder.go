@@ -2684,7 +2684,7 @@ start:
 		// The "intrinsics" new/make/len/cap are forbidden here.
 		// panic is treated like an ordinary function call.
 		deferstack := emitLoad(fn, fn.lookup(fn.deferstack, false))
-		v := Defer{pos: s.Defer, _DeferStack: deferstack}
+		v := Defer{pos: s.Defer, DeferStack: deferstack}
 		b.setCall(fn, s.Call, &v.Call)
 		fn.emit(&v)
 
