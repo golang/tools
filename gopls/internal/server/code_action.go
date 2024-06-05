@@ -113,25 +113,22 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		//
 		// The diagnostics already have a UI presence (e.g. squiggly underline);
 		// the associated action may additionally show (in VS Code) as a lightbulb.
+		// Note s.codeActionsMatchingDiagnostics returns only fixes
+		// detected during the analysis phase. golang.CodeActions computes
+		// extra changes that can address some diagnostics.
 		actions, err := s.codeActionsMatchingDiagnostics(ctx, uri, snapshot, params.Context.Diagnostics, want)
 		if err != nil {
 			return nil, err
 		}
-
-		// non-diagnostic code actions (non-problematic)
-		//
-		// Don't report these for mere cursor motion (trigger=Automatic), only
-		// when the menu is opened, to avoid a distracting lightbulb in VS Code.
-		// (See protocol/codeactionkind.go for background.)
-		//
-		// Some clients (e.g. eglot) do not set TriggerKind at all.
-		if k := params.Context.TriggerKind; k == nil || *k != protocol.CodeActionAutomatic {
-			moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, want)
-			if err != nil {
-				return nil, err
-			}
-			actions = append(actions, moreActions...)
+		var triggerKind protocol.CodeActionTriggerKind
+		if k := params.Context.TriggerKind; k != nil {
+			triggerKind = *k
 		}
+		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, want, triggerKind)
+		if err != nil {
+			return nil, err
+		}
+		actions = append(actions, moreActions...)
 
 		// Don't suggest fixes for generated files, since they are generally
 		// not useful and some editors may apply them automatically on save.

@@ -5,11 +5,13 @@
 package misc
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/protocol"
 	. "golang.org/x/tools/gopls/internal/test/integration"
+	"golang.org/x/tools/gopls/internal/util/slices"
 )
 
 // This test exercises the filtering of code actions in generated files.
@@ -68,5 +70,48 @@ func g() {}
 		check("gen.go",
 			protocol.GoDoc,
 			protocol.GoFreeSymbols)
+	})
+}
+
+// Test refactor.inline is not included in automatically triggered code action
+// unless users want refactoring.
+func TestVSCodeIssue65167(t *testing.T) {
+	const vim1 = `package main
+
+func main() {
+	Func()  // range to be selected
+}
+
+func Func() int { return 0 }
+`
+
+	Run(t, "", func(t *testing.T, env *Env) {
+		env.CreateBuffer("main.go", vim1)
+		for _, triggerKind := range []protocol.CodeActionTriggerKind{0, protocol.CodeActionInvoked, protocol.CodeActionAutomatic} {
+			triggerKindPtr := &triggerKind
+			if triggerKind == 0 {
+				triggerKindPtr = nil
+			}
+			t.Run(fmt.Sprintf("trigger=%v", triggerKind), func(t *testing.T) {
+				for _, selectedRange := range []bool{false, true} {
+					t.Run(fmt.Sprintf("range=%t", selectedRange), func(t *testing.T) {
+						pattern := env.RegexpSearch("main.go", "Func")
+						rng := pattern.Range
+						if !selectedRange {
+							// assume the cursor is placed at the beginning of `Func`, so end==start.
+							rng.End = rng.Start
+						}
+						loc := protocol.Location{URI: pattern.URI, Range: rng}
+						actions := env.CodeAction0("main.go", loc, nil, triggerKindPtr)
+						want := triggerKind != protocol.CodeActionAutomatic || selectedRange
+						if got := slices.ContainsFunc(actions, func(act protocol.CodeAction) bool {
+							return act.Kind == protocol.RefactorInline
+						}); got != want {
+							t.Errorf("got refactor.inline = %t, want %t", got, want)
+						}
+					})
+				}
+			})
+		}
 	})
 }

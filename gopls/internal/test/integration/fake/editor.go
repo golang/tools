@@ -1559,6 +1559,10 @@ func (e *Editor) ChangeWorkspaceFolders(ctx context.Context, folders []string) e
 // CodeAction executes a codeAction request on the server.
 // If loc.Range is zero, the whole file is implied.
 func (e *Editor) CodeAction(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic) ([]protocol.CodeAction, error) {
+	return e.CodeAction0(ctx, loc, diagnostics, nil)
+}
+
+func (e *Editor) CodeAction0(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic, triggerKind *protocol.CodeActionTriggerKind) ([]protocol.CodeAction, error) {
 	if e.Server == nil {
 		return nil, nil
 	}
@@ -1573,6 +1577,7 @@ func (e *Editor) CodeAction(ctx context.Context, loc protocol.Location, diagnost
 		TextDocument: e.TextDocumentIdentifier(path),
 		Context: protocol.CodeActionContext{
 			Diagnostics: diagnostics,
+			TriggerKind: triggerKind,
 		},
 		Range: loc.Range, // may be zero
 	}

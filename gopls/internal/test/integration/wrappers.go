@@ -536,9 +536,13 @@ func (e *Env) AcceptCompletion(loc protocol.Location, item protocol.CompletionIt
 // CodeAction calls textDocument/codeAction for the given path, and calls
 // t.Fatal if there are errors.
 func (e *Env) CodeAction(path string, diagnostics []protocol.Diagnostic) []protocol.CodeAction {
-	e.T.Helper()
 	loc := protocol.Location{URI: e.Sandbox.Workdir.URI(path)} // no Range => whole file
-	actions, err := e.Editor.CodeAction(e.Ctx, loc, diagnostics)
+	return e.CodeAction0(path, loc, diagnostics, nil)
+}
+
+func (e *Env) CodeAction0(path string, loc protocol.Location, diagnostics []protocol.Diagnostic, triggerKind *protocol.CodeActionTriggerKind) []protocol.CodeAction {
+	e.T.Helper()
+	actions, err := e.Editor.CodeAction0(e.Ctx, loc, diagnostics, triggerKind)
 	if err != nil {
 		e.T.Fatal(err)
 	}

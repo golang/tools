@@ -28,7 +28,7 @@ import (
 
 // CodeActions returns all code actions (edits and other commands)
 // available for the selected range.
-func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, diagnostics []protocol.Diagnostic, want map[protocol.CodeActionKind]bool) (actions []protocol.CodeAction, _ error) {
+func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, diagnostics []protocol.Diagnostic, want map[protocol.CodeActionKind]bool, triggerKind protocol.CodeActionTriggerKind) (actions []protocol.CodeAction, _ error) {
 	// Only compute quick fixes if there are any diagnostics to fix.
 	wantQuickFixes := want[protocol.QuickFix] && len(diagnostics) > 0
 
@@ -138,7 +138,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 			actions = append(actions, rewrites...)
 		}
 
-		if want[protocol.RefactorInline] {
+		if want[protocol.RefactorInline] && (triggerKind != protocol.CodeActionAutomatic || rng.Start != rng.End) {
 			rewrites, err := getInlineCodeActions(pkg, pgf, rng, snapshot.Options())
 			if err != nil {
 				return nil, err
