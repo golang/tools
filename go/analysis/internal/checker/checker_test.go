@@ -68,10 +68,11 @@ func Foo() {
 }
 
 var renameAnalyzer = &analysis.Analyzer{
-	Name:     "rename",
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
-	Run:      run,
-	Doc:      "renames symbols named bar to baz",
+	Name:             "rename",
+	Requires:         []*analysis.Analyzer{inspect.Analyzer},
+	Run:              run,
+	Doc:              "renames symbols named bar to baz",
+	RunDespiteErrors: true,
 }
 
 var otherAnalyzer = &analysis.Analyzer{ // like analyzer but with a different Name.
@@ -140,13 +141,28 @@ func TestRunDespiteErrors(t *testing.T) {
 func Foo(s string) int {
 	return s + 1
 }
-`}
+`,
+		"cperr/test.go": `package copyerr
+
+import "sync"
+
+func bar() { } // for renameAnalyzer
+
+type T struct{ mu sync.Mutex }
+type T1 struct{ t *T }
+
+func NewT1() *T1 { return &T1{T} }
+`,
+	}
 
 	testdata, cleanup, err := analysistest.WriteFiles(files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(testdata, "src/rderr/test.go")
+	defer cleanup()
+
+	rderrFile := "file=" + filepath.Join(testdata, "src/rderr/test.go")
+	cperrFile := "file=" + filepath.Join(testdata, "src/cperr/test.go")
 
 	// A no-op analyzer that should finish regardless of
 	// parse or type errors in the code.
@@ -159,8 +175,8 @@ func Foo(s string) int {
 		RunDespiteErrors: true,
 	}
 
-	// A no-op analyzer that should finish regardless of
-	// parse or type errors in the code.
+	// A no-op analyzer, with facts, that should finish
+	// regardless of parse or type errors in the code.
 	noopWithFact := &analysis.Analyzer{
 		Name:     "noopfact",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
@@ -178,30 +194,34 @@ func Foo(s string) int {
 		code      int
 	}{
 		// parse/type errors
-		{name: "skip-error", pattern: []string{"file=" + path}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: 1},
+		{name: "skip-error", pattern: []string{rderrFile}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: 1},
 		// RunDespiteErrors allows a driver to run an Analyzer even after parse/type errors.
 		//
 		// The noop analyzer doesn't use facts, so the driver loads only the root
 		// package from source. For the rest, it asks 'go list' for export data,
 		// which fails because the compiler encounters the type error.  Since the
 		// errors come from 'go list', the driver doesn't run the analyzer.
-		{name: "despite-error", pattern: []string{"file=" + path}, analyzers: []*analysis.Analyzer{noop}, code: 1},
+		{name: "despite-error", pattern: []string{rderrFile}, analyzers: []*analysis.Analyzer{noop}, code: 1},
 		// The noopfact analyzer does use facts, so the driver loads source for
 		// all dependencies, does type checking itself, recognizes the error as a
 		// type error, and runs the analyzer.
-		{name: "despite-error-fact", pattern: []string{"file=" + path}, analyzers: []*analysis.Analyzer{noopWithFact}, code: 0},
+		{name: "despite-error-fact", pattern: []string{rderrFile}, analyzers: []*analysis.Analyzer{noopWithFact}, code: 1},
 		// combination of parse/type errors and no errors
-		{name: "despite-error-and-no-error", pattern: []string{"file=" + path, "sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
+		{name: "despite-error-and-no-error", pattern: []string{rderrFile, "sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
 		// non-existing package error
 		{name: "no-package", pattern: []string{"xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: 1},
 		{name: "no-package-despite-error", pattern: []string{"abc"}, analyzers: []*analysis.Analyzer{noop}, code: 1},
 		{name: "no-multi-package-despite-error", pattern: []string{"xyz", "abc"}, analyzers: []*analysis.Analyzer{noop}, code: 1},
 		// combination of type/parsing and different errors
-		{name: "different-errors", pattern: []string{"file=" + path, "xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
+		{name: "different-errors", pattern: []string{rderrFile, "xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
 		// non existing dir error
 		{name: "no-match-dir", pattern: []string{"file=non/existing/dir"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
 		// no errors
 		{name: "no-errors", pattern: []string{"sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 0},
+		// duplicate list error with no findings
+		{name: "list-error", pattern: []string{cperrFile}, analyzers: []*analysis.Analyzer{noop}, code: 1},
+		// duplicate list errors with findings (issue #67790)
+		{name: "list-error-findings", pattern: []string{cperrFile}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: 3},
 	} {
 		if test.name == "despite-error" && testenv.Go1Point() < 20 {
 			// The behavior in the comment on the despite-error test only occurs for Go 1.20+.
@@ -211,8 +231,6 @@ func Foo(s string) int {
 			t.Errorf("got incorrect exit code %d for test %s; want %d", got, test.name, test.code)
 		}
 	}
-
-	defer cleanup()
 }
 
 type EmptyFact struct{}
