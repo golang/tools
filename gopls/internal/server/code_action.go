@@ -109,7 +109,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		return actions, nil
 
 	case file.Go:
-		// diagnostic-associated code actions (problematic code)
+		// diagnostic-bundled code actions
 		//
 		// The diagnostics already have a UI presence (e.g. squiggly underline);
 		// the associated action may additionally show (in VS Code) as a lightbulb.
@@ -120,11 +120,13 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		if err != nil {
 			return nil, err
 		}
-		var triggerKind protocol.CodeActionTriggerKind
-		if k := params.Context.TriggerKind; k != nil {
-			triggerKind = *k
+
+		// computed code actions (may include quickfixes from diagnostics)
+		trigger := protocol.CodeActionUnknownTrigger
+		if k := params.Context.TriggerKind; k != nil { // (some clients omit it)
+			trigger = *k
 		}
-		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, want, triggerKind)
+		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, want, trigger)
 		if err != nil {
 			return nil, err
 		}

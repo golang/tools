@@ -933,7 +933,7 @@ func (e *Editor) Symbol(ctx context.Context, query string) ([]protocol.SymbolInf
 
 // OrganizeImports requests and performs the source.organizeImports codeAction.
 func (e *Editor) OrganizeImports(ctx context.Context, path string) error {
-	loc := protocol.Location{URI: e.sandbox.Workdir.URI(path)} // zero Range => whole file
+	loc := e.sandbox.Workdir.EntireFile(path)
 	_, err := e.applyCodeActions(ctx, loc, nil, protocol.SourceOrganizeImports)
 	return err
 }
@@ -1558,11 +1558,9 @@ func (e *Editor) ChangeWorkspaceFolders(ctx context.Context, folders []string) e
 
 // CodeAction executes a codeAction request on the server.
 // If loc.Range is zero, the whole file is implied.
-func (e *Editor) CodeAction(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic) ([]protocol.CodeAction, error) {
-	return e.CodeAction0(ctx, loc, diagnostics, nil)
-}
-
-func (e *Editor) CodeAction0(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic, triggerKind *protocol.CodeActionTriggerKind) ([]protocol.CodeAction, error) {
+// To reduce distraction, the trigger action (unknown, automatic, invoked)
+// may affect what actions are offered.
+func (e *Editor) CodeAction(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic, trigger protocol.CodeActionTriggerKind) ([]protocol.CodeAction, error) {
 	if e.Server == nil {
 		return nil, nil
 	}
@@ -1577,7 +1575,7 @@ func (e *Editor) CodeAction0(ctx context.Context, loc protocol.Location, diagnos
 		TextDocument: e.TextDocumentIdentifier(path),
 		Context: protocol.CodeActionContext{
 			Diagnostics: diagnostics,
-			TriggerKind: triggerKind,
+			TriggerKind: &trigger,
 		},
 		Range: loc.Range, // may be zero
 	}

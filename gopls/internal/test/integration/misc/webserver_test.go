@@ -198,7 +198,7 @@ func viewPkgDoc(t *testing.T, env *Env, filename string) protocol.URI {
 	// Invoke the "View package documentation" code
 	// action to start the server.
 	var docAction *protocol.CodeAction
-	actions := env.CodeAction(filename, nil)
+	actions := env.CodeActionForFile(filename, nil)
 	for _, act := range actions {
 		if act.Title == "View package documentation" {
 			docAction = &act
@@ -254,7 +254,7 @@ func f(buf bytes.Buffer, greeting string) {
 		// Invoke the "Show free symbols" code
 		// action to start the server.
 		loc := env.RegexpSearch("a/a.go", "«((?:.|\n)*)»")
-		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil)
+		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
 		if err != nil {
 			t.Fatalf("CodeAction: %v", err)
 		}

@@ -79,6 +79,11 @@ const (
 	GoFreeSymbols CodeActionKind = "source.freesymbols"
 )
 
+// CodeActionUnknownTrigger indicates that the trigger for a
+// CodeAction request is unknown. A missing
+// CodeActionContext.TriggerKind should be treated as equivalent.
+const CodeActionUnknownTrigger CodeActionTriggerKind = 0
+
 // A CodeLensSource identifies an (algorithmic) source of code lenses.
 type CodeLensSource string
 

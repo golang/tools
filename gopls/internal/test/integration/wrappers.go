@@ -207,7 +207,7 @@ func (e *Env) OrganizeImports(name string) {
 // ApplyQuickFixes processes the quickfix codeAction, calling t.Fatal on any error.
 func (e *Env) ApplyQuickFixes(path string, diagnostics []protocol.Diagnostic) {
 	e.T.Helper()
-	loc := protocol.Location{URI: e.Sandbox.Workdir.URI(path)} // zero Range => whole file
+	loc := e.Sandbox.Workdir.EntireFile(path)
 	if err := e.Editor.ApplyQuickFixes(e.Ctx, loc, diagnostics); err != nil {
 		e.T.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func (e *Env) ApplyCodeAction(action protocol.CodeAction) {
 // GetQuickFixes returns the available quick fix code actions.
 func (e *Env) GetQuickFixes(path string, diagnostics []protocol.Diagnostic) []protocol.CodeAction {
 	e.T.Helper()
-	loc := protocol.Location{URI: e.Sandbox.Workdir.URI(path)} // zero Range => whole file
+	loc := e.Sandbox.Workdir.EntireFile(path)
 	actions, err := e.Editor.GetQuickFixes(e.Ctx, loc, diagnostics)
 	if err != nil {
 		e.T.Fatal(err)
@@ -533,16 +533,17 @@ func (e *Env) AcceptCompletion(loc protocol.Location, item protocol.CompletionIt
 	}
 }
 
-// CodeAction calls textDocument/codeAction for the given path, and calls
-// t.Fatal if there are errors.
-func (e *Env) CodeAction(path string, diagnostics []protocol.Diagnostic) []protocol.CodeAction {
-	loc := protocol.Location{URI: e.Sandbox.Workdir.URI(path)} // no Range => whole file
-	return e.CodeAction0(path, loc, diagnostics, nil)
+// CodeActionForFile calls textDocument/codeAction for the entire
+// file, and calls t.Fatal if there were errors.
+func (e *Env) CodeActionForFile(path string, diagnostics []protocol.Diagnostic) []protocol.CodeAction {
+	return e.CodeAction(e.Sandbox.Workdir.EntireFile(path), diagnostics, protocol.CodeActionUnknownTrigger)
 }
 
-func (e *Env) CodeAction0(path string, loc protocol.Location, diagnostics []protocol.Diagnostic, triggerKind *protocol.CodeActionTriggerKind) []protocol.CodeAction {
+// CodeAction calls textDocument/codeAction for a selection,
+// and calls t.Fatal if there were errors.
+func (e *Env) CodeAction(loc protocol.Location, diagnostics []protocol.Diagnostic, trigger protocol.CodeActionTriggerKind) []protocol.CodeAction {
 	e.T.Helper()
-	actions, err := e.Editor.CodeAction0(e.Ctx, loc, diagnostics, triggerKind)
+	actions, err := e.Editor.CodeAction(e.Ctx, loc, diagnostics, trigger)
 	if err != nil {
 		e.T.Fatal(err)
 	}

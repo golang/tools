@@ -149,7 +149,7 @@ func main() {
 		env.OrganizeImports("main.go")
 
 		// Assert no quick fixes.
-		for _, act := range env.CodeAction("main.go", nil) {
+		for _, act := range env.CodeActionForFile("main.go", nil) {
 			if act.Kind == protocol.QuickFix {
 				t.Errorf("unexpected quick fix action: %#v", act)
 			}
@@ -187,7 +187,7 @@ func main() {
 		env.OrganizeImports("main.go")
 
 		// Assert no quick fixes.
-		for _, act := range env.CodeAction("main.go", nil) {
+		for _, act := range env.CodeActionForFile("main.go", nil) {
 			if act.Kind == protocol.QuickFix {
 				t.Errorf("unexpected quick-fix action: %#v", act)
 			}

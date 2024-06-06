@@ -519,7 +519,7 @@ func TestRunVulncheckPackageDiagnostics(t *testing.T) {
 		for pattern, want := range wantVulncheckDiagnostics {
 			modPathDiagnostics := testVulnDiagnostics(t, env, pattern, want, gotDiagnostics)
 
-			gotActions := env.CodeAction("go.mod", modPathDiagnostics)
+			gotActions := env.CodeActionForFile("go.mod", modPathDiagnostics)
 			if diff := diffCodeActions(gotActions, want.codeActions); diff != "" {
 				t.Errorf("code actions for %q do not match, got %v, want %v\n%v\n", pattern, gotActions, want.codeActions, diff)
 				continue
@@ -716,7 +716,7 @@ func TestRunVulncheckWarning(t *testing.T) {
 			modPathDiagnostics := testVulnDiagnostics(t, env, mod, want, gotDiagnostics)
 
 			// Check that the actions we get when including all diagnostics at a location return the same result
-			gotActions := env.CodeAction("go.mod", modPathDiagnostics)
+			gotActions := env.CodeActionForFile("go.mod", modPathDiagnostics)
 			if diff := diffCodeActions(gotActions, want.codeActions); diff != "" {
 				t.Errorf("code actions for %q do not match, expected %v, got %v\n%v\n", mod, want.codeActions, gotActions, diff)
 				continue
@@ -839,7 +839,7 @@ func TestGovulncheckInfo(t *testing.T) {
 		for mod, want := range wantDiagnostics {
 			modPathDiagnostics := testVulnDiagnostics(t, env, mod, want, gotDiagnostics)
 			// Check that the actions we get when including all diagnostics at a location return the same result
-			gotActions := env.CodeAction("go.mod", modPathDiagnostics)
+			gotActions := env.CodeActionForFile("go.mod", modPathDiagnostics)
 			allActions = append(allActions, gotActions...)
 			if diff := diffCodeActions(gotActions, want.codeActions); diff != "" {
 				t.Errorf("code actions for %q do not match, expected %v, got %v\n%v\n", mod, want.codeActions, gotActions, diff)
@@ -889,7 +889,7 @@ func testVulnDiagnostics(t *testing.T, env *Env, pattern string, want vulnDiagEx
 			t.Errorf("incorrect (severity, source) for %q, want (%s, %s) got (%s, %s)\n", w.msg, w.severity, w.source, diag.Severity, diag.Source)
 		}
 		// Check expected code actions appear.
-		gotActions := env.CodeAction("go.mod", []protocol.Diagnostic{*diag})
+		gotActions := env.CodeActionForFile("go.mod", []protocol.Diagnostic{*diag})
 		if diff := diffCodeActions(gotActions, w.codeActions); diff != "" {
 			t.Errorf("code actions for %q do not match, want %v, got %v\n%v\n", w.msg, w.codeActions, gotActions, diff)
 			continue

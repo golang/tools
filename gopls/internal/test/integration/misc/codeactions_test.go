@@ -40,7 +40,7 @@ func g() {}
 		check := func(filename string, wantKind ...protocol.CodeActionKind) {
 			env.OpenFile(filename)
 			loc := env.RegexpSearch(filename, `g\(\)`)
-			actions, err := env.Editor.CodeAction(env.Ctx, loc, nil)
+			actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -87,23 +87,21 @@ func Func() int { return 0 }
 
 	Run(t, "", func(t *testing.T, env *Env) {
 		env.CreateBuffer("main.go", vim1)
-		for _, triggerKind := range []protocol.CodeActionTriggerKind{0, protocol.CodeActionInvoked, protocol.CodeActionAutomatic} {
-			triggerKindPtr := &triggerKind
-			if triggerKind == 0 {
-				triggerKindPtr = nil
-			}
-			t.Run(fmt.Sprintf("trigger=%v", triggerKind), func(t *testing.T) {
+		for _, trigger := range []protocol.CodeActionTriggerKind{
+			protocol.CodeActionUnknownTrigger,
+			protocol.CodeActionInvoked,
+			protocol.CodeActionAutomatic,
+		} {
+			t.Run(fmt.Sprintf("trigger=%v", trigger), func(t *testing.T) {
 				for _, selectedRange := range []bool{false, true} {
 					t.Run(fmt.Sprintf("range=%t", selectedRange), func(t *testing.T) {
-						pattern := env.RegexpSearch("main.go", "Func")
-						rng := pattern.Range
+						loc := env.RegexpSearch("main.go", "Func")
 						if !selectedRange {
 							// assume the cursor is placed at the beginning of `Func`, so end==start.
-							rng.End = rng.Start
+							loc.Range.End = loc.Range.Start
 						}
-						loc := protocol.Location{URI: pattern.URI, Range: rng}
-						actions := env.CodeAction0("main.go", loc, nil, triggerKindPtr)
-						want := triggerKind != protocol.CodeActionAutomatic || selectedRange
+						actions := env.CodeAction(loc, nil, trigger)
+						want := trigger != protocol.CodeActionAutomatic || selectedRange
 						if got := slices.ContainsFunc(actions, func(act protocol.CodeAction) bool {
 							return act.Kind == protocol.RefactorInline
 						}); got != want {
