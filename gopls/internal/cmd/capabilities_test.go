@@ -48,7 +48,7 @@ func TestCapabilities(t *testing.T) {
 
 	// Send an initialize request to the server.
 	ctx := context.Background()
-	client := newClient(app, nil)
+	client := newClient(app)
 	options := settings.DefaultOptions(app.options)
 	server := server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
 	result, err := server.Initialize(ctx, params)

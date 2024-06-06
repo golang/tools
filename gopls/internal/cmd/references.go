@@ -43,7 +43,7 @@ func (r *references) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("references expects 1 argument (position)")
 	}
 
-	conn, err := r.app.connect(ctx, nil)
+	conn, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}

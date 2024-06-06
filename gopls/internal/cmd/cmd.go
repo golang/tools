@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -309,40 +310,31 @@ var (
 )
 
 // connect creates and initializes a new in-process gopls session.
-//
-// If onProgress is set, it is called for each new progress notification.
-func (app *Application) connect(ctx context.Context, onProgress func(*protocol.ProgressParams)) (*connection, error) {
-	switch {
-	case app.Remote == "":
-		client := newClient(app, onProgress)
+func (app *Application) connect(ctx context.Context) (*connection, error) {
+	client := newClient(app)
+	var svr protocol.Server
+	if app.Remote == "" {
+		// local
 		options := settings.DefaultOptions(app.options)
-		server := server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
-		conn := newConnection(server, client)
-		if err := conn.initialize(protocol.WithClient(ctx, client), app.options); err != nil {
+		svr = server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
+		ctx = protocol.WithClient(ctx, client)
+
+	} else {
+		// remote
+		netConn, err := lsprpc.ConnectToRemote(ctx, app.Remote)
+		if err != nil {
 			return nil, err
 		}
-		return conn, nil
-
-	default:
-		return app.connectRemote(ctx, app.Remote)
+		stream := jsonrpc2.NewHeaderStream(netConn)
+		jsonConn := jsonrpc2.NewConn(stream)
+		svr = protocol.ServerDispatcher(jsonConn)
+		ctx = protocol.WithClient(ctx, client)
+		jsonConn.Go(ctx,
+			protocol.Handlers(
+				protocol.ClientHandler(client, jsonrpc2.MethodNotFound)))
 	}
-}
-
-func (app *Application) connectRemote(ctx context.Context, remote string) (*connection, error) {
-	conn, err := lsprpc.ConnectToRemote(ctx, remote)
-	if err != nil {
-		return nil, err
-	}
-	stream := jsonrpc2.NewHeaderStream(conn)
-	cc := jsonrpc2.NewConn(stream)
-	server := protocol.ServerDispatcher(cc)
-	client := newClient(app, nil)
-	connection := newConnection(server, client)
-	ctx = protocol.WithClient(ctx, connection.client)
-	cc.Go(ctx,
-		protocol.Handlers(
-			protocol.ClientHandler(client, jsonrpc2.MethodNotFound)))
-	return connection, connection.initialize(ctx, app.options)
+	conn := newConnection(svr, client)
+	return conn, conn.initialize(ctx, app.options)
 }
 
 func (c *connection) initialize(ctx context.Context, options func(*settings.Options)) error {
@@ -368,12 +360,7 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
 	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = protocol.SemanticTypes()
 	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = protocol.SemanticModifiers()
-
-	// If the subcommand has registered a progress handler, report the progress
-	// capability.
-	if c.client.onProgress != nil {
-		params.Capabilities.Window.WorkDoneProgress = true
-	}
+	params.Capabilities.Window.WorkDoneProgress = true
 
 	params.InitializationOptions = map[string]interface{}{
 		"symbolMatcher": string(opts.SymbolMatcher),
@@ -392,10 +379,35 @@ type connection struct {
 	client *cmdClient
 }
 
+// registerProgressHandler registers a handler for progress notifications.
+// The caller must call unregister when the handler is no longer needed.
+func (cli *cmdClient) registerProgressHandler(handler func(*protocol.ProgressParams)) (token protocol.ProgressToken, unregister func()) {
+	token = fmt.Sprintf("tok%d", rand.Uint64())
+
+	// register
+	cli.progressHandlersMu.Lock()
+	if cli.progressHandlers == nil {
+		cli.progressHandlers = make(map[protocol.ProgressToken]func(*protocol.ProgressParams))
+	}
+	cli.progressHandlers[token] = handler
+	cli.progressHandlersMu.Unlock()
+
+	unregister = func() {
+		cli.progressHandlersMu.Lock()
+		delete(cli.progressHandlers, token)
+		cli.progressHandlersMu.Unlock()
+	}
+	return token, unregister
+}
+
 // cmdClient defines the protocol.Client interface behavior of the gopls CLI tool.
 type cmdClient struct {
-	app        *Application
-	onProgress func(*protocol.ProgressParams)
+	app *Application
+
+	progressHandlersMu sync.Mutex
+	progressHandlers   map[protocol.ProgressToken]func(*protocol.ProgressParams)
+	iwlToken           protocol.ProgressToken
+	iwlDone            chan struct{}
 
 	filesMu sync.Mutex // guards files map
 	files   map[protocol.DocumentURI]*cmdFile
@@ -409,11 +421,11 @@ type cmdFile struct {
 	diagnostics   []protocol.Diagnostic
 }
 
-func newClient(app *Application, onProgress func(*protocol.ProgressParams)) *cmdClient {
+func newClient(app *Application) *cmdClient {
 	return &cmdClient{
-		app:        app,
-		onProgress: onProgress,
-		files:      make(map[protocol.DocumentURI]*cmdFile),
+		app:     app,
+		files:   make(map[protocol.DocumentURI]*cmdFile),
+		iwlDone: make(chan struct{}),
 	}
 }
 
@@ -674,10 +686,41 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 }
 
 func (c *cmdClient) Progress(_ context.Context, params *protocol.ProgressParams) error {
-	if c.onProgress != nil {
-		c.onProgress(params)
+	token, ok := params.Token.(string)
+	if !ok {
+		return fmt.Errorf("unexpected progress token: %[1]T %[1]v", params.Token)
 	}
+
+	c.progressHandlersMu.Lock()
+	handler := c.progressHandlers[token]
+	c.progressHandlersMu.Unlock()
+	if handler == nil {
+		handler = c.defaultProgressHandler
+	}
+	handler(params)
 	return nil
+}
+
+// defaultProgressHandler is the default handler of progress messages,
+// used during the initialize request.
+func (c *cmdClient) defaultProgressHandler(params *protocol.ProgressParams) {
+	switch v := params.Value.(type) {
+	case *protocol.WorkDoneProgressBegin:
+		if v.Title == server.DiagnosticWorkTitle(server.FromInitialWorkspaceLoad) {
+			c.progressHandlersMu.Lock()
+			c.iwlToken = params.Token
+			c.progressHandlersMu.Unlock()
+		}
+
+	case *protocol.WorkDoneProgressEnd:
+		c.progressHandlersMu.Lock()
+		iwlToken := c.iwlToken
+		c.progressHandlersMu.Unlock()
+
+		if params.Token == iwlToken {
+			close(c.iwlDone)
+		}
+	}
 }
 
 func (c *cmdClient) ShowDocument(ctx context.Context, params *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
@@ -781,10 +824,7 @@ func (c *connection) diagnoseFiles(ctx context.Context, files []protocol.Documen
 	if err != nil {
 		return err
 	}
-	_, err = c.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
-		Command:   cmd.Command,
-		Arguments: cmd.Arguments,
-	})
+	_, err = c.executeCommand(ctx, &cmd)
 	return err
 }
 

@@ -16,13 +16,11 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
-	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"
 	bugpkg "golang.org/x/tools/gopls/internal/util/bug"
 	versionpkg "golang.org/x/tools/gopls/internal/version"
@@ -85,30 +83,6 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 		}
 		o.VerboseWorkDoneProgress = true
 	}
-	var (
-		iwlMu    sync.Mutex
-		iwlToken protocol.ProgressToken
-		iwlDone  = make(chan struct{})
-	)
-
-	onProgress := func(p *protocol.ProgressParams) {
-		switch v := p.Value.(type) {
-		case *protocol.WorkDoneProgressBegin:
-			if v.Title == server.DiagnosticWorkTitle(server.FromInitialWorkspaceLoad) {
-				iwlMu.Lock()
-				iwlToken = p.Token
-				iwlMu.Unlock()
-			}
-		case *protocol.WorkDoneProgressEnd:
-			iwlMu.Lock()
-			tok := iwlToken
-			iwlMu.Unlock()
-
-			if p.Token == tok {
-				close(iwlDone)
-			}
-		}
-	}
 
 	// do executes a timed section of the stats command.
 	do := func(name string, f func() error) (time.Duration, error) {
@@ -123,24 +97,24 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	}
 
 	var conn *connection
-	iwlDuration, err := do("Initializing workspace", func() error {
-		var err error
-		conn, err = s.app.connect(ctx, onProgress)
+	iwlDuration, err := do("Initializing workspace", func() (err error) {
+		conn, err = s.app.connect(ctx)
 		if err != nil {
 			return err
 		}
 		select {
-		case <-iwlDone:
+		case <-conn.client.iwlDone:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 		return nil
 	})
-	stats.InitialWorkspaceLoadDuration = fmt.Sprint(iwlDuration)
 	if err != nil {
 		return err
 	}
 	defer conn.terminate(ctx)
+
+	stats.InitialWorkspaceLoadDuration = fmt.Sprint(iwlDuration)
 
 	// Gather bug reports produced by any process using
 	// this executable and persisted in the cache.
@@ -153,7 +127,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	})
 
 	if _, err := do("Querying memstats", func() error {
-		memStats, err := conn.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
+		memStats, err := conn.executeCommand(ctx, &protocol.Command{
 			Command: command.MemStats.ID(),
 		})
 		if err != nil {
@@ -166,7 +140,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	}
 
 	if _, err := do("Querying workspace stats", func() error {
-		wsStats, err := conn.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
+		wsStats, err := conn.executeCommand(ctx, &protocol.Command{
 			Command: command.WorkspaceStats.ID(),
 		})
 		if err != nil {

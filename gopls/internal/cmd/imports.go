@@ -43,7 +43,7 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("imports expects 1 argument")
 	}
 	t.app.editFlags = &t.EditFlags
-	conn, err := t.app.connect(ctx, nil)
+	conn, err := t.app.connect(ctx)
 	if err != nil {
 		return err
 	}

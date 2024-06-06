@@ -83,10 +83,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 		opts.Codelenses[protocol.CodeLensTest] = true
 	}
 
-	// TODO(adonovan): cleanup: factor progress with stats subcommand.
-	cmdDone, onProgress := commandProgress()
-
-	conn, err := r.app.connect(ctx, onProgress)
+	conn, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
@@ -125,7 +122,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 
 		// -exec: run the first matching code lens.
 		if r.Exec {
-			_, err := conn.executeCommand(ctx, cmdDone, lens.Command)
+			_, err := conn.executeCommand(ctx, lens.Command)
 			return err
 		}
 

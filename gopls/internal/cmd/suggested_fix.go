@@ -75,7 +75,7 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("fix expects at least 1 argument")
 	}
 	s.app.editFlags = &s.EditFlags
-	conn, err := s.app.connect(ctx, nil)
+	conn, err := s.app.connect(ctx)
 	if err != nil {
 		return err
 	}
@@ -136,10 +136,7 @@ func (s *suggestedFix) Run(ctx context.Context, args ...string) error {
 		// This may cause the server to make
 		// an ApplyEdit downcall to the client.
 		if a.Command != nil {
-			if _, err := conn.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
-				Command:   a.Command.Command,
-				Arguments: a.Command.Arguments,
-			}); err != nil {
+			if _, err := conn.executeCommand(ctx, a.Command); err != nil {
 				return err
 			}
 			// The specification says that commands should

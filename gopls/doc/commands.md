@@ -534,6 +534,8 @@ Identifier: `gopls.run_govulncheck`
 
 Run vulnerability check (`govulncheck`).
 
+This command is asynchronous; clients must wait for the 'end' progress notification.
+
 Args:
 
 ```
@@ -559,6 +561,8 @@ Result:
 Identifier: `gopls.run_tests`
 
 Runs `go test` for a specific set of test or benchmark functions.
+
+This command is asynchronous; clients must wait for the 'end' progress notification.
 
 Args:
 
@@ -664,6 +668,13 @@ Result:
 Identifier: `gopls.test`
 
 Runs `go test` for a specific set of test or benchmark functions.
+
+This command is asynchronous; wait for the 'end' progress notification.
+
+This command is an alias for RunTests; the only difference
+is the form of the parameters.
+
+TODO(adonovan): eliminate it.
 
 Args:
 

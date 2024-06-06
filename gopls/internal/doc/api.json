@@ -1089,14 +1089,14 @@
 		{
 			"Command": "gopls.run_govulncheck",
 			"Title": "Run vulncheck",
-			"Doc": "Run vulnerability check (`govulncheck`).",
+			"Doc": "Run vulnerability check (`govulncheck`).\n\nThis command is asynchronous; clients must wait for the 'end' progress notification.",
 			"ArgDoc": "{\n\t// Any document in the directory from which govulncheck will run.\n\t\"URI\": string,\n\t// Package pattern. E.g. \"\", \".\", \"./...\".\n\t\"Pattern\": string,\n}",
 			"ResultDoc": "{\n\t// Token holds the progress token for LSP workDone reporting of the vulncheck\n\t// invocation.\n\t\"Token\": interface{},\n}"
 		},
 		{
 			"Command": "gopls.run_tests",
 			"Title": "Run test(s)",
-			"Doc": "Runs `go test` for a specific set of test or benchmark functions.",
+			"Doc": "Runs `go test` for a specific set of test or benchmark functions.\n\nThis command is asynchronous; clients must wait for the 'end' progress notification.",
 			"ArgDoc": "{\n\t// The test file containing the tests to run.\n\t\"URI\": string,\n\t// Specific test names to run, e.g. TestFoo.\n\t\"Tests\": []string,\n\t// Specific benchmarks to run, e.g. BenchmarkFoo.\n\t\"Benchmarks\": []string,\n}",
 			"ResultDoc": ""
 		},
@@ -1124,7 +1124,7 @@
 		{
 			"Command": "gopls.test",
 			"Title": "Run test(s) (legacy)",
-			"Doc": "Runs `go test` for a specific set of test or benchmark functions.",
+			"Doc": "Runs `go test` for a specific set of test or benchmark functions.\n\nThis command is asynchronous; wait for the 'end' progress notification.\n\nThis command is an alias for RunTests; the only difference\nis the form of the parameters.\n\nTODO(adonovan): eliminate it.",
 			"ArgDoc": "string,\n[]string,\n[]string",
 			"ResultDoc": ""
 		},

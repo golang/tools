@@ -42,7 +42,7 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 		return nil
 	}
 	c.app.editFlags = &c.EditFlags
-	conn, err := c.app.connect(ctx, nil)
+	conn, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}
