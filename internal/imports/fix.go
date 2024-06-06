@@ -564,6 +564,8 @@ func (p *pass) addCandidate(imp *ImportInfo, pkg *packageInfo) {
 //
 // This is declared as a variable rather than a function so goimports can
 // easily be extended by adding a file with an init function.
+//
+// DO NOT REMOVE: used internally at Google.
 var fixImports = fixImportsDefault
 
 func fixImportsDefault(fset *token.FileSet, f *ast.File, filename string, env *ProcessEnv) error {
