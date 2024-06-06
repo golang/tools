@@ -561,7 +561,12 @@ func (p *pass) addCandidate(imp *ImportInfo, pkg *packageInfo) {
 
 // fixImports adds and removes imports from f so that all its references are
 // satisfied and there are no unused imports.
-func fixImports(fset *token.FileSet, f *ast.File, filename string, env *ProcessEnv) error {
+//
+// This is declared as a variable rather than a function so goimports can
+// easily be extended by adding a file with an init function.
+var fixImports = fixImportsDefault
+
+func fixImportsDefault(fset *token.FileSet, f *ast.File, filename string, env *ProcessEnv) error {
 	fixes, err := getFixes(context.Background(), fset, f, filename, env)
 	if err != nil {
 		return err
