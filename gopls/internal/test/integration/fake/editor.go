@@ -391,9 +391,9 @@ func marshalUnmarshal[T any](v any) (T, error) {
 }
 
 // HasCommand reports whether the connected server supports the command with the given ID.
-func (e *Editor) HasCommand(id string) bool {
+func (e *Editor) HasCommand(cmd command.Command) bool {
 	for _, command := range e.serverCapabilities.ExecuteCommandProvider.Commands {
-		if command == id {
+		if command == cmd.String() {
 			return true
 		}
 	}

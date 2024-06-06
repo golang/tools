@@ -121,7 +121,7 @@ func TestFoo2(t *testing.T) {}
 			}
 			var result command.ListImportsResult
 			env.ExecuteCommand(&protocol.ExecuteCommandParams{
-				Command:   command.ListImports.ID(),
+				Command:   command.ListImports.String(),
 				Arguments: cmd.Arguments,
 			}, &result)
 			if diff := cmp.Diff(tt.want, result); diff != "" {

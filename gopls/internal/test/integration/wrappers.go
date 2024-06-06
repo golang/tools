@@ -355,13 +355,13 @@ func (e *Env) ExecuteCodeLensCommand(path string, cmd command.Command, result in
 	var lens protocol.CodeLens
 	var found bool
 	for _, l := range lenses {
-		if l.Command.Command == cmd.ID() {
+		if l.Command.Command == cmd.String() {
 			lens = l
 			found = true
 		}
 	}
 	if !found {
-		e.T.Fatalf("found no command with the ID %s", cmd.ID())
+		e.T.Fatalf("found no command with the ID %s", cmd)
 	}
 	e.ExecuteCommand(&protocol.ExecuteCommandParams{
 		Command:   lens.Command.Command,
@@ -421,7 +421,7 @@ func (e *Env) StartProfile() (stop func() string) {
 		e.T.Fatal(err)
 	}
 	params := &protocol.ExecuteCommandParams{
-		Command:   command.StartProfile.ID(),
+		Command:   command.StartProfile.String(),
 		Arguments: args,
 	}
 	var result command.StartProfileResult
@@ -433,7 +433,7 @@ func (e *Env) StartProfile() (stop func() string) {
 			e.T.Fatal(err)
 		}
 		stopParams := &protocol.ExecuteCommandParams{
-			Command:   command.StopProfile.ID(),
+			Command:   command.StopProfile.String(),
 			Arguments: stopArgs,
 		}
 		var result command.StopProfileResult

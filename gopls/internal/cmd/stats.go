@@ -128,7 +128,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 
 	if _, err := do("Querying memstats", func() error {
 		memStats, err := conn.executeCommand(ctx, &protocol.Command{
-			Command: command.MemStats.ID(),
+			Command: command.MemStats.String(),
 		})
 		if err != nil {
 			return err
@@ -141,7 +141,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 
 	if _, err := do("Querying workspace stats", func() error {
 		wsStats, err := conn.executeCommand(ctx, &protocol.Command{
-			Command: command.WorkspaceStats.ID(),
+			Command: command.WorkspaceStats.String(),
 		})
 		if err != nil {
 			return err

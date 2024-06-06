@@ -123,11 +123,11 @@ func addForwardedCounters(env *Env, names []string, values []int64) {
 	}
 	var res error
 	env.ExecuteCommand(&protocol.ExecuteCommandParams{
-		Command:   command.AddTelemetryCounters.ID(),
+		Command:   command.AddTelemetryCounters.String(),
 		Arguments: args,
 	}, &res)
 	if res != nil {
-		env.T.Errorf("%v failed - %v", command.AddTelemetryCounters.ID(), res)
+		env.T.Errorf("%v failed - %v", command.AddTelemetryCounters, res)
 	}
 }
 

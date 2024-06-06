@@ -57,10 +57,10 @@ func doIWL(b *testing.B, gopath string, repo *repo) {
 
 	env.Await(InitialWorkspaceLoad)
 
-	if env.Editor.HasCommand(command.MemStats.ID()) {
+	if env.Editor.HasCommand(command.MemStats) {
 		b.StopTimer()
 		params := &protocol.ExecuteCommandParams{
-			Command: command.MemStats.ID(),
+			Command: command.MemStats.String(),
 		}
 		var memstats command.MemStatsResult
 		env.ExecuteCommand(params, &memstats)

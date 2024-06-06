@@ -187,8 +187,7 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 		return err
 	}
 
-	enum := command.Command(strings.TrimPrefix(c.params.Command, "gopls."))
-	if enum.IsAsync() {
+	if enum := command.Command(c.params.Command); enum.IsAsync() {
 		if cfg.progress == "" {
 			log.Fatalf("asynchronous command %q does not enable progress reporting",
 				enum)

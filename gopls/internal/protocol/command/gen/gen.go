@@ -35,9 +35,11 @@ import (
 	{{end}}
 )
 
-// Symbolic names for gopls commands, excluding "gopls." prefix.
-// These commands may be requested by ExecuteCommand, CodeLens,
-// CodeAction, and other LSP requests.
+// Symbolic names for gopls commands, corresponding to methods of [Interface].
+//
+// The string value is used in the Command field of protocol.Command.
+// These commands may be obtained from a CodeLens or CodeAction request
+// and executed by an ExecuteCommand request.
 const (
 {{- range .Commands}}
 	{{.MethodName}} Command = "{{.Name}}"
@@ -51,9 +53,9 @@ var Commands = []Command {
 }
 
 func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (interface{}, error) {
-	switch params.Command {
+	switch Command(params.Command) {
 	{{- range .Commands}}
-	case "{{.ID}}":
+	case {{.MethodName}}:
 		{{- if .Args -}}
 			{{- range $i, $v := .Args}}
 		var a{{$i}} {{typeString $v.Type}}
@@ -76,7 +78,7 @@ func New{{.MethodName}}Command(title string, {{range $i, $v := .Args}}{{if $i}},
 	}
 	return protocol.Command{
 		Title: title,
-		Command: "{{.ID}}",
+		Command: {{.MethodName}}.String(),
 		Arguments: args,
 	}, nil
 }

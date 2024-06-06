@@ -288,7 +288,7 @@ func (s *SidecarServer) Connect(ctx context.Context) jsonrpc2.Conn {
 // the profile is written to a temp file that is deleted after the cpu_seconds
 // metric has been computed.
 func startProfileIfSupported(b *testing.B, env *integration.Env, name string) func() {
-	if !env.Editor.HasCommand(command.StartProfile.ID()) {
+	if !env.Editor.HasCommand(command.StartProfile) {
 		return nil
 	}
 	b.StopTimer()

@@ -151,7 +151,7 @@ func (c *startDebugging) Run(ctx context.Context, args ...string) error {
 		Addr: debugAddr,
 	}
 	var result command.DebuggingResult
-	if err := lsprpc.ExecuteCommand(ctx, remote, command.StartDebugging.ID(), debugArgs, &result); err != nil {
+	if err := lsprpc.ExecuteCommand(ctx, remote, command.StartDebugging.String(), debugArgs, &result); err != nil {
 		return err
 	}
 	if len(result.URLs) == 0 {

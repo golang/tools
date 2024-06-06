@@ -55,7 +55,7 @@ type EnumValue struct {
 }
 
 type Command struct {
-	Command   string
+	Command   string // e.g. "gopls.run_tests"
 	Title     string
 	Doc       string
 	ArgDoc    string

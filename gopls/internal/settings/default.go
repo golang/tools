@@ -27,7 +27,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 	optionsOnce.Do(func() {
 		var commands []string
 		for _, c := range command.Commands {
-			commands = append(commands, c.ID())
+			commands = append(commands, c.String())
 		}
 		defaultOptions = &Options{
 			ClientOptions: ClientOptions{

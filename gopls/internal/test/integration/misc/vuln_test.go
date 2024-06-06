@@ -41,7 +41,7 @@ package foo
 		}
 
 		params := &protocol.ExecuteCommandParams{
-			Command:   command.RunGovulncheck.ID(),
+			Command:   command.RunGovulncheck.String(),
 			Arguments: cmd.Arguments,
 		}
 

@@ -80,7 +80,7 @@ func startDebugging(ctx context.Context, server protocol.Server, args *command.D
 		return nil, err
 	}
 	res0, err := server.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
-		Command:   command.StartDebugging.ID(),
+		Command:   command.StartDebugging.String(),
 		Arguments: rawArgs,
 	})
 	if err != nil {

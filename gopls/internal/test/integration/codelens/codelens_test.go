@@ -54,7 +54,7 @@ const (
 		},
 		{
 			label:        "generate disabled",
-			enabled:      map[string]bool{string(command.Generate): false},
+			enabled:      map[string]bool{string(protocol.CodeLensGenerate): false},
 			wantCodeLens: false,
 		},
 	}

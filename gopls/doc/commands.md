@@ -3,8 +3,7 @@
 This document describes the LSP-level commands supported by `gopls`. They cannot be invoked directly by users, and all the details are subject to change, so nobody should rely on this information.
 
 <!-- BEGIN Commands: DO NOT MANUALLY EDIT THIS SECTION -->
-### **Add a dependency**
-Identifier: `gopls.add_dependency`
+## `gopls.add_dependency`: **Add a dependency**
 
 Adds a dependency to the go.mod file for a module.
 
@@ -21,8 +20,7 @@ Args:
 }
 ```
 
-### **Add an import**
-Identifier: `gopls.add_import`
+## `gopls.add_import`: **Add an import**
 
 Ask the server to add an import path to a given Go file.  The method will
 call applyEdit on the client so that clients don't have to apply the edit
@@ -41,8 +39,7 @@ Args:
 }
 ```
 
-### **Update the given telemetry counters**
-Identifier: `gopls.add_telemetry_counters`
+## `gopls.add_telemetry_counters`: **Update the given telemetry counters**
 
 Gopls will prepend "fwd/" to all the counters updated using this command
 to avoid conflicts with other counters gopls collects.
@@ -57,8 +54,7 @@ Args:
 }
 ```
 
-### **Apply a fix**
-Identifier: `gopls.apply_fix`
+## `gopls.apply_fix`: **Apply a fix**
 
 Applies a fix to a region of source code.
 
@@ -144,8 +140,7 @@ Result:
 }
 ```
 
-### **Perform a "change signature" refactoring**
-Identifier: `gopls.change_signature`
+## `gopls.change_signature`: **Perform a "change signature" refactoring**
 
 This command is experimental, currently only supporting parameter removal.
 Its signature will certainly change in the future (pun intended).
@@ -217,8 +212,7 @@ Result:
 }
 ```
 
-### **Check for upgrades**
-Identifier: `gopls.check_upgrades`
+## `gopls.check_upgrades`: **Check for upgrades**
 
 Checks for module upgrades.
 
@@ -233,8 +227,7 @@ Args:
 }
 ```
 
-### **Cause server to publish diagnostics for the specified files.**
-Identifier: `gopls.diagnose_files`
+## `gopls.diagnose_files`: **Cause server to publish diagnostics for the specified files.**
 
 This command is needed by the 'gopls {check,fix}' CLI subcommands.
 
@@ -246,8 +239,7 @@ Args:
 }
 ```
 
-### **View package documentation.**
-Identifier: `gopls.doc`
+## `gopls.doc`: **View package documentation.**
 
 Opens the Go package documentation page for the current
 package in a browser.
@@ -270,8 +262,7 @@ Args:
 }
 ```
 
-### **Run go mod edit -go=version**
-Identifier: `gopls.edit_go_directive`
+## `gopls.edit_go_directive`: **Run go mod edit -go=version**
 
 Runs `go mod edit -go=version` for a module.
 
@@ -286,8 +277,7 @@ Args:
 }
 ```
 
-### **Get known vulncheck result**
-Identifier: `gopls.fetch_vulncheck_result`
+## `gopls.fetch_vulncheck_result`: **Get known vulncheck result**
 
 Fetch the result of latest vulnerability check (`govulncheck`).
 
@@ -306,8 +296,7 @@ Result:
 map[golang.org/x/tools/gopls/internal/protocol.DocumentURI]*golang.org/x/tools/gopls/internal/vulncheck.Result
 ```
 
-### **report free symbols referenced by the selection.**
-Identifier: `gopls.free_symbols`
+## `gopls.free_symbols`: **report free symbols referenced by the selection.**
 
 This command is a query over a selected range of Go source
 code. It reports the set of "free" symbols of the
@@ -335,8 +324,7 @@ string,
 }
 ```
 
-### **Toggle gc_details**
-Identifier: `gopls.gc_details`
+## `gopls.gc_details`: **Toggle gc_details**
 
 Toggle the calculation of gc annotations.
 
@@ -346,8 +334,7 @@ Args:
 string
 ```
 
-### **Run go generate**
-Identifier: `gopls.generate`
+## `gopls.generate`: **Run go generate**
 
 Runs `go generate` for a given directory.
 
@@ -362,8 +349,7 @@ Args:
 }
 ```
 
-### **'go get' a package**
-Identifier: `gopls.go_get_package`
+## `gopls.go_get_package`: **'go get' a package**
 
 Runs `go get` to fetch a package.
 
@@ -379,8 +365,7 @@ Args:
 }
 ```
 
-### **List imports of a file and its package**
-Identifier: `gopls.list_imports`
+## `gopls.list_imports`: **List imports of a file and its package**
 
 Retrieve a list of imports in the given Go file, and the package it
 belongs to.
@@ -410,8 +395,7 @@ Result:
 }
 ```
 
-### **List known packages**
-Identifier: `gopls.list_known_packages`
+## `gopls.list_known_packages`: **List known packages**
 
 Retrieve a list of packages that are importable from the given URI.
 
@@ -437,15 +421,13 @@ Result:
 }
 ```
 
-### **Prompt user to enable telemetry**
-Identifier: `gopls.maybe_prompt_for_telemetry`
+## `gopls.maybe_prompt_for_telemetry`: **Prompt user to enable telemetry**
 
 Checks for the right conditions, and then prompts the user
 to ask if they want to enable Go telemetry uploading. If
 the user responds 'Yes', the telemetry mode is set to "on".
 
-### **Fetch memory statistics**
-Identifier: `gopls.mem_stats`
+## `gopls.mem_stats`: **Fetch memory statistics**
 
 Call runtime.GC multiple times and return memory statistics as reported by
 runtime.MemStats.
@@ -462,8 +444,7 @@ Result:
 }
 ```
 
-### **Regenerate cgo**
-Identifier: `gopls.regenerate_cgo`
+## `gopls.regenerate_cgo`: **Regenerate cgo**
 
 Regenerates cgo definitions.
 
@@ -476,8 +457,7 @@ Args:
 }
 ```
 
-### **Remove a dependency**
-Identifier: `gopls.remove_dependency`
+## `gopls.remove_dependency`: **Remove a dependency**
 
 Removes a dependency from the go.mod file of a module.
 
@@ -496,8 +476,7 @@ Args:
 }
 ```
 
-### **Reset go.mod diagnostics**
-Identifier: `gopls.reset_go_mod_diagnostics`
+## `gopls.reset_go_mod_diagnostics`: **Reset go.mod diagnostics**
 
 Reset diagnostics in the go.mod file of a module.
 
@@ -514,8 +493,7 @@ Args:
 }
 ```
 
-### **Run `go work [args...]`, and apply the resulting go.work**
-Identifier: `gopls.run_go_work_command`
+## `gopls.run_go_work_command`: **Run `go work [args...]`, and apply the resulting go.work**
 
 edits to the current go.work file
 
@@ -529,8 +507,7 @@ Args:
 }
 ```
 
-### **Run vulncheck**
-Identifier: `gopls.run_govulncheck`
+## `gopls.run_govulncheck`: **Run vulncheck**
 
 Run vulnerability check (`govulncheck`).
 
@@ -557,8 +534,7 @@ Result:
 }
 ```
 
-### **Run test(s)**
-Identifier: `gopls.run_tests`
+## `gopls.run_tests`: **Run test(s)**
 
 Runs `go test` for a specific set of test or benchmark functions.
 
@@ -577,8 +553,7 @@ Args:
 }
 ```
 
-### **Start the gopls debug server**
-Identifier: `gopls.start_debugging`
+## `gopls.start_debugging`: **Start the gopls debug server**
 
 Start the gopls debug server if it isn't running, and return the debug
 address.
@@ -622,8 +597,7 @@ Result:
 }
 ```
 
-### **Start capturing a profile of gopls' execution**
-Identifier: `gopls.start_profile`
+## `gopls.start_profile`: **Start capturing a profile of gopls' execution**
 
 Start a new pprof profile. Before using the resulting file, profiling must
 be stopped with a corresponding call to StopProfile.
@@ -643,8 +617,7 @@ Result:
 struct{}
 ```
 
-### **Stop an ongoing profile**
-Identifier: `gopls.stop_profile`
+## `gopls.stop_profile`: **Stop an ongoing profile**
 
 This command is intended for internal use only, by the gopls benchmark
 runner.
@@ -664,8 +637,7 @@ Result:
 }
 ```
 
-### **Run test(s) (legacy)**
-Identifier: `gopls.test`
+## `gopls.test`: **Run test(s) (legacy)**
 
 Runs `go test` for a specific set of test or benchmark functions.
 
@@ -684,8 +656,7 @@ string,
 []string
 ```
 
-### **Run go mod tidy**
-Identifier: `gopls.tidy`
+## `gopls.tidy`: **Run go mod tidy**
 
 Runs `go mod tidy` for a module.
 
@@ -698,8 +669,7 @@ Args:
 }
 ```
 
-### **Toggle gc_details**
-Identifier: `gopls.toggle_gc_details`
+## `gopls.toggle_gc_details`: **Toggle gc_details**
 
 Toggle the calculation of gc annotations.
 
@@ -712,8 +682,7 @@ Args:
 }
 ```
 
-### **Update go.sum**
-Identifier: `gopls.update_go_sum`
+## `gopls.update_go_sum`: **Update go.sum**
 
 Updates the go.sum file for a module.
 
@@ -726,8 +695,7 @@ Args:
 }
 ```
 
-### **Upgrade a dependency**
-Identifier: `gopls.upgrade_dependency`
+## `gopls.upgrade_dependency`: **Upgrade a dependency**
 
 Upgrades a dependency in the go.mod file for a module.
 
@@ -744,8 +712,7 @@ Args:
 }
 ```
 
-### **Run go mod vendor**
-Identifier: `gopls.vendor`
+## `gopls.vendor`: **Run go mod vendor**
 
 Runs `go mod vendor` for a module.
 
@@ -758,8 +725,7 @@ Args:
 }
 ```
 
-### **List current Views on the server.**
-Identifier: `gopls.views`
+## `gopls.views`: **List current Views on the server.**
 
 This command is intended for use by gopls tests only.
 
@@ -775,8 +741,7 @@ Result:
 }
 ```
 
-### **Fetch workspace statistics**
-Identifier: `gopls.workspace_stats`
+## `gopls.workspace_stats`: **Fetch workspace statistics**
 
 Query statistics about workspace builds, modules, packages, and files.
 

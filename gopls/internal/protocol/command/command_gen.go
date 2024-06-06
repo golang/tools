@@ -18,45 +18,47 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
-// Symbolic names for gopls commands, excluding "gopls." prefix.
-// These commands may be requested by ExecuteCommand, CodeLens,
-// CodeAction, and other LSP requests.
+// Symbolic names for gopls commands, corresponding to methods of [Interface].
+//
+// The string value is used in the Command field of protocol.Command.
+// These commands may be obtained from a CodeLens or CodeAction request
+// and executed by an ExecuteCommand request.
 const (
-	AddDependency           Command = "add_dependency"
-	AddImport               Command = "add_import"
-	AddTelemetryCounters    Command = "add_telemetry_counters"
-	ApplyFix                Command = "apply_fix"
-	ChangeSignature         Command = "change_signature"
-	CheckUpgrades           Command = "check_upgrades"
-	DiagnoseFiles           Command = "diagnose_files"
-	Doc                     Command = "doc"
-	EditGoDirective         Command = "edit_go_directive"
-	FetchVulncheckResult    Command = "fetch_vulncheck_result"
-	FreeSymbols             Command = "free_symbols"
-	GCDetails               Command = "gc_details"
-	Generate                Command = "generate"
-	GoGetPackage            Command = "go_get_package"
-	ListImports             Command = "list_imports"
-	ListKnownPackages       Command = "list_known_packages"
-	MaybePromptForTelemetry Command = "maybe_prompt_for_telemetry"
-	MemStats                Command = "mem_stats"
-	RegenerateCgo           Command = "regenerate_cgo"
-	RemoveDependency        Command = "remove_dependency"
-	ResetGoModDiagnostics   Command = "reset_go_mod_diagnostics"
-	RunGoWorkCommand        Command = "run_go_work_command"
-	RunGovulncheck          Command = "run_govulncheck"
-	RunTests                Command = "run_tests"
-	StartDebugging          Command = "start_debugging"
-	StartProfile            Command = "start_profile"
-	StopProfile             Command = "stop_profile"
-	Test                    Command = "test"
-	Tidy                    Command = "tidy"
-	ToggleGCDetails         Command = "toggle_gc_details"
-	UpdateGoSum             Command = "update_go_sum"
-	UpgradeDependency       Command = "upgrade_dependency"
-	Vendor                  Command = "vendor"
-	Views                   Command = "views"
-	WorkspaceStats          Command = "workspace_stats"
+	AddDependency           Command = "gopls.add_dependency"
+	AddImport               Command = "gopls.add_import"
+	AddTelemetryCounters    Command = "gopls.add_telemetry_counters"
+	ApplyFix                Command = "gopls.apply_fix"
+	ChangeSignature         Command = "gopls.change_signature"
+	CheckUpgrades           Command = "gopls.check_upgrades"
+	DiagnoseFiles           Command = "gopls.diagnose_files"
+	Doc                     Command = "gopls.doc"
+	EditGoDirective         Command = "gopls.edit_go_directive"
+	FetchVulncheckResult    Command = "gopls.fetch_vulncheck_result"
+	FreeSymbols             Command = "gopls.free_symbols"
+	GCDetails               Command = "gopls.gc_details"
+	Generate                Command = "gopls.generate"
+	GoGetPackage            Command = "gopls.go_get_package"
+	ListImports             Command = "gopls.list_imports"
+	ListKnownPackages       Command = "gopls.list_known_packages"
+	MaybePromptForTelemetry Command = "gopls.maybe_prompt_for_telemetry"
+	MemStats                Command = "gopls.mem_stats"
+	RegenerateCgo           Command = "gopls.regenerate_cgo"
+	RemoveDependency        Command = "gopls.remove_dependency"
+	ResetGoModDiagnostics   Command = "gopls.reset_go_mod_diagnostics"
+	RunGoWorkCommand        Command = "gopls.run_go_work_command"
+	RunGovulncheck          Command = "gopls.run_govulncheck"
+	RunTests                Command = "gopls.run_tests"
+	StartDebugging          Command = "gopls.start_debugging"
+	StartProfile            Command = "gopls.start_profile"
+	StopProfile             Command = "gopls.stop_profile"
+	Test                    Command = "gopls.test"
+	Tidy                    Command = "gopls.tidy"
+	ToggleGCDetails         Command = "gopls.toggle_gc_details"
+	UpdateGoSum             Command = "gopls.update_go_sum"
+	UpgradeDependency       Command = "gopls.upgrade_dependency"
+	Vendor                  Command = "gopls.vendor"
+	Views                   Command = "gopls.views"
+	WorkspaceStats          Command = "gopls.workspace_stats"
 )
 
 var Commands = []Command{
@@ -98,163 +100,163 @@ var Commands = []Command{
 }
 
 func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (interface{}, error) {
-	switch params.Command {
-	case "gopls.add_dependency":
+	switch Command(params.Command) {
+	case AddDependency:
 		var a0 DependencyArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.AddDependency(ctx, a0)
-	case "gopls.add_import":
+	case AddImport:
 		var a0 AddImportArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.AddImport(ctx, a0)
-	case "gopls.add_telemetry_counters":
+	case AddTelemetryCounters:
 		var a0 AddTelemetryCountersArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.AddTelemetryCounters(ctx, a0)
-	case "gopls.apply_fix":
+	case ApplyFix:
 		var a0 ApplyFixArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return s.ApplyFix(ctx, a0)
-	case "gopls.change_signature":
+	case ChangeSignature:
 		var a0 ChangeSignatureArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return s.ChangeSignature(ctx, a0)
-	case "gopls.check_upgrades":
+	case CheckUpgrades:
 		var a0 CheckUpgradesArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.CheckUpgrades(ctx, a0)
-	case "gopls.diagnose_files":
+	case DiagnoseFiles:
 		var a0 DiagnoseFilesArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.DiagnoseFiles(ctx, a0)
-	case "gopls.doc":
+	case Doc:
 		var a0 protocol.Location
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.Doc(ctx, a0)
-	case "gopls.edit_go_directive":
+	case EditGoDirective:
 		var a0 EditGoDirectiveArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.EditGoDirective(ctx, a0)
-	case "gopls.fetch_vulncheck_result":
+	case FetchVulncheckResult:
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return s.FetchVulncheckResult(ctx, a0)
-	case "gopls.free_symbols":
+	case FreeSymbols:
 		var a0 protocol.DocumentURI
 		var a1 protocol.Range
 		if err := UnmarshalArgs(params.Arguments, &a0, &a1); err != nil {
 			return nil, err
 		}
 		return nil, s.FreeSymbols(ctx, a0, a1)
-	case "gopls.gc_details":
+	case GCDetails:
 		var a0 protocol.DocumentURI
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.GCDetails(ctx, a0)
-	case "gopls.generate":
+	case Generate:
 		var a0 GenerateArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.Generate(ctx, a0)
-	case "gopls.go_get_package":
+	case GoGetPackage:
 		var a0 GoGetPackageArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.GoGetPackage(ctx, a0)
-	case "gopls.list_imports":
+	case ListImports:
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return s.ListImports(ctx, a0)
-	case "gopls.list_known_packages":
+	case ListKnownPackages:
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return s.ListKnownPackages(ctx, a0)
-	case "gopls.maybe_prompt_for_telemetry":
+	case MaybePromptForTelemetry:
 		return nil, s.MaybePromptForTelemetry(ctx)
-	case "gopls.mem_stats":
+	case MemStats:
 		return s.MemStats(ctx)
-	case "gopls.regenerate_cgo":
+	case RegenerateCgo:
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.RegenerateCgo(ctx, a0)
-	case "gopls.remove_dependency":
+	case RemoveDependency:
 		var a0 RemoveDependencyArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.RemoveDependency(ctx, a0)
-	case "gopls.reset_go_mod_diagnostics":
+	case ResetGoModDiagnostics:
 		var a0 ResetGoModDiagnosticsArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.ResetGoModDiagnostics(ctx, a0)
-	case "gopls.run_go_work_command":
+	case RunGoWorkCommand:
 		var a0 RunGoWorkArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.RunGoWorkCommand(ctx, a0)
-	case "gopls.run_govulncheck":
+	case RunGovulncheck:
 		var a0 VulncheckArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return s.RunGovulncheck(ctx, a0)
-	case "gopls.run_tests":
+	case RunTests:
 		var a0 RunTestsArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.RunTests(ctx, a0)
-	case "gopls.start_debugging":
+	case StartDebugging:
 		var a0 DebuggingArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return s.StartDebugging(ctx, a0)
-	case "gopls.start_profile":
+	case StartProfile:
 		var a0 StartProfileArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return s.StartProfile(ctx, a0)
-	case "gopls.stop_profile":
+	case StopProfile:
 		var a0 StopProfileArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return s.StopProfile(ctx, a0)
-	case "gopls.test":
+	case Test:
 		var a0 protocol.DocumentURI
 		var a1 []string
 		var a2 []string
@@ -262,39 +264,39 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.Test(ctx, a0, a1, a2)
-	case "gopls.tidy":
+	case Tidy:
 		var a0 URIArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.Tidy(ctx, a0)
-	case "gopls.toggle_gc_details":
+	case ToggleGCDetails:
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.ToggleGCDetails(ctx, a0)
-	case "gopls.update_go_sum":
+	case UpdateGoSum:
 		var a0 URIArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.UpdateGoSum(ctx, a0)
-	case "gopls.upgrade_dependency":
+	case UpgradeDependency:
 		var a0 DependencyArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.UpgradeDependency(ctx, a0)
-	case "gopls.vendor":
+	case Vendor:
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
 		return nil, s.Vendor(ctx, a0)
-	case "gopls.views":
+	case Views:
 		return s.Views(ctx)
-	case "gopls.workspace_stats":
+	case WorkspaceStats:
 		return s.WorkspaceStats(ctx)
 	}
 	return nil, fmt.Errorf("unsupported command %q", params.Command)
@@ -307,7 +309,7 @@ func NewAddDependencyCommand(title string, a0 DependencyArgs) (protocol.Command,
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.add_dependency",
+		Command:   AddDependency.String(),
 		Arguments: args,
 	}, nil
 }
@@ -319,7 +321,7 @@ func NewAddImportCommand(title string, a0 AddImportArgs) (protocol.Command, erro
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.add_import",
+		Command:   AddImport.String(),
 		Arguments: args,
 	}, nil
 }
@@ -331,7 +333,7 @@ func NewAddTelemetryCountersCommand(title string, a0 AddTelemetryCountersArgs) (
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.add_telemetry_counters",
+		Command:   AddTelemetryCounters.String(),
 		Arguments: args,
 	}, nil
 }
@@ -343,7 +345,7 @@ func NewApplyFixCommand(title string, a0 ApplyFixArgs) (protocol.Command, error)
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.apply_fix",
+		Command:   ApplyFix.String(),
 		Arguments: args,
 	}, nil
 }
@@ -355,7 +357,7 @@ func NewChangeSignatureCommand(title string, a0 ChangeSignatureArgs) (protocol.C
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.change_signature",
+		Command:   ChangeSignature.String(),
 		Arguments: args,
 	}, nil
 }
@@ -367,7 +369,7 @@ func NewCheckUpgradesCommand(title string, a0 CheckUpgradesArgs) (protocol.Comma
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.check_upgrades",
+		Command:   CheckUpgrades.String(),
 		Arguments: args,
 	}, nil
 }
@@ -379,7 +381,7 @@ func NewDiagnoseFilesCommand(title string, a0 DiagnoseFilesArgs) (protocol.Comma
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.diagnose_files",
+		Command:   DiagnoseFiles.String(),
 		Arguments: args,
 	}, nil
 }
@@ -391,7 +393,7 @@ func NewDocCommand(title string, a0 protocol.Location) (protocol.Command, error)
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.doc",
+		Command:   Doc.String(),
 		Arguments: args,
 	}, nil
 }
@@ -403,7 +405,7 @@ func NewEditGoDirectiveCommand(title string, a0 EditGoDirectiveArgs) (protocol.C
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.edit_go_directive",
+		Command:   EditGoDirective.String(),
 		Arguments: args,
 	}, nil
 }
@@ -415,7 +417,7 @@ func NewFetchVulncheckResultCommand(title string, a0 URIArg) (protocol.Command, 
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.fetch_vulncheck_result",
+		Command:   FetchVulncheckResult.String(),
 		Arguments: args,
 	}, nil
 }
@@ -427,7 +429,7 @@ func NewFreeSymbolsCommand(title string, a0 protocol.DocumentURI, a1 protocol.Ra
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.free_symbols",
+		Command:   FreeSymbols.String(),
 		Arguments: args,
 	}, nil
 }
@@ -439,7 +441,7 @@ func NewGCDetailsCommand(title string, a0 protocol.DocumentURI) (protocol.Comman
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.gc_details",
+		Command:   GCDetails.String(),
 		Arguments: args,
 	}, nil
 }
@@ -451,7 +453,7 @@ func NewGenerateCommand(title string, a0 GenerateArgs) (protocol.Command, error)
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.generate",
+		Command:   Generate.String(),
 		Arguments: args,
 	}, nil
 }
@@ -463,7 +465,7 @@ func NewGoGetPackageCommand(title string, a0 GoGetPackageArgs) (protocol.Command
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.go_get_package",
+		Command:   GoGetPackage.String(),
 		Arguments: args,
 	}, nil
 }
@@ -475,7 +477,7 @@ func NewListImportsCommand(title string, a0 URIArg) (protocol.Command, error) {
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.list_imports",
+		Command:   ListImports.String(),
 		Arguments: args,
 	}, nil
 }
@@ -487,7 +489,7 @@ func NewListKnownPackagesCommand(title string, a0 URIArg) (protocol.Command, err
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.list_known_packages",
+		Command:   ListKnownPackages.String(),
 		Arguments: args,
 	}, nil
 }
@@ -499,7 +501,7 @@ func NewMaybePromptForTelemetryCommand(title string) (protocol.Command, error) {
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.maybe_prompt_for_telemetry",
+		Command:   MaybePromptForTelemetry.String(),
 		Arguments: args,
 	}, nil
 }
@@ -511,7 +513,7 @@ func NewMemStatsCommand(title string) (protocol.Command, error) {
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.mem_stats",
+		Command:   MemStats.String(),
 		Arguments: args,
 	}, nil
 }
@@ -523,7 +525,7 @@ func NewRegenerateCgoCommand(title string, a0 URIArg) (protocol.Command, error) 
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.regenerate_cgo",
+		Command:   RegenerateCgo.String(),
 		Arguments: args,
 	}, nil
 }
@@ -535,7 +537,7 @@ func NewRemoveDependencyCommand(title string, a0 RemoveDependencyArgs) (protocol
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.remove_dependency",
+		Command:   RemoveDependency.String(),
 		Arguments: args,
 	}, nil
 }
@@ -547,7 +549,7 @@ func NewResetGoModDiagnosticsCommand(title string, a0 ResetGoModDiagnosticsArgs)
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.reset_go_mod_diagnostics",
+		Command:   ResetGoModDiagnostics.String(),
 		Arguments: args,
 	}, nil
 }
@@ -559,7 +561,7 @@ func NewRunGoWorkCommandCommand(title string, a0 RunGoWorkArgs) (protocol.Comman
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.run_go_work_command",
+		Command:   RunGoWorkCommand.String(),
 		Arguments: args,
 	}, nil
 }
@@ -571,7 +573,7 @@ func NewRunGovulncheckCommand(title string, a0 VulncheckArgs) (protocol.Command,
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.run_govulncheck",
+		Command:   RunGovulncheck.String(),
 		Arguments: args,
 	}, nil
 }
@@ -583,7 +585,7 @@ func NewRunTestsCommand(title string, a0 RunTestsArgs) (protocol.Command, error)
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.run_tests",
+		Command:   RunTests.String(),
 		Arguments: args,
 	}, nil
 }
@@ -595,7 +597,7 @@ func NewStartDebuggingCommand(title string, a0 DebuggingArgs) (protocol.Command,
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.start_debugging",
+		Command:   StartDebugging.String(),
 		Arguments: args,
 	}, nil
 }
@@ -607,7 +609,7 @@ func NewStartProfileCommand(title string, a0 StartProfileArgs) (protocol.Command
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.start_profile",
+		Command:   StartProfile.String(),
 		Arguments: args,
 	}, nil
 }
@@ -619,7 +621,7 @@ func NewStopProfileCommand(title string, a0 StopProfileArgs) (protocol.Command, 
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.stop_profile",
+		Command:   StopProfile.String(),
 		Arguments: args,
 	}, nil
 }
@@ -631,7 +633,7 @@ func NewTestCommand(title string, a0 protocol.DocumentURI, a1 []string, a2 []str
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.test",
+		Command:   Test.String(),
 		Arguments: args,
 	}, nil
 }
@@ -643,7 +645,7 @@ func NewTidyCommand(title string, a0 URIArgs) (protocol.Command, error) {
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.tidy",
+		Command:   Tidy.String(),
 		Arguments: args,
 	}, nil
 }
@@ -655,7 +657,7 @@ func NewToggleGCDetailsCommand(title string, a0 URIArg) (protocol.Command, error
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.toggle_gc_details",
+		Command:   ToggleGCDetails.String(),
 		Arguments: args,
 	}, nil
 }
@@ -667,7 +669,7 @@ func NewUpdateGoSumCommand(title string, a0 URIArgs) (protocol.Command, error) {
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.update_go_sum",
+		Command:   UpdateGoSum.String(),
 		Arguments: args,
 	}, nil
 }
@@ -679,7 +681,7 @@ func NewUpgradeDependencyCommand(title string, a0 DependencyArgs) (protocol.Comm
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.upgrade_dependency",
+		Command:   UpgradeDependency.String(),
 		Arguments: args,
 	}, nil
 }
@@ -691,7 +693,7 @@ func NewVendorCommand(title string, a0 URIArg) (protocol.Command, error) {
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.vendor",
+		Command:   Vendor.String(),
 		Arguments: args,
 	}, nil
 }
@@ -703,7 +705,7 @@ func NewViewsCommand(title string) (protocol.Command, error) {
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.views",
+		Command:   Views.String(),
 		Arguments: args,
 	}, nil
 }
@@ -715,7 +717,7 @@ func NewWorkspaceStatsCommand(title string) (protocol.Command, error) {
 	}
 	return protocol.Command{
 		Title:     title,
-		Command:   "gopls.workspace_stats",
+		Command:   WorkspaceStats.String(),
 		Arguments: args,
 	}, nil
 }

@@ -23,18 +23,13 @@ import (
 
 // A Command describes a workspace/executeCommand extension command.
 type Command struct {
-	MethodName string
-	Name       string
-	// TODO(rFindley): I think Title can actually be eliminated. In all cases
-	// where we use it, there is probably a more appropriate contextual title.
-	Title  string
-	Doc    string
-	Args   []*Field
-	Result *Field
+	MethodName string // e.g. "RunTests"
+	Name       string // e.g. "gopls.run_tests"
+	Title      string
+	Doc        string
+	Args       []*Field
+	Result     *Field
 }
-
-// (used by the ../command/gen template)
-func (c *Command) ID() string { return "gopls." + c.Name }
 
 type Field struct {
 	Name     string
@@ -208,7 +203,7 @@ func lspName(methodName string) string {
 	for i := range words {
 		words[i] = strings.ToLower(words[i])
 	}
-	return strings.Join(words, "_")
+	return "gopls." + strings.Join(words, "_")
 }
 
 // splitCamel splits s into words, according to camel-case word boundaries.

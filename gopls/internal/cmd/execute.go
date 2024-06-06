@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
@@ -58,7 +57,7 @@ func (e *execute) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("execute requires a command name")
 	}
 	cmd := args[0]
-	if !slices.Contains(command.Commands, command.Command(strings.TrimPrefix(cmd, "gopls."))) {
+	if !slices.Contains(command.Commands, command.Command(cmd)) {
 		return tool.CommandLineErrorf("unrecognized command: %s", cmd)
 	}
 
@@ -127,8 +126,7 @@ func (conn *connection) executeCommand(ctx context.Context, cmd *protocol.Comman
 
 	// Some commands are asynchronous, so clients
 	// must wait for the "end" progress notification.
-	enum := command.Command(strings.TrimPrefix(cmd.Command, "gopls."))
-	if enum.IsAsync() {
+	if command.Command(cmd.Command).IsAsync() {
 		status := <-endStatus
 		if status != server.CommandCompleted {
 			return nil, fmt.Errorf("command %s", status)

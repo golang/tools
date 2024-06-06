@@ -29,9 +29,8 @@ import (
 //  1. All method arguments must be JSON serializable.
 //  2. Methods must return either error or (T, error), where T is a
 //     JSON serializable type.
-//  3. The first line of the doc string is special. Everything after the colon
-//     is considered the command 'Title'.
-//     TODO(rFindley): reconsider this -- Title may be unnecessary.
+//  3. The first line of the doc string is special.
+//     Everything after the colon is considered the command 'Title'.
 //
 // The doc comment on each method is eventually published at
 // https://github.com/golang/tools/blob/master/gopls/doc/commands.md,

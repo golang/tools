@@ -40,7 +40,6 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/protocol/command/commandmeta"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/maps"
@@ -170,10 +169,6 @@ func loadAPI() (*doc.API, error) {
 		return nil, err
 	}
 
-	// Transform the internal command name to the external command name.
-	for _, c := range api.Commands {
-		c.Command = command.ID(c.Command)
-	}
 	api.Hints = loadHints(golang.AllInlayHints)
 	for _, category := range []reflect.Value{
 		reflect.ValueOf(defaults.UserOptions),
@@ -707,8 +702,6 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 				fmt.Fprintf(&buf, "<a id='%s'></a>\n", opt.Name)
 
 				// heading
-				// (The blob helps the reader see the start of each item,
-				// which is otherwise hard to discern in GitHub markdown.)
 				//
 				// TODO(adonovan): We should display not the Go type (e.g.
 				// `time.Duration`, `map[Enum]bool`) for each setting,
@@ -720,7 +713,7 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 				//
 				// We do not display the undocumented dotted-path alias
 				// (h.title + "." + opt.Name) used by VS Code only.
-				fmt.Fprintf(&buf, "### ⬤ `%s` *%v*\n\n", opt.Name, opt.Type)
+				fmt.Fprintf(&buf, "### `%s` *%v*\n\n", opt.Name, opt.Type)
 
 				// status
 				switch opt.Status {
@@ -848,7 +841,7 @@ func capitalize(s string) string {
 func rewriteCodeLenses(prevContent []byte, api *doc.API) ([]byte, error) {
 	var buf bytes.Buffer
 	for _, lens := range api.Lenses {
-		fmt.Fprintf(&buf, "## ⬤ `%s`: %s\n\n", lens.Lens, lens.Title)
+		fmt.Fprintf(&buf, "## `%s`: %s\n\n", lens.Lens, lens.Title)
 		fmt.Fprintf(&buf, "%s\n\n", lens.Doc)
 		fmt.Fprintf(&buf, "Default: %v\n\n", onOff(lens.Default))
 		fmt.Fprintf(&buf, "File type: %s\n\n", lens.FileType)
@@ -859,7 +852,7 @@ func rewriteCodeLenses(prevContent []byte, api *doc.API) ([]byte, error) {
 func rewriteCommands(prevContent []byte, api *doc.API) ([]byte, error) {
 	var buf bytes.Buffer
 	for _, command := range api.Commands {
-		fmt.Fprintf(&buf, "### **%v**\nIdentifier: `%v`\n\n%v\n\n", command.Title, command.Command, command.Doc)
+		fmt.Fprintf(&buf, "## `%s`: **%s**\n\n%v\n\n", command.Command, command.Title, command.Doc)
 		if command.ArgDoc != "" {
 			fmt.Fprintf(&buf, "Args:\n\n```\n%s\n```\n\n", command.ArgDoc)
 		}

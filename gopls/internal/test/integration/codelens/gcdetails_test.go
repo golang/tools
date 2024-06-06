@@ -101,7 +101,7 @@ go 1.12
 		hasGCDetails := func() bool {
 			lenses := env.CodeLens("p_test.go") // should not crash
 			for _, lens := range lenses {
-				if lens.Command.Command == command.GCDetails.ID() {
+				if lens.Command.Command == command.GCDetails.String() {
 					return true
 				}
 			}

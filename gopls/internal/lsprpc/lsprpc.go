@@ -290,7 +290,7 @@ func (f *forwarder) handler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 		case "workspace/executeCommand":
 			var params protocol.ExecuteCommandParams
 			if err := json.Unmarshal(r.Params(), &params); err == nil {
-				if params.Command == command.StartDebugging.ID() {
+				if params.Command == command.StartDebugging.String() {
 					var args command.DebuggingArgs
 					if err := command.UnmarshalArgs(params.Arguments, &args); err == nil {
 						reply = f.replyWithDebugAddress(ctx, reply, args)

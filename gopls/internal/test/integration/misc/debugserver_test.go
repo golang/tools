@@ -23,7 +23,7 @@ func TestStartDebugging(t *testing.T) {
 			t.Fatal(err)
 		}
 		params := &protocol.ExecuteCommandParams{
-			Command:   command.StartDebugging.ID(),
+			Command:   command.StartDebugging.String(),
 			Arguments: args,
 		}
 		var result command.DebuggingResult
