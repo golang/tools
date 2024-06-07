@@ -17,7 +17,6 @@ package golang
 // - list promoted methods---we have type information!
 // - gather Example tests, following go/doc and pkgsite.
 // - add option for doc.AllDecls: show non-exported symbols too.
-// - abbreviate long signatures by replacing parameters 4 onwards with "...".
 // - style the <li> bullets in the index as invisible.
 // - add push notifications such as didChange -> reload.
 // - there appears to be a maximum file size beyond which the
@@ -25,9 +24,9 @@ package golang
 // - modify JS httpGET function to give a transient visual indication
 //   when clicking a source link that the editor is being navigated
 //   (in case it doesn't raise itself, like VS Code).
-// - move this into a new package, golang/pkgdoc, and then
+// - move this into a new package, golang/web, and then
 //   split out the various helpers without fear of polluting
-//   the golang package namespace.
+//   the golang package namespace?
 // - show "Deprecated" chip when appropriate.
 
 import (
@@ -58,8 +57,8 @@ type Web interface {
 	// PkgURL forms URLs of package or symbol documentation.
 	PkgURL(viewID string, path PackagePath, fragment string) protocol.URI
 
-	// OpenURL forms URLs that cause the editor to open a file at a specific position.
-	OpenURL(filename string, line, col8 int) protocol.URI
+	// SrcURL forms URLs that cause the editor to open a file at a specific position.
+	SrcURL(filename string, line, col8 int) protocol.URI
 }
 
 // PackageDocHTML formats the package documentation page.
@@ -199,39 +198,40 @@ func PackageDocHTML(viewID string, pkg *cache.Package, web Web) ([]byte, error) 
 <html>
 <head>
   <meta charset="UTF-8">
-  <style>` + pkgDocStyle + `</style>
   <title>` + title + `</title>
-  <script type='text/javascript'>
-// httpGET requests a URL for its effects only.
-function httpGET(url) {
-	var xhttp = new XMLHttpRequest();
-	xhttp.open("GET", url, true);
-	xhttp.send();
-	return false; // disable usual <a href=...> behavior
+  <link rel="stylesheet" href="/assets/common.css">
+  <script src="/assets/common.js"></script>
+  <style>
+.lit { color: darkgreen; }
+
+header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding: 0.3em;
 }
 
-window.onload = () => {
+#pkgsite { height: 1.5em; }
+
+#hdr-Selector {
+  margin-right: 0.3em;
+  float: right;
+  min-width: 25em;
+  padding: 0.3em;
+}
+  </style>
+  <script type='text/javascript'>
+window.addEventListener('load', function() {
 	// Hook up the navigation selector.
 	document.getElementById('hdr-Selector').onchange = (e) => {
 		window.location.href = e.target.value;
 	};
-};
-
-// Start a GET /hang request. If it ever completes, the server
-// has disconnected. Show a banner in that case.
-{
-	var x = new XMLHttpRequest();
-	x.open("GET", "/hang", true);
-	x.onloadend = () => {
-		document.getElementById("disconnected").style.display = 'block';
-	};
-	x.send();
-};
+});
   </script>
 </head>
 <body>
 <header>
-<div id='disconnected'>Gopls server has terminated. Page is inactive.</div>
 <select id='hdr-Selector'>
 <optgroup label="Documentation">
   <option label="Overview" value="#hdr-Overview"/>
@@ -315,26 +315,6 @@ window.onload = () => {
 	fmt.Fprintf(&buf, "</header>\n")
 
 	// -- main element --
-
-	// sourceLink returns HTML for a link to open a file in the client editor.
-	sourceLink := func(text, url string) string {
-		// The /open URL returns nothing but has the side effect
-		// of causing the LSP client to open the requested file.
-		// So we use onclick to prevent the browser from navigating.
-		// We keep the href attribute as it causes the <a> to render
-		// as a link: blue, underlined, with URL hover information.
-		return fmt.Sprintf(`<a href="%[1]s" onclick='return httpGET("%[1]s")'>%[2]s</a>`,
-			escape(url), escape(text))
-	}
-
-	// objHTML returns HTML for obj.Name(), possibly as a link.
-	objHTML := func(obj types.Object) string {
-		text := obj.Name()
-		if posn := safetoken.StartPosition(pkg.FileSet(), obj.Pos()); posn.IsValid() {
-			return sourceLink(text, web.OpenURL(posn.Filename, posn.Line, posn.Column))
-		}
-		return text
-	}
 
 	// nodeHTML returns HTML markup for a syntax tree.
 	// It replaces referring identifiers with links,
@@ -613,7 +593,7 @@ window.onload = () => {
 		for _, docfn := range funcs {
 			obj := scope.Lookup(docfn.Name).(*types.Func)
 			fmt.Fprintf(&buf, "<h3 id='%s'>func %s</h3>\n",
-				docfn.Name, objHTML(obj))
+				docfn.Name, objHTML(pkg.FileSet(), web, obj))
 
 			// decl: func F(params) results
 			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n",
@@ -631,7 +611,8 @@ window.onload = () => {
 		tname := scope.Lookup(doctype.Name).(*types.TypeName)
 
 		// title and source link
-		fmt.Fprintf(&buf, "<h3 id='%s'>type %s</a></h3>\n", doctype.Name, objHTML(tname))
+		fmt.Fprintf(&buf, "<h3 id='%s'>type %s</a></h3>\n",
+			doctype.Name, objHTML(pkg.FileSet(), web, tname))
 
 		// declaration
 		// TODO(adonovan): excise non-exported struct fields somehow.
@@ -652,7 +633,7 @@ window.onload = () => {
 			method, _, _ := types.LookupFieldOrMethod(tname.Type(), true, tname.Pkg(), docmethod.Name)
 			fmt.Fprintf(&buf, "<h4 id='%s.%s'>func (%s) %s</h4>\n",
 				doctype.Name, docmethod.Name,
-				doctype.Name, objHTML(method))
+				doctype.Name, objHTML(pkg.FileSet(), web, method))
 
 			// decl: func (x T) M(params) results
 			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n",
@@ -668,7 +649,7 @@ window.onload = () => {
 	fmt.Fprintf(&buf, "<h2 id='hdr-SourceFiles'>Source files</h2>\n")
 	for _, filename := range docpkg.Filenames {
 		fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n",
-			sourceLink(filepath.Base(filename), web.OpenURL(filename, 1, 1)))
+			sourceLink(filepath.Base(filename), web.SrcURL(filename, 1, 1)))
 	}
 
 	fmt.Fprintf(&buf, "</main>\n")
@@ -693,135 +674,3 @@ func typesSeqToSlice[T any](seq typesSeq[T]) []T {
 	}
 	return slice
 }
-
-// (partly taken from pkgsite's typography.css)
-const pkgDocStyle = `
-body {
-  font-family: Helvetica, Arial, sans-serif;
-  font-size: 1rem;
-  line-height: normal;
-}
-
-h1 {
-  font-size: 1.5rem;
-}
-
-h2 {
-  font-size: 1.375rem;
-}
-
-h3 {
-  font-size: 1.25rem;
-}
-
-h4 {
-  font-size: 1.125rem;
-}
-
-h5 {
-  font-size: 1rem;
-}
-
-h6 {
-  font-size: 0.875rem;
-}
-
-h1,
-h2,
-h3,
-h4 {
-  font-weight: 600;
-  line-height: 1.25em;
-  word-break: break-word;
-}
-
-h5,
-h6 {
-  font-weight: 500;
-  line-height: 1.3em;
-  word-break: break-word;
-}
-
-p {
-  font-size: 1rem;
-  line-height: 1.5rem;
-  max-width: 60rem;
-}
-
-strong {
-  font-weight: 600;
-}
-
-code,
-pre,
-textarea.code {
-  font-family: Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 0.875rem;
-  line-height: 1.5em;
-}
-
-pre,
-textarea.code {
-  background-color: #eee;
-  border: 3px;
-  border-radius: 3px
-  color: black;
-  overflow-x: auto;
-  padding: 0.625rem;
-  tab-size: 4;
-  white-space: pre;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-a,
-a:link,
-a:visited {
-  color: rgb(0, 125, 156);
-  text-decoration: none;
-}
-
-a:hover,
-a:focus {
-  color: rgb(0, 125, 156);
-  text-decoration: underline;
-}
-
-a:hover > * {
-  text-decoration: underline;
-}
-
-.lit { color: darkgreen; }
-
-#pkgsite { height: 1.5em; }
-
-header {
-  position: sticky;
-  top: 0;
-  left: 0;
-  width: 100%;
-  padding: 0.3em;
-}
-
-#hdr-Selector {
-  margin-right: 0.3em;
-  float: right;
-  min-width: 25em;
-  padding: 0.3em;
-}
-
-#disconnected {
-  position: fixed;
-  top: 1em;
-  left: 1em;
-  display: none; /* initially */
-  background-color: white;
-  border: thick solid red;
-  padding: 2em;
-}
-`

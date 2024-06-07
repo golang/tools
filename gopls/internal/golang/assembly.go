@@ -50,7 +50,6 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pack
 	escape := html.EscapeString
 
 	// Produce the report.
-	// TODO(adonovan): factor with RenderPkgDoc, FreeSymbolsHTML
 	title := fmt.Sprintf("%s assembly for %s",
 		escape(snapshot.View().GOARCH()),
 		escape(symbol))
@@ -59,31 +58,11 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pack
 <html>
 <head>
   <meta charset="UTF-8">
-  <style>` + pkgDocStyle + `</style>
   <title>` + escape(title) + `</title>
-  <script type='text/javascript'>
-// httpGET requests a URL for its effects only.
-function httpGET(url) {
-	var xhttp = new XMLHttpRequest();
-	xhttp.open("GET", url, true);
-	xhttp.send();
-	return false; // disable usual <a href=...> behavior
-}
-
-// Start a GET /hang request. If it ever completes, the server
-// has disconnected. Show a banner in that case.
-{
-	var x = new XMLHttpRequest();
-	x.open("GET", "/hang", true);
-	x.onloadend = () => {
-		document.getElementById("disconnected").style.display = 'block';
-	};
-	x.send();
-};
-  </script>
+  <link rel="stylesheet" href="/assets/common.css">
+  <script src="/assets/common.js"></script>
 </head>
 <body>
-<div id='disconnected'>Gopls server has terminated. Page is inactive.</div>
 <h1>` + title + `</h1>
 <p>
   <a href='https://go.dev/doc/asm'>A Quick Guide to Go's Assembler</a>
@@ -100,18 +79,6 @@ function httpGET(url) {
 </p>
 <pre>
 `)
-
-	// sourceLink returns HTML for a link to open a file in the client editor.
-	// TODO(adonovan): factor with two other copies.
-	sourceLink := func(text, url string) string {
-		// The /open URL returns nothing but has the side effect
-		// of causing the LSP client to open the requested file.
-		// So we use onclick to prevent the browser from navigating.
-		// We keep the href attribute as it causes the <a> to render
-		// as a link: blue, underlined, with URL hover information.
-		return fmt.Sprintf(`<a href="%[1]s" onclick='return httpGET("%[1]s")'>%[2]s</a>`,
-			escape(url), text)
-	}
 
 	// insnRx matches an assembly instruction line.
 	// Submatch groups are: (offset-hex-dec, file-line-column, instruction).
@@ -145,7 +112,7 @@ function httpGET(url) {
 			if file, linenum, ok := cutLast(parts[2], ":"); ok && !strings.HasPrefix(file, "<") {
 				if linenum, err := strconv.Atoi(linenum); err == nil {
 					text := fmt.Sprintf("L%04d", linenum)
-					link = sourceLink(text, web.OpenURL(file, linenum, 1))
+					link = sourceLink(text, web.SrcURL(file, linenum, 1))
 				}
 			}
 			fmt.Fprintf(&buf, "%s\t%s\t%s", escape(parts[1]), link, escape(parts[3]))

@@ -161,40 +161,11 @@ func FreeSymbolsHTML(viewID string, pkg *cache.Package, pgf *parsego.File, start
 .col-local { color: #0cb7c9 }
 li { font-family: monospace; }
 p { max-width: 6in; }
-#disconnected {
-  position: fixed;
-  top: 1em;
-  left: 1em;
-  display: none; /* initially */
-  background-color: white;
-  border: thick solid red;
-  padding: 2em;
-}
 </style>
-<!-- TODO(adonovan): factor with RenderPackageDoc -->
-  <script type='text/javascript'>
-// httpGET requests a URL for its effects only.
-function httpGET(url) {
-	var xhttp = new XMLHttpRequest();
-	xhttp.open("GET", url, true);
-	xhttp.send();
-	return false; // disable usual <a href=...> behavior
-}
-
-// Start a GET /hang request. If it ever completes, the server
-// has disconnected. Show a banner in that case.
-{
-	var x = new XMLHttpRequest();
-	x.open("GET", "/hang", true);
-	x.onloadend = () => {
-		document.getElementById("disconnected").style.display = 'block';
-	};
-	x.send();
-};
-  </script>
+  <script src="/assets/common.js"></script>
+  <link rel="stylesheet" href="/assets/common.css">
 </head>
 <body>
-<div id='disconnected'>Gopls server has terminated. Page is inactive.</div>
 <h1>Free symbols</h1>
 <p>
   The selected code contains references to these free* symbols:
@@ -219,28 +190,6 @@ function httpGET(url) {
 	}
 	buf.WriteString("</ul>\n")
 
-	// sourceLink returns HTML for a link to open a file in the client editor.
-	// TODO(adonovan): factor with RenderPackageDoc.
-	sourceLink := func(text, url string) string {
-		// The /open URL returns nothing but has the side effect
-		// of causing the LSP client to open the requested file.
-		// So we use onclick to prevent the browser from navigating.
-		// We keep the href attribute as it causes the <a> to render
-		// as a link: blue, underlined, with URL hover information.
-		return fmt.Sprintf(`<a href="%[1]s" onclick='return httpGET("%[1]s")'>%[2]s</a>`,
-			html.EscapeString(url), text)
-	}
-
-	// objHTML returns HTML for obj.Name(), possibly as a link.
-	// TODO(adonovan): factor with RenderPackageDoc.
-	objHTML := func(obj types.Object) string {
-		text := obj.Name()
-		if posn := safetoken.StartPosition(pkg.FileSet(), obj.Pos()); posn.IsValid() {
-			return sourceLink(text, web.OpenURL(posn.Filename, posn.Line, posn.Column))
-		}
-		return text
-	}
-
 	// -- package and local symbols --
 
 	showSymbols := func(scope, title string, symbols []Symbol) {
@@ -253,7 +202,7 @@ function httpGET(url) {
 				if i > 0 {
 					buf.WriteByte('.')
 				}
-				buf.WriteString(objHTML(obj))
+				buf.WriteString(objHTML(pkg.FileSet(), web, obj))
 			}
 			fmt.Fprintf(&buf, " %s</li>\n", html.EscapeString(sym.Type))
 		}
@@ -451,4 +400,27 @@ func freeRefs(pkg *types.Package, info *types.Info, file *ast.File, start, end t
 	}
 	ast.Inspect(path[0], visit)
 	return free
+}
+
+// objHTML returns HTML for obj.Name(), possibly marked up as a link
+// to the web server that, when visited, opens the declaration in the
+// client editor.
+func objHTML(fset *token.FileSet, web Web, obj types.Object) string {
+	text := obj.Name()
+	if posn := safetoken.StartPosition(fset, obj.Pos()); posn.IsValid() {
+		url := web.SrcURL(posn.Filename, posn.Line, posn.Column)
+		return sourceLink(text, url)
+	}
+	return text
+}
+
+// sourceLink returns HTML for a link to open a file in the client editor.
+func sourceLink(text, url string) string {
+	// The /src URL returns nothing but has the side effect
+	// of causing the LSP client to open the requested file.
+	// So we use onclick to prevent the browser from navigating.
+	// We keep the href attribute as it causes the <a> to render
+	// as a link: blue, underlined, with URL hover information.
+	return fmt.Sprintf(`<a href="%[1]s" onclick='return httpGET("%[1]s")'>%[2]s</a>`,
+		html.EscapeString(url), text)
 }

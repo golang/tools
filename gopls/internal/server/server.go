@@ -286,9 +286,9 @@ func (s *server) initWeb() (*web, error) {
 		mux:    webMux,
 	}
 
-	// The /open handler allows the browser to request that the
-	// LSP client editor open a file; see web.urlToOpen.
-	webMux.HandleFunc("/open", func(w http.ResponseWriter, req *http.Request) {
+	// The /src handler allows the browser to request that the
+	// LSP client editor open a file; see web.SrcURL.
+	webMux.HandleFunc("/src", func(w http.ResponseWriter, req *http.Request) {
 		if err := req.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -463,16 +463,16 @@ func (s *server) initWeb() (*web, error) {
 //go:embed assets/*
 var assets embed.FS
 
-// OpenURL returns an /open URL that, when visited, causes the client
+// SrcURL returns a /src URL that, when visited, causes the client
 // editor to open the specified file/line/column (in 1-based UTF-8
 // coordinates).
 //
 // (Rendering may generate hundreds of positions across files of many
 // packages, so don't convert to LSP coordinates yet: wait until the
 // URL is opened.)
-func (w *web) OpenURL(filename string, line, col8 int) protocol.URI {
+func (w *web) SrcURL(filename string, line, col8 int) protocol.URI {
 	return w.url(
-		"open",
+		"src",
 		fmt.Sprintf("file=%s&line=%d&col=%d", url.QueryEscape(filename), line, col8),
 		"")
 }

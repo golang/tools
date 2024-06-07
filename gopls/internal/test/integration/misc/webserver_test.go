@@ -61,14 +61,14 @@ func (G[T]) F(int, int, int, int, int, int, int, ...int) {}
 		// (We don't have a DOM or JS interpreter so we have
 		// to know something of the document internals here.)
 		rx := regexp.MustCompile(`<h3 id='NewFunc'.*httpGET\("(.*)"\)`)
-		openURL := html.UnescapeString(string(rx.FindSubmatch(doc2)[1]))
+		srcURL := html.UnescapeString(string(rx.FindSubmatch(doc2)[1]))
 
 		// Fetch the document. Its result isn't important,
 		// but it must have the side effect of another showDocument
 		// downcall, this time for a "file:" URL, causing the
 		// client editor to navigate to the source file.
-		t.Log("extracted /open URL", openURL)
-		get(t, openURL)
+		t.Log("extracted /src URL", srcURL)
+		get(t, srcURL)
 
 		// Check that that shown location is that of NewFunc.
 		shownSource := shownDocument(t, env, "file:")
