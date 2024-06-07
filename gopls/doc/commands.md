@@ -325,15 +325,16 @@ Args:
 ```
 string,
 {
-	// The range's start position.
-	"start": {
-		"line": uint32,
-		"character": uint32,
-	},
-	// The range's end position.
-	"end": {
-		"line": uint32,
-		"character": uint32,
+	"uri": string,
+	"range": {
+		"start": {
+			"line": uint32,
+			"character": uint32,
+		},
+		"end": {
+			"line": uint32,
+			"character": uint32,
+		},
 	},
 }
 ```

@@ -251,7 +251,7 @@ type Interface interface {
 	// information is useful for understanding at a glance what a
 	// block of code depends on, perhaps as a precursor to
 	// extracting it into a separate function.
-	FreeSymbols(context.Context, protocol.DocumentURI, protocol.Range) error
+	FreeSymbols(ctx context.Context, viewID string, loc protocol.Location) error
 
 	// Assembly: Show disassembly of current function.
 	//

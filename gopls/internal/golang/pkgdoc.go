@@ -62,7 +62,7 @@ type (
 	PosURLFunc = func(filename string, line, col8 int) protocol.URI
 )
 
-// RenderPackageDoc formats the package documentation page.
+// PackageDocHTML formats the package documentation page.
 //
 // The posURL function returns a URL that when visited, has the side
 // effect of causing gopls to direct the client editor to navigate to
@@ -70,9 +70,7 @@ type (
 //
 // The pkgURL function returns a URL for the documentation of the
 // specified package and symbol.
-//
-// TODO(adonovan): "Render" is a client-side verb; rename to PackageDocHTML.
-func RenderPackageDoc(pkg *cache.Package, posURL PosURLFunc, pkgURL PkgURLFunc) ([]byte, error) {
+func PackageDocHTML(pkg *cache.Package, posURL PosURLFunc, pkgURL PkgURLFunc) ([]byte, error) {
 	// We can't use doc.NewFromFiles (even with doc.PreserveAST
 	// mode) as it calls ast.NewPackage which assumes that each
 	// ast.File has an ast.Scope and resolves identifiers to

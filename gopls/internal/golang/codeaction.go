@@ -117,7 +117,8 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 		}
 
 		if want[protocol.GoFreeSymbols] && rng.End != rng.Start {
-			cmd, err := command.NewFreeSymbolsCommand("Show free symbols", pgf.URI, rng)
+			loc := protocol.Location{URI: pgf.URI, Range: rng}
+			cmd, err := command.NewFreeSymbolsCommand("Show free symbols", snapshot.View().ID(), loc)
 			if err != nil {
 				return nil, err
 			}

@@ -350,7 +350,7 @@ func (s *server) initWeb() (*web, error) {
 		pkgURL := func(path golang.PackagePath, fragment string) protocol.URI {
 			return web.pkgURL(view, path, fragment)
 		}
-		content, err := golang.RenderPackageDoc(pkgs[0], web.openURL, pkgURL)
+		content, err := golang.PackageDocHTML(pkgs[0], web.openURL, pkgURL)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -494,7 +494,7 @@ func (w *web) pkgURL(v *cache.View, path golang.PackagePath, fragment string) pr
 
 // freesymbolsURL returns a /freesymbols URL for a report
 // on the free symbols referenced within the selection span (loc).
-func (w *web) freesymbolsURL(v *cache.View, loc protocol.Location) protocol.URI {
+func (w *web) freesymbolsURL(viewID string, loc protocol.Location) protocol.URI {
 	return w.url(
 		"freesymbols",
 		fmt.Sprintf("file=%s&range=%d:%d:%d:%d&view=%s",
@@ -503,7 +503,7 @@ func (w *web) freesymbolsURL(v *cache.View, loc protocol.Location) protocol.URI 
 			loc.Range.Start.Character,
 			loc.Range.End.Line,
 			loc.Range.End.Character,
-			url.QueryEscape(v.ID())),
+			url.QueryEscape(viewID)),
 		"")
 }
 

@@ -172,8 +172,8 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 		}
 		return s.FetchVulncheckResult(ctx, a0)
 	case FreeSymbols:
-		var a0 protocol.DocumentURI
-		var a1 protocol.Range
+		var a0 string
+		var a1 protocol.Location
 		if err := UnmarshalArgs(params.Arguments, &a0, &a1); err != nil {
 			return nil, err
 		}
@@ -444,7 +444,7 @@ func NewFetchVulncheckResultCommand(title string, a0 URIArg) (protocol.Command, 
 	}, nil
 }
 
-func NewFreeSymbolsCommand(title string, a0 protocol.DocumentURI, a1 protocol.Range) (protocol.Command, error) {
+func NewFreeSymbolsCommand(title string, a0 string, a1 protocol.Location) (protocol.Command, error) {
 	args, err := MarshalArgs(a0, a1)
 	if err != nil {
 		return protocol.Command{}, err
