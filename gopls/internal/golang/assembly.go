@@ -30,7 +30,7 @@ import (
 // TODO(adonovan):
 // - display a "Compiling..." message as a cold build can be slow.
 // - cross-link jumps and block labels, like github.com/aclements/objbrowse.
-func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, symbol string, posURL PosURLFunc) ([]byte, error) {
+func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, symbol string, web Web) ([]byte, error) {
 	// Compile the package with -S, and capture its stderr stream.
 	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
 		Verb:       "build",
@@ -145,7 +145,7 @@ function httpGET(url) {
 			if file, linenum, ok := cutLast(parts[2], ":"); ok && !strings.HasPrefix(file, "<") {
 				if linenum, err := strconv.Atoi(linenum); err == nil {
 					text := fmt.Sprintf("L%04d", linenum)
-					link = sourceLink(text, posURL(file, linenum, 1))
+					link = sourceLink(text, web.OpenURL(file, linenum, 1))
 				}
 			}
 			fmt.Fprintf(&buf, "%s\t%s\t%s", escape(parts[1]), link, escape(parts[3]))

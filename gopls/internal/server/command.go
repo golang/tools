@@ -571,7 +571,7 @@ func (c *commandHandler) Doc(ctx context.Context, loc protocol.Location) error {
 		}
 
 		// Direct the client to open the /pkg page.
-		url := web.pkgURL(deps.snapshot.View(), pkgpath, fragment)
+		url := web.PkgURL(deps.snapshot.View().ID(), pkgpath, fragment)
 		openClientBrowser(ctx, c.s.client, url)
 
 		return nil

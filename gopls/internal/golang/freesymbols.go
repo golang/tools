@@ -27,7 +27,7 @@ import (
 
 // FreeSymbolsHTML returns an HTML document containing the report of
 // free symbols referenced by the selection.
-func FreeSymbolsHTML(pkg *cache.Package, pgf *parsego.File, start, end token.Pos, posURL PosURLFunc, pkgURL PkgURLFunc) []byte {
+func FreeSymbolsHTML(viewID string, pkg *cache.Package, pgf *parsego.File, start, end token.Pos, web Web) []byte {
 
 	// Compute free references.
 	refs := freeRefs(pkg.Types(), pkg.TypesInfo(), pgf.File, start, end)
@@ -210,7 +210,7 @@ function httpGET(url) {
 	fmt.Fprintf(&buf, "<ul>\n")
 	for _, imp := range model.Imported {
 		fmt.Fprintf(&buf, "<li>import \"<a href='%s'>%s</a>\" // for %s</li>\n",
-			pkgURL(imp.Path, ""),
+			web.PkgURL(viewID, imp.Path, ""),
 			html.EscapeString(string(imp.Path)),
 			strings.Join(imp.Symbols, ", "))
 	}
@@ -236,7 +236,7 @@ function httpGET(url) {
 	objHTML := func(obj types.Object) string {
 		text := obj.Name()
 		if posn := safetoken.StartPosition(pkg.FileSet(), obj.Pos()); posn.IsValid() {
-			return sourceLink(text, posURL(posn.Filename, posn.Line, posn.Column))
+			return sourceLink(text, web.OpenURL(posn.Filename, posn.Line, posn.Column))
 		}
 		return text
 	}

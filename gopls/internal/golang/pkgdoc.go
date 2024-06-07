@@ -53,24 +53,21 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
-// TODO(adonovan): factor these two functions into an interface.
-type (
-	// A PkgURLFunc forms URLs of package or symbol documentation.
-	PkgURLFunc = func(path PackagePath, fragment string) protocol.URI
+// Web is an abstraction of gopls' web server.
+type Web interface {
+	// PkgURL forms URLs of package or symbol documentation.
+	PkgURL(viewID string, path PackagePath, fragment string) protocol.URI
 
-	// A PosURLFunc forms URLs that cause the editor to navigate to a position.
-	PosURLFunc = func(filename string, line, col8 int) protocol.URI
-)
+	// OpenURL forms URLs that cause the editor to open a file at a specific position.
+	OpenURL(filename string, line, col8 int) protocol.URI
+}
 
 // PackageDocHTML formats the package documentation page.
 //
 // The posURL function returns a URL that when visited, has the side
 // effect of causing gopls to direct the client editor to navigate to
 // the specified file/line/column position, in UTF-8 coordinates.
-//
-// The pkgURL function returns a URL for the documentation of the
-// specified package and symbol.
-func PackageDocHTML(pkg *cache.Package, posURL PosURLFunc, pkgURL PkgURLFunc) ([]byte, error) {
+func PackageDocHTML(viewID string, pkg *cache.Package, web Web) ([]byte, error) {
 	// We can't use doc.NewFromFiles (even with doc.PreserveAST
 	// mode) as it calls ast.NewPackage which assumes that each
 	// ast.File has an ast.Scope and resolves identifiers to
@@ -143,7 +140,7 @@ func PackageDocHTML(pkg *cache.Package, posURL PosURLFunc, pkgURL PkgURLFunc) ([
 			if link.Recv != "" {
 				fragment = link.Recv + "." + link.Name
 			}
-			return pkgURL(path, fragment)
+			return web.PkgURL(viewID, path, fragment)
 		}
 		parser := docpkg.Parser()
 		parser.LookupPackage = func(name string) (importPath string, ok bool) {
@@ -334,7 +331,7 @@ window.onload = () => {
 	objHTML := func(obj types.Object) string {
 		text := obj.Name()
 		if posn := safetoken.StartPosition(pkg.FileSet(), obj.Pos()); posn.IsValid() {
-			return sourceLink(text, posURL(posn.Filename, posn.Line, posn.Column))
+			return sourceLink(text, web.OpenURL(posn.Filename, posn.Line, posn.Column))
 		}
 		return text
 	}
@@ -350,7 +347,7 @@ window.onload = () => {
 				// imported package name?
 				if pkgname, ok := obj.(*types.PkgName); ok {
 					// TODO(adonovan): do this for Defs of PkgName too.
-					return pkgURL(PackagePath(pkgname.Imported().Path()), "")
+					return web.PkgURL(viewID, PackagePath(pkgname.Imported().Path()), "")
 				}
 
 				// package-level symbol?
@@ -358,7 +355,7 @@ window.onload = () => {
 					if obj.Pkg() == pkg.Types() {
 						return "#" + obj.Name() // intra-package ref
 					} else {
-						return pkgURL(PackagePath(obj.Pkg().Path()), obj.Name())
+						return web.PkgURL(viewID, PackagePath(obj.Pkg().Path()), obj.Name())
 					}
 				}
 
@@ -369,7 +366,7 @@ window.onload = () => {
 						_, named := typesinternal.ReceiverNamed(sig.Recv())
 						if named != nil {
 							fragment := named.Obj().Name() + "." + fn.Name()
-							return pkgURL(PackagePath(fn.Pkg().Path()), fragment)
+							return web.PkgURL(viewID, PackagePath(fn.Pkg().Path()), fragment)
 						}
 					}
 					return ""
@@ -671,7 +668,7 @@ window.onload = () => {
 	fmt.Fprintf(&buf, "<h2 id='hdr-SourceFiles'>Source files</h2>\n")
 	for _, filename := range docpkg.Filenames {
 		fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n",
-			sourceLink(filepath.Base(filename), posURL(filename, 1, 1)))
+			sourceLink(filepath.Base(filename), web.OpenURL(filename, 1, 1)))
 	}
 
 	fmt.Fprintf(&buf, "</main>\n")

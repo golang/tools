@@ -347,10 +347,7 @@ func (s *server) initWeb() (*web, error) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		pkgURL := func(path golang.PackagePath, fragment string) protocol.URI {
-			return web.pkgURL(view, path, fragment)
-		}
-		content, err := golang.PackageDocHTML(pkgs[0], web.openURL, pkgURL)
+		content, err := golang.PackageDocHTML(view.ID(), pkgs[0], web)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -405,10 +402,7 @@ func (s *server) initWeb() (*web, error) {
 		}
 
 		// Produce report.
-		pkgURL := func(path golang.PackagePath, fragment string) protocol.URI {
-			return web.pkgURL(view, path, fragment)
-		}
-		html := golang.FreeSymbolsHTML(pkg, pgf, start, end, web.openURL, pkgURL)
+		html := golang.FreeSymbolsHTML(view.ID(), pkg, pgf, start, end, web)
 		w.Write(html)
 	})
 
@@ -453,7 +447,7 @@ func (s *server) initWeb() (*web, error) {
 		pkg := pkgs[0]
 
 		// Produce report.
-		html, err := golang.AssemblyHTML(ctx, snapshot, pkg, symbol, web.openURL)
+		html, err := golang.AssemblyHTML(ctx, snapshot, pkg, symbol, web)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -469,26 +463,26 @@ func (s *server) initWeb() (*web, error) {
 //go:embed assets/*
 var assets embed.FS
 
-// openURL returns an /open URL that, when visited, causes the client
+// OpenURL returns an /open URL that, when visited, causes the client
 // editor to open the specified file/line/column (in 1-based UTF-8
 // coordinates).
 //
 // (Rendering may generate hundreds of positions across files of many
 // packages, so don't convert to LSP coordinates yet: wait until the
 // URL is opened.)
-func (w *web) openURL(filename string, line, col8 int) protocol.URI {
+func (w *web) OpenURL(filename string, line, col8 int) protocol.URI {
 	return w.url(
 		"open",
 		fmt.Sprintf("file=%s&line=%d&col=%d", url.QueryEscape(filename), line, col8),
 		"")
 }
 
-// pkgURL returns a /pkg URL for the documentation of the specified package.
+// PkgURL returns a /pkg URL for the documentation of the specified package.
 // The optional fragment must be of the form "Println" or "Buffer.WriteString".
-func (w *web) pkgURL(v *cache.View, path golang.PackagePath, fragment string) protocol.URI {
+func (w *web) PkgURL(viewID string, path golang.PackagePath, fragment string) protocol.URI {
 	return w.url(
 		"pkg/"+string(path),
-		"view="+url.QueryEscape(v.ID()),
+		"view="+url.QueryEscape(viewID),
 		fragment)
 }
 
