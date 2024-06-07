@@ -32,24 +32,25 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 		return nil, err
 	}
 	defer release()
-	if !snapshot.Options().SemanticTokens {
-		// Note: returning new(protocol.SemanticTokens) is necessary here to
-		// invalidate semantic tokens in VS Code (and perhaps other editors).
-		// Previously, an error was returned here to achieve the same effect, but
-		// that had the side effect of very noisy "semantictokens are disabled"
-		// logs on every keystroke.
-		return new(protocol.SemanticTokens), nil
+
+	if snapshot.Options().SemanticTokens {
+		switch snapshot.FileKind(fh) {
+		case file.Tmpl:
+			return template.SemanticTokens(ctx, snapshot, fh.URI())
+		case file.Go:
+			return golang.SemanticTokens(ctx, snapshot, fh, rng)
+		}
 	}
 
-	switch snapshot.FileKind(fh) {
-	case file.Tmpl:
-		return template.SemanticTokens(ctx, snapshot, fh.URI())
-
-	case file.Go:
-		return golang.SemanticTokens(ctx, snapshot, fh, rng)
-
-	default:
-		// TODO(adonovan): should return an error!
-		return nil, nil // empty result
-	}
+	// Not enabled, or unsupported file type: return empty result.
+	//
+	// Returning an empty response is necessary to invalidate
+	// semantic tokens in VS Code (and perhaps other editors).
+	// Previously, we returned an error, but that had the side effect
+	// of noisy "semantictokens are disabled" logs on every keystroke.
+	//
+	// We must return a non-nil Data slice for JSON serialization.
+	// We do not return an empty field with "omitempty" set,
+	// as it is not marked optional in the protocol (golang/go#67885).
+	return &protocol.SemanticTokens{Data: []uint32{}}, nil
 }
