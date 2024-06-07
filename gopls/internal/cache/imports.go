@@ -35,6 +35,18 @@ func newRefreshTimer(refresh func()) *refreshTimer {
 	}
 }
 
+// stop stops any future scheduled refresh.
+func (t *refreshTimer) stop() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.timer != nil {
+		t.timer.Stop()
+		t.timer = nil
+		t.refreshFn = nil // release resources
+	}
+}
+
 // schedule schedules the refresh function to run at some point in the future,
 // if no existing refresh is already scheduled.
 //
@@ -54,11 +66,16 @@ func (t *refreshTimer) schedule() {
 		}
 		t.timer = time.AfterFunc(delay, func() {
 			start := time.Now()
-			t.refreshFn()
 			t.mu.Lock()
-			t.duration = time.Since(start)
-			t.timer = nil
+			refreshFn := t.refreshFn
 			t.mu.Unlock()
+			if refreshFn != nil { // timer may be stopped.
+				refreshFn()
+				t.mu.Lock()
+				t.duration = time.Since(start)
+				t.timer = nil
+				t.mu.Unlock()
+			}
 		})
 	}
 }
@@ -70,7 +87,8 @@ func (t *refreshTimer) schedule() {
 type sharedModCache struct {
 	mu     sync.Mutex
 	caches map[string]*imports.DirInfoCache // GOMODCACHE -> cache content; never invalidated
-	timers map[string]*refreshTimer         // GOMODCACHE -> timer
+	// TODO(rfindley): consider stopping these timers when the session shuts down.
+	timers map[string]*refreshTimer // GOMODCACHE -> timer
 }
 
 func (c *sharedModCache) dirCache(dir string) *imports.DirInfoCache {
@@ -129,6 +147,11 @@ func newImportsState(backgroundCtx context.Context, modCache *sharedModCache, en
 	s.refreshTimer = newRefreshTimer(s.refreshProcessEnv)
 	s.refreshTimer.schedule()
 	return s
+}
+
+// stopTimer stops scheduled refreshes of this imports state.
+func (s *importsState) stopTimer() {
+	s.refreshTimer.stop()
 }
 
 // runProcessEnvFunc runs goimports.
