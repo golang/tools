@@ -322,7 +322,7 @@ func g() {
 
 		// Invoke the "Show assembly" code action to start the server.
 		loc := env.RegexpSearch("a/a.go", "println")
-		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil)
+		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
 		if err != nil {
 			t.Fatalf("CodeAction: %v", err)
 		}
