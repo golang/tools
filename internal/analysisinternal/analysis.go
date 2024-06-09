@@ -269,6 +269,8 @@ func StmtToInsertVarBefore(path []ast.Node) ast.Stmt {
 		if expr.Init == enclosingStmt || expr.Post == enclosingStmt {
 			return expr
 		}
+	case *ast.SwitchStmt, *ast.TypeSwitchStmt:
+		return expr.(ast.Stmt)
 	}
 	return enclosingStmt.(ast.Stmt)
 }
