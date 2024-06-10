@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/loader"
@@ -1210,4 +1211,52 @@ func TestFixedBugs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIssue67079(t *testing.T) {
+	// This test reproduced a race in the SSA builder nearly 100% of the time.
+
+	// Load the package.
+	const src = `package p; type T int; func (T) f() {}; var _ = (*T).f`
+	conf := loader.Config{Fset: token.NewFileSet()}
+	f, err := parser.ParseFile(conf.Fset, "p.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf.CreateFromFiles("p", f)
+	iprog, err := conf.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := iprog.Created[0].Pkg
+
+	// Create and build SSA program.
+	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
+	prog.Build()
+
+	var g errgroup.Group
+
+	// Access bodies of all functions.
+	g.Go(func() error {
+		for fn := range ssautil.AllFunctions(prog) {
+			for _, b := range fn.Blocks {
+				for _, instr := range b.Instrs {
+					if call, ok := instr.(*ssa.Call); ok {
+						call.Common().StaticCallee() // access call.Value
+					}
+				}
+			}
+		}
+		return nil
+	})
+
+	// Force building of wrappers.
+	g.Go(func() error {
+		ptrT := types.NewPointer(pkg.Scope().Lookup("T").Type())
+		ptrTf := types.NewMethodSet(ptrT).At(0) // (*T).f symbol
+		prog.MethodValue(ptrTf)
+		return nil
+	})
+
+	g.Wait() // ignore error
 }

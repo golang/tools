@@ -69,7 +69,7 @@ type Package struct {
 	ninit       int32               // number of init functions
 	info        *types.Info         // package type information
 	files       []*ast.File         // package ASTs
-	created     creator             // members created as a result of building this package (includes declared functions, wrappers)
+	created     []*Function         // members created as a result of building this package (includes declared functions, wrappers)
 	initVersion map[ast.Expr]string // goversion to use for each global var init expr
 }
 
@@ -347,6 +347,8 @@ type Function struct {
 	parent *Function // enclosing function if anon; nil if global
 	Pkg    *Package  // enclosing package; nil for shared funcs (wrappers and error.Error)
 	Prog   *Program  // enclosing program
+
+	buildshared *task // wait for a shared function to be done building (may be nil if <=1 builder ever needs to wait)
 
 	// These fields are populated only when the function body is built:
 

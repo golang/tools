@@ -22,6 +22,8 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
+type unit struct{}
+
 //// Sanity checking utilities
 
 // assert panics with the mesage msg if p is false.

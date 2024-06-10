@@ -50,6 +50,16 @@ func TestNetHTTP(t *testing.T) {
 	testLoad(t, 120, "net/http")
 }
 
+// TestCycles loads two standard libraries that depend on the same
+// generic instantiations.
+// internal/trace/testtrace and net/http both depend on
+// slices.Contains[[]string string] and slices.Index[[]string string]
+// This can under some schedules create a cycle of dependencies
+// where both need to wait on the other to finish building.
+func TestCycles(t *testing.T) {
+	testLoad(t, 120, "net/http", "internal/trace/testtrace")
+}
+
 func testLoad(t *testing.T, minPkgs int, patterns ...string) {
 	// Note: most of the commentary below applies to TestStdlib.
 
