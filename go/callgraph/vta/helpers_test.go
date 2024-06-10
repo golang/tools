@@ -99,7 +99,7 @@ func callGraphStr(g *callgraph.Graph) []string {
 	for f, n := range g.Nodes {
 		c := make(map[string][]string)
 		for _, edge := range n.Out {
-			cs := edge.Site.String()
+			cs := edge.Site.String() // TODO(adonovan): handle Site=nil gracefully
 			c[cs] = append(c[cs], funcName(edge.Callee.Func))
 		}
 
