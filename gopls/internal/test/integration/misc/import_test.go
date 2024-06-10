@@ -46,7 +46,7 @@ func main() {
 			t.Fatal(err)
 		}
 		env.ExecuteCommand(&protocol.ExecuteCommandParams{
-			Command:   "gopls.add_import",
+			Command:   command.AddImport.String(),
 			Arguments: cmd.Arguments,
 		}, nil)
 		got := env.BufferText("main.go")

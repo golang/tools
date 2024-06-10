@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path"
@@ -479,6 +480,14 @@ func (v *View) shutdown() {
 		v.snapshot = nil
 	}
 	v.snapshotMu.Unlock()
+}
+
+// ScanImports scans the module cache synchronously.
+// For use in tests.
+func (v *View) ScanImports() {
+	gomodcache := v.folder.Env.GOMODCACHE
+	dirCache := v.importsState.modCache.dirCache(gomodcache)
+	imports.ScanModuleCache(gomodcache, dirCache, log.Printf)
 }
 
 // IgnoredFile reports if a file would be ignored by a `go list` of the whole

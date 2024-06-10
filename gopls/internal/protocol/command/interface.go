@@ -259,6 +259,11 @@ type Interface interface {
 	// specified function symbol (plus any nested lambdas and defers).
 	// The machine architecture is determined by the view.
 	Assembly(_ context.Context, viewID, packageID, symbol string) error
+
+	// ScanImports: force a sychronous scan of the imports cache.
+	//
+	// This command is intended for use by gopls tests only.
+	ScanImports(context.Context) error
 }
 
 type RunTestsArgs struct {

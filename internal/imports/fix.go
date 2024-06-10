@@ -1776,56 +1776,22 @@ func pkgIsCandidate(filename string, refs references, pkg *pkg) bool {
 	}
 
 	// Speed optimization to minimize disk I/O:
-	// the last two components on disk must contain the
-	// package name somewhere.
 	//
-	// This permits mismatch naming like directory
-	// "go-foo" being package "foo", or "pkg.v3" being "pkg",
-	// or directory "google.golang.org/api/cloudbilling/v1"
-	// being package "cloudbilling", but doesn't
-	// permit a directory "foo" to be package
-	// "bar", which is strongly discouraged
-	// anyway. There's no reason goimports needs
-	// to be slow just to accommodate that.
+	// Use the matchesPath heuristic to filter to package paths that could
+	// reasonably match a dangling reference.
+	//
+	// This permits mismatch naming like directory "go-foo" being package "foo",
+	// or "pkg.v3" being "pkg", or directory
+	// "google.golang.org/api/cloudbilling/v1" being package "cloudbilling", but
+	// doesn't permit a directory "foo" to be package "bar", which is strongly
+	// discouraged anyway. There's no reason goimports needs to be slow just to
+	// accommodate that.
 	for pkgIdent := range refs {
-		lastTwo := lastTwoComponents(pkg.importPathShort)
-		if strings.Contains(lastTwo, pkgIdent) {
-			return true
-		}
-		if hasHyphenOrUpperASCII(lastTwo) && !hasHyphenOrUpperASCII(pkgIdent) {
-			lastTwo = lowerASCIIAndRemoveHyphen(lastTwo)
-			if strings.Contains(lastTwo, pkgIdent) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func hasHyphenOrUpperASCII(s string) bool {
-	for i := 0; i < len(s); i++ {
-		b := s[i]
-		if b == '-' || ('A' <= b && b <= 'Z') {
+		if matchesPath(pkgIdent, pkg.importPathShort) {
 			return true
 		}
 	}
 	return false
-}
-
-func lowerASCIIAndRemoveHyphen(s string) (ret string) {
-	buf := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		b := s[i]
-		switch {
-		case b == '-':
-			continue
-		case 'A' <= b && b <= 'Z':
-			buf = append(buf, b+('a'-'A'))
-		default:
-			buf = append(buf, b)
-		}
-	}
-	return string(buf)
 }
 
 // canUse reports whether the package in dir is usable from filename,
@@ -1868,19 +1834,84 @@ func canUse(filename, dir string) bool {
 	return !strings.Contains(relSlash, "/vendor/") && !strings.Contains(relSlash, "/internal/") && !strings.HasSuffix(relSlash, "/internal")
 }
 
-// lastTwoComponents returns at most the last two path components
-// of v, using either / or \ as the path separator.
-func lastTwoComponents(v string) string {
+// matchesPath reports whether ident may match a potential package name
+// referred to by path, using heuristics to filter out unidiomatic package
+// names.
+//
+// Specifically, it checks whether either of the last two '/'- or '\'-delimited
+// path segments matches the identifier. The segment-matching heuristic must
+// allow for various conventions around segment naming, including go-foo,
+// foo-go, and foo.v3. To handle all of these, matching considers both (1) the
+// entire segment, ignoring '-' and '.', as well as (2) the last subsegment
+// separated by '-' or '.'. So the segment foo-go matches all of the following
+// identifiers: foo, go, and foogo. All matches are case insensitive (for ASCII
+// identifiers).
+//
+// See the docstring for [pkgIsCandidate] for an explanation of how this
+// heuristic filters potential candidate packages.
+func matchesPath(ident, path string) bool {
+	// Ignore case, for ASCII.
+	lowerIfASCII := func(b byte) byte {
+		if 'A' <= b && b <= 'Z' {
+			return b + ('a' - 'A')
+		}
+		return b
+	}
+
+	// match reports whether path[start:end] matches ident, ignoring [.-].
+	match := func(start, end int) bool {
+		ii := len(ident) - 1 // current byte in ident
+		pi := end - 1        // current byte in path
+		for ; pi >= start && ii >= 0; pi-- {
+			pb := path[pi]
+			if pb == '-' || pb == '.' {
+				continue
+			}
+			pb = lowerIfASCII(pb)
+			ib := lowerIfASCII(ident[ii])
+			if pb != ib {
+				return false
+			}
+			ii--
+		}
+		return ii < 0 && pi < start // all bytes matched
+	}
+
+	// segmentEnd and subsegmentEnd hold the end points of the current segment
+	// and subsegment intervals.
+	segmentEnd := len(path)
+	subsegmentEnd := len(path)
+
+	// Count slashes; we only care about the last two segments.
 	nslash := 0
-	for i := len(v) - 1; i >= 0; i-- {
-		if v[i] == '/' || v[i] == '\\' {
+
+	for i := len(path) - 1; i >= 0; i-- {
+		switch b := path[i]; b {
+		// TODO(rfindley): we handle backlashes here only because the previous
+		// heuristic handled backslashes. This is perhaps overly defensive, but is
+		// the result of many lessons regarding Chesterton's fence and the
+		// goimports codebase.
+		//
+		// However, this function is only ever called with something called an
+		// 'importPath'. Is it possible that this is a real import path, and
+		// therefore we need only consider forward slashes?
+		case '/', '\\':
+			if match(i+1, segmentEnd) || match(i+1, subsegmentEnd) {
+				return true
+			}
 			nslash++
 			if nslash == 2 {
-				return v[i:]
+				return false // did not match above
 			}
+			segmentEnd, subsegmentEnd = i, i // reset
+		case '-', '.':
+			if match(i+1, subsegmentEnd) {
+				return true
+			}
+			subsegmentEnd = i
 		}
 	}
-	return v
+	return match(0, segmentEnd) || match(0, subsegmentEnd)
 }
 
 type visitFn func(node ast.Node) ast.Visitor

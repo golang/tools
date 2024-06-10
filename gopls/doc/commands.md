@@ -568,6 +568,10 @@ Args:
 }
 ```
 
+## `gopls.scan_imports`: **force a sychronous scan of the imports cache.**
+
+This command is intended for use by gopls tests only.
+
 ## `gopls.start_debugging`: **Start the gopls debug server**
 
 Start the gopls debug server if it isn't running, and return the debug

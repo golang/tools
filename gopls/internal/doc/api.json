@@ -1108,6 +1108,13 @@
 			"ResultDoc": ""
 		},
 		{
+			"Command": "gopls.scan_imports",
+			"Title": "force a sychronous scan of the imports cache.",
+			"Doc": "This command is intended for use by gopls tests only.",
+			"ArgDoc": "",
+			"ResultDoc": ""
+		},
+		{
 			"Command": "gopls.start_debugging",
 			"Title": "Start the gopls debug server",
 			"Doc": "Start the gopls debug server if it isn't running, and return the debug\naddress.",
