@@ -27,6 +27,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -1140,8 +1141,8 @@ type Resolver interface {
 	// scan works with callback to search for packages. See scanCallback for details.
 	scan(ctx context.Context, callback *scanCallback) error
 
-	// loadExports returns the set of exported symbols in the package at dir.
-	// loadExports may be called concurrently.
+	// loadExports returns the package name and set of exported symbols in the
+	// package at dir. loadExports may be called concurrently.
 	loadExports(ctx context.Context, pkg *pkg, includeTest bool) (string, []stdlib.Symbol, error)
 
 	// scoreImportPath returns the relevance for an import path.
@@ -1218,54 +1219,52 @@ func addExternalCandidates(ctx context.Context, pass *pass, refs references, fil
 		imp *ImportInfo
 		pkg *packageInfo
 	}
-	results := make(chan result, len(refs))
+	results := make([]*result, len(refs))
 
-	ctx, cancel := context.WithCancel(ctx)
-	var wg sync.WaitGroup
-	defer func() {
-		cancel()
-		wg.Wait()
-	}()
-	var (
-		firstErr     error
-		firstErrOnce sync.Once
-	)
+	g, ctx := errgroup.WithContext(ctx)
+
+	searcher := symbolSearcher{
+		logf:        pass.env.logf,
+		srcDir:      pass.srcDir,
+		xtest:       strings.HasSuffix(pass.f.Name.Name, "_test"),
+		loadExports: resolver.loadExports,
+	}
+
+	i := 0
 	for pkgName, symbols := range refs {
-		wg.Add(1)
-		go func(pkgName string, symbols map[string]bool) {
-			defer wg.Done()
+		index := i // claim an index in results
+		i++
+		pkgName := pkgName
+		symbols := symbols
 
-			found, err := findImport(ctx, pass, found[pkgName], pkgName, symbols)
-
+		g.Go(func() error {
+			found, err := searcher.search(ctx, found[pkgName], pkgName, symbols)
 			if err != nil {
-				firstErrOnce.Do(func() {
-					firstErr = err
-					cancel()
-				})
-				return
+				return err
 			}
-
 			if found == nil {
-				return // No matching package.
+				return nil // No matching package.
 			}
 
 			imp := &ImportInfo{
 				ImportPath: found.importPathShort,
 			}
-
 			pkg := &packageInfo{
 				name:    pkgName,
 				exports: symbols,
 			}
-			results <- result{imp, pkg}
-		}(pkgName, symbols)
+			results[index] = &result{imp, pkg}
+			return nil
+		})
 	}
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
+	if err := g.Wait(); err != nil {
+		return err
+	}
 
-	for result := range results {
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
 		// Don't offer completions that would shadow predeclared
 		// names, such as github.com/coreos/etcd/error.
 		if types.Universe.Lookup(result.pkg.name) != nil { // predeclared
@@ -1279,7 +1278,7 @@ func addExternalCandidates(ctx context.Context, pass *pass, refs references, fil
 		}
 		pass.addCandidate(result.imp, result.pkg)
 	}
-	return firstErr
+	return nil
 }
 
 // notIdentifier reports whether ch is an invalid identifier character.
@@ -1669,25 +1668,39 @@ func sortSymbols(syms []stdlib.Symbol) {
 	})
 }
 
-// findImport searches for a package with the given symbols.
-// If no package is found, findImport returns ("", false, nil)
-func findImport(ctx context.Context, pass *pass, candidates []pkgDistance, pkgName string, symbols map[string]bool) (*pkg, error) {
+// A symbolSearcher searches for a package with a set of symbols, among a set
+// of candidates. See [symbolSearcher.search].
+//
+// The search occurs within the scope of a single file, with context captured
+// in srcDir and xtest.
+type symbolSearcher struct {
+	logf        func(string, ...any)
+	srcDir      string // directory containing the file
+	xtest       bool   // if set, the file containing is an x_test file
+	loadExports func(ctx context.Context, pkg *pkg, includeTest bool) (string, []stdlib.Symbol, error)
+}
+
+// search searches the provided candidates for a package containing all
+// exported symbols.
+//
+// If successful, returns the resulting package.
+func (s *symbolSearcher) search(ctx context.Context, candidates []pkgDistance, pkgName string, symbols map[string]bool) (*pkg, error) {
 	// Sort the candidates by their import package length,
 	// assuming that shorter package names are better than long
 	// ones.  Note that this sorts by the de-vendored name, so
 	// there's no "penalty" for vendoring.
 	sort.Sort(byDistanceOrImportPathShortLength(candidates))
-	if pass.env.Logf != nil {
+	if s.logf != nil {
 		for i, c := range candidates {
-			pass.env.Logf("%s candidate %d/%d: %v in %v", pkgName, i+1, len(candidates), c.pkg.importPathShort, c.pkg.dir)
+			s.logf("%s candidate %d/%d: %v in %v", pkgName, i+1, len(candidates), c.pkg.importPathShort, c.pkg.dir)
 		}
 	}
-	resolver, err := pass.env.GetResolver()
-	if err != nil {
-		return nil, err
-	}
 
-	// Collect exports for packages with matching names.
+	// Arrange rescv so that we can we can await results in order of relevance
+	// and exit as soon as we find the first match.
+	//
+	// Search with bounded concurrency, returning as soon as the first result
+	// among rescv is non-nil.
 	rescv := make([]chan *pkg, len(candidates))
 	for i := range candidates {
 		rescv[i] = make(chan *pkg, 1)
@@ -1695,6 +1708,7 @@ func findImport(ctx context.Context, pass *pass, candidates []pkgDistance, pkgNa
 	const maxConcurrentPackageImport = 4
 	loadExportsSem := make(chan struct{}, maxConcurrentPackageImport)
 
+	// Ensure that all work is completed at exit.
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() {
@@ -1702,6 +1716,7 @@ func findImport(ctx context.Context, pass *pass, candidates []pkgDistance, pkgNa
 		wg.Wait()
 	}()
 
+	// Start the search.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -1712,49 +1727,65 @@ func findImport(ctx context.Context, pass *pass, candidates []pkgDistance, pkgNa
 				return
 			}
 
+			i := i
+			c := c
 			wg.Add(1)
-			go func(c pkgDistance, resc chan<- *pkg) {
+			go func() {
 				defer func() {
 					<-loadExportsSem
 					wg.Done()
 				}()
-
-				pass.env.logf("loading exports in dir %s (seeking package %s)", c.pkg.dir, pkgName)
-				// If we're an x_test, load the package under test's test variant.
-				includeTest := strings.HasSuffix(pass.f.Name.Name, "_test") && c.pkg.dir == pass.srcDir
-				_, exports, err := resolver.loadExports(ctx, c.pkg, includeTest)
+				if s.logf != nil {
+					s.logf("loading exports in dir %s (seeking package %s)", c.pkg.dir, pkgName)
+				}
+				pkg, err := s.searchOne(ctx, c, symbols)
 				if err != nil {
-					pass.env.logf("loading exports in dir %s (seeking package %s): %v", c.pkg.dir, pkgName, err)
-					resc <- nil
-					return
-				}
-
-				exportsMap := make(map[string]bool, len(exports))
-				for _, sym := range exports {
-					exportsMap[sym.Name] = true
-				}
-
-				// If it doesn't have the right
-				// symbols, send nil to mean no match.
-				for symbol := range symbols {
-					if !exportsMap[symbol] {
-						resc <- nil
-						return
+					if s.logf != nil && ctx.Err() == nil {
+						s.logf("loading exports in dir %s (seeking package %s): %v", c.pkg.dir, pkgName, err)
 					}
+					pkg = nil
 				}
-				resc <- c.pkg
-			}(c, rescv[i])
+				rescv[i] <- pkg // may be nil
+			}()
 		}
 	}()
 
+	// Await the first (best) result.
 	for _, resc := range rescv {
-		pkg := <-resc
-		if pkg == nil {
-			continue
+		select {
+		case r := <-resc:
+			if r != nil {
+				return r, nil
+			}
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
-		return pkg, nil
 	}
 	return nil, nil
+}
+
+func (s *symbolSearcher) searchOne(ctx context.Context, c pkgDistance, symbols map[string]bool) (*pkg, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	// If we're considering the package under test from an x_test, load the
+	// test variant.
+	includeTest := s.xtest && c.pkg.dir == s.srcDir
+	_, exports, err := s.loadExports(ctx, c.pkg, includeTest)
+	if err != nil {
+		return nil, err
+	}
+
+	exportsMap := make(map[string]bool, len(exports))
+	for _, sym := range exports {
+		exportsMap[sym.Name] = true
+	}
+	for symbol := range symbols {
+		if !exportsMap[symbol] {
+			return nil, nil // no match
+		}
+	}
+	return c.pkg, nil
 }
 
 // pkgIsCandidate reports whether pkg is a candidate for satisfying the

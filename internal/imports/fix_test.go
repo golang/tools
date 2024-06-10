@@ -11,11 +11,13 @@ import (
 	"go/build"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"golang.org/x/tools/go/packages/packagestest"
@@ -2954,6 +2956,49 @@ var _, _ = fmt.Sprintf, dot.Dot
 		},
 		gopathOnly: true, // our modules testing setup doesn't allow modules without dots.
 	}.processTest(t, "golang.org/fake", "x.go", nil, nil, want)
+}
+
+func TestSymbolSearchStarvation(t *testing.T) {
+	// This test verifies the fix for golang/go#67923: searching through
+	// candidates should not starve when the context is cancelled.
+	//
+	// To reproduce the conditions that led to starvation, cancel the context
+	// half way through the search, by leveraging the loadExports callback.
+	const candCount = 100
+	var loaded atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	searcher := symbolSearcher{
+		logf:   t.Logf,
+		srcDir: "/path/to/foo",
+		loadExports: func(ctx context.Context, pkg *pkg, includeTest bool) (string, []stdlib.Symbol, error) {
+			if loaded.Add(1) > candCount/2 {
+				cancel()
+			}
+			return "bar", []stdlib.Symbol{
+				{Name: "A", Kind: stdlib.Var},
+				{Name: "B", Kind: stdlib.Var},
+				// Missing: "C", so that none of these packages match.
+			}, nil
+		},
+	}
+
+	var candidates []pkgDistance
+	for i := 0; i < candCount; i++ {
+		name := fmt.Sprintf("bar%d", i)
+		candidates = append(candidates, pkgDistance{
+			pkg: &pkg{
+				dir:             path.Join(searcher.srcDir, name),
+				importPathShort: "foo/" + name,
+				packageName:     name,
+				relevance:       1,
+			},
+			distance: 1,
+		})
+	}
+
+	// We don't actually care what happens, as long as it doesn't deadlock!
+	_, err := searcher.search(ctx, candidates, "bar", map[string]bool{"A": true, "B": true, "C": true})
+	t.Logf("search completed with err: %v", err)
 }
 
 func TestMatchesPath(t *testing.T) {
