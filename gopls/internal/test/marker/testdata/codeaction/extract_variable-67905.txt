@@ -1,0 +1,38 @@
+This test verifies the fix for golang/go#67905: Extract variable from type
+switch produces invalid code
+
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
+-- extract_switch.go --
+package extract
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"strings"
+)
+
+func r() io.Reader {
+	return &bytes.Buffer{}
+}
+
+func main() {
+	switch r := r().(type) { //@codeactionedit("r()", "refactor.extract", type_switch_func_call)
+	case *bytes.Buffer:
+		fmt.Println("buf", r.Available())
+	case *strings.Reader:
+		fmt.Println("str", r.Size())
+	default:
+		fmt.Println("ior")
+	}
+}
+
+-- @type_switch_func_call/extract_switch.go --
+@@ -15 +15,2 @@
+-	switch r := r().(type) { //@codeactionedit("r()", "refactor.extract", type_switch_func_call)
++	x := r()
++	switch r := x.(type) { //@codeactionedit("r()", "refactor.extract", type_switch_func_call)
