@@ -253,7 +253,7 @@ func f(buf bytes.Buffer, greeting string) {
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 
-		// Invoke the "Show free symbols" code
+		// Invoke the "View free symbols" code
 		// action to start the server.
 		loc := env.RegexpSearch("a/a.go", "«((?:.|\n)*)»")
 		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
@@ -262,13 +262,13 @@ func f(buf bytes.Buffer, greeting string) {
 		}
 		var action *protocol.CodeAction
 		for _, a := range actions {
-			if a.Title == "Show free symbols" {
+			if a.Title == "View free symbols" {
 				action = &a
 				break
 			}
 		}
 		if action == nil {
-			t.Fatalf("can't find action with Title 'Show free symbols', only %#v",
+			t.Fatalf("can't find action with Title 'View free symbols', only %#v",
 				actions)
 		}
 
@@ -320,13 +320,13 @@ func g() {
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 
-		// Invoke the "Show assembly" code action to start the server.
+		// Invoke the "View assembly" code action to start the server.
 		loc := env.RegexpSearch("a/a.go", "println")
 		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
 		if err != nil {
 			t.Fatalf("CodeAction: %v", err)
 		}
-		const wantTitle = "Show " + runtime.GOARCH + " assembly for f"
+		const wantTitle = "View " + runtime.GOARCH + " assembly for f"
 		var action *protocol.CodeAction
 		for _, a := range actions {
 			if a.Title == wantTitle {

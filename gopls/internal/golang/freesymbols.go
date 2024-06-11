@@ -4,7 +4,7 @@
 
 package golang
 
-// This file implements the "Show free symbols" code action.
+// This file implements the "View free symbols" code action.
 
 import (
 	"bytes"

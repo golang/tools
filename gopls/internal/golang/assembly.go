@@ -4,7 +4,7 @@
 
 package golang
 
-// This file produces the "Show GOARCH assembly of f" HTML report.
+// This file produces the "View GOARCH assembly of f" HTML report.
 //
 // See also:
 // - ./codeaction.go - computes the symbol and offers the CodeAction command.
@@ -72,7 +72,7 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pack
 </p>
 <p>
   Click on a source line marker <code>L1234</code> to navigate your editor there.
-  (Beware: <a href='https://github.com/microsoft/vscode/issues/207634'>#207634</a>)
+  (VS Code users: please upvote <a href='https://github.com/microsoft/vscode/issues/208093'>#208093</a>)
 </p>
 <p>
   Reload the page to recompile.

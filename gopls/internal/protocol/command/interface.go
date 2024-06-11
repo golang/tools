@@ -242,7 +242,7 @@ type Interface interface {
 	// This command is intended for use by gopls tests only.
 	Views(context.Context) ([]View, error)
 
-	// FreeSymbols: report free symbols referenced by the selection.
+	// FreeSymbols: View free symbols referenced by the selection in a browser.
 	//
 	// This command is a query over a selected range of Go source
 	// code. It reports the set of "free" symbols of the
@@ -253,7 +253,7 @@ type Interface interface {
 	// extracting it into a separate function.
 	FreeSymbols(ctx context.Context, viewID string, loc protocol.Location) error
 
-	// Assembly: Show disassembly of current function.
+	// Assembly: View assembly listing of current function in a browser.
 	//
 	// This command opens a web-based disassembly listing of the
 	// specified function symbol (plus any nested lambdas and defers).
