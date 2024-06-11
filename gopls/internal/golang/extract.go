@@ -58,6 +58,15 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 		return nil, nil, fmt.Errorf("cannot extract %T", expr)
 	}
 
+	// TODO: There is a bug here: for a variable declared in a labeled
+	// switch/for statement it returns the for/switch statement itself
+	// which produces the below code which is a compiler error e.g.
+	// label:
+	// switch r1 := r() { ... break label ... }
+	// On extracting "r()" to a variable
+	// label:
+	// x := r()
+	// switch r1 := x { ... break label ... } // compiler error
 	insertBeforeStmt := analysisinternal.StmtToInsertVarBefore(path)
 	if insertBeforeStmt == nil {
 		return nil, nil, fmt.Errorf("cannot find location to insert extraction")

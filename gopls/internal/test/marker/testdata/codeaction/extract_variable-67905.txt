@@ -10,29 +10,20 @@ go 1.18
 package extract
 
 import (
-	"bytes"
-	"fmt"
 	"io"
-	"strings"
 )
 
-func r() io.Reader {
-	return &bytes.Buffer{}
-}
+func f() io.Reader
 
 func main() {
-	switch r := r().(type) { //@codeactionedit("r()", "refactor.extract", type_switch_func_call)
-	case *bytes.Buffer:
-		fmt.Println("buf", r.Available())
-	case *strings.Reader:
-		fmt.Println("str", r.Size())
+	switch r := f().(type) { //@codeactionedit("f()", "refactor.extract", type_switch_func_call)
 	default:
-		fmt.Println("ior")
+		_ = r
 	}
 }
 
 -- @type_switch_func_call/extract_switch.go --
-@@ -15 +15,2 @@
--	switch r := r().(type) { //@codeactionedit("r()", "refactor.extract", type_switch_func_call)
-+	x := r()
-+	switch r := x.(type) { //@codeactionedit("r()", "refactor.extract", type_switch_func_call)
+@@ -10 +10,2 @@
+-	switch r := f().(type) { //@codeactionedit("f()", "refactor.extract", type_switch_func_call)
++	x := f()
++	switch r := x.(type) { //@codeactionedit("f()", "refactor.extract", type_switch_func_call)
