@@ -55,10 +55,6 @@ type unit = struct{}
 // It shares state such as parsed files and imports, to optimize type-checking
 // for packages with overlapping dependency graphs.
 type typeCheckBatch struct {
-	activePackageCache interface {
-		getActivePackage(id PackageID) *Package
-		setActivePackage(id PackageID, pkg *Package)
-	}
 	syntaxIndex map[PackageID]int // requested ID -> index in ids
 	pre         preTypeCheck
 	post        postTypeCheck
@@ -350,17 +346,52 @@ func (s *Snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preT
 	ctx, done := event.Start(ctx, "cache.forEachPackage", label.PackageCount.Of(len(ids)))
 	defer done()
 
-	if len(ids) == 0 {
+	var (
+		needIDs []PackageID // ids to type-check
+		indexes []int       // original index of requested ids
+	)
+
+	// Check for existing active packages.
+	//
+	// Since gopls can't depend on package identity, any instance of the
+	// requested package must be ok to return.
+	//
+	// This is an optimization to avoid redundant type-checking: following
+	// changes to an open package many LSP clients send several successive
+	// requests for package information for the modified package (semantic
+	// tokens, code lens, inlay hints, etc.)
+	for i, id := range ids {
+		if pkg := s.getActivePackage(id); pkg != nil {
+			post(i, pkg)
+		} else {
+			needIDs = append(needIDs, id)
+			indexes = append(indexes, i)
+		}
+	}
+
+	if len(needIDs) == 0 {
 		return nil // short cut: many call sites do not handle empty ids
 	}
 
-	handles, err := s.getPackageHandles(ctx, ids)
+	// Wrap the pre- and post- funcs to translate indices.
+	var pre2 preTypeCheck
+	if pre != nil {
+		pre2 = func(i int, ph *packageHandle) bool {
+			return pre(indexes[i], ph)
+		}
+	}
+	post2 := func(i int, pkg *Package) {
+		s.setActivePackage(pkg.metadata.ID, pkg)
+		post(indexes[i], pkg)
+	}
+
+	handles, err := s.getPackageHandles(ctx, needIDs)
 	if err != nil {
 		return err
 	}
 
 	impGraph := s.getImportGraph(ctx)
-	_, err = s.forEachPackageInternal(ctx, impGraph, nil, ids, pre, post, handles)
+	_, err = s.forEachPackageInternal(ctx, impGraph, nil, needIDs, pre2, post2, handles)
 	return err
 }
 
@@ -370,16 +401,15 @@ func (s *Snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preT
 // If a non-nil importGraph is provided, imports in this graph will be reused.
 func (s *Snapshot) forEachPackageInternal(ctx context.Context, importGraph *importGraph, importIDs, syntaxIDs []PackageID, pre preTypeCheck, post postTypeCheck, handles map[PackageID]*packageHandle) (*typeCheckBatch, error) {
 	b := &typeCheckBatch{
-		activePackageCache: s,
-		pre:                pre,
-		post:               post,
-		handles:            handles,
-		parseCache:         s.view.parseCache,
-		fset:               fileSetWithBase(reservedForParsing),
-		syntaxIndex:        make(map[PackageID]int),
-		cpulimit:           make(chan unit, runtime.GOMAXPROCS(0)),
-		syntaxPackages:     make(map[PackageID]*futurePackage),
-		importPackages:     make(map[PackageID]*futurePackage),
+		pre:            pre,
+		post:           post,
+		handles:        handles,
+		parseCache:     s.view.parseCache,
+		fset:           fileSetWithBase(reservedForParsing),
+		syntaxIndex:    make(map[PackageID]int),
+		cpulimit:       make(chan unit, runtime.GOMAXPROCS(0)),
+		syntaxPackages: make(map[PackageID]*futurePackage),
+		importPackages: make(map[PackageID]*futurePackage),
 	}
 
 	if importGraph != nil {
@@ -517,20 +547,6 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 		return nil, nil // skip: export data only
 	}
 
-	// Check for existing active packages.
-	//
-	// Since gopls can't depend on package identity, any instance of the
-	// requested package must be ok to return.
-	//
-	// This is an optimization to avoid redundant type-checking: following
-	// changes to an open package many LSP clients send several successive
-	// requests for package information for the modified package (semantic
-	// tokens, code lens, inlay hints, etc.)
-	if pkg := b.activePackageCache.getActivePackage(id); pkg != nil {
-		b.post(i, pkg)
-		return nil, nil // skip: not checked in this batch
-	}
-
 	// Wait for predecessors.
 	{
 		var g errgroup.Group
@@ -571,8 +587,7 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 	}
 
 	// Update caches.
-	b.activePackageCache.setActivePackage(id, p) // store active packages in memory
-	go storePackageResults(ctx, ph, p)           // ...and write all packages to disk
+	go storePackageResults(ctx, ph, p) // ...and write all packages to disk
 
 	b.post(i, p)
 
