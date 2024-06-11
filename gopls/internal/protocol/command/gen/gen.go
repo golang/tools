@@ -72,14 +72,18 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 {{- range .Commands}}
 
 func New{{.MethodName}}Command(title string, {{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}} {{typeString $v.Type}}{{end}}) (protocol.Command, error) {
+	{{- if .Args -}}
 	args, err := MarshalArgs({{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}}{{end}})
 	if err != nil {
 		return protocol.Command{}, err
 	}
+	{{end -}}
 	return protocol.Command{
 		Title: title,
 		Command: {{.MethodName}}.String(),
+	{{- if .Args}}
 		Arguments: args,
+	{{end}}
 	}, nil
 }
 {{end}}

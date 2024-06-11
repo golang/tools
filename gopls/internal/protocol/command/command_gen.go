@@ -517,26 +517,16 @@ func NewListKnownPackagesCommand(title string, a0 URIArg) (protocol.Command, err
 }
 
 func NewMaybePromptForTelemetryCommand(title string) (protocol.Command, error) {
-	args, err := MarshalArgs()
-	if err != nil {
-		return protocol.Command{}, err
-	}
 	return protocol.Command{
-		Title:     title,
-		Command:   MaybePromptForTelemetry.String(),
-		Arguments: args,
+		Title:   title,
+		Command: MaybePromptForTelemetry.String(),
 	}, nil
 }
 
 func NewMemStatsCommand(title string) (protocol.Command, error) {
-	args, err := MarshalArgs()
-	if err != nil {
-		return protocol.Command{}, err
-	}
 	return protocol.Command{
-		Title:     title,
-		Command:   MemStats.String(),
-		Arguments: args,
+		Title:   title,
+		Command: MemStats.String(),
 	}, nil
 }
 
@@ -721,25 +711,15 @@ func NewVendorCommand(title string, a0 URIArg) (protocol.Command, error) {
 }
 
 func NewViewsCommand(title string) (protocol.Command, error) {
-	args, err := MarshalArgs()
-	if err != nil {
-		return protocol.Command{}, err
-	}
 	return protocol.Command{
-		Title:     title,
-		Command:   Views.String(),
-		Arguments: args,
+		Title:   title,
+		Command: Views.String(),
 	}, nil
 }
 
 func NewWorkspaceStatsCommand(title string) (protocol.Command, error) {
-	args, err := MarshalArgs()
-	if err != nil {
-		return protocol.Command{}, err
-	}
 	return protocol.Command{
-		Title:     title,
-		Command:   WorkspaceStats.String(),
-		Arguments: args,
+		Title:   title,
+		Command: WorkspaceStats.String(),
 	}, nil
 }
