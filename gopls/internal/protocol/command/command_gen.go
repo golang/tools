@@ -607,14 +607,9 @@ func NewRunTestsCommand(title string, a0 RunTestsArgs) (protocol.Command, error)
 }
 
 func NewScanImportsCommand(title string) (protocol.Command, error) {
-	args, err := MarshalArgs()
-	if err != nil {
-		return protocol.Command{}, err
-	}
 	return protocol.Command{
-		Title:     title,
-		Command:   ScanImports.String(),
-		Arguments: args,
+		Title:   title,
+		Command: ScanImports.String(),
 	}, nil
 }
 
