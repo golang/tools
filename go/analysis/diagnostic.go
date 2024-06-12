@@ -58,8 +58,10 @@ type RelatedInformation struct {
 //
 // The TextEdits must not overlap, nor contain edits for other packages.
 type SuggestedFix struct {
-	// A description for this suggested fix to be shown to a user deciding
-	// whether to accept it.
+	// A verb phrase describing the fix, to be shown to
+	// a user trying to decide whether to accept it.
+	//
+	// Example: "Remove the surplus argument"
 	Message   string
 	TextEdits []TextEdit
 }

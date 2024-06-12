@@ -114,9 +114,9 @@ type Testing interface {
 // into nonconflicting parts.
 //
 // Conflicts of the second kind can be avoided by giving the
-// alternative fixes different names (SuggestedFix.Message) and using
-// a multi-section .txtar file with a named section for each
-// alternative fix.
+// alternative fixes different names (SuggestedFix.Message) and
+// defining the .golden file as a multi-section txtar file with a
+// named section for each alternative fix, as shown above.
 //
 // Analyzers that compute fixes from a textual diff of the
 // before/after file contents (instead of directly from syntax tree
