@@ -85,8 +85,8 @@ gopls build will depend on the latest version of Go. However, due to the
 [forward compatibility](https://go.dev/blog/toolchain) support added to the
 `go` command in Go 1.21, as long as Go 1.21 or later are used to install gopls,
 the toolchain upgrade will be handled automatically, just like any other
-dependency. Gopls will continue to support integrating with the two most recent
-major Go releases of the `go` command, per the Go Release Policy. See
+dependency. Gopls will continue to support integrating with the three most
+recent major Go releases of the `go` command. See
 [issue #65917](https://go.dev/issue/65917) for more details.
 
 Maintaining support for legacy versions of Go caused
