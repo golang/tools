@@ -4,7 +4,7 @@
 
 package golang
 
-// This file implements the "View free symbols" code action.
+// This file implements the "Browse free symbols" code action.
 
 import (
 	"bytes"
@@ -259,7 +259,7 @@ p { max-width: 6in; }
   as a separate item, so that you can see which parts of a complex
   type are actually needed.
 
-  Viewing the free symbols referenced by the body of a function may
+  The free symbols referenced by the body of a function may
   reveal that only a small part (a single field of a struct, say) of
   one of the function's parameters is used, allowing you to simplify
   and generalize the function by choosing a different type for that

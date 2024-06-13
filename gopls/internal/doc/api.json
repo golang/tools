@@ -962,7 +962,7 @@
 		},
 		{
 			"Command": "gopls.assembly",
-			"Title": "View assembly listing of current function in a browser.",
+			"Title": "Browse assembly listing of current function in a browser.",
 			"Doc": "This command opens a web-based disassembly listing of the\nspecified function symbol (plus any nested lambdas and defers).\nThe machine architecture is determined by the view.",
 			"ArgDoc": "string,\nstring,\nstring",
 			"ResultDoc": ""
@@ -990,7 +990,7 @@
 		},
 		{
 			"Command": "gopls.doc",
-			"Title": "View package documentation.",
+			"Title": "Browse package documentation.",
 			"Doc": "Opens the Go package documentation page for the current\npackage in a browser.",
 			"ArgDoc": "{\n\t\"uri\": string,\n\t\"range\": {\n\t\t\"start\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t\t\"end\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t},\n}",
 			"ResultDoc": ""
@@ -1011,7 +1011,7 @@
 		},
 		{
 			"Command": "gopls.free_symbols",
-			"Title": "View free symbols referenced by the selection in a browser.",
+			"Title": "Browse free symbols referenced by the selection in a browser.",
 			"Doc": "This command is a query over a selected range of Go source\ncode. It reports the set of \"free\" symbols of the\nselection: the set of symbols that are referenced within\nthe selection but are declared outside of it. This\ninformation is useful for understanding at a glance what a\nblock of code depends on, perhaps as a precursor to\nextracting it into a separate function.",
 			"ArgDoc": "string,\n{\n\t\"uri\": string,\n\t\"range\": {\n\t\t\"start\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t\t\"end\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t},\n}",
 			"ResultDoc": ""

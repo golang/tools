@@ -140,7 +140,7 @@ Result:
 }
 ```
 
-## `gopls.assembly`: **View assembly listing of current function in a browser.**
+## `gopls.assembly`: **Browse assembly listing of current function in a browser.**
 
 This command opens a web-based disassembly listing of the
 specified function symbol (plus any nested lambdas and defers).
@@ -253,7 +253,7 @@ Args:
 }
 ```
 
-## `gopls.doc`: **View package documentation.**
+## `gopls.doc`: **Browse package documentation.**
 
 Opens the Go package documentation page for the current
 package in a browser.
@@ -310,7 +310,7 @@ Result:
 map[golang.org/x/tools/gopls/internal/protocol.DocumentURI]*golang.org/x/tools/gopls/internal/vulncheck.Result
 ```
 
-## `gopls.free_symbols`: **View free symbols referenced by the selection in a browser.**
+## `gopls.free_symbols`: **Browse free symbols referenced by the selection in a browser.**
 
 This command is a query over a selected range of Go source
 code. It reports the set of "free" symbols of the

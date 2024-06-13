@@ -20,7 +20,7 @@ import (
 )
 
 // TestWebServer exercises the web server created on demand
-// for code actions such as "View package documentation".
+// for code actions such as "Browse package documentation".
 func TestWebServer(t *testing.T) {
 	const files = `
 -- go.mod --
@@ -191,24 +191,24 @@ func Constructor() Type
 	})
 }
 
-// viewPkgDoc invokes the "View package documentation" code action in
+// viewPkgDoc invokes the "Browse package documentation" code action in
 // the specified file. It returns the URI of the document, or fails
 // the test.
 func viewPkgDoc(t *testing.T, env *Env, filename string) protocol.URI {
 	env.OpenFile(filename)
 
-	// Invoke the "View package documentation" code
+	// Invoke the "Browse package documentation" code
 	// action to start the server.
 	var docAction *protocol.CodeAction
 	actions := env.CodeActionForFile(filename, nil)
 	for _, act := range actions {
-		if act.Title == "View package documentation" {
+		if act.Title == "Browse package documentation" {
 			docAction = &act
 			break
 		}
 	}
 	if docAction == nil {
-		t.Fatalf("can't find action with Title 'View package documentation', only %#v",
+		t.Fatalf("can't find action with Title 'Browse package documentation', only %#v",
 			actions)
 	}
 
@@ -253,7 +253,7 @@ func f(buf bytes.Buffer, greeting string) {
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 
-		// Invoke the "View free symbols" code
+		// Invoke the "Browse free symbols" code
 		// action to start the server.
 		loc := env.RegexpSearch("a/a.go", "«((?:.|\n)*)»")
 		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
@@ -262,13 +262,13 @@ func f(buf bytes.Buffer, greeting string) {
 		}
 		var action *protocol.CodeAction
 		for _, a := range actions {
-			if a.Title == "View free symbols" {
+			if a.Title == "Browse free symbols" {
 				action = &a
 				break
 			}
 		}
 		if action == nil {
-			t.Fatalf("can't find action with Title 'View free symbols', only %#v",
+			t.Fatalf("can't find action with Title 'Browse free symbols', only %#v",
 				actions)
 		}
 
@@ -320,13 +320,13 @@ func g() {
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 
-		// Invoke the "View assembly" code action to start the server.
+		// Invoke the "Browse assembly" code action to start the server.
 		loc := env.RegexpSearch("a/a.go", "println")
 		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
 		if err != nil {
 			t.Fatalf("CodeAction: %v", err)
 		}
-		const wantTitle = "View " + runtime.GOARCH + " assembly for f"
+		const wantTitle = "Browse " + runtime.GOARCH + " assembly for f"
 		var action *protocol.CodeAction
 		for _, a := range actions {
 			if a.Title == wantTitle {

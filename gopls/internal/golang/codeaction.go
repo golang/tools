@@ -105,7 +105,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 
 		if want[protocol.GoDoc] {
 			loc := protocol.Location{URI: pgf.URI, Range: rng}
-			cmd, err := command.NewDocCommand("View package documentation", loc)
+			cmd, err := command.NewDocCommand("Browse package documentation", loc)
 			if err != nil {
 				return nil, err
 			}
@@ -118,7 +118,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 
 		if want[protocol.GoFreeSymbols] && rng.End != rng.Start {
 			loc := protocol.Location{URI: pgf.URI, Range: rng}
-			cmd, err := command.NewFreeSymbolsCommand("View free symbols", snapshot.View().ID(), loc)
+			cmd, err := command.NewFreeSymbolsCommand("Browse free symbols", snapshot.View().ID(), loc)
 			if err != nil {
 				return nil, err
 			}
@@ -535,7 +535,7 @@ func getGoTestCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Ra
 	}}, nil
 }
 
-// getGoAssemblyAction returns any "View assembly for f" code actions for the selection.
+// getGoAssemblyAction returns any "Browse assembly for f" code actions for the selection.
 func getGoAssemblyAction(view *cache.View, pkg *cache.Package, pgf *parsego.File, rng protocol.Range) ([]protocol.CodeAction, error) {
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
@@ -593,7 +593,7 @@ func getGoAssemblyAction(view *cache.View, pkg *cache.Package, pgf *parsego.File
 					(fn.Name() != "init" || sig.Recv() != nil) && // init functions aren't linker functions
 					sig.TypeParams() == nil && sig.RecvTypeParams() == nil { // generic => no assembly
 					cmd, err := command.NewAssemblyCommand(
-						fmt.Sprintf("View %s assembly for %s", view.GOARCH(), decl.Name),
+						fmt.Sprintf("Browse %s assembly for %s", view.GOARCH(), decl.Name),
 						view.ID(),
 						string(pkg.Metadata().ID),
 						sym.String())
