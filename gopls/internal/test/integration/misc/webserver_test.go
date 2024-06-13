@@ -354,15 +354,21 @@ func g() {
 		t.Log("showDocument(package doc) URL:", doc.URI)
 
 		// Get the report and do some minimal checks for sensible results.
-		// Use only portable instructions below!
+		//
+		// Use only portable instructions below! Remember that
+		// This is a test of plumbing, not compilation, so
+		// it's better to skip the tests, rather than refine
+		// them, on any architecture that gives us trouble.
 		report := get(t, doc.URI)
 		checkMatch(t, true, report, `TEXT.*example.com/a.f`)
-		checkMatch(t, true, report, `CALL	runtime.printlock`)
-		checkMatch(t, true, report, `CALL	runtime.printstring`)
-		checkMatch(t, true, report, `CALL	runtime.printunlock`)
-		checkMatch(t, true, report, `CALL	example.com/a.f.deferwrap1`)
-		checkMatch(t, true, report, `RET`)
-		checkMatch(t, true, report, `CALL	runtime.morestack_noctxt`)
+		if runtime.GOARCH != "risc64" { // RISC-V uses JAL instead of CALL
+			checkMatch(t, true, report, `CALL	runtime.printlock`)
+			checkMatch(t, true, report, `CALL	runtime.printstring`)
+			checkMatch(t, true, report, `CALL	runtime.printunlock`)
+			checkMatch(t, true, report, `CALL	example.com/a.f.deferwrap1`)
+			checkMatch(t, true, report, `RET`)
+			checkMatch(t, true, report, `CALL	runtime.morestack_noctxt`)
+		}
 
 		// Nested functions are also shown.
 		checkMatch(t, true, report, `TEXT.*example.com/a.f.deferwrap1`)
