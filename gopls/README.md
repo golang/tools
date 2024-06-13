@@ -80,16 +80,30 @@ that it officially supports only the two most recent major Go releases. Until
 August 2024, the Go team will also maintain best-effort support for the last
 4 major Go releases, as described in [issue #39146](https://go.dev/issues/39146).
 
-Starting with the release of Go 1.23.0 and gopls@v0.17.0 in August 2024, the
-gopls build will depend on the latest version of Go. However, due to the
-[forward compatibility](https://go.dev/blog/toolchain) support added to the
-`go` command in Go 1.21, as long as Go 1.21 or later are used to install gopls,
-the toolchain upgrade will be handled automatically, just like any other
-dependency. Gopls will continue to support integrating with the three most
-recent major Go releases of the `go` command. See
-[issue #65917](https://go.dev/issue/65917) for more details.
+When using gopls, there are three versions to be aware of:
+1. The _gopls build go version_: the version of Go used to build gopls.
+2. The _go command version_: the version of the go list command executed by
+   gopls to load information about your workspace.
+3. The _language version_: the version in the go directive of the current
+   file's enclosing go.mod file, which determines the file's Go language
+   semantics.
 
-Maintaining support for legacy versions of Go caused
+Starting with the release of Go 1.23.0 and gopls@v0.17.0 in August 2024, we
+will only support the most recent Go version as the _gopls build go version_.
+However, due to the [forward compatibility](https://go.dev/blog/toolchain)
+support added in Go 1.21, as long as Go 1.21 or later are used to install
+gopls, any necessary toolchain upgrade will be handled automatically, just like
+any other dependency.
+
+Additionally, starting with gopls@v0.17.0, the _go command version_ will narrow
+from 4 versions to 3. This is more consistent with the Go Release Policy.
+
+Gopls supports **all** Go versions as its _language version_, by providing
+compiler errors based on the language version and filtering available standard
+library symbols based on the standard library APIs available at that Go
+version.
+
+Maintaining support for building gopls with legacy versions of Go caused
 [significant friction](https://go.dev/issue/50825) for gopls maintainers and
 held back other improvements. If you are unable to install a supported version
 of Go on your system, you can still install an older version of gopls. The
