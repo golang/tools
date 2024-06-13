@@ -79,6 +79,9 @@ func (a *Awaiter) Hooks() fake.ClientHooks {
 	}
 }
 
+// ResetShownDocuments resets the set of accumulated ShownDocuments seen so far.
+func (a *Awaiter) ResetShownDocuments() { a.state.showDocument = nil }
+
 // State encapsulates the server state TODO: explain more
 type State struct {
 	// diagnostics are a map of relative path->diagnostics params

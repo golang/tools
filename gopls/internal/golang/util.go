@@ -354,3 +354,12 @@ func (f ImporterFunc) Import(path string) (*types.Package, error) { return f(pat
 // isBuiltin reports whether obj is a built-in symbol (e.g. append, iota, error.Error, unsafe.Slice).
 // All other symbols have a valid position and a valid package.
 func isBuiltin(obj types.Object) bool { return !obj.Pos().IsValid() }
+
+// btoi returns int(b) as proposed in #64825.
+func btoi(b bool) int {
+	if b {
+		return 1
+	} else {
+		return 0
+	}
+}

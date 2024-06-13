@@ -125,6 +125,8 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 // hover computes hover information at the given position. If we do not support
 // hovering at the position, it returns _, nil, nil: an error is only returned
 // if the position is valid but we fail to compute hover information.
+//
+// TODO(adonovan): strength-reduce file.Handle to protocol.DocumentURI.
 func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) (protocol.Range, *hoverJSON, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
@@ -533,13 +535,13 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			pkg := obj.Pkg()
 			if recv != nil {
 				linkName = fmt.Sprintf("(%s.%s).%s", pkg.Name(), recv.Name(), obj.Name())
-				if obj.Exported() && recv.Exported() && pkg.Scope().Lookup(recv.Name()) == recv {
+				if obj.Exported() && recv.Exported() && isPackageLevel(recv) {
 					linkPath = pkg.Path()
 					anchor = fmt.Sprintf("%s.%s", recv.Name(), obj.Name())
 				}
 			} else {
 				linkName = fmt.Sprintf("%s.%s", pkg.Name(), obj.Name())
-				if obj.Exported() && pkg.Scope().Lookup(obj.Name()) == obj {
+				if obj.Exported() && isPackageLevel(obj) {
 					linkPath = pkg.Path()
 					anchor = obj.Name()
 				}

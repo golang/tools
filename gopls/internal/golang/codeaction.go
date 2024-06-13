@@ -48,7 +48,6 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 	if wantQuickFixes ||
 		want[protocol.SourceOrganizeImports] ||
 		want[protocol.RefactorExtract] ||
-		want[protocol.GoDoc] ||
 		want[protocol.GoFreeSymbols] {
 
 		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
@@ -103,19 +102,6 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 			actions = append(actions, extractions...)
 		}
 
-		if want[protocol.GoDoc] {
-			loc := protocol.Location{URI: pgf.URI, Range: rng}
-			cmd, err := command.NewDocCommand("Browse package documentation", loc)
-			if err != nil {
-				return nil, err
-			}
-			actions = append(actions, protocol.CodeAction{
-				Title:   cmd.Title,
-				Kind:    protocol.GoDoc,
-				Command: &cmd,
-			})
-		}
-
 		if want[protocol.GoFreeSymbols] && rng.End != rng.Start {
 			loc := protocol.Location{URI: pgf.URI, Range: rng}
 			cmd, err := command.NewFreeSymbolsCommand("Browse free symbols", snapshot.View().ID(), loc)
@@ -135,11 +121,17 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 	if want[protocol.RefactorRewrite] ||
 		want[protocol.RefactorInline] ||
 		want[protocol.GoAssembly] ||
+		want[protocol.GoDoc] ||
 		want[protocol.GoTest] {
 		pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 		if err != nil {
 			return nil, err
 		}
+		start, end, err := pgf.RangePos(rng)
+		if err != nil {
+			return nil, err
+		}
+
 		if want[protocol.RefactorRewrite] {
 			rewrites, err := getRewriteCodeActions(ctx, pkg, snapshot, pgf, fh, rng, snapshot.Options())
 			if err != nil {
@@ -164,6 +156,21 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 				return nil, err
 			}
 			actions = append(actions, fixes...)
+		}
+
+		if want[protocol.GoDoc] {
+			// "Browse documentation for ..."
+			_, _, title := DocFragment(pkg, pgf, start, end)
+			loc := protocol.Location{URI: pgf.URI, Range: rng}
+			cmd, err := command.NewDocCommand(title, loc)
+			if err != nil {
+				return nil, err
+			}
+			actions = append(actions, protocol.CodeAction{
+				Title:   cmd.Title,
+				Kind:    protocol.GoDoc,
+				Command: &cmd,
+			})
 		}
 
 		if want[protocol.GoAssembly] {
