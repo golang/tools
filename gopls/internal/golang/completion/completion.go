@@ -2134,6 +2134,9 @@ const (
 	kindError
 	kindStringer
 	kindFunc
+	kindRange0Func
+	kindRange1Func
+	kindRange2Func
 )
 
 // penalizedObj represents an object that should be disfavored as a
@@ -2430,8 +2433,12 @@ Nodes:
 		case *ast.RangeStmt:
 			if goplsastutil.NodeContains(node.X, c.pos) {
 				inf.objKind |= kindSlice | kindArray | kindMap | kindString
-				if node.Value == nil {
-					inf.objKind |= kindChan
+				if node.Key == nil && node.Value == nil {
+					inf.objKind |= kindRange0Func | kindRange1Func | kindRange2Func
+				} else if node.Value == nil {
+					inf.objKind |= kindChan | kindRange1Func | kindRange2Func
+				} else {
+					inf.objKind |= kindRange2Func
 				}
 			}
 			return inf
@@ -3233,15 +3240,17 @@ var (
 
 	// "interface { String() string }" (i.e. fmt.Stringer)
 	stringerIntf = types.NewInterfaceType([]*types.Func{
-		types.NewFunc(token.NoPos, nil, "String", types.NewSignature(
-			nil,
-			nil,
+		types.NewFunc(token.NoPos, nil, "String", types.NewSignatureType(
+			nil, nil,
+			nil, nil,
 			types.NewTuple(types.NewParam(token.NoPos, nil, "", types.Typ[types.String])),
 			false,
 		)),
 	}, nil).Complete()
 
 	byteType = types.Universe.Lookup("byte").Type()
+
+	boolType = types.Universe.Lookup("bool").Type()
 )
 
 // candKind returns the objKind of candType, if any.
@@ -3287,7 +3296,16 @@ func candKind(candType types.Type) objKind {
 			kind |= kindBool
 		}
 	case *types.Signature:
-		return kindFunc
+		kind |= kindFunc
+
+		switch rangeFuncParamCount(t) {
+		case 0:
+			kind |= kindRange0Func
+		case 1:
+			kind |= kindRange1Func
+		case 2:
+			kind |= kindRange2Func
+		}
 	}
 
 	if types.Implements(candType, errorIntf) {
@@ -3299,6 +3317,24 @@ func candKind(candType types.Type) objKind {
 	}
 
 	return kind
+}
+
+// If sig looks like a range func, return param count, else return -1.
+func rangeFuncParamCount(sig *types.Signature) int {
+	if sig.Results().Len() != 0 || sig.Params().Len() != 1 {
+		return -1
+	}
+
+	yieldSig, _ := sig.Params().At(0).Type().Underlying().(*types.Signature)
+	if yieldSig == nil {
+		return -1
+	}
+
+	if yieldSig.Results().Len() != 1 || yieldSig.Results().At(0).Type() != boolType {
+		return -1
+	}
+
+	return yieldSig.Params().Len()
 }
 
 // innermostScope returns the innermost scope for c.pos.
