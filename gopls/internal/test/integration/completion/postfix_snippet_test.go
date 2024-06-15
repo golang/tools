@@ -239,6 +239,25 @@ func _() {
 `,
 		},
 		{
+			name: "slice_clear",
+			before: `
+package foo
+
+func _() {
+	var foo []int
+	foo.clear
+}
+`,
+			after: `
+package foo
+
+func _() {
+	var foo []int
+	clear(foo)
+}
+`,
+		},
+		{
 			name: "map_keys",
 			before: `
 package foo

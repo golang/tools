@@ -173,8 +173,8 @@ for {{.VarName .KeyType "k" | .Placeholder}}, {{.VarName .ElemType "v" | .Placeh
 {{- end}}`,
 }, {
 	label:   "clear",
-	details: "clear map contents",
-	body: `{{if and (eq .Kind "map") .StmtOK -}}
+	details: "clear contents",
+	body: `{{if and (eq .Kind "map" "slice") .StmtOK -}}
 clear({{.X}})
 {{- end}}`,
 }, {
