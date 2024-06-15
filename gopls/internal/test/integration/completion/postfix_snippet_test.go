@@ -234,10 +234,7 @@ package foo
 
 func _() {
 	var foo map[string]int
-	for k := range foo {
-	delete(foo, k)
-}
-
+	clear(foo)
 }
 `,
 		},

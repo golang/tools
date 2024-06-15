@@ -84,7 +84,7 @@ func _() {
 	foo.fo //@snippet(" //", postfixFor, "for ${1:} := range foo {\n\t$0\n}")
 	foo.forr //@snippet(" //", postfixForr, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
 	foo.rang //@snippet(" //", postfixRange, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
-	foo.clear //@snippet(" //", postfixClear, "for k := range foo {\n\tdelete(foo, k)\n}\n")
+	foo.clear //@snippet(" //", postfixClear, "clear(foo)")
 	foo.keys //@snippet(" //", postfixKeys, "keys := make([]int, 0, len(foo))\nfor k := range foo {\n\tkeys = append(keys, k)\n}\n")
 }
 
