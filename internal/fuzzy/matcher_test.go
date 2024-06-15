@@ -109,29 +109,34 @@ func TestScore(t *testing.T) {
 }
 
 var compareCandidatesTestCases = []struct {
-	pattern           string
-	orderedCandidates []string
+	pattern string
+	// In `[][]string{{"foo", "bar"}, {"baz"}}`,
+	// "foo" and "bar" must have same score, "baz" must be strictly higher scoring.
+	orderedCandidates [][]string
 }{
 	{
 		pattern: "Foo",
-		orderedCandidates: []string{
-			"Barfoo",
-			"Faoo",
-			"F_o_o",
-			"FaoFooa",
-			"BarFoo",
-			"F__oo",
-			"F_oo",
-			"FooA",
-			"FooBar",
-			"Foo",
+		orderedCandidates: [][]string{
+			{"Barfoo"},
+			{"Faoo"},
+			{"F_o_o"},
+			{"FaoFooa", "BarFoo"},
+			{"F__oo", "F_oo"},
+			{"FooA", "FooBar", "Foo"},
 		},
 	},
 	{
 		pattern: "U",
-		orderedCandidates: []string{
-			"ErrUnexpectedEOF.Error",
-			"ErrUnexpectedEOF",
+		orderedCandidates: [][]string{
+			{"ErrUnexpectedEOF.Error"},
+			{"ErrUnexpectedEOF"},
+		},
+	},
+	{
+		pattern: "N",
+		orderedCandidates: [][]string{
+			{"name"},
+			{"Name"},
 		},
 	},
 }
@@ -141,17 +146,25 @@ func TestCompareCandidateScores(t *testing.T) {
 		m := fuzzy.NewMatcher(tc.pattern)
 
 		var prevScore float32
-		prevCand := "MIN_SCORE"
-		for _, cand := range tc.orderedCandidates {
-			score := m.Score(cand)
-			if prevScore > score {
-				t.Errorf("%s[=%v] is scored lower than %s[=%v]", cand, score, prevCand, prevScore)
+		var prevCandGroup []string
+		for i, candGroup := range tc.orderedCandidates {
+			var groupScore float32
+			for j, cand := range candGroup {
+				score := m.Score(cand)
+				if j > 0 && score != groupScore {
+					t.Fatalf("score %f of %q different than group", score, cand)
+				}
+				groupScore = score
 			}
-			if score < -1 || score > 1 {
-				t.Errorf("%s score is %v; want value between [-1, 1]", cand, score)
+
+			if i > 0 && prevScore >= groupScore {
+				t.Errorf("%s[=%v] is not scored higher than %s[=%v]", candGroup, groupScore, prevCandGroup, prevScore)
 			}
-			prevScore = score
-			prevCand = cand
+			if groupScore < 0 || groupScore > 1 {
+				t.Errorf("%s score is %v; want value between [0, 1]", candGroup, groupScore)
+			}
+			prevScore = groupScore
+			prevCandGroup = candGroup
 		}
 	}
 }

@@ -277,22 +277,27 @@ func (m *Matcher) computeScore(candidate []byte, candidateLower []byte) int {
 
 			// Compute the char score.
 			var charScore int
-			// Bonus 1: the char is in the candidate's last segment.
+			// Bonus: the char is in the candidate's last segment.
 			if segmentsLeft <= 1 {
 				charScore++
 			}
-			// Bonus 2: Case match or a Head in the pattern aligns with one in the word.
-			// Single-case patterns lack segmentation signals and we assume any character
-			// can be a head of a segment.
-			if candidate[i-1] == m.pattern[j-1] || role == RHead && (!m.caseSensitive || pRole == RHead) {
+
+			// Bonus: exact case match between pattern and candidate.
+			if candidate[i-1] == m.pattern[j-1] ||
+				// Bonus: candidate char is a head and pattern is all
+				// lowercase. There is no segmentation in an all lowercase
+				// pattern, so assume any char in pattern can be a head. Note
+				// that we are intentionally _not_ giving a bonus to a case
+				// insensitive match when the pattern is case sensitive.
+				role == RHead && !m.caseSensitive {
 				charScore++
 			}
 
-			// Penalty 1: pattern char is Head, candidate char is Tail.
+			// Penalty: pattern char is Head, candidate char is Tail.
 			if role == RTail && pRole == RHead {
 				charScore--
 			}
-			// Penalty 2: first pattern character matched in the middle of a word.
+			// Penalty: first pattern character matched in the middle of a word.
 			if j == 1 && role == RTail {
 				charScore -= 4
 			}
@@ -304,14 +309,14 @@ func (m *Matcher) computeScore(candidate []byte, candidateLower []byte) int {
 
 				isConsecutive := k == 1 || i-1 == 0 || i-1 == lastSegStart
 				if isConsecutive {
-					// Bonus 3: a consecutive match. First character match also gets a bonus to
+					// Bonus: a consecutive match. First character match also gets a bonus to
 					// ensure prefix final match score normalizes to 1.0.
 					// Logically, this is a part of charScore, but we have to compute it here because it
 					// only applies for consecutive matches (k == 1).
 					sc += consecutiveBonus
 				}
 				if k == 0 {
-					// Penalty 3: Matching inside a segment (and previous char wasn't matched). Penalize for the lack
+					// Penalty: Matching inside a segment (and previous char wasn't matched). Penalize for the lack
 					// of alignment.
 					if role == RTail || role == RUCTail {
 						sc -= 3
