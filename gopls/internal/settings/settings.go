@@ -599,30 +599,24 @@ const (
 	// TODO: support "Manual"?
 )
 
-type OptionResults []OptionResult
-
-type OptionResult struct {
-	Name  string
-	Value any // JSON value (e.g. string, int, bool, map[string]any)
-	Error error
-}
-
-func SetOptions(options *Options, opts any) OptionResults {
-	var results OptionResults
-	switch opts := opts.(type) {
+// Set updates *options based on the provided JSON value:
+// null, bool, string, number, array, or object.
+// On failure, it returns one or more non-nil errors.
+func (options *Options) Set(value any) (errors []error) {
+	switch value := value.(type) {
 	case nil:
 	case map[string]any:
-		seen := map[string]struct{}{}
-		for name, value := range opts {
-			results = append(results, options.set(name, value, seen))
+		seen := make(map[string]struct{})
+		for name, value := range value {
+			if err := options.set(name, value, seen); err != nil {
+				err := fmt.Errorf("setting option %v: %w", name, err)
+				errors = append(errors, err)
+			}
 		}
 	default:
-		results = append(results, OptionResult{
-			Value: opts,
-			Error: fmt.Errorf("Invalid options type %T", opts),
-		})
+		errors = append(errors, fmt.Errorf("invalid options type %T (want JSON null or object)", value))
 	}
-	return results
+	return errors
 }
 
 func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps protocol.ClientCapabilities) {
@@ -720,7 +714,10 @@ func validateDirectoryFilter(ifilter string) (string, error) {
 	return strings.TrimRight(filepath.FromSlash(filter), "/"), nil
 }
 
-func (o *Options) set(name string, value any, seen map[string]struct{}) OptionResult {
+// set updates a field of o based on the name and value.
+// It returns an error if the value was invalid or duplicate.
+// It is the caller's responsibility to augment the error with 'name'.
+func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 	// Use only the last segment of a dotted name such as
 	// ui.navigation.symbolMatcher. The other segments
 	// are discarded, even without validation (!).
@@ -729,270 +726,236 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) OptionRe
 	split := strings.Split(name, ".")
 	name = split[len(split)-1]
 
-	result := &OptionResult{Name: name, Value: value}
 	if _, ok := seen[name]; ok {
-		result.parseErrorf("duplicate configuration for %s", name)
+		return fmt.Errorf("duplicate value")
 	}
 	seen[name] = struct{}{}
 
 	switch name {
 	case "env":
-		menv, ok := value.(map[string]any)
+		env, ok := value.(map[string]any)
 		if !ok {
-			result.parseErrorf("invalid type %T, expect map", value)
-			break
+			return fmt.Errorf("invalid type %T (want JSON object)", value)
 		}
 		if o.Env == nil {
 			o.Env = make(map[string]string)
 		}
-		for k, v := range menv {
+		for k, v := range env {
 			o.Env[k] = fmt.Sprint(v)
 		}
 
 	case "buildFlags":
-		// TODO(rfindley): use asStringSlice.
-		iflags, ok := value.([]any)
-		if !ok {
-			result.parseErrorf("invalid type %T, expect list", value)
-			break
-		}
-		flags := make([]string, 0, len(iflags))
-		for _, flag := range iflags {
-			flags = append(flags, fmt.Sprintf("%s", flag))
-		}
-		o.BuildFlags = flags
+		return setStringSlice(&o.BuildFlags, value)
 
 	case "directoryFilters":
-		// TODO(rfindley): use asStringSlice.
-		ifilters, ok := value.([]any)
-		if !ok {
-			result.parseErrorf("invalid type %T, expect list", value)
-			break
+		filterStrings, err := asStringSlice(value)
+		if err != nil {
+			return err
 		}
 		var filters []string
-		for _, ifilter := range ifilters {
-			filter, err := validateDirectoryFilter(fmt.Sprintf("%v", ifilter))
+		for _, filterStr := range filterStrings {
+			filter, err := validateDirectoryFilter(filterStr)
 			if err != nil {
-				result.parseErrorf("%v", err)
-				return *result
+				return err
 			}
 			filters = append(filters, strings.TrimRight(filepath.FromSlash(filter), "/"))
 		}
 		o.DirectoryFilters = filters
 
 	case "memoryMode":
-		result.deprecated("")
+		return deprecatedError("")
 	case "completionDocumentation":
-		result.setBool(&o.CompletionDocumentation)
+		return setBool(&o.CompletionDocumentation, value)
 	case "usePlaceholders":
-		result.setBool(&o.UsePlaceholders)
+		return setBool(&o.UsePlaceholders, value)
 	case "deepCompletion":
-		result.setBool(&o.DeepCompletion)
+		return setBool(&o.DeepCompletion, value)
 	case "completeUnimported":
-		result.setBool(&o.CompleteUnimported)
+		return setBool(&o.CompleteUnimported, value)
 	case "completionBudget":
-		result.setDuration(&o.CompletionBudget)
+		return setDuration(&o.CompletionBudget, value)
 	case "matcher":
-		if s, ok := result.asOneOf(
-			string(Fuzzy),
-			string(CaseSensitive),
-			string(CaseInsensitive),
-		); ok {
-			o.Matcher = Matcher(s)
-		}
+		return setEnum(&o.Matcher, value,
+			Fuzzy,
+			CaseSensitive,
+			CaseInsensitive)
 
 	case "symbolMatcher":
-		if s, ok := result.asOneOf(
-			string(SymbolFuzzy),
-			string(SymbolFastFuzzy),
-			string(SymbolCaseInsensitive),
-			string(SymbolCaseSensitive),
-		); ok {
-			o.SymbolMatcher = SymbolMatcher(s)
-		}
+		return setEnum(&o.SymbolMatcher, value,
+			SymbolFuzzy,
+			SymbolFastFuzzy,
+			SymbolCaseInsensitive,
+			SymbolCaseSensitive)
 
 	case "symbolStyle":
-		if s, ok := result.asOneOf(
-			string(FullyQualifiedSymbols),
-			string(PackageQualifiedSymbols),
-			string(DynamicSymbols),
-		); ok {
-			o.SymbolStyle = SymbolStyle(s)
-		}
+		return setEnum(&o.SymbolStyle, value,
+			FullyQualifiedSymbols,
+			PackageQualifiedSymbols,
+			DynamicSymbols)
 
 	case "symbolScope":
-		if s, ok := result.asOneOf(
-			string(WorkspaceSymbolScope),
-			string(AllSymbolScope),
-		); ok {
-			o.SymbolScope = SymbolScope(s)
-		}
+		return setEnum(&o.SymbolScope, value,
+			WorkspaceSymbolScope,
+			AllSymbolScope)
 
 	case "hoverKind":
-		if s, ok := result.asOneOf(
-			string(NoDocumentation),
-			string(SingleLine),
-			string(SynopsisDocumentation),
-			string(FullDocumentation),
-			string(Structured),
-		); ok {
-			o.HoverKind = HoverKind(s)
-		}
+		return setEnum(&o.HoverKind, value,
+			NoDocumentation,
+			SingleLine,
+			SynopsisDocumentation,
+			FullDocumentation,
+			Structured)
 
 	case "linkTarget":
-		result.setString(&o.LinkTarget)
+		return setString(&o.LinkTarget, value)
 
 	case "linksInHover":
-		result.setBool(&o.LinksInHover)
+		return setBool(&o.LinksInHover, value)
 
 	case "importShortcut":
-		if s, ok := result.asOneOf(string(BothShortcuts), string(LinkShortcut), string(DefinitionShortcut)); ok {
-			o.ImportShortcut = ImportShortcut(s)
-		}
+		return setEnum(&o.ImportShortcut, value,
+			BothShortcuts,
+			LinkShortcut,
+			DefinitionShortcut)
 
 	case "analyses":
-		o.Analyses = asBoolMap[string](result)
+		return setBoolMap(&o.Analyses, value)
 
 	case "hints":
-		o.Hints = asBoolMap[string](result)
+		return setBoolMap(&o.Hints, value)
 
 	case "annotations":
-		result.setAnnotationMap(&o.Annotations)
+		return setAnnotationMap(&o.Annotations, value)
 
 	case "vulncheck":
-		if s, ok := result.asOneOf(
-			string(ModeVulncheckOff),
-			string(ModeVulncheckImports),
-		); ok {
-			o.Vulncheck = VulncheckMode(s)
-		}
+		return setEnum(&o.Vulncheck, value,
+			ModeVulncheckOff,
+			ModeVulncheckImports)
 
 	case "codelenses", "codelens":
-		lensOverrides := asBoolMap[protocol.CodeLensSource](result)
-		if result.Error == nil {
-			if o.Codelenses == nil {
-				o.Codelenses = make(map[protocol.CodeLensSource]bool)
-			}
-			for source, enabled := range lensOverrides {
-				o.Codelenses[source] = enabled
-			}
+		lensOverrides, err := asBoolMap[protocol.CodeLensSource](value)
+		if err != nil {
+			return err
+		}
+		o.Codelenses = maps.Clone(o.Codelenses)
+		for source, enabled := range lensOverrides {
+			o.Codelenses[source] = enabled
 		}
 
 		// codelens is deprecated, but still works for now.
 		// TODO(rstambler): Remove this for the gopls/v0.7.0 release.
 		if name == "codelens" {
-			result.deprecated("codelenses")
+			return deprecatedError("codelenses")
 		}
 
 	case "staticcheck":
-		if v, ok := result.asBool(); ok {
-			o.Staticcheck = v
-			if v && !StaticcheckSupported {
-				result.Error = fmt.Errorf("applying setting %q: staticcheck is not supported at %s;"+
-					" rebuild gopls with a more recent version of Go", result.Name, runtime.Version())
-			}
+		v, err := asBool(value)
+		if err != nil {
+			return err
 		}
+		if v && !StaticcheckSupported {
+			return fmt.Errorf("staticcheck is not supported at %s;"+
+				" rebuild gopls with a more recent version of Go", runtime.Version())
+		}
+		o.Staticcheck = v
 
 	case "local":
-		result.setString(&o.Local)
+		return setString(&o.Local, value)
 
 	case "verboseOutput":
-		result.setBool(&o.VerboseOutput)
+		return setBool(&o.VerboseOutput, value)
 
 	case "verboseWorkDoneProgress":
-		result.setBool(&o.VerboseWorkDoneProgress)
+		return setBool(&o.VerboseWorkDoneProgress, value)
 
 	case "tempModFile":
-		result.deprecated("")
+		return deprecatedError("")
 
 	case "showBugReports":
-		result.setBool(&o.ShowBugReports)
+		return setBool(&o.ShowBugReports, value)
 
 	case "gofumpt":
-		if v, ok := result.asBool(); ok {
-			o.Gofumpt = v
-			if v && !GofumptSupported {
-				result.Error = fmt.Errorf("applying setting %q: gofumpt is not supported at %s;"+
-					" rebuild gopls with a more recent version of Go", result.Name, runtime.Version())
-			}
+		v, err := asBool(value)
+		if err != nil {
+			return err
 		}
+		if v && !GofumptSupported {
+			return fmt.Errorf("gofumpt is not supported at %s;"+
+				" rebuild gopls with a more recent version of Go", runtime.Version())
+		}
+		o.Gofumpt = v
+
 	case "completeFunctionCalls":
-		result.setBool(&o.CompleteFunctionCalls)
+		return setBool(&o.CompleteFunctionCalls, value)
 
 	case "semanticTokens":
-		result.setBool(&o.SemanticTokens)
+		return setBool(&o.SemanticTokens, value)
 
 	case "noSemanticString":
-		result.setBool(&o.NoSemanticString)
+		return setBool(&o.NoSemanticString, value)
 
 	case "noSemanticNumber":
-		result.setBool(&o.NoSemanticNumber)
+		return setBool(&o.NoSemanticNumber, value)
 
 	case "expandWorkspaceToModule":
 		// See golang/go#63536: we can consider deprecating
 		// expandWorkspaceToModule, but probably need to change the default
 		// behavior in that case to *not* expand to the module.
-		result.setBool(&o.ExpandWorkspaceToModule)
+		return setBool(&o.ExpandWorkspaceToModule, value)
 
 	case "experimentalPostfixCompletions":
-		result.setBool(&o.ExperimentalPostfixCompletions)
+		return setBool(&o.ExperimentalPostfixCompletions, value)
 
 	case "experimentalWorkspaceModule":
-		result.deprecated("")
+		return deprecatedError("")
 
 	case "experimentalTemplateSupport": // TODO(pjw): remove after June 2022
-		result.deprecated("")
+		return deprecatedError("")
 
 	case "templateExtensions":
-		if iexts, ok := value.([]any); ok {
-			ans := []string{}
-			for _, x := range iexts {
-				ans = append(ans, fmt.Sprint(x))
-			}
-			o.TemplateExtensions = ans
-			break
-		}
-		if value == nil {
+		switch value := value.(type) {
+		case []any:
+			return setStringSlice(&o.TemplateExtensions, value)
+		case nil:
 			o.TemplateExtensions = nil
-			break
+		default:
+			return fmt.Errorf("unexpected type %T (want JSON array of string)", value)
 		}
-		result.parseErrorf("unexpected type %T not []string", value)
 
 	case "experimentalDiagnosticsDelay":
-		result.deprecated("diagnosticsDelay")
+		return deprecatedError("diagnosticsDelay")
 
 	case "diagnosticsDelay":
-		result.setDuration(&o.DiagnosticsDelay)
+		return setDuration(&o.DiagnosticsDelay, value)
 
 	case "diagnosticsTrigger":
-		if s, ok := result.asOneOf(
-			string(DiagnosticsOnEdit),
-			string(DiagnosticsOnSave),
-		); ok {
-			o.DiagnosticsTrigger = DiagnosticsTrigger(s)
-		}
+		return setEnum(&o.DiagnosticsTrigger, value,
+			DiagnosticsOnEdit,
+			DiagnosticsOnSave)
 
 	case "analysisProgressReporting":
-		result.setBool(&o.AnalysisProgressReporting)
+		return setBool(&o.AnalysisProgressReporting, value)
 
 	case "experimentalWatchedFileDelay":
-		result.deprecated("")
+		return deprecatedError("")
 
 	case "experimentalPackageCacheKey":
-		result.deprecated("")
+		return deprecatedError("")
 
 	case "allowModfileModifications":
-		result.deprecated("")
+		return deprecatedError("")
 
 	case "allowImplicitNetworkAccess":
-		result.softErrorf("gopls setting \"allowImplicitNetworkAccess\" is deprecated.\nPlease comment on https://go.dev/issue/66861 if this impacts your workflow.")
-		result.setBool(&o.AllowImplicitNetworkAccess)
+		if err := setBool(&o.AllowImplicitNetworkAccess, value); err != nil {
+			return err
+		}
+		return softErrorf("gopls setting \"allowImplicitNetworkAccess\" is deprecated.\nPlease comment on https://go.dev/issue/66861 if this impacts your workflow.")
 
 	case "experimentalUseInvalidMetadata":
-		result.deprecated("")
+		return deprecatedError("")
 
 	case "standaloneTags":
-		result.setStringSlice(&o.StandaloneTags)
+		return setStringSlice(&o.StandaloneTags, value)
 
 	case "allExperiments":
 		// golang/go#65548: this setting is a no-op, but we fail don't report it as
@@ -1003,80 +966,68 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) OptionRe
 		// setting forever.
 
 	case "newDiff":
-		result.deprecated("")
+		return deprecatedError("")
 
 	case "subdirWatchPatterns":
-		if s, ok := result.asOneOf(
-			string(SubdirWatchPatternsOn),
-			string(SubdirWatchPatternsOff),
-			string(SubdirWatchPatternsAuto),
-		); ok {
-			o.SubdirWatchPatterns = SubdirWatchPatterns(s)
-		}
+		return setEnum(&o.SubdirWatchPatterns, value,
+			SubdirWatchPatternsOn,
+			SubdirWatchPatternsOff,
+			SubdirWatchPatternsAuto)
 
 	case "reportAnalysisProgressAfter":
-		result.setDuration(&o.ReportAnalysisProgressAfter)
+		return setDuration(&o.ReportAnalysisProgressAfter, value)
 
 	case "telemetryPrompt":
-		result.setBool(&o.TelemetryPrompt)
+		return setBool(&o.TelemetryPrompt, value)
 
 	case "linkifyShowMessage":
-		result.setBool(&o.LinkifyShowMessage)
+		return setBool(&o.LinkifyShowMessage, value)
 
 	case "includeReplaceInWorkspace":
-		result.setBool(&o.IncludeReplaceInWorkspace)
+		return setBool(&o.IncludeReplaceInWorkspace, value)
 
 	case "zeroConfig":
-		result.setBool(&o.ZeroConfig)
+		return setBool(&o.ZeroConfig, value)
 
 	// Replaced settings.
 	case "experimentalDisabledAnalyses":
-		result.deprecated("analyses")
+		return deprecatedError("analyses")
 
 	case "disableDeepCompletion":
-		result.deprecated("deepCompletion")
+		return deprecatedError("deepCompletion")
 
 	case "disableFuzzyMatching":
-		result.deprecated("fuzzyMatching")
+		return deprecatedError("fuzzyMatching")
 
 	case "wantCompletionDocumentation":
-		result.deprecated("completionDocumentation")
+		return deprecatedError("completionDocumentation")
 
 	case "wantUnimportedCompletions":
-		result.deprecated("completeUnimported")
+		return deprecatedError("completeUnimported")
 
 	case "fuzzyMatching":
-		result.deprecated("matcher")
+		return deprecatedError("matcher")
 
 	case "caseSensitiveCompletion":
-		result.deprecated("matcher")
+		return deprecatedError("matcher")
 
 	// Deprecated settings.
 	case "wantSuggestedFixes":
-		result.deprecated("")
+		return deprecatedError("")
 
 	case "noIncrementalSync":
-		result.deprecated("")
+		return deprecatedError("")
 
 	case "watchFileChanges":
-		result.deprecated("")
+		return deprecatedError("")
 
 	case "go-diff":
-		result.deprecated("")
+		return deprecatedError("")
 
 	default:
-		result.unexpected()
+		return fmt.Errorf("unexpected setting")
 	}
-	return *result
-}
-
-// parseErrorf reports an error parsing the current configuration value.
-func (r *OptionResult) parseErrorf(msg string, values ...any) {
-	if false {
-		_ = fmt.Sprintf(msg, values...) // this causes vet to check this like printf
-	}
-	prefix := fmt.Sprintf("parsing setting %q: ", r.Name)
-	r.Error = fmt.Errorf(prefix+msg, values...)
+	return nil
 }
 
 // A SoftError is an error that does not affect the functionality of gopls.
@@ -1088,167 +1039,182 @@ func (e *SoftError) Error() string {
 	return e.msg
 }
 
-// deprecated reports the current setting as deprecated. If 'replacement' is
-// non-nil, it is suggested to the user.
-func (r *OptionResult) deprecated(replacement string) {
-	msg := fmt.Sprintf("gopls setting %q is deprecated", r.Name)
+// softErrorf reports a soft error related to the current option.
+func softErrorf(format string, args ...any) error {
+	return &SoftError{fmt.Sprintf(format, args...)}
+}
+
+// deprecatedError reports the current setting as deprecated.
+// The optional replacement is suggested to the user.
+func deprecatedError(replacement string) error {
+	msg := fmt.Sprintf("this setting is deprecated")
 	if replacement != "" {
 		msg = fmt.Sprintf("%s, use %q instead", msg, replacement)
 	}
-	r.Error = &SoftError{msg}
+	return &SoftError{msg}
 }
 
-// softErrorf reports a soft error related to the current option.
-func (r *OptionResult) softErrorf(format string, args ...any) {
-	r.Error = &SoftError{fmt.Sprintf(format, args...)}
+// setT() and asT() helpers: the setT forms write to the 'dest *T'
+// variable only on success, to reduce boilerplate in Option.set.
+
+func setBool(dest *bool, value any) error {
+	b, err := asBool(value)
+	if err != nil {
+		return err
+	}
+	*dest = b
+	return nil
 }
 
-// unexpected reports that the current setting is not known to gopls.
-func (r *OptionResult) unexpected() {
-	r.Error = fmt.Errorf("unexpected gopls setting %q", r.Name)
-}
-
-func (r *OptionResult) asBool() (bool, bool) {
-	b, ok := r.Value.(bool)
+func asBool(value any) (bool, error) {
+	b, ok := value.(bool)
 	if !ok {
-		r.parseErrorf("invalid type %T, expect bool", r.Value)
-		return false, false
+		return false, fmt.Errorf("invalid type %T (want bool)", value)
 	}
-	return b, true
+	return b, nil
 }
 
-func (r *OptionResult) setBool(b *bool) {
-	if v, ok := r.asBool(); ok {
-		*b = v
+func setDuration(dest *time.Duration, value any) error {
+	str, err := asString(value)
+	if err != nil {
+		return err
 	}
+	parsed, err := time.ParseDuration(str)
+	if err != nil {
+		return err
+	}
+	*dest = parsed
+	return nil
 }
 
-func (r *OptionResult) setDuration(d *time.Duration) {
-	if v, ok := r.asString(); ok {
-		parsed, err := time.ParseDuration(v)
-		if err != nil {
-			r.parseErrorf("failed to parse duration %q: %v", v, err)
-			return
-		}
-		*d = parsed
+func setAnnotationMap(dest *map[Annotation]bool, value any) error {
+	all, err := asBoolMap[string](value)
+	if err != nil {
+		return err
 	}
-}
-
-func (r *OptionResult) setAnnotationMap(bm *map[Annotation]bool) {
-	all := asBoolMap[string](r)
 	if all == nil {
-		return
+		return nil
 	}
 	// Default to everything enabled by default.
 	m := make(map[Annotation]bool)
 	for k, enabled := range all {
-		a, err := asOneOf(
-			k,
-			string(Nil),
-			string(Escape),
-			string(Inline),
-			string(Bounds),
-		)
-		if err != nil {
+		var a Annotation
+		if err := setEnum(&a, k,
+			Nil,
+			Escape,
+			Inline,
+			Bounds); err != nil {
 			// In case of an error, process any legacy values.
 			switch k {
 			case "noEscape":
 				m[Escape] = false
-				r.parseErrorf(`"noEscape" is deprecated, set "Escape: false" instead`)
+				return fmt.Errorf(`"noEscape" is deprecated, set "Escape: false" instead`)
 			case "noNilcheck":
 				m[Nil] = false
-				r.parseErrorf(`"noNilcheck" is deprecated, set "Nil: false" instead`)
+				return fmt.Errorf(`"noNilcheck" is deprecated, set "Nil: false" instead`)
+
 			case "noInline":
 				m[Inline] = false
-				r.parseErrorf(`"noInline" is deprecated, set "Inline: false" instead`)
+				return fmt.Errorf(`"noInline" is deprecated, set "Inline: false" instead`)
 			case "noBounds":
 				m[Bounds] = false
-				r.parseErrorf(`"noBounds" is deprecated, set "Bounds: false" instead`)
+				return fmt.Errorf(`"noBounds" is deprecated, set "Bounds: false" instead`)
 			default:
-				r.parseErrorf("%v", err)
+				return err
 			}
 			continue
 		}
-		m[Annotation(a)] = enabled
+		m[a] = enabled
 	}
-	*bm = m
+	*dest = m
+	return nil
 }
 
-func asBoolMap[K ~string](r *OptionResult) map[K]bool {
-	all, ok := r.Value.(map[string]any)
+func setBoolMap[K ~string](dest *map[K]bool, value any) error {
+	m, err := asBoolMap[K](value)
+	if err != nil {
+		return err
+	}
+	*dest = m
+	return nil
+}
+
+func asBoolMap[K ~string](value any) (map[K]bool, error) {
+	all, ok := value.(map[string]any)
 	if !ok {
-		r.parseErrorf("invalid type %T for map[string]bool option", r.Value)
-		return nil
+		return nil, fmt.Errorf("invalid type %T (want JSON object)", value)
 	}
 	m := make(map[K]bool)
 	for a, enabled := range all {
-		if e, ok := enabled.(bool); ok {
-			m[K(a)] = e
-		} else {
-			r.parseErrorf("invalid type %T for map key %q", enabled, a)
-			return m
-		}
-	}
-	return m
-}
-
-func (r *OptionResult) asString() (string, bool) {
-	b, ok := r.Value.(string)
-	if !ok {
-		r.parseErrorf("invalid type %T, expect string", r.Value)
-		return "", false
-	}
-	return b, true
-}
-
-func (r *OptionResult) asStringSlice() ([]string, bool) {
-	iList, ok := r.Value.([]any)
-	if !ok {
-		r.parseErrorf("invalid type %T, expect list", r.Value)
-		return nil, false
-	}
-	var list []string
-	for _, elem := range iList {
-		s, ok := elem.(string)
+		b, ok := enabled.(bool)
 		if !ok {
-			r.parseErrorf("invalid element type %T, expect string", elem)
-			return nil, false
+			return nil, fmt.Errorf("invalid type %T for object field %q", enabled, a)
 		}
-		list = append(list, s)
+		m[K(a)] = b
 	}
-	return list, true
+	return m, nil
 }
 
-func (r *OptionResult) asOneOf(options ...string) (string, bool) {
-	s, ok := r.asString()
-	if !ok {
-		return "", false
-	}
-	s, err := asOneOf(s, options...)
+func setString(dest *string, value any) error {
+	str, err := asString(value)
 	if err != nil {
-		r.parseErrorf("%v", err)
+		return err
 	}
-	return s, err == nil
+	*dest = str
+	return nil
 }
 
-func asOneOf(str string, options ...string) (string, error) {
-	lower := strings.ToLower(str)
+func asString(value any) (string, error) {
+	str, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("invalid type %T (want string)", value)
+	}
+	return str, nil
+}
+
+func setStringSlice(dest *[]string, value any) error {
+	slice, err := asStringSlice(value)
+	if err != nil {
+		return err
+	}
+	*dest = slice
+	return nil
+}
+
+func asStringSlice(value any) ([]string, error) {
+	array, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("invalid type %T (want JSON array of string)", value)
+	}
+	var slice []string
+	for _, elem := range array {
+		str, ok := elem.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid array element type %T (want string)", elem)
+		}
+		slice = append(slice, str)
+	}
+	return slice, nil
+}
+
+func setEnum[S ~string](dest *S, value any, options ...S) error {
+	enum, err := asEnum(value, options...)
+	if err != nil {
+		return err
+	}
+	*dest = enum
+	return nil
+}
+
+func asEnum[S ~string](value any, options ...S) (S, error) {
+	str, err := asString(value)
+	if err != nil {
+		return "", err
+	}
 	for _, opt := range options {
-		if strings.ToLower(opt) == lower {
+		if strings.EqualFold(str, string(opt)) {
 			return opt, nil
 		}
 	}
 	return "", fmt.Errorf("invalid option %q for enum", str)
-}
-
-func (r *OptionResult) setString(s *string) {
-	if v, ok := r.asString(); ok {
-		*s = v
-	}
-}
-
-func (r *OptionResult) setStringSlice(s *[]string) {
-	if v, ok := r.asStringSlice(); ok {
-		*s = v
-	}
 }

@@ -63,8 +63,8 @@ func TestSubdirWatchPatterns_BadValues(t *testing.T) {
 		badValue    interface{}
 		wantMessage string
 	}{
-		{true, "invalid type bool, expect string"},
-		{false, "invalid type bool, expect string"},
+		{true, "invalid type bool (want string)"},
+		{false, "invalid type bool (want string)"},
 		{"yes", `invalid option "yes"`},
 	}
 

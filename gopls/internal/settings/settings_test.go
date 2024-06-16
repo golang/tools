@@ -206,10 +206,18 @@ func TestSetOption(t *testing.T) {
 
 	for _, test := range tests {
 		var opts Options
-		result := opts.set(test.name, test.value, map[string]struct{}{})
-		if (result.Error != nil) != test.wantError {
-			t.Fatalf("Options.set(%q, %v): result.Error = %v, want error: %t", test.name, test.value, result.Error, test.wantError)
+		err := opts.set(test.name, test.value, make(map[string]struct{}))
+		if err != nil {
+			if !test.wantError {
+				t.Errorf("Options.set(%q, %v) failed: %v",
+					test.name, test.value, err)
+			}
+			continue
+		} else if test.wantError {
+			t.Fatalf("Options.set(%q, %v) succeeded unexpectedly",
+				test.name, test.value)
 		}
+
 		// TODO: this could be made much better using cmp.Diff, if that becomes
 		// available in this module.
 		if !test.check(opts) {
