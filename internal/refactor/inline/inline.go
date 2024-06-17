@@ -1438,25 +1438,28 @@ next:
 			// a binding decl or when using the literalization
 			// strategy.
 
-			// Check if the types are identical to eliminate redundant type conversion.
+			// If the types are identical, we can eliminate
+			// redundant type conversions such as this:
 			//
-			// As trivialConversion is unable to distinguish between typed and untyped constants,
-			// it leads to redundant conversions:
-			//	A callee:
-			//		func f1(i int32) { print(i) }
-			//  Called from:
-			//		func f() { f1(int32(1)) }
-			//  Will be inlined as:
-			//		func f() { print(int32(int32(1)))
+			// Callee:
+			//    func f(i int32) { print(i) }
+			// Caller:
+			//    func g() { f(int32(1)) }
+			// Inlined as:
+			//    func g() { print(int32(int32(1)))
 			//
-			// However, at this point arg.typ includes information regarding constants being typed or untyped.
-			// This happens due to state.arguments() performing re-typechecking.
-			// Hence, the redundant conversion can be eliminated by making a check if types are identical at this stage.
-			typesIdentical := types.Identical(arg.typ, param.obj.Type())
-			if len(param.info.Refs) > 0 && !typesIdentical && !trivialConversion(args[i].constant, args[i].typ, params[i].obj.Type()) {
-				arg.expr = convert(params[i].fieldType, arg.expr)
+			// Recall that non-trivial does not imply non-identical
+			// for constant conversions; however, at this point state.arguments
+			// has already re-typechecked the constant and set arg.type to
+			// its (possibly "untyped") inherent type, so
+			// the conversion from untyped 1 to int32 is non-trivial even
+			// though both arg and param have identical types (int32).
+			if len(param.info.Refs) > 0 &&
+				!types.Identical(arg.typ, param.obj.Type()) &&
+				!trivialConversion(arg.constant, arg.typ, param.obj.Type()) {
+				arg.expr = convert(param.fieldType, arg.expr)
 				logf("param %q: adding explicit %s -> %s conversion around argument",
-					param.info.Name, args[i].typ, params[i].obj.Type())
+					param.info.Name, arg.typ, param.obj.Type())
 			}
 
 			// It is safe to substitute param and replace it with arg.
