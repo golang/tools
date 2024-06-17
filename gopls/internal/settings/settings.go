@@ -723,13 +723,13 @@ const (
 // Set updates *options based on the provided JSON value:
 // null, bool, string, number, array, or object.
 // On failure, it returns one or more non-nil errors.
-func (options *Options) Set(value any) (errors []error) {
+func (o *Options) Set(value any) (errors []error) {
 	switch value := value.(type) {
 	case nil:
 	case map[string]any:
 		seen := make(map[string]struct{})
 		for name, value := range value {
-			if err := options.set(name, value, seen); err != nil {
+			if err := o.set(name, value, seen); err != nil {
 				err := fmt.Errorf("setting option %v: %w", name, err)
 				errors = append(errors, err)
 			}
@@ -862,7 +862,13 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 			o.Env = make(map[string]string)
 		}
 		for k, v := range env {
-			o.Env[k] = fmt.Sprint(v)
+			// For historic compatibility, we accept int too (e.g. CGO_ENABLED=1).
+			switch v.(type) {
+			case string, int:
+				o.Env[k] = fmt.Sprint(v)
+			default:
+				return fmt.Errorf("invalid map value %T (want string)", v)
+			}
 		}
 
 	case "buildFlags":
@@ -883,8 +889,6 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 		}
 		o.DirectoryFilters = filters
 
-	case "memoryMode":
-		return deprecatedError("")
 	case "completionDocumentation":
 		return setBool(&o.CompletionDocumentation, value)
 	case "usePlaceholders":
@@ -969,8 +973,6 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 			o.Codelenses[source] = enabled
 		}
 
-		// codelens is deprecated, but still works for now.
-		// TODO(rstambler): Remove this for the gopls/v0.7.0 release.
 		if name == "codelens" {
 			return deprecatedError("codelenses")
 		}
@@ -994,9 +996,6 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 
 	case "verboseWorkDoneProgress":
 		return setBool(&o.VerboseWorkDoneProgress, value)
-
-	case "tempModFile":
-		return deprecatedError("")
 
 	case "showBugReports":
 		return setBool(&o.ShowBugReports, value)
@@ -1033,12 +1032,6 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 	case "experimentalPostfixCompletions":
 		return setBool(&o.ExperimentalPostfixCompletions, value)
 
-	case "experimentalWorkspaceModule":
-		return deprecatedError("")
-
-	case "experimentalTemplateSupport": // TODO(pjw): remove after June 2022
-		return deprecatedError("")
-
 	case "templateExtensions":
 		switch value := value.(type) {
 		case []any:
@@ -1048,9 +1041,6 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 		default:
 			return fmt.Errorf("unexpected type %T (want JSON array of string)", value)
 		}
-
-	case "experimentalDiagnosticsDelay":
-		return deprecatedError("diagnosticsDelay")
 
 	case "diagnosticsDelay":
 		return setDuration(&o.DiagnosticsDelay, value)
@@ -1063,37 +1053,14 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 	case "analysisProgressReporting":
 		return setBool(&o.AnalysisProgressReporting, value)
 
-	case "experimentalWatchedFileDelay":
-		return deprecatedError("")
-
-	case "experimentalPackageCacheKey":
-		return deprecatedError("")
-
-	case "allowModfileModifications":
-		return deprecatedError("")
-
 	case "allowImplicitNetworkAccess":
 		if err := setBool(&o.AllowImplicitNetworkAccess, value); err != nil {
 			return err
 		}
 		return softErrorf("gopls setting \"allowImplicitNetworkAccess\" is deprecated.\nPlease comment on https://go.dev/issue/66861 if this impacts your workflow.")
 
-	case "experimentalUseInvalidMetadata":
-		return deprecatedError("")
-
 	case "standaloneTags":
 		return setStringSlice(&o.StandaloneTags, value)
-
-	case "allExperiments":
-		// golang/go#65548: this setting is a no-op, but we fail don't report it as
-		// deprecated, since the nightly VS Code injects it.
-		//
-		// If, in the future, VS Code stops injecting this, we could theoretically
-		// report an error here, but it also seems harmless to keep ignoring this
-		// setting forever.
-
-	case "newDiff":
-		return deprecatedError("")
 
 	case "subdirWatchPatterns":
 		return setEnum(&o.SubdirWatchPatterns, value,
@@ -1116,7 +1083,13 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 	case "zeroConfig":
 		return setBool(&o.ZeroConfig, value)
 
-	// Replaced settings.
+	// deprecated and renamed settings
+	//
+	// These should never be deleted: there is essentially no cost
+	// to providing a better error message indefinitely; it's not
+	// as if we would ever want to recycle the name of a setting.
+
+	// renamed
 	case "experimentalDisabledAnalyses":
 		return deprecatedError("analyses")
 
@@ -1138,7 +1111,45 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 	case "caseSensitiveCompletion":
 		return deprecatedError("matcher")
 
-	// Deprecated settings.
+	case "experimentalDiagnosticsDelay":
+		return deprecatedError("diagnosticsDelay")
+
+	// deprecated
+	case "memoryMode":
+		return deprecatedError("")
+
+	case "tempModFile":
+		return deprecatedError("")
+
+	case "experimentalWorkspaceModule":
+		return deprecatedError("")
+
+	case "experimentalTemplateSupport":
+		return deprecatedError("")
+
+	case "experimentalWatchedFileDelay":
+		return deprecatedError("")
+
+	case "experimentalPackageCacheKey":
+		return deprecatedError("")
+
+	case "allowModfileModifications":
+		return deprecatedError("")
+
+	case "allExperiments":
+		// golang/go#65548: this setting is a no-op, but we fail don't report it as
+		// deprecated, since the nightly VS Code injects it.
+		//
+		// If, in the future, VS Code stops injecting this, we could theoretically
+		// report an error here, but it also seems harmless to keep ignoring this
+		// setting forever.
+
+	case "experimentalUseInvalidMetadata":
+		return deprecatedError("")
+
+	case "newDiff":
+		return deprecatedError("")
+
 	case "wantSuggestedFixes":
 		return deprecatedError("")
 
