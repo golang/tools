@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
@@ -99,7 +100,11 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	}
 
 	// select trailing empty lines
-	rest := pgf.Src[pgf.Tok.Offset(end):]
+	offset, err := safetoken.Offset(pgf.Tok, end)
+	if err != nil {
+		return nil, err
+	}
+	rest := pgf.Src[offset:]
 	end += token.Pos(len(rest) - len(bytes.TrimLeft(rest, " \t\n")))
 
 	replaceRange, err := pgf.PosRange(start, end)

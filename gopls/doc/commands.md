@@ -291,6 +291,28 @@ Args:
 }
 ```
 
+## `gopls.extract_to_new_file`: **Move selected declarations to a new file**
+
+Used by the code action of the same name.
+
+Args:
+
+```
+{
+	"uri": string,
+	"range": {
+		"start": {
+			"line": uint32,
+			"character": uint32,
+		},
+		"end": {
+			"line": uint32,
+			"character": uint32,
+		},
+	},
+}
+```
+
 ## `gopls.fetch_vulncheck_result`: **Get known vulncheck result**
 
 Fetch the result of latest vulnerability check (`govulncheck`).
