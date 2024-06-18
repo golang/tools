@@ -336,11 +336,8 @@ replace (
 			for _, f := range test.folders {
 				opts := settings.DefaultOptions()
 				if f.options != nil {
-					results := settings.SetOptions(opts, f.options(dir))
-					for _, r := range results {
-						if r.Error != nil {
-							t.Fatalf("setting option %v: %v", r.Name, r.Error)
-						}
+					for _, err := range opts.Set(f.options(dir)) {
+						t.Fatal(err)
 					}
 				}
 				env, err := FetchGoEnv(ctx, toURI(f.dir), opts)

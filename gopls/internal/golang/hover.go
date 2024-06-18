@@ -98,7 +98,9 @@ type hoverJSON struct {
 }
 
 // Hover implements the "textDocument/hover" RPC for Go files.
-func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
+//
+// If pkgURL is non-nil, it should be used to generate doc links.
+func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position, pkgURL func(path PackagePath, fragment string) protocol.URI) (*protocol.Hover, error) {
 	ctx, done := event.Start(ctx, "golang.Hover")
 	defer done()
 
@@ -109,7 +111,7 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 	if h == nil {
 		return nil, nil
 	}
-	hover, err := formatHover(h, snapshot.Options())
+	hover, err := formatHover(h, snapshot.Options(), pkgURL)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +127,8 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 // hover computes hover information at the given position. If we do not support
 // hovering at the position, it returns _, nil, nil: an error is only returned
 // if the position is valid but we fail to compute hover information.
+//
+// TODO(adonovan): strength-reduce file.Handle to protocol.DocumentURI.
 func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) (protocol.Range, *hoverJSON, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
@@ -533,13 +537,13 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			pkg := obj.Pkg()
 			if recv != nil {
 				linkName = fmt.Sprintf("(%s.%s).%s", pkg.Name(), recv.Name(), obj.Name())
-				if obj.Exported() && recv.Exported() && pkg.Scope().Lookup(recv.Name()) == recv {
+				if obj.Exported() && recv.Exported() && isPackageLevel(recv) {
 					linkPath = pkg.Path()
 					anchor = fmt.Sprintf("%s.%s", recv.Name(), obj.Name())
 				}
 			} else {
 				linkName = fmt.Sprintf("%s.%s", pkg.Name(), obj.Name())
-				if obj.Exported() && pkg.Scope().Lookup(obj.Name()) == obj {
+				if obj.Exported() && isPackageLevel(obj) {
 					linkPath = pkg.Path()
 					anchor = obj.Name()
 				}
@@ -1086,7 +1090,8 @@ func parseFull(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSe
 	return pgf, fullPos, nil
 }
 
-func formatHover(h *hoverJSON, options *settings.Options) (string, error) {
+// If pkgURL is non-nil, it should be used to generate doc links.
+func formatHover(h *hoverJSON, options *settings.Options, pkgURL func(path PackagePath, fragment string) protocol.URI) (string, error) {
 	maybeMarkdown := func(s string) string {
 		if s != "" && options.PreferredContentFormat == protocol.Markdown {
 			s = fmt.Sprintf("```go\n%s\n```", strings.Trim(s, "\n"))
@@ -1121,7 +1126,7 @@ func formatHover(h *hoverJSON, options *settings.Options) (string, error) {
 			formatDoc(h, options),
 			maybeMarkdown(h.promotedFields),
 			maybeMarkdown(h.methods),
-			formatLink(h, options),
+			formatLink(h, options, pkgURL),
 		}
 		if h.typeDecl != "" {
 			parts[0] = "" // type: suppress redundant Signature
@@ -1146,18 +1151,30 @@ func formatHover(h *hoverJSON, options *settings.Options) (string, error) {
 	}
 }
 
-func formatLink(h *hoverJSON, options *settings.Options) string {
-	if !options.LinksInHover || options.LinkTarget == "" || h.LinkPath == "" {
+// If pkgURL is non-nil, it should be used to generate doc links.
+func formatLink(h *hoverJSON, options *settings.Options, pkgURL func(path PackagePath, fragment string) protocol.URI) string {
+	if options.LinksInHover == false || h.LinkPath == "" {
 		return ""
 	}
-	plainLink := cache.BuildLink(options.LinkTarget, h.LinkPath, h.LinkAnchor)
+	var url protocol.URI
+	var caption string
+	if pkgURL != nil { // LinksInHover == "gopls"
+		url = pkgURL(PackagePath(h.LinkPath), h.LinkAnchor)
+		caption = "in gopls doc viewer"
+	} else {
+		if options.LinkTarget == "" {
+			return ""
+		}
+		url = cache.BuildLink(options.LinkTarget, h.LinkPath, h.LinkAnchor)
+		caption = "on " + options.LinkTarget
+	}
 	switch options.PreferredContentFormat {
 	case protocol.Markdown:
-		return fmt.Sprintf("[`%s` on %s](%s)", h.SymbolName, options.LinkTarget, plainLink)
+		return fmt.Sprintf("[`%s` %s](%s)", h.SymbolName, caption, url)
 	case protocol.PlainText:
 		return ""
 	default:
-		return plainLink
+		return url
 	}
 }
 

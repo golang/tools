@@ -20,7 +20,7 @@ import (
 )
 
 // TestWebServer exercises the web server created on demand
-// for code actions such as "View package documentation".
+// for code actions such as "Browse package documentation".
 func TestWebServer(t *testing.T) {
 	const files = `
 -- go.mod --
@@ -39,7 +39,8 @@ func (G[T]) F(int, int, int, int, int, int, int, ...int) {}
 	Run(t, files, func(t *testing.T, env *Env) {
 		// Assert that the HTML page contains the expected const declaration.
 		// (We may need to make allowances for HTML markup.)
-		uri1 := viewPkgDoc(t, env, "a/a.go")
+		env.OpenFile("a/a.go")
+		uri1 := viewPkgDoc(t, env, env.Sandbox.Workdir.EntireFile("a/a.go"))
 		doc1 := get(t, uri1)
 		checkMatch(t, true, doc1, "const A =.*1")
 
@@ -84,7 +85,7 @@ func (G[T]) F(int, int, int, int, int, int, int, ...int) {}
 	})
 }
 
-func TestRenderNoPanic66449(t *testing.T) {
+func TestPkgDocNoPanic66449(t *testing.T) {
 	// This particular input triggered a latent bug in doc.New
 	// that would corrupt the AST while filtering out unexported
 	// symbols such as b, causing nodeHTML to panic.
@@ -117,7 +118,9 @@ func (tπ) Mπ() {}
 func (tπ) mπ() {}
 `
 	Run(t, files, func(t *testing.T, env *Env) {
-		uri1 := viewPkgDoc(t, env, "a/a.go")
+		env.OpenFile("a/a.go")
+		uri1 := viewPkgDoc(t, env, env.Sandbox.Workdir.EntireFile("a/a.go"))
+
 		doc := get(t, uri1)
 		// (Ideally our code rendering would also
 		// eliminate unexported symbols...)
@@ -148,9 +151,9 @@ func (tπ) mπ() {}
 	})
 }
 
-// TestRenderNavigation tests that the symbol selector and index of
+// TestPkgDocNavigation tests that the symbol selector and index of
 // symbols are well formed.
-func TestRenderNavigation(t *testing.T) {
+func TestPkgDocNavigation(t *testing.T) {
 	const files = `
 -- go.mod --
 module example.com
@@ -168,7 +171,8 @@ func (p *Type) PtrMethod() {}
 func Constructor() Type
 `
 	Run(t, files, func(t *testing.T, env *Env) {
-		uri1 := viewPkgDoc(t, env, "a/a.go")
+		env.OpenFile("a/a.go")
+		uri1 := viewPkgDoc(t, env, env.Sandbox.Workdir.EntireFile("a/a.go"))
 		doc := get(t, uri1)
 
 		q := regexp.QuoteMeta
@@ -191,24 +195,93 @@ func Constructor() Type
 	})
 }
 
-// viewPkgDoc invokes the "View package documentation" code action in
-// the specified file. It returns the URI of the document, or fails
-// the test.
-func viewPkgDoc(t *testing.T, env *Env, filename string) protocol.URI {
-	env.OpenFile(filename)
+// TestPkgDocContext tests that the gopls.doc command title and /pkg
+// URL are appropriate for the current selection. It is effectively a
+// test of golang.DocFragment.
+func TestPkgDocContext(t *testing.T) {
+	const files = `
+-- go.mod --
+module example.com
 
-	// Invoke the "View package documentation" code
+-- a/a.go --
+package a
+
+import "fmt"
+import "bytes"
+
+func A() {
+	fmt.Println()
+	new(bytes.Buffer).Write(nil)
+}
+
+const K = 123
+
+type T int
+func (*T) M() { /*in T.M*/}
+
+`
+
+	viewRE := regexp.MustCompile("view=[0-9]*")
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		for _, test := range []struct {
+			re   string // regexp indicating selected portion of input file
+			want string // suffix of expected URL after /pkg/
+		}{
+			// current package
+			{"package a", "example.com/a?view=1"},  // outside any decl
+			{"in T.M", "example.com/a?view=1#T.M"}, // inside method (*T).M
+			{"123", "example.com/a?view=1#K"},      // inside const/var decl
+			{"T int", "example.com/a?view=1#T"},    // inside type decl
+
+			// imported
+			{"\"fmt\"", "fmt?view=1"},              // in import spec
+			{"fmt[.]", "fmt?view=1"},               // use of PkgName
+			{"Println", "fmt?view=1#Println"},      // use of imported pkg-level symbol
+			{"fmt.Println", "fmt?view=1#Println"},  // qualified identifier
+			{"Write", "bytes?view=1#Buffer.Write"}, // use of imported method
+
+			// TODO(adonovan):
+			// - xtest package -> ForTest
+			// - field of imported struct -> nope
+			// - exported method of nonexported type from another package
+			//   (e.g. types.Named.Obj) -> nope
+			// Also: assert that Command.Title looks nice.
+		} {
+			uri := viewPkgDoc(t, env, env.RegexpSearch("a/a.go", test.re))
+			_, got, ok := strings.Cut(uri, "/pkg/")
+			if !ok {
+				t.Errorf("pattern %q => %s (invalid /pkg URL)", test.re, uri)
+				continue
+			}
+
+			// Normalize the view ID, which varies by integration test mode.
+			got = viewRE.ReplaceAllString(got, "view=1")
+
+			if got != test.want {
+				t.Errorf("pattern %q => %s; want %s", test.re, got, test.want)
+			}
+		}
+	})
+}
+
+// viewPkgDoc invokes the "Browse package documentation" code action
+// at the specified location. It returns the URI of the document, or
+// fails the test.
+func viewPkgDoc(t *testing.T, env *Env, loc protocol.Location) protocol.URI {
+	// Invoke the "Browse package documentation" code
 	// action to start the server.
 	var docAction *protocol.CodeAction
-	actions := env.CodeActionForFile(filename, nil)
+	actions := env.CodeAction(loc, nil, 0)
 	for _, act := range actions {
-		if act.Title == "View package documentation" {
+		if strings.HasPrefix(act.Title, "Browse ") &&
+			strings.Contains(act.Title, "documentation") {
 			docAction = &act
 			break
 		}
 	}
 	if docAction == nil {
-		t.Fatalf("can't find action with Title 'View package documentation', only %#v",
+		t.Fatalf("can't find action with Title 'Browse...documentation', only %#v",
 			actions)
 	}
 
@@ -225,7 +298,9 @@ func viewPkgDoc(t *testing.T, env *Env, filename string) protocol.URI {
 	if doc == nil {
 		t.Fatalf("no showDocument call had 'http:' prefix")
 	}
-	t.Log("showDocument(package doc) URL:", doc.URI)
+	if false {
+		t.Log("showDocument(package doc) URL:", doc.URI)
+	}
 	return doc.URI
 }
 
@@ -253,7 +328,7 @@ func f(buf bytes.Buffer, greeting string) {
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 
-		// Invoke the "View free symbols" code
+		// Invoke the "Browse free symbols" code
 		// action to start the server.
 		loc := env.RegexpSearch("a/a.go", "«((?:.|\n)*)»")
 		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
@@ -262,13 +337,13 @@ func f(buf bytes.Buffer, greeting string) {
 		}
 		var action *protocol.CodeAction
 		for _, a := range actions {
-			if a.Title == "View free symbols" {
+			if a.Title == "Browse free symbols" {
 				action = &a
 				break
 			}
 		}
 		if action == nil {
-			t.Fatalf("can't find action with Title 'View free symbols', only %#v",
+			t.Fatalf("can't find action with Title 'Browse free symbols', only %#v",
 				actions)
 		}
 
@@ -320,13 +395,13 @@ func g() {
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 
-		// Invoke the "View assembly" code action to start the server.
+		// Invoke the "Browse assembly" code action to start the server.
 		loc := env.RegexpSearch("a/a.go", "println")
 		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
 		if err != nil {
 			t.Fatalf("CodeAction: %v", err)
 		}
-		const wantTitle = "View " + runtime.GOARCH + " assembly for f"
+		const wantTitle = "Browse " + runtime.GOARCH + " assembly for f"
 		var action *protocol.CodeAction
 		for _, a := range actions {
 			if a.Title == wantTitle {
@@ -354,15 +429,21 @@ func g() {
 		t.Log("showDocument(package doc) URL:", doc.URI)
 
 		// Get the report and do some minimal checks for sensible results.
-		// Use only portable instructions below!
+		//
+		// Use only portable instructions below! Remember that
+		// This is a test of plumbing, not compilation, so
+		// it's better to skip the tests, rather than refine
+		// them, on any architecture that gives us trouble.
 		report := get(t, doc.URI)
 		checkMatch(t, true, report, `TEXT.*example.com/a.f`)
-		checkMatch(t, true, report, `CALL	runtime.printlock`)
-		checkMatch(t, true, report, `CALL	runtime.printstring`)
-		checkMatch(t, true, report, `CALL	runtime.printunlock`)
-		checkMatch(t, true, report, `CALL	example.com/a.f.deferwrap1`)
-		checkMatch(t, true, report, `RET`)
-		checkMatch(t, true, report, `CALL	runtime.morestack_noctxt`)
+		if runtime.GOARCH != "risc64" { // RISC-V uses JAL instead of CALL
+			checkMatch(t, true, report, `CALL	runtime.printlock`)
+			checkMatch(t, true, report, `CALL	runtime.printstring`)
+			checkMatch(t, true, report, `CALL	runtime.printunlock`)
+			checkMatch(t, true, report, `CALL	example.com/a.f.deferwrap1`)
+			checkMatch(t, true, report, `RET`)
+			checkMatch(t, true, report, `CALL	runtime.morestack_noctxt`)
+		}
 
 		// Nested functions are also shown.
 		checkMatch(t, true, report, `TEXT.*example.com/a.f.deferwrap1`)
@@ -374,14 +455,12 @@ func g() {
 
 // shownDocument returns the first shown document matching the URI prefix.
 // It may be nil.
-//
-// TODO(adonovan): the integration test framework
-// needs a way to reset ShownDocuments so they don't
-// accumulate, necessitating the fragile prefix hack.
+// As a side effect, it clears the list of accumulated shown documents.
 func shownDocument(t *testing.T, env *Env, prefix string) *protocol.ShowDocumentParams {
 	t.Helper()
 	var shown []*protocol.ShowDocumentParams
 	env.Await(ShownDocuments(&shown))
+	env.Awaiter.ResetShownDocuments() // REVIEWERS: seems like a hack; better ideas?
 	var first *protocol.ShowDocumentParams
 	for _, sd := range shown {
 		if strings.HasPrefix(sd.URI, prefix) {

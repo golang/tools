@@ -125,46 +125,57 @@ func enclosingNodeCallItem(ctx context.Context, snapshot *cache.Snapshot, pkgPat
 		return protocol.CallHierarchyItem{}, err
 	}
 
-	// Find the enclosing function, if any, and the number of func literals in between.
-	var funcDecl *ast.FuncDecl
-	var funcLit *ast.FuncLit // innermost function literal
-	var litCount int
+	// Find the enclosing named function, if any.
+	//
+	// It is tempting to treat anonymous functions as nodes in the
+	// call hierarchy, and historically we used to do that,
+	// poorly; see #64451. However, it is impossible to track
+	// references to anonymous functions without much deeper
+	// analysis. Local analysis is tractable, but ultimately it
+	// can only detect calls from the outer function to the inner
+	// function.
+	//
+	// It is simpler and clearer to treat the top-level named
+	// function and all its nested functions as one entity, and it
+	// allows users to recursively expand the tree where, before,
+	// the chain would be broken by each lambda.
+	//
+	// If the selection is in a global var initializer,
+	// default to the file's package declaration.
 	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-outer:
+	var (
+		name = pgf.File.Name.Name
+		kind = protocol.Package
+	)
+	start, end = pgf.File.Name.Pos(), pgf.File.Name.End()
 	for _, node := range path {
-		switch n := node.(type) {
+		switch node := node.(type) {
 		case *ast.FuncDecl:
-			funcDecl = n
-			break outer
+			name = node.Name.Name
+			start, end = node.Name.Pos(), node.Name.End()
+			kind = protocol.Function
+
 		case *ast.FuncLit:
-			litCount++
-			if litCount > 1 {
-				continue
-			}
-			funcLit = n
+			// If the call comes from a FuncLit with
+			// no enclosing FuncDecl, then use the
+			// FuncLit's extent.
+			name = "func"
+			start, end = node.Pos(), node.Type.End() // signature, sans body
+			kind = protocol.Function
+
+		case *ast.ValueSpec:
+			// If the call comes from a var (or,
+			// theoretically, const) initializer outside
+			// any function, then use the ValueSpec.Names span.
+			name = "init"
+			start, end = node.Names[0].Pos(), node.Names[len(node.Names)-1].End()
+			kind = protocol.Variable
 		}
 	}
 
-	nameIdent := path[len(path)-1].(*ast.File).Name
-	kind := protocol.Package
-	if funcDecl != nil {
-		nameIdent = funcDecl.Name
-		kind = protocol.Function
-	}
-
-	nameStart, nameEnd := nameIdent.Pos(), nameIdent.End()
-	if funcLit != nil {
-		nameStart, nameEnd = funcLit.Type.Func, funcLit.Type.Params.Pos()
-		kind = protocol.Function
-	}
-	rng, err := pgf.PosRange(nameStart, nameEnd)
+	rng, err := pgf.PosRange(start, end)
 	if err != nil {
 		return protocol.CallHierarchyItem{}, err
-	}
-
-	name := nameIdent.Name
-	for i := 0; i < litCount; i++ {
-		name += ".func()"
 	}
 
 	return protocol.CallHierarchyItem{
@@ -216,7 +227,6 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		return nil, err
 	}
 
-	// Use TypecheckFull as we want to inspect the body of the function declaration.
 	declPkg, declPGF, err := NarrowestPackageForFile(ctx, snapshot, uri)
 	if err != nil {
 		return nil, err

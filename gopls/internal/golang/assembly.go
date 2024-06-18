@@ -4,7 +4,7 @@
 
 package golang
 
-// This file produces the "View GOARCH assembly of f" HTML report.
+// This file produces the "Browse GOARCH assembly of f" HTML report.
 //
 // See also:
 // - ./codeaction.go - computes the symbol and offers the CodeAction command.

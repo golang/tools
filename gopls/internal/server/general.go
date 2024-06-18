@@ -10,9 +10,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/build"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -69,13 +69,10 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 	s.progress.SetSupportsWorkDoneProgress(params.Capabilities.Window.WorkDoneProgress)
 
 	options := s.Options().Clone()
-	// TODO(rfindley): remove the error return from handleOptionResults, and
-	// eliminate this defer.
+	// TODO(rfindley): eliminate this defer.
 	defer func() { s.SetOptions(options) }()
 
-	if err := s.handleOptionResults(ctx, settings.SetOptions(options, params.InitializationOptions)); err != nil {
-		return nil, err
-	}
+	s.handleOptionErrors(ctx, options.Set(params.InitializationOptions))
 	options.ForClientCapabilities(params.ClientInfo, params.Capabilities)
 
 	if options.ShowBugReports {
@@ -85,11 +82,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 				Type:    protocol.Error,
 				Message: fmt.Sprintf("A bug occurred on the server: %s\nLocation:%s", b.Description, b.Key),
 			}
-			go func() {
-				if err := s.eventuallyShowMessage(context.Background(), msg); err != nil {
-					log.Printf("error showing bug: %v", err)
-				}
-			}()
+			go s.eventuallyShowMessage(context.Background(), msg)
 		})
 	}
 
@@ -510,33 +503,30 @@ func (s *server) fetchFolderOptions(ctx context.Context, folder protocol.Documen
 
 	opts = opts.Clone()
 	for _, config := range configs {
-		if err := s.handleOptionResults(ctx, settings.SetOptions(opts, config)); err != nil {
-			return nil, err
-		}
+		s.handleOptionErrors(ctx, opts.Set(config))
 	}
 	return opts, nil
 }
 
-func (s *server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMessageParams) error {
+func (s *server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMessageParams) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	if s.state == serverInitialized {
-		return s.client.ShowMessage(ctx, msg)
+		_ = s.client.ShowMessage(ctx, msg) // ignore error
 	}
 	s.notifications = append(s.notifications, msg)
-	return nil
 }
 
-func (s *server) handleOptionResults(ctx context.Context, results settings.OptionResults) error {
-	var warnings, errors []string
-	for _, result := range results {
-		switch result.Error.(type) {
-		case nil:
-			// nothing to do
-		case *settings.SoftError:
-			warnings = append(warnings, result.Error.Error())
-		default:
-			errors = append(errors, result.Error.Error())
+func (s *server) handleOptionErrors(ctx context.Context, optionErrors []error) {
+	var warnings, errs []string
+	for _, err := range optionErrors {
+		if err == nil {
+			panic("nil error passed to handleOptionErrors")
+		}
+		if errors.Is(err, new(settings.SoftError)) {
+			warnings = append(warnings, err.Error())
+		} else {
+			errs = append(errs, err.Error())
 		}
 	}
 
@@ -548,10 +538,10 @@ func (s *server) handleOptionResults(ctx context.Context, results settings.Optio
 	// individual viewsettings.
 	var msgs []string
 	msgType := protocol.Warning
-	if len(errors) > 0 {
+	if len(errs) > 0 {
 		msgType = protocol.Error
-		sort.Strings(errors)
-		msgs = append(msgs, errors...)
+		sort.Strings(errs)
+		msgs = append(msgs, errs...)
 	}
 	if len(warnings) > 0 {
 		sort.Strings(warnings)
@@ -565,10 +555,8 @@ func (s *server) handleOptionResults(ctx context.Context, results settings.Optio
 			Type:    msgType,
 			Message: combined,
 		}
-		return s.eventuallyShowMessage(ctx, params)
+		s.eventuallyShowMessage(ctx, params)
 	}
-
-	return nil
 }
 
 // fileOf returns the file for a given URI and its snapshot.

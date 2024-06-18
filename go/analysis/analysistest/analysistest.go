@@ -114,9 +114,9 @@ type Testing interface {
 // into nonconflicting parts.
 //
 // Conflicts of the second kind can be avoided by giving the
-// alternative fixes different names (SuggestedFix.Message) and using
-// a multi-section .txtar file with a named section for each
-// alternative fix.
+// alternative fixes different names (SuggestedFix.Message) and
+// defining the .golden file as a multi-section txtar file with a
+// named section for each alternative fix, as shown above.
 //
 // Analyzers that compute fixes from a textual diff of the
 // before/after file contents (instead of directly from syntax tree
@@ -126,6 +126,16 @@ type Testing interface {
 // sufficient separation of the statements in the test input so that
 // the computed diffs do not overlap. If that fails, break the test
 // into smaller parts.
+//
+// TODO(adonovan): the behavior of RunWithSuggestedFixes as documented
+// above is impractical for tests that report multiple diagnostics and
+// offer multiple alternative fixes for the same diagnostic, and it is
+// inconsistent with the interpretation of multiple diagnostics
+// described at Diagnostic.SuggestedFixes.
+// We need to rethink the analyzer testing API to better support such
+// cases. In the meantime, users of RunWithSuggestedFixes testing
+// analyzers that offer alternative fixes are advised to put each fix
+// in a separate .go file in the testdata.
 func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns ...string) []*Result {
 	r := Run(t, dir, a, patterns...)
 

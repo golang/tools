@@ -13,5 +13,6 @@ import (
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.RunWithSuggestedFixes(t, testdata, stringintconv.Analyzer, "a", "typeparams")
+	analysistest.Run(t, testdata, stringintconv.Analyzer, "a", "typeparams")
+	analysistest.RunWithSuggestedFixes(t, testdata, stringintconv.Analyzer, "fix")
 }

@@ -388,7 +388,7 @@ func typesCodeHref(linkTarget string, code typesinternal.ErrorCode) string {
 }
 
 // BuildLink constructs a URL with the given target, path, and anchor.
-func BuildLink(target, path, anchor string) string {
+func BuildLink(target, path, anchor string) protocol.URI {
 	link := fmt.Sprintf("https://%s/%s", target, path)
 	if anchor == "" {
 		return link

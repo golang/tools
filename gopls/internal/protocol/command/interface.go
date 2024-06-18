@@ -69,7 +69,7 @@ type Interface interface {
 	// Runs `go generate` for a given directory.
 	Generate(context.Context, GenerateArgs) error
 
-	// Doc: View package documentation.
+	// Doc: Browse package documentation.
 	//
 	// Opens the Go package documentation page for the current
 	// package in a browser.
@@ -242,7 +242,7 @@ type Interface interface {
 	// This command is intended for use by gopls tests only.
 	Views(context.Context) ([]View, error)
 
-	// FreeSymbols: View free symbols referenced by the selection in a browser.
+	// FreeSymbols: Browse free symbols referenced by the selection in a browser.
 	//
 	// This command is a query over a selected range of Go source
 	// code. It reports the set of "free" symbols of the
@@ -253,7 +253,7 @@ type Interface interface {
 	// extracting it into a separate function.
 	FreeSymbols(ctx context.Context, viewID string, loc protocol.Location) error
 
-	// Assembly: View assembly listing of current function in a browser.
+	// Assembly: Browse assembly listing of current function in a browser.
 	//
 	// This command opens a web-based disassembly listing of the
 	// specified function symbol (plus any nested lambdas and defers).

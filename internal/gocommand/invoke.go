@@ -521,7 +521,7 @@ func WriteOverlays(overlay map[string][]byte) (filename string, cleanup func(), 
 	for k, v := range overlay {
 		// Use a unique basename for each file (001-foo.go),
 		// to avoid creating nested directories.
-		base := fmt.Sprintf("%d-%s.go", 1+len(overlays), filepath.Base(k))
+		base := fmt.Sprintf("%d-%s", 1+len(overlays), filepath.Base(k))
 		filename := filepath.Join(dir, base)
 		err := os.WriteFile(filename, v, 0666)
 		if err != nil {

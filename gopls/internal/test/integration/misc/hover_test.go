@@ -6,6 +6,7 @@ package misc
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -513,4 +514,42 @@ func _() {
 		// This request should not crash gopls.
 		_, _, _ = env.Editor.Hover(env.Ctx, env.RegexpSearch("p.go", "foo[.]"))
 	})
+}
+
+func TestHoverInternalLinks(t *testing.T) {
+	const src = `
+-- main.go --
+package main
+
+import "errors"
+
+func main() {
+	errors.New("oops")
+}
+`
+	for _, test := range []struct {
+		linksInHover any    // JSON configuration value
+		wantRE       string // pattern to match the Hover Markdown output
+	}{
+		{
+			true, // default: use options.LinkTarget domain
+			regexp.QuoteMeta("[`errors.New` on pkg.go.dev](https://pkg.go.dev/errors#New)"),
+		},
+		{
+			"gopls", // use gopls' internal viewer
+			"\\[`errors.New` in gopls doc viewer\\]\\(http://127.0.0.1:[0-9]+/gopls/[^/]+/pkg/errors\\?view=[0-9]+#New\\)",
+		},
+	} {
+		WithOptions(
+			Settings{"linksInHover": test.linksInHover},
+		).Run(t, src, func(t *testing.T, env *Env) {
+			env.OpenFile("main.go")
+			got, _ := env.Hover(env.RegexpSearch("main.go", "New"))
+			if m, err := regexp.MatchString(test.wantRE, got.Value); err != nil {
+				t.Fatalf("bad regexp in test: %v", err)
+			} else if !m {
+				t.Fatalf("hover output does not match %q; got:\n\n%s", test.wantRE, got.Value)
+			}
+		})
+	}
 }

@@ -439,9 +439,15 @@ documentation links in hover.
 Default: `"pkg.go.dev"`.
 
 <a id='linksInHover'></a>
-### `linksInHover` *bool*
+### `linksInHover` *any*
 
-linksInHover toggles the presence of links to documentation in hover.
+linksInHover controls the presence of documentation links
+in hover markdown.
+
+Its legal values are:
+- `false`, for no links;
+- `true`, for links to the `linkTarget` domain; or
+- `"gopls"`, for links to gopls' internal documentation viewer.
 
 Default: `true`.
 

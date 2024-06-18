@@ -48,7 +48,6 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 	if wantQuickFixes ||
 		want[protocol.SourceOrganizeImports] ||
 		want[protocol.RefactorExtract] ||
-		want[protocol.GoDoc] ||
 		want[protocol.GoFreeSymbols] {
 
 		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
@@ -103,22 +102,9 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 			actions = append(actions, extractions...)
 		}
 
-		if want[protocol.GoDoc] {
-			loc := protocol.Location{URI: pgf.URI, Range: rng}
-			cmd, err := command.NewDocCommand("View package documentation", loc)
-			if err != nil {
-				return nil, err
-			}
-			actions = append(actions, protocol.CodeAction{
-				Title:   cmd.Title,
-				Kind:    protocol.GoDoc,
-				Command: &cmd,
-			})
-		}
-
 		if want[protocol.GoFreeSymbols] && rng.End != rng.Start {
 			loc := protocol.Location{URI: pgf.URI, Range: rng}
-			cmd, err := command.NewFreeSymbolsCommand("View free symbols", snapshot.View().ID(), loc)
+			cmd, err := command.NewFreeSymbolsCommand("Browse free symbols", snapshot.View().ID(), loc)
 			if err != nil {
 				return nil, err
 			}
@@ -135,11 +121,17 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 	if want[protocol.RefactorRewrite] ||
 		want[protocol.RefactorInline] ||
 		want[protocol.GoAssembly] ||
+		want[protocol.GoDoc] ||
 		want[protocol.GoTest] {
 		pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 		if err != nil {
 			return nil, err
 		}
+		start, end, err := pgf.RangePos(rng)
+		if err != nil {
+			return nil, err
+		}
+
 		if want[protocol.RefactorRewrite] {
 			rewrites, err := getRewriteCodeActions(ctx, pkg, snapshot, pgf, fh, rng, snapshot.Options())
 			if err != nil {
@@ -164,6 +156,21 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 				return nil, err
 			}
 			actions = append(actions, fixes...)
+		}
+
+		if want[protocol.GoDoc] {
+			// "Browse documentation for ..."
+			_, _, title := DocFragment(pkg, pgf, start, end)
+			loc := protocol.Location{URI: pgf.URI, Range: rng}
+			cmd, err := command.NewDocCommand(title, loc)
+			if err != nil {
+				return nil, err
+			}
+			actions = append(actions, protocol.CodeAction{
+				Title:   cmd.Title,
+				Kind:    protocol.GoDoc,
+				Command: &cmd,
+			})
 		}
 
 		if want[protocol.GoAssembly] {
@@ -535,7 +542,7 @@ func getGoTestCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Ra
 	}}, nil
 }
 
-// getGoAssemblyAction returns any "View assembly for f" code actions for the selection.
+// getGoAssemblyAction returns any "Browse assembly for f" code actions for the selection.
 func getGoAssemblyAction(view *cache.View, pkg *cache.Package, pgf *parsego.File, rng protocol.Range) ([]protocol.CodeAction, error) {
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
@@ -593,7 +600,7 @@ func getGoAssemblyAction(view *cache.View, pkg *cache.Package, pgf *parsego.File
 					(fn.Name() != "init" || sig.Recv() != nil) && // init functions aren't linker functions
 					sig.TypeParams() == nil && sig.RecvTypeParams() == nil { // generic => no assembly
 					cmd, err := command.NewAssemblyCommand(
-						fmt.Sprintf("View %s assembly for %s", view.GOARCH(), decl.Name),
+						fmt.Sprintf("Browse %s assembly for %s", view.GOARCH(), decl.Name),
 						view.ID(),
 						string(pkg.Metadata().ID),
 						sym.String())
