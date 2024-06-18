@@ -431,12 +431,16 @@ func g() {
 		// Get the report and do some minimal checks for sensible results.
 		//
 		// Use only portable instructions below! Remember that
-		// This is a test of plumbing, not compilation, so
+		// this is a test of plumbing, not compilation, so
 		// it's better to skip the tests, rather than refine
-		// them, on any architecture that gives us trouble.
+		// them, on any architecture that gives us trouble
+		// (e.g. uses JAL for CALL, or BL<cc> for RET).
+		// We conservatively test only on the two most popular
+		// architectures.
 		report := get(t, doc.URI)
 		checkMatch(t, true, report, `TEXT.*example.com/a.f`)
-		if runtime.GOARCH != "risc64" { // RISC-V uses JAL instead of CALL
+		switch runtime.GOARCH {
+		case "amd64", "arm64":
 			checkMatch(t, true, report, `CALL	runtime.printlock`)
 			checkMatch(t, true, report, `CALL	runtime.printstring`)
 			checkMatch(t, true, report, `CALL	runtime.printunlock`)
