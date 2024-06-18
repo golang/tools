@@ -13,6 +13,7 @@ import (
 	"go/constant"
 	"go/doc"
 	"go/format"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"io/fs"
@@ -431,8 +432,15 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		// including those that require a pointer receiver,
 		// and those promoted from embedded struct fields or
 		// embedded interfaces.
-		var b strings.Builder
-		for _, m := range typeutil.IntuitiveMethodSet(obj.Type(), nil) {
+		var (
+			b strings.Builder
+			// methodDocs is a map of the method name and it associated documentation.
+			methodDocs = make(map[string]string)
+		)
+		methodSetOfHoveredType := typeutil.IntuitiveMethodSet(obj.Type(), nil)
+		lenOfMethodSet := len(methodSetOfHoveredType)
+		methodNameArray := make([]string, 0, lenOfMethodSet)
+		for _, m := range methodSetOfHoveredType {
 			if !accessibleTo(m.Obj(), pkg.Types()) {
 				continue // inaccessible
 			}
@@ -445,10 +453,38 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 
 			// Use objectString for its prettier rendering of method receivers.
 			b.WriteString(objectString(m.Obj(), qf, token.NoPos, nil, nil))
+			methodNameArray = append(methodNameArray, m.Obj().Name())
+			methodDocs[m.Obj().Name()] = ""
 		}
 		methods = b.String()
 
 		signature = typeDecl + "\n" + methods
+
+		// -- method doc --
+		{
+			if len(methodNameArray) > 0 { // if we have methods at all from methodSet
+				fs := token.NewFileSet()
+				if allPkgsInDir, err := parser.ParseDir(fs, declPGF.URI.Dir().Path(), nil, parser.ParseComments); err == nil {
+					if files, ok := allPkgsInDir[obj.Pkg().Name()]; ok {
+						for _, file := range files.Files {
+							getMethodDoc(file, fs, ident, methodDocs)
+						}
+
+						methodArray := strings.Split(methods, "\n")
+						if m := len(methodArray); m > 0 && m == len(methodNameArray) {
+							var d strings.Builder
+							for i := 0; i < m; i++ {
+								if doc, ok := methodDocs[methodNameArray[i]]; ok {
+									d.WriteString(fmt.Sprintf("```go\n%s\n```\n%s\n", methodArray[i], doc))
+								}
+							}
+							methods = d.String()
+						}
+					}
+				}
+			}
+		}
+
 	} else {
 		// Non-types
 		if sizeOffset != "" {
@@ -1096,6 +1132,13 @@ func formatHover(h *hoverJSON, options *settings.Options) (string, error) {
 		return s
 	}
 
+	fallback := func(s string) string {
+		if !strings.Contains(s, "```go") {
+			return maybeMarkdown(s)
+		}
+		return s
+	}
+
 	switch options.HoverKind {
 	case settings.SingleLine:
 		return h.SingleLine, nil
@@ -1122,7 +1165,7 @@ func formatHover(h *hoverJSON, options *settings.Options) (string, error) {
 			maybeMarkdown(h.typeDecl),
 			formatDoc(h, options),
 			maybeMarkdown(h.promotedFields),
-			maybeMarkdown(h.methods),
+			fallback(h.methods),
 			formatLink(h, options),
 		}
 		if h.typeDecl != "" {
@@ -1441,4 +1484,32 @@ func computeSizeOffsetInfo(pkg *cache.Package, path []ast.Node, obj types.Object
 	}
 
 	return
+}
+
+// getMethodDoc populates the map type parameter(methodDocs) with the respective docs,
+// if the key (method name) is present in the map.
+func getMethodDoc(file *ast.File, fs *token.FileSet, hoveredType *ast.Ident, methodDocs map[string]string) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		if fn, ok := n.(*ast.FuncDecl); ok {
+			if recv := fn.Recv; recv != nil { // if it is a method
+				if recvList := recv.List; len(recvList) == 1 { // as it should always be
+					methodType := types.ExprString(recvList[0].Type)
+					rFmethodType, _ := strings.CutPrefix(methodType, "*") // if it a pointer
+
+					if rFmethodType == hoveredType.Name {
+						fnPos := fn.Pos()
+						f := fs.File(fnPos)
+						filname, lineNumber := f.Name(), f.Line(fnPos)
+						pageSourceURL := fmt.Sprintf("[jump to page source](%s#L%d)", filname, lineNumber)
+
+						methodDocs[fn.Name.Name] = strings.TrimSpace(fn.Doc.Text()) + "\n\n" + pageSourceURL
+						return false
+					}
+				}
+				return true
+			}
+			return true
+		}
+		return true
+	})
 }
