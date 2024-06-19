@@ -78,9 +78,9 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 			origOptions(opts)
 		}
 		if opts.Codelenses == nil {
-			opts.Codelenses = make(map[protocol.CodeLensSource]bool)
+			opts.Codelenses = make(map[settings.CodeLensSource]bool)
 		}
-		opts.Codelenses[protocol.CodeLensTest] = true
+		opts.Codelenses[settings.CodeLensTest] = true
 	}
 
 	conn, err := r.app.connect(ctx)

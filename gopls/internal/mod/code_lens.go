@@ -15,15 +15,16 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 // CodeLensSources returns the sources of code lenses for go.mod files.
-func CodeLensSources() map[protocol.CodeLensSource]cache.CodeLensSourceFunc {
-	return map[protocol.CodeLensSource]cache.CodeLensSourceFunc{
-		protocol.CodeLensUpgradeDependency: upgradeLenses,   // commands: CheckUpgrades, UpgradeDependency
-		protocol.CodeLensTidy:              tidyLens,        // commands: Tidy
-		protocol.CodeLensVendor:            vendorLens,      // commands: Vendor
-		protocol.CodeLensRunGovulncheck:    vulncheckLenses, // commands: RunGovulncheck
+func CodeLensSources() map[settings.CodeLensSource]cache.CodeLensSourceFunc {
+	return map[settings.CodeLensSource]cache.CodeLensSourceFunc{
+		settings.CodeLensUpgradeDependency: upgradeLenses,   // commands: CheckUpgrades, UpgradeDependency
+		settings.CodeLensTidy:              tidyLens,        // commands: Tidy
+		settings.CodeLensVendor:            vendorLens,      // commands: Vendor
+		settings.CodeLensRunGovulncheck:    vulncheckLenses, // commands: RunGovulncheck
 	}
 }
 

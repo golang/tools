@@ -17,15 +17,16 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/settings"
 )
 
 // CodeLensSources returns the supported sources of code lenses for Go files.
-func CodeLensSources() map[protocol.CodeLensSource]cache.CodeLensSourceFunc {
-	return map[protocol.CodeLensSource]cache.CodeLensSourceFunc{
-		protocol.CodeLensGenerate:      goGenerateCodeLens,    // commands: Generate
-		protocol.CodeLensTest:          runTestCodeLens,       // commands: Test
-		protocol.CodeLensRegenerateCgo: regenerateCgoLens,     // commands: RegenerateCgo
-		protocol.CodeLensGCDetails:     toggleDetailsCodeLens, // commands: GCDetails
+func CodeLensSources() map[settings.CodeLensSource]cache.CodeLensSourceFunc {
+	return map[settings.CodeLensSource]cache.CodeLensSourceFunc{
+		settings.CodeLensGenerate:      goGenerateCodeLens,    // commands: Generate
+		settings.CodeLensTest:          runTestCodeLens,       // commands: Test
+		settings.CodeLensRegenerateCgo: regenerateCgoLens,     // commands: RegenerateCgo
+		settings.CodeLensGCDetails:     toggleDetailsCodeLens, // commands: GCDetails
 	}
 }
 

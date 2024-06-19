@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/server"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -54,7 +55,7 @@ const (
 		},
 		{
 			label:        "generate disabled",
-			enabled:      map[string]bool{string(protocol.CodeLensGenerate): false},
+			enabled:      map[string]bool{string(settings.CodeLensGenerate): false},
 			wantCodeLens: false,
 		},
 	}
