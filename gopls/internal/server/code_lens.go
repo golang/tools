@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -30,7 +31,7 @@ func (s *server) CodeLens(ctx context.Context, params *protocol.CodeLensParams) 
 	}
 	defer release()
 
-	var lensFuncs map[protocol.CodeLensSource]cache.CodeLensSourceFunc
+	var lensFuncs map[settings.CodeLensSource]cache.CodeLensSourceFunc
 	switch snapshot.FileKind(fh) {
 	case file.Mod:
 		lensFuncs = mod.CodeLensSources()

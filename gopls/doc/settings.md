@@ -180,7 +180,7 @@ Default: `false`.
 ## UI
 
 <a id='codelenses'></a>
-### `codelenses` *map[golang.org/x/tools/gopls/internal/protocol.CodeLensSource]bool*
+### `codelenses` *map[enum]bool*
 
 codelenses overrides the enabled/disabled state of each of gopls'
 sources of [Code Lenses](codelenses.md).
@@ -325,14 +325,14 @@ These analyses are documented on
 Default: `false`.
 
 <a id='annotations'></a>
-### `annotations` *map[string]bool*
+### `annotations` *map[enum]bool*
 
 **This setting is experimental and may be deleted.**
 
 annotations specifies the various kinds of optimization diagnostics
 that should be reported by the gc_details command.
 
-Can contain any of:
+Each enum must be one of:
 
 * `"bounds"` controls bounds checking diagnostics.
 * `"escape"` controls diagnostics about escape choices.
