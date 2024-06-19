@@ -36,4 +36,7 @@ func _() {
 		a, //@rank(",", printfInt, printfFloat)
 		a, //@rank(",", printfFloat, printfInt)
 	)
+
+  // Don't insert as "&aStringer"
+	fmt.Printf("%p", a) //@snippet(")", printfStringer, "aStringer")
 }

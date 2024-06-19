@@ -41,7 +41,7 @@ func TestFormatOperandKind(t *testing.T) {
 		{"%s", 1, kindString | kindBytes | kindStringer | kindError},
 		{"%x", 1, kindString | kindBytes | kindInt | kindFloat | kindComplex},
 		{"%X", 1, kindString | kindBytes | kindInt | kindFloat | kindComplex},
-		{"%p", 1, kindPtr | kindSlice},
+		{"%p", 1, kindPtr | kindSlice | kindMap | kindFunc | kindInterface},
 		{"%w", 1, kindError},
 
 		{"%1.2f", 1, kindFloat | kindComplex},

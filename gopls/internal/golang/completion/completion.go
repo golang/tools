@@ -2128,6 +2128,7 @@ const (
 	kindBool
 	kindBytes
 	kindPtr
+	kindInterface
 	kindFloat
 	kindComplex
 	kindError
@@ -3270,6 +3271,8 @@ func candKind(candType types.Type) objKind {
 		if _, isArray := t.Elem().Underlying().(*types.Array); isArray {
 			kind |= kindArray
 		}
+	case *types.Interface:
+		kind |= kindInterface
 	case *types.Basic:
 		switch info := t.Info(); {
 		case info&types.IsString > 0:
