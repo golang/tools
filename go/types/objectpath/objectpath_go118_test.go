@@ -39,6 +39,8 @@ func F[FP0 any, FP1 interface{ M() }](FP0, FP1) {}
 		{"b", "T", "type b.T[TP0 any, TP1 interface{M0(); M1()}] struct{}", ""},
 		{"b", "T.O", "type b.T[TP0 any, TP1 interface{M0(); M1()}] struct{}", ""},
 		{"b", "T.M0", "func (b.T[RP0, RP1]).M()", ""},
+		{"b", "T.M0.r1O", "type parameter RP1 interface{M0(); M1()}", ""},
+		{"b", "T.M0.r1CM1", "func (interface).M1()", ""},
 		{"b", "T.T0O", "type parameter TP0 any", ""},
 		{"b", "T.T1O", "type parameter TP1 interface{M0(); M1()}", ""},
 		{"b", "T.T1CM0", "func (interface).M0()", ""},
