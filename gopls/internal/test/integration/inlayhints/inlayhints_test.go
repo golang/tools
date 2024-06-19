@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/settings"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/util/bug"
 )
@@ -42,12 +42,12 @@ const (
 		},
 		{
 			label:         "enable const",
-			enabled:       map[string]bool{golang.ConstantValues: true},
+			enabled:       map[string]bool{string(settings.ConstantValues): true},
 			wantInlayHint: true,
 		},
 		{
 			label:         "enable parameter names",
-			enabled:       map[string]bool{golang.ParameterNames: true},
+			enabled:       map[string]bool{string(settings.ParameterNames): true},
 			wantInlayHint: false,
 		},
 	}

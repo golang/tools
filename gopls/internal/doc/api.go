@@ -44,14 +44,14 @@ type EnumKeys struct {
 }
 
 type EnumKey struct {
-	Name    string
+	Name    string // in JSON syntax (quoted)
 	Doc     string
 	Default string
 }
 
 type EnumValue struct {
-	Value string
-	Doc   string
+	Value string // in JSON syntax (quoted)
+	Doc   string // doc comment; always starts with `Value`
 }
 
 type Command struct {

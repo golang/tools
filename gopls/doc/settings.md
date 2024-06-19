@@ -455,7 +455,7 @@ Default: `true`.
 ## Inlayhint
 
 <a id='hints'></a>
-### `hints` *map[string]bool*
+### `hints` *map[enum]bool*
 
 **This setting is experimental and may be deleted.**
 

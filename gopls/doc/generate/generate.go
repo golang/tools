@@ -7,7 +7,7 @@
 //	gopls/doc/settings.md   -- from linking gopls/internal/settings.DefaultOptions
 //	gopls/doc/commands.md   -- from loading gopls/internal/protocol/command
 //	gopls/doc/analyzers.md  -- from linking gopls/internal/settings.DefaultAnalyzers
-//	gopls/doc/inlayHints.md -- from linking gopls/internal/golang.AllInlayHints
+//	gopls/doc/inlayHints.md -- from loading gopls/internal/settings.InlayHint
 //	gopls/internal/doc/api.json -- all of the above in a single value, for 'gopls api-json'
 //
 // Run it with this command:
@@ -156,8 +156,11 @@ func loadAPI() (*doc.API, error) {
 	if err != nil {
 		return nil, err
 	}
+	api.Hints, err = loadHints(settingsPkg)
+	if err != nil {
+		return nil, err
+	}
 
-	api.Hints = loadHints(golang.AllInlayHints)
 	for _, category := range []reflect.Value{
 		reflect.ValueOf(defaults.UserOptions),
 	} {
@@ -170,25 +173,14 @@ func loadAPI() (*doc.API, error) {
 		if err != nil {
 			return nil, err
 		}
-		catName := strings.TrimSuffix(category.Type().Name(), "Options")
-		api.Options[catName] = opts
 
-		// Hardcode the expected values for the "analyses" and "hints" settings,
-		// since their map keys are strings, not enums.
+		// Edge case for "analyses": populate its enum keys from
+		// the analyzer list, since its map keys are strings, not enums.
+		// Also, set its EnumKeys.ValueType for historical reasons.
 		for _, opt := range opts {
-			switch opt.Name {
-			case "analyses":
+			if opt.Name == "analyses" {
+				opt.EnumKeys.ValueType = "bool"
 				for _, a := range api.Analyzers {
-					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, doc.EnumKey{
-						Name:    fmt.Sprintf("%q", a.Name),
-						Doc:     a.Doc,
-						Default: strconv.FormatBool(a.Default),
-					})
-				}
-			case "hints":
-				// TODO(adonovan): simplify InlayHints to use an enum,
-				// following CodeLensSource.
-				for _, a := range api.Hints {
 					opt.EnumKeys.Keys = append(opt.EnumKeys.Keys, doc.EnumKey{
 						Name:    fmt.Sprintf("%q", a.Name),
 						Doc:     a.Doc,
@@ -197,6 +189,9 @@ func loadAPI() (*doc.API, error) {
 				}
 			}
 		}
+
+		catName := strings.TrimSuffix(category.Type().Name(), "Options")
+		api.Options[catName] = opts
 	}
 	return api, nil
 }
@@ -276,18 +271,12 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		// enum-keyed maps
 		var enumKeys doc.EnumKeys
 		if m, ok := typesField.Type().Underlying().(*types.Map); ok {
-			values, ok := enums[m.Key()]
-			if ok {
+			if values, ok := enums[m.Key()]; ok {
 				// Update type name: "map[CodeLensSource]T" -> "map[enum]T"
 				// hack: assumes key substring is unique!
 				typ = strings.Replace(typ, m.Key().String(), "enum", 1)
-			}
 
-			// Edge case: "analyses" is a string (not enum) keyed map,
-			// but its EnumKeys.ValueType was historically populated.
-			// (But not "env"; not sure why.)
-			if ok || name == "analyses" {
-				enumKeys.ValueType = m.Elem().String()
+				enumKeys.ValueType = m.Elem().String() // e.g. bool
 
 				// For map[enum]T fields, gather the set of valid
 				// EnumKeys (from type information). If T=bool, also
@@ -608,21 +597,22 @@ func loadAnalyzers(m map[string]*settings.Analyzer) []*doc.Analyzer {
 	return json
 }
 
-func loadHints(m map[string]*golang.Hint) []*doc.Hint {
-	var sorted []string
-	for _, h := range m {
-		sorted = append(sorted, h.Name)
+// loadHints derives and returns the inlay hints metadata from the settings.InlayHint type.
+func loadHints(settingsPkg *packages.Package) ([]*doc.Hint, error) {
+	enums, err := loadEnums(settingsPkg) // TODO(adonovan): call loadEnums exactly once
+	if err != nil {
+		return nil, err
 	}
-	sort.Strings(sorted)
-	var json []*doc.Hint
-	for _, name := range sorted {
-		h := m[name]
-		json = append(json, &doc.Hint{
-			Name: h.Name,
-			Doc:  h.Doc,
+	inlayHint := settingsPkg.Types.Scope().Lookup("InlayHint").Type()
+	var hints []*doc.Hint
+	for _, enumVal := range enums[inlayHint] {
+		name, _ := strconv.Unquote(enumVal.Value)
+		hints = append(hints, &doc.Hint{
+			Name: name,
+			Doc:  enumVal.Doc,
 		})
 	}
-	return json
+	return hints, nil
 }
 
 func lowerFirst(x string) string {
