@@ -355,15 +355,19 @@ type DocumentationOptions struct {
 	// documentation links in hover.
 	LinkTarget string
 
-	// LinksInHover controls the presence of documentation links
-	// in hover markdown.
-	//
-	// Its legal values are:
-	// - `false`, for no links;
-	// - `true`, for links to the `linkTarget` domain; or
-	// - `"gopls"`, for links to gopls' internal documentation viewer.
-	LinksInHover any
+	// LinksInHover controls the presence of documentation links in hover markdown.
+	LinksInHover LinksInHoverEnum
 }
+
+// LinksInHoverEnum has legal values:
+//
+// - `false`, for no links;
+// - `true`, for links to the `linkTarget` domain; or
+// - `"gopls"`, for links to gopls' internal documentation viewer.
+//
+// Note: this type has special logic in loadEnums in generate.go.
+// Be sure to reflect enum and doc changes there!
+type LinksInHoverEnum any
 
 // Note: FormattingOptions must be comparable with reflect.DeepEqual.
 type FormattingOptions struct {

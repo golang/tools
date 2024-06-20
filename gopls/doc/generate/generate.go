@@ -12,7 +12,7 @@
 //
 // Run it with this command:
 //
-//	$ cd gopls/doc && go generate
+//	$ cd gopls/internal/doc && go generate
 package main
 
 import (
@@ -323,7 +323,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 
 // loadEnums returns a description of gopls' settings enum types based on static analysis.
 func loadEnums(pkg *packages.Package) (map[types.Type][]doc.EnumValue, error) {
-	enums := map[types.Type][]doc.EnumValue{}
+	enums := make(map[types.Type][]doc.EnumValue)
 	for _, name := range pkg.Types.Scope().Names() {
 		obj := pkg.Types.Scope().Lookup(name)
 		cnst, ok := obj.(*types.Const)
@@ -344,6 +344,15 @@ func loadEnums(pkg *packages.Package) (map[types.Type][]doc.EnumValue, error) {
 		}
 		enums[obj.Type()] = append(enums[obj.Type()], v)
 	}
+
+	// linksInHover is a one-off edge case (true | false | "gopls")
+	// that doesn't warrant a general solution (e.g. struct tag).
+	enums[pkg.Types.Scope().Lookup("LinksInHoverEnum").Type()] = []doc.EnumValue{
+		{Value: "false", Doc: "false: do not show links"},
+		{Value: "true", Doc: "true: show links to the `linkTarget` domain"},
+		{Value: `"gopls"`, Doc: "`\"gopls\"`: show links to gopls' internal documentation viewer"},
+	}
+
 	return enums, nil
 }
 
@@ -692,14 +701,6 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 				fmt.Fprintf(&buf, "<a id='%s'></a>\n", opt.Name)
 
 				// heading
-				//
-				// TODO(adonovan): We should display not the Go type (e.g.
-				// `time.Duration`, `map[Enum]bool`) for each setting,
-				// but its JSON type, since that's the actual interface.
-				// We need a better way to derive accurate JSON type descriptions
-				// from Go types. eg. "a string parsed as if by
-				// `time.Duration.Parse`". (`time.Duration` is an integer, not
-				// a string!)
 				//
 				// We do not display the undocumented dotted-path alias
 				// (h.title + "." + opt.Name) used by VS Code only.

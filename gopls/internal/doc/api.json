@@ -154,13 +154,26 @@
 			},
 			{
 				"Name": "linksInHover",
-				"Type": "any",
-				"Doc": "linksInHover controls the presence of documentation links\nin hover markdown.\n\nIts legal values are:\n- `false`, for no links;\n- `true`, for links to the `linkTarget` domain; or\n- `\"gopls\"`, for links to gopls' internal documentation viewer.\n",
+				"Type": "enum",
+				"Doc": "linksInHover controls the presence of documentation links in hover markdown.\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null
 				},
-				"EnumValues": null,
+				"EnumValues": [
+					{
+						"Value": "false",
+						"Doc": "false: do not show links"
+					},
+					{
+						"Value": "true",
+						"Doc": "true: show links to the `linkTarget` domain"
+					},
+					{
+						"Value": "\"gopls\"",
+						"Doc": "`\"gopls\"`: show links to gopls' internal documentation viewer"
+					}
+				],
 				"Default": "true",
 				"Status": "",
 				"Hierarchy": "ui.documentation"

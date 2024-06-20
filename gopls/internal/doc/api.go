@@ -29,7 +29,7 @@ type API struct {
 
 type Option struct {
 	Name       string
-	Type       string
+	Type       string // T = bool | string | int | enum | any | []T | map[T]T | time.Duration
 	Doc        string
 	EnumKeys   EnumKeys
 	EnumValues []EnumValue
