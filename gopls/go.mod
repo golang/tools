@@ -9,7 +9,7 @@ require (
 	golang.org/x/sync v0.7.0
 	golang.org/x/telemetry v0.0.0-20240607193123-221703e18637
 	golang.org/x/text v0.16.0
-	golang.org/x/tools v0.22.1-0.20240618171934-9c7c6b4ad0a3
+	golang.org/x/tools v0.22.1-0.20240620150659-cb3016b76f3e
 	golang.org/x/vuln v1.0.4
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.4.7
