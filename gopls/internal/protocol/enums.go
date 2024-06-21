@@ -8,6 +8,11 @@ import (
 	"fmt"
 )
 
+// CodeActionUnknownTrigger indicates that the trigger for a
+// CodeAction request is unknown. A missing
+// CodeActionContext.TriggerKind should be treated as equivalent.
+const CodeActionUnknownTrigger CodeActionTriggerKind = 0
+
 var (
 	namesTextDocumentSyncKind   [int(Incremental) + 1]string
 	namesMessageType            [int(Log) + 1]string

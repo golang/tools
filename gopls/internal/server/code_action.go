@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/event"
 )
@@ -59,7 +60,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		// See https://github.com/joaotavora/eglot/discussions/1402
 		// for a better solution.
 		explicit := map[protocol.CodeActionKind]bool{
-			protocol.GoTest: true,
+			settings.GoTest: true,
 		}
 
 		for _, only := range params.Context.Only {
@@ -139,10 +140,10 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		if golang.IsGenerated(ctx, snapshot, uri) {
 			actions = slices.DeleteFunc(actions, func(a protocol.CodeAction) bool {
 				switch a.Kind {
-				case protocol.GoTest,
-					protocol.GoDoc,
-					protocol.GoFreeSymbols,
-					protocol.GoAssembly:
+				case settings.GoTest,
+					settings.GoDoc,
+					settings.GoFreeSymbols,
+					settings.GoAssembly:
 					return false // read-only query
 				}
 				return true // potential write operation

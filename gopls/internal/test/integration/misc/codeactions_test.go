@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/util/slices"
 )
@@ -63,15 +64,15 @@ func g() {}
 		}
 
 		check("src/a.go",
-			protocol.GoAssembly,
-			protocol.GoDoc,
-			protocol.GoFreeSymbols,
+			settings.GoAssembly,
+			settings.GoDoc,
+			settings.GoFreeSymbols,
 			protocol.RefactorExtract,
 			protocol.RefactorInline)
 		check("gen/a.go",
-			protocol.GoAssembly,
-			protocol.GoDoc,
-			protocol.GoFreeSymbols)
+			settings.GoAssembly,
+			settings.GoDoc,
+			settings.GoFreeSymbols)
 	})
 }
 
