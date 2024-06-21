@@ -53,6 +53,7 @@ const (
 	iexportVersionPosCol   = 1
 	iexportVersionGo1_18   = 2
 	iexportVersionGenerics = 2
+	iexportVersion         = iexportVersionGenerics
 
 	iexportVersionCurrent = 2
 )

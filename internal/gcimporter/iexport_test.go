@@ -4,9 +4,6 @@
 
 // This is a copy of bexport_test.go for iexport.go.
 
-//go:build go1.11
-// +build go1.11
-
 package gcimporter_test
 
 import (

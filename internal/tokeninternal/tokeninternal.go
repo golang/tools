@@ -11,40 +11,9 @@ import (
 	"go/token"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 )
-
-// GetLines returns the table of line-start offsets from a token.File.
-func GetLines(file *token.File) []int {
-	// token.File has a Lines method on Go 1.21 and later.
-	if file, ok := (interface{})(file).(interface{ Lines() []int }); ok {
-		return file.Lines()
-	}
-
-	// This declaration must match that of token.File.
-	// This creates a risk of dependency skew.
-	// For now we check that the size of the two
-	// declarations is the same, on the (fragile) assumption
-	// that future changes would add fields.
-	type tokenFile119 struct {
-		_     string
-		_     int
-		_     int
-		mu    sync.Mutex // we're not complete monsters
-		lines []int
-		_     []struct{}
-	}
-
-	if unsafe.Sizeof(*file) != unsafe.Sizeof(tokenFile119{}) {
-		panic("unexpected token.File size")
-	}
-	var ptr *tokenFile119
-	type uP = unsafe.Pointer
-	*(*uP)(uP(&ptr)) = uP(file)
-	ptr.mu.Lock()
-	defer ptr.mu.Unlock()
-	return ptr.lines
-}
 
 // AddExistingFiles adds the specified files to the FileSet if they
 // are not already present. It panics if any pair of files in the
@@ -56,7 +25,7 @@ func AddExistingFiles(fset *token.FileSet, files []*token.File) {
 		mutex sync.RWMutex
 		base  int
 		files []*token.File
-		_     *token.File // changed to atomic.Pointer[token.File] in go1.19
+		_     atomic.Pointer[token.File]
 	}
 
 	// If the size of token.FileSet changes, this will fail to compile.
@@ -116,8 +85,7 @@ func FileSetFor(files ...*token.File) *token.FileSet {
 	fset := token.NewFileSet()
 	for _, f := range files {
 		f2 := fset.AddFile(f.Name(), f.Base(), f.Size())
-		lines := GetLines(f)
-		f2.SetLines(lines)
+		f2.SetLines(f.Lines())
 	}
 	return fset
 }

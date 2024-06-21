@@ -13,13 +13,10 @@ import (
 	"go/types"
 	"testing"
 
-	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/versions"
 )
 
 func Test(t *testing.T) {
-	testenv.NeedsGo1Point(t, 22)
-
 	var contents = map[string]string{
 		"gobuild.go": `
 	//go:build go1.23
@@ -49,7 +46,7 @@ func Test(t *testing.T) {
 				files[i] = parse(t, fset, test.fname, contents[test.fname])
 			}
 			pkg, info := typeCheck(t, fset, files, item.goversion)
-			if got, want := versions.GoVersion(pkg), item.pversion; versions.Compare(got, want) != 0 {
+			if got, want := pkg.GoVersion(), item.pversion; versions.Compare(got, want) != 0 {
 				t.Errorf("GoVersion()=%q. expected %q", got, want)
 			}
 			if got := versions.FileVersion(info, nil); got != "" {

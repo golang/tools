@@ -67,7 +67,7 @@ func TestNewAlias(t *testing.T) {
 				t.Errorf("Expected Unalias(A)==%q. got %q", want, got)
 			}
 
-			if testenv.Go1Point() >= 22 && godebug != "gotypesalias=0" {
+			if godebug != "gotypesalias=0" {
 				if _, ok := A.Type().(*types.Alias); !ok {
 					t.Errorf("Expected A.Type() to be a types.Alias(). got %q", A.Type())
 				}

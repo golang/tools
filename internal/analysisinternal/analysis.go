@@ -415,8 +415,7 @@ func CheckReadable(pass *analysis.Pass, filename string) error {
 		return nil
 	}
 	for _, f := range pass.Files {
-		// TODO(adonovan): use go1.20 f.FileStart
-		if pass.Fset.File(f.Pos()).Name() == filename {
+		if pass.Fset.File(f.FileStart).Name() == filename {
 			return nil
 		}
 	}

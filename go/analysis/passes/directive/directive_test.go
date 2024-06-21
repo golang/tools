@@ -10,11 +10,9 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/directive"
-	"golang.org/x/tools/internal/testenv"
 )
 
 func Test(t *testing.T) {
-	testenv.NeedsGo1Point(t, 16)
 	analyzer := *directive.Analyzer
 	analyzer.Run = func(pass *analysis.Pass) (interface{}, error) {
 		defer func() {

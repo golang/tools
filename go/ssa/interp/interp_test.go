@@ -137,6 +137,10 @@ var testdataTests = []string{
 	"fixedbugs/issue66783.go",
 	"typeassert.go",
 	"zeros.go",
+	"slice2array.go",
+	"minmax.go",
+	"rangevarlifetime_go122.go",
+	"forvarlifetime_go122.go",
 }
 
 func init() {

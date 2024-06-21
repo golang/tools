@@ -223,10 +223,6 @@ func NewT1() *T1 { return &T1{T} }
 		// duplicate list errors with findings (issue #67790)
 		{name: "list-error-findings", pattern: []string{cperrFile}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: 3},
 	} {
-		if test.name == "despite-error" && testenv.Go1Point() < 20 {
-			// The behavior in the comment on the despite-error test only occurs for Go 1.20+.
-			continue
-		}
 		if got := checker.Run(test.pattern, test.analyzers); got != test.code {
 			t.Errorf("got incorrect exit code %d for test %s; want %d", got, test.name, test.code)
 		}

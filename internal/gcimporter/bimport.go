@@ -138,8 +138,13 @@ func predeclared() []types.Type {
 
 			// used internally by gc; never used by this package or in .a files
 			anyType{},
+
+			// comparable
+			types.Universe.Lookup("comparable").Type(),
+
+			// any
+			types.Universe.Lookup("any").Type(),
 		}
-		predecl = append(predecl, additionalPredeclared()...)
 	})
 	return predecl
 }

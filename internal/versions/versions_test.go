@@ -11,7 +11,6 @@ import (
 	"go/types"
 	"testing"
 
-	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/versions"
 )
 
@@ -192,9 +191,7 @@ func TestBefore(t *testing.T) {
 	}
 }
 
-func TestFileVersions122(t *testing.T) {
-	testenv.NeedsGo1Point(t, 22)
-
+func TestFileVersions(t *testing.T) {
 	const source = `
 	package P
 	`
@@ -228,29 +225,5 @@ func TestFileVersions122(t *testing.T) {
 		if conf.GoVersion == "" && v != versions.Future {
 			t.Error("Expected the FileVersion to be the Future when conf.GoVersion is unset")
 		}
-	}
-}
-
-func TestFileVersions121(t *testing.T) {
-	testenv.SkipAfterGo1Point(t, 21)
-
-	// If <1.22, info and file are ignored.
-	v := versions.FileVersion(nil, nil)
-	oneof := map[string]bool{
-		versions.Go1_18: true,
-		versions.Go1_19: true,
-		versions.Go1_20: true,
-		versions.Go1_21: true,
-	}
-	if !oneof[v] {
-		t.Errorf("FileVersion(...)=%q expected to be a known go version <1.22", v)
-	}
-
-	if versions.AtLeast(v, versions.Go1_22) {
-		t.Errorf("versions.AtLeast(%q, %q) expected to be false", v, versions.Go1_22)
-	}
-
-	if !versions.Before(v, versions.Go1_22) {
-		t.Errorf("versions.Before(%q, %q) expected to hold", v, versions.Go1_22)
 	}
 }

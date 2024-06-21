@@ -15,6 +15,7 @@ import (
 	"go/types"
 	pathpkg "path"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -151,7 +152,7 @@ func (st *state) inline() (*Result, error) {
 	elideBraces := res.elideBraces
 	if !elideBraces {
 		if newBlock, ok := res.new.(*ast.BlockStmt); ok {
-			i := nodeIndex(caller.path, res.old)
+			i := slices.Index(caller.path, res.old)
 			parent := caller.path[i+1]
 			var body []ast.Stmt
 			switch parent := parent.(type) {
@@ -2465,7 +2466,7 @@ func callStmt(callPath []ast.Node, unrestricted bool) *ast.ExprStmt {
 	parent, _ := callContext(callPath)
 	stmt, ok := parent.(*ast.ExprStmt)
 	if ok && unrestricted {
-		switch callPath[nodeIndex(callPath, stmt)+1].(type) {
+		switch callPath[slices.Index(callPath, ast.Node(stmt))+1].(type) {
 		case *ast.LabeledStmt,
 			*ast.BlockStmt,
 			*ast.CaseClause,
@@ -2775,7 +2776,7 @@ func consistentOffsets(caller *Caller) bool {
 // ancestor of the CallExpr identified by its PathEnclosingInterval).
 func needsParens(callPath []ast.Node, old, new ast.Node) bool {
 	// Find enclosing old node and its parent.
-	i := nodeIndex(callPath, old)
+	i := slices.Index(callPath, old)
 	if i == -1 {
 		panic("not found")
 	}
@@ -2835,16 +2836,6 @@ func needsParens(callPath []ast.Node, old, new ast.Node) bool {
 		return parent.Fun == old
 	}
 	return false
-}
-
-func nodeIndex(nodes []ast.Node, n ast.Node) int {
-	// TODO(adonovan): Use index[ast.Node]() in go1.20.
-	for i, node := range nodes {
-		if node == n {
-			return i
-		}
-	}
-	return -1
 }
 
 // declares returns the set of lexical names declared by a

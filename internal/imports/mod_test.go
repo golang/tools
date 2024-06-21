@@ -267,10 +267,7 @@ import _ "rsc.io/sampler"
 		t.Fatal(err)
 	}
 
-	wantDir := `pkg.*mod.*/sampler@.*$`
-	if testenv.Go1Point() >= 14 {
-		wantDir = `/vendor/`
-	}
+	wantDir := `/vendor/`
 
 	// Clear out the resolver's module info, since we've changed the environment.
 	// (the presence of a /vendor directory affects `go list -m`).
@@ -1322,4 +1319,49 @@ func BenchmarkModuleResolver_InitialScan(b *testing.B) {
 		}
 		scanToSlice(resolver, exclude)
 	}
+}
+
+// Tests that go.work files and vendor directory are respected.
+func TestModWorkspaceVendoring(t *testing.T) {
+	mt := setup(t, nil, `
+-- go.work --
+go 1.22
+
+use (
+	./a
+	./b
+)
+-- a/go.mod --
+module example.com/a
+
+go 1.22
+
+require rsc.io/sampler v1.3.1
+-- a/a.go --
+package a
+
+import _ "rsc.io/sampler"
+-- b/go.mod --
+module example.com/b
+
+go 1.22
+-- b/b.go --
+package b
+`, "")
+	defer mt.cleanup()
+
+	// generate vendor directory
+	if _, err := mt.env.invokeGo(context.Background(), "work", "vendor"); err != nil {
+		t.Fatal(err)
+	}
+
+	// update module resolver
+	mt.env.ClearModuleInfo()
+	mt.env.UpdateResolver(mt.env.resolver.ClearForNewScan())
+
+	mt.assertModuleFoundInDir("example.com/a", "a", `main/a$`)
+	mt.assertScanFinds("example.com/a", "a")
+	mt.assertModuleFoundInDir("example.com/b", "b", `main/b$`)
+	mt.assertScanFinds("example.com/b", "b")
+	mt.assertModuleFoundInDir("rsc.io/sampler", "sampler", `/vendor/`)
 }

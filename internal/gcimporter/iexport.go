@@ -242,7 +242,6 @@ import (
 
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/internal/aliases"
-	"golang.org/x/tools/internal/tokeninternal"
 )
 
 // IExportShallow encodes "shallow" export data for the specified package.
@@ -441,7 +440,7 @@ func (p *iexporter) encodeFile(w *intWriter, file *token.File, needed []uint64) 
 	// Sort the set of needed offsets. Duplicates are harmless.
 	sort.Slice(needed, func(i, j int) bool { return needed[i] < needed[j] })
 
-	lines := tokeninternal.GetLines(file) // byte offset of each line start
+	lines := file.Lines() // byte offset of each line start
 	w.uint64(uint64(len(lines)))
 
 	// Rather than record the entire array of line start offsets,
