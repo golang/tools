@@ -414,52 +414,171 @@ func TestBasics(t *testing.T) {
 }
 
 func TestDuplicable(t *testing.T) {
-	runTests(t, []testcase{
-		{
-			"Empty strings are duplicable.",
-			`func f(s string) { print(s, s) }`,
-			`func _() { f("")  }`,
-			`func _() { print("", "") }`,
-		},
-		{
-			"Non-empty string literals are not duplicable.",
-			`func f(s string) { print(s, s) }`,
-			`func _() { f("hi")  }`,
-			`func _() {
+	t.Run("basic", func(t *testing.T) {
+		runTests(t, []testcase{
+			{
+				"Empty strings are duplicable.",
+				`func f(s string) { print(s, s) }`,
+				`func _() { f("")  }`,
+				`func _() { print("", "") }`,
+			},
+			{
+				"Non-empty string literals are not duplicable.",
+				`func f(s string) { print(s, s) }`,
+				`func _() { f("hi")  }`,
+				`func _() {
 	var s string = "hi"
 	print(s, s)
 }`,
-		},
-		{
-			"Empty array literals are duplicable.",
-			`func f(a [2]int) { print(a, a) }`,
-			`func _() { f([2]int{})  }`,
-			`func _() { print([2]int{}, [2]int{}) }`,
-		},
-		{
-			"Non-empty array literals are not duplicable.",
-			`func f(a [2]int) { print(a, a) }`,
-			`func _() { f([2]int{1, 2})  }`,
-			`func _() {
+			},
+			{
+				"Empty array literals are duplicable.",
+				`func f(a [2]int) { print(a, a) }`,
+				`func _() { f([2]int{})  }`,
+				`func _() { print([2]int{}, [2]int{}) }`,
+			},
+			{
+				"Non-empty array literals are not duplicable.",
+				`func f(a [2]int) { print(a, a) }`,
+				`func _() { f([2]int{1, 2})  }`,
+				`func _() {
 	var a [2]int = [2]int{1, 2}
 	print(a, a)
 }`,
-		},
-		{
-			"Empty struct literals are duplicable.",
-			`func f(s S) { print(s, s) }; type S struct { x int }`,
-			`func _() { f(S{})  }`,
-			`func _() { print(S{}, S{}) }`,
-		},
-		{
-			"Non-empty struct literals are not duplicable.",
-			`func f(s S) { print(s, s) }; type S struct { x int }`,
-			`func _() { f(S{x: 1})  }`,
-			`func _() {
+			},
+			{
+				"Empty struct literals are duplicable.",
+				`func f(s S) { print(s, s) }; type S struct { x int }`,
+				`func _() { f(S{})  }`,
+				`func _() { print(S{}, S{}) }`,
+			},
+			{
+				"Non-empty struct literals are not duplicable.",
+				`func f(s S) { print(s, s) }; type S struct { x int }`,
+				`func _() { f(S{x: 1})  }`,
+				`func _() {
 	var s S = S{x: 1}
 	print(s, s)
 }`,
-		},
+			},
+		})
+	})
+
+	t.Run("conversions", func(t *testing.T) {
+		runTests(t, []testcase{
+			{
+				"Conversions to integer are duplicable.",
+				`func f(i int) { print(i, i) }`,
+				`func _() { var i int8 = 1; f(int(i))  }`,
+				`func _() { var i int8 = 1; print(int(i), int(i)) }`,
+			},
+			{
+				"Implicit conversions from underlying types are duplicable.",
+				`func f(i I) { print(i, i) }; type I int`,
+				`func _() { f(1)  }`,
+				`func _() { print(I(1), I(1)) }`,
+			},
+			{
+				"Conversions to array are duplicable.",
+				`func f(a [2]int) { print(a, a) }; type A [2]int`,
+				`func _() { var a A; f([2]int(a)) }`,
+				`func _() { var a A; print([2]int(a), [2]int(a)) }`,
+			},
+			{
+				"Conversions from array are duplicable.",
+				`func f(a A) { print(a, a) }; type A [2]int`,
+				`func _() { var a [2]int; f(A(a)) }`,
+				`func _() { var a [2]int; print(A(a), A(a)) }`,
+			},
+			{
+				"Conversions from byte slice to string are duplicable.",
+				`func f(s string) { print(s, s) }`,
+				`func _() { var b []byte; f(string(b)) }`,
+				`func _() { var b []byte; print(string(b), string(b)) }`,
+			},
+			{
+				"Conversions from string to byte slice are not duplicable.",
+				`func f(b []byte) { print(b, b) }`,
+				`func _() { var s string; f([]byte(s)) }`,
+				`func _() {
+	var s string
+	var b []byte = []byte(s)
+	print(b, b)
+}`,
+			},
+			{
+				"Conversions from string to uint8 slice are not duplicable.",
+				`func f(b []uint8) { print(b, b) }`,
+				`func _() { var s string; f([]uint8(s)) }`,
+				`func _() {
+	var s string
+	var b []uint8 = []uint8(s)
+	print(b, b)
+}`,
+			},
+			{
+				"Conversions from string to rune slice are not duplicable.",
+				`func f(r []rune) { print(r, r) }`,
+				`func _() { var s string; f([]rune(s)) }`,
+				`func _() {
+	var s string
+	var r []rune = []rune(s)
+	print(r, r)
+}`,
+			},
+			{
+				"Conversions from string to named type with underlying byte slice are not duplicable.",
+				`func f(b B) { print(b, b) }; type B []byte`,
+				`func _() { var s string; f(B(s)) }`,
+				`func _() {
+	var s string
+	var b B = B(s)
+	print(b, b)
+}`,
+			},
+			{
+				"Conversions from string to named type of string are duplicable.",
+				`func f(s S) { print(s, s) }; type S string`,
+				`func _() { var s string; f(S(s)) }`,
+				`func _() { var s string; print(S(s), S(s)) }`,
+			},
+			{
+				"Built-in function calls are not duplicable.",
+				`func f(i int) { print(i, i) }`,
+				`func _() { f(len(""))  }`,
+				`func _() {
+	var i int = len("")
+	print(i, i)
+}`,
+			},
+			{
+				"Built-in function calls are not duplicable.",
+				`func f(c complex128) { print(c, c) }`,
+				`func _() { f(complex(1.0, 2.0)) }`,
+				`func _() {
+	var c complex128 = complex(1.0, 2.0)
+	print(c, c)
+}`,
+			},
+			{
+				"Non built-in function calls are not duplicable.",
+				`func f(i int) { print(i, i) }
+//go:noinline
+func f1(i int) int { return i + 1 }`,
+				`func _() { f(f1(1))  }`,
+				`func _() {
+	var i int = f1(1)
+	print(i, i)
+}`,
+			},
+			{
+				"Conversions between function types are duplicable.",
+				`func f(f F) { print(f, f) }; type F func(); func f1() {}`,
+				`func _() { f(F(f1))  }`,
+				`func _() { print(F(f1), F(f1)) }`,
+			},
+		})
+
 	})
 }
 
@@ -1354,6 +1473,23 @@ func TestSubstitutionPreservesParameterType(t *testing.T) {
 			`func f(x T) { _ = &x == (*T)(nil) }; type T int16`,
 			`func _() { type T bool; f(1) }`,
 			`error: T.*shadowed.*by.*type`,
+		},
+	})
+}
+
+func TestRedundantConversions(t *testing.T) {
+	runTests(t, []testcase{
+		{
+			"Type conversion must be added if the constant is untyped.",
+			`func f(i int32) { print(i) }`,
+			`func _() { f(1)  }`,
+			`func _() { print(int32(1)) }`,
+		},
+		{
+			"Type conversion must not be added if the constant is typed.",
+			`func f(i int32) { print(i) }`,
+			`func _() { f(int32(1))  }`,
+			`func _() { print(int32(1)) }`,
 		},
 	})
 }

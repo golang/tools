@@ -1437,10 +1437,29 @@ next:
 			// other arguments are given explicit types in either
 			// a binding decl or when using the literalization
 			// strategy.
-			if len(param.info.Refs) > 0 && !trivialConversion(args[i].constant, args[i].typ, params[i].obj.Type()) {
-				arg.expr = convert(params[i].fieldType, arg.expr)
+
+			// If the types are identical, we can eliminate
+			// redundant type conversions such as this:
+			//
+			// Callee:
+			//    func f(i int32) { print(i) }
+			// Caller:
+			//    func g() { f(int32(1)) }
+			// Inlined as:
+			//    func g() { print(int32(int32(1)))
+			//
+			// Recall that non-trivial does not imply non-identical
+			// for constant conversions; however, at this point state.arguments
+			// has already re-typechecked the constant and set arg.type to
+			// its (possibly "untyped") inherent type, so
+			// the conversion from untyped 1 to int32 is non-trivial even
+			// though both arg and param have identical types (int32).
+			if len(param.info.Refs) > 0 &&
+				!types.Identical(arg.typ, param.obj.Type()) &&
+				!trivialConversion(arg.constant, arg.typ, param.obj.Type()) {
+				arg.expr = convert(param.fieldType, arg.expr)
 				logf("param %q: adding explicit %s -> %s conversion around argument",
-					param.info.Name, args[i].typ, params[i].obj.Type())
+					param.info.Name, arg.typ, param.obj.Type())
 			}
 
 			// It is safe to substitute param and replace it with arg.
@@ -2206,16 +2225,35 @@ func duplicable(info *types.Info, e ast.Expr) bool {
 		return false
 
 	case *ast.CallExpr:
-		// Don't treat a conversion T(x) as duplicable even
-		// if x is duplicable because it could duplicate
-		// allocations.
+		// Treat type conversions as duplicable if they do not observably allocate.
+		// The only cases of observable allocations are
+		// the `[]byte(string)` and `[]rune(string)` conversions.
 		//
-		// TODO(adonovan): there are cases to tease apart here:
-		// duplicating string([]byte) conversions increases
+		// Duplicating string([]byte) conversions increases
 		// allocation but doesn't change behavior, but the
 		// reverse, []byte(string), allocates a distinct array,
-		// which is observable
-		return false
+		// which is observable.
+
+		if !info.Types[e.Fun].IsType() { // check whether e.Fun is a type conversion
+			return false
+		}
+
+		fun := info.TypeOf(e.Fun)
+		arg := info.TypeOf(e.Args[0])
+
+		switch fun := fun.Underlying().(type) {
+		case *types.Slice:
+			// Do not mark []byte(string) and []rune(string) as duplicable.
+			elem, ok := fun.Elem().Underlying().(*types.Basic)
+			if ok && (elem.Kind() == types.Rune || elem.Kind() == types.Byte) {
+				from, ok := arg.Underlying().(*types.Basic)
+				isString := ok && from.Info()&types.IsString != 0
+				return !isString
+			}
+		case *types.TypeParam:
+			return false // be conservative
+		}
+		return true
 
 	case *ast.SelectorExpr:
 		if seln, ok := info.Selections[e]; ok {
