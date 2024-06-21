@@ -20,11 +20,13 @@ import (
 // PJW: are there other packages where we can deduce usage constraints?
 
 // if we find fuzz completions, then return true, as those are the only completions to offer
-func (c *completer) fuzz(mset *types.MethodSet, imp *importInfo, cb func(candidate)) bool {
+func (c *completer) fuzz(testingF types.Type, imp *importInfo, cb func(candidate)) bool {
 	// 1. inside f.Fuzz? (only f.Failed and f.Name)
 	// 2. possible completing f.Fuzz?
 	//    [Ident,SelectorExpr,Callexpr,ExprStmt,BlockiStmt,FuncDecl(Fuzz...)]
 	// 3. before f.Fuzz, same (for 2., offer choice when looking at an F)
+
+	mset := types.NewMethodSet(testingF)
 
 	// does the path contain FuncLit as arg to f.Fuzz CallExpr?
 	inside := false

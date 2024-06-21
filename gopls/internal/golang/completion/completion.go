@@ -1496,6 +1496,13 @@ func ignoreUnimportedCompletion(fix *imports.ImportFix) bool {
 }
 
 func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *importInfo, cb func(candidate)) {
+	if isStarTestingDotF(typ) {
+		// is that a sufficient test? (or is more care needed?)
+		if c.fuzz(typ, imp, cb) {
+			return
+		}
+	}
+
 	mset := c.methodSetCache[methodSetKey{typ, addressable}]
 	if mset == nil {
 		if addressable && !types.IsInterface(typ) && !isPointer(typ) {
@@ -1506,13 +1513,6 @@ func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *impo
 			mset = types.NewMethodSet(typ)
 		}
 		c.methodSetCache[methodSetKey{typ, addressable}] = mset
-	}
-
-	if isStarTestingDotF(typ) && addressable {
-		// is that a sufficient test? (or is more care needed?)
-		if c.fuzz(mset, imp, cb) {
-			return
-		}
 	}
 
 	for i := 0; i < mset.Len(); i++ {
