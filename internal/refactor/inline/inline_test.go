@@ -545,9 +545,9 @@ func TestDuplicable(t *testing.T) {
 			{
 				"Built-in function calls are not duplicable.",
 				`func f(i int) { print(i, i) }`,
-				`func _() { f(max(1))  }`,
+				`func _() { f(len(""))  }`,
 				`func _() {
-	var i int = max(1)
+	var i int = len("")
 	print(i, i)
 }`,
 			},
