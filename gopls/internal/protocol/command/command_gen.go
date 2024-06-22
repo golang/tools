@@ -53,7 +53,6 @@ const (
 	StartDebugging          Command = "gopls.start_debugging"
 	StartProfile            Command = "gopls.start_profile"
 	StopProfile             Command = "gopls.stop_profile"
-	Test                    Command = "gopls.test"
 	Tidy                    Command = "gopls.tidy"
 	ToggleGCDetails         Command = "gopls.toggle_gc_details"
 	UpdateGoSum             Command = "gopls.update_go_sum"
@@ -93,7 +92,6 @@ var Commands = []Command{
 	StartDebugging,
 	StartProfile,
 	StopProfile,
-	Test,
 	Tidy,
 	ToggleGCDetails,
 	UpdateGoSum,
@@ -270,14 +268,6 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return s.StopProfile(ctx, a0)
-	case Test:
-		var a0 protocol.DocumentURI
-		var a1 []string
-		var a2 []string
-		if err := UnmarshalArgs(params.Arguments, &a0, &a1, &a2); err != nil {
-			return nil, err
-		}
-		return nil, s.Test(ctx, a0, a1, a2)
 	case Tidy:
 		var a0 URIArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -645,18 +635,6 @@ func NewStopProfileCommand(title string, a0 StopProfileArgs) (protocol.Command, 
 	return protocol.Command{
 		Title:     title,
 		Command:   StopProfile.String(),
-		Arguments: args,
-	}, nil
-}
-
-func NewTestCommand(title string, a0 protocol.DocumentURI, a1 []string, a2 []string) (protocol.Command, error) {
-	args, err := MarshalArgs(a0, a1, a2)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
-		Title:     title,
-		Command:   Test.String(),
 		Arguments: args,
 	}, nil
 }
