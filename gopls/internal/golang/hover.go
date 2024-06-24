@@ -70,6 +70,7 @@ type hoverJSON struct {
 
 	// LinkPath is the pkg.go.dev link for the given symbol.
 	// For example, the "go/ast" part of "pkg.go.dev/go/ast#Node".
+	// It may have a module version suffix "@v1.2.3".
 	LinkPath string `json:"linkPath"`
 
 	// LinkAnchor is the pkg.go.dev link anchor for the given symbol.
@@ -98,6 +99,7 @@ type hoverJSON struct {
 }
 
 // Hover implements the "textDocument/hover" RPC for Go files.
+// It may return nil even on success.
 //
 // If pkgURL is non-nil, it should be used to generate doc links.
 func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position, pkgURL func(path PackagePath, fragment string) protocol.URI) (*protocol.Hover, error) {
@@ -200,7 +202,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			if hoverRange == nil {
 				hoverRange = &rng
 			}
-			return *hoverRange, hoverJSON, nil
+			return *hoverRange, hoverJSON, nil // (hoverJSON may be nil)
 		}
 	}
 	// Handle hovering over (non-import-path) literals.
@@ -1159,7 +1161,8 @@ func formatLink(h *hoverJSON, options *settings.Options, pkgURL func(path Packag
 	var url protocol.URI
 	var caption string
 	if pkgURL != nil { // LinksInHover == "gopls"
-		url = pkgURL(PackagePath(h.LinkPath), h.LinkAnchor)
+		path, _, _ := strings.Cut(h.LinkPath, "@") // remove optional module version suffix
+		url = pkgURL(PackagePath(path), h.LinkAnchor)
 		caption = "in gopls doc viewer"
 	} else {
 		if options.LinkTarget == "" {

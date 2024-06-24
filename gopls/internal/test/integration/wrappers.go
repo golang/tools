@@ -233,6 +233,7 @@ func (e *Env) GetQuickFixes(path string, diagnostics []protocol.Diagnostic) []pr
 }
 
 // Hover in the editor, calling t.Fatal on any error.
+// It may return (nil, zero) even on success.
 func (e *Env) Hover(loc protocol.Location) (*protocol.MarkupContent, protocol.Location) {
 	e.T.Helper()
 	c, loc, err := e.Editor.Hover(e.Ctx, loc)

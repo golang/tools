@@ -1595,6 +1595,7 @@ func (e *Editor) EditResolveSupport() (bool, error) {
 }
 
 // Hover triggers a hover at the given position in an open buffer.
+// It may return (nil, zero) if no symbol was selected.
 func (e *Editor) Hover(ctx context.Context, loc protocol.Location) (*protocol.MarkupContent, protocol.Location, error) {
 	if err := e.checkBufferLocation(loc); err != nil {
 		return nil, protocol.Location{}, err
@@ -1608,7 +1609,7 @@ func (e *Editor) Hover(ctx context.Context, loc protocol.Location) (*protocol.Ma
 		return nil, protocol.Location{}, fmt.Errorf("hover: %w", err)
 	}
 	if resp == nil {
-		return nil, protocol.Location{}, nil
+		return nil, protocol.Location{}, nil // e.g. no selected symbol
 	}
 	return &resp.Contents, protocol.Location{URI: loc.URI, Range: resp.Range}, nil
 }
