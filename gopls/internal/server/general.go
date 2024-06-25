@@ -472,13 +472,24 @@ func (s *server) newFolder(ctx context.Context, folder protocol.DocumentURI, nam
 	// Increment folder counters.
 	switch {
 	case env.GOTOOLCHAIN == "auto" || strings.Contains(env.GOTOOLCHAIN, "+auto"):
-		counter.New("gopls/gotoolchain:auto").Inc()
+		counter.Inc("gopls/gotoolchain:auto")
 	case env.GOTOOLCHAIN == "path" || strings.Contains(env.GOTOOLCHAIN, "+path"):
-		counter.New("gopls/gotoolchain:path").Inc()
+		counter.Inc("gopls/gotoolchain:path")
 	case env.GOTOOLCHAIN == "local": // local+auto and local+path handled above
-		counter.New("gopls/gotoolchain:local").Inc()
+		counter.Inc("gopls/gotoolchain:local")
 	default:
-		counter.New("gopls/gotoolchain:other").Inc()
+		counter.Inc("gopls/gotoolchain:other")
+	}
+
+	// Record whether a driver is in use so that it appears in the
+	// user's telemetry upload. Although we can't correlate the
+	// driver information with the crash or bug.Report at the
+	// granularity of the process instance, users that use a
+	// driver tend to do so most of the time, so we'll get a
+	// strong clue. See #60890 for an example of an issue where
+	// this information would have been helpful.
+	if env.EffectiveGOPACKAGESDRIVER != "" {
+		counter.Inc("gopls/gopackagesdriver")
 	}
 
 	return &cache.Folder{
