@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/protocol"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
@@ -600,6 +601,62 @@ func main() {
 			t.Fatalf("bad regexp in test: %v", err)
 		} else if !m {
 			t.Fatalf("hover output does not match %q; got:\n\n%s", wantRE, got.Value)
+		}
+	})
+}
+
+func TestHoverBuiltinFile(t *testing.T) {
+	testenv.NeedsGo1Point(t, 21) // uses 'min'
+
+	// This test verifies that hovering in the builtin file provides the same
+	// hover content as hovering over a use of a builtin.
+
+	const src = `
+-- p.go --
+package p
+
+func _() {
+	const (
+		_ = iota
+		_ = true
+	)
+	var (
+		_ any
+		err error = e{} // avoid nil deref warning
+	)
+	_ = err.Error
+	println("Hello")
+	_ = min(1, 2)
+}
+
+// e implements Error, for use above.
+type e struct{}
+func (e) Error() string
+`
+
+	// Test hovering over various builtins with different kinds of declarations.
+	tests := []string{
+		"iota",
+		"true",
+		"any",
+		"error",
+		"Error",
+		"println",
+		"min",
+	}
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("p.go")
+		env.AfterChange(NoDiagnostics()) // avoid accidental compiler errors
+
+		for _, builtin := range tests {
+			useLocation := env.RegexpSearch("p.go", builtin)
+			calleeHover, _ := env.Hover(useLocation)
+			declLocation := env.GoToDefinition(useLocation)
+			declHover, _ := env.Hover(declLocation)
+			if diff := cmp.Diff(calleeHover, declHover); diff != "" {
+				t.Errorf("Hover mismatch (-callee hover +decl hover):\n%s", diff)
+			}
 		}
 	})
 }

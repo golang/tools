@@ -132,6 +132,41 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 //
 // TODO(adonovan): strength-reduce file.Handle to protocol.DocumentURI.
 func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) (protocol.Range, *hoverJSON, error) {
+	// Check for hover inside the builtin file before attempting type checking
+	// below. NarrowestPackageForFile may or may not succeed, depending on
+	// whether this is a GOROOT view, but even if it does succeed the resulting
+	// package will be command-line-arguments package. The user should get a
+	// hover for the builtin object, not the object type checked from the
+	// builtin.go.
+	if snapshot.IsBuiltin(fh.URI()) {
+		pgf, err := snapshot.BuiltinFile(ctx)
+		if err != nil {
+			return protocol.Range{}, nil, err
+		}
+		pos, err := pgf.PositionPos(pp)
+		if err != nil {
+			return protocol.Range{}, nil, err
+		}
+		path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
+		if id, ok := path[0].(*ast.Ident); ok {
+			rng, err := pgf.NodeRange(id)
+			if err != nil {
+				return protocol.Range{}, nil, err
+			}
+			var obj types.Object
+			if id.Name == "Error" {
+				obj = types.Universe.Lookup("error").Type().Underlying().(*types.Interface).Method(0)
+			} else {
+				obj = types.Universe.Lookup(id.Name)
+			}
+			if obj != nil {
+				h, err := hoverBuiltin(ctx, snapshot, obj)
+				return rng, h, err
+			}
+		}
+		return protocol.Range{}, nil, nil // no object to hover
+	}
+
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return protocol.Range{}, nil, err
@@ -592,13 +627,16 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 		}, nil
 	}
 
-	pgf, node, err := builtinDecl(ctx, snapshot, obj)
+	pgf, ident, err := builtinDecl(ctx, snapshot, obj)
 	if err != nil {
 		return nil, err
 	}
 
-	var comment *ast.CommentGroup
-	path, _ := astutil.PathEnclosingInterval(pgf.File, node.Pos(), node.End())
+	var (
+		comment *ast.CommentGroup
+		decl    ast.Decl
+	)
+	path, _ := astutil.PathEnclosingInterval(pgf.File, ident.Pos(), ident.Pos())
 	for _, n := range path {
 		switch n := n.(type) {
 		case *ast.GenDecl:
@@ -606,17 +644,17 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 			comment = n.Doc
 			node2 := *n
 			node2.Doc = nil
-			node = &node2
+			decl = &node2
 		case *ast.FuncDecl:
 			// Ditto.
 			comment = n.Doc
 			node2 := *n
 			node2.Doc = nil
-			node = &node2
+			decl = &node2
 		}
 	}
 
-	signature := formatNodeFile(pgf.Tok, node)
+	signature := formatNodeFile(pgf.Tok, decl)
 	// Replace fake types with their common equivalent.
 	// TODO(rfindley): we should instead use obj.Type(), which would have the
 	// *actual* types of the builtin call.
