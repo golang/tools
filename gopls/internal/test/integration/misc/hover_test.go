@@ -660,3 +660,52 @@ func (e) Error() string
 		}
 	})
 }
+
+func TestHoverStdlibWithAvailableVersion(t *testing.T) {
+	const src = `
+-- stdlib.go --
+package stdlib
+
+import "fmt"
+import "context"
+import "crypto"
+
+func _() {
+	var ctx context.Context
+	ctx = context.Background()
+	if ctx.Err(); e == context.Canceled {
+		fmt.Println("Canceled")
+		fmt.Printf("%v", crypto.SHA512_224)
+	}
+	_ := fmt.Appendf(make([]byte, 100), "world, %d", 23)
+}
+`
+
+	testcases := []struct {
+		symbolRE      string // regexp matching symbol to hover over
+		shouldContain bool
+		targetString  string
+	}{
+		{"Println", false, "go1.0"},   // package-level func
+		{"Appendf", true, "go1.19"},   // package-level func
+		{"Background", true, "go1.7"}, // package-level func
+		{"Canceled", true, "go1.7"},   // package-level var
+		{"Context", true, "go1.7"},    // package-level type
+		{"SHA512_224", true, "go1.5"}, // package-level const
+		// TODO(hxjiang): add test for symbol type Method.
+		// TODO(hxjiang): add test for symbol type Field.
+	}
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("stdlib.go")
+		for _, tc := range testcases {
+			content, _ := env.Hover(env.RegexpSearch("stdlib.go", tc.symbolRE))
+			if tc.shouldContain && !strings.Contains(content.Value, tc.targetString) {
+				t.Errorf("Hover(%q) should contain string %s", tc.symbolRE, tc.targetString)
+			}
+			if !tc.shouldContain && strings.Contains(content.Value, tc.targetString) {
+				t.Errorf("Hover(%q) should not contain string %s", tc.symbolRE, tc.targetString)
+			}
+		}
+	})
+}

@@ -40,6 +40,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
@@ -76,6 +77,10 @@ type hoverJSON struct {
 	// LinkAnchor is the pkg.go.dev link anchor for the given symbol.
 	// For example, the "Node" part of "pkg.go.dev/go/ast#Node".
 	LinkAnchor string `json:"linkAnchor"`
+
+	// stdVersion is the Go release version at which this symbol became available.
+	// It is nil for non-std library.
+	stdVersion *stdlib.Version
 
 	// New fields go below, and are unexported. The existing
 	// exported fields are underspecified and have already
@@ -595,6 +600,11 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		linkPath = strings.Replace(linkPath, mod.Path, mod.Path+"@"+mod.Version, 1)
 	}
 
+	var version *stdlib.Version
+	if symbol := StdSymbolOf(obj); symbol != nil {
+		version = &symbol.Version
+	}
+
 	return *hoverRange, &hoverJSON{
 		Synopsis:          doc.Synopsis(docText),
 		FullDocumentation: docText,
@@ -606,6 +616,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		typeDecl:          typeDecl,
 		methods:           methods,
 		promotedFields:    fields,
+		stdVersion:        version,
 	}, nil
 }
 
@@ -1166,10 +1177,14 @@ func formatHover(h *hoverJSON, options *settings.Options, pkgURL func(path Packa
 			formatDoc(h, options),
 			maybeMarkdown(h.promotedFields),
 			maybeMarkdown(h.methods),
+			fmt.Sprintf("Added in %v", h.stdVersion),
 			formatLink(h, options, pkgURL),
 		}
 		if h.typeDecl != "" {
 			parts[0] = "" // type: suppress redundant Signature
+		}
+		if h.stdVersion == nil || *h.stdVersion == stdlib.Version(0) {
+			parts[5] = "" // suppress stdlib version if not applicable or initial version 1.0
 		}
 		parts = slices.Remove(parts, "")
 
@@ -1189,6 +1204,29 @@ func formatHover(h *hoverJSON, options *settings.Options, pkgURL func(path Packa
 	default:
 		return "", fmt.Errorf("invalid HoverKind: %v", options.HoverKind)
 	}
+}
+
+// StdSymbolOf returns the std lib symbol information of the given obj.
+// It returns nil if the input obj is not an exported standard library symbol.
+func StdSymbolOf(obj types.Object) *stdlib.Symbol {
+	if !obj.Exported() {
+		return nil
+	}
+
+	if isPackageLevel(obj) {
+		// TODO(hxjiang): This is binary searchable.
+		for _, s := range stdlib.PackageSymbols[obj.Pkg().Path()] {
+			if s.Kind == stdlib.Method || s.Kind == stdlib.Field {
+				continue
+			}
+			if s.Name == obj.Name() {
+				return &s
+			}
+		}
+	}
+
+	// TODO(hxjiang): handle exported fields and methods of package level types.
+	return nil
 }
 
 // If pkgURL is non-nil, it should be used to generate doc links.
