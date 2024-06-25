@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
@@ -217,7 +218,16 @@ func _() {
 			conf.Check(f.Name.Name, fset, []*ast.File{f}, info)
 
 			// add import
-			name, edit := analysisinternal.AddImport(info, f, pos, path, name)
+			name, edits := analysisinternal.AddImport(info, f, pos, path, name)
+
+			var edit analysis.TextEdit
+			switch len(edits) {
+			case 0:
+			case 1:
+				edit = edits[0]
+			default:
+				t.Fatalf("expected at most one edit, got %d", len(edits))
+			}
 
 			// apply patch
 			start := fset.Position(edit.Pos)
