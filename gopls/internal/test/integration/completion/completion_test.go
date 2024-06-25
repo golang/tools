@@ -121,11 +121,11 @@ package
 			want:          nil,
 		},
 		{
-			name:          "package completion after keyword 'package'",
+			name:          "package completion after package keyword",
 			filename:      "fruits/testfile2.go",
 			triggerRegexp: "package()",
 			want:          []string{"package apple", "package apple_test", "package fruits", "package fruits_test", "package main"},
-			editRegexp:    "package\n",
+			editRegexp:    "package",
 		},
 		{
 			name:          "package completion with 'pac' prefix",
@@ -164,14 +164,14 @@ package
 			filename:      "123f_r.u~its-123/testfile.go",
 			triggerRegexp: "package()",
 			want:          []string{"package fruits123", "package fruits123_test", "package main"},
-			editRegexp:    "package\n",
+			editRegexp:    "package",
 		},
 		{
 			name:          "package completion for invalid dir name",
 			filename:      ".invalid-dir@-name/testfile.go",
 			triggerRegexp: "package()",
 			want:          []string{"package main"},
-			editRegexp:    "package\n",
+			editRegexp:    "package",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
