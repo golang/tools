@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/internal/diff/myers"
 	"golang.org/x/tools/internal/drivertest"
 	"golang.org/x/tools/internal/packagesinternal"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
@@ -28,6 +29,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestDriverConformance(t *testing.T) {
+	testenv.NeedsExec(t)
+
 	const workspace = `
 -- go.mod --
 module example.com/m

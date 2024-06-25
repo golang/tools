@@ -118,6 +118,10 @@ func TestLoad_NoInitialPackages(t *testing.T) {
 }
 
 func TestLoad_MissingInitialPackage(t *testing.T) {
+	if runtime.GOOS == "wasip1" {
+		t.Skip("Skipping due to golang/go#64725: fails with EBADF errors")
+	}
+
 	var conf loader.Config
 	conf.Import("nosuchpkg")
 	conf.Import("errors")
