@@ -34,6 +34,7 @@ const (
 	DiagnoseFiles           Command = "gopls.diagnose_files"
 	Doc                     Command = "gopls.doc"
 	EditGoDirective         Command = "gopls.edit_go_directive"
+	ExtractToNewFile        Command = "gopls.extract_to_new_file"
 	FetchVulncheckResult    Command = "gopls.fetch_vulncheck_result"
 	FreeSymbols             Command = "gopls.free_symbols"
 	GCDetails               Command = "gopls.gc_details"
@@ -74,6 +75,7 @@ var Commands = []Command{
 	DiagnoseFiles,
 	Doc,
 	EditGoDirective,
+	ExtractToNewFile,
 	FetchVulncheckResult,
 	FreeSymbols,
 	GCDetails,
@@ -167,6 +169,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.EditGoDirective(ctx, a0)
+	case ExtractToNewFile:
+		var a0 protocol.Location
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return nil, s.ExtractToNewFile(ctx, a0)
 	case FetchVulncheckResult:
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -432,6 +440,18 @@ func NewEditGoDirectiveCommand(title string, a0 EditGoDirectiveArgs) (protocol.C
 	return protocol.Command{
 		Title:     title,
 		Command:   EditGoDirective.String(),
+		Arguments: args,
+	}, nil
+}
+
+func NewExtractToNewFileCommand(title string, a0 protocol.Location) (protocol.Command, error) {
+	args, err := MarshalArgs(a0)
+	if err != nil {
+		return protocol.Command{}, err
+	}
+	return protocol.Command{
+		Title:     title,
+		Command:   ExtractToNewFile.String(),
 		Arguments: args,
 	}, nil
 }

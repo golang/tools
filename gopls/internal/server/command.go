@@ -940,6 +940,26 @@ func (c *commandHandler) AddImport(ctx context.Context, args command.AddImportAr
 	})
 }
 
+func (c *commandHandler) ExtractToNewFile(ctx context.Context, args protocol.Location) error {
+	return c.run(ctx, commandConfig{
+		progress: "Extract to a new file",
+		forURI:   args.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		edit, err := golang.ExtractToNewFile(ctx, deps.snapshot, deps.fh, args.Range)
+		if err != nil {
+			return err
+		}
+		resp, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{Edit: *edit})
+		if err != nil {
+			return fmt.Errorf("could not apply edits: %v", err)
+		}
+		if !resp.Applied {
+			return fmt.Errorf("edits not applied: %s", resp.FailureReason)
+		}
+		return nil
+	})
+}
+
 func (c *commandHandler) StartDebugging(ctx context.Context, args command.DebuggingArgs) (result command.DebuggingResult, _ error) {
 	addr := args.Addr
 	if addr == "" {

@@ -160,6 +160,11 @@ type Interface interface {
 	// themselves.
 	AddImport(context.Context, AddImportArgs) error
 
+	// ExtractToNewFile: Move selected declarations to a new file
+	//
+	// Used by the code action of the same name.
+	ExtractToNewFile(context.Context, protocol.Location) error
+
 	// StartDebugging: Start the gopls debug server
 	//
 	// Start the gopls debug server if it isn't running, and return the debug

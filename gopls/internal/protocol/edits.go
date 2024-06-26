@@ -129,6 +129,16 @@ func DocumentChangeEdit(fh fileHandle, textedits []TextEdit) DocumentChange {
 	}
 }
 
+// DocumentChangeCreate constructs a DocumentChange that creates a file.
+func DocumentChangeCreate(uri DocumentURI) DocumentChange {
+	return DocumentChange{
+		CreateFile: &CreateFile{
+			Kind: "create",
+			URI:  uri,
+		},
+	}
+}
+
 // DocumentChangeRename constructs a DocumentChange that renames a file.
 func DocumentChangeRename(src, dst DocumentURI) DocumentChange {
 	return DocumentChange{

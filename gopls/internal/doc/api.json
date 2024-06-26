@@ -1011,6 +1011,13 @@
 			"ResultDoc": ""
 		},
 		{
+			"Command": "gopls.extract_to_new_file",
+			"Title": "Move selected declarations to a new file",
+			"Doc": "Used by the code action of the same name.",
+			"ArgDoc": "{\n\t\"uri\": string,\n\t\"range\": {\n\t\t\"start\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t\t\"end\": {\n\t\t\t\"line\": uint32,\n\t\t\t\"character\": uint32,\n\t\t},\n\t},\n}",
+			"ResultDoc": ""
+		},
+		{
 			"Command": "gopls.fetch_vulncheck_result",
 			"Title": "Get known vulncheck result",
 			"Doc": "Fetch the result of latest vulnerability check (`govulncheck`).",
