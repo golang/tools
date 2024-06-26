@@ -166,20 +166,8 @@ func findSplitJoinTarget(fset *token.FileSet, file *ast.File, src []byte, start,
 		path, _ := astutil.PathEnclosingInterval(file, start, end)
 		for _, node := range path {
 			switch node := node.(type) {
-			case *ast.FuncDecl:
-				// target struct method declarations.
-				//   function (...) someMethod(a int, b int, c int) (d int, e, int) {}
-				params := node.Type.Params
-				if isCursorInside(params.Opening, params.Closing) {
-					return "parameters", params, params.Opening, params.Closing
-				}
-
-				results := node.Type.Results
-				if results != nil && isCursorInside(results.Opening, results.Closing) {
-					return "results", results, results.Opening, results.Closing
-				}
 			case *ast.FuncType:
-				// target function signature args and result.
+				// target function signature parameters and results.
 				//   type someFunc func (a int, b int, c int) (d int, e int)
 				params := node.Params
 				if isCursorInside(params.Opening, params.Closing) {
