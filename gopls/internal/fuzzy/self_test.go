@@ -7,7 +7,7 @@ package fuzzy_test
 import (
 	"testing"
 
-	. "golang.org/x/tools/internal/fuzzy"
+	. "golang.org/x/tools/gopls/internal/fuzzy"
 )
 
 func BenchmarkSelf_Matcher(b *testing.B) {

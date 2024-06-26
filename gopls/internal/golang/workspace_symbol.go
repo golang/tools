@@ -15,10 +15,10 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/fuzzy"
 )
 
 // maxSymbols defines the maximum number of symbol results that should ever be
