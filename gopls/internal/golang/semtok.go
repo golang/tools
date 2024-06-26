@@ -259,12 +259,11 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 
 // token emits a token of the specified extent and semantics.
 func (tv *tokenVisitor) token(start token.Pos, length int, typ semtok.TokenType, modifiers []string) {
+	if !start.IsValid() {
+		return
+	}
 	if length <= 0 {
 		return // vscode doesn't like 0-length Tokens
-	}
-	if !start.IsValid() {
-		// This is not worth reporting. TODO(pjw): does it still happen?
-		return
 	}
 	end := start + token.Pos(length)
 	if start >= tv.end || end <= tv.start {
@@ -849,19 +848,21 @@ func (tv *tokenVisitor) multiline(start, end token.Pos, tok semtok.TokenType) {
 }
 
 // findKeyword returns the position of a keyword by searching within
-// the specified range, for when its cannot be exactly known from the AST.
+// the specified range, for when it cannot be exactly known from the AST.
+// It returns NoPos if the keyword was not present in the source due to parse error.
 func (tv *tokenVisitor) findKeyword(keyword string, start, end token.Pos) token.Pos {
 	// TODO(adonovan): use safetoken.Offset.
 	offset := int(start) - tv.pgf.Tok.Base()
 	last := int(end) - tv.pgf.Tok.Base()
 	buf := tv.pgf.Src
 	idx := bytes.Index(buf[offset:last], []byte(keyword))
-	if idx != -1 {
-		return start + token.Pos(idx)
+	if idx < 0 {
+		// Ill-formed code may form syntax trees without their usual tokens.
+		// For example, "type _ <-<-chan int" parses as <-chan (chan int),
+		// with two nested ChanTypes but only one chan keyword.
+		return token.NoPos
 	}
-	//(in unparsable programs: type _ <-<-chan int)
-	tv.errorf("not found:%s %v", keyword, safetoken.StartPosition(tv.fset, start))
-	return token.NoPos
+	return start + token.Pos(idx)
 }
 
 func (tv *tokenVisitor) importSpec(spec *ast.ImportSpec) {
