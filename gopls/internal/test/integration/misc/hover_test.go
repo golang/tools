@@ -669,6 +669,9 @@ package stdlib
 import "fmt"
 import "context"
 import "crypto"
+import "regexp"
+
+type testRegexp = *regexp.Regexp
 
 func _() {
 	var ctx context.Context
@@ -678,6 +681,11 @@ func _() {
 		fmt.Printf("%v", crypto.SHA512_224)
 	}
 	_ := fmt.Appendf(make([]byte, 100), "world, %d", 23)
+
+	var re = regexp.MustCompile("\n{2,}")
+	copy := re.Copy()
+	var testRE testRegexp
+	testRE.Longest()
 }
 `
 
@@ -692,7 +700,8 @@ func _() {
 		{"Canceled", true, "go1.7"},   // package-level var
 		{"Context", true, "go1.7"},    // package-level type
 		{"SHA512_224", true, "go1.5"}, // package-level const
-		// TODO(hxjiang): add test for symbol type Method.
+		{"Copy", true, "go1.6"},       // method
+		{"Longest", true, "go1.1"},    // method with alias receiver
 		// TODO(hxjiang): add test for symbol type Field.
 	}
 
