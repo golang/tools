@@ -152,7 +152,8 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		return nil, fmt.Errorf("%s: %w", errorPrefix, err)
 	}
 
-	buf.Write(pgf.Src[start-pgf.File.FileStart : end-pgf.File.FileStart])
+	fileStart := pgf.Tok.Pos(0) // TODO(adonovan): use go1.20 pgf.File.FileStart
+	buf.Write(pgf.Src[start-fileStart : end-fileStart])
 
 	// TODO: attempt to duplicate the copyright header, if any.
 	newFileContent, err := format.Source(buf.Bytes())
