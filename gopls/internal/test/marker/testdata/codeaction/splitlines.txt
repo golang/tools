@@ -1,4 +1,4 @@
-This test exercises the refactoring of putting arguments, return values, and composite literal elements
+This test exercises the refactoring of putting arguments, results, and composite literal elements
 into separate lines.
 
 -- go.mod --

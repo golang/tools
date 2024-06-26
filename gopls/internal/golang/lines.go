@@ -176,7 +176,7 @@ func findSplitJoinTarget(fset *token.FileSet, file *ast.File, src []byte, start,
 
 				results := node.Type.Results
 				if results != nil && isCursorInside(results.Opening, results.Closing) {
-					return "return values", results, results.Opening, results.Closing
+					return "results", results, results.Opening, results.Closing
 				}
 			case *ast.FuncType:
 				// target function signature args and result.
@@ -188,7 +188,7 @@ func findSplitJoinTarget(fset *token.FileSet, file *ast.File, src []byte, start,
 
 				results := node.Results
 				if results != nil && isCursorInside(results.Opening, results.Closing) {
-					return "return values", results, results.Opening, results.Closing
+					return "results", results, results.Opening, results.Closing
 				}
 			case *ast.CallExpr:
 				// target function calls.
