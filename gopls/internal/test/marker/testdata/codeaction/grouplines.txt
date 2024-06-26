@@ -108,7 +108,7 @@ func a() {
         2,
         3,
         fmt.Sprintf(
-            "hello %d" /*@codeaction("hello", "hello", "refactor.rewrite", indent, "Join parameters into one line")*/,
+            "hello %d" /*@codeaction("hello", "hello", "refactor.rewrite", indent, "Join arguments into one line")*/,
             4,
         ))
 }
@@ -123,7 +123,7 @@ func a() {
         1,
         2,
         3,
-        fmt.Sprintf("hello %d" /*@codeaction("hello", "hello", "refactor.rewrite", indent, "Join parameters into one line")*/, 4))
+        fmt.Sprintf("hello %d" /*@codeaction("hello", "hello", "refactor.rewrite", indent, "Join arguments into one line")*/, 4))
 }
 
 -- structelts/structelts.go --

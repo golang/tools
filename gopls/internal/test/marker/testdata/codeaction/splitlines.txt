@@ -103,7 +103,7 @@ package indent
 import "fmt"
 
 func a() {
-	fmt.Println(1, 2, 3, fmt.Sprintf("hello %d", 4)) //@codeaction("hello", "hello", "refactor.rewrite", indent, "Split parameters into separate lines")
+	fmt.Println(1, 2, 3, fmt.Sprintf("hello %d", 4)) //@codeaction("hello", "hello", "refactor.rewrite", indent, "Split arguments into separate lines")
 }
 
 -- @indent/indent/indent.go --
@@ -115,7 +115,7 @@ func a() {
 	fmt.Println(1, 2, 3, fmt.Sprintf(
 		"hello %d",
 		4,
-	)) //@codeaction("hello", "hello", "refactor.rewrite", indent, "Split parameters into separate lines")
+	)) //@codeaction("hello", "hello", "refactor.rewrite", indent, "Split arguments into separate lines")
 }
 
 -- indent2/indent2.go --
@@ -125,7 +125,7 @@ import "fmt"
 
 func a() {
 	fmt.
-		Println(1, 2, 3, fmt.Sprintf("hello %d", 4)) //@codeaction("1", "1", "refactor.rewrite", indent2, "Split parameters into separate lines")
+		Println(1, 2, 3, fmt.Sprintf("hello %d", 4)) //@codeaction("1", "1", "refactor.rewrite", indent2, "Split arguments into separate lines")
 }
 
 -- @indent2/indent2/indent2.go --
@@ -140,7 +140,7 @@ func a() {
 			2,
 			3,
 			fmt.Sprintf("hello %d", 4),
-		) //@codeaction("1", "1", "refactor.rewrite", indent2, "Split parameters into separate lines")
+		) //@codeaction("1", "1", "refactor.rewrite", indent2, "Split arguments into separate lines")
 }
 
 -- structelts/structelts.go --
