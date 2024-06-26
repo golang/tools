@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/slices"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // FreeSymbolsHTML returns an HTML document containing the report of
@@ -49,14 +50,7 @@ func FreeSymbolsHTML(viewID string, pkg *cache.Package, pgf *parsego.File, start
 		Local    []Symbol
 	}
 
-	// TODO(adonovan): factor with RenderPackageDoc.
-	qualifier := func(other *types.Package) string {
-		// (like types.RelativeTo but using Package.Name)
-		if other == pkg.Types() {
-			return "" // same package; unqualified
-		}
-		return other.Name()
-	}
+	qualifier := typesinternal.NameRelativeTo(pkg.Types())
 
 	// Populate model.
 	{

@@ -639,13 +639,7 @@ window.addEventListener('load', function() {
 	//   since it is unreachable for the methods in go/doc.
 	// - elides parameters after the first three: f(a, b, c, ...).
 	fnString := func(fn *types.Func) string {
-		// pkgRelative qualifies types by package name alone
-		pkgRelative := func(other *types.Package) string {
-			if pkg.Types() == other {
-				return "" // same package; unqualified
-			}
-			return other.Name()
-		}
+		pkgRelative := typesinternal.NameRelativeTo(pkg.Types())
 
 		sig := fn.Type().(*types.Signature)
 

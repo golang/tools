@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // Diagnose computes diagnostics for fillable struct literals overlapping with
@@ -89,7 +90,7 @@ func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types
 		var name string
 		if typ != tStruct {
 			// named struct type (e.g. pkg.S[T])
-			name = types.TypeString(typ, types.RelativeTo(pkg))
+			name = types.TypeString(typ, typesinternal.NameRelativeTo(pkg))
 		} else {
 			// anonymous struct type
 			totalFields := len(fillableFields)
@@ -159,7 +160,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	tStruct, ok := typ.Underlying().(*types.Struct)
 	if !ok {
 		return nil, nil, fmt.Errorf("%s is not a (pointer to) struct type",
-			types.TypeString(typ, types.RelativeTo(pkg)))
+			types.TypeString(typ, typesinternal.NameRelativeTo(pkg)))
 	}
 	// Inv: typ is the possibly-named struct type.
 
