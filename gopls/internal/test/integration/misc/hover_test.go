@@ -670,6 +670,7 @@ import "fmt"
 import "context"
 import "crypto"
 import "regexp"
+import "go/doc/comment"
 
 type testRegexp = *regexp.Regexp
 
@@ -686,6 +687,9 @@ func _() {
 	copy := re.Copy()
 	var testRE testRegexp
 	testRE.Longest()
+
+	var pr comment.Printer
+	pr.HeadingID = func(*comment.Heading) string { return "" }
 }
 `
 
@@ -702,7 +706,7 @@ func _() {
 		{"SHA512_224", true, "go1.5"}, // package-level const
 		{"Copy", true, "go1.6"},       // method
 		{"Longest", true, "go1.1"},    // method with alias receiver
-		// TODO(hxjiang): add test for symbol type Field.
+		{"HeadingID", true, "go1.19"}, // field
 	}
 
 	Run(t, src, func(t *testing.T, env *Env) {

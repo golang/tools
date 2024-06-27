@@ -1209,18 +1209,19 @@ func formatHover(h *hoverJSON, options *settings.Options, pkgURL func(path Packa
 // StdSymbolOf returns the std lib symbol information of the given obj.
 // It returns nil if the input obj is not an exported standard library symbol.
 func StdSymbolOf(obj types.Object) *stdlib.Symbol {
-	if !obj.Exported() {
+	if !obj.Exported() || obj.Pkg() == nil {
+		return nil
+	}
+
+	// Symbols that not defined in standard library should return early.
+	// TODO(hxjiang): The returned slices is binary searchable.
+	symbols := stdlib.PackageSymbols[obj.Pkg().Path()]
+	if symbols == nil {
 		return nil
 	}
 
 	// Handle Function, Type, Const & Var.
 	if isPackageLevel(obj) {
-		// Symbols defined not in std lib package should return early.
-		symbols := stdlib.PackageSymbols[obj.Pkg().Path()]
-		if symbols == nil {
-			return nil
-		}
-		// TODO(hxjiang): This is binary searchable.
 		for _, s := range symbols {
 			if s.Kind == stdlib.Method || s.Kind == stdlib.Field {
 				continue
@@ -1236,7 +1237,7 @@ func StdSymbolOf(obj types.Object) *stdlib.Symbol {
 	if fn, _ := obj.(*types.Func); fn != nil {
 		isPtr, named := typesinternal.ReceiverNamed(fn.Type().(*types.Signature).Recv())
 		if isPackageLevel(named.Obj()) {
-			for _, s := range stdlib.PackageSymbols[obj.Pkg().Path()] {
+			for _, s := range symbols {
 				if s.Kind != stdlib.Method {
 					continue
 				}
@@ -1249,7 +1250,30 @@ func StdSymbolOf(obj types.Object) *stdlib.Symbol {
 		}
 	}
 
-	// TODO(hxjiang): handle exported fields of package level types.
+	// Handle Field.
+	if v, _ := obj.(*types.Var); v != nil && v.IsField() {
+		for _, s := range symbols {
+			if s.Kind != stdlib.Field {
+				continue
+			}
+
+			typeName, fieldName := s.SplitField()
+			if fieldName != v.Name() {
+				continue
+			}
+
+			typeObj := obj.Pkg().Scope().Lookup(typeName)
+			if typeObj == nil {
+				continue
+			}
+
+			if fieldObj, _, _ := types.LookupFieldOrMethod(typeObj.Type(), true, obj.Pkg(), fieldName); obj == fieldObj {
+				return &s
+			}
+		}
+		return nil
+	}
+
 	return nil
 }
 
