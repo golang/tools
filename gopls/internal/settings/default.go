@@ -53,6 +53,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						GoDoc:                          true,
 						GoFreeSymbols:                  true,
 						// Not GoTest: it must be explicit in CodeActionParams.Context.Only
+						GoplsDocFeatures: true,
 					},
 					file.Mod: {
 						protocol.SourceOrganizeImports: true,

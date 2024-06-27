@@ -977,10 +977,13 @@ type C struct{}
 	}
 	// list code actions in file, filtering by title
 	{
-		res := gopls(t, tree, "codeaction", "-title=Br.wse", "a.go")
+		res := gopls(t, tree, "codeaction", "-title=Browse.*doc", "a.go")
 		res.checkExit(true)
 		got := res.stdout
-		want := `command	"Browse documentation for package a" [source.doc]` + "\n"
+		want := `command	"Browse gopls feature documentation" [gopls.doc.features]` +
+			"\n" +
+			`command	"Browse documentation for package a" [source.doc]` +
+			"\n"
 		if got != want {
 			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
 		}

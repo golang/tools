@@ -67,12 +67,14 @@ func g() {}
 			settings.GoAssembly,
 			settings.GoDoc,
 			settings.GoFreeSymbols,
+			settings.GoplsDocFeatures,
 			protocol.RefactorExtract,
 			protocol.RefactorInline)
 		check("gen/a.go",
 			settings.GoAssembly,
 			settings.GoDoc,
-			settings.GoFreeSymbols)
+			settings.GoFreeSymbols,
+			settings.GoplsDocFeatures)
 	})
 }
 

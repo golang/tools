@@ -990,6 +990,13 @@
 			"ResultDoc": ""
 		},
 		{
+			"Command": "gopls.client_open_url",
+			"Title": "Request that the client open a URL in a browser.",
+			"Doc": "",
+			"ArgDoc": "string",
+			"ResultDoc": ""
+		},
+		{
 			"Command": "gopls.diagnose_files",
 			"Title": "Cause server to publish diagnostics for the specified files.",
 			"Doc": "This command is needed by the 'gopls {check,fix}' CLI subcommands.",

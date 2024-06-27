@@ -5,6 +5,7 @@
 package misc
 
 import (
+	"fmt"
 	"html"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/settings"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -271,18 +273,10 @@ func (*T) M() { /*in T.M*/}
 func viewPkgDoc(t *testing.T, env *Env, loc protocol.Location) protocol.URI {
 	// Invoke the "Browse package documentation" code
 	// action to start the server.
-	var docAction *protocol.CodeAction
 	actions := env.CodeAction(loc, nil, 0)
-	for _, act := range actions {
-		if strings.HasPrefix(act.Title, "Browse ") &&
-			strings.Contains(act.Title, "documentation") {
-			docAction = &act
-			break
-		}
-	}
-	if docAction == nil {
-		t.Fatalf("can't find action with Title 'Browse...documentation', only %#v",
-			actions)
+	docAction, err := codeActionByKind(actions, settings.GoDoc)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// Execute the command.
@@ -335,16 +329,9 @@ func f(buf bytes.Buffer, greeting string) {
 		if err != nil {
 			t.Fatalf("CodeAction: %v", err)
 		}
-		var action *protocol.CodeAction
-		for _, a := range actions {
-			if a.Title == "Browse free symbols" {
-				action = &a
-				break
-			}
-		}
-		if action == nil {
-			t.Fatalf("can't find action with Title 'Browse free symbols', only %#v",
-				actions)
+		action, err := codeActionByKind(actions, settings.GoFreeSymbols)
+		if err != nil {
+			t.Fatal(err)
 		}
 
 		// Execute the command.
@@ -401,17 +388,9 @@ func g() {
 		if err != nil {
 			t.Fatalf("CodeAction: %v", err)
 		}
-		const wantTitle = "Browse " + runtime.GOARCH + " assembly for f"
-		var action *protocol.CodeAction
-		for _, a := range actions {
-			if a.Title == wantTitle {
-				action = &a
-				break
-			}
-		}
-		if action == nil {
-			t.Fatalf("can't find action with Title %s, only %#v",
-				wantTitle, actions)
+		action, err := codeActionByKind(actions, settings.GoAssembly)
+		if err != nil {
+			t.Fatal(err)
 		}
 
 		// Execute the command.
@@ -503,4 +482,14 @@ func checkMatch(t *testing.T, want bool, got []byte, pattern string) {
 			t.Errorf("input matched unwanted pattern %q; got:\n%s", pattern, got)
 		}
 	}
+}
+
+// codeActionByKind returns the first action of the specified kind, or an error.
+func codeActionByKind(actions []protocol.CodeAction, kind protocol.CodeActionKind) (*protocol.CodeAction, error) {
+	for _, act := range actions {
+		if act.Kind == kind {
+			return &act, nil
+		}
+	}
+	return nil, fmt.Errorf("can't find action with kind %s, only %#v", kind, actions)
 }

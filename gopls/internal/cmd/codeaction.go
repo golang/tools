@@ -58,6 +58,7 @@ Valid kinds include:
 	source.doc
 	source.freesymbols
 	goTest
+	gopls.doc.features
 
 Kinds are hierarchical, so "refactor" includes "refactor.inline".
 (Note: actions of kind "goTest" are not returned unless explicitly

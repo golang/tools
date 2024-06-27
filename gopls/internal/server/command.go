@@ -1462,6 +1462,11 @@ func (c *commandHandler) Assembly(ctx context.Context, viewID, packageID, symbol
 	return nil
 }
 
+func (c *commandHandler) ClientOpenURL(ctx context.Context, url string) error {
+	openClientBrowser(ctx, c.s.client, url)
+	return nil
+}
+
 func (c *commandHandler) ScanImports(ctx context.Context) error {
 	for _, v := range c.s.session.Views() {
 		v.ScanImports()

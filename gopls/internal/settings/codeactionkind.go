@@ -31,7 +31,8 @@ import "golang.org/x/tools/gopls/internal/protocol"
 // actions with kind="source.*". A lightbulb appears in both cases.
 // A third menu, "Quick fix...", not found on the usual context
 // menu but accessible through the command palette or "⌘.",
-// displays code actions of kind "quickfix.*" and "refactor.*".
+// displays code actions of kind "quickfix.*" and "refactor.*",
+// and ad hoc ones ("More actions...") such as "gopls.*".
 // All of these CodeAction requests have triggerkind=Invoked.
 //
 // Cursor motion also performs a CodeAction request, but with
@@ -76,8 +77,9 @@ import "golang.org/x/tools/gopls/internal/protocol"
 // instead of == for CodeActionKinds throughout gopls.
 // See golang/go#40438 for related discussion.
 const (
-	GoAssembly    protocol.CodeActionKind = "source.assembly"
-	GoDoc         protocol.CodeActionKind = "source.doc"
-	GoFreeSymbols protocol.CodeActionKind = "source.freesymbols"
-	GoTest        protocol.CodeActionKind = "goTest" // TODO(adonovan): rename "source.test"
+	GoAssembly       protocol.CodeActionKind = "source.assembly"
+	GoDoc            protocol.CodeActionKind = "source.doc"
+	GoFreeSymbols    protocol.CodeActionKind = "source.freesymbols"
+	GoTest           protocol.CodeActionKind = "goTest" // TODO(adonovan): rename "source.test"
+	GoplsDocFeatures protocol.CodeActionKind = "gopls.doc.features"
 )

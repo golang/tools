@@ -262,6 +262,17 @@ Args:
 }
 ```
 
+<a id='gopls.client_open_url'></a>
+## `gopls.client_open_url`: **Request that the client open a URL in a browser.**
+
+
+
+Args:
+
+```
+string
+```
+
 <a id='gopls.diagnose_files'></a>
 ## `gopls.diagnose_files`: **Cause server to publish diagnostics for the specified files.**
 

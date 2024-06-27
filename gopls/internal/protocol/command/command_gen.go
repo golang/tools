@@ -31,6 +31,7 @@ const (
 	Assembly                Command = "gopls.assembly"
 	ChangeSignature         Command = "gopls.change_signature"
 	CheckUpgrades           Command = "gopls.check_upgrades"
+	ClientOpenURL           Command = "gopls.client_open_url"
 	DiagnoseFiles           Command = "gopls.diagnose_files"
 	Doc                     Command = "gopls.doc"
 	EditGoDirective         Command = "gopls.edit_go_directive"
@@ -74,6 +75,7 @@ var Commands = []Command{
 	Assembly,
 	ChangeSignature,
 	CheckUpgrades,
+	ClientOpenURL,
 	DiagnoseFiles,
 	Doc,
 	EditGoDirective,
@@ -155,6 +157,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.CheckUpgrades(ctx, a0)
+	case ClientOpenURL:
+		var a0 string
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return nil, s.ClientOpenURL(ctx, a0)
 	case DiagnoseFiles:
 		var a0 DiagnoseFilesArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -420,6 +428,18 @@ func NewCheckUpgradesCommand(title string, a0 CheckUpgradesArgs) (protocol.Comma
 	return protocol.Command{
 		Title:     title,
 		Command:   CheckUpgrades.String(),
+		Arguments: args,
+	}, nil
+}
+
+func NewClientOpenURLCommand(title string, a0 string) (protocol.Command, error) {
+	args, err := MarshalArgs(a0)
+	if err != nil {
+		return protocol.Command{}, err
+	}
+	return protocol.Command{
+		Title:     title,
+		Command:   ClientOpenURL.String(),
 		Arguments: args,
 	}, nil
 }

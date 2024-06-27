@@ -48,7 +48,8 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 	if wantQuickFixes ||
 		want[protocol.SourceOrganizeImports] ||
 		want[protocol.RefactorExtract] ||
-		want[settings.GoFreeSymbols] {
+		want[settings.GoFreeSymbols] ||
+		want[settings.GoplsDocFeatures] {
 
 		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 		if err != nil {
@@ -112,6 +113,22 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 			actions = append(actions, protocol.CodeAction{
 				Title:   cmd.Title,
 				Kind:    settings.GoFreeSymbols,
+				Command: &cmd,
+			})
+		}
+
+		if want[settings.GoplsDocFeatures] {
+			// TODO(adonovan): after the docs are published in gopls/v0.17.0,
+			// use the gopls release tag instead of master.
+			cmd, err := command.NewClientOpenURLCommand(
+				"Browse gopls feature documentation",
+				"https://github.com/golang/tools/blob/master/gopls/doc/features/README.md")
+			if err != nil {
+				return nil, err
+			}
+			actions = append(actions, protocol.CodeAction{
+				Title:   cmd.Title,
+				Kind:    settings.GoplsDocFeatures,
 				Command: &cmd,
 			})
 		}

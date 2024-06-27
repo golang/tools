@@ -38,7 +38,7 @@ when making significant changes to existing features or when adding new ones.
   - [Type Definition](navigation.md#type-definition): go to definition of type of selected symbol
   - [References](navigation.md#references): list references to selected symbol
   - [Implementation](navigation.md#implementation): show "implements" relationships of selected type
-  - [Document Symbol](passive.md#document-symbol): outline of symbols defined in current file
+  - [Document Symbol](navigation.md#document-symbol): outline of symbols defined in current file
   - [Symbol](navigation.md#symbol): fuzzy search for symbol by name
   - [Selection Range](navigation.md#selection-range): select enclosing unit of syntax
   - [Call Hierarchy](navigation.md#call-hierarchy): show outgoing/incoming calls to the current function
@@ -59,3 +59,8 @@ when making significant changes to existing features or when adding new ones.
   - [go.mod and go.work files](modfiles.md): Go module and workspace manifests
 - [Command-line interface](../command-line.md): CLI for debugging and scripting (unstable)
 - [Non-standard commands](../commands.md): gopls-specific RPC protocol extensions (unstable)
+
+You can find this page from within your editor by executing the
+`gopls.doc.features` [code action](transformation.md#code-actions),
+which opens it in a web browser.
+In VS Code, you can find it on the Quick fix menu.

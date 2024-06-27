@@ -265,6 +265,9 @@ type Interface interface {
 	// The machine architecture is determined by the view.
 	Assembly(_ context.Context, viewID, packageID, symbol string) error
 
+	// ClientOpenURL: Request that the client open a URL in a browser.
+	ClientOpenURL(_ context.Context, url string) error
+
 	// ScanImports: force a sychronous scan of the imports cache.
 	//
 	// This command is intended for use by gopls tests only.
