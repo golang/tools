@@ -184,11 +184,11 @@ func runFunc(pass *analysis.Pass, fn *ssa.Function) {
 				var newFacts facts
 				if xnil == isnil {
 					// x is nil, y is unknown:
-					// t successor learns y is nil.
+					// t successor learns x is nil.
 					newFacts = expandFacts(fact{binop.Y, isnil})
 				} else {
-					// x is nil, y is unknown:
-					// t successor learns x is nil.
+					// y is nil, x is unknown:
+					// t successor learns y is nil.
 					newFacts = expandFacts(fact{binop.X, isnil})
 				}
 
