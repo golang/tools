@@ -52,5 +52,6 @@ var (
 	semanticModifiers = [...]string{
 		"declaration", "definition", "readonly", "static",
 		"deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary",
+		"controlFlow",
 	}
 )
