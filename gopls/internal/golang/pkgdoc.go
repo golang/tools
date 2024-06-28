@@ -51,6 +51,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -413,6 +414,12 @@ header {
   left: 0;
   width: 100%;
   padding: 0.3em;
+}
+
+.Documentation-sinceVersion {
+  font-weight: normal;
+  color: #808080;
+  float: right;
 }
 
 #pkgsite { height: 1.5em; }
@@ -782,6 +789,15 @@ window.addEventListener('load', function() {
 		values(docpkg.Vars)
 	}
 
+	// addedInHTML returns an HTML division containing the Go release version at
+	// which this obj became available.
+	addedInHTML := func(obj types.Object) string {
+		if sym := StdSymbolOf(obj); sym != nil && sym.Version != stdlib.Version(0) {
+			return fmt.Sprintf("<span class='Documentation-sinceVersion'>added in %v</span>", sym.Version)
+		}
+		return ""
+	}
+
 	// package-level functions
 	fmt.Fprintf(&buf, "<h2 id='hdr-Functions'>Functions</h2>\n")
 	// funcs emits a list of package-level functions,
@@ -789,8 +805,9 @@ window.addEventListener('load', function() {
 	funcs := func(funcs []*doc.Func) {
 		for _, docfn := range funcs {
 			obj := scope.Lookup(docfn.Name).(*types.Func)
-			fmt.Fprintf(&buf, "<h3 id='%s'>func %s</h3>\n",
-				docfn.Name, objHTML(pkg.FileSet(), web, obj))
+
+			fmt.Fprintf(&buf, "<h3 id='%s'>func %s %s</h3>\n",
+				docfn.Name, objHTML(pkg.FileSet(), web, obj), addedInHTML(obj))
 
 			// decl: func F(params) results
 			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n",
@@ -808,8 +825,8 @@ window.addEventListener('load', function() {
 		tname := scope.Lookup(doctype.Name).(*types.TypeName)
 
 		// title and source link
-		fmt.Fprintf(&buf, "<h3 id='%s'>type %s</a></h3>\n",
-			doctype.Name, objHTML(pkg.FileSet(), web, tname))
+		fmt.Fprintf(&buf, "<h3 id='%s'>type %s %s</h3>\n",
+			doctype.Name, objHTML(pkg.FileSet(), web, tname), addedInHTML(tname))
 
 		// declaration
 		// TODO(adonovan): excise non-exported struct fields somehow.
@@ -828,10 +845,10 @@ window.addEventListener('load', function() {
 		// methods on T
 		for _, docmethod := range doctype.Methods {
 			method, _, _ := types.LookupFieldOrMethod(tname.Type(), true, tname.Pkg(), docmethod.Name)
-			fmt.Fprintf(&buf, "<h4 id='%s.%s'>func (%s) %s</h4>\n",
+			fmt.Fprintf(&buf, "<h4 id='%s.%s'>func (%s) %s %s</h4>\n",
 				doctype.Name, docmethod.Name,
 				docmethod.Orig, // T or *T
-				objHTML(pkg.FileSet(), web, method))
+				objHTML(pkg.FileSet(), web, method), addedInHTML(method))
 
 			// decl: func (x T) M(params) results
 			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n",
