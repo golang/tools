@@ -48,7 +48,11 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	}
 	puri := fh.URI()
 	for _, fn := range testFuncs {
-		cmd, err := command.NewTestCommand("run test", puri, []string{fn.name}, nil)
+		cmd, err := command.NewRunTestsCommand("run test", command.RunTestsArgs{
+			URI:        puri,
+			Tests:      []string{fn.name},
+			Benchmarks: nil,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -57,7 +61,11 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	}
 
 	for _, fn := range benchFuncs {
-		cmd, err := command.NewTestCommand("run benchmark", puri, nil, []string{fn.name})
+		cmd, err := command.NewRunTestsCommand("run benchmark", command.RunTestsArgs{
+			URI:        puri,
+			Tests:      nil,
+			Benchmarks: []string{fn.name},
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -79,7 +87,11 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 		for _, fn := range benchFuncs {
 			benches = append(benches, fn.name)
 		}
-		cmd, err := command.NewTestCommand("run file benchmarks", puri, nil, benches)
+		cmd, err := command.NewRunTestsCommand("run file benchmarks", command.RunTestsArgs{
+			URI:        puri,
+			Tests:      nil,
+			Benchmarks: benches,
+		})
 		if err != nil {
 			return nil, err
 		}
