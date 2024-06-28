@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/telemetry/counter"
+	"golang.org/x/telemetry/counter/countertest"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/server"
@@ -250,6 +252,10 @@ func main() {
 
 // Test that responding to the telemetry prompt results in the expected state.
 func TestTelemetryPrompt_Response(t *testing.T) {
+	if !countertest.SupportedPlatform {
+		t.Skip("requires counter support")
+	}
+
 	const src = `
 -- go.mod --
 module mod.com
@@ -262,18 +268,32 @@ func main() {
 }
 `
 
+	acceptanceCounterName := "gopls/telemetryprompt/accepted"
+	acceptanceCounter := counter.New(acceptanceCounterName)
+	// We must increment the acceptance counter in order for the initial read
+	// below to succeed.
+	//
+	// TODO(rfindley): ReadCounter should simply return 0 for uninitialized
+	// counters.
+	acceptanceCounter.Inc()
+
 	tests := []struct {
 		name     string // subtest name
 		response string // response to choose for the telemetry dialog
 		wantMode string // resulting telemetry mode
 		wantMsg  string // substring contained in the follow-up popup (if empty, no popup is expected)
+		wantInc  uint64 // expected 'prompt accepted' counter increment
 	}{
-		{"yes", server.TelemetryYes, "on", "uploading is now enabled"},
-		{"no", server.TelemetryNo, "", ""},
-		{"empty", "", "", ""},
+		{"yes", server.TelemetryYes, "on", "uploading is now enabled", 1},
+		{"no", server.TelemetryNo, "", "", 0},
+		{"empty", "", "", "", 0},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			initialCount, err := countertest.ReadCounter(acceptanceCounter)
+			if err != nil {
+				t.Fatalf("ReadCounter(%q) failed: %v", acceptanceCounterName, err)
+			}
 			modeFile := filepath.Join(t.TempDir(), "mode")
 			telemetryStartTime := time.Now().Add(-8 * 24 * time.Hour)
 			msgRE := regexp.MustCompile(".*Would you like to enable Go telemetry?")
@@ -319,6 +339,13 @@ func main() {
 				}
 				if gotMode != test.wantMode {
 					t.Errorf("after prompt, mode=%s, want %s", gotMode, test.wantMode)
+				}
+				finalCount, err := countertest.ReadCounter(acceptanceCounter)
+				if err != nil {
+					t.Fatalf("ReadCounter(%q) failed: %v", acceptanceCounterName, err)
+				}
+				if gotInc := finalCount - initialCount; gotInc != test.wantInc {
+					t.Errorf("%q mismatch: got %d, want %d", acceptanceCounterName, gotInc, test.wantInc)
 				}
 			})
 		})

@@ -26,13 +26,13 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	tmp, err := os.MkdirTemp("", "gopls-telemetry-test")
+	tmp, err := os.MkdirTemp("", "gopls-telemetry-test-counters")
 	if err != nil {
 		panic(err)
 	}
 	countertest.Open(tmp)
 	code := Main(m)
-	os.RemoveAll(tmp)
+	os.RemoveAll(tmp) // golang/go#68243: ignore error; cleanup fails on Windows
 	os.Exit(code)
 }
 
@@ -54,6 +54,7 @@ func TestTelemetry(t *testing.T) {
 		counter.New("gopls/client:" + editor),
 		counter.New("gopls/goversion:1." + goversion),
 		counter.New("fwd/vscode/linter:a"),
+		counter.New("gopls/gotoolchain:local"),
 	}
 	initialCounts := make([]uint64, len(sessionCounters))
 	for i, c := range sessionCounters {
@@ -70,6 +71,9 @@ func TestTelemetry(t *testing.T) {
 		Modes(Default), // must be in-process to receive the bug report below
 		Settings{"showBugReports": true},
 		ClientName("Visual Studio Code"),
+		EnvVars{
+			"GOTOOLCHAIN": "local", // so that the local counter is incremented
+		},
 	).Run(t, "", func(_ *testing.T, env *Env) {
 		goversion = strconv.Itoa(env.GoVersion())
 		addForwardedCounters(env, []string{"vscode/linter:a"}, []int64{1})
@@ -93,6 +97,7 @@ func TestTelemetry(t *testing.T) {
 	// gopls/editor:client
 	// gopls/goversion:1.x
 	// fwd/vscode/linter:a
+	// gopls/gotoolchain:local
 	for i, c := range sessionCounters {
 		want := initialCounts[i] + 1
 		got, err := countertest.ReadCounter(c)

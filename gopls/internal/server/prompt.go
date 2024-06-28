@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"golang.org/x/telemetry"
+	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
 )
@@ -308,6 +309,7 @@ Would you like to enable Go telemetry?
 			result = pYes
 			if err := s.setTelemetryMode("on"); err == nil {
 				message(protocol.Info, telemetryOnMessage(s.Options().LinkifyShowMessage))
+				counter.New("gopls/telemetryprompt/accepted").Inc()
 			} else {
 				errorf("enabling telemetry failed: %v", err)
 				msg := fmt.Sprintf("Failed to enable Go telemetry: %v\nTo enable telemetry manually, please run `go run golang.org/x/telemetry/cmd/gotelemetry@latest on`", err)
