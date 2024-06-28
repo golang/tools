@@ -468,6 +468,19 @@ func (s *server) newFolder(ctx context.Context, folder protocol.DocumentURI, nam
 	if err != nil {
 		return nil, err
 	}
+
+	// Increment folder counters.
+	switch {
+	case env.GOTOOLCHAIN == "auto" || strings.Contains(env.GOTOOLCHAIN, "+auto"):
+		counter.New("gopls/gotoolchain:auto").Inc()
+	case env.GOTOOLCHAIN == "path" || strings.Contains(env.GOTOOLCHAIN, "+path"):
+		counter.New("gopls/gotoolchain:path").Inc()
+	case env.GOTOOLCHAIN == "local": // local+auto and local+path handled above
+		counter.New("gopls/gotoolchain:local").Inc()
+	default:
+		counter.New("gopls/gotoolchain:other").Inc()
+	}
+
 	return &cache.Folder{
 		Dir:     folder,
 		Name:    name,
