@@ -17,7 +17,7 @@ A definition query also works in these unexpected places:
 - On a symbol in a **[`go:linkname` directive](https://pkg.go.dev/cmd/compile)**,
   it returns the location of that symbol's declaration.
 - On a **[doc link](https://tip.golang.org/doc/comment#doclinks)**, it returns
-  (like [`hover`](passive.md#Hover)) the location of the linked symbol.
+  (like [`hover`](passive.md#hover)) the location of the linked symbol.
 - On a file name in a **[`go:embed` directive](https://pkg.go.dev/embed)**,
   it returns the location of the embedded file.
 
@@ -40,7 +40,7 @@ request returns the locations of all identifiers that refers to the symbol under
 The references algorithm handles various parts of syntax as follows:
 
 - The references to a **symbol** report all uses of that symbol.
-  In the case of exported this may include locations in other packages.
+  In the case of exported symbols this may include locations in other packages.
 - The references to a **package declaration** are all the
   direct imports of the package, along with all the other package
   declarations in the same package.
@@ -112,7 +112,7 @@ Client support:
 - **CLI**: `gopls implementation file.go:#offset`
 
 
-## TypeDefinition
+## Type Definition
 
 The LSP
 [`textDocument/typeDefinition`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_typeDefinition)
@@ -141,17 +141,17 @@ Client support:
 - **Vim + coc.nvim**: ??
 - **CLI**: not supported
 
-## DocumentSymbol
+## Document Symbol
 
 The `textDocument/documentSymbol` LSP query reports the list of
 top-level declarations in this file. Clients may use this information
 to present an overview of the file, and an index for faster navigation.
 
-Gopls responds with the newer
+Gopls responds with the
 [`DocumentSymbol`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentSymbol)
 type if the client indicates
 [`hierarchicalDocumentSymbolSupport`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentSymbolClientCapabilities);
-otherwise it returns the older
+otherwise it returns a
 [`SymbolInformation`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#symbolInformation).
 
 Client support:
@@ -182,7 +182,7 @@ It also supports the following special characters within queries:
 | `$`       | `printf$` | exact suffix |
 
 However, VS Code does its own fuzzy matching afterward, so these
-aren't effective in that client.
+aren't effective in that client; see golang/vscode-go#647.
 -->
 
 TODO: screenshot
@@ -200,7 +200,7 @@ Client support:
 - **CLI**: `gopls links file.go`
 
 
-## SelectionRange
+## Selection Range
 
 The
 [`textDocument/selectionRange`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_selectionRange)
@@ -215,7 +215,7 @@ Client support:
 - **Vim + coc.nvim**: ??
 - **CLI**: not supported
 
-## CallHierarchy
+## Call Hierarchy
 
 The LSP CallHierarchy mechanism consists of three queries that
 together enable clients to present a hierarchical view of a portion of

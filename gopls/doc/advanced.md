@@ -9,7 +9,7 @@ To get a specific version of `gopls` (for example, to test a prerelease
 version), run:
 
 ```sh
-GO111MODULE=on go install golang.org/x/tools/gopls@vX.Y.Z
+$ go install golang.org/x/tools/gopls@vX.Y.Z
 ```
 
 Where `vX.Y.Z` is the desired version.

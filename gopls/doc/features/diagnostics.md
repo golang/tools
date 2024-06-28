@@ -8,12 +8,12 @@ diagnostics and sends them to the client using the LSP
 notification, giving you real-time feedback that reduces the cost of
 common mistakes.
 
-Diagnostics come from two main sources: build errors and analysis findings.
+Diagnostics come from two main sources: compilation errors and analysis findings.
 
-- **Build errors** are those that you would obtain from running `go
+- **Compilation errors** are those that you would obtain from running `go
   build`. Gopls doesn't actually run the compiler; that would be too
   slow. Instead it runs `go list` (when needed) to compute the
-  metadata of the build, then processes those packages in a similar
+  metadata of the compilation, then processes those packages in a similar
   manner to the compiler front-end: reading, scanning, and parsing the
   source files, then type-checking them. Each of these steps can
   produce errors that gopls will surface as a diagnostic.
@@ -54,13 +54,14 @@ Diagnostics come from two main sources: build errors and analysis findings.
 Diagnostics are automatically recomputed each time the source files
 are edited.
 
-Build errors are updated immediately after each file is edited,
-potentially after every keystroke. This ensures rapid feedback of
-syntax and type errors while editing.
+Compilation errors in open files are updated after a very short delay
+(tens of milliseconds) after each file change, potentially after every keystroke.
+This ensures rapid feedback of syntax and type errors while editing.
 
-Analysis diagnostics can be more expensive to compute than type
-checking, so they are usually recomputed after a short idle period
-following an edit.
+Compilation and analysis diagnostics for the whole workspace are much
+more expensive to compute, so they are usually recomputed after a
+short idle period (around 1s) following an edit.
+
 The [`diagnosticsDelay`](../settings.md#diagnosticsDelay) setting determines
 this period.
 Alternatively, diagnostics may be triggered only after an edited file
@@ -78,7 +79,7 @@ ways to fix the problem by editing the code.
 For example, when a `return` statement has too few operands,
 the [`fillreturns`](../analyzers.md#fillreturns) analyzer
 suggests a fix that heuristically fills in the missing ones
-with suitable values. Applying the fix eliminates the build error.
+with suitable values. Applying the fix eliminates the compilation error.
 
 ![An analyzer diagnostic with two alternative fixes](../assets/remove-unusedparam-before.png)
 
@@ -104,9 +105,9 @@ Settings:
   the base URI for Go package links in the Diagnostic.CodeDescription field.
 
 Client support:
-- **VS Code**: Diagnostics appear as a red squiggly underline.
+- **VS Code**: Diagnostics appear as a squiggly underline.
   Hovering reveals the details, along with any suggested fixes.
-- **Emacs + eglot**: Diagnostics appear as a red squiggly underline.
+- **Emacs + eglot**: Diagnostics appear as a squiggly underline.
   Hovering reveals the details. Use `M-x eglot-code-action-quickfix`
   to apply available fixes; it will prompt if there are more than one.
 - **Vim + coc.nvim**: ??
@@ -118,7 +119,7 @@ dorky details and deletia:
 
 - The **vet suite**, of about thirty analyzers
   designed to catch likely mistakes in your code.
- 
+
 - **Type-error fixers**. These are gopls-specific analyzers that
   enrich diagnostics from the type checker by suggesting fixes for
   simple problems.

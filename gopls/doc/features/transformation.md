@@ -13,7 +13,6 @@ Code transformations are not a single category in the LSP:
   <!-- Generate, RegenerateCgo (Go); Tidy, UpgradeDependency, Vendor (go.mod) -->
 - most are defined as *code actions*.
 
-<a id='code-actions'></a>
 ## Code Actions
 
 A **code action** is an action associated with a portion of the file.
@@ -241,10 +240,11 @@ in the latter half of this 2015 GothamGo talk:
 Client support:
 - **VS Code**: Use "[Rename symbol](https://code.visualstudio.com/docs/editor/editingevolved#_rename-symbol)" menu item (`F2`).
 - **Emacs + eglot**: Use `M-x eglot-rename`, or `M-x go-rename` from [go-mode](https://github.com/dominikh/go-mode.el).
+- **Vim + coc.nvim**: Use the `coc-rename` command.
 - **CLI**: `gopls rename file.go:#offset newname`
 
 
-<a id='Extract'></a>
+<a name='extract'></a>
 ## Extract function/method/variable
 
 The `refactor.extract` family of code actions all return commands that
@@ -296,9 +296,6 @@ The following Extract features are planned for 2024 but not yet supported:
 
 - **Extract constant** is a variant of "Extract variable" to be
   offered when the expression is constant; see golang/go#37170.
-- **Extract to new file** will extract one or more top-level
-  declarations into a new file in the same package; see golang/go#65707.
-  <!-- TODO(adonovan): update when https://go.dev/cl/565895 lands. -->
 - **Extract parameter struct** will replace two or more parameters of a
   function by a struct type with one field per parameter; see golang/go#65552.
   <!-- TODO(adonovan): review and land https://go.dev/cl/563235. -->
@@ -308,8 +305,10 @@ The following Extract features are planned for 2024 but not yet supported:
   see golang/go#65721 and golang/go#46665.
 
 
-<a id='extract-to-new-file'></a>
+<a name='extract-to-new-file'></a>
 ## Extract declarations to new file
+
+(Available from gopls/v0.17.0)
 
 If you select one or more top-level declarations, gopls will offer an
 "Extract declarations to new file" code action that moves the selected
@@ -323,7 +322,7 @@ Import declarations are created as needed.
 ![After: the new file is based on the first symbol name](../assets/extract-to-new-file-after.png)
 
 
-<a id='Inline'></a>
+<a name='inline'></a>
 ## Inline call to function
 
 For a `codeActions` request where the selection is (or is within) a
@@ -478,7 +477,6 @@ more detail. All of this is to say, it's a complex problem, and we aim
 for correctness first of all. We've already implemented a number of
 important "tidiness optimizations" and we expect more to follow.
 
-<a id='Rewrite'></a>
 ## Miscellaneous rewrites
 
 This section covers a number of transformations that are accessible as
@@ -487,7 +485,6 @@ code actions of kind `refactor.rewrite`.
 <!-- See TODO comments in settings/codeactionkind.go about splitting
      up "refactor.extract" into finer grained categories. -->
 
-<a id='remove-unused-parameter'></a>
 ### Remove unused parameter
 
 The [`unusedparams` analyzer](../analyzers.md#unusedparams) reports a

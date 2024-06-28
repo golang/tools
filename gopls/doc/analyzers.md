@@ -15,7 +15,7 @@ before you run your tests, or even before you save your files.
 This document describes the suite of analyzers available in gopls,
 which aggregates analyzers from a variety of sources:
 
-- all the usual bug-finding analyzers from the `go vet` suite (e.g. `printf`; run `go tool vet help` for the complete list);
+- all the usual bug-finding analyzers from the `go vet` suite (e.g. `printf`; see [`go tool vet help`](https://pkg.go.dev/cmd/vet) for the complete list);
 - a number of analyzers with more substantial dependencies that prevent them from being used in `go vet` (e.g. `nilness`);
 - analyzers that augment compilation errors by suggesting quick fixes to common mistakes (e.g. `fillreturns`); and
 - a handful of analyzers that suggest possible style improvements (e.g. `simplifyrange`).

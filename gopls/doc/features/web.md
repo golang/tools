@@ -40,7 +40,7 @@ indicating that they have become disconnected.
 TODO: combine the web server and the debug server; see golang/go#68229.
 
 Gopls supports two-way communication between the web browser and the
-client editor. All of the web-based reports contains links to
+client editor. All of the web-based reports contain links to
 declarations in your source code. Clicking on one of these links
 causes gopls to send a `showDocument` request to your editor to open
 the relevant source file at the appropriate line. This works even when
@@ -48,7 +48,7 @@ your source code has been modified but not saved.
 (VS Code users: please upvote microsoft/vscode#208093 if you would
 like your editor to raise its window when handling this event.)
 
-<a id='doc'></a>
+<a name='doc'></a>
 ## View package documentation
 
 In any Go source file, a code action request returns a command to
@@ -74,7 +74,7 @@ Client support:
 - **Vim + coc.nvim**: ??
 
 
-<a id='freesymbols'></a>
+<a name='freesymbols'></a>
 ## View free symbols
 
 When studying code, either to understand it or to evaluate a different
@@ -107,7 +107,7 @@ Client support:
 - **Vim + coc.nvim**: ??
 
 
-<a id='assembly'></a>
+<a name='assembly'></a>
 ## View assembly
 
 When you're optimizing the performance of your code or investigating

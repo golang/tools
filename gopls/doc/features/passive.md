@@ -27,7 +27,7 @@ plus any methods promoted from embedded fields.
 
 **Doc links**: A doc comment may refer to another symbol using square
 brackets, for example `[fmt.Printf]`. Hovering over one of these
-[doc links](https://tip.golang.org/doc/comment#doclinks) reveals
+[doc links](https://go.dev/doc/comment#doclinks) reveals
 information about the referenced symbol.
 
 <img src='../assets/hover-doclink.png'>
@@ -71,6 +71,9 @@ Hovering over the directive shows information about the other symbol.
 
 <img src='../assets/hover-linkname.png'>
 
+The hover information for symbols from the standard library added
+after Go 1.0 states the Go release that added the symbol.
+
 Settings:
 - The [`hoverKind`](../settings.md#hoverKind) setting controls the verbosity of documentation.
 - The [`linkTarget`](../settings.md#linkTarget) setting specifies
@@ -91,7 +94,7 @@ Client support:
 - **CLI**: `gopls definition file.go:#start-#end` includes information from a Hover query.
 
 
-## SignatureHelp
+## Signature Help
 
 The LSP [`textDocument/signatureHelp`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_signatureHelp)
 query returns information about the innermost function call enclosing
@@ -105,13 +108,15 @@ function call.
 <img src='../assets/signature-help.png'>
 
 Client support:
-- **VS Code**: enabled by default. Displays signature and doc comment alongside Hover information.
+- **VS Code**: enabled by default.
+  Also known as "[parameter hints](https://code.visualstudio.com/api/references/vscode-api#SignatureHelpProvider)" in the [IntelliSense settings](https://code.visualstudio.com/docs/editor/intellisense#_settings).
+  Displays signature and doc comment alongside Hover information.
 - **Emacs + eglot**: enabled by default. Displays signature in the echo area.
 - **Vim + coc.nvim**: ??
 - **CLI**: `gopls signature file.go:#start-#end`
 
 
-## DocumentHighlight
+## Document Highlight
 
 The LSP [`textDocument/documentHighlight`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentHighlight)
 query reports a set of source ranges that should be highlighted based
@@ -140,7 +145,7 @@ Client support:
 - **CLI**: `gopls signature file.go:#start-#end`
 
 
-## InlayHint
+## Inlay Hint
 
 The LSP [`textDocument/inlayHint`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_inlayHint)
 query returns a set of annotations to be spliced into the current file
@@ -189,7 +194,7 @@ Client  support:
 - **Vim + coc.nvim**: ??
 - **CLI**: not supported
 
-## SemanticTokens
+## Semantic Tokens
 
 The LSP [`textDocument/semanticTokens`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_semanticTokens)
 query reports information about all the tokens in the current file, or
@@ -220,7 +225,7 @@ Client Support:
 For internal details of gopls' implementation of semantic tokens,
 see [semantic tokens](../semantictokens.md).
 
-## FoldingRange
+## Folding Range
 
 The LSP [`textDocument/foldingRange`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_foldingRange)
 query reports the list of regions in the current file that may be
@@ -240,7 +245,7 @@ Client support:
 - **Vim + coc.nvim**: ??
 - **CLI**: `gopls folding_ranges file.go`
 
-## DocumentLink
+## Document Link
 
 The LSP [`textDocument/documentLink`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentLink)
 query uses heuristics to extracts URLs from doc comments and string
