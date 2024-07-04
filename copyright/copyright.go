@@ -24,7 +24,7 @@ func checkCopyright(dir string) ([]string, error) {
 		}
 		if d.IsDir() {
 			// Skip directories like ".git".
-			if strings.HasPrefix(d.Name(), ".") {
+			if strings.HasPrefix(d.Name(), ".") && d.Name() != "." && d.Name() != ".." {
 				return filepath.SkipDir
 			}
 			// Skip any directory that starts with an underscore, as the go
