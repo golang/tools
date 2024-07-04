@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -81,7 +82,10 @@ func fix(t *testing.T, dir, analyzers string, wantExit int, patterns ...string) 
 	if err, ok := err.(*exec.ExitError); !ok {
 		t.Fatalf("failed to execute multichecker: %v", err)
 	} else if err.ExitCode() != wantExit {
-		t.Errorf("exit code was %d, want %d", err.ExitCode(), wantExit)
+		// plan9 ExitCode() currently only returns 0 for success or 1 for failure
+		if !(runtime.GOOS == "plan9" && wantExit != exitCodeSuccess && err.ExitCode() != exitCodeSuccess) {
+			t.Errorf("exit code was %d, want %d", err.ExitCode(), wantExit)
+		}
 	}
 	return out
 }
