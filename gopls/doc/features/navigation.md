@@ -2,6 +2,8 @@
 
 This page documents gopls features for navigating your source code.
 
+<!-- TODO: screenshots -->
+
 ## Definition
 
 The LSP [`textDocument/definition`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_definition)
@@ -35,7 +37,7 @@ Client support:
 ## References
 
 The LSP [`textDocument/references`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_references)
-request returns the locations of all identifiers that refers to the symbol under the cursor.
+request returns the locations of all identifiers that refer to the symbol under the cursor.
 
 The references algorithm handles various parts of syntax as follows:
 
@@ -169,7 +171,7 @@ LSP query searches an index of all the symbols in the workspace.
 
 The default symbol matching algorithm (`fastFuzzy`), inspired by the
 popular fuzzy matcher [FZF](https://github.com/junegunn/fzf), attempts
-a variety of inexact matches to correct for misspellings in your
+a variety of inexact matches to correct for misspellings or abbreviations in your
 query. For example, it considers `DocSym` a match for `DocumentSymbol`.
 
 <!--
@@ -184,8 +186,6 @@ It also supports the following special characters within queries:
 However, VS Code does its own fuzzy matching afterward, so these
 aren't effective in that client; see golang/vscode-go#647.
 -->
-
-TODO: screenshot
 
 Settings:
 - The [`symbolMatcher`](../settings.md#symbolMatcher) setting controls the algorithm used for symbol matching.

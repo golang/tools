@@ -40,7 +40,7 @@ Diagnostics come from two main sources: compilation errors and analysis findings
   `fmt.Printf("%d", "three")`.
 
   Gopls provides dozens of analyzers aggregated from a variety of
-  suites. See [Analyzers](../analyzers.md) for the complete list. The
+  suites; see [Analyzers](../analyzers.md) for the complete list. The
   `source` field of each diagnostic produced by an analyzer records
   the name of the analyzer that produced it.
 
@@ -89,8 +89,14 @@ parameter" analysis diagnostic with two alternative fixes.
 
 Suggested fixes that are indisputably safe are [code
 actions](transformation.md#code-actions) whose kind is
-`"source.fixAll"`. Many client editors have a shortcut to apply all
-such fixes.
+`"source.fixAll"`.
+Many client editors have a shortcut to apply all such fixes.
+<!-- Note: each Code Action has exactly one kind, so a server
+     must offer each "safe" action twice, once with its usual kind
+     and once with kind "source.fixAll".
+     The only ones in gopls are simplify{compositelit,range,slice},
+     which are fixAll + quickfix.
+-->
 
 TODO(adonovan): audit all the analyzers to ensure that their
 documentation is up-to-date w.r.t. any fixes they suggest.
@@ -105,9 +111,9 @@ Settings:
   the base URI for Go package links in the Diagnostic.CodeDescription field.
 
 Client support:
-- **VS Code**: Diagnostics appear as a squiggly underline.
+- **VS Code**: Each diagnostic appears as a squiggly underline.
   Hovering reveals the details, along with any suggested fixes.
-- **Emacs + eglot**: Diagnostics appear as a squiggly underline.
+- **Emacs + eglot**: Each diagnostic appears as a squiggly underline.
   Hovering reveals the details. Use `M-x eglot-code-action-quickfix`
   to apply available fixes; it will prompt if there are more than one.
 - **Vim + coc.nvim**: ??

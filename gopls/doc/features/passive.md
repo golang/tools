@@ -13,15 +13,15 @@ considered passive features.
 ## Hover
 
 The LSP [`textDocument/hover`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_hover)
-query returns description of the code currently under the cursor, such
+query returns a	description of the code currently under the cursor, such
 as its name, kind, type, value (for a constant), abbreviated
-declaration (for a type), its doc comment, if any, and a link to the
+declaration (for a type), doc comment (if any), and a link to the
 symbol's documentation on `pkg.go.dev`. The client may request either
 plain text or Markdown.
 
 <img src='../assets/hover-basic.png'>
 
-Depending on the selection, it may include additional information.
+Depending on the selection, the response may include additional information.
 For example, hovering over a type shows its declared methods,
 plus any methods promoted from embedded fields.
 
@@ -132,8 +132,8 @@ select any one member, gopls will highlight the complete set:
 - the `switch` and `break` tokens of the same switch statement;
 - the `func` keyword of a function and all of its `return` statements.
 
-More than one of these rules may be activated by the same selection,
-for example, an identifier that is also a return operand.
+More than one of these rules may be activated by a single selection,
+for example, by an identifier that is also a return operand.
 
 <img src='../assets/document-highlight.png'>
 
@@ -155,7 +155,7 @@ that reveal implicit information.
 
 Examples:
 
-- In a function call `f(1, 2)`, gopls will provide hints for the
+- In a function call `f(1, 2)`, hints provide the
   names of the parameters (`parameterNames`), as in the screenshot above.
 - In a call to a generic function, hints provide the type arguments
   (`functionTypeParameters`).
@@ -172,10 +172,12 @@ Examples:
 
 See [Inlay hints](../inlayHints.md) for a complete list with examples.
 
+<!--
 TODO: Do we really need that separate doc? We could put all the
      information here with much less fuss. It changes so rarely that a
      culture of "update the tests and docs in every CL" should be sufficient.
      IIUC, VS Code needs only the api-json representation.
+-->
 
 Settings:
 - The [`hints`](../settings.md#hints) setting indicates the desired set of hints.
@@ -202,7 +204,7 @@ a portion of it.
 The client may use this information to provide syntax highlighting
 that conveys semantic distinctions between, for example, functions and
 types, constants and variables, or library functions and built-ins.
-The client specifies the sets of types and modifiers they are interested in.
+The client specifies the sets of types and modifiers it is interested in.
 
 Settings:
 - The [`semanticTokens`](../settings.md#semanticTokens) setting determines whether
@@ -249,7 +251,7 @@ Client support:
 
 The LSP [`textDocument/documentLink`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_documentLink)
 query uses heuristics to extracts URLs from doc comments and string
-literals in the current file so that client can present them as
+literals in the current file so that the client can present them as
 clickable links.
 
 <img src='../assets/documentlink.png'>

@@ -3,7 +3,7 @@
 This document describes gopls' features for code transformation, which
 include a range of behavior-preserving changes (refactorings,
 formatting, simplifications), code repair (fixes), and editing support
-(filling in struct literals, switch statements).
+(filling in struct literals and switch statements).
 
 Code transformations are not a single category in the LSP:
 - a few, such as Formatting and Rename, are primary operations in the
@@ -24,7 +24,7 @@ The VS Code manual describes code actions as
 "[Quick fixes + Refactorings](https://code.visualstudio.com/docs/editor/refactoring#_code-actions-quick-fixes-and-refactorings)".
 
 A `codeAction` request delivers the menu, so to speak, but it does
-not order the meal. When an action is chosen, one of two things happens.
+not order the meal. Once the user chooses an action, one of two things happens.
 In trivial cases, the action itself contains an edit that the
 client can directly apply to the file.
 But in most cases, the action contains a [command](../commands.md)
@@ -36,24 +36,33 @@ The server may then compute the edit and send the client a
 [`workspace/applyEdit`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_applyEdit)
 request to patch the files.
 Not all code actions' commands have an `applyEdit` side effect: some
-may change the state of the server, for example, to toggle a
-variable, or cause the server to send other requests to the client,
-such as as a `showDocument` request to open a report in a web browser.
+may change the state of the server, for example to toggle a variable
+or to cause the server to send other requests to the client,
+such as a `showDocument` request to open a report in a web browser.
 
 The main difference between code lenses and code actions is this:
-- `codeLens` requests commands for the entire file.
+- a `codeLens` request obtains commands for the entire file.
   Each command specifies its applicable source range,
   and typically appears as an annotation on that source range.
-- `codeAction` requests commands only for a particular range: the current selection.
+- a `codeAction` request obtains commands only for a particular range: the current selection.
   All the commands are presented together in a menu at that location.
 
 Each action has a _kind_,
 which is a hierarchical identifier such as `refactor.inline`.
 Clients may filter actions based on their kind.
-For example, VS Code has two menus, "Refactor..." and "Source action...",
-each populated by different kinds of code actions (`refactor.*` and `source.*`),
-plus a lightbulb icon that triggers a menu of "quick fixes" (of kind `quickfix.*`),
-which are commands deemed unambiguously safe to apply.
+For example, VS Code has:
+two menus, "Refactor..." and "Source action...", each populated by
+different kinds of code actions (`refactor.*` and `source.*`);
+a lightbulb icon that triggers a menu of "quick fixes" (of kind `quickfix.*`);
+and a "Fix All" command that executes all code actions of
+kind `source.fixAll`, which are those deemed unambiguously safe to apply.
+
+Gopls reports some code actions twice, with two different kinds, so
+that they appear in multiple UI elements: simplifications,
+for example from `for _ = range m` to `for range m`,
+have kinds `quickfix` and `source.fixAll`,
+so they appear in the "Quick Fix" menu and
+are activated by the "Fix All" command.
 
 <!-- In principle the filter may include the trigger event
      e.g. auto (cursor motion) vs. invoked (open a menu)
@@ -71,7 +80,7 @@ for the current selection.
 
 Caveats:
 - Many of gopls code transformations are limited by Go's syntax tree
-  representation, which currently records comments not in the tree,
+  representation, which currently records comments not in the tree
   but in a side table; consequently, transformations such as Extract
   and Inline are prone to losing comments. This is issue
   golang/go#20744, and it is a priority for us to fix in 2024.
@@ -88,6 +97,7 @@ Client support for code actions:
   the "Source action..." menu,
   the 💡 (light bulb) icon's menu, or
   the "Quick fix" (`⌘.`) menu.
+  The "Fix All" command applies all actions of kind `source.fixAll`.
 - **Emacs + eglot**: Code actions are invisible.
   Use `M-x eglot-code-actions` to select one from those that are
   available (if there are multiple) and execute it.
@@ -126,8 +136,8 @@ deleting existing imports that are duplicate or unused,
 adding new ones for undefined symbols,
 and sorting them into the conventional order.
 
-The addition of new imports is based on heuristics that depends on
-your workspace and the contents of your GOMODCACHE directory; it may
+The addition of new imports is based on heuristics that depend on
+your workspace and the contents of your GOMODCACHE directory; they may
 sometimes make surprising choices.
 
 Many editors automatically organize imports and format the code before
@@ -207,7 +217,7 @@ invoking the rename operation on the type.
 Renaming should never introduce a compilation error, but it may
 introduce dynamic errors. For example, in a method renaming, if there
 is no direct conversion of the affected type to the interface type,
-but there is an intermediate conversion to `interface{}` followed by a
+but there is an intermediate conversion to a broader type (such as `any`) followed by a
 type assertion to the interface type, then gopls may proceed to rename
 the method, causing the type assertion to fail at run time.
 Similar problems may arise with packages that use reflection, such as
@@ -275,8 +285,8 @@ newly created declaration that contains the selected code:
 If the default name for the new declaration is already in use, gopls
 generates a fresh name.
 
-Extraction is a challenging problem requiring consideration of a
-variety of aspects such as identifier scope and shadowing, control
+Extraction is a challenging problem requiring consideration of
+identifier scope and shadowing, control
 flow such as `break`/`continue` in a loop or `return` in a
 function, cardinality of variables, and even subtle issues of style.
 In each case, the tool will try to update the extracted statements
@@ -314,9 +324,9 @@ If you select one or more top-level declarations, gopls will offer an
 "Extract declarations to new file" code action that moves the selected
 declarations into a new file whose name is based on the first declared
 symbol.
+Import declarations are created as needed.
 Gopls also offers this code action when the selection is just the
 first token of the declaration, such as `func` or `type`.
-Import declarations are created as needed.
 
 ![Before: select the declarations to move](../assets/extract-to-new-file-before.png)
 ![After: the new file is based on the first symbol name](../assets/extract-to-new-file-after.png)
@@ -414,7 +424,7 @@ As users report inputs that cause the compiler to emit suboptimal
 code, the compiler is improved to recognize more cases, or more rules,
 and more exceptions to rules---but this process has no end.
 Inlining is similar, except that "better" code means tidier code.
-The most conservative translation provides a simple but (hopefully!)
+The most conservative translation provides a simple but (hopefully)
 correct foundation, on top of which endless rules, and exceptions to
 rules, can embellish and improve the quality of the output.
 
@@ -447,7 +457,7 @@ Here are some of the technical challenges involved in sound inlining:
   its argument expression, we must ensure that any names in the
   argument expression continue to refer to the same thing---not to a
   different declaration in the callee function body that happens to
-  use the same name! The inliner must replace local references such as
+  use the same name. The inliner must replace local references such as
   `Printf` by qualified references such as `fmt.Printf`, and add an
   import of package `fmt` as needed.
 
@@ -468,7 +478,7 @@ Here are some of the technical challenges involved in sound inlining:
   and its corresponding parameter is never used, the expression
   may be eliminated. However, if the expression contains the last
   reference to a local variable at the caller, this may cause a compile
-  error because the variable is now unused! So the inliner must be
+  error because the variable is now unused. So the inliner must be
   cautious about eliminating references to local variables.
 
 This is just a taste of the problem domain. If you're curious, the
@@ -524,12 +534,12 @@ call, the argument 2, a constant, was safely deleted.
 
 When the selection is a string literal, gopls offers a code action
 to convert the string between raw form (`` `abc` ``) and interpreted
-form (`"abc"`):
+form (`"abc"`) where this is possible:
 
 ![Convert to interpreted](../assets/convert-string-interpreted.png)
 ![Convert to raw](../assets/convert-string-raw.png)
 
-Apply the code action a second time to revert back to the original
+Applying the code action a second time reverts back to the original
 form.
 
 ### Invert 'if' condition
@@ -549,7 +559,7 @@ blocks.
 
 ### Split elements into separate lines
 
-When the selection is within a bracketed list such as:
+When the selection is within a bracketed list of items such as:
 
 - the **elements** of a composite literal, `[]T{a, b, c}`,
 - the **arguments** of a function call, `f(a, b, c)`,
