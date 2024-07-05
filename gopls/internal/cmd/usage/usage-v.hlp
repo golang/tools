@@ -5,6 +5,10 @@ It is typically used with an editor to provide language features. When no
 command is specified, gopls will default to the 'serve' command. The language
 features can also be accessed via the gopls command-line interface.
 
+For documentation of all its features, see:
+
+   https://github.com/golang/tools/blob/master/gopls/doc/features
+
 Usage:
   gopls help [<subject>]
 
@@ -21,9 +25,11 @@ Main
 Features            
   call_hierarchy    display selected identifier's call hierarchy
   check             show diagnostic results for the specified file
+  codeaction        list or execute code actions
   codelens          List or execute code lenses for a file
   definition        show declaration of selected identifier
   execute           Execute a gopls custom LSP command
+  fix               apply suggested fixes (obsolete)
   folding_ranges    display selected file's folding ranges
   format            format the code according to the go standard
   highlight         display selected identifier's highlights
@@ -38,7 +44,6 @@ Features
   semtok            show semantic tokens for the specified file
   signature         display selected identifier's signature
   stats             print workspace statistics
-  fix               apply suggested fixes
   symbols           display selected file's symbols
   workspace_symbol  search symbols in workspace
                     

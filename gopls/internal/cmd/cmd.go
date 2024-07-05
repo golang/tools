@@ -75,7 +75,7 @@ type Application struct {
 	editFlags *EditFlags
 }
 
-// EditFlags defines flags common to {fix,format,imports,rename}
+// EditFlags defines flags common to {code{action,lens},format,imports,rename}
 // that control how edits are applied to the client's files.
 //
 // The type is exported for flag reflection.
@@ -130,6 +130,10 @@ gopls is a Go language server.
 It is typically used with an editor to provide language features. When no
 command is specified, gopls will default to the 'serve' command. The language
 features can also be accessed via the gopls command-line interface.
+
+For documentation of all its features, see:
+
+   https://github.com/golang/tools/blob/master/gopls/doc/features
 
 Usage:
   gopls help [<subject>]
@@ -280,9 +284,11 @@ func (app *Application) featureCommands() []tool.Application {
 	return []tool.Application{
 		&callHierarchy{app: app},
 		&check{app: app},
+		&codeaction{app: app},
 		&codelens{app: app},
 		&definition{app: app},
 		&execute{app: app},
+		&fix{app: app}, // (non-functional)
 		&foldingRanges{app: app},
 		&format{app: app},
 		&highlight{app: app},
@@ -297,7 +303,6 @@ func (app *Application) featureCommands() []tool.Application {
 		&semtok{app: app},
 		&signature{app: app},
 		&stats{app: app},
-		&suggestedFix{app: app},
 		&symbols{app: app},
 
 		&workspaceSymbol{app: app},
@@ -930,4 +935,18 @@ func pointPosition(m *protocol.Mapper, p point) (protocol.Position, error) {
 		return m.OffsetPosition(p.Offset())
 	}
 	return protocol.Position{}, fmt.Errorf("point has neither offset nor line/column")
+}
+
+// TODO(adonovan): delete in 2025.
+type fix struct{ app *Application }
+
+func (*fix) Name() string       { return "fix" }
+func (cmd *fix) Parent() string { return cmd.app.Name() }
+func (*fix) Usage() string      { return "" }
+func (*fix) ShortHelp() string  { return "apply suggested fixes (obsolete)" }
+func (*fix) DetailedHelp(flags *flag.FlagSet) {
+	fmt.Fprintf(flags.Output(), `No longer supported; use "gopls codeaction" instead.`)
+}
+func (*fix) Run(ctx context.Context, args ...string) error {
+	return tool.CommandLineErrorf(`no longer supported; use "gopls codeaction" instead`)
 }

@@ -941,8 +941,8 @@ package foo
 	}
 }
 
-// TestFix tests the 'fix' subcommand (../suggested_fix.go).
-func TestFix(t *testing.T) {
+// TestCodeAction tests the 'codeaction' subcommand (../codeaction.go).
+func TestCodeAction(t *testing.T) {
 	t.Parallel()
 
 	tree := writeTree(t, `
@@ -964,29 +964,46 @@ type C struct{}
 
 	// no arguments
 	{
-		res := gopls(t, tree, "fix")
+		res := gopls(t, tree, "codeaction")
 		res.checkExit(false)
 		res.checkStderr("expects at least 1 argument")
 	}
-	// success with default kinds, {quickfix}.
-	// -a is always required because no fix is currently "preferred" (!)
+	// list code actions in file
 	{
-		res := gopls(t, tree, "fix", "-a", "a.go")
+		res := gopls(t, tree, "codeaction", "a.go")
+		res.checkExit(true)
+		res.checkStdout(`edit	"Fill in return values" \[quickfix\]`)
+		res.checkStdout(`command	"Browse documentation for package a" \[source.doc\]`)
+	}
+	// list code actions in file, filtering by title
+	{
+		res := gopls(t, tree, "codeaction", "-title=Br.wse", "a.go")
 		res.checkExit(true)
 		got := res.stdout
-		want := `
-package a
-type T int
-func f() (int, string) { return 0, "" }
-
-`[1:]
+		want := `command	"Browse documentation for package a" [source.doc]` + "\n"
 		if got != want {
-			t.Errorf("fix: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
+			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
+		}
+	}
+	// list code actions at position (of io.Reader)
+	{
+		res := gopls(t, tree, "codeaction", "b.go:#31")
+		res.checkExit(true)
+		res.checkStdout(`command	"Browse documentation for type io.Reader" \[source.doc]`)
+	}
+	// list quick fixes at position (of type T)
+	{
+		res := gopls(t, tree, "codeaction", "-kind=quickfix", "a.go:#15")
+		res.checkExit(true)
+		got := res.stdout
+		want := `edit	"Fill in return values" [quickfix]` + "\n"
+		if got != want {
+			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
 		}
 	}
 	// success, with explicit CodeAction kind and diagnostics span.
 	{
-		res := gopls(t, tree, "fix", "-a", "b.go:#40", "quickfix")
+		res := gopls(t, tree, "codeaction", "-kind=quickfix", "-exec", "b.go:#40")
 		res.checkExit(true)
 		got := res.stdout
 		want := `
@@ -1004,7 +1021,7 @@ func (c C) Read(p []byte) (n int, err error) {
 }
 `[1:]
 		if got != want {
-			t.Errorf("fix: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
+			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
 		}
 	}
 }

@@ -261,7 +261,7 @@ func addFlag(f *flag.FlagSet, value reflect.Value, flagName string, help string)
 	case *uint64:
 		f.Uint64Var(v, flagName, *v, help)
 	default:
-		log.Fatalf("Cannot understand flag of type %T", v)
+		log.Fatalf("field %q of type %T is not assignable to flag.Value", flagName, v)
 	}
 }
 

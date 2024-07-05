@@ -103,8 +103,8 @@ Client support for code actions:
   available (if there are multiple) and execute it.
   Some action kinds have filtering shortcuts,
   e.g. [`M-x eglot-code-action-{inline,extract,rewrite}`](https://joaotavora.github.io/eglot/#index-M_002dx-eglot_002dcode_002daction_002dinline).
-- **CLI**: `gopls fix -a file.go:#123-#456 kinds...` executes code actions of the specified
-  kinds (e.g. `refactor.inline`) on the selected range, specified using zero-based byte offsets.
+- **CLI**: `gopls codeaction -exec -kind k,... -diff file.go:#123-#456` executes code actions of the specified
+  kinds (e.g. `refactor.inline`) on the selected range, specified using zero-based byte offsets, and displays the diff.
 
 ## Formatting
 

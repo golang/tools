@@ -145,7 +145,7 @@ func TestEverything(t *testing.T) {
 					t.Logf("callee declared at %v",
 						filepath.Base(calleePosn.String()))
 
-					t.Logf("run this command to reproduce locally:\n$ gopls fix -a -d %s:#%d refactor.inline",
+					t.Logf("run this command to reproduce locally:\n$ gopls codeaction -kind=refactor.inline -exec -diff %s:#%d",
 						callPosn.Filename, callPosn.Offset)
 
 					callee, err := inline.AnalyzeCallee(
