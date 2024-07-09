@@ -24,21 +24,21 @@ import (
 // Interface defines the interface gopls exposes for the
 // workspace/executeCommand request.
 //
-// This interface is used to generate marshaling/unmarshaling code, dispatch,
-// and documentation, and so has some additional restrictions:
+// This interface is used to generate logic for marshaling,
+// unmarshaling, and dispatch, so it has some additional restrictions:
+//
 //  1. All method arguments must be JSON serializable.
+//
 //  2. Methods must return either error or (T, error), where T is a
 //     JSON serializable type.
+//
 //  3. The first line of the doc string is special.
 //     Everything after the colon is considered the command 'Title'.
+//     For example:
 //
-// The doc comment on each method is eventually published at
-// https://github.com/golang/tools/blob/master/gopls/doc/commands.md,
-// so please be consistent in using this form:
+//     Command: Capitalized verb phrase with no period
 //
-//	Command: Capitalized verb phrase with no period
-//
-//	Longer description here...
+//     Longer description here...
 type Interface interface {
 	// ApplyFix: Apply a fix
 	//

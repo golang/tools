@@ -21,7 +21,6 @@ var JSON string
 // TODO(adonovan): document these data types.
 type API struct {
 	Options   map[string][]*Option
-	Commands  []*Command
 	Lenses    []*Lens
 	Analyzers []*Analyzer
 	Hints     []*Hint
@@ -52,14 +51,6 @@ type EnumKey struct {
 type EnumValue struct {
 	Value string // in JSON syntax (quoted)
 	Doc   string // doc comment; always starts with `Value`
-}
-
-type Command struct {
-	Command   string // e.g. "gopls.run_tests"
-	Title     string
-	Doc       string
-	ArgDoc    string
-	ResultDoc string
 }
 
 type Lens struct {

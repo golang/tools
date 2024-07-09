@@ -6,12 +6,15 @@ formatting, simplifications), code repair (fixes), and editing support
 (filling in struct literals and switch statements).
 
 Code transformations are not a single category in the LSP:
-- a few, such as Formatting and Rename, are primary operations in the
-  protocol;
-- some are [commands](../commands.md) exposed through [Code
-  Lenses](../codelenses.md) (though none of these are transformations of Go syntax);
+- A few, such as Formatting and Rename, are primary operations in the
+  protocol.
+- Some transformations are exposed through [Code Lenses](../codelenses.md),
+  which return _commands_, arbitrary server
+  operations invoked for their side effects through a
+  [`workspace/executeCommand`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_executeCommand) request;
+  however, no current code lenses are transformations of Go syntax.
   <!-- Generate, RegenerateCgo (Go); Tidy, UpgradeDependency, Vendor (go.mod) -->
-- most are defined as *code actions*.
+- Most transformations are defined as *code actions*.
 
 ## Code Actions
 
@@ -27,9 +30,8 @@ A `codeAction` request delivers the menu, so to speak, but it does
 not order the meal. Once the user chooses an action, one of two things happens.
 In trivial cases, the action itself contains an edit that the
 client can directly apply to the file.
-But in most cases, the action contains a [command](../commands.md)
-to be sent back to the server for its side effects,
-just as with the command associated with a Code Lens.
+But in most cases the action contains a command,
+similar to the command associated with a code lens.
 This allows the work of computing the patch to be done lazily, only
 when actually needed. (Most aren't.)
 The server may then compute the edit and send the client a

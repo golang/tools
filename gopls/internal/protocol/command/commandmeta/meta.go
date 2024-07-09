@@ -4,6 +4,9 @@
 
 // Package commandmeta provides metadata about LSP commands, by
 // statically analyzing the command.Interface type.
+//
+// It is used to generate JSONRPC dispatch and marshaling.
+// TODO(adonovan): combine with gopls/internal/protocol/command/gen.
 package commandmeta
 
 import (

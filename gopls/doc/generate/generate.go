@@ -5,7 +5,6 @@
 // The generate command updates the following files of documentation:
 //
 //	gopls/doc/settings.md   -- from linking gopls/internal/settings.DefaultOptions
-//	gopls/doc/commands.md   -- from loading gopls/internal/protocol/command
 //	gopls/doc/analyzers.md  -- from linking gopls/internal/settings.DefaultAnalyzers
 //	gopls/doc/inlayHints.md -- from loading gopls/internal/settings.InlayHint
 //	gopls/internal/doc/api.json -- all of the above in a single value, for 'gopls api-json'
@@ -41,7 +40,6 @@ import (
 	"golang.org/x/tools/gopls/internal/doc"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/mod"
-	"golang.org/x/tools/gopls/internal/protocol/command/commandmeta"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
@@ -88,7 +86,6 @@ func doMain(write bool) (bool, error) {
 		{"internal/doc/api.json", rewriteAPI},
 		{"doc/settings.md", rewriteSettings},
 		{"doc/codelenses.md", rewriteCodeLenses},
-		{"doc/commands.md", rewriteCommands},
 		{"doc/analyzers.md", rewriteAnalyzers},
 		{"doc/inlayHints.md", rewriteInlayHints},
 	} {
@@ -150,10 +147,6 @@ func loadAPI() (*doc.API, error) {
 		Analyzers: loadAnalyzers(settings.DefaultAnalyzers), // no staticcheck analyzers
 	}
 
-	api.Commands, err = loadCommands()
-	if err != nil {
-		return nil, err
-	}
 	api.Lenses, err = loadLenses(settingsPkg, defaults.Codelenses)
 	if err != nil {
 		return nil, err
@@ -439,84 +432,6 @@ func valueDoc(name, value, doc string) string {
 		return fmt.Sprintf("`%s`%s", value, doc[len(name):])
 	}
 	return fmt.Sprintf("`%s`: %s", value, doc)
-}
-
-func loadCommands() ([]*doc.Command, error) {
-	var commands []*doc.Command
-
-	cmds, err := commandmeta.Load()
-	if err != nil {
-		return nil, err
-	}
-	// Parse the objects it contains.
-	for _, cmd := range cmds {
-		cmdjson := &doc.Command{
-			Command: cmd.Name,
-			Title:   cmd.Title,
-			Doc:     cmd.Doc,
-			ArgDoc:  argsDoc(cmd.Args),
-		}
-		if cmd.Result != nil {
-			cmdjson.ResultDoc = typeDoc(cmd.Result, 0)
-		}
-		commands = append(commands, cmdjson)
-	}
-	return commands, nil
-}
-
-func argsDoc(args []*commandmeta.Field) string {
-	var b strings.Builder
-	for i, arg := range args {
-		b.WriteString(typeDoc(arg, 0))
-		if i != len(args)-1 {
-			b.WriteString(",\n")
-		}
-	}
-	return b.String()
-}
-
-func typeDoc(arg *commandmeta.Field, level int) string {
-	// Max level to expand struct fields.
-	const maxLevel = 3
-	if len(arg.Fields) > 0 {
-		if level < maxLevel {
-			return arg.FieldMod + structDoc(arg.Fields, level)
-		}
-		return "{ ... }"
-	}
-	under := arg.Type.Underlying()
-	switch u := under.(type) {
-	case *types.Slice:
-		return fmt.Sprintf("[]%s", u.Elem().Underlying().String())
-	}
-	// TODO(adonovan): use (*types.Package).Name qualifier.
-	return types.TypeString(under, nil)
-}
-
-// TODO(adonovan): this format is strange; it's not Go, nor JSON, nor LSP. Rethink.
-func structDoc(fields []*commandmeta.Field, level int) string {
-	var b strings.Builder
-	b.WriteString("{\n")
-	indent := strings.Repeat("\t", level)
-	for _, fld := range fields {
-		if fld.Doc != "" && level == 0 {
-			doclines := strings.Split(fld.Doc, "\n")
-			for _, line := range doclines {
-				text := ""
-				if line != "" {
-					text = " " + line
-				}
-				fmt.Fprintf(&b, "%s\t//%s\n", indent, text)
-			}
-		}
-		tag := strings.Split(fld.JSONTag, ",")[0]
-		if tag == "" {
-			tag = fld.Name
-		}
-		fmt.Fprintf(&b, "%s\t%q: %s,\n", indent, tag, typeDoc(fld, level+1))
-	}
-	fmt.Fprintf(&b, "%s}", indent)
-	return b.String()
 }
 
 // loadLenses combines the syntactic comments from the settings
@@ -826,23 +741,6 @@ func rewriteCodeLenses(prevContent []byte, api *doc.API) ([]byte, error) {
 		fmt.Fprintf(&buf, "File type: %s\n\n", lens.FileType)
 	}
 	return replaceSection(prevContent, "Lenses", buf.Bytes())
-}
-
-func rewriteCommands(prevContent []byte, api *doc.API) ([]byte, error) {
-	var buf bytes.Buffer
-	for _, command := range api.Commands {
-		// Emit HTML anchor as GitHub markdown doesn't support
-		// "# Heading {#anchor}" syntax.
-		fmt.Fprintf(&buf, "<a id='%s'></a>\n", command.Command)
-		fmt.Fprintf(&buf, "## `%s`: **%s**\n\n%v\n\n", command.Command, command.Title, command.Doc)
-		if command.ArgDoc != "" {
-			fmt.Fprintf(&buf, "Args:\n\n```\n%s\n```\n\n", command.ArgDoc)
-		}
-		if command.ResultDoc != "" {
-			fmt.Fprintf(&buf, "Result:\n\n```\n%s\n```\n\n", command.ResultDoc)
-		}
-	}
-	return replaceSection(prevContent, "Commands", buf.Bytes())
 }
 
 func rewriteAnalyzers(prevContent []byte, api *doc.API) ([]byte, error) {
