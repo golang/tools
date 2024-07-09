@@ -2,6 +2,7 @@ This test verifies that unimported completion respects the usePlaceholders setti
 
 -- flags --
 -ignore_extra_diags
+-min_go=go1.21
 
 -- settings.json --
 {

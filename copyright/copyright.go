@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.18
-// +build go1.18
-
 // Package copyright checks that files have the correct copyright notices.
 package copyright
 
@@ -27,7 +24,7 @@ func checkCopyright(dir string) ([]string, error) {
 		}
 		if d.IsDir() {
 			// Skip directories like ".git".
-			if strings.HasPrefix(d.Name(), ".") {
+			if strings.HasPrefix(d.Name(), ".") && d.Name() != "." && d.Name() != ".." {
 				return filepath.SkipDir
 			}
 			// Skip any directory that starts with an underscore, as the go

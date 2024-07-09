@@ -4,7 +4,7 @@
 
 package stubmethods
 
-var _ I = Y{} // want "Implement I"
+var _ I = Y{} // want "does not implement I"
 
 type I interface{ F() }
 

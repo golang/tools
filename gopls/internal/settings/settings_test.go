@@ -5,17 +5,27 @@
 package settings
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
 
+func TestDefaultsEquivalence(t *testing.T) {
+	opts1 := DefaultOptions()
+	opts2 := DefaultOptions()
+	if !reflect.DeepEqual(opts1, opts2) {
+		t.Fatal("default options are not equivalent using reflect.DeepEqual")
+	}
+}
+
 func TestSetOption(t *testing.T) {
-	tests := []struct {
+	type testCase struct {
 		name      string
-		value     interface{}
+		value     any
 		wantError bool
 		check     func(Options) bool
-	}{
+	}
+	tests := []testCase{
 		{
 			name:  "symbolStyle",
 			value: "Dynamic",
@@ -44,14 +54,8 @@ func TestSetOption(t *testing.T) {
 			check: func(o Options) bool { return o.CompletionBudget == 2*time.Second },
 		},
 		{
-			name:      "staticcheck",
-			value:     true,
-			check:     func(o Options) bool { return o.Staticcheck == true },
-			wantError: true, // o.StaticcheckSupported is unset
-		},
-		{
 			name:  "codelenses",
-			value: map[string]interface{}{"generate": true},
+			value: map[string]any{"generate": true},
 			check: func(o Options) bool { return o.Codelenses["generate"] },
 		},
 		{
@@ -119,7 +123,7 @@ func TestSetOption(t *testing.T) {
 		},
 		{
 			name:  "env",
-			value: map[string]interface{}{"testing": "true"},
+			value: map[string]any{"testing": "true"},
 			check: func(o Options) bool {
 				v, found := o.Env["testing"]
 				return found && v == "true"
@@ -135,14 +139,14 @@ func TestSetOption(t *testing.T) {
 		},
 		{
 			name:  "directoryFilters",
-			value: []interface{}{"-node_modules", "+project_a"},
+			value: []any{"-node_modules", "+project_a"},
 			check: func(o Options) bool {
 				return len(o.DirectoryFilters) == 2
 			},
 		},
 		{
 			name:      "directoryFilters",
-			value:     []interface{}{"invalid"},
+			value:     []any{"invalid"},
 			wantError: true,
 			check: func(o Options) bool {
 				return len(o.DirectoryFilters) == 0
@@ -158,7 +162,7 @@ func TestSetOption(t *testing.T) {
 		},
 		{
 			name: "annotations",
-			value: map[string]interface{}{
+			value: map[string]any{
 				"Nil":      false,
 				"noBounds": true,
 			},
@@ -169,7 +173,7 @@ func TestSetOption(t *testing.T) {
 		},
 		{
 			name:      "vulncheck",
-			value:     []interface{}{"invalid"},
+			value:     []any{"invalid"},
 			wantError: true,
 			check: func(o Options) bool {
 				return o.Vulncheck == "" // For invalid value, default to 'off'.
@@ -191,12 +195,29 @@ func TestSetOption(t *testing.T) {
 		},
 	}
 
+	if !StaticcheckSupported {
+		tests = append(tests, testCase{
+			name:      "staticcheck",
+			value:     true,
+			check:     func(o Options) bool { return o.Staticcheck == true },
+			wantError: true, // o.StaticcheckSupported is unset
+		})
+	}
+
 	for _, test := range tests {
 		var opts Options
-		result := opts.set(test.name, test.value, map[string]struct{}{})
-		if (result.Error != nil) != test.wantError {
-			t.Fatalf("Options.set(%q, %v): result.Error = %v, want error: %t", test.name, test.value, result.Error, test.wantError)
+		err := opts.set(test.name, test.value, make(map[string]struct{}))
+		if err != nil {
+			if !test.wantError {
+				t.Errorf("Options.set(%q, %v) failed: %v",
+					test.name, test.value, err)
+			}
+			continue
+		} else if test.wantError {
+			t.Fatalf("Options.set(%q, %v) succeeded unexpectedly",
+				test.name, test.value)
 		}
+
 		// TODO: this could be made much better using cmp.Diff, if that becomes
 		// available in this module.
 		if !test.check(opts) {

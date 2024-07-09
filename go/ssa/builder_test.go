@@ -20,13 +20,16 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/txtar"
+	"golang.org/x/tools/internal/testfiles"
 )
 
 func isEmpty(f *ssa.Function) bool { return f.Blocks == nil }
@@ -171,38 +174,7 @@ func main() {
 func TestNoIndirectCreatePackage(t *testing.T) {
 	testenv.NeedsGoBuild(t) // for go/packages
 
-	src := `
--- go.mod --
-module testdata
-go 1.18
-
--- a/a.go --
-package a
-
-import "testdata/b"
-
-func A() {
-	var x b.B
-	x.F()
-}
-
--- b/b.go --
-package b
-
-import "testdata/c"
-
-type B struct { c.C }
-
--- c/c.go --
-package c
-
-type C int
-func (C) F() {}
-`
-	dir := t.TempDir()
-	if err := extractArchive(dir, src); err != nil {
-		t.Fatal(err)
-	}
+	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "indirect.txtar"))
 	pkgs, err := loadPackages(dir, "testdata/a")
 	if err != nil {
 		t.Fatal(err)
@@ -232,27 +204,6 @@ func (C) F() {}
 	if got != want {
 		t.Errorf("for sole call in a.A, got: <<%s>>, want <<%s>>", got, want)
 	}
-}
-
-// extractArchive extracts the txtar archive into the specified directory.
-func extractArchive(dir, arch string) error {
-	// TODO(adonovan): publish this a helper (#61386).
-	extractTxtar := func(ar *txtar.Archive, dir string) error {
-		for _, file := range ar.Files {
-			name := filepath.Join(dir, file.Name)
-			if err := os.MkdirAll(filepath.Dir(name), 0777); err != nil {
-				return err
-			}
-			if err := os.WriteFile(name, file.Data, 0666); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	// Extract archive to temporary tree.
-	ar := txtar.Parse([]byte(arch))
-	return extractTxtar(ar, dir)
 }
 
 // loadPackages loads packages from the specified directory, using LoadSyntax.
@@ -821,8 +772,6 @@ var indirect = R[int].M
 // TestTypeparamTest builds SSA over compilable examples in $GOROOT/test/typeparam/*.go.
 
 func TestTypeparamTest(t *testing.T) {
-	testenv.NeedsGo1Point(t, 19) // fails with infinite recursion at 1.18 -- not investigated
-
 	// Tests use a fake goroot to stub out standard libraries with delcarations in
 	// testdata/src. Decreases runtime from ~80s to ~1s.
 
@@ -999,7 +948,6 @@ func TestGenericFunctionSelector(t *testing.T) {
 
 func TestIssue58491(t *testing.T) {
 	// Test that a local type reaches type param in instantiation.
-	testenv.NeedsGo1Point(t, 18)
 	src := `
 		package p
 
@@ -1057,7 +1005,6 @@ func TestIssue58491(t *testing.T) {
 
 func TestIssue58491Rec(t *testing.T) {
 	// Roughly the same as TestIssue58491 but with a recursive type.
-	testenv.NeedsGo1Point(t, 18)
 	src := `
 		package p
 
@@ -1091,7 +1038,7 @@ func TestIssue58491Rec(t *testing.T) {
 	// Find the local type result instantiated with int.
 	var found bool
 	for _, rt := range p.Prog.RuntimeTypes() {
-		if n, ok := rt.(*types.Named); ok {
+		if n, ok := aliases.Unalias(rt).(*types.Named); ok {
 			if u, ok := n.Underlying().(*types.Struct); ok {
 				found = true
 				if got, want := n.String(), "p.result"; got != want {
@@ -1212,4 +1159,104 @@ func TestGo117Builtins(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLabels just tests that anonymous labels are handled.
+func TestLabels(t *testing.T) {
+	tests := []string{
+		`package main
+		  func main() { _:println(1) }`,
+		`package main
+		  func main() { _:println(1); _:println(2)}`,
+	}
+	for _, test := range tests {
+		conf := loader.Config{Fset: token.NewFileSet()}
+		f, err := parser.ParseFile(conf.Fset, "<input>", test, 0)
+		if err != nil {
+			t.Errorf("parse error: %s", err)
+			return
+		}
+		conf.CreateFromFiles("main", f)
+		iprog, err := conf.Load()
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
+		pkg := prog.Package(iprog.Created[0].Pkg)
+		pkg.Build()
+	}
+}
+
+func TestFixedBugs(t *testing.T) {
+	for _, name := range []string{
+		"issue66783a",
+		"issue66783b",
+	} {
+
+		t.Run(name, func(t *testing.T) {
+			base := name + ".go"
+			path := filepath.Join(analysistest.TestData(), "fixedbugs", base)
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+			if err != nil {
+				t.Fatal(err)
+			}
+			files := []*ast.File{f}
+			pkg := types.NewPackage(name, name)
+			mode := ssa.SanityCheckFunctions | ssa.InstantiateGenerics
+			// mode |= ssa.PrintFunctions // debug mode
+			if _, _, err := ssautil.BuildPackage(&types.Config{}, fset, pkg, files, mode); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
+func TestIssue67079(t *testing.T) {
+	// This test reproduced a race in the SSA builder nearly 100% of the time.
+
+	// Load the package.
+	const src = `package p; type T int; func (T) f() {}; var _ = (*T).f`
+	conf := loader.Config{Fset: token.NewFileSet()}
+	f, err := parser.ParseFile(conf.Fset, "p.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf.CreateFromFiles("p", f)
+	iprog, err := conf.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := iprog.Created[0].Pkg
+
+	// Create and build SSA program.
+	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
+	prog.Build()
+
+	var g errgroup.Group
+
+	// Access bodies of all functions.
+	g.Go(func() error {
+		for fn := range ssautil.AllFunctions(prog) {
+			for _, b := range fn.Blocks {
+				for _, instr := range b.Instrs {
+					if call, ok := instr.(*ssa.Call); ok {
+						call.Common().StaticCallee() // access call.Value
+					}
+				}
+			}
+		}
+		return nil
+	})
+
+	// Force building of wrappers.
+	g.Go(func() error {
+		ptrT := types.NewPointer(pkg.Scope().Lookup("T").Type())
+		ptrTf := types.NewMethodSet(ptrT).At(0) // (*T).f symbol
+		prog.MethodValue(ptrTf)
+		return nil
+	})
+
+	g.Wait() // ignore error
 }

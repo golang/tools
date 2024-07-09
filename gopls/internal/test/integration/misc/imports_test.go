@@ -72,13 +72,58 @@ func a() {
 	Run(t, stuff, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
 		was := env.BufferText("a.go")
-		env.Await(NoDiagnostics())
+		env.AfterChange(NoDiagnostics())
 		env.OrganizeImports("a.go")
 		is := env.BufferText("a.go")
 		if diff := compare.Text(was, is); diff != "" {
 			t.Errorf("unexpected diff after organizeImports:\n%s", diff)
 		}
 	})
+}
+
+func TestIssue66407(t *testing.T) {
+	const files = `
+-- go.mod --
+module foo
+go 1.21
+-- a.go --
+package foo
+
+func f(x float64) float64 {
+	return x +  rand.Float64()
+}
+-- b.go --
+package foo
+
+func g() {
+	_ = rand.Int63()
+}
+`
+	WithOptions(Modes(Default)).
+		Run(t, files, func(t *testing.T, env *Env) {
+			env.OpenFile("a.go")
+			was := env.BufferText("a.go")
+			env.OrganizeImports("a.go")
+			is := env.BufferText("a.go")
+			// expect complaint that module is before 1.22
+			env.AfterChange(Diagnostics(ForFile("a.go")))
+			diff := compare.Text(was, is)
+			// check that it found the 'right' rand
+			if !strings.Contains(diff, `import "math/rand/v2"`) {
+				t.Errorf("expected rand/v2, got %q", diff)
+			}
+			env.OpenFile("b.go")
+			was = env.BufferText("b.go")
+			env.OrganizeImports("b.go")
+			// a.go still has its module problem but b.go is fine
+			env.AfterChange(Diagnostics(ForFile("a.go")),
+				NoDiagnostics(ForFile("b.go")))
+			is = env.BufferText("b.go")
+			diff = compare.Text(was, is)
+			if !strings.Contains(diff, `import "math/rand"`) {
+				t.Errorf("expected math/rand, got %q", diff)
+			}
+		})
 }
 
 func TestVim1(t *testing.T) {
@@ -96,15 +141,21 @@ func main() {
 }
 `
 
-	// The file remains unchanged, but if there are any CodeActions returned, they confuse vim.
-	// Therefore check for no CodeActions
+	// The file remains unchanged, but if there any quick fixes
+	// are returned, they confuse vim (according to CL 233117).
+	// Therefore check for no QuickFix CodeActions.
 	Run(t, "", func(t *testing.T, env *Env) {
 		env.CreateBuffer("main.go", vim1)
 		env.OrganizeImports("main.go")
-		actions := env.CodeAction("main.go", nil)
-		if len(actions) > 0 {
+
+		// Assert no quick fixes.
+		for _, act := range env.CodeActionForFile("main.go", nil) {
+			if act.Kind == protocol.QuickFix {
+				t.Errorf("unexpected quick fix action: %#v", act)
+			}
+		}
+		if t.Failed() {
 			got := env.BufferText("main.go")
-			t.Errorf("unexpected actions %#v", actions)
 			if got == vim1 {
 				t.Errorf("no changes")
 			} else {
@@ -134,9 +185,12 @@ func main() {
 	Run(t, "", func(t *testing.T, env *Env) {
 		env.CreateBuffer("main.go", vim2)
 		env.OrganizeImports("main.go")
-		actions := env.CodeAction("main.go", nil)
-		if len(actions) > 0 {
-			t.Errorf("unexpected actions %#v", actions)
+
+		// Assert no quick fixes.
+		for _, act := range env.CodeActionForFile("main.go", nil) {
+			if act.Kind == protocol.QuickFix {
+				t.Errorf("unexpected quick-fix action: %#v", act)
+			}
 		}
 	})
 }

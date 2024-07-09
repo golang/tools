@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// This file contains tests for the loopclosure checker.
+// This file contains legacy tests for the loopclosure checker.
+// Legacy expectations are incorrect after go1.22.
 
 package testdata
 

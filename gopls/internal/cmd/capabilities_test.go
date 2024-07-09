@@ -40,7 +40,7 @@ func TestCapabilities(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	app := New(nil)
+	app := New()
 
 	params := &protocol.ParamInitialize{}
 	params.RootURI = protocol.URIFromPath(tmpDir)
@@ -48,7 +48,7 @@ func TestCapabilities(t *testing.T) {
 
 	// Send an initialize request to the server.
 	ctx := context.Background()
-	client := newClient(app, nil)
+	client := newClient(app)
 	options := settings.DefaultOptions(app.options)
 	server := server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
 	result, err := server.Initialize(ctx, params)
@@ -149,9 +149,11 @@ func TestCapabilities(t *testing.T) {
 		}
 		// The item's TextEdit must be a pointer, as VS Code considers TextEdits
 		// that don't contain the cursor position to be invalid.
-		var textEdit interface{} = item.TextEdit
-		if _, ok := textEdit.(*protocol.TextEdit); !ok {
-			t.Errorf("textEdit is not a *protocol.TextEdit, instead it is %T", textEdit)
+		var textEdit = item.TextEdit.Value
+		switch textEdit.(type) {
+		case protocol.TextEdit, protocol.InsertReplaceEdit:
+		default:
+			t.Errorf("textEdit is not TextEdit nor InsertReplaceEdit, instead it is %T", textEdit)
 		}
 	}
 	if err := c.Server.Shutdown(ctx); err != nil {

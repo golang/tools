@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cmd"
-	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/drivertest"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/testenv"
@@ -46,12 +46,6 @@ func defaultTimeout() time.Duration {
 
 var runner *Runner
 
-// The integrationTestRunner interface abstracts the Run operation,
-// enables decorators for various optional features.
-type integrationTestRunner interface {
-	Run(t *testing.T, files string, f TestFunc)
-}
-
 func Run(t *testing.T, files string, f TestFunc) {
 	runner.Run(t, files, f)
 }
@@ -80,9 +74,15 @@ func (r configuredRunner) Run(t *testing.T, files string, f TestFunc) {
 	runner.Run(t, files, f, r.opts...)
 }
 
+// RunMultiple runs a test multiple times, with different options.
+// The runner should be constructed with [WithOptions].
+//
+// TODO(rfindley): replace Modes with selective use of RunMultiple.
 type RunMultiple []struct {
 	Name   string
-	Runner integrationTestRunner
+	Runner interface {
+		Run(t *testing.T, files string, f TestFunc)
+	}
 }
 
 func (r RunMultiple) Run(t *testing.T, files string, f TestFunc) {
@@ -98,7 +98,10 @@ func (r RunMultiple) Run(t *testing.T, files string, f TestFunc) {
 func DefaultModes() Mode {
 	modes := Default
 	if !testing.Short() {
-		modes |= Experimental | Forwarded
+		// TODO(rfindley): we should just run a few select integration tests in
+		// "Forwarded" mode, and call it a day. No need to run every single test in
+		// two ways.
+		modes |= Forwarded
 	}
 	if *runSubprocessTests {
 		modes |= SeparateProcess
@@ -106,35 +109,68 @@ func DefaultModes() Mode {
 	return modes
 }
 
+var runFromMain = false // true if Main has been called
+
 // Main sets up and tears down the shared integration test state.
-func Main(m *testing.M, hook func(*settings.Options)) {
+func Main(m *testing.M) (code int) {
+	// Provide an entrypoint for tests that use a fake go/packages driver.
+	drivertest.RunIfChild()
+
+	defer func() {
+		if runner != nil {
+			if err := runner.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "closing test runner: %v\n", err)
+				// Cleanup is broken in go1.12 and earlier, and sometimes flakes on
+				// Windows due to file locking, but this is OK for our CI.
+				//
+				// Fail on go1.13+, except for windows and android which have shutdown problems.
+				if testenv.Go1Point() >= 13 && runtime.GOOS != "windows" && runtime.GOOS != "android" {
+					if code == 0 {
+						code = 1
+					}
+				}
+			}
+		}
+	}()
+
+	runFromMain = true
+
 	// golang/go#54461: enable additional debugging around hanging Go commands.
 	gocommand.DebugHangingGoCommands = true
 
 	// If this magic environment variable is set, run gopls instead of the test
 	// suite. See the documentation for runTestAsGoplsEnvvar for more details.
 	if os.Getenv(runTestAsGoplsEnvvar) == "true" {
-		tool.Main(context.Background(), cmd.New(hook), os.Args[1:])
-		os.Exit(0)
+		tool.Main(context.Background(), cmd.New(), os.Args[1:])
+		return 0
 	}
 
 	if !testenv.HasExec() {
 		fmt.Printf("skipping all tests: exec not supported on %s/%s\n", runtime.GOOS, runtime.GOARCH)
-		os.Exit(0)
+		return 0
 	}
 	testenv.ExitIfSmallMachine()
+
+	flag.Parse()
 
 	// Disable GOPACKAGESDRIVER, as it can cause spurious test failures.
 	os.Setenv("GOPACKAGESDRIVER", "off")
 
-	flag.Parse()
+	if skipReason := checkBuilder(); skipReason != "" {
+		fmt.Printf("Skipping all tests: %s\n", skipReason)
+		return 0
+	}
+
+	if err := testenv.HasTool("go"); err != nil {
+		fmt.Println("Missing go command")
+		return 1
+	}
 
 	runner = &Runner{
 		DefaultModes:             DefaultModes(),
 		Timeout:                  *timeout,
 		PrintGoroutinesOnFailure: *printGoroutinesOnFailure,
 		SkipCleanup:              *skipCleanup,
-		OptionsHook:              hook,
 		store:                    memoize.NewStore(memoize.NeverEvict),
 	}
 
@@ -153,19 +189,5 @@ func Main(m *testing.M, hook func(*settings.Options)) {
 	}
 	runner.tempDir = dir
 
-	var code int
-	defer func() {
-		if err := runner.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "closing test runner: %v\n", err)
-			// Cleanup is broken in go1.12 and earlier, and sometimes flakes on
-			// Windows due to file locking, but this is OK for our CI.
-			//
-			// Fail on go1.13+, except for windows and android which have shutdown problems.
-			if testenv.Go1Point() >= 13 && runtime.GOOS != "windows" && runtime.GOOS != "android" {
-				os.Exit(1)
-			}
-		}
-		os.Exit(code)
-	}()
-	code = m.Run()
+	return m.Run()
 }

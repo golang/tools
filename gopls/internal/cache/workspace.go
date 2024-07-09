@@ -8,17 +8,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"path/filepath"
-	"strings"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
-// TODO(rfindley): now that experimentalWorkspaceModule is gone, this file can
-// be massively cleaned up and/or removed.
+// isGoWork reports if uri is a go.work file.
+func isGoWork(uri protocol.DocumentURI) bool {
+	return filepath.Base(uri.Path()) == "go.work"
+}
 
 // goWorkModules returns the URIs of go.mod files named by the go.work file.
 func goWorkModules(ctx context.Context, gowork protocol.DocumentURI, fs file.Source) (map[protocol.DocumentURI]unit, error) {
@@ -36,16 +36,28 @@ func goWorkModules(ctx context.Context, gowork protocol.DocumentURI, fs file.Sou
 	if err != nil {
 		return nil, fmt.Errorf("parsing go.work: %w", err)
 	}
-	modFiles := make(map[protocol.DocumentURI]unit)
+	var usedDirs []string
 	for _, use := range workFile.Use {
-		modDir := filepath.FromSlash(use.Path)
+		usedDirs = append(usedDirs, use.Path)
+	}
+	return localModFiles(dir, usedDirs), nil
+}
+
+// localModFiles builds a set of local go.mod files referenced by
+// goWorkOrModPaths, which is a slice of paths as contained in a go.work 'use'
+// directive or go.mod 'replace' directive (and which therefore may use either
+// '/' or '\' as a path separator).
+func localModFiles(relativeTo string, goWorkOrModPaths []string) map[protocol.DocumentURI]unit {
+	modFiles := make(map[protocol.DocumentURI]unit)
+	for _, path := range goWorkOrModPaths {
+		modDir := filepath.FromSlash(path)
 		if !filepath.IsAbs(modDir) {
-			modDir = filepath.Join(dir, modDir)
+			modDir = filepath.Join(relativeTo, modDir)
 		}
 		modURI := protocol.URIFromPath(filepath.Join(modDir, "go.mod"))
 		modFiles[modURI] = unit{}
 	}
-	return modFiles, nil
+	return modFiles
 }
 
 // isGoMod reports if uri is a go.mod file.
@@ -53,9 +65,33 @@ func isGoMod(uri protocol.DocumentURI) bool {
 	return filepath.Base(uri.Path()) == "go.mod"
 }
 
-// isGoWork reports if uri is a go.work file.
-func isGoWork(uri protocol.DocumentURI) bool {
-	return filepath.Base(uri.Path()) == "go.work"
+// goModModules returns the URIs of "workspace" go.mod files defined by a
+// go.mod file. This set is defined to be the given go.mod file itself, as well
+// as the modfiles of any locally replaced modules in the go.mod file.
+func goModModules(ctx context.Context, gomod protocol.DocumentURI, fs file.Source) (map[protocol.DocumentURI]unit, error) {
+	fh, err := fs.ReadFile(ctx, gomod)
+	if err != nil {
+		return nil, err // canceled
+	}
+	content, err := fh.Content()
+	if err != nil {
+		return nil, err
+	}
+	filename := gomod.Path()
+	dir := filepath.Dir(filename)
+	modFile, err := modfile.Parse(filename, content, nil)
+	if err != nil {
+		return nil, err
+	}
+	var localReplaces []string
+	for _, replace := range modFile.Replace {
+		if modfile.IsDirectoryPath(replace.New.Path) {
+			localReplaces = append(localReplaces, replace.New.Path)
+		}
+	}
+	modFiles := localModFiles(dir, localReplaces)
+	modFiles[gomod] = unit{}
+	return modFiles, nil
 }
 
 // fileExists reports whether the file has a Content (which may be empty).
@@ -74,50 +110,3 @@ var errExhausted = errors.New("exhausted")
 // Note: per golang/go#56496, the previous limit of 1M files was too slow, at
 // which point this limit was decreased to 100K.
 const fileLimit = 100_000
-
-// findModules recursively walks the root directory looking for go.mod files,
-// returning the set of modules it discovers. If modLimit is non-zero,
-// searching stops once modLimit modules have been found.
-//
-// TODO(rfindley): consider overlays.
-func findModules(root protocol.DocumentURI, excludePath func(string) bool, modLimit int) (map[protocol.DocumentURI]struct{}, error) {
-	// Walk the view's folder to find all modules in the view.
-	modFiles := make(map[protocol.DocumentURI]struct{})
-	searched := 0
-	errDone := errors.New("done")
-	err := filepath.WalkDir(root.Path(), func(path string, info fs.DirEntry, err error) error {
-		if err != nil {
-			// Probably a permission error. Keep looking.
-			return filepath.SkipDir
-		}
-		// For any path that is not the workspace folder, check if the path
-		// would be ignored by the go command. Vendor directories also do not
-		// contain workspace modules.
-		if info.IsDir() && path != root.Path() {
-			suffix := strings.TrimPrefix(path, root.Path())
-			switch {
-			case checkIgnored(suffix),
-				strings.Contains(filepath.ToSlash(suffix), "/vendor/"),
-				excludePath(suffix):
-				return filepath.SkipDir
-			}
-		}
-		// We're only interested in go.mod files.
-		uri := protocol.URIFromPath(path)
-		if isGoMod(uri) {
-			modFiles[uri] = struct{}{}
-		}
-		if modLimit > 0 && len(modFiles) >= modLimit {
-			return errDone
-		}
-		searched++
-		if fileLimit > 0 && searched >= fileLimit {
-			return errExhausted
-		}
-		return nil
-	})
-	if err == errDone {
-		return modFiles, nil
-	}
-	return modFiles, err
-}

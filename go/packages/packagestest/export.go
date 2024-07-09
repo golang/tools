@@ -147,7 +147,7 @@ type Exporter interface {
 
 // All is the list of known exporters.
 // This is used by TestAll to run tests with all the exporters.
-var All []Exporter
+var All = []Exporter{GOPATH, Modules}
 
 // TestAll invokes the testing function once for each exporter registered in
 // the All global.

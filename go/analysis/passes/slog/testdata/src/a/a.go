@@ -107,6 +107,18 @@ func F() {
 	slog.Debug("msg", any(nil), "a", 2)
 	slog.Debug("msg", any(nil), "a", 2, "b") // want `call to slog.Debug has a missing or misplaced value`
 	slog.Debug("msg", any(nil), 2, 3, 4)     // want "slog.Debug arg \\\"3\\\" should probably be a string or a slog.Attr \\(previous arg \\\"2\\\" cannot be a key\\)"
+
+	// In these cases, an argument in key position is an interface, but we can glean useful information about it.
+
+	// An error interface in key position is definitely invalid: it can't be a string
+	// or slog.Attr.
+	var err error
+	slog.Error("msg", err) // want `slog.Error arg "err" should be a string or a slog.Attr`
+
+	// slog.Attr implements fmt.Stringer, but string does not, so assume the arg is an Attr.
+	var stringer fmt.Stringer
+	slog.Info("msg", stringer, "a", 1)
+	slog.Info("msg", stringer, 1) // want `slog.Info arg "1" should be a string or a slog.Attr`
 }
 
 func All() {

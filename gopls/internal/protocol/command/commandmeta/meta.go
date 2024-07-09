@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package commandmeta provides metadata about LSP commands, by analyzing the
-// command.Interface type.
+// Package commandmeta provides metadata about LSP commands, by
+// statically analyzing the command.Interface type.
 package commandmeta
 
 import (
@@ -17,22 +17,18 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/internal/aliases"
+	// (does not depend on gopls itself)
 )
 
+// A Command describes a workspace/executeCommand extension command.
 type Command struct {
-	MethodName string
-	Name       string
-	// TODO(rFindley): I think Title can actually be eliminated. In all cases
-	// where we use it, there is probably a more appropriate contextual title.
-	Title  string
-	Doc    string
-	Args   []*Field
-	Result *Field
-}
-
-func (c *Command) ID() string {
-	return command.ID(c.Name)
+	MethodName string // e.g. "RunTests"
+	Name       string // e.g. "gopls.run_tests"
+	Title      string
+	Doc        string
+	Args       []*Field
+	Result     *Field
 }
 
 type Field struct {
@@ -46,7 +42,9 @@ type Field struct {
 	Fields []*Field
 }
 
-func Load() (*packages.Package, []*Command, error) {
+// Load returns a description of the workspace/executeCommand commands
+// supported by gopls based on static analysis of the command.Interface type.
+func Load() ([]*Command, error) {
 	pkgs, err := packages.Load(
 		&packages.Config{
 			Mode:       packages.NeedTypes | packages.NeedTypesInfo | packages.NeedSyntax | packages.NeedImports | packages.NeedDeps,
@@ -55,17 +53,15 @@ func Load() (*packages.Package, []*Command, error) {
 		"golang.org/x/tools/gopls/internal/protocol/command",
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("packages.Load: %v", err)
+		return nil, fmt.Errorf("packages.Load: %v", err)
 	}
 	pkg := pkgs[0]
 	if len(pkg.Errors) > 0 {
-		return pkg, nil, pkg.Errors[0]
+		return nil, pkg.Errors[0]
 	}
 
-	// For a bit of type safety, use reflection to get the interface name within
-	// the package scope.
-	it := reflect.TypeOf((*command.Interface)(nil)).Elem()
-	obj := pkg.Types.Scope().Lookup(it.Name()).Type().Underlying().(*types.Interface)
+	// command.Interface
+	obj := pkg.Types.Scope().Lookup("Interface").Type().Underlying().(*types.Interface)
 
 	// Load command metadata corresponding to each interface method.
 	var commands []*Command
@@ -74,11 +70,11 @@ func Load() (*packages.Package, []*Command, error) {
 		m := obj.Method(i)
 		c, err := loader.loadMethod(pkg, m)
 		if err != nil {
-			return nil, nil, fmt.Errorf("loading %s: %v", m.Name(), err)
+			return nil, fmt.Errorf("loading %s: %v", m.Name(), err)
 		}
 		commands = append(commands, c)
 	}
-	return pkg, commands, nil
+	return commands, nil
 }
 
 // fieldLoader loads field information, memoizing results to prevent infinite
@@ -126,7 +122,7 @@ func (l *fieldLoader) loadMethod(pkg *packages.Package, m *types.Func) (*Command
 		if i == 0 {
 			// Lazy check that the first argument is a context. We could relax this,
 			// but then the generated code gets more complicated.
-			if named, ok := fld.Type.(*types.Named); !ok || named.Obj().Name() != "Context" || named.Obj().Pkg().Path() != "context" {
+			if named, ok := aliases.Unalias(fld.Type).(*types.Named); !ok || named.Obj().Name() != "Context" || named.Obj().Pkg().Path() != "context" {
 				return nil, fmt.Errorf("first method parameter must be context.Context")
 			}
 			// Skip the context argument, as it is implied.
@@ -207,7 +203,7 @@ func lspName(methodName string) string {
 	for i := range words {
 		words[i] = strings.ToLower(words[i])
 	}
-	return strings.Join(words, "_")
+	return "gopls." + strings.Join(words, "_")
 }
 
 // splitCamel splits s into words, according to camel-case word boundaries.

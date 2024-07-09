@@ -25,9 +25,9 @@ import (
 	"golang.org/x/tools/internal/refactor/inline"
 )
 
-// EnclosingStaticCall returns the innermost function call enclosing
+// enclosingStaticCall returns the innermost function call enclosing
 // the selected range, along with the callee.
-func EnclosingStaticCall(pkg *cache.Package, pgf *ParsedGoFile, start, end token.Pos) (*ast.CallExpr, *types.Func, error) {
+func enclosingStaticCall(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*ast.CallExpr, *types.Func, error) {
 	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 
 	var call *ast.CallExpr
@@ -47,7 +47,7 @@ loop:
 	if safetoken.Line(pgf.Tok, call.Lparen) != safetoken.Line(pgf.Tok, start) {
 		return nil, nil, fmt.Errorf("enclosing call is not on this line")
 	}
-	fn := typeutil.StaticCallee(pkg.GetTypesInfo(), call)
+	fn := typeutil.StaticCallee(pkg.TypesInfo(), call)
 	if fn == nil {
 		return nil, nil, fmt.Errorf("not a static call to a Go function")
 	}
@@ -56,7 +56,7 @@ loop:
 
 func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.Package, callerPGF *parsego.File, start, end token.Pos) (_ *token.FileSet, _ *analysis.SuggestedFix, err error) {
 	// Find enclosing static call.
-	call, fn, err := EnclosingStaticCall(callerPkg, callerPGF, start, end)
+	call, fn, err := enclosingStaticCall(callerPkg, callerPGF, start, end)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -85,7 +85,7 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 	// but that is frequently not the case within gopls.
 	// Until we are able to harden the inliner,
 	// report panics as errors to avoid crashing the server.
-	bad := func(p *cache.Package) bool { return len(p.GetParseErrors())+len(p.GetTypeErrors()) > 0 }
+	bad := func(p *cache.Package) bool { return len(p.ParseErrors())+len(p.TypeErrors()) > 0 }
 	if bad(calleePkg) || bad(callerPkg) {
 		defer func() {
 			if x := recover(); x != nil {
@@ -98,7 +98,7 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 	// why a particular inlining strategy was chosen.
 	logf := logger(ctx, "inliner", snapshot.Options().VerboseOutput)
 
-	callee, err := inline.AnalyzeCallee(logf, calleePkg.FileSet(), calleePkg.GetTypes(), calleePkg.GetTypesInfo(), calleeDecl, calleePGF.Src)
+	callee, err := inline.AnalyzeCallee(logf, calleePkg.FileSet(), calleePkg.Types(), calleePkg.TypesInfo(), calleeDecl, calleePGF.Src)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -106,21 +106,21 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 	// Inline the call.
 	caller := &inline.Caller{
 		Fset:    callerPkg.FileSet(),
-		Types:   callerPkg.GetTypes(),
-		Info:    callerPkg.GetTypesInfo(),
+		Types:   callerPkg.Types(),
+		Info:    callerPkg.TypesInfo(),
 		File:    callerPGF.File,
 		Call:    call,
 		Content: callerPGF.Src,
 	}
 
-	got, err := inline.Inline(logf, caller, callee)
+	res, err := inline.Inline(caller, callee, &inline.Options{Logf: logf})
 	if err != nil {
 		return nil, nil, err
 	}
 
 	return callerPkg.FileSet(), &analysis.SuggestedFix{
 		Message:   fmt.Sprintf("inline call of %v", callee),
-		TextEdits: diffToTextEdits(callerPGF.Tok, diff.Bytes(callerPGF.Src, got)),
+		TextEdits: diffToTextEdits(callerPGF.Tok, diff.Bytes(callerPGF.Src, res.Content)),
 	}, nil
 }
 

@@ -45,7 +45,10 @@ var checkGoBuild struct {
 	err  error
 }
 
-func hasTool(tool string) error {
+// HasTool reports an error if the required tool is not available in PATH.
+//
+// For certain tools, it checks that the tool executable is correct.
+func HasTool(tool string) error {
 	if tool == "cgo" {
 		enabled, err := cgoEnabled(false)
 		if err != nil {
@@ -83,8 +86,11 @@ func hasTool(tool string) error {
 				// GOROOT. Otherwise, 'some/path/go test ./...' will test against some
 				// version of the 'go' binary other than 'some/path/go', which is almost
 				// certainly not what the user intended.
-				out, err := exec.Command(tool, "env", "GOROOT").CombinedOutput()
+				out, err := exec.Command(tool, "env", "GOROOT").Output()
 				if err != nil {
+					if exit, ok := err.(*exec.ExitError); ok && len(exit.Stderr) > 0 {
+						err = fmt.Errorf("%w\nstderr:\n%s)", err, exit.Stderr)
+					}
 					checkGoBuild.err = err
 					return
 				}
@@ -141,8 +147,11 @@ func cgoEnabled(bypassEnvironment bool) (bool, error) {
 	if bypassEnvironment {
 		cmd.Env = append(append([]string(nil), os.Environ()...), "CGO_ENABLED=")
 	}
-	out, err := cmd.CombinedOutput()
+	out, err := cmd.Output()
 	if err != nil {
+		if exit, ok := err.(*exec.ExitError); ok && len(exit.Stderr) > 0 {
+			err = fmt.Errorf("%w\nstderr:\n%s", err, exit.Stderr)
+		}
 		return false, err
 	}
 	enabled := strings.TrimSpace(string(out))
@@ -192,13 +201,19 @@ func allowMissingTool(tool string) bool {
 // NeedsTool skips t if the named tool is not present in the path.
 // As a special case, "cgo" means "go" is present and can compile cgo programs.
 func NeedsTool(t testing.TB, tool string) {
-	err := hasTool(tool)
+	err := HasTool(tool)
 	if err == nil {
 		return
 	}
 
 	t.Helper()
 	if allowMissingTool(tool) {
+		// TODO(adonovan): if we skip because of (e.g.)
+		// mismatched go env GOROOT and runtime.GOROOT, don't
+		// we risk some users not getting the coverage they expect?
+		// bcmills notes: this shouldn't be a concern as of CL 404134 (Go 1.19).
+		// We could probably safely get rid of that GOPATH consistency
+		// check entirely at this point.
 		t.Skipf("skipping because %s tool not available: %v", tool, err)
 	} else {
 		t.Fatalf("%s tool not available: %v", tool, err)

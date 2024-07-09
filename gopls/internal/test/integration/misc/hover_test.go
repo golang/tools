@@ -6,9 +6,11 @@ package misc
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/protocol"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
@@ -512,5 +514,211 @@ func _() {
 		env.OpenFile("p.go")
 		// This request should not crash gopls.
 		_, _, _ = env.Editor.Hover(env.Ctx, env.RegexpSearch("p.go", "foo[.]"))
+	})
+}
+
+func TestHoverInternalLinks(t *testing.T) {
+	const src = `
+-- main.go --
+package main
+
+import "errors"
+
+func main() {
+	errors.New("oops")
+}
+`
+	for _, test := range []struct {
+		linksInHover any    // JSON configuration value
+		wantRE       string // pattern to match the Hover Markdown output
+	}{
+		{
+			true, // default: use options.LinkTarget domain
+			regexp.QuoteMeta("[`errors.New` on pkg.go.dev](https://pkg.go.dev/errors#New)"),
+		},
+		{
+			"gopls", // use gopls' internal viewer
+			"\\[`errors.New` in gopls doc viewer\\]\\(http://127.0.0.1:[0-9]+/gopls/[^/]+/pkg/errors\\?view=[0-9]+#New\\)",
+		},
+	} {
+		WithOptions(
+			Settings{"linksInHover": test.linksInHover},
+		).Run(t, src, func(t *testing.T, env *Env) {
+			env.OpenFile("main.go")
+			got, _ := env.Hover(env.RegexpSearch("main.go", "New"))
+			if m, err := regexp.MatchString(test.wantRE, got.Value); err != nil {
+				t.Fatalf("bad regexp in test: %v", err)
+			} else if !m {
+				t.Fatalf("hover output does not match %q; got:\n\n%s", test.wantRE, got.Value)
+			}
+		})
+	}
+}
+
+func TestHoverInternalLinksIssue68116(t *testing.T) {
+	// Links for the internal viewer should not include a module version suffix:
+	// the package path and the view are an unambiguous key; see #68116.
+
+	const proxy = `
+-- example.com@v1.2.3/go.mod --
+module example.com
+
+go 1.12
+
+-- example.com@v1.2.3/a/a.go --
+package a
+
+// F is a function.
+func F()
+`
+
+	const mod = `
+-- go.mod --
+module main
+
+go 1.12
+
+require example.com v1.2.3
+
+-- main.go --
+package main
+
+import "example.com/a"
+
+func main() {
+	a.F()
+}
+`
+	WithOptions(
+		ProxyFiles(proxy),
+		Settings{"linksInHover": "gopls"},
+		WriteGoSum("."),
+	).Run(t, mod, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		got, _ := env.Hover(env.RegexpSearch("main.go", "F"))
+		const wantRE = "\\[`a.F` in gopls doc viewer\\]\\(http://127.0.0.1:[0-9]+/gopls/[^/]+/pkg/example.com\\?view=[0-9]+#F\\)" // no version
+		if m, err := regexp.MatchString(wantRE, got.Value); err != nil {
+			t.Fatalf("bad regexp in test: %v", err)
+		} else if !m {
+			t.Fatalf("hover output does not match %q; got:\n\n%s", wantRE, got.Value)
+		}
+	})
+}
+
+func TestHoverBuiltinFile(t *testing.T) {
+	testenv.NeedsGo1Point(t, 21) // uses 'min'
+
+	// This test verifies that hovering in the builtin file provides the same
+	// hover content as hovering over a use of a builtin.
+
+	const src = `
+-- p.go --
+package p
+
+func _() {
+	const (
+		_ = iota
+		_ = true
+	)
+	var (
+		_ any
+		err error = e{} // avoid nil deref warning
+	)
+	_ = err.Error
+	println("Hello")
+	_ = min(1, 2)
+}
+
+// e implements Error, for use above.
+type e struct{}
+func (e) Error() string
+`
+
+	// Test hovering over various builtins with different kinds of declarations.
+	tests := []string{
+		"iota",
+		"true",
+		"any",
+		"error",
+		"Error",
+		"println",
+		"min",
+	}
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("p.go")
+		env.AfterChange(NoDiagnostics()) // avoid accidental compiler errors
+
+		for _, builtin := range tests {
+			useLocation := env.RegexpSearch("p.go", builtin)
+			calleeHover, _ := env.Hover(useLocation)
+			declLocation := env.GoToDefinition(useLocation)
+			declHover, _ := env.Hover(declLocation)
+			if diff := cmp.Diff(calleeHover, declHover); diff != "" {
+				t.Errorf("Hover mismatch (-callee hover +decl hover):\n%s", diff)
+			}
+		}
+	})
+}
+
+func TestHoverStdlibWithAvailableVersion(t *testing.T) {
+	const src = `
+-- stdlib.go --
+package stdlib
+
+import "fmt"
+import "context"
+import "crypto"
+import "regexp"
+import "go/doc/comment"
+
+type testRegexp = *regexp.Regexp
+
+func _() {
+	var ctx context.Context
+	ctx = context.Background()
+	if ctx.Err(); e == context.Canceled {
+		fmt.Println("Canceled")
+		fmt.Printf("%v", crypto.SHA512_224)
+	}
+	_ := fmt.Appendf(make([]byte, 100), "world, %d", 23)
+
+	var re = regexp.MustCompile("\n{2,}")
+	copy := re.Copy()
+	var testRE testRegexp
+	testRE.Longest()
+
+	var pr comment.Printer
+	pr.HeadingID = func(*comment.Heading) string { return "" }
+}
+`
+
+	testcases := []struct {
+		symbolRE      string // regexp matching symbol to hover over
+		shouldContain bool
+		targetString  string
+	}{
+		{"Println", false, "go1.0"},   // package-level func
+		{"Appendf", true, "go1.19"},   // package-level func
+		{"Background", true, "go1.7"}, // package-level func
+		{"Canceled", true, "go1.7"},   // package-level var
+		{"Context", true, "go1.7"},    // package-level type
+		{"SHA512_224", true, "go1.5"}, // package-level const
+		{"Copy", true, "go1.6"},       // method
+		{"Longest", true, "go1.1"},    // method with alias receiver
+		{"HeadingID", true, "go1.19"}, // field
+	}
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("stdlib.go")
+		for _, tc := range testcases {
+			content, _ := env.Hover(env.RegexpSearch("stdlib.go", tc.symbolRE))
+			if tc.shouldContain && !strings.Contains(content.Value, tc.targetString) {
+				t.Errorf("Hover(%q) should contain string %s", tc.symbolRE, tc.targetString)
+			}
+			if !tc.shouldContain && strings.Contains(content.Value, tc.targetString) {
+				t.Errorf("Hover(%q) should not contain string %s", tc.symbolRE, tc.targetString)
+			}
+		}
 	})
 }

@@ -149,6 +149,11 @@ func (w *Workdir) URIToPath(uri protocol.DocumentURI) string {
 	return w.RelPath(uri.Path())
 }
 
+// EntireFile returns the entire extent of the file named by the workdir-relative path.
+func (w *Workdir) EntireFile(path string) protocol.Location {
+	return protocol.Location{URI: w.URI(path)}
+}
+
 // ReadFile reads a text file specified by a workdir-relative path.
 func (w *Workdir) ReadFile(path string) ([]byte, error) {
 	backoff := 1 * time.Millisecond

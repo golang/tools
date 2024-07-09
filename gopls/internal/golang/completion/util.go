@@ -13,7 +13,9 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // exprAtPos returns the index of the expression containing pos.
@@ -38,7 +40,10 @@ func eachField(T types.Type, fn func(*types.Var)) {
 
 	var visit func(T types.Type)
 	visit = func(T types.Type) {
-		if T, ok := golang.Deref(T).Underlying().(*types.Struct); ok {
+		// T may be a Struct, optionally Named, with an optional
+		// Pointer (with optional Aliases at every step!):
+		// Consider: type T *struct{ f int }; _ = T(nil).f
+		if T, ok := typeparams.Deref(T).Underlying().(*types.Struct); ok {
 			if seen.At(T) != nil {
 				return
 			}
@@ -60,7 +65,7 @@ func eachField(T types.Type, fn func(*types.Var)) {
 func typeIsValid(typ types.Type) bool {
 	// Check named types separately, because we don't want
 	// to call Underlying() on them to avoid problems with recursive types.
-	if _, ok := typ.(*types.Named); ok {
+	if _, ok := aliases.Unalias(typ).(*types.Named); ok {
 		return true
 	}
 
@@ -125,46 +130,36 @@ func resolveInvalid(fset *token.FileSet, obj types.Object, node ast.Node, info *
 	return types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), typ)
 }
 
-func isPointer(T types.Type) bool {
-	_, ok := T.(*types.Pointer)
-	return ok
-}
+// TODO(adonovan): inline these.
+func isVar(obj types.Object) bool      { return is[*types.Var](obj) }
+func isTypeName(obj types.Object) bool { return is[*types.TypeName](obj) }
+func isFunc(obj types.Object) bool     { return is[*types.Func](obj) }
+func isPkgName(obj types.Object) bool  { return is[*types.PkgName](obj) }
 
-func isVar(obj types.Object) bool {
-	_, ok := obj.(*types.Var)
-	return ok
-}
+// isPointer reports whether T is a Pointer, or an alias of one.
+// It returns false for a Named type whose Underlying is a Pointer.
+//
+// TODO(adonovan): shouldn't this use CoreType(T)?
+func isPointer(T types.Type) bool { return is[*types.Pointer](aliases.Unalias(T)) }
 
-func isTypeName(obj types.Object) bool {
-	_, ok := obj.(*types.TypeName)
-	return ok
-}
-
-func isFunc(obj types.Object) bool {
-	_, ok := obj.(*types.Func)
-	return ok
-}
-
+// isEmptyInterface whether T is a (possibly Named or Alias) empty interface
+// type, such that every type is assignable to T.
+//
+// isEmptyInterface returns false for type parameters, since they have
+// different assignability rules.
 func isEmptyInterface(T types.Type) bool {
-	intf, _ := T.(*types.Interface)
-	return intf != nil && intf.NumMethods() == 0 && intf.IsMethodSet()
+	if _, ok := T.(*types.TypeParam); ok {
+		return false
+	}
+	intf, _ := T.Underlying().(*types.Interface)
+	return intf != nil && intf.Empty()
 }
 
 func isUntyped(T types.Type) bool {
-	if basic, ok := T.(*types.Basic); ok {
+	if basic, ok := aliases.Unalias(T).(*types.Basic); ok {
 		return basic.Info()&types.IsUntyped > 0
 	}
 	return false
-}
-
-func isPkgName(obj types.Object) bool {
-	_, ok := obj.(*types.PkgName)
-	return ok
-}
-
-func isASTFile(n ast.Node) bool {
-	_, ok := n.(*ast.File)
-	return ok
 }
 
 func deslice(T types.Type) types.Type {
@@ -185,6 +180,7 @@ func enclosingSelector(path []ast.Node, pos token.Pos) *ast.SelectorExpr {
 		return sel
 	}
 
+	// TODO(adonovan): consider ast.ParenExpr (e.g. (x).name)
 	if _, ok := path[0].(*ast.Ident); ok && len(path) > 1 {
 		if sel, ok := path[1].(*ast.SelectorExpr); ok && pos >= sel.Sel.Pos() {
 			return sel
@@ -325,7 +321,8 @@ func (c *completer) editText(from, to token.Pos, newText string) ([]protocol.Tex
 // assignableTo is like types.AssignableTo, but returns false if
 // either type is invalid.
 func assignableTo(x, to types.Type) bool {
-	if x == types.Typ[types.Invalid] || to == types.Typ[types.Invalid] {
+	if aliases.Unalias(x) == types.Typ[types.Invalid] ||
+		aliases.Unalias(to) == types.Typ[types.Invalid] {
 		return false
 	}
 
@@ -335,7 +332,8 @@ func assignableTo(x, to types.Type) bool {
 // convertibleTo is like types.ConvertibleTo, but returns false if
 // either type is invalid.
 func convertibleTo(x, to types.Type) bool {
-	if x == types.Typ[types.Invalid] || to == types.Typ[types.Invalid] {
+	if aliases.Unalias(x) == types.Typ[types.Invalid] ||
+		aliases.Unalias(to) == types.Typ[types.Invalid] {
 		return false
 	}
 

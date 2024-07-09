@@ -96,11 +96,11 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 
 		meth := prog.FuncValue(obj)
 
-		var cr creator
+		b := &builder{}
 		intSliceTyp := types.NewSlice(types.Typ[types.Int])
-		instance := meth.instance([]types.Type{intSliceTyp}, &cr)
-		if len(cr) != 1 {
-			t.Errorf("Expected first instance to create a function. got %d created functions", len(cr))
+		instance := meth.instance([]types.Type{intSliceTyp}, b)
+		if len(b.fns) != 1 {
+			t.Errorf("Expected first instance to create a function. got %d created functions", len(b.fns))
 		}
 		if instance.Origin() != meth {
 			t.Errorf("Expected Origin of %s to be %s. got %s", instance, meth, instance.Origin())
@@ -114,13 +114,13 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 		}
 
 		// A second request with an identical type returns the same Function.
-		second := meth.instance([]types.Type{types.NewSlice(types.Typ[types.Int])}, &cr)
-		if second != instance || len(cr) != 1 {
+		second := meth.instance([]types.Type{types.NewSlice(types.Typ[types.Int])}, b)
+		if second != instance || len(b.fns) != 1 {
 			t.Error("Expected second identical instantiation to not create a function")
 		}
 
 		// Add a second instance.
-		inst2 := meth.instance([]types.Type{types.NewSlice(types.Typ[types.Uint])}, &cr)
+		inst2 := meth.instance([]types.Type{types.NewSlice(types.Typ[types.Uint])}, b)
 		instances = allInstances(meth)
 
 		// Note: instance.Name() < inst2.Name()
@@ -134,7 +134,6 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 		// TODO(adonovan): tests should not rely on unexported functions.
 
 		// build and sanity check manually created instance.
-		var b builder
 		b.buildFunction(instance)
 		var buf bytes.Buffer
 		if !sanityCheck(instance, &buf) {

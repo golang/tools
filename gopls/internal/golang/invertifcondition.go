@@ -18,7 +18,7 @@ import (
 
 // invertIfCondition is a singleFileFixFunc that inverts an if/else statement
 func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, _ *types.Package, _ *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	ifStatement, _, err := CanInvertIfCondition(file, start, end)
+	ifStatement, _, err := canInvertIfCondition(file, start, end)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -239,9 +239,9 @@ func invertAndOr(fset *token.FileSet, expr *ast.BinaryExpr, src []byte) ([]byte,
 	return []byte(string(invertedBefore) + string(whitespaceAfterBefore) + newOpWithTrailingWhitespace + string(invertedAfter)), nil
 }
 
-// CanInvertIfCondition reports whether we can do invert-if-condition on the
+// canInvertIfCondition reports whether we can do invert-if-condition on the
 // code in the given range
-func CanInvertIfCondition(file *ast.File, start, end token.Pos) (*ast.IfStmt, bool, error) {
+func canInvertIfCondition(file *ast.File, start, end token.Pos) (*ast.IfStmt, bool, error) {
 	path, _ := astutil.PathEnclosingInterval(file, start, end)
 	for _, node := range path {
 		stmt, isIfStatement := node.(*ast.IfStmt)

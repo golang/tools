@@ -1,0 +1,65 @@
+This test verifies that gopls can remove unused parameters from methods,
+when that method satisfies an interface.
+
+For now, we just update static calls. In the future, we should compute the set
+of dynamic calls that must change (and therefore, the set of concrete functions
+that must be modified), in order to produce the desired outcome for our users.
+
+Doing so would be more complicated, so for now this test simply records the
+current behavior.
+
+-- flags --
+-min_go=go1.20
+
+-- go.mod --
+module example.com/rm
+
+go 1.20
+
+-- p.go --
+package rm
+
+type T int
+
+func (t T) Foo(x int) { //@codeaction("x", "x", "refactor.rewrite", basic)
+}
+
+-- use/use.go --
+package use
+
+import "example.com/rm"
+
+type Fooer interface{
+	Foo(int)
+}
+
+var _ Fooer = rm.T(0)
+
+func _() {
+	var x rm.T
+	x.Foo(1)
+}
+-- @basic/p.go --
+package rm
+
+type T int
+
+func (t T) Foo() { //@codeaction("x", "x", "refactor.rewrite", basic)
+}
+
+-- @basic/use/use.go --
+package use
+
+import "example.com/rm"
+
+type Fooer interface {
+	Foo(int)
+}
+
+var _ Fooer = rm.T(0)
+
+func _() {
+	var x rm.T
+	var t rm.T = x
+	t.Foo()
+}

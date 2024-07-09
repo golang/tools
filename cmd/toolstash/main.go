@@ -423,7 +423,7 @@ func sameObject(file1, file2 string) bool {
 			log.Fatalf("reading %s: %v", file1, err1)
 		}
 		if err2 != nil {
-			log.Fatalf("reading %s: %v", file2, err1)
+			log.Fatalf("reading %s: %v", file2, err2)
 		}
 		if c1 != c2 {
 			return false
@@ -450,7 +450,7 @@ func skipVersion(b1, b2 *bufio.Reader, file1, file2 string) bool {
 			log.Fatalf("reading %s: %v", file1, err1)
 		}
 		if err2 != nil {
-			log.Fatalf("reading %s: %v", file2, err1)
+			log.Fatalf("reading %s: %v", file2, err2)
 		}
 		if c1 != c2 {
 			return false
@@ -473,7 +473,7 @@ func skipVersion(b1, b2 *bufio.Reader, file1, file2 string) bool {
 			log.Fatalf("reading %s: %v", file1, err1)
 		}
 		if err2 != nil {
-			log.Fatalf("reading %s: %v", file2, err1)
+			log.Fatalf("reading %s: %v", file2, err2)
 		}
 		if c1 != c2 {
 			return false

@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 )
 
 const Doc = `check for calls of reflect.DeepEqual on error values
@@ -101,7 +102,7 @@ func containsError(typ types.Type) bool {
 					return true
 				}
 			}
-		case *types.Named:
+		case *types.Named, *aliases.Alias:
 			return check(t.Underlying())
 
 		// We list the remaining valid type kinds for completeness.

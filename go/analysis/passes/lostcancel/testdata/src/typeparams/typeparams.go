@@ -4,8 +4,6 @@
 
 // This file contains tests for the lostcancel checker.
 
-//go:build go1.18
-
 package typeparams
 
 import (
@@ -20,7 +18,7 @@ func _[T any]() {
 	if false {
 		_ = cancel
 	}
-} // want "this return statement may be reached without using the cancel var defined on line 19"
+} // want "this return statement may be reached without using the cancel var defined on line 17"
 
 func _[T any]() {
 	_, cancel := context.WithCancel(bg)

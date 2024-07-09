@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -64,7 +65,7 @@ type falconType struct {
 //     cannot be eliminated by substitution as its argument value is
 //     negative.
 //
-//   - When inlining sub("", 2, 1), all three parameters cannot be be
+//   - When inlining sub("", 2, 1), all three parameters cannot be
 //     simultaneously eliminated by substitution without violating i
 //     <= len(s) and j <= len(s), but the parameters i and j could be
 //     safely eliminated without s.
@@ -422,7 +423,7 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 		if e.Type != nil {
 			_ = st.expr(e.Type)
 		}
-		t := deref(typeparams.CoreType(deref(tv.Type)))
+		t := aliases.Unalias(typeparams.Deref(tv.Type))
 		var uniques []ast.Expr
 		for _, elt := range e.Elts {
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {
@@ -507,7 +508,7 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 				if kX != nil {
 					// string
 					x = st.toExpr(kX)
-				} else if arr, ok := deref(st.info.TypeOf(e.X).Underlying()).(*types.Array); ok {
+				} else if arr, ok := typeparams.CoreType(typeparams.Deref(st.info.TypeOf(e.X))).(*types.Array); ok {
 					// array, *array
 					x = &ast.CompositeLit{
 						Type: &ast.ArrayType{
@@ -572,7 +573,7 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 		if kX != nil {
 			// string
 			x = st.toExpr(kX)
-		} else if arr, ok := deref(st.info.TypeOf(e.X).Underlying()).(*types.Array); ok {
+		} else if arr, ok := typeparams.CoreType(typeparams.Deref(st.info.TypeOf(e.X))).(*types.Array); ok {
 			// array, *array
 			x = &ast.CompositeLit{
 				Type: &ast.ArrayType{

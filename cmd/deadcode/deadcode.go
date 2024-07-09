@@ -26,13 +26,13 @@ import (
 	"strings"
 	"text/template"
 
-	"golang.org/x/telemetry/counter"
-	"golang.org/x/telemetry/crashmonitor"
+	"golang.org/x/telemetry"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/rta"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -64,8 +64,7 @@ Flags:
 }
 
 func main() {
-	counter.Open()       // Enable telemetry counter writing.
-	crashmonitor.Start() // Enable crash reporting watchdog.
+	telemetry.Start(telemetry.Config{ReportCrashes: true})
 
 	log.SetPrefix("deadcode: ")
 	log.SetFlags(0) // no time prefix
@@ -131,16 +130,6 @@ func main() {
 		log.Fatalf("packages contain errors")
 	}
 
-	// Gather names of generated files.
-	generated := make(map[string]bool)
-	packages.Visit(initial, nil, func(p *packages.Package) {
-		for _, file := range p.Syntax {
-			if isGenerated(file) {
-				generated[p.Fset.File(file.Pos()).Name()] = true
-			}
-		}
-	})
-
 	// If -filter is unset, use first module (if available).
 	if *filterFlag == "<module>" {
 		if mod := initial[0].Module; mod != nil && mod.Path != "" {
@@ -168,6 +157,32 @@ func main() {
 		roots = append(roots, main.Func("init"), main.Func("main"))
 	}
 
+	// Gather all source-level functions,
+	// as the user interface is expressed in terms of them.
+	//
+	// We ignore synthetic wrappers, and nested functions. Literal
+	// functions passed as arguments to other functions are of
+	// course address-taken and there exists a dynamic call of
+	// that signature, so when they are unreachable, it is
+	// invariably because the parent is unreachable.
+	var sourceFuncs []*ssa.Function
+	generated := make(map[string]bool)
+	packages.Visit(initial, nil, func(p *packages.Package) {
+		for _, file := range p.Syntax {
+			for _, decl := range file.Decls {
+				if decl, ok := decl.(*ast.FuncDecl); ok {
+					obj := p.TypesInfo.Defs[decl.Name].(*types.Func)
+					fn := prog.FuncValue(obj)
+					sourceFuncs = append(sourceFuncs, fn)
+				}
+			}
+
+			if isGenerated(file) {
+				generated[p.Fset.File(file.Pos()).Name()] = true
+			}
+		}
+	})
+
 	// Compute the reachabilty from main.
 	// (Build a call graph only for -whylive.)
 	res := rta.Analyze(roots, *whyLiveFlag != "")
@@ -194,10 +209,7 @@ func main() {
 	// is not dead, by showing a path to it from some root.
 	if *whyLiveFlag != "" {
 		targets := make(map[*ssa.Function]bool)
-		for fn := range ssautil.AllFunctions(prog) {
-			if fn.Synthetic != "" || fn.Object() == nil {
-				continue // not a source-level named function
-			}
+		for _, fn := range sourceFuncs {
 			if prettyName(fn, true) == *whyLiveFlag {
 				targets[fn] = true
 			}
@@ -248,7 +260,7 @@ func main() {
 			edges = append(edges, jsonEdge{
 				Initial:  cond(len(edges) == 0, prettyName(edge.Caller.Func, true), ""),
 				Kind:     cond(isStaticCall(edge), "static", "dynamic"),
-				Position: toJSONPosition(prog.Fset.Position(edge.Site.Pos())),
+				Position: toJSONPosition(prog.Fset.Position(edge.Pos())),
 				Callee:   prettyName(edge.Callee.Func, true),
 			})
 		}
@@ -262,26 +274,7 @@ func main() {
 
 	// Group unreachable functions by package path.
 	byPkgPath := make(map[string]map[*ssa.Function]bool)
-	for fn := range ssautil.AllFunctions(prog) {
-		if fn.Synthetic != "" {
-			continue // ignore synthetic wrappers etc
-		}
-
-		// Use generic, as instantiations may not have a Pkg.
-		if orig := fn.Origin(); orig != nil {
-			fn = orig
-		}
-
-		// Ignore unreachable nested functions.
-		// Literal functions passed as arguments to other
-		// functions are of course address-taken and there
-		// exists a dynamic call of that signature, so when
-		// they are unreachable, it is invariably because the
-		// parent is unreachable.
-		if fn.Parent() != nil {
-			continue
-		}
-
+	for _, fn := range sourceFuncs {
 		posn := prog.Fset.Position(fn.Pos())
 
 		if !reachablePosn[posn] {
@@ -384,11 +377,8 @@ func prettyName(fn *ssa.Function, qualified bool) string {
 
 		// method receiver?
 		if recv := fn.Signature.Recv(); recv != nil {
-			t := recv.Type()
-			if ptr, ok := t.(*types.Pointer); ok {
-				t = ptr.Elem()
-			}
-			buf.WriteString(t.(*types.Named).Obj().Name())
+			_, named := typesinternal.ReceiverNamed(recv)
+			buf.WriteString(named.Obj().Name())
 			buf.WriteByte('.')
 		}
 

@@ -44,7 +44,7 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
 		return tool.CommandLineErrorf("links expects 1 argument")
 	}
-	conn, err := l.app.connect(ctx, nil)
+	conn, err := l.app.connect(ctx)
 	if err != nil {
 		return err
 	}

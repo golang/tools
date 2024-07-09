@@ -4,7 +4,11 @@
 
 package file
 
-import "fmt"
+import (
+	"fmt"
+
+	"golang.org/x/tools/gopls/internal/protocol"
+)
 
 // Kind describes the kind of the file in question.
 // It can be one of Go,mod, Sum, or Tmpl.
@@ -43,10 +47,10 @@ func (k Kind) String() string {
 	}
 }
 
-// KindForLang returns the file kind associated with the given language ID
-// (from protocol.TextDocumentItem.LanguageID), or UnknownKind if the language
-// ID is not recognized.
-func KindForLang(langID string) Kind {
+// KindForLang returns the gopls file [Kind] associated with the given LSP
+// LanguageKind string from protocol.TextDocumentItem.LanguageID,
+// or UnknownKind if the language is not one recognized by gopls.
+func KindForLang(langID protocol.LanguageKind) Kind {
 	switch langID {
 	case "go":
 		return Go

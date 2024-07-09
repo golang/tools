@@ -39,11 +39,11 @@ func hello() {
 
 
 
-	var x int //@diag("x", re"x declared (and|but) not used")
+	var x int //@diag("x", re"declared (and|but) not used")
 }
 
 func hi() {
-	runtime.GOROOT()
+	runtime.NumCPU()
 	fmt.Printf("")
 
 	log.Printf("")
@@ -59,11 +59,11 @@ import (
 
 func hello() {
 
-	var x int //@diag("x", re"x declared (and|but) not used")
+	var x int //@diag("x", re"declared (and|but) not used")
 }
 
 func hi() {
-	runtime.GOROOT()
+	runtime.NumCPU()
 	fmt.Printf("")
 
 	log.Printf("")

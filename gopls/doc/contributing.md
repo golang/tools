@@ -1,4 +1,4 @@
-# Documentation for contributors
+# Gopls: Documentation for contributors
 
 This documentation augments the general documentation for contributing to the
 x/tools repository, described at the [repository root](../../CONTRIBUTING.md).
@@ -165,3 +165,17 @@ telemetry.-->
 
 [issue-gopls]: https://github.com/golang/go/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen+label%3Agopls "gopls issues"
 [issue-wanted]: https://github.com/golang/go/issues?utf8=✓&q=is%3Aissue+is%3Aopen+label%3Agopls+label%3A"help+wanted" "help wanted"
+
+## Documentation
+
+Each CL that adds or changes a feature should include, in addition to
+a test that exercises the new behavior:
+
+- a **release note** that briefly explains the change, and
+- **comprehensive documentation** in the [index of features](features/README.md).
+
+The release note should go in the file named for the forthcoming
+release, for example [release/v0.16.0.md](release/v0.16.0.md). (Create
+the file if your feature is the first to be added after a release.)
+
+

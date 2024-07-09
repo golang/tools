@@ -4,7 +4,7 @@
 
 /*
 Package expect provides support for interpreting structured comments in Go
-source code as test expectations.
+source code (including go.mod and go.work files) as test expectations.
 
 This is primarily intended for writing tests of things that process Go source
 files, although it does not directly depend on the testing package.

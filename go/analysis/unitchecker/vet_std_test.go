@@ -33,6 +33,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/shift"
 	"golang.org/x/tools/go/analysis/passes/sigchanyzer"
 	"golang.org/x/tools/go/analysis/passes/stdmethods"
+	"golang.org/x/tools/go/analysis/passes/stdversion"
 	"golang.org/x/tools/go/analysis/passes/stringintconv"
 	"golang.org/x/tools/go/analysis/passes/structtag"
 	"golang.org/x/tools/go/analysis/passes/testinggoroutine"
@@ -70,6 +71,7 @@ func vet() {
 		shift.Analyzer,
 		sigchanyzer.Analyzer,
 		stdmethods.Analyzer,
+		stdversion.Analyzer,
 		stringintconv.Analyzer,
 		structtag.Analyzer,
 		testinggoroutine.Analyzer,

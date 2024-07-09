@@ -6,8 +6,8 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.1 (hash d2c907f450cb6d3baff74b31b432b90786d2c3b0).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.1/protocol/metaModel.json
+// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.2 (hash 654dc9be6673c61476c28fda604406279c3258d7).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.2/protocol/metaModel.json
 // LSP metaData.version = 3.17.0.
 
 import "encoding/json"
@@ -15,6 +15,8 @@ import "encoding/json"
 // A special text edit with an additional change annotation.
 //
 // @since 3.16.0.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#annotatedTextEdit
 type AnnotatedTextEdit struct {
 	// The actual identifier of the change annotation
 	AnnotationID *ChangeAnnotationIdentifier `json:"annotationId,omitempty"`
@@ -22,6 +24,8 @@ type AnnotatedTextEdit struct {
 }
 
 // The parameters passed via an apply workspace edit request.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#applyWorkspaceEditParams
 type ApplyWorkspaceEditParams struct {
 	// An optional label of the workspace edit. This label is
 	// presented in the user interface for example on an undo
@@ -34,6 +38,8 @@ type ApplyWorkspaceEditParams struct {
 // The result returned from the apply workspace edit request.
 //
 // @since 3.17 renamed from ApplyWorkspaceEditResponse
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#applyWorkspaceEditResult
 type ApplyWorkspaceEditResult struct {
 	// Indicates whether the edit was applied or not.
 	Applied bool `json:"applied"`
@@ -48,6 +54,8 @@ type ApplyWorkspaceEditResult struct {
 }
 
 // A base for all symbol information.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#baseSymbolInformation
 type BaseSymbolInformation struct {
 	// The name of this symbol.
 	Name string `json:"name"`
@@ -65,6 +73,8 @@ type BaseSymbolInformation struct {
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchyClientCapabilities
 type CallHierarchyClientCapabilities struct {
 	// Whether implementation supports dynamic registration. If this is set to `true`
 	// the client supports the new `(TextDocumentRegistrationOptions & StaticRegistrationOptions)`
@@ -75,6 +85,8 @@ type CallHierarchyClientCapabilities struct {
 // Represents an incoming call, e.g. a caller of a method or constructor.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchyIncomingCall
 type CallHierarchyIncomingCall struct {
 	// The item that makes the call.
 	From CallHierarchyItem `json:"from"`
@@ -86,6 +98,8 @@ type CallHierarchyIncomingCall struct {
 // The parameter of a `callHierarchy/incomingCalls` request.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchyIncomingCallsParams
 type CallHierarchyIncomingCallsParams struct {
 	Item CallHierarchyItem `json:"item"`
 	WorkDoneProgressParams
@@ -96,6 +110,8 @@ type CallHierarchyIncomingCallsParams struct {
 // of call hierarchy.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchyItem
 type CallHierarchyItem struct {
 	// The name of this item.
 	Name string `json:"name"`
@@ -120,6 +136,8 @@ type CallHierarchyItem struct {
 // Call hierarchy options used during static registration.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchyOptions
 type CallHierarchyOptions struct {
 	WorkDoneProgressOptions
 }
@@ -127,6 +145,8 @@ type CallHierarchyOptions struct {
 // Represents an outgoing call, e.g. calling a getter from a method or a method from a constructor etc.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchyOutgoingCall
 type CallHierarchyOutgoingCall struct {
 	// The item that is called.
 	To CallHierarchyItem `json:"to"`
@@ -139,6 +159,8 @@ type CallHierarchyOutgoingCall struct {
 // The parameter of a `callHierarchy/outgoingCalls` request.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchyOutgoingCallsParams
 type CallHierarchyOutgoingCallsParams struct {
 	Item CallHierarchyItem `json:"item"`
 	WorkDoneProgressParams
@@ -148,6 +170,8 @@ type CallHierarchyOutgoingCallsParams struct {
 // The parameter of a `textDocument/prepareCallHierarchy` request.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchyPrepareParams
 type CallHierarchyPrepareParams struct {
 	TextDocumentPositionParams
 	WorkDoneProgressParams
@@ -156,11 +180,15 @@ type CallHierarchyPrepareParams struct {
 // Call hierarchy options used during static or dynamic registration.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchyRegistrationOptions
 type CallHierarchyRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	CallHierarchyOptions
 	StaticRegistrationOptions
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#cancelParams
 type CancelParams struct {
 	// The request id to cancel.
 	ID interface{} `json:"id"`
@@ -169,6 +197,8 @@ type CancelParams struct {
 // Additional information that describes document changes.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#changeAnnotation
 type ChangeAnnotation struct {
 	// A human-readable string describing the actual change. The string
 	// is rendered prominent in the user interface.
@@ -182,9 +212,13 @@ type ChangeAnnotation struct {
 }
 
 // An identifier to refer to a change annotation stored with a workspace edit.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#changeAnnotationIdentifier
 type ChangeAnnotationIdentifier = string // (alias)
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#changeAnnotationsSupportOptions
 type ChangeAnnotationsSupportOptions struct {
 	// Whether the client groups edits with equal labels into tree nodes,
 	// for instance all edits labelled with "Changes in Strings" would
@@ -193,6 +227,8 @@ type ChangeAnnotationsSupportOptions struct {
 }
 
 // Defines the capabilities provided by the client.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientCapabilities
 type ClientCapabilities struct {
 	// Workspace specific client capabilities.
 	Workspace WorkspaceClientCapabilities `json:"workspace,omitempty"`
@@ -214,6 +250,8 @@ type ClientCapabilities struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientCodeActionKindOptions
 type ClientCodeActionKindOptions struct {
 	// The code action kind values the client supports. When this
 	// property exists the client also guarantees that it will
@@ -224,6 +262,8 @@ type ClientCodeActionKindOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientCodeActionLiteralOptions
 type ClientCodeActionLiteralOptions struct {
 	// The code action kind is support with the following value
 	// set.
@@ -232,6 +272,8 @@ type ClientCodeActionLiteralOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientCodeActionResolveOptions
 type ClientCodeActionResolveOptions struct {
 	// The properties that a client can resolve lazily.
 	Properties []string `json:"properties"`
@@ -239,12 +281,16 @@ type ClientCodeActionResolveOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientCompletionItemInsertTextModeOptions
 type ClientCompletionItemInsertTextModeOptions struct {
 	ValueSet []InsertTextMode `json:"valueSet"`
 }
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientCompletionItemOptions
 type ClientCompletionItemOptions struct {
 	// Client supports snippets as insert text.
 	//
@@ -295,6 +341,8 @@ type ClientCompletionItemOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientCompletionItemOptionsKind
 type ClientCompletionItemOptionsKind struct {
 	// The completion item kind values the client supports. When this
 	// property exists the client also guarantees that it will
@@ -309,6 +357,8 @@ type ClientCompletionItemOptionsKind struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientCompletionItemResolveOptions
 type ClientCompletionItemResolveOptions struct {
 	// The properties that a client can resolve lazily.
 	Properties []string `json:"properties"`
@@ -316,6 +366,8 @@ type ClientCompletionItemResolveOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientDiagnosticsTagOptions
 type ClientDiagnosticsTagOptions struct {
 	// The tags supported by the client.
 	ValueSet []DiagnosticTag `json:"valueSet"`
@@ -323,6 +375,8 @@ type ClientDiagnosticsTagOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientFoldingRangeKindOptions
 type ClientFoldingRangeKindOptions struct {
 	// The folding range kind values the client supports. When this
 	// property exists the client also guarantees that it will
@@ -333,6 +387,8 @@ type ClientFoldingRangeKindOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientFoldingRangeOptions
 type ClientFoldingRangeOptions struct {
 	// If set, the client signals that it supports setting collapsedText on
 	// folding ranges to display custom labels instead of the default text.
@@ -346,6 +402,8 @@ type ClientFoldingRangeOptions struct {
 // @since 3.15.0
 // @since 3.18.0 ClientInfo type name added.
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientInfo
 type ClientInfo struct {
 	// The name of the client as defined by the client.
 	Name string `json:"name"`
@@ -355,6 +413,8 @@ type ClientInfo struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientInlayHintResolveOptions
 type ClientInlayHintResolveOptions struct {
 	// The properties that a client can resolve lazily.
 	Properties []string `json:"properties"`
@@ -362,6 +422,8 @@ type ClientInlayHintResolveOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientSemanticTokensRequestFullDelta
 type ClientSemanticTokensRequestFullDelta struct {
 	// The client will send the `textDocument/semanticTokens/full/delta` request if
 	// the server provides a corresponding handler.
@@ -370,6 +432,8 @@ type ClientSemanticTokensRequestFullDelta struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientSemanticTokensRequestOptions
 type ClientSemanticTokensRequestOptions struct {
 	// The client will send the `textDocument/semanticTokens/range` request if
 	// the server provides a corresponding handler.
@@ -381,6 +445,8 @@ type ClientSemanticTokensRequestOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientShowMessageActionItemOptions
 type ClientShowMessageActionItemOptions struct {
 	// Whether the client supports additional attributes which
 	// are preserved and send back to the server in the
@@ -390,6 +456,8 @@ type ClientShowMessageActionItemOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientSignatureInformationOptions
 type ClientSignatureInformationOptions struct {
 	// Client supports the following content formats for the documentation
 	// property. The order describes the preferred format of the client.
@@ -401,10 +469,19 @@ type ClientSignatureInformationOptions struct {
 	//
 	// @since 3.16.0
 	ActiveParameterSupport bool `json:"activeParameterSupport,omitempty"`
+	// The client supports the `activeParameter` property on
+	// `SignatureHelp`/`SignatureInformation` being set to `null` to
+	// indicate that no parameter should be active.
+	//
+	// @since 3.18.0
+	// @proposed
+	NoActiveParameterSupport bool `json:"noActiveParameterSupport,omitempty"`
 }
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientSignatureParameterInformationOptions
 type ClientSignatureParameterInformationOptions struct {
 	// The client supports processing label offsets instead of a
 	// simple label string.
@@ -415,6 +492,8 @@ type ClientSignatureParameterInformationOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientSymbolKindOptions
 type ClientSymbolKindOptions struct {
 	// The symbol kind values the client supports. When this
 	// property exists the client also guarantees that it will
@@ -429,6 +508,8 @@ type ClientSymbolKindOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientSymbolResolveOptions
 type ClientSymbolResolveOptions struct {
 	// The properties that a client can resolve lazily. Usually
 	// `location.range`
@@ -437,6 +518,8 @@ type ClientSymbolResolveOptions struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#clientSymbolTagOptions
 type ClientSymbolTagOptions struct {
 	// The tags supported by the client.
 	ValueSet []SymbolTag `json:"valueSet"`
@@ -446,6 +529,8 @@ type ClientSymbolTagOptions struct {
 // to refactor code.
 //
 // A CodeAction must set either `edit` and/or a `command`. If both are supplied, the `edit` is applied first, then the `command` is executed.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeAction
 type CodeAction struct {
 	// A short, human-readable, title for this code action.
 	Title string `json:"title"`
@@ -493,6 +578,8 @@ type CodeAction struct {
 }
 
 // The Client Capabilities of a {@link CodeActionRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeActionClientCapabilities
 type CodeActionClientCapabilities struct {
 	// Whether code action supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -529,10 +616,18 @@ type CodeActionClientCapabilities struct {
 	//
 	// @since 3.16.0
 	HonorsChangeAnnotations bool `json:"honorsChangeAnnotations,omitempty"`
+	// Whether the client supports documentation for a class of
+	// code actions.
+	//
+	// @since 3.18.0
+	// @proposed
+	DocumentationSupport bool `json:"documentationSupport,omitempty"`
 }
 
 // Contains additional diagnostic information about the context in which
 // a {@link CodeActionProvider.provideCodeActions code action} is run.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeActionContext
 type CodeActionContext struct {
 	// An array of diagnostics known on the client side overlapping the range provided to the
 	// `textDocument/codeAction` request. They are provided so that the server knows which
@@ -555,6 +650,8 @@ type CodeActionContext struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeActionDisabled
 type CodeActionDisabled struct {
 	// Human readable description of why the code action is currently disabled.
 	//
@@ -565,13 +662,52 @@ type CodeActionDisabled struct {
 // A set of predefined code action kinds
 type CodeActionKind string
 
+// Documentation for a class of code actions.
+//
+// @since 3.18.0
+// @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeActionKindDocumentation
+type CodeActionKindDocumentation struct {
+	// The kind of the code action being documented.
+	//
+	// If the kind is generic, such as `CodeActionKind.Refactor`, the documentation will be shown whenever any
+	// refactorings are returned. If the kind if more specific, such as `CodeActionKind.RefactorExtract`, the
+	// documentation will only be shown when extract refactoring code actions are returned.
+	Kind CodeActionKind `json:"kind"`
+	// Command that is ued to display the documentation to the user.
+	//
+	// The title of this documentation code action is taken from {@linkcode Command.title}
+	Command Command `json:"command"`
+}
+
 // Provider options for a {@link CodeActionRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeActionOptions
 type CodeActionOptions struct {
 	// CodeActionKinds that this server may return.
 	//
 	// The list of kinds may be generic, such as `CodeActionKind.Refactor`, or the server
 	// may list out every specific kind they provide.
 	CodeActionKinds []CodeActionKind `json:"codeActionKinds,omitempty"`
+	// Static documentation for a class of code actions.
+	//
+	// Documentation from the provider should be shown in the code actions menu if either:
+	//
+	//
+	//  - Code actions of `kind` are requested by the editor. In this case, the editor will show the documentation that
+	//   most closely matches the requested code action kind. For example, if a provider has documentation for
+	//   both `Refactor` and `RefactorExtract`, when the user requests code actions for `RefactorExtract`,
+	//   the editor will use the documentation for `RefactorExtract` instead of the documentation for `Refactor`.
+	//
+	//
+	//  - Any code actions of `kind` are returned by the provider.
+	//
+	// At most one documentation entry should be shown per provider.
+	//
+	// @since 3.18.0
+	// @proposed
+	Documentation []CodeActionKindDocumentation `json:"documentation,omitempty"`
 	// The server provides support to resolve additional
 	// information for a code action.
 	//
@@ -581,6 +717,8 @@ type CodeActionOptions struct {
 }
 
 // The parameters of a {@link CodeActionRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeActionParams
 type CodeActionParams struct {
 	// The document in which the command was invoked.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -593,6 +731,8 @@ type CodeActionParams struct {
 }
 
 // Registration options for a {@link CodeActionRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeActionRegistrationOptions
 type CodeActionRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	CodeActionOptions
@@ -606,6 +746,8 @@ type CodeActionTriggerKind uint32
 // Structure to capture a description for an error code.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeDescription
 type CodeDescription struct {
 	// An URI to open with more information about the diagnostic error.
 	Href URI `json:"href"`
@@ -616,6 +758,8 @@ type CodeDescription struct {
 //
 // A code lens is _unresolved_ when no command is associated to it. For performance
 // reasons the creation of a code lens and resolving should be done in two stages.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeLens
 type CodeLens struct {
 	// The range in which this code lens is valid. Should only span a single line.
 	Range Range `json:"range"`
@@ -627,12 +771,16 @@ type CodeLens struct {
 }
 
 // The client capabilities  of a {@link CodeLensRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeLensClientCapabilities
 type CodeLensClientCapabilities struct {
 	// Whether code lens supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
 }
 
 // Code Lens provider options of a {@link CodeLensRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeLensOptions
 type CodeLensOptions struct {
 	// Code lens has a resolve provider as well.
 	ResolveProvider bool `json:"resolveProvider,omitempty"`
@@ -640,6 +788,8 @@ type CodeLensOptions struct {
 }
 
 // The parameters of a {@link CodeLensRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeLensParams
 type CodeLensParams struct {
 	// The document to request code lens for.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -648,12 +798,16 @@ type CodeLensParams struct {
 }
 
 // Registration options for a {@link CodeLensRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeLensRegistrationOptions
 type CodeLensRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	CodeLensOptions
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#codeLensWorkspaceClientCapabilities
 type CodeLensWorkspaceClientCapabilities struct {
 	// Whether the client implementation supports a refresh request sent from the
 	// server to the client.
@@ -666,6 +820,8 @@ type CodeLensWorkspaceClientCapabilities struct {
 }
 
 // Represents a color in RGBA space.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#color
 type Color struct {
 	// The red component of this color in the range [0-1].
 	Red float64 `json:"red"`
@@ -678,12 +834,16 @@ type Color struct {
 }
 
 // Represents a color range from a document.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#colorInformation
 type ColorInformation struct {
 	// The range in the document where this color appears.
 	Range Range `json:"range"`
 	// The actual color value for this color range.
 	Color Color `json:"color"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#colorPresentation
 type ColorPresentation struct {
 	// The label of this color presentation. It will be shown on the color
 	// picker header. By default this is also the text that is inserted when selecting
@@ -699,6 +859,8 @@ type ColorPresentation struct {
 }
 
 // Parameters for a {@link ColorPresentationRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#colorPresentationParams
 type ColorPresentationParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -714,9 +876,16 @@ type ColorPresentationParams struct {
 // will be used to represent a command in the UI and, optionally,
 // an array of arguments which will be passed to the command handler
 // function when invoked.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#command
 type Command struct {
 	// Title of the command, like `save`.
 	Title string `json:"title"`
+	// An optional tooltip.
+	//
+	// @since 3.18.0
+	// @proposed
+	Tooltip string `json:"tooltip,omitempty"`
 	// The identifier of the actual command handler.
 	Command string `json:"command"`
 	// Arguments that the command handler should be
@@ -725,6 +894,8 @@ type Command struct {
 }
 
 // Completion client capabilities
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionClientCapabilities
 type CompletionClientCapabilities struct {
 	// Whether completion supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -749,6 +920,8 @@ type CompletionClientCapabilities struct {
 }
 
 // Contains additional information about the context in which a completion request is triggered.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionContext
 type CompletionContext struct {
 	// How the completion was triggered.
 	TriggerKind CompletionTriggerKind `json:"triggerKind"`
@@ -759,6 +932,8 @@ type CompletionContext struct {
 
 // A completion item represents a text snippet that is
 // proposed to complete text that is being typed.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionItem
 type CompletionItem struct {
 	// The label of this completion item.
 	//
@@ -846,7 +1021,7 @@ type CompletionItem struct {
 	// contained and starting at the same position.
 	//
 	// @since 3.16.0 additional type `InsertReplaceEdit`
-	TextEdit *TextEdit `json:"textEdit,omitempty"`
+	TextEdit *Or_CompletionItem_textEdit `json:"textEdit,omitempty"`
 	// The edit text used if the completion item is part of a CompletionList and
 	// CompletionList defines an item default for the text edit range.
 	//
@@ -892,6 +1067,8 @@ type CompletionItem struct {
 // capability.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionItemDefaults
 type CompletionItemDefaults struct {
 	// A default commit character set.
 	//
@@ -921,6 +1098,8 @@ type CompletionItemKind uint32
 // Additional details for a completion item label.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionItemLabelDetails
 type CompletionItemLabelDetails struct {
 	// An optional string which is rendered less prominently directly after {@link CompletionItem.label label},
 	// without any spacing. Should be used for function signatures and type annotations.
@@ -938,6 +1117,8 @@ type CompletionItemTag uint32
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionItemTagOptions
 type CompletionItemTagOptions struct {
 	// The tags supported by the client.
 	ValueSet []CompletionItemTag `json:"valueSet"`
@@ -945,6 +1126,8 @@ type CompletionItemTagOptions struct {
 
 // Represents a collection of {@link CompletionItem completion items} to be presented
 // in the editor.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionList
 type CompletionList struct {
 	// This list it not complete. Further typing results in recomputing this list.
 	//
@@ -973,6 +1156,8 @@ type CompletionList struct {
 // capabilities.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionListCapabilities
 type CompletionListCapabilities struct {
 	// The client supports the following itemDefaults on
 	// a completion list.
@@ -986,6 +1171,8 @@ type CompletionListCapabilities struct {
 }
 
 // Completion options.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionOptions
 type CompletionOptions struct {
 	// Most tools trigger completion request automatically without explicitly requesting
 	// it using a keyboard shortcut (e.g. Ctrl+Space). Typically they do so when the user
@@ -1017,6 +1204,8 @@ type CompletionOptions struct {
 }
 
 // Completion parameters
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionParams
 type CompletionParams struct {
 	// The completion context. This is only available it the client specifies
 	// to send this using the client capability `textDocument.completion.contextSupport === true`
@@ -1027,6 +1216,8 @@ type CompletionParams struct {
 }
 
 // Registration options for a {@link CompletionRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#completionRegistrationOptions
 type CompletionRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	CompletionOptions
@@ -1034,6 +1225,8 @@ type CompletionRegistrationOptions struct {
 
 // How a completion was triggered
 type CompletionTriggerKind uint32
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#configurationItem
 type ConfigurationItem struct {
 	// The scope to get the configuration section for.
 	ScopeURI *URI `json:"scopeUri,omitempty"`
@@ -1042,11 +1235,15 @@ type ConfigurationItem struct {
 }
 
 // The parameters of a configuration request.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#configurationParams
 type ConfigurationParams struct {
 	Items []ConfigurationItem `json:"items"`
 }
 
 // Create file operation.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#createFile
 type CreateFile struct {
 	// A create
 	Kind string `json:"kind"`
@@ -1058,6 +1255,8 @@ type CreateFile struct {
 }
 
 // Options to create a file.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#createFileOptions
 type CreateFileOptions struct {
 	// Overwrite existing file. Overwrite wins over `ignoreIfExists`
 	Overwrite bool `json:"overwrite,omitempty"`
@@ -1069,14 +1268,20 @@ type CreateFileOptions struct {
 // files.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#createFilesParams
 type CreateFilesParams struct {
 	// An array of all files/folders created in this operation.
 	Files []FileCreate `json:"files"`
 }
 
 // The declaration of a symbol representation as one or many {@link Location locations}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#declaration
 type Declaration = []Location // (alias)
 // @since 3.14.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#declarationClientCapabilities
 type DeclarationClientCapabilities struct {
 	// Whether declaration supports dynamic registration. If this is set to `true`
 	// the client supports the new `DeclarationRegistrationOptions` return value
@@ -1093,15 +1298,22 @@ type DeclarationClientCapabilities struct {
 //
 // Servers should prefer returning `DeclarationLink` over `Declaration` if supported
 // by the client.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#declarationLink
 type DeclarationLink = LocationLink // (alias)
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#declarationOptions
 type DeclarationOptions struct {
 	WorkDoneProgressOptions
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#declarationParams
 type DeclarationParams struct {
 	TextDocumentPositionParams
 	WorkDoneProgressParams
 	PartialResultParams
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#declarationRegistrationOptions
 type DeclarationRegistrationOptions struct {
 	DeclarationOptions
 	TextDocumentRegistrationOptions
@@ -1114,8 +1326,12 @@ type DeclarationRegistrationOptions struct {
 //
 // Servers should prefer returning `DefinitionLink` over `Definition` if supported
 // by the client.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#definition
 type Definition = Or_Definition // (alias)
 // Client Capabilities for a {@link DefinitionRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#definitionClientCapabilities
 type DefinitionClientCapabilities struct {
 	// Whether definition supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -1129,13 +1345,19 @@ type DefinitionClientCapabilities struct {
 //
 // Provides additional metadata over normal {@link Location location} definitions, including the range of
 // the defining symbol
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#definitionLink
 type DefinitionLink = LocationLink // (alias)
 // Server Capabilities for a {@link DefinitionRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#definitionOptions
 type DefinitionOptions struct {
 	WorkDoneProgressOptions
 }
 
 // Parameters for a {@link DefinitionRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#definitionParams
 type DefinitionParams struct {
 	TextDocumentPositionParams
 	WorkDoneProgressParams
@@ -1143,12 +1365,16 @@ type DefinitionParams struct {
 }
 
 // Registration options for a {@link DefinitionRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#definitionRegistrationOptions
 type DefinitionRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	DefinitionOptions
 }
 
 // Delete file operation
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#deleteFile
 type DeleteFile struct {
 	// A delete
 	Kind string `json:"kind"`
@@ -1160,6 +1386,8 @@ type DeleteFile struct {
 }
 
 // Delete file options
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#deleteFileOptions
 type DeleteFileOptions struct {
 	// Delete the content recursively if a folder is denoted.
 	Recursive bool `json:"recursive,omitempty"`
@@ -1171,6 +1399,8 @@ type DeleteFileOptions struct {
 // files.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#deleteFilesParams
 type DeleteFilesParams struct {
 	// An array of all files/folders deleted in this operation.
 	Files []FileDelete `json:"files"`
@@ -1178,6 +1408,8 @@ type DeleteFilesParams struct {
 
 // Represents a diagnostic, such as a compiler error or warning. Diagnostic objects
 // are only valid in the scope of a resource.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#diagnostic
 type Diagnostic struct {
 	// The range at which the message applies
 	Range Range `json:"range"`
@@ -1214,6 +1446,8 @@ type Diagnostic struct {
 // Client capabilities specific to diagnostic pull requests.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#diagnosticClientCapabilities
 type DiagnosticClientCapabilities struct {
 	// Whether implementation supports dynamic registration. If this is set to `true`
 	// the client supports the new `(TextDocumentRegistrationOptions & StaticRegistrationOptions)`
@@ -1226,6 +1460,8 @@ type DiagnosticClientCapabilities struct {
 // Diagnostic options.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#diagnosticOptions
 type DiagnosticOptions struct {
 	// An optional identifier under which the diagnostics are
 	// managed by the client.
@@ -1243,6 +1479,8 @@ type DiagnosticOptions struct {
 // Diagnostic registration options.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#diagnosticRegistrationOptions
 type DiagnosticRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	DiagnosticOptions
@@ -1252,6 +1490,8 @@ type DiagnosticRegistrationOptions struct {
 // Represents a related message and source code location for a diagnostic. This should be
 // used to point to code locations that cause or related to a diagnostics, e.g when duplicating
 // a symbol in a scope.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#diagnosticRelatedInformation
 type DiagnosticRelatedInformation struct {
 	// The location of this related diagnostic information.
 	Location Location `json:"location"`
@@ -1262,6 +1502,8 @@ type DiagnosticRelatedInformation struct {
 // Cancellation data returned from a diagnostic request.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#diagnosticServerCancellationData
 type DiagnosticServerCancellationData struct {
 	RetriggerRequest bool `json:"retriggerRequest"`
 }
@@ -1277,6 +1519,8 @@ type DiagnosticTag uint32
 // Workspace client capabilities specific to diagnostic pull requests.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#diagnosticWorkspaceClientCapabilities
 type DiagnosticWorkspaceClientCapabilities struct {
 	// Whether the client implementation supports a refresh request sent from
 	// the server to the client.
@@ -1287,16 +1531,22 @@ type DiagnosticWorkspaceClientCapabilities struct {
 	// change that requires such a calculation.
 	RefreshSupport bool `json:"refreshSupport,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didChangeConfigurationClientCapabilities
 type DidChangeConfigurationClientCapabilities struct {
 	// Did change configuration notification supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
 }
 
 // The parameters of a change configuration notification.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didChangeConfigurationParams
 type DidChangeConfigurationParams struct {
 	// The actual changed settings
 	Settings interface{} `json:"settings"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didChangeConfigurationRegistrationOptions
 type DidChangeConfigurationRegistrationOptions struct {
 	Section *OrPSection_workspace_didChangeConfiguration `json:"section,omitempty"`
 }
@@ -1304,6 +1554,8 @@ type DidChangeConfigurationRegistrationOptions struct {
 // The params sent in a change notebook document notification.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didChangeNotebookDocumentParams
 type DidChangeNotebookDocumentParams struct {
 	// The notebook document that did change. The version number points
 	// to the version after all provided changes have been applied. If
@@ -1328,6 +1580,8 @@ type DidChangeNotebookDocumentParams struct {
 }
 
 // The change text document notification's parameters.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didChangeTextDocumentParams
 type DidChangeTextDocumentParams struct {
 	// The document that did change. The version number points
 	// to the version after all provided content changes have
@@ -1347,6 +1601,8 @@ type DidChangeTextDocumentParams struct {
 	//   you receive them.
 	ContentChanges []TextDocumentContentChangeEvent `json:"contentChanges"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didChangeWatchedFilesClientCapabilities
 type DidChangeWatchedFilesClientCapabilities struct {
 	// Did change watched files notification supports dynamic registration. Please note
 	// that the current protocol doesn't support static configuration for file changes
@@ -1360,18 +1616,24 @@ type DidChangeWatchedFilesClientCapabilities struct {
 }
 
 // The watched files change notification's parameters.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didChangeWatchedFilesParams
 type DidChangeWatchedFilesParams struct {
 	// The actual file events.
 	Changes []FileEvent `json:"changes"`
 }
 
 // Describe options to be used when registered for text document change events.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didChangeWatchedFilesRegistrationOptions
 type DidChangeWatchedFilesRegistrationOptions struct {
 	// The watchers to register.
 	Watchers []FileSystemWatcher `json:"watchers"`
 }
 
 // The parameters of a `workspace/didChangeWorkspaceFolders` notification.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didChangeWorkspaceFoldersParams
 type DidChangeWorkspaceFoldersParams struct {
 	// The actual workspace folder change event.
 	Event WorkspaceFoldersChangeEvent `json:"event"`
@@ -1380,6 +1642,8 @@ type DidChangeWorkspaceFoldersParams struct {
 // The params sent in a close notebook document notification.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didCloseNotebookDocumentParams
 type DidCloseNotebookDocumentParams struct {
 	// The notebook document that got closed.
 	NotebookDocument NotebookDocumentIdentifier `json:"notebookDocument"`
@@ -1389,6 +1653,8 @@ type DidCloseNotebookDocumentParams struct {
 }
 
 // The parameters sent in a close text document notification
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didCloseTextDocumentParams
 type DidCloseTextDocumentParams struct {
 	// The document that was closed.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -1397,6 +1663,8 @@ type DidCloseTextDocumentParams struct {
 // The params sent in an open notebook document notification.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didOpenNotebookDocumentParams
 type DidOpenNotebookDocumentParams struct {
 	// The notebook document that got opened.
 	NotebookDocument NotebookDocument `json:"notebookDocument"`
@@ -1406,6 +1674,8 @@ type DidOpenNotebookDocumentParams struct {
 }
 
 // The parameters sent in an open text document notification
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didOpenTextDocumentParams
 type DidOpenTextDocumentParams struct {
 	// The document that was opened.
 	TextDocument TextDocumentItem `json:"textDocument"`
@@ -1414,12 +1684,16 @@ type DidOpenTextDocumentParams struct {
 // The params sent in a save notebook document notification.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didSaveNotebookDocumentParams
 type DidSaveNotebookDocumentParams struct {
 	// The notebook document that got saved.
 	NotebookDocument NotebookDocumentIdentifier `json:"notebookDocument"`
 }
 
 // The parameters sent in a save text document notification
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didSaveTextDocumentParams
 type DidSaveTextDocumentParams struct {
 	// The document that was saved.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -1427,23 +1701,31 @@ type DidSaveTextDocumentParams struct {
 	// when the save notification was requested.
 	Text *string `json:"text,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentColorClientCapabilities
 type DocumentColorClientCapabilities struct {
 	// Whether implementation supports dynamic registration. If this is set to `true`
 	// the client supports the new `DocumentColorRegistrationOptions` return value
 	// for the corresponding server capability as well.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentColorOptions
 type DocumentColorOptions struct {
 	WorkDoneProgressOptions
 }
 
 // Parameters for a {@link DocumentColorRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentColorParams
 type DocumentColorParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
 	WorkDoneProgressParams
 	PartialResultParams
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentColorRegistrationOptions
 type DocumentColorRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	DocumentColorOptions
@@ -1453,6 +1735,8 @@ type DocumentColorRegistrationOptions struct {
 // Parameters of the document diagnostic request.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentDiagnosticParams
 type DocumentDiagnosticParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -1472,6 +1756,8 @@ type DocumentDiagnosticReportKind string
 // A partial result for a document diagnostic report.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentDiagnosticReportPartialResult
 type DocumentDiagnosticReportPartialResult struct {
 	RelatedDocuments map[DocumentURI]interface{} `json:"relatedDocuments"`
 }
@@ -1480,19 +1766,27 @@ type DocumentDiagnosticReportPartialResult struct {
 // a notebook cell document.
 //
 // @since 3.17.0 - proposed support for NotebookCellTextDocumentFilter.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentFilter
 type DocumentFilter = Or_DocumentFilter // (alias)
 // Client capabilities of a {@link DocumentFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentFormattingClientCapabilities
 type DocumentFormattingClientCapabilities struct {
 	// Whether formatting supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
 }
 
 // Provider options for a {@link DocumentFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentFormattingOptions
 type DocumentFormattingOptions struct {
 	WorkDoneProgressOptions
 }
 
 // The parameters of a {@link DocumentFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentFormattingParams
 type DocumentFormattingParams struct {
 	// The document to format.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -1502,6 +1796,8 @@ type DocumentFormattingParams struct {
 }
 
 // Registration options for a {@link DocumentFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentFormattingRegistrationOptions
 type DocumentFormattingRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	DocumentFormattingOptions
@@ -1510,6 +1806,8 @@ type DocumentFormattingRegistrationOptions struct {
 // A document highlight is a range inside a text document which deserves
 // special attention. Usually a document highlight is visualized by changing
 // the background color of its range.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentHighlight
 type DocumentHighlight struct {
 	// The range this highlight applies to.
 	Range Range `json:"range"`
@@ -1518,6 +1816,8 @@ type DocumentHighlight struct {
 }
 
 // Client Capabilities for a {@link DocumentHighlightRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentHighlightClientCapabilities
 type DocumentHighlightClientCapabilities struct {
 	// Whether document highlight supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -1527,11 +1827,15 @@ type DocumentHighlightClientCapabilities struct {
 type DocumentHighlightKind uint32
 
 // Provider options for a {@link DocumentHighlightRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentHighlightOptions
 type DocumentHighlightOptions struct {
 	WorkDoneProgressOptions
 }
 
 // Parameters for a {@link DocumentHighlightRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentHighlightParams
 type DocumentHighlightParams struct {
 	TextDocumentPositionParams
 	WorkDoneProgressParams
@@ -1539,6 +1843,8 @@ type DocumentHighlightParams struct {
 }
 
 // Registration options for a {@link DocumentHighlightRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentHighlightRegistrationOptions
 type DocumentHighlightRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	DocumentHighlightOptions
@@ -1546,6 +1852,8 @@ type DocumentHighlightRegistrationOptions struct {
 
 // A document link is a range in a text document that links to an internal or external resource, like another
 // text document or a web site.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentLink
 type DocumentLink struct {
 	// The range this link applies to.
 	Range Range `json:"range"`
@@ -1565,6 +1873,8 @@ type DocumentLink struct {
 }
 
 // The client capabilities of a {@link DocumentLinkRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentLinkClientCapabilities
 type DocumentLinkClientCapabilities struct {
 	// Whether document link supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -1575,6 +1885,8 @@ type DocumentLinkClientCapabilities struct {
 }
 
 // Provider options for a {@link DocumentLinkRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentLinkOptions
 type DocumentLinkOptions struct {
 	// Document links have a resolve provider as well.
 	ResolveProvider bool `json:"resolveProvider,omitempty"`
@@ -1582,6 +1894,8 @@ type DocumentLinkOptions struct {
 }
 
 // The parameters of a {@link DocumentLinkRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentLinkParams
 type DocumentLinkParams struct {
 	// The document to provide document links for.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -1590,18 +1904,24 @@ type DocumentLinkParams struct {
 }
 
 // Registration options for a {@link DocumentLinkRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentLinkRegistrationOptions
 type DocumentLinkRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	DocumentLinkOptions
 }
 
 // Client capabilities of a {@link DocumentOnTypeFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentOnTypeFormattingClientCapabilities
 type DocumentOnTypeFormattingClientCapabilities struct {
 	// Whether on type formatting supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
 }
 
 // Provider options for a {@link DocumentOnTypeFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentOnTypeFormattingOptions
 type DocumentOnTypeFormattingOptions struct {
 	// A character on which formatting should be triggered, like `{`.
 	FirstTriggerCharacter string `json:"firstTriggerCharacter"`
@@ -1610,6 +1930,8 @@ type DocumentOnTypeFormattingOptions struct {
 }
 
 // The parameters of a {@link DocumentOnTypeFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentOnTypeFormattingParams
 type DocumentOnTypeFormattingParams struct {
 	// The document to format.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -1627,12 +1949,16 @@ type DocumentOnTypeFormattingParams struct {
 }
 
 // Registration options for a {@link DocumentOnTypeFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentOnTypeFormattingRegistrationOptions
 type DocumentOnTypeFormattingRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	DocumentOnTypeFormattingOptions
 }
 
 // Client capabilities of a {@link DocumentRangeFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentRangeFormattingClientCapabilities
 type DocumentRangeFormattingClientCapabilities struct {
 	// Whether range formatting supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -1644,6 +1970,8 @@ type DocumentRangeFormattingClientCapabilities struct {
 }
 
 // Provider options for a {@link DocumentRangeFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentRangeFormattingOptions
 type DocumentRangeFormattingOptions struct {
 	// Whether the server supports formatting multiple ranges at once.
 	//
@@ -1654,6 +1982,8 @@ type DocumentRangeFormattingOptions struct {
 }
 
 // The parameters of a {@link DocumentRangeFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentRangeFormattingParams
 type DocumentRangeFormattingParams struct {
 	// The document to format.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -1665,6 +1995,8 @@ type DocumentRangeFormattingParams struct {
 }
 
 // Registration options for a {@link DocumentRangeFormattingRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentRangeFormattingRegistrationOptions
 type DocumentRangeFormattingRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	DocumentRangeFormattingOptions
@@ -1674,6 +2006,8 @@ type DocumentRangeFormattingRegistrationOptions struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentRangesFormattingParams
 type DocumentRangesFormattingParams struct {
 	// The document to format.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -1689,11 +2023,15 @@ type DocumentRangesFormattingParams struct {
 // @sample `let sel:DocumentSelector = [{ language: 'typescript' }, { language: 'json', pattern: '**∕tsconfig.json' }]`;
 //
 // The use of a string as a document filter is deprecated @since 3.16.0.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentSelector
 type DocumentSelector = []DocumentFilter // (alias)
 // Represents programming constructs like variables, classes, interfaces etc.
 // that appear in a document. Document symbols can be hierarchical and they
 // have two ranges: one that encloses its definition and one that points to
 // its most interesting range, e.g. the range of an identifier.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentSymbol
 type DocumentSymbol struct {
 	// The name of this symbol. Will be displayed in the user interface and therefore must not be
 	// an empty string or a string only consisting of white spaces.
@@ -1722,6 +2060,8 @@ type DocumentSymbol struct {
 }
 
 // Client Capabilities for a {@link DocumentSymbolRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentSymbolClientCapabilities
 type DocumentSymbolClientCapabilities struct {
 	// Whether document symbol supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -1744,6 +2084,8 @@ type DocumentSymbolClientCapabilities struct {
 }
 
 // Provider options for a {@link DocumentSymbolRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentSymbolOptions
 type DocumentSymbolOptions struct {
 	// A human-readable string that is shown when multiple outlines trees
 	// are shown for the same document.
@@ -1754,6 +2096,8 @@ type DocumentSymbolOptions struct {
 }
 
 // Parameters for a {@link DocumentSymbolRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentSymbolParams
 type DocumentSymbolParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -1762,6 +2106,8 @@ type DocumentSymbolParams struct {
 }
 
 // Registration options for a {@link DocumentSymbolRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentSymbolRegistrationOptions
 type DocumentSymbolRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	DocumentSymbolOptions
@@ -1771,6 +2117,8 @@ type DocumentSymbolRegistrationOptions struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#editRangeWithInsertReplace
 type EditRangeWithInsertReplace struct {
 	Insert  Range `json:"insert"`
 	Replace Range `json:"replace"`
@@ -1780,12 +2128,16 @@ type EditRangeWithInsertReplace struct {
 type ErrorCodes int32
 
 // The client capabilities of a {@link ExecuteCommandRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#executeCommandClientCapabilities
 type ExecuteCommandClientCapabilities struct {
 	// Execute command supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
 }
 
 // The server capabilities of a {@link ExecuteCommandRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#executeCommandOptions
 type ExecuteCommandOptions struct {
 	// The commands to be executed on the server
 	Commands []string `json:"commands"`
@@ -1793,6 +2145,8 @@ type ExecuteCommandOptions struct {
 }
 
 // The parameters of a {@link ExecuteCommandRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#executeCommandParams
 type ExecuteCommandParams struct {
 	// The identifier of the actual command handler.
 	Command string `json:"command"`
@@ -1802,9 +2156,13 @@ type ExecuteCommandParams struct {
 }
 
 // Registration options for a {@link ExecuteCommandRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#executeCommandRegistrationOptions
 type ExecuteCommandRegistrationOptions struct {
 	ExecuteCommandOptions
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#executionSummary
 type ExecutionSummary struct {
 	// A strict monotonically increasing value
 	// indicating the execution order of a cell
@@ -1822,6 +2180,8 @@ type FileChangeType uint32
 // Represents information on a file/folder create.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileCreate
 type FileCreate struct {
 	// A file:// URI for the location of the file/folder being created.
 	URI string `json:"uri"`
@@ -1830,12 +2190,16 @@ type FileCreate struct {
 // Represents information on a file/folder delete.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileDelete
 type FileDelete struct {
 	// A file:// URI for the location of the file/folder being deleted.
 	URI string `json:"uri"`
 }
 
 // An event describing a file change.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileEvent
 type FileEvent struct {
 	// The file's uri.
 	URI DocumentURI `json:"uri"`
@@ -1849,6 +2213,8 @@ type FileEvent struct {
 // like renaming a file in the UI.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileOperationClientCapabilities
 type FileOperationClientCapabilities struct {
 	// Whether the client supports dynamic registration for file requests/notifications.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -1870,6 +2236,8 @@ type FileOperationClientCapabilities struct {
 // the server is interested in receiving.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileOperationFilter
 type FileOperationFilter struct {
 	// A Uri scheme like `file` or `untitled`.
 	Scheme string `json:"scheme,omitempty"`
@@ -1880,6 +2248,8 @@ type FileOperationFilter struct {
 // Options for notifications/requests for user operations on files.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileOperationOptions
 type FileOperationOptions struct {
 	// The server is interested in receiving didCreateFiles notifications.
 	DidCreate *FileOperationRegistrationOptions `json:"didCreate,omitempty"`
@@ -1899,6 +2269,8 @@ type FileOperationOptions struct {
 // the server is interested in receiving.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileOperationPattern
 type FileOperationPattern struct {
 	// The glob pattern to match. Glob patterns can have the following syntax:
 	//
@@ -1926,6 +2298,8 @@ type FileOperationPatternKind string
 // Matching options for the file operation pattern.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileOperationPatternOptions
 type FileOperationPatternOptions struct {
 	// The pattern should be matched ignoring casing.
 	IgnoreCase bool `json:"ignoreCase,omitempty"`
@@ -1934,6 +2308,8 @@ type FileOperationPatternOptions struct {
 // The options to register for file operations.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileOperationRegistrationOptions
 type FileOperationRegistrationOptions struct {
 	// The actual filters.
 	Filters []FileOperationFilter `json:"filters"`
@@ -1942,12 +2318,16 @@ type FileOperationRegistrationOptions struct {
 // Represents information on a file/folder rename.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileRename
 type FileRename struct {
 	// A file:// URI for the original location of the file/folder being renamed.
 	OldURI string `json:"oldUri"`
 	// A file:// URI for the new location of the file/folder being renamed.
 	NewURI string `json:"newUri"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fileSystemWatcher
 type FileSystemWatcher struct {
 	// The glob pattern to watch. See {@link GlobPattern glob pattern} for more detail.
 	//
@@ -1961,6 +2341,8 @@ type FileSystemWatcher struct {
 
 // Represents a folding range. To be valid, start and end line must be bigger than zero and smaller
 // than the number of lines in the document. Clients are free to ignore invalid ranges.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#foldingRange
 type FoldingRange struct {
 	// The zero-based start line of the range to fold. The folded area starts after the line's last character.
 	// To be valid, the end must be zero or larger and smaller than the number of lines in the document.
@@ -1972,7 +2354,7 @@ type FoldingRange struct {
 	EndLine uint32 `json:"endLine"`
 	// The zero-based character offset before the folded range ends. If not defined, defaults to the length of the end line.
 	EndCharacter uint32 `json:"endCharacter,omitempty"`
-	// Describes the kind of the folding range such as `comment' or 'region'. The kind
+	// Describes the kind of the folding range such as 'comment' or 'region'. The kind
 	// is used to categorize folding ranges and used by commands like 'Fold all comments'.
 	// See {@link FoldingRangeKind} for an enumeration of standardized kinds.
 	Kind string `json:"kind,omitempty"`
@@ -1983,6 +2365,8 @@ type FoldingRange struct {
 	// @since 3.17.0
 	CollapsedText string `json:"collapsedText,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#foldingRangeClientCapabilities
 type FoldingRangeClientCapabilities struct {
 	// Whether implementation supports dynamic registration for folding range
 	// providers. If this is set to `true` the client supports the new
@@ -2009,17 +2393,23 @@ type FoldingRangeClientCapabilities struct {
 
 // A set of predefined range kinds.
 type FoldingRangeKind string
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#foldingRangeOptions
 type FoldingRangeOptions struct {
 	WorkDoneProgressOptions
 }
 
 // Parameters for a {@link FoldingRangeRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#foldingRangeParams
 type FoldingRangeParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
 	WorkDoneProgressParams
 	PartialResultParams
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#foldingRangeRegistrationOptions
 type FoldingRangeRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	FoldingRangeOptions
@@ -2030,6 +2420,8 @@ type FoldingRangeRegistrationOptions struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#foldingRangeWorkspaceClientCapabilities
 type FoldingRangeWorkspaceClientCapabilities struct {
 	// Whether the client implementation supports a refresh request sent from the
 	// server to the client.
@@ -2045,6 +2437,8 @@ type FoldingRangeWorkspaceClientCapabilities struct {
 }
 
 // Value-object describing what options formatting should use.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#formattingOptions
 type FormattingOptions struct {
 	// Size of a tab in spaces.
 	TabSize uint32 `json:"tabSize"`
@@ -2067,6 +2461,8 @@ type FormattingOptions struct {
 // A diagnostic report with a full set of problems.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#fullDocumentDiagnosticReport
 type FullDocumentDiagnosticReport struct {
 	// A full document diagnostic report.
 	Kind string `json:"kind"`
@@ -2081,6 +2477,8 @@ type FullDocumentDiagnosticReport struct {
 // General client capabilities.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#generalClientCapabilities
 type GeneralClientCapabilities struct {
 	// Client capability that signals how the client
 	// handles stale requests (e.g. a request
@@ -2121,8 +2519,12 @@ type GeneralClientCapabilities struct {
 // The glob pattern. Either a string pattern or a relative pattern.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#globPattern
 type GlobPattern = Or_GlobPattern // (alias)
 // The result of a hover request.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#hover
 type Hover struct {
 	// The hover's content
 	Contents MarkupContent `json:"contents"`
@@ -2130,6 +2532,8 @@ type Hover struct {
 	// visualize the hover, e.g. by changing the background color.
 	Range Range `json:"range,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#hoverClientCapabilities
 type HoverClientCapabilities struct {
 	// Whether hover supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -2139,23 +2543,31 @@ type HoverClientCapabilities struct {
 }
 
 // Hover options.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#hoverOptions
 type HoverOptions struct {
 	WorkDoneProgressOptions
 }
 
 // Parameters for a {@link HoverRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#hoverParams
 type HoverParams struct {
 	TextDocumentPositionParams
 	WorkDoneProgressParams
 }
 
 // Registration options for a {@link HoverRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#hoverRegistrationOptions
 type HoverRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	HoverOptions
 }
 
 // @since 3.6.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#implementationClientCapabilities
 type ImplementationClientCapabilities struct {
 	// Whether implementation supports dynamic registration. If this is set to `true`
 	// the client supports the new `ImplementationRegistrationOptions` return value
@@ -2166,14 +2578,20 @@ type ImplementationClientCapabilities struct {
 	// @since 3.14.0
 	LinkSupport bool `json:"linkSupport,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#implementationOptions
 type ImplementationOptions struct {
 	WorkDoneProgressOptions
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#implementationParams
 type ImplementationParams struct {
 	TextDocumentPositionParams
 	WorkDoneProgressParams
 	PartialResultParams
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#implementationRegistrationOptions
 type ImplementationRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	ImplementationOptions
@@ -2182,6 +2600,8 @@ type ImplementationRegistrationOptions struct {
 
 // The data type of the ResponseError if the
 // initialize request fails.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#initializeError
 type InitializeError struct {
 	// Indicates whether the client execute the following retry logic:
 	// (1) show the message provided by the ResponseError to the user
@@ -2189,12 +2609,16 @@ type InitializeError struct {
 	// (3) if user selected retry the initialize method is sent again.
 	Retry bool `json:"retry"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#initializeParams
 type InitializeParams struct {
 	XInitializeParams
 	WorkspaceFoldersInitializeParams
 }
 
 // The result returned from an initialize request.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#initializeResult
 type InitializeResult struct {
 	// The capabilities the language server provides.
 	Capabilities ServerCapabilities `json:"capabilities"`
@@ -2203,14 +2627,21 @@ type InitializeResult struct {
 	// @since 3.15.0
 	ServerInfo *ServerInfo `json:"serverInfo,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#initializedParams
 type InitializedParams struct {
 }
 
 // Inlay hint information.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlayHint
 type InlayHint struct {
 	// The position of this hint.
+	//
+	// If multiple hints have the same position, they will be shown in the order
+	// they appear in the response.
 	Position Position `json:"position"`
 	// The label of this hint. A human readable string or an array of
 	// InlayHintLabelPart label parts.
@@ -2248,6 +2679,8 @@ type InlayHint struct {
 // Inlay hint client capabilities.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlayHintClientCapabilities
 type InlayHintClientCapabilities struct {
 	// Whether inlay hints support dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -2265,6 +2698,8 @@ type InlayHintKind uint32
 // of inlay hints.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlayHintLabelPart
 type InlayHintLabelPart struct {
 	// The value of this label part.
 	Value string `json:"value"`
@@ -2294,6 +2729,8 @@ type InlayHintLabelPart struct {
 // Inlay hint options used during static registration.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlayHintOptions
 type InlayHintOptions struct {
 	// The server provides support to resolve additional
 	// information for an inlay hint item.
@@ -2304,6 +2741,8 @@ type InlayHintOptions struct {
 // A parameter literal used in inlay hint requests.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlayHintParams
 type InlayHintParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -2315,6 +2754,8 @@ type InlayHintParams struct {
 // Inlay hint options used during static or dynamic registration.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlayHintRegistrationOptions
 type InlayHintRegistrationOptions struct {
 	InlayHintOptions
 	TextDocumentRegistrationOptions
@@ -2324,6 +2765,8 @@ type InlayHintRegistrationOptions struct {
 // Client workspace capabilities specific to inlay hints.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlayHintWorkspaceClientCapabilities
 type InlayHintWorkspaceClientCapabilities struct {
 	// Whether the client implementation supports a refresh request sent from
 	// the server to the client.
@@ -2339,6 +2782,8 @@ type InlayHintWorkspaceClientCapabilities struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineCompletionClientCapabilities
 type InlineCompletionClientCapabilities struct {
 	// Whether implementation supports dynamic registration for inline completion providers.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -2348,6 +2793,8 @@ type InlineCompletionClientCapabilities struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineCompletionContext
 type InlineCompletionContext struct {
 	// Describes how the inline completion was triggered.
 	TriggerKind InlineCompletionTriggerKind `json:"triggerKind"`
@@ -2359,6 +2806,8 @@ type InlineCompletionContext struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineCompletionItem
 type InlineCompletionItem struct {
 	// The text to replace the range with. Must be set.
 	InsertText Or_InlineCompletionItem_insertText `json:"insertText"`
@@ -2374,6 +2823,8 @@ type InlineCompletionItem struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineCompletionList
 type InlineCompletionList struct {
 	// The inline completion items
 	Items []InlineCompletionItem `json:"items"`
@@ -2383,6 +2834,8 @@ type InlineCompletionList struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineCompletionOptions
 type InlineCompletionOptions struct {
 	WorkDoneProgressOptions
 }
@@ -2391,6 +2844,8 @@ type InlineCompletionOptions struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineCompletionParams
 type InlineCompletionParams struct {
 	// Additional information about the context in which inline completions were
 	// requested.
@@ -2403,6 +2858,8 @@ type InlineCompletionParams struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineCompletionRegistrationOptions
 type InlineCompletionRegistrationOptions struct {
 	InlineCompletionOptions
 	TextDocumentRegistrationOptions
@@ -2424,16 +2881,22 @@ type InlineCompletionTriggerKind uint32
 // The InlineValue types combines all inline value types into one type.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineValue
 type InlineValue = Or_InlineValue // (alias)
 // Client capabilities specific to inline values.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineValueClientCapabilities
 type InlineValueClientCapabilities struct {
 	// Whether implementation supports dynamic registration for inline value providers.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
 }
 
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineValueContext
 type InlineValueContext struct {
 	// The stack frame (as a DAP Id) where the execution has stopped.
 	FrameID int32 `json:"frameId"`
@@ -2447,6 +2910,8 @@ type InlineValueContext struct {
 // An optional expression can be used to override the extracted expression.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineValueEvaluatableExpression
 type InlineValueEvaluatableExpression struct {
 	// The document range for which the inline value applies.
 	// The range is used to extract the evaluatable expression from the underlying document.
@@ -2458,6 +2923,8 @@ type InlineValueEvaluatableExpression struct {
 // Inline value options used during static registration.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineValueOptions
 type InlineValueOptions struct {
 	WorkDoneProgressOptions
 }
@@ -2465,6 +2932,8 @@ type InlineValueOptions struct {
 // A parameter literal used in inline value requests.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineValueParams
 type InlineValueParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -2479,6 +2948,8 @@ type InlineValueParams struct {
 // Inline value options used during static or dynamic registration.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineValueRegistrationOptions
 type InlineValueRegistrationOptions struct {
 	InlineValueOptions
 	TextDocumentRegistrationOptions
@@ -2488,6 +2959,8 @@ type InlineValueRegistrationOptions struct {
 // Provide inline value as text.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineValueText
 type InlineValueText struct {
 	// The document range for which the inline value applies.
 	Range Range `json:"range"`
@@ -2500,6 +2973,8 @@ type InlineValueText struct {
 // An optional variable name can be used to override the extracted name.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineValueVariableLookup
 type InlineValueVariableLookup struct {
 	// The document range for which the inline value applies.
 	// The range is used to extract the variable name from the underlying document.
@@ -2513,6 +2988,8 @@ type InlineValueVariableLookup struct {
 // Client workspace capabilities specific to inline values.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#inlineValueWorkspaceClientCapabilities
 type InlineValueWorkspaceClientCapabilities struct {
 	// Whether the client implementation supports a refresh request sent from the
 	// server to the client.
@@ -2527,6 +3004,8 @@ type InlineValueWorkspaceClientCapabilities struct {
 // A special text edit to provide an insert and a replace operation.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#insertReplaceEdit
 type InsertReplaceEdit struct {
 	// The string to be inserted.
 	NewText string `json:"newText"`
@@ -2549,28 +3028,45 @@ type LSPAny = interface{}
 
 // LSP arrays.
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#lSPArray
 type LSPArray = []interface{} // (alias)
 type LSPErrorCodes int32
 
 // LSP object definition.
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#lSPObject
 type LSPObject = map[string]LSPAny // (alias)
+// Predefined Language kinds
+// @since 3.18.0
+// @proposed
+type LanguageKind string
+
 // Client capabilities for the linked editing range request.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#linkedEditingRangeClientCapabilities
 type LinkedEditingRangeClientCapabilities struct {
 	// Whether implementation supports dynamic registration. If this is set to `true`
 	// the client supports the new `(TextDocumentRegistrationOptions & StaticRegistrationOptions)`
 	// return value for the corresponding server capability as well.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#linkedEditingRangeOptions
 type LinkedEditingRangeOptions struct {
 	WorkDoneProgressOptions
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#linkedEditingRangeParams
 type LinkedEditingRangeParams struct {
 	TextDocumentPositionParams
 	WorkDoneProgressParams
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#linkedEditingRangeRegistrationOptions
 type LinkedEditingRangeRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	LinkedEditingRangeOptions
@@ -2580,6 +3076,8 @@ type LinkedEditingRangeRegistrationOptions struct {
 // The result of a linked editing range request.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#linkedEditingRanges
 type LinkedEditingRanges struct {
 	// A list of ranges that can be edited together. The ranges must have
 	// identical length and contain identical text content. The ranges cannot overlap.
@@ -2596,6 +3094,8 @@ type Lit_ClientSemanticTokensRequestOptions_range_Item1 struct {
 
 // Represents a location inside a resource, such as a line
 // inside a text file.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#location
 type Location struct {
 	URI   DocumentURI `json:"uri"`
 	Range Range       `json:"range"`
@@ -2603,6 +3103,8 @@ type Location struct {
 
 // Represents the connection of two locations. Provides additional metadata over normal {@link Location locations},
 // including an origin range.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#locationLink
 type LocationLink struct {
 	// Span of the origin of this link.
 	//
@@ -2624,17 +3126,23 @@ type LocationLink struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#locationUriOnly
 type LocationUriOnly struct {
 	URI DocumentURI `json:"uri"`
 }
 
 // The log message parameters.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#logMessageParams
 type LogMessageParams struct {
 	// The message type. See {@link MessageType}
 	Type MessageType `json:"type"`
 	// The actual message.
 	Message string `json:"message"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#logTraceParams
 type LogTraceParams struct {
 	Message string `json:"message"`
 	Verbose string `json:"verbose,omitempty"`
@@ -2643,6 +3151,8 @@ type LogTraceParams struct {
 // Client capabilities specific to the used markdown parser.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#markdownClientCapabilities
 type MarkdownClientCapabilities struct {
 	// The name of the parser.
 	Parser string `json:"parser"`
@@ -2667,10 +3177,14 @@ type MarkdownClientCapabilities struct {
 //
 // Note that markdown strings will be sanitized - that means html will be escaped.
 // @deprecated use MarkupContent instead.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#markedString
 type MarkedString = Or_MarkedString // (alias)
 // @since 3.18.0
 // @proposed
 // @deprecated use MarkupContent instead.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#markedStringWithLanguage
 type MarkedStringWithLanguage struct {
 	Language string `json:"language"`
 	Value    string `json:"value"`
@@ -2700,6 +3214,8 @@ type MarkedStringWithLanguage struct {
 //
 // *Please Note* that clients might sanitize the return markdown. A client could decide to
 // remove HTML from the markdown to avoid script execution.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#markupContent
 type MarkupContent struct {
 	// The type of the Markup
 	Kind MarkupKind `json:"kind"`
@@ -2713,6 +3229,8 @@ type MarkupContent struct {
 // Please note that `MarkupKinds` must not start with a `$`. This kinds
 // are reserved for internal usage.
 type MarkupKind string
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#messageActionItem
 type MessageActionItem struct {
 	// A short title like 'Retry', 'Open Log' etc.
 	Title string `json:"title"`
@@ -2724,6 +3242,8 @@ type MessageType uint32
 // Moniker definition to match LSIF 0.5 moniker definition.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#moniker
 type Moniker struct {
 	// The scheme of the moniker. For example tsc or .Net
 	Scheme string `json:"scheme"`
@@ -2739,6 +3259,8 @@ type Moniker struct {
 // Client capabilities specific to the moniker request.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#monikerClientCapabilities
 type MonikerClientCapabilities struct {
 	// Whether moniker supports dynamic registration. If this is set to `true`
 	// the client supports the new `MonikerRegistrationOptions` return value
@@ -2750,14 +3272,20 @@ type MonikerClientCapabilities struct {
 //
 // @since 3.16.0
 type MonikerKind string
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#monikerOptions
 type MonikerOptions struct {
 	WorkDoneProgressOptions
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#monikerParams
 type MonikerParams struct {
 	TextDocumentPositionParams
 	WorkDoneProgressParams
 	PartialResultParams
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#monikerRegistrationOptions
 type MonikerRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	MonikerOptions
@@ -2770,6 +3298,8 @@ type MonikerRegistrationOptions struct {
 // notebook cell or the cell's text document.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookCell
 type NotebookCell struct {
 	// The cell's kind
 	Kind NotebookCellKind `json:"kind"`
@@ -2789,6 +3319,8 @@ type NotebookCell struct {
 // array from state S to S'.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookCellArrayChange
 type NotebookCellArrayChange struct {
 	// The start oftest of the cell that changed.
 	Start uint32 `json:"start"`
@@ -2805,6 +3337,8 @@ type NotebookCellKind uint32
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookCellLanguage
 type NotebookCellLanguage struct {
 	Language string `json:"language"`
 }
@@ -2813,6 +3347,8 @@ type NotebookCellLanguage struct {
 // document by different properties.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookCellTextDocumentFilter
 type NotebookCellTextDocumentFilter struct {
 	// A filter that matches against the notebook
 	// containing the notebook cell. If a string
@@ -2829,6 +3365,8 @@ type NotebookCellTextDocumentFilter struct {
 // A notebook document.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocument
 type NotebookDocument struct {
 	// The notebook document's uri.
 	URI URI `json:"uri"`
@@ -2850,6 +3388,8 @@ type NotebookDocument struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentCellChangeStructure
 type NotebookDocumentCellChangeStructure struct {
 	// The change to the cell array.
 	Array NotebookCellArrayChange `json:"array"`
@@ -2863,6 +3403,8 @@ type NotebookDocumentCellChangeStructure struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentCellChanges
 type NotebookDocumentCellChanges struct {
 	// Changes to the cell structure to add or
 	// remove cells.
@@ -2878,6 +3420,8 @@ type NotebookDocumentCellChanges struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentCellContentChanges
 type NotebookDocumentCellContentChanges struct {
 	Document VersionedTextDocumentIdentifier  `json:"document"`
 	Changes  []TextDocumentContentChangeEvent `json:"changes"`
@@ -2886,6 +3430,8 @@ type NotebookDocumentCellContentChanges struct {
 // A change event for a notebook document.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentChangeEvent
 type NotebookDocumentChangeEvent struct {
 	// The changed meta data if any.
 	//
@@ -2898,6 +3444,8 @@ type NotebookDocumentChangeEvent struct {
 // Capabilities specific to the notebook document support.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentClientCapabilities
 type NotebookDocumentClientCapabilities struct {
 	// Capabilities specific to notebook document synchronization
 	//
@@ -2910,11 +3458,15 @@ type NotebookDocumentClientCapabilities struct {
 // against the notebook's URI (same as with documents)
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentFilter
 type NotebookDocumentFilter = Or_NotebookDocumentFilter // (alias)
 // A notebook document filter where `notebookType` is required field.
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentFilterNotebookType
 type NotebookDocumentFilterNotebookType struct {
 	// The type of the enclosing notebook.
 	NotebookType string `json:"notebookType"`
@@ -2928,6 +3480,8 @@ type NotebookDocumentFilterNotebookType struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentFilterPattern
 type NotebookDocumentFilterPattern struct {
 	// The type of the enclosing notebook.
 	NotebookType string `json:"notebookType,omitempty"`
@@ -2941,6 +3495,8 @@ type NotebookDocumentFilterPattern struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentFilterScheme
 type NotebookDocumentFilterScheme struct {
 	// The type of the enclosing notebook.
 	NotebookType string `json:"notebookType,omitempty"`
@@ -2952,6 +3508,8 @@ type NotebookDocumentFilterScheme struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentFilterWithCells
 type NotebookDocumentFilterWithCells struct {
 	// The notebook to be synced If a string
 	// value is provided it matches against the
@@ -2963,6 +3521,8 @@ type NotebookDocumentFilterWithCells struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentFilterWithNotebook
 type NotebookDocumentFilterWithNotebook struct {
 	// The notebook to be synced If a string
 	// value is provided it matches against the
@@ -2975,6 +3535,8 @@ type NotebookDocumentFilterWithNotebook struct {
 // A literal to identify a notebook document in the client.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentIdentifier
 type NotebookDocumentIdentifier struct {
 	// The notebook document's uri.
 	URI URI `json:"uri"`
@@ -2983,6 +3545,8 @@ type NotebookDocumentIdentifier struct {
 // Notebook specific client capabilities.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentSyncClientCapabilities
 type NotebookDocumentSyncClientCapabilities struct {
 	// Whether implementation supports dynamic registration. If this is
 	// set to `true` the client supports the new
@@ -3006,6 +3570,8 @@ type NotebookDocumentSyncClientCapabilities struct {
 // cell will be synced.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentSyncOptions
 type NotebookDocumentSyncOptions struct {
 	// The notebooks to be synced
 	NotebookSelector []Or_NotebookDocumentSyncOptions_notebookSelector_Elem `json:"notebookSelector"`
@@ -3017,12 +3583,16 @@ type NotebookDocumentSyncOptions struct {
 // Registration options specific to a notebook.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#notebookDocumentSyncRegistrationOptions
 type NotebookDocumentSyncRegistrationOptions struct {
 	NotebookDocumentSyncOptions
 	StaticRegistrationOptions
 }
 
 // A text document identifier to optionally denote a specific version of a text document.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#optionalVersionedTextDocumentIdentifier
 type OptionalVersionedTextDocumentIdentifier struct {
 	// The version number of this document. If a versioned text document identifier
 	// is sent from the server to the client and the file is not open in the editor
@@ -3368,9 +3938,13 @@ type PRangeESemanticTokensOptions struct {
 }
 
 // The parameters of a configuration request.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#configurationParams
 type ParamConfiguration struct {
 	Items []ConfigurationItem `json:"items"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#initializeParams
 type ParamInitialize struct {
 	XInitializeParams
 	WorkspaceFoldersInitializeParams
@@ -3378,12 +3952,18 @@ type ParamInitialize struct {
 
 // Represents a parameter of a callable-signature. A parameter can
 // have a label and a doc-comment.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#parameterInformation
 type ParameterInformation struct {
 	// The label of this parameter information.
 	//
 	// Either a string or an inclusive start and exclusive end offsets within its containing
 	// signature label. (see SignatureInformation.label). The offsets are based on a UTF-16
 	// string representation as `Position` and `Range` does.
+	//
+	// To avoid ambiguities a server should use the [start, end] offset value instead of using
+	// a substring. Whether a client support this is controlled via `labelOffsetSupport` client
+	// capability.
 	//
 	// *Note*: a label of type string should be a substring of its containing signature label.
 	// Its intended use case is to highlight the parameter label part in the `SignatureInformation.label`.
@@ -3392,6 +3972,8 @@ type ParameterInformation struct {
 	// in the UI but can be omitted.
 	Documentation string `json:"documentation,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#partialResultParams
 type PartialResultParams struct {
 	// An optional token that a server can use to report partial results (e.g. streaming) to
 	// the client.
@@ -3408,6 +3990,8 @@ type PartialResultParams struct {
 //   - `[!...]` to negate a range of characters to match in a path segment (e.g., `example.[!0-9]` to match on `example.a`, `example.b`, but not `example.0`)
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#pattern
 type Pattern = string // (alias)
 // Position in a text document expressed as zero-based line and character
 // offset. Prior to 3.17 the offsets were always based on a UTF-16 string
@@ -3436,6 +4020,8 @@ type Pattern = string // (alias)
 // that denotes `\r|\n` or `\n|` where `|` represents the character offset.
 //
 // @since 3.17.0 - support for negotiated position encoding.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#position
 type Position struct {
 	// Line position in a document (zero-based).
 	//
@@ -3459,9 +4045,13 @@ type PositionEncodingKind string
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#prepareRenameDefaultBehavior
 type PrepareRenameDefaultBehavior struct {
 	DefaultBehavior bool `json:"defaultBehavior"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#prepareRenameParams
 type PrepareRenameParams struct {
 	TextDocumentPositionParams
 	WorkDoneProgressParams
@@ -3469,16 +4059,22 @@ type PrepareRenameParams struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#prepareRenamePlaceholder
 type PrepareRenamePlaceholder struct {
 	Range       Range  `json:"range"`
 	Placeholder string `json:"placeholder"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#prepareRenameResult
 type PrepareRenameResult = PrepareRenamePlaceholder // (alias)
 type PrepareSupportDefaultBehavior uint32
 
 // A previous result id in a workspace pull request.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#previousResultId
 type PreviousResultID struct {
 	// The URI for which the client knowns a
 	// result id.
@@ -3490,6 +4086,8 @@ type PreviousResultID struct {
 // A previous result id in a workspace pull request.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#previousResultId
 type PreviousResultId struct {
 	// The URI for which the client knowns a
 	// result id.
@@ -3497,14 +4095,20 @@ type PreviousResultId struct {
 	// The value of the previous result id.
 	Value string `json:"value"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#progressParams
 type ProgressParams struct {
 	// The progress token provided by the client or server.
 	Token ProgressToken `json:"token"`
 	// The progress data.
 	Value interface{} `json:"value"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#progressToken
 type ProgressToken = interface{} // (alias)
 // The publish diagnostic client capabilities.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#publishDiagnosticsClientCapabilities
 type PublishDiagnosticsClientCapabilities struct {
 	// Whether the clients accepts diagnostics with related information.
 	RelatedInformation bool `json:"relatedInformation,omitempty"`
@@ -3531,6 +4135,8 @@ type PublishDiagnosticsClientCapabilities struct {
 }
 
 // The publish diagnostic notification's parameters.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#publishDiagnosticsParams
 type PublishDiagnosticsParams struct {
 	// The URI for which diagnostic information is reported.
 	URI DocumentURI `json:"uri"`
@@ -3555,6 +4161,8 @@ type PublishDiagnosticsParams struct {
 //	}
 //
 // ```
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#range
 type Range struct {
 	// The range's start position.
 	Start Position `json:"start"`
@@ -3563,6 +4171,8 @@ type Range struct {
 }
 
 // Client Capabilities for a {@link ReferencesRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#referenceClientCapabilities
 type ReferenceClientCapabilities struct {
 	// Whether references supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -3570,17 +4180,23 @@ type ReferenceClientCapabilities struct {
 
 // Value-object that contains additional information when
 // requesting references.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#referenceContext
 type ReferenceContext struct {
 	// Include the declaration of the current symbol.
 	IncludeDeclaration bool `json:"includeDeclaration"`
 }
 
 // Reference options.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#referenceOptions
 type ReferenceOptions struct {
 	WorkDoneProgressOptions
 }
 
 // Parameters for a {@link ReferencesRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#referenceParams
 type ReferenceParams struct {
 	Context ReferenceContext `json:"context"`
 	TextDocumentPositionParams
@@ -3589,12 +4205,16 @@ type ReferenceParams struct {
 }
 
 // Registration options for a {@link ReferencesRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#referenceRegistrationOptions
 type ReferenceRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	ReferenceOptions
 }
 
 // General parameters to register for a notification or to register a provider.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#registration
 type Registration struct {
 	// The id used to register the request. The id can be used to deregister
 	// the request again.
@@ -3604,16 +4224,22 @@ type Registration struct {
 	// Options necessary for the registration.
 	RegisterOptions interface{} `json:"registerOptions,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#registrationParams
 type RegistrationParams struct {
 	Registrations []Registration `json:"registrations"`
 }
 
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#regularExpressionEngineKind
+type RegularExpressionEngineKind = string // (alias)
 // Client capabilities specific to regular expressions.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#regularExpressionsClientCapabilities
 type RegularExpressionsClientCapabilities struct {
 	// The engine's name.
-	Engine string `json:"engine"`
+	Engine RegularExpressionEngineKind `json:"engine"`
 	// The engine's version.
 	Version string `json:"version,omitempty"`
 }
@@ -3621,6 +4247,8 @@ type RegularExpressionsClientCapabilities struct {
 // A full diagnostic report with a set of related documents.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#relatedFullDocumentDiagnosticReport
 type RelatedFullDocumentDiagnosticReport struct {
 	// Diagnostics of related documents. This information is useful
 	// in programming languages where code in a file A can generate
@@ -3636,6 +4264,8 @@ type RelatedFullDocumentDiagnosticReport struct {
 // An unchanged diagnostic report with a set of related documents.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#relatedUnchangedDocumentDiagnosticReport
 type RelatedUnchangedDocumentDiagnosticReport struct {
 	// Diagnostics of related documents. This information is useful
 	// in programming languages where code in a file A can generate
@@ -3653,6 +4283,8 @@ type RelatedUnchangedDocumentDiagnosticReport struct {
 // folder root, but it can be another absolute URI as well.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#relativePattern
 type RelativePattern struct {
 	// A workspace folder or a base URI to which this pattern will be matched
 	// against relatively.
@@ -3660,6 +4292,8 @@ type RelativePattern struct {
 	// The actual glob pattern;
 	Pattern Pattern `json:"pattern"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#renameClientCapabilities
 type RenameClientCapabilities struct {
 	// Whether rename supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -3686,6 +4320,8 @@ type RenameClientCapabilities struct {
 }
 
 // Rename file operation
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#renameFile
 type RenameFile struct {
 	// A rename
 	Kind string `json:"kind"`
@@ -3699,6 +4335,8 @@ type RenameFile struct {
 }
 
 // Rename file options
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#renameFileOptions
 type RenameFileOptions struct {
 	// Overwrite target if existing. Overwrite wins over `ignoreIfExists`
 	Overwrite bool `json:"overwrite,omitempty"`
@@ -3710,6 +4348,8 @@ type RenameFileOptions struct {
 // files.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#renameFilesParams
 type RenameFilesParams struct {
 	// An array of all files/folders renamed in this operation. When a folder is renamed, only
 	// the folder will be included, and not its children.
@@ -3717,6 +4357,8 @@ type RenameFilesParams struct {
 }
 
 // Provider options for a {@link RenameRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#renameOptions
 type RenameOptions struct {
 	// Renames should be checked and tested before being executed.
 	//
@@ -3726,6 +4368,8 @@ type RenameOptions struct {
 }
 
 // The parameters of a {@link RenameRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#renameParams
 type RenameParams struct {
 	// The document to rename.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -3739,12 +4383,16 @@ type RenameParams struct {
 }
 
 // Registration options for a {@link RenameRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#renameRegistrationOptions
 type RenameRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	RenameOptions
 }
 
 // A generic resource operation.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#resourceOperation
 type ResourceOperation struct {
 	// The resource operation kind.
 	Kind string `json:"kind"`
@@ -3756,6 +4404,8 @@ type ResourceOperation struct {
 type ResourceOperationKind string
 
 // Save options.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#saveOptions
 type SaveOptions struct {
 	// The client is supposed to include the content on save.
 	IncludeText bool `json:"includeText,omitempty"`
@@ -3765,6 +4415,8 @@ type SaveOptions struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#selectedCompletionInfo
 type SelectedCompletionInfo struct {
 	// The range that will be replaced if this completion item is accepted.
 	Range Range `json:"range"`
@@ -3774,23 +4426,31 @@ type SelectedCompletionInfo struct {
 
 // A selection range represents a part of a selection hierarchy. A selection range
 // may have a parent selection range that contains it.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#selectionRange
 type SelectionRange struct {
 	// The {@link Range range} of this selection range.
 	Range Range `json:"range"`
 	// The parent selection range containing this range. Therefore `parent.range` must contain `this.range`.
 	Parent *SelectionRange `json:"parent,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#selectionRangeClientCapabilities
 type SelectionRangeClientCapabilities struct {
 	// Whether implementation supports dynamic registration for selection range providers. If this is set to `true`
 	// the client supports the new `SelectionRangeRegistrationOptions` return value for the corresponding server
 	// capability as well.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#selectionRangeOptions
 type SelectionRangeOptions struct {
 	WorkDoneProgressOptions
 }
 
 // A parameter literal used in selection range requests.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#selectionRangeParams
 type SelectionRangeParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -3799,6 +4459,8 @@ type SelectionRangeParams struct {
 	WorkDoneProgressParams
 	PartialResultParams
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#selectionRangeRegistrationOptions
 type SelectionRangeRegistrationOptions struct {
 	SelectionRangeOptions
 	TextDocumentRegistrationOptions
@@ -3820,6 +4482,8 @@ type SemanticTokenModifiers string
 type SemanticTokenTypes string
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokens
 type SemanticTokens struct {
 	// An optional result id. If provided and clients support delta updating
 	// the client will include the result id in the next semantic token request.
@@ -3831,6 +4495,8 @@ type SemanticTokens struct {
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensClientCapabilities
 type SemanticTokensClientCapabilities struct {
 	// Whether implementation supports dynamic registration. If this is set to `true`
 	// the client supports the new `(TextDocumentRegistrationOptions & StaticRegistrationOptions)`
@@ -3876,6 +4542,8 @@ type SemanticTokensClientCapabilities struct {
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensDelta
 type SemanticTokensDelta struct {
 	ResultID string `json:"resultId,omitempty"`
 	// The semantic token edits to transform a previous result into a new result.
@@ -3883,6 +4551,8 @@ type SemanticTokensDelta struct {
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensDeltaParams
 type SemanticTokensDeltaParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -3894,11 +4564,15 @@ type SemanticTokensDeltaParams struct {
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensDeltaPartialResult
 type SemanticTokensDeltaPartialResult struct {
 	Edits []SemanticTokensEdit `json:"edits"`
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensEdit
 type SemanticTokensEdit struct {
 	// The start offset of the edit.
 	Start uint32 `json:"start"`
@@ -3912,12 +4586,16 @@ type SemanticTokensEdit struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensFullDelta
 type SemanticTokensFullDelta struct {
 	// The server supports deltas for full documents.
 	Delta bool `json:"delta,omitempty"`
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensLegend
 type SemanticTokensLegend struct {
 	// The token types a server uses.
 	TokenTypes []string `json:"tokenTypes"`
@@ -3926,6 +4604,8 @@ type SemanticTokensLegend struct {
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensOptions
 type SemanticTokensOptions struct {
 	// The legend used by the server
 	Legend SemanticTokensLegend `json:"legend"`
@@ -3938,6 +4618,8 @@ type SemanticTokensOptions struct {
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensParams
 type SemanticTokensParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -3946,11 +4628,15 @@ type SemanticTokensParams struct {
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensPartialResult
 type SemanticTokensPartialResult struct {
 	Data []uint32 `json:"data"`
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensRangeParams
 type SemanticTokensRangeParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -3961,6 +4647,8 @@ type SemanticTokensRangeParams struct {
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensRegistrationOptions
 type SemanticTokensRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	SemanticTokensOptions
@@ -3968,6 +4656,8 @@ type SemanticTokensRegistrationOptions struct {
 }
 
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#semanticTokensWorkspaceClientCapabilities
 type SemanticTokensWorkspaceClientCapabilities struct {
 	// Whether the client implementation supports a refresh request sent from
 	// the server to the client.
@@ -3981,6 +4671,8 @@ type SemanticTokensWorkspaceClientCapabilities struct {
 
 // Defines the capabilities provided by a language
 // server.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#serverCapabilities
 type ServerCapabilities struct {
 	// The position encoding the server picked from the encodings offered
 	// by the client via the client capability `general.positionEncodings`.
@@ -4093,6 +4785,8 @@ type ServerCapabilities struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#serverCompletionItemOptions
 type ServerCompletionItemOptions struct {
 	// The server has support for completion item label
 	// details (see also `CompletionItemLabelDetails`) when
@@ -4107,19 +4801,25 @@ type ServerCompletionItemOptions struct {
 // @since 3.15.0
 // @since 3.18.0 ServerInfo type name added.
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#serverInfo
 type ServerInfo struct {
 	// The name of the server as defined by the server.
 	Name string `json:"name"`
 	// The server's version as defined by the server.
 	Version string `json:"version,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#setTraceParams
 type SetTraceParams struct {
-	Value TraceValues `json:"value"`
+	Value TraceValue `json:"value"`
 }
 
 // Client capabilities for the showDocument request.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#showDocumentClientCapabilities
 type ShowDocumentClientCapabilities struct {
 	// The client has support for the showDocument
 	// request.
@@ -4129,6 +4829,8 @@ type ShowDocumentClientCapabilities struct {
 // Params to show a resource in the UI.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#showDocumentParams
 type ShowDocumentParams struct {
 	// The uri to show.
 	URI URI `json:"uri"`
@@ -4151,12 +4853,16 @@ type ShowDocumentParams struct {
 // The result of a showDocument request.
 //
 // @since 3.16.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#showDocumentResult
 type ShowDocumentResult struct {
 	// A boolean indicating if the show was successful.
 	Success bool `json:"success"`
 }
 
 // The parameters of a notification message.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#showMessageParams
 type ShowMessageParams struct {
 	// The message type. See {@link MessageType}
 	Type MessageType `json:"type"`
@@ -4165,10 +4871,14 @@ type ShowMessageParams struct {
 }
 
 // Show message request client capabilities
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#showMessageRequestClientCapabilities
 type ShowMessageRequestClientCapabilities struct {
 	// Capabilities specific to the `MessageActionItem` type.
 	MessageActionItem *ClientShowMessageActionItemOptions `json:"messageActionItem,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#showMessageRequestParams
 type ShowMessageRequestParams struct {
 	// The message type. See {@link MessageType}
 	Type MessageType `json:"type"`
@@ -4181,6 +4891,8 @@ type ShowMessageRequestParams struct {
 // Signature help represents the signature of something
 // callable. There can be multiple signature but only one
 // active and only one active parameter.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#signatureHelp
 type SignatureHelp struct {
 	// One or more signatures.
 	Signatures []SignatureInformation `json:"signatures"`
@@ -4194,17 +4906,28 @@ type SignatureHelp struct {
 	// In future version of the protocol this property might become
 	// mandatory to better express this.
 	ActiveSignature uint32 `json:"activeSignature,omitempty"`
-	// The active parameter of the active signature. If omitted or the value
-	// lies outside the range of `signatures[activeSignature].parameters`
-	// defaults to 0 if the active signature has parameters. If
-	// the active signature has no parameters it is ignored.
+	// The active parameter of the active signature.
+	//
+	// If `null`, no parameter of the signature is active (for example a named
+	// argument that does not match any declared parameters). This is only valid
+	// if the client specifies the client capability
+	// `textDocument.signatureHelp.noActiveParameterSupport === true`
+	//
+	// If omitted or the value lies outside the range of
+	// `signatures[activeSignature].parameters` defaults to 0 if the active
+	// signature has parameters.
+	//
+	// If the active signature has no parameters it is ignored.
+	//
 	// In future version of the protocol this property might become
-	// mandatory to better express the active parameter if the
-	// active signature does have any.
+	// mandatory (but still nullable) to better express the active parameter if
+	// the active signature does have any.
 	ActiveParameter uint32 `json:"activeParameter,omitempty"`
 }
 
 // Client Capabilities for a {@link SignatureHelpRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#signatureHelpClientCapabilities
 type SignatureHelpClientCapabilities struct {
 	// Whether signature help supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -4223,6 +4946,8 @@ type SignatureHelpClientCapabilities struct {
 // Additional information about the context in which a signature help request was triggered.
 //
 // @since 3.15.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#signatureHelpContext
 type SignatureHelpContext struct {
 	// Action that caused signature help to be triggered.
 	TriggerKind SignatureHelpTriggerKind `json:"triggerKind"`
@@ -4243,6 +4968,8 @@ type SignatureHelpContext struct {
 }
 
 // Server Capabilities for a {@link SignatureHelpRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#signatureHelpOptions
 type SignatureHelpOptions struct {
 	// List of characters that trigger signature help automatically.
 	TriggerCharacters []string `json:"triggerCharacters,omitempty"`
@@ -4257,6 +4984,8 @@ type SignatureHelpOptions struct {
 }
 
 // Parameters for a {@link SignatureHelpRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#signatureHelpParams
 type SignatureHelpParams struct {
 	// The signature help context. This is only available if the client specifies
 	// to send this using the client capability `textDocument.signatureHelp.contextSupport === true`
@@ -4268,6 +4997,8 @@ type SignatureHelpParams struct {
 }
 
 // Registration options for a {@link SignatureHelpRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#signatureHelpRegistrationOptions
 type SignatureHelpRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	SignatureHelpOptions
@@ -4281,6 +5012,8 @@ type SignatureHelpTriggerKind uint32
 // Represents the signature of something callable. A signature
 // can have a label, like a function-name, a doc-comment, and
 // a set of parameters.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#signatureInformation
 type SignatureInformation struct {
 	// The label of this signature. Will be shown in
 	// the UI.
@@ -4292,7 +5025,13 @@ type SignatureInformation struct {
 	Parameters []ParameterInformation `json:"parameters,omitempty"`
 	// The index of the active parameter.
 	//
-	// If provided, this is used in place of `SignatureHelp.activeParameter`.
+	// If `null`, no parameter of the signature is active (for example a named
+	// argument that does not match any declared parameters). This is only valid
+	// if the client specifies the client capability
+	// `textDocument.signatureHelp.noActiveParameterSupport === true`
+	//
+	// If provided (or `null`), this is used in place of
+	// `SignatureHelp.activeParameter`.
 	//
 	// @since 3.16.0
 	ActiveParameter uint32 `json:"activeParameter,omitempty"`
@@ -4300,6 +5039,8 @@ type SignatureInformation struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#staleRequestSupportOptions
 type StaleRequestSupportOptions struct {
 	// The client will actively cancel the request.
 	Cancel bool `json:"cancel"`
@@ -4311,6 +5052,8 @@ type StaleRequestSupportOptions struct {
 
 // Static registration options to be returned in the initialize
 // request.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#staticRegistrationOptions
 type StaticRegistrationOptions struct {
 	// The id used to register the request. The id can be used to deregister
 	// the request again. See also Registration#id.
@@ -4327,6 +5070,8 @@ type StaticRegistrationOptions struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#stringValue
 type StringValue struct {
 	// The kind of string value.
 	Kind string `json:"kind"`
@@ -4336,6 +5081,8 @@ type StringValue struct {
 
 // Represents information about programming constructs like variables, classes,
 // interfaces etc.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#symbolInformation
 type SymbolInformation struct {
 	// extends BaseSymbolInformation
 	// Indicates if this symbol is deprecated.
@@ -4376,6 +5123,8 @@ type SymbolKind uint32
 type SymbolTag uint32
 
 // Describe options to be used when registered for text document change events.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentChangeRegistrationOptions
 type TextDocumentChangeRegistrationOptions struct {
 	// How documents are synced to the server.
 	SyncKind TextDocumentSyncKind `json:"syncKind"`
@@ -4383,6 +5132,8 @@ type TextDocumentChangeRegistrationOptions struct {
 }
 
 // Text document specific client capabilities.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentClientCapabilities
 type TextDocumentClientCapabilities struct {
 	// Defines which synchronization capabilities the client supports.
 	Synchronization *TextDocumentSyncClientCapabilities `json:"synchronization,omitempty"`
@@ -4482,9 +5233,13 @@ type TextDocumentClientCapabilities struct {
 
 // An event describing a change to a text document. If only a text is provided
 // it is considered to be the full content of the document.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentContentChangeEvent
 type TextDocumentContentChangeEvent = TextDocumentContentChangePartial // (alias)
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentContentChangePartial
 type TextDocumentContentChangePartial struct {
 	// The range of the document that changed.
 	Range *Range `json:"range,omitempty"`
@@ -4498,6 +5253,8 @@ type TextDocumentContentChangePartial struct {
 
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentContentChangeWholeDocument
 type TextDocumentContentChangeWholeDocument struct {
 	// The new text of the whole document.
 	Text string `json:"text"`
@@ -4507,6 +5264,8 @@ type TextDocumentContentChangeWholeDocument struct {
 // on a document version Si and after they are applied move the document to version Si+1.
 // So the creator of a TextDocumentEdit doesn't need to sort the array of edits or do any
 // kind of ordering. However the edits must be non overlapping.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentEdit
 type TextDocumentEdit struct {
 	// The text document to change.
 	TextDocument OptionalVersionedTextDocumentIdentifier `json:"textDocument"`
@@ -4534,11 +5293,15 @@ type TextDocumentEdit struct {
 // @sample A language filter that applies to all package.json paths: `{ language: 'json', pattern: '**package.json' }`
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentFilter
 type TextDocumentFilter = Or_TextDocumentFilter // (alias)
 // A document filter where `language` is required field.
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentFilterLanguage
 type TextDocumentFilterLanguage struct {
 	// A language id, like `typescript`.
 	Language string `json:"language"`
@@ -4552,6 +5315,8 @@ type TextDocumentFilterLanguage struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentFilterPattern
 type TextDocumentFilterPattern struct {
 	// A language id, like `typescript`.
 	Language string `json:"language,omitempty"`
@@ -4565,6 +5330,8 @@ type TextDocumentFilterPattern struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentFilterScheme
 type TextDocumentFilterScheme struct {
 	// A language id, like `typescript`.
 	Language string `json:"language,omitempty"`
@@ -4575,6 +5342,8 @@ type TextDocumentFilterScheme struct {
 }
 
 // A literal to identify a text document in the client.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentIdentifier
 type TextDocumentIdentifier struct {
 	// The text document's uri.
 	URI DocumentURI `json:"uri"`
@@ -4582,11 +5351,13 @@ type TextDocumentIdentifier struct {
 
 // An item to transfer a text document from the client to the
 // server.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentItem
 type TextDocumentItem struct {
 	// The text document's uri.
 	URI DocumentURI `json:"uri"`
 	// The text document's language identifier.
-	LanguageID string `json:"languageId"`
+	LanguageID LanguageKind `json:"languageId"`
 	// The version number of this document (it will increase after each
 	// change, including undo/redo).
 	Version int32 `json:"version"`
@@ -4596,6 +5367,8 @@ type TextDocumentItem struct {
 
 // A parameter literal used in requests to pass a text document and a position inside that
 // document.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentPositionParams
 type TextDocumentPositionParams struct {
 	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
@@ -4604,6 +5377,8 @@ type TextDocumentPositionParams struct {
 }
 
 // General text document registration options.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentRegistrationOptions
 type TextDocumentRegistrationOptions struct {
 	// A document selector to identify the scope of the registration. If set to null
 	// the document selector provided on the client side will be used.
@@ -4614,10 +5389,14 @@ type TextDocumentRegistrationOptions struct {
 type TextDocumentSaveReason uint32
 
 // Save registration options.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentSaveRegistrationOptions
 type TextDocumentSaveRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	SaveOptions
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentSyncClientCapabilities
 type TextDocumentSyncClientCapabilities struct {
 	// Whether text document synchronization supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -4634,6 +5413,8 @@ type TextDocumentSyncClientCapabilities struct {
 // Defines how the host (editor) should sync
 // document changes to the language server.
 type TextDocumentSyncKind uint32
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocumentSyncOptions
 type TextDocumentSyncOptions struct {
 	// Open and close notifications are sent to the server. If omitted open close notification should not
 	// be sent.
@@ -4653,6 +5434,8 @@ type TextDocumentSyncOptions struct {
 }
 
 // A text edit applicable to a text document.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textEdit
 type TextEdit struct {
 	// The range of the text document to be manipulated. To insert
 	// text into a document create a range where start === end.
@@ -4662,9 +5445,11 @@ type TextEdit struct {
 	NewText string `json:"newText"`
 }
 type TokenFormat string
-type TraceValues string
+type TraceValue string
 
 // Since 3.6.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeDefinitionClientCapabilities
 type TypeDefinitionClientCapabilities struct {
 	// Whether implementation supports dynamic registration. If this is set to `true`
 	// the client supports the new `TypeDefinitionRegistrationOptions` return value
@@ -4675,14 +5460,20 @@ type TypeDefinitionClientCapabilities struct {
 	// Since 3.14.0
 	LinkSupport bool `json:"linkSupport,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeDefinitionOptions
 type TypeDefinitionOptions struct {
 	WorkDoneProgressOptions
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeDefinitionParams
 type TypeDefinitionParams struct {
 	TextDocumentPositionParams
 	WorkDoneProgressParams
 	PartialResultParams
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeDefinitionRegistrationOptions
 type TypeDefinitionRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	TypeDefinitionOptions
@@ -4690,6 +5481,8 @@ type TypeDefinitionRegistrationOptions struct {
 }
 
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchyClientCapabilities
 type TypeHierarchyClientCapabilities struct {
 	// Whether implementation supports dynamic registration. If this is set to `true`
 	// the client supports the new `(TextDocumentRegistrationOptions & StaticRegistrationOptions)`
@@ -4698,6 +5491,8 @@ type TypeHierarchyClientCapabilities struct {
 }
 
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchyItem
 type TypeHierarchyItem struct {
 	// The name of this item.
 	Name string `json:"name"`
@@ -4726,6 +5521,8 @@ type TypeHierarchyItem struct {
 // Type hierarchy options used during static registration.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchyOptions
 type TypeHierarchyOptions struct {
 	WorkDoneProgressOptions
 }
@@ -4733,6 +5530,8 @@ type TypeHierarchyOptions struct {
 // The parameter of a `textDocument/prepareTypeHierarchy` request.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchyPrepareParams
 type TypeHierarchyPrepareParams struct {
 	TextDocumentPositionParams
 	WorkDoneProgressParams
@@ -4741,6 +5540,8 @@ type TypeHierarchyPrepareParams struct {
 // Type hierarchy options used during static or dynamic registration.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchyRegistrationOptions
 type TypeHierarchyRegistrationOptions struct {
 	TextDocumentRegistrationOptions
 	TypeHierarchyOptions
@@ -4750,6 +5551,8 @@ type TypeHierarchyRegistrationOptions struct {
 // The parameter of a `typeHierarchy/subtypes` request.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchySubtypesParams
 type TypeHierarchySubtypesParams struct {
 	Item TypeHierarchyItem `json:"item"`
 	WorkDoneProgressParams
@@ -4759,6 +5562,8 @@ type TypeHierarchySubtypesParams struct {
 // The parameter of a `typeHierarchy/supertypes` request.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#typeHierarchySupertypesParams
 type TypeHierarchySupertypesParams struct {
 	Item TypeHierarchyItem `json:"item"`
 	WorkDoneProgressParams
@@ -4775,6 +5580,8 @@ type UIntCommaUInt struct {
 // report is still accurate.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#unchangedDocumentDiagnosticReport
 type UnchangedDocumentDiagnosticReport struct {
 	// A document diagnostic report indicating
 	// no changes to the last result. A server can
@@ -4792,6 +5599,8 @@ type UnchangedDocumentDiagnosticReport struct {
 type UniquenessLevel string
 
 // General parameters to unregister a request or notification.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#unregistration
 type Unregistration struct {
 	// The id used to unregister the request or notification. Usually an id
 	// provided during the register request.
@@ -4799,6 +5608,8 @@ type Unregistration struct {
 	// The method to unregister for.
 	Method string `json:"method"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#unregistrationParams
 type UnregistrationParams struct {
 	Unregisterations []Unregistration `json:"unregisterations"`
 }
@@ -4806,6 +5617,8 @@ type UnregistrationParams struct {
 // A versioned notebook document identifier.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#versionedNotebookDocumentIdentifier
 type VersionedNotebookDocumentIdentifier struct {
 	// The version number of this notebook document.
 	Version int32 `json:"version"`
@@ -4814,18 +5627,23 @@ type VersionedNotebookDocumentIdentifier struct {
 }
 
 // A text document identifier to denote a specific version of a text document.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#versionedTextDocumentIdentifier
 type VersionedTextDocumentIdentifier struct {
 	// The version number of this document.
 	Version int32 `json:"version"`
 	TextDocumentIdentifier
 }
 type WatchKind = uint32 // The parameters sent in a will save text document notification.
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#willSaveTextDocumentParams
 type WillSaveTextDocumentParams struct {
 	// The document that will be saved.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
 	// The 'TextDocumentSaveReason'.
 	Reason TextDocumentSaveReason `json:"reason"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#windowClientCapabilities
 type WindowClientCapabilities struct {
 	// It indicates whether the client supports server initiated
 	// progress using the `window/workDoneProgress/create` request.
@@ -4846,6 +5664,8 @@ type WindowClientCapabilities struct {
 	// @since 3.16.0
 	ShowDocument *ShowDocumentClientCapabilities `json:"showDocument,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workDoneProgressBegin
 type WorkDoneProgressBegin struct {
 	Kind string `json:"kind"`
 	// Mandatory title of the progress operation. Used to briefly inform about
@@ -4871,20 +5691,28 @@ type WorkDoneProgressBegin struct {
 	// that are not following this rule. The value range is [0, 100].
 	Percentage uint32 `json:"percentage,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workDoneProgressCancelParams
 type WorkDoneProgressCancelParams struct {
 	// The token to be used to report progress.
 	Token ProgressToken `json:"token"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workDoneProgressCreateParams
 type WorkDoneProgressCreateParams struct {
 	// The token to be used to report progress.
 	Token ProgressToken `json:"token"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workDoneProgressEnd
 type WorkDoneProgressEnd struct {
 	Kind string `json:"kind"`
 	// Optional, a final message indicating to for example indicate the outcome
 	// of the operation.
 	Message string `json:"message,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workDoneProgressOptions
 type WorkDoneProgressOptions struct {
 	WorkDoneProgress bool `json:"workDoneProgress,omitempty"`
 }
@@ -4894,10 +5722,14 @@ type WorkDoneProgressOptionsAndTextDocumentRegistrationOptions struct {
 	WorkDoneProgressOptions
 	TextDocumentRegistrationOptions
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workDoneProgressParams
 type WorkDoneProgressParams struct {
 	// An optional token that a server can use to report work done progress.
 	WorkDoneToken ProgressToken `json:"workDoneToken,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workDoneProgressReport
 type WorkDoneProgressReport struct {
 	Kind string `json:"kind"`
 	// Controls enablement state of a cancel button.
@@ -4921,6 +5753,8 @@ type WorkDoneProgressReport struct {
 }
 
 // Workspace specific client capabilities.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceClientCapabilities
 type WorkspaceClientCapabilities struct {
 	// The client supports applying batch edits
 	// to the workspace by supporting the request
@@ -4983,6 +5817,8 @@ type WorkspaceClientCapabilities struct {
 // Parameters of the workspace diagnostic request.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceDiagnosticParams
 type WorkspaceDiagnosticParams struct {
 	// The additional identifier provided during registration.
 	Identifier string `json:"identifier,omitempty"`
@@ -4996,6 +5832,8 @@ type WorkspaceDiagnosticParams struct {
 // A workspace diagnostic report.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceDiagnosticReport
 type WorkspaceDiagnosticReport struct {
 	Items []WorkspaceDocumentDiagnosticReport `json:"items"`
 }
@@ -5003,6 +5841,8 @@ type WorkspaceDiagnosticReport struct {
 // A partial result for a workspace diagnostic report.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceDiagnosticReportPartialResult
 type WorkspaceDiagnosticReportPartialResult struct {
 	Items []WorkspaceDocumentDiagnosticReport `json:"items"`
 }
@@ -5010,6 +5850,8 @@ type WorkspaceDiagnosticReportPartialResult struct {
 // A workspace diagnostic document report.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceDocumentDiagnosticReport
 type WorkspaceDocumentDiagnosticReport = Or_WorkspaceDocumentDiagnosticReport // (alias)
 // A workspace edit represents changes to many resources managed in the workspace. The edit
 // should either provide `changes` or `documentChanges`. If documentChanges are present
@@ -5023,6 +5865,8 @@ type WorkspaceDocumentDiagnosticReport = Or_WorkspaceDocumentDiagnosticReport //
 // An invalid sequence (e.g. (1) delete file a.txt and (2) insert text into file a.txt) will
 // cause failure of the operation. How the client recovers from the failure is described by
 // the client capability: `workspace.workspaceEdit.failureHandling`
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceEdit
 type WorkspaceEdit struct {
 	// Holds changes to existing resources.
 	Changes map[DocumentURI][]TextEdit `json:"changes,omitempty"`
@@ -5036,7 +5880,7 @@ type WorkspaceEdit struct {
 	//
 	// If a client neither supports `documentChanges` nor `workspace.workspaceEdit.resourceOperations` then
 	// only plain `TextEdit`s using the `changes` property are supported.
-	DocumentChanges []DocumentChanges `json:"documentChanges,omitempty"`
+	DocumentChanges []DocumentChange `json:"documentChanges,omitempty"`
 	// A map of change annotations that can be referenced in `AnnotatedTextEdit`s or create, rename and
 	// delete file / folder operations.
 	//
@@ -5045,6 +5889,8 @@ type WorkspaceEdit struct {
 	// @since 3.16.0
 	ChangeAnnotations map[ChangeAnnotationIdentifier]ChangeAnnotation `json:"changeAnnotations,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceEditClientCapabilities
 type WorkspaceEditClientCapabilities struct {
 	// The client supports versioned document changes in `WorkspaceEdit`s
 	DocumentChanges bool `json:"documentChanges,omitempty"`
@@ -5074,6 +5920,8 @@ type WorkspaceEditClientCapabilities struct {
 }
 
 // A workspace folder inside a client.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceFolder
 type WorkspaceFolder struct {
 	// The associated URI for this workspace folder.
 	URI URI `json:"uri"`
@@ -5081,6 +5929,8 @@ type WorkspaceFolder struct {
 	// workspace folder in the user interface.
 	Name string `json:"name"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceFoldersServerCapabilities
 type WorkspaceFolders5Gn struct {
 	// The server has support for workspace folders
 	Supported bool `json:"supported,omitempty"`
@@ -5095,12 +5945,16 @@ type WorkspaceFolders5Gn struct {
 }
 
 // The workspace folder change event.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceFoldersChangeEvent
 type WorkspaceFoldersChangeEvent struct {
 	// The array of added workspace folders
 	Added []WorkspaceFolder `json:"added"`
 	// The array of the removed workspace folders
 	Removed []WorkspaceFolder `json:"removed"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceFoldersInitializeParams
 type WorkspaceFoldersInitializeParams struct {
 	// The workspace folders configured in the client when the server starts.
 	//
@@ -5111,6 +5965,8 @@ type WorkspaceFoldersInitializeParams struct {
 	// @since 3.6.0
 	WorkspaceFolders []WorkspaceFolder `json:"workspaceFolders,omitempty"`
 }
+
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceFoldersServerCapabilities
 type WorkspaceFoldersServerCapabilities struct {
 	// The server has support for workspace folders
 	Supported bool `json:"supported,omitempty"`
@@ -5127,6 +5983,8 @@ type WorkspaceFoldersServerCapabilities struct {
 // A full document diagnostic report for a workspace diagnostic result.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceFullDocumentDiagnosticReport
 type WorkspaceFullDocumentDiagnosticReport struct {
 	// The URI for which diagnostic information is reported.
 	URI DocumentURI `json:"uri"`
@@ -5140,6 +5998,8 @@ type WorkspaceFullDocumentDiagnosticReport struct {
 //
 // @since 3.18.0
 // @proposed
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceOptions
 type WorkspaceOptions struct {
 	// The server supports workspace folder.
 	//
@@ -5156,6 +6016,8 @@ type WorkspaceOptions struct {
 // See also SymbolInformation.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceSymbol
 type WorkspaceSymbol struct {
 	// The location of the symbol. Whether a server is allowed to
 	// return a location without a range depends on the client
@@ -5170,6 +6032,8 @@ type WorkspaceSymbol struct {
 }
 
 // Client capabilities for a {@link WorkspaceSymbolRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceSymbolClientCapabilities
 type WorkspaceSymbolClientCapabilities struct {
 	// Symbol request supports dynamic registration.
 	DynamicRegistration bool `json:"dynamicRegistration,omitempty"`
@@ -5189,6 +6053,8 @@ type WorkspaceSymbolClientCapabilities struct {
 }
 
 // Server capabilities for a {@link WorkspaceSymbolRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceSymbolOptions
 type WorkspaceSymbolOptions struct {
 	// The server provides support to resolve additional
 	// information for a workspace symbol.
@@ -5199,6 +6065,8 @@ type WorkspaceSymbolOptions struct {
 }
 
 // The parameters of a {@link WorkspaceSymbolRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceSymbolParams
 type WorkspaceSymbolParams struct {
 	// A query string to filter symbols by. Clients may send an empty
 	// string here to request all symbols.
@@ -5208,6 +6076,8 @@ type WorkspaceSymbolParams struct {
 }
 
 // Registration options for a {@link WorkspaceSymbolRequest}.
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceSymbolRegistrationOptions
 type WorkspaceSymbolRegistrationOptions struct {
 	WorkspaceSymbolOptions
 }
@@ -5215,6 +6085,8 @@ type WorkspaceSymbolRegistrationOptions struct {
 // An unchanged document diagnostic report for a workspace diagnostic result.
 //
 // @since 3.17.0
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspaceUnchangedDocumentDiagnosticReport
 type WorkspaceUnchangedDocumentDiagnosticReport struct {
 	// The URI for which diagnostic information is reported.
 	URI DocumentURI `json:"uri"`
@@ -5225,6 +6097,8 @@ type WorkspaceUnchangedDocumentDiagnosticReport struct {
 }
 
 // The initialize parameters
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#_InitializeParams
 type XInitializeParams struct {
 	// The process Id of the parent process that started
 	// the server.
@@ -5261,11 +6135,13 @@ type XInitializeParams struct {
 	// User provided initialization options.
 	InitializationOptions interface{} `json:"initializationOptions,omitempty"`
 	// The initial trace setting. If omitted trace is disabled ('off').
-	Trace *TraceValues `json:"trace,omitempty"`
+	Trace *TraceValue `json:"trace,omitempty"`
 	WorkDoneProgressParams
 }
 
 // The initialize parameters
+//
+// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#_InitializeParams
 type _InitializeParams struct {
 	// The process Id of the parent process that started
 	// the server.
@@ -5302,7 +6178,7 @@ type _InitializeParams struct {
 	// User provided initialization options.
 	InitializationOptions interface{} `json:"initializationOptions,omitempty"`
 	// The initial trace setting. If omitted trace is disabled ('off').
-	Trace *TraceValues `json:"trace,omitempty"`
+	Trace *TraceValue `json:"trace,omitempty"`
 	WorkDoneProgressParams
 }
 
@@ -5335,6 +6211,19 @@ const (
 	//  - Inline constant
 	//  - ...
 	RefactorInline CodeActionKind = "refactor.inline"
+	// Base kind for refactoring move actions: `refactor.move`
+	//
+	// Example move actions:
+	//
+	//
+	//  - Move a function to a new file
+	//  - Move a property between classes
+	//  - Move method to base class
+	//  - ...
+	//
+	// @since 3.18.0
+	// @proposed
+	RefactorMove CodeActionKind = "refactor.move"
 	// Base kind for refactoring rewrite actions: 'refactor.rewrite'
 	//
 	// Example rewrite actions:
@@ -5360,6 +6249,11 @@ const (
 	//
 	// @since 3.15.0
 	SourceFixAll CodeActionKind = "source.fixAll"
+	// Base kind for all code actions applying to the entire notebook's scope. CodeActionKinds using
+	// this should always begin with `notebook.`
+	//
+	// @since 3.18.0
+	Notebook CodeActionKind = "notebook"
 	// The reason why code actions were requested.
 	//
 	// @since 3.17.0
@@ -5505,9 +6399,9 @@ const (
 	// @since 3.18.0
 	// @proposed
 	// Completion was triggered explicitly by a user gesture.
-	InlineInvoked InlineCompletionTriggerKind = 0
+	InlineInvoked InlineCompletionTriggerKind = 1
 	// Completion was triggered automatically while editing.
-	InlineAutomatic InlineCompletionTriggerKind = 1
+	InlineAutomatic InlineCompletionTriggerKind = 2
 	// Defines whether the insert text in a completion item should be interpreted as
 	// plain text or a snippet.
 	// The primary text to be inserted is treated as a plain string.
@@ -5564,6 +6458,75 @@ const (
 	// The client has canceled a request and a server as detected
 	// the cancel.
 	RequestCancelled LSPErrorCodes = -32800
+	// Predefined Language kinds
+	// @since 3.18.0
+	// @proposed
+	LangABAP         LanguageKind = "abap"
+	LangWindowsBat   LanguageKind = "bat"
+	LangBibTeX       LanguageKind = "bibtex"
+	LangClojure      LanguageKind = "clojure"
+	LangCoffeescript LanguageKind = "coffeescript"
+	LangC            LanguageKind = "c"
+	LangCPP          LanguageKind = "cpp"
+	LangCSharp       LanguageKind = "csharp"
+	LangCSS          LanguageKind = "css"
+	// @since 3.18.0
+	// @proposed
+	LangD LanguageKind = "d"
+	// @since 3.18.0
+	// @proposed
+	LangDelphi          LanguageKind = "pascal"
+	LangDiff            LanguageKind = "diff"
+	LangDart            LanguageKind = "dart"
+	LangDockerfile      LanguageKind = "dockerfile"
+	LangElixir          LanguageKind = "elixir"
+	LangErlang          LanguageKind = "erlang"
+	LangFSharp          LanguageKind = "fsharp"
+	LangGitCommit       LanguageKind = "git-commit"
+	LangGitRebase       LanguageKind = "rebase"
+	LangGo              LanguageKind = "go"
+	LangGroovy          LanguageKind = "groovy"
+	LangHandlebars      LanguageKind = "handlebars"
+	LangHTML            LanguageKind = "html"
+	LangIni             LanguageKind = "ini"
+	LangJava            LanguageKind = "java"
+	LangJavaScript      LanguageKind = "javascript"
+	LangJavaScriptReact LanguageKind = "javascriptreact"
+	LangJSON            LanguageKind = "json"
+	LangLaTeX           LanguageKind = "latex"
+	LangLess            LanguageKind = "less"
+	LangLua             LanguageKind = "lua"
+	LangMakefile        LanguageKind = "makefile"
+	LangMarkdown        LanguageKind = "markdown"
+	LangObjectiveC      LanguageKind = "objective-c"
+	LangObjectiveCPP    LanguageKind = "objective-cpp"
+	// @since 3.18.0
+	// @proposed
+	LangPascal          LanguageKind = "pascal"
+	LangPerl            LanguageKind = "perl"
+	LangPerl6           LanguageKind = "perl6"
+	LangPHP             LanguageKind = "php"
+	LangPowershell      LanguageKind = "powershell"
+	LangPug             LanguageKind = "jade"
+	LangPython          LanguageKind = "python"
+	LangR               LanguageKind = "r"
+	LangRazor           LanguageKind = "razor"
+	LangRuby            LanguageKind = "ruby"
+	LangRust            LanguageKind = "rust"
+	LangSCSS            LanguageKind = "scss"
+	LangSASS            LanguageKind = "sass"
+	LangScala           LanguageKind = "scala"
+	LangShaderLab       LanguageKind = "shaderlab"
+	LangShellScript     LanguageKind = "shellscript"
+	LangSQL             LanguageKind = "sql"
+	LangSwift           LanguageKind = "swift"
+	LangTypeScript      LanguageKind = "typescript"
+	LangTypeScriptReact LanguageKind = "typescriptreact"
+	LangTeX             LanguageKind = "tex"
+	LangVisualBasic     LanguageKind = "vb"
+	LangXML             LanguageKind = "xml"
+	LangXSL             LanguageKind = "xsl"
+	LangYAML            LanguageKind = "yaml"
 	// Describes the content type that a client supports in various
 	// result literals like `Hover`, `ParameterInfo` or `CompletionItem`.
 	//
@@ -5585,6 +6548,7 @@ const (
 	// A debug message.
 	//
 	// @since 3.18.0
+	// @proposed
 	Debug MessageType = 5
 	// The moniker kind.
 	//
@@ -5736,11 +6700,11 @@ const (
 	Incremental TextDocumentSyncKind = 2
 	Relative    TokenFormat          = "relative"
 	// Turn tracing off.
-	Off TraceValues = "off"
+	Off TraceValue = "off"
 	// Trace messages only.
-	Messages TraceValues = "messages"
+	Messages TraceValue = "messages"
 	// Verbose message tracing.
-	Verbose TraceValues = "verbose"
+	Verbose TraceValue = "verbose"
 	// Moniker uniqueness level to define scope of the moniker.
 	//
 	// @since 3.16.0

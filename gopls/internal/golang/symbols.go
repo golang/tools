@@ -12,6 +12,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
@@ -21,7 +22,7 @@ func DocumentSymbols(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	ctx, done := event.Start(ctx, "golang.DocumentSymbols")
 	defer done()
 
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, fmt.Errorf("getting file for DocumentSymbols: %w", err)
 	}

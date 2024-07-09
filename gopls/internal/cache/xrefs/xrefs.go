@@ -19,7 +19,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 // Index constructs a serializable index of outbound cross-references
@@ -68,7 +67,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 						// For instantiations of generic methods,
 						// use the generic object (see issue #60622).
 						if fn, ok := obj.(*types.Func); ok {
-							obj = typeparams.OriginMethod(fn)
+							obj = fn.Origin()
 						}
 
 						objects := getObjects(obj.Pkg())

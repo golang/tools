@@ -1,0 +1,21 @@
+This test executes definition requests over doc links.
+
+-- go.mod --
+module mod.com
+
+go 1.19
+
+-- a.go --
+package p
+
+import "strconv" //@loc(strconv, `"strconv"`)
+
+const NumberBase = 10 //@loc(NumberBase, "NumberBase")
+
+// [Conv] converts s to an int. //@def("Conv", Conv)
+func Conv(s string) int { //@loc(Conv, "Conv")
+	// [strconv.ParseInt] parses s and returns the integer corresponding to it. //@def("strconv", strconv)
+	// [NumberBase] is the base to use for number parsing. //@def("NumberBase", NumberBase)
+	i, _ := strconv.ParseInt(s, NumberBase, 64)
+	return int(i)
+}

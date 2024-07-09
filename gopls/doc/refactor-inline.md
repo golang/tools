@@ -1,4 +1,6 @@
 
+<!-- this doc has been incorporated into features/transformation.md#Rename -->
+
 Gopls v0.14 supports a new refactoring operation:
 inlining of function calls.
 

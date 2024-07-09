@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.18
-// +build go1.18
-
 package misc
 
 import (
@@ -44,7 +41,7 @@ package foo
 		}
 
 		params := &protocol.ExecuteCommandParams{
-			Command:   command.RunGovulncheck.ID(),
+			Command:   command.RunGovulncheck.String(),
 			Arguments: cmd.Arguments,
 		}
 
@@ -167,7 +164,7 @@ func TestRunGovulncheckStd(t *testing.T) {
 -- go.mod --
 module mod.com
 
-go 1.18
+go 1.19
 -- main.go --
 package main
 
@@ -192,9 +189,9 @@ func main() {
 			// Let the analyzer read vulnerabilities data from the testdata/vulndb.
 			"GOVULNDB": db.URI(),
 			// When fetchinging stdlib package vulnerability info,
-			// behave as if our go version is go1.18 for this testing.
+			// behave as if our go version is go1.19 for this testing.
 			// The default behavior is to run `go env GOVERSION` (which isn't mutable env var).
-			cache.GoVersionForVulnTest:        "go1.18",
+			cache.GoVersionForVulnTest:        "go1.19",
 			"_GOPLS_TEST_BINARY_RUN_AS_GOPLS": "true", // needed to run `gopls vulncheck`.
 		},
 		Settings{
@@ -522,7 +519,7 @@ func TestRunVulncheckPackageDiagnostics(t *testing.T) {
 		for pattern, want := range wantVulncheckDiagnostics {
 			modPathDiagnostics := testVulnDiagnostics(t, env, pattern, want, gotDiagnostics)
 
-			gotActions := env.CodeAction("go.mod", modPathDiagnostics)
+			gotActions := env.CodeActionForFile("go.mod", modPathDiagnostics)
 			if diff := diffCodeActions(gotActions, want.codeActions); diff != "" {
 				t.Errorf("code actions for %q do not match, got %v, want %v\n%v\n", pattern, gotActions, want.codeActions, diff)
 				continue
@@ -660,7 +657,8 @@ func TestRunVulncheckWarning(t *testing.T) {
 		)
 
 		testFetchVulncheckResult(t, env, map[string]fetchVulncheckResult{
-			"go.mod": {IDs: []string{"GO-2022-01", "GO-2022-02", "GO-2022-03"}, Mode: vulncheck.ModeGovulncheck},
+			// All vulnerabilities (symbol-level, import-level, module-level) are reported.
+			"go.mod": {IDs: []string{"GO-2022-01", "GO-2022-02", "GO-2022-03", "GO-2022-04"}, Mode: vulncheck.ModeGovulncheck},
 		})
 		env.OpenFile("x/x.go")
 		env.OpenFile("y/y.go")
@@ -718,7 +716,7 @@ func TestRunVulncheckWarning(t *testing.T) {
 			modPathDiagnostics := testVulnDiagnostics(t, env, mod, want, gotDiagnostics)
 
 			// Check that the actions we get when including all diagnostics at a location return the same result
-			gotActions := env.CodeAction("go.mod", modPathDiagnostics)
+			gotActions := env.CodeActionForFile("go.mod", modPathDiagnostics)
 			if diff := diffCodeActions(gotActions, want.codeActions); diff != "" {
 				t.Errorf("code actions for %q do not match, expected %v, got %v\n%v\n", mod, want.codeActions, gotActions, diff)
 				continue
@@ -814,7 +812,7 @@ func TestGovulncheckInfo(t *testing.T) {
 			ReadDiagnostics("go.mod", gotDiagnostics),
 		)
 
-		testFetchVulncheckResult(t, env, map[string]fetchVulncheckResult{"go.mod": {IDs: []string{"GO-2022-02"}, Mode: vulncheck.ModeGovulncheck}})
+		testFetchVulncheckResult(t, env, map[string]fetchVulncheckResult{"go.mod": {IDs: []string{"GO-2022-02", "GO-2022-04"}, Mode: vulncheck.ModeGovulncheck}})
 		// wantDiagnostics maps a module path in the require
 		// section of a go.mod to diagnostics that will be returned
 		// when running vulncheck.
@@ -841,7 +839,7 @@ func TestGovulncheckInfo(t *testing.T) {
 		for mod, want := range wantDiagnostics {
 			modPathDiagnostics := testVulnDiagnostics(t, env, mod, want, gotDiagnostics)
 			// Check that the actions we get when including all diagnostics at a location return the same result
-			gotActions := env.CodeAction("go.mod", modPathDiagnostics)
+			gotActions := env.CodeActionForFile("go.mod", modPathDiagnostics)
 			allActions = append(allActions, gotActions...)
 			if diff := diffCodeActions(gotActions, want.codeActions); diff != "" {
 				t.Errorf("code actions for %q do not match, expected %v, got %v\n%v\n", mod, want.codeActions, gotActions, diff)
@@ -891,7 +889,7 @@ func testVulnDiagnostics(t *testing.T, env *Env, pattern string, want vulnDiagEx
 			t.Errorf("incorrect (severity, source) for %q, want (%s, %s) got (%s, %s)\n", w.msg, w.severity, w.source, diag.Severity, diag.Source)
 		}
 		// Check expected code actions appear.
-		gotActions := env.CodeAction("go.mod", []protocol.Diagnostic{*diag})
+		gotActions := env.CodeActionForFile("go.mod", []protocol.Diagnostic{*diag})
 		if diff := diffCodeActions(gotActions, w.codeActions); diff != "" {
 			t.Errorf("code actions for %q do not match, want %v, got %v\n%v\n", w.msg, w.codeActions, gotActions, diff)
 			continue

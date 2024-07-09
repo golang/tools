@@ -1,0 +1,55 @@
+This test checks the semantic tokens in comments (golang/go#64648).
+
+There will be doc links in the comments to reference other objects. Parse these
+links and output tokens according to the referenced object types, so that the
+editor can highlight them. This will help in checking the doc link errors and
+reading comments in the code.
+
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
+-- a.go --
+package p
+
+import "strconv"
+
+const A = 1
+var B = 2
+
+type Foo int
+
+
+// [F] accept a [Foo], and print it. //@token("F", "function", ""),token("Foo", "type", "")
+func F(v Foo) {
+	println(v)
+
+}
+
+/*
+	[F1] print [A] and [B] //@token("F1", "function", ""),token("A", "variable", ""),token("B", "variable", "")
+*/
+func F1() {
+	// print [A] and [B]. //@token("A", "variable", ""),token("B", "variable", "")
+	println(A, B)
+}
+
+// [F2] use [strconv.Atoi] convert s, then print it //@token("F2", "function", ""),token("strconv", "namespace", ""),token("Atoi", "function", "")
+func F2(s string) {
+	a, _ := strconv.Atoi("42")
+	b, _ := strconv.Atoi("42")
+	println(a, b)  // this is a tail comment in F2 //hover(F2, "F2", F2)
+}
+-- b.go --
+package p
+
+// [F3] accept [*Foo]	//@token("F3", "function", ""),token("Foo", "type", "")
+func F3(v *Foo) {
+	println(*v)
+}
+
+// [F4] equal [strconv.Atoi]	//@token("F4", "function", ""),token("strconv", "namespace", ""),token("Atoi", "function", "")
+func F4(s string) (int, error) {
+	return 0, nil
+}

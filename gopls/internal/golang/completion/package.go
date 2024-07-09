@@ -19,11 +19,12 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/fuzzy"
 )
 
 // packageClauseCompletions offers completions for a package declaration when
@@ -32,7 +33,7 @@ func packageClauseCompletions(ctx context.Context, snapshot *cache.Snapshot, fh 
 	// We know that the AST for this file will be empty due to the missing
 	// package declaration, but parse it anyway to get a mapper.
 	// TODO(adonovan): opt: there's no need to parse just to get a mapper.
-	pgf, err := snapshot.ParseGo(ctx, fh, golang.ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -68,7 +69,7 @@ func packageClauseCompletions(ctx context.Context, snapshot *cache.Snapshot, fh 
 // packageCompletionSurrounding returns surrounding for package completion if a
 // package completions can be suggested at a given cursor offset. A valid location
 // for package completion is above any declarations or import statements.
-func packageCompletionSurrounding(pgf *golang.ParsedGoFile, offset int) (*Selection, error) {
+func packageCompletionSurrounding(pgf *parsego.File, offset int) (*Selection, error) {
 	m := pgf.Mapper
 	// If the file lacks a package declaration, the parser will return an empty
 	// AST. As a work-around, try to parse an expression from the file contents.
@@ -105,39 +106,20 @@ func packageCompletionSurrounding(pgf *golang.ParsedGoFile, offset int) (*Select
 
 	// First, consider the possibility that we have a valid "package" keyword
 	// with an empty package name ("package "). "package" is parsed as an
-	// *ast.BadDecl since it is a keyword. This logic would allow "package" to
-	// appear on any line of the file as long as it's the first code expression
-	// in the file.
-	lines := strings.Split(string(pgf.Src), "\n")
-	cursorLine := safetoken.Line(tok, cursor)
-	if cursorLine <= 0 || cursorLine > len(lines) {
-		return nil, fmt.Errorf("invalid line number")
+	// *ast.BadDecl since it is a keyword.
+	start, err := safetoken.Offset(tok, expr.Pos())
+	if err != nil {
+		return nil, err
 	}
-	if safetoken.StartPosition(fset, expr.Pos()).Line == cursorLine {
-		words := strings.Fields(lines[cursorLine-1])
-		if len(words) > 0 && words[0] == PACKAGE {
-			content := PACKAGE
-			// Account for spaces if there are any.
-			if len(words) > 1 {
-				content += " "
-			}
-
-			start := expr.Pos()
-			end := token.Pos(int(expr.Pos()) + len(content) + 1)
-			// We have verified that we have a valid 'package' keyword as our
-			// first expression. Ensure that cursor is in this keyword or
-			// otherwise fallback to the general case.
-			if cursor >= start && cursor <= end {
-				return &Selection{
-					content: content,
-					cursor:  cursor,
-					tokFile: tok,
-					start:   start,
-					end:     end,
-					mapper:  m,
-				}, nil
-			}
-		}
+	if offset > start && string(bytes.TrimRight(pgf.Src[start:offset], " ")) == PACKAGE {
+		return &Selection{
+			content: string(pgf.Src[start:offset]),
+			cursor:  cursor,
+			tokFile: tok,
+			start:   expr.Pos(),
+			end:     cursor,
+			mapper:  m,
+		}, nil
 	}
 
 	// If the cursor is after the start of the expression, no package

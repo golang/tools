@@ -6,13 +6,14 @@ package unusedwrite
 
 import (
 	_ "embed"
-	"fmt"
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 //go:embed doc.go
@@ -36,9 +37,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		for _, store := range reports {
 			switch addr := store.Addr.(type) {
 			case *ssa.FieldAddr:
+				field := typeparams.CoreType(typeparams.MustDeref(addr.X.Type())).(*types.Struct).Field(addr.Field)
 				pass.Reportf(store.Pos(),
-					"unused write to field %s",
-					getFieldName(addr.X.Type(), addr.Field))
+					"unused write to field %s", field.Name())
 			case *ssa.IndexAddr:
 				pass.Reportf(store.Pos(),
 					"unused write to array index %s", addr.Index)
@@ -124,10 +125,7 @@ func isDeadStore(store *ssa.Store, obj ssa.Value, addr ssa.Instruction) bool {
 
 // isStructOrArray returns whether the underlying type is struct or array.
 func isStructOrArray(tp types.Type) bool {
-	if named, ok := tp.(*types.Named); ok {
-		tp = named.Underlying()
-	}
-	switch tp.(type) {
+	switch tp.Underlying().(type) {
 	case *types.Array:
 		return true
 	case *types.Struct:
@@ -145,28 +143,11 @@ func hasStructOrArrayType(v ssa.Value) bool {
 			//   func (t T) f() { ...}
 			// the receiver object is of type *T:
 			//   t0 = local T (t)   *T
-			if tp, ok := alloc.Type().(*types.Pointer); ok {
+			if tp, ok := aliases.Unalias(alloc.Type()).(*types.Pointer); ok {
 				return isStructOrArray(tp.Elem())
 			}
 			return false
 		}
 	}
 	return isStructOrArray(v.Type())
-}
-
-// getFieldName returns the name of a field in a struct.
-// It the field is not found, then it returns the string format of the index.
-//
-// For example, for struct T {x int, y int), getFieldName(*T, 1) returns "y".
-func getFieldName(tp types.Type, index int) string {
-	if pt, ok := tp.(*types.Pointer); ok {
-		tp = pt.Elem()
-	}
-	if named, ok := tp.(*types.Named); ok {
-		tp = named.Underlying()
-	}
-	if stp, ok := tp.(*types.Struct); ok {
-		return stp.Field(index).Name()
-	}
-	return fmt.Sprintf("%d", index)
 }

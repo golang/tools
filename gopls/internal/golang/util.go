@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -33,7 +34,7 @@ func IsGenerated(ctx context.Context, snapshot *cache.Snapshot, uri protocol.Doc
 	if err != nil {
 		return false
 	}
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseHeader)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 	if err != nil {
 		return false
 	}
@@ -80,20 +81,6 @@ func adjustedObjEnd(obj types.Object) token.Pos {
 //	https://golang.org/s/generatedcode
 var generatedRx = regexp.MustCompile(`// .*DO NOT EDIT\.?`)
 
-// nodeAtPos returns the index and the node whose position is contained inside
-// the node list.
-func nodeAtPos(nodes []ast.Node, pos token.Pos) (ast.Node, int) {
-	if nodes == nil {
-		return nil, -1
-	}
-	for i, node := range nodes {
-		if node.Pos() <= pos && pos <= node.End() {
-			return node, i
-		}
-	}
-	return nil, -1
-}
-
 // FormatNode returns the "pretty-print" output for an ast node.
 func FormatNode(fset *token.FileSet, n ast.Node) string {
 	var buf strings.Builder
@@ -105,35 +92,11 @@ func FormatNode(fset *token.FileSet, n ast.Node) string {
 	return buf.String()
 }
 
-// FormatNodeFile is like FormatNode, but requires only the token.File for the
+// formatNodeFile is like FormatNode, but requires only the token.File for the
 // syntax containing the given ast node.
-func FormatNodeFile(file *token.File, n ast.Node) string {
+func formatNodeFile(file *token.File, n ast.Node) string {
 	fset := tokeninternal.FileSetFor(file)
 	return FormatNode(fset, n)
-}
-
-// Deref returns a pointer's element type, traversing as many levels as needed.
-// Otherwise it returns typ.
-//
-// It can return a pointer type for cyclic types (see golang/go#45510).
-func Deref(typ types.Type) types.Type {
-	var seen map[types.Type]struct{}
-	for {
-		p, ok := typ.Underlying().(*types.Pointer)
-		if !ok {
-			return typ
-		}
-		if _, ok := seen[p.Elem()]; ok {
-			return typ
-		}
-
-		typ = p.Elem()
-
-		if seen == nil {
-			seen = make(map[types.Type]struct{})
-		}
-		seen[typ] = struct{}{}
-	}
 }
 
 // findFileInDeps finds package metadata containing URI in the transitive
@@ -387,3 +350,16 @@ func embeddedIdent(x ast.Expr) *ast.Ident {
 type ImporterFunc func(path string) (*types.Package, error)
 
 func (f ImporterFunc) Import(path string) (*types.Package, error) { return f(path) }
+
+// isBuiltin reports whether obj is a built-in symbol (e.g. append, iota, error.Error, unsafe.Slice).
+// All other symbols have a valid position and a valid package.
+func isBuiltin(obj types.Object) bool { return !obj.Pos().IsValid() }
+
+// btoi returns int(b) as proposed in #64825.
+func btoi(b bool) int {
+	if b {
+		return 1
+	} else {
+		return 0
+	}
+}

@@ -110,7 +110,7 @@ func _() {
 -- field/field.go --
 package field
 
-func Field(x int, field int) { //@codeaction("int", "int", "refactor.rewrite", field)
+func Field(x int, field int) { //@codeaction("int", "int", "refactor.rewrite", field, "Refactor: remove unused parameter")
 }
 
 func _() {
@@ -119,7 +119,7 @@ func _() {
 -- @field/field/field.go --
 package field
 
-func Field(field int) { //@codeaction("int", "int", "refactor.rewrite", field)
+func Field(field int) { //@codeaction("int", "int", "refactor.rewrite", field, "Refactor: remove unused parameter")
 }
 
 func _() {
@@ -173,7 +173,7 @@ func i() []any
 -- ellipsis2/ellipsis2.go --
 package ellipsis2
 
-func Ellipsis2(_, _ int, rest ...int) { //@codeaction("_", "_", "refactor.rewrite", ellipsis2)
+func Ellipsis2(_, _ int, rest ...int) { //@codeaction("_", "_", "refactor.rewrite", ellipsis2, "Refactor: remove unused parameter")
 }
 
 func _() {
@@ -187,7 +187,7 @@ func h() (int, int)
 -- @ellipsis2/ellipsis2/ellipsis2.go --
 package ellipsis2
 
-func Ellipsis2(_ int, rest ...int) { //@codeaction("_", "_", "refactor.rewrite", ellipsis2)
+func Ellipsis2(_ int, rest ...int) { //@codeaction("_", "_", "refactor.rewrite", ellipsis2, "Refactor: remove unused parameter")
 }
 
 func _() {

@@ -7,20 +7,29 @@ package server
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strings"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 )
 
 func (s *server) DidChangeWorkspaceFolders(ctx context.Context, params *protocol.DidChangeWorkspaceFoldersParams) error {
 	for _, folder := range params.Event.Removed {
+		if !strings.HasPrefix(folder.URI, "file://") {
+			// Some clients that support virtual file systems may send workspace change messages
+			// about workspace folders in the virtual file systems. addFolders must not add
+			// those folders, so they don't need to be removed either.
+			continue
+		}
 		dir, err := protocol.ParseDocumentURI(folder.URI)
 		if err != nil {
 			return fmt.Errorf("invalid folder %q: %v", folder.URI, err)
 		}
-		if !s.session.RemoveView(dir) {
+		if !s.session.RemoveView(ctx, dir) {
 			return fmt.Errorf("view %q for %v not found", folder.Name, folder.URI)
 		}
 	}
@@ -37,7 +46,11 @@ func (s *server) addView(ctx context.Context, name string, dir protocol.Document
 	if state < serverInitialized {
 		return nil, nil, fmt.Errorf("addView called before server initialized")
 	}
-	folder, err := s.newFolder(ctx, dir, name)
+	opts, err := s.fetchFolderOptions(ctx, dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	folder, err := s.newFolder(ctx, dir, name, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -68,15 +81,39 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 	s.SetOptions(options)
 
 	// Collect options for all workspace folders.
-	seen := make(map[protocol.DocumentURI]bool)
-	var newFolders []*cache.Folder
-	for _, view := range s.session.Views() {
+	// If none have changed, this is a no op.
+	folderOpts := make(map[protocol.DocumentURI]*settings.Options)
+	changed := false
+	// The set of views is implicitly guarded by the fact that gopls processes
+	// didChange notifications synchronously.
+	//
+	// TODO(rfindley): investigate this assumption: perhaps we should hold viewMu
+	// here.
+	views := s.session.Views()
+	for _, view := range views {
 		folder := view.Folder()
-		if seen[folder.Dir] {
+		if folderOpts[folder.Dir] != nil {
 			continue
 		}
-		seen[folder.Dir] = true
-		newFolder, err := s.newFolder(ctx, folder.Dir, folder.Name)
+		opts, err := s.fetchFolderOptions(ctx, folder.Dir)
+		if err != nil {
+			return err
+		}
+
+		if !reflect.DeepEqual(folder.Options, opts) {
+			changed = true
+		}
+		folderOpts[folder.Dir] = opts
+	}
+	if !changed {
+		return nil
+	}
+
+	var newFolders []*cache.Folder
+	for _, view := range views {
+		folder := view.Folder()
+		opts := folderOpts[folder.Dir]
+		newFolder, err := s.newFolder(ctx, folder.Dir, folder.Name, opts)
 		if err != nil {
 			return err
 		}

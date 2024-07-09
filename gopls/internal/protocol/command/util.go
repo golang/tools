@@ -9,16 +9,22 @@ import (
 	"fmt"
 )
 
-// ID returns the command name for use in the LSP.
-func ID(name string) string {
-	return "gopls." + name
-}
-
+// A Command identifies one of gopls' ad-hoc extension commands
+// that may be invoked through LSP's executeCommand.
 type Command string
 
-// ID returns the command identifier to use in the executeCommand request.
-func (c Command) ID() string {
-	return ID(string(c))
+func (c Command) String() string { return string(c) }
+
+// IsAsync reports whether the command is asynchronous:
+// clients must wait for the "end" progress notification.
+func (c Command) IsAsync() bool {
+	switch string(c) {
+	// TODO(adonovan): derive this list from interface.go somewhow.
+	// Unfortunately we can't even reference the enum from here...
+	case "gopls.run_tests", "gopls.run_govulncheck", "gopls.test":
+		return true
+	}
+	return false
 }
 
 // MarshalArgs encodes the given arguments to json.RawMessages. This function

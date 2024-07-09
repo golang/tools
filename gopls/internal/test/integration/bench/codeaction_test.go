@@ -20,7 +20,7 @@ func BenchmarkCodeAction(b *testing.B) {
 			defer closeBuffer(b, env, test.file)
 			env.AfterChange()
 
-			env.CodeAction(test.file, nil) // pre-warm
+			env.CodeActionForFile(test.file, nil) // pre-warm
 
 			b.ResetTimer()
 
@@ -29,7 +29,7 @@ func BenchmarkCodeAction(b *testing.B) {
 			}
 
 			for i := 0; i < b.N; i++ {
-				env.CodeAction(test.file, nil)
+				env.CodeActionForFile(test.file, nil)
 			}
 		})
 	}
@@ -44,7 +44,7 @@ func BenchmarkCodeActionFollowingEdit(b *testing.B) {
 			env.EditBuffer(test.file, protocol.TextEdit{NewText: "// __TEST_PLACEHOLDER_0__\n"})
 			env.AfterChange()
 
-			env.CodeAction(test.file, nil) // pre-warm
+			env.CodeActionForFile(test.file, nil) // pre-warm
 
 			b.ResetTimer()
 
@@ -62,7 +62,7 @@ func BenchmarkCodeActionFollowingEdit(b *testing.B) {
 					// Increment the placeholder text, to ensure cache misses.
 					NewText: fmt.Sprintf("// __TEST_PLACEHOLDER_%d__\n", edits),
 				})
-				env.CodeAction(test.file, nil)
+				env.CodeActionForFile(test.file, nil)
 			}
 		})
 	}

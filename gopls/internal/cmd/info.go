@@ -9,7 +9,6 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net/url"
@@ -18,8 +17,9 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/debug"
+	"golang.org/x/tools/gopls/internal/doc"
 	"golang.org/x/tools/gopls/internal/filecache"
-	"golang.org/x/tools/gopls/internal/settings"
+	licensespkg "golang.org/x/tools/gopls/internal/licenses"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	goplsbug "golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/tool"
@@ -220,16 +220,17 @@ func (j *apiJSON) Parent() string    { return j.app.Name() }
 func (j *apiJSON) Usage() string     { return "" }
 func (j *apiJSON) ShortHelp() string { return "print JSON describing gopls API" }
 func (j *apiJSON) DetailedHelp(f *flag.FlagSet) {
-	fmt.Fprint(f.Output(), ``)
+	fmt.Fprint(f.Output(), `
+The api-json command prints a JSON value that describes
+and documents all gopls' public interfaces.
+Its schema is defined by golang.org/x/tools/gopls/internal/doc.API.
+`)
 	printFlagDefaults(f)
 }
 
 func (j *apiJSON) Run(ctx context.Context, args ...string) error {
-	js, err := json.MarshalIndent(settings.GeneratedAPIJSON, "", "\t")
-	if err != nil {
-		return err
-	}
-	fmt.Fprint(os.Stdout, string(js))
+	os.Stdout.WriteString(doc.JSON)
+	fmt.Println()
 	return nil
 }
 
@@ -301,12 +302,11 @@ gopls also includes software made available under these licenses:
 `
 
 func (l *licenses) Run(ctx context.Context, args ...string) error {
-	opts := settings.DefaultOptions(l.app.options)
 	txt := licensePreamble
-	if opts.LicensesText == "" {
+	if licensespkg.Text == "" {
 		txt += "(development gopls, license information not available)"
 	} else {
-		txt += opts.LicensesText
+		txt += licensespkg.Text
 	}
 	fmt.Fprint(os.Stdout, txt)
 	return nil

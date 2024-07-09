@@ -24,6 +24,8 @@ import (
 
 	"go/token"
 	"go/types"
+
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // -- wrappers -----------------------------------------------------------
@@ -40,7 +42,7 @@ import (
 //   - optional implicit field selections
 //   - meth.Obj() may denote a concrete or an interface method
 //   - the result may be a thunk or a wrapper.
-func createWrapper(prog *Program, sel *selection, cr *creator) *Function {
+func createWrapper(prog *Program, sel *selection) *Function {
 	obj := sel.obj.(*types.Func)      // the declared function
 	sig := sel.typ.(*types.Signature) // type of this wrapper
 
@@ -61,7 +63,7 @@ func createWrapper(prog *Program, sel *selection, cr *creator) *Function {
 		defer logStack("create %s to (%s)", description, recv.Type())()
 	}
 	/* method wrapper */
-	fn := &Function{
+	return &Function{
 		name:      name,
 		method:    sel,
 		object:    obj,
@@ -75,8 +77,6 @@ func createWrapper(prog *Program, sel *selection, cr *creator) *Function {
 		info:      nil,
 		goversion: "",
 	}
-	cr.Add(fn)
-	return fn
 }
 
 // buildWrapper builds fn.Body for a method wrapper.
@@ -97,14 +97,12 @@ func (b *builder) buildWrapper(fn *Function) {
 	indices := fn.method.index
 
 	var v Value = fn.Locals[0] // spilled receiver
-	srdt, ptrRecv := deptr(fn.method.recv)
-	if ptrRecv {
+	if isPointer(fn.method.recv) {
 		v = emitLoad(fn, v)
 
 		// For simple indirection wrappers, perform an informative nil-check:
 		// "value method (T).f called using nil *T pointer"
-		_, ptrObj := deptr(recvType(fn.object))
-		if len(indices) == 1 && !ptrObj {
+		if len(indices) == 1 && !isPointer(recvType(fn.object)) {
 			var c Call
 			c.Call.Value = &Builtin{
 				name: "ssa:wrapnilchk",
@@ -114,7 +112,7 @@ func (b *builder) buildWrapper(fn *Function) {
 			}
 			c.Call.Args = []Value{
 				v,
-				stringConst(srdt.String()),
+				stringConst(typeparams.MustDeref(fn.method.recv).String()),
 				stringConst(fn.method.obj.Name()),
 			}
 			c.setType(v.Type())
@@ -138,10 +136,10 @@ func (b *builder) buildWrapper(fn *Function) {
 
 	var c Call
 	if r := recvType(fn.object); !types.IsInterface(r) { // concrete method
-		if _, ptrObj := deptr(r); !ptrObj {
+		if !isPointer(r) {
 			v = emitLoad(fn, v)
 		}
-		c.Call.Value = fn.Prog.objectMethod(fn.object, b.created)
+		c.Call.Value = fn.Prog.objectMethod(fn.object, b)
 		c.Call.Args = append(c.Call.Args, v)
 	} else {
 		c.Call.Method = fn.object
@@ -188,7 +186,7 @@ func createParams(fn *Function, start int) {
 // Unlike createWrapper, createBound need perform no indirection or field
 // selections because that can be done before the closure is
 // constructed.
-func createBound(prog *Program, obj *types.Func, cr *creator) *Function {
+func createBound(prog *Program, obj *types.Func) *Function {
 	description := fmt.Sprintf("bound method wrapper for %s", obj)
 	if prog.mode&LogSource != 0 {
 		defer logStack("%s", description)()
@@ -208,7 +206,6 @@ func createBound(prog *Program, obj *types.Func, cr *creator) *Function {
 		goversion: "",
 	}
 	fn.FreeVars = []*FreeVar{{name: "recv", typ: recvType(obj), parent: fn}} // (cyclic)
-	cr.Add(fn)
 	return fn
 }
 
@@ -220,7 +217,7 @@ func (b *builder) buildBound(fn *Function) {
 
 	recv := fn.FreeVars[0]
 	if !types.IsInterface(recvType(fn.object)) { // concrete
-		c.Call.Value = fn.Prog.objectMethod(fn.object, b.created)
+		c.Call.Value = fn.Prog.objectMethod(fn.object, b)
 		c.Call.Args = []Value{recv}
 	} else {
 		c.Call.Method = fn.object
@@ -251,12 +248,12 @@ func (b *builder) buildBound(fn *Function) {
 // f is a synthetic wrapper defined as if by:
 //
 //	f := func(t T) { return t.meth() }
-func createThunk(prog *Program, sel *selection, cr *creator) *Function {
+func createThunk(prog *Program, sel *selection) *Function {
 	if sel.kind != types.MethodExpr {
 		panic(sel)
 	}
 
-	fn := createWrapper(prog, sel, cr)
+	fn := createWrapper(prog, sel)
 	if fn.Signature.Recv() != nil {
 		panic(fn) // unexpected receiver
 	}

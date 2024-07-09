@@ -71,6 +71,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
@@ -131,6 +132,14 @@ func (m *Mapper) initLines() {
 // LineCol8Position converts a valid line and UTF-8 column number,
 // both 1-based, to a protocol (UTF-16) position.
 func (m *Mapper) LineCol8Position(line, col8 int) (Position, error) {
+	// Report a bug for inputs that are invalid for any file content.
+	if line < 1 {
+		return Position{}, bug.Errorf("invalid 1-based line number: %d", line)
+	}
+	if col8 < 1 {
+		return Position{}, bug.Errorf("invalid 1-based column number: %d", col8)
+	}
+
 	m.initLines()
 	line0 := line - 1 // 0-based
 	if !(0 <= line0 && line0 < len(m.lineStart)) {
@@ -375,7 +384,7 @@ func (m *Mapper) NodeMappedRange(tf *token.File, node ast.Node) (MappedRange, er
 //
 // Construct one by calling Mapper.OffsetMappedRange with start/end offsets.
 // From the go/token domain, call safetoken.Offsets first,
-// or use a helper such as ParsedGoFile.MappedPosRange.
+// or use a helper such as parsego.File.MappedPosRange.
 //
 // Two MappedRanges produced the same Mapper are equal if and only if they
 // denote the same range.  Two MappedRanges produced by different Mappers

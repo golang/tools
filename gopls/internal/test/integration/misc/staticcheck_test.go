@@ -7,6 +7,7 @@ package misc
 import (
 	"testing"
 
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/testenv"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
@@ -14,6 +15,19 @@ import (
 
 func TestStaticcheckGenerics(t *testing.T) {
 	testenv.NeedsGo1Point(t, 20) // staticcheck requires go1.20+
+
+	// CL 583778 causes buildir not to run on packages that use
+	// range-over-func, since it might otherwise crash. But nearly
+	// all packages will soon meet this description, so the
+	// analyzers in this test will not run, and the test will fail.
+	// TODO(adonovan): reenable once dominikh/go-tools#1494 is fixed.
+	t.Skip("disabled until buildir supports range-over-func (dominikh/go-tools#1494)")
+
+	// TODO(golang/go#65249): re-enable and fix this test once we
+	// update go.mod to go1.23 so that gotypesalias=1 becomes the default.
+	if aliases.Enabled() {
+		t.Skip("staticheck doesn't yet support aliases (dominikh/go-tools#1523)")
+	}
 
 	const files = `
 -- go.mod --
@@ -79,6 +93,20 @@ var FooErr error = errors.New("foo")
 // analysis.RelatedInformation.End is not set.
 func TestStaticcheckRelatedInfo(t *testing.T) {
 	testenv.NeedsGo1Point(t, 20) // staticcheck is only supported at Go 1.20+
+
+	// CL 583778 causes buildir not to run on packages that use
+	// range-over-func, since it might otherwise crash. But nearly
+	// all packages will soon meet this description, so the
+	// analyzers in this test will not run, and the test will fail.
+	// TODO(adonovan): reenable once dominikh/go-tools#1494 is fixed.
+	t.Skip("disabled until buildir supports range-over-func (dominikh/go-tools#1494)")
+
+	// TODO(golang/go#65249): re-enable and fix this test once we
+	// update go.mod to go1.23 so that gotypesalias=1 becomes the default.
+	if aliases.Enabled() {
+		t.Skip("staticheck doesn't yet support aliases (dominikh/go-tools#1523)")
+	}
+
 	const files = `
 -- go.mod --
 module mod.test

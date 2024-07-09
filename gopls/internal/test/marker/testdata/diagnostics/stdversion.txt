@@ -1,0 +1,89 @@
+Test of "too new" diagnostics from the stdversion analyzer.
+
+This test references go1.21 symbols from std, but the analyzer itself
+depends on the go1.22 behavior of versions.FileVersion.
+
+See also go/analysis/passes/stdversion/testdata/test.txtar,
+which runs the same test in the analysistest framework.
+
+-- flags --
+-min_go=go1.22
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+-- a/a.go --
+package a
+
+import "go/types"
+
+func _() {
+	// old package-level type
+	var _ types.Info // ok: defined by go1.0
+
+	// new field of older type
+	_ = new(types.Info).FileVersions //@diag("FileVersions", re`types.FileVersions requires go1.22 or later \(module is go1.21\)`)
+
+	// new method of older type
+	_ = new(types.Info).PkgNameOf //@diag("PkgNameOf", re`types.PkgNameOf requires go1.22 or later \(module is go1.21\)`)
+
+	// new package-level type
+	var a types.Alias //@diag("Alias", re`types.Alias requires go1.22 or later \(module is go1.21\)`)
+
+	// new method of new type
+	a.Underlying() // no diagnostic
+}
+
+-- sub/go.mod --
+module example.com/sub
+
+go 1.21
+
+-- sub/sub.go --
+package sub
+
+import "go/types"
+
+func _() {
+	// old package-level type
+	var _ types.Info // ok: defined by go1.0
+
+	// new field of older type
+	_ = new(types.Info).FileVersions //@diag("FileVersions", re`types.FileVersions requires go1.22 or later \(module is go1.21\)`)
+
+	// new method of older type
+	_ = new(types.Info).PkgNameOf //@diag("PkgNameOf", re`types.PkgNameOf requires go1.22 or later \(module is go1.21\)`)
+
+	// new package-level type
+	var a types.Alias //@diag("Alias", re`types.Alias requires go1.22 or later \(module is go1.21\)`)
+
+	// new method of new type
+	a.Underlying() // no diagnostic
+}
+
+-- sub/tagged.go --
+//go:build go1.22
+
+package sub
+
+import "go/types"
+
+func _() {
+	// old package-level type
+	var _ types.Info
+
+	// new field of older type
+	_ = new(types.Info).FileVersions
+
+	// new method of older type
+	_ = new(types.Info).PkgNameOf
+
+	// new package-level type
+	var a types.Alias
+
+	// new method of new type
+	a.Underlying()
+}
+

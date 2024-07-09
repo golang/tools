@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -178,7 +179,7 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *as
 	if !ok {
 		return nil
 	}
-	sig, ok := tv.Type.(*types.Signature)
+	sig, ok := aliases.Unalias(tv.Type).(*types.Signature)
 	if !ok {
 		return nil
 	}
@@ -343,7 +344,7 @@ func ifaceType(e ast.Expr, info *types.Info) *types.TypeName {
 }
 
 func ifaceObjFromType(t types.Type) *types.TypeName {
-	named, ok := t.(*types.Named)
+	named, ok := aliases.Unalias(t).(*types.Named)
 	if !ok {
 		return nil
 	}
@@ -372,11 +373,11 @@ func concreteType(e ast.Expr, info *types.Info) (*types.Named, bool) {
 		return nil, false
 	}
 	typ := tv.Type
-	ptr, isPtr := typ.(*types.Pointer)
+	ptr, isPtr := aliases.Unalias(typ).(*types.Pointer)
 	if isPtr {
 		typ = ptr.Elem()
 	}
-	named, ok := typ.(*types.Named)
+	named, ok := aliases.Unalias(typ).(*types.Named)
 	if !ok {
 		return nil, false
 	}

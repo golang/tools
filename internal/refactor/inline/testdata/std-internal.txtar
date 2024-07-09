@@ -1,7 +1,7 @@
 
 std packages are a special case of the internal package check.
 
-This test assumes that strings.Index refers to internal/bytealg.
+This test assumes that syscall.ByteSliceFromString refers to internal/bytealg.
 
 -- go.mod --
 module testdata
@@ -10,6 +10,6 @@ go 1.12
 -- a/a.go --
 package a
 
-import "strings"
+import "syscall"
 
-var _ = strings.Index("", "") //@ inline(re"Index", re`inaccessible package "internal/bytealg"`)
+var _, _ = syscall.ByteSliceFromString("") //@ inline(re"ByteSliceFromString", re`inaccessible package "internal/bytealg"`)

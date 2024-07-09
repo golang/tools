@@ -62,6 +62,8 @@ L: // unpack receiver type
 }
 
 // NodeContains returns true if a node encloses a given position pos.
+// The end point will also be inclusive, which will to allow hovering when the
+// cursor is behind some nodes.
 //
 // Precondition: n must not be nil.
 func NodeContains(n ast.Node, pos token.Pos) bool {

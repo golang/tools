@@ -153,3 +153,8 @@ func ShiftDeadCode() {
 		_ = i << 64 // want "too small for shift"
 	}
 }
+
+func issue65939() {
+	a := 1
+	println(a << 2.0)
+}

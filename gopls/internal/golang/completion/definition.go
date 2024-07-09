@@ -11,7 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
 )
@@ -21,7 +21,7 @@ import (
 // BenchmarkFoo(b *testing.B), FuzzFoo(f *testing.F)
 
 // path[0] is known to be *ast.Ident
-func definition(path []ast.Node, obj types.Object, pgf *golang.ParsedGoFile) ([]CompletionItem, *Selection) {
+func definition(path []ast.Node, obj types.Object, pgf *parsego.File) ([]CompletionItem, *Selection) {
 	if _, ok := obj.(*types.Func); !ok {
 		return nil, nil // not a function at all
 	}

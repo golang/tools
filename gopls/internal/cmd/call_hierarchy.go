@@ -39,7 +39,7 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("call_hierarchy expects 1 argument (position)")
 	}
 
-	conn, err := c.app.connect(ctx, nil)
+	conn, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}

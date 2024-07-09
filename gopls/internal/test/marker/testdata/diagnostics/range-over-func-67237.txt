@@ -1,0 +1,82 @@
+
+This test verifies that SSA-based analyzers don't run on packages that
+use range-over-func. This is an emergency fix of #67237 (for buildssa)
+until we land https://go.dev/cl/555075.
+
+Similarly, it is an emergency fix of dominikh/go-tools#1494 (for
+buildir) until that package is similarly fixed for go1.23.
+
+Explanation:
+- Package p depends on q and r, and analyzers buildssa and buildir
+  depend on norangeoverfunc.
+- Analysis pass norangeoverfunc@q fails, thus norangeoverfunc@p is not
+  executed; but norangeoverfunc@r is ok
+- nilness requires buildssa, which is not facty, so it can run on p and r.
+- SA4010 (CheckIneffectiveAppend) requires buildir, which is facty,
+  so SA4010 can run only on r.
+
+We don't import any std packages because even "fmt" depends on
+range-over-func now (which means that in practice, everything does).
+
+-- flags --
+-min_go=go1.23
+
+-- settings.json --
+{
+	"staticcheck": true,
+	"analyses": {"SA4010": true}
+}
+
+-- go.mod --
+module example.com
+
+go 1.23
+
+-- p/p.go --
+package p // a dependency uses range-over-func, so nilness runs but SA4010 cannot (buildir is facty)
+
+import (
+	_ "example.com/q"
+	_ "example.com/r"
+)
+
+func f(ptr *int) {
+	if ptr == nil {
+		println(*ptr) //@diag(re"[*]ptr", re"nil dereference in load")
+	}
+
+	var s []int
+	s = append(s, 1) // no SA4010 finding
+}
+
+-- q/q.go --
+package q // uses range-over-func, so no diagnostics from SA4010
+
+type iterSeq[T any] func(yield func(T) bool)
+
+func f(seq iterSeq[int]) {
+	for x := range seq {
+		println(x)
+	}
+
+	var s []int
+	s = append(s, 1) // no SA4010 finding
+}
+
+func _(ptr *int) {
+	if ptr == nil {
+		println(*ptr) //@diag(re"[*]ptr", re"nil dereference in load")
+	}
+}
+
+-- r/r.go --
+package r // does not use range-over-func, so nilness and SA4010 report diagnosticcs
+
+func f(ptr *int) {
+	if ptr == nil {
+		println(*ptr) //@diag(re"[*]ptr", re"nil dereference in load")
+	}
+
+	var s []int
+	s = append(s, 1) //@ diag(re`s`, re`s is never used`), diag(re`append`, re`append is never used`)
+}

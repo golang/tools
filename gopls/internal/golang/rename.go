@@ -66,9 +66,10 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
 )
 
@@ -126,7 +127,7 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 	if err != nil {
 		return nil, nil, err
 	}
-	targets, node, err := objectsAt(pkg.GetTypesInfo(), pgf.File, pos)
+	targets, node, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -151,7 +152,7 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 	}, nil, nil
 }
 
-func prepareRenamePackageName(ctx context.Context, snapshot *cache.Snapshot, pgf *ParsedGoFile) (*PrepareItem, error) {
+func prepareRenamePackageName(ctx context.Context, snapshot *cache.Snapshot, pgf *parsego.File) (*PrepareItem, error) {
 	// Does the client support file renaming?
 	fileRenameSupported := false
 	for _, op := range snapshot.Options().SupportedResourceOperations {
@@ -278,11 +279,11 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 			return nil, false, err
 		}
 		m := protocol.NewMapper(uri, data)
-		protocolEdits, err := protocol.EditsFromDiffEdits(m, edits)
+		textedits, err := protocol.EditsFromDiffEdits(m, edits)
 		if err != nil {
 			return nil, false, err
 		}
-		result[uri] = protocolEdits
+		result[uri] = textedits
 	}
 
 	return result, inPackageName, nil
@@ -322,7 +323,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 		if err != nil {
 			return nil, err
 		}
-		objects, _, err := objectsAt(pkg.GetTypesInfo(), pgf.File, pos)
+		objects, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 		if err != nil {
 			return nil, err
 		}
@@ -346,20 +347,19 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	var declObjPath objectpath.Path
 	if obj.Exported() {
 		// objectpath.For requires the origin of a generic function or type, not an
-		// instantiation (a bug?). Unfortunately we can't call Func.Origin as this
-		// is not available in go/types@go1.18. So we take a scenic route.
+		// instantiation (a bug?).
 		//
 		// Note that unlike Funcs, TypeNames are always canonical (they are "left"
 		// of the type parameters, unlike methods).
 		switch obj.(type) { // avoid "obj :=" since cases reassign the var
 		case *types.TypeName:
-			if _, ok := obj.Type().(*types.TypeParam); ok {
+			if _, ok := aliases.Unalias(obj.Type()).(*types.TypeParam); ok {
 				// As with capitalized function parameters below, type parameters are
 				// local.
 				goto skipObjectPath
 			}
 		case *types.Func:
-			obj = funcOrigin(obj.(*types.Func))
+			obj = obj.(*types.Func).Origin()
 		case *types.Var:
 			// TODO(adonovan): do vars need the origin treatment too? (issue #58462)
 
@@ -448,23 +448,6 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	// Apply the renaming to the (initial) object.
 	declPkgPath := PackagePath(obj.Pkg().Path())
 	return renameExported(pkgs, declPkgPath, declObjPath, newName)
-}
-
-// funcOrigin is a go1.18-portable implementation of (*types.Func).Origin.
-func funcOrigin(fn *types.Func) *types.Func {
-	// Method?
-	if fn.Type().(*types.Signature).Recv() != nil {
-		return typeparams.OriginMethod(fn)
-	}
-
-	// Package-level function?
-	// (Assume the origin has the same position.)
-	gen := fn.Pkg().Scope().Lookup(fn.Name())
-	if gen != nil && gen.Pos() == fn.Pos() {
-		return gen.(*types.Func)
-	}
-
-	return fn
 }
 
 // typeCheckReverseDependencies returns the type-checked packages for
@@ -605,7 +588,7 @@ func renameExported(pkgs []*cache.Package, declPkgPath PackagePath, declObjPath 
 			// TODO(adonovan): methods requires dynamic
 			// programming of the product targets x
 			// packages as any package might add a new
-			// target (from a foward dep) as a
+			// target (from a forward dep) as a
 			// consequence, and any target might imply a
 			// new set of rdeps. See golang/go#58461.
 		}
@@ -812,7 +795,7 @@ func renamePackageClause(ctx context.Context, mp *metadata.Package, snapshot *ca
 		if err != nil {
 			return err
 		}
-		f, err := snapshot.ParseGo(ctx, fh, ParseHeader)
+		f, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 		if err != nil {
 			return err
 		}
@@ -853,7 +836,7 @@ func renameImports(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.P
 			if err != nil {
 				return err
 			}
-			f, err := snapshot.ParseGo(ctx, fh, ParseHeader)
+			f, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 			if err != nil {
 				return err
 			}
@@ -918,10 +901,10 @@ func renameImports(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.P
 					continue // not the import we're looking for
 				}
 
-				pkgname := pkg.GetTypesInfo().Implicits[imp].(*types.PkgName)
+				pkgname := pkg.TypesInfo().Implicits[imp].(*types.PkgName)
 
-				pkgScope := pkg.GetTypes().Scope()
-				fileScope := pkg.GetTypesInfo().Scopes[f.File]
+				pkgScope := pkg.Types().Scope()
+				fileScope := pkg.TypesInfo().Scopes[f.File]
 
 				localName := string(newName)
 				try := 0
@@ -1043,7 +1026,7 @@ func (r *renamer) update() (map[protocol.DocumentURI][]diff.Edit, error) {
 		isDef bool
 	}
 	var items []item
-	info := r.pkg.GetTypesInfo()
+	info := r.pkg.TypesInfo()
 	for id, obj := range info.Uses {
 		if shouldUpdate(obj) {
 			items = append(items, item{id, obj, false})
@@ -1181,7 +1164,7 @@ func (r *renamer) updateCommentDocLinks() (map[protocol.DocumentURI][]diff.Edit,
 		// Doc links can reference only exported package-level objects
 		// and methods of exported package-level named types.
 		if !isPackageLevel(obj) {
-			_, isFunc := obj.(*types.Func)
+			obj, isFunc := obj.(*types.Func)
 			if !isFunc {
 				continue
 			}
@@ -1189,12 +1172,8 @@ func (r *renamer) updateCommentDocLinks() (map[protocol.DocumentURI][]diff.Edit,
 			if recv == nil {
 				continue
 			}
-			recvT := recv.Type()
-			if ptr, ok := recvT.(*types.Pointer); ok {
-				recvT = ptr.Elem()
-			}
-			named, isNamed := recvT.(*types.Named)
-			if !isNamed {
+			_, named := typesinternal.ReceiverNamed(recv)
+			if named == nil {
 				continue
 			}
 			// Doc links can't reference interface methods.
@@ -1210,12 +1189,12 @@ func (r *renamer) updateCommentDocLinks() (map[protocol.DocumentURI][]diff.Edit,
 
 		// Qualify objects from other packages.
 		pkgName := ""
-		if r.pkg.GetTypes() != obj.Pkg() {
+		if r.pkg.Types() != obj.Pkg() {
 			pkgName = obj.Pkg().Name()
 		}
 		_, isTypeName := obj.(*types.TypeName)
 		docRenamers = append(docRenamers, &docLinkRenamer{
-			isDep:       r.pkg.GetTypes() != obj.Pkg(),
+			isDep:       r.pkg.Types() != obj.Pkg(),
 			isPkgOrType: isTypeName,
 			packagePath: obj.Pkg().Path(),
 			packageName: pkgName,
@@ -1350,7 +1329,7 @@ func (r *docLinkRenamer) update(pgf *parsego.File) (result []diff.Edit, err erro
 }
 
 // docComment returns the doc for an identifier within the specified file.
-func docComment(pgf *ParsedGoFile, id *ast.Ident) *ast.CommentGroup {
+func docComment(pgf *parsego.File, id *ast.Ident) *ast.CommentGroup {
 	nodes, _ := astutil.PathEnclosingInterval(pgf.File, id.Pos(), id.End())
 	for _, node := range nodes {
 		switch decl := node.(type) {
@@ -1401,7 +1380,7 @@ func docComment(pgf *ParsedGoFile, id *ast.Ident) *ast.CommentGroup {
 
 // updatePkgName returns the updates to rename a pkgName in the import spec by
 // only modifying the package name portion of the import declaration.
-func (r *renamer) updatePkgName(pgf *ParsedGoFile, pkgName *types.PkgName) (diff.Edit, error) {
+func (r *renamer) updatePkgName(pgf *parsego.File, pkgName *types.PkgName) (diff.Edit, error) {
 	// Modify ImportSpec syntax to add or remove the Name as needed.
 	path, _ := astutil.PathEnclosingInterval(pgf.File, pkgName.Pos(), pkgName.Pos())
 	if len(path) < 2 {
@@ -1428,19 +1407,19 @@ func (r *renamer) updatePkgName(pgf *ParsedGoFile, pkgName *types.PkgName) (diff
 // whether the position ppos lies within it.
 //
 // Note: also used by references.
-func parsePackageNameDecl(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, ppos protocol.Position) (*ParsedGoFile, bool, error) {
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseHeader)
+func parsePackageNameDecl(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, ppos protocol.Position) (*parsego.File, bool, error) {
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 	if err != nil {
 		return nil, false, err
 	}
-	// Careful: because we used ParseHeader,
+	// Careful: because we used parsego.Header,
 	// pgf.Pos(ppos) may be beyond EOF => (0, err).
 	pos, _ := pgf.PositionPos(ppos)
 	return pgf, pgf.File.Name.Pos() <= pos && pos <= pgf.File.Name.End(), nil
 }
 
 // enclosingFile returns the CompiledGoFile of pkg that contains the specified position.
-func enclosingFile(pkg *cache.Package, pos token.Pos) (*ParsedGoFile, bool) {
+func enclosingFile(pkg *cache.Package, pos token.Pos) (*parsego.File, bool) {
 	for _, pgf := range pkg.CompiledGoFiles() {
 		if pgf.File.Pos() <= pos && pos <= pgf.File.End() {
 			return pgf, true

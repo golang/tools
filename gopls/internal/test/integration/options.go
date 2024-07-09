@@ -5,14 +5,20 @@
 package integration
 
 import (
+	"strings"
+	"testing"
+
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
+	"golang.org/x/tools/internal/drivertest"
 )
 
 type runConfig struct {
-	editor  fake.EditorConfig
-	sandbox fake.SandboxConfig
-	modes   Mode
+	editor        fake.EditorConfig
+	sandbox       fake.SandboxConfig
+	modes         Mode
+	noLogsOnError bool
+	writeGoSum    []string
 }
 
 func defaultConfig() runConfig {
@@ -45,6 +51,17 @@ func ProxyFiles(txt string) RunOption {
 	})
 }
 
+// WriteGoSum causes the environment to write a go.sum file for the requested
+// relative directories (via `go list -mod=mod`), before starting gopls.
+//
+// Useful for tests that use ProxyFiles, but don't care about crafting the
+// go.sum content.
+func WriteGoSum(dirs ...string) RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.writeGoSum = dirs
+	})
+}
+
 // Modes configures the execution modes that the test should run in.
 //
 // By default, modes are configured by the test runner. If this option is set,
@@ -56,6 +73,13 @@ func Modes(modes Mode) RunOption {
 			panic("modes set more than once")
 		}
 		opts.modes = modes
+	})
+}
+
+// NoLogsOnError turns off dumping the LSP logs on test failures.
+func NoLogsOnError() RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.noLogsOnError = true
 	})
 }
 
@@ -95,8 +119,8 @@ func (s Settings) set(opts *runConfig) {
 	}
 }
 
-// WorkspaceFolders configures the workdir-relative workspace folders to send
-// to the LSP server. By default the editor sends a single workspace folder
+// WorkspaceFolders configures the workdir-relative workspace folders or uri
+// to send to the LSP server. By default the editor sends a single workspace folder
 // corresponding to the workdir root. To explicitly configure no workspace
 // folders, use WorkspaceFolders with no arguments.
 func WorkspaceFolders(relFolders ...string) RunOption {
@@ -104,9 +128,27 @@ func WorkspaceFolders(relFolders ...string) RunOption {
 		// Use an empty non-nil slice to signal explicitly no folders.
 		relFolders = []string{}
 	}
+
 	return optionSetter(func(opts *runConfig) {
 		opts.editor.WorkspaceFolders = relFolders
 	})
+}
+
+// FolderSettings defines per-folder workspace settings, keyed by relative path
+// to the folder.
+//
+// Use in conjunction with WorkspaceFolders to have different settings for
+// different folders.
+type FolderSettings map[string]Settings
+
+func (fs FolderSettings) set(opts *runConfig) {
+	// Re-use the Settings type, for symmetry, but translate back into maps for
+	// the editor config.
+	folders := make(map[string]map[string]any)
+	for k, v := range fs {
+		folders[k] = v
+	}
+	opts.editor.FolderSettings = folders
 }
 
 // EnvVars sets environment variables for the LSP session. When applying these
@@ -121,6 +163,18 @@ func (e EnvVars) set(opts *runConfig) {
 	for k, v := range e {
 		opts.editor.Env[k] = v
 	}
+}
+
+// FakeGoPackagesDriver configures gopls to run with a fake GOPACKAGESDRIVER
+// environment variable.
+func FakeGoPackagesDriver(t *testing.T) RunOption {
+	env := drivertest.Env(t)
+	vars := make(EnvVars)
+	for _, e := range env {
+		kv := strings.SplitN(e, "=", 2)
+		vars[kv[0]] = kv[1]
+	}
+	return vars
 }
 
 // InGOPATH configures the workspace working directory to be GOPATH, rather

@@ -21,7 +21,7 @@ type Modification struct {
 	Text    []byte
 
 	// LanguageID is only sent from the language client on textDocument/didOpen.
-	LanguageID string
+	LanguageID protocol.LanguageKind
 }
 
 // An Action is a type of file state change.

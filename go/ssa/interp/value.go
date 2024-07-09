@@ -27,6 +27,7 @@ package interp
 // - iter --- iterators from 'range' over map or string.
 // - bad --- a poison pill for locals that have gone out of scope.
 // - rtype -- the interpreter's concrete implementation of reflect.Type
+// - **deferred -- the address of a frame's defer stack for a Defer._Stack.
 //
 // Note that nil is not on this list.
 //
@@ -45,6 +46,7 @@ import (
 
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 )
 
 type value interface{}
@@ -117,7 +119,7 @@ func usesBuiltinMap(t types.Type) bool {
 	switch t := t.(type) {
 	case *types.Basic, *types.Chan, *types.Pointer:
 		return true
-	case *types.Named:
+	case *types.Named, *aliases.Alias:
 		return usesBuiltinMap(t.Underlying())
 	case *types.Interface, *types.Array, *types.Struct:
 		return false

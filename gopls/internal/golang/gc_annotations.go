@@ -17,23 +17,38 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 )
 
+// GCOptimizationDetails invokes the Go compiler on the specified
+// package and reports its log of optimizations decisions as a set of
+// diagnostics.
+//
+// TODO(adonovan): this feature needs more consistent and informative naming.
+// Now that the compiler is cmd/compile, "GC" now means only "garbage collection".
+// I propose "(Toggle|Display) Go compiler optimization details" in the UI,
+// and CompilerOptimizationDetails for this function and compileropts.go for the file.
 func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.Package) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	if len(mp.CompiledGoFiles) == 0 {
 		return nil, nil
 	}
 	pkgDir := filepath.Dir(mp.CompiledGoFiles[0].Path())
-	outDir := filepath.Join(os.TempDir(), fmt.Sprintf("gopls-%d.details", os.Getpid()))
-
-	if err := os.MkdirAll(outDir, 0700); err != nil {
+	outDir, err := os.MkdirTemp("", fmt.Sprintf("gopls-%d.details", os.Getpid()))
+	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err := os.RemoveAll(outDir); err != nil {
+			event.Error(ctx, "cleaning gcdetails dir", err)
+		}
+	}()
+
 	tmpFile, err := os.CreateTemp(os.TempDir(), "gopls-x")
 	if err != nil {
 		return nil, err
 	}
+	tmpFile.Close() // ignore error
 	defer os.Remove(tmpFile.Name())
 
 	outDirURI := protocol.URIFromPath(outDir)
@@ -42,7 +57,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 	if !strings.HasPrefix(outDir, "/") {
 		outDirURI = protocol.DocumentURI(strings.Replace(string(outDirURI), "file:///", "file://", 1))
 	}
-	inv := &gocommand.Invocation{
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
 		Verb: "build",
 		Args: []string{
 			fmt.Sprintf("-gcflags=-json=0,%s", outDirURI),
@@ -50,8 +65,12 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 			".",
 		},
 		WorkingDir: pkgDir,
+	})
+	if err != nil {
+		return nil, err
 	}
-	_, err = snapshot.RunGoCommandDirect(ctx, cache.Normal, inv)
+	defer cleanupInvocation()
+	_, err = snapshot.View().GoCommandRunner().Run(ctx, *inv)
 	if err != nil {
 		return nil, err
 	}

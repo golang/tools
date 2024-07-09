@@ -40,12 +40,15 @@ import (
 //   - Improve the extra newlines in output.
 //   - Stream type checking via ForEachPackage.
 //   - Avoid unnecessary additional type checking.
-func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot *cache.Snapshot) ([]protocol.DocumentChanges, error) {
+func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot *cache.Snapshot) ([]protocol.DocumentChange, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
 	}
-	if perrors, terrors := pkg.GetParseErrors(), pkg.GetTypeErrors(); len(perrors) > 0 || len(terrors) > 0 {
+
+	// Changes to our heuristics for whether we can remove a parameter must also
+	// be reflected in the canRemoveParameter helper.
+	if perrors, terrors := pkg.ParseErrors(), pkg.TypeErrors(); len(perrors) > 0 || len(terrors) > 0 {
 		var sample string
 		if len(perrors) > 0 {
 			sample = perrors[0].Error()
@@ -55,33 +58,30 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		return nil, fmt.Errorf("can't change signatures for packages with parse or type errors: (e.g. %s)", sample)
 	}
 
-	info, err := FindParam(pgf, rng)
+	info, err := findParam(pgf, rng)
 	if err != nil {
 		return nil, err // e.g. invalid range
 	}
-	if info.Decl.Recv != nil {
-		return nil, fmt.Errorf("can't change signature of methods (yet)")
-	}
-	if info.Field == nil {
+	if info.field == nil {
 		return nil, fmt.Errorf("failed to find field")
 	}
 
 	// Create the new declaration, which is a copy of the original decl with the
 	// unnecessary parameter removed.
-	newDecl := internalastutil.CloneNode(info.Decl)
-	if info.Name != nil {
-		names := remove(newDecl.Type.Params.List[info.FieldIndex].Names, info.NameIndex)
-		newDecl.Type.Params.List[info.FieldIndex].Names = names
+	newDecl := internalastutil.CloneNode(info.decl)
+	if info.name != nil {
+		names := remove(newDecl.Type.Params.List[info.fieldIndex].Names, info.nameIndex)
+		newDecl.Type.Params.List[info.fieldIndex].Names = names
 	}
-	if len(newDecl.Type.Params.List[info.FieldIndex].Names) == 0 {
+	if len(newDecl.Type.Params.List[info.fieldIndex].Names) == 0 {
 		// Unnamed, or final name was removed: in either case, remove the field.
-		newDecl.Type.Params.List = remove(newDecl.Type.Params.List, info.FieldIndex)
+		newDecl.Type.Params.List = remove(newDecl.Type.Params.List, info.fieldIndex)
 	}
 
 	// Compute inputs into building a wrapper function around the modified
 	// signature.
 	var (
-		params   = internalastutil.CloneNode(info.Decl.Type.Params) // "_" names will be modified
+		params   = internalastutil.CloneNode(info.decl.Type.Params) // "_" names will be modified
 		args     []ast.Expr                                         // arguments to delegate
 		variadic = false                                            // whether the signature is variadic
 	)
@@ -97,7 +97,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		blanks := 0
 		for i, fld := range params.List {
 			for j, n := range fld.Names {
-				if i == info.FieldIndex && j == info.NameIndex {
+				if i == info.fieldIndex && j == info.nameIndex {
 					continue
 				}
 				if n.Name == "_" {
@@ -125,7 +125,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		snapshot: snapshot,
 		pkg:      pkg,
 		pgf:      pgf,
-		origDecl: info.Decl,
+		origDecl: info.decl,
 		newDecl:  newDecl,
 		params:   params,
 		callArgs: args,
@@ -140,7 +140,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 	// of the inlining should have changed the location of the original
 	// declaration.
 	{
-		idx := findDecl(pgf.File, info.Decl)
+		idx := findDecl(pgf.File, info.decl)
 		if idx < 0 {
 			return nil, bug.Errorf("didn't find original decl")
 		}
@@ -158,7 +158,7 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 	}
 
 	// Translate the resulting state into document changes.
-	var changes []protocol.DocumentChanges
+	var changes []protocol.DocumentChange
 	for uri, after := range newContent {
 		fh, err := snapshot.ReadFile(ctx, uri)
 		if err != nil {
@@ -170,11 +170,12 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		}
 		edits := diff.Bytes(before, after)
 		mapper := protocol.NewMapper(uri, before)
-		pedits, err := protocol.EditsFromDiffEdits(mapper, edits)
+		textedits, err := protocol.EditsFromDiffEdits(mapper, edits)
 		if err != nil {
 			return nil, fmt.Errorf("computing edits for %s: %v", uri, err)
 		}
-		changes = append(changes, documentChanges(fh, pedits)...)
+		change := protocol.DocumentChangeEdit(fh, textedits)
+		changes = append(changes, change)
 	}
 	return changes, nil
 }
@@ -236,17 +237,17 @@ func rewriteSignature(fset *token.FileSet, declIdx int, src0 []byte, newDecl *as
 	return newSrc, nil
 }
 
-// ParamInfo records information about a param identified by a position.
-type ParamInfo struct {
-	Decl       *ast.FuncDecl // enclosing func decl (non-nil)
-	FieldIndex int           // index of Field in Decl.Type.Params, or -1
-	Field      *ast.Field    // enclosing field of Decl, or nil if range not among parameters
-	NameIndex  int           // index of Name in Field.Names, or nil
-	Name       *ast.Ident    // indicated name (either enclosing, or Field.Names[0] if len(Field.Names) == 1)
+// paramInfo records information about a param identified by a position.
+type paramInfo struct {
+	decl       *ast.FuncDecl // enclosing func decl (non-nil)
+	fieldIndex int           // index of Field in Decl.Type.Params, or -1
+	field      *ast.Field    // enclosing field of Decl, or nil if range not among parameters
+	nameIndex  int           // index of Name in Field.Names, or nil
+	name       *ast.Ident    // indicated name (either enclosing, or Field.Names[0] if len(Field.Names) == 1)
 }
 
-// FindParam finds the parameter information spanned by the given range.
-func FindParam(pgf *ParsedGoFile, rng protocol.Range) (*ParamInfo, error) {
+// findParam finds the parameter information spanned by the given range.
+func findParam(pgf *parsego.File, rng protocol.Range) (*paramInfo, error) {
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
 		return nil, err
@@ -274,25 +275,25 @@ func FindParam(pgf *ParsedGoFile, rng protocol.Range) (*ParamInfo, error) {
 	if decl == nil {
 		return nil, fmt.Errorf("range is not within a function declaration")
 	}
-	info := &ParamInfo{
-		FieldIndex: -1,
-		NameIndex:  -1,
-		Decl:       decl,
+	info := &paramInfo{
+		fieldIndex: -1,
+		nameIndex:  -1,
+		decl:       decl,
 	}
 	for fi, f := range decl.Type.Params.List {
 		if f == field {
-			info.FieldIndex = fi
-			info.Field = f
+			info.fieldIndex = fi
+			info.field = f
 			for ni, n := range f.Names {
 				if n == id {
-					info.NameIndex = ni
-					info.Name = n
+					info.nameIndex = ni
+					info.name = n
 					break
 				}
 			}
-			if info.Name == nil && len(info.Field.Names) == 1 {
-				info.NameIndex = 0
-				info.Name = info.Field.Names[0]
+			if info.name == nil && len(info.field.Names) == 1 {
+				info.nameIndex = 0
+				info.name = info.field.Names[0]
 			}
 			break
 		}
@@ -367,14 +368,56 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[protocol.Docume
 	{
 		delegate := internalastutil.CloneNode(rw.newDecl) // clone before modifying
 		delegate.Name.Name = tag + delegate.Name.Name
-		if obj := rw.pkg.GetTypes().Scope().Lookup(delegate.Name.Name); obj != nil {
+		if obj := rw.pkg.Types().Scope().Lookup(delegate.Name.Name); obj != nil {
 			return nil, fmt.Errorf("synthetic name %q conflicts with an existing declaration", delegate.Name.Name)
 		}
 
 		wrapper := internalastutil.CloneNode(rw.origDecl)
 		wrapper.Type.Params = rw.params
+
+		// Get the receiver name, creating it if necessary.
+		var recv string // nonempty => call is a method call with receiver recv
+		if wrapper.Recv.NumFields() > 0 {
+			if len(wrapper.Recv.List[0].Names) > 0 {
+				recv = wrapper.Recv.List[0].Names[0].Name
+			} else {
+				// Create unique name for the temporary receiver, which will be inlined away.
+				//
+				// We use the lexical scope of the original function to avoid conflicts
+				// with (e.g.) named result variables. However, since the parameter syntax
+				// may have been modified/renamed from the original function, we must
+				// reject those names too.
+				usedParams := make(map[string]bool)
+				for _, fld := range wrapper.Type.Params.List {
+					for _, name := range fld.Names {
+						usedParams[name.Name] = true
+					}
+				}
+				scope := rw.pkg.TypesInfo().Scopes[rw.origDecl.Type]
+				if scope == nil {
+					return nil, bug.Errorf("missing function scope for %v", rw.origDecl.Name.Name)
+				}
+				for i := 0; ; i++ {
+					recv = fmt.Sprintf("r%d", i)
+					_, obj := scope.LookupParent(recv, token.NoPos)
+					if obj == nil && !usedParams[recv] {
+						break
+					}
+				}
+				wrapper.Recv.List[0].Names = []*ast.Ident{{Name: recv}}
+			}
+		}
+
+		name := &ast.Ident{Name: delegate.Name.Name}
+		var fun ast.Expr = name
+		if recv != "" {
+			fun = &ast.SelectorExpr{
+				X:   &ast.Ident{Name: recv},
+				Sel: name,
+			}
+		}
 		call := &ast.CallExpr{
-			Fun:  &ast.Ident{Name: delegate.Name.Name},
+			Fun:  fun,
 			Args: rw.callArgs,
 		}
 		if rw.variadic {
@@ -467,9 +510,9 @@ func reTypeCheck(logf func(string, ...any), orig *cache.Package, fileMask map[pr
 		var importer func(importPath string) (*types.Package, error)
 		{
 			var (
-				importsByPath = make(map[string]*types.Package)   // cached imports
-				toSearch      = []*types.Package{orig.GetTypes()} // packages to search
-				searched      = make(map[string]bool)             // path -> (false, if present in toSearch; true, if already searched)
+				importsByPath = make(map[string]*types.Package) // cached imports
+				toSearch      = []*types.Package{orig.Types()}  // packages to search
+				searched      = make(map[string]bool)           // path -> (false, if present in toSearch; true, if already searched)
 			)
 			importer = func(path string) (*types.Package, error) {
 				if p, ok := importsByPath[path]; ok {
@@ -515,7 +558,7 @@ func reTypeCheck(logf func(string, ...any), orig *cache.Package, fileMask map[pr
 			// An unparsable mod file should probably stop us
 			// before we get here, but double check just in case.
 			if goVersionRx.MatchString(goVersion) {
-				typesinternal.SetGoVersion(cfg, goVersion)
+				cfg.GoVersion = goVersion
 			}
 		}
 		if expectErrors {
@@ -542,7 +585,7 @@ func remove[T any](s []T, i int) []T {
 // replaceFileDecl replaces old with new in the file described by pgf.
 //
 // TODO(rfindley): generalize, and combine with rewriteSignature.
-func replaceFileDecl(pgf *ParsedGoFile, old, new ast.Decl) ([]byte, error) {
+func replaceFileDecl(pgf *parsego.File, old, new ast.Decl) ([]byte, error) {
 	i := findDecl(pgf.File, old)
 	if i == -1 {
 		return nil, bug.Errorf("didn't find old declaration")

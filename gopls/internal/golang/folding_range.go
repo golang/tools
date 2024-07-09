@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -28,7 +29,7 @@ type FoldingRangeInfo struct {
 func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, lineFoldingOnly bool) (ranges []*FoldingRangeInfo, err error) {
 	// TODO(suzmue): consider limiting the number of folding ranges returned, and
 	// implement a way to prioritize folding ranges in that case.
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +69,7 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 }
 
 // foldingRangeFunc calculates the line folding range for ast.Node n
-func foldingRangeFunc(pgf *ParsedGoFile, n ast.Node, lineFoldingOnly bool) *FoldingRangeInfo {
+func foldingRangeFunc(pgf *parsego.File, n ast.Node, lineFoldingOnly bool) *FoldingRangeInfo {
 	// TODO(suzmue): include trailing empty lines before the closing
 	// parenthesis/brace.
 	var kind protocol.FoldingRangeKind
@@ -165,7 +166,7 @@ func validLineFoldingRange(tokFile *token.File, open, close, start, end token.Po
 // commentsFoldingRange returns the folding ranges for all comment blocks in file.
 // The folding range starts at the end of the first line of the comment block, and ends at the end of the
 // comment block and has kind protocol.Comment.
-func commentsFoldingRange(pgf *ParsedGoFile) (comments []*FoldingRangeInfo) {
+func commentsFoldingRange(pgf *parsego.File) (comments []*FoldingRangeInfo) {
 	tokFile := pgf.Tok
 	for _, commentGrp := range pgf.File.Comments {
 		startGrpLine, endGrpLine := safetoken.Line(tokFile, commentGrp.Pos()), safetoken.Line(tokFile, commentGrp.End())

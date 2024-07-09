@@ -14,25 +14,25 @@ import (
 	"go/token"
 	"reflect"
 
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 // Common parse modes; these should be reused wherever possible to increase
 // cache hits.
 const (
-	// ParseHeader specifies that the main package declaration and imports are needed.
+	// Header specifies that the main package declaration and imports are needed.
 	// This is the mode used when attempting to examine the package graph structure.
-	ParseHeader = parser.AllErrors | parser.ParseComments | parser.ImportsOnly | parser.SkipObjectResolution
+	Header = parser.AllErrors | parser.ParseComments | parser.ImportsOnly | parser.SkipObjectResolution
 
-	// ParseFull specifies the full AST is needed.
+	// Full specifies the full AST is needed.
 	// This is used for files of direct interest where the entire contents must
 	// be considered.
-	ParseFull = parser.AllErrors | parser.ParseComments | parser.SkipObjectResolution
+	Full = parser.AllErrors | parser.ParseComments | parser.SkipObjectResolution
 )
 
 // Parse parses a buffer of Go source, repairing the tree if necessary.
@@ -42,7 +42,7 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 	if purgeFuncBodies {
 		src = astutil.PurgeFuncBodies(src)
 	}
-	ctx, done := event.Start(ctx, "cache.ParseGoSrc", tag.File.Of(uri.Path()))
+	ctx, done := event.Start(ctx, "cache.ParseGoSrc", label.File.Of(uri.Path()))
 	defer done()
 
 	file, err := parser.ParseFile(fset, uri.Path(), src, mode)
@@ -84,7 +84,7 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 			// of the last changes we made to aid in debugging.
 			if i == 9 {
 				unified := diff.Unified("before", "after", string(src), string(newSrc))
-				event.Log(ctx, fmt.Sprintf("fixSrc loop - last diff:\n%v", unified), tag.File.Of(tok.Name()))
+				event.Log(ctx, fmt.Sprintf("fixSrc loop - last diff:\n%v", unified), label.File.Of(tok.Name()))
 			}
 
 			newFile, newErr := parser.ParseFile(fset, uri.Path(), newSrc, mode)

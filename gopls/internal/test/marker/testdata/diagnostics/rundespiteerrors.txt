@@ -1,9 +1,6 @@
 This test verifies that analyzers without RunDespiteErrors are not
 executed on a package containing type errors (see issue #54762).
 
-We require go1.18 because the range of the `1 + ""` go/types error
-changed then, and the new @diag marker is quite particular.
-
 -- go.mod --
 module example.com
 go 1.12

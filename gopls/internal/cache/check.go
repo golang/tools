@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -23,15 +24,17 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -52,14 +55,10 @@ type unit = struct{}
 // It shares state such as parsed files and imports, to optimize type-checking
 // for packages with overlapping dependency graphs.
 type typeCheckBatch struct {
-	activePackageCache interface {
-		getActivePackage(id PackageID) *Package
-		setActivePackage(id PackageID, pkg *Package)
-	}
 	syntaxIndex map[PackageID]int // requested ID -> index in ids
 	pre         preTypeCheck
 	post        postTypeCheck
-	handles     map[PackageID]*packageHandle
+	handles     map[PackageID]*packageHandle // (immutable)
 	parseCache  *parseCache
 	fset        *token.FileSet // describes all parsed or imported files
 	cpulimit    chan unit      // concurrency limiter for CPU-bound operations
@@ -166,7 +165,10 @@ func (s *Snapshot) getImportGraph(ctx context.Context) *importGraph {
 			defer release()
 			importGraph, err := s.resolveImportGraph() // may be nil
 			if err != nil {
-				if ctx.Err() == nil {
+				// resolveImportGraph operates on the background context, because it is
+				// a shared resource across the snapshot. If the snapshot is cancelled,
+				// don't log an error.
+				if s.backgroundCtx.Err() == nil {
 					event.Error(ctx, "computing the shared import graph", err)
 				}
 				importGraph = nil
@@ -204,9 +206,17 @@ func (s *Snapshot) resolveImportGraph() (*importGraph, error) {
 
 	openPackages := make(map[PackageID]bool)
 	for _, fh := range s.Overlays() {
-		mps, err := s.MetadataForFile(ctx, fh.URI())
-		if err != nil {
-			return nil, err
+		// golang/go#66145: don't call MetadataForFile here. This function, which
+		// builds a shared import graph, is an optimization. We don't want it to
+		// have the side effect of triggering a load.
+		//
+		// In the past, a call to MetadataForFile here caused a bunch of
+		// unnecessary loads in multi-root workspaces (and as a result, spurious
+		// diagnostics).
+		g := s.MetadataGraph()
+		var mps []*metadata.Package
+		for _, id := range g.IDs[fh.URI()] {
+			mps = append(mps, g.Packages[id])
 		}
 		metadata.RemoveIntermediateTestVariants(&mps)
 		for _, mp := range mps {
@@ -333,20 +343,55 @@ type (
 //
 // Both pre and post may be called concurrently.
 func (s *Snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preTypeCheck, post postTypeCheck) error {
-	ctx, done := event.Start(ctx, "cache.forEachPackage", tag.PackageCount.Of(len(ids)))
+	ctx, done := event.Start(ctx, "cache.forEachPackage", label.PackageCount.Of(len(ids)))
 	defer done()
 
-	if len(ids) == 0 {
+	var (
+		needIDs []PackageID // ids to type-check
+		indexes []int       // original index of requested ids
+	)
+
+	// Check for existing active packages.
+	//
+	// Since gopls can't depend on package identity, any instance of the
+	// requested package must be ok to return.
+	//
+	// This is an optimization to avoid redundant type-checking: following
+	// changes to an open package many LSP clients send several successive
+	// requests for package information for the modified package (semantic
+	// tokens, code lens, inlay hints, etc.)
+	for i, id := range ids {
+		if pkg := s.getActivePackage(id); pkg != nil {
+			post(i, pkg)
+		} else {
+			needIDs = append(needIDs, id)
+			indexes = append(indexes, i)
+		}
+	}
+
+	if len(needIDs) == 0 {
 		return nil // short cut: many call sites do not handle empty ids
 	}
 
-	handles, err := s.getPackageHandles(ctx, ids)
+	// Wrap the pre- and post- funcs to translate indices.
+	var pre2 preTypeCheck
+	if pre != nil {
+		pre2 = func(i int, ph *packageHandle) bool {
+			return pre(indexes[i], ph)
+		}
+	}
+	post2 := func(i int, pkg *Package) {
+		s.setActivePackage(pkg.metadata.ID, pkg)
+		post(indexes[i], pkg)
+	}
+
+	handles, err := s.getPackageHandles(ctx, needIDs)
 	if err != nil {
 		return err
 	}
 
 	impGraph := s.getImportGraph(ctx)
-	_, err = s.forEachPackageInternal(ctx, impGraph, nil, ids, pre, post, handles)
+	_, err = s.forEachPackageInternal(ctx, impGraph, nil, needIDs, pre2, post2, handles)
 	return err
 }
 
@@ -356,16 +401,15 @@ func (s *Snapshot) forEachPackage(ctx context.Context, ids []PackageID, pre preT
 // If a non-nil importGraph is provided, imports in this graph will be reused.
 func (s *Snapshot) forEachPackageInternal(ctx context.Context, importGraph *importGraph, importIDs, syntaxIDs []PackageID, pre preTypeCheck, post postTypeCheck, handles map[PackageID]*packageHandle) (*typeCheckBatch, error) {
 	b := &typeCheckBatch{
-		activePackageCache: s,
-		pre:                pre,
-		post:               post,
-		handles:            handles,
-		parseCache:         s.view.parseCache,
-		fset:               fileSetWithBase(reservedForParsing),
-		syntaxIndex:        make(map[PackageID]int),
-		cpulimit:           make(chan unit, runtime.GOMAXPROCS(0)),
-		syntaxPackages:     make(map[PackageID]*futurePackage),
-		importPackages:     make(map[PackageID]*futurePackage),
+		pre:            pre,
+		post:           post,
+		handles:        handles,
+		parseCache:     s.view.parseCache,
+		fset:           fileSetWithBase(reservedForParsing),
+		syntaxIndex:    make(map[PackageID]int),
+		cpulimit:       make(chan unit, runtime.GOMAXPROCS(0)),
+		syntaxPackages: make(map[PackageID]*futurePackage),
+		importPackages: make(map[PackageID]*futurePackage),
 	}
 
 	if importGraph != nil {
@@ -459,6 +503,7 @@ func (b *typeCheckBatch) getImportPackage(ctx context.Context, id PackageID) (pk
 
 	// Do a second check for "unsafe" defensively, due to golang/go#60890.
 	if ph.mp.PkgPath == "unsafe" {
+		// (This assertion is reached.)
 		bug.Reportf("encountered \"unsafe\" as %s (golang/go#60890)", id)
 		return types.Unsafe, nil
 	}
@@ -502,20 +547,6 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 		return nil, nil // skip: export data only
 	}
 
-	// Check for existing active packages.
-	//
-	// Since gopls can't depend on package identity, any instance of the
-	// requested package must be ok to return.
-	//
-	// This is an optimization to avoid redundant type-checking: following
-	// changes to an open package many LSP clients send several successive
-	// requests for package information for the modified package (semantic
-	// tokens, code lens, inlay hints, etc.)
-	if pkg := b.activePackageCache.getActivePackage(id); pkg != nil {
-		b.post(i, pkg)
-		return nil, nil // skip: not checked in this batch
-	}
-
 	// Wait for predecessors.
 	{
 		var g errgroup.Group
@@ -556,8 +587,7 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 	}
 
 	// Update caches.
-	b.activePackageCache.setActivePackage(id, p) // store active packages in memory
-	go storePackageResults(ctx, ph, p)           // ...and write all packages to disk
+	go storePackageResults(ctx, ph, p) // ...and write all packages to disk
 
 	b.post(i, p)
 
@@ -597,7 +627,7 @@ func storePackageResults(ctx context.Context, ph *packageHandle, p *Package) {
 // importPackage loads the given package from its export data in p.exportData
 // (which must already be populated).
 func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package, data []byte) (*types.Package, error) {
-	ctx, done := event.Start(ctx, "cache.typeCheckBatch.importPackage", tag.Package.Of(string(mp.ID)))
+	ctx, done := event.Start(ctx, "cache.typeCheckBatch.importPackage", label.Package.Of(string(mp.ID)))
 	defer done()
 
 	impMap := b.importMap(mp.ID)
@@ -663,7 +693,7 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 // checkPackageForImport type checks, but skips function bodies and does not
 // record syntax information.
 func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageHandle) (*types.Package, error) {
-	ctx, done := event.Start(ctx, "cache.typeCheckBatch.checkPackageForImport", tag.Package.Of(string(ph.mp.ID)))
+	ctx, done := event.Start(ctx, "cache.typeCheckBatch.checkPackageForImport", label.Package.Of(string(ph.mp.ID)))
 	defer done()
 
 	onError := func(e error) {
@@ -675,7 +705,7 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 	// Parse the compiled go files, bypassing the parse cache as packages checked
 	// for import are unlikely to get cache hits. Additionally, we can optimize
 	// parsing slightly by not passing parser.ParseComments.
-	pgfs := make([]*ParsedGoFile, len(ph.localInputs.compiledGoFiles))
+	pgfs := make([]*parsego.File, len(ph.localInputs.compiledGoFiles))
 	{
 		var group errgroup.Group
 		// Set an arbitrary concurrency limit; we want some parallelism but don't
@@ -943,6 +973,11 @@ func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 	for _, v := range b.nodes {
 		assert(v.ph != nil, "nil handle")
 		handles[v.mp.ID] = v.ph
+
+		// debugging #60890
+		if v.ph.mp.PkgPath == "unsafe" && v.mp.ID != "unsafe" {
+			bug.Reportf("PackagePath \"unsafe\" with ID %q", v.mp.ID)
+		}
 	}
 
 	return handles, nil
@@ -1271,7 +1306,7 @@ func (s *Snapshot) typerefData(ctx context.Context, id PackageID, imports map[Im
 		bug.Reportf("internal error reading typerefs data: %v", err)
 	}
 
-	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), ParseFull&^parser.ParseComments, true, cgfs...)
+	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), parsego.Full&^parser.ParseComments, true, cgfs...)
 	if err != nil {
 		return nil, err
 	}
@@ -1336,9 +1371,9 @@ type typeCheckInputs struct {
 	// TODO(rfindley): consider storing less data in gobDiagnostics, and
 	// interpreting each diagnostic in the context of a fixed set of options.
 	// Then these fields need not be part of the type checking inputs.
-	relatedInformation bool
-	linkTarget         string
-	moduleMode         bool
+	supportsRelatedInformation bool
+	linkTarget                 string
+	viewType                   ViewType
 }
 
 func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (typeCheckInputs, error) {
@@ -1376,9 +1411,9 @@ func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (t
 		depsByImpPath:   mp.DepsByImpPath,
 		goVersion:       goVersion,
 
-		relatedInformation: s.Options().RelatedInformationSupported,
-		linkTarget:         s.Options().LinkTarget,
-		moduleMode:         s.view.moduleMode(),
+		supportsRelatedInformation: s.Options().RelatedInformationSupported,
+		linkTarget:                 s.Options().LinkTarget,
+		viewType:                   s.view.typ,
 	}, nil
 }
 
@@ -1435,9 +1470,9 @@ func localPackageKey(inputs typeCheckInputs) file.Hash {
 	maxAlign := inputs.sizes.Alignof(types.NewPointer(types.Typ[types.Int64]))
 	fmt.Fprintf(hasher, "sizes: %d %d\n", wordSize, maxAlign)
 
-	fmt.Fprintf(hasher, "relatedInformation: %t\n", inputs.relatedInformation)
+	fmt.Fprintf(hasher, "relatedInformation: %t\n", inputs.supportsRelatedInformation)
 	fmt.Fprintf(hasher, "linkTarget: %s\n", inputs.linkTarget)
-	fmt.Fprintf(hasher, "moduleMode: %t\n", inputs.moduleMode)
+	fmt.Fprintf(hasher, "viewType: %d\n", inputs.viewType)
 
 	var hash [sha256.Size]byte
 	hasher.Sum(hash[:0])
@@ -1449,13 +1484,14 @@ func localPackageKey(inputs typeCheckInputs) file.Hash {
 // deps holds the future results of type-checking the direct dependencies.
 func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*Package, error) {
 	inputs := ph.localInputs
-	ctx, done := event.Start(ctx, "cache.typeCheckBatch.checkPackage", tag.Package.Of(string(inputs.id)))
+	ctx, done := event.Start(ctx, "cache.typeCheckBatch.checkPackage", label.Package.Of(string(inputs.id)))
 	defer done()
 
 	pkg := &syntaxPackage{
-		id:    inputs.id,
-		fset:  b.fset, // must match parse call below
-		types: types.NewPackage(string(inputs.pkgPath), string(inputs.name)),
+		id:         inputs.id,
+		fset:       b.fset, // must match parse call below
+		types:      types.NewPackage(string(inputs.pkgPath), string(inputs.name)),
+		typesSizes: inputs.sizes,
 		typesInfo: &types.Info{
 			Types:      make(map[ast.Expr]types.TypeAndValue),
 			Defs:       make(map[*ast.Ident]types.Object),
@@ -1471,11 +1507,11 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 	// Collect parsed files from the type check pass, capturing parse errors from
 	// compiled files.
 	var err error
-	pkg.goFiles, err = b.parseCache.parseFiles(ctx, b.fset, ParseFull, false, inputs.goFiles...)
+	pkg.goFiles, err = b.parseCache.parseFiles(ctx, b.fset, parsego.Full, false, inputs.goFiles...)
 	if err != nil {
 		return nil, err
 	}
-	pkg.compiledGoFiles, err = b.parseCache.parseFiles(ctx, b.fset, ParseFull, false, inputs.compiledGoFiles...)
+	pkg.compiledGoFiles, err = b.parseCache.parseFiles(ctx, b.fset, parsego.Full, false, inputs.compiledGoFiles...)
 	if err != nil {
 		return nil, err
 	}
@@ -1565,7 +1601,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 	for _, e := range pkg.parseErrors {
 		diags, err := parseErrorDiagnostics(pkg, e)
 		if err != nil {
-			event.Error(ctx, "unable to compute positions for parse errors", err, tag.Package.Of(string(inputs.id)))
+			event.Error(ctx, "unable to compute positions for parse errors", err, label.Package.Of(string(inputs.id)))
 			continue
 		}
 		for _, diag := range diags {
@@ -1574,7 +1610,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 		}
 	}
 
-	diags := typeErrorsToDiagnostics(pkg, pkg.typeErrors, inputs.linkTarget, inputs.moduleMode, inputs.relatedInformation)
+	diags := typeErrorsToDiagnostics(pkg, inputs, pkg.typeErrors)
 	for _, diag := range diags {
 		// If the file didn't parse cleanly, it is highly likely that type
 		// checking errors will be confusing or redundant. But otherwise, type
@@ -1609,9 +1645,9 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 			depPH := b.handles[id]
 			if depPH == nil {
 				// e.g. missing metadata for dependencies in buildPackageHandle
-				return nil, missingPkgError(inputs.id, path, inputs.moduleMode)
+				return nil, missingPkgError(inputs.id, path, inputs.viewType)
 			}
-			if !metadata.IsValidImport(inputs.pkgPath, depPH.mp.PkgPath) {
+			if !metadata.IsValidImport(inputs.pkgPath, depPH.mp.PkgPath, inputs.viewType != GoPackagesDriverView) {
 				return nil, fmt.Errorf("invalid use of internal package %q", path)
 			}
 			return b.getImportPackage(ctx, id)
@@ -1620,11 +1656,8 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 
 	if inputs.goVersion != "" {
 		goVersion := "go" + inputs.goVersion
-		// types.NewChecker panics if GoVersion is invalid. An unparsable mod
-		// file should probably stop us before we get here, but double check
-		// just in case.
-		if goVersionRx.MatchString(goVersion) {
-			typesinternal.SetGoVersion(cfg, goVersion)
+		if validGoVersion(goVersion) {
+			cfg.GoVersion = goVersion
 		}
 	}
 
@@ -1632,6 +1665,43 @@ func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs
 	// We passed typecheckCgo to go/packages when we Loaded.
 	typesinternal.SetUsesCgo(cfg)
 	return cfg
+}
+
+// validGoVersion reports whether goVersion is a valid Go version for go/types.
+// types.NewChecker panics if GoVersion is invalid.
+//
+// Note that, prior to go1.21, go/types required exactly two components to the
+// version number. For example, go types would panic with the Go version
+// go1.21.1. validGoVersion handles this case when built with go1.20 or earlier.
+func validGoVersion(goVersion string) bool {
+	if !goVersionRx.MatchString(goVersion) {
+		return false // malformed version string
+	}
+
+	if relVer := releaseVersion(); relVer != "" && versions.Before(versions.Lang(relVer), versions.Lang(goVersion)) {
+		return false // 'go list' is too new for go/types
+	}
+
+	// TODO(rfindley): remove once we no longer support building gopls with Go
+	// 1.20 or earlier.
+	if !slices.Contains(build.Default.ReleaseTags, "go1.21") && strings.Count(goVersion, ".") >= 2 {
+		return false // unsupported patch version
+	}
+
+	return true
+}
+
+// releaseVersion reports the Go language version used to compile gopls, or ""
+// if it cannot be determined.
+func releaseVersion() string {
+	if len(build.Default.ReleaseTags) > 0 {
+		v := build.Default.ReleaseTags[len(build.Default.ReleaseTags)-1]
+		var dummy int
+		if _, err := fmt.Sscanf(v, "go1.%d", &dummy); err == nil {
+			return v
+		}
+	}
+	return ""
 }
 
 // depsErrors creates diagnostics for each metadata error (e.g. import cycle).
@@ -1670,12 +1740,12 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 
 	// Build an index of all imports in the package.
 	type fileImport struct {
-		cgf *ParsedGoFile
+		cgf *parsego.File
 		imp *ast.ImportSpec
 	}
 	allImports := map[string][]fileImport{}
 	for _, uri := range mp.CompiledGoFiles {
-		pgf, err := parseGoURI(ctx, snapshot, uri, ParseHeader)
+		pgf, err := parseGoURI(ctx, snapshot, uri, parsego.Header)
 		if err != nil {
 			return nil, err
 		}
@@ -1715,7 +1785,7 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 					Message:        fmt.Sprintf("error while importing %v: %v", item, depErr.Err),
 					SuggestedFixes: goGetQuickFixes(mp.Module != nil, imp.cgf.URI, item),
 				}
-				if !bundleQuickFixes(diag) {
+				if !bundleLazyFixes(diag) {
 					bug.Reportf("failed to bundle fixes for diagnostic %q", diag.Message)
 				}
 				errors = append(errors, diag)
@@ -1758,7 +1828,7 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 				Message:        fmt.Sprintf("error while importing %v: %v", item, depErr.Err),
 				SuggestedFixes: goGetQuickFixes(true, pm.URI, item),
 			}
-			if !bundleQuickFixes(diag) {
+			if !bundleLazyFixes(diag) {
 				bug.Reportf("failed to bundle fixes for diagnostic %q", diag.Message)
 			}
 			errors = append(errors, diag)
@@ -1770,20 +1840,23 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 
 // missingPkgError returns an error message for a missing package that varies
 // based on the user's workspace mode.
-func missingPkgError(from PackageID, pkgPath string, moduleMode bool) error {
-	// TODO(rfindley): improve this error. Previous versions of this error had
-	// access to the full snapshot, and could provide more information (such as
-	// the initialization error).
-	if moduleMode {
+func missingPkgError(from PackageID, pkgPath string, viewType ViewType) error {
+	switch viewType {
+	case GoModView, GoWorkView:
 		if metadata.IsCommandLineArguments(from) {
 			return fmt.Errorf("current file is not included in a workspace module")
 		} else {
 			// Previously, we would present the initialization error here.
 			return fmt.Errorf("no required module provides package %q", pkgPath)
 		}
-	} else {
-		// Previously, we would list the directories in GOROOT and GOPATH here.
+	case AdHocView:
+		return fmt.Errorf("cannot find package %q in GOROOT", pkgPath)
+	case GoPackagesDriverView:
+		return fmt.Errorf("go/packages driver could not load %q", pkgPath)
+	case GOPATHView:
 		return fmt.Errorf("cannot find package %q in GOROOT or GOPATH", pkgPath)
+	default:
+		return fmt.Errorf("unable to load package")
 	}
 }
 
@@ -1797,12 +1870,12 @@ func missingPkgError(from PackageID, pkgPath string, moduleMode bool) error {
 // to the previous error in the errs slice (such as if they were printed in
 // sequence to a terminal).
 //
-// The linkTarget, moduleMode, and supportsRelatedInformation parameters affect
-// the construction of protocol objects (see the code for details).
-func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget string, moduleMode, supportsRelatedInformation bool) []*Diagnostic {
+// Fields in typeCheckInputs may affect the resulting diagnostics.
+func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs typeCheckInputs, errs []types.Error) []*Diagnostic {
 	var result []*Diagnostic
 
 	// batch records diagnostics for a set of related types.Errors.
+	// (related[0] is the primary error.)
 	batch := func(related []types.Error) {
 		var diags []*Diagnostic
 		for i, e := range related {
@@ -1822,6 +1895,12 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 				// report.
 				continue
 			}
+
+			// Invariant: both start and end are IsValid.
+			if !end.IsValid() {
+				panic("end is invalid")
+			}
+
 			posn := safetoken.StartPosition(e.Fset, start)
 			if !posn.IsValid() {
 				// All valid positions produced by the type checker should described by
@@ -1847,18 +1926,42 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 				}
 				continue
 			}
-			if !end.IsValid() || end == start {
+
+			// debugging #65960
+			//
+			// At this point, we know 'start' IsValid, and
+			// StartPosition(start) worked (with e.Fset).
+			//
+			// If the asserted condition is true, 'start'
+			// is also in range for pgf.Tok, which means
+			// the PosRange failure must be caused by 'end'.
+			if pgf.Tok != e.Fset.File(start) {
+				bug.Reportf("internal error: inconsistent token.Files for pos")
+			}
+
+			if end == start {
 				// Expand the end position to a more meaningful span.
 				end = analysisinternal.TypeErrorEndPos(e.Fset, pgf.Src, start)
+
+				// debugging #65960
+				if _, err := safetoken.Offset(pgf.Tok, end); err != nil {
+					bug.Reportf("TypeErrorEndPos returned invalid end: %v", err)
+				}
+			} else {
+				// debugging #65960
+				if _, err := safetoken.Offset(pgf.Tok, end); err != nil {
+					bug.Reportf("ReadGo116ErrorData returned invalid end: %v", err)
+				}
 			}
+
 			rng, err := pgf.Mapper.PosRange(pgf.Tok, start, end)
 			if err != nil {
 				bug.Reportf("internal error: could not compute pos to range for %v: %v", e, err)
 				continue
 			}
-			msg := related[0].Msg
+			msg := related[0].Msg // primary
 			if i > 0 {
-				if supportsRelatedInformation {
+				if inputs.supportsRelatedInformation {
 					msg += " (see details)"
 				} else {
 					msg += fmt.Sprintf(" (this error: %v)", e.Msg)
@@ -1873,16 +1976,16 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 			}
 			if code != 0 {
 				diag.Code = code.String()
-				diag.CodeHref = typesCodeHref(linkTarget, code)
+				diag.CodeHref = typesCodeHref(inputs.linkTarget, code)
 			}
 			if code == typesinternal.UnusedVar || code == typesinternal.UnusedImport {
 				diag.Tags = append(diag.Tags, protocol.Unnecessary)
 			}
 			if match := importErrorRe.FindStringSubmatch(e.Msg); match != nil {
-				diag.SuggestedFixes = append(diag.SuggestedFixes, goGetQuickFixes(moduleMode, pgf.URI, match[1])...)
+				diag.SuggestedFixes = append(diag.SuggestedFixes, goGetQuickFixes(inputs.viewType.usesModules(), pgf.URI, match[1])...)
 			}
 			if match := unsupportedFeatureRe.FindStringSubmatch(e.Msg); match != nil {
-				diag.SuggestedFixes = append(diag.SuggestedFixes, editGoDirectiveQuickFix(moduleMode, pgf.URI, match[1])...)
+				diag.SuggestedFixes = append(diag.SuggestedFixes, editGoDirectiveQuickFix(inputs.viewType.usesModules(), pgf.URI, match[1])...)
 			}
 
 			// Link up related information. For the primary error, all related errors
@@ -1892,7 +1995,10 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, errs []types.Error, linkTarget 
 			// This is because go/types assumes that errors are read top-down, such as
 			// in the cycle error "A refers to...". The structure of the secondary
 			// error set likely only makes sense for the primary error.
-			if i > 0 {
+			//
+			// NOTE: len(diags) == 0 if the primary diagnostic has invalid positions.
+			// See also golang/go#66731.
+			if i > 0 && len(diags) > 0 {
 				primary := diags[0]
 				primary.Related = append(primary.Related, protocol.DiagnosticRelatedInformation{
 					Location: protocol.Location{URI: diag.URI, Range: diag.Range},

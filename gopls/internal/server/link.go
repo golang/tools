@@ -21,10 +21,11 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
+	"mvdan.cc/xurls/v2"
 )
 
 func (s *server) DocumentLink(ctx context.Context, params *protocol.DocumentLinkParams) (links []protocol.DocumentLink, err error) {
@@ -45,7 +46,7 @@ func (s *server) DocumentLink(ctx context.Context, params *protocol.DocumentLink
 	}
 	// Don't return errors for document links.
 	if err != nil {
-		event.Error(ctx, "failed to compute document links", err, tag.URI.Of(fh.URI()))
+		event.Error(ctx, "failed to compute document links", err, label.URI.Of(fh.URI()))
 		return nil, nil // empty result
 	}
 	return links, nil // may be empty (for other file types)
@@ -87,7 +88,7 @@ func modLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]
 	}
 
 	// Get all the links that are contained in the comments of the file.
-	urlRegexp := snapshot.Options().URLRegexp
+	urlRegexp := xurls.Relaxed()
 	for _, expr := range pm.File.Syntax.Stmt {
 		comments := expr.Comment()
 		if comments == nil {
@@ -109,7 +110,7 @@ func modLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]
 // goLinks returns the set of hyperlink annotations for the specified Go file.
 func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.DocumentLink, error) {
 
-	pgf, err := snapshot.ParseGo(ctx, fh, parsego.ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +160,7 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 		}
 	}
 
-	urlRegexp := snapshot.Options().URLRegexp
+	urlRegexp := xurls.Relaxed()
 
 	// Gather links found in string literals.
 	var str []*ast.BasicLit

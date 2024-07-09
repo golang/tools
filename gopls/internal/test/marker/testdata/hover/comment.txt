@@ -1,0 +1,82 @@
+This test checks hovering over doc links in comments.
+
+Requires go1.20+ for the unsafe package test.
+
+-- flags --
+-min_go=go1.20
+
+-- go.mod --
+module mod.com
+
+go 1.20
+
+-- a.go --
+package p
+
+import (
+	"unsafe"
+
+	"mod.com/util" //@hover(`"mod.com/util"`, `"mod.com/util"`, strconv)
+)
+
+// [NumberBase] is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase)
+const NumberBase = 10
+
+// [Conv] converts s to an int. //@hover("Conv", "Conv", Conv)
+func Conv(s string) int {
+	// [util.ParseInt] parses s and returns the integer corresponding to it. //@hover("util", "util", util),hover("ParseInt", "ParseInt", strconvParseInt)
+	// [NumberBase] is the base to use for number parsing.
+	i, _ := util.ParseInt(s, NumberBase, 64)
+	return int(i)
+}
+
+// unsafeConv converts s to a byte slice using [unsafe.Pointer]. hover("Pointer", "Pointer", unsafePointer)
+func unsafeConv(s string) []byte {
+	p := unsafe.StringData(s)
+	b := unsafe.Slice(p, len(s))
+	return b
+}
+
+-- util/conv.go --
+// Package util provides utility functions.
+package util
+
+import "strconv"
+
+// ParseInt interprets a string s in the given base (0, 2 to 36) and
+// bit size (0 to 64) and returns the corresponding value i.
+func ParseInt(s string, base int, bitSize int) (int64, error) {
+	return strconv.ParseInt(s, base, bitSize)
+}
+
+-- @Conv --
+```go
+func Conv(s string) int
+```
+
+\[Conv] converts s to an int. //@hover("Conv", "Conv", Conv)
+
+
+[`p.Conv` on pkg.go.dev](https://pkg.go.dev/mod.com#Conv)
+-- @NumberBase --
+```go
+const NumberBase untyped int = 10
+```
+
+\[NumberBase] is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase)
+
+
+[`p.NumberBase` on pkg.go.dev](https://pkg.go.dev/mod.com#NumberBase)
+-- @strconv --
+Package util provides utility functions.
+-- @strconvParseInt --
+```go
+func ParseInt(s string, base int, bitSize int) (int64, error)
+```
+
+ParseInt interprets a string s in the given base (0, 2 to 36) and bit size (0 to 64) and returns the corresponding value i.
+
+
+[`util.ParseInt` on pkg.go.dev](https://pkg.go.dev/mod.com/util#ParseInt)
+-- @util --
+Package util provides utility functions.

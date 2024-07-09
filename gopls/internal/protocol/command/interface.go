@@ -29,9 +29,8 @@ import (
 //  1. All method arguments must be JSON serializable.
 //  2. Methods must return either error or (T, error), where T is a
 //     JSON serializable type.
-//  3. The first line of the doc string is special. Everything after the colon
-//     is considered the command 'Title'.
-//     TODO(rFindley): reconsider this -- Title may be unnecessary.
+//  3. The first line of the doc string is special.
+//     Everything after the colon is considered the command 'Title'.
 //
 // The doc comment on each method is eventually published at
 // https://github.com/golang/tools/blob/master/gopls/doc/commands.md,
@@ -49,19 +48,32 @@ type Interface interface {
 	// Test: Run test(s) (legacy)
 	//
 	// Runs `go test` for a specific set of test or benchmark functions.
+	//
+	// This command is asynchronous; wait for the 'end' progress notification.
+	//
+	// This command is an alias for RunTests; the only difference
+	// is the form of the parameters.
+	//
+	// TODO(adonovan): eliminate it.
 	Test(context.Context, protocol.DocumentURI, []string, []string) error
-
-	// TODO: deprecate Test in favor of RunTests below.
 
 	// Test: Run test(s)
 	//
 	// Runs `go test` for a specific set of test or benchmark functions.
+	//
+	// This command is asynchronous; clients must wait for the 'end' progress notification.
 	RunTests(context.Context, RunTestsArgs) error
 
 	// Generate: Run go generate
 	//
 	// Runs `go generate` for a given directory.
 	Generate(context.Context, GenerateArgs) error
+
+	// Doc: Browse package documentation.
+	//
+	// Opens the Go package documentation page for the current
+	// package in a browser.
+	Doc(context.Context, protocol.Location) error
 
 	// RegenerateCgo: Regenerate cgo
 	//
@@ -148,6 +160,11 @@ type Interface interface {
 	// themselves.
 	AddImport(context.Context, AddImportArgs) error
 
+	// ExtractToNewFile: Move selected declarations to a new file
+	//
+	// Used by the code action of the same name.
+	ExtractToNewFile(context.Context, protocol.Location) error
+
 	// StartDebugging: Start the gopls debug server
 	//
 	// Start the gopls debug server if it isn't running, and return the debug
@@ -172,6 +189,8 @@ type Interface interface {
 	// RunGovulncheck: Run vulncheck
 	//
 	// Run vulnerability check (`govulncheck`).
+	//
+	// This command is asynchronous; clients must wait for the 'end' progress notification.
 	RunGovulncheck(context.Context, VulncheckArgs) (RunVulncheckResult, error)
 
 	// FetchVulncheckResult: Get known vulncheck result
@@ -227,6 +246,29 @@ type Interface interface {
 	//
 	// This command is intended for use by gopls tests only.
 	Views(context.Context) ([]View, error)
+
+	// FreeSymbols: Browse free symbols referenced by the selection in a browser.
+	//
+	// This command is a query over a selected range of Go source
+	// code. It reports the set of "free" symbols of the
+	// selection: the set of symbols that are referenced within
+	// the selection but are declared outside of it. This
+	// information is useful for understanding at a glance what a
+	// block of code depends on, perhaps as a precursor to
+	// extracting it into a separate function.
+	FreeSymbols(ctx context.Context, viewID string, loc protocol.Location) error
+
+	// Assembly: Browse assembly listing of current function in a browser.
+	//
+	// This command opens a web-based disassembly listing of the
+	// specified function symbol (plus any nested lambdas and defers).
+	// The machine architecture is determined by the view.
+	Assembly(_ context.Context, viewID, packageID, symbol string) error
+
+	// ScanImports: force a sychronous scan of the imports cache.
+	//
+	// This command is intended for use by gopls tests only.
+	ScanImports(context.Context) error
 }
 
 type RunTestsArgs struct {
@@ -521,6 +563,7 @@ type DiagnoseFilesArgs struct {
 
 // A View holds summary information about a cache.View.
 type View struct {
+	ID         string               // view ID (the index of this view among all views created)
 	Type       string               // view type (via cache.ViewType.String)
 	Root       protocol.DocumentURI // root dir of the view (e.g. containing go.mod or go.work)
 	Folder     protocol.DocumentURI // workspace folder associated with the view

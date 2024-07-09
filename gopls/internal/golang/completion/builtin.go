@@ -82,7 +82,7 @@ func (c *completer) builtinArgType(obj types.Object, call *ast.CallExpr, parentI
 		// For non-initial append() args, infer slice type from the first
 		// append() arg, or from parent context.
 		if len(call.Args) > 0 {
-			inf.objType = c.pkg.GetTypesInfo().TypeOf(call.Args[0])
+			inf.objType = c.pkg.TypesInfo().TypeOf(call.Args[0])
 		}
 		if inf.objType == nil {
 			inf.objType = parentInf.objType
@@ -98,13 +98,13 @@ func (c *completer) builtinArgType(obj types.Object, call *ast.CallExpr, parentI
 
 		// Penalize the first append() argument as a candidate. You
 		// don't normally append a slice to itself.
-		if sliceChain := objChain(c.pkg.GetTypesInfo(), call.Args[0]); len(sliceChain) > 0 {
+		if sliceChain := objChain(c.pkg.TypesInfo(), call.Args[0]); len(sliceChain) > 0 {
 			inf.penalized = append(inf.penalized, penalizedObj{objChain: sliceChain, penalty: 0.9})
 		}
 	case "delete":
 		if exprIdx > 0 && len(call.Args) > 0 {
 			// Try to fill in expected type of map key.
-			firstArgType := c.pkg.GetTypesInfo().TypeOf(call.Args[0])
+			firstArgType := c.pkg.TypesInfo().TypeOf(call.Args[0])
 			if firstArgType != nil {
 				if mt, ok := firstArgType.Underlying().(*types.Map); ok {
 					inf.objType = mt.Key()
@@ -114,9 +114,9 @@ func (c *completer) builtinArgType(obj types.Object, call *ast.CallExpr, parentI
 	case "copy":
 		var t1, t2 types.Type
 		if len(call.Args) > 0 {
-			t1 = c.pkg.GetTypesInfo().TypeOf(call.Args[0])
+			t1 = c.pkg.TypesInfo().TypeOf(call.Args[0])
 			if len(call.Args) > 1 {
-				t2 = c.pkg.GetTypesInfo().TypeOf(call.Args[1])
+				t2 = c.pkg.TypesInfo().TypeOf(call.Args[1])
 			}
 		}
 

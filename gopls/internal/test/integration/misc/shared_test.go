@@ -33,8 +33,7 @@ func main() {
 		// Create a second test session connected to the same workspace and server
 		// as the first.
 		awaiter := NewAwaiter(env1.Sandbox.Workdir)
-		const skipApplyEdits = false
-		editor, err := fake.NewEditor(env1.Sandbox, env1.Editor.Config()).Connect(env1.Ctx, env1.Server, awaiter.Hooks(), skipApplyEdits)
+		editor, err := fake.NewEditor(env1.Sandbox, env1.Editor.Config()).Connect(env1.Ctx, env1.Server, awaiter.Hooks())
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -17,7 +17,7 @@ import (
 	"golang.org/x/tools/internal/event/core"
 	"golang.org/x/tools/internal/event/export"
 	"golang.org/x/tools/internal/event/label"
-	"golang.org/x/tools/internal/event/tag"
+	"golang.org/x/tools/internal/jsonrpc2"
 )
 
 var RPCTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
@@ -93,8 +93,8 @@ func (r *Rpcs) ProcessEvent(ctx context.Context, ev core.Event, lm label.Map) co
 			endRPC(span, stats)
 		}
 	case event.IsMetric(ev):
-		sent := byteUnits(tag.SentBytes.Get(lm))
-		rec := byteUnits(tag.ReceivedBytes.Get(lm))
+		sent := byteUnits(jsonrpc2.SentBytes.Get(lm))
+		rec := byteUnits(jsonrpc2.ReceivedBytes.Get(lm))
 		if sent != 0 || rec != 0 {
 			if _, stats := r.getRPCSpan(ctx); stats != nil {
 				stats.Sent += sent
@@ -164,12 +164,12 @@ func (r *Rpcs) getRPCSpan(ctx context.Context) (*export.Span, *rpcStats) {
 }
 
 func (r *Rpcs) getRPCStats(lm label.Map) *rpcStats {
-	method := tag.Method.Get(lm)
+	method := jsonrpc2.Method.Get(lm)
 	if method == "" {
 		return nil
 	}
 	set := &r.Inbound
-	if tag.RPCDirection.Get(lm) != tag.Inbound {
+	if jsonrpc2.RPCDirection.Get(lm) != jsonrpc2.Inbound {
 		set = &r.Outbound
 	}
 	// get the record for this method
@@ -202,7 +202,7 @@ func (h *rpcTimeHistogram) Mean() timeUnits { return h.Sum / timeUnits(h.Count) 
 
 func getStatusCode(span *export.Span) string {
 	for _, ev := range span.Events() {
-		if status := tag.StatusCode.Get(ev); status != "" {
+		if status := jsonrpc2.StatusCode.Get(ev); status != "" {
 			return status
 		}
 	}

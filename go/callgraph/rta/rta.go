@@ -45,7 +45,7 @@ import (
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/compat"
+	"golang.org/x/tools/internal/aliases"
 )
 
 // A Result holds the results of Rapid Type Analysis, which includes the
@@ -374,7 +374,7 @@ func (r *rta) interfaces(C types.Type) []*types.Interface {
 		// and update the 'implements' relation.
 		r.interfaceTypes.Iterate(func(I types.Type, v interface{}) {
 			iinfo := v.(*interfaceTypeInfo)
-			if I := I.(*types.Interface); implements(cinfo, iinfo) {
+			if I := aliases.Unalias(I).(*types.Interface); implements(cinfo, iinfo) {
 				iinfo.implementations = append(iinfo.implementations, C)
 				cinfo.implements = append(cinfo.implements, I)
 			}
@@ -416,6 +416,9 @@ func (r *rta) implementations(I *types.Interface) []types.Type {
 // dynamic type of some interface or reflect.Value.
 // Adapted from needMethods in go/ssa/builder.go
 func (r *rta) addRuntimeType(T types.Type, skip bool) {
+	// Never record aliases.
+	T = aliases.Unalias(T)
+
 	if prev, ok := r.result.RuntimeTypes.At(T).(bool); ok {
 		if skip && !prev {
 			r.result.RuntimeTypes.Set(T, skip)
@@ -453,11 +456,11 @@ func (r *rta) addRuntimeType(T types.Type, skip bool) {
 	// Each package maintains its own set of types it has visited.
 
 	var n *types.Named
-	switch T := T.(type) {
+	switch T := aliases.Unalias(T).(type) {
 	case *types.Named:
 		n = T
 	case *types.Pointer:
-		n, _ = T.Elem().(*types.Named)
+		n, _ = aliases.Unalias(T.Elem()).(*types.Named)
 	}
 	if n != nil {
 		owner := n.Obj().Pkg()
@@ -476,6 +479,9 @@ func (r *rta) addRuntimeType(T types.Type, skip bool) {
 	}
 
 	switch t := T.(type) {
+	case *aliases.Alias:
+		panic("unreachable")
+
 	case *types.Basic:
 		// nop
 
@@ -539,7 +545,7 @@ func fingerprint(mset *types.MethodSet) uint64 {
 	for i := 0; i < mset.Len(); i++ {
 		method := mset.At(i).Obj()
 		sig := method.Type().(*types.Signature)
-		sum := crc32.ChecksumIEEE(compat.Appendf(space[:], "%s/%d/%d",
+		sum := crc32.ChecksumIEEE(fmt.Appendf(space[:], "%s/%d/%d",
 			method.Id(),
 			sig.Params().Len(),
 			sig.Results().Len()))

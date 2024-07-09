@@ -59,11 +59,11 @@ func TestParseLine(t *testing.T) {
 		// error handling cases
 		{
 			line: "BenchPress	100	        19.6 ns/op", // non-benchmark
-			err: true,
+			err:  true,
 		},
 		{
 			line: "BenchmarkEncrypt	lots	        19.6 ns/op", // non-int iterations
-			err: true,
+			err:  true,
 		},
 		{
 			line: "BenchmarkBridge	100000000	        19.6 smoots", // unknown unit

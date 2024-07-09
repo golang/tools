@@ -97,18 +97,18 @@ type propTypeMap struct {
 	sccToTypes map[int]*trie.MutMap
 }
 
-// propTypes returns a list of propTypes associated with
-// node `n`. If `n` is not in the map `ptm`, nil is returned.
-func (ptm propTypeMap) propTypes(n node) []propType {
-	id, ok := ptm.nodeToScc[n]
-	if !ok {
-		return nil
+// propTypes returns a go1.23 iterator for the propTypes associated with
+// node `n` in map `ptm`.
+func (ptm propTypeMap) propTypes(n node) func(yield func(propType) bool) {
+	// TODO: when x/tools uses go1.23, change callers to use range-over-func
+	// (https://go.dev/issue/65237).
+	return func(yield func(propType) bool) {
+		if id, ok := ptm.nodeToScc[n]; ok {
+			ptm.sccToTypes[id].M.Range(func(_ uint64, elem interface{}) bool {
+				return yield(elem.(propType))
+			})
+		}
 	}
-	var pts []propType
-	for _, elem := range trie.Elems(ptm.sccToTypes[id].M) {
-		pts = append(pts, elem.(propType))
-	}
-	return pts
 }
 
 // propagate reduces the `graph` based on its SCCs and

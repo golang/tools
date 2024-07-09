@@ -6,14 +6,13 @@ package server
 
 import (
 	"context"
-	"fmt"
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 func (s *server) SemanticTokensFull(ctx context.Context, params *protocol.SemanticTokensParams) (*protocol.SemanticTokens, error) {
@@ -25,7 +24,7 @@ func (s *server) SemanticTokensRange(ctx context.Context, params *protocol.Seman
 }
 
 func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIdentifier, rng *protocol.Range) (*protocol.SemanticTokens, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.semanticTokens", tag.URI.Of(td.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.semanticTokens", label.URI.Of(td.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, td.URI)
@@ -33,21 +32,25 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 		return nil, err
 	}
 	defer release()
-	if !snapshot.Options().SemanticTokens {
-		// return an error, so if the option changes
-		// the client won't remember the wrong answer
-		return nil, fmt.Errorf("semantictokens are disabled")
+
+	if snapshot.Options().SemanticTokens {
+		switch snapshot.FileKind(fh) {
+		case file.Tmpl:
+			return template.SemanticTokens(ctx, snapshot, fh.URI())
+		case file.Go:
+			return golang.SemanticTokens(ctx, snapshot, fh, rng)
+		}
 	}
 
-	switch snapshot.FileKind(fh) {
-	case file.Tmpl:
-		return template.SemanticTokens(ctx, snapshot, fh.URI())
-
-	case file.Go:
-		return golang.SemanticTokens(ctx, snapshot, fh, rng)
-
-	default:
-		// TODO(adonovan): should return an error!
-		return nil, nil // empty result
-	}
+	// Not enabled, or unsupported file type: return empty result.
+	//
+	// Returning an empty response is necessary to invalidate
+	// semantic tokens in VS Code (and perhaps other editors).
+	// Previously, we returned an error, but that had the side effect
+	// of noisy "semantictokens are disabled" logs on every keystroke.
+	//
+	// We must return a non-nil Data slice for JSON serialization.
+	// We do not return an empty field with "omitempty" set,
+	// as it is not marked optional in the protocol (golang/go#67885).
+	return &protocol.SemanticTokens{Data: []uint32{}}, nil
 }

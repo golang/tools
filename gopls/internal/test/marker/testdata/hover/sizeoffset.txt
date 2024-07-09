@@ -1,0 +1,117 @@
+This test checks that hover reports the sizes of vars/types,
+and the offsets of struct fields.
+
+Notes:
+- this only works on the declaring identifier, not on refs.
+- the size of a type is undefined if it depends on type parameters.
+- the offset of a field is undefined if it or any preceding field
+  has undefined size/alignment.
+- the test's size expectations assumes a 64-bit machine.
+- requires go1.22 because size information was inaccurate before.
+
+-- flags --
+-skip_goarch=386,arm
+-min_go=go1.22
+
+-- go.mod --
+module example.com
+
+go 1.18
+-- a.go --
+package a
+
+type T struct {         //@ hover("T", "T", T)
+	a int		//@ hover("a", "a", a)
+	U U		//@ hover("U", "U", U)
+	y, z int	//@ hover("y", "y", y), hover("z", "z", z)
+}
+
+type U struct {
+	slice []string
+}
+
+type G[T any] struct {
+	p T		//@ hover("p", "p", p)
+	q int		//@ hover("q", "q", q)
+}
+
+var _ struct {
+	Gint    G[int]    //@ hover("Gint",    "Gint",    Gint)
+	Gstring G[string] //@ hover("Gstring", "Gstring", Gstring)
+}
+
+type wasteful struct { //@ hover("wasteful", "wasteful", wasteful)
+	a bool
+	b [2]string
+	c bool
+}
+
+-- @T --
+```go
+type T struct { // size=48 (0x30)
+	a    int //@ hover("a", "a", a)
+	U    U   //@ hover("U", "U", U)
+	y, z int //@ hover("y", "y", y), hover("z", "z", z)
+}
+```
+
+[`a.T` on pkg.go.dev](https://pkg.go.dev/example.com#T)
+-- @wasteful --
+```go
+type wasteful struct { // size=48 (0x30) (29% wasted)
+	a bool
+	b [2]string
+	c bool
+}
+```
+-- @a --
+```go
+field a int // size=8, offset=0
+```
+
+@ hover("a", "a", a)
+-- @U --
+```go
+field U U // size=24 (0x18), offset=8
+```
+
+@ hover("U", "U", U)
+
+
+[`(a.T).U` on pkg.go.dev](https://pkg.go.dev/example.com#T.U)
+-- @y --
+```go
+field y int // size=8, offset=32 (0x20)
+```
+
+@ hover("y", "y", y), hover("z", "z", z)
+-- @z --
+```go
+field z int // size=8, offset=40 (0x28)
+```
+
+@ hover("y", "y", y), hover("z", "z", z)
+-- @p --
+```go
+field p T
+```
+
+@ hover("p", "p", p)
+-- @q --
+```go
+field q int // size=8
+```
+
+@ hover("q", "q", q)
+-- @Gint --
+```go
+field Gint G[int] // size=16 (0x10), offset=0
+```
+
+@ hover("Gint",    "Gint",    Gint)
+-- @Gstring --
+```go
+field Gstring G[string] // size=24 (0x18), offset=16 (0x10)
+```
+
+@ hover("Gstring", "Gstring", Gstring)

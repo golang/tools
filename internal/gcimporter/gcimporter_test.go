@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/constant"
 	goimporter "go/importer"
 	goparser "go/parser"
@@ -28,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/goroot"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -84,8 +84,7 @@ func compilePkg(t *testing.T, dirname, filename, outdirname string, packagefiles
 	importreldir := strings.ReplaceAll(outdirname, string(os.PathSeparator), "/")
 	cmd := exec.Command("go", "tool", "compile", "-p", pkg, "-D", importreldir, "-importcfg", importcfgfile, "-o", outname, filename)
 	cmd.Dir = dirname
-	out, err := cmd.CombinedOutput()
-	if err != nil {
+	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Logf("%s", out)
 		t.Fatalf("go tool compile %s failed: %s", filename, err)
 	}
@@ -165,8 +164,7 @@ func TestImportTypeparamTests(t *testing.T) {
 		t.Skipf("in short mode, skipping test that requires export data for all of std")
 	}
 
-	testenv.NeedsGo1Point(t, 18) // requires generics
-	testenv.NeedsGoBuild(t)      // to find stdlib export data in the build cache
+	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
 	// This package only handles gc export data.
 	if runtime.Compiler != "gc" {
@@ -406,18 +404,6 @@ var importedObjectTests = []struct {
 	{"go/types.Type", "type Type interface{String() string; Underlying() Type}"},
 }
 
-// TODO(rsc): Delete this init func after x/tools no longer needs to test successfully with Go 1.17.
-func init() {
-	if build.Default.ReleaseTags[len(build.Default.ReleaseTags)-1] <= "go1.17" {
-		for i := range importedObjectTests {
-			if importedObjectTests[i].name == "context.Context" {
-				// Expand any to interface{}.
-				importedObjectTests[i].want = "type Context interface{Deadline() (deadline time.Time, ok bool); Done() <-chan struct{}; Err() error; Value(key interface{}) interface{}}"
-			}
-		}
-	}
-}
-
 func TestImportedTypes(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
@@ -439,7 +425,7 @@ func TestImportedTypes(t *testing.T) {
 			t.Errorf("%s: got %q; want %q", test.name, got, test.want)
 		}
 
-		if named, _ := obj.Type().(*types.Named); named != nil {
+		if named, _ := aliases.Unalias(obj.Type()).(*types.Named); named != nil {
 			verifyInterfaceMethodRecvs(t, named, 0)
 		}
 	}
@@ -522,7 +508,7 @@ func verifyInterfaceMethodRecvs(t *testing.T, named *types.Named, level int) {
 	// check embedded interfaces (if they are named, too)
 	for i := 0; i < iface.NumEmbeddeds(); i++ {
 		// embedding of interfaces cannot have cycles; recursion will terminate
-		if etype, _ := iface.EmbeddedType(i).(*types.Named); etype != nil {
+		if etype, _ := aliases.Unalias(iface.EmbeddedType(i)).(*types.Named); etype != nil {
 			verifyInterfaceMethodRecvs(t, etype, level+1)
 		}
 	}
@@ -542,7 +528,7 @@ func TestIssue5815(t *testing.T) {
 			t.Errorf("no pkg for %s", obj)
 		}
 		if tname, _ := obj.(*types.TypeName); tname != nil {
-			named := tname.Type().(*types.Named)
+			named := aliases.Unalias(tname.Type()).(*types.Named)
 			for i := 0; i < named.NumMethods(); i++ {
 				m := named.Method(i)
 				if m.Pkg() == nil {
@@ -642,7 +628,7 @@ func TestIssue13898(t *testing.T) {
 
 	// look for go/types.Object type
 	obj := lookupObj(t, goTypesPkg.Scope(), "Object")
-	typ, ok := obj.Type().(*types.Named)
+	typ, ok := aliases.Unalias(obj.Type()).(*types.Named)
 	if !ok {
 		t.Fatalf("go/types.Object type is %v; wanted named type", typ)
 	}
@@ -739,8 +725,6 @@ func TestIssue25301(t *testing.T) {
 }
 
 func TestIssue51836(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // requires generics
-
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
 
@@ -770,8 +754,6 @@ func TestIssue51836(t *testing.T) {
 }
 
 func TestIssue61561(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // requires generics
-
 	const src = `package p
 
 type I[P any] interface {
@@ -836,8 +818,6 @@ type K = StillBad[string]
 }
 
 func TestIssue57015(t *testing.T) {
-	testenv.NeedsGo1Point(t, 18) // requires generics
-
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
 

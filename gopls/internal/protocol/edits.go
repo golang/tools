@@ -102,27 +102,74 @@ func AsAnnotatedTextEdits(edits []TextEdit) []Or_TextDocumentEdit_edits_Elem {
 	return result
 }
 
-// TextEditsToDocumentChanges converts a set of edits within the
-// specified (versioned) file to a singleton list of DocumentChanges
-// (as required for a WorkspaceEdit).
-func TextEditsToDocumentChanges(uri DocumentURI, version int32, edits []TextEdit) []DocumentChanges {
-	return []DocumentChanges{{
-		TextDocumentEdit: &TextDocumentEdit{
-			TextDocument: OptionalVersionedTextDocumentIdentifier{
-				Version:                version,
-				TextDocumentIdentifier: TextDocumentIdentifier{URI: uri},
-			},
-			Edits: AsAnnotatedTextEdits(edits),
-		},
-	}}
+// fileHandle abstracts file.Handle to avoid a cycle.
+type fileHandle interface {
+	URI() DocumentURI
+	Version() int32
 }
 
-// TextDocumentEditsToDocumentChanges wraps each TextDocumentEdit in a DocumentChange.
-func TextDocumentEditsToDocumentChanges(edits []TextDocumentEdit) []DocumentChanges {
-	changes := []DocumentChanges{} // non-nil
-	for _, edit := range edits {
-		edit := edit
-		changes = append(changes, DocumentChanges{TextDocumentEdit: &edit})
+// NewWorkspaceEdit constructs a WorkspaceEdit from a list of document changes.
+//
+// Any ChangeAnnotations must be added after.
+func NewWorkspaceEdit(changes ...DocumentChange) *WorkspaceEdit {
+	return &WorkspaceEdit{DocumentChanges: changes}
+}
+
+// DocumentChangeEdit constructs a DocumentChange containing a
+// TextDocumentEdit from a file.Handle and a list of TextEdits.
+func DocumentChangeEdit(fh fileHandle, textedits []TextEdit) DocumentChange {
+	return DocumentChange{
+		TextDocumentEdit: &TextDocumentEdit{
+			TextDocument: OptionalVersionedTextDocumentIdentifier{
+				Version:                fh.Version(),
+				TextDocumentIdentifier: TextDocumentIdentifier{URI: fh.URI()},
+			},
+			Edits: AsAnnotatedTextEdits(textedits),
+		},
 	}
-	return changes
+}
+
+// DocumentChangeCreate constructs a DocumentChange that creates a file.
+func DocumentChangeCreate(uri DocumentURI) DocumentChange {
+	return DocumentChange{
+		CreateFile: &CreateFile{
+			Kind: "create",
+			URI:  uri,
+		},
+	}
+}
+
+// DocumentChangeRename constructs a DocumentChange that renames a file.
+func DocumentChangeRename(src, dst DocumentURI) DocumentChange {
+	return DocumentChange{
+		RenameFile: &RenameFile{
+			Kind:   "rename",
+			OldURI: src,
+			NewURI: dst,
+		},
+	}
+}
+
+// SelectCompletionTextEdit returns insert or replace mode TextEdit
+// included in the completion item.
+func SelectCompletionTextEdit(item CompletionItem, useReplaceMode bool) (TextEdit, error) {
+	var edit TextEdit
+	switch typ := item.TextEdit.Value.(type) {
+	case TextEdit: // old style completion item.
+		return typ, nil
+	case InsertReplaceEdit:
+		if useReplaceMode {
+			return TextEdit{
+				NewText: typ.NewText,
+				Range:   typ.Replace,
+			}, nil
+		} else {
+			return TextEdit{
+				NewText: typ.NewText,
+				Range:   typ.Insert,
+			}, nil
+		}
+	default:
+		return edit, fmt.Errorf("unsupported edit type %T", typ)
+	}
 }

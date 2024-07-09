@@ -63,7 +63,7 @@ func _() {
 	foo.len //@snippet(" //", postfixLen, "len(foo)")
 	foo.print //@snippet(" //", postfixPrint, `fmt.Printf("foo: %v\n", foo)`)
 	foo.rang //@snippet(" //", postfixRange, "for ${1:}, ${2:} := range foo {\n\t$0\n}")
-	foo.reverse //@snippet(" //", postfixReverse, "for i, j := 0, len(foo)-1; i < j; i, j = i+1, j-1 {\n\tfoo[i], foo[j] = foo[j], foo[i]\n}\n")
+	foo.reverse //@snippet(" //", postfixReverse, "slices.Reverse(foo)")
 	foo.sort //@snippet(" //", postfixSort, "sort.Slice(foo, func(i, j int) bool {\n\t$0\n})")
 	foo.va //@snippet(" //", postfixVar, "${1:} := foo")
 	foo.ifnotnil //@snippet(" //", postfixIfNotNil, "if foo != nil {\n\t$0\n}")

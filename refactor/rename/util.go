@@ -22,7 +22,7 @@ func objectKind(obj types.Object) string {
 	switch obj := obj.(type) {
 	case *types.PkgName:
 		return "imported package name"
-	case *types.TypeName:
+	case *types.TypeName: // defined type | alias | type parameter
 		return "type"
 	case *types.Var:
 		if obj.IsField() {
@@ -35,10 +35,6 @@ func objectKind(obj types.Object) string {
 	}
 	// label, func, var, const
 	return strings.ToLower(strings.TrimPrefix(reflect.TypeOf(obj).String(), "*types."))
-}
-
-func typeKind(T types.Type) string {
-	return strings.ToLower(strings.TrimPrefix(reflect.TypeOf(T.Underlying()).String(), "*types."))
 }
 
 // NB: for renamings, blank is not considered valid.
@@ -102,3 +98,8 @@ func sameFile(x, y string) bool {
 }
 
 func unparen(e ast.Expr) ast.Expr { return astutil.Unparen(e) }
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
+}

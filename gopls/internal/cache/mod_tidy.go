@@ -16,12 +16,13 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
 )
@@ -77,7 +78,7 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 		}
 
 		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg interface{}) interface{} {
-			tidied, err := modTidyImpl(ctx, arg.(*Snapshot), uri.Path(), pm)
+			tidied, err := modTidyImpl(ctx, arg.(*Snapshot), pm)
 			return modTidyResult{tidied, err}
 		})
 
@@ -97,34 +98,38 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 }
 
 // modTidyImpl runs "go mod tidy" on a go.mod file.
-func modTidyImpl(ctx context.Context, snapshot *Snapshot, filename string, pm *ParsedModule) (*TidiedModule, error) {
-	ctx, done := event.Start(ctx, "cache.ModTidy", tag.URI.Of(filename))
+func modTidyImpl(ctx context.Context, snapshot *Snapshot, pm *ParsedModule) (*TidiedModule, error) {
+	ctx, done := event.Start(ctx, "cache.ModTidy", label.URI.Of(pm.URI))
 	defer done()
 
-	inv := &gocommand.Invocation{
-		Verb:       "mod",
-		Args:       []string{"tidy"},
-		WorkingDir: filepath.Dir(filename),
-	}
-	// TODO(adonovan): ensure that unsaved overlays are passed through to 'go'.
-	tmpURI, inv, cleanup, err := snapshot.goCommandInvocation(ctx, WriteTemporaryModFile, inv)
+	tempDir, cleanup, err := TempModDir(ctx, snapshot, pm.URI)
 	if err != nil {
 		return nil, err
 	}
-	// Keep the temporary go.mod file around long enough to parse it.
 	defer cleanup()
 
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
+		Verb:       "mod",
+		Args:       []string{"tidy", "-modfile=" + filepath.Join(tempDir, "go.mod")},
+		Env:        []string{"GOWORK=off"},
+		WorkingDir: pm.URI.Dir().Path(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupInvocation()
 	if _, err := snapshot.view.gocmdRunner.Run(ctx, *inv); err != nil {
 		return nil, err
 	}
 
 	// Go directly to disk to get the temporary mod file,
 	// since it is always on disk.
-	tempContents, err := os.ReadFile(tmpURI.Path())
+	tempMod := filepath.Join(tempDir, "go.mod")
+	tempContents, err := os.ReadFile(tempMod)
 	if err != nil {
 		return nil, err
 	}
-	ideal, err := modfile.Parse(tmpURI.Path(), tempContents, nil)
+	ideal, err := modfile.Parse(tempMod, tempContents, nil)
 	if err != nil {
 		// We do not need to worry about the temporary file's parse errors
 		// since it has been "tidied".
@@ -281,7 +286,7 @@ func missingModuleDiagnostics(ctx context.Context, snapshot *Snapshot, pm *Parse
 			continue
 		}
 		for _, goFile := range compiledGoFiles {
-			pgf, err := snapshot.ParseGo(ctx, goFile, ParseHeader)
+			pgf, err := snapshot.ParseGo(ctx, goFile, parsego.Header)
 			if err != nil {
 				continue
 			}
@@ -461,7 +466,7 @@ func switchDirectness(req *modfile.Require, m *protocol.Mapper) ([]protocol.Text
 
 // missingModuleForImport creates an error for a given import path that comes
 // from a missing module.
-func missingModuleForImport(pgf *ParsedGoFile, imp *ast.ImportSpec, req *modfile.Require, fixes []SuggestedFix) (*Diagnostic, error) {
+func missingModuleForImport(pgf *parsego.File, imp *ast.ImportSpec, req *modfile.Require, fixes []SuggestedFix) (*Diagnostic, error) {
 	if req.Syntax == nil {
 		return nil, fmt.Errorf("no syntax for %v", req)
 	}
@@ -488,7 +493,7 @@ func missingModuleForImport(pgf *ParsedGoFile, imp *ast.ImportSpec, req *modfile
 //
 // TODO(rfindley): this should key off ImportPath.
 func parseImports(ctx context.Context, s *Snapshot, files []file.Handle) (map[string]bool, error) {
-	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), ParseHeader, false, files...)
+	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), parsego.Header, false, files...)
 	if err != nil { // e.g. context cancellation
 		return nil, err
 	}

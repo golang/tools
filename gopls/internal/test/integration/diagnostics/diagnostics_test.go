@@ -7,22 +7,21 @@ package diagnostics
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/server"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/goversion"
 	"golang.org/x/tools/internal/testenv"
 )
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	Main(m, hooks.Options)
+	os.Exit(Main(m))
 }
 
 // Use mod.com for all go.mod files due to golang/go#35230.
@@ -44,7 +43,13 @@ func TestDiagnosticErrorInEditedFile(t *testing.T) {
 	// This test is very basic: start with a clean Go program, make an error, and
 	// get a diagnostic for that error. However, it also demonstrates how to
 	// combine Expectations to await more complex state in the editor.
-	Run(t, exampleProgram, func(t *testing.T, env *Env) {
+	RunMultiple{
+		{"golist", WithOptions(Modes(Default))},
+		{"gopackages", WithOptions(
+			Modes(Default),
+			FakeGoPackagesDriver(t),
+		)},
+	}.Run(t, exampleProgram, func(t *testing.T, env *Env) {
 		// Deleting the 'n' at the end of Println should generate a single error
 		// diagnostic.
 		env.OpenFile("main.go")
@@ -85,7 +90,15 @@ func TestDiagnosticErrorInNewFile(t *testing.T) {
 
 const Foo = "abc
 `
-	Run(t, brokenFile, func(t *testing.T, env *Env) {
+	RunMultiple{
+		{"golist", WithOptions(Modes(Default))},
+		// Since this test requires loading an overlay,
+		// it verifies that the fake go/packages driver honors overlays.
+		{"gopackages", WithOptions(
+			Modes(Default),
+			FakeGoPackagesDriver(t),
+		)},
+	}.Run(t, brokenFile, func(t *testing.T, env *Env) {
 		env.CreateBuffer("broken.go", brokenFile)
 		env.AfterChange(Diagnostics(env.AtRegexp("broken.go", "\"abc")))
 	})
@@ -557,10 +570,10 @@ func f() {
 			// AdHoc views are not critical errors, but their missing import
 			// diagnostics should specifically mention GOROOT or GOPATH (and not
 			// modules).
-			NoOutstandingWork(nil),
+			NoOutstandingWork(IgnoreTelemetryPromptWork),
 			Diagnostics(
 				env.AtRegexp("a.go", `"mod.com`),
-				WithMessage("GOROOT or GOPATH"),
+				WithMessage("in GOROOT"),
 			),
 		)
 		// Deleting the import dismisses the warning.
@@ -1382,36 +1395,6 @@ func _() {
 		// it yet.
 		env.RegexpReplace("a/a.go", "package a", "package a // arbitrary comment")
 		env.AfterChange(loadOnce)
-	})
-}
-
-func TestEnableAllExperiments(t *testing.T) {
-	// Before the oldest supported Go version, gopls sends a warning to upgrade
-	// Go, which fails the expectation below.
-	testenv.NeedsGo1Point(t, goversion.OldestSupported())
-
-	const mod = `
--- go.mod --
-module mod.com
-
-go 1.12
--- main.go --
-package main
-
-import "bytes"
-
-func b(c bytes.Buffer) {
-	_ = 1
-}
-`
-	WithOptions(
-		Settings{"allExperiments": true},
-	).Run(t, mod, func(t *testing.T, env *Env) {
-		// Confirm that the setting doesn't cause any warnings.
-		env.OnceMet(
-			InitialWorkspaceLoad,
-			NoShownMessage(""), // empty substring to match any message
-		)
 	})
 }
 

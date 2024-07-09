@@ -32,17 +32,21 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
-	"golang.org/x/tools/gopls/internal/cache/metadata"
-	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/progress"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
+	"golang.org/x/tools/gopls/internal/util/maps"
+	"golang.org/x/tools/gopls/internal/util/slices"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/typesinternal"
@@ -177,8 +181,6 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 
 	var tagStr string // sorted comma-separated list of PackageIDs
 	{
-		// TODO(adonovan): replace with a generic map[S]any -> string
-		// function in the tag package, and use maps.Keys + slices.Sort.
 		keys := make([]string, 0, len(pkgs))
 		for id := range pkgs {
 			keys = append(keys, string(id))
@@ -186,36 +188,36 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 		sort.Strings(keys)
 		tagStr = strings.Join(keys, ",")
 	}
-	ctx, done := event.Start(ctx, "snapshot.Analyze", tag.Package.Of(tagStr))
+	ctx, done := event.Start(ctx, "snapshot.Analyze", label.Package.Of(tagStr))
 	defer done()
 
 	// Filter and sort enabled root analyzers.
 	// A disabled analyzer may still be run if required by another.
 	toSrc := make(map[*analysis.Analyzer]*settings.Analyzer)
-	var enabled []*analysis.Analyzer // enabled subset + transitive requirements
+	var enabledAnalyzers []*analysis.Analyzer // enabled subset + transitive requirements
 	for _, a := range analyzers {
-		if a.IsEnabled(s.Options()) {
-			toSrc[a.Analyzer] = a
-			enabled = append(enabled, a.Analyzer)
+		if enabled, ok := s.Options().Analyses[a.Analyzer().Name]; enabled || !ok && a.EnabledByDefault() {
+			toSrc[a.Analyzer()] = a
+			enabledAnalyzers = append(enabledAnalyzers, a.Analyzer())
 		}
 	}
-	sort.Slice(enabled, func(i, j int) bool {
-		return enabled[i].Name < enabled[j].Name
+	sort.Slice(enabledAnalyzers, func(i, j int) bool {
+		return enabledAnalyzers[i].Name < enabledAnalyzers[j].Name
 	})
 	analyzers = nil // prevent accidental use
 
-	enabled = requiredAnalyzers(enabled)
+	enabledAnalyzers = requiredAnalyzers(enabledAnalyzers)
 
 	// Perform basic sanity checks.
 	// (Ideally we would do this only once.)
-	if err := analysis.Validate(enabled); err != nil {
+	if err := analysis.Validate(enabledAnalyzers); err != nil {
 		return nil, fmt.Errorf("invalid analyzer configuration: %v", err)
 	}
 
 	stableNames := make(map[*analysis.Analyzer]string)
 
 	var facty []*analysis.Analyzer // facty subset of enabled + transitive requirements
-	for _, a := range enabled {
+	for _, a := range enabledAnalyzers {
 		// TODO(adonovan): reject duplicate stable names (very unlikely).
 		stableNames[a] = stableName(a)
 
@@ -254,6 +256,8 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 
 			an = &analysisNode{
 				fset:        fset,
+				fsource:     struct{ file.Source }{s}, // expose only ReadFile
+				viewType:    s.View().Type(),
 				mp:          mp,
 				analyzers:   facty, // all nodes run at least the facty analyzers
 				allDeps:     make(map[PackagePath]*analysisNode),
@@ -303,10 +307,10 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 		}
 		// Add edge from predecessor.
 		if from != nil {
-			atomic.AddInt32(&from.unfinishedSuccs, 1) // TODO(adonovan): use generics
+			from.unfinishedSuccs.Add(+1) // incref
 			an.preds = append(an.preds, from)
 		}
-		atomic.AddInt32(&an.unfinishedPreds, 1)
+		an.unfinishedPreds.Add(+1)
 		return an, nil
 	}
 
@@ -317,7 +321,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 		if err != nil {
 			return nil, err
 		}
-		root.analyzers = enabled
+		root.analyzers = enabledAnalyzers
 		roots = append(roots, root)
 	}
 
@@ -387,7 +391,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 	// prevents workers from enqeuing, and thus finishing, and thus allowing the
 	// group to make progress: deadlock.
 	limiter := make(chan unit, runtime.GOMAXPROCS(0))
-	var completed int64
+	var completed atomic.Int64
 
 	var enqueue func(*analysisNode)
 	enqueue = func(an *analysisNode) {
@@ -399,13 +403,13 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 			if err != nil {
 				return err // cancelled, or failed to produce a package
 			}
-			maybeReport(atomic.AddInt64(&completed, 1))
+			maybeReport(completed.Add(1))
 			an.summary = summary
 
 			// Notify each waiting predecessor,
 			// and enqueue it when it becomes a leaf.
 			for _, pred := range an.preds {
-				if atomic.AddInt32(&pred.unfinishedSuccs, -1) == 0 {
+				if pred.unfinishedSuccs.Add(-1) == 0 { // decref
 					enqueue(pred)
 				}
 			}
@@ -427,6 +431,18 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 		return nil, err // cancelled, or failed to produce a package
 	}
 
+	// Inv: all root nodes now have a summary (#66732).
+	//
+	// We know this is falsified empirically. This means either
+	// the summary was "successfully" set to nil (above), or there
+	// is a problem with the graph such the enqueuing leaves does
+	// not lead to completion of roots (or an error).
+	for _, root := range roots {
+		if root.summary == nil {
+			bug.Report("root analysisNode has nil summary")
+		}
+	}
+
 	// Report diagnostics only from enabled actions that succeeded.
 	// Errors from creating or analyzing packages are ignored.
 	// Diagnostics are reported in the order of the analyzers argument.
@@ -439,7 +455,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 	// results, we should propagate the per-action errors.
 	var results []*Diagnostic
 	for _, root := range roots {
-		for _, a := range enabled {
+		for _, a := range enabledAnalyzers {
 			// Skip analyzers that were added only to
 			// fulfil requirements of the original set.
 			srcAnalyzer, ok := toSrc[a]
@@ -458,6 +474,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 			}
 
 			// Inv: root.summary is the successful result of run (via runCached).
+			// TODO(adonovan): fix: root.summary is sometimes nil! (#66732).
 			summary, ok := root.summary.Actions[stableNames[a]]
 			if summary == nil {
 				panic(fmt.Sprintf("analyzeSummary.Actions[%q] = (nil, %t); got %v (#60551)",
@@ -475,7 +492,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 }
 
 func (an *analysisNode) decrefPreds() {
-	if atomic.AddInt32(&an.unfinishedPreds, -1) == 0 {
+	if an.unfinishedPreds.Add(-1) == 0 {
 		an.summary.Actions = nil
 	}
 }
@@ -505,13 +522,15 @@ func (an *analysisNode) decrefPreds() {
 // type-checking and analyzing syntax (miss).
 type analysisNode struct {
 	fset            *token.FileSet              // file set shared by entire batch (DAG)
+	fsource         file.Source                 // Snapshot.ReadFile, for use by Pass.ReadFile
+	viewType        ViewType                    // type of view
 	mp              *metadata.Package           // metadata for this package
 	files           []file.Handle               // contents of CompiledGoFiles
 	analyzers       []*analysis.Analyzer        // set of analyzers to run
 	preds           []*analysisNode             // graph edges:
 	succs           map[PackageID]*analysisNode //   (preds -> self -> succs)
-	unfinishedSuccs int32
-	unfinishedPreds int32                         // effectively a summary.Actions refcount
+	unfinishedSuccs atomic.Int32
+	unfinishedPreds atomic.Int32                  // effectively a summary.Actions refcount
 	allDeps         map[PackagePath]*analysisNode // all dependencies including self
 	exportDeps      map[PackagePath]*analysisNode // subset of allDeps ref'd by export data (+self)
 	summary         *analyzeSummary               // serializable result of analyzing this package
@@ -664,6 +683,9 @@ func (an *analysisNode) runCached(ctx context.Context) (*analyzeSummary, error) 
 	if data, err := filecache.Get(cacheKind, key); err == nil {
 		// cache hit
 		analyzeSummaryCodec.Decode(data, &summary)
+		if summary == nil { // debugging #66732
+			bug.Reportf("analyzeSummaryCodec.Decode yielded nil *analyzeSummary")
+		}
 	} else if err != filecache.ErrNotFound {
 		return nil, bug.Errorf("internal error reading shared cache: %v", err)
 	} else {
@@ -673,8 +695,11 @@ func (an *analysisNode) runCached(ctx context.Context) (*analyzeSummary, error) 
 		if err != nil {
 			return nil, err
 		}
+		if summary == nil { // debugging #66732 (can't happen)
+			bug.Reportf("analyzeNode.run returned nil *analyzeSummary")
+		}
 
-		atomic.AddInt32(&an.unfinishedPreds, +1) // incref
+		an.unfinishedPreds.Add(+1) // incref
 		go func() {
 			defer an.decrefPreds() //decref
 
@@ -719,6 +744,8 @@ func (an *analysisNode) cacheKey() [sha256.Size]byte {
 	// package metadata
 	mp := an.mp
 	fmt.Fprintf(hasher, "package: %s %s %s\n", mp.ID, mp.Name, mp.PkgPath)
+	fmt.Fprintf(hasher, "viewtype: %s\n", an.viewType) // (affects diagnostics)
+
 	// We can ignore m.DepsBy{Pkg,Import}Path: although the logic
 	// uses those fields, we account for them by hashing vdeps.
 
@@ -742,13 +769,11 @@ func (an *analysisNode) cacheKey() [sha256.Size]byte {
 	}
 
 	// vdeps, in PackageID order
-	depIDs := make([]string, 0, len(an.succs))
-	for depID := range an.succs {
-		depIDs = append(depIDs, string(depID))
-	}
-	sort.Strings(depIDs) // TODO(adonovan): avoid conversions by using slices.Sort[PackageID]
+	depIDs := maps.Keys(an.succs)
+	// TODO(adonovan): use go1.2x slices.Sort(depIDs).
+	sort.Slice(depIDs, func(i, j int) bool { return depIDs[i] < depIDs[j] })
 	for _, depID := range depIDs {
-		vdep := an.succs[PackageID(depID)]
+		vdep := an.succs[depID]
 		fmt.Fprintf(hasher, "dep: %s\n", vdep.mp.PkgPath)
 		fmt.Fprintf(hasher, "export: %s\n", vdep.summary.DeepExportHash)
 
@@ -785,7 +810,7 @@ func (an *analysisNode) cacheKey() [sha256.Size]byte {
 func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 	// Parse only the "compiled" Go files.
 	// Do the computation in parallel.
-	parsed := make([]*ParsedGoFile, len(an.files))
+	parsed := make([]*parsego.File, len(an.files))
 	{
 		var group errgroup.Group
 		group.SetLimit(4) // not too much: run itself is already called in parallel
@@ -796,7 +821,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 				// as cached ASTs require the global FileSet.
 				// ast.Object resolution is unfortunately an implied part of the
 				// go/analysis contract.
-				pgf, err := parseGoImpl(ctx, an.fset, fh, ParseFull&^parser.SkipObjectResolution, false)
+				pgf, err := parseGoImpl(ctx, an.fset, fh, parsego.Full&^parser.SkipObjectResolution, false)
 				parsed[i] = pgf
 				return err
 			})
@@ -867,6 +892,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 			}
 			act = &action{
 				a:          a,
+				fsource:    an.fsource,
 				stableName: an.stableNames[a],
 				pkg:        pkg,
 				vdeps:      an.succs,
@@ -884,7 +910,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 	}
 
 	// Execute the graph in parallel.
-	execActions(roots)
+	execActions(ctx, roots)
 	// Inv: each root's summary is set (whether success or error).
 
 	// Don't return (or cache) the result in case of cancellation.
@@ -910,7 +936,7 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 }
 
 // Postcondition: analysisPackage.types and an.exportDeps are populated.
-func (an *analysisNode) typeCheck(parsed []*ParsedGoFile) *analysisPackage {
+func (an *analysisNode) typeCheck(parsed []*parsego.File) *analysisPackage {
 	mp := an.mp
 
 	if false { // debugging
@@ -1001,7 +1027,7 @@ func (an *analysisNode) typeCheck(parsed []*ParsedGoFile) *analysisPackage {
 			}
 
 			// (Duplicates logic from check.go.)
-			if !metadata.IsValidImport(an.mp.PkgPath, dep.mp.PkgPath) {
+			if !metadata.IsValidImport(an.mp.PkgPath, dep.mp.PkgPath, an.viewType != GoPackagesDriverView) {
 				return nil, fmt.Errorf("invalid use of internal package %s", importPath)
 			}
 
@@ -1012,11 +1038,8 @@ func (an *analysisNode) typeCheck(parsed []*ParsedGoFile) *analysisPackage {
 	// Set Go dialect.
 	if mp.Module != nil && mp.Module.GoVersion != "" {
 		goVersion := "go" + mp.Module.GoVersion
-		// types.NewChecker panics if GoVersion is invalid.
-		// An unparsable mod file should probably stop us
-		// before we get here, but double check just in case.
-		if goVersionRx.MatchString(goVersion) {
-			typesinternal.SetGoVersion(cfg, goVersion)
+		if validGoVersion(goVersion) {
+			cfg.GoVersion = goVersion
 		}
 	}
 
@@ -1101,7 +1124,7 @@ func readShallowManifest(export []byte) ([]PackagePath, error) {
 type analysisPackage struct {
 	mp             *metadata.Package
 	fset           *token.FileSet // local to this package
-	parsed         []*ParsedGoFile
+	parsed         []*parsego.File
 	files          []*ast.File // same as parsed[i].File
 	types          *types.Package
 	compiles       bool // package is transitively free of list/parse/type errors
@@ -1120,7 +1143,8 @@ type analysisPackage struct {
 type action struct {
 	once       sync.Once
 	a          *analysis.Analyzer
-	stableName string // cross-process stable name of analyzer
+	fsource    file.Source // Snapshot.ReadFile, for Pass.ReadFile
+	stableName string      // cross-process stable name of analyzer
 	pkg        *analysisPackage
 	hdeps      []*action                   // horizontal dependencies
 	vdeps      map[PackageID]*analysisNode // vertical dependencies
@@ -1137,7 +1161,7 @@ func (act *action) String() string {
 
 // execActions executes a set of action graph nodes in parallel.
 // Postcondition: each action.summary is set, even in case of error.
-func execActions(actions []*action) {
+func execActions(ctx context.Context, actions []*action) {
 	var wg sync.WaitGroup
 	for _, act := range actions {
 		act := act
@@ -1145,8 +1169,8 @@ func execActions(actions []*action) {
 		go func() {
 			defer wg.Done()
 			act.once.Do(func() {
-				execActions(act.hdeps) // analyze "horizontal" dependencies
-				act.result, act.summary, act.err = act.exec()
+				execActions(ctx, act.hdeps) // analyze "horizontal" dependencies
+				act.result, act.summary, act.err = act.exec(ctx)
 				if act.err != nil {
 					act.summary = &actionSummary{Err: act.err.Error()}
 					// TODO(adonovan): suppress logging. But
@@ -1170,7 +1194,7 @@ func execActions(actions []*action) {
 // along with its (serializable) facts and diagnostics.
 // Or it returns an error if the analyzer did not run to
 // completion and deliver a valid result.
-func (act *action) exec() (interface{}, *actionSummary, error) {
+func (act *action) exec(ctx context.Context) (any, *actionSummary, error) {
 	analyzer := act.a
 	pkg := act.pkg
 
@@ -1269,53 +1293,114 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 		factFilter[reflect.TypeOf(f)] = true
 	}
 
-	// If the package contains "fixed" files, it's not necessarily an error if we
-	// can't convert positions.
-	hasFixedFiles := false
-	for _, p := range pkg.parsed {
-		if p.Fixed() {
-			hasFixedFiles = true
-			break
-		}
-	}
-
 	// posToLocation converts from token.Pos to protocol form.
-	// TODO(adonovan): improve error messages.
 	posToLocation := func(start, end token.Pos) (protocol.Location, error) {
 		tokFile := pkg.fset.File(start)
 
+		// Find existing mapper by file name.
+		// (Don't require an exact token.File match
+		// as the analyzer may have re-parsed the file.)
+		var (
+			mapper *protocol.Mapper
+			fixed  bool
+		)
 		for _, p := range pkg.parsed {
-			if p.Tok == tokFile {
-				if end == token.NoPos {
-					end = start
-				}
-				return p.PosLocation(start, end)
+			if p.Tok.Name() == tokFile.Name() {
+				mapper = p.Mapper
+				fixed = p.Fixed() // suppress some assertions after parser recovery
+				break
 			}
 		}
-		errorf := bug.Errorf
-		if hasFixedFiles {
-			errorf = fmt.Errorf
+		if mapper == nil {
+			// The start position was not among the package's parsed
+			// Go files, indicating that the analyzer added new files
+			// to the FileSet.
+			//
+			// For example, the cgocall analyzer re-parses and
+			// type-checks some of the files in a special environment;
+			// and asmdecl and other low-level runtime analyzers call
+			// ReadFile to parse non-Go files.
+			// (This is a supported feature, documented at go/analysis.)
+			//
+			// In principle these files could be:
+			//
+			// - OtherFiles (non-Go files such as asm).
+			//   However, we set Pass.OtherFiles=[] because
+			//   gopls won't service "diagnose" requests
+			//   for non-Go files, so there's no point
+			//   reporting diagnostics in them.
+			//
+			// - IgnoredFiles (files tagged for other configs).
+			//   However, we set Pass.IgnoredFiles=[] because,
+			//   in most cases, zero-config gopls should create
+			//   another view that covers these files.
+			//
+			// - Referents of //line directives, as in cgo packages.
+			//   The file names in this case are not known a priori.
+			//   gopls generally tries to avoid honoring line directives,
+			//   but analyzers such as cgocall may honor them.
+			//
+			// In short, it's unclear how this can be reached
+			// other than due to an analyzer bug.
+			return protocol.Location{}, bug.Errorf("diagnostic location is not among files of package: %s", tokFile.Name())
 		}
-		return protocol.Location{}, errorf("token.Pos not within package")
+		// Inv: mapper != nil
+
+		if end == token.NoPos {
+			end = start
+		}
+
+		// debugging #64547
+		fileStart := token.Pos(tokFile.Base())
+		fileEnd := fileStart + token.Pos(tokFile.Size())
+		if start < fileStart {
+			if !fixed {
+				bug.Reportf("start < start of file")
+			}
+			start = fileStart
+		}
+		if end < start {
+			// This can happen if End is zero (#66683)
+			// or a small positive displacement from zero
+			// due to recursive Node.End() computation.
+			// This usually arises from poor parser recovery
+			// of an incomplete term at EOF.
+			if !fixed {
+				bug.Reportf("end < start of file")
+			}
+			end = fileEnd
+		}
+		if end > fileEnd+1 {
+			if !fixed {
+				bug.Reportf("end > end of file + 1")
+			}
+			end = fileEnd
+		}
+
+		return mapper.PosLocation(tokFile, start, end)
 	}
 
 	// Now run the (pkg, analyzer) action.
 	var diagnostics []gobDiagnostic
+
 	pass := &analysis.Pass{
-		Analyzer:   analyzer,
-		Fset:       pkg.fset,
-		Files:      pkg.files,
-		Pkg:        pkg.types,
-		TypesInfo:  pkg.typesInfo,
-		TypesSizes: pkg.typesSizes,
-		TypeErrors: pkg.typeErrors,
-		ResultOf:   inputs,
+		Analyzer:     analyzer,
+		Fset:         pkg.fset,
+		Files:        pkg.files,
+		OtherFiles:   nil, // since gopls doesn't handle non-Go (e.g. asm) files
+		IgnoredFiles: nil, // zero-config gopls should analyze these files in another view
+		Pkg:          pkg.types,
+		TypesInfo:    pkg.typesInfo,
+		TypesSizes:   pkg.typesSizes,
+		TypeErrors:   pkg.typeErrors,
+		ResultOf:     inputs,
 		Report: func(d analysis.Diagnostic) {
 			diagnostic, err := toGobDiagnostic(posToLocation, analyzer, d)
 			if err != nil {
-				if !hasFixedFiles {
-					bug.Reportf("internal error converting diagnostic from analyzer %q: %v", analyzer.Name, err)
-				}
+				// Don't bug.Report here: these errors all originate in
+				// posToLocation, and we can more accurately discriminate
+				// severe errors from benign ones in that function.
+				event.Error(ctx, fmt.Sprintf("internal error converting diagnostic from analyzer %q", analyzer.Name), err)
 				return
 			}
 			diagnostics = append(diagnostics, diagnostic)
@@ -1326,6 +1411,29 @@ func (act *action) exec() (interface{}, *actionSummary, error) {
 		ExportPackageFact: factset.ExportPackageFact,
 		AllObjectFacts:    func() []analysis.ObjectFact { return factset.AllObjectFacts(factFilter) },
 		AllPackageFacts:   func() []analysis.PackageFact { return factset.AllPackageFacts(factFilter) },
+	}
+
+	pass.ReadFile = func(filename string) ([]byte, error) {
+		// Read file from snapshot, to ensure reads are consistent.
+		//
+		// TODO(adonovan): make the dependency analysis sound by
+		// incorporating these additional files into the the analysis
+		// hash. This requires either (a) preemptively reading and
+		// hashing a potentially large number of mostly irrelevant
+		// files; or (b) some kind of dynamic dependency discovery
+		// system like used in Bazel for C++ headers. Neither entices.
+		if err := analysisinternal.CheckReadable(pass, filename); err != nil {
+			return nil, err
+		}
+		h, err := act.fsource.ReadFile(ctx, protocol.URIFromPath(filename))
+		if err != nil {
+			return nil, err
+		}
+		content, err := h.Content()
+		if err != nil {
+			return nil, err // file doesn't exist
+		}
+		return slices.Clone(content), nil // follow ownership of os.ReadFile
 	}
 
 	// Recover from panics (only) within the analyzer logic.
@@ -1401,7 +1509,7 @@ type LabelDuration struct {
 	Duration time.Duration
 }
 
-// AnalyzerTimes returns the accumulated time spent in each Analyzer's
+// AnalyzerRunTimes returns the accumulated time spent in each Analyzer's
 // Run function since process start, in descending order.
 func AnalyzerRunTimes() []LabelDuration {
 	analyzerRunTimesMu.Lock()

@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -21,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/loader"
@@ -90,6 +92,75 @@ func TestCHAGenerics(t *testing.T) {
 		t.Errorf("%s: got:\n%s\nwant:\n%s",
 			prog.Fset.Position(pos), got, want)
 	}
+}
+
+// TestCHAUnexported tests call resolution for unexported methods.
+func TestCHAUnexported(t *testing.T) {
+	// The two packages below each have types with methods called "m".
+	// Each of these methods should only be callable by functions in their
+	// own package, because they are unexported.
+	//
+	// In particular:
+	// - main.main can call    (main.S1).m
+	// - p2.Foo    can call    (p2.S2).m
+	// - main.main cannot call (p2.S2).m
+	// - p2.Foo    cannot call (main.S1).m
+	//
+	// We use CHA to build a callgraph, then check that it has the
+	// appropriate set of edges.
+
+	main := `package main
+		import "p2"
+		type I1 interface { m() }
+		type S1 struct { p2.I2 }
+		func (s S1) m() { }
+		func main() {
+			var s S1
+			var o I1 = s
+			o.m()
+			p2.Foo(s)
+		}`
+
+	p2 := `package p2
+		type I2 interface { m() }
+		type S2 struct { }
+		func (s S2) m() { }
+		func Foo(i I2) { i.m() }`
+
+	want := `All calls
+  main.init --> p2.init
+  main.main --> (main.S1).m
+  main.main --> p2.Foo
+  p2.Foo --> (p2.S2).m`
+
+	conf := loader.Config{
+		Build: fakeContext(map[string]string{"main": main, "p2": p2}),
+	}
+	conf.Import("main")
+	iprog, err := conf.Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	prog := ssautil.CreateProgram(iprog, ssa.InstantiateGenerics)
+	prog.Build()
+
+	cg := cha.CallGraph(prog)
+
+	// The graph is easier to read without synthetic nodes.
+	cg.DeleteSyntheticNodes()
+
+	if got := printGraph(cg, nil, "", "All calls"); got != want {
+		t.Errorf("cha.CallGraph: got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// Simplifying wrapper around buildutil.FakeContext for single-file packages.
+func fakeContext(pkgs map[string]string) *build.Context {
+	pkgs2 := make(map[string]map[string]string)
+	for path, content := range pkgs {
+		pkgs2[path] = map[string]string{"x.go": content}
+	}
+	return buildutil.FakeContext(pkgs2)
 }
 
 func loadProgInfo(filename string, mode ssa.BuilderMode) (*ssa.Program, *ast.File, *ssa.Package, error) {

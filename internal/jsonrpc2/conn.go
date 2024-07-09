@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/label"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 // Conn is the common interface to jsonrpc clients and servers.
@@ -83,17 +82,17 @@ func (c *conn) Notify(ctx context.Context, method string, params interface{}) (e
 		return fmt.Errorf("marshaling notify parameters: %v", err)
 	}
 	ctx, done := event.Start(ctx, method,
-		tag.Method.Of(method),
-		tag.RPCDirection.Of(tag.Outbound),
+		Method.Of(method),
+		RPCDirection.Of(Outbound),
 	)
 	defer func() {
 		recordStatus(ctx, err)
 		done()
 	}()
 
-	event.Metric(ctx, tag.Started.Of(1))
+	event.Metric(ctx, Started.Of(1))
 	n, err := c.write(ctx, notify)
-	event.Metric(ctx, tag.SentBytes.Of(n))
+	event.Metric(ctx, SentBytes.Of(n))
 	return err
 }
 
@@ -105,15 +104,15 @@ func (c *conn) Call(ctx context.Context, method string, params, result interface
 		return id, fmt.Errorf("marshaling call parameters: %v", err)
 	}
 	ctx, done := event.Start(ctx, method,
-		tag.Method.Of(method),
-		tag.RPCDirection.Of(tag.Outbound),
-		tag.RPCID.Of(fmt.Sprintf("%q", id)),
+		Method.Of(method),
+		RPCDirection.Of(Outbound),
+		RPCID.Of(fmt.Sprintf("%q", id)),
 	)
 	defer func() {
 		recordStatus(ctx, err)
 		done()
 	}()
-	event.Metric(ctx, tag.Started.Of(1))
+	event.Metric(ctx, Started.Of(1))
 	// We have to add ourselves to the pending map before we send, otherwise we
 	// are racing the response. Also add a buffer to rchan, so that if we get a
 	// wire response between the time this call is cancelled and id is deleted
@@ -129,7 +128,7 @@ func (c *conn) Call(ctx context.Context, method string, params, result interface
 	}()
 	// now we are ready to send
 	n, err := c.write(ctx, call)
-	event.Metric(ctx, tag.SentBytes.Of(n))
+	event.Metric(ctx, SentBytes.Of(n))
 	if err != nil {
 		// sending failed, we will never get a response, so don't leave it pending
 		return id, err
@@ -169,7 +168,7 @@ func (c *conn) replier(req Request, spanDone func()) Replier {
 			return err
 		}
 		n, err := c.write(ctx, response)
-		event.Metric(ctx, tag.SentBytes.Of(n))
+		event.Metric(ctx, SentBytes.Of(n))
 		if err != nil {
 			// TODO(iancottrell): if a stream write fails, we really need to shut down
 			// the whole stream
@@ -202,19 +201,19 @@ func (c *conn) run(ctx context.Context, handler Handler) {
 		switch msg := msg.(type) {
 		case Request:
 			labels := []label.Label{
-				tag.Method.Of(msg.Method()),
-				tag.RPCDirection.Of(tag.Inbound),
+				Method.Of(msg.Method()),
+				RPCDirection.Of(Inbound),
 				{}, // reserved for ID if present
 			}
 			if call, ok := msg.(*Call); ok {
-				labels[len(labels)-1] = tag.RPCID.Of(fmt.Sprintf("%q", call.ID()))
+				labels[len(labels)-1] = RPCID.Of(fmt.Sprintf("%q", call.ID()))
 			} else {
 				labels = labels[:len(labels)-1]
 			}
 			reqCtx, spanDone := event.Start(ctx, msg.Method(), labels...)
 			event.Metric(reqCtx,
-				tag.Started.Of(1),
-				tag.ReceivedBytes.Of(n))
+				Started.Of(1),
+				ReceivedBytes.Of(n))
 			if err := handler(reqCtx, c.replier(msg, spanDone), msg); err != nil {
 				// delivery failed, not much we can do
 				event.Error(reqCtx, "jsonrpc2 message delivery failed", err)
@@ -255,8 +254,8 @@ func (c *conn) fail(err error) {
 
 func recordStatus(ctx context.Context, err error) {
 	if err != nil {
-		event.Label(ctx, tag.StatusCode.Of("ERROR"))
+		event.Label(ctx, StatusCode.Of("ERROR"))
 	} else {
-		event.Label(ctx, tag.StatusCode.Of("OK"))
+		event.Label(ctx, StatusCode.Of("OK"))
 	}
 }

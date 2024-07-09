@@ -11,7 +11,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/aliases"
 )
 
 // MethodValue returns the Function implementing method sel, building
@@ -32,7 +32,7 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 		return nil // interface method or type parameter
 	}
 
-	if prog.parameterized.isParameterized(T) {
+	if prog.isParameterized(T) {
 		return nil // generic method
 	}
 
@@ -40,7 +40,7 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 		defer logStack("MethodValue %s %v", T, sel)()
 	}
 
-	var cr creator
+	var b builder
 
 	m := func() *Function {
 		prog.methodsMu.Lock()
@@ -58,25 +58,26 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 		fn, ok := mset.mapping[id]
 		if !ok {
 			obj := sel.Obj().(*types.Func)
-			_, ptrObj := deptr(recvType(obj))
-			_, ptrRecv := deptr(T)
 			needsPromotion := len(sel.Index()) > 1
-			needsIndirection := !ptrObj && ptrRecv
+			needsIndirection := !isPointer(recvType(obj)) && isPointer(T)
 			if needsPromotion || needsIndirection {
-				fn = createWrapper(prog, toSelection(sel), &cr)
+				fn = createWrapper(prog, toSelection(sel))
+				fn.buildshared = b.shared()
+				b.enqueue(fn)
 			} else {
-				fn = prog.objectMethod(obj, &cr)
+				fn = prog.objectMethod(obj, &b)
 			}
 			if fn.Signature.Recv() == nil {
 				panic(fn)
 			}
 			mset.mapping[id] = fn
+		} else {
+			b.waitForSharedFunction(fn)
 		}
 
 		return fn
 	}()
 
-	b := builder{created: &cr}
 	b.iterate()
 
 	return m
@@ -90,7 +91,7 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 // objectMethod panics if the function is not a method.
 //
 // Acquires prog.objectMethodsMu.
-func (prog *Program) objectMethod(obj *types.Func, cr *creator) *Function {
+func (prog *Program) objectMethod(obj *types.Func, b *builder) *Function {
 	sig := obj.Type().(*types.Signature)
 	if sig.Recv() == nil {
 		panic("not a method: " + obj.String())
@@ -102,11 +103,11 @@ func (prog *Program) objectMethod(obj *types.Func, cr *creator) *Function {
 	}
 
 	// Instantiation of generic?
-	if originObj := typeparams.OriginMethod(obj); originObj != obj {
-		origin := prog.objectMethod(originObj, cr)
+	if originObj := obj.Origin(); originObj != obj {
+		origin := prog.objectMethod(originObj, b)
 		assert(origin.typeparams.Len() > 0, "origin is not generic")
 		targs := receiverTypeArgs(obj)
-		return origin.instance(targs, cr)
+		return origin.instance(targs, b)
 	}
 
 	// Consult/update cache of methods created from types.Func.
@@ -114,13 +115,17 @@ func (prog *Program) objectMethod(obj *types.Func, cr *creator) *Function {
 	defer prog.objectMethodsMu.Unlock()
 	fn, ok := prog.objectMethods[obj]
 	if !ok {
-		fn = createFunction(prog, obj, obj.Name(), nil, nil, "", cr)
+		fn = createFunction(prog, obj, obj.Name(), nil, nil, "")
 		fn.Synthetic = "from type information (on demand)"
+		fn.buildshared = b.shared()
+		b.enqueue(fn)
 
 		if prog.objectMethods == nil {
 			prog.objectMethods = make(map[*types.Func]*Function)
 		}
 		prog.objectMethods[obj] = fn
+	} else {
+		b.waitForSharedFunction(fn)
 	}
 	return fn
 }
@@ -209,6 +214,9 @@ func forEachReachable(msets *typeutil.MethodSetCache, T types.Type, f func(types
 		}
 
 		switch T := T.(type) {
+		case *aliases.Alias:
+			visit(aliases.Unalias(T), skip) // emulates the pre-Alias behavior
+
 		case *types.Basic:
 			// nop
 

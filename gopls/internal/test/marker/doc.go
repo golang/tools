@@ -43,19 +43,22 @@ treatment by the test runner:
 
   - "flags": this file is treated as a whitespace-separated list of flags
     that configure the MarkerTest instance. Supported flags:
-    -min_go=go1.20 sets the minimum Go version for the test;
+    -{min,max}_go=go1.20 sets the {min,max}imum Go version for the test
+    (inclusive)
     -cgo requires that CGO_ENABLED is set and the cgo tool is available
     -write_sumfile=a,b,c instructs the test runner to generate go.sum files
     in these directories before running the test.
     -skip_goos=a,b,c instructs the test runner to skip the test for the
     listed GOOS values.
+    -skip_goarch=a,b,c does the same for GOARCH.
     -ignore_extra_diags suppresses errors for unmatched diagnostics
-    TODO(rfindley): using build constraint expressions for -skip_goos would
+    TODO(rfindley): using build constraint expressions for -skip_go{os,arch} would
     be clearer.
     -filter_builtins=false disables the filtering of builtins from
     completion results.
     -filter_keywords=false disables the filtering of keywords from
     completion results.
+    -errors_ok=true suppresses errors for Error level log entries.
     TODO(rfindley): support flag values containing whitespace.
 
   - "settings.json": this file is parsed as JSON, and used as the
@@ -172,6 +175,8 @@ The following markers are supported within marker tests:
   - incomingcalls(src location, want ...location): makes a
     callHierarchy/incomingCalls query at the src location, and checks that
     the set of call.From locations matches want.
+    (These locations are the declarations of the functions enclosing
+    the calls, not the calls themselves.)
 
   - item(label, details, kind): defines a completion item with the provided
     fields. This information is not positional, and therefore @item markers
@@ -221,6 +226,8 @@ The following markers are supported within marker tests:
     unexpected completion items may occur in the results.
     TODO(rfindley): this exists for compatibility with the old marker tests.
     Replace this with rankl, and rename.
+    A "!" prefix on a label asserts that the symbol is not a
+    completion candidate.
 
   - rankl(location, ...label): like rank, but only cares about completion
     item labels.
@@ -234,7 +241,7 @@ The following markers are supported within marker tests:
     textDocument/completion request at the location, and searches for a
     result with label matching that of the provided completion item
     (TODO(rfindley): accept a label rather than a completion item). Check
-    the the result snippet matches the provided snippet.
+    the result snippet matches the provided snippet.
 
   - symbol(golden): makes a textDocument/documentSymbol request
     for the enclosing file, formats the response with one symbol

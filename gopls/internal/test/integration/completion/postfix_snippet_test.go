@@ -108,12 +108,11 @@ func _() {
 			after: `
 package foo
 
+import "slices"
+
 func _() {
 	var foo []int
-	for i, j := 0, len(foo)-1; i < j; i, j = i+1, j-1 {
-	foo[i], foo[j] = foo[j], foo[i]
-}
-
+	slices.Reverse(foo)
 }
 `,
 		},

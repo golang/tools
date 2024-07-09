@@ -9,16 +9,141 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"testing"
+	"time"
 
+	"golang.org/x/telemetry/counter"
+	"golang.org/x/telemetry/counter/countertest"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/server"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 )
 
+// Test prompt file in old and new formats are handled as expected.
+func TestTelemetryPrompt_PromptFile(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+func main() {}
+`
+
+	defaultTelemetryStartTime := "1714521600" // 2024-05-01
+	defaultToken := "7"
+	samplesPerMille := "500"
+
+	testCases := []struct {
+		name, in, want string
+		wantPrompt     bool
+	}{
+		{
+			name:       "empty",
+			in:         "",
+			want:       "failed 1 1714521600 7",
+			wantPrompt: true,
+		},
+		{
+			name:       "v0.15-format/invalid",
+			in:         "pending",
+			want:       "failed 1 1714521600 7",
+			wantPrompt: true,
+		},
+		{
+			name:       "v0.15-format/pPending",
+			in:         "pending 1",
+			want:       "failed 2 1714521600 7",
+			wantPrompt: true,
+		},
+		{
+			name:       "v0.15-format/pPending",
+			in:         "failed 1",
+			want:       "failed 2 1714521600 7",
+			wantPrompt: true,
+		},
+		{
+			name: "v0.15-format/pYes",
+			in:   "yes 1",
+			want: "yes 1", // untouched since short-circuited
+		},
+		{
+			name: "v0.16-format/pNotReady",
+			in:   "- 0 1714521600 1000",
+			want: "- 0 1714521600 1000",
+		},
+		{
+			name:       "v0.16-format/pPending",
+			in:         "pending 1 1714521600 1",
+			want:       "failed 2 1714521600 1",
+			wantPrompt: true,
+		},
+		{
+			name:       "v0.16-format/pFailed",
+			in:         "failed 2 1714521600 1",
+			want:       "failed 3 1714521600 1",
+			wantPrompt: true,
+		},
+		{
+			name:       "v0.16-format/invalid",
+			in:         "xxx 0 12345 678",
+			want:       "failed 1 1714521600 7",
+			wantPrompt: true,
+		},
+		{
+			name: "v0.16-format/extra",
+			in:   "- 0 1714521600 1000 7777 xxx",
+			want: "- 0 1714521600 1000", // drop extra
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			modeFile := filepath.Join(t.TempDir(), "mode")
+			goplsConfigDir := t.TempDir()
+			promptDir := filepath.Join(goplsConfigDir, "prompt")
+			promptFile := filepath.Join(promptDir, "telemetry")
+
+			if err := os.MkdirAll(promptDir, 0777); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(promptFile, []byte(tc.in), 0666); err != nil {
+				t.Fatal(err)
+			}
+			WithOptions(
+				Modes(Default), // no need to run this in all modes
+				EnvVars{
+					server.GoplsConfigDirEnvvar:                  goplsConfigDir,
+					server.FakeTelemetryModefileEnvvar:           modeFile,
+					server.GoTelemetryGoplsClientStartTimeEnvvar: defaultTelemetryStartTime,
+					server.GoTelemetryGoplsClientTokenEnvvar:     defaultToken,
+					server.FakeSamplesPerMille:                   samplesPerMille,
+				},
+				Settings{
+					"telemetryPrompt": true,
+				},
+			).Run(t, src, func(t *testing.T, env *Env) {
+				expectation := ShownMessageRequest(".*Would you like to enable Go telemetry?")
+				if !tc.wantPrompt {
+					expectation = Not(expectation)
+				}
+				env.OnceMet(
+					CompletedWork(server.TelemetryPromptWorkTitle, 1, true),
+					expectation,
+				)
+				if got, err := os.ReadFile(promptFile); err != nil || string(got) != tc.want {
+					t.Fatalf("(%q) -> (%q, %v), want %q", tc.in, got, err, tc.want)
+				}
+			})
+		})
+	}
+}
+
 // Test that gopls prompts for telemetry only when it is supposed to.
-func TestTelemetryPrompt_Conditions(t *testing.T) {
+func TestTelemetryPrompt_Conditions_Mode(t *testing.T) {
 	const src = `
 -- go.mod --
 module mod.com
@@ -41,11 +166,14 @@ func main() {
 							t.Fatal(err)
 						}
 					}
+					telemetryStartTime := time.Now().Add(-8 * 24 * time.Hour) // telemetry started a while ago
 					WithOptions(
 						Modes(Default), // no need to run this in all modes
 						EnvVars{
-							server.GoplsConfigDirEnvvar:        t.TempDir(),
-							server.FakeTelemetryModefileEnvvar: modeFile,
+							server.GoplsConfigDirEnvvar:                  t.TempDir(),
+							server.FakeTelemetryModefileEnvvar:           modeFile,
+							server.GoTelemetryGoplsClientStartTimeEnvvar: strconv.FormatInt(telemetryStartTime.Unix(), 10),
+							server.GoTelemetryGoplsClientTokenEnvvar:     "1", // always sample because samplingPerMille >= 1.
 						},
 						Settings{
 							"telemetryPrompt": enabled,
@@ -67,8 +195,67 @@ func main() {
 	}
 }
 
+// Test that gopls prompts for telemetry only after instrumenting for a while, and
+// when the token is within the range for sample.
+func TestTelemetryPrompt_Conditions_StartTimeAndSamplingToken(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+func main() {
+}
+`
+	day := 24 * time.Hour
+	samplesPerMille := 50
+	for _, token := range []int{1, samplesPerMille, samplesPerMille + 1} {
+		wantSampled := token <= samplesPerMille
+		t.Run(fmt.Sprintf("to_sample=%t/tokens=%d", wantSampled, token), func(t *testing.T) {
+			for _, elapsed := range []time.Duration{8 * day, 1 * day, 0} {
+				telemetryStartTimeOrEmpty := ""
+				if elapsed > 0 {
+					telemetryStartTimeOrEmpty = strconv.FormatInt(time.Now().Add(-elapsed).Unix(), 10)
+				}
+				t.Run(fmt.Sprintf("elapsed=%s", elapsed), func(t *testing.T) {
+					modeFile := filepath.Join(t.TempDir(), "mode")
+					WithOptions(
+						Modes(Default), // no need to run this in all modes
+						EnvVars{
+							server.GoplsConfigDirEnvvar:                  t.TempDir(),
+							server.FakeTelemetryModefileEnvvar:           modeFile,
+							server.GoTelemetryGoplsClientStartTimeEnvvar: telemetryStartTimeOrEmpty,
+							server.GoTelemetryGoplsClientTokenEnvvar:     strconv.Itoa(token),
+							server.FakeSamplesPerMille:                   strconv.Itoa(samplesPerMille), // want token ∈ [1, 50] is always sampled.
+						},
+						Settings{
+							"telemetryPrompt": true,
+						},
+					).Run(t, src, func(t *testing.T, env *Env) {
+						wantPrompt := wantSampled && elapsed > 7*day
+						expectation := ShownMessageRequest(".*Would you like to enable Go telemetry?")
+						if !wantPrompt {
+							expectation = Not(expectation)
+						}
+						env.OnceMet(
+							CompletedWork(server.TelemetryPromptWorkTitle, 1, true),
+							expectation,
+						)
+					})
+				})
+			}
+		})
+	}
+}
+
 // Test that responding to the telemetry prompt results in the expected state.
 func TestTelemetryPrompt_Response(t *testing.T) {
+	if !countertest.SupportedPlatform {
+		t.Skip("requires counter support")
+	}
+
 	const src = `
 -- go.mod --
 module mod.com
@@ -81,19 +268,34 @@ func main() {
 }
 `
 
+	acceptanceCounterName := "gopls/telemetryprompt/accepted"
+	acceptanceCounter := counter.New(acceptanceCounterName)
+	// We must increment the acceptance counter in order for the initial read
+	// below to succeed.
+	//
+	// TODO(rfindley): ReadCounter should simply return 0 for uninitialized
+	// counters.
+	acceptanceCounter.Inc()
+
 	tests := []struct {
 		name     string // subtest name
 		response string // response to choose for the telemetry dialog
 		wantMode string // resulting telemetry mode
 		wantMsg  string // substring contained in the follow-up popup (if empty, no popup is expected)
+		wantInc  uint64 // expected 'prompt accepted' counter increment
 	}{
-		{"yes", server.TelemetryYes, "on", "uploading is now enabled"},
-		{"no", server.TelemetryNo, "", ""},
-		{"empty", "", "", ""},
+		{"yes", server.TelemetryYes, "on", "uploading is now enabled", 1},
+		{"no", server.TelemetryNo, "", "", 0},
+		{"empty", "", "", "", 0},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			initialCount, err := countertest.ReadCounter(acceptanceCounter)
+			if err != nil {
+				t.Fatalf("ReadCounter(%q) failed: %v", acceptanceCounterName, err)
+			}
 			modeFile := filepath.Join(t.TempDir(), "mode")
+			telemetryStartTime := time.Now().Add(-8 * 24 * time.Hour)
 			msgRE := regexp.MustCompile(".*Would you like to enable Go telemetry?")
 			respond := func(m *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error) {
 				if msgRE.MatchString(m.Message) {
@@ -111,8 +313,10 @@ func main() {
 			WithOptions(
 				Modes(Default), // no need to run this in all modes
 				EnvVars{
-					server.GoplsConfigDirEnvvar:        t.TempDir(),
-					server.FakeTelemetryModefileEnvvar: modeFile,
+					server.GoplsConfigDirEnvvar:                  t.TempDir(),
+					server.FakeTelemetryModefileEnvvar:           modeFile,
+					server.GoTelemetryGoplsClientStartTimeEnvvar: strconv.FormatInt(telemetryStartTime.Unix(), 10),
+					server.GoTelemetryGoplsClientTokenEnvvar:     "1", // always sample because samplingPerMille >= 1.
 				},
 				Settings{
 					"telemetryPrompt": true,
@@ -136,6 +340,13 @@ func main() {
 				if gotMode != test.wantMode {
 					t.Errorf("after prompt, mode=%s, want %s", gotMode, test.wantMode)
 				}
+				finalCount, err := countertest.ReadCounter(acceptanceCounter)
+				if err != nil {
+					t.Fatalf("ReadCounter(%q) failed: %v", acceptanceCounterName, err)
+				}
+				if gotInc := finalCount - initialCount; gotInc != test.wantInc {
+					t.Errorf("%q mismatch: got %d, want %d", acceptanceCounterName, gotInc, test.wantInc)
+				}
 			})
 		})
 	}
@@ -158,6 +369,7 @@ func main() {
 
 	// For this test, we want to share state across gopls sessions.
 	modeFile := filepath.Join(t.TempDir(), "mode")
+	telemetryStartTime := time.Now().Add(-30 * 24 * time.Hour)
 	configDir := t.TempDir()
 
 	const maxPrompts = 5 // internal prompt limit defined by gopls
@@ -166,8 +378,10 @@ func main() {
 		WithOptions(
 			Modes(Default), // no need to run this in all modes
 			EnvVars{
-				server.GoplsConfigDirEnvvar:        configDir,
-				server.FakeTelemetryModefileEnvvar: modeFile,
+				server.GoplsConfigDirEnvvar:                  configDir,
+				server.FakeTelemetryModefileEnvvar:           modeFile,
+				server.GoTelemetryGoplsClientStartTimeEnvvar: strconv.FormatInt(telemetryStartTime.Unix(), 10),
+				server.GoTelemetryGoplsClientTokenEnvvar:     "1", // always sample because samplingPerMille >= 1.
 			},
 			Settings{
 				"telemetryPrompt": true,
@@ -187,7 +401,7 @@ func main() {
 }
 
 // Test that gopls prompts for telemetry only when it is supposed to.
-func TestTelemetryPrompt_Conditions2(t *testing.T) {
+func TestTelemetryPrompt_Conditions_Command(t *testing.T) {
 	const src = `
 -- go.mod --
 module mod.com
@@ -200,11 +414,14 @@ func main() {
 }
 `
 	modeFile := filepath.Join(t.TempDir(), "mode")
+	telemetryStartTime := time.Now().Add(-8 * 24 * time.Hour)
 	WithOptions(
 		Modes(Default), // no need to run this in all modes
 		EnvVars{
-			server.GoplsConfigDirEnvvar:        t.TempDir(),
-			server.FakeTelemetryModefileEnvvar: modeFile,
+			server.GoplsConfigDirEnvvar:                  t.TempDir(),
+			server.FakeTelemetryModefileEnvvar:           modeFile,
+			server.GoTelemetryGoplsClientStartTimeEnvvar: fmt.Sprintf("%d", telemetryStartTime.Unix()),
+			server.GoTelemetryGoplsClientTokenEnvvar:     "1", // always sample because samplingPerMille >= 1.
 		},
 		Settings{
 			// off because we are testing

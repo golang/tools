@@ -1,10 +1,5 @@
 This file contains tests for documentation links to generic code in hover.
 
-Requires go1.19+ for the new go/doc/comment package.
-
--- flags --
--min_go=go1.19
-
 -- go.mod --
 module mod.com
 

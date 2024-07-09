@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/test/integration/fake/glob"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -40,12 +41,13 @@ type Editor struct {
 	sandbox    *Sandbox
 
 	// TODO(rfindley): buffers should be keyed by protocol.DocumentURI.
-	mu                 sync.Mutex
-	config             EditorConfig                // editor configuration
-	buffers            map[string]buffer           // open buffers (relative path -> buffer content)
-	serverCapabilities protocol.ServerCapabilities // capabilities / options
-	semTokOpts         protocol.SemanticTokensOptions
-	watchPatterns      []*glob.Glob // glob patterns to watch
+	mu                       sync.Mutex
+	config                   EditorConfig                // editor configuration
+	buffers                  map[string]buffer           // open buffers (relative path -> buffer content)
+	serverCapabilities       protocol.ServerCapabilities // capabilities / options
+	semTokOpts               protocol.SemanticTokensOptions
+	watchPatterns            []*glob.Glob // glob patterns to watch
+	suggestionUseReplaceMode bool
 
 	// Call metrics for the purpose of expectations. This is done in an ad-hoc
 	// manner for now. Perhaps in the future we should do something more
@@ -82,6 +84,8 @@ type EditorConfig struct {
 	//
 	// Since this can only be set during initialization, changing this field via
 	// Editor.ChangeConfiguration has no effect.
+	//
+	// If empty, "fake.Editor" is used.
 	ClientName string
 
 	// Env holds environment variables to apply on top of the default editor
@@ -90,10 +94,12 @@ type EditorConfig struct {
 	// directory.
 	Env map[string]string
 
-	// WorkspaceFolders is the workspace folders to configure on the LSP server,
-	// relative to the sandbox workdir.
+	// WorkspaceFolders is the workspace folders to configure on the LSP server.
+	// Each workspace folder is a file path relative to the sandbox workdir, or
+	// a uri (used when testing behavior with virtual file system or non-'file'
+	// scheme document uris).
 	//
-	// As a special case, if WorkspaceFolders is nil the editor defaults to
+	// As special cases, if WorkspaceFolders is nil the editor defaults to
 	// configuring a single workspace folder corresponding to the workdir root.
 	// To explicitly send no workspace folders, use an empty (non-nil) slice.
 	WorkspaceFolders []string
@@ -110,7 +116,13 @@ type EditorConfig struct {
 	FileAssociations map[string]string
 
 	// Settings holds user-provided configuration for the LSP server.
-	Settings map[string]interface{}
+	Settings map[string]any
+
+	// FolderSettings holds user-provided per-folder configuration, if any.
+	//
+	// It maps each folder (as a relative path to the sandbox workdir) to its
+	// configuration mapping (like Settings).
+	FolderSettings map[string]map[string]any
 
 	// CapabilitiesJSON holds JSON client capabilities to overlay over the
 	// editor's default client capabilities.
@@ -140,14 +152,14 @@ func NewEditor(sandbox *Sandbox, config EditorConfig) *Editor {
 // It returns the editor, so that it may be called as follows:
 //
 //	editor, err := NewEditor(s).Connect(ctx, conn, hooks)
-func (e *Editor) Connect(ctx context.Context, connector servertest.Connector, hooks ClientHooks, skipApplyEdits bool) (*Editor, error) {
+func (e *Editor) Connect(ctx context.Context, connector servertest.Connector, hooks ClientHooks) (*Editor, error) {
 	bgCtx, cancelConn := context.WithCancel(xcontext.Detach(ctx))
 	conn := connector.Connect(bgCtx)
 	e.cancelConn = cancelConn
 
 	e.serverConn = conn
 	e.Server = protocol.ServerDispatcher(conn)
-	e.client = &Client{editor: e, hooks: hooks, skipApplyEdits: skipApplyEdits}
+	e.client = &Client{editor: e, hooks: hooks}
 	conn.Go(bgCtx,
 		protocol.Handlers(
 			protocol.ClientHandler(e.client,
@@ -216,7 +228,7 @@ func (e *Editor) Client() *Client {
 }
 
 // makeSettings builds the settings map for use in LSP settings RPCs.
-func makeSettings(sandbox *Sandbox, config EditorConfig) map[string]interface{} {
+func makeSettings(sandbox *Sandbox, config EditorConfig, scopeURI *protocol.URI) map[string]any {
 	env := make(map[string]string)
 	for k, v := range sandbox.GoEnv() {
 		env[k] = v
@@ -229,7 +241,7 @@ func makeSettings(sandbox *Sandbox, config EditorConfig) map[string]interface{} 
 		env[k] = v
 	}
 
-	settings := map[string]interface{}{
+	settings := map[string]any{
 		"env": env,
 
 		// Use verbose progress reporting so that integration tests can assert on
@@ -248,20 +260,45 @@ func makeSettings(sandbox *Sandbox, config EditorConfig) map[string]interface{} 
 		settings[k] = v
 	}
 
+	// If the server is requesting configuration for a specific scope, apply
+	// settings for the nearest folder that has customized settings, if any.
+	if scopeURI != nil {
+		var (
+			scopePath       = protocol.DocumentURI(*scopeURI).Path()
+			closestDir      string         // longest dir with settings containing the scope, if any
+			closestSettings map[string]any // settings for that dir, if any
+		)
+		for relPath, settings := range config.FolderSettings {
+			dir := sandbox.Workdir.AbsPath(relPath)
+			if strings.HasPrefix(scopePath+string(filepath.Separator), dir+string(filepath.Separator)) && len(dir) > len(closestDir) {
+				closestDir = dir
+				closestSettings = settings
+			}
+		}
+		if closestSettings != nil {
+			for k, v := range closestSettings {
+				settings[k] = v
+			}
+		}
+	}
+
 	return settings
 }
 
 func (e *Editor) initialize(ctx context.Context) error {
 	config := e.Config()
 
-	params := &protocol.ParamInitialize{}
-	if e.config.ClientName != "" {
-		params.ClientInfo = &protocol.ClientInfo{
-			Name:    e.config.ClientName,
-			Version: "v1.0.0",
-		}
+	clientName := config.ClientName
+	if clientName == "" {
+		clientName = "fake.Editor"
 	}
-	params.InitializationOptions = makeSettings(e.sandbox, config)
+
+	params := &protocol.ParamInitialize{}
+	params.ClientInfo = &protocol.ClientInfo{
+		Name:    clientName,
+		Version: "v1.0.0",
+	}
+	params.InitializationOptions = makeSettings(e.sandbox, config, nil)
 	params.WorkspaceFolders = makeWorkspaceFolders(e.sandbox, config.WorkspaceFolders)
 
 	capabilities, err := clientCapabilities(config)
@@ -270,7 +307,7 @@ func (e *Editor) initialize(ctx context.Context) error {
 	}
 	params.Capabilities = capabilities
 
-	trace := protocol.TraceValues("messages")
+	trace := protocol.TraceValue("messages")
 	params.Trace = &trace
 	// TODO: support workspace folders.
 	if e.Server != nil {
@@ -302,6 +339,7 @@ func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
 	capabilities.TextDocument.Completion.CompletionItem.TagSupport = &protocol.CompletionItemTagOptions{}
 	capabilities.TextDocument.Completion.CompletionItem.TagSupport.ValueSet = []protocol.CompletionItemTag{protocol.ComplDeprecated}
 	capabilities.TextDocument.Completion.CompletionItem.SnippetSupport = true
+	capabilities.TextDocument.Completion.CompletionItem.InsertReplaceSupport = true
 	capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
 	capabilities.Window.WorkDoneProgress = true // support window/workDoneProgress
 	capabilities.TextDocument.SemanticTokens.TokenTypes = []string{
@@ -309,6 +347,8 @@ func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
 		"struct", "typeParameter", "parameter", "variable", "property", "enumMember",
 		"event", "function", "method", "macro", "keyword", "modifier", "comment",
 		"string", "number", "regexp", "operator",
+		// Additional types supported by this client:
+		"label",
 	}
 	capabilities.TextDocument.SemanticTokens.TokenModifiers = []string{
 		"declaration", "definition", "readonly", "static",
@@ -351,14 +391,17 @@ func marshalUnmarshal[T any](v any) (T, error) {
 }
 
 // HasCommand reports whether the connected server supports the command with the given ID.
-func (e *Editor) HasCommand(id string) bool {
+func (e *Editor) HasCommand(cmd command.Command) bool {
 	for _, command := range e.serverCapabilities.ExecuteCommandProvider.Commands {
-		if command == id {
+		if command == cmd.String() {
 			return true
 		}
 	}
 	return false
 }
+
+// Examples: https://www.iana.org/assignments/uri-schemes/uri-schemes.xhtml
+var uriRE = regexp.MustCompile(`^[a-z][a-z0-9+\-.]*://\S+`)
 
 // makeWorkspaceFolders creates a slice of workspace folders to use for
 // this editing session, based on the editor configuration.
@@ -368,7 +411,10 @@ func makeWorkspaceFolders(sandbox *Sandbox, paths []string) (folders []protocol.
 	}
 
 	for _, path := range paths {
-		uri := string(sandbox.Workdir.URI(path))
+		uri := path
+		if !uriRE.MatchString(path) { // relative file path
+			uri = string(sandbox.Workdir.URI(path))
+		}
 		folders = append(folders, protocol.WorkspaceFolder{
 			URI:  uri,
 			Name: filepath.Base(uri),
@@ -542,23 +588,24 @@ var defaultFileAssociations = map[string]*regexp.Regexp{
 
 // languageID returns the language identifier for the path p given the user
 // configured fileAssociations.
-func languageID(p string, fileAssociations map[string]string) string {
+func languageID(p string, fileAssociations map[string]string) protocol.LanguageKind {
 	base := path.Base(p)
 	for lang, re := range fileAssociations {
 		re := regexp.MustCompile(re)
 		if re.MatchString(base) {
-			return lang
+			return protocol.LanguageKind(lang)
 		}
 	}
 	for lang, re := range defaultFileAssociations {
 		if re.MatchString(base) {
-			return lang
+			return protocol.LanguageKind(lang)
 		}
 	}
 	return ""
 }
 
 // CloseBuffer removes the current buffer (regardless of whether it is saved).
+// CloseBuffer returns an error if the buffer is not open.
 func (e *Editor) CloseBuffer(ctx context.Context, path string) error {
 	e.mu.Lock()
 	_, ok := e.buffers[path]
@@ -886,7 +933,7 @@ func (e *Editor) Symbol(ctx context.Context, query string) ([]protocol.SymbolInf
 
 // OrganizeImports requests and performs the source.organizeImports codeAction.
 func (e *Editor) OrganizeImports(ctx context.Context, path string) error {
-	loc := protocol.Location{URI: e.sandbox.Workdir.URI(path)} // zero Range => whole file
+	loc := e.sandbox.Workdir.EntireFile(path)
 	_, err := e.applyCodeActions(ctx, loc, nil, protocol.SourceOrganizeImports)
 	return err
 }
@@ -1145,8 +1192,17 @@ func (e *Editor) Completion(ctx context.Context, loc protocol.Location) (*protoc
 	return completions, nil
 }
 
-// AcceptCompletion accepts a completion for the given item at the given
-// position.
+func (e *Editor) SetSuggestionInsertReplaceMode(_ context.Context, useReplaceMode bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.suggestionUseReplaceMode = useReplaceMode
+}
+
+// AcceptCompletion accepts a completion for the given item
+// at the given position based on the editor's suggestion insert mode.
+// The server provides separate insert/replace ranges only if the
+// Editor declares `InsertReplaceSupport` capability during initialization.
+// Otherwise, it returns a single range and the insert/replace mode is ignored.
 func (e *Editor) AcceptCompletion(ctx context.Context, loc protocol.Location, item protocol.CompletionItem) error {
 	if e.Server == nil {
 		return nil
@@ -1158,8 +1214,12 @@ func (e *Editor) AcceptCompletion(ctx context.Context, loc protocol.Location, it
 	if !ok {
 		return fmt.Errorf("buffer %q is not open", path)
 	}
+	edit, err := protocol.SelectCompletionTextEdit(item, e.suggestionUseReplaceMode)
+	if err != nil {
+		return err
+	}
 	return e.editBufferLocked(ctx, path, append([]protocol.TextEdit{
-		*item.TextEdit,
+		edit,
 	}, item.AdditionalTextEdits...))
 }
 
@@ -1241,16 +1301,11 @@ func (e *Editor) Rename(ctx context.Context, loc protocol.Location, newName stri
 		Position:     loc.Range.Start,
 		NewName:      newName,
 	}
-	wsEdits, err := e.Server.Rename(ctx, params)
+	wsedit, err := e.Server.Rename(ctx, params)
 	if err != nil {
 		return err
 	}
-	for _, change := range wsEdits.DocumentChanges {
-		if err := e.applyDocumentChange(ctx, change); err != nil {
-			return err
-		}
-	}
-	return nil
+	return e.applyWorkspaceEdit(ctx, wsedit)
 }
 
 // Implementations returns implementations for the object at loc, as
@@ -1357,17 +1412,47 @@ func (e *Editor) renameBuffers(oldPath, newPath string) (closed []protocol.TextD
 	return closed, opened, nil
 }
 
-func (e *Editor) applyDocumentChange(ctx context.Context, change protocol.DocumentChanges) error {
-	if change.RenameFile != nil {
-		oldPath := e.sandbox.Workdir.URIToPath(change.RenameFile.OldURI)
-		newPath := e.sandbox.Workdir.URIToPath(change.RenameFile.NewURI)
+// applyWorkspaceEdit applies the sequence of document changes in
+// wsedit to the Editor.
+//
+// See also:
+//   - changedFiles in ../../marker/marker_test.go for the
+//     handler used by the marker test to intercept edits.
+//   - cmdClient.applyWorkspaceEdit in ../../../cmd/cmd.go for the
+//     CLI variant.
+func (e *Editor) applyWorkspaceEdit(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
+	uriToPath := e.sandbox.Workdir.URIToPath
 
-		return e.RenameFile(ctx, oldPath, newPath)
+	for _, change := range wsedit.DocumentChanges {
+		switch {
+		case change.TextDocumentEdit != nil:
+			if err := e.applyTextDocumentEdit(ctx, *change.TextDocumentEdit); err != nil {
+				return err
+			}
+
+		case change.RenameFile != nil:
+			old := uriToPath(change.RenameFile.OldURI)
+			new := uriToPath(change.RenameFile.NewURI)
+			return e.RenameFile(ctx, old, new)
+
+		case change.CreateFile != nil:
+			path := uriToPath(change.CreateFile.URI)
+			if err := e.CreateBuffer(ctx, path, ""); err != nil {
+				return err // e.g. already exists
+			}
+
+		case change.DeleteFile != nil:
+			path := uriToPath(change.CreateFile.URI)
+			_ = e.CloseBuffer(ctx, path) // returns error if not open
+			if err := e.sandbox.Workdir.RemoveFile(ctx, path); err != nil {
+				return err // e.g. doesn't exist
+			}
+
+		default:
+			return bug.Errorf("invalid DocumentChange")
+		}
 	}
-	if change.TextDocumentEdit != nil {
-		return e.applyTextDocumentEdit(ctx, *change.TextDocumentEdit)
-	}
-	panic("Internal error: one of RenameFile or TextDocumentEdit must be set")
+	return nil
 }
 
 func (e *Editor) applyTextDocumentEdit(ctx context.Context, change protocol.TextDocumentEdit) error {
@@ -1473,7 +1558,9 @@ func (e *Editor) ChangeWorkspaceFolders(ctx context.Context, folders []string) e
 
 // CodeAction executes a codeAction request on the server.
 // If loc.Range is zero, the whole file is implied.
-func (e *Editor) CodeAction(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic) ([]protocol.CodeAction, error) {
+// To reduce distraction, the trigger action (unknown, automatic, invoked)
+// may affect what actions are offered.
+func (e *Editor) CodeAction(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic, trigger protocol.CodeActionTriggerKind) ([]protocol.CodeAction, error) {
 	if e.Server == nil {
 		return nil, nil
 	}
@@ -1488,6 +1575,7 @@ func (e *Editor) CodeAction(ctx context.Context, loc protocol.Location, diagnost
 		TextDocument: e.TextDocumentIdentifier(path),
 		Context: protocol.CodeActionContext{
 			Diagnostics: diagnostics,
+			TriggerKind: &trigger,
 		},
 		Range: loc.Range, // may be zero
 	}
@@ -1507,6 +1595,7 @@ func (e *Editor) EditResolveSupport() (bool, error) {
 }
 
 // Hover triggers a hover at the given position in an open buffer.
+// It may return (nil, zero) if no symbol was selected.
 func (e *Editor) Hover(ctx context.Context, loc protocol.Location) (*protocol.MarkupContent, protocol.Location, error) {
 	if err := e.checkBufferLocation(loc); err != nil {
 		return nil, protocol.Location{}, err
@@ -1520,7 +1609,7 @@ func (e *Editor) Hover(ctx context.Context, loc protocol.Location) (*protocol.Ma
 		return nil, protocol.Location{}, fmt.Errorf("hover: %w", err)
 	}
 	if resp == nil {
-		return nil, protocol.Location{}, nil
+		return nil, protocol.Location{}, nil // e.g. no selected symbol
 	}
 	return &resp.Contents, protocol.Location{URI: loc.URI, Range: resp.Range}, nil
 }

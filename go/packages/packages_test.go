@@ -367,6 +367,32 @@ func TestLoadAbsolutePath(t *testing.T) {
 	}
 }
 
+func TestLoadArgumentListIsNotTooLong(t *testing.T) {
+	// NOTE: this test adds about 2s to the test suite running time
+
+	t.Parallel()
+
+	// using the real ARG_MAX for some platforms increases the running time of this test by a lot,
+	// 1_000_000 seems like enough to break Windows and macOS if Load doesn't split provided patterns
+	argMax := 1_000_000
+	exported := packagestest.Export(t, packagestest.GOPATH, []packagestest.Module{{
+		Name: "golang.org/mod",
+		Files: map[string]interface{}{
+			"main.go": `package main"`,
+		}}})
+	defer exported.Cleanup()
+	numOfPatterns := argMax/16 + 1 // the pattern below is approx. 16 chars
+	patterns := make([]string, numOfPatterns)
+	for i := 0; i < numOfPatterns; i++ {
+		patterns[i] = fmt.Sprintf("golang.org/mod/p%d", i)
+	} // patterns have more than argMax number of chars combined with whitespaces b/w patterns
+
+	_, err := packages.Load(exported.Config, patterns...)
+	if err != nil {
+		t.Fatalf("failed to load: %v", err)
+	}
+}
+
 func TestVendorImports(t *testing.T) {
 	t.Parallel()
 
@@ -1308,7 +1334,7 @@ func testNoPatterns(t *testing.T, exporter packagestest.Exporter) {
 
 func TestJSON(t *testing.T) { testAllOrModulesParallel(t, testJSON) }
 func testJSON(t *testing.T, exporter packagestest.Exporter) {
-	//TODO: add in some errors
+	// TODO: add in some errors
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
 		Files: map[string]interface{}{
@@ -2396,21 +2422,29 @@ func testForTestField(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
-func TestIssue37529(t *testing.T) {
-	testAllOrModulesParallel(t, testIssue37529)
+func TestIssue37629(t *testing.T) {
+	testAllOrModulesParallel(t, testIssue37629)
 }
-func testIssue37529(t *testing.T, exporter packagestest.Exporter) {
-	// Tests #37529. When automatic vendoring is triggered, and we try to determine
+func testIssue37629(t *testing.T, exporter packagestest.Exporter) {
+	// Tests #37629. When automatic vendoring is triggered, and we try to determine
 	// the module root dir for a new overlay package, we previously would do a go list -m all,
 	// which is incompatible with automatic vendoring.
 
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"c/c2.go":             `package c`,
 			"a/a.go":              `package a; import "b.com/b"; const A = b.B`,
 			"vendor/b.com/b/b.go": `package b; const B = 4`,
-		}}})
+			"vendor/modules.txt": `# b.com/b v1.0.0
+## explicit
+b.com/b`,
+		}}, {
+		Name: "b.com/b@v1.0.0",
+		Files: map[string]any{
+			"arbitrary.txt": "",
+		}},
+	})
 	rootDir := filepath.Dir(filepath.Dir(exported.File("golang.org/fake", "a/a.go")))
 	exported.Config.Overlay = map[string][]byte{
 		filepath.Join(rootDir, "c/c.go"): []byte(`package c; import "golang.org/fake/a"; const C = a.A`),
@@ -2443,9 +2477,6 @@ func testIssue37098(t *testing.T, exporter packagestest.Exporter) {
 	// (*Package).CompiledGoFiles.  This tests #37098, where using SWIG to
 	// causes C++ sources to be inadvertently included in
 	// (*Package).CompiledGoFiles.
-
-	// This is fixed in Go 1.17, but not earlier.
-	testenv.NeedsGo1Point(t, 17)
 
 	if _, err := exec.LookPath("swig"); err != nil {
 		t.Skip("skipping test: swig not available")
@@ -2991,5 +3022,40 @@ func TestLoadEitherSucceedsOrFails(t *testing.T) {
 	// it had better give us the correct number packages.
 	if len(initial) != 1 {
 		t.Errorf("Load returned %d packages (want 1) and no error", len(initial))
+	}
+}
+
+// TestLoadOverlayGoMod ensures that overlays containing go.mod files
+// are effective for all 'go list' calls made by go/packages (#67644).
+func TestLoadOverlayGoMod(t *testing.T) {
+	testenv.NeedsGoBuild(t)
+
+	cwd, _ := os.Getwd()
+
+	// This test ensures that the overlaid go.mod file is seen by
+	// all runs of 'go list', in particular the early run that
+	// enumerates the modules: if the go.mod file were absent,
+	// it would ascend to the parent directory (x/tools) and
+	// then (falsely) report inconsistent vendoring.
+	//
+	// (Ideally the testdata would be constructed from nothing
+	// rather than rely on the go/packages source tree, but it is
+	// turned out to a bigger project than bargained for.)
+	cfg := &packages.Config{
+		Mode: packages.LoadSyntax,
+		Overlay: map[string][]byte{
+			filepath.Join(cwd, "go.mod"): []byte("module example.com\ngo 1.0"),
+		},
+		Env: append(os.Environ(), "GOFLAGS=-mod=vendor", "GOWORK=off"),
+	}
+
+	pkgs, err := packages.Load(cfg, "./testdata")
+	if err != nil {
+		t.Fatal(err) // (would previously fail here with "inconsistent vendoring")
+	}
+	got := fmt.Sprint(pkgs)
+	want := `[./testdata]`
+	if got != want {
+		t.Errorf("Load: got %s, want %v", got, want)
 	}
 }

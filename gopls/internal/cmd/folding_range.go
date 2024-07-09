@@ -36,7 +36,7 @@ func (r *foldingRanges) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("folding_ranges expects 1 argument (file)")
 	}
 
-	conn, err := r.app.connect(ctx, nil)
+	conn, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}

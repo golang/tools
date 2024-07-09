@@ -10,11 +10,11 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -42,12 +42,12 @@ func TestChanges(t *testing.T) {
 	report := Changes(oldpkg.Types, newpkg.Types)
 
 	got := report.messages(false)
-	if !reflect.DeepEqual(got, wanti) {
-		t.Errorf("incompatibles: got %v\nwant %v\n", got, wanti)
+	if diff := cmp.Diff(wanti, got); diff != "" {
+		t.Errorf("incompatibles (-want +got):\n%s", diff)
 	}
 	got = report.messages(true)
-	if !reflect.DeepEqual(got, wantc) {
-		t.Errorf("compatibles: got %v\nwant %v\n", got, wantc)
+	if diff := cmp.Diff(wantc, got); diff != "" {
+		t.Errorf("compatibles (-want +got):\n%s", diff)
 	}
 }
 

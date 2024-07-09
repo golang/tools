@@ -53,7 +53,7 @@ type singleFileFixer func(fset *token.FileSet, start, end token.Pos, src []byte,
 // singleFile adapts a single-file fixer to a Fixer.
 func singleFile(fixer1 singleFileFixer) fixer {
 	return func(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-		return fixer1(pkg.FileSet(), start, end, pgf.Src, pgf.File, pkg.GetTypes(), pkg.GetTypesInfo())
+		return fixer1(pkg.FileSet(), start, end, pgf.Src, pgf.File, pkg.Types(), pkg.TypesInfo())
 	}
 }
 
@@ -64,10 +64,12 @@ const (
 	fixExtractMethod     = "extract_method"
 	fixInlineCall        = "inline_call"
 	fixInvertIfCondition = "invert_if_condition"
+	fixSplitLines        = "split_lines"
+	fixJoinLines         = "join_lines"
 )
 
 // ApplyFix applies the specified kind of suggested fix to the given
-// file and range, returning the resulting edits.
+// file and range, returning the resulting changes.
 //
 // A fix kind is either the Category of an analysis.Diagnostic that
 // had a SuggestedFix with no edits; or the name of a fix agreed upon
@@ -81,23 +83,14 @@ const (
 // impossible to distinguish. It would more precise if there was a
 // SuggestedFix.Category field, or some other way to squirrel metadata
 // in the fix.
-func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.TextDocumentEdit, error) {
+func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.DocumentChange, error) {
 	// This can't be expressed as an entry in the fixer table below
 	// because it operates in the protocol (not go/{token,ast}) domain.
 	// (Sigh; perhaps it was a mistake to factor out the
 	// NarrowestPackageForFile/RangePos/suggestedFixToEdits
 	// steps.)
 	if fix == unusedparams.FixCategory {
-		changes, err := RemoveUnusedParameter(ctx, fh, rng, snapshot)
-		if err != nil {
-			return nil, err
-		}
-		// Unwrap TextDocumentEdits again!
-		var edits []protocol.TextDocumentEdit
-		for _, change := range changes {
-			edits = append(edits, *change.TextDocumentEdit)
-		}
-		return edits, nil
+		return RemoveUnusedParameter(ctx, fh, rng, snapshot)
 	}
 
 	fixers := map[string]fixer{
@@ -115,6 +108,8 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fixExtractVariable:   singleFile(extractVariable),
 		fixInlineCall:        inlineCall,
 		fixInvertIfCondition: singleFile(invertIfCondition),
+		fixSplitLines:        singleFile(splitLines),
+		fixJoinLines:         singleFile(joinLines),
 	}
 	fixer, ok := fixers[fix]
 	if !ok {
@@ -135,12 +130,17 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 	if suggestion == nil {
 		return nil, nil
 	}
-	return suggestedFixToEdits(ctx, snapshot, fixFset, suggestion)
+	return suggestedFixToDocumentChange(ctx, snapshot, fixFset, suggestion)
 }
 
-// suggestedFixToEdits converts the suggestion's edits from analysis form into protocol form.
-func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]protocol.TextDocumentEdit, error) {
-	editsPerFile := map[protocol.DocumentURI]*protocol.TextDocumentEdit{}
+// suggestedFixToDocumentChange converts the suggestion's edits from analysis form into protocol form.
+func suggestedFixToDocumentChange(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, suggestion *analysis.SuggestedFix) ([]protocol.DocumentChange, error) {
+	type fileInfo struct {
+		fh     file.Handle
+		mapper *protocol.Mapper
+		edits  []protocol.TextEdit
+	}
+	files := make(map[protocol.DocumentURI]*fileInfo)
 	for _, edit := range suggestion.TextEdits {
 		tokFile := fset.File(edit.Pos)
 		if tokFile == nil {
@@ -150,43 +150,37 @@ func suggestedFixToEdits(ctx context.Context, snapshot *cache.Snapshot, fset *to
 		if !end.IsValid() {
 			end = edit.Pos
 		}
-		fh, err := snapshot.ReadFile(ctx, protocol.URIFromPath(tokFile.Name()))
-		if err != nil {
-			return nil, err
-		}
-		te, ok := editsPerFile[fh.URI()]
+		uri := protocol.URIFromPath(tokFile.Name())
+		info, ok := files[uri]
 		if !ok {
-			te = &protocol.TextDocumentEdit{
-				TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
-					Version: fh.Version(),
-					TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-						URI: fh.URI(),
-					},
-				},
+			// First edit: create a mapper.
+			fh, err := snapshot.ReadFile(ctx, uri)
+			if err != nil {
+				return nil, err
 			}
-			editsPerFile[fh.URI()] = te
+			content, err := fh.Content()
+			if err != nil {
+				return nil, err
+			}
+			mapper := protocol.NewMapper(uri, content)
+			info = &fileInfo{fh, mapper, nil}
+			files[uri] = info
 		}
-		content, err := fh.Content()
+		rng, err := info.mapper.PosRange(tokFile, edit.Pos, end)
 		if err != nil {
 			return nil, err
 		}
-		m := protocol.NewMapper(fh.URI(), content) // TODO(adonovan): opt: memoize in map
-		rng, err := m.PosRange(tokFile, edit.Pos, end)
-		if err != nil {
-			return nil, err
-		}
-		te.Edits = append(te.Edits, protocol.Or_TextDocumentEdit_edits_Elem{
-			Value: protocol.TextEdit{
-				Range:   rng,
-				NewText: string(edit.NewText),
-			},
+		info.edits = append(info.edits, protocol.TextEdit{
+			Range:   rng,
+			NewText: string(edit.NewText),
 		})
 	}
-	var edits []protocol.TextDocumentEdit
-	for _, edit := range editsPerFile {
-		edits = append(edits, *edit)
+	var changes []protocol.DocumentChange
+	for _, info := range files {
+		change := protocol.DocumentChangeEdit(info.fh, info.edits)
+		changes = append(changes, change)
 	}
-	return edits, nil
+	return changes, nil
 }
 
 // addEmbedImport adds a missing embed "embed" import with blank name.

@@ -6,14 +6,17 @@ package completion
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"golang.org/x/tools/gopls/internal/hooks"
+	"golang.org/x/telemetry/counter"
+	"golang.org/x/telemetry/counter/countertest"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/server"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -22,7 +25,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	Main(m, hooks.Options)
+	os.Exit(Main(m))
 }
 
 const proxy = `
@@ -118,11 +121,11 @@ package
 			want:          nil,
 		},
 		{
-			name:          "package completion after keyword 'package'",
+			name:          "package completion after package keyword",
 			filename:      "fruits/testfile2.go",
 			triggerRegexp: "package()",
 			want:          []string{"package apple", "package apple_test", "package fruits", "package fruits_test", "package main"},
-			editRegexp:    "package\n",
+			editRegexp:    "package",
 		},
 		{
 			name:          "package completion with 'pac' prefix",
@@ -161,14 +164,14 @@ package
 			filename:      "123f_r.u~its-123/testfile.go",
 			triggerRegexp: "package()",
 			want:          []string{"package fruits123", "package fruits123_test", "package main"},
-			editRegexp:    "package\n",
+			editRegexp:    "package",
 		},
 		{
 			name:          "package completion for invalid dir name",
 			filename:      ".invalid-dir@-name/testfile.go",
 			triggerRegexp: "package()",
 			want:          []string{"package main"},
-			editRegexp:    "package\n",
+			editRegexp:    "package",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -184,21 +187,30 @@ package
 				// of the file. {Start,End}.Line are zero-based.
 				lineCount := len(strings.Split(env.BufferText(tc.filename), "\n"))
 				for _, item := range completions.Items {
-					if start := int(item.TextEdit.Range.Start.Line); start > lineCount {
-						t.Fatalf("unexpected text edit range start line number: got %d, want <= %d", start, lineCount)
-					}
-					if end := int(item.TextEdit.Range.End.Line); end > lineCount {
-						t.Fatalf("unexpected text edit range end line number: got %d, want <= %d", end, lineCount)
+					for _, mode := range []string{"replace", "insert"} {
+						edit, err := protocol.SelectCompletionTextEdit(item, mode == "replace")
+						if err != nil {
+							t.Fatalf("unexpected text edit in completion item (%v): %v", mode, err)
+						}
+						if start := int(edit.Range.Start.Line); start > lineCount {
+							t.Fatalf("unexpected text edit range (%v) start line number: got %d, want <= %d", mode, start, lineCount)
+						}
+						if end := int(edit.Range.End.Line); end > lineCount {
+							t.Fatalf("unexpected text edit range (%v) end line number: got %d, want <= %d", mode, end, lineCount)
+						}
 					}
 				}
 
 				if tc.want != nil {
 					expectedLoc := env.RegexpSearch(tc.filename, tc.editRegexp)
 					for _, item := range completions.Items {
-						gotRng := item.TextEdit.Range
-						if expectedLoc.Range != gotRng {
-							t.Errorf("unexpected completion range for completion item %s: got %v, want %v",
-								item.Label, gotRng, expectedLoc.Range)
+						for _, mode := range []string{"replace", "insert"} {
+							edit, _ := protocol.SelectCompletionTextEdit(item, mode == "replace")
+							gotRng := edit.Range
+							if expectedLoc.Range != gotRng {
+								t.Errorf("unexpected completion range (%v) for completion item %s: got %v, want %v",
+									mode, item.Label, gotRng, expectedLoc.Range)
+							}
 						}
 					}
 				}
@@ -537,6 +549,98 @@ func main() {
 	})
 }
 
+func TestUnimportedCompletion_VSCodeIssue3365(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.19
+
+-- main.go --
+package main
+
+func main() {
+	println(strings.TLower)
+}
+
+var Lower = ""
+`
+	find := func(t *testing.T, completions *protocol.CompletionList, name string) protocol.CompletionItem {
+		t.Helper()
+		if completions == nil || len(completions.Items) == 0 {
+			t.Fatalf("no completion items")
+		}
+		for _, i := range completions.Items {
+			if i.Label == name {
+				return i
+			}
+		}
+		t.Fatalf("no item with label %q", name)
+		return protocol.CompletionItem{}
+	}
+
+	for _, supportInsertReplace := range []bool{true, false} {
+		t.Run(fmt.Sprintf("insertReplaceSupport=%v", supportInsertReplace), func(t *testing.T) {
+			capabilities := fmt.Sprintf(`{ "textDocument": { "completion": { "completionItem": {"insertReplaceSupport":%t, "snippetSupport": false } } } }`, supportInsertReplace)
+			runner := WithOptions(CapabilitiesJSON([]byte(capabilities)))
+			runner.Run(t, src, func(t *testing.T, env *Env) {
+				env.OpenFile("main.go")
+				env.Await(env.DoneWithOpen())
+				orig := env.BufferText("main.go")
+
+				// We try to trigger completion at "println(strings.T<>Lower)"
+				// and accept the completion candidate that matches the 'accept' label.
+				insertModeWant := "println(strings.ToUpperLower)"
+				if !supportInsertReplace {
+					insertModeWant = "println(strings.ToUpper)"
+				}
+				testcases := []struct {
+					mode   string
+					accept string
+					want   string
+				}{
+					{
+						mode:   "insert",
+						accept: "ToUpper",
+						want:   insertModeWant,
+					},
+					{
+						mode:   "insert",
+						accept: "ToLower",
+						want:   "println(strings.ToLower)", // The suffix 'Lower' is included in the text edit.
+					},
+					{
+						mode:   "replace",
+						accept: "ToUpper",
+						want:   "println(strings.ToUpper)",
+					},
+					{
+						mode:   "replace",
+						accept: "ToLower",
+						want:   "println(strings.ToLower)",
+					},
+				}
+
+				for _, tc := range testcases {
+					t.Run(fmt.Sprintf("%v/%v", tc.mode, tc.accept), func(t *testing.T) {
+
+						env.SetSuggestionInsertReplaceMode(tc.mode == "replace")
+						env.SetBufferContent("main.go", orig)
+						loc := env.RegexpSearch("main.go", `Lower\)`)
+						completions := env.Completion(loc)
+						item := find(t, completions, tc.accept)
+						env.AcceptCompletion(loc, item)
+						env.Await(env.DoneWithChange())
+						got := env.BufferText("main.go")
+						if !strings.Contains(got, tc.want) {
+							t.Errorf("unexpected state after completion:\n%v\nwanted %v", got, tc.want)
+						}
+					})
+				}
+			})
+		})
+	}
+}
 func TestUnimportedCompletionHasPlaceholders60269(t *testing.T) {
 	// We can't express this as a marker test because it doesn't support AcceptCompletion.
 	const src = `
@@ -996,6 +1100,67 @@ func Join() {}
 				if strings.Contains(item.Detail, "golang.org/toolchain") {
 					t.Errorf("Completion(...) returned toolchain item %#v", item)
 				}
+			}
+		}
+	})
+}
+
+// show that the efficacy counters get exercised. Fortuntely a small program
+// exercises them all
+func TestCounters(t *testing.T) {
+	const files = `
+-- go.mod --
+module foo
+go 1.21
+-- x.go --
+package foo
+
+func main() {
+}
+
+`
+	WithOptions(
+		Modes(Default),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		cts := func() map[*counter.Counter]uint64 {
+			ans := make(map[*counter.Counter]uint64)
+			for _, c := range server.CompletionCounters {
+				ans[c], _ = countertest.ReadCounter(c)
+			}
+			return ans
+		}
+		before := cts()
+		env.OpenFile("x.go")
+		env.Await(env.DoneWithOpen())
+		saved := env.BufferText("x.go")
+		lines := strings.Split(saved, "\n")
+		// make sure the unused counter is exercised
+		loc := env.RegexpSearch("x.go", "main")
+		loc.Range.End = loc.Range.Start
+		env.Completion(loc)                       // ignore the proposed completions
+		env.RegexpReplace("x.go", "main", "Main") // completions are unused
+		env.SetBufferContent("x.go", saved)       // restore x.go
+		// used:no
+
+		// all the action is after 4 characters on line 2 (counting from 0)
+		for i := 2; i < len(lines); i++ {
+			l := lines[i]
+			loc.Range.Start.Line = uint32(i)
+			for j := 4; j < len(l); j++ {
+				loc.Range.Start.Character = uint32(j)
+				loc.Range.End = loc.Range.Start
+				res := env.Completion(loc)
+				if len(res.Items) > 0 {
+					r := res.Items[0]
+					env.AcceptCompletion(loc, r)
+					env.SetBufferContent("x.go", saved)
+				}
+			}
+		}
+		after := cts()
+		for c := range after {
+			if after[c] <= before[c] {
+				t.Errorf("%s did not increase", c.Name())
 			}
 		}
 	})

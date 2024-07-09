@@ -1,0 +1,54 @@
+This test verifies spurious pkgname conflicts.
+Issue golang/go#67069.
+
+-- go.mod --
+module example
+go 1.19
+
+-- aa/a.go --
+package aa
+
+var cc int //@rename("cc", "aa", CToA)
+const C = 0
+const D = 0
+
+-- aa/a_test.go --
+package aa_test
+
+import "example/aa"
+
+var _ = aa.C //@rename("aa", "bb", AToB)
+-- @CToA/aa/a.go --
+@@ -3 +3 @@
+-var cc int //@rename("cc", "aa", CToA)
++var aa int //@rename("cc", "aa", CToA)
+-- @AToB/aa/a_test.go --
+@@ -3 +3 @@
+-import "example/aa"
++import bb "example/aa"
+@@ -5 +5 @@
+-var _ = aa.C //@rename("aa", "bb", AToB)
++var _ = bb.C //@rename("aa", "bb", AToB)
+-- bb/b.go --
+package bb
+
+import "example/aa"
+
+var _ = aa.C
+var bb int //@renameerr("bb", "aa", errImportConflict)
+
+-- @errImportConflict --
+bb/b.go:6:5: renaming this var "bb" to "aa" would conflict
+bb/b.go:3:8:	with this imported package name
+-- aa/a_internal_test.go --
+package aa
+
+var _ = D //@rename("D", "aa", DToA)
+-- @DToA/aa/a_internal_test.go --
+@@ -3 +3 @@
+-var _ = D //@rename("D", "aa", DToA)
++var _ = aa //@rename("D", "aa", DToA)
+-- @DToA/aa/a.go --
+@@ -5 +5 @@
+-const D = 0
++const aa = 0

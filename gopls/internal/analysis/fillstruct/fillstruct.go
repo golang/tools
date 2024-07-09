@@ -24,39 +24,44 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/fuzzy"
+	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // Diagnose computes diagnostics for fillable struct literals overlapping with
-// the provided start and end position.
+// the provided start and end position of file f.
 //
 // The diagnostic contains a lazy fix; the actual patch is computed
 // (via the ApplyFix command) by a call to [SuggestedFix].
 //
-// If either start or end is invalid, the entire package is inspected.
-func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Package, info *types.Info) []analysis.Diagnostic {
+// If either start or end is invalid, the entire file is inspected.
+func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types.Info) []analysis.Diagnostic {
 	var diags []analysis.Diagnostic
-	nodeFilter := []ast.Node{(*ast.CompositeLit)(nil)}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		expr := n.(*ast.CompositeLit)
-
-		if (start.IsValid() && expr.End() < start) || (end.IsValid() && expr.Pos() > end) {
-			return // non-overlapping
+	ast.Inspect(f, func(n ast.Node) bool {
+		if n == nil {
+			return true // pop
 		}
-
+		if start.IsValid() && n.End() < start || end.IsValid() && n.Pos() > end {
+			return false // skip non-overlapping subtree
+		}
+		expr, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
 		typ := info.TypeOf(expr)
 		if typ == nil {
-			return
+			return true
 		}
 
 		// Find reference to the type declaration of the struct being initialized.
-		typ = deref(typ)
-		tStruct, ok := typ.Underlying().(*types.Struct)
+		typ = typeparams.Deref(typ)
+		tStruct, ok := typeparams.CoreType(typ).(*types.Struct)
 		if !ok {
-			return
+			return true
 		}
 		// Inv: typ is the possibly-named struct type.
 
@@ -64,7 +69,7 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 
 		// Skip any struct that is already populated or that has no fields.
 		if fieldCount == 0 || fieldCount == len(expr.Elts) {
-			return
+			return true
 		}
 
 		// Are any fields in need of filling?
@@ -78,14 +83,14 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 			fillableFields = append(fillableFields, fmt.Sprintf("%s: %s", field.Name(), field.Type().String()))
 		}
 		if len(fillableFields) == 0 {
-			return
+			return true
 		}
 
 		// Derive a name for the struct type.
 		var name string
 		if typ != tStruct {
 			// named struct type (e.g. pkg.S[T])
-			name = types.TypeString(typ, types.RelativeTo(pkg))
+			name = types.TypeString(typ, typesinternal.NameRelativeTo(pkg))
 		} else {
 			// anonymous struct type
 			totalFields := len(fillableFields)
@@ -114,6 +119,7 @@ func Diagnose(inspect *inspector.Inspector, start, end token.Pos, pkg *types.Pac
 				// No TextEdits => computed later by gopls.
 			}},
 		})
+		return true
 	})
 
 	return diags
@@ -150,11 +156,11 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	}
 
 	// Find reference to the type declaration of the struct being initialized.
-	typ = deref(typ)
+	typ = typeparams.Deref(typ)
 	tStruct, ok := typ.Underlying().(*types.Struct)
 	if !ok {
 		return nil, nil, fmt.Errorf("%s is not a (pointer to) struct type",
-			types.TypeString(typ, types.RelativeTo(pkg)))
+			types.TypeString(typ, typesinternal.NameRelativeTo(pkg)))
 	}
 	// Inv: typ is the possibly-named struct type.
 
@@ -447,7 +453,7 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 		}
 
 	case *types.Pointer:
-		switch u.Elem().(type) {
+		switch aliases.Unalias(u.Elem()).(type) {
 		case *types.Basic:
 			return &ast.CallExpr{
 				Fun: &ast.Ident{
@@ -471,7 +477,7 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 		}
 
 	case *types.Interface:
-		if param, ok := typ.(*types.TypeParam); ok {
+		if param, ok := aliases.Unalias(typ).(*types.TypeParam); ok {
 			// *new(T) is the zero value of a type parameter T.
 			// TODO(adonovan): one could give a more specific zero
 			// value if the type has a core type that is, say,
@@ -489,14 +495,4 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 		return ast.NewIdent("nil")
 	}
 	return nil
-}
-
-func deref(t types.Type) types.Type {
-	for {
-		ptr, ok := t.Underlying().(*types.Pointer)
-		if !ok {
-			return t
-		}
-		t = ptr.Elem()
-	}
 }

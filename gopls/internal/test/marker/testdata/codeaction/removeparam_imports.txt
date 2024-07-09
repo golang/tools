@@ -1,6 +1,9 @@
 This test checks the behavior of removing a parameter with respect to various
 import scenarios.
 
+-- flags --
+-min_go=go1.21
+
 -- go.mod --
 module mod.test
 

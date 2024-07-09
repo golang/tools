@@ -7,11 +7,16 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"os"
+	"sort"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/hooks"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/goversion"
@@ -23,7 +28,7 @@ import (
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	Main(m, hooks.Options)
+	os.Exit(Main(m))
 }
 
 const workspaceProxy = `
@@ -259,13 +264,6 @@ func TestWorkspaceVendoring(t *testing.T) {
 		env.AfterChange()
 		env.OpenFile("moda/a/a.go")
 		env.RunGoCommand("work", "vendor")
-
-		// Make an on-disk go.mod change to force a workspace reinitialization.
-		// This will be fixed in a follow-up CL.
-		env.OpenFile("moda/a/go.mod")
-		env.EditBuffer("moda/a/go.mod", protocol.TextEdit{NewText: "// arbitrary\n"})
-		env.SaveBuffer("moda/a/go.mod")
-
 		env.AfterChange()
 		loc := env.GoToDefinition(env.RegexpSearch("moda/a/a.go", "b.(Hello)"))
 		const want = "vendor/b.com/b/b.go"
@@ -825,6 +823,51 @@ use (
 	})
 }
 
+func TestInnerGoWork(t *testing.T) {
+	// This test checks that gopls honors a go.work file defined
+	// inside a go module (golang/go#63917).
+	const workspace = `
+-- go.mod --
+module a.com
+
+require b.com v1.2.3
+-- a/go.work --
+go 1.18
+
+use (
+	..
+	../b
+)
+-- a/a.go --
+package a
+
+import "b.com/b"
+
+var _ = b.B
+-- b/go.mod --
+module b.com/b
+
+-- b/b.go --
+package b
+
+const B = 0
+`
+	WithOptions(
+		// This doesn't work if we open the outer module. I'm not sure it should,
+		// since the go.work file does not apply to the entire module, just a
+		// subdirectory.
+		WorkspaceFolders("a"),
+	).Run(t, workspace, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		loc := env.GoToDefinition(env.RegexpSearch("a/a.go", "b.(B)"))
+		got := env.Sandbox.Workdir.URIToPath(loc.URI)
+		want := "b/b.go"
+		if got != want {
+			t.Errorf("Definition(b.B): got %q, want %q", got, want)
+		}
+	})
+}
+
 func TestNonWorkspaceFileCreation(t *testing.T) {
 	const files = `
 -- work/go.mod --
@@ -1085,16 +1128,139 @@ import (
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("a/main.go", "V"), WithMessage("not used")),
 		)
+		// Here, diagnostics are added because of zero-config gopls.
+		// In the past, they were added simply due to diagnosing changed files.
+		// (see TestClearNonWorkspaceDiagnostics_NoView below for a
+		// reimplementation of that test).
+		if got, want := len(env.Views()), 2; got != want {
+			t.Errorf("after opening a/main.go, got %d views, want %d", got, want)
+		}
 		env.CloseBuffer("a/main.go")
-
-		// Make an arbitrary edit because gopls explicitly diagnoses a/main.go
-		// whenever it is "changed".
-		//
-		// TODO(rfindley): it should not be necessary to make another edit here.
-		// Gopls should be smart enough to avoid diagnosing a.
-		env.RegexpReplace("b/main.go", "package b", "package b // a package")
 		env.AfterChange(
 			NoDiagnostics(ForFile("a/main.go")),
+		)
+		if got, want := len(env.Views()), 1; got != want {
+			t.Errorf("after closing a/main.go, got %d views, want %d", got, want)
+		}
+	})
+}
+
+// This test is like TestClearNonWorkspaceDiagnostics, but bypasses the
+// zero-config algorithm by opening a nested workspace folder.
+//
+// We should still compute diagnostics correctly for open packages.
+func TestClearNonWorkspaceDiagnostics_NoView(t *testing.T) {
+	const ws = `
+-- a/go.mod --
+module example.com/a
+
+go 1.18
+
+require example.com/b v1.2.3
+
+replace example.com/b => ../b
+
+-- a/a.go --
+package a
+
+import "example.com/b"
+
+func _() {
+	V := b.B // unused
+}
+
+-- b/go.mod --
+module b
+
+go 1.18
+
+-- b/b.go --
+package b
+
+const B = 2
+
+func _() {
+	var V int // unused
+}
+
+-- b/b2.go --
+package b
+
+const B2 = B
+
+-- c/c.go --
+package main
+
+func main() {
+	var V int // unused
+}
+`
+	WithOptions(
+		WorkspaceFolders("a"),
+	).Run(t, ws, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("b/b.go")),
+			NoDiagnostics(ForFile("c/c.go")),
+		)
+		env.OpenFile("b/b.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			Diagnostics(env.AtRegexp("b/b.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("c/c.go")),
+		)
+
+		// Opening b/b.go should not result in a new view, because b is not
+		// contained in a workspace folder.
+		//
+		// Yet we should get diagnostics for b, because it is open.
+		if got, want := len(env.Views()), 1; got != want {
+			t.Errorf("after opening b/b.go, got %d views, want %d", got, want)
+		}
+		env.CloseBuffer("b/b.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("b/b.go")),
+			NoDiagnostics(ForFile("c/c.go")),
+		)
+
+		// We should get references in the b package.
+		bUse := env.RegexpSearch("a/a.go", `b\.(B)`)
+		refs := env.References(bUse)
+		wantRefs := []string{"a/a.go", "b/b.go", "b/b2.go"}
+		var gotRefs []string
+		for _, ref := range refs {
+			gotRefs = append(gotRefs, env.Sandbox.Workdir.URIToPath(ref.URI))
+		}
+		sort.Strings(gotRefs)
+		if diff := cmp.Diff(wantRefs, gotRefs); diff != "" {
+			t.Errorf("references(b.B) mismatch (-want +got)\n%s", diff)
+		}
+
+		// Opening c/c.go should also not result in a new view, yet we should get
+		// orphaned file diagnostics.
+		env.OpenFile("c/c.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("b/b.go")),
+			Diagnostics(env.AtRegexp("c/c.go", "V"), WithMessage("not used")),
+		)
+		if got, want := len(env.Views()), 1; got != want {
+			t.Errorf("after opening b/b.go, got %d views, want %d", got, want)
+		}
+
+		env.CloseBuffer("c/c.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("b/b.go")),
+			NoDiagnostics(ForFile("c/c.go")),
+		)
+		env.CloseBuffer("a/a.go")
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("a/a.go", "V"), WithMessage("not used")),
+			NoDiagnostics(ForFile("b/b.go")),
+			NoDiagnostics(ForFile("c/c.go")),
 		)
 	})
 }
@@ -1189,4 +1355,114 @@ func TestGoworkMutation(t *testing.T) {
 			Diagnostics(env.AtRegexp("moda/a/a.go", `b\.Hello`)),
 		)
 	})
+}
+
+func TestInitializeWithNonFileWorkspaceFolders(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		folders       []string
+		wantViewRoots []string
+	}{
+		{
+			name:          "real,virtual",
+			folders:       []string{"modb", "virtual:///virtualpath"},
+			wantViewRoots: []string{"./modb"},
+		},
+		{
+			name:          "virtual,real",
+			folders:       []string{"virtual:///virtualpath", "modb"},
+			wantViewRoots: []string{"./modb"},
+		},
+		{
+			name:          "real,virtual,real",
+			folders:       []string{"moda/a", "virtual:///virtualpath", "modb"},
+			wantViewRoots: []string{"./moda/a", "./modb"},
+		},
+		{
+			name:          "virtual",
+			folders:       []string{"virtual:///virtualpath"},
+			wantViewRoots: nil,
+		},
+	} {
+
+		t.Run(tt.name, func(t *testing.T) {
+			opts := []RunOption{ProxyFiles(workspaceProxy), WorkspaceFolders(tt.folders...)}
+			WithOptions(opts...).Run(t, multiModule, func(t *testing.T, env *Env) {
+				summary := func(typ cache.ViewType, root, folder string) command.View {
+					return command.View{
+						Type:   typ.String(),
+						Root:   env.Sandbox.Workdir.URI(root),
+						Folder: env.Sandbox.Workdir.URI(folder),
+					}
+				}
+				checkViews := func(want ...command.View) {
+					got := env.Views()
+					if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(command.View{}, "ID")); diff != "" {
+						t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
+					}
+				}
+				var wantViews []command.View
+				for _, root := range tt.wantViewRoots {
+					wantViews = append(wantViews, summary(cache.GoModView, root, root))
+				}
+				env.Await(
+					LogMatching(protocol.Warning, "skip adding virtual folder", 1, false),
+				)
+				checkViews(wantViews...)
+			})
+		})
+	}
+}
+
+// Test that non-file scheme Document URIs in ChangeWorkspaceFolders
+// notification does not produce errors.
+func TestChangeNonFileWorkspaceFolders(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		before        []string
+		after         []string
+		wantViewRoots []string
+	}{
+		{
+			name:          "add",
+			before:        []string{"modb"},
+			after:         []string{"modb", "moda/a", "virtual:///virtualpath"},
+			wantViewRoots: []string{"./modb", "moda/a"},
+		},
+		{
+			name:          "remove",
+			before:        []string{"modb", "virtual:///virtualpath", "moda/a"},
+			after:         []string{"modb"},
+			wantViewRoots: []string{"./modb"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := []RunOption{ProxyFiles(workspaceProxy), WorkspaceFolders(tt.before...)}
+			WithOptions(opts...).Run(t, multiModule, func(t *testing.T, env *Env) {
+				summary := func(typ cache.ViewType, root, folder string) command.View {
+					return command.View{
+						Type:   typ.String(),
+						Root:   env.Sandbox.Workdir.URI(root),
+						Folder: env.Sandbox.Workdir.URI(folder),
+					}
+				}
+				checkViews := func(want ...command.View) {
+					got := env.Views()
+					if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(command.View{}, "ID")); diff != "" {
+						t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
+					}
+				}
+				var wantViews []command.View
+				for _, root := range tt.wantViewRoots {
+					wantViews = append(wantViews, summary(cache.GoModView, root, root))
+				}
+				env.ChangeWorkspaceFolders(tt.after...)
+				env.Await(
+					LogMatching(protocol.Warning, "skip adding virtual folder", 1, false),
+					NoOutstandingWork(IgnoreTelemetryPromptWork),
+				)
+				checkViews(wantViews...)
+			})
+		})
+	}
 }

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.19
-
 // The play program is a playground for go/types: a simple web-based
 // text editor into which the user can enter a Go program, select a
 // region, and see type information about it.
@@ -32,6 +30,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -276,8 +275,8 @@ func formatObj(out *strings.Builder, fset *token.FileSet, ref string, obj types.
 		origin = obj.Origin()
 
 	case *types.Func:
-		if obj.Type().(*types.Signature).Recv() != nil {
-			kind = "method"
+		if recv := obj.Type().(*types.Signature).Recv(); recv != nil {
+			kind = fmt.Sprintf("method (with recv %v)", recv.Type())
 		}
 		origin = obj.Origin()
 
@@ -285,7 +284,7 @@ func formatObj(out *strings.Builder, fset *token.FileSet, ref string, obj types.
 		if obj.IsAlias() {
 			kind = "type alias"
 		}
-		if named, ok := obj.Type().(*types.Named); ok {
+		if named, ok := aliases.Unalias(obj.Type()).(*types.Named); ok {
 			origin = named.Obj()
 		}
 	}

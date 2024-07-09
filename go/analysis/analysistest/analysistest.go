@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -113,9 +114,9 @@ type Testing interface {
 // into nonconflicting parts.
 //
 // Conflicts of the second kind can be avoided by giving the
-// alternative fixes different names (SuggestedFix.Message) and using
-// a multi-section .txtar file with a named section for each
-// alternative fix.
+// alternative fixes different names (SuggestedFix.Message) and
+// defining the .golden file as a multi-section txtar file with a
+// named section for each alternative fix, as shown above.
 //
 // Analyzers that compute fixes from a textual diff of the
 // before/after file contents (instead of directly from syntax tree
@@ -125,8 +126,31 @@ type Testing interface {
 // sufficient separation of the statements in the test input so that
 // the computed diffs do not overlap. If that fails, break the test
 // into smaller parts.
+//
+// TODO(adonovan): the behavior of RunWithSuggestedFixes as documented
+// above is impractical for tests that report multiple diagnostics and
+// offer multiple alternative fixes for the same diagnostic, and it is
+// inconsistent with the interpretation of multiple diagnostics
+// described at Diagnostic.SuggestedFixes.
+// We need to rethink the analyzer testing API to better support such
+// cases. In the meantime, users of RunWithSuggestedFixes testing
+// analyzers that offer alternative fixes are advised to put each fix
+// in a separate .go file in the testdata.
 func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns ...string) []*Result {
 	r := Run(t, dir, a, patterns...)
+
+	// If the immediate caller of RunWithSuggestedFixes is in
+	// x/tools, we apply stricter checks as required by gopls.
+	inTools := false
+	{
+		var pcs [1]uintptr
+		n := runtime.Callers(1, pcs[:])
+		frames := runtime.CallersFrames(pcs[:n])
+		fr, _ := frames.Next()
+		if fr.Func != nil && strings.HasPrefix(fr.Func.Name(), "golang.org/x/tools/") {
+			inTools = true
+		}
+	}
 
 	// Process each result (package) separately, matching up the suggested
 	// fixes into a diff, which we will compare to the .golden file.  We have
@@ -145,8 +169,14 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 
 		// Validate edits, prepare the fileEdits map and read the file contents.
 		for _, diag := range act.Diagnostics {
-			for _, sf := range diag.SuggestedFixes {
-				for _, edit := range sf.TextEdits {
+			for _, fix := range diag.SuggestedFixes {
+
+				// Assert that lazy fixes have a Category (#65578, #65087).
+				if inTools && len(fix.TextEdits) == 0 && diag.Category == "" {
+					t.Errorf("missing Diagnostic.Category for SuggestedFix without TextEdits (gopls requires the category for the name of the fix command")
+				}
+
+				for _, edit := range fix.TextEdits {
 					start, end := edit.Pos, edit.End
 					if !end.IsValid() {
 						end = start
@@ -175,7 +205,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 					if _, ok := fileEdits[file]; !ok {
 						fileEdits[file] = make(map[string][]diff.Edit)
 					}
-					fileEdits[file][sf.Message] = append(fileEdits[file][sf.Message], diff.Edit{
+					fileEdits[file][fix.Message] = append(fileEdits[file][fix.Message], diff.Edit{
 						Start: file.Offset(start),
 						End:   file.Offset(end),
 						New:   string(edit.NewText),
@@ -349,11 +379,16 @@ type Result = checker.TestAnalyzerResult
 // loadPackages returns an error if any package had an error, or the pattern
 // matched no packages.
 func loadPackages(a *analysis.Analyzer, dir string, patterns ...string) ([]*packages.Package, error) {
-	env := []string{"GOPATH=" + dir, "GO111MODULE=off"} // GOPATH mode
+	env := []string{"GOPATH=" + dir, "GO111MODULE=off", "GOWORK=off"} // GOPATH mode
 
 	// Undocumented module mode. Will be replaced by something better.
 	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-		env = []string{"GO111MODULE=on", "GOPROXY=off"} // module mode
+		gowork := filepath.Join(dir, "go.work")
+		if _, err := os.Stat(gowork); err != nil {
+			gowork = "off"
+		}
+
+		env = []string{"GO111MODULE=on", "GOPROXY=off", "GOWORK=" + gowork} // module mode
 	}
 
 	// packages.Load loads the real standard library, not a minimal
@@ -377,12 +412,23 @@ func loadPackages(a *analysis.Analyzer, dir string, patterns ...string) ([]*pack
 		return nil, err
 	}
 
+	// If any named package couldn't be loaded at all
+	// (e.g. the Name field is unset), fail fast.
+	for _, pkg := range pkgs {
+		if pkg.Name == "" {
+			return nil, fmt.Errorf("failed to load %q: Errors=%v",
+				pkg.PkgPath, pkg.Errors)
+		}
+	}
+
 	// Do NOT print errors if the analyzer will continue running.
 	// It is incredibly confusing for tests to be printing to stderr
 	// willy-nilly instead of their test logs, especially when the
 	// errors are expected and are going to be fixed.
 	if !a.RunDespiteErrors {
-		packages.PrintErrors(pkgs)
+		if packages.PrintErrors(pkgs) > 0 {
+			return nil, fmt.Errorf("there were package loading errors (and RunDespiteErrors is false)")
+		}
 	}
 
 	if len(pkgs) == 0 {

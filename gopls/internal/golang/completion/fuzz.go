@@ -81,7 +81,7 @@ Loop:
 				return true
 			}
 			// Sel.X should be of type *testing.F
-			got := c.pkg.GetTypesInfo().Types[s.X]
+			got := c.pkg.TypesInfo().Types[s.X]
 			if got.Type.String() == "*testing.F" {
 				add = call
 			}
@@ -106,7 +106,7 @@ Loop:
 
 		lbl := "Fuzz(func(t *testing.T"
 		for i, a := range add.Args {
-			info := c.pkg.GetTypesInfo().TypeOf(a)
+			info := c.pkg.TypesInfo().TypeOf(a)
 			if info == nil {
 				return false // How could this happen, but better safe than panic.
 			}

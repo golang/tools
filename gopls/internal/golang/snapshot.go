@@ -44,7 +44,7 @@ func NarrowestMetadataForFile(ctx context.Context, snapshot *cache.Snapshot, uri
 //
 // Type-checking is expensive. Call snapshot.ParseGo if all you need is a parse
 // tree, or snapshot.MetadataForFile if you only need metadata.
-func NarrowestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*cache.Package, *ParsedGoFile, error) {
+func NarrowestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*cache.Package, *parsego.File, error) {
 	return selectPackageForFile(ctx, snapshot, uri, func(metas []*metadata.Package) *metadata.Package { return metas[0] })
 }
 
@@ -62,11 +62,11 @@ func NarrowestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri 
 //
 // Type-checking is expensive. Call snapshot.ParseGo if all you need is a parse
 // tree, or snapshot.MetadataForFile if you only need metadata.
-func WidestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*cache.Package, *ParsedGoFile, error) {
+func WidestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*cache.Package, *parsego.File, error) {
 	return selectPackageForFile(ctx, snapshot, uri, func(metas []*metadata.Package) *metadata.Package { return metas[len(metas)-1] })
 }
 
-func selectPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, selector func([]*metadata.Package) *metadata.Package) (*cache.Package, *ParsedGoFile, error) {
+func selectPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, selector func([]*metadata.Package) *metadata.Package) (*cache.Package, *parsego.File, error) {
 	mps, err := snapshot.MetadataForFile(ctx, uri)
 	if err != nil {
 		return nil, nil, err
@@ -87,13 +87,6 @@ func selectPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri pro
 	}
 	return pkg, pgf, err
 }
-
-type ParsedGoFile = parsego.File
-
-const (
-	ParseHeader = parsego.ParseHeader
-	ParseFull   = parsego.ParseFull
-)
 
 type (
 	PackageID   = metadata.PackageID

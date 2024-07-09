@@ -16,6 +16,8 @@ import (
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -42,27 +44,32 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 
 	// The Only field of the context specifies which code actions the client wants.
 	// If Only is empty, assume that the client wants all of the non-explicit code actions.
-	var want map[protocol.CodeActionKind]bool
-	{
-		// Explicit Code Actions are opt-in and shouldn't be returned to the client unless
-		// requested using Only.
-		// TODO: Add other CodeLenses such as GoGenerate, RegenerateCgo, etc..
+	want := supportedCodeActions
+	if len(params.Context.Only) > 0 {
+		want = make(map[protocol.CodeActionKind]bool)
+
+		// Explicit Code Actions are opt-in and shouldn't be
+		// returned to the client unless requested using Only.
+		//
+		// This mechanim exists to avoid a distracting
+		// lightbulb (code action) on each Test function.
+		// These actions are unwanted in VS Code because it
+		// has Test Explorer, and in other editors because
+		// the UX of executeCommand is unsatisfactory for tests:
+		// it doesn't show the complete streaming output.
+		// See https://github.com/joaotavora/eglot/discussions/1402
+		// for a better solution.
 		explicit := map[protocol.CodeActionKind]bool{
-			protocol.GoTest: true,
+			settings.GoTest: true,
 		}
 
-		if len(params.Context.Only) == 0 {
-			want = supportedCodeActions
-		} else {
-			want = make(map[protocol.CodeActionKind]bool)
-			for _, only := range params.Context.Only {
-				for k, v := range supportedCodeActions {
-					if only == k || strings.HasPrefix(string(k), string(only)+".") {
-						want[k] = want[k] || v
-					}
+		for _, only := range params.Context.Only {
+			for k, v := range supportedCodeActions {
+				if only == k || strings.HasPrefix(string(k), string(only)+".") {
+					want[k] = want[k] || v
 				}
-				want[only] = want[only] || explicit[only]
 			}
+			want[only] = want[only] || explicit[only]
 		}
 	}
 	if len(want) == 0 {
@@ -103,22 +110,45 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		return actions, nil
 
 	case file.Go:
-		// Don't suggest fixes for generated files, since they are generally
-		// not useful and some editors may apply them automatically on save.
-		if golang.IsGenerated(ctx, snapshot, uri) {
-			return nil, nil
-		}
-
+		// diagnostic-bundled code actions
+		//
+		// The diagnostics already have a UI presence (e.g. squiggly underline);
+		// the associated action may additionally show (in VS Code) as a lightbulb.
+		// Note s.codeActionsMatchingDiagnostics returns only fixes
+		// detected during the analysis phase. golang.CodeActions computes
+		// extra changes that can address some diagnostics.
 		actions, err := s.codeActionsMatchingDiagnostics(ctx, uri, snapshot, params.Context.Diagnostics, want)
 		if err != nil {
 			return nil, err
 		}
 
-		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, want)
+		// computed code actions (may include quickfixes from diagnostics)
+		trigger := protocol.CodeActionUnknownTrigger
+		if k := params.Context.TriggerKind; k != nil { // (some clients omit it)
+			trigger = *k
+		}
+		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, want, trigger)
 		if err != nil {
 			return nil, err
 		}
 		actions = append(actions, moreActions...)
+
+		// Don't suggest fixes for generated files, since they are generally
+		// not useful and some editors may apply them automatically on save.
+		// (Unfortunately there's no reliable way to distinguish fixes from
+		// queries, so we must list all kinds of queries here.)
+		if golang.IsGenerated(ctx, snapshot, uri) {
+			actions = slices.DeleteFunc(actions, func(a protocol.CodeAction) bool {
+				switch a.Kind {
+				case settings.GoTest,
+					settings.GoDoc,
+					settings.GoFreeSymbols,
+					settings.GoAssembly:
+					return false // read-only query
+				}
+				return true // potential write operation
+			})
+		}
 
 		return actions, nil
 
@@ -160,7 +190,6 @@ func (s *server) ResolveCodeAction(ctx context.Context, ca *protocol.CodeAction)
 		}
 		edit, err := command.Dispatch(ctx, params, handler)
 		if err != nil {
-
 			return nil, err
 		}
 		var ok bool
@@ -171,16 +200,16 @@ func (s *server) ResolveCodeAction(ctx context.Context, ca *protocol.CodeAction)
 	return ca, nil
 }
 
-// codeActionsMatchingDiagnostics fetches code actions for the provided
-// diagnostics, by first attempting to unmarshal code actions directly from the
-// bundled protocol.Diagnostic.Data field, and failing that by falling back on
-// fetching a matching Diagnostic from the set of stored diagnostics for
-// this file.
+// codeActionsMatchingDiagnostics creates code actions for the
+// provided diagnostics, by unmarshalling actions bundled in the
+// protocol.Diagnostic.Data field or, if there were none, by creating
+// actions from edits associated with a matching Diagnostic from the
+// set of stored diagnostics for this file.
 func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri protocol.DocumentURI, snapshot *cache.Snapshot, pds []protocol.Diagnostic, want map[protocol.CodeActionKind]bool) ([]protocol.CodeAction, error) {
 	var actions []protocol.CodeAction
 	var unbundled []protocol.Diagnostic // diagnostics without bundled code actions in their Data field
 	for _, pd := range pds {
-		bundled := cache.BundledQuickFixes(pd)
+		bundled := cache.BundledLazyFixes(pd)
 		if len(bundled) > 0 {
 			for _, fix := range bundled {
 				if want[fix.Kind] {
@@ -211,20 +240,19 @@ func codeActionsForDiagnostic(ctx context.Context, snapshot *cache.Snapshot, sd 
 		if !want[fix.ActionKind] {
 			continue
 		}
-		changes := []protocol.DocumentChanges{} // must be a slice
+		var changes []protocol.DocumentChange
 		for uri, edits := range fix.Edits {
 			fh, err := snapshot.ReadFile(ctx, uri)
 			if err != nil {
 				return nil, err
 			}
-			changes = append(changes, documentChanges(fh, edits)...)
+			change := protocol.DocumentChangeEdit(fh, edits)
+			changes = append(changes, change)
 		}
 		actions = append(actions, protocol.CodeAction{
-			Title: fix.Title,
-			Kind:  fix.ActionKind,
-			Edit: &protocol.WorkspaceEdit{
-				DocumentChanges: changes,
-			},
+			Title:       fix.Title,
+			Kind:        fix.ActionKind,
+			Edit:        protocol.NewWorkspaceEdit(changes...),
 			Command:     fix.Command,
 			Diagnostics: []protocol.Diagnostic{*pd},
 		})
@@ -269,7 +297,3 @@ func (s *server) getSupportedCodeActions() []protocol.CodeActionKind {
 }
 
 type unit = struct{}
-
-func documentChanges(fh file.Handle, edits []protocol.TextEdit) []protocol.DocumentChanges {
-	return protocol.TextEditsToDocumentChanges(fh.URI(), fh.Version(), edits)
-}

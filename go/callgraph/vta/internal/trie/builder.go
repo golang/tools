@@ -260,12 +260,12 @@ func (b *Builder) create(leaves []*leaf) node {
 
 // mkLeaf returns the hash-consed representative of (k, v) in the current scope.
 func (b *Builder) mkLeaf(k key, v interface{}) *leaf {
-	l := &leaf{k: k, v: v}
-	if rep, ok := b.leaves[*l]; ok {
-		return rep
+	rep, ok := b.leaves[leaf{k, v}]
+	if !ok {
+		rep = &leaf{k, v} // heap-allocated copy
+		b.leaves[leaf{k, v}] = rep
 	}
-	b.leaves[*l] = l
-	return l
+	return rep
 }
 
 // mkBranch returns the hash-consed representative of the tuple
@@ -274,18 +274,20 @@ func (b *Builder) mkLeaf(k key, v interface{}) *leaf {
 //
 // in the current scope.
 func (b *Builder) mkBranch(p prefix, bp bitpos, left node, right node) *branch {
-	br := &branch{
+	br := branch{
 		sz:        left.size() + right.size(),
 		prefix:    p,
 		branching: bp,
 		left:      left,
 		right:     right,
 	}
-	if rep, ok := b.branches[*br]; ok {
-		return rep
+	rep, ok := b.branches[br]
+	if !ok {
+		rep = new(branch) // heap-allocated copy
+		*rep = br
+		b.branches[br] = rep
 	}
-	b.branches[*br] = br
-	return br
+	return rep
 }
 
 // join two maps with prefixes p0 and p1 that are *known* to disagree.

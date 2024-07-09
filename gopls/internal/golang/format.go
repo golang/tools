@@ -18,8 +18,10 @@ import (
 	"text/scanner"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
@@ -37,7 +39,7 @@ func Format(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]pr
 		return nil, fmt.Errorf("can't format %q: file is generated", fh.URI().Path())
 	}
 
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +67,7 @@ func Format(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]pr
 
 	// Apply additional formatting, if any is supported. Currently, the only
 	// supported additional formatter is gofumpt.
-	if format := snapshot.Options().GofumptFormat; snapshot.Options().Gofumpt && format != nil {
+	if format := settings.GofumptFormat; snapshot.Options().Gofumpt && format != nil {
 		// gofumpt can customize formatting based on language version and module
 		// path, if available.
 		//
@@ -111,22 +113,22 @@ type importFix struct {
 // In addition to returning the result of applying all edits,
 // it returns a list of fixes that could be applied to the file, with the
 // corresponding TextEdits that would be needed to apply that fix.
-func allImportsFixes(ctx context.Context, snapshot *cache.Snapshot, pgf *ParsedGoFile) (allFixEdits []protocol.TextEdit, editsPerFix []*importFix, err error) {
-	ctx, done := event.Start(ctx, "golang.AllImportsFixes")
+func allImportsFixes(ctx context.Context, snapshot *cache.Snapshot, pgf *parsego.File) (allFixEdits []protocol.TextEdit, editsPerFix []*importFix, err error) {
+	ctx, done := event.Start(ctx, "golang.allImportsFixes")
 	defer done()
 
 	if err := snapshot.RunProcessEnvFunc(ctx, func(ctx context.Context, opts *imports.Options) error {
 		allFixEdits, editsPerFix, err = computeImportEdits(ctx, pgf, opts)
 		return err
 	}); err != nil {
-		return nil, nil, fmt.Errorf("AllImportsFixes: %v", err)
+		return nil, nil, fmt.Errorf("allImportsFixes: %v", err)
 	}
 	return allFixEdits, editsPerFix, nil
 }
 
 // computeImportEdits computes a set of edits that perform one or all of the
 // necessary import fixes.
-func computeImportEdits(ctx context.Context, pgf *ParsedGoFile, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*importFix, err error) {
+func computeImportEdits(ctx context.Context, pgf *parsego.File, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*importFix, err error) {
 	filename := pgf.URI.Path()
 
 	// Build up basic information about the original file.
@@ -156,7 +158,7 @@ func computeImportEdits(ctx context.Context, pgf *ParsedGoFile, options *imports
 }
 
 // ComputeOneImportFixEdits returns text edits for a single import fix.
-func ComputeOneImportFixEdits(snapshot *cache.Snapshot, pgf *ParsedGoFile, fix *imports.ImportFix) ([]protocol.TextEdit, error) {
+func ComputeOneImportFixEdits(snapshot *cache.Snapshot, pgf *parsego.File, fix *imports.ImportFix) ([]protocol.TextEdit, error) {
 	options := &imports.Options{
 		LocalPrefix: snapshot.Options().Local,
 		// Defaults.
@@ -170,7 +172,7 @@ func ComputeOneImportFixEdits(snapshot *cache.Snapshot, pgf *ParsedGoFile, fix *
 	return computeFixEdits(pgf, options, []*imports.ImportFix{fix})
 }
 
-func computeFixEdits(pgf *ParsedGoFile, options *imports.Options, fixes []*imports.ImportFix) ([]protocol.TextEdit, error) {
+func computeFixEdits(pgf *parsego.File, options *imports.Options, fixes []*imports.ImportFix) ([]protocol.TextEdit, error) {
 	// trim the original data to match fixedData
 	left, err := importPrefix(pgf.Src)
 	if err != nil {
@@ -303,7 +305,7 @@ func scanForCommentEnd(src []byte) int {
 	return 0
 }
 
-func computeTextEdits(ctx context.Context, pgf *ParsedGoFile, formatted string) ([]protocol.TextEdit, error) {
+func computeTextEdits(ctx context.Context, pgf *parsego.File, formatted string) ([]protocol.TextEdit, error) {
 	_, done := event.Start(ctx, "golang.computeTextEdits")
 	defer done()
 

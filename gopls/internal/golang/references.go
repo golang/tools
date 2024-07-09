@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -164,7 +165,7 @@ func packageReferences(ctx context.Context, snapshot *cache.Snapshot, uri protoc
 				if err != nil {
 					return nil, err
 				}
-				f, err := snapshot.ParseGo(ctx, fh, ParseHeader)
+				f, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 				if err != nil {
 					return nil, err
 				}
@@ -193,15 +194,18 @@ func packageReferences(ctx context.Context, snapshot *cache.Snapshot, uri protoc
 		if err != nil {
 			return nil, err
 		}
-		f, err := snapshot.ParseGo(ctx, fh, ParseHeader)
+		f, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 		if err != nil {
 			return nil, err
 		}
-		refs = append(refs, reference{
-			isDeclaration: true, // (one of many)
-			location:      mustLocation(f, f.File.Name),
-			pkgPath:       widest.PkgPath,
-		})
+		// golang/go#66250: don't crash if the package file lacks a name.
+		if f.File.Name.Pos().IsValid() {
+			refs = append(refs, reference{
+				isDeclaration: true, // (one of many)
+				location:      mustLocation(f, f.File.Name),
+				pkgPath:       widest.PkgPath,
+			})
+		}
 	}
 
 	return refs, nil
@@ -231,7 +235,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	if err != nil {
 		return nil, err
 	}
-	candidates, _, err := objectsAt(pkg.GetTypesInfo(), pgf.File, pos)
+	candidates, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 	if err != nil {
 		return nil, err
 	}
@@ -248,14 +252,8 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	}
 
 	// nil, error, error.Error, iota, or other built-in?
-	if obj.Pkg() == nil {
+	if isBuiltin(obj) {
 		return nil, fmt.Errorf("references to builtin %q are not supported", obj.Name())
-	}
-	if !obj.Pos().IsValid() {
-		if obj.Pkg().Path() != "unsafe" {
-			bug.Reportf("references: object %v has no position", obj)
-		}
-		return nil, fmt.Errorf("references to unsafe.%s are not supported", obj.Name())
 	}
 
 	// Find metadata of all packages containing the object's defining file.
@@ -418,7 +416,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 			if err != nil {
 				return err
 			}
-			objects, _, err := objectsAt(pkg.GetTypesInfo(), pgf.File, pos)
+			objects, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 			if err != nil {
 				return err // unreachable? (probably caught earlier)
 			}
@@ -454,7 +452,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 
 			targets := make(map[types.Object]bool)
 			for objpath := range globalTargets[pkg.Metadata().PkgPath] {
-				obj, err := objectpath.Object(pkg.GetTypes(), objpath)
+				obj, err := objectpath.Object(pkg.Types(), objpath)
 				if err != nil {
 					// No such object, because it was
 					// declared only in the test variant.
@@ -601,7 +599,7 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 	for _, pgf := range pkg.CompiledGoFiles() {
 		ast.Inspect(pgf.File, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok {
-				if obj, ok := pkg.GetTypesInfo().Uses[id]; ok && matches(obj) {
+				if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {
 					report(mustLocation(pgf, id), false)
 				}
 			}
@@ -685,7 +683,7 @@ func objectsAt(info *types.Info, file *ast.File, pos token.Pos) (map[types.Objec
 // which must belong to m.File.
 //
 // Safe for use only by references and implementations.
-func mustLocation(pgf *ParsedGoFile, n ast.Node) protocol.Location {
+func mustLocation(pgf *parsego.File, n ast.Node) protocol.Location {
 	loc, err := pgf.NodeLocation(n)
 	if err != nil {
 		panic(err) // can't happen in references or implementations

@@ -54,7 +54,7 @@ func Parse(fset *token.FileSet, filename string, content []byte) ([]*Note, error
 		}
 		f := fset.AddFile(filename, -1, len(content))
 		f.SetLinesForContent(content)
-		notes, err := extractMod(fset, file)
+		notes, err := extractModWork(fset, file.Syntax.Stmt)
 		if err != nil {
 			return nil, err
 		}
@@ -64,39 +64,45 @@ func Parse(fset *token.FileSet, filename string, content []byte) ([]*Note, error
 			note.Pos += token.Pos(f.Base())
 		}
 		return notes, nil
+	case ".work":
+		file, err := modfile.ParseWork(filename, content, nil)
+		if err != nil {
+			return nil, err
+		}
+		f := fset.AddFile(filename, -1, len(content))
+		f.SetLinesForContent(content)
+		notes, err := extractModWork(fset, file.Syntax.Stmt)
+		if err != nil {
+			return nil, err
+		}
+		// As with go.mod files, we need to compute a synthetic token.Pos.
+		for _, note := range notes {
+			note.Pos += token.Pos(f.Base())
+		}
+		return notes, nil
 	}
 	return nil, nil
 }
 
-// extractMod collects all the notes present in a go.mod file.
+// extractModWork collects all the notes present in a go.mod file or go.work
+// file, by way of the shared modfile.Expr statement node.
+//
 // Each comment whose text starts with @ is parsed as a comma-separated
 // sequence of notes.
 // See the package documentation for details about the syntax of those
 // notes.
 // Only allow notes to appear with the following format: "//@mark()" or // @mark()
-func extractMod(fset *token.FileSet, file *modfile.File) ([]*Note, error) {
+func extractModWork(fset *token.FileSet, exprs []modfile.Expr) ([]*Note, error) {
 	var notes []*Note
-	for _, stmt := range file.Syntax.Stmt {
+	for _, stmt := range exprs {
 		comment := stmt.Comment()
 		if comment == nil {
 			continue
 		}
-		// Handle the case for markers of `// indirect` to be on the line before
-		// the require statement.
-		// TODO(golang/go#36894): have a more intuitive approach for // indirect
-		for _, cmt := range comment.Before {
-			text, adjust := getAdjustedNote(cmt.Token)
-			if text == "" {
-				continue
-			}
-			parsed, err := parse(fset, token.Pos(int(cmt.Start.Byte)+adjust), text)
-			if err != nil {
-				return nil, err
-			}
-			notes = append(notes, parsed...)
-		}
-		// Handle the normal case for markers on the same line.
-		for _, cmt := range comment.Suffix {
+		var allComments []modfile.Comment
+		allComments = append(allComments, comment.Before...)
+		allComments = append(allComments, comment.Suffix...)
+		for _, cmt := range allComments {
 			text, adjust := getAdjustedNote(cmt.Token)
 			if text == "" {
 				continue

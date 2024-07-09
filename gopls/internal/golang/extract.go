@@ -25,7 +25,7 @@ import (
 
 func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	tokFile := fset.File(file.Pos())
-	expr, path, ok, err := CanExtractVariable(start, end, file)
+	expr, path, ok, err := canExtractVariable(start, end, file)
 	if !ok {
 		return nil, nil, fmt.Errorf("extractVariable: cannot extract %s: %v", safetoken.StartPosition(fset, start), err)
 	}
@@ -58,6 +58,15 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 		return nil, nil, fmt.Errorf("cannot extract %T", expr)
 	}
 
+	// TODO: There is a bug here: for a variable declared in a labeled
+	// switch/for statement it returns the for/switch statement itself
+	// which produces the below code which is a compiler error e.g.
+	// label:
+	// switch r1 := r() { ... break label ... }
+	// On extracting "r()" to a variable
+	// label:
+	// x := r()
+	// switch r1 := x { ... break label ... } // compiler error
 	insertBeforeStmt := analysisinternal.StmtToInsertVarBefore(path)
 	if insertBeforeStmt == nil {
 		return nil, nil, fmt.Errorf("cannot find location to insert extraction")
@@ -96,9 +105,9 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 	}, nil
 }
 
-// CanExtractVariable reports whether the code in the given range can be
+// canExtractVariable reports whether the code in the given range can be
 // extracted to a variable.
-func CanExtractVariable(start, end token.Pos, file *ast.File) (ast.Expr, []ast.Node, bool, error) {
+func canExtractVariable(start, end token.Pos, file *ast.File) (ast.Expr, []ast.Node, bool, error) {
 	if start == end {
 		return nil, nil, false, fmt.Errorf("start and end are equal")
 	}
@@ -209,7 +218,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 	if tok == nil {
 		return nil, nil, bug.Errorf("no file for position")
 	}
-	p, ok, methodOk, err := CanExtractFunction(tok, start, end, src, file)
+	p, ok, methodOk, err := canExtractFunction(tok, start, end, src, file)
 	if (!ok && !isMethod) || (!methodOk && isMethod) {
 		return nil, nil, fmt.Errorf("%s: cannot extract %s: %v", errorPrefix,
 			safetoken.StartPosition(fset, start), err)
@@ -997,9 +1006,9 @@ type fnExtractParams struct {
 	node       ast.Node
 }
 
-// CanExtractFunction reports whether the code in the given range can be
+// canExtractFunction reports whether the code in the given range can be
 // extracted to a function.
-func CanExtractFunction(tok *token.File, start, end token.Pos, src []byte, file *ast.File) (*fnExtractParams, bool, bool, error) {
+func canExtractFunction(tok *token.File, start, end token.Pos, src []byte, file *ast.File) (*fnExtractParams, bool, bool, error) {
 	if start == end {
 		return nil, false, false, fmt.Errorf("start and end are equal")
 	}

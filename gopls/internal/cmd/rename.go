@@ -45,7 +45,7 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("rename expects 2 arguments (position, new name)")
 	}
 	r.app.editFlags = &r.EditFlags
-	conn, err := r.app.connect(ctx, nil)
+	conn, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}

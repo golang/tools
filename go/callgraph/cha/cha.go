@@ -93,10 +93,14 @@ func lazyCallees(fns map[*ssa.Function]bool) func(site ssa.CallInstruction) []*s
 	// a dynamic call of a particular signature.
 	var funcsBySig typeutil.Map // value is []*ssa.Function
 
-	// methodsByName contains all methods,
-	// grouped by name for efficient lookup.
-	// (methodsById would be better but not every SSA method has a go/types ID.)
-	methodsByName := make(map[string][]*ssa.Function)
+	// methodsByID contains all methods, grouped by ID for efficient
+	// lookup.
+	//
+	// We must key by ID, not name, for correct resolution of interface
+	// calls to a type with two (unexported) methods spelled the same but
+	// from different packages. The fact that the concrete type implements
+	// the interface does not mean the call dispatches to both methods.
+	methodsByID := make(map[string][]*ssa.Function)
 
 	// An imethod represents an interface method I.m.
 	// (There's no go/types object for it;
@@ -118,7 +122,7 @@ func lazyCallees(fns map[*ssa.Function]bool) func(site ssa.CallInstruction) []*s
 		id := m.Id()
 		methods, ok := methodsMemo[imethod{I, id}]
 		if !ok {
-			for _, f := range methodsByName[m.Name()] {
+			for _, f := range methodsByID[id] {
 				C := f.Signature.Recv().Type() // named or *named
 				if types.Implements(C, I) {
 					methods = append(methods, f)
@@ -138,8 +142,9 @@ func lazyCallees(fns map[*ssa.Function]bool) func(site ssa.CallInstruction) []*s
 			funcs, _ := funcsBySig.At(f.Signature).([]*ssa.Function)
 			funcs = append(funcs, f)
 			funcsBySig.Set(f.Signature, funcs)
-		} else {
-			methodsByName[f.Name()] = append(methodsByName[f.Name()], f)
+		} else if obj := f.Object(); obj != nil {
+			id := obj.(*types.Func).Id()
+			methodsByID[id] = append(methodsByID[id], f)
 		}
 	}
 

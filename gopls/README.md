@@ -3,7 +3,9 @@
 [![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools/gopls)](https://pkg.go.dev/golang.org/x/tools/gopls)
 
 `gopls` (pronounced "Go please") is the official Go [language server] developed
-by the Go team. It provides IDE features to any [LSP]-compatible editor.
+by the Go team.
+It provides a wide variety of [IDE features](doc/features/README.md)
+to any [LSP]-compatible editor.
 
 <!--TODO(rfindley): Add gifs here.-->
 
@@ -11,10 +13,15 @@ You should not need to interact with `gopls` directly--it will be automatically
 integrated into your editor. The specific features and settings vary slightly
 by editor, so we recommend that you proceed to the
 [documentation for your editor](#editors) below.
+Also, the gopls documentation for each feature describes whether it is
+supported in each client editor.
 
 ## Editors
 
 To get started with `gopls`, install an LSP plugin in your editor of choice.
+
+TODO: ensure that each editor has a local page (and move these to doc/clients/$EDITOR.md).
+TODO: also, be more consistent about editor (e.g. Emacs) vs. client (e.g. eglot).
 
 * [VS Code](https://github.com/golang/vscode-go/blob/master/README.md)
 * [Vim / Neovim](doc/vim.md)
@@ -75,31 +82,49 @@ and
 ### Supported Go versions
 
 `gopls` follows the
-[Go Release Policy](https://golang.org/doc/devel/release.html#policy),
-meaning that it officially supports the last 2 major Go releases. Per
-[issue #39146](https://go.dev/issues/39146), we attempt to maintain best-effort
-support for the last 4 major Go releases, but this support extends only to not
-breaking the build and avoiding easily fixable regressions.
+[Go Release Policy](https://golang.org/doc/devel/release.html#policy), meaning
+that it officially supports only the two most recent major Go releases. Until
+August 2024, the Go team will also maintain best-effort support for the last
+4 major Go releases, as described in [issue #39146](https://go.dev/issues/39146).
 
-In the context of this discussion, gopls "supports" a Go version if it supports
-being built with that Go version as well as integrating with the `go` command
-of that Go version.
+When using gopls, there are three versions to be aware of:
+1. The _gopls build go version_: the version of Go used to build gopls.
+2. The _go command version_: the version of the go list command executed by
+   gopls to load information about your workspace.
+3. The _language version_: the version in the go directive of the current
+   file's enclosing go.mod file, which determines the file's Go language
+   semantics.
 
-The following table shows the final gopls version that supports a given Go
-version. Go releases more recent than any in the table can be used with any
-version of gopls.
+Starting with the release of Go 1.23.0 and gopls@v0.17.0 in August 2024, we
+will only support the most recent Go version as the _gopls build go version_.
+However, due to the [forward compatibility](https://go.dev/blog/toolchain)
+support added in Go 1.21, as long as Go 1.21 or later are used to install
+gopls, any necessary toolchain upgrade will be handled automatically, just like
+any other dependency.
+
+Additionally, starting with gopls@v0.17.0, the _go command version_ will narrow
+from 4 versions to 3. This is more consistent with the Go Release Policy.
+
+Gopls supports **all** Go versions as its _language version_, by providing
+compiler errors based on the language version and filtering available standard
+library symbols based on the standard library APIs available at that Go
+version.
+
+Maintaining support for building gopls with legacy versions of Go caused
+[significant friction](https://go.dev/issue/50825) for gopls maintainers and
+held back other improvements. If you are unable to install a supported version
+of Go on your system, you can still install an older version of gopls. The
+following table shows the final gopls version that supports a given Go version.
+Go releases more recent than those in the table can be used with any version of
+gopls.
 
 | Go Version  | Final gopls version with support (without warnings) |
 | ----------- | --------------------------------------------------- |
 | Go 1.12     | [gopls@v0.7.5](https://github.com/golang/tools/releases/tag/gopls%2Fv0.7.5) |
 | Go 1.15     | [gopls@v0.9.5](https://github.com/golang/tools/releases/tag/gopls%2Fv0.9.5) |
 | Go 1.17     | [gopls@v0.11.0](https://github.com/golang/tools/releases/tag/gopls%2Fv0.11.0) |
-
-Our extended support is enforced via [continuous integration with older Go
-versions](doc/contributing.md#ci). This legacy Go CI may not block releases:
-test failures may be skipped rather than fixed. Furthermore, if a regression in
-an older Go version causes irreconcilable CI failures, we may drop support for
-that Go version in CI if it is 3 or 4 Go versions old.
+| Go 1.18     | [gopls@v0.14.2](https://github.com/golang/tools/releases/tag/gopls%2Fv0.14.2) |
+| Go 1.20     | [gopls@v0.15.3](https://github.com/golang/tools/releases/tag/gopls%2Fv0.15.3) |
 
 ### Supported build systems
 
@@ -119,8 +144,9 @@ If you are having issues with `gopls`, please follow the steps described in the
 
 ## Additional information
 
-* [Features](doc/features.md)
+* [Index of features](doc/features/README.md)
 * [Command-line interface](doc/command-line.md)
+* [Configuration settings](doc/settings.md)
 * [Advanced topics](doc/advanced.md)
 * [Contributing to `gopls`](doc/contributing.md)
 * [Integrating `gopls` with an editor](doc/design/integrating.md)

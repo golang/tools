@@ -10,11 +10,11 @@ import (
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 func (s *server) Definition(ctx context.Context, params *protocol.DefinitionParams) (_ []protocol.Location, rerr error) {
@@ -23,7 +23,7 @@ func (s *server) Definition(ctx context.Context, params *protocol.DefinitionPara
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.definition", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.definition", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	// TODO(rfindley): definition requests should be multiplexed across all views.
@@ -43,7 +43,7 @@ func (s *server) Definition(ctx context.Context, params *protocol.DefinitionPara
 }
 
 func (s *server) TypeDefinition(ctx context.Context, params *protocol.TypeDefinitionParams) ([]protocol.Location, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.typeDefinition", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.typeDefinition", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	// TODO(rfindley): type definition requests should be multiplexed across all views.

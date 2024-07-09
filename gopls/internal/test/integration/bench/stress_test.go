@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/cache"
-	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -45,12 +44,11 @@ func TestPilosaStress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server := lsprpc.NewStreamServer(cache.New(nil), false, hooks.Options)
+	server := lsprpc.NewStreamServer(cache.New(nil), false, nil)
 	ts := servertest.NewPipeServer(server, jsonrpc2.NewRawStream)
 	ctx := context.Background()
 
-	const skipApplyEdits = false
-	editor, err := fake.NewEditor(sandbox, fake.EditorConfig{}).Connect(ctx, ts, fake.ClientHooks{}, skipApplyEdits)
+	editor, err := fake.NewEditor(sandbox, fake.EditorConfig{}).Connect(ctx, ts, fake.ClientHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}

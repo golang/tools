@@ -39,7 +39,7 @@ func (i *implementation) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("implementation expects 1 argument (position)")
 	}
 
-	conn, err := i.app.connect(ctx, nil)
+	conn, err := i.app.connect(ctx)
 	if err != nil {
 		return err
 	}

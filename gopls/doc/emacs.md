@@ -1,4 +1,4 @@
-# Emacs
+# Gopls: Using Emacs
 
 ## Installing `gopls`
 
@@ -111,10 +111,13 @@ project root.
 ;; Optional: install eglot-format-buffer as a save hook.
 ;; The depth of -10 places this before eglot's willSave notification,
 ;; so that that notification reports the actual contents that will be saved.
-(defun eglot-format-buffer-on-save ()
+(defun eglot-format-buffer-before-save ()
   (add-hook 'before-save-hook #'eglot-format-buffer -10 t))
-(add-hook 'go-mode-hook #'eglot-format-buffer-on-save)
+(add-hook 'go-mode-hook #'eglot-format-buffer-before-save)
 ```
+
+Use `M-x eglot-upgrade-eglot` to upgrade to the latest version of
+Eglot.
 
 ### Configuring `gopls` via Eglot
 

@@ -57,7 +57,7 @@ func main() {
 //
 // Use ssautil.BuildPackage only if you have parsed--but not
 // type-checked--syntax trees. Typically, clients already have typed
-// syntax, perhaps obtained from from golang.org/x/tools/go/packages.
+// syntax, perhaps obtained from golang.org/x/tools/go/packages.
 // In that case, see the other examples for simpler approaches.
 func Example_buildPackage() {
 	// Replace interface{} with any for this test.

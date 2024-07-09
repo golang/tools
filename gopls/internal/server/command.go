@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,6 +22,7 @@ import (
 	"sync"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -32,7 +34,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
@@ -80,24 +81,20 @@ func (*commandHandler) AddTelemetryCounters(_ context.Context, args command.AddT
 		return fmt.Errorf("Names and Values must have the same length")
 	}
 	// invalid counter update requests will be silently dropped. (no audience)
-	telemetry.AddForwardedCounters(args.Names, args.Values)
+	for i, n := range args.Names {
+		v := args.Values[i]
+		if n == "" || v < 0 {
+			continue
+		}
+		counter.Add("fwd/"+n, v)
+	}
 	return nil
 }
 
 // commandConfig configures common command set-up and execution.
 type commandConfig struct {
-	// TODO(adonovan): whether a command is synchronous or
-	// asynchronous is part of the server interface contract, not
-	// a mere implementation detail of the handler.
-	// Export a (command.Command).IsAsync() property so that
-	// clients can tell. (The tricky part is ensuring the handler
-	// remains consistent with the command.Command metadata, as at
-	// the point were we read the 'async' field below, we no
-	// longer know that command.Command.)
-
-	async       bool                 // whether to run the command asynchronously. Async commands can only return errors.
 	requireSave bool                 // whether all files must be saved for the command to work
-	progress    string               // title to use for progress reporting. If empty, no progress will be reported.
+	progress    string               // title to use for progress reporting. If empty, no progress will be reported. Mandatory for async commands.
 	forView     string               // view to resolve to a snapshot; incompatible with forURI
 	forURI      protocol.DocumentURI // URI to resolve to a snapshot. If unset, snapshot will be nil.
 }
@@ -106,9 +103,9 @@ type commandConfig struct {
 // be populated, depending on which configuration is set. See comments in-line
 // for details.
 type commandDeps struct {
-	snapshot *cache.Snapshot    // present if cfg.forURI was set
+	snapshot *cache.Snapshot    // present if cfg.forURI or forView was set
 	fh       file.Handle        // present if cfg.forURI was set
-	work     *progress.WorkDone // present cfg.progress was set
+	work     *progress.WorkDone // present if cfg.progress was set
 }
 
 type commandFunc func(context.Context, commandDeps) error
@@ -188,7 +185,12 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 		}
 		return err
 	}
-	if cfg.async {
+
+	if enum := command.Command(c.params.Command); enum.IsAsync() {
+		if cfg.progress == "" {
+			log.Fatalf("asynchronous command %q does not enable progress reporting",
+				enum)
+		}
 		go func() {
 			if err := runcmd(); err != nil {
 				showMessage(ctx, c.s.client, protocol.Error, err.Error())
@@ -205,32 +207,23 @@ func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs
 		// Note: no progress here. Applying fixes should be quick.
 		forURI: args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		edits, err := golang.ApplyFix(ctx, args.Fix, deps.snapshot, deps.fh, args.Range)
+		changes, err := golang.ApplyFix(ctx, args.Fix, deps.snapshot, deps.fh, args.Range)
 		if err != nil {
 			return err
 		}
-		changes := []protocol.DocumentChanges{} // must be a slice
-		for _, edit := range edits {
-			edit := edit
-			changes = append(changes, protocol.DocumentChanges{
-				TextDocumentEdit: &edit,
-			})
-		}
-		edit := protocol.WorkspaceEdit{
-			DocumentChanges: changes,
-		}
+		wsedit := protocol.NewWorkspaceEdit(changes...)
 		if args.ResolveEdits {
-			result = &edit
+			result = wsedit
 			return nil
 		}
-		r, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: edit,
+		resp, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
+			Edit: *wsedit,
 		})
 		if err != nil {
 			return err
 		}
-		if !r.Applied {
-			return errors.New(r.FailureReason)
+		if !resp.Applied {
+			return errors.New(resp.FailureReason)
 		}
 		return nil
 	})
@@ -274,7 +267,9 @@ func (c *commandHandler) modifyState(ctx context.Context, source ModificationSou
 	}
 	wg.Add(1)
 	go func() {
-		c.s.diagnoseSnapshot(snapshot, nil, 0)
+		// Diagnosing with the background context ensures new snapshots are fully
+		// diagnosed.
+		c.s.diagnoseSnapshot(snapshot.BackgroundContext(), snapshot, nil, 0)
 		release()
 		wg.Done()
 	}()
@@ -358,8 +353,7 @@ func (c *commandHandler) UpdateGoSum(ctx context.Context, args command.URIArgs) 
 
 func (c *commandHandler) Tidy(ctx context.Context, args command.URIArgs) error {
 	return c.run(ctx, commandConfig{
-		requireSave: true,
-		progress:    "Running go mod tidy",
+		progress: "Running go mod tidy",
 	}, func(ctx context.Context, _ commandDeps) error {
 		for _, uri := range args.URIs {
 			fh, snapshot, release, err := c.s.fileOf(ctx, uri)
@@ -380,7 +374,7 @@ func (c *commandHandler) Tidy(ctx context.Context, args command.URIArgs) error {
 
 func (c *commandHandler) Vendor(ctx context.Context, args command.URIArg) error {
 	return c.run(ctx, commandConfig{
-		requireSave: true,
+		requireSave: true, // TODO(adonovan): probably not needed; but needs a test.
 		progress:    "Running go mod vendor",
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
@@ -393,11 +387,16 @@ func (c *commandHandler) Vendor(ctx context.Context, args command.URIArg) error 
 		// modules.txt in-place. In that case we could theoretically allow this
 		// command to run concurrently.
 		stderr := new(bytes.Buffer)
-		err := deps.snapshot.RunGoCommandPiped(ctx, cache.Normal|cache.AllowNetwork, &gocommand.Invocation{
+		inv, cleanupInvocation, err := deps.snapshot.GoCommandInvocation(true, &gocommand.Invocation{
 			Verb:       "mod",
 			Args:       []string{"vendor"},
 			WorkingDir: filepath.Dir(args.URI.Path()),
-		}, &bytes.Buffer{}, stderr)
+		})
+		if err != nil {
+			return err
+		}
+		defer cleanupInvocation()
+		err = deps.snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, &bytes.Buffer{}, stderr)
 		if err != nil {
 			return fmt.Errorf("running go mod vendor failed: %v\nstderr:\n%s", err, stderr.String())
 		}
@@ -452,9 +451,8 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 			return err
 		}
 		response, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: protocol.WorkspaceEdit{
-				DocumentChanges: documentChanges(deps.fh, edits),
-			},
+			Edit: *protocol.NewWorkspaceEdit(
+				protocol.DocumentChangeEdit(deps.fh, edits)),
 		})
 		if err != nil {
 			return err
@@ -488,6 +486,7 @@ func dropDependency(pm *cache.ParsedModule, modulePath string) ([]protocol.TextE
 	return protocol.EditsFromDiffEdits(pm.Mapper, diff)
 }
 
+// Test is an alias for RunTests (with splayed arguments).
 func (c *commandHandler) Test(ctx context.Context, uri protocol.DocumentURI, tests, benchmarks []string) error {
 	return c.RunTests(ctx, command.RunTestsArgs{
 		URI:        uri,
@@ -496,11 +495,42 @@ func (c *commandHandler) Test(ctx context.Context, uri protocol.DocumentURI, tes
 	})
 }
 
+func (c *commandHandler) Doc(ctx context.Context, loc protocol.Location) error {
+	return c.run(ctx, commandConfig{
+		progress: "", // the operation should be fast
+		forURI:   loc.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		pkg, pgf, err := golang.NarrowestPackageForFile(ctx, deps.snapshot, loc.URI)
+		if err != nil {
+			return err
+		}
+		start, end, err := pgf.RangePos(loc.Range)
+		if err != nil {
+			return err
+		}
+
+		// Start web server.
+		web, err := c.s.getWeb()
+		if err != nil {
+			return err
+		}
+
+		// Compute package path and optional symbol fragment
+		// (e.g. "#Buffer.Len") from the the selection.
+		pkgpath, fragment, _ := golang.DocFragment(pkg, pgf, start, end)
+
+		// Direct the client to open the /pkg page.
+		url := web.PkgURL(deps.snapshot.View().ID(), pkgpath, fragment)
+		openClientBrowser(ctx, c.s.client, url)
+
+		return nil
+	})
+}
+
 func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs) error {
 	return c.run(ctx, commandConfig{
-		async:       true,
-		progress:    "Running go test",
-		requireSave: true,
+		progress:    "Running go test", // (asynchronous)
+		requireSave: true,              // go test honors overlays, but tests themselves cannot
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		return c.runTests(ctx, deps.snapshot, deps.work, args.URI, args.Tests, args.Benchmarks)
@@ -523,12 +553,16 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 	// Run `go test -run Func` on each test.
 	var failedTests int
 	for _, funcName := range tests {
-		inv := &gocommand.Invocation{
+		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
 			Verb:       "test",
 			Args:       []string{pkgPath, "-v", "-count=1", fmt.Sprintf("-run=^%s$", regexp.QuoteMeta(funcName))},
 			WorkingDir: filepath.Dir(uri.Path()),
+		})
+		if err != nil {
+			return err
 		}
-		if err := snapshot.RunGoCommandPiped(ctx, cache.Normal, inv, out, out); err != nil {
+		defer cleanupInvocation()
+		if err := snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, out, out); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
@@ -539,12 +573,16 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 	// Run `go test -run=^$ -bench Func` on each test.
 	var failedBenchmarks int
 	for _, funcName := range benchmarks {
-		inv := &gocommand.Invocation{
+		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
 			Verb:       "test",
 			Args:       []string{pkgPath, "-v", "-run=^$", fmt.Sprintf("-bench=^%s$", regexp.QuoteMeta(funcName))},
 			WorkingDir: filepath.Dir(uri.Path()),
+		})
+		if err != nil {
+			return err
 		}
-		if err := snapshot.RunGoCommandPiped(ctx, cache.Normal, inv, out, out); err != nil {
+		defer cleanupInvocation()
+		if err := snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, out, out); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
@@ -588,7 +626,7 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 		title = "Running go generate ./..."
 	}
 	return c.run(ctx, commandConfig{
-		requireSave: true,
+		requireSave: true, // commands executed by go generate cannot honor overlays
 		progress:    title,
 		forURI:      args.Dir,
 	}, func(ctx context.Context, deps commandDeps) error {
@@ -598,13 +636,17 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 		if args.Recursive {
 			pattern = "./..."
 		}
-		inv := &gocommand.Invocation{
+		inv, cleanupInvocation, err := deps.snapshot.GoCommandInvocation(true, &gocommand.Invocation{
 			Verb:       "generate",
 			Args:       []string{"-x", pattern},
 			WorkingDir: args.Dir.Path(),
+		})
+		if err != nil {
+			return err
 		}
+		defer cleanupInvocation()
 		stderr := io.MultiWriter(er, progress.NewWorkDoneWriter(ctx, deps.work))
-		if err := deps.snapshot.RunGoCommandPiped(ctx, cache.AllowNetwork, inv, er, stderr); err != nil {
+		if err := deps.snapshot.View().GoCommandRunner().RunPiped(ctx, *inv, er, stderr); err != nil {
 			return err
 		}
 		return nil
@@ -616,17 +658,33 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 		forURI:   args.URI,
 		progress: "Running go get",
 	}, func(ctx context.Context, deps commandDeps) error {
-		// Run on a throwaway go.mod, otherwise it'll write to the real one.
-		stdout, err := deps.snapshot.RunGoCommandDirect(ctx, cache.WriteTemporaryModFile|cache.AllowNetwork, &gocommand.Invocation{
+		snapshot := deps.snapshot
+		modURI := snapshot.GoModForFile(args.URI)
+		if modURI == "" {
+			return fmt.Errorf("no go.mod file found for %s", args.URI)
+		}
+		tempDir, cleanupModDir, err := cache.TempModDir(ctx, snapshot, modURI)
+		if err != nil {
+			return fmt.Errorf("creating a temp go.mod: %v", err)
+		}
+		defer cleanupModDir()
+
+		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(true, &gocommand.Invocation{
 			Verb:       "list",
-			Args:       []string{"-f", "{{.Module.Path}}@{{.Module.Version}}", args.Pkg},
-			WorkingDir: filepath.Dir(args.URI.Path()),
+			Args:       []string{"-f", "{{.Module.Path}}@{{.Module.Version}}", "-mod=mod", "-modfile=" + filepath.Join(tempDir, "go.mod"), args.Pkg},
+			Env:        []string{"GOWORK=off"},
+			WorkingDir: modURI.Dir().Path(),
 		})
 		if err != nil {
 			return err
 		}
+		defer cleanupInvocation()
+		stdout, err := snapshot.View().GoCommandRunner().Run(ctx, *inv)
+		if err != nil {
+			return err
+		}
 		ver := strings.TrimSpace(stdout.String())
-		return c.s.runGoModUpdateCommands(ctx, deps.snapshot, args.URI, func(invoke func(...string) (*bytes.Buffer, error)) error {
+		return c.s.runGoModUpdateCommands(ctx, snapshot, args.URI, func(invoke func(...string) (*bytes.Buffer, error)) error {
 			if args.AddRequire {
 				if err := addModuleRequire(invoke, []string{ver}); err != nil {
 					return err
@@ -639,43 +697,57 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 }
 
 func (s *server) runGoModUpdateCommands(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, run func(invoke func(...string) (*bytes.Buffer, error)) error) error {
-	newModBytes, newSumBytes, err := snapshot.RunGoModUpdateCommands(ctx, filepath.Dir(uri.Path()), run)
-	if err != nil {
-		return err
-	}
+	// TODO(rfindley): can/should this use findRootPattern?
 	modURI := snapshot.GoModForFile(uri)
+	if modURI == "" {
+		return fmt.Errorf("no go.mod file found for %s", uri.Path())
+	}
+	newModBytes, newSumBytes, err := snapshot.RunGoModUpdateCommands(ctx, modURI, run)
+	if err != nil {
+		return err
+	}
 	sumURI := protocol.URIFromPath(strings.TrimSuffix(modURI.Path(), ".mod") + ".sum")
-	modEdits, err := collectFileEdits(ctx, snapshot, modURI, newModBytes)
+
+	modChange, err := computeEditChange(ctx, snapshot, modURI, newModBytes)
 	if err != nil {
 		return err
 	}
-	sumEdits, err := collectFileEdits(ctx, snapshot, sumURI, newSumBytes)
+	sumChange, err := computeEditChange(ctx, snapshot, sumURI, newSumBytes)
 	if err != nil {
 		return err
 	}
-	return applyFileEdits(ctx, s.client, append(sumEdits, modEdits...))
+
+	var changes []protocol.DocumentChange
+	if modChange.Valid() {
+		changes = append(changes, modChange)
+	}
+	if sumChange.Valid() {
+		changes = append(changes, sumChange)
+	}
+	return applyChanges(ctx, s.client, changes)
 }
 
-// collectFileEdits collects any file edits required to transform the snapshot
-// file specified by uri to the provided new content.
+// computeEditChange computes the edit change required to transform the
+// snapshot file specified by uri to the provided new content.
+// Beware: returns a DocumentChange that is !Valid() if none were necessary.
 //
-// If the file is not open, collectFileEdits simply writes the new content to
+// If the file is not open, computeEditChange simply writes the new content to
 // disk.
 //
 // TODO(rfindley): fix this API asymmetry. It should be up to the caller to
 // write the file or apply the edits.
-func collectFileEdits(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, newContent []byte) ([]protocol.TextDocumentEdit, error) {
+func computeEditChange(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, newContent []byte) (protocol.DocumentChange, error) {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
-		return nil, err
+		return protocol.DocumentChange{}, err
 	}
 	oldContent, err := fh.Content()
 	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+		return protocol.DocumentChange{}, err
 	}
 
 	if bytes.Equal(oldContent, newContent) {
-		return nil, nil
+		return protocol.DocumentChange{}, nil // note: result is !Valid()
 	}
 
 	// Sending a workspace edit to a closed file causes VS Code to open the
@@ -683,34 +755,24 @@ func collectFileEdits(ctx context.Context, snapshot *cache.Snapshot, uri protoco
 	// especially to go.sum, which should be mostly invisible to the user.
 	if !snapshot.IsOpen(uri) {
 		err := os.WriteFile(uri.Path(), newContent, 0666)
-		return nil, err
+		return protocol.DocumentChange{}, err
 	}
 
 	m := protocol.NewMapper(fh.URI(), oldContent)
 	diff := diff.Bytes(oldContent, newContent)
-	edits, err := protocol.EditsFromDiffEdits(m, diff)
+	textedits, err := protocol.EditsFromDiffEdits(m, diff)
 	if err != nil {
-		return nil, err
+		return protocol.DocumentChange{}, err
 	}
-	return []protocol.TextDocumentEdit{{
-		TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
-			Version: fh.Version(),
-			TextDocumentIdentifier: protocol.TextDocumentIdentifier{
-				URI: uri,
-			},
-		},
-		Edits: protocol.AsAnnotatedTextEdits(edits),
-	}}, nil
+	return protocol.DocumentChangeEdit(fh, textedits), nil
 }
 
-func applyFileEdits(ctx context.Context, cli protocol.Client, edits []protocol.TextDocumentEdit) error {
-	if len(edits) == 0 {
+func applyChanges(ctx context.Context, cli protocol.Client, changes []protocol.DocumentChange) error {
+	if len(changes) == 0 {
 		return nil
 	}
 	response, err := cli.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-		Edit: protocol.WorkspaceEdit{
-			DocumentChanges: protocol.TextDocumentEditsToDocumentChanges(edits),
-		},
+		Edit: *protocol.NewWorkspaceEdit(changes...),
 	})
 	if err != nil {
 		return err
@@ -742,11 +804,17 @@ func addModuleRequire(invoke func(...string) (*bytes.Buffer, error), args []stri
 
 // TODO(rfindley): inline.
 func (s *server) getUpgrades(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, modules []string) (map[string]string, error) {
-	stdout, err := snapshot.RunGoCommandDirect(ctx, cache.Normal|cache.AllowNetwork, &gocommand.Invocation{
-		Verb:       "list",
-		Args:       append([]string{"-m", "-u", "-json"}, modules...),
+	inv, cleanup, err := snapshot.GoCommandInvocation(true, &gocommand.Invocation{
+		Verb: "list",
+		// -mod=readonly is necessary when vendor is present (golang/go#66055)
+		Args:       append([]string{"-mod=readonly", "-m", "-u", "-json"}, modules...),
 		WorkingDir: filepath.Dir(uri.Path()),
 	})
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	stdout, err := snapshot.View().GoCommandRunner().Run(ctx, *inv)
 	if err != nil {
 		return nil, err
 	}
@@ -771,9 +839,8 @@ func (c *commandHandler) GCDetails(ctx context.Context, uri protocol.DocumentURI
 
 func (c *commandHandler) ToggleGCDetails(ctx context.Context, args command.URIArg) error {
 	return c.run(ctx, commandConfig{
-		requireSave: true,
-		progress:    "Toggling GC Details",
-		forURI:      args.URI,
+		progress: "Toggling GC Details",
+		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		return c.modifyState(ctx, FromToggleGCDetails, func() (*cache.Snapshot, func(), error) {
 			meta, err := golang.NarrowestMetadataForFile(ctx, deps.snapshot, deps.fh.URI())
@@ -814,7 +881,7 @@ func (c *commandHandler) ListImports(ctx context.Context, args command.URIArg) (
 		if err != nil {
 			return err
 		}
-		pgf, err := deps.snapshot.ParseGo(ctx, fh, parsego.ParseHeader)
+		pgf, err := deps.snapshot.ParseGo(ctx, fh, parsego.Header)
 		if err != nil {
 			return err
 		}
@@ -859,12 +926,35 @@ func (c *commandHandler) AddImport(ctx context.Context, args command.AddImportAr
 		if err != nil {
 			return fmt.Errorf("could not add import: %v", err)
 		}
-		if _, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: protocol.WorkspaceEdit{
-				DocumentChanges: documentChanges(deps.fh, edits),
-			},
-		}); err != nil {
+		r, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
+			Edit: *protocol.NewWorkspaceEdit(
+				protocol.DocumentChangeEdit(deps.fh, edits)),
+		})
+		if err != nil {
 			return fmt.Errorf("could not apply import edits: %v", err)
+		}
+		if !r.Applied {
+			return fmt.Errorf("failed to apply edits: %v", r.FailureReason)
+		}
+		return nil
+	})
+}
+
+func (c *commandHandler) ExtractToNewFile(ctx context.Context, args protocol.Location) error {
+	return c.run(ctx, commandConfig{
+		progress: "Extract to a new file",
+		forURI:   args.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		edit, err := golang.ExtractToNewFile(ctx, deps.snapshot, deps.fh, args.Range)
+		if err != nil {
+			return err
+		}
+		resp, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{Edit: *edit})
+		if err != nil {
+			return fmt.Errorf("could not apply edits: %v", err)
+		}
+		if !resp.Applied {
+			return fmt.Errorf("edits not applied: %s", resp.FailureReason)
 		}
 		return nil
 	})
@@ -963,9 +1053,8 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 	// synchronize the start of the run and return the token.
 	tokenChan := make(chan protocol.ProgressToken, 1)
 	err := c.run(ctx, commandConfig{
-		async:       true, // need to be async to be cancellable
-		progress:    "govulncheck",
-		requireSave: true,
+		progress:    "govulncheck", // (asynchronous)
+		requireSave: true,          // govulncheck cannot honor overlays
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		tokenChan <- deps.work.Token()
@@ -986,7 +1075,10 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 			return err
 		}
 		defer release()
-		c.s.diagnoseSnapshot(snapshot, nil, 0)
+
+		// Diagnosing with the background context ensures new snapshots are fully
+		// diagnosed.
+		c.s.diagnoseSnapshot(snapshot.BackgroundContext(), snapshot, nil, 0)
 
 		affecting := make(map[string]bool, len(result.Entries))
 		for _, finding := range result.Findings {
@@ -1218,6 +1310,9 @@ func openClientBrowser(ctx context.Context, cli protocol.Client, url protocol.UR
 
 // openClientEditor causes the LSP client to open the specified document
 // and select the indicated range.
+//
+// Note that VS Code 1.87.2 doesn't currently raise the window; this is
+// https://github.com/microsoft/vscode/issues/207634
 func openClientEditor(ctx context.Context, cli protocol.Client, loc protocol.Location) {
 	showDocumentImpl(ctx, cli, protocol.URI(loc.URI), &loc.Range)
 }
@@ -1260,24 +1355,21 @@ func (c *commandHandler) ChangeSignature(ctx context.Context, args command.Chang
 		forURI: args.RemoveParameter.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		// For now, gopls only supports removing unused parameters.
-		changes, err := golang.RemoveUnusedParameter(ctx, deps.fh, args.RemoveParameter.Range, deps.snapshot)
+		docedits, err := golang.RemoveUnusedParameter(ctx, deps.fh, args.RemoveParameter.Range, deps.snapshot)
 		if err != nil {
 			return err
 		}
-		edit := protocol.WorkspaceEdit{
-			DocumentChanges: changes,
-		}
+		wsedit := protocol.NewWorkspaceEdit(docedits...)
 		if args.ResolveEdits {
-			result = &edit
+			result = wsedit
 			return nil
 		}
 		r, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: edit,
+			Edit: *wsedit,
 		})
 		if !r.Applied {
 			return fmt.Errorf("failed to apply edits: %v", r.FailureReason)
 		}
-
 		return nil
 	})
 	return result, err
@@ -1315,7 +1407,11 @@ func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.Diagnos
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				c.s.diagnoseSnapshot(snapshot, nil, 0)
+
+				// Use the operation context for diagnosis, rather than
+				// snapshot.BackgroundContext, because this operation does not create
+				// new snapshots (so they should also be diagnosed by other means).
+				c.s.diagnoseSnapshot(ctx, snapshot, nil, 0)
 			}()
 		}
 		wg.Wait()
@@ -1328,6 +1424,7 @@ func (c *commandHandler) Views(ctx context.Context) ([]command.View, error) {
 	var summaries []command.View
 	for _, view := range c.s.session.Views() {
 		summaries = append(summaries, command.View{
+			ID:         view.ID(),
 			Type:       view.Type().String(),
 			Root:       view.Root(),
 			Folder:     view.Folder().Dir,
@@ -1335,4 +1432,31 @@ func (c *commandHandler) Views(ctx context.Context) ([]command.View, error) {
 		})
 	}
 	return summaries, nil
+}
+
+func (c *commandHandler) FreeSymbols(ctx context.Context, viewID string, loc protocol.Location) error {
+	web, err := c.s.getWeb()
+	if err != nil {
+		return err
+	}
+	url := web.freesymbolsURL(viewID, loc)
+	openClientBrowser(ctx, c.s.client, url)
+	return nil
+}
+
+func (c *commandHandler) Assembly(ctx context.Context, viewID, packageID, symbol string) error {
+	web, err := c.s.getWeb()
+	if err != nil {
+		return err
+	}
+	url := web.assemblyURL(viewID, packageID, symbol)
+	openClientBrowser(ctx, c.s.client, url)
+	return nil
+}
+
+func (c *commandHandler) ScanImports(ctx context.Context) error {
+	for _, v := range c.s.session.Views() {
+		v.ScanImports()
+	}
+	return nil
 }

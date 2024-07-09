@@ -17,7 +17,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/internal/bisect"
-	"golang.org/x/tools/internal/compat"
 	"golang.org/x/tools/internal/diffp"
 	"golang.org/x/tools/txtar"
 )
@@ -82,7 +81,7 @@ func Test(t *testing.T) {
 						have[color] = true
 					}
 					if m.ShouldReport(uint64(i)) {
-						out = compat.Appendf(out, "%s %s\n", color, bisect.Marker(uint64(i)))
+						out = fmt.Appendf(out, "%s %s\n", color, bisect.Marker(uint64(i)))
 					}
 				}
 				err = nil

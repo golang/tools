@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -18,17 +19,13 @@ import (
 	"golang.org/x/tools/internal/diff"
 )
 
-// ConvertStringLiteral reports whether we can convert between raw and interpreted
-// string literals in the [start, end), along with a CodeAction containing the edits.
+// convertStringLiteral reports whether we can convert between raw and interpreted
+// string literals in the [start, end) range, along with a CodeAction containing the edits.
 //
 // Only the following conditions are true, the action in result is valid
 //   - [start, end) is enclosed by a string literal
 //   - if the string is interpreted string, need check whether the convert is allowed
-func ConvertStringLiteral(pgf *ParsedGoFile, fh file.Handle, rng protocol.Range) (protocol.CodeAction, bool) {
-	startPos, endPos, err := pgf.RangePos(rng)
-	if err != nil {
-		return protocol.CodeAction{}, false // e.g. invalid range
-	}
+func convertStringLiteral(pgf *parsego.File, fh file.Handle, startPos, endPos token.Pos) (protocol.CodeAction, bool) {
 	path, _ := astutil.PathEnclosingInterval(pgf.File, startPos, endPos)
 	lit, ok := path[0].(*ast.BasicLit)
 	if !ok || lit.Kind != token.STRING {
@@ -68,17 +65,14 @@ func ConvertStringLiteral(pgf *ParsedGoFile, fh file.Handle, rng protocol.Range)
 		End:   end,
 		New:   newText,
 	}}
-	pedits, err := protocol.EditsFromDiffEdits(pgf.Mapper, edits)
+	textedits, err := protocol.EditsFromDiffEdits(pgf.Mapper, edits)
 	if err != nil {
 		bug.Reportf("failed to convert diff.Edit to protocol.TextEdit:%v", err)
 		return protocol.CodeAction{}, false
 	}
-
 	return protocol.CodeAction{
 		Title: title,
 		Kind:  protocol.RefactorRewrite,
-		Edit: &protocol.WorkspaceEdit{
-			DocumentChanges: documentChanges(fh, pedits),
-		},
+		Edit:  protocol.NewWorkspaceEdit(protocol.DocumentChangeEdit(fh, textedits)),
 	}, true
 }

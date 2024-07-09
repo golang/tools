@@ -39,7 +39,7 @@ type nestedStruct struct {
 
 var _ = nestedStruct{} // want `nestedStruct literal has missing fields`
 
-var _ = data.B{} // want `b.B literal has missing fields`
+var _ = data.B{} // want `fillstruct.B literal has missing fields`
 
 type typedStruct struct {
 	m  map[string]int
@@ -100,10 +100,10 @@ type pointerBuiltinStruct struct {
 var _ = pointerBuiltinStruct{} // want `pointerBuiltinStruct literal has missing fields`
 
 var _ = []ast.BasicLit{
-	{}, // want `go/ast.BasicLit literal has missing fields`
+	{}, // want `ast.BasicLit literal has missing fields`
 }
 
-var _ = []ast.BasicLit{{}} // want "go/ast.BasicLit literal has missing fields"
+var _ = []ast.BasicLit{{}} // want "ast.BasicLit literal has missing fields"
 
 type unsafeStruct struct {
 	foo unsafe.Pointer

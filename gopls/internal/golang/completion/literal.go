@@ -14,7 +14,9 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // literal generates composite literal, function literal, and make()
@@ -49,10 +51,15 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 	//
 	// don't offer "mySlice{}" since we have already added a candidate
 	// of "[]int{}".
-	if _, named := literalType.(*types.Named); named && expType != nil {
-		if _, named := golang.Deref(expType).(*types.Named); !named {
-			return
-		}
+
+	// TODO(adonovan): think about aliases:
+	// they should probably be treated more like Named.
+	// Should this use Deref not Unpointer?
+	if is[*types.Named](aliases.Unalias(literalType)) &&
+		expType != nil &&
+		!is[*types.Named](aliases.Unalias(typesinternal.Unpointer(expType))) {
+
+		return
 	}
 
 	// Check if an object of type literalType would match our expected type.
@@ -193,7 +200,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 			name = p.Name()
 		)
 
-		if tp, _ := p.Type().(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+		if tp, _ := aliases.Unalias(p.Type()).(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
 			hasTypeParams = true
 		}
 
@@ -284,7 +291,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 				typeStr = strings.Replace(typeStr, "[]", "...", 1)
 			}
 
-			if tp, _ := p.Type().(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+			if tp, ok := aliases.Unalias(p.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 				snip.WritePlaceholder(func(snip *snippet.Builder) {
 					snip.WriteText(typeStr)
 				})
@@ -305,7 +312,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 
 	var resultHasTypeParams bool
 	for i := 0; i < results.Len(); i++ {
-		if tp, _ := results.At(i).Type().(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+		if tp, ok := aliases.Unalias(results.At(i).Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 			resultHasTypeParams = true
 		}
 	}
@@ -338,7 +345,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 			}
 			return
 		}
-		if tp, _ := r.Type().(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+		if tp, ok := aliases.Unalias(r.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 			snip.WritePlaceholder(func(snip *snippet.Builder) {
 				snip.WriteText(text)
 			})
@@ -425,11 +432,12 @@ func abbreviateTypeName(s string) string {
 }
 
 // compositeLiteral adds a composite literal completion item for the given typeName.
+// T is an (unnamed, unaliased) struct, array, slice, or map type.
 func (c *completer) compositeLiteral(T types.Type, snip *snippet.Builder, typeName string, matchScore float64, edits []protocol.TextEdit) {
 	snip.WriteText("{")
 	// Don't put the tab stop inside the composite literal curlies "{}"
 	// for structs that have no accessible fields.
-	if strct, ok := T.(*types.Struct); !ok || fieldsAccessible(strct, c.pkg.GetTypes()) {
+	if strct, ok := T.(*types.Struct); !ok || fieldsAccessible(strct, c.pkg.Types()) {
 		snip.WriteFinalTabstop()
 	}
 	snip.WriteText("}")
@@ -509,7 +517,9 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 	var (
 		snip     snippet.Builder
 		typeName string
-		named, _ = literalType.(*types.Named)
+		// TODO(adonovan): think more about aliases.
+		// They should probably be treated more like Named.
+		named, _ = aliases.Unalias(literalType).(*types.Named)
 	)
 
 	if named != nil && named.Obj() != nil && named.TypeParams().Len() > 0 && !c.fullyInstantiated(named) {
@@ -556,7 +566,8 @@ func (c *completer) fullyInstantiated(t *types.Named) bool {
 	}
 
 	for i := 0; i < tas.Len(); i++ {
-		switch ta := tas.At(i).(type) {
+		// TODO(adonovan) think about generic aliases.
+		switch ta := aliases.Unalias(tas.At(i)).(type) {
 		case *types.TypeParam:
 			// A *TypeParam only counts as specified if it is currently in
 			// scope (i.e. we are in a generic definition).

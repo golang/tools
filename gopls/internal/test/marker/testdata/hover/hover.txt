@@ -1,16 +1,12 @@
 This test demonstrates some features of the new marker test runner.
 
-Requires go1.19+ for the new go/doc/comment package.
-
--- flags --
--min_go=go1.19
-
 -- a.go --
-package a
+// package comment
+package aa //@hover("aa", "aa", aa)
 
 const abc = 0x2a //@hover("b", "abc", abc),hover(" =", "abc", abc)
 -- typeswitch.go --
-package a
+package aa
 
 func _() {
 	var y interface{}
@@ -33,3 +29,5 @@ var x interface{}
 ```go
 var x int
 ```
+-- @aa --
+package comment

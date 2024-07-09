@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // relName returns the name of v relative to i.
@@ -38,7 +39,7 @@ func relName(v Value, i Instruction) string {
 	return v.Name()
 }
 
-// normalizeAnyFortesting controls whether we replace occurrences of
+// normalizeAnyForTesting controls whether we replace occurrences of
 // interface{} with any. It is only used for normalizing test output.
 var normalizeAnyForTesting bool
 
@@ -94,7 +95,7 @@ func (v *Alloc) String() string {
 		op = "new"
 	}
 	from := v.Parent().relPkg()
-	return fmt.Sprintf("%s %s (%s)", op, relType(mustDeref(v.Type()), from), v.Comment)
+	return fmt.Sprintf("%s %s (%s)", op, relType(typeparams.MustDeref(v.Type()), from), v.Comment)
 }
 
 func (v *Phi) String() string {
@@ -260,7 +261,7 @@ func (v *MakeChan) String() string {
 func (v *FieldAddr) String() string {
 	// Be robust against a bad index.
 	name := "?"
-	if fld := fieldOf(mustDeref(v.X.Type()), v.Field); fld != nil {
+	if fld := fieldOf(typeparams.MustDeref(v.X.Type()), v.Field); fld != nil {
 		name = fld.Name()
 	}
 	return fmt.Sprintf("&%s.%s [#%d]", relName(v.X, v), name, v.Field)
@@ -354,7 +355,12 @@ func (s *Send) String() string {
 }
 
 func (s *Defer) String() string {
-	return printCall(&s.Call, "defer ", s)
+	prefix := "defer "
+	if s.DeferStack != nil {
+		prefix += "[" + relName(s.DeferStack, s) + "] "
+	}
+	c := printCall(&s.Call, prefix, s)
+	return c
 }
 
 func (s *Select) String() string {
@@ -449,7 +455,7 @@ func WritePackage(buf *bytes.Buffer, p *Package) {
 
 		case *Global:
 			fmt.Fprintf(buf, "  var   %-*s %s\n",
-				maxname, name, relType(mustDeref(mem.Type()), from))
+				maxname, name, relType(typeparams.MustDeref(mem.Type()), from))
 		}
 	}
 

@@ -5,19 +5,26 @@
 package misc
 
 import (
+	"os"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/hooks"
+	"golang.org/x/telemetry/counter/countertest"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/test/integration"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/util/bug"
 )
 
 func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
-	integration.Main(m, hooks.Options)
+	tmp, err := os.MkdirTemp("", "gopls-misc-test-counters")
+	if err != nil {
+		panic(err)
+	}
+	countertest.Open(tmp)
+	code := Main(m)
+	os.RemoveAll(tmp) // golang/go#68243: ignore error; cleanup fails on Windows
+	os.Exit(code)
 }
 
 // TestDocumentURIFix ensures that a DocumentURI supplied by the

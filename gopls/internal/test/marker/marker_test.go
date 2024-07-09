@@ -26,13 +26,13 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
 	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
-	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/compare"
@@ -40,6 +40,7 @@ import (
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/diff/myers"
 	"golang.org/x/tools/internal/jsonrpc2"
@@ -87,7 +88,11 @@ func TestMain(m *testing.M) {
 func Test(t *testing.T) {
 	if testing.Short() {
 		builder := os.Getenv("GO_BUILDER_NAME")
-		if strings.HasPrefix(builder, "darwin-") || builder == "solaris-amd64-oraclerel" {
+		// Note that HasPrefix(builder, "darwin-" only matches legacy builders.
+		// LUCI builder names start with x_tools-goN.NN.
+		// We want to exclude solaris on both legacy and LUCI builders, as
+		// it is timing out.
+		if strings.HasPrefix(builder, "darwin-") || strings.Contains(builder, "solaris") {
 			t.Skip("golang/go#64473: skipping with -short: this test is too slow on darwin and solaris builders")
 		}
 	}
@@ -103,6 +108,10 @@ func Test(t *testing.T) {
 	// Opt: use a shared cache.
 	cache := cache.New(nil)
 
+	// Opt: seed the cache and file cache by type-checking and analyzing common
+	// standard library packages.
+	seedCache(t, cache)
+
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
@@ -110,10 +119,11 @@ func Test(t *testing.T) {
 			if test.skipReason != "" {
 				t.Skip(test.skipReason)
 			}
-			for _, goos := range test.skipGOOS {
-				if runtime.GOOS == goos {
-					t.Skipf("skipping on %s due to -skip_goos", runtime.GOOS)
-				}
+			if slices.Contains(test.skipGOOS, runtime.GOOS) {
+				t.Skipf("skipping on %s due to -skip_goos", runtime.GOOS)
+			}
+			if slices.Contains(test.skipGOARCH, runtime.GOARCH) {
+				t.Skipf("skipping on %s due to -skip_goarch", runtime.GOARCH)
 			}
 
 			// TODO(rfindley): it may be more useful to have full support for build
@@ -124,6 +134,13 @@ func Test(t *testing.T) {
 					t.Fatalf("parsing -min_go version: %v", err)
 				}
 				testenv.NeedsGo1Point(t, go1point)
+			}
+			if test.maxGoVersion != "" {
+				var go1point int
+				if _, err := fmt.Sscanf(test.maxGoVersion, "go1.%d", &go1point); err != nil {
+					t.Fatalf("parsing -max_go version: %v", err)
+				}
+				testenv.SkipAfterGo1Point(t, go1point)
 			}
 			if test.cgo {
 				testenv.NeedsTool(t, "cgo")
@@ -161,6 +178,7 @@ func Test(t *testing.T) {
 			for file := range test.files {
 				run.env.OpenFile(file)
 			}
+
 			// Wait for the didOpen notifications to be processed, then collect
 			// diagnostics.
 			var diags map[string]*protocol.PublishDiagnosticsParams
@@ -218,6 +236,13 @@ func Test(t *testing.T) {
 				}
 			}
 
+			// Now that all markers have executed, check whether there where any
+			// unexpected error logs.
+			// This guards against noisiness: see golang/go#66746)
+			if !test.errorsOK {
+				run.env.AfterChange(integration.NoErrorLogs())
+			}
+
 			formatted, err := formatTest(test)
 			if err != nil {
 				t.Errorf("formatTest: %v", err)
@@ -226,19 +251,14 @@ func Test(t *testing.T) {
 				if err := os.WriteFile(filename, formatted, 0644); err != nil {
 					t.Error(err)
 				}
-			} else {
-				// On go 1.19 and later, verify that the testdata has not changed.
-				//
-				// On earlier Go versions, the golden test data varies due to different
-				// markdown escaping.
+			} else if !t.Failed() {
+				// Verify that the testdata has not changed.
 				//
 				// Only check this if the test hasn't already failed, otherwise we'd
 				// report duplicate mismatches of golden data.
-				if testenv.Go1Point() >= 19 && !t.Failed() {
-					// Otherwise, verify that formatted content matches.
-					if diff := compare.NamedText("formatted", "on-disk", string(formatted), string(test.content)); diff != "" {
-						t.Errorf("formatted test does not match on-disk content:\n%s", diff)
-					}
+				// Otherwise, verify that formatted content matches.
+				if diff := compare.NamedText("formatted", "on-disk", string(formatted), string(test.content)); diff != "" {
+					t.Errorf("formatted test does not match on-disk content:\n%s", diff)
 				}
 			}
 		})
@@ -247,6 +267,58 @@ func Test(t *testing.T) {
 	if abs, err := filepath.Abs(dir); err == nil && t.Failed() {
 		t.Logf("(Filenames are relative to %s.)", abs)
 	}
+}
+
+// seedCache populates the file cache by type checking and analyzing standard
+// library packages that are reachable from tests.
+//
+// Most tests are themselves small codebases, and yet may reference large
+// amounts of standard library code. Since tests are heavily parallelized, they
+// naively end up type checking and analyzing many of the same standard library
+// packages. By seeding the cache, we ensure cache hits for these standard
+// library packages, significantly reducing the amount of work done by each
+// test.
+//
+// The following command was used to determine the set of packages to import
+// below:
+//
+//	rm -rf ~/.cache/gopls && \
+//	 go test -count=1 ./internal/test/marker -cpuprofile=prof -v
+//
+// Look through the individual test timings to see which tests are slow, then
+// look through the imports of slow tests to see which standard library
+// packages are imported. Choose high level packages such as go/types that
+// import others such as fmt or go/ast. After doing so, re-run the command and
+// verify that the total samples in the collected profile decreased.
+func seedCache(t *testing.T, cache *cache.Cache) {
+	start := time.Now()
+
+	// The the doc string for details on how this seed was produced.
+	seed := `package p
+import (
+	_ "net/http"
+	_ "sort"
+	_ "go/types"
+	_ "testing"
+)
+`
+
+	// Create a test environment for the seed file.
+	env := newEnv(t, cache, map[string][]byte{"p.go": []byte(seed)}, nil, nil, fake.EditorConfig{})
+	// See other TODO: this cleanup logic is too messy.
+	defer env.Editor.Shutdown(context.Background()) // ignore error
+	defer env.Sandbox.Close()                       // ignore error
+	env.Awaiter.Await(context.Background(), integration.InitialWorkspaceLoad)
+
+	// Opening the file is necessary to trigger analysis.
+	env.OpenFile("p.go")
+
+	// As a checksum, verify that the file has no errors after analysis.
+	// This isn't strictly necessary, but helps avoid incorrect seeding due to
+	// typos.
+	env.AfterChange(integration.NoDiagnostics())
+
+	t.Logf("warming the cache took %s", time.Since(start))
 }
 
 // A marker holds state for the execution of a single @marker
@@ -296,6 +368,7 @@ func (mark marker) mapper() *protocol.Mapper {
 //
 // It formats the error message using mark.sprintf.
 func (mark marker) errorf(format string, args ...any) {
+	mark.T().Helper()
 	msg := mark.sprintf(format, args...)
 	// TODO(adonovan): consider using fmt.Fprintf(os.Stderr)+t.Fail instead of
 	// t.Errorf to avoid reporting uninteresting positions in the Go source of
@@ -494,14 +567,17 @@ type markerTest struct {
 	skipReason string   // the skip reason extracted from the "skip" archive file
 	flags      []string // flags extracted from the special "flags" archive file.
 
-	// Parsed flags values.
+	// Parsed flags values. See the flag definitions below for documentation.
 	minGoVersion     string
+	maxGoVersion     string
 	cgo              bool
-	writeGoSum       []string // comma separated dirs to write go sum for
-	skipGOOS         []string // comma separated GOOS values to skip
+	writeGoSum       []string
+	skipGOOS         []string
+	skipGOARCH       []string
 	ignoreExtraDiags bool
 	filterBuiltins   bool
 	filterKeywords   bool
+	errorsOK         bool
 }
 
 // flagSet returns the flagset used for parsing the special "flags" file in the
@@ -509,12 +585,15 @@ type markerTest struct {
 func (t *markerTest) flagSet() *flag.FlagSet {
 	flags := flag.NewFlagSet(t.name, flag.ContinueOnError)
 	flags.StringVar(&t.minGoVersion, "min_go", "", "if set, the minimum go1.X version required for this test")
+	flags.StringVar(&t.maxGoVersion, "max_go", "", "if set, the maximum go1.X version required for this test")
 	flags.BoolVar(&t.cgo, "cgo", false, "if set, requires cgo (both the cgo tool and CGO_ENABLED=1)")
 	flags.Var((*stringListValue)(&t.writeGoSum), "write_sumfile", "if set, write the sumfile for these directories")
 	flags.Var((*stringListValue)(&t.skipGOOS), "skip_goos", "if set, skip this test on these GOOS values")
+	flags.Var((*stringListValue)(&t.skipGOARCH), "skip_goarch", "if set, skip this test on these GOARCH values")
 	flags.BoolVar(&t.ignoreExtraDiags, "ignore_extra_diags", false, "if set, suppress errors for unmatched diagnostics")
 	flags.BoolVar(&t.filterBuiltins, "filter_builtins", true, "if set, filter builtins from completion results")
 	flags.BoolVar(&t.filterKeywords, "filter_keywords", true, "if set, filter keywords from completion results")
+	flags.BoolVar(&t.errorsOK, "errors_ok", false, "if set, Error level log messages are acceptable in this test")
 	return flags
 }
 
@@ -804,10 +883,9 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	ctx = debug.WithInstance(ctx, "off")
 
 	awaiter := integration.NewAwaiter(sandbox.Workdir)
-	ss := lsprpc.NewStreamServer(cache, false, hooks.Options)
+	ss := lsprpc.NewStreamServer(cache, false, nil)
 	server := servertest.NewPipeServer(ss, jsonrpc2.NewRawStream)
-	const skipApplyEdits = true // capture edits but don't apply them
-	editor, err := fake.NewEditor(sandbox, config).Connect(ctx, server, awaiter.Hooks(), skipApplyEdits)
+	editor, err := fake.NewEditor(sandbox, config).Connect(ctx, server, awaiter.Hooks())
 	if err != nil {
 		sandbox.Close() // ignore error
 		t.Fatal(err)
@@ -864,7 +942,7 @@ func (c *marker) sprintf(format string, args ...any) string {
 	return fmt.Sprintf(format, args2...)
 }
 
-// fmtLoc formats the given pos in the context of the test, using
+// fmtPos formats the given pos in the context of the test, using
 // archive-relative paths for files and including the line number in the full
 // archive file.
 func (run *markerTestRun) fmtPos(pos token.Pos) string {
@@ -1238,19 +1316,35 @@ func completionItemMarker(mark marker, label string, other ...string) completion
 }
 
 func rankMarker(mark marker, src protocol.Location, items ...completionItem) {
+	// Separate positive and negative items (expectations).
+	var pos, neg []completionItem
+	for _, item := range items {
+		if strings.HasPrefix(item.Label, "!") {
+			neg = append(neg, item)
+		} else {
+			pos = append(pos, item)
+		}
+	}
+
+	// Collect results that are present in items, preserving their order.
 	list := mark.run.env.Completion(src)
 	var got []string
-	// Collect results that are present in items, preserving their order.
 	for _, g := range list.Items {
-		for _, w := range items {
+		for _, w := range pos {
 			if g.Label == w.Label {
 				got = append(got, g.Label)
 				break
 			}
 		}
+		for _, w := range neg {
+			if g.Label == w.Label[len("!"):] {
+				mark.errorf("got unwanted completion: %s", g.Label)
+				break
+			}
+		}
 	}
 	var want []string
-	for _, w := range items {
+	for _, w := range pos {
 		want = append(want, w.Label)
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -1259,18 +1353,27 @@ func rankMarker(mark marker, src protocol.Location, items ...completionItem) {
 }
 
 func ranklMarker(mark marker, src protocol.Location, labels ...string) {
-	list := mark.run.env.Completion(src)
-	var got []string
-	// Collect results that are present in items, preserving their order.
-	for _, g := range list.Items {
-		for _, label := range labels {
-			if g.Label == label {
-				got = append(got, g.Label)
-				break
-			}
+	// Separate positive and negative labels (expectations).
+	var pos, neg []string
+	for _, label := range labels {
+		if strings.HasPrefix(label, "!") {
+			neg = append(neg, label[len("!"):])
+		} else {
+			pos = append(pos, label)
 		}
 	}
-	if diff := cmp.Diff(labels, got); diff != "" {
+
+	// Collect results that are present in items, preserving their order.
+	list := mark.run.env.Completion(src)
+	var got []string
+	for _, g := range list.Items {
+		if slices.Contains(pos, g.Label) {
+			got = append(got, g.Label)
+		} else if slices.Contains(neg, g.Label) {
+			mark.errorf("got unwanted completion: %s", g.Label)
+		}
+	}
+	if diff := cmp.Diff(pos, got); diff != "" {
 		mark.errorf("completion rankings do not match (-want +got):\n%s", diff)
 	}
 }
@@ -1288,7 +1391,9 @@ func snippetMarker(mark marker, src protocol.Location, item completionItem, want
 		if i.Label == item.Label {
 			found = true
 			if i.TextEdit != nil {
-				got = i.TextEdit.NewText
+				if edit, err := protocol.SelectCompletionTextEdit(i, false); err == nil {
+					got = edit.NewText
+				}
 			}
 			break
 		}
@@ -1382,9 +1487,14 @@ func acceptCompletionMarker(mark marker, src protocol.Location, label string, go
 		mark.errorf("Completion(...) did not return an item labeled %q", label)
 		return
 	}
+	edit, err := protocol.SelectCompletionTextEdit(*selected, false)
+	if err != nil {
+		mark.errorf("Completion(...) did not return a valid edit: %v", err)
+		return
+	}
 	filename := mark.path()
 	mapper := mark.mapper()
-	patched, _, err := protocol.ApplyEdits(mapper, append([]protocol.TextEdit{*selected.TextEdit}, selected.AdditionalTextEdits...))
+	patched, _, err := protocol.ApplyEdits(mapper, append([]protocol.TextEdit{edit}, selected.AdditionalTextEdits...))
 
 	if err != nil {
 		mark.errorf("ApplyProtocolEdits failed: %v", err)
@@ -1659,7 +1769,7 @@ func rename(env *integration.Env, loc protocol.Location, newName string) (map[st
 	// want to modify the file system in a scenario with multiple
 	// @rename markers.
 
-	editMap, err := env.Editor.Server.Rename(env.Ctx, &protocol.RenameParams{
+	wsedit, err := env.Editor.Server.Rename(env.Ctx, &protocol.RenameParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
 		Position:     loc.Range.Start,
 		NewName:      newName,
@@ -1667,52 +1777,106 @@ func rename(env *integration.Env, loc protocol.Location, newName string) (map[st
 	if err != nil {
 		return nil, err
 	}
-
-	fileChanges := make(map[string][]byte)
-	if err := applyDocumentChanges(env, editMap.DocumentChanges, fileChanges); err != nil {
-		return nil, fmt.Errorf("applying document changes: %v", err)
-	}
-	return fileChanges, nil
+	return changedFiles(env, wsedit.DocumentChanges)
 }
 
-// applyDocumentChanges applies the given document changes to the editor buffer
-// content, recording the resulting contents in the fileChanges map. It is an
-// error for a change to an edit a file that is already present in the
-// fileChanges map.
-func applyDocumentChanges(env *integration.Env, changes []protocol.DocumentChanges, fileChanges map[string][]byte) error {
-	getMapper := func(path string) (*protocol.Mapper, error) {
-		if _, ok := fileChanges[path]; ok {
-			return nil, fmt.Errorf("internal error: %s is already edited", path)
+// changedFiles applies the given sequence of document changes to the
+// editor buffer content, recording the final contents in the returned map.
+// The actual editor state is not changed.
+// Deleted files are indicated by a content of []byte(nil).
+//
+// See also:
+//   - Editor.applyWorkspaceEdit ../integration/fake/editor.go for the
+//     implementation of this operation used in normal testing.
+//   - cmdClient.applyWorkspaceEdit in ../../../cmd/cmd.go for the
+//     CLI variant.
+func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[string][]byte, error) {
+	uriToPath := env.Sandbox.Workdir.URIToPath
+
+	// latest maps each updated file name to a mapper holding its
+	// current contents, or nil if the file has been deleted.
+	latest := make(map[protocol.DocumentURI]*protocol.Mapper)
+
+	// read reads a file. It returns an error if the file never
+	// existed or was deleted.
+	read := func(uri protocol.DocumentURI) (*protocol.Mapper, error) {
+		if m, ok := latest[uri]; ok {
+			if m == nil {
+				return nil, fmt.Errorf("read: file %s was deleted", uri)
+			}
+			return m, nil
 		}
-		return env.Editor.Mapper(path)
+		return env.Editor.Mapper(uriToPath(uri))
 	}
 
+	// write (over)writes a file. A nil content indicates a deletion.
+	write := func(uri protocol.DocumentURI, content []byte) {
+		var m *protocol.Mapper
+		if content != nil {
+			m = protocol.NewMapper(uri, content)
+		}
+		latest[uri] = m
+	}
+
+	// Process the sequence of changes.
 	for _, change := range changes {
-		if change.RenameFile != nil {
-			// rename
-			oldFile := env.Sandbox.Workdir.URIToPath(change.RenameFile.OldURI)
-			mapper, err := getMapper(oldFile)
+		switch {
+		case change.TextDocumentEdit != nil:
+			uri := change.TextDocumentEdit.TextDocument.URI
+			m, err := read(uri)
 			if err != nil {
-				return err
+				return nil, err // missing
 			}
-			newFile := env.Sandbox.Workdir.URIToPath(change.RenameFile.NewURI)
-			fileChanges[newFile] = mapper.Content
-		} else {
-			// edit
-			filename := env.Sandbox.Workdir.URIToPath(change.TextDocumentEdit.TextDocument.URI)
-			mapper, err := getMapper(filename)
+			patched, _, err := protocol.ApplyEdits(m, protocol.AsTextEdits(change.TextDocumentEdit.Edits))
 			if err != nil {
-				return err
+				return nil, err // bad edit
 			}
-			patched, _, err := protocol.ApplyEdits(mapper, protocol.AsTextEdits(change.TextDocumentEdit.Edits))
+			write(uri, patched)
+
+		case change.RenameFile != nil:
+			old := change.RenameFile.OldURI
+			m, err := read(old)
 			if err != nil {
-				return err
+				return nil, err // missing
 			}
-			fileChanges[filename] = patched
+			write(old, nil)
+
+			new := change.RenameFile.NewURI
+			if _, err := read(old); err == nil {
+				return nil, fmt.Errorf("RenameFile: destination %s exists", new)
+			}
+			write(new, m.Content)
+
+		case change.CreateFile != nil:
+			uri := change.CreateFile.URI
+			if _, err := read(uri); err == nil {
+				return nil, fmt.Errorf("CreateFile %s: file exists", uri)
+			}
+			write(uri, []byte("")) // initially empty
+
+		case change.DeleteFile != nil:
+			uri := change.DeleteFile.URI
+			if _, err := read(uri); err != nil {
+				return nil, fmt.Errorf("DeleteFile %s: file does not exist", uri)
+			}
+			write(uri, nil)
+
+		default:
+			return nil, fmt.Errorf("invalid DocumentChange")
 		}
 	}
 
-	return nil
+	// Convert into result form.
+	result := make(map[string][]byte)
+	for uri, mapper := range latest {
+		var content []byte
+		if mapper != nil {
+			content = mapper.Content
+		}
+		result[uriToPath(uri)] = content
+	}
+
+	return result, nil
 }
 
 func codeActionMarker(mark marker, start, end protocol.Location, actionKind string, g *Golden, titles ...string) {
@@ -1864,18 +2028,14 @@ func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Ran
 	if err != nil {
 		return nil, err
 	}
-	fileChanges := make(map[string][]byte)
-	if err := applyDocumentChanges(env, changes, fileChanges); err != nil {
-		return nil, fmt.Errorf("applying document changes: %v", err)
-	}
-	return fileChanges, nil
+	return changedFiles(env, changes)
 }
 
 // codeActionChanges executes a textDocument/codeAction request for the
 // specified location and kind, and captures the resulting document changes.
 // If diag is non-nil, it is used as the code action context.
 // If titles is non-empty, the code action title must be present among the provided titles.
-func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) ([]protocol.DocumentChanges, error) {
+func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) ([]protocol.DocumentChange, error) {
 	// Request all code actions that apply to the diagnostic.
 	// (The protocol supports filtering using Context.Only={actionKind}
 	// but we can give a better error if we don't filter.)
@@ -1946,7 +2106,7 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 	}
 
 	if action.Edit != nil {
-		if action.Edit.Changes != nil {
+		if len(action.Edit.Changes) > 0 {
 			env.T.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)
 		}
 		if action.Edit.DocumentChanges != nil {
@@ -1968,9 +2128,16 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 		// which dispatches it to the ApplyFix handler.
 		// ApplyFix dispatches to the "stub_methods" suggestedfix hook (the meat).
 		// The server then makes an ApplyEdit RPC to the client,
-		// whose Awaiter hook gathers the edits instead of applying them.
+		// whose WorkspaceEditFunc hook temporarily gathers the edits
+		// instead of applying them.
 
-		_ = env.Awaiter.TakeDocumentChanges() // reset (assuming Env is confined to this thread)
+		var changes []protocol.DocumentChange
+		cli := env.Editor.Client()
+		restore := cli.SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
+			changes = append(changes, wsedit.DocumentChanges...)
+			return nil
+		})
+		defer restore()
 
 		if _, err := env.Editor.Server.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
 			Command:   action.Command.Command,
@@ -1978,7 +2145,7 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 		}); err != nil {
 			return nil, err
 		}
-		return env.Awaiter.TakeDocumentChanges(), nil
+		return changes, nil // populated as a side effect of ExecuteCommand
 	}
 
 	return nil, nil

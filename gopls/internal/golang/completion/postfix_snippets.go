@@ -21,8 +21,10 @@ import (
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // Postfix snippets are artificial methods that allow the user to
@@ -100,11 +102,8 @@ var postfixTmpls = []postfixTmpl{{
 	label:   "reverse",
 	details: "reverse slice",
 	body: `{{if and (eq .Kind "slice") .StmtOK -}}
-{{$i := .VarName nil "i"}}{{$j := .VarName nil "j" -}}
-for {{$i}}, {{$j}} := 0, len({{.X}})-1; {{$i}} < {{$j}}; {{$i}}, {{$j}} = {{$i}}+1, {{$j}}-1 {
-	{{.X}}[{{$i}}], {{.X}}[{{$j}}] = {{.X}}[{{$j}}], {{.X}}[{{$i}}]
-}
-{{end}}`,
+{{.Import "slices"}}.Reverse({{.X}})
+{{- end}}`,
 }, {
 	label:   "range",
 	details: "range over slice",
@@ -388,7 +387,8 @@ func (a *postfixTmplArgs) EscapeQuotes(v string) string {
 
 // ElemType returns the Elem() type of xType, if applicable.
 func (a *postfixTmplArgs) ElemType() types.Type {
-	if e, _ := a.Type.(interface{ Elem() types.Type }); e != nil {
+	type hasElem interface{ Elem() types.Type } // Array, Chan, Map, Pointer, Slice
+	if e, ok := a.Type.Underlying().(hasElem); ok {
 		return e.Elem()
 	}
 	return nil
@@ -465,7 +465,7 @@ func (a *postfixTmplArgs) VarName(t types.Type, nonNamedDefault string) string {
 	// go/types predicates are undefined on types.Typ[types.Invalid].
 	if !types.Identical(t, types.Typ[types.Invalid]) && types.Implements(t, errorIntf) {
 		name = "err"
-	} else if _, isNamed := golang.Deref(t).(*types.Named); !isNamed {
+	} else if !is[*types.Named](aliases.Unalias(typesinternal.Unpointer(t))) {
 		name = nonNamedDefault
 	}
 
@@ -504,13 +504,13 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 		return
 	}
 
-	selType := c.pkg.GetTypesInfo().TypeOf(sel.X)
+	selType := c.pkg.TypesInfo().TypeOf(sel.X)
 	if selType == nil {
 		return
 	}
 
 	// Skip empty tuples since there is no value to operate on.
-	if tuple, ok := selType.Underlying().(*types.Tuple); ok && tuple == nil {
+	if tuple, ok := selType.(*types.Tuple); ok && tuple == nil {
 		return
 	}
 
@@ -548,7 +548,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 		}
 	}
 
-	scope := c.pkg.GetTypes().Scope().Innermost(c.pos)
+	scope := c.pkg.Types().Scope().Innermost(c.pos)
 	if scope == nil {
 		return
 	}
@@ -584,7 +584,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 		tmplArgs := postfixTmplArgs{
 			X:              golang.FormatNode(c.pkg.FileSet(), sel.X),
 			StmtOK:         stmtOK,
-			Obj:            exprObj(c.pkg.GetTypesInfo(), sel.X),
+			Obj:            exprObj(c.pkg.TypesInfo(), sel.X),
 			Type:           selType,
 			FuncResults:    funcResults,
 			sel:            sel,

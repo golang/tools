@@ -66,10 +66,12 @@ func (c *semtok) Run(ctx context.Context, args ...string) error {
 	// perhaps simpler if app had just had a FlagSet member
 	origOptions := c.app.options
 	c.app.options = func(opts *settings.Options) {
-		origOptions(opts)
+		if origOptions != nil {
+			origOptions(opts)
+		}
 		opts.SemanticTokens = true
 	}
-	conn, err := c.app.connect(ctx, nil)
+	conn, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}

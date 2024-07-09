@@ -155,7 +155,7 @@ func (c *completer) deepSearch(ctx context.Context, minDepth int, deadline *time
 			// not exported, don't treat it as a completion candidate unless it's
 			// a package completion candidate.
 			if !c.completionContext.packageCompletion &&
-				obj.Pkg() != nil && obj.Pkg() != c.pkg.GetTypes() && !obj.Exported() {
+				obj.Pkg() != nil && obj.Pkg() != c.pkg.Types() && !obj.Exported() {
 				continue
 			}
 

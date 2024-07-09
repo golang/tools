@@ -6,9 +6,12 @@ package imports
 
 import (
 	"fmt"
+	"os/exec"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestDirectoryPackageInfoReachedStatus(t *testing.T) {
@@ -58,9 +61,7 @@ func TestDirectoryPackageInfoReachedStatus(t *testing.T) {
 }
 
 func TestModCacheInfo(t *testing.T) {
-	m := &dirInfoCache{
-		dirs: make(map[string]*directoryPackageInfo),
-	}
+	m := NewDirInfoCache()
 
 	dirInfo := []struct {
 		dir  string
@@ -122,5 +123,22 @@ func TestModCacheInfo(t *testing.T) {
 		if want != gotKeys[i] {
 			t.Errorf("%d: expected %s, got %s", i, want, gotKeys[i])
 		}
+	}
+}
+
+func BenchmarkScanModuleCache(b *testing.B) {
+	output, err := exec.Command("go", "env", "GOMODCACHE").Output()
+	if err != nil {
+		b.Fatal(err)
+	}
+	gomodcache := strings.TrimSpace(string(output))
+	cache := NewDirInfoCache()
+	start := time.Now()
+	ScanModuleCache(gomodcache, cache, nil)
+	b.Logf("initial scan took %v", time.Since(start))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		ScanModuleCache(gomodcache, cache, nil)
 	}
 }

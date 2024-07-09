@@ -79,18 +79,18 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"runtime"
 	"sync"
 
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/versions"
 )
 
-type opaqueType struct {
-	types.Type
-	name string
-}
+type opaqueType struct{ name string }
 
-func (t *opaqueType) String() string { return t.name }
+func (t *opaqueType) String() string         { return t.name }
+func (t *opaqueType) Underlying() types.Type { return t }
 
 var (
 	varOk    = newVar("ok", tBool)
@@ -103,21 +103,72 @@ var (
 	tInvalid    = types.Typ[types.Invalid]
 	tString     = types.Typ[types.String]
 	tUntypedNil = types.Typ[types.UntypedNil]
-	tRangeIter  = &opaqueType{nil, "iter"} // the type of all "range" iterators
+
+	tRangeIter  = &opaqueType{"iter"}                         // the type of all "range" iterators
+	tDeferStack = types.NewPointer(&opaqueType{"deferStack"}) // the type of a "deferStack" from ssa:deferstack()
 	tEface      = types.NewInterfaceType(nil, nil).Complete()
 
 	// SSA Value constants.
-	vZero = intConst(0)
-	vOne  = intConst(1)
-	vTrue = NewConst(constant.MakeBool(true), tBool)
+	vZero  = intConst(0)
+	vOne   = intConst(1)
+	vTrue  = NewConst(constant.MakeBool(true), tBool)
+	vFalse = NewConst(constant.MakeBool(false), tBool)
+
+	jReady = intConst(0)  // range-over-func jump is READY
+	jBusy  = intConst(-1) // range-over-func jump is BUSY
+	jDone  = intConst(-2) // range-over-func jump is DONE
+
+	// The ssa:deferstack intrinsic returns the current function's defer stack.
+	vDeferStack = &Builtin{
+		name: "ssa:deferstack",
+		sig:  types.NewSignatureType(nil, nil, nil, nil, types.NewTuple(anonVar(tDeferStack)), false),
+	}
 )
 
 // builder holds state associated with the package currently being built.
 // Its methods contain all the logic for AST-to-SSA conversion.
+//
+// All Functions belong to the same Program.
+//
+// builders are not thread-safe.
 type builder struct {
-	// Invariant: 0 <= rtypes <= finished <= created.Len()
-	created  *creator // functions created during building
-	finished int      // Invariant: create[i].built holds for i in [0,finished)
+	fns []*Function // Functions that have finished their CREATE phases.
+
+	finished int // finished is the length of the prefix of fns containing built functions.
+
+	// The task of building shared functions within the builder.
+	// Shared functions are ones the the builder may either create or lookup.
+	// These may be built by other builders in parallel.
+	// The task is done when the builder has finished iterating, and it
+	// waits for all shared functions to finish building.
+	// nil implies there are no hared functions to wait on.
+	buildshared *task
+}
+
+// shared is done when the builder has built all of the
+// enqueued functions to a fixed-point.
+func (b *builder) shared() *task {
+	if b.buildshared == nil { // lazily-initialize
+		b.buildshared = &task{done: make(chan unit)}
+	}
+	return b.buildshared
+}
+
+// enqueue fn to be built by the builder.
+func (b *builder) enqueue(fn *Function) {
+	b.fns = append(b.fns, fn)
+}
+
+// waitForSharedFunction indicates that the builder should wait until
+// the potentially shared function fn has finished building.
+//
+// This should include any functions that may be built by other
+// builders.
+func (b *builder) waitForSharedFunction(fn *Function) {
+	if fn.buildshared != nil { // maybe need to wait?
+		s := b.shared()
+		s.addEdge(fn.buildshared)
+	}
 }
 
 // cond emits to fn code to evaluate boolean condition e and jump
@@ -328,7 +379,7 @@ func (b *builder) builtin(fn *Function, obj *types.Builtin, args []ast.Expr, typ
 		}
 
 	case "new":
-		return emitNew(fn, mustDeref(typ), pos, "new")
+		return emitNew(fn, typeparams.MustDeref(typ), pos, "new")
 
 	case "len", "cap":
 		// Special case: len or cap of an array or *array is
@@ -336,7 +387,7 @@ func (b *builder) builtin(fn *Function, obj *types.Builtin, args []ast.Expr, typ
 		// We must still evaluate the value, though.  (If it
 		// was side-effect free, the whole call would have
 		// been constant-folded.)
-		t, _ := deref(fn.typeOf(args[0]))
+		t := typeparams.Deref(fn.typeOf(args[0]))
 		if at, ok := typeparams.CoreType(t).(*types.Array); ok {
 			b.expr(fn, args[0]) // for effects only
 			return intConst(at.Len())
@@ -392,7 +443,7 @@ func (b *builder) addr(fn *Function, e ast.Expr, escaping bool) lvalue {
 		return &address{addr: v, pos: e.Pos(), expr: e}
 
 	case *ast.CompositeLit:
-		typ, _ := deref(fn.typeOf(e))
+		typ := typeparams.Deref(fn.typeOf(e))
 		var v *Alloc
 		if escaping {
 			v = emitNew(fn, typ, e.Lbrace, "complit")
@@ -419,7 +470,7 @@ func (b *builder) addr(fn *Function, e ast.Expr, escaping bool) lvalue {
 		wantAddr := true
 		v := b.receiver(fn, e.X, wantAddr, escaping, sel)
 		index := sel.index[len(sel.index)-1]
-		fld := fieldOf(mustDeref(v.Type()), index) // v is an addr.
+		fld := fieldOf(typeparams.MustDeref(v.Type()), index) // v is an addr.
 
 		// Due to the two phases of resolving AssignStmt, a panic from x.f = p()
 		// when x is nil is required to come after the side-effects of
@@ -468,7 +519,7 @@ func (b *builder) addr(fn *Function, e ast.Expr, escaping bool) lvalue {
 			v.setType(et)
 			return fn.emit(v)
 		}
-		return &lazyAddress{addr: emit, t: mustDeref(et), pos: e.Lbrack, expr: e}
+		return &lazyAddress{addr: emit, t: typeparams.MustDeref(et), pos: e.Lbrack, expr: e}
 
 	case *ast.StarExpr:
 		return &address{addr: b.expr(fn, e.X), pos: e.Star, expr: e}
@@ -513,17 +564,15 @@ func (b *builder) assign(fn *Function, loc lvalue, e ast.Expr, isZero bool, sb *
 		// A CompositeLit never evaluates to a pointer,
 		// so if the type of the location is a pointer,
 		// an &-operation is implied.
-		if _, ok := loc.(blank); !ok { // avoid calling blank.typ()
-			if _, ok := deref(loc.typ()); ok {
-				ptr := b.addr(fn, e, true).address(fn)
-				// copy address
-				if sb != nil {
-					sb.store(loc, ptr)
-				} else {
-					loc.store(fn, ptr)
-				}
-				return
+		if !is[blank](loc) && isPointerCore(loc.typ()) { // avoid calling blank.typ()
+			ptr := b.addr(fn, e, true).address(fn)
+			// copy address
+			if sb != nil {
+				sb.store(loc, ptr)
+			} else {
+				loc.store(fn, ptr)
 			}
+			return
 		}
 
 		if _, ok := loc.(*address); ok {
@@ -613,11 +662,13 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			typeparams:     fn.typeparams, // share the parent's type parameters.
 			typeargs:       fn.typeargs,   // share the parent's type arguments.
 			subst:          fn.subst,      // share the parent's type substitutions.
+			uniq:           fn.uniq,       // start from parent's unique values
 		}
 		fn.AnonFuncs = append(fn.AnonFuncs, anon)
 		// Build anon immediately, as it may cause fn's locals to escape.
 		// (It is not marked 'built' until the end of the enclosing FuncDecl.)
 		anon.build(b, anon)
+		fn.uniq = anon.uniq // resume after anon's unique values
 		if anon.FreeVars == nil {
 			return anon
 		}
@@ -766,7 +817,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			callee := v.(*Function) // (func)
 			if callee.typeparams.Len() > 0 {
 				targs := fn.subst.types(instanceArgs(fn.info, e))
-				callee = callee.instance(targs, b.created)
+				callee = callee.instance(targs, b)
 			}
 			return callee
 		}
@@ -787,7 +838,8 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 		case types.MethodExpr:
 			// (*T).f or T.f, the method f from the method-set of type T.
 			// The result is a "thunk".
-			thunk := createThunk(fn.Prog, sel, b.created)
+			thunk := createThunk(fn.Prog, sel)
+			b.enqueue(thunk)
 			return emitConv(fn, thunk, fn.typ(tv.Type))
 
 		case types.MethodVal:
@@ -795,14 +847,14 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			// The result is a "bound".
 			obj := sel.obj.(*types.Func)
 			rt := fn.typ(recvType(obj))
-			_, wantAddr := deref(rt)
+			wantAddr := isPointer(rt)
 			escaping := true
 			v := b.receiver(fn, e.X, wantAddr, escaping, sel)
 
 			if types.IsInterface(rt) {
 				// If v may be an interface type I (after instantiating),
 				// we must emit a check that v is non-nil.
-				if recv, ok := sel.recv.(*types.TypeParam); ok {
+				if recv, ok := aliases.Unalias(sel.recv).(*types.TypeParam); ok {
 					// Emit a nil check if any possible instantiation of the
 					// type parameter is an interface type.
 					if typeSetOf(recv).Len() > 0 {
@@ -829,8 +881,11 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 				// obj is generic.
 				obj = fn.Prog.canon.instantiateMethod(obj, fn.subst.types(targs), fn.Prog.ctxt)
 			}
+			bound := createBound(fn.Prog, obj)
+			b.enqueue(bound)
+
 			c := &MakeClosure{
-				Fn:       createBound(fn.Prog, obj, b.created),
+				Fn:       bound,
 				Bindings: []Value{v},
 			}
 			c.setPos(e.Sel.Pos())
@@ -923,7 +978,7 @@ func (b *builder) stmtList(fn *Function, list []ast.Stmt) {
 // escaping is defined as per builder.addr().
 func (b *builder) receiver(fn *Function, e ast.Expr, wantAddr, escaping bool, sel *selection) Value {
 	var v Value
-	if _, eptr := deref(fn.typeOf(e)); wantAddr && !sel.indirect && !eptr {
+	if wantAddr && !sel.indirect && !isPointerCore(fn.typeOf(e)) {
 		v = b.addr(fn, e, escaping).address(fn)
 	} else {
 		v = b.expr(fn, e)
@@ -935,7 +990,7 @@ func (b *builder) receiver(fn *Function, e ast.Expr, wantAddr, escaping bool, se
 	if types.IsInterface(v.Type()) {
 		// When v is an interface, sel.Kind()==MethodValue and v.f is invoked.
 		// So v is not loaded, even if v has a pointer core type.
-	} else if _, vptr := deref(v.Type()); !wantAddr && vptr {
+	} else if !wantAddr && isPointerCore(v.Type()) {
 		v = emitLoad(fn, v)
 	}
 	return v
@@ -954,7 +1009,7 @@ func (b *builder) setCallFunc(fn *Function, e *ast.CallExpr, c *CallCommon) {
 			obj := sel.obj.(*types.Func)
 			recv := recvType(obj)
 
-			_, wantAddr := deref(recv)
+			wantAddr := isPointer(recv)
 			escaping := true
 			v := b.receiver(fn, selector.X, wantAddr, escaping, sel)
 			if types.IsInterface(recv) {
@@ -963,7 +1018,7 @@ func (b *builder) setCallFunc(fn *Function, e *ast.CallExpr, c *CallCommon) {
 				c.Method = obj
 			} else {
 				// "Call"-mode call.
-				c.Value = fn.Prog.objectMethod(obj, b.created)
+				c.Value = fn.Prog.objectMethod(obj, b)
 				c.Args = append(c.Args, v)
 			}
 			return
@@ -1215,12 +1270,12 @@ func (b *builder) arrayLen(fn *Function, elts []ast.Expr) int64 {
 // literal has type *T behaves like &T{}.
 // In that case, addr must hold a T, not a *T.
 func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero bool, sb *storebuf) {
-	typ, _ := deref(fn.typeOf(e)) // type with name [may be type param]
+	typ := typeparams.Deref(fn.typeOf(e)) // retain the named/alias/param type, if any
 	switch t := typeparams.CoreType(typ).(type) {
 	case *types.Struct:
 		if !isZero && len(e.Elts) != t.NumFields() {
 			// memclear
-			zt, _ := deref(addr.Type())
+			zt := typeparams.MustDeref(addr.Type())
 			sb.store(&address{addr, e.Lbrace, nil}, zeroConst(zt))
 			isZero = true
 		}
@@ -1263,7 +1318,7 @@ func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero 
 
 			if !isZero && int64(len(e.Elts)) != at.Len() {
 				// memclear
-				zt, _ := deref(array.Type())
+				zt := typeparams.MustDeref(array.Type())
 				sb.store(&address{array, e.Lbrace, nil}, zeroConst(zt))
 			}
 		}
@@ -1319,7 +1374,7 @@ func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero 
 			//	map[*struct{}]bool{&struct{}{}: true}
 			wantAddr := false
 			if _, ok := unparen(e.Key).(*ast.CompositeLit); ok {
-				_, wantAddr = deref(t.Key())
+				wantAddr = isPointerCore(t.Key())
 			}
 
 			var key Value
@@ -1748,8 +1803,7 @@ func (b *builder) forStmt(fn *Function, s *ast.ForStmt, label *lblock) {
 	// Use forStmtGo122 instead if it applies.
 	if s.Init != nil {
 		if assign, ok := s.Init.(*ast.AssignStmt); ok && assign.Tok == token.DEFINE {
-			afterGo122 := versions.Compare(fn.goversion, "go1.21") > 0
-			if afterGo122 {
+			if versions.AtLeast(fn.goversion, versions.Go1_22) {
 				b.forStmtGo122(fn, s, label)
 				return
 			}
@@ -1867,7 +1921,7 @@ func (b *builder) forStmtGo122(fn *Function, s *ast.ForStmt, label *lblock) {
 		fn.emit(phi)
 
 		fn.currentBlock = post
-		// If next is is local, it reuses the address and zeroes the old value so
+		// If next is local, it reuses the address and zeroes the old value so
 		// load before allocating next.
 		load := emitLoad(fn, phi)
 		next := emitLocal(fn, typ, v.Pos(), v.Name())
@@ -1993,7 +2047,7 @@ func (b *builder) rangeIndexed(fn *Function, x Value, tv types.Type, pos token.P
 
 	// Determine number of iterations.
 	var length Value
-	dt, _ := deref(x.Type())
+	dt := typeparams.Deref(x.Type())
 	if arr, ok := typeparams.CoreType(dt).(*types.Array); ok {
 		// For array or *array, the number of iterations is
 		// known statically thanks to the type.  We avoid a
@@ -2244,7 +2298,7 @@ func (b *builder) rangeStmt(fn *Function, s *ast.RangeStmt, label *lblock) {
 		}
 	}
 
-	afterGo122 := versions.Compare(fn.goversion, "go1.21") > 0
+	afterGo122 := versions.AtLeast(fn.goversion, versions.Go1_22)
 	if s.Tok == token.DEFINE && !afterGo122 {
 		// pre-go1.22: If iteration variables are defined (:=), this
 		// occurs once outside the loop.
@@ -2276,6 +2330,14 @@ func (b *builder) rangeStmt(fn *Function, s *ast.RangeStmt, label *lblock) {
 		default:
 			panic("Cannot range over basic type: " + rt.String())
 		}
+
+	case *types.Signature:
+		// Special case rewrite (fn.goversion >= go1.23):
+		// 	for x := range f { ... }
+		// into
+		// 	f(func(x T) bool { ... })
+		b.rangeFunc(fn, x, tk, tv, s, label)
+		return
 
 	default:
 		panic("Cannot range over: " + rt.String())
@@ -2317,6 +2379,277 @@ func (b *builder) rangeStmt(fn *Function, s *ast.RangeStmt, label *lblock) {
 	fn.currentBlock = done
 }
 
+// rangeFunc emits to fn code for the range-over-func rng.Body of the iterator
+// function x, optionally labelled by label. It creates a new anonymous function
+// yield for rng and builds the function.
+func (b *builder) rangeFunc(fn *Function, x Value, tk, tv types.Type, rng *ast.RangeStmt, label *lblock) {
+	// Consider the SSA code for the outermost range-over-func in fn:
+	//
+	//   func fn(...) (ret R) {
+	//     ...
+	//     for k, v = range x {
+	// 	     ...
+	//     }
+	//     ...
+	//   }
+	//
+	// The code emitted into fn will look something like this.
+	//
+	// loop:
+	//     jump := READY
+	//     y := make closure yield [ret, deferstack, jump, k, v]
+	//     x(y)
+	//     switch jump {
+	//        [see resuming execution]
+	//     }
+	//     goto done
+	// done:
+	//     ...
+	//
+	// where yield is a new synthetic yield function:
+	//
+	// func yield(_k tk, _v tv) bool
+	//   free variables: [ret, stack, jump, k, v]
+	// {
+	//    entry:
+	//      if jump != READY then goto invalid else valid
+	//    invalid:
+	//      panic("iterator called when it is not in a ready state")
+	//    valid:
+	//      jump = BUSY
+	//      k = _k
+	//      v = _v
+	//    ...
+	//    cont:
+	//      jump = READY
+	//      return true
+	// }
+	//
+	// Yield state:
+	//
+	// Each range loop has an associated jump variable that records
+	// the state of the iterator. A yield function is initially
+	// in a READY (0) and callable state.  If the yield function is called
+	// and is not in READY state, it panics. When it is called in a callable
+	// state, it becomes BUSY. When execution reaches the end of the body
+	// of the loop (or a continue statement targeting the loop is executed),
+	// the yield function returns true and resumes being in a READY state.
+	// After the iterator function x(y) returns, then if the yield function
+	// is in a READY state, the yield enters the DONE state.
+	//
+	// Each lowered control statement (break X, continue X, goto Z, or return)
+	// that exits the loop sets the variable to a unique positive EXIT value,
+	// before returning false from the yield function.
+	//
+	// If the yield function returns abruptly due to a panic or GoExit,
+	// it remains in a BUSY state. The generated code asserts that, after
+	// the iterator call x(y) returns normally, the jump variable state
+	// is DONE.
+	//
+	// Resuming execution:
+	//
+	// The code generated for the range statement checks the jump
+	// variable to determine how to resume execution.
+	//
+	//    switch jump {
+	//    case BUSY:  panic("...")
+	//    case DONE:  goto done
+	//    case READY: state = DONE; goto done
+	//    case 123:   ... // action for exit 123.
+	//    case 456:   ... // action for exit 456.
+	//    ...
+	//    }
+	//
+	// Forward goto statements within a yield are jumps to labels that
+	// have not yet been traversed in fn. They may be in the Body of the
+	// function. What we emit for these is:
+	//
+	//    goto target
+	//  target:
+	//    ...
+	//
+	// We leave an unresolved exit in yield.exits to check at the end
+	// of building yield if it encountered target in the body. If it
+	// encountered target, no additional work is required. Otherwise,
+	// the yield emits a new early exit in the basic block for target.
+	// We expect that blockopt will fuse the early exit into the case
+	// block later. The unresolved exit is then added to yield.parent.exits.
+
+	loop := fn.newBasicBlock("rangefunc.loop")
+	done := fn.newBasicBlock("rangefunc.done")
+
+	// These are targets within y.
+	fn.targets = &targets{
+		tail:   fn.targets,
+		_break: done,
+		// _continue is within y.
+	}
+	if label != nil {
+		label._break = done
+		// _continue is within y
+	}
+
+	emitJump(fn, loop)
+	fn.currentBlock = loop
+
+	// loop:
+	//     jump := READY
+
+	anonIdx := len(fn.AnonFuncs)
+
+	jump := newVar(fmt.Sprintf("jump$%d", anonIdx+1), tInt)
+	emitLocalVar(fn, jump) // zero value is READY
+
+	xsig := typeparams.CoreType(x.Type()).(*types.Signature)
+	ysig := typeparams.CoreType(xsig.Params().At(0).Type()).(*types.Signature)
+
+	/* synthetic yield function for body of range-over-func loop */
+	y := &Function{
+		name:           fmt.Sprintf("%s$%d", fn.Name(), anonIdx+1),
+		Signature:      ysig,
+		Synthetic:      "range-over-func yield",
+		pos:            rangePosition(rng),
+		parent:         fn,
+		anonIdx:        int32(len(fn.AnonFuncs)),
+		Pkg:            fn.Pkg,
+		Prog:           fn.Prog,
+		syntax:         rng,
+		info:           fn.info,
+		goversion:      fn.goversion,
+		build:          (*builder).buildYieldFunc,
+		topLevelOrigin: nil,
+		typeparams:     fn.typeparams,
+		typeargs:       fn.typeargs,
+		subst:          fn.subst,
+		jump:           jump,
+		deferstack:     fn.deferstack,
+		returnVars:     fn.returnVars, // use the parent's return variables
+		uniq:           fn.uniq,       // start from parent's unique values
+	}
+
+	// If the RangeStmt has a label, this is how it is passed to buildYieldFunc.
+	if label != nil {
+		y.lblocks = map[*types.Label]*lblock{label.label: nil}
+	}
+	fn.AnonFuncs = append(fn.AnonFuncs, y)
+
+	// Build y immediately. It may:
+	// * cause fn's locals to escape, and
+	// * create new exit nodes in exits.
+	// (y is not marked 'built' until the end of the enclosing FuncDecl.)
+	unresolved := len(fn.exits)
+	y.build(b, y)
+	fn.uniq = y.uniq // resume after y's unique values
+
+	// Emit the call of y.
+	//   c := MakeClosure y
+	//   x(c)
+	c := &MakeClosure{Fn: y}
+	c.setType(ysig)
+	for _, fv := range y.FreeVars {
+		c.Bindings = append(c.Bindings, fv.outer)
+		fv.outer = nil
+	}
+	fn.emit(c)
+	call := Call{
+		Call: CallCommon{
+			Value: x,
+			Args:  []Value{c},
+			pos:   token.NoPos,
+		},
+	}
+	call.setType(xsig.Results())
+	fn.emit(&call)
+
+	exits := fn.exits[unresolved:]
+	b.buildYieldResume(fn, jump, exits, done)
+
+	emitJump(fn, done)
+	fn.currentBlock = done
+}
+
+// buildYieldResume emits to fn code for how to resume execution once a call to
+// the iterator function over the yield function returns x(y). It does this by building
+// a switch over the value of jump for when it is READY, BUSY, or EXIT(id).
+func (b *builder) buildYieldResume(fn *Function, jump *types.Var, exits []*exit, done *BasicBlock) {
+	//    v := *jump
+	//    switch v {
+	//    case BUSY:    panic("...")
+	//    case READY:   jump = DONE; goto done
+	//    case EXIT(a): ...
+	//    case EXIT(b): ...
+	//    ...
+	//    }
+	v := emitLoad(fn, fn.lookup(jump, false))
+
+	// case BUSY: panic("...")
+	isbusy := fn.newBasicBlock("rangefunc.resume.busy")
+	ifready := fn.newBasicBlock("rangefunc.resume.ready.check")
+	emitIf(fn, emitCompare(fn, token.EQL, v, jBusy, token.NoPos), isbusy, ifready)
+	fn.currentBlock = isbusy
+	fn.emit(&Panic{
+		X: emitConv(fn, stringConst("iterator call did not preserve panic"), tEface),
+	})
+	fn.currentBlock = ifready
+
+	// case READY: jump = DONE; goto done
+	isready := fn.newBasicBlock("rangefunc.resume.ready")
+	ifexit := fn.newBasicBlock("rangefunc.resume.exits")
+	emitIf(fn, emitCompare(fn, token.EQL, v, jReady, token.NoPos), isready, ifexit)
+	fn.currentBlock = isready
+	storeVar(fn, jump, jDone, token.NoPos)
+	emitJump(fn, done)
+	fn.currentBlock = ifexit
+
+	for _, e := range exits {
+		id := intConst(e.id)
+
+		//  case EXIT(id): { /* do e */ }
+		cond := emitCompare(fn, token.EQL, v, id, e.pos)
+		matchb := fn.newBasicBlock("rangefunc.resume.match")
+		cndb := fn.newBasicBlock("rangefunc.resume.cnd")
+		emitIf(fn, cond, matchb, cndb)
+		fn.currentBlock = matchb
+
+		// Cases to fill in the { /* do e */ } bit.
+		switch {
+		case e.label != nil: // forward goto?
+			// case EXIT(id): goto lb // label
+			lb := fn.lblockOf(e.label)
+			// Do not mark lb as resolved.
+			// If fn does not contain label, lb remains unresolved and
+			// fn must itself be a range-over-func function. lb will be:
+			//   lb:
+			//     fn.jump = id
+			//     return false
+			emitJump(fn, lb._goto)
+
+		case e.to != fn: // e jumps to an ancestor of fn?
+			// case EXIT(id): { fn.jump = id; return false }
+			// fn is a range-over-func function.
+			storeVar(fn, fn.jump, id, token.NoPos)
+			fn.emit(&Return{Results: []Value{vFalse}, pos: e.pos})
+
+		case e.block == nil && e.label == nil: // return from fn?
+			// case EXIT(id): { return ... }
+			fn.emit(new(RunDefers))
+			results := make([]Value, len(fn.results))
+			for i, r := range fn.results {
+				results[i] = emitLoad(fn, r)
+			}
+			fn.emit(&Return{Results: results, pos: e.pos})
+
+		case e.block != nil:
+			// case EXIT(id): goto block
+			emitJump(fn, e.block)
+
+		default:
+			panic("unreachable")
+		}
+		fn.currentBlock = cndb
+	}
+}
+
 // stmt lowers statement s to SSA form, emitting code to fn.
 func (b *builder) stmt(fn *Function, _s ast.Stmt) {
 	// The label of the current statement.  If non-nil, its _goto
@@ -2340,7 +2673,14 @@ start:
 		}
 
 	case *ast.LabeledStmt:
-		label = fn.labelledBlock(s.Label)
+		if s.Label.Name == "_" {
+			// Blank labels can't be the target of a goto, break,
+			// or continue statement, so we don't need a new block.
+			_s = s.Stmt
+			goto start
+		}
+		label = fn.lblockOf(fn.label(s.Label))
+		label.resolved = true
 		emitJump(fn, label._goto)
 		fn.currentBlock = label._goto
 		_s = s.Stmt
@@ -2385,83 +2725,20 @@ start:
 	case *ast.DeferStmt:
 		// The "intrinsics" new/make/len/cap are forbidden here.
 		// panic is treated like an ordinary function call.
-		v := Defer{pos: s.Defer}
+		deferstack := emitLoad(fn, fn.lookup(fn.deferstack, false))
+		v := Defer{pos: s.Defer, DeferStack: deferstack}
 		b.setCall(fn, s.Call, &v.Call)
 		fn.emit(&v)
 
 		// A deferred call can cause recovery from panic,
 		// and control resumes at the Recover block.
-		createRecoverBlock(fn)
+		createRecoverBlock(fn.source)
 
 	case *ast.ReturnStmt:
-		var results []Value
-		if len(s.Results) == 1 && fn.Signature.Results().Len() > 1 {
-			// Return of one expression in a multi-valued function.
-			tuple := b.exprN(fn, s.Results[0])
-			ttuple := tuple.Type().(*types.Tuple)
-			for i, n := 0, ttuple.Len(); i < n; i++ {
-				results = append(results,
-					emitConv(fn, emitExtract(fn, tuple, i),
-						fn.Signature.Results().At(i).Type()))
-			}
-		} else {
-			// 1:1 return, or no-arg return in non-void function.
-			for i, r := range s.Results {
-				v := emitConv(fn, b.expr(fn, r), fn.Signature.Results().At(i).Type())
-				results = append(results, v)
-			}
-		}
-		if fn.namedResults != nil {
-			// Function has named result parameters (NRPs).
-			// Perform parallel assignment of return operands to NRPs.
-			for i, r := range results {
-				emitStore(fn, fn.namedResults[i], r, s.Return)
-			}
-		}
-		// Run function calls deferred in this
-		// function when explicitly returning from it.
-		fn.emit(new(RunDefers))
-		if fn.namedResults != nil {
-			// Reload NRPs to form the result tuple.
-			results = results[:0]
-			for _, r := range fn.namedResults {
-				results = append(results, emitLoad(fn, r))
-			}
-		}
-		fn.emit(&Return{Results: results, pos: s.Return})
-		fn.currentBlock = fn.newBasicBlock("unreachable")
+		b.returnStmt(fn, s)
 
 	case *ast.BranchStmt:
-		var block *BasicBlock
-		switch s.Tok {
-		case token.BREAK:
-			if s.Label != nil {
-				block = fn.labelledBlock(s.Label)._break
-			} else {
-				for t := fn.targets; t != nil && block == nil; t = t.tail {
-					block = t._break
-				}
-			}
-
-		case token.CONTINUE:
-			if s.Label != nil {
-				block = fn.labelledBlock(s.Label)._continue
-			} else {
-				for t := fn.targets; t != nil && block == nil; t = t.tail {
-					block = t._continue
-				}
-			}
-
-		case token.FALLTHROUGH:
-			for t := fn.targets; t != nil && block == nil; t = t.tail {
-				block = t._fallthrough
-			}
-
-		case token.GOTO:
-			block = fn.labelledBlock(s.Label)._goto
-		}
-		emitJump(fn, block)
-		fn.currentBlock = fn.newBasicBlock("unreachable")
+		b.branchStmt(fn, s)
 
 	case *ast.BlockStmt:
 		b.stmtList(fn, s.List)
@@ -2509,17 +2786,110 @@ start:
 	}
 }
 
+func (b *builder) branchStmt(fn *Function, s *ast.BranchStmt) {
+	var block *BasicBlock
+	if s.Label == nil {
+		block = targetedBlock(fn, s.Tok)
+	} else {
+		target := fn.label(s.Label)
+		block = labelledBlock(fn, target, s.Tok)
+		if block == nil { // forward goto
+			lb := fn.lblockOf(target)
+			block = lb._goto // jump to lb._goto
+			if fn.jump != nil {
+				// fn is a range-over-func and the goto may exit fn.
+				// Create an exit and resolve it at the end of
+				// builder.buildYieldFunc.
+				labelExit(fn, target, s.Pos())
+			}
+		}
+	}
+	to := block.parent
+
+	if to == fn {
+		emitJump(fn, block)
+	} else { // break outside of fn.
+		// fn must be a range-over-func
+		e := blockExit(fn, block, s.Pos())
+		storeVar(fn, fn.jump, intConst(e.id), e.pos)
+		fn.emit(&Return{Results: []Value{vFalse}, pos: e.pos})
+	}
+	fn.currentBlock = fn.newBasicBlock("unreachable")
+}
+
+func (b *builder) returnStmt(fn *Function, s *ast.ReturnStmt) {
+	var results []Value
+
+	sig := fn.source.Signature // signature of the enclosing source function
+
+	// Convert return operands to result type.
+	if len(s.Results) == 1 && sig.Results().Len() > 1 {
+		// Return of one expression in a multi-valued function.
+		tuple := b.exprN(fn, s.Results[0])
+		ttuple := tuple.Type().(*types.Tuple)
+		for i, n := 0, ttuple.Len(); i < n; i++ {
+			results = append(results,
+				emitConv(fn, emitExtract(fn, tuple, i),
+					sig.Results().At(i).Type()))
+		}
+	} else {
+		// 1:1 return, or no-arg return in non-void function.
+		for i, r := range s.Results {
+			v := emitConv(fn, b.expr(fn, r), sig.Results().At(i).Type())
+			results = append(results, v)
+		}
+	}
+
+	// Store the results.
+	for i, r := range results {
+		var result Value // fn.source.result[i] conceptually
+		if fn == fn.source {
+			result = fn.results[i]
+		} else { // lookup needed?
+			result = fn.lookup(fn.returnVars[i], false)
+		}
+		emitStore(fn, result, r, s.Return)
+	}
+
+	if fn.jump != nil {
+		// Return from body of a range-over-func.
+		// The return statement is syntactically within the loop,
+		// but the generated code is in the 'switch jump {...}' after it.
+		e := returnExit(fn, s.Pos())
+		storeVar(fn, fn.jump, intConst(e.id), e.pos)
+		fn.emit(&Return{Results: []Value{vFalse}, pos: e.pos})
+		fn.currentBlock = fn.newBasicBlock("unreachable")
+		return
+	}
+
+	// Run function calls deferred in this
+	// function when explicitly returning from it.
+	fn.emit(new(RunDefers))
+	// Reload (potentially) named result variables to form the result tuple.
+	results = results[:0]
+	for _, nr := range fn.results {
+		results = append(results, emitLoad(fn, nr))
+	}
+	fn.emit(&Return{Results: results, pos: s.Return})
+	fn.currentBlock = fn.newBasicBlock("unreachable")
+}
+
 // A buildFunc is a strategy for building the SSA body for a function.
 type buildFunc = func(*builder, *Function)
 
 // iterate causes all created but unbuilt functions to be built. As
 // this may create new methods, the process is iterated until it
 // converges.
+//
+// Waits for any dependencies to finish building.
 func (b *builder) iterate() {
-	for ; b.finished < b.created.Len(); b.finished++ {
-		fn := b.created.At(b.finished)
+	for ; b.finished < len(b.fns); b.finished++ {
+		fn := b.fns[b.finished]
 		b.buildFunction(fn)
 	}
+
+	b.buildshared.markDone()
+	b.buildshared.wait()
 }
 
 // buildFunction builds SSA code for the body of function fn.  Idempotent.
@@ -2573,9 +2943,10 @@ func (b *builder) buildFromSyntax(fn *Function) {
 	default:
 		panic(syntax) // unexpected syntax
 	}
-
+	fn.source = fn
 	fn.startBody()
 	fn.createSyntacticParams(recvField, functype)
+	fn.createDeferStack()
 	b.stmt(fn, body)
 	if cb := fn.currentBlock; cb != nil && (cb == fn.Blocks[0] || cb == fn.Recover || cb.Preds != nil) {
 		// Control fell off the end of the function's body block.
@@ -2588,6 +2959,148 @@ func (b *builder) buildFromSyntax(fn *Function) {
 		fn.emit(new(RunDefers))
 		fn.emit(new(Return))
 	}
+	fn.finishBody()
+}
+
+// buildYieldFunc builds the body of the yield function created
+// from a range-over-func *ast.RangeStmt.
+func (b *builder) buildYieldFunc(fn *Function) {
+	// See builder.rangeFunc for detailed documentation on how fn is set up.
+	//
+	// In psuedo-Go this roughly builds:
+	// func yield(_k tk, _v tv) bool {
+	// 	   if jump != READY { panic("yield function called after range loop exit") }
+	//     jump = BUSY
+	//     k, v = _k, _v // assign the iterator variable (if needed)
+	//     ... // rng.Body
+	//   continue:
+	//     jump = READY
+	//     return true
+	// }
+	s := fn.syntax.(*ast.RangeStmt)
+	fn.source = fn.parent.source
+	fn.startBody()
+	params := fn.Signature.Params()
+	for i := 0; i < params.Len(); i++ {
+		fn.addParamVar(params.At(i))
+	}
+
+	// Initial targets
+	ycont := fn.newBasicBlock("yield-continue")
+	// lblocks is either {} or is {label: nil} where label is the label of syntax.
+	for label := range fn.lblocks {
+		fn.lblocks[label] = &lblock{
+			label:     label,
+			resolved:  true,
+			_goto:     ycont,
+			_continue: ycont,
+			// `break label` statement targets fn.parent.targets._break
+		}
+	}
+	fn.targets = &targets{
+		_continue: ycont,
+		// `break` statement targets fn.parent.targets._break.
+	}
+
+	// continue:
+	//   jump = READY
+	//   return true
+	saved := fn.currentBlock
+	fn.currentBlock = ycont
+	storeVar(fn, fn.jump, jReady, s.Body.Rbrace)
+	// A yield function's own deferstack is always empty, so rundefers is not needed.
+	fn.emit(&Return{Results: []Value{vTrue}, pos: token.NoPos})
+
+	// Emit header:
+	//
+	//   if jump != READY { panic("yield iterator accessed after exit") }
+	//   jump = BUSY
+	//   k, v = _k, _v
+	fn.currentBlock = saved
+	yloop := fn.newBasicBlock("yield-loop")
+	invalid := fn.newBasicBlock("yield-invalid")
+
+	jumpVal := emitLoad(fn, fn.lookup(fn.jump, true))
+	emitIf(fn, emitCompare(fn, token.EQL, jumpVal, jReady, token.NoPos), yloop, invalid)
+	fn.currentBlock = invalid
+	fn.emit(&Panic{
+		X: emitConv(fn, stringConst("yield function called after range loop exit"), tEface),
+	})
+
+	fn.currentBlock = yloop
+	storeVar(fn, fn.jump, jBusy, s.Body.Rbrace)
+
+	// Initialize k and v from params.
+	var tk, tv types.Type
+	if s.Key != nil && !isBlankIdent(s.Key) {
+		tk = fn.typeOf(s.Key) // fn.parent.typeOf is identical
+	}
+	if s.Value != nil && !isBlankIdent(s.Value) {
+		tv = fn.typeOf(s.Value)
+	}
+	if s.Tok == token.DEFINE {
+		if tk != nil {
+			emitLocalVar(fn, identVar(fn, s.Key.(*ast.Ident)))
+		}
+		if tv != nil {
+			emitLocalVar(fn, identVar(fn, s.Value.(*ast.Ident)))
+		}
+	}
+	var k, v Value
+	if len(fn.Params) > 0 {
+		k = fn.Params[0]
+	}
+	if len(fn.Params) > 1 {
+		v = fn.Params[1]
+	}
+	var kl, vl lvalue
+	if tk != nil {
+		kl = b.addr(fn, s.Key, false) // non-escaping
+	}
+	if tv != nil {
+		vl = b.addr(fn, s.Value, false) // non-escaping
+	}
+	if tk != nil {
+		kl.store(fn, k)
+	}
+	if tv != nil {
+		vl.store(fn, v)
+	}
+
+	// Build the body of the range loop.
+	b.stmt(fn, s.Body)
+	if cb := fn.currentBlock; cb != nil && (cb == fn.Blocks[0] || cb == fn.Recover || cb.Preds != nil) {
+		// Control fell off the end of the function's body block.
+		// Block optimizations eliminate the current block, if
+		// unreachable.
+		emitJump(fn, ycont)
+	}
+
+	// Clean up exits and promote any unresolved exits to fn.parent.
+	for _, e := range fn.exits {
+		if e.label != nil {
+			lb := fn.lblocks[e.label]
+			if lb.resolved {
+				// label was resolved. Do not turn lb into an exit.
+				// e does not need to be handled by the parent.
+				continue
+			}
+
+			// _goto becomes an exit.
+			//   _goto:
+			//     jump = id
+			//     return false
+			fn.currentBlock = lb._goto
+			id := intConst(e.id)
+			storeVar(fn, fn.jump, id, e.pos)
+			fn.emit(&Return{Results: []Value{vFalse}, pos: e.pos})
+		}
+
+		if e.to != fn { // e needs to be handled by the parent too.
+			fn.parent.exits = append(fn.parent.exits, e)
+		}
+	}
+
 	fn.finishBody()
 }
 
@@ -2618,14 +3131,19 @@ func (prog *Program) Build() {
 			p.Build()
 		} else {
 			wg.Add(1)
+			cpuLimit <- unit{} // acquire a token
 			go func(p *Package) {
 				p.Build()
 				wg.Done()
+				<-cpuLimit // release a token
 			}(p)
 		}
 	}
 	wg.Wait()
 }
+
+// cpuLimit is a counting semaphore to limit CPU parallelism.
+var cpuLimit = make(chan unit, runtime.GOMAXPROCS(0))
 
 // Build builds SSA code for all functions and vars in package p.
 //
@@ -2646,7 +3164,7 @@ func (p *Package) build() {
 		defer logStack("build %s", p)()
 	}
 
-	b := builder{created: &p.created}
+	b := builder{fns: p.created}
 	b.iterate()
 
 	// We no longer need transient information: ASTs or go/types deductions.

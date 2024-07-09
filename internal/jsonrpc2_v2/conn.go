@@ -17,7 +17,7 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/event/label"
-	"golang.org/x/tools/internal/event/tag"
+	"golang.org/x/tools/internal/jsonrpc2"
 )
 
 // Binder builds a connection configuration.
@@ -262,8 +262,8 @@ func newConnection(bindCtx context.Context, rwc io.ReadWriteCloser, binder Binde
 // be handed to the method invoked.
 func (c *Connection) Notify(ctx context.Context, method string, params interface{}) (err error) {
 	ctx, done := event.Start(ctx, method,
-		tag.Method.Of(method),
-		tag.RPCDirection.Of(tag.Outbound),
+		jsonrpc2.Method.Of(method),
+		jsonrpc2.RPCDirection.Of(jsonrpc2.Outbound),
 	)
 	attempted := false
 
@@ -300,7 +300,7 @@ func (c *Connection) Notify(ctx context.Context, method string, params interface
 		return fmt.Errorf("marshaling notify parameters: %v", err)
 	}
 
-	event.Metric(ctx, tag.Started.Of(1))
+	event.Metric(ctx, jsonrpc2.Started.Of(1))
 	return c.write(ctx, notify)
 }
 
@@ -313,9 +313,9 @@ func (c *Connection) Call(ctx context.Context, method string, params interface{}
 	// Generate a new request identifier.
 	id := Int64ID(atomic.AddInt64(&c.seq, 1))
 	ctx, endSpan := event.Start(ctx, method,
-		tag.Method.Of(method),
-		tag.RPCDirection.Of(tag.Outbound),
-		tag.RPCID.Of(fmt.Sprintf("%q", id)),
+		jsonrpc2.Method.Of(method),
+		jsonrpc2.RPCDirection.Of(jsonrpc2.Outbound),
+		jsonrpc2.RPCID.Of(fmt.Sprintf("%q", id)),
 	)
 
 	ac := &AsyncCall{
@@ -349,7 +349,7 @@ func (c *Connection) Call(ctx context.Context, method string, params interface{}
 		return ac
 	}
 
-	event.Metric(ctx, tag.Started.Of(1))
+	event.Metric(ctx, jsonrpc2.Started.Of(1))
 	if err := c.write(ctx, call); err != nil {
 		// Sending failed. We will never get a response, so deliver a fake one if it
 		// wasn't already retired by the connection breaking.
@@ -539,16 +539,16 @@ func (c *Connection) readIncoming(ctx context.Context, reader Reader, preempter 
 func (c *Connection) acceptRequest(ctx context.Context, msg *Request, msgBytes int64, preempter Preempter) {
 	// Add a span to the context for this request.
 	labels := append(make([]label.Label, 0, 3), // Make space for the ID if present.
-		tag.Method.Of(msg.Method),
-		tag.RPCDirection.Of(tag.Inbound),
+		jsonrpc2.Method.Of(msg.Method),
+		jsonrpc2.RPCDirection.Of(jsonrpc2.Inbound),
 	)
 	if msg.IsCall() {
-		labels = append(labels, tag.RPCID.Of(fmt.Sprintf("%q", msg.ID)))
+		labels = append(labels, jsonrpc2.RPCID.Of(fmt.Sprintf("%q", msg.ID)))
 	}
 	ctx, endSpan := event.Start(ctx, msg.Method, labels...)
 	event.Metric(ctx,
-		tag.Started.Of(1),
-		tag.ReceivedBytes.Of(msgBytes))
+		jsonrpc2.Started.Of(1),
+		jsonrpc2.ReceivedBytes.Of(msgBytes))
 
 	// In theory notifications cannot be cancelled, but we build them a cancel
 	// context anyway.
@@ -754,7 +754,7 @@ func (c *Connection) write(ctx context.Context, msg Message) error {
 	writer := <-c.writer
 	defer func() { c.writer <- writer }()
 	n, err := writer.Write(ctx, msg)
-	event.Metric(ctx, tag.SentBytes.Of(n))
+	event.Metric(ctx, jsonrpc2.SentBytes.Of(n))
 
 	if err != nil && ctx.Err() == nil {
 		// The call to Write failed, and since ctx.Err() is nil we can't attribute
@@ -794,9 +794,9 @@ func (c *Connection) internalErrorf(format string, args ...interface{}) error {
 // labelStatus labels the status of the event in ctx based on whether err is nil.
 func labelStatus(ctx context.Context, err error) {
 	if err == nil {
-		event.Label(ctx, tag.StatusCode.Of("OK"))
+		event.Label(ctx, jsonrpc2.StatusCode.Of("OK"))
 	} else {
-		event.Label(ctx, tag.StatusCode.Of("ERROR"))
+		event.Label(ctx, jsonrpc2.StatusCode.Of("ERROR"))
 	}
 }
 

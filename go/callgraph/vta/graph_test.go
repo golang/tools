@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/aliases"
 )
 
 func TestNodeInterface(t *testing.T) {
@@ -35,7 +36,7 @@ func TestNodeInterface(t *testing.T) {
 	reg := firstRegInstr(main) // t0 := *gl
 	X := pkg.Type("X").Type()
 	gl := pkg.Var("gl")
-	glPtrType, ok := gl.Type().(*types.Pointer)
+	glPtrType, ok := aliases.Unalias(gl.Type()).(*types.Pointer)
 	if !ok {
 		t.Fatalf("could not cast gl variable to pointer type")
 	}
@@ -128,7 +129,7 @@ func TestVtaGraph(t *testing.T) {
 		{n3, 1},
 		{n4, 0},
 	} {
-		if sl := len(g.successors(test.n)); sl != test.l {
+		if sl := len(g[test.n]); sl != test.l {
 			t.Errorf("want %d successors; got %d", test.l, sl)
 		}
 	}
@@ -180,6 +181,7 @@ func TestVTAGraphConstruction(t *testing.T) {
 		"testdata/src/store_load_alias.go",
 		"testdata/src/phi_alias.go",
 		"testdata/src/channels.go",
+		"testdata/src/generic_channels.go",
 		"testdata/src/select.go",
 		"testdata/src/stores_arrays.go",
 		"testdata/src/maps.go",

@@ -1,6 +1,7 @@
 // Copyright 2022 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
+
 package misc
 
 import (
@@ -29,7 +30,7 @@ func Foo() int {
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		loc := env.RegexpSearch("main.go", `a := 5\n.*return a`)
-		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil)
+		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -16,69 +16,12 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
-
-const (
-	maxLabelLength = 28
-)
-
-type InlayHintFunc func(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, q *types.Qualifier) []protocol.InlayHint
-
-type Hint struct {
-	Name string
-	Doc  string
-	Run  InlayHintFunc
-}
-
-const (
-	ParameterNames             = "parameterNames"
-	AssignVariableTypes        = "assignVariableTypes"
-	ConstantValues             = "constantValues"
-	RangeVariableTypes         = "rangeVariableTypes"
-	CompositeLiteralTypes      = "compositeLiteralTypes"
-	CompositeLiteralFieldNames = "compositeLiteralFields"
-	FunctionTypeParameters     = "functionTypeParameters"
-)
-
-var AllInlayHints = map[string]*Hint{
-	AssignVariableTypes: {
-		Name: AssignVariableTypes,
-		Doc:  "Enable/disable inlay hints for variable types in assign statements:\n```go\n\ti/* int*/, j/* int*/ := 0, len(r)-1\n```",
-		Run:  assignVariableTypes,
-	},
-	ParameterNames: {
-		Name: ParameterNames,
-		Doc:  "Enable/disable inlay hints for parameter names:\n```go\n\tparseInt(/* str: */ \"123\", /* radix: */ 8)\n```",
-		Run:  parameterNames,
-	},
-	ConstantValues: {
-		Name: ConstantValues,
-		Doc:  "Enable/disable inlay hints for constant values:\n```go\n\tconst (\n\t\tKindNone   Kind = iota/* = 0*/\n\t\tKindPrint/*  = 1*/\n\t\tKindPrintf/* = 2*/\n\t\tKindErrorf/* = 3*/\n\t)\n```",
-		Run:  constantValues,
-	},
-	RangeVariableTypes: {
-		Name: RangeVariableTypes,
-		Doc:  "Enable/disable inlay hints for variable types in range statements:\n```go\n\tfor k/* int*/, v/* string*/ := range []string{} {\n\t\tfmt.Println(k, v)\n\t}\n```",
-		Run:  rangeVariableTypes,
-	},
-	CompositeLiteralTypes: {
-		Name: CompositeLiteralTypes,
-		Doc:  "Enable/disable inlay hints for composite literal types:\n```go\n\tfor _, c := range []struct {\n\t\tin, want string\n\t}{\n\t\t/*struct{ in string; want string }*/{\"Hello, world\", \"dlrow ,olleH\"},\n\t}\n```",
-		Run:  compositeLiteralTypes,
-	},
-	CompositeLiteralFieldNames: {
-		Name: CompositeLiteralFieldNames,
-		Doc:  "Enable/disable inlay hints for composite literal field names:\n```go\n\t{/*in: */\"Hello, world\", /*want: */\"dlrow ,olleH\"}\n```",
-		Run:  compositeLiteralFields,
-	},
-	FunctionTypeParameters: {
-		Name: FunctionTypeParameters,
-		Doc:  "Enable/disable inlay hints for implicit type parameters on generic functions:\n```go\n\tmyFoo/*[int, string]*/(1, \"hello\")\n```",
-		Run:  funcTypeParams,
-	},
-}
 
 func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pRng protocol.Range) ([]protocol.InlayHint, error) {
 	ctx, done := event.Start(ctx, "golang.InlayHint")
@@ -91,21 +34,21 @@ func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pR
 
 	// Collect a list of the inlay hints that are enabled.
 	inlayHintOptions := snapshot.Options().InlayHintOptions
-	var enabledHints []InlayHintFunc
+	var enabledHints []inlayHintFunc
 	for hint, enabled := range inlayHintOptions.Hints {
 		if !enabled {
 			continue
 		}
-		if h, ok := AllInlayHints[hint]; ok {
-			enabledHints = append(enabledHints, h.Run)
+		if fn, ok := allInlayHints[hint]; ok {
+			enabledHints = append(enabledHints, fn)
 		}
 	}
 	if len(enabledHints) == 0 {
 		return nil, nil
 	}
 
-	info := pkg.GetTypesInfo()
-	q := typesutil.FileQualifier(pgf.File, pkg.GetTypes(), info)
+	info := pkg.TypesInfo()
+	q := typesutil.FileQualifier(pgf.File, pkg.Types(), info)
 
 	// Set the range to the full file if the range is not valid.
 	start, end := pgf.File.Pos(), pgf.File.End()
@@ -132,12 +75,28 @@ func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pR
 	return hints, nil
 }
 
+type inlayHintFunc func(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, q *types.Qualifier) []protocol.InlayHint
+
+var allInlayHints = map[settings.InlayHint]inlayHintFunc{
+	settings.AssignVariableTypes:        assignVariableTypes,
+	settings.ConstantValues:             constantValues,
+	settings.ParameterNames:             parameterNames,
+	settings.RangeVariableTypes:         rangeVariableTypes,
+	settings.CompositeLiteralTypes:      compositeLiteralTypes,
+	settings.CompositeLiteralFieldNames: compositeLiteralFields,
+	settings.FunctionTypeParameters:     funcTypeParams,
+}
+
 func parameterNames(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, _ *types.Qualifier) []protocol.InlayHint {
 	callExpr, ok := node.(*ast.CallExpr)
 	if !ok {
 		return nil
 	}
-	signature, ok := info.TypeOf(callExpr.Fun).(*types.Signature)
+	t := info.TypeOf(callExpr.Fun)
+	if t == nil {
+		return nil
+	}
+	signature, ok := typeparams.CoreType(t).(*types.Signature)
 	if !ok {
 		return nil
 	}
@@ -317,10 +276,8 @@ func compositeLiteralFields(node ast.Node, m *protocol.Mapper, tf *token.File, i
 	if typ == nil {
 		return nil
 	}
-	if t, ok := typ.(*types.Pointer); ok {
-		typ = t.Elem()
-	}
-	strct, ok := typ.Underlying().(*types.Struct)
+	typ = typesinternal.Unpointer(typ)
+	strct, ok := typeparams.CoreType(typ).(*types.Struct)
 	if !ok {
 		return nil
 	}
@@ -369,7 +326,7 @@ func compositeLiteralTypes(node ast.Node, m *protocol.Mapper, tf *token.File, in
 		return nil
 	}
 	prefix := ""
-	if t, ok := typ.(*types.Pointer); ok {
+	if t, ok := typeparams.CoreType(typ).(*types.Pointer); ok {
 		typ = t.Elem()
 		prefix = "&"
 	}
@@ -386,6 +343,7 @@ func compositeLiteralTypes(node ast.Node, m *protocol.Mapper, tf *token.File, in
 }
 
 func buildLabel(s string) []protocol.InlayHintLabelPart {
+	const maxLabelLength = 28
 	label := protocol.InlayHintLabelPart{
 		Value: s,
 	}

@@ -20,6 +20,7 @@ import (
 
 func TestZeroConfigAlgorithm(t *testing.T) {
 	testenv.NeedsExec(t) // executes the Go command
+	t.Setenv("GOPACKAGESDRIVER", "off")
 
 	type viewSummary struct {
 		// fields exported for cmp.Diff
@@ -31,6 +32,12 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 	type folderSummary struct {
 		dir     string
 		options func(dir string) map[string]any // options may refer to the temp dir
+	}
+
+	includeReplaceInWorkspace := func(string) map[string]any {
+		return map[string]any{
+			"includeReplaceInWorkspace": true,
+		}
 	}
 
 	type test struct {
@@ -227,6 +234,91 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			[]string{"a/a.go", "b/b.go", "b/c/c.go"},
 			[]viewSummary{{GoWorkView, ".", nil}, {GoModView, "b/c", []string{"GOWORK=off"}}},
 		},
+		{
+			"go.mod with nested replace",
+			map[string]string{
+				"go.mod":   "module golang.org/a\n require golang.org/b v1.2.3\nreplace example.com/b => ./b",
+				"a.go":     "package a",
+				"b/go.mod": "module golang.org/b\ngo 1.18\n",
+				"b/b.go":   "package b",
+			},
+			[]folderSummary{{dir: ".", options: includeReplaceInWorkspace}},
+			[]string{"a/a.go", "b/b.go"},
+			[]viewSummary{{GoModView, ".", nil}},
+		},
+		{
+			"go.mod with parent replace, parent folder",
+			map[string]string{
+				"go.mod":   "module golang.org/a",
+				"a.go":     "package a",
+				"b/go.mod": "module golang.org/b\ngo 1.18\nrequire golang.org/a v1.2.3\nreplace golang.org/a => ../",
+				"b/b.go":   "package b",
+			},
+			[]folderSummary{{dir: ".", options: includeReplaceInWorkspace}},
+			[]string{"a/a.go", "b/b.go"},
+			[]viewSummary{{GoModView, ".", nil}, {GoModView, "b", nil}},
+		},
+		{
+			"go.mod with multiple replace",
+			map[string]string{
+				"go.mod": `
+module golang.org/root
+
+require (
+	golang.org/a v1.2.3
+	golang.org/b v1.2.3
+	golang.org/c v1.2.3
+)
+
+replace (
+	golang.org/b => ./b
+	golang.org/c => ./c
+	// Note: d is not replaced
+)
+`,
+				"a.go":     "package a",
+				"b/go.mod": "module golang.org/b\ngo 1.18",
+				"b/b.go":   "package b",
+				"c/go.mod": "module golang.org/c\ngo 1.18",
+				"c/c.go":   "package c",
+				"d/go.mod": "module golang.org/d\ngo 1.18",
+				"d/d.go":   "package d",
+			},
+			[]folderSummary{{dir: ".", options: includeReplaceInWorkspace}},
+			[]string{"b/b.go", "c/c.go", "d/d.go"},
+			[]viewSummary{{GoModView, ".", nil}, {GoModView, "d", nil}},
+		},
+		{
+			"go.mod with replace outside the workspace",
+			map[string]string{
+				"go.mod":   "module golang.org/a\ngo 1.18",
+				"a.go":     "package a",
+				"b/go.mod": "module golang.org/b\ngo 1.18\nrequire golang.org/a v1.2.3\nreplace golang.org/a => ../",
+				"b/b.go":   "package b",
+			},
+			[]folderSummary{{dir: "b"}},
+			[]string{"a.go", "b/b.go"},
+			[]viewSummary{{GoModView, "b", nil}},
+		},
+		{
+			"go.mod with replace directive; workspace replace off",
+			map[string]string{
+				"go.mod":   "module golang.org/a\n require golang.org/b v1.2.3\nreplace example.com/b => ./b",
+				"a.go":     "package a",
+				"b/go.mod": "module golang.org/b\ngo 1.18\n",
+				"b/b.go":   "package b",
+			},
+			[]folderSummary{{
+				dir: ".",
+				options: func(string) map[string]any {
+					return map[string]any{
+						"includeReplaceInWorkspace": false,
+					}
+				},
+			}},
+			[]string{"a/a.go", "b/b.go"},
+			[]viewSummary{{GoModView, ".", nil}, {GoModView, "b", nil}},
+		},
 	}
 
 	for _, test := range tests {
@@ -244,11 +336,8 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 			for _, f := range test.folders {
 				opts := settings.DefaultOptions()
 				if f.options != nil {
-					results := settings.SetOptions(opts, f.options(dir))
-					for _, r := range results {
-						if r.Error != nil {
-							t.Fatalf("setting option %v: %v", r.Name, r.Error)
-						}
+					for _, err := range opts.Set(f.options(dir)) {
+						t.Fatal(err)
 					}
 				}
 				env, err := FetchGoEnv(ctx, toURI(f.dir), opts)
@@ -259,7 +348,7 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 					Dir:     toURI(f.dir),
 					Name:    path.Base(f.dir),
 					Options: opts,
-					Env:     env,
+					Env:     *env,
 				})
 			}
 

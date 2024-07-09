@@ -1,0 +1,126 @@
+This test verifies that gopls can remove unused parameters from methods.
+
+Specifically, check
+1. basic removal of unused parameters, when the receiver is named, locally and
+   across package boundaries
+2. handling of unnamed receivers
+
+-- flags --
+-min_go=go1.20
+
+-- go.mod --
+module example.com/rm
+
+go 1.20
+
+-- basic.go --
+package rm
+
+type Basic int
+
+func (t Basic) Foo(x int) { //@codeaction("x", "x", "refactor.rewrite", basic)
+}
+
+func _(b Basic) {
+	b.Foo(1)
+	// TODO(rfindley): methodexprs should not get rewritten as methods.
+	Basic.Foo(1, 2)
+}
+
+-- basicuse/p.go --
+package basicuse
+
+import "example.com/rm"
+
+func _() {
+	x := new(rm.Basic)
+	x.Foo(sideEffects())
+	rm.Basic.Foo(1,2)
+}
+
+func sideEffects() int
+
+-- @basic/basic.go --
+package rm
+
+type Basic int
+
+func (t Basic) Foo() { //@codeaction("x", "x", "refactor.rewrite", basic)
+}
+
+func _(b Basic) {
+	b.Foo()
+	// TODO(rfindley): methodexprs should not get rewritten as methods.
+	Basic(1).Foo()
+}
+-- @basic/basicuse/p.go --
+package basicuse
+
+import "example.com/rm"
+
+func _() {
+	x := new(rm.Basic)
+	var (
+		t rm.Basic = *x
+		_ int      = sideEffects()
+	)
+	t.Foo()
+	rm.Basic(1).Foo()
+}
+
+func sideEffects() int
+-- missingrecv.go --
+package rm
+
+type Missing struct{}
+
+var r2 int
+
+func (Missing) M(a, b, c, r0 int) (r1 int) { //@codeaction("b", "b", "refactor.rewrite", missingrecv)
+	return a + c
+}
+
+func _() {
+	m := &Missing{}
+	_ = m.M(1, 2, 3, 4)
+}
+
+-- missingrecvuse/p.go --
+package missingrecvuse
+
+import "example.com/rm"
+
+func _() {
+	x := rm.Missing{}
+	x.M(1, sideEffects(), 3, 4)
+}
+
+func sideEffects() int
+
+-- @missingrecv/missingrecv.go --
+package rm
+
+type Missing struct{}
+
+var r2 int
+
+func (Missing) M(a, c, r0 int) (r1 int) { //@codeaction("b", "b", "refactor.rewrite", missingrecv)
+	return a + c
+}
+
+func _() {
+	m := &Missing{}
+	_ = (*m).M(1, 3, 4)
+}
+-- @missingrecv/missingrecvuse/p.go --
+package missingrecvuse
+
+import "example.com/rm"
+
+func _() {
+	x := rm.Missing{}
+	var _ int = sideEffects()
+	x.M(1, 3, 4)
+}
+
+func sideEffects() int

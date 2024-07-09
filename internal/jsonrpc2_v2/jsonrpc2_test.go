@@ -240,7 +240,7 @@ func newResults(expect interface{}) interface{} {
 func verifyResults(t *testing.T, method string, results interface{}, expect interface{}) {
 	if expect == nil {
 		if results != nil {
-			t.Errorf("%v:Got results %+v where none expeted", method, expect)
+			t.Errorf("%v:Got results %+v where none expected", method, expect)
 		}
 		return
 	}

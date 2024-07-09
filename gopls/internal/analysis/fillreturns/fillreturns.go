@@ -16,8 +16,8 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/fuzzy"
 )
 
 //go:embed doc.go

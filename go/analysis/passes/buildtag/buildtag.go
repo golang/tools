@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.16
-// +build go1.16
-
 // Package buildtag defines an Analyzer that checks build tags.
 package buildtag
 
@@ -89,7 +86,7 @@ func checkOtherFile(pass *analysis.Pass, filename string) error {
 
 	// We cannot use the Go parser, since this may not be a Go source file.
 	// Read the raw bytes instead.
-	content, tf, err := analysisutil.ReadFile(pass.Fset, filename)
+	content, tf, err := analysisutil.ReadFile(pass, filename)
 	if err != nil {
 		return err
 	}

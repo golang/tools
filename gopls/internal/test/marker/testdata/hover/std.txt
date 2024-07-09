@@ -7,11 +7,6 @@ synopsis does not.
 In the future we may need to limit this test to the latest Go version to avoid
 documentation churn.
 
-Requires go1.19+ for the new go/doc/comment package.
-
--- flags --
--min_go=go1.19
-
 -- settings.json --
 {
 	"hoverKind": "SynopsisDocumentation"

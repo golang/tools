@@ -110,3 +110,12 @@ func badUnwrapResp() {
 		log.Fatal(err)
 	}
 }
+
+type i66259 struct{}
+
+func (_ *i66259) Foo() (*int, int) { return nil, 1 }
+
+func issue66259() {
+	var f *i66259
+	f.Foo()
+}

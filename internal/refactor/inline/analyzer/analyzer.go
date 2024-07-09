@@ -104,7 +104,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			if !ok {
 				var fact inlineMeFact
 				if pass.ImportObjectFact(fn, &fact) {
-					callee = fact.callee
+					callee = fact.Callee
 					inlinable[fn] = callee
 				}
 			}
@@ -126,11 +126,12 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				Call:    call,
 				Content: content,
 			}
-			got, err := inline.Inline(discard, caller, callee)
+			res, err := inline.Inline(caller, callee, &inline.Options{Logf: discard})
 			if err != nil {
 				pass.Reportf(call.Lparen, "%v", err)
 				return
 			}
+			got := res.Content
 
 			// Suggest the "fix".
 			var textEdits []analysis.TextEdit
@@ -157,9 +158,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-type inlineMeFact struct{ callee *inline.Callee }
+type inlineMeFact struct{ Callee *inline.Callee }
 
-func (f *inlineMeFact) String() string { return "inlineme " + f.callee.String() }
+func (f *inlineMeFact) String() string { return "inlineme " + f.Callee.String() }
 func (*inlineMeFact) AFact()           {}
 
 func discard(string, ...any) {}

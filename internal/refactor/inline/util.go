@@ -8,6 +8,7 @@ package inline
 
 import (
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"reflect"
@@ -64,8 +65,42 @@ func within(pos token.Pos, n ast.Node) bool {
 // The reason for this check is that converting from A to B to C may
 // yield a different result than converting A directly to C: consider
 // 0 to int32 to any.
-func trivialConversion(val types.Type, obj *types.Var) bool {
-	return types.Identical(types.Default(val), obj.Type())
+//
+// trivialConversion under-approximates trivial conversions, as unfortunately
+// go/types does not record the type of an expression *before* it is implicitly
+// converted, and therefore it cannot distinguish typed constant
+// expressions from untyped constant expressions. For example, in the
+// expression `c + 2`, where c is a uint32 constant, trivialConversion does not
+// detect that the default type of this expression is actually uint32, not untyped
+// int.
+//
+// We could, of course, do better here by reverse engineering some of go/types'
+// constant handling. That may or may not be worthwhile.
+//
+// Example: in func f() int32 { return 0 },
+// the type recorded for 0 is int32, not untyped int;
+// although it is Identical to the result var,
+// the conversion is non-trivial.
+func trivialConversion(fromValue constant.Value, from, to types.Type) bool {
+	if fromValue != nil {
+		var defaultType types.Type
+		switch fromValue.Kind() {
+		case constant.Bool:
+			defaultType = types.Typ[types.Bool]
+		case constant.String:
+			defaultType = types.Typ[types.String]
+		case constant.Int:
+			defaultType = types.Typ[types.Int]
+		case constant.Float:
+			defaultType = types.Typ[types.Float64]
+		case constant.Complex:
+			defaultType = types.Typ[types.Complex128]
+		default:
+			return false
+		}
+		return types.Identical(defaultType, to)
+	}
+	return types.Identical(from, to)
 }
 
 func checkInfoFields(info *types.Info) {
@@ -120,8 +155,10 @@ func convert(T, x ast.Expr) *ast.CallExpr {
 	}
 }
 
-// isPointer reports whether t is a pointer type.
-func isPointer(t types.Type) bool { return t != deref(t) }
+// isPointer reports whether t's core type is a pointer.
+func isPointer(t types.Type) bool {
+	return is[*types.Pointer](typeparams.CoreType(t))
+}
 
 // indirectSelection is like seln.Indirect() without bug #8353.
 func indirectSelection(seln *types.Selection) bool {
@@ -132,7 +169,7 @@ func indirectSelection(seln *types.Selection) bool {
 			return true
 		}
 
-		tParam := seln.Obj().Type().(*types.Signature).Recv().Type()
+		tParam := seln.Obj().Type().Underlying().(*types.Signature).Recv().Type()
 		return isPointer(tArg) && !isPointer(tParam) // implicit *
 	}
 
@@ -150,9 +187,9 @@ func effectiveReceiver(seln *types.Selection) (types.Type, bool) {
 	indices := seln.Index()
 	indirect := false
 	for _, index := range indices[:len(indices)-1] {
-		if tElem := deref(t); tElem != t {
+		if isPointer(t) {
 			indirect = true
-			t = tElem
+			t = typeparams.MustDeref(t)
 		}
 		t = typeparams.CoreType(t).(*types.Struct).Field(index).Type()
 	}

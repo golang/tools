@@ -11,15 +11,18 @@ import (
 	"go/build"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/stdlib"
 )
 
 var testDebug = flag.Bool("debug", false, "enable debug output")
@@ -1150,7 +1153,7 @@ var _ = rand.NewZipf
 `,
 		out: `package p
 
-import "math/rand"
+import "math/rand/v2"
 
 var _ = rand.NewZipf
 `,
@@ -1626,9 +1629,9 @@ import "bytes"
 var _ = bytes.Buffer
 `
 	// Force a scan of the stdlib.
-	savedStdlib := stdlib
-	defer func() { stdlib = savedStdlib }()
-	stdlib = map[string][]string{}
+	savedStdlib := stdlib.PackageSymbols
+	defer func() { stdlib.PackageSymbols = savedStdlib }()
+	stdlib.PackageSymbols = nil
 
 	testConfig{
 		module: packagestest.Module{
@@ -2854,8 +2857,8 @@ func TestGetPackageCompletions(t *testing.T) {
 			defer mu.Unlock()
 			for _, csym := range c.Exports {
 				for _, w := range want {
-					if c.Fix.StmtInfo.ImportPath == w.path && csym == w.symbol {
-						got = append(got, res{c.Fix.Relevance, c.Fix.IdentName, c.Fix.StmtInfo.ImportPath, csym})
+					if c.Fix.StmtInfo.ImportPath == w.path && csym.Name == w.symbol {
+						got = append(got, res{c.Fix.Relevance, c.Fix.IdentName, c.Fix.StmtInfo.ImportPath, csym.Name})
 					}
 				}
 			}
@@ -2953,4 +2956,132 @@ var _, _ = fmt.Sprintf, dot.Dot
 		},
 		gopathOnly: true, // our modules testing setup doesn't allow modules without dots.
 	}.processTest(t, "golang.org/fake", "x.go", nil, nil, want)
+}
+
+func TestSymbolSearchStarvation(t *testing.T) {
+	// This test verifies the fix for golang/go#67923: searching through
+	// candidates should not starve when the context is cancelled.
+	//
+	// To reproduce the conditions that led to starvation, cancel the context
+	// half way through the search, by leveraging the loadExports callback.
+	const candCount = 100
+	var loaded atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	searcher := symbolSearcher{
+		logf:   t.Logf,
+		srcDir: "/path/to/foo",
+		loadExports: func(ctx context.Context, pkg *pkg, includeTest bool) (string, []stdlib.Symbol, error) {
+			if loaded.Add(1) > candCount/2 {
+				cancel()
+			}
+			return "bar", []stdlib.Symbol{
+				{Name: "A", Kind: stdlib.Var},
+				{Name: "B", Kind: stdlib.Var},
+				// Missing: "C", so that none of these packages match.
+			}, nil
+		},
+	}
+
+	var candidates []pkgDistance
+	for i := 0; i < candCount; i++ {
+		name := fmt.Sprintf("bar%d", i)
+		candidates = append(candidates, pkgDistance{
+			pkg: &pkg{
+				dir:             path.Join(searcher.srcDir, name),
+				importPathShort: "foo/" + name,
+				packageName:     name,
+				relevance:       1,
+			},
+			distance: 1,
+		})
+	}
+
+	// We don't actually care what happens, as long as it doesn't deadlock!
+	_, err := searcher.search(ctx, candidates, "bar", map[string]bool{"A": true, "B": true, "C": true})
+	t.Logf("search completed with err: %v", err)
+}
+
+func TestMatchesPath(t *testing.T) {
+	tests := []struct {
+		ident string
+		path  string
+		want  bool
+	}{
+		// degenerate cases
+		{"", "", true},
+		{"", "x", false},
+		{"x", "", false},
+
+		// full segment matching
+		{"x", "x", true},
+		{"x", "y", false},
+		{"x", "wx", false},
+		{"x", "path/to/x", true},
+		{"mypkg", "path/to/mypkg", true},
+		{"x", "path/to/xy", false},
+		{"x", "path/to/x/y", true},
+		{"mypkg", "path/to/mypkg/y", true},
+		{"x", "path/to/x/v3", true},
+
+		// subsegment matching
+		{"x", "path/to/x-go", true},
+		{"foo", "path/to/go-foo", true},
+		{"go", "path/to/go-foo", true},
+		{"gofoo", "path/to/go-foo", true},
+		{"gofoo", "path/to/go-foo-bar", false},
+		{"foo", "path/to/go-foo-bar", true},
+		{"bar", "path/to/go-foo-bar", true},
+		{"gofoobar", "path/to/go-foo-bar", true},
+		{"x", "path/to/x.v3", true},
+		{"x", "path/to/xy.v3", false},
+		{"x", "path/to/wx.v3", false},
+
+		// case insensitivity
+		{"MyPkg", "path/to/mypkg", true},
+		{"myPkg", "path/to/MyPkg", true},
+
+		// multi-byte runes
+		{"世界", "path/to/世界", true},
+		{"世界", "path/to/世界/foo", true},
+		{"世界", "path/to/go-世界/foo", true},
+		{"世界", "path/to/世/foo", false},
+	}
+
+	for _, test := range tests {
+		if got := matchesPath(test.ident, test.path); got != test.want {
+			t.Errorf("matchesPath(%q, %q) = %v, want %v", test.ident, test.path, got, test.want)
+		}
+	}
+}
+
+func BenchmarkMatchesPath(b *testing.B) {
+	// A collection of calls that exercise different kinds of matching.
+	tests := map[string][]struct {
+		ident string
+		path  string
+		want  bool
+	}{
+		"easy": { // lower case ascii
+			{"mypkg", "path/to/mypkg/y", true},
+			{"foo", "path/to/go-foo-bar", true},
+			{"gofoo", "path/to/go-foo-bar-baz", false},
+		},
+		"hard": {
+			{"MyPkg", "path/to/mypkg", true},
+			{"世界", "path/to/go-世界-pkg/foo", true},
+			{"longpkgname", "cloud.google.com/Go/Spanner/Admin/Database/longpkgname", true},
+		},
+	}
+
+	for name, tests := range tests {
+		b.Run(name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for _, test := range tests {
+					if got := matchesPath(test.ident, test.path); got != test.want {
+						b.Errorf("matchesPath(%q, %q) = %v, want %v", test.ident, test.path, got, test.want)
+					}
+				}
+			}
+		})
+	}
 }

@@ -24,6 +24,15 @@ func Keys[M ~map[K]V, K comparable, V any](m M) []K {
 	return r
 }
 
+// Values returns the values of the map M.
+func Values[M ~map[K]V, K comparable, V any](m M) []V {
+	r := make([]V, 0, len(m))
+	for _, v := range m {
+		r = append(r, v)
+	}
+	return r
+}
+
 // SameKeys reports whether x and y have equal sets of keys.
 func SameKeys[K comparable, V1, V2 any](x map[K]V1, y map[K]V2) bool {
 	if len(x) != len(y) {
@@ -35,4 +44,13 @@ func SameKeys[K comparable, V1, V2 any](x map[K]V1, y map[K]V2) bool {
 		}
 	}
 	return true
+}
+
+// Clone returns a new map with the same entries as m.
+func Clone[M ~map[K]V, K comparable, V any](m M) M {
+	copy := make(map[K]V, len(m))
+	for k, v := range m {
+		copy[k] = v
+	}
+	return copy
 }

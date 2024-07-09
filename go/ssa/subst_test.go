@@ -16,6 +16,10 @@ func TestSubst(t *testing.T) {
 	const source = `
 package P
 
+func within(){
+	// Pretend that the instantiation happens within this function.
+}
+
 type t0 int
 func (t0) f()
 type t1 interface{ f() }
@@ -53,6 +57,11 @@ var _ L[int] = Fn0[L[int]](nil)
 	pkg, err := conf.Check("P", fset, []*ast.File{f}, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	within, _ := pkg.Scope().Lookup("within").(*types.Func)
+	if within == nil {
+		t.Fatal("Failed to find the function within()")
 	}
 
 	for _, test := range []struct {
@@ -94,7 +103,7 @@ var _ L[int] = Fn0[L[int]](nil)
 
 		T := tv.Type.(*types.Named)
 
-		subst := makeSubster(types.NewContext(), nil, T.TypeParams(), targs, true)
+		subst := makeSubster(types.NewContext(), within, T.TypeParams(), targs, true)
 		sub := subst.typ(T.Underlying())
 		if got := sub.String(); got != test.want {
 			t.Errorf("subst{%v->%v}.typ(%s) = %v, want %v", test.expr, test.args, T.Underlying(), got, test.want)

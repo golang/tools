@@ -7,6 +7,7 @@ package ssa
 import (
 	"go/types"
 
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -49,7 +50,8 @@ func typeSetOf(typ types.Type) termList {
 	// This is a adaptation of x/exp/typeparams.NormalTerms which x/tools cannot depend on.
 	var terms []*types.Term
 	var err error
-	switch typ := typ.(type) {
+	// typeSetOf(t) == typeSetOf(Unalias(t))
+	switch typ := aliases.Unalias(typ).(type) {
 	case *types.TypeParam:
 		terms, err = typeparams.StructuralTerms(typ)
 	case *types.Union:

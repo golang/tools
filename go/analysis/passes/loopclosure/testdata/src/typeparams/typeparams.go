@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// This file contains tests for the loopclosure checker.
+// This file contains legacy tests for the loopclosure checker for GoVersion <go1.22.
+// Expectations are incorrect after go1.22.
 
-//go:build go1.18
+//go:build go1.19
 
 package typeparams
 
@@ -45,15 +46,15 @@ type T[P any] struct {
 	a P
 }
 
-func (t T[P]) Go(func() error) { }
+func (t T[P]) Go(func() error) {}
 
 func _(g T[errgroup.Group]) {
 	var s []int
 	for i, v := range s {
 		// "T.a" is method "(*...errgroup.Group).Go".
 		g.a.Go(func() error {
-			print(i)  // want "loop variable i captured by func literal"
-			print(v)  // want "loop variable v captured by func literal"
+			print(i) // want "loop variable i captured by func literal"
+			print(v) // want "loop variable v captured by func literal"
 			return nil
 		})
 	}

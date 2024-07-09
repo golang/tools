@@ -34,13 +34,10 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		(*ast.RangeStmt)(nil),
 	}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		var copy *ast.RangeStmt
-		if stmt, ok := n.(*ast.RangeStmt); ok {
-			x := *stmt
+		var copy *ast.RangeStmt // shallow-copy the AST before modifying
+		{
+			x := *n.(*ast.RangeStmt)
 			copy = &x
-		}
-		if copy == nil {
-			return
 		}
 		end := newlineIndex(pass.Fset, copy)
 

@@ -15,12 +15,12 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 // PrepareCallHierarchy returns an array of CallHierarchyItem for a file and the position within the file.
@@ -82,7 +82,7 @@ func IncomingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	for _, ref := range refs {
 		callItem, err := enclosingNodeCallItem(ctx, snapshot, ref.pkgPath, ref.location)
 		if err != nil {
-			event.Error(ctx, "error getting enclosing node", err, tag.Method.Of(string(ref.pkgPath)))
+			event.Error(ctx, fmt.Sprintf("error getting enclosing node for %q", ref.pkgPath), err)
 			continue
 		}
 		loc := protocol.Location{
@@ -116,7 +116,7 @@ func enclosingNodeCallItem(ctx context.Context, snapshot *cache.Snapshot, pkgPat
 	// that don't contain the reference, using either a scanner-based
 	// implementation such as https://go.dev/play/p/KUrObH1YkX8
 	// (~31% speedup), or a byte-oriented implementation (2x speedup).
-	pgf, err := snapshot.ParseGo(ctx, fh, ParseFull)
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return protocol.CallHierarchyItem{}, err
 	}
@@ -125,46 +125,57 @@ func enclosingNodeCallItem(ctx context.Context, snapshot *cache.Snapshot, pkgPat
 		return protocol.CallHierarchyItem{}, err
 	}
 
-	// Find the enclosing function, if any, and the number of func literals in between.
-	var funcDecl *ast.FuncDecl
-	var funcLit *ast.FuncLit // innermost function literal
-	var litCount int
+	// Find the enclosing named function, if any.
+	//
+	// It is tempting to treat anonymous functions as nodes in the
+	// call hierarchy, and historically we used to do that,
+	// poorly; see #64451. However, it is impossible to track
+	// references to anonymous functions without much deeper
+	// analysis. Local analysis is tractable, but ultimately it
+	// can only detect calls from the outer function to the inner
+	// function.
+	//
+	// It is simpler and clearer to treat the top-level named
+	// function and all its nested functions as one entity, and it
+	// allows users to recursively expand the tree where, before,
+	// the chain would be broken by each lambda.
+	//
+	// If the selection is in a global var initializer,
+	// default to the file's package declaration.
 	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-outer:
+	var (
+		name = pgf.File.Name.Name
+		kind = protocol.Package
+	)
+	start, end = pgf.File.Name.Pos(), pgf.File.Name.End()
 	for _, node := range path {
-		switch n := node.(type) {
+		switch node := node.(type) {
 		case *ast.FuncDecl:
-			funcDecl = n
-			break outer
+			name = node.Name.Name
+			start, end = node.Name.Pos(), node.Name.End()
+			kind = protocol.Function
+
 		case *ast.FuncLit:
-			litCount++
-			if litCount > 1 {
-				continue
-			}
-			funcLit = n
+			// If the call comes from a FuncLit with
+			// no enclosing FuncDecl, then use the
+			// FuncLit's extent.
+			name = "func"
+			start, end = node.Pos(), node.Type.End() // signature, sans body
+			kind = protocol.Function
+
+		case *ast.ValueSpec:
+			// If the call comes from a var (or,
+			// theoretically, const) initializer outside
+			// any function, then use the ValueSpec.Names span.
+			name = "init"
+			start, end = node.Names[0].Pos(), node.Names[len(node.Names)-1].End()
+			kind = protocol.Variable
 		}
 	}
 
-	nameIdent := path[len(path)-1].(*ast.File).Name
-	kind := protocol.Package
-	if funcDecl != nil {
-		nameIdent = funcDecl.Name
-		kind = protocol.Function
-	}
-
-	nameStart, nameEnd := nameIdent.Pos(), nameIdent.End()
-	if funcLit != nil {
-		nameStart, nameEnd = funcLit.Type.Func, funcLit.Type.Params.Pos()
-		kind = protocol.Function
-	}
-	rng, err := pgf.PosRange(nameStart, nameEnd)
+	rng, err := pgf.PosRange(start, end)
 	if err != nil {
 		return protocol.CallHierarchyItem{}, err
-	}
-
-	name := nameIdent.Name
-	for i := 0; i < litCount; i++ {
-		name += ".func()"
 	}
 
 	return protocol.CallHierarchyItem{
@@ -201,13 +212,8 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		return nil, nil
 	}
 
-	// Skip builtins.
-	if obj.Pkg() == nil {
-		return nil, nil
-	}
-
-	if !obj.Pos().IsValid() {
-		return nil, bug.Errorf("internal error: object %s.%s missing position", obj.Pkg().Path(), obj.Name())
+	if isBuiltin(obj) {
+		return nil, nil // built-ins have no position
 	}
 
 	declFile := pkg.FileSet().File(obj.Pos())
@@ -221,7 +227,6 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		return nil, err
 	}
 
-	// Use TypecheckFull as we want to inspect the body of the function declaration.
 	declPkg, declPGF, err := NarrowestPackageForFile(ctx, snapshot, uri)
 	if err != nil {
 		return nil, err
@@ -271,10 +276,8 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		if obj == nil {
 			continue
 		}
-
-		// ignore calls to builtin functions
-		if obj.Pkg() == nil {
-			continue
+		if isBuiltin(obj) {
+			continue // built-ins have no position
 		}
 
 		outgoingCall, ok := outgoingCalls[obj.Pos()]

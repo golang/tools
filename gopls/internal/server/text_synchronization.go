@@ -10,14 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/xcontext"
 )
@@ -91,7 +92,7 @@ func (m ModificationSource) String() string {
 }
 
 func (s *server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didOpen", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.didOpen", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	uri := params.TextDocument.URI
@@ -120,7 +121,7 @@ func (s *server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 }
 
 func (s *server) DidChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didChange", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.didChange", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	uri := params.TextDocument.URI
@@ -189,7 +190,7 @@ func (s *server) DidChangeWatchedFiles(ctx context.Context, params *protocol.Did
 }
 
 func (s *server) DidSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didSave", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.didSave", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	c := file.Modification{
@@ -203,7 +204,7 @@ func (s *server) DidSave(ctx context.Context, params *protocol.DidSaveTextDocume
 }
 
 func (s *server) DidClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didClose", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.didClose", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	return s.didModifyFiles(ctx, []file.Modification{
@@ -313,6 +314,7 @@ func (s *server) changedText(ctx context.Context, uri protocol.DocumentURI, chan
 	// Check if the client sent the full content of the file.
 	// We accept a full content change even if the server expected incremental changes.
 	if len(changes) == 1 && changes[0].Range == nil && changes[0].RangeLength == 0 {
+		changeFull.Inc()
 		return []byte(changes[0].Text), nil
 	}
 	return s.applyIncrementalChanges(ctx, uri, changes)
@@ -327,7 +329,7 @@ func (s *server) applyIncrementalChanges(ctx context.Context, uri protocol.Docum
 	if err != nil {
 		return nil, fmt.Errorf("%w: file not found (%v)", jsonrpc2.ErrInternal, err)
 	}
-	for _, change := range changes {
+	for i, change := range changes {
 		// TODO(adonovan): refactor to use diff.Apply, which is robust w.r.t.
 		// out-of-order or overlapping changes---and much more efficient.
 
@@ -348,8 +350,62 @@ func (s *server) applyIncrementalChanges(ctx context.Context, uri protocol.Docum
 		buf.WriteString(change.Text)
 		buf.Write(content[end:])
 		content = buf.Bytes()
+		if i == 0 { // only look at the first change if there are seversl
+			// TODO(pjw): understand multi-change)
+			s.checkEfficacy(fh.URI(), fh.Version(), change)
+		}
 	}
 	return content, nil
+}
+
+// increment counters if any of the completions look like there were used
+func (s *server) checkEfficacy(uri protocol.DocumentURI, version int32, change protocol.TextDocumentContentChangePartial) {
+	s.efficacyMu.Lock()
+	defer s.efficacyMu.Unlock()
+	if s.efficacyURI != uri {
+		return
+	}
+	// gopls increments the version, the test client does not
+	if version != s.efficacyVersion && version != s.efficacyVersion+1 {
+		return
+	}
+	// does any change at pos match a proposed completion item?
+	for _, item := range s.efficacyItems {
+		if item.TextEdit == nil {
+			continue
+		}
+		// CompletionTextEdit may have both insert/replace mode ranges.
+		// According to the LSP spec, if an `InsertReplaceEdit` is returned
+		// the edit's insert range must be a prefix of the edit's replace range,
+		// that means it must be contained and starting at the same position.
+		// The efficacy computation uses only the start range, so it is not
+		// affected by whether the client applied the suggestion in insert
+		// or replace mode. Let's just use the replace mode that was the default
+		// in gopls for a while.
+		edit, err := protocol.SelectCompletionTextEdit(item, false)
+		if err != nil {
+			continue
+		}
+		if edit.Range.Start == change.Range.Start {
+			// the change and the proposed completion start at the same
+			if change.RangeLength == 0 && len(change.Text) == 1 {
+				// a single character added it does not count as a completion
+				continue
+			}
+			ix := strings.Index(edit.NewText, "$")
+			if ix < 0 && strings.HasPrefix(change.Text, edit.NewText) {
+				// not a snippet, suggested completion is a prefix of the change
+				complUsed.Inc()
+				return
+			}
+			if ix > 1 && strings.HasPrefix(change.Text, edit.NewText[:ix]) {
+				// a snippet, suggested completion up to $ marker is a prefix of the change
+				complUsed.Inc()
+				return
+			}
+		}
+	}
+	complUnused.Inc()
 }
 
 func changeTypeToFileAction(ct protocol.FileChangeType) file.Action {

@@ -64,15 +64,21 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	// Handle the case where the cursor is in a linkname directive.
-	locations, err := LinknameDefinition(ctx, snapshot, pgf.Mapper, position)
+	locations, err := linknameDefinition(ctx, snapshot, pgf.Mapper, position)
 	if !errors.Is(err, ErrNoLinkname) {
-		return locations, err
+		return locations, err // may be success or failure
 	}
 
 	// Handle the case where the cursor is in an embed directive.
-	locations, err = EmbedDefinition(pgf.Mapper, position)
+	locations, err = embedDefinition(pgf.Mapper, position)
 	if !errors.Is(err, ErrNoEmbed) {
-		return locations, err
+		return locations, err // may be success or failure
+	}
+
+	// Handle the case where the cursor is in a doc link.
+	locations, err = docLinkDefinition(ctx, snapshot, pkg, pgf, pos)
+	if !errors.Is(err, errNoCommentReference) {
+		return locations, err // may be success or failure
 	}
 
 	// The general case: the cursor is on an identifier.
@@ -81,8 +87,8 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return nil, nil
 	}
 
-	// Handle objects with no position: builtin, unsafe.
-	if !obj.Pos().IsValid() {
+	// Built-ins have no position.
+	if isBuiltin(obj) {
 		return builtinDefinition(ctx, snapshot, obj)
 	}
 
@@ -97,12 +103,12 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 // builtinDefinition returns the location of the fake source
 // declaration of a built-in in {builtin,unsafe}.go.
 func builtinDefinition(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) ([]protocol.Location, error) {
-	pgf, decl, err := builtinDecl(ctx, snapshot, obj)
+	pgf, ident, err := builtinDecl(ctx, snapshot, obj)
 	if err != nil {
 		return nil, err
 	}
 
-	loc, err := pgf.PosLocation(decl.Pos(), decl.Pos()+token.Pos(len(obj.Name())))
+	loc, err := pgf.NodeLocation(ident)
 	if err != nil {
 		return nil, err
 	}
@@ -110,29 +116,59 @@ func builtinDefinition(ctx context.Context, snapshot *cache.Snapshot, obj types.
 }
 
 // builtinDecl returns the parsed Go file and node corresponding to a builtin
-// object, which may be a universe object or part of types.Unsafe.
-func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) (*parsego.File, ast.Node, error) {
-	// getDecl returns the file-level declaration of name
-	// using legacy (go/ast) object resolution.
-	getDecl := func(file *ast.File, name string) (ast.Node, error) {
+// object, which may be a universe object or part of types.Unsafe, as well as
+// its declaring identifier.
+func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) (*parsego.File, *ast.Ident, error) {
+	// declaringIdent returns the file-level declaration node (as reported by
+	// ast.Object) and declaring identifier of name using legacy (go/ast) object
+	// resolution.
+	declaringIdent := func(file *ast.File, name string) (ast.Node, *ast.Ident, error) {
 		astObj := file.Scope.Lookup(name)
 		if astObj == nil {
 			// Every built-in should have documentation syntax.
 			// However, it is possible to reach this statement by
 			// commenting out declarations in {builtin,unsafe}.go.
-			return nil, fmt.Errorf("internal error: no object for %s", name)
+			return nil, nil, fmt.Errorf("internal error: no object for %s", name)
 		}
 		decl, ok := astObj.Decl.(ast.Node)
 		if !ok {
-			return nil, bug.Errorf("internal error: no declaration for %s", obj.Name())
+			return nil, nil, bug.Errorf("internal error: no declaration for %s", obj.Name())
 		}
-		return decl, nil
+		var ident *ast.Ident
+		switch node := decl.(type) {
+		case *ast.Field:
+			for _, id := range node.Names {
+				if id.Name == name {
+					ident = id
+				}
+			}
+		case *ast.ValueSpec:
+			for _, id := range node.Names {
+				if id.Name == name {
+					ident = id
+				}
+			}
+		case *ast.TypeSpec:
+			ident = node.Name
+		case *ast.Ident:
+			ident = node
+		case *ast.FuncDecl:
+			ident = node.Name
+		case *ast.ImportSpec, *ast.LabeledStmt, *ast.AssignStmt:
+			// Not reachable for imported objects.
+		default:
+			return nil, nil, bug.Errorf("internal error: unexpected decl type %T", decl)
+		}
+		if ident == nil {
+			return nil, nil, bug.Errorf("internal error: no declaring identifier for %s", obj.Name())
+		}
+		return decl, ident, nil
 	}
 
 	var (
-		pgf  *ParsedGoFile
-		decl ast.Node
-		err  error
+		pgf   *parsego.File
+		ident *ast.Ident
+		err   error
 	)
 	if obj.Pkg() == types.Unsafe {
 		// package "unsafe":
@@ -148,11 +184,13 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 		if err != nil {
 			return nil, nil, err
 		}
-		pgf, err = snapshot.ParseGo(ctx, fh, ParseFull&^parser.SkipObjectResolution)
+		// TODO(rfindley): treat unsafe symmetrically with the builtin file. Either
+		// pre-parse them both, or look up metadata for both.
+		pgf, err = snapshot.ParseGo(ctx, fh, parsego.Full&^parser.SkipObjectResolution)
 		if err != nil {
 			return nil, nil, err
 		}
-		decl, err = getDecl(pgf.File, obj.Name())
+		_, ident, err = declaringIdent(pgf.File, obj.Name())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -166,23 +204,24 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 
 		if obj.Parent() == types.Universe {
 			// built-in function or type
-			decl, err = getDecl(pgf.File, obj.Name())
+			_, ident, err = declaringIdent(pgf.File, obj.Name())
 			if err != nil {
 				return nil, nil, err
 			}
 		} else if obj.Name() == "Error" {
 			// error.Error method
-			decl, err = getDecl(pgf.File, "error")
+			decl, _, err := declaringIdent(pgf.File, "error")
 			if err != nil {
 				return nil, nil, err
 			}
-			decl = decl.(*ast.TypeSpec).Type.(*ast.InterfaceType).Methods.List[0]
-
+			field := decl.(*ast.TypeSpec).Type.(*ast.InterfaceType).Methods.List[0]
+			ident = field.Names[0]
 		} else {
 			return nil, nil, bug.Errorf("unknown built-in %v", obj)
 		}
 	}
-	return pgf, decl, nil
+
+	return pgf, ident, nil
 }
 
 // referencedObject returns the identifier and object referenced at the
@@ -202,13 +241,13 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 // TODO(rfindley): this function exists to preserve the pre-existing behavior
 // of golang.Identifier. Eliminate this helper in favor of sharing
 // functionality with objectsAt, after choosing suitable primitives.
-func referencedObject(pkg *cache.Package, pgf *ParsedGoFile, pos token.Pos) (*ast.Ident, types.Object, types.Type) {
+func referencedObject(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (*ast.Ident, types.Object, types.Type) {
 	path := pathEnclosingObjNode(pgf.File, pos)
 	if len(path) == 0 {
 		return nil, nil, nil
 	}
 	var obj types.Object
-	info := pkg.GetTypesInfo()
+	info := pkg.TypesInfo()
 	switch n := path[0].(type) {
 	case *ast.Ident:
 		obj = info.ObjectOf(n)
@@ -242,7 +281,7 @@ func referencedObject(pkg *cache.Package, pgf *ParsedGoFile, pos token.Pos) (*as
 // import spec containing pos.
 //
 // If pos is not inside an import spec, it returns nil, nil.
-func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *ParsedGoFile, pos token.Pos) ([]protocol.Location, error) {
+func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol.Location, error) {
 	var imp *ast.ImportSpec
 	for _, spec := range pgf.File.Imports {
 		// We use "<= End" to accept a query immediately after an ImportSpec.
@@ -273,7 +312,7 @@ func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package
 			}
 			continue
 		}
-		pgf, err := s.ParseGo(ctx, fh, ParseHeader)
+		pgf, err := s.ParseGo(ctx, fh, parsego.Header)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()

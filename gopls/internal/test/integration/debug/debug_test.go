@@ -9,10 +9,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	. "golang.org/x/tools/gopls/internal/test/integration"
@@ -20,7 +20,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	Main(m, hooks.Options)
+	os.Exit(Main(m))
 }
 
 func TestBugNotification(t *testing.T) {
@@ -40,7 +40,7 @@ func TestBugNotification(t *testing.T) {
 // start the internal web server.
 func TestStartDebugging(t *testing.T) {
 	WithOptions(
-		Modes(Default|Experimental), // doesn't work in Forwarded mode
+		Modes(Default), // doesn't work in Forwarded mode
 	).Run(t, "", func(t *testing.T, env *Env) {
 		// Start a debugging server.
 		res, err := startDebugging(env.Ctx, env.Editor.Server, &command.DebuggingArgs{
@@ -80,7 +80,7 @@ func startDebugging(ctx context.Context, server protocol.Server, args *command.D
 		return nil, err
 	}
 	res0, err := server.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
-		Command:   command.StartDebugging.ID(),
+		Command:   command.StartDebugging.String(),
 		Arguments: rawArgs,
 	})
 	if err != nil {

@@ -10,9 +10,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/build"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,12 +20,13 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
+	debuglog "golang.org/x/tools/gopls/internal/debug/log"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/goversion"
 	"golang.org/x/tools/gopls/internal/util/maps"
@@ -41,7 +42,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 	if params != nil && params.ClientInfo != nil {
 		clientName = params.ClientInfo.Name
 	}
-	telemetry.RecordClientInfo(clientName)
+	recordClientInfo(clientName)
 
 	s.stateMu.Lock()
 	if s.state >= serverInitializing {
@@ -68,13 +69,10 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 	s.progress.SetSupportsWorkDoneProgress(params.Capabilities.Window.WorkDoneProgress)
 
 	options := s.Options().Clone()
-	// TODO(rfindley): remove the error return from handleOptionResults, and
-	// eliminate this defer.
+	// TODO(rfindley): eliminate this defer.
 	defer func() { s.SetOptions(options) }()
 
-	if err := s.handleOptionResults(ctx, settings.SetOptions(options, params.InitializationOptions)); err != nil {
-		return nil, err
-	}
+	s.handleOptionErrors(ctx, options.Set(params.InitializationOptions))
 	options.ForClientCapabilities(params.ClientInfo, params.Capabilities)
 
 	if options.ShowBugReports {
@@ -84,11 +82,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 				Type:    protocol.Error,
 				Message: fmt.Sprintf("A bug occurred on the server: %s\nLocation:%s", b.Description, b.Key),
 			}
-			go func() {
-				if err := s.eventuallyShowMessage(context.Background(), msg); err != nil {
-					log.Printf("error showing bug: %v", err)
-				}
-			}()
+			go s.eventuallyShowMessage(context.Background(), msg)
 		})
 	}
 
@@ -101,15 +95,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 			}}
 		}
 	}
-	for _, folder := range folders {
-		if folder.URI == "" {
-			return nil, fmt.Errorf("empty WorkspaceFolder.URI")
-		}
-		if _, err := protocol.ParseDocumentURI(folder.URI); err != nil {
-			return nil, fmt.Errorf("invalid WorkspaceFolder.URI: %v", err)
-		}
-		s.pendingFolders = append(s.pendingFolders, folder)
-	}
+	s.pendingFolders = append(s.pendingFolders, folders...)
 
 	var codeActionProvider interface{} = true
 	if ca := params.Capabilities.TextDocument.CodeAction; len(ca.CodeActionLiteralSupport.CodeActionKind.ValueSet) > 0 {
@@ -249,7 +235,9 @@ func (s *server) checkViewGoVersions() {
 		if oldestVersion == -1 || viewVersion < oldestVersion {
 			oldestVersion, fromBuild = viewVersion, false
 		}
-		telemetry.RecordViewGoVersion(viewVersion)
+		if viewVersion >= 0 {
+			counter.Inc(fmt.Sprintf("gopls/goversion:1.%d", viewVersion))
+		}
 	}
 
 	if msg, isError := goversion.Message(oldestVersion, fromBuild); msg != "" {
@@ -282,10 +270,27 @@ func go1Point() int {
 // addFolders adds the specified list of "folders" (that's Windows for
 // directories) to the session. It does not return an error, though it
 // may report an error to the client over LSP if one or more folders
-// had problems.
+// had problems, for example, folders with unsupported file system.
 func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFolder) {
 	originalViews := len(s.session.Views())
 	viewErrors := make(map[protocol.URI]error)
+
+	// Skip non-'file' scheme, or invalid workspace folders,
+	// and log them form error reports.
+	// VS Code's file system API
+	// (https://code.visualstudio.com/api/references/vscode-api#FileSystem)
+	// allows extension to define their own schemes and register
+	// them with the workspace. We've seen gitlens://, decompileFs://, etc
+	// but the list can grow over time.
+	var filtered []protocol.WorkspaceFolder
+	for _, f := range folders {
+		if _, err := protocol.ParseDocumentURI(f.URI); err != nil {
+			debuglog.Warning.Logf(ctx, "skip adding virtual folder %q - invalid folder URI: %v", f.Name, err)
+			continue
+		}
+		filtered = append(filtered, f)
+	}
+	folders = filtered
 
 	var ndiagnose sync.WaitGroup // number of unfinished diagnose calls
 	if s.Options().VerboseWorkDoneProgress {
@@ -330,7 +335,7 @@ func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		// Diagnose the newly created view asynchronously.
 		ndiagnose.Add(1)
 		go func() {
-			s.diagnoseSnapshot(snapshot, nil, 0)
+			s.diagnoseSnapshot(snapshot.BackgroundContext(), snapshot, nil, 0)
 			<-initialized
 			release()
 			ndiagnose.Done()
@@ -458,50 +463,49 @@ func (s *server) SetOptions(opts *settings.Options) {
 	s.options = opts
 }
 
-func (s *server) newFolder(ctx context.Context, folder protocol.DocumentURI, name string) (*cache.Folder, error) {
-	opts := s.Options()
-	if opts.ConfigurationSupported {
-		scope := string(folder)
-		configs, err := s.client.Configuration(ctx, &protocol.ParamConfiguration{
-			Items: []protocol.ConfigurationItem{{
-				ScopeURI: &scope,
-				Section:  "gopls",
-			}},
-		},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get workspace configuration from client (%s): %v", folder, err)
-		}
-
-		opts := opts.Clone()
-		for _, config := range configs {
-			if err := s.handleOptionResults(ctx, settings.SetOptions(opts, config)); err != nil {
-				return nil, err
-			}
-		}
-	}
-
+func (s *server) newFolder(ctx context.Context, folder protocol.DocumentURI, name string, opts *settings.Options) (*cache.Folder, error) {
 	env, err := cache.FetchGoEnv(ctx, folder, opts)
 	if err != nil {
 		return nil, err
 	}
+
+	// Increment folder counters.
+	switch {
+	case env.GOTOOLCHAIN == "auto" || strings.Contains(env.GOTOOLCHAIN, "+auto"):
+		counter.New("gopls/gotoolchain:auto").Inc()
+	case env.GOTOOLCHAIN == "path" || strings.Contains(env.GOTOOLCHAIN, "+path"):
+		counter.New("gopls/gotoolchain:path").Inc()
+	case env.GOTOOLCHAIN == "local": // local+auto and local+path handled above
+		counter.New("gopls/gotoolchain:local").Inc()
+	default:
+		counter.New("gopls/gotoolchain:other").Inc()
+	}
+
 	return &cache.Folder{
 		Dir:     folder,
 		Name:    name,
 		Options: opts,
-		Env:     env,
+		Env:     *env,
 	}, nil
 }
 
+// fetchFolderOptions makes a workspace/configuration request for the given
+// folder, and populates options with the result.
+//
+// If folder is "", fetchFolderOptions makes an unscoped request.
 func (s *server) fetchFolderOptions(ctx context.Context, folder protocol.DocumentURI) (*settings.Options, error) {
 	opts := s.Options()
 	if !opts.ConfigurationSupported {
 		return opts, nil
 	}
-	scope := string(folder)
+	var scopeURI *string
+	if folder != "" {
+		scope := string(folder)
+		scopeURI = &scope
+	}
 	configs, err := s.client.Configuration(ctx, &protocol.ParamConfiguration{
 		Items: []protocol.ConfigurationItem{{
-			ScopeURI: &scope,
+			ScopeURI: scopeURI,
 			Section:  "gopls",
 		}},
 	},
@@ -512,33 +516,30 @@ func (s *server) fetchFolderOptions(ctx context.Context, folder protocol.Documen
 
 	opts = opts.Clone()
 	for _, config := range configs {
-		if err := s.handleOptionResults(ctx, settings.SetOptions(opts, config)); err != nil {
-			return nil, err
-		}
+		s.handleOptionErrors(ctx, opts.Set(config))
 	}
 	return opts, nil
 }
 
-func (s *server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMessageParams) error {
+func (s *server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMessageParams) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	if s.state == serverInitialized {
-		return s.client.ShowMessage(ctx, msg)
+		_ = s.client.ShowMessage(ctx, msg) // ignore error
 	}
 	s.notifications = append(s.notifications, msg)
-	return nil
 }
 
-func (s *server) handleOptionResults(ctx context.Context, results settings.OptionResults) error {
-	var warnings, errors []string
-	for _, result := range results {
-		switch result.Error.(type) {
-		case nil:
-			// nothing to do
-		case *settings.SoftError:
-			warnings = append(warnings, result.Error.Error())
-		default:
-			errors = append(errors, result.Error.Error())
+func (s *server) handleOptionErrors(ctx context.Context, optionErrors []error) {
+	var warnings, errs []string
+	for _, err := range optionErrors {
+		if err == nil {
+			panic("nil error passed to handleOptionErrors")
+		}
+		if errors.Is(err, new(settings.SoftError)) {
+			warnings = append(warnings, err.Error())
+		} else {
+			errs = append(errs, err.Error())
 		}
 	}
 
@@ -550,10 +551,10 @@ func (s *server) handleOptionResults(ctx context.Context, results settings.Optio
 	// individual viewsettings.
 	var msgs []string
 	msgType := protocol.Warning
-	if len(errors) > 0 {
+	if len(errs) > 0 {
 		msgType = protocol.Error
-		sort.Strings(errors)
-		msgs = append(msgs, errors...)
+		sort.Strings(errs)
+		msgs = append(msgs, errs...)
 	}
 	if len(warnings) > 0 {
 		sort.Strings(warnings)
@@ -567,10 +568,8 @@ func (s *server) handleOptionResults(ctx context.Context, results settings.Optio
 			Type:    msgType,
 			Message: combined,
 		}
-		return s.eventuallyShowMessage(ctx, params)
+		s.eventuallyShowMessage(ctx, params)
 	}
-
-	return nil
 }
 
 // fileOf returns the file for a given URI and its snapshot.
@@ -600,6 +599,11 @@ func (s *server) Shutdown(ctx context.Context) error {
 		event.Log(ctx, "server shutdown without initialization")
 	}
 	if s.state != serverShutDown {
+		// Wait for the webserver (if any) to finish.
+		if s.web != nil {
+			s.web.server.Shutdown(ctx)
+		}
+
 		// drop all the active views
 		s.session.Shutdown(ctx)
 		s.state = serverShutDown
@@ -628,4 +632,43 @@ func (s *server) Exit(ctx context.Context) error {
 	// We don't terminate the process on a normal exit, we just allow it to
 	// close naturally if needed after the connection is closed.
 	return nil
+}
+
+// recordClientInfo records gopls client info.
+func recordClientInfo(clientName string) {
+	key := "gopls/client:other"
+	switch clientName {
+	case "Visual Studio Code":
+		key = "gopls/client:vscode"
+	case "Visual Studio Code - Insiders":
+		key = "gopls/client:vscode-insiders"
+	case "VSCodium":
+		key = "gopls/client:vscodium"
+	case "code-server":
+		// https://github.com/coder/code-server/blob/3cb92edc76ecc2cfa5809205897d93d4379b16a6/ci/build/build-vscode.sh#L19
+		key = "gopls/client:code-server"
+	case "Eglot":
+		// https://lists.gnu.org/archive/html/bug-gnu-emacs/2023-03/msg00954.html
+		key = "gopls/client:eglot"
+	case "govim":
+		// https://github.com/govim/govim/pull/1189
+		key = "gopls/client:govim"
+	case "Neovim":
+		// https://github.com/neovim/neovim/blob/42333ea98dfcd2994ee128a3467dfe68205154cd/runtime/lua/vim/lsp.lua#L1361
+		key = "gopls/client:neovim"
+	case "coc.nvim":
+		// https://github.com/neoclide/coc.nvim/blob/3dc6153a85ed0f185abec1deb972a66af3fbbfb4/src/language-client/client.ts#L994
+		key = "gopls/client:coc.nvim"
+	case "Sublime Text LSP":
+		// https://github.com/sublimelsp/LSP/blob/e608f878e7e9dd34aabe4ff0462540fadcd88fcc/plugin/core/sessions.py#L493
+		key = "gopls/client:sublimetext"
+	default:
+		// Accumulate at least a local counter for an unknown
+		// client name, but also fall through to count it as
+		// ":other" for collection.
+		if clientName != "" {
+			counter.New(fmt.Sprintf("gopls/client-other:%s", clientName)).Inc()
+		}
+	}
+	counter.Inc(key)
 }

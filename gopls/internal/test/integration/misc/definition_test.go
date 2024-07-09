@@ -495,9 +495,7 @@ const _ = b.K
 		}
 
 		// Run 'go mod vendor' outside the editor.
-		if err := env.Sandbox.RunGoCommand(env.Ctx, ".", "mod", []string{"vendor"}, nil, true); err != nil {
-			t.Fatalf("go mod vendor: %v", err)
-		}
+		env.RunGoCommand("mod", "vendor")
 
 		// Synchronize changes to watched files.
 		env.Await(env.DoneWithChangeWatchedFiles())

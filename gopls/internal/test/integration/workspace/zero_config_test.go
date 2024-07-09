@@ -5,9 +5,11 @@
 package workspace
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 
@@ -52,7 +54,7 @@ func main() {}
 		}
 		checkViews := func(want ...command.View) {
 			got := env.Views()
-			if diff := cmp.Diff(want, got); diff != "" {
+			if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(command.View{}, "ID")); diff != "" {
 				t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
 			}
 		}
@@ -129,7 +131,7 @@ package a
 		}
 		checkViews := func(want ...command.View) {
 			got := env.Views()
-			if diff := cmp.Diff(want, got); diff != "" {
+			if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(command.View{}, "ID")); diff != "" {
 				t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
 			}
 		}
@@ -183,5 +185,143 @@ const C = 0
 			Diagnostics(env.AtRegexp("go.mod", "modul")),
 			Diagnostics(env.AtRegexp("a.go", "broken"), WithMessage("initialization failed")),
 		)
+	})
+}
+
+func TestGoModReplace(t *testing.T) {
+	// This test checks that we treat locally replaced modules as workspace
+	// modules, according to the "includeReplaceInWorkspace" setting.
+	const files = `
+-- moda/go.mod --
+module golang.org/a
+
+require golang.org/b v1.2.3
+
+replace golang.org/b => ../modb
+
+go 1.20
+
+-- moda/a.go --
+package a
+
+import "golang.org/b"
+
+const A = b.B
+
+-- modb/go.mod --
+module golang.org/b
+
+go 1.20
+
+-- modb/b.go --
+package b
+
+const B = 1
+`
+
+	for useReplace, expectation := range map[bool]Expectation{
+		true:  FileWatchMatching("modb"),
+		false: NoFileWatchMatching("modb"),
+	} {
+		WithOptions(
+			WorkspaceFolders("moda"),
+			Settings{
+				"includeReplaceInWorkspace": useReplace,
+			},
+		).Run(t, files, func(t *testing.T, env *Env) {
+			env.OnceMet(
+				InitialWorkspaceLoad,
+				expectation,
+			)
+		})
+	}
+}
+
+func TestDisableZeroConfig(t *testing.T) {
+	// This test checks that we treat locally replaced modules as workspace
+	// modules, according to the "includeReplaceInWorkspace" setting.
+	const files = `
+-- moda/go.mod --
+module golang.org/a
+
+go 1.20
+
+-- moda/a.go --
+package a
+
+-- modb/go.mod --
+module golang.org/b
+
+go 1.20
+
+-- modb/b.go --
+package b
+
+`
+
+	WithOptions(
+		Settings{"zeroConfig": false},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("moda/a.go")
+		env.OpenFile("modb/b.go")
+		env.AfterChange()
+		if got := env.Views(); len(got) != 1 || got[0].Type != cache.AdHocView.String() {
+			t.Errorf("Views: got %v, want one adhoc view", got)
+		}
+	})
+}
+
+func TestVendorExcluded(t *testing.T) {
+	// Test that we don't create Views for vendored modules.
+	//
+	// We construct the vendor directory manually here, as `go mod vendor` will
+	// omit the go.mod file. This synthesizes the setup of Kubernetes, where the
+	// entire module is vendored through a symlinked directory.
+	const src = `
+-- go.mod --
+module example.com/a
+
+go 1.18
+
+require other.com/b v1.0.0
+
+-- a.go --
+package a
+import "other.com/b"
+var _ b.B
+
+-- vendor/modules.txt --
+# other.com/b v1.0.0
+## explicit; go 1.14
+other.com/b
+
+-- vendor/other.com/b/go.mod --
+module other.com/b
+go 1.14
+
+-- vendor/other.com/b/b.go --
+package b
+type B int
+
+func _() {
+	var V int // unused
+}
+`
+	WithOptions(
+		Modes(Default),
+	).Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+		env.AfterChange(NoDiagnostics())
+		loc := env.GoToDefinition(env.RegexpSearch("a.go", `b\.(B)`))
+		if !strings.Contains(string(loc.URI), "/vendor/") {
+			t.Fatalf("Definition(b.B) = %v, want vendored location", loc.URI)
+		}
+		env.AfterChange(
+			Diagnostics(env.AtRegexp("vendor/other.com/b/b.go", "V"), WithMessage("not used")),
+		)
+
+		if views := env.Views(); len(views) != 1 {
+			t.Errorf("After opening /vendor/, got %d views, want 1. Views:\n%v", len(views), views)
+		}
 	})
 }

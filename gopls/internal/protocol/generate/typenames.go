@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.19
-// +build go1.19
-
 package main
 
 import (
@@ -16,7 +13,7 @@ import (
 var typeNames = make(map[*Type]string)
 var genTypes []*newType
 
-func findTypeNames(model Model) {
+func findTypeNames(model *Model) {
 	for _, s := range model.Structures {
 		for _, e := range s.Extends {
 			nameType(e, nil) // all references

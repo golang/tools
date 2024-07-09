@@ -1,10 +1,5 @@
 This test checks that links in hover obey GOPRIVATE.
 
-Requires go1.19+ for the new go/doc/comment package.
-
--- flags --
--min_go=go1.19
-
 -- env --
 GOPRIVATE=mod.com
 -- go.mod --
@@ -21,13 +16,13 @@ package lib
 type L struct{} //@hover("L", "L", L)
 -- @L --
 ```go
-type L struct{}
+type L struct{} // size=0
 ```
 
 GOPRIVATE should also match nested packages.
 -- @T --
 ```go
-type T struct{}
+type T struct{} // size=0
 ```
 
 T should not be linked, as it is private.

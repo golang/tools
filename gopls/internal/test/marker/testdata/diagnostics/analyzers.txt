@@ -1,5 +1,5 @@
 Test of warning diagnostics from various analyzers:
-copylocks, printf, slog, tests, timeformat, and nilness.
+copylocks, printf, slog, tests, timeformat, nilness, and cgocall.
 
 -- go.mod --
 module example.com
@@ -7,13 +7,13 @@ go 1.12
 
 -- flags --
 -min_go=go1.21
+-cgo
 
 -- bad_test.go --
 package analyzer
 
 import (
 	"fmt"
-	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -34,13 +34,8 @@ func printfWrapper(format string, args ...interface{}) {
 	fmt.Printf(format, args...)
 }
 
-// slog
-func _() {
-	slog.Info("msg", 1) //@diag("1", re`slog.Info arg "1" should be a string or a slog.Attr`)
-}
-
 // tests
-func Testbad(t *testing.T) { //@diag("", re"Testbad has malformed name: first letter after 'Test' must not be lowercase")
+func Testbad(t *testing.T) { //@diag("Testbad", re"Testbad has malformed name: first letter after 'Test' must not be lowercase")
 }
 
 // timeformat
@@ -54,4 +49,34 @@ func _(ptr *int) {
 	if ptr == nil {
 		_ = *ptr //@diag("*ptr", re"nil dereference in load")
 	}
+}
+
+// unusedwrite
+func _(s struct{x int}) {
+	s.x = 1  //@diag("x", re"unused write to field x")
+}
+
+-- cgocall.go --
+package analyzer
+
+import "unsafe"
+
+// void f(void *ptr) {}
+import "C"
+
+// cgocall
+func _(c chan bool) {
+	C.f(unsafe.Pointer(&c)) //@ diag("unsafe", re"passing Go type with embedded pointer to C")
+}
+
+-- bad_test_go121.go --
+//go:build go1.21
+
+package analyzer
+
+import "log/slog"
+
+// slog
+func _() {
+	slog.Info("msg", 1) //@diag("1", re`slog.Info arg "1" should be a string or a slog.Attr`)
 }

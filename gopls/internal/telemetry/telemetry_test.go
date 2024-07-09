@@ -18,7 +18,6 @@ import (
 
 	"golang.org/x/telemetry/counter"
 	"golang.org/x/telemetry/counter/countertest" // requires go1.21+
-	"golang.org/x/tools/gopls/internal/hooks"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/telemetry"
@@ -27,13 +26,14 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	tmp, err := os.MkdirTemp("", "gopls-telemetry-test")
+	tmp, err := os.MkdirTemp("", "gopls-telemetry-test-counters")
 	if err != nil {
 		panic(err)
 	}
 	countertest.Open(tmp)
-	defer os.RemoveAll(tmp)
-	Main(m, hooks.Options)
+	code := Main(m)
+	os.RemoveAll(tmp) // golang/go#68243: ignore error; cleanup fails on Windows
+	os.Exit(code)
 }
 
 func TestTelemetry(t *testing.T) {
@@ -54,12 +54,13 @@ func TestTelemetry(t *testing.T) {
 		counter.New("gopls/client:" + editor),
 		counter.New("gopls/goversion:1." + goversion),
 		counter.New("fwd/vscode/linter:a"),
+		counter.New("gopls/gotoolchain:local"),
 	}
 	initialCounts := make([]uint64, len(sessionCounters))
 	for i, c := range sessionCounters {
 		count, err := countertest.ReadCounter(c)
 		if err != nil {
-			t.Fatalf("ReadCounter(%s): %v", c.Name(), err)
+			continue // counter db not open, or counter not found
 		}
 		initialCounts[i] = count
 	}
@@ -70,17 +71,33 @@ func TestTelemetry(t *testing.T) {
 		Modes(Default), // must be in-process to receive the bug report below
 		Settings{"showBugReports": true},
 		ClientName("Visual Studio Code"),
+		EnvVars{
+			"GOTOOLCHAIN": "local", // so that the local counter is incremented
+		},
 	).Run(t, "", func(_ *testing.T, env *Env) {
 		goversion = strconv.Itoa(env.GoVersion())
 		addForwardedCounters(env, []string{"vscode/linter:a"}, []int64{1})
 		const desc = "got a bug"
+
+		// This will increment a counter named something like:
+		//
+		// `gopls/bug
+		// golang.org/x/tools/gopls/internal/util/bug.report:+35
+		// golang.org/x/tools/gopls/internal/util/bug.Report:=68
+		// golang.org/x/tools/gopls/internal/telemetry_test.TestTelemetry.func2:+4
+		// golang.org/x/tools/gopls/internal/test/integration.(*Runner).Run.func1:+87
+		// testing.tRunner:+150
+		// runtime.goexit:+0`
+		//
 		bug.Report(desc) // want a stack counter with the trace starting from here.
+
 		env.Await(ShownMessage(desc))
 	})
 
 	// gopls/editor:client
 	// gopls/goversion:1.x
 	// fwd/vscode/linter:a
+	// gopls/gotoolchain:local
 	for i, c := range sessionCounters {
 		want := initialCounts[i] + 1
 		got, err := countertest.ReadCounter(c)
@@ -111,11 +128,11 @@ func addForwardedCounters(env *Env, names []string, values []int64) {
 	}
 	var res error
 	env.ExecuteCommand(&protocol.ExecuteCommandParams{
-		Command:   command.AddTelemetryCounters.ID(),
+		Command:   command.AddTelemetryCounters.String(),
 		Arguments: args,
-	}, res)
+	}, &res)
 	if res != nil {
-		env.T.Errorf("%v failed - %v", command.AddTelemetryCounters.ID(), res)
+		env.T.Errorf("%v failed - %v", command.AddTelemetryCounters, res)
 	}
 }
 

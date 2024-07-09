@@ -72,6 +72,8 @@ func g[A any, P interface{ctype1| ~ctype2}](a1 A, p1 P) {}
 
 type PT[T constraint] struct{ t T }
 
+func (r recv) method(p param) {}
+
 var v GT[targ1]
 
 var h = g[ targ2, targ3]
@@ -204,14 +206,16 @@ func TestPathEnclosingInterval_Paths(t *testing.T) {
 			"[Ident File],true"},
 		{"f() // NB",
 			"[CallExpr ExprStmt BlockStmt FuncDecl File],true"},
-		{" any", "[Ident Field FieldList FuncDecl File],true"},
-		{"|", "[BinaryExpr Field FieldList InterfaceType Field FieldList FuncDecl File],true"},
+		{" any", "[Ident Field FieldList FuncType FuncDecl File],true"},
+		{"|", "[BinaryExpr Field FieldList InterfaceType Field FieldList FuncType FuncDecl File],true"},
 		{"ctype2",
-			"[Ident UnaryExpr BinaryExpr Field FieldList InterfaceType Field FieldList FuncDecl File],true"},
-		{"a1", "[Ident Field FieldList FuncDecl File],true"},
+			"[Ident UnaryExpr BinaryExpr Field FieldList InterfaceType Field FieldList FuncType FuncDecl File],true"},
+		{"a1", "[Ident Field FieldList FuncType FuncDecl File],true"},
 		{"PT[T constraint]", "[TypeSpec GenDecl File],false"},
 		{"[T constraint]", "[FieldList TypeSpec GenDecl File],true"},
 		{"targ2", "[Ident IndexListExpr ValueSpec GenDecl File],true"},
+		{"p param", "[Field FieldList FuncType FuncDecl File],true"}, // FuncType is present for FuncDecl.Params (etc)
+		{"r recv", "[Field FieldList FuncDecl File],true"},           // no FuncType for FuncDecl.Recv
 	}
 	for _, test := range tests {
 		f, start, end := findInterval(t, new(token.FileSet), input, test.substr)

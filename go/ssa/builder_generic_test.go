@@ -595,7 +595,7 @@ func callsTo(p *ssa.Package, fname string) map[*ssa.CallCommon]*ssa.Function {
 	return callsites
 }
 
-// matchNodes returns a mapping from call sites (found by callsTo)
+// matchNotes returns a mapping from call sites (found by callsTo)
 // to the first "//@ note" comment on the same line.
 func matchNotes(fset *token.FileSet, notes []*expect.Note, calls map[*ssa.CallCommon]*ssa.Function) map[*ssa.CallCommon]*expect.Note {
 	// Matches each probe with a note that has the same line.

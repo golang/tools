@@ -317,7 +317,7 @@ func TestFalconComplex(t *testing.T) {
 			"Complex arithmetic (good).",
 			`func f(re, im float64, z complex128) byte { return "x"[int(real(complex(re, im)*complex(re, -im)-z))] }`,
 			`func _() { f(1, 2, 5+0i) }`,
-			`func _() { _ = "x"[int(real(complex(float64(1), float64(2))*complex(float64(1), -float64(2))-(5+0i)))] }`,
+			`func _() { _ = "x"[int(real(complex(1, 2)*complex(1, -2)-(5+0i)))] }`,
 		},
 		{
 			"Complex arithmetic (bad).",

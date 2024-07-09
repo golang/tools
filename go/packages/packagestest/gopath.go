@@ -41,10 +41,6 @@ import (
 //	/sometemporarydirectory/repoa/src
 var GOPATH = gopath{}
 
-func init() {
-	All = append(All, GOPATH)
-}
-
 type gopath struct{}
 
 func (gopath) Name() string {

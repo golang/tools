@@ -21,10 +21,11 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
-	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/typesinternal"
@@ -128,9 +129,9 @@ func parseErrorDiagnostics(pkg *syntaxPackage, errList scanner.ErrorList) ([]*Di
 var importErrorRe = regexp.MustCompile(`could not import ([^\s]+)`)
 var unsupportedFeatureRe = regexp.MustCompile(`.*require.* go(\d+\.\d+) or later`)
 
-func goGetQuickFixes(moduleMode bool, uri protocol.DocumentURI, pkg string) []SuggestedFix {
+func goGetQuickFixes(haveModule bool, uri protocol.DocumentURI, pkg string) []SuggestedFix {
 	// Go get only supports module mode for now.
-	if !moduleMode {
+	if !haveModule {
 		return nil
 	}
 	title := fmt.Sprintf("go get package %v", pkg)
@@ -146,9 +147,9 @@ func goGetQuickFixes(moduleMode bool, uri protocol.DocumentURI, pkg string) []Su
 	return []SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)}
 }
 
-func editGoDirectiveQuickFix(moduleMode bool, uri protocol.DocumentURI, version string) []SuggestedFix {
+func editGoDirectiveQuickFix(haveModule bool, uri protocol.DocumentURI, version string) []SuggestedFix {
 	// Go mod edit only supports module mode.
-	if !moduleMode {
+	if !haveModule {
 		return nil
 	}
 	title := fmt.Sprintf("go mod edit -go=%s", version)
@@ -278,7 +279,7 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 		related = append(related, protocol.DiagnosticRelatedInformation(gobRelated))
 	}
 
-	severity := srcAnalyzer.Severity
+	severity := srcAnalyzer.Severity()
 	if severity == 0 {
 		severity = protocol.SeverityWarning
 	}
@@ -292,7 +293,7 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 		Source:   DiagnosticSource(gobDiag.Source),
 		Message:  gobDiag.Message,
 		Related:  related,
-		Tags:     srcAnalyzer.Tag,
+		Tags:     srcAnalyzer.Tags(),
 	}
 
 	// We cross the set of fixes (whether edit- or command-based)
@@ -300,7 +301,7 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 	// than one kind of action (e.g. refactor, quickfix, fixall),
 	// each corresponding to a distinct client UI element
 	// or operation.
-	kinds := srcAnalyzer.ActionKinds
+	kinds := srcAnalyzer.ActionKinds()
 	if len(kinds) == 0 {
 		kinds = []protocol.CodeActionKind{protocol.QuickFix}
 	}
@@ -345,8 +346,10 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 			}
 
 			// Ensure that the analyzer specifies a category for all its no-edit fixes.
+			// This is asserted by analysistest.RunWithSuggestedFixes, but there
+			// may be gaps in test coverage.
 			if diag.Code == "" || diag.Code == "default" {
-				panic(fmt.Sprintf("missing Diagnostic.Code: %#v", *diag))
+				bug.Reportf("missing Diagnostic.Code: %#v", *diag)
 			}
 		}
 	}
@@ -385,7 +388,7 @@ func typesCodeHref(linkTarget string, code typesinternal.ErrorCode) string {
 }
 
 // BuildLink constructs a URL with the given target, path, and anchor.
-func BuildLink(target, path, anchor string) string {
+func BuildLink(target, path, anchor string) protocol.URI {
 	link := fmt.Sprintf("https://%s/%s", target, path)
 	if anchor == "" {
 		return link
@@ -430,13 +433,13 @@ func splitFileLineCol(s string) (file string, line, col8 int) {
 	// strip col ":%d"
 	s, n1 := stripColonDigits(s)
 	if n1 < 0 {
-		return s, 0, 0 // "filename"
+		return s, 1, 1 // "filename"
 	}
 
 	// strip line ":%d"
 	s, n2 := stripColonDigits(s)
 	if n2 < 0 {
-		return s, n1, 0 // "filename:line"
+		return s, n1, 1 // "filename:line"
 	}
 
 	return s, n2, n1 // "filename:line:col"
@@ -462,7 +465,7 @@ func parseGoListImportCycleError(ctx context.Context, e packages.Error, mp *meta
 	// Imports have quotation marks around them.
 	circImp := strconv.Quote(importList[1])
 	for _, uri := range mp.CompiledGoFiles {
-		pgf, err := parseGoURI(ctx, fs, uri, ParseHeader)
+		pgf, err := parseGoURI(ctx, fs, uri, parsego.Header)
 		if err != nil {
 			return nil, err
 		}
@@ -495,7 +498,7 @@ func parseGoListImportCycleError(ctx context.Context, e packages.Error, mp *meta
 // It returns an error if the file could not be read.
 //
 // TODO(rfindley): eliminate this helper.
-func parseGoURI(ctx context.Context, fs file.Source, uri protocol.DocumentURI, mode parser.Mode) (*ParsedGoFile, error) {
+func parseGoURI(ctx context.Context, fs file.Source, uri protocol.DocumentURI, mode parser.Mode) (*parsego.File, error) {
 	fh, err := fs.ReadFile(ctx, uri)
 	if err != nil {
 		return nil, err

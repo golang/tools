@@ -140,9 +140,12 @@ func TestObjImporter(t *testing.T) {
 		t.Skip("no support yet for debug/xcoff")
 	}
 
-	verout, err := exec.Command(gpath, "--version").CombinedOutput()
+	verout, err := exec.Command(gpath, "--version").Output()
 	if err != nil {
 		t.Logf("%s", verout)
+		if exit, ok := err.(*exec.ExitError); ok && len(exit.Stderr) > 0 {
+			t.Logf("stderr:\n%s", exit.Stderr)
+		}
 		t.Fatal(err)
 	}
 	vers := regexp.MustCompile(`([0-9]+)\.([0-9]+)`).FindSubmatch(verout)
@@ -182,8 +185,7 @@ func TestObjImporter(t *testing.T) {
 		afile := filepath.Join(artmpdir, "lib"+test.pkgpath+".a")
 
 		cmd := exec.Command(gpath, "-fgo-pkgpath="+test.pkgpath, "-c", "-o", ofile, gofile)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
+		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Logf("%s", out)
 			t.Fatalf("gccgo %s failed: %s", gofile, err)
 		}
@@ -191,8 +193,7 @@ func TestObjImporter(t *testing.T) {
 		runImporterTest(t, imp, initmap, &test)
 
 		cmd = exec.Command("ar", "cr", afile, ofile)
-		out, err = cmd.CombinedOutput()
-		if err != nil {
+		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Logf("%s", out)
 			t.Fatalf("ar cr %s %s failed: %s", afile, ofile, err)
 		}

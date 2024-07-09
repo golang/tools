@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/buildutil"
+	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -467,6 +468,7 @@ func TestRewrites(t *testing.T) {
 		ctxt             *build.Context    // nil => use previous
 		offset, from, to string            // values of the -from/-offset and -to flags
 		want             map[string]string // contents of updated files
+		alias            bool              // requires materialized aliases
 	}{
 		// Elimination of renaming import.
 		{
@@ -764,6 +766,78 @@ type T2 int
 type U struct{ *T2 }
 
 var _ = U{}.T2
+`,
+			},
+		},
+		// Renaming of embedded field alias.
+		{
+			alias: true,
+			ctxt: main(`package main
+
+type T int
+type A = T
+type U struct{ A }
+
+var _ = U{}.A
+var a A
+`),
+			offset: "/go/src/main/0.go:#68", to: "A2", // A in "U{}.A"
+			want: map[string]string{
+				"/go/src/main/0.go": `package main
+
+type T int
+type A2 = T
+type U struct{ A2 }
+
+var _ = U{}.A2
+var a A2
+`,
+			},
+		},
+		// Renaming of embedded field pointer to alias.
+		{
+			alias: true,
+			ctxt: main(`package main
+
+type T int
+type A = T
+type U struct{ *A }
+
+var _ = U{}.A
+var a A
+`),
+			offset: "/go/src/main/0.go:#69", to: "A2", // A in "U{}.A"
+			want: map[string]string{
+				"/go/src/main/0.go": `package main
+
+type T int
+type A2 = T
+type U struct{ *A2 }
+
+var _ = U{}.A2
+var a A2
+`,
+			},
+		},
+		// Renaming of alias
+		{
+			ctxt: main(`package main
+
+type A = int
+
+func _() A {
+	return A(0)
+}
+`),
+			offset: "/go/src/main/0.go:#49", to: "A2", // A in "A(0)"
+			want: map[string]string{
+				"/go/src/main/0.go": `package main
+
+type A2 = int
+
+func _() A2 {
+	return A2(0)
+}
 `,
 			},
 		},
@@ -1245,6 +1319,14 @@ func main() {
 		writeFile = func(filename string, content []byte) error {
 			got[filepath.ToSlash(filename)] = string(content)
 			return nil
+		}
+
+		// Skip tests that require aliases when not enables.
+		// (No test requires _no_ aliases,
+		// so there is no contrapositive case.)
+		if test.alias && !aliases.Enabled() {
+			t.Log("test requires aliases")
+			continue
 		}
 
 		err := Main(ctxt, test.offset, test.from, test.to)

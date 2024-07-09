@@ -43,7 +43,7 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("imports expects 1 argument")
 	}
 	t.app.editFlags = &t.EditFlags
-	conn, err := t.app.connect(ctx, nil)
+	conn, err := t.app.connect(ctx)
 	if err != nil {
 		return err
 	}
@@ -69,10 +69,10 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 			continue
 		}
 		for _, c := range a.Edit.DocumentChanges {
-			if c.TextDocumentEdit != nil {
-				if c.TextDocumentEdit.TextDocument.URI == uri {
-					edits = append(edits, protocol.AsTextEdits(c.TextDocumentEdit.Edits)...)
-				}
+			// This code action should affect only the specified file;
+			// it is safe to ignore others.
+			if c.TextDocumentEdit != nil && c.TextDocumentEdit.TextDocument.URI == uri {
+				edits = append(edits, protocol.AsTextEdits(c.TextDocumentEdit.Edits)...)
 			}
 		}
 	}

@@ -17,6 +17,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // If the target program panics, the interpreter panics with this type.
@@ -234,6 +236,8 @@ func zero(t types.Type) value {
 		return a
 	case *types.Named:
 		return zero(t.Underlying())
+	case *aliases.Alias:
+		return zero(aliases.Unalias(t))
 	case *types.Interface:
 		return iface{} // nil type, methodset and value
 	case *types.Slice:
@@ -881,7 +885,7 @@ func unop(instr *ssa.UnOp, x value) value {
 			return -x
 		}
 	case token.MUL:
-		return load(deref(instr.X.Type()), x.(*value))
+		return load(typeparams.MustDeref(instr.X.Type()), x.(*value))
 	case token.NOT:
 		return !x.(bool)
 	case token.XOR:
@@ -1112,6 +1116,9 @@ func callBuiltin(caller *frame, callpos token.Pos, fn *ssa.Builtin, args []value
 				recvType, methodName, recvType))
 		}
 		return recv
+
+	case "ssa:deferstack":
+		return &caller.defers
 	}
 
 	panic("unknown built-in: " + fn.Name())

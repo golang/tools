@@ -1,0 +1,61 @@
+Test of imported completions respecting the effective Go version of the file.
+
+(See "un-" prefixed file for same test of unimported completions.)
+
+These symbols below were introduced to go/types in go1.22:
+
+  Alias
+  Info.FileVersions
+  (Checker).PkgNameOf
+
+The underlying logic depends on versions.FileVersion, which only
+behaves correctly in go1.22. (When go1.22 is assured, we can remove
+the min_go flag but leave the test inputs unchanged.)
+
+-- flags --
+-ignore_extra_diags -min_go=go1.22
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+-- a/a.go --
+package a
+
+import "go/ast"
+import "go/token"
+import "go/types"
+
+// package-level decl
+var _ = types.Sat //@rankl("Sat", "Satisfies")
+var _ = types.Ali //@rankl("Ali", "!Alias")
+
+// field
+var _ = new(types.Info).Use //@rankl("Use", "Uses")
+var _ = new(types.Info).Fil //@rankl("Fil", "!FileVersions")
+
+// method
+var _ = new(types.Checker).Obje //@rankl("Obje", "ObjectOf")
+var _ = new(types.Checker).PkgN //@rankl("PkgN", "!PkgNameOf")
+
+-- b/b.go --
+//go:build go1.22
+
+package a
+
+import "go/ast"
+import "go/token"
+import "go/types"
+
+// package-level decl
+var _ = types.Sat //@rankl("Sat", "Satisfies")
+var _ = types.Ali //@rankl("Ali", "Alias")
+
+// field
+var _ = new(types.Info).Use //@rankl("Use", "Uses")
+var _ = new(types.Info).Fil //@rankl("Fil", "FileVersions")
+
+// method
+var _ = new(types.Checker).Obje //@rankl("Obje", "ObjectOf")
+var _ = new(types.Checker).PkgN //@rankl("PkgN", "PkgNameOf")

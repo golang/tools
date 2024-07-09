@@ -46,7 +46,7 @@ func main() {
 			t.Fatal(err)
 		}
 		env.ExecuteCommand(&protocol.ExecuteCommandParams{
-			Command:   "gopls.add_import",
+			Command:   command.AddImport.String(),
 			Arguments: cmd.Arguments,
 		}, nil)
 		got := env.BufferText("main.go")
@@ -121,7 +121,7 @@ func TestFoo2(t *testing.T) {}
 			}
 			var result command.ListImportsResult
 			env.ExecuteCommand(&protocol.ExecuteCommandParams{
-				Command:   command.ListImports.ID(),
+				Command:   command.ListImports.String(),
 				Arguments: cmd.Arguments,
 			}, &result)
 			if diff := cmp.Diff(tt.want, result); diff != "" {

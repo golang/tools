@@ -20,21 +20,19 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typeparams"
 )
 
 // FormatType returns the detail and kind for a types.Type.
 func FormatType(typ types.Type, qf types.Qualifier) (detail string, kind protocol.CompletionItemKind) {
+	typ = typ.Underlying()
 	if types.IsInterface(typ) {
 		detail = "interface{...}"
 		kind = protocol.InterfaceCompletion
 	} else if _, ok := typ.(*types.Struct); ok {
 		detail = "struct{...}"
 		kind = protocol.StructCompletion
-	} else if typ != typ.Underlying() {
-		detail, kind = FormatType(typ.Underlying(), qf)
 	} else {
 		detail = types.TypeString(typ, qf)
 		kind = protocol.ClassCompletion
@@ -155,7 +153,7 @@ func formatFieldList(ctx context.Context, fset *token.FileSet, list *ast.FieldLi
 		cfg := printer.Config{Mode: printer.UseSpaces | printer.TabIndent, Tabwidth: 4}
 		b := &bytes.Buffer{}
 		if err := cfg.Fprint(b, fset, p.Type); err != nil {
-			event.Error(ctx, "unable to print type", nil, tag.Type.Of(p.Type))
+			event.Error(ctx, fmt.Sprintf("error printing type %s", types.ExprString(p.Type)), err)
 			continue
 		}
 		typ := replacer.Replace(b.String())
@@ -285,7 +283,7 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 		return types.TypeString(obj.Type(), qf), nil
 	}
 
-	if obj.Pkg() == nil || !obj.Pos().IsValid() {
+	if isBuiltin(obj) {
 		// This is defensive, though it is extremely unlikely we'll ever have a
 		// builtin var.
 		return types.TypeString(obj.Type(), qf), nil
@@ -344,7 +342,7 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 
 	// If the request came from a different package than the one in which the
 	// types are defined, we may need to modify the qualifiers.
-	return FormatNodeFile(targetpgf.Tok, expr), nil
+	return formatNodeFile(targetpgf.Tok, expr), nil
 }
 
 // qualifyTypeExpr clones the type expression expr after re-qualifying type

@@ -3,9 +3,6 @@ Basic tests of textDocument/documentSymbols with generics.
 -- symbol.go --
 //@symbol(want)
 
-//go:build go1.18
-// +build go1.18
-
 package main
 
 type T[P any] struct {

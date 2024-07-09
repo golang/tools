@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.19
-// +build go1.19
-
 package main
 
 import "log"
@@ -60,12 +57,11 @@ var usedGoplsStar = make(map[prop]bool)
 
 // For gopls compatibility, use a different, typically more restrictive, type for some fields.
 var renameProp = map[prop]string{
-	{"CancelParams", "id"}:         "interface{}",
-	{"Command", "arguments"}:       "[]json.RawMessage",
-	{"CompletionItem", "textEdit"}: "TextEdit",
-	{"CodeAction", "data"}:         "json.RawMessage", // delay unmarshalling commands
-	{"Diagnostic", "code"}:         "interface{}",
-	{"Diagnostic", "data"}:         "json.RawMessage", // delay unmarshalling quickfixes
+	{"CancelParams", "id"}:   "interface{}",
+	{"Command", "arguments"}: "[]json.RawMessage",
+	{"CodeAction", "data"}:   "json.RawMessage", // delay unmarshalling commands
+	{"Diagnostic", "code"}:   "interface{}",
+	{"Diagnostic", "data"}:   "json.RawMessage", // delay unmarshalling quickfixes
 
 	{"DocumentDiagnosticReportPartialResult", "relatedDocuments"}: "map[DocumentURI]interface{}",
 
@@ -88,7 +84,7 @@ var renameProp = map[prop]string{
 	// slightly tricky
 	{"ServerCapabilities", "textDocumentSync"}: "interface{}",
 	{"TextDocumentSyncOptions", "save"}:        "SaveOptions",
-	{"WorkspaceEdit", "documentChanges"}:       "[]DocumentChanges",
+	{"WorkspaceEdit", "documentChanges"}:       "[]DocumentChange",
 }
 
 // which entries of renameProp were used
@@ -109,6 +105,7 @@ var disambiguate = map[string]adjust{
 	"FileOperationPatternKind":     {"", "Pattern"},
 	"InlineCompletionTriggerKind":  {"Inline", ""},
 	"InsertTextFormat":             {"", "TextFormat"},
+	"LanguageKind":                 {"Lang", ""},
 	"SemanticTokenModifiers":       {"Mod", ""},
 	"SemanticTokenTypes":           {"", "Type"},
 	"SignatureHelpTriggerKind":     {"Sig", ""},

@@ -229,6 +229,23 @@ func ShownDocument(uri protocol.URI) Expectation {
 	}
 }
 
+// ShownDocuments is an expectation that appends each showDocument
+// request into the provided slice, whenever it is evaluated.
+//
+// It can be used in combination with OnceMet or AfterChange to
+// capture the set of showDocument requests when other expectations
+// are satisfied.
+func ShownDocuments(into *[]*protocol.ShowDocumentParams) Expectation {
+	check := func(s State) Verdict {
+		*into = append(*into, s.showDocument...)
+		return Met
+	}
+	return Expectation{
+		Check:       check,
+		Description: "read shown documents",
+	}
+}
+
 // NoShownMessage asserts that the editor has not received a ShowMessage.
 func NoShownMessage(subString string) Expectation {
 	check := func(s State) Verdict {
@@ -325,9 +342,14 @@ func (e *Env) DoneDiagnosingChanges() Expectation {
 
 // AfterChange expects that the given expectations will be met after all
 // state-changing notifications have been processed by the server.
-//
-// It awaits the completion of all anticipated work before checking the given
-// expectations.
+// Specifically, it awaits the awaits completion of the process of diagnosis
+// after the following notifications, before checking the given expectations:
+//   - textDocument/didOpen
+//   - textDocument/didChange
+//   - textDocument/didSave
+//   - textDocument/didClose
+//   - workspace/didChangeWatchedFiles
+//   - workspace/didChangeConfiguration
 func (e *Env) AfterChange(expectations ...Expectation) {
 	e.T.Helper()
 	e.OnceMet(
@@ -390,7 +412,7 @@ func (e *Env) DoneWithClose() Expectation {
 // See CompletedWork.
 func StartedWork(title string, atLeast uint64) Expectation {
 	check := func(s State) Verdict {
-		if s.startedWork()[title] >= atLeast {
+		if s.startedWork[title] >= atLeast {
 			return Met
 		}
 		return Unmet
@@ -407,8 +429,8 @@ func StartedWork(title string, atLeast uint64) Expectation {
 // progress notification title to identify the work we expect to be completed.
 func CompletedWork(title string, count uint64, atLeast bool) Expectation {
 	check := func(s State) Verdict {
-		completed := s.completedWork()
-		if completed[title] == count || atLeast && completed[title] > count {
+		completed := s.completedWork[title]
+		if completed == count || atLeast && completed > count {
 			return Met
 		}
 		return Unmet

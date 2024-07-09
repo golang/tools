@@ -19,7 +19,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/typeparams"
 )
 
 //go:embed doc.go
@@ -67,8 +66,8 @@ func checkDeprecated(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		obj := pass.TypesInfo.ObjectOf(sel.Sel)
-		if obj_, ok := obj.(*types.Func); ok {
-			obj = typeparams.OriginMethod(obj_)
+		if fn, ok := obj.(*types.Func); ok {
+			obj = fn.Origin()
 		}
 		if obj == nil || obj.Pkg() == nil {
 			// skip invalid sel.Sel.

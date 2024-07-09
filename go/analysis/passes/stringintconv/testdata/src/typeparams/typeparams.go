@@ -22,16 +22,16 @@ func _[AllString ~string, MaybeString ~string | ~int, NotString ~int | byte, Nam
 	)
 	const p = 0
 
-	_ = MaybeString(i) // want `conversion from int to string .in MaybeString. yields a string of one rune, not a string of digits .did you mean fmt\.Sprint.x.\?.`
+	_ = MaybeString(i) // want `conversion from int to string .in MaybeString. yields a string of one rune, not a string of digits`
 	_ = MaybeString(r)
 	_ = MaybeString(b)
-	_ = MaybeString(I) // want `conversion from Int .int. to string .in MaybeString. yields a string of one rune, not a string of digits .did you mean fmt\.Sprint.x.\?.`
-	_ = MaybeString(U) // want `conversion from uintptr to string .in MaybeString. yields a string of one rune, not a string of digits .did you mean fmt\.Sprint.x.\?.`
+	_ = MaybeString(I) // want `conversion from Int .int. to string .in MaybeString. yields a string of one rune, not a string of digits`
+	_ = MaybeString(U) // want `conversion from uintptr to string .in MaybeString. yields a string of one rune, not a string of digits`
 	// Type parameters are never constant types, so arguments are always
 	// converted to their default type (int versus untyped int, in this case)
-	_ = MaybeString(p) // want `conversion from int to string .in MaybeString. yields a string of one rune, not a string of digits .did you mean fmt\.Sprint.x.\?.`
+	_ = MaybeString(p) // want `conversion from int to string .in MaybeString. yields a string of one rune, not a string of digits`
 	// ...even if the type parameter is only strings.
-	_ = AllString(p) // want `conversion from int to string .in AllString. yields a string of one rune, not a string of digits .did you mean fmt\.Sprint.x.\?.`
+	_ = AllString(p) // want `conversion from int to string .in AllString. yields a string of one rune, not a string of digits`
 
 	_ = NotString(i)
 	_ = NotString(r)
@@ -40,10 +40,10 @@ func _[AllString ~string, MaybeString ~string | ~int, NotString ~int | byte, Nam
 	_ = NotString(U)
 	_ = NotString(p)
 
-	_ = NamedString(i) // want `conversion from int to String .string, in NamedString. yields a string of one rune, not a string of digits .did you mean fmt\.Sprint.x.\?.`
-	_ = string(M)      // want `conversion from int .in MaybeString. to string yields a string of one rune, not a string of digits .did you mean fmt\.Sprint.x.\?.`
+	_ = NamedString(i) // want `conversion from int to String .string, in NamedString. yields a string of one rune, not a string of digits`
+	_ = string(M)      // want `conversion from int .in MaybeString. to string yields a string of one rune, not a string of digits`
 
 	// Note that M is not convertible to rune.
-	_ = MaybeString(M) // want `conversion from int .in MaybeString. to string .in MaybeString. yields a string of one rune, not a string of digits .did you mean fmt\.Sprint.x.\?.`
+	_ = MaybeString(M) // want `conversion from int .in MaybeString. to string .in MaybeString. yields a string of one rune, not a string of digits`
 	_ = NotString(N)   // ok
 }

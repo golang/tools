@@ -1,0 +1,11 @@
+This test checks that we can't remove parameters for packages with errors.
+
+-- p.go --
+package p
+
+func foo(unused int) { //@codeactionerr("unused", "unused", "refactor.rewrite", re"found 0")
+}
+
+func _() {
+	foo("") //@diag(`""`, re"cannot use")
+}

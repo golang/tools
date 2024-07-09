@@ -1,9 +1,9 @@
 This test checks gopls behavior when hovering over basic literals.
 
-Requires go1.19+ for the new go/doc/comment package.
+Skipped on ppc64 as there appears to be a bug on aix-ppc64: golang/go#67526.
 
 -- flags --
--min_go=go1.19
+-skip_goarch=ppc64
 
 -- basiclit.go --
 package basiclit

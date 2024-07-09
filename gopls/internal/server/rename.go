@@ -11,13 +11,13 @@ import (
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.rename", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.rename", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
@@ -38,29 +38,27 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 		return nil, err
 	}
 
-	docChanges := []protocol.DocumentChanges{} // must be a slice
+	var changes []protocol.DocumentChange
 	for uri, e := range edits {
 		fh, err := snapshot.ReadFile(ctx, uri)
 		if err != nil {
 			return nil, err
 		}
-		docChanges = append(docChanges, documentChanges(fh, e)...)
+		change := protocol.DocumentChangeEdit(fh, e)
+		changes = append(changes, change)
 	}
+
 	if isPkgRenaming {
 		// Update the last component of the file's enclosing directory.
-		oldBase := filepath.Dir(fh.URI().Path())
-		newURI := filepath.Join(filepath.Dir(oldBase), params.NewName)
-		docChanges = append(docChanges, protocol.DocumentChanges{
-			RenameFile: &protocol.RenameFile{
-				Kind:   "rename",
-				OldURI: protocol.URIFromPath(oldBase),
-				NewURI: protocol.URIFromPath(newURI),
-			},
-		})
+		oldDir := filepath.Dir(fh.URI().Path())
+		newDir := filepath.Join(filepath.Dir(oldDir), params.NewName)
+		change := protocol.DocumentChangeRename(
+			protocol.URIFromPath(oldDir),
+			protocol.URIFromPath(newDir))
+		changes = append(changes, change)
 	}
-	return &protocol.WorkspaceEdit{
-		DocumentChanges: docChanges,
-	}, nil
+
+	return protocol.NewWorkspaceEdit(changes...), nil
 }
 
 // PrepareRename implements the textDocument/prepareRename handler. It may
@@ -70,7 +68,7 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 // TODO(rfindley): why wouldn't we want to show an error to the user, if the
 // user initiated a rename request at the cursor?
 func (s *server) PrepareRename(ctx context.Context, params *protocol.PrepareRenameParams) (*protocol.PrepareRenamePlaceholder, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.prepareRename", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.prepareRename", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)

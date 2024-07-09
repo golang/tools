@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// This file contains tests that the loopclosure analyzer detects leaked
+// This file contains legacy tests that the loopclosure analyzer detects leaked
 // references via parallel subtests.
+// Legacy expectations are incorrect after go1.22.
 
 package subtests
 

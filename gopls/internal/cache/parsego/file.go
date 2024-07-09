@@ -41,10 +41,12 @@ type File struct {
 	ParseErr scanner.ErrorList
 }
 
+func (pgf File) String() string { return string(pgf.URI) }
+
 // Fixed reports whether p was "Fixed", meaning that its source or positions
 // may not correlate with the original file.
-func (p File) Fixed() bool {
-	return p.fixedSrc || p.fixedAST
+func (pgf File) Fixed() bool {
+	return pgf.fixedSrc || pgf.fixedAST
 }
 
 // -- go/token domain convenience helpers --

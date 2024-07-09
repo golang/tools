@@ -36,7 +36,7 @@ func (r *symbols) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("symbols expects 1 argument (position)")
 	}
 
-	conn, err := r.app.connect(ctx, nil)
+	conn, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}

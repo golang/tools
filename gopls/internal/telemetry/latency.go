@@ -79,7 +79,7 @@ func getLatencyCounter(operation, bucket string, isError bool) *counter.Counter 
 // StartLatencyTimer starts a timer for the gopls operation with the given
 // name, and returns a func to stop the timer and record the latency sample.
 //
-// If the context provided to the the resulting func is done, no observation is
+// If the context provided to the resulting func is done, no observation is
 // recorded.
 func StartLatencyTimer(operation string) func(context.Context, error) {
 	start := time.Now()

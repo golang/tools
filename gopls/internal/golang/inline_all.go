@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/refactor/inline"
@@ -43,7 +44,7 @@ import (
 //
 // The code below notes where are assumptions are made that only hold true in
 // the case of parameter removal (annotated with 'Assumption:')
-func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *cache.Snapshot, pkg *cache.Package, pgf *ParsedGoFile, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte) (map[protocol.DocumentURI][]byte, error) {
+func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte) (map[protocol.DocumentURI][]byte, error) {
 	// Collect references.
 	var refs []protocol.Location
 	{
@@ -100,7 +101,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 
 	type fileCalls struct {
 		pkg   *cache.Package
-		pgf   *ParsedGoFile
+		pgf   *parsego.File
 		calls []*ast.CallExpr
 	}
 
@@ -137,7 +138,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 			return nil, fmt.Errorf("cannot inline: found non-call function reference %v", ref)
 		}
 		// Sanity check.
-		if obj := refpkg.GetTypesInfo().ObjectOf(name); obj == nil ||
+		if obj := refpkg.TypesInfo().ObjectOf(name); obj == nil ||
 			obj.Name() != origDecl.Name.Name ||
 			obj.Pkg() == nil ||
 			obj.Pkg().Path() != string(pkg.Metadata().PkgPath) {
@@ -166,8 +167,8 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 		var (
 			calls   = callInfo.calls
 			fset    = callInfo.pkg.FileSet()
-			tpkg    = callInfo.pkg.GetTypes()
-			tinfo   = callInfo.pkg.GetTypesInfo()
+			tpkg    = callInfo.pkg.Types()
+			tinfo   = callInfo.pkg.TypesInfo()
 			file    = callInfo.pgf.File
 			content = callInfo.pgf.Src
 		)
@@ -192,11 +193,11 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 				Call:    calls[currentCall],
 				Content: content,
 			}
-			var err error
-			content, err = inline.Inline(logf, caller, callee)
+			res, err := inline.Inline(caller, callee, &inline.Options{Logf: logf})
 			if err != nil {
 				return nil, fmt.Errorf("inlining failed: %v", err)
 			}
+			content = res.Content
 			if post != nil {
 				content = post(content)
 			}

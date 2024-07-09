@@ -9,14 +9,14 @@ import (
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/event/tag"
 )
 
 func (s *server) DocumentSymbol(ctx context.Context, params *protocol.DocumentSymbolParams) ([]any, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.documentSymbol", tag.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "lsp.Server.documentSymbol", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
