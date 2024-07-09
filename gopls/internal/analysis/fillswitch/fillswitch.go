@@ -12,6 +12,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // Diagnose computes diagnostics for switch statements with missing cases
@@ -125,7 +126,7 @@ func suggestedFixTypeSwitch(stmt *ast.TypeSwitchStmt, pkg *types.Package, info *
 	}
 
 	return &analysis.SuggestedFix{
-		Message: fmt.Sprintf("Add cases for %s", namedType.Obj().Name()),
+		Message: "Add cases for " + types.TypeString(namedType, typesinternal.NameRelativeTo(pkg)),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - token.Pos(len("}")),
 			End:     stmt.End() - token.Pos(len("}")),
@@ -176,7 +177,7 @@ func suggestedFixSwitch(stmt *ast.SwitchStmt, pkg *types.Package, info *types.In
 	addDefaultCase(&buf, namedType, stmt.Tag)
 
 	return &analysis.SuggestedFix{
-		Message: fmt.Sprintf("Add cases for %s", namedType.Obj().Name()),
+		Message: "Add cases for " + types.TypeString(namedType, typesinternal.NameRelativeTo(pkg)),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     stmt.End() - token.Pos(len("}")),
 			End:     stmt.End() - token.Pos(len("}")),

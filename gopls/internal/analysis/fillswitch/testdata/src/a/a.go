@@ -4,9 +4,7 @@
 
 package fillswitch
 
-import (
-	data "b"
-)
+import altb "b"
 
 type typeA int
 
@@ -36,9 +34,9 @@ func doSwitch() {
 	case typeAThree:
 	}
 
-	var b data.TypeB
-	switch b { // want `Add cases for TypeB`
-	case data.TypeBOne:
+	var b altb.TypeB
+	switch b { // want `Add cases for b.TypeB`
+	case altb.TypeBOne:
 	}
 }
 
