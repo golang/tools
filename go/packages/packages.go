@@ -1499,6 +1499,10 @@ func impliedLoadMode(loadMode LoadMode) LoadMode {
 		// All these things require knowing the import graph.
 		loadMode |= NeedImports
 	}
+	if loadMode&NeedTypes != 0 {
+		// Types require the GoVersion from Module.
+		loadMode |= NeedModule
+	}
 
 	return loadMode
 }
