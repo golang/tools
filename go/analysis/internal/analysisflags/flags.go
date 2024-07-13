@@ -363,11 +363,10 @@ type JSONSuggestedFix struct {
 }
 
 // A JSONDiagnostic describes the JSON schema of an analysis.Diagnostic.
-//
-// TODO(matloob): include End position if present.
 type JSONDiagnostic struct {
 	Category       string                   `json:"category,omitempty"`
 	Posn           string                   `json:"posn"` // e.g. "file.go:line:column"
+	EndPosn        string                   `json:"end_posn,omitempty"`
 	Message        string                   `json:"message"`
 	SuggestedFixes []JSONSuggestedFix       `json:"suggested_fixes,omitempty"`
 	Related        []JSONRelatedInformation `json:"related,omitempty"`
@@ -375,10 +374,9 @@ type JSONDiagnostic struct {
 
 // A JSONRelated describes a secondary position and message related to
 // a primary diagnostic.
-//
-// TODO(adonovan): include End position if present.
 type JSONRelatedInformation struct {
 	Posn    string `json:"posn"` // e.g. "file.go:line:column"
+	EndPosn string `json:"end_posn,omitempty"`
 	Message string `json:"message"`
 }
 
@@ -414,12 +412,14 @@ func (tree JSONTree) Add(fset *token.FileSet, id, name string, diags []analysis.
 			for _, r := range f.Related {
 				related = append(related, JSONRelatedInformation{
 					Posn:    fset.Position(r.Pos).String(),
+					EndPosn: fset.Position(r.End).String(),
 					Message: r.Message,
 				})
 			}
 			jdiag := JSONDiagnostic{
 				Category:       f.Category,
 				Posn:           fset.Position(f.Pos).String(),
+				EndPosn:        fset.Position(f.End).String(),
 				Message:        f.Message,
 				SuggestedFixes: fixes,
 				Related:        related,
