@@ -81,10 +81,10 @@ func Parse(analyzers []*analysis.Analyzer, multi bool) []*analysis.Analyzer {
 	_ = flag.Bool("v", false, "no effect (deprecated)")
 	_ = flag.Bool("all", false, "no effect (deprecated)")
 	_ = flag.String("tags", "", "no effect (deprecated)")
-	for old, new := range vetLegacyFlags {
-		newFlag := flag.Lookup(new)
-		if newFlag != nil && flag.Lookup(old) == nil {
-			flag.Var(newFlag.Value, old, "deprecated alias for -"+new)
+	for oldName, newName := range vetLegacyFlags {
+		newFlag := flag.Lookup(newName)
+		if newFlag != nil && flag.Lookup(oldName) == nil {
+			flag.Var(newFlag.Value, oldName, "deprecated alias for -"+newName)
 		}
 	}
 
