@@ -136,6 +136,21 @@ func (e *Env) FileContent(name string) string {
 	return string(content)
 }
 
+// FileContentAt returns the file content at the given location, using the
+// file's mapper.
+func (e *Env) FileContentAt(location protocol.Location) string {
+	e.T.Helper()
+	mapper, err := e.Editor.Mapper(location.URI.Path())
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	start, end, err := mapper.RangeOffsets(location.Range)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return string(mapper.Content[start:end])
+}
+
 // RegexpSearch returns the starting position of the first match for re in the
 // buffer specified by name, calling t.Fatal on any error. It first searches
 // for the position in open buffers, then in workspace files.

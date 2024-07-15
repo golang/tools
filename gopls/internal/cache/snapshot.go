@@ -31,6 +31,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/cache/testfuncs"
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/cache/xrefs"
 	"golang.org/x/tools/gopls/internal/file"
@@ -572,6 +573,7 @@ func (s *Snapshot) Overlays() []*overlay {
 const (
 	xrefsKind       = "xrefs"
 	methodSetsKind  = "methodsets"
+	testsKind       = "tests"
 	exportDataKind  = "export"
 	diagnosticsKind = "diagnostics"
 	typerefsKind    = "typerefs"
@@ -669,6 +671,32 @@ func (s *Snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 	}
 	post := func(i int, pkg *Package) {
 		indexes[i] = pkg.pkg.methodsets()
+	}
+	return indexes, s.forEachPackage(ctx, ids, pre, post)
+}
+
+// Tests returns test-set indexes for the specified packages. There is a
+// one-to-one correspondence between ID and Index.
+//
+// If these indexes cannot be loaded from cache, the requested packages may be
+// type-checked.
+func (s *Snapshot) Tests(ctx context.Context, ids ...PackageID) ([]*testfuncs.Index, error) {
+	ctx, done := event.Start(ctx, "cache.snapshot.Tests")
+	defer done()
+
+	indexes := make([]*testfuncs.Index, len(ids))
+	pre := func(i int, ph *packageHandle) bool {
+		data, err := filecache.Get(testsKind, ph.key)
+		if err == nil { // hit
+			indexes[i] = testfuncs.Decode(data)
+			return false
+		} else if err != filecache.ErrNotFound {
+			event.Error(ctx, "reading tests from filecache", err)
+		}
+		return true
+	}
+	post := func(i int, pkg *Package) {
+		indexes[i] = pkg.pkg.tests()
 	}
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }

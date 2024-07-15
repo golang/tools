@@ -146,6 +146,12 @@ func (l *fieldLoader) loadField(pkg *packages.Package, obj *types.Var, doc, tag 
 		Type:    obj.Type(),
 		JSONTag: reflect.StructTag(tag).Get("json"),
 	}
+
+	// This must be done here to handle nested types, such as:
+	//
+	//    type Test struct { Subtests []Test }
+	l.loaded[obj] = fld
+
 	under := fld.Type.Underlying()
 	// Quick-and-dirty handling for various underlying types.
 	switch p := under.(type) {

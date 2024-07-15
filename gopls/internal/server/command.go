@@ -35,6 +35,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
 	"golang.org/x/tools/internal/diff"
@@ -144,18 +145,20 @@ func (h *commandHandler) Modules(ctx context.Context, args command.ModulesArgs) 
 }
 
 func (h *commandHandler) Packages(ctx context.Context, args command.PackagesArgs) (command.PackagesResult, error) {
-	wantTests := args.Mode&command.NeedTests != 0
-	result := command.PackagesResult{
-		Module: make(map[string]command.Module),
+	// Convert file arguments into directories
+	dirs := make([]protocol.DocumentURI, len(args.Files))
+	for i, file := range args.Files {
+		if filepath.Ext(file.Path()) == ".go" {
+			dirs[i] = file.Dir()
+		} else {
+			dirs[i] = file
+		}
 	}
 
 	keepPackage := func(pkg *metadata.Package) bool {
 		for _, file := range pkg.GoFiles {
-			for _, arg := range args.Files {
-				if file == arg || file.Dir() == arg {
-					return true
-				}
-				if args.Recursive && arg.Encloses(file) {
+			for _, dir := range dirs {
+				if file.Dir() == dir || args.Recursive && dir.Encloses(file) {
 					return true
 				}
 			}
@@ -163,27 +166,8 @@ func (h *commandHandler) Packages(ctx context.Context, args command.PackagesArgs
 		return false
 	}
 
-	buildPackage := func(snapshot *cache.Snapshot, meta *metadata.Package) (command.Package, command.Module) {
-		if wantTests {
-			// These will be used in the next CL to query tests
-			_, _ = ctx, snapshot
-			panic("unimplemented")
-		}
-
-		pkg := command.Package{
-			Path: string(meta.PkgPath),
-		}
-		if meta.Module == nil {
-			return pkg, command.Module{}
-		}
-
-		mod := command.Module{
-			Path:    meta.Module.Path,
-			Version: meta.Module.Version,
-			GoMod:   protocol.URIFromPath(meta.Module.GoMod),
-		}
-		pkg.ModulePath = mod.Path
-		return pkg, mod
+	result := command.PackagesResult{
+		Module: make(map[string]command.Module),
 	}
 
 	err := h.run(ctx, commandConfig{
@@ -201,20 +185,67 @@ func (h *commandHandler) Packages(ctx context.Context, args command.PackagesArgs
 				return err
 			}
 
+			// Filter out unwanted packages
+			metas = slices.DeleteFunc(metas, func(meta *metadata.Package) bool {
+				return meta.IsIntermediateTestVariant() ||
+					!keepPackage(meta)
+			})
+
+			start := len(result.Packages)
 			for _, meta := range metas {
-				if meta.IsIntermediateTestVariant() {
-					continue
-				}
-				if !keepPackage(meta) {
-					continue
+				var mod command.Module
+				if meta.Module != nil {
+					mod = command.Module{
+						Path:    meta.Module.Path,
+						Version: meta.Module.Version,
+						GoMod:   protocol.URIFromPath(meta.Module.GoMod),
+					}
+					result.Module[mod.Path] = mod // Overwriting is ok
 				}
 
-				pkg, mod := buildPackage(snapshot, meta)
-				result.Packages = append(result.Packages, pkg)
+				result.Packages = append(result.Packages, command.Package{
+					Path:       string(meta.PkgPath),
+					ForTest:    string(meta.ForTest),
+					ModulePath: mod.Path,
+				})
+			}
 
-				// Overwriting is ok
-				if mod.Path != "" {
-					result.Module[mod.Path] = mod
+			if args.Mode&command.NeedTests == 0 {
+				continue
+			}
+
+			// Make a single request to the index (per snapshot) to minimize the
+			// performance hit
+			var ids []cache.PackageID
+			for _, meta := range metas {
+				ids = append(ids, meta.ID)
+			}
+
+			allTests, err := snapshot.Tests(ctx, ids...)
+			if err != nil {
+				return err
+			}
+
+			for i, tests := range allTests {
+				pkg := &result.Packages[start+i]
+				fileByPath := map[protocol.DocumentURI]*command.TestFile{}
+				for _, test := range tests.All() {
+					test := command.TestCase{
+						Name: test.Name,
+						Loc:  test.Location,
+					}
+
+					file, ok := fileByPath[test.Loc.URI]
+					if !ok {
+						f := command.TestFile{
+							URI: test.Loc.URI,
+						}
+						i := len(pkg.TestFiles)
+						pkg.TestFiles = append(pkg.TestFiles, f)
+						file = &pkg.TestFiles[i]
+						fileByPath[test.Loc.URI] = file
+					}
+					file.Tests = append(file.Tests, test)
 				}
 			}
 		}

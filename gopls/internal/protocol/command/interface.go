@@ -599,7 +599,7 @@ type PackagesArgs struct {
 	// the result may describe any of them.
 	Files []protocol.DocumentURI
 
-	// Enumerate all packages under the directry loadable with
+	// Enumerate all packages under the directory loadable with
 	// the ... pattern.
 	// The search does not cross the module boundaries and
 	// does not return packages that are not yet loaded.
@@ -637,6 +637,8 @@ type Package struct {
 	// Module path. Empty if the package doesn't
 	// belong to any module.
 	ModulePath string
+	// q in a "p [q.test]" package.
+	ForTest string
 
 	// Note: the result does not include the directory name
 	// of the package because mapping between a package and
@@ -683,7 +685,7 @@ type TestCase struct {
 	// analysis; if so, it should aim to simulate the actual computed
 	// name of the test, including any disambiguating suffix such as "#01".
 	// To run only this test, clients need to compute the -run, -bench, -fuzz
-	// flag values by first splitting the Name with “/” and
+	// flag values by first splitting the Name with "/" and
 	// quoting each element with "^" + regexp.QuoteMeta(Name) + "$".
 	// e.g. TestToplevel/Inner.Subtest → -run=^TestToplevel$/^Inner\.Subtest$
 	Name string
