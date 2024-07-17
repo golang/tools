@@ -633,9 +633,13 @@ func (e *Editor) sendDidClose(ctx context.Context, doc protocol.TextDocumentIden
 	return nil
 }
 
+func (e *Editor) DocumentURI(path string) protocol.DocumentURI {
+	return e.sandbox.Workdir.URI(path)
+}
+
 func (e *Editor) TextDocumentIdentifier(path string) protocol.TextDocumentIdentifier {
 	return protocol.TextDocumentIdentifier{
-		URI: e.sandbox.Workdir.URI(path),
+		URI: e.DocumentURI(path),
 	}
 }
 

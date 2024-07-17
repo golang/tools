@@ -282,10 +282,12 @@ type Interface interface {
 
 	// Modules: Return information about modules within a directory
 	//
-	// This command returns an empty result if there is no module,
-	// or if module mode is disabled.
-	// The result does not includes the modules that are not
-	// associated with any Views on the server yet.
+	// This command returns an empty result if there is no module, or if module
+	// mode is disabled. Modules will not cause any new views to be loaded and
+	// will only return modules associated with views that have already been
+	// loaded, regardless of how it is called. Given current usage (by the
+	// language server client), there should never be a case where Modules is
+	// called on a path that has not already been loaded.
 	Modules(context.Context, ModulesArgs) (ModulesResult, error)
 }
 

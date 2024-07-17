@@ -71,8 +71,76 @@ type commandHandler struct {
 	params *protocol.ExecuteCommandParams
 }
 
-func (h *commandHandler) Modules(context.Context, command.ModulesArgs) (command.ModulesResult, error) {
-	panic("unimplemented")
+func (h *commandHandler) Modules(ctx context.Context, args command.ModulesArgs) (command.ModulesResult, error) {
+	// keepModule filters modules based on the command args
+	keepModule := func(goMod protocol.DocumentURI) bool {
+		// Does the directory enclose the view's go.mod file?
+		if !args.Dir.Encloses(goMod) {
+			return false
+		}
+
+		// Calculate the relative path
+		rel, err := filepath.Rel(args.Dir.Path(), goMod.Path())
+		if err != nil {
+			return false // "can't happen" (see prior Encloses check)
+		}
+
+		assert(filepath.Base(goMod.Path()) == "go.mod", fmt.Sprintf("invalid go.mod path: want go.mod, got %q", goMod.Path()))
+
+		// Invariant: rel is a relative path without "../" segments and the last
+		// segment is "go.mod"
+		nparts := strings.Count(rel, string(filepath.Separator))
+		return args.MaxDepth < 0 || nparts <= args.MaxDepth
+	}
+
+	// Views may include:
+	//   - go.work views containing one or more modules each;
+	//   - go.mod views containing a single module each;
+	//   - GOPATH and/or ad hoc views containing no modules.
+	//
+	// Retrieving a view via the request path would only work for a
+	// non-recursive query for a go.mod view, and even in that case
+	// [Session.SnapshotOf] doesn't work on directories. Thus we check every
+	// view.
+	var result command.ModulesResult
+	seen := map[protocol.DocumentURI]bool{}
+	for _, v := range h.s.session.Views() {
+		s, release, err := v.Snapshot()
+		if err != nil {
+			return command.ModulesResult{}, err
+		}
+		defer release()
+
+		for _, modFile := range v.ModFiles() {
+			if !keepModule(modFile) {
+				continue
+			}
+
+			// Deduplicate
+			if seen[modFile] {
+				continue
+			}
+			seen[modFile] = true
+
+			fh, err := s.ReadFile(ctx, modFile)
+			if err != nil {
+				return command.ModulesResult{}, err
+			}
+			mod, err := s.ParseMod(ctx, fh)
+			if err != nil {
+				return command.ModulesResult{}, err
+			}
+			if mod.File.Module == nil {
+				continue // syntax contains errors
+			}
+			result.Modules = append(result.Modules, command.Module{
+				Path:    mod.File.Module.Mod.Path,
+				Version: mod.File.Module.Mod.Version,
+				GoMod:   mod.URI,
+			})
+		}
+	}
+	return result, nil
 }
 
 func (h *commandHandler) Packages(context.Context, command.PackagesArgs) (command.PackagesResult, error) {
