@@ -26,13 +26,11 @@ func Test(t *testing.T) {
 func TestVersions22(t *testing.T) {
 	testenv.NeedsGo1Point(t, 22)
 
-	txtar := filepath.Join(analysistest.TestData(), "src", "versions", "go22.txtar")
-	dir := testfiles.ExtractTxtarFileToTmp(t, txtar)
+	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "src", "versions", "go22.txtar"))
 	analysistest.Run(t, dir, loopclosure.Analyzer, "golang.org/fake/versions")
 }
 
 func TestVersions18(t *testing.T) {
-	txtar := filepath.Join(analysistest.TestData(), "src", "versions", "go18.txtar")
-	dir := testfiles.ExtractTxtarFileToTmp(t, txtar)
+	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "src", "versions", "go18.txtar"))
 	analysistest.Run(t, dir, loopclosure.Analyzer, "golang.org/fake/versions")
 }

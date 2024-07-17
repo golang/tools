@@ -44,11 +44,15 @@ package m
 package lib
 `
 
-	dir := testfiles.ExtractTxtarToTmp(t, txtar.Parse([]byte(workspace)))
+	fs, err := txtar.FS(txtar.Parse([]byte(workspace)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := testfiles.CopyToTmp(t, fs)
 
 	// TODO(rfindley): on mac, this is required to fix symlink path mismatches.
 	// But why? Where is the symlink being evaluated in go/packages?
-	dir, err := filepath.EvalSymlinks(dir)
+	dir, err = filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

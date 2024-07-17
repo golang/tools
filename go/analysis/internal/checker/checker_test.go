@@ -299,10 +299,11 @@ hello from other
 `
 
 	// Expand archive into tmp tree.
-	tmpdir := t.TempDir()
-	if err := testfiles.ExtractTxtar(tmpdir, txtar.Parse([]byte(src))); err != nil {
+	fs, err := txtar.FS(txtar.Parse([]byte(src)))
+	if err != nil {
 		t.Fatal(err)
 	}
+	tmpdir := testfiles.CopyToTmp(t, fs)
 
 	ran := false
 	a := &analysis.Analyzer{

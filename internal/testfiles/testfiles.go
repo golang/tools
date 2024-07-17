@@ -17,20 +17,14 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
-// CopyDirToTmp copies dir to a temporary test directory using
-// CopyTestFiles and returns the path to the test directory.
-func CopyDirToTmp(t testing.TB, srcdir string) string {
-	dst := t.TempDir()
-	if err := CopyFS(dst, os.DirFS(srcdir)); err != nil {
-		t.Fatal(err)
-	}
-	return dst
-}
-
-// CopyFS copies the files and directories in src to a
-// destination directory dst. Paths to files and directories
-// ending in a ".test" extension have the ".test" extension
-// removed. This allows tests to hide files whose names have
+// CopyToTmp copies the files and directories in src to a new temporary testing
+// directory dst, and returns dst on success.
+//
+// After copying the files, it processes each of the 'old,new,' rename
+// directives in order. Each rename directive moves the relative path "old"
+// to the relative path "new" within the directory.
+//
+// Renaming allows tests to hide files whose names have
 // special meaning, such as "go.mod" files or "testdata" directories
 // from the go command, or ill-formed Go source files from gofmt.
 //
@@ -41,42 +35,31 @@ func CopyDirToTmp(t testing.TB, srcdir string) string {
 //	    a/a.go
 //	    b/b.go
 //
-// The resulting files will be:
+// with the rename "go.mod.test,go.mod", the resulting files will be:
 //
 //	dst/
 //	    go.mod
 //	    a/a.go
 //	    b/b.go
-func CopyFS(dstdir string, src fs.FS) error {
+func CopyToTmp(t testing.TB, src fs.FS, rename ...string) string {
+	dstdir := t.TempDir()
+
 	if err := copyFS(dstdir, src); err != nil {
-		return err
+		t.Fatal(err)
+	}
+	for _, r := range rename {
+		old, new, found := strings.Cut(r, ",")
+		if !found {
+			t.Fatalf("rename directive %q does not contain delimiter %q", r, ",")
+		}
+		oldpath := filepath.Join(dstdir, old)
+		newpath := filepath.Join(dstdir, new)
+		if err := os.Rename(oldpath, newpath); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	// Collect ".test" paths in lexical order.
-	var rename []string
-	err := fs.WalkDir(os.DirFS(dstdir), ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if strings.HasSuffix(path, ".test") {
-			rename = append(rename, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	// Rename the .test paths in reverse lexical order, e.g.
-	// in d.test/a.test renames a.test to d.test/a then d.test to d.
-	for i := len(rename) - 1; i >= 0; i-- {
-		oldpath := filepath.Join(dstdir, rename[i])
-		newpath := strings.TrimSuffix(oldpath, ".test")
-		if err != os.Rename(oldpath, newpath) {
-			return err
-		}
-	}
-	return nil
+	return dstdir
 }
 
 // Copy the files in src to dst.
@@ -106,46 +89,18 @@ func copyFS(dstdir string, src fs.FS) error {
 	})
 }
 
-// ExtractTxtar writes each archive file to the corresponding location beneath dir.
-//
-// TODO(adonovan): move this to txtar package, we need it all the time (#61386).
-func ExtractTxtar(dstdir string, ar *txtar.Archive) error {
-	for _, file := range ar.Files {
-		name := filepath.Join(dstdir, file.Name)
-		if err := os.MkdirAll(filepath.Dir(name), 0777); err != nil {
-			return err
-		}
-		if err := os.WriteFile(name, file.Data, 0666); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ExtractTxtarFileToTmp read a txtar archive on a given path,
 // extracts it to a temporary directory, and returns the
 // temporary directory.
-func ExtractTxtarFileToTmp(t testing.TB, archiveFile string) string {
-	ar, err := txtar.ParseFile(archiveFile)
+func ExtractTxtarFileToTmp(t testing.TB, file string) string {
+	ar, err := txtar.ParseFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	dir := t.TempDir()
-	err = ExtractTxtar(dir, ar)
+	fs, err := txtar.FS(ar)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return dir
-}
-
-// ExtractTxtarToTmp extracts the given archive to a temp directory, and
-// returns that temporary directory.
-func ExtractTxtarToTmp(t testing.TB, ar *txtar.Archive) string {
-	dir := t.TempDir()
-	err := ExtractTxtar(dir, ar)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return dir
+	return CopyToTmp(t, fs)
 }

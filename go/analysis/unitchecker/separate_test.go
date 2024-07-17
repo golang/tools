@@ -82,10 +82,11 @@ func MyPrintf(format string, args ...any) {
 `
 
 	// Expand archive into tmp tree.
-	tmpdir := t.TempDir()
-	if err := testfiles.ExtractTxtar(tmpdir, txtar.Parse([]byte(src))); err != nil {
+	fs, err := txtar.FS(txtar.Parse([]byte(src)))
+	if err != nil {
 		t.Fatal(err)
 	}
+	tmpdir := testfiles.CopyToTmp(t, fs)
 
 	// Load metadata for the main package and all its dependencies.
 	cfg := &packages.Config{

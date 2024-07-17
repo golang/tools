@@ -5,6 +5,7 @@
 package testfiles_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,16 +15,20 @@ import (
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/internal/versions"
+	"golang.org/x/tools/txtar"
 )
 
 func TestTestDir(t *testing.T) {
 	testenv.NeedsGo1Point(t, 22)
 
-	// TODO(taking): Expose a helper for this pattern?
-	// dir must contain a go.mod file to be picked up by Run().
-	// So this pattern or Join(TestDir(t, TestData()), "versions")  are
-	// probably what everyone will want.
-	dir := testfiles.CopyDirToTmp(t, filepath.Join(analysistest.TestData(), "versions"))
+	// Files are initially {go.mod.test,sub.test/sub.go.test}.
+	fs := os.DirFS(filepath.Join(analysistest.TestData(), "versions"))
+	tmpdir := testfiles.CopyToTmp(t, fs,
+		"go.mod.test,go.mod",                // After: {go.mod,sub.test/sub.go.test}
+		"sub.test/sub.go.test,sub.test/abc", // After: {go.mod,sub.test/abc}
+		"sub.test,sub",                      // After: {go.mod,sub/abc}
+		"sub/abc,sub/sub.go",                // After: {go.mod,sub/sub.go}
+	)
 
 	filever := &analysis.Analyzer{
 		Name: "filever",
@@ -37,18 +42,54 @@ func TestTestDir(t *testing.T) {
 			return nil, nil
 		},
 	}
-	analysistest.Run(t, dir, filever, "golang.org/fake/versions", "golang.org/fake/versions/sub")
+	res := analysistest.Run(t, tmpdir, filever, "golang.org/fake/versions", "golang.org/fake/versions/sub")
+	got := 0
+	for _, r := range res {
+		got += len(r.Diagnostics)
+	}
+
+	if want := 4; got != want {
+		t.Errorf("Got %d diagnostics. wanted %d", got, want)
+	}
 }
 
-func TestCopyTestFilesErrors(t *testing.T) {
-	tmp := t.TempDir() // a real tmp dir
-	for _, dir := range []string{
-		filepath.Join(analysistest.TestData(), "not_there"),    // dir does not exist
-		filepath.Join(analysistest.TestData(), "somefile.txt"), // not a dir
-	} {
-		err := testfiles.CopyFS(tmp, os.DirFS(dir))
-		if err == nil {
-			t.Error("Expected an error from CopyTestFiles")
-		}
+func TestTestDirErrors(t *testing.T) {
+	const input = `
+-- one.txt --
+one
+`
+	// Files are initially {go.mod.test,sub.test/sub.go.test}.
+	fs, err := txtar.FS(txtar.Parse([]byte(input)))
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	directive := "no comma to split on"
+	intercept := &fatalIntercept{t, nil}
+	func() {
+		defer func() { // swallow panics from fatalIntercept.Fatal
+			if r := recover(); r != intercept {
+				panic(r)
+			}
+		}()
+		testfiles.CopyToTmp(intercept, fs, directive)
+	}()
+
+	got := fmt.Sprint(intercept.fatalfs)
+	want := `[rename directive "no comma to split on" does not contain delimiter ","]`
+	if got != want {
+		t.Errorf("CopyToTmp(%q) had the Fatal messages %q. wanted %q", directive, got, want)
+	}
+}
+
+// helper for TestTestDirErrors
+type fatalIntercept struct {
+	testing.TB
+	fatalfs []string
+}
+
+func (i *fatalIntercept) Fatalf(format string, args ...any) {
+	i.fatalfs = append(i.fatalfs, fmt.Sprintf(format, args...))
+	// Do not mark the test as failing, but fail early.
+	panic(i)
 }
