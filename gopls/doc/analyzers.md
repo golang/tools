@@ -636,6 +636,8 @@ will be simplified to:
 
 This is one of the simplifications that "gofmt -s" applies.
 
+This analyzer ignores generated code.
+
 Default: on.
 
 Package documentation: [simplifycompositelit](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifycompositelit)
@@ -662,6 +664,8 @@ will be simplified to:
 
 This is one of the simplifications that "gofmt -s" applies.
 
+This analyzer ignores generated code.
+
 Default: on.
 
 Package documentation: [simplifyrange](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyrange)
@@ -679,6 +683,8 @@ will be simplified to:
 	s[a:]
 
 This is one of the simplifications that "gofmt -s" applies.
+
+This analyzer ignores generated code.
 
 Default: on.
 

@@ -15,7 +15,7 @@ import (
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.RunWithSuggestedFixes(t, testdata, simplifyrange.Analyzer, "a")
+	analysistest.RunWithSuggestedFixes(t, testdata, simplifyrange.Analyzer, "a", "generatedcode")
 	if slices.Contains(build.Default.ReleaseTags, "go1.23") { // uses iter.Seq
 		analysistest.RunWithSuggestedFixes(t, testdata, simplifyrange.Analyzer, "rangeoverfunc")
 	}
