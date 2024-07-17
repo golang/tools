@@ -340,8 +340,9 @@ type completionContext struct {
 	// packageCompletion is true if we are completing a package name.
 	packageCompletion bool
 
-	// removeBeforePeriod is true if we are removing content before the period.
-	removeBeforePeriod bool
+	// syntaxError is information about when the source code contains
+	// syntax errors. Only triggered if the completion candidate has period.
+	syntaxError syntaxErrorContext
 }
 
 // A Selection represents the cursor position and surrounding identifier.
@@ -768,11 +769,9 @@ func (c *completer) containingIdent(src []byte) *ast.Ident {
 		// is a keyword. This improves completion after an "accidental
 		// keyword", e.g. completing to "variance" in "someFunc(var<>)".
 		return fakeIdent
-	} else if c.isCompletionAllowed() && tkn == token.IDENT {
-		// Use manually extracted token even when syntax is incomplete
-		// or contains errors. This provides better developer experience.
-		// Only for certain conditions: when completion is allowed and
-		// the token is an IDENT.
+	} else if tkn == token.IDENT {
+		// Use manually extracted token when the source contains
+		// syntax errors. This provides better developer experience.
 		return fakeIdent
 	}
 
@@ -781,10 +780,13 @@ func (c *completer) containingIdent(src []byte) *ast.Ident {
 
 // scanToken scans pgh's contents for the token containing pos.
 func (c *completer) scanToken(contents []byte) (token.Pos, token.Token, string) {
-	tok := c.pkg.FileSet().File(c.pos)
+	var (
+		lastLit string
+		prdPos  token.Pos
+		s       scanner.Scanner
+	)
 
-	var prdPos token.Pos
-	var s scanner.Scanner
+	tok := c.pkg.FileSet().File(c.pos)
 	s.Init(tok, contents, nil, 0)
 	for {
 		tknPos, tkn, lit := s.Scan()
@@ -794,11 +796,17 @@ func (c *completer) scanToken(contents []byte) (token.Pos, token.Token, string) 
 
 		if tkn == token.PERIOD {
 			prdPos = tknPos
+			// Save the last lit declared just before the period.
+			c.completionContext.syntaxError.lit = lastLit
 		}
-		// Set removeBeforePeriod to true if cursor is:
-		// - Right after the period (e.g., "foo.")
-		// - One or more characters after the period (e.g., "foo.b", "foo.bar")
-		c.completionContext.removeBeforePeriod = tknPos == prdPos || tknPos == prdPos+1
+		// Set hasPeriod to true if cursor is:
+		// - Right after the period (e.g., "foo.<>").
+		// - One or more characters after the period (e.g., "foo.b<>", "foo.bar<>").
+		c.completionContext.syntaxError.hasPeriod = tknPos == prdPos || tknPos == prdPos+1
+
+		if len(lit) > 0 {
+			lastLit = lit
+		}
 
 		if len(lit) > 0 && tknPos <= c.pos && c.pos <= tknPos+token.Pos(len(lit)) {
 			return tknPos, tkn, lit
@@ -1611,6 +1619,14 @@ func (c *completer) lexical(ctx context.Context) error {
 			declScope, obj := scope.LookupParent(name, c.pos)
 			if declScope != scope {
 				continue // Name was declared in some enclosing scope, or not at all.
+			}
+
+			// Provide better completion suggestions when the source code contains syntax
+			// errors and hasPeriod is true. This helps to offer relevant completions despite
+			// the presence of syntax errors in the code.
+			if c.completionContext.syntaxError.hasPeriod {
+				c.syntaxErrorCompletion(obj)
+				continue
 			}
 
 			// If obj's type is invalid, find the AST node that defines the lexical block
@@ -3370,26 +3386,4 @@ func forEachPackageMember(content []byte, f func(tok token.Token, id *ast.Ident,
 func is[T any](x any) bool {
 	_, ok := x.(T)
 	return ok
-}
-
-// isCompletionAllowed checks whether completion is allowed even
-// if the current source is incomplete or contains syntax errors.
-func (c *completer) isCompletionAllowed() bool {
-	// Examples
-	//
-	// BlockStmt:
-	//  minimum, maximum := 0, 0
-	//  minimum, max
-	// BadExpr:
-	//  math.Sqrt(,0)
-	//  math.Ab
-	// CallExpr:
-	//  value := 0
-	//  fmt.Println("value:" val)
-	switch c.path[0].(type) {
-	case *ast.BlockStmt, *ast.BadExpr, *ast.CallExpr:
-		return true
-	default:
-		return false
-	}
 }

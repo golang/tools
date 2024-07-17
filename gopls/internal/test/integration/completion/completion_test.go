@@ -1266,6 +1266,23 @@ func test9() {
 	p := person{}
 	fmt.Println("name:" p.na)
 }
+
+-- test10.go --
+package main
+
+type Foo struct {
+	bar  Bar
+	name string
+}
+
+type Bar struct {
+	baz string
+}
+
+func test10() {
+	f := Foo{}
+	f.name, f.bar.b
+}
 `
 	tests := []struct {
 		name string
@@ -1325,7 +1342,13 @@ func test9() {
 			name: "test 9 struct field completion after missing comma with period",
 			file: "test9.go",
 			re:   "p.na()",
-			want: "package main\n\ntype person struct {\n\tname string\n\tage  int\n}\n\nfunc test9() {\n\tp := person{}\n\tfmt.Println(\"name:\" p.name)\n}\n",
+			want: "package main\n\ntype person struct {\n\tname string\n\tage  int\n}\n\nfunc test9() {\n\tp := person{}\n\tfmt.Println(\"name:\" p.name)\n}\n\n",
+		},
+		{
+			name: "test 10 complex struct field completion after comma with period",
+			file: "test10.go",
+			re:   "f.bar.b()",
+			want: "package main\n\ntype Foo struct {\n\tbar  Bar\n\tname string\n}\n\ntype Bar struct {\n\tbaz string\n}\n\nfunc test10() {\n\tf := Foo{}\n\tf.name, f.bar.baz\n}\n",
 		},
 	}
 
