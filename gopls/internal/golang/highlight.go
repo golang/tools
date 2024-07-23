@@ -555,15 +555,21 @@ func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result
 		case *ast.SendStmt:
 			highlightExpr(n.Chan)
 		case *ast.CompositeLit:
-			for _, expr := range n.Elts {
-				if expr, ok := (expr).(*ast.KeyValueExpr); ok {
-					highlightExpr(expr.Key)
+			switch n.Type.(type) {
+			case *ast.ArrayType, *ast.MapType:
+			default:
+				for _, expr := range n.Elts {
+					if expr, ok := (expr).(*ast.KeyValueExpr); ok {
+						highlightExpr(expr.Key)
+					}
 				}
 			}
 		case *ast.RangeStmt:
 			highlightExpr(n.Key)
 			highlightExpr(n.Value)
 		case *ast.Ident:
+			// This case is reached for all Idents,
+			// including those also visited by visitLHS.
 			if n.Name == id.Name && info.ObjectOf(n) == obj {
 				highlight(n)
 			}
