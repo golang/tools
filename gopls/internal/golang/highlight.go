@@ -515,8 +515,7 @@ func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result
 	obj := info.ObjectOf(id)
 
 	highlightIdent := func(n *ast.Ident, kind protocol.DocumentHighlightKind) {
-		if (obj != nil && info.ObjectOf(n) == obj) ||
-			(obj == nil && n.Name == id.Name) { // ill-typed: use name-based matching
+		if n.Name == id.Name && info.ObjectOf(n) == obj {
 			highlightNode(n, kind)
 		}
 	}

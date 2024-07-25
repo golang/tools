@@ -1,4 +1,4 @@
-// Copyright 2019 The Go Authors. All rights reserved.
+// Copyright 2024 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -12,9 +12,8 @@ import (
 
 	"strings"
 
+	"github.com/google/go-cmp/cmp"
 	"go/types"
-	"reflect"
-
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
@@ -131,10 +130,10 @@ func highlightTest() (ret int) {
 		obj := info.ObjectOf(ident)
 		result := map[posRange]protocol.DocumentHighlightKind{}
 		highlightIdentifier(ident, file, info, result)
-		if !reflect.DeepEqual(result, allHighlights[obj]) {
+		diff := cmp.Diff(result, allHighlights[obj])
+		if diff != "" {
 			t.Errorf("highlightIdentifier(%v)", obj)
-			t.Errorf("result: %v", result)
-			t.Errorf("want:   %v", allHighlights[obj])
+			t.Errorf("diff: %s", diff)
 		}
 	}
 }
