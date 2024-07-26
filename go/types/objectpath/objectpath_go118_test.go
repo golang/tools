@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/types/objectpath"
 )
 
+// TODO(adonovan): merge this back into objectpath_test.go.
 func TestGenericPaths(t *testing.T) {
 	pkgs := map[string]map[string]string{
 		"b": {"b.go": `

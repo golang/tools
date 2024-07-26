@@ -28,6 +28,14 @@ func Rhs(alias *Alias) types.Type {
 	return Unalias(alias)
 }
 
+// TypeParams returns the type parameter list of the alias.
+func TypeParams(alias *Alias) *types.TypeParamList {
+	if alias, ok := any(alias).(interface{ TypeParams() *types.TypeParamList }); ok {
+		return alias.TypeParams() // go1.23+
+	}
+	return nil
+}
+
 // Unalias is a wrapper of types.Unalias.
 func Unalias(t types.Type) types.Type { return types.Unalias(t) }
 

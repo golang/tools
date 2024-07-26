@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/importer"
 	"go/parser"
 	"go/token"
@@ -19,9 +20,21 @@ import (
 	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/types/objectpath"
+	"golang.org/x/tools/internal/aliases"
 )
 
 func TestPaths(t *testing.T) {
+	for _, aliases := range []int{0, 1} {
+		t.Run(fmt.Sprint(aliases), func(t *testing.T) {
+			testPaths(t, aliases)
+		})
+	}
+}
+
+func testPaths(t *testing.T, gotypesalias int) {
+	// override default set by go1.19 in go.mod
+	t.Setenv("GODEBUG", fmt.Sprintf("gotypesalias=%d", gotypesalias))
+
 	pkgs := map[string]map[string]string{
 		"b": {"b.go": `
 package b
@@ -39,6 +52,11 @@ func (T) M() *interface{ f() }
 type U T
 
 type A = struct{ x int }
+
+type unexported2 struct { z int }
+type AN = unexported2 // alias of named
+
+// type GA[T any] = T // see below
 
 var V []*a.T
 
@@ -75,9 +93,17 @@ type T struct{x, y int}
 		{"b", "T.UF0", "field A int", ""},
 		{"b", "T.UF1", "field b int", ""},
 		{"b", "T.UF2", "field T a.T", ""},
-		{"b", "U.UF2", "field T a.T", ""}, // U.U... are aliases for T.U...
-		{"b", "A", "type b.A = struct{x int}", ""},
+		{"b", "U.UF2", "field T a.T", ""},          // U.U... are aliases for T.U...
+		{"b", "A", "type b.A = struct{x int}", ""}, // go1.22/alias=1: "type b.A = b.A"
+		{"b", "A.aF0", "field x int", ""},
 		{"b", "A.F0", "field x int", ""},
+		{"b", "AN", "type b.AN = b.unexported2", ""}, // go1.22/alias=1: "type b.AN = b.AN"
+		{"b", "AN.UF0", "field z int", ""},
+		{"b", "AN.aO", "type b.unexported2 struct{z int}", ""},
+		{"b", "AN.O", "type b.unexported2 struct{z int}", ""},
+		{"b", "AN.aUF0", "field z int", ""},
+		{"b", "AN.UF0", "field z int", ""},
+		// {"b", "GA", "type parameter b.GA = T", ""}, // TODO(adonovan): enable once GOEXPERIMENT=aliastypeparams has gone, and only when gotypesalias=1
 		{"b", "V", "var b.V []*a.T", ""},
 		{"b", "M", "type b.M map[struct{x int}]struct{y int}", ""},
 		{"b", "M.UKF0", "field x int", ""},
@@ -126,6 +152,20 @@ type T struct{x, y int}
 	}
 
 	for _, test := range paths {
+		// go1.22 gotypesalias=1 prints aliases wrong: "type A = A".
+		// (Fixed by https://go.dev/cl/574716.)
+		// Work around it here by updating the expectation.
+		if slicesContains(build.Default.ReleaseTags, "go1.22") &&
+			!slicesContains(build.Default.ReleaseTags, "go1.23") &&
+			aliases.Enabled() {
+			if test.pkg == "b" && test.path == "A" {
+				test.wantobj = "type b.A = b.A"
+			}
+			if test.pkg == "b" && test.path == "AN" {
+				test.wantobj = "type b.AN = b.AN"
+			}
+		}
+
 		if err := testPath(prog, test); err != nil {
 			t.Error(err)
 		}
@@ -386,4 +426,14 @@ func (T) X() { }
 			t.Errorf("Objects(%s) not equal, got a1 = %v, a2 = %v", test.path, pobj.Name(), qobj.Name())
 		}
 	}
+}
+
+// TODO(adonovan): use go1.21 slices.Contains.
+func slicesContains[S ~[]E, E comparable](slice S, x E) bool {
+	for _, elem := range slice {
+		if elem == x {
+			return true
+		}
+	}
+	return false
 }
