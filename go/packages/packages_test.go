@@ -2370,7 +2370,7 @@ func testCycleImportStack(t *testing.T, exporter packagestest.Exporter) {
 	if len(pkg.Errors) != 1 {
 		t.Fatalf("Expected one error in package, got %v", pkg.Errors)
 	}
-	expected := "import cycle not allowed: import stack: [golang.org/fake/a golang.org/fake/b golang.org/fake/a]"
+	expected := "import cycle not allowed: import stack: [golang.org/fake/a golang.org/fake/b from a.go golang.org/fake/a from b.go]"
 	if pkg.Errors[0].Msg != expected {
 		t.Fatalf("Expected error %q, got %q", expected, pkg.Errors[0].Msg)
 	}
