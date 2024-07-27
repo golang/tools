@@ -76,7 +76,7 @@ const (
 	// NeedTypes adds Types, Fset, and IllTyped.
 	NeedTypes
 
-	// NeedSyntax adds Syntax.
+	// NeedSyntax adds Syntax and Fset.
 	NeedSyntax
 
 	// NeedTypesInfo adds TypesInfo.
@@ -961,11 +961,13 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 		}
 		if ld.requestedMode&NeedTypes == 0 {
 			ld.pkgs[i].Types = nil
-			ld.pkgs[i].Fset = nil
 			ld.pkgs[i].IllTyped = false
 		}
 		if ld.requestedMode&NeedSyntax == 0 {
 			ld.pkgs[i].Syntax = nil
+		}
+		if ld.requestedMode&NeedTypes == 0 && ld.requestedMode&NeedSyntax == 0 {
+			ld.pkgs[i].Fset = nil
 		}
 		if ld.requestedMode&NeedTypesInfo == 0 {
 			ld.pkgs[i].TypesInfo = nil
