@@ -506,8 +506,9 @@ func is[T any](arg any) bool {
 
 // Supported value marker functions. See [valueMarkerFunc] for more details.
 var valueMarkerFuncs = map[string]func(marker){
-	"loc":  valueMarkerFunc(locMarker),
-	"item": valueMarkerFunc(completionItemMarker),
+	"loc":   valueMarkerFunc(locMarker),
+	"item":  valueMarkerFunc(completionItemMarker),
+	"hiloc": valueMarkerFunc(highlightLocationMarker),
 }
 
 // Supported action marker functions. See [actionMarkerFunc] for more details.
@@ -524,6 +525,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"foldingrange":     actionMarkerFunc(foldingRangeMarker),
 	"format":           actionMarkerFunc(formatMarker),
 	"highlight":        actionMarkerFunc(highlightMarker),
+	"highlighteach":    actionMarkerFunc(highlightEachMarker),
 	"hover":            actionMarkerFunc(hoverMarker),
 	"hovererr":         actionMarkerFunc(hoverErrMarker),
 	"implementation":   actionMarkerFunc(implementationMarker),
@@ -1591,6 +1593,54 @@ func formatMarker(mark marker, golden *Golden) {
 	}
 
 	compareGolden(mark, got, golden)
+}
+
+// highlightLocation is highlight location with kind
+type highlightLocation struct {
+	loc       protocol.Location
+	highlight protocol.DocumentHighlight
+}
+
+func highlightLocationMarker(_ marker, loc protocol.Location, kindName string) highlightLocation {
+	var kind protocol.DocumentHighlightKind
+	switch kindName {
+	case "Read":
+		kind = protocol.Read
+	case "Write":
+		kind = protocol.Write
+	case "Text":
+		kind = protocol.Text
+	}
+
+	return highlightLocation{
+		loc: loc,
+		highlight: protocol.DocumentHighlight{
+			Range: loc.Range,
+			Kind:  kind,
+		},
+	}
+}
+
+// highlightEachMarker gets the highlight results of each location in 'all', and the results should be same, and same as 'all'.
+func highlightEachMarker(mark marker, all ...highlightLocation) {
+	var want []protocol.DocumentHighlight
+	for _, d := range all {
+		want = append(want, d.highlight)
+	}
+	sortRanges := func(s []protocol.DocumentHighlight) {
+		sort.Slice(s, func(i, j int) bool {
+			return protocol.CompareRange(s[i].Range, s[j].Range) < 0
+		})
+	}
+	sortRanges(want)
+	for _, src := range all {
+		got := mark.run.env.DocumentHighlight(src.loc)
+		sortRanges(got)
+
+		if d := cmp.Diff(want, got); d != "" {
+			mark.errorf("DocumentHighlightKind(%v) mismatch (-want +got):\n%s", src.loc, d)
+		}
+	}
 }
 
 func highlightMarker(mark marker, src protocol.Location, dsts ...protocol.Location) {

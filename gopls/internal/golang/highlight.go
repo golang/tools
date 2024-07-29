@@ -78,7 +78,7 @@ func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRa
 		if len(path) > 1 {
 			if imp, ok := path[1].(*ast.ImportSpec); ok {
 				highlight := func(n ast.Node) {
-					result[posRange{start: n.Pos(), end: n.End()}] = protocol.Text
+					highlightNode(result, n, protocol.Text)
 				}
 
 				// Highlight the import itself...
@@ -127,9 +127,6 @@ func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRa
 				highlightLoopControlFlow(path, info, result)
 			}
 		}
-	default:
-		// If the cursor is in an unidentified area, return empty results.
-		return nil, nil
 	}
 
 	return result, nil
@@ -215,10 +212,7 @@ findEnclosingFunc:
 
 	if highlightAll {
 		// Add the "func" part of the func declaration.
-		result[posRange{
-			start: funcType.Func,
-			end:   funcEnd,
-		}] = protocol.Text
+		highlightRange(result, funcType.Func, funcEnd, protocol.Text)
 	} else if returnStmt == nil && !inResults {
 		return // nothing to highlight
 	} else {
@@ -246,7 +240,7 @@ findEnclosingFunc:
 				for _, field := range funcType.Results.List {
 					for j, name := range field.Names {
 						if inNode(name) || highlightIndexes[i+j] {
-							result[posRange{name.Pos(), name.End()}] = protocol.Text
+							highlightNode(result, name, protocol.Text)
 							highlightIndexes[i+j] = true
 							break findField // found/highlighted the specific name
 						}
@@ -261,7 +255,7 @@ findEnclosingFunc:
 					// ...where it would make more sense to highlight only y. But we don't
 					// reach this function if not in a func, return, ident, or basiclit.
 					if inNode(field) || highlightIndexes[i] {
-						result[posRange{field.Pos(), field.End()}] = protocol.Text
+						highlightNode(result, field, protocol.Text)
 						highlightIndexes[i] = true
 						if inNode(field) {
 							for j := range field.Names {
@@ -290,12 +284,12 @@ findEnclosingFunc:
 			case *ast.ReturnStmt:
 				if highlightAll {
 					// Add the entire return statement.
-					result[posRange{n.Pos(), n.End()}] = protocol.Text
+					highlightNode(result, n, protocol.Text)
 				} else {
 					// Add the highlighted indexes.
 					for i, expr := range n.Results {
 						if highlightIndexes[i] {
-							result[posRange{expr.Pos(), expr.End()}] = protocol.Text
+							highlightNode(result, expr, protocol.Text)
 						}
 					}
 				}
@@ -376,11 +370,9 @@ Outer:
 	}
 
 	// Add the for statement.
-	rng := posRange{
-		start: loop.Pos(),
-		end:   loop.Pos() + token.Pos(len("for")),
-	}
-	result[rng] = protocol.Text
+	rngStart := loop.Pos()
+	rngEnd := loop.Pos() + token.Pos(len("for"))
+	highlightRange(result, rngStart, rngEnd, protocol.Text)
 
 	// Traverse AST to find branch statements within the same for-loop.
 	ast.Inspect(loop, func(n ast.Node) bool {
@@ -395,7 +387,7 @@ Outer:
 			return true
 		}
 		if b.Label == nil || info.Uses[b.Label] == info.Defs[loopLabel] {
-			result[posRange{start: b.Pos(), end: b.End()}] = protocol.Text
+			highlightNode(result, b, protocol.Text)
 		}
 		return true
 	})
@@ -408,7 +400,7 @@ Outer:
 		}
 
 		if n, ok := n.(*ast.BranchStmt); ok && n.Tok == token.CONTINUE {
-			result[posRange{start: n.Pos(), end: n.End()}] = protocol.Text
+			highlightNode(result, n, protocol.Text)
 		}
 		return true
 	})
@@ -426,7 +418,7 @@ Outer:
 		}
 		// statement with labels that matches the loop
 		if b.Label != nil && info.Uses[b.Label] == info.Defs[loopLabel] {
-			result[posRange{start: b.Pos(), end: b.End()}] = protocol.Text
+			highlightNode(result, b, protocol.Text)
 		}
 		return true
 	})
@@ -454,11 +446,9 @@ Outer:
 	}
 
 	// Add the switch statement.
-	rng := posRange{
-		start: switchNode.Pos(),
-		end:   switchNode.Pos() + token.Pos(len("switch")),
-	}
-	result[rng] = protocol.Text
+	rngStart := switchNode.Pos()
+	rngEnd := switchNode.Pos() + token.Pos(len("switch"))
+	highlightRange(result, rngStart, rngEnd, protocol.Text)
 
 	// Traverse AST to find break statements within the same switch.
 	ast.Inspect(switchNode, func(n ast.Node) bool {
@@ -475,7 +465,7 @@ Outer:
 		}
 
 		if b.Label == nil || info.Uses[b.Label] == info.Defs[switchNodeLabel] {
-			result[posRange{start: b.Pos(), end: b.End()}] = protocol.Text
+			highlightNode(result, b, protocol.Text)
 		}
 		return true
 	})
@@ -493,21 +483,27 @@ Outer:
 		}
 
 		if b.Label != nil && info.Uses[b.Label] == info.Defs[switchNodeLabel] {
-			result[posRange{start: b.Pos(), end: b.End()}] = protocol.Text
+			highlightNode(result, b, protocol.Text)
 		}
 
 		return true
 	})
 }
 
-func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result map[posRange]protocol.DocumentHighlightKind) {
-	highlightNode := func(n ast.Node, kind protocol.DocumentHighlightKind) {
-		pos := posRange{start: n.Pos(), end: n.End()}
-		// 'Write' can overwrite 'Read'
-		if old, exists := result[pos]; !exists || old < kind {
-			result[pos] = kind
-		}
+func highlightNode(result map[posRange]protocol.DocumentHighlightKind, n ast.Node, kind protocol.DocumentHighlightKind) {
+	highlightRange(result, n.Pos(), n.End(), kind)
+}
+
+func highlightRange(result map[posRange]protocol.DocumentHighlightKind, pos, end token.Pos, kind protocol.DocumentHighlightKind) {
+	rng := posRange{pos, end}
+	// 'Write' can overwrite 'Read'
+	// TODO: use result[rng] = max(result[rng], kind) in go1.21.
+	if old, exists := result[rng]; !exists || old < kind {
+		result[rng] = kind
 	}
+}
+
+func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result map[posRange]protocol.DocumentHighlightKind) {
 
 	// obj may be nil if the Ident is undefined.
 	// In this case, the behavior expected by tests is
@@ -516,12 +512,17 @@ func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result
 
 	highlightIdent := func(n *ast.Ident, kind protocol.DocumentHighlightKind) {
 		if n.Name == id.Name && info.ObjectOf(n) == obj {
-			highlightNode(n, kind)
+			highlightNode(result, n, kind)
 		}
 	}
-	// the highlighting rules are same as other IDEs/LSPs like GoLand, Rust Analyzer, Java JDT
-	// the rules are different from that of type checker, so ast traversal is used now
-	// see unit tests for more information
+	// highlightWriteInExpr is called for expressions that are
+	// logically on the left side of an assignment.
+	// We follow the behavior of VSCode+Rust and GoLand, which differs
+	// slightly from types.TypeAndValue.Assignable:
+	//     *ptr = 1       // ptr write
+	//     *ptr.field = 1 // ptr read, field write
+	//     s.field = 1    // s read, field write
+	//     array[i] = 1   // array read
 	var highlightWriteInExpr func(expr ast.Expr)
 	highlightWriteInExpr = func(expr ast.Expr) {
 		switch expr := expr.(type) {
@@ -557,13 +558,11 @@ func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result
 		case *ast.SendStmt:
 			highlightWriteInExpr(n.Chan)
 		case *ast.CompositeLit:
-			ut := info.TypeOf(n).Underlying()
-			switch t := ut.(type) {
-			case *types.Pointer:
-				ut = t.Elem().Underlying()
+			t := info.TypeOf(n)
+			if ptr, ok := t.Underlying().(*types.Pointer); ok {
+				t = ptr.Elem()
 			}
-			switch ut.(type) {
-			case *types.Struct:
+			if _, ok := t.Underlying().(*types.Struct); ok {
 				for _, expr := range n.Elts {
 					if expr, ok := (expr).(*ast.KeyValueExpr); ok {
 						highlightWriteInExpr(expr.Key)
@@ -582,9 +581,9 @@ func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result
 			pkgname, ok := typesutil.ImportedPkgName(info, n)
 			if ok && pkgname == obj {
 				if n.Name != nil {
-					highlightNode(n.Name, protocol.Text)
+					highlightNode(result, n.Name, protocol.Text)
 				} else {
-					highlightNode(n, protocol.Text)
+					highlightNode(result, n, protocol.Text)
 				}
 			}
 		}
