@@ -2645,6 +2645,42 @@ func testTypecheckCgo(t *testing.T, exporter packagestest.Exporter) {
 	}
 }
 
+// TestIssue48226 ensures that when NeedSyntax is provided we do not nullify the
+// Fset, which is needed to resolve the syntax tree element positions to files.
+func TestIssue48226(t *testing.T) { testAllOrModulesParallel(t, testIssue48226) }
+func testIssue48226(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{
+		{
+			Name: "golang.org/fake/syntax",
+			Files: map[string]interface{}{
+				"syntax.go": `package test`,
+			},
+		},
+	})
+	defer exported.Cleanup()
+
+	exported.Config.Mode = packages.NeedFiles | packages.NeedSyntax
+
+	initial, err := packages.Load(exported.Config, "golang.org/fake/syntax")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(initial) != 1 {
+		t.Fatalf("exepected 1 package, got %d", len(initial))
+	}
+	pkg := initial[0]
+
+	if len(pkg.Errors) != 0 {
+		t.Fatalf("package has errors: %v", pkg.Errors)
+	}
+
+	fname := pkg.Fset.File(pkg.Syntax[0].Pos()).Name()
+	if filepath.Base(fname) != "syntax.go" {
+		t.Errorf("expected the package declaration position "+
+			"to resolve to \"syntax.go\", got %q instead", fname)
+	}
+}
+
 func TestModule(t *testing.T) {
 	testAllOrModulesParallel(t, testModule)
 }
