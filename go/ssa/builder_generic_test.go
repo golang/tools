@@ -550,7 +550,13 @@ func TestGenericBodies(t *testing.T) {
 			}
 
 			// Collect calls to the builtin print function.
-			probes := callsTo(p, "print")
+			fns := make(map[*ssa.Function]bool)
+			for _, mem := range p.Members {
+				if fn, ok := mem.(*ssa.Function); ok {
+					fns[fn] = true
+				}
+			}
+			probes := callsTo(fns, "print")
 			expectations := matchNotes(prog.Fset, notes, probes)
 
 			for call := range probes {
@@ -576,17 +582,15 @@ func TestGenericBodies(t *testing.T) {
 
 // callsTo finds all calls to an SSA value named fname,
 // and returns a map from each call site to its enclosing function.
-func callsTo(p *ssa.Package, fname string) map[*ssa.CallCommon]*ssa.Function {
+func callsTo(fns map[*ssa.Function]bool, fname string) map[*ssa.CallCommon]*ssa.Function {
 	callsites := make(map[*ssa.CallCommon]*ssa.Function)
-	for _, mem := range p.Members {
-		if fn, ok := mem.(*ssa.Function); ok {
-			for _, bb := range fn.Blocks {
-				for _, i := range bb.Instrs {
-					if i, ok := i.(ssa.CallInstruction); ok {
-						call := i.Common()
-						if call.Value.Name() == fname {
-							callsites[call] = fn
-						}
+	for fn := range fns {
+		for _, bb := range fn.Blocks {
+			for _, i := range bb.Instrs {
+				if i, ok := i.(ssa.CallInstruction); ok {
+					call := i.Common()
+					if call.Value.Name() == fname {
+						callsites[call] = fn
 					}
 				}
 			}

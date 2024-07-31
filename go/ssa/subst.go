@@ -318,15 +318,80 @@ func (subst *subster) interface_(iface *types.Interface) *types.Interface {
 }
 
 func (subst *subster) alias(t *aliases.Alias) types.Type {
-	// TODO(go.dev/issues/46477): support TypeParameters once these are available from go/types.
-	u := aliases.Unalias(t)
-	if s := subst.typ(u); s != u {
-		// If there is any change, do not create a new alias.
-		return s
+	// See subster.named. This follows the same strategy.
+	tparams := aliases.TypeParams(t)
+	targs := aliases.TypeArgs(t)
+	tname := t.Obj()
+	torigin := aliases.Origin(t)
+
+	if !declaredWithin(tname, subst.origin) {
+		// t is declared outside of the function origin. So t is a package level type alias.
+		if targs.Len() == 0 {
+			// No type arguments so no instantiation needed.
+			return t
+		}
+
+		// Instantiate with the substituted type arguments.
+		newTArgs := subst.typelist(targs)
+		return subst.instantiate(torigin, newTArgs)
 	}
-	// If there is no change, t did not reach any type parameter.
-	// Keep the Alias.
-	return t
+
+	if targs.Len() == 0 {
+		// t is declared within the function origin and has no type arguments.
+		//
+		// Example: This corresponds to A or B in F, but not A[int]:
+		//
+		//     func F[T any]() {
+		//       type A[S any] = struct{t T, s S}
+		//       type B = T
+		//       var x A[int]
+		//       ...
+		//     }
+		//
+		// This is somewhat different than *Named as *Alias cannot be created recursively.
+
+		// Copy and substitute type params.
+		var newTParams []*types.TypeParam
+		for i := 0; i < tparams.Len(); i++ {
+			cur := tparams.At(i)
+			cobj := cur.Obj()
+			cname := types.NewTypeName(cobj.Pos(), cobj.Pkg(), cobj.Name(), nil)
+			ntp := types.NewTypeParam(cname, nil)
+			subst.cache[cur] = ntp // See the comment "Note: Subtle" in subster.named.
+			newTParams = append(newTParams, ntp)
+		}
+
+		// Substitute rhs.
+		rhs := subst.typ(aliases.Rhs(t))
+
+		// Create the fresh alias.
+		obj := aliases.NewAlias(true, tname.Pos(), tname.Pkg(), tname.Name(), rhs)
+		fresh := obj.Type()
+		if fresh, ok := fresh.(*aliases.Alias); ok {
+			// TODO: assume ok when aliases are always materialized (go1.27).
+			aliases.SetTypeParams(fresh, newTParams)
+		}
+
+		// Substitute into all of the constraints after they are created.
+		for i, ntp := range newTParams {
+			bound := tparams.At(i).Constraint()
+			ntp.SetConstraint(subst.typ(bound))
+		}
+		return fresh
+	}
+
+	// t is declared within the function origin and has type arguments.
+	//
+	// Example: This corresponds to A[int] in F. Cases A and B are handled above.
+	//     func F[T any]() {
+	//       type A[S any] = struct{t T, s S}
+	//       type B = T
+	//       var x A[int]
+	//       ...
+	//     }
+	subOrigin := subst.typ(torigin)
+	subTArgs := subst.typelist(targs)
+	return subst.instantiate(subOrigin, subTArgs)
 }
 
 func (subst *subster) named(t *types.Named) types.Type {
@@ -456,7 +521,7 @@ func (subst *subster) named(t *types.Named) types.Type {
 
 func (subst *subster) instantiate(orig types.Type, targs []types.Type) types.Type {
 	i, err := types.Instantiate(subst.ctxt, orig, targs, false)
-	assert(err == nil, "failed to Instantiate Named type")
+	assert(err == nil, "failed to Instantiate named (Named or Alias) type")
 	if c, _ := subst.uniqueness.At(i).(types.Type); c != nil {
 		return c.(types.Type)
 	}

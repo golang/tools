@@ -14,6 +14,7 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -1259,4 +1260,144 @@ func TestIssue67079(t *testing.T) {
 	})
 
 	g.Wait() // ignore error
+}
+
+func TestGenericAliases(t *testing.T) {
+	testenv.NeedsGo1Point(t, 23)
+
+	if os.Getenv("GENERICALIASTEST_CHILD") == "1" {
+		testGenericAliases(t)
+		return
+	}
+
+	testenv.NeedsExec(t)
+	testenv.NeedsTool(t, "go")
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestGenericAliases")
+	cmd.Env = append(os.Environ(),
+		"GENERICALIASTEST_CHILD=1",
+		"GODEBUG=gotypesalias=1",
+		"GOEXPERIMENT=aliastypeparams",
+	)
+	out, err := cmd.CombinedOutput()
+	if len(out) > 0 {
+		t.Logf("out=<<%s>>", out)
+	}
+	var exitcode int
+	if err, ok := err.(*exec.ExitError); ok {
+		exitcode = err.ExitCode()
+	}
+	const want = 0
+	if exitcode != want {
+		t.Errorf("exited %d, want %d", exitcode, want)
+	}
+}
+
+func testGenericAliases(t *testing.T) {
+	t.Setenv("GOEXPERIMENT", "aliastypeparams=1")
+
+	const source = `
+package P
+
+type A = uint8
+type B[T any] = [4]T
+
+var F = f[string]
+
+func f[S any]() {
+	// Two copies of f are made: p.f[S] and p.f[string]
+
+	var v A // application of A that is declared outside of f without no type arguments
+	print("p.f", "String", "p.A", v)
+	print("p.f", "==", v, uint8(0))
+	print("p.f[string]", "String", "p.A", v)
+	print("p.f[string]", "==", v, uint8(0))
+
+
+	var u B[S] // application of B that is declared outside declared outside of f with type arguments
+	print("p.f", "String", "p.B[S]", u)
+	print("p.f", "==", u, [4]S{})
+	print("p.f[string]", "String", "p.B[string]", u)
+	print("p.f[string]", "==", u, [4]string{})
+
+	type C[T any] = struct{ s S; ap *B[T]} // declaration within f with type params
+	var w C[int] // application of C with type arguments
+	print("p.f", "String", "p.C[int]", w)
+	print("p.f", "==", w, struct{ s S; ap *[4]int}{})
+	print("p.f[string]", "String", "p.C[int]", w)
+	print("p.f[string]", "==", w, struct{ s string; ap *[4]int}{})
+}
+`
+
+	conf := loader.Config{Fset: token.NewFileSet()}
+	f, err := parser.ParseFile(conf.Fset, "p.go", source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf.CreateFromFiles("p", f)
+	iprog, err := conf.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create and build SSA program.
+	prog := ssautil.CreateProgram(iprog, ssa.InstantiateGenerics)
+	prog.Build()
+
+	probes := callsTo(ssautil.AllFunctions(prog), "print")
+	if got, want := len(probes), 3*4*2; got != want {
+		t.Errorf("Found %v probes, expected %v", got, want)
+	}
+
+	const debug = false // enable to debug skips
+	skipped := 0
+	for probe, fn := range probes {
+		// Each probe is of the form:
+		// 		print("within", "test", head, tail)
+		// The probe only matches within a function whose fn.String() is within.
+		// This allows for different instantiations of fn to match different probes.
+		// On a match, it applies the test named "test" to head::tail.
+		if len(probe.Args) < 3 {
+			t.Fatalf("probe %v did not have enough arguments", probe)
+		}
+		within, test, head, tail := constString(probe.Args[0]), probe.Args[1], probe.Args[2], probe.Args[3:]
+		if within != fn.String() {
+			skipped++
+			if debug {
+				t.Logf("Skipping %q within %q", within, fn.String())
+			}
+			continue // does not match function
+		}
+
+		switch test := constString(test); test {
+		case "==": // All of the values are types.Identical.
+			for _, v := range tail {
+				if !types.Identical(head.Type(), v.Type()) {
+					t.Errorf("Expected %v and %v to have identical types", head, v)
+				}
+			}
+		case "String": // head is a string constant that all values in tail must match Type().String()
+			want := constString(head)
+			for _, v := range tail {
+				if got := v.Type().String(); got != want {
+					t.Errorf("%s: %v had the Type().String()=%q. expected %q", within, v, got, want)
+				}
+			}
+		default:
+			t.Errorf("%q is not a test subcommand", test)
+		}
+	}
+	if want := 3 * 4; skipped != want {
+		t.Errorf("Skipped %d probes, expected to skip %d", skipped, want)
+	}
+}
+
+// constString returns the value of a string constant
+// or "<not a constant string>" if the value is not a string constant.
+func constString(v ssa.Value) string {
+	if c, ok := v.(*ssa.Const); ok {
+		str := c.Value.String()
+		return strings.Trim(str, `"`)
+	}
+	return "<not a constant string>"
 }

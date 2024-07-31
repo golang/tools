@@ -168,7 +168,13 @@ func TestRangeOverInt(t *testing.T) {
 	}
 
 	// Collect calls to the built-in print function.
-	probes := callsTo(p, "print")
+	fns := make(map[*ssa.Function]bool)
+	for _, mem := range p.Members {
+		if fn, ok := mem.(*ssa.Function); ok {
+			fns[fn] = true
+		}
+	}
+	probes := callsTo(fns, "print")
 	expectations := matchNotes(fset, notes, probes)
 
 	for call := range probes {
