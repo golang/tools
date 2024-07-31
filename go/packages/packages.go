@@ -46,7 +46,6 @@ import (
 //
 // Unfortunately there are a number of open bugs related to
 // interactions among the LoadMode bits:
-// - https://github.com/golang/go/issues/48226
 // - https://github.com/golang/go/issues/56633
 // - https://github.com/golang/go/issues/56677
 // - https://github.com/golang/go/issues/58726
