@@ -105,7 +105,6 @@ func _() {
 		"findcall": \[
 			\{
 				"posn": "([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?a/a.go:4:11",
-				"end_posn": "-",
 				"message": "call of MyFunc123\(...\)",
 				"suggested_fixes": \[
 					\{
@@ -131,7 +130,6 @@ func _() {
 		"assign": \[
 			\{
 				"posn": "([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?c/c.go:5:5",
-				"end_posn": "-",
 				"message": "self-assignment of i to i",
 				"suggested_fixes": \[
 					\{

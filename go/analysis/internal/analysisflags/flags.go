@@ -410,19 +410,24 @@ func (tree JSONTree) Add(fset *token.FileSet, id, name string, diags []analysis.
 			}
 			var related []JSONRelatedInformation
 			for _, r := range f.Related {
-				related = append(related, JSONRelatedInformation{
+				relatedInfo := JSONRelatedInformation{
 					Posn:    fset.Position(r.Pos).String(),
-					EndPosn: fset.Position(r.End).String(),
 					Message: r.Message,
-				})
+				}
+				if r.End != token.NoPos {
+					relatedInfo.EndPosn = fset.Position(r.End).String()
+				}
+				related = append(related, relatedInfo)
 			}
 			jdiag := JSONDiagnostic{
 				Category:       f.Category,
 				Posn:           fset.Position(f.Pos).String(),
-				EndPosn:        fset.Position(f.End).String(),
 				Message:        f.Message,
 				SuggestedFixes: fixes,
 				Related:        related,
+			}
+			if f.End != token.NoPos {
+				jdiag.EndPosn = fset.Position(f.End).String()
 			}
 			diagnostics = append(diagnostics, jdiag)
 		}
