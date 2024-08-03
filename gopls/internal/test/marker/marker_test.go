@@ -525,7 +525,6 @@ var actionMarkerFuncs = map[string]func(marker){
 	"foldingrange":     actionMarkerFunc(foldingRangeMarker),
 	"format":           actionMarkerFunc(formatMarker),
 	"highlight":        actionMarkerFunc(highlightMarker),
-	"highlighteach":    actionMarkerFunc(highlightEachMarker),
 	"hover":            actionMarkerFunc(hoverMarker),
 	"hovererr":         actionMarkerFunc(hoverErrMarker),
 	"implementation":   actionMarkerFunc(implementationMarker),
@@ -1621,43 +1620,19 @@ func highlightLocationMarker(_ marker, loc protocol.Location, kindName string) h
 	}
 }
 
-// highlightEachMarker gets the highlight results of each location in 'all', and the results should be same, and same as 'all'.
-func highlightEachMarker(mark marker, all ...highlightLocation) {
+// TODO(b/288111111): this is a bit of a hack. We should probably
+// have a more general way of testing that a function is idempotent.
+func highlightMarker(mark marker, src highlightLocation, dsts ...highlightLocation) {
+	got := mark.run.env.DocumentHighlight(src.loc)
+
 	var want []protocol.DocumentHighlight
-	for _, d := range all {
+	for _, d := range dsts {
 		want = append(want, d.highlight)
 	}
+
 	sortRanges := func(s []protocol.DocumentHighlight) {
 		sort.Slice(s, func(i, j int) bool {
 			return protocol.CompareRange(s[i].Range, s[j].Range) < 0
-		})
-	}
-	sortRanges(want)
-	for _, src := range all {
-		got := mark.run.env.DocumentHighlight(src.loc)
-		sortRanges(got)
-
-		if d := cmp.Diff(want, got); d != "" {
-			mark.errorf("DocumentHighlightKind(%v) mismatch (-want +got):\n%s", src.loc, d)
-		}
-	}
-}
-
-func highlightMarker(mark marker, src protocol.Location, dsts ...protocol.Location) {
-	highlights := mark.run.env.DocumentHighlight(src)
-	var got []protocol.Range
-	for _, h := range highlights {
-		got = append(got, h.Range)
-	}
-
-	var want []protocol.Range
-	for _, d := range dsts {
-		want = append(want, d.Range)
-	}
-
-	sortRanges := func(s []protocol.Range) {
-		sort.Slice(s, func(i, j int) bool {
-			return protocol.CompareRange(s[i], s[j]) < 0
 		})
 	}
 

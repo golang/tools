@@ -4,28 +4,53 @@ This test checks textDocument/highlight with highlight kinds.
 package a
 
 type Nest struct {
-	nest *Nest //@hiloc(fNest, "nest", "Read")
+	nest *Nest //@hiloc(fNest, "nest", "Text")
 }
 type MyMap map[string]string
 
 type NestMap map[Nest]Nest
 
 func highlightTest() {
-	const constIdent = 1 //@hiloc(constIdent, "constIdent", "Write"), highlighteach(constIdent)
+	const constIdent = 1 //@hiloc(constIdent, "constIdent", "Write")
+	//@highlight(constIdent, constIdent)
 	var varNoInit int    //@hiloc(varNoInit, "varNoInit", "Write")
 	(varNoInit) = 1      //@hiloc(varNoInitAssign, "varNoInit", "Write")
 	_ = varNoInit        //@hiloc(varNoInitRead, "varNoInit", "Read")
-	//@highlighteach(varNoInit, varNoInitAssign, varNoInitRead)
+	//@highlight(varNoInit,       varNoInit, varNoInitAssign, varNoInitRead)
+	//@highlight(varNoInitAssign, varNoInit, varNoInitAssign, varNoInitRead)
+	//@highlight(varNoInitRead,   varNoInit, varNoInitAssign, varNoInitRead)
 
 	str, num := "hello", 2 //@hiloc(str, "str", "Write"), hiloc(num, "num", "Write")
 	_, _ = str, num        //@hiloc(strRead, "str", "Read"), hiloc(numRead, "num", "Read")
-	//@highlighteach(str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
-	//@highlighteach(num, numRead, numAddr, numIncr, numMul)
+	//@highlight(str,                 str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
+	//@highlight(strRead,             str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
+	//@highlight(strMapKey,           str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
+	//@highlight(strMapVal,           str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
+	//@highlight(strMyMapKey,         str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
+	//@highlight(strMyMapVal,         str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
+	//@highlight(strMyMapSliceKey,    str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
+	//@highlight(strMyMapSliceVal,    str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
+	//@highlight(strMyMapPtrSliceKey, str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
+	//@highlight(strMyMapPtrSliceVal, str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
+	//@highlight(num,     num, numRead, numAddr, numIncr, numMul)
+	//@highlight(numRead, num, numRead, numAddr, numIncr, numMul)
+	//@highlight(numAddr, num, numRead, numAddr, numIncr, numMul)
+	//@highlight(numIncr, num, numRead, numAddr, numIncr, numMul)
+	//@highlight(numMul,  num, numRead, numAddr, numIncr, numMul)
 	nest := &Nest{nest: nil} //@hiloc(nest, "nest", "Write"),hiloc(fNestComp, re`(nest):`, "Write")
 	nest.nest = &Nest{}      //@hiloc(nestSelX, "nest", "Read"), hiloc(fNestSel, re`(nest) =`, "Write")
 	*nest.nest = Nest{}      //@hiloc(nestSelXStar, "nest", "Read"), hiloc(fNestSelStar, re`(nest) =`, "Write")
-	//@highlighteach(nest, nestSelX, nestSelXStar, nestMapVal)
-	//@highlighteach(fNest, fNestComp, fNestSel, fNestSelStar, fNestSliceComp, fNestPtrSliceComp, fNestMapKey)
+	//@highlight(nest,         nest, nestSelX, nestSelXStar, nestMapVal)
+	//@highlight(nestSelX,     nest, nestSelX, nestSelXStar, nestMapVal)
+	//@highlight(nestSelXStar, nest, nestSelX, nestSelXStar, nestMapVal)
+	//@highlight(nestMapVal,   nest, nestSelX, nestSelXStar, nestMapVal)
+	//@highlight(fNest,             fNest, fNestComp, fNestSel, fNestSelStar, fNestSliceComp, fNestPtrSliceComp, fNestMapKey)
+	//@highlight(fNestComp,         fNest, fNestComp, fNestSel, fNestSelStar, fNestSliceComp, fNestPtrSliceComp, fNestMapKey)
+	//@highlight(fNestSel,          fNest, fNestComp, fNestSel, fNestSelStar, fNestSliceComp, fNestPtrSliceComp, fNestMapKey)
+	//@highlight(fNestSelStar,      fNest, fNestComp, fNestSel, fNestSelStar, fNestSliceComp, fNestPtrSliceComp, fNestMapKey)
+	//@highlight(fNestSliceComp,    fNest, fNestComp, fNestSel, fNestSelStar, fNestSliceComp, fNestPtrSliceComp, fNestMapKey)
+	//@highlight(fNestPtrSliceComp, fNest, fNestComp, fNestSel, fNestSelStar, fNestSliceComp, fNestPtrSliceComp, fNestMapKey)
+	//@highlight(fNestMapKey,       fNest, fNestComp, fNestSel, fNestSelStar, fNestSliceComp, fNestPtrSliceComp, fNestMapKey)
 
 	pInt := &num //@hiloc(pInt, "pInt", "Write"),hiloc(numAddr, "num", "Read")
 	// StarExpr is treated as write in GoLand and Rust Analyzer
@@ -33,8 +58,12 @@ func highlightTest() {
 	var ppInt **int = &pInt //@hiloc(ppInt, "ppInt", "Write"),hiloc(pIntAddr, re`&(pInt)`, "Read")
 	**ppInt = 4             //@hiloc(ppIntStar, "ppInt", "Write")
 	*(*ppInt) = 4           //@hiloc(ppIntParen, "ppInt", "Write")
-	//@highlighteach(pInt, pIntStar, pIntAddr)
-	//@highlighteach(ppInt, ppIntStar, ppIntParen)
+	//@highlight(pInt,     pInt, pIntStar, pIntAddr)
+	//@highlight(pIntStar, pInt, pIntStar, pIntAddr)
+	//@highlight(pIntAddr, pInt, pIntStar, pIntAddr)
+	//@highlight(ppInt,      ppInt, ppIntStar, ppIntParen)
+	//@highlight(ppIntStar,  ppInt, ppIntStar, ppIntParen)
+	//@highlight(ppIntParen, ppInt, ppIntStar, ppIntParen)
 
 	num++    //@hiloc(numIncr, "num", "Write")
 	num *= 1 //@hiloc(numMul, "num", "Write")
@@ -42,12 +71,15 @@ func highlightTest() {
 	var ch chan int = make(chan int, 10) //@hiloc(ch, "ch", "Write")
 	ch <- 3                              //@hiloc(chSend, "ch", "Write")
 	<-ch                                 //@hiloc(chRecv, "ch", "Read")
-	//@highlighteach(ch, chSend, chRecv)
+	//@highlight(ch,     ch, chSend, chRecv)
+	//@highlight(chSend, ch, chSend, chRecv)
+	//@highlight(chRecv, ch, chSend, chRecv)
 
 	var nums []int = []int{1, 2} //@hiloc(nums, "nums", "Write")
 	// IndexExpr is treated as read in GoLand, Rust Analyzer and Java JDT
 	nums[0] = 1 //@hiloc(numsIndex, "nums", "Read")
-	//@highlighteach(nums, numsIndex)
+	//@highlight(nums,      nums, numsIndex)
+	//@highlight(numsIndex, nums, numsIndex)
 
 	mapLiteral := map[string]string{ //@hiloc(mapLiteral, "mapLiteral", "Write")
 		str: str, //@hiloc(strMapKey, "str", "Read"),hiloc(strMapVal, re`(str),`, "Read")
@@ -55,9 +87,12 @@ func highlightTest() {
 	for key, value := range mapLiteral { //@hiloc(mapKey, "key", "Write"), hiloc(mapVal, "value", "Write"), hiloc(mapLiteralRange, "mapLiteral", "Read")
 		_, _ = key, value //@hiloc(mapKeyRead, "key", "Read"), hiloc(mapValRead, "value", "Read")
 	}
-	//@highlighteach(mapLiteral, mapLiteralRange)
-	//@highlighteach(mapKey, mapKeyRead)
-	//@highlighteach(mapVal, mapValRead)
+	//@highlight(mapLiteral,      mapLiteral, mapLiteralRange)
+	//@highlight(mapLiteralRange, mapLiteral, mapLiteralRange)
+	//@highlight(mapKey,     mapKey, mapKeyRead)
+	//@highlight(mapKeyRead, mapKey, mapKeyRead)
+	//@highlight(mapVal,     mapVal, mapValRead)
+	//@highlight(mapValRead, mapVal, mapValRead)
 
 	nestSlice := []Nest{
 		{nest: nil}, //@hiloc(fNestSliceComp, "nest", "Write")

@@ -496,9 +496,9 @@ func highlightNode(result map[posRange]protocol.DocumentHighlightKind, n ast.Nod
 
 func highlightRange(result map[posRange]protocol.DocumentHighlightKind, pos, end token.Pos, kind protocol.DocumentHighlightKind) {
 	rng := posRange{pos, end}
-	// 'Write' can overwrite 'Read'
-	// TODO: use result[rng] = max(result[rng], kind) in go1.21.
-	if old, exists := result[rng]; !exists || old < kind {
+	// nodes of kind Write and Text are visited earlier than normal visits,
+	// so we only record first specified kind
+	if _, exists := result[rng]; !exists {
 		result[rng] = kind
 	}
 }
@@ -572,11 +572,21 @@ func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result
 		case *ast.RangeStmt:
 			highlightWriteInExpr(n.Key)
 			highlightWriteInExpr(n.Value)
+		case *ast.Field:
+			// kind of idents in fields of struct declaration and parameters of function declaration is Text
+			for _, name := range n.Names {
+				highlightIdent(name, protocol.Text)
+			}
 		case *ast.Ident:
 			// This case is reached for all Idents,
 			// including those also visited by highlightWriteInExpr.
-			highlightIdent(n, protocol.Read)
-
+			nobj := info.ObjectOf(n)
+			if _, ok := nobj.(*types.Var); ok {
+				highlightIdent(n, protocol.Read)
+			} else {
+				// kind of idents in PkgName, etc. is Text
+				highlightIdent(n, protocol.Text)
+			}
 		case *ast.ImportSpec:
 			pkgname, ok := typesutil.ImportedPkgName(info, n)
 			if ok && pkgname == obj {
