@@ -17,6 +17,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -31,12 +33,41 @@ import (
 // flags
 var (
 	daysFlag = flag.Int("days", 7, "number of previous days of telemetry data to read")
+
+	token string // optional GitHub authentication token, to relax the rate limit
 )
 
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("stacks: ")
 	flag.Parse()
+
+	// Read GitHub authentication token from $HOME/.stacks.token.
+	//
+	// You can create one using the flow at: GitHub > You > Settings >
+	// Developer Settings > Personal Access Tokens > Fine-grained tokens >
+	// Generate New Token.  Generate the token on behalf of yourself
+	// (not "golang" or "google"), with no special permissions.
+	// The token is typically of the form "github_pat_XXX", with 82 hex digits.
+	// Save it in the file, with mode 0400.
+	//
+	// For security, secret tokens should be read from files, not
+	// command-line flags or environment variables.
+	{
+		home, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatal(err)
+		}
+		tokenFile := filepath.Join(home, ".stacks.token")
+		content, err := os.ReadFile(tokenFile)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				log.Fatalf("cannot read GitHub authentication token: %v", err)
+			}
+			log.Printf("no file %s containing GitHub authentication token; continuing without authentication, which is subject to stricter rate limits (https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).", tokenFile)
+		}
+		token = string(bytes.TrimSpace(content))
+	}
 
 	// Maps stack text to Version/GoVersion/GOOS/GOARCH string to counter.
 	stacks := make(map[string]map[string]int64)
@@ -129,10 +160,10 @@ func main() {
 		batch := stackIDs[:min(6, len(stackIDs))]
 		stackIDs = stackIDs[len(batch):]
 
-		query := "label:gopls/telemetry-wins in:body " + strings.Join(batch, " OR ")
+		query := "is:issue label:gopls/telemetry-wins in:body " + strings.Join(batch, " OR ")
 		res, err := searchIssues(query)
 		if err != nil {
-			log.Fatalf("GitHub issues query failed: %v", err)
+			log.Fatalf("GitHub issues query %q failed: %v", query, err)
 		}
 		for _, issue := range res.Items {
 			for _, id := range batch {
@@ -283,13 +314,22 @@ func newIssue(stack, id, jsonURL string, counts map[string]int64) string {
 // searchIssues queries the GitHub issue tracker.
 func searchIssues(query string) (*IssuesSearchResult, error) {
 	q := url.QueryEscape(query)
-	resp, err := http.Get(IssuesURL + "?q=" + q)
+
+	req, err := http.NewRequest("GET", IssuesURL+"?q="+q, nil)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		req.Header.Add("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("search query failed: %s", resp.Status)
+		return nil, fmt.Errorf("search query failed: %s (body: %s)", resp.Status, body)
 	}
 	var result IssuesSearchResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
