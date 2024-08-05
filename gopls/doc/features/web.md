@@ -108,7 +108,7 @@ Client support:
 
 
 <a name='assembly'></a>
-## Browsse assembly
+## Browse assembly
 
 When you're optimizing the performance of your code or investigating
 an unexpected crash, it may sometimes be helpful to inspect the
