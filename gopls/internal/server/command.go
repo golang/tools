@@ -143,8 +143,85 @@ func (h *commandHandler) Modules(ctx context.Context, args command.ModulesArgs) 
 	return result, nil
 }
 
-func (h *commandHandler) Packages(context.Context, command.PackagesArgs) (command.PackagesResult, error) {
-	panic("unimplemented")
+func (h *commandHandler) Packages(ctx context.Context, args command.PackagesArgs) (command.PackagesResult, error) {
+	wantTests := args.Mode&command.NeedTests != 0
+	result := command.PackagesResult{
+		Module: make(map[string]command.Module),
+	}
+
+	keepPackage := func(pkg *metadata.Package) bool {
+		for _, file := range pkg.GoFiles {
+			for _, arg := range args.Files {
+				if file == arg || file.Dir() == arg {
+					return true
+				}
+				if args.Recursive && arg.Encloses(file) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	buildPackage := func(snapshot *cache.Snapshot, meta *metadata.Package) (command.Package, command.Module) {
+		if wantTests {
+			// These will be used in the next CL to query tests
+			_, _ = ctx, snapshot
+			panic("unimplemented")
+		}
+
+		pkg := command.Package{
+			Path: string(meta.PkgPath),
+		}
+		if meta.Module == nil {
+			return pkg, command.Module{}
+		}
+
+		mod := command.Module{
+			Path:    meta.Module.Path,
+			Version: meta.Module.Version,
+			GoMod:   protocol.URIFromPath(meta.Module.GoMod),
+		}
+		pkg.ModulePath = mod.Path
+		return pkg, mod
+	}
+
+	err := h.run(ctx, commandConfig{
+		progress: "Packages",
+	}, func(ctx context.Context, _ commandDeps) error {
+		for _, view := range h.s.session.Views() {
+			snapshot, release, err := view.Snapshot()
+			if err != nil {
+				return err
+			}
+			defer release()
+
+			metas, err := snapshot.WorkspaceMetadata(ctx)
+			if err != nil {
+				return err
+			}
+
+			for _, meta := range metas {
+				if meta.IsIntermediateTestVariant() {
+					continue
+				}
+				if !keepPackage(meta) {
+					continue
+				}
+
+				pkg, mod := buildPackage(snapshot, meta)
+				result.Packages = append(result.Packages, pkg)
+
+				// Overwriting is ok
+				if mod.Path != "" {
+					result.Module[mod.Path] = mod
+				}
+			}
+		}
+
+		return nil
+	})
+	return result, err
 }
 
 func (h *commandHandler) MaybePromptForTelemetry(ctx context.Context) error {
