@@ -5,14 +5,17 @@
 package vta
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/aliases"
 )
 
 func TestVTACallGraph(t *testing.T) {
@@ -30,6 +33,11 @@ func TestVTACallGraph(t *testing.T) {
 		"testdata/src/callgraph_type_aliases.go",
 	} {
 		t.Run(file, func(t *testing.T) {
+			// https://github.com/golang/go/issues/68799
+			if !aliases.Enabled() && file == "testdata/src/callgraph_type_aliases.go" {
+				t.Skip("callgraph_type_aliases.go requires gotypesalias=1")
+			}
+
 			prog, want, err := testProg(file, ssa.BuilderMode(0))
 			if err != nil {
 				t.Fatalf("couldn't load test file '%s': %s", file, err)
@@ -40,8 +48,12 @@ func TestVTACallGraph(t *testing.T) {
 
 			g := CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
 			got := callGraphStr(g)
-			if diff := setdiff(want, got); len(diff) > 0 {
-				t.Errorf("computed callgraph %v\nshould contain\n%v\n(diff: %v)", got, want, diff)
+			if missing := setdiff(want, got); len(missing) > 0 {
+				t.Errorf("got:\n%s\n\nwant:\n%s\n\nmissing:\n%s\n\ndiff:\n%s",
+					strings.Join(got, "\n"),
+					strings.Join(want, "\n"),
+					strings.Join(missing, "\n"),
+					cmp.Diff(got, want)) // to aid debugging
 			}
 		})
 	}
