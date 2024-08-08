@@ -159,10 +159,11 @@ func maybePrintfWrapper(info *types.Info, decl ast.Decl) *printfWrapper {
 	params := sig.Params()
 	nparams := params.Len() // variadic => nonzero
 
+	// Check final parameter is "args ...interface{}".
 	args := params.At(nparams - 1)
-	iface, ok := args.Type().(*types.Slice).Elem().(*types.Interface)
+	iface, ok := aliases.Unalias(args.Type().(*types.Slice).Elem()).(*types.Interface)
 	if !ok || !iface.Empty() {
-		return nil // final (args) param is not ...interface{}
+		return nil
 	}
 
 	// Is second last param 'format string'?
