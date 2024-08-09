@@ -573,15 +573,13 @@ func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result
 			highlightWriteInExpr(n.Key)
 			highlightWriteInExpr(n.Value)
 		case *ast.Field:
-			// kind of idents in fields of struct declaration and parameters of function declaration is Text
 			for _, name := range n.Names {
 				highlightIdent(name, protocol.Text)
 			}
 		case *ast.Ident:
 			// This case is reached for all Idents,
 			// including those also visited by highlightWriteInExpr.
-			nobj := info.ObjectOf(n)
-			if _, ok := nobj.(*types.Var); ok {
+			if is[*types.Var](info.ObjectOf(n)) {
 				highlightIdent(n, protocol.Read)
 			} else {
 				// kind of idents in PkgName, etc. is Text
