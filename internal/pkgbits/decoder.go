@@ -68,8 +68,6 @@ func (pr *PkgDecoder) SyncMarkers() bool { return pr.sync }
 // NewPkgDecoder returns a PkgDecoder initialized to read the Unified
 // IR export data from input. pkgPath is the package path for the
 // compilation unit that produced the export data.
-//
-// TODO(mdempsky): Remove pkgPath parameter; unneeded since CL 391014.
 func NewPkgDecoder(pkgPath, input string) PkgDecoder {
 	pr := PkgDecoder{
 		pkgPath: pkgPath,
@@ -84,7 +82,7 @@ func NewPkgDecoder(pkgPath, input string) PkgDecoder {
 
 	switch pr.version {
 	default:
-		panic(fmt.Errorf("unsupported version: %v", pr.version))
+		panic(fmt.Errorf("cannot import %q, export data is newer version (%d) - update tool", pkgPath, pr.version))
 	case 0:
 		// no flags
 	case 1:
