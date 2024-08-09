@@ -15,8 +15,8 @@ package p
 // accounts for multi-name result parameters.
 // In golang/go#60589, it did not.
 
-func _() (foo int, bar, baz string) { //@ hiloc(func, "func", "Text"), hiloc(foo, "foo", "Text"), hiloc(fooint, "foo int", "Text"), hiloc(int, "int", "Text"), hiloc(bar, "bar", "Text"), hiloc(beforebaz, " baz", "Text"), hiloc(baz, "baz", "Text"), hiloc(barbazstring, "bar, baz string", "Text"), hiloc(beforestring, re`() string`, "Text"), hiloc(string, "string", "Text")
-	return 0, "1", "2" //@ hiloc(return, `return 0, "1", "2"`, "Text"), hiloc(l0, "0", "Text"), hiloc(l1, `"1"`, "Text"), hiloc(l2, `"2"`, "Text")
+func _() (foo int, bar, baz string) { //@ hiloc(func, "func", text), hiloc(foo, "foo", text), hiloc(fooint, "foo int", text), hiloc(int, "int", text), hiloc(bar, "bar", text), hiloc(beforebaz, " baz", text), hiloc(baz, "baz", text), hiloc(barbazstring, "bar, baz string", text), hiloc(beforestring, re`() string`, text), hiloc(string, "string", text)
+	return 0, "1", "2" //@ hiloc(return, `return 0, "1", "2"`, text), hiloc(l0, "0", text), hiloc(l1, `"1"`, text), hiloc(l2, `"2"`, text)
 }
 
 // Assertions, expressed here to avoid clutter above.
@@ -38,8 +38,8 @@ func _() (foo int, bar, baz string) { //@ hiloc(func, "func", "Text"), hiloc(foo
 // Check that duplicate result names do not cause
 // inaccurate highlighting.
 
-func _() (x, x int32) { //@ loc(locx1, re`\((x)`), loc(locx2, re`(x) int`), hiloc(x1, re`\((x)`, "Text"), hiloc(x2, re`(x) int`, "Text"), diag(locx1, re"redeclared"), diag(locx2, re"redeclared")
-	return 1, 2 //@ hiloc(one, "1", "Text"), hiloc(two, "2", "Text")
+func _() (x, x int32) { //@ loc(locx1, re`\((x)`), loc(locx2, re`(x) int`), hiloc(x1, re`\((x)`, text), hiloc(x2, re`(x) int`, text), diag(locx1, re"redeclared"), diag(locx2, re"redeclared")
+	return 1, 2 //@ hiloc(one, "1", text), hiloc(two, "2", text)
 }
 
 //@ highlight(one, one, x1)
@@ -53,7 +53,7 @@ package p
 // This test checks that gopls doesn't crash while highlighting
 // functions with no body (golang/go#65516).
 
-func Foo() (int, string) //@hiloc(noBodyInt, "int", "Text"), hiloc(noBodyFunc, "func", "Text")
+func Foo() (int, string) //@hiloc(noBodyInt, "int", text), hiloc(noBodyFunc, "func", text)
 //@highlight(noBodyInt, noBodyInt), highlight(noBodyFunc, noBodyFunc)
 
 -- issue65952.go --
@@ -63,12 +63,12 @@ package p
 // return values in functions with no results.
 
 func _() {
-	return 0 //@hiloc(ret1, "0", "Text"), diag("0", re"too many return")
+	return 0 //@hiloc(ret1, "0", text), diag("0", re"too many return")
 	//@highlight(ret1, ret1)
 }
 
 func _() () {
 	// TODO(golang/go#65966): fix the triplicate diagnostics here.
-	return 0 //@hiloc(ret2, "0", "Text"), diag("0", re"too many return"), diag("0", re"too many return"), diag("0", re"too many return")
+	return 0 //@hiloc(ret2, "0", text), diag("0", re"too many return"), diag("0", re"too many return"), diag("0", re"too many return")
 	//@highlight(ret2, ret2)
 }

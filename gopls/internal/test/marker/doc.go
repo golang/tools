@@ -157,9 +157,16 @@ The following markers are supported within marker tests:
     source. If the formatting request fails, the golden file must contain
     the error message.
 
-  - highlight(src location, dsts ...location): makes a
+  - highlightall(all ...documentHighlight): makes textDocument/highlight
+    requests at locations of equivalence classes, the results should be same
+    as "all". Given input highlightall(X1, X2, ..., Xn), the marker checks
+    highlight(X1) = highlight(X2) = ... = highlight(Xn) = {X1, X2, ..., Xn}.
+    It is not the general rule for all highlighting, and use @highlight
+    for asymmetric cases.
+
+  - highlight(src location, dsts ...documentHighlight): makes a
     textDocument/highlight request at the given src location, which should
-    highlight the provided dst locations.
+    highlight the provided dst locations and kinds.
 
   - hover(src, dst location, sm stringMatcher): performs a textDocument/hover
     at the src location, and checks that the result is the dst location, with

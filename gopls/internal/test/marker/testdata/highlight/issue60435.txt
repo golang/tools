@@ -7,9 +7,9 @@ such as httptest.
 package highlights
 
 import (
-	"net/http"          //@hiloc(httpImp, `"net/http"`, "Text")
-	"net/http/httptest" //@hiloc(httptestImp, `"net/http/httptest"`, "Text")
+	"net/http"          //@hiloc(httpImp, `"net/http"`, text)
+	"net/http/httptest" //@hiloc(httptestImp, `"net/http/httptest"`, text)
 )
 
 var _ = httptest.NewRequest
-var _ = http.NewRequest //@hiloc(here, "http", "Text"), highlight(here, here, httpImp)
+var _ = http.NewRequest //@hiloc(here, "http", text), highlight(here, here, httpImp)
