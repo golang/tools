@@ -7,15 +7,15 @@ package a
 func _(x any) {
 	for {
 		// type switch
-		switch x.(type) { //@loc(tswitch, "switch")
+		switch x.(type) { //@hiloc(tswitch, "switch", text)
 		default:
-			break //@highlight("break", tswitch, "break")
+			break //@hiloc(tbreak, "break", text),highlight(tbreak, tswitch, tbreak)
 		}
 
 		// value switch
-		switch { //@loc(vswitch, "switch")
+		switch { //@hiloc(vswitch, "switch", text)
 		default:
-			break //@highlight("break", vswitch, "break")
+			break //@hiloc(vbreak, "break", text), highlight(vbreak, vswitch, vbreak)
 		}
 	}
 }

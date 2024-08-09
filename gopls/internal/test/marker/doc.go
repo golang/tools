@@ -157,9 +157,21 @@ The following markers are supported within marker tests:
     source. If the formatting request fails, the golden file must contain
     the error message.
 
-  - highlight(src location, dsts ...location): makes a
+  - highlightall(all ...documentHighlight): makes a textDocument/highlight
+    request at each location in "all" and checks that the result is "all".
+    In other words, given highlightall(X1, X2, ..., Xn), it checks that
+    highlight(X1) = highlight(X2) = ... = highlight(Xn) = {X1, X2, ..., Xn}.
+    In general, highlight sets are not equivalence classes; for asymmetric
+    cases, use @highlight instead.
+    Each element of "all" is the label of a @hiloc marker.
+
+  - highlight(src location, dsts ...documentHighlight): makes a
     textDocument/highlight request at the given src location, which should
-    highlight the provided dst locations.
+    highlight the provided dst locations and kinds.
+
+  - hiloc(label, location, kind): defines a documentHighlight value of the
+    given location and kind. Use its label in a @highlightall marker to
+    indicate the expected result of a highlight query.
 
   - hover(src, dst location, sm stringMatcher): performs a textDocument/hover
     at the src location, and checks that the result is the dst location, with
