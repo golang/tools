@@ -39,7 +39,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/lru"
+	"golang.org/x/tools/internal/lru"
 )
 
 // Start causes the filecache to initialize and start garbage gollection.
