@@ -496,8 +496,8 @@ func highlightNode(result map[posRange]protocol.DocumentHighlightKind, n ast.Nod
 
 func highlightRange(result map[posRange]protocol.DocumentHighlightKind, pos, end token.Pos, kind protocol.DocumentHighlightKind) {
 	rng := posRange{pos, end}
-	// nodes of kind Write and Text are visited earlier than normal visits,
-	// so we only record first specified kind
+	// Order of traversal is important: some nodes (e.g. identifiers) are
+	// visited more than once, but the kind set during the first visitation "wins".
 	if _, exists := result[rng]; !exists {
 		result[rng] = kind
 	}
