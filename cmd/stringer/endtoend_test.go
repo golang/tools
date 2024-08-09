@@ -17,6 +17,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -194,6 +196,127 @@ func TestConstValueChange(t *testing.T) {
 	err = run(t, "go", "build", stringSource, source)
 	if err == nil {
 		t.Fatal("unexpected compiler success")
+	}
+}
+
+var testfileSrcs = map[string]string{
+	"go.mod": "module foo",
+
+	// Normal file in the package.
+	"main.go": `package foo
+
+type Foo int
+
+const (
+	fooX Foo = iota
+	fooY
+	fooZ
+)
+`,
+
+	// Test file in the package.
+	"main_test.go": `package foo
+
+type Bar int
+
+const (
+	barX Bar = iota
+	barY
+	barZ
+)
+`,
+
+	// Test file in the test package.
+	"main_pkg_test.go": `package foo_test
+
+type Baz int
+
+const (
+	bazX Baz = iota
+	bazY
+	bazZ
+)
+`,
+}
+
+// Test stringer on types defined in different kinds of tests.
+// The generated code should not interfere between itself.
+func TestTestFiles(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+	stringer := stringerPath(t)
+
+	dir := t.TempDir()
+	t.Logf("TestTestFiles in: %s \n", dir)
+	for name, src := range testfileSrcs {
+		source := filepath.Join(dir, name)
+		err := os.WriteFile(source, []byte(src), 0666)
+		if err != nil {
+			t.Fatalf("write file: %s", err)
+		}
+	}
+
+	// Must run stringer in the temp directory, see TestTags.
+	err := runInDir(t, dir, stringer, "-type=Foo,Bar,Baz", dir)
+	if err != nil {
+		t.Fatalf("run stringer: %s", err)
+	}
+
+	// Check that stringer has created the expected files.
+	content, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir: %s", err)
+	}
+	gotFiles := []string{}
+	for _, f := range content {
+		if !f.IsDir() {
+			gotFiles = append(gotFiles, f.Name())
+		}
+	}
+	wantFiles := []string{
+		// Original.
+		"go.mod",
+		"main.go",
+		"main_test.go",
+		"main_pkg_test.go",
+		// Generated.
+		"foo_string.go",
+		"bar_string_test.go",
+		"baz_string_test.go",
+	}
+	slices.Sort(gotFiles)
+	slices.Sort(wantFiles)
+	if !reflect.DeepEqual(gotFiles, wantFiles) {
+		t.Errorf("stringer generated files:\n%s\n\nbut want:\n%s",
+			strings.Join(gotFiles, "\n"),
+			strings.Join(wantFiles, "\n"),
+		)
+	}
+
+	// Run go test as a smoke test.
+	err = runInDir(t, dir, "go", "test", "-count=1", ".")
+	if err != nil {
+		t.Fatalf("go test: %s", err)
+	}
+}
+
+// The -output flag cannot be used in combiation with matching types across multiple packages.
+func TestCollidingOutput(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+	stringer := stringerPath(t)
+
+	dir := t.TempDir()
+	for name, src := range testfileSrcs {
+		source := filepath.Join(dir, name)
+		err := os.WriteFile(source, []byte(src), 0666)
+		if err != nil {
+			t.Fatalf("write file: %s", err)
+		}
+	}
+
+	// Must run stringer in the temp directory, see TestTags.
+	err := runInDir(t, dir, stringer, "-type=Foo,Bar,Baz", "-output=somefile.go", dir)
+	if err == nil {
+		t.Fatal("unexpected stringer success")
 	}
 }
 

@@ -455,11 +455,6 @@ func TestGolden(t *testing.T) {
 	for _, test := range golden {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			g := Generator{
-				trimPrefix:  test.trimPrefix,
-				lineComment: test.lineComment,
-				logf:        t.Logf,
-			}
 			input := "package test\n" + test.input
 			file := test.name + ".go"
 			absFile := filepath.Join(dir, file)
@@ -468,16 +463,24 @@ func TestGolden(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			g.parsePackage([]string{absFile}, nil)
+			pkgs := loadPackages([]string{absFile}, nil, test.trimPrefix, test.lineComment, t.Logf)
+			if len(pkgs) != 1 {
+				t.Fatalf("got %d parsed packages but expected 1", len(pkgs))
+			}
 			// Extract the name and type of the constant from the first line.
 			tokens := strings.SplitN(test.input, " ", 3)
 			if len(tokens) != 3 {
 				t.Fatalf("%s: need type declaration on first line", test.name)
 			}
-			g.generate(tokens[1])
+
+			g := Generator{
+				pkg:  pkgs[0],
+				logf: t.Logf,
+			}
+			g.generate(tokens[1], findValues(tokens[1], pkgs[0]))
 			got := string(g.format())
 			if got != test.output {
-				t.Errorf("%s: got(%d)\n====\n%q====\nexpected(%d)\n====%q", test.name, len(got), got, len(test.output), test.output)
+				t.Errorf("%s: got(%d)\n====\n%q====\nexpected(%d)\n====\n%q", test.name, len(got), got, len(test.output), test.output)
 			}
 		})
 	}
