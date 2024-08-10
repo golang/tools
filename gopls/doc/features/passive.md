@@ -126,7 +126,9 @@ relationship between them.
 Each of the following parts of syntax forms a set so that if you
 select any one member, gopls will highlight the complete set:
 
-- each identifier that refers to the same symbol (as in the screenshot below);
+- each identifier that refers to the same symbol (as in the screenshot below), 
+  different occurrences of the same identifier may be color-coded to distinguish
+  "read" from "write" references to a given variable symbol;
 - a named result variable and all its corresponding operands of `return` statements;
 - the `for`, `break`, and `continue` tokens of the same loop;
 - the `switch` and `break` tokens of the same switch statement;
