@@ -1,0 +1,88 @@
+This test checks textDocument/highlight with highlight kinds.
+For example, a use of a variable is reported as a "read",
+and an assignment to a variable is reported as a "write".
+(Note that the details don't align exactly with the Go
+type-checker notions of values versus addressable variables).
+
+
+-- highlight_kind.go --
+package a
+
+type Nest struct {
+	nest *Nest //@hiloc(fNest, "nest", text)
+}
+type MyMap map[string]string
+
+type NestMap map[Nest]Nest
+
+func highlightTest() {
+	const constIdent = 1 //@hiloc(constIdent, "constIdent", write)
+	//@highlightall(constIdent)
+	var varNoInit int    //@hiloc(varNoInit, "varNoInit", write)
+	(varNoInit) = 1      //@hiloc(varNoInitAssign, "varNoInit", write)
+	_ = varNoInit        //@hiloc(varNoInitRead, "varNoInit", read)
+	//@highlightall(varNoInit, varNoInitAssign, varNoInitRead)
+
+	str, num := "hello", 2 //@hiloc(str, "str", write), hiloc(num, "num", write)
+	_, _ = str, num        //@hiloc(strRead, "str", read), hiloc(numRead, "num", read)
+	//@highlightall(str, strRead, strMapKey, strMapVal, strMyMapKey, strMyMapVal, strMyMapSliceKey, strMyMapSliceVal, strMyMapPtrSliceKey, strMyMapPtrSliceVal)
+	//@highlightall(num, numRead, numAddr, numIncr, numMul)
+	nest := &Nest{nest: nil} //@hiloc(nest, "nest", write),hiloc(fNestComp, re`(nest):`, write)
+	nest.nest = &Nest{}      //@hiloc(nestSelX, "nest", read), hiloc(fNestSel, re`(nest) =`, write)
+	*nest.nest = Nest{}      //@hiloc(nestSelXStar, "nest", read), hiloc(fNestSelStar, re`(nest) =`, write)
+	//@highlightall(nest, nestSelX, nestSelXStar, nestMapVal)
+	//@highlightall(fNest, fNestComp, fNestSel, fNestSelStar, fNestSliceComp, fNestPtrSliceComp, fNestMapKey)
+
+	pInt := &num //@hiloc(pInt, "pInt", write),hiloc(numAddr, "num", read)
+	// StarExpr is reported as "write" in GoLand and Rust Analyzer
+	*pInt = 3               //@hiloc(pIntStar, "pInt", write)
+	var ppInt **int = &pInt //@hiloc(ppInt, "ppInt", write),hiloc(pIntAddr, re`&(pInt)`, read)
+	**ppInt = 4             //@hiloc(ppIntStar, "ppInt", write)
+	*(*ppInt) = 4           //@hiloc(ppIntParen, "ppInt", write)
+	//@highlightall(pInt, pIntStar, pIntAddr)
+	//@highlightall(ppInt, ppIntStar, ppIntParen)
+
+	num++    //@hiloc(numIncr, "num", write)
+	num *= 1 //@hiloc(numMul, "num", write)
+
+	var ch chan int = make(chan int, 10) //@hiloc(ch, "ch", write)
+	ch <- 3                              //@hiloc(chSend, "ch", write)
+	<-ch                                 //@hiloc(chRecv, "ch", read)
+	//@highlightall(ch, chSend, chRecv)
+
+	var nums []int = []int{1, 2} //@hiloc(nums, "nums", write)
+	// IndexExpr is reported as "read" in GoLand, Rust Analyzer and Java JDT
+	nums[0] = 1 //@hiloc(numsIndex, "nums", read)
+	//@highlightall(nums, numsIndex)
+
+	mapLiteral := map[string]string{ //@hiloc(mapLiteral, "mapLiteral", write)
+		str: str, //@hiloc(strMapKey, "str", read),hiloc(strMapVal, re`(str),`, read)
+	}
+	for key, value := range mapLiteral { //@hiloc(mapKey, "key", write), hiloc(mapVal, "value", write), hiloc(mapLiteralRange, "mapLiteral", read)
+		_, _ = key, value //@hiloc(mapKeyRead, "key", read), hiloc(mapValRead, "value", read)
+	}
+	//@highlightall(mapLiteral, mapLiteralRange)
+	//@highlightall(mapKey, mapKeyRead)
+	//@highlightall(mapVal, mapValRead)
+
+	nestSlice := []Nest{
+		{nest: nil}, //@hiloc(fNestSliceComp, "nest", write)
+	}
+	nestPtrSlice := []*Nest{
+		{nest: nil}, //@hiloc(fNestPtrSliceComp, "nest", write)
+	}
+	myMap := MyMap{
+		str: str, //@hiloc(strMyMapKey, "str", read),hiloc(strMyMapVal, re`(str),`, read)
+	}
+	myMapSlice := []MyMap{
+		{str: str}, //@hiloc(strMyMapSliceKey, "str", read),hiloc(strMyMapSliceVal, re`: (str)`, read)
+	}
+	myMapPtrSlice := []*MyMap{
+		{str: str}, //@hiloc(strMyMapPtrSliceKey, "str", read),hiloc(strMyMapPtrSliceVal, re`: (str)`, read)
+	}
+	nestMap := NestMap{
+		Nest{nest: nil}: *nest, //@hiloc(fNestMapKey, "nest", write), hiloc(nestMapVal, re`(nest),`, read)
+	}
+
+	_, _, _, _, _, _ = myMap, nestSlice, nestPtrSlice, myMapSlice, myMapPtrSlice, nestMap
+}

@@ -33,19 +33,7 @@ func (s *server) DocumentHighlight(ctx context.Context, params *protocol.Documen
 		if err != nil {
 			event.Error(ctx, "no highlight", err)
 		}
-		return toProtocolHighlight(rngs), nil
+		return rngs, nil
 	}
 	return nil, nil // empty result
-}
-
-func toProtocolHighlight(rngs []protocol.Range) []protocol.DocumentHighlight {
-	result := make([]protocol.DocumentHighlight, 0, len(rngs))
-	kind := protocol.Text
-	for _, rng := range rngs {
-		result = append(result, protocol.DocumentHighlight{
-			Kind:  kind,
-			Range: rng,
-		})
-	}
-	return result
 }

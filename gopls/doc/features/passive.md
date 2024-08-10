@@ -135,6 +135,9 @@ select any one member, gopls will highlight the complete set:
 More than one of these rules may be activated by a single selection,
 for example, by an identifier that is also a return operand.
 
+Different occurrences of the same identifier may be color-coded to distinguish
+"read" from "write" references to a given variable symbol.
+
 <img src='../assets/document-highlight.png'>
 
 Client support:

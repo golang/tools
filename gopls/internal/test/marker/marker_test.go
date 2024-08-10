@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -506,8 +507,9 @@ func is[T any](arg any) bool {
 
 // Supported value marker functions. See [valueMarkerFunc] for more details.
 var valueMarkerFuncs = map[string]func(marker){
-	"loc":  valueMarkerFunc(locMarker),
-	"item": valueMarkerFunc(completionItemMarker),
+	"loc":   valueMarkerFunc(locMarker),
+	"item":  valueMarkerFunc(completionItemMarker),
+	"hiloc": valueMarkerFunc(highlightLocationMarker),
 }
 
 // Supported action marker functions. See [actionMarkerFunc] for more details.
@@ -524,6 +526,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"foldingrange":     actionMarkerFunc(foldingRangeMarker),
 	"format":           actionMarkerFunc(formatMarker),
 	"highlight":        actionMarkerFunc(highlightMarker),
+	"highlightall":     actionMarkerFunc(highlightAllMarker),
 	"hover":            actionMarkerFunc(hoverMarker),
 	"hovererr":         actionMarkerFunc(hoverErrMarker),
 	"implementation":   actionMarkerFunc(implementationMarker),
@@ -1593,28 +1596,60 @@ func formatMarker(mark marker, golden *Golden) {
 	compareGolden(mark, got, golden)
 }
 
-func highlightMarker(mark marker, src protocol.Location, dsts ...protocol.Location) {
-	highlights := mark.run.env.DocumentHighlight(src)
-	var got []protocol.Range
-	for _, h := range highlights {
-		got = append(got, h.Range)
+func highlightLocationMarker(mark marker, loc protocol.Location, kindName expect.Identifier) protocol.DocumentHighlight {
+	var kind protocol.DocumentHighlightKind
+	switch kindName {
+	case "read":
+		kind = protocol.Read
+	case "write":
+		kind = protocol.Write
+	case "text":
+		kind = protocol.Text
+	default:
+		mark.errorf("invalid highlight kind: %q", kindName)
 	}
 
-	var want []protocol.Range
-	for _, d := range dsts {
-		want = append(want, d.Range)
+	return protocol.DocumentHighlight{
+		Range: loc.Range,
+		Kind:  kind,
 	}
+}
+func sortDocumentHighlights(s []protocol.DocumentHighlight) {
+	sort.Slice(s, func(i, j int) bool {
+		return protocol.CompareRange(s[i].Range, s[j].Range) < 0
+	})
+}
 
-	sortRanges := func(s []protocol.Range) {
-		sort.Slice(s, func(i, j int) bool {
-			return protocol.CompareRange(s[i], s[j]) < 0
-		})
+// highlightAllMarker makes textDocument/highlight
+// requests at locations of equivalence classes. Given input
+// highlightall(X1, X2, ..., Xn), the marker checks
+// highlight(X1) = highlight(X2) = ... = highlight(Xn) = {X1, X2, ..., Xn}.
+// It is not the general rule for all highlighting, and use @highlight
+// for asymmetric cases.
+//
+// TODO(b/288111111): this is a bit of a hack. We should probably
+// have a more general way of testing that a function is idempotent.
+func highlightAllMarker(mark marker, all ...protocol.DocumentHighlight) {
+	sortDocumentHighlights(all)
+	for _, src := range all {
+		loc := protocol.Location{URI: mark.uri(), Range: src.Range}
+		got := mark.run.env.DocumentHighlight(loc)
+		sortDocumentHighlights(got)
+
+		if d := cmp.Diff(all, got); d != "" {
+			mark.errorf("DocumentHighlight(%v) mismatch (-want +got):\n%s", loc, d)
+		}
 	}
+}
 
-	sortRanges(got)
-	sortRanges(want)
+func highlightMarker(mark marker, src protocol.DocumentHighlight, dsts ...protocol.DocumentHighlight) {
+	loc := protocol.Location{URI: mark.uri(), Range: src.Range}
+	got := mark.run.env.DocumentHighlight(loc)
 
-	if diff := cmp.Diff(want, got); diff != "" {
+	sortDocumentHighlights(got)
+	sortDocumentHighlights(dsts)
+
+	if diff := cmp.Diff(dsts, got, cmpopts.EquateEmpty()); diff != "" {
 		mark.errorf("DocumentHighlight(%v) mismatch (-want +got):\n%s", src, diff)
 	}
 }
