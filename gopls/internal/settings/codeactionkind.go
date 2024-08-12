@@ -80,6 +80,6 @@ const (
 	GoAssembly       protocol.CodeActionKind = "source.assembly"
 	GoDoc            protocol.CodeActionKind = "source.doc"
 	GoFreeSymbols    protocol.CodeActionKind = "source.freesymbols"
-	GoTest           protocol.CodeActionKind = "goTest" // TODO(adonovan): rename "source.test"
+	GoTest           protocol.CodeActionKind = "source.test"
 	GoplsDocFeatures protocol.CodeActionKind = "gopls.doc.features"
 )

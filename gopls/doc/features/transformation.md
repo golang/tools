@@ -80,6 +80,18 @@ for the current selection.
      recognized by gopls that enables corresponding logic in the
      server's ApplyFix command handler. -->
 
+<!-- The source.test ("Run this test") code action (not a
+     transformation) runs the selected test. However, it is not
+     offered by default because:
+     (a) VS Code has a richer test UX (with richer ones to come--see
+         https://github.com/golang/vscode-go/issues/1641) and
+     (b) LSP has no good way to display the streaming output of a test
+         in the client's natural UX (see last paragraph of first note
+	 of https://github.com/golang/go/issues/67400).
+     It is only offered when the "only" field includes kind source.test.
+     Should it be documented? If so, where?
+-->
+
 Caveats:
 - Many of gopls code transformations are limited by Go's syntax tree
   representation, which currently records comments not in the tree
