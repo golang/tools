@@ -494,17 +494,17 @@ func (b *typeCheckBatch) getImportPackage(ctx context.Context, id PackageID) (pk
 		// type-checking was short-circuited by the pre- func.
 	}
 
-	// unsafe cannot be imported or type-checked.
-	if id == "unsafe" {
-		return types.Unsafe, nil
-	}
-
 	ph := b.handles[id]
 
-	// Do a second check for "unsafe" defensively, due to golang/go#60890.
+	// "unsafe" cannot be imported or type-checked.
+	//
+	// We check PkgPath, not id, as the structure of the ID
+	// depends on the build system (in particular,
+	// Bazel+gopackagesdriver appears to use something other than
+	// "unsafe", though we aren't sure what; even 'go list' can
+	// use "p [q.test]" for testing or if PGO is enabled.
+	// See golang/go#60890.
 	if ph.mp.PkgPath == "unsafe" {
-		// (This assertion is reached.)
-		bug.Reportf("encountered \"unsafe\" as %s (golang/go#60890)", id)
 		return types.Unsafe, nil
 	}
 
@@ -611,10 +611,6 @@ func storePackageResults(ctx context.Context, ph *packageHandle, p *Package) {
 		} else {
 			toCache[exportDataKind] = exportData
 		}
-	} else if p.metadata.ID != "unsafe" {
-		// golang/go#60890: we should only ever see one variant of the "unsafe"
-		// package.
-		bug.Reportf("encountered \"unsafe\" as %s (golang/go#60890)", p.metadata.ID)
 	}
 
 	for kind, data := range toCache {
@@ -973,11 +969,6 @@ func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 	for _, v := range b.nodes {
 		assert(v.ph != nil, "nil handle")
 		handles[v.mp.ID] = v.ph
-
-		// debugging #60890
-		if v.ph.mp.PkgPath == "unsafe" && v.mp.ID != "unsafe" {
-			bug.Reportf("PackagePath \"unsafe\" with ID %q", v.mp.ID)
-		}
 	}
 
 	return handles, nil

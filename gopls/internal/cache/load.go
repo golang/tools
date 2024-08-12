@@ -359,11 +359,6 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 	pkgPath := PackagePath(pkg.PkgPath)
 	id := PackageID(pkg.ID)
 
-	// debugging #60890
-	if pkg.PkgPath == "unsafe" && pkg.ID != "unsafe" {
-		bug.Reportf("PackagePath \"unsafe\" with ID %q", pkg.ID)
-	}
-
 	if metadata.IsCommandLineArguments(id) {
 		var f string // file to use as disambiguating suffix
 		if len(pkg.CompiledGoFiles) > 0 {
@@ -413,11 +408,6 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 		Errors:     pkg.Errors,
 		DepsErrors: packagesinternal.GetDepsErrors(pkg),
 		Standalone: standalone,
-	}
-
-	// debugging #60890
-	if mp.PkgPath == "unsafe" && mp.ID != "unsafe" {
-		bug.Reportf("PackagePath \"unsafe\" with ID %q", mp.ID)
 	}
 
 	updates[id] = mp
