@@ -19,8 +19,7 @@ import (
 )
 
 func TestTestDir(t *testing.T) {
-	t.Skip("Disabled for golang.org/cl/603895. Fix and re-enable.")
-	testenv.NeedsGo1Point(t, 22)
+	testenv.NeedsGo1Point(t, 23)
 
 	// Files are initially {go.mod.test,sub.test/sub.go.test}.
 	fs := os.DirFS(filepath.Join(analysistest.TestData(), "versions"))

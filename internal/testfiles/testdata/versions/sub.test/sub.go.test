@@ -1,1 +1,1 @@
-package sub // want "sub.go@go1.21"
+package sub // want "sub.go@go1.22"
