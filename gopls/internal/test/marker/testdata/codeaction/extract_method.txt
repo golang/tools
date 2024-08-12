@@ -6,18 +6,18 @@ This test exercises function and method extraction.
 -- basic.go --
 package extract
 
-//@codeactionedit(A_XLessThanYP, "refactor.extract", meth1, "Extract method")
-//@codeactionedit(A_XLessThanYP, "refactor.extract", func1, "Extract function")
-//@codeactionedit(A_AddP1, "refactor.extract", meth2, "Extract method")
-//@codeactionedit(A_AddP1, "refactor.extract", func2, "Extract function")
-//@codeactionedit(A_AddP2, "refactor.extract", meth3, "Extract method")
-//@codeactionedit(A_AddP2, "refactor.extract", func3, "Extract function")
-//@codeactionedit(A_XLessThanY, "refactor.extract", meth4, "Extract method")
-//@codeactionedit(A_XLessThanY, "refactor.extract", func4, "Extract function")
-//@codeactionedit(A_Add1, "refactor.extract", meth5, "Extract method")
-//@codeactionedit(A_Add1, "refactor.extract", func5, "Extract function")
-//@codeactionedit(A_Add2, "refactor.extract", meth6, "Extract method")
-//@codeactionedit(A_Add2, "refactor.extract", func6, "Extract function")
+//@codeactionedit(A_XLessThanYP, "refactor.extract.method", meth1)
+//@codeactionedit(A_XLessThanYP, "refactor.extract.function", func1)
+//@codeactionedit(A_AddP1, "refactor.extract.method", meth2)
+//@codeactionedit(A_AddP1, "refactor.extract.function", func2)
+//@codeactionedit(A_AddP2, "refactor.extract.method", meth3)
+//@codeactionedit(A_AddP2, "refactor.extract.function", func3)
+//@codeactionedit(A_XLessThanY, "refactor.extract.method", meth4)
+//@codeactionedit(A_XLessThanY, "refactor.extract.function", func4)
+//@codeactionedit(A_Add1, "refactor.extract.method", meth5)
+//@codeactionedit(A_Add1, "refactor.extract.function", func5)
+//@codeactionedit(A_Add2, "refactor.extract.method", meth6)
+//@codeactionedit(A_Add2, "refactor.extract.function", func6)
 
 type A struct {
 	x int
@@ -162,18 +162,18 @@ import (
 	"testing"
 )
 
-//@codeactionedit(B_AddP, "refactor.extract", contextMeth1, "Extract method")
-//@codeactionedit(B_AddP, "refactor.extract", contextFunc1, "Extract function")
-//@codeactionedit(B_LongList, "refactor.extract", contextMeth2, "Extract method")
-//@codeactionedit(B_LongList, "refactor.extract", contextFunc2, "Extract function")
-//@codeactionedit(B_AddPWithB, "refactor.extract", contextFuncB, "Extract function")
-//@codeactionedit(B_LongListWithT, "refactor.extract", contextFuncT, "Extract function")
+//@codeactionedit(B_AddP, "refactor.extract.method", contextMeth1)
+//@codeactionedit(B_AddP, "refactor.extract.function", contextFunc1)
+//@codeactionedit(B_LongList, "refactor.extract.method", contextMeth2)
+//@codeactionedit(B_LongList, "refactor.extract.function", contextFunc2)
+//@codeactionedit(B_AddPWithB, "refactor.extract.function", contextFuncB)
+//@codeactionedit(B_LongListWithT, "refactor.extract.function", contextFuncT)
 
 type B struct {
 	x int
 	y int
 }
-
+	
 func (b *B) AddP(ctx context.Context) (int, error) {
 	sum := b.x + b.y
 	return sum, ctx.Err() //@loc(B_AddP, re`return.*ctx\.Err\(\)`)

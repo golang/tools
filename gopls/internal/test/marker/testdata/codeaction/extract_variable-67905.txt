@@ -16,7 +16,7 @@ import (
 func f() io.Reader
 
 func main() {
-	switch r := f().(type) { //@codeactionedit("f()", "refactor.extract", type_switch_func_call)
+	switch r := f().(type) { //@codeactionedit("f()", "refactor.extract.variable", type_switch_func_call)
 	default:
 		_ = r
 	}
@@ -24,6 +24,6 @@ func main() {
 
 -- @type_switch_func_call/extract_switch.go --
 @@ -10 +10,2 @@
--	switch r := f().(type) { //@codeactionedit("f()", "refactor.extract", type_switch_func_call)
+-	switch r := f().(type) { //@codeactionedit("f()", "refactor.extract.variable", type_switch_func_call)
 +	x := f()
-+	switch r := x.(type) { //@codeactionedit("f()", "refactor.extract", type_switch_func_call)
++	switch r := x.(type) { //@codeactionedit("f()", "refactor.extract.variable", type_switch_func_call)

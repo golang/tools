@@ -49,7 +49,7 @@ your source code has been modified but not saved.
 like your editor to raise its window when handling this event.)
 
 <a name='doc'></a>
-## Browse package documentation
+## `source.doc`: Browse package documentation
 
 In any Go source file, a code action request returns a command to
 "Browse package documentation". This command opens a browser window
@@ -75,7 +75,7 @@ Client support:
 
 
 <a name='freesymbols'></a>
-## Browse free symbols
+## `source.freesymbols`: Browse free symbols
 
 When studying code, either to understand it or to evaluate a different
 organization or factoring, it is common to need to know what the
@@ -108,7 +108,7 @@ Client support:
 
 
 <a name='assembly'></a>
-## Browse assembly
+## `source.assembly`: Browse assembly
 
 When you're optimizing the performance of your code or investigating
 an unexpected crash, it may sometimes be helpful to inspect the

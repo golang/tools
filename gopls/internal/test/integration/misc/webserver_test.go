@@ -484,7 +484,7 @@ func checkMatch(t *testing.T, want bool, got []byte, pattern string) {
 	}
 }
 
-// codeActionByKind returns the first action of the specified kind, or an error.
+// codeActionByKind returns the first action of (exactly) the specified kind, or an error.
 func codeActionByKind(actions []protocol.CodeAction, kind protocol.CodeActionKind) (*protocol.CodeAction, error) {
 	for _, act := range actions {
 		if act.Kind == kind {

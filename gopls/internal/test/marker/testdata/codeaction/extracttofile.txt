@@ -12,28 +12,28 @@ go 1.18
 package main
 
 // docs
-func fn() {} //@codeactionedit("func", "refactor.extract", function_declaration)
+func fn() {} //@codeactionedit("func", "refactor.extract.toNewFile", function_declaration)
 
-func fn2() {} //@codeactionedit("fn2", "refactor.extract", only_select_func_name)
+func fn2() {} //@codeactionedit("fn2", "refactor.extract.toNewFile", only_select_func_name)
 
-func fn3() {} //@codeactionedit(re`()fn3`, "refactor.extract", zero_width_selection_on_func_name)
-
-// docs
-type T int //@codeactionedit("type", "refactor.extract", type_declaration)
+func fn3() {} //@codeactionedit(re`()fn3`, "refactor.extract.toNewFile", zero_width_selection_on_func_name)
 
 // docs
-var V int //@codeactionedit("var", "refactor.extract", var_declaration)
+type T int //@codeactionedit("type", "refactor.extract.toNewFile", type_declaration)
 
 // docs
-const K = "" //@codeactionedit("const", "refactor.extract", const_declaration)
+var V int //@codeactionedit("var", "refactor.extract.toNewFile", var_declaration)
 
-const ( //@codeactionedit("const", "refactor.extract", const_declaration_multiple_specs)
+// docs
+const K = "" //@codeactionedit("const", "refactor.extract.toNewFile", const_declaration)
+
+const ( //@codeactionedit("const", "refactor.extract.toNewFile", const_declaration_multiple_specs)
     P = iota
     Q
     R
 )
 
-func fnA () {} //@codeaction("func", mdEnd,  "refactor.extract", multiple_declarations)
+func fnA () {} //@codeaction("func", mdEnd,  "refactor.extract.toNewFile", multiple_declarations)
 
 // unattached comment
 
@@ -45,13 +45,13 @@ func fnB () {} //@loc(mdEnd, "}")
 -- existing2.1.go --
 -- b.go --
 package main
-func existing() {} //@codeactionedit("func", "refactor.extract", file_name_conflict)
-func existing2() {} //@codeactionedit("func", "refactor.extract", file_name_conflict_again)
+func existing() {} //@codeactionedit("func", "refactor.extract.toNewFile", file_name_conflict)
+func existing2() {} //@codeactionedit("func", "refactor.extract.toNewFile", file_name_conflict_again)
 
 -- single_import.go --
 package main
 import "fmt"
-func F() { //@codeactionedit("func", "refactor.extract", single_import)
+func F() { //@codeactionedit("func", "refactor.extract.toNewFile", single_import)
     fmt.Println()
 }
 
@@ -65,24 +65,24 @@ import (
 func init(){
     log.Println()
 }
-func F() { //@codeactionedit("func", "refactor.extract", multiple_imports)
+func F() { //@codeactionedit("func", "refactor.extract.toNewFile", multiple_imports)
     fmt.Println()
 }
-func g() string{ //@codeactionedit("func", "refactor.extract", renamed_import)
+func g() string{ //@codeactionedit("func", "refactor.extract.toNewFile", renamed_import)
     return time1.Now().string()
 }
 
 -- blank_import.go --
 package main
 import _ "fmt"
-func F() {} //@codeactionedit("func", "refactor.extract", blank_import)
+func F() {} //@codeactionedit("func", "refactor.extract.toNewFile", blank_import)
 
 
 
 -- @blank_import/blank_import.go --
 @@ -3 +3 @@
--func F() {} //@codeactionedit("func", "refactor.extract", blank_import)
-+//@codeactionedit("func", "refactor.extract", blank_import)
+-func F() {} //@codeactionedit("func", "refactor.extract.toNewFile", blank_import)
++//@codeactionedit("func", "refactor.extract.toNewFile", blank_import)
 -- @blank_import/f.go --
 @@ -0,0 +1,3 @@
 +package main
@@ -91,8 +91,8 @@ func F() {} //@codeactionedit("func", "refactor.extract", blank_import)
 -- @const_declaration/a.go --
 @@ -16,2 +16 @@
 -// docs
--const K = "" //@codeactionedit("const", "refactor.extract", const_declaration)
-+//@codeactionedit("const", "refactor.extract", const_declaration)
+-const K = "" //@codeactionedit("const", "refactor.extract.toNewFile", const_declaration)
++//@codeactionedit("const", "refactor.extract.toNewFile", const_declaration)
 -- @const_declaration/k.go --
 @@ -0,0 +1,4 @@
 +package main
@@ -101,7 +101,7 @@ func F() {} //@codeactionedit("func", "refactor.extract", blank_import)
 +const K = ""
 -- @const_declaration_multiple_specs/a.go --
 @@ -19,6 +19 @@
--const ( //@codeactionedit("const", "refactor.extract", const_declaration_multiple_specs)
+-const ( //@codeactionedit("const", "refactor.extract.toNewFile", const_declaration_multiple_specs)
 -    P = iota
 -    Q
 -    R
@@ -111,15 +111,15 @@ func F() {} //@codeactionedit("func", "refactor.extract", blank_import)
 @@ -0,0 +1,7 @@
 +package main
 +
-+const ( //@codeactionedit("const", "refactor.extract", const_declaration_multiple_specs)
++const ( //@codeactionedit("const", "refactor.extract.toNewFile", const_declaration_multiple_specs)
 +	P = iota
 +	Q
 +	R
 +)
 -- @file_name_conflict/b.go --
 @@ -2 +2 @@
--func existing() {} //@codeactionedit("func", "refactor.extract", file_name_conflict)
-+//@codeactionedit("func", "refactor.extract", file_name_conflict)
+-func existing() {} //@codeactionedit("func", "refactor.extract.toNewFile", file_name_conflict)
++//@codeactionedit("func", "refactor.extract.toNewFile", file_name_conflict)
 -- @file_name_conflict/existing.1.go --
 @@ -0,0 +1,3 @@
 +package main
@@ -127,8 +127,8 @@ func F() {} //@codeactionedit("func", "refactor.extract", blank_import)
 +func existing() {}
 -- @file_name_conflict_again/b.go --
 @@ -3 +3 @@
--func existing2() {} //@codeactionedit("func", "refactor.extract", file_name_conflict_again)
-+//@codeactionedit("func", "refactor.extract", file_name_conflict_again)
+-func existing2() {} //@codeactionedit("func", "refactor.extract.toNewFile", file_name_conflict_again)
++//@codeactionedit("func", "refactor.extract.toNewFile", file_name_conflict_again)
 -- @file_name_conflict_again/existing2.2.go --
 @@ -0,0 +1,3 @@
 +package main
@@ -137,8 +137,8 @@ func F() {} //@codeactionedit("func", "refactor.extract", blank_import)
 -- @function_declaration/a.go --
 @@ -3,2 +3 @@
 -// docs
--func fn() {} //@codeactionedit("func", "refactor.extract", function_declaration)
-+//@codeactionedit("func", "refactor.extract", function_declaration)
+-func fn() {} //@codeactionedit("func", "refactor.extract.toNewFile", function_declaration)
++//@codeactionedit("func", "refactor.extract.toNewFile", function_declaration)
 -- @function_declaration/fn.go --
 @@ -0,0 +1,4 @@
 +package main
@@ -149,22 +149,22 @@ func F() {} //@codeactionedit("func", "refactor.extract", blank_import)
 package main
 
 // docs
-func fn() {} //@codeactionedit("func", "refactor.extract", function_declaration)
+func fn() {} //@codeactionedit("func", "refactor.extract.toNewFile", function_declaration)
 
-func fn2() {} //@codeactionedit("fn2", "refactor.extract", only_select_func_name)
+func fn2() {} //@codeactionedit("fn2", "refactor.extract.toNewFile", only_select_func_name)
 
-func fn3() {} //@codeactionedit(re`()fn3`, "refactor.extract", zero_width_selection_on_func_name)
-
-// docs
-type T int //@codeactionedit("type", "refactor.extract", type_declaration)
+func fn3() {} //@codeactionedit(re`()fn3`, "refactor.extract.toNewFile", zero_width_selection_on_func_name)
 
 // docs
-var V int //@codeactionedit("var", "refactor.extract", var_declaration)
+type T int //@codeactionedit("type", "refactor.extract.toNewFile", type_declaration)
 
 // docs
-const K = "" //@codeactionedit("const", "refactor.extract", const_declaration)
+var V int //@codeactionedit("var", "refactor.extract.toNewFile", var_declaration)
 
-const ( //@codeactionedit("const", "refactor.extract", const_declaration_multiple_specs)
+// docs
+const K = "" //@codeactionedit("const", "refactor.extract.toNewFile", const_declaration)
+
+const ( //@codeactionedit("const", "refactor.extract.toNewFile", const_declaration_multiple_specs)
     P = iota
     Q
     R
@@ -176,7 +176,7 @@ const ( //@codeactionedit("const", "refactor.extract", const_declaration_multipl
 -- @multiple_declarations/fna.go --
 package main
 
-func fnA() {} //@codeaction("func", mdEnd,  "refactor.extract", multiple_declarations)
+func fnA() {} //@codeaction("func", mdEnd,  "refactor.extract.toNewFile", multiple_declarations)
 
 // unattached comment
 
@@ -189,7 +189,7 @@ func fnB() {}
 +	"fmt"
 +)
 +
-+func F() { //@codeactionedit("func", "refactor.extract", multiple_imports)
++func F() { //@codeactionedit("func", "refactor.extract.toNewFile", multiple_imports)
 +	fmt.Println()
 +}
 -- @multiple_imports/multiple_imports.go --
@@ -197,13 +197,13 @@ func fnB() {}
 -    "fmt"
 +    
 @@ -10,3 +10 @@
--func F() { //@codeactionedit("func", "refactor.extract", multiple_imports)
+-func F() { //@codeactionedit("func", "refactor.extract.toNewFile", multiple_imports)
 -    fmt.Println()
 -}
 -- @only_select_func_name/a.go --
 @@ -6 +6 @@
--func fn2() {} //@codeactionedit("fn2", "refactor.extract", only_select_func_name)
-+//@codeactionedit("fn2", "refactor.extract", only_select_func_name)
+-func fn2() {} //@codeactionedit("fn2", "refactor.extract.toNewFile", only_select_func_name)
++//@codeactionedit("fn2", "refactor.extract.toNewFile", only_select_func_name)
 -- @only_select_func_name/fn2.go --
 @@ -0,0 +1,3 @@
 +package main
@@ -217,20 +217,20 @@ func fnB() {}
 +	"fmt"
 +)
 +
-+func F() { //@codeactionedit("func", "refactor.extract", single_import)
++func F() { //@codeactionedit("func", "refactor.extract.toNewFile", single_import)
 +	fmt.Println()
 +}
 -- @single_import/single_import.go --
 @@ -2,4 +2 @@
 -import "fmt"
--func F() { //@codeactionedit("func", "refactor.extract", single_import)
+-func F() { //@codeactionedit("func", "refactor.extract.toNewFile", single_import)
 -    fmt.Println()
 -}
 -- @type_declaration/a.go --
 @@ -10,2 +10 @@
 -// docs
--type T int //@codeactionedit("type", "refactor.extract", type_declaration)
-+//@codeactionedit("type", "refactor.extract", type_declaration)
+-type T int //@codeactionedit("type", "refactor.extract.toNewFile", type_declaration)
++//@codeactionedit("type", "refactor.extract.toNewFile", type_declaration)
 -- @type_declaration/t.go --
 @@ -0,0 +1,4 @@
 +package main
@@ -240,8 +240,8 @@ func fnB() {}
 -- @var_declaration/a.go --
 @@ -13,2 +13 @@
 -// docs
--var V int //@codeactionedit("var", "refactor.extract", var_declaration)
-+//@codeactionedit("var", "refactor.extract", var_declaration)
+-var V int //@codeactionedit("var", "refactor.extract.toNewFile", var_declaration)
++//@codeactionedit("var", "refactor.extract.toNewFile", var_declaration)
 -- @var_declaration/v.go --
 @@ -0,0 +1,4 @@
 +package main
@@ -250,8 +250,8 @@ func fnB() {}
 +var V int
 -- @zero_width_selection_on_func_name/a.go --
 @@ -8 +8 @@
--func fn3() {} //@codeactionedit(re`()fn3`, "refactor.extract", zero_width_selection_on_func_name)
-+//@codeactionedit(re`()fn3`, "refactor.extract", zero_width_selection_on_func_name)
+-func fn3() {} //@codeactionedit(re`()fn3`, "refactor.extract.toNewFile", zero_width_selection_on_func_name)
++//@codeactionedit(re`()fn3`, "refactor.extract.toNewFile", zero_width_selection_on_func_name)
 -- @zero_width_selection_on_func_name/fn3.go --
 @@ -0,0 +1,3 @@
 +package main
@@ -265,7 +265,7 @@ func fnB() {}
 +	time1 "time"
 +)
 +
-+func g() string { //@codeactionedit("func", "refactor.extract", renamed_import)
++func g() string { //@codeactionedit("func", "refactor.extract.toNewFile", renamed_import)
 +	return time1.Now().string()
 +}
 -- @renamed_import/multiple_imports.go --
@@ -273,7 +273,7 @@ func fnB() {}
 -    time1 "time"
 +    
 @@ -13,4 +13 @@
--func g() string{ //@codeactionedit("func", "refactor.extract", renamed_import)
+-func g() string{ //@codeactionedit("func", "refactor.extract.toNewFile", renamed_import)
 -    return time1.Now().string()
 -}
 -

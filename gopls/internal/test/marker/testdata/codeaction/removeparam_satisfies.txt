@@ -21,7 +21,7 @@ package rm
 
 type T int
 
-func (t T) Foo(x int) { //@codeaction("x", "x", "refactor.rewrite", basic)
+func (t T) Foo(x int) { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", basic)
 }
 
 -- use/use.go --
@@ -44,7 +44,7 @@ package rm
 
 type T int
 
-func (t T) Foo() { //@codeaction("x", "x", "refactor.rewrite", basic)
+func (t T) Foo() { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", basic)
 }
 
 -- @basic/use/use.go --

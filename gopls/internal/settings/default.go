@@ -43,17 +43,29 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 			ServerOptions: ServerOptions{
 				SupportedCodeActions: map[file.Kind]map[protocol.CodeActionKind]bool{
 					file.Go: {
-						protocol.SourceFixAll:          true,
-						protocol.SourceOrganizeImports: true,
-						protocol.QuickFix:              true,
-						protocol.RefactorRewrite:       true,
-						protocol.RefactorInline:        true,
-						protocol.RefactorExtract:       true,
-						GoAssembly:                     true,
-						GoDoc:                          true,
-						GoFreeSymbols:                  true,
+						// This should include specific leaves in the tree,
+						// (e.g. refactor.inline.call) not generic branches
+						// (e.g. refactor.inline or refactor).
+						protocol.SourceFixAll:            true,
+						protocol.SourceOrganizeImports:   true,
+						protocol.QuickFix:                true,
+						GoAssembly:                       true,
+						GoDoc:                            true,
+						GoFreeSymbols:                    true,
+						GoplsDocFeatures:                 true,
+						RefactorRewriteChangeQuote:       true,
+						RefactorRewriteFillStruct:        true,
+						RefactorRewriteFillSwitch:        true,
+						RefactorRewriteInvertIf:          true,
+						RefactorRewriteJoinLines:         true,
+						RefactorRewriteRemoveUnusedParam: true,
+						RefactorRewriteSplitLines:        true,
+						RefactorInlineCall:               true,
+						RefactorExtractFunction:          true,
+						RefactorExtractMethod:            true,
+						RefactorExtractVariable:          true,
+						RefactorExtractToNewFile:         true,
 						// Not GoTest: it must be explicit in CodeActionParams.Context.Only
-						GoplsDocFeatures: true,
 					},
 					file.Mod: {
 						protocol.SourceOrganizeImports: true,

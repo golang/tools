@@ -1026,16 +1026,6 @@ func (e *Editor) applyCodeActions(ctx context.Context, loc protocol.Location, di
 		if action.Title == "" {
 			return 0, fmt.Errorf("empty title for code action")
 		}
-		var match bool
-		for _, o := range only {
-			if action.Kind == o {
-				match = true
-				break
-			}
-		}
-		if !match {
-			continue
-		}
 		applied++
 		if err := e.ApplyCodeAction(ctx, action); err != nil {
 			return 0, err

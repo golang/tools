@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
@@ -72,7 +73,7 @@ func convertStringLiteral(pgf *parsego.File, fh file.Handle, startPos, endPos to
 	}
 	return protocol.CodeAction{
 		Title: title,
-		Kind:  protocol.RefactorRewrite,
+		Kind:  settings.RefactorRewriteChangeQuote,
 		Edit:  protocol.NewWorkspaceEdit(protocol.DocumentChangeEdit(fh, textedits)),
 	}, true
 }

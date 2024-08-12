@@ -7,6 +7,7 @@ package misc
 import (
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 
@@ -49,7 +50,7 @@ func Foo() {
 
 			runner.Run(t, basic, func(t *testing.T, env *Env) {
 				env.OpenFile("main.go")
-				fixes, err := env.Editor.CodeActions(env.Ctx, env.RegexpSearch("main.go", "Info{}"), nil, protocol.RefactorRewrite)
+				fixes, err := env.Editor.CodeActions(env.Ctx, env.RegexpSearch("main.go", "Info{}"), nil, settings.RefactorRewriteFillStruct)
 				if err != nil {
 					t.Fatal(err)
 				}

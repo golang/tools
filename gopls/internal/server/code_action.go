@@ -31,56 +31,72 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 	}
 	defer release()
 	uri := fh.URI()
-
-	// Determine the supported actions for this file kind.
 	kind := snapshot.FileKind(fh)
-	supportedCodeActions, ok := snapshot.Options().SupportedCodeActions[kind]
+
+	// Determine the supported code action kinds for this file.
+	//
+	// We interpret CodeActionKinds hierarchically, so refactor.rewrite
+	// subsumes refactor.rewrite.change_quote, for example.
+	// See ../protocol/codeactionkind.go for some code action theory.
+	codeActionKinds, ok := snapshot.Options().SupportedCodeActions[kind]
 	if !ok {
 		return nil, fmt.Errorf("no supported code actions for %v file kind", kind)
 	}
-	if len(supportedCodeActions) == 0 {
-		return nil, nil // not an error if there are none supported
-	}
 
-	// The Only field of the context specifies which code actions the client wants.
-	// If Only is empty, assume that the client wants all of the non-explicit code actions.
-	want := supportedCodeActions
+	// The Only field of the context specifies which code actions
+	// the client wants. If Only is empty, assume the client wants
+	// all supported code actions.
 	if len(params.Context.Only) > 0 {
-		want = make(map[protocol.CodeActionKind]bool)
-
-		// Explicit Code Actions are opt-in and shouldn't be
-		// returned to the client unless requested using Only.
-		//
-		// This mechanim exists to avoid a distracting
-		// lightbulb (code action) on each Test function.
-		// These actions are unwanted in VS Code because it
-		// has Test Explorer, and in other editors because
-		// the UX of executeCommand is unsatisfactory for tests:
-		// it doesn't show the complete streaming output.
-		// See https://github.com/joaotavora/eglot/discussions/1402
-		// for a better solution.
-		explicit := map[protocol.CodeActionKind]bool{
-			settings.GoTest: true,
-		}
-
-		for _, only := range params.Context.Only {
-			for k, v := range supportedCodeActions {
-				if only == k || strings.HasPrefix(string(k), string(only)+".") {
-					want[k] = want[k] || v
-				}
-			}
-			want[only] = want[only] || explicit[only]
+		codeActionKinds = make(map[protocol.CodeActionKind]bool)
+		for _, kind := range params.Context.Only {
+			codeActionKinds[kind] = true
 		}
 	}
-	if len(want) == 0 {
-		return nil, fmt.Errorf("no supported code action to execute for %s, wanted %v", uri, params.Context.Only)
+
+	// enabled reports whether the specified kind of code action is required.
+	enabled := func(kind protocol.CodeActionKind) bool {
+		// Given "refactor.rewrite.foo", check for it,
+		// then "refactor.rewrite", "refactor".
+		// A false map entry prunes the search for ancestors.
+		for {
+			if v, ok := codeActionKinds[kind]; ok {
+				return v
+			}
+			dot := strings.LastIndexByte(string(kind), '.')
+			if dot < 0 {
+				return false
+			}
+
+			// The "source.test" code action shouldn't be
+			// returned to the client unless requested by
+			// an exact match in Only.
+			//
+			// This mechanism exists to avoid a distracting
+			// lightbulb (code action) on each Test function.
+			// These actions are unwanted in VS Code because it
+			// has Test Explorer, and in other editors because
+			// the UX of executeCommand is unsatisfactory for tests:
+			// it doesn't show the complete streaming output.
+			// See https://github.com/joaotavora/eglot/discussions/1402
+			// for a better solution. See also
+			// https://github.com/golang/go/issues/67400.
+			//
+			// TODO(adonovan): consider instead switching on
+			// codeActionTriggerKind. Perhaps other noisy Source
+			// Actions should be guarded in the same way.
+			if kind == settings.GoTest {
+				return false // don't search ancestors
+			}
+
+			kind = kind[:dot]
+		}
 	}
 
 	switch kind {
 	case file.Mod:
 		var actions []protocol.CodeAction
 
-		fixes, err := s.codeActionsMatchingDiagnostics(ctx, fh.URI(), snapshot, params.Context.Diagnostics, want)
+		fixes, err := s.codeActionsMatchingDiagnostics(ctx, fh.URI(), snapshot, params.Context.Diagnostics, enabled)
 		if err != nil {
 			return nil, err
 		}
@@ -117,7 +133,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		// Note s.codeActionsMatchingDiagnostics returns only fixes
 		// detected during the analysis phase. golang.CodeActions computes
 		// extra changes that can address some diagnostics.
-		actions, err := s.codeActionsMatchingDiagnostics(ctx, uri, snapshot, params.Context.Diagnostics, want)
+		actions, err := s.codeActionsMatchingDiagnostics(ctx, uri, snapshot, params.Context.Diagnostics, enabled)
 		if err != nil {
 			return nil, err
 		}
@@ -127,7 +143,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		if k := params.Context.TriggerKind; k != nil { // (some clients omit it)
 			trigger = *k
 		}
-		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, want, trigger)
+		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, enabled, trigger)
 		if err != nil {
 			return nil, err
 		}
@@ -206,14 +222,14 @@ func (s *server) ResolveCodeAction(ctx context.Context, ca *protocol.CodeAction)
 // protocol.Diagnostic.Data field or, if there were none, by creating
 // actions from edits associated with a matching Diagnostic from the
 // set of stored diagnostics for this file.
-func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri protocol.DocumentURI, snapshot *cache.Snapshot, pds []protocol.Diagnostic, want map[protocol.CodeActionKind]bool) ([]protocol.CodeAction, error) {
+func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri protocol.DocumentURI, snapshot *cache.Snapshot, pds []protocol.Diagnostic, enabled func(protocol.CodeActionKind) bool) ([]protocol.CodeAction, error) {
 	var actions []protocol.CodeAction
 	var unbundled []protocol.Diagnostic // diagnostics without bundled code actions in their Data field
 	for _, pd := range pds {
 		bundled := cache.BundledLazyFixes(pd)
 		if len(bundled) > 0 {
 			for _, fix := range bundled {
-				if want[fix.Kind] {
+				if enabled(fix.Kind) {
 					actions = append(actions, fix)
 				}
 			}
@@ -225,7 +241,7 @@ func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri protoco
 
 	for _, pd := range unbundled {
 		for _, sd := range s.findMatchingDiagnostics(uri, pd) {
-			diagActions, err := codeActionsForDiagnostic(ctx, snapshot, sd, &pd, want)
+			diagActions, err := codeActionsForDiagnostic(ctx, snapshot, sd, &pd, enabled)
 			if err != nil {
 				return nil, err
 			}
@@ -235,10 +251,10 @@ func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri protoco
 	return actions, nil
 }
 
-func codeActionsForDiagnostic(ctx context.Context, snapshot *cache.Snapshot, sd *cache.Diagnostic, pd *protocol.Diagnostic, want map[protocol.CodeActionKind]bool) ([]protocol.CodeAction, error) {
+func codeActionsForDiagnostic(ctx context.Context, snapshot *cache.Snapshot, sd *cache.Diagnostic, pd *protocol.Diagnostic, enabled func(protocol.CodeActionKind) bool) ([]protocol.CodeAction, error) {
 	var actions []protocol.CodeAction
 	for _, fix := range sd.SuggestedFixes {
-		if !want[fix.ActionKind] {
+		if !enabled(fix.ActionKind) {
 			continue
 		}
 		var changes []protocol.DocumentChange

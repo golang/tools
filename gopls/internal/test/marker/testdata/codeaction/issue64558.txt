@@ -8,7 +8,7 @@ go 1.18
 package a
 
 func _() {
-	f(1, 2) //@ diag("2", re"too many arguments"), codeactionerr("f", ")", "refactor.inline", re`inlining failed \("args/params mismatch"\), likely because inputs were ill-typed`)
+	f(1, 2) //@ diag("2", re"too many arguments"), codeactionerr("f", ")", "refactor.inline.call", re`inlining failed \("args/params mismatch"\), likely because inputs were ill-typed`)
 }
 
 func f(int) {}

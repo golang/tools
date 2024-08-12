@@ -14,7 +14,7 @@ go 1.18
 package a
 
 // A doc comment.
-func A(x /* used parameter */, unused int /* unused parameter */ ) int { //@codeaction("unused", "unused", "refactor.rewrite", a)
+func A(x /* used parameter */, unused int /* unused parameter */ ) int { //@codeaction("unused", "unused", "refactor.rewrite.removeUnusedParam", a)
 	// about to return
 	return x // returning
 	// just returned
@@ -36,7 +36,7 @@ func one() int {
 package a
 
 // A doc comment.
-func A(x int) int { //@codeaction("unused", "unused", "refactor.rewrite", a)
+func A(x int) int { //@codeaction("unused", "unused", "refactor.rewrite.removeUnusedParam", a)
 	// about to return
 	return x // returning
 	// just returned

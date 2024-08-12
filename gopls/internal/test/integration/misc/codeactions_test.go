@@ -68,8 +68,8 @@ func g() {}
 			settings.GoDoc,
 			settings.GoFreeSymbols,
 			settings.GoplsDocFeatures,
-			protocol.RefactorExtract,
-			protocol.RefactorInline)
+			settings.RefactorExtractVariable,
+			settings.RefactorInlineCall)
 		check("gen/a.go",
 			settings.GoAssembly,
 			settings.GoDoc,
@@ -78,7 +78,7 @@ func g() {}
 	})
 }
 
-// Test refactor.inline is not included in automatically triggered code action
+// Test refactor.inline.call is not included in automatically triggered code action
 // unless users want refactoring.
 func TestVSCodeIssue65167(t *testing.T) {
 	const vim1 = `package main
@@ -108,9 +108,9 @@ func Func() int { return 0 }
 						actions := env.CodeAction(loc, nil, trigger)
 						want := trigger != protocol.CodeActionAutomatic || selectedRange
 						if got := slices.ContainsFunc(actions, func(act protocol.CodeAction) bool {
-							return act.Kind == protocol.RefactorInline
+							return act.Kind == settings.RefactorInlineCall
 						}); got != want {
-							t.Errorf("got refactor.inline = %t, want %t", got, want)
+							t.Errorf("got refactor.inline.call = %t, want %t", got, want)
 						}
 					})
 				}

@@ -62,7 +62,7 @@ import "mod.test/c"
 
 var Chan chan c.C
 
-func B(x, y c.C) { //@codeaction("x", "x", "refactor.rewrite", b)
+func B(x, y c.C) { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", b)
 }
 
 -- c/c.go --
@@ -76,7 +76,7 @@ package d
 // Removing the parameter should remove this import.
 import "mod.test/c"
 
-func D(x c.C) { //@codeaction("x", "x", "refactor.rewrite", d)
+func D(x c.C) { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", d)
 }
 
 func _() {
@@ -148,14 +148,14 @@ import "mod.test/c"
 
 var Chan chan c.C
 
-func B(y c.C) { //@codeaction("x", "x", "refactor.rewrite", b)
+func B(y c.C) { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", b)
 }
 -- @d/d/d.go --
 package d
 
 // Removing the parameter should remove this import.
 
-func D() { //@codeaction("x", "x", "refactor.rewrite", d)
+func D() { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", d)
 }
 
 func _() {

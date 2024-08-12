@@ -20,14 +20,14 @@ go 1.18
 -- a/a.go --
 package a
 
-func A(x, unused int) int { //@codeaction("unused", "unused", "refactor.rewrite", a)
+func A(x, unused int) int { //@codeaction("unused", "unused", "refactor.rewrite.removeUnusedParam", a)
 	return x
 }
 
 -- @a/a/a.go --
 package a
 
-func A(x int) int { //@codeaction("unused", "unused", "refactor.rewrite", a)
+func A(x int) int { //@codeaction("unused", "unused", "refactor.rewrite.removeUnusedParam", a)
 	return x
 }
 
@@ -110,7 +110,7 @@ func _() {
 -- field/field.go --
 package field
 
-func Field(x int, field int) { //@codeaction("int", "int", "refactor.rewrite", field, "Refactor: remove unused parameter")
+func Field(x int, field int) { //@codeaction("int", "int", "refactor.rewrite.removeUnusedParam", field)
 }
 
 func _() {
@@ -119,7 +119,7 @@ func _() {
 -- @field/field/field.go --
 package field
 
-func Field(field int) { //@codeaction("int", "int", "refactor.rewrite", field, "Refactor: remove unused parameter")
+func Field(field int) { //@codeaction("int", "int", "refactor.rewrite.removeUnusedParam", field)
 }
 
 func _() {
@@ -128,7 +128,7 @@ func _() {
 -- ellipsis/ellipsis.go --
 package ellipsis
 
-func Ellipsis(...any) { //@codeaction("any", "any", "refactor.rewrite", ellipsis)
+func Ellipsis(...any) { //@codeaction("any", "any", "refactor.rewrite.removeUnusedParam", ellipsis)
 }
 
 func _() {
@@ -149,7 +149,7 @@ func i() []any
 -- @ellipsis/ellipsis/ellipsis.go --
 package ellipsis
 
-func Ellipsis() { //@codeaction("any", "any", "refactor.rewrite", ellipsis)
+func Ellipsis() { //@codeaction("any", "any", "refactor.rewrite.removeUnusedParam", ellipsis)
 }
 
 func _() {
@@ -173,7 +173,7 @@ func i() []any
 -- ellipsis2/ellipsis2.go --
 package ellipsis2
 
-func Ellipsis2(_, _ int, rest ...int) { //@codeaction("_", "_", "refactor.rewrite", ellipsis2, "Refactor: remove unused parameter")
+func Ellipsis2(_, _ int, rest ...int) { //@codeaction("_", "_", "refactor.rewrite.removeUnusedParam", ellipsis2)
 }
 
 func _() {
@@ -187,7 +187,7 @@ func h() (int, int)
 -- @ellipsis2/ellipsis2/ellipsis2.go --
 package ellipsis2
 
-func Ellipsis2(_ int, rest ...int) { //@codeaction("_", "_", "refactor.rewrite", ellipsis2, "Refactor: remove unused parameter")
+func Ellipsis2(_ int, rest ...int) { //@codeaction("_", "_", "refactor.rewrite.removeUnusedParam", ellipsis2)
 }
 
 func _() {
@@ -202,7 +202,7 @@ func h() (int, int)
 -- overlapping/overlapping.go --
 package overlapping
 
-func Overlapping(i int) int { //@codeactionerr(re"(i) int", re"(i) int", "refactor.rewrite", re"overlapping")
+func Overlapping(i int) int { //@codeactionerr(re"(i) int", re"(i) int", "refactor.rewrite.removeUnusedParam", re"overlapping")
 	return 0
 }
 
@@ -214,7 +214,7 @@ func _() {
 -- effects/effects.go --
 package effects
 
-func effects(x, y int) int { //@codeaction("y", "y", "refactor.rewrite", effects), diag("y", re"unused")
+func effects(x, y int) int { //@codeaction("y", "y", "refactor.rewrite.removeUnusedParam", effects), diag("y", re"unused")
 	return x
 }
 
@@ -228,7 +228,7 @@ func _() {
 -- @effects/effects/effects.go --
 package effects
 
-func effects(x int) int { //@codeaction("y", "y", "refactor.rewrite", effects), diag("y", re"unused")
+func effects(x int) int { //@codeaction("y", "y", "refactor.rewrite.removeUnusedParam", effects), diag("y", re"unused")
 	return x
 }
 
@@ -246,13 +246,13 @@ func _() {
 -- recursive/recursive.go --
 package recursive
 
-func Recursive(x int) int { //@codeaction("x", "x", "refactor.rewrite", recursive)
+func Recursive(x int) int { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", recursive)
 	return Recursive(1)
 }
 
 -- @recursive/recursive/recursive.go --
 package recursive
 
-func Recursive() int { //@codeaction("x", "x", "refactor.rewrite", recursive)
+func Recursive() int { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", recursive)
 	return Recursive()
 }

@@ -12,7 +12,7 @@ package func_arg
 func A(
 	a string,
 	b, c int64,
-	x int /*@codeaction("x", "x", "refactor.rewrite", func_arg)*/,
+	x int /*@codeaction("x", "x", "refactor.rewrite.joinLines", func_arg)*/,
 	y int,
 ) (r1 string, r2, r3 int64, r4 int, r5 int) {
 	return a, b, c, x, y
@@ -21,7 +21,7 @@ func A(
 -- @func_arg/func_arg/func_arg.go --
 package func_arg
 
-func A(a string, b, c int64, x int /*@codeaction("x", "x", "refactor.rewrite", func_arg)*/, y int) (r1 string, r2, r3 int64, r4 int, r5 int) {
+func A(a string, b, c int64, x int /*@codeaction("x", "x", "refactor.rewrite.joinLines", func_arg)*/, y int) (r1 string, r2, r3 int64, r4 int, r5 int) {
 	return a, b, c, x, y
 }
 
@@ -29,7 +29,7 @@ func A(a string, b, c int64, x int /*@codeaction("x", "x", "refactor.rewrite", f
 package func_ret
 
 func A(a string, b, c int64, x int, y int) (
-	r1 string /*@codeaction("r1", "r1", "refactor.rewrite", func_ret)*/,
+	r1 string /*@codeaction("r1", "r1", "refactor.rewrite.joinLines", func_ret)*/,
 	r2, r3 int64,
 	r4 int,
 	r5 int,
@@ -40,7 +40,7 @@ func A(a string, b, c int64, x int, y int) (
 -- @func_ret/func_ret/func_ret.go --
 package func_ret
 
-func A(a string, b, c int64, x int, y int) (r1 string /*@codeaction("r1", "r1", "refactor.rewrite", func_ret)*/, r2, r3 int64, r4 int, r5 int) {
+func A(a string, b, c int64, x int, y int) (r1 string /*@codeaction("r1", "r1", "refactor.rewrite.joinLines", func_ret)*/, r2, r3 int64, r4 int, r5 int) {
 	return a, b, c, x, y
 }
 
@@ -50,20 +50,20 @@ package functype_arg
 type A func(
 	a string,
 	b, c int64,
-	x int /*@codeaction("x", "x", "refactor.rewrite", functype_arg)*/,
+	x int /*@codeaction("x", "x", "refactor.rewrite.joinLines", functype_arg)*/,
 	y int,
 ) (r1 string, r2, r3 int64, r4 int, r5 int)
 
 -- @functype_arg/functype_arg/functype_arg.go --
 package functype_arg
 
-type A func(a string, b, c int64, x int /*@codeaction("x", "x", "refactor.rewrite", functype_arg)*/, y int) (r1 string, r2, r3 int64, r4 int, r5 int)
+type A func(a string, b, c int64, x int /*@codeaction("x", "x", "refactor.rewrite.joinLines", functype_arg)*/, y int) (r1 string, r2, r3 int64, r4 int, r5 int)
 
 -- functype_ret/functype_ret.go --
 package functype_ret
 
 type A func(a string, b, c int64, x int, y int) (
-	r1 string /*@codeaction("r1", "r1", "refactor.rewrite", functype_ret)*/,
+	r1 string /*@codeaction("r1", "r1", "refactor.rewrite.joinLines", functype_ret)*/,
 	r2, r3 int64,
 	r4 int,
 	r5 int,
@@ -72,7 +72,7 @@ type A func(a string, b, c int64, x int, y int) (
 -- @functype_ret/functype_ret/functype_ret.go --
 package functype_ret
 
-type A func(a string, b, c int64, x int, y int) (r1 string /*@codeaction("r1", "r1", "refactor.rewrite", functype_ret)*/, r2, r3 int64, r4 int, r5 int)
+type A func(a string, b, c int64, x int, y int) (r1 string /*@codeaction("r1", "r1", "refactor.rewrite.joinLines", functype_ret)*/, r2, r3 int64, r4 int, r5 int)
 
 -- func_call/func_call.go --
 package func_call
@@ -81,7 +81,7 @@ import "fmt"
 
 func a() {
 	fmt.Println(
-		1 /*@codeaction("1", "1", "refactor.rewrite", func_call)*/,
+		1 /*@codeaction("1", "1", "refactor.rewrite.joinLines", func_call)*/,
 		2,
 		3,
 		fmt.Sprintf("hello %d", 4),
@@ -94,7 +94,7 @@ package func_call
 import "fmt"
 
 func a() {
-	fmt.Println(1 /*@codeaction("1", "1", "refactor.rewrite", func_call)*/, 2, 3, fmt.Sprintf("hello %d", 4))
+	fmt.Println(1 /*@codeaction("1", "1", "refactor.rewrite.joinLines", func_call)*/, 2, 3, fmt.Sprintf("hello %d", 4))
 }
 
 -- indent/indent.go --
@@ -108,7 +108,7 @@ func a() {
         2,
         3,
         fmt.Sprintf(
-            "hello %d" /*@codeaction("hello", "hello", "refactor.rewrite", indent, "Join arguments into one line")*/,
+            "hello %d" /*@codeaction("hello", "hello", "refactor.rewrite.joinLines", indent)*/,
             4,
         ))
 }
@@ -123,7 +123,7 @@ func a() {
         1,
         2,
         3,
-        fmt.Sprintf("hello %d" /*@codeaction("hello", "hello", "refactor.rewrite", indent, "Join arguments into one line")*/, 4))
+        fmt.Sprintf("hello %d" /*@codeaction("hello", "hello", "refactor.rewrite.joinLines", indent)*/, 4))
 }
 
 -- structelts/structelts.go --
@@ -137,7 +137,7 @@ type A struct{
 func a() {
 	_ = A{
 		a: 1,
-		b: 2 /*@codeaction("b", "b", "refactor.rewrite", structelts)*/,
+		b: 2 /*@codeaction("b", "b", "refactor.rewrite.joinLines", structelts)*/,
 	}
 }
 
@@ -150,7 +150,7 @@ type A struct{
 }
 
 func a() {
-	_ = A{a: 1, b: 2 /*@codeaction("b", "b", "refactor.rewrite", structelts)*/}
+	_ = A{a: 1, b: 2 /*@codeaction("b", "b", "refactor.rewrite.joinLines", structelts)*/}
 }
 
 -- sliceelts/sliceelts.go --
@@ -158,7 +158,7 @@ package sliceelts
 
 func a() {
 	_ = []int{
-		1 /*@codeaction("1", "1", "refactor.rewrite", sliceelts)*/,
+		1 /*@codeaction("1", "1", "refactor.rewrite.joinLines", sliceelts)*/,
 		2,
 	}
 }
@@ -167,7 +167,7 @@ func a() {
 package sliceelts
 
 func a() {
-	_ = []int{1 /*@codeaction("1", "1", "refactor.rewrite", sliceelts)*/, 2}
+	_ = []int{1 /*@codeaction("1", "1", "refactor.rewrite.joinLines", sliceelts)*/, 2}
 }
 
 -- mapelts/mapelts.go --
@@ -175,7 +175,7 @@ package mapelts
 
 func a() {
 	_ = map[string]int{
-		"a": 1 /*@codeaction("1", "1", "refactor.rewrite", mapelts)*/,
+		"a": 1 /*@codeaction("1", "1", "refactor.rewrite.joinLines", mapelts)*/,
 		"b": 2,
 	}
 }
@@ -184,14 +184,14 @@ func a() {
 package mapelts
 
 func a() {
-	_ = map[string]int{"a": 1 /*@codeaction("1", "1", "refactor.rewrite", mapelts)*/, "b": 2}
+	_ = map[string]int{"a": 1 /*@codeaction("1", "1", "refactor.rewrite.joinLines", mapelts)*/, "b": 2}
 }
 
 -- starcomment/starcomment.go --
 package starcomment
 
 func A(
-	/*1*/ x /*2*/ string /*3*/ /*@codeaction("x", "x", "refactor.rewrite", starcomment)*/,
+	/*1*/ x /*2*/ string /*3*/ /*@codeaction("x", "x", "refactor.rewrite.joinLines", starcomment)*/,
 	/*4*/ y /*5*/ int /*6*/,
 ) (string, int) {
 	return x, y
@@ -200,7 +200,7 @@ func A(
 -- @starcomment/starcomment/starcomment.go --
 package starcomment
 
-func A(/*1*/ x /*2*/ string /*3*/ /*@codeaction("x", "x", "refactor.rewrite", starcomment)*/, /*4*/ y /*5*/ int /*6*/) (string, int) {
+func A(/*1*/ x /*2*/ string /*3*/ /*@codeaction("x", "x", "refactor.rewrite.joinLines", starcomment)*/, /*4*/ y /*5*/ int /*6*/) (string, int) {
 	return x, y
 }
 

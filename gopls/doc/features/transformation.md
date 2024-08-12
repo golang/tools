@@ -50,12 +50,12 @@ The main difference between code lenses and code actions is this:
   All the commands are presented together in a menu at that location.
 
 Each action has a _kind_,
-which is a hierarchical identifier such as `refactor.inline`.
+which is a hierarchical identifier such as `refactor.inline.call`.
 Clients may filter actions based on their kind.
 For example, VS Code has:
 two menus, "Refactor..." and "Source action...", each populated by
-different kinds of code actions (`refactor.*` and `source.*`);
-a lightbulb icon that triggers a menu of "quick fixes" (of kind `quickfix.*`);
+different kinds of code actions (`refactor` and `source`);
+a lightbulb icon that triggers a menu of "quick fixes" (of kind `quickfix`);
 and a "Fix All" command that executes all code actions of
 kind `source.fixAll`, which are those deemed unambiguously safe to apply.
 
@@ -187,7 +187,7 @@ Client support:
 - **CLI**: `gopls fix -a file.go:#offset source.organizeImports`
 
 
-## Rename
+## `refactor.rename`: Rename
 
 The LSP
 [`textDocument/rename`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_rename)
@@ -269,7 +269,7 @@ Client support:
 
 
 <a name='extract'></a>
-## Extract function/method/variable
+## `refactor.extract`: Extract function/method/variable
 
 The `refactor.extract` family of code actions all return commands that
 replace the selected expression or statements with a reference to a
@@ -278,7 +278,7 @@ newly created declaration that contains the selected code:
 <!-- See TODO comments in settings/codeactionkind.go about splitting
      up "refactor.extract" into finer grained categories. -->
 
-- **Extract function** replaces one or more complete statements by a
+- **`refactor.extract.function`** replaces one or more complete statements by a
   call to a new function named `newFunction` whose body contains the
   statements. The selection must enclose fewer statements than the
   entire body of the existing function.
@@ -286,11 +286,11 @@ newly created declaration that contains the selected code:
   ![Before extracting a function](../assets/extract-function-before.png)
   ![After extracting a function](../assets/extract-function-after.png)
 
-- **Extract method** is a variant of "Extract function" offered when
+- **`refactor.extract.method`** is a variant of "Extract function" offered when
   the selected statements belong to a method. The newly created function
   will be a method of the same receiver type.
 
-- **Extract variable** replaces an expression by a reference to a new
+- **`refactor.extract.variable`** replaces an expression by a reference to a new
   local variable named `x` initialized by the expression:
 
   ![Before extracting a var](../assets/extract-var-before.png)
@@ -330,7 +330,7 @@ The following Extract features are planned for 2024 but not yet supported:
 
 
 <a name='extract-to-new-file'></a>
-## Extract declarations to new file
+## `refactor.extract.toNewFile`: Extract declarations to new file
 
 (Available from gopls/v0.17.0)
 
@@ -347,11 +347,11 @@ first token of the declaration, such as `func` or `type`.
 
 
 <a name='inline'></a>
-## Inline call to function
+## `refactor.inline.call`: Inline call to function
 
 For a `codeActions` request where the selection is (or is within) a
 call of a function or method, gopls will return a command of kind
-`refactor.inline`, whose effect is to inline the function call.
+`refactor.inline.call`, whose effect is to inline the function call.
 
 The screenshots below show a call to `sum` before and after inlining:
 <!-- source code used for images:
@@ -501,15 +501,12 @@ more detail. All of this is to say, it's a complex problem, and we aim
 for correctness first of all. We've already implemented a number of
 important "tidiness optimizations" and we expect more to follow.
 
-## Miscellaneous rewrites
+## `refactor.rewrite`: Miscellaneous rewrites
 
 This section covers a number of transformations that are accessible as
-code actions of kind `refactor.rewrite`.
+code actions whose kinds are children of `refactor.rewrite`.
 
-<!-- See TODO comments in settings/codeactionkind.go about splitting
-     up "refactor.extract" into finer grained categories. -->
-
-### Remove unused parameter
+### `refactor.rewrite.removeUnusedParam`: Remove unused parameter
 
 The [`unusedparams` analyzer](../analyzers.md#unusedparams) reports a
 diagnostic for each parameter that is not used within the function body.
@@ -544,7 +541,7 @@ Observe that in the first call, the argument `chargeCreditCard()` was
 not deleted because of potential side effects, whereas in the second
 call, the argument 2, a constant, was safely deleted.
 
-### Convert string literal between raw and interpreted
+### `refactor.rewrite.changeQuote`: Convert string literal between raw and interpreted
 
 When the selection is a string literal, gopls offers a code action
 to convert the string between raw form (`` `abc` ``) and interpreted
@@ -556,7 +553,7 @@ form (`"abc"`) where this is possible:
 Applying the code action a second time reverts back to the original
 form.
 
-### Invert 'if' condition
+### `refactor.rewrite.invertIf`: Invert 'if' condition
 
 When the selection is within an `if`/`else` statement that is not
 followed by `else if`, gopls offers a code action to invert the
@@ -571,7 +568,7 @@ blocks.
      if the else block ends with a return statement; and thus applying
      the operation twice does not get you back to where you started. -->
 
-### Split elements into separate lines
+### `refactor.rewrite.{split,join}Lines`: Split elements into separate lines
 
 When the selection is within a bracketed list of items such as:
 
@@ -619,7 +616,7 @@ comments, which run to the end of the line.
 <!-- Strictly, line comments make only "join" (but not "split") infeasible. -->
 
 
-### Fill struct literal
+### `refactor.rewrite.fillStruct`: Fill struct literal
 
 When the cursor is within a struct literal `S{}`, gopls offers the
 "Fill S" code action, which populates each missing field of the
@@ -651,7 +648,7 @@ Caveats:
   or in other files in the package, are not considered; see
   golang/go#68224.
 
-### Fill switch
+### `refactor.rewrite.fillSwitch`: Fill switch
 
 When the cursor is within a switch statement whose operand type is an
 _enum_ (a finite set of named constants), or within a type switch,

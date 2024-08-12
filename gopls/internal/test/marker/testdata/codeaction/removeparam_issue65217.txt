@@ -27,7 +27,7 @@ func _() {
 	_ = i
 }
 
-func f(unused S, i int) int { //@codeaction("unused", "unused", "refactor.rewrite", rewrite, "Refactor: remove unused parameter"), diag("unused", re`unused`)
+func f(unused S, i int) int { //@codeaction("unused", "unused", "refactor.rewrite.removeUnusedParam", rewrite), diag("unused", re`unused`)
 	return i
 }
 
@@ -53,6 +53,6 @@ func _() {
 	_ = i
 }
 
-func f(i int) int { //@codeaction("unused", "unused", "refactor.rewrite", rewrite, "Refactor: remove unused parameter"), diag("unused", re`unused`)
+func f(i int) int { //@codeaction("unused", "unused", "refactor.rewrite.removeUnusedParam", rewrite), diag("unused", re`unused`)
 	return i
 }

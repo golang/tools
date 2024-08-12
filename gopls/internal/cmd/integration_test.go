@@ -988,6 +988,17 @@ type C struct{}
 			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
 		}
 	}
+	// list code actions in file, filtering (hierarchically) by kind
+	{
+		res := gopls(t, tree, "codeaction", "-kind=source", "a.go")
+		res.checkExit(true)
+		got := res.stdout
+		want := `command	"Browse documentation for package a" [source.doc]` +
+			"\n"
+		if got != want {
+			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
+		}
+	}
 	// list code actions at position (of io.Reader)
 	{
 		res := gopls(t, tree, "codeaction", "b.go:#31")

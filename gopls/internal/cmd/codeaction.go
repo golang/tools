@@ -47,21 +47,34 @@ The -kind flag specifies a comma-separated list of LSP CodeAction kinds.
 Only actions of these kinds will be requested from the server.
 Valid kinds include:
 
+	gopls.doc.features
 	quickfix
 	refactor
 	refactor.extract
+	refactor.extract.function
+	refactor.extract.method
+	refactor.extract.toNewFile
+	refactor.extract.variable
 	refactor.inline
+	refactor.inline.call
 	refactor.rewrite
-	source.organizeImports
-	source.fixAll
+	refactor.rewrite.changeQuote
+	refactor.rewrite.fillStruct
+	refactor.rewrite.fillSwitch
+	refactor.rewrite.invertIf
+	refactor.rewrite.joinLines
+	refactor.rewrite.removeUnusedParam
+	refactor.rewrite.splitLines
+	source
 	source.assembly
 	source.doc
+	source.fixAll
 	source.freesymbols
-	goTest
-	gopls.doc.features
+	source.organizeImports
+	source.test
 
 Kinds are hierarchical, so "refactor" includes "refactor.inline".
-(Note: actions of kind "goTest" are not returned unless explicitly
+(Note: actions of kind "source.test" are not returned unless explicitly
 requested.)
 
 The -title flag specifies a regular expression that must match the

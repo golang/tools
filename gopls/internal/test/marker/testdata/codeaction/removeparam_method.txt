@@ -18,7 +18,7 @@ package rm
 
 type Basic int
 
-func (t Basic) Foo(x int) { //@codeaction("x", "x", "refactor.rewrite", basic)
+func (t Basic) Foo(x int) { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", basic)
 }
 
 func _(b Basic) {
@@ -45,7 +45,7 @@ package rm
 
 type Basic int
 
-func (t Basic) Foo() { //@codeaction("x", "x", "refactor.rewrite", basic)
+func (t Basic) Foo() { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", basic)
 }
 
 func _(b Basic) {
@@ -76,7 +76,7 @@ type Missing struct{}
 
 var r2 int
 
-func (Missing) M(a, b, c, r0 int) (r1 int) { //@codeaction("b", "b", "refactor.rewrite", missingrecv)
+func (Missing) M(a, b, c, r0 int) (r1 int) { //@codeaction("b", "b", "refactor.rewrite.removeUnusedParam", missingrecv)
 	return a + c
 }
 
@@ -104,7 +104,7 @@ type Missing struct{}
 
 var r2 int
 
-func (Missing) M(a, c, r0 int) (r1 int) { //@codeaction("b", "b", "refactor.rewrite", missingrecv)
+func (Missing) M(a, c, r0 int) (r1 int) { //@codeaction("b", "b", "refactor.rewrite.removeUnusedParam", missingrecv)
 	return a + c
 }
 

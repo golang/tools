@@ -12,16 +12,28 @@ import "golang.org/x/tools/gopls/internal/protocol"
 //
 // See ../protocol/tsprotocol.go for LSP standard kinds, including
 //
-//	"quickfix"
-//	"refactor"
-//	"refactor.extract"
-//	"refactor.inline"
-//	"refactor.move"
-//	"refactor.rewrite"
-//	"source"
-//	"source.organizeImports"
-//	"source.fixAll"
-//	"notebook"
+//	quickfix
+//	refactor
+//	refactor.extract
+//	refactor.inline
+//	refactor.move
+//	refactor.rewrite
+//	source
+//	source.organizeImports
+//	source.fixAll
+//	notebook
+//
+// Kinds are hierarchical: "refactor" subsumes "refactor.inline",
+// which subsumes "refactor.inline.call". The "Only" field in a
+// CodeAction request may specify a category such as "refactor"; any
+// matching code action will be returned.
+//
+// All CodeActions returned by gopls use a specific leaf kind such as
+// "refactor.inline.call", except for quick fixes, which all use
+// "quickfix". TODO(adonovan): perhaps quick fixes should also be
+// hierarchical (e.g. quickfix.govulncheck.{reset,upgrade}).
+//
+// # VS Code
 //
 // The effects of CodeActionKind on the behavior of VS Code are
 // baffling and undocumented. Here's what we have observed.
@@ -54,32 +66,33 @@ import "golang.org/x/tools/gopls/internal/protocol"
 // are unambiguously safe to apply so that clients may automatically
 // apply all actions matching this category on save. (That said, this
 // is not VS Code's default behavior; see editor.codeActionsOnSave.)
-//
-// TODO(adonovan): the intent of CodeActionKind is a hierarchy. We
-// should changes gopls so that we don't create instances of the
-// predefined kinds directly, but treat them as interfaces.
-//
-// For example,
-//
-//	instead of:		we should create:
-//	refactor.extract	refactor.extract.const
-//				refactor.extract.var
-//				refactor.extract.func
-//	refactor.rewrite	refactor.rewrite.fillstruct
-//				refactor.rewrite.unusedparam
-//	quickfix		quickfix.govulncheck.reset
-//				quickfix.govulncheck.upgrade
-//
-// etc, so that client editors and scripts can be more specific in
-// their requests.
-//
-// This entails that we use a segmented-path matching operator
-// instead of == for CodeActionKinds throughout gopls.
-// See golang/go#40438 for related discussion.
 const (
-	GoAssembly       protocol.CodeActionKind = "source.assembly"
-	GoDoc            protocol.CodeActionKind = "source.doc"
-	GoFreeSymbols    protocol.CodeActionKind = "source.freesymbols"
-	GoTest           protocol.CodeActionKind = "source.test"
+	// source
+	GoAssembly    protocol.CodeActionKind = "source.assembly"
+	GoDoc         protocol.CodeActionKind = "source.doc"
+	GoFreeSymbols protocol.CodeActionKind = "source.freesymbols"
+	GoTest        protocol.CodeActionKind = "source.test"
+
+	// gopls
 	GoplsDocFeatures protocol.CodeActionKind = "gopls.doc.features"
+
+	// refactor.rewrite
+	RefactorRewriteChangeQuote       protocol.CodeActionKind = "refactor.rewrite.changeQuote"
+	RefactorRewriteFillStruct        protocol.CodeActionKind = "refactor.rewrite.fillStruct"
+	RefactorRewriteFillSwitch        protocol.CodeActionKind = "refactor.rewrite.fillSwitch"
+	RefactorRewriteInvertIf          protocol.CodeActionKind = "refactor.rewrite.invertIf"
+	RefactorRewriteJoinLines         protocol.CodeActionKind = "refactor.rewrite.joinLines"
+	RefactorRewriteRemoveUnusedParam protocol.CodeActionKind = "refactor.rewrite.removeUnusedParam"
+	RefactorRewriteSplitLines        protocol.CodeActionKind = "refactor.rewrite.splitLines"
+
+	// refactor.inline
+	RefactorInlineCall protocol.CodeActionKind = "refactor.inline.call"
+
+	// refactor.extract
+	RefactorExtractFunction  protocol.CodeActionKind = "refactor.extract.function"
+	RefactorExtractMethod    protocol.CodeActionKind = "refactor.extract.method"
+	RefactorExtractVariable  protocol.CodeActionKind = "refactor.extract.variable"
+	RefactorExtractToNewFile protocol.CodeActionKind = "refactor.extract.toNewFile"
+
+	// Note: add new kinds to the SupportedCodeActions map in defaults.go too.
 )

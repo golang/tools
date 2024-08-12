@@ -1921,13 +1921,13 @@ func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[
 	return result, nil
 }
 
-func codeActionMarker(mark marker, start, end protocol.Location, actionKind string, g *Golden, titles ...string) {
+func codeActionMarker(mark marker, start, end protocol.Location, actionKind string, g *Golden) {
 	// Request the range from start.Start to end.End.
 	loc := start
 	loc.Range.End = end.Range.End
 
 	// Apply the fix it suggests.
-	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil, titles)
+	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil)
 	if err != nil {
 		mark.errorf("codeAction failed: %v", err)
 		return
@@ -1937,8 +1937,8 @@ func codeActionMarker(mark marker, start, end protocol.Location, actionKind stri
 	checkChangedFiles(mark, changed, g)
 }
 
-func codeActionEditMarker(mark marker, loc protocol.Location, actionKind string, g *Golden, titles ...string) {
-	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil, titles)
+func codeActionEditMarker(mark marker, loc protocol.Location, actionKind string, g *Golden) {
+	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil)
 	if err != nil {
 		mark.errorf("codeAction failed: %v", err)
 		return
@@ -1950,7 +1950,7 @@ func codeActionEditMarker(mark marker, loc protocol.Location, actionKind string,
 func codeActionErrMarker(mark marker, start, end protocol.Location, actionKind string, wantErr stringMatcher) {
 	loc := start
 	loc.Range.End = end.Range.End
-	_, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil, nil)
+	_, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil)
 	wantErr.checkErr(mark, err)
 }
 
@@ -2034,7 +2034,7 @@ func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, g
 	}
 
 	// Apply the fix it suggests.
-	changed, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag, nil)
+	changed, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag)
 	if err != nil {
 		mark.errorf("suggestedfix failed: %v. (Use @suggestedfixerr for expected errors.)", err)
 		return
@@ -2054,7 +2054,7 @@ func suggestedfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp
 	}
 
 	// Apply the fix it suggests.
-	_, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag, nil)
+	_, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag)
 	wantErr.checkErr(mark, err)
 }
 
@@ -2065,8 +2065,8 @@ func suggestedfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp
 // The resulting map contains resulting file contents after the code action is
 // applied. Currently, this function does not support code actions that return
 // edits directly; it only supports code action commands.
-func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) (map[string][]byte, error) {
-	changes, err := codeActionChanges(env, uri, rng, actionKind, diag, titles)
+func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic) (map[string][]byte, error) {
+	changes, err := codeActionChanges(env, uri, rng, actionKind, diag)
 	if err != nil {
 		return nil, err
 	}
@@ -2076,8 +2076,7 @@ func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Ran
 // codeActionChanges executes a textDocument/codeAction request for the
 // specified location and kind, and captures the resulting document changes.
 // If diag is non-nil, it is used as the code action context.
-// If titles is non-empty, the code action title must be present among the provided titles.
-func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic, titles []string) ([]protocol.DocumentChange, error) {
+func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic) ([]protocol.DocumentChange, error) {
 	// Request all code actions that apply to the diagnostic.
 	// (The protocol supports filtering using Context.Only={actionKind}
 	// but we can give a better error if we don't filter.)
@@ -2097,27 +2096,19 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 		return nil, err
 	}
 
-	// Find the sole candidates CodeAction of the specified kind (e.g. refactor.rewrite).
+	// Find the sole candidate CodeAction of exactly the specified kind
+	// (e.g. refactor.inline.call).
 	var candidates []protocol.CodeAction
 	for _, act := range actions {
 		if act.Kind == protocol.CodeActionKind(actionKind) {
-			if len(titles) > 0 {
-				for _, f := range titles {
-					if act.Title == f {
-						candidates = append(candidates, act)
-						break
-					}
-				}
-			} else {
-				candidates = append(candidates, act)
-			}
+			candidates = append(candidates, act)
 		}
 	}
 	if len(candidates) != 1 {
 		for _, act := range actions {
 			env.T.Logf("found CodeAction Kind=%s Title=%q", act.Kind, act.Title)
 		}
-		return nil, fmt.Errorf("found %d CodeActions of kind %s matching filters %v for this diagnostic, want 1", len(candidates), actionKind, titles)
+		return nil, fmt.Errorf("found %d CodeActions of kind %s for this diagnostic, want 1", len(candidates), actionKind)
 	}
 	action := candidates[0]
 

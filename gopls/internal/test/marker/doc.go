@@ -100,17 +100,15 @@ The following markers are supported within marker tests:
     completion candidate produced at the given location with provided label
     results in the given golden state.
 
-  - codeaction(start, end, kind, golden, ...titles): specifies a code action
+  - codeaction(start, end, kind, golden): specifies a code action
     to request for the given range. To support multi-line ranges, the range
     is defined to be between start.Start and end.End. The golden directory
     contains changed file content after the code action is applied.
-    If titles are provided, they are used to filter the matching code
-    action.
 
     TODO(rfindley): now that 'location' supports multi-line matches, replace
     uses of 'codeaction' with codeactionedit.
 
-  - codeactionedit(location, kind, golden, ...titles): a shorter form of
+  - codeactionedit(location, kind, golden): a shorter form of
     codeaction. Invokes a code action of the given kind for the given
     in-line range, and compares the resulting formatted unified *edits*
     (notably, not the full file content) with the golden directory.
