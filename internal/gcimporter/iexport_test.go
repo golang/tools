@@ -16,12 +16,14 @@ import (
 	"go/ast"
 	"go/build"
 	"go/constant"
+	"go/importer"
 	"go/parser"
 	"go/token"
 	"go/types"
 	"io"
 	"math/big"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"sort"
@@ -454,3 +456,148 @@ func TestUnexportedStructFields(t *testing.T) {
 type importerFunc func(path string) (*types.Package, error)
 
 func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
+
+// TestIExportDataTypeParameterizedAliases tests IExportData
+// on both declarations and uses of type parameterized aliases.
+func TestIExportDataTypeParameterizedAliases(t *testing.T) {
+	testenv.NeedsGo1Point(t, 23)
+
+	testenv.NeedsGoExperiment(t, "aliastypeparams")
+	t.Setenv("GODEBUG", "gotypesalias=1")
+
+	// High level steps:
+	// * parse  and typecheck
+	// * export the data for the importer (via IExportData),
+	// * import the data (via either x/tools or GOROOT's gcimporter), and
+	// * check the imported types.
+
+	const src = `package a
+
+type A[T any] = *T
+type B[R any, S *R] = []S
+type C[U any] = B[U, A[U]]
+
+type Named int
+type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
+`
+
+	// parse and typecheck
+	fset1 := token.NewFileSet()
+	f, err := parser.ParseFile(fset1, "a", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var conf types.Config
+	pkg1, err := conf.Check("a", fset1, []*ast.File{f}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testcases := map[string]func(t *testing.T) *types.Package{
+		// Read the result of IExportData through x/tools/internal/gcimporter.IImportData.
+		"tools": func(t *testing.T) *types.Package {
+			// export
+			exportdata, err := iexport(fset1, gcimporter.IExportVersion, pkg1)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// import
+			imports := make(map[string]*types.Package)
+			fset2 := token.NewFileSet()
+			_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg1.Path())
+			if err != nil {
+				t.Fatalf("IImportData(%s): %v", pkg1.Path(), err)
+			}
+			return pkg2
+		},
+		// Read the result of IExportData through $GOROOT/src/internal/gcimporter.IImportData.
+		//
+		// This test fakes creating an old go object file in indexed format.
+		// This means that it can be loaded by go/importer or go/types.
+		// This step is not supported, but it does give test coverage for stdlib.
+		"goroot": func(t *testing.T) *types.Package {
+			t.Skip("Fix bug in src/internal/gcimporter.IImportData for aliasType then reenable")
+
+			// Write indexed export data file contents.
+			//
+			// TODO(taking): Slightly unclear to what extent this step should be supported by go/importer.
+			var buf bytes.Buffer
+			buf.WriteString("go object \n$$B\n") // object file header
+			if err := gcexportdata.Write(&buf, fset1, pkg1); err != nil {
+				t.Fatal(err)
+			}
+
+			// Write export data to temporary file
+			out := t.TempDir()
+			name := filepath.Join(out, "a.out")
+			if err := os.WriteFile(name+".a", buf.Bytes(), 0644); err != nil {
+				t.Fatal(err)
+			}
+			pkg2, err := importer.Default().Import(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return pkg2
+		},
+	}
+
+	for name, importer := range testcases {
+		t.Run(name, func(t *testing.T) {
+			pkg := importer(t)
+
+			obj := pkg.Scope().Lookup("A")
+			if obj == nil {
+				t.Fatalf("failed to find %q in package %s", "A", pkg)
+			}
+
+			// Check that A is type A[T any] = *T.
+			// TODO(taking): fix how go/types prints parameterized aliases to simplify tests.
+			alias, ok := obj.Type().(*aliases.Alias)
+			if !ok {
+				t.Fatalf("Obj %s is not an Alias", obj)
+			}
+
+			targs := aliases.TypeArgs(alias)
+			if targs.Len() != 0 {
+				t.Errorf("%s has %d type arguments. expected 0", alias, targs.Len())
+			}
+
+			tparams := aliases.TypeParams(alias)
+			if tparams.Len() != 1 {
+				t.Fatalf("%s has %d type arguments. expected 1", alias, targs.Len())
+			}
+			tparam := tparams.At(0)
+			if got, want := tparam.String(), "T"; got != want {
+				t.Errorf("(%q).TypeParams().At(0)=%q. want %q", alias, got, want)
+			}
+
+			anyt := types.Universe.Lookup("any").Type()
+			if c := tparam.Constraint(); !types.Identical(anyt, c) {
+				t.Errorf("(%q).Constraint()=%q. expected %q", tparam, c, anyt)
+			}
+
+			ptparam := types.NewPointer(tparam)
+			if rhs := aliases.Rhs(alias); !types.Identical(ptparam, rhs) {
+				t.Errorf("(%q).Rhs()=%q. expected %q", alias, rhs, ptparam)
+			}
+
+			// TODO(taking): add tests for B and C once it is simpler to write tests.
+
+			chained := pkg.Scope().Lookup("Chained")
+			if chained == nil {
+				t.Fatalf("failed to find %q in package %s", "Chained", pkg)
+			}
+
+			named, _ := pkg.Scope().Lookup("Named").(*types.TypeName)
+			if named == nil {
+				t.Fatalf("failed to find %q in package %s", "Named", pkg)
+			}
+
+			want := types.NewSlice(types.NewPointer(named.Type()))
+			if got := chained.Type(); !types.Identical(got, want) {
+				t.Errorf("(%q).Type()=%q which should be identical to %q", chained, got, want)
+			}
+		})
+	}
+}

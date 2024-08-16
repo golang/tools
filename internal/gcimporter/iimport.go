@@ -562,15 +562,14 @@ func (r *importReader) obj(name string) {
 	pos := r.pos()
 
 	switch tag {
-	case aliasTag:
-		typ := r.typ()
-		// TODO(adonovan): support generic aliases:
-		// if tag == genericAliasTag {
-		// 	tparams := r.tparamList()
-		// 	alias.SetTypeParams(tparams)
-		// }
+	case aliasTag, genericAliasTag:
 		var tparams []*types.TypeParam
-		r.declare(aliases.NewAlias(r.p.aliases, pos, r.currPkg, name, typ, tparams))
+		if tag == genericAliasTag {
+			tparams = r.tparamList()
+		}
+		typ := r.typ()
+		obj := aliases.NewAlias(r.p.aliases, pos, r.currPkg, name, typ, tparams)
+		r.declare(obj)
 
 	case constTag:
 		typ, val := r.value()
@@ -863,7 +862,7 @@ func (r *importReader) string() string      { return r.p.stringAt(r.uint64()) }
 func (r *importReader) doType(base *types.Named) (res types.Type) {
 	k := r.kind()
 	if debug {
-		r.p.trace("importing type %d (base: %s)", k, base)
+		r.p.trace("importing type %d (base: %v)", k, base)
 		r.p.indent++
 		defer func() {
 			r.p.indent--

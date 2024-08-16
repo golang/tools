@@ -741,9 +741,22 @@ func (p *iexporter) doDecl(obj types.Object) {
 		}
 
 		if obj.IsAlias() {
-			w.tag(aliasTag)
+			alias, materialized := t.(*aliases.Alias) // may fail when aliases are not enabled
+
+			var tparams *types.TypeParamList
+			if materialized {
+				tparams = aliases.TypeParams(alias)
+			}
+			if tparams.Len() == 0 {
+				w.tag(aliasTag)
+			} else {
+				w.tag(genericAliasTag)
+			}
 			w.pos(obj.Pos())
-			if alias, ok := t.(*aliases.Alias); ok {
+			if tparams.Len() > 0 {
+				w.tparamList(obj.Name(), tparams, obj.Pkg())
+			}
+			if materialized {
 				// Preserve materialized aliases,
 				// even of non-exported types.
 				t = aliases.Rhs(alias)
@@ -963,7 +976,13 @@ func (w *exportWriter) doTyp(t types.Type, pkg *types.Package) {
 	}
 	switch t := t.(type) {
 	case *aliases.Alias:
-		// TODO(adonovan): support parameterized aliases, following *types.Named.
+		if targs := aliases.TypeArgs(t); targs.Len() > 0 {
+			w.startType(instanceType)
+			w.pos(t.Obj().Pos())
+			w.typeList(targs, pkg)
+			w.typ(aliases.Origin(t), pkg)
+			return
+		}
 		w.startType(aliasType)
 		w.qualifiedType(t.Obj())
 
