@@ -39,8 +39,8 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if err != nil {
 		return nil, 0, err
 	}
-	// Find a call expression surrounding the query position.
-	var callExpr *ast.CallExpr
+	// Find a call/SelectorExpr expression surrounding the query position.
+	var callNode ast.Node
 	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
 	if path == nil {
 		return nil, 0, fmt.Errorf("cannot find node enclosing position")
@@ -48,9 +48,14 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 FindCall:
 	for _, node := range path {
 		switch node := node.(type) {
+		case *ast.SelectorExpr:
+			if pos >= node.Pos() && pos <= node.End() {
+				callNode = node
+				break FindCall
+			}
 		case *ast.CallExpr:
 			if pos >= node.Lparen && pos <= node.Rparen {
-				callExpr = node
+				callNode = node
 				break FindCall
 			}
 		case *ast.FuncLit, *ast.FuncType:
@@ -67,23 +72,36 @@ FindCall:
 				// you've already dismissed the help!).
 				return nil, 0, nil
 			}
+		default:
 		}
 
 	}
-	if callExpr == nil || callExpr.Fun == nil {
+
+	if callNode == nil {
 		return nil, 0, nil
 	}
 
 	info := pkg.TypesInfo()
 
+	var expr ast.Expr
+	switch node := callNode.(type) {
+	case *ast.SelectorExpr:
+		expr = node
+	case *ast.CallExpr:
+		if node.Fun == nil {
+			return nil, 0, nil
+		}
+		expr = node.Fun
+	}
+
 	// Get the type information for the function being called.
 	var sig *types.Signature
-	if tv, ok := info.Types[callExpr.Fun]; !ok {
-		return nil, 0, fmt.Errorf("cannot get type for Fun %[1]T (%[1]v)", callExpr.Fun)
+	if tv, ok := info.Types[expr]; !ok {
+		return nil, 0, fmt.Errorf("cannot get type for Fun %[1]T (%[1]v)", expr)
 	} else if tv.IsType() {
 		return nil, 0, nil // a conversion, not a call
 	} else if sig, ok = tv.Type.Underlying().(*types.Signature); !ok {
-		return nil, 0, fmt.Errorf("call operand is not a func or type: %[1]T (%[1]v)", callExpr.Fun)
+		return nil, 0, fmt.Errorf("call operand is not a func or type: %[1]T (%[1]v)", expr)
 	}
 	// Inv: sig != nil
 
@@ -93,16 +111,26 @@ FindCall:
 	// There is no object in certain cases such as calling a function returned by
 	// a function (e.g. "foo()()").
 	var obj types.Object
-	switch t := callExpr.Fun.(type) {
+	switch t := expr.(type) {
 	case *ast.Ident:
 		obj = info.ObjectOf(t)
 	case *ast.SelectorExpr:
 		obj = info.ObjectOf(t.Sel)
 	}
+
+	activeParam := 0
+	switch node := callNode.(type) {
+	case *ast.SelectorExpr:
+	case *ast.CallExpr:
+		// only return activeParam when CallExpr
+		// because we don't modify arguments when get function signature only
+		activeParam = activeParameter(node, sig.Params().Len(), sig.Variadic(), pos)
+	}
+
 	if obj != nil && isBuiltin(obj) {
 		// function?
 		if obj, ok := obj.(*types.Builtin); ok {
-			return builtinSignature(ctx, snapshot, callExpr, obj.Name(), pos)
+			return builtinSignature(ctx, snapshot, activeParam, obj.Name(), pos)
 		}
 
 		// method (only error.Error)?
@@ -115,8 +143,6 @@ FindCall:
 
 		return nil, 0, bug.Errorf("call to unexpected built-in %v (%T)", obj, obj)
 	}
-
-	activeParam := activeParameter(callExpr, sig.Params().Len(), sig.Variadic(), pos)
 
 	var (
 		name    string
@@ -148,7 +174,7 @@ FindCall:
 	}, activeParam, nil
 }
 
-func builtinSignature(ctx context.Context, snapshot *cache.Snapshot, callExpr *ast.CallExpr, name string, pos token.Pos) (*protocol.SignatureInformation, int, error) {
+func builtinSignature(ctx context.Context, snapshot *cache.Snapshot, activeParam int, name string, pos token.Pos) (*protocol.SignatureInformation, int, error) {
 	sig, err := NewBuiltinSignature(ctx, snapshot, name)
 	if err != nil {
 		return nil, 0, err
@@ -157,7 +183,7 @@ func builtinSignature(ctx context.Context, snapshot *cache.Snapshot, callExpr *a
 	for _, p := range sig.params {
 		paramInfo = append(paramInfo, protocol.ParameterInformation{Label: p})
 	}
-	activeParam := activeParameter(callExpr, len(sig.params), sig.variadic, pos)
+
 	return &protocol.SignatureInformation{
 		Label:         sig.name + sig.Format(),
 		Documentation: stringToSigInfoDocumentation(sig.doc, snapshot.Options()),

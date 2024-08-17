@@ -21,6 +21,7 @@ go 1.18
 -- a/a/a.go --
 package a
 
+func GoSomething(int) {}
 func DoSomething(int) {}
 
 func _() {
@@ -40,6 +41,7 @@ import "a.com/a"
 
 func _() {
 	a.DoSomething()
+	a.DoSomething.
 }
 `
 
@@ -48,8 +50,8 @@ func _() {
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a/a.go")
 		env.OpenFile("b/b/b.go")
-		signatureHelp := func(filename string) *protocol.SignatureHelp {
-			loc := env.RegexpSearch(filename, `DoSomething\(()\)`)
+		signatureHelp := func(filename, posRegex string) *protocol.SignatureHelp {
+			loc := env.RegexpSearch(filename, posRegex)
 			var params protocol.SignatureHelpParams
 			params.TextDocument.URI = loc.URI
 			params.Position = loc.Range.Start
@@ -59,10 +61,14 @@ func _() {
 			}
 			return help
 		}
-		ahelp := signatureHelp("a/a/a.go")
-		bhelp := signatureHelp("b/b/b.go")
+		ahelp := signatureHelp("a/a/a.go", `DoSomething\(()\)`)
+		bhelp := signatureHelp("b/b/b.go", `DoSomething\(()\)`)
 
 		if diff := cmp.Diff(ahelp, bhelp); diff != "" {
+			t.Fatal(diff)
+		}
+		chelp := signatureHelp("b/b/b.go", `DoSomethin()g\.`)
+		if diff := cmp.Diff(ahelp, chelp); diff != "" {
 			t.Fatal(diff)
 		}
 	})
