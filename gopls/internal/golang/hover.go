@@ -1279,7 +1279,7 @@ func StdSymbolOf(obj types.Object) *stdlib.Symbol {
 
 // If pkgURL is non-nil, it should be used to generate doc links.
 func formatLink(h *hoverJSON, options *settings.Options, pkgURL func(path PackagePath, fragment string) protocol.URI) string {
-	if options.LinksInHover == false || h.LinkPath == "" {
+	if options.LinksInHover == settings.LinksInHover_None || h.LinkPath == "" {
 		return ""
 	}
 	var url protocol.URI

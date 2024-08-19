@@ -89,7 +89,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 					DocumentationOptions: DocumentationOptions{
 						HoverKind:    FullDocumentation,
 						LinkTarget:   "pkg.go.dev",
-						LinksInHover: true,
+						LinksInHover: LinksInHover_LinkTarget,
 					},
 					NavigationOptions: NavigationOptions{
 						ImportShortcut: BothShortcuts,

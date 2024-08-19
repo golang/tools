@@ -12,6 +12,7 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/template"
 	"golang.org/x/tools/gopls/internal/work"
@@ -38,7 +39,7 @@ func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *pr
 		return mod.Hover(ctx, snapshot, fh, params.Position)
 	case file.Go:
 		var pkgURL func(path golang.PackagePath, fragment string) protocol.URI
-		if snapshot.Options().LinksInHover == "gopls" {
+		if snapshot.Options().LinksInHover == settings.LinksInHover_Gopls {
 			web, err := s.getWeb()
 			if err != nil {
 				event.Error(ctx, "failed to start web server", err)

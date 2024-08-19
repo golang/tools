@@ -13,8 +13,8 @@ import (
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/gopls/internal/util/maps"
-	"golang.org/x/tools/gopls/internal/util/slices"
 )
 
 type Annotation string
@@ -36,7 +36,8 @@ const (
 // Options holds various configuration that affects Gopls execution, organized
 // by the nature or origin of the settings.
 //
-// Options must be comparable with reflect.DeepEqual.
+// Options must be comparable with reflect.DeepEqual, and serializable with
+// [frob.Codec].
 //
 // This type defines both the logic of LSP-supplied option parsing
 // (see [SetOptions]), and the public documentation of options in
@@ -58,7 +59,7 @@ type Options struct {
 //
 // ClientOptions must be comparable with reflect.DeepEqual.
 type ClientOptions struct {
-	ClientInfo                                 *protocol.ClientInfo
+	ClientInfo                                 protocol.ClientInfo
 	InsertTextFormat                           protocol.InsertTextFormat
 	InsertReplaceSupported                     bool
 	ConfigurationSupported                     bool
@@ -371,7 +372,29 @@ type DocumentationOptions struct {
 //
 // Note: this type has special logic in loadEnums in generate.go.
 // Be sure to reflect enum and doc changes there!
-type LinksInHoverEnum any
+type LinksInHoverEnum int
+
+const (
+	LinksInHover_None LinksInHoverEnum = iota
+	LinksInHover_LinkTarget
+	LinksInHover_Gopls
+)
+
+// MarshalJSON implements the json.Marshaler interface, so that the default
+// values are formatted correctly in documentation. (See [Options.setOne] for
+// the flexible custom unmarshalling behavior).
+func (l LinksInHoverEnum) MarshalJSON() ([]byte, error) {
+	switch l {
+	case LinksInHover_None:
+		return []byte("false"), nil
+	case LinksInHover_LinkTarget:
+		return []byte("true"), nil
+	case LinksInHover_Gopls:
+		return []byte(`"gopls"`), nil
+	default:
+		return nil, fmt.Errorf("invalid LinksInHover value %d", l)
+	}
+}
 
 // Note: FormattingOptions must be comparable with reflect.DeepEqual.
 type FormattingOptions struct {
@@ -798,7 +821,20 @@ func (o *Options) Set(value any) (errors []error) {
 	case map[string]any:
 		seen := make(map[string]struct{})
 		for name, value := range value {
-			if err := o.set(name, value, seen); err != nil {
+			// Use only the last segment of a dotted name such as
+			// ui.navigation.symbolMatcher. The other segments
+			// are discarded, even without validation (!).
+			// (They are supported to enable hierarchical names
+			// in the VS Code graphical configuration UI.)
+			split := strings.Split(name, ".")
+			name = split[len(split)-1]
+
+			if _, ok := seen[name]; ok {
+				errors = append(errors, fmt.Errorf("duplicate value for %s", name))
+			}
+			seen[name] = struct{}{}
+
+			if err := o.setOne(name, value); err != nil {
 				err := fmt.Errorf("setting option %q: %w", name, err)
 				errors = append(errors, err)
 			}
@@ -809,8 +845,10 @@ func (o *Options) Set(value any) (errors []error) {
 	return errors
 }
 
-func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps protocol.ClientCapabilities) {
-	o.ClientInfo = clientName
+func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps protocol.ClientCapabilities) {
+	if clientInfo != nil {
+		o.ClientInfo = *clientInfo
+	}
 	if caps.Workspace.WorkspaceEdit != nil {
 		o.SupportedResourceOperations = caps.Workspace.WorkspaceEdit.ResourceOperations
 	}
@@ -860,24 +898,13 @@ func (o *Options) ForClientCapabilities(clientName *protocol.ClientInfo, caps pr
 	}
 }
 
-func (o *Options) Clone() *Options {
-	// TODO(rfindley): has this function gone stale? It appears that there are
-	// settings that are incorrectly cloned here (such as TemplateExtensions).
-	result := &Options{
-		ClientOptions:   o.ClientOptions,
-		InternalOptions: o.InternalOptions,
-		ServerOptions:   o.ServerOptions,
-		UserOptions:     o.UserOptions,
-	}
-	// Fully clone any slice or map fields. Only UserOptions can be modified.
-	result.Analyses = maps.Clone(o.Analyses)
-	result.Codelenses = maps.Clone(o.Codelenses)
-	result.SetEnvSlice(o.EnvSlice())
-	result.BuildFlags = slices.Clone(o.BuildFlags)
-	result.DirectoryFilters = slices.Clone(o.DirectoryFilters)
-	result.StandaloneTags = slices.Clone(o.StandaloneTags)
+var codec = frob.CodecFor[*Options]()
 
-	return result
+func (o *Options) Clone() *Options {
+	data := codec.Encode(o)
+	var clone *Options
+	codec.Decode(data, &clone)
+	return clone
 }
 
 // validateDirectoryFilter validates if the filter string
@@ -904,23 +931,10 @@ func validateDirectoryFilter(ifilter string) (string, error) {
 	return strings.TrimRight(filepath.FromSlash(filter), "/"), nil
 }
 
-// set updates a field of o based on the name and value.
+// setOne updates a field of o based on the name and value.
 // It returns an error if the value was invalid or duplicate.
 // It is the caller's responsibility to augment the error with 'name'.
-func (o *Options) set(name string, value any, seen map[string]struct{}) error {
-	// Use only the last segment of a dotted name such as
-	// ui.navigation.symbolMatcher. The other segments
-	// are discarded, even without validation (!).
-	// (They are supported to enable hierarchical names
-	// in the VS Code graphical configuration UI.)
-	split := strings.Split(name, ".")
-	name = split[len(split)-1]
-
-	if _, ok := seen[name]; ok {
-		return fmt.Errorf("duplicate value")
-	}
-	seen[name] = struct{}{}
-
+func (o *Options) setOne(name string, value any) error {
 	switch name {
 	case "env":
 		env, ok := value.(map[string]any)
@@ -1005,8 +1019,12 @@ func (o *Options) set(name string, value any, seen map[string]struct{}) error {
 
 	case "linksInHover":
 		switch value {
-		case false, true, "gopls":
-			o.LinksInHover = value
+		case false:
+			o.LinksInHover = LinksInHover_None
+		case true:
+			o.LinksInHover = LinksInHover_LinkTarget
+		case "gopls":
+			o.LinksInHover = LinksInHover_Gopls
 		default:
 			return fmt.Errorf(`invalid value %s; expect false, true, or "gopls"`,
 				value)
@@ -1334,7 +1352,6 @@ func setAnnotationMap(dest *map[Annotation]bool, value any) error {
 			default:
 				return err
 			}
-			continue
 		}
 		m[a] = enabled
 	}
