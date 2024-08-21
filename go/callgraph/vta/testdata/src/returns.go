@@ -51,7 +51,9 @@ func Baz(i I) *I {
 // WANT:
 // Local(i) -> Local(ii), Local(j)
 // Local(ii) -> Local(iii)
-// Local(iii) -> Local(t0[0]), Local(t0[1])
-// Local(t1) -> Local(t0[0])
-// Local(t2) -> Local(t0[1])
-// Local(t0) -> Local(t1)
+// Local(iii) -> Return(Foo[0]), Return(Foo[1])
+// Local(t1) -> Return(Baz[0])
+// Local(t1) -> Return(Bar[0])
+// Local(t2) -> Return(Bar[1])
+// Local(t0) -> Return(Do[0])
+// Return(Do[0]) -> Local(t1)

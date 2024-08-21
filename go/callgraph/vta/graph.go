@@ -172,6 +172,26 @@ func (f function) String() string {
 	return fmt.Sprintf("Function(%s)", f.f.Name())
 }
 
+// resultVar represents the result
+// variable of a function, whether
+// named or not.
+type resultVar struct {
+	f     *ssa.Function
+	index int // valid index into result var tuple
+}
+
+func (o resultVar) Type() types.Type {
+	return o.f.Signature.Results().At(o.index).Type()
+}
+
+func (o resultVar) String() string {
+	v := o.f.Signature.Results().At(o.index)
+	if n := v.Name(); n != "" {
+		return fmt.Sprintf("Return(%s[%s])", o.f.Name(), n)
+	}
+	return fmt.Sprintf("Return(%s[%d])", o.f.Name(), o.index)
+}
+
 // nestedPtrInterface node represents all references and dereferences
 // of locals and globals that have a nested pointer to interface type.
 // We merge such constructs into a single node for simplicity and without
@@ -580,6 +600,24 @@ func (b *builder) call(c ssa.CallInstruction) {
 
 	siteCallees(c, b.callGraph)(func(f *ssa.Function) bool {
 		addArgumentFlows(b, c, f)
+
+		site, ok := c.(ssa.Value)
+		if !ok {
+			return true // go or defer
+		}
+
+		results := f.Signature.Results()
+		if results.Len() == 1 {
+			// When there is only one return value, the destination register does not
+			// have a tuple type.
+			b.addInFlowEdge(resultVar{f: f, index: 0}, b.nodeFromVal(site))
+		} else {
+			tup := site.Type().(*types.Tuple)
+			for i := 0; i < results.Len(); i++ {
+				local := indexedLocal{val: site, typ: tup.At(i).Type(), index: i}
+				b.addInFlowEdge(resultVar{f: f, index: i}, local)
+			}
+		}
 		return true
 	})
 }
@@ -624,37 +662,11 @@ func addArgumentFlows(b *builder, c ssa.CallInstruction, f *ssa.Function) {
 	}
 }
 
-// rtrn produces flows between values of r and c where
-// c is a call instruction that resolves to the enclosing
-// function of r based on b.callGraph.
+// rtrn creates flow edges from the operands of the return
+// statement to the result variables of the enclosing function.
 func (b *builder) rtrn(r *ssa.Return) {
-	n := b.callGraph.Nodes[r.Parent()]
-	// n != nil when b.callgraph is sound, but the client can
-	// pass any callgraph, including an underapproximate one.
-	if n == nil {
-		return
-	}
-
-	for _, e := range n.In {
-		if cv, ok := e.Site.(ssa.Value); ok {
-			addReturnFlows(b, r, cv)
-		}
-	}
-}
-
-func addReturnFlows(b *builder, r *ssa.Return, site ssa.Value) {
-	results := r.Results
-	if len(results) == 1 {
-		// When there is only one return value, the destination register does not
-		// have a tuple type.
-		b.addInFlowEdge(b.nodeFromVal(results[0]), b.nodeFromVal(site))
-		return
-	}
-
-	tup := site.Type().(*types.Tuple)
-	for i, r := range results {
-		local := indexedLocal{val: site, typ: tup.At(i).Type(), index: i}
-		b.addInFlowEdge(b.nodeFromVal(r), local)
+	for i, rs := range r.Results {
+		b.addInFlowEdge(b.nodeFromVal(rs), resultVar{f: r.Parent(), index: i})
 	}
 }
 
@@ -795,7 +807,7 @@ func (b *builder) representative(n node) node {
 		return field{StructType: canonicalize(i.StructType, &b.canon), index: i.index}
 	case indexedLocal:
 		return indexedLocal{typ: t, val: i.val, index: i.index}
-	case local, global, panicArg, recoverReturn, function:
+	case local, global, panicArg, recoverReturn, function, resultVar:
 		return n
 	default:
 		panic(fmt.Errorf("canonicalizing unrecognized node %v", n))

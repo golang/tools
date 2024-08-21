@@ -16,3 +16,5 @@ type X struct {
 func main() {
 	print(gl)
 }
+
+func foo() (r int) { return gl }

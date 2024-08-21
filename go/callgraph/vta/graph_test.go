@@ -24,6 +24,7 @@ func TestNodeInterface(t *testing.T) {
 	//   - basic type int
 	//   - struct X with two int fields a and b
 	//   - global variable "gl"
+	//   - "foo" function
 	//   - "main" function and its
 	//   - first register instruction t0 := *gl
 	prog, _, err := testProg("testdata/src/simple.go", ssa.BuilderMode(0))
@@ -33,6 +34,7 @@ func TestNodeInterface(t *testing.T) {
 
 	pkg := prog.AllPackages()[0]
 	main := pkg.Func("main")
+	foo := pkg.Func("foo")
 	reg := firstRegInstr(main) // t0 := *gl
 	X := pkg.Type("X").Type()
 	gl := pkg.Var("gl")
@@ -64,6 +66,7 @@ func TestNodeInterface(t *testing.T) {
 		{local{val: reg}, "Local(t0)", bint},
 		{indexedLocal{val: reg, typ: X, index: 0}, "Local(t0[0])", X},
 		{function{f: main}, "Function(main)", voidFunc},
+		{resultVar{f: foo, index: 0}, "Return(foo[r])", bint},
 		{nestedPtrInterface{typ: i}, "PtrInterface(interface{})", i},
 		{nestedPtrFunction{typ: voidFunc}, "PtrFunction(func())", voidFunc},
 		{panicArg{}, "Panic", nil},
