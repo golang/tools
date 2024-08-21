@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Indexed package import.
-// See cmd/compile/internal/gc/iexport.go for the export data format.
+// See iexport.go for the export data format.
 
 // This file is a copy of $GOROOT/src/go/internal/gcimporter/iimport.go.
 
