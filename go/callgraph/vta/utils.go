@@ -7,7 +7,6 @@ package vta
 import (
 	"go/types"
 
-	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
@@ -149,22 +148,14 @@ func sliceArrayElem(t types.Type) types.Type {
 	}
 }
 
-// siteCallees returns a go1.23 iterator for the callees for call site `c`
-// given program `callgraph`.
-func siteCallees(c ssa.CallInstruction, callgraph *callgraph.Graph) func(yield func(*ssa.Function) bool) {
+// siteCallees returns a go1.23 iterator for the callees for call site `c`.
+func siteCallees(c ssa.CallInstruction, callees calleesFunc) func(yield func(*ssa.Function) bool) {
 	// TODO: when x/tools uses go1.23, change callers to use range-over-func
 	// (https://go.dev/issue/65237).
-	node := callgraph.Nodes[c.Parent()]
 	return func(yield func(*ssa.Function) bool) {
-		if node == nil {
-			return
-		}
-
-		for _, edge := range node.Out {
-			if edge.Site == c {
-				if !yield(edge.Callee.Func) {
-					return
-				}
+		for _, callee := range callees(c) {
+			if !yield(callee) {
+				return
 			}
 		}
 	}

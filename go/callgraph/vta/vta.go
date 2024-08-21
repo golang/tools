@@ -65,17 +65,20 @@ import (
 
 // CallGraph uses the VTA algorithm to compute call graph for all functions
 // f:true in funcs. VTA refines the results of initial call graph and uses it
-// to establish interprocedural type flow. The resulting graph does not have
-// a root node.
+// to establish interprocedural type flow. If initial is nil, VTA uses a more
+// efficient approach to construct a CHA call graph.
+//
+// The resulting graph does not have a root node.
 //
 // CallGraph does not make any assumptions on initial types global variables
 // and function/method inputs can have. CallGraph is then sound, modulo use of
 // reflection and unsafe, if the initial call graph is sound.
 func CallGraph(funcs map[*ssa.Function]bool, initial *callgraph.Graph) *callgraph.Graph {
-	vtaG, canon := typePropGraph(funcs, initial)
+	callees := makeCalleesFunc(funcs, initial)
+	vtaG, canon := typePropGraph(funcs, callees)
 	types := propagate(vtaG, canon)
 
-	c := &constructor{types: types, initial: initial, cache: make(methodCache)}
+	c := &constructor{types: types, callees: callees, cache: make(methodCache)}
 	return c.construct(funcs)
 }
 
@@ -85,7 +88,7 @@ func CallGraph(funcs map[*ssa.Function]bool, initial *callgraph.Graph) *callgrap
 type constructor struct {
 	types   propTypeMap
 	cache   methodCache
-	initial *callgraph.Graph
+	callees calleesFunc
 }
 
 func (c *constructor) construct(funcs map[*ssa.Function]bool) *callgraph.Graph {
@@ -101,15 +104,15 @@ func (c *constructor) construct(funcs map[*ssa.Function]bool) *callgraph.Graph {
 func (c *constructor) constrct(g *callgraph.Graph, f *ssa.Function) {
 	caller := g.CreateNode(f)
 	for _, call := range calls(f) {
-		for _, c := range c.callees(call) {
+		for _, c := range c.resolves(call) {
 			callgraph.AddEdge(caller, call, g.CreateNode(c))
 		}
 	}
 }
 
-// callees computes the set of functions to which VTA resolves `c`. The resolved
-// functions are intersected with functions to which `initial` resolves `c`.
-func (c *constructor) callees(call ssa.CallInstruction) []*ssa.Function {
+// resolves computes the set of functions to which VTA resolves `c`. The resolved
+// functions are intersected with functions to which `c.initial` resolves `c`.
+func (c *constructor) resolves(call ssa.CallInstruction) []*ssa.Function {
 	cc := call.Common()
 	if cc.StaticCallee() != nil {
 		return []*ssa.Function{cc.StaticCallee()}
@@ -123,7 +126,7 @@ func (c *constructor) callees(call ssa.CallInstruction) []*ssa.Function {
 	// Cover the case of dynamic higher-order and interface calls.
 	var res []*ssa.Function
 	resolved := resolve(call, c.types, c.cache)
-	siteCallees(call, c.initial)(func(f *ssa.Function) bool {
+	siteCallees(call, c.callees)(func(f *ssa.Function) bool {
 		if _, ok := resolved[f]; ok {
 			res = append(res, f)
 		}

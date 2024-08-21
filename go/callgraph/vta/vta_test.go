@@ -19,6 +19,14 @@ import (
 )
 
 func TestVTACallGraph(t *testing.T) {
+	errDiff := func(want, got, missing []string) {
+		t.Errorf("got:\n%s\n\nwant:\n%s\n\nmissing:\n%s\n\ndiff:\n%s",
+			strings.Join(got, "\n"),
+			strings.Join(want, "\n"),
+			strings.Join(missing, "\n"),
+			cmp.Diff(got, want)) // to aid debugging
+	}
+
 	for _, file := range []string{
 		"testdata/src/callgraph_static.go",
 		"testdata/src/callgraph_ho.go",
@@ -46,14 +54,18 @@ func TestVTACallGraph(t *testing.T) {
 				t.Fatalf("couldn't find want in `%s`", file)
 			}
 
-			g := CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
+			// First test VTA with lazy-CHA initial call graph.
+			g := CallGraph(ssautil.AllFunctions(prog), nil)
 			got := callGraphStr(g)
 			if missing := setdiff(want, got); len(missing) > 0 {
-				t.Errorf("got:\n%s\n\nwant:\n%s\n\nmissing:\n%s\n\ndiff:\n%s",
-					strings.Join(got, "\n"),
-					strings.Join(want, "\n"),
-					strings.Join(missing, "\n"),
-					cmp.Diff(got, want)) // to aid debugging
+				errDiff(want, got, missing)
+			}
+
+			// Repeat the test with explicit CHA initial call graph.
+			g = CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
+			got = callGraphStr(g)
+			if missing := setdiff(want, got); len(missing) > 0 {
+				errDiff(want, got, missing)
 			}
 		})
 	}
@@ -168,7 +180,7 @@ func TestVTACallGraphGo117(t *testing.T) {
 		t.Fatalf("couldn't find want in `%s`", file)
 	}
 
-	g, _ := typePropGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
+	g, _ := typePropGraph(ssautil.AllFunctions(prog), makeCalleesFunc(nil, cha.CallGraph(prog)))
 	got := vtaGraphStr(g)
 	if diff := setdiff(want, got); len(diff) != 0 {
 		t.Errorf("`%s`: want superset of %v;\n got %v", file, want, got)

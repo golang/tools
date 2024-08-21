@@ -205,8 +205,18 @@ func TestVTAGraphConstruction(t *testing.T) {
 				t.Fatalf("couldn't find want in `%s`", file)
 			}
 
-			g, _ := typePropGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
+			fs := ssautil.AllFunctions(prog)
+
+			// First test propagation with lazy-CHA initial call graph.
+			g, _ := typePropGraph(fs, makeCalleesFunc(fs, nil))
 			got := vtaGraphStr(g)
+			if diff := setdiff(want, got); len(diff) > 0 {
+				t.Errorf("`%s`: want superset of %v;\n got %v\ndiff: %v", file, want, got, diff)
+			}
+
+			// Repeat the test with explicit CHA initial call graph.
+			g, _ = typePropGraph(fs, makeCalleesFunc(fs, cha.CallGraph(prog)))
+			got = vtaGraphStr(g)
 			if diff := setdiff(want, got); len(diff) > 0 {
 				t.Errorf("`%s`: want superset of %v;\n got %v\ndiff: %v", file, want, got, diff)
 			}

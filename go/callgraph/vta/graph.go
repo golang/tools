@@ -9,7 +9,6 @@ import (
 	"go/token"
 	"go/types"
 
-	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/aliases"
@@ -274,8 +273,8 @@ func (g vtaGraph) addEdge(x, y node) {
 // typePropGraph builds a VTA graph for a set of `funcs` and initial
 // `callgraph` needed to establish interprocedural edges. Returns the
 // graph and a map for unique type representatives.
-func typePropGraph(funcs map[*ssa.Function]bool, callgraph *callgraph.Graph) (vtaGraph, *typeutil.Map) {
-	b := builder{graph: make(vtaGraph), callGraph: callgraph}
+func typePropGraph(funcs map[*ssa.Function]bool, callees calleesFunc) (vtaGraph, *typeutil.Map) {
+	b := builder{graph: make(vtaGraph), callees: callees}
 	b.visit(funcs)
 	return b.graph, &b.canon
 }
@@ -283,8 +282,8 @@ func typePropGraph(funcs map[*ssa.Function]bool, callgraph *callgraph.Graph) (vt
 // Data structure responsible for linearly traversing the
 // code and building a VTA graph.
 type builder struct {
-	graph     vtaGraph
-	callGraph *callgraph.Graph // initial call graph for creating flows at unresolved call sites.
+	graph   vtaGraph
+	callees calleesFunc // initial call graph for creating flows at unresolved call sites.
 
 	// Specialized type map for canonicalization of types.Type.
 	// Semantically equivalent types can have different implementations,
@@ -598,7 +597,7 @@ func (b *builder) call(c ssa.CallInstruction) {
 		return
 	}
 
-	siteCallees(c, b.callGraph)(func(f *ssa.Function) bool {
+	siteCallees(c, b.callees)(func(f *ssa.Function) bool {
 		addArgumentFlows(b, c, f)
 
 		site, ok := c.(ssa.Value)
