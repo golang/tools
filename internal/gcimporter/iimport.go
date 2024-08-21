@@ -569,7 +569,8 @@ func (r *importReader) obj(name string) {
 		// 	tparams := r.tparamList()
 		// 	alias.SetTypeParams(tparams)
 		// }
-		r.declare(aliases.NewAlias(r.p.aliases, pos, r.currPkg, name, typ))
+		var tparams []*types.TypeParam
+		r.declare(aliases.NewAlias(r.p.aliases, pos, r.currPkg, name, typ, tparams))
 
 	case constTag:
 		typ, val := r.value()

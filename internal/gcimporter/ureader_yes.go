@@ -526,7 +526,8 @@ func (pr *pkgReader) objIdx(idx pkgbits.Index) (*types.Package, string) {
 		case pkgbits.ObjAlias:
 			pos := r.pos()
 			typ := r.typ()
-			declare(aliases.NewAlias(r.p.aliases, pos, objPkg, objName, typ))
+			var tparams []*types.TypeParam // TODO(#68778): read type params once pkgbits.V2 is available.
+			declare(aliases.NewAlias(r.p.aliases, pos, objPkg, objName, typ, tparams))
 
 		case pkgbits.ObjConst:
 			pos := r.pos()
