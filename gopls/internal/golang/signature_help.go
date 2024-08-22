@@ -48,10 +48,9 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 FindCall:
 	for _, node := range path {
 		switch node := node.(type) {
-		case *ast.SelectorExpr:
+		case *ast.SelectorExpr, *ast.Ident:
 			if pos >= node.Pos() && pos <= node.End() {
 				callNode = node
-				break FindCall
 			}
 		case *ast.CallExpr:
 			if pos >= node.Lparen && pos <= node.Rparen {
@@ -72,7 +71,6 @@ FindCall:
 				// you've already dismissed the help!).
 				return nil, 0, nil
 			}
-		default:
 		}
 
 	}
@@ -85,6 +83,8 @@ FindCall:
 
 	var expr ast.Expr
 	switch node := callNode.(type) {
+	case *ast.Ident:
+		expr = node
 	case *ast.SelectorExpr:
 		expr = node
 	case *ast.CallExpr:
@@ -129,8 +129,9 @@ FindCall:
 
 	if obj != nil && isBuiltin(obj) {
 		// function?
-		if obj, ok := obj.(*types.Builtin); ok {
-			return builtinSignature(ctx, snapshot, activeParam, obj.Name(), pos)
+		callExpr, isCall := callNode.(*ast.CallExpr)
+		if obj, ok := obj.(*types.Builtin); ok && isCall {
+			return builtinSignature(ctx, snapshot, callExpr, obj.Name(), pos)
 		}
 
 		// method (only error.Error)?
@@ -174,7 +175,7 @@ FindCall:
 	}, activeParam, nil
 }
 
-func builtinSignature(ctx context.Context, snapshot *cache.Snapshot, activeParam int, name string, pos token.Pos) (*protocol.SignatureInformation, int, error) {
+func builtinSignature(ctx context.Context, snapshot *cache.Snapshot, callExpr *ast.CallExpr, name string, pos token.Pos) (*protocol.SignatureInformation, int, error) {
 	sig, err := NewBuiltinSignature(ctx, snapshot, name)
 	if err != nil {
 		return nil, 0, err
@@ -183,7 +184,7 @@ func builtinSignature(ctx context.Context, snapshot *cache.Snapshot, activeParam
 	for _, p := range sig.params {
 		paramInfo = append(paramInfo, protocol.ParameterInformation{Label: p})
 	}
-
+	activeParam := activeParameter(callExpr, len(sig.params), sig.variadic, pos)
 	return &protocol.SignatureInformation{
 		Label:         sig.name + sig.Format(),
 		Documentation: stringToSigInfoDocumentation(sig.doc, snapshot.Options()),
