@@ -215,19 +215,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			framer = ls.framer(jsonrpc2.NewRawStream)
 			ts := servertest.NewPipeServer(ss, framer)
 
-			awaiter := NewAwaiter(sandbox.Workdir)
-			editor, err := fake.NewEditor(sandbox, config.editor).Connect(ctx, ts, awaiter.Hooks())
-			if err != nil {
-				t.Fatal(err)
-			}
-			env := &Env{
-				T:       t,
-				Ctx:     ctx,
-				Sandbox: sandbox,
-				Editor:  editor,
-				Server:  ts,
-				Awaiter: awaiter,
-			}
+			env := ConnectGoplsEnv(t, ctx, sandbox, config.editor, ts)
 			defer func() {
 				if t.Failed() && r.PrintGoroutinesOnFailure {
 					pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
@@ -242,7 +230,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 				// the editor: in general we want to clean up before proceeding to the
 				// next test, and if there is a deadlock preventing closing it will
 				// eventually be handled by the `go test` timeout.
-				if err := editor.Close(xcontext.Detach(ctx)); err != nil {
+				if err := env.Editor.Close(xcontext.Detach(ctx)); err != nil {
 					t.Errorf("closing editor: %v", err)
 				}
 			}()
@@ -251,6 +239,28 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			test(t, env)
 		})
 	}
+}
+
+// ConnectGoplsEnv creates a new Gopls environment for the given sandbox,
+// editor config, and server connector.
+//
+// TODO(rfindley): significantly refactor the way testing environments are
+// constructed.
+func ConnectGoplsEnv(t testing.TB, ctx context.Context, sandbox *fake.Sandbox, config fake.EditorConfig, connector servertest.Connector) *Env {
+	awaiter := NewAwaiter(sandbox.Workdir)
+	editor, err := fake.NewEditor(sandbox, config).Connect(ctx, connector, awaiter.Hooks())
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := &Env{
+		T:       t,
+		Ctx:     ctx,
+		Sandbox: sandbox,
+		Server:  connector,
+		Editor:  editor,
+		Awaiter: awaiter,
+	}
+	return env
 }
 
 // longBuilders maps builders that are skipped when -short is set to a

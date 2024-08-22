@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
-	"golang.org/x/tools/gopls/internal/test/integration/fake"
 )
 
 // Smoke test that simultaneous editing sessions in the same workspace works.
@@ -32,19 +31,7 @@ func main() {
 	).Run(t, sharedProgram, func(t *testing.T, env1 *Env) {
 		// Create a second test session connected to the same workspace and server
 		// as the first.
-		awaiter := NewAwaiter(env1.Sandbox.Workdir)
-		editor, err := fake.NewEditor(env1.Sandbox, env1.Editor.Config()).Connect(env1.Ctx, env1.Server, awaiter.Hooks())
-		if err != nil {
-			t.Fatal(err)
-		}
-		env2 := &Env{
-			T:       t,
-			Ctx:     env1.Ctx,
-			Sandbox: env1.Sandbox,
-			Server:  env1.Server,
-			Editor:  editor,
-			Awaiter: awaiter,
-		}
+		env2 := ConnectGoplsEnv(t, env1.Ctx, env1.Sandbox, env1.Editor.Config(), env1.Server)
 		env2.Await(InitialWorkspaceLoad)
 		// In editor #1, break fmt.Println as before.
 		env1.OpenFile("main.go")

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/robustio"
 )
 
@@ -333,8 +334,7 @@ func (w *Workdir) CheckForFileChanges(ctx context.Context) error {
 		return nil
 	}
 	w.watcherMu.Lock()
-	watchers := make([]func(context.Context, []protocol.FileEvent), len(w.watchers))
-	copy(watchers, w.watchers)
+	watchers := slices.Clone(w.watchers)
 	w.watcherMu.Unlock()
 	for _, w := range watchers {
 		w(ctx, evts)
