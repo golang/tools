@@ -39,7 +39,7 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if err != nil {
 		return nil, 0, err
 	}
-	// Find a call/SelectorExpr expression surrounding the query position.
+	// Find a Ident/Call/SelectorExpr expression surrounding the query position.
 	var callNode ast.Node
 	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
 	if path == nil {
@@ -49,6 +49,8 @@ FindCall:
 	for _, node := range path {
 		switch node := node.(type) {
 		case *ast.SelectorExpr, *ast.Ident:
+			// golang/go#68922: offer signature help when the
+			// cursor over ident or function name.
 			if pos >= node.Pos() && pos <= node.End() {
 				callNode = node
 			}
@@ -86,7 +88,12 @@ FindCall:
 	case *ast.Ident:
 		expr = node
 	case *ast.SelectorExpr:
-		expr = node
+		// If the cursor is not on sel, then it should be on name.
+		if pos >= node.Sel.Pos() && pos <= node.Sel.End() {
+			expr = node
+		} else {
+			expr = node.X
+		}
 	case *ast.CallExpr:
 		if node.Fun == nil {
 			return nil, 0, nil

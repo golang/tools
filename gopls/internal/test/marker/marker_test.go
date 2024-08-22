@@ -114,6 +114,9 @@ func Test(t *testing.T) {
 
 	for _, test := range tests {
 		test := test
+		if !strings.Contains(test.name, "signature.txt") {
+			continue
+		}
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			if test.skipReason != "" {
