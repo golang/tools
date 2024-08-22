@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/telemetry/counter"
 	"golang.org/x/telemetry/counter/countertest"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -268,32 +269,63 @@ func main() {
 }
 `
 
-	acceptanceCounterName := "gopls/telemetryprompt/accepted"
-	acceptanceCounter := counter.New(acceptanceCounterName)
-	// We must increment the acceptance counter in order for the initial read
-	// below to succeed.
+	var (
+		acceptanceCounter = "gopls/telemetryprompt/accepted"
+		declinedCounter   = "gopls/telemetryprompt/declined"
+		attempt1Counter   = "gopls/telemetryprompt/attempts:1"
+		allCounters       = []string{acceptanceCounter, declinedCounter, attempt1Counter}
+	)
+
+	// We must increment counters in order for the initial reads below to
+	// succeed.
 	//
 	// TODO(rfindley): ReadCounter should simply return 0 for uninitialized
 	// counters.
-	acceptanceCounter.Inc()
+	for _, name := range allCounters {
+		counter.New(name).Inc()
+	}
+
+	readCounts := func(t *testing.T) map[string]uint64 {
+		t.Helper()
+		counts := make(map[string]uint64)
+		for _, name := range allCounters {
+			count, err := countertest.ReadCounter(counter.New(name))
+			if err != nil {
+				t.Fatalf("ReadCounter(%q) failed: %v", name, err)
+			}
+			counts[name] = count
+		}
+		return counts
+	}
 
 	tests := []struct {
-		name     string // subtest name
-		response string // response to choose for the telemetry dialog
-		wantMode string // resulting telemetry mode
-		wantMsg  string // substring contained in the follow-up popup (if empty, no popup is expected)
-		wantInc  uint64 // expected 'prompt accepted' counter increment
+		name       string // subtest name
+		response   string // response to choose for the telemetry dialog
+		wantMode   string // resulting telemetry mode
+		wantMsg    string // substring contained in the follow-up popup (if empty, no popup is expected)
+		wantInc    uint64 // expected 'prompt accepted' counter increment
+		wantCounts map[string]uint64
 	}{
-		{"yes", server.TelemetryYes, "on", "uploading is now enabled", 1},
-		{"no", server.TelemetryNo, "", "", 0},
-		{"empty", "", "", "", 0},
+		{"yes", server.TelemetryYes, "on", "uploading is now enabled", 1, map[string]uint64{
+			acceptanceCounter: 1,
+			declinedCounter:   0,
+			attempt1Counter:   1,
+		}},
+		{"no", server.TelemetryNo, "", "", 0, map[string]uint64{
+			acceptanceCounter: 0,
+			declinedCounter:   1,
+			attempt1Counter:   1,
+		}},
+		{"empty", "", "", "", 0, map[string]uint64{
+			acceptanceCounter: 0,
+			declinedCounter:   0,
+			attempt1Counter:   1,
+		}},
 	}
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			initialCount, err := countertest.ReadCounter(acceptanceCounter)
-			if err != nil {
-				t.Fatalf("ReadCounter(%q) failed: %v", acceptanceCounterName, err)
-			}
+			initialCounts := readCounts(t)
 			modeFile := filepath.Join(t.TempDir(), "mode")
 			telemetryStartTime := time.Now().Add(-8 * 24 * time.Hour)
 			msgRE := regexp.MustCompile(".*Would you like to enable Go telemetry?")
@@ -340,12 +372,22 @@ func main() {
 				if gotMode != test.wantMode {
 					t.Errorf("after prompt, mode=%s, want %s", gotMode, test.wantMode)
 				}
-				finalCount, err := countertest.ReadCounter(acceptanceCounter)
-				if err != nil {
-					t.Fatalf("ReadCounter(%q) failed: %v", acceptanceCounterName, err)
+
+				// We increment the acceptance counter when checking the prompt file
+				// before prompting, so start a second, transient gopls session and
+				// verify that the acceptance counter is incremented.
+				env2 := ConnectGoplsEnv(t, env.Ctx, env.Sandbox, env.Editor.Config(), env.Server)
+				env2.Await(CompletedWork(server.TelemetryPromptWorkTitle, 1, true))
+				if err := env2.Editor.Close(env2.Ctx); err != nil {
+					t.Errorf("closing second editor: %v", err)
 				}
-				if gotInc := finalCount - initialCount; gotInc != test.wantInc {
-					t.Errorf("%q mismatch: got %d, want %d", acceptanceCounterName, gotInc, test.wantInc)
+
+				gotCounts := readCounts(t)
+				for k := range gotCounts {
+					gotCounts[k] -= initialCounts[k]
+				}
+				if diff := cmp.Diff(test.wantCounts, gotCounts); diff != "" {
+					t.Errorf("counter mismatch (-want +got):\n%s", diff)
 				}
 			})
 		})

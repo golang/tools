@@ -113,15 +113,6 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 		defer work.End(ctx, "Done.")
 	}
 
-	if !enabled { // check this after the work progress message for testing.
-		return // prompt is disabled
-	}
-
-	if s.telemetryMode() == "on" || s.telemetryMode() == "off" {
-		// Telemetry is already on or explicitly off -- nothing to ask about.
-		return
-	}
-
 	errorf := func(format string, args ...any) {
 		err := fmt.Errorf(format, args...)
 		event.Error(ctx, "telemetry prompt failed", err)
@@ -134,12 +125,14 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 		return
 	}
 
+	// Read the current prompt file.
+
 	var (
 		promptDir  = filepath.Join(configDir, "prompt")    // prompt configuration directory
 		promptFile = filepath.Join(promptDir, "telemetry") // telemetry prompt file
 	)
 
-	// prompt states, to be written to the prompt file
+	// prompt states, stored in the prompt file
 	const (
 		pUnknown  = ""        // first time
 		pNotReady = "-"       // user is not asked yet (either not sampled or not past the grace period)
@@ -177,17 +170,55 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 	} else if !os.IsNotExist(err) {
 		errorf("reading prompt file: %v", err)
 		// Something went wrong. Since we don't know how many times we've asked the
-		// prompt, err on the side of not spamming.
+		// prompt, err on the side of not asking.
+		//
+		// But record this in telemetry, in case some users enable telemetry by
+		// other means.
+		counter.New("gopls/telemetryprompt/corrupted").Inc()
 		return
 	}
 
-	// Terminal conditions.
-	if state == pYes || state == pNo {
-		// Prompt has been answered. Nothing to do.
+	counter.New(fmt.Sprintf("gopls/telemetryprompt/attempts:%d", attempts)).Inc()
+
+	// Check terminal conditions.
+
+	if state == pYes {
+		// Prompt has been accepted.
+		//
+		// We record this counter for every gopls session, rather than when the
+		// prompt actually accepted below, because if we only recorded it in the
+		// counter file at the time telemetry is enabled, we'd never upload it,
+		// because we exclude any counter files that overlap with a time period
+		// that has telemetry uploading is disabled.
+		counter.New("gopls/telemetryprompt/accepted").Inc()
+		return
+	}
+	if state == pNo {
+		// Prompt has been declined. In most cases, this means we'll never see the
+		// counter below, but it's possible that the user may enable telemetry by
+		// other means later on. If we see a significant number of users that have
+		// accepted telemetry but declined the prompt, it may be an indication that
+		// the prompt is not working well.
+		counter.New("gopls/telemetryprompt/declined").Inc()
 		return
 	}
 	if attempts >= 5 { // pPending or pFailed
-		// We've tried asking enough; give up.
+		// We've tried asking enough; give up. Record that the prompt expired, in
+		// case the user decides to enable telemetry by other means later on.
+		// (see also the pNo case).
+		counter.New("gopls/telemetryprompt/expired").Inc()
+		return
+	}
+
+	// We only check enabled after (1) the work progress is started, and (2) the
+	// prompt file has been read. (1) is for testing purposes, and (2) is so that
+	// we record the "gopls/telemetryprompt/accepted" counter for every session.
+	if !enabled {
+		return // prompt is disabled
+	}
+
+	if s.telemetryMode() == "on" || s.telemetryMode() == "off" {
+		// Telemetry is already on or explicitly off -- nothing to ask about.
 		return
 	}
 
@@ -309,7 +340,6 @@ Would you like to enable Go telemetry?
 			result = pYes
 			if err := s.setTelemetryMode("on"); err == nil {
 				message(protocol.Info, telemetryOnMessage(s.Options().LinkifyShowMessage))
-				counter.New("gopls/telemetryprompt/accepted").Inc()
 			} else {
 				errorf("enabling telemetry failed: %v", err)
 				msg := fmt.Sprintf("Failed to enable Go telemetry: %v\nTo enable telemetry manually, please run `go run golang.org/x/telemetry/cmd/gotelemetry@latest on`", err)

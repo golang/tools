@@ -200,7 +200,8 @@ func (e *Editor) Exit(ctx context.Context) error {
 	return nil
 }
 
-// Close issues the shutdown and exit sequence an editor should.
+// Close disconnects the LSP client session.
+// TODO(rfindley): rename to 'Disconnect'.
 func (e *Editor) Close(ctx context.Context) error {
 	if err := e.Shutdown(ctx); err != nil {
 		return err
