@@ -39,8 +39,8 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if err != nil {
 		return nil, 0, err
 	}
-	// Find a Ident/Call/SelectorExpr expression surrounding the query position.
-	var callNode ast.Node
+	// Find a call expression surrounding the query position.
+	var callExpr *ast.CallExpr
 	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
 	if path == nil {
 		return nil, 0, fmt.Errorf("cannot find node enclosing position")
@@ -48,15 +48,9 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 FindCall:
 	for _, node := range path {
 		switch node := node.(type) {
-		case *ast.SelectorExpr, *ast.Ident:
-			// golang/go#68922: offer signature help when the
-			// cursor over ident or function name.
-			if pos >= node.Pos() && pos <= node.End() {
-				callNode = node
-			}
 		case *ast.CallExpr:
-			if pos >= node.Lparen && pos <= node.Rparen {
-				callNode = node
+			if pos >= node.Pos() && pos <= node.Rparen {
+				callExpr = node
 				break FindCall
 			}
 		case *ast.FuncLit, *ast.FuncType:
@@ -77,38 +71,31 @@ FindCall:
 
 	}
 
-	if callNode == nil {
-		return nil, 0, nil
-	}
-
+	var fnval ast.Expr
 	info := pkg.TypesInfo()
-
-	var expr ast.Expr
-	switch node := callNode.(type) {
-	case *ast.Ident:
-		expr = node
-	case *ast.SelectorExpr:
-		// If the cursor is not on sel, then it should be on name.
-		if pos >= node.Sel.Pos() && pos <= node.Sel.End() {
-			expr = node
-		} else {
-			expr = node.X
-		}
-	case *ast.CallExpr:
-		if node.Fun == nil {
-			return nil, 0, nil
-		}
-		expr = node.Fun
+	if callExpr != nil && callExpr.Fun != nil {
+		// Found enclosing call.
+		fnval = callExpr.Fun
+	} else if id, ok := path[0].(*ast.Ident); ok &&
+		info.Defs[id] == nil && // must be a use, not a definition
+		is[*types.Signature](info.TypeOf(id).Underlying()) {
+		// golang/go#68922: offer signature help when the
+		// cursor over ident or function name.
+		// No enclosing call found.
+		// If the selection is an Ident of func type, use that instead.
+		fnval = id
+	} else {
+		return nil, 0, nil
 	}
 
 	// Get the type information for the function being called.
 	var sig *types.Signature
-	if tv, ok := info.Types[expr]; !ok {
-		return nil, 0, fmt.Errorf("cannot get type for Fun %[1]T (%[1]v)", expr)
+	if tv, ok := info.Types[fnval]; !ok {
+		return nil, 0, fmt.Errorf("cannot get type for Fun %[1]T (%[1]v)", fnval)
 	} else if tv.IsType() {
 		return nil, 0, nil // a conversion, not a call
 	} else if sig, ok = tv.Type.Underlying().(*types.Signature); !ok {
-		return nil, 0, fmt.Errorf("call operand is not a func or type: %[1]T (%[1]v)", expr)
+		return nil, 0, fmt.Errorf("call operand is not a func or type: %[1]T (%[1]v)", fnval)
 	}
 	// Inv: sig != nil
 
@@ -118,26 +105,15 @@ FindCall:
 	// There is no object in certain cases such as calling a function returned by
 	// a function (e.g. "foo()()").
 	var obj types.Object
-	switch t := expr.(type) {
+	switch t := fnval.(type) {
 	case *ast.Ident:
 		obj = info.ObjectOf(t)
 	case *ast.SelectorExpr:
 		obj = info.ObjectOf(t.Sel)
 	}
-
-	activeParam := 0
-	switch node := callNode.(type) {
-	case *ast.SelectorExpr:
-	case *ast.CallExpr:
-		// only return activeParam when CallExpr
-		// because we don't modify arguments when get function signature only
-		activeParam = activeParameter(node, sig.Params().Len(), sig.Variadic(), pos)
-	}
-
 	if obj != nil && isBuiltin(obj) {
 		// function?
-		callExpr, isCall := callNode.(*ast.CallExpr)
-		if obj, ok := obj.(*types.Builtin); ok && isCall {
+		if obj, ok := obj.(*types.Builtin); ok {
 			return builtinSignature(ctx, snapshot, callExpr, obj.Name(), pos)
 		}
 
@@ -150,6 +126,13 @@ FindCall:
 		}
 
 		return nil, 0, bug.Errorf("call to unexpected built-in %v (%T)", obj, obj)
+	}
+
+	activeParam := 0
+	if callExpr != nil {
+		// only return activeParam when CallExpr
+		// because we don't modify arguments when get function signature only
+		activeParam = activeParameter(callExpr, sig.Params().Len(), sig.Variadic(), pos)
 	}
 
 	var (

@@ -81,7 +81,12 @@ func Qux() {
 
 	_ = make([]int, 1, 2) //@signature("2", "make(t Type, size ...int) Type", 1)
 
-	Foo(myFunc(123), 456) //@signature("myFunc", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature("o(", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature("(m", "Foo(a string, b int) (c bool)", 0)
+	Foo( myFunc(123), 456) //@signature(" m", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature(", ", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature("456", "Foo(a string, b int) (c bool)", 1)
+	Foo(myFunc(123), 456) //@signature("(1", "myFunc(foo int) string", 0)
 	Foo(myFunc(123), 456) //@signature("123", "myFunc(foo int) string", 0)
 
 	panic("oops!")            //@signature(")", "panic(v any)", 0)
