@@ -96,6 +96,7 @@ Client support:
 
 ## Signature Help
 
+## FIXME: signature help on ast.Ident... 
 The LSP [`textDocument/signatureHelp`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_signatureHelp)
 query returns information about the innermost function call enclosing
 the cursor or selection, including the signature of the function and
