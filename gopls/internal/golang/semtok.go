@@ -210,18 +210,18 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 		}
 	}
 
-	tokenTypeByObject := func(obj types.Object) semtok.TokenType {
+	tokenTypeByObject := func(obj types.Object) (semtok.TokenType, []string) {
 		switch obj.(type) {
 		case *types.PkgName:
-			return semtok.TokNamespace
+			return semtok.TokNamespace, nil
 		case *types.Func:
-			return semtok.TokFunction
+			return semtok.TokFunction, nil
 		case *types.TypeName:
-			return semtok.TokType
+			return underlineType(obj)
 		case *types.Const, *types.Var:
-			return semtok.TokVariable
+			return semtok.TokVariable, nil
 		default:
-			return semtok.TokComment
+			return semtok.TokComment, nil
 		}
 	}
 
@@ -244,7 +244,8 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 					}
 					id, rest, _ := strings.Cut(name, ".")
 					name = rest
-					tv.token(offset, len(id), tokenTypeByObject(obj), nil)
+					tok, mods := tokenTypeByObject(obj)
+					tv.token(offset, len(id), tok, mods)
 					offset += token.Pos(len(id))
 				}
 				last = idx[3]
@@ -483,6 +484,31 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 	return true
 }
 
+func underlineType(obj types.Object) (semtok.TokenType, []string) {
+	switch obj.Type().Underlying().(type) {
+	case *types.Interface:
+		return semtok.TokType, []string{"interface"}
+	case *types.Struct:
+		return semtok.TokType, []string{"struct"}
+	case *types.Signature:
+		return semtok.TokType, []string{"signature"}
+	case *types.Pointer:
+		return semtok.TokType, []string{"pointer"}
+	case *types.Array:
+		return semtok.TokType, []string{"array"}
+	case *types.Map:
+		return semtok.TokType, []string{"map"}
+	case *types.Slice:
+		return semtok.TokType, []string{"slice"}
+	case *types.Chan:
+		return semtok.TokType, []string{"chan"}
+	case *types.Basic:
+		return semtok.TokType, []string{"defaultLibrary"}
+	default:
+		return semtok.TokType, nil
+	}
+}
+
 func (tv *tokenVisitor) ident(id *ast.Ident) {
 	var obj types.Object
 
@@ -535,10 +561,9 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 	case *types.TypeName: // could be a TypeParam
 		if is[*types.TypeParam](aliases.Unalias(obj.Type())) {
 			emit(semtok.TokTypeParam)
-		} else if is[*types.Basic](obj.Type()) {
-			emit(semtok.TokType, "defaultLibrary")
 		} else {
-			emit(semtok.TokType)
+			tok, mods := underlineType(obj)
+			emit(tok, mods...)
 		}
 	case *types.Var:
 		if is[*types.Signature](aliases.Unalias(obj.Type())) {
@@ -795,11 +820,15 @@ func (tv *tokenVisitor) definitionFor(id *ast.Ident, obj types.Object) (semtok.T
 			if fld, ok := fldm.(*ast.Field); ok {
 				// if len(fld.names) == 0 this is a semtok.TokType, being used
 				if len(fld.Names) == 0 {
-					return semtok.TokType, nil
+					tok, mods := underlineType(obj)
+					modifiers = append(modifiers, mods...)
+					return tok, modifiers
 				}
 				return semtok.TokVariable, modifiers
 			}
-			return semtok.TokType, modifiers
+			tok, mods := underlineType(obj)
+			modifiers = append(modifiers, mods...)
+			return tok, modifiers
 		}
 	}
 	// can't happen
