@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"math/big"
+	"fmt"
 )
 
 func Foo(a string, b int) (c bool) {
@@ -86,8 +87,11 @@ func Qux() {
 	Foo( myFunc(123), 456) //@signature(" m", "Foo(a string, b int) (c bool)", 0)
 	Foo(myFunc(123), 456) //@signature(", ", "Foo(a string, b int) (c bool)", 0)
 	Foo(myFunc(123), 456) //@signature("456", "Foo(a string, b int) (c bool)", 1)
+	Foo(myFunc) //@signature(")", "Foo(a string, b int) (c bool)", 0)
 	Foo(myFunc(123), 456) //@signature("(1", "myFunc(foo int) string", 0)
 	Foo(myFunc(123), 456) //@signature("123", "myFunc(foo int) string", 0)
+
+	fmt.Println //@signature("ln", "Println(a ...any) (n int, err error)", 0)
 
 	panic("oops!")            //@signature(")", "panic(v any)", 0)
 	println("hello", "world") //@signature(",", "println(args ...Type)", 0)

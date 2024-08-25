@@ -84,6 +84,9 @@ FindCall:
 		// No enclosing call found.
 		// If the selection is an Ident of func type, use that instead.
 		fnval = id
+		if s, ok := path[1].(*ast.SelectorExpr); ok {
+			fnval = s
+		}
 	} else {
 		return nil, 0, nil
 	}
