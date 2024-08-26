@@ -192,17 +192,6 @@ func (s *server) diagnoseSnapshot(ctx context.Context, snapshot *cache.Snapshot,
 		// file modifications.
 		//
 		// The second phase runs after the delay, and does everything.
-		//
-		// We wait a brief delay before the first phase, to allow higher priority
-		// work such as autocompletion to acquire the type checking mutex (though
-		// typically both diagnosing changed files and performing autocompletion
-		// will be doing the same work: recomputing active packages).
-		const minDelay = 20 * time.Millisecond
-		select {
-		case <-time.After(minDelay):
-		case <-ctx.Done():
-			return
-		}
 
 		if len(changedURIs) > 0 {
 			diagnostics, err := s.diagnoseChangedFiles(ctx, snapshot, changedURIs)
@@ -213,12 +202,6 @@ func (s *server) diagnoseSnapshot(ctx context.Context, snapshot *cache.Snapshot,
 				return
 			}
 			s.updateDiagnostics(ctx, snapshot, diagnostics, false)
-		}
-
-		if delay < minDelay {
-			delay = 0
-		} else {
-			delay -= minDelay
 		}
 
 		select {
