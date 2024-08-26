@@ -92,6 +92,17 @@ func Qux() {
 	Foo(myFunc(123), 456) //@signature("123", "myFunc(foo int) string", 0)
 
 	fmt.Println //@signature("ln", "Println(a ...any) (n int, err error)", 0)
+	fmt.Println(myFunc) //@signature("ln", "Println(a ...any) (n int, err error)", 0)
+	fmt.Println(myFunc) //@signature("Func", "myFunc(foo int) string", 0)
+
+	var hi string = "hello"
+	var wl string = " world: %s"
+	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature("Func", "myFunc(foo int) string", 0)
+	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature("wl", "Sprintf(format string, a ...any) string", 0)
+	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature(" m", "Sprintf(format string, a ...any) string", 1)
+	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature("Sprint", "Sprintf(format string, a ...any) string", 0)
+	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature(" fmt", "Println(a ...any) (n int, err error)", 0)
+	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature("hi", "Println(a ...any) (n int, err error)", 0)
 
 	panic("oops!")            //@signature(")", "panic(v any)", 0)
 	println("hello", "world") //@signature(",", "println(args ...Type)", 0)

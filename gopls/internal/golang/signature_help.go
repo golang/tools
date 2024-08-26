@@ -45,11 +45,28 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if path == nil {
 		return nil, 0, fmt.Errorf("cannot find node enclosing position")
 	}
+	info := pkg.TypesInfo()
 FindCall:
 	for _, node := range path {
 		switch node := node.(type) {
+		case *ast.Ident:
+			// When a function value is inside the
+			// parentheses of another function call,
+			// querying only the CallExpr will return
+			// the signature of the nearest function
+			// to the current identifier.
+			// Consider the following case:
+			// The '⁁' is a cursor.
+			// fmt.Println(fmt.Sp⁁rint, fmt.Sprint("hello %s", world))
+			// We expect fmt.Sprint(ast.Ident) to be returned,
+			// not fmt.Println(ast.CallExpr).
+			if info.Defs[node] == nil && // must be a use, not a definition
+				info.TypeOf(node) != nil &&
+				is[*types.Signature](info.TypeOf(node).Underlying()) {
+				break FindCall
+			}
 		case *ast.CallExpr:
-			if pos >= node.Pos() && pos <= node.Rparen {
+			if pos >= node.Lparen && pos <= node.Rparen {
 				callExpr = node
 				break FindCall
 			}
@@ -72,7 +89,6 @@ FindCall:
 	}
 
 	var fnval ast.Expr
-	info := pkg.TypesInfo()
 	if callExpr != nil && callExpr.Fun != nil {
 		// Found enclosing call.
 		fnval = callExpr.Fun
