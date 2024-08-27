@@ -22,14 +22,14 @@ func FuzzCache(f *testing.F) {
 			ops = append(ops, op{data[0]%2 == 0, data[1], data[2]})
 			data = data[3:]
 		}
-		cache := lru.New(100)
+		cache := lru.New[byte, byte](100)
 		var reference [256]byte
 		for _, op := range ops {
 			if op.set {
 				reference[op.key] = op.value
 				cache.Set(op.key, op.value, 1)
 			} else {
-				if v := cache.Get(op.key); v != nil && v != reference[op.key] {
+				if v, ok := cache.Get(op.key); ok && v != reference[op.key] {
 					t.Fatalf("cache.Get(%d) = %d, want %d", op.key, v, reference[op.key])
 				}
 			}

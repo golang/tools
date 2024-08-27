@@ -20,7 +20,7 @@ import (
 func TestCache(t *testing.T) {
 	type get struct {
 		key  string
-		want any
+		want string
 	}
 	type set struct {
 		key, value string
@@ -31,8 +31,8 @@ func TestCache(t *testing.T) {
 		steps []any
 	}{
 		{"empty cache", []any{
-			get{"a", nil},
-			get{"b", nil},
+			get{"a", ""},
+			get{"b", ""},
 		}},
 		{"zero-length string", []any{
 			set{"a", ""},
@@ -48,7 +48,7 @@ func TestCache(t *testing.T) {
 			set{"a", "123"},
 			set{"b", "456"},
 			set{"c", "78901"},
-			get{"a", nil},
+			get{"a", ""},
 			get{"b", "456"},
 			get{"c", "78901"},
 		}},
@@ -58,18 +58,18 @@ func TestCache(t *testing.T) {
 			get{"a", "123"},
 			set{"c", "78901"},
 			get{"a", "123"},
-			get{"b", nil},
+			get{"b", ""},
 			get{"c", "78901"},
 		}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.label, func(t *testing.T) {
-			c := lru.New(10)
+			c := lru.New[string, string](10)
 			for i, step := range test.steps {
 				switch step := step.(type) {
 				case get:
-					if got := c.Get(step.key); got != step.want {
+					if got, _ := c.Get(step.key); got != step.want {
 						t.Errorf("#%d: c.Get(%q) = %q, want %q", i, step.key, got, step.want)
 					}
 				case set:
@@ -96,21 +96,20 @@ func TestConcurrency(t *testing.T) {
 		}
 	}
 
-	cache := lru.New(100 * 1e6) // 100MB cache
+	cache := lru.New[[32]byte, []byte](100 * 1e6) // 100MB cache
 
 	// get calls Get and verifies that the cache entry
 	// matches one of the values passed to Set.
 	get := func(mustBeFound bool) error {
-		got := cache.Get(key)
-		if got == nil {
+		got, ok := cache.Get(key)
+		if !ok {
 			if !mustBeFound {
 				return nil
 			}
 			return fmt.Errorf("Get did not return a value")
 		}
-		gotBytes := got.([]byte)
 		for _, want := range values {
-			if bytes.Equal(want[:], gotBytes) {
+			if bytes.Equal(want[:], got) {
 				return nil // a match
 			}
 		}
