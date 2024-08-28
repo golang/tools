@@ -21,7 +21,7 @@ var B = 2
 type Foo int
 
 
-// [F] accept a [Foo], and print it. //@token("F", "function", ""),token("Foo", "type", "")
+// [F] accept a [Foo], and print it. //@token("F", "function", ""),token("Foo", "type", "defaultLibrary number")
 func F(v Foo) {
 	println(v)
 
@@ -44,7 +44,7 @@ func F2(s string) {
 -- b.go --
 package p
 
-// [F3] accept [*Foo]	//@token("F3", "function", ""),token("Foo", "type", "")
+// [F3] accept [*Foo]	//@token("F3", "function", ""),token("Foo", "type", "defaultLibrary number")
 func F3(v *Foo) {
 	println(*v)
 }

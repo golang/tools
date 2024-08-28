@@ -210,18 +210,18 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 		}
 	}
 
-	tokenTypeByObject := func(obj types.Object) semtok.TokenType {
+	tokenTypeByObject := func(obj types.Object) (semtok.TokenType, []string) {
 		switch obj.(type) {
 		case *types.PkgName:
-			return semtok.TokNamespace
+			return semtok.TokNamespace, nil
 		case *types.Func:
-			return semtok.TokFunction
+			return semtok.TokFunction, nil
 		case *types.TypeName:
-			return semtok.TokType
+			return semtok.TokType, appendTypeModifiers(nil, obj)
 		case *types.Const, *types.Var:
-			return semtok.TokVariable
+			return semtok.TokVariable, nil
 		default:
-			return semtok.TokComment
+			return semtok.TokComment, nil
 		}
 	}
 
@@ -244,7 +244,8 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 					}
 					id, rest, _ := strings.Cut(name, ".")
 					name = rest
-					tv.token(offset, len(id), tokenTypeByObject(obj), nil)
+					tok, mods := tokenTypeByObject(obj)
+					tv.token(offset, len(id), tok, mods)
 					offset += token.Pos(len(id))
 				}
 				last = idx[3]
@@ -483,6 +484,46 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 	return true
 }
 
+// appendTypeModifiers appends optional modifiers that describe the top-level
+// type constructor of obj.Type(): "pointer", "map", etc.
+func appendTypeModifiers(mods []string, obj types.Object) []string {
+	switch t := obj.Type().Underlying().(type) {
+	case *types.Interface:
+		mods = append(mods, "interface")
+	case *types.Struct:
+		mods = append(mods, "struct")
+	case *types.Signature:
+		mods = append(mods, "signature")
+	case *types.Pointer:
+		mods = append(mods, "pointer")
+	case *types.Array:
+		mods = append(mods, "array")
+	case *types.Map:
+		mods = append(mods, "map")
+	case *types.Slice:
+		mods = append(mods, "slice")
+	case *types.Chan:
+		mods = append(mods, "chan")
+	case *types.Basic:
+		mods = append(mods, "defaultLibrary")
+		switch t.Kind() {
+		case types.Invalid:
+			mods = append(mods, "invalid")
+		case types.String:
+			mods = append(mods, "string")
+		case types.Bool:
+			mods = append(mods, "bool")
+		case types.UnsafePointer:
+			mods = append(mods, "pointer")
+		default:
+			if t.Info()&types.IsNumeric != 0 {
+				mods = append(mods, "number")
+			}
+		}
+	}
+	return mods
+}
+
 func (tv *tokenVisitor) ident(id *ast.Ident) {
 	var obj types.Object
 
@@ -535,10 +576,8 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 	case *types.TypeName: // could be a TypeParam
 		if is[*types.TypeParam](aliases.Unalias(obj.Type())) {
 			emit(semtok.TokTypeParam)
-		} else if is[*types.Basic](obj.Type()) {
-			emit(semtok.TokType, "defaultLibrary")
 		} else {
-			emit(semtok.TokType)
+			emit(semtok.TokType, appendTypeModifiers(nil, obj)...)
 		}
 	case *types.Var:
 		if is[*types.Signature](aliases.Unalias(obj.Type())) {
@@ -795,11 +834,11 @@ func (tv *tokenVisitor) definitionFor(id *ast.Ident, obj types.Object) (semtok.T
 			if fld, ok := fldm.(*ast.Field); ok {
 				// if len(fld.names) == 0 this is a semtok.TokType, being used
 				if len(fld.Names) == 0 {
-					return semtok.TokType, nil
+					return semtok.TokType, appendTypeModifiers(nil, obj)
 				}
 				return semtok.TokVariable, modifiers
 			}
-			return semtok.TokType, modifiers
+			return semtok.TokType, appendTypeModifiers(modifiers, obj)
 		}
 	}
 	// can't happen

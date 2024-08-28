@@ -819,7 +819,7 @@ const c = 0
 		want := `
 /*⇒7,keyword,[]*/package /*⇒1,namespace,[]*/a
 /*⇒4,keyword,[]*/func /*⇒1,function,[definition]*/f()
-/*⇒3,keyword,[]*/var /*⇒1,variable,[definition]*/v /*⇒3,type,[defaultLibrary]*/int
+/*⇒3,keyword,[]*/var /*⇒1,variable,[definition]*/v /*⇒3,type,[defaultLibrary number]*/int
 /*⇒5,keyword,[]*/const /*⇒1,variable,[definition readonly]*/c = /*⇒1,number,[]*/0
 `[1:]
 		if got != want {

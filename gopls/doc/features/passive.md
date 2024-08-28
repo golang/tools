@@ -207,6 +207,8 @@ a portion of it.
 The client may use this information to provide syntax highlighting
 that conveys semantic distinctions between, for example, functions and
 types, constants and variables, or library functions and built-ins.
+Gopls also reports a modifier for the top-level constructor of each symbols's type, one of:
+`interface`, `struct`, `signature`, `pointer`, `array`, `map`, `slice`, `chan`, `string`, `number`, `bool`, `invalid`.
 The client specifies the sets of types and modifiers it is interested in.
 
 Settings:

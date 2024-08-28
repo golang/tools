@@ -72,9 +72,9 @@ The references to *object* refer to the
 1. __`keyword`__ All Go [keywords](https://golang.org/ref/spec#Keywords) are marked `keyword`.
 1. __`namespace`__ All package names are marked `namespace`. In an import, if there is an
 alias, it would be marked. Otherwise the last component of the import path is marked.
-1. __`type`__ Objects of type ```types.TypeName``` are marked `type`.
-If they are also ```types.Basic```
-the modifier is `defaultLibrary`. (And in ```type B struct{C}```, ```B``` has modifier `definition`.)
+1. __`type`__ Objects of type ```types.TypeName``` are marked `type`. It also reports
+a modifier for the top-level constructor of the object's type, one of:
+`interface`, `struct`, `signature`, `pointer`, `array`, `map`, `slice`, `chan`, `string`, `number`, `bool`, `invalid`.
 1. __`parameter`__ The formal arguments in ```ast.FuncDecl``` and ```ast.FuncType``` nodes are marked `parameter`.
 1. __`variable`__  Identifiers in the
 scope of ```const``` are modified with `readonly`. ```nil``` is usually a `variable` modified with both

@@ -354,6 +354,8 @@ func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
 	capabilities.TextDocument.SemanticTokens.TokenModifiers = []string{
 		"declaration", "definition", "readonly", "static",
 		"deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary",
+		// Additional modifiers supported by this client:
+		"interface", "struct", "signature", "pointer", "array", "map", "slice", "chan", "string", "number", "bool", "invalid",
 	}
 	// The LSP tests have historically enabled this flag,
 	// but really we should test both ways for older editors.

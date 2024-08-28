@@ -57,7 +57,7 @@ func TestSemantic_2527(t *testing.T) {
 		{Token: "func", TokenType: "keyword"},
 		{Token: "Add", TokenType: "function", Mod: "definition deprecated"},
 		{Token: "T", TokenType: "typeParameter", Mod: "definition"},
-		{Token: "int", TokenType: "type", Mod: "defaultLibrary"},
+		{Token: "int", TokenType: "type", Mod: "defaultLibrary number"},
 		{Token: "target", TokenType: "parameter", Mod: "definition"},
 		{Token: "T", TokenType: "typeParameter"},
 		{Token: "l", TokenType: "parameter", Mod: "definition"},
