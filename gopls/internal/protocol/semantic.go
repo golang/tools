@@ -52,6 +52,7 @@ var (
 	semanticModifiers = [...]string{
 		"declaration", "definition", "readonly", "static",
 		"deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary",
-		"interface", "struct", "signature", "pointer", "array", "map", "slice", "chan",
+		// Additional modifiers
+		"interface", "struct", "signature", "pointer", "array", "map", "slice", "chan", "string", "number", "bool", "invalid",
 	}
 )
