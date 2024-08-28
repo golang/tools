@@ -12,7 +12,6 @@ package rta_test
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/types"
 	"sort"
 	"strings"
@@ -20,15 +19,15 @@ import (
 
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/rta"
-	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/aliases"
 )
 
-// TestRTA runs RTA on each testdata/*.go file and compares the
+// TestRTASingleFile runs RTA on each testdata/*.go file and compares the
 // results with the expectations expressed in the WANT comment.
-func TestRTA(t *testing.T) {
+func TestRTASingleFile(t *testing.T) {
 	filenames := []string{
 		"testdata/func.go",
 		"testdata/generics.go",
@@ -38,21 +37,25 @@ func TestRTA(t *testing.T) {
 	}
 	for _, filename := range filenames {
 		t.Run(filename, func(t *testing.T) {
-			// Load main program and build SSA.
-			// TODO(adonovan): use go/packages instead.
-			conf := loader.Config{ParserMode: parser.ParseComments}
-			f, err := conf.ParseFile(filename, nil)
+			pkgs, err := packages.Load(&packages.Config{
+				Mode: packages.NeedSyntax |
+					packages.NeedTypesInfo |
+					packages.NeedDeps |
+					packages.NeedName |
+					packages.NeedFiles |
+					packages.NeedImports |
+					packages.NeedCompiledGoFiles |
+					packages.NeedTypes,
+			}, filename)
 			if err != nil {
 				t.Fatal(err)
 			}
-			conf.CreateFromFiles("main", f)
-			lprog, err := conf.Load()
-			if err != nil {
-				t.Fatal(err)
-			}
-			prog := ssautil.CreateProgram(lprog, ssa.InstantiateGenerics)
+			// the ast representation of the go file
+			f := pkgs[0].Syntax[0]
+
+			prog, spkg := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 			prog.Build()
-			mainPkg := prog.Package(lprog.Created[0].Pkg)
+			mainPkg := spkg[0]
 
 			res := rta.Analyze([]*ssa.Function{
 				mainPkg.Func("main"),
@@ -62,6 +65,53 @@ func TestRTA(t *testing.T) {
 			check(t, f, mainPkg, res)
 		})
 	}
+}
+
+// TestRTAOnPackages runs RTA on the testdata/pkg/iface2.go with its dependent package and compares the
+// results with the expectations expressed in the WANT comment inside testdata/pkg/iface2.go.
+func TestRTAOnPackages(t *testing.T) {
+	filenames := []string{
+		"golang.org/x/tools/go/callgraph/rta/testdata/pkg",
+		"golang.org/x/tools/go/callgraph/rta/testdata/pkg/subpkg",
+	}
+	pkgs, err := packages.Load(&packages.Config{
+		BuildFlags: []string{"--tags=ignore"},
+		Mode: packages.NeedSyntax |
+			packages.NeedTypesInfo |
+			packages.NeedDeps |
+			packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedImports |
+			packages.NeedCompiledGoFiles |
+			packages.NeedTypes,
+	}, filenames...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f *ast.File
+	for _, p := range pkgs {
+		if p.Name == "main" {
+			f = p.Syntax[0]
+		}
+	}
+
+	prog, spkg := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+	prog.Build()
+	var mainPkg *ssa.Package
+	for _, sp := range spkg {
+		if _, ok := sp.Members["main"]; ok {
+			mainPkg = sp
+			break
+		}
+	}
+
+	res := rta.Analyze([]*ssa.Function{
+		mainPkg.Func("main"),
+		mainPkg.Func("init"),
+	}, true)
+
+	check(t, f, mainPkg, res)
+
 }
 
 // check tests the RTA analysis results against the test expectations

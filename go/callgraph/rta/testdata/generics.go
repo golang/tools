@@ -49,31 +49,34 @@ func lambda[X I]() func() func() {
 	}
 }
 
+// Note: command-line-arguments is used here as we load a single file by packages.Load,
+// it will use command-line-arguments instead of the package name for ImportedPath
+
 // WANT:
 //
 //  edge (*C).Foo --static method call--> (C).Foo
 //  edge (A).Foo$bound --static method call--> (A).Foo
-//  edge instantiated[main.A] --static method call--> (A).Foo
-//  edge instantiated[main.B] --static method call--> (B).Foo
+//  edge instantiated[command-line-arguments.A] --static method call--> (A).Foo
+//  edge instantiated[command-line-arguments.B] --static method call--> (B).Foo
 //  edge main --dynamic method call--> (*C).Foo
 //  edge main --dynamic function call--> (A).Foo$bound
 //  edge main --dynamic method call--> (C).Foo
-//  edge main --static function call--> instantiated[main.A]
-//  edge main --static function call--> instantiated[main.B]
-//  edge main --static function call--> lambda[main.A]
-//  edge main --dynamic function call--> lambda[main.A]$1
-//  edge main --static function call--> local[main.C]
+//  edge main --static function call--> instantiated[command-line-arguments.A]
+//  edge main --static function call--> instantiated[command-line-arguments.B]
+//  edge main --static function call--> lambda[command-line-arguments.A]
+//  edge main --dynamic function call--> lambda[command-line-arguments.A]$1
+//  edge main --static function call--> local[command-line-arguments.C]
 //
 //  reachable (*C).Foo
 //  reachable (A).Foo
 //  reachable (A).Foo$bound
 //  reachable (B).Foo
 //  reachable (C).Foo
-//  reachable instantiated[main.A]
-//  reachable instantiated[main.B]
-//  reachable lambda[main.A]
-//  reachable lambda[main.A]$1
-//  reachable local[main.C]
+//  reachable instantiated[command-line-arguments.A]
+//  reachable instantiated[command-line-arguments.B]
+//  reachable lambda[command-line-arguments.A]
+//  reachable lambda[command-line-arguments.A]$1
+//  reachable local[command-line-arguments.C]
 //
 //  rtype *C
 //  rtype C
