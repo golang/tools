@@ -38,6 +38,18 @@ import (
 // cache in front the filecache package, and the throughput of type checking.
 // Gopls already requires hundreds of megabytes of RAM to function.
 //
+// Note that while other use cases for a ballast were made obsolete by
+// GOMEMLIMIT, ours is not. GOMEMLIMIT helps in cases where you have a
+// containerized service and want to optimize its latency and throughput by
+// taking advantage of available memory. However, in our case gopls is running
+// on the developer's machine alongside other applications, and can have a wide
+// range of memory footprints depending on the size of the user's workspace.
+// Setting GOMEMLIMIT to too low a number would make gopls perform poorly on
+// large repositories, and setting it to too high a number would make gopls a
+// badly behaved tenant. Short of calibrating GOMEMLIMIT based on the user's
+// workspace (an intractible problem), there is no way for gopls to use
+// GOMEMLIMIT to solve its GC CPU problem.
+//
 // Because this allocation is large and occurs early, there is a good chance
 // that rather than being recycled, it comes directly from the OS already
 // zeroed, and since it is never accessed, the memory region may avoid being
