@@ -516,8 +516,7 @@ func appendTypeModifiers(mods []string, obj types.Object) []string {
 		case types.UnsafePointer:
 			mods = append(mods, "pointer")
 		default:
-			info := t.Info()
-			if info == types.IsFloat || info == types.IsComplex || info == types.IsInteger {
+			if t.Info()&types.IsNumeric != 0 {
 				mods = append(mods, "number")
 			}
 		}
