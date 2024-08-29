@@ -6,22 +6,22 @@ This test check completion snippets with type modifiers.
 -- typemods.go --
 package typemods
 
-func fooFunc() func() int { //@item(modFooFunc, "fooFunc", "func() func() int", "func")
+func fooFunc() func() int {
 	return func() int {
 		return 0
 	}
 }
 
-func fooPtr() *int { //@item(modFooPtr, "fooPtr", "func() *int", "func")
+func fooPtr() *int {
 	return nil
 }
 
 func _() {
-	var _ int = foo //@snippet(" //", modFooFunc, "fooFunc()()"),snippet(" //", modFooPtr, "*fooPtr()")
+	var _ int = foo //@snippet(" //", "fooFunc", "fooFunc()()"),snippet(" //", "fooPtr", "*fooPtr()")
 }
 
 func _() {
-	var m map[int][]chan int //@item(modMapChanPtr, "m", "map[int]chan *int", "var")
+	var m map[int][]chan int
 
-	var _ int = m //@snippet(" //", modMapChanPtr, "<-m[${1:}][${2:}]")
+	var _ int = m //@snippet(" //", "m", "<-m[${1:}][${2:}]")
 }

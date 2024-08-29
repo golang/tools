@@ -535,7 +535,6 @@ var actionMarkerFuncs = map[string]func(marker){
 	"outgoingcalls":    actionMarkerFunc(outgoingCallsMarker),
 	"preparerename":    actionMarkerFunc(prepareRenameMarker),
 	"rank":             actionMarkerFunc(rankMarker),
-	"rankl":            actionMarkerFunc(ranklMarker),
 	"refs":             actionMarkerFunc(refsMarker),
 	"rename":           actionMarkerFunc(renameMarker),
 	"renameerr":        actionMarkerFunc(renameErrMarker),
@@ -1035,18 +1034,23 @@ func (run *markerTestRun) fmtLocDetails(loc protocol.Location, includeTxtPos boo
 
 // ---- converters ----
 
-// converter is the signature of argument converters.
-// A converter should return an error rather than calling marker.errorf().
-//
-// type converter func(marker, any) (any, error)
-
-// Types with special conversions.
+// Types with special handling.
 var (
 	goldenType        = reflect.TypeOf(&Golden{})
-	locationType      = reflect.TypeOf(protocol.Location{})
 	markerType        = reflect.TypeOf(marker{})
 	stringMatcherType = reflect.TypeOf(stringMatcher{})
 )
+
+// Custom conversions.
+//
+// These functions are called after valueMarkerFuncs have run to convert
+// arguments into the desired parameter types.
+//
+// Converters should return an error rather than calling marker.errorf().
+var customConverters = map[reflect.Type]func(marker, any) (any, error){
+	reflect.TypeOf(protocol.Location{}): convertLocation,
+	reflect.TypeOf(completionLabel("")): convertCompletionLabel,
+}
 
 func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 	// Handle stringMatcher and golden parameters before resolving identifiers,
@@ -1063,15 +1067,16 @@ func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 		return mark.run.test.getGolden(id), nil
 	}
 	if id, ok := arg.(expect.Identifier); ok {
-		if arg, ok := mark.run.values[id]; ok {
-			if !reflect.TypeOf(arg).AssignableTo(paramType) {
-				return nil, fmt.Errorf("cannot convert %v (%T) to %s", arg, arg, paramType)
-			}
-			return arg, nil
+		if arg2, ok := mark.run.values[id]; ok {
+			arg = arg2
 		}
 	}
-	if paramType == locationType {
-		return convertLocation(mark, arg)
+	if converter, ok := customConverters[paramType]; ok {
+		arg2, err := converter(mark, arg)
+		if err != nil {
+			return nil, fmt.Errorf("converting for input type %T to %v: %v", arg, paramType, err)
+		}
+		arg = arg2
 	}
 	if reflect.TypeOf(arg).AssignableTo(paramType) {
 		return arg, nil // no conversion required
@@ -1082,8 +1087,10 @@ func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 // convertLocation converts a string or regexp argument into the protocol
 // location corresponding to the first position of the string (or first match
 // of the regexp) in the line preceding the note.
-func convertLocation(mark marker, arg any) (protocol.Location, error) {
+func convertLocation(mark marker, arg any) (any, error) {
 	switch arg := arg.(type) {
+	case protocol.Location:
+		return arg, nil
 	case string:
 		startOff, preceding, m, err := linePreceding(mark.run, mark.note.Pos)
 		if err != nil {
@@ -1098,7 +1105,32 @@ func convertLocation(mark marker, arg any) (protocol.Location, error) {
 	case *regexp.Regexp:
 		return findRegexpInLine(mark.run, mark.note.Pos, arg)
 	default:
-		return protocol.Location{}, fmt.Errorf("cannot convert argument type %T to location (must be a string to match the preceding line)", arg)
+		return protocol.Location{}, fmt.Errorf("cannot convert argument type %T to location (must be a string or regexp to match the preceding line)", arg)
+	}
+}
+
+// completionLabel is a special parameter type that may be converted from a
+// string literal, or extracted from a completion item.
+//
+// See [convertCompletionLabel].
+type completionLabel string
+
+// convertCompletionLabel coerces an argument to a [completionLabel] parameter
+// type.
+//
+// If the arg is a string, it is trivially converted. If the arg is a
+// completionItem, its label is extracted.
+//
+// This allows us to stage a migration of the "snippet" marker to a simpler
+// model where the completion label can just be listed explicitly.
+func convertCompletionLabel(mark marker, arg any) (any, error) {
+	switch arg := arg.(type) {
+	case string:
+		return completionLabel(arg), nil
+	case completionItem:
+		return completionLabel(arg.Label), nil
+	default:
+		return "", fmt.Errorf("cannot convert argument type %T to completion label (must be a string or completion item)", arg)
 	}
 }
 
@@ -1318,11 +1350,11 @@ func completionItemMarker(mark marker, label string, other ...string) completion
 	return item
 }
 
-func rankMarker(mark marker, src protocol.Location, items ...completionItem) {
+func rankMarker(mark marker, src protocol.Location, items ...completionLabel) {
 	// Separate positive and negative items (expectations).
-	var pos, neg []completionItem
+	var pos, neg []completionLabel
 	for _, item := range items {
-		if strings.HasPrefix(item.Label, "!") {
+		if strings.HasPrefix(string(item), "!") {
 			neg = append(neg, item)
 		} else {
 			pos = append(pos, item)
@@ -1334,13 +1366,13 @@ func rankMarker(mark marker, src protocol.Location, items ...completionItem) {
 	var got []string
 	for _, g := range list.Items {
 		for _, w := range pos {
-			if g.Label == w.Label {
+			if g.Label == string(w) {
 				got = append(got, g.Label)
 				break
 			}
 		}
 		for _, w := range neg {
-			if g.Label == w.Label[len("!"):] {
+			if g.Label == string(w[len("!"):]) {
 				mark.errorf("got unwanted completion: %s", g.Label)
 				break
 			}
@@ -1348,40 +1380,14 @@ func rankMarker(mark marker, src protocol.Location, items ...completionItem) {
 	}
 	var want []string
 	for _, w := range pos {
-		want = append(want, w.Label)
+		want = append(want, string(w))
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		mark.errorf("completion rankings do not match (-want +got):\n%s", diff)
 	}
 }
 
-func ranklMarker(mark marker, src protocol.Location, labels ...string) {
-	// Separate positive and negative labels (expectations).
-	var pos, neg []string
-	for _, label := range labels {
-		if strings.HasPrefix(label, "!") {
-			neg = append(neg, label[len("!"):])
-		} else {
-			pos = append(pos, label)
-		}
-	}
-
-	// Collect results that are present in items, preserving their order.
-	list := mark.run.env.Completion(src)
-	var got []string
-	for _, g := range list.Items {
-		if slices.Contains(pos, g.Label) {
-			got = append(got, g.Label)
-		} else if slices.Contains(neg, g.Label) {
-			mark.errorf("got unwanted completion: %s", g.Label)
-		}
-	}
-	if diff := cmp.Diff(pos, got); diff != "" {
-		mark.errorf("completion rankings do not match (-want +got):\n%s", diff)
-	}
-}
-
-func snippetMarker(mark marker, src protocol.Location, item completionItem, want string) {
+func snippetMarker(mark marker, src protocol.Location, label completionLabel, want string) {
 	list := mark.run.env.Completion(src)
 	var (
 		found bool
@@ -1391,7 +1397,7 @@ func snippetMarker(mark marker, src protocol.Location, item completionItem, want
 	items := filterBuiltinsAndKeywords(mark, list.Items)
 	for _, i := range items {
 		all = append(all, i.Label)
-		if i.Label == item.Label {
+		if i.Label == string(label) {
 			found = true
 			if i.TextEdit != nil {
 				if edit, err := protocol.SelectCompletionTextEdit(i, false); err == nil {
@@ -1402,7 +1408,7 @@ func snippetMarker(mark marker, src protocol.Location, item completionItem, want
 		}
 	}
 	if !found {
-		mark.errorf("no completion item found matching %s (got: %v)", item.Label, all)
+		mark.errorf("no completion item found matching %s (got: %v)", label, all)
 		return
 	}
 	if got != want {

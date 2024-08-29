@@ -190,10 +190,10 @@ The following markers are supported within marker tests:
     (These locations are the declarations of the functions enclosing
     the calls, not the calls themselves.)
 
-  - item(label, details, kind): defines a completion item with the provided
+  - item(label, details, kind): defines a completionItem with the provided
     fields. This information is not positional, and therefore @item markers
     may occur anywhere in the source. Used in conjunction with @complete,
-    snippet, or rank.
+    @snippet, or @rank.
 
     TODO(rfindley): rethink whether floating @item annotations are the best
     way to specify completion results.
@@ -232,28 +232,26 @@ The following markers are supported within marker tests:
     (Failures in the computation to offer a fix do not generally result
     in LSP errors, so this marker is not appropriate for testing them.)
 
-  - rank(location, ...completionItem): executes a textDocument/completion
-    request at the given location, and verifies that each expected
-    completion item occurs in the results, in the expected order. Other
-    unexpected completion items may occur in the results.
-    TODO(rfindley): this exists for compatibility with the old marker tests.
-    Replace this with rankl, and rename.
-    A "!" prefix on a label asserts that the symbol is not a
+  - rank(location, ...string OR completionItem): executes a
+    textDocument/completion request at the given location, and verifies that
+    each expected completion item occurs in the results, in the expected order.
+    Items may be specified as string literal completion labels, or as
+    references to a completion item created with the @item marker.
+    Other unexpected completion items are allowed to occur in the results, and
+    are ignored. A "!" prefix on a label asserts that the symbol is not a
     completion candidate.
-
-  - rankl(location, ...label): like rank, but only cares about completion
-    item labels.
 
   - refs(location, want ...location): executes a textDocument/references
     request at the first location and asserts that the result is the set of
     'want' locations. The first want location must be the declaration
     (assumedly unique).
 
-  - snippet(location, completionItem, snippet): executes a
-    textDocument/completion request at the location, and searches for a
-    result with label matching that of the provided completion item
-    (TODO(rfindley): accept a label rather than a completion item). Check
-    the result snippet matches the provided snippet.
+  - snippet(location, string OR completionItem, snippet): executes a
+    textDocument/completion request at the location, and searches for a result
+    with label matching that its second argument, which may be a string literal
+    or a reference to a completion item created by the @item marker (in which
+    case the item's label is used). It checks that the resulting snippet
+    matches the provided snippet.
 
   - symbol(golden): makes a textDocument/documentSymbol request
     for the enclosing file, formats the response with one symbol

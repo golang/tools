@@ -10,7 +10,7 @@ module mod.test
 package foo
 
 func _() {
-	json.U //@rankl(re"U()", "Unmarshal", "InvalidUTF8Error"), diag("json", re"(undefined|undeclared)")
+	json.U //@rank(re"U()", "Unmarshal", "InvalidUTF8Error"), diag("json", re"(undefined|undeclared)")
 }
 
 -- bar/bar.go --
