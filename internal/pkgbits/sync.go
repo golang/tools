@@ -110,4 +110,8 @@ const (
 	SyncStmtsEnd
 	SyncLabel
 	SyncOptLabel
+
+	SyncMultiExpr
+	SyncRType
+	SyncConvRTTI
 )
