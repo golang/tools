@@ -517,8 +517,6 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 		// This means that it can be loaded by go/importer or go/types.
 		// This step is not supported, but it does give test coverage for stdlib.
 		"goroot": func(t *testing.T) *types.Package {
-			t.Skip("Fix bug in src/internal/gcimporter.IImportData for aliasType then reenable")
-
 			// Write indexed export data file contents.
 			//
 			// TODO(taking): Slightly unclear to what extent this step should be supported by go/importer.

@@ -956,6 +956,67 @@ func TestIssue58296(t *testing.T) {
 	}
 }
 
+func TestIssueAliases(t *testing.T) {
+	// This package only handles gc export data.
+	testenv.NeedsGo1Point(t, 24)
+	needsCompiler(t, "gc")
+	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
+	testenv.NeedsGoExperiment(t, "aliastypeparams")
+
+	t.Setenv("GODEBUG", fmt.Sprintf("gotypesalias=%d", 1))
+
+	tmpdir := mktmpdir(t)
+	defer os.RemoveAll(tmpdir)
+	testoutdir := filepath.Join(tmpdir, "testdata")
+
+	apkg := filepath.Join(testoutdir, "a")
+	bpkg := filepath.Join(testoutdir, "b")
+	cpkg := filepath.Join(testoutdir, "c")
+
+	// compile a, b and c into gc export data.
+	srcdir := filepath.Join("testdata", "aliases")
+	compilePkg(t, filepath.Join(srcdir, "a"), "a.go", testoutdir, nil, apkg)
+	compilePkg(t, filepath.Join(srcdir, "b"), "b.go", testoutdir, map[string]string{apkg: filepath.Join(testoutdir, "a.o")}, bpkg)
+	compilePkg(t, filepath.Join(srcdir, "c"), "c.go", testoutdir,
+		map[string]string{apkg: filepath.Join(testoutdir, "a.o"), bpkg: filepath.Join(testoutdir, "b.o")},
+		cpkg,
+	)
+
+	// import c from gc export data using a and b.
+	pkg, err := Import(map[string]*types.Package{
+		apkg: types.NewPackage(apkg, "a"),
+		bpkg: types.NewPackage(bpkg, "b"),
+	}, "./c", testoutdir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check c's objects and types.
+	var objs []string
+	for _, imp := range pkg.Scope().Names() {
+		obj := pkg.Scope().Lookup(imp)
+		s := fmt.Sprintf("%s : %s", obj.Name(), obj.Type())
+		s = strings.ReplaceAll(s, testoutdir, "testdata")
+		objs = append(objs, s)
+	}
+	sort.Strings(objs)
+
+	want := strings.Join([]string{
+		"S : struct{F int}",
+		"T : struct{F int}",
+		"U : testdata/a.A[string]",
+		"V : testdata/a.A[int]",
+		"W : testdata/b.B[string]",
+		"X : testdata/b.B[int]",
+		"Y : testdata/c.c[string]",
+		"Z : testdata/c.c[int]",
+		"c : testdata/c.c",
+	}, ",")
+	if got := strings.Join(objs, ","); got != want {
+		t.Errorf("got imports %v for package c. wanted %v", objs, want)
+	}
+}
+
 // apkg returns the package "a" prefixed by (as a package) testoutdir
 func apkg(testoutdir string) string {
 	apkg := testoutdir + "/a"
