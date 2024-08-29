@@ -58,6 +58,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
 	"golang.org/x/tools/gopls/internal/analysis/useany"
+	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
@@ -145,12 +146,13 @@ func init() {
 		{analyzer: unusedresult.Analyzer, enabled: true},
 
 		// not suitable for vet:
-		// - some (nilness) use go/ssa; see #59714.
+		// - some (nilness, yield) use go/ssa; see #59714.
 		// - others don't meet the "frequency" criterion;
 		//   see GOROOT/src/cmd/vet/README.
 		{analyzer: atomicalign.Analyzer, enabled: true},
 		{analyzer: deepequalerrors.Analyzer, enabled: true},
 		{analyzer: nilness.Analyzer, enabled: true}, // uses go/ssa
+		{analyzer: yield.Analyzer, enabled: true},   // uses go/ssa
 		{analyzer: sortslice.Analyzer, enabled: true},
 		{analyzer: embeddirective.Analyzer, enabled: true},
 

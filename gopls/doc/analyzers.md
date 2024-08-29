@@ -996,4 +996,39 @@ Default: off. Enable by setting `"analyses": {"useany": true}`.
 
 Package documentation: [useany](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/useany)
 
+<a id='yield'></a>
+## `yield`: report calls to yield where the result is ignored
+
+
+After a yield function returns false, the caller should not call
+the yield function again; generally the iterator should return
+promptly.
+
+This example fails to check the result of the call to yield,
+causing this analyzer to report a diagnostic:
+
+	yield(1) // yield may be called again (on L2) after returning false
+	yield(2)
+
+The corrected code is either this:
+
+	if yield(1) { yield(2) }
+
+or simply:
+
+	_ = yield(1) && yield(2)
+
+It is not always a mistake to ignore the result of yield.
+For example, this is a valid single-element iterator:
+
+	yield(1) // ok to ignore result
+	return
+
+It is only a mistake when the yield call that returned false may be
+followed by another call.
+
+Default: on.
+
+Package documentation: [yield](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/yield)
+
 <!-- END Analyzers: DO NOT MANUALLY EDIT THIS SECTION -->
