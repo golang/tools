@@ -147,10 +147,10 @@ func propagate(graph vtaGraph, canon *typeutil.Map) propTypeMap {
 	}
 
 	for i := len(sccs) - 1; i >= 0; i-- {
-		nextSccs := make(map[int]struct{})
+		nextSccs := make(map[int]empty)
 		for _, node := range sccs[i] {
 			for succ := range graph[node] {
-				nextSccs[nodeToScc[succ]] = struct{}{}
+				nextSccs[nodeToScc[succ]] = empty{}
 			}
 		}
 		// Propagate types to all successor SCCs.

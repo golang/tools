@@ -235,18 +235,20 @@ func (r recoverReturn) String() string {
 	return "Recover"
 }
 
+type empty = struct{}
+
 // vtaGraph remembers for each VTA node the set of its successors.
 // Tailored for VTA, hence does not support singleton (sub)graphs.
-type vtaGraph map[node]map[node]bool
+type vtaGraph map[node]map[node]empty
 
 // addEdge adds an edge x->y to the graph.
 func (g vtaGraph) addEdge(x, y node) {
 	succs, ok := g[x]
 	if !ok {
-		succs = make(map[node]bool)
+		succs = make(map[node]empty)
 		g[x] = succs
 	}
-	succs[y] = true
+	succs[y] = empty{}
 }
 
 // typePropGraph builds a VTA graph for a set of `funcs` and initial

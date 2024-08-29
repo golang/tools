@@ -134,7 +134,7 @@ func (c *constructor) callees(call ssa.CallInstruction) []*ssa.Function {
 
 // resolve returns a set of functions `c` resolves to based on the
 // type propagation results in `types`.
-func resolve(c ssa.CallInstruction, types propTypeMap, cache methodCache) (fns map[*ssa.Function]struct{}) {
+func resolve(c ssa.CallInstruction, types propTypeMap, cache methodCache) (fns map[*ssa.Function]empty) {
 	n := local{val: c.Common().Value}
 	types.propTypes(n)(func(p propType) bool {
 		pfs := propFunc(p, c, cache)
@@ -142,10 +142,10 @@ func resolve(c ssa.CallInstruction, types propTypeMap, cache methodCache) (fns m
 			return true
 		}
 		if fns == nil {
-			fns = make(map[*ssa.Function]struct{})
+			fns = make(map[*ssa.Function]empty)
 		}
 		for _, f := range pfs {
-			fns[f] = struct{}{}
+			fns[f] = empty{}
 		}
 		return true
 	})

@@ -199,42 +199,42 @@ func testSuite() map[string]vtaGraph {
 	setName(f4, "F4")
 
 	graphs := make(map[string]vtaGraph)
-	graphs["no-cycles"] = map[node]map[node]bool{
-		newLocal("t0", a): {newLocal("t1", b): true},
-		newLocal("t1", b): {newLocal("t2", c): true},
+	graphs["no-cycles"] = map[node]map[node]empty{
+		newLocal("t0", a): {newLocal("t1", b): empty{}},
+		newLocal("t1", b): {newLocal("t2", c): empty{}},
 	}
 
-	graphs["trivial-cycle"] = map[node]map[node]bool{
-		newLocal("t0", a): {newLocal("t0", a): true},
-		newLocal("t1", b): {newLocal("t1", b): true},
+	graphs["trivial-cycle"] = map[node]map[node]empty{
+		newLocal("t0", a): {newLocal("t0", a): empty{}},
+		newLocal("t1", b): {newLocal("t1", b): empty{}},
 	}
 
-	graphs["circle-cycle"] = map[node]map[node]bool{
-		newLocal("t0", a): {newLocal("t1", a): true},
-		newLocal("t1", a): {newLocal("t2", b): true},
-		newLocal("t2", b): {newLocal("t0", a): true},
+	graphs["circle-cycle"] = map[node]map[node]empty{
+		newLocal("t0", a): {newLocal("t1", a): empty{}},
+		newLocal("t1", a): {newLocal("t2", b): empty{}},
+		newLocal("t2", b): {newLocal("t0", a): empty{}},
 	}
 
-	graphs["fully-connected"] = map[node]map[node]bool{
-		newLocal("t0", a): {newLocal("t1", b): true, newLocal("t2", c): true},
-		newLocal("t1", b): {newLocal("t0", a): true, newLocal("t2", c): true},
-		newLocal("t2", c): {newLocal("t0", a): true, newLocal("t1", b): true},
+	graphs["fully-connected"] = map[node]map[node]empty{
+		newLocal("t0", a): {newLocal("t1", b): empty{}, newLocal("t2", c): empty{}},
+		newLocal("t1", b): {newLocal("t0", a): empty{}, newLocal("t2", c): empty{}},
+		newLocal("t2", c): {newLocal("t0", a): empty{}, newLocal("t1", b): empty{}},
 	}
 
-	graphs["subsumed-scc"] = map[node]map[node]bool{
-		newLocal("t0", a): {newLocal("t1", b): true},
-		newLocal("t1", b): {newLocal("t2", b): true},
-		newLocal("t2", b): {newLocal("t1", b): true, newLocal("t3", a): true},
-		newLocal("t3", a): {newLocal("t0", a): true},
+	graphs["subsumed-scc"] = map[node]map[node]empty{
+		newLocal("t0", a): {newLocal("t1", b): empty{}},
+		newLocal("t1", b): {newLocal("t2", b): empty{}},
+		newLocal("t2", b): {newLocal("t1", b): empty{}, newLocal("t3", a): empty{}},
+		newLocal("t3", a): {newLocal("t0", a): empty{}},
 	}
 
-	graphs["more-realistic"] = map[node]map[node]bool{
-		newLocal("t0", a): {newLocal("t0", a): true},
-		newLocal("t1", a): {newLocal("t2", b): true},
-		newLocal("t2", b): {newLocal("t1", a): true, function{f1}: true},
-		function{f1}:      {function{f2}: true, function{f3}: true},
-		function{f2}:      {function{f3}: true},
-		function{f3}:      {function{f1}: true, function{f4}: true},
+	graphs["more-realistic"] = map[node]map[node]empty{
+		newLocal("t0", a): {newLocal("t0", a): empty{}},
+		newLocal("t1", a): {newLocal("t2", b): empty{}},
+		newLocal("t2", b): {newLocal("t1", a): empty{}, function{f1}: empty{}},
+		function{f1}:      {function{f2}: empty{}, function{f3}: empty{}},
+		function{f2}:      {function{f3}: empty{}},
+		function{f3}:      {function{f1}: empty{}, function{f4}: empty{}},
 	}
 
 	return graphs

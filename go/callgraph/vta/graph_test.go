@@ -111,9 +111,9 @@ func TestVtaGraph(t *testing.T) {
 	g.addEdge(n1, n3)
 
 	want := vtaGraph{
-		n1: map[node]bool{n3: true},
-		n2: map[node]bool{n3: true, n4: true},
-		n3: map[node]bool{n4: true},
+		n1: map[node]empty{n3: empty{}},
+		n2: map[node]empty{n3: empty{}, n4: empty{}},
+		n3: map[node]empty{n4: empty{}},
 	}
 
 	if !reflect.DeepEqual(want, g) {
