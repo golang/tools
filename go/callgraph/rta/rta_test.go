@@ -27,15 +27,6 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
-const packageConfigMode = packages.NeedSyntax |
-	packages.NeedTypesInfo |
-	packages.NeedDeps |
-	packages.NeedName |
-	packages.NeedFiles |
-	packages.NeedImports |
-	packages.NeedCompiledGoFiles |
-	packages.NeedTypes
-
 // TestRTASingleFile runs RTA on each testdata/*.txtar file containing a single
 // go file and compares the results with the expectations expressed in the WANT
 // comment.
@@ -99,22 +90,9 @@ func TestRTAOnPackages(t *testing.T) {
 	check(t, f, mainPkg, res)
 }
 
+// loadPackages unpacks the archive to a temporary directory and loads all packages within it.
 func loadPackages(t *testing.T, archive string) []*packages.Package {
-	var baseConfig = &packages.Config{
-		Mode: packageConfigMode,
-		Dir:  restoreArchive(t, archive),
-	}
-	pkgs, err := packages.Load(baseConfig, "./...")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pkgs
-}
-
-// restoreArchive restores a go module from the archive file,
-// and puts all contents in a temporary folder.
-func restoreArchive(t *testing.T, achieveFilePath string) string {
-	ar, err := txtar.ParseFile(achieveFilePath)
+	ar, err := txtar.ParseFile(archive)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +101,27 @@ func restoreArchive(t *testing.T, achieveFilePath string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return testfiles.CopyToTmp(t, fs)
+	dir := testfiles.CopyToTmp(t, fs)
+
+	var baseConfig = &packages.Config{
+		Mode: packages.NeedSyntax |
+			packages.NeedTypesInfo |
+			packages.NeedDeps |
+			packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedImports |
+			packages.NeedCompiledGoFiles |
+			packages.NeedTypes,
+		Dir: dir,
+	}
+	pkgs, err := packages.Load(baseConfig, "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if num := packages.PrintErrors(pkgs); num > 0 {
+		t.Fatalf("packages contained %d errors", num)
+	}
+	return pkgs
 }
 
 // check tests the RTA analysis results against the test expectations
