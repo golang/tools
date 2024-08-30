@@ -27,16 +27,14 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
-var baseConfig = &packages.Config{
-	Mode: packages.NeedSyntax |
-		packages.NeedTypesInfo |
-		packages.NeedDeps |
-		packages.NeedName |
-		packages.NeedFiles |
-		packages.NeedImports |
-		packages.NeedCompiledGoFiles |
-		packages.NeedTypes,
-}
+const packageConfigMode = packages.NeedSyntax |
+	packages.NeedTypesInfo |
+	packages.NeedDeps |
+	packages.NeedName |
+	packages.NeedFiles |
+	packages.NeedImports |
+	packages.NeedCompiledGoFiles |
+	packages.NeedTypes
 
 // TestRTASingleFile runs RTA on each testdata/*.txtar file containing a single
 // go file and compares the results with the expectations expressed in the WANT
@@ -52,11 +50,7 @@ func TestRTASingleFile(t *testing.T) {
 	}
 	for _, archive := range archivePaths {
 		t.Run(archive, func(t *testing.T) {
-			baseConfig.Dir = restoreArchive(t, archive)
-			pkgs, err := packages.Load(baseConfig, "./...")
-			if err != nil {
-				t.Fatal(err)
-			}
+			pkgs := loadPackages(t, archive)
 
 			f := pkgs[0].Syntax[0]
 
@@ -76,11 +70,7 @@ func TestRTASingleFile(t *testing.T) {
 // TestRTAOnPackages runs RTA on a go module which contains multiple packages to test the case
 // when an interface has implementations across different packages.
 func TestRTAOnPackages(t *testing.T) {
-	baseConfig.Dir = restoreArchive(t, "testdata/multipkgs.txtar")
-	pkgs, err := packages.Load(baseConfig, "./...")
-	if err != nil {
-		t.Fatal(err)
-	}
+	pkgs := loadPackages(t, "testdata/multipkgs.txtar")
 
 	var f *ast.File
 	for _, p := range pkgs {
@@ -107,6 +97,18 @@ func TestRTAOnPackages(t *testing.T) {
 	}, true)
 
 	check(t, f, mainPkg, res)
+}
+
+func loadPackages(t *testing.T, archive string) []*packages.Package {
+	var baseConfig = &packages.Config{
+		Mode: packageConfigMode,
+		Dir:  restoreArchive(t, archive),
+	}
+	pkgs, err := packages.Load(baseConfig, "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pkgs
 }
 
 // restoreArchive restores a go module from the archive file,
