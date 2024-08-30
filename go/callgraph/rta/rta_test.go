@@ -23,40 +23,45 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
+
+var baseConfig = &packages.Config{
+	Mode: packages.NeedSyntax |
+		packages.NeedTypesInfo |
+		packages.NeedDeps |
+		packages.NeedName |
+		packages.NeedFiles |
+		packages.NeedImports |
+		packages.NeedCompiledGoFiles |
+		packages.NeedTypes,
+}
 
 // TestRTASingleFile runs RTA on each testdata/*.go file and compares the
 // results with the expectations expressed in the WANT comment.
 func TestRTASingleFile(t *testing.T) {
-	filenames := []string{
-		"testdata/func.go",
-		"testdata/generics.go",
-		"testdata/iface.go",
-		"testdata/reflectcall.go",
-		"testdata/rtype.go",
+	archivePaths := []string{
+		"testdata/func.txtar",
+		"testdata/pkgmaingenerics.txtar",
+		"testdata/generics.txtar",
+		"testdata/iface.txtar",
+		"testdata/reflectcall.txtar",
+		"testdata/rtype.txtar",
 	}
-	for _, filename := range filenames {
-		t.Run(filename, func(t *testing.T) {
-			pkgs, err := packages.Load(&packages.Config{
-				Mode: packages.NeedSyntax |
-					packages.NeedTypesInfo |
-					packages.NeedDeps |
-					packages.NeedName |
-					packages.NeedFiles |
-					packages.NeedImports |
-					packages.NeedCompiledGoFiles |
-					packages.NeedTypes,
-			}, filename)
+	for _, archive := range archivePaths {
+		t.Run(archive, func(t *testing.T) {
+			baseConfig.Dir = restoreArchive(t, archive)
+			pkgs, err := packages.Load(baseConfig, "./...")
 			if err != nil {
 				t.Fatal(err)
 			}
-			// the ast representation of the go file
+
 			f := pkgs[0].Syntax[0]
 
 			prog, spkg := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 			prog.Build()
 			mainPkg := spkg[0]
-
 			res := rta.Analyze([]*ssa.Function{
 				mainPkg.Func("main"),
 				mainPkg.Func("init"),
@@ -67,39 +72,30 @@ func TestRTASingleFile(t *testing.T) {
 	}
 }
 
-// TestRTAOnPackages runs RTA on the testdata/pkg/iface2.go with its dependent package and compares the
-// results with the expectations expressed in the WANT comment inside testdata/pkg/iface2.go.
+// TestRTAOnPackages runs RTA on a go module which contains multiple packages to test the case
+// that the interface definition and its implementations locate in different packages.
 func TestRTAOnPackages(t *testing.T) {
-	filenames := []string{
-		"golang.org/x/tools/go/callgraph/rta/testdata/pkg",
-		"golang.org/x/tools/go/callgraph/rta/testdata/pkg/subpkg",
-	}
-	pkgs, err := packages.Load(&packages.Config{
-		BuildFlags: []string{"--tags=ignore"},
-		Mode: packages.NeedSyntax |
-			packages.NeedTypesInfo |
-			packages.NeedDeps |
-			packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedImports |
-			packages.NeedCompiledGoFiles |
-			packages.NeedTypes,
-	}, filenames...)
+	baseConfig.Dir = restoreArchive(t, "testdata/multipkgs.txtar")
+	pkgs, err := packages.Load(baseConfig, "./...")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var f *ast.File
 	for _, p := range pkgs {
+		// we retrieve first file inside main package as the expected result stays there
+		// this implies the main package should only have one file or the expected result is stored
+		// in the first file of main package
 		if p.Name == "main" {
 			f = p.Syntax[0]
 		}
 	}
 
-	prog, spkg := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+	prog, spkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 	prog.Build()
 	var mainPkg *ssa.Package
-	for _, sp := range spkg {
-		if _, ok := sp.Members["main"]; ok {
+	for _, sp := range spkgs {
+		if sp.Pkg.Name() == "main" {
 			mainPkg = sp
 			break
 		}
@@ -111,7 +107,22 @@ func TestRTAOnPackages(t *testing.T) {
 	}, true)
 
 	check(t, f, mainPkg, res)
+}
 
+// restoreArchive restores a go module from the archive file,
+// and put all contents in a temporary folder
+func restoreArchive(t *testing.T, achieveFilePath string) (dir string) {
+	ar, err := txtar.ParseFile(achieveFilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fs, err := txtar.FS(ar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir = testfiles.CopyToTmp(t, fs)
+	return
 }
 
 // check tests the RTA analysis results against the test expectations

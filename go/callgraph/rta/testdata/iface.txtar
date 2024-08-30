@@ -1,6 +1,8 @@
-//go:build ignore
-// +build ignore
+-- go.mod --
+module example.com
+go 1.18
 
+-- iface.go --
 package main
 
 // Test of interface calls.

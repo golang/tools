@@ -1,6 +1,8 @@
-//go:build ignore
-// +build ignore
+-- go.mod --
+module example.com
+go 1.18
 
+-- reflectcall.go --
 // Test of a reflective call to an address-taken function.
 //
 // Dynamically, this program executes both print statements.
