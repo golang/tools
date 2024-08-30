@@ -38,8 +38,9 @@ var baseConfig = &packages.Config{
 		packages.NeedTypes,
 }
 
-// TestRTASingleFile runs RTA on each testdata/*.go file and compares the
-// results with the expectations expressed in the WANT comment.
+// TestRTASingleFile runs RTA on each testdata/*.txtar file containing a single
+// go file and compares the results with the expectations expressed in the WANT
+// comment.
 func TestRTASingleFile(t *testing.T) {
 	archivePaths := []string{
 		"testdata/func.txtar",
@@ -73,7 +74,7 @@ func TestRTASingleFile(t *testing.T) {
 }
 
 // TestRTAOnPackages runs RTA on a go module which contains multiple packages to test the case
-// that the interface definition and its implementations locate in different packages.
+// when an interface has implementations across different packages.
 func TestRTAOnPackages(t *testing.T) {
 	baseConfig.Dir = restoreArchive(t, "testdata/multipkgs.txtar")
 	pkgs, err := packages.Load(baseConfig, "./...")
@@ -83,9 +84,8 @@ func TestRTAOnPackages(t *testing.T) {
 
 	var f *ast.File
 	for _, p := range pkgs {
-		// we retrieve first file inside main package as the expected result stays there
-		// this implies the main package should only have one file or the expected result is stored
-		// in the first file of main package
+		// We assume the packages have a single file or
+		// the wanted result is in the first file of the main package.
 		if p.Name == "main" {
 			f = p.Syntax[0]
 		}
@@ -110,8 +110,8 @@ func TestRTAOnPackages(t *testing.T) {
 }
 
 // restoreArchive restores a go module from the archive file,
-// and put all contents in a temporary folder
-func restoreArchive(t *testing.T, achieveFilePath string) (dir string) {
+// and puts all contents in a temporary folder.
+func restoreArchive(t *testing.T, achieveFilePath string) string {
 	ar, err := txtar.ParseFile(achieveFilePath)
 	if err != nil {
 		t.Fatal(err)
@@ -121,8 +121,7 @@ func restoreArchive(t *testing.T, achieveFilePath string) (dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir = testfiles.CopyToTmp(t, fs)
-	return
+	return testfiles.CopyToTmp(t, fs)
 }
 
 // check tests the RTA analysis results against the test expectations
