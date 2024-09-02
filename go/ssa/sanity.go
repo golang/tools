@@ -407,14 +407,107 @@ func (s *sanity) checkReferrerList(v Value) {
 	}
 }
 
-func (s *sanity) checkFunction(fn *Function) bool {
-	// TODO(adonovan): check Function invariants:
-	// - check params match signature
-	// - check transient fields are nil
-	// - warn if any fn.Locals do not appear among block instructions.
+func (s *sanity) checkTransientFields(fn *Function) {
+	if fn.build != nil {
+		s.errorf("function transient field 'build' is not nil")
+	}
+	if fn.currentBlock != nil {
+		s.errorf("function transient field 'currentBlock' is not nil")
+	}
+	if fn.vars != nil {
+		s.errorf("function transient field 'vars' is not nil")
+	}
+	if fn.results != nil {
+		s.errorf("function transient field 'results' is not nil")
+	}
+	if fn.returnVars != nil {
+		s.errorf("function transient field 'returnVars' is not nil")
+	}
+	if fn.targets != nil {
+		s.errorf("function transient field 'targets' is not nil")
+	}
+	if fn.lblocks != nil {
+		s.errorf("function transient field 'lblocks' is not nil")
+	}
+	if fn.subst != nil {
+		s.errorf("function transient field 'subst' is not nil")
+	}
+	if fn.jump != nil {
+		s.errorf("function transient field 'jump' is not nil")
+	}
+	if fn.deferstack != nil {
+		s.errorf("function transient field 'deferstack' is not nil")
+	}
+	if fn.source != nil {
+		s.errorf("function transient field 'source' is not nil")
+	}
+	if fn.exits != nil {
+		s.errorf("function transient field 'exits' is not nil")
+	}
+	if fn.uniq != 0 {
+		s.errorf("function transient field 'uniq' is not zero")
+	}
+}
 
-	// TODO(taking): Sanity check origin, typeparams, and typeargs.
+// checkFunctionParams checks whether the function parameters match the function signature,
+// it reports an error if the function is not built.
+func (s *sanity) checkFunctionParams(fn *Function) {
+	if fn.Synthetic != "" {
+		// synthetic function is allowed to have different signature and actual parameters,
+		// such as the instantiated functions of generic
+		return
+	}
+	signature := fn.Signature
+	params := fn.Params
+	if params == nil {
+		// if the params are nil, it's either un-built or the instantiated function,
+		// hence we skip to check it
+		return
+	}
+
+	sigParamNumber := signature.Params().Len()
+	if signature.Recv() != nil {
+		sigParamNumber++
+	}
+
+	if sigParamNumber != len(params) {
+		s.errorf("function has %d parameters in signature but has %d after building",
+			sigParamNumber, len(params))
+		return
+	}
+	// function doesn't have any parameter,
+	// and the parameter in signature and built Params is matched
+	if sigParamNumber == 0 && len(params) == 0 {
+		return
+	}
+
+	var offset int
+	for i, param := range params {
+		var sigType types.Type
+		if tp := signature.Recv(); i == 0 && tp != nil {
+			sigType = tp.Type()
+			offset++
+		} else {
+			sigType = signature.Params().At(i - offset).Type()
+		}
+
+		if sigType != param.Type() {
+			s.errorf("expect type %s in signature but get type %s in %dth field",
+				param.Type(),
+				sigType,
+				i)
+		}
+	}
+}
+
+func (s *sanity) checkFunction(fn *Function) bool {
 	s.fn = fn
+	s.checkTransientFields(fn)
+	s.checkFunctionParams(fn)
+
+	// TODO(adonovan): check Function invariants:
+	// - warn if any fn.Locals do not appear among block instructions.
+	// TODO(taking): Sanity check origin, typeparams, and typeargs.
 	if fn.Prog == nil {
 		s.errorf("nil Prog")
 	}

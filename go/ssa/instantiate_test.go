@@ -75,7 +75,7 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 	//      var   init$guard  bool
 
 	lprog, err := loadProgram(input)
-	if err != err {
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -194,7 +194,7 @@ func entry(i int, a A) int {
 }
 `
 	lprog, err := loadProgram(input)
-	if err != err {
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -310,7 +310,7 @@ func Foo[T any, S any](t T, s S) {
 }
 `
 	lprog, err := loadProgram(input)
-	if err != err {
+	if err != nil {
 		t.Fatal(err)
 	}
 
