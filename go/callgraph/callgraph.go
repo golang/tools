@@ -32,11 +32,6 @@ language.
 */
 package callgraph // import "golang.org/x/tools/go/callgraph"
 
-// TODO(adonovan): add a function to eliminate wrappers from the
-// callgraph, preserving topology.
-// More generally, we could eliminate "uninteresting" nodes such as
-// nodes from packages we don't care about.
-
 // TODO(zpavlinovic): decide how callgraphs handle calls to and from generic function bodies.
 
 import (
@@ -52,11 +47,11 @@ import (
 // If the call graph is sound, such nodes indicate unreachable
 // functions.
 type Graph struct {
-	Root  *Node                   // the distinguished root node
+	Root  *Node                   // the distinguished root node (Root.Func may be nil)
 	Nodes map[*ssa.Function]*Node // all nodes by function
 }
 
-// New returns a new Graph with the specified root node.
+// New returns a new Graph with the specified (optional) root node.
 func New(root *ssa.Function) *Graph {
 	g := &Graph{Nodes: make(map[*ssa.Function]*Node)}
 	g.Root = g.CreateNode(root)

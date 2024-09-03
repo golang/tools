@@ -18,7 +18,7 @@ import (
 	"golang.org/x/tools/go/ssa/ssautil"
 )
 
-const input = `package P
+const input = `package main
 
 type C int
 func (C) f()
@@ -46,6 +46,9 @@ func g() {
 func h()
 
 var unknown bool
+
+func main() {
+}
 `
 
 const genericsInput = `package P
