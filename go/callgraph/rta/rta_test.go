@@ -12,7 +12,6 @@ package rta_test
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/types"
 	"sort"
 	"strings"
@@ -20,39 +19,59 @@ import (
 
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/rta"
-	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
 
-// TestRTA runs RTA on each testdata/*.go file and compares the
-// results with the expectations expressed in the WANT comment.
+// TestRTA runs RTA on each testdata/*.txtar file containing a single
+// go file in a single package or multiple files in different packages,
+// and compares the results with the expectations expressed in the WANT
+// comment.
 func TestRTA(t *testing.T) {
-	filenames := []string{
-		"testdata/func.go",
-		"testdata/generics.go",
-		"testdata/iface.go",
-		"testdata/reflectcall.go",
-		"testdata/rtype.go",
+	archivePaths := []string{
+		"testdata/func.txtar",
+		"testdata/generics.txtar",
+		"testdata/iface.txtar",
+		"testdata/reflectcall.txtar",
+		"testdata/rtype.txtar",
+		"testdata/multipkgs.txtar",
 	}
-	for _, filename := range filenames {
-		t.Run(filename, func(t *testing.T) {
-			// Load main program and build SSA.
-			// TODO(adonovan): use go/packages instead.
-			conf := loader.Config{ParserMode: parser.ParseComments}
-			f, err := conf.ParseFile(filename, nil)
-			if err != nil {
-				t.Fatal(err)
+	for _, archive := range archivePaths {
+		t.Run(archive, func(t *testing.T) {
+			pkgs := loadPackages(t, archive)
+
+			// find the file which contains the expected result
+			var f *ast.File
+			for _, p := range pkgs {
+				// We assume the packages have a single file or
+				// the wanted result is in the first file of the main package.
+				if p.Name == "main" {
+					f = p.Syntax[0]
+				}
 			}
-			conf.CreateFromFiles("main", f)
-			lprog, err := conf.Load()
-			if err != nil {
-				t.Fatal(err)
+			if f == nil {
+				t.Fatalf("failed to find the file with expected result within main package %s", archive)
 			}
-			prog := ssautil.CreateProgram(lprog, ssa.InstantiateGenerics)
+
+			prog, spkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+
+			// find the main package to get functions for rta analysis
+			var mainPkg *ssa.Package
+			for _, sp := range spkgs {
+				if sp.Pkg.Name() == "main" {
+					mainPkg = sp
+					break
+				}
+			}
+			if mainPkg == nil {
+				t.Fatalf("failed to find main ssa package %s", archive)
+			}
+
 			prog.Build()
-			mainPkg := prog.Package(lprog.Created[0].Pkg)
 
 			res := rta.Analyze([]*ssa.Function{
 				mainPkg.Func("main"),
@@ -62,6 +81,40 @@ func TestRTA(t *testing.T) {
 			check(t, f, mainPkg, res)
 		})
 	}
+}
+
+// loadPackages unpacks the archive to a temporary directory and loads all packages within it.
+func loadPackages(t *testing.T, archive string) []*packages.Package {
+	ar, err := txtar.ParseFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fs, err := txtar.FS(ar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := testfiles.CopyToTmp(t, fs)
+
+	var baseConfig = &packages.Config{
+		Mode: packages.NeedSyntax |
+			packages.NeedTypesInfo |
+			packages.NeedDeps |
+			packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedImports |
+			packages.NeedCompiledGoFiles |
+			packages.NeedTypes,
+		Dir: dir,
+	}
+	pkgs, err := packages.Load(baseConfig, "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if num := packages.PrintErrors(pkgs); num > 0 {
+		t.Fatalf("packages contained %d errors", num)
+	}
+	return pkgs
 }
 
 // check tests the RTA analysis results against the test expectations

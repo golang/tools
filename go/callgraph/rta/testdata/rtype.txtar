@@ -1,6 +1,8 @@
-//go:build ignore
-// +build ignore
+-- go.mod --
+module example.com
+go 1.18
 
+-- rtype.go --
 package main
 
 // Test of runtime types (types for which descriptors are needed).

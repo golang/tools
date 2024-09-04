@@ -1,6 +1,8 @@
-//go:build ignore
-// +build ignore
+-- go.mod --
+module example.com
+go 1.18
 
+-- func.go --
 package main
 
 // Test of dynamic function calls.

@@ -1,6 +1,8 @@
-//go:build ignore
-// +build ignore
+-- go.mod --
+module example.com
+go 1.18
 
+-- generics.go --
 package main
 
 // Test of generic function calls.
@@ -53,27 +55,27 @@ func lambda[X I]() func() func() {
 //
 //  edge (*C).Foo --static method call--> (C).Foo
 //  edge (A).Foo$bound --static method call--> (A).Foo
-//  edge instantiated[main.A] --static method call--> (A).Foo
-//  edge instantiated[main.B] --static method call--> (B).Foo
+//  edge instantiated[example.com.A] --static method call--> (A).Foo
+//  edge instantiated[example.com.B] --static method call--> (B).Foo
 //  edge main --dynamic method call--> (*C).Foo
 //  edge main --dynamic function call--> (A).Foo$bound
 //  edge main --dynamic method call--> (C).Foo
-//  edge main --static function call--> instantiated[main.A]
-//  edge main --static function call--> instantiated[main.B]
-//  edge main --static function call--> lambda[main.A]
-//  edge main --dynamic function call--> lambda[main.A]$1
-//  edge main --static function call--> local[main.C]
+//  edge main --static function call--> instantiated[example.com.A]
+//  edge main --static function call--> instantiated[example.com.B]
+//  edge main --static function call--> lambda[example.com.A]
+//  edge main --dynamic function call--> lambda[example.com.A]$1
+//  edge main --static function call--> local[example.com.C]
 //
 //  reachable (*C).Foo
 //  reachable (A).Foo
 //  reachable (A).Foo$bound
 //  reachable (B).Foo
 //  reachable (C).Foo
-//  reachable instantiated[main.A]
-//  reachable instantiated[main.B]
-//  reachable lambda[main.A]
-//  reachable lambda[main.A]$1
-//  reachable local[main.C]
+//  reachable instantiated[example.com.A]
+//  reachable instantiated[example.com.B]
+//  reachable lambda[example.com.A]
+//  reachable lambda[example.com.A]$1
+//  reachable local[example.com.C]
 //
 //  rtype *C
 //  rtype C
