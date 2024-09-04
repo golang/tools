@@ -37,8 +37,9 @@ type Program struct {
 	hasParamsMu sync.Mutex
 	hasParams   typeparams.Free
 
-	runtimeTypesMu sync.Mutex
-	runtimeTypes   typeutil.Map // set of runtime types (from MakeInterface)
+	// set of concrete types used as MakeInterface operands
+	makeInterfaceTypesMu sync.Mutex
+	makeInterfaceTypes   map[types.Type]unit // (may contain redundant identical types)
 
 	// objectMethods is a memoization of objectMethod
 	// to avoid creation of duplicate methods from type information.

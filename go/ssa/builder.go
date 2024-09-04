@@ -3104,17 +3104,17 @@ func (b *builder) buildYieldFunc(fn *Function) {
 	fn.finishBody()
 }
 
-// addRuntimeType records t as a runtime type,
-// along with all types derivable from it using reflection.
+// addMakeInterfaceType records non-interface type t as the type of
+// the operand a MakeInterface operation, for [Program.RuntimeTypes].
 //
-// Acquires prog.runtimeTypesMu.
-func addRuntimeType(prog *Program, t types.Type) {
-	prog.runtimeTypesMu.Lock()
-	defer prog.runtimeTypesMu.Unlock()
-	forEachReachable(&prog.MethodSets, t, func(t types.Type) bool {
-		prev, _ := prog.runtimeTypes.Set(t, true).(bool)
-		return !prev // already seen?
-	})
+// Acquires prog.makeInterfaceTypesMu.
+func addMakeInterfaceType(prog *Program, t types.Type) {
+	prog.makeInterfaceTypesMu.Lock()
+	defer prog.makeInterfaceTypesMu.Unlock()
+	if prog.makeInterfaceTypes == nil {
+		prog.makeInterfaceTypes = make(map[types.Type]unit)
+	}
+	prog.makeInterfaceTypes[t] = unit{}
 }
 
 // Build calls Package.Build for each package in prog.
