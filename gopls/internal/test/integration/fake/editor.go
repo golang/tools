@@ -663,7 +663,7 @@ func (e *Editor) SaveBufferWithoutActions(ctx context.Context, path string) erro
 	defer e.mu.Unlock()
 	buf, ok := e.buffers[path]
 	if !ok {
-		return fmt.Errorf(fmt.Sprintf("unknown buffer: %q", path))
+		return fmt.Errorf("unknown buffer: %q", path)
 	}
 	content := buf.text()
 	includeText := false

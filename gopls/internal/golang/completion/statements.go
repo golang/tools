@@ -408,7 +408,7 @@ func (c *completer) addReturnZeroValues() {
 		snip.WritePlaceholder(func(b *snippet.Builder) {
 			b.WriteText(zero)
 		})
-		fmt.Fprintf(&label, zero)
+		fmt.Fprint(&label, zero)
 	}
 
 	c.items = append(c.items, CompletionItem{

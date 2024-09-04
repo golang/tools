@@ -706,7 +706,7 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 		}
 	case len(modDiagnostics) > 0:
 		initialErr = &InitializationError{
-			MainError: fmt.Errorf(modDiagnostics[0].Message),
+			MainError: errors.New(modDiagnostics[0].Message),
 		}
 	}
 
