@@ -27,27 +27,52 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
-// TestRTASingleFile runs RTA on each testdata/*.txtar file containing a single
-// go file and compares the results with the expectations expressed in the WANT
+// TestRTA runs RTA on each testdata/*.txtar file containing a single
+// go file in a single package or multiple files in different packages,
+// and compares the results with the expectations expressed in the WANT
 // comment.
-func TestRTASingleFile(t *testing.T) {
+func TestRTA(t *testing.T) {
 	archivePaths := []string{
 		"testdata/func.txtar",
-		"testdata/pkgmaingenerics.txtar",
 		"testdata/generics.txtar",
 		"testdata/iface.txtar",
 		"testdata/reflectcall.txtar",
 		"testdata/rtype.txtar",
+		"testdata/multipkgs.txtar",
 	}
 	for _, archive := range archivePaths {
 		t.Run(archive, func(t *testing.T) {
 			pkgs := loadPackages(t, archive)
 
-			f := pkgs[0].Syntax[0]
+			// find the file which contains the expected result
+			var f *ast.File
+			for _, p := range pkgs {
+				// We assume the packages have a single file or
+				// the wanted result is in the first file of the main package.
+				if p.Name == "main" {
+					f = p.Syntax[0]
+				}
+			}
+			if f == nil {
+				t.Fatalf("failed to find the file with expected result within main package %s", archive)
+			}
 
-			prog, spkg := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+			prog, spkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+
+			// find the main package to get functions for rta analysis
+			var mainPkg *ssa.Package
+			for _, sp := range spkgs {
+				if sp.Pkg.Name() == "main" {
+					mainPkg = sp
+					break
+				}
+			}
+			if mainPkg == nil {
+				t.Fatalf("failed to find main ssa package %s", archive)
+			}
+
 			prog.Build()
-			mainPkg := spkg[0]
+
 			res := rta.Analyze([]*ssa.Function{
 				mainPkg.Func("main"),
 				mainPkg.Func("init"),
@@ -56,38 +81,6 @@ func TestRTASingleFile(t *testing.T) {
 			check(t, f, mainPkg, res)
 		})
 	}
-}
-
-// TestRTAOnPackages runs RTA on a go module which contains multiple packages to test the case
-// when an interface has implementations across different packages.
-func TestRTAOnPackages(t *testing.T) {
-	pkgs := loadPackages(t, "testdata/multipkgs.txtar")
-
-	var f *ast.File
-	for _, p := range pkgs {
-		// We assume the packages have a single file or
-		// the wanted result is in the first file of the main package.
-		if p.Name == "main" {
-			f = p.Syntax[0]
-		}
-	}
-
-	prog, spkgs := ssautil.Packages(pkgs, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
-	prog.Build()
-	var mainPkg *ssa.Package
-	for _, sp := range spkgs {
-		if sp.Pkg.Name() == "main" {
-			mainPkg = sp
-			break
-		}
-	}
-
-	res := rta.Analyze([]*ssa.Function{
-		mainPkg.Func("main"),
-		mainPkg.Func("init"),
-	}, true)
-
-	check(t, f, mainPkg, res)
 }
 
 // loadPackages unpacks the archive to a temporary directory and loads all packages within it.

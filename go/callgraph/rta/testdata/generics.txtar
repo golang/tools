@@ -1,9 +1,9 @@
 -- go.mod --
-module example.com/generic
+module example.com
 go 1.18
 
 -- generics.go --
-package generic
+package main
 
 // Test of generic function calls.
 
@@ -51,34 +51,31 @@ func lambda[X I]() func() func() {
 	}
 }
 
-// Note: example.com/generic is used here as we load a single file by packages.Load,
-// it will use example.com/generic instead of the package name for ImportedPath
-
 // WANT:
 //
 //  edge (*C).Foo --static method call--> (C).Foo
 //  edge (A).Foo$bound --static method call--> (A).Foo
-//  edge instantiated[example.com/generic.A] --static method call--> (A).Foo
-//  edge instantiated[example.com/generic.B] --static method call--> (B).Foo
+//  edge instantiated[example.com.A] --static method call--> (A).Foo
+//  edge instantiated[example.com.B] --static method call--> (B).Foo
 //  edge main --dynamic method call--> (*C).Foo
 //  edge main --dynamic function call--> (A).Foo$bound
 //  edge main --dynamic method call--> (C).Foo
-//  edge main --static function call--> instantiated[example.com/generic.A]
-//  edge main --static function call--> instantiated[example.com/generic.B]
-//  edge main --static function call--> lambda[example.com/generic.A]
-//  edge main --dynamic function call--> lambda[example.com/generic.A]$1
-//  edge main --static function call--> local[example.com/generic.C]
+//  edge main --static function call--> instantiated[example.com.A]
+//  edge main --static function call--> instantiated[example.com.B]
+//  edge main --static function call--> lambda[example.com.A]
+//  edge main --dynamic function call--> lambda[example.com.A]$1
+//  edge main --static function call--> local[example.com.C]
 //
 //  reachable (*C).Foo
 //  reachable (A).Foo
 //  reachable (A).Foo$bound
 //  reachable (B).Foo
 //  reachable (C).Foo
-//  reachable instantiated[example.com/generic.A]
-//  reachable instantiated[example.com/generic.B]
-//  reachable lambda[example.com/generic.A]
-//  reachable lambda[example.com/generic.A]$1
-//  reachable local[example.com/generic.C]
+//  reachable instantiated[example.com.A]
+//  reachable instantiated[example.com.B]
+//  reachable lambda[example.com.A]
+//  reachable lambda[example.com.A]$1
+//  reachable local[example.com.C]
 //
 //  rtype *C
 //  rtype C
