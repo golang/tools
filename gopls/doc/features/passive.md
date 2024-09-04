@@ -107,14 +107,9 @@ function call.
 
 <img src='../assets/signature-help.png'>
 
-The query is not limited to functions that are currently being called;
-it also includes function values, identifiers, etc. If the trigger is
-not inside the function’s parentheses or if there are no parentheses,
-the active parameter position will not be returned. Since there is an
-identifier with a function signature (callable), we should return it.
-
-This is not only helpful for code reading but also beneficial for
-some completions, as it allows us to manipulate the function’s signature.
+Call parens are not necessary if the cursor is within an identifier
+that denotes a function or method. For example, Signature Help at
+`once.Do(initialize‸)` will describe `initialize`, not `once.Do`.
 
 Client support:
 - **VS Code**: enabled by default.
