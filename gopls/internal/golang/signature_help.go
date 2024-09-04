@@ -46,8 +46,9 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		return nil, 0, fmt.Errorf("cannot find node enclosing position")
 	}
 	info := pkg.TypesInfo()
+	var fnval ast.Expr
 FindCall:
-	for _, node := range path {
+	for i, node := range path {
 		switch node := node.(type) {
 		case *ast.Ident:
 			// If the selection is a function/method identifier,
@@ -58,11 +59,28 @@ FindCall:
 			if info.Defs[node] == nil &&
 				info.TypeOf(node) != nil &&
 				is[*types.Signature](info.TypeOf(node).Underlying()) {
+				// golang/go#68922: offer signature help when the
+				// cursor over ident or function name.
+				// No enclosing call found.
+				// If the selection is an Ident of func type, use that instead.
+				fnval = node
+				if _, ok := info.Types[fnval]; ok {
+					break FindCall
+				}
+
+				if len(path) <= i+1 {
+					continue
+				}
+				if s, ok := path[i+1].(*ast.SelectorExpr); ok {
+					fnval = s
+				}
+
 				break FindCall
 			}
 		case *ast.CallExpr:
 			if pos >= node.Lparen && pos <= node.Rparen {
 				callExpr = node
+				fnval = callExpr.Fun
 				break FindCall
 			}
 		case *ast.FuncLit, *ast.FuncType:
@@ -83,22 +101,7 @@ FindCall:
 
 	}
 
-	var fnval ast.Expr
-	if callExpr != nil && callExpr.Fun != nil {
-		// Found enclosing call.
-		fnval = callExpr.Fun
-	} else if id, ok := path[0].(*ast.Ident); ok &&
-		info.Defs[id] == nil && // must be a use, not a definition
-		is[*types.Signature](info.TypeOf(id).Underlying()) {
-		// golang/go#68922: offer signature help when the
-		// cursor over ident or function name.
-		// No enclosing call found.
-		// If the selection is an Ident of func type, use that instead.
-		fnval = id
-		if s, ok := path[1].(*ast.SelectorExpr); ok {
-			fnval = s
-		}
-	} else {
+	if fnval == nil {
 		return nil, 0, nil
 	}
 

@@ -124,6 +124,7 @@ package signature
 func _() {
 	Foo(//@signature("//", "Foo(a string, b int) (c bool)", 0)
 	Foo.//@signature("//", "Foo(a string, b int) (c bool)", 0)
+	Foo.//@signature("oo", "Foo(a string, b int) (c bool)", 0)
 }
 
 -- signature/signature3.go --
