@@ -226,7 +226,7 @@ func doCallgraph(dir, gopath, algo, format string, tests bool, args []string) er
 		// NB: RTA gives us Reachable and RuntimeTypes too.
 
 	case "vta":
-		cg = vta.CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
+		cg = vta.CallGraph(ssautil.AllFunctions(prog), nil)
 
 	default:
 		return fmt.Errorf("unknown algorithm: %s", algo)
