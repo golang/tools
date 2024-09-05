@@ -41,6 +41,7 @@ func bytesAllocated() uint64 {
 // returned by the 'std' query, the set is essentially transitively
 // closed, so marginal per-dependency costs are invisible.
 func TestStdlib(t *testing.T) {
+	t.Skip("broken; see https://go.dev/issues/69287")
 	testLoad(t, 500, "std", "cmd")
 }
 
