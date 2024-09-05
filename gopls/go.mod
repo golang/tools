@@ -1,6 +1,8 @@
 module golang.org/x/tools/gopls
 
-go 1.22.6 // => default GODEBUG has gotypesalias=0
+// go 1.23.1 fixes some bugs in go/types Alias support.
+// (golang/go#68894 and golang/go#68905).
+go 1.23.1
 
 require (
 	github.com/google/go-cmp v0.6.0
