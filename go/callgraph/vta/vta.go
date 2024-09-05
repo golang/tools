@@ -137,17 +137,11 @@ func (c *constructor) resolves(call ssa.CallInstruction) []*ssa.Function {
 
 // resolve returns a set of functions `c` resolves to based on the
 // type propagation results in `types`.
-func resolve(c ssa.CallInstruction, types propTypeMap, cache methodCache) (fns map[*ssa.Function]empty) {
+func resolve(c ssa.CallInstruction, types propTypeMap, cache methodCache) map[*ssa.Function]empty {
+	fns := make(map[*ssa.Function]empty)
 	n := local{val: c.Common().Value}
 	types.propTypes(n)(func(p propType) bool {
-		pfs := propFunc(p, c, cache)
-		if len(pfs) == 0 {
-			return true
-		}
-		if fns == nil {
-			fns = make(map[*ssa.Function]empty)
-		}
-		for _, f := range pfs {
+		for _, f := range propFunc(p, c, cache) {
 			fns[f] = empty{}
 		}
 		return true
@@ -174,9 +168,6 @@ func propFunc(p propType, c ssa.CallInstruction, cache methodCache) []*ssa.Funct
 // ssa.Program.MethodSets and ssa.Program.MethodValue
 // APIs. The cache is used to speed up querying of
 // methods of a type as the mentioned APIs are expensive.
-//
-// TODO(adonovan): Program.MethodValue already does this kind of
-// caching. Is this really necessary?
 type methodCache map[types.Type]map[string][]*ssa.Function
 
 // methods returns methods of a type `t` named `name`. First consults
