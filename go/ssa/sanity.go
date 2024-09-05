@@ -407,6 +407,7 @@ func (s *sanity) checkReferrerList(v Value) {
 	}
 }
 
+// checkTransientFields checks whether all transient fields of Function are cleared.
 func (s *sanity) checkTransientFields(fn *Function) {
 	if fn.build != nil {
 		s.errorf("function transient field 'build' is not nil")
@@ -500,13 +501,35 @@ func (s *sanity) checkFunctionParams(fn *Function) {
 	}
 }
 
+// checkLocalAllocations checks whether all allocations in Locals appear among function block instructions.
+func (s *sanity) checkLocalAllocations(fn *Function) {
+	locals := fn.Locals
+	if len(locals) == 0 {
+		return
+	}
+
+	set := make(map[*Alloc]struct{})
+	for _, block := range fn.Blocks {
+		for _, instr := range block.Instrs {
+			if alloc, ok := instr.(*Alloc); ok {
+				set[alloc] = struct{}{}
+			}
+		}
+	}
+	for _, l := range locals {
+		_, ok := set[l]
+		if !ok {
+			s.warnf("function doesn't contain Local alloc %s", l.Name())
+		}
+	}
+}
+
 func (s *sanity) checkFunction(fn *Function) bool {
 	s.fn = fn
 	s.checkTransientFields(fn)
 	s.checkFunctionParams(fn)
+	s.checkLocalAllocations(fn)
 
-	// TODO(adonovan): check Function invariants:
-	// - warn if any fn.Locals do not appear among block instructions.
 	// TODO(taking): Sanity check origin, typeparams, and typeargs.
 	if fn.Prog == nil {
 		s.errorf("nil Prog")
