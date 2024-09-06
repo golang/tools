@@ -452,7 +452,7 @@ func loadLenses(settingsPkg *packages.Package, defaults map[settings.CodeLensSou
 							return nil, fmt.Errorf("%s: declare one CodeLensSource per line", posn)
 						}
 						lit, ok := spec.Values[0].(*ast.BasicLit)
-						if !ok && lit.Kind != token.STRING {
+						if !ok || lit.Kind != token.STRING {
 							return nil, fmt.Errorf("%s: CodeLensSource value is not a string literal", posn)
 						}
 						value, _ := strconv.Unquote(lit.Value) // ignore error: AST is well-formed
@@ -537,13 +537,6 @@ func lowerFirst(x string) string {
 		return x
 	}
 	return strings.ToLower(x[:1]) + x[1:]
-}
-
-func upperFirst(x string) string {
-	if x == "" {
-		return x
-	}
-	return strings.ToUpper(x[:1]) + x[1:]
 }
 
 func fileForPos(pkg *packages.Package, pos token.Pos) (*ast.File, error) {
