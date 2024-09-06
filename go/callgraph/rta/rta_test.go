@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
@@ -85,6 +86,8 @@ func TestRTA(t *testing.T) {
 
 // loadPackages unpacks the archive to a temporary directory and loads all packages within it.
 func loadPackages(t *testing.T, archive string) []*packages.Package {
+	testenv.NeedsGoPackages(t)
+
 	ar, err := txtar.ParseFile(archive)
 	if err != nil {
 		t.Fatal(err)
