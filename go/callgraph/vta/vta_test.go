@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:debug gotypesalias=1
+
 package vta
 
 import (
@@ -15,7 +17,7 @@ import (
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestVTACallGraph(t *testing.T) {
@@ -27,7 +29,7 @@ func TestVTACallGraph(t *testing.T) {
 			cmp.Diff(got, want)) // to aid debugging
 	}
 
-	for _, file := range []string{
+	files := []string{
 		"testdata/src/callgraph_static.go",
 		"testdata/src/callgraph_ho.go",
 		"testdata/src/callgraph_interfaces.go",
@@ -38,14 +40,14 @@ func TestVTACallGraph(t *testing.T) {
 		"testdata/src/callgraph_recursive_types.go",
 		"testdata/src/callgraph_issue_57756.go",
 		"testdata/src/callgraph_comma_maps.go",
-		"testdata/src/callgraph_type_aliases.go",
-	} {
-		t.Run(file, func(t *testing.T) {
-			// https://github.com/golang/go/issues/68799
-			if !aliases.Enabled() && file == "testdata/src/callgraph_type_aliases.go" {
-				t.Skip("callgraph_type_aliases.go requires gotypesalias=1")
-			}
+		"testdata/src/callgraph_type_aliases.go", // https://github.com/golang/go/issues/68799
+	}
+	if testenv.Go1Point() >= 23 {
+		files = append(files, "testdata/src/callgraph_range_over_func.go")
+	}
 
+	for _, file := range files {
+		t.Run(file, func(t *testing.T) {
 			prog, want, err := testProg(file, ssa.BuilderMode(0))
 			if err != nil {
 				t.Fatalf("couldn't load test file '%s': %s", file, err)
