@@ -410,11 +410,6 @@ func (s *sanity) checkReferrerList(v Value) {
 // checkFunctionParams checks whether the function parameters match the function signature,
 // it reports an error if the function is not built.
 func (s *sanity) checkFunctionParams(fn *Function) {
-	if fn.Synthetic != "" {
-		// synthetic function is allowed to have different signature and actual parameters,
-		// such as the instantiated functions of generic
-		return
-	}
 	signature := fn.Signature
 	params := fn.Params
 	if params == nil {
