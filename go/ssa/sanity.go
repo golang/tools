@@ -445,36 +445,12 @@ func (s *sanity) checkFunctionParams(fn *Function) {
 	}
 }
 
-// checkLocalAllocations checks whether all allocations in Locals appear among function block instructions.
-func (s *sanity) checkLocalAllocations(fn *Function) {
-	locals := fn.Locals
-	if len(locals) == 0 {
-		return
-	}
-
-	set := make(map[*Alloc]struct{})
-	for _, block := range fn.Blocks {
-		for _, instr := range block.Instrs {
-			if alloc, ok := instr.(*Alloc); ok {
-				set[alloc] = struct{}{}
-			}
-		}
-	}
-	for _, l := range locals {
-		_, ok := set[l]
-		if !ok {
-			s.warnf("function doesn't contain Local alloc %s", l.Name())
-		}
-	}
-}
-
 func (s *sanity) checkFunction(fn *Function) bool {
 	s.fn = fn
 	// TODO(yuchen): fix the bug caught on fn.targets when checking transient fields
 	// see https://go-review.googlesource.com/c/tools/+/610059/comment/4287a123_dc6cbc44/
 
 	s.checkFunctionParams(fn)
-	s.checkLocalAllocations(fn)
 
 	// TODO(taking): Sanity check origin, typeparams, and typeargs.
 	if fn.Prog == nil {
@@ -514,19 +490,34 @@ func (s *sanity) checkFunction(fn *Function) bool {
 			s.errorf("got fromSource=%t, hasSyntax=%t; want same values", src, syn)
 		}
 	}
+
+	// Build the set of valid referrers.
+	s.instrs = make(map[Instruction]unit)
+	// Build the set for all allocations of function instructions.
+	allocSet := make(map[*Alloc]unit)
+
+	// TODO: switch to range-over-func when x/tools updates to 1.23.
+	// instrs are the instructions that are present in the function.
+	fn.instrs()(func(instr Instruction) bool {
+		if alloc, ok := instr.(*Alloc); ok {
+			allocSet[alloc] = unit{}
+		}
+
+		s.instrs[instr] = unit{}
+		return true
+	})
+
+	// Check all Locals allocations appear in the function instruction.
 	for i, l := range fn.Locals {
+		if _, present := allocSet[l]; !present {
+			s.warnf("function doesn't contain Local alloc %s", l.Name())
+		}
+
 		if l.Parent() != fn {
 			s.errorf("Local %s at index %d has wrong parent", l.Name(), i)
 		}
 		if l.Heap {
 			s.errorf("Local %s at index %d has Heap flag set", l.Name(), i)
-		}
-	}
-	// Build the set of valid referrers.
-	s.instrs = make(map[Instruction]unit)
-	for _, b := range fn.Blocks {
-		for _, instr := range b.Instrs {
-			s.instrs[instr] = unit{}
 		}
 	}
 	for i, p := range fn.Params {

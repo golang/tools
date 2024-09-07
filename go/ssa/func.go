@@ -186,6 +186,19 @@ func targetedBlock(f *Function, tok token.Token) *BasicBlock {
 	return targetedBlock(f.parent, tok)
 }
 
+// instrs returns a next function that returns each reachable instruction of the SSA function.
+func (f *Function) instrs() func(yield func(i Instruction) bool) {
+	return func(yield func(i Instruction) bool) {
+		for _, block := range f.Blocks {
+			for _, instr := range block.Instrs {
+				if !yield(instr) {
+					return
+				}
+			}
+		}
+	}
+}
+
 // addResultVar adds a result for a variable v to f.results and v to f.returnVars.
 func (f *Function) addResultVar(v *types.Var) {
 	result := emitLocalVar(f, v)
