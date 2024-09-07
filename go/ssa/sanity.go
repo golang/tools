@@ -409,52 +409,40 @@ func (s *sanity) checkReferrerList(v Value) {
 
 // checkFunctionParams checks whether the function parameters match the function signature,
 // it reports an error if the function is not built.
-//
-// this change tries to reproduce the issue mentioned here:
-// https://go-review.googlesource.com/c/tools/+/610059/comment/8539d464_5744937f/
-//
-// when we match types between Function.Signature.RecvTypeParams() and Params,
-// it fails if the function is a synthetic function.
-//
-// there're two errors:
-// 1. Error: function (*p.Pointer[[]int]).Load[[]int]: expect type *p.Pointer[[]int] in signature but got type T in param 0
-// 2. Error: function (p.A).Foo: function has 0 parameters in signature but has 1 after building
-// you can run 'gotip test ./go/ssa' to reproduce it
-//
-// this change tries to reproduce the issue mentioned here:
-// https://go-review.googlesource.com/c/tools/+/610059/comments/3eaadf3e_c56b1094
-//
-// when we try to get the Origin() of an instantiated function 'Lambda$1', we get a nil
-// because it's instantiated from function 'Lambda', i hope to get this function.
-// please ignore the commented code for type signature/params checking
 func (s *sanity) checkFunctionParams(fn *Function) {
-	// signature := fn.Signature
+	signature := fn.Signature
 	params := fn.Params
 	if params == nil {
-		if fn.Name() == "Lambda$1" {
-			if fn.Origin() == nil {
-				s.errorf("Origin of instantiated function Lambda$1 shouldn't be nil")
-			}
-		}
 		// if the params are nil, it's either un-built or the instantiated function,
 		// hence we skip to check it
 		return
 	}
 
-	// sigAllParams := signature.RecvTypeParams()
-	// if sigAllParams.Len() != len(params) {
-	// 	s.errorf("function has %d parameters in signature but has %d after building",
-	// 		sigAllParams.Len(), len(params))
-	// 	return
-	// }
+	// startSigParams is the start of signature.Params() within params.
+	startSigParams := 0
+	if signature.Recv() != nil {
+		startSigParams = 1
+	}
 
-	// for i, param := range params {
-	// 	sigType := sigAllParams.At(i).Obj().Type()
+	if startSigParams+signature.Params().Len() != len(params) {
+		s.errorf("function has %d parameters in signature but has %d after building",
+			startSigParams+signature.Params().Len(), len(params))
+		return
+	}
 
-	// 	if !types.Identical(sigType, param.Type()) {
-	// 		s.errorf("expect type %s in signature but got type %s in param %d", param.Type(), sigType, i)
-	// 	}
-	// }
+	for i, param := range params {
+		var sigType types.Type
+		si := i - startSigParams
+		if si < 0 {
+			sigType = signature.Recv().Type()
+		} else {
+			sigType = signature.Params().At(si).Type()
+		}
+
+		if !types.Identical(sigType, param.Type()) {
+			s.errorf("expect type %s in signature but got type %s in param %d", param.Type(), sigType, i)
+		}
+	}
 }
 
 // checkLocalAllocations checks whether all allocations in Locals appear among function block instructions.
