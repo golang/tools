@@ -651,8 +651,12 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 	}, nil
 }
 
-// isSelector reports if e is the selector expr <x>, <sel>.
+// isSelector reports if e is the selector expr <x>, <sel>. It works for pointer and non-pointer selector expressions.
 func isSelector(e ast.Expr, x, sel string) bool {
+	unary, ok := e.(*ast.UnaryExpr)
+	if ok && unary.Op == token.MUL {
+		e = unary.X
+	}
 	selectorExpr, ok := e.(*ast.SelectorExpr)
 	if !ok {
 		return false
@@ -666,9 +670,15 @@ func isSelector(e ast.Expr, x, sel string) bool {
 
 // reorderParams reorders the given parameters in-place to follow common Go conventions.
 func reorderParams(params []ast.Expr, paramTypes []*ast.Field) {
+	moveParamToFrontIfFound(params, paramTypes, "testing", "T")
+	moveParamToFrontIfFound(params, paramTypes, "testing", "B")
+	moveParamToFrontIfFound(params, paramTypes, "context", "Context")
+}
+
+func moveParamToFrontIfFound(params []ast.Expr, paramTypes []*ast.Field, x, sel string) {
 	// Move Context parameter (if any) to front.
 	for i, t := range paramTypes {
-		if isSelector(t.Type, "context", "Context") {
+		if isSelector(t.Type, x, sel) {
 			p, t := params[i], paramTypes[i]
 			copy(params[1:], params[:i])
 			copy(paramTypes[1:], paramTypes[:i])
