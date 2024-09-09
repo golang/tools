@@ -216,7 +216,3 @@ func init() {
 		DefaultAnalyzers[analyzer.analyzer.Name] = analyzer
 	}
 }
-
-// StaticcheckAnalzyers describes available Staticcheck analyzers, keyed by
-// analyzer name.
-var StaticcheckAnalyzers = make(map[string]*Analyzer) // written by analysis_<ver>.go

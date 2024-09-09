@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.20
-// +build go1.20
-
 package settings
 
 import (
@@ -16,7 +13,9 @@ import (
 	"honnef.co/go/tools/stylecheck"
 )
 
-const StaticcheckSupported = true
+// StaticcheckAnalzyers describes available Staticcheck analyzers, keyed by
+// analyzer name.
+var StaticcheckAnalyzers = make(map[string]*Analyzer) // written by analysis_<ver>.go
 
 func init() {
 	mapSeverity := func(severity lint.Severity) protocol.DiagnosticSeverity {

@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.20
-// +build go1.20
-
 package settings
 
 import (
@@ -13,8 +10,6 @@ import (
 
 	"mvdan.cc/gofumpt/format"
 )
-
-const GofumptSupported = true
 
 // GofumptFormat allows the gopls module to wire in a call to
 // gofumpt/format.Source. langVersion and modulePath are used for some

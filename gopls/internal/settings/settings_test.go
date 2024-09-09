@@ -199,15 +199,6 @@ func TestOptions_Set(t *testing.T) {
 		},
 	}
 
-	if !StaticcheckSupported {
-		tests = append(tests, testCase{
-			name:      "staticcheck",
-			value:     true,
-			check:     func(o Options) bool { return o.Staticcheck == true },
-			wantError: true, // o.StaticcheckSupported is unset
-		})
-	}
-
 	for _, test := range tests {
 		var opts Options
 		err := opts.Set(map[string]any{test.name: test.value})
