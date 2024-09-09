@@ -493,23 +493,17 @@ func (s *sanity) checkFunction(fn *Function) bool {
 
 	// Build the set of valid referrers.
 	s.instrs = make(map[Instruction]unit)
-	// Build the set for all allocations of function instructions.
-	allocSet := make(map[*Alloc]unit)
 
 	// TODO: switch to range-over-func when x/tools updates to 1.23.
 	// instrs are the instructions that are present in the function.
 	fn.instrs()(func(instr Instruction) bool {
-		if alloc, ok := instr.(*Alloc); ok {
-			allocSet[alloc] = unit{}
-		}
-
 		s.instrs[instr] = unit{}
 		return true
 	})
 
 	// Check all Locals allocations appear in the function instruction.
 	for i, l := range fn.Locals {
-		if _, present := allocSet[l]; !present {
+		if _, present := s.instrs[l]; !present {
 			s.warnf("function doesn't contain Local alloc %s", l.Name())
 		}
 
