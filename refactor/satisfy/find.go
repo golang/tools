@@ -43,7 +43,6 @@ import (
 	"go/token"
 	"go/types"
 
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -708,7 +707,7 @@ func (f *Finder) stmt(s ast.Stmt) {
 
 // -- Plundered from golang.org/x/tools/go/ssa -----------------
 
-func unparen(e ast.Expr) ast.Expr { return astutil.Unparen(e) }
+func unparen(e ast.Expr) ast.Expr { return ast.Unparen(e) }
 
 func isInterface(T types.Type) bool { return types.IsInterface(T) }
 

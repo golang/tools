@@ -527,7 +527,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 			// or time.Second.String()) will remain after
 			// inlining, as arguments.
 			if pkgName, ok := existing.(*types.PkgName); ok {
-				if sel, ok := astutil.Unparen(caller.Call.Fun).(*ast.SelectorExpr); ok {
+				if sel, ok := ast.Unparen(caller.Call.Fun).(*ast.SelectorExpr); ok {
 					if sole := soleUse(caller.Info, pkgName); sole == sel.X {
 						for _, spec := range caller.File.Imports {
 							pkgName2, ok := importedPkgName(caller.Info, spec)
@@ -1263,7 +1263,7 @@ func (st *state) arguments(caller *Caller, calleeDecl *ast.FuncDecl, assign1 fun
 
 	callArgs := caller.Call.Args
 	if calleeDecl.Recv != nil {
-		sel := astutil.Unparen(caller.Call.Fun).(*ast.SelectorExpr)
+		sel := ast.Unparen(caller.Call.Fun).(*ast.SelectorExpr)
 		seln := caller.Info.Selections[sel]
 		var recvArg ast.Expr
 		switch seln.Kind() {
@@ -2227,7 +2227,7 @@ func pure(info *types.Info, assign1 func(*types.Var) bool, e ast.Expr) bool {
 // be evaluated at any point--though not necessarily at multiple
 // points (consider new, make).
 func callsPureBuiltin(info *types.Info, call *ast.CallExpr) bool {
-	if id, ok := astutil.Unparen(call.Fun).(*ast.Ident); ok {
+	if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok {
 		if b, ok := info.ObjectOf(id).(*types.Builtin); ok {
 			switch b.Name() {
 			case "len", "cap", "complex", "imag", "real", "make", "new", "max", "min":

@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/aliases"
 )
@@ -70,7 +69,7 @@ func isSafeUintptr(info *types.Info, x ast.Expr) bool {
 	// Check unsafe.Pointer safety rules according to
 	// https://golang.org/pkg/unsafe/#Pointer.
 
-	switch x := astutil.Unparen(x).(type) {
+	switch x := ast.Unparen(x).(type) {
 	case *ast.SelectorExpr:
 		// "(6) Conversion of a reflect.SliceHeader or
 		// reflect.StringHeader Data field to or from Pointer."
@@ -119,7 +118,7 @@ func isSafeUintptr(info *types.Info, x ast.Expr) bool {
 // isSafeArith reports whether x is a pointer arithmetic expression that is safe
 // to convert to unsafe.Pointer.
 func isSafeArith(info *types.Info, x ast.Expr) bool {
-	switch x := astutil.Unparen(x).(type) {
+	switch x := ast.Unparen(x).(type) {
 	case *ast.CallExpr:
 		// Base case: initial conversion from unsafe.Pointer to uintptr.
 		return len(x.Args) == 1 &&

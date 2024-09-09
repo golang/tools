@@ -16,7 +16,6 @@ import (
 	"go/types"
 	"strings"
 
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -242,7 +241,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 		// not just a return statement
 	} else if ret, ok := decl.Body.List[0].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
 		validForCallStmt = func() bool {
-			switch expr := astutil.Unparen(ret.Results[0]).(type) {
+			switch expr := ast.Unparen(ret.Results[0]).(type) {
 			case *ast.CallExpr: // f(x)
 				callee := typeutil.Callee(info, expr)
 				if callee == nil {

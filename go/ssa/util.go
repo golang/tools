@@ -15,7 +15,6 @@ import (
 	"os"
 	"sync"
 
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
@@ -36,7 +35,7 @@ func assert(p bool, msg string) {
 
 //// AST utilities
 
-func unparen(e ast.Expr) ast.Expr { return astutil.Unparen(e) }
+func unparen(e ast.Expr) ast.Expr { return ast.Unparen(e) }
 
 // isBlankIdent returns true iff e is an Ident with name "_".
 // They have no associated types.Object, and thus no type.
