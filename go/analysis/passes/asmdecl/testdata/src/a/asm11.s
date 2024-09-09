@@ -11,3 +11,9 @@ TEXT ·returnABIInternal<ABIInternal>(SB), NOSPLIT, $8
 TEXT ·returnmissingABIInternal<ABIInternal>(SB), NOSPLIT, $8
 	MOV	$123, X20
 	RET // want `RET without writing to result register`
+
+// issue 69352
+TEXT ·returnsyscall<ABIInternal>(SB),0,$0-0
+	MOV	$123, X20
+	ECALL
+	RET

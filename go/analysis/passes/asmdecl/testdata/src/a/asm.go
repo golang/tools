@@ -30,6 +30,7 @@ func returnint() int
 func returnbyte(x int) byte
 func returnnamed(x byte) (r1 int, r2 int16, r3 string, r4 byte)
 func returnintmissing() int
+func returnsyscall()
 func leaf(x, y int) int
 
 func noprof(x int)
