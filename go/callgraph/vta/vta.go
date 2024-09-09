@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package vta computes the call graph of a Go program using the Variable
-// Type Analysis (VTA) algorithm originally described in “Practical Virtual
+// Type Analysis (VTA) algorithm originally described in "Practical Virtual
 // Method Call Resolution for Java," Vijay Sundaresan, Laurie Hendren,
 // Chrislain Razafimahefa, Raja Vallée-Rai, Patrick Lam, Etienne Gagnon, and
 // Charles Godin.

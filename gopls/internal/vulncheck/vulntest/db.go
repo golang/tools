@@ -51,7 +51,7 @@ func NewDatabase(ctx context.Context, txtarReports []byte) (*DB, error) {
 
 // DB is a read-only vulnerability database on disk.
 // Users can use this database with golang.org/x/vuln APIs
-// by setting the `VULNDB“ environment variable.
+// by setting the `VULNDB` environment variable.
 type DB struct {
 	disk string
 }
