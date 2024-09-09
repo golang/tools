@@ -883,7 +883,7 @@ func (r *renamer) satisfy() map[satisfy.Constraint]bool {
 
 // recv returns the method's receiver.
 func recv(meth *types.Func) *types.Var {
-	return meth.Type().(*types.Signature).Recv()
+	return meth.Signature().Recv()
 }
 
 // someUse returns an arbitrary use of obj within info.

@@ -208,7 +208,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 	// Otherwise, use lowercase for the first letter of the object.
 	rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
 	for i := 0; i < si.Concrete.NumMethods(); i++ {
-		if recv := si.Concrete.Method(i).Type().(*types.Signature).Recv(); recv.Name() != "" {
+		if recv := si.Concrete.Method(i).Signature().Recv(); recv.Name() != "" {
 			rn = recv.Name()
 			break
 		}
@@ -229,7 +229,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 
 	for index := range missing {
 		mrn := rn + " "
-		sig := missing[index].fn.Type().(*types.Signature)
+		sig := missing[index].fn.Signature()
 		if checkRecvName(sig.Params()) || checkRecvName(sig.Results()) {
 			mrn = ""
 		}

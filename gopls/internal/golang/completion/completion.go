@@ -1036,7 +1036,7 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 
 			// collect receiver struct fields
 			if node.Recv != nil {
-				sig := c.pkg.TypesInfo().Defs[node.Name].(*types.Func).Type().(*types.Signature)
+				sig := c.pkg.TypesInfo().Defs[node.Name].(*types.Func).Signature()
 				_, named := typesinternal.ReceiverNamed(sig.Recv()) // may be nil if ill-typed
 				if named != nil {
 					if recvStruct, ok := named.Underlying().(*types.Struct); ok {

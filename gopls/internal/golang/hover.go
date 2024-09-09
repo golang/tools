@@ -535,7 +535,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			var recv types.Object
 			switch obj := obj.(type) {
 			case *types.Func:
-				sig := obj.Type().(*types.Signature)
+				sig := obj.Signature()
 				if sig.Recv() != nil {
 					tname := typeToObject(sig.Recv().Type())
 					if tname != nil { // beware typed nil
@@ -962,7 +962,7 @@ func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file 
 		// specifically, we show the receiver name,
 		// and replace the period in (T).f by a space (#62190).
 
-		sig := obj.Type().(*types.Signature)
+		sig := obj.Signature()
 
 		var buf bytes.Buffer
 		buf.WriteString("func ")
@@ -1236,7 +1236,7 @@ func StdSymbolOf(obj types.Object) *stdlib.Symbol {
 
 	// Handle Method.
 	if fn, _ := obj.(*types.Func); fn != nil {
-		isPtr, named := typesinternal.ReceiverNamed(fn.Type().(*types.Signature).Recv())
+		isPtr, named := typesinternal.ReceiverNamed(fn.Signature().Recv())
 		if isPackageLevel(named.Obj()) {
 			for _, s := range symbols {
 				if s.Kind != stdlib.Method {

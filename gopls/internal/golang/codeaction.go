@@ -597,7 +597,7 @@ func getGoAssemblyAction(view *cache.View, pkg *cache.Package, pgf *parsego.File
 	if len(path) >= 2 { // [... FuncDecl File]
 		if decl, ok := path[len(path)-2].(*ast.FuncDecl); ok {
 			if fn, ok := pkg.TypesInfo().Defs[decl.Name].(*types.Func); ok {
-				sig := fn.Type().(*types.Signature)
+				sig := fn.Signature()
 
 				// Compute the linker symbol of the enclosing function.
 				var sym strings.Builder

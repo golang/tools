@@ -129,7 +129,7 @@ func matchTestFunc(fn *ast.FuncDecl, info *types.Info, nameRe *regexp.Regexp, pa
 	if !ok {
 		return false
 	}
-	sig := obj.Type().(*types.Signature)
+	sig := obj.Signature()
 	// Test functions should have only one parameter.
 	if sig.Params().Len() != 1 {
 		return false

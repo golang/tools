@@ -426,7 +426,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 		// contain a reference (xrefs) to the target field.
 
 	case *types.Func:
-		if obj.Type().(*types.Signature).Recv() != nil {
+		if obj.Signature().Recv() != nil {
 			transitive = true // method
 		}
 
@@ -978,7 +978,7 @@ func renameObjects(newName string, pkg *cache.Package, targets ...types.Object) 
 	// TODO(adonovan): pull this into the caller.
 	for _, obj := range targets {
 		if obj, ok := obj.(*types.Func); ok {
-			recv := obj.Type().(*types.Signature).Recv()
+			recv := obj.Signature().Recv()
 			if recv != nil && types.IsInterface(recv.Type().Underlying()) {
 				r.changeMethods = true
 				break
@@ -1168,7 +1168,7 @@ func (r *renamer) updateCommentDocLinks() (map[protocol.DocumentURI][]diff.Edit,
 			if !isFunc {
 				continue
 			}
-			recv := obj.Type().(*types.Signature).Recv()
+			recv := obj.Signature().Recv()
 			if recv == nil {
 				continue
 			}

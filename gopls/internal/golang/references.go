@@ -615,7 +615,7 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 // comparisons for obj, if it is a method, or nil otherwise.
 func effectiveReceiver(obj types.Object) types.Type {
 	if fn, ok := obj.(*types.Func); ok {
-		if recv := fn.Type().(*types.Signature).Recv(); recv != nil {
+		if recv := fn.Signature().Recv(); recv != nil {
 			return methodsets.EnsurePointer(recv.Type())
 		}
 	}

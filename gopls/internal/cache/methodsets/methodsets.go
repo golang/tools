@@ -449,7 +449,7 @@ func fingerprint(method *types.Func) (string, bool) {
 	}
 
 	buf.WriteString(method.Id()) // e.g. "pkg.Type"
-	sig := method.Type().(*types.Signature)
+	sig := method.Signature()
 	fprint(sig.Params())
 	fprint(sig.Results())
 	return buf.String(), tricky

@@ -120,7 +120,7 @@ func DocFragment(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (p
 	if !sym.Exported() {
 		// Unexported method of exported type?
 		if fn, ok := sym.(*types.Func); ok {
-			if recv := fn.Type().(*types.Signature).Recv(); recv != nil {
+			if recv := fn.Signature().Recv(); recv != nil {
 				_, named := typesinternal.ReceiverNamed(recv)
 				if named != nil && named.Obj().Exported() {
 					sym = named.Obj()
@@ -147,7 +147,7 @@ func DocFragment(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (p
 	// Inv: sym is field or method, or local.
 	switch sym := sym.(type) {
 	case *types.Func: // => method
-		sig := sym.Type().(*types.Signature)
+		sig := sym.Signature()
 		isPtr, named := typesinternal.ReceiverNamed(sig.Recv())
 		if named != nil {
 			if !named.Obj().Exported() {
@@ -469,7 +469,7 @@ window.addEventListener('load', function() {
 		label := obj.Name() // for a type
 		if fn, ok := obj.(*types.Func); ok {
 			var buf strings.Builder
-			sig := fn.Type().(*types.Signature)
+			sig := fn.Signature()
 			if sig.Recv() != nil {
 				fmt.Fprintf(&buf, "(%s) ", sig.Recv().Name())
 				fragment = recvType + "." + fn.Name()
@@ -551,7 +551,7 @@ window.addEventListener('load', function() {
 
 				// method of package-level named type?
 				if fn, ok := obj.(*types.Func); ok {
-					sig := fn.Type().(*types.Signature)
+					sig := fn.Signature()
 					if sig.Recv() != nil {
 						_, named := typesinternal.ReceiverNamed(sig.Recv())
 						if named != nil {
@@ -648,7 +648,7 @@ window.addEventListener('load', function() {
 	fnString := func(fn *types.Func) string {
 		pkgRelative := typesinternal.NameRelativeTo(pkg.Types())
 
-		sig := fn.Type().(*types.Signature)
+		sig := fn.Signature()
 
 		// Emit "func (recv T) F".
 		var buf bytes.Buffer

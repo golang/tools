@@ -95,7 +95,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 			break
 		}
 	case *types.Func:
-		if obj.Type().(*types.Signature).Recv() == nil {
+		if obj.Signature().Recv() == nil {
 			kind = protocol.FunctionCompletion
 		} else {
 			kind = protocol.MethodCompletion

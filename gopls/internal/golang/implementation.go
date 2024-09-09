@@ -126,7 +126,7 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 			return obj.Type(), ""
 		case *types.Func:
 			// For methods, use the receiver type, which may be anonymous.
-			if recv := obj.Type().(*types.Signature).Recv(); recv != nil {
+			if recv := obj.Signature().Recv(); recv != nil {
 				return recv.Type(), obj.Id()
 			}
 		}
@@ -317,7 +317,7 @@ func implementsObj(ctx context.Context, snapshot *cache.Snapshot, uri protocol.D
 	case *types.TypeName:
 		// ok
 	case *types.Func:
-		if obj.Type().(*types.Signature).Recv() == nil {
+		if obj.Signature().Recv() == nil {
 			return nil, nil, fmt.Errorf("%s is a function, not a method", id.Name)
 		}
 	case nil:
