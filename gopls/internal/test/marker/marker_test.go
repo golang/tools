@@ -1412,7 +1412,7 @@ func snippetMarker(mark marker, src protocol.Location, label completionLabel, wa
 		return
 	}
 	if got != want {
-		mark.errorf("snippets do not match: got %q, want %q", got, want)
+		mark.errorf("snippets do not match: got:\n%q\nwant:\n%q", got, want)
 	}
 }
 

@@ -214,6 +214,9 @@ func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, si
 		if err != nil {
 			return nil, err
 		}
+		if sig.Variadic() && i == sig.Params().Len()-1 {
+			typ = strings.Replace(typ, "[]", "...", 1)
+		}
 		p := typ
 		if el.Name() != "" {
 			p = el.Name() + " " + typ
@@ -261,6 +264,10 @@ func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, si
 	}, nil
 }
 
+// We look for 'invalidTypeString' to determine if we can use the fast path for
+// FormatVarType.
+var invalidTypeString = types.Typ[types.Invalid].String()
+
 // FormatVarType formats a *types.Var, accounting for type aliases.
 // To do this, it looks in the AST of the file in which the object is declared.
 // On any errors, it always falls back to types.TypeString.
@@ -268,6 +275,21 @@ func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, si
 // TODO(rfindley): this function could return the actual name used in syntax,
 // for better parameter names.
 func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.Package, obj *types.Var, qf types.Qualifier, mq MetadataQualifier) (string, error) {
+	typeString := types.TypeString(obj.Type(), qf)
+	// Fast path: if the type string does not contain 'invalid type', we no
+	// longer need to do any special handling, thanks to materialized aliases in
+	// Go 1.23+.
+	//
+	// Unfortunately, due to the handling of invalid types, we can't quite delete
+	// the rather complicated preexisting logic of FormatVarType--it isn't an
+	// acceptable regression to start printing "invalid type" in completion or
+	// signature help. strings.Contains is conservative: the type string of a
+	// valid type may actually contain "invalid type" (due to struct tags or
+	// field formatting), but such cases should be exceedingly rare.
+	if !strings.Contains(typeString, invalidTypeString) {
+		return typeString, nil
+	}
+
 	// TODO(rfindley): This looks wrong. The previous comment said:
 	// "If the given expr refers to a type parameter, then use the
 	// object's Type instead of the type parameter declaration. This helps
@@ -280,13 +302,13 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 	//
 	// Left this during refactoring in order to preserve pre-existing logic.
 	if typeparams.IsTypeParam(obj.Type()) {
-		return types.TypeString(obj.Type(), qf), nil
+		return typeString, nil
 	}
 
 	if isBuiltin(obj) {
 		// This is defensive, though it is extremely unlikely we'll ever have a
 		// builtin var.
-		return types.TypeString(obj.Type(), qf), nil
+		return typeString, nil
 	}
 
 	// TODO(rfindley): parsing to produce candidates can be costly; consider
@@ -309,7 +331,7 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 	// for parameterized decls.
 	if decl, _ := decl.(*ast.FuncDecl); decl != nil {
 		if decl.Type.TypeParams.NumFields() > 0 {
-			return types.TypeString(obj.Type(), qf), nil // in generic function
+			return typeString, nil // in generic function
 		}
 		if decl.Recv != nil && len(decl.Recv.List) > 0 {
 			rtype := decl.Recv.List[0].Type
@@ -317,18 +339,18 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 				rtype = e.X
 			}
 			if x, _, _, _ := typeparams.UnpackIndexExpr(rtype); x != nil {
-				return types.TypeString(obj.Type(), qf), nil // in method of generic type
+				return typeString, nil // in method of generic type
 			}
 		}
 	}
 	if spec, _ := spec.(*ast.TypeSpec); spec != nil && spec.TypeParams.NumFields() > 0 {
-		return types.TypeString(obj.Type(), qf), nil // in generic type decl
+		return typeString, nil // in generic type decl
 	}
 
 	if field == nil {
 		// TODO(rfindley): we should never reach here from an ordinary var, so
 		// should probably return an error here.
-		return types.TypeString(obj.Type(), qf), nil
+		return typeString, nil
 	}
 	expr := field.Type
 
