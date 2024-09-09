@@ -439,7 +439,8 @@ func (s *sanity) checkFunctionParams(fn *Function) {
 }
 
 // checkTransientFields checks whether all transient fields of Function are cleared.
-func (s *sanity) checkTransientFields(fn *Function) {
+func (s *sanity) checkTransientFields() {
+	fn := s.fn
 	if fn.build != nil {
 		s.errorf("function transient field 'build' is not nil")
 	}
@@ -484,7 +485,7 @@ func (s *sanity) checkTransientFields(fn *Function) {
 func (s *sanity) checkFunction(fn *Function) bool {
 	s.fn = fn
 	s.checkFunctionParams(fn)
-	s.checkTransientFields(fn)
+	s.checkTransientFields()
 
 	// TODO(taking): Sanity check origin, typeparams, and typeargs.
 	if fn.Prog == nil {
