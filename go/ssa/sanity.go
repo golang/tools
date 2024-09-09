@@ -407,16 +407,9 @@ func (s *sanity) checkReferrerList(v Value) {
 	}
 }
 
-// checkFunctionParams checks whether the function parameters match the function signature,
-// it reports an error if the function is not built.
 func (s *sanity) checkFunctionParams(fn *Function) {
 	signature := fn.Signature
 	params := fn.Params
-	if params == nil {
-		// if the params are nil, it's either un-built or the instantiated function,
-		// hence we skip to check it
-		return
-	}
 
 	// startSigParams is the start of signature.Params() within params.
 	startSigParams := 0
