@@ -6,11 +6,11 @@ package simplifyrange_test
 
 import (
 	"go/build"
+	"slices"
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyrange"
-	"golang.org/x/tools/gopls/internal/util/slices"
 )
 
 func Test(t *testing.T) {

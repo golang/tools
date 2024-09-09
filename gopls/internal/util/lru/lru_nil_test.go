@@ -4,11 +4,6 @@
 
 package lru_test
 
-// TODO(rfindley): uncomment once -lang is at least go1.20.
-// Prior to that language version, interfaces did not satisfy comparable.
-// Note that we can't simply use //go:build go1.20, because we need at least Go
-// 1.21 in the go.mod file for file language versions support!
-/*
 import (
 	"testing"
 
@@ -22,4 +17,3 @@ func TestSetUntypedNil(t *testing.T) {
 		t.Errorf("cache.Get(nil) = %v, %v, want nil, true", got, ok)
 	}
 }
-*/

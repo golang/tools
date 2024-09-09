@@ -13,6 +13,7 @@ import (
 	"go/token"
 	"go/types"
 	"html"
+	"slices"
 	"sort"
 	"strings"
 
@@ -20,9 +21,8 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
-	"golang.org/x/tools/gopls/internal/util/maps"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -119,11 +119,7 @@ func FreeSymbolsHTML(viewID string, pkg *cache.Package, pgf *parsego.File, start
 
 		// Imported symbols.
 		// Produce one record per package, with a list of symbols.
-		pkgPaths := maps.Keys(imported)
-		sort.Strings(pkgPaths)
-		for _, pkgPath := range pkgPaths {
-			refs := imported[pkgPath]
-
+		for pkgPath, refs := range moremaps.Sorted(imported) {
 			var syms []string
 			for _, ref := range refs {
 				// strip package name (bytes.Buffer.Len -> Buffer.Len)
@@ -218,7 +214,7 @@ p { max-width: 6in; }
 	pos := start
 	emitTo := func(end token.Pos) {
 		if pos < end {
-			fileStart := pgf.Tok.Pos(0) // TODO(adonovan): use go1.20 pgf.File.FileStart
+			fileStart := pgf.File.FileStart
 			text := pgf.Mapper.Content[pos-fileStart : end-fileStart]
 			buf.WriteString(html.EscapeString(string(text)))
 			pos = end

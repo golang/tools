@@ -23,11 +23,13 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,7 +43,6 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/maps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
@@ -56,14 +57,6 @@ func main() {
 // - if write, it updates them;
 // - if !write, it reports whether they would change.
 func doMain(write bool) (bool, error) {
-	// TODO(adonovan): when we can rely on go1.23,
-	// switch to gotypesalias=1 behavior.
-	//
-	// (Since this program is run by 'go run',
-	// the gopls/go.mod file's go 1.19 directive doesn't
-	// have its usual effect of setting gotypesalias=0.)
-	os.Setenv("GODEBUG", "gotypesalias=0")
-
 	api, err := loadAPI()
 	if err != nil {
 		return false, err
@@ -472,9 +465,7 @@ func loadLenses(settingsPkg *packages.Package, defaults map[settings.CodeLensSou
 	// Build list of Lens descriptors.
 	var lenses []*doc.Lens
 	addAll := func(sources map[settings.CodeLensSource]cache.CodeLensSourceFunc, fileType string) error {
-		slice := maps.Keys(sources)
-		sort.Slice(slice, func(i, j int) bool { return slice[i] < slice[j] })
-		for _, source := range slice {
+		for _, source := range slices.Sorted(maps.Keys(sources)) {
 			docText, ok := enumDoc[string(source)]
 			if !ok {
 				return fmt.Errorf("missing CodeLensSource declaration for %s", source)

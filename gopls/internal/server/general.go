@@ -29,7 +29,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/goversion"
-	"golang.org/x/tools/gopls/internal/util/maps"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
@@ -372,7 +372,7 @@ func (s *server) updateWatchedDirectories(ctx context.Context) error {
 	defer s.watchedGlobPatternsMu.Unlock()
 
 	// Nothing to do if the set of workspace directories is unchanged.
-	if maps.SameKeys(s.watchedGlobPatterns, patterns) {
+	if moremaps.SameKeys(s.watchedGlobPatterns, patterns) {
 		return nil
 	}
 

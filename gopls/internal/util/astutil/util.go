@@ -7,7 +7,6 @@ package astutil
 import (
 	"go/ast"
 	"go/token"
-	"strings"
 
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -69,26 +68,4 @@ L: // unpack receiver type
 // Precondition: n must not be nil.
 func NodeContains(n ast.Node, pos token.Pos) bool {
 	return n.Pos() <= pos && pos <= n.End()
-}
-
-// IsGenerated check if a file is generated code
-func IsGenerated(file *ast.File) bool {
-	// TODO: replace this implementation with calling function ast.IsGenerated when go1.21 is assured
-	for _, group := range file.Comments {
-		for _, comment := range group.List {
-			if comment.Pos() > file.Package {
-				break // after package declaration
-			}
-			// opt: check Contains first to avoid unnecessary array allocation in Split.
-			const prefix = "// Code generated "
-			if strings.Contains(comment.Text, prefix) {
-				for _, line := range strings.Split(comment.Text, "\n") {
-					if strings.HasPrefix(line, prefix) && strings.HasSuffix(line, " DO NOT EDIT.") {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
 }

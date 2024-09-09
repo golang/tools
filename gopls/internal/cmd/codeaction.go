@@ -9,10 +9,10 @@ import (
 	"flag"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/internal/tool"
 )
 

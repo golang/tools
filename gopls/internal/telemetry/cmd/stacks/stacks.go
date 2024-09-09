@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -23,11 +24,9 @@ import (
 	"strings"
 	"time"
 
-	"io"
-
 	"golang.org/x/telemetry"
 	"golang.org/x/tools/gopls/internal/util/browser"
-	"golang.org/x/tools/gopls/internal/util/maps"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 )
 
 // flags
@@ -79,8 +78,7 @@ func main() {
 	// Read all recent telemetry reports.
 	t := time.Now()
 	for i := 0; i < *daysFlag; i++ {
-		const DateOnly = "2006-01-02" // TODO(adonovan): use time.DateOnly in go1.20.
-		date := t.Add(-time.Duration(i+1) * 24 * time.Hour).Format(DateOnly)
+		date := t.Add(-time.Duration(i+1) * 24 * time.Hour).Format(time.DateOnly)
 
 		url := fmt.Sprintf("https://storage.googleapis.com/prod-telemetry-merged/%s.json", date)
 		resp, err := http.Get(url)
@@ -209,7 +207,7 @@ func main() {
 	}
 	print := func(caption string, issues map[string]int64) {
 		// Print items in descending frequency.
-		keys := maps.Keys(issues)
+		keys := moremaps.KeySlice(issues)
 		sort.Slice(keys, func(i, j int) bool {
 			return issues[keys[i]] > issues[keys[j]]
 		})

@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/frob"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
 // Index constructs a serializable index of outbound cross-references
@@ -93,8 +92,8 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 			case *ast.ImportSpec:
 				// Report a reference from each import path
 				// string to the imported package.
-				pkgname, ok := typesutil.ImportedPkgName(info, n)
-				if !ok {
+				pkgname := info.PkgNameOf(n)
+				if pkgname == nil {
 					return true // missing import
 				}
 				objects := getObjects(pkgname.Imported())

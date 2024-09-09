@@ -8,10 +8,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"slices"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/slices"
 )
 
 // check implements the check verb for gopls.

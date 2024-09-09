@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -43,8 +44,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
-	"golang.org/x/tools/gopls/internal/util/maps"
-	"golang.org/x/tools/gopls/internal/util/slices"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/facts"
@@ -769,11 +769,7 @@ func (an *analysisNode) cacheKey() [sha256.Size]byte {
 	}
 
 	// vdeps, in PackageID order
-	depIDs := maps.Keys(an.succs)
-	// TODO(adonovan): use go1.2x slices.Sort(depIDs).
-	sort.Slice(depIDs, func(i, j int) bool { return depIDs[i] < depIDs[j] })
-	for _, depID := range depIDs {
-		vdep := an.succs[depID]
+	for _, vdep := range moremaps.Sorted(an.succs) {
 		fmt.Fprintf(hasher, "dep: %s\n", vdep.mp.PkgPath)
 		fmt.Fprintf(hasher, "export: %s\n", vdep.summary.DeepExportHash)
 

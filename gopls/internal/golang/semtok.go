@@ -28,7 +28,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 )
@@ -128,7 +127,7 @@ func (tv *tokenVisitor) visit() {
 	importByName := make(map[string]*types.PkgName)
 	for _, pgf := range tv.pkg.CompiledGoFiles() {
 		for _, imp := range pgf.File.Imports {
-			if obj, _ := typesutil.ImportedPkgName(tv.pkg.TypesInfo(), imp); obj != nil {
+			if obj := tv.pkg.TypesInfo().PkgNameOf(imp); obj != nil {
 				if old, ok := importByName[obj.Name()]; ok {
 					if old != nil && old.Imported() != obj.Imported() {
 						importByName[obj.Name()] = nil // nil => ambiguous across files

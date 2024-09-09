@@ -36,7 +36,6 @@ import (
 	gastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
@@ -1186,11 +1185,13 @@ func formatHover(h *hoverJSON, options *settings.Options, pkgURL func(path Packa
 		if h.stdVersion == nil || *h.stdVersion == stdlib.Version(0) {
 			parts[5] = "" // suppress stdlib version if not applicable or initial version 1.0
 		}
-		parts = slices.Remove(parts, "")
 
 		var b strings.Builder
-		for i, part := range parts {
-			if i > 0 {
+		for _, part := range parts {
+			if part == "" {
+				continue
+			}
+			if b.Len() > 0 {
 				if options.PreferredContentFormat == protocol.Markdown {
 					b.WriteString("\n\n")
 				} else {

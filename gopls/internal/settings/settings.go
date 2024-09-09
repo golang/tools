@@ -6,6 +6,7 @@ package settings
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -14,7 +15,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/frob"
-	"golang.org/x/tools/gopls/internal/util/maps"
 )
 
 type Annotation string
@@ -1059,6 +1059,9 @@ func (o *Options) setOne(name string, value any) error {
 		lensOverrides, err := asBoolMap[CodeLensSource](value)
 		if err != nil {
 			return err
+		}
+		if o.Codelenses == nil {
+			o.Codelenses = make(map[CodeLensSource]bool)
 		}
 		o.Codelenses = maps.Clone(o.Codelenses)
 		for source, enabled := range lensOverrides {

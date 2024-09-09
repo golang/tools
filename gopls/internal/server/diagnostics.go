@@ -26,7 +26,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/template"
-	"golang.org/x/tools/gopls/internal/util/maps"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/work"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
@@ -103,7 +103,7 @@ func sortDiagnostics(d []*cache.Diagnostic) {
 func (s *server) diagnoseChangedViews(ctx context.Context, modID uint64, lastChange map[*cache.View][]protocol.DocumentURI, cause ModificationSource) {
 	// Collect views needing diagnosis.
 	s.modificationMu.Lock()
-	needsDiagnosis := maps.Keys(s.viewsToDiagnose)
+	needsDiagnosis := moremaps.KeySlice(s.viewsToDiagnose)
 	s.modificationMu.Unlock()
 
 	// Diagnose views concurrently.
@@ -288,7 +288,7 @@ func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snaps
 			toDiagnose[meta.ID] = meta
 		}
 	}
-	diags, err := snapshot.PackageDiagnostics(ctx, maps.Keys(toDiagnose)...)
+	diags, err := snapshot.PackageDiagnostics(ctx, moremaps.KeySlice(toDiagnose)...)
 	if err != nil {
 		if ctx.Err() == nil {
 			event.Error(ctx, "warning: diagnostics failed", err, snapshot.Labels()...)
@@ -495,7 +495,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 	go func() {
 		defer wg.Done()
 		var err error
-		pkgDiags, err = snapshot.PackageDiagnostics(ctx, maps.Keys(toDiagnose)...)
+		pkgDiags, err = snapshot.PackageDiagnostics(ctx, moremaps.KeySlice(toDiagnose)...)
 		if err != nil {
 			event.Error(ctx, "warning: diagnostics failed", err, snapshot.Labels()...)
 		}
@@ -511,7 +511,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 		// if err is non-nil (though as of today it's OK).
 		analysisDiags, err = golang.Analyze(ctx, snapshot, toAnalyze, s.progress)
 		if err != nil {
-			event.Error(ctx, "warning: analyzing package", err, append(snapshot.Labels(), label.Package.Of(keys.Join(maps.Keys(toDiagnose))))...)
+			event.Error(ctx, "warning: analyzing package", err, append(snapshot.Labels(), label.Package.Of(keys.Join(moremaps.KeySlice(toDiagnose))))...)
 			return
 		}
 	}()

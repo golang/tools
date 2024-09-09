@@ -20,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -29,9 +30,8 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/maps"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
-	"golang.org/x/tools/gopls/internal/util/slices"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -253,7 +253,7 @@ func viewDefinitionsEqual(x, y *viewDefinition) bool {
 		if x.workspaceModFilesErr.Error() != y.workspaceModFilesErr.Error() {
 			return false
 		}
-	} else if !maps.SameKeys(x.workspaceModFiles, y.workspaceModFiles) {
+	} else if !moremaps.SameKeys(x.workspaceModFiles, y.workspaceModFiles) {
 		return false
 	}
 	if len(x.envOverlay) != len(y.envOverlay) {
@@ -698,7 +698,7 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 		extractedDiags := s.extractGoCommandErrors(ctx, loadErr)
 		initialErr = &InitializationError{
 			MainError:   loadErr,
-			Diagnostics: maps.Group(extractedDiags, byURI),
+			Diagnostics: moremaps.Group(extractedDiags, byURI),
 		}
 	case s.view.workspaceModFilesErr != nil:
 		initialErr = &InitializationError{

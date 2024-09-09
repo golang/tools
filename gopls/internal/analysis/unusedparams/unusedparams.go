@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/util/slices"
+	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
@@ -194,7 +194,7 @@ func run(pass *analysis.Pass) (any, error) {
 							// Edge case: f = func() {...}
 							// should not count as a use.
 							if pass.TypesInfo.Uses[id] != nil {
-								usesOutsideCall[fn] = slices.Remove(usesOutsideCall[fn], id)
+								usesOutsideCall[fn] = moreslices.Remove(usesOutsideCall[fn], id)
 							}
 
 							if fn == nil && id.Name == "_" {

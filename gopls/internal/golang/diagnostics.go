@@ -6,13 +6,15 @@ package golang
 
 import (
 	"context"
+	"maps"
+	"slices"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/maps"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 )
 
 // Analyze reports go/analysis-framework diagnostics in the specified package.
@@ -28,9 +30,9 @@ func Analyze(ctx context.Context, snapshot *cache.Snapshot, pkgIDs map[PackageID
 		return nil, ctx.Err()
 	}
 
-	analyzers := maps.Values(settings.DefaultAnalyzers)
+	analyzers := slices.Collect(maps.Values(settings.DefaultAnalyzers))
 	if snapshot.Options().Staticcheck {
-		analyzers = append(analyzers, maps.Values(settings.StaticcheckAnalyzers)...)
+		analyzers = slices.AppendSeq(analyzers, maps.Values(settings.StaticcheckAnalyzers))
 	}
 
 	analysisDiagnostics, err := snapshot.Analyze(ctx, pkgIDs, analyzers, tracker)
@@ -38,5 +40,5 @@ func Analyze(ctx context.Context, snapshot *cache.Snapshot, pkgIDs map[PackageID
 		return nil, err
 	}
 	byURI := func(d *cache.Diagnostic) protocol.DocumentURI { return d.URI }
-	return maps.Group(analysisDiagnostics, byURI), nil
+	return moremaps.Group(analysisDiagnostics, byURI), nil
 }

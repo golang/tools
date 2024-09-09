@@ -25,7 +25,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
 // canExtractToNewFile reports whether the code in the given range can be extracted to a new file.
@@ -56,8 +55,8 @@ func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (ad
 			// TODO: support dot imports.
 			return nil, nil, errors.New("\"extract to new file\" does not support files containing dot imports")
 		}
-		pkgName, ok := typesutil.ImportedPkgName(info, spec)
-		if !ok {
+		pkgName := info.PkgNameOf(spec)
+		if pkgName == nil {
 			continue
 		}
 		usedInSelection := false
@@ -152,7 +151,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		return nil, fmt.Errorf("%s: %w", errorPrefix, err)
 	}
 
-	fileStart := pgf.Tok.Pos(0) // TODO(adonovan): use go1.20 pgf.File.FileStart
+	fileStart := pgf.File.FileStart
 	buf.Write(pgf.Src[start-fileStart : end-fileStart])
 
 	// TODO: attempt to duplicate the copyright header, if any.

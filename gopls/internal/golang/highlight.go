@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -85,7 +84,7 @@ func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRa
 				highlight(imp)
 
 				// ...and all references to it in the file.
-				if pkgname, ok := typesutil.ImportedPkgName(info, imp); ok {
+				if pkgname := info.PkgNameOf(imp); pkgname != nil {
 					ast.Inspect(file, func(n ast.Node) bool {
 						if id, ok := n.(*ast.Ident); ok &&
 							info.Uses[id] == pkgname {
@@ -586,8 +585,8 @@ func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result
 				highlightIdent(n, protocol.Text)
 			}
 		case *ast.ImportSpec:
-			pkgname, ok := typesutil.ImportedPkgName(info, n)
-			if ok && pkgname == obj {
+			pkgname := info.PkgNameOf(n)
+			if pkgname == obj {
 				if n.Name != nil {
 					highlightNode(result, n.Name, protocol.Text)
 				} else {

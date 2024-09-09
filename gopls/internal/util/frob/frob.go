@@ -327,14 +327,9 @@ func (fr *frob) decode(in *reader, addr reflect.Value) {
 			kfrob, vfrob := fr.elems[0], fr.elems[1]
 			k := reflect.New(kfrob.t).Elem()
 			v := reflect.New(vfrob.t).Elem()
-			kzero := reflect.Zero(kfrob.t)
-			vzero := reflect.Zero(vfrob.t)
 			for i := 0; i < len; i++ {
-				// TODO(adonovan): use SetZero from go1.20.
-				// k.SetZero()
-				// v.SetZero()
-				k.Set(kzero)
-				v.Set(vzero)
+				k.SetZero()
+				v.SetZero()
 				kfrob.decode(in, k)
 				vfrob.decode(in, v)
 				m.SetMapIndex(k, v)
