@@ -13,13 +13,13 @@ package a
 
 func _() {
 	var logf func(string, ...any)
-	{ println(logf) } //@loc(block, re`{.*}`)
+	{ println(logf) } //@loc(block, re`{[^}]*}`)
 }
 
 -- @out/a/a.go --
 @@ -7 +7 @@
--	{ println(logf) } //@loc(block, re`{.*}`)
-+	{ newFunction(logf) } //@loc(block, re`{.*}`)
+-	{ println(logf) } //@loc(block, re`{[^}]*}`)
++	{ newFunction(logf) } //@loc(block, re`{[^}]*}`)
 @@ -10 +10,4 @@
 +func newFunction(logf func( string,  ...any)) {
 +	println(logf)

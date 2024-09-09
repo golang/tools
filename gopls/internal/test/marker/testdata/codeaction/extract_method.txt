@@ -30,7 +30,7 @@ func (a *A) XLessThanYP() bool {
 
 func (a *A) AddP() int {
 	sum := a.x + a.y //@loc(A_AddP1, re`sum.*a\.y`)
-	return sum       //@loc(A_AddP2, re`return.*sum`)
+	return sum       //@loc(A_AddP2, re`return.*?sum`)
 }
 
 func (a A) XLessThanY() bool {
@@ -39,7 +39,7 @@ func (a A) XLessThanY() bool {
 
 func (a A) Add() int {
 	sum := a.x + a.y //@loc(A_Add1, re`sum.*a\.y`)
-	return sum       //@loc(A_Add2, re`return.*sum`)
+	return sum       //@loc(A_Add2, re`return.*?sum`)
 }
 
 -- @func1/basic.go --
@@ -63,8 +63,8 @@ func (a A) Add() int {
 +
 -- @func3/basic.go --
 @@ -27 +27 @@
--	return sum       //@loc(A_AddP2, re`return.*sum`)
-+	return newFunction(sum)       //@loc(A_AddP2, re`return.*sum`)
+-	return sum       //@loc(A_AddP2, re`return.*?sum`)
++	return newFunction(sum)       //@loc(A_AddP2, re`return.*?sum`)
 @@ -30 +30,4 @@
 +func newFunction(sum int) int {
 +	return sum
@@ -91,8 +91,8 @@ func (a A) Add() int {
 +
 -- @func6/basic.go --
 @@ -36 +36 @@
--	return sum       //@loc(A_Add2, re`return.*sum`)
-+	return newFunction(sum)       //@loc(A_Add2, re`return.*sum`)
+-	return sum       //@loc(A_Add2, re`return.*?sum`)
++	return newFunction(sum)       //@loc(A_Add2, re`return.*?sum`)
 @@ -39 +39,4 @@
 +func newFunction(sum int) int {
 +	return sum
@@ -119,8 +119,8 @@ func (a A) Add() int {
 +
 -- @meth3/basic.go --
 @@ -27 +27 @@
--	return sum       //@loc(A_AddP2, re`return.*sum`)
-+	return a.newMethod(sum)       //@loc(A_AddP2, re`return.*sum`)
+-	return sum       //@loc(A_AddP2, re`return.*?sum`)
++	return a.newMethod(sum)       //@loc(A_AddP2, re`return.*?sum`)
 @@ -30 +30,4 @@
 +func (*A) newMethod(sum int) int {
 +	return sum
@@ -147,8 +147,8 @@ func (a A) Add() int {
 +
 -- @meth6/basic.go --
 @@ -36 +36 @@
--	return sum       //@loc(A_Add2, re`return.*sum`)
-+	return a.newMethod(sum)       //@loc(A_Add2, re`return.*sum`)
+-	return sum       //@loc(A_Add2, re`return.*?sum`)
++	return a.newMethod(sum)       //@loc(A_Add2, re`return.*?sum`)
 @@ -39 +39,4 @@
 +func (A) newMethod(sum int) int {
 +	return sum

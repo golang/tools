@@ -47,7 +47,7 @@ type J interface { //@loc(J, "J")
 -- b/b.go --
 package b
 
-import "mod.com/a" //@loc(AImport, re"\".*\"")
+import "mod.com/a" //@loc(AImport, re"\"[^\"]*\"")
 
 type embed struct {
 	F int //@loc(F, "F")

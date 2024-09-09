@@ -13,26 +13,26 @@ package comment_completion
 
 var p bool
 
-//@complete(re"$")
+//@complete(re"//()")
 
 func _() {
 	var a int
 
 	switch a {
 	case 1:
-		//@complete(re"$")
+		//@complete(re"//()")
 		_ = a
 	}
 
 	var b chan int
 	select {
 	case <-b:
-		//@complete(re"$")
+		//@complete(re"//()")
 		_ = b
 	}
 
 	var (
-		//@complete(re"$")
+		//@complete(re"//()")
 		_ = a
 	)
 }

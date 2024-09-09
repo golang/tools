@@ -27,7 +27,7 @@ func _() {
 
 // printf
 func _() {
-	printfWrapper("%s") //@diag(re`printfWrapper\(.*\)`, re"example.com.printfWrapper format %s reads arg #1, but call has 0 args")
+	printfWrapper("%s") //@diag(re`printfWrapper\(.*?\)`, re"example.com.printfWrapper format %s reads arg #1, but call has 0 args")
 }
 
 func printfWrapper(format string, args ...interface{}) {

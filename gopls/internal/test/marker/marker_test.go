@@ -1047,8 +1047,16 @@ var (
 //
 // Converters should return an error rather than calling marker.errorf().
 var customConverters = map[reflect.Type]func(marker, any) (any, error){
-	reflect.TypeOf(protocol.Location{}): convertLocation,
-	reflect.TypeOf(completionLabel("")): convertCompletionLabel,
+	reflect.TypeOf(protocol.Location{}): converter(convertLocation),
+	reflect.TypeOf(completionLabel("")): converter(convertCompletionLabel),
+}
+
+// converter transforms a typed argument conversion function to an untyped
+// conversion function.
+func converter[T any](f func(marker, any) (T, error)) func(marker, any) (any, error) {
+	return func(m marker, arg any) (any, error) {
+		return f(m, arg)
+	}
 }
 
 func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
@@ -1086,26 +1094,64 @@ func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 // convertLocation converts a string or regexp argument into the protocol
 // location corresponding to the first position of the string (or first match
 // of the regexp) in the line preceding the note.
-func convertLocation(mark marker, arg any) (any, error) {
+func convertLocation(mark marker, arg any) (protocol.Location, error) {
+	// matchContent is used to match the given argument against the file content
+	// starting at the marker line.
+	var matchContent func([]byte) (int, int, error)
+
 	switch arg := arg.(type) {
 	case protocol.Location:
-		return arg, nil
+		return arg, nil // nothing to do
 	case string:
-		startOff, preceding, m, err := linePreceding(mark.run, mark.note.Pos)
-		if err != nil {
-			return protocol.Location{}, err
+		matchContent = func(content []byte) (int, int, error) {
+			idx := bytes.Index(content, []byte(arg))
+			if idx < 0 {
+				return 0, 0, fmt.Errorf("substring %q not found", arg)
+			}
+			return idx, idx + len(arg), nil
 		}
-		idx := bytes.Index(preceding, []byte(arg))
-		if idx < 0 {
-			return protocol.Location{}, fmt.Errorf("substring %q not found in %q", arg, preceding)
-		}
-		off := startOff + idx
-		return m.OffsetLocation(off, off+len(arg))
 	case *regexp.Regexp:
-		return findRegexpInLine(mark.run, mark.note.Pos, arg)
+		matchContent = func(content []byte) (int, int, error) {
+			matches := arg.FindSubmatchIndex(content)
+			if len(matches) == 0 {
+				return 0, 0, fmt.Errorf("no match for regexp %q", arg)
+			}
+			switch len(matches) {
+			case 2:
+				// no subgroups: return the range of the regexp expression
+				return matches[0], matches[1], nil
+			case 4:
+				// one subgroup: return its range
+				return matches[2], matches[3], nil
+			default:
+				return 0, 0, fmt.Errorf("invalid location regexp %q: expect either 0 or 1 subgroups, got %d", arg, len(matches)/2-1)
+			}
+		}
 	default:
 		return protocol.Location{}, fmt.Errorf("cannot convert argument type %T to location (must be a string or regexp to match the preceding line)", arg)
 	}
+
+	// Now use matchFunc to match a range starting on the marker line.
+
+	file := mark.run.test.fset.File(mark.note.Pos)
+	posn := safetoken.Position(file, mark.note.Pos)
+	lineStart := file.LineStart(posn.Line)
+	lineStartOff, lineEndOff, err := safetoken.Offsets(file, lineStart, mark.note.Pos)
+	if err != nil {
+		return protocol.Location{}, err
+	}
+	m := mark.mapper()
+	start, end, err := matchContent(m.Content[lineStartOff:])
+	if err != nil {
+		return protocol.Location{}, err
+	}
+	startOff, endOff := lineStartOff+start, lineStartOff+end
+	if startOff > lineEndOff {
+		// The start of the match must be between the start of the line and the
+		// marker position (inclusive).
+		return protocol.Location{}, fmt.Errorf("no matching range found starting on the current line")
+	}
+	return m.OffsetLocation(startOff, endOff)
 }
 
 // completionLabel is a special parameter type that may be converted from a
@@ -1122,7 +1168,7 @@ type completionLabel string
 //
 // This allows us to stage a migration of the "snippet" marker to a simpler
 // model where the completion label can just be listed explicitly.
-func convertCompletionLabel(mark marker, arg any) (any, error) {
+func convertCompletionLabel(mark marker, arg any) (completionLabel, error) {
 	switch arg := arg.(type) {
 	case string:
 		return completionLabel(arg), nil
@@ -1131,50 +1177,6 @@ func convertCompletionLabel(mark marker, arg any) (any, error) {
 	default:
 		return "", fmt.Errorf("cannot convert argument type %T to completion label (must be a string or completion item)", arg)
 	}
-}
-
-// findRegexpInLine searches the partial line preceding pos for a match for the
-// regular expression re, returning a location spanning the first match. If re
-// contains exactly one subgroup, the position of this subgroup match is
-// returned rather than the position of the full match.
-func findRegexpInLine(run *markerTestRun, pos token.Pos, re *regexp.Regexp) (protocol.Location, error) {
-	startOff, preceding, m, err := linePreceding(run, pos)
-	if err != nil {
-		return protocol.Location{}, err
-	}
-
-	matches := re.FindSubmatchIndex(preceding)
-	if len(matches) == 0 {
-		return protocol.Location{}, fmt.Errorf("no match for regexp %q found in %q", re, string(preceding))
-	}
-	var start, end int
-	switch len(matches) {
-	case 2:
-		// no subgroups: return the range of the regexp expression
-		start, end = matches[0], matches[1]
-	case 4:
-		// one subgroup: return its range
-		start, end = matches[2], matches[3]
-	default:
-		return protocol.Location{}, fmt.Errorf("invalid location regexp %q: expect either 0 or 1 subgroups, got %d", re, len(matches)/2-1)
-	}
-
-	return m.OffsetLocation(start+startOff, end+startOff)
-}
-
-func linePreceding(run *markerTestRun, pos token.Pos) (int, []byte, *protocol.Mapper, error) {
-	file := run.test.fset.File(pos)
-	posn := safetoken.Position(file, pos)
-	lineStart := file.LineStart(posn.Line)
-	startOff, endOff, err := safetoken.Offsets(file, lineStart, pos)
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	m, err := run.env.Editor.Mapper(file.Name())
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	return startOff, m.Content[startOff:endOff], m, nil
 }
 
 // convertStringMatcher converts a string, regexp, or identifier

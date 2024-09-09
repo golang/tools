@@ -107,10 +107,10 @@ The following markers are supported within marker tests:
     If titles are provided, they are used to filter the matching code
     action.
 
-    TODO(rfindley): consolidate with codeactionedit, via a @loc2 marker that
-    allows binding multi-line locations.
+    TODO(rfindley): now that 'location' supports multi-line matches, replace
+    uses of 'codeaction' with codeactionedit.
 
-  - codeactionedit(range, kind, golden, ...titles): a shorter form of
+  - codeactionedit(location, kind, golden, ...titles): a shorter form of
     codeaction. Invokes a code action of the given kind for the given
     in-line range, and compares the resulting formatted unified *edits*
     (notably, not the full file content) with the golden directory.
@@ -292,11 +292,15 @@ test function. Additional value conversions may occur for these argument ->
 parameter type pairs:
   - string->regexp: the argument is parsed as a regular expressions.
   - string->location: the argument is converted to the location of the first
-    instance of the argument in the partial line preceding the note.
+    instance of the argument in the file content starting from the beginning of
+    the line containing the note. Multi-line matches are permitted, but the
+    match must begin before the note.
   - regexp->location: the argument is converted to the location of the first
-    match for the argument in the partial line preceding the note. If the
-    regular expression contains exactly one subgroup, the position of the
-    subgroup is used rather than the position of the submatch.
+    match for the argument in the file content starting from the beginning of
+    the line containing the note. Multi-line matches are permitted, but the
+    match must begin before the note. If the regular expression contains
+    exactly one subgroup, the position of the subgroup is used rather than the
+    position of the submatch.
   - name->location: the argument is replaced by the named location.
   - name->Golden: the argument is used to look up golden content prefixed by
     @<argument>.
@@ -336,12 +340,12 @@ files, and sandboxed directory.
 
 Argument converters translate the "b" and "abc" arguments into locations by
 interpreting each one as a substring (or as a regular expression, if of the
-form re"a|b") and finding the location of its first occurrence on the preceding
-portion of the line, and the abc identifier into a the golden content contained
-in the file @abc. Then the hoverMarker method executes a textDocument/hover LSP
-request at the src position, and ensures the result spans "abc", with the
-markdown content from @abc. (Note that the markdown content includes the expect
-annotation as the doc comment.)
+form re"a|b") and finding the location of its first occurrence starting on the
+preceding portion of the line, and the abc identifier into a the golden content
+contained in the file @abc. Then the hoverMarker method executes a
+textDocument/hover LSP request at the src position, and ensures the result
+spans "abc", with the markdown content from @abc. (Note that the markdown
+content includes the expect annotation as the doc comment.)
 
 The next hover on the same line asserts the same result, but initiates the
 hover immediately after "abc" in the source. This tests that we find the
