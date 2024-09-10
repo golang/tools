@@ -35,13 +35,18 @@ func bytesAllocated() uint64 {
 	return stats.Alloc
 }
 
-// TestStdlib loads the entire standard library and its tools.
+// TestStdlib loads the entire standard library and its tools and all
+// their dependencies.
+//
+// (As of go1.23, std is transitively closed, so adding the -deps flag
+// doesn't increase its result set. The cmd pseudomodule of course
+// depends on a good chunk of std, but the std+cmd set is also
+// transitively closed, so long as -pgo=off.)
 //
 // Apart from a small number of internal packages that are not
 // returned by the 'std' query, the set is essentially transitively
 // closed, so marginal per-dependency costs are invisible.
 func TestStdlib(t *testing.T) {
-	t.Skip("broken; see https://go.dev/issues/69287")
 	testLoad(t, 500, "std", "cmd")
 }
 
@@ -77,6 +82,9 @@ func testLoad(t *testing.T, minPkgs int, patterns ...string) {
 	pkgs, err := packages.Load(cfg, patterns...)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if packages.PrintErrors(pkgs) > 0 {
+		t.Fatal("there were errors loading the packages")
 	}
 
 	t1 := time.Now()
@@ -195,9 +203,13 @@ func srcFunctions(prog *ssa.Program, pkgs []*packages.Package) (res []*ssa.Funct
 				if decl, ok := decl.(*ast.FuncDecl); ok {
 					obj := pkg.TypesInfo.Defs[decl.Name].(*types.Func)
 					if obj == nil {
-						panic("nil *Func")
+						panic("nil *types.Func: " + decl.Name.Name)
 					}
-					addSrcFunc(prog.FuncValue(obj))
+					fn := prog.FuncValue(obj)
+					if fn == nil {
+						panic("nil *ssa.Function: " + obj.String())
+					}
+					addSrcFunc(fn)
 				}
 			}
 		}
