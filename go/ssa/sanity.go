@@ -407,14 +407,45 @@ func (s *sanity) checkReferrerList(v Value) {
 	}
 }
 
+func (s *sanity) checkFunctionParams(fn *Function) {
+	signature := fn.Signature
+	params := fn.Params
+
+	// startSigParams is the start of signature.Params() within params.
+	startSigParams := 0
+	if signature.Recv() != nil {
+		startSigParams = 1
+	}
+
+	if startSigParams+signature.Params().Len() != len(params) {
+		s.errorf("function has %d parameters in signature but has %d after building",
+			startSigParams+signature.Params().Len(), len(params))
+		return
+	}
+
+	for i, param := range params {
+		var sigType types.Type
+		si := i - startSigParams
+		if si < 0 {
+			sigType = signature.Recv().Type()
+		} else {
+			sigType = signature.Params().At(si).Type()
+		}
+
+		if !types.Identical(sigType, param.Type()) {
+			s.errorf("expect type %s in signature but got type %s in param %d", param.Type(), sigType, i)
+		}
+	}
+}
+
 func (s *sanity) checkFunction(fn *Function) bool {
-	// TODO(adonovan): check Function invariants:
-	// - check params match signature
-	// - check transient fields are nil
-	// - warn if any fn.Locals do not appear among block instructions.
+	s.fn = fn
+	// TODO(yuchen): fix the bug caught on fn.targets when checking transient fields
+	// see https://go-review.googlesource.com/c/tools/+/610059/comment/4287a123_dc6cbc44/
+
+	s.checkFunctionParams(fn)
 
 	// TODO(taking): Sanity check origin, typeparams, and typeargs.
-	s.fn = fn
 	if fn.Prog == nil {
 		s.errorf("nil Prog")
 	}
@@ -452,19 +483,28 @@ func (s *sanity) checkFunction(fn *Function) bool {
 			s.errorf("got fromSource=%t, hasSyntax=%t; want same values", src, syn)
 		}
 	}
+
+	// Build the set of valid referrers.
+	s.instrs = make(map[Instruction]unit)
+
+	// TODO: switch to range-over-func when x/tools updates to 1.23.
+	// instrs are the instructions that are present in the function.
+	fn.instrs()(func(instr Instruction) bool {
+		s.instrs[instr] = unit{}
+		return true
+	})
+
+	// Check all Locals allocations appear in the function instruction.
 	for i, l := range fn.Locals {
+		if _, present := s.instrs[l]; !present {
+			s.warnf("function doesn't contain Local alloc %s", l.Name())
+		}
+
 		if l.Parent() != fn {
 			s.errorf("Local %s at index %d has wrong parent", l.Name(), i)
 		}
 		if l.Heap {
 			s.errorf("Local %s at index %d has Heap flag set", l.Name(), i)
-		}
-	}
-	// Build the set of valid referrers.
-	s.instrs = make(map[Instruction]unit)
-	for _, b := range fn.Blocks {
-		for _, instr := range b.Instrs {
-			s.instrs[instr] = unit{}
 		}
 	}
 	for i, p := range fn.Params {
