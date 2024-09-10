@@ -111,7 +111,7 @@ func parseDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types.O
 
 	for _, idx := range docLinkRegex.FindAllStringSubmatchIndex(text, -1) {
 		// The [idx[2], idx[3]) identifies the first submatch,
-		// which is the reference name in the doc link.
+		// which is the reference name in the doc link (sans '*').
 		// e.g. The "[fmt.Println]" reference name is "fmt.Println".
 		if !(idx[2] <= lineOffset && lineOffset < idx[3]) {
 			continue
@@ -126,7 +126,7 @@ func parseDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types.O
 			name = name[:i]
 			i = strings.LastIndexByte(name, '.')
 		}
-		obj := lookupObjectByName(pkg, pgf, name)
+		obj := lookupDocLinkSymbol(pkg, pgf, name)
 		if obj == nil {
 			return nil, protocol.Range{}, errNoCommentReference
 		}
@@ -141,19 +141,42 @@ func parseDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types.O
 	return nil, protocol.Range{}, errNoCommentReference
 }
 
-func lookupObjectByName(pkg *cache.Package, pgf *parsego.File, name string) types.Object {
+// lookupDocLinkSymbol returns the symbol denoted by a doc link such
+// as "fmt.Println" or "bytes.Buffer.Write" in the specified file.
+func lookupDocLinkSymbol(pkg *cache.Package, pgf *parsego.File, name string) types.Object {
 	scope := pkg.Types().Scope()
+
+	prefix, suffix, _ := strings.Cut(name, ".")
+
+	// Try treating the prefix as a package name,
+	// allowing for non-renaming and renaming imports.
 	fileScope := pkg.TypesInfo().Scopes[pgf.File]
-	pkgName, suffix, _ := strings.Cut(name, ".")
-	obj, ok := fileScope.Lookup(pkgName).(*types.PkgName)
-	if ok {
-		scope = obj.Imported().Scope()
+	pkgname, ok := fileScope.Lookup(prefix).(*types.PkgName) // ok => prefix is imported name
+	if !ok {
+		// Handle renaming import, e.g.
+		// [path.Join] after import pathpkg "path".
+		// (Should we look at all files of the package?)
+		for _, imp := range pgf.File.Imports {
+			pkgname2 := pkg.TypesInfo().PkgNameOf(imp)
+			if pkgname2 != nil && pkgname2.Imported().Name() == prefix {
+				pkgname = pkgname2
+				break
+			}
+		}
+	}
+	if pkgname != nil {
+		scope = pkgname.Imported().Scope()
 		if suffix == "" {
-			return obj
+			return pkgname // not really a valid doc link
 		}
 		name = suffix
 	}
 
+	// TODO(adonovan): try searching the forward closure for packages
+	// that define the symbol but are not directly imported;
+	// see https://github.com/golang/go/issues/61677
+
+	// Type.Method?
 	recv, method, ok := strings.Cut(name, ".")
 	if ok {
 		obj, ok := scope.Lookup(recv).(*types.TypeName)
@@ -173,5 +196,6 @@ func lookupObjectByName(pkg *cache.Package, pgf *parsego.File, name string) type
 		return nil
 	}
 
+	// package-level symbol
 	return scope.Lookup(name)
 }
