@@ -407,9 +407,9 @@ func (s *sanity) checkReferrerList(v Value) {
 	}
 }
 
-func (s *sanity) checkFunctionParams(fn *Function) {
-	signature := fn.Signature
-	params := fn.Params
+func (s *sanity) checkFunctionParams() {
+	signature := s.fn.Signature
+	params := s.fn.Params
 
 	// startSigParams is the start of signature.Params() within params.
 	startSigParams := 0
@@ -438,12 +438,54 @@ func (s *sanity) checkFunctionParams(fn *Function) {
 	}
 }
 
+// checkTransientFields checks whether all transient fields of Function are cleared.
+func (s *sanity) checkTransientFields() {
+	fn := s.fn
+	if fn.build != nil {
+		s.errorf("function transient field 'build' is not nil")
+	}
+	if fn.currentBlock != nil {
+		s.errorf("function transient field 'currentBlock' is not nil")
+	}
+	if fn.vars != nil {
+		s.errorf("function transient field 'vars' is not nil")
+	}
+	if fn.results != nil {
+		s.errorf("function transient field 'results' is not nil")
+	}
+	if fn.returnVars != nil {
+		s.errorf("function transient field 'returnVars' is not nil")
+	}
+	if fn.targets != nil {
+		s.errorf("function transient field 'targets' is not nil")
+	}
+	if fn.lblocks != nil {
+		s.errorf("function transient field 'lblocks' is not nil")
+	}
+	if fn.subst != nil {
+		s.errorf("function transient field 'subst' is not nil")
+	}
+	if fn.jump != nil {
+		s.errorf("function transient field 'jump' is not nil")
+	}
+	if fn.deferstack != nil {
+		s.errorf("function transient field 'deferstack' is not nil")
+	}
+	if fn.source != nil {
+		s.errorf("function transient field 'source' is not nil")
+	}
+	if fn.exits != nil {
+		s.errorf("function transient field 'exits' is not nil")
+	}
+	if fn.uniq != 0 {
+		s.errorf("function transient field 'uniq' is not zero")
+	}
+}
+
 func (s *sanity) checkFunction(fn *Function) bool {
 	s.fn = fn
-	// TODO(yuchen): fix the bug caught on fn.targets when checking transient fields
-	// see https://go-review.googlesource.com/c/tools/+/610059/comment/4287a123_dc6cbc44/
-
-	s.checkFunctionParams(fn)
+	s.checkFunctionParams()
+	s.checkTransientFields()
 
 	// TODO(taking): Sanity check origin, typeparams, and typeargs.
 	if fn.Prog == nil {

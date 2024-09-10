@@ -39,6 +39,18 @@ func TestExperimentRange(t *testing.T) {
 	run(t, filepath.Join(cwd, "testdata", "rangeoverint.go"), goroot)
 }
 
+func TestIssue69298(t *testing.T) {
+	testenv.NeedsGo1Point(t, 23)
+
+	// TODO: Is cwd actually needed here?
+	goroot := makeGoroot(t)
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+	run(t, filepath.Join(cwd, "testdata", "fixedbugs/issue69298.go"), goroot)
+}
+
 // TestRangeFunc tests range-over-func in a subprocess.
 func TestRangeFunc(t *testing.T) {
 	testenv.NeedsGo1Point(t, 23)
