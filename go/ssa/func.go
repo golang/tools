@@ -186,7 +186,8 @@ func targetedBlock(f *Function, tok token.Token) *BasicBlock {
 	return targetedBlock(f.parent, tok)
 }
 
-// instrs returns a next function that returns each reachable instruction of the SSA function.
+// instrs returns an iterator that returns each reachable instruction of the SSA function.
+// TODO: return an iter.Seq once x/tools is on 1.23
 func (f *Function) instrs() func(yield func(i Instruction) bool) {
 	return func(yield func(i Instruction) bool) {
 		for _, block := range f.Blocks {
