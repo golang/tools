@@ -407,9 +407,9 @@ func (s *sanity) checkReferrerList(v Value) {
 	}
 }
 
-func (s *sanity) checkFunctionParams(fn *Function) {
-	signature := fn.Signature
-	params := fn.Params
+func (s *sanity) checkFunctionParams() {
+	signature := s.fn.Signature
+	params := s.fn.Params
 
 	// startSigParams is the start of signature.Params() within params.
 	startSigParams := 0
@@ -484,7 +484,7 @@ func (s *sanity) checkTransientFields() {
 
 func (s *sanity) checkFunction(fn *Function) bool {
 	s.fn = fn
-	s.checkFunctionParams(fn)
+	s.checkFunctionParams()
 	s.checkTransientFields()
 
 	// TODO(taking): Sanity check origin, typeparams, and typeargs.
