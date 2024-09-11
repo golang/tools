@@ -11,10 +11,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/gopls/internal/cache/parsego"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
@@ -26,22 +23,22 @@ import (
 // Only the following conditions are true, the action in result is valid
 //   - [start, end) is enclosed by a string literal
 //   - if the string is interpreted string, need check whether the convert is allowed
-func convertStringLiteral(pgf *parsego.File, fh file.Handle, startPos, endPos token.Pos) (protocol.CodeAction, bool) {
-	path, _ := astutil.PathEnclosingInterval(pgf.File, startPos, endPos)
+func convertStringLiteral(req *codeActionsRequest) {
+	path, _ := astutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
 	lit, ok := path[0].(*ast.BasicLit)
 	if !ok || lit.Kind != token.STRING {
-		return protocol.CodeAction{}, false
+		return
 	}
 
 	str, err := strconv.Unquote(lit.Value)
 	if err != nil {
-		return protocol.CodeAction{}, false
+		return
 	}
 
 	interpreted := lit.Value[0] == '"'
 	// Not all "..." strings can be represented as `...` strings.
 	if interpreted && !strconv.CanBackquote(strings.ReplaceAll(str, "\n", "")) {
-		return protocol.CodeAction{}, false
+		return
 	}
 
 	var (
@@ -56,24 +53,20 @@ func convertStringLiteral(pgf *parsego.File, fh file.Handle, startPos, endPos to
 		newText = strconv.Quote(str)
 	}
 
-	start, end, err := safetoken.Offsets(pgf.Tok, lit.Pos(), lit.End())
+	start, end, err := safetoken.Offsets(req.pgf.Tok, lit.Pos(), lit.End())
 	if err != nil {
 		bug.Reportf("failed to get string literal offset by token.Pos:%v", err)
-		return protocol.CodeAction{}, false
+		return
 	}
 	edits := []diff.Edit{{
 		Start: start,
 		End:   end,
 		New:   newText,
 	}}
-	textedits, err := protocol.EditsFromDiffEdits(pgf.Mapper, edits)
+	textedits, err := protocol.EditsFromDiffEdits(req.pgf.Mapper, edits)
 	if err != nil {
 		bug.Reportf("failed to convert diff.Edit to protocol.TextEdit:%v", err)
-		return protocol.CodeAction{}, false
+		return
 	}
-	return protocol.CodeAction{
-		Title: title,
-		Kind:  settings.RefactorRewriteChangeQuote,
-		Edit:  protocol.NewWorkspaceEdit(protocol.DocumentChangeEdit(fh, textedits)),
-	}, true
+	req.addEditAction(title, protocol.DocumentChangeEdit(req.fh, textedits))
 }

@@ -240,7 +240,7 @@ func invertAndOr(fset *token.FileSet, expr *ast.BinaryExpr, src []byte) ([]byte,
 }
 
 // canInvertIfCondition reports whether we can do invert-if-condition on the
-// code in the given range
+// code in the given range.
 func canInvertIfCondition(file *ast.File, start, end token.Pos) (*ast.IfStmt, bool, error) {
 	path, _ := astutil.PathEnclosingInterval(file, start, end)
 	for _, node := range path {

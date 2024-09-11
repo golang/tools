@@ -9,8 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/token"
 	"go/types"
+	"reflect"
 	"slices"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -23,7 +26,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -38,7 +40,7 @@ import (
 // See ../protocol/codeactionkind.go for some code action theory.
 func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, diagnostics []protocol.Diagnostic, enabled func(protocol.CodeActionKind) bool, trigger protocol.CodeActionTriggerKind) (actions []protocol.CodeAction, _ error) {
 
-	// code actions that require only a parse tree
+	loc := protocol.Location{URI: fh.URI(), Range: rng}
 
 	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
@@ -49,166 +51,250 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 		return nil, err
 	}
 
-	// add adds a code action to the result.
-	add := func(cmd *protocol.Command, kind protocol.CodeActionKind) {
-		action := newCodeAction(cmd.Title, kind, cmd, nil, snapshot.Options())
-		actions = append(actions, action)
+	// Scan to see if any enabled producer needs type information.
+	var enabledMemo [len(codeActionProducers)]bool
+	needTypes := false
+	for i, p := range codeActionProducers {
+		if enabled(p.kind) {
+			enabledMemo[i] = true
+			if p.needPkg {
+				needTypes = true
+			}
+		}
 	}
+
+	// Compute type information if needed.
+	// Also update pgf, start, end to be consistent with pkg.
+	// They may differ in case of parse cache miss.
+	var pkg *cache.Package
+	if needTypes {
+		var err error
+		pkg, pgf, err = NarrowestPackageForFile(ctx, snapshot, loc.URI)
+		if err != nil {
+			return nil, err
+		}
+		start, end, err = pgf.RangePos(loc.Range)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Execute each enabled producer function.
+	req := &codeActionsRequest{
+		actions:     &actions,
+		lazy:        make(map[reflect.Type]any),
+		snapshot:    snapshot,
+		fh:          fh,
+		pgf:         pgf,
+		loc:         loc,
+		start:       start,
+		end:         end,
+		diagnostics: diagnostics,
+		trigger:     trigger,
+		pkg:         pkg,
+	}
+	for i, p := range codeActionProducers {
+		if !enabledMemo[i] {
+			continue
+		}
+		req.kind = p.kind
+		if p.needPkg {
+			req.pkg = pkg
+		} else {
+			req.pkg = nil
+		}
+		if err := p.fn(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+
+	sort.Slice(actions, func(i, j int) bool {
+		return actions[i].Kind < actions[j].Kind
+	})
+
+	return actions, nil
+}
+
+// A codeActionsRequest is passed to each function
+// that produces code actions.
+type codeActionsRequest struct {
+	// internal fields for use only by [CodeActions].
+	actions *[]protocol.CodeAction // pointer to output slice; call addAction to populate
+	lazy    map[reflect.Type]any   // lazy construction
+
+	// inputs to the producer function:
+	kind        protocol.CodeActionKind
+	snapshot    *cache.Snapshot
+	fh          file.Handle
+	pgf         *parsego.File
+	loc         protocol.Location
+	start, end  token.Pos
+	diagnostics []protocol.Diagnostic
+	trigger     protocol.CodeActionTriggerKind
+	pkg         *cache.Package // set only if producer.needPkg
+}
+
+// addCommandAction adds a CodeAction to the result based on the provided command.
+//
+// If the client supports codeAction/resolve, then the command is embedded into
+// the code action data field, and used to resolve edits later. Otherwise, the
+// command is set as the code action operation.
+func (req *codeActionsRequest) addCommandAction(cmd *protocol.Command) *protocol.CodeAction {
+	act := protocol.CodeAction{
+		Title: cmd.Title,
+		Kind:  req.kind,
+	}
+	// TODO(adonovan): some commands (goFreeSymbols, goplsDoc,
+	// goDoc, goTest, and goAssembly) have side effects such as
+	// opening a browser, and so should not be eligible for lazy
+	// edit resolution.
+	if !req.resolveEdits() {
+		act.Command = cmd
+	} else {
+		data, err := json.Marshal(cmd)
+		if err != nil {
+			panic("unable to marshal")
+		}
+		msg := json.RawMessage(data)
+		act.Data = &msg
+	}
+	return req.addAction(act)
+}
+
+// addCommandAction adds an edit-based CodeAction to the result.
+func (req *codeActionsRequest) addEditAction(title string, changes ...protocol.DocumentChange) *protocol.CodeAction {
+	return req.addAction(protocol.CodeAction{
+		Title: title,
+		Kind:  req.kind,
+		Edit:  protocol.NewWorkspaceEdit(changes...),
+	})
+}
+
+// addAction adds a code action to the response.
+// It returns an ephemeral pointer to the action in situ.
+// which may be used (but only immediately) for further mutation.
+func (req *codeActionsRequest) addAction(act protocol.CodeAction) *protocol.CodeAction {
+	*req.actions = append(*req.actions, act)
+	return &(*req.actions)[len(*req.actions)-1]
+}
+
+// resolveEdits reports whether the client can resolve edits lazily.
+func (req *codeActionsRequest) resolveEdits() bool {
+	opts := req.snapshot.Options()
+	return opts.CodeActionResolveOptions != nil &&
+		slices.Contains(opts.CodeActionResolveOptions, "edit")
+}
+
+// lazyInit[*T](ctx, req) returns a pointer to an instance of T,
+// calling new(T).init(ctx.req) on the first request.
+//
+// It is conceptually a (generic) method of req.
+func lazyInit[P interface {
+	init(ctx context.Context, req *codeActionsRequest)
+	*T
+}, T any](ctx context.Context, req *codeActionsRequest) P {
+	t := reflect.TypeFor[T]()
+	v, ok := req.lazy[t].(P)
+	if !ok {
+		v = new(T)
+		v.init(ctx, req)
+		req.lazy[t] = v
+	}
+	return v
+}
+
+// -- producers --
+
+// A codeActionProducer describes a function that produces CodeActions
+// of a particular kind.
+// The function is only called if that kind is enabled.
+type codeActionProducer struct {
+	kind    protocol.CodeActionKind
+	fn      func(ctx context.Context, req *codeActionsRequest) error
+	needPkg bool // fn needs type information (req.pkg)
+}
+
+var codeActionProducers = [...]codeActionProducer{
+	{kind: protocol.QuickFix, fn: quickFix},
+	{kind: protocol.SourceOrganizeImports, fn: sourceOrganizeImports},
+	{kind: settings.GoAssembly, fn: goAssembly, needPkg: true},
+	{kind: settings.GoDoc, fn: goDoc, needPkg: true},
+	{kind: settings.GoFreeSymbols, fn: goFreeSymbols},
+	{kind: settings.GoTest, fn: goTest},
+	{kind: settings.GoplsDocFeatures, fn: goplsDocFeatures},
+	{kind: settings.RefactorExtractFunction, fn: refactorExtractFunction},
+	{kind: settings.RefactorExtractMethod, fn: refactorExtractMethod},
+	{kind: settings.RefactorExtractToNewFile, fn: refactorExtractToNewFile},
+	{kind: settings.RefactorExtractVariable, fn: refactorExtractVariable},
+	{kind: settings.RefactorInlineCall, fn: refactorInlineCall, needPkg: true},
+	{kind: settings.RefactorRewriteChangeQuote, fn: refactorRewriteChangeQuote},
+	{kind: settings.RefactorRewriteFillStruct, fn: refactorRewriteFillStruct, needPkg: true},
+	{kind: settings.RefactorRewriteFillSwitch, fn: refactorRewriteFillSwitch, needPkg: true},
+	{kind: settings.RefactorRewriteInvertIf, fn: refactorRewriteInvertIf},
+	{kind: settings.RefactorRewriteJoinLines, fn: refactorRewriteJoinLines, needPkg: true},
+	{kind: settings.RefactorRewriteRemoveUnusedParam, fn: refactorRewriteRemoveUnusedParam, needPkg: true},
+	{kind: settings.RefactorRewriteSplitLines, fn: refactorRewriteSplitLines, needPkg: true},
 
 	// Note: don't forget to update the allow-list in Server.CodeAction
 	// when adding new query operations like GoTest and GoDoc that
 	// are permitted even in generated source files.
-
-	// Only compute quick fixes if there are any diagnostics to fix.
-	wantQuickFixes := len(diagnostics) > 0 && enabled(protocol.QuickFix)
-	if wantQuickFixes || enabled(protocol.SourceOrganizeImports) {
-		// Process any missing imports and pair them with the diagnostics they fix.
-		importEdits, importEditsPerFix, err := allImportsFixes(ctx, snapshot, pgf)
-		if err != nil {
-			event.Error(ctx, "imports fixes", err, label.File.Of(fh.URI().Path()))
-			importEdits = nil
-			importEditsPerFix = nil
-		}
-
-		// Separate this into a set of codeActions per diagnostic, where
-		// each action is the addition, removal, or renaming of one import.
-		if wantQuickFixes {
-			for _, importFix := range importEditsPerFix {
-				fixed := fixedByImportFix(importFix.fix, diagnostics)
-				if len(fixed) == 0 {
-					continue
-				}
-				actions = append(actions, protocol.CodeAction{
-					Title: importFixTitle(importFix.fix),
-					Kind:  protocol.QuickFix,
-					Edit: protocol.NewWorkspaceEdit(
-						protocol.DocumentChangeEdit(fh, importFix.edits)),
-					Diagnostics: fixed,
-				})
-			}
-		}
-
-		// Send all of the import edits as one code action if the file is
-		// being organized.
-		if len(importEdits) > 0 && enabled(protocol.SourceOrganizeImports) {
-			actions = append(actions, protocol.CodeAction{
-				Title: "Organize Imports",
-				Kind:  protocol.SourceOrganizeImports,
-				Edit: protocol.NewWorkspaceEdit(
-					protocol.DocumentChangeEdit(fh, importEdits)),
-			})
-		}
-	}
-
-	// refactor.extract.*
-	{
-		extractions, err := getExtractCodeActions(enabled, pgf, rng, snapshot.Options())
-		if err != nil {
-			return nil, err
-		}
-		actions = append(actions, extractions...)
-	}
-
-	if kind := settings.GoFreeSymbols; enabled(kind) && rng.End != rng.Start {
-		loc := protocol.Location{URI: pgf.URI, Range: rng}
-		cmd := command.NewFreeSymbolsCommand("Browse free symbols", snapshot.View().ID(), loc)
-		// For implementation, see commandHandler.FreeSymbols.
-		add(cmd, kind)
-	}
-
-	if kind := settings.GoplsDocFeatures; enabled(kind) {
-		// TODO(adonovan): after the docs are published in gopls/v0.17.0,
-		// use the gopls release tag instead of master.
-		cmd := command.NewClientOpenURLCommand(
-			"Browse gopls feature documentation",
-			"https://github.com/golang/tools/blob/master/gopls/doc/features/README.md")
-		add(cmd, kind)
-	}
-
-	// code actions that require type information
-	//
-	// In order to keep the fast path (in particular,
-	// VS Code's request for just source.organizeImports
-	// immediately after a save) fast, avoid type checking
-	// if no enabled code actions need it.
-	//
-	// TODO(adonovan): design some kind of registration mechanism
-	// that avoids the need to keep this list up to date.
-	if !slices.ContainsFunc([]protocol.CodeActionKind{
-		settings.RefactorRewriteRemoveUnusedParam,
-		settings.RefactorRewriteChangeQuote,
-		settings.RefactorRewriteInvertIf,
-		settings.RefactorRewriteSplitLines,
-		settings.RefactorRewriteJoinLines,
-		settings.RefactorRewriteFillStruct,
-		settings.RefactorRewriteFillSwitch,
-		settings.RefactorInlineCall,
-		settings.GoTest,
-		settings.GoDoc,
-		settings.GoAssembly,
-	}, enabled) {
-		return actions, nil
-	}
-
-	// NB: update pgf, since it may not be a parse cache hit (esp. on 386).
-	// And update start, end, since they may have changed too.
-	// A framework would really make this cleaner.
-	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
-	if err != nil {
-		return nil, err
-	}
-	start, end, err = pgf.RangePos(rng)
-	if err != nil {
-		return nil, err
-	}
-
-	// refactor.rewrite.*
-	{
-		rewrites, err := getRewriteCodeActions(enabled, ctx, pkg, snapshot, pgf, fh, rng, snapshot.Options())
-		if err != nil {
-			return nil, err
-		}
-		actions = append(actions, rewrites...)
-	}
-
-	// To avoid distraction (e.g. VS Code lightbulb), offer "inline"
-	// only after a selection or explicit menu operation.
-	if trigger != protocol.CodeActionAutomatic || rng.Start != rng.End {
-		rewrites, err := getInlineCodeActions(enabled, pkg, pgf, rng, snapshot.Options())
-		if err != nil {
-			return nil, err
-		}
-		actions = append(actions, rewrites...)
-	}
-
-	if enabled(settings.GoTest) {
-		fixes, err := getGoTestCodeActions(pkg, pgf, rng)
-		if err != nil {
-			return nil, err
-		}
-		actions = append(actions, fixes...)
-	}
-
-	if kind := settings.GoDoc; enabled(kind) {
-		// "Browse documentation for ..."
-		_, _, title := DocFragment(pkg, pgf, start, end)
-		loc := protocol.Location{URI: pgf.URI, Range: rng}
-		cmd := command.NewDocCommand(title, loc)
-		add(cmd, kind)
-	}
-
-	if enabled(settings.GoAssembly) {
-		fixes, err := getGoAssemblyAction(snapshot.View(), pkg, pgf, rng)
-		if err != nil {
-			return nil, err
-		}
-		actions = append(actions, fixes...)
-	}
-	return actions, nil
 }
 
-func supportsResolveEdits(options *settings.Options) bool {
-	return options.CodeActionResolveOptions != nil && slices.Contains(options.CodeActionResolveOptions, "edit")
+// sourceOrganizeImports produces "Organize Imports" code actions.
+func sourceOrganizeImports(ctx context.Context, req *codeActionsRequest) error {
+	res := lazyInit[*allImportsFixesResult](ctx, req)
+
+	// Send all of the import edits as one code action
+	// if the file is being organized.
+	if len(res.allFixEdits) > 0 {
+		req.addEditAction("Organize Imports", protocol.DocumentChangeEdit(req.fh, res.allFixEdits))
+	}
+
+	return nil
+}
+
+// quickFix produces code actions that add/delete/rename imports to fix type errors.
+func quickFix(ctx context.Context, req *codeActionsRequest) error {
+	// Only compute quick fixes if there are any diagnostics to fix.
+	if len(req.diagnostics) == 0 {
+		return nil
+	}
+
+	// Process any missing imports and pair them with the diagnostics they fix.
+	res := lazyInit[*allImportsFixesResult](ctx, req)
+	if res.err != nil {
+		return nil
+	}
+
+	// Separate this into a set of codeActions per diagnostic, where
+	// each action is the addition, removal, or renaming of one import.
+	for _, importFix := range res.editsPerFix {
+		fixed := fixedByImportFix(importFix.fix, req.diagnostics)
+		if len(fixed) == 0 {
+			continue
+		}
+		act := req.addEditAction(
+			importFixTitle(importFix.fix),
+			protocol.DocumentChangeEdit(req.fh, importFix.edits))
+		act.Diagnostics = fixed
+	}
+
+	return nil
+}
+
+// allImportsFixesResult is the result of a lazy call to allImportsFixes.
+// It implements the codeActionsRequest lazyInit interface.
+type allImportsFixesResult struct {
+	allFixEdits []protocol.TextEdit
+	editsPerFix []*importFix
+	err         error
+}
+
+func (res *allImportsFixesResult) init(ctx context.Context, req *codeActionsRequest) {
+	res.allFixEdits, res.editsPerFix, res.err = allImportsFixes(ctx, req.snapshot, req.pgf)
+	if res.err != nil {
+		event.Error(ctx, "imports fixes", res.err, label.File.Of(req.loc.URI.Path()))
+	}
 }
 
 func importFixTitle(fix *imports.ImportFix) string {
@@ -261,212 +347,193 @@ func fixedByImportFix(fix *imports.ImportFix, diagnostics []protocol.Diagnostic)
 	return results
 }
 
-// getExtractCodeActions returns any refactor.extract code actions for the selection.
-func getExtractCodeActions(enabled func(protocol.CodeActionKind) bool, pgf *parsego.File, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
-	start, end, err := pgf.RangePos(rng)
-	if err != nil {
-		return nil, err
+// goFreeSymbols produces "Browse free symbols" code actions.
+// See [server.commandHandler.FreeSymbols] for command implementation.
+func goFreeSymbols(ctx context.Context, req *codeActionsRequest) error {
+	if !req.loc.Empty() {
+		cmd := command.NewFreeSymbolsCommand("Browse free symbols", req.snapshot.View().ID(), req.loc)
+		req.addCommandAction(cmd)
 	}
-
-	var actions []protocol.CodeAction
-	add := func(cmd *protocol.Command, kind protocol.CodeActionKind) {
-		action := newCodeAction(cmd.Title, kind, cmd, nil, options)
-		actions = append(actions, action)
-	}
-
-	// extract function or method
-	if enabled(settings.RefactorExtractFunction) || enabled(settings.RefactorExtractMethod) {
-		if _, ok, methodOk, _ := canExtractFunction(pgf.Tok, start, end, pgf.Src, pgf.File); ok {
-			// extract function
-			if kind := settings.RefactorExtractFunction; enabled(kind) {
-				cmd := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
-					Fix:          fixExtractFunction,
-					URI:          pgf.URI,
-					Range:        rng,
-					ResolveEdits: supportsResolveEdits(options),
-				})
-				add(cmd, kind)
-			}
-
-			// extract method
-			if kind := settings.RefactorExtractMethod; methodOk && enabled(kind) {
-				cmd := command.NewApplyFixCommand("Extract method", command.ApplyFixArgs{
-					Fix:          fixExtractMethod,
-					URI:          pgf.URI,
-					Range:        rng,
-					ResolveEdits: supportsResolveEdits(options),
-				})
-				add(cmd, kind)
-			}
-		}
-	}
-
-	// extract variable
-	if kind := settings.RefactorExtractVariable; enabled(kind) {
-		if _, _, ok, _ := canExtractVariable(start, end, pgf.File); ok {
-			cmd := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
-				Fix:          fixExtractVariable,
-				URI:          pgf.URI,
-				Range:        rng,
-				ResolveEdits: supportsResolveEdits(options),
-			})
-			add(cmd, kind)
-		}
-	}
-
-	// extract to new file
-	if kind := settings.RefactorExtractToNewFile; enabled(kind) {
-		if canExtractToNewFile(pgf, start, end) {
-			cmd := command.NewExtractToNewFileCommand(
-				"Extract declarations to new file",
-				protocol.Location{URI: pgf.URI, Range: rng},
-			)
-			add(cmd, kind)
-		}
-	}
-
-	return actions, nil
+	return nil
 }
 
-func newCodeAction(title string, kind protocol.CodeActionKind, cmd *protocol.Command, diagnostics []protocol.Diagnostic, options *settings.Options) protocol.CodeAction {
-	action := protocol.CodeAction{
-		Title:       title,
-		Kind:        kind,
-		Diagnostics: diagnostics,
-	}
-	if !supportsResolveEdits(options) {
-		action.Command = cmd
-	} else {
-		data, err := json.Marshal(cmd)
-		if err != nil {
-			panic("unable to marshal")
-		}
-		msg := json.RawMessage(data)
-		action.Data = &msg
-	}
-	return action
+// goplsDocFeatures produces "Browse gopls feature documentation" code actions.
+// See [server.commandHandler.ClientOpenURL] for command implementation.
+func goplsDocFeatures(ctx context.Context, req *codeActionsRequest) error {
+	// TODO(adonovan): after the docs are published in gopls/v0.17.0,
+	// use the gopls release tag instead of master.
+	cmd := command.NewClientOpenURLCommand(
+		"Browse gopls feature documentation",
+		"https://github.com/golang/tools/blob/master/gopls/doc/features/README.md")
+	req.addCommandAction(cmd)
+	return nil
 }
 
-func getRewriteCodeActions(enabled func(protocol.CodeActionKind) bool, ctx context.Context, pkg *cache.Package, snapshot *cache.Snapshot, pgf *parsego.File, fh file.Handle, rng protocol.Range, options *settings.Options) (_ []protocol.CodeAction, rerr error) {
-	// golang/go#61693: code actions were refactored to run outside of the
-	// analysis framework, but as a result they lost their panic recovery.
-	//
-	// These code actions should never fail, but put back the panic recovery as a
-	// defensive measure.
-	defer func() {
-		if r := recover(); r != nil {
-			rerr = bug.Errorf("refactor.rewrite code actions panicked: %v", r)
-		}
-	}()
+// goDoc produces "Browse documentation for X" code actions.
+// See [server.commandHandler.Doc] for command implementation.
+func goDoc(ctx context.Context, req *codeActionsRequest) error {
+	_, _, title := DocFragment(req.pkg, req.pgf, req.start, req.end)
+	cmd := command.NewDocCommand(title, req.loc)
+	req.addCommandAction(cmd)
+	return nil
+}
 
-	var actions []protocol.CodeAction
-	add := func(cmd *protocol.Command, kind protocol.CodeActionKind) {
-		action := newCodeAction(cmd.Title, kind, cmd, nil, options)
-		actions = append(actions, action)
-	}
-
-	// remove unused param
-	if kind := settings.RefactorRewriteRemoveUnusedParam; enabled(kind) && canRemoveParameter(pkg, pgf, rng) {
-		cmd := command.NewChangeSignatureCommand("Refactor: remove unused parameter", command.ChangeSignatureArgs{
-			RemoveParameter: protocol.Location{
-				URI:   pgf.URI,
-				Range: rng,
-			},
-			ResolveEdits: supportsResolveEdits(options),
+// refactorExtractFunction produces "Extract function" code actions.
+// See [extractFunction] for command implementation.
+func refactorExtractFunction(ctx context.Context, req *codeActionsRequest) error {
+	if _, ok, _, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.File); ok {
+		cmd := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
+			Fix:          fixExtractFunction,
+			URI:          req.loc.URI,
+			Range:        req.loc.Range,
+			ResolveEdits: req.resolveEdits(),
 		})
-		add(cmd, kind)
+		req.addCommandAction(cmd)
 	}
+	return nil
+}
 
-	start, end, err := pgf.RangePos(rng)
-	if err != nil {
-		return nil, err
+// refactorExtractMethod produces "Extract method" code actions.
+// See [extractMethod] for command implementation.
+func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
+	if _, ok, methodOK, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.File); ok && methodOK {
+		cmd := command.NewApplyFixCommand("Extract method", command.ApplyFixArgs{
+			Fix:          fixExtractMethod,
+			URI:          req.loc.URI,
+			Range:        req.loc.Range,
+			ResolveEdits: req.resolveEdits(),
+		})
+		req.addCommandAction(cmd)
 	}
+	return nil
+}
 
-	// change quote
-	if enabled(settings.RefactorRewriteChangeQuote) {
-		if action, ok := convertStringLiteral(pgf, fh, start, end); ok {
-			actions = append(actions, action)
-		}
+// refactorExtractVariable produces "Extract variable" code actions.
+// See [extractVariable] for command implementation.
+func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error {
+	if _, _, ok, _ := canExtractVariable(req.start, req.end, req.pgf.File); ok {
+		cmd := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
+			Fix:          fixExtractVariable,
+			URI:          req.loc.URI,
+			Range:        req.loc.Range,
+			ResolveEdits: req.resolveEdits(),
+		})
+		req.addCommandAction(cmd)
 	}
+	return nil
+}
 
-	// invert if condition
-	if kind := settings.RefactorRewriteInvertIf; enabled(kind) {
-		if _, ok, _ := canInvertIfCondition(pgf.File, start, end); ok {
-			cmd := command.NewApplyFixCommand("Invert 'if' condition", command.ApplyFixArgs{
-				Fix:          fixInvertIfCondition,
-				URI:          pgf.URI,
-				Range:        rng,
-				ResolveEdits: supportsResolveEdits(options),
-			})
-			add(cmd, kind)
-		}
+// refactorExtractToNewFile produces "Extract declarations to new file" code actions.
+// See [server.commandHandler.ExtractToNewFile] for command implementation.
+func refactorExtractToNewFile(ctx context.Context, req *codeActionsRequest) error {
+	if canExtractToNewFile(req.pgf, req.start, req.end) {
+		cmd := command.NewExtractToNewFileCommand("Extract declarations to new file", req.loc)
+		req.addCommandAction(cmd)
 	}
+	return nil
+}
 
-	// split lines
-	if kind := settings.RefactorRewriteSplitLines; enabled(kind) {
-		if msg, ok, _ := canSplitLines(pgf.File, pkg.FileSet(), start, end); ok {
-			cmd := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
-				Fix:          fixSplitLines,
-				URI:          pgf.URI,
-				Range:        rng,
-				ResolveEdits: supportsResolveEdits(options),
-			})
-			add(cmd, kind)
-		}
+// refactorRewriteRemoveUnusedParam produces "Remove unused parameter" code actions.
+// See [server.commandHandler.ChangeSignature] for command implementation.
+func refactorRewriteRemoveUnusedParam(ctx context.Context, req *codeActionsRequest) error {
+	if canRemoveParameter(req.pkg, req.pgf, req.loc.Range) {
+		cmd := command.NewChangeSignatureCommand("Refactor: remove unused parameter", command.ChangeSignatureArgs{
+			RemoveParameter: req.loc,
+			ResolveEdits:    req.resolveEdits(),
+		})
+		req.addCommandAction(cmd)
 	}
+	return nil
+}
 
-	// join lines
-	if kind := settings.RefactorRewriteJoinLines; enabled(kind) {
-		if msg, ok, _ := canJoinLines(pgf.File, pkg.FileSet(), start, end); ok {
-			cmd := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
-				Fix:          fixJoinLines,
-				URI:          pgf.URI,
-				Range:        rng,
-				ResolveEdits: supportsResolveEdits(options),
-			})
-			add(cmd, kind)
-		}
+// refactorRewriteChangeQuote produces "Convert to {raw,interpreted} string literal" code actions.
+func refactorRewriteChangeQuote(ctx context.Context, req *codeActionsRequest) error {
+	convertStringLiteral(req)
+	return nil
+}
+
+// refactorRewriteChangeQuote produces "Invert 'if' condition" code actions.
+// See [invertIfCondition] for command implementation.
+func refactorRewriteInvertIf(ctx context.Context, req *codeActionsRequest) error {
+	if _, ok, _ := canInvertIfCondition(req.pgf.File, req.start, req.end); ok {
+		cmd := command.NewApplyFixCommand("Invert 'if' condition", command.ApplyFixArgs{
+			Fix:          fixInvertIfCondition,
+			URI:          req.loc.URI,
+			Range:        req.loc.Range,
+			ResolveEdits: req.resolveEdits(),
+		})
+		req.addCommandAction(cmd)
 	}
+	return nil
+}
 
-	// fill struct
-	//
+// refactorRewriteSplitLines produces "Split ITEMS into separate lines" code actions.
+// See [splitLines] for command implementation.
+func refactorRewriteSplitLines(ctx context.Context, req *codeActionsRequest) error {
+	// TODO(adonovan): opt: don't set needPkg just for FileSet.
+	if msg, ok, _ := canSplitLines(req.pgf.File, req.pkg.FileSet(), req.start, req.end); ok {
+		cmd := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
+			Fix:          fixSplitLines,
+			URI:          req.loc.URI,
+			Range:        req.loc.Range,
+			ResolveEdits: req.resolveEdits(),
+		})
+		req.addCommandAction(cmd)
+	}
+	return nil
+}
+
+// refactorRewriteJoinLines produces "Join ITEMS into one line" code actions.
+// See [joinLines] for command implementation.
+func refactorRewriteJoinLines(ctx context.Context, req *codeActionsRequest) error {
+	// TODO(adonovan): opt: don't set needPkg just for FileSet.
+	if msg, ok, _ := canJoinLines(req.pgf.File, req.pkg.FileSet(), req.start, req.end); ok {
+		cmd := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
+			Fix:          fixJoinLines,
+			URI:          req.loc.URI,
+			Range:        req.loc.Range,
+			ResolveEdits: req.resolveEdits(),
+		})
+		req.addCommandAction(cmd)
+	}
+	return nil
+}
+
+// refactorRewriteFillStruct produces "Join ITEMS into one line" code actions.
+// See [fillstruct.SuggestedFix] for command implementation.
+func refactorRewriteFillStruct(ctx context.Context, req *codeActionsRequest) error {
 	// fillstruct.Diagnose is a lazy analyzer: all it gives us is
 	// the (start, end, message) of each SuggestedFix; the actual
 	// edit is computed only later by ApplyFix, which calls fillstruct.SuggestedFix.
-	if kind := settings.RefactorRewriteFillStruct; enabled(kind) {
-		for _, diag := range fillstruct.Diagnose(pgf.File, start, end, pkg.Types(), pkg.TypesInfo()) {
-			rng, err := pgf.Mapper.PosRange(pgf.Tok, diag.Pos, diag.End)
-			if err != nil {
-				return nil, err
-			}
-			for _, fix := range diag.SuggestedFixes {
-				cmd := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
-					Fix:          diag.Category,
-					URI:          pgf.URI,
-					Range:        rng,
-					ResolveEdits: supportsResolveEdits(options),
-				})
-				add(cmd, kind)
-			}
+	for _, diag := range fillstruct.Diagnose(req.pgf.File, req.start, req.end, req.pkg.Types(), req.pkg.TypesInfo()) {
+		rng, err := req.pgf.Mapper.PosRange(req.pgf.Tok, diag.Pos, diag.End)
+		if err != nil {
+			return err
 		}
-	}
-
-	// fill switch
-	if kind := settings.RefactorRewriteFillSwitch; enabled(kind) {
-		for _, diag := range fillswitch.Diagnose(pgf.File, start, end, pkg.Types(), pkg.TypesInfo()) {
-			changes, err := suggestedFixToDocumentChange(ctx, snapshot, pkg.FileSet(), &diag.SuggestedFixes[0])
-			if err != nil {
-				return nil, err
-			}
-			actions = append(actions, protocol.CodeAction{
-				Title: diag.Message,
-				Kind:  kind,
-				Edit:  protocol.NewWorkspaceEdit(changes...),
+		for _, fix := range diag.SuggestedFixes {
+			cmd := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
+				Fix:          diag.Category,
+				URI:          req.loc.URI,
+				Range:        rng,
+				ResolveEdits: req.resolveEdits(),
 			})
+			req.addCommandAction(cmd)
 		}
 	}
+	return nil
+}
 
-	return actions, nil
+// refactorRewriteFillSwitch produces "Add cases for TYPE/ENUM" code actions.
+func refactorRewriteFillSwitch(ctx context.Context, req *codeActionsRequest) error {
+	for _, diag := range fillswitch.Diagnose(req.pgf.File, req.start, req.end, req.pkg.Types(), req.pkg.TypesInfo()) {
+		changes, err := suggestedFixToDocumentChange(ctx, req.snapshot, req.pkg.FileSet(), &diag.SuggestedFixes[0])
+		if err != nil {
+			return err
+		}
+		req.addEditAction(diag.Message, changes...)
+	}
+
+	return nil
 }
 
 // canRemoveParameter reports whether we can remove the function parameter
@@ -479,6 +546,8 @@ func getRewriteCodeActions(enabled func(protocol.CodeActionKind) bool, ctx conte
 //
 // (Note that the unusedparam analyzer also computes this property, but
 // much more precisely, allowing it to report its findings as diagnostics.)
+//
+// TODO(adonovan): inline into refactorRewriteRemoveUnusedParam.
 func canRemoveParameter(pkg *cache.Package, pgf *parsego.File, rng protocol.Range) bool {
 	if perrors, terrors := pkg.ParseErrors(), pkg.TypeErrors(); len(perrors) > 0 || len(terrors) > 0 {
 		return false // can't remove parameters from packages with errors
@@ -518,73 +587,61 @@ func canRemoveParameter(pkg *cache.Package, pgf *parsego.File, rng protocol.Rang
 	return !used
 }
 
-// getInlineCodeActions returns refactor.inline actions available at the specified range.
-func getInlineCodeActions(enabled func(protocol.CodeActionKind) bool, pkg *cache.Package, pgf *parsego.File, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
-	var actions []protocol.CodeAction
-	add := func(cmd *protocol.Command, kind protocol.CodeActionKind) {
-		action := newCodeAction(cmd.Title, kind, cmd, nil, options)
-		actions = append(actions, action)
+// refactorInlineCall produces "Inline call to FUNC" code actions.
+// See [inlineCall] for command implementation.
+func refactorInlineCall(ctx context.Context, req *codeActionsRequest) error {
+	// To avoid distraction (e.g. VS Code lightbulb), offer "inline"
+	// only after a selection or explicit menu operation.
+	if req.trigger == protocol.CodeActionAutomatic && req.loc.Empty() {
+		return nil
 	}
 
-	// inline call
-	if kind := settings.RefactorInlineCall; enabled(kind) {
-		start, end, err := pgf.RangePos(rng)
-		if err != nil {
-			return nil, err
-		}
-
-		// If range is within call expression, offer to inline the call.
-		if _, fn, err := enclosingStaticCall(pkg, pgf, start, end); err == nil {
-			cmd := command.NewApplyFixCommand(fmt.Sprintf("Inline call to %s", fn.Name()), command.ApplyFixArgs{
-				Fix:          fixInlineCall,
-				URI:          pgf.URI,
-				Range:        rng,
-				ResolveEdits: supportsResolveEdits(options),
-			})
-			add(cmd, kind)
-		}
+	// If range is within call expression, offer to inline the call.
+	if _, fn, err := enclosingStaticCall(req.pkg, req.pgf, req.start, req.end); err == nil {
+		cmd := command.NewApplyFixCommand(fmt.Sprintf("Inline call to %s", fn.Name()), command.ApplyFixArgs{
+			Fix:          fixInlineCall,
+			URI:          req.loc.URI,
+			Range:        req.loc.Range,
+			ResolveEdits: req.resolveEdits(),
+		})
+		req.addCommandAction(cmd)
 	}
-
-	return actions, nil
+	return nil
 }
 
-// getGoTestCodeActions returns any "run this test/benchmark" code actions for the selection.
-func getGoTestCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Range) ([]protocol.CodeAction, error) {
-	testFuncs, benchFuncs, err := testsAndBenchmarks(pkg.TypesInfo(), pgf)
+// goTest produces "Run tests and benchmarks" code actions.
+// See [server.commandHandler.runTests] for command implementation.
+func goTest(ctx context.Context, req *codeActionsRequest) error {
+	testFuncs, benchFuncs, err := testsAndBenchmarks(req.pkg.TypesInfo(), req.pgf)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var tests, benchmarks []string
 	for _, fn := range testFuncs {
-		if protocol.Intersect(fn.rng, rng) {
+		if protocol.Intersect(fn.rng, req.loc.Range) {
 			tests = append(tests, fn.name)
 		}
 	}
 	for _, fn := range benchFuncs {
-		if protocol.Intersect(fn.rng, rng) {
+		if protocol.Intersect(fn.rng, req.loc.Range) {
 			benchmarks = append(benchmarks, fn.name)
 		}
 	}
 
 	if len(tests) == 0 && len(benchmarks) == 0 {
-		return nil, nil
+		return nil
 	}
 
-	cmd := command.NewTestCommand("Run tests and benchmarks", pgf.URI, tests, benchmarks)
-	return []protocol.CodeAction{{
-		Title:   cmd.Title,
-		Kind:    settings.GoTest,
-		Command: cmd,
-	}}, nil
+	cmd := command.NewTestCommand("Run tests and benchmarks", req.loc.URI, tests, benchmarks)
+	req.addCommandAction(cmd)
+	return nil
 }
 
-// getGoAssemblyAction returns any "Browse assembly for f" code actions for the selection.
-func getGoAssemblyAction(view *cache.View, pkg *cache.Package, pgf *parsego.File, rng protocol.Range) ([]protocol.CodeAction, error) {
-	start, end, err := pgf.RangePos(rng)
-	if err != nil {
-		return nil, err
-	}
+// goAssembly produces "Browse ARCH assembly for FUNC" code actions.
+// See [server.commandHandler.Assembly] for command implementation.
+func goAssembly(ctx context.Context, req *codeActionsRequest) error {
+	view := req.snapshot.View()
 
 	// Find the enclosing toplevel function or method,
 	// and compute its symbol name (e.g. "pkgpath.(T).method").
@@ -606,11 +663,10 @@ func getGoAssemblyAction(view *cache.View, pkg *cache.Package, pgf *parsego.File
 	// directly to (say) a lambda of interest.
 	// Perhaps we could scroll to STEXT for the innermost
 	// enclosing nested function?
-	var actions []protocol.CodeAction
-	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	path, _ := astutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
 	if len(path) >= 2 { // [... FuncDecl File]
 		if decl, ok := path[len(path)-2].(*ast.FuncDecl); ok {
-			if fn, ok := pkg.TypesInfo().Defs[decl.Name].(*types.Func); ok {
+			if fn, ok := req.pkg.TypesInfo().Defs[decl.Name].(*types.Func); ok {
 				sig := fn.Signature()
 
 				// Compute the linker symbol of the enclosing function.
@@ -639,17 +695,12 @@ func getGoAssemblyAction(view *cache.View, pkg *cache.Package, pgf *parsego.File
 					cmd := command.NewAssemblyCommand(
 						fmt.Sprintf("Browse %s assembly for %s", view.GOARCH(), decl.Name),
 						view.ID(),
-						string(pkg.Metadata().ID),
+						string(req.pkg.Metadata().ID),
 						sym.String())
-					// For handler, see commandHandler.Assembly.
-					actions = append(actions, protocol.CodeAction{
-						Title:   cmd.Title,
-						Kind:    settings.GoAssembly,
-						Command: cmd,
-					})
+					req.addCommandAction(cmd)
 				}
 			}
 		}
 	}
-	return actions, nil
+	return nil
 }

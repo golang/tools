@@ -9,6 +9,12 @@ import (
 	"unicode/utf8"
 )
 
+// Empty reports whether the Range is an empty selection.
+func (rng Range) Empty() bool { return rng.Start == rng.End }
+
+// Empty reports whether the Location is an empty selection.
+func (loc Location) Empty() bool { return loc.Range.Empty() }
+
 // CompareLocation defines a three-valued comparison over locations,
 // lexicographically ordered by (URI, Range).
 func CompareLocation(x, y Location) int {
