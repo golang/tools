@@ -166,8 +166,8 @@ import (
 //@codeactionedit(B_AddP, "refactor.extract", contextFunc1, "Extract function")
 //@codeactionedit(B_LongList, "refactor.extract", contextMeth2, "Extract method")
 //@codeactionedit(B_LongList, "refactor.extract", contextFunc2, "Extract function")
-//@codeaction(B_AddPWithBStart, B_AddPWithBEnd, "refactor.extract", contextFunc1T, "Extract function")
-//@codeaction(B_LongListWithTStart, B_LongListWithTEnd, "refactor.extract", contextFunc2T, "Extract function")
+//@codeactionedit(B_AddPWithB, "refactor.extract", contextFuncB, "Extract function")
+//@codeactionedit(B_LongListWithT, "refactor.extract", contextFuncT, "Extract function")
 
 type B struct {
 	x int
@@ -185,19 +185,20 @@ func (b *B) LongList(ctx context.Context) (int, error) {
 	p3 := 1
 	return p1 + p2 + p3, ctx.Err() //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
 }
+
 func (b *B) AddPWithB(ctx context.Context, tB *testing.B) (int, error) {
-	sum := b.x + b.y //@loc(B_AddPWithBStart, "s")
-	tB.Skip() 
-	return sum, ctx.Err() //@loc(B_AddPWithBEnd, re`$`)
+	sum := b.x + b.y //@loc(B_AddPWithB, re`(?s:^.*?Err\(\))`)
+	tB.Skip()
+	return sum, ctx.Err()
 }
 
 func (b *B) LongListWithT(ctx context.Context, t *testing.T) (int, error) {
 	p1 := 1
 	p2 := 1
 	p3 := 1
-	p4 := p1 + p2 //@loc(B_LongListWithTStart, "p")
+	p4 := p1 + p2 //@loc(B_LongListWithT, re`(?s:^.*?Err\(\))`)
 	t.Skip()
-	return p4 + p3, ctx.Err() //@loc(B_LongListWithTEnd, re`$`)
+	return p4 + p3, ctx.Err()
 }
 -- @contextMeth1/context.go --
 @@ -22 +22 @@
@@ -212,20 +213,20 @@ func (b *B) LongListWithT(ctx context.Context, t *testing.T) (int, error) {
 @@ -29 +29 @@
 -	return p1 + p2 + p3, ctx.Err() //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
 +	return b.newMethod(ctx, p1, p2, p3) //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
-@@ -31 +31,4 @@
-+
+@@ -32 +32,4 @@
 +func (*B) newMethod(ctx context.Context, p1 int, p2 int, p3 int) (int, error) {
 +	return p1 + p2 + p3, ctx.Err()
 +}
++
 -- @contextFunc2/context.go --
 @@ -29 +29 @@
 -	return p1 + p2 + p3, ctx.Err() //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
 +	return newFunction(ctx, p1, p2, p3) //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
-@@ -31 +31,4 @@
-+
+@@ -32 +32,4 @@
 +func newFunction(ctx context.Context, p1 int, p2 int, p3 int) (int, error) {
 +	return p1 + p2 + p3, ctx.Err()
 +}
++
 -- @contextFunc1/context.go --
 @@ -22 +22 @@
 -	return sum, ctx.Err() //@loc(B_AddP, re`return.*ctx\.Err\(\)`)
@@ -235,103 +236,21 @@ func (b *B) LongListWithT(ctx context.Context, t *testing.T) (int, error) {
 +	return sum, ctx.Err()
 +}
 +
--- @contextFunc2T/context.go --
-package extract
-
-import (
-	"context"
-	"testing"
-)
-
-//@codeactionedit(B_AddP, "refactor.extract", contextMeth1, "Extract method")
-//@codeactionedit(B_AddP, "refactor.extract", contextFunc1, "Extract function")
-//@codeactionedit(B_LongList, "refactor.extract", contextMeth2, "Extract method")
-//@codeactionedit(B_LongList, "refactor.extract", contextFunc2, "Extract function")
-//@codeaction(B_AddPWithBStart, B_AddPWithBEnd, "refactor.extract", contextFunc1T, "Extract function")
-//@codeaction(B_LongListWithTStart, B_LongListWithTEnd, "refactor.extract", contextFunc2T, "Extract function")
-
-type B struct {
-	x int
-	y int
-}
-
-func (b *B) AddP(ctx context.Context) (int, error) {
-	sum := b.x + b.y
-	return sum, ctx.Err() //@loc(B_AddP, re`return.*ctx\.Err\(\)`)
-}
-
-func (b *B) LongList(ctx context.Context) (int, error) {
-	p1 := 1
-	p2 := 1
-	p3 := 1
-	return p1 + p2 + p3, ctx.Err() //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
-}
-func (b *B) AddPWithB(ctx context.Context, tB *testing.B) (int, error) {
-	sum := b.x + b.y //@loc(B_AddPWithBStart, "s")
-	tB.Skip() 
-	return sum, ctx.Err() //@loc(B_AddPWithBEnd, re`$`)
-}
-
-func (b *B) LongListWithT(ctx context.Context, t *testing.T) (int, error) {
-	p1 := 1
-	p2 := 1
-	p3 := 1
-	//@loc(B_LongListWithTStart, "p")
-	return newFunction(ctx, t, p1, p2, p3) //@loc(B_LongListWithTEnd, re`$`)
-}
-
-func newFunction(ctx context.Context, t *testing.T, p1 int, p2 int, p3 int) (int, error) {
-	p4 := p1 + p2
-	t.Skip()
-	return p4 + p3, ctx.Err()
-}
--- @contextFunc1T/context.go --
-package extract
-
-import (
-	"context"
-	"testing"
-)
-
-//@codeactionedit(B_AddP, "refactor.extract", contextMeth1, "Extract method")
-//@codeactionedit(B_AddP, "refactor.extract", contextFunc1, "Extract function")
-//@codeactionedit(B_LongList, "refactor.extract", contextMeth2, "Extract method")
-//@codeactionedit(B_LongList, "refactor.extract", contextFunc2, "Extract function")
-//@codeaction(B_AddPWithBStart, B_AddPWithBEnd, "refactor.extract", contextFunc1T, "Extract function")
-//@codeaction(B_LongListWithTStart, B_LongListWithTEnd, "refactor.extract", contextFunc2T, "Extract function")
-
-type B struct {
-	x int
-	y int
-}
-
-func (b *B) AddP(ctx context.Context) (int, error) {
-	sum := b.x + b.y
-	return sum, ctx.Err() //@loc(B_AddP, re`return.*ctx\.Err\(\)`)
-}
-
-func (b *B) LongList(ctx context.Context) (int, error) {
-	p1 := 1
-	p2 := 1
-	p3 := 1
-	return p1 + p2 + p3, ctx.Err() //@loc(B_LongList, re`return.*ctx\.Err\(\)`)
-}
-func (b *B) AddPWithB(ctx context.Context, tB *testing.B) (int, error) {
-	//@loc(B_AddPWithBStart, "s")
-	return newFunction(ctx, tB, b) //@loc(B_AddPWithBEnd, re`$`)
-}
-
-func newFunction(ctx context.Context, tB *testing.B, b *B) (int, error) {
-	sum := b.x + b.y
-	tB.Skip()
-	return sum, ctx.Err()
-}
-
-func (b *B) LongListWithT(ctx context.Context, t *testing.T) (int, error) {
-	p1 := 1
-	p2 := 1
-	p3 := 1
-	p4 := p1 + p2 //@loc(B_LongListWithTStart, "p")
-	t.Skip()
-	return p4 + p3, ctx.Err() //@loc(B_LongListWithTEnd, re`$`)
-}
+-- @contextFuncB/context.go --
+@@ -33 +33,6 @@
+-	sum := b.x + b.y //@loc(B_AddPWithB, re`(?s:^.*?Err\(\))`)
++	//@loc(B_AddPWithB, re`(?s:^.*?Err\(\))`)
++	return newFunction(ctx, tB, b)
++}
++
++func newFunction(ctx context.Context, tB *testing.B, b *B) (int, error) {
++	sum := b.x + b.y
+-- @contextFuncT/context.go --
+@@ -42 +42,6 @@
+-	p4 := p1 + p2 //@loc(B_LongListWithT, re`(?s:^.*?Err\(\))`)
++	//@loc(B_LongListWithT, re`(?s:^.*?Err\(\))`)
++	return newFunction(ctx, t, p1, p2, p3)
++}
++
++func newFunction(ctx context.Context, t *testing.T, p1 int, p2 int, p3 int) (int, error) {
++	p4 := p1 + p2
