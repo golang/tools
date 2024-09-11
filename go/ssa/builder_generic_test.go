@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/expect"
-	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 )
 
@@ -93,22 +92,22 @@ func TestGenericBodies(t *testing.T) {
 
 		func From() {
 			type A [4]byte
-			print(a[A]) //@ types("func(x p03.A)")
+			print(a[A]) //@ types("func(x example.com.A)")
 
 			type B *[4]byte
-			print(b[B]) //@ types("func(x p03.B)")
+			print(b[B]) //@ types("func(x example.com.B)")
 
 			type C []byte
-			print(c[C]) //@ types("func(x p03.C)")
+			print(c[C]) //@ types("func(x example.com.C)")
 
 			type D string
-			print(d[D]) //@ types("func(x p03.D)")
+			print(d[D]) //@ types("func(x example.com.D)")
 
 			type E map[int]string
-			print(e[E]) //@ types("func(x p03.E)")
+			print(e[E]) //@ types("func(x example.com.E)")
 
 			type F chan string
-			print(f[F]) //@ types("func(x p03.F)")
+			print(f[F]) //@ types("func(x example.com.F)")
 		}
 		`,
 		`
@@ -122,7 +121,7 @@ func TestGenericBodies(t *testing.T) {
 
 		func From() {
 			type F chan string
-			print(f[string, F]) //@ types("func(x p05.F)")
+			print(f[string, F]) //@ types("func(x example.com.F)")
 		}
 		`,
 		`
@@ -152,8 +151,8 @@ func TestGenericBodies(t *testing.T) {
 			type F chan int
 			c := make(F)
 			quit := make(F)
-			print(start[F], c, quit)     //@ types("func(c p06.F, quit p06.F)", "p06.F", "p06.F")
-			print(fibonacci[F], c, quit) //@ types("func(c p06.F, quit p06.F)", "p06.F", "p06.F")
+			print(start[F], c, quit)     //@ types("func(c example.com.F, quit example.com.F)", "example.com.F", "example.com.F")
+			print(fibonacci[F], c, quit) //@ types("func(c example.com.F, quit example.com.F)", "example.com.F", "example.com.F")
 		}
 		`,
 		`
@@ -165,7 +164,7 @@ func TestGenericBodies(t *testing.T) {
 		}
 		func From() {
 			type S struct{ x int; y string }
-			print(f[S])     //@ types("func(i int) p07.S")
+			print(f[S])     //@ types("func(i int) example.com.S")
 		}
 		`,
 		`
@@ -186,7 +185,7 @@ func TestGenericBodies(t *testing.T) {
 			type H []int32
 			print(f[F](F{}, 0, 0))  //@ types("[]int8")
 			print(g[G](nil, 0, 0)) //@ types("[]int16")
-			print(h[H](nil, 0, 0)) //@ types("p08.H")
+			print(h[H](nil, 0, 0)) //@ types("example.com.H")
 		}
 		`,
 		`
@@ -322,18 +321,18 @@ func TestGenericBodies(t *testing.T) {
 		type MyInterface interface{ foo() }
 
 		// ChangeType tests
-		func ct0(x int) { v := MyInt(x);  print(x, v) /*@ types(int, "p15.MyInt")*/ }
+		func ct0(x int) { v := MyInt(x);  print(x, v) /*@ types(int, "example.com.MyInt")*/ }
 		func ct1[T MyInt | Other, S int ](x S) { v := T(x);  print(x, v) /*@ types(S, T)*/ }
 		func ct2[T int, S MyInt | int ](x S) { v := T(x); print(x, v) /*@ types(S, T)*/ }
 		func ct3[T MyInt | Other, S MyInt | int ](x S) { v := T(x) ; print(x, v) /*@ types(S, T)*/ }
 
 		// Convert tests
-		func co0[T int | int8](x MyInt) { v := T(x); print(x, v) /*@ types("p15.MyInt", T)*/}
-		func co1[T int | int8](x T) { v := MyInt(x); print(x, v) /*@ types(T, "p15.MyInt")*/ }
+		func co0[T int | int8](x MyInt) { v := T(x); print(x, v) /*@ types("example.com.MyInt", T)*/}
+		func co1[T int | int8](x T) { v := MyInt(x); print(x, v) /*@ types(T, "example.com.MyInt")*/ }
 		func co2[S, T int | int8](x T) { v := S(x); print(x, v) /*@ types(T, S)*/ }
 
 		// MakeInterface tests
-		func mi0[T MyInterface](x T) { v := MyInterface(x); print(x, v) /*@ types(T, "p15.MyInterface")*/ }
+		func mi0[T MyInterface](x T) { v := MyInterface(x); print(x, v) /*@ types(T, "example.com.MyInterface")*/ }
 
 		// NewConst tests
 		func nc0[T any]() { v := (*T)(nil); print(v) /*@ types("*T")*/}
@@ -427,9 +426,9 @@ func TestGenericBodies(t *testing.T) {
 			Marker()
 		}](v T) {
 			v.Marker()
-			a := *(any(v).(*A)); print(a)  /*@ types("p23.A")*/
-			b := *(any(v).(*B)); print(b)  /*@ types("p23.B")*/
-			c := *(any(v).(*C)); print(c)  /*@ types("p23.C")*/
+			a := *(any(v).(*A)); print(a)  /*@ types("example.com.A")*/
+			b := *(any(v).(*B)); print(b)  /*@ types("example.com.B")*/
+			c := *(any(v).(*C)); print(c)  /*@ types("example.com.C")*/
 		}
 		`,
 		`
@@ -519,32 +518,14 @@ func TestGenericBodies(t *testing.T) {
 		contents := contents
 		pkgname := packageName(t, contents)
 		t.Run(pkgname, func(t *testing.T) {
-			// Parse
-			conf := loader.Config{ParserMode: parser.ParseComments}
-			f, err := conf.ParseFile("file.go", contents)
-			if err != nil {
-				t.Fatalf("parse: %v", err)
-			}
-			conf.CreateFromFiles(pkgname, f)
+			info := ssa.LoadPackageFromSingleFile(t, contents, ssa.SanityCheckFunctions)
+			p := info.SPkg
+			prog := p.Prog
 
-			// Load
-			lprog, err := conf.Load()
-			if err != nil {
-				t.Fatalf("Load: %v", err)
-			}
-
-			// Create and build SSA
-			prog := ssa.NewProgram(lprog.Fset, ssa.SanityCheckFunctions)
-			for _, info := range lprog.AllPackages {
-				if info.TransitivelyErrorFree {
-					prog.CreatePackage(info.Pkg, info.Files, &info.Info, info.Importable)
-				}
-			}
-			p := prog.Package(lprog.Package(pkgname).Pkg)
 			p.Build()
 
 			// Collect all notes in f, i.e. comments starting with "//@ types".
-			notes, err := expect.ExtractGo(prog.Fset, f)
+			notes, err := expect.ExtractGo(prog.Fset, info.File)
 			if err != nil {
 				t.Errorf("expect.ExtractGo: %v", err)
 			}
@@ -754,33 +735,13 @@ func TestInstructionString(t *testing.T) {
 	}
 	`
 
-	// Parse
-	conf := loader.Config{ParserMode: parser.ParseComments}
-	const fname = "p.go"
-	f, err := conf.ParseFile(fname, contents)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	conf.CreateFromFiles("p", f)
-
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	// Create and build SSA
-	prog := ssa.NewProgram(lprog.Fset, ssa.SanityCheckFunctions)
-	for _, info := range lprog.AllPackages {
-		if info.TransitivelyErrorFree {
-			prog.CreatePackage(info.Pkg, info.Files, &info.Info, info.Importable)
-		}
-	}
-	p := prog.Package(lprog.Package("p").Pkg)
+	info := ssa.LoadPackageFromSingleFile(t, contents, ssa.SanityCheckFunctions)
+	p := info.SPkg
+	prog := p.Prog
 	p.Build()
 
 	// Collect all notes in f, i.e. comments starting with "//@ instr".
-	notes, err := expect.ExtractGo(prog.Fset, f)
+	notes, err := expect.ExtractGo(prog.Fset, info.File)
 	if err != nil {
 		t.Errorf("expect.ExtractGo: %v", err)
 	}

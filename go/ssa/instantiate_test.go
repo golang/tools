@@ -15,38 +15,68 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/go/packages"
 )
 
-// loadProgram creates loader.Program out of p.
-func loadProgram(p string) (*loader.Program, error) {
-	// Parse
-	var conf loader.Config
-	f, err := conf.ParseFile("<input>", p)
-	if err != nil {
-		return nil, fmt.Errorf("parse: %v", err)
-	}
-	conf.CreateFromFiles("p", f)
+func TestCreateNewPkgAfterBuild(t *testing.T) {
 
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		return nil, fmt.Errorf("Load: %v", err)
-	}
-	return lprog, nil
+	ar := `
+-- go.mod --
+module example.com
+go 1.18
+
+-- main.go --
+package p
+
+import "slices"
+
+func main(){
+	ints := []int{1, 2, 3, 4, 5}
+	slices.Contains(ints, 1)
 }
 
-// buildPackage builds and returns ssa representation of package pkg of lprog.
-func buildPackage(lprog *loader.Program, pkg string, mode BuilderMode) *Package {
-	prog := NewProgram(lprog.Fset, mode)
+-- sub/p2.go --
+package p2
 
-	for _, info := range lprog.AllPackages {
-		prog.CreatePackage(info.Pkg, info.Files, &info.Info, info.Importable)
+import "slices"
+
+func Entry(){
+	numbers := []float32{1, 2, 3, 4, 5}
+	slices.Contains(numbers, 1)
+}
+`
+	pkgs := PackagesFromArchive(t, ar)
+
+	var anotherPkg *packages.Package
+	for i, p := range pkgs {
+		if p.Name == "p2" {
+			anotherPkg = p
+			pkgs = append(pkgs[:i], pkgs[i+1:]...)
+		}
+	}
+	if anotherPkg == nil {
+		t.Fatal("cannot find package p2 in the loaded packages")
 	}
 
-	p := prog.Package(lprog.Package(pkg).Pkg)
-	p.Build()
-	return p
+	mode := InstantiateGenerics
+	prog := CreateProgram(t, pkgs, mode)
+	prog.Build()
+
+	npkg := prog.CreatePackage(anotherPkg.Types, anotherPkg.Syntax, anotherPkg.TypesInfo, true)
+	npkg.Build()
+
+	var pkgSlices *Package
+	for _, pkg := range prog.AllPackages() {
+		if pkg.Pkg.Name() == "slices" {
+			pkgSlices = pkg
+			break
+		}
+	}
+
+	instanceNum := len(allInstances(pkgSlices.Func("Contains")))
+	if instanceNum != 2 {
+		t.Errorf("slices.Contains should have 2 instances but got %d", instanceNum)
+	}
 }
 
 // TestNeedsInstance ensures that new method instances can be created via needsInstance,
@@ -74,14 +104,9 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 	//      func  init        func()
 	//      var   init$guard  bool
 
-	lprog, err := loadProgram(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	for _, mode := range []BuilderMode{BuilderMode(0), InstantiateGenerics} {
 		// Create and build SSA
-		p := buildPackage(lprog, "p", mode)
+		p := LoadPackageFromSingleFile(t, input, mode).SPkg
 		prog := p.Prog
 
 		ptr := p.Type("Pointer").Type().(*types.Named)
@@ -193,14 +218,10 @@ func entry(i int, a A) int {
 	return Id[int](i)
 }
 `
-	lprog, err := loadProgram(input)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	p := buildPackage(lprog, "p", SanityCheckFunctions)
+	p := LoadPackageFromSingleFile(t, input, SanityCheckFunctions).SPkg
 	prog := p.Prog
-
+	prog.Build()
 	for _, ti := range []struct {
 		orig         string
 		instance     string
@@ -209,9 +230,9 @@ func entry(i int, a A) int {
 		chTypeInstrs int // number of ChangeType instructions in f's body
 	}{
 		{"Id", "Id[int]", "[T]", "[int]", 2},
-		{"Lambda", "Lambda[p.A]", "[T]", "[p.A]", 1},
+		{"Lambda", "Lambda[example.com.A]", "[T]", "[example.com.A]", 1},
 		{"Make", "Make[int]", "[T]", "[int]", 0},
-		{"NoOp", "NoOp[p.K[T]]", "[T]", "[p.K[T]]", 0},
+		{"NoOp", "NoOp[example.com.K[T]]", "[T]", "[example.com.K[T]]", 0},
 	} {
 		test := ti
 		t.Run(test.instance, func(t *testing.T) {
@@ -309,19 +330,16 @@ func Foo[T any, S any](t T, s S) {
 	Foo[T, S](t, s)
 }
 `
-	lprog, err := loadProgram(input)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	p := buildPackage(lprog, "p", SanityCheckFunctions)
+	p := LoadPackageFromSingleFile(t, input, SanityCheckFunctions).SPkg
+	p.Build()
 
 	for _, test := range []struct {
 		orig      string
 		instances string
 	}{
-		{"H", "[p.H[T] p.H[T]]"},
-		{"Foo", "[p.Foo[S T] p.Foo[T S]]"},
+		{"H", "[example.com.H[T] example.com.H[T]]"},
+		{"Foo", "[example.com.Foo[S T] example.com.Foo[T S]]"},
 	} {
 		t.Run(test.orig, func(t *testing.T) {
 			f := p.Members[test.orig].(*Function)

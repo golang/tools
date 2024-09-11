@@ -20,9 +20,7 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/expect"
-	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/go/ssa/ssautil"
 )
 
 func TestObjValueLookup(t *testing.T) {
@@ -30,17 +28,33 @@ func TestObjValueLookup(t *testing.T) {
 		t.Skipf("no testdata directory on %s", runtime.GOOS)
 	}
 
-	conf := loader.Config{ParserMode: parser.ParseComments}
-	src, err := os.ReadFile("testdata/objlookup.go")
+	src, err := os.ReadFile("testdata/objlookup.txtar")
 	if err != nil {
 		t.Fatal(err)
 	}
-	readFile := func(filename string) ([]byte, error) { return src, nil }
-	f, err := conf.ParseFile("testdata/objlookup.go", src)
-	if err != nil {
-		t.Fatal(err)
+
+	pkgs := ssa.PackagesFromArchive(t, string(src))
+	prog := ssa.CreateProgram(t, pkgs, ssa.BuilderMode(0))
+
+	info := ssa.GetPkgInfo(prog, pkgs, "main")
+
+	if info == nil {
+		t.Fatalf("fail to get package main from loaded packages")
 	}
-	conf.CreateFromFiles("main", f)
+
+	ppkg := info.PPkg
+	f := info.File
+	mainPkg := info.SPkg
+
+	readFile := func(_ string) ([]byte, error) {
+		// split the file content to get the exact file content,
+		// instead of using go/printer which re-formats the file and the positions are no longer exact
+		strs := strings.SplitAfter(string(src), "-- objlookup.go --\n")
+		if len(strs) != 2 {
+			t.Fatalf("expect to get 2 parts after splitting but got %d", len(strs))
+		}
+		return []byte(strs[1]), nil
+	}
 
 	// Maps each var Ident (represented "name:linenum") to the
 	// kind of ssa.Value we expect (represented "Constant", "&Alloc").
@@ -49,54 +63,45 @@ func TestObjValueLookup(t *testing.T) {
 	// Each note of the form @ssa(x, "BinOp") in testdata/objlookup.go
 	// specifies an expectation that an object named x declared on the
 	// same line is associated with an ssa.Value of type *ssa.BinOp.
-	notes, err := expect.ExtractGo(conf.Fset, f)
+	notes, err := expect.ExtractGo(ppkg.Fset, f)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, n := range notes {
 		if n.Name != "ssa" {
-			t.Errorf("%v: unexpected note type %q, want \"ssa\"", conf.Fset.Position(n.Pos), n.Name)
+			t.Errorf("%v: unexpected note type %q, want \"ssa\"", ppkg.Fset.Position(n.Pos), n.Name)
 			continue
 		}
 		if len(n.Args) != 2 {
-			t.Errorf("%v: ssa has %d args, want 2", conf.Fset.Position(n.Pos), len(n.Args))
+			t.Errorf("%v: ssa has %d args, want 2", ppkg.Fset.Position(n.Pos), len(n.Args))
 			continue
 		}
 		ident, ok := n.Args[0].(expect.Identifier)
 		if !ok {
-			t.Errorf("%v: got %v for arg 1, want identifier", conf.Fset.Position(n.Pos), n.Args[0])
+			t.Errorf("%v: got %v for arg 1, want identifier", ppkg.Fset.Position(n.Pos), n.Args[0])
 			continue
 		}
 		exp, ok := n.Args[1].(string)
 		if !ok {
-			t.Errorf("%v: got %v for arg 2, want string", conf.Fset.Position(n.Pos), n.Args[1])
+			t.Errorf("%v: got %v for arg 2, want string", ppkg.Fset.Position(n.Pos), n.Args[1])
 			continue
 		}
-		p, _, err := expect.MatchBefore(conf.Fset, readFile, n.Pos, string(ident))
+		p, _, err := expect.MatchBefore(ppkg.Fset, readFile, n.Pos, string(ident))
 		if err != nil {
 			t.Error(err)
 			continue
 		}
-		pos := conf.Fset.Position(p)
+		pos := ppkg.Fset.Position(p)
 		key := fmt.Sprintf("%s:%d", ident, pos.Line)
 		expectations[key] = exp
 	}
 
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0) /*|ssa.PrintFunctions*/)
-	mainInfo := iprog.Created[0]
-	mainPkg := prog.Package(mainInfo.Pkg)
 	mainPkg.SetDebugMode(true)
 	mainPkg.Build()
 
 	var varIds []*ast.Ident
 	var varObjs []*types.Var
-	for id, obj := range mainInfo.Defs {
+	for id, obj := range ppkg.TypesInfo.Defs {
 		// Check invariants for func and const objects.
 		switch obj := obj.(type) {
 		case *types.Func:
@@ -113,7 +118,7 @@ func TestObjValueLookup(t *testing.T) {
 			varObjs = append(varObjs, obj)
 		}
 	}
-	for id, obj := range mainInfo.Uses {
+	for id, obj := range ppkg.TypesInfo.Uses {
 		if obj, ok := obj.(*types.Var); ok {
 			varIds = append(varIds, id)
 			varObjs = append(varObjs, obj)
@@ -125,7 +130,7 @@ func TestObjValueLookup(t *testing.T) {
 	for i, id := range varIds {
 		obj := varObjs[i]
 		ref, _ := astutil.PathEnclosingInterval(f, id.Pos(), id.Pos())
-		pos := prog.Fset.Position(id.Pos())
+		pos := ppkg.Fset.Position(id.Pos())
 		exp := expectations[fmt.Sprintf("%s:%d", id.Name, pos.Line)]
 		if exp == "" {
 			t.Errorf("%s: no expectation for var ident %s ", pos, id.Name)
@@ -222,11 +227,11 @@ func checkVarValue(t *testing.T, prog *ssa.Program, pkg *ssa.Package, ref []ast.
 // Ensure that, in debug mode, we can determine the ssa.Value
 // corresponding to every ast.Expr.
 func TestValueForExpr(t *testing.T) {
-	testValueForExpr(t, "testdata/valueforexpr.go")
+	testValueForExpr(t, "testdata/valueforexpr.txtar")
 }
 
 func TestValueForExprStructConv(t *testing.T) {
-	testValueForExpr(t, "testdata/structconv.go")
+	testValueForExpr(t, "testdata/structconv.txtar")
 }
 
 func testValueForExpr(t *testing.T, testfile string) {
@@ -234,24 +239,24 @@ func testValueForExpr(t *testing.T, testfile string) {
 		t.Skipf("no testdata dir on %s", runtime.GOOS)
 	}
 
-	conf := loader.Config{ParserMode: parser.ParseComments}
-	f, err := conf.ParseFile(testfile, nil)
+	src, err := os.ReadFile(testfile)
 	if err != nil {
-		t.Error(err)
-		return
-	}
-	conf.CreateFromFiles("main", f)
-
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Error(err)
-		return
+		t.Fatal(err)
 	}
 
-	mainInfo := iprog.Created[0]
+	pkgs := ssa.PackagesFromArchive(t, string(src))
+	prog := ssa.CreateProgram(t, pkgs, ssa.BuilderMode(0))
 
-	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
-	mainPkg := prog.Package(mainInfo.Pkg)
+	info := ssa.GetPkgInfo(prog, pkgs, "main")
+
+	if info == nil {
+		t.Fatalf("fail to get package main from loaded packages")
+	}
+
+	ppkg := info.PPkg
+	f := info.File
+	mainPkg := info.SPkg
+
 	mainPkg.SetDebugMode(true)
 	mainPkg.Build()
 
@@ -318,8 +323,8 @@ func testValueForExpr(t *testing.T, testfile string) {
 			if gotAddr {
 				T = T.Underlying().(*types.Pointer).Elem() // deref
 			}
-			if !types.Identical(T, mainInfo.TypeOf(e)) {
-				t.Errorf("%s: got type %s, want %s", position, mainInfo.TypeOf(e), T)
+			if !types.Identical(T, ppkg.TypesInfo.TypeOf(e)) {
+				t.Errorf("%s: got type %s, want %s", position, ppkg.TypesInfo.TypeOf(e), T)
 			}
 		}
 	}
@@ -357,46 +362,46 @@ func TestEnclosingFunction(t *testing.T) {
 		// Ordinary function:
 		{`package main
 		  func f() { println(1003) }`,
-			"100", "main.f"},
+			"100", "example.com.f"},
 		// Methods:
 		{`package main
                   type T int
 		  func (t T) f() { println(200) }`,
-			"200", "(main.T).f"},
+			"200", "(example.com.T).f"},
 		// Function literal:
 		{`package main
 		  func f() { println(func() { print(300) }) }`,
-			"300", "main.f$1"},
+			"300", "example.com.f$1"},
 		// Doubly nested
 		{`package main
 		  func f() { println(func() { print(func() { print(350) })})}`,
-			"350", "main.f$1$1"},
+			"350", "example.com.f$1$1"},
 		// Implicit init for package-level var initializer.
-		{"package main; var a = 400", "400", "main.init"},
+		{"package main; var a = 400", "400", "example.com.init"},
 		// No code for constants:
 		{"package main; const a = 500", "500", "(none)"},
 		// Explicit init()
-		{"package main; func init() { println(600) }", "600", "main.init#1"},
+		{"package main; func init() { println(600) }", "600", "example.com.init#1"},
 		// Multiple explicit init functions:
 		{`package main
 		  func init() { println("foo") }
 		  func init() { println(800) }`,
-			"800", "main.init#2"},
+			"800", "example.com.init#2"},
 		// init() containing FuncLit.
 		{`package main
 		  func init() { println(func(){print(900)}) }`,
-			"900", "main.init#1$1"},
+			"900", "example.com.init#1$1"},
 		// generics
 		{`package main
 			type S[T any] struct{}
 			func (*S[T]) Foo() { println(1000) }
 			type P[T any] struct{ *S[T] }`,
-			"1000", "(*main.S[T]).Foo",
+			"1000", "(*example.com.S[T]).Foo",
 		},
 	}
 	for _, test := range tests {
-		conf := loader.Config{Fset: token.NewFileSet()}
-		f, start, end := findInterval(t, conf.Fset, test.input, test.substr)
+		fset := token.NewFileSet()
+		f, start, end := findInterval(t, fset, test.input, test.substr)
 		if f == nil {
 			continue
 		}
@@ -406,15 +411,8 @@ func TestEnclosingFunction(t *testing.T) {
 			continue
 		}
 
-		conf.CreateFromFiles("main", f)
-
-		iprog, err := conf.Load()
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-		prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
-		pkg := prog.Package(iprog.Created[0].Pkg)
+		info := ssa.LoadPackageFromSingleFile(t, test.input, ssa.BuilderMode(0))
+		pkg := info.SPkg
 		pkg.Build()
 
 		name := "(none)"

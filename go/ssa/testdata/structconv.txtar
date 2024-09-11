@@ -1,5 +1,8 @@
-// +build ignore
+-- go.mod --
+module example.com
+go 1.18
 
+-- structconv.go --
 // This file is the input to TestValueForExprStructConv in identical_test.go,
 // which uses the same framework as TestValueForExpr does in source_test.go.
 //

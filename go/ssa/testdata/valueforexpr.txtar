@@ -1,6 +1,8 @@
-//go:build ignore
-// +build ignore
+-- go.mod --
+module example.com
+go 1.18
 
+-- valueforexpr.go --
 package main
 
 // This file is the input to TestValueForExpr in source_test.go, which
