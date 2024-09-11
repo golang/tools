@@ -63,6 +63,7 @@ func TestNetHTTP(t *testing.T) {
 // This can under some schedules create a cycle of dependencies
 // where both need to wait on the other to finish building.
 func TestCycles(t *testing.T) {
+	testenv.NeedsGo1Point(t, 23) // internal/trace/testtrace was added in 1.23.
 	testLoad(t, 120, "net/http", "internal/trace/testtrace")
 }
 
