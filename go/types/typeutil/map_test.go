@@ -16,7 +16,9 @@ import (
 	"go/types"
 	"testing"
 
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/testenv"
 )
 
 var (
@@ -425,4 +427,43 @@ func instantiate(t *testing.T, origin types.Type, targs ...types.Type) types.Typ
 		t.Fatal(err)
 	}
 	return inst
+}
+
+// BenchmarkMap stores the type of every expression in the net/http
+// package in a map.
+func BenchmarkMap(b *testing.B) {
+	testenv.NeedsGoPackages(b)
+
+	// Load all dependencies of net/http.
+	cfg := &packages.Config{Mode: packages.LoadAllSyntax}
+	pkgs, err := packages.Load(cfg, "net/http")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Gather all unique types.Type pointers (>67K) annotating the syntax.
+	allTypes := make(map[types.Type]bool)
+	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
+		for _, tv := range pkg.TypesInfo.Types {
+			allTypes[tv.Type] = true
+		}
+	})
+	b.ResetTimer()
+
+	for range b.N {
+		// De-duplicate the logically identical types.
+		var tmap typeutil.Map
+		for t := range allTypes {
+			tmap.Set(t, nil)
+		}
+
+		// For sanity, ensure we find a minimum number
+		// of distinct type equivalence classes.
+		if want := 12000; tmap.Len() < want {
+			b.Errorf("too few types (from %d types.Type values, got %d logically distinct types, want >=%d)",
+				len(allTypes),
+				tmap.Len(),
+				want)
+		}
+	}
 }

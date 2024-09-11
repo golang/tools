@@ -99,10 +99,7 @@ var (
 // hashType returns a hash for t such that
 // types.Identical(x, y) => hashType(x) == hashType(y).
 func hashType(t types.Type) int {
-	mu.Lock()
-	h := int(hasher.Hash(t))
-	mu.Unlock()
-	return h
+	return int(hasher.Hash(t))
 }
 
 // usesBuiltinMap returns true if the built-in hash function and
