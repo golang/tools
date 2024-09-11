@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -773,7 +774,7 @@ var indirect = R[int].M
 // TestTypeparamTest builds SSA over compilable examples in $GOROOT/test/typeparam/*.go.
 
 func TestTypeparamTest(t *testing.T) {
-	// Tests use a fake goroot to stub out standard libraries with delcarations in
+	// Tests use a fake goroot to stub out standard libraries with declarations in
 	// testdata/src. Decreases runtime from ~80s to ~1s.
 
 	dir := filepath.Join(build.Default.GOROOT, "test", "typeparam")
@@ -785,8 +786,8 @@ func TestTypeparamTest(t *testing.T) {
 	}
 
 	for _, entry := range list {
-		if entry.Name() == "issue58513.go" {
-			continue // uses runtime.Caller; unimplemented by go/ssa/interp
+		if entry.Name() == "chans.go" && runtime.GOARCH == "wasm" {
+			continue // https://go.dev/issues/64726 runtime: found bad pointer
 		}
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
 			continue // Consider standalone go files.
