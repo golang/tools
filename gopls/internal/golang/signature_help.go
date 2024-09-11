@@ -47,41 +47,30 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	}
 	info := pkg.TypesInfo()
 	var fnval ast.Expr
-FindCall:
+loop:
 	for i, node := range path {
 		switch node := node.(type) {
 		case *ast.Ident:
-			// If the selection is a function/method identifier,
+			// If the selected text is a function/method Ident orSelectorExpr,
 			// even one not in function call position,
 			// show help for its signature. Example:
 			//    once.Do(initialize⁁)
 			// should show help for initialize, not once.Do.
-			if info.Defs[node] == nil &&
-				info.TypeOf(node) != nil &&
-				is[*types.Signature](info.TypeOf(node).Underlying()) {
-				// golang/go#68922: offer signature help when the
-				// cursor over ident or function name.
-				// No enclosing call found.
-				// If the selection is an Ident of func type, use that instead.
-				fnval = node
-				if _, ok := info.Types[fnval]; ok {
-					break FindCall
+			if t := info.TypeOf(node); t != nil &&
+				info.Defs[node] == nil &&
+				is[*types.Signature](t.Underlying()) {
+				if sel, ok := path[i+1].(*ast.SelectorExpr); ok && sel.Sel == node {
+					fnval = sel // e.g. fmt.Println⁁
+				} else {
+					fnval = node
 				}
-
-				if len(path) <= i+1 {
-					continue
-				}
-				if s, ok := path[i+1].(*ast.SelectorExpr); ok {
-					fnval = s
-				}
-
-				break FindCall
+				break loop
 			}
 		case *ast.CallExpr:
 			if pos >= node.Lparen && pos <= node.Rparen {
 				callExpr = node
 				fnval = callExpr.Fun
-				break FindCall
+				break loop
 			}
 		case *ast.FuncLit, *ast.FuncType:
 			// The user is within an anonymous function,
