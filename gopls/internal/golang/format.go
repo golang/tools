@@ -21,12 +21,12 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/tokeninternal"
+	gofumptFormat "mvdan.cc/gofumpt/format"
 )
 
 // Format formats a file with a given range.
@@ -67,7 +67,7 @@ func Format(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]pr
 
 	// Apply additional formatting, if any is supported. Currently, the only
 	// supported additional formatter is gofumpt.
-	if format := settings.GofumptFormat; snapshot.Options().Gofumpt && format != nil {
+	if snapshot.Options().Gofumpt {
 		// gofumpt can customize formatting based on language version and module
 		// path, if available.
 		//
@@ -76,17 +76,17 @@ func Format(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]pr
 		// TODO: under which circumstances can we fail to find module information?
 		// Can this, for example, result in inconsistent formatting across saves,
 		// due to pending calls to packages.Load?
-		var langVersion, modulePath string
+		var opts gofumptFormat.Options
 		meta, err := NarrowestMetadataForFile(ctx, snapshot, fh.URI())
 		if err == nil {
 			if mi := meta.Module; mi != nil {
 				if v := mi.GoVersion; v != "" {
-					langVersion = "go" + v
+					opts.LangVersion = "go" + v
 				}
-				modulePath = mi.Path
+				opts.ModulePath = mi.Path
 			}
 		}
-		b, err := format(ctx, langVersion, modulePath, buf.Bytes())
+		b, err := gofumptFormat.Source(buf.Bytes(), opts)
 		if err != nil {
 			return nil, err
 		}
