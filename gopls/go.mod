@@ -15,7 +15,7 @@ require (
 	golang.org/x/vuln v1.0.4
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.4.7
-	mvdan.cc/gofumpt v0.6.0
+	mvdan.cc/gofumpt v0.7.0
 	mvdan.cc/xurls/v2 v2.5.0
 )
 

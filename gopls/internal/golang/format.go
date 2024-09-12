@@ -80,7 +80,9 @@ func Format(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]pr
 		meta, err := NarrowestMetadataForFile(ctx, snapshot, fh.URI())
 		if err == nil {
 			if mi := meta.Module; mi != nil {
-				langVersion = mi.GoVersion
+				if v := mi.GoVersion; v != "" {
+					langVersion = "go" + v
+				}
 				modulePath = mi.Path
 			}
 		}
