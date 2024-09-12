@@ -45,13 +45,32 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if path == nil {
 		return nil, 0, fmt.Errorf("cannot find node enclosing position")
 	}
-FindCall:
-	for _, node := range path {
+	info := pkg.TypesInfo()
+	var fnval ast.Expr
+loop:
+	for i, node := range path {
 		switch node := node.(type) {
+		case *ast.Ident:
+			// If the selected text is a function/method Ident orSelectorExpr,
+			// even one not in function call position,
+			// show help for its signature. Example:
+			//    once.Do(initialize⁁)
+			// should show help for initialize, not once.Do.
+			if t := info.TypeOf(node); t != nil &&
+				info.Defs[node] == nil &&
+				is[*types.Signature](t.Underlying()) {
+				if sel, ok := path[i+1].(*ast.SelectorExpr); ok && sel.Sel == node {
+					fnval = sel // e.g. fmt.Println⁁
+				} else {
+					fnval = node
+				}
+				break loop
+			}
 		case *ast.CallExpr:
 			if pos >= node.Lparen && pos <= node.Rparen {
 				callExpr = node
-				break FindCall
+				fnval = callExpr.Fun
+				break loop
 			}
 		case *ast.FuncLit, *ast.FuncType:
 			// The user is within an anonymous function,
@@ -70,20 +89,19 @@ FindCall:
 		}
 
 	}
-	if callExpr == nil || callExpr.Fun == nil {
+
+	if fnval == nil {
 		return nil, 0, nil
 	}
 
-	info := pkg.TypesInfo()
-
 	// Get the type information for the function being called.
 	var sig *types.Signature
-	if tv, ok := info.Types[callExpr.Fun]; !ok {
-		return nil, 0, fmt.Errorf("cannot get type for Fun %[1]T (%[1]v)", callExpr.Fun)
+	if tv, ok := info.Types[fnval]; !ok {
+		return nil, 0, fmt.Errorf("cannot get type for Fun %[1]T (%[1]v)", fnval)
 	} else if tv.IsType() {
 		return nil, 0, nil // a conversion, not a call
 	} else if sig, ok = tv.Type.Underlying().(*types.Signature); !ok {
-		return nil, 0, fmt.Errorf("call operand is not a func or type: %[1]T (%[1]v)", callExpr.Fun)
+		return nil, 0, fmt.Errorf("call operand is not a func or type: %[1]T (%[1]v)", fnval)
 	}
 	// Inv: sig != nil
 
@@ -93,7 +111,7 @@ FindCall:
 	// There is no object in certain cases such as calling a function returned by
 	// a function (e.g. "foo()()").
 	var obj types.Object
-	switch t := callExpr.Fun.(type) {
+	switch t := fnval.(type) {
 	case *ast.Ident:
 		obj = info.ObjectOf(t)
 	case *ast.SelectorExpr:
@@ -116,7 +134,12 @@ FindCall:
 		return nil, 0, bug.Errorf("call to unexpected built-in %v (%T)", obj, obj)
 	}
 
-	activeParam := activeParameter(callExpr, sig.Params().Len(), sig.Variadic(), pos)
+	activeParam := 0
+	if callExpr != nil {
+		// only return activeParam when CallExpr
+		// because we don't modify arguments when get function signature only
+		activeParam = activeParameter(callExpr, sig.Params().Len(), sig.Variadic(), pos)
+	}
 
 	var (
 		name    string

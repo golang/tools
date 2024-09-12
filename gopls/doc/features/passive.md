@@ -107,6 +107,10 @@ function call.
 
 <img src='../assets/signature-help.png'>
 
+Call parens are not necessary if the cursor is within an identifier
+that denotes a function or method. For example, Signature Help at
+`once.Do(initialize‸)` will describe `initialize`, not `once.Do`.
+
 Client support:
 - **VS Code**: enabled by default.
   Also known as "[parameter hints](https://code.visualstudio.com/api/references/vscode-api#SignatureHelpProvider)" in the [IntelliSense settings](https://code.visualstudio.com/docs/editor/intellisense#_settings).

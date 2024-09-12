@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"math/big"
+	"fmt"
 )
 
 func Foo(a string, b int) (c bool) {
@@ -49,6 +50,9 @@ func Qux() {
 	Foo("foo", 123) //@signature(",", "Foo(a string, b int) (c bool)", 0)
 	Foo("foo", 123) //@signature(" 1", "Foo(a string, b int) (c bool)", 1)
 	Foo("foo", 123) //@signature(")", "Foo(a string, b int) (c bool)", 1)
+	Foo("foo", 123) //@signature("o", "Foo(a string, b int) (c bool)", 0)
+	_ = Foo //@signature("o", "Foo(a string, b int) (c bool)", 0)
+	Foo //@signature("o", "Foo(a string, b int) (c bool)", 0)
 
 	Bar(13.37, 0x13)       //@signature("13.37", "Bar(float64, ...byte)", 0)
 	Bar(13.37, 0x37)       //@signature("0x37", "Bar(float64, ...byte)", 1)
@@ -78,8 +82,27 @@ func Qux() {
 
 	_ = make([]int, 1, 2) //@signature("2", "make(t Type, size ...int) Type", 1)
 
-	Foo(myFunc(123), 456) //@signature("myFunc", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature("o(", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature("(m", "Foo(a string, b int) (c bool)", 0)
+	Foo( myFunc(123), 456) //@signature(" m", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature(", ", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature("456", "Foo(a string, b int) (c bool)", 1)
+	Foo(myFunc) //@signature(")", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature("(1", "myFunc(foo int) string", 0)
 	Foo(myFunc(123), 456) //@signature("123", "myFunc(foo int) string", 0)
+
+	fmt.Println //@signature("ln", "Println(a ...any) (n int, err error)", 0)
+	fmt.Println(myFunc) //@signature("ln", "Println(a ...any) (n int, err error)", 0)
+	fmt.Println(myFunc) //@signature("Func", "myFunc(foo int) string", 0)
+
+	var hi string = "hello"
+	var wl string = " world: %s"
+	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature("Func", "myFunc(foo int) string", 0)
+	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature("wl", "Sprintf(format string, a ...any) string", 0)
+	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature(" m", "Sprintf(format string, a ...any) string", 1)
+	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature("Sprint", "Sprintf(format string, a ...any) string", 0)
+	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature(" fmt", "Println(a ...any) (n int, err error)", 0)
+	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature("hi", "Println(a ...any) (n int, err error)", 0)
 
 	panic("oops!")            //@signature(")", "panic(v any)", 0)
 	println("hello", "world") //@signature(",", "println(args ...Type)", 0)
@@ -100,6 +123,8 @@ package signature
 
 func _() {
 	Foo(//@signature("//", "Foo(a string, b int) (c bool)", 0)
+	Foo.//@signature("//", "Foo(a string, b int) (c bool)", 0)
+	Foo.//@signature("oo", "Foo(a string, b int) (c bool)", 0)
 }
 
 -- signature/signature3.go --
