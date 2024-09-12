@@ -777,6 +777,13 @@ func TestTypeparamTest(t *testing.T) {
 	// Tests use a fake goroot to stub out standard libraries with declarations in
 	// testdata/src. Decreases runtime from ~80s to ~1s.
 
+	if runtime.GOARCH == "wasm" {
+		// Consistent flakes on wasm (#64726, #69409, #69410).
+		// Needs more investigation, but more likely a wasm issue
+		// Disabling for now.
+		t.Skip("Consistent flakes on wasm (e.g. https://go.dev/issues/64726)")
+	}
+
 	dir := filepath.Join(build.Default.GOROOT, "test", "typeparam")
 
 	// Collect all of the .go files in
@@ -786,9 +793,6 @@ func TestTypeparamTest(t *testing.T) {
 	}
 
 	for _, entry := range list {
-		if entry.Name() == "chans.go" && runtime.GOARCH == "wasm" {
-			continue // https://go.dev/issues/64726 runtime: found bad pointer
-		}
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
 			continue // Consider standalone go files.
 		}

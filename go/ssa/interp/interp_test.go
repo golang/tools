@@ -307,6 +307,11 @@ func TestGorootTest(t *testing.T) {
 // in $GOROOT/test/typeparam/*.go.
 
 func TestTypeparamTest(t *testing.T) {
+	if runtime.GOARCH == "wasm" {
+		// See ssa/TestTypeparamTest.
+		t.Skip("Consistent flakes on wasm (e.g. https://go.dev/issues/64726)")
+	}
+
 	goroot := makeGoroot(t)
 
 	// Skip known failures for the given reason.
