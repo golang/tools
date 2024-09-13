@@ -316,75 +316,11 @@ func newIssue(stack, id string, info Info, jsonURL string, counts map[Info]int64
 	}
 
 	// Parse the stack and get the symbol names out.
-	for _, line := range strings.Split(stack, "\n") {
-		// e.g. "golang.org/x/tools/gopls/foo.(*Type).Method.inlined.func3:+5"
-		symbol, offset, ok := strings.Cut(line, ":")
-		if !ok {
-			// Not a symbol (perhaps stack counter title: "gopls/bug"?)
-			fmt.Fprintf(body, "`%s`\n", line)
-			continue
-		}
-		fileline, ok := pclntab[symbol]
-		if !ok {
-			// objdump reports ELF symbol names, which in
-			// rare cases may be the Go symbols of
-			// runtime.CallersFrames mangled by (e.g.) the
-			// addition of .abi0 suffix; see
-			// https://github.com/golang/go/issues/69390#issuecomment-2343795920
-			// So this should not be a hard error.
-			log.Printf("no pclntab info for symbol: %s", symbol)
-			fmt.Fprintf(body, "`%s`\n", line)
-			continue
-		}
-		if offset == "" {
-			log.Fatalf("missing line offset: %s", line)
-		}
-		offsetNum, err := strconv.Atoi(offset[1:])
-		if err != nil {
-			log.Fatalf("invalid line offset: %s", line)
-		}
-		linenum := fileline.line
-		switch offset[0] {
-		case '-':
-			linenum -= offsetNum
-		case '+':
-			linenum += offsetNum
-		case '=':
-			linenum = offsetNum
-		}
-
-		// Construct CodeSearch URL.
-		var url string
-		if firstSegment, _, _ := strings.Cut(fileline.file, "/"); !strings.Contains(firstSegment, ".") {
-			// std
-			// (First segment is a dir beneath GOROOT/src, not a module domain name.)
-			url = fmt.Sprintf("https://cs.opensource.google/go/go/+/%s:src/%s;l=%d",
-				info.GoVersion, fileline.file, linenum)
-
-		} else if rest, ok := strings.CutPrefix(fileline.file, "golang.org/x/tools"); ok {
-			// in x/tools repo (tools or gopls module)
-			if rest[0] == '/' {
-				// "golang.org/x/tools/gopls" -> "gopls"
-				rest = rest[1:]
-			} else if rest[0] == '@' {
-				// "golang.org/x/tools@version/dir/file.go" -> "dir/file.go"
-				rest = rest[strings.Index(rest, "/")+1:]
-			}
-
-			url = fmt.Sprintf("https://cs.opensource.google/go/x/tools/+/%s:%s;l=%d",
-				"gopls/"+info.Version, rest, linenum)
-
+	for _, frame := range strings.Split(stack, "\n") {
+		if url := frameURL(pclntab, info, frame); url != "" {
+			fmt.Fprintf(body, "- [`%s`](%s)\n", frame, url)
 		} else {
-			// TODO(adonovan): support other module dependencies of gopls.
-			log.Printf("no CodeSearch URL for %q (%s:%d)",
-				symbol, fileline.file, linenum)
-		}
-
-		// Emit stack frame.
-		if url != "" {
-			fmt.Fprintf(body, "- [`%s`](%s)\n", line, url)
-		} else {
-			fmt.Fprintf(body, "- `%s`\n", line)
+			fmt.Fprintf(body, "- `%s`\n", frame)
 		}
 	}
 
@@ -409,6 +345,73 @@ func newIssue(stack, id string, info Info, jsonURL string, counts map[Info]int64
 	}
 
 	return title
+}
+
+// frameURL returns the CodeSearch URL for the stack frame, if known.
+func frameURL(pclntab map[string]FileLine, info Info, frame string) string {
+	// e.g. "golang.org/x/tools/gopls/foo.(*Type).Method.inlined.func3:+5"
+	symbol, offset, ok := strings.Cut(frame, ":")
+	if !ok {
+		// Not a symbol (perhaps stack counter title: "gopls/bug"?)
+		return ""
+	}
+
+	fileline, ok := pclntab[symbol]
+	if !ok {
+		// objdump reports ELF symbol names, which in
+		// rare cases may be the Go symbols of
+		// runtime.CallersFrames mangled by (e.g.) the
+		// addition of .abi0 suffix; see
+		// https://github.com/golang/go/issues/69390#issuecomment-2343795920
+		// So this should not be a hard error.
+		log.Printf("no pclntab info for symbol: %s", symbol)
+		return ""
+	}
+
+	if offset == "" {
+		log.Fatalf("missing line offset: %s", frame)
+	}
+	offsetNum, err := strconv.Atoi(offset[1:])
+	if err != nil {
+		log.Fatalf("invalid line offset: %s", frame)
+	}
+	linenum := fileline.line
+	switch offset[0] {
+	case '-':
+		linenum -= offsetNum
+	case '+':
+		linenum += offsetNum
+	case '=':
+		linenum = offsetNum
+	}
+
+	// Construct CodeSearch URL.
+	firstSegment, _, _ := strings.Cut(fileline.file, "/")
+	if !strings.Contains(firstSegment, ".") {
+		// std
+		// (First segment is a dir beneath GOROOT/src, not a module domain name.)
+		return fmt.Sprintf("https://cs.opensource.google/go/go/+/%s:src/%s;l=%d",
+			info.GoVersion, fileline.file, linenum)
+	}
+
+	if rest, ok := strings.CutPrefix(fileline.file, "golang.org/x/tools"); ok {
+		// in x/tools repo (tools or gopls module)
+		if rest[0] == '/' {
+			// "golang.org/x/tools/gopls" -> "gopls"
+			rest = rest[1:]
+		} else if rest[0] == '@' {
+			// "golang.org/x/tools@version/dir/file.go" -> "dir/file.go"
+			rest = rest[strings.Index(rest, "/")+1:]
+		}
+
+		return fmt.Sprintf("https://cs.opensource.google/go/x/tools/+/%s:%s;l=%d",
+			"gopls/"+info.Version, rest, linenum)
+	}
+
+	// TODO(adonovan): support other module dependencies of gopls.
+	log.Printf("no CodeSearch URL for %q (%s:%d)",
+		symbol, fileline.file, linenum)
+	return ""
 }
 
 // -- GitHub search --
@@ -504,6 +507,7 @@ func readPCLineTable(info Info) (map[string]FileLine, error) {
 	if !fileExists(revDir) {
 		log.Printf("cloning tools@gopls/%s", info.Version)
 		if err := shallowClone(revDir, "https://go.googlesource.com/tools", "gopls/"+info.Version); err != nil {
+			_ = os.RemoveAll(revDir) // ignore errors
 			return nil, fmt.Errorf("clone: %v", err)
 		}
 	}
