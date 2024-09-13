@@ -5,6 +5,51 @@
 // The stacks command finds all gopls stack traces reported by
 // telemetry in the past 7 days, and reports their associated GitHub
 // issue, creating new issues as needed.
+//
+// The association of stacks with GitHub issues (labelled
+// gopls/telemetry-wins) is represented in two different ways by the
+// body (first comment) of the issue:
+//
+//  1. Each distinct stack is identified by an ID, 6-digit base64
+//     string such as "TwtkSg". If a stack's ID appears anywhere
+//     within the issue body, the stack is associated with the issue.
+//
+//     Some problems are highly deterministic, resulting in many
+//     field reports of the exact same stack. For such problems, a
+//     single ID in the issue body suffices to record the
+//     association. But most problems are exhibited in a variety of
+//     ways, leading to multiple field reports of similar but
+//     distinct stacks.
+//
+//  2. Each GitHub issue body may start with a code block of this form:
+//
+//     ```
+//     #!stacks
+//     "runtime.sigpanic" && "golang.hover:+170"
+//     ```
+//
+//     The first line indicates the purpose of the block; the
+//     remainder is a predicate that matches stacks.
+//     It is an expression defined by this grammar:
+//
+//     >  expr = "string literal"
+//     >       | ( expr )
+//     >       | ! expr
+//     >       | expr && expr
+//     >       | expr || expr
+//
+//     Each string literal implies a substring match on the stack;
+//     the other productions are boolean operations.
+//
+//     The stacks command gathers all such predicates out of the
+//     labelled issues and evaluates each one against each new stack.
+//     If the predicate for an issue matches, the issue is considered
+//     to have "claimed" the stack: the stack command appends a
+//     comment containing the new (variant) stack to the issue, and
+//     appends the stack's ID to the last line of the issue body.
+//
+//     It is an error if two issues' predicates attempt to claim the
+//     same stack.
 package main
 
 // TODO(adonovan): create a proper package with tests. Much of this
@@ -17,6 +62,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"hash/fnv"
 	"io"
 	"log"
@@ -29,6 +77,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"golang.org/x/telemetry"
 	"golang.org/x/tools/gopls/internal/util/browser"
@@ -39,7 +88,7 @@ import (
 var (
 	daysFlag = flag.Int("days", 7, "number of previous days of telemetry data to read")
 
-	token string // optional GitHub authentication token, to relax the rate limit
+	authToken string // mandatory GitHub authentication token (for R/W issues access)
 )
 
 func main() {
@@ -51,8 +100,8 @@ func main() {
 	//
 	// You can create one using the flow at: GitHub > You > Settings >
 	// Developer Settings > Personal Access Tokens > Fine-grained tokens >
-	// Generate New Token.  Generate the token on behalf of yourself
-	// (not "golang" or "google"), with no special permissions.
+	// Generate New Token.  Generate the token on behalf of golang/go
+	// with R/W access to "Issues".
 	// The token is typically of the form "github_pat_XXX", with 82 hex digits.
 	// Save it in the file, with mode 0400.
 	//
@@ -69,9 +118,9 @@ func main() {
 			if !os.IsNotExist(err) {
 				log.Fatalf("cannot read GitHub authentication token: %v", err)
 			}
-			log.Printf("no file %s containing GitHub authentication token; continuing without authentication, which is subject to stricter rate limits (https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).", tokenFile)
+			log.Fatalf("no file %s containing GitHub authentication token.", tokenFile)
 		}
-		token = string(bytes.TrimSpace(content))
+		authToken = string(bytes.TrimSpace(content))
 	}
 
 	// Maps stack text to Info to count.
@@ -152,36 +201,138 @@ func main() {
 		}
 	}
 
-	// Compute IDs of all stacks.
-	var stackIDs []string
-	for stack := range stacks {
-		stackIDs = append(stackIDs, stackID(stack))
+	// Query GitHub for all existing GitHub issues with label:gopls/telemetry-wins.
+	//
+	// TODO(adonovan): by default GitHub returns at most 30
+	// issues; we have lifted this to 100 using per_page=%d, but
+	// that won't work forever; use paging.
+	const query = "is:issue label:gopls/telemetry-wins"
+	res, err := searchIssues(query)
+	if err != nil {
+		log.Fatalf("GitHub issues query %q failed: %v", query, err)
 	}
 
-	// Query GitHub for existing GitHub issues.
-	// (Note: there may be multiple Issue records
-	// for the same logical issue, i.e. Issue.Number.)
-	issuesByStackID := make(map[string]*Issue)
-	for len(stackIDs) > 0 {
-		// For some reason GitHub returns 422 UnprocessableEntity
-		// if we attempt to read more than 6 at once.
-		batch := stackIDs[:min(6, len(stackIDs))]
-		stackIDs = stackIDs[len(batch):]
+	// Extract and validate predicate expressions in ```#!stacks...``` code blocks.
+	// See the package doc comment for the grammar.
+	for _, issue := range res.Items {
+		block := findPredicateBlock(issue.Body)
+		if block != "" {
+			expr, err := parser.ParseExpr(block)
+			if err != nil {
+				log.Printf("invalid predicate in issue #%d: %v\n<<%s>>",
+					issue.Number, err, block)
+				continue
+			}
+			var validate func(ast.Expr) error
+			validate = func(e ast.Expr) error {
+				switch e := e.(type) {
+				case *ast.UnaryExpr:
+					if e.Op != token.NOT {
+						return fmt.Errorf("invalid op: %s", e.Op)
+					}
+					return validate(e.X)
 
-		query := "is:issue label:gopls/telemetry-wins in:body " + strings.Join(batch, " OR ")
-		res, err := searchIssues(query)
-		if err != nil {
-			log.Fatalf("GitHub issues query %q failed: %v", query, err)
-		}
-		for _, issue := range res.Items {
-			for _, id := range batch {
-				// Matching is a little fuzzy here
-				// but base64 will rarely produce
-				// words that appear in the body
-				// by chance.
-				if strings.Contains(issue.Body, id) {
-					issuesByStackID[id] = issue
+				case *ast.BinaryExpr:
+					if e.Op != token.LAND && e.Op != token.LOR {
+						return fmt.Errorf("invalid op: %s", e.Op)
+					}
+					if err := validate(e.X); err != nil {
+						return err
+					}
+					return validate(e.Y)
+
+				case *ast.ParenExpr:
+					return validate(e.X)
+
+				case *ast.BasicLit:
+					if e.Kind != token.STRING {
+						return fmt.Errorf("invalid literal (%s)", e.Kind)
+					}
+					if _, err := strconv.Unquote(e.Value); err != nil {
+						return err
+					}
+
+				default:
+					return fmt.Errorf("syntax error (%T)", e)
 				}
+				return nil
+			}
+			if err := validate(expr); err != nil {
+				log.Printf("invalid predicate in issue #%d: %v\n<<%s>>",
+					issue.Number, err, block)
+				continue
+			}
+			issue.predicateText = block
+			issue.predicate = func(stack string) bool {
+				var eval func(ast.Expr) bool
+				eval = func(e ast.Expr) bool {
+					switch e := e.(type) {
+					case *ast.UnaryExpr:
+						return !eval(e.X)
+
+					case *ast.BinaryExpr:
+						if e.Op == token.LAND {
+							return eval(e.X) && eval(e.Y)
+						} else {
+							return eval(e.X) || eval(e.Y)
+						}
+
+					case *ast.ParenExpr:
+						return eval(e.X)
+
+					case *ast.BasicLit:
+						substr, _ := strconv.Unquote(e.Value)
+						return strings.Contains(stack, substr)
+					}
+					panic("unreachable")
+				}
+				return eval(expr)
+			}
+		}
+	}
+
+	// Map each stack ID to its issue.
+	//
+	// An issue can claim a stack two ways:
+	//
+	// 1. if the issue body contains the ID of the stack. Matching
+	//    is a little loose but base64 will rarely produce words
+	//    that appear in the body by chance.
+	//
+	// 2. if the issue body contains a ```#!stacks``` predicate
+	//    that matches the stack.
+	//
+	// We report an error if two different issues attempt to claim
+	// the same stack.
+	//
+	// This is O(new stacks x existing issues).
+	claimedBy := make(map[string]*Issue)
+	for stack := range stacks {
+		id := stackID(stack)
+		for _, issue := range res.Items {
+			byPredicate := false
+			if strings.Contains(issue.Body, id) {
+				// nop
+			} else if issue.predicate != nil && issue.predicate(stack) {
+				byPredicate = true
+			} else {
+				continue
+			}
+
+			if prev := claimedBy[id]; prev != nil && prev != issue {
+				log.Printf("stack %s is claimed by issues #%d and #%d",
+					id, prev.Number, issue.Number)
+				continue
+			}
+			if false {
+				log.Printf("stack %s claimed by issue #%d",
+					id, issue.Number)
+			}
+			claimedBy[id] = issue
+			if byPredicate {
+				// The stack ID matched the predicate but was not
+				// found in the issue body, so this is a new stack.
+				issue.newStacks = append(issue.newStacks, stack)
 			}
 		}
 	}
@@ -196,25 +347,57 @@ func main() {
 	for stack, counts := range stacks {
 		id := stackID(stack)
 
-		var info0 Info // an arbitrary Info for this stack
 		var total int64
-		for info, count := range counts {
-			info0 = info
+		for _, count := range counts {
 			total += count
 		}
 
-		if issue, ok := issuesByStackID[id]; ok {
+		if issue, ok := claimedBy[id]; ok {
 			// existing issue
-			// TODO(adonovan): use ANSI tty color codes for Issue.State.
 			summary := fmt.Sprintf("#%d: %s [%s]",
 				issue.Number, issue.Title, issue.State)
 			existingIssues[summary] += total
 		} else {
 			// new issue
-			title := newIssue(stack, id, info0, stackToURL[stack], counts)
+			title := newIssue(stack, id, stackToURL[stack], counts)
 			summary := fmt.Sprintf("%s: %s [%s]", id, title, "new")
 			newIssues[summary] += total
 		}
+	}
+
+	// Update existing issues that claimed new stacks by predicate.
+	for _, issue := range res.Items {
+		if len(issue.newStacks) == 0 {
+			continue
+		}
+
+		// Add a comment to the existing issue listing all its new stacks.
+		// (Save the ID of each stack for the second step.)
+		comment := new(bytes.Buffer)
+		var newStackIDs []string
+		for _, stack := range issue.newStacks {
+			id := stackID(stack)
+			newStackIDs = append(newStackIDs, id)
+			writeStackComment(comment, stack, id, stackToURL[stack], stacks[stack])
+		}
+		if err := addIssueComment(issue.Number, comment.String()); err != nil {
+			log.Println(err)
+			continue
+		}
+		log.Printf("added comment to issue #%d", issue.Number)
+
+		// Append to the "Dups: ID ..." list on last line of issue body.
+		body := strings.TrimSpace(issue.Body)
+		lastLineStart := strings.LastIndexByte(body, '\n') + 1
+		lastLine := body[lastLineStart:]
+		if !strings.HasPrefix(lastLine, "Dups:") {
+			body += "\nDups:"
+		}
+		body += " " + strings.Join(newStackIDs, " ")
+		if err := updateIssueBody(issue.Number, body); err != nil {
+			log.Println(err)
+		}
+		log.Printf("updated body of issue #%d", issue.Number)
 	}
 
 	fmt.Printf("Found %d distinct stacks in last %v days:\n", distinctStacks, *daysFlag)
@@ -227,7 +410,6 @@ func main() {
 		fmt.Printf("%s issues:\n", caption)
 		for _, summary := range keys {
 			count := issues[summary]
-			// TODO(adonovan): use ANSI tty codes to show high n values in bold.
 			fmt.Printf("%s (n=%d)\n", summary, count)
 		}
 	}
@@ -235,6 +417,8 @@ func main() {
 	print("New", newIssues)
 }
 
+// Info is used as a key for de-duping and aggregating.
+// Do not add detail about particular records (e.g. data, telemetry URL).
 type Info struct {
 	Program            string // "golang.org/x/tools/gopls"
 	Version, GoVersion string // e.g. "gopls/v0.16.1", "go1.23"
@@ -273,7 +457,7 @@ func stackID(stack string) string {
 // manually de-dup the issue before deciding whether to submit the form.)
 //
 // It returns the title.
-func newIssue(stack, id string, info Info, jsonURL string, counts map[Info]int64) string {
+func newIssue(stack, id string, jsonURL string, counts map[Info]int64) string {
 	// Use a heuristic to find a suitable symbol to blame
 	// in the title: the first public function or method
 	// of a public type, in gopls, to appear in the stack
@@ -305,7 +489,44 @@ func newIssue(stack, id string, info Info, jsonURL string, counts map[Info]int64
 
 	// Populate the form (title, body, label)
 	title := fmt.Sprintf("x/tools/gopls: bug in %s", symbol)
+
 	body := new(bytes.Buffer)
+
+	// Add a placeholder ```#!stacks``` block since this is a new issue.
+	body.WriteString("```" + `
+#!stacks
+"<insert predicate here>"
+` + "```\n")
+	fmt.Fprintf(body, "Issue created by [stacks](https://pkg.go.dev/golang.org/x/tools/gopls/internal/telemetry/cmd/stacks).\n\n")
+
+	writeStackComment(body, stack, id, jsonURL, counts)
+
+	const labels = "gopls,Tools,gopls/telemetry-wins,NeedsInvestigation"
+
+	// Report it. The user will interactively finish the task,
+	// since they will typically de-dup it without even creating a new issue
+	// by expanding the #!stacks predicate of an existing issue.
+	if !browser.Open("https://github.com/golang/go/issues/new?labels=" + labels + "&title=" + url.QueryEscape(title) + "&body=" + url.QueryEscape(body.String())) {
+		log.Print("Please file a new issue at golang.org/issue/new using this template:\n\n")
+		log.Printf("Title: %s\n", title)
+		log.Printf("Labels: %s\n", labels)
+		log.Printf("Body: %s\n", body)
+	}
+
+	return title
+}
+
+// writeStackComment writes a stack in Markdown form, for a new GitHub
+// issue or new comment on an existing one.
+func writeStackComment(body *bytes.Buffer, stack, id string, jsonURL string, counts map[Info]int64) {
+	if len(counts) == 0 {
+		panic("no counts")
+	}
+	var info Info // pick an arbitrary key
+	for info = range counts {
+		break
+	}
+
 	fmt.Fprintf(body, "This stack `%s` was [reported by telemetry](%s):\n\n",
 		id, jsonURL)
 
@@ -331,20 +552,6 @@ func newIssue(stack, id string, info Info, jsonURL string, counts map[Info]int64
 		fmt.Fprintf(body, "%s (%d)\n", info, count)
 	}
 	fmt.Fprintf(body, "```\n\n")
-
-	fmt.Fprintf(body, "Issue created by golang.org/x/tools/gopls/internal/telemetry/cmd/stacks.\n")
-
-	const labels = "gopls,Tools,gopls/telemetry-wins,NeedsInvestigation"
-
-	// Report it.
-	if !browser.Open("https://github.com/golang/go/issues/new?labels=" + labels + "&title=" + url.QueryEscape(title) + "&body=" + url.QueryEscape(body.String())) {
-		log.Print("Please file a new issue at golang.org/issue/new using this template:\n\n")
-		log.Printf("Title: %s\n", title)
-		log.Printf("Labels: %s\n", labels)
-		log.Printf("Body: %s\n", body)
-	}
-
-	return title
 }
 
 // frameURL returns the CodeSearch URL for the stack frame, if known.
@@ -364,12 +571,18 @@ func frameURL(pclntab map[string]FileLine, info Info, frame string) string {
 		// addition of .abi0 suffix; see
 		// https://github.com/golang/go/issues/69390#issuecomment-2343795920
 		// So this should not be a hard error.
-		log.Printf("no pclntab info for symbol: %s", symbol)
+		if symbol != "runtime.goexit" {
+			log.Printf("no pclntab info for symbol: %s", symbol)
+		}
 		return ""
 	}
 
 	if offset == "" {
 		log.Fatalf("missing line offset: %s", frame)
+	}
+	if unicode.IsDigit(rune(offset[0])) {
+		// Fix gopls/v0.14.2 legacy syntax ":%d" -> ":+%d".
+		offset = "+" + offset
 	}
 	offsetNum, err := strconv.Atoi(offset[1:])
 	if err != nil {
@@ -386,16 +599,17 @@ func frameURL(pclntab map[string]FileLine, info Info, frame string) string {
 	}
 
 	// Construct CodeSearch URL.
+
+	// std module?
 	firstSegment, _, _ := strings.Cut(fileline.file, "/")
 	if !strings.Contains(firstSegment, ".") {
-		// std
 		// (First segment is a dir beneath GOROOT/src, not a module domain name.)
 		return fmt.Sprintf("https://cs.opensource.google/go/go/+/%s:src/%s;l=%d",
 			info.GoVersion, fileline.file, linenum)
 	}
 
+	// x/tools repo (tools or gopls module)?
 	if rest, ok := strings.CutPrefix(fileline.file, "golang.org/x/tools"); ok {
-		// in x/tools repo (tools or gopls module)
 		if rest[0] == '/' {
 			// "golang.org/x/tools/gopls" -> "gopls"
 			rest = rest[1:]
@@ -408,7 +622,17 @@ func frameURL(pclntab map[string]FileLine, info Info, frame string) string {
 			"gopls/"+info.Version, rest, linenum)
 	}
 
-	// TODO(adonovan): support other module dependencies of gopls.
+	// other x/ module dependency?
+	// e.g. golang.org/x/sync@v0.8.0/errgroup/errgroup.go
+	if rest, ok := strings.CutPrefix(fileline.file, "golang.org/x/"); ok {
+		if modVer, filename, ok := strings.Cut(rest, "/"); ok {
+			if mod, version, ok := strings.Cut(modVer, "@"); ok {
+				return fmt.Sprintf("https://cs.opensource.google/go/x/%s/+/%s:%s;l=%d",
+					mod, version, filename, linenum)
+			}
+		}
+	}
+
 	log.Printf("no CodeSearch URL for %q (%s:%d)",
 		symbol, fileline.file, linenum)
 	return ""
@@ -420,34 +644,94 @@ func frameURL(pclntab map[string]FileLine, info Info, frame string) string {
 func searchIssues(query string) (*IssuesSearchResult, error) {
 	q := url.QueryEscape(query)
 
-	req, err := http.NewRequest("GET", IssuesURL+"?q="+q, nil)
+	req, err := http.NewRequest("GET", "https://api.github.com/search/issues?q="+q+"&per_page=100", nil)
 	if err != nil {
 		return nil, err
 	}
-	if token != "" {
-		req.Header.Add("Authorization", "Bearer "+token)
+	if authToken != "" {
+		req.Header.Add("Authorization", "Bearer "+authToken)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
 		return nil, fmt.Errorf("search query failed: %s (body: %s)", resp.Status, body)
 	}
 	var result IssuesSearchResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		resp.Body.Close()
 		return nil, err
 	}
-	resp.Body.Close()
 	return &result, nil
 }
 
-// See https://developer.github.com/v3/search/#search-issues.
+// updateIssueBody updates the body of the numbered issue.
+func updateIssueBody(number int, body string) error {
+	// https://docs.github.com/en/rest/issues/comments#update-an-issue
+	var payload struct {
+		Body string `json:"body"`
+	}
+	payload.Body = body
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
 
-const IssuesURL = "https://api.github.com/search/issues"
+	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d", number)
+	req, err := http.NewRequest("PATCH", url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	if authToken != "" {
+		req.Header.Add("Authorization", "Bearer "+authToken)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("issue update failed: %s (body: %s)", resp.Status, body)
+	}
+	return nil
+}
+
+// addIssueComment adds a markdown comment to the numbered issue.
+func addIssueComment(number int, comment string) error {
+	// https://docs.github.com/en/rest/issues/comments#create-an-issue-comment
+	var payload struct {
+		Body string `json:"body"`
+	}
+	payload.Body = comment
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d/comments", number)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	if authToken != "" {
+		req.Header.Add("Authorization", "Bearer "+authToken)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to create issue comment: %s (body: %s)", resp.Status, body)
+	}
+	return nil
+}
+
+// See https://developer.github.com/v3/search/#search-issues.
 
 type IssuesSearchResult struct {
 	TotalCount int `json:"total_count"`
@@ -462,6 +746,10 @@ type Issue struct {
 	User      *User
 	CreatedAt time.Time `json:"created_at"`
 	Body      string    // in Markdown format
+
+	predicateText string            // text of ```#!stacks...``` predicate block
+	predicate     func(string) bool // matching predicate over stack text
+	newStacks     []string          // new stacks to add to existing issue (comments and IDs)
 }
 
 type User struct {
@@ -605,4 +893,50 @@ func shallowClone(dir, repo, commitish string) error {
 func fileExists(filename string) bool {
 	_, err := os.Stat(filename)
 	return err == nil
+}
+
+// findPredicateBlock returns the content (sans "#!stacks") of the
+// code block at the start of the issue body.
+// Logic plundered from x/build/cmd/watchflakes/github.go.
+func findPredicateBlock(body string) string {
+	// Extract ```-fenced or indented code block at start of issue description (body).
+	body = strings.ReplaceAll(body, "\r\n", "\n")
+	lines := strings.SplitAfter(body, "\n")
+	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+		lines = lines[1:]
+	}
+	text := ""
+	// A code quotation is bracketed by sequence of 3+ backticks.
+	// (More than 3 are permitted so that one can quote 3 backticks.)
+	if len(lines) > 0 && strings.HasPrefix(lines[0], "```") {
+		marker := lines[0]
+		n := 0
+		for n < len(marker) && marker[n] == '`' {
+			n++
+		}
+		marker = marker[:n]
+		i := 1
+		for i := 1; i < len(lines); i++ {
+			if strings.HasPrefix(lines[i], marker) && strings.TrimSpace(strings.TrimLeft(lines[i], "`")) == "" {
+				text = strings.Join(lines[1:i], "")
+				break
+			}
+		}
+		if i < len(lines) {
+		}
+	} else if strings.HasPrefix(lines[0], "\t") || strings.HasPrefix(lines[0], "    ") {
+		i := 1
+		for i < len(lines) && (strings.HasPrefix(lines[i], "\t") || strings.HasPrefix(lines[i], "    ")) {
+			i++
+		}
+		text = strings.Join(lines[:i], "")
+	}
+
+	// Must start with #!stacks so we're sure it is for us.
+	hdr, rest, _ := strings.Cut(text, "\n")
+	hdr = strings.TrimSpace(hdr)
+	if hdr != "#!stacks" {
+		return ""
+	}
+	return rest
 }
