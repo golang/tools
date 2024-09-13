@@ -12,12 +12,15 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"regexp"
+	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/event"
 )
@@ -90,6 +93,18 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	// Built-ins have no position.
 	if isBuiltin(obj) {
 		return builtinDefinition(ctx, snapshot, obj)
+	}
+
+	// Non-go (e.g. assembly) symbols
+	//
+	// When already at the definition of a Go function without
+	// a body, we jump to its non-Go (C or assembly) definition.
+	for _, decl := range pgf.File.Decls {
+		if decl, ok := decl.(*ast.FuncDecl); ok &&
+			decl.Body == nil &&
+			astutil.NodeContains(decl.Name, pos) {
+			return nonGoDefinition(ctx, snapshot, pkg, decl.Name.Name)
+		}
 	}
 
 	// Finally, map the object position.
@@ -352,4 +367,41 @@ func mapPosition(ctx context.Context, fset *token.FileSet, s file.Source, start,
 	}
 	m := protocol.NewMapper(fh.URI(), content)
 	return m.PosLocation(file, start, end)
+}
+
+// nonGoDefinition returns the location of the definition of a non-Go symbol.
+// Only assembly is supported for now.
+func nonGoDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, symbol string) ([]protocol.Location, error) {
+	// Examples:
+	//   TEXT runtime·foo(SB)
+	//   TEXT ·foo<ABIInternal>(SB)
+	// TODO(adonovan): why does ^TEXT cause it not to match?
+	pattern := regexp.MustCompile("TEXT\\b.*·(" + regexp.QuoteMeta(symbol) + ")[\\(<]")
+
+	for _, uri := range pkg.Metadata().OtherFiles {
+		if strings.HasSuffix(uri.Path(), ".s") {
+			fh, err := snapshot.ReadFile(ctx, uri)
+			if err != nil {
+				return nil, err // context cancelled
+			}
+			content, err := fh.Content()
+			if err != nil {
+				continue // can't read file
+			}
+			if match := pattern.FindSubmatchIndex(content); match != nil {
+				mapper := protocol.NewMapper(uri, content)
+				loc, err := mapper.OffsetLocation(match[2], match[3])
+				if err != nil {
+					return nil, err
+				}
+				return []protocol.Location{loc}, nil
+			}
+		}
+	}
+
+	// TODO(adonovan): try C files
+
+	// This may be reached for functions that aren't implemented
+	// in assembly (e.g. compiler intrinsics like getg).
+	return nil, fmt.Errorf("can't find non-Go definition of %s", symbol)
 }

@@ -5,9 +5,11 @@
 package misc
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -592,6 +594,51 @@ func _(err error) {
 
 		if !strings.HasSuffix(string(loc.URI), "builtin.go") {
 			t.Errorf("GoToDefinition(err.Error) = %#v, want builtin.go", loc)
+		}
+	})
+}
+
+func TestAssemblyDefinition(t *testing.T) {
+	// This test cannot be expressed as a marker test because
+	// the expect package ignores markers (@loc) within a .s file.
+	const src = `
+-- go.mod --
+module mod.com
+
+-- foo_darwin_arm64.s --
+
+// assembly implementation
+TEXT ·foo(SB),NOSPLIT,$0
+	RET
+
+-- a.go --
+//go:build darwin && arm64
+
+package a
+
+// Go declaration
+func foo(int) int
+
+var _ = foo(123) // call
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+
+		locString := func(loc protocol.Location) string {
+			return fmt.Sprintf("%s:%s", filepath.Base(loc.URI.Path()), loc.Range)
+		}
+
+		// Definition at the call"foo(123)" takes us to the Go declaration.
+		callLoc := env.RegexpSearch("a.go", regexp.QuoteMeta("foo(123)"))
+		declLoc := env.GoToDefinition(callLoc)
+		if got, want := locString(declLoc), "a.go:5:5-5:8"; got != want {
+			t.Errorf("Definition(call): got %s, want %s", got, want)
+		}
+
+		// Definition a second time takes us to the assembly implementation.
+		implLoc := env.GoToDefinition(declLoc)
+		if got, want := locString(implLoc), "foo_darwin_arm64.s:2:6-2:9"; got != want {
+			t.Errorf("Definition(go decl): got %s, want %s", got, want)
 		}
 	})
 }

@@ -412,18 +412,15 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 
 	updates[id] = mp
 
-	for _, filename := range pkg.CompiledGoFiles {
-		uri := protocol.URIFromPath(filename)
-		mp.CompiledGoFiles = append(mp.CompiledGoFiles, uri)
+	copyURIs := func(dst *[]protocol.DocumentURI, src []string) {
+		for _, filename := range src {
+			*dst = append(*dst, protocol.URIFromPath(filename))
+		}
 	}
-	for _, filename := range pkg.GoFiles {
-		uri := protocol.URIFromPath(filename)
-		mp.GoFiles = append(mp.GoFiles, uri)
-	}
-	for _, filename := range pkg.IgnoredFiles {
-		uri := protocol.URIFromPath(filename)
-		mp.IgnoredFiles = append(mp.IgnoredFiles, uri)
-	}
+	copyURIs(&mp.CompiledGoFiles, pkg.CompiledGoFiles)
+	copyURIs(&mp.GoFiles, pkg.GoFiles)
+	copyURIs(&mp.IgnoredFiles, pkg.IgnoredFiles)
+	copyURIs(&mp.OtherFiles, pkg.OtherFiles)
 
 	depsByImpPath := make(map[ImportPath]PackageID)
 	depsByPkgPath := make(map[PackagePath]PackageID)

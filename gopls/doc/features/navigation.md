@@ -22,6 +22,8 @@ A definition query also works in these unexpected places:
   (like [`hover`](passive.md#hover)) the location of the linked symbol.
 - On a file name in a **[`go:embed` directive](https://pkg.go.dev/embed)**,
   it returns the location of the embedded file.
+- On the declaration of a non-Go function (a `func` with no body),
+  it returns the location of the assembly implementation, if any,
 
 <!-- On a built-in symbol such as `append` or `unsafe.Pointer`, `definition` reports
 the location of the declaration in the builtin or unsafe pseudo-packages,
