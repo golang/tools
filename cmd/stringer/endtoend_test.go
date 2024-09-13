@@ -121,11 +121,10 @@ func TestTags(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Run stringer in the directory that contains the package files.
-	// We cannot run stringer in the current directory for the following reasons:
-	// - Versions of Go earlier than Go 1.11, do not support absolute directories as a pattern.
-	// - When the current directory is inside a go module, the path will not be considered
-	//   a valid path to a package.
+	// Run stringer in the directory that contains the module that contains the package files.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	err := runInDir(t, dir, stringer, "-type", "Const", ".")
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +166,10 @@ func TestConstValueChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	stringSource := filepath.Join(dir, "day_string.go")
-	// Run stringer in the directory that contains the package files.
+	// Run stringer in the directory that contains the module that contains the package files.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	err = runInDir(t, dir, stringer, "-type", "Day", "-output", stringSource)
 	if err != nil {
 		t.Fatal(err)
@@ -388,7 +390,6 @@ func runInDir(t testing.TB, dir, name string, arg ...string) error {
 	t.Helper()
 	cmd := testenv.Command(t, name, arg...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GO111MODULE=auto")
 	out, err := cmd.CombinedOutput()
 	if len(out) > 0 {
 		t.Logf("%s", out)
