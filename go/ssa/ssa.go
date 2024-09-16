@@ -342,7 +342,7 @@ type Function struct {
 	// source information
 	Synthetic string      // provenance of synthetic function; "" for true source functions
 	syntax    ast.Node    // *ast.Func{Decl,Lit}, if from syntax (incl. generic instances) or (*ast.RangeStmt if a yield function)
-	info      *types.Info // type annotations (iff syntax != nil)
+	info      *types.Info // type annotations (if syntax != nil)
 	goversion string      // Go version of syntax (NB: init is special)
 
 	parent *Function // enclosing function if anon; nil if global
