@@ -508,7 +508,7 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, fn *types.F
 	}
 	formatArg := call.Args[idx]
 	format, ok := stringConstantExpr(pass, formatArg)
-	if !ok {
+	if !ok && !suppressNonconstants {
 		// Format string argument is non-constant.
 
 		// It is a common mistake to call fmt.Printf(msg) with a
@@ -1101,3 +1101,12 @@ func (ss stringSet) Set(flag string) error {
 	}
 	return nil
 }
+
+// suppressNonconstants suppresses reporting printf calls with
+// non-constant formatting strings (proposal #60529) when true.
+//
+// This variable is to allow for staging the transition to newer
+// versions of x/tools by vendoring.
+//
+// Remove this after the 1.24 release.
+var suppressNonconstants bool
