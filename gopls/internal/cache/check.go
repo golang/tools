@@ -627,7 +627,7 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 	ctx, done := event.Start(ctx, "cache.typeCheckBatch.importPackage", label.Package.Of(string(mp.ID)))
 	defer done()
 
-	impMap := b.importMap(mp.ID)
+	importLookup := b.importLookup(mp)
 
 	thisPackage := types.NewPackage(string(mp.PkgPath), string(mp.Name))
 	getPackages := func(items []gcimporter.GetPackagesItem) error {
@@ -648,7 +648,7 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 						pkg.Name(), item.Name, id, item.Path)
 				}
 			} else {
-				id = impMap[item.Path]
+				id = importLookup(PackagePath(item.Path))
 				var err error
 				pkg, err = b.getImportPackage(ctx, id)
 				if err != nil {
@@ -761,28 +761,65 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 	return pkg, nil
 }
 
-// importMap returns the map of package path -> package ID relative to the
-// specified ID.
-func (b *typeCheckBatch) importMap(id PackageID) map[string]PackageID {
-	impMap := make(map[string]PackageID)
-	var populateDeps func(*metadata.Package)
-	populateDeps = func(parent *metadata.Package) {
-		for _, id := range parent.DepsByPkgPath {
-			mp := b.handles[id].mp
-			if prevID, ok := impMap[string(mp.PkgPath)]; ok {
+// importLookup returns a function that may be used to look up a package ID for
+// a given package path, based on the forward transitive closure of the initial
+// package (id).
+//
+// The resulting function is not concurrency safe.
+func (b *typeCheckBatch) importLookup(mp *metadata.Package) func(PackagePath) PackageID {
+	// This function implements an incremental depth first scan through the
+	// package imports. Previous implementations of import mapping built the
+	// entire PackagePath->PackageID mapping eagerly, but that resulted in a
+	// large amount of unnecessary work: most imports are either directly
+	// imported, or found through a shallow scan.
+
+	// impMap memoizes the lookup of package paths.
+	impMap := map[PackagePath]PackageID{
+		mp.PkgPath: mp.ID,
+	}
+	// pending is a FIFO queue of package metadata that has yet to have its
+	// dependencies fully scanned.
+	// Invariant: all entries in pending are already mapped in impMap.
+	pending := []*metadata.Package{mp}
+
+	// search scans children the next package in pending, looking for pkgPath.
+	// Invariant: whenever search is called, pkgPath is not yet mapped.
+	var search func(pkgPath PackagePath) (PackageID, bool)
+	search = func(pkgPath PackagePath) (id PackageID, found bool) {
+		pkg := pending[0]
+		pending = pending[1:]
+		for depPath, depID := range pkg.DepsByPkgPath {
+			if prevID, ok := impMap[depPath]; ok {
 				// debugging #63822
-				if prevID != mp.ID {
+				if prevID != depID {
 					bug.Reportf("inconsistent view of dependencies")
 				}
 				continue
 			}
-			impMap[string(mp.PkgPath)] = mp.ID
-			populateDeps(mp)
+			impMap[depPath] = depID
+			// TODO(rfindley): express this as an operation on the import graph
+			// itself, rather than the set of package handles.
+			pending = append(pending, b.handles[depID].mp)
+			if depPath == pkgPath {
+				// Don't return early; finish processing pkg's deps.
+				id = depID
+				found = true
+			}
 		}
+		return id, found
 	}
-	mp := b.handles[id].mp
-	populateDeps(mp)
-	return impMap
+
+	return func(pkgPath PackagePath) PackageID {
+		if id, ok := impMap[pkgPath]; ok {
+			return id
+		}
+		for len(pending) > 0 {
+			if id, found := search(pkgPath); found {
+				return id
+			}
+		}
+		return ""
+	}
 }
 
 // A packageHandle holds inputs required to compute a Package, including
