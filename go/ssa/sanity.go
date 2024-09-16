@@ -609,6 +609,19 @@ func sanityCheckPackage(pkg *Package) {
 	if pkg.Pkg == nil {
 		panic(fmt.Sprintf("Package %s has no Object", pkg))
 	}
+	if pkg.info != nil {
+		panic(fmt.Sprintf("package %s field 'info' is not cleared", pkg))
+	}
+	if pkg.files != nil {
+		panic(fmt.Sprintf("package %s field 'files' is not cleared", pkg))
+	}
+	if pkg.created != nil {
+		panic(fmt.Sprintf("package %s field 'created' is not cleared", pkg))
+	}
+	if pkg.initVersion != nil {
+		panic(fmt.Sprintf("package %s field 'initVersion' is not cleared", pkg))
+	}
+
 	_ = pkg.String() // must not crash
 
 	for name, mem := range pkg.Members {
