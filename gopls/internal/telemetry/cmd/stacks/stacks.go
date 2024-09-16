@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build linux || darwin
+
 // The stacks command finds all gopls stack traces reported by
 // telemetry in the past 7 days, and reports their associated GitHub
 // issue, creating new issues as needed.
@@ -73,12 +75,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
+	"golang.org/x/sys/unix"
 	"golang.org/x/telemetry"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
@@ -410,6 +414,12 @@ func main() {
 		fmt.Printf("%s issues:\n", caption)
 		for _, summary := range keys {
 			count := issues[summary]
+			// Show closed issues in "white".
+			if isTerminal(os.Stdout) && strings.Contains(summary, "[closed]") {
+				// ESC + "[" + n + "m" => change color to n
+				// (37 = white, 0 = default)
+				summary = "\x1B[37m" + summary + "\x1B[0m"
+			}
 			fmt.Printf("%s (n=%d)\n", summary, count)
 		}
 	}
@@ -939,4 +949,22 @@ func findPredicateBlock(body string) string {
 		return ""
 	}
 	return rest
+}
+
+// isTerminal reports whether file is a terminal,
+// avoiding a dependency on golang.org/x/term.
+func isTerminal(file *os.File) bool {
+	// Hardwire the constants to avoid the need for build tags.
+	// The values here are good for our dev machines.
+	switch runtime.GOOS {
+	case "darwin":
+		const TIOCGETA = 0x40487413 // from unix.TIOCGETA
+		_, err := unix.IoctlGetTermios(int(file.Fd()), TIOCGETA)
+		return err == nil
+	case "linux":
+		const TCGETS = 0x5401 // from unix.TCGETS
+		_, err := unix.IoctlGetTermios(int(file.Fd()), TCGETS)
+		return err == nil
+	}
+	panic("unreachable")
 }
