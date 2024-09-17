@@ -153,8 +153,7 @@ func (fsys *filesystem) ReadFile(name string) ([]byte, error) {
 		return nil, err
 	}
 	if file, ok := file.(*openFile); ok {
-		cp := slices.Clone(file.data)
-		return cp, err
+		return slices.Clone(file.data), nil
 	}
 	return nil, &fs.PathError{Op: "read", Path: name, Err: fs.ErrInvalid}
 }
