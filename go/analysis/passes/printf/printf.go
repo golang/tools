@@ -508,14 +508,14 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, fn *types.F
 	}
 	formatArg := call.Args[idx]
 	format, ok := stringConstantExpr(pass, formatArg)
-	if !ok && !suppressNonconstants {
+	if !ok {
 		// Format string argument is non-constant.
 
 		// It is a common mistake to call fmt.Printf(msg) with a
 		// non-constant format string and no arguments:
 		// if msg contains "%", misformatting occurs.
 		// Report the problem and suggest a fix: fmt.Printf("%s", msg).
-		if idx == len(call.Args)-1 {
+		if !suppressNonconstants && idx == len(call.Args)-1 {
 			pass.Report(analysis.Diagnostic{
 				Pos: formatArg.Pos(),
 				End: formatArg.End(),
