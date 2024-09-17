@@ -60,9 +60,6 @@ func main() {
 // syntax, perhaps obtained from golang.org/x/tools/go/packages.
 // In that case, see the other examples for simpler approaches.
 func Example_buildPackage() {
-	// Replace interface{} with any for this test.
-	ssa.SetNormalizeAnyForTesting(true)
-	defer ssa.SetNormalizeAnyForTesting(false)
 	// Parse the source files.
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "hello.go", hello, parser.ParseComments)
