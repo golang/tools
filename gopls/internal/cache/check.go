@@ -295,6 +295,9 @@ func (s *Snapshot) resolveImportGraph() (*importGraph, error) {
 		return v
 	}
 	for _, id := range openPackageIDs {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		_ = isVolatile(id) // populate volatile map
 	}
 
@@ -504,12 +507,18 @@ func (b *typeCheckBatch) query(ctx context.Context, importIDs, syntaxIDs []Packa
 	var g errgroup.Group
 	for _, id := range importIDs {
 		g.Go(func() error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			_, err := b.getImportPackage(ctx, id)
 			return err
 		})
 	}
 	for i, id := range syntaxIDs {
 		g.Go(func() error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return b.handleSyntaxPackage(ctx, i, id, pre, post)
 		})
 	}
@@ -981,6 +990,10 @@ func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 		return n
 	}
 	for _, id := range ids {
+		if ctx.Err() != nil {
+			s.mu.Unlock()
+			return nil, ctx.Err()
+		}
 		makeNode(nil, id)
 	}
 	s.mu.Unlock()
