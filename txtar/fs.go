@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"slices"
 	"time"
 )
 
@@ -152,10 +153,7 @@ func (fsys *filesystem) ReadFile(name string) ([]byte, error) {
 		return nil, err
 	}
 	if file, ok := file.(*openFile); ok {
-		// TODO: use slices.Clone once x/tools has 1.21 available.
-		cp := make([]byte, file.size)
-		copy(cp, file.data)
-		return cp, err
+		return slices.Clone(file.data), nil
 	}
 	return nil, &fs.PathError{Op: "read", Path: name, Err: fs.ErrInvalid}
 }
