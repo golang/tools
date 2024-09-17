@@ -13,6 +13,16 @@ import (
 )
 
 func BenchmarkPackagesCommand(b *testing.B) {
+	// By convention, x/benchmarks runs the gopls benchmarks with -short, so that
+	// we can use this flag to filter out benchmarks that should not be run by
+	// the perf builder.
+	//
+	// In this case, the benchmark must be skipped because the current baseline
+	// (gopls@v0.11.0) lacks the gopls.package command.
+	if testing.Short() {
+		b.Skip("not supported by the benchmark dashboard baseline")
+	}
+
 	tests := []struct {
 		repo    string
 		files   []string
