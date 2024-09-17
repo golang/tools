@@ -34,16 +34,13 @@ func upgradeLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		return nil, err
 	}
 	uri := fh.URI()
-	reset, err := command.NewResetGoModDiagnosticsCommand("Reset go.mod diagnostics", command.ResetGoModDiagnosticsArgs{URIArg: command.URIArg{URI: uri}})
-	if err != nil {
-		return nil, err
-	}
+	reset := command.NewResetGoModDiagnosticsCommand("Reset go.mod diagnostics", command.ResetGoModDiagnosticsArgs{URIArg: command.URIArg{URI: uri}})
 	// Put the `Reset go.mod diagnostics` codelens on the module statement.
 	modrng, err := moduleStmtRange(fh, pm)
 	if err != nil {
 		return nil, err
 	}
-	lenses := []protocol.CodeLens{{Range: modrng, Command: &reset}}
+	lenses := []protocol.CodeLens{{Range: modrng, Command: reset}}
 	if len(pm.File.Require) == 0 {
 		// Nothing to upgrade.
 		return lenses, nil
@@ -52,29 +49,20 @@ func upgradeLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	for _, req := range pm.File.Require {
 		requires = append(requires, req.Mod.Path)
 	}
-	checkUpgrade, err := command.NewCheckUpgradesCommand("Check for upgrades", command.CheckUpgradesArgs{
+	checkUpgrade := command.NewCheckUpgradesCommand("Check for upgrades", command.CheckUpgradesArgs{
 		URI:     uri,
 		Modules: requires,
 	})
-	if err != nil {
-		return nil, err
-	}
-	upgradeTransitive, err := command.NewUpgradeDependencyCommand("Upgrade transitive dependencies", command.DependencyArgs{
+	upgradeTransitive := command.NewUpgradeDependencyCommand("Upgrade transitive dependencies", command.DependencyArgs{
 		URI:        uri,
 		AddRequire: false,
 		GoCmdArgs:  []string{"-d", "-u", "-t", "./..."},
 	})
-	if err != nil {
-		return nil, err
-	}
-	upgradeDirect, err := command.NewUpgradeDependencyCommand("Upgrade direct dependencies", command.DependencyArgs{
+	upgradeDirect := command.NewUpgradeDependencyCommand("Upgrade direct dependencies", command.DependencyArgs{
 		URI:        uri,
 		AddRequire: false,
 		GoCmdArgs:  append([]string{"-d"}, requires...),
 	})
-	if err != nil {
-		return nil, err
-	}
 
 	// Put the upgrade code lenses above the first require block or statement.
 	rng, err := firstRequireRange(fh, pm)
@@ -83,9 +71,9 @@ func upgradeLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	}
 
 	return append(lenses, []protocol.CodeLens{
-		{Range: rng, Command: &checkUpgrade},
-		{Range: rng, Command: &upgradeTransitive},
-		{Range: rng, Command: &upgradeDirect},
+		{Range: rng, Command: checkUpgrade},
+		{Range: rng, Command: upgradeTransitive},
+		{Range: rng, Command: upgradeDirect},
 	}...), nil
 }
 
@@ -95,17 +83,14 @@ func tidyLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]
 		return nil, err
 	}
 	uri := fh.URI()
-	cmd, err := command.NewTidyCommand("Run go mod tidy", command.URIArgs{URIs: []protocol.DocumentURI{uri}})
-	if err != nil {
-		return nil, err
-	}
+	cmd := command.NewTidyCommand("Run go mod tidy", command.URIArgs{URIs: []protocol.DocumentURI{uri}})
 	rng, err := moduleStmtRange(fh, pm)
 	if err != nil {
 		return nil, err
 	}
 	return []protocol.CodeLens{{
 		Range:   rng,
-		Command: &cmd,
+		Command: cmd,
 	}}, nil
 }
 
@@ -124,17 +109,14 @@ func vendorLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (
 	}
 	title := "Create vendor directory"
 	uri := fh.URI()
-	cmd, err := command.NewVendorCommand(title, command.URIArg{URI: uri})
-	if err != nil {
-		return nil, err
-	}
+	cmd := command.NewVendorCommand(title, command.URIArg{URI: uri})
 	// Change the message depending on whether or not the module already has a
 	// vendor directory.
 	vendorDir := filepath.Join(filepath.Dir(fh.URI().Path()), "vendor")
 	if info, _ := os.Stat(vendorDir); info != nil && info.IsDir() {
 		title = "Sync vendor directory"
 	}
-	return []protocol.CodeLens{{Range: rng, Command: &cmd}}, nil
+	return []protocol.CodeLens{{Range: rng, Command: cmd}}, nil
 }
 
 func moduleStmtRange(fh file.Handle, pm *cache.ParsedModule) (protocol.Range, error) {
@@ -180,14 +162,11 @@ func vulncheckLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 		return nil, err
 	}
 
-	vulncheck, err := command.NewRunGovulncheckCommand("Run govulncheck", command.VulncheckArgs{
+	vulncheck := command.NewRunGovulncheckCommand("Run govulncheck", command.VulncheckArgs{
 		URI:     uri,
 		Pattern: "./...",
 	})
-	if err != nil {
-		return nil, err
-	}
 	return []protocol.CodeLens{
-		{Range: rng, Command: &vulncheck},
+		{Range: rng, Command: vulncheck},
 	}, nil
 }

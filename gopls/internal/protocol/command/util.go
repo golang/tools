@@ -45,6 +45,15 @@ func MarshalArgs(args ...interface{}) ([]json.RawMessage, error) {
 	return out, nil
 }
 
+// MustMarshalArgs is like MarshalArgs, but panics on error.
+func MustMarshalArgs(args ...interface{}) []json.RawMessage {
+	msg, err := MarshalArgs(args...)
+	if err != nil {
+		panic(err)
+	}
+	return msg
+}
+
 // UnmarshalArgs decodes the given json.RawMessages to the variables provided
 // by args. Each element of args should be a pointer.
 //

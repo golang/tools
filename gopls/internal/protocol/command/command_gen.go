@@ -348,469 +348,330 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 	return nil, fmt.Errorf("unsupported command %q", params.Command)
 }
 
-func NewAddDependencyCommand(title string, a0 DependencyArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewAddDependencyCommand(title string, a0 DependencyArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   AddDependency.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewAddImportCommand(title string, a0 AddImportArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewAddImportCommand(title string, a0 AddImportArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   AddImport.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewAddTelemetryCountersCommand(title string, a0 AddTelemetryCountersArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewAddTelemetryCountersCommand(title string, a0 AddTelemetryCountersArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   AddTelemetryCounters.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewApplyFixCommand(title string, a0 ApplyFixArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewApplyFixCommand(title string, a0 ApplyFixArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   ApplyFix.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewAssemblyCommand(title string, a0 string, a1 string, a2 string) (protocol.Command, error) {
-	args, err := MarshalArgs(a0, a1, a2)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewAssemblyCommand(title string, a0 string, a1 string, a2 string) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   Assembly.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0, a1, a2),
+	}
 }
 
-func NewChangeSignatureCommand(title string, a0 ChangeSignatureArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewChangeSignatureCommand(title string, a0 ChangeSignatureArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   ChangeSignature.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewCheckUpgradesCommand(title string, a0 CheckUpgradesArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewCheckUpgradesCommand(title string, a0 CheckUpgradesArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   CheckUpgrades.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewClientOpenURLCommand(title string, a0 string) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewClientOpenURLCommand(title string, a0 string) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   ClientOpenURL.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewDiagnoseFilesCommand(title string, a0 DiagnoseFilesArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewDiagnoseFilesCommand(title string, a0 DiagnoseFilesArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   DiagnoseFiles.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewDocCommand(title string, a0 protocol.Location) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewDocCommand(title string, a0 protocol.Location) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   Doc.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewEditGoDirectiveCommand(title string, a0 EditGoDirectiveArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewEditGoDirectiveCommand(title string, a0 EditGoDirectiveArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   EditGoDirective.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewExtractToNewFileCommand(title string, a0 protocol.Location) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewExtractToNewFileCommand(title string, a0 protocol.Location) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   ExtractToNewFile.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewFetchVulncheckResultCommand(title string, a0 URIArg) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewFetchVulncheckResultCommand(title string, a0 URIArg) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   FetchVulncheckResult.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewFreeSymbolsCommand(title string, a0 string, a1 protocol.Location) (protocol.Command, error) {
-	args, err := MarshalArgs(a0, a1)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewFreeSymbolsCommand(title string, a0 string, a1 protocol.Location) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   FreeSymbols.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0, a1),
+	}
 }
 
-func NewGCDetailsCommand(title string, a0 protocol.DocumentURI) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewGCDetailsCommand(title string, a0 protocol.DocumentURI) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   GCDetails.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewGenerateCommand(title string, a0 GenerateArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewGenerateCommand(title string, a0 GenerateArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   Generate.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewGoGetPackageCommand(title string, a0 GoGetPackageArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewGoGetPackageCommand(title string, a0 GoGetPackageArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   GoGetPackage.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewListImportsCommand(title string, a0 URIArg) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewListImportsCommand(title string, a0 URIArg) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   ListImports.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewListKnownPackagesCommand(title string, a0 URIArg) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewListKnownPackagesCommand(title string, a0 URIArg) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   ListKnownPackages.String(),
-		Arguments: args,
-	}, nil
-}
-
-func NewMaybePromptForTelemetryCommand(title string) (protocol.Command, error) {
-	return protocol.Command{
-		Title:   title,
-		Command: MaybePromptForTelemetry.String(),
-	}, nil
-}
-
-func NewMemStatsCommand(title string) (protocol.Command, error) {
-	return protocol.Command{
-		Title:   title,
-		Command: MemStats.String(),
-	}, nil
-}
-
-func NewModulesCommand(title string, a0 ModulesArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
+		Arguments: MustMarshalArgs(a0),
 	}
-	return protocol.Command{
+}
+
+func NewMaybePromptForTelemetryCommand(title string) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   MaybePromptForTelemetry.String(),
+		Arguments: MustMarshalArgs(),
+	}
+}
+
+func NewMemStatsCommand(title string) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   MemStats.String(),
+		Arguments: MustMarshalArgs(),
+	}
+}
+
+func NewModulesCommand(title string, a0 ModulesArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   Modules.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewPackagesCommand(title string, a0 PackagesArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewPackagesCommand(title string, a0 PackagesArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   Packages.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewRegenerateCgoCommand(title string, a0 URIArg) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewRegenerateCgoCommand(title string, a0 URIArg) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   RegenerateCgo.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewRemoveDependencyCommand(title string, a0 RemoveDependencyArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewRemoveDependencyCommand(title string, a0 RemoveDependencyArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   RemoveDependency.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewResetGoModDiagnosticsCommand(title string, a0 ResetGoModDiagnosticsArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewResetGoModDiagnosticsCommand(title string, a0 ResetGoModDiagnosticsArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   ResetGoModDiagnostics.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewRunGoWorkCommandCommand(title string, a0 RunGoWorkArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewRunGoWorkCommandCommand(title string, a0 RunGoWorkArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   RunGoWorkCommand.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewRunGovulncheckCommand(title string, a0 VulncheckArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewRunGovulncheckCommand(title string, a0 VulncheckArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   RunGovulncheck.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewRunTestsCommand(title string, a0 RunTestsArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewRunTestsCommand(title string, a0 RunTestsArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   RunTests.String(),
-		Arguments: args,
-	}, nil
-}
-
-func NewScanImportsCommand(title string) (protocol.Command, error) {
-	return protocol.Command{
-		Title:   title,
-		Command: ScanImports.String(),
-	}, nil
-}
-
-func NewStartDebuggingCommand(title string, a0 DebuggingArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
+		Arguments: MustMarshalArgs(a0),
 	}
-	return protocol.Command{
+}
+
+func NewScanImportsCommand(title string) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   ScanImports.String(),
+		Arguments: MustMarshalArgs(),
+	}
+}
+
+func NewStartDebuggingCommand(title string, a0 DebuggingArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   StartDebugging.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewStartProfileCommand(title string, a0 StartProfileArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewStartProfileCommand(title string, a0 StartProfileArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   StartProfile.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewStopProfileCommand(title string, a0 StopProfileArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewStopProfileCommand(title string, a0 StopProfileArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   StopProfile.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewTestCommand(title string, a0 protocol.DocumentURI, a1 []string, a2 []string) (protocol.Command, error) {
-	args, err := MarshalArgs(a0, a1, a2)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewTestCommand(title string, a0 protocol.DocumentURI, a1 []string, a2 []string) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   Test.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0, a1, a2),
+	}
 }
 
-func NewTidyCommand(title string, a0 URIArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewTidyCommand(title string, a0 URIArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   Tidy.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewToggleGCDetailsCommand(title string, a0 URIArg) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewToggleGCDetailsCommand(title string, a0 URIArg) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   ToggleGCDetails.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewUpdateGoSumCommand(title string, a0 URIArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewUpdateGoSumCommand(title string, a0 URIArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   UpdateGoSum.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewUpgradeDependencyCommand(title string, a0 DependencyArgs) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewUpgradeDependencyCommand(title string, a0 DependencyArgs) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   UpgradeDependency.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewVendorCommand(title string, a0 URIArg) (protocol.Command, error) {
-	args, err := MarshalArgs(a0)
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return protocol.Command{
+func NewVendorCommand(title string, a0 URIArg) *protocol.Command {
+	return &protocol.Command{
 		Title:     title,
 		Command:   Vendor.String(),
-		Arguments: args,
-	}, nil
+		Arguments: MustMarshalArgs(a0),
+	}
 }
 
-func NewViewsCommand(title string) (protocol.Command, error) {
-	return protocol.Command{
-		Title:   title,
-		Command: Views.String(),
-	}, nil
+func NewViewsCommand(title string) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   Views.String(),
+		Arguments: MustMarshalArgs(),
+	}
 }
 
-func NewWorkspaceStatsCommand(title string) (protocol.Command, error) {
-	return protocol.Command{
-		Title:   title,
-		Command: WorkspaceStats.String(),
-	}, nil
+func NewWorkspaceStatsCommand(title string) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   WorkspaceStats.String(),
+		Arguments: MustMarshalArgs(),
+	}
 }

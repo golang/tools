@@ -50,8 +50,8 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 	}
 
 	// add adds a code action to the result.
-	add := func(cmd protocol.Command, kind protocol.CodeActionKind) {
-		action := newCodeAction(cmd.Title, kind, &cmd, nil, snapshot.Options())
+	add := func(cmd *protocol.Command, kind protocol.CodeActionKind) {
+		action := newCodeAction(cmd.Title, kind, cmd, nil, snapshot.Options())
 		actions = append(actions, action)
 	}
 
@@ -111,10 +111,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 
 	if kind := settings.GoFreeSymbols; enabled(kind) && rng.End != rng.Start {
 		loc := protocol.Location{URI: pgf.URI, Range: rng}
-		cmd, err := command.NewFreeSymbolsCommand("Browse free symbols", snapshot.View().ID(), loc)
-		if err != nil {
-			return nil, err
-		}
+		cmd := command.NewFreeSymbolsCommand("Browse free symbols", snapshot.View().ID(), loc)
 		// For implementation, see commandHandler.FreeSymbols.
 		add(cmd, kind)
 	}
@@ -122,12 +119,9 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 	if kind := settings.GoplsDocFeatures; enabled(kind) {
 		// TODO(adonovan): after the docs are published in gopls/v0.17.0,
 		// use the gopls release tag instead of master.
-		cmd, err := command.NewClientOpenURLCommand(
+		cmd := command.NewClientOpenURLCommand(
 			"Browse gopls feature documentation",
 			"https://github.com/golang/tools/blob/master/gopls/doc/features/README.md")
-		if err != nil {
-			return nil, err
-		}
 		add(cmd, kind)
 	}
 
@@ -199,10 +193,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 		// "Browse documentation for ..."
 		_, _, title := DocFragment(pkg, pgf, start, end)
 		loc := protocol.Location{URI: pgf.URI, Range: rng}
-		cmd, err := command.NewDocCommand(title, loc)
-		if err != nil {
-			return nil, err
-		}
+		cmd := command.NewDocCommand(title, loc)
 		add(cmd, kind)
 	}
 
@@ -278,8 +269,8 @@ func getExtractCodeActions(enabled func(protocol.CodeActionKind) bool, pgf *pars
 	}
 
 	var actions []protocol.CodeAction
-	add := func(cmd protocol.Command, kind protocol.CodeActionKind) {
-		action := newCodeAction(cmd.Title, kind, &cmd, nil, options)
+	add := func(cmd *protocol.Command, kind protocol.CodeActionKind) {
+		action := newCodeAction(cmd.Title, kind, cmd, nil, options)
 		actions = append(actions, action)
 	}
 
@@ -288,29 +279,23 @@ func getExtractCodeActions(enabled func(protocol.CodeActionKind) bool, pgf *pars
 		if _, ok, methodOk, _ := canExtractFunction(pgf.Tok, start, end, pgf.Src, pgf.File); ok {
 			// extract function
 			if kind := settings.RefactorExtractFunction; enabled(kind) {
-				cmd, err := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
+				cmd := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
 					Fix:          fixExtractFunction,
 					URI:          pgf.URI,
 					Range:        rng,
 					ResolveEdits: supportsResolveEdits(options),
 				})
-				if err != nil {
-					return nil, err
-				}
 				add(cmd, kind)
 			}
 
 			// extract method
 			if kind := settings.RefactorExtractMethod; methodOk && enabled(kind) {
-				cmd, err := command.NewApplyFixCommand("Extract method", command.ApplyFixArgs{
+				cmd := command.NewApplyFixCommand("Extract method", command.ApplyFixArgs{
 					Fix:          fixExtractMethod,
 					URI:          pgf.URI,
 					Range:        rng,
 					ResolveEdits: supportsResolveEdits(options),
 				})
-				if err != nil {
-					return nil, err
-				}
 				add(cmd, kind)
 			}
 		}
@@ -319,15 +304,12 @@ func getExtractCodeActions(enabled func(protocol.CodeActionKind) bool, pgf *pars
 	// extract variable
 	if kind := settings.RefactorExtractVariable; enabled(kind) {
 		if _, _, ok, _ := canExtractVariable(start, end, pgf.File); ok {
-			cmd, err := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
+			cmd := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
 				Fix:          fixExtractVariable,
 				URI:          pgf.URI,
 				Range:        rng,
 				ResolveEdits: supportsResolveEdits(options),
 			})
-			if err != nil {
-				return nil, err
-			}
 			add(cmd, kind)
 		}
 	}
@@ -335,13 +317,10 @@ func getExtractCodeActions(enabled func(protocol.CodeActionKind) bool, pgf *pars
 	// extract to new file
 	if kind := settings.RefactorExtractToNewFile; enabled(kind) {
 		if canExtractToNewFile(pgf, start, end) {
-			cmd, err := command.NewExtractToNewFileCommand(
+			cmd := command.NewExtractToNewFileCommand(
 				"Extract declarations to new file",
 				protocol.Location{URI: pgf.URI, Range: rng},
 			)
-			if err != nil {
-				return nil, err
-			}
 			add(cmd, kind)
 		}
 	}
@@ -381,23 +360,20 @@ func getRewriteCodeActions(enabled func(protocol.CodeActionKind) bool, ctx conte
 	}()
 
 	var actions []protocol.CodeAction
-	add := func(cmd protocol.Command, kind protocol.CodeActionKind) {
-		action := newCodeAction(cmd.Title, kind, &cmd, nil, options)
+	add := func(cmd *protocol.Command, kind protocol.CodeActionKind) {
+		action := newCodeAction(cmd.Title, kind, cmd, nil, options)
 		actions = append(actions, action)
 	}
 
 	// remove unused param
 	if kind := settings.RefactorRewriteRemoveUnusedParam; enabled(kind) && canRemoveParameter(pkg, pgf, rng) {
-		cmd, err := command.NewChangeSignatureCommand("Refactor: remove unused parameter", command.ChangeSignatureArgs{
+		cmd := command.NewChangeSignatureCommand("Refactor: remove unused parameter", command.ChangeSignatureArgs{
 			RemoveParameter: protocol.Location{
 				URI:   pgf.URI,
 				Range: rng,
 			},
 			ResolveEdits: supportsResolveEdits(options),
 		})
-		if err != nil {
-			return nil, err
-		}
 		add(cmd, kind)
 	}
 
@@ -416,15 +392,12 @@ func getRewriteCodeActions(enabled func(protocol.CodeActionKind) bool, ctx conte
 	// invert if condition
 	if kind := settings.RefactorRewriteInvertIf; enabled(kind) {
 		if _, ok, _ := canInvertIfCondition(pgf.File, start, end); ok {
-			cmd, err := command.NewApplyFixCommand("Invert 'if' condition", command.ApplyFixArgs{
+			cmd := command.NewApplyFixCommand("Invert 'if' condition", command.ApplyFixArgs{
 				Fix:          fixInvertIfCondition,
 				URI:          pgf.URI,
 				Range:        rng,
 				ResolveEdits: supportsResolveEdits(options),
 			})
-			if err != nil {
-				return nil, err
-			}
 			add(cmd, kind)
 		}
 	}
@@ -432,15 +405,12 @@ func getRewriteCodeActions(enabled func(protocol.CodeActionKind) bool, ctx conte
 	// split lines
 	if kind := settings.RefactorRewriteSplitLines; enabled(kind) {
 		if msg, ok, _ := canSplitLines(pgf.File, pkg.FileSet(), start, end); ok {
-			cmd, err := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
+			cmd := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
 				Fix:          fixSplitLines,
 				URI:          pgf.URI,
 				Range:        rng,
 				ResolveEdits: supportsResolveEdits(options),
 			})
-			if err != nil {
-				return nil, err
-			}
 			add(cmd, kind)
 		}
 	}
@@ -448,15 +418,12 @@ func getRewriteCodeActions(enabled func(protocol.CodeActionKind) bool, ctx conte
 	// join lines
 	if kind := settings.RefactorRewriteJoinLines; enabled(kind) {
 		if msg, ok, _ := canJoinLines(pgf.File, pkg.FileSet(), start, end); ok {
-			cmd, err := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
+			cmd := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
 				Fix:          fixJoinLines,
 				URI:          pgf.URI,
 				Range:        rng,
 				ResolveEdits: supportsResolveEdits(options),
 			})
-			if err != nil {
-				return nil, err
-			}
 			add(cmd, kind)
 		}
 	}
@@ -473,15 +440,12 @@ func getRewriteCodeActions(enabled func(protocol.CodeActionKind) bool, ctx conte
 				return nil, err
 			}
 			for _, fix := range diag.SuggestedFixes {
-				cmd, err := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
+				cmd := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
 					Fix:          diag.Category,
 					URI:          pgf.URI,
 					Range:        rng,
 					ResolveEdits: supportsResolveEdits(options),
 				})
-				if err != nil {
-					return nil, err
-				}
 				add(cmd, kind)
 			}
 		}
@@ -557,8 +521,8 @@ func canRemoveParameter(pkg *cache.Package, pgf *parsego.File, rng protocol.Rang
 // getInlineCodeActions returns refactor.inline actions available at the specified range.
 func getInlineCodeActions(enabled func(protocol.CodeActionKind) bool, pkg *cache.Package, pgf *parsego.File, rng protocol.Range, options *settings.Options) ([]protocol.CodeAction, error) {
 	var actions []protocol.CodeAction
-	add := func(cmd protocol.Command, kind protocol.CodeActionKind) {
-		action := newCodeAction(cmd.Title, kind, &cmd, nil, options)
+	add := func(cmd *protocol.Command, kind protocol.CodeActionKind) {
+		action := newCodeAction(cmd.Title, kind, cmd, nil, options)
 		actions = append(actions, action)
 	}
 
@@ -571,15 +535,12 @@ func getInlineCodeActions(enabled func(protocol.CodeActionKind) bool, pkg *cache
 
 		// If range is within call expression, offer to inline the call.
 		if _, fn, err := enclosingStaticCall(pkg, pgf, start, end); err == nil {
-			cmd, err := command.NewApplyFixCommand(fmt.Sprintf("Inline call to %s", fn.Name()), command.ApplyFixArgs{
+			cmd := command.NewApplyFixCommand(fmt.Sprintf("Inline call to %s", fn.Name()), command.ApplyFixArgs{
 				Fix:          fixInlineCall,
 				URI:          pgf.URI,
 				Range:        rng,
 				ResolveEdits: supportsResolveEdits(options),
 			})
-			if err != nil {
-				return nil, err
-			}
 			add(cmd, kind)
 		}
 	}
@@ -610,14 +571,11 @@ func getGoTestCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Ra
 		return nil, nil
 	}
 
-	cmd, err := command.NewTestCommand("Run tests and benchmarks", pgf.URI, tests, benchmarks)
-	if err != nil {
-		return nil, err
-	}
+	cmd := command.NewTestCommand("Run tests and benchmarks", pgf.URI, tests, benchmarks)
 	return []protocol.CodeAction{{
 		Title:   cmd.Title,
 		Kind:    settings.GoTest,
-		Command: &cmd,
+		Command: cmd,
 	}}, nil
 }
 
@@ -678,19 +636,16 @@ func getGoAssemblyAction(view *cache.View, pkg *cache.Package, pgf *parsego.File
 				if fn.Name() != "_" && // blank functions are not compiled
 					(fn.Name() != "init" || sig.Recv() != nil) && // init functions aren't linker functions
 					sig.TypeParams() == nil && sig.RecvTypeParams() == nil { // generic => no assembly
-					cmd, err := command.NewAssemblyCommand(
+					cmd := command.NewAssemblyCommand(
 						fmt.Sprintf("Browse %s assembly for %s", view.GOARCH(), decl.Name),
 						view.ID(),
 						string(pkg.Metadata().ID),
 						sym.String())
-					if err != nil {
-						return nil, err
-					}
 					// For handler, see commandHandler.Assembly.
 					actions = append(actions, protocol.CodeAction{
 						Title:   cmd.Title,
 						Kind:    settings.GoAssembly,
-						Command: &cmd,
+						Command: cmd,
 					})
 				}
 			}

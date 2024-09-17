@@ -33,13 +33,9 @@ go 1.12
 package foo
 `
 	Run(t, files, func(t *testing.T, env *Env) {
-		cmd, err := command.NewRunGovulncheckCommand("Run Vulncheck Exp", command.VulncheckArgs{
+		cmd := command.NewRunGovulncheckCommand("Run Vulncheck Exp", command.VulncheckArgs{
 			URI: "/invalid/file/url", // invalid arg
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		params := &protocol.ExecuteCommandParams{
 			Command:   command.RunGovulncheck.String(),
 			Arguments: cmd.Arguments,
@@ -274,12 +270,9 @@ func testFetchVulncheckResult(t *testing.T, env *Env, want map[string]fetchVulnc
 	t.Helper()
 
 	var result map[protocol.DocumentURI]*vulncheck.Result
-	fetchCmd, err := command.NewFetchVulncheckResultCommand("fetch", command.URIArg{
+	fetchCmd := command.NewFetchVulncheckResultCommand("fetch", command.URIArg{
 		URI: env.Sandbox.Workdir.URI("go.mod"),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	env.ExecuteCommand(&protocol.ExecuteCommandParams{
 		Command:   fetchCmd.Command,
 		Arguments: fetchCmd.Arguments,

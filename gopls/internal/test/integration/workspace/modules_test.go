@@ -140,10 +140,7 @@ func Bar()
 func checkModules(t testing.TB, env *Env, dir protocol.DocumentURI, maxDepth int, want []command.Module) {
 	t.Helper()
 
-	cmd, err := command.NewModulesCommand("Modules", command.ModulesArgs{Dir: dir, MaxDepth: maxDepth})
-	if err != nil {
-		t.Fatal(err)
-	}
+	cmd := command.NewModulesCommand("Modules", command.ModulesArgs{Dir: dir, MaxDepth: maxDepth})
 	var result command.ModulesResult
 	env.ExecuteCommand(&protocol.ExecuteCommandParams{
 		Command:   command.Modules.String(),

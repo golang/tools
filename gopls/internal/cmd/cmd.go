@@ -823,13 +823,10 @@ func (c *connection) semanticTokens(ctx context.Context, p *protocol.SemanticTok
 }
 
 func (c *connection) diagnoseFiles(ctx context.Context, files []protocol.DocumentURI) error {
-	cmd, err := command.NewDiagnoseFilesCommand("Diagnose files", command.DiagnoseFilesArgs{
+	cmd := command.NewDiagnoseFilesCommand("Diagnose files", command.DiagnoseFilesArgs{
 		Files: files,
 	})
-	if err != nil {
-		return err
-	}
-	_, err = c.executeCommand(ctx, &cmd)
+	_, err := c.executeCommand(ctx, cmd)
 	return err
 }
 

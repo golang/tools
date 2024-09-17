@@ -157,14 +157,11 @@ func ModUpgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh fil
 		}
 		// Upgrade to the exact version we offer the user, not the most recent.
 		title := fmt.Sprintf("%s%v", upgradeCodeActionPrefix, ver)
-		cmd, err := command.NewUpgradeDependencyCommand(title, command.DependencyArgs{
+		cmd := command.NewUpgradeDependencyCommand(title, command.DependencyArgs{
 			URI:        fh.URI(),
 			AddRequire: false,
 			GoCmdArgs:  []string{req.Mod.Path + "@" + ver},
 		})
-		if err != nil {
-			return nil, err
-		}
 		upgradeDiagnostics = append(upgradeDiagnostics, &cache.Diagnostic{
 			URI:            fh.URI(),
 			Range:          rng,
@@ -268,10 +265,7 @@ func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, 
 			}
 			// Upgrade to the exact version we offer the user, not the most recent.
 			if fixedVersion := finding.FixedVersion; semver.IsValid(fixedVersion) && semver.Compare(req.Mod.Version, fixedVersion) < 0 {
-				cmd, err := getUpgradeCodeAction(fh, req, fixedVersion)
-				if err != nil {
-					return nil, err // TODO: bug report
-				}
+				cmd := getUpgradeCodeAction(fh, req, fixedVersion)
 				sf := cache.SuggestedFixFromCommand(cmd, protocol.QuickFix)
 				switch _, typ := foundVuln(finding); typ {
 				case vulnImported:
@@ -295,10 +289,7 @@ func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, 
 		}
 		// Add an upgrade for module@latest.
 		// TODO(suzmue): verify if latest is the same as fixedVersion.
-		latest, err := getUpgradeCodeAction(fh, req, "latest")
-		if err != nil {
-			return nil, err // TODO: bug report
-		}
+		latest := getUpgradeCodeAction(fh, req, "latest")
 		sf := cache.SuggestedFixFromCommand(latest, protocol.QuickFix)
 		if len(warningFixes) > 0 {
 			warningFixes = append(warningFixes, sf)
@@ -445,22 +436,16 @@ func sortedKeys(m map[string]bool) []string {
 // (if the present vulncheck diagnostics are already based on govulncheck run).
 func suggestGovulncheckAction(fromGovulncheck bool, uri protocol.DocumentURI) (cache.SuggestedFix, error) {
 	if fromGovulncheck {
-		resetVulncheck, err := command.NewResetGoModDiagnosticsCommand("Reset govulncheck result", command.ResetGoModDiagnosticsArgs{
+		resetVulncheck := command.NewResetGoModDiagnosticsCommand("Reset govulncheck result", command.ResetGoModDiagnosticsArgs{
 			URIArg:           command.URIArg{URI: uri},
 			DiagnosticSource: string(cache.Govulncheck),
 		})
-		if err != nil {
-			return cache.SuggestedFix{}, err
-		}
 		return cache.SuggestedFixFromCommand(resetVulncheck, protocol.QuickFix), nil
 	}
-	vulncheck, err := command.NewRunGovulncheckCommand("Run govulncheck to verify", command.VulncheckArgs{
+	vulncheck := command.NewRunGovulncheckCommand("Run govulncheck to verify", command.VulncheckArgs{
 		URI:     uri,
 		Pattern: "./...",
 	})
-	if err != nil {
-		return cache.SuggestedFix{}, err
-	}
 	return cache.SuggestedFixFromCommand(vulncheck, protocol.QuickFix), nil
 }
 
@@ -501,16 +486,12 @@ func href(vulnID string) string {
 	return fmt.Sprintf("https://pkg.go.dev/vuln/%s", vulnID)
 }
 
-func getUpgradeCodeAction(fh file.Handle, req *modfile.Require, version string) (protocol.Command, error) {
-	cmd, err := command.NewUpgradeDependencyCommand(upgradeTitle(version), command.DependencyArgs{
+func getUpgradeCodeAction(fh file.Handle, req *modfile.Require, version string) *protocol.Command {
+	return command.NewUpgradeDependencyCommand(upgradeTitle(version), command.DependencyArgs{
 		URI:        fh.URI(),
 		AddRequire: false,
 		GoCmdArgs:  []string{req.Mod.Path + "@" + version},
 	})
-	if err != nil {
-		return protocol.Command{}, err
-	}
-	return cmd, nil
 }
 
 func upgradeTitle(fixedVersion string) string {

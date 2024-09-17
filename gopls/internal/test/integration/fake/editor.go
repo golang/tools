@@ -1125,13 +1125,10 @@ func (e *Editor) RunGenerate(ctx context.Context, dir string) error {
 		return nil
 	}
 	absDir := e.sandbox.Workdir.AbsPath(dir)
-	cmd, err := command.NewGenerateCommand("", command.GenerateArgs{
+	cmd := command.NewGenerateCommand("", command.GenerateArgs{
 		Dir:       protocol.URIFromPath(absDir),
 		Recursive: false,
 	})
-	if err != nil {
-		return err
-	}
 	params := &protocol.ExecuteCommandParams{
 		Command:   cmd.Command,
 		Arguments: cmd.Arguments,

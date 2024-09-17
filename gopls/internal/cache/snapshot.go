@@ -1479,58 +1479,54 @@ searchOverlays:
 				if s.view.folder.Env.GoVersion >= 18 {
 					if s.view.gowork != "" {
 						fix = fmt.Sprintf("To fix this problem, you can add this module to your go.work file (%s)", s.view.gowork)
-						if cmd, err := command.NewRunGoWorkCommandCommand("Run `go work use`", command.RunGoWorkArgs{
+						cmd := command.NewRunGoWorkCommandCommand("Run `go work use`", command.RunGoWorkArgs{
 							ViewID: s.view.ID(),
 							Args:   []string{"use", modDir},
-						}); err == nil {
-							suggestedFixes = append(suggestedFixes, SuggestedFix{
-								Title:      "Use this module in your go.work file",
-								Command:    &cmd,
-								ActionKind: protocol.QuickFix,
-							})
-						}
+						})
+						suggestedFixes = append(suggestedFixes, SuggestedFix{
+							Title:      "Use this module in your go.work file",
+							Command:    cmd,
+							ActionKind: protocol.QuickFix,
+						})
 
 						if inDir {
-							if cmd, err := command.NewRunGoWorkCommandCommand("Run `go work use -r`", command.RunGoWorkArgs{
+							cmd := command.NewRunGoWorkCommandCommand("Run `go work use -r`", command.RunGoWorkArgs{
 								ViewID: s.view.ID(),
 								Args:   []string{"use", "-r", "."},
-							}); err == nil {
-								suggestedFixes = append(suggestedFixes, SuggestedFix{
-									Title:      "Use all modules in your workspace",
-									Command:    &cmd,
-									ActionKind: protocol.QuickFix,
-								})
-							}
+							})
+							suggestedFixes = append(suggestedFixes, SuggestedFix{
+								Title:      "Use all modules in your workspace",
+								Command:    cmd,
+								ActionKind: protocol.QuickFix,
+							})
 						}
 					} else {
 						fix = "To fix this problem, you can add a go.work file that uses this directory."
 
-						if cmd, err := command.NewRunGoWorkCommandCommand("Run `go work init && go work use`", command.RunGoWorkArgs{
+						cmd := command.NewRunGoWorkCommandCommand("Run `go work init && go work use`", command.RunGoWorkArgs{
 							ViewID:    s.view.ID(),
 							InitFirst: true,
 							Args:      []string{"use", modDir},
-						}); err == nil {
-							suggestedFixes = []SuggestedFix{
-								{
-									Title:      "Add a go.work file using this module",
-									Command:    &cmd,
-									ActionKind: protocol.QuickFix,
-								},
-							}
+						})
+						suggestedFixes = []SuggestedFix{
+							{
+								Title:      "Add a go.work file using this module",
+								Command:    cmd,
+								ActionKind: protocol.QuickFix,
+							},
 						}
 
 						if inDir {
-							if cmd, err := command.NewRunGoWorkCommandCommand("Run `go work init && go work use -r`", command.RunGoWorkArgs{
+							cmd := command.NewRunGoWorkCommandCommand("Run `go work init && go work use -r`", command.RunGoWorkArgs{
 								ViewID:    s.view.ID(),
 								InitFirst: true,
 								Args:      []string{"use", "-r", "."},
-							}); err == nil {
-								suggestedFixes = append(suggestedFixes, SuggestedFix{
-									Title:      "Add a go.work file using all modules in your workspace",
-									Command:    &cmd,
-									ActionKind: protocol.QuickFix,
-								})
-							}
+							})
+							suggestedFixes = append(suggestedFixes, SuggestedFix{
+								Title:      "Add a go.work file using all modules in your workspace",
+								Command:    cmd,
+								ActionKind: protocol.QuickFix,
+							})
 						}
 					}
 				} else {

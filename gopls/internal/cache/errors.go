@@ -14,7 +14,6 @@ import (
 	"go/parser"
 	"go/scanner"
 	"go/token"
-	"log"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -135,15 +134,11 @@ func goGetQuickFixes(haveModule bool, uri protocol.DocumentURI, pkg string) []Su
 		return nil
 	}
 	title := fmt.Sprintf("go get package %v", pkg)
-	cmd, err := command.NewGoGetPackageCommand(title, command.GoGetPackageArgs{
+	cmd := command.NewGoGetPackageCommand(title, command.GoGetPackageArgs{
 		URI:        uri,
 		AddRequire: true,
 		Pkg:        pkg,
 	})
-	if err != nil {
-		bug.Reportf("internal error building 'go get package' fix: %v", err)
-		return nil
-	}
 	return []SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)}
 }
 
@@ -153,14 +148,10 @@ func editGoDirectiveQuickFix(haveModule bool, uri protocol.DocumentURI, version 
 		return nil
 	}
 	title := fmt.Sprintf("go mod edit -go=%s", version)
-	cmd, err := command.NewEditGoDirectiveCommand(title, command.EditGoDirectiveArgs{
+	cmd := command.NewEditGoDirectiveCommand(title, command.EditGoDirectiveArgs{
 		URI:     uri,
 		Version: version,
 	})
-	if err != nil {
-		bug.Reportf("internal error constructing 'edit go directive' fix: %v", err)
-		return nil
-	}
 	return []SuggestedFix{SuggestedFixFromCommand(cmd, protocol.QuickFix)}
 }
 
@@ -332,15 +323,11 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 			// by logic "adjacent to" the analyzer.
 			//
 			// The analysis.Diagnostic.Category is used as the fix name.
-			cmd, err := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
+			cmd := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
 				Fix:   diag.Code,
 				URI:   gobDiag.Location.URI,
 				Range: gobDiag.Location.Range,
 			})
-			if err != nil {
-				// JSON marshalling of these argument values cannot fail.
-				log.Fatalf("internal error in NewApplyFixCommand: %v", err)
-			}
 			for _, kind := range kinds {
 				fixes = append(fixes, SuggestedFixFromCommand(cmd, kind))
 			}

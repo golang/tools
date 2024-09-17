@@ -429,10 +429,7 @@ func (X) SubtestMethod(t *testing.T) {
 func checkPackages(t testing.TB, env *Env, files []protocol.DocumentURI, recursive bool, mode command.PackagesMode, wantPkg []command.Package, wantModule map[string]command.Module, wantSource []string) {
 	t.Helper()
 
-	cmd, err := command.NewPackagesCommand("Packages", command.PackagesArgs{Files: files, Recursive: recursive, Mode: mode})
-	if err != nil {
-		t.Fatal(err)
-	}
+	cmd := command.NewPackagesCommand("Packages", command.PackagesArgs{Files: files, Recursive: recursive, Mode: mode})
 	var result command.PackagesResult
 	env.ExecuteCommand(&protocol.ExecuteCommandParams{
 		Command:   command.Packages.String(),

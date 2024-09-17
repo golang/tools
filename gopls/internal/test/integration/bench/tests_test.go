@@ -84,10 +84,7 @@ func BenchmarkPackagesCommand(b *testing.B) {
 
 func executePackagesCmd(t testing.TB, env *integration.Env, args command.PackagesArgs) any {
 	t.Helper()
-	cmd, err := command.NewPackagesCommand("Packages", args)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cmd := command.NewPackagesCommand("Packages", args)
 	result, err := env.Editor.Server.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
 		Command:   command.Packages.String(),
 		Arguments: cmd.Arguments,

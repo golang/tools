@@ -471,15 +471,12 @@ func main() {
 			"telemetryPrompt": false,
 		},
 	).Run(t, src, func(t *testing.T, env *Env) {
-		cmd, err := command.NewMaybePromptForTelemetryCommand("prompt")
-		if err != nil {
-			t.Fatal(err)
-		}
-		var result error
+		cmd := command.NewMaybePromptForTelemetryCommand("prompt")
+		var err error
 		env.ExecuteCommand(&protocol.ExecuteCommandParams{
 			Command: cmd.Command,
-		}, &result)
-		if result != nil {
+		}, &err)
+		if err != nil {
 			t.Fatal(err)
 		}
 		expectation := ShownMessageRequest(".*Would you like to enable Go telemetry?")

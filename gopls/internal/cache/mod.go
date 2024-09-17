@@ -418,10 +418,7 @@ func (s *Snapshot) goCommandDiagnostic(pm *ParsedModule, loc protocol.Location, 
 
 	switch {
 	case strings.Contains(goCmdError, "inconsistent vendoring"):
-		cmd, err := command.NewVendorCommand("Run go mod vendor", command.URIArg{URI: pm.URI})
-		if err != nil {
-			return nil, err
-		}
+		cmd := command.NewVendorCommand("Run go mod vendor", command.URIArg{URI: pm.URI})
 		return &Diagnostic{
 			URI:      pm.URI,
 			Range:    loc.Range,
@@ -435,14 +432,8 @@ See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
 	case strings.Contains(goCmdError, "updates to go.sum needed"), strings.Contains(goCmdError, "missing go.sum entry"):
 		var args []protocol.DocumentURI
 		args = append(args, s.View().ModFiles()...)
-		tidyCmd, err := command.NewTidyCommand("Run go mod tidy", command.URIArgs{URIs: args})
-		if err != nil {
-			return nil, err
-		}
-		updateCmd, err := command.NewUpdateGoSumCommand("Update go.sum", command.URIArgs{URIs: args})
-		if err != nil {
-			return nil, err
-		}
+		tidyCmd := command.NewTidyCommand("Run go mod tidy", command.URIArgs{URIs: args})
+		updateCmd := command.NewUpdateGoSumCommand("Update go.sum", command.URIArgs{URIs: args})
 		msg := "go.sum is out of sync with go.mod. Please update it by applying the quick fix."
 		if innermost != nil {
 			msg = fmt.Sprintf("go.sum is out of sync with go.mod: entry for %v is missing. Please updating it by applying the quick fix.", innermost)
@@ -460,14 +451,11 @@ See https://github.com/golang/go/issues/39164 for more detail on this issue.`,
 		}, nil
 	case strings.Contains(goCmdError, "disabled by GOPROXY=off") && innermost != nil:
 		title := fmt.Sprintf("Download %v@%v", innermost.Path, innermost.Version)
-		cmd, err := command.NewAddDependencyCommand(title, command.DependencyArgs{
+		cmd := command.NewAddDependencyCommand(title, command.DependencyArgs{
 			URI:        pm.URI,
 			AddRequire: false,
 			GoCmdArgs:  []string{fmt.Sprintf("%v@%v", innermost.Path, innermost.Version)},
 		})
-		if err != nil {
-			return nil, err
-		}
 		return &Diagnostic{
 			URI:            pm.URI,
 			Range:          loc.Range,

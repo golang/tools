@@ -103,10 +103,10 @@ type SuggestedFix struct {
 }
 
 // SuggestedFixFromCommand returns a suggested fix to run the given command.
-func SuggestedFixFromCommand(cmd protocol.Command, kind protocol.CodeActionKind) SuggestedFix {
+func SuggestedFixFromCommand(cmd *protocol.Command, kind protocol.CodeActionKind) SuggestedFix {
 	return SuggestedFix{
 		Title:      cmd.Title,
-		Command:    &cmd,
+		Command:    cmd,
 		ActionKind: kind,
 	}
 }

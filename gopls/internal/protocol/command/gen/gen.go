@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/types"
+	"log"
 	"text/template"
 
 	"golang.org/x/tools/gopls/internal/protocol/command/commandmeta"
@@ -71,21 +72,28 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 }
 {{- range .Commands}}
 
-func New{{.MethodName}}Command(title string, {{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}} {{typeString $v.Type}}{{end}}) (protocol.Command, error) {
-	{{- if .Args -}}
+{{if fallible .Args}}
+func New{{.MethodName}}Command(title string, {{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}} {{typeString $v.Type}}{{end}}) (*protocol.Command, error) {
 	args, err := MarshalArgs({{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}}{{end}})
 	if err != nil {
-		return protocol.Command{}, err
+		return nil, err
 	}
-	{{end -}}
-	return protocol.Command{
+	return &protocol.Command{
 		Title: title,
 		Command: {{.MethodName}}.String(),
-	{{- if .Args}}
 		Arguments: args,
-	{{end}}
 	}, nil
 }
+{{else}}
+func New{{.MethodName}}Command(title string, {{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}} {{typeString $v.Type}}{{end}}) *protocol.Command {
+	return &protocol.Command{
+		Title: title,
+		Command: {{.MethodName}}.String(),
+		Arguments: MustMarshalArgs({{range $i, $v := .Args}}{{if $i}}, {{end}}a{{$i}}{{end}}),
+	}
+}
+{{end}}
+
 {{end}}
 `
 
@@ -111,6 +119,33 @@ func Generate() ([]byte, error) {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"typeString": func(t types.Type) string {
 			return types.TypeString(t, qf)
+		},
+		"fallible": func(args []*commandmeta.Field) bool {
+			var fallible func(types.Type) bool
+			fallible = func(t types.Type) bool {
+				switch t := t.Underlying().(type) {
+				case *types.Basic:
+					return false
+				case *types.Slice:
+					return fallible(t.Elem())
+				case *types.Struct:
+					for i := 0; i < t.NumFields(); i++ {
+						if fallible(t.Field(i).Type()) {
+							return true
+						}
+					}
+					return false
+				}
+				// Assume all other types are fallible for now:
+				log.Println("Command.Args has fallible type", t)
+				return true
+			}
+			for _, arg := range args {
+				if fallible(arg.Type) {
+					return true
+				}
+			}
+			return false
 		},
 	}).Parse(src)
 	if err != nil {
