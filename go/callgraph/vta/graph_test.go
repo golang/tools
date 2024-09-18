@@ -110,7 +110,7 @@ func TestVtaGraph(t *testing.T) {
 	//     n3 /
 	//     | /
 	//     n4
-	g := make(vtaGraph)
+	var g vtaGraph
 	g.addEdge(n1, n3)
 	g.addEdge(n2, n3)
 	g.addEdge(n3, n4)
@@ -119,9 +119,19 @@ func TestVtaGraph(t *testing.T) {
 	g.addEdge(n1, n3)
 
 	want := vtaGraph{
-		n1: map[node]empty{n3: empty{}},
-		n2: map[node]empty{n3: empty{}, n4: empty{}},
-		n3: map[node]empty{n4: empty{}},
+		m: []map[idx]empty{
+			map[idx]empty{1: empty{}},
+			map[idx]empty{3: empty{}},
+			map[idx]empty{1: empty{}, 3: empty{}},
+			nil,
+		},
+		idx: map[node]idx{
+			n1: 0,
+			n3: 1,
+			n2: 2,
+			n4: 3,
+		},
+		node: []node{n1, n3, n2, n4},
 	}
 
 	if !reflect.DeepEqual(want, g) {
@@ -137,7 +147,9 @@ func TestVtaGraph(t *testing.T) {
 		{n3, 1},
 		{n4, 0},
 	} {
-		if sl := len(g[test.n]); sl != test.l {
+		sl := 0
+		g.successors(g.idx[test.n])(func(_ idx) bool { sl++; return true })
+		if sl != test.l {
 			t.Errorf("want %d successors; got %d", test.l, sl)
 		}
 	}
@@ -147,15 +159,16 @@ func TestVtaGraph(t *testing.T) {
 // where each string represents an edge set of the format
 // node -> succ_1, ..., succ_n. succ_1, ..., succ_n are
 // sorted in alphabetical order.
-func vtaGraphStr(g vtaGraph) []string {
+func vtaGraphStr(g *vtaGraph) []string {
 	var vgs []string
-	for n, succ := range g {
+	for n := 0; n < g.numNodes(); n++ {
 		var succStr []string
-		for s := range succ {
-			succStr = append(succStr, s.String())
-		}
+		g.successors(idx(n))(func(s idx) bool {
+			succStr = append(succStr, g.node[s].String())
+			return true
+		})
 		sort.Strings(succStr)
-		entry := fmt.Sprintf("%v -> %v", n.String(), strings.Join(succStr, ", "))
+		entry := fmt.Sprintf("%v -> %v", g.node[n].String(), strings.Join(succStr, ", "))
 		vgs = append(vgs, removeModulePrefix(entry))
 	}
 	return vgs
