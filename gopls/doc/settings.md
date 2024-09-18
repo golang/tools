@@ -88,7 +88,7 @@ Default: `["-**/node_modules"]`.
 <a id='templateExtensions'></a>
 ### `templateExtensions []string`
 
-templateExtensions gives the extensions of file names that are treateed
+templateExtensions gives the extensions of file names that are treated
 as template files. (The extension
 is the part of the file name after the final dot.)
 

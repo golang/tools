@@ -2969,7 +2969,7 @@ func (b *builder) buildFromSyntax(fn *Function) {
 func (b *builder) buildYieldFunc(fn *Function) {
 	// See builder.rangeFunc for detailed documentation on how fn is set up.
 	//
-	// In psuedo-Go this roughly builds:
+	// In pseudo-Go this roughly builds:
 	// func yield(_k tk, _v tv) bool {
 	// 	   if jump != READY { panic("yield function called after range loop exit") }
 	//     jump = BUSY

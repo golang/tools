@@ -32,7 +32,7 @@ package
 		if len(completions.Items) == 0 {
 			t.Fatal("Completion() returned empty results")
 		}
-		// Sanity check: we should get package clause compeltion.
+		// Sanity check: we should get package clause completion.
 		if got, want := completions.Items[0].Label, "package playdos"; got != want {
 			t.Errorf("Completion()[0].Label == %s, want %s", got, want)
 		}

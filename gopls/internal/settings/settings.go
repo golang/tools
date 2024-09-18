@@ -117,7 +117,7 @@ type BuildOptions struct {
 	// Include only project_a, but not node_modules inside it: `-`, `+project_a`, `-project_a/node_modules`
 	DirectoryFilters []string
 
-	// TemplateExtensions gives the extensions of file names that are treateed
+	// TemplateExtensions gives the extensions of file names that are treated
 	// as template files. (The extension
 	// is the part of the file name after the final dot.)
 	TemplateExtensions []string

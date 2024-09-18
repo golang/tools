@@ -43,7 +43,7 @@
 			{
 				"Name": "templateExtensions",
 				"Type": "[]string",
-				"Doc": "templateExtensions gives the extensions of file names that are treateed\nas template files. (The extension\nis the part of the file name after the final dot.)\n",
+				"Doc": "templateExtensions gives the extensions of file names that are treated\nas template files. (The extension\nis the part of the file name after the final dot.)\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null

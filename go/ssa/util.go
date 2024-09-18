@@ -267,7 +267,7 @@ func instanceArgs(info *types.Info, id *ast.Ident) []types.Type {
 	return targs
 }
 
-// Mapping of a type T to a canonical instance C s.t. types.Indentical(T, C).
+// Mapping of a type T to a canonical instance C s.t. types.Identical(T, C).
 // Thread-safe.
 type canonizer struct {
 	mu    sync.Mutex
