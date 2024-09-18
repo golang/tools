@@ -842,16 +842,6 @@ func TestInstructionString(t *testing.T) {
 	}
 }
 
-// packageName is a test helper to extract the package name from a string
-// containing the content of a go file.
-func packageName(t testing.TB, content string) string {
-	f, err := parser.ParseFile(token.NewFileSet(), "", content, parser.PackageClauseOnly)
-	if err != nil {
-		t.Fatalf("parsing the file %q failed with error: %s", content, err)
-	}
-	return f.Name.Name
-}
-
 func logFunction(t testing.TB, fn *ssa.Function) {
 	// TODO: Consider adding a ssa.Function.GoString() so this can be logged to t via '%#v'.
 	var buf bytes.Buffer

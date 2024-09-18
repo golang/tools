@@ -556,23 +556,7 @@ func h(error)
 	//         t8 = phi [1: t7, 3: t4] #e
 	//         ...
 
-	// Parse
-	var conf loader.Config
-	f, err := conf.ParseFile("<input>", input)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	conf.CreateFromFiles("p", f)
-
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	// Create and build SSA
-	prog := ssautil.CreateProgram(lprog, ssa.BuilderMode(0))
-	p := prog.Package(lprog.Package("p").Pkg)
+	p := loadPackageFromSingleFile(t, input, ssa.BuilderMode(0)).spkg
 	p.Build()
 	g := p.Func("g")
 
@@ -622,23 +606,7 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 	//      func  init        func()
 	//      var   init$guard  bool
 
-	// Parse
-	var conf loader.Config
-	f, err := conf.ParseFile("<input>", input)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	conf.CreateFromFiles("p", f)
-
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	// Create and build SSA
-	prog := ssautil.CreateProgram(lprog, ssa.BuilderMode(0))
-	p := prog.Package(lprog.Package("p").Pkg)
+	p := loadPackageFromSingleFile(t, input, ssa.BuilderMode(0)).spkg
 	p.Build()
 
 	if load := p.Func("Load"); load.Signature.TypeParams().Len() != 1 {
@@ -809,31 +777,22 @@ func TestTypeparamTest(t *testing.T) {
 
 			t.Logf("Input: %s\n", input)
 
-			ctx := build.Default    // copy
-			ctx.GOROOT = "testdata" // fake goroot. Makes tests ~1s. tests take ~80s.
-
-			reportErr := func(err error) {
-				t.Error(err)
-			}
-			conf := loader.Config{Build: &ctx, TypeChecker: types.Config{Error: reportErr}}
-			if _, err := conf.FromArgs([]string{input}, true); err != nil {
-				t.Fatalf("FromArgs(%s) failed: %s", input, err)
-			}
-
-			iprog, err := conf.Load()
-			if iprog != nil {
-				for _, pkg := range iprog.Created {
-					for i, e := range pkg.Errors {
-						t.Errorf("Loading pkg %s error[%d]=%s", pkg, i, e)
-					}
-				}
-			}
+			pkgs, err := packages.Load(&packages.Config{
+				Mode: packages.NeedSyntax |
+					packages.NeedTypesInfo |
+					packages.NeedDeps |
+					packages.NeedName |
+					packages.NeedFiles |
+					packages.NeedImports |
+					packages.NeedCompiledGoFiles |
+					packages.NeedTypes,
+			}, input)
 			if err != nil {
-				t.Fatalf("conf.Load(%s) failed: %s", input, err)
+				t.Fatalf("fail to load pkgs from file %s", input)
 			}
 
 			mode := ssa.SanityCheckFunctions | ssa.InstantiateGenerics
-			prog := ssautil.CreateProgram(iprog, mode)
+			prog, _ := ssautil.Packages(pkgs, mode)
 			prog.Build()
 		})
 	}
@@ -856,23 +815,7 @@ func sliceMax(s []int) []int { return s[a():b():c()] }
 
 `
 
-	// Parse
-	var conf loader.Config
-	f, err := conf.ParseFile("<input>", input)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	conf.CreateFromFiles("p", f)
-
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	// Create and build SSA
-	prog := ssautil.CreateProgram(lprog, ssa.BuilderMode(0))
-	p := prog.Package(lprog.Package("p").Pkg)
+	p := loadPackageFromSingleFile(t, input, ssa.BuilderMode(0)).spkg
 	p.Build()
 
 	for _, item := range []struct {
@@ -1176,20 +1119,7 @@ func TestLabels(t *testing.T) {
 		  func main() { _:println(1); _:println(2)}`,
 	}
 	for _, test := range tests {
-		conf := loader.Config{Fset: token.NewFileSet()}
-		f, err := parser.ParseFile(conf.Fset, "<input>", test, 0)
-		if err != nil {
-			t.Errorf("parse error: %s", err)
-			return
-		}
-		conf.CreateFromFiles("main", f)
-		iprog, err := conf.Load()
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-		prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
-		pkg := prog.Package(iprog.Created[0].Pkg)
+		pkg := loadPackageFromSingleFile(t, test, ssa.BuilderMode(0)).spkg
 		pkg.Build()
 	}
 }
@@ -1224,20 +1154,10 @@ func TestIssue67079(t *testing.T) {
 
 	// Load the package.
 	const src = `package p; type T int; func (T) f() {}; var _ = (*T).f`
-	conf := loader.Config{Fset: token.NewFileSet()}
-	f, err := parser.ParseFile(conf.Fset, "p.go", src, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf.CreateFromFiles("p", f)
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	pkg := iprog.Created[0].Pkg
 
-	// Create and build SSA program.
-	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
+	p := loadPackageFromSingleFile(t, src, ssa.BuilderMode(0)).spkg
+	pkg := p.Pkg
+	prog := p.Prog
 	prog.Build()
 
 	var g errgroup.Group

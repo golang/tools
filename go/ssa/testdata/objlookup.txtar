@@ -1,4 +1,8 @@
-// +build ignore
+-- go.mod --
+module example.com
+go 1.18
+
+-- objlookup.go --
 
 package main
 

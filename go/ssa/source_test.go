@@ -30,18 +30,34 @@ func TestObjValueLookup(t *testing.T) {
 		t.Skipf("no testdata directory on %s", runtime.GOOS)
 	}
 
-	conf := loader.Config{ParserMode: parser.ParseComments}
-	src, err := os.ReadFile("testdata/objlookup.go")
+	src, err := os.ReadFile("testdata/objlookup.txtar")
 	if err != nil {
 		t.Fatal(err)
 	}
-	readFile := func(filename string) ([]byte, error) { return src, nil }
-	f, err := conf.ParseFile("testdata/objlookup.go", src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf.CreateFromFiles("main", f)
+	pkgs := packagesFromArchive(t, string(src))
+	prog, _ := ssautil.Packages(pkgs, ssa.BuilderMode(0))
 
+	info := getPkgInfo(prog, pkgs, "main")
+
+	if info == nil {
+		t.Fatalf("fail to get package main from loaded packages")
+	}
+
+	conf := info.ppkg
+	mainInfo := conf.TypesInfo
+
+	f := info.file
+	mainPkg := info.spkg
+
+	readFile := func(_ string) ([]byte, error) {
+		// split the file content to get the exact file content,
+		// instead of using go/printer which re-formats the file and the positions are no longer exact
+		strs := strings.SplitAfter(string(src), "-- objlookup.go --\n")
+		if len(strs) != 2 {
+			t.Fatalf("expect to get 2 parts after splitting but got %d", len(strs))
+		}
+		return []byte(strs[1]), nil
+	}
 	// Maps each var Ident (represented "name:linenum") to the
 	// kind of ssa.Value we expect (represented "Constant", "&Alloc").
 	expectations := make(map[string]string)
@@ -82,15 +98,6 @@ func TestObjValueLookup(t *testing.T) {
 		expectations[key] = exp
 	}
 
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0) /*|ssa.PrintFunctions*/)
-	mainInfo := iprog.Created[0]
-	mainPkg := prog.Package(mainInfo.Pkg)
 	mainPkg.SetDebugMode(true)
 	mainPkg.Build()
 
@@ -222,11 +229,11 @@ func checkVarValue(t *testing.T, prog *ssa.Program, pkg *ssa.Package, ref []ast.
 // Ensure that, in debug mode, we can determine the ssa.Value
 // corresponding to every ast.Expr.
 func TestValueForExpr(t *testing.T) {
-	testValueForExpr(t, "testdata/valueforexpr.go")
+	testValueForExpr(t, "testdata/valueforexpr.txtar")
 }
 
 func TestValueForExprStructConv(t *testing.T) {
-	testValueForExpr(t, "testdata/structconv.go")
+	testValueForExpr(t, "testdata/structconv.txtar")
 }
 
 func testValueForExpr(t *testing.T, testfile string) {
@@ -234,24 +241,23 @@ func testValueForExpr(t *testing.T, testfile string) {
 		t.Skipf("no testdata dir on %s", runtime.GOOS)
 	}
 
-	conf := loader.Config{ParserMode: parser.ParseComments}
-	f, err := conf.ParseFile(testfile, nil)
+	src, err := os.ReadFile(testfile)
 	if err != nil {
-		t.Error(err)
-		return
-	}
-	conf.CreateFromFiles("main", f)
-
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Error(err)
-		return
+		t.Fatal(err)
 	}
 
-	mainInfo := iprog.Created[0]
+	pkgs := packagesFromArchive(t, string(src))
+	prog, _ := ssautil.Packages(pkgs, ssa.BuilderMode(0))
 
-	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
-	mainPkg := prog.Package(mainInfo.Pkg)
+	info := getPkgInfo(prog, pkgs, "main")
+
+	if info == nil {
+		t.Fatalf("fail to get package main from loaded packages")
+	}
+	mainInfo := info.ppkg.TypesInfo
+	f := info.file
+	mainPkg := info.spkg
+
 	mainPkg.SetDebugMode(true)
 	mainPkg.Build()
 
