@@ -389,9 +389,9 @@ func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs
 	var result *protocol.WorkspaceEdit
 	err := c.run(ctx, commandConfig{
 		// Note: no progress here. Applying fixes should be quick.
-		forURI: args.URI,
+		forURI: args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		changes, err := golang.ApplyFix(ctx, args.Fix, deps.snapshot, deps.fh, args.Range)
+		changes, err := golang.ApplyFix(ctx, args.Fix, deps.snapshot, deps.fh, args.Location.Range)
 		if err != nil {
 			return err
 		}

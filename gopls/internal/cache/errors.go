@@ -324,9 +324,8 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 			//
 			// The analysis.Diagnostic.Category is used as the fix name.
 			cmd := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
-				Fix:   diag.Code,
-				URI:   gobDiag.Location.URI,
-				Range: gobDiag.Location.Range,
+				Fix:      diag.Code,
+				Location: gobDiag.Location,
 			})
 			for _, kind := range kinds {
 				fixes = append(fixes, SuggestedFixFromCommand(cmd, kind))

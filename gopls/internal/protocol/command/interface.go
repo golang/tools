@@ -323,12 +323,9 @@ type ApplyFixArgs struct {
 	// upon by the code action and golang.ApplyFix.
 	Fix string
 
-	// TODO(adonovan): replace URI + Range with Location
+	// The portion of the document to fix.
+	Location protocol.Location
 
-	// The file URI for the document to fix.
-	URI protocol.DocumentURI
-	// The document range to scan for fixes.
-	Range protocol.Range
 	// Whether to resolve and return the edits.
 	ResolveEdits bool
 }

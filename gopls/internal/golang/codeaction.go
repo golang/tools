@@ -134,29 +134,39 @@ type codeActionsRequest struct {
 	pkg         *cache.Package // set only if producer.needPkg
 }
 
+// addApplyFixAction adds an ApplyFix command-based CodeAction to the result.
+func (req *codeActionsRequest) addApplyFixAction(title, fix string, loc protocol.Location) *protocol.CodeAction {
+	cmd := command.NewApplyFixCommand(title, command.ApplyFixArgs{
+		Fix:          fix,
+		Location:     loc,
+		ResolveEdits: req.resolveEdits(),
+	})
+	return req.addCommandAction(cmd, true)
+}
+
 // addCommandAction adds a CodeAction to the result based on the provided command.
 //
-// If the client supports codeAction/resolve, then the command is embedded into
-// the code action data field, and used to resolve edits later. Otherwise, the
-// command is set as the code action operation.
-func (req *codeActionsRequest) addCommandAction(cmd *protocol.Command) *protocol.CodeAction {
+// If allowResolveEdits (and the client supports codeAction/resolve)
+// then the command is embedded into the code action data field so
+// that the client can later ask the server to "resolve" a command
+// into an edit that they can preview and apply selectively.
+// Set allowResolveEdits only for actions that generate edits.
+//
+// Otherwise, the command is set as the code action operation.
+func (req *codeActionsRequest) addCommandAction(cmd *protocol.Command, allowResolveEdits bool) *protocol.CodeAction {
 	act := protocol.CodeAction{
 		Title: cmd.Title,
 		Kind:  req.kind,
 	}
-	// TODO(adonovan): some commands (goFreeSymbols, goplsDoc,
-	// goDoc, goTest, and goAssembly) have side effects such as
-	// opening a browser, and so should not be eligible for lazy
-	// edit resolution.
-	if !req.resolveEdits() {
-		act.Command = cmd
-	} else {
+	if allowResolveEdits && req.resolveEdits() {
 		data, err := json.Marshal(cmd)
 		if err != nil {
 			panic("unable to marshal")
 		}
 		msg := json.RawMessage(data)
 		act.Data = &msg
+	} else {
+		act.Command = cmd
 	}
 	return req.addAction(act)
 }
@@ -352,7 +362,7 @@ func fixedByImportFix(fix *imports.ImportFix, diagnostics []protocol.Diagnostic)
 func goFreeSymbols(ctx context.Context, req *codeActionsRequest) error {
 	if !req.loc.Empty() {
 		cmd := command.NewFreeSymbolsCommand("Browse free symbols", req.snapshot.View().ID(), req.loc)
-		req.addCommandAction(cmd)
+		req.addCommandAction(cmd, false)
 	}
 	return nil
 }
@@ -365,7 +375,7 @@ func goplsDocFeatures(ctx context.Context, req *codeActionsRequest) error {
 	cmd := command.NewClientOpenURLCommand(
 		"Browse gopls feature documentation",
 		"https://github.com/golang/tools/blob/master/gopls/doc/features/README.md")
-	req.addCommandAction(cmd)
+	req.addCommandAction(cmd, false)
 	return nil
 }
 
@@ -374,7 +384,7 @@ func goplsDocFeatures(ctx context.Context, req *codeActionsRequest) error {
 func goDoc(ctx context.Context, req *codeActionsRequest) error {
 	_, _, title := DocFragment(req.pkg, req.pgf, req.start, req.end)
 	cmd := command.NewDocCommand(title, req.loc)
-	req.addCommandAction(cmd)
+	req.addCommandAction(cmd, false)
 	return nil
 }
 
@@ -382,13 +392,7 @@ func goDoc(ctx context.Context, req *codeActionsRequest) error {
 // See [extractFunction] for command implementation.
 func refactorExtractFunction(ctx context.Context, req *codeActionsRequest) error {
 	if _, ok, _, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.File); ok {
-		cmd := command.NewApplyFixCommand("Extract function", command.ApplyFixArgs{
-			Fix:          fixExtractFunction,
-			URI:          req.loc.URI,
-			Range:        req.loc.Range,
-			ResolveEdits: req.resolveEdits(),
-		})
-		req.addCommandAction(cmd)
+		req.addApplyFixAction("Extract function", fixExtractFunction, req.loc)
 	}
 	return nil
 }
@@ -397,13 +401,7 @@ func refactorExtractFunction(ctx context.Context, req *codeActionsRequest) error
 // See [extractMethod] for command implementation.
 func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
 	if _, ok, methodOK, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.File); ok && methodOK {
-		cmd := command.NewApplyFixCommand("Extract method", command.ApplyFixArgs{
-			Fix:          fixExtractMethod,
-			URI:          req.loc.URI,
-			Range:        req.loc.Range,
-			ResolveEdits: req.resolveEdits(),
-		})
-		req.addCommandAction(cmd)
+		req.addApplyFixAction("Extract method", fixExtractMethod, req.loc)
 	}
 	return nil
 }
@@ -412,13 +410,7 @@ func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
 // See [extractVariable] for command implementation.
 func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error {
 	if _, _, ok, _ := canExtractVariable(req.start, req.end, req.pgf.File); ok {
-		cmd := command.NewApplyFixCommand("Extract variable", command.ApplyFixArgs{
-			Fix:          fixExtractVariable,
-			URI:          req.loc.URI,
-			Range:        req.loc.Range,
-			ResolveEdits: req.resolveEdits(),
-		})
-		req.addCommandAction(cmd)
+		req.addApplyFixAction("Extract variable", fixExtractVariable, req.loc)
 	}
 	return nil
 }
@@ -428,7 +420,7 @@ func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error
 func refactorExtractToNewFile(ctx context.Context, req *codeActionsRequest) error {
 	if canExtractToNewFile(req.pgf, req.start, req.end) {
 		cmd := command.NewExtractToNewFileCommand("Extract declarations to new file", req.loc)
-		req.addCommandAction(cmd)
+		req.addCommandAction(cmd, true)
 	}
 	return nil
 }
@@ -441,7 +433,7 @@ func refactorRewriteRemoveUnusedParam(ctx context.Context, req *codeActionsReque
 			RemoveParameter: req.loc,
 			ResolveEdits:    req.resolveEdits(),
 		})
-		req.addCommandAction(cmd)
+		req.addCommandAction(cmd, true)
 	}
 	return nil
 }
@@ -456,13 +448,7 @@ func refactorRewriteChangeQuote(ctx context.Context, req *codeActionsRequest) er
 // See [invertIfCondition] for command implementation.
 func refactorRewriteInvertIf(ctx context.Context, req *codeActionsRequest) error {
 	if _, ok, _ := canInvertIfCondition(req.pgf.File, req.start, req.end); ok {
-		cmd := command.NewApplyFixCommand("Invert 'if' condition", command.ApplyFixArgs{
-			Fix:          fixInvertIfCondition,
-			URI:          req.loc.URI,
-			Range:        req.loc.Range,
-			ResolveEdits: req.resolveEdits(),
-		})
-		req.addCommandAction(cmd)
+		req.addApplyFixAction("Invert 'if' condition", fixInvertIfCondition, req.loc)
 	}
 	return nil
 }
@@ -472,13 +458,7 @@ func refactorRewriteInvertIf(ctx context.Context, req *codeActionsRequest) error
 func refactorRewriteSplitLines(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): opt: don't set needPkg just for FileSet.
 	if msg, ok, _ := canSplitLines(req.pgf.File, req.pkg.FileSet(), req.start, req.end); ok {
-		cmd := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
-			Fix:          fixSplitLines,
-			URI:          req.loc.URI,
-			Range:        req.loc.Range,
-			ResolveEdits: req.resolveEdits(),
-		})
-		req.addCommandAction(cmd)
+		req.addApplyFixAction(msg, fixSplitLines, req.loc)
 	}
 	return nil
 }
@@ -488,13 +468,7 @@ func refactorRewriteSplitLines(ctx context.Context, req *codeActionsRequest) err
 func refactorRewriteJoinLines(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): opt: don't set needPkg just for FileSet.
 	if msg, ok, _ := canJoinLines(req.pgf.File, req.pkg.FileSet(), req.start, req.end); ok {
-		cmd := command.NewApplyFixCommand(msg, command.ApplyFixArgs{
-			Fix:          fixJoinLines,
-			URI:          req.loc.URI,
-			Range:        req.loc.Range,
-			ResolveEdits: req.resolveEdits(),
-		})
-		req.addCommandAction(cmd)
+		req.addApplyFixAction(msg, fixJoinLines, req.loc)
 	}
 	return nil
 }
@@ -506,18 +480,12 @@ func refactorRewriteFillStruct(ctx context.Context, req *codeActionsRequest) err
 	// the (start, end, message) of each SuggestedFix; the actual
 	// edit is computed only later by ApplyFix, which calls fillstruct.SuggestedFix.
 	for _, diag := range fillstruct.Diagnose(req.pgf.File, req.start, req.end, req.pkg.Types(), req.pkg.TypesInfo()) {
-		rng, err := req.pgf.Mapper.PosRange(req.pgf.Tok, diag.Pos, diag.End)
+		loc, err := req.pgf.Mapper.PosLocation(req.pgf.Tok, diag.Pos, diag.End)
 		if err != nil {
 			return err
 		}
 		for _, fix := range diag.SuggestedFixes {
-			cmd := command.NewApplyFixCommand(fix.Message, command.ApplyFixArgs{
-				Fix:          diag.Category,
-				URI:          req.loc.URI,
-				Range:        rng,
-				ResolveEdits: req.resolveEdits(),
-			})
-			req.addCommandAction(cmd)
+			req.addApplyFixAction(fix.Message, diag.Category, loc)
 		}
 	}
 	return nil
@@ -598,13 +566,7 @@ func refactorInlineCall(ctx context.Context, req *codeActionsRequest) error {
 
 	// If range is within call expression, offer to inline the call.
 	if _, fn, err := enclosingStaticCall(req.pkg, req.pgf, req.start, req.end); err == nil {
-		cmd := command.NewApplyFixCommand(fmt.Sprintf("Inline call to %s", fn.Name()), command.ApplyFixArgs{
-			Fix:          fixInlineCall,
-			URI:          req.loc.URI,
-			Range:        req.loc.Range,
-			ResolveEdits: req.resolveEdits(),
-		})
-		req.addCommandAction(cmd)
+		req.addApplyFixAction("Inline call to "+fn.Name(), fixInlineCall, req.loc)
 	}
 	return nil
 }
@@ -634,7 +596,7 @@ func goTest(ctx context.Context, req *codeActionsRequest) error {
 	}
 
 	cmd := command.NewTestCommand("Run tests and benchmarks", req.loc.URI, tests, benchmarks)
-	req.addCommandAction(cmd)
+	req.addCommandAction(cmd, false)
 	return nil
 }
 
@@ -697,7 +659,7 @@ func goAssembly(ctx context.Context, req *codeActionsRequest) error {
 						view.ID(),
 						string(req.pkg.Metadata().ID),
 						sym.String())
-					req.addCommandAction(cmd)
+					req.addCommandAction(cmd, false)
 				}
 			}
 		}
