@@ -388,7 +388,6 @@ func main() {
 			log.Println(err)
 			continue
 		}
-		log.Printf("added comment to issue #%d", issue.Number)
 
 		// Append to the "Dups: ID ..." list on last line of issue body.
 		body := strings.TrimSpace(issue.Body)
@@ -399,9 +398,12 @@ func main() {
 		}
 		body += " " + strings.Join(newStackIDs, " ")
 		if err := updateIssueBody(issue.Number, body); err != nil {
-			log.Println(err)
+			log.Printf("added comment to issue #%d but failed to update body: %v",
+				issue.Number, err)
+			continue
 		}
-		log.Printf("updated body of issue #%d", issue.Number)
+
+		log.Printf("added stacks %s to issue #%d", newStackIDs, issue.Number)
 	}
 
 	fmt.Printf("Found %d distinct stacks in last %v days:\n", distinctStacks, *daysFlag)
@@ -658,9 +660,7 @@ func searchIssues(query string) (*IssuesSearchResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if authToken != "" {
-		req.Header.Add("Authorization", "Bearer "+authToken)
-	}
+	req.Header.Add("Authorization", "Bearer "+authToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -694,9 +694,7 @@ func updateIssueBody(number int, body string) error {
 	if err != nil {
 		return err
 	}
-	if authToken != "" {
-		req.Header.Add("Authorization", "Bearer "+authToken)
-	}
+	req.Header.Add("Authorization", "Bearer "+authToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -726,9 +724,7 @@ func addIssueComment(number int, comment string) error {
 	if err != nil {
 		return err
 	}
-	if authToken != "" {
-		req.Header.Add("Authorization", "Bearer "+authToken)
-	}
+	req.Header.Add("Authorization", "Bearer "+authToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -767,16 +763,6 @@ type User struct {
 	HTMLURL string `json:"html_url"`
 }
 
-// -- helpers --
-
-func min(x, y int) int {
-	if x < y {
-		return x
-	} else {
-		return y
-	}
-}
-
 // -- pclntab --
 
 type FileLine struct {
@@ -790,7 +776,7 @@ type FileLine struct {
 func readPCLineTable(info Info) (map[string]FileLine, error) {
 	// The stacks dir will be a semi-durable temp directory
 	// (i.e. lasts for at least hours) holding source trees
-	// and executables we have build recently.
+	// and executables we have built recently.
 	//
 	// Each subdir will hold a specific revision.
 	stacksDir := "/tmp/gopls-stacks"
@@ -815,6 +801,7 @@ func readPCLineTable(info Info) (map[string]FileLine, error) {
 	// (Skip if it's already built.)
 	exe := fmt.Sprintf("exe-%s.%s-%s", info.GoVersion, info.GOOS, info.GOARCH)
 	cmd := exec.Command("go", "build", "-trimpath", "-o", "../"+exe)
+	cmd.Stderr = os.Stderr
 	cmd.Dir = filepath.Join(revDir, "gopls")
 	cmd.Env = append(os.Environ(),
 		"GOTOOLCHAIN="+info.GoVersion,
@@ -822,10 +809,10 @@ func readPCLineTable(info Info) (map[string]FileLine, error) {
 		"GOARCH="+info.GOARCH,
 	)
 	if !fileExists(filepath.Join(revDir, exe)) {
-		log.Printf("building %s@%s with %s on %s/%s",
+		log.Printf("building %s@%s with %s for %s/%s",
 			info.Program, info.Version, info.GoVersion, info.GOOS, info.GOARCH)
 		if err := cmd.Run(); err != nil {
-			return nil, fmt.Errorf("building: %v", err)
+			return nil, fmt.Errorf("building: %v (rm -fr /tmp/gopls-stacks?)", err)
 		}
 	}
 
