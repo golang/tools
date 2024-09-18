@@ -32,7 +32,6 @@ var Analyzer = &analysis.Analyzer{
 func run(pass *analysis.Pass) (interface{}, error) {
 	ssainput := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	for _, fn := range ssainput.SrcFuncs {
-		// TODO(taking): Iterate over fn._Instantiations() once exported. If so, have 1 report per Pos().
 		reports := checkStores(fn)
 		for _, store := range reports {
 			switch addr := store.Addr.(type) {
