@@ -610,7 +610,11 @@ func getGoTestCodeActions(pkg *cache.Package, pgf *parsego.File, rng protocol.Ra
 		return nil, nil
 	}
 
-	cmd, err := command.NewTestCommand("Run tests and benchmarks", pgf.URI, tests, benchmarks)
+	cmd, err := command.NewRunTestsCommand("Run tests and benchmarks", command.RunTestsArgs{
+		URI:        pgf.URI,
+		Tests:      tests,
+		Benchmarks: benchmarks,
+	})
 	if err != nil {
 		return nil, err
 	}

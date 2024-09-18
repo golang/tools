@@ -1131,12 +1131,6 @@ func (o *Options) setOne(name string, value any) error {
 	case "analysisProgressReporting":
 		return setBool(&o.AnalysisProgressReporting, value)
 
-	case "allowImplicitNetworkAccess":
-		if err := setBool(&o.AllowImplicitNetworkAccess, value); err != nil {
-			return err
-		}
-		return softErrorf("gopls setting \"allowImplicitNetworkAccess\" is deprecated.\nPlease comment on https://go.dev/issue/66861 if this impacts your workflow.")
-
 	case "standaloneTags":
 		return setStringSlice(&o.StandaloneTags, value)
 
