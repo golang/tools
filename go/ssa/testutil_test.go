@@ -24,7 +24,7 @@ import (
 // It's useful to create a ssa package and its packages.Package and ast.File representation.
 func loadPackageFromSingleFile(t *testing.T, content string, mode ssa.BuilderMode) *pkgInfo {
 	ar := archiveFromSingleFileContent(content)
-	pkgs := packagesFromArchive(t, ar)
+	pkgs := fromTxtar(t, ar)
 	prog, _ := ssautil.Packages(pkgs, mode)
 
 	pkgName := packageName(t, content)
@@ -49,9 +49,10 @@ go 1.18
 %s`, content)
 }
 
-// packagesFromArchive creates a temporary folder from the archive and load packages from it.
-func packagesFromArchive(t *testing.T, archive string) []*packages.Package {
-	ar := txtar.Parse([]byte(archive))
+// fromTxtar creates a temporary folder from the content in txtar format
+// and then loads the packages.
+func fromTxtar(t *testing.T, content string) []*packages.Package {
+	ar := txtar.Parse([]byte(content))
 
 	fs, err := txtar.FS(ar)
 	if err != nil {

@@ -34,7 +34,7 @@ func TestObjValueLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkgs := packagesFromArchive(t, string(src))
+	pkgs := fromTxtar(t, string(src))
 	prog, _ := ssautil.Packages(pkgs, ssa.BuilderMode(0))
 
 	info := getPkgInfo(prog, pkgs, "main")
@@ -246,7 +246,7 @@ func testValueForExpr(t *testing.T, testfile string) {
 		t.Fatal(err)
 	}
 
-	pkgs := packagesFromArchive(t, string(src))
+	pkgs := fromTxtar(t, string(src))
 	prog, _ := ssautil.Packages(pkgs, ssa.BuilderMode(0))
 
 	info := getPkgInfo(prog, pkgs, "main")
