@@ -26,6 +26,9 @@ import (
 // `foo(arg1:+n1, arg2:+n2) (ret1:+n3)`.
 // Each argument is followed by a delta change to its reference counter.
 // In case if no change is expected, the delta will be `-0`.
+//
+// TODO(rfindley): add Update(K, func(V, bool) V), as we have several instances
+// of the Get-<check>-Set pattern that could be optimized.
 
 // Map is an associative mapping from keys to values.
 //

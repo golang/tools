@@ -301,7 +301,6 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	workspacePackages := computeWorkspacePackagesLocked(ctx, s, meta)
 	s.meta = meta
 	s.workspacePackages = workspacePackages
-	s.resetActivePackagesLocked()
 
 	s.mu.Unlock()
 

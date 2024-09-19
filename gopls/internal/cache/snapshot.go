@@ -144,12 +144,6 @@ type Snapshot struct {
 	//    be in packages, unless there is a missing import
 	packages *persistent.Map[PackageID, *packageHandle]
 
-	// activePackages maps a package ID to a memoized active package, or nil if
-	// the package is known not to be open.
-	//
-	// IDs not contained in the map are not known to be open or not open.
-	activePackages *persistent.Map[PackageID, *Package]
-
 	// workspacePackages contains the workspace's packages, which are loaded
 	// when the view is created. It does not contain intermediate test variants.
 	workspacePackages immutable.Map[PackageID, PackagePath]
@@ -181,14 +175,6 @@ type Snapshot struct {
 	modTidyHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modTidyResult]
 	modWhyHandles  *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modWhyResult]
 	modVulnHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[modVulnResult]
-
-	// importGraph holds a shared import graph to use for type-checking. Adding
-	// more packages to this import graph can speed up type checking, at the
-	// expense of in-use memory.
-	//
-	// See getImportGraph for additional documentation.
-	importGraphDone chan struct{} // closed when importGraph is set; may be nil
-	importGraph     *importGraph  // copied from preceding snapshot and re-evaluated
 
 	// moduleUpgrades tracks known upgrades for module paths in each modfile.
 	// Each modfile has a map of module name to upgrade version.
@@ -245,7 +231,6 @@ func (s *Snapshot) decref() {
 	s.refcount--
 	if s.refcount == 0 {
 		s.packages.Destroy()
-		s.activePackages.Destroy()
 		s.files.destroy()
 		s.symbolizeHandles.Destroy()
 		s.parseModHandles.Destroy()
@@ -842,50 +827,6 @@ func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transi
 	}
 
 	return rdeps, nil
-}
-
-// -- Active package tracking --
-//
-// We say a package is "active" if any of its files are open.
-// This is an optimization: the "active" concept is an
-// implementation detail of the cache and is not exposed
-// in the source or Snapshot API.
-// After type-checking we keep active packages in memory.
-// The activePackages persistent map does bookkeeping for
-// the set of active packages.
-
-// getActivePackage returns a the memoized active package for id, if it exists.
-// If id is not active or has not yet been type-checked, it returns nil.
-func (s *Snapshot) getActivePackage(id PackageID) *Package {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if value, ok := s.activePackages.Get(id); ok {
-		return value
-	}
-	return nil
-}
-
-// setActivePackage checks if pkg is active, and if so either records it in
-// the active packages map or returns the existing memoized active package for id.
-func (s *Snapshot) setActivePackage(id PackageID, pkg *Package) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, ok := s.activePackages.Get(id); ok {
-		return // already memoized
-	}
-
-	if containsOpenFileLocked(s, pkg.Metadata()) {
-		s.activePackages.Set(id, pkg, nil)
-	} else {
-		s.activePackages.Set(id, (*Package)(nil), nil) // remember that pkg is not open
-	}
-}
-
-func (s *Snapshot) resetActivePackagesLocked() {
-	s.activePackages.Destroy()
-	s.activePackages = new(persistent.Map[PackageID, *Package])
 }
 
 // See Session.FileWatchingGlobPatterns for a description of gopls' file
@@ -1670,7 +1611,6 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		initialized:       s.initialized,
 		initialErr:        s.initialErr,
 		packages:          s.packages.Clone(),
-		activePackages:    s.activePackages.Clone(),
 		files:             s.files.clone(changedFiles),
 		symbolizeHandles:  cloneWithout(s.symbolizeHandles, changedFiles, nil),
 		workspacePackages: s.workspacePackages,
@@ -1681,7 +1621,6 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		modTidyHandles:    cloneWithout(s.modTidyHandles, changedFiles, &needsDiagnosis),
 		modWhyHandles:     cloneWithout(s.modWhyHandles, changedFiles, &needsDiagnosis),
 		modVulnHandles:    cloneWithout(s.modVulnHandles, changedFiles, &needsDiagnosis),
-		importGraph:       s.importGraph,
 		moduleUpgrades:    cloneWith(s.moduleUpgrades, changed.ModuleUpgrades),
 		vulns:             cloneWith(s.vulns, changed.Vulns),
 	}
@@ -1963,9 +1902,6 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 				result.packages.Set(id, ph, nil)
 			}
 		}
-		if result.activePackages.Delete(id) {
-			needsDiagnosis = true
-		}
 	}
 
 	// Compute which metadata updates are required. We only need to invalidate
@@ -2006,7 +1942,6 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	if result.meta != s.meta || anyFileOpenedOrClosed {
 		needsDiagnosis = true
 		result.workspacePackages = computeWorkspacePackagesLocked(ctx, result, result.meta)
-		result.resetActivePackagesLocked()
 	} else {
 		result.workspacePackages = s.workspacePackages
 	}
@@ -2190,8 +2125,8 @@ func metadataChanges(ctx context.Context, lockedSnapshot *Snapshot, oldFH, newFH
 
 	// Check whether package imports have changed. Only consider potentially
 	// valid imports paths.
-	oldImports := validImports(oldHead.File.Imports)
-	newImports := validImports(newHead.File.Imports)
+	oldImports := validImportPaths(oldHead.File.Imports)
+	newImports := validImportPaths(newHead.File.Imports)
 
 	for path := range newImports {
 		if _, ok := oldImports[path]; ok {
@@ -2240,8 +2175,8 @@ func magicCommentsChanged(original *ast.File, current *ast.File) bool {
 	return false
 }
 
-// validImports extracts the set of valid import paths from imports.
-func validImports(imports []*ast.ImportSpec) map[string]struct{} {
+// validImportPaths extracts the set of valid import paths from imports.
+func validImportPaths(imports []*ast.ImportSpec) map[string]struct{} {
 	m := make(map[string]struct{})
 	for _, spec := range imports {
 		if path := spec.Path.Value; validImportPath(path) {

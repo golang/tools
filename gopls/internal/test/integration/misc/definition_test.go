@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	. "golang.org/x/tools/gopls/internal/test/integration"
@@ -639,6 +640,51 @@ var _ = foo(123) // call
 		implLoc := env.GoToDefinition(declLoc)
 		if got, want := locString(implLoc), "foo_darwin_arm64.s:2:6-2:9"; got != want {
 			t.Errorf("Definition(go decl): got %s, want %s", got, want)
+		}
+	})
+}
+
+func TestPackageKeyInvalidationAfterSave(t *testing.T) {
+	// This test is a little subtle, but catches a bug that slipped through
+	// testing of https://go.dev/cl/614165, which moved active packages to the
+	// packageHandle.
+	//
+	// The bug was that after a format-and-save operation, the save marks the
+	// package as dirty but doesn't change its identity. In other words, this is
+	// the sequence of change:
+	//
+	//  S_0 --format--> S_1 --save--> S_2
+	//
+	// A package is computed on S_0, invalidated in S_1 and immediately
+	// invalidated again in S_2. Due to an invalidation bug, the validity of the
+	// package from S_0 was checked by comparing the identical keys of S_1 and
+	// S_2, and so the stale package from S_0 was marked as valid.
+	const src = `
+-- go.mod --
+module mod.com
+
+-- a.go --
+package a
+
+func Foo() {
+}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+
+		fooLoc := env.RegexpSearch("a.go", "()Foo")
+		loc0 := env.GoToDefinition(fooLoc)
+
+		// Insert a space that will be removed by formatting.
+		env.EditBuffer("a.go", protocol.TextEdit{
+			Range:   fooLoc.Range,
+			NewText: " ",
+		})
+		env.SaveBuffer("a.go") // reformats the file before save
+		env.AfterChange()
+		loc1 := env.GoToDefinition(env.RegexpSearch("a.go", "Foo"))
+		if diff := cmp.Diff(loc0, loc1); diff != "" {
+			t.Errorf("mismatching locations (-want +got):\n%s", diff)
 		}
 	})
 }
