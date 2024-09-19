@@ -2508,7 +2508,7 @@ func (b *builder) rangeFunc(fn *Function, x Value, tk, tv types.Type, rng *ast.R
 		name:           fmt.Sprintf("%s$%d", fn.Name(), anonIdx+1),
 		Signature:      ysig,
 		Synthetic:      "range-over-func yield",
-		pos:            rangePosition(rng),
+		pos:            rng.Range,
 		parent:         fn,
 		anonIdx:        int32(len(fn.AnonFuncs)),
 		Pkg:            fn.Pkg,
