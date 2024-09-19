@@ -42,6 +42,7 @@ var (
 	cpuProfile   = flag.String("gopls_cpuprofile", "", "if set, the cpu profile file suffix; see \"Profiling\" in the package doc")
 	memProfile   = flag.String("gopls_memprofile", "", "if set, the mem profile file suffix; see \"Profiling\" in the package doc")
 	allocProfile = flag.String("gopls_allocprofile", "", "if set, the alloc profile file suffix; see \"Profiling\" in the package doc")
+	blockProfile = flag.String("gopls_blockprofile", "", "if set, the block profile file suffix; see \"Profiling\" in the package doc")
 	trace        = flag.String("gopls_trace", "", "if set, the trace file suffix; see \"Profiling\" in the package doc")
 
 	// If non-empty, tempDir is a temporary working dir that was created by this
@@ -176,6 +177,9 @@ func profileArgs(name string, wantCPU bool) []string {
 	}
 	if *allocProfile != "" {
 		args = append(args, fmt.Sprintf("-profile.alloc=%s", qualifiedName(name, *allocProfile)))
+	}
+	if *blockProfile != "" {
+		args = append(args, fmt.Sprintf("-profile.block=%s", qualifiedName(name, *blockProfile)))
 	}
 	if *trace != "" {
 		args = append(args, fmt.Sprintf("-profile.trace=%s", qualifiedName(name, *trace)))

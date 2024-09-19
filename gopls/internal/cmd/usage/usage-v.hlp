@@ -67,6 +67,8 @@ flags:
     	port on which to run gopls for debugging purposes
   -profile.alloc=string
     	write alloc profile to this file
+  -profile.block=string
+    	write block profile to this file
   -profile.cpu=string
     	write CPU profile to this file
   -profile.mem=string
