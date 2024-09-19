@@ -77,6 +77,7 @@ func (b *typeCheckBatch) addHandles(handles map[PackageID]*packageHandle) {
 	b.handleMu.Lock()
 	defer b.handleMu.Unlock()
 	for id, ph := range handles {
+		assert(ph.state == validKey, "invalid handle")
 		if alt, ok := b._handles[id]; ok {
 			// Once handles have been reevaluated, they should not change. Therefore,
 			// we should only ever encounter exactly one handle instance for a given
@@ -832,39 +833,61 @@ func (b *typeCheckBatch) importLookup(mp *metadata.Package) func(PackagePath) Pa
 	}
 }
 
-// A packageHandle holds inputs required to compute a Package, including
-// metadata, derived diagnostics, files, and settings. Additionally,
-// packageHandles manage a key for these inputs, to use in looking up
-// precomputed results.
+// A packageState is the state of a [packageHandle]; see below for details.
+type packageState uint8
+
+const (
+	validMetadata  packageState = iota // the package has valid metadata (initial state)
+	validLocalData                     // local package files have been analyzed
+	validKey                           // dependencies have been analyzed, and key produced
+)
+
+// A packageHandle holds information derived from a metadata.Package, and
+// records its degree of validity as state changes occur: successful analysis
+// causes the state to progress; invalidation due to changes causes it to
+// regress.
 //
-// packageHandles may be invalid following an invalidation via snapshot.clone,
-// but the handles returned by getPackageHandles will always be valid.
+// In the initial state (validMetadata), all we know is the metadata for the
+// package itself. This is the lowest state, and it cannot become invalid
+// because the metadata for a given snapshot never changes. (Each handle is
+// implicitly associated with a Snapshot.)
 //
-// packageHandles are critical for implementing "precise pruning" in gopls:
-// packageHandle.key is a hash of a precise set of inputs, such as package
-// files and "reachable" syntax, that may affect type checking.
+// After the files of the package have been read (validLocalData), we can
+// perform computations that are local to that package, such as parsing, or
+// building the symbol reference graph (SRG). This information is invalidated
+// by a change to any file in the package. The local information is thus
+// sufficient to form a cache key for saved parsed trees or the SRG.
 //
-// packageHandles also keep track of state that allows gopls to compute, and
-// then quickly recompute, these keys. This state is split into two categories:
-//   - local state, which depends only on the package's local files and metadata
-//   - other state, which includes data derived from dependencies.
+// Once all dependencies have been analyzed (validKey), we can type-check the
+// package. This information is invalidated by any change to the package
+// itself, or to any dependency that is transitively reachable through the SRG.
+// The cache key for saved type information must thus incorporate information
+// from all reachable dependencies. This reachability analysis implements what
+// we sometimes refer to as "precise pruning", or fine-grained invalidation:
+// https://go.dev/blog/gopls-scalability#invalidation
 //
-// Dividing the data in this way allows gopls to minimize invalidation when a
-// package is modified. For example, any change to a package file fully
-// invalidates the package handle. On the other hand, if that change was not
-// metadata-affecting it may be the case that packages indirectly depending on
-// the modified package are unaffected by the change. For that reason, we have
-// two types of invalidation, corresponding to the two types of data above:
-//   - deletion of the handle, which occurs when the package itself changes
-//   - clearing of the validated field, which marks the package as possibly
-//     invalid.
+// Following a change, the packageHandle is cloned in the new snapshot with a
+// new state set to its least known valid state, as described above: if package
+// files changed, it is reset to validMetadata; if dependencies changed, it is
+// reset to validLocalData. However, the derived data from its previous state
+// is not yet removed, as keys may not have changed after they are reevaluated,
+// in which case we can avoid recomputing the derived data.
 //
-// With the second type of invalidation, packageHandles are re-evaluated from the
-// bottom up. If this process encounters a packageHandle whose deps have not
-// changed (as detected by the depkeys field), then the packageHandle in
-// question must also not have changed, and we need not re-evaluate its key.
+// See [packageHandleBuilder.evaluatePackageHandle] for more details of the
+// reevaluation algorithm.
+//
+// packageHandles are immutable once they are stored in the Snapshot.packages
+// map: any changes to packageHandle fields evaluatePackageHandle must be made
+// to a cloned packageHandle, and inserted back into Snapshot.packages. Data
+// referred to by the packageHandle may be shared by multiple clones, and so
+// referents must not be mutated.
 type packageHandle struct {
 	mp *metadata.Package
+
+	// state indicates which data below are still valid.
+	state packageState
+
+	// Local data:
 
 	// loadDiagnostics memoizes the result of processing error messages from
 	// go/packages (i.e. `go list`).
@@ -883,27 +906,19 @@ type packageHandle struct {
 	// (Nevertheless, since the lifetime of load diagnostics matches that of the
 	// Metadata, it is convenient to memoize them here.)
 	loadDiagnostics []*Diagnostic
-
-	// Local data:
-
 	// localInputs holds all local type-checking localInputs, excluding
 	// dependencies.
-	localInputs typeCheckInputs
+	localInputs *typeCheckInputs
 	// localKey is a hash of localInputs.
 	localKey file.Hash
 	// refs is the result of syntactic dependency analysis produced by the
-	// typerefs package.
+	// typerefs package. Derived from localInputs.
 	refs map[string][]typerefs.Symbol
 
-	// Data derived from dependencies:
+	// Keys, computed through reachability analysis of dependencies.
 
-	// validated indicates whether the current packageHandle is known to have a
-	// valid key. Invalidated package handles are stored for packages whose
-	// type information may have changed.
-	validated bool
 	// depKeys records the key of each dependency that was used to calculate the
-	// key above. If the handle becomes invalid, we must re-check that each still
-	// matches.
+	// key below. If state < validKey, we must re-check that each still matches.
 	depKeys map[PackageID]file.Hash
 	// key is the hashed key for the package.
 	//
@@ -912,36 +927,35 @@ type packageHandle struct {
 	key file.Hash
 }
 
-// clone returns a copy of the receiver with the validated bit set to the
-// provided value.
-func (ph *packageHandle) clone(validated bool) *packageHandle {
-	copy := *ph
-	copy.validated = validated
-	return &copy
+// clone returns a shallow copy of the receiver.
+func (ph *packageHandle) clone() *packageHandle {
+	clone := *ph
+	return &clone
 }
 
 // getPackageHandles gets package handles for all given ids and their
-// dependencies, recursively.
+// dependencies, recursively. The resulting [packageHandle] values are fully
+// evaluated (their state will be at least validKey).
 func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[PackageID]*packageHandle, error) {
 	// perform a two-pass traversal.
 	//
 	// On the first pass, build up a bidirectional graph of handle nodes, and collect leaves.
 	// Then build package handles from bottom up.
-
-	s.mu.Lock() // guard s.meta and s.packages below
 	b := &packageHandleBuilder{
 		s:              s,
 		transitiveRefs: make(map[typerefs.IndexID]*partialRefs),
 		nodes:          make(map[typerefs.IndexID]*handleNode),
 	}
 
+	meta := s.MetadataGraph()
+
 	var leaves []*handleNode
 	var makeNode func(*handleNode, PackageID) *handleNode
 	makeNode = func(from *handleNode, id PackageID) *handleNode {
-		idxID := b.s.pkgIndex.IndexID(id)
+		idxID := s.view.pkgIndex.IndexID(id)
 		n, ok := b.nodes[idxID]
 		if !ok {
-			mp := s.meta.Packages[id]
+			mp := meta.Packages[id]
 			if mp == nil {
 				panic(fmt.Sprintf("nil metadata for %q", id))
 			}
@@ -949,9 +963,6 @@ func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 				mp:              mp,
 				idxID:           idxID,
 				unfinishedSuccs: int32(len(mp.DepsByPkgPath)),
-			}
-			if entry, hit := b.s.packages.Get(mp.ID); hit {
-				n.ph = entry
 			}
 			if n.unfinishedSuccs == 0 {
 				leaves = append(leaves, n)
@@ -971,12 +982,10 @@ func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 	}
 	for _, id := range ids {
 		if ctx.Err() != nil {
-			s.mu.Unlock()
 			return nil, ctx.Err()
 		}
 		makeNode(nil, id)
 	}
-	s.mu.Unlock()
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -997,15 +1006,16 @@ func (s *Snapshot) getPackageHandles(ctx context.Context, ids []PackageID) (map[
 				return ctx.Err()
 			}
 
-			b.buildPackageHandle(ctx, n)
+			if err := b.evaluatePackageHandle(ctx, n); err != nil {
+				return err
+			}
 
 			for _, pred := range n.preds {
 				if atomic.AddInt32(&pred.unfinishedSuccs, -1) == 0 {
 					enqueue(pred)
 				}
 			}
-
-			return n.err
+			return nil
 		})
 	}
 	for _, leaf := range leaves {
@@ -1047,7 +1057,6 @@ type handleNode struct {
 	mp              *metadata.Package
 	idxID           typerefs.IndexID
 	ph              *packageHandle
-	err             error
 	preds           []*handleNode
 	succs           map[PackageID]*handleNode
 	unfinishedSuccs int32
@@ -1073,7 +1082,7 @@ func (b *packageHandleBuilder) getTransitiveRefs(pkgID PackageID) map[string]*ty
 	b.transitiveRefsMu.Lock()
 	defer b.transitiveRefsMu.Unlock()
 
-	idxID := b.s.pkgIndex.IndexID(pkgID)
+	idxID := b.s.view.pkgIndex.IndexID(pkgID)
 	trefs, ok := b.transitiveRefs[idxID]
 	if !ok {
 		trefs = &partialRefs{
@@ -1084,12 +1093,12 @@ func (b *packageHandleBuilder) getTransitiveRefs(pkgID PackageID) map[string]*ty
 
 	if !trefs.complete {
 		trefs.complete = true
-		ph := b.nodes[idxID].ph
-		for name := range ph.refs {
+		node := b.nodes[idxID]
+		for name := range node.ph.refs {
 			if ('A' <= name[0] && name[0] <= 'Z') || token.IsExported(name) {
 				if _, ok := trefs.refs[name]; !ok {
-					pkgs := b.s.pkgIndex.NewSet()
-					for _, sym := range ph.refs[name] {
+					pkgs := b.s.view.pkgIndex.NewSet()
+					for _, sym := range node.ph.refs[name] {
 						pkgs.Add(sym.Package)
 						otherSet := b.getOneTransitiveRefLocked(sym)
 						pkgs.Union(otherSet)
@@ -1140,7 +1149,7 @@ func (b *packageHandleBuilder) getOneTransitiveRefLocked(sym typerefs.Symbol) *t
 			// point release.
 			//
 			// TODO(rfindley): in the future, we should turn this into an assertion.
-			bug.Reportf("missing reference to package %s", b.s.pkgIndex.PackageID(sym.Package))
+			bug.Reportf("missing reference to package %s", b.s.view.pkgIndex.PackageID(sym.Package))
 			return nil
 		}
 
@@ -1152,7 +1161,7 @@ func (b *packageHandleBuilder) getOneTransitiveRefLocked(sym typerefs.Symbol) *t
 		// See the "cycle detected" bug report above.
 		trefs.refs[sym.Name] = nil
 
-		pkgs := b.s.pkgIndex.NewSet()
+		pkgs := b.s.view.pkgIndex.NewSet()
 		for _, sym2 := range n.ph.refs[sym.Name] {
 			pkgs.Add(sym2.Package)
 			otherSet := b.getOneTransitiveRefLocked(sym2)
@@ -1164,153 +1173,152 @@ func (b *packageHandleBuilder) getOneTransitiveRefLocked(sym typerefs.Symbol) *t
 	return pkgs
 }
 
-// buildPackageHandle gets or builds a package handle for the given id, storing
-// its result in the snapshot.packages map.
+// evaluatePackageHandle recomputes the derived information in the package handle.
+// On success, the handle's state is validKey.
 //
-// buildPackageHandle must only be called from getPackageHandles.
-func (b *packageHandleBuilder) buildPackageHandle(ctx context.Context, n *handleNode) {
-	var prevPH *packageHandle
-	if n.ph != nil {
-		// Existing package handle: if it is valid, return it. Otherwise, create a
-		// copy to update.
-		if n.ph.validated {
-			return
-		}
-		prevPH = n.ph
-		// Either prevPH is still valid, or we will update the key and depKeys of
-		// this copy. In either case, the result will be valid.
-		n.ph = prevPH.clone(true)
+// evaluatePackageHandle must only be called from getPackageHandles.
+func (b *packageHandleBuilder) evaluatePackageHandle(ctx context.Context, n *handleNode) (err error) {
+	// Initialize n.ph.
+	var hit bool
+	b.s.mu.Lock()
+	n.ph, hit = b.s.packages.Get(n.mp.ID)
+	b.s.mu.Unlock()
+
+	if hit && n.ph.state >= validKey {
+		return nil // already valid
 	} else {
+		// We'll need to update the package handle. Since this could happen
+		// concurrently, make a copy.
+		if hit {
+			n.ph = n.ph.clone()
+		} else {
+			n.ph = &packageHandle{
+				mp:    n.mp,
+				state: validMetadata,
+			}
+		}
+	}
+
+	defer func() {
+		if err == nil {
+			assert(n.ph.state == validKey, "invalid handle")
+			// Record the now valid key in the snapshot.
+			// There may be a race, so avoid the write if the recorded handle is
+			// already valid.
+			b.s.mu.Lock()
+			if alt, ok := b.s.packages.Get(n.mp.ID); !ok || alt.state < n.ph.state {
+				b.s.packages.Set(n.mp.ID, n.ph, nil)
+			} else {
+				n.ph = alt
+			}
+			b.s.mu.Unlock()
+		}
+	}()
+
+	// Invariant: n.ph is either
+	// - a new handle in state validMetadata, or
+	// - a clone of an existing handle in state validMetadata or validLocalData.
+
+	// State transition: validMetadata -> validLocalInputs.
+	localKeyChanged := false
+	if n.ph.state < validLocalData {
+		prevLocalKey := n.ph.localKey // may be zero
 		// No package handle: read and analyze the package syntax.
 		inputs, err := b.s.typeCheckInputs(ctx, n.mp)
 		if err != nil {
-			n.err = err
-			return
+			return err
 		}
 		refs, err := b.s.typerefs(ctx, n.mp, inputs.compiledGoFiles)
 		if err != nil {
-			n.err = err
-			return
+			return err
 		}
-		n.ph = &packageHandle{
-			mp:              n.mp,
-			loadDiagnostics: computeLoadDiagnostics(ctx, b.s, n.mp),
-			localInputs:     inputs,
-			localKey:        localPackageKey(inputs),
-			refs:            refs,
-			validated:       true,
-		}
+		n.ph.loadDiagnostics = computeLoadDiagnostics(ctx, b.s, n.mp)
+		n.ph.localInputs = inputs
+		n.ph.localKey = localPackageKey(inputs)
+		n.ph.refs = refs
+		n.ph.state = validLocalData
+		localKeyChanged = n.ph.localKey != prevLocalKey
 	}
 
-	// ph either did not exist, or was invalid. We must re-evaluate deps and key.
-	if err := b.evaluatePackageHandle(prevPH, n); err != nil {
-		n.err = err
-		return
-	}
+	assert(n.ph.state == validLocalData, "unexpected handle state")
 
-	assert(n.ph.validated, "unvalidated handle")
-
-	// Ensure the result (or an equivalent) is recorded in the snapshot.
-	b.s.mu.Lock()
-	defer b.s.mu.Unlock()
-
-	// Check that the metadata has not changed
-	// (which should invalidate this handle).
+	// Optimization: if the local package information did not change, nor did any
+	// of the dependencies, we don't need to re-run the reachability algorithm.
 	//
-	// TODO(rfindley): eventually promote this to an assert.
-	// TODO(rfindley): move this to after building the package handle graph?
-	if b.s.meta.Packages[n.mp.ID] != n.mp {
-		bug.Reportf("stale metadata for %s", n.mp.ID)
-	}
+	// Concretely: suppose A -> B -> C -> D, where '->' means "imports". If I
+	// type in a function body of D, I will probably invalidate types in D that C
+	// uses, because positions change, and therefore the package key of C will
+	// change. But B probably doesn't reach any types in D, and therefore the
+	// package key of B will not change. We still need to re-run the reachability
+	// algorithm on B to confirm. But if the key of B did not change, we don't
+	// even need to run the reachability algorithm on A.
+	if !localKeyChanged &&
+		n.ph.depKeys != nil && // n.ph was previously evaluated
+		len(n.ph.depKeys) == len(n.succs) {
 
-	// Check the packages map again in case another goroutine got there first.
-	if alt, ok := b.s.packages.Get(n.mp.ID); ok && alt.validated {
-		if alt.mp != n.mp {
-			bug.Reportf("existing package handle does not match for %s", n.mp.ID)
-		}
-		n.ph = alt
-	} else {
-		b.s.packages.Set(n.mp.ID, n.ph, nil)
-	}
-}
-
-// evaluatePackageHandle validates and/or computes the key of ph, setting key,
-// depKeys, and the validated flag on ph.
-//
-// It uses prevPH to avoid recomputing keys that can't have changed, since
-// their depKeys did not change.
-//
-// See the documentation for packageHandle for more details about packageHandle
-// state, and see the documentation for the typerefs package for more details
-// about precise reachability analysis.
-func (b *packageHandleBuilder) evaluatePackageHandle(prevPH *packageHandle, n *handleNode) error {
-	// Opt: if no dep keys have changed, we need not re-evaluate the key.
-	if prevPH != nil {
-		depsChanged := false
-		assert(len(prevPH.depKeys) == len(n.succs), "mismatching dep count")
+		unchanged := true
 		for id, succ := range n.succs {
-			oldKey, ok := prevPH.depKeys[id]
+			oldKey, ok := n.ph.depKeys[id]
 			assert(ok, "missing dep")
 			if oldKey != succ.ph.key {
-				depsChanged = true
+				unchanged = false
 				break
 			}
 		}
-		if !depsChanged {
-			return nil // key cannot have changed
+		if unchanged {
+			n.ph.state = validKey
+			return nil
 		}
 	}
 
-	// Deps have changed, so we must re-evaluate the key.
+	// State transition: validLocalInputs -> validKey
+	//
+	// If we get here, it must be the case that deps have changed, so we must
+	// run the reachability algorithm.
 	n.ph.depKeys = make(map[PackageID]file.Hash)
 
 	// See the typerefs package: the reachable set of packages is defined to be
 	// the set of packages containing syntax that is reachable through the
 	// exported symbols in the dependencies of n.ph.
-	reachable := b.s.pkgIndex.NewSet()
+	reachable := b.s.view.pkgIndex.NewSet()
 	for depID, succ := range n.succs {
 		n.ph.depKeys[depID] = succ.ph.key
 		reachable.Add(succ.idxID)
 		trefs := b.getTransitiveRefs(succ.mp.ID)
-		if trefs == nil {
-			// A predecessor failed to build due to e.g. context cancellation.
-			return fmt.Errorf("missing transitive refs for %s", succ.mp.ID)
-		}
+		assert(trefs != nil, "nil trefs")
 		for _, set := range trefs {
 			reachable.Union(set)
 		}
 	}
 
-	// Collect reachable handles.
-	var reachableHandles []*packageHandle
+	// Collect reachable nodes.
+	var reachableNodes []*handleNode
 	// In the presence of context cancellation, any package may be missing.
 	// We need all dependencies to produce a valid key.
-	missingReachablePackage := false
 	reachable.Elems(func(id typerefs.IndexID) {
 		dh := b.nodes[id]
 		if dh == nil {
-			missingReachablePackage = true
+			// Previous code reported an error (not a bug) here.
+			bug.Reportf("missing reachable node for %q", id)
 		} else {
-			assert(dh.ph.validated, "unvalidated dependency")
-			reachableHandles = append(reachableHandles, dh.ph)
+			reachableNodes = append(reachableNodes, dh)
 		}
 	})
-	if missingReachablePackage {
-		return fmt.Errorf("missing reachable package")
-	}
+
 	// Sort for stability.
-	sort.Slice(reachableHandles, func(i, j int) bool {
-		return reachableHandles[i].mp.ID < reachableHandles[j].mp.ID
+	sort.Slice(reachableNodes, func(i, j int) bool {
+		return reachableNodes[i].mp.ID < reachableNodes[j].mp.ID
 	})
 
 	// Key is the hash of the local key, and the local key of all reachable
 	// packages.
 	depHasher := sha256.New()
 	depHasher.Write(n.ph.localKey[:])
-	for _, rph := range reachableHandles {
-		depHasher.Write(rph.localKey[:])
+	for _, dh := range reachableNodes {
+		depHasher.Write(dh.ph.localKey[:])
 	}
 	depHasher.Sum(n.ph.key[:0])
+	n.ph.state = validKey
 
 	return nil
 }
@@ -1329,7 +1337,7 @@ func (s *Snapshot) typerefs(ctx context.Context, mp *metadata.Package, cgfs []fi
 	if err != nil {
 		return nil, err
 	}
-	classes := typerefs.Decode(s.pkgIndex, data)
+	classes := typerefs.Decode(s.view.pkgIndex, data)
 	refs := make(map[string][]typerefs.Symbol)
 	for _, class := range classes {
 		for _, decl := range class.Decls {
@@ -1419,7 +1427,7 @@ type typeCheckInputs struct {
 	viewType                   ViewType
 }
 
-func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (typeCheckInputs, error) {
+func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (*typeCheckInputs, error) {
 	// Read both lists of files of this package.
 	//
 	// Parallelism is not necessary here as the files will have already been
@@ -1432,11 +1440,11 @@ func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (t
 	// The need should be rare.
 	goFiles, err := readFiles(ctx, s, mp.GoFiles)
 	if err != nil {
-		return typeCheckInputs{}, err
+		return nil, err
 	}
 	compiledGoFiles, err := readFiles(ctx, s, mp.CompiledGoFiles)
 	if err != nil {
-		return typeCheckInputs{}, err
+		return nil, err
 	}
 
 	goVersion := ""
@@ -1444,7 +1452,7 @@ func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (t
 		goVersion = mp.Module.GoVersion
 	}
 
-	return typeCheckInputs{
+	return &typeCheckInputs{
 		id:              mp.ID,
 		pkgPath:         mp.PkgPath,
 		name:            mp.Name,
@@ -1475,7 +1483,7 @@ func readFiles(ctx context.Context, fs file.Source, uris []protocol.DocumentURI)
 
 // localPackageKey returns a key for local inputs into type-checking, excluding
 // dependency information: files, metadata, and configuration.
-func localPackageKey(inputs typeCheckInputs) file.Hash {
+func localPackageKey(inputs *typeCheckInputs) file.Hash {
 	hasher := sha256.New()
 
 	// In principle, a key must be the hash of an
@@ -1669,7 +1677,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 // e.g. "go1" or "go1.2" or "go1.2.3"
 var goVersionRx = regexp.MustCompile(`^go[1-9][0-9]*(?:\.(0|[1-9][0-9]*)){0,2}$`)
 
-func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs typeCheckInputs, onError func(e error)) *types.Config {
+func (b *typeCheckBatch) typesConfig(ctx context.Context, inputs *typeCheckInputs, onError func(e error)) *types.Config {
 	cfg := &types.Config{
 		Sizes: inputs.sizes,
 		Error: onError,
@@ -1914,7 +1922,7 @@ func missingPkgError(from PackageID, pkgPath string, viewType ViewType) error {
 // sequence to a terminal).
 //
 // Fields in typeCheckInputs may affect the resulting diagnostics.
-func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs typeCheckInputs, errs []types.Error) []*Diagnostic {
+func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs []types.Error) []*Diagnostic {
 	var result []*Diagnostic
 
 	// batch records diagnostics for a set of related types.Errors.

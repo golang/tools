@@ -32,7 +32,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/cache/testfuncs"
-	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/cache/xrefs"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/filecache"
@@ -190,9 +189,6 @@ type Snapshot struct {
 	// See getImportGraph for additional documentation.
 	importGraphDone chan struct{} // closed when importGraph is set; may be nil
 	importGraph     *importGraph  // copied from preceding snapshot and re-evaluated
-
-	// pkgIndex is an index of package IDs, for efficient storage of typerefs.
-	pkgIndex *typerefs.PackageIndex
 
 	// moduleUpgrades tracks known upgrades for module paths in each modfile.
 	// Each modfile has a map of module name to upgrade version.
@@ -1686,7 +1682,6 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		modWhyHandles:     cloneWithout(s.modWhyHandles, changedFiles, &needsDiagnosis),
 		modVulnHandles:    cloneWithout(s.modVulnHandles, changedFiles, &needsDiagnosis),
 		importGraph:       s.importGraph,
-		pkgIndex:          s.pkgIndex,
 		moduleUpgrades:    cloneWith(s.moduleUpgrades, changed.ModuleUpgrades),
 		vulns:             cloneWith(s.vulns, changed.Vulns),
 	}
@@ -1950,14 +1945,21 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 
 	// Invalidated package information.
 	for id, invalidateMetadata := range idsToInvalidate {
-		if _, ok := directIDs[id]; ok || invalidateMetadata {
-			if result.packages.Delete(id) {
-				needsDiagnosis = true
-			}
-		} else {
-			if entry, hit := result.packages.Get(id); hit {
-				needsDiagnosis = true
-				ph := entry.clone(false)
+		// See the [packageHandle] documentation for more details about this
+		// invalidation.
+		if ph, ok := result.packages.Get(id); ok {
+			needsDiagnosis = true
+			if invalidateMetadata {
+				result.packages.Delete(id)
+			} else {
+				// If the package was just invalidated by a dependency, its local
+				// inputs are still valid.
+				ph = ph.clone()
+				if _, ok := directIDs[id]; ok {
+					ph.state = validMetadata // local inputs changed
+				} else {
+					ph.state = min(ph.state, validLocalData) // a dependency changed
+				}
 				result.packages.Set(id, ph, nil)
 			}
 		}

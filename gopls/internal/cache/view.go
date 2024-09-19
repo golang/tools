@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -105,6 +106,9 @@ type View struct {
 	baseCtx context.Context
 
 	importsState *importsState
+
+	// pkgIndex is an index of package IDs, for efficient storage of typerefs.
+	pkgIndex *typerefs.PackageIndex
 
 	// parseCache holds an LRU cache of recently parsed files.
 	parseCache *parseCache
