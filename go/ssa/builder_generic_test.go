@@ -31,7 +31,7 @@ import (
 // serialized using go/types.Type.String().
 // See x/tools/go/expect for details on the syntax.
 func TestGenericBodies(t *testing.T) {
-	for _, contents := range []string{
+	for _, content := range []string{
 		`
 		package p00
 
@@ -516,48 +516,27 @@ func TestGenericBodies(t *testing.T) {
 		}
 		`,
 	} {
-		contents := contents
-		pkgname := packageName(t, contents)
+		pkgname := parsePackageClause(t, content)
 		t.Run(pkgname, func(t *testing.T) {
-			// Parse
-			conf := loader.Config{ParserMode: parser.ParseComments}
-			f, err := conf.ParseFile("file.go", contents)
-			if err != nil {
-				t.Fatalf("parse: %v", err)
-			}
-			conf.CreateFromFiles(pkgname, f)
-
-			// Load
-			lprog, err := conf.Load()
-			if err != nil {
-				t.Fatalf("Load: %v", err)
-			}
-
-			// Create and build SSA
-			prog := ssa.NewProgram(lprog.Fset, ssa.SanityCheckFunctions)
-			for _, info := range lprog.AllPackages {
-				if info.TransitivelyErrorFree {
-					prog.CreatePackage(info.Pkg, info.Files, &info.Info, info.Importable)
-				}
-			}
-			p := prog.Package(lprog.Package(pkgname).Pkg)
-			p.Build()
+			t.Parallel()
+			ssapkg, f := buildContent(t, content, ssa.SanityCheckFunctions)
+			fset := ssapkg.Prog.Fset
 
 			// Collect all notes in f, i.e. comments starting with "//@ types".
-			notes, err := expect.ExtractGo(prog.Fset, f)
+			notes, err := expect.ExtractGo(fset, f)
 			if err != nil {
 				t.Errorf("expect.ExtractGo: %v", err)
 			}
 
 			// Collect calls to the builtin print function.
 			fns := make(map[*ssa.Function]bool)
-			for _, mem := range p.Members {
+			for _, mem := range ssapkg.Members {
 				if fn, ok := mem.(*ssa.Function); ok {
 					fns[fn] = true
 				}
 			}
 			probes := callsTo(fns, "print")
-			expectations := matchNotes(prog.Fset, notes, probes)
+			expectations := matchNotes(fset, notes, probes)
 
 			for call := range probes {
 				if expectations[call] == nil {
@@ -840,16 +819,6 @@ func TestInstructionString(t *testing.T) {
 			logFunction(t, fn)
 		}
 	}
-}
-
-// packageName is a test helper to extract the package name from a string
-// containing the content of a go file.
-func packageName(t testing.TB, content string) string {
-	f, err := parser.ParseFile(token.NewFileSet(), "", content, parser.PackageClauseOnly)
-	if err != nil {
-		t.Fatalf("parsing the file %q failed with error: %s", content, err)
-	}
-	return f.Name.Name
 }
 
 func logFunction(t testing.TB, fn *ssa.Function) {

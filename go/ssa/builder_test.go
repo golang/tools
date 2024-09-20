@@ -27,12 +27,10 @@ import (
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/loader"
-	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/testenv"
-	"golang.org/x/tools/internal/testfiles"
 )
 
 func isEmpty(f *ssa.Function) bool { return f.Blocks == nil }
@@ -177,11 +175,8 @@ func main() {
 func TestNoIndirectCreatePackage(t *testing.T) {
 	testenv.NeedsGoBuild(t) // for go/packages
 
-	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "indirect.txtar"))
-	pkgs, err := loadPackages(dir, "testdata/a")
-	if err != nil {
-		t.Fatal(err)
-	}
+	fs := openTxtar(t, filepath.Join(analysistest.TestData(), "indirect.txtar"))
+	pkgs := loadPackages(t, fs, "testdata/a")
 	a := pkgs[0]
 
 	// Create a from syntax, its direct deps b from types, but not indirect deps c.
@@ -207,27 +202,6 @@ func TestNoIndirectCreatePackage(t *testing.T) {
 	if got != want {
 		t.Errorf("for sole call in a.A, got: <<%s>>, want <<%s>>", got, want)
 	}
-}
-
-// loadPackages loads packages from the specified directory, using LoadSyntax.
-func loadPackages(dir string, patterns ...string) ([]*packages.Package, error) {
-	cfg := &packages.Config{
-		Dir:  dir,
-		Mode: packages.LoadSyntax,
-		Env: append(os.Environ(),
-			"GO111MODULES=on",
-			"GOPATH=",
-			"GOWORK=off",
-			"GOPROXY=off"),
-	}
-	pkgs, err := packages.Load(cfg, patterns...)
-	if err != nil {
-		return nil, err
-	}
-	if packages.PrintErrors(pkgs) > 0 {
-		return nil, fmt.Errorf("there were errors")
-	}
-	return pkgs, nil
 }
 
 // TestRuntimeTypes tests that (*Program).RuntimeTypes() includes all necessary types.
@@ -376,37 +350,23 @@ func init():
 	}
 	for _, test := range tests {
 		// Create a single-file main package.
-		var conf loader.Config
-		f, err := conf.ParseFile("<input>", test.input)
-		if err != nil {
-			t.Errorf("test %q: %s", test.input[:15], err)
-			continue
-		}
-		conf.CreateFromFiles(f.Name.Name, f)
-
-		lprog, err := conf.Load()
-		if err != nil {
-			t.Errorf("test 'package %s': Load: %s", f.Name.Name, err)
-			continue
-		}
-		prog := ssautil.CreateProgram(lprog, test.mode)
-		mainPkg := prog.Package(lprog.Created[0].Pkg)
-		prog.Build()
+		mainPkg, _ := buildContent(t, test.input, test.mode)
+		name := mainPkg.Pkg.Name()
 		initFunc := mainPkg.Func("init")
 		if initFunc == nil {
-			t.Errorf("test 'package %s': no init function", f.Name.Name)
+			t.Errorf("test 'package %s': no init function", name)
 			continue
 		}
 
 		var initbuf bytes.Buffer
-		_, err = initFunc.WriteTo(&initbuf)
+		_, err := initFunc.WriteTo(&initbuf)
 		if err != nil {
-			t.Errorf("test 'package %s': WriteTo: %s", f.Name.Name, err)
+			t.Errorf("test 'package %s': WriteTo: %s", name, err)
 			continue
 		}
 
 		if initbuf.String() != test.want {
-			t.Errorf("test 'package %s': got %s, want %s", f.Name.Name, initbuf.String(), test.want)
+			t.Errorf("test 'package %s': got %s, want %s", name, initbuf.String(), test.want)
 		}
 	}
 }
@@ -446,23 +406,7 @@ var (
 	t interface{} = new(struct{*T})
 )
 `
-	// Parse
-	var conf loader.Config
-	f, err := conf.ParseFile("<input>", input)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	conf.CreateFromFiles(f.Name.Name, f)
-
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	// Create and build SSA
-	prog := ssautil.CreateProgram(lprog, ssa.BuilderMode(0))
-	prog.Build()
+	pkg, _ := buildContent(t, input, ssa.BuilderMode(0))
 
 	// Enumerate reachable synthetic functions
 	want := map[string]string{
@@ -486,7 +430,7 @@ var (
 		"P.init": "package initializer",
 	}
 	var seen []string // may contain dups
-	for fn := range ssautil.AllFunctions(prog) {
+	for fn := range ssautil.AllFunctions(pkg.Prog) {
 		if fn.Synthetic == "" {
 			continue
 		}
