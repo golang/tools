@@ -640,9 +640,16 @@ func (b *Bisect) run(suffix string) *Result {
 		}
 		cmd := exec.CommandContext(ctx, b.Cmd, args...)
 		cmd.Env = append(os.Environ(), env...)
-		// Set up cmd.Cancel, cmd.WaitDelay on Go 1.20 and later
-		// TODO(rsc): Inline go120.go's cmdInterrupt once we stop supporting Go 1.19.
-		cmdInterrupt(cmd)
+		cmd.Cancel = func() error {
+			// On timeout, send interrupt,
+			// in hopes of shutting down process tree.
+			// Ignore errors sending signal; it's all best effort
+			// and not even implemented on Windows.
+			// TODO(rsc): Maybe use a new process group and kill the whole group?
+			cmd.Process.Signal(os.Interrupt)
+			return nil
+		}
+		cmd.WaitDelay = 2 * time.Second
 		out, err = cmd.CombinedOutput()
 	}
 
