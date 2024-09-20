@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/aliases"
 )
 
 //go:embed doc.go
@@ -88,7 +87,7 @@ func isSafeUintptr(info *types.Info, x ast.Expr) bool {
 		// by the time we get to the conversion at the end.
 		// For now approximate by saying that *Header is okay
 		// but Header is not.
-		pt, ok := aliases.Unalias(info.Types[x.X].Type).(*types.Pointer)
+		pt, ok := types.Unalias(info.Types[x.X].Type).(*types.Pointer)
 		if ok && isReflectHeader(pt.Elem()) {
 			return true
 		}

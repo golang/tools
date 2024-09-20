@@ -344,8 +344,8 @@ func cmpObj(x, y types.Object) error {
 		// situations where the type name is not referenced by the underlying or
 		// any other top-level declarations. Therefore, we must explicitly compare
 		// named types here, before passing their underlying types into equalType.
-		xn, _ := aliases.Unalias(xt).(*types.Named)
-		yn, _ := aliases.Unalias(yt).(*types.Named)
+		xn, _ := types.Unalias(xt).(*types.Named)
+		yn, _ := types.Unalias(yt).(*types.Named)
 		if (xn == nil) != (yn == nil) {
 			return fmt.Errorf("mismatching types: %T vs %T", xt, yt)
 		}
@@ -551,7 +551,7 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 
 			// Check that A is type A[T any] = *T.
 			// TODO(taking): fix how go/types prints parameterized aliases to simplify tests.
-			alias, ok := obj.Type().(*aliases.Alias)
+			alias, ok := obj.Type().(*types.Alias)
 			if !ok {
 				t.Fatalf("Obj %s is not an Alias", obj)
 			}

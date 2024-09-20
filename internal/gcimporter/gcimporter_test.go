@@ -27,7 +27,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/goroot"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -425,7 +424,7 @@ func TestImportedTypes(t *testing.T) {
 			t.Errorf("%s: got %q; want %q", test.name, got, test.want)
 		}
 
-		if named, _ := aliases.Unalias(obj.Type()).(*types.Named); named != nil {
+		if named, _ := types.Unalias(obj.Type()).(*types.Named); named != nil {
 			verifyInterfaceMethodRecvs(t, named, 0)
 		}
 	}
@@ -508,7 +507,7 @@ func verifyInterfaceMethodRecvs(t *testing.T, named *types.Named, level int) {
 	// check embedded interfaces (if they are named, too)
 	for i := 0; i < iface.NumEmbeddeds(); i++ {
 		// embedding of interfaces cannot have cycles; recursion will terminate
-		if etype, _ := aliases.Unalias(iface.EmbeddedType(i)).(*types.Named); etype != nil {
+		if etype, _ := types.Unalias(iface.EmbeddedType(i)).(*types.Named); etype != nil {
 			verifyInterfaceMethodRecvs(t, etype, level+1)
 		}
 	}
@@ -528,7 +527,7 @@ func TestIssue5815(t *testing.T) {
 			t.Errorf("no pkg for %s", obj)
 		}
 		if tname, _ := obj.(*types.TypeName); tname != nil {
-			named := aliases.Unalias(tname.Type()).(*types.Named)
+			named := types.Unalias(tname.Type()).(*types.Named)
 			for i := 0; i < named.NumMethods(); i++ {
 				m := named.Method(i)
 				if m.Pkg() == nil {
@@ -628,7 +627,7 @@ func TestIssue13898(t *testing.T) {
 
 	// look for go/types.Object type
 	obj := lookupObj(t, goTypesPkg.Scope(), "Object")
-	typ, ok := aliases.Unalias(obj.Type()).(*types.Named)
+	typ, ok := types.Unalias(obj.Type()).(*types.Named)
 	if !ok {
 		t.Fatalf("go/types.Object type is %v; wanted named type", typ)
 	}

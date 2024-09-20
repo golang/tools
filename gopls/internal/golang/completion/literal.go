@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -55,9 +54,9 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 	// TODO(adonovan): think about aliases:
 	// they should probably be treated more like Named.
 	// Should this use Deref not Unpointer?
-	if is[*types.Named](aliases.Unalias(literalType)) &&
+	if is[*types.Named](types.Unalias(literalType)) &&
 		expType != nil &&
-		!is[*types.Named](aliases.Unalias(typesinternal.Unpointer(expType))) {
+		!is[*types.Named](types.Unalias(typesinternal.Unpointer(expType))) {
 
 		return
 	}
@@ -200,7 +199,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 			name = p.Name()
 		)
 
-		if tp, _ := aliases.Unalias(p.Type()).(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
+		if tp, _ := types.Unalias(p.Type()).(*types.TypeParam); tp != nil && !c.typeParamInScope(tp) {
 			hasTypeParams = true
 		}
 
@@ -291,7 +290,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 				typeStr = strings.Replace(typeStr, "[]", "...", 1)
 			}
 
-			if tp, ok := aliases.Unalias(p.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
+			if tp, ok := types.Unalias(p.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 				snip.WritePlaceholder(func(snip *snippet.Builder) {
 					snip.WriteText(typeStr)
 				})
@@ -312,7 +311,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 
 	var resultHasTypeParams bool
 	for i := 0; i < results.Len(); i++ {
-		if tp, ok := aliases.Unalias(results.At(i).Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
+		if tp, ok := types.Unalias(results.At(i).Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 			resultHasTypeParams = true
 		}
 	}
@@ -345,7 +344,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 			}
 			return
 		}
-		if tp, ok := aliases.Unalias(r.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
+		if tp, ok := types.Unalias(r.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 			snip.WritePlaceholder(func(snip *snippet.Builder) {
 				snip.WriteText(text)
 			})
@@ -519,7 +518,7 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 		typeName string
 		// TODO(adonovan): think more about aliases.
 		// They should probably be treated more like Named.
-		named, _ = aliases.Unalias(literalType).(*types.Named)
+		named, _ = types.Unalias(literalType).(*types.Named)
 	)
 
 	if named != nil && named.Obj() != nil && named.TypeParams().Len() > 0 && !c.fullyInstantiated(named) {
@@ -567,7 +566,7 @@ func (c *completer) fullyInstantiated(t *types.Named) bool {
 
 	for i := 0; i < tas.Len(); i++ {
 		// TODO(adonovan) think about generic aliases.
-		switch ta := aliases.Unalias(tas.At(i)).(type) {
+		switch ta := types.Unalias(tas.At(i)).(type) {
 		case *types.TypeParam:
 			// A *TypeParam only counts as specified if it is currently in
 			// scope (i.e. we are in a generic definition).

@@ -9,13 +9,12 @@ import (
 	"go/types"
 	"reflect"
 
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
 func (d *differ) checkCompatible(otn *types.TypeName, old, new types.Type) {
-	old = aliases.Unalias(old)
-	new = aliases.Unalias(new)
+	old = types.Unalias(old)
+	new = types.Unalias(new)
 	switch old := old.(type) {
 	case *types.Interface:
 		if new, ok := new.(*types.Interface); ok {
@@ -292,7 +291,7 @@ func (d *differ) checkMethodSet(otn *types.TypeName, oldt, newt types.Type, addc
 	oldMethodSet := exportedMethods(oldt)
 	newMethodSet := exportedMethods(newt)
 	msname := otn.Name()
-	if _, ok := aliases.Unalias(oldt).(*types.Pointer); ok {
+	if _, ok := types.Unalias(oldt).(*types.Pointer); ok {
 		msname = "*" + msname
 	}
 	for name, oldMethod := range oldMethodSet {

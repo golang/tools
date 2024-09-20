@@ -13,7 +13,6 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -65,7 +64,7 @@ func eachField(T types.Type, fn func(*types.Var)) {
 func typeIsValid(typ types.Type) bool {
 	// Check named types separately, because we don't want
 	// to call Underlying() on them to avoid problems with recursive types.
-	if _, ok := aliases.Unalias(typ).(*types.Named); ok {
+	if _, ok := types.Unalias(typ).(*types.Named); ok {
 		return true
 	}
 
@@ -140,7 +139,7 @@ func isPkgName(obj types.Object) bool  { return is[*types.PkgName](obj) }
 // It returns false for a Named type whose Underlying is a Pointer.
 //
 // TODO(adonovan): shouldn't this use CoreType(T)?
-func isPointer(T types.Type) bool { return is[*types.Pointer](aliases.Unalias(T)) }
+func isPointer(T types.Type) bool { return is[*types.Pointer](types.Unalias(T)) }
 
 // isEmptyInterface whether T is a (possibly Named or Alias) empty interface
 // type, such that every type is assignable to T.
@@ -156,7 +155,7 @@ func isEmptyInterface(T types.Type) bool {
 }
 
 func isUntyped(T types.Type) bool {
-	if basic, ok := aliases.Unalias(T).(*types.Basic); ok {
+	if basic, ok := types.Unalias(T).(*types.Basic); ok {
 		return basic.Info()&types.IsUntyped > 0
 	}
 	return false
@@ -321,8 +320,8 @@ func (c *completer) editText(from, to token.Pos, newText string) ([]protocol.Tex
 // assignableTo is like types.AssignableTo, but returns false if
 // either type is invalid.
 func assignableTo(x, to types.Type) bool {
-	if aliases.Unalias(x) == types.Typ[types.Invalid] ||
-		aliases.Unalias(to) == types.Typ[types.Invalid] {
+	if types.Unalias(x) == types.Typ[types.Invalid] ||
+		types.Unalias(to) == types.Typ[types.Invalid] {
 		return false
 	}
 
@@ -332,8 +331,8 @@ func assignableTo(x, to types.Type) bool {
 // convertibleTo is like types.ConvertibleTo, but returns false if
 // either type is invalid.
 func convertibleTo(x, to types.Type) bool {
-	if aliases.Unalias(x) == types.Typ[types.Invalid] ||
-		aliases.Unalias(to) == types.Typ[types.Invalid] {
+	if types.Unalias(x) == types.Typ[types.Invalid] ||
+		types.Unalias(to) == types.Typ[types.Invalid] {
 		return false
 	}
 

@@ -40,7 +40,6 @@ import (
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/stdlib"
@@ -1640,7 +1639,7 @@ func (c *completer) lexical(ctx context.Context) error {
 	}
 
 	if c.inference.objType != nil {
-		if named, ok := aliases.Unalias(typesinternal.Unpointer(c.inference.objType)).(*types.Named); ok {
+		if named, ok := types.Unalias(typesinternal.Unpointer(c.inference.objType)).(*types.Named); ok {
 			// If we expected a named type, check the type's package for
 			// completion items. This is useful when the current file hasn't
 			// imported the type's package yet.
@@ -1714,7 +1713,7 @@ func (c *completer) injectType(ctx context.Context, t types.Type) {
 	// considered via a lexical search, so we need to directly inject
 	// them. Also allow generic types since lexical search does not
 	// infer instantiated versions of them.
-	if named, ok := aliases.Unalias(t).(*types.Named); !ok || named.TypeParams().Len() > 0 {
+	if named, ok := types.Unalias(t).(*types.Named); !ok || named.TypeParams().Len() > 0 {
 		// If our expected type is "[]int", this will add a literal
 		// candidate of "[]int{}".
 		c.literal(ctx, t, nil)
@@ -1898,7 +1897,7 @@ func (c *completer) structLiteralFieldName(ctx context.Context) error {
 	}
 
 	// Add struct fields.
-	if t, ok := aliases.Unalias(clInfo.clType).(*types.Struct); ok {
+	if t, ok := types.Unalias(clInfo.clType).(*types.Struct); ok {
 		const deltaScore = 0.0001
 		for i := 0; i < t.NumFields(); i++ {
 			field := t.Field(i)

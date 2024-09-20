@@ -71,7 +71,7 @@ func complex() (*int, []int, [2]int, map[int]int) {
 }
 
 func structsAndInterfaces() (T, url.URL, T1, I, I1, io.Reader, Client, ast2.Stmt) {
-	return T{}, url.URL{}, T{}, nil, nil, nil, Client{}, nil // want "return values"
+	return T{}, url.URL{}, T1{}, nil, nil, nil, Client{}, nil // want "return values"
 }
 
 func m() (int, error) {

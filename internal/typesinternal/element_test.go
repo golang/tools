@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -102,7 +101,7 @@ func TestForEachElement(t *testing.T) {
 			t.Errorf("no such type %q", test.name)
 			continue
 		}
-		T := aliases.Unalias(tname.Type())
+		T := types.Unalias(tname.Type())
 
 		toStr := func(T types.Type) string {
 			return types.TypeString(T, func(*types.Package) string { return "" })

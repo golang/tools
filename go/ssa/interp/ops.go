@@ -17,7 +17,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -236,8 +235,8 @@ func zero(t types.Type) value {
 		return a
 	case *types.Named:
 		return zero(t.Underlying())
-	case *aliases.Alias:
-		return zero(aliases.Unalias(t))
+	case *types.Alias:
+		return zero(types.Unalias(t))
 	case *types.Interface:
 		return iface{} // nil type, methodset and value
 	case *types.Slice:

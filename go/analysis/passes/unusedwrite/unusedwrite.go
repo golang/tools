@@ -12,7 +12,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -142,7 +141,7 @@ func hasStructOrArrayType(v ssa.Value) bool {
 			//   func (t T) f() { ...}
 			// the receiver object is of type *T:
 			//   t0 = local T (t)   *T
-			if tp, ok := aliases.Unalias(alloc.Type()).(*types.Pointer); ok {
+			if tp, ok := types.Unalias(alloc.Type()).(*types.Pointer); ok {
 				return isStructOrArray(tp.Elem())
 			}
 			return false

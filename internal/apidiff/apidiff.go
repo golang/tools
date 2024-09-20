@@ -19,8 +19,6 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
-
-	"golang.org/x/tools/internal/aliases"
 )
 
 // Changes reports on the differences between the APIs of the old and new packages.
@@ -208,7 +206,7 @@ func (d *differ) typeChanged(obj types.Object, part string, old, new types.Type)
 // Since these can change without affecting compatibility, we don't want users to
 // be distracted by them, so we remove them.
 func removeNamesFromSignature(t types.Type) types.Type {
-	t = aliases.Unalias(t)
+	t = types.Unalias(t)
 	sig, ok := t.(*types.Signature)
 	if !ok {
 		return t
@@ -218,7 +216,7 @@ func removeNamesFromSignature(t types.Type) types.Type {
 		var vars []*types.Var
 		for i := 0; i < p.Len(); i++ {
 			v := p.At(i)
-			vars = append(vars, types.NewVar(v.Pos(), v.Pkg(), "", aliases.Unalias(v.Type())))
+			vars = append(vars, types.NewVar(v.Pos(), v.Pkg(), "", types.Unalias(v.Type())))
 		}
 		return types.NewTuple(vars...)
 	}

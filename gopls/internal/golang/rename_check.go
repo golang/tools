@@ -45,7 +45,6 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
@@ -504,7 +503,7 @@ func (r *renamer) checkStructField(from *types.Var) {
 	if from.Anonymous() {
 		if named, ok := from.Type().(*types.Named); ok {
 			r.check(named.Obj())
-		} else if named, ok := aliases.Unalias(typesinternal.Unpointer(from.Type())).(*types.Named); ok {
+		} else if named, ok := types.Unalias(typesinternal.Unpointer(from.Type())).(*types.Named); ok {
 			r.check(named.Obj())
 		}
 	}
@@ -813,7 +812,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 				var iface string
 
 				I := recv(imeth).Type()
-				if named, ok := aliases.Unalias(I).(*types.Named); ok {
+				if named, ok := types.Unalias(I).(*types.Named); ok {
 					pos = named.Obj().Pos()
 					iface = "interface " + named.Obj().Name()
 				} else {

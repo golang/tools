@@ -7,8 +7,6 @@ package apidiff
 import (
 	"go/types"
 	"sort"
-
-	"golang.org/x/tools/internal/aliases"
 )
 
 // Two types are correspond if they are identical except for defined types,
@@ -33,8 +31,8 @@ func (d *differ) correspond(old, new types.Type) bool {
 // Compare this to the implementation of go/types.Identical.
 func (d *differ) corr(old, new types.Type, p *ifacePair) bool {
 	// Structure copied from types.Identical.
-	old = aliases.Unalias(old)
-	new = aliases.Unalias(new)
+	old = types.Unalias(old)
+	new = types.Unalias(new)
 	switch old := old.(type) {
 	case *types.Basic:
 		return types.Identical(old, new)

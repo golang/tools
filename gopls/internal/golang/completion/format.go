@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 )
@@ -61,7 +60,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	}
 	if isTypeName(obj) && c.wantTypeParams() {
 		x := cand.obj.(*types.TypeName)
-		if named, ok := aliases.Unalias(x.Type()).(*types.Named); ok {
+		if named, ok := types.Unalias(x.Type()).(*types.Named); ok {
 			tp := named.TypeParams()
 			label += golang.FormatTypeParams(tp)
 			insert = label // maintain invariant above (label == insert)
@@ -412,8 +411,8 @@ func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
 			}
 		case *types.TypeParam:
 			free[t] = true
-		case *aliases.Alias:
-			visit(aliases.Unalias(t))
+		case *types.Alias:
+			visit(types.Unalias(t))
 		case *types.Named:
 			targs := t.TypeArgs()
 			for i := 0; i < targs.Len(); i++ {

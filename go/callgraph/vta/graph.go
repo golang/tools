@@ -11,7 +11,6 @@ import (
 
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -676,7 +675,7 @@ func (b *builder) multiconvert(c *ssa.MultiConvert) {
 		// This is a adaptation of x/exp/typeparams.NormalTerms which x/tools cannot depend on.
 		var terms []*types.Term
 		var err error
-		switch typ := aliases.Unalias(typ).(type) {
+		switch typ := types.Unalias(typ).(type) {
 		case *types.TypeParam:
 			terms, err = typeparams.StructuralTerms(typ)
 		case *types.Union:
@@ -745,7 +744,7 @@ func (b *builder) addInFlowEdge(s, d node) {
 
 // Creates const, pointer, global, func, and local nodes based on register instructions.
 func (b *builder) nodeFromVal(val ssa.Value) node {
-	if p, ok := aliases.Unalias(val.Type()).(*types.Pointer); ok && !types.IsInterface(p.Elem()) && !isFunction(p.Elem()) {
+	if p, ok := types.Unalias(val.Type()).(*types.Pointer); ok && !types.IsInterface(p.Elem()) && !isFunction(p.Elem()) {
 		// Nested pointer to interfaces are modeled as a special
 		// nestedPtrInterface node.
 		if i := interfaceUnderPtr(p.Elem()); i != nil {

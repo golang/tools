@@ -14,8 +14,6 @@ package main
 
 import (
 	"go/types"
-
-	"golang.org/x/tools/internal/aliases"
 )
 
 func (p *printer) writeType(this *types.Package, typ types.Type) {
@@ -177,9 +175,9 @@ func (p *printer) writeTypeInternal(this *types.Package, typ types.Type, visited
 			p.print(")")
 		}
 
-	case *aliases.Alias:
+	case *types.Alias:
 		// TODO(adonovan): display something aliasy.
-		p.writeTypeInternal(this, aliases.Unalias(t), visited)
+		p.writeTypeInternal(this, types.Unalias(t), visited)
 
 	case *types.Named:
 		s := "<Named w/o object>"

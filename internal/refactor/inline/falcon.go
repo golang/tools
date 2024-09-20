@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -423,7 +422,7 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 		if e.Type != nil {
 			_ = st.expr(e.Type)
 		}
-		t := aliases.Unalias(typeparams.Deref(tv.Type))
+		t := types.Unalias(typeparams.Deref(tv.Type))
 		var uniques []ast.Expr
 		for _, elt := range e.Elts {
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {

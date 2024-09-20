@@ -144,7 +144,7 @@ func (subst *subster) typ(t types.Type) (res types.Type) {
 	case *types.Interface:
 		return subst.interface_(t)
 
-	case *aliases.Alias:
+	case *types.Alias:
 		return subst.alias(t)
 
 	case *types.Named:
@@ -317,7 +317,7 @@ func (subst *subster) interface_(iface *types.Interface) *types.Interface {
 	return types.NewInterfaceType(methods, embeds).Complete()
 }
 
-func (subst *subster) alias(t *aliases.Alias) types.Type {
+func (subst *subster) alias(t *types.Alias) types.Type {
 	// See subster.named. This follows the same strategy.
 	tparams := aliases.TypeParams(t)
 	targs := aliases.TypeArgs(t)
@@ -633,7 +633,7 @@ func reaches(t types.Type, c map[types.Type]bool) (res bool) {
 				return true
 			}
 		}
-	case *types.Named, *aliases.Alias:
+	case *types.Named, *types.Alias:
 		return reaches(t.Underlying(), c)
 	default:
 		panic("unreachable")

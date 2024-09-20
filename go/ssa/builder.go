@@ -82,7 +82,6 @@ import (
 	"runtime"
 	"sync"
 
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/versions"
 )
@@ -854,7 +853,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			if types.IsInterface(rt) {
 				// If v may be an interface type I (after instantiating),
 				// we must emit a check that v is non-nil.
-				if recv, ok := aliases.Unalias(sel.recv).(*types.TypeParam); ok {
+				if recv, ok := types.Unalias(sel.recv).(*types.TypeParam); ok {
 					// Emit a nil check if any possible instantiation of the
 					// type parameter is an interface type.
 					if typeSetOf(recv).Len() > 0 {

@@ -22,7 +22,6 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
@@ -257,7 +256,7 @@ func check(t *testing.T, f *ast.File, pkg *ssa.Package, res *rta.Result) {
 		got := make(stringset)
 		res.RuntimeTypes.Iterate(func(key types.Type, value interface{}) {
 			if !value.(bool) { // accessible to reflection
-				typ := types.TypeString(aliases.Unalias(key), types.RelativeTo(pkg.Pkg))
+				typ := types.TypeString(types.Unalias(key), types.RelativeTo(pkg.Pkg))
 				got[typ] = true
 			}
 		})

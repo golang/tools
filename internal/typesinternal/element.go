@@ -9,7 +9,6 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
 )
 
 // ForEachElement calls f for type T and each type reachable from its
@@ -67,8 +66,8 @@ func ForEachElement(rtypes *typeutil.Map, msets *typeutil.MethodSetCache, T type
 		}
 
 		switch T := T.(type) {
-		case *aliases.Alias:
-			visit(aliases.Unalias(T), skip) // emulates the pre-Alias behavior
+		case *types.Alias:
+			visit(types.Unalias(T), skip) // emulates the pre-Alias behavior
 
 		case *types.Basic:
 			// nop

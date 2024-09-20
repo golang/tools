@@ -18,7 +18,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/aliases"
 )
 
 type opaqueType struct {
@@ -180,7 +179,7 @@ func ext۰reflect۰Zero(fr *frame, args []value) value {
 
 func reflectKind(t types.Type) reflect.Kind {
 	switch t := t.(type) {
-	case *types.Named, *aliases.Alias:
+	case *types.Named, *types.Alias:
 		return reflectKind(t.Underlying())
 	case *types.Basic:
 		switch t.Kind() {

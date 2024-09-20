@@ -9,7 +9,6 @@ import (
 	"go/ast"
 	"go/types"
 
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -22,7 +21,7 @@ var ErrNoIdentFound = errors.New("no identifier found")
 // If no such signature exists, it returns nil.
 func inferredSignature(info *types.Info, id *ast.Ident) *types.Signature {
 	inst := info.Instances[id]
-	sig, _ := aliases.Unalias(inst.Type).(*types.Signature)
+	sig, _ := types.Unalias(inst.Type).(*types.Signature)
 	return sig
 }
 
@@ -41,7 +40,7 @@ func searchForEnclosing(info *types.Info, path []ast.Node) *types.TypeName {
 
 				// Keep track of the last exported type seen.
 				var exported *types.TypeName
-				if named, ok := aliases.Unalias(recv).(*types.Named); ok && named.Obj().Exported() {
+				if named, ok := types.Unalias(recv).(*types.Named); ok && named.Obj().Exported() {
 					exported = named.Obj()
 				}
 				// We don't want the last element, as that's the field or
@@ -49,7 +48,7 @@ func searchForEnclosing(info *types.Info, path []ast.Node) *types.TypeName {
 				for _, index := range sel.Index()[:len(sel.Index())-1] {
 					if r, ok := recv.Underlying().(*types.Struct); ok {
 						recv = typesinternal.Unpointer(r.Field(index).Type())
-						if named, ok := aliases.Unalias(recv).(*types.Named); ok && named.Obj().Exported() {
+						if named, ok := types.Unalias(recv).(*types.Named); ok && named.Obj().Exported() {
 							exported = named.Obj()
 						}
 					}
@@ -66,7 +65,7 @@ func searchForEnclosing(info *types.Info, path []ast.Node) *types.TypeName {
 // a single non-error result, and ignoring built-in named types.
 func typeToObject(typ types.Type) *types.TypeName {
 	switch typ := typ.(type) {
-	case *aliases.Alias:
+	case *types.Alias:
 		return typ.Obj()
 	case *types.Named:
 		// TODO(rfindley): this should use typeparams.NamedTypeOrigin.

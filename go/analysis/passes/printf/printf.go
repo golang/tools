@@ -24,7 +24,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -161,7 +160,7 @@ func maybePrintfWrapper(info *types.Info, decl ast.Decl) *printfWrapper {
 
 	// Check final parameter is "args ...interface{}".
 	args := params.At(nparams - 1)
-	iface, ok := aliases.Unalias(args.Type().(*types.Slice).Elem()).(*types.Interface)
+	iface, ok := types.Unalias(args.Type().(*types.Slice).Elem()).(*types.Interface)
 	if !ok || !iface.Empty() {
 		return nil
 	}
@@ -1013,7 +1012,7 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, fn *types.Func) {
 
 		typ := params.At(firstArg).Type()
 		typ = typ.(*types.Slice).Elem()
-		it, ok := aliases.Unalias(typ).(*types.Interface)
+		it, ok := types.Unalias(typ).(*types.Interface)
 		if !ok || !it.Empty() {
 			// Skip variadic functions accepting non-interface{} args.
 			return

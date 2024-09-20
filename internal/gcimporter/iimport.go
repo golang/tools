@@ -540,7 +540,7 @@ func canReuse(def *types.Named, rhs types.Type) bool {
 	if def == nil {
 		return true
 	}
-	iface, _ := aliases.Unalias(rhs).(*types.Interface)
+	iface, _ := types.Unalias(rhs).(*types.Interface)
 	if iface == nil {
 		return true
 	}
@@ -615,7 +615,7 @@ func (r *importReader) obj(name string) {
 				if targs.Len() > 0 {
 					rparams = make([]*types.TypeParam, targs.Len())
 					for i := range rparams {
-						rparams[i] = aliases.Unalias(targs.At(i)).(*types.TypeParam)
+						rparams[i] = types.Unalias(targs.At(i)).(*types.TypeParam)
 					}
 				}
 				msig := r.signature(recv, rparams, nil)
@@ -645,7 +645,7 @@ func (r *importReader) obj(name string) {
 		}
 		constraint := r.typ()
 		if implicit {
-			iface, _ := aliases.Unalias(constraint).(*types.Interface)
+			iface, _ := types.Unalias(constraint).(*types.Interface)
 			if iface == nil {
 				errorf("non-interface constraint marked implicit")
 			}
@@ -852,7 +852,7 @@ func (r *importReader) typ() types.Type {
 }
 
 func isInterface(t types.Type) bool {
-	_, ok := aliases.Unalias(t).(*types.Interface)
+	_, ok := types.Unalias(t).(*types.Interface)
 	return ok
 }
 
@@ -1051,7 +1051,7 @@ func (r *importReader) tparamList() []*types.TypeParam {
 	for i := range xs {
 		// Note: the standard library importer is tolerant of nil types here,
 		// though would panic in SetTypeParams.
-		xs[i] = aliases.Unalias(r.typ()).(*types.TypeParam)
+		xs[i] = types.Unalias(r.typ()).(*types.TypeParam)
 	}
 	return xs
 }

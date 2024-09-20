@@ -15,13 +15,10 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
-// Assert that Obj exists on Alias.
-var _ func(*aliases.Alias) *types.TypeName = (*aliases.Alias).Obj
-
 // TestNewAlias tests that alias.NewAlias creates an alias of a type
 // whose underlying and Unaliased type is *Named.
 // When gotypesalias=1 (or unset) and GoVersion >= 1.22, the type will
-// be an *aliases.Alias.
+// be an *types.Alias.
 func TestNewAlias(t *testing.T) {
 	const source = `
 	package p
@@ -66,12 +63,12 @@ func TestNewAlias(t *testing.T) {
 			if got, want := A.Type().Underlying(), tv.Type; got != want {
 				t.Errorf("Expected A.Type().Underlying()==%q. got %q", want, got)
 			}
-			if got, want := aliases.Unalias(A.Type()), tv.Type; got != want {
+			if got, want := types.Unalias(A.Type()), tv.Type; got != want {
 				t.Errorf("Expected Unalias(A)==%q. got %q", want, got)
 			}
 
 			if testenv.Go1Point() >= 22 && godebug != "gotypesalias=0" {
-				if _, ok := A.Type().(*aliases.Alias); !ok {
+				if _, ok := A.Type().(*types.Alias); !ok {
 					t.Errorf("Expected A.Type() to be a types.Alias(). got %q", A.Type())
 				}
 			}
@@ -125,11 +122,11 @@ func TestNewParameterizedAlias(t *testing.T) {
 	if got, want := A.Type().Underlying(), ptrT; !types.Identical(got, want) {
 		t.Errorf("A.Type().Underlying (%q) is not identical to %q", got, want)
 	}
-	if got, want := aliases.Unalias(A.Type()), ptrT; !types.Identical(got, want) {
+	if got, want := types.Unalias(A.Type()), ptrT; !types.Identical(got, want) {
 		t.Errorf("Unalias(A)==%q is not identical to %q", got, want)
 	}
 
-	if _, ok := A.Type().(*aliases.Alias); !ok {
+	if _, ok := A.Type().(*types.Alias); !ok {
 		t.Errorf("Expected A.Type() to be a types.Alias(). got %q", A.Type())
 	}
 
@@ -150,7 +147,7 @@ func TestNewParameterizedAlias(t *testing.T) {
 	if got, want := tv.Type.Underlying(), ptrNamed; !types.Identical(got, want) {
 		t.Errorf("A[Named].Type().Underlying (%q) is not identical to %q", got, want)
 	}
-	if got, want := aliases.Unalias(tv.Type), ptrNamed; !types.Identical(got, want) {
+	if got, want := types.Unalias(tv.Type), ptrNamed; !types.Identical(got, want) {
 		t.Errorf("Unalias(A[Named])==%q is not identical to %q", got, want)
 	}
 }

@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
@@ -318,7 +317,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 func typeToArgName(ty types.Type) string {
 	s := types.Default(ty).String()
 
-	switch t := aliases.Unalias(ty).(type) {
+	switch t := types.Unalias(ty).(type) {
 	case *types.Basic:
 		// use first letter in type name for basic types
 		return s[0:1]

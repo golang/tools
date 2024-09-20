@@ -37,7 +37,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -381,7 +380,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	//  (2) we lose inline comments
 	// Furthermore, we include a summary of their method set.
 	_, isTypeName := obj.(*types.TypeName)
-	_, isTypeParam := aliases.Unalias(obj.Type()).(*types.TypeParam)
+	_, isTypeParam := types.Unalias(obj.Type()).(*types.TypeParam)
 	if isTypeName && !isTypeParam {
 		spec, ok := spec.(*ast.TypeSpec)
 		if !ok {
@@ -1024,7 +1023,7 @@ func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file 
 		}
 
 		// Special formatting cases.
-		switch typ := aliases.Unalias(obj.Type()).(type) {
+		switch typ := types.Unalias(obj.Type()).(type) {
 		case *types.Named:
 			// Try to add a formatted duration as an inline comment.
 			pkg := typ.Obj().Pkg()

@@ -16,7 +16,6 @@ import (
 	"sync"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -287,7 +286,7 @@ func (c *canonizer) List(ts []types.Type) *typeList {
 		// Is there some top level alias?
 		var found bool
 		for _, t := range ts {
-			if _, ok := t.(*aliases.Alias); ok {
+			if _, ok := t.(*types.Alias); ok {
 				found = true
 				break
 			}
@@ -298,7 +297,7 @@ func (c *canonizer) List(ts []types.Type) *typeList {
 
 		cp := make([]types.Type, len(ts)) // copy with top level aliases removed.
 		for i, t := range ts {
-			cp[i] = aliases.Unalias(t)
+			cp[i] = types.Unalias(t)
 		}
 		return cp
 	}
@@ -315,7 +314,7 @@ func (c *canonizer) List(ts []types.Type) *typeList {
 // For performance, reasons the canonical instance is order-dependent,
 // and may contain deeply nested aliases.
 func (c *canonizer) Type(T types.Type) types.Type {
-	T = aliases.Unalias(T) // remove the top level alias.
+	T = types.Unalias(T) // remove the top level alias.
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -395,10 +394,10 @@ func (m *typeListMap) hash(ts []types.Type) uint32 {
 // instantiateMethod instantiates m with targs and returns a canonical representative for this method.
 func (canon *canonizer) instantiateMethod(m *types.Func, targs []types.Type, ctxt *types.Context) *types.Func {
 	recv := recvType(m)
-	if p, ok := aliases.Unalias(recv).(*types.Pointer); ok {
+	if p, ok := types.Unalias(recv).(*types.Pointer); ok {
 		recv = p.Elem()
 	}
-	named := aliases.Unalias(recv).(*types.Named)
+	named := types.Unalias(recv).(*types.Named)
 	inst, err := types.Instantiate(ctxt, named.Origin(), targs, false)
 	if err != nil {
 		panic(err)

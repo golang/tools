@@ -8,7 +8,6 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -24,7 +23,7 @@ func isReferenceNode(n node) bool {
 		return true
 	}
 
-	if _, ok := aliases.Unalias(n.Type()).(*types.Pointer); ok {
+	if _, ok := types.Unalias(n.Type()).(*types.Pointer); ok {
 		return true
 	}
 
@@ -162,7 +161,7 @@ func siteCallees(c ssa.CallInstruction, callees calleesFunc) func(yield func(*ss
 }
 
 func canHaveMethods(t types.Type) bool {
-	t = aliases.Unalias(t)
+	t = types.Unalias(t)
 	if _, ok := t.(*types.Named); ok {
 		return true
 	}
