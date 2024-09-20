@@ -519,7 +519,7 @@ func TestGenericBodies(t *testing.T) {
 		pkgname := parsePackageClause(t, content)
 		t.Run(pkgname, func(t *testing.T) {
 			t.Parallel()
-			ssapkg, f := buildContent(t, content, ssa.SanityCheckFunctions)
+			ssapkg, f := buildPackage(t, content, ssa.SanityCheckFunctions)
 			fset := ssapkg.Prog.Fset
 
 			// Collect all notes in f, i.e. comments starting with "//@ types".

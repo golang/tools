@@ -100,12 +100,12 @@ func loadPackages(t testing.TB, src fs.FS, patterns ...string) []*packages.Packa
 	return pkgs
 }
 
-// buildContent builds the content of a go file into:
+// buildPackage builds the content of a go file into:
 // * a module with the same name as the package at the current go version,
 // * loads the package (parses and types checks),
 // * builds the package and its dependencies, and
 // * returns the built package and the parsed file.
-func buildContent(t testing.TB, content string, mode ssa.BuilderMode) (*ssa.Package, *ast.File) {
+func buildPackage(t testing.TB, content string, mode ssa.BuilderMode) (*ssa.Package, *ast.File) {
 	name := parsePackageClause(t, content)
 
 	fs := overlayFS(map[string][]byte{

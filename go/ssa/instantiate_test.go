@@ -12,41 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 )
-
-// loadProgram creates loader.Program out of p.
-func loadProgram(p string) (*loader.Program, error) {
-	// Parse
-	var conf loader.Config
-	f, err := conf.ParseFile("<input>", p)
-	if err != nil {
-		return nil, fmt.Errorf("parse: %v", err)
-	}
-	conf.CreateFromFiles("p", f)
-
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		return nil, fmt.Errorf("Load: %v", err)
-	}
-	return lprog, nil
-}
-
-// buildPackage builds and returns ssa representation of package pkg of lprog.
-func buildPackage(lprog *loader.Program, pkg string, mode ssa.BuilderMode) *ssa.Package {
-	prog := ssa.NewProgram(lprog.Fset, mode)
-
-	for _, info := range lprog.AllPackages {
-		prog.CreatePackage(info.Pkg, info.Files, &info.Info, info.Importable)
-	}
-
-	p := prog.Package(lprog.Package(pkg).Pkg)
-	p.Build()
-	return p
-}
 
 // TestNeedsInstance ensures that new method instances can be created via MethodValue.
 func TestNeedsInstance(t *testing.T) {
@@ -72,17 +40,11 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 	//      func  init        func()
 	//      var   init$guard  bool
 
-	lprog, err := loadProgram(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	for _, mode := range []ssa.BuilderMode{
 		ssa.SanityCheckFunctions,
 		ssa.SanityCheckFunctions | ssa.InstantiateGenerics,
 	} {
-		// Create and build SSA
-		p := buildPackage(lprog, "p", mode)
+		p, _ := buildPackage(t, input, mode)
 		prog := p.Prog
 
 		ptr := p.Type("Pointer").Type().(*types.Named)
@@ -185,12 +147,7 @@ func entry(i int, a A) int {
 	return Id[int](i)
 }
 `
-	lprog, err := loadProgram(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p := buildPackage(lprog, "p", ssa.SanityCheckFunctions)
+	p, _ := buildPackage(t, input, ssa.SanityCheckFunctions)
 	all := ssautil.AllFunctions(p.Prog)
 
 	for _, ti := range []struct {
@@ -298,12 +255,7 @@ func Foo[T any, S any](t T, s S) {
 	Foo[T, S](t, s)
 }
 `
-	lprog, err := loadProgram(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p := buildPackage(lprog, "p", ssa.SanityCheckFunctions)
+	p, _ := buildPackage(t, input, ssa.SanityCheckFunctions)
 
 	all := ssautil.AllFunctions(p.Prog)
 	for _, test := range []struct {

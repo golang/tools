@@ -350,7 +350,7 @@ func init():
 	}
 	for _, test := range tests {
 		// Create a single-file main package.
-		mainPkg, _ := buildContent(t, test.input, test.mode)
+		mainPkg, _ := buildPackage(t, test.input, test.mode)
 		name := mainPkg.Pkg.Name()
 		initFunc := mainPkg.Func("init")
 		if initFunc == nil {
@@ -406,7 +406,7 @@ var (
 	t interface{} = new(struct{*T})
 )
 `
-	pkg, _ := buildContent(t, input, ssa.BuilderMode(0))
+	pkg, _ := buildPackage(t, input, ssa.BuilderMode(0))
 
 	// Enumerate reachable synthetic functions
 	want := map[string]string{
