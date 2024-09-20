@@ -8,7 +8,6 @@ package ssa_test
 
 import (
 	"fmt"
-	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -102,36 +101,36 @@ func loadPackages(t testing.TB, src fs.FS, patterns ...string) []*packages.Packa
 
 // buildPackage builds the content of a go file into:
 // * a module with the same name as the package at the current go version,
-// * loads the package (parses and types checks),
-// * builds the package and its dependencies, and
-// * returns the built package and the parsed file.
-func buildPackage(t testing.TB, content string, mode ssa.BuilderMode) (*ssa.Package, *ast.File) {
+// * loads the *package.Package,
+// * checks that (*packages.Packages).Syntax contains one file,
+// * builds the *ssa.Package (and not its dependencies), and
+// * returns the built *ssa.Package and the loaded packages.Package.
+func buildPackage(t testing.TB, content string, mode ssa.BuilderMode) (*ssa.Package, *packages.Package) {
 	name := parsePackageClause(t, content)
 
 	fs := overlayFS(map[string][]byte{
 		"go.mod":   goMod(name, -1),
 		"input.go": []byte(content),
 	})
-	pkgs := loadPackages(t, fs, name)
-	if len(pkgs) != 1 {
-		t.Fatalf("Expected to load 1 package from pattern %q. got %d", name, len(pkgs))
+	ppkgs := loadPackages(t, fs, name)
+	if len(ppkgs) != 1 {
+		t.Fatalf("Expected to load 1 package from pattern %q. got %d", name, len(ppkgs))
 	}
-	pkg := pkgs[0]
+	ppkg := ppkgs[0]
 
-	if len(pkg.Syntax) != 1 {
-		t.Fatalf("Expected 1 file in package %q. got %d", pkg, len(pkg.Syntax))
+	if len(ppkg.Syntax) != 1 {
+		t.Fatalf("Expected 1 file in package %q. got %d", ppkg, len(ppkg.Syntax))
 	}
-	file := pkg.Syntax[0]
 
-	prog, _ := ssautil.Packages(pkgs, mode)
+	prog, _ := ssautil.Packages(ppkgs, mode)
 
-	p := prog.Package(pkg.Types)
-	if p == nil {
-		t.Fatalf("Failed to find ssa package for %q", pkg.Types)
+	ssapkg := prog.Package(ppkg.Types)
+	if ssapkg == nil {
+		t.Fatalf("Failed to find ssa package for %q", ppkg.Types)
 	}
-	prog.Build()
+	ssapkg.Build()
 
-	return p, file
+	return ssapkg, ppkg
 }
 
 // parsePackageClause is a test helper to extract the package name from a string

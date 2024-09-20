@@ -1,5 +1,3 @@
-// +build ignore
-
 package main
 
 // This file is the input to TestObjValueLookup in source_test.go,
@@ -15,8 +13,10 @@ package main
 // are always values not addresses, so no annotations are needed.  The
 // declaration is enough.
 
-import "fmt"
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
 type J int
 

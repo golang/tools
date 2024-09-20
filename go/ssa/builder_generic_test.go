@@ -519,11 +519,11 @@ func TestGenericBodies(t *testing.T) {
 		pkgname := parsePackageClause(t, content)
 		t.Run(pkgname, func(t *testing.T) {
 			t.Parallel()
-			ssapkg, f := buildPackage(t, content, ssa.SanityCheckFunctions)
+			ssapkg, ppkg := buildPackage(t, content, ssa.SanityCheckFunctions)
 			fset := ssapkg.Prog.Fset
 
 			// Collect all notes in f, i.e. comments starting with "//@ types".
-			notes, err := expect.ExtractGo(fset, f)
+			notes, err := expect.ExtractGo(fset, ppkg.Syntax[0])
 			if err != nil {
 				t.Errorf("expect.ExtractGo: %v", err)
 			}

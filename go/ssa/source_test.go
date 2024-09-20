@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/constant"
-	"go/parser"
 	"go/token"
 	"go/types"
 	"os"
@@ -20,9 +19,7 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/expect"
-	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/go/ssa/ssautil"
 )
 
 func TestObjValueLookup(t *testing.T) {
@@ -30,17 +27,15 @@ func TestObjValueLookup(t *testing.T) {
 		t.Skipf("no testdata directory on %s", runtime.GOOS)
 	}
 
-	conf := loader.Config{ParserMode: parser.ParseComments}
 	src, err := os.ReadFile("testdata/objlookup.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	readFile := func(filename string) ([]byte, error) { return src, nil }
-	f, err := conf.ParseFile("testdata/objlookup.go", src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf.CreateFromFiles("main", f)
+
+	mode := ssa.GlobalDebug /*|ssa.PrintFunctions*/
+	mainPkg, ppkg := buildPackage(t, string(src), mode)
+	fset := ppkg.Fset
 
 	// Maps each var Ident (represented "name:linenum") to the
 	// kind of ssa.Value we expect (represented "Constant", "&Alloc").
@@ -49,61 +44,49 @@ func TestObjValueLookup(t *testing.T) {
 	// Each note of the form @ssa(x, "BinOp") in testdata/objlookup.go
 	// specifies an expectation that an object named x declared on the
 	// same line is associated with an ssa.Value of type *ssa.BinOp.
-	notes, err := expect.ExtractGo(conf.Fset, f)
+	notes, err := expect.ExtractGo(fset, ppkg.Syntax[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, n := range notes {
 		if n.Name != "ssa" {
-			t.Errorf("%v: unexpected note type %q, want \"ssa\"", conf.Fset.Position(n.Pos), n.Name)
+			t.Errorf("%v: unexpected note type %q, want \"ssa\"", fset.Position(n.Pos), n.Name)
 			continue
 		}
 		if len(n.Args) != 2 {
-			t.Errorf("%v: ssa has %d args, want 2", conf.Fset.Position(n.Pos), len(n.Args))
+			t.Errorf("%v: ssa has %d args, want 2", fset.Position(n.Pos), len(n.Args))
 			continue
 		}
 		ident, ok := n.Args[0].(expect.Identifier)
 		if !ok {
-			t.Errorf("%v: got %v for arg 1, want identifier", conf.Fset.Position(n.Pos), n.Args[0])
+			t.Errorf("%v: got %v for arg 1, want identifier", fset.Position(n.Pos), n.Args[0])
 			continue
 		}
 		exp, ok := n.Args[1].(string)
 		if !ok {
-			t.Errorf("%v: got %v for arg 2, want string", conf.Fset.Position(n.Pos), n.Args[1])
+			t.Errorf("%v: got %v for arg 2, want string", fset.Position(n.Pos), n.Args[1])
 			continue
 		}
-		p, _, err := expect.MatchBefore(conf.Fset, readFile, n.Pos, string(ident))
+		p, _, err := expect.MatchBefore(fset, readFile, n.Pos, string(ident))
 		if err != nil {
 			t.Error(err)
 			continue
 		}
-		pos := conf.Fset.Position(p)
+		pos := fset.Position(p)
 		key := fmt.Sprintf("%s:%d", ident, pos.Line)
 		expectations[key] = exp
 	}
 
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0) /*|ssa.PrintFunctions*/)
-	mainInfo := iprog.Created[0]
-	mainPkg := prog.Package(mainInfo.Pkg)
-	mainPkg.SetDebugMode(true)
-	mainPkg.Build()
-
 	var varIds []*ast.Ident
 	var varObjs []*types.Var
-	for id, obj := range mainInfo.Defs {
+	for id, obj := range ppkg.TypesInfo.Defs {
 		// Check invariants for func and const objects.
 		switch obj := obj.(type) {
 		case *types.Func:
-			checkFuncValue(t, prog, obj)
+			checkFuncValue(t, mainPkg.Prog, obj)
 
 		case *types.Const:
-			checkConstValue(t, prog, obj)
+			checkConstValue(t, mainPkg.Prog, obj)
 
 		case *types.Var:
 			if id.Name == "_" {
@@ -113,7 +96,7 @@ func TestObjValueLookup(t *testing.T) {
 			varObjs = append(varObjs, obj)
 		}
 	}
-	for id, obj := range mainInfo.Uses {
+	for id, obj := range ppkg.TypesInfo.Uses {
 		if obj, ok := obj.(*types.Var); ok {
 			varIds = append(varIds, id)
 			varObjs = append(varObjs, obj)
@@ -124,8 +107,8 @@ func TestObjValueLookup(t *testing.T) {
 	// The result varies based on the specific Ident.
 	for i, id := range varIds {
 		obj := varObjs[i]
-		ref, _ := astutil.PathEnclosingInterval(f, id.Pos(), id.Pos())
-		pos := prog.Fset.Position(id.Pos())
+		ref, _ := astutil.PathEnclosingInterval(ppkg.Syntax[0], id.Pos(), id.Pos())
+		pos := fset.Position(id.Pos())
 		exp := expectations[fmt.Sprintf("%s:%d", id.Name, pos.Line)]
 		if exp == "" {
 			t.Errorf("%s: no expectation for var ident %s ", pos, id.Name)
@@ -136,7 +119,7 @@ func TestObjValueLookup(t *testing.T) {
 			wantAddr = true
 			exp = exp[1:]
 		}
-		checkVarValue(t, prog, mainPkg, ref, obj, exp, wantAddr)
+		checkVarValue(t, mainPkg, ref, obj, exp, wantAddr)
 	}
 }
 
@@ -180,12 +163,12 @@ func checkConstValue(t *testing.T, prog *ssa.Program, obj *types.Const) {
 	}
 }
 
-func checkVarValue(t *testing.T, prog *ssa.Program, pkg *ssa.Package, ref []ast.Node, obj *types.Var, expKind string, wantAddr bool) {
+func checkVarValue(t *testing.T, pkg *ssa.Package, ref []ast.Node, obj *types.Var, expKind string, wantAddr bool) {
 	// The prefix of all assertions messages.
 	prefix := fmt.Sprintf("VarValue(%s @ L%d)",
-		obj, prog.Fset.Position(ref[0].Pos()).Line)
+		obj, pkg.Prog.Fset.Position(ref[0].Pos()).Line)
 
-	v, gotAddr := prog.VarValue(obj, pkg, ref)
+	v, gotAddr := pkg.Prog.VarValue(obj, pkg, ref)
 
 	// Kind is the concrete type of the ssa Value.
 	gotKind := "nil"
@@ -234,26 +217,14 @@ func testValueForExpr(t *testing.T, testfile string) {
 		t.Skipf("no testdata dir on %s", runtime.GOOS)
 	}
 
-	conf := loader.Config{ParserMode: parser.ParseComments}
-	f, err := conf.ParseFile(testfile, nil)
+	src, err := os.ReadFile(testfile)
 	if err != nil {
-		t.Error(err)
-		return
-	}
-	conf.CreateFromFiles("main", f)
-
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Error(err)
-		return
+		t.Fatal(err)
 	}
 
-	mainInfo := iprog.Created[0]
-
-	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
-	mainPkg := prog.Package(mainInfo.Pkg)
-	mainPkg.SetDebugMode(true)
-	mainPkg.Build()
+	mode := ssa.GlobalDebug /*|ssa.PrintFunctions*/
+	mainPkg, ppkg := buildPackage(t, string(src), mode)
+	fset, file := ppkg.Fset, ppkg.Syntax[0]
 
 	if false {
 		// debugging
@@ -265,7 +236,7 @@ func testValueForExpr(t *testing.T, testfile string) {
 	}
 
 	var parenExprs []*ast.ParenExpr
-	ast.Inspect(f, func(n ast.Node) bool {
+	ast.Inspect(file, func(n ast.Node) bool {
 		if n != nil {
 			if e, ok := n.(*ast.ParenExpr); ok {
 				parenExprs = append(parenExprs, e)
@@ -274,7 +245,7 @@ func testValueForExpr(t *testing.T, testfile string) {
 		return true
 	})
 
-	notes, err := expect.ExtractGo(prog.Fset, f)
+	notes, err := expect.ExtractGo(fset, file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +254,7 @@ func testValueForExpr(t *testing.T, testfile string) {
 		if want == "nil" {
 			want = "<nil>"
 		}
-		position := prog.Fset.Position(n.Pos)
+		position := fset.Position(n.Pos)
 		var e ast.Expr
 		for _, paren := range parenExprs {
 			if paren.Pos() > n.Pos {
@@ -296,7 +267,7 @@ func testValueForExpr(t *testing.T, testfile string) {
 			continue
 		}
 
-		path, _ := astutil.PathEnclosingInterval(f, n.Pos, n.Pos)
+		path, _ := astutil.PathEnclosingInterval(file, n.Pos, n.Pos)
 		if path == nil {
 			t.Errorf("%s: can't find AST path from root to comment: %s", position, want)
 			continue
@@ -318,76 +289,54 @@ func testValueForExpr(t *testing.T, testfile string) {
 			if gotAddr {
 				T = T.Underlying().(*types.Pointer).Elem() // deref
 			}
-			if !types.Identical(T, mainInfo.TypeOf(e)) {
-				t.Errorf("%s: got type %s, want %s", position, mainInfo.TypeOf(e), T)
+			if etyp := ppkg.TypesInfo.TypeOf(e); !types.Identical(T, etyp) {
+				t.Errorf("%s: got type %s, want %s", position, etyp, T)
 			}
 		}
 	}
 }
 
-// findInterval parses input and returns the [start, end) positions of
-// the first occurrence of substr in input.  f==nil indicates failure;
-// an error has already been reported in that case.
-func findInterval(t *testing.T, fset *token.FileSet, input, substr string) (f *ast.File, start, end token.Pos) {
-	f, err := parser.ParseFile(fset, "<input>", input, 0)
-	if err != nil {
-		t.Errorf("parse error: %s", err)
-		return
-	}
-
-	i := strings.Index(input, substr)
-	if i < 0 {
-		t.Errorf("%q is not a substring of input", substr)
-		f = nil
-		return
-	}
-
-	filePos := fset.File(f.Package)
-	return f, filePos.Pos(i), filePos.Pos(i + len(substr))
-}
-
 func TestEnclosingFunction(t *testing.T) {
 	tests := []struct {
+		desc   string
 		input  string // the input file
 		substr string // first occurrence of this string denotes interval
 		fn     string // name of expected containing function
 	}{
 		// We use distinctive numbers as syntactic landmarks.
-
-		// Ordinary function:
-		{`package main
+		{"Ordinary function", `
+		  package main
 		  func f() { println(1003) }`,
 			"100", "main.f"},
-		// Methods:
-		{`package main
-                  type T int
+		{"Methods", `
+		  package main
+          type T int
 		  func (t T) f() { println(200) }`,
 			"200", "(main.T).f"},
-		// Function literal:
-		{`package main
+		{"Function literal", `
+		  package main
 		  func f() { println(func() { print(300) }) }`,
 			"300", "main.f$1"},
-		// Doubly nested
-		{`package main
+		{"Doubly nested", `
+		  package main
 		  func f() { println(func() { print(func() { print(350) })})}`,
 			"350", "main.f$1$1"},
-		// Implicit init for package-level var initializer.
-		{"package main; var a = 400", "400", "main.init"},
-		// No code for constants:
-		{"package main; const a = 500", "500", "(none)"},
-		// Explicit init()
-		{"package main; func init() { println(600) }", "600", "main.init#1"},
-		// Multiple explicit init functions:
-		{`package main
+		{"Implicit init for package-level var initializer", `
+		  package main; var a = 400`,
+			"400", "main.init"},
+		{"No code for constants", "package main; const a = 500", "500", "(none)"},
+		{" Explicit init", "package main; func init() { println(600) }", "600", "main.init#1"},
+		{"Multiple explicit init functions", `
+		  package main
 		  func init() { println("foo") }
 		  func init() { println(800) }`,
 			"800", "main.init#2"},
-		// init() containing FuncLit.
-		{`package main
+		{"init containing FuncLit", `
+		  package main
 		  func init() { println(func(){print(900)}) }`,
 			"900", "main.init#1$1"},
-		// generics
-		{`package main
+		{"generic", `
+		    package main
 			type S[T any] struct{}
 			func (*S[T]) Foo() { println(1000) }
 			type P[T any] struct{ *S[T] }`,
@@ -395,45 +344,39 @@ func TestEnclosingFunction(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		conf := loader.Config{Fset: token.NewFileSet()}
-		f, start, end := findInterval(t, conf.Fset, test.input, test.substr)
-		if f == nil {
-			continue
-		}
-		path, exact := astutil.PathEnclosingInterval(f, start, end)
-		if !exact {
-			t.Errorf("EnclosingFunction(%q) not exact", test.substr)
-			continue
-		}
+		t.Run(test.desc, func(t *testing.T) {
+			pkg, ppkg := buildPackage(t, test.input, ssa.BuilderMode(0))
+			fset, file := ppkg.Fset, ppkg.Syntax[0]
 
-		conf.CreateFromFiles("main", f)
+			// Find [start,end) positions of the first occurrence of substr in file.
+			index := strings.Index(test.input, test.substr)
+			if index < 0 {
+				t.Fatalf("%q is not a substring of input", test.substr)
+			}
+			filePos := fset.File(file.Package)
+			start, end := filePos.Pos(index), filePos.Pos(index+len(test.substr))
 
-		iprog, err := conf.Load()
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-		prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
-		pkg := prog.Package(iprog.Created[0].Pkg)
-		pkg.Build()
+			path, exact := astutil.PathEnclosingInterval(file, start, end)
+			if !exact {
+				t.Fatalf("PathEnclosingInterval(%q) not exact", test.substr)
+			}
 
-		name := "(none)"
-		fn := ssa.EnclosingFunction(pkg, path)
-		if fn != nil {
-			name = fn.String()
-		}
+			name := "(none)"
+			fn := ssa.EnclosingFunction(pkg, path)
+			if fn != nil {
+				name = fn.String()
+			}
 
-		if name != test.fn {
-			t.Errorf("EnclosingFunction(%q in %q) got %s, want %s",
-				test.substr, test.input, name, test.fn)
-			continue
-		}
+			if name != test.fn {
+				t.Errorf("EnclosingFunction(%q in %q) got %s, want %s",
+					test.substr, test.input, name, test.fn)
+			}
 
-		// While we're here: test HasEnclosingFunction.
-		if has := ssa.HasEnclosingFunction(pkg, path); has != (fn != nil) {
-			t.Errorf("HasEnclosingFunction(%q in %q) got %v, want %v",
-				test.substr, test.input, has, fn != nil)
-			continue
-		}
+			// While we're here: test HasEnclosingFunction.
+			if has := ssa.HasEnclosingFunction(pkg, path); has != (fn != nil) {
+				t.Errorf("HasEnclosingFunction(%q in %q) got %v, want %v",
+					test.substr, test.input, has, fn != nil)
+			}
+		})
 	}
 }

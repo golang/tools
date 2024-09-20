@@ -1,6 +1,3 @@
-//go:build ignore
-// +build ignore
-
 package main
 
 // This file is the input to TestValueForExpr in source_test.go, which
