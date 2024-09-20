@@ -556,7 +556,7 @@ func h(error)
 	//         t8 = phi [1: t7, 3: t4] #e
 	//         ...
 
-	p := loadPackageFromSingleFile(t, input, ssa.BuilderMode(0)).spkg
+	p := packageFromBytes(t, input, ssa.BuilderMode(0))
 	p.Build()
 	g := p.Func("g")
 
@@ -606,7 +606,7 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 	//      func  init        func()
 	//      var   init$guard  bool
 
-	p := loadPackageFromSingleFile(t, input, ssa.BuilderMode(0)).spkg
+	p := packageFromBytes(t, input, ssa.BuilderMode(0))
 	p.Build()
 
 	if load := p.Func("Load"); load.Signature.TypeParams().Len() != 1 {
@@ -759,7 +759,7 @@ func TestTypeparamTest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	fsys := os.DirFS(dir)
 	for _, entry := range list {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
 			continue // Consider standalone go files.
@@ -777,20 +777,7 @@ func TestTypeparamTest(t *testing.T) {
 
 			t.Logf("Input: %s\n", input)
 
-			pkgs, err := packages.Load(&packages.Config{
-				Mode: packages.NeedSyntax |
-					packages.NeedTypesInfo |
-					packages.NeedDeps |
-					packages.NeedName |
-					packages.NeedFiles |
-					packages.NeedImports |
-					packages.NeedCompiledGoFiles |
-					packages.NeedTypes,
-			}, input)
-			if err != nil {
-				t.Fatalf("fail to load pkgs from file %s", input)
-			}
-
+			pkgs := fromFS(t, fsys, input)
 			mode := ssa.SanityCheckFunctions | ssa.InstantiateGenerics
 			prog, _ := ssautil.Packages(pkgs, mode)
 			prog.Build()
@@ -815,7 +802,7 @@ func sliceMax(s []int) []int { return s[a():b():c()] }
 
 `
 
-	p := loadPackageFromSingleFile(t, input, ssa.BuilderMode(0)).spkg
+	p := packageFromBytes(t, input, ssa.BuilderMode(0))
 	p.Build()
 
 	for _, item := range []struct {
@@ -1119,7 +1106,7 @@ func TestLabels(t *testing.T) {
 		  func main() { _:println(1); _:println(2)}`,
 	}
 	for _, test := range tests {
-		pkg := loadPackageFromSingleFile(t, test, ssa.BuilderMode(0)).spkg
+		pkg := packageFromBytes(t, test, ssa.BuilderMode(0))
 		pkg.Build()
 	}
 }
@@ -1155,7 +1142,7 @@ func TestIssue67079(t *testing.T) {
 	// Load the package.
 	const src = `package p; type T int; func (T) f() {}; var _ = (*T).f`
 
-	p := loadPackageFromSingleFile(t, src, ssa.BuilderMode(0)).spkg
+	p := packageFromBytes(t, src, ssa.BuilderMode(0))
 	pkg := p.Pkg
 	prog := p.Prog
 	prog.Build()

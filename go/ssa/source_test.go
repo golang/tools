@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/txtar"
 )
 
 func TestObjValueLookup(t *testing.T) {
@@ -34,10 +35,16 @@ func TestObjValueLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkgs := fromTxtar(t, string(src))
+
+	fs, err := txtar.FS(txtar.Parse(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs := fromFS(t, fs, ".")
 	prog, _ := ssautil.Packages(pkgs, ssa.BuilderMode(0))
 
-	info := getPkgInfo(prog, pkgs, "main")
+	info := getPkgInfo(pkgs, "main")
 
 	if info == nil {
 		t.Fatalf("fail to get package main from loaded packages")
@@ -47,7 +54,7 @@ func TestObjValueLookup(t *testing.T) {
 	mainInfo := conf.TypesInfo
 
 	f := info.file
-	mainPkg := info.spkg
+	mainPkg := prog.Package(info.ppkg.Types)
 
 	readFile := func(_ string) ([]byte, error) {
 		// split the file content to get the exact file content,
@@ -246,17 +253,22 @@ func testValueForExpr(t *testing.T, testfile string) {
 		t.Fatal(err)
 	}
 
-	pkgs := fromTxtar(t, string(src))
+	fs, err := txtar.FS(txtar.Parse(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs := fromFS(t, fs, ".")
 	prog, _ := ssautil.Packages(pkgs, ssa.BuilderMode(0))
 
-	info := getPkgInfo(prog, pkgs, "main")
+	info := getPkgInfo(pkgs, "main")
 
 	if info == nil {
 		t.Fatalf("fail to get package main from loaded packages")
 	}
 	mainInfo := info.ppkg.TypesInfo
 	f := info.file
-	mainPkg := info.spkg
+	mainPkg := prog.Package(info.ppkg.Types)
 
 	mainPkg.SetDebugMode(true)
 	mainPkg.Build()

@@ -5,65 +5,48 @@
 package ssa_test
 
 import (
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"testing"
 
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-
-	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
 
-// loadPackageFromSingleFile is a utility function to create a package based on the content of a go file,
-// and returns the pkgInfo about the input go file. The package name is retrieved from content after parsing.
-// It's useful to create a ssa package and its packages.Package and ast.File representation.
-func loadPackageFromSingleFile(t *testing.T, content string, mode ssa.BuilderMode) *pkgInfo {
-	ar := archiveFromSingleFileContent(content)
-	pkgs := fromTxtar(t, ar)
+// packageFromBytes creates a package under the go module example.com from file content data,
+// and returns its ssa package.
+func packageFromBytes(t *testing.T, data string, mode ssa.BuilderMode) *ssa.Package {
+	src, err := txtar.FS(&txtar.Archive{
+		Files: []txtar.File{
+			{Name: "go.mod", Data: []byte("module example.com\ngo 1.18")},
+			{Name: "main.go", Data: []byte(data)},
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs := fromFS(t, src, ".")
 	prog, _ := ssautil.Packages(pkgs, mode)
 
-	pkgName := packageName(t, content)
-	pkgInfo := getPkgInfo(prog, pkgs, pkgName)
-	if pkgInfo == nil {
-		t.Fatalf("fail to get package %s from loaded packages", pkgName)
+	pkgName := packageName(t, data)
+	for _, spkg := range prog.AllPackages() {
+		if spkg.Pkg.Name() == pkgName {
+			return spkg
+		}
 	}
-	return pkgInfo
+	t.Fatalf("fail to get package %s from loaded packages", pkgName)
+	return nil
 }
 
-// archiveFromSingleFileContent helps to create a go archive format string
-// with go module example.com, the given content is put inside main.go.
-// The package name depends on the package clause in the content.
-//
-// It's useful to define a package in a string variable instead of putting it inside a file.
-func archiveFromSingleFileContent(content string) string {
-	return fmt.Sprintf(`
--- go.mod --
-module example.com
-go 1.18
--- main.go --
-%s`, content)
-}
-
-// fromTxtar creates a temporary folder from the content in txtar format
-// and then loads the packages.
-func fromTxtar(t *testing.T, content string) []*packages.Package {
-	ar := txtar.Parse([]byte(content))
-
-	fs, err := txtar.FS(ar)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dir := testfiles.CopyToTmp(t, fs)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+// fromFS copies the files and directories in src to a new temporary testing directory,
+// loads and returns the Go packages named by the given patterns.
+func fromFS(t *testing.T, src fs.FS, patterns ...string) []*packages.Package {
+	dir := testfiles.CopyToTmp(t, src)
 	var baseConfig = &packages.Config{
 		Mode: packages.NeedSyntax |
 			packages.NeedTypesInfo |
@@ -75,7 +58,7 @@ func fromTxtar(t *testing.T, content string) []*packages.Package {
 			packages.NeedTypes,
 		Dir: dir,
 	}
-	pkgs, err := packages.Load(baseConfig, "./...")
+	pkgs, err := packages.Load(baseConfig, patterns...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,18 +71,16 @@ func fromTxtar(t *testing.T, content string) []*packages.Package {
 // pkgInfo holds information about a ssa package for testing purpose.
 // We assume ssa package only has one file in tests.
 type pkgInfo struct {
-	spkg *ssa.Package      // ssa representation of a package
 	ppkg *packages.Package // packages representation of a package
 	file *ast.File         // AST representation of the first package file
 }
 
-// getPkgInfo retrieves the package info from the program with the given name.
-// It's useful to test a package from a string instead of storing it inside a file.
-func getPkgInfo(prog *ssa.Program, pkgs []*packages.Package, pkgname string) *pkgInfo {
+// getPkgInfo gets the ast.File and packages.Package of a ssa package.
+func getPkgInfo(pkgs []*packages.Package, pkgname string) *pkgInfo {
 	for _, pkg := range pkgs {
+		// checking package name is enough for testing purpose
 		if pkg.Name == pkgname {
 			return &pkgInfo{
-				spkg: prog.Package(pkg.Types),
 				ppkg: pkg,
 				file: pkg.Syntax[0], // we assume the test package is only consisted by one file
 			}
