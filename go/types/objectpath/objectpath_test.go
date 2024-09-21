@@ -13,14 +13,16 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"slices"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/gcexportdata"
-	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/internal/aliases"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
 
 func TestPaths(t *testing.T) {
@@ -35,11 +37,14 @@ func testPaths(t *testing.T, gotypesalias int) {
 	// override default set by go1.19 in go.mod
 	t.Setenv("GODEBUG", fmt.Sprintf("gotypesalias=%d", gotypesalias))
 
-	pkgs := map[string]map[string]string{
-		"b": {"b.go": `
+	const src = `
+-- go.mod --
+module x.io
+
+-- b/b.go --
 package b
 
-import "a"
+import "x.io/a"
 
 const C = a.Int(0)
 
@@ -70,16 +75,17 @@ func (unexportedType) F() {} // not reachable from package's public API (export 
 type S struct{t struct{x int}}
 type R []struct{y int}
 type Q [2]struct{z int}
-`},
-		"a": {"a.go": `
+
+-- a/a.go --
 package a
 
 type Int int
 
 type T struct{x, y int}
+`
 
-`},
-	}
+	pkgmap := loadPackages(t, src, "./a", "./b")
+
 	paths := []pathTest{
 		// Good paths
 		{"b", "C", "const b.C a.Int", ""},
@@ -143,20 +149,12 @@ type T struct{x, y int}
 		{"b", "F.PA4", "", "tuple index 4 out of range [0-4)"},
 		{"b", "F.XO", "", "invalid path: unknown code 'X'"},
 	}
-	conf := loader.Config{Build: buildutil.FakeContext(pkgs)}
-	conf.Import("a")
-	conf.Import("b")
-	prog, err := conf.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	for _, test := range paths {
 		// go1.22 gotypesalias=1 prints aliases wrong: "type A = A".
 		// (Fixed by https://go.dev/cl/574716.)
 		// Work around it here by updating the expectation.
-		if slicesContains(build.Default.ReleaseTags, "go1.22") &&
-			!slicesContains(build.Default.ReleaseTags, "go1.23") &&
+		if slices.Contains(build.Default.ReleaseTags, "go1.22") &&
+			!slices.Contains(build.Default.ReleaseTags, "go1.23") &&
 			aliases.Enabled() {
 			if test.pkg == "b" && test.path == "A" {
 				test.wantobj = "type b.A = b.A"
@@ -166,13 +164,13 @@ type T struct{x, y int}
 			}
 		}
 
-		if err := testPath(prog, test); err != nil {
+		if err := testPath(pkgmap, test); err != nil {
 			t.Error(err)
 		}
 	}
 
 	// bad objects
-	bInfo := prog.Imported["b"]
+	b := pkgmap["x.io/b"]
 	for _, test := range []struct {
 		obj     types.Object
 		wantErr string
@@ -180,29 +178,58 @@ type T struct{x, y int}
 		{types.Universe.Lookup("nil"), "predeclared nil has no path"},
 		{types.Universe.Lookup("len"), "predeclared builtin len has no path"},
 		{types.Universe.Lookup("int"), "predeclared type int has no path"},
-		{bInfo.Implicits[bInfo.Files[0].Imports[0]], "no path for package a"}, // import "a"
-		{bInfo.Pkg.Scope().Lookup("unexportedFunc"), "no path for non-exported func b.unexportedFunc()"},
+		{b.TypesInfo.Implicits[b.Syntax[0].Imports[0]], "no path for package a (\"a\")"}, // import "a"
+		{b.Types.Scope().Lookup("unexportedFunc"), "no path for non-exported func b.unexportedFunc()"},
 	} {
 		path, err := objectpath.For(test.obj)
 		if err == nil {
 			t.Errorf("Object(%s) = %q, want error", test.obj, path)
 			continue
 		}
-		if err.Error() != test.wantErr {
-			t.Errorf("Object(%s) error was %q, want %q", test.obj, err, test.wantErr)
+		gotErr := strings.ReplaceAll(err.Error(), "x.io/", "")
+		if gotErr != test.wantErr {
+			t.Errorf("Object(%s) error was %q, want %q", test.obj, gotErr, test.wantErr)
 			continue
 		}
 	}
 }
 
-type pathTest struct {
-	pkg     string
-	path    objectpath.Path
-	wantobj string
-	wantErr string
+// loadPackages expands the archive and loads the package patterns relative to its root.
+func loadPackages(t *testing.T, archive string, patterns ...string) map[string]*packages.Package {
+	// TODO(adonovan): ExtractTxtarToTmp (sans File) would be useful.
+	ar := txtar.Parse([]byte(archive))
+	fs, err := txtar.FS(ar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := testfiles.CopyToTmp(t, fs)
+
+	cfg := packages.Config{
+		Mode: packages.LoadAllSyntax,
+		Dir:  dir,
+	}
+	pkgs, err := packages.Load(&cfg, patterns...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if packages.PrintErrors(pkgs) > 0 {
+		t.Fatal("Load: there were errors")
+	}
+	m := make(map[string]*packages.Package)
+	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
+		m[pkg.Types.Path()] = pkg
+	})
+	return m
 }
 
-func testPath(prog *loader.Program, test pathTest) error {
+type pathTest struct {
+	pkg     string // sans "x.io/" module prefix
+	path    objectpath.Path
+	wantobj string
+	wantErr string // after each "x.io/" replaced with ""
+}
+
+func testPath(pkgmap map[string]*packages.Package, test pathTest) error {
 	// We test objectpath by enumerating a set of paths
 	// and ensuring that Path(pkg, Object(pkg, path)) == path.
 	//
@@ -217,23 +244,24 @@ func testPath(prog *loader.Program, test pathTest) error {
 	//
 	// The downside is that the test depends on the path encoding.
 	// The upside is that the test exercises the encoding.
+	pkg := pkgmap["x.io/"+test.pkg].Types
 
-	pkg := prog.Imported[test.pkg].Pkg
 	// check path -> object
 	obj, err := objectpath.Object(pkg, test.path)
 	if (test.wantErr != "") != (err != nil) {
 		return fmt.Errorf("Object(%s, %q) returned error %q, want %q", pkg.Path(), test.path, err, test.wantErr)
 	}
 	if test.wantErr != "" {
-		if got := err.Error(); got != test.wantErr {
+		gotErr := strings.ReplaceAll(err.Error(), "x.io/", "")
+		if gotErr != test.wantErr {
 			return fmt.Errorf("Object(%s, %q) error was %q, want %q",
-				pkg.Path(), test.path, got, test.wantErr)
+				pkg.Path(), test.path, gotErr, test.wantErr)
 		}
 		return nil
 	}
 	// Inv: err == nil
 
-	if objString := obj.String(); objString != test.wantobj {
+	if objString := types.ObjectString(obj, (*types.Package).Name); objString != test.wantobj {
 		return fmt.Errorf("Object(%s, %q) = %s, want %s", pkg.Path(), test.path, objString, test.wantobj)
 	}
 	if obj.Pkg() != pkg {
@@ -370,8 +398,11 @@ func objectString(obj types.Object) string {
 // names but in a different source order and checks that objectpath is the
 // same for methods with the same name.
 func TestOrdering(t *testing.T) {
-	pkgs := map[string]map[string]string{
-		"p": {"p.go": `
+	const src = `
+-- go.mod --
+module x.io
+
+-- p/p.go --
 package p
 
 type T struct{ A int }
@@ -380,8 +411,8 @@ func (T) M() { }
 func (T) N() { }
 func (T) X() { }
 func (T) Y() { }
-`},
-		"q": {"q.go": `
+
+-- q/q.go --
 package q
 
 type T struct{ A int }
@@ -390,16 +421,11 @@ func (T) N() { }
 func (T) M() { }
 func (T) Y() { }
 func (T) X() { }
-`}}
-	conf := loader.Config{Build: buildutil.FakeContext(pkgs)}
-	conf.Import("p")
-	conf.Import("q")
-	prog, err := conf.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := prog.Imported["p"].Pkg
-	q := prog.Imported["q"].Pkg
+`
+
+	pkgmap := loadPackages(t, src, "./p", "./q")
+	p := pkgmap["x.io/p"].Types
+	q := pkgmap["x.io/q"].Types
 
 	// From here, the objectpaths generated for p and q should be the
 	// same. If they are not, then we are generating an ordering that is
@@ -426,14 +452,4 @@ func (T) X() { }
 			t.Errorf("Objects(%s) not equal, got a1 = %v, a2 = %v", test.path, pobj.Name(), qobj.Name())
 		}
 	}
-}
-
-// TODO(adonovan): use go1.21 slices.Contains.
-func slicesContains[S ~[]E, E comparable](slice S, x E) bool {
-	for _, elem := range slice {
-		if elem == x {
-			return true
-		}
-	}
-	return false
 }

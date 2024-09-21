@@ -8,15 +8,17 @@ import (
 	"go/types"
 	"testing"
 
-	"golang.org/x/tools/go/buildutil"
-	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/types/objectpath"
 )
 
 // TODO(adonovan): merge this back into objectpath_test.go.
 func TestGenericPaths(t *testing.T) {
-	pkgs := map[string]map[string]string{
-		"b": {"b.go": `
+	const src = `
+-- go.mod --
+module x.io
+go 1.18
+
+-- b/b.go --
 package b
 
 const C int = 1
@@ -33,8 +35,10 @@ func (N) M1()
 type A = T[int, N]
 
 func F[FP0 any, FP1 interface{ M() }](FP0, FP1) {}
-`},
-	}
+`
+
+	pkgmap := loadPackages(t, src, "./b")
+
 	paths := []pathTest{
 		// Good paths
 		{"b", "T", "type b.T[TP0 any, TP1 interface{M0(); M1()}] struct{}", ""},
@@ -60,16 +64,8 @@ func F[FP0 any, FP1 interface{ M() }](FP0, FP1) {}
 		{"b", "T.T1M0", "", "cannot apply 'M' to TP1 (got *types.TypeParam, want interface or named)"},
 		{"b", "C.T0", "", "cannot apply 'T' to int (got *types.Basic, want named or signature)"},
 	}
-
-	conf := loader.Config{Build: buildutil.FakeContext(pkgs)}
-	conf.Import("b")
-	prog, err := conf.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	for _, test := range paths {
-		if err := testPath(prog, test); err != nil {
+		if err := testPath(pkgmap, test); err != nil {
 			t.Error(err)
 		}
 	}
@@ -95,8 +91,12 @@ func F[FP0 any, FP1 interface{ M() }](FP0, FP1) {}
 }
 
 func TestGenericPaths_Issue51717(t *testing.T) {
-	pkgs := map[string]map[string]string{
-		"p": {"p.go": `
+	const src = `
+-- go.mod --
+module x.io
+go 1.18
+
+-- p/p.go --
 package p
 
 type S struct{}
@@ -110,8 +110,9 @@ func F[WL interface{ N(item W) WL }, W any]() {
 }
 
 func main() {}
-`},
-	}
+`
+	pkgmap := loadPackages(t, src, "./p")
+
 	paths := []pathTest{
 		{"p", "F.T0CM0.RA0", "var  WL", ""},
 		{"p", "F.T0CM0.RA0.CM0", "func (interface).N(item W) WL", ""},
@@ -120,16 +121,8 @@ func main() {}
 		// because F is searched before S.
 		{"p", "S.M0", "func (p.S).M()", ""},
 	}
-
-	conf := loader.Config{Build: buildutil.FakeContext(pkgs)}
-	conf.Import("p")
-	prog, err := conf.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	for _, test := range paths {
-		if err := testPath(prog, test); err != nil {
+		if err := testPath(pkgmap, test); err != nil {
 			t.Error(err)
 		}
 	}
