@@ -170,11 +170,11 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 		}
 		return nil, s.DiagnoseFiles(ctx, a0)
 	case Doc:
-		var a0 protocol.Location
+		var a0 DocArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
 			return nil, err
 		}
-		return nil, s.Doc(ctx, a0)
+		return s.Doc(ctx, a0)
 	case EditGoDirective:
 		var a0 EditGoDirectiveArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -420,7 +420,7 @@ func NewDiagnoseFilesCommand(title string, a0 DiagnoseFilesArgs) *protocol.Comma
 	}
 }
 
-func NewDocCommand(title string, a0 protocol.Location) *protocol.Command {
+func NewDocCommand(title string, a0 DocArgs) *protocol.Command {
 	return &protocol.Command{
 		Title:     title,
 		Command:   Doc.String(),

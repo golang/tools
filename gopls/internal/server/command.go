@@ -679,16 +679,21 @@ func (c *commandHandler) Test(ctx context.Context, uri protocol.DocumentURI, tes
 	})
 }
 
-func (c *commandHandler) Doc(ctx context.Context, loc protocol.Location) error {
-	return c.run(ctx, commandConfig{
+func (c *commandHandler) Doc(ctx context.Context, args command.DocArgs) (protocol.URI, error) {
+	if args.Location.URI == "" {
+		return "", errors.New("missing location URI")
+	}
+
+	var result protocol.URI
+	err := c.run(ctx, commandConfig{
 		progress: "", // the operation should be fast
-		forURI:   loc.URI,
+		forURI:   args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		pkg, pgf, err := golang.NarrowestPackageForFile(ctx, deps.snapshot, loc.URI)
+		pkg, pgf, err := golang.NarrowestPackageForFile(ctx, deps.snapshot, args.Location.URI)
 		if err != nil {
 			return err
 		}
-		start, end, err := pgf.RangePos(loc.Range)
+		start, end, err := pgf.RangePos(args.Location.Range)
 		if err != nil {
 			return err
 		}
@@ -704,11 +709,14 @@ func (c *commandHandler) Doc(ctx context.Context, loc protocol.Location) error {
 		pkgpath, fragment, _ := golang.DocFragment(pkg, pgf, start, end)
 
 		// Direct the client to open the /pkg page.
-		url := web.PkgURL(deps.snapshot.View().ID(), pkgpath, fragment)
-		openClientBrowser(ctx, c.s.client, url)
+		result = web.PkgURL(deps.snapshot.View().ID(), pkgpath, fragment)
+		if args.ShowDocument {
+			openClientBrowser(ctx, c.s.client, result)
+		}
 
 		return nil
 	})
+	return result, err
 }
 
 func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs) error {

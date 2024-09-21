@@ -73,7 +73,7 @@ type Interface interface {
 	//
 	// Opens the Go package documentation page for the current
 	// package in a browser.
-	Doc(context.Context, protocol.Location) error
+	Doc(context.Context, DocArgs) (protocol.URI, error)
 
 	// RegenerateCgo: Regenerate cgo
 	//
@@ -308,6 +308,11 @@ type GenerateArgs struct {
 
 	// Whether to generate recursively (go generate ./...)
 	Recursive bool
+}
+
+type DocArgs struct {
+	Location     protocol.Location
+	ShowDocument bool // in addition to returning the URL, send showDocument
 }
 
 // TODO(rFindley): document the rest of these once the docgen is fleshed out.

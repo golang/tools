@@ -285,7 +285,7 @@ func viewPkgDoc(t *testing.T, env *Env, loc protocol.Location) protocol.URI {
 		Command:   docAction.Command.Command,
 		Arguments: docAction.Command.Arguments,
 	}
-	var result command.DebuggingResult
+	var result any
 	env.ExecuteCommand(params, &result)
 
 	doc := shownDocument(t, env, "http:")
