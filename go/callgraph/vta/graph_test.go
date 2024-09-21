@@ -26,7 +26,7 @@ func TestNodeInterface(t *testing.T) {
 	//   - "foo" function
 	//   - "main" function and its
 	//   - first register instruction t0 := *gl
-	prog, _, err := testProg("testdata/src/simple.go", ssa.BuilderMode(0))
+	prog, _, err := testProg(t, "testdata/src/simple.go", ssa.BuilderMode(0))
 	if err != nil {
 		t.Fatalf("couldn't load testdata/src/simple.go program: %v", err)
 	}
@@ -71,8 +71,8 @@ func TestNodeInterface(t *testing.T) {
 		{panicArg{}, "Panic", nil},
 		{recoverReturn{}, "Recover", nil},
 	} {
-		if test.s != test.n.String() {
-			t.Errorf("want %s; got %s", test.s, test.n.String())
+		if removeModulePrefix(test.s) != removeModulePrefix(test.n.String()) {
+			t.Errorf("want %s; got %s", removeModulePrefix(test.s), removeModulePrefix(test.n.String()))
 		}
 		if test.t != test.n.Type() {
 			t.Errorf("want %s; got %s", test.t, test.n.Type())
@@ -80,9 +80,15 @@ func TestNodeInterface(t *testing.T) {
 	}
 }
 
+// removeModulePrefix removes the "x.io/" module name prefix throughout s.
+// (It is added by testProg.)
+func removeModulePrefix(s string) string {
+	return strings.ReplaceAll(s, "x.io/", "")
+}
+
 func TestVtaGraph(t *testing.T) {
 	// Get the basic type int from a real program.
-	prog, _, err := testProg("testdata/src/simple.go", ssa.BuilderMode(0))
+	prog, _, err := testProg(t, "testdata/src/simple.go", ssa.BuilderMode(0))
 	if err != nil {
 		t.Fatalf("couldn't load testdata/src/simple.go program: %v", err)
 	}
@@ -150,7 +156,7 @@ func vtaGraphStr(g vtaGraph) []string {
 		}
 		sort.Strings(succStr)
 		entry := fmt.Sprintf("%v -> %v", n.String(), strings.Join(succStr, ", "))
-		vgs = append(vgs, entry)
+		vgs = append(vgs, removeModulePrefix(entry))
 	}
 	return vgs
 }
@@ -196,7 +202,7 @@ func TestVTAGraphConstruction(t *testing.T) {
 		"testdata/src/panic.go",
 	} {
 		t.Run(file, func(t *testing.T) {
-			prog, want, err := testProg(file, ssa.BuilderMode(0))
+			prog, want, err := testProg(t, file, ssa.BuilderMode(0))
 			if err != nil {
 				t.Fatalf("couldn't load test file '%s': %s", file, err)
 			}

@@ -4,7 +4,6 @@
 package callgraph_test
 
 import (
-	"log"
 	"sync"
 	"testing"
 
@@ -13,9 +12,10 @@ import (
 	"golang.org/x/tools/go/callgraph/rta"
 	"golang.org/x/tools/go/callgraph/static"
 	"golang.org/x/tools/go/callgraph/vta"
-	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
 
 // Benchmarks comparing different callgraph algorithms implemented in
@@ -47,7 +47,12 @@ import (
 //   CHA callgraph.
 // * All algorithms are unsound w.r.t. reflection.
 
-const httpEx = `package main
+const httpEx = `
+-- go.mod --
+module x.io
+
+-- main.go --
+package main
 
 import (
     "fmt"
@@ -70,23 +75,12 @@ var (
 	main *ssa.Function
 )
 
-func example() (*ssa.Program, *ssa.Function) {
+func example(t testing.TB) (*ssa.Program, *ssa.Function) {
 	once.Do(func() {
-		var conf loader.Config
-		f, err := conf.ParseFile("<input>", httpEx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		conf.CreateFromFiles(f.Name.Name, f)
-
-		lprog, err := conf.Load()
-		if err != nil {
-			log.Fatalf("test 'package %s': Load: %s", f.Name.Name, err)
-		}
-		prog = ssautil.CreateProgram(lprog, ssa.InstantiateGenerics)
+		pkgs := testfiles.LoadPackages(t, txtar.Parse([]byte(httpEx)), ".")
+		prog, ssapkgs := ssautil.Packages(pkgs, ssa.InstantiateGenerics)
 		prog.Build()
-
-		main = prog.Package(lprog.Created[0].Pkg).Members["main"].(*ssa.Function)
+		main = ssapkgs[0].Members["main"].(*ssa.Function)
 	})
 	return prog, main
 }
@@ -106,7 +100,7 @@ func logStats(b *testing.B, cnd bool, name string, cg *callgraph.Graph, main *ss
 
 func BenchmarkStatic(b *testing.B) {
 	b.StopTimer()
-	prog, main := example()
+	prog, main := example(b)
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -117,7 +111,7 @@ func BenchmarkStatic(b *testing.B) {
 
 func BenchmarkCHA(b *testing.B) {
 	b.StopTimer()
-	prog, main := example()
+	prog, main := example(b)
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -128,7 +122,7 @@ func BenchmarkCHA(b *testing.B) {
 
 func BenchmarkRTA(b *testing.B) {
 	b.StopTimer()
-	_, main := example()
+	_, main := example(b)
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -140,7 +134,7 @@ func BenchmarkRTA(b *testing.B) {
 
 func BenchmarkVTA(b *testing.B) {
 	b.StopTimer()
-	prog, main := example()
+	prog, main := example(b)
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -151,7 +145,7 @@ func BenchmarkVTA(b *testing.B) {
 
 func BenchmarkVTA2(b *testing.B) {
 	b.StopTimer()
-	prog, main := example()
+	prog, main := example(b)
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -163,7 +157,7 @@ func BenchmarkVTA2(b *testing.B) {
 
 func BenchmarkVTA3(b *testing.B) {
 	b.StopTimer()
-	prog, main := example()
+	prog, main := example(b)
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -176,7 +170,7 @@ func BenchmarkVTA3(b *testing.B) {
 
 func BenchmarkVTAAlt(b *testing.B) {
 	b.StopTimer()
-	prog, main := example()
+	prog, main := example(b)
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -188,7 +182,7 @@ func BenchmarkVTAAlt(b *testing.B) {
 
 func BenchmarkVTAAlt2(b *testing.B) {
 	b.StopTimer()
-	prog, main := example()
+	prog, main := example(b)
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {

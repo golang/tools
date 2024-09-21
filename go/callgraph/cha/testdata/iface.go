@@ -1,5 +1,3 @@
-// +build ignore
-
 package main
 
 // Test of interface calls.  None of the concrete types are ever

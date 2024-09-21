@@ -19,10 +19,8 @@ import (
 
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/rta"
-	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
@@ -42,7 +40,12 @@ func TestRTA(t *testing.T) {
 	}
 	for _, archive := range archivePaths {
 		t.Run(archive, func(t *testing.T) {
-			pkgs := loadPackages(t, archive)
+			ar, err := txtar.ParseFile(archive)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			pkgs := testfiles.LoadPackages(t, ar, "./...")
 
 			// find the file which contains the expected result
 			var f *ast.File
@@ -81,42 +84,6 @@ func TestRTA(t *testing.T) {
 			check(t, f, mainPkg, res)
 		})
 	}
-}
-
-// loadPackages unpacks the archive to a temporary directory and loads all packages within it.
-func loadPackages(t *testing.T, archive string) []*packages.Package {
-	testenv.NeedsGoPackages(t)
-
-	ar, err := txtar.ParseFile(archive)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fs, err := txtar.FS(ar)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := testfiles.CopyToTmp(t, fs)
-
-	var baseConfig = &packages.Config{
-		Mode: packages.NeedSyntax |
-			packages.NeedTypesInfo |
-			packages.NeedDeps |
-			packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedImports |
-			packages.NeedCompiledGoFiles |
-			packages.NeedTypes,
-		Dir: dir,
-	}
-	pkgs, err := packages.Load(baseConfig, "./...")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if num := packages.PrintErrors(pkgs); num > 0 {
-		t.Fatalf("packages contained %d errors", num)
-	}
-	return pkgs
 }
 
 // check tests the RTA analysis results against the test expectations

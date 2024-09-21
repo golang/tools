@@ -48,7 +48,7 @@ func TestVTACallGraph(t *testing.T) {
 
 	for _, file := range files {
 		t.Run(file, func(t *testing.T) {
-			prog, want, err := testProg(file, ssa.BuilderMode(0))
+			prog, want, err := testProg(t, file, ssa.BuilderMode(0))
 			if err != nil {
 				t.Fatalf("couldn't load test file '%s': %s", file, err)
 			}
@@ -77,7 +77,7 @@ func TestVTACallGraph(t *testing.T) {
 // enabled by having an arbitrary function set as input to CallGraph
 // instead of the whole program (i.e., ssautil.AllFunctions(prog)).
 func TestVTAProgVsFuncSet(t *testing.T) {
-	prog, want, err := testProg("testdata/src/callgraph_nested_ptr.go", ssa.BuilderMode(0))
+	prog, want, err := testProg(t, "testdata/src/callgraph_nested_ptr.go", ssa.BuilderMode(0))
 	if err != nil {
 		t.Fatalf("couldn't load test `testdata/src/callgraph_nested_ptr.go`: %s", err)
 	}
@@ -154,7 +154,7 @@ func TestVTACallGraphGenerics(t *testing.T) {
 	}
 	for _, file := range files {
 		t.Run(file, func(t *testing.T) {
-			prog, want, err := testProg(file, ssa.InstantiateGenerics)
+			prog, want, err := testProg(t, file, ssa.InstantiateGenerics)
 			if err != nil {
 				t.Fatalf("couldn't load test file '%s': %s", file, err)
 			}
@@ -174,7 +174,7 @@ func TestVTACallGraphGenerics(t *testing.T) {
 
 func TestVTACallGraphGo117(t *testing.T) {
 	file := "testdata/src/go117.go"
-	prog, want, err := testProg(file, ssa.BuilderMode(0))
+	prog, want, err := testProg(t, file, ssa.BuilderMode(0))
 	if err != nil {
 		t.Fatalf("couldn't load test file '%s': %s", file, err)
 	}

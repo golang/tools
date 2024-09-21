@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
 
@@ -103,4 +105,43 @@ func ExtractTxtarFileToTmp(t testing.TB, file string) string {
 		t.Fatal(err)
 	}
 	return CopyToTmp(t, fs)
+}
+
+// LoadPackages loads typed syntax for all packages that match the
+// patterns, interpreted relative to the archive root.
+//
+// The packages must be error-free.
+func LoadPackages(t testing.TB, ar *txtar.Archive, patterns ...string) []*packages.Package {
+	testenv.NeedsGoPackages(t)
+
+	fs, err := txtar.FS(ar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := CopyToTmp(t, fs)
+
+	cfg := &packages.Config{
+		Mode: packages.NeedSyntax |
+			packages.NeedTypesInfo |
+			packages.NeedDeps |
+			packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedImports |
+			packages.NeedCompiledGoFiles |
+			packages.NeedTypes,
+		Dir: dir,
+		Env: append(os.Environ(),
+			"GO111MODULES=on",
+			"GOPATH=",
+			"GOWORK=off",
+			"GOPROXY=off"),
+	}
+	pkgs, err := packages.Load(cfg, patterns...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if num := packages.PrintErrors(pkgs); num > 0 {
+		t.Fatalf("packages contained %d errors", num)
+	}
+	return pkgs
 }

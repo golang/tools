@@ -13,21 +13,22 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/build"
-	"go/parser"
 	"go/token"
 	"go/types"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
-	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
 
 var inputs = []string{
@@ -52,23 +53,19 @@ func expectation(f *ast.File) (string, token.Pos) {
 // the WANT comment at the end of the file.
 func TestCHA(t *testing.T) {
 	for _, filename := range inputs {
-		prog, f, mainPkg, err := loadProgInfo(filename, ssa.InstantiateGenerics)
-		if err != nil {
-			t.Error(err)
-			continue
-		}
+		pkg, ssapkg := loadFile(t, filename, ssa.InstantiateGenerics)
 
-		want, pos := expectation(f)
+		want, pos := expectation(pkg.Syntax[0])
 		if pos == token.NoPos {
 			t.Error(fmt.Errorf("No WANT: comment in %s", filename))
 			continue
 		}
 
-		cg := cha.CallGraph(prog)
+		cg := cha.CallGraph(ssapkg.Prog)
 
-		if got := printGraph(cg, mainPkg.Pkg, "dynamic", "Dynamic calls"); got != want {
+		if got := printGraph(cg, pkg.Types, "dynamic", "Dynamic calls"); got != want {
 			t.Errorf("%s: got:\n%s\nwant:\n%s",
-				prog.Fset.Position(pos), got, want)
+				ssapkg.Prog.Fset.Position(pos), got, want)
 		}
 	}
 }
@@ -76,21 +73,18 @@ func TestCHA(t *testing.T) {
 // TestCHAGenerics is TestCHA tailored for testing generics,
 func TestCHAGenerics(t *testing.T) {
 	filename := "testdata/generics.go"
-	prog, f, mainPkg, err := loadProgInfo(filename, ssa.InstantiateGenerics)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pkg, ssapkg := loadFile(t, filename, ssa.InstantiateGenerics)
 
-	want, pos := expectation(f)
+	want, pos := expectation(pkg.Syntax[0])
 	if pos == token.NoPos {
 		t.Fatal(fmt.Errorf("No WANT: comment in %s", filename))
 	}
 
-	cg := cha.CallGraph(prog)
+	cg := cha.CallGraph(ssapkg.Prog)
 
-	if got := printGraph(cg, mainPkg.Pkg, "", "All calls"); got != want {
+	if got := printGraph(cg, pkg.Types, "", "All calls"); got != want {
 		t.Errorf("%s: got:\n%s\nwant:\n%s",
-			prog.Fset.Position(pos), got, want)
+			ssapkg.Prog.Fset.Position(pos), got, want)
 	}
 }
 
@@ -109,39 +103,43 @@ func TestCHAUnexported(t *testing.T) {
 	// We use CHA to build a callgraph, then check that it has the
 	// appropriate set of edges.
 
-	main := `package main
-		import "p2"
-		type I1 interface { m() }
-		type S1 struct { p2.I2 }
-		func (s S1) m() { }
-		func main() {
-			var s S1
-			var o I1 = s
-			o.m()
-			p2.Foo(s)
-		}`
+	const src = `
+-- go.mod --
+module x.io
+go 1.18
 
-	p2 := `package p2
-		type I2 interface { m() }
-		type S2 struct { }
-		func (s S2) m() { }
-		func Foo(i I2) { i.m() }`
+-- main/main.go --
+package main
+
+import "x.io/p2"
+
+type I1 interface { m() }
+type S1 struct { p2.I2 }
+func (s S1) m() { }
+func main() {
+	var s S1
+	var o I1 = s
+	o.m()
+	p2.Foo(s)
+}
+
+-- p2/p2.go --
+package p2
+
+type I2 interface { m() }
+type S2 struct { }
+func (s S2) m() { }
+func Foo(i I2) { i.m() }
+`
 
 	want := `All calls
-  main.init --> p2.init
-  main.main --> (main.S1).m
-  main.main --> p2.Foo
-  p2.Foo --> (p2.S2).m`
+  x.io/main.init --> x.io/p2.init
+  x.io/main.main --> (x.io/main.S1).m
+  x.io/main.main --> x.io/p2.Foo
+  x.io/p2.Foo --> (x.io/p2.S2).m`
 
-	conf := loader.Config{
-		Build: fakeContext(map[string]string{"main": main, "p2": p2}),
-	}
-	conf.Import("main")
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-	prog := ssautil.CreateProgram(iprog, ssa.InstantiateGenerics)
+	pkgs := testfiles.LoadPackages(t, txtar.Parse([]byte(src)), "./...")
+	prog, _ := ssautil.Packages(pkgs, ssa.InstantiateGenerics)
 	prog.Build()
 
 	cg := cha.CallGraph(prog)
@@ -154,39 +152,35 @@ func TestCHAUnexported(t *testing.T) {
 	}
 }
 
-// Simplifying wrapper around buildutil.FakeContext for single-file packages.
-func fakeContext(pkgs map[string]string) *build.Context {
-	pkgs2 := make(map[string]map[string]string)
-	for path, content := range pkgs {
-		pkgs2[path] = map[string]string{"x.go": content}
-	}
-	return buildutil.FakeContext(pkgs2)
-}
+// loadFile loads a built SSA package for a single-file "x.io/main" package.
+// (Ideally all uses would be converted over to txtar files with explicit go.mod files.)
+func loadFile(t testing.TB, filename string, mode ssa.BuilderMode) (*packages.Package, *ssa.Package) {
+	testenv.NeedsGoPackages(t)
 
-func loadProgInfo(filename string, mode ssa.BuilderMode) (*ssa.Program, *ast.File, *ssa.Package, error) {
-	content, err := os.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("couldn't read file '%s': %s", filename, err)
+		t.Fatal(err)
 	}
-
-	conf := loader.Config{
-		ParserMode: parser.ParseComments,
+	dir := t.TempDir()
+	cfg := &packages.Config{
+		Mode: packages.LoadAllSyntax,
+		Dir:  dir,
+		Overlay: map[string][]byte{
+			filepath.Join(dir, "go.mod"):       []byte("module x.io\ngo 1.22"),
+			filepath.Join(dir, "main/main.go"): data,
+		},
+		Env: append(os.Environ(), "GO111MODULES=on", "GOPATH=", "GOWORK=off", "GOPROXY=off"),
 	}
-	f, err := conf.ParseFile(filename, content)
+	pkgs, err := packages.Load(cfg, "./main")
 	if err != nil {
-		return nil, nil, nil, err
+		t.Fatal(err)
 	}
-
-	conf.CreateFromFiles("main", f)
-	iprog, err := conf.Load()
-	if err != nil {
-		return nil, nil, nil, err
+	if num := packages.PrintErrors(pkgs); num > 0 {
+		t.Fatalf("packages contained %d errors", num)
 	}
-
-	prog := ssautil.CreateProgram(iprog, mode)
+	prog, ssapkgs := ssautil.Packages(pkgs, mode)
 	prog.Build()
-
-	return prog, f, prog.Package(iprog.Created[0].Pkg), nil
+	return pkgs[0], ssapkgs[0]
 }
 
 // printGraph returns a string representation of cg involving only edges

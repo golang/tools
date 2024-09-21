@@ -105,6 +105,8 @@ func loadPackages(t testing.TB, src fs.FS, patterns ...string) []*packages.Packa
 // * checks that (*packages.Packages).Syntax contains one file,
 // * builds the *ssa.Package (and not its dependencies), and
 // * returns the built *ssa.Package and the loaded packages.Package.
+//
+// TODO(adonovan): factor with similar loadFile (2x) in cha/cha_test.go and vta/helpers_test.go.
 func buildPackage(t testing.TB, content string, mode ssa.BuilderMode) (*ssa.Package, *packages.Package) {
 	name := parsePackageClause(t, content)
 
