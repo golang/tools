@@ -103,25 +103,37 @@ const (
 
 	// NeedEmbedPatterns adds EmbedPatterns.
 	NeedEmbedPatterns
+
+	// Be sure to update loadmode_string.go when adding new items!
 )
 
 const (
+	// LoadFiles loads the name and file names for the initial packages.
+	//
 	// Deprecated: LoadFiles exists for historical compatibility
 	// and should not be used. Please directly specify the needed fields using the Need values.
 	LoadFiles = NeedName | NeedFiles | NeedCompiledGoFiles
 
+	// LoadImports loads the name, file names, and import mapping for the initial packages.
+	//
 	// Deprecated: LoadImports exists for historical compatibility
 	// and should not be used. Please directly specify the needed fields using the Need values.
 	LoadImports = LoadFiles | NeedImports
 
+	// LoadTypes loads exported type information for the initial packages.
+	//
 	// Deprecated: LoadTypes exists for historical compatibility
 	// and should not be used. Please directly specify the needed fields using the Need values.
 	LoadTypes = LoadImports | NeedTypes | NeedTypesSizes
 
+	// LoadSyntax loads typed syntax for the initial packages.
+	//
 	// Deprecated: LoadSyntax exists for historical compatibility
 	// and should not be used. Please directly specify the needed fields using the Need values.
 	LoadSyntax = LoadTypes | NeedSyntax | NeedTypesInfo
 
+	// LoadAllSyntax loads typed syntax for the initial packages and all dependencies.
+	//
 	// Deprecated: LoadAllSyntax exists for historical compatibility
 	// and should not be used. Please directly specify the needed fields using the Need values.
 	LoadAllSyntax = LoadSyntax | NeedDeps

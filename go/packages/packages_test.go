@@ -2280,59 +2280,67 @@ func TestLoadModeStrings(t *testing.T) {
 		},
 		{
 			packages.NeedName,
-			"LoadMode(NeedName)",
+			"NeedName",
 		},
 		{
 			packages.NeedFiles,
-			"LoadMode(NeedFiles)",
+			"NeedFiles",
 		},
 		{
 			packages.NeedCompiledGoFiles,
-			"LoadMode(NeedCompiledGoFiles)",
+			"NeedCompiledGoFiles",
 		},
 		{
 			packages.NeedImports,
-			"LoadMode(NeedImports)",
+			"NeedImports",
 		},
 		{
 			packages.NeedDeps,
-			"LoadMode(NeedDeps)",
+			"NeedDeps",
 		},
 		{
 			packages.NeedExportFile,
-			"LoadMode(NeedExportFile)",
+			"NeedExportFile",
 		},
 		{
 			packages.NeedTypes,
-			"LoadMode(NeedTypes)",
+			"NeedTypes",
 		},
 		{
 			packages.NeedSyntax,
-			"LoadMode(NeedSyntax)",
+			"NeedSyntax",
 		},
 		{
 			packages.NeedTypesInfo,
-			"LoadMode(NeedTypesInfo)",
+			"NeedTypesInfo",
 		},
 		{
 			packages.NeedTypesSizes,
-			"LoadMode(NeedTypesSizes)",
+			"NeedTypesSizes",
 		},
 		{
 			packages.NeedName | packages.NeedExportFile,
-			"LoadMode(NeedName|NeedExportFile)",
+			"(NeedName|NeedExportFile)",
 		},
 		{
 			packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedDeps | packages.NeedExportFile | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedTypesSizes,
-			"LoadMode(NeedName|NeedFiles|NeedCompiledGoFiles|NeedImports|NeedDeps|NeedExportFile|NeedTypes|NeedSyntax|NeedTypesInfo|NeedTypesSizes)",
+			"(NeedName|NeedFiles|NeedCompiledGoFiles|NeedImports|NeedDeps|NeedExportFile|NeedTypes|NeedSyntax|NeedTypesInfo|NeedTypesSizes)",
 		},
 		{
-			packages.NeedName | 8192,
-			"LoadMode(NeedName|Unknown)",
+			packages.NeedName | packages.NeedModule,
+			"(NeedName|NeedModule)",
 		},
 		{
-			4096,
-			"LoadMode(Unknown)",
+			packages.NeedName | 0x10000, // off the end (future use)
+			"(NeedName|0x10000)",
+		},
+		{
+			packages.NeedName | 0x400, // needInternalDepsErrors
+			"(NeedName|0x400)",
+		},
+		{
+			0x1000,
+			"LoadMode(0x1000)",
 		},
 	}
 
