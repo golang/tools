@@ -23,14 +23,12 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"go/build"
 	"go/token"
 	"io"
 	"os"
 	"runtime"
 	"text/template"
 
-	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/callgraph/rta"
@@ -52,11 +50,9 @@ var (
 	formatFlag = flag.String("format",
 		"{{.Caller}}\t--{{.Dynamic}}-{{.Line}}:{{.Column}}-->\t{{.Callee}}",
 		"A template expression specifying how to format an edge")
-)
 
-func init() {
-	flag.Var((*buildutil.TagsFlag)(&build.Default.BuildTags), "tags", buildutil.TagsFlagDoc)
-}
+	tagsFlag = flag.String("tags", "", "comma-separated list of extra build tags (see: go help buildconstraint)")
+)
 
 const Usage = `callgraph: display the call graph of a Go program.
 
@@ -177,9 +173,10 @@ func doCallgraph(dir, gopath, algo, format string, tests bool, args []string) er
 	}
 
 	cfg := &packages.Config{
-		Mode:  packages.LoadAllSyntax,
-		Tests: tests,
-		Dir:   dir,
+		Mode:       packages.LoadAllSyntax,
+		BuildFlags: []string{"-tags=" + *tagsFlag},
+		Tests:      tests,
+		Dir:        dir,
 	}
 	if gopath != "" {
 		cfg.Env = append(os.Environ(), "GOPATH="+gopath) // to enable testing

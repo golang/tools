@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 
-	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/interp"
@@ -38,11 +37,12 @@ T	[T]race execution of the program.  Best for single-threaded programs!
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 	args stringListValue
+
+	tagsFlag = flag.String("tags", "", "comma-separated list of extra build tags (see: go help buildconstraint)")
 )
 
 func init() {
 	flag.Var(&mode, "build", ssa.BuilderModeDoc)
-	flag.Var((*buildutil.TagsFlag)(&build.Default.BuildTags), "tags", buildutil.TagsFlagDoc)
 	flag.Var(&args, "arg", "add argument to interpreted program")
 }
 
@@ -76,8 +76,9 @@ func doMain() error {
 	}
 
 	cfg := &packages.Config{
-		Mode:  packages.LoadSyntax,
-		Tests: *testFlag,
+		BuildFlags: []string{"-tags=" + *tagsFlag},
+		Mode:       packages.LoadSyntax,
+		Tests:      *testFlag,
 	}
 
 	// Choose types.Sizes from conf.Build.

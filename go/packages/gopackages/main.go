@@ -37,6 +37,7 @@ type application struct {
 	Deps       bool            `flag:"deps" help:"show dependencies too"`
 	Test       bool            `flag:"test" help:"include any tests implied by the patterns"`
 	Mode       string          `flag:"mode" help:"mode (one of files, imports, types, syntax, allsyntax)"`
+	Tags       string          `flag:"tags" help:"comma-separated list of extra build tags (see: go help buildconstraint)"`
 	Private    bool            `flag:"private" help:"show non-exported declarations too (if -mode=syntax)"`
 	PrintJSON  bool            `flag:"json" help:"print package in JSON form"`
 	BuildFlags stringListValue `flag:"buildflag" help:"pass argument to underlying build system (may be repeated)"`
@@ -95,7 +96,7 @@ func (app *application) Run(ctx context.Context, args ...string) error {
 	cfg := &packages.Config{
 		Mode:       packages.LoadSyntax,
 		Tests:      app.Test,
-		BuildFlags: app.BuildFlags,
+		BuildFlags: append([]string{"-tags=" + app.Tags}, app.BuildFlags...),
 		Env:        env,
 	}
 
