@@ -196,24 +196,9 @@ Suffixes:
 	}
 
 	if cand.convertTo != nil {
-		typeName := types.TypeString(cand.convertTo, c.qf)
-
-		switch t := cand.convertTo.(type) {
-		// We need extra parens when casting to these types. For example,
-		// we need "(*int)(foo)", not "*int(foo)".
-		case *types.Pointer, *types.Signature:
-			typeName = "(" + typeName + ")"
-		case *types.Basic:
-			// If the types are incompatible (as determined by typeMatches), then we
-			// must need a conversion here. However, if the target type is untyped,
-			// don't suggest converting to e.g. "untyped float" (golang/go#62141).
-			if t.Info()&types.IsUntyped != 0 {
-				typeName = types.TypeString(types.Default(cand.convertTo), c.qf)
-			}
-		}
-
-		prefix = typeName + "(" + prefix
-		suffix = ")"
+		p, s := c.formatConvertTo(cand.convertTo)
+		prefix = p + prefix
+		suffix = s
 	}
 
 	if prefix != "" {
@@ -286,6 +271,24 @@ Suffixes:
 	}
 
 	return item, nil
+}
+
+func (c *completer) formatConvertTo(convertTo types.Type) (prefix string, suffix string) {
+	typeName := types.TypeString(convertTo, c.qf)
+	switch t := convertTo.(type) {
+	// We need extra parens when casting to these types. For example,
+	// we need "(*int)(foo)", not "*int(foo)".
+	case *types.Pointer, *types.Signature:
+		typeName = "(" + typeName + ")"
+	case *types.Basic:
+		// If the types are incompatible (as determined by typeMatches), then we
+		// must need a conversion here. However, if the target type is untyped,
+		// don't suggest converting to e.g. "untyped float" (golang/go#62141).
+		if t.Info()&types.IsUntyped != 0 {
+			typeName = types.TypeString(types.Default(convertTo), c.qf)
+		}
+	}
+	return typeName + "(", ")"
 }
 
 // importEdits produces the text edits necessary to add the given import to the current file.
