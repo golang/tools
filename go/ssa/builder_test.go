@@ -24,7 +24,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/packages"
@@ -767,30 +766,28 @@ func sliceMax(s []int) []int { return s[a():b():c()] }
 
 // TestGenericFunctionSelector ensures generic functions from other packages can be selected.
 func TestGenericFunctionSelector(t *testing.T) {
-	pkgs := map[string]map[string]string{
-		"main": {"m.go": `package main; import "a"; func main() { a.F[int](); a.G[int,string](); a.H(0) }`},
-		"a":    {"a.go": `package a; func F[T any](){}; func G[S, T any](){}; func H[T any](a T){} `},
-	}
+	fsys := overlayFS(map[string][]byte{
+		"go.mod":  goMod("example.com", -1),
+		"main.go": []byte(`package main; import "example.com/a"; func main() { a.F[int](); a.G[int,string](); a.H(0) }`),
+		"a/a.go":  []byte(`package a; func F[T any](){}; func G[S, T any](){}; func H[T any](a T){} `),
+	})
 
 	for _, mode := range []ssa.BuilderMode{
 		ssa.SanityCheckFunctions,
 		ssa.SanityCheckFunctions | ssa.InstantiateGenerics,
 	} {
-		conf := loader.Config{
-			Build: buildutil.FakeContext(pkgs),
-		}
-		conf.Import("main")
 
-		lprog, err := conf.Load()
-		if err != nil {
-			t.Errorf("Load failed: %s", err)
+		pkgs := loadPackages(t, fsys, "example.com") // package main
+		if len(pkgs) != 1 {
+			t.Fatalf("Expected 1 root package but got %d", len(pkgs))
 		}
-		if lprog == nil {
-			t.Fatalf("Load returned nil *Program")
+		prog, _ := ssautil.Packages(pkgs, mode)
+		p := prog.Package(pkgs[0].Types)
+		p.Build()
+
+		if p.Pkg.Name() != "main" {
+			t.Fatalf("Expected the second package is main but got %s", p.Pkg.Name())
 		}
-		// Create and build SSA
-		prog := ssautil.CreateProgram(lprog, mode)
-		p := prog.Package(lprog.Package("main").Pkg)
 		p.Build()
 
 		var callees []string // callees of the CallInstruction.String() in main().
@@ -807,7 +804,7 @@ func TestGenericFunctionSelector(t *testing.T) {
 		}
 		sort.Strings(callees) // ignore the order in the code.
 
-		want := "[a.F[int] a.G[int string] a.H[int]]"
+		want := "[example.com/a.F[int] example.com/a.G[int string] example.com/a.H[int]]"
 		if got := fmt.Sprint(callees); got != want {
 			t.Errorf("Expected main() to contain calls %v. got %v", want, got)
 		}
