@@ -1,5 +1,8 @@
-// +build ignore
+-- go.mod --
+module example.com
+go 1.22
 
+-- switches.go --
 package main
 
 // This file is the input to TestSwitches in switch_test.go.
