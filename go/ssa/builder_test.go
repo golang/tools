@@ -500,24 +500,7 @@ func h(error)
 	//         t8 = phi [1: t7, 3: t4] #e
 	//         ...
 
-	// Parse
-	var conf loader.Config
-	f, err := conf.ParseFile("<input>", input)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	conf.CreateFromFiles("p", f)
-
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	// Create and build SSA
-	prog := ssautil.CreateProgram(lprog, ssa.BuilderMode(0))
-	p := prog.Package(lprog.Package("p").Pkg)
-	p.Build()
+	p, _ := buildPackage(t, input, ssa.BuilderMode(0))
 	g := p.Func("g")
 
 	phis := 0
@@ -566,24 +549,7 @@ func LoadPointer(addr *unsafe.Pointer) (val unsafe.Pointer)
 	//      func  init        func()
 	//      var   init$guard  bool
 
-	// Parse
-	var conf loader.Config
-	f, err := conf.ParseFile("<input>", input)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	conf.CreateFromFiles("p", f)
-
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	// Create and build SSA
-	prog := ssautil.CreateProgram(lprog, ssa.BuilderMode(0))
-	p := prog.Package(lprog.Package("p").Pkg)
-	p.Build()
+	p, _ := buildPackage(t, input, ssa.BuilderMode(0))
 
 	if load := p.Func("Load"); load.Signature.TypeParams().Len() != 1 {
 		t.Errorf("expected a single type param T for Load got %q", load.Signature)
@@ -619,25 +585,8 @@ var indirect = R[int].M
 	// var   thunk      func(S[int]) int
 	// var   wrapper    func(R[int]) int
 
-	// Parse
-	var conf loader.Config
-	f, err := conf.ParseFile("<input>", input)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	conf.CreateFromFiles("p", f)
-
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
 	for _, mode := range []ssa.BuilderMode{ssa.BuilderMode(0), ssa.InstantiateGenerics} {
-		// Create and build SSA
-		prog := ssautil.CreateProgram(lprog, mode)
-		p := prog.Package(lprog.Package("p").Pkg)
-		p.Build()
+		p, _ := buildPackage(t, input, mode)
 
 		for _, entry := range []struct {
 			name    string // name of the package variable
@@ -800,24 +749,7 @@ func sliceMax(s []int) []int { return s[a():b():c()] }
 
 `
 
-	// Parse
-	var conf loader.Config
-	f, err := conf.ParseFile("<input>", input)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	conf.CreateFromFiles("p", f)
-
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	// Create and build SSA
-	prog := ssautil.CreateProgram(lprog, ssa.BuilderMode(0))
-	p := prog.Package(lprog.Package("p").Pkg)
-	p.Build()
+	p, _ := buildPackage(t, input, ssa.BuilderMode(0))
 
 	for _, item := range []struct {
 		fn   string
@@ -1031,23 +963,8 @@ func TestSyntax(t *testing.T) {
 	var _ = F[P] // unreferenced => not instantiated
 	`
 
-	// Parse
-	var conf loader.Config
-	f, err := conf.ParseFile("<input>", input)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	conf.CreateFromFiles("p", f)
-
-	// Load
-	lprog, err := conf.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	// Create and build SSA
-	prog := ssautil.CreateProgram(lprog, ssa.InstantiateGenerics)
-	prog.Build()
+	p, _ := buildPackage(t, input, ssa.InstantiateGenerics)
+	prog := p.Prog
 
 	// Collect syntax information for all of the functions.
 	got := make(map[string]string)
@@ -1120,21 +1037,7 @@ func TestLabels(t *testing.T) {
 		  func main() { _:println(1); _:println(2)}`,
 	}
 	for _, test := range tests {
-		conf := loader.Config{Fset: token.NewFileSet()}
-		f, err := parser.ParseFile(conf.Fset, "<input>", test, 0)
-		if err != nil {
-			t.Errorf("parse error: %s", err)
-			return
-		}
-		conf.CreateFromFiles("main", f)
-		iprog, err := conf.Load()
-		if err != nil {
-			t.Error(err)
-			continue
-		}
-		prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
-		pkg := prog.Package(iprog.Created[0].Pkg)
-		pkg.Build()
+		buildPackage(t, test, ssa.BuilderMode(0))
 	}
 }
 
@@ -1168,22 +1071,8 @@ func TestIssue67079(t *testing.T) {
 
 	// Load the package.
 	const src = `package p; type T int; func (T) f() {}; var _ = (*T).f`
-	conf := loader.Config{Fset: token.NewFileSet()}
-	f, err := parser.ParseFile(conf.Fset, "p.go", src, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf.CreateFromFiles("p", f)
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	pkg := iprog.Created[0].Pkg
-
-	// Create and build SSA program.
-	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
-	prog.Build()
-
+	spkg, ppkg := buildPackage(t, src, ssa.BuilderMode(0))
+	prog := spkg.Prog
 	var g errgroup.Group
 
 	// Access bodies of all functions.
@@ -1202,7 +1091,7 @@ func TestIssue67079(t *testing.T) {
 
 	// Force building of wrappers.
 	g.Go(func() error {
-		ptrT := types.NewPointer(pkg.Scope().Lookup("T").Type())
+		ptrT := types.NewPointer(ppkg.Types.Scope().Lookup("T").Type())
 		ptrTf := types.NewMethodSet(ptrT).At(0) // (*T).f symbol
 		prog.MethodValue(ptrTf)
 		return nil
