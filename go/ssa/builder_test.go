@@ -8,11 +8,11 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/importer"
 	"go/parser"
 	"go/token"
 	"go/types"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +27,7 @@ import (
 	"golang.org/x/tools/go/buildutil"
 	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/testenv"
@@ -677,57 +678,42 @@ func TestTypeparamTest(t *testing.T) {
 		t.Skip("Consistent flakes on wasm (e.g. https://go.dev/issues/64726)")
 	}
 
-	dir := filepath.Join(build.Default.GOROOT, "test", "typeparam")
+	// located GOROOT based on the relative path of errors in $GOROOT/src/errors
+	stdPkgs, err := packages.Load(&packages.Config{
+		Mode: packages.NeedFiles,
+	}, "errors")
+	if err != nil {
+		t.Fatalf("Failed to load errors package from std: %s", err)
+	}
+	goroot := filepath.Dir(filepath.Dir(filepath.Dir(stdPkgs[0].GoFiles[0])))
+
+	dir := filepath.Join(goroot, "test", "typeparam")
 
 	// Collect all of the .go files in
-	list, err := os.ReadDir(dir)
+	fsys := os.DirFS(dir)
+	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for _, entry := range list {
+	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
 			continue // Consider standalone go files.
 		}
-		input := filepath.Join(dir, entry.Name())
 		t.Run(entry.Name(), func(t *testing.T) {
-			src, err := os.ReadFile(input)
+			src, err := fs.ReadFile(fsys, entry.Name())
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			// Only build test files that can be compiled, or compiled and run.
 			if !bytes.HasPrefix(src, []byte("// run")) && !bytes.HasPrefix(src, []byte("// compile")) {
 				t.Skipf("not detected as a run test")
 			}
 
-			t.Logf("Input: %s\n", input)
+			t.Logf("Input: %s\n", entry.Name())
 
-			ctx := build.Default    // copy
-			ctx.GOROOT = "testdata" // fake goroot. Makes tests ~1s. tests take ~80s.
-
-			reportErr := func(err error) {
-				t.Error(err)
-			}
-			conf := loader.Config{Build: &ctx, TypeChecker: types.Config{Error: reportErr}}
-			if _, err := conf.FromArgs([]string{input}, true); err != nil {
-				t.Fatalf("FromArgs(%s) failed: %s", input, err)
-			}
-
-			iprog, err := conf.Load()
-			if iprog != nil {
-				for _, pkg := range iprog.Created {
-					for i, e := range pkg.Errors {
-						t.Errorf("Loading pkg %s error[%d]=%s", pkg, i, e)
-					}
-				}
-			}
-			if err != nil {
-				t.Fatalf("conf.Load(%s) failed: %s", input, err)
-			}
-
-			mode := ssa.SanityCheckFunctions | ssa.InstantiateGenerics
-			prog := ssautil.CreateProgram(iprog, mode)
-			prog.Build()
+			_, _ = buildPackage(t, string(src), ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
 		})
 	}
 }
