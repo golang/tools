@@ -1132,10 +1132,10 @@ func TestGenericAliases(t *testing.T) {
 }
 
 func testGenericAliases(t *testing.T) {
-	t.Setenv("GOEXPERIMENT", "aliastypeparams=1")
+	testenv.NeedsGoExperiment(t, "aliastypeparams")
 
 	const source = `
-package P
+package p
 
 type A = uint8
 type B[T any] = [4]T
@@ -1167,22 +1167,9 @@ func f[S any]() {
 }
 `
 
-	conf := loader.Config{Fset: token.NewFileSet()}
-	f, err := parser.ParseFile(conf.Fset, "p.go", source, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf.CreateFromFiles("p", f)
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	p, _ := buildPackage(t, source, ssa.InstantiateGenerics)
 
-	// Create and build SSA program.
-	prog := ssautil.CreateProgram(iprog, ssa.InstantiateGenerics)
-	prog.Build()
-
-	probes := callsTo(ssautil.AllFunctions(prog), "print")
+	probes := callsTo(ssautil.AllFunctions(p.Prog), "print")
 	if got, want := len(probes), 3*4*2; got != want {
 		t.Errorf("Found %v probes, expected %v", got, want)
 	}
