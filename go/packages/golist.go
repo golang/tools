@@ -879,6 +879,12 @@ func (state *golistState) invokeGo(verb string, args ...string) (*bytes.Buffer, 
 			return nil, friendlyErr
 		}
 
+		// Return an error if 'go list' failed due to missing tools in
+		// $GOROOT/pkg/tool/$GOOS_$GOARCH (#69606).
+		if len(stderr.String()) > 0 && strings.Contains(stderr.String(), `go: no such tool`) {
+			return nil, friendlyErr
+		}
+
 		// Is there an error running the C compiler in cgo? This will be reported in the "Error" field
 		// and should be suppressed by go list -e.
 		//

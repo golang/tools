@@ -23,12 +23,14 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
 )
 
 // testCtx is canceled when the test binary is about to time out.
@@ -3101,5 +3103,76 @@ func TestLoadOverlayGoMod(t *testing.T) {
 	want := `[./testdata]`
 	if got != want {
 		t.Errorf("Load: got %s, want %v", got, want)
+	}
+}
+
+func overlayFS(overlay map[string][]byte) fstest.MapFS {
+	fs := make(fstest.MapFS)
+	for name, data := range overlay {
+		fs[name] = &fstest.MapFile{Data: data}
+	}
+	return fs
+}
+
+// TestIssue69606a tests when tools in $GOROOT/pkg/tool/$GOOS_$GOARCH are missing,
+// Load should return an error.
+func TestIssue69606a(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+	overlay := overlayFS(map[string][]byte{
+		"io/io.go":         []byte("package io"),
+		"unsafe/unsafe.go": []byte("package unsafe"),
+	})
+	goroot := testfiles.CopyToTmp(t, overlay)
+
+	t.Logf("custom GOROOT: %s", goroot)
+
+	// load the std packages under a custom GOROOT
+	_, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedImports |
+			packages.NeedTypes,
+		Env: append(
+			os.Environ(),
+			"GO111MODULES=on",
+			"GOPATH=",
+			"GOWORK=off",
+			"GOPROXY=off",
+			fmt.Sprintf("GOROOT=%s", goroot)),
+	}, "std")
+
+	if err == nil {
+		t.Fatal("Expected to get an error because missing tool 'compile' but got a nil error")
+	}
+}
+
+// TestIssue69606b tests when loading std from a fake goroot without a unsafe package,
+// Load should return an error.
+func TestIssue69606b(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+	overlay := overlayFS(map[string][]byte{
+		"io/io.go": []byte("package io"),
+	})
+	goroot := testfiles.CopyToTmp(t, overlay)
+
+	t.Logf("custom GOROOT: %s", goroot)
+
+	// load the std packages under a custom GOROOT
+	_, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedImports |
+			packages.NeedTypes,
+		Env: append(
+			os.Environ(),
+			"GO111MODULES=on",
+			"GOPATH=",
+			"GOWORK=off",
+			"GOPROXY=off",
+			fmt.Sprintf("GOROOT=%s", goroot)),
+	}, "std")
+
+	if err == nil {
+		t.Fatal("Expected to get an error because missing unsafe package but got a nil error")
 	}
 }
