@@ -52,9 +52,10 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 		// Update the last component of the file's enclosing directory.
 		oldDir := filepath.Dir(fh.URI().Path())
 		newDir := filepath.Join(filepath.Dir(oldDir), params.NewName)
+		fileName := filepath.Base(fh.URI().Path())
 		change := protocol.DocumentChangeRename(
-			protocol.URIFromPath(oldDir),
-			protocol.URIFromPath(newDir))
+			protocol.URIFromPath(fmt.Sprintf("%s/%s", oldDir, fileName)),
+			protocol.URIFromPath(fmt.Sprintf("%s/%s", newDir, fileName)))
 		changes = append(changes, change)
 	}
 
