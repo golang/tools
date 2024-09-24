@@ -824,7 +824,7 @@ func parseStmt(tok *token.File, pos token.Pos, src []byte) (ast.Stmt, error) {
 
 	// Use ParseFile instead of ParseExpr because ParseFile has
 	// best-effort behavior, whereas ParseExpr fails hard on any error.
-	fakeFile, err := parser.ParseFile(token.NewFileSet(), "", fileSrc, 0)
+	fakeFile, err := parser.ParseFile(token.NewFileSet(), "", fileSrc, parser.SkipObjectResolution)
 	if fakeFile == nil {
 		return nil, fmt.Errorf("error reading fake file source: %v", err)
 	}

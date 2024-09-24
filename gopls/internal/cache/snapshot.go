@@ -2270,7 +2270,8 @@ func extractMagicComments(f *ast.File) []string {
 	return results
 }
 
-// BuiltinFile returns information about the special builtin package.
+// BuiltinFile returns the pseudo-source file builtins.go,
+// parsed with legacy ast.Object resolution.
 func (s *Snapshot) BuiltinFile(ctx context.Context) (*parsego.File, error) {
 	s.AwaitInitialized(ctx)
 

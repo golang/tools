@@ -158,6 +158,7 @@ func loadExports(dir string) map[string]bool {
 		return nil
 	}
 	for _, file := range buildPkg.GoFiles {
+		// Legacy ast.Object resolution is needed here.
 		f, err := parser.ParseFile(fset, filepath.Join(dir, file), nil, 0)
 		if err != nil {
 			log.Printf("could not parse %q: %v", file, err)

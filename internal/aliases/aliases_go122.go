@@ -73,7 +73,7 @@ func Enabled() bool {
 	//     many tests. Therefore any attempt to cache the result
 	//     is just incorrect.
 	fset := token.NewFileSet()
-	f, _ := parser.ParseFile(fset, "a.go", "package p; type A = int", 0)
+	f, _ := parser.ParseFile(fset, "a.go", "package p; type A = int", parser.SkipObjectResolution)
 	pkg, _ := new(types.Config).Check("p", fset, []*ast.File{f}, nil)
 	_, enabled := pkg.Scope().Lookup("A").Type().(*types.Alias)
 	return enabled

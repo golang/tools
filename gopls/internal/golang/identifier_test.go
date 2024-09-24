@@ -46,7 +46,7 @@ func TestSearchForEnclosing(t *testing.T) {
 		test := test
 		t.Run(test.desc, func(t *testing.T) {
 			fset := token.NewFileSet()
-			file, err := parser.ParseFile(fset, "a.go", test.src, parser.AllErrors)
+			file, err := parser.ParseFile(fset, "a.go", test.src, parser.AllErrors|parser.SkipObjectResolution)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -775,6 +775,7 @@ func newLoader(cfg *Config) *loader {
 		// because we load source if export data is missing.
 		if ld.ParseFile == nil {
 			ld.ParseFile = func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
+				// We implicitly promise to keep doing ast.Object resolution. :(
 				const mode = parser.AllErrors | parser.ParseComments
 				return parser.ParseFile(fset, filename, src, mode)
 			}
