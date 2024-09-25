@@ -563,15 +563,21 @@ func (cli *cmdClient) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
 
 		case c.RenameFile != nil:
 			// Analyze as creation + deletion. (NB: loses file mode.)
-			f := cli.openFile(c.RenameFile.OldURI)
-			if f.err != nil {
-				return f.err
-			}
-			if err := create(c.RenameFile.NewURI, f.mapper.Content); err != nil {
+			fs, err := cli.openFiles(c.RenameFile.OldURI)
+			if err != nil {
 				return err
 			}
-			if err := delete(f.mapper.URI, f.mapper.Content); err != nil {
-				return err
+			for _, f := range fs {
+				if f.err != nil {
+					return f.err
+				}
+				fileName := protocol.DocumentURI(filepath.Join(string(c.RenameFile.NewURI), filepath.Base(f.uri.Path())))
+				if err := create(fileName, f.mapper.Content); err != nil {
+					return err
+				}
+				if err := delete(f.mapper.URI, f.mapper.Content); err != nil {
+					return err
+				}
 			}
 
 		case c.DeleteFile != nil:
@@ -786,6 +792,30 @@ func (c *cmdClient) openFile(uri protocol.DocumentURI) *cmdFile {
 	c.filesMu.Lock()
 	defer c.filesMu.Unlock()
 	return c.getFile(uri)
+}
+
+func (c *cmdClient) openFiles(uri protocol.DocumentURI) ([]*cmdFile, error) {
+	c.filesMu.Lock()
+	defer c.filesMu.Unlock()
+	s, err := os.Stat(uri.Path())
+	if err != nil {
+		return nil, err
+	}
+
+	if s.IsDir() {
+		entries, err := os.ReadDir(uri.Path())
+		if err != nil {
+			return nil, err
+		}
+		files := make([]*cmdFile, len(entries))
+		for i, e := range entries {
+			files[i] = c.getFile(protocol.DocumentURI(filepath.Join(string(uri), e.Name())))
+		}
+
+		return files, nil
+	}
+
+	return []*cmdFile{c.getFile(uri)}, nil
 }
 
 // TODO(adonovan): provide convenience helpers to:
