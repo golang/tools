@@ -807,9 +807,11 @@ func (c *cmdClient) openFiles(uri protocol.DocumentURI) ([]*cmdFile, error) {
 		if err != nil {
 			return nil, err
 		}
-		files := make([]*cmdFile, len(entries))
-		for i, e := range entries {
-			files[i] = c.getFile(protocol.DocumentURI(filepath.Join(string(uri), e.Name())))
+		files := make([]*cmdFile, 0)
+		for _, e := range entries {
+			if !e.IsDir() {
+				files = append(files, c.getFile(protocol.DocumentURI(filepath.Join(string(uri), e.Name()))))
+			}
 		}
 
 		return files, nil
