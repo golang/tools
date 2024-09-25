@@ -5,7 +5,7 @@
 // This file is a copy of $GOROOT/src/go/internal/gcimporter/gcimporter_test.go,
 // adjusted to make it build with code from (std lib) internal/testenv copied.
 
-package gcimporter
+package gcimporter_test
 
 import (
 	"bytes"
@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/goroot"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -92,7 +93,7 @@ func compilePkg(t *testing.T, dirname, filename, outdirname string, packagefiles
 
 func testPath(t *testing.T, path, srcDir string) *types.Package {
 	t0 := time.Now()
-	pkg, err := Import(make(map[string]*types.Package), path, srcDir, nil)
+	pkg, err := gcimporter.Import(make(map[string]*types.Package), path, srcDir, nil)
 	if err != nil {
 		t.Errorf("testPath(%s): %s", path, err)
 		return nil
@@ -124,7 +125,7 @@ func TestImportTestdata(t *testing.T) {
 
 	packageFiles := map[string]string{}
 	for _, pkg := range []string{"go/ast", "go/token"} {
-		export, _ := FindPkg(pkg, "testdata")
+		export, _ := gcimporter.FindPkg(pkg, "testdata")
 		if export == "" {
 			t.Fatalf("no export data found for %s", pkg)
 		}
@@ -146,10 +147,7 @@ func TestImportTestdata(t *testing.T) {
 		// For now, we just test the presence of a few packages
 		// that we know are there for sure.
 		got := fmt.Sprint(pkg.Imports())
-		wants := []string{"go/ast", "go/token"}
-		if unifiedIR {
-			wants = []string{"go/ast"}
-		}
+		wants := []string{"go/ast", "go/token", "go/ast"}
 		for _, want := range wants {
 			if !strings.Contains(got, want) {
 				t.Errorf(`Package("exports").Imports() = %s, does not contain %s`, got, want)
@@ -181,17 +179,6 @@ func TestImportTypeparamTests(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var skip map[string]string
-	if !unifiedIR {
-		// The Go 1.18 frontend still fails several cases.
-		skip = map[string]string{
-			"equal.go":      "inconsistent embedded sorting", // TODO(rfindley): investigate this.
-			"nested.go":     "fails to compile",              // TODO(rfindley): investigate this.
-			"issue47631.go": "can not handle local type declarations",
-			"issue55101.go": "fails to compile",
-		}
-	}
-
 	for _, entry := range list {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
 			// For now, only consider standalone go files.
@@ -199,10 +186,6 @@ func TestImportTypeparamTests(t *testing.T) {
 		}
 
 		t.Run(entry.Name(), func(t *testing.T) {
-			if reason, ok := skip[entry.Name()]; ok {
-				t.Skip(reason)
-			}
-
 			filename := filepath.Join(rootDir, entry.Name())
 			src, err := os.ReadFile(filename)
 			if err != nil {
@@ -274,10 +257,6 @@ func checkFile(t *testing.T, filename string, src []byte) *types.Package {
 }
 
 func TestVersionHandling(t *testing.T) {
-	if debug {
-		t.Skip("TestVersionHandling panics in debug mode")
-	}
-
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
 
@@ -309,7 +288,7 @@ func TestVersionHandling(t *testing.T) {
 		}
 
 		// test that export data can be imported
-		_, err := Import(make(map[string]*types.Package), pkgpath, dir, nil)
+		_, err := gcimporter.Import(make(map[string]*types.Package), pkgpath, dir, nil)
 		if err != nil {
 			t.Errorf("import %q failed: %v", pkgpath, err)
 			continue
@@ -337,7 +316,7 @@ func TestVersionHandling(t *testing.T) {
 		os.WriteFile(filename, data, 0666)
 
 		// test that importing the corrupted file results in an error
-		_, err = Import(make(map[string]*types.Package), pkgpath, corruptdir, nil)
+		_, err = gcimporter.Import(make(map[string]*types.Package), pkgpath, corruptdir, nil)
 		if err == nil {
 			t.Errorf("import corrupted %q succeeded", pkgpath)
 		} else if msg := err.Error(); !strings.Contains(msg, "internal error") {
@@ -463,7 +442,7 @@ func importObject(t *testing.T, name string) types.Object {
 	importPath := s[0]
 	objName := s[1]
 
-	pkg, err := Import(make(map[string]*types.Package), importPath, ".", nil)
+	pkg, err := gcimporter.Import(make(map[string]*types.Package), importPath, ".", nil)
 	if err != nil {
 		t.Error(err)
 		return nil
@@ -545,7 +524,7 @@ func TestCorrectMethodPackage(t *testing.T) {
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
 	imports := make(map[string]*types.Package)
-	_, err := Import(imports, "net/http", ".", nil)
+	_, err := gcimporter.Import(imports, "net/http", ".", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -582,7 +561,7 @@ func TestIssue13566(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	jsonExport, _ := FindPkg("encoding/json", "testdata")
+	jsonExport, _ := gcimporter.FindPkg("encoding/json", "testdata")
 	if jsonExport == "" {
 		t.Fatalf("no export data found for encoding/json")
 	}
@@ -608,7 +587,7 @@ func TestIssue13898(t *testing.T) {
 
 	// import go/internal/gcimporter which imports go/types partially
 	imports := make(map[string]*types.Package)
-	_, err := Import(imports, "go/internal/gcimporter", ".", nil)
+	_, err := gcimporter.Import(imports, "go/internal/gcimporter", ".", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -673,7 +652,7 @@ func TestIssue15517(t *testing.T) {
 	// The same issue occurs with vendoring.)
 	imports := make(map[string]*types.Package)
 	for i := 0; i < 3; i++ {
-		if _, err := Import(imports, "./././testdata/p", tmpdir, nil); err != nil {
+		if _, err := gcimporter.Import(imports, "./././testdata/p", tmpdir, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -781,14 +760,14 @@ type K = StillBad[string]
 	}
 
 	// Export it. (Shallowness isn't important here.)
-	data, err := IExportShallow(fset, pkg1, nil)
+	data, err := gcimporter.IExportShallow(fset, pkg1, nil)
 	if err != nil {
 		t.Fatalf("export: %v", err) // any failure to export is a bug
 	}
 
 	// Re-import it.
 	imports := make(map[string]*types.Package)
-	pkg2, err := IImportShallow(fset, GetPackagesFromMap(imports), data, "p", nil)
+	pkg2, err := gcimporter.IImportShallow(fset, gcimporter.GetPackagesFromMap(imports), data, "p", nil)
 	if err != nil {
 		t.Fatalf("import: %v", err) // any failure of IExport+IImport is a bug.
 	}
@@ -878,14 +857,14 @@ func TestExportInvalid(t *testing.T) {
 
 			// Export it.
 			// (Shallowness isn't important here.)
-			data, err := IExportShallow(fset, pkg1, nil)
+			data, err := gcimporter.IExportShallow(fset, pkg1, nil)
 			if err != nil {
 				t.Fatalf("export: %v", err) // any failure to export is a bug
 			}
 
 			// Re-import it.
 			imports := make(map[string]*types.Package)
-			pkg2, err := IImportShallow(fset, GetPackagesFromMap(imports), data, "p", nil)
+			pkg2, err := gcimporter.IImportShallow(fset, gcimporter.GetPackagesFromMap(imports), data, "p", nil)
 			if err != nil {
 				t.Fatalf("import: %v", err) // any failure of IExport+IImport is a bug.
 			}
@@ -939,7 +918,7 @@ func TestIssue58296(t *testing.T) {
 	}
 
 	// make sure a and b are both imported by c.
-	pkg, err := Import(imports, "./c", testoutdir, nil)
+	pkg, err := gcimporter.Import(imports, "./c", testoutdir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -982,7 +961,7 @@ func TestIssueAliases(t *testing.T) {
 	)
 
 	// import c from gc export data using a and b.
-	pkg, err := Import(map[string]*types.Package{
+	pkg, err := gcimporter.Import(map[string]*types.Package{
 		apkg: types.NewPackage(apkg, "a"),
 		bpkg: types.NewPackage(bpkg, "b"),
 	}, "./c", testoutdir, nil)
@@ -1026,7 +1005,7 @@ func apkg(testoutdir string) string {
 }
 
 func importPkg(t *testing.T, path, srcDir string) *types.Package {
-	pkg, err := Import(make(map[string]*types.Package), path, srcDir, nil)
+	pkg, err := gcimporter.Import(make(map[string]*types.Package), path, srcDir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

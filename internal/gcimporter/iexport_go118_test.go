@@ -96,7 +96,7 @@ func testExportSrc(t *testing.T, src []byte) {
 	testPkgData(t, fset, version, pkg, data)
 }
 
-func TestImportTypeparamTests(t *testing.T) {
+func TestIndexedImportTypeparamTests(t *testing.T) {
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
 	// Check go files in test/typeparam.
