@@ -34,7 +34,7 @@ func TestPaths(t *testing.T) {
 }
 
 func testPaths(t *testing.T, gotypesalias int) {
-	// override default set by go1.19 in go.mod
+	// override default set by go1.22 in go.mod
 	t.Setenv("GODEBUG", fmt.Sprintf("gotypesalias=%d", gotypesalias))
 
 	const src = `

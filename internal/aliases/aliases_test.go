@@ -45,8 +45,8 @@ func TestNewAlias(t *testing.T) {
 
 	for _, godebug := range []string{
 		// The default gotypesalias value follows the x/tools/go.mod version
-		// The go.mod is at 1.19 so the default is gotypesalias=0.
-		// "", // Use the default GODEBUG value.
+		// The go.mod is at 1.22 so the default is gotypesalias=0.
+		"", // Use the default GODEBUG value (off).
 		"gotypesalias=0",
 		"gotypesalias=1",
 	} {
@@ -67,10 +67,14 @@ func TestNewAlias(t *testing.T) {
 				t.Errorf("Expected Unalias(A)==%q. got %q", want, got)
 			}
 
-			if godebug != "gotypesalias=0" {
-				if _, ok := A.Type().(*types.Alias); !ok {
-					t.Errorf("Expected A.Type() to be a types.Alias(). got %q", A.Type())
+			wantAlias := godebug == "gotypesalias=1"
+			_, gotAlias := A.Type().(*types.Alias)
+			if gotAlias != wantAlias {
+				verb := "to be"
+				if !wantAlias {
+					verb = "to not be"
 				}
+				t.Errorf("Expected A.Type() %s a types.Alias(). got %q", verb, A.Type())
 			}
 		})
 	}
@@ -83,9 +87,12 @@ func TestNewAlias(t *testing.T) {
 //
 // Requires gotypesalias GODEBUG and aliastypeparams GOEXPERIMENT.
 func TestNewParameterizedAlias(t *testing.T) {
-	testenv.NeedsGoExperiment(t, "aliastypeparams")
+	testenv.NeedsGo1Point(t, 23)
+	if testenv.Go1Point() == 23 {
+		testenv.NeedsGoExperiment(t, "aliastypeparams")
+	}
 
-	t.Setenv("GODEBUG", "gotypesalias=1") // needed until gotypesalias is removed (1.27).
+	t.Setenv("GODEBUG", "gotypesalias=1") // needed until gotypesalias is removed (1.27) or enabled by go.mod (1.23).
 	enabled := aliases.Enabled()
 	if !enabled {
 		t.Fatal("Need materialized aliases enabled")
