@@ -542,12 +542,7 @@ func TestIssue13566(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
-
-	// On windows, we have to set the -D option for the compiler to avoid having a drive
-	// letter and an illegal ':' in the import path - just skip it (see also issue #3483).
-	if runtime.GOOS == "windows" {
-		t.Skip("avoid dealing with relative paths/drive letters on windows")
-	}
+	skipWindows(t)
 
 	tmpdir := mktmpdir(t)
 	defer os.RemoveAll(tmpdir)
@@ -626,12 +621,7 @@ func TestIssue13898(t *testing.T) {
 func TestIssue15517(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
-
-	// On windows, we have to set the -D option for the compiler to avoid having a drive
-	// letter and an illegal ':' in the import path - just skip it (see also issue #3483).
-	if runtime.GOOS == "windows" {
-		t.Skip("avoid dealing with relative paths/drive letters on windows")
-	}
+	skipWindows(t)
 
 	tmpdir := mktmpdir(t)
 	defer os.RemoveAll(tmpdir)
@@ -661,12 +651,7 @@ func TestIssue15517(t *testing.T) {
 func TestIssue15920(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
-
-	// On windows, we have to set the -D option for the compiler to avoid having a drive
-	// letter and an illegal ':' in the import path - just skip it (see also issue #3483).
-	if runtime.GOOS == "windows" {
-		t.Skip("avoid dealing with relative paths/drive letters on windows")
-	}
+	skipWindows(t)
 
 	compileAndImportPkg(t, "issue15920")
 }
@@ -674,12 +659,7 @@ func TestIssue15920(t *testing.T) {
 func TestIssue20046(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
-
-	// On windows, we have to set the -D option for the compiler to avoid having a drive
-	// letter and an illegal ':' in the import path - just skip it (see also issue #3483).
-	if runtime.GOOS == "windows" {
-		t.Skip("avoid dealing with relative paths/drive letters on windows")
-	}
+	skipWindows(t)
 
 	// "./issue20046".V.M must exist
 	pkg := compileAndImportPkg(t, "issue20046")
@@ -692,12 +672,7 @@ func TestIssue20046(t *testing.T) {
 func TestIssue25301(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
-
-	// On windows, we have to set the -D option for the compiler to avoid having a drive
-	// letter and an illegal ':' in the import path - just skip it (see also issue #3483).
-	if runtime.GOOS == "windows" {
-		t.Skip("avoid dealing with relative paths/drive letters on windows")
-	}
+	skipWindows(t)
 
 	compileAndImportPkg(t, "issue25301")
 }
@@ -705,12 +680,7 @@ func TestIssue25301(t *testing.T) {
 func TestIssue51836(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
-
-	// On windows, we have to set the -D option for the compiler to avoid having a drive
-	// letter and an illegal ':' in the import path - just skip it (see also issue #3483).
-	if runtime.GOOS == "windows" {
-		t.Skip("avoid dealing with relative paths/drive letters on windows")
-	}
+	skipWindows(t)
 
 	tmpdir := mktmpdir(t)
 	defer os.RemoveAll(tmpdir)
@@ -798,12 +768,7 @@ type K = StillBad[string]
 func TestIssue57015(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
-
-	// On windows, we have to set the -D option for the compiler to avoid having a drive
-	// letter and an illegal ':' in the import path - just skip it (see also issue #3483).
-	if runtime.GOOS == "windows" {
-		t.Skip("avoid dealing with relative paths/drive letters on windows")
-	}
+	skipWindows(t)
 
 	compileAndImportPkg(t, "issue57015")
 }
@@ -890,12 +855,7 @@ func TestIssue58296(t *testing.T) {
 	// This package only handles gc export data.
 	needsCompiler(t, "gc")
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
-
-	// On windows, we have to set the -D option for the compiler to avoid having a drive
-	// letter and an illegal ':' in the import path - just skip it (see also issue #3483).
-	if runtime.GOOS == "windows" {
-		t.Skip("avoid dealing with relative paths/drive letters on windows")
-	}
+	skipWindows(t)
 
 	tmpdir := mktmpdir(t)
 	defer os.RemoveAll(tmpdir)
@@ -939,9 +899,9 @@ func TestIssueAliases(t *testing.T) {
 	testenv.NeedsGo1Point(t, 24)
 	needsCompiler(t, "gc")
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
-	testenv.NeedsGoExperiment(t, "aliastypeparams")
+	skipWindows(t)
 
-	t.Setenv("GODEBUG", fmt.Sprintf("gotypesalias=%d", 1))
+	t.Setenv("GODEBUG", aliasesOn)
 
 	tmpdir := mktmpdir(t)
 	defer os.RemoveAll(tmpdir)
@@ -1026,3 +986,18 @@ func lookupObj(t *testing.T, scope *types.Scope, name string) types.Object {
 	t.Fatalf("%s not found", name)
 	return nil
 }
+
+// skipWindows skips the test on windows.
+//
+// On windows, we have to set the -D option for the compiler to avoid having a drive
+// letter and an illegal ':' in the import path - just skip it (see also issue #3483).
+func skipWindows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("avoid dealing with relative paths/drive letters on windows")
+	}
+}
+
+const (
+	aliasesOff = "gotypesalias=0" // default GODEBUG in 1.22 (like x/tools)
+	aliasesOn  = "gotypesalias=1" // default after 1.23
+)

@@ -420,9 +420,12 @@ func (f importerFunc) Import(path string) (*types.Package, error) { return f(pat
 // on both declarations and uses of type parameterized aliases.
 func TestIExportDataTypeParameterizedAliases(t *testing.T) {
 	testenv.NeedsGo1Point(t, 23)
+	skipWindows(t)
+	if testenv.Go1Point() == 23 {
+		testenv.NeedsGoExperiment(t, "aliastypeparams") // testenv.Go1Point() >= 24 implies aliastypeparams=1
+	}
 
-	testenv.NeedsGoExperiment(t, "aliastypeparams")
-	t.Setenv("GODEBUG", "gotypesalias=1")
+	t.Setenv("GODEBUG", aliasesOn)
 
 	// High level steps:
 	// * parse  and typecheck
@@ -476,6 +479,8 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 		// This means that it can be loaded by go/importer or go/types.
 		// This step is not supported, but it does give test coverage for stdlib.
 		"goroot": func(t *testing.T) *types.Package {
+			testenv.NeedsGo1Point(t, 24) // requires >= 1.24 go/importer.
+
 			// Write indexed export data file contents.
 			//
 			// TODO(taking): Slightly unclear to what extent this step should be supported by go/importer.
