@@ -1009,7 +1009,7 @@ func TestIssueAliases(t *testing.T) {
 		"X : testdata/b.B[int]",
 		"Y : testdata/c.c[string]",
 		"Z : testdata/c.c[int]",
-		"c : testdata/c.c",
+		"c : testdata/c.c[V any]",
 	}, ",")
 	if got := strings.Join(objs, ","); got != want {
 		t.Errorf("got imports %v for package c. wanted %v", objs, want)
