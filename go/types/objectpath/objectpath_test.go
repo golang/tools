@@ -198,23 +198,7 @@ type T struct{x, y int}
 func loadPackages(t *testing.T, archive string, patterns ...string) map[string]*packages.Package {
 	// TODO(adonovan): ExtractTxtarToTmp (sans File) would be useful.
 	ar := txtar.Parse([]byte(archive))
-	fs, err := txtar.FS(ar)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := testfiles.CopyToTmp(t, fs)
-
-	cfg := packages.Config{
-		Mode: packages.LoadAllSyntax,
-		Dir:  dir,
-	}
-	pkgs, err := packages.Load(&cfg, patterns...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if packages.PrintErrors(pkgs) > 0 {
-		t.Fatal("Load: there were errors")
-	}
+	pkgs := testfiles.LoadPackages(t, ar, patterns...)
 	m := make(map[string]*packages.Package)
 	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
 		m[pkg.Types.Path()] = pkg
