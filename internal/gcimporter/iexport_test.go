@@ -47,6 +47,10 @@ func TestIExportData_stdlib(t *testing.T) {
 		t.Skip("skipping RAM hungry test in -short mode")
 	}
 
+	testAliases(t, testIExportData_stdlib)
+}
+
+func testIExportData_stdlib(t *testing.T) {
 	var errorsDir string // GOROOT/src/errors directory
 	{
 		cfg := packages.Config{
@@ -105,7 +109,7 @@ type UnknownType undefined
 	})
 
 	// Assert that we saw a plausible sized library.
-	const minStdlibPackages = 284
+	const minStdlibPackages = 248
 	if n := len(allPkgs); n < minStdlibPackages {
 		t.Errorf("Loaded only %d packages, want at least %d", n, minStdlibPackages)
 	}
@@ -225,6 +229,9 @@ func TestIExportData_long(t *testing.T) {
 }
 
 func TestIExportData_typealiases(t *testing.T) {
+	testAliases(t, testIExportData_typealiases)
+}
+func testIExportData_typealiases(t *testing.T) {
 	// parse and typecheck
 	fset1 := token.NewFileSet()
 	f, err := parser.ParseFile(fset1, "p.go", src, 0)

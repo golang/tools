@@ -19,10 +19,13 @@ import (
 )
 
 // TestStdlib ensures that all packages in std and x/tools can be
-// type-checked using export data. Takes around 3s.
+// type-checked using export data.
 func TestStdlib(t *testing.T) {
 	testenv.NeedsGoPackages(t)
 
+	testAliases(t, testStdlib)
+}
+func testStdlib(t *testing.T) {
 	// gcexportdata.Read rapidly consumes FileSet address space,
 	// so disable the test on 32-bit machines.
 	// (We could use a fresh FileSet per type-check, but that

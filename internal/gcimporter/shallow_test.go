@@ -27,6 +27,9 @@ func TestShallowStd(t *testing.T) {
 	}
 	testenv.NeedsTool(t, "go")
 
+	testAliases(t, testShallowStd)
+}
+func testShallowStd(t *testing.T) {
 	// Load import graph of the standard library.
 	// (No parsing or type-checking.)
 	cfg := &packages.Config{

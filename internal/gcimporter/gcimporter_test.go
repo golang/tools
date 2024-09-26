@@ -120,6 +120,10 @@ func TestImportTestdata(t *testing.T) {
 	needsCompiler(t, "gc")
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
+	testAliases(t, testImportTestdata)
+}
+
+func testImportTestdata(t *testing.T) {
 	tmpdir := mktmpdir(t)
 	defer os.RemoveAll(tmpdir)
 
@@ -168,8 +172,21 @@ func TestImportTypeparamTests(t *testing.T) {
 		t.Skipf("gc-built packages not available (compiler = %s)", runtime.Compiler)
 	}
 
+	testAliases(t, testImportTypeparamTests)
+}
+
+func testImportTypeparamTests(t *testing.T) {
 	tmpdir := mktmpdir(t)
 	defer os.RemoveAll(tmpdir)
+
+	// GoVersion -> GoDebug -> filename -> reason to skip
+	skips := map[int]map[string]map[string]string{
+		22: {aliasesOn: {
+			"issue50259.go": "internal compiler error: unexpected types2.Invalid",
+			"struct.go":     "badly formatted expectation E[int]",
+		}},
+	}
+	dbg, version := os.Getenv("GODEBUG"), testenv.Go1Point()
 
 	// Check go files in test/typeparam, except those that fail for a known
 	// reason.
@@ -186,6 +203,11 @@ func TestImportTypeparamTests(t *testing.T) {
 		}
 
 		t.Run(entry.Name(), func(t *testing.T) {
+			if reason := skips[version][dbg][entry.Name()]; reason != "" {
+				t.Skipf("Skipping file %q with GODEBUG=%q due to %q at version 1.%d",
+					entry.Name(), dbg, reason, version)
+			}
+
 			filename := filepath.Join(rootDir, entry.Name())
 			src, err := os.ReadFile(filename)
 			if err != nil {
@@ -333,6 +355,10 @@ func TestImportStdLib(t *testing.T) {
 	needsCompiler(t, "gc")
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
 
+	testAliases(t, testImportStdLib)
+}
+
+func testImportStdLib(t *testing.T) {
 	// Get list of packages in stdlib. Filter out test-only packages with {{if .GoFiles}} check.
 	var stderr bytes.Buffer
 	cmd := exec.Command("go", "list", "-f", "{{if .GoFiles}}{{.ImportPath}}{{end}}", "std")
@@ -1001,3 +1027,16 @@ const (
 	aliasesOff = "gotypesalias=0" // default GODEBUG in 1.22 (like x/tools)
 	aliasesOn  = "gotypesalias=1" // default after 1.23
 )
+
+// testAliases runs f within subtests with the GODEBUG gotypesalias enables and disabled.
+func testAliases(t *testing.T, f func(*testing.T)) {
+	for _, dbg := range []string{
+		aliasesOff,
+		aliasesOn,
+	} {
+		t.Run(dbg, func(t *testing.T) {
+			t.Setenv("GODEBUG", dbg)
+			f(t)
+		})
+	}
+}
