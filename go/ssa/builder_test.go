@@ -13,6 +13,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"golang.org/x/tools/go/packages"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1483,5 +1484,67 @@ func TestBuildPackageGo120(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+// TestCreateNewPackageAfterBuild tests creating a new package after the program has been built,
+// and verifies the slices.Contains has instantiated correctly.
+func TestCreateNewPackageAfterBuild(t *testing.T) {
+	content1 := `
+package p
+import "slices"
+func main(){
+	ints := []int{1, 2, 3, 4, 5}
+	slices.Contains(ints, 1)
+}`
+	content2 := `
+package p2
+import "slices"
+
+func After(){
+	numbers := []float32{1, 2, 3, 4, 5}
+	slices.Contains(numbers, 1)
+}`
+
+	name := parsePackageClause(t, content1)
+	fs := overlayFS(map[string][]byte{
+		"go.mod":    goMod(name, -1),
+		"p.go":      []byte(content1),
+		"sub/p2.go": []byte(content2),
+	})
+
+	pkgs := loadPackages(t, fs, "./...")
+
+	var p2 *packages.Package
+	// remove the package p2 so we can build the other packages first
+	for i, pkg := range pkgs {
+		if pkg.Name == "p2" {
+			p2 = pkg
+			pkgs = append(pkgs[:i], pkgs[i+1:]...)
+		}
+	}
+
+	if p2 == nil {
+		t.Fatal("cannot find package p2 in the loaded packages")
+	}
+
+	prog, _ := ssautil.Packages(pkgs, ssa.InstantiateGenerics)
+	prog.Build()
+
+	// create a package after the whole program has been built, and build the new created package
+	npkg := prog.CreatePackage(p2.Types, p2.Syntax, p2.TypesInfo, true)
+	npkg.Build()
+
+	var pkgSlices *ssa.Package
+	for _, pkg := range prog.AllPackages() {
+		if pkg.Pkg.Name() == "slices" {
+			pkgSlices = pkg
+		}
+	}
+
+	all := ssautil.AllFunctions(prog)
+	number := len(instancesOf(all, pkgSlices.Func("Contains")))
+	if number != 2 {
+		t.Errorf("slices.Contains should have 2 instances but got %d", number)
 	}
 }
