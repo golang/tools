@@ -64,7 +64,7 @@ graph using the Imports fields.
 
 The Load function can be configured by passing a pointer to a Config as
 the first argument. A nil Config is equivalent to the zero Config, which
-causes Load to run in LoadFiles mode, collecting minimal information.
+causes Load to run in [LoadFiles] mode, collecting minimal information.
 See the documentation for type Config for details.
 
 As noted earlier, the Config.Mode controls the amount of detail
@@ -72,14 +72,14 @@ reported about the loaded packages. See the documentation for type LoadMode
 for details.
 
 Most tools should pass their command-line arguments (after any flags)
-uninterpreted to [Load], so that it can interpret them
+uninterpreted to Load, so that it can interpret them
 according to the conventions of the underlying build system.
 
 See the Example function for typical usage.
 
 # The driver protocol
 
-[Load] may be used to load Go packages even in Go projects that use
+Load may be used to load Go packages even in Go projects that use
 alternative build systems, by installing an appropriate "driver"
 program for the build system and specifying its location in the
 GOPACKAGESDRIVER environment variable.

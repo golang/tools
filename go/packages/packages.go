@@ -46,10 +46,10 @@ import (
 //
 // Unfortunately there are a number of open bugs related to
 // interactions among the LoadMode bits:
-// - https://github.com/golang/go/issues/56633
-// - https://github.com/golang/go/issues/56677
-// - https://github.com/golang/go/issues/58726
-// - https://github.com/golang/go/issues/63517
+//   - https://github.com/golang/go/issues/56633
+//   - https://github.com/golang/go/issues/56677
+//   - https://github.com/golang/go/issues/58726
+//   - https://github.com/golang/go/issues/63517
 type LoadMode int
 
 const (
@@ -248,14 +248,13 @@ type Config struct {
 
 // Load loads and returns the Go packages named by the given patterns.
 //
-// Config specifies loading options;
-// nil behaves the same as an empty Config.
+// The cfg parameter specifies loading options; nil behaves the same as an empty [Config].
 //
 // The [Config.Mode] field is a set of bits that determine what kinds
 // of information should be computed and returned. Modes that require
 // more information tend to be slower. See [LoadMode] for details
 // and important caveats. Its zero value is equivalent to
-// NeedName | NeedFiles | NeedCompiledGoFiles.
+// [NeedName] | [NeedFiles] | [NeedCompiledGoFiles].
 //
 // Each call to Load returns a new set of [Package] instances.
 // The Packages and their Imports form a directed acyclic graph.
@@ -272,7 +271,7 @@ type Config struct {
 // Errors associated with a particular package are recorded in the
 // corresponding Package's Errors list, and do not cause Load to
 // return an error. Clients may need to handle such errors before
-// proceeding with further analysis. The PrintErrors function is
+// proceeding with further analysis. The [PrintErrors] function is
 // provided for convenient display of all errors.
 func Load(cfg *Config, patterns ...string) ([]*Package, error) {
 	ld := newLoader(cfg)
