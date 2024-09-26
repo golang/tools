@@ -1,0 +1,49 @@
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
+package template
+
+// Basic test of expression refactoring.
+// (Types are not important in this case; it could be done with gofmt -r.)
+
+import "time"
+
+func before(t time.Time) time.Duration { return time.Now().Sub(t) }
+func after(t time.Time) time.Duration  { return time.Since(t) }
+
+-- in/b1/b1.go --
+package b1
+
+import "time"
+
+var startup = time.Now()
+
+func example() time.Duration {
+	before := time.Now()
+	time.Sleep(1)
+	return time.Now().Sub(before)
+}
+
+func msSinceStartup() int64 {
+	return int64(time.Now().Sub(startup) / time.Millisecond)
+}
+
+-- out/b1/b1.go --
+package b1
+
+import "time"
+
+var startup = time.Now()
+
+func example() time.Duration {
+	before := time.Now()
+	time.Sleep(1)
+	return time.Since(before)
+}
+
+func msSinceStartup() int64 {
+	return int64(time.Since(startup) / time.Millisecond)
+}

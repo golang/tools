@@ -1,3 +1,10 @@
+
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
 package template
 
 const shouldFail = "different signatures"

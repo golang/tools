@@ -12,21 +12,22 @@ package eg_test
 import (
 	"bytes"
 	"flag"
-	"go/build"
+	"fmt"
 	"go/constant"
-	"go/parser"
-	"go/token"
+	"go/format"
 	"go/types"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/loader"
+	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/refactor/eg"
+	"golang.org/x/tools/txtar"
 )
 
 // TODO(adonovan): more tests:
@@ -41,80 +42,64 @@ var (
 )
 
 func Test(t *testing.T) {
-	testenv.NeedsTool(t, "go")
+	testenv.NeedsGoPackages(t)
 
 	switch runtime.GOOS {
 	case "windows":
 		t.Skipf("skipping test on %q (no /usr/bin/diff)", runtime.GOOS)
 	}
 
-	ctx := build.Default   // copy
-	ctx.CgoEnabled = false // don't use cgo
-	conf := loader.Config{
-		Fset:       token.NewFileSet(),
-		ParserMode: parser.ParseComments,
-		Build:      &ctx,
-	}
-
-	// Each entry is a single-file package.
-	// (Multi-file packages aren't interesting for this test.)
-	// Order matters: each non-template package is processed using
-	// the preceding template package.
+	// Each txtar defines a package example.com/template and zero
+	// or more input packages example.com/in/... on which to apply
+	// it. The outputs are compared with the corresponding files
+	// in example.com/out/...
 	for _, filename := range []string{
-		"testdata/A.template",
-		"testdata/A1.go",
-		"testdata/A2.go",
-
-		"testdata/B.template",
-		"testdata/B1.go",
-
-		"testdata/C.template",
-		"testdata/C1.go",
-
-		"testdata/D.template",
-		"testdata/D1.go",
-
-		"testdata/E.template",
-		"testdata/E1.go",
-
-		"testdata/F.template",
-		"testdata/F1.go",
-
-		"testdata/G.template",
-		"testdata/G1.go",
-
-		"testdata/H.template",
-		"testdata/H1.go",
-
-		"testdata/I.template",
-		"testdata/I1.go",
-
-		"testdata/J.template",
-		"testdata/J1.go",
-
-		"testdata/bad_type.template",
-		"testdata/no_before.template",
-		"testdata/no_after_return.template",
-		"testdata/type_mismatch.template",
-		"testdata/expr_type_mismatch.template",
+		"testdata/a.txtar",
+		"testdata/b.txtar",
+		"testdata/c.txtar",
+		"testdata/d.txtar",
+		"testdata/e.txtar",
+		"testdata/f.txtar",
+		"testdata/g.txtar",
+		"testdata/h.txtar",
+		"testdata/i.txtar",
+		"testdata/j.txtar",
+		"testdata/bad_type.txtar",
+		"testdata/no_before.txtar",
+		"testdata/no_after_return.txtar",
+		"testdata/type_mismatch.txtar",
+		"testdata/expr_type_mismatch.txtar",
 	} {
-		pkgname := strings.TrimSuffix(filepath.Base(filename), ".go")
-		conf.CreateFromFilenames(pkgname, filename)
-	}
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+		t.Run(filename, func(t *testing.T) {
+			// Extract and load packages from test archive.
+			dir := testfiles.ExtractTxtarFileToTmp(t, filename)
+			cfg := packages.Config{
+				Mode: packages.LoadAllSyntax,
+				Dir:  dir,
+			}
+			pkgs, err := packages.Load(&cfg, "example.com/template", "example.com/in/...")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if packages.PrintErrors(pkgs) > 0 {
+				t.Fatal("Load: there were errors")
+			}
 
-	var xform *eg.Transformer
-	for _, info := range iprog.Created {
-		file := info.Files[0]
-		filename := iprog.Fset.File(file.Pos()).Name() // foo.go
-
-		if strings.HasSuffix(filename, "template") {
-			// a new template
-			shouldFail, _ := info.Pkg.Scope().Lookup("shouldFail").(*types.Const)
-			xform, err = eg.NewTransformer(iprog.Fset, info.Pkg, file, &info.Info, *verboseFlag)
+			// Find and compile the template.
+			var template *packages.Package
+			var inputs []*packages.Package
+			for _, pkg := range pkgs {
+				if pkg.Types.Name() == "template" {
+					template = pkg
+				} else {
+					inputs = append(inputs, pkg)
+				}
+			}
+			if template == nil {
+				t.Fatal("no template package")
+			}
+			shouldFail, _ := template.Types.Scope().Lookup("shouldFail").(*types.Const)
+			xform, err := eg.NewTransformer(template.Fset, template.Types, template.Syntax[0], template.TypesInfo, *verboseFlag)
 			if err != nil {
 				if shouldFail == nil {
 					t.Errorf("NewTransformer(%s): %s", filename, err)
@@ -125,55 +110,67 @@ func Test(t *testing.T) {
 				t.Errorf("NewTransformer(%s) succeeded unexpectedly; want error %q",
 					filename, shouldFail.Val())
 			}
-			continue
-		}
 
-		if xform == nil {
-			t.Errorf("%s: no previous template", filename)
-			continue
-		}
+			// Apply template to each input package.
+			updated := make(map[string][]byte)
+			for _, pkg := range inputs {
+				for _, file := range pkg.Syntax {
+					filename, err := filepath.Rel(dir, pkg.Fset.File(file.FileStart).Name())
+					if err != nil {
+						t.Fatalf("can't relativize filename: %v", err)
+					}
 
-		// apply previous template to this package
-		n := xform.Transform(&info.Info, info.Pkg, file)
-		if n == 0 {
-			t.Errorf("%s: no matches", filename)
-			continue
-		}
+					// Apply the transform and reformat.
+					n := xform.Transform(pkg.TypesInfo, pkg.Types, file)
+					if n == 0 {
+						t.Fatalf("%s: no replacements", filename)
+					}
+					var got []byte
+					{
+						var out bytes.Buffer
+						format.Node(&out, pkg.Fset, file) // ignore error
+						got = out.Bytes()
+					}
 
-		gotf, err := os.CreateTemp("", filepath.Base(filename)+"t")
-		if err != nil {
-			t.Fatal(err)
-		}
-		got := gotf.Name()          // foo.got
-		golden := filename + "lden" // foo.golden
-
-		// Write actual output to foo.got.
-		if err := eg.WriteAST(iprog.Fset, got, file); err != nil {
-			t.Error(err)
-		}
-		defer os.Remove(got)
-
-		// Compare foo.got with foo.golden.
-		var cmd *exec.Cmd
-		switch runtime.GOOS {
-		case "plan9":
-			cmd = exec.Command("/bin/diff", "-c", golden, got)
-		default:
-			cmd = exec.Command("/usr/bin/diff", "-u", golden, got)
-		}
-		buf := new(bytes.Buffer)
-		cmd.Stdout = buf
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			t.Errorf("eg tests for %s failed: %s.\n%s\n", filename, err, buf)
-
-			if *updateFlag {
-				t.Logf("Updating %s...", golden)
-				if err := exec.Command("/bin/cp", got, golden).Run(); err != nil {
-					t.Errorf("Update failed: %s", err)
+					// Compare formatted output with out/<filename>
+					// Errors here are not fatal, so we can proceed to -update.
+					outfile := strings.Replace(filename, "in", "out", 1)
+					updated[outfile] = got
+					want, err := os.ReadFile(filepath.Join(dir, outfile))
+					if err != nil {
+						t.Errorf("can't read output file: %v", err)
+					} else if diff := cmp.Diff(want, got); diff != "" {
+						t.Errorf("Unexpected output:\n%s\n\ngot %s:\n%s\n\nwant %s:\n%s",
+							diff,
+							filename, got, outfile, want)
+					}
 				}
 			}
-		}
+
+			// -update: replace the .txtar.
+			if *updateFlag {
+				ar, err := txtar.ParseFile(filename)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				var new bytes.Buffer
+				new.Write(ar.Comment)
+				for _, file := range ar.Files {
+					data, ok := updated[file.Name]
+					if !ok {
+						data = file.Data
+					}
+					fmt.Fprintf(&new, "-- %s --\n%s", file.Name, data)
+				}
+				t.Logf("Updating %s...", filename)
+				os.Remove(filename + ".bak")         // ignore error
+				os.Rename(filename, filename+".bak") // ignore error
+				if err := os.WriteFile(filename, new.Bytes(), 0666); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
 	}
 }
 

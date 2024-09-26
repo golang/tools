@@ -1,0 +1,39 @@
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
+package template
+
+import (
+	"go/ast" // defines many unencapsulated structs
+	"go/token"
+)
+
+func before(from, to token.Pos) ast.BadExpr { return ast.BadExpr{from, to} }
+func after(from, to token.Pos) ast.BadExpr  { return ast.BadExpr{From: from, To: to} }
+
+-- in/h1/h1.go --
+package h1
+
+import "go/ast"
+
+func example() {
+	_ = ast.BadExpr{From: 123, To: 456} // no match
+	_ = ast.BadExpr{123, 456}           // match
+	_ = ast.BadExpr{From: 123}          // no match
+	_ = ast.BadExpr{To: 456}            // no match
+}
+
+-- out/h1/h1.go --
+package h1
+
+import "go/ast"
+
+func example() {
+	_ = ast.BadExpr{From: 123, To: 456} // no match
+	_ = ast.BadExpr{From: 123, To: 456} // match
+	_ = ast.BadExpr{From: 123}          // no match
+	_ = ast.BadExpr{To: 456}            // no match
+}

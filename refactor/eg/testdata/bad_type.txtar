@@ -1,3 +1,9 @@
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
 package template
 
 // Test in which replacement has a different type.

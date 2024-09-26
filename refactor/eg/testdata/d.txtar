@@ -1,0 +1,38 @@
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- template/template.go --
+package template
+
+import "fmt"
+
+// Test of semantic (not syntactic) matching of basic literals.
+
+func before() (int, error) { return fmt.Println(123, "a") }
+func after() (int, error)  { return fmt.Println(456, "!") }
+
+-- in/d1/d1.go --
+package d1
+
+import "fmt"
+
+func example() {
+	fmt.Println(123, "a")         // match
+	fmt.Println(0x7b, `a`)        // match
+	fmt.Println(0173, "\x61")     // match
+	fmt.Println(100+20+3, "a"+"") // no match: constant expressions, but not basic literals
+}
+
+-- out/d1/d1.go --
+package d1
+
+import "fmt"
+
+func example() {
+	fmt.Println(456, "!")         // match
+	fmt.Println(456, "!")         // match
+	fmt.Println(456, "!")         // match
+	fmt.Println(100+20+3, "a"+"") // no match: constant expressions, but not basic literals
+}
