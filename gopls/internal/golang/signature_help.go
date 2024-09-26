@@ -171,6 +171,8 @@ loop:
 	}, activeParam, nil
 }
 
+// Note: callExpr may be nil when signatureHelp is invoked outside the call
+// argument list (golang/go#69552).
 func builtinSignature(ctx context.Context, snapshot *cache.Snapshot, callExpr *ast.CallExpr, name string, pos token.Pos) (*protocol.SignatureInformation, int, error) {
 	sig, err := NewBuiltinSignature(ctx, snapshot, name)
 	if err != nil {
@@ -180,7 +182,10 @@ func builtinSignature(ctx context.Context, snapshot *cache.Snapshot, callExpr *a
 	for _, p := range sig.params {
 		paramInfo = append(paramInfo, protocol.ParameterInformation{Label: p})
 	}
-	activeParam := activeParameter(callExpr, len(sig.params), sig.variadic, pos)
+	activeParam := 0
+	if callExpr != nil {
+		activeParam = activeParameter(callExpr, len(sig.params), sig.variadic, pos)
+	}
 	return &protocol.SignatureInformation{
 		Label:         sig.name + sig.Format(),
 		Documentation: stringToSigInfoDocumentation(sig.doc, snapshot.Options()),

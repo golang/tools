@@ -1781,20 +1781,26 @@ func tokenMarker(mark marker, loc protocol.Location, tokenType, mod string) {
 
 func signatureMarker(mark marker, src protocol.Location, label string, active int64) {
 	got := mark.run.env.SignatureHelp(src)
+	var gotLabels []string // for better error messages
+	if got != nil {
+		for _, s := range got.Signatures {
+			gotLabels = append(gotLabels, s.Label)
+		}
+	}
 	if label == "" {
 		// A null result is expected.
 		// (There's no point having a @signatureerr marker
 		// because the server handler suppresses all errors.)
-		if got != nil && len(got.Signatures) > 0 {
-			mark.errorf("signatureHelp = %v, want 0 signatures", got)
+		if got != nil && len(gotLabels) > 0 {
+			mark.errorf("signatureHelp = %v, want 0 signatures", gotLabels)
 		}
 		return
 	}
 	if got == nil || len(got.Signatures) != 1 {
-		mark.errorf("signatureHelp = %v, want exactly 1 signature", got)
+		mark.errorf("signatureHelp = %v, want exactly 1 signature", gotLabels)
 		return
 	}
-	if got := got.Signatures[0].Label; got != label {
+	if got := gotLabels[0]; got != label {
 		mark.errorf("signatureHelp: got label %q, want %q", got, label)
 	}
 	if got := int64(got.ActiveParameter); got != active {
