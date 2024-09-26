@@ -97,6 +97,15 @@ JSON-encoded [DriverRequest] message providing additional information
 is written to the driver's standard input. The driver must write a
 JSON-encoded [DriverResponse] message to its standard output. (This
 message differs from the JSON schema produced by 'go list'.)
+
+The value of the PWD environment variable seen by the driver process
+is the preferred name of its working directory. (The working directory
+may have other aliases due to symbolic links; see the comment on the
+Dir field of [exec.Cmd] for related information.)
+When the driver process emits in its response the name of a file
+that is a descendant of this directory, it must use an absolute path
+that has the value of PWD as a prefix, to ensure that the returned
+filenames satisfy the original query.
 */
 package packages // import "golang.org/x/tools/go/packages"
 
