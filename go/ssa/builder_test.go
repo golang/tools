@@ -25,7 +25,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/expect"
-	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
