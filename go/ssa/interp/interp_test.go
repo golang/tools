@@ -117,7 +117,7 @@ var testdataTests = []string{
 	"deepequal.go",
 	"defer.go",
 	"fieldprom.go",
-	// "forvarlifetime_old.go", Disabled for golang.org/cl/603895. Fix and re-enable.
+	"forvarlifetime_old.go",
 	"ifaceconv.go",
 	"ifaceprom.go",
 	"initorder.go",
@@ -129,7 +129,7 @@ var testdataTests = []string{
 	"slice2arrayptr.go",
 	"static.go",
 	"width32.go",
-	// "rangevarlifetime_old.go", Disabled for golang.org/cl/603895. Fix and re-enable.
+	"rangevarlifetime_old.go",
 	"fixedbugs/issue52342.go",
 	"fixedbugs/issue55115.go",
 	"fixedbugs/issue52835.go",
