@@ -960,7 +960,7 @@ func (r *importReader) doType(base *types.Named) (res types.Type) {
 			methods[i] = method
 		}
 
-		typ := newInterface(methods, embeddeds)
+		typ := types.NewInterfaceType(methods, embeddeds)
 		r.p.interfaceList = append(r.p.interfaceList, typ)
 		return typ
 
