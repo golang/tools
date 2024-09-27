@@ -172,21 +172,25 @@ func TestImportTypeparamTests(t *testing.T) {
 		t.Skipf("gc-built packages not available (compiler = %s)", runtime.Compiler)
 	}
 
-	testAliases(t, testImportTypeparamTests)
+	testAliases(t, func(t *testing.T) {
+		var skip map[string]string
+
+		// Add tests to skip.
+		if testenv.Go1Point() == 22 && os.Getenv("GODEBUG") == aliasesOn {
+			// The tests below can be skipped in 1.22 as gotypesalias=1 was experimental.
+			// These do not need to be addressed.
+			skip = map[string]string{
+				"struct.go":     "1.22 differences in formatting a *types.Alias",
+				"issue50259.go": "1.22 cannot compile due to an understood types.Alias bug",
+			}
+		}
+		testImportTypeparamTests(t, skip)
+	})
 }
 
-func testImportTypeparamTests(t *testing.T) {
+func testImportTypeparamTests(t *testing.T, skip map[string]string) {
 	tmpdir := mktmpdir(t)
 	defer os.RemoveAll(tmpdir)
-
-	// GoVersion -> GoDebug -> filename -> reason to skip
-	skips := map[int]map[string]map[string]string{
-		22: {aliasesOn: {
-			"issue50259.go": "internal compiler error: unexpected types2.Invalid",
-			"struct.go":     "badly formatted expectation E[int]",
-		}},
-	}
-	dbg, version := os.Getenv("GODEBUG"), testenv.Go1Point()
 
 	// Check go files in test/typeparam, except those that fail for a known
 	// reason.
@@ -203,9 +207,8 @@ func testImportTypeparamTests(t *testing.T) {
 		}
 
 		t.Run(entry.Name(), func(t *testing.T) {
-			if reason := skips[version][dbg][entry.Name()]; reason != "" {
-				t.Skipf("Skipping file %q with GODEBUG=%q due to %q at version 1.%d",
-					entry.Name(), dbg, reason, version)
+			if reason := skip[entry.Name()]; reason != "" {
+				t.Skipf("Skipping due to %s", reason)
 			}
 
 			filename := filepath.Join(rootDir, entry.Name())
