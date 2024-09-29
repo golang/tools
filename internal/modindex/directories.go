@@ -23,6 +23,7 @@ type directory struct {
 	path       Relpath
 	importPath string
 	version    string // semantic version
+	syms       []symbol
 }
 
 // filterDirs groups the directories by import path,

@@ -91,7 +91,7 @@ func (w *work) buildIndex() error {
 	if err != nil {
 		return err
 	}
-	log.Printf("%d dirs, %d ips", len(dirs), len(newdirs))
+	log.Printf("%d dirs, %d new", len(dirs), len(newdirs))
 	// for each import path it might occur only in newdirs,
 	// only in w.oldIndex, or in both.
 	// If it occurs in both, use the semantically later one
@@ -111,7 +111,7 @@ func (w *work) buildIndex() error {
 				delete(newdirs, e.ImportPath)
 			}
 		}
-		log.Printf("%d killed, %d ips", killed, len(newdirs))
+		log.Printf("%d killed, %d new", killed, len(newdirs))
 	}
 	// Build the skeleton of the new index using newdirs,
 	// and include the surviving parts of the old index
@@ -122,17 +122,24 @@ func (w *work) buildIndex() error {
 			}
 		}
 	}
+	// get symbol information for all the new diredtories
+	getSymbols(w.cacheDir, newdirs)
+	// assemble the new index entries
 	for k, v := range newdirs {
 		d := v[0]
+		pkg, names := processSyms(d.syms)
+		if pkg == "" {
+			continue // PJW: does this ever happen?
+		}
 		entry := Entry{
+			PkgName:    pkg,
 			Dir:        d.path,
 			ImportPath: k,
 			Version:    d.version,
+			Names:      names,
 		}
 		w.newIndex.Entries = append(w.newIndex.Entries, entry)
 	}
-	// find symbols for the incomplete entries
-	log.Print("not finding any symbols yet")
 	// sort the entries in the new index
 	slices.SortFunc(w.newIndex.Entries, func(l, r Entry) int {
 		if n := strings.Compare(l.PkgName, r.PkgName); n != 0 {

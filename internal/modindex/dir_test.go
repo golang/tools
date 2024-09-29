@@ -37,7 +37,7 @@ var idtests = []id{
 			"cloud.google.com/go@v0.94.0/compute/metadata",
 		},
 	},
-	{ //m test bizarre characters in directory name
+	{ // test bizarre characters in directory name
 		importPath: "bad,guy.com/go",
 		best:       0,
 		dirs:       []string{"bad,guy.com/go@v0.1.0"},
@@ -51,17 +51,18 @@ func testModCache(t *testing.T) string {
 	return dir
 }
 
+// choose the semantically-latest version, with a single symbol
 func TestDirsSinglePath(t *testing.T) {
 	for _, itest := range idtests {
 		t.Run(itest.importPath, func(t *testing.T) {
-			// create a new fake GOMODCACHE
+			// create a new test GOMODCACHE
 			dir := testModCache(t)
 			for _, d := range itest.dirs {
 				if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
 					t.Fatal(err)
 				}
-				// gopathwalk wants to see .go files
-				err := os.WriteFile(filepath.Join(dir, d, "main.go"), []byte("package main\nfunc main() {}"), 0600)
+				err := os.WriteFile(filepath.Join(dir, d, "foo.go"),
+					[]byte("package foo\nfunc Foo() {}"), 0600)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -82,6 +83,13 @@ func TestDirsSinglePath(t *testing.T) {
 			}
 			if ix.Entries[0].Dir != Relpath(itest.dirs[itest.best]) {
 				t.Fatalf("got dir %s, wanted %s", ix.Entries[0].Dir, itest.dirs[itest.best])
+			}
+			nms := ix.Entries[0].Names
+			if len(nms) != 1 {
+				t.Fatalf("got %d names, expected 1", len(nms))
+			}
+			if nms[0] != "Foo F 0" {
+				t.Fatalf("got %q, expected Foo F 0", nms[0])
 			}
 		})
 	}
