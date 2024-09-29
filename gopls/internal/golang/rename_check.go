@@ -866,9 +866,17 @@ func (r *renamer) satisfy() map[satisfy.Constraint]bool {
 			//
 			// Only proceed if all packages have no errors.
 			if len(pkg.ParseErrors()) > 0 || len(pkg.TypeErrors()) > 0 {
+				var filename string
+				if len(pkg.ParseErrors()) > 0 {
+					err := pkg.ParseErrors()[0][0]
+					filename = filepath.Base(err.Pos.Filename)
+				} else if len(pkg.TypeErrors()) > 0 {
+					err := pkg.TypeErrors()[0]
+					filename = filepath.Base(err.Fset.File(err.Pos).Name())
+				}
 				r.errorf(token.NoPos, // we don't have a position for this error.
-					"renaming %q to %q not possible because %q has errors",
-					r.from, r.to, pkg.Metadata().PkgPath)
+					"renaming %q to %q not possible because %q in %q has errors",
+					r.from, r.to, filename, pkg.Metadata().PkgPath)
 				return nil
 			}
 			f.Find(pkg.TypesInfo(), pkg.Syntax())
