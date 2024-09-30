@@ -1291,8 +1291,6 @@ func TestMultipleGoversions(t *testing.T) {
 // the type of each range var v (identified by print(v) calls)
 // has the expected type.
 func TestRangeOverInt(t *testing.T) {
-	testenv.NeedsGoExperiment(t, "range")
-
 	const rangeOverIntSrc = `
 		package p
 

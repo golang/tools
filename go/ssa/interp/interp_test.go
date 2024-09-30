@@ -124,6 +124,7 @@ var testdataTests = []string{
 	"methprom.go",
 	"mrvchain.go",
 	"range.go",
+	"rangeoverint.go",
 	"recover.go",
 	"reflect.go",
 	"slice2arrayptr.go",

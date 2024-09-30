@@ -16,19 +16,6 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
-// TestExperimentRange tests files in testdata with GOEXPERIMENT=range set.
-func TestExperimentRange(t *testing.T) {
-	testenv.NeedsGoExperiment(t, "range")
-
-	// TODO: Is cwd actually needed here?
-	goroot := makeGoroot(t)
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Fatal(err)
-	}
-	run(t, filepath.Join(cwd, "testdata", "rangeoverint.go"), goroot)
-}
-
 func TestIssue69298(t *testing.T) {
 	testenv.NeedsGo1Point(t, 23)
 

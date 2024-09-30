@@ -1,8 +1,6 @@
 package main
 
-// Range over integers.
-
-// Currently requires 1.22 and GOEXPERIMENT=range.
+// Range over integers (Go 1.22).
 
 import "fmt"
 
