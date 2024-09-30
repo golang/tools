@@ -365,6 +365,13 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
 	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = protocol.SemanticTypes()
 	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = protocol.SemanticModifiers()
+	params.Capabilities.TextDocument.CodeAction = protocol.CodeActionClientCapabilities{
+		CodeActionLiteralSupport: protocol.ClientCodeActionLiteralOptions{
+			CodeActionKind: protocol.ClientCodeActionKindOptions{
+				ValueSet: []protocol.CodeActionKind{protocol.Empty}, // => all
+			},
+		},
+	}
 	params.Capabilities.Window.WorkDoneProgress = true
 
 	params.InitializationOptions = map[string]interface{}{

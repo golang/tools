@@ -36,34 +36,65 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 	// Determine the supported code action kinds for this file.
 	//
 	// We interpret CodeActionKinds hierarchically, so refactor.rewrite
-	// subsumes refactor.rewrite.change_quote, for example.
+	// subsumes refactor.rewrite.change_quote, for example,
+	// and "" (protocol.Empty) subsumes all kinds.
 	// See ../protocol/codeactionkind.go for some code action theory.
-	codeActionKinds, ok := snapshot.Options().SupportedCodeActions[kind]
-	if !ok {
-		return nil, fmt.Errorf("no supported code actions for %v file kind", kind)
-	}
-
-	// The Only field of the context specifies which code actions
-	// the client wants. If Only is empty, assume the client wants
-	// all supported code actions.
+	//
+	// The Context.Only field specifies which code actions
+	// the client wants. According to LSP 3.18 textDocument_codeAction,
+	// an Only=[] should be interpreted as Only=["quickfix"]:
+	//
+	//   "In version 1.0 of the protocol, there weren’t any
+	//   source or refactoring code actions. Code actions
+	//   were solely used to (quick) fix code, not to
+	//   write/rewrite code. So if a client asks for code
+	//   actions without any kind, the standard quick fix
+	//   code actions should be returned."
+	//
+	// However, this would deny clients (e.g. Vim+coc.nvim,
+	// Emacs+eglot, and possibly others) the easiest and most
+	// natural way of querying the server for the entire set of
+	// available code actions. But reporting all available code
+	// actions would be a nuisance for VS Code, since mere cursor
+	// motion into a region with a code action (~anywhere) would
+	// trigger a lightbulb usually associated with quickfixes.
+	//
+	// As a compromise, we use the trigger kind as a heuristic: if
+	// the query was triggered by cursor motion (Automatic), we
+	// respond with only quick fixes; if the query was invoked
+	// explicitly (Invoked), we respond with all available
+	// actions.
+	codeActionKinds := make(map[protocol.CodeActionKind]bool)
 	if len(params.Context.Only) > 0 {
-		codeActionKinds = make(map[protocol.CodeActionKind]bool)
-		for _, kind := range params.Context.Only {
+		for _, kind := range params.Context.Only { // kind may be "" (=> all)
 			codeActionKinds[kind] = true
+		}
+	} else {
+		// No explicit kind specified.
+		// Heuristic: decide based on trigger.
+		if triggerKind(params) == protocol.CodeActionAutomatic {
+			// e.g. cursor motion: show only quick fixes
+			codeActionKinds[protocol.QuickFix] = true
+		} else {
+			// e.g. a menu selection (or unknown trigger kind,
+			// as in our tests): show all available code actions.
+			codeActionKinds[protocol.Empty] = true
 		}
 	}
 
 	// enabled reports whether the specified kind of code action is required.
 	enabled := func(kind protocol.CodeActionKind) bool {
 		// Given "refactor.rewrite.foo", check for it,
-		// then "refactor.rewrite", "refactor".
+		// then "refactor.rewrite", "refactor", then "".
 		// A false map entry prunes the search for ancestors.
+		//
+		// If codeActionKinds contains protocol.Empty (""),
+		// all kinds are enabled.
 		for {
 			if v, ok := codeActionKinds[kind]; ok {
 				return v
 			}
-			dot := strings.LastIndexByte(string(kind), '.')
-			if dot < 0 {
+			if kind == "" {
 				return false
 			}
 
@@ -88,7 +119,12 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 				return false // don't search ancestors
 			}
 
-			kind = kind[:dot]
+			// Try the parent.
+			if dot := strings.LastIndexByte(string(kind), '.'); dot >= 0 {
+				kind = kind[:dot] // "refactor.foo" -> "refactor"
+			} else {
+				kind = "" // "refactor" -> ""
+			}
 		}
 	}
 
@@ -139,11 +175,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		}
 
 		// computed code actions (may include quickfixes from diagnostics)
-		trigger := protocol.CodeActionUnknownTrigger
-		if k := params.Context.TriggerKind; k != nil { // (some clients omit it)
-			trigger = *k
-		}
-		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, enabled, trigger)
+		moreActions, err := golang.CodeActions(ctx, snapshot, fh, params.Range, params.Context.Diagnostics, enabled, triggerKind(params))
 		if err != nil {
 			return nil, err
 		}
@@ -173,6 +205,13 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		// Unsupported file kind for a code action.
 		return nil, nil
 	}
+}
+
+func triggerKind(params *protocol.CodeActionParams) protocol.CodeActionTriggerKind {
+	if kind := params.Context.TriggerKind; kind != nil { // (some clients omit it)
+		return *kind
+	}
+	return protocol.CodeActionUnknownTrigger
 }
 
 // ResolveCodeAction resolves missing Edit information (that is, computes the

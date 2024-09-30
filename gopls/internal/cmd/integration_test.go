@@ -48,7 +48,7 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
-// TestVersion tests the 'version' subcommand (../info.go).
+// TestVersion tests the 'version' subcommand (info.go).
 func TestVersion(t *testing.T) {
 	t.Parallel()
 
@@ -84,7 +84,7 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-// TestCheck tests the 'check' subcommand (../check.go).
+// TestCheck tests the 'check' subcommand (check.go).
 func TestCheck(t *testing.T) {
 	t.Parallel()
 
@@ -143,7 +143,7 @@ var C int
 	}
 }
 
-// TestCallHierarchy tests the 'call_hierarchy' subcommand (../call_hierarchy.go).
+// TestCallHierarchy tests the 'call_hierarchy' subcommand (call_hierarchy.go).
 func TestCallHierarchy(t *testing.T) {
 	t.Parallel()
 
@@ -186,7 +186,7 @@ func h() {
 	}
 }
 
-// TestCodeLens tests the 'codelens' subcommand (../codelens.go).
+// TestCodeLens tests the 'codelens' subcommand (codelens.go).
 func TestCodeLens(t *testing.T) {
 	t.Parallel()
 
@@ -238,7 +238,7 @@ func TestFail(t *testing.T) { t.Fatal("fail") }
 	}
 }
 
-// TestDefinition tests the 'definition' subcommand (../definition.go).
+// TestDefinition tests the 'definition' subcommand (definition.go).
 func TestDefinition(t *testing.T) {
 	t.Parallel()
 
@@ -289,7 +289,7 @@ func g() {
 	}
 }
 
-// TestExecute tests the 'execute' subcommand (../execute.go).
+// TestExecute tests the 'execute' subcommand (execute.go).
 func TestExecute(t *testing.T) {
 	t.Parallel()
 
@@ -363,7 +363,7 @@ func TestHello(t *testing.T) {
 	}
 }
 
-// TestFoldingRanges tests the 'folding_ranges' subcommand (../folding_range.go).
+// TestFoldingRanges tests the 'folding_ranges' subcommand (folding_range.go).
 func TestFoldingRanges(t *testing.T) {
 	t.Parallel()
 
@@ -393,7 +393,7 @@ func f(x int) {
 	}
 }
 
-// TestFormat tests the 'format' subcommand (../format.go).
+// TestFormat tests the 'format' subcommand (format.go).
 func TestFormat(t *testing.T) {
 	t.Parallel()
 
@@ -453,7 +453,7 @@ func f() {}
 	}
 }
 
-// TestHighlight tests the 'highlight' subcommand (../highlight.go).
+// TestHighlight tests the 'highlight' subcommand (highlight.go).
 func TestHighlight(t *testing.T) {
 	t.Parallel()
 
@@ -482,7 +482,7 @@ func f() {
 	}
 }
 
-// TestImplementations tests the 'implementation' subcommand (../implementation.go).
+// TestImplementations tests the 'implementation' subcommand (implementation.go).
 func TestImplementations(t *testing.T) {
 	t.Parallel()
 
@@ -511,7 +511,7 @@ func (T) String() string { return "" }
 	}
 }
 
-// TestImports tests the 'imports' subcommand (../imports.go).
+// TestImports tests the 'imports' subcommand (imports.go).
 func TestImports(t *testing.T) {
 	t.Parallel()
 
@@ -560,7 +560,7 @@ func _() {
 	}
 }
 
-// TestLinks tests the 'links' subcommand (../links.go).
+// TestLinks tests the 'links' subcommand (links.go).
 func TestLinks(t *testing.T) {
 	t.Parallel()
 
@@ -605,7 +605,7 @@ func f() {}
 	}
 }
 
-// TestReferences tests the 'references' subcommand (../references.go).
+// TestReferences tests the 'references' subcommand (references.go).
 func TestReferences(t *testing.T) {
 	t.Parallel()
 
@@ -643,7 +643,7 @@ func g() {
 	}
 }
 
-// TestSignature tests the 'signature' subcommand (../signature.go).
+// TestSignature tests the 'signature' subcommand (signature.go).
 func TestSignature(t *testing.T) {
 	t.Parallel()
 
@@ -674,7 +674,7 @@ func f() {
 	}
 }
 
-// TestPrepareRename tests the 'prepare_rename' subcommand (../prepare_rename.go).
+// TestPrepareRename tests the 'prepare_rename' subcommand (prepare_rename.go).
 func TestPrepareRename(t *testing.T) {
 	t.Parallel()
 
@@ -713,7 +713,7 @@ func oldname() {}
 	}
 }
 
-// TestRename tests the 'rename' subcommand (../rename.go).
+// TestRename tests the 'rename' subcommand (rename.go).
 func TestRename(t *testing.T) {
 	t.Parallel()
 
@@ -759,7 +759,7 @@ func oldname() {}
 	}
 }
 
-// TestSymbols tests the 'symbols' subcommand (../symbols.go).
+// TestSymbols tests the 'symbols' subcommand (symbols.go).
 func TestSymbols(t *testing.T) {
 	t.Parallel()
 
@@ -790,7 +790,7 @@ const c = 0
 	}
 }
 
-// TestSemtok tests the 'semtok' subcommand (../semantictokens.go).
+// TestSemtok tests the 'semtok' subcommand (semantictokens.go).
 func TestSemtok(t *testing.T) {
 	t.Parallel()
 
@@ -941,7 +941,7 @@ package foo
 	}
 }
 
-// TestCodeAction tests the 'codeaction' subcommand (../codeaction.go).
+// TestCodeAction tests the 'codeaction' subcommand (codeaction.go).
 func TestCodeAction(t *testing.T) {
 	t.Parallel()
 
@@ -1040,7 +1040,7 @@ func (c C) Read(p []byte) (n int, err error) {
 	}
 }
 
-// TestWorkspaceSymbol tests the 'workspace_symbol' subcommand (../workspace_symbol.go).
+// TestWorkspaceSymbol tests the 'workspace_symbol' subcommand (workspace_symbol.go).
 func TestWorkspaceSymbol(t *testing.T) {
 	t.Parallel()
 

@@ -59,15 +59,15 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: uri,
 		},
+		Context: protocol.CodeActionContext{
+			Only: []protocol.CodeActionKind{protocol.SourceOrganizeImports},
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}
 	var edits []protocol.TextEdit
 	for _, a := range actions {
-		if a.Title != "Organize Imports" {
-			continue
-		}
 		for _, c := range a.Edit.DocumentChanges {
 			// This code action should affect only the specified file;
 			// it is safe to ignore others.

@@ -1933,7 +1933,7 @@ func codeActionMarker(mark marker, start, end protocol.Location, actionKind stri
 	loc.Range.End = end.Range.End
 
 	// Apply the fix it suggests.
-	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil)
+	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, protocol.CodeActionKind(actionKind), nil)
 	if err != nil {
 		mark.errorf("codeAction failed: %v", err)
 		return
@@ -1944,7 +1944,7 @@ func codeActionMarker(mark marker, start, end protocol.Location, actionKind stri
 }
 
 func codeActionEditMarker(mark marker, loc protocol.Location, actionKind string, g *Golden) {
-	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil)
+	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, protocol.CodeActionKind(actionKind), nil)
 	if err != nil {
 		mark.errorf("codeAction failed: %v", err)
 		return
@@ -1956,7 +1956,7 @@ func codeActionEditMarker(mark marker, loc protocol.Location, actionKind string,
 func codeActionErrMarker(mark marker, start, end protocol.Location, actionKind string, wantErr stringMatcher) {
 	loc := start
 	loc.Range.End = end.Range.End
-	_, err := codeAction(mark.run.env, loc.URI, loc.Range, actionKind, nil)
+	_, err := codeAction(mark.run.env, loc.URI, loc.Range, protocol.CodeActionKind(actionKind), nil)
 	wantErr.checkErr(mark, err)
 }
 
@@ -2071,8 +2071,8 @@ func suggestedfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp
 // The resulting map contains resulting file contents after the code action is
 // applied. Currently, this function does not support code actions that return
 // edits directly; it only supports code action commands.
-func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic) (map[string][]byte, error) {
-	changes, err := codeActionChanges(env, uri, rng, actionKind, diag)
+func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, kind protocol.CodeActionKind, diag *protocol.Diagnostic) (map[string][]byte, error) {
+	changes, err := codeActionChanges(env, uri, rng, kind, diag)
 	if err != nil {
 		return nil, err
 	}
@@ -2082,15 +2082,15 @@ func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Ran
 // codeActionChanges executes a textDocument/codeAction request for the
 // specified location and kind, and captures the resulting document changes.
 // If diag is non-nil, it is used as the code action context.
-func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, actionKind string, diag *protocol.Diagnostic) ([]protocol.DocumentChange, error) {
+func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, kind protocol.CodeActionKind, diag *protocol.Diagnostic) ([]protocol.DocumentChange, error) {
 	// Request all code actions that apply to the diagnostic.
-	// (The protocol supports filtering using Context.Only={actionKind}
-	// but we can give a better error if we don't filter.)
+	// A production client would set Only=[kind],
+	// but we can give a better error if we don't filter.
 	params := &protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
 		Range:        rng,
 		Context: protocol.CodeActionContext{
-			Only: nil, // => all kinds
+			Only: []protocol.CodeActionKind{protocol.Empty}, // => all
 		},
 	}
 	if diag != nil {
@@ -2106,7 +2106,7 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 	// (e.g. refactor.inline.call).
 	var candidates []protocol.CodeAction
 	for _, act := range actions {
-		if act.Kind == protocol.CodeActionKind(actionKind) {
+		if act.Kind == kind {
 			candidates = append(candidates, act)
 		}
 	}
@@ -2114,7 +2114,7 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 		for _, act := range actions {
 			env.T.Logf("found CodeAction Kind=%s Title=%q", act.Kind, act.Title)
 		}
-		return nil, fmt.Errorf("found %d CodeActions of kind %s for this diagnostic, want 1", len(candidates), actionKind)
+		return nil, fmt.Errorf("found %d CodeActions of kind %s for this diagnostic, want 1", len(candidates), kind)
 	}
 	action := candidates[0]
 

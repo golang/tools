@@ -144,6 +144,8 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 		for _, kind := range strings.Split(cmd.Kind, ",") {
 			kinds = append(kinds, protocol.CodeActionKind(kind))
 		}
+	} else {
+		kinds = append(kinds, protocol.Empty) // => all
 	}
 	actions, err := conn.CodeAction(ctx, &protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: uri},

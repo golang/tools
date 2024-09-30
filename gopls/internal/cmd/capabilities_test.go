@@ -104,6 +104,9 @@ func TestCapabilities(t *testing.T) {
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: uri,
 		},
+		Context: protocol.CodeActionContext{
+			Only: []protocol.CodeActionKind{protocol.SourceOrganizeImports},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

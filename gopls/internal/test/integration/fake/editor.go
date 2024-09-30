@@ -42,12 +42,14 @@ type Editor struct {
 
 	// TODO(rfindley): buffers should be keyed by protocol.DocumentURI.
 	mu                       sync.Mutex
-	config                   EditorConfig                // editor configuration
-	buffers                  map[string]buffer           // open buffers (relative path -> buffer content)
-	serverCapabilities       protocol.ServerCapabilities // capabilities / options
-	semTokOpts               protocol.SemanticTokensOptions
-	watchPatterns            []*glob.Glob // glob patterns to watch
+	config                   EditorConfig      // editor configuration
+	buffers                  map[string]buffer // open buffers (relative path -> buffer content)
+	watchPatterns            []*glob.Glob      // glob patterns to watch
 	suggestionUseReplaceMode bool
+
+	// These fields are populated by Connect.
+	serverCapabilities protocol.ServerCapabilities
+	semTokOpts         protocol.SemanticTokensOptions
 
 	// Call metrics for the purpose of expectations. This is done in an ad-hoc
 	// manner for now. Perhaps in the future we should do something more
@@ -320,10 +322,8 @@ func (e *Editor) initialize(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("unmarshalling semantic tokens options: %v", err)
 		}
-		e.mu.Lock()
 		e.serverCapabilities = resp.Capabilities
 		e.semTokOpts = semTokOpts
-		e.mu.Unlock()
 
 		if err := e.Server.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
 			return fmt.Errorf("initialized: %w", err)
@@ -356,6 +356,14 @@ func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
 		"deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary",
 		// Additional modifiers supported by this client:
 		"interface", "struct", "signature", "pointer", "array", "map", "slice", "chan", "string", "number", "bool", "invalid",
+	}
+	// Request that the server provide its complete list of code action kinds.
+	capabilities.TextDocument.CodeAction = protocol.CodeActionClientCapabilities{
+		CodeActionLiteralSupport: protocol.ClientCodeActionLiteralOptions{
+			CodeActionKind: protocol.ClientCodeActionKindOptions{
+				ValueSet: []protocol.CodeActionKind{protocol.Empty}, // => all
+			},
+		},
 	}
 	// The LSP tests have historically enabled this flag,
 	// but really we should test both ways for older editors.
@@ -1570,6 +1578,7 @@ func (e *Editor) CodeAction(ctx context.Context, loc protocol.Location, diagnost
 		Context: protocol.CodeActionContext{
 			Diagnostics: diagnostics,
 			TriggerKind: &trigger,
+			Only:        []protocol.CodeActionKind{protocol.Empty}, // => all
 		},
 		Range: loc.Range, // may be zero
 	}
@@ -1680,9 +1689,7 @@ type SemanticToken struct {
 // Note: previously this function elided comment, string, and number tokens.
 // Instead, filtering of token types should be done by the caller.
 func (e *Editor) interpretTokens(x []uint32, contents string) []SemanticToken {
-	e.mu.Lock()
 	legend := e.semTokOpts.Legend
-	e.mu.Unlock()
 	lines := strings.Split(contents, "\n")
 	ans := []SemanticToken{}
 	line, col := 1, 1

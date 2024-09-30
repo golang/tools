@@ -24,14 +24,15 @@ import "golang.org/x/tools/gopls/internal/protocol"
 //	notebook
 //
 // Kinds are hierarchical: "refactor" subsumes "refactor.inline",
-// which subsumes "refactor.inline.call". The "Only" field in a
-// CodeAction request may specify a category such as "refactor"; any
-// matching code action will be returned.
+// which subsumes "refactor.inline.call". This rule implies that the
+// empty string, confusingly named protocol.Empty, subsumes all kinds.
+// The "Only" field in a CodeAction request may specify a category
+// such as "refactor"; any matching code action will be returned.
 //
 // All CodeActions returned by gopls use a specific leaf kind such as
 // "refactor.inline.call", except for quick fixes, which all use
 // "quickfix". TODO(adonovan): perhaps quick fixes should also be
-// hierarchical (e.g. quickfix.govulncheck.{reset,upgrade}).
+// hierarchical (e.g. quickfix.govulncheck.{reset,upgrade})?
 //
 // # VS Code
 //
@@ -41,10 +42,16 @@ import "golang.org/x/tools/gopls/internal/protocol"
 // Clicking on the "Refactor..." menu item shows a submenu of actions
 // with kind="refactor.*", and clicking on "Source action..." shows
 // actions with kind="source.*". A lightbulb appears in both cases.
+//
 // A third menu, "Quick fix...", not found on the usual context
 // menu but accessible through the command palette or "⌘.",
-// displays code actions of kind "quickfix.*" and "refactor.*",
-// and ad hoc ones ("More actions...") such as "gopls.*".
+// does not set the Only field in its request, so the set of
+// kinds is determined by how the server interprets the default.
+// The LSP 3.18 guidance is that this should be treated
+// equivalent to Only=["quickfix"], and that is what gopls
+// now does. (If the server responds with more kinds, they will
+// be displayed in menu subsections.)
+//
 // All of these CodeAction requests have triggerkind=Invoked.
 //
 // Cursor motion also performs a CodeAction request, but with
@@ -60,7 +67,7 @@ import "golang.org/x/tools/gopls/internal/protocol"
 //
 // In all these menus, VS Code organizes the actions' menu items
 // into groups based on their kind, with hardwired captions such as
-// "Extract", "Inline", "More actions", and "Quick fix".
+// "Refactor...", "Extract", "Inline", "More actions", and "Quick fix".
 //
 // The special category "source.fixAll" is intended for actions that
 // are unambiguously safe to apply so that clients may automatically
@@ -74,6 +81,10 @@ const (
 	GoTest        protocol.CodeActionKind = "source.test"
 
 	// gopls
+	// TODO(adonovan): we should not use this category as it will
+	// never be requested now that we no longer interpret "no kind
+	// restriction" as "quickfix" instead of "all kinds".
+	// We need another way to make docs discoverable.
 	GoplsDocFeatures protocol.CodeActionKind = "gopls.doc.features"
 
 	// refactor.rewrite
