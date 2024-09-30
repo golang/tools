@@ -4,100 +4,15 @@
 
 package stubmethods
 
+// TODO(adonovan): rename package to golang/stubmethods or move
+// functions to golang/stub.go.
+
 import (
-	"bytes"
-	_ "embed"
 	"fmt"
 	"go/ast"
-	"go/format"
 	"go/token"
 	"go/types"
-	"strings"
-
-	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
-	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/typesinternal"
 )
-
-//go:embed doc.go
-var doc string
-
-var Analyzer = &analysis.Analyzer{
-	Name:             "stubmethods",
-	Doc:              analysisinternal.MustExtractDoc(doc, "stubmethods"),
-	Run:              run,
-	RunDespiteErrors: true,
-	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods",
-}
-
-// TODO(rfindley): remove this thin wrapper around the stubmethods refactoring,
-// and eliminate the stubmethods analyzer.
-//
-// Previous iterations used the analysis framework for computing refactorings,
-// which proved inefficient.
-func run(pass *analysis.Pass) (interface{}, error) {
-	for _, err := range pass.TypeErrors {
-		var file *ast.File
-		for _, f := range pass.Files {
-			if f.Pos() <= err.Pos && err.Pos < f.End() {
-				file = f
-				break
-			}
-		}
-		// Get the end position of the error.
-		_, _, end, ok := typesinternal.ReadGo116ErrorData(err)
-		if !ok {
-			var buf bytes.Buffer
-			if err := format.Node(&buf, pass.Fset, file); err != nil {
-				continue
-			}
-			end = analysisinternal.TypeErrorEndPos(pass.Fset, buf.Bytes(), err.Pos)
-		}
-		if diag, ok := DiagnosticForError(pass.Fset, file, err.Pos, end, err.Msg, pass.TypesInfo); ok {
-			pass.Report(diag)
-		}
-	}
-
-	return nil, nil
-}
-
-// MatchesMessage reports whether msg matches the error message sought after by
-// the stubmethods fix.
-func MatchesMessage(msg string) bool {
-	return strings.Contains(msg, "missing method") || strings.HasPrefix(msg, "cannot convert") || strings.Contains(msg, "not implement")
-}
-
-// DiagnosticForError computes a diagnostic suggesting to implement an
-// interface to fix the type checking error defined by (start, end, msg).
-//
-// If no such fix is possible, the second result is false.
-func DiagnosticForError(fset *token.FileSet, file *ast.File, start, end token.Pos, msg string, info *types.Info) (analysis.Diagnostic, bool) {
-	if !MatchesMessage(msg) {
-		return analysis.Diagnostic{}, false
-	}
-
-	path, _ := astutil.PathEnclosingInterval(file, start, end)
-	si := GetStubInfo(fset, info, path, start)
-	if si == nil {
-		return analysis.Diagnostic{}, false
-	}
-	qf := typesutil.FileQualifier(file, si.Concrete.Obj().Pkg(), info)
-	iface := types.TypeString(si.Interface.Type(), qf)
-	return analysis.Diagnostic{
-		Pos:      start,
-		End:      end,
-		Message:  msg,
-		Category: FixCategory,
-		SuggestedFixes: []analysis.SuggestedFix{{
-			Message: fmt.Sprintf("Declare missing methods of %s", iface),
-			// No TextEdits => computed later by gopls.
-		}},
-	}, true
-}
-
-const FixCategory = "stubmethods" // recognized by gopls ApplyFix
 
 // StubInfo represents a concrete type
 // that wants to stub out an interface type

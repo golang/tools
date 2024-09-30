@@ -568,11 +568,6 @@
 							"Default": "true"
 						},
 						{
-							"Name": "\"stubmethods\"",
-							"Doc": "detect missing methods and fix with stub implementations\n\nThis analyzer detects type-checking errors due to missing methods\nin assignments from concrete types to interface types, and offers\na suggested fix that will create a set of stub methods so that\nthe concrete type satisfies the interface.\n\nFor example, this function will not compile because the value\nNegativeErr{} does not implement the \"error\" interface:\n\n\tfunc sqrt(x float64) (float64, error) {\n\t\tif x \u003c 0 {\n\t\t\treturn 0, NegativeErr{} // error: missing method\n\t\t}\n\t\t...\n\t}\n\n\ttype NegativeErr struct{}\n\nThis analyzer will suggest a fix to declare this method:\n\n\t// Error implements error.Error.\n\tfunc (NegativeErr) Error() string {\n\t\tpanic(\"unimplemented\")\n\t}\n\n(At least, it appears to behave that way, but technically it\ndoesn't use the SuggestedFix mechanism and the stub is created by\nlogic in gopls's golang.stub function.)",
-							"Default": "true"
-						},
-						{
 							"Name": "\"testinggoroutine\"",
 							"Doc": "report calls to (*testing.T).Fatal from goroutines started by a test\n\nFunctions that abruptly terminate a test, such as the Fatal, Fatalf, FailNow, and\nSkip{,f,Now} methods of *testing.T, must be called from the test goroutine itself.\nThis checker detects calls to these functions that occur within a goroutine\nstarted by the test. For example:\n\n\tfunc TestFoo(t *testing.T) {\n\t    go func() {\n\t        t.Fatal(\"oops\") // error: (*T).Fatal called from non-test goroutine\n\t    }()\n\t}",
 							"Default": "true"
@@ -1236,12 +1231,6 @@
 			"Name": "structtag",
 			"Doc": "check that struct field tags conform to reflect.StructTag.Get\n\nAlso report certain struct tags (json, xml) used with unexported fields.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/structtag",
-			"Default": true
-		},
-		{
-			"Name": "stubmethods",
-			"Doc": "detect missing methods and fix with stub implementations\n\nThis analyzer detects type-checking errors due to missing methods\nin assignments from concrete types to interface types, and offers\na suggested fix that will create a set of stub methods so that\nthe concrete type satisfies the interface.\n\nFor example, this function will not compile because the value\nNegativeErr{} does not implement the \"error\" interface:\n\n\tfunc sqrt(x float64) (float64, error) {\n\t\tif x \u003c 0 {\n\t\t\treturn 0, NegativeErr{} // error: missing method\n\t\t}\n\t\t...\n\t}\n\n\ttype NegativeErr struct{}\n\nThis analyzer will suggest a fix to declare this method:\n\n\t// Error implements error.Error.\n\tfunc (NegativeErr) Error() string {\n\t\tpanic(\"unimplemented\")\n\t}\n\n(At least, it appears to behave that way, but technically it\ndoesn't use the SuggestedFix mechanism and the stub is created by\nlogic in gopls's golang.stub function.)",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods",
 			"Default": true
 		},
 		{

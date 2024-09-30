@@ -119,6 +119,52 @@ Client support:
 - **Vim + coc.nvim**: ??
 - **CLI**: `gopls check file.go`
 
+
+<!-- Below we list any quick fixes (by their internal fix name)
+     that aren't analyzers. -->
+
+### `stubMethods`: Declare missing methods of type
+
+When a value of a concrete type is assigned to a variable of an
+interface type, but the concrete type does not possess all the
+necessary methods, the type checker will report a "missing method"
+error.
+
+In this situation, gopls offers a quick fix to add stub declarations
+of all the missing methods to the concrete type so that it implements
+the interface.
+
+For example, this function will not compile because the value
+`NegativeErr{}` does not implement the "error" interface:
+
+```go
+func sqrt(x float64) (float64, error) {
+	if x < 0 {
+		return 0, NegativeErr{} // error: missing method
+	}
+	...
+}
+
+type NegativeErr struct{}
+```
+
+Gopls will offer a quick fix to declare this method:
+
+```go
+
+// Error implements error.Error.
+func (NegativeErr) Error() string {
+	panic("unimplemented")
+}
+```
+
+Beware that the new declarations appear alongside the concrete type,
+which may be in a different file or even package from the cursor
+position.
+(Perhaps gopls should send a `showDocument` request to navigate the
+client there, or a progress notification indicating that something
+happened.)
+
 <!--
 
 dorky details and deletia:

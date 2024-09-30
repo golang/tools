@@ -347,9 +347,10 @@ type (
 
 func _() {
 	// Local types can't be stubbed as there's nowhere to put the methods.
-	// The suggestedfix assertion can't express this yet. TODO(adonovan): support it.
+	// Check that executing the code action causes an error, not file corruption.
+	// TODO(adonovan): it would be better not to offer the quick fix in this case.
 	type local struct{}
-	var _ io.ReadCloser = local{} //@diag("local", re"does not implement")
+	var _ io.ReadCloser = local{} //@suggestedfixerr("local", re"does not implement", "local type \"local\" cannot be stubbed")
 }
 -- @typedecl_group/typedecl_group.go --
 @@ -18 +18,10 @@

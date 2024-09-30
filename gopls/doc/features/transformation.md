@@ -275,9 +275,6 @@ The `refactor.extract` family of code actions all return commands that
 replace the selected expression or statements with a reference to a
 newly created declaration that contains the selected code:
 
-<!-- See TODO comments in settings/codeactionkind.go about splitting
-     up "refactor.extract" into finer grained categories. -->
-
 - **`refactor.extract.function`** replaces one or more complete statements by a
   call to a new function named `newFunction` whose body contains the
   statements. The selection must enclose fewer statements than the

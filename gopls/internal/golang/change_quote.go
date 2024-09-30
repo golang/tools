@@ -68,5 +68,5 @@ func convertStringLiteral(req *codeActionsRequest) {
 		bug.Reportf("failed to convert diff.Edit to protocol.TextEdit:%v", err)
 		return
 	}
-	req.addEditAction(title, protocol.DocumentChangeEdit(req.fh, textedits))
+	req.addEditAction(title, nil, protocol.DocumentChangeEdit(req.fh, textedits))
 }

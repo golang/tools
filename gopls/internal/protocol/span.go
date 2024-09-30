@@ -58,12 +58,37 @@ func ComparePosition(a, b Position) int {
 	return 0
 }
 
-func Intersect(a, b Range) bool {
-	if a.Start.Line > b.End.Line || a.End.Line < b.Start.Line {
-		return false
+// Intersect reports whether x and y intersect.
+//
+// Two non-empty half-open integer intervals intersect iff:
+//
+//	y.start < x.end && x.start < y.end
+//
+// Mathematical conventional views an interval as a set of integers.
+// An empty interval is the empty set, so its intersection with any
+// other interval is empty, and thus an empty interval does not
+// intersect any other interval.
+//
+// However, this function uses a looser definition appropriate for
+// text selections: if either x or y is empty, it uses <= operators
+// instead, so an empty range within or abutting a non-empty range is
+// considered to overlap it, and an empty range overlaps itself.
+//
+// This handles the common case in which there is no selection, but
+// the cursor is at the start or end of an expression and the caller
+// wants to know whether the cursor intersects the range of the
+// expression. The answer in this case should be yes, even though the
+// selection is empty. Similarly the answer should also be yes if the
+// cursor is properly within the range of the expression. But a
+// non-empty selection abutting the expression should not be
+// considered to intersect it.
+func Intersect(x, y Range) bool {
+	r1 := ComparePosition(x.Start, y.End)
+	r2 := ComparePosition(y.Start, x.End)
+	if r1 < 0 && r2 < 0 {
+		return true // mathematical intersection
 	}
-	return !((a.Start.Line == b.End.Line) && a.Start.Character > b.End.Character ||
-		(a.End.Line == b.Start.Line) && a.End.Character < b.Start.Character)
+	return (x.Empty() || y.Empty()) && r1 <= 0 && r2 <= 0
 }
 
 // Format implements fmt.Formatter.

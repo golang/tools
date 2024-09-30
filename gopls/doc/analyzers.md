@@ -796,42 +796,6 @@ Default: on.
 
 Package documentation: [structtag](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/structtag)
 
-<a id='stubmethods'></a>
-## `stubmethods`: detect missing methods and fix with stub implementations
-
-
-This analyzer detects type-checking errors due to missing methods
-in assignments from concrete types to interface types, and offers
-a suggested fix that will create a set of stub methods so that
-the concrete type satisfies the interface.
-
-For example, this function will not compile because the value
-NegativeErr{} does not implement the "error" interface:
-
-	func sqrt(x float64) (float64, error) {
-		if x < 0 {
-			return 0, NegativeErr{} // error: missing method
-		}
-		...
-	}
-
-	type NegativeErr struct{}
-
-This analyzer will suggest a fix to declare this method:
-
-	// Error implements error.Error.
-	func (NegativeErr) Error() string {
-		panic("unimplemented")
-	}
-
-(At least, it appears to behave that way, but technically it
-doesn't use the SuggestedFix mechanism and the stub is created by
-logic in gopls's golang.stub function.)
-
-Default: on.
-
-Package documentation: [stubmethods](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/stubmethods)
-
 <a id='testinggoroutine'></a>
 ## `testinggoroutine`: report calls to (*testing.T).Fatal from goroutines started by a test
 

@@ -40,6 +40,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 
 	// A function-local type cannot be stubbed
 	// since there's nowhere to put the methods.
+	// TODO(adonovan): move this check into GetStubInfo instead of offering a bad fix.
 	conc := si.Concrete.Obj()
 	if conc.Parent() != conc.Pkg().Scope() {
 		return nil, nil, fmt.Errorf("local type %q cannot be stubbed", conc.Name())

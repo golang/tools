@@ -2028,8 +2028,10 @@ func (mark marker) consumeExtraNotes(name string, f func(marker)) {
 
 // suggestedfixMarker implements the @suggestedfix(location, regexp,
 // kind, golden) marker. It acts like @diag(location, regexp), to set
-// the expectation of a diagnostic, but then it applies the first code
-// action of the specified kind suggested by the matched diagnostic.
+// the expectation of a diagnostic, but then it applies the "quickfix"
+// code action (which must be unique) suggested by the matched diagnostic.
+//
+// TODO(adonovan): rename to @quickfix, since that's the LSP term.
 func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, golden *Golden) {
 	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
 	// Find and remove the matching diagnostic.

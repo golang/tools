@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/analysis/fillswitch"
+	"golang.org/x/tools/gopls/internal/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
@@ -26,6 +27,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -135,13 +137,13 @@ type codeActionsRequest struct {
 }
 
 // addApplyFixAction adds an ApplyFix command-based CodeAction to the result.
-func (req *codeActionsRequest) addApplyFixAction(title, fix string, loc protocol.Location) *protocol.CodeAction {
+func (req *codeActionsRequest) addApplyFixAction(title, fix string, loc protocol.Location) {
 	cmd := command.NewApplyFixCommand(title, command.ApplyFixArgs{
 		Fix:          fix,
 		Location:     loc,
 		ResolveEdits: req.resolveEdits(),
 	})
-	return req.addCommandAction(cmd, true)
+	req.addCommandAction(cmd, true)
 }
 
 // addCommandAction adds a CodeAction to the result based on the provided command.
@@ -153,7 +155,7 @@ func (req *codeActionsRequest) addApplyFixAction(title, fix string, loc protocol
 // Set allowResolveEdits only for actions that generate edits.
 //
 // Otherwise, the command is set as the code action operation.
-func (req *codeActionsRequest) addCommandAction(cmd *protocol.Command, allowResolveEdits bool) *protocol.CodeAction {
+func (req *codeActionsRequest) addCommandAction(cmd *protocol.Command, allowResolveEdits bool) {
 	act := protocol.CodeAction{
 		Title: cmd.Title,
 		Kind:  req.kind,
@@ -168,24 +170,22 @@ func (req *codeActionsRequest) addCommandAction(cmd *protocol.Command, allowReso
 	} else {
 		act.Command = cmd
 	}
-	return req.addAction(act)
+	req.addAction(act)
 }
 
 // addCommandAction adds an edit-based CodeAction to the result.
-func (req *codeActionsRequest) addEditAction(title string, changes ...protocol.DocumentChange) *protocol.CodeAction {
-	return req.addAction(protocol.CodeAction{
-		Title: title,
-		Kind:  req.kind,
-		Edit:  protocol.NewWorkspaceEdit(changes...),
+func (req *codeActionsRequest) addEditAction(title string, fixedDiagnostics []protocol.Diagnostic, changes ...protocol.DocumentChange) {
+	req.addAction(protocol.CodeAction{
+		Title:       title,
+		Kind:        req.kind,
+		Diagnostics: fixedDiagnostics,
+		Edit:        protocol.NewWorkspaceEdit(changes...),
 	})
 }
 
 // addAction adds a code action to the response.
-// It returns an ephemeral pointer to the action in situ.
-// which may be used (but only immediately) for further mutation.
-func (req *codeActionsRequest) addAction(act protocol.CodeAction) *protocol.CodeAction {
+func (req *codeActionsRequest) addAction(act protocol.CodeAction) {
 	*req.actions = append(*req.actions, act)
-	return &(*req.actions)[len(*req.actions)-1]
 }
 
 // resolveEdits reports whether the client can resolve edits lazily.
@@ -225,7 +225,7 @@ type codeActionProducer struct {
 }
 
 var codeActionProducers = [...]codeActionProducer{
-	{kind: protocol.QuickFix, fn: quickFix},
+	{kind: protocol.QuickFix, fn: quickFix, needPkg: true},
 	{kind: protocol.SourceOrganizeImports, fn: sourceOrganizeImports},
 	{kind: settings.GoAssembly, fn: goAssembly, needPkg: true},
 	{kind: settings.GoDoc, fn: goDoc, needPkg: true},
@@ -257,13 +257,15 @@ func sourceOrganizeImports(ctx context.Context, req *codeActionsRequest) error {
 	// Send all of the import edits as one code action
 	// if the file is being organized.
 	if len(res.allFixEdits) > 0 {
-		req.addEditAction("Organize Imports", protocol.DocumentChangeEdit(req.fh, res.allFixEdits))
+		req.addEditAction("Organize Imports", nil, protocol.DocumentChangeEdit(req.fh, res.allFixEdits))
 	}
 
 	return nil
 }
 
-// quickFix produces code actions that add/delete/rename imports to fix type errors.
+// quickFix produces code actions that fix errors,
+// for example by adding/deleting/renaming imports,
+// or declaring the missing methods of a type.
 func quickFix(ctx context.Context, req *codeActionsRequest) error {
 	// Only compute quick fixes if there are any diagnostics to fix.
 	if len(req.diagnostics) == 0 {
@@ -279,14 +281,42 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 	// Separate this into a set of codeActions per diagnostic, where
 	// each action is the addition, removal, or renaming of one import.
 	for _, importFix := range res.editsPerFix {
-		fixed := fixedByImportFix(importFix.fix, req.diagnostics)
-		if len(fixed) == 0 {
+		fixedDiags := fixedByImportFix(importFix.fix, req.diagnostics)
+		if len(fixedDiags) == 0 {
 			continue
 		}
-		act := req.addEditAction(
-			importFixTitle(importFix.fix),
-			protocol.DocumentChangeEdit(req.fh, importFix.edits))
-		act.Diagnostics = fixed
+		req.addEditAction(importFixTitle(importFix.fix), fixedDiags, protocol.DocumentChangeEdit(req.fh, importFix.edits))
+	}
+
+	// Quick fixes for type errors.
+	info := req.pkg.TypesInfo()
+	for _, typeError := range req.pkg.TypeErrors() {
+		// Does type error overlap with CodeAction range?
+		start, end := typeError.Pos, typeError.Pos
+		if _, _, endPos, ok := typesinternal.ReadGo116ErrorData(typeError); ok {
+			end = endPos
+		}
+		typeErrorRange, err := req.pgf.PosRange(start, end)
+		if err != nil || !protocol.Intersect(typeErrorRange, req.loc.Range) {
+			continue
+		}
+
+		// "Missing method" error? (stubmethods)
+		// Offer a "Declare missing methods of INTERFACE" code action.
+		// See [stubMethodsFixer] for command implementation.
+		msg := typeError.Error()
+		if strings.Contains(msg, "missing method") ||
+			strings.HasPrefix(msg, "cannot convert") ||
+			strings.Contains(msg, "not implement") {
+			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
+			si := stubmethods.GetStubInfo(req.pkg.FileSet(), info, path, start)
+			if si != nil {
+				qf := typesutil.FileQualifier(req.pgf.File, si.Concrete.Obj().Pkg(), info)
+				iface := types.TypeString(si.Interface.Type(), qf)
+				msg := fmt.Sprintf("Declare missing methods of %s", iface)
+				req.addApplyFixAction(msg, fixStubMethods, req.loc)
+			}
+		}
 	}
 
 	return nil
@@ -473,7 +503,7 @@ func refactorRewriteJoinLines(ctx context.Context, req *codeActionsRequest) erro
 	return nil
 }
 
-// refactorRewriteFillStruct produces "Join ITEMS into one line" code actions.
+// refactorRewriteFillStruct produces "Fill STRUCT" code actions.
 // See [fillstruct.SuggestedFix] for command implementation.
 func refactorRewriteFillStruct(ctx context.Context, req *codeActionsRequest) error {
 	// fillstruct.Diagnose is a lazy analyzer: all it gives us is
@@ -498,7 +528,7 @@ func refactorRewriteFillSwitch(ctx context.Context, req *codeActionsRequest) err
 		if err != nil {
 			return err
 		}
-		req.addEditAction(diag.Message, changes...)
+		req.addEditAction(diag.Message, nil, changes...)
 	}
 
 	return nil
@@ -560,6 +590,7 @@ func canRemoveParameter(pkg *cache.Package, pgf *parsego.File, rng protocol.Rang
 func refactorInlineCall(ctx context.Context, req *codeActionsRequest) error {
 	// To avoid distraction (e.g. VS Code lightbulb), offer "inline"
 	// only after a selection or explicit menu operation.
+	// TODO(adonovan): remove this (and req.trigger); see comment at TestVSCodeIssue65167.
 	if req.trigger == protocol.CodeActionAutomatic && req.loc.Empty() {
 		return nil
 	}

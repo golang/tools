@@ -220,12 +220,12 @@ The following markers are supported within marker tests:
     the active parameter (an index) highlighted.
 
   - suggestedfix(location, regexp, golden): like diag, the location and
-    regexp identify an expected diagnostic. This diagnostic must
-    to have exactly one associated code action of the specified kind.
+    regexp identify an expected diagnostic, which must have exactly one
+    associated "quickfix" code action.
     This action is executed for its editing effects on the source files.
     Like rename, the golden directory contains the expected transformed files.
 
-  - suggestedfixerr(location, regexp, kind, wantError): specifies that the
+  - suggestedfixerr(location, regexp, wantError): specifies that the
     suggestedfix operation should fail with an error that matches the expectation.
     (Failures in the computation to offer a fix do not generally result
     in LSP errors, so this marker is not appropriate for testing them.)

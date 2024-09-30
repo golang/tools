@@ -80,6 +80,16 @@ func g() {}
 
 // Test refactor.inline.call is not included in automatically triggered code action
 // unless users want refactoring.
+//
+// (The mechanism behind this behavior has changed. It was added when
+// we used to interpret CodeAction(Only=[]) as "all kinds", which was
+// a distracting nuisance (too many lightbulbs); this was fixed by
+// adding special logic to refactor.inline.call to respect the trigger
+// kind; but now we do this for all actions (for similar reasons) and
+// interpret Only=[] as Only=[quickfix] unless triggerKind=invoked;
+// except that the test client always requests CodeAction(Only=[""]).
+// So, we should remove the special logic from refactorInlineCall
+// and vary the Only parameter used by the test client.)
 func TestVSCodeIssue65167(t *testing.T) {
 	const vim1 = `package main
 

@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
-	"golang.org/x/tools/gopls/internal/analysis/stubmethods"
 	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -66,6 +65,7 @@ const (
 	fixInvertIfCondition = "invert_if_condition"
 	fixSplitLines        = "split_lines"
 	fixJoinLines         = "join_lines"
+	fixStubMethods       = "stub_methods"
 )
 
 // ApplyFix applies the specified kind of suggested fix to the given
@@ -98,7 +98,6 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		// These match the Diagnostic.Category.
 		embeddirective.FixCategory: addEmbedImport,
 		fillstruct.FixCategory:     singleFile(fillstruct.SuggestedFix),
-		stubmethods.FixCategory:    stubMethodsFixer,
 		undeclaredname.FixCategory: singleFile(undeclaredname.SuggestedFix),
 
 		// Ad-hoc fixers: these are used when the command is
@@ -110,6 +109,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fixInvertIfCondition: singleFile(invertIfCondition),
 		fixSplitLines:        singleFile(splitLines),
 		fixJoinLines:         singleFile(joinLines),
+		fixStubMethods:       stubMethodsFixer,
 	}
 	fixer, ok := fixers[fix]
 	if !ok {
