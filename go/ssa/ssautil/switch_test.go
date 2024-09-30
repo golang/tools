@@ -10,13 +10,9 @@
 package ssautil_test
 
 import (
-	"go/ast"
-	"go/parser"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/internal/testfiles"
@@ -32,39 +28,12 @@ func TestSwitches(t *testing.T) {
 	if len(ppkgs) != 1 {
 		t.Fatalf("Expected to load one package but got %d", len(ppkgs))
 	}
+	f := ppkgs[0].Syntax[0]
 
 	prog, _ := ssautil.Packages(ppkgs, ssa.BuilderMode(0))
 	mainPkg := prog.Package(ppkgs[0].Types)
 	mainPkg.Build()
-	testSwitches(t, ppkgs[0].Syntax[0], mainPkg)
-}
 
-// TestCreateProgram uses loader and ssautil.CreateProgram to create an *ssa.Program.
-// It has the same testing logic with TestSwitches.
-// CreateProgram is deprecated, but it is a part of the public API.
-// For now keep a test that exercises it.
-func TestCreateProgram(t *testing.T) {
-	dir := testfiles.ExtractTxtarFileToTmp(t, "testdata/switches.txtar")
-	conf := loader.Config{ParserMode: parser.ParseComments}
-	f, err := conf.ParseFile(filepath.Join(dir, "switches.go"), nil)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	conf.CreateFromFiles("main", f)
-	iprog, err := conf.Load()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	prog := ssautil.CreateProgram(iprog, ssa.BuilderMode(0))
-	mainPkg := prog.Package(iprog.Created[0].Pkg)
-	mainPkg.Build()
-	testSwitches(t, f, mainPkg)
-}
-
-func testSwitches(t *testing.T, f *ast.File, mainPkg *ssa.Package) {
 	for _, mem := range mainPkg.Members {
 		if fn, ok := mem.(*ssa.Function); ok {
 			if fn.Synthetic != "" {
