@@ -6,7 +6,6 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -31,6 +30,46 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
 )
+
+// Diagnostic implements the textDocument/diagnostic LSP request, reporting
+// diagnostics for the given file.
+//
+// This is a work in progress.
+// TODO(rfindley):
+//   - support RelatedDocuments? If so, how? Maybe include other package diagnostics?
+//   - support resultID (=snapshot ID)
+//   - support multiple views
+//   - add orphaned file diagnostics
+//   - support go.mod, go.work files
+func (s *server) Diagnostic(ctx context.Context, params *protocol.DocumentDiagnosticParams) (*protocol.DocumentDiagnosticReport, error) {
+	ctx, done := event.Start(ctx, "server.Diagnostic")
+	defer done()
+
+	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	uri := fh.URI()
+	kind := snapshot.FileKind(fh)
+	var diagnostics []*cache.Diagnostic
+	switch kind {
+	case file.Go:
+		diagnostics, err = golang.DiagnoseFile(ctx, snapshot, uri)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("pull diagnostics not supported for this file kind")
+	}
+	return &protocol.DocumentDiagnosticReport{
+		Value: protocol.RelatedFullDocumentDiagnosticReport{
+			FullDocumentDiagnosticReport: protocol.FullDocumentDiagnosticReport{
+				Items: toProtocolDiagnostics(diagnostics),
+			},
+		},
+	}, nil
+}
 
 // fileDiagnostics holds the current state of published diagnostics for a file.
 type fileDiagnostics struct {
@@ -61,31 +100,6 @@ type (
 	viewSet = map[*cache.View]unit
 	diagMap = map[protocol.DocumentURI][]*cache.Diagnostic
 )
-
-// hashDiagnostic computes a hash to identify a diagnostic.
-// The hash is for deduplicating within a file,
-// so it need not incorporate d.URI.
-func hashDiagnostic(d *cache.Diagnostic) file.Hash {
-	h := sha256.New()
-	for _, t := range d.Tags {
-		fmt.Fprintf(h, "tag: %s\n", t)
-	}
-	for _, r := range d.Related {
-		fmt.Fprintf(h, "related: %s %s %s\n", r.Location.URI, r.Message, r.Location.Range)
-	}
-	fmt.Fprintf(h, "code: %s\n", d.Code)
-	fmt.Fprintf(h, "codeHref: %s\n", d.CodeHref)
-	fmt.Fprintf(h, "message: %s\n", d.Message)
-	fmt.Fprintf(h, "range: %s\n", d.Range)
-	fmt.Fprintf(h, "severity: %s\n", d.Severity)
-	fmt.Fprintf(h, "source: %s\n", d.Source)
-	if d.BundledFixes != nil {
-		fmt.Fprintf(h, "fixes: %s\n", *d.BundledFixes)
-	}
-	var hash [sha256.Size]byte
-	h.Sum(hash[:0])
-	return hash
-}
 
 func sortDiagnostics(d []*cache.Diagnostic) {
 	sort.Slice(d, func(i int, j int) bool {
@@ -503,15 +517,17 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 
 	// Merge analysis diagnostics with package diagnostics, and store the
 	// resulting analysis diagnostics.
+	combinedDiags := make(diagMap)
 	for uri, adiags := range analysisDiags {
 		tdiags := pkgDiags[uri]
-		var tdiags2, adiags2 []*cache.Diagnostic
-		combineDiagnostics(tdiags, adiags, &tdiags2, &adiags2)
-		pkgDiags[uri] = tdiags2
-		analysisDiags[uri] = adiags2
+		combinedDiags[uri] = golang.CombineDiagnostics(tdiags, adiags)
 	}
-	store("type checking", pkgDiags, nil)           // error reported above
-	store("analyzing packages", analysisDiags, nil) // error reported above
+	for uri, tdiags := range pkgDiags {
+		if _, ok := combinedDiags[uri]; !ok {
+			combinedDiags[uri] = tdiags
+		}
+	}
+	store("type checking and analysing", combinedDiags, nil) // error reported above
 
 	return diagnostics, nil
 }
@@ -544,55 +560,6 @@ func (s *server) gcDetailsDiagnostics(ctx context.Context, snapshot *cache.Snaps
 		}
 	}
 	return diagnostics, nil
-}
-
-// combineDiagnostics combines and filters list/parse/type diagnostics from
-// tdiags with adiags, and appends the two lists to *outT and *outA,
-// respectively.
-//
-// Type-error analyzers produce diagnostics that are redundant
-// with type checker diagnostics, but more detailed (e.g. fixes).
-// Rather than report two diagnostics for the same problem,
-// we combine them by augmenting the type-checker diagnostic
-// and discarding the analyzer diagnostic.
-//
-// If an analysis diagnostic has the same range and message as
-// a list/parse/type diagnostic, the suggested fix information
-// (et al) of the latter is merged into a copy of the former.
-// This handles the case where a type-error analyzer suggests
-// a fix to a type error, and avoids duplication.
-//
-// The use of out-slices, though irregular, allows the caller to
-// easily choose whether to keep the results separate or combined.
-//
-// The arguments are not modified.
-func combineDiagnostics(tdiags []*cache.Diagnostic, adiags []*cache.Diagnostic, outT, outA *[]*cache.Diagnostic) {
-
-	// Build index of (list+parse+)type errors.
-	type key struct {
-		Range   protocol.Range
-		message string
-	}
-	index := make(map[key]int) // maps (Range,Message) to index in tdiags slice
-	for i, diag := range tdiags {
-		index[key{diag.Range, diag.Message}] = i
-	}
-
-	// Filter out analysis diagnostics that match type errors,
-	// retaining their suggested fix (etc) fields.
-	for _, diag := range adiags {
-		if i, ok := index[key{diag.Range, diag.Message}]; ok {
-			copy := *tdiags[i]
-			copy.SuggestedFixes = diag.SuggestedFixes
-			copy.Tags = diag.Tags
-			tdiags[i] = &copy
-			continue
-		}
-
-		*outA = append(*outA, diag)
-	}
-
-	*outT = append(*outT, tdiags...)
 }
 
 // mustPublishDiagnostics marks the uri as needing publication, independent of
@@ -815,7 +782,7 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 	// diagSuffixes records the set of view suffixes for a given diagnostic.
 	diagSuffixes := make(map[file.Hash][]diagSuffix)
 	add := func(diag *cache.Diagnostic, suffix string) {
-		h := hashDiagnostic(diag)
+		h := diag.Hash()
 		diagSuffixes[h] = append(diagSuffixes[h], diagSuffix{diag, suffix})
 	}
 
@@ -901,7 +868,7 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 			diag2 := *first.diag // shallow copy
 			diag2.Message += first.suffix
 			first.diag = &diag2
-			h = hashDiagnostic(&diag2) // update the hash
+			h = diag2.Hash() // update the hash
 		}
 
 		hash.XORWith(h)
@@ -925,6 +892,9 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 }
 
 func toProtocolDiagnostics(diagnostics []*cache.Diagnostic) []protocol.Diagnostic {
+	// TODO(rfindley): support bundling edits, and bundle all suggested fixes here.
+	// (see cache.bundleLazyFixes).
+
 	reports := []protocol.Diagnostic{}
 	for _, diag := range diagnostics {
 		pdiag := protocol.Diagnostic{

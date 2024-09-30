@@ -11,7 +11,7 @@ common mistakes.
 Diagnostics come from two main sources: compilation errors and analysis findings.
 
 - **Compilation errors** are those that you would obtain from running `go
-  build`. Gopls doesn't actually run the compiler; that would be too
+build`. Gopls doesn't actually run the compiler; that would be too
   slow. Instead it runs `go list` (when needed) to compute the
   metadata of the compilation, then processes those packages in a similar
   manner to the compiler front-end: reading, scanning, and parsing the
@@ -51,7 +51,7 @@ Diagnostics come from two main sources: compilation errors and analysis findings
 
 ## Recomputation of diagnostics
 
-Diagnostics are automatically recomputed each time the source files
+By default, diagnostics are automatically recomputed each time the source files
 are edited.
 
 Compilation errors in open files are updated after a very short delay
@@ -68,9 +68,12 @@ Alternatively, diagnostics may be triggered only after an edited file
 is saved, using the
 [`diagnosticsTrigger`](../settings.md#diagnosticsTrigger) setting.
 
-Gopls does not currently support "pull-based" diagnostics, which are
-computed synchronously when requested by the client; see golang/go#53275.
-
+When initialized with `"pullDiagnostics": true`, gopls also supports
+["pull diagnostics"](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_pullDiagnostics),
+an alternative mechanism for recomputing diagnostics in which the client
+requests diagnostics from gopls explicitly using the `textDocument/diagnostic`
+request. This feature is off by default until the performance of pull
+diagnostics is comparable to push diagnostics.
 
 ## Quick fixes
 
@@ -91,6 +94,7 @@ Suggested fixes that are indisputably safe are [code
 actions](transformation.md#code-actions) whose kind is
 `"source.fixAll"`.
 Many client editors have a shortcut to apply all such fixes.
+
 <!-- Note: each Code Action has exactly one kind, so a server
      must offer each "safe" action twice, once with its usual kind
      and once with kind "source.fixAll".
@@ -111,6 +115,7 @@ Settings:
   the base URI for Go package links in the Diagnostic.CodeDescription field.
 
 Client support:
+
 - **VS Code**: Each diagnostic appears as a squiggly underline.
   Hovering reveals the details, along with any suggested fixes.
 - **Emacs + eglot**: Each diagnostic appears as a squiggly underline.
@@ -118,7 +123,6 @@ Client support:
   to apply available fixes; it will prompt if there are more than one.
 - **Vim + coc.nvim**: ??
 - **CLI**: `gopls check file.go`
-
 
 <!-- Below we list any quick fixes (by their internal fix name)
      that aren't analyzers. -->

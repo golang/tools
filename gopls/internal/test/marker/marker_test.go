@@ -150,12 +150,14 @@ func Test(t *testing.T) {
 				CapabilitiesJSON: test.capabilities,
 				Env:              test.env,
 			}
+
 			if _, ok := config.Settings["diagnosticsDelay"]; !ok {
 				if config.Settings == nil {
 					config.Settings = make(map[string]any)
 				}
 				config.Settings["diagnosticsDelay"] = "10ms"
 			}
+
 			// inv: config.Settings != nil
 
 			run := &markerTestRun{
@@ -179,13 +181,32 @@ func Test(t *testing.T) {
 				run.env.OpenFile(file)
 			}
 
+			allDiags := make(map[string][]protocol.Diagnostic)
+			if run.env.Editor.ServerCapabilities().DiagnosticProvider != nil {
+				for name := range test.files {
+					// golang/go#53275: support pull diagnostics for go.mod and go.work
+					// files.
+					if strings.HasSuffix(name, ".go") {
+						allDiags[name] = run.env.Diagnostics(name)
+					}
+				}
+			} else {
+				// Wait for the didOpen notifications to be processed, then collect
+				// diagnostics.
+
+				run.env.AfterChange()
+				var diags map[string]*protocol.PublishDiagnosticsParams
+				run.env.AfterChange(integration.ReadAllDiagnostics(&diags))
+				for path, params := range diags {
+					allDiags[path] = params.Diagnostics
+				}
+			}
+
 			// Wait for the didOpen notifications to be processed, then collect
 			// diagnostics.
-			var diags map[string]*protocol.PublishDiagnosticsParams
-			run.env.AfterChange(integration.ReadAllDiagnostics(&diags))
-			for path, params := range diags {
+			for path, diags := range allDiags {
 				uri := run.env.Sandbox.Workdir.URI(path)
-				for _, diag := range params.Diagnostics {
+				for _, diag := range diags {
 					loc := protocol.Location{
 						URI: uri,
 						Range: protocol.Range{

@@ -699,6 +699,12 @@ type InternalOptions struct {
 	// dynamically creating build configurations for different modules,
 	// directories, and GOOS/GOARCH combinations to cover open files.
 	ZeroConfig bool
+
+	// PullDiagnostics enables support for pull diagnostics.
+	//
+	// TODO(rfindley): make pull diagnostics robust, and remove this option,
+	// allowing pull diagnostics by default.
+	PullDiagnostics bool
 }
 
 type SubdirWatchPatterns string
@@ -1160,6 +1166,9 @@ func (o *Options) setOne(name string, value any) error {
 
 	case "zeroConfig":
 		return setBool(&o.ZeroConfig, value)
+
+	case "pullDiagnostics":
+		return setBool(&o.PullDiagnostics, value)
 
 	// deprecated and renamed settings
 	//

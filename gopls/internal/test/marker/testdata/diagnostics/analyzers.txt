@@ -1,6 +1,11 @@
 Test of warning diagnostics from various analyzers:
 copylocks, printf, slog, tests, timeformat, nilness, and cgocall.
 
+-- settings.json --
+{
+	"pullDiagnostics": true
+}
+
 -- go.mod --
 module example.com
 go 1.12

@@ -108,6 +108,17 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 			ResolveProvider: true,
 		}
 	}
+
+	var diagnosticProvider *protocol.Or_ServerCapabilities_diagnosticProvider
+	if options.PullDiagnostics {
+		diagnosticProvider = &protocol.Or_ServerCapabilities_diagnosticProvider{
+			Value: protocol.DiagnosticOptions{
+				InterFileDependencies: true,
+				WorkspaceDiagnostics:  false, // we don't support workspace/diagnostic
+			},
+		}
+	}
+
 	var renameOpts interface{} = true
 	if r := params.Capabilities.TextDocument.Rename; r != nil && r.PrepareSupport {
 		renameOpts = protocol.RenameOptions{
@@ -144,6 +155,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 			DocumentHighlightProvider: &protocol.Or_ServerCapabilities_documentHighlightProvider{Value: true},
 			DocumentLinkProvider:      &protocol.DocumentLinkOptions{},
 			InlayHintProvider:         protocol.InlayHintOptions{},
+			DiagnosticProvider:        diagnosticProvider,
 			ReferencesProvider:        &protocol.Or_ServerCapabilities_referencesProvider{Value: true},
 			RenameProvider:            renameOpts,
 			SelectionRangeProvider:    &protocol.Or_ServerCapabilities_selectionRangeProvider{Value: true},

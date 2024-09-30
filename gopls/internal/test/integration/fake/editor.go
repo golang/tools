@@ -388,6 +388,12 @@ func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
 	return capabilities, nil
 }
 
+// Returns the connected LSP server's capabilities.
+// Only populated after a call to [Editor.Connect].
+func (e *Editor) ServerCapabilities() protocol.ServerCapabilities {
+	return e.serverCapabilities
+}
+
 // marshalUnmarshal is a helper to json Marshal and then Unmarshal as a
 // different type. Used to work around cases where our protocol types are not
 // specific.
@@ -1017,6 +1023,42 @@ func (e *Editor) ApplyCodeAction(ctx context.Context, action protocol.CodeAction
 	}
 	// Some commands may edit files on disk.
 	return e.sandbox.Workdir.CheckForFileChanges(ctx)
+}
+
+func (e *Editor) Diagnostics(ctx context.Context, path string) ([]protocol.Diagnostic, error) {
+	if e.Server == nil {
+		return nil, errors.New("not connected")
+	}
+	e.mu.Lock()
+	capabilities := e.serverCapabilities.DiagnosticProvider
+	e.mu.Unlock()
+
+	if capabilities == nil {
+		return nil, errors.New("server does not support pull diagnostics")
+	}
+	switch capabilities.Value.(type) {
+	case nil:
+		return nil, errors.New("server does not support pull diagnostics")
+	case protocol.DiagnosticOptions:
+	case protocol.DiagnosticRegistrationOptions:
+		// We could optionally check TextDocumentRegistrationOptions here to
+		// see if any filters apply to path.
+	default:
+		panic(fmt.Sprintf("unknown DiagnosticsProvider type %T", capabilities.Value))
+	}
+
+	params := &protocol.DocumentDiagnosticParams{
+		TextDocument: e.TextDocumentIdentifier(path),
+	}
+	result, err := e.Server.Diagnostic(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	report, ok := result.Value.(protocol.RelatedFullDocumentDiagnosticReport)
+	if !ok {
+		return nil, fmt.Errorf("unexpected diagnostics report type %T", result)
+	}
+	return report.Items, nil
 }
 
 // GetQuickFixes returns the available quick fix code actions.

@@ -238,7 +238,7 @@ func (e *Env) ApplyQuickFixes(path string, diagnostics []protocol.Diagnostic) {
 	}
 }
 
-// ApplyCodeAction applies the given code action.
+// ApplyCodeAction applies the given code action, calling t.Fatal on any error.
 func (e *Env) ApplyCodeAction(action protocol.CodeAction) {
 	e.T.Helper()
 	if err := e.Editor.ApplyCodeAction(e.Ctx, action); err != nil {
@@ -246,7 +246,19 @@ func (e *Env) ApplyCodeAction(action protocol.CodeAction) {
 	}
 }
 
-// GetQuickFixes returns the available quick fix code actions.
+// Diagnostics returns diagnostics for the given file, calling t.Fatal on any
+// error.
+func (e *Env) Diagnostics(name string) []protocol.Diagnostic {
+	e.T.Helper()
+	diags, err := e.Editor.Diagnostics(e.Ctx, name)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return diags
+}
+
+// GetQuickFixes returns the available quick fix code actions, calling t.Fatal
+// on any error.
 func (e *Env) GetQuickFixes(path string, diagnostics []protocol.Diagnostic) []protocol.CodeAction {
 	e.T.Helper()
 	loc := e.Sandbox.Workdir.EntireFile(path)

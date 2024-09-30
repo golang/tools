@@ -5,9 +5,11 @@
 package cache
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 )
@@ -67,6 +69,30 @@ type Diagnostic struct {
 
 func (d *Diagnostic) String() string {
 	return fmt.Sprintf("%v: %s", d.Range, d.Message)
+}
+
+// Hash computes a hash to identify the diagnostic.
+// The hash is for deduplicating within a file, so does not incorporate d.URI.
+func (d *Diagnostic) Hash() file.Hash {
+	h := sha256.New()
+	for _, t := range d.Tags {
+		fmt.Fprintf(h, "tag: %s\n", t)
+	}
+	for _, r := range d.Related {
+		fmt.Fprintf(h, "related: %s %s %s\n", r.Location.URI, r.Message, r.Location.Range)
+	}
+	fmt.Fprintf(h, "code: %s\n", d.Code)
+	fmt.Fprintf(h, "codeHref: %s\n", d.CodeHref)
+	fmt.Fprintf(h, "message: %s\n", d.Message)
+	fmt.Fprintf(h, "range: %s\n", d.Range)
+	fmt.Fprintf(h, "severity: %s\n", d.Severity)
+	fmt.Fprintf(h, "source: %s\n", d.Source)
+	if d.BundledFixes != nil {
+		fmt.Fprintf(h, "fixes: %s\n", *d.BundledFixes)
+	}
+	var hash [sha256.Size]byte
+	h.Sum(hash[:0])
+	return hash
 }
 
 type DiagnosticSource string

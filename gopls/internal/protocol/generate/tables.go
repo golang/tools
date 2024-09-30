@@ -120,8 +120,6 @@ var usedDisambiguate = make(map[string]bool)
 var goplsType = map[string]string{
 	"And_RegOpt_textDocument_colorPresentation": "WorkDoneProgressOptionsAndTextDocumentRegistrationOptions",
 	"ConfigurationParams":                       "ParamConfiguration",
-	"DocumentDiagnosticParams":                  "string",
-	"DocumentDiagnosticReport":                  "string",
 	"DocumentUri":                               "DocumentURI",
 	"InitializeParams":                          "ParamInitialize",
 	"LSPAny":                                    "interface{}",

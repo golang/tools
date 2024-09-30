@@ -1,5 +1,10 @@
 Test of "undeclared" diagnostic in generated code.
 
+-- settings.json --
+{
+	"pullDiagnostics": true
+}
+
 -- go.mod --
 module example.com
 go 1.12

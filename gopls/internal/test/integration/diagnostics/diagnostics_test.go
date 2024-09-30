@@ -72,7 +72,11 @@ module mod.com
 
 go 1.12
 `
-	Run(t, onlyMod, func(t *testing.T, env *Env) {
+	WithOptions(
+		Settings{
+			"pullDiagnostics": true,
+		},
+	).Run(t, onlyMod, func(t *testing.T, env *Env) {
 		env.CreateBuffer("main.go", `package main
 
 func m() {
@@ -81,6 +85,9 @@ func m() {
 `)
 		env.AfterChange(Diagnostics(env.AtRegexp("main.go", "log")))
 		env.SaveBuffer("main.go")
+		if got := env.Diagnostics("main.go"); len(got) != 0 {
+			t.Errorf("got %d diagnostics, want 0", len(got))
+		}
 		env.AfterChange(NoDiagnostics(ForFile("main.go")))
 	})
 }
@@ -121,8 +128,18 @@ const a = 2
 `
 
 func TestDiagnosticClearingOnEdit(t *testing.T) {
-	Run(t, badPackage, func(t *testing.T, env *Env) {
+	WithOptions(
+		Settings{
+			"pullDiagnostics": true,
+		},
+	).Run(t, badPackage, func(t *testing.T, env *Env) {
 		env.OpenFile("b.go")
+
+		for _, f := range []string{"a.go", "b.go"} {
+			if got := env.Diagnostics(f); len(got) != 1 {
+				t.Errorf("textDocument/diagnostic(%s) returned %d diagnostics, want 1. Got %v", f, len(got), got)
+			}
+		}
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("a.go", "a = 1")),
 			Diagnostics(env.AtRegexp("b.go", "a = 2")),
@@ -130,6 +147,11 @@ func TestDiagnosticClearingOnEdit(t *testing.T) {
 
 		// Fix the error by editing the const name in b.go to `b`.
 		env.RegexpReplace("b.go", "(a) = 2", "b")
+		for _, f := range []string{"a.go", "b.go"} {
+			if got := env.Diagnostics(f); len(got) != 0 {
+				t.Errorf("textDocument/diagnostic(%s) returned %d diagnostics, want 0. Got %v", f, len(got), got)
+			}
+		}
 		env.AfterChange(
 			NoDiagnostics(ForFile("a.go")),
 			NoDiagnostics(ForFile("b.go")),

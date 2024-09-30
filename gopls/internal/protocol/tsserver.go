@@ -64,7 +64,7 @@ type Server interface {
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_definition
 	Definition(context.Context, *DefinitionParams) ([]Location, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_diagnostic
-	Diagnostic(context.Context, *string) (*string, error)
+	Diagnostic(context.Context, *DocumentDiagnosticParams) (*DocumentDiagnosticReport, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_didChange
 	DidChange(context.Context, *DidChangeTextDocumentParams) error
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_didClose
@@ -387,7 +387,7 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 		return true, reply(ctx, resp, nil)
 
 	case "textDocument/diagnostic":
-		var params string
+		var params DocumentDiagnosticParams
 		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
@@ -1030,8 +1030,8 @@ func (s *serverDispatcher) Definition(ctx context.Context, params *DefinitionPar
 	}
 	return result, nil
 }
-func (s *serverDispatcher) Diagnostic(ctx context.Context, params *string) (*string, error) {
-	var result *string
+func (s *serverDispatcher) Diagnostic(ctx context.Context, params *DocumentDiagnosticParams) (*DocumentDiagnosticReport, error) {
+	var result *DocumentDiagnosticReport
 	if err := s.sender.Call(ctx, "textDocument/diagnostic", params, &result); err != nil {
 		return nil, err
 	}
