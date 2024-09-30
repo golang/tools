@@ -24,7 +24,6 @@ import (
 
 	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/aliases"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -440,7 +439,7 @@ func TestIExportDataTypeParameterizedAliases(t *testing.T) {
 	// * import the data (via either x/tools or GOROOT's gcimporter), and
 	// * check the imported types.
 
-	const src = `package a
+	const src = `package pkg
 
 type A[T any] = *T
 type B[R any, S *R] = []S
@@ -452,12 +451,12 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 
 	// parse and typecheck
 	fset1 := token.NewFileSet()
-	f, err := parser.ParseFile(fset1, "a", src, 0)
+	f, err := parser.ParseFile(fset1, "pkg", src, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var conf types.Config
-	pkg1, err := conf.Check("a", fset1, []*ast.File{f}, nil)
+	pkg1, err := conf.Check("pkg", fset1, []*ast.File{f}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -499,7 +498,7 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 
 			// Write export data to temporary file
 			out := t.TempDir()
-			name := filepath.Join(out, "a.out")
+			name := filepath.Join(out, "pkg.out")
 			if err := os.WriteFile(name+".a", buf.Bytes(), 0644); err != nil {
 				t.Fatal(err)
 			}
@@ -514,58 +513,23 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 	for name, importer := range testcases {
 		t.Run(name, func(t *testing.T) {
 			pkg := importer(t)
+			for name, want := range map[string]string{
+				"A":       "type pkg.A[T any] = *T",
+				"B":       "type pkg.B[R any, S *R] = []S",
+				"C":       "type pkg.C[U any] = pkg.B[U, pkg.A[U]]",
+				"Named":   "type pkg.Named int",
+				"Chained": "type pkg.Chained = pkg.C[pkg.Named]",
+			} {
+				obj := pkg.Scope().Lookup(name)
+				if obj == nil {
+					t.Errorf("failed to find %q in package %s", name, pkg)
+					continue
+				}
 
-			obj := pkg.Scope().Lookup("A")
-			if obj == nil {
-				t.Fatalf("failed to find %q in package %s", "A", pkg)
-			}
-
-			// Check that A is type A[T any] = *T.
-			// TODO(taking): fix how go/types prints parameterized aliases to simplify tests.
-			alias, ok := obj.Type().(*types.Alias)
-			if !ok {
-				t.Fatalf("Obj %s is not an Alias", obj)
-			}
-
-			targs := aliases.TypeArgs(alias)
-			if targs.Len() != 0 {
-				t.Errorf("%s has %d type arguments. expected 0", alias, targs.Len())
-			}
-
-			tparams := aliases.TypeParams(alias)
-			if tparams.Len() != 1 {
-				t.Fatalf("%s has %d type arguments. expected 1", alias, targs.Len())
-			}
-			tparam := tparams.At(0)
-			if got, want := tparam.String(), "T"; got != want {
-				t.Errorf("(%q).TypeParams().At(0)=%q. want %q", alias, got, want)
-			}
-
-			anyt := types.Universe.Lookup("any").Type()
-			if c := tparam.Constraint(); !types.Identical(anyt, c) {
-				t.Errorf("(%q).Constraint()=%q. expected %q", tparam, c, anyt)
-			}
-
-			ptparam := types.NewPointer(tparam)
-			if rhs := aliases.Rhs(alias); !types.Identical(ptparam, rhs) {
-				t.Errorf("(%q).Rhs()=%q. expected %q", alias, rhs, ptparam)
-			}
-
-			// TODO(taking): add tests for B and C once it is simpler to write tests.
-
-			chained := pkg.Scope().Lookup("Chained")
-			if chained == nil {
-				t.Fatalf("failed to find %q in package %s", "Chained", pkg)
-			}
-
-			named, _ := pkg.Scope().Lookup("Named").(*types.TypeName)
-			if named == nil {
-				t.Fatalf("failed to find %q in package %s", "Named", pkg)
-			}
-
-			want := types.NewSlice(types.NewPointer(named.Type()))
-			if got := chained.Type(); !types.Identical(got, want) {
-				t.Errorf("(%q).Type()=%q which should be identical to %q", chained, got, want)
+				got := strings.ReplaceAll(obj.String(), pkg.Path(), "pkg")
+				if got != want {
+					t.Errorf("(%q).String()=%q. wanted %q", name, got, want)
+				}
 			}
 		})
 	}
