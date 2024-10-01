@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Package stubmethods provides the analysis logic for the quick fix
+// to "Declare missing methods of TYPE" errors. (The fix logic lives
+// in golang.stubMethodsFixer.)
 package stubmethods
-
-// TODO(adonovan): rename package to golang/stubmethods or move
-// functions to golang/stub.go.
 
 import (
 	"fmt"
@@ -13,6 +13,9 @@ import (
 	"go/token"
 	"go/types"
 )
+
+// TODO(adonovan): eliminate the confusing Fset parameter; only the
+// file name and byte offset of Concrete are needed.
 
 // StubInfo represents a concrete type
 // that wants to stub out an interface type

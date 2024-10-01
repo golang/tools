@@ -1109,6 +1109,10 @@ func chooseDocComment(decl ast.Decl, spec ast.Spec, field *ast.Field) *ast.Comme
 // pos; the resulting File and Pos may belong to the same or a
 // different FileSet, such as one synthesized by the parser cache, if
 // parse-caching is enabled.
+//
+// TODO(adonovan): change this function to accept a filename and a
+// byte offset, and eliminate the confusing (fset, pos) parameters.
+// Then simplify stubmethods.StubInfo, which doesn't need a Fset.
 func parseFull(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, pos token.Pos) (*parsego.File, token.Pos, error) {
 	f := fset.File(pos)
 	if f == nil {
