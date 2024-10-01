@@ -6,6 +6,9 @@
 // how to use golang.org/x/tools/go/packages to load, parse,
 // type-check, and print one or more Go packages.
 // Its precise output is unspecified and may change.
+
+//go:debug gotypesalias=0
+
 package main
 
 import (

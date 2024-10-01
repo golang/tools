@@ -4,6 +4,9 @@
 
 // The unusedresult command applies the golang.org/x/tools/go/analysis/passes/unusedresult
 // analysis to the specified packages of Go source code.
+
+//go:debug gotypesalias=0
+
 package main
 
 import (

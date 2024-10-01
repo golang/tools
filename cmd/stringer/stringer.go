@@ -70,6 +70,9 @@
 //	PillAspirin // Aspirin
 //
 // to suppress it in the output.
+
+//go:debug gotypesalias=0
+
 package main // import "golang.org/x/tools/cmd/stringer"
 
 import (

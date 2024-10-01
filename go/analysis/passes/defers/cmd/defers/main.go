@@ -3,6 +3,9 @@
 // license that can be found in the LICENSE file.
 
 // The defers command runs the defers analyzer.
+
+//go:debug gotypesalias=0
+
 package main
 
 import (

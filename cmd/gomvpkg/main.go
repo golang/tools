@@ -4,6 +4,9 @@
 
 // The gomvpkg command moves go packages, updating import declarations.
 // See the -help message or Usage constant for details.
+
+//go:debug gotypesalias=0
+
 package main
 
 import (

@@ -9,6 +9,9 @@
 // It is intended for convenient exploration and debugging of
 // go/types. The command and its web interface are not officially
 // supported and they may be changed arbitrarily in the future.
+
+//go:debug gotypesalias=0
+
 package main
 
 import (

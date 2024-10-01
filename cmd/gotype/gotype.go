@@ -85,6 +85,9 @@ To verify the output of a pipe:
 
 	echo "package foo" | gotype
 */
+
+//go:debug gotypesalias=0
+
 package main
 
 import (
