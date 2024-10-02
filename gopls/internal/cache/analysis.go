@@ -539,6 +539,9 @@ type analysisNode struct {
 	typesOnce sync.Once      // guards lazy population of types and typesErr fields
 	types     *types.Package // type information lazily imported from summary
 	typesErr  error          // an error producing type information
+
+	depHashOnce sync.Once
+	_depHash    file.Hash // memoized hash of data affecting dependents
 }
 
 func (an *analysisNode) String() string { return string(an.mp.ID) }
@@ -595,6 +598,40 @@ func (an *analysisNode) _import() (*types.Package, error) {
 		}
 	})
 	return an.types, an.typesErr
+}
+
+// depHash computes the hash of node information that may affect other nodes
+// depending on this node: the package path, export hash, and action results.
+//
+// The result is memoized to avoid redundant work when analysing multiple
+// dependents.
+func (an *analysisNode) depHash() file.Hash {
+	an.depHashOnce.Do(func() {
+		hasher := sha256.New()
+		fmt.Fprintf(hasher, "dep: %s\n", an.mp.PkgPath)
+		fmt.Fprintf(hasher, "export: %s\n", an.summary.DeepExportHash)
+
+		// action results: errors and facts
+		actions := an.summary.Actions
+		names := make([]string, 0, len(actions))
+		for name := range actions {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			summary := actions[name]
+			fmt.Fprintf(hasher, "action %s\n", name)
+			if summary.Err != "" {
+				fmt.Fprintf(hasher, "error %s\n", summary.Err)
+			} else {
+				fmt.Fprintf(hasher, "facts %s\n", summary.FactsHash)
+				// We can safely omit summary.diagnostics
+				// from the key since they have no downstream effect.
+			}
+		}
+		hasher.Sum(an._depHash[:0])
+	})
+	return an._depHash
 }
 
 // analyzeSummary is a gob-serializable summary of successfully
@@ -770,27 +807,8 @@ func (an *analysisNode) cacheKey() [sha256.Size]byte {
 
 	// vdeps, in PackageID order
 	for _, vdep := range moremaps.Sorted(an.succs) {
-		fmt.Fprintf(hasher, "dep: %s\n", vdep.mp.PkgPath)
-		fmt.Fprintf(hasher, "export: %s\n", vdep.summary.DeepExportHash)
-
-		// action results: errors and facts
-		actions := vdep.summary.Actions
-		names := make([]string, 0, len(actions))
-		for name := range actions {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			summary := actions[name]
-			fmt.Fprintf(hasher, "action %s\n", name)
-			if summary.Err != "" {
-				fmt.Fprintf(hasher, "error %s\n", summary.Err)
-			} else {
-				fmt.Fprintf(hasher, "facts %s\n", summary.FactsHash)
-				// We can safely omit summary.diagnostics
-				// from the key since they have no downstream effect.
-			}
-		}
+		hash := vdep.depHash()
+		hasher.Write(hash[:])
 	}
 
 	var hash [sha256.Size]byte
