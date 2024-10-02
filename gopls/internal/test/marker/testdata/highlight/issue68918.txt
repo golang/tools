@@ -1,6 +1,12 @@
 Regression test for https://github.com/golang/go/issues/68918:
 crash due to missing type information in CompositeLit.
 
+The corresponding go/types fix in Go 1.24 introduces a
+new error message, hence the -ignore_extra_diags flag.
+
+-- flags --
+-ignore_extra_diags
+
 -- a.go --
 package a
 
