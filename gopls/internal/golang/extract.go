@@ -246,6 +246,10 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 		if n.Pos() < start || n.End() > end {
 			return n.Pos() <= end
 		}
+		// exclude return statements in function literals because they don't affect the refactor.
+		if _, ok := n.(*ast.FuncLit); ok {
+			return false
+		}
 		ret, ok := n.(*ast.ReturnStmt)
 		if !ok {
 			return true

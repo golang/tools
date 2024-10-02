@@ -581,3 +581,36 @@ func newFunction() (int, error) {
 	return u, err
 }
 
+-- anonymousfunc.go --
+package extract
+import "cmp"
+import "slices"
+
+// issue go#64821
+func _() {
+	var s []string //@codeaction("var", anonEnd, "refactor.extract.function", anon1)
+	slices.SortFunc(s, func(a, b string) int {
+		return cmp.Compare(a, b)
+	})
+	println(s) //@loc(anonEnd, ")")
+}
+
+-- @anon1/anonymousfunc.go --
+package extract
+import "cmp"
+import "slices"
+
+// issue go#64821
+func _() {
+	//@codeaction("var", anonEnd, "refactor.extract.function", anon1)
+	newFunction() //@loc(anonEnd, ")")
+}
+
+func newFunction() {
+	var s []string
+	slices.SortFunc(s, func(a, b string) int {
+		return cmp.Compare(a, b)
+	})
+	println(s)
+}
+
