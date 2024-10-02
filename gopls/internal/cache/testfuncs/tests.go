@@ -156,7 +156,7 @@ func (b *indexBuilder) findSubtests(parent gobTest, typ *ast.FuncType, body *ast
 			continue // subtest has wrong signature
 		}
 
-		val := info.Types[call.Args[0]].Value
+		val := info.Types[call.Args[0]].Value // may be zero
 		if val == nil || val.Kind() != constant.String {
 			continue
 		}

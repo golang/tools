@@ -558,8 +558,6 @@ func highlightIdentifier(id *ast.Ident, file *ast.File, info *types.Info, result
 			highlightWriteInExpr(n.Chan)
 		case *ast.CompositeLit:
 			t := info.TypeOf(n)
-			// Every expression should have a type;
-			// work around https://github.com/golang/go/issues/69092.
 			if t == nil {
 				t = types.Typ[types.Invalid]
 			}

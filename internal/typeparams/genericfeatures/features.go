@@ -80,7 +80,7 @@ func ForPackage(inspect *inspector.Inspector, info *types.Info) Features {
 				direct |= GenericFuncDecls
 			}
 		case *ast.InterfaceType:
-			tv := info.Types[n]
+			tv := info.Types[n] // may be zero
 			if iface, _ := tv.Type.(*types.Interface); iface != nil && !iface.IsMethodSet() {
 				direct |= EmbeddedTypeSets
 			}

@@ -372,7 +372,11 @@ func freeRefs(pkg *types.Package, info *types.Info, file *ast.File, start, end t
 
 			if ref != nil {
 				ref.expr = n.(ast.Expr)
-				ref.typ = info.Types[n.(ast.Expr)].Type
+				if tv, ok := info.Types[ref.expr]; ok {
+					ref.typ = tv.Type
+				} else {
+					ref.typ = types.Typ[types.Invalid]
+				}
 				free = append(free, ref)
 			}
 

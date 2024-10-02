@@ -175,7 +175,7 @@ Outer:
 	var typ types.Type
 	if assign, ok := ts.Assign.(*ast.AssignStmt); ok && len(assign.Rhs) == 1 {
 		if rhs := assign.Rhs[0].(*ast.TypeAssertExpr); ok {
-			typ = info.TypeOf(rhs.X)
+			typ = info.TypeOf(rhs.X) // may be nil
 		}
 	}
 	return objs, typ

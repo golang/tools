@@ -40,7 +40,7 @@ func printfArgKind(info *types.Info, call *ast.CallExpr, argIdx int) objKind {
 	}
 
 	// Format string must be a constant.
-	strArg := info.Types[call.Args[numParams-2]].Value
+	strArg := info.Types[call.Args[numParams-2]].Value // may be zero
 	if strArg == nil || strArg.Kind() != constant.String {
 		return kindAny
 	}
