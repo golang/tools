@@ -16,7 +16,7 @@ Their features are subject to change.
 
 Client support:
 - **VS Code**: Code Lenses appear as small text links above a line of source code.
-- **Emacs + eglot**: Not supported, but prototype exists at https://github.joaotavora/eglot/pull/71.
+- **Emacs + eglot**: Not supported, but prototype exists at https://github.com/joaotavora/eglot/pull/71.
 - **Vim + coc.nvim**: ??
 - **CLI**: `gopls codelens`. For example, `gopls codelens -exec file.go:123 "run test"` runs the test at the specified line.
 
