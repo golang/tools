@@ -218,8 +218,9 @@ func typeCheck(fset *token.FileSet, files []*ast.File, goversion string) (*types
 		Importer:  importer.Default(),
 		GoVersion: goversion,
 	}
-	info := types.Info{}
-	versions.InitFileVersions(&info)
+	info := types.Info{
+		FileVersions: make(map[*ast.File]string),
+	}
 	pkg, err := conf.Check("", fset, files, &info)
 	return pkg, &info, err
 }

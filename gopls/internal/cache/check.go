@@ -1544,16 +1544,16 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, ph *packageHandle) (*
 		types:      types.NewPackage(string(inputs.pkgPath), string(inputs.name)),
 		typesSizes: inputs.sizes,
 		typesInfo: &types.Info{
-			Types:      make(map[ast.Expr]types.TypeAndValue),
-			Defs:       make(map[*ast.Ident]types.Object),
-			Uses:       make(map[*ast.Ident]types.Object),
-			Implicits:  make(map[ast.Node]types.Object),
-			Instances:  make(map[*ast.Ident]types.Instance),
-			Selections: make(map[*ast.SelectorExpr]*types.Selection),
-			Scopes:     make(map[ast.Node]*types.Scope),
+			Types:        make(map[ast.Expr]types.TypeAndValue),
+			Defs:         make(map[*ast.Ident]types.Object),
+			Uses:         make(map[*ast.Ident]types.Object),
+			Implicits:    make(map[ast.Node]types.Object),
+			Instances:    make(map[*ast.Ident]types.Instance),
+			Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+			Scopes:       make(map[ast.Node]*types.Scope),
+			FileVersions: make(map[*ast.File]string),
 		},
 	}
-	versions.InitFileVersions(pkg.typesInfo)
 
 	// Collect parsed files from the type check pass, capturing parse errors from
 	// compiled files.

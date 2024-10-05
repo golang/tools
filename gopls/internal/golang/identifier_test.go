@@ -11,8 +11,6 @@ import (
 	"go/token"
 	"go/types"
 	"testing"
-
-	"golang.org/x/tools/internal/versions"
 )
 
 func TestSearchForEnclosing(t *testing.T) {
@@ -95,13 +93,13 @@ func posAt(line, column int, fset *token.FileSet, fname string) token.Pos {
 // newInfo returns a types.Info with all maps populated.
 func newInfo() *types.Info {
 	info := &types.Info{
-		Types:      make(map[ast.Expr]types.TypeAndValue),
-		Defs:       make(map[*ast.Ident]types.Object),
-		Uses:       make(map[*ast.Ident]types.Object),
-		Implicits:  make(map[ast.Node]types.Object),
-		Selections: make(map[*ast.SelectorExpr]*types.Selection),
-		Scopes:     make(map[ast.Node]*types.Scope),
+		Types:        make(map[ast.Expr]types.TypeAndValue),
+		Defs:         make(map[*ast.Ident]types.Object),
+		Uses:         make(map[*ast.Ident]types.Object),
+		Implicits:    make(map[ast.Node]types.Object),
+		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+		Scopes:       make(map[ast.Node]*types.Scope),
+		FileVersions: make(map[*ast.File]string),
 	}
-	versions.InitFileVersions(info)
 	return info
 }

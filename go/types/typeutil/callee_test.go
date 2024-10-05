@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/versions"
 )
 
 func TestStaticCallee(t *testing.T) {
@@ -122,11 +121,11 @@ func testStaticCallee(t *testing.T, contents []string) {
 	packages := make(map[string]*types.Package)
 	cfg := &types.Config{Importer: closure(packages)}
 	info := &types.Info{
-		Instances:  make(map[*ast.Ident]types.Instance),
-		Uses:       make(map[*ast.Ident]types.Object),
-		Selections: make(map[*ast.SelectorExpr]*types.Selection),
+		Instances:    make(map[*ast.Ident]types.Instance),
+		Uses:         make(map[*ast.Ident]types.Object),
+		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+		FileVersions: make(map[*ast.File]string),
 	}
-	versions.InitFileVersions(info)
 
 	var files []*ast.File
 	for i, content := range contents {

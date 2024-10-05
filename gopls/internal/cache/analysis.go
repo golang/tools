@@ -50,7 +50,6 @@ import (
 	"golang.org/x/tools/internal/facts"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/typesinternal"
-	"golang.org/x/tools/internal/versions"
 )
 
 /*
@@ -965,17 +964,17 @@ func (an *analysisNode) typeCheck(parsed []*parsego.File) *analysisPackage {
 		compiles: len(mp.Errors) == 0, // false => list error
 		types:    types.NewPackage(string(mp.PkgPath), string(mp.Name)),
 		typesInfo: &types.Info{
-			Types:      make(map[ast.Expr]types.TypeAndValue),
-			Defs:       make(map[*ast.Ident]types.Object),
-			Instances:  make(map[*ast.Ident]types.Instance),
-			Implicits:  make(map[ast.Node]types.Object),
-			Selections: make(map[*ast.SelectorExpr]*types.Selection),
-			Scopes:     make(map[ast.Node]*types.Scope),
-			Uses:       make(map[*ast.Ident]types.Object),
+			Types:        make(map[ast.Expr]types.TypeAndValue),
+			Defs:         make(map[*ast.Ident]types.Object),
+			Instances:    make(map[*ast.Ident]types.Instance),
+			Implicits:    make(map[ast.Node]types.Object),
+			Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+			Scopes:       make(map[ast.Node]*types.Scope),
+			Uses:         make(map[*ast.Ident]types.Object),
+			FileVersions: make(map[*ast.File]string),
 		},
 		typesSizes: mp.TypesSizes,
 	}
-	versions.InitFileVersions(pkg.typesInfo)
 
 	// Unsafe has no syntax.
 	if mp.PkgPath == "unsafe" {

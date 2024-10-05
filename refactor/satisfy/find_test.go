@@ -15,7 +15,6 @@ import (
 	"sort"
 	"testing"
 
-	"golang.org/x/tools/internal/versions"
 	"golang.org/x/tools/refactor/satisfy"
 )
 
@@ -216,15 +215,15 @@ func constraints(t *testing.T, src string) []string {
 
 	// type-check
 	info := &types.Info{
-		Types:      make(map[ast.Expr]types.TypeAndValue),
-		Defs:       make(map[*ast.Ident]types.Object),
-		Uses:       make(map[*ast.Ident]types.Object),
-		Implicits:  make(map[ast.Node]types.Object),
-		Instances:  make(map[*ast.Ident]types.Instance),
-		Scopes:     make(map[ast.Node]*types.Scope),
-		Selections: make(map[*ast.SelectorExpr]*types.Selection),
+		Types:        make(map[ast.Expr]types.TypeAndValue),
+		Defs:         make(map[*ast.Ident]types.Object),
+		Uses:         make(map[*ast.Ident]types.Object),
+		Implicits:    make(map[ast.Node]types.Object),
+		Instances:    make(map[*ast.Ident]types.Instance),
+		Scopes:       make(map[ast.Node]*types.Scope),
+		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+		FileVersions: make(map[*ast.File]string),
 	}
-	versions.InitFileVersions(info)
 	conf := types.Config{
 		Importer: importer.Default(),
 	}

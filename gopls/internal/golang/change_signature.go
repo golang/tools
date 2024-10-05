@@ -28,7 +28,6 @@ import (
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typesinternal"
-	"golang.org/x/tools/internal/versions"
 )
 
 // RemoveUnusedParameter computes a refactoring to remove the parameter
@@ -482,15 +481,15 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[protocol.Docume
 func reTypeCheck(logf func(string, ...any), orig *cache.Package, fileMask map[protocol.DocumentURI]*ast.File, expectErrors bool) (*types.Package, *types.Info, error) {
 	pkg := types.NewPackage(string(orig.Metadata().PkgPath), string(orig.Metadata().Name))
 	info := &types.Info{
-		Types:      make(map[ast.Expr]types.TypeAndValue),
-		Defs:       make(map[*ast.Ident]types.Object),
-		Uses:       make(map[*ast.Ident]types.Object),
-		Implicits:  make(map[ast.Node]types.Object),
-		Selections: make(map[*ast.SelectorExpr]*types.Selection),
-		Scopes:     make(map[ast.Node]*types.Scope),
-		Instances:  make(map[*ast.Ident]types.Instance),
+		Types:        make(map[ast.Expr]types.TypeAndValue),
+		Defs:         make(map[*ast.Ident]types.Object),
+		Uses:         make(map[*ast.Ident]types.Object),
+		Implicits:    make(map[ast.Node]types.Object),
+		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+		Scopes:       make(map[ast.Node]*types.Scope),
+		Instances:    make(map[*ast.Ident]types.Instance),
+		FileVersions: make(map[*ast.File]string),
 	}
-	versions.InitFileVersions(info)
 	{
 		var files []*ast.File
 		for _, pgf := range orig.CompiledGoFiles() {

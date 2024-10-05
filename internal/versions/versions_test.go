@@ -205,8 +205,9 @@ func TestFileVersions(t *testing.T) {
 		{GoVersion: versions.Go1_22},
 		{}, // GoVersion is unset.
 	} {
-		info := &types.Info{}
-		versions.InitFileVersions(info)
+		info := &types.Info{
+			FileVersions: make(map[*ast.File]string),
+		}
 
 		_, err = conf.Check("P", fset, []*ast.File{f}, info)
 		if err != nil {
