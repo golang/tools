@@ -160,3 +160,70 @@ func _() {
 		// yay, no panic
 	})
 }
+
+func TestStubMethodCallExpr(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.12
+-- main.go --
+package main
+
+import "net/http"
+
+type Foo struct {}
+
+func main() {
+	var st string
+	st = "adasd"
+	f := Foo{}
+	B(f.bar(st, 3, "asd", "asdas", "asdsad", http.ErrShortBody, HelloWord(), []int{1}, http.ErrShortBody, [1]int{1}, make(chan string, 0), make(map[string]string, 0)))
+}
+func B(s Foo) string { return "" }
+func HelloWord() Foo{
+	return Foo{}
+}
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		var d protocol.PublishDiagnosticsParams
+		env.AfterChange(
+			ReadDiagnostics("main.go", &d),
+		)
+
+		loc := env.RegexpSearch("main.go", "bar")
+		fixes := env.CodeAction(loc, d.Diagnostics, protocol.CodeActionUnknownTrigger)
+		for _, act := range fixes {
+			if act.Kind == protocol.QuickFix {
+				env.ApplyCodeAction(act)
+				break
+			}
+		}
+
+		want := `package main
+
+import "net/http"
+
+type Foo struct{}
+
+func (f Foo) bar(st string, i int, s string, s1 string, s2 string, protocolError *http.ProtocolError, foo Foo, args7 []int, protocolError1 *http.ProtocolError, args9 [1]int, ch chan string, m map[string]string) Foo {
+	panic("unimplemented")
+}
+
+func main() {
+	var st string
+	st = "adasd"
+	f := Foo{}
+	B(f.bar(st, 3, "asd", "asdas", "asdsad", http.ErrShortBody, HelloWord(), []int{1}, http.ErrShortBody, [1]int{1}, make(chan string, 0), make(map[string]string, 0)))
+}
+func B(s Foo) string { return "" }
+func HelloWord() Foo {
+	return Foo{}
+}
+`
+		if got := env.BufferText("main.go"); got != want {
+			t.Fatalf("TestStubMethodCallExpr failed:\n%s", compare.Text(want, got))
+		}
+	})
+}
