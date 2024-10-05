@@ -12,16 +12,19 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-
 	"golang.org/x/tools/internal/typesinternal"
+	"strconv"
+	"strings"
+
+	"golang.org/x/tools/gopls/internal/cache"
 )
 
 // TODO(adonovan): eliminate the confusing Fset parameter; only the
 // file name and byte offset of Concrete are needed.
 
-// StubInfo represents a concrete type
+// IfaceStubInfo represents a concrete type
 // that wants to stub out an interface type
-type StubInfo struct {
+type IfaceStubInfo struct {
 	// Interface is the interface that the client wants to implement.
 	// When the interface is defined, the underlying object will be a TypeName.
 	// Note that we keep track of types.Object instead of types.Type in order
@@ -35,7 +38,7 @@ type StubInfo struct {
 	Pointer   bool
 }
 
-// GetStubInfo determines whether the "missing method error"
+// GetIfaceStubInfo determines whether the "missing method error"
 // can be used to deduced what the concrete and interface types are.
 //
 // TODO(adonovan): this function (and its following 5 helpers) tries
@@ -44,7 +47,7 @@ type StubInfo struct {
 // function call. This is essentially what the refactor/satisfy does,
 // more generally. Refactor to share logic, after auditing 'satisfy'
 // for safety on ill-typed code.
-func GetStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos token.Pos) *StubInfo {
+func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos token.Pos) *IfaceStubInfo {
 	for _, n := range path {
 		switch n := n.(type) {
 		case *ast.ValueSpec:
@@ -72,10 +75,150 @@ func GetStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos tok
 	return nil
 }
 
+// CallStubInfo represents a missing method
+// that a receiver type is about to generate
+// which has “type X has no field or method Y" error
+type CallStubInfo struct {
+	Fset       *token.FileSet // the FileSet used to type-check the types below
+	Receiver   *types.Named   // the method's receiver type
+	Pointer    bool
+	Args       []Arg // the argument list of new methods
+	MethodName string
+	Return     []types.Type
+}
+
+type Arg struct {
+	Name string
+	Typ  types.Type // the type of argument, infered from CallExpr
+}
+
+// GetCallStubInfo extracts necessary information to generate a method definition from
+// a CallExpr.
+func GetCallStubInfo(pkg *cache.Package, info *types.Info, path []ast.Node, pos token.Pos) *CallStubInfo {
+	fset := pkg.FileSet()
+	for i, n := range path {
+		switch n := n.(type) {
+		case *ast.CallExpr:
+			s, ok := n.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return nil
+			}
+
+			// If recvExpr is a package name, compiler error would be
+			// e.g., "undefined: http.bar", thus will not hit this code path.
+			recvExpr := s.X
+			recvType, pointer := concreteType(recvExpr, info)
+			if recvType == nil || recvType.Obj().Pkg() == nil {
+				return nil
+			}
+
+			var args []Arg
+			for i, arg := range n.Args {
+				typ, name, err := argInfo(arg, info, i)
+				if err != nil {
+					return nil
+				}
+				args = append(args, Arg{
+					Name: name,
+					Typ:  typ,
+				})
+			}
+
+			var rets []types.Type
+			if i < len(path)-1 {
+				switch parent := path[i+1].(type) {
+				case *ast.AssignStmt:
+					// Append all lhs's type
+					if len(parent.Rhs) == 1 {
+						for _, lhs := range parent.Lhs {
+							if t, ok := info.Types[lhs]; ok {
+								rets = append(rets, t.Type)
+							}
+						}
+						break
+					}
+
+					// Lhs and Rhs counts do not match, give up
+					if len(parent.Lhs) != len(parent.Rhs) {
+						break
+					}
+
+					// Append corresponding index of lhs's type
+					for i, rhs := range parent.Rhs {
+						if rhs.Pos() <= pos && pos <= rhs.End() {
+							left := parent.Lhs[i]
+							if t, ok := info.Types[left]; ok {
+								rets = append(rets, t.Type)
+							}
+							break
+						}
+					}
+				case *ast.CallExpr:
+					// Find argument containing pos.
+					argIdx := -1
+					for i, callArg := range parent.Args {
+						if callArg.Pos() <= pos && pos <= callArg.End() {
+							argIdx = i
+							break
+						}
+					}
+					if argIdx == -1 {
+						break
+					}
+
+					var def types.Object
+					switch f := parent.Fun.(type) {
+					// functon call
+					case *ast.Ident:
+						def, ok = info.Uses[f]
+						if !ok {
+							break
+						}
+					// method call
+					case *ast.SelectorExpr:
+						def, ok = info.Uses[f.Sel]
+						if !ok {
+							break
+						}
+					}
+
+					sig, ok := types.Unalias(def.Type()).(*types.Signature)
+					if !ok {
+						break
+					}
+					var paramType types.Type
+					if sig.Variadic() && argIdx >= sig.Params().Len()-1 {
+						v := sig.Params().At(sig.Params().Len() - 1)
+						if s, _ := v.Type().(*types.Slice); s != nil {
+							paramType = s.Elem()
+						}
+					} else if argIdx < sig.Params().Len() {
+						paramType = sig.Params().At(argIdx).Type()
+					}
+					if paramType == nil {
+						break
+					}
+					rets = append(rets, paramType)
+				}
+			}
+
+			return &CallStubInfo{
+				Fset:       fset,
+				Receiver:   recvType,
+				MethodName: s.Sel.Name,
+				Pointer:    pointer,
+				Args:       args,
+				Return:     rets,
+			}
+		}
+	}
+	return nil
+}
+
 // fromCallExpr tries to find an *ast.CallExpr's function declaration and
 // analyzes a function call's signature against the passed in parameter to deduce
 // the concrete and interface types.
-func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *ast.CallExpr) *StubInfo {
+func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *ast.CallExpr) *IfaceStubInfo {
 	// Find argument containing pos.
 	argIdx := -1
 	var arg ast.Expr
@@ -118,7 +261,7 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *as
 	if iface == nil {
 		return nil
 	}
-	return &StubInfo{
+	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
 		Pointer:   pointer,
@@ -130,8 +273,8 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *as
 // a concrete type that is trying to be returned as an interface type.
 //
 // For example, func() io.Writer { return myType{} }
-// would return StubInfo with the interface being io.Writer and the concrete type being myType{}.
-func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path []ast.Node, ret *ast.ReturnStmt) (*StubInfo, error) {
+// would return StubIfaceInfo with the interface being io.Writer and the concrete type being myType{}.
+func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path []ast.Node, ret *ast.ReturnStmt) (*IfaceStubInfo, error) {
 	// Find return operand containing pos.
 	returnIdx := -1
 	for i, r := range ret.Results {
@@ -161,7 +304,7 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 	if iface == nil {
 		return nil, nil
 	}
-	return &StubInfo{
+	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
 		Pointer:   pointer,
@@ -169,9 +312,9 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 	}, nil
 }
 
-// fromValueSpec returns *StubInfo from a variable declaration such as
+// fromValueSpec returns *StubIfaceInfo from a variable declaration such as
 // var x io.Writer = &T{}
-func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, pos token.Pos) *StubInfo {
+func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, pos token.Pos) *IfaceStubInfo {
 	// Find RHS element containing pos.
 	var rhs ast.Expr
 	for _, r := range spec.Values {
@@ -199,7 +342,7 @@ func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, p
 	if ifaceObj == nil {
 		return nil
 	}
-	return &StubInfo{
+	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
 		Interface: ifaceObj,
@@ -207,10 +350,10 @@ func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, p
 	}
 }
 
-// fromAssignStmt returns *StubInfo from a variable assignment such as
+// fromAssignStmt returns *StubIfaceInfo from a variable assignment such as
 // var x io.Writer
 // x = &T{}
-func fromAssignStmt(fset *token.FileSet, info *types.Info, assign *ast.AssignStmt, pos token.Pos) *StubInfo {
+func fromAssignStmt(fset *token.FileSet, info *types.Info, assign *ast.AssignStmt, pos token.Pos) *IfaceStubInfo {
 	// The interface conversion error in an assignment is against the RHS:
 	//
 	//      var x io.Writer
@@ -245,7 +388,7 @@ func fromAssignStmt(fset *token.FileSet, info *types.Info, assign *ast.AssignStm
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil
 	}
-	return &StubInfo{
+	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
 		Interface: ifaceObj,
@@ -319,4 +462,42 @@ func enclosingFunction(path []ast.Node, info *types.Info) *ast.FuncType {
 		}
 	}
 	return nil
+}
+
+// argInfo generate placeholder name heuristicly for a function argument.
+func argInfo(e ast.Expr, info *types.Info, i int) (types.Type, string, error) {
+	tv, ok := info.Types[e]
+	if !ok {
+		return nil, "", fmt.Errorf("no type info")
+	}
+
+	ident, ok := e.(*ast.Ident)
+	if ok {
+		// uses the identifier's name as the argument name.
+		return tv.Type, ident.Name, nil
+	}
+
+	typ := tv.Type
+	ptr, isPtr := types.Unalias(typ).(*types.Pointer)
+	if isPtr {
+		typ = ptr.Elem()
+	}
+
+	// Uses the first character of the type name as the argument name for builtin types
+	switch t := types.Default(typ).(type) {
+	case *types.Basic:
+		return tv.Type, t.Name()[0:1], nil
+	case *types.Signature:
+		return tv.Type, "f", nil
+	case *types.Map:
+		return tv.Type, "m", nil
+	case *types.Chan:
+		return tv.Type, "ch", nil
+	case *types.Named:
+		n := t.Obj().Name()
+		// "FooBar" becomes "fooBar"
+		return tv.Type, strings.ToLower(n[0:1]) + n[1:], nil
+	default:
+		return tv.Type, "args" + strconv.Itoa(i), nil
+	}
 }

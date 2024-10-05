@@ -66,6 +66,7 @@ const (
 	fixSplitLines        = "split_lines"
 	fixJoinLines         = "join_lines"
 	fixStubMethods       = "stub_methods"
+	fixMissingMethods    = "missing_methods"
 )
 
 // ApplyFix applies the specified kind of suggested fix to the given
@@ -109,7 +110,8 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fixInvertIfCondition: singleFile(invertIfCondition),
 		fixSplitLines:        singleFile(splitLines),
 		fixJoinLines:         singleFile(joinLines),
-		fixStubMethods:       stubMethodsFixer,
+		fixStubMethods:       stubMethodsIfaceFixer,
+		fixMissingMethods:    stubMethodsCallFixer,
 	}
 	fixer, ok := fixers[fix]
 	if !ok {

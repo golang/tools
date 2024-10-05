@@ -309,12 +309,20 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 			strings.HasPrefix(msg, "cannot convert") ||
 			strings.Contains(msg, "not implement") {
 			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
-			si := stubmethods.GetStubInfo(req.pkg.FileSet(), info, path, start)
+			si := stubmethods.GetIfaceStubInfo(req.pkg.FileSet(), info, path, start)
 			if si != nil {
 				qf := typesutil.FileQualifier(req.pgf.File, si.Concrete.Obj().Pkg(), info)
 				iface := types.TypeString(si.Interface.Type(), qf)
 				msg := fmt.Sprintf("Declare missing methods of %s", iface)
 				req.addApplyFixAction(msg, fixStubMethods, req.loc)
+			}
+		} else if strings.Contains(msg, "has no field or method") {
+			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
+
+			si := stubmethods.GetCallStubInfo(req.pkg, info, path, start)
+			if si != nil {
+				msg := fmt.Sprintf("Declare missing methods of %s", si.Receiver.Obj().Name())
+				req.addApplyFixAction(msg, fixMissingMethods, req.loc)
 			}
 		}
 	}

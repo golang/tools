@@ -29,28 +29,56 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
-// stubMethodsFixer returns a suggested fix to declare the missing
+// stubMethodsIfaceFixer returns a suggested fix to declare the missing
 // methods of the concrete type that is assigned to an interface type
 // at the cursor position.
-func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+func stubMethodsIfaceFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-	si := stubmethods.GetStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes, start)
+	si := stubmethods.GetIfaceStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes, start)
 	if si == nil {
 		return nil, nil, fmt.Errorf("nil interface request")
 	}
 
 	// A function-local type cannot be stubbed
 	// since there's nowhere to put the methods.
-	// TODO(adonovan): move this check into GetStubInfo instead of offering a bad fix.
+	// TODO(adonovan): move this check into GetIfaceStubInfo instead of offering a bad fix.
 	conc := si.Concrete.Obj()
 	if conc.Parent() != conc.Pkg().Scope() {
 		return nil, nil, fmt.Errorf("local type %q cannot be stubbed", conc.Name())
 	}
+	return stubMethodsFixer(ctx, snapshot, pkg, si.Fset, conc, fromIface(si, conc))
+}
 
+// stubMethodsCallFixer returns a suggested fix to declare the missing
+// methods that the user may want to generate based on CallExpr
+// at the cursor position.
+func stubMethodsCallFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	si := stubmethods.GetCallStubInfo(pkg, pkg.TypesInfo(), nodes, start)
+	if si == nil {
+		return nil, nil, fmt.Errorf("invalid type request")
+	}
+
+	// TODO(adonovan): move this check into GetCallStubInfo instead of offering a bad fix.
+	recv := si.Receiver.Obj()
+	if recv.Parent() != recv.Pkg().Scope() {
+		return nil, nil, fmt.Errorf("local type %q cannot be stubbed", recv.Name())
+	}
+	return stubMethodsFixer(ctx, snapshot, pkg, si.Fset, recv, fromCall(si, recv))
+}
+
+func stubMethodsFixer(
+	ctx context.Context,
+	snapshot *cache.Snapshot,
+	pkg *cache.Package,
+	fset *token.FileSet,
+	conc *types.TypeName,
+	newMethodBuf func(qual func(pkg *types.Package) string) (bytes.Buffer, error),
+) (*token.FileSet, *analysis.SuggestedFix, error) {
 	// Parse the file declaring the concrete type.
 	//
 	// Beware: declPGF is not necessarily covered by pkg.FileSet() or si.Fset.
-	declPGF, _, err := parseFull(ctx, snapshot, si.Fset, conc.Pos())
+	declPGF, _, err := parseFull(ctx, snapshot, fset, conc.Pos())
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse file %q declaring implementation type: %w", declPGF.URI, err)
 	}
@@ -63,67 +91,6 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 	declMeta := findFileInDeps(snapshot, pkg.Metadata(), declPGF.URI)
 	if declMeta == nil {
 		return nil, nil, bug.Errorf("can't find metadata for file %s among dependencies of %s", declPGF.URI, pkg)
-	}
-
-	// Record all direct methods of the current object
-	concreteFuncs := make(map[string]struct{})
-	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
-		for i := 0; i < named.NumMethods(); i++ {
-			concreteFuncs[named.Method(i).Name()] = struct{}{}
-		}
-	}
-
-	// Find subset of interface methods that the concrete type lacks.
-	ifaceType := si.Interface.Type().Underlying().(*types.Interface)
-
-	type missingFn struct {
-		fn         *types.Func
-		needSubtle string
-	}
-
-	var (
-		missing                  []missingFn
-		concreteStruct, isStruct = typesinternal.Origin(si.Concrete).Underlying().(*types.Struct)
-	)
-
-	for i := 0; i < ifaceType.NumMethods(); i++ {
-		imethod := ifaceType.Method(i)
-		cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.Pointer, imethod.Pkg(), imethod.Name())
-		if cmethod == nil {
-			missing = append(missing, missingFn{fn: imethod})
-			continue
-		}
-
-		if _, ok := cmethod.(*types.Var); ok {
-			// len(LookupFieldOrMethod.index) = 1 => conflict, >1 => shadow.
-			return nil, nil, fmt.Errorf("adding method %s.%s would conflict with (or shadow) existing field",
-				conc.Name(), imethod.Name())
-		}
-
-		if _, exist := concreteFuncs[imethod.Name()]; exist {
-			if !types.Identical(cmethod.Type(), imethod.Type()) {
-				return nil, nil, fmt.Errorf("method %s.%s already exists but has the wrong type: got %s, want %s",
-					conc.Name(), imethod.Name(), cmethod.Type(), imethod.Type())
-			}
-			continue
-		}
-
-		mf := missingFn{fn: imethod}
-		if isStruct && len(index) > 0 {
-			field := concreteStruct.Field(index[0])
-
-			fn := field.Name()
-			if is[*types.Pointer](field.Type()) {
-				fn = "*" + fn
-			}
-
-			mf.needSubtle = fmt.Sprintf("// Subtle: this method shadows the method (%s).%s of %s.%s.\n", fn, imethod.Name(), si.Concrete.Obj().Name(), field.Name())
-		}
-
-		missing = append(missing, mf)
-	}
-	if len(missing) == 0 {
-		return nil, nil, fmt.Errorf("no missing methods found")
 	}
 
 	// Build import environment for the declaring file.
@@ -196,64 +163,9 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 		return name
 	}
 
-	// Format interface name (used only in a comment).
-	iface := si.Interface.Name()
-	if ipkg := si.Interface.Pkg(); ipkg != nil && ipkg != conc.Pkg() {
-		iface = ipkg.Name() + "." + iface
-	}
-
-	// Pointer receiver?
-	var star string
-	if si.Pointer {
-		star = "*"
-	}
-
-	// If there are any that have named receiver, choose the first one.
-	// Otherwise, use lowercase for the first letter of the object.
-	rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
-	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
-		for i := 0; i < named.NumMethods(); i++ {
-			if recv := named.Method(i).Type().(*types.Signature).Recv(); recv.Name() != "" {
-				rn = recv.Name()
-				break
-			}
-		}
-	}
-
-	// Check for receiver name conflicts
-	checkRecvName := func(tuple *types.Tuple) bool {
-		for i := 0; i < tuple.Len(); i++ {
-			if rn == tuple.At(i).Name() {
-				return true
-			}
-		}
-		return false
-	}
-
-	// Format the new methods.
-	var newMethods bytes.Buffer
-
-	for index := range missing {
-		mrn := rn + " "
-		sig := missing[index].fn.Signature()
-		if checkRecvName(sig.Params()) || checkRecvName(sig.Results()) {
-			mrn = ""
-		}
-
-		fmt.Fprintf(&newMethods, `// %s implements %s.
-%sfunc (%s%s%s%s) %s%s {
-	panic("unimplemented")
-}
-`,
-			missing[index].fn.Name(),
-			iface,
-			missing[index].needSubtle,
-			mrn,
-			star,
-			si.Concrete.Obj().Name(),
-			FormatTypeParams(typesinternal.TypeParams(si.Concrete)),
-			missing[index].fn.Name(),
-			strings.TrimPrefix(types.TypeString(missing[index].fn.Type(), qual), "func"))
+	newMethods, err := newMethodBuf(qual)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Compute insertion point for new methods:
@@ -262,7 +174,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 	if err != nil {
 		return nil, nil, bug.Errorf("internal error: end position outside file bounds: %v", err)
 	}
-	concOffset, err := safetoken.Offset(si.Fset.File(conc.Pos()), conc.Pos())
+	concOffset, err := safetoken.Offset(fset.File(conc.Pos()), conc.Pos())
 	if err != nil {
 		return nil, nil, bug.Errorf("internal error: finding type decl offset: %v", err)
 	}
@@ -286,7 +198,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 	buf.Write(input[insertOffset:])
 
 	// Re-parse the file.
-	fset := token.NewFileSet()
+	fset = token.NewFileSet()
 	newF, err := parser.ParseFile(fset, declPGF.URI.Path(), buf.Bytes(), parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not reparse file: %w", err)
@@ -308,6 +220,213 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 	return tokeninternal.FileSetFor(declPGF.Tok), // edits use declPGF.Tok
 		&analysis.SuggestedFix{TextEdits: diffToTextEdits(declPGF.Tok, diffs)},
 		nil
+}
+
+// fromCall generate the missing method based on type info of CallExpr.
+func fromCall(si *stubmethods.CallStubInfo, recv *types.TypeName) func(qual func(pkg *types.Package) string) (bytes.Buffer, error) {
+	return func(qual func(pkg *types.Package) string) (bytes.Buffer, error) {
+		// Pointer receiver?
+		var star string
+		if si.Pointer {
+			star = "*"
+		}
+
+		// If there are any that have named receiver, choose the first one.
+		// Otherwise, use lowercase for the first letter of the object.
+		rn := strings.ToLower(si.Receiver.Obj().Name()[0:1])
+		for i := 0; i < si.Receiver.NumMethods(); i++ {
+			if recv := si.Receiver.Method(i).Signature().Recv(); recv.Name() != "" {
+				rn = recv.Name()
+				break
+			}
+		}
+
+		mrn := rn + " "
+
+		// Avoid duplicated argument name
+		usedNames := make(map[string]int)
+		for i, arg := range si.Args {
+			name := arg.Name
+			if count, exists := usedNames[name]; exists {
+				// Name has been used before; increment the count and append it to the name
+				count++
+				usedNames[name] = count
+				si.Args[i].Name = fmt.Sprintf("%s%d", name, count)
+			} else {
+				usedNames[name] = 0
+			}
+		}
+
+		// Avoid conflict receiver name
+		for _, arg := range si.Args {
+			name := arg.Name
+			if name == rn {
+				mrn = ""
+			}
+		}
+
+		// Format the new methods.
+		var newMethods bytes.Buffer
+		signature := ""
+		for i, arg := range si.Args {
+			signature = signature + arg.Name + " " + types.TypeString(types.Default(arg.Typ), qual)
+			if i < len(si.Args)-1 {
+				signature = signature + ", "
+			}
+		}
+
+		ret := ""
+		if len(si.Return) > 1 {
+			ret = "("
+		}
+		for i, r := range si.Return {
+			ret = ret + " " + types.TypeString(types.Default(r), qual)
+			if i < len(si.Return)-1 {
+				ret = ret + ", "
+			}
+		}
+		if len(si.Return) > 1 {
+			ret = ret + ")"
+		}
+
+		fmt.Fprintf(&newMethods, `
+func (%s%s%s%s) %s(%s) %s{
+	panic("unimplemented")
+}
+`,
+			mrn,
+			star,
+			recv.Name(),
+			FormatTypeParams(si.Receiver.TypeParams()),
+			si.MethodName,
+			signature,
+			ret,
+		)
+		return newMethods, nil
+	}
+}
+
+// fromIface generate the missing method based on type info of conc's corresponding interface.
+func fromIface(si *stubmethods.IfaceStubInfo, conc *types.TypeName) func(qual func(pkg *types.Package) string) (bytes.Buffer, error) {
+	return func(qual func(pkg *types.Package) string) (bytes.Buffer, error) {
+		// Record all direct methods of the current object
+		concreteFuncs := make(map[string]struct{})
+		for i := 0; i < si.Concrete.NumMethods(); i++ {
+			concreteFuncs[si.Concrete.Method(i).Name()] = struct{}{}
+		}
+
+		// Find subset of interface methods that the concrete type lacks.
+		ifaceType := si.Interface.Type().Underlying().(*types.Interface)
+
+		type missingFn struct {
+			fn         *types.Func
+			needSubtle string
+		}
+
+		var (
+			missing                  []missingFn
+			concreteStruct, isStruct = si.Concrete.Origin().Underlying().(*types.Struct)
+		)
+
+		for i := 0; i < ifaceType.NumMethods(); i++ {
+			imethod := ifaceType.Method(i)
+			cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.Pointer, imethod.Pkg(), imethod.Name())
+			if cmethod == nil {
+				missing = append(missing, missingFn{fn: imethod})
+				continue
+			}
+
+			if _, ok := cmethod.(*types.Var); ok {
+				// len(LookupFieldOrMethod.index) = 1 => conflict, >1 => shadow.
+				return bytes.Buffer{}, fmt.Errorf("adding method %s.%s would conflict with (or shadow) existing field",
+					conc.Name(), imethod.Name())
+			}
+
+			if _, exist := concreteFuncs[imethod.Name()]; exist {
+				if !types.Identical(cmethod.Type(), imethod.Type()) {
+					return bytes.Buffer{}, fmt.Errorf("method %s.%s already exists but has the wrong type: got %s, want %s",
+						conc.Name(), imethod.Name(), cmethod.Type(), imethod.Type())
+				}
+				continue
+			}
+
+			mf := missingFn{fn: imethod}
+			if isStruct && len(index) > 0 {
+				field := concreteStruct.Field(index[0])
+
+				fn := field.Name()
+				if is[*types.Pointer](field.Type()) {
+					fn = "*" + fn
+				}
+
+				mf.needSubtle = fmt.Sprintf("// Subtle: this method shadows the method (%s).%s of %s.%s.\n", fn, imethod.Name(), si.Concrete.Obj().Name(), field.Name())
+			}
+
+			missing = append(missing, mf)
+		}
+		if len(missing) == 0 {
+			return bytes.Buffer{}, fmt.Errorf("no missing methods found")
+		}
+
+		// Format interface name (used only in a comment).
+		iface := si.Interface.Name()
+		if ipkg := si.Interface.Pkg(); ipkg != nil && ipkg != conc.Pkg() {
+			iface = ipkg.Name() + "." + iface
+		}
+
+		// Pointer receiver?
+		var star string
+		if si.Pointer {
+			star = "*"
+		}
+
+		// If there are any that have named receiver, choose the first one.
+		// Otherwise, use lowercase for the first letter of the object.
+		rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
+		for i := 0; i < si.Concrete.NumMethods(); i++ {
+			if recv := si.Concrete.Method(i).Signature().Recv(); recv.Name() != "" {
+				rn = recv.Name()
+				break
+			}
+		}
+
+		// Check for receiver name conflicts
+		checkRecvName := func(tuple *types.Tuple) bool {
+			for i := 0; i < tuple.Len(); i++ {
+				if rn == tuple.At(i).Name() {
+					return true
+				}
+			}
+			return false
+		}
+
+		// Format the new methods.
+		var newMethods bytes.Buffer
+
+		for index := range missing {
+			mrn := rn + " "
+			sig := missing[index].fn.Signature()
+			if checkRecvName(sig.Params()) || checkRecvName(sig.Results()) {
+				mrn = ""
+			}
+
+			fmt.Fprintf(&newMethods, `// %s implements %s.
+%sfunc (%s%s%s%s) %s%s {
+	panic("unimplemented")
+}
+`,
+				missing[index].fn.Name(),
+				iface,
+				missing[index].needSubtle,
+				mrn,
+				star,
+				si.Concrete.Obj().Name(),
+				FormatTypeParams(si.Concrete.TypeParams()),
+				missing[index].fn.Name(),
+				strings.TrimPrefix(types.TypeString(missing[index].fn.Type(), qual), "func"))
+		}
+		return newMethods, nil
+	}
 }
 
 // diffToTextEdits converts diff (offset-based) edits to analysis (token.Pos) form.
