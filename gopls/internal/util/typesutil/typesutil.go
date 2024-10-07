@@ -5,6 +5,7 @@
 package typesutil
 
 import (
+	"bytes"
 	"go/ast"
 	"go/types"
 )
@@ -33,4 +34,23 @@ func FileQualifier(f *ast.File, pkg *types.Package, info *types.Info) types.Qual
 		}
 		return p.Name()
 	}
+}
+
+// FormatTypeParams turns TypeParamList into its Go representation, such as:
+// [T, Y]. Note that it does not print constraints as this is mainly used for
+// formatting type params in method receivers.
+func FormatTypeParams(tparams *types.TypeParamList) string {
+	if tparams == nil || tparams.Len() == 0 {
+		return ""
+	}
+	var buf bytes.Buffer
+	buf.WriteByte('[')
+	for i := 0; i < tparams.Len(); i++ {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		buf.WriteString(tparams.At(i).Obj().Name())
+	}
+	buf.WriteByte(']')
+	return buf.String()
 }

@@ -177,25 +177,6 @@ func formatFieldList(ctx context.Context, fset *token.FileSet, list *ast.FieldLi
 	return result, writeResultParens
 }
 
-// FormatTypeParams turns TypeParamList into its Go representation, such as:
-// [T, Y]. Note that it does not print constraints as this is mainly used for
-// formatting type params in method receivers.
-func FormatTypeParams(tparams *types.TypeParamList) string {
-	if tparams == nil || tparams.Len() == 0 {
-		return ""
-	}
-	var buf bytes.Buffer
-	buf.WriteByte('[')
-	for i := 0; i < tparams.Len(); i++ {
-		if i > 0 {
-			buf.WriteString(", ")
-		}
-		buf.WriteString(tparams.At(i).Obj().Name())
-	}
-	buf.WriteByte(']')
-	return buf.String()
-}
-
 // NewSignature returns formatted signature for a types.Signature struct.
 func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, sig *types.Signature, comment *ast.CommentGroup, qf types.Qualifier, mq MetadataQualifier) (*signature, error) {
 	var tparams []string

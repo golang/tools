@@ -58,15 +58,15 @@ func singleFile(fixer1 singleFileFixer) fixer {
 
 // Names of ApplyFix.Fix created directly by the CodeAction handler.
 const (
-	fixExtractVariable   = "extract_variable"
-	fixExtractFunction   = "extract_function"
-	fixExtractMethod     = "extract_method"
-	fixInlineCall        = "inline_call"
-	fixInvertIfCondition = "invert_if_condition"
-	fixSplitLines        = "split_lines"
-	fixJoinLines         = "join_lines"
-	fixStubMethods       = "stub_methods"
-	fixMissingMethods    = "missing_methods"
+	fixExtractVariable         = "extract_variable"
+	fixExtractFunction         = "extract_function"
+	fixExtractMethod           = "extract_method"
+	fixInlineCall              = "inline_call"
+	fixInvertIfCondition       = "invert_if_condition"
+	fixSplitLines              = "split_lines"
+	fixJoinLines               = "join_lines"
+	fixMissingInterfaceMethods = "stub_missing_interface_method"
+	fixMissingCalledFunction   = "stub_missing_called_function"
 )
 
 // ApplyFix applies the specified kind of suggested fix to the given
@@ -103,15 +103,15 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 
 		// Ad-hoc fixers: these are used when the command is
 		// constructed directly by logic in server/code_action.
-		fixExtractFunction:   singleFile(extractFunction),
-		fixExtractMethod:     singleFile(extractMethod),
-		fixExtractVariable:   singleFile(extractVariable),
-		fixInlineCall:        inlineCall,
-		fixInvertIfCondition: singleFile(invertIfCondition),
-		fixSplitLines:        singleFile(splitLines),
-		fixJoinLines:         singleFile(joinLines),
-		fixStubMethods:       stubMethodsIfaceFixer,
-		fixMissingMethods:    stubMethodsCallFixer,
+		fixExtractFunction:         singleFile(extractFunction),
+		fixExtractMethod:           singleFile(extractMethod),
+		fixExtractVariable:         singleFile(extractVariable),
+		fixInlineCall:              inlineCall,
+		fixInvertIfCondition:       singleFile(invertIfCondition),
+		fixSplitLines:              singleFile(splitLines),
+		fixJoinLines:               singleFile(joinLines),
+		fixMissingInterfaceMethods: StubMissingInterfaceMethodsFixer,
+		fixMissingCalledFunction:   StubMissingCalledFunctionFixer,
 	}
 	fixer, ok := fixers[fix]
 	if !ok {

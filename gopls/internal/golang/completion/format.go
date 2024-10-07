@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 )
@@ -62,7 +63,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 		x := cand.obj.(*types.TypeName)
 		if named, ok := types.Unalias(x.Type()).(*types.Named); ok {
 			tp := named.TypeParams()
-			label += golang.FormatTypeParams(tp)
+			label += typesutil.FormatTypeParams(tp)
 			insert = label // maintain invariant above (label == insert)
 		}
 	}
