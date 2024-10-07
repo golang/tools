@@ -528,6 +528,12 @@ func F9(int) {}
 // OK, even though new S1 is incompatible with old S1 (see below)
 func F10(S1) {}
 
+// old
+func F11(string) {}
+
+// new
+func F11[C ~string](C) {} //OK: ~string includes string type
+
 //////////////// Structs
 
 // old

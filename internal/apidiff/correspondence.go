@@ -35,6 +35,9 @@ func (d *differ) corr(old, new types.Type, p *ifacePair) bool {
 	new = types.Unalias(new)
 	switch old := old.(type) {
 	case *types.Basic:
+		if isTypeParam(new) {
+			return types.AssignableTo(old, new.Underlying())
+		}
 		return types.Identical(old, new)
 
 	case *types.Array:
@@ -222,4 +225,9 @@ type ifacePair struct {
 
 func (p *ifacePair) identical(q *ifacePair) bool {
 	return p.x == q.x && p.y == q.y || p.x == q.y && p.y == q.x
+}
+
+func isTypeParam(t types.Type) bool {
+	_, ok := types.Unalias(t).(*types.TypeParam)
+	return ok
 }
