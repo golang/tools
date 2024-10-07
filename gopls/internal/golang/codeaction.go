@@ -301,28 +301,31 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 			continue
 		}
 
+		msg := typeError.Error()
+		switch {
 		// "Missing method" error? (stubmethods)
 		// Offer a "Declare missing methods of INTERFACE" code action.
-		// See [stubMethodsFixer] for command implementation.
-		msg := typeError.Error()
-		if strings.Contains(msg, "missing method") ||
+		// See [StubMissingInterfaceMethodsFixer] for command implementation.
+		case strings.Contains(msg, "missing method") ||
 			strings.HasPrefix(msg, "cannot convert") ||
-			strings.Contains(msg, "not implement") {
+			strings.Contains(msg, "not implement"):
 			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
 			si := stubmethods.GetIfaceStubInfo(req.pkg.FileSet(), info, path, start)
 			if si != nil {
 				qf := typesutil.FileQualifier(req.pgf.File, si.Concrete.Obj().Pkg(), info)
 				iface := types.TypeString(si.Interface.Type(), qf)
 				msg := fmt.Sprintf("Declare missing methods of %s", iface)
-				req.addApplyFixAction(msg, fixStubMethods, req.loc)
+				req.addApplyFixAction(msg, fixMissingInterfaceMethods, req.loc)
 			}
-		} else if strings.Contains(msg, "has no field or method") {
+		// “type X has no field or method Y” complier error.
+		// Offer a "Declare missing methods of X" code action.
+		// See [StubMissingCalledFunctionFixer] for command implementation.
+		case strings.Contains(msg, "has no field or method"):
 			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
-
-			si := stubmethods.GetCallStubInfo(req.pkg, info, path, start)
+			si := stubmethods.GetCallStubInfo(req.pkg.FileSet(), info, path, start)
 			if si != nil {
 				msg := fmt.Sprintf("Declare missing methods of %s", si.Receiver.Obj().Name())
-				req.addApplyFixAction(msg, fixMissingMethods, req.loc)
+				req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
 			}
 		}
 	}

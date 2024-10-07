@@ -8,6 +8,7 @@
 package stubmethods
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -16,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
 // TODO(adonovan): eliminate the confusing Fset parameter; only the
@@ -75,142 +76,121 @@ func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, po
 	return nil
 }
 
-// CallStubInfo represents a missing method
-// that a receiver type is about to generate
-// which has “type X has no field or method Y" error
-type CallStubInfo struct {
-	Fset       *token.FileSet // the FileSet used to type-check the types below
-	Receiver   *types.Named   // the method's receiver type
-	Pointer    bool
-	Args       []Arg // the argument list of new methods
-	MethodName string
-	Return     []types.Type
-}
+// Emit generate the missing method based on type info of conc's corresponding interface.
+func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
+	conc := si.Concrete.Obj()
+	// Record all direct methods of the current object
+	concreteFuncs := make(map[string]struct{})
+	for i := 0; i < si.Concrete.NumMethods(); i++ {
+		concreteFuncs[si.Concrete.Method(i).Name()] = struct{}{}
+	}
 
-type Arg struct {
-	Name string
-	Typ  types.Type // the type of argument, infered from CallExpr
-}
+	// Find subset of interface methods that the concrete type lacks.
+	ifaceType := si.Interface.Type().Underlying().(*types.Interface)
 
-// GetCallStubInfo extracts necessary information to generate a method definition from
-// a CallExpr.
-func GetCallStubInfo(pkg *cache.Package, info *types.Info, path []ast.Node, pos token.Pos) *CallStubInfo {
-	fset := pkg.FileSet()
-	for i, n := range path {
-		switch n := n.(type) {
-		case *ast.CallExpr:
-			s, ok := n.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return nil
+	type missingFn struct {
+		fn         *types.Func
+		needSubtle string
+	}
+
+	var (
+		missing                  []missingFn
+		concreteStruct, isStruct = si.Concrete.Origin().Underlying().(*types.Struct)
+	)
+
+	for i := 0; i < ifaceType.NumMethods(); i++ {
+		imethod := ifaceType.Method(i)
+		cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.pointer, imethod.Pkg(), imethod.Name())
+		if cmethod == nil {
+			missing = append(missing, missingFn{fn: imethod})
+			continue
+		}
+
+		if _, ok := cmethod.(*types.Var); ok {
+			// len(LookupFieldOrMethod.index) = 1 => conflict, >1 => shadow.
+			return fmt.Errorf("adding method %s.%s would conflict with (or shadow) existing field",
+				conc.Name(), imethod.Name())
+		}
+
+		if _, exist := concreteFuncs[imethod.Name()]; exist {
+			if !types.Identical(cmethod.Type(), imethod.Type()) {
+				return fmt.Errorf("method %s.%s already exists but has the wrong type: got %s, want %s",
+					conc.Name(), imethod.Name(), cmethod.Type(), imethod.Type())
+			}
+			continue
+		}
+
+		mf := missingFn{fn: imethod}
+		if isStruct && len(index) > 0 {
+			field := concreteStruct.Field(index[0])
+
+			fn := field.Name()
+			if _, ok := field.Type().(*types.Pointer); ok {
+				fn = "*" + fn
 			}
 
-			// If recvExpr is a package name, compiler error would be
-			// e.g., "undefined: http.bar", thus will not hit this code path.
-			recvExpr := s.X
-			recvType, pointer := concreteType(recvExpr, info)
-			if recvType == nil || recvType.Obj().Pkg() == nil {
-				return nil
-			}
+			mf.needSubtle = fmt.Sprintf("// Subtle: this method shadows the method (%s).%s of %s.%s.\n", fn, imethod.Name(), si.Concrete.Obj().Name(), field.Name())
+		}
 
-			var args []Arg
-			for i, arg := range n.Args {
-				typ, name, err := argInfo(arg, info, i)
-				if err != nil {
-					return nil
-				}
-				args = append(args, Arg{
-					Name: name,
-					Typ:  typ,
-				})
-			}
+		missing = append(missing, mf)
+	}
+	if len(missing) == 0 {
+		return fmt.Errorf("no missing methods found")
+	}
 
-			var rets []types.Type
-			if i < len(path)-1 {
-				switch parent := path[i+1].(type) {
-				case *ast.AssignStmt:
-					// Append all lhs's type
-					if len(parent.Rhs) == 1 {
-						for _, lhs := range parent.Lhs {
-							if t, ok := info.Types[lhs]; ok {
-								rets = append(rets, t.Type)
-							}
-						}
-						break
-					}
+	// Format interface name (used only in a comment).
+	iface := si.Interface.Name()
+	if ipkg := si.Interface.Pkg(); ipkg != nil && ipkg != conc.Pkg() {
+		iface = ipkg.Name() + "." + iface
+	}
 
-					// Lhs and Rhs counts do not match, give up
-					if len(parent.Lhs) != len(parent.Rhs) {
-						break
-					}
+	// Pointer receiver?
+	var star string
+	if si.pointer {
+		star = "*"
+	}
 
-					// Append corresponding index of lhs's type
-					for i, rhs := range parent.Rhs {
-						if rhs.Pos() <= pos && pos <= rhs.End() {
-							left := parent.Lhs[i]
-							if t, ok := info.Types[left]; ok {
-								rets = append(rets, t.Type)
-							}
-							break
-						}
-					}
-				case *ast.CallExpr:
-					// Find argument containing pos.
-					argIdx := -1
-					for i, callArg := range parent.Args {
-						if callArg.Pos() <= pos && pos <= callArg.End() {
-							argIdx = i
-							break
-						}
-					}
-					if argIdx == -1 {
-						break
-					}
+	// If there are any that have named receiver, choose the first one.
+	// Otherwise, use lowercase for the first letter of the object.
+	rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
+	for i := 0; i < si.Concrete.NumMethods(); i++ {
+		if recv := si.Concrete.Method(i).Signature().Recv(); recv.Name() != "" {
+			rn = recv.Name()
+			break
+		}
+	}
 
-					var def types.Object
-					switch f := parent.Fun.(type) {
-					// functon call
-					case *ast.Ident:
-						def, ok = info.Uses[f]
-						if !ok {
-							break
-						}
-					// method call
-					case *ast.SelectorExpr:
-						def, ok = info.Uses[f.Sel]
-						if !ok {
-							break
-						}
-					}
-
-					sig, ok := types.Unalias(def.Type()).(*types.Signature)
-					if !ok {
-						break
-					}
-					var paramType types.Type
-					if sig.Variadic() && argIdx >= sig.Params().Len()-1 {
-						v := sig.Params().At(sig.Params().Len() - 1)
-						if s, _ := v.Type().(*types.Slice); s != nil {
-							paramType = s.Elem()
-						}
-					} else if argIdx < sig.Params().Len() {
-						paramType = sig.Params().At(argIdx).Type()
-					}
-					if paramType == nil {
-						break
-					}
-					rets = append(rets, paramType)
-				}
-			}
-
-			return &CallStubInfo{
-				Fset:       fset,
-				Receiver:   recvType,
-				MethodName: s.Sel.Name,
-				Pointer:    pointer,
-				Args:       args,
-				Return:     rets,
+	// Check for receiver name conflicts
+	checkRecvName := func(tuple *types.Tuple) bool {
+		for i := 0; i < tuple.Len(); i++ {
+			if rn == tuple.At(i).Name() {
+				return true
 			}
 		}
+		return false
+	}
+
+	for index := range missing {
+		mrn := rn + " "
+		sig := missing[index].fn.Signature()
+		if checkRecvName(sig.Params()) || checkRecvName(sig.Results()) {
+			mrn = ""
+		}
+
+		fmt.Fprintf(out, `// %s implements %s.
+%sfunc (%s%s%s%s) %s%s {
+	panic("unimplemented")
+}
+`,
+			missing[index].fn.Name(),
+			iface,
+			missing[index].needSubtle,
+			mrn,
+			star,
+			si.Concrete.Obj().Name(),
+			typesutil.FormatTypeParams(si.Concrete.TypeParams()),
+			missing[index].fn.Name(),
+			strings.TrimPrefix(types.TypeString(missing[index].fn.Type(), qual), "func"))
 	}
 	return nil
 }
@@ -264,7 +244,7 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *as
 	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
-		Pointer:   pointer,
+		pointer:   pointer,
 		Interface: iface,
 	}
 }
@@ -291,6 +271,11 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil, nil
 	}
+	conc := concType.Obj()
+	if conc.Parent() != conc.Pkg().Scope() {
+		return nil, fmt.Errorf("local type %q cannot be stubbed", conc.Name())
+	}
+
 	funcType := enclosingFunction(path, info)
 	if funcType == nil {
 		return nil, fmt.Errorf("could not find the enclosing function of the return statement")
@@ -307,7 +292,7 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
-		Pointer:   pointer,
+		pointer:   pointer,
 		Interface: iface,
 	}, nil
 }
@@ -338,6 +323,11 @@ func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, p
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil
 	}
+	conc := concType.Obj()
+	if conc.Parent() != conc.Pkg().Scope() {
+		return nil
+	}
+
 	ifaceObj := ifaceType(ifaceNode, info)
 	if ifaceObj == nil {
 		return nil
@@ -346,7 +336,7 @@ func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, p
 		Fset:      fset,
 		Concrete:  concType,
 		Interface: ifaceObj,
-		Pointer:   pointer,
+		pointer:   pointer,
 	}
 }
 
@@ -388,11 +378,15 @@ func fromAssignStmt(fset *token.FileSet, info *types.Info, assign *ast.AssignStm
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil
 	}
+	conc := concType.Obj()
+	if conc.Parent() != conc.Pkg().Scope() {
+		return nil
+	}
 	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
 		Interface: ifaceObj,
-		Pointer:   pointer,
+		pointer:   pointer,
 	}
 }
 
@@ -462,42 +456,4 @@ func enclosingFunction(path []ast.Node, info *types.Info) *ast.FuncType {
 		}
 	}
 	return nil
-}
-
-// argInfo generate placeholder name heuristicly for a function argument.
-func argInfo(e ast.Expr, info *types.Info, i int) (types.Type, string, error) {
-	tv, ok := info.Types[e]
-	if !ok {
-		return nil, "", fmt.Errorf("no type info")
-	}
-
-	ident, ok := e.(*ast.Ident)
-	if ok {
-		// uses the identifier's name as the argument name.
-		return tv.Type, ident.Name, nil
-	}
-
-	typ := tv.Type
-	ptr, isPtr := types.Unalias(typ).(*types.Pointer)
-	if isPtr {
-		typ = ptr.Elem()
-	}
-
-	// Uses the first character of the type name as the argument name for builtin types
-	switch t := types.Default(typ).(type) {
-	case *types.Basic:
-		return tv.Type, t.Name()[0:1], nil
-	case *types.Signature:
-		return tv.Type, "f", nil
-	case *types.Map:
-		return tv.Type, "m", nil
-	case *types.Chan:
-		return tv.Type, "ch", nil
-	case *types.Named:
-		n := t.Obj().Name()
-		// "FooBar" becomes "fooBar"
-		return tv.Type, strings.ToLower(n[0:1]) + n[1:], nil
-	default:
-		return tv.Type, "args" + strconv.Itoa(i), nil
-	}
 }
