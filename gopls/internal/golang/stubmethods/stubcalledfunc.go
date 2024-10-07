@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
@@ -242,6 +243,26 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 	return nil
 }
 
+// indentTrail find the position of the last uppercase letter,
+// extract the substring from that point onward,
+// and convert it to lowercase.
+func identTrail(identName string) string {
+	s := identName
+	lastUpperIndex := -1
+
+	for i, r := range s {
+		if unicode.IsUpper(r) {
+			lastUpperIndex = i
+		}
+	}
+	if lastUpperIndex != -1 {
+		last := s[lastUpperIndex:]
+		return strings.ToLower(last)
+	} else {
+		return identName
+	}
+}
+
 // argInfo generate placeholder name heuristically for a function argument.
 func argInfo(e ast.Expr, info *types.Info, i int) (types.Type, string, error) {
 	tv, ok := info.Types[e]
@@ -252,9 +273,9 @@ func argInfo(e ast.Expr, info *types.Info, i int) (types.Type, string, error) {
 	// uses the identifier's name as the argument name.
 	switch t := e.(type) {
 	case *ast.Ident:
-		return tv.Type, t.Name, nil
+		return tv.Type, identTrail(t.Name), nil
 	case *ast.SelectorExpr:
-		return tv.Type, t.Sel.Name, nil
+		return tv.Type, identTrail(t.Sel.Name), nil
 	}
 
 	typ := tv.Type
@@ -275,8 +296,7 @@ func argInfo(e ast.Expr, info *types.Info, i int) (types.Type, string, error) {
 		return tv.Type, "ch", nil
 	case *types.Named:
 		n := t.Obj().Name()
-		// "FooBar" becomes "fooBar"
-		return tv.Type, strings.ToLower(n[0:1]) + n[1:], nil
+		return tv.Type, identTrail(n), nil
 	default:
 		return tv.Type, "args" + strconv.Itoa(i), nil
 	}
