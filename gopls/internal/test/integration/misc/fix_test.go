@@ -174,6 +174,8 @@ import "net/http"
 
 type Foo struct {}
 
+type FooBar struct {}
+
 func main() {
 	var st string
 	st = "adasd"
@@ -181,7 +183,7 @@ func main() {
 	B(f.bar(st, 3, "asd", "asdas", "asdsad", http.ErrShortBody, HelloWord(), []int{1}, http.ErrShortBody, [1]int{1}, make(chan string, 0), make(map[string]string, 0)))
 }
 func B(s Foo) string { return "" }
-func HelloWord() Foo{
+func HelloWord() FooBar{
 	return Foo{}
 }
 `
@@ -207,9 +209,11 @@ import "net/http"
 
 type Foo struct{}
 
-func (f Foo) bar(st string, i int, s string, s1 string, s2 string, protocolError *http.ProtocolError, foo Foo, args7 []int, protocolError1 *http.ProtocolError, args9 [1]int, ch chan string, m map[string]string) Foo {
+func (f Foo) bar(st string, i int, s string, s1 string, s2 string, body *http.ProtocolError, bar FooBar, args7 []int, body1 *http.ProtocolError, args9 [1]int, ch chan string, m map[string]string) Foo {
 	panic("unimplemented")
 }
+
+type FooBar struct{}
 
 func main() {
 	var st string
@@ -218,7 +222,7 @@ func main() {
 	B(f.bar(st, 3, "asd", "asdas", "asdsad", http.ErrShortBody, HelloWord(), []int{1}, http.ErrShortBody, [1]int{1}, make(chan string, 0), make(map[string]string, 0)))
 }
 func B(s Foo) string { return "" }
-func HelloWord() Foo {
+func HelloWord() FooBar {
 	return Foo{}
 }
 `
