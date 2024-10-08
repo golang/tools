@@ -15,10 +15,13 @@ import (
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/testenv"
 )
 
 // TestCreateProgram tests CreateProgram which has an x/tools/go/loader.Program.
 func TestCreateProgram(t *testing.T) {
+	testenv.NeedsGoBuild(t) // for importer.Default()
+
 	conf := loader.Config{ParserMode: parser.ParseComments}
 	f, err := conf.ParseFile("hello.go", hello)
 	if err != nil {
