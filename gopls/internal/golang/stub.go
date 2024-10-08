@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/tokeninternal"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // stubMethodsFixer returns a suggested fix to declare the missing
@@ -66,8 +67,10 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 
 	// Record all direct methods of the current object
 	concreteFuncs := make(map[string]struct{})
-	for i := 0; i < si.Concrete.NumMethods(); i++ {
-		concreteFuncs[si.Concrete.Method(i).Name()] = struct{}{}
+	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
+		for i := 0; i < named.NumMethods(); i++ {
+			concreteFuncs[named.Method(i).Name()] = struct{}{}
+		}
 	}
 
 	// Find subset of interface methods that the concrete type lacks.
@@ -80,7 +83,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 
 	var (
 		missing                  []missingFn
-		concreteStruct, isStruct = si.Concrete.Origin().Underlying().(*types.Struct)
+		concreteStruct, isStruct = typesinternal.Origin(si.Concrete).Underlying().(*types.Struct)
 	)
 
 	for i := 0; i < ifaceType.NumMethods(); i++ {
@@ -208,10 +211,12 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 	// If there are any that have named receiver, choose the first one.
 	// Otherwise, use lowercase for the first letter of the object.
 	rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
-	for i := 0; i < si.Concrete.NumMethods(); i++ {
-		if recv := si.Concrete.Method(i).Signature().Recv(); recv.Name() != "" {
-			rn = recv.Name()
-			break
+	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
+		for i := 0; i < named.NumMethods(); i++ {
+			if recv := named.Method(i).Type().(*types.Signature).Recv(); recv.Name() != "" {
+				rn = recv.Name()
+				break
+			}
 		}
 	}
 
@@ -246,7 +251,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 			mrn,
 			star,
 			si.Concrete.Obj().Name(),
-			FormatTypeParams(si.Concrete.TypeParams()),
+			FormatTypeParams(typesinternal.TypeParams(si.Concrete)),
 			missing[index].fn.Name(),
 			strings.TrimPrefix(types.TypeString(missing[index].fn.Type(), qual), "func"))
 	}

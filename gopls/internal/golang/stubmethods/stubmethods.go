@@ -12,6 +12,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // TODO(adonovan): eliminate the confusing Fset parameter; only the
@@ -29,7 +31,7 @@ type StubInfo struct {
 	// TODO(marwan-at-work): implement interface literals.
 	Fset      *token.FileSet // the FileSet used to type-check the types below
 	Interface *types.TypeName
-	Concrete  *types.Named
+	Concrete  typesinternal.NamedOrAlias
 	Pointer   bool
 }
 
