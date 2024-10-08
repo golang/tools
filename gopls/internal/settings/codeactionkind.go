@@ -81,10 +81,6 @@ const (
 	GoTest        protocol.CodeActionKind = "source.test"
 
 	// gopls
-	// TODO(adonovan): we should not use this category as it will
-	// never be requested now that we no longer interpret "no kind
-	// restriction" as "quickfix" instead of "all kinds".
-	// We need another way to make docs discoverable.
 	GoplsDocFeatures protocol.CodeActionKind = "gopls.doc.features"
 
 	// refactor.rewrite
@@ -105,5 +101,8 @@ const (
 	RefactorExtractVariable  protocol.CodeActionKind = "refactor.extract.variable"
 	RefactorExtractToNewFile protocol.CodeActionKind = "refactor.extract.toNewFile"
 
-	// Note: add new kinds to the SupportedCodeActions map in defaults.go too.
+	// Note: add new kinds to:
+	// - the SupportedCodeActions map in default.go
+	// - the codeActionProducers table in ../golang/codeaction.go
+	// - the docs in ../../doc/features/transformation.md
 )

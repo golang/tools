@@ -46,10 +46,10 @@ when making significant changes to existing features or when adding new ones.
 - [Code transformation](transformation.md): fixes and refactorings
   - [Formatting](transformation.md#formatting): format the source code
   - [Rename](transformation.md#rename): rename a symbol or package
-  - [Organize imports](transformation.md#organize-imports): organize the import declaration
-  - [Extract](transformation.md#extract): extract selection to a new file/function/variable
-  - [Inline](transformation.md#inline): inline a call to a function or method
-  - [Miscellaneous rewrites](transformation.md#miscellaneous-rewrites): various Go-specific refactorings
+  - [Organize imports](transformation.md#source.organizeImports): organize the import declaration
+  - [Extract](transformation.md#refactor.extract): extract selection to a new file/function/variable
+  - [Inline](transformation.md#refactor.inline.call): inline a call to a function or method
+  - [Miscellaneous rewrites](transformation.md#refactor.rewrite): various Go-specific refactorings
 - [Web-based queries](web.md): commands that open a browser page
   - [Package documentation](web.md#doc): browse documentation for current Go package
   - [Free symbols](web.md#freesymbols): show symbols used by a selected block of code

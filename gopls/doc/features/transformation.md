@@ -59,6 +59,28 @@ a lightbulb icon that triggers a menu of "quick fixes" (of kind `quickfix`);
 and a "Fix All" command that executes all code actions of
 kind `source.fixAll`, which are those deemed unambiguously safe to apply.
 
+Gopls supports the following code actions:
+
+- `quickfix`, which applies unambiguously safe fixes <!-- TODO: document -->
+- [`source.organizeImports`](#source.organizeImports)
+- [`source.assembly`](web.md#assembly)
+- [`source.doc`](web.md#doc)
+- [`source.freesymbols`](web.md#freesymbols)
+- `source.test` (undocumented) <!-- TODO: fix that -->
+- [`gopls.doc.features`](README.md), which opens gopls' index of features in a browser
+- [`refactor.extract.function`](#extract)
+- [`refactor.extract.method`](#extract)
+- [`refactor.extract.toNewFile`](#extract.toNewFile)
+- [`refactor.extract.variable`](#extract)
+- [`refactor.inline.call`](#refactor.inline.call)
+- [`refactor.rewrite.changeQuote`](#refactor.rewrite.changeQuote)
+- [`refactor.rewrite.fillStruct`](#refactor.rewrite.fillStruct)
+- [`refactor.rewrite.fillSwitch`](#refactor.rewrite.fillSwitch)
+- [`refactor.rewrite.invertIf`](#refactor.rewrite.invertIf)
+- [`refactor.rewrite.joinLines`](#refactor.rewrite.joinLines)
+- [`refactor.rewrite.removeUnusedParam`](#refactor.rewrite.removeUnusedParam)
+- [`refactor.rewrite.splitLines`](#refactor.rewrite.splitLines)
+
 Gopls reports some code actions twice, with two different kinds, so
 that they appear in multiple UI elements: simplifications,
 for example from `for _ = range m` to `for range m`,
@@ -120,6 +142,7 @@ Client support for code actions:
 - **CLI**: `gopls codeaction -exec -kind k,... -diff file.go:#123-#456` executes code actions of the specified
   kinds (e.g. `refactor.inline`) on the selected range, specified using zero-based byte offsets, and displays the diff.
 
+<a name='formatting'></a>
 ## Formatting
 
 The LSP
@@ -141,7 +164,8 @@ Client support:
 - **Emacs + eglot**: Use `M-x eglot-format-buffer` to format. Attach it to `before-save-hook` to format on save. For formatting combined with organize-imports, many users take the legacy approach of setting `"goimports"` as their `gofmt-command` using [go-mode](https://github.com/dominikh/go-mode.el), and adding `gofmt-before-save` to `before-save-hook`. An LSP-based solution requires code such as https://github.com/joaotavora/eglot/discussions/1409.
 - **CLI**: `gopls format file.go`
 
-## Organize imports
+<a name='source.organizeImports'></a>
+## `source.organizeImports`: Organize imports
 
 A `codeActions` request in a file whose imports are not organized will
 return an action of the standard kind `source.organizeImports`.
@@ -187,7 +211,8 @@ Client support:
 - **CLI**: `gopls fix -a file.go:#offset source.organizeImports`
 
 
-## `refactor.rename`: Rename
+<a name='rename'></a>
+## Rename
 
 The LSP
 [`textDocument/rename`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_rename)
@@ -268,7 +293,7 @@ Client support:
 - **CLI**: `gopls rename file.go:#offset newname`
 
 
-<a name='extract'></a>
+<a name='refactor.extract'></a>
 ## `refactor.extract`: Extract function/method/variable
 
 The `refactor.extract` family of code actions all return commands that
@@ -326,7 +351,7 @@ The following Extract features are planned for 2024 but not yet supported:
   see golang/go#65721 and golang/go#46665.
 
 
-<a name='extract-to-new-file'></a>
+<a name='refactor.extract.toNewFile'></a>
 ## `refactor.extract.toNewFile`: Extract declarations to new file
 
 (Available from gopls/v0.17.0)
@@ -343,7 +368,7 @@ first token of the declaration, such as `func` or `type`.
 ![After: the new file is based on the first symbol name](../assets/extract-to-new-file-after.png)
 
 
-<a name='inline'></a>
+<a name='refactor.inline.call'></a>
 ## `refactor.inline.call`: Inline call to function
 
 For a `codeActions` request where the selection is (or is within) a
@@ -498,11 +523,13 @@ more detail. All of this is to say, it's a complex problem, and we aim
 for correctness first of all. We've already implemented a number of
 important "tidiness optimizations" and we expect more to follow.
 
+<a name='refactor.rewrite'></a>
 ## `refactor.rewrite`: Miscellaneous rewrites
 
 This section covers a number of transformations that are accessible as
 code actions whose kinds are children of `refactor.rewrite`.
 
+<a name='refactor.rewrite.removeUnusedParam'></a>
 ### `refactor.rewrite.removeUnusedParam`: Remove unused parameter
 
 The [`unusedparams` analyzer](../analyzers.md#unusedparams) reports a
@@ -538,6 +565,7 @@ Observe that in the first call, the argument `chargeCreditCard()` was
 not deleted because of potential side effects, whereas in the second
 call, the argument 2, a constant, was safely deleted.
 
+<a name='refactor.rewrite.changeQuote'></a>
 ### `refactor.rewrite.changeQuote`: Convert string literal between raw and interpreted
 
 When the selection is a string literal, gopls offers a code action
@@ -550,6 +578,7 @@ form (`"abc"`) where this is possible:
 Applying the code action a second time reverts back to the original
 form.
 
+<a name='refactor.rewrite.invertIf'></a>
 ### `refactor.rewrite.invertIf`: Invert 'if' condition
 
 When the selection is within an `if`/`else` statement that is not
@@ -565,6 +594,8 @@ blocks.
      if the else block ends with a return statement; and thus applying
      the operation twice does not get you back to where you started. -->
 
+<a name='refactor.rewrite.splitLines'></a>
+<a name='refactor.rewrite.joinLines'></a>
 ### `refactor.rewrite.{split,join}Lines`: Split elements into separate lines
 
 When the selection is within a bracketed list of items such as:
@@ -612,7 +643,7 @@ These code actions are not offered for lists containing `//`-style
 comments, which run to the end of the line.
 <!-- Strictly, line comments make only "join" (but not "split") infeasible. -->
 
-
+<a name='refactor.rewrite.fillStruct'></a>
 ### `refactor.rewrite.fillStruct`: Fill struct literal
 
 When the cursor is within a struct literal `S{}`, gopls offers the
@@ -645,6 +676,7 @@ Caveats:
   or in other files in the package, are not considered; see
   golang/go#68224.
 
+<a name='refactor.rewrite.fillSwitch'></a>
 ### `refactor.rewrite.fillSwitch`: Fill switch
 
 When the cursor is within a switch statement whose operand type is an
