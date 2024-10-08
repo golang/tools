@@ -68,9 +68,6 @@
 // Update all bundles in the standard library:
 //
 //	go generate -run bundle std
-
-//go:debug gotypesalias=0
-
 package main
 
 import (
