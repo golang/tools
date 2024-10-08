@@ -127,7 +127,7 @@ Client support:
 <!-- Below we list any quick fixes (by their internal fix name)
      that aren't analyzers. -->
 
-### `stubMethods`: Declare missing methods of type
+### `stubMissingInterfaceMethods`: Declare missing methods to implement an interface of type
 
 When a value of a concrete type is assigned to a variable of an
 interface type, but the concrete type does not possess all the
@@ -158,6 +158,37 @@ Gopls will offer a quick fix to declare this method:
 
 // Error implements error.Error.
 func (NegativeErr) Error() string {
+	panic("unimplemented")
+}
+```
+
+### `StubMissingCalledFunction`: Generate missing methods from function calls
+
+When you attempt to call a method on a type that does not have that method, 
+the compiler will report an error like “type X has no field or method Y”.
+In this scenario, gopls now offers a quick fix to generate a stub declaration of 
+the missing method on that concrete type. The correct signature is inferred
+from the method call.
+
+Consider the following code where `Foo` does not have a method `bar`:
+
+```go
+type Foo struct{}
+
+func main() {
+  var s string
+	f := Foo{}
+	s = f.bar("str", 42)
+}
+```
+
+This code will not compile and produces the error:
+`f.bar undefined (type Foo has no field or method bar`.
+
+Gopls will offer a quick fix to declare this method:
+
+```go
+func (f Foo) bar(s string, i int) string {
 	panic("unimplemented")
 }
 ```
