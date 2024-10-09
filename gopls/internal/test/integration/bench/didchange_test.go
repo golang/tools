@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/protocol"
+	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 )
 
@@ -48,26 +49,45 @@ func BenchmarkDidChange(b *testing.B) {
 			defer closeBuffer(b, env, test.file)
 
 			// Insert the text we'll be modifying at the top of the file.
-			env.EditBuffer(test.file, protocol.TextEdit{NewText: "// __TEST_PLACEHOLDER_0__\n"})
-			env.AfterChange()
-			b.ResetTimer()
+			edit := makeEditFunc(env, test.file)
 
 			if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, "didchange")); stopAndRecord != nil {
 				defer stopAndRecord()
 			}
+			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				edits := atomic.AddInt64(&editID, 1)
-				env.EditBuffer(test.file, protocol.TextEdit{
-					Range: protocol.Range{
-						Start: protocol.Position{Line: 0, Character: 0},
-						End:   protocol.Position{Line: 1, Character: 0},
-					},
-					// Increment the placeholder text, to ensure cache misses.
-					NewText: fmt.Sprintf("// __TEST_PLACEHOLDER_%d__\n", edits),
-				})
+				edit()
 				env.Await(env.StartedChange())
 			}
+		})
+	}
+}
+
+// makeEditFunc prepares the given file for incremental editing, by inserting a
+// placeholder comment that will be overwritten with a new unique value by each
+// call to the resulting function. While makeEditFunc awaits gopls to finish
+// processing the initial edit, the callback for incremental edits does not
+// await any gopls state.
+//
+// This is used for benchmarks that must repeatedly invalidate a file's
+// contents.
+//
+// TODO(rfindley): use this throughout.
+func makeEditFunc(env *Env, file string) func() {
+	// Insert the text we'll be modifying at the top of the file.
+	env.EditBuffer(file, protocol.TextEdit{NewText: "// __TEST_PLACEHOLDER_0__\n"})
+	env.AfterChange()
+
+	return func() {
+		edits := atomic.AddInt64(&editID, 1)
+		env.EditBuffer(file, protocol.TextEdit{
+			Range: protocol.Range{
+				Start: protocol.Position{Line: 0, Character: 0},
+				End:   protocol.Position{Line: 1, Character: 0},
+			},
+			// Increment the placeholder text, to ensure cache misses.
+			NewText: fmt.Sprintf("// __TEST_PLACEHOLDER_%d__\n", edits),
 		})
 	}
 }
