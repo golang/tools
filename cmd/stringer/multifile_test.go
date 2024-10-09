@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// For os.CopyFS
-//go:build go1.23
+// go1.23 is required for os.CopyFS.
+// !android is required for compatibility with endtoend_test.go.
+//go:build go1.23 && !android
 
 package main
 
