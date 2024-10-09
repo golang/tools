@@ -233,6 +233,9 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 	// File set for this batch (entire graph) of analysis.
 	fset := token.NewFileSet()
 
+	// Get the metadata graph once for lock-free access during analysis.
+	meta := s.MetadataGraph()
+
 	// Starting from the root packages and following DepsByPkgPath,
 	// build the DAG of packages we're going to analyze.
 	//
@@ -246,7 +249,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 	makeNode = func(from *analysisNode, id PackageID) (*analysisNode, error) {
 		an, ok := nodes[id]
 		if !ok {
-			mp := s.Metadata(id)
+			mp := meta.Metadata(id)
 			if mp == nil {
 				return nil, bug.Errorf("no metadata for %s", id)
 			}
@@ -254,14 +257,15 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 			// -- preorder --
 
 			an = &analysisNode{
-				fset:        fset,
-				fsource:     struct{ file.Source }{s}, // expose only ReadFile
-				viewType:    s.View().Type(),
-				mp:          mp,
-				analyzers:   facty, // all nodes run at least the facty analyzers
-				allDeps:     make(map[PackagePath]*analysisNode),
-				exportDeps:  make(map[PackagePath]*analysisNode),
-				stableNames: stableNames,
+				allNodes:     nodes,
+				fset:         fset,
+				fsource:      struct{ file.Source }{s}, // expose only ReadFile
+				viewType:     s.View().Type(),
+				mp:           mp,
+				analyzers:    facty, // all nodes run at least the facty analyzers
+				importLookup: importLookup(mp, meta),
+				exportDeps:   make(map[PackagePath]*analysisNode),
+				stableNames:  stableNames,
 			}
 			nodes[id] = an
 
@@ -275,17 +279,9 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 					return nil, err
 				}
 				an.succs[depID] = dep
-
-				// Compute the union of all dependencies.
-				// (This step has quadratic complexity.)
-				for pkgPath, node := range dep.allDeps {
-					an.allDeps[pkgPath] = node
-				}
 			}
 
 			// -- postorder --
-
-			an.allDeps[mp.PkgPath] = an // add self entry (reflexive transitive closure)
 
 			// Add leaf nodes (no successors) directly to queue.
 			if len(an.succs) == 0 {
@@ -520,6 +516,7 @@ func (an *analysisNode) decrefPreds() {
 // its summary field is populated, either from the cache (hit), or by
 // type-checking and analyzing syntax (miss).
 type analysisNode struct {
+	allNodes        map[PackageID]*analysisNode // all nodes, for lazy lookup of transitive dependencies
 	fset            *token.FileSet              // file set shared by entire batch (DAG)
 	fsource         file.Source                 // Snapshot.ReadFile, for use by Pass.ReadFile
 	viewType        ViewType                    // type of view
@@ -530,8 +527,8 @@ type analysisNode struct {
 	succs           map[PackageID]*analysisNode //   (preds -> self -> succs)
 	unfinishedSuccs atomic.Int32
 	unfinishedPreds atomic.Int32                  // effectively a summary.Actions refcount
-	allDeps         map[PackagePath]*analysisNode // all dependencies including self
-	exportDeps      map[PackagePath]*analysisNode // subset of allDeps ref'd by export data (+self)
+	importLookup    func(PackagePath) PackageID   // lazy lookup of path->id
+	exportDeps      map[PackagePath]*analysisNode // nodes referenced by export data (+self)
 	summary         *analyzeSummary               // serializable result of analyzing this package
 	stableNames     map[*analysis.Analyzer]string // cross-process stable names for Analyzers
 
@@ -563,7 +560,9 @@ func (an *analysisNode) _import() (*types.Package, error) {
 			var g errgroup.Group
 			for i, item := range items {
 				path := PackagePath(item.Path)
-				dep, ok := an.allDeps[path]
+
+				id := an.importLookup(path) // possibly ""
+				dep, ok := an.allNodes[id]
 				if !ok {
 					// This early return bypasses Wait; that's ok.
 					return fmt.Errorf("%s: unknown dependency %q", an.mp, path)
@@ -879,9 +878,6 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 		// by export data, it is safe to ignore it.
 		// (In that case dep.types exists but may be unpopulated
 		// or in the process of being populated from export data.)
-		if an.allDeps[PackagePath(path)] == nil {
-			log.Fatalf("fact package %q is not a dependency", path)
-		}
 		return nil
 	})
 
@@ -1094,7 +1090,8 @@ func (an *analysisNode) typeCheck(parsed []*parsego.File) *analysisPackage {
 		log.Fatalf("internal error: bad export data: %v", err)
 	}
 	for _, path := range paths {
-		dep, ok := an.allDeps[path]
+		id := an.importLookup(path) // possibly ""
+		dep, ok := an.allNodes[id]
 		if !ok {
 			log.Fatalf("%s: missing dependency: %q", an, path)
 		}

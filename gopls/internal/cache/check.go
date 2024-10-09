@@ -447,13 +447,22 @@ func storePackageResults(ctx context.Context, ph *packageHandle, p *Package) {
 	}
 }
 
+// Metadata implements the [metadata.Source] interface.
+func (b *typeCheckBatch) Metadata(id PackageID) *metadata.Package {
+	ph := b.getHandle(id)
+	if ph == nil {
+		return nil
+	}
+	return ph.mp
+}
+
 // importPackage loads the given package from its export data in p.exportData
 // (which must already be populated).
 func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package, data []byte) (*types.Package, error) {
 	ctx, done := event.Start(ctx, "cache.typeCheckBatch.importPackage", label.Package.Of(string(mp.ID)))
 	defer done()
 
-	importLookup := b.importLookup(mp)
+	importLookup := importLookup(mp, b)
 
 	thisPackage := types.NewPackage(string(mp.PkgPath), string(mp.Name))
 	getPackages := func(items []gcimporter.GetPackagesItem) error {
@@ -592,7 +601,9 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 // package (id).
 //
 // The resulting function is not concurrency safe.
-func (b *typeCheckBatch) importLookup(mp *metadata.Package) func(PackagePath) PackageID {
+func importLookup(mp *metadata.Package, source metadata.Source) func(PackagePath) PackageID {
+	assert(mp != nil, "nil metadata")
+
 	// This function implements an incremental depth first scan through the
 	// package imports. Previous implementations of import mapping built the
 	// entire PackagePath->PackageID mapping eagerly, but that resulted in a
@@ -603,6 +614,7 @@ func (b *typeCheckBatch) importLookup(mp *metadata.Package) func(PackagePath) Pa
 	impMap := map[PackagePath]PackageID{
 		mp.PkgPath: mp.ID,
 	}
+
 	// pending is a FIFO queue of package metadata that has yet to have its
 	// dependencies fully scanned.
 	// Invariant: all entries in pending are already mapped in impMap.
@@ -623,9 +635,11 @@ func (b *typeCheckBatch) importLookup(mp *metadata.Package) func(PackagePath) Pa
 				continue
 			}
 			impMap[depPath] = depID
-			// TODO(rfindley): express this as an operation on the import graph
-			// itself, rather than the set of package handles.
-			pending = append(pending, b.getHandle(depID).mp)
+
+			dep := source.Metadata(depID)
+			assert(dep != nil, "missing dep metadata")
+
+			pending = append(pending, dep)
 			if depPath == pkgPath {
 				// Don't return early; finish processing pkg's deps.
 				id = depID

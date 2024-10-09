@@ -27,6 +27,11 @@ type Graph struct {
 	IDs map[protocol.DocumentURI][]PackageID
 }
 
+// Metadata implements the [Source] interface
+func (g *Graph) Metadata(id PackageID) *Package {
+	return g.Packages[id]
+}
+
 // Update creates a new Graph containing the result of applying the given
 // updates to the receiver, though the receiver is not itself mutated. As a
 // special case, if updates is empty, Update just returns the receiver.

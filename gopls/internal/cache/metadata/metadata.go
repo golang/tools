@@ -167,9 +167,6 @@ func (mp *Package) IsIntermediateTestVariant() bool {
 }
 
 // A Source maps package IDs to metadata for the packages.
-//
-// TODO(rfindley): replace this with a concrete metadata graph, once it is
-// exposed from the snapshot.
 type Source interface {
 	// Metadata returns the [Package] for the given package ID, or nil if it does
 	// not exist.
