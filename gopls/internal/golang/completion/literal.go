@@ -517,28 +517,30 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 	var (
 		snip     snippet.Builder
 		typeName string
-		// TODO(adonovan): think more about aliases.
-		// They should probably be treated more like Named.
-		named, _ = types.Unalias(literalType).(*types.Named)
+		pnt, _   = literalType.(typesinternal.NamedOrAlias) // = *Named | *Alias
 	)
 
-	if named != nil && named.Obj() != nil && named.TypeParams().Len() > 0 && !c.fullyInstantiated(named) {
+	tparams := typesinternal.TypeParams(pnt)
+	if tparams.Len() > 0 && !c.fullyInstantiated(pnt) {
+		// tparams.Len() > 0 implies pnt != nil.
+		// Inv: pnt is not "error" or "unsafe.Pointer", so pnt.Obj() != nil and has a Pkg().
+
 		// We are not "fully instantiated" meaning we have type params that must be specified.
-		if pkg := qf(named.Obj().Pkg()); pkg != "" {
+		if pkg := qf(pnt.Obj().Pkg()); pkg != "" {
 			typeName = pkg + "."
 		}
 
 		// We do this to get "someType" instead of "someType[T]".
-		typeName += named.Obj().Name()
+		typeName += pnt.Obj().Name()
 		snip.WriteText(typeName + "[")
 
 		if c.opts.placeholders {
-			for i := 0; i < named.TypeParams().Len(); i++ {
+			for i := 0; i < tparams.Len(); i++ {
 				if i > 0 {
 					snip.WriteText(", ")
 				}
 				snip.WritePlaceholder(func(snip *snippet.Builder) {
-					snip.WriteText(types.TypeString(named.TypeParams().At(i), qf))
+					snip.WriteText(types.TypeString(tparams.At(i), qf))
 				})
 			}
 		} else {
@@ -557,25 +559,35 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 
 // fullyInstantiated reports whether all of t's type params have
 // specified type args.
-func (c *completer) fullyInstantiated(t *types.Named) bool {
-	tps := t.TypeParams()
-	tas := t.TypeArgs()
+func (c *completer) fullyInstantiated(t typesinternal.NamedOrAlias) bool {
+	targs := typesinternal.TypeArgs(t)
+	tparams := typesinternal.TypeParams(t)
 
-	if tps.Len() != tas.Len() {
+	if tparams.Len() != targs.Len() {
 		return false
 	}
 
-	for i := 0; i < tas.Len(); i++ {
-		// TODO(adonovan) think about generic aliases.
-		switch ta := types.Unalias(tas.At(i)).(type) {
+	for i := 0; i < targs.Len(); i++ {
+		targ := targs.At(i)
+
+		// The expansion of an alias can have free type parameters,
+		// whether or not the alias itself has type parameters:
+		//
+		//   func _[K comparable]() {
+		//     type Set      = map[K]bool // free(Set)      = {K}
+		//     type MapTo[V] = map[K]V    // free(Map[foo]) = {V}
+		//   }
+		//
+		// So, we must Unalias.
+		switch targ := types.Unalias(targ).(type) {
 		case *types.TypeParam:
 			// A *TypeParam only counts as specified if it is currently in
 			// scope (i.e. we are in a generic definition).
-			if !c.typeParamInScope(ta) {
+			if !c.typeParamInScope(targ) {
 				return false
 			}
 		case *types.Named:
-			if !c.fullyInstantiated(ta) {
+			if !c.fullyInstantiated(targ) {
 				return false
 			}
 		}
