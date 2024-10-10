@@ -30,6 +30,7 @@ TODO: also, be more consistent about editor (e.g. Emacs) vs. client (e.g. eglot)
 * [Sublime Text](doc/subl.md)
 * [Acme](https://github.com/fhs/acme-lsp)
 * [Lapce](https://github.com/lapce-community/lapce-go)
+* [Zed](https://zed.dev/docs/languages/go)
 
 If you use `gopls` with an editor that is not on this list, please send us a CL
 [updating this documentation](doc/contributing.md).
