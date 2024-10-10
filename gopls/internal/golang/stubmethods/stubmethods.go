@@ -74,7 +74,7 @@ func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, po
 	return nil
 }
 
-// Emit generate the missing method based on type info of conc's corresponding interface.
+// Emit writes to out the missing method based on type info of conc's corresponding interface.
 func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	conc := si.Concrete.Obj()
 	// Record all direct methods of the current object

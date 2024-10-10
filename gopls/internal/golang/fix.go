@@ -110,8 +110,8 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fixInvertIfCondition:       singleFile(invertIfCondition),
 		fixSplitLines:              singleFile(splitLines),
 		fixJoinLines:               singleFile(joinLines),
-		fixMissingInterfaceMethods: StubMissingInterfaceMethodsFixer,
-		fixMissingCalledFunction:   StubMissingCalledFunctionFixer,
+		fixMissingInterfaceMethods: stubMissingInterfaceMethodsFixer,
+		fixMissingCalledFunction:   stubMissingCalledFunctionFixer,
 	}
 	fixer, ok := fixers[fix]
 	if !ok {
