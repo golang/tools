@@ -15,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"go/types"
 	"log"
@@ -234,7 +233,10 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 	facty = requiredAnalyzers(facty)
 
 	// File set for this batch (entire graph) of analysis.
-	fset := token.NewFileSet()
+	//
+	// Start at reservedForParsing so that cached parsed files can be inserted
+	// into the fileset retroactively.
+	fset := fileSetWithBase(reservedForParsing)
 
 	// Get the metadata graph once for lock-free access during analysis.
 	meta := s.MetadataGraph()
@@ -261,6 +263,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 
 			an = &analysisNode{
 				allNodes:     nodes,
+				parseCache:   s.view.parseCache,
 				fset:         fset,
 				fsource:      s, // expose only ReadFile
 				viewType:     s.View().Type(),
@@ -548,6 +551,7 @@ func (an *analysisNode) decrefPreds() {
 // type-checking and analyzing syntax (miss).
 type analysisNode struct {
 	allNodes        map[PackageID]*analysisNode // all nodes, for lazy lookup of transitive dependencies
+	parseCache      *parseCache                 // shared parse cache
 	fset            *token.FileSet              // file set shared by entire batch (DAG)
 	fsource         file.Source                 // Snapshot.ReadFile, for use by Pass.ReadFile
 	viewType        ViewType                    // type of view
@@ -868,12 +872,13 @@ func (an *analysisNode) run(ctx context.Context) (*analyzeSummary, error) {
 		for i, fh := range an.files {
 			i, fh := i, fh
 			group.Go(func() error {
-				// Call parseGoImpl directly, not the caching wrapper,
-				// as cached ASTs require the global FileSet.
-				// ast.Object resolution is unfortunately an implied part of the
-				// go/analysis contract.
-				pgf, err := parseGoImpl(ctx, an.fset, fh, parsego.Full&^parser.SkipObjectResolution, false)
-				parsed[i] = pgf
+				// Files fetched from the cache must also have their ast.Ident.Objects
+				// resolved, as it is part of the analysis contract.
+				pgfs, err := an.parseCache.parseFiles(ctx, an.fset, parsego.Full, false, fh)
+				if err == nil {
+					pgfs[0].Resolve()
+				}
+				parsed[i] = pgfs[0]
 				return err
 			})
 		}

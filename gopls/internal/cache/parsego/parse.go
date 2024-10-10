@@ -2,6 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:generate go run resolver_gen.go
+
+// The parsego package defines the [File] type, a wrapper around a go/ast.File
+// that is useful for answering LSP queries. Notably, it bundles the
+// *token.File and *protocol.Mapper necessary for token.Pos locations to and
+// from UTF-16 LSP positions.
+//
+// Run `go generate` to update resolver.go from GOROOT.
 package parsego
 
 import (
