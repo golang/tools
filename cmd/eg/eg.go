@@ -5,9 +5,6 @@
 // The eg command performs example-based refactoring.
 // For documentation, run the command, or see Help in
 // golang.org/x/tools/refactor/eg.
-
-//go:debug gotypesalias=0
-
 package main // import "golang.org/x/tools/cmd/eg"
 
 import (

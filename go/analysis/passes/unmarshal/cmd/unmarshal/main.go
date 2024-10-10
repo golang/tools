@@ -3,9 +3,6 @@
 // license that can be found in the LICENSE file.
 
 // The unmarshal command runs the unmarshal analyzer.
-
-//go:debug gotypesalias=0
-
 package main
 
 import (

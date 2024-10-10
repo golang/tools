@@ -14,8 +14,6 @@
 //				http://godoc/pkg/compress/zlib)
 //
 
-//go:debug gotypesalias=0
-
 package main
 
 import (

@@ -4,9 +4,6 @@
 
 // callgraph: a tool for reporting the call graph of a Go program.
 // See Usage for details, or run with -help.
-
-//go:debug gotypesalias=0
-
 package main // import "golang.org/x/tools/cmd/callgraph"
 
 // TODO(adonovan):

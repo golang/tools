@@ -13,9 +13,6 @@
 // A typical distribution is 40% identifiers, 10% literals, 8%
 // selectors, and 6% calls; around 3% each of BinaryExpr, BlockStmt,
 // AssignStmt, Field, and Comment; and the rest accounting for 20%.
-
-//go:debug gotypesalias=0
-
 package main
 
 import (

@@ -3,9 +3,6 @@
 // license that can be found in the LICENSE file.
 
 // The httpmux command runs the httpmux analyzer.
-
-//go:debug gotypesalias=0
-
 package main
 
 import (
