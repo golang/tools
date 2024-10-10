@@ -63,7 +63,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	if isTypeName(obj) && c.wantTypeParams() {
 		// obj is a *types.TypeName, so its type must be Alias|Named.
 		tparams := typesinternal.TypeParams(obj.Type().(typesinternal.NamedOrAlias))
-		label += golang.FormatTypeParams(tparams)
+		label += typesutil.FormatTypeParams(tparams)
 		insert = label // maintain invariant above (label == insert)
 	}
 

@@ -14,7 +14,6 @@ import (
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/internal/typesinternal"
-	"strconv"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/util/typesutil"
@@ -36,7 +35,7 @@ type IfaceStubInfo struct {
 	Fset      *token.FileSet // the FileSet used to type-check the types below
 	Interface *types.TypeName
 	Concrete  typesinternal.NamedOrAlias
-	Pointer   bool
+	pointer   bool
 }
 
 // GetIfaceStubInfo determines whether the "missing method error"
@@ -76,13 +75,15 @@ func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, po
 	return nil
 }
 
-// Emit generate the missing method based on type info of conc's corresponding interface.
+// Emit writes to out the missing method based on type info of conc's corresponding interface.
 func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	conc := si.Concrete.Obj()
 	// Record all direct methods of the current object
 	concreteFuncs := make(map[string]struct{})
-	for i := 0; i < si.Concrete.NumMethods(); i++ {
-		concreteFuncs[si.Concrete.Method(i).Name()] = struct{}{}
+	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
+		for i := 0; i < named.NumMethods(); i++ {
+			concreteFuncs[named.Method(i).Name()] = struct{}{}
+		}
 	}
 
 	// Find subset of interface methods that the concrete type lacks.
@@ -95,7 +96,7 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 
 	var (
 		missing                  []missingFn
-		concreteStruct, isStruct = si.Concrete.Origin().Underlying().(*types.Struct)
+		concreteStruct, isStruct = typesinternal.Origin(si.Concrete).Underlying().(*types.Struct)
 	)
 
 	for i := 0; i < ifaceType.NumMethods(); i++ {
@@ -153,10 +154,12 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	// If there are any that have named receiver, choose the first one.
 	// Otherwise, use lowercase for the first letter of the object.
 	rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
-	for i := 0; i < si.Concrete.NumMethods(); i++ {
-		if recv := si.Concrete.Method(i).Signature().Recv(); recv.Name() != "" {
-			rn = recv.Name()
-			break
+	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
+		for i := 0; i < named.NumMethods(); i++ {
+			if recv := named.Method(i).Type().(*types.Signature).Recv(); recv.Name() != "" {
+				rn = recv.Name()
+				break
+			}
 		}
 	}
 
@@ -188,7 +191,7 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 			mrn,
 			star,
 			si.Concrete.Obj().Name(),
-			typesutil.FormatTypeParams(si.Concrete.TypeParams()),
+			typesutil.FormatTypeParams(typesinternal.TypeParams(si.Concrete)),
 			missing[index].fn.Name(),
 			strings.TrimPrefix(types.TypeString(missing[index].fn.Type(), qual), "func"))
 	}

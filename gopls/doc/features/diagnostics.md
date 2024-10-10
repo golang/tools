@@ -162,12 +162,12 @@ func (NegativeErr) Error() string {
 }
 ```
 
-### `StubMissingCalledFunction`: Generate missing methods from function calls
+### `StubMissingCalledFunction`: Generate missing method from function calls
 
 When you attempt to call a method on a type that does not have that method, 
 the compiler will report an error like “type X has no field or method Y”.
 In this scenario, gopls now offers a quick fix to generate a stub declaration of 
-the missing method on that concrete type. The correct signature is inferred
+the missing method on that concrete type. The the stub method's signature is inferred
 from the method call.
 
 Consider the following code where `Foo` does not have a method `bar`:

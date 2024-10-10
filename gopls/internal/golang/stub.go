@@ -12,7 +12,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io"
 	pathpkg "path"
 	"strings"
 
@@ -26,18 +25,12 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/tokeninternal"
-	"golang.org/x/tools/internal/typesinternal"
 )
 
-// An emitter writes new top-level declarations into an existing
-// file. References to symbols should be qualified using qual, which
-// respects the local import environment.
-type emitter = func(out *bytes.Buffer, qual types.Qualifier) error
-
-// StubMissingInterfaceMethodsFixer returns a suggested fix to declare the missing
+// stubMissingInterfaceMethodsFixer returns a suggested fix to declare the missing
 // methods of the concrete type that is assigned to an interface type
 // at the cursor position.
-func StubMissingInterfaceMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+func stubMissingInterfaceMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 	si := stubmethods.GetIfaceStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes, start)
 	if si == nil {
@@ -46,10 +39,10 @@ func StubMissingInterfaceMethodsFixer(ctx context.Context, snapshot *cache.Snaps
 	return insertDeclsAfter(ctx, snapshot, pkg.Metadata(), si.Fset, si.Concrete.Obj(), si.Emit)
 }
 
-// StubMissingCalledFunctionFixer returns a suggested fix to declare the missing
-// methods that the user may want to generate based on CallExpr
+// stubMissingCalledFunctionFixer returns a suggested fix to declare the missing
+// method that the user may want to generate based on CallExpr
 // at the cursor position.
-func StubMissingCalledFunctionFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+func stubMissingCalledFunctionFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 	si := stubmethods.GetCallStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes, start)
 	if si == nil {
@@ -57,6 +50,11 @@ func StubMissingCalledFunctionFixer(ctx context.Context, snapshot *cache.Snapsho
 	}
 	return insertDeclsAfter(ctx, snapshot, pkg.Metadata(), si.Fset, si.Receiver.Obj(), si.Emit)
 }
+
+// An emitter writes new top-level declarations into an existing
+// file. References to symbols should be qualified using qual, which
+// respects the local import environment.
+type emitter = func(out *bytes.Buffer, qual types.Qualifier) error
 
 // insertDeclsAfter locates the file that declares symbol sym,
 // (which must be among the dependencies of mp),
@@ -155,19 +153,13 @@ func insertDeclsAfter(ctx context.Context, snapshot *cache.Snapshot, mp *metadat
 		return name
 	}
 
-	var newBuf bytes.Buffer
-	err = emit(&newBuf, qual)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Compute insertion point for new methods:
+	// Compute insertion point for new declarations:
 	// after the top-level declaration enclosing the (package-level) type.
 	insertOffset, err := safetoken.Offset(declPGF.Tok, declPGF.File.End())
 	if err != nil {
 		return nil, nil, bug.Errorf("internal error: end position outside file bounds: %v", err)
 	}
-	concOffset, err := safetoken.Offset(fset.File(sym.Pos()), sym.Pos())
+	symOffset, err := safetoken.Offset(fset.File(sym.Pos()), sym.Pos())
 	if err != nil {
 		return nil, nil, bug.Errorf("internal error: finding type decl offset: %v", err)
 	}
@@ -176,18 +168,21 @@ func insertDeclsAfter(ctx context.Context, snapshot *cache.Snapshot, mp *metadat
 		if err != nil {
 			return nil, nil, bug.Errorf("internal error: finding decl offset: %v", err)
 		}
-		if declEndOffset > concOffset {
+		if declEndOffset > symOffset {
 			insertOffset = declEndOffset
 			break
 		}
 	}
 
-	// Splice the new methods into the file content.
+	// Splice the new declarations into the file content.
 	var buf bytes.Buffer
 	input := declPGF.Mapper.Content // unfixed content of file
 	buf.Write(input[:insertOffset])
 	buf.WriteByte('\n')
-	io.Copy(&buf, &newBuf)
+	err = emit(&buf, qual)
+	if err != nil {
+		return nil, nil, err
+	}
 	buf.Write(input[insertOffset:])
 
 	// Re-parse the file.
