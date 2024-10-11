@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 type id struct {
@@ -51,6 +53,115 @@ func testModCache(t *testing.T) string {
 	return dir
 }
 
+// add a trivial package to the test module cache
+func addPkg(cachedir, dir string) error {
+	if err := os.MkdirAll(filepath.Join(cachedir, dir), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(cachedir, dir, "foo.go"),
+		[]byte("package foo\nfunc Foo() {}"), 0644)
+}
+
+// update, where new stuff is semantically better than old stuff
+func TestIncremental(t *testing.T) {
+	dir := testModCache(t)
+	// build old index
+	for _, it := range idtests {
+		for i, d := range it.dirs {
+			if it.best == i {
+				continue // wait for second pass
+			}
+			if err := addPkg(dir, d); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := IndexModCache(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	// add new stuff to the module cache
+	for _, it := range idtests {
+		for i, d := range it.dirs {
+			if it.best != i {
+				continue // only add the new stuff
+			}
+			if err := addPkg(dir, d); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := IndexModCache(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	index2, err := ReadIndex(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// build a fresh index
+	if err := IndexModCache(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	index1, err := ReadIndex(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// they should be the same except maybe for the time
+	index1.Changed = index2.Changed
+	if diff := cmp.Diff(index1, index2); diff != "" {
+		t.Errorf("mismatching indexes (-updated +cleared):\n%s", diff)
+	}
+}
+
+// update, where new stuff is semantically worse than some old stuff
+func TestIncrementalNope(t *testing.T) {
+	dir := testModCache(t)
+	// build old index
+	for _, it := range idtests {
+		for i, d := range it.dirs {
+			if i == 0 {
+				continue // wait for second pass
+			}
+			if err := addPkg(dir, d); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := IndexModCache(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	// add new stuff to the module cache
+	for _, it := range idtests {
+		for i, d := range it.dirs {
+			if i > 0 {
+				break // only add the new one
+			}
+			if err := addPkg(dir, d); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := IndexModCache(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	index2, err := ReadIndex(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// build a fresh index
+	if err := IndexModCache(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	index1, err := ReadIndex(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// they should be the same except maybe for the time
+	index1.Changed = index2.Changed
+	if diff := cmp.Diff(index1, index2); diff != "" {
+		t.Errorf("mismatching indexes (-updated +cleared):\n%s", diff)
+	}
+}
+
 // choose the semantically-latest version, with a single symbol
 func TestDirsSinglePath(t *testing.T) {
 	for _, itest := range idtests {
@@ -58,12 +169,7 @@ func TestDirsSinglePath(t *testing.T) {
 			// create a new test GOMODCACHE
 			dir := testModCache(t)
 			for _, d := range itest.dirs {
-				if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
-					t.Fatal(err)
-				}
-				err := os.WriteFile(filepath.Join(dir, d, "foo.go"),
-					[]byte("package foo\nfunc Foo() {}"), 0600)
-				if err != nil {
+				if err := addPkg(dir, d); err != nil {
 					t.Fatal(err)
 				}
 			}

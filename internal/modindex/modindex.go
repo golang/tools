@@ -13,7 +13,6 @@
 package modindex
 
 import (
-	"log"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -91,34 +90,22 @@ func (w *work) buildIndex() error {
 	if err != nil {
 		return err
 	}
-	log.Printf("%d dirs, %d new", len(dirs), len(newdirs))
 	// for each import path it might occur only in newdirs,
 	// only in w.oldIndex, or in both.
 	// If it occurs in both, use the semantically later one
 	if w.oldIndex != nil {
-		killed := 0
 		for _, e := range w.oldIndex.Entries {
 			found, ok := newdirs[e.ImportPath]
 			if !ok {
-				continue
+				w.newIndex.Entries = append(w.newIndex.Entries, e)
+				continue // use this one, there is no new one
 			}
 			if semver.Compare(found[0].version, e.Version) > 0 {
-				// the new one is better, disable the old one
-				e.ImportPath = ""
-				killed++
+				// use the new one
 			} else {
 				// use the old one, forget the new one
-				delete(newdirs, e.ImportPath)
-			}
-		}
-		log.Printf("%d killed, %d new", killed, len(newdirs))
-	}
-	// Build the skeleton of the new index using newdirs,
-	// and include the surviving parts of the old index
-	if w.oldIndex != nil {
-		for _, e := range w.oldIndex.Entries {
-			if e.ImportPath != "" {
 				w.newIndex.Entries = append(w.newIndex.Entries, e)
+				delete(newdirs, e.ImportPath)
 			}
 		}
 	}
