@@ -5,11 +5,11 @@ type A struct{}
 
 func basic() {
 	a := A{}
-	a.Bar("s", 42, 4.12, make(map[string]int), []int{1}, [1]int{1}, make(chan string)) //@suggestedfix("Bar", re"has no field or method", basic)
+	a.basic("s", 42, 4.12, make(map[string]int), []int{1}, [1]int{1}, make(chan string)) //@suggestedfix("basic", re"has no field or method", basic)
 }
 -- @basic/basic_stub.go --
 @@ -5 +5,4 @@
-+func (a A) Bar(s string, i int, f float64, m map[string]int, i1 []int, i2 [1]int, ch chan string) {
++func (a A) basic(s string, i int, f float64, m map[string]int, i1 []int, i2 [1]int, ch chan string) {
 +	panic("unimplemented")
 +}
 +
@@ -20,11 +20,11 @@ type B struct{}
 
 func invalidBasicKind() {
 	b := B{}
-	b.Bar(NonExistentType{}) //@suggestedfix("Bar", re"has no field or method", nonexistent),diag(re"NonExistentType",re"undefined: NonExistentType")
+	b.basicKind(NonExistentType{}) //@suggestedfix("basicKind", re"has no field or method", nonexistent),diag(re"NonExistentType",re"undefined: NonExistentType")
 }
 -- @nonexistent/nonexistent_type.go --
 @@ -5 +5,4 @@
-+func (b B) Bar(a any) {
++func (b B) basicKind(a any) {
 +	panic("unimplemented")
 +}
 +
@@ -38,11 +38,11 @@ func passParamByIdent() {
 	stringVar := "some string"
 	intVar := 1
 	sliceVar := []int{1}
-	c.Bar(stringVar, intVar, sliceVar) //@suggestedfix("Bar", re"has no field or method", ident)
+	c.ident(stringVar, intVar, sliceVar) //@suggestedfix("ident", re"has no field or method", ident)
 }
 -- @ident/pass_param_by_ident.go --
 @@ -5 +5,4 @@
-+func (c C) Bar(stringVar string, intVar int, sliceVar []int) {
++func (c C) ident(stringVar string, intVar int, sliceVar []int) {
 +	panic("unimplemented")
 +}
 +
@@ -53,13 +53,13 @@ type D struct{}
 
 func inferReturnRromParam() {
 	d := D{}
-	f(d.Bar()) //@suggestedfix("Bar", re"has no field or method", infer_param)
+	f(d.as_param()) //@suggestedfix("as_param", re"has no field or method", infer_param)
 }
 
 func f(i int) {}
 -- @infer_param/infer_return_from_param.go --
 @@ -5 +5,4 @@
-+func (d D) Bar() int {
++func (d D) as_param() int {
 +	panic("unimplemented")
 +}
 +
@@ -71,11 +71,11 @@ type E struct{}
 func inferReturnfromAssign() {
 	var assign int //@diag("assign", re"not used")
 	e := E{}
-	assign = e.Bar() //@suggestedfix("Bar", re"has no field or method", infer_assign)
+	assign = e.as_assign() //@suggestedfix("as_assign", re"has no field or method", infer_assign)
 }
 -- @infer_assign/infer_return_from_assign.go --
 @@ -5 +5,4 @@
-+func (e E) Bar() int {
++func (e E) as_assign() int {
 +	panic("unimplemented")
 +}
 +
@@ -88,11 +88,11 @@ func inferReturnfromMultipleAssign() {
 	var assign1 int //@diag("assign", re"not used")
 	var assign2 int //@diag("assign", re"not used")
 	f := F{}
-	assign1, assign2 = f.Bar() //@suggestedfix("Bar", re"has no field or method", infer_multiple_assign)
+	assign1, assign2 = f.multi_assign() //@suggestedfix("multi_assign", re"has no field or method", infer_multiple_assign)
 }
 -- @infer_multiple_assign/infer_return_from_multiple_assign.go --
 @@ -5 +5,4 @@
-+func (f F) Bar() (int, int) {
++func (f F) multi_assign() (int, int) {
 +	panic("unimplemented")
 +}
 +
@@ -103,7 +103,7 @@ type G struct{}
 
 func inferMultipleReturnInParam() {
 	g := G{}
-	g.Bar(multiReturn()) //@suggestedfix("Bar", re"has no field or method", multiple_return)
+	g.param_has_multi_return(multiReturn()) //@suggestedfix("param_has_multi_return", re"has no field or method", multiple_return)
 }
 
 func multiReturn() (int, int) {
@@ -111,7 +111,7 @@ func multiReturn() (int, int) {
 }
 -- @multiple_return/infer_multiple_return_in_param.go --
 @@ -5 +5,4 @@
-+func (g G) Bar(i int, i1 int) {
++func (g G) param_has_multi_return(i int, i1 int) {
 +	panic("unimplemented")
 +}
 +
@@ -124,11 +124,11 @@ type TypeWithLongName struct{}
 
 func TailParamName() {
 	h := H{}
-	h.Bar(TypeWithLongName{}) //@suggestedfix("Bar", re"has no field or method", trail)
+	h.longName(TypeWithLongName{}) //@suggestedfix("longName", re"has no field or method", trail)
 }
 -- @trail/tail_param_name.go --
 @@ -5 +5,4 @@
-+func (h H) Bar(name TypeWithLongName) {
++func (h H) longName(name TypeWithLongName) {
 +	panic("unimplemented")
 +}
 +
@@ -139,12 +139,28 @@ type I struct{}
 
 func all_error() {
 	i := I{}
-	errorFunc(i.Bar(undefined1(), undefined2(), undefined3{})) //@suggestedfix("Bar", re"has no field or method", all_error),diag("undefined1",re"undefined"),diag("undefined2",re"undefined"),diag("undefined3",re"undefined")
+	errorFunc(i.errors(undefined1(), undefined2(), undefined3{})) //@suggestedfix("errors", re"has no field or method", all_error),diag("undefined1",re"undefined"),diag("undefined2",re"undefined"),diag("undefined3",re"undefined")
 }
 func errorFunc(u undefined4) {} //@diag("undefined4",re"undefined")
 -- @all_error/param_and_return_all_error_nodes.go --
 @@ -5 +5,4 @@
-+func (i I) Bar(a any, a1 any, a2 any) any {
++func (i I) errors(a any, a1 any, a2 any) any {
++	panic("unimplemented")
++}
++
+-- pointer.go --
+package stubcalled
+
+type J struct{}
+
+func recv_param_pointer() {
+	j := &J{}
+	i := 42
+	j.pointer(&i) //@suggestedfix("pointer", re"has no field or method", pointer)
+}
+-- @pointer/pointer.go --
+@@ -5 +5,4 @@
++func (j *J) pointer(i *int) {
 +	panic("unimplemented")
 +}
 +

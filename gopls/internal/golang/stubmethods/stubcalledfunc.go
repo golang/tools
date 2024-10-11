@@ -289,6 +289,9 @@ func invalidName(t types.Type) bool {
 // its argument expression and type. Caller should ensure
 // typ is non-nil.
 func paramName(e ast.Expr, typ types.Type) string {
+	if typ == types.Universe.Lookup("error").Type() {
+		return "err"
+	}
 	switch t := e.(type) {
 	// Use the identifier's name as the argument name.
 	case *ast.Ident:
