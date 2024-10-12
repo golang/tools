@@ -128,30 +128,6 @@ func (v Version) Canonical() string {
 	return strings.TrimPrefix(semver.Canonical(v.V()), "v")
 }
 
-// Reference type is a reference (link) type.
-type ReferenceType string
-
-const (
-	ReferenceTypeAdvisory = ReferenceType("ADVISORY")
-	ReferenceTypeArticle  = ReferenceType("ARTICLE")
-	ReferenceTypeReport   = ReferenceType("REPORT")
-	ReferenceTypeFix      = ReferenceType("FIX")
-	ReferenceTypePackage  = ReferenceType("PACKAGE")
-	ReferenceTypeEvidence = ReferenceType("EVIDENCE")
-	ReferenceTypeWeb      = ReferenceType("WEB")
-)
-
-// ReferenceTypes is the set of reference types defined in OSV.
-var ReferenceTypes = []ReferenceType{
-	ReferenceTypeAdvisory,
-	ReferenceTypeArticle,
-	ReferenceTypeReport,
-	ReferenceTypeFix,
-	ReferenceTypePackage,
-	ReferenceTypeEvidence,
-	ReferenceTypeWeb,
-}
-
 // A Reference is a link to some external resource.
 //
 // For ease of typing, References are represented in the YAML as a

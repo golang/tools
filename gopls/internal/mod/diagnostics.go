@@ -31,7 +31,7 @@ func ParseDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protoc
 	ctx, done := event.Start(ctx, "mod.Diagnostics", snapshot.Labels()...)
 	defer done()
 
-	return collectDiagnostics(ctx, snapshot, ModParseDiagnostics)
+	return collectDiagnostics(ctx, snapshot, parseDiagnostics)
 }
 
 // Diagnostics returns diagnostics from running go mod tidy.
@@ -39,7 +39,7 @@ func TidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protoco
 	ctx, done := event.Start(ctx, "mod.Diagnostics", snapshot.Labels()...)
 	defer done()
 
-	return collectDiagnostics(ctx, snapshot, ModTidyDiagnostics)
+	return collectDiagnostics(ctx, snapshot, tidyDiagnostics)
 }
 
 // UpgradeDiagnostics returns upgrade diagnostics for the modules in the
@@ -48,7 +48,7 @@ func UpgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[prot
 	ctx, done := event.Start(ctx, "mod.UpgradeDiagnostics", snapshot.Labels()...)
 	defer done()
 
-	return collectDiagnostics(ctx, snapshot, ModUpgradeDiagnostics)
+	return collectDiagnostics(ctx, snapshot, upgradeDiagnostics)
 }
 
 // VulnerabilityDiagnostics returns vulnerability diagnostics for the active modules in the
@@ -57,7 +57,7 @@ func VulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (ma
 	ctx, done := event.Start(ctx, "mod.VulnerabilityDiagnostics", snapshot.Labels()...)
 	defer done()
 
-	return collectDiagnostics(ctx, snapshot, ModVulnerabilityDiagnostics)
+	return collectDiagnostics(ctx, snapshot, vulnerabilityDiagnostics)
 }
 
 func collectDiagnostics(ctx context.Context, snapshot *cache.Snapshot, diagFn func(context.Context, *cache.Snapshot, file.Handle) ([]*cache.Diagnostic, error)) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
@@ -94,8 +94,8 @@ func collectDiagnostics(ctx context.Context, snapshot *cache.Snapshot, diagFn fu
 	return reports, nil
 }
 
-// ModParseDiagnostics reports diagnostics from parsing the mod file.
-func ModParseDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (diagnostics []*cache.Diagnostic, err error) {
+// parseDiagnostics reports diagnostics from parsing the mod file.
+func parseDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (diagnostics []*cache.Diagnostic, err error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil {
 		if pm == nil || len(pm.ParseErrors) == 0 {
@@ -106,8 +106,8 @@ func ModParseDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.
 	return nil, nil
 }
 
-// ModTidyDiagnostics reports diagnostics from running go mod tidy.
-func ModTidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]*cache.Diagnostic, error) {
+// tidyDiagnostics reports diagnostics from running go mod tidy.
+func tidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]*cache.Diagnostic, error) {
 	pm, err := snapshot.ParseMod(ctx, fh) // memoized
 	if err != nil {
 		return nil, nil // errors reported by ModDiagnostics above
@@ -132,9 +132,9 @@ func ModTidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.H
 	return tidied.Diagnostics, nil
 }
 
-// ModUpgradeDiagnostics adds upgrade quick fixes for individual modules if the upgrades
+// upgradeDiagnostics adds upgrade quick fixes for individual modules if the upgrades
 // are recorded in the view.
-func ModUpgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (upgradeDiagnostics []*cache.Diagnostic, err error) {
+func upgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (upgradeDiagnostics []*cache.Diagnostic, err error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil {
 		// Don't return an error if there are parse error diagnostics to be shown, but also do not
@@ -177,9 +177,9 @@ func ModUpgradeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh fil
 
 const upgradeCodeActionPrefix = "Upgrade to "
 
-// ModVulnerabilityDiagnostics adds diagnostics for vulnerabilities in individual modules
+// vulnerabilityDiagnostics adds diagnostics for vulnerabilities in individual modules
 // if the vulnerability is recorded in the view.
-func ModVulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (vulnDiagnostics []*cache.Diagnostic, err error) {
+func vulnerabilityDiagnostics(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (vulnDiagnostics []*cache.Diagnostic, err error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil {
 		// Don't return an error if there are parse error diagnostics to be shown, but also do not

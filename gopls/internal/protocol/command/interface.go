@@ -506,22 +506,6 @@ type RunVulncheckResult struct {
 	Token protocol.ProgressToken
 }
 
-// CallStack models a trace of function calls starting
-// with a client function or method and ending with a
-// call to a vulnerable symbol.
-type CallStack []StackEntry
-
-// StackEntry models an element of a call stack.
-type StackEntry struct {
-	// See golang.org/x/exp/vulncheck.StackEntry.
-
-	// User-friendly representation of function/method names.
-	// e.g. package.funcName, package.(recvType).methodName, ...
-	Name string
-	URI  protocol.DocumentURI
-	Pos  protocol.Position // Start position. (0-based. Column is always 0)
-}
-
 // MemStatsResult holds selected fields from runtime.MemStats.
 type MemStatsResult struct {
 	HeapAlloc  uint64
