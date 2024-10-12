@@ -1,0 +1,54 @@
+This test checks the basic of 'Declare missing method T.f' quick fix.
+
+-- basic_stub.go --
+package fromcallbasic
+
+type Basic struct{}
+
+func basic() {
+	i := 1
+	b := Basic{}
+	f(b.basic(i)) //@suggestedfix("basic", re"has no field or method", basic)
+}
+
+func f(i int) string { return "s" }
+-- @basic/basic_stub.go --
+@@ -5 +5,4 @@
++func (b Basic) basic(i int) int {
++	panic("unimplemented")
++}
++
+-- pointer.go --
+package fromcallbasic
+
+type P struct{}
+
+func recv_param_pointer() {
+	p := &P{}
+	i := 42
+	p.pointer(&i) //@suggestedfix("pointer", re"has no field or method", pointer)
+}
+-- @pointer/pointer.go --
+@@ -5 +5,4 @@
++func (p *P) pointer(i *int) {
++	panic("unimplemented")
++}
++
+-- other.go --
+package fromcallbasic
+
+type TypeDeclInOtherFile struct{}
+
+-- this.go --
+package fromcallbasic
+
+func fun() {
+	i := 1
+	t := TypeDeclInOtherFile{}
+	t.other(i) //@suggestedfix("other", re"has no field or method", del_other)
+}
+-- @del_other/other.go --
+@@ -5 +5,3 @@
++func (t TypeDeclInOtherFile) other(i int) {
++	panic("unimplemented")
++}

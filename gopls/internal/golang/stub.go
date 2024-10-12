@@ -12,7 +12,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io"
 	pathpkg "path"
 	"strings"
 
@@ -26,104 +25,62 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/tokeninternal"
-	"golang.org/x/tools/internal/typesinternal"
 )
 
-// stubMethodsFixer returns a suggested fix to declare the missing
+// stubMissingInterfaceMethodsFixer returns a suggested fix to declare the missing
 // methods of the concrete type that is assigned to an interface type
 // at the cursor position.
-func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+func stubMissingInterfaceMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-	si := stubmethods.GetStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes, start)
+	si := stubmethods.GetIfaceStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes, start)
 	if si == nil {
 		return nil, nil, fmt.Errorf("nil interface request")
 	}
+	return insertDeclsAfter(ctx, snapshot, pkg.Metadata(), si.Fset, si.Concrete.Obj(), si.Emit)
+}
 
-	// A function-local type cannot be stubbed
-	// since there's nowhere to put the methods.
-	// TODO(adonovan): move this check into GetStubInfo instead of offering a bad fix.
-	conc := si.Concrete.Obj()
-	if conc.Parent() != conc.Pkg().Scope() {
-		return nil, nil, fmt.Errorf("local type %q cannot be stubbed", conc.Name())
+// stubMissingCalledFunctionFixer returns a suggested fix to declare the missing
+// method that the user may want to generate based on CallExpr
+// at the cursor position.
+func stubMissingCalledFunctionFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	si := stubmethods.GetCallStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes, start)
+	if si == nil {
+		return nil, nil, fmt.Errorf("invalid type request")
 	}
+	return insertDeclsAfter(ctx, snapshot, pkg.Metadata(), si.Fset, si.Receiver.Obj(), si.Emit)
+}
 
-	// Parse the file declaring the concrete type.
+// An emitter writes new top-level declarations into an existing
+// file. References to symbols should be qualified using qual, which
+// respects the local import environment.
+type emitter = func(out *bytes.Buffer, qual types.Qualifier) error
+
+// insertDeclsAfter locates the file that declares symbol sym,
+// (which must be among the dependencies of mp),
+// calls the emit function to generate new declarations,
+// respecting the local import environment,
+// and splices those declarations into the file after the declaration of sym,
+// updating imports as needed.
+//
+// fset must provide the position of sym.
+func insertDeclsAfter(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.Package, fset *token.FileSet, sym types.Object, emit emitter) (*token.FileSet, *analysis.SuggestedFix, error) {
+	// Parse the file declaring the sym.
 	//
 	// Beware: declPGF is not necessarily covered by pkg.FileSet() or si.Fset.
-	declPGF, _, err := parseFull(ctx, snapshot, si.Fset, conc.Pos())
+	declPGF, _, err := parseFull(ctx, snapshot, fset, sym.Pos())
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse file %q declaring implementation type: %w", declPGF.URI, err)
+		return nil, nil, fmt.Errorf("failed to parse file %q declaring implementation symbol: %w", declPGF.URI, err)
 	}
 	if declPGF.Fixed() {
 		return nil, nil, fmt.Errorf("file contains parse errors: %s", declPGF.URI)
 	}
 
-	// Find metadata for the concrete type's declaring package
+	// Find metadata for the symbol's declaring package
 	// as we'll need its import mapping.
-	declMeta := findFileInDeps(snapshot, pkg.Metadata(), declPGF.URI)
+	declMeta := findFileInDeps(snapshot, mp, declPGF.URI)
 	if declMeta == nil {
-		return nil, nil, bug.Errorf("can't find metadata for file %s among dependencies of %s", declPGF.URI, pkg)
-	}
-
-	// Record all direct methods of the current object
-	concreteFuncs := make(map[string]struct{})
-	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
-		for i := 0; i < named.NumMethods(); i++ {
-			concreteFuncs[named.Method(i).Name()] = struct{}{}
-		}
-	}
-
-	// Find subset of interface methods that the concrete type lacks.
-	ifaceType := si.Interface.Type().Underlying().(*types.Interface)
-
-	type missingFn struct {
-		fn         *types.Func
-		needSubtle string
-	}
-
-	var (
-		missing                  []missingFn
-		concreteStruct, isStruct = typesinternal.Origin(si.Concrete).Underlying().(*types.Struct)
-	)
-
-	for i := 0; i < ifaceType.NumMethods(); i++ {
-		imethod := ifaceType.Method(i)
-		cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.Pointer, imethod.Pkg(), imethod.Name())
-		if cmethod == nil {
-			missing = append(missing, missingFn{fn: imethod})
-			continue
-		}
-
-		if _, ok := cmethod.(*types.Var); ok {
-			// len(LookupFieldOrMethod.index) = 1 => conflict, >1 => shadow.
-			return nil, nil, fmt.Errorf("adding method %s.%s would conflict with (or shadow) existing field",
-				conc.Name(), imethod.Name())
-		}
-
-		if _, exist := concreteFuncs[imethod.Name()]; exist {
-			if !types.Identical(cmethod.Type(), imethod.Type()) {
-				return nil, nil, fmt.Errorf("method %s.%s already exists but has the wrong type: got %s, want %s",
-					conc.Name(), imethod.Name(), cmethod.Type(), imethod.Type())
-			}
-			continue
-		}
-
-		mf := missingFn{fn: imethod}
-		if isStruct && len(index) > 0 {
-			field := concreteStruct.Field(index[0])
-
-			fn := field.Name()
-			if is[*types.Pointer](field.Type()) {
-				fn = "*" + fn
-			}
-
-			mf.needSubtle = fmt.Sprintf("// Subtle: this method shadows the method (%s).%s of %s.%s.\n", fn, imethod.Name(), si.Concrete.Obj().Name(), field.Name())
-		}
-
-		missing = append(missing, mf)
-	}
-	if len(missing) == 0 {
-		return nil, nil, fmt.Errorf("no missing methods found")
+		return nil, nil, bug.Errorf("can't find metadata for file %s among dependencies of %s", declPGF.URI, mp)
 	}
 
 	// Build import environment for the declaring file.
@@ -170,7 +127,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 		// TODO(adonovan): don't ignore vendor prefix.
 		//
 		// Ignore the current package import.
-		if pkg.Path() == conc.Pkg().Path() {
+		if pkg.Path() == sym.Pkg().Path() {
 			return ""
 		}
 
@@ -181,7 +138,7 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 			//
 			// TODO(adonovan): resolve conflict between declared
 			// name and existing file-level (declPGF.File.Imports)
-			// or package-level (si.Concrete.Pkg.Scope) decls by
+			// or package-level (sym.Pkg.Scope) decls by
 			// generating a fresh name.
 			name = pkg.Name()
 			importEnv[importPath] = name
@@ -196,73 +153,13 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 		return name
 	}
 
-	// Format interface name (used only in a comment).
-	iface := si.Interface.Name()
-	if ipkg := si.Interface.Pkg(); ipkg != nil && ipkg != conc.Pkg() {
-		iface = ipkg.Name() + "." + iface
-	}
-
-	// Pointer receiver?
-	var star string
-	if si.Pointer {
-		star = "*"
-	}
-
-	// If there are any that have named receiver, choose the first one.
-	// Otherwise, use lowercase for the first letter of the object.
-	rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
-	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
-		for i := 0; i < named.NumMethods(); i++ {
-			if recv := named.Method(i).Type().(*types.Signature).Recv(); recv.Name() != "" {
-				rn = recv.Name()
-				break
-			}
-		}
-	}
-
-	// Check for receiver name conflicts
-	checkRecvName := func(tuple *types.Tuple) bool {
-		for i := 0; i < tuple.Len(); i++ {
-			if rn == tuple.At(i).Name() {
-				return true
-			}
-		}
-		return false
-	}
-
-	// Format the new methods.
-	var newMethods bytes.Buffer
-
-	for index := range missing {
-		mrn := rn + " "
-		sig := missing[index].fn.Signature()
-		if checkRecvName(sig.Params()) || checkRecvName(sig.Results()) {
-			mrn = ""
-		}
-
-		fmt.Fprintf(&newMethods, `// %s implements %s.
-%sfunc (%s%s%s%s) %s%s {
-	panic("unimplemented")
-}
-`,
-			missing[index].fn.Name(),
-			iface,
-			missing[index].needSubtle,
-			mrn,
-			star,
-			si.Concrete.Obj().Name(),
-			FormatTypeParams(typesinternal.TypeParams(si.Concrete)),
-			missing[index].fn.Name(),
-			strings.TrimPrefix(types.TypeString(missing[index].fn.Type(), qual), "func"))
-	}
-
-	// Compute insertion point for new methods:
+	// Compute insertion point for new declarations:
 	// after the top-level declaration enclosing the (package-level) type.
 	insertOffset, err := safetoken.Offset(declPGF.Tok, declPGF.File.End())
 	if err != nil {
 		return nil, nil, bug.Errorf("internal error: end position outside file bounds: %v", err)
 	}
-	concOffset, err := safetoken.Offset(si.Fset.File(conc.Pos()), conc.Pos())
+	symOffset, err := safetoken.Offset(fset.File(sym.Pos()), sym.Pos())
 	if err != nil {
 		return nil, nil, bug.Errorf("internal error: finding type decl offset: %v", err)
 	}
@@ -271,22 +168,25 @@ func stubMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.
 		if err != nil {
 			return nil, nil, bug.Errorf("internal error: finding decl offset: %v", err)
 		}
-		if declEndOffset > concOffset {
+		if declEndOffset > symOffset {
 			insertOffset = declEndOffset
 			break
 		}
 	}
 
-	// Splice the new methods into the file content.
+	// Splice the new declarations into the file content.
 	var buf bytes.Buffer
 	input := declPGF.Mapper.Content // unfixed content of file
 	buf.Write(input[:insertOffset])
 	buf.WriteByte('\n')
-	io.Copy(&buf, &newMethods)
+	err = emit(&buf, qual)
+	if err != nil {
+		return nil, nil, err
+	}
 	buf.Write(input[insertOffset:])
 
 	// Re-parse the file.
-	fset := token.NewFileSet()
+	fset = token.NewFileSet()
 	newF, err := parser.ParseFile(fset, declPGF.URI.Path(), buf.Bytes(), parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not reparse file: %w", err)

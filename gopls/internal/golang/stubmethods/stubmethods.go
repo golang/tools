@@ -8,20 +8,23 @@
 package stubmethods
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
-
 	"golang.org/x/tools/internal/typesinternal"
+	"strings"
+
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
 // TODO(adonovan): eliminate the confusing Fset parameter; only the
 // file name and byte offset of Concrete are needed.
 
-// StubInfo represents a concrete type
+// IfaceStubInfo represents a concrete type
 // that wants to stub out an interface type
-type StubInfo struct {
+type IfaceStubInfo struct {
 	// Interface is the interface that the client wants to implement.
 	// When the interface is defined, the underlying object will be a TypeName.
 	// Note that we keep track of types.Object instead of types.Type in order
@@ -32,10 +35,10 @@ type StubInfo struct {
 	Fset      *token.FileSet // the FileSet used to type-check the types below
 	Interface *types.TypeName
 	Concrete  typesinternal.NamedOrAlias
-	Pointer   bool
+	pointer   bool
 }
 
-// GetStubInfo determines whether the "missing method error"
+// GetIfaceStubInfo determines whether the "missing method error"
 // can be used to deduced what the concrete and interface types are.
 //
 // TODO(adonovan): this function (and its following 5 helpers) tries
@@ -44,7 +47,7 @@ type StubInfo struct {
 // function call. This is essentially what the refactor/satisfy does,
 // more generally. Refactor to share logic, after auditing 'satisfy'
 // for safety on ill-typed code.
-func GetStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos token.Pos) *StubInfo {
+func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos token.Pos) *IfaceStubInfo {
 	for _, n := range path {
 		switch n := n.(type) {
 		case *ast.ValueSpec:
@@ -72,10 +75,133 @@ func GetStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos tok
 	return nil
 }
 
+// Emit writes to out the missing methods of si.Concrete required for it to implement si.Interface
+func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
+	conc := si.Concrete.Obj()
+	// Record all direct methods of the current object
+	concreteFuncs := make(map[string]struct{})
+	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
+		for i := 0; i < named.NumMethods(); i++ {
+			concreteFuncs[named.Method(i).Name()] = struct{}{}
+		}
+	}
+
+	// Find subset of interface methods that the concrete type lacks.
+	ifaceType := si.Interface.Type().Underlying().(*types.Interface)
+
+	type missingFn struct {
+		fn         *types.Func
+		needSubtle string
+	}
+
+	var (
+		missing                  []missingFn
+		concreteStruct, isStruct = typesinternal.Origin(si.Concrete).Underlying().(*types.Struct)
+	)
+
+	for i := 0; i < ifaceType.NumMethods(); i++ {
+		imethod := ifaceType.Method(i)
+		cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.pointer, imethod.Pkg(), imethod.Name())
+		if cmethod == nil {
+			missing = append(missing, missingFn{fn: imethod})
+			continue
+		}
+
+		if _, ok := cmethod.(*types.Var); ok {
+			// len(LookupFieldOrMethod.index) = 1 => conflict, >1 => shadow.
+			return fmt.Errorf("adding method %s.%s would conflict with (or shadow) existing field",
+				conc.Name(), imethod.Name())
+		}
+
+		if _, exist := concreteFuncs[imethod.Name()]; exist {
+			if !types.Identical(cmethod.Type(), imethod.Type()) {
+				return fmt.Errorf("method %s.%s already exists but has the wrong type: got %s, want %s",
+					conc.Name(), imethod.Name(), cmethod.Type(), imethod.Type())
+			}
+			continue
+		}
+
+		mf := missingFn{fn: imethod}
+		if isStruct && len(index) > 0 {
+			field := concreteStruct.Field(index[0])
+
+			fn := field.Name()
+			if _, ok := field.Type().(*types.Pointer); ok {
+				fn = "*" + fn
+			}
+
+			mf.needSubtle = fmt.Sprintf("// Subtle: this method shadows the method (%s).%s of %s.%s.\n", fn, imethod.Name(), si.Concrete.Obj().Name(), field.Name())
+		}
+
+		missing = append(missing, mf)
+	}
+	if len(missing) == 0 {
+		return fmt.Errorf("no missing methods found")
+	}
+
+	// Format interface name (used only in a comment).
+	iface := si.Interface.Name()
+	if ipkg := si.Interface.Pkg(); ipkg != nil && ipkg != conc.Pkg() {
+		iface = ipkg.Name() + "." + iface
+	}
+
+	// Pointer receiver?
+	var star string
+	if si.pointer {
+		star = "*"
+	}
+
+	// If there are any that have named receiver, choose the first one.
+	// Otherwise, use lowercase for the first letter of the object.
+	rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
+	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
+		for i := 0; i < named.NumMethods(); i++ {
+			if recv := named.Method(i).Type().(*types.Signature).Recv(); recv.Name() != "" {
+				rn = recv.Name()
+				break
+			}
+		}
+	}
+
+	// Check for receiver name conflicts
+	checkRecvName := func(tuple *types.Tuple) bool {
+		for i := 0; i < tuple.Len(); i++ {
+			if rn == tuple.At(i).Name() {
+				return true
+			}
+		}
+		return false
+	}
+
+	for index := range missing {
+		mrn := rn + " "
+		sig := missing[index].fn.Signature()
+		if checkRecvName(sig.Params()) || checkRecvName(sig.Results()) {
+			mrn = ""
+		}
+
+		fmt.Fprintf(out, `// %s implements %s.
+%sfunc (%s%s%s%s) %s%s {
+	panic("unimplemented")
+}
+`,
+			missing[index].fn.Name(),
+			iface,
+			missing[index].needSubtle,
+			mrn,
+			star,
+			si.Concrete.Obj().Name(),
+			typesutil.FormatTypeParams(typesinternal.TypeParams(si.Concrete)),
+			missing[index].fn.Name(),
+			strings.TrimPrefix(types.TypeString(missing[index].fn.Type(), qual), "func"))
+	}
+	return nil
+}
+
 // fromCallExpr tries to find an *ast.CallExpr's function declaration and
 // analyzes a function call's signature against the passed in parameter to deduce
 // the concrete and interface types.
-func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *ast.CallExpr) *StubInfo {
+func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *ast.CallExpr) *IfaceStubInfo {
 	// Find argument containing pos.
 	argIdx := -1
 	var arg ast.Expr
@@ -118,10 +244,10 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *as
 	if iface == nil {
 		return nil
 	}
-	return &StubInfo{
+	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
-		Pointer:   pointer,
+		pointer:   pointer,
 		Interface: iface,
 	}
 }
@@ -130,8 +256,8 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *as
 // a concrete type that is trying to be returned as an interface type.
 //
 // For example, func() io.Writer { return myType{} }
-// would return StubInfo with the interface being io.Writer and the concrete type being myType{}.
-func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path []ast.Node, ret *ast.ReturnStmt) (*StubInfo, error) {
+// would return StubIfaceInfo with the interface being io.Writer and the concrete type being myType{}.
+func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path []ast.Node, ret *ast.ReturnStmt) (*IfaceStubInfo, error) {
 	// Find return operand containing pos.
 	returnIdx := -1
 	for i, r := range ret.Results {
@@ -148,6 +274,11 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil, nil
 	}
+	conc := concType.Obj()
+	if conc.Parent() != conc.Pkg().Scope() {
+		return nil, fmt.Errorf("local type %q cannot be stubbed", conc.Name())
+	}
+
 	funcType := enclosingFunction(path, info)
 	if funcType == nil {
 		return nil, fmt.Errorf("could not find the enclosing function of the return statement")
@@ -161,17 +292,17 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 	if iface == nil {
 		return nil, nil
 	}
-	return &StubInfo{
+	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
-		Pointer:   pointer,
+		pointer:   pointer,
 		Interface: iface,
 	}, nil
 }
 
-// fromValueSpec returns *StubInfo from a variable declaration such as
+// fromValueSpec returns *StubIfaceInfo from a variable declaration such as
 // var x io.Writer = &T{}
-func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, pos token.Pos) *StubInfo {
+func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, pos token.Pos) *IfaceStubInfo {
 	// Find RHS element containing pos.
 	var rhs ast.Expr
 	for _, r := range spec.Values {
@@ -195,22 +326,27 @@ func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, p
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil
 	}
+	conc := concType.Obj()
+	if conc.Parent() != conc.Pkg().Scope() {
+		return nil
+	}
+
 	ifaceObj := ifaceType(ifaceNode, info)
 	if ifaceObj == nil {
 		return nil
 	}
-	return &StubInfo{
+	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
 		Interface: ifaceObj,
-		Pointer:   pointer,
+		pointer:   pointer,
 	}
 }
 
-// fromAssignStmt returns *StubInfo from a variable assignment such as
+// fromAssignStmt returns *StubIfaceInfo from a variable assignment such as
 // var x io.Writer
 // x = &T{}
-func fromAssignStmt(fset *token.FileSet, info *types.Info, assign *ast.AssignStmt, pos token.Pos) *StubInfo {
+func fromAssignStmt(fset *token.FileSet, info *types.Info, assign *ast.AssignStmt, pos token.Pos) *IfaceStubInfo {
 	// The interface conversion error in an assignment is against the RHS:
 	//
 	//      var x io.Writer
@@ -245,11 +381,15 @@ func fromAssignStmt(fset *token.FileSet, info *types.Info, assign *ast.AssignStm
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil
 	}
-	return &StubInfo{
+	conc := concType.Obj()
+	if conc.Parent() != conc.Pkg().Scope() {
+		return nil
+	}
+	return &IfaceStubInfo{
 		Fset:      fset,
 		Concrete:  concType,
 		Interface: ifaceObj,
-		Pointer:   pointer,
+		pointer:   pointer,
 	}
 }
 

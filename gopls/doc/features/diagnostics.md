@@ -127,7 +127,7 @@ Client support:
 <!-- Below we list any quick fixes (by their internal fix name)
      that aren't analyzers. -->
 
-### `stubMethods`: Declare missing methods of type
+### `stubMissingInterfaceMethods`: Declare missing methods of I
 
 When a value of a concrete type is assigned to a variable of an
 interface type, but the concrete type does not possess all the
@@ -168,6 +168,34 @@ position.
 (Perhaps gopls should send a `showDocument` request to navigate the
 client there, or a progress notification indicating that something
 happened.)
+
+### `StubMissingCalledFunction`: Declare missing method T.f
+
+When you attempt to call a method on a type that does not have that method,
+the compiler will report an error such as "type X has no field or method Y".
+In this scenario, gopls now offers a quick fix to generate a stub declaration of
+the missing method, inferring its type from the call.
+
+Consider the following code where `Foo` does not have a method `bar`:
+
+```go
+type Foo struct{}
+
+func main() {
+  var s string
+  f := Foo{}
+  s = f.bar("str", 42) // error: f.bar undefined (type Foo has no field or method bar)
+}
+```
+
+Gopls will offer a quick fix, "Declare missing method Foo.bar".
+When invoked, it creates the following declaration:
+
+```go
+func (f Foo) bar(s string, i int) string {
+	panic("unimplemented")
+}
+```
 
 <!--
 
