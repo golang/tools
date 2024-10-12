@@ -17,6 +17,8 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
+var anyType = types.Universe.Lookup("any").Type()
+
 // CallStubInfo represents a missing method
 // that a receiver type is about to generate
 // which has "type X has no field or method Y" error
@@ -25,15 +27,9 @@ type CallStubInfo struct {
 	Receiver   typesinternal.NamedOrAlias // the method's receiver type
 	MethodName string
 	pointer    bool
-	parent     ast.Node // the parent node of original CallExpr
 	info       *types.Info
-	args       []ast.Expr // the argument list of original CallExpr
-	pos        token.Pos
-}
-
-type param struct {
-	name string
-	typ  types.Type // the type of param, inferred from CallExpr
+	path       []ast.Node // path enclosing the CallExpr
+	args       []ast.Expr // argument list of original CallExpr
 }
 
 // GetCallStubInfo extracts necessary information to generate a method definition from
@@ -43,6 +39,7 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 		switch n := n.(type) {
 		case *ast.CallExpr:
 			s, ok := n.Fun.(*ast.SelectorExpr)
+			// TODO: support generating stub functions in the same way.
 			if !ok {
 				return nil
 			}
@@ -62,19 +59,14 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 			if recv.Parent() != recv.Pkg().Scope() {
 				return nil
 			}
-			var parent ast.Node
-			if i < len(path)-1 {
-				parent = path[i+1]
-			}
 			return &CallStubInfo{
 				Fset:       fset,
 				Receiver:   recvType,
 				MethodName: s.Sel.Name,
 				pointer:    pointer,
-				parent:     parent,
+				path:       path[i:],
 				info:       info,
 				args:       n.Args,
-				pos:        pos,
 			}
 		}
 	}
@@ -84,7 +76,7 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 // Emit writes to out the missing method based on type info of si.Receiver and CallExpr.
 func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	params := si.collectParams()
-	rets := si.collectReturnTypes()
+	rets := typesFromContext(si.info, si.path, si.path[0].Pos())
 	recv := si.Receiver.Obj()
 	// Pointer receiver?
 	var star string
@@ -114,17 +106,15 @@ func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 		si.MethodName)
 
 	// Emit parameters, avoiding name conflicts.
-	nameCounts := map[string]int{recvName: 1}
+	seen := map[string]bool{recvName: true}
 	out.WriteString("(")
 	for i, param := range params {
 		name := param.name
-		if count, exists := nameCounts[name]; exists {
-			count++
-			nameCounts[name] = count
-			name = fmt.Sprintf("%s%d", name, count)
-		} else {
-			nameCounts[name] = 0
+		if seen[name] {
+			name = fmt.Sprintf("param%d", i+1)
 		}
+		seen[name] = true
+
 		if i > 0 {
 			out.WriteString(", ")
 		}
@@ -153,25 +143,22 @@ func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	return nil
 }
 
+type param struct {
+	name string
+	typ  types.Type // the type of param, inferred from CallExpr
+}
+
 // collectParams gathers the parameter information needed to generate a method stub.
 // The param's type default to any if there is a type error in the argument.
 func (si *CallStubInfo) collectParams() []param {
 	var params []param
-	defaultName, defaultType := "a", types.Universe.Lookup("any").Type()
-
 	appendParam := func(e ast.Expr, t types.Type) {
-		typ := types.Default(t)
-		if typ == nil || invalidName(typ) {
-			params = append(params, param{
-				name: defaultName,
-				typ:  defaultType,
-			})
-		} else {
-			params = append(params, param{
-				name: paramName(e, typ),
-				typ:  typ,
-			})
+		p := param{"param", anyType}
+		if t != nil && !containsInvalid(t) {
+			t = types.Default(t)
+			p = param{paramName(e, t), t}
 		}
+		params = append(params, p)
 	}
 
 	for _, arg := range si.args {
@@ -190,22 +177,35 @@ func (si *CallStubInfo) collectParams() []param {
 	return params
 }
 
-// collectReturnTypes attempts to infer the expected return types for
-// a missing method based on the context in which the method call appears.
-// It analyzes parent Node to determine if the method call is part of
-// an assignment statement or used as an argument in another function call.
-func (si *CallStubInfo) collectReturnTypes() []types.Type {
-	var rets []types.Type
-	switch parent := si.parent.(type) {
+// typesFromContext returns the type (or perhaps zero or multiple types)
+// of the "hole" into which the expression identified by path must fit.
+//
+// For example, given
+//
+//	s, i := "", 0
+//	s, i = EXPR
+//
+// the hole that must be filled by EXPR has type (string, int).
+//
+// It returns nil on failure.
+func typesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.Type {
+	var typs []types.Type
+	parent := parentNode(path)
+	if parent == nil {
+		return nil
+	}
+	switch parent := parent.(type) {
 	case *ast.AssignStmt:
 		// Append all lhs's type
 		if len(parent.Rhs) == 1 {
 			for _, lhs := range parent.Lhs {
-				t := types.Default(si.info.TypeOf(lhs))
-				if t == nil || invalidName(t) {
-					t = types.Universe.Lookup("any").Type()
+				t := info.TypeOf(lhs)
+				if t != nil && !containsInvalid(t) {
+					t = types.Default(t)
+				} else {
+					t = anyType
 				}
-				rets = append(rets, t)
+				typs = append(typs, t)
 			}
 			break
 		}
@@ -217,12 +217,14 @@ func (si *CallStubInfo) collectReturnTypes() []types.Type {
 
 		// Append corresponding index of lhs's type
 		for i, rhs := range parent.Rhs {
-			if rhs.Pos() <= si.pos && si.pos <= rhs.End() {
-				t := types.Default(si.info.TypeOf(parent.Lhs[i]))
-				if t == nil || invalidName(t) {
-					t = types.Universe.Lookup("any").Type()
+			if rhs.Pos() <= pos && pos <= rhs.End() {
+				t := info.TypeOf(parent.Lhs[i])
+				if t != nil && !containsInvalid(t) {
+					t = types.Default(t)
+				} else {
+					t = anyType
 				}
-				rets = append(rets, t)
+				typs = append(typs, t)
 				break
 			}
 		}
@@ -230,7 +232,7 @@ func (si *CallStubInfo) collectReturnTypes() []types.Type {
 		// Find argument containing pos.
 		argIdx := -1
 		for i, callArg := range parent.Args {
-			if callArg.Pos() <= si.pos && si.pos <= callArg.End() {
+			if callArg.Pos() <= pos && pos <= callArg.End() {
 				argIdx = i
 				break
 			}
@@ -239,48 +241,55 @@ func (si *CallStubInfo) collectReturnTypes() []types.Type {
 			break
 		}
 
-		var (
-			def types.Object
-			ok  bool
-		)
-		switch f := parent.Fun.(type) {
-		case *ast.Ident:
-			def, ok = si.info.Uses[f]
-			if !ok {
-				break
-			}
-		case *ast.SelectorExpr:
-			def, ok = si.info.Uses[f.Sel]
-			if !ok {
-				break
-			}
-		}
-
-		sig, ok := types.Unalias(def.Type()).(*types.Signature)
-		if !ok {
+		t := info.TypeOf(parent.Fun)
+		if t == nil {
 			break
 		}
-		var paramType types.Type
-		if sig.Variadic() && argIdx >= sig.Params().Len()-1 {
-			v := sig.Params().At(sig.Params().Len() - 1)
-			if s, _ := v.Type().(*types.Slice); s != nil {
-				paramType = s.Elem()
-			}
-		} else if argIdx < sig.Params().Len() {
-			paramType = sig.Params().At(argIdx).Type()
-		}
-		if paramType == nil || invalidName(paramType) {
-			paramType = types.Universe.Lookup("any").Type()
-		}
-		rets = append(rets, paramType)
-	}
 
-	return rets
+		if sig, ok := t.Underlying().(*types.Signature); ok {
+			var paramType types.Type
+			if sig.Variadic() && argIdx >= sig.Params().Len()-1 {
+				v := sig.Params().At(sig.Params().Len() - 1)
+				if s, _ := v.Type().(*types.Slice); s != nil {
+					paramType = s.Elem()
+				}
+			} else if argIdx < sig.Params().Len() {
+				paramType = sig.Params().At(argIdx).Type()
+			} else {
+				break
+			}
+			if paramType == nil || containsInvalid(paramType) {
+				paramType = anyType
+			}
+			typs = append(typs, paramType)
+		}
+	default:
+		// TODO: support other common kinds of "holes", e.g.
+		//   x + EXPR         => typeof(x)
+		//   !EXPR            => bool
+		//   var x int = EXPR => int
+		//   etc.
+	}
+	return typs
 }
 
-// invalidName checks if the type name is "invalid type",
+// parentNode returns the nodes immediately enclosing path[0],
+// ignoring parens.
+func parentNode(path []ast.Node) ast.Node {
+	if len(path) <= 1 {
+		return nil
+	}
+	for _, n := range path[1:] {
+		if _, ok := n.(*ast.ParenExpr); !ok {
+			return n
+		}
+	}
+	return nil
+}
+
+// containsInvalid checks if the type name contains "invalid type",
 // which is not a valid syntax to generate.
-func invalidName(t types.Type) bool {
+func containsInvalid(t types.Type) bool {
 	typeString := types.TypeString(t, nil)
 	return strings.Contains(typeString, types.Typ[types.Invalid].String())
 }
@@ -296,9 +305,9 @@ func paramName(e ast.Expr, typ types.Type) string {
 	// Use the identifier's name as the argument name.
 	case *ast.Ident:
 		return t.Name
-	// Use the Sel.Name's trail name as the argument name.
+	// Use the Sel.Name's last section as the argument name.
 	case *ast.SelectorExpr:
-		return identTrail(t.Sel.Name)
+		return lastSection(t.Sel.Name)
 	}
 
 	typ = typesinternal.Unpointer(typ)
@@ -317,16 +326,18 @@ func paramName(e ast.Expr, typ types.Type) string {
 	case *types.Chan:
 		return "ch"
 	case *types.Named:
-		return identTrail(t.Obj().Name())
+		return lastSection(t.Obj().Name())
 	default:
-		return identTrail(t.String())
+		return lastSection(t.String())
 	}
 }
 
-// indentTrail find the position of the last uppercase letter,
+// lastSection find the position of the last uppercase letter,
 // extract the substring from that point onward,
 // and convert it to lowercase.
-func identTrail(identName string) string {
+//
+// Example: lastSection("registryManagerFactory") = "factory"
+func lastSection(identName string) string {
 	lastUpperIndex := -1
 	for i, r := range identName {
 		if unicode.IsUpper(r) {
