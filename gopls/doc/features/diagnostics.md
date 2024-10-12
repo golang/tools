@@ -171,9 +171,9 @@ happened.)
 
 ### `StubMissingCalledFunction`: Declare missing method T.f
 
-When you attempt to call a method on a type that does not have that method, 
+When you attempt to call a method on a type that does not have that method,
 the compiler will report an error such as "type X has no field or method Y".
-In this scenario, gopls now offers a quick fix to generate a stub declaration of 
+In this scenario, gopls now offers a quick fix to generate a stub declaration of
 the missing method, inferring its type from the call.
 
 Consider the following code where `Foo` does not have a method `bar`:

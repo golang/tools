@@ -37,18 +37,18 @@ func recv_param_pointer() {
 -- other.go --
 package fromcallbasic
 
-type TypeDelInOtherFile struct{}
+type TypeDeclInOtherFile struct{}
 
 -- this.go --
 package fromcallbasic
 
 func fun() {
 	i := 1
-	t := TypeDelInOtherFile{}
+	t := TypeDeclInOtherFile{}
 	t.other(i) //@suggestedfix("other", re"has no field or method", del_other)
 }
 -- @del_other/other.go --
 @@ -5 +5,3 @@
-+func (t TypeDelInOtherFile) other(i int) {
++func (t TypeDeclInOtherFile) other(i int) {
 +	panic("unimplemented")
 +}

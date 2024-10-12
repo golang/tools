@@ -88,3 +88,22 @@ func errorFunc(u undefined4) {} //@diag("undefined4",re"undefined")
 +	panic("unimplemented")
 +}
 +
+-- paren.go --
+package fromcallreturns
+
+type Paren struct{}
+
+func paren() {
+	p := Paren{}
+	fn()((p.surroundingParen())) //@suggestedfix("surroundingParen", re"has no field or method", surrounding_paren)
+}
+
+func fn() func(i int) {
+	return func(i int) {}
+}
+-- @surrounding_paren/paren.go --
+@@ -5 +5,4 @@
++func (p Paren) surroundingParen() int {
++	panic("unimplemented")
++}
++

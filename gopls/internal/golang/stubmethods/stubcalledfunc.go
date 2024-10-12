@@ -29,7 +29,6 @@ type CallStubInfo struct {
 	pointer    bool
 	info       *types.Info
 	path       []ast.Node // path enclosing the CallExpr
-	args       []ast.Expr // argument list of original CallExpr
 }
 
 // GetCallStubInfo extracts necessary information to generate a method definition from
@@ -66,7 +65,6 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 				pointer:    pointer,
 				path:       path[i:],
 				info:       info,
-				args:       n.Args,
 			}
 		}
 	}
@@ -161,7 +159,8 @@ func (si *CallStubInfo) collectParams() []param {
 		params = append(params, p)
 	}
 
-	for _, arg := range si.args {
+	args := si.path[0].(*ast.CallExpr).Args
+	for _, arg := range args {
 		t := si.info.TypeOf(arg)
 		switch t := t.(type) {
 		// This is the case where another function call returning multiple
