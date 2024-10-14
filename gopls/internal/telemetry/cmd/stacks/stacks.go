@@ -788,7 +788,13 @@ func readPCLineTable(info Info) (map[string]FileLine, error) {
 	// shallow-cloning just the desired revision.
 	// (Skip if it's already cloned.)
 	revDir := filepath.Join(stacksDir, info.Version)
-	if !fileExists(revDir) {
+	if !fileExists(filepath.Join(revDir, "go.mod")) {
+		// We check for presence of the go.mod file,
+		// not just the directory itself, as the /tmp reaper
+		// often removes stale files before removing their directories.
+		// Remove those stale directories now.
+		_ = os.RemoveAll(revDir) // ignore errors
+
 		log.Printf("cloning tools@gopls/%s", info.Version)
 		if err := shallowClone(revDir, "https://go.googlesource.com/tools", "gopls/"+info.Version); err != nil {
 			_ = os.RemoveAll(revDir) // ignore errors
