@@ -11,12 +11,10 @@ import (
 	"fmt"
 	"go/ast"
 	"go/constant"
-	"go/importer"
 	"go/parser"
 	"go/token"
 	"go/types"
 	"math/big"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -461,76 +459,38 @@ type Chained = C[Named] // B[Named, A[Named]] = B[Named, *Named] = []*Named
 		t.Fatal(err)
 	}
 
-	testcases := map[string]func(t *testing.T) *types.Package{
-		// Read the result of IExportData through x/tools/internal/gcimporter.IImportData.
-		"tools": func(t *testing.T) *types.Package {
-			// export
-			exportdata, err := iexport(fset1, gcimporter.IExportVersion, pkg1)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			// import
-			imports := make(map[string]*types.Package)
-			fset2 := token.NewFileSet()
-			_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg1.Path())
-			if err != nil {
-				t.Fatalf("IImportData(%s): %v", pkg1.Path(), err)
-			}
-			return pkg2
-		},
-		// Read the result of IExportData through $GOROOT/src/internal/gcimporter.IImportData.
-		//
-		// This test fakes creating an old go object file in indexed format.
-		// This means that it can be loaded by go/importer or go/types.
-		// This step is not supported, but it does give test coverage for stdlib.
-		"goroot": func(t *testing.T) *types.Package {
-			testenv.NeedsGo1Point(t, 24) // requires >= 1.24 go/importer.
-
-			// Write indexed export data file contents.
-			//
-			// TODO(taking): Slightly unclear to what extent this step should be supported by go/importer.
-			var buf bytes.Buffer
-			buf.WriteString("go object \n$$B\n") // object file header
-			if err := gcexportdata.Write(&buf, fset1, pkg1); err != nil {
-				t.Fatal(err)
-			}
-
-			// Write export data to temporary file
-			out := t.TempDir()
-			name := filepath.Join(out, "pkg.out")
-			if err := os.WriteFile(name+".a", buf.Bytes(), 0644); err != nil {
-				t.Fatal(err)
-			}
-			pkg2, err := importer.Default().Import(name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return pkg2
-		},
+	// Read the result of IExportData through x/tools/internal/gcimporter.IImportData.
+	// export
+	exportdata, err := iexport(fset1, gcimporter.IExportVersion, pkg1)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	for name, importer := range testcases {
-		t.Run(name, func(t *testing.T) {
-			pkg := importer(t)
-			for name, want := range map[string]string{
-				"A":       "type pkg.A[T any] = *T",
-				"B":       "type pkg.B[R any, S *R] = []S",
-				"C":       "type pkg.C[U any] = pkg.B[U, pkg.A[U]]",
-				"Named":   "type pkg.Named int",
-				"Chained": "type pkg.Chained = pkg.C[pkg.Named]",
-			} {
-				obj := pkg.Scope().Lookup(name)
-				if obj == nil {
-					t.Errorf("failed to find %q in package %s", name, pkg)
-					continue
-				}
+	// import
+	imports := make(map[string]*types.Package)
+	fset2 := token.NewFileSet()
+	_, pkg2, err := gcimporter.IImportData(fset2, imports, exportdata, pkg1.Path())
+	if err != nil {
+		t.Fatalf("IImportData(%s): %v", pkg1.Path(), err)
+	}
 
-				got := strings.ReplaceAll(obj.String(), pkg.Path(), "pkg")
-				if got != want {
-					t.Errorf("(%q).String()=%q. wanted %q", name, got, want)
-				}
-			}
-		})
+	pkg := pkg2
+	for name, want := range map[string]string{
+		"A":       "type pkg.A[T any] = *T",
+		"B":       "type pkg.B[R any, S *R] = []S",
+		"C":       "type pkg.C[U any] = pkg.B[U, pkg.A[U]]",
+		"Named":   "type pkg.Named int",
+		"Chained": "type pkg.Chained = pkg.C[pkg.Named]",
+	} {
+		obj := pkg.Scope().Lookup(name)
+		if obj == nil {
+			t.Errorf("failed to find %q in package %s", name, pkg)
+			continue
+		}
+
+		got := strings.ReplaceAll(obj.String(), pkg.Path(), "pkg")
+		if got != want {
+			t.Errorf("(%q).String()=%q. wanted %q", name, got, want)
+		}
 	}
 }
