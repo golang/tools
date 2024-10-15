@@ -112,9 +112,14 @@ func getFileExports(f *ast.File) []symbol {
 					continue
 				}
 				tp = strings.Replace(tp, " ", "$", -1)
-				for _, y := range x.Names {
-					result = append(result, y.Name)
+				if len(x.Names) == 0 {
+					result = append(result, "_")
 					result = append(result, tp)
+				} else {
+					for _, y := range x.Names {
+						result = append(result, y.Name)
+						result = append(result, tp)
+					}
 				}
 			}
 			sigs := strings.Join(result, " ")
@@ -124,9 +129,9 @@ func getFileExports(f *ast.File) []symbol {
 		case *ast.GenDecl:
 			switch decl.Tok {
 			case token.CONST, token.VAR:
-				tp := " V"
+				tp := "V"
 				if decl.Tok == token.CONST {
-					tp = " C"
+					tp = "C"
 				}
 				for _, sp := range decl.Specs {
 					for _, x := range sp.(*ast.ValueSpec).Names {
@@ -137,7 +142,7 @@ func getFileExports(f *ast.File) []symbol {
 				}
 			case token.TYPE:
 				for _, sp := range decl.Specs {
-					if s := newsym(pkg, sp.(*ast.TypeSpec).Name.Name, " T", ""); s != nil {
+					if s := newsym(pkg, sp.(*ast.TypeSpec).Name.Name, "T", ""); s != nil {
 						ans = append(ans, *s)
 					}
 				}
