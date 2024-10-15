@@ -354,7 +354,7 @@ Files:
 
 			if abi == "ABIInternal" && !haveRetArg {
 				for _, ins := range archDef.writeResult {
-					if strings.HasPrefix(line, ins) {
+					if strings.Contains(line, ins) {
 						haveRetArg = true
 						break
 					}

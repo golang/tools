@@ -354,7 +354,7 @@ TEXT ·returnmissingABIInternal<ABIInternal>(SB), NOSPLIT, $32
 	RET // want `RET without writing to result register`
 
 // issue 69352
-TEXT ·returnsyscall<ABIInternal>(SB),0,$0-0
+TEXT ·returnsyscallABIInternal<ABIInternal>(SB), NOSPLIT, $0
 	MOVQ	$123, CX
 	SYSCALL
 	RET
