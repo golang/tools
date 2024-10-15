@@ -153,7 +153,7 @@ func TestBuild(t *testing.T) {
 	}
 	if !reverse.Search(this)[this] {
 		printNode("reverse", this)
-		t.Errorf("irrefexive: reverse.Search(importgraph)[importgraph] not found")
+		t.Errorf("irreflexive: reverse.Search(importgraph)[importgraph] not found")
 	}
 
 	// Test Search is transitive.  (There is no direct edge to these packages.)
