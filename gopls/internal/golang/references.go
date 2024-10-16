@@ -441,7 +441,6 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	// corresponding methods (see above), which expand the global search.
 	// The target objects are identified by (PkgPath, objectpath).
 	for id := range expansions {
-		id := id
 		group.Go(func() error {
 			// TODO(adonovan): opt: batch these TypeChecks.
 			pkgs, err := snapshot.TypeCheck(ctx, id)
@@ -524,8 +523,9 @@ func expandMethodSearch(ctx context.Context, snapshot *cache.Snapshot, workspace
 		i := i
 		index := index
 		group.Go(func() error {
-			// Consult index for matching methods.
-			results := index.Search(key, method)
+			// Consult index for matching (super/sub) methods.
+			const want = methodsets.Supertype | methodsets.Subtype
+			results := index.Search(key, want, method)
 			if len(results) == 0 {
 				return nil
 			}
@@ -583,7 +583,7 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 	var msets typeutil.MethodSetCache
 
 	// matches reports whether obj either is or corresponds to a target.
-	// (Correspondence is defined as usual for interface methods.)
+	// (Correspondence is defined as usual for interface methods: super/subtype.)
 	matches := func(obj types.Object) bool {
 		if containsOrigin(targets, obj) {
 			return true
@@ -591,7 +591,8 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 		if methodRecvs != nil && obj.Name() == methodName {
 			if orecv := effectiveReceiver(obj); orecv != nil {
 				for _, mrecv := range methodRecvs {
-					if concreteImplementsIntf(&msets, orecv, mrecv) {
+					if implements(&msets, orecv, mrecv) ||
+						implements(&msets, mrecv, orecv) {
 						return true
 					}
 				}

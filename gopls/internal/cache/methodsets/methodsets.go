@@ -51,6 +51,7 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/tools/go/types/objectpath"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/fingerprint"
 	"golang.org/x/tools/gopls/internal/util/frob"
@@ -62,14 +63,15 @@ import (
 // types in a package in a form that permits assignability queries
 // without the type checker.
 type Index struct {
-	pkg gobPackage
+	pkg     gobPackage
+	PkgPath metadata.PackagePath
 }
 
 // Decode decodes the given gob-encoded data as an Index.
-func Decode(data []byte) *Index {
+func Decode(pkgpath metadata.PackagePath, data []byte) *Index {
 	var pkg gobPackage
 	packageCodec.Decode(data, &pkg)
-	return &Index{pkg}
+	return &Index{pkg: pkg, PkgPath: pkgpath}
 }
 
 // Encode encodes the receiver as gob-encoded data.
@@ -110,36 +112,75 @@ func KeyOf(t types.Type) (Key, bool) {
 
 // A Result reports a matching type or method in a method-set search.
 type Result struct {
-	Location Location // location of the type or method
+	TypeName    string   // name of the named type
+	IsInterface bool     // matched type (or method) is abstract
+	Location    Location // location of the type or method
 
 	// methods only:
 	PkgPath    string          // path of declaring package (may differ due to embedding)
 	ObjectPath objectpath.Path // path of method within declaring package
 }
 
-// Search reports each type that implements (or is implemented by) the
-// type that produced the search key. If methodID is nonempty, only
-// that method of each type is reported.
+// TypeRelation indicates the direction of subtyping relation,
+// if any, between two types.
+//
+// It is a bitset, so that clients of Implementations may use
+// Supertype|Subtype to request an undirected match.
+type TypeRelation int8
+
+const (
+	Supertype TypeRelation = 0x1
+	Subtype   TypeRelation = 0x2
+)
+
+// Search reports each type that implements (Supertype ∈ want) or is
+// implemented by (Subtype ∈ want) the type that produced the search key.
+//
+// If method is non-nil, only that method of each type is reported.
 //
 // The result does not include the error.Error method.
 // TODO(adonovan): give this special case a more systematic treatment.
-func (index *Index) Search(key Key, method *types.Func) []Result {
+func (index *Index) Search(key Key, want TypeRelation, method *types.Func) []Result {
 	var results []Result
 	for _, candidate := range index.pkg.MethodSets {
-		// Traditionally this feature doesn't report
-		// interface/interface elements of the relation.
-		// I think that's a mistake.
-		// TODO(adonovan): UX: change it, here and in the local implementation.
+		// The historical behavior enshrined by this
+		// function rejects cases where both are
+		// (nontrivial) interface types, but this is
+		// useful information; see #68641 and CL 619719.
+		// TODO(adonovan): rescind this policy choice,
+		// and report I/I relationships,
+		// by deleting this continue statement.
+		// (It is also necessary to remove self-matches.)
+		//
+		// The same question appears in the local algorithm (implementations).
 		if candidate.IsInterface && key.mset.IsInterface {
 			continue
 		}
 
-		if !implements(candidate, key.mset) && !implements(key.mset, candidate) {
+		// Test the direction of the relation.
+		// The client may request either direction or both
+		// (e.g. when the client is References),
+		// and the Result reports each test independently;
+		// both tests succeed when comparing identical
+		// interface types.
+		var got TypeRelation
+		if want&Subtype != 0 && implements(candidate, key.mset) {
+			got |= Subtype
+		}
+		if want&Supertype != 0 && implements(key.mset, candidate) {
+			got |= Supertype
+		}
+		if got == 0 {
 			continue
 		}
 
+		typeName := index.pkg.Strings[candidate.TypeName]
 		if method == nil {
-			results = append(results, Result{Location: index.location(candidate.Posn)})
+			results = append(results, Result{
+				TypeName:    typeName,
+				IsInterface: candidate.IsInterface,
+				Location:    index.location(candidate.Posn),
+			})
 		} else {
 			for _, m := range candidate.Methods {
 				if m.ID == method.Id() {
@@ -154,9 +195,11 @@ func (index *Index) Search(key Key, method *types.Func) []Result {
 					}
 
 					results = append(results, Result{
-						Location:   index.location(m.Posn),
-						PkgPath:    index.pkg.Strings[m.PkgPath],
-						ObjectPath: objectpath.Path(index.pkg.Strings[m.ObjectPath]),
+						TypeName:    typeName,
+						IsInterface: candidate.IsInterface,
+						Location:    index.location(m.Posn),
+						PkgPath:     index.pkg.Strings[m.PkgPath],
+						ObjectPath:  objectpath.Path(index.pkg.Strings[m.ObjectPath]),
 					})
 					break
 				}
@@ -285,6 +328,7 @@ func (b *indexBuilder) build(fset *token.FileSet, pkg *types.Package) *Index {
 	for _, name := range scope.Names() {
 		if tname, ok := scope.Lookup(name).(*types.TypeName); ok && !tname.IsAlias() {
 			if mset := methodSetInfo(tname.Type(), setIndexInfo); mset.Mask != 0 {
+				mset.TypeName = b.string(name)
 				mset.Posn = objectPos(tname)
 				// Only record types with non-trivial method sets.
 				b.MethodSets = append(b.MethodSets, mset)
@@ -292,7 +336,10 @@ func (b *indexBuilder) build(fset *token.FileSet, pkg *types.Package) *Index {
 		}
 	}
 
-	return &Index{pkg: b.gobPackage}
+	return &Index{
+		pkg:     b.gobPackage,
+		PkgPath: metadata.PackagePath(pkg.Path()),
+	}
 }
 
 // string returns a small integer that encodes the string.
@@ -370,6 +417,7 @@ type gobPackage struct {
 
 // A gobMethodSet records the method set of a single type.
 type gobMethodSet struct {
+	TypeName    int // name (string index) of the package-level type
 	Posn        gobPosition
 	IsInterface bool
 	Tricky      bool   // at least one method is tricky; fingerprint must be parsed + unified

@@ -74,10 +74,6 @@ func (s *server) OnTypeFormatting(context.Context, *protocol.DocumentOnTypeForma
 	return nil, notImplemented("OnTypeFormatting")
 }
 
-func (s *server) PrepareTypeHierarchy(context.Context, *protocol.TypeHierarchyPrepareParams) ([]protocol.TypeHierarchyItem, error) {
-	return nil, notImplemented("PrepareTypeHierarchy")
-}
-
 func (s *server) Progress(context.Context, *protocol.ProgressParams) error {
 	return notImplemented("Progress")
 }
@@ -116,14 +112,6 @@ func (s *server) SemanticTokensFullDelta(context.Context, *protocol.SemanticToke
 
 func (s *server) SetTrace(context.Context, *protocol.SetTraceParams) error {
 	return notImplemented("SetTrace")
-}
-
-func (s *server) Subtypes(context.Context, *protocol.TypeHierarchySubtypesParams) ([]protocol.TypeHierarchyItem, error) {
-	return nil, notImplemented("Subtypes")
-}
-
-func (s *server) Supertypes(context.Context, *protocol.TypeHierarchySupertypesParams) ([]protocol.TypeHierarchyItem, error) {
-	return nil, notImplemented("Supertypes")
 }
 
 func (s *server) WillCreateFiles(context.Context, *protocol.CreateFilesParams) (*protocol.WorkspaceEdit, error) {

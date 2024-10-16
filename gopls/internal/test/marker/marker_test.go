@@ -596,6 +596,8 @@ var actionMarkerFuncs = map[string]func(marker){
 	"selectionrange":   actionMarkerFunc(selectionRangeMarker),
 	"signature":        actionMarkerFunc(signatureMarker),
 	"snippet":          actionMarkerFunc(snippetMarker),
+	"subtypes":         actionMarkerFunc(subtypesMarker),
+	"supertypes":       actionMarkerFunc(supertypesMarker),
 	"quickfix":         actionMarkerFunc(quickfixMarker),
 	"quickfixerr":      actionMarkerFunc(quickfixErrMarker),
 	"symbol":           actionMarkerFunc(symbolMarker),
@@ -2457,13 +2459,8 @@ func callHierarchy(mark marker, src protocol.Location, getCalls callHierarchyFun
 		calls = []protocol.Location{}
 	}
 	// TODO(rfindley): why aren't call hierarchy results stable?
-	sortLocs := func(locs []protocol.Location) {
-		sort.Slice(locs, func(i, j int) bool {
-			return protocol.CompareLocation(locs[i], locs[j]) < 0
-		})
-	}
-	sortLocs(want)
-	sortLocs(calls)
+	slices.SortFunc(want, protocol.CompareLocation)
+	slices.SortFunc(calls, protocol.CompareLocation)
 	if d := cmp.Diff(want, calls); d != "" {
 		mark.errorf("call hierarchy: unexpected results (-want +got):\n%s", d)
 	}
@@ -2523,6 +2520,50 @@ func prepareRenameMarker(mark marker, src protocol.Location, placeholder string)
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		mark.errorf("mismatching PrepareRename result:\n%s", diff)
+	}
+}
+
+func subtypesMarker(mark marker, src protocol.Location, want ...protocol.Location) {
+	typeHierarchy(mark, src, want, func(item protocol.TypeHierarchyItem) ([]protocol.TypeHierarchyItem, error) {
+		return mark.server().Subtypes(mark.ctx(), &protocol.TypeHierarchySubtypesParams{Item: item})
+	})
+}
+
+func supertypesMarker(mark marker, src protocol.Location, want ...protocol.Location) {
+	typeHierarchy(mark, src, want, func(item protocol.TypeHierarchyItem) ([]protocol.TypeHierarchyItem, error) {
+		return mark.server().Supertypes(mark.ctx(), &protocol.TypeHierarchySupertypesParams{Item: item})
+	})
+}
+
+type typeHierarchyFunc = func(item protocol.TypeHierarchyItem) ([]protocol.TypeHierarchyItem, error)
+
+func typeHierarchy(mark marker, src protocol.Location, want []protocol.Location, get typeHierarchyFunc) {
+	items, err := mark.server().PrepareTypeHierarchy(mark.ctx(), &protocol.TypeHierarchyPrepareParams{
+		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
+	})
+	if err != nil {
+		mark.errorf("PrepareTypeHierarchy failed: %v", err)
+		return
+	}
+	if nitems := len(items); nitems != 1 {
+		mark.errorf("PrepareTypeHierarchy returned %d items, want exactly 1", nitems)
+		return
+	}
+	if loc := (protocol.Location{URI: items[0].URI, Range: items[0].Range}); loc != src {
+		mark.errorf("PrepareTypeHierarchy found type %v, want %v", loc, src)
+		return
+	}
+	items, err = get(items[0])
+	if err != nil {
+		mark.errorf("type hierarchy failed: %v", err)
+		return
+	}
+	got := []protocol.Location{} // non-nil; cmp.Diff cares
+	for _, item := range items {
+		got = append(got, protocol.Location{URI: item.URI, Range: item.Range})
+	}
+	if d := cmp.Diff(want, got); d != "" {
+		mark.errorf("type hierarchy: unexpected results (-want +got):\n%s", d)
 	}
 }
 

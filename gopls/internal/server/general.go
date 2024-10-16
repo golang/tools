@@ -184,6 +184,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 					IncludeText: false,
 				},
 			},
+			TypeHierarchyProvider: &protocol.Or_ServerCapabilities_typeHierarchyProvider{Value: true},
 			Workspace: &protocol.WorkspaceOptions{
 				WorkspaceFolders: &protocol.WorkspaceFolders5Gn{
 					Supported:           true,

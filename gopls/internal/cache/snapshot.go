@@ -608,7 +608,7 @@ func (s *Snapshot) MethodSets(ctx context.Context, ids ...PackageID) ([]*methods
 	pre := func(i int, ph *packageHandle) bool {
 		data, err := filecache.Get(methodSetsKind, ph.key)
 		if err == nil { // hit
-			indexes[i] = methodsets.Decode(data)
+			indexes[i] = methodsets.Decode(ph.mp.PkgPath, data)
 			return false
 		} else if err != filecache.ErrNotFound {
 			event.Error(ctx, "reading methodsets from filecache", err)

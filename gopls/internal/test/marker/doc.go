@@ -276,6 +276,13 @@ Here is the list of supported action markers:
     case the item's label is used). It checks that the resulting snippet
     matches the provided snippet.
 
+  - subtypes  (src location, want ...location),
+    supertypes(src location, want ...location):
+    execute a textDocument/prepareTypeHierarchy request at the src
+    location, followed by a typeHierarchy/{sub,super}types request on
+    the first response, and check that the result contains the list
+    of wanted locations in order.
+
   - symbol(golden): makes a textDocument/documentSymbol request
     for the enclosing file, formats the response with one symbol
     per line, sorts it, and compares against the named golden file.
@@ -398,5 +405,6 @@ Note that -update does not cause missing @diag or @loc markers to be added.
 
   - Rename the files .txtar.
   - Eliminate all *err markers, preferring named arguments.
+  - In failed assertions, display locations using symbolic @loc names where available.
 */
 package marker

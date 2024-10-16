@@ -1,0 +1,54 @@
+Basic test of type hierarchy.
+
+We pose the same queries across two identical packages to exercise
+the local and global algorithms.
+
+TODO(adonovan): I and J are related by subtyping, but Implementations
+refuses to report it and thus so does Type Hierarchy; see issue #68641
+and CL 619719.
+
+TODO(adonovan): test other properties of the result, such as kind.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+type I interface { F() } //@ loc(I, "I")
+
+type J interface { F(); G() } //@ loc(J, "J")
+
+type S int  //@ loc(S, "S")
+
+func (S) F() {}
+func (S) G() {}
+
+//@subtypes(S)
+//@subtypes(I, S, BS)
+//@subtypes(J, S, BS)
+
+//@supertypes(S, I, J, BI, BJ)
+//@supertypes(I)
+//@supertypes(J)
+
+-- b/b.go --
+package b
+
+type BI interface { F() } //@ loc(BI, "BI")
+
+type BJ interface { F(); G() } //@ loc(BJ, "BJ")
+
+type BS int  //@ loc(BS, "BS")
+
+func (BS) F() {}
+func (BS) G() {}
+
+//@subtypes(BS)
+//@subtypes(BI, BS, S)
+//@subtypes(BJ, BS, S)
+
+//@supertypes(BS, BI, BJ, I, J)
+//@supertypes(BI)
+//@supertypes(BJ)
