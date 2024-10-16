@@ -80,7 +80,7 @@ func findImportEdits(file *ast.File, info *types.Info, start, end token.Pos) (ad
 }
 
 // ExtractToNewFile moves selected declarations into a new file.
-func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (*protocol.WorkspaceEdit, error) {
+func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.DocumentChange, error) {
 	errorPrefix := "ExtractToNewFile"
 
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
@@ -160,7 +160,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		return nil, err
 	}
 
-	return protocol.NewWorkspaceEdit(
+	return []protocol.DocumentChange{
 		// edit the original file
 		protocol.DocumentChangeEdit(fh, append(importDeletes, protocol.TextEdit{Range: replaceRange, NewText: ""})),
 		// create a new file
@@ -168,7 +168,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		// edit the created file
 		protocol.DocumentChangeEdit(newFile, []protocol.TextEdit{
 			{Range: protocol.Range{}, NewText: string(newFileContent)},
-		})), nil
+		})}, nil
 }
 
 // chooseNewFile chooses a new filename in dir, based on the name of the

@@ -89,6 +89,11 @@ func (pgf *File) NodeRange(node ast.Node) (protocol.Range, error) {
 	return pgf.Mapper.NodeRange(pgf.Tok, node)
 }
 
+// NodeOffsets returns offsets for the ast.Node.
+func (pgf *File) NodeOffsets(node ast.Node) (start int, end int, _ error) {
+	return safetoken.Offsets(pgf.Tok, node.Pos(), node.End())
+}
+
 // NodeMappedRange returns a MappedRange for the ast.Node interval in this file.
 // A MappedRange can be converted to any other form.
 func (pgf *File) NodeMappedRange(node ast.Node) (protocol.MappedRange, error) {

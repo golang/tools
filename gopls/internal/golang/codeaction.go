@@ -227,6 +227,7 @@ type codeActionProducer struct {
 var codeActionProducers = [...]codeActionProducer{
 	{kind: protocol.QuickFix, fn: quickFix, needPkg: true},
 	{kind: protocol.SourceOrganizeImports, fn: sourceOrganizeImports},
+	{kind: settings.AddTest, fn: addTest, needPkg: true},
 	{kind: settings.GoAssembly, fn: goAssembly, needPkg: true},
 	{kind: settings.GoDoc, fn: goDoc, needPkg: true},
 	{kind: settings.GoFreeSymbols, fn: goFreeSymbols},
@@ -464,6 +465,41 @@ func refactorExtractToNewFile(ctx context.Context, req *codeActionsRequest) erro
 		cmd := command.NewExtractToNewFileCommand("Extract declarations to new file", req.loc)
 		req.addCommandAction(cmd, true)
 	}
+	return nil
+}
+
+// addTest produces "Add a test for FUNC" code actions.
+// See [server.commandHandler.AddTest] for command implementation.
+func addTest(ctx context.Context, req *codeActionsRequest) error {
+	// Reject if the feature is turned off.
+	if !req.snapshot.Options().AddTestSourceCodeAction {
+		return nil
+	}
+
+	// Reject test package.
+	if req.pkg.Metadata().ForTest != "" {
+		return nil
+	}
+
+	path, _ := astutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
+	if len(path) < 2 {
+		return nil
+	}
+
+	decl, ok := path[len(path)-2].(*ast.FuncDecl)
+	if !ok {
+		return nil
+	}
+
+	// Don't offer to create tests of "init" or "_".
+	if decl.Name.Name == "_" || decl.Name.Name == "init" {
+		return nil
+	}
+
+	cmd := command.NewAddTestCommand("Add a test for "+decl.Name.String(), req.loc)
+	req.addCommandAction(cmd, true)
+
+	// TODO(hxjiang): add code action for generate test for package/file.
 	return nil
 }
 

@@ -27,6 +27,7 @@ const (
 	AddDependency           Command = "gopls.add_dependency"
 	AddImport               Command = "gopls.add_import"
 	AddTelemetryCounters    Command = "gopls.add_telemetry_counters"
+	AddTest                 Command = "gopls.add_test"
 	ApplyFix                Command = "gopls.apply_fix"
 	Assembly                Command = "gopls.assembly"
 	ChangeSignature         Command = "gopls.change_signature"
@@ -71,6 +72,7 @@ var Commands = []Command{
 	AddDependency,
 	AddImport,
 	AddTelemetryCounters,
+	AddTest,
 	ApplyFix,
 	Assembly,
 	ChangeSignature,
@@ -131,6 +133,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.AddTelemetryCounters(ctx, a0)
+	case AddTest:
+		var a0 protocol.Location
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.AddTest(ctx, a0)
 	case ApplyFix:
 		var a0 ApplyFixArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -368,6 +376,14 @@ func NewAddTelemetryCountersCommand(title string, a0 AddTelemetryCountersArgs) *
 	return &protocol.Command{
 		Title:     title,
 		Command:   AddTelemetryCounters.String(),
+		Arguments: MustMarshalArgs(a0),
+	}
+}
+
+func NewAddTestCommand(title string, a0 protocol.Location) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   AddTest.String(),
 		Arguments: MustMarshalArgs(a0),
 	}
 }

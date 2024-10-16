@@ -275,6 +275,24 @@ func (*commandHandler) AddTelemetryCounters(_ context.Context, args command.AddT
 	return nil
 }
 
+func (c *commandHandler) AddTest(ctx context.Context, loc protocol.Location) (*protocol.WorkspaceEdit, error) {
+	var result *protocol.WorkspaceEdit
+	err := c.run(ctx, commandConfig{
+		forURI: loc.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		if deps.snapshot.FileKind(deps.fh) != file.Go {
+			return fmt.Errorf("can't add test for non-Go file")
+		}
+		docedits, err := golang.AddTestForFunc(ctx, deps.snapshot, loc)
+		if err != nil {
+			return err
+		}
+		return applyChanges(ctx, c.s.client, docedits)
+	})
+	// TODO(hxjiang): move the cursor to the new test once edits applied.
+	return result, err
+}
+
 // commandConfig configures common command set-up and execution.
 type commandConfig struct {
 	requireSave bool                 // whether all files must be saved for the command to work
@@ -388,16 +406,7 @@ func (c *commandHandler) ApplyFix(ctx context.Context, args command.ApplyFixArgs
 			result = wsedit
 			return nil
 		}
-		resp, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: *wsedit,
-		})
-		if err != nil {
-			return err
-		}
-		if !resp.Applied {
-			return errors.New(resp.FailureReason)
-		}
-		return nil
+		return applyChanges(ctx, c.s.client, changes)
 	})
 	return result, err
 }
@@ -622,17 +631,7 @@ func (c *commandHandler) RemoveDependency(ctx context.Context, args command.Remo
 		if err != nil {
 			return err
 		}
-		response, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: *protocol.NewWorkspaceEdit(
-				protocol.DocumentChangeEdit(deps.fh, edits)),
-		})
-		if err != nil {
-			return err
-		}
-		if !response.Applied {
-			return fmt.Errorf("edits not applied because of %s", response.FailureReason)
-		}
-		return nil
+		return applyChanges(ctx, c.s.client, []protocol.DocumentChange{protocol.DocumentChangeEdit(deps.fh, edits)})
 	})
 }
 
@@ -1107,17 +1106,7 @@ func (c *commandHandler) AddImport(ctx context.Context, args command.AddImportAr
 		if err != nil {
 			return fmt.Errorf("could not add import: %v", err)
 		}
-		r, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: *protocol.NewWorkspaceEdit(
-				protocol.DocumentChangeEdit(deps.fh, edits)),
-		})
-		if err != nil {
-			return fmt.Errorf("could not apply import edits: %v", err)
-		}
-		if !r.Applied {
-			return fmt.Errorf("failed to apply edits: %v", r.FailureReason)
-		}
-		return nil
+		return applyChanges(ctx, c.s.client, []protocol.DocumentChange{protocol.DocumentChangeEdit(deps.fh, edits)})
 	})
 }
 
@@ -1126,18 +1115,11 @@ func (c *commandHandler) ExtractToNewFile(ctx context.Context, args protocol.Loc
 		progress: "Extract to a new file",
 		forURI:   args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		edit, err := golang.ExtractToNewFile(ctx, deps.snapshot, deps.fh, args.Range)
+		changes, err := golang.ExtractToNewFile(ctx, deps.snapshot, deps.fh, args.Range)
 		if err != nil {
 			return err
 		}
-		resp, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{Edit: *edit})
-		if err != nil {
-			return fmt.Errorf("could not apply edits: %v", err)
-		}
-		if !resp.Applied {
-			return fmt.Errorf("edits not applied: %s", resp.FailureReason)
-		}
-		return nil
+		return applyChanges(ctx, c.s.client, changes)
 	})
 }
 
@@ -1543,13 +1525,7 @@ func (c *commandHandler) ChangeSignature(ctx context.Context, args command.Chang
 			result = wsedit
 			return nil
 		}
-		r, err := c.s.client.ApplyEdit(ctx, &protocol.ApplyWorkspaceEditParams{
-			Edit: *wsedit,
-		})
-		if !r.Applied {
-			return fmt.Errorf("failed to apply edits: %v", r.FailureReason)
-		}
-		return nil
+		return applyChanges(ctx, c.s.client, docedits)
 	})
 	return result, err
 }

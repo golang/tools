@@ -700,6 +700,11 @@ type InternalOptions struct {
 	// TODO(rfindley): make pull diagnostics robust, and remove this option,
 	// allowing pull diagnostics by default.
 	PullDiagnostics bool
+
+	// AddTestSourceCodeAction enables support for adding test as a source code
+	// action.
+	// TODO(hxjiang): remove this option once the feature is implemented.
+	AddTestSourceCodeAction bool
 }
 
 type SubdirWatchPatterns string
@@ -980,6 +985,8 @@ func (o *Options) setOne(name string, value any) error {
 		return setBool(&o.DeepCompletion, value)
 	case "completeUnimported":
 		return setBool(&o.CompleteUnimported, value)
+	case "addTestSourceCodeAction":
+		return setBool(&o.AddTestSourceCodeAction, value)
 	case "completionBudget":
 		return setDuration(&o.CompletionBudget, value)
 	case "matcher":

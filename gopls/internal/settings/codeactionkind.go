@@ -79,6 +79,7 @@ const (
 	GoDoc         protocol.CodeActionKind = "source.doc"
 	GoFreeSymbols protocol.CodeActionKind = "source.freesymbols"
 	GoTest        protocol.CodeActionKind = "source.test"
+	AddTest       protocol.CodeActionKind = "source.addTest"
 
 	// gopls
 	GoplsDocFeatures protocol.CodeActionKind = "gopls.doc.features"

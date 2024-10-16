@@ -1,0 +1,53 @@
+This test checks the behavior of the 'add test for FUNC' code action.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/copyright
+
+go 1.18
+
+-- settings.json --
+{
+	"addTestSourceCodeAction": true
+}
+
+-- withcopyright/copyright.go --
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build go1.23
+
+// Package copyright is for lsp test.
+package copyright
+
+func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", with_copyright)
+
+-- @with_copyright/withcopyright/copyright_test.go --
+@@ -0,0 +1,8 @@
++// Copyright 2020 The Go Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style
++// license that can be found in the LICENSE file.
++
++package copyright_test
++
++
++func TestFoo(*testing.T) {}
+\ No newline at end of file
+-- withoutcopyright/copyright.go --
+//go:build go1.23
+
+// Package copyright is for lsp test.
+package copyright
+
+func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", without_copyright)
+
+-- @without_copyright/withoutcopyright/copyright_test.go --
+@@ -0,0 +1,4 @@
++package copyright_test
++
++
++func TestFoo(*testing.T) {}
+\ No newline at end of file

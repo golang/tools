@@ -224,6 +224,9 @@ type Interface interface {
 	// to avoid conflicts with other counters gopls collects.
 	AddTelemetryCounters(context.Context, AddTelemetryCountersArgs) error
 
+	// AddTest: add a test for the selected function
+	AddTest(context.Context, protocol.Location) (*protocol.WorkspaceEdit, error)
+
 	// MaybePromptForTelemetry: Prompt user to enable telemetry
 	//
 	// Checks for the right conditions, and then prompts the user
