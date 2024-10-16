@@ -50,7 +50,6 @@ import (
 
 // A CompletionItem represents a possible completion suggested by the algorithm.
 type CompletionItem struct {
-
 	// Invariant: CompletionItem does not refer to syntax or types.
 
 	// Label is the primary text the user sees for this completion item.
@@ -2958,6 +2957,13 @@ func (ci *candidateInference) candTypeMatches(cand *candidate) bool {
 				// If candType doesn't otherwise match, consider if we can
 				// convert candType directly to expType.
 				if considerTypeConversion(candType, expType, cand.path) {
+					// special case: a string to a variadic []byte/[]rune
+					typ := deslice(expType)
+					isBytesOrRunes := typ != nil && (isBasicKind(typ, types.Byte) || isBasicKind(typ, types.Rune))
+					if isBasicType(candType, types.IsString) && isBytesOrRunes && expType == variadicType {
+						cand.mods = append(cand.mods, takeDotDotDot)
+					}
+
 					cand.convertTo = expType
 					// Give a major score penalty so we always prefer directly
 					// assignable candidates, all else equal.
@@ -3038,7 +3044,7 @@ func considerTypeConversion(from, to types.Type, path []types.Object) bool {
 
 	// Don't offer to convert ints to strings since that probably
 	// doesn't do what the user wants.
-	if isBasicKind(from, types.IsInteger) && isBasicKind(to, types.IsString) {
+	if isBasicType(from, types.IsInteger) && isBasicType(to, types.IsString) {
 		return false
 	}
 
