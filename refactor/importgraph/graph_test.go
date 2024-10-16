@@ -100,7 +100,6 @@ func TestBuild(t *testing.T) {
 		case "reverse":
 			g = reverse
 		default:
-			t.Helper()
 			t.Fatalf("bad direction: %q", direction)
 		}
 
