@@ -73,14 +73,25 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 		cand.addressable = true
 	}
 
-	if !c.matchingCandidate(&cand) || cand.convertTo != nil {
+	if !c.matchingCandidate(&cand) {
 		return
 	}
 
 	var (
-		qf  = c.qf
-		sel = enclosingSelector(c.path, c.pos)
+		qf     = c.qf
+		sel    = enclosingSelector(c.path, c.pos)
+		prefix = ""
+		suffix = ""
 	)
+
+	// Only convert literals which are an interface type value to a
+	// parameterized argument in a function call.
+	if cand.convertTo != nil {
+		if !types.IsInterface(cand.convertTo) {
+			return
+		}
+		prefix, suffix = c.formatConvertTo(cand.convertTo)
+	}
 
 	// Don't qualify the type name if we are in a selector expression
 	// since the package name is already present.
@@ -129,13 +140,18 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 
 		switch t := literalType.Underlying().(type) {
 		case *types.Struct, *types.Array, *types.Slice, *types.Map:
-			c.compositeLiteral(t, snip.Clone(), typeName, float64(score), addlEdits)
+			item := c.compositeLiteral(t, snip.Clone(), typeName, float64(score), addlEdits)
+			item.addPrefixSuffix(c, prefix, suffix)
+			c.items = append(c.items, item)
 		case *types.Signature:
 			// Add a literal completion for a signature type that implements
 			// an interface. For example, offer "http.HandlerFunc()" when
 			// expected type is "http.Handler".
 			if expType != nil && types.IsInterface(expType) {
-				c.basicLiteral(t, snip.Clone(), typeName, float64(score), addlEdits)
+				if item, ok := c.basicLiteral(t, snip.Clone(), typeName, float64(score), addlEdits); ok {
+					item.addPrefixSuffix(c, prefix, suffix)
+					c.items = append(c.items, item)
+				}
 			}
 		case *types.Basic:
 			// Add a literal completion for basic types that implement our
@@ -143,7 +159,10 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 			// implements http.FileSystem), or are identical to our expected
 			// type (i.e. yielding a type conversion such as "float64()").
 			if expType != nil && (types.IsInterface(expType) || types.Identical(expType, literalType)) {
-				c.basicLiteral(t, snip.Clone(), typeName, float64(score), addlEdits)
+				if item, ok := c.basicLiteral(t, snip.Clone(), typeName, float64(score), addlEdits); ok {
+					item.addPrefixSuffix(c, prefix, suffix)
+					c.items = append(c.items, item)
+				}
 			}
 		}
 	}
@@ -155,11 +174,15 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 		switch literalType.Underlying().(type) {
 		case *types.Slice:
 			// The second argument to "make()" for slices is required, so default to "0".
-			c.makeCall(snip.Clone(), typeName, "0", float64(score), addlEdits)
+			item := c.makeCall(snip.Clone(), typeName, "0", float64(score), addlEdits)
+			item.addPrefixSuffix(c, prefix, suffix)
+			c.items = append(c.items, item)
 		case *types.Map, *types.Chan:
 			// Maps and channels don't require the second argument, so omit
 			// to keep things simple for now.
-			c.makeCall(snip.Clone(), typeName, "", float64(score), addlEdits)
+			item := c.makeCall(snip.Clone(), typeName, "", float64(score), addlEdits)
+			item.addPrefixSuffix(c, prefix, suffix)
+			c.items = append(c.items, item)
 		}
 	}
 
@@ -167,7 +190,10 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 	if score := c.matcher.Score("func"); !cand.hasMod(reference) && score > 0 && (expType == nil || !types.IsInterface(expType)) {
 		switch t := literalType.Underlying().(type) {
 		case *types.Signature:
-			c.functionLiteral(ctx, t, float64(score))
+			if item, ok := c.functionLiteral(ctx, t, float64(score)); ok {
+				item.addPrefixSuffix(c, prefix, suffix)
+				c.items = append(c.items, item)
+			}
 		}
 	}
 }
@@ -180,7 +206,7 @@ const literalCandidateScore = highScore / 2
 
 // functionLiteral adds a function literal completion item for the
 // given signature.
-func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, matchScore float64) {
+func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, matchScore float64) (CompletionItem, bool) {
 	snip := &snippet.Builder{}
 	snip.WriteText("func(")
 
@@ -216,7 +242,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 				if ctx.Err() == nil {
 					event.Error(ctx, "formatting var type", err)
 				}
-				return
+				return CompletionItem{}, false
 			}
 			name = abbreviateTypeName(typeName)
 		}
@@ -284,7 +310,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 				if ctx.Err() == nil {
 					event.Error(ctx, "formatting var type", err)
 				}
-				return
+				return CompletionItem{}, false
 			}
 			if sig.Variadic() && i == sig.Params().Len()-1 {
 				typeStr = strings.Replace(typeStr, "[]", "...", 1)
@@ -342,7 +368,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 			if ctx.Err() == nil {
 				event.Error(ctx, "formatting var type", err)
 			}
-			return
+			return CompletionItem{}, false
 		}
 		if tp, ok := types.Unalias(r.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 			snip.WritePlaceholder(func(snip *snippet.Builder) {
@@ -360,12 +386,12 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 	snip.WriteFinalTabstop()
 	snip.WriteText("}")
 
-	c.items = append(c.items, CompletionItem{
+	return CompletionItem{
 		Label:   "func(...) {}",
 		Score:   matchScore * literalCandidateScore,
 		Kind:    protocol.VariableCompletion,
 		snippet: snip,
-	})
+	}, true
 }
 
 // conventionalAcronyms contains conventional acronyms for type names
@@ -432,7 +458,7 @@ func abbreviateTypeName(s string) string {
 
 // compositeLiteral adds a composite literal completion item for the given typeName.
 // T is an (unnamed, unaliased) struct, array, slice, or map type.
-func (c *completer) compositeLiteral(T types.Type, snip *snippet.Builder, typeName string, matchScore float64, edits []protocol.TextEdit) {
+func (c *completer) compositeLiteral(T types.Type, snip *snippet.Builder, typeName string, matchScore float64, edits []protocol.TextEdit) CompletionItem {
 	snip.WriteText("{")
 	// Don't put the tab stop inside the composite literal curlies "{}"
 	// for structs that have no accessible fields.
@@ -443,22 +469,22 @@ func (c *completer) compositeLiteral(T types.Type, snip *snippet.Builder, typeNa
 
 	nonSnippet := typeName + "{}"
 
-	c.items = append(c.items, CompletionItem{
+	return CompletionItem{
 		Label:               nonSnippet,
 		InsertText:          nonSnippet,
 		Score:               matchScore * literalCandidateScore,
 		Kind:                protocol.VariableCompletion,
 		AdditionalTextEdits: edits,
 		snippet:             snip,
-	})
+	}
 }
 
 // basicLiteral adds a literal completion item for the given basic
 // type name typeName.
-func (c *completer) basicLiteral(T types.Type, snip *snippet.Builder, typeName string, matchScore float64, edits []protocol.TextEdit) {
+func (c *completer) basicLiteral(T types.Type, snip *snippet.Builder, typeName string, matchScore float64, edits []protocol.TextEdit) (CompletionItem, bool) {
 	// Never give type conversions like "untyped int()".
 	if isUntyped(T) {
-		return
+		return CompletionItem{}, false
 	}
 
 	snip.WriteText("(")
@@ -467,7 +493,7 @@ func (c *completer) basicLiteral(T types.Type, snip *snippet.Builder, typeName s
 
 	nonSnippet := typeName + "()"
 
-	c.items = append(c.items, CompletionItem{
+	return CompletionItem{
 		Label:               nonSnippet,
 		InsertText:          nonSnippet,
 		Detail:              T.String(),
@@ -475,11 +501,11 @@ func (c *completer) basicLiteral(T types.Type, snip *snippet.Builder, typeName s
 		Kind:                protocol.VariableCompletion,
 		AdditionalTextEdits: edits,
 		snippet:             snip,
-	})
+	}, true
 }
 
-// makeCall adds a completion item for a "make()" call given a specific type.
-func (c *completer) makeCall(snip *snippet.Builder, typeName string, secondArg string, matchScore float64, edits []protocol.TextEdit) {
+// makeCall returns a completion item for a "make()" call given a specific type.
+func (c *completer) makeCall(snip *snippet.Builder, typeName string, secondArg string, matchScore float64, edits []protocol.TextEdit) CompletionItem {
 	// Keep it simple and don't add any placeholders for optional "make()" arguments.
 
 	snip.PrependText("make(")
@@ -501,14 +527,15 @@ func (c *completer) makeCall(snip *snippet.Builder, typeName string, secondArg s
 	}
 	nonSnippet.WriteByte(')')
 
-	c.items = append(c.items, CompletionItem{
-		Label:               nonSnippet.String(),
-		InsertText:          nonSnippet.String(),
-		Score:               matchScore * literalCandidateScore,
+	return CompletionItem{
+		Label:      nonSnippet.String(),
+		InsertText: nonSnippet.String(),
+		// make() should be just below other literal completions
+		Score:               matchScore * literalCandidateScore * 0.99,
 		Kind:                protocol.FunctionCompletion,
 		AdditionalTextEdits: edits,
 		snippet:             snip,
-	})
+	}
 }
 
 // Create a snippet for a type name where type params become placeholders.

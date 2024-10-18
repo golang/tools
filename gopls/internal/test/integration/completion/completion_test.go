@@ -970,6 +970,96 @@ use ./missing/
 	})
 }
 
+const reverseInferenceSrc = `
+-- go.mod --
+module mod.com
+
+go 1.18
+-- a.go --
+package a
+
+type Wrap[T any] struct {
+	inner *T
+}
+
+func NewWrap[T any](x T) Wrap[T] {
+	return Wrap[T]{inner: &x}
+}
+
+func DoubleWrap[T any, U any](t T, u U) (Wrap[T], Wrap[U]) {
+	return Wrap[T]{inner: &t}, Wrap[U]{inner: &u}
+}
+
+type InterfaceA interface {
+	implA()
+}
+
+type InterfaceB interface {
+	implB()
+}
+
+type TypeA struct{}
+
+func (TypeA) implA() {}
+
+type TypeX string
+
+func (TypeX) implB() {}
+
+type TypeB struct{}
+
+func (TypeB) implB() {}
+
+func one[a int | string]() {}
+
+func main() {
+	var y Wrap[InterfaceA]
+	var x Wrap[InterfaceB]
+	avar := TypeA{}
+	bvar := TypeB{}
+	x = NewWrap[]()
+	x, y = DoubleWrap[,]()
+}
+`
+
+func TestReverseInferInterfaceCompletion(t *testing.T) {
+	Run(t, reverseInferenceSrc, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `NewWrap\[\]\(()\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+
+		want := []string{"bvar", "x.inner", "TypeB{}", "TypeX()", "nil"}
+		for i, item := range result.Items[:len(want)] {
+			if diff := cmp.Diff(want[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+}
+
+// TODO: implement after fixed index list expressions inference with multiple type parameters
+func TestReverseInferDoubleTypeParamCompletion(t *testing.T) {
+	Run(t, reverseInferenceSrc, func(t *testing.T, env *Env) {
+	})
+}
+
+func TestReverseInferInterfaceTypeParamCompletion(t *testing.T) {
+	Run(t, reverseInferenceSrc, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `NewWrap\[\]\(()\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+
+		want := []string{"bvar", "x.inner", "TypeB{}", "TypeX()", "nil"}
+		for i, item := range result.Items[:len(want)] {
+			if diff := cmp.Diff(want[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+}
+
 func TestBuiltinCompletion(t *testing.T) {
 	const files = `
 -- go.mod --
