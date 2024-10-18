@@ -5,7 +5,6 @@
 package integration
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path"
@@ -387,46 +386,22 @@ func (e *Env) CodeLens(path string) []protocol.CodeLens {
 
 // ExecuteCodeLensCommand executes the command for the code lens matching the
 // given command name.
-func (e *Env) ExecuteCodeLensCommand(path string, cmd command.Command, result interface{}) {
+//
+// result is a pointer to a variable to be populated by json.Unmarshal.
+func (e *Env) ExecuteCodeLensCommand(path string, cmd command.Command, result any) {
 	e.T.Helper()
-	lenses := e.CodeLens(path)
-	var lens protocol.CodeLens
-	var found bool
-	for _, l := range lenses {
-		if l.Command.Command == cmd.String() {
-			lens = l
-			found = true
-		}
+	if err := e.Editor.ExecuteCodeLensCommand(e.Ctx, path, cmd, result); err != nil {
+		e.T.Fatal(err)
 	}
-	if !found {
-		e.T.Fatalf("found no command with the ID %s", cmd)
-	}
-	e.ExecuteCommand(&protocol.ExecuteCommandParams{
-		Command:   lens.Command.Command,
-		Arguments: lens.Command.Arguments,
-	}, result)
 }
 
-func (e *Env) ExecuteCommand(params *protocol.ExecuteCommandParams, result interface{}) {
+// ExecuteCommand executes the requested command in the editor, calling t.Fatal
+// on any error.
+//
+// result is a pointer to a variable to be populated by json.Unmarshal.
+func (e *Env) ExecuteCommand(params *protocol.ExecuteCommandParams, result any) {
 	e.T.Helper()
-	response, err := e.Editor.ExecuteCommand(e.Ctx, params)
-	if err != nil {
-		e.T.Fatal(err)
-	}
-	if result == nil {
-		return
-	}
-	// Hack: The result of an executeCommand request will be unmarshaled into
-	// maps. Re-marshal and unmarshal into the type we expect.
-	//
-	// This could be improved by generating a jsonrpc2 command client from the
-	// command.Interface, but that should only be done if we're consolidating
-	// this part of the tsprotocol generation.
-	data, err := json.Marshal(response)
-	if err != nil {
-		e.T.Fatal(err)
-	}
-	if err := json.Unmarshal(data, result); err != nil {
+	if err := e.Editor.ExecuteCommand(e.Ctx, params, result); err != nil {
 		e.T.Fatal(err)
 	}
 }

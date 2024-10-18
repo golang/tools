@@ -27,8 +27,8 @@ func MethodNotFound(ctx context.Context, reply Replier, req Request) error {
 	return reply(ctx, nil, fmt.Errorf("%w: %q", ErrMethodNotFound, req.Method()))
 }
 
-// MustReplyHandler creates a Handler that panics if the wrapped handler does
-// not call Reply for every request that it is passed.
+// MustReplyHandler is a middleware that creates a Handler that panics if the
+// wrapped handler does not call Reply for every request that it is passed.
 func MustReplyHandler(handler Handler) Handler {
 	return func(ctx context.Context, reply Replier, req Request) error {
 		called := false
@@ -78,8 +78,8 @@ func CancelHandler(handler Handler) (Handler, func(id ID)) {
 	}
 }
 
-// AsyncHandler returns a handler that processes each request goes in its own
-// goroutine.
+// AsyncHandler is a middleware that returns a handler that processes each
+// request goes in its own goroutine.
 // The handler returns immediately, without the request being processed.
 // Each request then waits for the previous request to finish before it starts.
 // This allows the stream to unblock at the cost of unbounded goroutines
@@ -90,13 +90,14 @@ func AsyncHandler(handler Handler) Handler {
 	return func(ctx context.Context, reply Replier, req Request) error {
 		waitForPrevious := nextRequest
 		nextRequest = make(chan struct{})
-		unlockNext := nextRequest
+		releaser := &releaser{ch: nextRequest}
 		innerReply := reply
 		reply = func(ctx context.Context, result interface{}, err error) error {
-			close(unlockNext)
+			releaser.release(true)
 			return innerReply(ctx, result, err)
 		}
 		_, queueDone := event.Start(ctx, "queued")
+		ctx = context.WithValue(ctx, asyncKey, releaser)
 		go func() {
 			<-waitForPrevious
 			queueDone()
@@ -105,5 +106,48 @@ func AsyncHandler(handler Handler) Handler {
 			}
 		}()
 		return nil
+	}
+}
+
+// Async, when used with the [AsyncHandler] middleware, indicates that the
+// current jsonrpc2 request may be handled asynchronously to subsequent
+// requests.
+//
+// When not used with an AsyncHandler, Async is a no-op.
+//
+// Async must be called at most once on each request's context (and its
+// descendants).
+func Async(ctx context.Context) {
+	if r, ok := ctx.Value(asyncKey).(*releaser); ok {
+		r.release(false)
+	}
+}
+
+type asyncKeyType struct{}
+
+var asyncKey = asyncKeyType{}
+
+// A releaser implements concurrency safe 'releasing' of async requests. (A
+// request is released when it is allowed to run concurrent with other
+// requests, via a call to [Async].)
+type releaser struct {
+	mu       sync.Mutex
+	ch       chan struct{}
+	released bool
+}
+
+// release closes the associated channel. If soft is set, multiple calls to
+// release are allowed.
+func (r *releaser) release(soft bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.released {
+		if !soft {
+			panic("jsonrpc2.Async called multiple times")
+		}
+	} else {
+		close(r.ch)
+		r.released = true
 	}
 }

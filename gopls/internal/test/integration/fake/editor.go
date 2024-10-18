@@ -1014,10 +1014,10 @@ func (e *Editor) ApplyCodeAction(ctx context.Context, action protocol.CodeAction
 	// Execute any commands. The specification says that commands are
 	// executed after edits are applied.
 	if action.Command != nil {
-		if _, err := e.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
+		if err := e.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
 			Command:   action.Command.Command,
 			Arguments: action.Command.Arguments,
-		}); err != nil {
+		}, nil); err != nil {
 			return err
 		}
 	}
@@ -1084,6 +1084,8 @@ func (e *Editor) applyCodeActions(ctx context.Context, loc protocol.Location, di
 	return applied, nil
 }
 
+// TODO(rfindley): add missing documentation to exported methods here.
+
 func (e *Editor) CodeActions(ctx context.Context, loc protocol.Location, diagnostics []protocol.Diagnostic, only ...protocol.CodeActionKind) ([]protocol.CodeAction, error) {
 	if e.Server == nil {
 		return nil, nil
@@ -1098,9 +1100,35 @@ func (e *Editor) CodeActions(ctx context.Context, loc protocol.Location, diagnos
 	return e.Server.CodeAction(ctx, params)
 }
 
-func (e *Editor) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (interface{}, error) {
+func (e *Editor) ExecuteCodeLensCommand(ctx context.Context, path string, cmd command.Command, result any) error {
+	lenses, err := e.CodeLens(ctx, path)
+	if err != nil {
+		return err
+	}
+	var lens protocol.CodeLens
+	var found bool
+	for _, l := range lenses {
+		if l.Command.Command == cmd.String() {
+			lens = l
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("found no command with the ID %s", cmd)
+	}
+	return e.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
+		Command:   lens.Command.Command,
+		Arguments: lens.Command.Arguments,
+	}, result)
+}
+
+// ExecuteCommand makes a workspace/executeCommand request to the connected LSP
+// server, if any.
+//
+// Result contains a pointer to a variable to be populated by json.Unmarshal.
+func (e *Editor) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams, result any) error {
 	if e.Server == nil {
-		return nil, nil
+		return nil
 	}
 	var match bool
 	if e.serverCapabilities.ExecuteCommandProvider != nil {
@@ -1113,18 +1141,37 @@ func (e *Editor) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCom
 		}
 	}
 	if !match {
-		return nil, fmt.Errorf("unsupported command %q", params.Command)
+		return fmt.Errorf("unsupported command %q", params.Command)
 	}
-	result, err := e.Server.ExecuteCommand(ctx, params)
+	response, err := e.Server.ExecuteCommand(ctx, params)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// Some commands use the go command, which writes directly to disk.
 	// For convenience, check for those changes.
 	if err := e.sandbox.Workdir.CheckForFileChanges(ctx); err != nil {
-		return nil, fmt.Errorf("checking for file changes: %v", err)
+		return fmt.Errorf("checking for file changes: %v", err)
 	}
-	return result, nil
+	if result != nil {
+		// ExecuteCommand already unmarshalled the response without knowing
+		// its schema, using the generic map[string]any representation.
+		// Encode and decode again, this time into a typed variable.
+		//
+		// This could be improved by generating a jsonrpc2 command client from the
+		// command.Interface, but that should only be done if we're consolidating
+		// this part of the tsprotocol generation.
+		//
+		// TODO(rfindley): we could also improve this by having ExecuteCommand return
+		// a json.RawMessage, similar to what we do with arguments.
+		data, err := json.Marshal(response)
+		if err != nil {
+			return bug.Errorf("marshalling response: %v", err)
+		}
+		if err := json.Unmarshal(data, result); err != nil {
+			return fmt.Errorf("unmarshalling response: %v", err)
+		}
+	}
+	return nil
 }
 
 // FormatBuffer gofmts a Go file.
@@ -1183,7 +1230,7 @@ func (e *Editor) RunGenerate(ctx context.Context, dir string) error {
 		Command:   cmd.Command,
 		Arguments: cmd.Arguments,
 	}
-	if _, err := e.ExecuteCommand(ctx, params); err != nil {
+	if err := e.ExecuteCommand(ctx, params, nil); err != nil {
 		return fmt.Errorf("running generate: %v", err)
 	}
 	// Unfortunately we can't simply poll the workdir for file changes here,

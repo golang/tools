@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -41,6 +40,7 @@ import (
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/xcontext"
 )
@@ -278,7 +278,7 @@ func (*commandHandler) AddTelemetryCounters(_ context.Context, args command.AddT
 // commandConfig configures common command set-up and execution.
 type commandConfig struct {
 	requireSave bool                 // whether all files must be saved for the command to work
-	progress    string               // title to use for progress reporting. If empty, no progress will be reported. Mandatory for async commands.
+	progress    string               // title to use for progress reporting. If empty, no progress will be reported.
 	forView     string               // view to resolve to a snapshot; incompatible with forURI
 	forURI      protocol.DocumentURI // URI to resolve to a snapshot. If unset, snapshot will be nil.
 }
@@ -370,18 +370,6 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 		return err
 	}
 
-	if enum := command.Command(c.params.Command); enum.IsAsync() {
-		if cfg.progress == "" {
-			log.Fatalf("asynchronous command %q does not enable progress reporting",
-				enum)
-		}
-		go func() {
-			if err := runcmd(); err != nil {
-				showMessage(ctx, c.s.client, protocol.Error, err.Error())
-			}
-		}()
-		return nil
-	}
 	return runcmd()
 }
 
@@ -725,6 +713,7 @@ func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs
 		requireSave: true,              // go test honors overlays, but tests themselves cannot
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
+		jsonrpc2.Async(ctx) // don't block RPCs behind this command, since it can take a while
 		return c.runTests(ctx, deps.snapshot, deps.work, args.URI, args.Tests, args.Benchmarks)
 	})
 }
@@ -1233,23 +1222,25 @@ func (c *commandHandler) FetchVulncheckResult(ctx context.Context, arg command.U
 	return ret, err
 }
 
+const GoVulncheckCommandTitle = "govulncheck"
+
 func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.VulncheckArgs) (command.RunVulncheckResult, error) {
 	if args.URI == "" {
 		return command.RunVulncheckResult{}, errors.New("VulncheckArgs is missing URI field")
 	}
 
-	// Return the workdone token so that clients can identify when this
-	// vulncheck invocation is complete.
-	//
-	// Since the run function executes asynchronously, we use a channel to
-	// synchronize the start of the run and return the token.
-	tokenChan := make(chan protocol.ProgressToken, 1)
+	var commandResult command.RunVulncheckResult
 	err := c.run(ctx, commandConfig{
-		progress:    "govulncheck", // (asynchronous)
-		requireSave: true,          // govulncheck cannot honor overlays
+		progress:    GoVulncheckCommandTitle,
+		requireSave: true, // govulncheck cannot honor overlays
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		tokenChan <- deps.work.Token()
+		// For compatibility with the legacy asynchronous API, return the workdone
+		// token that clients used to use to identify when this vulncheck
+		// invocation is complete.
+		commandResult.Token = deps.work.Token()
+
+		jsonrpc2.Async(ctx) // run this in parallel with other requests: vulncheck can be slow.
 
 		workDoneWriter := progress.NewWorkDoneWriter(ctx, deps.work)
 		dir := filepath.Dir(args.URI.Path())
@@ -1259,6 +1250,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 		if err != nil {
 			return err
 		}
+		commandResult.Result = result
 
 		snapshot, release, err := c.s.session.InvalidateView(ctx, deps.snapshot.View(), cache.StateChange{
 			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI: result},
@@ -1295,12 +1287,7 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 	if err != nil {
 		return command.RunVulncheckResult{}, err
 	}
-	select {
-	case <-ctx.Done():
-		return command.RunVulncheckResult{}, ctx.Err()
-	case token := <-tokenChan:
-		return command.RunVulncheckResult{Token: token}, nil
-	}
+	return commandResult, nil
 }
 
 // MemStats implements the MemStats command. It returns an error as a

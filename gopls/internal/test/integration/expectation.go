@@ -452,17 +452,27 @@ type WorkStatus struct {
 	EndMsg string
 }
 
-// CompletedProgress expects that workDone progress is complete for the given
-// progress token. When non-nil WorkStatus is provided, it will be filled
-// when the expectation is met.
+// CompletedProgress expects that there is exactly one workDone progress with
+// the given title, and is satisfied when that progress completes. If it is
+// met, the corresponding status is written to the into argument.
 //
-// If the token is not a progress token that the client has seen, this
-// expectation is Unmeetable.
-func CompletedProgress(token protocol.ProgressToken, into *WorkStatus) Expectation {
+// TODO(rfindley): refactor to eliminate the redundancy with CompletedWork.
+// This expectation is a vestige of older workarounds for asynchronous command
+// execution.
+func CompletedProgress(title string, into *WorkStatus) Expectation {
 	check := func(s State) Verdict {
-		work, ok := s.work[token]
-		if !ok {
-			return Unmeetable // TODO(rfindley): refactor to allow the verdict to explain this result
+		var work *workProgress
+		for _, w := range s.work {
+			if w.title == title {
+				if work != nil {
+					// TODO(rfindley): refactor to allow the verdict to explain this result
+					return Unmeetable // multiple matches
+				}
+				work = w
+			}
+		}
+		if work == nil {
+			return Unmeetable // zero matches
 		}
 		if work.complete {
 			if into != nil {
@@ -473,7 +483,7 @@ func CompletedProgress(token protocol.ProgressToken, into *WorkStatus) Expectati
 		}
 		return Unmet
 	}
-	desc := fmt.Sprintf("completed work for token %v", token)
+	desc := fmt.Sprintf("exactly 1 completed workDoneProgress with title %v", title)
 	return Expectation{
 		Check:       check,
 		Description: desc,

@@ -503,7 +503,15 @@ type VulncheckArgs struct {
 type RunVulncheckResult struct {
 	// Token holds the progress token for LSP workDone reporting of the vulncheck
 	// invocation.
+	//
+	// Deprecated: previously, this was used as a signal to retrieve the result
+	// using gopls.fetch_vulncheck_result. Clients should ignore this field:
+	// gopls.vulncheck now runs synchronously, and returns a result in the Result
+	// field.
 	Token protocol.ProgressToken
+
+	// Result holds the result of running vulncheck.
+	Result *vulncheck.Result
 }
 
 // MemStatsResult holds selected fields from runtime.MemStats.

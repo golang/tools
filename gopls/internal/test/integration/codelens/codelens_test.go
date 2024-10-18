@@ -182,10 +182,10 @@ require golang.org/x/hello v1.2.3
 				if !found {
 					t.Fatalf("found no command with the title %s", commandTitle)
 				}
-				if _, err := env.Editor.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
+				if err := env.Editor.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
 					Command:   lens.Command.Command,
 					Arguments: lens.Command.Arguments,
-				}); err != nil {
+				}, nil); err != nil {
 					t.Fatal(err)
 				}
 				env.AfterChange()

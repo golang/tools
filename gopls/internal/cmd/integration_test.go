@@ -224,7 +224,7 @@ func TestFail(t *testing.T) { t.Fatal("fail") }
 	}
 	// run the passing test
 	{
-		res := gopls(t, tree, "codelens", "-exec", "./a/a_test.go:3", "run test")
+		res := gopls(t, tree, "-v", "codelens", "-exec", "./a/a_test.go:3", "run test")
 		res.checkExit(true)
 		res.checkStderr(`PASS: TestPass`)         // from go test
 		res.checkStderr("Info: all tests passed") // from gopls.test

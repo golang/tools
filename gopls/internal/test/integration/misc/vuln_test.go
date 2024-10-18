@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/vulncheck"
@@ -41,10 +42,11 @@ package foo
 			Arguments: cmd.Arguments,
 		}
 
-		response, err := env.Editor.ExecuteCommand(env.Ctx, params)
+		var result any
+		err := env.Editor.ExecuteCommand(env.Ctx, params, &result)
 		// We want an error!
 		if err == nil {
-			t.Errorf("got success, want invalid file URL error: %v", response)
+			t.Errorf("got success, want invalid file URL error. Result: %v", result)
 		}
 	})
 }
@@ -72,13 +74,16 @@ func F() { // build error incomplete
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
 		var result command.RunVulncheckResult
-		env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
+		err := env.Editor.ExecuteCodeLensCommand(env.Ctx, "go.mod", command.RunGovulncheck, &result)
+		if err == nil {
+			t.Fatalf("govulncheck succeeded unexpectedly: %v", result)
+		}
 		var ws WorkStatus
 		env.Await(
-			CompletedProgress(result.Token, &ws),
+			CompletedProgress(server.GoVulncheckCommandTitle, &ws),
 		)
 		wantEndMsg, wantMsgPart := "failed", "There are errors with the provided package patterns:"
-		if ws.EndMsg != "failed" || !strings.Contains(ws.Msg, wantMsgPart) {
+		if ws.EndMsg != "failed" || !strings.Contains(ws.Msg, wantMsgPart) || !strings.Contains(err.Error(), wantMsgPart) {
 			t.Errorf("work status = %+v, want {EndMessage: %q, Message: %q}", ws, wantEndMsg, wantMsgPart)
 		}
 	})
@@ -203,14 +208,16 @@ func main() {
 		env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
 
 		env.OnceMet(
-			CompletedProgress(result.Token, nil),
+			CompletedProgress(server.GoVulncheckCommandTitle, nil),
 			ShownMessage("Found GOSTDLIB"),
 			NoDiagnostics(ForFile("go.mod")),
 		)
-		testFetchVulncheckResult(t, env, map[string]fetchVulncheckResult{
-			"go.mod": {IDs: []string{"GOSTDLIB"}, Mode: vulncheck.ModeGovulncheck}})
+		testFetchVulncheckResult(t, env, "go.mod", result.Result, map[string]fetchVulncheckResult{
+			"go.mod": {IDs: []string{"GOSTDLIB"}, Mode: vulncheck.ModeGovulncheck},
+		})
 	})
 }
+
 func TestFetchVulncheckResultStd(t *testing.T) {
 	const files = `
 -- go.mod --
@@ -252,7 +259,7 @@ func main() {
 			NoDiagnostics(ForFile("go.mod")),
 			// we don't publish diagnostics for standard library vulnerability yet.
 		)
-		testFetchVulncheckResult(t, env, map[string]fetchVulncheckResult{
+		testFetchVulncheckResult(t, env, "", nil, map[string]fetchVulncheckResult{
 			"go.mod": {
 				IDs:  []string{"GOSTDLIB"},
 				Mode: vulncheck.ModeImports,
@@ -261,12 +268,28 @@ func main() {
 	})
 }
 
+// fetchVulncheckResult summarizes a vulncheck result for a single file.
 type fetchVulncheckResult struct {
 	IDs  []string
 	Mode vulncheck.AnalysisMode
 }
 
-func testFetchVulncheckResult(t *testing.T, env *Env, want map[string]fetchVulncheckResult) {
+// testFetchVulncheckResult checks that calling gopls.fetch_vulncheck_result
+// returns the expected summarized results contained in the want argument.
+//
+// If fromRun is non-nil, is is the result of running running vulncheck for
+// runPath, and testFetchVulncheckResult also checks that the fetched result
+// for runPath matches fromRun.
+//
+// This awkward factoring is an artifact of a transition from fetching
+// vulncheck results asynchronously, to allowing the command to run
+// asynchronously, yet returning the result synchronously from the client's
+// perspective.
+//
+// TODO(rfindley): once VS Code no longer depends on fetching results
+// asynchronously, we can remove gopls.fetch_vulncheck_result, and simplify or
+// remove this helper.
+func testFetchVulncheckResult(t *testing.T, env *Env, runPath string, fromRun *vulncheck.Result, want map[string]fetchVulncheckResult) {
 	t.Helper()
 
 	var result map[protocol.DocumentURI]*vulncheck.Result
@@ -281,8 +304,7 @@ func testFetchVulncheckResult(t *testing.T, env *Env, want map[string]fetchVulnc
 	for _, v := range want {
 		sort.Strings(v.IDs)
 	}
-	got := map[string]fetchVulncheckResult{}
-	for k, r := range result {
+	summarize := func(r *vulncheck.Result) fetchVulncheckResult {
 		osv := map[string]bool{}
 		for _, v := range r.Findings {
 			osv[v.OSV] = true
@@ -292,14 +314,23 @@ func testFetchVulncheckResult(t *testing.T, env *Env, want map[string]fetchVulnc
 			ids = append(ids, id)
 		}
 		sort.Strings(ids)
-		modfile := env.Sandbox.Workdir.RelPath(k.Path())
-		got[modfile] = fetchVulncheckResult{
+		return fetchVulncheckResult{
 			IDs:  ids,
 			Mode: r.Mode,
 		}
 	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("fetch vulnchheck result = got %v, want %v: diff %v", got, want, diff)
+	got := map[string]fetchVulncheckResult{}
+	for k, r := range result {
+		modfile := env.Sandbox.Workdir.RelPath(k.Path())
+		got[modfile] = summarize(r)
+	}
+	if fromRun != nil {
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("fetch vulncheck result = got %v, want %v: diff %v", got, want, diff)
+		}
+		if diff := cmp.Diff(summarize(fromRun), got[runPath]); diff != "" {
+			t.Errorf("fetched vulncheck result differs from returned (-returned, +fetched):\n%s", diff)
+		}
 	}
 }
 
@@ -463,7 +494,7 @@ func TestRunVulncheckPackageDiagnostics(t *testing.T) {
 			ReadDiagnostics("go.mod", gotDiagnostics),
 		)
 
-		testFetchVulncheckResult(t, env, map[string]fetchVulncheckResult{
+		testFetchVulncheckResult(t, env, "", nil, map[string]fetchVulncheckResult{
 			"go.mod": {
 				IDs:  []string{"GO-2022-01", "GO-2022-02", "GO-2022-03"},
 				Mode: vulncheck.ModeImports,
@@ -531,7 +562,7 @@ func TestRunVulncheckPackageDiagnostics(t *testing.T) {
 		if len(gotDiagnostics.Diagnostics) > 0 {
 			t.Errorf("Unexpected diagnostics: %v", stringify(gotDiagnostics))
 		}
-		testFetchVulncheckResult(t, env, map[string]fetchVulncheckResult{})
+		testFetchVulncheckResult(t, env, "", nil, map[string]fetchVulncheckResult{})
 	}
 
 	for _, tc := range []struct {
@@ -561,7 +592,7 @@ func TestRunVulncheckPackageDiagnostics(t *testing.T) {
 					env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
 					gotDiagnostics := &protocol.PublishDiagnosticsParams{}
 					env.OnceMet(
-						CompletedProgress(result.Token, nil),
+						CompletedProgress(server.GoVulncheckCommandTitle, nil),
 						ShownMessage("Found"),
 					)
 					env.OnceMet(
@@ -609,7 +640,7 @@ func TestRunGovulncheck_Expiry(t *testing.T) {
 		var result command.RunVulncheckResult
 		env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
 		env.OnceMet(
-			CompletedProgress(result.Token, nil),
+			CompletedProgress(server.GoVulncheckCommandTitle, nil),
 			ShownMessage("Found"),
 		)
 		// Sleep long enough for the results to expire.
@@ -640,7 +671,7 @@ func TestRunVulncheckWarning(t *testing.T) {
 		env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
 		gotDiagnostics := &protocol.PublishDiagnosticsParams{}
 		env.OnceMet(
-			CompletedProgress(result.Token, nil),
+			CompletedProgress(server.GoVulncheckCommandTitle, nil),
 			ShownMessage("Found"),
 		)
 		// Vulncheck diagnostics asynchronous to the vulncheck command.
@@ -649,7 +680,7 @@ func TestRunVulncheckWarning(t *testing.T) {
 			ReadDiagnostics("go.mod", gotDiagnostics),
 		)
 
-		testFetchVulncheckResult(t, env, map[string]fetchVulncheckResult{
+		testFetchVulncheckResult(t, env, "go.mod", result.Result, map[string]fetchVulncheckResult{
 			// All vulnerabilities (symbol-level, import-level, module-level) are reported.
 			"go.mod": {IDs: []string{"GO-2022-01", "GO-2022-02", "GO-2022-03", "GO-2022-04"}, Mode: vulncheck.ModeGovulncheck},
 		})
@@ -795,7 +826,7 @@ func TestGovulncheckInfo(t *testing.T) {
 		env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
 		gotDiagnostics := &protocol.PublishDiagnosticsParams{}
 		env.OnceMet(
-			CompletedProgress(result.Token, nil),
+			CompletedProgress(server.GoVulncheckCommandTitle, nil),
 			ShownMessage("No vulnerabilities found"), // only count affecting vulnerabilities.
 		)
 
@@ -805,7 +836,9 @@ func TestGovulncheckInfo(t *testing.T) {
 			ReadDiagnostics("go.mod", gotDiagnostics),
 		)
 
-		testFetchVulncheckResult(t, env, map[string]fetchVulncheckResult{"go.mod": {IDs: []string{"GO-2022-02", "GO-2022-04"}, Mode: vulncheck.ModeGovulncheck}})
+		testFetchVulncheckResult(t, env, "go.mod", result.Result, map[string]fetchVulncheckResult{
+			"go.mod": {IDs: []string{"GO-2022-02", "GO-2022-04"}, Mode: vulncheck.ModeGovulncheck},
+		})
 		// wantDiagnostics maps a module path in the require
 		// section of a go.mod to diagnostics that will be returned
 		// when running vulncheck.

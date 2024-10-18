@@ -10,12 +10,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"slices"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
-	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/internal/tool"
 )
 
@@ -98,38 +96,11 @@ func (e *execute) Run(ctx context.Context, args ...string) error {
 
 // executeCommand executes a protocol.Command, displaying progress
 // messages and awaiting completion of asynchronous commands.
+//
+// TODO(rfindley): inline away all calls, ensuring they inline idiomatically.
 func (conn *connection) executeCommand(ctx context.Context, cmd *protocol.Command) (any, error) {
-	endStatus := make(chan string, 1)
-	token, unregister := conn.client.registerProgressHandler(func(params *protocol.ProgressParams) {
-		switch v := params.Value.(type) {
-		case *protocol.WorkDoneProgressReport:
-			fmt.Fprintln(os.Stderr, v.Message) // combined std{out,err}
-
-		case *protocol.WorkDoneProgressEnd:
-			endStatus <- v.Message // = canceled | failed | completed
-		}
-	})
-	defer unregister()
-
-	res, err := conn.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
+	return conn.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
 		Command:   cmd.Command,
 		Arguments: cmd.Arguments,
-		WorkDoneProgressParams: protocol.WorkDoneProgressParams{
-			WorkDoneToken: token,
-		},
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Some commands are asynchronous, so clients
-	// must wait for the "end" progress notification.
-	if command.Command(cmd.Command).IsAsync() {
-		status := <-endStatus
-		if status != server.CommandCompleted {
-			return nil, fmt.Errorf("command %s", status)
-		}
-	}
-
-	return res, nil
 }

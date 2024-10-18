@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -391,35 +390,13 @@ type connection struct {
 	client *cmdClient
 }
 
-// registerProgressHandler registers a handler for progress notifications.
-// The caller must call unregister when the handler is no longer needed.
-func (cli *cmdClient) registerProgressHandler(handler func(*protocol.ProgressParams)) (token protocol.ProgressToken, unregister func()) {
-	token = fmt.Sprintf("tok%d", rand.Uint64())
-
-	// register
-	cli.progressHandlersMu.Lock()
-	if cli.progressHandlers == nil {
-		cli.progressHandlers = make(map[protocol.ProgressToken]func(*protocol.ProgressParams))
-	}
-	cli.progressHandlers[token] = handler
-	cli.progressHandlersMu.Unlock()
-
-	unregister = func() {
-		cli.progressHandlersMu.Lock()
-		delete(cli.progressHandlers, token)
-		cli.progressHandlersMu.Unlock()
-	}
-	return token, unregister
-}
-
 // cmdClient defines the protocol.Client interface behavior of the gopls CLI tool.
 type cmdClient struct {
 	app *Application
 
-	progressHandlersMu sync.Mutex
-	progressHandlers   map[protocol.ProgressToken]func(*protocol.ProgressParams)
-	iwlToken           protocol.ProgressToken
-	iwlDone            chan struct{}
+	progressMu sync.Mutex
+	iwlToken   protocol.ProgressToken
+	iwlDone    chan struct{}
 
 	filesMu sync.Mutex // guards files map
 	files   map[protocol.DocumentURI]*cmdFile
@@ -698,41 +675,33 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 }
 
 func (c *cmdClient) Progress(_ context.Context, params *protocol.ProgressParams) error {
-	token, ok := params.Token.(string)
-	if !ok {
+	if _, ok := params.Token.(string); !ok {
 		return fmt.Errorf("unexpected progress token: %[1]T %[1]v", params.Token)
 	}
 
-	c.progressHandlersMu.Lock()
-	handler := c.progressHandlers[token]
-	c.progressHandlersMu.Unlock()
-	if handler == nil {
-		handler = c.defaultProgressHandler
-	}
-	handler(params)
-	return nil
-}
-
-// defaultProgressHandler is the default handler of progress messages,
-// used during the initialize request.
-func (c *cmdClient) defaultProgressHandler(params *protocol.ProgressParams) {
 	switch v := params.Value.(type) {
 	case *protocol.WorkDoneProgressBegin:
 		if v.Title == server.DiagnosticWorkTitle(server.FromInitialWorkspaceLoad) {
-			c.progressHandlersMu.Lock()
+			c.progressMu.Lock()
 			c.iwlToken = params.Token
-			c.progressHandlersMu.Unlock()
+			c.progressMu.Unlock()
+		}
+
+	case *protocol.WorkDoneProgressReport:
+		if c.app.Verbose {
+			fmt.Fprintln(os.Stderr, v.Message)
 		}
 
 	case *protocol.WorkDoneProgressEnd:
-		c.progressHandlersMu.Lock()
+		c.progressMu.Lock()
 		iwlToken := c.iwlToken
-		c.progressHandlersMu.Unlock()
+		c.progressMu.Unlock()
 
 		if params.Token == iwlToken {
 			close(c.iwlDone)
 		}
 	}
+	return nil
 }
 
 func (c *cmdClient) ShowDocument(ctx context.Context, params *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
