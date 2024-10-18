@@ -32,20 +32,11 @@ func TestBuild(t *testing.T) {
 
 	var gopath string
 	for _, env := range exported.Config.Env {
-		eq := strings.Index(env, "=")
-		if eq == 0 {
-			// We sometimes see keys with a single leading "=" in the environment on Windows.
-			// TODO(#49886): What is the correct way to parse them in general?
-			eq = strings.Index(env[1:], "=") + 1
-		}
-		if eq < 0 {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) != 2 {
 			t.Fatalf("invalid variable in exported.Config.Env: %q", env)
 		}
-		k := env[:eq]
-		v := env[eq+1:]
-		if k == "GOPATH" {
-			gopath = v
-		}
+		k, v := parts[0], parts[1]
 
 		if os.Getenv(k) == v {
 			continue
