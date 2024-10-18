@@ -110,10 +110,7 @@ func (r *region) addDir(rt gopathwalk.Root, dir string) {
 }
 
 func (r *region) skipDir(_ gopathwalk.Root, dir string) bool {
-	// The cache directory is alreday ignored in gopathwalk
-	if filepath.Base(dir) == "vendor" {
-		return true
-	}
+	// The cache directory is already ignored in gopathwalk\
 	if filepath.Base(dir) == "internal" {
 		return true
 	}
