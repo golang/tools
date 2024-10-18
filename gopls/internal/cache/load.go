@@ -249,6 +249,12 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 			s.setBuiltin(pkg.GoFiles[0])
 			continue
 		}
+		if packagesinternal.GetForTest(pkg) == "builtin" {
+			// We don't care about test variants of builtin. This caused test
+			// failures in https://go.dev/cl/620196, when a test file was added to
+			// builtin.
+			continue
+		}
 		// Skip test main packages.
 		if isTestMain(pkg, s.view.folder.Env.GOCACHE) {
 			continue
