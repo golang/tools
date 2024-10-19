@@ -3187,7 +3187,7 @@ func testLoadTypesInfoWithoutSyntaxOrTypes(t *testing.T, exporter packagestest.E
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
 		Files: map[string]interface{}{
-			"a/a.go": `package a; 
+			"a/a.go": `package a;
 
 func foo() int {
 	i := 0
@@ -3199,13 +3199,13 @@ func foo() int {
 	defer exported.Cleanup()
 	exported.Config.Mode = packages.NeedTypesInfo
 
-	packs, err := packages.Load(exported.Config, "golang.org/fake/a")
+	pkgs, err := packages.Load(exported.Config, "golang.org/fake/a")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// check if types info is present
-	if packs[0].TypesInfo == nil {
+	if pkgs[0].TypesInfo == nil {
 		t.Errorf("expected types info to be present but got nil")
 	}
 }
