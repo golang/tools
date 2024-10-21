@@ -2611,6 +2611,14 @@ func (c *completer) resetExpectedType(inf *candidateInference) []types.Type {
 //
 // inf is expected to contain inferences based on the parent of the CallExpr node.
 func (c *completer) reverseInferExpectedTypeParam(inf candidateInference, expectedConstraint types.Type, typeParamIdx int, sig *types.Signature) candidateInference {
+	inf.typeName.wantTypeName = true
+	inf.typeName.isTypeParam = true
+
+	if typeParamIdx < 0 || typeParamIdx >= sig.TypeParams().Len() {
+		inf.objType = nil
+		return inf
+	}
+
 	substs, ok := reverseInferSignature(sig, c.resetExpectedType(&inf))
 	if ok && len(substs) > 0 && substs[typeParamIdx] != nil {
 		inf.objType = substs[typeParamIdx]
@@ -2618,8 +2626,6 @@ func (c *completer) reverseInferExpectedTypeParam(inf candidateInference, expect
 		// Default to the constraint if no viable substition.
 		inf.objType = expectedConstraint
 	}
-	inf.typeName.wantTypeName = true
-	inf.typeName.isTypeParam = true
 	return inf
 }
 
