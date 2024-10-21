@@ -73,24 +73,19 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 		cand.addressable = true
 	}
 
-	if !c.matchingCandidate(&cand) {
+	// Only suggest a literal conversion if the exact type is known.
+	if !c.matchingCandidate(&cand) || (cand.convertTo != nil && !c.inference.needsExactType) {
 		return
 	}
 
 	var (
-		qf     = c.qf
-		sel    = enclosingSelector(c.path, c.pos)
-		prefix = ""
-		suffix = ""
+		qf         = c.qf
+		sel        = enclosingSelector(c.path, c.pos)
+		conversion conversionEdits
 	)
 
-	// Only convert literals which are an interface type value to a
-	// parameterized argument in a function call.
 	if cand.convertTo != nil {
-		if !types.IsInterface(cand.convertTo) {
-			return
-		}
-		prefix, suffix = c.formatConvertTo(cand.convertTo)
+		conversion = c.formatConversion(cand.convertTo)
 	}
 
 	// Don't qualify the type name if we are in a selector expression
@@ -141,7 +136,7 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 		switch t := literalType.Underlying().(type) {
 		case *types.Struct, *types.Array, *types.Slice, *types.Map:
 			item := c.compositeLiteral(t, snip.Clone(), typeName, float64(score), addlEdits)
-			item.addPrefixSuffix(c, prefix, suffix)
+			item.addConversion(c, conversion)
 			c.items = append(c.items, item)
 		case *types.Signature:
 			// Add a literal completion for a signature type that implements
@@ -149,7 +144,7 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 			// expected type is "http.Handler".
 			if expType != nil && types.IsInterface(expType) {
 				if item, ok := c.basicLiteral(t, snip.Clone(), typeName, float64(score), addlEdits); ok {
-					item.addPrefixSuffix(c, prefix, suffix)
+					item.addConversion(c, conversion)
 					c.items = append(c.items, item)
 				}
 			}
@@ -160,7 +155,7 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 			// type (i.e. yielding a type conversion such as "float64()").
 			if expType != nil && (types.IsInterface(expType) || types.Identical(expType, literalType)) {
 				if item, ok := c.basicLiteral(t, snip.Clone(), typeName, float64(score), addlEdits); ok {
-					item.addPrefixSuffix(c, prefix, suffix)
+					item.addConversion(c, conversion)
 					c.items = append(c.items, item)
 				}
 			}
@@ -175,13 +170,13 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 		case *types.Slice:
 			// The second argument to "make()" for slices is required, so default to "0".
 			item := c.makeCall(snip.Clone(), typeName, "0", float64(score), addlEdits)
-			item.addPrefixSuffix(c, prefix, suffix)
+			item.addConversion(c, conversion)
 			c.items = append(c.items, item)
 		case *types.Map, *types.Chan:
 			// Maps and channels don't require the second argument, so omit
 			// to keep things simple for now.
 			item := c.makeCall(snip.Clone(), typeName, "", float64(score), addlEdits)
-			item.addPrefixSuffix(c, prefix, suffix)
+			item.addConversion(c, conversion)
 			c.items = append(c.items, item)
 		}
 	}
@@ -191,7 +186,7 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 		switch t := literalType.Underlying().(type) {
 		case *types.Signature:
 			if item, ok := c.functionLiteral(ctx, t, float64(score)); ok {
-				item.addPrefixSuffix(c, prefix, suffix)
+				item.addConversion(c, conversion)
 				c.items = append(c.items, item)
 			}
 		}
@@ -204,8 +199,8 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 // correct type, so scale down highScore.
 const literalCandidateScore = highScore / 2
 
-// functionLiteral adds a function literal completion item for the
-// given signature.
+// functionLiteral returns a function literal completion item for the
+// given signature, if applicable.
 func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, matchScore float64) (CompletionItem, bool) {
 	snip := &snippet.Builder{}
 	snip.WriteText("func(")
@@ -456,7 +451,7 @@ func abbreviateTypeName(s string) string {
 	return b.String()
 }
 
-// compositeLiteral adds a composite literal completion item for the given typeName.
+// compositeLiteral returns a composite literal completion item for the given typeName.
 // T is an (unnamed, unaliased) struct, array, slice, or map type.
 func (c *completer) compositeLiteral(T types.Type, snip *snippet.Builder, typeName string, matchScore float64, edits []protocol.TextEdit) CompletionItem {
 	snip.WriteText("{")
@@ -479,8 +474,10 @@ func (c *completer) compositeLiteral(T types.Type, snip *snippet.Builder, typeNa
 	}
 }
 
-// basicLiteral adds a literal completion item for the given basic
+// basicLiteral returns a literal completion item for the given basic
 // type name typeName.
+//
+// If T is untyped, this function returns false.
 func (c *completer) basicLiteral(T types.Type, snip *snippet.Builder, typeName string, matchScore float64, edits []protocol.TextEdit) (CompletionItem, bool) {
 	// Never give type conversions like "untyped int()".
 	if isUntyped(T) {

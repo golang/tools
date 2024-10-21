@@ -1,12 +1,12 @@
-// Below is copied from go/types/unify.go on September 21, 2021, with
-// snippets from other files as well. It is copied to implement
-// unification for autocompletion inferences, in lieu of an official
-// type unification API.
+// Below is copied from go/types/unify.go on September 21, 2024,
+// combined with snippets from other files as well.
+// It is copied to implement unification for code completion inferences,
+// in lieu of an official type unification API.
 //
-// When such an API is available, the code below should deleted.
+// TODO: When such an API is available, the code below should deleted.
+//
 // Due to complexity of extracting private types from the go/types package,
-//
-// The unifier does not fully interface unification.
+// the unifier does not fully implement interface unification.
 //
 // The code has been modified to compile without introducing key any functionality changes.
 //
@@ -121,6 +121,8 @@ const (
 	unifyModeExact
 )
 
+// This function was copied from go/types/unify.go
+//
 // unify attempts to unify x and y and reports whether it succeeded.
 // As a side-effect, types may be inferred for type parameters.
 // The mode parameter controls how types are compared.

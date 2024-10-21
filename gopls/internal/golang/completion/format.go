@@ -196,9 +196,9 @@ Suffixes:
 	}
 
 	if cand.convertTo != nil {
-		p, s := c.formatConvertTo(cand.convertTo)
-		prefix = p + prefix
-		suffix = s
+		conv := c.formatConversion(cand.convertTo)
+		prefix = conv.prefix + prefix
+		suffix = conv.suffix
 	}
 
 	if prefix != "" {
@@ -273,7 +273,21 @@ Suffixes:
 	return item, nil
 }
 
-func (c *completer) formatConvertTo(convertTo types.Type) (prefix string, suffix string) {
+// conversionEdits represents the string edits needed to make a type conversion
+// of an expression.
+type conversionEdits struct {
+	prefix, suffix string
+}
+
+// formatConversion returns the edits needed to make a type conversion
+// expression, including parentheses if necessary.
+//
+// Returns empty conversionEdits if convertTo is nil.
+func (c *completer) formatConversion(convertTo types.Type) conversionEdits {
+	if convertTo == nil {
+		return conversionEdits{}
+	}
+
 	typeName := types.TypeString(convertTo, c.qf)
 	switch t := convertTo.(type) {
 	// We need extra parens when casting to these types. For example,
@@ -288,7 +302,7 @@ func (c *completer) formatConvertTo(convertTo types.Type) (prefix string, suffix
 			typeName = types.TypeString(types.Default(convertTo), c.qf)
 		}
 	}
-	return typeName + "(", ")"
+	return conversionEdits{prefix: typeName + "(", suffix: ")"}
 }
 
 // importEdits produces the text edits necessary to add the given import to the current file.

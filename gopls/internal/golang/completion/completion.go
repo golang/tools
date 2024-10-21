@@ -134,25 +134,28 @@ func (i *CompletionItem) Snippet() string {
 	return i.InsertText
 }
 
-func (i *CompletionItem) addPrefixSuffix(c *completer, prefix string, suffix string) error {
-	if prefix != "" {
+// addConversion wraps the existing completionItem in a conversion expression.
+// Only affects the receiver's InsertText and snippet fields, not the Label.
+// An empty conv argument has no effect.
+func (i *CompletionItem) addConversion(c *completer, conv conversionEdits) error {
+	if conv.prefix != "" {
 		// If we are in a selector, add an edit to place prefix before selector.
 		if sel := enclosingSelector(c.path, c.pos); sel != nil {
-			edits, err := c.editText(sel.Pos(), sel.Pos(), prefix)
+			edits, err := c.editText(sel.Pos(), sel.Pos(), conv.prefix)
 			if err != nil {
 				return err
 			}
 			i.AdditionalTextEdits = append(i.AdditionalTextEdits, edits...)
 		} else {
 			// If there is no selector, just stick the prefix at the start.
-			i.InsertText = prefix + i.InsertText
-			i.snippet.PrependText(prefix)
+			i.InsertText = conv.prefix + i.InsertText
+			i.snippet.PrependText(conv.prefix)
 		}
 	}
 
-	if suffix != "" {
-		i.InsertText += suffix
-		i.snippet.WriteText(suffix)
+	if conv.suffix != "" {
+		i.InsertText += conv.suffix
+		i.snippet.WriteText(conv.suffix)
 	}
 
 	return nil
@@ -2189,6 +2192,10 @@ type candidateInference struct {
 	// convertibleTo is a type our candidate type must be convertible to.
 	convertibleTo types.Type
 
+	// needsExactType is true if the candidate type must be exactly the type of
+	// the objType, e.g. an interface rather than it's implementors.
+	needsExactType bool
+
 	// typeName holds information about the expected type name at
 	// position, if any.
 	typeName typeNameInference
@@ -2324,26 +2331,32 @@ Nodes:
 					break Nodes
 				}
 
-				sig, _ := c.pkg.TypesInfo().Types[node.Fun].Type.(*types.Signature)
-
-				if sig != nil && sig.TypeParams().Len() > 0 && len(c.path) > i+1 {
-					// infer an instantiation for the CallExpr from it's context
-					switch c.path[i+1].(type) {
-					case *ast.AssignStmt, *ast.ReturnStmt, *ast.SendStmt, *ast.ValueSpec:
-						// Defer call to reverseInferExpectedCallParamType so we can provide it the
-						// inferences about its parent node.
-						defer func(sig *types.Signature) {
-							inf = c.reverseInferExpectedCallParam(inf, node, sig)
-						}(sig)
-						continue Nodes
-					case *ast.KeyValueExpr:
-						c.enclosingCompositeLiteral = enclosingCompositeLiteral(c.path[i:], node.Pos(), c.pkg.TypesInfo())
-						inf = c.reverseInferExpectedCallParam(inf, node, sig)
-						break Nodes
+				if sig, ok := c.pkg.TypesInfo().Types[node.Fun].Type.(*types.Signature); ok {
+					// Out of bounds arguments get no inference completion.
+					if !sig.Variadic() && exprAtPos(c.pos, node.Args) >= sig.Params().Len() {
+						return inf
 					}
-				}
 
-				if sig != nil {
+					// Call has uninstantiated type parameters.
+					// Skips inference for partially instantiated calls until partially
+					// instantiating signatures has stronger support.
+					if sig.TypeParams().Len() > 0 && c.numTypeArgs(node) == 0 && len(c.path) > i+1 {
+						// Use the CallExpr's surroundings to infer an instantiation from its return types.
+						switch c.path[i+1].(type) {
+						case *ast.AssignStmt, *ast.ReturnStmt, *ast.SendStmt, *ast.ValueSpec:
+							// Defer call to reverseInferExpectedCallParamType so we can provide it the
+							// inferences about its parent node.
+							defer func(sig *types.Signature) {
+								inf = c.reverseInferExpectedCallParam(inf, node, sig)
+							}(sig)
+							continue Nodes
+						case *ast.KeyValueExpr:
+							c.enclosingCompositeLiteral = enclosingCompositeLiteral(c.path[i:], node.Pos(), c.pkg.TypesInfo())
+							inf = c.reverseInferExpectedCallParam(inf, node, sig)
+							break Nodes
+						}
+					}
+
 					inf = c.expectedCallParamType(inf, node, sig)
 				}
 
@@ -2531,55 +2544,66 @@ Nodes:
 	return inf
 }
 
-func reverseInferSignature(sig *types.Signature, targetType []types.Type) []types.Type {
-	if sig.Results().Len() != len(targetType) {
-		return nil
-	}
-
-	tparams := []*types.TypeParam{}
-	targs := []types.Type{}
-	for i := range sig.TypeParams().Len() {
-		tparams = append(tparams, sig.TypeParams().At(i))
-		targs = append(targs, nil)
-	}
-
-	u := newUnifier(tparams, targs)
-	for i, assignee := range targetType {
-		// reverseInferSignature instantiates the call site of a generic function
-		// based on the expected return types. Returns nil if inference fails or is invalid.
-		//
-		// targetType is the expected return types of the function after instantiation.
-		if !u.unify(sig.Results().At(i).Type(), assignee, unifyMode(unifyModeExact)) {
-			return nil
+func (c *completer) numTypeArgs(callExpr *ast.CallExpr) int {
+	switch fun := callExpr.Fun.(type) {
+	case *ast.IndexListExpr:
+		return len(fun.Indices)
+	case *ast.IndexExpr:
+		if typ, ok := c.pkg.TypesInfo().Types[fun.Index]; ok && typeIsValid(typ.Type) {
+			return 1
 		}
 	}
-
-	substs := []types.Type{}
-	for i := 0; i < sig.TypeParams().Len(); i++ {
-		if v := u.handles[sig.TypeParams().At(i)]; v != nil && *v != nil {
-			substs = append(substs, *v)
-		} else {
-			substs = append(substs, nil)
-		}
-	}
-
-	return substs
+	return 0
 }
 
-func (c *completer) reverseInferredSubstitions(inf candidateInference, sig *types.Signature) []types.Type {
-	targetType := []types.Type{}
+// reverseInferSignature instantiates the call site of a generic function
+// based on the expected return types. Returns false if inference fails or is invalid.
+func reverseInferSignature(sig *types.Signature, targetType []types.Type) ([]types.Type, bool) {
+	if sig.Results().Len() != len(targetType) || len(targetType) == 0 {
+		return nil, false
+	}
+
+	tparams := make([]*types.TypeParam, sig.TypeParams().Len())
+	for i := range sig.TypeParams().Len() {
+		tparams[i] = sig.TypeParams().At(i)
+	}
+
+	u := newUnifier(tparams, make([]types.Type, sig.TypeParams().Len()))
+	for i, assignee := range targetType {
+		// This unification does not check the constraints of the type parameters.
+		if !u.unify(sig.Results().At(i).Type(), assignee, unifyMode(unifyModeExact)) {
+			return nil, false
+		}
+	}
+
+	substs := make([]types.Type, sig.TypeParams().Len())
+	for i := 0; i < sig.TypeParams().Len(); i++ {
+		if sub := u.handles[sig.TypeParams().At(i)]; sub != nil && *sub != nil {
+			// Ensure the inferred subst is assignable to the type parameter's constraint.
+			if !assignableTo(*sub, sig.TypeParams().At(i).Constraint()) {
+				return nil, false
+			}
+			substs[i] = *sub
+		}
+	}
+
+	return substs, true
+}
+
+// resetExpectedType resets the inference and returns the previous
+// expected inference type.
+func (c *completer) resetExpectedType(inf *candidateInference) []types.Type {
+	var targetType []types.Type
 	if inf.assignees != nil {
 		targetType = inf.assignees
 		inf.assignees = nil
 	} else if c.enclosingCompositeLiteral != nil && !c.wantStructFieldCompletions() {
 		targetType = append(targetType, c.expectedCompositeLiteralType())
 	} else if t := inf.objType; t != nil {
-		inf.objType = nil
 		targetType = append(targetType, t)
-	} else {
-		return nil
+		inf.objType = nil
 	}
-	return reverseInferSignature(sig, targetType)
+	return targetType
 }
 
 // reverseInferExpectedTypeParam uses inferences and completion parameters from the parent scope
@@ -2587,23 +2611,15 @@ func (c *completer) reverseInferredSubstitions(inf candidateInference, sig *type
 //
 // inf is expected to contain inferences based on the parent of the CallExpr node.
 func (c *completer) reverseInferExpectedTypeParam(inf candidateInference, expectedConstraint types.Type, typeParamIdx int, sig *types.Signature) candidateInference {
-	if typeParamIdx >= sig.TypeParams().Len() {
-		inf.objType = nil
-		inf.assignees = nil
-		return inf
+	substs, ok := reverseInferSignature(sig, c.resetExpectedType(&inf))
+	if ok && len(substs) > 0 && substs[typeParamIdx] != nil {
+		inf.objType = substs[typeParamIdx]
+	} else {
+		// Default to the constraint if no viable substition.
+		inf.objType = expectedConstraint
 	}
-
-	substs := c.reverseInferredSubstitions(inf, sig)
-	if substs != nil && len(substs) > 0 {
-		if substs[typeParamIdx] != nil {
-			inf.objType = substs[typeParamIdx]
-		} else {
-			// default to the constraint if no viable substition
-			inf.objType = expectedConstraint
-		}
-		inf.typeName.wantTypeName = true
-		inf.typeName.isTypeParam = true
-	}
+	inf.typeName.wantTypeName = true
+	inf.typeName.isTypeParam = true
 	return inf
 }
 
@@ -2612,9 +2628,9 @@ func (c *completer) reverseInferExpectedTypeParam(inf candidateInference, expect
 //
 // inf is expected to contain inferences based on the parent of the CallExpr node.
 func (c *completer) reverseInferExpectedCallParam(inf candidateInference, node *ast.CallExpr, sig *types.Signature) candidateInference {
-	substs := c.reverseInferredSubstitions(inf, sig)
-	if substs == nil {
-		return inf
+	substs, ok := reverseInferSignature(sig, c.resetExpectedType(&inf))
+	if !ok {
+		return c.expectedCallParamType(inf, node, sig)
 	}
 
 	for i := range substs {
@@ -2627,17 +2643,15 @@ func (c *completer) reverseInferExpectedCallParam(inf candidateInference, node *
 		if inst, ok := inst.(*types.Signature); ok {
 			inf = c.expectedCallParamType(inf, node, inst)
 
-			// Interface type variants shouldn't be candidates as arguments if the caller isn't
-			// explicitly instantiated
+			// Interface variants can't be passed if the caller isn't
+			// explicitly instantiated. Completions must be exactly the interface type.
 			//
 			// func generic[T any](x T) T { return x }
 			// var x someInterface = generic(someImplementor{})
 			//                              ^^ wanted generic[someInterface] but got generic[someImplementor]
 			// When offering completions, add a conversion if necessary.
 			//                       generic(someInterface(someImplementor{}))
-			if types.IsInterface(inf.objType) {
-				inf.convertibleTo = inf.objType
-			}
+			inf.needsExactType = true
 		}
 	}
 	return inf
@@ -3124,12 +3138,6 @@ func (ci *candidateInference) candTypeMatches(cand *candidate) bool {
 		}
 
 		if ci.convertibleTo != nil && convertibleTo(candType, ci.convertibleTo) {
-			// Candidate implements an interface, but needs explicit conversion to the interface
-			// type. This happens when passing arguments to a generic function.
-			if ci.objType != nil && types.IsInterface(ci.objType) && !types.Identical(candType, ci.convertibleTo) {
-				cand.score *= 0.95 // should rank barely lower if it needs a conversion, even though it's perfectly valid
-				cand.convertTo = ci.objType
-			}
 			return true
 		}
 
@@ -3162,6 +3170,14 @@ func (ci *candidateInference) candTypeMatches(cand *candidate) bool {
 
 			if expType == variadicType {
 				cand.mods = append(cand.mods, takeDotDotDot)
+			}
+
+			// Candidate matches, but isn't exactly identical to the expected type.
+			// Apply a conversion to allow it to match.
+			if ci.needsExactType && !types.Identical(candType, expType) {
+				cand.convertTo = expType
+				// Ranks barely lower if it needs a conversion, even though it's perfectly valid.
+				cand.score *= 0.95
 			}
 
 			// Lower candidate score for untyped conversions. This avoids
