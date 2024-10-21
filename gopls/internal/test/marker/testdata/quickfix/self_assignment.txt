@@ -1,0 +1,19 @@
+Test of the suggested fix to remove unnecessary assignments.
+
+-- a.go --
+package quickfix
+
+import (
+	"log"
+)
+
+func goodbye() {
+	s := "hiiiiiii"
+	s = s //@quickfix("s = s", re"self-assignment", fix)
+	log.Print(s)
+}
+
+-- @fix/a.go --
+@@ -9 +9 @@
+-	s = s //@quickfix("s = s", re"self-assignment", fix)
++	 //@quickfix("s = s", re"self-assignment", fix)

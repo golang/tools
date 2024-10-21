@@ -4,7 +4,7 @@ This test checks the quick fix for undefined functions.
 package missingfunction
 
 func channels(s string) {
-	undefinedChannels(c()) //@suggestedfix("undefinedChannels", re"(undeclared|undefined)", channels)
+	undefinedChannels(c()) //@quickfix("undefinedChannels", re"(undeclared|undefined)", channels)
 }
 
 func c() (<-chan string, chan string) {
@@ -21,7 +21,7 @@ package missingfunction
 
 func consecutiveParams() {
 	var s string
-	undefinedConsecutiveParams(s, s) //@suggestedfix("undefinedConsecutiveParams", re"(undeclared|undefined)", consecutive)
+	undefinedConsecutiveParams(s, s) //@quickfix("undefinedConsecutiveParams", re"(undeclared|undefined)", consecutive)
 }
 -- @consecutive/consecutive.go --
 @@ -7 +7,4 @@
@@ -34,7 +34,7 @@ package missingfunction
 
 func errorParam() {
 	var err error
-	undefinedErrorParam(err) //@suggestedfix("undefinedErrorParam", re"(undeclared|undefined)", error)
+	undefinedErrorParam(err) //@quickfix("undefinedErrorParam", re"(undeclared|undefined)", error)
 }
 -- @error/error.go --
 @@ -7 +7,4 @@
@@ -48,7 +48,7 @@ package missingfunction
 type T struct{}
 
 func literals() {
-	undefinedLiterals("hey compiler", T{}, &T{}) //@suggestedfix("undefinedLiterals", re"(undeclared|undefined)", literals)
+	undefinedLiterals("hey compiler", T{}, &T{}) //@quickfix("undefinedLiterals", re"(undeclared|undefined)", literals)
 }
 -- @literals/literals.go --
 @@ -8 +8,4 @@
@@ -62,7 +62,7 @@ package missingfunction
 import "time"
 
 func operation() {
-	undefinedOperation(10 * time.Second) //@suggestedfix("undefinedOperation", re"(undeclared|undefined)", operation)
+	undefinedOperation(10 * time.Second) //@quickfix("undefinedOperation", re"(undeclared|undefined)", operation)
 }
 -- @operation/operation.go --
 @@ -8 +8,4 @@
@@ -75,7 +75,7 @@ package missingfunction
 
 func selector() {
 	m := map[int]bool{}
-	undefinedSelector(m[1]) //@suggestedfix("undefinedSelector", re"(undeclared|undefined)", selector)
+	undefinedSelector(m[1]) //@quickfix("undefinedSelector", re"(undeclared|undefined)", selector)
 }
 -- @selector/selector.go --
 @@ -7 +7,4 @@
@@ -87,7 +87,7 @@ func selector() {
 package missingfunction
 
 func slice() {
-	undefinedSlice([]int{1, 2}) //@suggestedfix("undefinedSlice", re"(undeclared|undefined)", slice)
+	undefinedSlice([]int{1, 2}) //@quickfix("undefinedSlice", re"(undeclared|undefined)", slice)
 }
 -- @slice/slice.go --
 @@ -6 +6,4 @@
@@ -99,7 +99,7 @@ func slice() {
 package missingfunction
 
 func tuple() {
-	undefinedTuple(b()) //@suggestedfix("undefinedTuple", re"(undeclared|undefined)", tuple)
+	undefinedTuple(b()) //@quickfix("undefinedTuple", re"(undeclared|undefined)", tuple)
 }
 
 func b() (string, error) {
@@ -117,7 +117,7 @@ package missingfunction
 func uniqueArguments() {
 	var s string
 	var i int
-	undefinedUniqueArguments(s, i, s) //@suggestedfix("undefinedUniqueArguments", re"(undeclared|undefined)", unique)
+	undefinedUniqueArguments(s, i, s) //@quickfix("undefinedUniqueArguments", re"(undeclared|undefined)", unique)
 }
 -- @unique/unique_params.go --
 @@ -8 +8,4 @@

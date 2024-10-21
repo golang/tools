@@ -561,8 +561,8 @@ var actionMarkerFuncs = map[string]func(marker){
 	"selectionrange":   actionMarkerFunc(selectionRangeMarker),
 	"signature":        actionMarkerFunc(signatureMarker),
 	"snippet":          actionMarkerFunc(snippetMarker),
-	"suggestedfix":     actionMarkerFunc(suggestedfixMarker),
-	"suggestedfixerr":  actionMarkerFunc(suggestedfixErrMarker),
+	"quickfix":         actionMarkerFunc(quickfixMarker),
+	"quickfixerr":      actionMarkerFunc(quickfixErrMarker),
 	"symbol":           actionMarkerFunc(symbolMarker),
 	"token":            actionMarkerFunc(tokenMarker),
 	"typedef":          actionMarkerFunc(typedefMarker),
@@ -932,7 +932,7 @@ type markerTestRun struct {
 	settings map[string]any
 
 	// Collected information.
-	// Each @diag/@suggestedfix marker eliminates an entry from diags.
+	// Each @diag/@quickfix marker eliminates an entry from diags.
 	values map[expect.Identifier]any
 	diags  map[protocol.Location][]protocol.Diagnostic // diagnostics by position; location end == start
 
@@ -2047,13 +2047,11 @@ func (mark marker) consumeExtraNotes(name string, f func(marker)) {
 	}
 }
 
-// suggestedfixMarker implements the @suggestedfix(location, regexp,
+// quickfixMarker implements the @quickfix(location, regexp,
 // kind, golden) marker. It acts like @diag(location, regexp), to set
 // the expectation of a diagnostic, but then it applies the "quickfix"
 // code action (which must be unique) suggested by the matched diagnostic.
-//
-// TODO(adonovan): rename to @quickfix, since that's the LSP term.
-func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, golden *Golden) {
+func quickfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, golden *Golden) {
 	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
 	// Find and remove the matching diagnostic.
 	diag, ok := removeDiagnostic(mark, loc, re)
@@ -2065,7 +2063,7 @@ func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, g
 	// Apply the fix it suggests.
 	changed, err := codeAction(mark.run.env, loc.URI, diag.Range, "quickfix", &diag)
 	if err != nil {
-		mark.errorf("suggestedfix failed: %v. (Use @suggestedfixerr for expected errors.)", err)
+		mark.errorf("quickfix failed: %v. (Use @quickfixerr for expected errors.)", err)
 		return
 	}
 
@@ -2073,7 +2071,7 @@ func suggestedfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, g
 	checkDiffs(mark, changed, golden)
 }
 
-func suggestedfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp, wantErr stringMatcher) {
+func quickfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp, wantErr stringMatcher) {
 	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
 	// Find and remove the matching diagnostic.
 	diag, ok := removeDiagnostic(mark, loc, re)
@@ -2188,7 +2186,7 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 		//
 		// The client makes an ExecuteCommand RPC to the server,
 		// which dispatches it to the ApplyFix handler.
-		// ApplyFix dispatches to the "stub_methods" suggestedfix hook (the meat).
+		// ApplyFix dispatches to the "stub_methods" fixer (the meat).
 		// The server then makes an ApplyEdit RPC to the client,
 		// whose WorkspaceEditFunc hook temporarily gathers the edits
 		// instead of applying them.

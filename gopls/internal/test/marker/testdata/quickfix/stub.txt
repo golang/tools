@@ -27,7 +27,7 @@ import "io"
 // then our implementation must add the import/package selector
 // in the concrete method if the concrete type is outside of the interface
 // package
-var _ io.ReaderFrom = &readerFrom{} //@suggestedfix("&readerFrom", re"cannot use", readerFrom)
+var _ io.ReaderFrom = &readerFrom{} //@quickfix("&readerFrom", re"cannot use", readerFrom)
 
 type readerFrom struct{}
 -- @readerFrom/add_selector.go --
@@ -44,7 +44,7 @@ import "io"
 
 func _() {
 	var br io.ByteWriter
-	br = &byteWriter{} //@suggestedfix("&", re"does not implement", assign)
+	br = &byteWriter{} //@quickfix("&", re"does not implement", assign)
 	_ = br
 }
 
@@ -64,7 +64,7 @@ import "io"
 func _() {
 	var br io.ByteWriter
 	var i int
-	i, br = 1, &multiByteWriter{} //@suggestedfix("&", re"does not implement", assign_multivars)
+	i, br = 1, &multiByteWriter{} //@quickfix("&", re"does not implement", assign_multivars)
 	_, _ = i, br
 }
 
@@ -80,7 +80,7 @@ type multiByteWriter struct{}
 package stub
 
 func main() {
-	check(&callExpr{}) //@suggestedfix("&", re"does not implement", call_expr)
+	check(&callExpr{}) //@quickfix("&", re"does not implement", call_expr)
 }
 
 func check(err error) {
@@ -105,7 +105,7 @@ import (
 	"sort"
 )
 
-var _ embeddedInterface = (*embeddedConcrete)(nil) //@suggestedfix("(", re"does not implement", embedded)
+var _ embeddedInterface = (*embeddedConcrete)(nil) //@quickfix("(", re"does not implement", embedded)
 
 type embeddedConcrete struct{}
 
@@ -139,7 +139,7 @@ type embeddedInterface interface {
 package stub
 
 func _() {
-	var br error = &customErr{} //@suggestedfix("&", re"does not implement", err)
+	var br error = &customErr{} //@quickfix("&", re"does not implement", err)
 	_ = br
 }
 
@@ -159,7 +159,7 @@ import (
 )
 
 func newCloser() io.Closer {
-	return closer{} //@suggestedfix("c", re"does not implement", function_return)
+	return closer{} //@quickfix("c", re"does not implement", function_return)
 }
 
 type closer struct{}
@@ -177,7 +177,7 @@ import "io"
 
 // This file tests that that the stub method generator accounts for concrete
 // types that have type parameters defined.
-var _ io.ReaderFrom = &genReader[string, int]{} //@suggestedfix("&genReader", re"does not implement", generic_receiver)
+var _ io.ReaderFrom = &genReader[string, int]{} //@quickfix("&genReader", re"does not implement", generic_receiver)
 
 type genReader[T, Y any] struct {
 	T T
@@ -205,7 +205,7 @@ import (
 
 var (
 	_ Reader
-	_ zlib.Resetter = (*ignoredResetter)(nil) //@suggestedfix("(", re"does not implement", ignored_imports)
+	_ zlib.Resetter = (*ignoredResetter)(nil) //@quickfix("(", re"does not implement", ignored_imports)
 )
 
 type ignoredResetter struct{}
@@ -223,7 +223,7 @@ type I interface{ error }
 
 type C int
 
-var _ I = C(0) //@suggestedfix("C", re"does not implement", issue2606)
+var _ I = C(0) //@quickfix("C", re"does not implement", issue2606)
 -- @issue2606/issue2606.go --
 @@ -7 +7,5 @@
 +// Error implements I.
@@ -240,7 +240,7 @@ import "io"
 // has multiple values on the same line can still be
 // analyzed correctly to target the interface implementation
 // diagnostic.
-var one, two, three io.Reader = nil, &multiVar{}, nil //@suggestedfix("&", re"does not implement", multi_var)
+var one, two, three io.Reader = nil, &multiVar{}, nil //@quickfix("&", re"does not implement", multi_var)
 
 type multiVar struct{}
 -- @multi_var/multi_var.go --
@@ -256,7 +256,7 @@ package stub
 import "io"
 
 func getReaderFrom() io.ReaderFrom {
-	return &pointerImpl{} //@suggestedfix("&", re"does not implement", pointer)
+	return &pointerImpl{} //@quickfix("&", re"does not implement", pointer)
 }
 
 type pointerImpl struct{}
@@ -275,7 +275,7 @@ import (
 	myio "io"
 )
 
-var _ zlib.Resetter = &myIO{} //@suggestedfix("&", re"does not implement", renamed_import)
+var _ zlib.Resetter = &myIO{} //@quickfix("&", re"does not implement", renamed_import)
 var _ myio.Reader
 
 type myIO struct{}
@@ -297,7 +297,7 @@ import (
 // method references an import from its own package
 // that the concrete type does not yet import, and that import happens
 // to be renamed, then we prefer the renaming of the interface.
-var _ other.Interface = &otherInterfaceImpl{} //@suggestedfix("&otherInterfaceImpl", re"does not implement", renamed_import_iface)
+var _ other.Interface = &otherInterfaceImpl{} //@quickfix("&otherInterfaceImpl", re"does not implement", renamed_import_iface)
 
 type otherInterfaceImpl struct{}
 -- @renamed_import_iface/renamed_import_iface.go --
@@ -317,7 +317,7 @@ import (
 	"io"
 )
 
-var _ io.Writer = writer{} //@suggestedfix("w", re"does not implement", stdlib)
+var _ io.Writer = writer{} //@quickfix("w", re"does not implement", stdlib)
 
 type writer struct{}
 -- @stdlib/stdlib.go --

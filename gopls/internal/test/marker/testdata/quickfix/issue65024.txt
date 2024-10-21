@@ -22,7 +22,7 @@ import "example.com/a/v2"
 
 type B struct{}
 
-var _ a.I = &B{} //@ suggestedfix("&B{}", re"does not implement", out)
+var _ a.I = &B{} //@ quickfix("&B{}", re"does not implement", out)
 
 // This line makes the diff tidier.
 
@@ -55,7 +55,7 @@ package b
 
 type B struct{}
 
-var _ I = &B{} //@ suggestedfix("&B{}", re"does not implement", out2)
+var _ I = &B{} //@ quickfix("&B{}", re"does not implement", out2)
 
 // This line makes the diff tidier.
 

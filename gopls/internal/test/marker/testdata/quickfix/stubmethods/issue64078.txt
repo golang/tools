@@ -16,7 +16,7 @@ type I interface {
 	M4() (aa string)
 }
 
-var _ I = &A{} //@suggestedfix(re"&A..", re"missing method M", stub)
+var _ I = &A{} //@quickfix(re"&A..", re"missing method M", stub)
 -- @stub/p.go --
 @@ -5 +5,15 @@
 +// M2 implements I.

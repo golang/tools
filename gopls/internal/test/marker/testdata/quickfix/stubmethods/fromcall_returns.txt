@@ -10,7 +10,7 @@ type A struct{}
 
 func inferFromParam() {
 	a := A{}
-	f(a.as_param()) //@suggestedfix("as_param", re"has no field or method", infer_param)
+	f(a.as_param()) //@quickfix("as_param", re"has no field or method", infer_param)
 }
 
 func f(i int) {}
@@ -28,7 +28,7 @@ type Assign struct{}
 func inferReturnfromAssign() {
 	var assign int //@diag("assign",re"not used")
 	a := Assign{}
-	assign = a.as_assign() //@suggestedfix("as_assign", re"has no field or method", infer_assign)
+	assign = a.as_assign() //@quickfix("as_assign", re"has no field or method", infer_assign)
 }
 -- @infer_assign/assign.go --
 @@ -5 +5,4 @@
@@ -45,7 +45,7 @@ func inferReturnfromMultipleAssign() {
 	var assign1 int //@diag("assign1",re"not used")
 	var assign2 int //@diag("assign2",re"not used")
 	m := MultiAssign{}
-	assign1, assign2 = m.multi_assign() //@suggestedfix("multi_assign", re"has no field or method", infer_multiple_assign)
+	assign1, assign2 = m.multi_assign() //@quickfix("multi_assign", re"has no field or method", infer_multiple_assign)
 }
 -- @infer_multiple_assign/multiple_assign.go --
 @@ -5 +5,4 @@
@@ -60,7 +60,7 @@ type MultiReturn struct{}
 
 func inferMultipleReturnInParam() {
 	m := MultiReturn{}
-	m.param_has_multi_return(multiReturn()) //@suggestedfix("param_has_multi_return", re"has no field or method", multiple_return)
+	m.param_has_multi_return(multiReturn()) //@quickfix("param_has_multi_return", re"has no field or method", multiple_return)
 }
 
 func multiReturn() (int, int) {
@@ -79,7 +79,7 @@ type E struct{}
 
 func all_error() {
 	e := E{}
-	errorFunc(e.errors(undefined1(), undefined2(), undefined3{})) //@suggestedfix("errors", re"has no field or method", all_error),diag("undefined1",re"undefined"),diag("undefined2",re"undefined"),diag("undefined3",re"undefined")
+	errorFunc(e.errors(undefined1(), undefined2(), undefined3{})) //@quickfix("errors", re"has no field or method", all_error),diag("undefined1",re"undefined"),diag("undefined2",re"undefined"),diag("undefined3",re"undefined")
 }
 func errorFunc(u undefined4) {} //@diag("undefined4",re"undefined")
 -- @all_error/error_nodes.go --
@@ -95,7 +95,7 @@ type Paren struct{}
 
 func paren() {
 	p := Paren{}
-	fn()((p.surroundingParen())) //@suggestedfix("surroundingParen", re"has no field or method", surrounding_paren)
+	fn()((p.surroundingParen())) //@quickfix("surroundingParen", re"has no field or method", surrounding_paren)
 }
 
 func fn() func(i int) {

@@ -20,12 +20,12 @@ module mod.com/a
 
 go 1.14
 
-require example.com v1.0.0 //@suggestedfix("require", re"not used", a)
+require example.com v1.0.0 //@quickfix("require", re"not used", a)
 
 -- @a/a/go.mod --
 @@ -4,3 +4 @@
 -
--require example.com v1.0.0 //@suggestedfix("require", re"not used", a)
+-require example.com v1.0.0 //@quickfix("require", re"not used", a)
 -
 -- a/main.go --
 package main
@@ -36,12 +36,12 @@ module mod.com/b
 
 go 1.14
 
-require example.com v1.0.0 //@suggestedfix("require", re"not used", b)
+require example.com v1.0.0 //@quickfix("require", re"not used", b)
 
 -- @b/b/go.mod --
 @@ -4,3 +4 @@
 -
--require example.com v1.0.0 //@suggestedfix("require", re"not used", b)
+-require example.com v1.0.0 //@quickfix("require", re"not used", b)
 -
 -- b/main.go --
 package main

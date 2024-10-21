@@ -10,7 +10,7 @@ import (
 	"os"
 )
 
-//go:embed embed.txt //@suggestedfix("//go:embed", re`must import "embed"`, fix_import)
+//go:embed embed.txt //@quickfix("//go:embed", re`must import "embed"`, fix_import)
 var t string
 
 func unused() {

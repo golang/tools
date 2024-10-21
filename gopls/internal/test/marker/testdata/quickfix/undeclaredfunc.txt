@@ -6,14 +6,14 @@ TODO(adonovan): infer the result variables from the context (int, in this case).
 -- a.go --
 package a
 
-func _() int { return f(1, "") } //@suggestedfix(re"f.1", re"unde(fined|clared name): f", x)
+func _() int { return f(1, "") } //@quickfix(re"f.1", re"unde(fined|clared name): f", x)
 
 -- @x/a.go --
 @@ -3 +3 @@
--func _() int { return f(1, "") } //@suggestedfix(re"f.1", re"unde(fined|clared name): f", x)
+-func _() int { return f(1, "") } //@quickfix(re"f.1", re"unde(fined|clared name): f", x)
 +func _() int { return f(1, "") }
 @@ -5 +5,4 @@
 +func f(i int, s string) {
 +	panic("unimplemented")
-+} //@suggestedfix(re"f.1", re"unde(fined|clared name): f", x)
++} //@quickfix(re"f.1", re"unde(fined|clared name): f", x)
 +

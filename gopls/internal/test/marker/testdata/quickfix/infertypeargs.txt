@@ -15,11 +15,11 @@ func app[S interface{ ~[]E }, E interface{}](s S, e E) S {
 func _() {
 	_ = app[[]int]
 	_ = app[[]int, int]
-	_ = app[[]int]([]int{}, 0) //@suggestedfix("[[]int]", re"unnecessary type arguments", infer)
+	_ = app[[]int]([]int{}, 0) //@quickfix("[[]int]", re"unnecessary type arguments", infer)
 	_ = app([]int{}, 0)
 }
 
 -- @infer/p.go --
 @@ -10 +10 @@
--	_ = app[[]int]([]int{}, 0) //@suggestedfix("[[]int]", re"unnecessary type arguments", infer)
-+	_ = app([]int{}, 0) //@suggestedfix("[[]int]", re"unnecessary type arguments", infer)
+-	_ = app[[]int]([]int{}, 0) //@quickfix("[[]int]", re"unnecessary type arguments", infer)
++	_ = app([]int{}, 0) //@quickfix("[[]int]", re"unnecessary type arguments", infer)

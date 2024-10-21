@@ -15,7 +15,7 @@ func F(err ...error) {}
 
 func _() {
 	var x error
-	F(x, C(0)) //@suggestedfix(re"C.0.", re"missing method Error", stub)
+	F(x, C(0)) //@quickfix(re"C.0.", re"missing method Error", stub)
 }
 -- @stub/main.go --
 @@ -5 +5,5 @@

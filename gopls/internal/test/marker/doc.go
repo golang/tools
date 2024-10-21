@@ -219,14 +219,14 @@ The following markers are supported within marker tests:
     signatureHelp at the given location should match the provided string, with
     the active parameter (an index) highlighted.
 
-  - suggestedfix(location, regexp, golden): like diag, the location and
+  - quickfix(location, regexp, golden): like diag, the location and
     regexp identify an expected diagnostic, which must have exactly one
     associated "quickfix" code action.
     This action is executed for its editing effects on the source files.
     Like rename, the golden directory contains the expected transformed files.
 
-  - suggestedfixerr(location, regexp, wantError): specifies that the
-    suggestedfix operation should fail with an error that matches the expectation.
+  - quickfixerr(location, regexp, wantError): specifies that the
+    quickfix operation should fail with an error that matches the expectation.
     (Failures in the computation to offer a fix do not generally result
     in LSP errors, so this marker is not appropriate for testing them.)
 
@@ -372,6 +372,6 @@ Note that -update does not cause missing @diag or @loc markers to be added.
   - If possible, improve handling for optional arguments. Rather than have
     multiple variations of a marker, it would be nice to support a more
     flexible signature: can codeaction, codeactionedit, codeactionerr, and
-    suggestedfix be consolidated?
+    quickfix be consolidated?
 */
 package marker

@@ -9,7 +9,7 @@ go 1.12
 package p
 
 func a() {
-	z, _ := 1+y, 11 //@suggestedfix("y", re"(undeclared name|undefined): y", a)
+	z, _ := 1+y, 11 //@quickfix("y", re"(undeclared name|undefined): y", a)
 	_ = z
 }
 
@@ -21,7 +21,7 @@ package p
 
 func b() {
 	if 100 < 90 {
-	} else if 100 > n+2 { //@suggestedfix("n", re"(undeclared name|undefined): n", b)
+	} else if 100 > n+2 { //@quickfix("n", re"(undeclared name|undefined): n", b)
 	}
 }
 
@@ -32,7 +32,7 @@ func b() {
 package p
 
 func c() {
-	for i < 200 { //@suggestedfix("i", re"(undeclared name|undefined): i", c)
+	for i < 200 { //@quickfix("i", re"(undeclared name|undefined): i", c)
 	}
 	r() //@diag("r", re"(undeclared name|undefined): r")
 }

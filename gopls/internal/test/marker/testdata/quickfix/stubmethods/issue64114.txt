@@ -5,7 +5,7 @@ package stub
 
 // Regression test for issue #64114: code action "implement" is not listed.
 
-var _ WriteTest = (*WriteStruct)(nil) //@suggestedfix("(", re"does not implement", issue64114)
+var _ WriteTest = (*WriteStruct)(nil) //@quickfix("(", re"does not implement", issue64114)
 
 type WriterTwoStruct struct{}
 

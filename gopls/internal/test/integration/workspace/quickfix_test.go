@@ -341,7 +341,7 @@ func main() {}
 }
 
 func TestStubMethods64087(t *testing.T) {
-	// We can't use the @fix or @suggestedfixerr or @codeactionerr
+	// We can't use the @fix or @quickfixerr or @codeactionerr
 	// because the error now reported by the corrected logic
 	// is internal and silently causes no fix to be offered.
 	//
@@ -404,7 +404,7 @@ type myerror struct{any}
 }
 
 func TestStubMethods64545(t *testing.T) {
-	// We can't use the @fix or @suggestedfixerr or @codeactionerr
+	// We can't use the @fix or @quickfixerr or @codeactionerr
 	// because the error now reported by the corrected logic
 	// is internal and silently causes no fix to be offered.
 	//
