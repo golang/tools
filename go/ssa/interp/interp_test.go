@@ -136,6 +136,7 @@ var testdataTests = []string{
 	"fixedbugs/issue52835.go",
 	"fixedbugs/issue55086.go",
 	"fixedbugs/issue66783.go",
+	"fixedbugs/issue69929.go",
 	"typeassert.go",
 	"zeros.go",
 	"slice2array.go",
