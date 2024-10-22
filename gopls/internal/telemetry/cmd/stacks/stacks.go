@@ -324,8 +324,8 @@ func main() {
 			}
 
 			if prev := claimedBy[id]; prev != nil && prev != issue {
-				log.Printf("stack %s is claimed by issues #%d and #%d",
-					id, prev.Number, issue.Number)
+				log.Printf("stack %s is claimed by issues #%d and #%d:%s",
+					id, prev.Number, issue.Number, strings.ReplaceAll("\n"+stack, "\n", "\n- "))
 				continue
 			}
 			if false {
