@@ -1043,3 +1043,71 @@ func testAliases(t *testing.T, f func(*testing.T)) {
 		})
 	}
 }
+
+type importMap map[string]*types.Package
+
+func (m importMap) Import(path string) (*types.Package, error) { return m[path], nil }
+
+func TestIssue69912(t *testing.T) {
+	fset := token.NewFileSet()
+
+	check := func(pkgname, src string, imports importMap) (*types.Package, error) {
+		f, err := goparser.ParseFile(fset, "a.go", src, 0)
+		if err != nil {
+			return nil, err
+		}
+		config := &types.Config{
+			Importer: imports,
+		}
+		return config.Check(pkgname, fset, []*ast.File{f}, nil)
+	}
+
+	const libSrc = `package lib
+
+type T int
+`
+
+	lib, err := check("lib", libSrc, nil)
+	if err != nil {
+		t.Fatalf("Checking lib: %v", err)
+	}
+
+	// Export it.
+	var out bytes.Buffer
+	if err := gcimporter.IExportData(&out, fset, lib); err != nil {
+		t.Fatalf("export: %v", err) // any failure to export is a bug
+	}
+
+	// Re-import it.
+	imports := make(map[string]*types.Package)
+	_, lib2, err := gcimporter.IImportData(fset, imports, out.Bytes(), "lib")
+	if err != nil {
+		t.Fatalf("import: %v", err) // any failure of export+import is a bug.
+	}
+
+	// Use the resulting package concurrently, via dot-imports.
+
+	const pSrc = `package p
+
+import . "lib"
+
+type S struct {
+	f T
+}
+`
+	importer := importMap{
+		"lib": lib2,
+	}
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := check("p", pSrc, importer)
+			if err != nil {
+				t.Errorf("check failed: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+}
