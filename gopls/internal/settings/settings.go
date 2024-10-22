@@ -135,11 +135,6 @@ type BuildOptions struct {
 	// gopls has to do to keep your workspace up to date.
 	ExpandWorkspaceToModule bool `status:"experimental"`
 
-	// AllowImplicitNetworkAccess disables GOPROXY=off, allowing implicit module
-	// downloads rather than requiring user action. This option will eventually
-	// be removed.
-	AllowImplicitNetworkAccess bool `status:"experimental"`
-
 	// StandaloneTags specifies a set of build constraints that identify
 	// individual Go source files that make up the entire main package of an
 	// executable.
@@ -1138,10 +1133,7 @@ func (o *Options) setOne(name string, value any) error {
 		return setBool(&o.AnalysisProgressReporting, value)
 
 	case "allowImplicitNetworkAccess":
-		if err := setBool(&o.AllowImplicitNetworkAccess, value); err != nil {
-			return err
-		}
-		return softErrorf("gopls setting \"allowImplicitNetworkAccess\" is deprecated.\nPlease comment on https://go.dev/issue/66861 if this impacts your workflow.")
+		return deprecatedError("")
 
 	case "standaloneTags":
 		return setStringSlice(&o.StandaloneTags, value)

@@ -516,7 +516,7 @@ func (s *Snapshot) GoCommandInvocation(allowNetwork bool, inv *gocommand.Invocat
 	)
 	inv.BuildFlags = slices.Clone(s.Options().BuildFlags)
 
-	if !allowNetwork && !s.Options().AllowImplicitNetworkAccess {
+	if !allowNetwork {
 		inv.Env = append(inv.Env, "GOPROXY=off")
 	}
 

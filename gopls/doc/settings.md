@@ -119,17 +119,6 @@ gopls has to do to keep your workspace up to date.
 
 Default: `true`.
 
-<a id='allowImplicitNetworkAccess'></a>
-### `allowImplicitNetworkAccess bool`
-
-**This setting is experimental and may be deleted.**
-
-allowImplicitNetworkAccess disables GOPROXY=off, allowing implicit module
-downloads rather than requiring user action. This option will eventually
-be removed.
-
-Default: `false`.
-
 <a id='standaloneTags'></a>
 ### `standaloneTags []string`
 
