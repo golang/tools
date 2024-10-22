@@ -156,6 +156,10 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		}
 	}
 
+	if err != nil {
+		return fmt.Errorf("packages.Load error: %w", err)
+	}
+
 	if standalone {
 		// Handle standalone package result.
 		//
@@ -173,20 +177,29 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		if s.view.typ == GoPackagesDriverView {
 			errorf = fmt.Errorf // all bets are off
 		}
+		for _, pkg := range pkgs {
+			// Don't report bugs if any packages have errors.
+			// For example: given go list errors, go/packages may synthesize a
+			// package with ID equal to the query.
+			if len(pkg.Errors) > 0 {
+				errorf = fmt.Errorf
+				break
+			}
+		}
 
 		var standalonePkg *packages.Package
 		for _, pkg := range pkgs {
 			if pkg.ID == "command-line-arguments" {
 				if standalonePkg != nil {
-					return errorf("internal error: go/packages returned multiple standalone packages")
+					return errorf("go/packages returned multiple standalone packages")
 				}
 				standalonePkg = pkg
 			} else if packagesinternal.GetForTest(pkg) == "" && !strings.HasSuffix(pkg.ID, ".test") {
-				return errorf("internal error: go/packages returned unexpected package %q for standalone file", pkg.ID)
+				return errorf("go/packages returned unexpected package %q for standalone file", pkg.ID)
 			}
 		}
 		if standalonePkg == nil {
-			return errorf("internal error: go/packages failed to return non-test standalone package")
+			return errorf("go/packages failed to return non-test standalone package")
 		}
 		if len(standalonePkg.CompiledGoFiles) > 0 {
 			pkgs = []*packages.Package{standalonePkg}
@@ -196,10 +209,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	}
 
 	if len(pkgs) == 0 {
-		if err == nil {
-			err = errNoPackages
-		}
-		return fmt.Errorf("packages.Load error: %w", err)
+		return fmt.Errorf("packages.Load error: %w", errNoPackages)
 	}
 
 	moduleErrs := make(map[string][]packages.Error) // module path -> errors
