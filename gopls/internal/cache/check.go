@@ -66,11 +66,12 @@ type typeCheckBatch struct {
 	handleMu sync.Mutex
 	_handles map[PackageID]*packageHandle
 
-	parseCache     *parseCache
-	fset           *token.FileSet                          // describes all parsed or imported files
-	cpulimit       chan unit                               // concurrency limiter for CPU-bound operations
-	syntaxPackages *futureCache[PackageID, *Package]       // transient cache of in-progress syntax futures
-	importPackages *futureCache[PackageID, *types.Package] // persistent cache of imports
+	parseCache       *parseCache
+	fset             *token.FileSet                          // describes all parsed or imported files
+	cpulimit         chan unit                               // concurrency limiter for CPU-bound operations
+	syntaxPackages   *futureCache[PackageID, *Package]       // transient cache of in-progress syntax futures
+	importPackages   *futureCache[PackageID, *types.Package] // persistent cache of imports
+	gopackagesdriver bool                                    // for bug reporting: were packages loaded with a driver?
 }
 
 // addHandles is called by each goroutine joining the type check batch, to
@@ -237,7 +238,7 @@ func (s *Snapshot) acquireTypeChecking() (*typeCheckBatch, func()) {
 
 	if s.batch == nil {
 		assert(s.batchRef == 0, "miscounted type checking")
-		s.batch = newTypeCheckBatch(s.view.parseCache)
+		s.batch = newTypeCheckBatch(s.view.parseCache, s.view.typ == GoPackagesDriverView)
 	}
 	s.batchRef++
 
@@ -256,14 +257,15 @@ func (s *Snapshot) acquireTypeChecking() (*typeCheckBatch, func()) {
 // shared parseCache.
 //
 // If a non-nil importGraph is provided, imports in this graph will be reused.
-func newTypeCheckBatch(parseCache *parseCache) *typeCheckBatch {
+func newTypeCheckBatch(parseCache *parseCache, gopackagesdriver bool) *typeCheckBatch {
 	return &typeCheckBatch{
-		_handles:       make(map[PackageID]*packageHandle),
-		parseCache:     parseCache,
-		fset:           fileSetWithBase(reservedForParsing),
-		cpulimit:       make(chan unit, runtime.GOMAXPROCS(0)),
-		syntaxPackages: newFutureCache[PackageID, *Package](false),      // don't persist syntax packages
-		importPackages: newFutureCache[PackageID, *types.Package](true), // ...but DO persist imports
+		_handles:         make(map[PackageID]*packageHandle),
+		parseCache:       parseCache,
+		fset:             fileSetWithBase(reservedForParsing),
+		cpulimit:         make(chan unit, runtime.GOMAXPROCS(0)),
+		syntaxPackages:   newFutureCache[PackageID, *Package](false),      // don't persist syntax packages
+		importPackages:   newFutureCache[PackageID, *types.Package](true), // ...but DO persist imports
+		gopackagesdriver: gopackagesdriver,
 	}
 }
 
@@ -479,8 +481,14 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 					// manifest in the export data of mp.PkgPath is
 					// inconsistent with mp.Name. Or perhaps there
 					// are duplicate PkgPath items in the manifest?
-					return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904)",
-						pkg.Name(), item.Name, id, item.Path)
+					if b.gopackagesdriver {
+						return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904) (using GOPACKAGESDRIVER)",
+							pkg.Name(), item.Name, id, item.Path)
+					} else {
+						return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904)",
+							pkg.Name(), item.Name, id, item.Path)
+
+					}
 				}
 			} else {
 				id = importLookup(PackagePath(item.Path))
