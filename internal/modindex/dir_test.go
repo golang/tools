@@ -76,7 +76,7 @@ func TestIncremental(t *testing.T) {
 			}
 		}
 	}
-	if err := IndexModCache(dir, true); err != nil {
+	if err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
 	// add new stuff to the module cache
@@ -90,15 +90,17 @@ func TestIncremental(t *testing.T) {
 			}
 		}
 	}
-	if err := IndexModCache(dir, false); err != nil {
+	if ok, err := Update(dir); err != nil {
 		t.Fatal(err)
+	} else if !ok {
+		t.Error("failed to write updated index")
 	}
 	index2, err := ReadIndex(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// build a fresh index
-	if err := IndexModCache(dir, true); err != nil {
+	if err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
 	index1, err := ReadIndex(dir)
@@ -126,7 +128,7 @@ func TestIncrementalNope(t *testing.T) {
 			}
 		}
 	}
-	if err := IndexModCache(dir, true); err != nil {
+	if err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
 	// add new stuff to the module cache
@@ -140,15 +142,17 @@ func TestIncrementalNope(t *testing.T) {
 			}
 		}
 	}
-	if err := IndexModCache(dir, false); err != nil {
+	if ok, err := Update(dir); err != nil {
 		t.Fatal(err)
+	} else if !ok {
+		t.Error("failed to write updated index")
 	}
 	index2, err := ReadIndex(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// build a fresh index
-	if err := IndexModCache(dir, true); err != nil {
+	if err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
 	index1, err := ReadIndex(dir)
@@ -174,7 +178,7 @@ func TestDirsSinglePath(t *testing.T) {
 				}
 			}
 			// build and check the index
-			if err := IndexModCache(dir, false); err != nil {
+			if err := Create(dir); err != nil {
 				t.Fatal(err)
 			}
 			ix, err := ReadIndex(dir)

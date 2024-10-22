@@ -82,11 +82,11 @@ func init() {
 }
 
 func index(dir string) {
-	modindex.IndexModCache(dir, true)
+	modindex.Create(dir)
 }
 
 func update(dir string) {
-	modindex.IndexModCache(dir, false)
+	modindex.Update(dir)
 }
 
 func query(dir string) {

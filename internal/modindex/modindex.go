@@ -21,36 +21,51 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// Modindex writes an index current as of when it is called.
+// Create always creates a new index for the go module cache that is in cachedir.
+func Create(cachedir string) error {
+	_, err := indexModCache(cachedir, true)
+	return err
+}
+
+// Update the index for the go module cache that is in cachedir,
+// If there is no existing index it will build one.
+// If there are changed directories since the last index, it will
+// write a new one and return true. Otherwise it returns false.
+func Update(cachedir string) (bool, error) {
+	return indexModCache(cachedir, false)
+}
+
+// indexModCache writes an index current as of when it is called.
 // If clear is true the index is constructed from all of GOMODCACHE
 // otherwise the index is constructed from the last previous index
-// and the updates to the cache.
-func IndexModCache(cachedir string, clear bool) error {
+// and the updates to the cache. It returns true if it wrote an index,
+// false otherwise.
+func indexModCache(cachedir string, clear bool) (bool, error) {
 	cachedir, err := filepath.Abs(cachedir)
 	if err != nil {
-		return err
+		return false, err
 	}
 	cd := Abspath(cachedir)
 	future := time.Now().Add(24 * time.Hour) // safely in the future
-	err = modindexTimed(future, cd, clear)
+	ok, err := modindexTimed(future, cd, clear)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return nil
+	return ok, nil
 }
 
 // modindexTimed writes an index current as of onlyBefore.
 // If clear is true the index is constructed from all of GOMODCACHE
 // otherwise the index is constructed from the last previous index
 // and all the updates to the cache before onlyBefore.
-// (this is useful for testing; perhaps it should not be exported)
-func modindexTimed(onlyBefore time.Time, cachedir Abspath, clear bool) error {
+// It returns true if it wrote a new index, false if it wrote nothing.
+func modindexTimed(onlyBefore time.Time, cachedir Abspath, clear bool) (bool, error) {
 	var curIndex *Index
 	if !clear {
 		var err error
 		curIndex, err = ReadIndex(string(cachedir))
 		if clear && err != nil {
-			return err
+			return false, err
 		}
 		// TODO(pjw): check that most of those directorie still exist
 	}
@@ -63,12 +78,16 @@ func modindexTimed(onlyBefore time.Time, cachedir Abspath, clear bool) error {
 		cfg.onlyAfter = curIndex.Changed
 	}
 	if err := cfg.buildIndex(); err != nil {
-		return err
+		return false, err
+	}
+	if len(cfg.newIndex.Entries) == 0 {
+		// no changes, don't write a new index
+		return false, nil
 	}
 	if err := cfg.writeIndex(); err != nil {
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 type work struct {
@@ -86,6 +105,9 @@ func (w *work) buildIndex() error {
 	// so set it now.
 	w.newIndex = &Index{Changed: time.Now(), Cachedir: w.cacheDir}
 	dirs := findDirs(string(w.cacheDir), w.onlyAfter, w.onlyBefore)
+	if len(dirs) == 0 {
+		return nil
+	}
 	newdirs, err := byImportPath(dirs)
 	if err != nil {
 		return err
