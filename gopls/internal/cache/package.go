@@ -10,6 +10,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
+	"slices"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -85,6 +86,14 @@ func (p *syntaxPackage) tests() *testfuncs.Index {
 		p._tests = testfuncs.NewIndex(p.compiledGoFiles, p.typesInfo)
 	})
 	return p._tests
+}
+
+// hasFixedFiles reports whether there are any 'fixed' compiled go files in the
+// package.
+//
+// Intended to be used to refine bug reports.
+func (p *syntaxPackage) hasFixedFiles() bool {
+	return slices.ContainsFunc(p.compiledGoFiles, (*parsego.File).Fixed)
 }
 
 func (p *Package) String() string { return string(p.metadata.ID) }

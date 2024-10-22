@@ -1877,7 +1877,11 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 				// over fixed syntax, which overflowed its file. So it's definitely
 				// possible that we get here (it's hard to reason about fixing up the
 				// AST). Nevertheless, it's a bug.
-				bug.Reportf("internal error: type checker error %q outside its Fset", e)
+				if pkg.hasFixedFiles() {
+					bug.Reportf("internal error: type checker error %q outside its Fset (fixed files)", e)
+				} else {
+					bug.Reportf("internal error: type checker error %q outside its Fset", e)
+				}
 				continue
 			}
 			pgf, err := pkg.File(protocol.URIFromPath(posn.Filename))
@@ -1889,12 +1893,16 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 				// package (the message would be rather confusing), but we do want to
 				// report an error in the current package (golang/go#59005).
 				if i == 0 {
-					bug.Reportf("internal error: could not locate file for primary type checker error %v: %v", e, err)
+					if pkg.hasFixedFiles() {
+						bug.Reportf("internal error: could not locate file for primary type checker error %v: %v (fixed files)", e, err)
+					} else {
+						bug.Reportf("internal error: could not locate file for primary type checker error %v: %v", e, err)
+					}
 				}
 				continue
 			}
 
-			// debugging #65960
+			// debugging golang/go#65960
 			//
 			// At this point, we know 'start' IsValid, and
 			// StartPosition(start) worked (with e.Fset).
@@ -1903,21 +1911,33 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 			// is also in range for pgf.Tok, which means
 			// the PosRange failure must be caused by 'end'.
 			if pgf.Tok != e.Fset.File(start) {
-				bug.Reportf("internal error: inconsistent token.Files for pos")
+				if pkg.hasFixedFiles() {
+					bug.Reportf("internal error: inconsistent token.Files for pos (fixed files)")
+				} else {
+					bug.Reportf("internal error: inconsistent token.Files for pos")
+				}
 			}
 
 			if end == start {
 				// Expand the end position to a more meaningful span.
 				end = analysisinternal.TypeErrorEndPos(e.Fset, pgf.Src, start)
 
-				// debugging #65960
+				// debugging golang/go#65960
 				if _, err := safetoken.Offset(pgf.Tok, end); err != nil {
-					bug.Reportf("TypeErrorEndPos returned invalid end: %v", err)
+					if pkg.hasFixedFiles() {
+						bug.Reportf("TypeErrorEndPos returned invalid end: %v (fixed files)", err)
+					} else {
+						bug.Reportf("TypeErrorEndPos returned invalid end: %v", err)
+					}
 				}
 			} else {
-				// debugging #65960
+				// debugging golang/go#65960
 				if _, err := safetoken.Offset(pgf.Tok, end); err != nil {
-					bug.Reportf("ReadGo116ErrorData returned invalid end: %v", err)
+					if pkg.hasFixedFiles() {
+						bug.Reportf("ReadGo116ErrorData returned invalid end: %v (fixed files)", err)
+					} else {
+						bug.Reportf("ReadGo116ErrorData returned invalid end: %v", err)
+					}
 				}
 			}
 
