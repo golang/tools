@@ -4,7 +4,7 @@ This test checks the behavior of the 'add test for FUNC' code action.
 -ignore_extra_diags
 
 -- go.mod --
-module golang.org/lsptests/copyright
+module golang.org/lsptests/addtest
 
 go 1.18
 
@@ -20,22 +20,23 @@ go 1.18
 
 //go:build go1.23
 
-// Package copyright is for lsp test.
-package copyright
+// Package main is for lsp test.
+package main
 
 func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", with_copyright)
 
 -- @with_copyright/withcopyright/copyright_test.go --
-@@ -0,0 +1,8 @@
+@@ -0,0 +1,10 @@
 +// Copyright 2020 The Go Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
 +
-+package copyright_test
++package main_test
 +
 +
-+func TestFoo(*testing.T) {}
-\ No newline at end of file
++func TestFoo(*testing.T) {
++  // TODO: implement test
++}
 -- withoutcopyright/copyright.go --
 //go:build go1.23
 
@@ -45,9 +46,138 @@ package copyright
 func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", without_copyright)
 
 -- @without_copyright/withoutcopyright/copyright_test.go --
-@@ -0,0 +1,4 @@
+@@ -0,0 +1,6 @@
 +package copyright_test
 +
 +
-+func TestFoo(*testing.T) {}
-\ No newline at end of file
++func TestFoo(*testing.T) {
++  // TODO: implement test
++}
+-- missingtestfile/missingtestfile.go --
+package main
+
+func ExportedFunction(in string) string {return in} //@codeactionedit("ExportedFunction", "source.addTest", missing_test_file_exported_function)
+
+type Bar struct {}
+
+func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("ExportedMethod", "source.addTest", missing_test_file_exported_recv_exported_method)
+
+-- @missing_test_file_exported_function/missingtestfile/missingtestfile_test.go --
+@@ -0,0 +1,6 @@
++package main_test
++
++
++func TestExportedFunction(*testing.T) {
++  // TODO: implement test
++}
+-- @missing_test_file_exported_recv_exported_method/missingtestfile/missingtestfile_test.go --
+@@ -0,0 +1,6 @@
++package main_test
++
++
++func TestBar_ExportedMethod(*testing.T) {
++  // TODO: implement test
++}
+-- xpackagetestfile/xpackagetestfile.go --
+package main
+
+func ExportedFunction(in string) string {return in} //@codeactionedit("ExportedFunction", "source.addTest", xpackage_exported_function)
+func unexportedFunction(in string) string {return in} //@codeactionedit("unexportedFunction", "source.addTest", xpackage_unexported_function)
+
+type Bar struct {}
+
+func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("ExportedMethod", "source.addTest", xpackage_exported_recv_exported_method)
+func (*Bar) unexportedMethod(in string) string {return in} //@codeactionedit("unexportedMethod", "source.addTest", xpackage_exported_recv_unexported_method)
+
+type foo struct {}
+
+func (*foo) ExportedMethod(in string) string {return in} //@codeactionedit("ExportedMethod", "source.addTest", xpackage_unexported_recv_exported_method)
+func (*foo) unexportedMethod(in string) string {return in} //@codeactionedit("unexportedMethod", "source.addTest", xpackage_unexported_recv_unexported_method)
+
+-- xpackagetestfile/xpackagetestfile_test.go --
+package main
+
+-- @xpackage_exported_function/xpackagetestfile/xpackagetestfile_test.go --
+@@ -3 +3,4 @@
++
++func TestExportedFunction(*testing.T) {
++  // TODO: implement test
++}
+-- @xpackage_unexported_function/xpackagetestfile/xpackagetestfile_test.go --
+@@ -3 +3,4 @@
++
++func Test_unexportedFunction(*testing.T) {
++  // TODO: implement test
++}
+-- @xpackage_exported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
+@@ -3 +3,4 @@
++
++func TestBar_ExportedMethod(*testing.T) {
++  // TODO: implement test
++}
+-- @xpackage_exported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
+@@ -3 +3,4 @@
++
++func TestBar_unexportedMethod(*testing.T) {
++  // TODO: implement test
++}
+-- @xpackage_unexported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
+@@ -3 +3,4 @@
++
++func Test_foo_ExportedMethod(*testing.T) {
++  // TODO: implement test
++}
+-- @xpackage_unexported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
+@@ -3 +3,4 @@
++
++func Test_foo_unexportedMethod(*testing.T) {
++  // TODO: implement test
++}
+-- aliasreceiver/aliasreceiver.go --
+package main
+
+type bar struct {}
+type middle1 = bar
+type middle2 = middle1
+type middle3 = middle2
+type Bar = middle3
+
+func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("ExportedMethod", "source.addTest", pointer_receiver_exported_method)
+func (*Bar) unexportedMethod(in string) string {return in} //@codeactionedit("unexportedMethod", "source.addTest", pointer_receiver_unexported_method)
+
+type bar2 struct {}
+type middle4 = bar2
+type middle5 = middle4
+type middle6 = middle5
+type foo = *middle6
+
+func (foo) ExportedMethod(in string) string {return in} //@codeactionedit("ExportedMethod", "source.addTest", alias_receiver_exported_method)
+func (foo) unexportedMethod(in string) string {return in} //@codeactionedit("unexportedMethod", "source.addTest", alias_receiver_unexported_method)
+
+-- aliasreceiver/aliasreceiver_test.go --
+package main
+
+-- @pointer_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
+@@ -3 +3,4 @@
++
++func TestBar_ExportedMethod(*testing.T) {
++  // TODO: implement test
++}
+-- @pointer_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
+@@ -3 +3,4 @@
++
++func TestBar_unexportedMethod(*testing.T) {
++  // TODO: implement test
++}
+-- @alias_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
+@@ -3 +3,4 @@
++
++func Test_foo_ExportedMethod(*testing.T) {
++  // TODO: implement test
++}
+-- @alias_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
+@@ -3 +3,4 @@
++
++func Test_foo_unexportedMethod(*testing.T) {
++  // TODO: implement test
++}
