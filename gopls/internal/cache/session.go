@@ -240,25 +240,27 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 
 	s.snapshotWG.Add(1)
 	v.snapshot = &Snapshot{
-		view:             v,
-		backgroundCtx:    backgroundCtx,
-		cancel:           cancel,
-		store:            s.cache.store,
-		refcount:         1, // Snapshots are born referenced.
-		done:             s.snapshotWG.Done,
-		packages:         new(persistent.Map[PackageID, *packageHandle]),
-		meta:             new(metadata.Graph),
-		files:            newFileMap(),
-		symbolizeHandles: new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		shouldLoad:       new(persistent.Map[PackageID, []PackagePath]),
-		unloadableFiles:  new(persistent.Set[protocol.DocumentURI]),
-		parseModHandles:  new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		parseWorkHandles: new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		modTidyHandles:   new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		modVulnHandles:   new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		modWhyHandles:    new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
-		moduleUpgrades:   new(persistent.Map[protocol.DocumentURI, map[string]string]),
-		vulns:            new(persistent.Map[protocol.DocumentURI, *vulncheck.Result]),
+		view:              v,
+		backgroundCtx:     backgroundCtx,
+		cancel:            cancel,
+		store:             s.cache.store,
+		refcount:          1, // Snapshots are born referenced.
+		done:              s.snapshotWG.Done,
+		packages:          new(persistent.Map[PackageID, *packageHandle]),
+		fullAnalysisKeys:  new(persistent.Map[PackageID, file.Hash]),
+		factyAnalysisKeys: new(persistent.Map[PackageID, file.Hash]),
+		meta:              new(metadata.Graph),
+		files:             newFileMap(),
+		symbolizeHandles:  new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		shouldLoad:        new(persistent.Map[PackageID, []PackagePath]),
+		unloadableFiles:   new(persistent.Set[protocol.DocumentURI]),
+		parseModHandles:   new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		parseWorkHandles:  new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modTidyHandles:    new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modVulnHandles:    new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		modWhyHandles:     new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
+		moduleUpgrades:    new(persistent.Map[protocol.DocumentURI, map[string]string]),
+		vulns:             new(persistent.Map[protocol.DocumentURI, *vulncheck.Result]),
 	}
 
 	// Snapshots must observe all open files, as there are some caching

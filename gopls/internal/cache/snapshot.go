@@ -144,6 +144,16 @@ type Snapshot struct {
 	//    be in packages, unless there is a missing import
 	packages *persistent.Map[PackageID, *packageHandle]
 
+	// fullAnalysisKeys and factyAnalysisKeys hold memoized cache keys for
+	// analysis packages. "full" refers to the cache key including all enabled
+	// analyzers, whereas "facty" is the key including only the subset of enabled
+	// analyzers that produce facts, such as is required for transitively
+	// imported packages.
+	//
+	// These keys are memoized because they can be quite expensive to compute.
+	fullAnalysisKeys  *persistent.Map[PackageID, file.Hash]
+	factyAnalysisKeys *persistent.Map[PackageID, file.Hash]
+
 	// workspacePackages contains the workspace's packages, which are loaded
 	// when the view is created. It does not contain intermediate test variants.
 	workspacePackages immutable.Map[PackageID, PackagePath]
@@ -1611,6 +1621,8 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		initialized:       s.initialized,
 		initialErr:        s.initialErr,
 		packages:          s.packages.Clone(),
+		fullAnalysisKeys:  s.fullAnalysisKeys.Clone(),
+		factyAnalysisKeys: s.factyAnalysisKeys.Clone(),
 		files:             s.files.clone(changedFiles),
 		symbolizeHandles:  cloneWithout(s.symbolizeHandles, changedFiles, nil),
 		workspacePackages: s.workspacePackages,
@@ -1888,6 +1900,12 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		// invalidation.
 		if ph, ok := result.packages.Get(id); ok {
 			needsDiagnosis = true
+
+			// Always invalidate analysis keys, as we do not implement fine-grained
+			// invalidation for analysis.
+			result.fullAnalysisKeys.Delete(id)
+			result.factyAnalysisKeys.Delete(id)
+
 			if invalidateMetadata {
 				result.packages.Delete(id)
 			} else {

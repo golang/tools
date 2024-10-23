@@ -6,14 +6,11 @@ package golang
 
 import (
 	"context"
-	"maps"
-	"slices"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 )
 
@@ -35,8 +32,7 @@ func DiagnoseFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.Do
 	diags := pkgDiags[uri]
 
 	// Get analysis diagnostics.
-	analyzers := analyzers(snapshot.Options().Staticcheck)
-	pkgAnalysisDiags, err := snapshot.Analyze(ctx, map[PackageID]*metadata.Package{mp.ID: mp}, analyzers, nil)
+	pkgAnalysisDiags, err := snapshot.Analyze(ctx, map[PackageID]*metadata.Package{mp.ID: mp}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -60,8 +56,7 @@ func Analyze(ctx context.Context, snapshot *cache.Snapshot, pkgIDs map[PackageID
 		return nil, ctx.Err()
 	}
 
-	analyzers := analyzers(snapshot.Options().Staticcheck)
-	analysisDiagnostics, err := snapshot.Analyze(ctx, pkgIDs, analyzers, tracker)
+	analysisDiagnostics, err := snapshot.Analyze(ctx, pkgIDs, tracker)
 	if err != nil {
 		return nil, err
 	}
@@ -70,14 +65,6 @@ func Analyze(ctx context.Context, snapshot *cache.Snapshot, pkgIDs map[PackageID
 
 // byURI is used for grouping diagnostics.
 func byURI(d *cache.Diagnostic) protocol.DocumentURI { return d.URI }
-
-func analyzers(staticcheck bool) []*settings.Analyzer {
-	analyzers := slices.Collect(maps.Values(settings.DefaultAnalyzers))
-	if staticcheck {
-		analyzers = slices.AppendSeq(analyzers, maps.Values(settings.StaticcheckAnalyzers))
-	}
-	return analyzers
-}
 
 // CombineDiagnostics combines and filters list/parse/type diagnostics from
 // tdiags with the analysis adiags, returning the resulting combined set.

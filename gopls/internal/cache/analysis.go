@@ -19,6 +19,7 @@ import (
 	"go/token"
 	"go/types"
 	"log"
+	"maps"
 	urlpkg "net/url"
 	"path/filepath"
 	"reflect"
@@ -45,6 +46,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
+	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/facts"
@@ -175,7 +177,7 @@ const AnalysisProgressTitle = "Analyzing Dependencies"
 // The analyzers list must be duplicate free; order does not matter.
 //
 // Notifications of progress may be sent to the optional reporter.
-func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Package, analyzers []*settings.Analyzer, reporter *progress.Tracker) ([]*Diagnostic, error) {
+func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Package, reporter *progress.Tracker) ([]*Diagnostic, error) {
 	start := time.Now() // for progress reporting
 
 	var tagStr string // sorted comma-separated list of PackageIDs
@@ -192,6 +194,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 
 	// Filter and sort enabled root analyzers.
 	// A disabled analyzer may still be run if required by another.
+	analyzers := analyzers(s.Options().Staticcheck)
 	toSrc := make(map[*analysis.Analyzer]*settings.Analyzer)
 	var enabledAnalyzers []*analysis.Analyzer // enabled subset + transitive requirements
 	for _, a := range analyzers {
@@ -322,20 +325,14 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 		roots = append(roots, root)
 	}
 
-	// Now that we have read all files,
-	// we no longer need the snapshot.
-	// (but options are needed for progress reporting)
-	options := s.Options()
-	s = nil
-
 	// Progress reporting. If supported, gopls reports progress on analysis
 	// passes that are taking a long time.
 	maybeReport := func(completed int64) {}
 
 	// Enable progress reporting if enabled by the user
 	// and we have a capable reporter.
-	if reporter != nil && reporter.SupportsWorkDoneProgress() && options.AnalysisProgressReporting {
-		var reportAfter = options.ReportAnalysisProgressAfter // tests may set this to 0
+	if reporter != nil && reporter.SupportsWorkDoneProgress() && s.Options().AnalysisProgressReporting {
+		var reportAfter = s.Options().ReportAnalysisProgressAfter // tests may set this to 0
 		const reportEvery = 1 * time.Second
 
 		ctx, cancel := context.WithCancel(ctx)
@@ -396,10 +393,34 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 			limiter <- unit{}
 			defer func() { <-limiter }()
 
-			summary, err := an.runCached(ctx)
+			// Check to see if we already have a valid cache key. If not, compute it.
+			//
+			// The snapshot field that memoizes keys depends on whether this key is
+			// for the analysis result including all enabled analyzer, or just facty analyzers.
+			var keys *persistent.Map[PackageID, file.Hash]
+			if _, root := pkgs[an.mp.ID]; root {
+				keys = s.fullAnalysisKeys
+			} else {
+				keys = s.factyAnalysisKeys
+			}
+
+			// As keys is referenced by a snapshot field, it's guarded by s.mu.
+			s.mu.Lock()
+			key, keyFound := keys.Get(an.mp.ID)
+			s.mu.Unlock()
+
+			if !keyFound {
+				key = an.cacheKey()
+				s.mu.Lock()
+				keys.Set(an.mp.ID, key, nil)
+				s.mu.Unlock()
+			}
+
+			summary, err := an.runCached(ctx, key)
 			if err != nil {
 				return err // cancelled, or failed to produce a package
 			}
+
 			maybeReport(completed.Add(1))
 			an.summary = summary
 
@@ -486,6 +507,14 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 		}
 	}
 	return results, nil
+}
+
+func analyzers(staticcheck bool) []*settings.Analyzer {
+	analyzers := slices.Collect(maps.Values(settings.DefaultAnalyzers))
+	if staticcheck {
+		analyzers = slices.AppendSeq(analyzers, maps.Values(settings.StaticcheckAnalyzers))
+	}
+	return analyzers
 }
 
 func (an *analysisNode) decrefPreds() {
@@ -711,21 +740,14 @@ var (
 // actions failed. It usually fails only if the package was unknown,
 // a file was missing, or the operation was cancelled.
 //
-// Postcondition: runCached must not continue to use the snapshot
-// (in background goroutines) after it has returned; see memoize.RefCounted.
-func (an *analysisNode) runCached(ctx context.Context) (*analyzeSummary, error) {
-	// At this point we have the action results (serialized
-	// packages and facts) of our immediate dependencies,
-	// and the metadata and content of this package.
+// The provided key is the cache key for this package.
+func (an *analysisNode) runCached(ctx context.Context, key file.Hash) (*analyzeSummary, error) {
+	// At this point we have the action results (serialized packages and facts)
+	// of our immediate dependencies, and the metadata and content of this
+	// package.
 	//
-	// We now compute a hash for all our inputs, and consult a
-	// global cache of promised results. If nothing material
-	// has changed, we'll make a hit in the shared cache.
-	//
-	// The hash of our inputs is based on the serialized export
-	// data and facts so that immaterial changes can be pruned
-	// without decoding.
-	key := an.cacheKey()
+	// We now consult a global cache of promised results. If nothing material has
+	// changed, we'll make a hit in the shared cache.
 
 	// Access the cache.
 	var summary *analyzeSummary
