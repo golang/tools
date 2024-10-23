@@ -24,6 +24,7 @@ import (
 	"golang.org/x/mod/module"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/bloom"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
@@ -356,7 +357,18 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 		return nil
 	}
 
-	pkg, err := b.syntaxPackages.get(ctx, id, func(ctx context.Context) (*Package, error) {
+	pkg, err := b.getPackage(ctx, ph)
+	if err != nil {
+		return err
+	}
+
+	post(i, pkg)
+	return nil
+}
+
+// getPackage type checks one [Package] in the batch.
+func (b *typeCheckBatch) getPackage(ctx context.Context, ph *packageHandle) (*Package, error) {
+	return b.syntaxPackages.get(ctx, ph.mp.ID, func(ctx context.Context) (*Package, error) {
 		// Wait for predecessors.
 		// Record imports of this package to avoid redundant work in typesConfig.
 		imports := make(map[PackagePath]*types.Package)
@@ -414,12 +426,6 @@ func (b *typeCheckBatch) handleSyntaxPackage(ctx context.Context, i int, id Pack
 		go storePackageResults(ctx, ph, p) // ...and write all packages to disk
 		return p, nil
 	})
-	if err != nil {
-		return err
-	}
-
-	post(i, pkg)
-	return nil
 }
 
 // storePackageResults serializes and writes information derived from p to the
@@ -769,6 +775,11 @@ type packageHandle struct {
 	// depKeys records the key of each dependency that was used to calculate the
 	// key below. If state < validKey, we must re-check that each still matches.
 	depKeys map[PackageID]file.Hash
+
+	// reachable is used to filter reachable package paths for go/analysis fact
+	// importing.
+	reachable *bloom.Filter
+
 	// key is the hashed key for the package.
 	//
 	// It includes the all bits of the transitive closure of
@@ -1203,10 +1214,13 @@ func (b *packageHandleBuilder) evaluatePackageHandle(ctx context.Context, n *han
 		// all reachable packages.
 		depHasher := sha256.New()
 		depHasher.Write(ph.localKey[:])
-		for _, dh := range reachableNodes {
+		reachablePaths := make([]string, len(reachableNodes))
+		for i, dh := range reachableNodes {
 			depHasher.Write(dh.ph.localKey[:])
+			reachablePaths[i] = string(dh.ph.mp.PkgPath)
 		}
 		depHasher.Sum(ph.key[:0])
+		ph.reachable = bloom.NewFilter(reachablePaths)
 		ph.state = validKey
 		keyChanged = ph.key != prevKey
 	}
