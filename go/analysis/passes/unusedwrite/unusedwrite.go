@@ -28,7 +28,15 @@ var Analyzer = &analysis.Analyzer{
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
+	for _, pkg := range pass.Pkg.Imports() {
+		if pkg.Path() == "unsafe" {
+			// See golang/go#67684, or testdata/src/importsunsafe: the unusedwrite
+			// analyzer may have false positives when used with unsafe.
+			return nil, nil
+		}
+	}
+
 	ssainput := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	for _, fn := range ssainput.SrcFuncs {
 		reports := checkStores(fn)
