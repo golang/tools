@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/gopls/internal/work"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
+	"golang.org/x/tools/internal/jsonrpc2"
 )
 
 // Diagnostic implements the textDocument/diagnostic LSP request, reporting
@@ -50,6 +51,9 @@ func (s *server) Diagnostic(ctx context.Context, params *protocol.DocumentDiagno
 		return nil, err
 	}
 	defer release()
+
+	jsonrpc2.Async(ctx) // allow asynchronous collection of diagnostics
+
 	uri := fh.URI()
 	kind := snapshot.FileKind(fh)
 	var diagnostics []*cache.Diagnostic

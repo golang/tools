@@ -27,7 +27,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -107,10 +106,6 @@ func Test(t *testing.T) {
 
 	// Opt: use a shared cache.
 	cache := cache.New(nil)
-
-	// Opt: seed the cache and file cache by type-checking and analyzing common
-	// standard library packages.
-	seedCache(t, cache)
 
 	for _, test := range tests {
 		test := test
@@ -288,58 +283,6 @@ func Test(t *testing.T) {
 	if abs, err := filepath.Abs(dir); err == nil && t.Failed() {
 		t.Logf("(Filenames are relative to %s.)", abs)
 	}
-}
-
-// seedCache populates the file cache by type checking and analyzing standard
-// library packages that are reachable from tests.
-//
-// Most tests are themselves small codebases, and yet may reference large
-// amounts of standard library code. Since tests are heavily parallelized, they
-// naively end up type checking and analyzing many of the same standard library
-// packages. By seeding the cache, we ensure cache hits for these standard
-// library packages, significantly reducing the amount of work done by each
-// test.
-//
-// The following command was used to determine the set of packages to import
-// below:
-//
-//	rm -rf ~/.cache/gopls && \
-//	 go test -count=1 ./internal/test/marker -cpuprofile=prof -v
-//
-// Look through the individual test timings to see which tests are slow, then
-// look through the imports of slow tests to see which standard library
-// packages are imported. Choose high level packages such as go/types that
-// import others such as fmt or go/ast. After doing so, re-run the command and
-// verify that the total samples in the collected profile decreased.
-func seedCache(t *testing.T, cache *cache.Cache) {
-	start := time.Now()
-
-	// The the doc string for details on how this seed was produced.
-	seed := `package p
-import (
-	_ "net/http"
-	_ "sort"
-	_ "go/types"
-	_ "testing"
-)
-`
-
-	// Create a test environment for the seed file.
-	env := newEnv(t, cache, map[string][]byte{"p.go": []byte(seed)}, nil, nil, fake.EditorConfig{})
-	// See other TODO: this cleanup logic is too messy.
-	defer env.Editor.Shutdown(context.Background()) // ignore error
-	defer env.Sandbox.Close()                       // ignore error
-	env.Awaiter.Await(context.Background(), integration.InitialWorkspaceLoad)
-
-	// Opening the file is necessary to trigger analysis.
-	env.OpenFile("p.go")
-
-	// As a checksum, verify that the file has no errors after analysis.
-	// This isn't strictly necessary, but helps avoid incorrect seeding due to
-	// typos.
-	env.AfterChange(integration.NoDiagnostics())
-
-	t.Logf("warming the cache took %s", time.Since(start))
 }
 
 // A marker holds state for the execution of a single @marker

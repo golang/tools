@@ -259,7 +259,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 			an = &analysisNode{
 				allNodes:     nodes,
 				fset:         fset,
-				fsource:      struct{ file.Source }{s}, // expose only ReadFile
+				fsource:      s, // expose only ReadFile
 				viewType:     s.View().Type(),
 				mp:           mp,
 				analyzers:    facty, // all nodes run at least the facty analyzers
@@ -305,6 +305,8 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 			from.unfinishedSuccs.Add(+1) // incref
 			an.preds = append(an.preds, from)
 		}
+		// Increment unfinishedPreds even for root nodes (from==nil), so that their
+		// Action summaries are never cleared.
 		an.unfinishedPreds.Add(+1)
 		return an, nil
 	}
@@ -689,6 +691,19 @@ type actionSummary struct {
 	Err         string // "" => success
 }
 
+var (
+	// inFlightAnalyses records active analysis operations so that later requests
+	// can be satisfied by joining onto earlier requests that are still active.
+	//
+	// Note that persistent=false, so results are cleared once they are delivered
+	// to awaiting goroutines.
+	inFlightAnalyses = newFutureCache[file.Hash, *analyzeSummary](false)
+
+	// cacheLimit reduces parallelism of filecache updates.
+	// We allow more than typical GOMAXPROCS as it's a mix of CPU and I/O.
+	cacheLimit = make(chan unit, 32)
+)
+
 // runCached applies a list of analyzers (plus any others
 // transitively required by them) to a package.  It succeeds as long
 // as it could produce a types.Package, even if there were direct or
@@ -725,38 +740,40 @@ func (an *analysisNode) runCached(ctx context.Context) (*analyzeSummary, error) 
 		return nil, bug.Errorf("internal error reading shared cache: %v", err)
 	} else {
 		// Cache miss: do the work.
-		var err error
-		summary, err = an.run(ctx)
+		cachedSummary, err := inFlightAnalyses.get(ctx, key, func(ctx context.Context) (*analyzeSummary, error) {
+			summary, err := an.run(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if summary == nil { // debugging #66732 (can't happen)
+				bug.Reportf("analyzeNode.run returned nil *analyzeSummary")
+			}
+			go func() {
+				cacheLimit <- unit{}            // acquire token
+				defer func() { <-cacheLimit }() // release token
+
+				data := analyzeSummaryCodec.Encode(summary)
+				if false {
+					log.Printf("Set key=%d value=%d id=%s\n", len(key), len(data), an.mp.ID)
+				}
+				if err := filecache.Set(cacheKind, key, data); err != nil {
+					event.Error(ctx, "internal error updating analysis shared cache", err)
+				}
+			}()
+			return summary, nil
+		})
 		if err != nil {
 			return nil, err
 		}
-		if summary == nil { // debugging #66732 (can't happen)
-			bug.Reportf("analyzeNode.run returned nil *analyzeSummary")
-		}
 
-		an.unfinishedPreds.Add(+1) // incref
-		go func() {
-			defer an.decrefPreds() //decref
-
-			cacheLimit <- unit{}            // acquire token
-			defer func() { <-cacheLimit }() // release token
-
-			data := analyzeSummaryCodec.Encode(summary)
-			if false {
-				log.Printf("Set key=%d value=%d id=%s\n", len(key), len(data), an.mp.ID)
-			}
-			if err := filecache.Set(cacheKind, key, data); err != nil {
-				event.Error(ctx, "internal error updating analysis shared cache", err)
-			}
-		}()
+		// Copy the computed summary. In decrefPreds, we may zero out
+		// summary.actions, but can't mutate a shared result.
+		copy := *cachedSummary
+		summary = &copy
 	}
 
 	return summary, nil
 }
-
-// cacheLimit reduces parallelism of cache updates.
-// We allow more than typical GOMAXPROCS as it's a mix of CPU and I/O.
-var cacheLimit = make(chan unit, 32)
 
 // analysisCacheKey returns a cache key that is a cryptographic digest
 // of the all the values that might affect type checking and analysis:

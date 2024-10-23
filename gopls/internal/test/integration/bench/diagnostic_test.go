@@ -5,6 +5,7 @@
 package bench
 
 import (
+	"sync"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -61,17 +62,19 @@ func BenchmarkDiagnosePackageFiles(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		edit()
-		var diags []protocol.Diagnostic
+		var wg sync.WaitGroup
 		for _, file := range files {
-			fileDiags := env.Diagnostics(file)
-			for _, d := range fileDiags {
-				if d.Severity == protocol.SeverityError {
-					diags = append(diags, d)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				fileDiags := env.Diagnostics(file)
+				for _, d := range fileDiags {
+					if d.Severity == protocol.SeverityError {
+						b.Errorf("unexpected error diagnostic: %s", d.Message)
+					}
 				}
-			}
+			}()
 		}
-		if len(diags) != 0 {
-			b.Fatalf("got %d error diagnostics, want 0\ndiagnostics:\n%v", len(diags), diags)
-		}
+		wg.Wait()
 	}
 }
