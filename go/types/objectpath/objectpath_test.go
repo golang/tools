@@ -82,6 +82,8 @@ package a
 type Int int
 
 type T struct{x, y int}
+
+type Issue68046 interface { f(x int) interface{Issue68046} }
 `
 
 	pkgmap := loadPackages(t, src, "./a", "./b")
@@ -123,7 +125,8 @@ type T struct{x, y int}
 		{"b", "R.UEF0", "field y int", ""},
 		{"b", "Q.UEF0", "field z int", ""},
 		{"a", "T", "type a.T struct{x int; y int}", ""},
-		{"a", "T.UF0", "field x int", ""},
+		{"a", "Issue68046.UM0", "func (a.Issue68046).f(x int) interface{a.Issue68046}", ""},
+		{"a", "Issue68046.UM0.PA0", "var x int", ""},
 
 		// Bad paths
 		{"b", "", "", "empty path"},
