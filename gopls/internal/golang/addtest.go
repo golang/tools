@@ -14,6 +14,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"html/template"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,79 @@ import (
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
+
+const testTmplString = `func {{.TestFuncName}}(t *testing.T) {
+  {{- /* Functions/methods input parameters struct declaration. */}}
+  {{- if gt (len .Args) 1}}
+  type args struct {
+  {{- range .Args}}
+    {{.Name}} {{.Type}}
+  {{- end}}
+  }
+  {{- end}}
+  {{- /* Test cases struct declaration and empty initialization. */}}
+  tests := []struct {
+    name string // description of this test case
+    {{- if gt (len .Args) 1}}
+    args args
+    {{- end}}
+    {{- if eq (len .Args) 1}}
+    arg {{(index .Args 0).Type}}
+    {{- end}}
+    {{- range $index, $res := .Results}}
+    {{if eq $index 0}}want{{else}}want{{add $index 1}}{{end}} {{$res.Type}}
+    {{- /* TODO(hxjiang): check whether the last return type is error and handle it using field "wantErr". */}}
+    {{- end}}
+  }{
+    // TODO: Add test cases.
+  }
+  {{- /* Loop over all the test cases. */}}
+  for _, tt := range tests {
+    {{/* Got variables. */}}
+    {{- if .Results}}{{fieldNames .Results ""}} := {{end}}
+
+    {{- /* Call expression. In xtest package test, call function by PACKAGE.FUNC. */}}
+    {{- /* TODO(hxjiang): consider any renaming in existing xtest package imports. E.g. import renamedfoo "foo". */}}
+    {{- /* TODO(hxjiang): support add test for methods by calling the right constructor. */}}
+    {{- if .PackageName}}{{.PackageName}}.{{end}}{{.FuncName}}
+
+    {{- /* Input parameters.  */ -}}
+    ({{if eq (len .Args) 1}}tt.arg{{end}}{{if gt (len .Args) 1}}{{fieldNames .Args "tt.args."}}{{end}})
+
+    {{- if .Results}}
+    // TODO: update the condition below to compare got with tt.want.
+    {{- range $index, $res := .Results}}
+    if true {
+      t.Errorf("%s: {{$.FuncName}}() = %v, want %v", tt.name, {{.Name}}, tt.{{if eq $index 0}}want{{else}}want{{add $index 1}}{{end}})
+    }
+    {{- end}}
+    {{- end}}
+  }
+}
+`
+
+type field struct {
+	Name, Type string
+}
+
+type testInfo struct {
+	PackageName  string
+	FuncName     string
+	TestFuncName string
+	Args         []field
+	Results      []field
+}
+
+var testTmpl = template.Must(template.New("test").Funcs(template.FuncMap{
+	"add": func(a, b int) int { return a + b },
+	"fieldNames": func(fields []field, qualifier string) (res string) {
+		var names []string
+		for _, f := range fields {
+			names = append(names, qualifier+f.Name)
+		}
+		return strings.Join(names, ", ")
+	},
+}).Parse(testTmplString))
 
 // AddTestForFunc adds a test for the function enclosing the given input range.
 // It creates a _test.go file if one does not already exist.
@@ -138,6 +212,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 	}
 
 	fn := pkg.TypesInfo().Defs[decl.Name].(*types.Func)
+	sig := fn.Signature()
 
 	if xtest {
 		// Reject if function/method is unexported.
@@ -146,30 +221,77 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		}
 
 		// Reject if receiver is unexported.
-		if fn.Signature().Recv() != nil {
+		if sig.Recv() != nil {
 			if _, ident, _ := goplsastutil.UnpackRecv(decl.Recv.List[0].Type); !ident.IsExported() {
 				return nil, fmt.Errorf("cannot add external test for method %s.%s as receiver type is not exported", ident.Name, decl.Name)
 			}
 		}
-
 		// TODO(hxjiang): reject if the any input parameter type is unexported.
 		// TODO(hxjiang): reject if any return value type is unexported. Explore
 		// the option to drop the return value if the type is unexported.
+	}
+
+	// TODO(hxjiang): qualifier should consolidate existing imports from x
+	// package and existing x_test package. The existing x_test package imports
+	// should overwrite x package imports.
+	var qf types.Qualifier
+	if xtest {
+		qf = (*types.Package).Name
+	} else {
+		qf = typesinternal.NameRelativeTo(pkg.Types())
 	}
 
 	testName, err := testName(fn)
 	if err != nil {
 		return nil, err
 	}
-	// TODO(hxjiang): replace test function with table-driven test.
+	data := testInfo{
+		FuncName:     fn.Name(),
+		TestFuncName: testName,
+	}
+
+	if sig.Recv() == nil && xtest {
+		data.PackageName = pkg.Types().Name()
+	}
+
+	for i := range sig.Params().Len() {
+		if i == 0 {
+			data.Args = append(data.Args, field{
+				Name: "in",
+				Type: types.TypeString(sig.Params().At(i).Type(), qf),
+			})
+		} else {
+			data.Args = append(data.Args, field{
+				Name: fmt.Sprintf("in%d", i+1),
+				Type: types.TypeString(sig.Params().At(i).Type(), qf),
+			})
+		}
+	}
+
+	for i := range sig.Results().Len() {
+		if i == 0 {
+			data.Results = append(data.Results, field{
+				Name: "got",
+				Type: types.TypeString(sig.Results().At(i).Type(), qf),
+			})
+		} else {
+			data.Results = append(data.Results, field{
+				Name: fmt.Sprintf("got%d", i+1),
+				Type: types.TypeString(sig.Results().At(i).Type(), qf),
+			})
+		}
+	}
+
+	var test bytes.Buffer
+	if err := testTmpl.Execute(&test, data); err != nil {
+		return nil, err
+	}
+
 	edits = append(edits, protocol.TextEdit{
-		Range: eofRange,
-		NewText: fmt.Sprintf(`
-func %s(*testing.T) {
-  // TODO: implement test
-}
-`, testName),
+		Range:   eofRange,
+		NewText: test.String(),
 	})
+
 	return append(changes, protocol.DocumentChangeEdit(testFH, edits)), nil
 }
 

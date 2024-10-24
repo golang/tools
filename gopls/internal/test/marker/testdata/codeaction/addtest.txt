@@ -26,16 +26,28 @@ package main
 func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", with_copyright)
 
 -- @with_copyright/withcopyright/copyright_test.go --
-@@ -0,0 +1,10 @@
+@@ -0,0 +1,22 @@
 +// Copyright 2020 The Go Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
 +
 +package main_test
 +
-+
-+func TestFoo(*testing.T) {
-+  // TODO: implement test
++func TestFoo(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := main.Foo(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: Foo() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- withoutcopyright/copyright.go --
 //go:build go1.23
@@ -46,12 +58,24 @@ package copyright
 func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", without_copyright)
 
 -- @without_copyright/withoutcopyright/copyright_test.go --
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,18 @@
 +package copyright_test
 +
-+
-+func TestFoo(*testing.T) {
-+  // TODO: implement test
++func TestFoo(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := copyright.Foo(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: Foo() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- missingtestfile/missingtestfile.go --
 package main
@@ -63,20 +87,44 @@ type Bar struct {}
 func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("ExportedMethod", "source.addTest", missing_test_file_exported_recv_exported_method)
 
 -- @missing_test_file_exported_function/missingtestfile/missingtestfile_test.go --
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,18 @@
 +package main_test
 +
-+
-+func TestExportedFunction(*testing.T) {
-+  // TODO: implement test
++func TestExportedFunction(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := main.ExportedFunction(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: ExportedFunction() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- @missing_test_file_exported_recv_exported_method/missingtestfile/missingtestfile_test.go --
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,18 @@
 +package main_test
 +
-+
-+func TestBar_ExportedMethod(*testing.T) {
-+  // TODO: implement test
++func TestBar_ExportedMethod(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := ExportedMethod(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: ExportedMethod() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- xpackagetestfile/xpackagetestfile.go --
 package main
@@ -98,40 +146,112 @@ func (*foo) unexportedMethod(in string) string {return in} //@codeactionedit("un
 package main
 
 -- @xpackage_exported_function/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,4 @@
-+
-+func TestExportedFunction(*testing.T) {
-+  // TODO: implement test
+@@ -3 +3,16 @@
++func TestExportedFunction(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := ExportedFunction(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: ExportedFunction() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- @xpackage_unexported_function/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,4 @@
-+
-+func Test_unexportedFunction(*testing.T) {
-+  // TODO: implement test
+@@ -3 +3,16 @@
++func Test_unexportedFunction(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := unexportedFunction(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: unexportedFunction() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- @xpackage_exported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,4 @@
-+
-+func TestBar_ExportedMethod(*testing.T) {
-+  // TODO: implement test
+@@ -3 +3,16 @@
++func TestBar_ExportedMethod(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := ExportedMethod(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: ExportedMethod() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- @xpackage_exported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,4 @@
-+
-+func TestBar_unexportedMethod(*testing.T) {
-+  // TODO: implement test
+@@ -3 +3,16 @@
++func TestBar_unexportedMethod(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := unexportedMethod(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: unexportedMethod() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- @xpackage_unexported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,4 @@
-+
-+func Test_foo_ExportedMethod(*testing.T) {
-+  // TODO: implement test
+@@ -3 +3,16 @@
++func Test_foo_ExportedMethod(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := ExportedMethod(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: ExportedMethod() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- @xpackage_unexported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,4 @@
-+
-+func Test_foo_unexportedMethod(*testing.T) {
-+  // TODO: implement test
+@@ -3 +3,16 @@
++func Test_foo_unexportedMethod(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := unexportedMethod(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: unexportedMethod() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- aliasreceiver/aliasreceiver.go --
 package main
@@ -158,26 +278,113 @@ func (foo) unexportedMethod(in string) string {return in} //@codeactionedit("une
 package main
 
 -- @pointer_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,4 @@
-+
-+func TestBar_ExportedMethod(*testing.T) {
-+  // TODO: implement test
+@@ -3 +3,16 @@
++func TestBar_ExportedMethod(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := ExportedMethod(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: ExportedMethod() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- @pointer_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,4 @@
-+
-+func TestBar_unexportedMethod(*testing.T) {
-+  // TODO: implement test
+@@ -3 +3,16 @@
++func TestBar_unexportedMethod(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := unexportedMethod(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: unexportedMethod() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- @alias_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,4 @@
-+
-+func Test_foo_ExportedMethod(*testing.T) {
-+  // TODO: implement test
+@@ -3 +3,16 @@
++func Test_foo_ExportedMethod(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := ExportedMethod(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: ExportedMethod() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
 +}
 -- @alias_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,4 @@
+@@ -3 +3,16 @@
++func Test_foo_unexportedMethod(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got := unexportedMethod(tt.arg)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: unexportedMethod() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
++}
+-- multiinputoutput/multiinputoutput.go --
+package main
+
+func Foo(in, in1, in2, in3 string) (out, out1, out2 string) {return in, in, in} //@codeactionedit("Foo", "source.addTest", multi_input_output)
+
+-- @multi_input_output/multiinputoutput/multiinputoutput_test.go --
+@@ -0,0 +1,32 @@
++package main_test
 +
-+func Test_foo_unexportedMethod(*testing.T) {
-+  // TODO: implement test
++func TestFoo(t *testing.T) {
++  type args struct {
++    in string
++    in2 string
++    in3 string
++    in4 string
++  }
++  tests := []struct {
++    name string // description of this test case
++    args args
++    want string
++    want2 string
++    want3 string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got, got2, got3 := main.Foo(tt.args.in, tt.args.in2, tt.args.in3, tt.args.in4)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: Foo() = %v, want %v", tt.name, got, tt.want)
++    }
++    if true {
++      t.Errorf("%s: Foo() = %v, want %v", tt.name, got2, tt.want2)
++    }
++    if true {
++      t.Errorf("%s: Foo() = %v, want %v", tt.name, got3, tt.want3)
++    }
++  }
 +}
