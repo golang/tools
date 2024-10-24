@@ -120,7 +120,8 @@ func wordMask(i uint) (w uint, mask word) {
 // insert sets the block b's ith bit and
 // returns true if it was not already set.
 func (b *block) insert(i uint) bool {
-	w, mask := wordMask(i)
+	w := i / bitsPerWord
+	mask := word(1 << (i % bitsPerWord))
 	if b.bits[w]&mask == 0 {
 		b.bits[w] |= mask
 		return true
