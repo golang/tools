@@ -196,24 +196,9 @@ Suffixes:
 	}
 
 	if cand.convertTo != nil {
-		typeName := types.TypeString(cand.convertTo, c.qf)
-
-		switch t := cand.convertTo.(type) {
-		// We need extra parens when casting to these types. For example,
-		// we need "(*int)(foo)", not "*int(foo)".
-		case *types.Pointer, *types.Signature:
-			typeName = "(" + typeName + ")"
-		case *types.Basic:
-			// If the types are incompatible (as determined by typeMatches), then we
-			// must need a conversion here. However, if the target type is untyped,
-			// don't suggest converting to e.g. "untyped float" (golang/go#62141).
-			if t.Info()&types.IsUntyped != 0 {
-				typeName = types.TypeString(types.Default(cand.convertTo), c.qf)
-			}
-		}
-
-		prefix = typeName + "(" + prefix
-		suffix = ")"
+		conv := c.formatConversion(cand.convertTo)
+		prefix = conv.prefix + prefix
+		suffix = conv.suffix
 	}
 
 	if prefix != "" {
@@ -286,6 +271,38 @@ Suffixes:
 	}
 
 	return item, nil
+}
+
+// conversionEdits represents the string edits needed to make a type conversion
+// of an expression.
+type conversionEdits struct {
+	prefix, suffix string
+}
+
+// formatConversion returns the edits needed to make a type conversion
+// expression, including parentheses if necessary.
+//
+// Returns empty conversionEdits if convertTo is nil.
+func (c *completer) formatConversion(convertTo types.Type) conversionEdits {
+	if convertTo == nil {
+		return conversionEdits{}
+	}
+
+	typeName := types.TypeString(convertTo, c.qf)
+	switch t := convertTo.(type) {
+	// We need extra parens when casting to these types. For example,
+	// we need "(*int)(foo)", not "*int(foo)".
+	case *types.Pointer, *types.Signature:
+		typeName = "(" + typeName + ")"
+	case *types.Basic:
+		// If the types are incompatible (as determined by typeMatches), then we
+		// must need a conversion here. However, if the target type is untyped,
+		// don't suggest converting to e.g. "untyped float" (golang/go#62141).
+		if t.Info()&types.IsUntyped != 0 {
+			typeName = types.TypeString(types.Default(convertTo), c.qf)
+		}
+	}
+	return conversionEdits{prefix: typeName + "(", suffix: ")"}
 }
 
 // importEdits produces the text edits necessary to add the given import to the current file.
