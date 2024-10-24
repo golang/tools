@@ -181,7 +181,6 @@ Suffixes:
 	// add the additional text edits needed.
 	if cand.imp != nil {
 		addlEdits, err := c.importEdits(cand.imp)
-
 		if err != nil {
 			return CompletionItem{}, err
 		}
@@ -213,7 +212,7 @@ Suffixes:
 		}
 
 		prefix = typeName + "(" + prefix
-		suffix = ")"
+		suffix = ")" + suffix
 	}
 
 	if prefix != "" {
