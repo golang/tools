@@ -153,12 +153,6 @@ func init() {
 }
 
 func run(t *testing.T, input string, goroot string) {
-	// The recover2 test case is broken on Go 1.14+. See golang/go#34089.
-	// TODO(matloob): Fix this.
-	if filepath.Base(input) == "recover2.go" {
-		t.Skip("The recover2.go test is broken in go1.14+. See golang.org/issue/34089.")
-	}
-
 	t.Logf("Input: %s\n", input)
 
 	start := time.Now()
