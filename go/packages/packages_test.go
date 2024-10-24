@@ -3176,3 +3176,36 @@ func TestIssue69606b(t *testing.T) {
 		t.Fatal("Expected to get an error because missing unsafe package but got a nil error")
 	}
 }
+
+// TestNeedTypesInfoOnly tests when NeedTypesInfo was set and NeedSyntax & NeedTypes were not,
+// Load should include the TypesInfo of packages properly
+func TestLoadTypesInfoWithoutSyntaxOrTypes(t *testing.T) {
+	testAllOrModulesParallel(t, testLoadTypesInfoWithoutSyntaxOrTypes)
+}
+
+func testLoadTypesInfoWithoutSyntaxOrTypes(t *testing.T, exporter packagestest.Exporter) {
+	exported := packagestest.Export(t, exporter, []packagestest.Module{{
+		Name: "golang.org/fake",
+		Files: map[string]interface{}{
+			"a/a.go": `package a;
+
+func foo() int {
+	i := 0
+	s := "abc"
+	return i + len(s)
+}
+`,
+		}}})
+	defer exported.Cleanup()
+	exported.Config.Mode = packages.NeedTypesInfo
+
+	pkgs, err := packages.Load(exported.Config, "golang.org/fake/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// check if types info is present
+	if pkgs[0].TypesInfo == nil {
+		t.Errorf("expected types info to be present but got nil")
+	}
+}
