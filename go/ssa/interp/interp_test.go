@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"go/build"
 	"go/types"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -186,10 +187,10 @@ func run(t *testing.T, input string, goroot string) {
 	var hint string
 	defer func() {
 		if hint != "" {
-			fmt.Println("FAIL")
-			fmt.Println(hint)
+			t.Log("FAIL")
+			t.Log(hint)
 		} else {
-			fmt.Println("PASS")
+			t.Log("PASS")
 		}
 
 		interp.CapturedOutput = nil
@@ -219,10 +220,53 @@ func run(t *testing.T, input string, goroot string) {
 		panic("bogus SizesFor")
 	}
 	hint = fmt.Sprintf("To trace execution, run:\n%% go build golang.org/x/tools/cmd/ssadump && ./ssadump -build=C -test -run --interp=T %s\n", input)
+
+	// Capture anything written by the interpreter to os.Std{out,err}
+	// by temporarily redirecting them to a buffer via a pipe.
+	//
+	// While capturing is in effect, we must not write any
+	// test-related stuff to stderr (including log.Print, t.Log, etc).
+	//
+	// Suppress capturing if we are the child process of TestRangeFunc.
+	// TODO(adonovan): simplify that test using this mechanism.
+	// Also eliminate the redundant interp.CapturedOutput mechanism.
+	restore := func() {} // restore files and log the mixed out/err.
+	if os.Getenv("INTERPTEST_CHILD") == "" {
+		// Connect std{out,err} to pipe.
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("can't create pipe for stderr: %v", err)
+		}
+		savedStdout := os.Stdout
+		savedStderr := os.Stderr
+		os.Stdout = w
+		os.Stderr = w
+
+		// Buffer what is written.
+		var buf bytes.Buffer
+		done := make(chan struct{})
+		go func() {
+			if _, err := io.Copy(&buf, r); err != nil {
+				fmt.Fprintf(savedStderr, "io.Copy: %v", err)
+			}
+			close(done)
+		}()
+
+		// Finally, restore the files and log what was captured.
+		restore = func() {
+			os.Stdout = savedStdout
+			os.Stderr = savedStderr
+			w.Close()
+			<-done
+			t.Logf("Interpreter's stdout+stderr:\n%s", &buf)
+		}
+	}
+
 	var imode interp.Mode // default mode
 	// imode |= interp.DisableRecover // enable for debugging
 	// imode |= interp.EnableTracing // enable for debugging
 	exitCode := interp.Interpret(mainPkg, imode, sizes, input, []string{})
+	restore()
 	if exitCode != 0 {
 		t.Fatalf("interpreting %s: exit code was %d", input, exitCode)
 	}
