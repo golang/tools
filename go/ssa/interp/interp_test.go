@@ -21,7 +21,6 @@ import (
 	"go/build"
 	"go/types"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -152,7 +151,8 @@ func init() {
 	os.Setenv("GOARCH", runtime.GOARCH)
 }
 
-func run(t *testing.T, input string, goroot string) {
+// run runs a single test. On success it returns the captured std{out,err}.
+func run(t *testing.T, input string, goroot string) string {
 	testenv.NeedsExec(t) // really we just need os.Pipe, but os/exec uses pipes
 
 	t.Logf("Input: %s\n", input)
@@ -182,14 +182,13 @@ func run(t *testing.T, input string, goroot string) {
 	// Print a helpful hint if we don't make it to the end.
 	var hint string
 	defer func() {
+		t.Logf("Duration: %v", time.Since(start))
 		if hint != "" {
 			t.Log("FAIL")
 			t.Log(hint)
 		} else {
 			t.Log("PASS")
 		}
-
-		interp.CapturedOutput = nil
 	}()
 
 	hint = fmt.Sprintf("To dump SSA representation, run:\n%% go build golang.org/x/tools/cmd/ssadump && ./ssadump -test -build=CFP %s\n", input)
@@ -209,8 +208,6 @@ func run(t *testing.T, input string, goroot string) {
 		t.Fatalf("not a main package: %s", input)
 	}
 
-	interp.CapturedOutput = new(bytes.Buffer)
-
 	sizes := types.SizesFor("gc", ctx.GOARCH)
 	if sizes.Sizeof(types.Typ[types.Int]) < 4 {
 		panic("bogus SizesFor")
@@ -222,12 +219,8 @@ func run(t *testing.T, input string, goroot string) {
 	//
 	// While capturing is in effect, we must not write any
 	// test-related stuff to stderr (including log.Print, t.Log, etc).
-	//
-	// Suppress capturing if we are the child process of TestRangeFunc.
-	// TODO(adonovan): simplify that test using this mechanism.
-	// Also eliminate the redundant interp.CapturedOutput mechanism.
-	restore := func() {} // restore files and log the mixed out/err.
-	if os.Getenv("INTERPTEST_CHILD") == "" {
+	var restore func() string // restore files and log+return the mixed out/err.
+	{
 		// Connect std{out,err} to pipe.
 		r, w, err := os.Pipe()
 		if err != nil {
@@ -239,7 +232,7 @@ func run(t *testing.T, input string, goroot string) {
 		os.Stderr = w
 
 		// Buffer what is written.
-		var buf bytes.Buffer
+		var buf strings.Builder
 		done := make(chan struct{})
 		go func() {
 			if _, err := io.Copy(&buf, r); err != nil {
@@ -249,12 +242,14 @@ func run(t *testing.T, input string, goroot string) {
 		}()
 
 		// Finally, restore the files and log what was captured.
-		restore = func() {
+		restore = func() string {
 			os.Stdout = savedStdout
 			os.Stderr = savedStderr
 			w.Close()
 			<-done
-			t.Logf("Interpreter's stdout+stderr:\n%s", &buf)
+			captured := buf.String()
+			t.Logf("Interpreter's stdout+stderr:\n%s", captured)
+			return captured
 		}
 	}
 
@@ -262,20 +257,18 @@ func run(t *testing.T, input string, goroot string) {
 	// imode |= interp.DisableRecover // enable for debugging
 	// imode |= interp.EnableTracing // enable for debugging
 	exitCode := interp.Interpret(mainPkg, imode, sizes, input, []string{})
-	restore()
+	capturedOutput := restore()
 	if exitCode != 0 {
 		t.Fatalf("interpreting %s: exit code was %d", input, exitCode)
 	}
 	// $GOROOT/test tests use this convention:
-	if strings.Contains(interp.CapturedOutput.String(), "BUG") {
+	if strings.Contains(capturedOutput, "BUG") {
 		t.Fatalf("interpreting %s: exited zero but output contained 'BUG'", input)
 	}
 
 	hint = "" // call off the hounds
 
-	if false {
-		t.Log(input, time.Since(start)) // test profiling
-	}
+	return capturedOutput
 }
 
 // makeGoroot copies testdata/src into the "src" directory of a temporary
@@ -327,13 +320,9 @@ const GOARCH = %q
 // TestTestdataFiles runs the interpreter on testdata/*.go.
 func TestTestdataFiles(t *testing.T) {
 	goroot := makeGoroot(t)
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Fatal(err)
-	}
 	for _, input := range testdataTests {
 		t.Run(input, func(t *testing.T) {
-			run(t, filepath.Join(cwd, "testdata", input), goroot)
+			run(t, filepath.Join("testdata", input), goroot)
 		})
 	}
 }
