@@ -153,6 +153,8 @@ func init() {
 }
 
 func run(t *testing.T, input string, goroot string) {
+	testenv.NeedsExec(t) // really we just need os.Pipe, but os/exec uses pipes
+
 	t.Logf("Input: %s\n", input)
 
 	start := time.Now()
