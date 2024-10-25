@@ -17,6 +17,7 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -115,6 +116,33 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		return nil, fmt.Errorf("package has type errors: %v", errors[0])
 	}
 
+	// imports is a map from package path to local package name.
+	var imports = make(map[string]string)
+
+	var collectImports = func(file *ast.File) error {
+		for _, spec := range file.Imports {
+			// TODO(hxjiang): support dot imports.
+			if spec.Name != nil && spec.Name.Name == "." {
+				return fmt.Errorf("\"add a test for FUNC\" does not support files containing dot imports")
+			}
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return err
+			}
+			if spec.Name != nil && spec.Name.Name != "_" {
+				imports[path] = spec.Name.Name
+			} else {
+				imports[path] = filepath.Base(path)
+			}
+		}
+		return nil
+	}
+
+	// Collect all the imports from the x.go, keep track of the local package name.
+	if err := collectImports(pgf.File); err != nil {
+		return nil, err
+	}
+
 	testBase := strings.TrimSuffix(filepath.Base(loc.URI.Path()), ".go") + "_test.go"
 	goTestFileURI := protocol.URIFromPath(filepath.Join(loc.URI.Dir().Path(), testBase))
 
@@ -192,6 +220,26 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		if err != nil {
 			return nil, err
 		}
+
+		// Collect all the imports from the x_test.go, overwrite the local pakcage
+		// name collected from x.go.
+		if err := collectImports(testPGF.File); err != nil {
+			return nil, err
+		}
+	}
+
+	// qf qualifier returns the local package name need to use in x_test.go by
+	// consulting the consolidated imports map.
+	qf := func(p *types.Package) string {
+		// When generating test in x packages, any type/function defined in the same
+		// x package can emit package name.
+		if !xtest && p == pkg.Types() {
+			return ""
+		}
+		if local, ok := imports[p.Path()]; ok {
+			return local
+		}
+		return p.Name()
 	}
 
 	// TODO(hxjiang): modify existing imports or add new imports.
@@ -231,16 +279,6 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		// the option to drop the return value if the type is unexported.
 	}
 
-	// TODO(hxjiang): qualifier should consolidate existing imports from x
-	// package and existing x_test package. The existing x_test package imports
-	// should overwrite x package imports.
-	var qf types.Qualifier
-	if xtest {
-		qf = (*types.Package).Name
-	} else {
-		qf = typesinternal.NameRelativeTo(pkg.Types())
-	}
-
 	testName, err := testName(fn)
 	if err != nil {
 		return nil, err
@@ -251,7 +289,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 	}
 
 	if sig.Recv() == nil && xtest {
-		data.PackageName = pkg.Types().Name()
+		data.PackageName = qf(pkg.Types())
 	}
 
 	for i := range sig.Params().Len() {

@@ -388,3 +388,88 @@ func Foo(in, in1, in2, in3 string) (out, out1, out2 string) {return in, in, in} 
 +    }
 +  }
 +}
+-- xpackagerename/xpackagerename.go --
+package main
+
+import (
+  mytime "time"
+  myast "go/ast"
+)
+
+func Foo(t mytime.Time, a *myast.Node) (mytime.Time, *myast.Node) {return t, a} //@codeactionedit("Foo", "source.addTest", xpackage_rename)
+
+-- @xpackage_rename/xpackagerename/xpackagerename_test.go --
+@@ -0,0 +1,26 @@
++package main_test
++
++func TestFoo(t *testing.T) {
++  type args struct {
++    in mytime.Time
++    in2 *myast.Node
++  }
++  tests := []struct {
++    name string // description of this test case
++    args args
++    want mytime.Time
++    want2 *myast.Node
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got, got2 := main.Foo(tt.args.in, tt.args.in2)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: Foo() = %v, want %v", tt.name, got, tt.want)
++    }
++    if true {
++      t.Errorf("%s: Foo() = %v, want %v", tt.name, got2, tt.want2)
++    }
++  }
++}
+-- xtestpackagerename/xtestpackagerename.go --
+package main
+
+import (
+  mytime "time"
+  myast "go/ast"
+)
+
+func Foo(t mytime.Time, a *myast.Node) (mytime.Time, *myast.Node) {return t, a} //@codeactionedit("Foo", "source.addTest", xtest_package_rename)
+
+-- xtestpackagerename/xtestpackagerename_test.go --
+package main_test
+
+import (
+  yourtime "time"
+  yourast "go/ast"
+)
+
+var fooTime = yourtime.Time{}
+var fooNode = yourast.Node{}
+
+-- @xtest_package_rename/xtestpackagerename/xtestpackagerename_test.go --
+@@ -11 +11,24 @@
++func TestFoo(t *testing.T) {
++  type args struct {
++    in yourtime.Time
++    in2 *yourast.Node
++  }
++  tests := []struct {
++    name string // description of this test case
++    args args
++    want yourtime.Time
++    want2 *yourast.Node
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got, got2 := main.Foo(tt.args.in, tt.args.in2)
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: Foo() = %v, want %v", tt.name, got, tt.want)
++    }
++    if true {
++      t.Errorf("%s: Foo() = %v, want %v", tt.name, got2, tt.want2)
++    }
++  }
++}
