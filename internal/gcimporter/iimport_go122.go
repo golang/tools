@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.23 && !go1.24
+//go:build go1.22 && !go1.24
 
 package gcimporter
 
@@ -12,8 +12,7 @@ import (
 	"unsafe"
 )
 
-// TODO(rfindley): delete this workaround once gopls no longer compiles with
-// go1.23.
+// TODO(rfindley): delete this workaround once go1.24 is assured.
 
 func init() {
 	// Update markBlack so that it correctly sets the color
