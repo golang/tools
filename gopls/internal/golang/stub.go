@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go/ast"
 	"go/format"
 	"go/parser"
 	"go/token"
@@ -25,6 +26,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/tokeninternal"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // stubMissingInterfaceMethodsFixer returns a suggested fix to declare the missing
@@ -48,7 +50,24 @@ func stubMissingCalledFunctionFixer(ctx context.Context, snapshot *cache.Snapsho
 	if si == nil {
 		return nil, nil, fmt.Errorf("invalid type request")
 	}
-	return insertDeclsAfter(ctx, snapshot, pkg.Metadata(), si.Fset, si.Receiver.Obj(), si.Emit)
+	var sym types.Object
+	sym = si.Receiver.Obj()
+	// If the enclosing function declaration is a method declaration,
+	// and matches the receiver type of the diagnostic,
+	// insert after the enclosing method.
+	if len(si.Path) > 1 {
+		decl, ok := si.Path[len(si.Path)-2].(*ast.FuncDecl)
+		if ok && decl.Recv != nil {
+			for _, mr := range decl.Recv.List {
+				mrt := si.Info.TypeOf(mr.Type)
+				if mrt != nil && types.Unalias(typesinternal.Unpointer(mrt)) == sym.Type() {
+					sym = si.Info.ObjectOf(decl.Name)
+					break
+				}
+			}
+		}
+	}
+	return insertDeclsAfter(ctx, snapshot, pkg.Metadata(), si.Fset, sym, si.Emit)
 }
 
 // An emitter writes new top-level declarations into an existing

@@ -52,3 +52,17 @@ func fun() {
 +func (t TypeDeclInOtherFile) other(i int) {
 +	panic("unimplemented")
 +}
+-- should_insert_after.go --
+package fromcallbasic
+
+type HasMethod struct{}
+
+func (h *HasMethod) m() {
+	h.should_insert_after() //@quickfix("should_insert_after", re"has no field or method", insert)
+}
+-- @insert/should_insert_after.go --
+@@ -8 +8,4 @@
++
++func (h *HasMethod) should_insert_after() {
++	panic("unimplemented")
++}

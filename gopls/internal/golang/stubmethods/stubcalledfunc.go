@@ -27,8 +27,8 @@ type CallStubInfo struct {
 	Receiver   typesinternal.NamedOrAlias // the method's receiver type
 	MethodName string
 	pointer    bool
-	info       *types.Info
-	path       []ast.Node // path enclosing the CallExpr
+	Info       *types.Info
+	Path       []ast.Node // path enclosing the CallExpr
 }
 
 // GetCallStubInfo extracts necessary information to generate a method definition from
@@ -63,8 +63,8 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 				Receiver:   recvType,
 				MethodName: s.Sel.Name,
 				pointer:    pointer,
-				path:       path[i:],
-				info:       info,
+				Path:       path[i:],
+				Info:       info,
 			}
 		}
 	}
@@ -74,7 +74,7 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 // Emit writes to out the missing method based on type info of si.Receiver and CallExpr.
 func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	params := si.collectParams()
-	rets := typesFromContext(si.info, si.path, si.path[0].Pos())
+	rets := typesFromContext(si.Info, si.Path, si.Path[0].Pos())
 	recv := si.Receiver.Obj()
 	// Pointer receiver?
 	var star string
@@ -159,9 +159,9 @@ func (si *CallStubInfo) collectParams() []param {
 		params = append(params, p)
 	}
 
-	args := si.path[0].(*ast.CallExpr).Args
+	args := si.Path[0].(*ast.CallExpr).Args
 	for _, arg := range args {
-		t := si.info.TypeOf(arg)
+		t := si.Info.TypeOf(arg)
 		switch t := t.(type) {
 		// This is the case where another function call returning multiple
 		// results is used as an argument.
