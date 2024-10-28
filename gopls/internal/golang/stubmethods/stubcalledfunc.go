@@ -26,9 +26,10 @@ type CallStubInfo struct {
 	Fset       *token.FileSet             // the FileSet used to type-check the types below
 	Receiver   typesinternal.NamedOrAlias // the method's receiver type
 	MethodName string
+	After      types.Object // decl after which to insert the new decl
 	pointer    bool
-	Info       *types.Info
-	Path       []ast.Node // path enclosing the CallExpr
+	info       *types.Info
+	path       []ast.Node // path enclosing the CallExpr
 }
 
 // GetCallStubInfo extracts necessary information to generate a method definition from
@@ -58,13 +59,29 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 			if recv.Parent() != recv.Pkg().Scope() {
 				return nil
 			}
+
+			after := types.Object(recv)
+			// If the enclosing function declaration is a method declaration,
+			// and matches the receiver type of the diagnostic,
+			// insert after the enclosing method.
+			decl, ok := path[len(path)-2].(*ast.FuncDecl)
+			if ok && decl.Recv != nil {
+				if len(decl.Recv.List) != 1 {
+					return nil
+				}
+				mrt := info.TypeOf(decl.Recv.List[0].Type)
+				if mrt != nil && types.Identical(types.Unalias(typesinternal.Unpointer(mrt)), recv.Type()) {
+					after = info.ObjectOf(decl.Name)
+				}
+			}
 			return &CallStubInfo{
 				Fset:       fset,
 				Receiver:   recvType,
 				MethodName: s.Sel.Name,
+				After:      after,
 				pointer:    pointer,
-				Path:       path[i:],
-				Info:       info,
+				path:       path[i:],
+				info:       info,
 			}
 		}
 	}
@@ -74,7 +91,7 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 // Emit writes to out the missing method based on type info of si.Receiver and CallExpr.
 func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	params := si.collectParams()
-	rets := typesFromContext(si.Info, si.Path, si.Path[0].Pos())
+	rets := typesFromContext(si.info, si.path, si.path[0].Pos())
 	recv := si.Receiver.Obj()
 	// Pointer receiver?
 	var star string
@@ -159,9 +176,9 @@ func (si *CallStubInfo) collectParams() []param {
 		params = append(params, p)
 	}
 
-	args := si.Path[0].(*ast.CallExpr).Args
+	args := si.path[0].(*ast.CallExpr).Args
 	for _, arg := range args {
-		t := si.Info.TypeOf(arg)
+		t := si.info.TypeOf(arg)
 		switch t := t.(type) {
 		// This is the case where another function call returning multiple
 		// results is used as an argument.
