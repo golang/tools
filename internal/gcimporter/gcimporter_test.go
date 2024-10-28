@@ -166,6 +166,7 @@ func TestImportTypeparamTests(t *testing.T) {
 	}
 
 	testenv.NeedsGoBuild(t) // to find stdlib export data in the build cache
+	testenv.NeedsGOROOTDir(t, "test")
 
 	// This package only handles gc export data.
 	if runtime.Compiler != "gc" {

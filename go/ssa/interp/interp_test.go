@@ -340,6 +340,8 @@ func TestTestdataFiles(t *testing.T) {
 
 // TestGorootTest runs the interpreter on $GOROOT/test/*.go.
 func TestGorootTest(t *testing.T) {
+	testenv.NeedsGOROOTDir(t, "test")
+
 	goroot := makeGoroot(t)
 	for _, input := range gorootTestTests {
 		t.Run(input, func(t *testing.T) {
@@ -352,6 +354,8 @@ func TestGorootTest(t *testing.T) {
 // in $GOROOT/test/typeparam/*.go.
 
 func TestTypeparamTest(t *testing.T) {
+	testenv.NeedsGOROOTDir(t, "test")
+
 	if runtime.GOARCH == "wasm" {
 		// See ssa/TestTypeparamTest.
 		t.Skip("Consistent flakes on wasm (e.g. https://go.dev/issues/64726)")

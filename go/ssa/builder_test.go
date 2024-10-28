@@ -666,6 +666,8 @@ var indirect = R[int].M
 // TestTypeparamTest builds SSA over compilable examples in $GOROOT/test/typeparam/*.go.
 
 func TestTypeparamTest(t *testing.T) {
+	testenv.NeedsGOROOTDir(t, "test")
+
 	// Tests use a fake goroot to stub out standard libraries with declarations in
 	// testdata/src. Decreases runtime from ~80s to ~1s.
 

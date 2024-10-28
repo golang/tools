@@ -44,9 +44,10 @@ func TestNewAlias(t *testing.T) {
 	}
 
 	for _, godebug := range []string{
-		// The default gotypesalias value follows the x/tools/go.mod version
-		// The go.mod is at 1.22 so the default is gotypesalias=0.
-		"", // Use the default GODEBUG value (off).
+		// Note: previously there was a test case for "", which asserted on the
+		// behavior implied by the x/tools go.mod go directive. But that only works
+		// if x/tools is the main module for the test, which isn't the case when
+		// run with a go.work file, or from another module (golang/go#70082).
 		"gotypesalias=0",
 		"gotypesalias=1",
 	} {

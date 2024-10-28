@@ -197,11 +197,11 @@ func TestWebIndex(t *testing.T) {
 
 // Basic integration test for godoc HTTP interface.
 func testWeb(t *testing.T, x packagestest.Exporter, bin string, withIndex bool) {
+	testenv.NeedsGOROOTDir(t, "api")
+
 	switch runtime.GOOS {
 	case "plan9":
 		t.Skip("skipping on plan9: fails to start up quickly enough")
-	case "android", "ios":
-		t.Skip("skipping on mobile: lacks GOROOT/api in test environment")
 	}
 
 	// Write a fake GOROOT/GOPATH with some third party packages.

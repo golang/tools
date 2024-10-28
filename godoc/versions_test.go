@@ -7,6 +7,8 @@ package godoc
 import (
 	"go/build"
 	"testing"
+
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestParseVersionRow(t *testing.T) {
@@ -88,6 +90,8 @@ func hasTag(t string) bool {
 }
 
 func TestAPIVersion(t *testing.T) {
+	testenv.NeedsGOROOTDir(t, "api")
+
 	av, err := parsePackageAPIInfo()
 	if err != nil {
 		t.Fatal(err)

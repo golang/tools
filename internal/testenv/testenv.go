@@ -490,3 +490,17 @@ func NeedsGoExperiment(t testing.TB, flag string) {
 		t.Skipf("skipping test: flag %q is not set in GOEXPERIMENT=%q", flag, goexp)
 	}
 }
+
+// NeedsGOROOTDir skips the test if GOROOT/dir does not exist, and GOROOT is a
+// released version of Go (=has a VERSION file). Some GOROOT directories are
+// removed by cmd/distpack.
+//
+// See also golang/go#70081.
+func NeedsGOROOTDir(t *testing.T, dir string) {
+	gorootTest := filepath.Join(GOROOT(t), dir)
+	if _, err := os.Stat(gorootTest); os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(GOROOT(t), "VERSION")); err == nil {
+			t.Skipf("skipping: GOROOT/%s not present", dir)
+		}
+	}
+}
