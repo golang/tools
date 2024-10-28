@@ -26,6 +26,7 @@ type CallStubInfo struct {
 	Fset       *token.FileSet             // the FileSet used to type-check the types below
 	Receiver   typesinternal.NamedOrAlias // the method's receiver type
 	MethodName string
+	After      types.Object // decl after which to insert the new decl
 	pointer    bool
 	info       *types.Info
 	path       []ast.Node // path enclosing the CallExpr
@@ -58,10 +59,26 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 			if recv.Parent() != recv.Pkg().Scope() {
 				return nil
 			}
+
+			after := types.Object(recv)
+			// If the enclosing function declaration is a method declaration,
+			// and matches the receiver type of the diagnostic,
+			// insert after the enclosing method.
+			decl, ok := path[len(path)-2].(*ast.FuncDecl)
+			if ok && decl.Recv != nil {
+				if len(decl.Recv.List) != 1 {
+					return nil
+				}
+				mrt := info.TypeOf(decl.Recv.List[0].Type)
+				if mrt != nil && types.Identical(types.Unalias(typesinternal.Unpointer(mrt)), recv.Type()) {
+					after = info.ObjectOf(decl.Name)
+				}
+			}
 			return &CallStubInfo{
 				Fset:       fset,
 				Receiver:   recvType,
 				MethodName: s.Sel.Name,
+				After:      after,
 				pointer:    pointer,
 				path:       path[i:],
 				info:       info,

@@ -48,7 +48,7 @@ func stubMissingCalledFunctionFixer(ctx context.Context, snapshot *cache.Snapsho
 	if si == nil {
 		return nil, nil, fmt.Errorf("invalid type request")
 	}
-	return insertDeclsAfter(ctx, snapshot, pkg.Metadata(), si.Fset, si.Receiver.Obj(), si.Emit)
+	return insertDeclsAfter(ctx, snapshot, pkg.Metadata(), si.Fset, si.After, si.Emit)
 }
 
 // An emitter writes new top-level declarations into an existing

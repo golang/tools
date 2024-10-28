@@ -1,8 +1,5 @@
 This test checks the return type of the generated missing method based on CallExpr.
 
--- basic_stub.go --
-package fromcallreturns
-
 -- param.go --
 package fromcallreturns
 
