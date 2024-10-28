@@ -52,7 +52,7 @@ license that can be found in the LICENSE file.`)
 
 func checkFile(toolsDir, filename string) (bool, error) {
 	// Only check Go files.
-	if !strings.HasSuffix(filename, "go") {
+	if !strings.HasSuffix(filename, ".go") {
 		return false, nil
 	}
 	// Don't check testdata files.
