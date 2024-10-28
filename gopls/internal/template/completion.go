@@ -84,13 +84,15 @@ func inTemplate(fc *Parsed, pos protocol.Position) int {
 	offset := fc.FromPosition(pos)
 	// this could be a binary search, as the tokens are ordered
 	for _, tk := range fc.tokens {
-		if tk.Start < offset && offset <= tk.End {
+		if tk.Start+len(Left) <= offset && offset+len(Right) <= tk.End {
 			return tk.Start
 		}
 	}
 	for _, x := range fc.elided {
-		if x > offset {
-			// fc.elided is sorted
+		if x+len(Left) > offset {
+			// fc.elided is sorted, and x is the position where a '{{' was replaced
+			// by '  '. We consider only cases where the replaced {{ is to the left
+			// of the cursor.
 			break
 		}
 		// If the interval [x,offset] does not contain Left or Right
