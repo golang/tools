@@ -6,6 +6,7 @@ package ssa_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/importer"
@@ -686,8 +687,10 @@ func TestTypeparamTest(t *testing.T) {
 		t.Fatalf("Failed to load errors package from std: %s", err)
 	}
 	goroot := filepath.Dir(filepath.Dir(filepath.Dir(stdPkgs[0].GoFiles[0])))
-
 	dir := filepath.Join(goroot, "test", "typeparam")
+	if _, err = os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+		t.Skipf("test/typeparam doesn't exist under GOROOT %s", goroot)
+	}
 
 	// Collect all of the .go files in
 	fsys := os.DirFS(dir)
@@ -696,24 +699,39 @@ func TestTypeparamTest(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Each call to buildPackage calls package.Load, which invokes "go list",
+	// and with over 300 subtests this can be very slow (minutes, or tens
+	// on some platforms). So, we use an overlay to map each test file to a
+	// distinct single-file package and load them all at once.
+	overlay := map[string][]byte{
+		"go.mod": goMod("example.com", -1),
+	}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
 			continue // Consider standalone go files.
 		}
-		t.Run(entry.Name(), func(t *testing.T) {
-			src, err := fs.ReadFile(fsys, entry.Name())
-			if err != nil {
-				t.Fatal(err)
-			}
+		src, err := fs.ReadFile(fsys, entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Only build test files that can be compiled, or compiled and run.
+		if !bytes.HasPrefix(src, []byte("// run")) && !bytes.HasPrefix(src, []byte("// compile")) {
+			t.Logf("%s: not detected as a run test", entry.Name())
+			continue
+		}
 
-			// Only build test files that can be compiled, or compiled and run.
-			if !bytes.HasPrefix(src, []byte("// run")) && !bytes.HasPrefix(src, []byte("// compile")) {
-				t.Skipf("not detected as a run test")
-			}
+		filename := fmt.Sprintf("%s/main.go", entry.Name())
+		overlay[filename] = src
+	}
 
-			t.Logf("Input: %s\n", entry.Name())
-
-			_, _ = buildPackage(t, string(src), ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+	// load all packages inside the overlay so 'go list' will be triggered only once.
+	pkgs := loadPackages(t, overlayFS(overlay), "./...")
+	for _, p := range pkgs {
+		originFilename := filepath.Base(filepath.Dir(p.GoFiles[0]))
+		t.Run(originFilename, func(t *testing.T) {
+			t.Parallel()
+			prog, _ := ssautil.Packages([]*packages.Package{p}, ssa.SanityCheckFunctions|ssa.InstantiateGenerics)
+			prog.Package(p.Types).Build()
 		})
 	}
 }
