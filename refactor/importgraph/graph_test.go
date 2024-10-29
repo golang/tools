@@ -15,6 +15,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"golang.org/x/tools/go/packages/packagestest"
@@ -85,13 +86,14 @@ func TestBuild(t *testing.T) {
 
 	// Log the complete graph before the errors, so that the errors are near the
 	// end of the log (where we expect them to be).
-	nodePrinted := map[string]bool{}
+	var nodePrinted sync.Map
+
 	printNode := func(direction string, from string) {
 		key := fmt.Sprintf("%s[%q]", direction, from)
-		if nodePrinted[key] {
+		if _, ok := nodePrinted.Load(key); ok {
 			return
 		}
-		nodePrinted[key] = true
+		nodePrinted.Store(key, true)
 
 		var g importgraph.Graph
 		switch direction {
@@ -100,7 +102,6 @@ func TestBuild(t *testing.T) {
 		case "reverse":
 			g = reverse
 		default:
-			t.Helper()
 			t.Fatalf("bad direction: %q", direction)
 		}
 
