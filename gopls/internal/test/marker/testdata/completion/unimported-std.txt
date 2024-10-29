@@ -13,7 +13,7 @@ behaves correctly in go1.22. (When go1.22 is assured, we can remove
 the min_go flag but leave the test inputs unchanged.)
 
 -- flags --
--ignore_extra_diags -min_go=go1.22
+-ignore_extra_diags
 
 -- go.mod --
 module example.com

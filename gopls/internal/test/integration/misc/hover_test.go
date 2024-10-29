@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
-	"golang.org/x/tools/internal/testenv"
 )
 
 func TestHoverUnexported(t *testing.T) {
@@ -282,7 +281,6 @@ go 1.16
 }
 
 func TestHoverCompletionMarkdown(t *testing.T) {
-	testenv.NeedsGo1Point(t, 19)
 	const source = `
 -- go.mod --
 module mod.com
@@ -343,7 +341,6 @@ func Hello() string {
 // Test that the generated markdown contains links for Go references.
 // https://github.com/golang/go/issues/58352
 func TestHoverLinks(t *testing.T) {
-	testenv.NeedsGo1Point(t, 19)
 	const input = `
 -- go.mod --
 go 1.19
@@ -465,7 +462,6 @@ SKIPPED
 `
 
 func TestHoverEmbedDirective(t *testing.T) {
-	testenv.NeedsGo1Point(t, 19)
 	Run(t, embedHover, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		from := env.RegexpSearch("main.go", `\*.txt`)
@@ -606,8 +602,6 @@ func main() {
 }
 
 func TestHoverBuiltinFile(t *testing.T) {
-	testenv.NeedsGo1Point(t, 21) // uses 'min'
-
 	// This test verifies that hovering in the builtin file provides the same
 	// hover content as hovering over a use of a builtin.
 

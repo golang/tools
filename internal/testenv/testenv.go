@@ -8,6 +8,7 @@ package testenv
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"go/build"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/goroot"
 )
 
@@ -323,12 +325,59 @@ func Go1Point() int {
 	panic("bad release tags")
 }
 
+// NeedsGoCommand1Point skips t if the ambient go command version in the PATH
+// of the current process is older than 1.x.
+//
+// NeedsGoCommand1Point memoizes the result of running the go command, so
+// should be called after all mutations of PATH.
+func NeedsGoCommand1Point(t testing.TB, x int) {
+	NeedsTool(t, "go")
+	go1point, err := goCommand1Point()
+	if err != nil {
+		panic(fmt.Sprintf("unable to determine go version: %v", err))
+	}
+	if go1point < x {
+		t.Helper()
+		t.Skipf("go command is version 1.%d, older than required 1.%d", go1point, x)
+	}
+}
+
+var (
+	goCommand1PointOnce sync.Once
+	goCommand1Point_    int
+	goCommand1PointErr  error
+)
+
+func goCommand1Point() (int, error) {
+	goCommand1PointOnce.Do(func() {
+		goCommand1Point_, goCommand1PointErr = gocommand.GoVersion(context.Background(), gocommand.Invocation{}, new(gocommand.Runner))
+	})
+	return goCommand1Point_, goCommand1PointErr
+}
+
 // NeedsGo1Point skips t if the Go version used to run the test is older than
 // 1.x.
 func NeedsGo1Point(t testing.TB, x int) {
 	if Go1Point() < x {
 		t.Helper()
 		t.Skipf("running Go version %q is version 1.%d, older than required 1.%d", runtime.Version(), Go1Point(), x)
+	}
+}
+
+// SkipAfterGo1Point skips t if the ambient go command version in the PATH of
+// the current process is newer than 1.x.
+//
+// SkipAfterGoCommand1Point memoizes the result of running the go command, so
+// should be called after any mutation of PATH.
+func SkipAfterGoCommand1Point(t testing.TB, x int) {
+	NeedsTool(t, "go")
+	go1point, err := goCommand1Point()
+	if err != nil {
+		panic(fmt.Sprintf("unable to determine go version: %v", err))
+	}
+	if go1point > x {
+		t.Helper()
+		t.Skipf("go command is version 1.%d, newer than maximum 1.%d", go1point, x)
 	}
 }
 

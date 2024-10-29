@@ -234,10 +234,10 @@ func (sb *Sandbox) goCommandInvocation() gocommand.Invocation {
 	return inv
 }
 
-// RunGoCommand executes a go command in the sandbox. If checkForFileChanges is
-// true, the sandbox scans the working directory and emits file change events
-// for any file changes it finds.
-func (sb *Sandbox) RunGoCommand(ctx context.Context, dir, verb string, args, env []string, checkForFileChanges bool) error {
+// RunGoCommand executes a go command in the sandbox and returns its standard
+// output. If checkForFileChanges is true, the sandbox scans the working
+// directory and emits file change events for any file changes it finds.
+func (sb *Sandbox) RunGoCommand(ctx context.Context, dir, verb string, args, env []string, checkForFileChanges bool) ([]byte, error) {
 	inv := sb.goCommandInvocation()
 	inv.Verb = verb
 	inv.Args = args
@@ -247,7 +247,7 @@ func (sb *Sandbox) RunGoCommand(ctx context.Context, dir, verb string, args, env
 	}
 	stdout, stderr, _, err := sb.goCommandRunner.RunRaw(ctx, inv)
 	if err != nil {
-		return fmt.Errorf("go command failed (stdout: %s) (stderr: %s): %v", stdout.String(), stderr.String(), err)
+		return nil, fmt.Errorf("go command failed (stdout: %s) (stderr: %s): %v", stdout.String(), stderr.String(), err)
 	}
 	// Since running a go command may result in changes to workspace files,
 	// check if we need to send any "watched" file events.
@@ -256,10 +256,10 @@ func (sb *Sandbox) RunGoCommand(ctx context.Context, dir, verb string, args, env
 	//                 for benchmarks. Consider refactoring.
 	if sb.Workdir != nil && checkForFileChanges {
 		if err := sb.Workdir.CheckForFileChanges(ctx); err != nil {
-			return fmt.Errorf("checking for file changes: %w", err)
+			return nil, fmt.Errorf("checking for file changes: %w", err)
 		}
 	}
-	return nil
+	return stdout.Bytes(), nil
 }
 
 // GoVersion checks the version of the go command.
@@ -275,7 +275,7 @@ func (sb *Sandbox) Close() error {
 	if sb.gopath != "" {
 		// Important: run this command in RootDir so that it doesn't interact with
 		// any toolchain downloads that may occur
-		goCleanErr = sb.RunGoCommand(context.Background(), sb.RootDir(), "clean", []string{"-modcache"}, nil, false)
+		_, goCleanErr = sb.RunGoCommand(context.Background(), sb.RootDir(), "clean", []string{"-modcache"}, nil, false)
 	}
 	err := robustio.RemoveAll(sb.rootdir)
 	if err != nil || goCleanErr != nil {

@@ -11,7 +11,6 @@ module example.com
 go 1.12
 
 -- flags --
--min_go=go1.21
 -cgo
 
 -- bad_test.go --

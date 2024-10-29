@@ -255,7 +255,7 @@ func TestAutomaticWorkspaceModule_Interdependent(t *testing.T) {
 }
 
 func TestWorkspaceVendoring(t *testing.T) {
-	testenv.NeedsGo1Point(t, 22)
+	testenv.NeedsGoCommand1Point(t, 22)
 	WithOptions(
 		ProxyFiles(workspaceModuleProxy),
 	).Run(t, multiModule, func(t *testing.T, env *Env) {

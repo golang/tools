@@ -2,7 +2,6 @@ Regression test for golang/go#67142.
 
 -- flags --
 -ignore_extra_diags
--min_go=go1.21
 
 -- settings.json --
 {

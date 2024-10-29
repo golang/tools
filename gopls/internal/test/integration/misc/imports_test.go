@@ -292,9 +292,9 @@ var _, _ = x.X, y.Y
 // inclined to undertake.
 func cleanModCache(t *testing.T, modcache string) {
 	cmd := exec.Command("go", "clean", "-modcache")
-	cmd.Env = append(os.Environ(), "GOMODCACHE="+modcache)
-	if err := cmd.Run(); err != nil {
-		t.Errorf("cleaning modcache: %v", err)
+	cmd.Env = append(os.Environ(), "GOMODCACHE="+modcache, "GOTOOLCHAIN=local")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Errorf("cleaning modcache: %v\noutput:\n%s", err, string(output))
 	}
 }
 

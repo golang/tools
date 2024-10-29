@@ -7,14 +7,10 @@ package misc
 import (
 	"testing"
 
-	"golang.org/x/tools/internal/testenv"
-
 	. "golang.org/x/tools/gopls/internal/test/integration"
 )
 
 func TestStaticcheckGenerics(t *testing.T) {
-	testenv.NeedsGo1Point(t, 20) // staticcheck requires go1.20+
-
 	// CL 583778 causes buildir not to run on packages that use
 	// range-over-func, since it might otherwise crash. But nearly
 	// all packages will soon meet this description, so the
@@ -85,8 +81,6 @@ var FooErr error = errors.New("foo")
 // Test for golang/go#56270: an analysis with related info should not panic if
 // analysis.RelatedInformation.End is not set.
 func TestStaticcheckRelatedInfo(t *testing.T) {
-	testenv.NeedsGo1Point(t, 20) // staticcheck is only supported at Go 1.20+
-
 	// CL 583778 causes buildir not to run on packages that use
 	// range-over-func, since it might otherwise crash. But nearly
 	// all packages will soon meet this description, so the

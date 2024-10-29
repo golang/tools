@@ -4,9 +4,6 @@ references to the package name p.
 
 The bug was fixed in release go1.21 of go/types.
 
--- flags --
--min_go=go1.21
-
 -- go.mod --
 module example.com
 go 1.12

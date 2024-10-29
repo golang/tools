@@ -10,7 +10,6 @@ import (
 
 	"golang.org/x/tools/gopls/internal/server"
 	. "golang.org/x/tools/gopls/internal/test/integration"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // This file holds various tests for UX with respect to broken workspaces.
@@ -23,10 +22,6 @@ import (
 
 // Test for golang/go#53933
 func TestBrokenWorkspace_DuplicateModules(t *testing.T) {
-	// The go command error message was improved in Go 1.20 to mention multiple
-	// modules.
-	testenv.NeedsGo1Point(t, 20)
-
 	// This proxy module content is replaced by the workspace, but is still
 	// required for module resolution to function in the Go command.
 	const proxy = `

@@ -1,10 +1,7 @@
 This test checks behavior of completion within append expressions.
 
-It requires go1.23 as the new "structs" package appears as a completion.
-
 -- flags --
 -ignore_extra_diags
--min_go=go1.23
 
 -- go.mod --
 module golang.org/lsptests/append

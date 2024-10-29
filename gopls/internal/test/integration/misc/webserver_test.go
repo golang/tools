@@ -361,7 +361,7 @@ func f(buf bytes.Buffer, greeting string) {
 
 // TestAssembly is a basic test of the web-based assembly listing.
 func TestAssembly(t *testing.T) {
-	testenv.NeedsGo1Point(t, 22) // for up-to-date assembly listing
+	testenv.NeedsGoCommand1Point(t, 22) // for up-to-date assembly listing
 
 	const files = `
 -- go.mod --

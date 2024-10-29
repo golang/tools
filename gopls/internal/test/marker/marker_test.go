@@ -55,6 +55,7 @@ func TestMain(m *testing.M) {
 	testenv.ExitIfSmallMachine()
 	// Disable GOPACKAGESDRIVER, as it can cause spurious test failures.
 	os.Setenv("GOPACKAGESDRIVER", "off")
+	integration.FilterToolchainPathAndGOROOT()
 	os.Exit(m.Run())
 }
 
@@ -130,12 +131,19 @@ func Test(t *testing.T) {
 				}
 				testenv.NeedsGo1Point(t, go1point)
 			}
-			if test.maxGoVersion != "" {
+			if test.minGoCommandVersion != "" {
 				var go1point int
-				if _, err := fmt.Sscanf(test.maxGoVersion, "go1.%d", &go1point); err != nil {
-					t.Fatalf("parsing -max_go version: %v", err)
+				if _, err := fmt.Sscanf(test.minGoCommandVersion, "go1.%d", &go1point); err != nil {
+					t.Fatalf("parsing -min_go_command version: %v", err)
 				}
-				testenv.SkipAfterGo1Point(t, go1point)
+				testenv.NeedsGoCommand1Point(t, go1point)
+			}
+			if test.maxGoCommandVersion != "" {
+				var go1point int
+				if _, err := fmt.Sscanf(test.maxGoCommandVersion, "go1.%d", &go1point); err != nil {
+					t.Fatalf("parsing -max_go_command version: %v", err)
+				}
+				testenv.SkipAfterGoCommand1Point(t, go1point)
 			}
 			if test.cgo {
 				testenv.NeedsTool(t, "cgo")
@@ -533,16 +541,17 @@ type markerTest struct {
 	flags      []string // flags extracted from the special "flags" archive file.
 
 	// Parsed flags values. See the flag definitions below for documentation.
-	minGoVersion     string
-	maxGoVersion     string
-	cgo              bool
-	writeGoSum       []string
-	skipGOOS         []string
-	skipGOARCH       []string
-	ignoreExtraDiags bool
-	filterBuiltins   bool
-	filterKeywords   bool
-	errorsOK         bool
+	minGoVersion        string // minimum Go runtime version; max should never be needed
+	minGoCommandVersion string
+	maxGoCommandVersion string
+	cgo                 bool
+	writeGoSum          []string
+	skipGOOS            []string
+	skipGOARCH          []string
+	ignoreExtraDiags    bool
+	filterBuiltins      bool
+	filterKeywords      bool
+	errorsOK            bool
 }
 
 // flagSet returns the flagset used for parsing the special "flags" file in the
@@ -550,7 +559,8 @@ type markerTest struct {
 func (t *markerTest) flagSet() *flag.FlagSet {
 	flags := flag.NewFlagSet(t.name, flag.ContinueOnError)
 	flags.StringVar(&t.minGoVersion, "min_go", "", "if set, the minimum go1.X version required for this test")
-	flags.StringVar(&t.maxGoVersion, "max_go", "", "if set, the maximum go1.X version required for this test")
+	flags.StringVar(&t.minGoCommandVersion, "min_go_command", "", "if set, the minimum go1.X go command version required for this test")
+	flags.StringVar(&t.maxGoCommandVersion, "max_go_command", "", "if set, the maximum go1.X go command version required for this test")
 	flags.BoolVar(&t.cgo, "cgo", false, "if set, requires cgo (both the cgo tool and CGO_ENABLED=1)")
 	flags.Var((*stringListValue)(&t.writeGoSum), "write_sumfile", "if set, write the sumfile for these directories")
 	flags.Var((*stringListValue)(&t.skipGOOS), "skip_goos", "if set, skip this test on these GOOS values")
@@ -837,7 +847,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	}
 
 	for _, dir := range writeGoSum {
-		if err := sandbox.RunGoCommand(context.Background(), dir, "list", []string{"-mod=mod", "..."}, []string{"GOWORK=off"}, true); err != nil {
+		if _, err := sandbox.RunGoCommand(context.Background(), dir, "list", []string{"-mod=mod", "..."}, []string{"GOWORK=off"}, true); err != nil {
 			t.Fatal(err)
 		}
 	}

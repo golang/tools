@@ -3,7 +3,6 @@ This test ports some arbitrary tests from the old marker framework, that were
 
 -- flags --
 -ignore_extra_diags
--min_go=go1.20
 
 -- settings.json --
 {

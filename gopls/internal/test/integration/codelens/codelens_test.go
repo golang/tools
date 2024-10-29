@@ -252,7 +252,8 @@ func TestUpgradeCodelens_ModVendor(t *testing.T) {
 	// This test checks the regression of golang/go#66055. The upgrade codelens
 	// should work in a mod vendor context (the test above using a go.work file
 	// was not broken).
-	testenv.NeedsGo1Point(t, 22)
+	testenv.NeedsGoCommand1Point(t, 22)
+
 	const shouldUpdateDep = `
 -- go.mod --
 module mod.com/a

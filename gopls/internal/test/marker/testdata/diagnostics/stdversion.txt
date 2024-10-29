@@ -7,7 +7,7 @@ See also go/analysis/passes/stdversion/testdata/test.txtar,
 which runs the same test in the analysistest framework.
 
 -- flags --
--min_go=go1.22
+-min_go_command=go1.22
 
 -- go.mod --
 module example.com

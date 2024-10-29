@@ -6,7 +6,6 @@ that affected the formatting of constraint interfaces.
 Its size expectations assume a 64-bit machine.
 
 -- flags --
--min_go=go1.20
 -skip_goarch=386,arm
 
 -- go.mod --

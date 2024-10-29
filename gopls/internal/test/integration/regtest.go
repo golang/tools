@@ -9,7 +9,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,5 +192,56 @@ func Main(m *testing.M) (code int) {
 	}
 	runner.tempDir = dir
 
+	FilterToolchainPathAndGOROOT()
+
 	return m.Run()
+}
+
+// FilterToolchainPathAndGOROOT updates the PATH and GOROOT environment
+// variables for the current process to effectively revert the changes made by
+// the go command when performing a toolchain switch in the context of `go
+// test` (see golang/go#68005).
+//
+// It does this by looking through PATH for a go command that is NOT a
+// toolchain go command, and adjusting PATH to find that go command. Then it
+// unsets GOROOT in order to use the default GOROOT for that go command.
+//
+// TODO(rfindley): this is very much a hack, so that our 1.21 and 1.22 builders
+// actually exercise integration with older go commands. In golang/go#69321, we
+// hope to do better.
+func FilterToolchainPathAndGOROOT() {
+	if localGo, first := findLocalGo(); localGo != "" && !first {
+		dir := filepath.Dir(localGo)
+		path := os.Getenv("PATH")
+		os.Setenv("PATH", dir+string(os.PathListSeparator)+path)
+		os.Unsetenv("GOROOT") // Remove the GOROOT value that was added by toolchain switch.
+	}
+}
+
+// findLocalGo returns a path to a local (=non-toolchain) Go version, or the
+// empty string if none is found.
+//
+// The second result reports if path matches the result of exec.LookPath.
+func findLocalGo() (path string, first bool) {
+	paths := filepath.SplitList(os.Getenv("PATH"))
+	for _, path := range paths {
+		// Use a simple heuristic to filter out toolchain paths.
+		if strings.Contains(path, "toolchain@v0.0.1-go") && filepath.Base(path) == "bin" {
+			continue // toolchain path
+		}
+		fullPath := filepath.Join(path, "go")
+		fi, err := os.Stat(fullPath)
+		if err != nil {
+			continue
+		}
+		if fi.Mode()&0111 != 0 {
+			first := false
+			pathGo, err := exec.LookPath("go")
+			if err == nil {
+				first = fullPath == pathGo
+			}
+			return fullPath, first
+		}
+	}
+	return "", false
 }

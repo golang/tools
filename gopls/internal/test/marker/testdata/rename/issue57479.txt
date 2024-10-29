@@ -3,9 +3,6 @@ referenced by one of the function parameters.
 
 See golang/go#57479
 
--- flags --
--min_go=go1.22
-
 -- go.mod --
 module golang.org/lsptests/rename
 

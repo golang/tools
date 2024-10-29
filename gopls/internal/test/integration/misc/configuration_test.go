@@ -15,11 +15,6 @@ import (
 // Test that enabling and disabling produces the expected results of showing
 // and hiding staticcheck analysis results.
 func TestChangeConfiguration(t *testing.T) {
-	// Staticcheck only supports Go versions >= 1.20.
-	// Note: keep this in sync with TestStaticcheckWarning. Below this version we
-	// should get an error when setting staticcheck configuration.
-	testenv.NeedsGo1Point(t, 20)
-
 	const files = `
 -- go.mod --
 module mod.com
@@ -164,8 +159,6 @@ type B struct {
 //
 // Gopls should not get confused about buffer content when recreating the view.
 func TestMajorOptionsChange(t *testing.T) {
-	testenv.NeedsGo1Point(t, 20) // needs staticcheck
-
 	const files = `
 -- go.mod --
 module mod.com

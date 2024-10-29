@@ -335,7 +335,7 @@ func Hello() {
 				InitialWorkspaceLoad,
 				Diagnostics(env.AtRegexp("main.go", `"mod.com/bob"`)),
 			)
-			if err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, nil, true); err != nil {
+			if _, err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, nil, true); err != nil {
 				t.Fatal(err)
 			}
 			env.AfterChange(

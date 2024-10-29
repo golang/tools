@@ -1,10 +1,5 @@
 This test checks hovering over doc links in comments.
 
-Requires go1.20+ for the unsafe package test.
-
--- flags --
--min_go=go1.20
-
 -- go.mod --
 module mod.com
 

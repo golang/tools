@@ -14,16 +14,12 @@ import (
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/internal/testenv"
 )
 
 func TestGCDetails_Toggle(t *testing.T) {
 	if runtime.GOOS == "android" {
 		t.Skipf("the gc details code lens doesn't work on Android")
 	}
-	// The overlay portion of the test fails with go1.19.
-	// I'm not sure why and not inclined to investigate.
-	testenv.NeedsGo1Point(t, 20)
 
 	const mod = `
 -- go.mod --

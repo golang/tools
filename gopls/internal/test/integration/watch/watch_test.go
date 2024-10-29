@@ -588,7 +588,7 @@ func main() {
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
 		)
-		if err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, nil, true); err != nil {
+		if _, err := env.Sandbox.RunGoCommand(env.Ctx, "", "mod", []string{"init", "mod.com"}, nil, true); err != nil {
 			t.Fatal(err)
 		}
 

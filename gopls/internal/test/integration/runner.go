@@ -203,7 +203,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 
 			// Write the go.sum file for the requested directories, before starting the server.
 			for _, dir := range config.writeGoSum {
-				if err := sandbox.RunGoCommand(context.Background(), dir, "list", []string{"-mod=mod", "./..."}, []string{"GOWORK=off"}, true); err != nil {
+				if _, err := sandbox.RunGoCommand(context.Background(), dir, "list", []string{"-mod=mod", "./..."}, []string{"GOWORK=off"}, true); err != nil {
 					t.Fatal(err)
 				}
 			}

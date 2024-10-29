@@ -314,18 +314,20 @@ func (e *Env) RunGenerate(dir string) {
 
 // RunGoCommand runs the given command in the sandbox's default working
 // directory.
-func (e *Env) RunGoCommand(verb string, args ...string) {
+func (e *Env) RunGoCommand(verb string, args ...string) []byte {
 	e.T.Helper()
-	if err := e.Sandbox.RunGoCommand(e.Ctx, "", verb, args, nil, true); err != nil {
+	out, err := e.Sandbox.RunGoCommand(e.Ctx, "", verb, args, nil, true)
+	if err != nil {
 		e.T.Fatal(err)
 	}
+	return out
 }
 
 // RunGoCommandInDir is like RunGoCommand, but executes in the given
 // relative directory of the sandbox.
 func (e *Env) RunGoCommandInDir(dir, verb string, args ...string) {
 	e.T.Helper()
-	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, verb, args, nil, true); err != nil {
+	if _, err := e.Sandbox.RunGoCommand(e.Ctx, dir, verb, args, nil, true); err != nil {
 		e.T.Fatal(err)
 	}
 }
@@ -334,7 +336,7 @@ func (e *Env) RunGoCommandInDir(dir, verb string, args ...string) {
 // relative directory of the sandbox with the given additional environment variables.
 func (e *Env) RunGoCommandInDirWithEnv(dir string, env []string, verb string, args ...string) {
 	e.T.Helper()
-	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, verb, args, env, true); err != nil {
+	if _, err := e.Sandbox.RunGoCommand(e.Ctx, dir, verb, args, env, true); err != nil {
 		e.T.Fatal(err)
 	}
 }
@@ -355,7 +357,7 @@ func (e *Env) GoVersion() int {
 func (e *Env) DumpGoSum(dir string) {
 	e.T.Helper()
 
-	if err := e.Sandbox.RunGoCommand(e.Ctx, dir, "list", []string{"-mod=mod", "./..."}, nil, true); err != nil {
+	if _, err := e.Sandbox.RunGoCommand(e.Ctx, dir, "list", []string{"-mod=mod", "./..."}, nil, true); err != nil {
 		e.T.Fatal(err)
 	}
 	sumFile := path.Join(dir, "go.sum")

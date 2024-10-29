@@ -6,9 +6,6 @@ behavior of types.Scope for function parameters and results.
 
 This is a regression test for issue #60752, a bug in the type checker.
 
--- flags --
--min_go=go1.22
-
 -- go.mod --
 module example.com
 go 1.18
