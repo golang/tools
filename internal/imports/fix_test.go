@@ -2513,7 +2513,7 @@ func TestPkgIsCandidate(t *testing.T) {
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			refs := references{tt.pkgIdent: nil}
+			refs := References{tt.pkgIdent: nil}
 			got := pkgIsCandidate(tt.filename, refs, tt.pkg)
 			if got != tt.want {
 				t.Errorf("test %d. pkgIsCandidate(%q, %q, %+v) = %v; want %v",

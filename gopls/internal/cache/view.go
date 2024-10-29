@@ -69,6 +69,7 @@ type GoEnv struct {
 	GOFLAGS     string
 	GO111MODULE string
 	GOTOOLCHAIN string
+	GOROOT      string
 
 	// Go version output.
 	GoVersion       int    // The X in Go 1.X
@@ -998,6 +999,7 @@ func FetchGoEnv(ctx context.Context, folder protocol.DocumentURI, opts *settings
 		"GOFLAGS":     &env.GOFLAGS,
 		"GO111MODULE": &env.GO111MODULE,
 		"GOTOOLCHAIN": &env.GOTOOLCHAIN,
+		"GOROOT":      &env.GOROOT,
 	}
 	if err := loadGoEnv(ctx, dir, opts.EnvSlice(), runner, envvars); err != nil {
 		return nil, err

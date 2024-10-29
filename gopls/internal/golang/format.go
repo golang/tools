@@ -120,7 +120,7 @@ func allImportsFixes(ctx context.Context, snapshot *cache.Snapshot, pgf *parsego
 	defer done()
 
 	if err := snapshot.RunProcessEnvFunc(ctx, func(ctx context.Context, opts *imports.Options) error {
-		allFixEdits, editsPerFix, err = computeImportEdits(ctx, pgf, opts)
+		allFixEdits, editsPerFix, err = computeImportEdits(ctx, pgf, snapshot.View().Folder().Env.GOROOT, opts)
 		return err
 	}); err != nil {
 		return nil, nil, fmt.Errorf("allImportsFixes: %v", err)
@@ -130,11 +130,12 @@ func allImportsFixes(ctx context.Context, snapshot *cache.Snapshot, pgf *parsego
 
 // computeImportEdits computes a set of edits that perform one or all of the
 // necessary import fixes.
-func computeImportEdits(ctx context.Context, pgf *parsego.File, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*importFix, err error) {
+func computeImportEdits(ctx context.Context, pgf *parsego.File, goroot string, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*importFix, err error) {
 	filename := pgf.URI.Path()
 
 	// Build up basic information about the original file.
-	allFixes, err := imports.FixImports(ctx, filename, pgf.Src, options)
+	isource, err := imports.NewProcessEnvSource(options.Env, filename, pgf.File.Name.Name)
+	allFixes, err := imports.FixImports(ctx, filename, pgf.Src, goroot, options.Env.Logf, isource)
 	if err != nil {
 		return nil, nil, err
 	}
