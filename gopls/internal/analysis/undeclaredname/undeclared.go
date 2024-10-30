@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/golang/stubmethods"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
 )
@@ -277,12 +278,19 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 		})
 	}
 
+	rets := &ast.FieldList{}
+	retTypes := stubmethods.TypesFromContext(info, path[1:], path[1].Pos())
+	for _, rt := range retTypes {
+		rets.List = append(rets.List, &ast.Field{
+			Type: analysisinternal.TypeExpr(file, pkg, rt),
+		})
+	}
+
 	decl := &ast.FuncDecl{
 		Name: ast.NewIdent(ident.Name),
 		Type: &ast.FuncType{
-			Params: params,
-			// TODO(golang/go#47558): Also handle result
-			// parameters here based on context of CallExpr.
+			Params:  params,
+			Results: rets,
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{

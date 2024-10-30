@@ -91,7 +91,7 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 // Emit writes to out the missing method based on type info of si.Receiver and CallExpr.
 func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	params := si.collectParams()
-	rets := typesFromContext(si.info, si.path, si.path[0].Pos())
+	rets := TypesFromContext(si.info, si.path, si.path[0].Pos())
 	recv := si.Receiver.Obj()
 	// Pointer receiver?
 	var star string
@@ -193,7 +193,7 @@ func (si *CallStubInfo) collectParams() []param {
 	return params
 }
 
-// typesFromContext returns the type (or perhaps zero or multiple types)
+// TypesFromContext returns the type (or perhaps zero or multiple types)
 // of the "hole" into which the expression identified by path must fit.
 //
 // For example, given
@@ -204,7 +204,7 @@ func (si *CallStubInfo) collectParams() []param {
 // the hole that must be filled by EXPR has type (string, int).
 //
 // It returns nil on failure.
-func typesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.Type {
+func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.Type {
 	var typs []types.Type
 	parent := parentNode(path)
 	if parent == nil {
