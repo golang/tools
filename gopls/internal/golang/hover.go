@@ -52,6 +52,10 @@ import (
 // TODO(adonovan): see if we can wean all clients of this interface.
 type hoverJSON struct {
 	// Synopsis is a single sentence synopsis of the symbol's documentation.
+	//
+	// TODO(adonovan): in what syntax? It (usually) comes from doc.Synopsis,
+	// which produces "Text" form, but it may be fed to
+	// DocCommentToMarkdown, which expects doc comment syntax.
 	Synopsis string `json:"synopsis"`
 
 	// FullDocumentation is the symbol's full documentation.
@@ -1318,7 +1322,7 @@ func formatDoc(h *hoverJSON, options *settings.Options) string {
 		doc = h.FullDocumentation
 	}
 	if options.PreferredContentFormat == protocol.Markdown {
-		return CommentToMarkdown(doc, options)
+		return DocCommentToMarkdown(doc, options)
 	}
 	return doc
 }

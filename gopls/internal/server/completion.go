@@ -143,7 +143,7 @@ func toProtocolCompletionItems(candidates []completion.CompletionItem, surroundi
 		doc := &protocol.Or_CompletionItem_documentation{
 			Value: protocol.MarkupContent{
 				Kind:  protocol.Markdown,
-				Value: golang.CommentToMarkdown(candidate.Documentation, options),
+				Value: golang.DocCommentToMarkdown(candidate.Documentation, options),
 			},
 		}
 		if options.PreferredContentFormat != protocol.Markdown {

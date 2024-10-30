@@ -18,26 +18,29 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
 var errNoCommentReference = errors.New("no comment reference found")
 
-// CommentToMarkdown converts comment text to formatted markdown.
-// The comment was prepared by DocReader,
-// so it is known not to have leading, trailing blank lines
-// nor to have trailing spaces at the end of lines.
-// The comment markers have already been removed.
-func CommentToMarkdown(text string, options *settings.Options) string {
-	var p comment.Parser
-	doc := p.Parse(text)
-	var pr comment.Printer
+// DocCommentToMarkdown converts the text of a [doc comment] to Markdown.
+//
+// TODO(adonovan): provide a package (or file imports) as context for
+// proper rendering of doc links; see [newDocCommentParser] and golang/go#61677.
+//
+// [doc comment]: https://go.dev/doc/comment
+func DocCommentToMarkdown(text string, options *settings.Options) string {
+	var parser comment.Parser
+	doc := parser.Parse(text)
+
+	var printer comment.Printer
 	// The default produces {#Hdr-...} tags for headings.
 	// vscode displays thems, which is undesirable.
 	// The godoc for comment.Printer says the tags
 	// avoid a security problem.
-	pr.HeadingID = func(*comment.Heading) string { return "" }
-	pr.DocLinkURL = func(link *comment.DocLink) string {
+	printer.HeadingID = func(*comment.Heading) string { return "" }
+	printer.DocLinkURL = func(link *comment.DocLink) string {
 		msg := fmt.Sprintf("https://%s/%s", options.LinkTarget, link.ImportPath)
 		if link.Name != "" {
 			msg += "#"
@@ -48,8 +51,8 @@ func CommentToMarkdown(text string, options *settings.Options) string {
 		}
 		return msg
 	}
-	easy := pr.Markdown(doc)
-	return string(easy)
+
+	return string(printer.Markdown(doc))
 }
 
 // docLinkDefinition finds the definition of the doc link in comments at pos.
@@ -198,4 +201,71 @@ func lookupDocLinkSymbol(pkg *cache.Package, pgf *parsego.File, name string) typ
 
 	// package-level symbol
 	return scope.Lookup(name)
+}
+
+// newDocCommentParser returns a function that parses [doc comments],
+// with context for Doc Links supplied by the specified package.
+//
+// Imported symbols are rendered using the import mapping for the file
+// that encloses fileNode.
+//
+// The resulting function is not concurrency safe.
+//
+// See issue #61677 for how this might be generalized to support
+// correct contextual parsing of doc comments in Hover too.
+//
+// [doc comment]: https://go.dev/doc/comment
+func newDocCommentParser(pkg *cache.Package) func(fileNode ast.Node, text string) *comment.Doc {
+	var currentFileNode ast.Node // node whose enclosing file's import mapping should be used
+	parser := &comment.Parser{
+		LookupPackage: func(name string) (importPath string, ok bool) {
+			for _, f := range pkg.Syntax() {
+				// Different files in the same package have
+				// different import mappings. Use the provided
+				// syntax node to find the correct file.
+				if astutil.NodeContains(f, currentFileNode.Pos()) {
+					// First try the actual imported package name.
+					for _, imp := range f.Imports {
+						pkgName := pkg.TypesInfo().PkgNameOf(imp)
+						if pkgName != nil && pkgName.Name() == name {
+							return pkgName.Imported().Path(), true
+						}
+					}
+
+					// Then try the imported package name, as some
+					// packages are typically imported under a
+					// non-default name (e.g. pathpkg "path") but
+					// may be referred to in doc links using their
+					// canonical name.
+					for _, imp := range f.Imports {
+						pkgName := pkg.TypesInfo().PkgNameOf(imp)
+						if pkgName != nil && pkgName.Imported().Name() == name {
+							return pkgName.Imported().Path(), true
+						}
+					}
+
+					break
+				}
+			}
+			return "", false
+		},
+		LookupSym: func(recv, name string) (ok bool) {
+			// package-level decl?
+			if recv == "" {
+				return pkg.Types().Scope().Lookup(name) != nil
+			}
+
+			// method?
+			tname, ok := pkg.Types().Scope().Lookup(recv).(*types.TypeName)
+			if !ok {
+				return false
+			}
+			m, _, _ := types.LookupFieldOrMethod(tname.Type(), true, pkg.Types(), name)
+			return is[*types.Func](m)
+		},
+	}
+	return func(fileNode ast.Node, text string) *comment.Doc {
+		currentFileNode = fileNode
+		return parser.Parse(text)
+	}
 }

@@ -21,6 +21,8 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
+// TODO(adonovan): define marker test verbs for checking package docs.
+
 // TestWebServer exercises the web server created on demand
 // for code actions such as "Browse package documentation".
 func TestWebServer(t *testing.T) {
@@ -264,6 +266,71 @@ func (*T) M() { /*in T.M*/}
 				t.Errorf("pattern %q => %s; want %s", test.re, got, test.want)
 			}
 		}
+	})
+}
+
+// TestPkgDocFileImports tests that the doc links are rendered
+// as URLs based on the correct import mapping for the file in
+// which they appear.
+func TestPkgDocFileImports(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+go 1.20
+
+-- a/a1.go --
+package a
+
+import "b"
+import alias "d"
+
+// [b.T] indeed refers to b.T.
+//
+// [alias.D] refers to d.D
+// but [d.D] also refers to d.D.
+type A1 int
+
+-- a/a2.go --
+package a
+
+import b "c"
+
+// [b.U] actually refers to c.U.
+type A2 int
+
+-- b/b.go --
+package b
+
+type T int
+type U int
+
+-- c/c.go --
+package c
+
+type T int
+type U int
+
+-- d/d.go --
+package d
+
+type D int
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a1.go")
+		uri1 := viewPkgDoc(t, env, env.Sandbox.Workdir.EntireFile("a/a1.go"))
+		doc := get(t, uri1)
+
+		// Check that the doc links are resolved using the
+		// appropriate import mapping for the file in which
+		// they appear.
+		checkMatch(t, true, doc, `pkg/b\?.*#T">b.T</a> indeed refers to b.T`)
+		checkMatch(t, true, doc, `pkg/c\?.*#U">b.U</a> actually refers to c.U`)
+
+		// Check that doc links can be resolved using either
+		// the original or the local name when they refer to a
+		// renaming import. (Local names are preferred.)
+		checkMatch(t, true, doc, `pkg/d\?.*#D">alias.D</a> refers to d.D`)
+		checkMatch(t, true, doc, `pkg/d\?.*#D">d.D</a> also refers to d.D`)
 	})
 }
 

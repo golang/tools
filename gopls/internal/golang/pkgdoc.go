@@ -326,68 +326,34 @@ func PackageDocHTML(viewID string, pkg *cache.Package, web Web) ([]byte, error) 
 		})
 	}
 
-	var docHTML func(comment string) []byte
+	// docHTML renders the doc comment as Markdown.
+	// The fileNode is used to deduce the enclosing file
+	// for the correct import mapping.
+	//
+	// It is not concurrency-safe.
+	var docHTML func(fileNode ast.Node, comment string) []byte
 	{
 		// Adapt doc comment parser and printer
 		// to our representation of Go packages
 		// so that doc links (e.g. "[fmt.Println]")
 		// become valid links.
-
-		printer := docpkg.Printer()
-		printer.DocLinkURL = func(link *comment.DocLink) string {
-			path := pkg.Metadata().PkgPath
-			if link.ImportPath != "" {
-				path = PackagePath(link.ImportPath)
-			}
-			fragment := link.Name
-			if link.Recv != "" {
-				fragment = link.Recv + "." + link.Name
-			}
-			return web.PkgURL(viewID, path, fragment)
-		}
-		parser := docpkg.Parser()
-		parser.LookupPackage = func(name string) (importPath string, ok bool) {
-			// Ambiguous: different files in the same
-			// package may have different import mappings,
-			// but the hook doesn't provide the file context.
-			// TODO(adonovan): conspire with docHTML to
-			// pass the doc comment's enclosing file through
-			// a shared variable, so that we can compute
-			// the correct per-file mapping.
-			//
-			// TODO(adonovan): check for PkgName.Name
-			// matches, but also check for
-			// PkgName.Imported.Namer matches, since some
-			// packages are typically imported under a
-			// non-default name (e.g. pathpkg "path") but
-			// may be referred to in doc links using their
-			// canonical name.
-			for _, f := range pkg.Syntax() {
-				for _, imp := range f.Imports {
-					pkgName := pkg.TypesInfo().PkgNameOf(imp)
-					if pkgName != nil && pkgName.Name() == name {
-						return pkgName.Imported().Path(), true
-					}
+		printer := &comment.Printer{
+			DocLinkURL: func(link *comment.DocLink) string {
+				path := pkg.Metadata().PkgPath
+				if link.ImportPath != "" {
+					path = PackagePath(link.ImportPath)
 				}
-			}
-			return "", false
+				fragment := link.Name
+				if link.Recv != "" {
+					fragment = link.Recv + "." + link.Name
+				}
+				return web.PkgURL(viewID, path, fragment)
+			},
 		}
-		parser.LookupSym = func(recv, name string) (ok bool) {
-			// package-level decl?
-			if recv == "" {
-				return pkg.Types().Scope().Lookup(name) != nil
-			}
-
-			// method?
-			tname, ok := pkg.Types().Scope().Lookup(recv).(*types.TypeName)
-			if !ok {
-				return false
-			}
-			m, _, _ := types.LookupFieldOrMethod(tname.Type(), true, pkg.Types(), name)
-			return is[*types.Func](m)
-		}
-		docHTML = func(comment string) []byte {
-			return printer.HTML(parser.Parse(comment))
+		parse := newDocCommentParser(pkg)
+		docHTML = func(fileNode ast.Node, comment string) []byte {
+			doc := parse(fileNode, comment)
+			return printer.HTML(doc)
 		}
 	}
 
@@ -715,7 +681,12 @@ window.addEventListener('load', function() {
 		"https://pkg.go.dev/"+string(pkg.Types().Path()))
 
 	// package doc
-	fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(docpkg.Doc))
+	for _, f := range pkg.Syntax() {
+		if f.Doc != nil {
+			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(f.Doc, docpkg.Doc))
+			break
+		}
+	}
 
 	// symbol index
 	fmt.Fprintf(&buf, "<h2 id='hdr-Index'>Index</h2>\n")
@@ -773,7 +744,7 @@ window.addEventListener('load', function() {
 			fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n", nodeHTML(&decl2))
 
 			// comment (if any)
-			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(v.Doc))
+			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(v.Decl, v.Doc))
 		}
 	}
 	fmt.Fprintf(&buf, "<h2 id='hdr-Constants'>Constants</h2>\n")
@@ -814,7 +785,7 @@ window.addEventListener('load', function() {
 				nodeHTML(docfn.Decl.Type))
 
 			// comment (if any)
-			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(docfn.Doc))
+			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(docfn.Decl, docfn.Doc))
 		}
 	}
 	funcs(docpkg.Funcs)
@@ -835,7 +806,7 @@ window.addEventListener('load', function() {
 		fmt.Fprintf(&buf, "<pre class='code'>%s</pre>\n", nodeHTML(&decl2))
 
 		// comment (if any)
-		fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(doctype.Doc))
+		fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n", docHTML(doctype.Decl, doctype.Doc))
 
 		// subelements
 		values(doctype.Consts) // constants of type T
@@ -856,7 +827,7 @@ window.addEventListener('load', function() {
 
 			// comment (if any)
 			fmt.Fprintf(&buf, "<div class='comment'>%s</div>\n",
-				docHTML(docmethod.Doc))
+				docHTML(docmethod.Decl, docmethod.Doc))
 		}
 	}
 
