@@ -59,6 +59,7 @@ func singleFile(fixer1 singleFileFixer) fixer {
 // Names of ApplyFix.Fix created directly by the CodeAction handler.
 const (
 	fixExtractVariable         = "extract_variable" // (or constant)
+	fixExtractVariableAll      = "extract_variable_all"
 	fixExtractFunction         = "extract_function"
 	fixExtractMethod           = "extract_method"
 	fixInlineCall              = "inline_call"
@@ -106,6 +107,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fixExtractFunction:         singleFile(extractFunction),
 		fixExtractMethod:           singleFile(extractMethod),
 		fixExtractVariable:         singleFile(extractVariable),
+		fixExtractVariableAll:      singleFile(extractVariableAll),
 		fixInlineCall:              inlineCall,
 		fixInvertIfCondition:       singleFile(invertIfCondition),
 		fixSplitLines:              singleFile(splitLines),
