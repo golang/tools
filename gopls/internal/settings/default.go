@@ -62,9 +62,11 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						RefactorRewriteSplitLines:        true,
 						RefactorInlineCall:               true,
 						RefactorExtractConstant:          true,
+						RefactorExtractConstantAll:       true,
 						RefactorExtractFunction:          true,
 						RefactorExtractMethod:            true,
 						RefactorExtractVariable:          true,
+						RefactorExtractVariableAll:       true,
 						RefactorExtractToNewFile:         true,
 						// Not GoTest: it must be explicit in CodeActionParams.Context.Only
 					},
