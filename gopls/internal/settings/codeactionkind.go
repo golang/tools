@@ -99,11 +99,13 @@ const (
 	RefactorInlineCall protocol.CodeActionKind = "refactor.inline.call"
 
 	// refactor.extract
-	RefactorExtractConstant  protocol.CodeActionKind = "refactor.extract.constant"
-	RefactorExtractFunction  protocol.CodeActionKind = "refactor.extract.function"
-	RefactorExtractMethod    protocol.CodeActionKind = "refactor.extract.method"
-	RefactorExtractVariable  protocol.CodeActionKind = "refactor.extract.variable"
-	RefactorExtractToNewFile protocol.CodeActionKind = "refactor.extract.toNewFile"
+	RefactorExtractConstant    protocol.CodeActionKind = "refactor.extract.constant"
+	RefactorExtractConstantAll protocol.CodeActionKind = "refactor.extract.constant-all"
+	RefactorExtractFunction    protocol.CodeActionKind = "refactor.extract.function"
+	RefactorExtractMethod      protocol.CodeActionKind = "refactor.extract.method"
+	RefactorExtractVariable    protocol.CodeActionKind = "refactor.extract.variable"
+	RefactorExtractVariableAll protocol.CodeActionKind = "refactor.extract.variable-all"
+	RefactorExtractToNewFile   protocol.CodeActionKind = "refactor.extract.toNewFile"
 
 	// Note: add new kinds to:
 	// - the SupportedCodeActions map in default.go

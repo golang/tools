@@ -238,6 +238,8 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorExtractToNewFile, fn: refactorExtractToNewFile},
 	{kind: settings.RefactorExtractConstant, fn: refactorExtractVariable, needPkg: true},
 	{kind: settings.RefactorExtractVariable, fn: refactorExtractVariable, needPkg: true},
+	{kind: settings.RefactorExtractConstantAll, fn: refactorExtractVariableAll, needPkg: true},
+	{kind: settings.RefactorExtractVariableAll, fn: refactorExtractVariableAll, needPkg: true},
 	{kind: settings.RefactorInlineCall, fn: refactorInlineCall, needPkg: true},
 	{kind: settings.RefactorRewriteChangeQuote, fn: refactorRewriteChangeQuote},
 	{kind: settings.RefactorRewriteFillStruct, fn: refactorRewriteFillStruct, needPkg: true},
@@ -467,20 +469,50 @@ func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
 // See [extractVariable] for command implementation.
 func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error {
 	info := req.pkg.TypesInfo()
-	if expr, _, err := canExtractVariable(info, req.pgf.File, req.start, req.end); err == nil {
+	if exprs, err := canExtractVariable(info, req.pgf.File, req.start, req.end, false); err == nil {
 		// Offer one of refactor.extract.{constant,variable}
 		// based on the constness of the expression; this is a
 		// limitation of the codeActionProducers mechanism.
 		// Beware that future evolutions of the refactorings
 		// may make them diverge to become non-complementary,
 		// for example because "if const x = ...; y {" is illegal.
-		constant := info.Types[expr].Value != nil
+		// Same as [refactorExtractVariableAll].
+		constant := info.Types[exprs[0]].Value != nil
 		if (req.kind == settings.RefactorExtractConstant) == constant {
 			title := "Extract variable"
 			if constant {
 				title = "Extract constant"
 			}
 			req.addApplyFixAction(title, fixExtractVariable, req.loc)
+		}
+	}
+	return nil
+}
+
+// refactorExtractVariableAll produces "Extract N occurrences of EXPR" code action.
+// See [extractAllOccursOfExpr] for command implementation.
+func refactorExtractVariableAll(ctx context.Context, req *codeActionsRequest) error {
+	info := req.pkg.TypesInfo()
+	// Don't suggest if only one expr is found,
+	// otherwise it will duplicate with [refactorExtractVariable]
+	if exprs, err := canExtractVariable(info, req.pgf.File, req.start, req.end, true); err == nil && len(exprs) > 1 {
+		start, end, err := req.pgf.NodeOffsets(exprs[0])
+		if err != nil {
+			return err
+		}
+		desc := string(req.pgf.Src[start:end])
+		if len(desc) >= 40 || strings.Contains(desc, "\n") {
+			desc = astutil.NodeDescription(exprs[0])
+		}
+		constant := info.Types[exprs[0]].Value != nil
+		if (req.kind == settings.RefactorExtractConstantAll) == constant {
+			var title string
+			if constant {
+				title = fmt.Sprintf("Extract %d occurrences of const expression: %s", len(exprs), desc)
+			} else {
+				title = fmt.Sprintf("Extract %d occurrences of %s", len(exprs), desc)
+			}
+			req.addApplyFixAction(title, fixExtractVariableAll, req.loc)
 		}
 	}
 	return nil

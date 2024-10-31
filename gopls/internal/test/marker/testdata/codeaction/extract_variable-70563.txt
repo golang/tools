@@ -1,0 +1,50 @@
+This test verifies the fix for golang/go#70563: refactor.extract.variable
+inserts new statement before the scope of its free symbols.
+
+-- flags --
+-ignore_extra_diags
+
+-- inside_else.go --
+package extract
+
+func _() {
+	if x := 1; true {
+
+	} else if y := x + 1; true { //@codeaction("x + 1", "refactor.extract.variable", err=re"Else's init statement has free variable declaration")
+
+	}
+}
+-- inside_case.go --
+package extract
+
+func _() {
+	switch x := 1; x {
+	case x + 1: //@codeaction("x + 1", "refactor.extract.variable-all", err=re"SwitchStmt's init statement has free variable declaration")
+		y := x + 1 //@codeaction("x + 1", "refactor.extract.variable-all", err=re"SwitchStmt's init statement has free variable declaration")
+		_ = y
+	case 3:
+		y := x + 1 //@codeaction("x + 1", "refactor.extract.variable-all", err=re"SwitchStmt's init statement has free variable declaration")
+		_ = y
+	}
+}
+-- parent_if.go --
+package extract
+
+func _() {
+	if x := 1; x > 0 {
+		y = x + 1 //@codeaction("x + 1", "refactor.extract.variable-all", err=re"IfStmt's init statement has free variable declaration")
+	} else {
+		y = x + 1 //@codeaction("x + 1", "refactor.extract.variable-all", err=re"IfStmt's init statement has free variable declaration")
+	}
+}
+-- parent_switch.go --
+package extract
+
+func _() {
+	switch x := 1; x {
+	case 1:
+		y = x + 1 //@codeaction("x + 1", "refactor.extract.variable-all", err=re"SwitchStmt's init statement has free variable declaration")
+	case 3:
+		y = x + 1 //@codeaction("x + 1", "refactor.extract.variable-all", err=re"SwitchStmt's init statement has free variable declaration")
+	}
+}
