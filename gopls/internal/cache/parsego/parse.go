@@ -59,15 +59,35 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 		// We passed a byte slice, so the only possible error is a parse error.
 		parseErr = err.(scanner.ErrorList)
 	}
+	// Inv: file != nil.
 
-	tok := fset.File(file.Pos())
-	if tok == nil {
-		// file.Pos is the location of the package declaration (issue #53202). If there was
-		// none, we can't find the token.File that ParseFile created, and we
-		// have no choice but to recreate it.
-		tok = fset.AddFile(uri.Path(), -1, len(src))
-		tok.SetLinesForContent(src)
+	// Workaround for #70162 (missing File{Start,End} when
+	// parsing empty file) with go1.23.
+	//
+	// When parsing an empty file, or one without a valid
+	// package declaration, the go1.23 parser bails out before
+	// setting FileStart and End.
+	//
+	// This leaves us no way to find the original
+	// token.File that ParseFile created, so as a
+	// workaround, we recreate the token.File, and
+	// populate the FileStart and FileEnd fields.
+	//
+	// See also #53202.
+	tokenFile := func(file *ast.File) *token.File {
+		tok := fset.File(file.FileStart)
+		if tok == nil {
+			tok = fset.AddFile(uri.Path(), -1, len(src))
+			tok.SetLinesForContent(src)
+			if file.FileStart.IsValid() {
+				file.FileStart = token.Pos(tok.Base())
+				file.FileEnd = token.Pos(tok.Base() + tok.Size())
+			}
+		}
+		return tok
 	}
+
+	tok := tokenFile(file)
 
 	fixedSrc := false
 	fixedAST := false
@@ -96,15 +116,13 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 			}
 
 			newFile, newErr := parser.ParseFile(fset, uri.Path(), newSrc, mode)
-			if newFile == nil {
-				break // no progress
-			}
+			assert(newFile != nil, "ParseFile returned nil") // I/O error can't happen
 
 			// Maintain the original parseError so we don't try formatting the
 			// doctored file.
 			file = newFile
 			src = newSrc
-			tok = fset.File(file.Pos())
+			tok = tokenFile(file)
 
 			// Only now that we accept the fix do we record the src fix from above.
 			fixes = append(fixes, srcFix)
@@ -122,6 +140,7 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 			}
 		}
 	}
+	assert(file != nil, "nil *ast.File")
 
 	return &File{
 		URI:      uri,

@@ -38,7 +38,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	generated := make(map[*token.File]bool)
 	for _, file := range pass.Files {
 		if ast.IsGenerated(file) {
-			generated[pass.Fset.File(file.Pos())] = true
+			generated[pass.Fset.File(file.FileStart)] = true
 		}
 	}
 

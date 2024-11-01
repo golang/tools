@@ -47,7 +47,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 		var file *ast.File
 		for _, f := range pass.Files {
-			if f.Pos() <= assignStmt.Pos() && assignStmt.Pos() < f.End() {
+			if f.FileStart <= assignStmt.Pos() && assignStmt.Pos() < f.FileEnd {
 				file = f
 				break
 			}

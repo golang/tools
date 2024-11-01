@@ -2684,7 +2684,7 @@ func testIssue48226(t *testing.T, exporter packagestest.Exporter) {
 		t.Fatalf("package has errors: %v", pkg.Errors)
 	}
 
-	fname := pkg.Fset.File(pkg.Syntax[0].Pos()).Name()
+	fname := pkg.Fset.File(pkg.Syntax[0].FileStart).Name()
 	if filepath.Base(fname) != "syntax.go" {
 		t.Errorf("expected the package declaration position "+
 			"to resolve to \"syntax.go\", got %q instead", fname)

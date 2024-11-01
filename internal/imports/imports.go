@@ -114,7 +114,7 @@ func ApplyFixes(fixes []*ImportFix, filename string, src []byte, opt *Options, e
 // formatted file, and returns the postpocessed result.
 func formatFile(fset *token.FileSet, file *ast.File, src []byte, adjust func(orig []byte, src []byte) []byte, opt *Options) ([]byte, error) {
 	mergeImports(file)
-	sortImports(opt.LocalPrefix, fset.File(file.Pos()), file)
+	sortImports(opt.LocalPrefix, fset.File(file.FileStart), file)
 	var spacesBefore []string // import paths we need spaces before
 	for _, impSection := range astutil.Imports(fset, file) {
 		// Within each block of contiguous imports, see if any

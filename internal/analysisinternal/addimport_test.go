@@ -202,7 +202,7 @@ func _() {
 			if err != nil {
 				t.Log(err)
 			}
-			pos := fset.File(f.Pos()).Pos(len(before))
+			pos := fset.File(f.FileStart).Pos(len(before))
 
 			// type-check
 			info := &types.Info{

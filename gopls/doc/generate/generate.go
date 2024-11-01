@@ -533,7 +533,7 @@ func lowerFirst(x string) string {
 func fileForPos(pkg *packages.Package, pos token.Pos) (*ast.File, error) {
 	fset := pkg.Fset
 	for _, f := range pkg.Syntax {
-		if safetoken.StartPosition(fset, f.Pos()).Filename == safetoken.StartPosition(fset, pos).Filename {
+		if safetoken.StartPosition(fset, f.FileStart).Filename == safetoken.StartPosition(fset, pos).Filename {
 			return f, nil
 		}
 	}

@@ -282,7 +282,7 @@ func PackageDocHTML(viewID string, pkg *cache.Package, web Web) ([]byte, error) 
 	// TODO(adonovan): simulate that too.
 	fileMap := make(map[string]*ast.File)
 	for _, f := range pkg.Syntax() {
-		fileMap[pkg.FileSet().File(f.Pos()).Name()] = f
+		fileMap[pkg.FileSet().File(f.FileStart).Name()] = f
 	}
 	astpkg := &ast.Package{
 		Name:  pkg.Types().Name(),

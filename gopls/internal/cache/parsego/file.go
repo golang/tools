@@ -20,9 +20,11 @@ type File struct {
 	URI  protocol.DocumentURI
 	Mode parser.Mode
 
-	// File is the file resulting from parsing. Clients must not access the AST's
-	// legacy ast.Object-related fields without first ensuring that
-	// [File.Resolve] was already called.
+	// File is the file resulting from parsing. It is always non-nil.
+	//
+	// Clients must not access the AST's legacy ast.Object-related
+	// fields without first ensuring that [File.Resolve] was
+	// already called.
 	File *ast.File
 	Tok  *token.File
 	// Source code used to build the AST. It may be different from the

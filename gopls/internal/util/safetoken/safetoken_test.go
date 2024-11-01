@@ -24,7 +24,7 @@ func TestWorkaroundIssue57490(t *testing.T) {
 	src := `package p; func f() { var x struct`
 	fset := token.NewFileSet()
 	file, _ := parser.ParseFile(fset, "a.go", src, parser.SkipObjectResolution)
-	tf := fset.File(file.Pos())
+	tf := fset.File(file.FileStart)
 
 	// Add another file to the FileSet.
 	file2, _ := parser.ParseFile(fset, "b.go", "package q", parser.SkipObjectResolution)

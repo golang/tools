@@ -100,7 +100,7 @@ func TestRTA(t *testing.T) {
 //
 // Functions are notated as if by ssa.Function.String.
 func check(t *testing.T, f *ast.File, pkg *ssa.Package, res *rta.Result) {
-	tokFile := pkg.Prog.Fset.File(f.Pos())
+	tokFile := pkg.Prog.Fset.File(f.FileStart)
 
 	// Find the WANT comment.
 	expectation := func(f *ast.File) (string, int) {

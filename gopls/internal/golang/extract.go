@@ -24,7 +24,7 @@ import (
 )
 
 func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	tokFile := fset.File(file.Pos())
+	tokFile := fset.File(file.FileStart)
 	expr, path, ok, err := canExtractVariable(start, end, file)
 	if !ok {
 		return nil, nil, fmt.Errorf("extractVariable: cannot extract %s: %v", safetoken.StartPosition(fset, start), err)
@@ -214,7 +214,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 		errorPrefix = "extractMethod"
 	}
 
-	tok := fset.File(file.Pos())
+	tok := fset.File(file.FileStart)
 	if tok == nil {
 		return nil, nil, bug.Errorf("no file for position")
 	}
@@ -821,7 +821,7 @@ func collectFreeVars(info *types.Info, file *ast.File, fileScope, pkgScope *type
 		if _, ok := obj.(*types.PkgName); ok {
 			return nil, false // imported package
 		}
-		if !(file.Pos() <= obj.Pos() && obj.Pos() <= file.End()) {
+		if !(file.FileStart <= obj.Pos() && obj.Pos() <= file.FileEnd) {
 			return nil, false // not defined in this file
 		}
 		scope := obj.Parent()

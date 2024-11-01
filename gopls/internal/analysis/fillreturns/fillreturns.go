@@ -45,7 +45,7 @@ outer:
 		}
 		var file *ast.File
 		for _, f := range pass.Files {
-			if f.Pos() <= typeErr.Pos && typeErr.Pos <= f.End() {
+			if f.FileStart <= typeErr.Pos && typeErr.Pos <= f.FileEnd {
 				file = f
 				break
 			}

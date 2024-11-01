@@ -1420,7 +1420,7 @@ func parsePackageNameDecl(ctx context.Context, snapshot *cache.Snapshot, fh file
 // enclosingFile returns the CompiledGoFile of pkg that contains the specified position.
 func enclosingFile(pkg *cache.Package, pos token.Pos) (*parsego.File, bool) {
 	for _, pgf := range pkg.CompiledGoFiles() {
-		if pgf.File.Pos() <= pos && pos <= pgf.File.End() {
+		if pgf.File.FileStart <= pos && pos <= pgf.File.FileEnd {
 			return pgf, true
 		}
 	}

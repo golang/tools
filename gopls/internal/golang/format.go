@@ -215,7 +215,7 @@ func importPrefix(src []byte) (string, error) {
 	if err != nil { // This can happen if 'package' is misspelled
 		return "", fmt.Errorf("importPrefix: failed to parse: %s", err)
 	}
-	tok := fset.File(f.Pos())
+	tok := fset.File(f.FileStart)
 	var importEnd int
 	for _, d := range f.Decls {
 		if x, ok := d.(*ast.GenDecl); ok && x.Tok == token.IMPORT {

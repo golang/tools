@@ -248,7 +248,7 @@ func findField(pkg *packages.Package, pos token.Pos) (*ast.Field, error) {
 	fset := pkg.Fset
 	var file *ast.File
 	for _, f := range pkg.Syntax {
-		if fset.File(f.Pos()).Name() == fset.File(pos).Name() {
+		if fset.File(f.FileStart).Name() == fset.File(pos).Name() {
 			file = f
 			break
 		}

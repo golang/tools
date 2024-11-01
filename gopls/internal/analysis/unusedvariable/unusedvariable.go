@@ -60,7 +60,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 func runForError(pass *analysis.Pass, err types.Error, name string) error {
 	var file *ast.File
 	for _, f := range pass.Files {
-		if f.Pos() <= err.Pos && err.Pos < f.End() {
+		if f.FileStart <= err.Pos && err.Pos < f.FileEnd {
 			file = f
 			break
 		}

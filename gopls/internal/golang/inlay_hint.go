@@ -51,7 +51,9 @@ func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pR
 	q := typesutil.FileQualifier(pgf.File, pkg.Types(), info)
 
 	// Set the range to the full file if the range is not valid.
-	start, end := pgf.File.Pos(), pgf.File.End()
+	start, end := pgf.File.FileStart, pgf.File.FileEnd
+
+	// TODO(adonovan): this condition looks completely wrong!
 	if pRng.Start.Line < pRng.End.Line || pRng.Start.Character < pRng.End.Character {
 		// Adjust start and end for the specified range.
 		var err error

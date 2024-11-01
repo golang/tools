@@ -40,6 +40,6 @@ func parseGoImpl(ctx context.Context, fset *token.FileSet, fh file.Handle, mode 
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	pgf, _ := parsego.Parse(ctx, fset, fh.URI(), content, mode, purgeFuncBodies)
+	pgf, _ := parsego.Parse(ctx, fset, fh.URI(), content, mode, purgeFuncBodies) // ignore 'fixes'
 	return pgf, nil
 }

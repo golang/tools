@@ -649,7 +649,7 @@ func (x *Indexer) addFile(f vfs.ReadSeekCloser, filename string, goFile bool) (f
 		if goFile {
 			// parse the file and in the process add it to the file set
 			if ast, err = parser.ParseFile(x.fset, filename, src, parser.ParseComments); err == nil {
-				file = x.fset.File(ast.Pos()) // ast.Pos() is inside the file
+				file = x.fset.File(ast.FileStart) // ast.FileStart is inside the file
 				return
 			}
 			// file has parse errors, and the AST may be incorrect -

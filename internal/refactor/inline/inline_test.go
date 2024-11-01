@@ -86,7 +86,7 @@ func TestData(t *testing.T) {
 			for _, pkg := range pkgs {
 				for _, file := range pkg.Syntax {
 					// Read file content (for @inline regexp, and inliner).
-					content, err := os.ReadFile(pkg.Fset.File(file.Pos()).Name())
+					content, err := os.ReadFile(pkg.Fset.File(file.FileStart).Name())
 					if err != nil {
 						t.Error(err)
 						continue
@@ -95,7 +95,7 @@ func TestData(t *testing.T) {
 					// Read and process @inline notes.
 					notes, err := expect.ExtractGo(pkg.Fset, file)
 					if err != nil {
-						t.Errorf("parsing notes in %q: %v", pkg.Fset.File(file.Pos()).Name(), err)
+						t.Errorf("parsing notes in %q: %v", pkg.Fset.File(file.FileStart).Name(), err)
 						continue
 					}
 					for _, note := range notes {
@@ -157,7 +157,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	// Find extent of pattern match within commented line.
 	var startPos, endPos token.Pos
 	{
-		tokFile := pkg.Fset.File(file.Pos())
+		tokFile := pkg.Fset.File(file.FileStart)
 		lineStartOffset := int(tokFile.LineStart(posn.Line)) - tokFile.Base()
 		line := content[lineStartOffset:]
 		if i := bytes.IndexByte(line, '\n'); i >= 0 {

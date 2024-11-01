@@ -313,7 +313,7 @@ func findFromObjectsInFile(iprog *loader.Program, spec *spec) ([]types.Object, e
 		// NB: under certain proprietary build systems, a given
 		// filename may appear in multiple packages.
 		for _, f := range info.Files {
-			thisFile := iprog.Fset.File(f.Pos())
+			thisFile := iprog.Fset.File(f.FileStart)
 			if !sameFile(thisFile.Name(), spec.filename) {
 				continue
 			}
