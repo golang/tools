@@ -282,7 +282,10 @@ func PackageDocHTML(viewID string, pkg *cache.Package, web Web) ([]byte, error) 
 	// TODO(adonovan): simulate that too.
 	fileMap := make(map[string]*ast.File)
 	for _, f := range pkg.Syntax() {
-		fileMap[pkg.FileSet().File(f.Pos()).Name()] = f
+		// This might happen when we have no package at the start of the file.
+		if file := pkg.FileSet().File(f.Pos()); file != nil {
+			fileMap[file.Name()] = f
+		}
 	}
 	astpkg := &ast.Package{
 		Name:  pkg.Types().Name(),
@@ -530,7 +533,6 @@ window.addEventListener('load', function() {
 	// It replaces referring identifiers with links,
 	// and adds style spans for strings and comments.
 	nodeHTML := func(n ast.Node) string {
-
 		// linkify returns the appropriate URL (if any) for an identifier.
 		linkify := func(id *ast.Ident) protocol.URI {
 			if obj, ok := pkg.TypesInfo().Uses[id]; ok && obj.Pkg() != nil {
