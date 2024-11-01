@@ -473,3 +473,100 @@ var fooNode = yourast.Node{}
 +    }
 +  }
 +}
+-- returnwitherror/returnwitherror.go --
+package main
+
+func OnlyErr() error {return nil} //@codeactionedit("OnlyErr", "source.addTest", return_only_error)
+func StringErr() (string, error) {return "", nil} //@codeactionedit("StringErr", "source.addTest", return_string_error)
+func MultipleStringErr() (string, string, string, error) {return "", "", "", nil} //@codeactionedit("MultipleStringErr", "source.addTest", return_multiple_string_error)
+
+-- @return_only_error/returnwitherror/returnwitherror_test.go --
+@@ -0,0 +1,22 @@
++package main_test
++
++func TestOnlyErr(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    wantErr bool
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    gotErr := main.OnlyErr()
++    if gotErr != nil {
++      if !tt.wantErr {
++        t.Errorf("%s: OnlyErr() failed: %v", tt.name, gotErr)
++      }
++      return
++    }
++    if tt.wantErr {
++      t.Fatalf("%s: OnlyErr() succeeded unexpectedly", tt.name)
++    }
++  }
++}
+-- @return_string_error/returnwitherror/returnwitherror_test.go --
+@@ -0,0 +1,27 @@
++package main_test
++
++func TestStringErr(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    want string
++    wantErr bool
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got, gotErr := main.StringErr()
++    if gotErr != nil {
++      if !tt.wantErr {
++        t.Errorf("%s: StringErr() failed: %v", tt.name, gotErr)
++      }
++      return
++    }
++    if tt.wantErr {
++      t.Fatalf("%s: StringErr() succeeded unexpectedly", tt.name)
++    }
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: StringErr() = %v, want %v", tt.name, got, tt.want)
++    }
++  }
++}
+-- @return_multiple_string_error/returnwitherror/returnwitherror_test.go --
+@@ -0,0 +1,35 @@
++package main_test
++
++func TestMultipleStringErr(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    want string
++    want2 string
++    want3 string
++    wantErr bool
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    got, got2, got3, gotErr := main.MultipleStringErr()
++    if gotErr != nil {
++      if !tt.wantErr {
++        t.Errorf("%s: MultipleStringErr() failed: %v", tt.name, gotErr)
++      }
++      return
++    }
++    if tt.wantErr {
++      t.Fatalf("%s: MultipleStringErr() succeeded unexpectedly", tt.name)
++    }
++    // TODO: update the condition below to compare got with tt.want.
++    if true {
++      t.Errorf("%s: MultipleStringErr() = %v, want %v", tt.name, got, tt.want)
++    }
++    if true {
++      t.Errorf("%s: MultipleStringErr() = %v, want %v", tt.name, got2, tt.want2)
++    }
++    if true {
++      t.Errorf("%s: MultipleStringErr() = %v, want %v", tt.name, got3, tt.want3)
++    }
++  }
++}

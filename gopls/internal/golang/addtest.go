@@ -37,6 +37,7 @@ const testTmplString = `func {{.TestFuncName}}(t *testing.T) {
   {{- end}}
   }
   {{- end}}
+
   {{- /* Test cases struct declaration and empty initialization. */}}
   tests := []struct {
     name string // description of this test case
@@ -47,12 +48,18 @@ const testTmplString = `func {{.TestFuncName}}(t *testing.T) {
     arg {{(index .Args 0).Type}}
     {{- end}}
     {{- range $index, $res := .Results}}
-    {{if eq $index 0}}want{{else}}want{{add $index 1}}{{end}} {{$res.Type}}
-    {{- /* TODO(hxjiang): check whether the last return type is error and handle it using field "wantErr". */}}
+    {{- if eq $res.Name "gotErr"}}
+    wantErr bool
+    {{- else if eq $index 0}}
+    want {{$res.Type}}
+    {{- else}}
+    want{{add $index 1}} {{$res.Type}}
+    {{- end}}
     {{- end}}
   }{
     // TODO: Add test cases.
   }
+
   {{- /* Loop over all the test cases. */}}
   for _, tt := range tests {
     {{/* Got variables. */}}
@@ -66,12 +73,29 @@ const testTmplString = `func {{.TestFuncName}}(t *testing.T) {
     {{- /* Input parameters.  */ -}}
     ({{if eq (len .Args) 1}}tt.arg{{end}}{{if gt (len .Args) 1}}{{fieldNames .Args "tt.args."}}{{end}})
 
-    {{- if .Results}}
+    {{- /* Handles the returned error before the rest of return value. */}}
+    {{- $last := index .Results (add (len .Results) -1)}}
+    {{- if eq $last.Name "gotErr"}}
+    if gotErr != nil {
+      if !tt.wantErr {
+        t.Errorf("%s: {{$.FuncName}}() failed: %v", tt.name, gotErr)
+      }
+      return
+    }
+    if tt.wantErr {
+      t.Fatalf("%s: {{$.FuncName}}() succeeded unexpectedly", tt.name)
+    }
+    {{- end}}
+
+    {{- /* Compare the returned values except for the last returned error. */}}
+    {{- if or (and .Results (ne $last.Name "gotErr")) (and (gt (len .Results) 1) (eq $last.Name "gotErr"))}}
     // TODO: update the condition below to compare got with tt.want.
     {{- range $index, $res := .Results}}
+    {{- if ne $res.Name "gotErr"}}
     if true {
       t.Errorf("%s: {{$.FuncName}}() = %v, want %v", tt.name, {{.Name}}, tt.{{if eq $index 0}}want{{else}}want{{add $index 1}}{{end}})
     }
+    {{- end}}
     {{- end}}
     {{- end}}
   }
@@ -306,18 +330,18 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		}
 	}
 
+	errorType := types.Universe.Lookup("error").Type()
 	for i := range sig.Results().Len() {
-		if i == 0 {
-			data.Results = append(data.Results, field{
-				Name: "got",
-				Type: types.TypeString(sig.Results().At(i).Type(), qf),
-			})
-		} else {
-			data.Results = append(data.Results, field{
-				Name: fmt.Sprintf("got%d", i+1),
-				Type: types.TypeString(sig.Results().At(i).Type(), qf),
-			})
+		name := "got"
+		if i == sig.Results().Len()-1 && types.Identical(sig.Results().At(i).Type(), errorType) {
+			name = "gotErr"
+		} else if i > 0 {
+			name = fmt.Sprintf("got%d", i+1)
 		}
+		data.Results = append(data.Results, field{
+			Name: name,
+			Type: types.TypeString(sig.Results().At(i).Type(), qf),
+		})
 	}
 
 	var test bytes.Buffer
