@@ -145,7 +145,7 @@ func goListDriver(cfg *Config, patterns ...string) (_ *DriverResponse, err error
 	}
 
 	// Fill in response.Sizes asynchronously if necessary.
-	if cfg.Mode&NeedTypesSizes != 0 || cfg.Mode&NeedTypes != 0 || cfg.Mode&NeedTypesInfo != 0 {
+	if cfg.Mode&NeedTypesSizes != 0 || cfg.Mode&(NeedTypes|NeedTypesInfo) != 0 {
 		errCh := make(chan error)
 		go func() {
 			compiler, arch, err := getSizesForArgs(ctx, state.cfgInvocation(), cfg.gocmdRunner)
