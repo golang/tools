@@ -145,7 +145,7 @@ func readIndexFrom(cd Abspath, bx io.Reader) (*Index, error) {
 	}
 	// TODO(pjw): need to check that this is the expected cachedir
 	// so the tag should be passed in to this function
-	ans.Changed, err = time.Parse(time.DateTime, b.Text())
+	ans.Changed, err = time.ParseInLocation(time.DateTime, b.Text(), time.Local)
 	if err != nil {
 		return nil, err
 	}
