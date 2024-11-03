@@ -1313,15 +1313,20 @@ func (ld *loader) parseFile(filename string) (*ast.File, error) {
 
 		var src []byte
 		for f, contents := range ld.Config.Overlay {
+			// TODO(adonovan): Inefficient for large overlays.
+			// Do an exact name-based map lookup
+			// (for nonexistent files) followed by a
+			// FileID-based map lookup (for existing ones).
 			if sameFile(f, filename) {
 				src = contents
+				break
 			}
 		}
 		var err error
 		if src == nil {
-			ioLimit <- true // wait
+			ioLimit <- true // acquire a token
 			src, err = os.ReadFile(filename)
-			<-ioLimit // signal
+			<-ioLimit // release a token
 		}
 		if err != nil {
 			v.err = err
@@ -1341,18 +1346,21 @@ func (ld *loader) parseFile(filename string) (*ast.File, error) {
 // Because files are scanned in parallel, the token.Pos
 // positions of the resulting ast.Files are not ordered.
 func (ld *loader) parseFiles(filenames []string) ([]*ast.File, []error) {
-	var wg sync.WaitGroup
-	n := len(filenames)
-	parsed := make([]*ast.File, n)
-	errors := make([]error, n)
-	for i, file := range filenames {
-		wg.Add(1)
-		go func(i int, filename string) {
+	var (
+		n      = len(filenames)
+		parsed = make([]*ast.File, n)
+		errors = make([]error, n)
+	)
+	var g errgroup.Group
+	for i, filename := range filenames {
+		// This creates goroutines unnecessarily in the
+		// cache-hit case, but that case is uncommon.
+		g.Go(func() error {
 			parsed[i], errors[i] = ld.parseFile(filename)
-			wg.Done()
-		}(i, file)
+			return nil
+		})
 	}
-	wg.Wait()
+	g.Wait()
 
 	// Eliminate nils, preserving order.
 	var o int
