@@ -26,7 +26,7 @@ package main
 func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", with_copyright)
 
 -- @with_copyright/withcopyright/copyright_test.go --
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,24 @@
 +// Copyright 2020 The Go Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -42,11 +42,13 @@ func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest"
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := main.Foo(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: Foo() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := main.Foo(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Foo() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- withoutcopyright/copyright.go --
@@ -58,7 +60,7 @@ package copyright
 func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", without_copyright)
 
 -- @without_copyright/withoutcopyright/copyright_test.go --
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,20 @@
 +package copyright_test
 +
 +func TestFoo(t *testing.T) {
@@ -70,11 +72,13 @@ func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest"
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := copyright.Foo(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: Foo() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := copyright.Foo(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Foo() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- missingtestfile/missingtestfile.go --
@@ -87,7 +91,7 @@ type Bar struct {}
 func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("ExportedMethod", "source.addTest", missing_test_file_exported_recv_exported_method)
 
 -- @missing_test_file_exported_function/missingtestfile/missingtestfile_test.go --
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,20 @@
 +package main_test
 +
 +func TestExportedFunction(t *testing.T) {
@@ -99,15 +103,17 @@ func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("Expo
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := main.ExportedFunction(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: ExportedFunction() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := main.ExportedFunction(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("ExportedFunction() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- @missing_test_file_exported_recv_exported_method/missingtestfile/missingtestfile_test.go --
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,20 @@
 +package main_test
 +
 +func TestBar_ExportedMethod(t *testing.T) {
@@ -119,11 +125,13 @@ func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("Expo
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := ExportedMethod(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: ExportedMethod() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := ExportedMethod(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- xpackagetestfile/xpackagetestfile.go --
@@ -146,7 +154,7 @@ func (*foo) unexportedMethod(in string) string {return in} //@codeactionedit("un
 package main
 
 -- @xpackage_exported_function/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,16 @@
+@@ -3 +3,18 @@
 +func TestExportedFunction(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -156,15 +164,17 @@ package main
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := ExportedFunction(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: ExportedFunction() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := ExportedFunction(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("ExportedFunction() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- @xpackage_unexported_function/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,16 @@
+@@ -3 +3,18 @@
 +func Test_unexportedFunction(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -174,15 +184,17 @@ package main
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := unexportedFunction(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: unexportedFunction() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := unexportedFunction(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("unexportedFunction() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- @xpackage_exported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,16 @@
+@@ -3 +3,18 @@
 +func TestBar_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -192,15 +204,17 @@ package main
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := ExportedMethod(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: ExportedMethod() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := ExportedMethod(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- @xpackage_exported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,16 @@
+@@ -3 +3,18 @@
 +func TestBar_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -210,15 +224,17 @@ package main
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := unexportedMethod(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: unexportedMethod() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := unexportedMethod(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- @xpackage_unexported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,16 @@
+@@ -3 +3,18 @@
 +func Test_foo_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -228,15 +244,17 @@ package main
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := ExportedMethod(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: ExportedMethod() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := ExportedMethod(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- @xpackage_unexported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,16 @@
+@@ -3 +3,18 @@
 +func Test_foo_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -246,11 +264,13 @@ package main
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := unexportedMethod(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: unexportedMethod() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := unexportedMethod(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- aliasreceiver/aliasreceiver.go --
@@ -278,7 +298,7 @@ func (foo) unexportedMethod(in string) string {return in} //@codeactionedit("une
 package main
 
 -- @pointer_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,16 @@
+@@ -3 +3,18 @@
 +func TestBar_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -288,15 +308,17 @@ package main
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := ExportedMethod(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: ExportedMethod() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := ExportedMethod(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- @pointer_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,16 @@
+@@ -3 +3,18 @@
 +func TestBar_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -306,15 +328,17 @@ package main
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := unexportedMethod(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: unexportedMethod() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := unexportedMethod(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- @alias_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,16 @@
+@@ -3 +3,18 @@
 +func Test_foo_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -324,15 +348,17 @@ package main
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := ExportedMethod(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: ExportedMethod() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := ExportedMethod(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- @alias_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,16 @@
+@@ -3 +3,18 @@
 +func Test_foo_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -342,11 +368,13 @@ package main
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got := unexportedMethod(tt.arg)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: unexportedMethod() = %v, want %v", tt.name, got, tt.want)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got := unexportedMethod(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- multiinputoutput/multiinputoutput.go --
@@ -355,7 +383,7 @@ package main
 func Foo(in, in1, in2, in3 string) (out, out1, out2 string) {return in, in, in} //@codeactionedit("Foo", "source.addTest", multi_input_output)
 
 -- @multi_input_output/multiinputoutput/multiinputoutput_test.go --
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,34 @@
 +package main_test
 +
 +func TestFoo(t *testing.T) {
@@ -375,17 +403,19 @@ func Foo(in, in1, in2, in3 string) (out, out1, out2 string) {return in, in, in} 
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got, got2, got3 := main.Foo(tt.args.in, tt.args.in2, tt.args.in3, tt.args.in4)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: Foo() = %v, want %v", tt.name, got, tt.want)
-+    }
-+    if true {
-+      t.Errorf("%s: Foo() = %v, want %v", tt.name, got2, tt.want2)
-+    }
-+    if true {
-+      t.Errorf("%s: Foo() = %v, want %v", tt.name, got3, tt.want3)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got, got2, got3 := main.Foo(tt.args.in, tt.args.in2, tt.args.in3, tt.args.in4)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Foo() = %v, want %v", got, tt.want)
++      }
++      if true {
++        t.Errorf("Foo() = %v, want %v", got2, tt.want2)
++      }
++      if true {
++        t.Errorf("Foo() = %v, want %v", got3, tt.want3)
++      }
++    })
 +  }
 +}
 -- xpackagerename/xpackagerename.go --
@@ -399,7 +429,7 @@ import (
 func Foo(t mytime.Time, a *myast.Node) (mytime.Time, *myast.Node) {return t, a} //@codeactionedit("Foo", "source.addTest", xpackage_rename)
 
 -- @xpackage_rename/xpackagerename/xpackagerename_test.go --
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,28 @@
 +package main_test
 +
 +func TestFoo(t *testing.T) {
@@ -416,14 +446,16 @@ func Foo(t mytime.Time, a *myast.Node) (mytime.Time, *myast.Node) {return t, a} 
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got, got2 := main.Foo(tt.args.in, tt.args.in2)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: Foo() = %v, want %v", tt.name, got, tt.want)
-+    }
-+    if true {
-+      t.Errorf("%s: Foo() = %v, want %v", tt.name, got2, tt.want2)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got, got2 := main.Foo(tt.args.in, tt.args.in2)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Foo() = %v, want %v", got, tt.want)
++      }
++      if true {
++        t.Errorf("Foo() = %v, want %v", got2, tt.want2)
++      }
++    })
 +  }
 +}
 -- xtestpackagerename/xtestpackagerename.go --
@@ -448,7 +480,7 @@ var fooTime = yourtime.Time{}
 var fooNode = yourast.Node{}
 
 -- @xtest_package_rename/xtestpackagerename/xtestpackagerename_test.go --
-@@ -11 +11,24 @@
+@@ -11 +11,26 @@
 +func TestFoo(t *testing.T) {
 +  type args struct {
 +    in yourtime.Time
@@ -463,14 +495,16 @@ var fooNode = yourast.Node{}
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got, got2 := main.Foo(tt.args.in, tt.args.in2)
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: Foo() = %v, want %v", tt.name, got, tt.want)
-+    }
-+    if true {
-+      t.Errorf("%s: Foo() = %v, want %v", tt.name, got2, tt.want2)
-+    }
++    t.Run(tt.name, func(t *testing.T) {
++      got, got2 := main.Foo(tt.args.in, tt.args.in2)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Foo() = %v, want %v", got, tt.want)
++      }
++      if true {
++        t.Errorf("Foo() = %v, want %v", got2, tt.want2)
++      }
++    })
 +  }
 +}
 -- returnwitherror/returnwitherror.go --
@@ -481,7 +515,7 @@ func StringErr() (string, error) {return "", nil} //@codeactionedit("StringErr",
 func MultipleStringErr() (string, string, string, error) {return "", "", "", nil} //@codeactionedit("MultipleStringErr", "source.addTest", return_multiple_string_error)
 
 -- @return_only_error/returnwitherror/returnwitherror_test.go --
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,24 @@
 +package main_test
 +
 +func TestOnlyErr(t *testing.T) {
@@ -492,20 +526,22 @@ func MultipleStringErr() (string, string, string, error) {return "", "", "", nil
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    gotErr := main.OnlyErr()
-+    if gotErr != nil {
-+      if !tt.wantErr {
-+        t.Errorf("%s: OnlyErr() failed: %v", tt.name, gotErr)
++    t.Run(tt.name, func(t *testing.T) {
++      gotErr := main.OnlyErr()
++      if gotErr != nil {
++        if !tt.wantErr {
++          t.Errorf("OnlyErr() failed: %v", gotErr)
++        }
++        return
 +      }
-+      return
-+    }
-+    if tt.wantErr {
-+      t.Fatalf("%s: OnlyErr() succeeded unexpectedly", tt.name)
-+    }
++      if tt.wantErr {
++        t.Fatal("OnlyErr() succeeded unexpectedly")
++      }
++    })
 +  }
 +}
 -- @return_string_error/returnwitherror/returnwitherror_test.go --
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,29 @@
 +package main_test
 +
 +func TestStringErr(t *testing.T) {
@@ -517,24 +553,26 @@ func MultipleStringErr() (string, string, string, error) {return "", "", "", nil
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got, gotErr := main.StringErr()
-+    if gotErr != nil {
-+      if !tt.wantErr {
-+        t.Errorf("%s: StringErr() failed: %v", tt.name, gotErr)
++    t.Run(tt.name, func(t *testing.T) {
++      got, gotErr := main.StringErr()
++      if gotErr != nil {
++        if !tt.wantErr {
++          t.Errorf("StringErr() failed: %v", gotErr)
++        }
++        return
 +      }
-+      return
-+    }
-+    if tt.wantErr {
-+      t.Fatalf("%s: StringErr() succeeded unexpectedly", tt.name)
-+    }
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: StringErr() = %v, want %v", tt.name, got, tt.want)
-+    }
++      if tt.wantErr {
++        t.Fatal("StringErr() succeeded unexpectedly")
++      }
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("StringErr() = %v, want %v", got, tt.want)
++      }
++    })
 +  }
 +}
 -- @return_multiple_string_error/returnwitherror/returnwitherror_test.go --
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,37 @@
 +package main_test
 +
 +func TestMultipleStringErr(t *testing.T) {
@@ -548,25 +586,27 @@ func MultipleStringErr() (string, string, string, error) {return "", "", "", nil
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    got, got2, got3, gotErr := main.MultipleStringErr()
-+    if gotErr != nil {
-+      if !tt.wantErr {
-+        t.Errorf("%s: MultipleStringErr() failed: %v", tt.name, gotErr)
++    t.Run(tt.name, func(t *testing.T) {
++      got, got2, got3, gotErr := main.MultipleStringErr()
++      if gotErr != nil {
++        if !tt.wantErr {
++          t.Errorf("MultipleStringErr() failed: %v", gotErr)
++        }
++        return
 +      }
-+      return
-+    }
-+    if tt.wantErr {
-+      t.Fatalf("%s: MultipleStringErr() succeeded unexpectedly", tt.name)
-+    }
-+    // TODO: update the condition below to compare got with tt.want.
-+    if true {
-+      t.Errorf("%s: MultipleStringErr() = %v, want %v", tt.name, got, tt.want)
-+    }
-+    if true {
-+      t.Errorf("%s: MultipleStringErr() = %v, want %v", tt.name, got2, tt.want2)
-+    }
-+    if true {
-+      t.Errorf("%s: MultipleStringErr() = %v, want %v", tt.name, got3, tt.want3)
-+    }
++      if tt.wantErr {
++        t.Fatal("MultipleStringErr() succeeded unexpectedly")
++      }
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("MultipleStringErr() = %v, want %v", got, tt.want)
++      }
++      if true {
++        t.Errorf("MultipleStringErr() = %v, want %v", got2, tt.want2)
++      }
++      if true {
++        t.Errorf("MultipleStringErr() = %v, want %v", got3, tt.want3)
++      }
++    })
 +  }
 +}

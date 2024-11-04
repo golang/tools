@@ -62,42 +62,44 @@ const testTmplString = `func {{.TestFuncName}}(t *testing.T) {
 
   {{- /* Loop over all the test cases. */}}
   for _, tt := range tests {
-    {{/* Got variables. */}}
-    {{- if .Results}}{{fieldNames .Results ""}} := {{end}}
+    t.Run(tt.name, func(t *testing.T) {
+      {{/* Got variables. */}}
+      {{- if .Results}}{{fieldNames .Results ""}} := {{end}}
 
-    {{- /* Call expression. In xtest package test, call function by PACKAGE.FUNC. */}}
-    {{- /* TODO(hxjiang): consider any renaming in existing xtest package imports. E.g. import renamedfoo "foo". */}}
-    {{- /* TODO(hxjiang): support add test for methods by calling the right constructor. */}}
-    {{- if .PackageName}}{{.PackageName}}.{{end}}{{.FuncName}}
+      {{- /* Call expression. In xtest package test, call function by PACKAGE.FUNC. */}}
+      {{- /* TODO(hxjiang): consider any renaming in existing xtest package imports. E.g. import renamedfoo "foo". */}}
+      {{- /* TODO(hxjiang): support add test for methods by calling the right constructor. */}}
+      {{- if .PackageName}}{{.PackageName}}.{{end}}{{.FuncName}}
 
-    {{- /* Input parameters.  */ -}}
-    ({{if eq (len .Args) 1}}tt.arg{{end}}{{if gt (len .Args) 1}}{{fieldNames .Args "tt.args."}}{{end}})
+      {{- /* Input parameters.  */ -}}
+      ({{- if eq (len .Args) 1}}tt.arg{{end}}{{if gt (len .Args) 1}}{{fieldNames .Args "tt.args."}}{{end}})
 
-    {{- /* Handles the returned error before the rest of return value. */}}
-    {{- $last := index .Results (add (len .Results) -1)}}
-    {{- if eq $last.Name "gotErr"}}
-    if gotErr != nil {
-      if !tt.wantErr {
-        t.Errorf("%s: {{$.FuncName}}() failed: %v", tt.name, gotErr)
+      {{- /* Handles the returned error before the rest of return value. */}}
+      {{- $last := index .Results (add (len .Results) -1)}}
+      {{- if eq $last.Name "gotErr"}}
+      if gotErr != nil {
+        if !tt.wantErr {
+          t.Errorf("{{$.FuncName}}() failed: %v", gotErr)
+        }
+        return
       }
-      return
-    }
-    if tt.wantErr {
-      t.Fatalf("%s: {{$.FuncName}}() succeeded unexpectedly", tt.name)
-    }
-    {{- end}}
+      if tt.wantErr {
+        t.Fatal("{{$.FuncName}}() succeeded unexpectedly")
+      }
+      {{- end}}
 
-    {{- /* Compare the returned values except for the last returned error. */}}
-    {{- if or (and .Results (ne $last.Name "gotErr")) (and (gt (len .Results) 1) (eq $last.Name "gotErr"))}}
-    // TODO: update the condition below to compare got with tt.want.
-    {{- range $index, $res := .Results}}
-    {{- if ne $res.Name "gotErr"}}
-    if true {
-      t.Errorf("%s: {{$.FuncName}}() = %v, want %v", tt.name, {{.Name}}, tt.{{if eq $index 0}}want{{else}}want{{add $index 1}}{{end}})
-    }
-    {{- end}}
-    {{- end}}
-    {{- end}}
+      {{- /* Compare the returned values except for the last returned error. */}}
+      {{- if or (and .Results (ne $last.Name "gotErr")) (and (gt (len .Results) 1) (eq $last.Name "gotErr"))}}
+      // TODO: update the condition below to compare got with tt.want.
+      {{- range $index, $res := .Results}}
+      {{- if ne $res.Name "gotErr"}}
+      if true {
+        t.Errorf("{{$.FuncName}}() = %v, want %v", {{.Name}}, tt.{{if eq $index 0}}want{{else}}want{{add $index 1}}{{end}})
+      }
+      {{- end}}
+      {{- end}}
+      {{- end}}
+    })
   }
 }
 `
