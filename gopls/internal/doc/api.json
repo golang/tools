@@ -466,7 +466,7 @@
 						},
 						{
 							"Name": "\"lostcancel\"",
-							"Doc": "check cancel func returned by context.WithCancel is called\n\nThe cancellation function returned by context.WithCancel, WithTimeout,\nand WithDeadline must be called or the new context will remain live\nuntil its parent context is cancelled.\n(The background context is never cancelled.)",
+							"Doc": "check cancel func returned by context.WithCancel is called\n\nThe cancellation function returned by context.WithCancel, WithTimeout,\nWithDeadline and variants such as WithCancelCause must be called,\nor the new context will remain live until its parent context is cancelled.\n(The background context is never cancelled.)",
 							"Default": "true"
 						},
 						{
@@ -1114,7 +1114,7 @@
 		},
 		{
 			"Name": "lostcancel",
-			"Doc": "check cancel func returned by context.WithCancel is called\n\nThe cancellation function returned by context.WithCancel, WithTimeout,\nand WithDeadline must be called or the new context will remain live\nuntil its parent context is cancelled.\n(The background context is never cancelled.)",
+			"Doc": "check cancel func returned by context.WithCancel is called\n\nThe cancellation function returned by context.WithCancel, WithTimeout,\nWithDeadline and variants such as WithCancelCause must be called,\nor the new context will remain live until its parent context is cancelled.\n(The background context is never cancelled.)",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/lostcancel",
 			"Default": true
 		},
