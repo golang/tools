@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"testing"
 	"time"
 
 	"golang.org/x/telemetry"
@@ -64,19 +65,6 @@ func (s *server) getenv(key string) string {
 	return os.Getenv(key)
 }
 
-// configDir returns the root of the gopls configuration dir. By default this
-// is os.UserConfigDir/gopls, but it may be overridden for tests.
-func (s *server) configDir() (string, error) {
-	if d := s.getenv(GoplsConfigDirEnvvar); d != "" {
-		return d, nil
-	}
-	userDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(userDir, "gopls"), nil
-}
-
 // telemetryMode returns the current effective telemetry mode.
 // By default this is x/telemetry.Mode(), but it may be overridden for tests.
 func (s *server) telemetryMode() string {
@@ -119,10 +107,19 @@ func (s *server) maybePromptForTelemetry(ctx context.Context, enabled bool) {
 	}
 
 	// Only prompt if we can read/write the prompt config file.
-	configDir, err := s.configDir()
-	if err != nil {
-		errorf("unable to determine config dir: %v", err)
+	configDir := s.getenv(GoplsConfigDirEnvvar) // set for testing
+	if configDir == "" && testing.Testing() {
+		// Unless tests set GoplsConfigDirEnvvar, the prompt is a no op.
+		// We don't want tests to interact with os.UserConfigDir().
 		return
+	}
+	if configDir == "" {
+		userDir, err := os.UserConfigDir()
+		if err != nil {
+			errorf("unable to determine user config dir: %v", err)
+			return
+		}
+		configDir = filepath.Join(userDir, "gopls")
 	}
 
 	// Read the current prompt file.
