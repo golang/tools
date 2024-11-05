@@ -85,7 +85,8 @@ func TestZeroConfigAlgorithm(t *testing.T) {
 				options: func(dir string) map[string]any {
 					return map[string]any{
 						"env": map[string]any{
-							"GOPATH": dir,
+							"GO111MODULE": "", // golang/go#70196: must be unset
+							"GOPATH":      dir,
 						},
 					}
 				},
