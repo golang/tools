@@ -76,10 +76,12 @@ golang.org/x/tools/txtar
 ## Contributing
 
 This repository uses Gerrit for code changes.
-To learn how to submit changes, see https://golang.org/doc/contribute.html.
+To learn how to submit changes, see https://go.dev/doc/contribute.
+
+The git repository is https://go.googlesource.com/tools.
 
 The main issue tracker for the tools repository is located at
-https://github.com/golang/go/issues. Prefix your issue with "x/tools/(your
+https://go.dev/issues. Prefix your issue with "x/tools/(your
 subdir):" in the subject line, so it is easy to find.
 
 ### JavaScript and CSS Formatting
