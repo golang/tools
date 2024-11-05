@@ -113,7 +113,7 @@ func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("Expo
 +  }
 +}
 -- @missing_test_file_exported_recv_exported_method/missingtestfile/missingtestfile_test.go --
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,22 @@
 +package main_test
 +
 +func TestBar_ExportedMethod(t *testing.T) {
@@ -126,7 +126,9 @@ func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("Expo
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := ExportedMethod(tt.arg)
++      // TODO: construct the receiver type.
++      var b main.Bar
++      got := b.ExportedMethod(tt.arg)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
@@ -194,7 +196,7 @@ package main
 +  }
 +}
 -- @xpackage_exported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,18 @@
+@@ -3 +3,20 @@
 +func TestBar_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -205,7 +207,9 @@ package main
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := ExportedMethod(tt.arg)
++      // TODO: construct the receiver type.
++      var b Bar
++      got := b.ExportedMethod(tt.arg)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
@@ -214,7 +218,7 @@ package main
 +  }
 +}
 -- @xpackage_exported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,18 @@
+@@ -3 +3,20 @@
 +func TestBar_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -225,7 +229,9 @@ package main
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := unexportedMethod(tt.arg)
++      // TODO: construct the receiver type.
++      var b Bar
++      got := b.unexportedMethod(tt.arg)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
@@ -234,7 +240,7 @@ package main
 +  }
 +}
 -- @xpackage_unexported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,18 @@
+@@ -3 +3,20 @@
 +func Test_foo_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -245,7 +251,9 @@ package main
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := ExportedMethod(tt.arg)
++      // TODO: construct the receiver type.
++      var f foo
++      got := f.ExportedMethod(tt.arg)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
@@ -254,7 +262,7 @@ package main
 +  }
 +}
 -- @xpackage_unexported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,18 @@
+@@ -3 +3,20 @@
 +func Test_foo_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -265,7 +273,9 @@ package main
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := unexportedMethod(tt.arg)
++      // TODO: construct the receiver type.
++      var f foo
++      got := f.unexportedMethod(tt.arg)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
@@ -276,29 +286,42 @@ package main
 -- aliasreceiver/aliasreceiver.go --
 package main
 
-type bar struct {}
-type middle1 = bar
-type middle2 = middle1
-type middle3 = middle2
-type Bar = middle3
+type bar0 struct {}
+type bar1 = bar0
+type Bar = bar1
 
 func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("ExportedMethod", "source.addTest", pointer_receiver_exported_method)
 func (*Bar) unexportedMethod(in string) string {return in} //@codeactionedit("unexportedMethod", "source.addTest", pointer_receiver_unexported_method)
 
-type bar2 struct {}
-type middle4 = bar2
-type middle5 = middle4
-type middle6 = middle5
-type foo = *middle6
+type foo0 struct {}
+type foo1 = foo0
+type foo = foo1
 
 func (foo) ExportedMethod(in string) string {return in} //@codeactionedit("ExportedMethod", "source.addTest", alias_receiver_exported_method)
 func (foo) unexportedMethod(in string) string {return in} //@codeactionedit("unexportedMethod", "source.addTest", alias_receiver_unexported_method)
+
+type baz0 struct{}
+type baz1 = baz0
+type baz = baz1
+
+func newBaz0() baz0 {return baz0{}}
+
+func (baz) method(in string) string {return in} //@codeactionedit("method", "source.addTest", alias_constructor_on_underlying_type)
+
+type qux0 struct{}
+type qux1 = qux0
+type qux2 = qux1
+type Qux = *qux2
+
+func newQux1() (qux1, error) {return qux1{}, nil}
+
+func (Qux) method(in string) string {return in} //@codeactionedit("method", "source.addTest", alias_constructor_on_different_alias_type)
 
 -- aliasreceiver/aliasreceiver_test.go --
 package main
 
 -- @pointer_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,18 @@
+@@ -3 +3,20 @@
 +func TestBar_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -309,7 +332,9 @@ package main
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := ExportedMethod(tt.arg)
++      // TODO: construct the receiver type.
++      var b Bar
++      got := b.ExportedMethod(tt.arg)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
@@ -318,7 +343,7 @@ package main
 +  }
 +}
 -- @pointer_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,18 @@
+@@ -3 +3,20 @@
 +func TestBar_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -329,7 +354,9 @@ package main
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := unexportedMethod(tt.arg)
++      // TODO: construct the receiver type.
++      var b Bar
++      got := b.unexportedMethod(tt.arg)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
@@ -338,7 +365,7 @@ package main
 +  }
 +}
 -- @alias_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,18 @@
+@@ -3 +3,20 @@
 +func Test_foo_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -349,7 +376,9 @@ package main
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := ExportedMethod(tt.arg)
++      // TODO: construct the receiver type.
++      var f foo
++      got := f.ExportedMethod(tt.arg)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
@@ -358,7 +387,7 @@ package main
 +  }
 +}
 -- @alias_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,18 @@
+@@ -3 +3,20 @@
 +func Test_foo_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -369,10 +398,57 @@ package main
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := unexportedMethod(tt.arg)
++      // TODO: construct the receiver type.
++      var f foo
++      got := f.unexportedMethod(tt.arg)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
++      }
++    })
++  }
++}
+-- @alias_constructor_on_underlying_type/aliasreceiver/aliasreceiver_test.go --
+@@ -3 +3,19 @@
++func Test_baz_method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      b := newBaz0()
++      got := b.method(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("method() = %v, want %v", got, tt.want)
++      }
++    })
++  }
++}
+-- @alias_constructor_on_different_alias_type/aliasreceiver/aliasreceiver_test.go --
+@@ -3 +3,22 @@
++func TestQux_method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      q, err := newQux1()
++      if err != nil {
++        t.Fatalf("could not contruct receiver type: %v", err)
++      }
++      got := q.method(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("method() = %v, want %v", got, tt.want)
 +      }
 +    })
 +  }
@@ -606,6 +682,203 @@ func MultipleStringErr() (string, string, string, error) {return "", "", "", nil
 +      }
 +      if true {
 +        t.Errorf("MultipleStringErr() = %v, want %v", got3, tt.want3)
++      }
++    })
++  }
++}
+-- constructor/constructor.go --
+package main
+
+// Constructor returns the type T.
+func NewReturnType() ReturnType {return ReturnType{}}
+
+type ReturnType struct {}
+
+func (*ReturnType) Method(in string) string {return in} //@codeactionedit("Method", "source.addTest", constructor_return_type)
+
+// Constructor returns the type T and an error.
+func NewReturnTypeError() (ReturnTypeError, error) {return ReturnTypeError{}, nil}
+
+type ReturnTypeError struct {}
+
+func (*ReturnTypeError) Method(in string) string {return in} //@codeactionedit("Method", "source.addTest", constructor_return_type_error)
+
+// Constructor returns the type *T.
+func NewReturnPtr() *ReturnPtr {return nil}
+
+type ReturnPtr struct {}
+
+func (*ReturnPtr) Method(in string) string {return in} //@codeactionedit("Method", "source.addTest", constructor_return_ptr)
+
+// Constructor returns the type *T and an error.
+func NewReturnPtrError() (*ReturnPtrError, error) {return nil, nil}
+
+type ReturnPtrError struct {}
+
+func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("Method", "source.addTest", constructor_return_ptr_error)
+
+-- @constructor_return_type/constructor/constructor_test.go --
+@@ -0,0 +1,21 @@
++package main_test
++
++func TestReturnType_Method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      r := main.NewReturnType()
++      got := r.Method(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Method() = %v, want %v", got, tt.want)
++      }
++    })
++  }
++}
+-- @constructor_return_type_error/constructor/constructor_test.go --
+@@ -0,0 +1,24 @@
++package main_test
++
++func TestReturnTypeError_Method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      r, err := main.NewReturnTypeError()
++      if err != nil {
++        t.Fatalf("could not contruct receiver type: %v", err)
++      }
++      got := r.Method(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Method() = %v, want %v", got, tt.want)
++      }
++    })
++  }
++}
+-- @constructor_return_ptr/constructor/constructor_test.go --
+@@ -0,0 +1,21 @@
++package main_test
++
++func TestReturnPtr_Method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      r := main.NewReturnPtr()
++      got := r.Method(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Method() = %v, want %v", got, tt.want)
++      }
++    })
++  }
++}
+-- @constructor_return_ptr_error/constructor/constructor_test.go --
+@@ -0,0 +1,24 @@
++package main_test
++
++func TestReturnPtrError_Method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      r, err := main.NewReturnPtrError()
++      if err != nil {
++        t.Fatalf("could not contruct receiver type: %v", err)
++      }
++      got := r.Method(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Method() = %v, want %v", got, tt.want)
++      }
++    })
++  }
++}
+-- constructorcomparison/constructorcomparison.go --
+package main
+
+// Foo have two constructors. NewFoo is prefered over others.
+func CreateAFoo() Foo {return Foo{}}
+func NewFoo() Foo {return Foo{}}
+
+type Foo struct{}
+
+func (*Foo) Method(in string) string {return in} //@codeactionedit("Method", "source.addTest", constructor_comparison_new)
+
+// Bar have two constructors. Bar is preferred due to alphabetical ordering.
+func ABar() (Bar, error) {return Bar{}, nil}
+// func CreateABar() Bar {return Bar{}}
+
+type Bar struct{}
+
+func (*Bar) Method(in string) string {return in} //@codeactionedit("Method", "source.addTest", constructor_comparison_alphabetical)
+
+-- @constructor_comparison_new/constructorcomparison/constructorcomparison_test.go --
+@@ -0,0 +1,21 @@
++package main_test
++
++func TestFoo_Method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      f := main.NewFoo()
++      got := f.Method(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Method() = %v, want %v", got, tt.want)
++      }
++    })
++  }
++}
+-- @constructor_comparison_alphabetical/constructorcomparison/constructorcomparison_test.go --
+@@ -0,0 +1,24 @@
++package main_test
++
++func TestBar_Method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    arg string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      b, err := main.ABar()
++      if err != nil {
++        t.Fatalf("could not contruct receiver type: %v", err)
++      }
++      got := b.Method(tt.arg)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Method() = %v, want %v", got, tt.want)
 +      }
 +    })
 +  }

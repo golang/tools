@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -29,10 +30,21 @@ import (
 )
 
 const testTmplString = `func {{.TestFuncName}}(t *testing.T) {
+  {{- /* Constructor input parameters struct declaration. */}}
+  {{- if and .Receiver .Receiver.Constructor}}
+  {{- if gt (len .Receiver.Constructor.Args) 1}}
+  type constructorArgs struct {
+  {{- range .Receiver.Constructor.Args}}
+    {{.Name}} {{.Type}}
+  {{- end}}
+  }
+  {{- end}}
+  {{- end}}
+
   {{- /* Functions/methods input parameters struct declaration. */}}
-  {{- if gt (len .Args) 1}}
+  {{- if gt (len .Func.Args) 1}}
   type args struct {
-  {{- range .Args}}
+  {{- range .Func.Args}}
     {{.Name}} {{.Type}}
   {{- end}}
   }
@@ -41,13 +53,22 @@ const testTmplString = `func {{.TestFuncName}}(t *testing.T) {
   {{- /* Test cases struct declaration and empty initialization. */}}
   tests := []struct {
     name string // description of this test case
-    {{- if gt (len .Args) 1}}
+    {{- if and .Receiver .Receiver.Constructor}}
+    {{- if gt (len .Receiver.Constructor.Args) 1}}
+    constructorArgs constructorArgs
+    {{- end}}
+    {{- if eq (len .Receiver.Constructor.Args) 1}}
+    constructorArg {{(index .Receiver.Constructor.Args 0).Type}}
+    {{- end}}
+    {{- end}}
+
+    {{- if gt (len .Func.Args) 1}}
     args args
     {{- end}}
-    {{- if eq (len .Args) 1}}
-    arg {{(index .Args 0).Type}}
+    {{- if eq (len .Func.Args) 1}}
+    arg {{(index .Func.Args 0).Type}}
     {{- end}}
-    {{- range $index, $res := .Results}}
+    {{- range $index, $res := .Func.Results}}
     {{- if eq $res.Name "gotErr"}}
     wantErr bool
     {{- else if eq $index 0}}
@@ -63,38 +84,64 @@ const testTmplString = `func {{.TestFuncName}}(t *testing.T) {
   {{- /* Loop over all the test cases. */}}
   for _, tt := range tests {
     t.Run(tt.name, func(t *testing.T) {
-      {{/* Got variables. */}}
-      {{- if .Results}}{{fieldNames .Results ""}} := {{end}}
+      {{- /* Constructor or empty initialization. */}}
+      {{- if .Receiver}}
+      {{- if .Receiver.Constructor}}
+      {{- /* Receiver variable by calling constructor. */}}
+      {{fieldNames .Receiver.Constructor.Results ""}} := {{if .PackageName}}{{.PackageName}}.{{end}}
+      {{- .Receiver.Constructor.Name}}
 
-      {{- /* Call expression. In xtest package test, call function by PACKAGE.FUNC. */}}
-      {{- /* TODO(hxjiang): consider any renaming in existing xtest package imports. E.g. import renamedfoo "foo". */}}
-      {{- /* TODO(hxjiang): support add test for methods by calling the right constructor. */}}
-      {{- if .PackageName}}{{.PackageName}}.{{end}}{{.FuncName}}
+      {{- /* Constructor input parameters. */ -}}
+      ({{- if eq (len .Receiver.Constructor.Args) 1}}tt.constructorArg{{end}}{{if gt (len .Func.Args) 1}}{{fieldNames .Receiver.Constructor.Args "tt.constructorArgs."}}{{end}})
 
-      {{- /* Input parameters.  */ -}}
-      ({{- if eq (len .Args) 1}}tt.arg{{end}}{{if gt (len .Args) 1}}{{fieldNames .Args "tt.args."}}{{end}})
+      {{- /* Handles the error return from constructor. */}}
+      {{- $last := last .Receiver.Constructor.Results}}
+      {{- if eq $last.Type "error"}}
+      if err != nil {
+        t.Fatalf("could not contruct receiver type: %v", err)
+      }
+      {{- end}}
+      {{- else}}
+      {{- /* Receiver variable declaration. */}}
+      // TODO: construct the receiver type.
+      var {{.Receiver.Var.Name}} {{.Receiver.Var.Type}}
+      {{- end}}
+      {{- end}}
+
+      {{- /* Got variables. */}}
+      {{if .Func.Results}}{{fieldNames .Func.Results ""}} := {{end}}
+
+      {{- /* Call expression. */}}
+      {{- if .Receiver}}{{/* Call method by VAR.METHOD. */}}
+      {{- .Receiver.Var.Name}}.
+      {{- else if .PackageName}}{{/* Call function by PACKAGE.FUNC. */}}
+      {{- .PackageName}}.
+      {{- end}}{{.Func.Name}}
+
+      {{- /* Input parameters. */ -}}
+      ({{- if eq (len .Func.Args) 1}}tt.arg{{end}}{{if gt (len .Func.Args) 1}}{{fieldNames .Func.Args "tt.args."}}{{end}})
 
       {{- /* Handles the returned error before the rest of return value. */}}
-      {{- $last := index .Results (add (len .Results) -1)}}
-      {{- if eq $last.Name "gotErr"}}
+      {{- $last := last .Func.Results}}
+      {{- if eq $last.Type "error"}}
       if gotErr != nil {
         if !tt.wantErr {
-          t.Errorf("{{$.FuncName}}() failed: %v", gotErr)
+          t.Errorf("{{$.Func.Name}}() failed: %v", gotErr)
         }
         return
       }
       if tt.wantErr {
-        t.Fatal("{{$.FuncName}}() succeeded unexpectedly")
+        t.Fatal("{{$.Func.Name}}() succeeded unexpectedly")
       }
       {{- end}}
 
       {{- /* Compare the returned values except for the last returned error. */}}
-      {{- if or (and .Results (ne $last.Name "gotErr")) (and (gt (len .Results) 1) (eq $last.Name "gotErr"))}}
+      {{- if or (and .Func.Results (ne $last.Type "error")) (and (gt (len .Func.Results) 1) (eq $last.Type "error"))}}
       // TODO: update the condition below to compare got with tt.want.
-      {{- range $index, $res := .Results}}
+      {{- range $index, $res := .Func.Results}}
       {{- if ne $res.Name "gotErr"}}
       if true {
-        t.Errorf("{{$.FuncName}}() = %v, want %v", {{.Name}}, tt.{{if eq $index 0}}want{{else}}want{{add $index 1}}{{end}})
+        t.Errorf("{{$.Func.Name}}() = %v, want %v", {{.Name}}, tt.{{if eq $index 0}}want{{else}}want{{add $index 1}}{{end}})
       }
       {{- end}}
       {{- end}}
@@ -108,16 +155,36 @@ type field struct {
 	Name, Type string
 }
 
+type function struct {
+	Name    string
+	Args    []field
+	Results []field
+}
+
+type receiver struct {
+	// Var is the name and type of the receiver variable.
+	Var field
+	// Constructor holds information about the constructor for the receiver type.
+	// If no qualified constructor is found, this field will be nil.
+	Constructor *function
+}
+
 type testInfo struct {
 	PackageName  string
-	FuncName     string
 	TestFuncName string
-	Args         []field
-	Results      []field
+	// Func holds information about the function or method being tested.
+	Func function
+	// Receiver holds information about the receiver of the function or method
+	// being tested.
+	// This field is nil for functions and non-nil for methods.
+	Receiver *receiver
 }
 
 var testTmpl = template.Must(template.New("test").Funcs(template.FuncMap{
 	"add": func(a, b int) int { return a + b },
+	"last": func(slice []field) field {
+		return slice[len(slice)-1]
+	},
 	"fieldNames": func(fields []field, qualifier string) (res string) {
 		var names []string
 		for _, f := range fields {
@@ -309,41 +376,185 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 	if err != nil {
 		return nil, err
 	}
+
 	data := testInfo{
-		FuncName:     fn.Name(),
+		PackageName:  qf(pkg.Types()),
 		TestFuncName: testName,
-	}
-
-	if sig.Recv() == nil && xtest {
-		data.PackageName = qf(pkg.Types())
-	}
-
-	for i := range sig.Params().Len() {
-		if i == 0 {
-			data.Args = append(data.Args, field{
-				Name: "in",
-				Type: types.TypeString(sig.Params().At(i).Type(), qf),
-			})
-		} else {
-			data.Args = append(data.Args, field{
-				Name: fmt.Sprintf("in%d", i+1),
-				Type: types.TypeString(sig.Params().At(i).Type(), qf),
-			})
-		}
+		Func: function{
+			Name: fn.Name(),
+		},
 	}
 
 	errorType := types.Universe.Lookup("error").Type()
-	for i := range sig.Results().Len() {
-		name := "got"
-		if i == sig.Results().Len()-1 && types.Identical(sig.Results().At(i).Type(), errorType) {
-			name = "gotErr"
-		} else if i > 0 {
-			name = fmt.Sprintf("got%d", i+1)
+
+	// TODO(hxjiang): if input parameter is not named (meaning it's not used),
+	// pass the zero value to the function call.
+	// TODO(hxjiang): if the input parameter is named, define the field by using
+	// the parameter's name instead of in%d.
+	// TODO(hxjiang): handle special case for ctx.Context input.
+	for index := range sig.Params().Len() {
+		var name string
+		if index == 0 {
+			name = "in"
+		} else {
+			name = fmt.Sprintf("in%d", index+1)
 		}
-		data.Results = append(data.Results, field{
+		data.Func.Args = append(data.Func.Args, field{
 			Name: name,
-			Type: types.TypeString(sig.Results().At(i).Type(), qf),
+			Type: types.TypeString(sig.Params().At(index).Type(), qf),
 		})
+	}
+
+	for index := range sig.Results().Len() {
+		var name string
+		if index == sig.Results().Len()-1 && types.Identical(sig.Results().At(index).Type(), errorType) {
+			name = "gotErr"
+		} else if index == 0 {
+			name = "got"
+		} else {
+			name = fmt.Sprintf("got%d", index+1)
+		}
+		data.Func.Results = append(data.Func.Results, field{
+			Name: name,
+			Type: types.TypeString(sig.Results().At(index).Type(), qf),
+		})
+	}
+
+	if sig.Recv() != nil {
+		// Find the preferred type for the receiver. We don't use
+		// typesinternal.ReceiverNamed here as we want to preserve aliases.
+		recvType := sig.Recv().Type()
+		if ptr, ok := recvType.(*types.Pointer); ok {
+			recvType = ptr.Elem()
+		}
+
+		t, ok := recvType.(typesinternal.NamedOrAlias)
+		if !ok {
+			return nil, fmt.Errorf("the receiver type is neither named type nor alias type")
+		}
+
+		var varName string
+		{
+			var possibleNames []string // list of candidates, preferring earlier entries.
+			if len(sig.Recv().Name()) > 0 {
+				possibleNames = append(possibleNames,
+					sig.Recv().Name(),            // receiver name.
+					string(sig.Recv().Name()[0]), // first character of receiver name.
+				)
+			}
+			possibleNames = append(possibleNames,
+				string(t.Obj().Name()[0]), // first character of receiver type name.
+			)
+			if len(t.Obj().Name()) >= 2 {
+				possibleNames = append(possibleNames,
+					string(t.Obj().Name()[:2]), // first two character of receiver type name.
+				)
+			}
+			var camelCase []rune
+			for i, s := range t.Obj().Name() {
+				if i == 0 || unicode.IsUpper(s) {
+					camelCase = append(camelCase, s)
+				}
+			}
+			possibleNames = append(possibleNames,
+				string(camelCase), // captalized initials.
+			)
+			for _, name := range possibleNames {
+				name = strings.ToLower(name)
+				if name == "" || name == "t" || name == "tt" {
+					continue
+				}
+				varName = name
+				break
+			}
+			if varName == "" {
+				varName = "r" // default as "r" for "receiver".
+			}
+		}
+
+		data.Receiver = &receiver{
+			Var: field{
+				Name: varName,
+				Type: types.TypeString(recvType, qf),
+			},
+		}
+
+		// constructor is the selected constructor for type T.
+		var constructor *types.Func
+
+		// When finding the qualified constructor, the function should return the
+		// any type whose named type is the same type as T's named type.
+		_, wantType := typesinternal.ReceiverNamed(sig.Recv())
+		for _, name := range pkg.Types().Scope().Names() {
+			f, ok := pkg.Types().Scope().Lookup(name).(*types.Func)
+			if !ok {
+				continue
+			}
+			if f.Signature().Recv() != nil {
+				continue
+			}
+			// Unexported constructor is not visible in x_test package.
+			if xtest && !f.Exported() {
+				continue
+			}
+			// Only allow constructors returning T, T, (T, error), or (T, error).
+			if f.Signature().Results().Len() > 2 || f.Signature().Results().Len() == 0 {
+				continue
+			}
+
+			_, gotType := typesinternal.ReceiverNamed(f.Signature().Results().At(0))
+			if gotType == nil || !types.Identical(gotType, wantType) {
+				continue
+			}
+
+			if f.Signature().Results().Len() == 2 && !types.Identical(f.Signature().Results().At(1).Type(), errorType) {
+				continue
+			}
+
+			if constructor == nil {
+				constructor = f
+			}
+
+			// Functions named NewType are prioritized as constructors over other
+			// functions that match only the signature criteria.
+			if strings.EqualFold(strings.ToLower(f.Name()), strings.ToLower("new"+t.Obj().Name())) {
+				constructor = f
+			}
+		}
+
+		if constructor != nil {
+			data.Receiver.Constructor = &function{Name: constructor.Name()}
+			for index := range constructor.Signature().Params().Len() {
+				var name string
+				if index == 0 {
+					name = "in"
+				} else {
+					name = fmt.Sprintf("in%d", index+1)
+				}
+				data.Receiver.Constructor.Args = append(data.Receiver.Constructor.Args, field{
+					Name: name,
+					Type: types.TypeString(constructor.Signature().Params().At(index).Type(), qf),
+				})
+			}
+			for index := range constructor.Signature().Results().Len() {
+				var name string
+				if index == 0 {
+					// The first return value must be of type T, *T, or a type whose named
+					// type is the same as named type of T.
+					name = varName
+				} else if index == constructor.Signature().Results().Len()-1 && types.Identical(constructor.Signature().Results().At(index).Type(), errorType) {
+					name = "err"
+				} else {
+					// Drop any return values beyond the first and the last.
+					// e.g., "f, _, _, err := NewFoo()".
+					name = "_"
+				}
+				data.Receiver.Constructor.Results = append(data.Receiver.Constructor.Results, field{
+					Name: name,
+					Type: types.TypeString(constructor.Signature().Results().At(index).Type(), qf),
+				})
+			}
+		}
 	}
 
 	var test bytes.Buffer
