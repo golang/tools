@@ -16,13 +16,13 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -55,7 +55,7 @@ const (
 	// NeedName adds Name and PkgPath.
 	NeedName LoadMode = 1 << iota
 
-	// NeedFiles adds GoFiles and OtherFiles.
+	// NeedFiles adds GoFiles, OtherFiles, and IgnoredFiles
 	NeedFiles
 
 	// NeedCompiledGoFiles adds CompiledGoFiles.
@@ -77,7 +77,7 @@ const (
 	// NeedSyntax adds Syntax and Fset.
 	NeedSyntax
 
-	// NeedTypesInfo adds TypesInfo.
+	// NeedTypesInfo adds TypesInfo and Fset.
 	NeedTypesInfo
 
 	// NeedTypesSizes adds TypesSizes.
@@ -691,18 +691,19 @@ func (p *Package) String() string { return p.ID }
 // loaderPackage augments Package with state used during the loading phase
 type loaderPackage struct {
 	*Package
-	importErrors map[string]error // maps each bad import to its error
-	loadOnce     sync.Once
-	color        uint8 // for cycle detection
-	needsrc      bool  // load from source (Mode >= LoadTypes)
-	needtypes    bool  // type information is either requested or depended on
-	initial      bool  // package was matched by a pattern
-	goVersion    int   // minor version number of go command on PATH
+	importErrors    map[string]error // maps each bad import to its error
+	preds           []*loaderPackage // packages that import this one
+	unfinishedSuccs atomic.Int32     // number of direct imports not yet loaded
+	color           uint8            // for cycle detection
+	needsrc         bool             // load from source (Mode >= LoadTypes)
+	needtypes       bool             // type information is either requested or depended on
+	initial         bool             // package was matched by a pattern
+	goVersion       int              // minor version number of go command on PATH
 }
 
 // loader holds the working state of a single call to load.
 type loader struct {
-	pkgs map[string]*loaderPackage
+	pkgs map[string]*loaderPackage // keyed by Package.ID
 	Config
 	sizes        types.Sizes // non-nil if needed by mode
 	parseCache   map[string]*parseValue
@@ -764,7 +765,7 @@ func newLoader(cfg *Config) *loader {
 	ld.requestedMode = ld.Mode
 	ld.Mode = impliedLoadMode(ld.Mode)
 
-	if ld.Mode&(NeedTypes|NeedSyntax|NeedTypesInfo) != 0 {
+	if ld.Mode&(NeedSyntax|NeedTypes|NeedTypesInfo) != 0 {
 		if ld.Fset == nil {
 			ld.Fset = token.NewFileSet()
 		}
@@ -805,7 +806,7 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 		exportDataInvalid := len(ld.Overlay) > 0 || pkg.ExportFile == "" && pkg.PkgPath != "unsafe"
 		// This package needs type information if the caller requested types and the package is
 		// either a root, or it's a non-root and the user requested dependencies ...
-		needtypes := (ld.Mode&NeedTypes|NeedTypesInfo != 0 && (rootIndex >= 0 || ld.Mode&NeedDeps != 0))
+		needtypes := (ld.Mode&(NeedTypes|NeedTypesInfo) != 0 && (rootIndex >= 0 || ld.Mode&NeedDeps != 0))
 		// This package needs source if the call requested source (or types info, which implies source)
 		// and the package is either a root, or itas a non- root and the user requested dependencies...
 		needsrc := ((ld.Mode&(NeedSyntax|NeedTypesInfo) != 0 && (rootIndex >= 0 || ld.Mode&NeedDeps != 0)) ||
@@ -830,9 +831,10 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 		}
 	}
 
-	if ld.Mode&NeedImports != 0 {
-		// Materialize the import graph.
-
+	// Materialize the import graph if it is needed (NeedImports),
+	// or if we'll be using loadPackages (Need{Syntax|Types|TypesInfo}).
+	var leaves []*loaderPackage // packages with no unfinished successors
+	if ld.Mode&(NeedImports|NeedSyntax|NeedTypes|NeedTypesInfo) != 0 {
 		const (
 			white = 0 // new
 			grey  = 1 // in progress
@@ -851,63 +853,76 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 		// dependency on a package that does. These are the only packages
 		// for which we load source code.
 		var stack []*loaderPackage
-		var visit func(lpkg *loaderPackage) bool
-		visit = func(lpkg *loaderPackage) bool {
-			switch lpkg.color {
-			case black:
-				return lpkg.needsrc
-			case grey:
+		var visit func(from, lpkg *loaderPackage) bool
+		visit = func(from, lpkg *loaderPackage) bool {
+			if lpkg.color == grey {
 				panic("internal error: grey node")
 			}
-			lpkg.color = grey
-			stack = append(stack, lpkg) // push
-			stubs := lpkg.Imports       // the structure form has only stubs with the ID in the Imports
-			lpkg.Imports = make(map[string]*Package, len(stubs))
-			for importPath, ipkg := range stubs {
-				var importErr error
-				imp := ld.pkgs[ipkg.ID]
-				if imp == nil {
-					// (includes package "C" when DisableCgo)
-					importErr = fmt.Errorf("missing package: %q", ipkg.ID)
-				} else if imp.color == grey {
-					importErr = fmt.Errorf("import cycle: %s", stack)
-				}
-				if importErr != nil {
-					if lpkg.importErrors == nil {
-						lpkg.importErrors = make(map[string]error)
+			if lpkg.color == white {
+				lpkg.color = grey
+				stack = append(stack, lpkg) // push
+				stubs := lpkg.Imports       // the structure form has only stubs with the ID in the Imports
+				lpkg.Imports = make(map[string]*Package, len(stubs))
+				for importPath, ipkg := range stubs {
+					var importErr error
+					imp := ld.pkgs[ipkg.ID]
+					if imp == nil {
+						// (includes package "C" when DisableCgo)
+						importErr = fmt.Errorf("missing package: %q", ipkg.ID)
+					} else if imp.color == grey {
+						importErr = fmt.Errorf("import cycle: %s", stack)
 					}
-					lpkg.importErrors[importPath] = importErr
-					continue
+					if importErr != nil {
+						if lpkg.importErrors == nil {
+							lpkg.importErrors = make(map[string]error)
+						}
+						lpkg.importErrors[importPath] = importErr
+						continue
+					}
+
+					if visit(lpkg, imp) {
+						lpkg.needsrc = true
+					}
+					lpkg.Imports[importPath] = imp.Package
 				}
 
-				if visit(imp) {
-					lpkg.needsrc = true
+				// -- postorder --
+
+				// Complete type information is required for the
+				// immediate dependencies of each source package.
+				if lpkg.needsrc && ld.Mode&NeedTypes != 0 {
+					for _, ipkg := range lpkg.Imports {
+						ld.pkgs[ipkg.ID].needtypes = true
+					}
 				}
-				lpkg.Imports[importPath] = imp.Package
+
+				// NeedTypeSizes causes TypeSizes to be set even
+				// on packages for which types aren't needed.
+				if ld.Mode&NeedTypesSizes != 0 {
+					lpkg.TypesSizes = ld.sizes
+				}
+
+				// Add packages with no imports directly to the queue of leaves.
+				if len(lpkg.Imports) == 0 {
+					leaves = append(leaves, lpkg)
+				}
+
+				stack = stack[:len(stack)-1] // pop
+				lpkg.color = black
 			}
 
-			// Complete type information is required for the
-			// immediate dependencies of each source package.
-			if lpkg.needsrc && ld.Mode&NeedTypes != 0 {
-				for _, ipkg := range lpkg.Imports {
-					ld.pkgs[ipkg.ID].needtypes = true
-				}
+			// Add edge from predecessor.
+			if from != nil {
+				from.unfinishedSuccs.Add(+1) // incref
+				lpkg.preds = append(lpkg.preds, from)
 			}
-
-			// NeedTypeSizes causes TypeSizes to be set even
-			// on packages for which types aren't needed.
-			if ld.Mode&NeedTypesSizes != 0 {
-				lpkg.TypesSizes = ld.sizes
-			}
-			stack = stack[:len(stack)-1] // pop
-			lpkg.color = black
 
 			return lpkg.needsrc
 		}
 
 		// For each initial package, create its import DAG.
 		for _, lpkg := range initial {
-			visit(lpkg)
+			visit(nil, lpkg)
 		}
 
 	} else {
@@ -920,16 +935,45 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 
 	// Load type data and syntax if needed, starting at
 	// the initial packages (roots of the import DAG).
-	if ld.Mode&(NeedTypes|NeedSyntax|NeedTypesInfo) != 0 {
-		var wg sync.WaitGroup
-		for _, lpkg := range initial {
-			wg.Add(1)
-			go func(lpkg *loaderPackage) {
-				ld.loadRecursive(lpkg)
-				wg.Done()
-			}(lpkg)
+	if ld.Mode&(NeedSyntax|NeedTypes|NeedTypesInfo) != 0 {
+
+		// We avoid using g.SetLimit to limit concurrency as
+		// it makes g.Go stop accepting work, which prevents
+		// workers from enqeuing, and thus finishing, and thus
+		// allowing the group to make progress: deadlock.
+		//
+		// Instead we use the ioLimit and cpuLimit semaphores.
+		g, _ := errgroup.WithContext(ld.Context)
+
+		// enqueues adds a package to the type-checking queue.
+		// It must have no unfinished successors.
+		var enqueue func(*loaderPackage)
+		enqueue = func(lpkg *loaderPackage) {
+			g.Go(func() error {
+				// Parse and type-check.
+				ld.loadPackage(lpkg)
+
+				// Notify each waiting predecessor,
+				// and enqueue it when it becomes a leaf.
+				for _, pred := range lpkg.preds {
+					if pred.unfinishedSuccs.Add(-1) == 0 { // decref
+						enqueue(pred)
+					}
+				}
+
+				return nil
+			})
 		}
-		wg.Wait()
+
+		// Load leaves first, adding new packages
+		// to the queue as they become leaves.
+		for _, leaf := range leaves {
+			enqueue(leaf)
+		}
+
+		if err := g.Wait(); err != nil {
+			return nil, err // cancelled
+		}
 	}
 
 	// If the context is done, return its error and
@@ -976,7 +1020,7 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 		if ld.requestedMode&NeedSyntax == 0 {
 			ld.pkgs[i].Syntax = nil
 		}
-		if ld.requestedMode&NeedTypes == 0 && ld.requestedMode&NeedSyntax == 0 {
+		if ld.requestedMode&(NeedSyntax|NeedTypes|NeedTypesInfo) == 0 {
 			ld.pkgs[i].Fset = nil
 		}
 		if ld.requestedMode&NeedTypesInfo == 0 {
@@ -993,31 +1037,10 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 	return result, nil
 }
 
-// loadRecursive loads the specified package and its dependencies,
-// recursively, in parallel, in topological order.
-// It is atomic and idempotent.
-// Precondition: ld.Mode&NeedTypes.
-func (ld *loader) loadRecursive(lpkg *loaderPackage) {
-	lpkg.loadOnce.Do(func() {
-		// Load the direct dependencies, in parallel.
-		var wg sync.WaitGroup
-		for _, ipkg := range lpkg.Imports {
-			imp := ld.pkgs[ipkg.ID]
-			wg.Add(1)
-			go func(imp *loaderPackage) {
-				ld.loadRecursive(imp)
-				wg.Done()
-			}(imp)
-		}
-		wg.Wait()
-		ld.loadPackage(lpkg)
-	})
-}
-
-// loadPackage loads the specified package.
+// loadPackage loads/parses/typechecks the specified package.
 // It must be called only once per Package,
 // after immediate dependencies are loaded.
-// Precondition: ld.Mode & NeedTypes.
+// Precondition: ld.Mode&(NeedSyntax|NeedTypes|NeedTypesInfo) != 0.
 func (ld *loader) loadPackage(lpkg *loaderPackage) {
 	if lpkg.PkgPath == "unsafe" {
 		// Fill in the blanks to avoid surprises.
@@ -1053,6 +1076,10 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 	if !lpkg.needtypes && !lpkg.needsrc {
 		return
 	}
+
+	// TODO(adonovan): this condition looks wrong:
+	// I think it should be lpkg.needtypes && !lpg.needsrc,
+	// so that NeedSyntax without NeedTypes can be satisfied by export data.
 	if !lpkg.needsrc {
 		if err := ld.loadFromExportData(lpkg); err != nil {
 			lpkg.Errors = append(lpkg.Errors, Error{
@@ -1169,15 +1196,19 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 		return
 	}
 
-	lpkg.TypesInfo = &types.Info{
-		Types:        make(map[ast.Expr]types.TypeAndValue),
-		Defs:         make(map[*ast.Ident]types.Object),
-		Uses:         make(map[*ast.Ident]types.Object),
-		Implicits:    make(map[ast.Node]types.Object),
-		Instances:    make(map[*ast.Ident]types.Instance),
-		Scopes:       make(map[ast.Node]*types.Scope),
-		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
-		FileVersions: make(map[*ast.File]string),
+	// Populate TypesInfo only if needed, as it
+	// causes the type checker to work much harder.
+	if ld.Config.Mode&NeedTypesInfo != 0 {
+		lpkg.TypesInfo = &types.Info{
+			Types:        make(map[ast.Expr]types.TypeAndValue),
+			Defs:         make(map[*ast.Ident]types.Object),
+			Uses:         make(map[*ast.Ident]types.Object),
+			Implicits:    make(map[ast.Node]types.Object),
+			Instances:    make(map[*ast.Ident]types.Instance),
+			Scopes:       make(map[ast.Node]*types.Scope),
+			Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+			FileVersions: make(map[*ast.File]string),
+		}
 	}
 	lpkg.TypesSizes = ld.sizes
 
@@ -1230,6 +1261,10 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 			return
 		}
 	}
+
+	// Type-checking is CPU intensive.
+	cpuLimit <- unit{}            // acquire a token
+	defer func() { <-cpuLimit }() // release a token
 
 	typErr := types.NewChecker(tc, ld.Fset, lpkg.Types, lpkg.TypesInfo).Files(lpkg.Syntax)
 	lpkg.importErrors = nil // no longer needed
@@ -1295,8 +1330,11 @@ type importerFunc func(path string) (*types.Package, error)
 func (f importerFunc) Import(path string) (*types.Package, error) { return f(path) }
 
 // We use a counting semaphore to limit
-// the number of parallel I/O calls per process.
-var ioLimit = make(chan bool, 20)
+// the number of parallel I/O calls or CPU threads per process.
+var (
+	ioLimit  = make(chan unit, 20)
+	cpuLimit = make(chan unit, runtime.GOMAXPROCS(0))
+)
 
 func (ld *loader) parseFile(filename string) (*ast.File, error) {
 	ld.parseCacheMu.Lock()
@@ -1324,14 +1362,17 @@ func (ld *loader) parseFile(filename string) (*ast.File, error) {
 		}
 		var err error
 		if src == nil {
-			ioLimit <- true // acquire a token
+			ioLimit <- unit{} // acquire a token
 			src, err = os.ReadFile(filename)
 			<-ioLimit // release a token
 		}
 		if err != nil {
 			v.err = err
 		} else {
+			// Parsing is CPU intensive.
+			cpuLimit <- unit{} // acquire a token
 			v.f, v.err = ld.ParseFile(ld.Fset, filename, src)
+			<-cpuLimit // release a token
 		}
 
 		close(v.ready)
@@ -1531,4 +1572,4 @@ func usesExportData(cfg *Config) bool {
 	return cfg.Mode&NeedExportFile != 0 || cfg.Mode&NeedTypes != 0 && cfg.Mode&NeedDeps == 0
 }
 
-var _ interface{} = io.Discard // assert build toolchain is go1.16 or later
+type unit struct{}
