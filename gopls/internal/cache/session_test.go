@@ -340,12 +340,14 @@ replace (
 						t.Fatal(err)
 					}
 				}
-				env, err := FetchGoEnv(ctx, toURI(f.dir), opts)
+				uri := toURI(f.dir)
+				env, err := FetchGoEnv(ctx, uri, opts)
 				if err != nil {
 					t.Fatalf("FetchGoEnv failed: %v", err)
 				}
+				t.Logf("FetchGoEnv(%q) = %+v", uri, env)
 				folders = append(folders, &Folder{
-					Dir:     toURI(f.dir),
+					Dir:     uri,
 					Name:    path.Base(f.dir),
 					Options: opts,
 					Env:     *env,
