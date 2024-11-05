@@ -144,13 +144,7 @@ const (
 // A Config specifies details about how packages should be loaded.
 // The zero value is a valid configuration.
 //
-// Calls to Load do not modify this struct.
-//
-// TODO(adonovan): #67702: this is currently false: in fact,
-// calls to [Load] do not modify the public fields of this struct, but
-// may modify hidden fields, so concurrent calls to [Load] must not
-// use the same Config. But perhaps we should reestablish the
-// documented invariant.
+// Calls to [Load] do not modify this struct.
 type Config struct {
 	// Mode controls the level of information returned for each package.
 	Mode LoadMode
@@ -181,18 +175,9 @@ type Config struct {
 	//
 	Env []string
 
-	// gocmdRunner guards go command calls from concurrency errors.
-	gocmdRunner *gocommand.Runner
-
 	// BuildFlags is a list of command-line flags to be passed through to
 	// the build system's query tool.
 	BuildFlags []string
-
-	// modFile will be used for -modfile in go command invocations.
-	modFile string
-
-	// modFlag will be used for -modfile in go command invocations.
-	modFlag string
 
 	// Fset provides source position information for syntax trees and types.
 	// If Fset is nil, Load will use a new fileset, but preserve Fset's value.
@@ -240,9 +225,13 @@ type Config struct {
 	// drivers may vary in their level of support for overlays.
 	Overlay map[string][]byte
 
-	// goListOverlayFile is the JSON file that encodes the Overlay
-	// mapping, used by 'go list -overlay=...'
-	goListOverlayFile string
+	// -- Hidden configuration fields only for use in x/tools --
+
+	// modFile will be used for -modfile in go command invocations.
+	modFile string
+
+	// modFlag will be used for -modfile in go command invocations.
+	modFlag string
 }
 
 // Load loads and returns the Go packages named by the given patterns.
@@ -333,21 +322,24 @@ func defaultDriver(cfg *Config, patterns ...string) (*DriverResponse, bool, erro
 		} else if !response.NotHandled {
 			return response, true, nil
 		}
-		// (fall through)
+		// not handled: fall through
 	}
 
 	// go list fallback
-	//
+
 	// Write overlays once, as there are many calls
 	// to 'go list' (one per chunk plus others too).
-	overlay, cleanupOverlay, err := gocommand.WriteOverlays(cfg.Overlay)
+	overlayFile, cleanupOverlay, err := gocommand.WriteOverlays(cfg.Overlay)
 	if err != nil {
 		return nil, false, err
 	}
 	defer cleanupOverlay()
-	cfg.goListOverlayFile = overlay
 
-	response, err := callDriverOnChunks(goListDriver, cfg, chunks)
+	var runner gocommand.Runner // (shared across many 'go list' calls)
+	driver := func(cfg *Config, patterns []string) (*DriverResponse, error) {
+		return goListDriver(cfg, &runner, overlayFile, patterns)
+	}
+	response, err := callDriverOnChunks(driver, cfg, chunks)
 	if err != nil {
 		return nil, false, err
 	}
@@ -385,16 +377,14 @@ func splitIntoChunks(patterns []string, argMax int) ([][]string, error) {
 
 func callDriverOnChunks(driver driver, cfg *Config, chunks [][]string) (*DriverResponse, error) {
 	if len(chunks) == 0 {
-		return driver(cfg)
+		return driver(cfg, nil)
 	}
 	responses := make([]*DriverResponse, len(chunks))
 	errNotHandled := errors.New("driver returned NotHandled")
 	var g errgroup.Group
 	for i, chunk := range chunks {
-		i := i
-		chunk := chunk
 		g.Go(func() (err error) {
-			responses[i], err = driver(cfg, chunk...)
+			responses[i], err = driver(cfg, chunk)
 			if responses[i] != nil && responses[i].NotHandled {
 				err = errNotHandled
 			}
@@ -748,9 +738,6 @@ func newLoader(cfg *Config) *loader {
 	}
 	if ld.Config.Env == nil {
 		ld.Config.Env = os.Environ()
-	}
-	if ld.Config.gocmdRunner == nil {
-		ld.Config.gocmdRunner = &gocommand.Runner{}
 	}
 	if ld.Context == nil {
 		ld.Context = context.Background()

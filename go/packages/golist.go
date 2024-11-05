@@ -80,6 +80,12 @@ type golistState struct {
 	cfg *Config
 	ctx context.Context
 
+	runner *gocommand.Runner
+
+	// overlay is the JSON file that encodes the Config.Overlay
+	// mapping, used by 'go list -overlay=...'.
+	overlay string
+
 	envOnce    sync.Once
 	goEnvError error
 	goEnv      map[string]string
@@ -127,7 +133,10 @@ func (state *golistState) mustGetEnv() map[string]string {
 // goListDriver uses the go list command to interpret the patterns and produce
 // the build system package structure.
 // See driver for more details.
-func goListDriver(cfg *Config, patterns ...string) (_ *DriverResponse, err error) {
+//
+// overlay is the JSON file that encodes the cfg.Overlay
+// mapping, used by 'go list -overlay=...'
+func goListDriver(cfg *Config, runner *gocommand.Runner, overlay string, patterns []string) (_ *DriverResponse, err error) {
 	// Make sure that any asynchronous go commands are killed when we return.
 	parentCtx := cfg.Context
 	if parentCtx == nil {
@@ -142,13 +151,15 @@ func goListDriver(cfg *Config, patterns ...string) (_ *DriverResponse, err error
 		cfg:        cfg,
 		ctx:        ctx,
 		vendorDirs: map[string]bool{},
+		overlay:    overlay,
+		runner:     runner,
 	}
 
 	// Fill in response.Sizes asynchronously if necessary.
 	if cfg.Mode&NeedTypesSizes != 0 || cfg.Mode&(NeedTypes|NeedTypesInfo) != 0 {
 		errCh := make(chan error)
 		go func() {
-			compiler, arch, err := getSizesForArgs(ctx, state.cfgInvocation(), cfg.gocmdRunner)
+			compiler, arch, err := getSizesForArgs(ctx, state.cfgInvocation(), runner)
 			response.dr.Compiler = compiler
 			response.dr.Arch = arch
 			errCh <- err
@@ -681,7 +692,7 @@ func (state *golistState) shouldAddFilenameFromError(p *jsonPackage) bool {
 // getGoVersion returns the effective minor version of the go command.
 func (state *golistState) getGoVersion() (int, error) {
 	state.goVersionOnce.Do(func() {
-		state.goVersion, state.goVersionError = gocommand.GoVersion(state.ctx, state.cfgInvocation(), state.cfg.gocmdRunner)
+		state.goVersion, state.goVersionError = gocommand.GoVersion(state.ctx, state.cfgInvocation(), state.runner)
 	})
 	return state.goVersion, state.goVersionError
 }
@@ -840,7 +851,7 @@ func (state *golistState) cfgInvocation() gocommand.Invocation {
 		Env:        cfg.Env,
 		Logf:       cfg.Logf,
 		WorkingDir: cfg.Dir,
-		Overlay:    cfg.goListOverlayFile,
+		Overlay:    state.overlay,
 	}
 }
 
@@ -851,11 +862,8 @@ func (state *golistState) invokeGo(verb string, args ...string) (*bytes.Buffer, 
 	inv := state.cfgInvocation()
 	inv.Verb = verb
 	inv.Args = args
-	gocmdRunner := cfg.gocmdRunner
-	if gocmdRunner == nil {
-		gocmdRunner = &gocommand.Runner{}
-	}
-	stdout, stderr, friendlyErr, err := gocmdRunner.RunRaw(cfg.Context, inv)
+
+	stdout, stderr, friendlyErr, err := state.runner.RunRaw(cfg.Context, inv)
 	if err != nil {
 		// Check for 'go' executable not being found.
 		if ee, ok := err.(*exec.Error); ok && ee.Err == exec.ErrNotFound {
