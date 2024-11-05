@@ -764,7 +764,7 @@ func newLoader(cfg *Config) *loader {
 	ld.requestedMode = ld.Mode
 	ld.Mode = impliedLoadMode(ld.Mode)
 
-	if ld.Mode&NeedTypes != 0 || ld.Mode&NeedSyntax != 0 {
+	if ld.Mode&(NeedTypes|NeedSyntax|NeedTypesInfo) != 0 {
 		if ld.Fset == nil {
 			ld.Fset = token.NewFileSet()
 		}
@@ -920,7 +920,7 @@ func (ld *loader) refine(response *DriverResponse) ([]*Package, error) {
 
 	// Load type data and syntax if needed, starting at
 	// the initial packages (roots of the import DAG).
-	if ld.Mode&NeedTypes != 0 || ld.Mode&NeedSyntax != 0 {
+	if ld.Mode&(NeedTypes|NeedSyntax|NeedTypesInfo) != 0 {
 		var wg sync.WaitGroup
 		for _, lpkg := range initial {
 			wg.Add(1)
@@ -1158,7 +1158,7 @@ func (ld *loader) loadPackage(lpkg *loaderPackage) {
 	}
 
 	lpkg.Syntax = files
-	if ld.Config.Mode&NeedTypes == 0 {
+	if ld.Config.Mode&(NeedTypes|NeedTypesInfo) == 0 {
 		return
 	}
 

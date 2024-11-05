@@ -145,7 +145,7 @@ func goListDriver(cfg *Config, patterns ...string) (_ *DriverResponse, err error
 	}
 
 	// Fill in response.Sizes asynchronously if necessary.
-	if cfg.Mode&NeedTypesSizes != 0 || cfg.Mode&NeedTypes != 0 {
+	if cfg.Mode&NeedTypesSizes != 0 || cfg.Mode&(NeedTypes|NeedTypesInfo) != 0 {
 		errCh := make(chan error)
 		go func() {
 			compiler, arch, err := getSizesForArgs(ctx, state.cfgInvocation(), cfg.gocmdRunner)
@@ -751,7 +751,7 @@ func jsonFlag(cfg *Config, goVersion int) string {
 		}
 	}
 	addFields("Name", "ImportPath", "Error") // These fields are always needed
-	if cfg.Mode&NeedFiles != 0 || cfg.Mode&NeedTypes != 0 {
+	if cfg.Mode&NeedFiles != 0 || cfg.Mode&(NeedTypes|NeedTypesInfo) != 0 {
 		addFields("Dir", "GoFiles", "IgnoredGoFiles", "IgnoredOtherFiles", "CFiles",
 			"CgoFiles", "CXXFiles", "MFiles", "HFiles", "FFiles", "SFiles",
 			"SwigFiles", "SwigCXXFiles", "SysoFiles")
@@ -759,7 +759,7 @@ func jsonFlag(cfg *Config, goVersion int) string {
 			addFields("TestGoFiles", "XTestGoFiles")
 		}
 	}
-	if cfg.Mode&NeedTypes != 0 {
+	if cfg.Mode&(NeedTypes|NeedTypesInfo) != 0 {
 		// CompiledGoFiles seems to be required for the test case TestCgoNoSyntax,
 		// even when -compiled isn't passed in.
 		// TODO(#52435): Should we make the test ask for -compiled, or automatically
