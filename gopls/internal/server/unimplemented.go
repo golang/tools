@@ -150,6 +150,10 @@ func (s *server) WillSaveWaitUntil(context.Context, *protocol.WillSaveTextDocume
 	return nil, notImplemented("WillSaveWaitUntil")
 }
 
+func (s *server) TextDocumentContent(context.Context, *protocol.TextDocumentContentParams) (*string, error) {
+	return nil, notImplemented("TextDocumentContent")
+}
+
 func notImplemented(method string) error {
 	return fmt.Errorf("%w: %q not yet implemented", jsonrpc2.ErrMethodNotFound, method)
 }

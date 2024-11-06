@@ -256,6 +256,8 @@ var methodNames = map[string]string{
 	"workspace/inlineValue/refresh":          "InlineValueRefresh",
 	"workspace/semanticTokens/refresh":       "SemanticTokensRefresh",
 	"workspace/symbol":                       "Symbol",
+	"workspace/textDocumentContent":          "TextDocumentContent",
+	"workspace/textDocumentContent/refresh":  "TextDocumentContentRefresh",
 	"workspace/willCreateFiles":              "WillCreateFiles",
 	"workspace/willDeleteFiles":              "WillDeleteFiles",
 	"workspace/willRenameFiles":              "WillRenameFiles",

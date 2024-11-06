@@ -425,6 +425,10 @@ func newConnection(server protocol.Server, client *cmdClient) *connection {
 	}
 }
 
+func (c *cmdClient) TextDocumentContentRefresh(context.Context, *protocol.TextDocumentContentRefreshParams) error {
+	return nil
+}
+
 func (c *cmdClient) CodeLensRefresh(context.Context) error { return nil }
 
 func (c *cmdClient) FoldingRangeRefresh(context.Context) error { return nil }

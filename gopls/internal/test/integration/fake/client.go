@@ -73,6 +73,10 @@ func (c *Client) SemanticTokensRefresh(context.Context) error { return nil }
 
 func (c *Client) LogTrace(context.Context, *protocol.LogTraceParams) error { return nil }
 
+func (c *Client) TextDocumentContentRefresh(context.Context, *protocol.TextDocumentContentRefreshParams) error {
+	return nil
+}
+
 func (c *Client) ShowMessage(ctx context.Context, params *protocol.ShowMessageParams) error {
 	if c.hooks.OnShowMessage != nil {
 		return c.hooks.OnShowMessage(ctx, params)

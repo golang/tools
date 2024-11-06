@@ -6,8 +6,8 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.2 (hash 654dc9be6673c61476c28fda604406279c3258d7).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.2/protocol/metaModel.json
+// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.9 (hash c94395b5da53729e6dff931293b051009ccaaaa4).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.9/protocol/metaModel.json
 // LSP metaData.version = 3.17.0.
 
 import (
@@ -55,6 +55,8 @@ type Client interface {
 	InlineValueRefresh(context.Context) error
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_semanticTokens_refresh
 	SemanticTokensRefresh(context.Context) error
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_textDocumentContent_refresh
+	TextDocumentContentRefresh(context.Context, *TextDocumentContentRefreshParams) error
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_workspaceFolders
 	WorkspaceFolders(context.Context) ([]WorkspaceFolder, error)
 }
@@ -202,6 +204,14 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 		err := client.SemanticTokensRefresh(ctx)
 		return true, reply(ctx, nil, err)
 
+	case "workspace/textDocumentContent/refresh":
+		var params TextDocumentContentRefreshParams
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
+			return true, sendParseError(ctx, reply, err)
+		}
+		err := client.TextDocumentContentRefresh(ctx, &params)
+		return true, reply(ctx, nil, err)
+
 	case "workspace/workspaceFolders":
 		resp, err := client.WorkspaceFolders(ctx)
 		if err != nil {
@@ -286,6 +296,9 @@ func (s *clientDispatcher) InlineValueRefresh(ctx context.Context) error {
 }
 func (s *clientDispatcher) SemanticTokensRefresh(ctx context.Context) error {
 	return s.sender.Call(ctx, "workspace/semanticTokens/refresh", nil, nil)
+}
+func (s *clientDispatcher) TextDocumentContentRefresh(ctx context.Context, params *TextDocumentContentRefreshParams) error {
+	return s.sender.Call(ctx, "workspace/textDocumentContent/refresh", params, nil)
 }
 func (s *clientDispatcher) WorkspaceFolders(ctx context.Context) ([]WorkspaceFolder, error) {
 	var result []WorkspaceFolder

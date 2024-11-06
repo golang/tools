@@ -6,8 +6,8 @@
 
 package protocol
 
-// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.2 (hash 654dc9be6673c61476c28fda604406279c3258d7).
-// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.2/protocol/metaModel.json
+// Code generated from protocol/metaModel.json at ref release/protocol/3.17.6-next.9 (hash c94395b5da53729e6dff931293b051009ccaaaa4).
+// https://github.com/microsoft/vscode-languageserver-node/blob/release/protocol/3.17.6-next.9/protocol/metaModel.json
 // LSP metaData.version = 3.17.0.
 
 import (
@@ -155,6 +155,8 @@ type Server interface {
 	ExecuteCommand(context.Context, *ExecuteCommandParams) (interface{}, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_symbol
 	Symbol(context.Context, *WorkspaceSymbolParams) ([]SymbolInformation, error)
+	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_textDocumentContent
+	TextDocumentContent(context.Context, *TextDocumentContentParams) (*string, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_willCreateFiles
 	WillCreateFiles(context.Context, *CreateFilesParams) (*WorkspaceEdit, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_willDeleteFiles
@@ -856,6 +858,17 @@ func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, 
 		}
 		return true, reply(ctx, resp, nil)
 
+	case "workspace/textDocumentContent":
+		var params TextDocumentContentParams
+		if err := UnmarshalJSON(r.Params(), &params); err != nil {
+			return true, sendParseError(ctx, reply, err)
+		}
+		resp, err := server.TextDocumentContent(ctx, &params)
+		if err != nil {
+			return true, reply(ctx, nil, err)
+		}
+		return true, reply(ctx, resp, nil)
+
 	case "workspace/willCreateFiles":
 		var params CreateFilesParams
 		if err := UnmarshalJSON(r.Params(), &params); err != nil {
@@ -1300,6 +1313,13 @@ func (s *serverDispatcher) ExecuteCommand(ctx context.Context, params *ExecuteCo
 func (s *serverDispatcher) Symbol(ctx context.Context, params *WorkspaceSymbolParams) ([]SymbolInformation, error) {
 	var result []SymbolInformation
 	if err := s.sender.Call(ctx, "workspace/symbol", params, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+func (s *serverDispatcher) TextDocumentContent(ctx context.Context, params *TextDocumentContentParams) (*string, error) {
+	var result *string
+	if err := s.sender.Call(ctx, "workspace/textDocumentContent", params, &result); err != nil {
 		return nil, err
 	}
 	return result, nil

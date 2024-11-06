@@ -86,7 +86,7 @@ func genDecl(model *Model, method string, param, result *Type, dir string) {
 	}
 }
 
-func genCase(model *Model, method string, param, result *Type, dir string) {
+func genCase(_ *Model, method string, param, result *Type, dir string) {
 	out := new(bytes.Buffer)
 	fmt.Fprintf(out, "\tcase %q:\n", method)
 	var p string
@@ -128,7 +128,7 @@ func genCase(model *Model, method string, param, result *Type, dir string) {
 	}
 }
 
-func genFunc(model *Model, method string, param, result *Type, dir string, isnotify bool) {
+func genFunc(_ *Model, method string, param, result *Type, dir string, isnotify bool) {
 	out := new(bytes.Buffer)
 	var p, r string
 	var goResult string
