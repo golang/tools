@@ -17,9 +17,9 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/packagestest"
 	"golang.org/x/tools/internal/testenv"
 )
 

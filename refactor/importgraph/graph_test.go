@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/go/packages/packagestest"
+	"golang.org/x/tools/internal/packagestest"
 	"golang.org/x/tools/refactor/importgraph"
 
 	_ "crypto/hmac" // just for test, below

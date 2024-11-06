@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/tools/go/packages/packagestest"
+	"golang.org/x/tools/internal/packagestest"
 	"golang.org/x/tools/internal/testenv"
 )
 

@@ -20,8 +20,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"golang.org/x/tools/go/packages/packagestest"
 	"golang.org/x/tools/internal/gocommand"
+	"golang.org/x/tools/internal/packagestest"
 	"golang.org/x/tools/internal/stdlib"
 )
 
