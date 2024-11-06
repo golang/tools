@@ -141,6 +141,11 @@ var (
 func (p port) matches(path string, content []byte) bool {
 	ctxt := build.Default // make a copy
 	ctxt.UseAllFiles = false
+	path = filepath.Clean(path)
+	if !filepath.IsAbs(path) {
+		bug.Reportf("non-abs file path %q", path)
+		return false // fail closed
+	}
 	dir, name := filepath.Split(path)
 
 	// The only virtualized operation called by MatchFile is OpenFile.
