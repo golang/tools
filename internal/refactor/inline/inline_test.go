@@ -23,10 +23,10 @@ import (
 	"unsafe"
 
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/expect"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"

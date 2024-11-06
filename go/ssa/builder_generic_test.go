@@ -13,9 +13,9 @@ import (
 	"sort"
 	"testing"
 
-	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/internal/expect"
 )
 
 // TestGenericBodies tests that bodies of generic functions and methods containing
@@ -29,7 +29,7 @@ import (
 //
 // where a, b and c are the types of the arguments to the print call
 // serialized using go/types.Type.String().
-// See x/tools/go/expect for details on the syntax.
+// See x/tools/internal/expect for details on the syntax.
 func TestGenericBodies(t *testing.T) {
 	for _, content := range []string{
 		`

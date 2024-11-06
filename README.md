@@ -51,9 +51,6 @@ Selected packages:
 
 - `go/cfg` provides a simple control-flow graph (CFG) for a Go function.
 
-- `go/expect` reads Go source files used as test inputs and interprets
-  special comments within them as queries or assertions for testing.
-
 - `go/gcexportdata` and `go/gccgoexportdata` read and write the binary
   files containing type information used by the standard and `gccgo` compilers.
 

@@ -10,7 +10,7 @@ Use this command to run the tests:
 
 	$ go test ./gopls/internal/test/marker [-update]
 
-A marker test uses the '//@' marker syntax of the x/tools/go/expect package
+A marker test uses the '//@' marker syntax of the x/tools/internal/expect package
 to annotate source code with various information such as locations and
 arguments of LSP operations to be executed by the test. The syntax following
 '@' is parsed as a comma-separated list of ordinary Go function calls, for
@@ -277,7 +277,7 @@ The following markers are supported within marker tests:
 
 # Argument conversion
 
-Marker arguments are first parsed by the go/expect package, which accepts
+Marker arguments are first parsed by the internal/expect package, which accepts
 the following tokens as defined by the Go spec:
   - string, int64, float64, and rune literals
   - true and false

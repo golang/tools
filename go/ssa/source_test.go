@@ -18,8 +18,8 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/go/expect"
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/internal/expect"
 )
 
 func TestObjValueLookup(t *testing.T) {
