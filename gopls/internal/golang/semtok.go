@@ -556,7 +556,7 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 	case *types.Builtin:
 		emit(semtok.TokFunction, "defaultLibrary")
 	case *types.Const:
-		if is[*types.Named](obj.Type()) &&
+		if is[*types.Basic](obj.Type()) &&
 			(id.Name == "iota" || id.Name == "true" || id.Name == "false") {
 			emit(semtok.TokVariable, "readonly", "defaultLibrary")
 		} else {
