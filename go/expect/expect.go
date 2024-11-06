@@ -6,6 +6,10 @@
 Package expect provides support for interpreting structured comments in Go
 source code (including go.mod and go.work files) as test expectations.
 
+[Note: there is an open proposal (golang/go#70229) to deprecate, tag,
+and delete this package. If accepted, the last version of the package
+be available indefinitely but will not receive updates.]
+
 This is primarily intended for writing tests of things that process Go source
 files, although it does not directly depend on the testing package.
 
