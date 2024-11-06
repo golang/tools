@@ -10,7 +10,7 @@ require (
 	golang.org/x/mod v0.21.0
 	golang.org/x/sync v0.8.0
 	golang.org/x/sys v0.26.0
-	golang.org/x/telemetry v0.0.0-20240927184629-19675431963b
+	golang.org/x/telemetry v0.0.0-20241106142447-58a1122356f5
 	golang.org/x/text v0.19.0
 	golang.org/x/tools v0.21.1-0.20240531212143-b6235391adb3
 	golang.org/x/vuln v1.0.4
