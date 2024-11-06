@@ -205,8 +205,6 @@ func Test(t *testing.T) {
 				}
 			}
 
-			// Wait for the didOpen notifications to be processed, then collect
-			// diagnostics.
 			for path, diags := range allDiags {
 				uri := run.env.Sandbox.Workdir.URI(path)
 				for _, diag := range diags {
@@ -246,7 +244,13 @@ func Test(t *testing.T) {
 			if !test.ignoreExtraDiags {
 				for loc, diags := range run.diags {
 					for _, diag := range diags {
-						t.Errorf("%s: unexpected diagnostic: %q", run.fmtLoc(loc), diag.Message)
+						// Note that loc is collapsed (start==end).
+						// For formatting, show the exact span.
+						exactLoc := protocol.Location{
+							URI:   loc.URI,
+							Range: diag.Range,
+						}
+						t.Errorf("%s: unexpected diagnostic: %q", run.fmtLoc(exactLoc), diag.Message)
 					}
 				}
 			}
@@ -404,10 +408,11 @@ func valueMarkerFunc(fn any) func(marker) {
 // called during the processing of action markers (e.g. @action("abc", 123))
 // with marker arguments converted to function parameters. The provided
 // function's first parameter must be of type 'marker', and it must not return
-// any values.
+// any values. Any named arguments that may be used by the marker func must be
+// listed in allowedNames.
 //
 // The provided fn should not mutate the test environment.
-func actionMarkerFunc(fn any) func(marker) {
+func actionMarkerFunc(fn any, allowedNames ...string) func(marker) {
 	ftype := reflect.TypeOf(fn)
 	if ftype.NumIn() == 0 || ftype.In(0) != markerType {
 		panic(fmt.Sprintf("action marker function %#v must accept marker as its first argument", ftype))
@@ -416,7 +421,21 @@ func actionMarkerFunc(fn any) func(marker) {
 		panic(fmt.Sprintf("action marker function %#v cannot have results", ftype))
 	}
 
+	var allowed map[string]bool
+	if len(allowedNames) > 0 {
+		allowed = make(map[string]bool)
+		for _, name := range allowedNames {
+			allowed[name] = true
+		}
+	}
+
 	return func(mark marker) {
+		for name := range mark.note.NamedArgs {
+			if !allowed[name] {
+				mark.errorf("unexpected named argument %q", name)
+			}
+		}
+
 		args := append([]any{mark}, mark.note.Args...)
 		argValues, err := convertArgs(mark, ftype, args)
 		if err != nil {
@@ -470,6 +489,18 @@ func convertArgs(mark marker, ftype reflect.Type, args []any) ([]reflect.Value, 
 	return argValues, nil
 }
 
+// namedArg returns the named argument for name, or the default value.
+func namedArg[T any](mark marker, name string, dflt T) T {
+	if v, ok := mark.note.NamedArgs[name]; ok {
+		if e, ok := v.(T); ok {
+			return e
+		} else {
+			mark.errorf("invalid value for %q: %v", name, v)
+		}
+	}
+	return dflt
+}
+
 // is reports whether arg is a T.
 func is[T any](arg any) bool {
 	_, ok := arg.(T)
@@ -492,7 +523,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"codelenses":       actionMarkerFunc(codeLensesMarker),
 	"complete":         actionMarkerFunc(completeMarker),
 	"def":              actionMarkerFunc(defMarker),
-	"diag":             actionMarkerFunc(diagMarker),
+	"diag":             actionMarkerFunc(diagMarker, "exact"),
 	"documentlink":     actionMarkerFunc(documentLinkMarker),
 	"foldingrange":     actionMarkerFunc(foldingRangeMarker),
 	"format":           actionMarkerFunc(formatMarker),
@@ -1659,7 +1690,8 @@ func locMarker(mark marker, loc protocol.Location) protocol.Location { return lo
 // diagMarker implements the @diag marker. It eliminates diagnostics from
 // the observed set in mark.test.
 func diagMarker(mark marker, loc protocol.Location, re *regexp.Regexp) {
-	if _, ok := removeDiagnostic(mark, loc, re); !ok {
+	exact := namedArg(mark, "exact", false)
+	if _, ok := removeDiagnostic(mark, loc, exact, re); !ok {
 		mark.errorf("no diagnostic at %v matches %q", loc, re)
 	}
 }
@@ -1670,12 +1702,13 @@ func diagMarker(mark marker, loc protocol.Location, re *regexp.Regexp) {
 // from the unmatched set.
 //
 // If not found, it returns (protocol.Diagnostic{}, false).
-func removeDiagnostic(mark marker, loc protocol.Location, re *regexp.Regexp) (protocol.Diagnostic, bool) {
-	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
-	diags := mark.run.diags[loc]
+func removeDiagnostic(mark marker, loc protocol.Location, matchEnd bool, re *regexp.Regexp) (protocol.Diagnostic, bool) {
+	key := loc
+	key.Range.End = key.Range.Start // diagnostics ignore end position.
+	diags := mark.run.diags[key]
 	for i, diag := range diags {
-		if re.MatchString(diag.Message) {
-			mark.run.diags[loc] = append(diags[:i], diags[i+1:]...)
+		if re.MatchString(diag.Message) && (!matchEnd || diag.Range.End == loc.Range.End) {
+			mark.run.diags[key] = append(diags[:i], diags[i+1:]...)
 			return diag, true
 		}
 	}
@@ -2007,7 +2040,7 @@ func (mark marker) consumeExtraNotes(name string, f func(marker)) {
 func quickfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, golden *Golden) {
 	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
 	// Find and remove the matching diagnostic.
-	diag, ok := removeDiagnostic(mark, loc, re)
+	diag, ok := removeDiagnostic(mark, loc, false, re)
 	if !ok {
 		mark.errorf("no diagnostic at %v matches %q", loc, re)
 		return
@@ -2027,7 +2060,7 @@ func quickfixMarker(mark marker, loc protocol.Location, re *regexp.Regexp, golde
 func quickfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp, wantErr stringMatcher) {
 	loc.Range.End = loc.Range.Start // diagnostics ignore end position.
 	// Find and remove the matching diagnostic.
-	diag, ok := removeDiagnostic(mark, loc, re)
+	diag, ok := removeDiagnostic(mark, loc, false, re)
 	if !ok {
 		mark.errorf("no diagnostic at %v matches %q", loc, re)
 		return

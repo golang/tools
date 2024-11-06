@@ -127,13 +127,13 @@ The following markers are supported within marker tests:
   - complete(location, ...items): specifies expected completion results at
     the given location. Must be used in conjunction with @item.
 
-  - diag(location, regexp): specifies an expected diagnostic matching the
-    given regexp at the given location. The test runner requires
-    a 1:1 correspondence between observed diagnostics and diag annotations.
-    The diagnostics source and kind fields are ignored, to reduce fuss.
+  - diag(location, regexp, exact=bool): specifies an expected diagnostic
+    matching the given regexp at the given location. The test runner requires a
+    1:1 correspondence between observed diagnostics and diag annotations. The
+    diagnostics source and kind fields are ignored, to reduce fuss.
 
     The specified location must match the start position of the diagnostic,
-    but end positions are ignored.
+    but end positions are ignored unless exact=true.
 
     TODO(adonovan): in the older marker framework, the annotation asserted
     two additional fields (source="compiler", kind="error"). Restore them?
