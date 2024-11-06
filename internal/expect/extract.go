@@ -231,7 +231,7 @@ func parse(fset *token.FileSet, base token.Pos, text string) ([]*Note, error) {
 	t := new(tokens).Init(base, text)
 	notes := parseComment(t)
 	if t.err != nil {
-		return nil, fmt.Errorf("%v:%s", fset.Position(t.Pos()), t.err)
+		return nil, fmt.Errorf("%v: %s", fset.Position(t.Pos()), t.err)
 	}
 	return notes, nil
 }
@@ -272,7 +272,7 @@ func parseNote(t *tokens) *Note {
 		// no argument list present
 		return n
 	case '(':
-		n.Args = parseArgumentList(t)
+		n.Args, n.NamedArgs = parseArgumentList(t)
 		return n
 	default:
 		t.Errorf("unexpected %s parsing note", t.TokenString())
@@ -280,12 +280,30 @@ func parseNote(t *tokens) *Note {
 	}
 }
 
-func parseArgumentList(t *tokens) []interface{} {
-	args := []interface{}{} // @name() is represented by a non-nil empty slice.
-	t.Consume()             // '('
+func parseArgumentList(t *tokens) (args []any, named map[string]any) {
+	args = []any{} // @name() is represented by a non-nil empty slice.
+	t.Consume()    // '('
 	t.Skip('\n')
 	for t.Token() != ')' {
-		args = append(args, parseArgument(t))
+		name, arg := parseArgument(t)
+		if name != "" {
+			// f(k=v)
+			if named == nil {
+				named = make(map[string]any)
+			}
+			if _, dup := named[name]; dup {
+				t.Errorf("duplicate named argument %q", name)
+				return nil, nil
+			}
+			named[name] = arg
+		} else {
+			// f(v)
+			if named != nil {
+				t.Errorf("positional argument follows named argument")
+				return nil, nil
+			}
+			args = append(args, arg)
+		}
 		if t.Token() != ',' {
 			break
 		}
@@ -294,42 +312,50 @@ func parseArgumentList(t *tokens) []interface{} {
 	}
 	if t.Token() != ')' {
 		t.Errorf("unexpected %s parsing argument list", t.TokenString())
-		return nil
+		return nil, nil
 	}
 	t.Consume() // ')'
-	return args
+	return args, named
 }
 
-func parseArgument(t *tokens) interface{} {
+// parseArgument returns the value of the argument ("f(value)"),
+// and its name if named "f(name=value)".
+func parseArgument(t *tokens) (name string, value any) {
+again:
 	switch t.Token() {
 	case scanner.Ident:
 		v := t.Consume()
 		switch v {
 		case "true":
-			return true
+			value = true
 		case "false":
-			return false
+			value = false
 		case "nil":
-			return nil
+			value = nil
 		case "re":
 			if t.Token() != scanner.String && t.Token() != scanner.RawString {
 				t.Errorf("re must be followed by string, got %s", t.TokenString())
-				return nil
+				return
 			}
 			pattern, _ := strconv.Unquote(t.Consume()) // can't fail
 			re, err := regexp.Compile(pattern)
 			if err != nil {
 				t.Errorf("invalid regular expression %s: %v", pattern, err)
-				return nil
+				return
 			}
-			return re
+			value = re
 		default:
-			return Identifier(v)
+			// f(name=value)?
+			if name == "" && t.Token() == '=' {
+				t.Consume() // '='
+				name = v
+				goto again
+			}
+			value = Identifier(v)
 		}
 
 	case scanner.String, scanner.RawString:
-		v, _ := strconv.Unquote(t.Consume()) // can't fail
-		return v
+		value, _ = strconv.Unquote(t.Consume()) // can't fail
 
 	case scanner.Int:
 		s := t.Consume()
@@ -337,7 +363,7 @@ func parseArgument(t *tokens) interface{} {
 		if err != nil {
 			t.Errorf("cannot convert %v to int: %v", s, err)
 		}
-		return v
+		value = v
 
 	case scanner.Float:
 		s := t.Consume()
@@ -345,14 +371,13 @@ func parseArgument(t *tokens) interface{} {
 		if err != nil {
 			t.Errorf("cannot convert %v to float: %v", s, err)
 		}
-		return v
+		value = v
 
 	case scanner.Char:
 		t.Errorf("unexpected char literal %s", t.Consume())
-		return nil
 
 	default:
 		t.Errorf("unexpected %s parsing argument", t.TokenString())
-		return nil
 	}
+	return
 }

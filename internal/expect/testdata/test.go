@@ -37,4 +37,6 @@ check(StringAndInt,
 )
 
 check(Bool, true)
+
+check(NamedArgs, 1, true, a, b=1, c="3", d=true)
 */

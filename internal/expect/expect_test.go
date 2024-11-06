@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"go/token"
 	"os"
+	"reflect"
+	"slices"
 	"testing"
 
 	"golang.org/x/tools/internal/expect"
@@ -18,11 +20,13 @@ func TestMarker(t *testing.T) {
 		filename      string
 		expectNotes   int
 		expectMarkers map[string]string
-		expectChecks  map[string][]interface{}
+		expectChecks  map[string][]any
+		// expectChecks holds {"id": values} for each call check(id, values...).
+		// Any named k=v arguments become a final map[string]any argument.
 	}{
 		{
 			filename:    "testdata/test.go",
-			expectNotes: 13,
+			expectNotes: 14,
 			expectMarkers: map[string]string{
 				"αSimpleMarker": "α",
 				"OffsetMarker":  "β",
@@ -36,10 +40,15 @@ func TestMarker(t *testing.T) {
 				"NonIdentifier": "+",
 				"StringMarker":  "\"hello\"",
 			},
-			expectChecks: map[string][]interface{}{
+			expectChecks: map[string][]any{
 				"αSimpleMarker": nil,
 				"StringAndInt":  {"Number %d", int64(12)},
 				"Bool":          {true},
+				"NamedArgs": {int64(1), true, expect.Identifier("a"), map[string]any{
+					"b": int64(1),
+					"c": "3",
+					"d": true,
+				}},
 			},
 		},
 		{
@@ -79,7 +88,7 @@ func TestMarker(t *testing.T) {
 			fset := token.NewFileSet()
 			notes, err := expect.Parse(fset, tt.filename, content)
 			if err != nil {
-				t.Fatalf("Failed to extract notes: %v", err)
+				t.Fatalf("Failed to extract notes:\n%v", err)
 			}
 			if len(notes) != tt.expectNotes {
 				t.Errorf("Expected %v notes, got %v", tt.expectNotes, len(notes))
@@ -99,7 +108,7 @@ func TestMarker(t *testing.T) {
 					}
 					ident, ok := n.Args[0].(expect.Identifier)
 					if !ok {
-						t.Errorf("%v: identifier, got %T", fset.Position(n.Pos), n.Args[0])
+						t.Errorf("%v: got %v (%T), want identifier", fset.Position(n.Pos), n.Args[0], n.Args[0])
 						continue
 					}
 					checkMarker(t, fset, readFile, markers, n.Pos, string(ident), n.Args[1])
@@ -115,21 +124,27 @@ func TestMarker(t *testing.T) {
 					}
 					ident, ok := n.Args[0].(expect.Identifier)
 					if !ok {
-						t.Errorf("%v: identifier, got %T", fset.Position(n.Pos), n.Args[0])
+						t.Errorf("%v: got %v (%T), want identifier", fset.Position(n.Pos), n.Args[0], n.Args[0])
 						continue
 					}
-					args, ok := tt.expectChecks[string(ident)]
+					wantArgs, ok := tt.expectChecks[string(ident)]
 					if !ok {
 						t.Errorf("%v: unexpected check %v", fset.Position(n.Pos), ident)
 						continue
 					}
-					if len(n.Args) != len(args)+1 {
-						t.Errorf("%v: expected %v args to check, got %v", fset.Position(n.Pos), len(args)+1, len(n.Args))
+					gotArgs := n.Args[1:]
+					if n.NamedArgs != nil {
+						// Clip to avoid mutating Args' array.
+						gotArgs = append(slices.Clip(gotArgs), n.NamedArgs)
+					}
+
+					if len(gotArgs) != len(wantArgs) {
+						t.Errorf("%v: expected %v args to check, got %v", fset.Position(n.Pos), len(wantArgs), len(gotArgs))
 						continue
 					}
-					for i, got := range n.Args[1:] {
-						if args[i] != got {
-							t.Errorf("%v: arg %d expected %v, got %v", fset.Position(n.Pos), i, args[i], got)
+					for i := range gotArgs {
+						if !reflect.DeepEqual(wantArgs[i], gotArgs[i]) {
+							t.Errorf("%v: arg %d: expected %#v, got %#v", fset.Position(n.Pos), i+1, wantArgs[i], gotArgs[i])
 						}
 					}
 				default:

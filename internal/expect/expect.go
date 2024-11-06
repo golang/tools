@@ -42,7 +42,11 @@ comma-separated list of arguments.
 The empty parameter list and the missing parameter list are distinguishable if
 needed; they result in a nil or an empty list in the Args parameter respectively.
 
-Arguments are either identifiers or literals.
+Arguments may be positional, such as f(value), or named, such as f(name=value).
+Positional arguments must appear before named arguments.
+Names may not be repeated.
+
+Argument values may be either identifiers or literals.
 The literals supported are the basic value literals, of string, float, integer
 true, false or nil. All the literals match the standard go conventions, with
 all bases of integers, and both quote and backtick strings.
@@ -62,9 +66,10 @@ import (
 // It knows the position of the start of the comment, and the name and
 // arguments that make up the note.
 type Note struct {
-	Pos  token.Pos     // The position at which the note identifier appears
-	Name string        // the name associated with the note
-	Args []interface{} // the arguments for the note
+	Pos       token.Pos      // The position at which the note identifier appears
+	Name      string         // the name associated with the note
+	Args      []any          // positional arguments (non-nil if parens were present)
+	NamedArgs map[string]any // named arguments (or nil if none)
 }
 
 // ReadFile is the type of a function that can provide file contents for a
@@ -115,11 +120,4 @@ func MatchBefore(fset *token.FileSet, readFile ReadFile, end token.Pos, pattern 
 		return token.NoPos, token.NoPos, nil
 	}
 	return f.Pos(startOffset + matchStart), f.Pos(startOffset + matchEnd), nil
-}
-
-func lineEnd(f *token.File, line int) token.Pos {
-	if line >= f.LineCount() {
-		return token.Pos(f.Base() + f.Size())
-	}
-	return f.LineStart(line + 1)
 }
