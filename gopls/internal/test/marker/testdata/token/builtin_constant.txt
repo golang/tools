@@ -17,5 +17,5 @@ func _() {
 }
 
 const (
-	c = iota //@ token("iota", "variable", "readonly defaultLibrary")
+	c = iota //@ token("iota", "variable", "readonly defaultLibrary number")
 )

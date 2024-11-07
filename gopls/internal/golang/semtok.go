@@ -109,9 +109,9 @@ type tokenVisitor struct {
 func (tv *tokenVisitor) visit() {
 	f := tv.pgf.File
 	// may not be in range, but harmless
-	tv.token(f.Package, len("package"), semtok.TokKeyword, nil)
+	tv.token(f.Package, len("package"), semtok.TokKeyword)
 	if f.Name != nil {
-		tv.token(f.Name.NamePos, len(f.Name.Name), semtok.TokNamespace, nil)
+		tv.token(f.Name.NamePos, len(f.Name.Name), semtok.TokNamespace)
 	}
 	for _, decl := range f.Decls {
 		// Only look at the decls that overlap the range.
@@ -208,21 +208,6 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 		}
 	}
 
-	tokenTypeByObject := func(obj types.Object) (semtok.TokenType, []string) {
-		switch obj.(type) {
-		case *types.PkgName:
-			return semtok.TokNamespace, nil
-		case *types.Func:
-			return semtok.TokFunction, nil
-		case *types.TypeName:
-			return semtok.TokType, appendTypeModifiers(nil, obj)
-		case *types.Const, *types.Var:
-			return semtok.TokVariable, nil
-		default:
-			return semtok.TokComment, nil
-		}
-	}
-
 	pos := c.Pos()
 	for _, line := range strings.Split(c.Text, "\n") {
 		last := 0
@@ -232,32 +217,32 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 			name := line[idx[2]:idx[3]]
 			if objs := lookupObjects(name); len(objs) > 0 {
 				if last < idx[2] {
-					tv.token(pos+token.Pos(last), idx[2]-last, semtok.TokComment, nil)
+					tv.token(pos+token.Pos(last), idx[2]-last, semtok.TokComment)
 				}
 				offset := pos + token.Pos(idx[2])
 				for i, obj := range objs {
 					if i > 0 {
-						tv.token(offset, len("."), semtok.TokComment, nil)
+						tv.token(offset, len("."), semtok.TokComment)
 						offset += token.Pos(len("."))
 					}
 					id, rest, _ := strings.Cut(name, ".")
 					name = rest
-					tok, mods := tokenTypeByObject(obj)
-					tv.token(offset, len(id), tok, mods)
+					tok, mods := tv.appendObjectModifiers(nil, obj)
+					tv.token(offset, len(id), tok, mods...)
 					offset += token.Pos(len(id))
 				}
 				last = idx[3]
 			}
 		}
 		if last != len(c.Text) {
-			tv.token(pos+token.Pos(last), len(line)-last, semtok.TokComment, nil)
+			tv.token(pos+token.Pos(last), len(line)-last, semtok.TokComment)
 		}
 		pos += token.Pos(len(line) + 1)
 	}
 }
 
 // token emits a token of the specified extent and semantics.
-func (tv *tokenVisitor) token(start token.Pos, length int, typ semtok.TokenType, modifiers []string) {
+func (tv *tokenVisitor) token(start token.Pos, length int, typ semtok.TokenType, modifiers ...semtok.Modifier) {
 	if !start.IsValid() {
 		return
 	}
@@ -338,7 +323,7 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 	switch n := n.(type) {
 	case *ast.ArrayType:
 	case *ast.AssignStmt:
-		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokOperator, nil)
+		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokOperator)
 	case *ast.BasicLit:
 		if strings.Contains(n.Value, "\n") {
 			// has to be a string.
@@ -349,123 +334,119 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 		if n.Kind == token.STRING {
 			what = semtok.TokString
 		}
-		tv.token(n.Pos(), len(n.Value), what, nil)
+		tv.token(n.Pos(), len(n.Value), what)
 	case *ast.BinaryExpr:
-		tv.token(n.OpPos, len(n.Op.String()), semtok.TokOperator, nil)
+		tv.token(n.OpPos, len(n.Op.String()), semtok.TokOperator)
 	case *ast.BlockStmt:
 	case *ast.BranchStmt:
-		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokKeyword, nil)
-		if n.Label != nil {
-			tv.token(n.Label.Pos(), len(n.Label.Name), semtok.TokLabel, nil)
-		}
+		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokKeyword)
 	case *ast.CallExpr:
 		if n.Ellipsis.IsValid() {
-			tv.token(n.Ellipsis, len("..."), semtok.TokOperator, nil)
+			tv.token(n.Ellipsis, len("..."), semtok.TokOperator)
 		}
 	case *ast.CaseClause:
 		iam := "case"
 		if n.List == nil {
 			iam = "default"
 		}
-		tv.token(n.Case, len(iam), semtok.TokKeyword, nil)
+		tv.token(n.Case, len(iam), semtok.TokKeyword)
 	case *ast.ChanType:
 		// chan | chan <- | <- chan
 		switch {
 		case n.Arrow == token.NoPos:
-			tv.token(n.Begin, len("chan"), semtok.TokKeyword, nil)
+			tv.token(n.Begin, len("chan"), semtok.TokKeyword)
 		case n.Arrow == n.Begin:
-			tv.token(n.Arrow, 2, semtok.TokOperator, nil)
+			tv.token(n.Arrow, 2, semtok.TokOperator)
 			pos := tv.findKeyword("chan", n.Begin+2, n.Value.Pos())
-			tv.token(pos, len("chan"), semtok.TokKeyword, nil)
+			tv.token(pos, len("chan"), semtok.TokKeyword)
 		case n.Arrow != n.Begin:
-			tv.token(n.Begin, len("chan"), semtok.TokKeyword, nil)
-			tv.token(n.Arrow, 2, semtok.TokOperator, nil)
+			tv.token(n.Begin, len("chan"), semtok.TokKeyword)
+			tv.token(n.Arrow, 2, semtok.TokOperator)
 		}
 	case *ast.CommClause:
 		length := len("case")
 		if n.Comm == nil {
 			length = len("default")
 		}
-		tv.token(n.Case, length, semtok.TokKeyword, nil)
+		tv.token(n.Case, length, semtok.TokKeyword)
 	case *ast.CompositeLit:
 	case *ast.DeclStmt:
 	case *ast.DeferStmt:
-		tv.token(n.Defer, len("defer"), semtok.TokKeyword, nil)
+		tv.token(n.Defer, len("defer"), semtok.TokKeyword)
 	case *ast.Ellipsis:
-		tv.token(n.Ellipsis, len("..."), semtok.TokOperator, nil)
+		tv.token(n.Ellipsis, len("..."), semtok.TokOperator)
 	case *ast.EmptyStmt:
 	case *ast.ExprStmt:
 	case *ast.Field:
 	case *ast.FieldList:
 	case *ast.ForStmt:
-		tv.token(n.For, len("for"), semtok.TokKeyword, nil)
+		tv.token(n.For, len("for"), semtok.TokKeyword)
 	case *ast.FuncDecl:
 	case *ast.FuncLit:
 	case *ast.FuncType:
 		if n.Func != token.NoPos {
-			tv.token(n.Func, len("func"), semtok.TokKeyword, nil)
+			tv.token(n.Func, len("func"), semtok.TokKeyword)
 		}
 	case *ast.GenDecl:
-		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokKeyword, nil)
+		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokKeyword)
 	case *ast.GoStmt:
-		tv.token(n.Go, len("go"), semtok.TokKeyword, nil)
+		tv.token(n.Go, len("go"), semtok.TokKeyword)
 	case *ast.Ident:
 		tv.ident(n)
 	case *ast.IfStmt:
-		tv.token(n.If, len("if"), semtok.TokKeyword, nil)
+		tv.token(n.If, len("if"), semtok.TokKeyword)
 		if n.Else != nil {
 			// x.Body.End() or x.Body.End()+1, not that it matters
 			pos := tv.findKeyword("else", n.Body.End(), n.Else.Pos())
-			tv.token(pos, len("else"), semtok.TokKeyword, nil)
+			tv.token(pos, len("else"), semtok.TokKeyword)
 		}
 	case *ast.ImportSpec:
 		tv.importSpec(n)
 		return false
 	case *ast.IncDecStmt:
-		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokOperator, nil)
+		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokOperator)
 	case *ast.IndexExpr:
 	case *ast.IndexListExpr:
 	case *ast.InterfaceType:
-		tv.token(n.Interface, len("interface"), semtok.TokKeyword, nil)
+		tv.token(n.Interface, len("interface"), semtok.TokKeyword)
 	case *ast.KeyValueExpr:
 	case *ast.LabeledStmt:
-		tv.token(n.Label.Pos(), len(n.Label.Name), semtok.TokLabel, []string{"definition"})
 	case *ast.MapType:
-		tv.token(n.Map, len("map"), semtok.TokKeyword, nil)
+		tv.token(n.Map, len("map"), semtok.TokKeyword)
 	case *ast.ParenExpr:
 	case *ast.RangeStmt:
-		tv.token(n.For, len("for"), semtok.TokKeyword, nil)
+		tv.token(n.For, len("for"), semtok.TokKeyword)
 		// x.TokPos == token.NoPos is legal (for range foo {})
 		offset := n.TokPos
 		if offset == token.NoPos {
 			offset = n.For
 		}
 		pos := tv.findKeyword("range", offset, n.X.Pos())
-		tv.token(pos, len("range"), semtok.TokKeyword, nil)
+		tv.token(pos, len("range"), semtok.TokKeyword)
 	case *ast.ReturnStmt:
-		tv.token(n.Return, len("return"), semtok.TokKeyword, nil)
+		tv.token(n.Return, len("return"), semtok.TokKeyword)
 	case *ast.SelectStmt:
-		tv.token(n.Select, len("select"), semtok.TokKeyword, nil)
+		tv.token(n.Select, len("select"), semtok.TokKeyword)
 	case *ast.SelectorExpr:
 	case *ast.SendStmt:
-		tv.token(n.Arrow, len("<-"), semtok.TokOperator, nil)
+		tv.token(n.Arrow, len("<-"), semtok.TokOperator)
 	case *ast.SliceExpr:
 	case *ast.StarExpr:
-		tv.token(n.Star, len("*"), semtok.TokOperator, nil)
+		tv.token(n.Star, len("*"), semtok.TokOperator)
 	case *ast.StructType:
-		tv.token(n.Struct, len("struct"), semtok.TokKeyword, nil)
+		tv.token(n.Struct, len("struct"), semtok.TokKeyword)
 	case *ast.SwitchStmt:
-		tv.token(n.Switch, len("switch"), semtok.TokKeyword, nil)
+		tv.token(n.Switch, len("switch"), semtok.TokKeyword)
 	case *ast.TypeAssertExpr:
 		if n.Type == nil {
 			pos := tv.findKeyword("type", n.Lparen, n.Rparen)
-			tv.token(pos, len("type"), semtok.TokKeyword, nil)
+			tv.token(pos, len("type"), semtok.TokKeyword)
 		}
 	case *ast.TypeSpec:
 	case *ast.TypeSwitchStmt:
-		tv.token(n.Switch, len("switch"), semtok.TokKeyword, nil)
+		tv.token(n.Switch, len("switch"), semtok.TokKeyword)
 	case *ast.UnaryExpr:
-		tv.token(n.OpPos, len(n.Op.String()), semtok.TokOperator, nil)
+		tv.token(n.OpPos, len(n.Op.String()), semtok.TokOperator)
 	case *ast.ValueSpec:
 	// things only seen with parsing or type errors, so ignore them
 	case *ast.BadDecl, *ast.BadExpr, *ast.BadStmt:
@@ -482,40 +463,94 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 	return true
 }
 
+func (tv *tokenVisitor) appendObjectModifiers(mods []semtok.Modifier, obj types.Object) (semtok.TokenType, []semtok.Modifier) {
+	if obj.Pkg() == nil {
+		mods = append(mods, semtok.ModDefaultLibrary)
+	}
+
+	// Note: PkgName, Builtin, Label have type Invalid, which adds no modifiers.
+	mods = appendTypeModifiers(mods, obj.Type())
+
+	switch obj := obj.(type) {
+	case *types.PkgName:
+		return semtok.TokNamespace, mods
+
+	case *types.Builtin:
+		return semtok.TokFunction, mods
+
+	case *types.Func:
+		if obj.Signature().Recv() != nil {
+			return semtok.TokMethod, mods
+		} else {
+			return semtok.TokFunction, mods
+		}
+
+	case *types.TypeName:
+		if is[*types.TypeParam](types.Unalias(obj.Type())) {
+			return semtok.TokTypeParam, mods
+		}
+		return semtok.TokType, mods
+
+	case *types.Const:
+		mods = append(mods, semtok.ModReadonly)
+		return semtok.TokVariable, mods
+
+	case *types.Var:
+		if tv.isParam(obj.Pos()) {
+			return semtok.TokParameter, mods
+		} else {
+			return semtok.TokVariable, mods
+		}
+
+	case *types.Label:
+		return semtok.TokLabel, mods
+
+	case *types.Nil:
+		mods = append(mods, semtok.ModReadonly)
+		return semtok.TokVariable, mods
+	}
+
+	panic(obj)
+}
+
 // appendTypeModifiers appends optional modifiers that describe the top-level
-// type constructor of obj.Type(): "pointer", "map", etc.
-func appendTypeModifiers(mods []string, obj types.Object) []string {
-	switch t := obj.Type().Underlying().(type) {
+// type constructor of t: "pointer", "map", etc.
+func appendTypeModifiers(mods []semtok.Modifier, t types.Type) []semtok.Modifier {
+	// For a type parameter, don't report "interface".
+	if is[*types.TypeParam](types.Unalias(t)) {
+		return mods
+	}
+
+	switch t := t.Underlying().(type) {
 	case *types.Interface:
-		mods = append(mods, "interface")
+		mods = append(mods, semtok.ModInterface)
 	case *types.Struct:
-		mods = append(mods, "struct")
+		mods = append(mods, semtok.ModStruct)
 	case *types.Signature:
-		mods = append(mods, "signature")
+		mods = append(mods, semtok.ModSignature)
 	case *types.Pointer:
-		mods = append(mods, "pointer")
+		mods = append(mods, semtok.ModPointer)
 	case *types.Array:
-		mods = append(mods, "array")
+		mods = append(mods, semtok.ModArray)
 	case *types.Map:
-		mods = append(mods, "map")
+		mods = append(mods, semtok.ModMap)
 	case *types.Slice:
-		mods = append(mods, "slice")
+		mods = append(mods, semtok.ModSlice)
 	case *types.Chan:
-		mods = append(mods, "chan")
+		mods = append(mods, semtok.ModChan)
 	case *types.Basic:
-		mods = append(mods, "defaultLibrary")
 		switch t.Kind() {
 		case types.Invalid:
-			mods = append(mods, "invalid")
+			// ignore (e.g. Builtin, PkgName, Label)
 		case types.String:
-			mods = append(mods, "string")
+			mods = append(mods, semtok.ModString)
 		case types.Bool:
-			mods = append(mods, "bool")
+			mods = append(mods, semtok.ModBool)
 		case types.UnsafePointer:
-			mods = append(mods, "pointer")
+			mods = append(mods, semtok.ModPointer)
 		default:
 			if t.Info()&types.IsNumeric != 0 {
-				mods = append(mods, "number")
+				mods = append(mods, semtok.ModNumber)
 			}
 		}
 	}
@@ -523,76 +558,38 @@ func appendTypeModifiers(mods []string, obj types.Object) []string {
 }
 
 func (tv *tokenVisitor) ident(id *ast.Ident) {
-	var obj types.Object
+	var (
+		tok  semtok.TokenType
+		mods []semtok.Modifier
+		obj  types.Object
+		ok   bool
+	)
+	if obj, ok = tv.info.Defs[id]; obj != nil {
+		// definition
+		mods = append(mods, semtok.ModDefinition)
+		tok, mods = tv.appendObjectModifiers(mods, obj)
 
-	// emit emits a token for the identifier's extent.
-	emit := func(tok semtok.TokenType, modifiers ...string) {
-		tv.token(id.Pos(), len(id.Name), tok, modifiers)
-		if semDebug {
-			q := "nil"
-			if obj != nil {
-				q = fmt.Sprintf("%T", obj.Type()) // e.g. "*types.Map"
-			}
-			log.Printf(" use %s/%T/%s got %s %v (%s)",
-				id.Name, obj, q, tok, modifiers, tv.strStack())
-		}
-	}
+	} else if obj, ok = tv.info.Uses[id]; ok {
+		// use
+		tok, mods = tv.appendObjectModifiers(mods, obj)
 
-	// definition?
-	obj = tv.info.Defs[id]
-	if obj != nil {
-		if tok, modifiers := tv.definitionFor(id, obj); tok != "" {
-			emit(tok, modifiers...)
-		} else if semDebug {
-			log.Printf(" for %s/%T/%T got '' %v (%s)",
-				id.Name, obj, obj.Type(), modifiers, tv.strStack())
-		}
+	} else if tok, mods = tv.unkIdent(id); tok != "" {
+		// ok
+
+	} else {
 		return
 	}
 
-	// use?
-	obj = tv.info.Uses[id]
-	switch obj := obj.(type) {
-	case *types.Builtin:
-		emit(semtok.TokFunction, "defaultLibrary")
-	case *types.Const:
-		if is[*types.Basic](obj.Type()) &&
-			(id.Name == "iota" || id.Name == "true" || id.Name == "false") {
-			emit(semtok.TokVariable, "readonly", "defaultLibrary")
-		} else {
-			emit(semtok.TokVariable, "readonly")
+	// Emit a token for the identifier's extent.
+	tv.token(id.Pos(), len(id.Name), tok, mods...)
+
+	if semDebug {
+		q := "nil"
+		if obj != nil {
+			q = fmt.Sprintf("%T", obj.Type()) // e.g. "*types.Map"
 		}
-	case *types.Func:
-		emit(semtok.TokFunction)
-	case *types.Label:
-		// Labels are reliably covered by the syntax traversal.
-	case *types.Nil:
-		// nil is a predeclared identifier
-		emit(semtok.TokVariable, "readonly", "defaultLibrary")
-	case *types.PkgName:
-		emit(semtok.TokNamespace)
-	case *types.TypeName: // could be a TypeParam
-		if is[*types.TypeParam](types.Unalias(obj.Type())) {
-			emit(semtok.TokTypeParam)
-		} else {
-			emit(semtok.TokType, appendTypeModifiers(nil, obj)...)
-		}
-	case *types.Var:
-		if is[*types.Signature](types.Unalias(obj.Type())) {
-			emit(semtok.TokFunction)
-		} else if tv.isParam(obj.Pos()) {
-			// variable, unless use.pos is the pos of a Field in an ancestor FuncDecl
-			// or FuncLit and then it's a parameter
-			emit(semtok.TokParameter)
-		} else {
-			emit(semtok.TokVariable)
-		}
-	case nil:
-		if tok, modifiers := tv.unkIdent(id); tok != "" {
-			emit(tok, modifiers...)
-		}
-	default:
-		panic(obj)
+		log.Printf(" use %s/%T/%s got %s %v (%s)",
+			id.Name, obj, q, tok, mods, tv.strStack())
 	}
 }
 
@@ -626,8 +623,8 @@ func (tv *tokenVisitor) isParam(pos token.Pos) bool {
 // def), use the parse stack.
 // A lot of these only happen when the package doesn't compile,
 // but in that case it is all best-effort from the parse tree.
-func (tv *tokenVisitor) unkIdent(id *ast.Ident) (semtok.TokenType, []string) {
-	def := []string{"definition"}
+func (tv *tokenVisitor) unkIdent(id *ast.Ident) (semtok.TokenType, []semtok.Modifier) {
+	def := []semtok.Modifier{semtok.ModDefinition}
 	n := len(tv.stack) - 2 // parent of Ident; stack is [File ... Ident]
 	if n < 0 {
 		tv.errorf("no stack") // can't happen
@@ -748,115 +745,6 @@ func (tv *tokenVisitor) unkIdent(id *ast.Ident) (semtok.TokenType, []string) {
 	return "", nil
 }
 
-func isDeprecated(n *ast.CommentGroup) bool {
-	if n != nil {
-		for _, c := range n.List {
-			if strings.HasPrefix(c.Text, "// Deprecated") {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// definitionFor handles a defining identifier.
-func (tv *tokenVisitor) definitionFor(id *ast.Ident, obj types.Object) (semtok.TokenType, []string) {
-	// The definition of a types.Label cannot be found by
-	// ascending the syntax tree, and doing so will reach the
-	// FuncDecl, causing us to misinterpret the label as a
-	// parameter (#65494).
-	//
-	// However, labels are reliably covered by the syntax
-	// traversal, so we don't need to use type information.
-	if is[*types.Label](obj) {
-		return "", nil
-	}
-
-	// PJW: look into replacing these syntactic tests with types more generally
-	modifiers := []string{"definition"}
-	for i := len(tv.stack) - 1; i >= 0; i-- {
-		switch ancestor := tv.stack[i].(type) {
-		case *ast.AssignStmt, *ast.RangeStmt:
-			if id.Name == "_" {
-				return "", nil // not really a variable
-			}
-			return semtok.TokVariable, modifiers
-		case *ast.GenDecl:
-			if isDeprecated(ancestor.Doc) {
-				modifiers = append(modifiers, "deprecated")
-			}
-			if ancestor.Tok == token.CONST {
-				modifiers = append(modifiers, "readonly")
-			}
-			return semtok.TokVariable, modifiers
-		case *ast.FuncDecl:
-			// If x is immediately under a FuncDecl, it is a function or method
-			if i == len(tv.stack)-2 {
-				if isDeprecated(ancestor.Doc) {
-					modifiers = append(modifiers, "deprecated")
-				}
-				if ancestor.Recv != nil {
-					return semtok.TokMethod, modifiers
-				}
-				return semtok.TokFunction, modifiers
-			}
-			// if x < ... < FieldList < FuncDecl, this is the receiver, a variable
-			// PJW: maybe not. it might be a typeparameter in the type of the receiver
-			if is[*ast.FieldList](tv.stack[i+1]) {
-				if is[*types.TypeName](obj) {
-					return semtok.TokTypeParam, modifiers
-				}
-				return semtok.TokVariable, nil
-			}
-			// if x < ... < FieldList < FuncType < FuncDecl, this is a param
-			return semtok.TokParameter, modifiers
-		case *ast.FuncType:
-			if isTypeParam(id, ancestor) {
-				return semtok.TokTypeParam, modifiers
-			}
-			return semtok.TokParameter, modifiers
-		case *ast.InterfaceType:
-			return semtok.TokMethod, modifiers
-		case *ast.TypeSpec:
-			// GenDecl/Typespec/FuncType/FieldList/Field/Ident
-			// (type A func(b uint64)) (err error)
-			// b and err should not be semtok.TokType, but semtok.TokVariable
-			// and in GenDecl/TpeSpec/StructType/FieldList/Field/Ident
-			// (type A struct{b uint64}
-			// but on type B struct{C}), C is a type, but is not being defined.
-			// GenDecl/TypeSpec/FieldList/Field/Ident is a typeParam
-			if is[*ast.FieldList](tv.stack[i+1]) {
-				return semtok.TokTypeParam, modifiers
-			}
-			fldm := tv.stack[len(tv.stack)-2]
-			if fld, ok := fldm.(*ast.Field); ok {
-				// if len(fld.names) == 0 this is a semtok.TokType, being used
-				if len(fld.Names) == 0 {
-					return semtok.TokType, appendTypeModifiers(nil, obj)
-				}
-				return semtok.TokVariable, modifiers
-			}
-			return semtok.TokType, appendTypeModifiers(modifiers, obj)
-		}
-	}
-	// can't happen
-	tv.errorf("failed to find the decl for %s", safetoken.Position(tv.pgf.Tok, id.Pos()))
-	return "", nil
-}
-
-func isTypeParam(id *ast.Ident, t *ast.FuncType) bool {
-	if tp := t.TypeParams; tp != nil {
-		for _, p := range tp.List {
-			for _, n := range p.Names {
-				if id == n {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
 // multiline emits a multiline token (`string` or /*comment*/).
 func (tv *tokenVisitor) multiline(start, end token.Pos, tok semtok.TokenType) {
 	// TODO(adonovan): test with non-ASCII.
@@ -875,13 +763,13 @@ func (tv *tokenVisitor) multiline(start, end token.Pos, tok semtok.TokenType) {
 	sline := spos.Line
 	eline := epos.Line
 	// first line is from spos.Column to end
-	tv.token(start, length(sline)-spos.Column, tok, nil) // leng(sline)-1 - (spos.Column-1)
+	tv.token(start, length(sline)-spos.Column, tok) // leng(sline)-1 - (spos.Column-1)
 	for i := sline + 1; i < eline; i++ {
 		// intermediate lines are from 1 to end
-		tv.token(f.LineStart(i), length(i)-1, tok, nil) // avoid the newline
+		tv.token(f.LineStart(i), length(i)-1, tok) // avoid the newline
 	}
 	// last line is from 1 to epos.Column
-	tv.token(f.LineStart(eline), epos.Column-1, tok, nil) // columns are 1-based
+	tv.token(f.LineStart(eline), epos.Column-1, tok) // columns are 1-based
 }
 
 // findKeyword returns the position of a keyword by searching within
@@ -907,7 +795,7 @@ func (tv *tokenVisitor) importSpec(spec *ast.ImportSpec) {
 	if spec.Name != nil {
 		name := spec.Name.String()
 		if name != "_" && name != "." {
-			tv.token(spec.Name.Pos(), len(name), semtok.TokNamespace, nil)
+			tv.token(spec.Name.Pos(), len(name), semtok.TokNamespace)
 		}
 		return // don't mark anything for . or _
 	}
@@ -933,7 +821,7 @@ func (tv *tokenVisitor) importSpec(spec *ast.ImportSpec) {
 	}
 	// Report virtual declaration at the position of the substring.
 	start := spec.Path.Pos() + token.Pos(j)
-	tv.token(start, len(depMD.Name), semtok.TokNamespace, nil)
+	tv.token(start, len(depMD.Name), semtok.TokNamespace)
 }
 
 // errorf logs an error and reports a bug.
@@ -968,19 +856,19 @@ func (tv *tokenVisitor) godirective(c *ast.Comment) {
 	kind, _ := stringsCutPrefix(directive, "//go:")
 	if _, ok := godirectives[kind]; !ok {
 		// Unknown 'go:' directive.
-		tv.token(c.Pos(), len(c.Text), semtok.TokComment, nil)
+		tv.token(c.Pos(), len(c.Text), semtok.TokComment)
 		return
 	}
 
 	// Make the 'go:directive' part stand out, the rest is comments.
-	tv.token(c.Pos(), len("//"), semtok.TokComment, nil)
+	tv.token(c.Pos(), len("//"), semtok.TokComment)
 
 	directiveStart := c.Pos() + token.Pos(len("//"))
-	tv.token(directiveStart, len(directive[len("//"):]), semtok.TokNamespace, nil)
+	tv.token(directiveStart, len(directive[len("//"):]), semtok.TokNamespace)
 
 	if len(args) > 0 {
 		tailStart := c.Pos() + token.Pos(len(directive)+len(" "))
-		tv.token(tailStart, len(args), semtok.TokComment, nil)
+		tv.token(tailStart, len(args), semtok.TokComment)
 	}
 }
 

@@ -1,0 +1,13 @@
+This is a regression test for #70251 (missing modifiers for
+predeclared interfaces).
+
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
+-- a/a.go --
+package a
+
+var _ any   //@token("any", "type", "defaultLibrary interface")
+var _ error //@token("error", "type", "defaultLibrary interface")

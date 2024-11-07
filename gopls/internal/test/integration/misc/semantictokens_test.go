@@ -53,23 +53,23 @@ func TestSemantic_2527(t *testing.T) {
 	want := []fake.SemanticToken{
 		{Token: "package", TokenType: "keyword"},
 		{Token: "foo", TokenType: "namespace"},
-		{Token: "// Deprecated (for testing)", TokenType: "comment"},
+		{Token: "// comment", TokenType: "comment"},
 		{Token: "func", TokenType: "keyword"},
-		{Token: "Add", TokenType: "function", Mod: "definition deprecated"},
+		{Token: "Add", TokenType: "function", Mod: "definition signature"},
 		{Token: "T", TokenType: "typeParameter", Mod: "definition"},
 		{Token: "int", TokenType: "type", Mod: "defaultLibrary number"},
 		{Token: "target", TokenType: "parameter", Mod: "definition"},
 		{Token: "T", TokenType: "typeParameter"},
-		{Token: "l", TokenType: "parameter", Mod: "definition"},
+		{Token: "l", TokenType: "parameter", Mod: "definition slice"},
 		{Token: "T", TokenType: "typeParameter"},
 		{Token: "T", TokenType: "typeParameter"},
 		{Token: "return", TokenType: "keyword"},
 		{Token: "append", TokenType: "function", Mod: "defaultLibrary"},
-		{Token: "l", TokenType: "parameter"},
+		{Token: "l", TokenType: "parameter", Mod: "slice"},
 		{Token: "target", TokenType: "parameter"},
 		{Token: "for", TokenType: "keyword"},
 		{Token: "range", TokenType: "keyword"},
-		{Token: "l", TokenType: "parameter"},
+		{Token: "l", TokenType: "parameter", Mod: "slice"},
 		{Token: "// test coverage", TokenType: "comment"},
 		{Token: "return", TokenType: "keyword"},
 		{Token: "nil", TokenType: "variable", Mod: "readonly defaultLibrary"},
@@ -81,7 +81,7 @@ module example.com
 go 1.19
 -- main.go --
 package foo
-// Deprecated (for testing)
+// comment
 func Add[T int](target T, l []T) []T {
 	return append(l, target)
 	for range l {} // test coverage
@@ -167,18 +167,18 @@ func bar() {}
 		{Token: "go:linkname", TokenType: "namespace"},
 		{Token: "now time.Now", TokenType: "comment"},
 		{Token: "func", TokenType: "keyword"},
-		{Token: "now", TokenType: "function", Mod: "definition"},
+		{Token: "now", TokenType: "function", Mod: "definition signature"},
 
 		{Token: "//", TokenType: "comment"},
 		{Token: "go:noinline", TokenType: "namespace"},
 		{Token: "func", TokenType: "keyword"},
-		{Token: "foo", TokenType: "function", Mod: "definition"},
+		{Token: "foo", TokenType: "function", Mod: "definition signature"},
 
 		{Token: "// Mentioning go:noinline should not tokenize.", TokenType: "comment"},
 
 		{Token: "//go:notadirective", TokenType: "comment"},
 		{Token: "func", TokenType: "keyword"},
-		{Token: "bar", TokenType: "function", Mod: "definition"},
+		{Token: "bar", TokenType: "function", Mod: "definition signature"},
 	}
 
 	WithOptions(

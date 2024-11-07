@@ -21,21 +21,21 @@ var B = 2
 type Foo int
 
 
-// [F] accept a [Foo], and print it. //@token("F", "function", ""),token("Foo", "type", "defaultLibrary number")
+// [F] accept a [Foo], and print it. //@token("F", "function", "signature"),token("Foo", "type", "number")
 func F(v Foo) {
 	println(v)
 
 }
 
 /*
-	[F1] print [A] and [B] //@token("F1", "function", ""),token("A", "variable", ""),token("B", "variable", "")
+	[F1] print [A] and [B] //@token("F1", "function", "signature"),token("A", "variable", "readonly number"),token("B", "variable", "number")
 */
 func F1() {
-	// print [A] and [B]. //@token("A", "variable", ""),token("B", "variable", "")
+	// print [A] and [B]. //@token("A", "variable", "readonly number"),token("B", "variable", "number")
 	println(A, B)
 }
 
-// [F2] use [strconv.Atoi] convert s, then print it //@token("F2", "function", ""),token("strconv", "namespace", ""),token("Atoi", "function", "")
+// [F2] use [strconv.Atoi] convert s, then print it //@token("F2", "function", "signature"),token("strconv", "namespace", ""),token("Atoi", "function", "signature")
 func F2(s string) {
 	a, _ := strconv.Atoi("42")
 	b, _ := strconv.Atoi("42")
@@ -44,12 +44,12 @@ func F2(s string) {
 -- b.go --
 package p
 
-// [F3] accept [*Foo]	//@token("F3", "function", ""),token("Foo", "type", "defaultLibrary number")
+// [F3] accept [*Foo]	//@token("F3", "function", "signature"),token("Foo", "type", "number")
 func F3(v *Foo) {
 	println(*v)
 }
 
-// [F4] equal [strconv.Atoi]	//@token("F4", "function", ""),token("strconv", "namespace", ""),token("Atoi", "function", "")
+// [F4] equal [strconv.Atoi]	//@token("F4", "function", "signature"),token("strconv", "namespace", ""),token("Atoi", "function", "signature")
 func F4(s string) (int, error) {
 	return 0, nil
 }

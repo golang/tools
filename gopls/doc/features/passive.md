@@ -211,9 +211,46 @@ a portion of it.
 The client may use this information to provide syntax highlighting
 that conveys semantic distinctions between, for example, functions and
 types, constants and variables, or library functions and built-ins.
-Gopls also reports a modifier for the top-level constructor of each symbols's type, one of:
-`interface`, `struct`, `signature`, `pointer`, `array`, `map`, `slice`, `chan`, `string`, `number`, `bool`, `invalid`.
-The client specifies the sets of types and modifiers it is interested in.
+
+The client must specify the sets of types and modifiers it is interested in.
+
+Gopls reports the following token types:
+
+- `"comment"`: a comment
+- `"function"`: a function
+- `"keyword"`: a keyword
+- `"label"`: a control label (not an LSP standard type)
+- `"macro"`: text/template tokens
+- `"method"`: a method
+- `"namespace"`: an imported package name
+- `"number"`: a numeric literal
+- `"operator"`: an operator
+- `"parameter"`: a parameter variable
+- `"string"`:  a string literal
+- `"type"`: a type name (plus other uses)
+- `"typeParameter"`: a type parameter
+- `"variable"`: a var or const (see `readonly` modifier)
+
+Gopls also reports the following standard modifiers:
+
+- `"defaultLibrary": predeclared symbols
+- `"definition"`: the declaring identifier of a symbol
+- `"readonly"`: for constants
+
+plus these non-standard modifiers each representing the top-level
+constructor of each symbols's type:
+
+- `"array"`
+- `"bool"`
+- `"chan"`
+- `"interface"`
+- `"map"`
+- `"number"`
+- `"pointer"`
+- `"signature"`
+- `"slice"`
+- `"string"`
+- `"struct"`
 
 Settings:
 - The [`semanticTokens`](../settings.md#semanticTokens) setting determines whether
