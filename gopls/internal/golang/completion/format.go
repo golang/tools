@@ -299,7 +299,7 @@ func (c *completer) importEdits(imp *importInfo) ([]protocol.TextEdit, error) {
 		return nil, err
 	}
 
-	return golang.ComputeOneImportFixEdits(c.snapshot, pgf, &imports.ImportFix{
+	return golang.ComputeImportFixEdits(c.snapshot.Options().Local, pgf.Src, &imports.ImportFix{
 		StmtInfo: imports.ImportInfo{
 			ImportPath: imp.importPath,
 			Name:       imp.name,

@@ -140,7 +140,7 @@ func computeImportEdits(ctx context.Context, pgf *parsego.File, goroot string, o
 		return nil, nil, err
 	}
 
-	allFixEdits, err = computeFixEdits(pgf, options, allFixes)
+	allFixEdits, err = computeFixEdits(pgf.Src, options, allFixes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -148,7 +148,7 @@ func computeImportEdits(ctx context.Context, pgf *parsego.File, goroot string, o
 	// Apply all of the import fixes to the file.
 	// Add the edits for each fix to the result.
 	for _, fix := range allFixes {
-		edits, err := computeFixEdits(pgf, options, []*imports.ImportFix{fix})
+		edits, err := computeFixEdits(pgf.Src, options, []*imports.ImportFix{fix})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -160,10 +160,10 @@ func computeImportEdits(ctx context.Context, pgf *parsego.File, goroot string, o
 	return allFixEdits, editsPerFix, nil
 }
 
-// ComputeOneImportFixEdits returns text edits for a single import fix.
-func ComputeOneImportFixEdits(snapshot *cache.Snapshot, pgf *parsego.File, fix *imports.ImportFix) ([]protocol.TextEdit, error) {
+// ComputeImportFixEdits returns text edits for a single import fix.
+func ComputeImportFixEdits(localPrefix string, src []byte, fixes ...*imports.ImportFix) ([]protocol.TextEdit, error) {
 	options := &imports.Options{
-		LocalPrefix: snapshot.Options().Local,
+		LocalPrefix: localPrefix,
 		// Defaults.
 		AllErrors:  true,
 		Comments:   true,
@@ -172,18 +172,18 @@ func ComputeOneImportFixEdits(snapshot *cache.Snapshot, pgf *parsego.File, fix *
 		TabIndent:  true,
 		TabWidth:   8,
 	}
-	return computeFixEdits(pgf, options, []*imports.ImportFix{fix})
+	return computeFixEdits(src, options, fixes)
 }
 
-func computeFixEdits(pgf *parsego.File, options *imports.Options, fixes []*imports.ImportFix) ([]protocol.TextEdit, error) {
+func computeFixEdits(src []byte, options *imports.Options, fixes []*imports.ImportFix) ([]protocol.TextEdit, error) {
 	// trim the original data to match fixedData
-	left, err := importPrefix(pgf.Src)
+	left, err := importPrefix(src)
 	if err != nil {
 		return nil, err
 	}
 	extra := !strings.Contains(left, "\n") // one line may have more than imports
 	if extra {
-		left = string(pgf.Src)
+		left = string(src)
 	}
 	if len(left) > 0 && left[len(left)-1] != '\n' {
 		left += "\n"
@@ -195,7 +195,7 @@ func computeFixEdits(pgf *parsego.File, options *imports.Options, fixes []*impor
 		// used all of origData above, use all of it here too
 		flags = 0
 	}
-	fixedData, err := imports.ApplyFixes(fixes, "", pgf.Src, options, flags)
+	fixedData, err := imports.ApplyFixes(fixes, "", src, options, flags)
 	if err != nil {
 		return nil, err
 	}

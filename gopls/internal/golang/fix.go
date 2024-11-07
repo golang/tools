@@ -188,7 +188,7 @@ func suggestedFixToDocumentChange(ctx context.Context, snapshot *cache.Snapshot,
 // addEmbedImport adds a missing embed "embed" import with blank name.
 func addEmbedImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, _, _ token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	// Like golang.AddImport, but with _ as Name and using our pgf.
-	protoEdits, err := ComputeOneImportFixEdits(snapshot, pgf, &imports.ImportFix{
+	protoEdits, err := ComputeImportFixEdits(snapshot.Options().Local, pgf.Src, &imports.ImportFix{
 		StmtInfo: imports.ImportInfo{
 			ImportPath: "embed",
 			Name:       "_",
