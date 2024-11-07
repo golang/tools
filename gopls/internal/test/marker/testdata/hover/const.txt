@@ -83,8 +83,12 @@ func _() {
 const X untyped int = 0
 ```
 
+---
+
 @hover("X", "X", bX)
 
+
+---
 
 [`c.X` on pkg.go.dev](https://pkg.go.dev/mod.com#X)
 -- @dur --
@@ -92,11 +96,15 @@ const X untyped int = 0
 const dur time.Duration = 15*time.Minute + 10*time.Second + 350*time.Millisecond // 15m10.35s
 ```
 
+---
+
 dur is a constant of type time.Duration.
 -- @decimalConst --
 ```go
 const decimal untyped int = 153
 ```
+
+---
 
 no inline comment
 -- @hexConst --
@@ -148,7 +156,11 @@ const longStr untyped string = "Lorem ipsum dolor sit amet, consectetur adipisci
 const math.Log2E untyped float = 1 / Ln2 // 1.4427
 ```
 
+---
+
 Mathematical constants.
 
+
+---
 
 [`math.Log2E` on pkg.go.dev](https://pkg.go.dev/math#Log2E)

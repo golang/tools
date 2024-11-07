@@ -27,4 +27,6 @@ func bar() string {
 func bar() string
 ```
 
+---
+
 bar does foo.

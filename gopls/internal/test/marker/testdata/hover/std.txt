@@ -44,8 +44,12 @@ func _() {
 func (m *sync.Mutex) Lock()
 ```
 
+---
+
 Lock locks m.
 
+
+---
 
 [`(sync.Mutex).Lock` on pkg.go.dev](https://pkg.go.dev/sync#Mutex.Lock)
 -- @hoverName --
@@ -53,8 +57,12 @@ Lock locks m.
 func (obj *types.object) Name() string
 ```
 
+---
+
 Name returns the object's (package-local, unqualified) name.
 
+
+---
 
 [`(types.TypeName).Name` on pkg.go.dev](https://pkg.go.dev/go/types#TypeName.Name)
 -- @hoverTypes --
@@ -62,14 +70,20 @@ Name returns the object's (package-local, unqualified) name.
 package types ("go/types")
 ```
 
+---
+
 [`types` on pkg.go.dev](https://pkg.go.dev/go/types)
 -- @hovermake --
 ```go
 func make(t Type, size ...int) Type
 ```
 
+---
+
 The make built-in function allocates and initializes an object of type slice, map, or chan (only).
 
+
+---
 
 [`make` on pkg.go.dev](https://pkg.go.dev/builtin#make)
 -- @hoverstring --
@@ -77,7 +91,11 @@ The make built-in function allocates and initializes an object of type slice, ma
 type string string
 ```
 
+---
+
 string is the set of all strings of 8-bit bytes, conventionally but not necessarily representing UTF-8-encoded text.
 
+
+---
 
 [`string` on pkg.go.dev](https://pkg.go.dev/builtin#string)

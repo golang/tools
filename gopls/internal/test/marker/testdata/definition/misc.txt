@@ -126,6 +126,15 @@ func _() {
 	_ = p.Sum() //@def("()", PosSum),hover("()", `Sum`, hoverSum)
 }
 -- @aPackage --
+```go
+package a
+```
+
+---
+
+ - Package path: mod.com
+ - Module: mod.com
+ - Language version: go1.16
 -- @hoverDeclBlocka --
 ```go
 type a struct { // size=16 (0x10)
@@ -133,11 +142,15 @@ type a struct { // size=16 (0x10)
 }
 ```
 
+---
+
 1st type declaration block
 -- @hoverDeclBlockb --
 ```go
 type b struct{} // size=0
 ```
+
+---
 
 b has a comment
 -- @hoverDeclBlockc --
@@ -147,11 +160,15 @@ type c struct { // size=16 (0x10)
 }
 ```
 
+---
+
 c is a struct
 -- @hoverDeclBlockd --
 ```go
 type d string // size=16 (0x10)
 ```
+
+---
 
 3rd type declaration block
 -- @hoverDeclBlocke --
@@ -161,6 +178,8 @@ type e struct { // size=8
 }
 ```
 
+---
+
 e has a comment
 -- @hoverH --
 ```go
@@ -168,6 +187,8 @@ type H interface {
 	Goodbye()
 }
 ```
+
+---
 
 [`a.H` on pkg.go.dev](https://pkg.go.dev/mod.com#H)
 -- @hoverI --
@@ -178,9 +199,13 @@ type I interface {
 }
 ```
 
+---
+
 ```go
 func (J) Hello()
 ```
+
+---
 
 [`a.I` on pkg.go.dev](https://pkg.go.dev/mod.com#I)
 -- @hoverJ --
@@ -190,11 +215,15 @@ type J interface {
 }
 ```
 
+---
+
 [`a.J` on pkg.go.dev](https://pkg.go.dev/mod.com#J)
 -- @hoverSum --
 ```go
 func (p *Pos) Sum() int
 ```
+
+---
 
 [`(a.Pos).Sum` on pkg.go.dev](https://pkg.go.dev/mod.com#Pos.Sum)
 -- @hoverTestA --
@@ -210,11 +239,15 @@ field field string
 const g untyped int = 1
 ```
 
+---
+
 When I hover on g, I should see this comment.
 -- @hoverh --
 ```go
 const h untyped int = 2
 ```
+
+---
 
 Constant block. When I hover on h, I should see this comment.
 -- @hoverpx --
@@ -222,11 +255,15 @@ Constant block. When I hover on h, I should see this comment.
 field x int
 ```
 
+---
+
 @loc(PosX, "x"),loc(PosY, "y")
 -- @hoverx --
 ```go
 var x string
 ```
+
+---
 
 x is a variable.
 -- @hovery --
@@ -237,5 +274,7 @@ var y int
 ```go
 var z string
 ```
+
+---
 
 z is a variable too.

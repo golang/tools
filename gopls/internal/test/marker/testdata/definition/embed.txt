@@ -115,14 +115,20 @@ var _ = S1{ //@def("S1", S1),hover("S1", "S1", S1)
 func (a.A) Hi()
 ```
 
+---
+
 [`(a.A).Hi` on pkg.go.dev](https://pkg.go.dev/mod.com/a#A.Hi)
 -- @F --
 ```go
 field F int
 ```
 
+---
+
 @loc(F, "F")
 
+
+---
 
 [`(b.Embed).F` on pkg.go.dev](https://pkg.go.dev/mod.com/b#Embed.F)
 -- @HGoodbye --
@@ -130,8 +136,12 @@ field F int
 func (a.H) Goodbye()
 ```
 
+---
+
 @loc(HGoodbye, "Goodbye")
 
+
+---
 
 [`(a.H).Goodbye` on pkg.go.dev](https://pkg.go.dev/mod.com/a#H.Goodbye)
 -- @IB --
@@ -139,8 +149,12 @@ func (a.H) Goodbye()
 func (a.I) B()
 ```
 
+---
+
 @loc(IB, "B")
 
+
+---
 
 [`(a.I).B` on pkg.go.dev](https://pkg.go.dev/mod.com/a#I.B)
 -- @JHello --
@@ -148,8 +162,12 @@ func (a.I) B()
 func (a.J) Hello()
 ```
 
+---
+
 @loc(JHello, "Hello")
 
+
+---
 
 [`(a.J).Hello` on pkg.go.dev](https://pkg.go.dev/mod.com/a#J.Hello)
 -- @M --
@@ -157,20 +175,28 @@ func (a.J) Hello()
 func (embed) M()
 ```
 
+---
+
 [`(b.Embed).M` on pkg.go.dev](https://pkg.go.dev/mod.com/b#Embed.M)
 -- @RField2 --
 ```go
 field Field2 int
 ```
 
+---
+
 @loc(RField2, "Field2")
 
+
+---
 
 [`(a.R).Field2` on pkg.go.dev](https://pkg.go.dev/mod.com/a#R.Field2)
 -- @RHey --
 ```go
 func (r a.R) Hey()
 ```
+
+---
 
 [`(a.R).Hey` on pkg.go.dev](https://pkg.go.dev/mod.com/a#R.Hey)
 -- @S1 --
@@ -183,10 +209,14 @@ type S1 struct {
 }
 ```
 
+---
+
 ```go
 // Embedded fields:
 F2 int // through S2 
 ```
+
+---
 
 [`b.S1` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S1)
 -- @S1F1 --
@@ -194,8 +224,12 @@ F2 int // through S2
 field F1 int
 ```
 
+---
+
 @loc(S1F1, "F1")
 
+
+---
 
 [`(b.S1).F1` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S1.F1)
 -- @S1S2 --
@@ -203,8 +237,12 @@ field F1 int
 field S2 S2
 ```
 
+---
+
 @loc(S1S2, "S2"),def("S2", S2),hover("S2", "S2", S2)
 
+
+---
 
 [`(b.S1).S2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S1.S2)
 -- @S2 --
@@ -216,9 +254,13 @@ type S2 struct { // size=32 (0x20)
 }
 ```
 
+---
+
 ```go
 func (a.A) Hi()
 ```
+
+---
 
 [`b.S2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S2)
 -- @S2F1 --
@@ -226,8 +268,12 @@ func (a.A) Hi()
 field F1 string
 ```
 
+---
+
 @loc(S2F1, "F1")
 
+
+---
 
 [`(b.S2).F1` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S2.F1)
 -- @S2F2 --
@@ -235,8 +281,12 @@ field F1 string
 field F2 int
 ```
 
+---
+
 @loc(S2F2, "F2")
 
+
+---
 
 [`(b.S2).F2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S2.F2)
 -- @SField --
@@ -244,14 +294,20 @@ field F2 int
 field Field int
 ```
 
+---
+
 @loc(SField, "Field")
 
+
+---
 
 [`(a.S).Field` on pkg.go.dev](https://pkg.go.dev/mod.com/a#S.Field)
 -- @aA --
 ```go
 type A string // size=16 (0x10)
 ```
+
+---
 
 @loc(AString, "A")
 
@@ -260,11 +316,15 @@ type A string // size=16 (0x10)
 func (a.A) Hi()
 ```
 
+---
+
 [`a.A` on pkg.go.dev](https://pkg.go.dev/mod.com/a#A)
 -- @aAlias --
 ```go
 type aAlias = a.A // size=16 (0x10)
 ```
+
+---
 
 @loc(aAlias, "aAlias")
 

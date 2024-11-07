@@ -23,7 +23,11 @@ func DoSomething() Something {
 field Field int `json:"field"`
 ```
 
+---
+
 Field with a tag
 
+
+---
 
 [`(lib.Something).Field` on pkg.go.dev](https://pkg.go.dev/example.com/lib#Something.Field)

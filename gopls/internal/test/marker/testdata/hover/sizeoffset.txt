@@ -54,6 +54,8 @@ type T struct { // size=48 (0x30)
 }
 ```
 
+---
+
 [`a.T` on pkg.go.dev](https://pkg.go.dev/example.com#T)
 -- @wasteful --
 ```go
@@ -68,14 +70,20 @@ type wasteful struct { // size=48 (0x30) (29% wasted)
 field a int // size=8, offset=0
 ```
 
+---
+
 @ hover("a", "a", a)
 -- @U --
 ```go
 field U U // size=24 (0x18), offset=8
 ```
 
+---
+
 @ hover("U", "U", U)
 
+
+---
 
 [`(a.T).U` on pkg.go.dev](https://pkg.go.dev/example.com#T.U)
 -- @y --
@@ -83,11 +91,15 @@ field U U // size=24 (0x18), offset=8
 field y int // size=8, offset=32 (0x20)
 ```
 
+---
+
 @ hover("y", "y", y), hover("z", "z", z)
 -- @z --
 ```go
 field z int // size=8, offset=40 (0x28)
 ```
+
+---
 
 @ hover("y", "y", y), hover("z", "z", z)
 -- @p --
@@ -95,11 +107,15 @@ field z int // size=8, offset=40 (0x28)
 field p T
 ```
 
+---
+
 @ hover("p", "p", p)
 -- @q --
 ```go
 field q int // size=8
 ```
+
+---
 
 @ hover("q", "q", q)
 -- @Gint --
@@ -107,10 +123,14 @@ field q int // size=8
 field Gint G[int] // size=16 (0x10), offset=0
 ```
 
+---
+
 @ hover("Gint",    "Gint",    Gint)
 -- @Gstring --
 ```go
 field Gstring G[string] // size=24 (0x18), offset=16 (0x10)
 ```
+
+---
 
 @ hover("Gstring", "Gstring", Gstring)

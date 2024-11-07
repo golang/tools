@@ -41,6 +41,8 @@ type P struct {
 }
 ```
 
+---
+
 doc
 
 
@@ -53,5 +55,7 @@ Three *chan int // through Q.q2
 ```go
 func (P) m()
 ```
+
+---
 
 [`p.P` on pkg.go.dev](https://pkg.go.dev/example.com#P)

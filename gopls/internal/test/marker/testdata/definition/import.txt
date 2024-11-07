@@ -35,8 +35,12 @@ func _() {
 func DoFoo()
 ```
 
+---
+
 DoFoo does foo.
 
+
+---
 
 [`foo.DoFoo` on pkg.go.dev](https://pkg.go.dev/mod.com/foo#DoFoo)
 -- @FooVar --
@@ -44,10 +48,14 @@ DoFoo does foo.
 var _ Foo
 ```
 
+---
+
 variable of type foo.Foo
 -- @myFoo --
 ```go
 package myFoo ("mod.com/foo")
 ```
+
+---
 
 [`myFoo` on pkg.go.dev](https://pkg.go.dev/mod.com/foo)

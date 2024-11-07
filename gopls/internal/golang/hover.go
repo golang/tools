@@ -15,6 +15,7 @@ import (
 	"go/format"
 	"go/token"
 	"go/types"
+	"go/version"
 	"io/fs"
 	"path/filepath"
 	"sort"
@@ -80,10 +81,6 @@ type hoverJSON struct {
 	// For example, the "Node" part of "pkg.go.dev/go/ast#Node".
 	LinkAnchor string `json:"linkAnchor"`
 
-	// stdVersion is the Go release version at which this symbol became available.
-	// It is nil for non-std library.
-	stdVersion *stdlib.Version
-
 	// New fields go below, and are unexported. The existing
 	// exported fields are underspecified and have already
 	// constrained our movements too much. A detailed JSON
@@ -103,6 +100,10 @@ type hoverJSON struct {
 	// fields of a (struct) type that were promoted through an
 	// embedded field.
 	promotedFields string
+
+	// footer is additional content to insert at the bottom of the hover
+	// documentation, before the pkgdoc link.
+	footer string
 }
 
 // Hover implements the "textDocument/hover" RPC for Go files.
@@ -602,9 +603,9 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		linkPath = strings.Replace(linkPath, mod.Path, mod.Path+"@"+mod.Version, 1)
 	}
 
-	var version *stdlib.Version
-	if symbol := StdSymbolOf(obj); symbol != nil {
-		version = &symbol.Version
+	var footer string
+	if sym := StdSymbolOf(obj); sym != nil && sym.Version > 0 {
+		footer = fmt.Sprintf("Added in %v", sym.Version)
 	}
 
 	return *hoverRange, &hoverJSON{
@@ -618,7 +619,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		typeDecl:          typeDecl,
 		methods:           methods,
 		promotedFields:    fields,
-		stdVersion:        version,
+		footer:            footer,
 	}, nil
 }
 
@@ -733,6 +734,7 @@ func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Packa
 
 	docText := comment.Text()
 	return rng, &hoverJSON{
+		Signature:         "package " + string(impMetadata.Name),
 		Synopsis:          doc.Synopsis(docText),
 		FullDocumentation: docText,
 	}, nil
@@ -753,11 +755,47 @@ func hoverPackageName(pkg *cache.Package, pgf *parsego.File) (protocol.Range, *h
 		return protocol.Range{}, nil, err
 	}
 	docText := comment.Text()
+
+	// List some package attributes at the bottom of the documentation, if
+	// applicable.
+	type attr struct{ title, value string }
+	var attrs []attr
+
+	if !metadata.IsCommandLineArguments(pkg.Metadata().ID) {
+		attrs = append(attrs, attr{"Package path", string(pkg.Metadata().PkgPath)})
+	}
+
+	if pkg.Metadata().Module != nil {
+		attrs = append(attrs, attr{"Module", pkg.Metadata().Module.Path})
+	}
+
+	// Show the effective language version for this package.
+	if v := pkg.TypesInfo().FileVersions[pgf.File]; v != "" {
+		attr := attr{value: version.Lang(v)}
+		if v == pkg.Types().GoVersion() {
+			attr.title = "Language version"
+		} else {
+			attr.title = "Language version (current file)"
+		}
+		attrs = append(attrs, attr)
+	}
+
+	// TODO(rfindley): consider exec'ing go here to compute DefaultGODEBUG, or
+	// propose adding GODEBUG info to go/packages.
+
+	var footer string
+	for i, attr := range attrs {
+		if i > 0 {
+			footer += "\n"
+		}
+		footer += fmt.Sprintf(" - %s: %s", attr.title, attr.value)
+	}
+
 	return rng, &hoverJSON{
+		Signature:         "package " + string(pkg.Metadata().Name),
 		Synopsis:          doc.Synopsis(docText),
 		FullDocumentation: docText,
-		// Note: including a signature is redundant, since the cursor is already on the
-		// package name.
+		footer:            footer,
 	}, nil
 }
 
@@ -1149,8 +1187,9 @@ func parseFull(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSe
 
 // If pkgURL is non-nil, it should be used to generate doc links.
 func formatHover(h *hoverJSON, options *settings.Options, pkgURL func(path PackagePath, fragment string) protocol.URI) (string, error) {
-	maybeMarkdown := func(s string) string {
-		if s != "" && options.PreferredContentFormat == protocol.Markdown {
+	markdown := options.PreferredContentFormat == protocol.Markdown
+	maybeFenced := func(s string) string {
+		if s != "" && markdown {
 			s = fmt.Sprintf("```go\n%s\n```", strings.Trim(s, "\n"))
 		}
 		return s
@@ -1161,7 +1200,7 @@ func formatHover(h *hoverJSON, options *settings.Options, pkgURL func(path Packa
 		return h.SingleLine, nil
 
 	case settings.NoDocumentation:
-		return maybeMarkdown(h.Signature), nil
+		return maybeFenced(h.Signature), nil
 
 	case settings.Structured:
 		b, err := json.Marshal(h)
@@ -1170,42 +1209,70 @@ func formatHover(h *hoverJSON, options *settings.Options, pkgURL func(path Packa
 		}
 		return string(b), nil
 
-	case settings.SynopsisDocumentation,
-		settings.FullDocumentation:
+	case settings.SynopsisDocumentation, settings.FullDocumentation:
+		var sections [][]string // assembled below
+
+		// Signature section.
+		//
 		// For types, we display TypeDecl and Methods,
 		// but not Signature, which is redundant (= TypeDecl + "\n" + Methods).
 		// For all other symbols, we display Signature;
 		// TypeDecl and Methods are empty.
 		// (This awkwardness is to preserve JSON compatibility.)
-		parts := []string{
-			maybeMarkdown(h.Signature),
-			maybeMarkdown(h.typeDecl),
-			formatDoc(h, options),
-			maybeMarkdown(h.promotedFields),
-			maybeMarkdown(h.methods),
-			fmt.Sprintf("Added in %v", h.stdVersion),
-			formatLink(h, options, pkgURL),
-		}
 		if h.typeDecl != "" {
-			parts[0] = "" // type: suppress redundant Signature
-		}
-		if h.stdVersion == nil || *h.stdVersion == stdlib.Version(0) {
-			parts[5] = "" // suppress stdlib version if not applicable or initial version 1.0
+			sections = append(sections, []string{maybeFenced(h.typeDecl)})
+		} else {
+			sections = append(sections, []string{maybeFenced(h.Signature)})
 		}
 
+		// Doc section.
+		var doc string
+		switch options.HoverKind {
+		case settings.SynopsisDocumentation:
+			doc = h.Synopsis
+		case settings.FullDocumentation:
+			doc = h.FullDocumentation
+		}
+		if options.PreferredContentFormat == protocol.Markdown {
+			doc = DocCommentToMarkdown(doc, options)
+		}
+		sections = append(sections, []string{
+			doc,
+			maybeFenced(h.promotedFields),
+			maybeFenced(h.methods),
+		})
+
+		// Footer section.
+		sections = append(sections, []string{
+			h.footer,
+			formatLink(h, options, pkgURL),
+		})
+
 		var b strings.Builder
-		for _, part := range parts {
-			if part == "" {
-				continue
+		newline := func() {
+			if options.PreferredContentFormat == protocol.Markdown {
+				b.WriteString("\n\n")
+			} else {
+				b.WriteByte('\n')
 			}
-			if b.Len() > 0 {
-				if options.PreferredContentFormat == protocol.Markdown {
-					b.WriteString("\n\n")
-				} else {
-					b.WriteByte('\n')
+		}
+		for _, section := range sections {
+			start := b.Len()
+			for _, part := range section {
+				if part == "" {
+					continue
 				}
+				// When markdown is a available, insert an hline before the start of
+				// the section, if there is content above.
+				if markdown && b.Len() == start && start > 0 {
+					newline()
+					b.WriteString("---")
+				}
+				if b.Len() > 0 {
+					newline()
+				}
+				b.WriteString(part)
 			}
-			b.WriteString(part)
 		}
 		return b.String(), nil
 
@@ -1311,20 +1378,6 @@ func formatLink(h *hoverJSON, options *settings.Options, pkgURL func(path Packag
 	default:
 		return url
 	}
-}
-
-func formatDoc(h *hoverJSON, options *settings.Options) string {
-	var doc string
-	switch options.HoverKind {
-	case settings.SynopsisDocumentation:
-		doc = h.Synopsis
-	case settings.FullDocumentation:
-		doc = h.FullDocumentation
-	}
-	if options.PreferredContentFormat == protocol.Markdown {
-		return DocCommentToMarkdown(doc, options)
-	}
-	return doc
 }
 
 // findDeclInfo returns the syntax nodes involved in the declaration of the

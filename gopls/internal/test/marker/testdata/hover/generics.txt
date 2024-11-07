@@ -32,6 +32,8 @@ type empty interface { // size=16 (0x10)
 }
 ```
 
+---
+
 Hovering over an interface with empty type set must not panic.
 -- generics.go --
 package generics
@@ -70,6 +72,8 @@ type parameter T any
 field Q int64 // size=8
 ```
 
+---
+
 @hover("Q", "Q", valueQ)
 -- @ValueT --
 ```go
@@ -84,8 +88,12 @@ type parameter T any
 field Q int64 // size=8
 ```
 
+---
+
 @hover("Q", "Q", ValueQ)
 
+
+---
 
 [`(generics.Value).Q` on pkg.go.dev](https://pkg.go.dev/mod.com#Value.Q)
 -- @Ptparam --

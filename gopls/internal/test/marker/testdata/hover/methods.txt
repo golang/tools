@@ -46,9 +46,13 @@ type I interface {
 }
 ```
 
+---
+
 ```go
 func (lib.J) C()
 ```
+
+---
 
 [`lib.I` on pkg.go.dev](https://pkg.go.dev/example.com/lib#I)
 -- @J --
@@ -56,16 +60,22 @@ func (lib.J) C()
 type J interface{ C() }
 ```
 
+---
+
 [`lib.J` on pkg.go.dev](https://pkg.go.dev/example.com/lib#J)
 -- @S --
 ```go
 type S struct{ I }
 ```
 
+---
+
 ```go
 func (s lib.S) A()
 func (lib.J) C()
 func (s *lib.S) PA()
 ```
+
+---
 
 [`lib.S` on pkg.go.dev](https://pkg.go.dev/example.com/lib#S)

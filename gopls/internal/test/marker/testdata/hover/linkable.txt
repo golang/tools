@@ -60,14 +60,20 @@ func _() {
 field Embed int64
 ```
 
+---
+
 [`(p.E).Embed` on pkg.go.dev](https://pkg.go.dev/mod.com#E.Embed)
 -- @F --
 ```go
 field F int64 // size=8, offset=8
 ```
 
+---
+
 @hover("F", "F", F)
 
+
+---
 
 [`(p.T).F` on pkg.go.dev](https://pkg.go.dev/mod.com#T.F)
 -- @Local --
@@ -76,6 +82,8 @@ type Local struct { // size=8
 	E
 }
 ```
+
+---
 
 Local types should not be linkable, even if they are capitalized.
 
@@ -88,6 +96,8 @@ Embed int64 // through E
 ```go
 field Nested int64 // size=8, offset=0
 ```
+
+---
 
 Nested fields should also be linkable.
 -- @T --
@@ -106,6 +116,8 @@ type T struct { // size=32 (0x20)
 }
 ```
 
+---
+
 T is in the package scope, and so should be linkable.
 
 
@@ -119,16 +131,22 @@ func (T) M()
 func (T) m()
 ```
 
+---
+
 [`p.T` on pkg.go.dev](https://pkg.go.dev/mod.com#T)
 -- @X --
 ```go
 var X int64
 ```
 
+---
+
 Local variables should not be linkable, even if they are capitalized.
 -- @f --
 ```go
 field f int64 // size=8, offset=0
 ```
+
+---
 
 @hover("f", "f", f)

@@ -43,6 +43,8 @@ func _() {
 func Example()
 ```
 
+---
+
 [`cgo.Example` on pkg.go.dev](https://pkg.go.dev/cgo.test/cgo#Example)
 -- usecgo/usecgo.go --
 package cgoimport
@@ -58,5 +60,7 @@ func _() {
 ```go
 func cgo.Example()
 ```
+
+---
 
 [`cgo.Example` on pkg.go.dev](https://pkg.go.dev/cgo.test/cgo#Example)

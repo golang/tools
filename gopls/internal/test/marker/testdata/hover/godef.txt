@@ -26,8 +26,12 @@ func TestA2(t *testing.T)
 field Member string
 ```
 
+---
+
 @loc(Member, "Member")
 
+
+---
 
 [`(a.Thing).Member` on pkg.go.dev](https://pkg.go.dev/godef.test/a#Thing.Member)
 -- a/d.go --
@@ -90,14 +94,20 @@ var nextThing NextThing //@hover("NextThing", "NextThing", NextThing), def("Next
 func Things(val []string) []Thing
 ```
 
+---
+
 [`a.Things` on pkg.go.dev](https://pkg.go.dev/godef.test/a#Things)
 -- @ther --
 ```go
 var Other Thing
 ```
 
+---
+
 @loc(Other, "Other")
 
+
+---
 
 [`a.Other` on pkg.go.dev](https://pkg.go.dev/godef.test/a#Other)
 -- @a --
@@ -108,12 +118,16 @@ type Thing struct {
 }
 ```
 
+---
+
 ```go
 func (t Thing) Method(i int) string
 func (t *Thing) Method2(i int, j int) (error, string)
 func (t Thing) Method3()
 func (t *Thing) private()
 ```
+
+---
 
 [`a.Thing` on pkg.go.dev](https://pkg.go.dev/godef.test/a#Thing)
 -- @NextThing --
@@ -123,6 +137,8 @@ type NextThing struct {
 	Value int
 }
 ```
+
+---
 
 ```go
 // Embedded fields:
@@ -137,11 +153,15 @@ func (n NextThing) another() string
 func (t *Thing) private()
 ```
 
+---
+
 [`a.NextThing` on pkg.go.dev](https://pkg.go.dev/godef.test/a#NextThing)
 -- @eth --
 ```go
 func (t Thing) Method(i int) string
 ```
+
+---
 
 [`(a.Thing).Method` on pkg.go.dev](https://pkg.go.dev/godef.test/a#Thing.Method)
 -- a/f.go --
@@ -326,11 +346,15 @@ func _() {
 field x string
 ```
 
+---
+
 X value field
 -- @hoverStructKeyY --
 ```go
 field y string
 ```
+
+---
 
 Y key field
 -- @nestedNumber --
@@ -338,11 +362,15 @@ Y key field
 field number int64
 ```
 
+---
+
 nested number
 -- @nestedString --
 ```go
 field str string
 ```
+
+---
 
 nested string
 -- @openMethod --
@@ -350,11 +378,15 @@ nested string
 func (interface) open() error
 ```
 
+---
+
 open method comment
 -- @nestedMap --
 ```go
 field m map[string]float64
 ```
+
+---
 
 nested map
 -- b/e.go --

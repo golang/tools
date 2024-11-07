@@ -42,8 +42,12 @@ func GF[P any] (p P) { //@hover("GF", "GF", GF)
 field F P
 ```
 
+---
+
 @hover("F", "F", F),hover("P", "P", FP)
 
+
+---
 
 [`(generic.GT).F` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT.F)
 -- @FP --
@@ -55,6 +59,8 @@ type parameter P any
 func GF[P any](p P)
 ```
 
+---
+
 [`generic.GF` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GF)
 -- @GT --
 ```go
@@ -62,6 +68,8 @@ type GT[P any] struct {
 	F P //@hover("F", "F", F),hover("P", "P", FP)
 }
 ```
+
+---
 
 Hovering over type parameters should link to documentation.
 
@@ -71,6 +79,8 @@ TODO(rfindley): should it? We should probably link to the type.
 ```go
 func (GT[P]) M(p P)
 ```
+
+---
 
 [`generic.GT` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT)
 -- @GTP --
@@ -84,6 +94,8 @@ type GT[P any] struct {
 }
 ```
 
+---
+
 Hovering over type parameters should link to documentation.
 
 TODO(rfindley): should it? We should probably link to the type.
@@ -93,11 +105,15 @@ TODO(rfindley): should it? We should probably link to the type.
 func (GT[P]) M(p P)
 ```
 
+---
+
 [`generic.GT` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT)
 -- @M --
 ```go
 func (GT[P]) M(p P)
 ```
+
+---
 
 [`(generic.GT).M` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT.M)
 -- @f --
@@ -109,6 +125,8 @@ var f func(p int)
 func generic.GF(p int) // func[P any](p P)
 ```
 
+---
+
 [`generic.GF` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GF)
 -- @pP --
 ```go
@@ -119,14 +137,20 @@ type parameter P any
 var x generic.GT[int]
 ```
 
+---
+
 @hover("GT", "GT", xGT)
 -- @xF --
 ```go
 field F int
 ```
 
+---
+
 @hover("F", "F", F),hover("P", "P", FP)
 
+
+---
 
 [`(generic.GT).F` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT.F)
 -- @xGT --
@@ -136,6 +160,8 @@ type GT[P any] struct {
 }
 ```
 
+---
+
 Hovering over type parameters should link to documentation.
 
 TODO(rfindley): should it? We should probably link to the type.
@@ -144,5 +170,7 @@ TODO(rfindley): should it? We should probably link to the type.
 ```go
 func (generic.GT[P]) M(p P)
 ```
+
+---
 
 [`generic.GT` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#GT)

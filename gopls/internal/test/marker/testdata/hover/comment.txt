@@ -49,8 +49,12 @@ func ParseInt(s string, base int, bitSize int) (int64, error) {
 func Conv(s string) int
 ```
 
+---
+
 \[Conv] converts s to an int. //@hover("Conv", "Conv", Conv)
 
+
+---
 
 [`p.Conv` on pkg.go.dev](https://pkg.go.dev/mod.com#Conv)
 -- @NumberBase --
@@ -58,20 +62,40 @@ func Conv(s string) int
 const NumberBase untyped int = 10
 ```
 
+---
+
 \[NumberBase] is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase)
 
 
+---
+
 [`p.NumberBase` on pkg.go.dev](https://pkg.go.dev/mod.com#NumberBase)
 -- @strconv --
+```go
+package util
+```
+
+---
+
 Package util provides utility functions.
 -- @strconvParseInt --
 ```go
 func ParseInt(s string, base int, bitSize int) (int64, error)
 ```
 
+---
+
 ParseInt interprets a string s in the given base (0, 2 to 36) and bit size (0 to 64) and returns the corresponding value i.
 
 
+---
+
 [`util.ParseInt` on pkg.go.dev](https://pkg.go.dev/mod.com/util#ParseInt)
 -- @util --
+```go
+package util
+```
+
+---
+
 Package util provides utility functions.
