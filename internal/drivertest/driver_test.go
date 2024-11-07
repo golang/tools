@@ -68,7 +68,7 @@ package lib
 			packages.NeedModule |
 			packages.NeedEmbedFiles |
 			packages.LoadMode(packagesinternal.DepsErrors) |
-			packages.LoadMode(packagesinternal.ForTest),
+			packages.NeedForTest,
 	}
 
 	tests := []struct {

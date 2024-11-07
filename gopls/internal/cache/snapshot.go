@@ -385,7 +385,7 @@ func (s *Snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packa
 			packages.NeedModule |
 			packages.NeedEmbedFiles |
 			packages.LoadMode(packagesinternal.DepsErrors) |
-			packages.LoadMode(packagesinternal.ForTest),
+			packages.NeedForTest,
 		Fset:    nil, // we do our own parsing
 		Overlay: s.buildOverlays(),
 		ParseFile: func(*token.FileSet, string, []byte) (*ast.File, error) {

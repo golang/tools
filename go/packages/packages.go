@@ -55,7 +55,7 @@ const (
 	// NeedName adds Name and PkgPath.
 	NeedName LoadMode = 1 << iota
 
-	// NeedFiles adds GoFiles, OtherFiles, and IgnoredFiles
+	// NeedFiles adds Dir, GoFiles, OtherFiles, and IgnoredFiles
 	NeedFiles
 
 	// NeedCompiledGoFiles adds CompiledGoFiles.
@@ -86,9 +86,10 @@ const (
 	// needInternalDepsErrors adds the internal deps errors field for use by gopls.
 	needInternalDepsErrors
 
-	// needInternalForTest adds the internal forTest field.
+	// NeedForTest adds ForTest.
+	//
 	// Tests must also be set on the context for this field to be populated.
-	needInternalForTest
+	NeedForTest
 
 	// typecheckCgo enables full support for type checking cgo. Requires Go 1.15+.
 	// Modifies CompiledGoFiles and Types, and has no effect on its own.
@@ -434,6 +435,12 @@ type Package struct {
 	// PkgPath is the package path as used by the go/types package.
 	PkgPath string
 
+	// Dir is the directory associated with the package, if it exists.
+	//
+	// For packages listed by the go command, this is the directory containing
+	// the package files.
+	Dir string
+
 	// Errors contains any errors encountered querying the metadata
 	// of the package, or while parsing or type-checking its files.
 	Errors []Error
@@ -521,8 +528,8 @@ type Package struct {
 
 	// -- internal --
 
-	// forTest is the package under test, if any.
-	forTest string
+	// ForTest is the package under test, if any.
+	ForTest string
 
 	// depsErrors is the DepsErrors field from the go list response, if any.
 	depsErrors []*packagesinternal.PackageError
@@ -551,9 +558,6 @@ type ModuleError struct {
 }
 
 func init() {
-	packagesinternal.GetForTest = func(p interface{}) string {
-		return p.(*Package).forTest
-	}
 	packagesinternal.GetDepsErrors = func(p interface{}) []*packagesinternal.PackageError {
 		return p.(*Package).depsErrors
 	}
@@ -565,7 +569,6 @@ func init() {
 	}
 	packagesinternal.TypecheckCgo = int(typecheckCgo)
 	packagesinternal.DepsErrors = int(needInternalDepsErrors)
-	packagesinternal.ForTest = int(needInternalForTest)
 }
 
 // An Error describes a problem with a package's metadata, syntax, or types.

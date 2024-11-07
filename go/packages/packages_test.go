@@ -26,11 +26,13 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/packagestest"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
 
 // testCtx is canceled when the test binary is about to time out.
@@ -2325,6 +2327,10 @@ func TestLoadModeStrings(t *testing.T) {
 			"(NeedName|NeedExportFile)",
 		},
 		{
+			packages.NeedForTest | packages.NeedEmbedFiles | packages.NeedEmbedPatterns,
+			"(NeedForTest|NeedEmbedFiles|NeedEmbedPatterns)",
+		},
+		{
 			packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedDeps | packages.NeedExportFile | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedTypesSizes,
 			"(NeedName|NeedFiles|NeedCompiledGoFiles|NeedImports|NeedDeps|NeedExportFile|NeedTypes|NeedSyntax|NeedTypesInfo|NeedTypesSizes)",
 		},
@@ -2425,8 +2431,7 @@ func testForTestField(t *testing.T, exporter packagestest.Exporter) {
 		if !hasTestFile {
 			continue
 		}
-		got := packagesinternal.GetForTest(pkg)
-		if got != forTest {
+		if got := pkg.ForTest; got != forTest {
 			t.Errorf("expected %q, got %q", forTest, got)
 		}
 	}
@@ -3208,4 +3213,103 @@ func foo() int {
 	if pkgs[0].TypesInfo == nil {
 		t.Errorf("expected types info to be present but got nil")
 	}
+}
+
+// TestDirAndForTest tests the new fields added as part of golang/go#38445.
+func TestDirAndForTest(t *testing.T) {
+	dir := writeTree(t, `
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a/a.go --
+package a
+
+func Foo() int { return 1 }
+
+-- a/a_test.go --
+package a
+
+func Bar() int { return 2 }
+
+-- a/a_x_test.go --
+package a_test
+
+import (
+	"testing"
+
+	"example.com/a"
+	"example.com/b"
+)
+
+func TestFooBar(t *testing.T) {
+	if got := a.Foo() + a.Bar() + b.Baz(); got != 6 {
+		t.Errorf("whoops!")
+	}
+}
+
+-- b/b.go --
+package b
+
+import "example.com/a"
+
+func Baz() int { return 3 }
+
+func Foo() int { return a.Foo() }
+`)
+
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedForTest |
+			packages.NeedImports,
+		Dir:   dir,
+		Tests: true,
+	}, "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	type result struct{ Dir, ForTest string }
+	got := make(map[string]result)
+	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
+		if strings.Contains(pkg.PkgPath, ".") { // ignore std
+			rel, err := filepath.Rel(dir, pkg.Dir)
+			if err != nil {
+				t.Errorf("Rel(%q, %q) failed: %v", dir, pkg.Dir, err)
+				return
+			}
+			got[pkg.ID] = result{
+				Dir:     rel,
+				ForTest: pkg.ForTest,
+			}
+		}
+	})
+	want := map[string]result{
+		"example.com/a":                           {"a", ""},
+		"example.com/a.test":                      {"a", ""},
+		"example.com/a [example.com/a.test]":      {"a", "example.com/a"}, // test variant
+		"example.com/a_test [example.com/a.test]": {"a", "example.com/a"}, // x_test
+		"example.com/b [example.com/a.test]":      {"b", "example.com/a"}, // intermediate test variant
+		"example.com/b":                           {"b", ""},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Load returned mismatching ForTest fields (ID->result -want +got):\n%s", diff)
+	}
+	t.Logf("Packages: %+v", pkgs)
+}
+
+func writeTree(t *testing.T, archive string) string {
+	root := t.TempDir()
+
+	for _, f := range txtar.Parse([]byte(archive)).Files {
+		filename := filepath.Join(root, f.Name)
+		if err := os.MkdirAll(filepath.Dir(filename), 0777); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filename, f.Data, 0666); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
 }

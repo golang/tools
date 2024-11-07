@@ -194,7 +194,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 					return errorf("go/packages returned multiple standalone packages")
 				}
 				standalonePkg = pkg
-			} else if packagesinternal.GetForTest(pkg) == "" && !strings.HasSuffix(pkg.ID, ".test") {
+			} else if pkg.ForTest == "" && !strings.HasSuffix(pkg.ID, ".test") {
 				return errorf("go/packages returned unexpected package %q for standalone file", pkg.ID)
 			}
 		}
@@ -259,7 +259,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 			s.setBuiltin(pkg.GoFiles[0])
 			continue
 		}
-		if packagesinternal.GetForTest(pkg) == "builtin" {
+		if pkg.ForTest == "builtin" {
 			// We don't care about test variants of builtin. This caused test
 			// failures in https://go.dev/cl/620196, when a test file was added to
 			// builtin.
@@ -416,7 +416,7 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 		ID:         id,
 		PkgPath:    pkgPath,
 		Name:       PackageName(pkg.Name),
-		ForTest:    PackagePath(packagesinternal.GetForTest(pkg)),
+		ForTest:    PackagePath(pkg.ForTest),
 		TypesSizes: pkg.TypesSizes,
 		LoadDir:    loadDir,
 		Module:     pkg.Module,

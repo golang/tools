@@ -342,7 +342,7 @@ func loadPackages(query string, needExport bool) (map[PackageID]string, Metadata
 			packages.NeedModule |
 			packages.NeedEmbedFiles |
 			packages.LoadMode(packagesinternal.DepsErrors) |
-			packages.LoadMode(packagesinternal.ForTest),
+			packages.NeedForTest,
 		Tests: true,
 	}
 	if needExport {
@@ -364,7 +364,7 @@ func loadPackages(query string, needExport bool) (map[PackageID]string, Metadata
 			ID:         id,
 			PkgPath:    PackagePath(pkg.PkgPath),
 			Name:       packageName(pkg.Name),
-			ForTest:    PackagePath(packagesinternal.GetForTest(pkg)),
+			ForTest:    PackagePath(pkg.ForTest),
 			TypesSizes: pkg.TypesSizes,
 			LoadDir:    cfg.Dir,
 			Module:     pkg.Module,
