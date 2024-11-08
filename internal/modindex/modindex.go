@@ -67,7 +67,7 @@ func modindexTimed(onlyBefore time.Time, cachedir Abspath, clear bool) (bool, er
 		if clear && err != nil {
 			return false, err
 		}
-		// TODO(pjw): check that most of those directorie still exist
+		// TODO(pjw): check that most of those directories still exist
 	}
 	cfg := &work{
 		onlyBefore: onlyBefore,
@@ -80,8 +80,8 @@ func modindexTimed(onlyBefore time.Time, cachedir Abspath, clear bool) (bool, er
 	if err := cfg.buildIndex(); err != nil {
 		return false, err
 	}
-	if len(cfg.newIndex.Entries) == 0 {
-		// no changes, don't write a new index
+	if len(cfg.newIndex.Entries) == 0 && curIndex != nil {
+		// no changes from existing curIndex, don't write a new index
 		return false, nil
 	}
 	if err := cfg.writeIndex(); err != nil {

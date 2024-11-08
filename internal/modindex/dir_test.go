@@ -205,41 +205,42 @@ func TestDirsSinglePath(t *testing.T) {
 	}
 }
 
-/* more data for tests
+func TestMissingCachedir(t *testing.T) {
+	// behave properly if the cached dir is empty
+	dir := testModCache(t)
+	if err := Create(dir); err != nil {
+		t.Fatal(err)
+	}
+	ixd, err := IndexDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	des, err := os.ReadDir(ixd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(des) != 2 {
+		t.Errorf("got %d, butexpected two entries in index dir", len(des))
+	}
+}
 
-directories.go:169: WEIRD cloud.google.com/go/iam/admin/apiv1
-map[cloud.google.com/go:1 cloud.google.com/go/iam:5]:
-[cloud.google.com/go/iam@v0.12.0/admin/apiv1
-cloud.google.com/go/iam@v0.13.0/admin/apiv1
-cloud.google.com/go/iam@v0.3.0/admin/apiv1
-cloud.google.com/go/iam@v0.7.0/admin/apiv1
-cloud.google.com/go/iam@v1.0.1/admin/apiv1
-cloud.google.com/go@v0.94.0/iam/admin/apiv1]
-directories.go:169: WEIRD cloud.google.com/go/iam
-map[cloud.google.com/go:1 cloud.google.com/go/iam:5]:
-[cloud.google.com/go/iam@v0.12.0 cloud.google.com/go/iam@v0.13.0
-cloud.google.com/go/iam@v0.3.0 cloud.google.com/go/iam@v0.7.0
-cloud.google.com/go/iam@v1.0.1 cloud.google.com/go@v0.94.0/iam]
-directories.go:169: WEIRD cloud.google.com/go/compute/apiv1
-map[cloud.google.com/go:1 cloud.google.com/go/compute:4]:
-[cloud.google.com/go/compute@v1.12.1/apiv1
-cloud.google.com/go/compute@v1.18.0/apiv1
-cloud.google.com/go/compute@v1.19.0/apiv1
-cloud.google.com/go/compute@v1.7.0/apiv1
-cloud.google.com/go@v0.94.0/compute/apiv1]
-directories.go:169: WEIRD cloud.google.com/go/longrunning/autogen
-map[cloud.google.com/go:2 cloud.google.com/go/longrunning:2]:
-[cloud.google.com/go/longrunning@v0.3.0/autogen
-cloud.google.com/go/longrunning@v0.4.1/autogen
-cloud.google.com/go@v0.104.0/longrunning/autogen
-cloud.google.com/go@v0.94.0/longrunning/autogen]
-directories.go:169: WEIRD cloud.google.com/go/iam/credentials/apiv1
-map[cloud.google.com/go:1 cloud.google.com/go/iam:5]:
-[cloud.google.com/go/iam@v0.12.0/credentials/apiv1
-cloud.google.com/go/iam@v0.13.0/credentials/apiv1
-cloud.google.com/go/iam@v0.3.0/credentials/apiv1
-cloud.google.com/go/iam@v0.7.0/credentials/apiv1
-cloud.google.com/go/iam@v1.0.1/credentials/apiv1
-cloud.google.com/go@v0.94.0/iam/credentials/apiv1]
-
-*/
+func TestMissingIndex(t *testing.T) {
+	// behave properly if there is no existing index
+	dir := testModCache(t)
+	if ok, err := Update(dir); err != nil {
+		t.Fatal(err)
+	} else if !ok {
+		t.Error("Update returned !ok")
+	}
+	ixd, err := IndexDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	des, err := os.ReadDir(ixd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(des) != 2 {
+		t.Errorf("got %d, butexpected two entries in index dir", len(des))
+	}
+}

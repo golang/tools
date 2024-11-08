@@ -7,9 +7,11 @@ package modindex
 import (
 	"bufio"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"hash/crc64"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -85,7 +87,8 @@ type Entry struct {
 
 // ReadIndex reads the latest version of the on-disk index
 // for the cache directory cd.
-// It returns nil if there is none, or if there is an error.
+// It returns (nil, nil) if there is no index, but returns
+// a non-nil error if the index exists but could not be read.
 func ReadIndex(cachedir string) (*Index, error) {
 	cachedir, err := filepath.Abs(cachedir)
 	if err != nil {
@@ -100,10 +103,10 @@ func ReadIndex(cachedir string) (*Index, error) {
 	iname := filepath.Join(dir, base)
 	buf, err := os.ReadFile(iname)
 	if err != nil {
-		if err == os.ErrNotExist {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("reading %s: %s %T", iname, err, err)
+		return nil, fmt.Errorf("cannot read %s: %w", iname, err)
 	}
 	fname := filepath.Join(dir, string(buf))
 	fd, err := os.Open(fname)
@@ -235,7 +238,6 @@ func writeIndexToFile(x *Index, fd *os.File) error {
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	log.Printf("%d Entries %d names", len(x.Entries), cnt)
 	return nil
 }
 
