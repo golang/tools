@@ -19,7 +19,7 @@ claiming it.
 ## Getting started
 
 Most of the `gopls` logic is in the `golang.org/x/tools/gopls/internal`
-directory. See [design/implementation.md] for an overview of the code organization.
+directory. See [design/implementation.md](./design/implementation.md) for an overview of the code organization.
 
 ## Build
 
