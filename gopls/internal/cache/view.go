@@ -356,6 +356,16 @@ func (v *View) Folder() *Folder {
 	return v.folder
 }
 
+// Env returns the environment to use for running go commands in this view.
+func (v *View) Env() []string {
+	return slices.Concat(
+		os.Environ(),
+		v.folder.Options.EnvSlice(),
+		[]string{"GO111MODULE=" + v.adjustedGO111MODULE()},
+		v.EnvOverlay(),
+	)
+}
+
 // UpdateFolders updates the set of views for the new folders.
 //
 // Calling this causes each view to be reinitialized.

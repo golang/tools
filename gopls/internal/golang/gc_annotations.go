@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gocommand"
 )
 
 // GCOptimizationDetails invokes the Go compiler on the specified
@@ -57,14 +56,10 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 	if !strings.HasPrefix(outDir, "/") {
 		outDirURI = protocol.DocumentURI(strings.Replace(string(outDirURI), "file:///", "file://", 1))
 	}
-	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
-		Verb: "build",
-		Args: []string{
-			fmt.Sprintf("-gcflags=-json=0,%s", outDirURI),
-			fmt.Sprintf("-o=%s", tmpFile.Name()),
-			".",
-		},
-		WorkingDir: pkgDir,
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, pkgDir, "build", []string{
+		fmt.Sprintf("-gcflags=-json=0,%s", outDirURI),
+		fmt.Sprintf("-o=%s", tmpFile.Name()),
+		".",
 	})
 	if err != nil {
 		return nil, err

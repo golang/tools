@@ -13,7 +13,6 @@ import (
 	"go/build/constraint"
 	"go/parser"
 	"go/token"
-	"go/types"
 	"os"
 	"path"
 	"path/filepath"
@@ -26,7 +25,6 @@ import (
 	"sync"
 
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
@@ -49,8 +47,6 @@ import (
 	"golang.org/x/tools/internal/event/label"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
-	"golang.org/x/tools/internal/packagesinternal"
-	"golang.org/x/tools/internal/typesinternal"
 )
 
 // A Snapshot represents the current state for a given view.
@@ -363,50 +359,6 @@ func (s *Snapshot) Templates() map[protocol.DocumentURI]file.Handle {
 	return tmpls
 }
 
-// config returns the configuration used for the snapshot's interaction with
-// the go/packages API. It uses the given working directory.
-//
-// TODO(rstambler): go/packages requires that we do not provide overlays for
-// multiple modules in one config, so buildOverlay needs to filter overlays by
-// module.
-func (s *Snapshot) config(ctx context.Context, inv *gocommand.Invocation) *packages.Config {
-
-	cfg := &packages.Config{
-		Context:    ctx,
-		Dir:        inv.WorkingDir,
-		Env:        inv.Env,
-		BuildFlags: inv.BuildFlags,
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedCompiledGoFiles |
-			packages.NeedImports |
-			packages.NeedDeps |
-			packages.NeedTypesSizes |
-			packages.NeedModule |
-			packages.NeedEmbedFiles |
-			packages.LoadMode(packagesinternal.DepsErrors) |
-			packages.NeedForTest,
-		Fset:    nil, // we do our own parsing
-		Overlay: s.buildOverlays(),
-		ParseFile: func(*token.FileSet, string, []byte) (*ast.File, error) {
-			panic("go/packages must not be used to parse files")
-		},
-		Logf: func(format string, args ...interface{}) {
-			if s.Options().VerboseOutput {
-				event.Log(ctx, fmt.Sprintf(format, args...))
-			}
-		},
-		Tests: true,
-	}
-	packagesinternal.SetModFile(cfg, inv.ModFile)
-	packagesinternal.SetModFlag(cfg, inv.ModFlag)
-	// We want to type check cgo code if go/types supports it.
-	if typesinternal.SetUsesCgo(&types.Config{}) {
-		cfg.Mode |= packages.LoadMode(packagesinternal.TypecheckCgo)
-	}
-	return cfg
-}
-
 // RunGoModUpdateCommands runs a series of `go` commands that updates the go.mod
 // and go.sum file for wd, and returns their updated contents.
 //
@@ -423,16 +375,14 @@ func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, modURI protocol.D
 	// TODO(rfindley): we must use ModFlag and ModFile here (rather than simply
 	// setting Args), because without knowing the verb, we can't know whether
 	// ModFlag is appropriate. Refactor so that args can be set by the caller.
-	inv, cleanupInvocation, err := s.GoCommandInvocation(true, &gocommand.Invocation{
-		WorkingDir: modURI.Dir().Path(),
-		ModFlag:    "mod",
-		ModFile:    filepath.Join(tempDir, "go.mod"),
-		Env:        []string{"GOWORK=off"},
-	})
+	inv, cleanupInvocation, err := s.GoCommandInvocation(true, modURI.Dir().Path(), "", nil, "GOWORK=off")
 	if err != nil {
 		return nil, nil, err
 	}
 	defer cleanupInvocation()
+
+	inv.ModFlag = "mod"
+	inv.ModFile = filepath.Join(tempDir, "go.mod")
 	invoke := func(args ...string) (*bytes.Buffer, error) {
 		inv.Verb = args[0]
 		inv.Args = args[1:]
@@ -510,22 +460,16 @@ func TempModDir(ctx context.Context, fs file.Source, modURI protocol.DocumentURI
 // BuildFlags should be more clearly expressed in the API.
 //
 // If allowNetwork is set, do not set GOPROXY=off.
-func (s *Snapshot) GoCommandInvocation(allowNetwork bool, inv *gocommand.Invocation) (_ *gocommand.Invocation, cleanup func(), _ error) {
-	// TODO(rfindley): it's not clear that this is doing the right thing.
-	// Should inv.Env really overwrite view.options? Should s.view.envOverlay
-	// overwrite inv.Env? (Do we ever invoke this with a non-empty inv.Env?)
-	//
-	// We should survey existing uses and write down rules for how env is
-	// applied.
-	inv.Env = slices.Concat(
-		os.Environ(),
-		s.Options().EnvSlice(),
-		inv.Env,
-		[]string{"GO111MODULE=" + s.view.adjustedGO111MODULE()},
-		s.view.EnvOverlay(),
-	)
-	inv.BuildFlags = slices.Clone(s.Options().BuildFlags)
-
+//
+// TODO(rfindley): use a named boolean for allowNetwork.
+func (s *Snapshot) GoCommandInvocation(allowNetwork bool, dir, verb string, args []string, env ...string) (_ *gocommand.Invocation, cleanup func(), _ error) {
+	inv := &gocommand.Invocation{
+		Verb:       verb,
+		Args:       args,
+		WorkingDir: dir,
+		Env:        append(s.view.Env(), env...),
+		BuildFlags: slices.Clone(s.Options().BuildFlags),
+	}
 	if !allowNetwork {
 		inv.Env = append(inv.Env, "GOPROXY=off")
 	}

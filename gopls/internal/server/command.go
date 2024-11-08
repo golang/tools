@@ -589,11 +589,7 @@ func (c *commandHandler) Vendor(ctx context.Context, args command.URIArg) error 
 		// modules.txt in-place. In that case we could theoretically allow this
 		// command to run concurrently.
 		stderr := new(bytes.Buffer)
-		inv, cleanupInvocation, err := deps.snapshot.GoCommandInvocation(true, &gocommand.Invocation{
-			Verb:       "mod",
-			Args:       []string{"vendor"},
-			WorkingDir: filepath.Dir(args.URI.Path()),
-		})
+		inv, cleanupInvocation, err := deps.snapshot.GoCommandInvocation(true, filepath.Dir(args.URI.Path()), "mod", []string{"vendor"})
 		if err != nil {
 			return err
 		}
@@ -754,11 +750,11 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 	// Run `go test -run Func` on each test.
 	var failedTests int
 	for _, funcName := range tests {
-		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
-			Verb:       "test",
-			Args:       []string{pkgPath, "-v", "-count=1", fmt.Sprintf("-run=^%s$", regexp.QuoteMeta(funcName))},
-			WorkingDir: filepath.Dir(uri.Path()),
-		})
+		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false,
+			filepath.Dir(uri.Path()),
+			"test",
+			[]string{pkgPath, "-v", "-count=1", fmt.Sprintf("-run=^%s$", regexp.QuoteMeta(funcName))},
+		)
 		if err != nil {
 			return err
 		}
@@ -774,11 +770,11 @@ func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot,
 	// Run `go test -run=^$ -bench Func` on each test.
 	var failedBenchmarks int
 	for _, funcName := range benchmarks {
-		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
-			Verb:       "test",
-			Args:       []string{pkgPath, "-v", "-run=^$", fmt.Sprintf("-bench=^%s$", regexp.QuoteMeta(funcName))},
-			WorkingDir: filepath.Dir(uri.Path()),
-		})
+		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false,
+			filepath.Dir(uri.Path()),
+			"test",
+			[]string{pkgPath, "-v", "-run=^$", fmt.Sprintf("-bench=^%s$", regexp.QuoteMeta(funcName))},
+		)
 		if err != nil {
 			return err
 		}
@@ -837,11 +833,11 @@ func (c *commandHandler) Generate(ctx context.Context, args command.GenerateArgs
 		if args.Recursive {
 			pattern = "./..."
 		}
-		inv, cleanupInvocation, err := deps.snapshot.GoCommandInvocation(true, &gocommand.Invocation{
-			Verb:       "generate",
-			Args:       []string{"-x", pattern},
-			WorkingDir: args.Dir.Path(),
-		})
+		inv, cleanupInvocation, err := deps.snapshot.GoCommandInvocation(true,
+			args.Dir.Path(),
+			"generate",
+			[]string{"-x", pattern},
+		)
 		if err != nil {
 			return err
 		}
@@ -870,12 +866,12 @@ func (c *commandHandler) GoGetPackage(ctx context.Context, args command.GoGetPac
 		}
 		defer cleanupModDir()
 
-		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(true, &gocommand.Invocation{
-			Verb:       "list",
-			Args:       []string{"-f", "{{.Module.Path}}@{{.Module.Version}}", "-mod=mod", "-modfile=" + filepath.Join(tempDir, "go.mod"), args.Pkg},
-			Env:        []string{"GOWORK=off"},
-			WorkingDir: modURI.Dir().Path(),
-		})
+		inv, cleanupInvocation, err := snapshot.GoCommandInvocation(true,
+			modURI.Dir().Path(),
+			"list",
+			[]string{"-f", "{{.Module.Path}}@{{.Module.Version}}", "-mod=mod", "-modfile=" + filepath.Join(tempDir, "go.mod"), args.Pkg},
+			"GOWORK=off",
+		)
 		if err != nil {
 			return err
 		}
@@ -1005,12 +1001,12 @@ func addModuleRequire(invoke func(...string) (*bytes.Buffer, error), args []stri
 
 // TODO(rfindley): inline.
 func (s *server) getUpgrades(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, modules []string) (map[string]string, error) {
-	inv, cleanup, err := snapshot.GoCommandInvocation(true, &gocommand.Invocation{
-		Verb: "list",
+	inv, cleanup, err := snapshot.GoCommandInvocation(true,
+		filepath.Dir(uri.Path()),
+		"list",
 		// -mod=readonly is necessary when vendor is present (golang/go#66055)
-		Args:       append([]string{"-mod=readonly", "-m", "-u", "-json"}, modules...),
-		WorkingDir: filepath.Dir(uri.Path()),
-	})
+		append([]string{"-mod=readonly", "-m", "-u", "-json"}, modules...),
+	)
 	if err != nil {
 		return nil, err
 	}

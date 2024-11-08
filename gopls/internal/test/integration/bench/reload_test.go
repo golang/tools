@@ -4,6 +4,9 @@
 package bench
 
 import (
+	"fmt"
+	"path"
+	"regexp"
 	"testing"
 
 	. "golang.org/x/tools/gopls/internal/test/integration"
@@ -14,39 +17,55 @@ import (
 // This ensures we are able to diagnose a changed file without reloading all
 // invalidated packages. See also golang/go#61344
 func BenchmarkReload(b *testing.B) {
-	// TODO(rfindley): add more tests, make this test table-driven
-	const (
-		repo = "kubernetes"
-		// pkg/util/hash is transitively imported by a large number of packages.
-		// We should not need to reload those packages to get a diagnostic.
-		file = "pkg/util/hash/hash.go"
-	)
-	b.Run(repo, func(b *testing.B) {
-		env := getRepo(b, repo).sharedEnv(b)
+	type replace map[string]string
+	tests := []struct {
+		repo string
+		file string
+		// replacements must be 'reversible', in the sense that the replacing
+		// string is unique.
+		replace replace
+	}{
+		// pkg/util/hash is transitively imported by a large number of packages. We
+		// should not need to reload those packages to get a diagnostic.
+		{"kubernetes", "pkg/util/hash/hash.go", replace{`"hash"`: `"hashx"`}},
+		{"kubernetes", "pkg/kubelet/kubelet.go", replace{
+			`"k8s.io/kubernetes/pkg/kubelet/config"`: `"k8s.io/kubernetes/pkg/kubelet/configx"`,
+		}},
+	}
 
-		env.OpenFile(file)
-		defer closeBuffer(b, env, file)
+	for _, test := range tests {
+		b.Run(fmt.Sprintf("%s/%s", test.repo, path.Base(test.file)), func(b *testing.B) {
+			env := getRepo(b, test.repo).sharedEnv(b)
 
-		env.AfterChange()
+			env.OpenFile(test.file)
+			defer closeBuffer(b, env, test.file)
 
-		if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(repo, "reload")); stopAndRecord != nil {
-			defer stopAndRecord()
-		}
+			env.AfterChange()
 
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			// Change the "hash" import. This may result in cache hits, but that's
-			// OK: the goal is to ensure that we don't reload more than just the
-			// current package.
-			env.RegexpReplace(file, `"hash"`, `"hashx"`)
-			// Note: don't use env.AfterChange() here: we only want to await the
-			// first diagnostic.
-			//
-			// Awaiting a full diagnosis would await diagnosing everything, which
-			// would require reloading everything.
-			env.Await(Diagnostics(ForFile(file)))
-			env.RegexpReplace(file, `"hashx"`, `"hash"`)
-			env.Await(NoDiagnostics(ForFile(file)))
-		}
-	})
+			profileName := qualifiedName("reload", test.repo, path.Base(test.file))
+			if stopAndRecord := startProfileIfSupported(b, env, profileName); stopAndRecord != nil {
+				defer stopAndRecord()
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				// Mutate the file. This may result in cache hits, but that's OK: the
+				// goal is to ensure that we don't reload more than just the current
+				// package.
+				for k, v := range test.replace {
+					env.RegexpReplace(test.file, regexp.QuoteMeta(k), v)
+				}
+				// Note: don't use env.AfterChange() here: we only want to await the
+				// first diagnostic.
+				//
+				// Awaiting a full diagnosis would await diagnosing everything, which
+				// would require reloading everything.
+				env.Await(Diagnostics(ForFile(test.file)))
+				for k, v := range test.replace {
+					env.RegexpReplace(test.file, regexp.QuoteMeta(v), k)
+				}
+				env.Await(NoDiagnostics(ForFile(test.file)))
+			}
+		})
+	}
 }
