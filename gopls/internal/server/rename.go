@@ -50,7 +50,7 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 
 	if isPkgRenaming {
 		// Update the last component of the file's enclosing directory.
-		oldDir := filepath.Dir(fh.URI().Path())
+		oldDir := fh.URI().DirPath()
 		newDir := filepath.Join(filepath.Dir(oldDir), params.NewName)
 		change := protocol.DocumentChangeRename(
 			protocol.URIFromPath(oldDir),

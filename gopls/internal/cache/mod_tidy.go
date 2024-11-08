@@ -107,13 +107,8 @@ func modTidyImpl(ctx context.Context, snapshot *Snapshot, pm *ParsedModule) (*Ti
 	}
 	defer cleanup()
 
-	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(
-		false,
-		pm.URI.Dir().Path(),
-		"mod",
-		[]string{"tidy", "-modfile=" + filepath.Join(tempDir, "go.mod")},
-		"GOWORK=off",
-	)
+	args := []string{"tidy", "-modfile=" + filepath.Join(tempDir, "go.mod")}
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, pm.URI.DirPath(), "mod", args, "GOWORK=off")
 	if err != nil {
 		return nil, err
 	}

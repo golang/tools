@@ -294,7 +294,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 	}
 
 	testBase := strings.TrimSuffix(filepath.Base(loc.URI.Path()), ".go") + "_test.go"
-	goTestFileURI := protocol.URIFromPath(filepath.Join(loc.URI.Dir().Path(), testBase))
+	goTestFileURI := protocol.URIFromPath(filepath.Join(loc.URI.DirPath(), testBase))
 
 	testFH, err := snapshot.ReadFile(ctx, goTestFileURI)
 	if err != nil {

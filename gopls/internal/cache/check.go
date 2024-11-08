@@ -1782,7 +1782,7 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 		}
 	}
 
-	modFile, err := nearestModFile(ctx, mp.CompiledGoFiles[0], snapshot)
+	modFile, err := findRootPattern(ctx, mp.CompiledGoFiles[0].Dir(), "go.mod", snapshot)
 	if err != nil {
 		return nil, err
 	}

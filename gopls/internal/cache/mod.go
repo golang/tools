@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -251,7 +250,7 @@ func modWhyImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) (map[st
 	for _, req := range pm.File.Require {
 		args = append(args, req.Mod.Path)
 	}
-	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, filepath.Dir(fh.URI().Path()), "mod", args)
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, fh.URI().DirPath(), "mod", args)
 	if err != nil {
 		return nil, err
 	}

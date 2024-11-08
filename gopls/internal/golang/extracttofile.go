@@ -146,7 +146,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		buf.WriteString(")\n")
 	}
 
-	newFile, err := chooseNewFile(ctx, snapshot, pgf.URI.Dir().Path(), firstSymbol)
+	newFile, err := chooseNewFile(ctx, snapshot, pgf.URI.DirPath(), firstSymbol)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", errorPrefix, err)
 	}

@@ -605,7 +605,7 @@ func renamePackageName(ctx context.Context, s *cache.Snapshot, f file.Handle, ne
 	}
 
 	// Update the last component of the file's enclosing directory.
-	oldBase := filepath.Dir(f.URI().Path())
+	oldBase := f.URI().DirPath()
 	newPkgDir := filepath.Join(filepath.Dir(oldBase), string(newName))
 
 	// Update any affected replace directives in go.mod files.
@@ -625,7 +625,7 @@ func renamePackageName(ctx context.Context, s *cache.Snapshot, f file.Handle, ne
 			return nil, err
 		}
 
-		modFileDir := filepath.Dir(pm.URI.Path())
+		modFileDir := pm.URI.DirPath()
 		affectedReplaces := []*modfile.Replace{}
 
 		// Check if any replace directives need to be fixed

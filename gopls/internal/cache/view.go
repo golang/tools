@@ -673,11 +673,10 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 				addError(modURI, fmt.Errorf("no module path for %s", modURI))
 				continue
 			}
-			moduleDir := filepath.Dir(modURI.Path())
 			// Previously, we loaded <modulepath>/... for each module path, but that
 			// is actually incorrect when the pattern may match packages in more than
 			// one module. See golang/go#59458 for more details.
-			scopes = append(scopes, moduleLoadScope{dir: moduleDir, modulePath: parsed.File.Module.Mod.Path})
+			scopes = append(scopes, moduleLoadScope{dir: modURI.DirPath(), modulePath: parsed.File.Module.Mod.Path})
 		}
 	} else {
 		scopes = append(scopes, viewLoadScope{})
@@ -826,7 +825,7 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 	}
 	dir := folder.Dir.Path()
 	if forFile != nil {
-		dir = filepath.Dir(forFile.URI().Path())
+		dir = forFile.URI().DirPath()
 	}
 
 	def := new(viewDefinition)

@@ -32,7 +32,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 	if len(mp.CompiledGoFiles) == 0 {
 		return nil, nil
 	}
-	pkgDir := filepath.Dir(mp.CompiledGoFiles[0].Path())
+	pkgDir := mp.CompiledGoFiles[0].DirPath()
 	outDir, err := os.MkdirTemp("", fmt.Sprintf("gopls-%d.details", os.Getpid()))
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 		if fh == nil {
 			continue
 		}
-		if pkgDir != filepath.Dir(fh.URI().Path()) {
+		if pkgDir != fh.URI().DirPath() {
 			// https://github.com/golang/go/issues/42198
 			// sometimes the detail diagnostics generated for files
 			// outside the package can never be taken back.

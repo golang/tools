@@ -105,7 +105,7 @@ func (s *server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 	// file is opened, and we can't do that inside didModifyFiles because we
 	// don't want to request configuration while holding a lock.
 	if len(s.session.Views()) == 0 {
-		dir := filepath.Dir(uri.Path())
+		dir := uri.DirPath()
 		s.addFolders(ctx, []protocol.WorkspaceFolder{{
 			URI:  string(protocol.URIFromPath(dir)),
 			Name: filepath.Base(dir),

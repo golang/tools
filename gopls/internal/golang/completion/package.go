@@ -205,7 +205,7 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 		}
 	}()
 
-	dirPath := filepath.Dir(fileURI.Path())
+	dirPath := fileURI.DirPath()
 	dirName := filepath.Base(dirPath)
 	if !isValidDirName(dirName) {
 		return packages, nil
@@ -227,7 +227,7 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 		// Only add packages that are previously used in the current directory.
 		var relevantPkg bool
 		for _, uri := range mp.CompiledGoFiles {
-			if filepath.Dir(uri.Path()) == dirPath {
+			if uri.DirPath() == dirPath {
 				relevantPkg = true
 				break
 			}
