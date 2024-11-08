@@ -970,6 +970,277 @@ use ./missing/
 	})
 }
 
+const reverseInferenceSrcPrelude = `
+-- go.mod --
+module mod.com
+
+go 1.18
+-- a.go --
+package a
+
+type InterfaceA interface {
+	implA()
+}
+
+type InterfaceB interface {
+	implB()
+}
+
+
+type TypeA struct{}
+
+func (TypeA) implA() {}
+
+type TypeX string
+
+func (TypeX) implB() {}
+
+type TypeB struct{}
+
+func (TypeB) implB() {}
+
+type TypeC struct{} // should have no impact
+
+type Wrap[T any] struct {
+	inner *T
+}
+
+func NewWrap[T any](x T) Wrap[T] {
+	return Wrap[T]{inner: &x}
+}
+
+func DoubleWrap[T any, U any](t T, u U) (Wrap[T], Wrap[U]) {
+	return Wrap[T]{inner: &t}, Wrap[U]{inner: &u}
+}
+
+func IntWrap[T int32 | int64](x T) Wrap[T] {
+	return Wrap[T]{inner: &x}
+}
+
+var ia InterfaceA
+var ib InterfaceB
+
+var avar TypeA
+var bvar TypeB
+
+var i int
+var i32 int32
+var i64 int64
+`
+
+func TestReverseInferCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var _ Wrap[int64] = IntWrap()
+	}
+	`
+	Run(t, src, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `IntWrap\(()\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+
+		wantLabel := []string{"i64", "i", "i32", "int64()"}
+
+		// only check the prefix due to formatting differences with escaped characters
+		wantText := []string{"i64", "int64(i", "int64(i32", "int64("}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+
+			if insertText, ok := item.TextEdit.Value.(protocol.InsertReplaceEdit); ok {
+				if diff := cmp.Diff(wantText[i], insertText.NewText[:len(wantText[i])]); diff != "" {
+					t.Errorf("Completion: unexpected insertText mismatch (checks prefix only) (-want +got):\n%s", diff)
+				}
+			}
+		}
+	})
+}
+
+func TestInterfaceReverseInferCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var wa Wrap[InterfaceA]
+		var wb Wrap[InterfaceB]
+		wb = NewWrap() // wb is of type Wrap[InterfaceB]
+	}
+	`
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `NewWrap\(()\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+
+		wantLabel := []string{"ib", "bvar", "wb.inner", "TypeB{}", "TypeX()", "nil"}
+
+		// only check the prefix due to formatting differences with escaped characters
+		wantText := []string{"ib", "InterfaceB(", "*wb.inner", "InterfaceB(", "InterfaceB(", "nil"}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+
+			if insertText, ok := item.TextEdit.Value.(protocol.InsertReplaceEdit); ok {
+				if diff := cmp.Diff(wantText[i], insertText.NewText[:len(wantText[i])]); diff != "" {
+					t.Errorf("Completion: unexpected insertText mismatch (checks prefix only) (-want +got):\n%s", diff)
+				}
+			}
+		}
+	})
+}
+
+func TestInvalidReverseInferenceDefaultsToConstraintCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var wa Wrap[InterfaceA]
+		// This is ambiguous, so default to the constraint rather the inference.
+		wa = IntWrap()
+	}
+	`
+	Run(t, src, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `IntWrap\(()\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+
+		wantLabel := []string{"i32", "i64", "nil"}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+}
+
+func TestInterfaceReverseInferTypeParamCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var wa Wrap[InterfaceA]
+		var wb Wrap[InterfaceB]
+		wb = NewWrap[]()
+	}
+	`
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `NewWrap\[()\]\(\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+		want := []string{"InterfaceB", "TypeB", "TypeX", "InterfaceA", "TypeA"}
+		for i, item := range result.Items[:len(want)] {
+			if diff := cmp.Diff(want[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+}
+
+func TestInvalidReverseInferenceTypeParamDefaultsToConstraintCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var wa Wrap[InterfaceA]
+		// This is ambiguous, so default to the constraint rather the inference.
+		wb = IntWrap[]()
+	}
+	`
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		compl := env.RegexpSearch("a.go", `IntWrap\[()\]\(\)`)
+
+		env.OpenFile("a.go")
+		result := env.Completion(compl)
+		want := []string{"int32", "int64"}
+		for i, item := range result.Items[:len(want)] {
+			if diff := cmp.Diff(want[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+}
+
+func TestReverseInferDoubleTypeParamCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func main() {
+		var wa Wrap[InterfaceA]
+		var wb Wrap[InterfaceB]
+
+		wa, wb = DoubleWrap[]()
+		// _ is necessary to trick the parser into an index list expression
+		wa, wb = DoubleWrap[InterfaceA, _]()
+	}
+	`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+
+		compl := env.RegexpSearch("a.go", `DoubleWrap\[()\]\(\)`)
+		result := env.Completion(compl)
+
+		wantLabel := []string{"InterfaceA", "TypeA", "InterfaceB", "TypeB", "TypeC"}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+		}
+
+		compl = env.RegexpSearch("a.go", `DoubleWrap\[InterfaceA, (_)\]\(\)`)
+		result = env.Completion(compl)
+
+		wantLabel = []string{"InterfaceB", "TypeB", "TypeX", "InterfaceA", "TypeA"}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+}
+
+func TestDoubleParamReturnCompletion(t *testing.T) {
+	src := reverseInferenceSrcPrelude + `
+	func concrete() (Wrap[InterfaceA], Wrap[InterfaceB]) {
+		return DoubleWrap[]()
+	}
+
+	func concrete2() (Wrap[InterfaceA], Wrap[InterfaceB]) {
+		return DoubleWrap[InterfaceA, _]()
+	}
+
+	func main() {}
+	`
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+
+		compl := env.RegexpSearch("a.go", `DoubleWrap\[()\]\(\)`)
+		result := env.Completion(compl)
+
+		wantLabel := []string{"InterfaceA", "TypeA", "InterfaceB", "TypeB", "TypeC"}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+		}
+
+		compl = env.RegexpSearch("a.go", `DoubleWrap\[InterfaceA, (_)\]\(\)`)
+		result = env.Completion(compl)
+
+		wantLabel = []string{"InterfaceB", "TypeB", "TypeX", "InterfaceA", "TypeA"}
+
+		for i, item := range result.Items[:len(wantLabel)] {
+			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
+				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+}
+
 func TestBuiltinCompletion(t *testing.T) {
 	const files = `
 -- go.mod --
