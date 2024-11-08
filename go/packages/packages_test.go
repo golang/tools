@@ -511,11 +511,6 @@ func testConfigDir(t *testing.T, exporter packagestest.Exporter) {
 				test.dir, test.pattern, got, test.want)
 		}
 		if fails != test.fails {
-			// TODO: remove when go#28023 is fixed
-			if test.fails && strings.HasPrefix(test.pattern, "./") && exporter == packagestest.Modules {
-				// Currently go list in module mode does not handle missing directories correctly.
-				continue
-			}
 			t.Errorf("dir %q, pattern %q: error %v, want %v",
 				test.dir, test.pattern, fails, test.fails)
 		}
