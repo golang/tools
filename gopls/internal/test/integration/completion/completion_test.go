@@ -1210,8 +1210,6 @@ func TestDoubleParamReturnCompletion(t *testing.T) {
 	func concrete2() (Wrap[InterfaceA], Wrap[InterfaceB]) {
 		return DoubleWrap[InterfaceA, _]()
 	}
-
-	func main() {}
 	`
 
 	Run(t, src, func(t *testing.T, env *Env) {
