@@ -442,7 +442,7 @@ func (a *postfixTmplArgs) TypeName(t types.Type) (string, error) {
 
 // Zero return the zero value representation of type t
 func (a *postfixTmplArgs) Zero(t types.Type) string {
-	return formatZeroValue(t, a.qf)
+	return typesinternal.ZeroString(t, a.qf)
 }
 
 func (a *postfixTmplArgs) IsIdent() bool {

@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // addStatementCandidates adds full statement completion candidates
@@ -294,7 +295,7 @@ func (c *completer) addErrCheck() {
 	} else {
 		snip.WriteText("return ")
 		for i := 0; i < result.Len()-1; i++ {
-			snip.WriteText(formatZeroValue(result.At(i).Type(), c.qf))
+			snip.WriteText(typesinternal.ZeroString(result.At(i).Type(), c.qf))
 			snip.WriteText(", ")
 		}
 		snip.WritePlaceholder(func(b *snippet.Builder) {
@@ -404,7 +405,7 @@ func (c *completer) addReturnZeroValues() {
 			fmt.Fprintf(&label, ", ")
 		}
 
-		zero := formatZeroValue(result.At(i).Type(), c.qf)
+		zero := typesinternal.ZeroString(result.At(i).Type(), c.qf)
 		snip.WritePlaceholder(func(b *snippet.Builder) {
 			b.WriteText(zero)
 		})

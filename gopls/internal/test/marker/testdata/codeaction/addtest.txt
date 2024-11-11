@@ -26,7 +26,7 @@ package main
 func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", with_copyright)
 
 -- @with_copyright/withcopyright/copyright_test.go --
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,30 @@
 +// Copyright 2020 The Go Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -41,14 +41,15 @@ func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest"
 +func TestFoo(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := main.Foo(tt.arg)
++      got := main.Foo(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("Foo() = %v, want %v", got, tt.want)
@@ -65,7 +66,7 @@ package copyright
 func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", without_copyright)
 
 -- @without_copyright/withoutcopyright/copyright_test.go --
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,26 @@
 +package copyright_test
 +
 +import(
@@ -76,14 +77,15 @@ func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest"
 +func TestFoo(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := copyright.Foo(tt.arg)
++      got := copyright.Foo(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("Foo() = %v, want %v", got, tt.want)
@@ -101,7 +103,7 @@ type Bar struct {}
 func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("ExportedMethod", "source.addTest", missing_test_file_exported_recv_exported_method)
 
 -- @missing_test_file_exported_function/missingtestfile/missingtestfile_test.go --
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,26 @@
 +package main_test
 +
 +import(
@@ -112,14 +114,15 @@ func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("Expo
 +func TestExportedFunction(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := main.ExportedFunction(tt.arg)
++      got := main.ExportedFunction(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedFunction() = %v, want %v", got, tt.want)
@@ -128,7 +131,7 @@ func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("Expo
 +  }
 +}
 -- @missing_test_file_exported_recv_exported_method/missingtestfile/missingtestfile_test.go --
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,28 @@
 +package main_test
 +
 +import(
@@ -139,7 +142,8 @@ func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("Expo
 +func TestBar_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -148,7 +152,7 @@ func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("Expo
 +    t.Run(tt.name, func(t *testing.T) {
 +      // TODO: construct the receiver type.
 +      var b main.Bar
-+      got := b.ExportedMethod(tt.arg)
++      got := b.ExportedMethod(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
@@ -176,21 +180,22 @@ func (*foo) unexportedMethod(in string) string {return in} //@codeactionedit("un
 package main
 
 -- @xpackage_exported_function/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,21 @@
+@@ -3 +3,22 @@
 +import "testing"
 +
 +
 +func TestExportedFunction(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := ExportedFunction(tt.arg)
++      got := ExportedFunction(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedFunction() = %v, want %v", got, tt.want)
@@ -199,21 +204,22 @@ package main
 +  }
 +}
 -- @xpackage_unexported_function/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,21 @@
+@@ -3 +3,22 @@
 +import "testing"
 +
 +
 +func Test_unexportedFunction(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got := unexportedFunction(tt.arg)
++      got := unexportedFunction(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("unexportedFunction() = %v, want %v", got, tt.want)
@@ -222,14 +228,15 @@ package main
 +  }
 +}
 -- @xpackage_exported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,23 @@
+@@ -3 +3,24 @@
 +import "testing"
 +
 +
 +func TestBar_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -238,7 +245,7 @@ package main
 +    t.Run(tt.name, func(t *testing.T) {
 +      // TODO: construct the receiver type.
 +      var b Bar
-+      got := b.ExportedMethod(tt.arg)
++      got := b.ExportedMethod(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
@@ -247,14 +254,15 @@ package main
 +  }
 +}
 -- @xpackage_exported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,23 @@
+@@ -3 +3,24 @@
 +import "testing"
 +
 +
 +func TestBar_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -263,7 +271,7 @@ package main
 +    t.Run(tt.name, func(t *testing.T) {
 +      // TODO: construct the receiver type.
 +      var b Bar
-+      got := b.unexportedMethod(tt.arg)
++      got := b.unexportedMethod(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
@@ -272,14 +280,15 @@ package main
 +  }
 +}
 -- @xpackage_unexported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,23 @@
+@@ -3 +3,24 @@
 +import "testing"
 +
 +
 +func Test_foo_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -288,7 +297,7 @@ package main
 +    t.Run(tt.name, func(t *testing.T) {
 +      // TODO: construct the receiver type.
 +      var f foo
-+      got := f.ExportedMethod(tt.arg)
++      got := f.ExportedMethod(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
@@ -297,14 +306,15 @@ package main
 +  }
 +}
 -- @xpackage_unexported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,23 @@
+@@ -3 +3,24 @@
 +import "testing"
 +
 +
 +func Test_foo_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -313,7 +323,7 @@ package main
 +    t.Run(tt.name, func(t *testing.T) {
 +      // TODO: construct the receiver type.
 +      var f foo
-+      got := f.unexportedMethod(tt.arg)
++      got := f.unexportedMethod(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
@@ -359,14 +369,15 @@ func (Qux) method(in string) string {return in} //@codeactionedit("method", "sou
 package main
 
 -- @pointer_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,23 @@
+@@ -3 +3,24 @@
 +import "testing"
 +
 +
 +func TestBar_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -375,7 +386,7 @@ package main
 +    t.Run(tt.name, func(t *testing.T) {
 +      // TODO: construct the receiver type.
 +      var b Bar
-+      got := b.ExportedMethod(tt.arg)
++      got := b.ExportedMethod(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
@@ -384,14 +395,15 @@ package main
 +  }
 +}
 -- @pointer_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,23 @@
+@@ -3 +3,24 @@
 +import "testing"
 +
 +
 +func TestBar_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -400,7 +412,7 @@ package main
 +    t.Run(tt.name, func(t *testing.T) {
 +      // TODO: construct the receiver type.
 +      var b Bar
-+      got := b.unexportedMethod(tt.arg)
++      got := b.unexportedMethod(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
@@ -409,14 +421,15 @@ package main
 +  }
 +}
 -- @alias_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,23 @@
+@@ -3 +3,24 @@
 +import "testing"
 +
 +
 +func Test_foo_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -425,7 +438,7 @@ package main
 +    t.Run(tt.name, func(t *testing.T) {
 +      // TODO: construct the receiver type.
 +      var f foo
-+      got := f.ExportedMethod(tt.arg)
++      got := f.ExportedMethod(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
@@ -434,14 +447,15 @@ package main
 +  }
 +}
 -- @alias_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,23 @@
+@@ -3 +3,24 @@
 +import "testing"
 +
 +
 +func Test_foo_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -450,7 +464,7 @@ package main
 +    t.Run(tt.name, func(t *testing.T) {
 +      // TODO: construct the receiver type.
 +      var f foo
-+      got := f.unexportedMethod(tt.arg)
++      got := f.unexportedMethod(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("unexportedMethod() = %v, want %v", got, tt.want)
@@ -459,14 +473,15 @@ package main
 +  }
 +}
 -- @alias_constructor_on_underlying_type/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,22 @@
+@@ -3 +3,23 @@
 +import "testing"
 +
 +
 +func Test_baz_method(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -474,7 +489,7 @@ package main
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
 +      b := newBaz0()
-+      got := b.method(tt.arg)
++      got := b.method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("method() = %v, want %v", got, tt.want)
@@ -483,14 +498,15 @@ package main
 +  }
 +}
 -- @alias_constructor_on_different_alias_type/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,25 @@
+@@ -3 +3,26 @@
 +import "testing"
 +
 +
 +func TestQux_method(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -501,7 +517,7 @@ package main
 +      if err != nil {
 +        t.Fatalf("could not contruct receiver type: %v", err)
 +      }
-+      got := q.method(tt.arg)
++      got := q.method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("method() = %v, want %v", got, tt.want)
@@ -512,10 +528,10 @@ package main
 -- multiinputoutput/multiinputoutput.go --
 package main
 
-func Foo(in, in1, in2, in3 string) (out, out1, out2 string) {return in, in, in} //@codeactionedit("Foo", "source.addTest", multi_input_output)
+func Foo(in, in2, in3, in4 string) (out, out1, out2 string) {return "", "", ""} //@codeactionedit("Foo", "source.addTest", multi_input_output)
 
 -- @multi_input_output/multiinputoutput/multiinputoutput_test.go --
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,37 @@
 +package main_test
 +
 +import(
@@ -524,15 +540,13 @@ func Foo(in, in1, in2, in3 string) (out, out1, out2 string) {return in, in, in} 
 +)
 +
 +func TestFoo(t *testing.T) {
-+  type args struct {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for target function.
 +    in string
 +    in2 string
 +    in3 string
 +    in4 string
-+  }
-+  tests := []struct {
-+    name string // description of this test case
-+    args args
 +    want string
 +    want2 string
 +    want3 string
@@ -541,7 +555,7 @@ func Foo(in, in1, in2, in3 string) (out, out1, out2 string) {return in, in, in} 
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
-+      got, got2, got3 := main.Foo(tt.args.in, tt.args.in2, tt.args.in3, tt.args.in4)
++      got, got2, got3 := main.Foo(tt.in, tt.in2, tt.in3, tt.in4)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("Foo() = %v, want %v", got, tt.want)
@@ -569,7 +583,7 @@ var local mytest.T
 func Foo(t mytime.Time, a *myast.Node) (mytime.Time, *myast.Node) {return t, a} //@codeactionedit("Foo", "source.addTest", xpackage_rename)
 
 -- @xpackage_rename/xpackagerename/xpackagerename_test.go --
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,33 @@
 +package main_test
 +
 +import(
@@ -580,13 +594,11 @@ func Foo(t mytime.Time, a *myast.Node) (mytime.Time, *myast.Node) {return t, a} 
 +)
 +
 +func TestFoo(t *mytest.T) {
-+  type args struct {
-+    in mytime.Time
-+    in2 *myast.Node
-+  }
 +  tests := []struct {
 +    name string // description of this test case
-+    args args
++    // Named input parameters for target function.
++    t mytime.Time
++    a *myast.Node
 +    want mytime.Time
 +    want2 *myast.Node
 +  }{
@@ -594,7 +606,7 @@ func Foo(t mytime.Time, a *myast.Node) (mytime.Time, *myast.Node) {return t, a} 
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *mytest.T) {
-+      got, got2 := main.Foo(tt.args.in, tt.args.in2)
++      got, got2 := main.Foo(tt.t, tt.a)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("Foo() = %v, want %v", got, tt.want)
@@ -635,16 +647,14 @@ var fooT yourtest.T
 @@ -7 +7,2 @@
 +
 +	"golang.org/lsptests/addtest/xtestpackagerename"
-@@ -13 +15,27 @@
+@@ -13 +15,25 @@
 +
 +func TestFoo(t *yourtest.T) {
-+  type args struct {
-+    in yourtime.Time
-+    in2 *yourast.Node
-+  }
 +  tests := []struct {
 +    name string // description of this test case
-+    args args
++    // Named input parameters for target function.
++    t yourtime.Time
++    a *yourast.Node
 +    want yourtime.Time
 +    want2 *yourast.Node
 +  }{
@@ -652,7 +662,7 @@ var fooT yourtest.T
 +  }
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *yourtest.T) {
-+      got, got2 := main.Foo(tt.args.in, tt.args.in2)
++      got, got2 := main.Foo(tt.t, tt.a)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("Foo() = %v, want %v", got, tt.want)
@@ -813,7 +823,7 @@ type ReturnPtrError struct {}
 func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("Method", "source.addTest", constructor_return_ptr_error)
 
 -- @constructor_return_type/constructor/constructor_test.go --
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,27 @@
 +package main_test
 +
 +import(
@@ -824,7 +834,8 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +func TestReturnType_Method(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -832,7 +843,7 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
 +      r := main.NewReturnType()
-+      got := r.Method(tt.arg)
++      got := r.Method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("Method() = %v, want %v", got, tt.want)
@@ -841,7 +852,7 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +  }
 +}
 -- @constructor_return_type_error/constructor/constructor_test.go --
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,30 @@
 +package main_test
 +
 +import(
@@ -852,7 +863,8 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +func TestReturnTypeError_Method(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -863,7 +875,7 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +      if err != nil {
 +        t.Fatalf("could not contruct receiver type: %v", err)
 +      }
-+      got := r.Method(tt.arg)
++      got := r.Method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("Method() = %v, want %v", got, tt.want)
@@ -872,7 +884,7 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +  }
 +}
 -- @constructor_return_ptr/constructor/constructor_test.go --
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,27 @@
 +package main_test
 +
 +import(
@@ -883,7 +895,8 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +func TestReturnPtr_Method(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -891,7 +904,7 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
 +      r := main.NewReturnPtr()
-+      got := r.Method(tt.arg)
++      got := r.Method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("Method() = %v, want %v", got, tt.want)
@@ -900,7 +913,7 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +  }
 +}
 -- @constructor_return_ptr_error/constructor/constructor_test.go --
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,30 @@
 +package main_test
 +
 +import(
@@ -911,7 +924,8 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +func TestReturnPtrError_Method(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -922,7 +936,7 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +      if err != nil {
 +        t.Fatalf("could not contruct receiver type: %v", err)
 +      }
-+      got := r.Method(tt.arg)
++      got := r.Method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("Method() = %v, want %v", got, tt.want)
@@ -950,7 +964,7 @@ type Bar struct{}
 func (*Bar) Method(in string) string {return in} //@codeactionedit("Method", "source.addTest", constructor_comparison_alphabetical)
 
 -- @constructor_comparison_new/constructorcomparison/constructorcomparison_test.go --
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,27 @@
 +package main_test
 +
 +import(
@@ -961,7 +975,8 @@ func (*Bar) Method(in string) string {return in} //@codeactionedit("Method", "so
 +func TestFoo_Method(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -969,7 +984,7 @@ func (*Bar) Method(in string) string {return in} //@codeactionedit("Method", "so
 +  for _, tt := range tests {
 +    t.Run(tt.name, func(t *testing.T) {
 +      f := main.NewFoo()
-+      got := f.Method(tt.arg)
++      got := f.Method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("Method() = %v, want %v", got, tt.want)
@@ -978,7 +993,7 @@ func (*Bar) Method(in string) string {return in} //@codeactionedit("Method", "so
 +  }
 +}
 -- @constructor_comparison_alphabetical/constructorcomparison/constructorcomparison_test.go --
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,30 @@
 +package main_test
 +
 +import(
@@ -989,7 +1004,8 @@ func (*Bar) Method(in string) string {return in} //@codeactionedit("Method", "so
 +func TestBar_Method(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
-+    arg string
++    // Named input parameters for target function.
++    in string
 +    want string
 +  }{
 +    // TODO: Add test cases.
@@ -1000,11 +1016,306 @@ func (*Bar) Method(in string) string {return in} //@codeactionedit("Method", "so
 +      if err != nil {
 +        t.Fatalf("could not contruct receiver type: %v", err)
 +      }
-+      got := b.Method(tt.arg)
++      got := b.Method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("Method() = %v, want %v", got, tt.want)
 +      }
++    })
++  }
++}
+-- unnamedparam/unnamedparam.go --
+package main
+
+import "time"
+
+func FooInputBasic(one, two, _ string, _ int) (out, out1, out2 string) {return "", "", ""} //@codeactionedit("Foo", "source.addTest", function_basic_type)
+
+func FooInputStruct(one string, _ time.Time) (out, out1, out2 string) {return "", "", ""} //@codeactionedit("Foo", "source.addTest", function_struct_type)
+
+func FooInputPtr(one string, _ *time.Time) (out, out1, out2 string) {return "", "", ""} //@codeactionedit("Foo", "source.addTest", function_ptr_type)
+
+func FooInputFunc(one string, _ func(time.Time) *time.Time) (out, out1, out2 string) {return "", "", ""} //@codeactionedit("Foo", "source.addTest", function_func_type)
+
+type BarInputBasic struct{}
+
+func NewBarInputBasic(one, two, _ string, _ int) *BarInputBasic {return nil} 
+
+func (r *BarInputBasic) Method(one, two, _ string, _ int) {} //@codeactionedit("Method", "source.addTest", constructor_basic_type)
+
+type BarInputStruct struct{}
+
+func NewBarInputStruct(one string, _ time.Time) *BarInputStruct {return nil} 
+
+func (r *BarInputStruct) Method(one string, _ time.Time) {} //@codeactionedit("Method", "source.addTest", constructor_struct_type)
+
+type BarInputPtr struct{}
+
+func NewBarInputPtr(one string, _ *time.Time) *BarInputPtr {return nil} 
+
+func (r *BarInputPtr) Method(one string, _ *time.Time) {} //@codeactionedit("Method", "source.addTest", constructor_ptr_type)
+
+type BarInputFunction struct{}
+
+func NewBarInputFunction(one string, _ func(time.Time) *time.Time) *BarInputFunction {return nil} 
+
+func (r *BarInputFunction) Method(one string, _ func(time.Time) *time.Time) {} //@codeactionedit("Method", "source.addTest", constructor_func_type)
+
+
+-- @function_basic_type/unnamedparam/unnamedparam_test.go --
+@@ -0,0 +1,35 @@
++package main_test
++
++import(
++	"golang.org/lsptests/addtest/unnamedparam"
++	"testing"
++)
++
++func TestFooInputBasic(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for target function.
++    one string
++    two string
++    want string
++    want2 string
++    want3 string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      got, got2, got3 := main.FooInputBasic(tt.one, tt.two, "", 0)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("FooInputBasic() = %v, want %v", got, tt.want)
++      }
++      if true {
++        t.Errorf("FooInputBasic() = %v, want %v", got2, tt.want2)
++      }
++      if true {
++        t.Errorf("FooInputBasic() = %v, want %v", got3, tt.want3)
++      }
++    })
++  }
++}
+-- @function_struct_type/unnamedparam/unnamedparam_test.go --
+@@ -0,0 +1,35 @@
++package main_test
++
++import(
++	"golang.org/lsptests/addtest/unnamedparam"
++	"testing"
++	"time"
++)
++
++func TestFooInputStruct(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for target function.
++    one string
++    want string
++    want2 string
++    want3 string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      got, got2, got3 := main.FooInputStruct(tt.one, time.Time{})
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("FooInputStruct() = %v, want %v", got, tt.want)
++      }
++      if true {
++        t.Errorf("FooInputStruct() = %v, want %v", got2, tt.want2)
++      }
++      if true {
++        t.Errorf("FooInputStruct() = %v, want %v", got3, tt.want3)
++      }
++    })
++  }
++}
+-- @function_ptr_type/unnamedparam/unnamedparam_test.go --
+@@ -0,0 +1,35 @@
++package main_test
++
++import(
++	"golang.org/lsptests/addtest/unnamedparam"
++	"testing"
++	"time"
++)
++
++func TestFooInputPtr(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for target function.
++    one string
++    want string
++    want2 string
++    want3 string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      got, got2, got3 := main.FooInputPtr(tt.one, nil)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("FooInputPtr() = %v, want %v", got, tt.want)
++      }
++      if true {
++        t.Errorf("FooInputPtr() = %v, want %v", got2, tt.want2)
++      }
++      if true {
++        t.Errorf("FooInputPtr() = %v, want %v", got3, tt.want3)
++      }
++    })
++  }
++}
+-- @function_func_type/unnamedparam/unnamedparam_test.go --
+@@ -0,0 +1,35 @@
++package main_test
++
++import(
++	"golang.org/lsptests/addtest/unnamedparam"
++	"testing"
++	"time"
++)
++
++func TestFooInputFunc(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for target function.
++    one string
++    want string
++    want2 string
++    want3 string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      got, got2, got3 := main.FooInputFunc(tt.one, nil)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("FooInputFunc() = %v, want %v", got, tt.want)
++      }
++      if true {
++        t.Errorf("FooInputFunc() = %v, want %v", got2, tt.want2)
++      }
++      if true {
++        t.Errorf("FooInputFunc() = %v, want %v", got3, tt.want3)
++      }
++    })
++  }
++}
+-- @constructor_basic_type/unnamedparam/unnamedparam_test.go --
+@@ -0,0 +1,26 @@
++package main_test
++
++import(
++	"golang.org/lsptests/addtest/unnamedparam"
++	"testing"
++)
++
++func TestBarInputBasic_Method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for receiver constructor.
++    cone string
++    ctwo string
++    // Named input parameters for target function.
++    one string
++    two string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      r := main.NewBarInputBasic(tt.cone, tt.ctwo, "", 0)
++      r.Method(tt.one, tt.two, "", 0)
++    })
++  }
++}
+-- @constructor_func_type/unnamedparam/unnamedparam_test.go --
+@@ -0,0 +1,25 @@
++package main_test
++
++import(
++	"golang.org/lsptests/addtest/unnamedparam"
++	"testing"
++	"time"
++)
++
++func TestBarInputFunction_Method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for receiver constructor.
++    cone string
++    // Named input parameters for target function.
++    one string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      r := main.NewBarInputFunction(tt.cone, nil)
++      r.Method(tt.one, nil)
++    })
++  }
++}
+-- @constructor_ptr_type/unnamedparam/unnamedparam_test.go --
+@@ -0,0 +1,25 @@
++package main_test
++
++import(
++	"golang.org/lsptests/addtest/unnamedparam"
++	"testing"
++	"time"
++)
++
++func TestBarInputPtr_Method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for receiver constructor.
++    cone string
++    // Named input parameters for target function.
++    one string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      r := main.NewBarInputPtr(tt.cone, nil)
++      r.Method(tt.one, nil)
++    })
++  }
++}
+-- @constructor_struct_type/unnamedparam/unnamedparam_test.go --
+@@ -0,0 +1,25 @@
++package main_test
++
++import(
++	"golang.org/lsptests/addtest/unnamedparam"
++	"testing"
++	"time"
++)
++
++func TestBarInputStruct_Method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for receiver constructor.
++    cone string
++    // Named input parameters for target function.
++    one string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      r := main.NewBarInputStruct(tt.cone, time.Time{})
++      r.Method(tt.one, time.Time{})
 +    })
 +  }
 +}

@@ -14,12 +14,12 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"html/template"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"text/template"
 	"unicode"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -34,44 +34,34 @@ import (
 
 const testTmplString = `
 func {{.TestFuncName}}(t *{{.TestingPackageName}}.T) {
-  {{- /* Constructor input parameters struct declaration. */}}
-  {{- if and .Receiver .Receiver.Constructor}}
-  {{- if gt (len .Receiver.Constructor.Args) 1}}
-  type constructorArgs struct {
-  {{- range .Receiver.Constructor.Args}}
-    {{.Name}} {{.Type}}
-  {{- end}}
-  }
-  {{- end}}
-  {{- end}}
-
-  {{- /* Functions/methods input parameters struct declaration. */}}
-  {{- if gt (len .Func.Args) 1}}
-  type args struct {
-  {{- range .Func.Args}}
-    {{.Name}} {{.Type}}
-  {{- end}}
-  }
-  {{- end}}
-
   {{- /* Test cases struct declaration and empty initialization. */}}
   tests := []struct {
     name string // description of this test case
+
+    {{- $commentPrinted := false }}
     {{- if and .Receiver .Receiver.Constructor}}
-    {{- if gt (len .Receiver.Constructor.Args) 1}}
-    constructorArgs constructorArgs
+    {{- range .Receiver.Constructor.Args}}
+    {{- if .Name}}
+    {{- if not $commentPrinted}}
+    // Named input parameters for receiver constructor.
+    {{- $commentPrinted = true }}
     {{- end}}
-    {{- if eq (len .Receiver.Constructor.Args) 1}}
-    constructorArg {{(index .Receiver.Constructor.Args 0).Type}}
+    {{.Name}} {{.Type}}
+    {{- end}}
     {{- end}}
     {{- end}}
 
-    {{- if gt (len .Func.Args) 1}}
-    args args
+    {{- $commentPrinted := false }}
+    {{- range .Func.Args}}
+    {{- if .Name}}
+    {{- if not $commentPrinted}}
+    // Named input parameters for target function.
+    {{- $commentPrinted = true }}
     {{- end}}
-    {{- if eq (len .Func.Args) 1}}
-    arg {{(index .Func.Args 0).Type}}
+    {{.Name}} {{.Type}}
     {{- end}}
+    {{- end}}
+
     {{- range $index, $res := .Func.Results}}
     {{- if eq $res.Name "gotErr"}}
     wantErr bool
@@ -96,7 +86,12 @@ func {{.TestFuncName}}(t *{{.TestingPackageName}}.T) {
       {{- .Receiver.Constructor.Name}}
 
       {{- /* Constructor input parameters. */ -}}
-      ({{- if eq (len .Receiver.Constructor.Args) 1}}tt.constructorArg{{end}}{{if gt (len .Func.Args) 1}}{{fieldNames .Receiver.Constructor.Args "tt.constructorArgs."}}{{end}})
+      (
+        {{- range $index, $arg := .Receiver.Constructor.Args}}
+        {{- if ne $index 0}}, {{end}}
+        {{- if .Name}}tt.{{.Name}}{{else}}{{.Value}}{{end}}
+        {{- end -}}
+      )
 
       {{- /* Handles the error return from constructor. */}}
       {{- $last := last .Receiver.Constructor.Results}}
@@ -123,7 +118,12 @@ func {{.TestFuncName}}(t *{{.TestingPackageName}}.T) {
       {{- end}}{{.Func.Name}}
 
       {{- /* Input parameters. */ -}}
-      ({{- if eq (len .Func.Args) 1}}tt.arg{{end}}{{if gt (len .Func.Args) 1}}{{fieldNames .Func.Args "tt.args."}}{{end}})
+      (
+        {{- range $index, $arg := .Func.Args}}
+        {{- if ne $index 0}}, {{end}}
+        {{- if .Name}}tt.{{.Name}}{{else}}{{.Value}}{{end}}
+        {{- end -}}
+      )
 
       {{- /* Handles the returned error before the rest of return value. */}}
       {{- $last := last .Func.Results}}
@@ -155,8 +155,12 @@ func {{.TestFuncName}}(t *{{.TestingPackageName}}.T) {
 }
 `
 
+// Name is the name of the field this input parameter should reference.
+// Value is the expression this input parameter should accept.
+//
+// Exactly one of Name or Value must be set.
 type field struct {
-	Name, Type string
+	Name, Type, Value string
 }
 
 type function struct {
@@ -191,6 +195,9 @@ type testInfo struct {
 var testTmpl = template.Must(template.New("test").Funcs(template.FuncMap{
 	"add": func(a, b int) int { return a + b },
 	"last": func(slice []field) field {
+		if len(slice) == 0 {
+			return field{}
+		}
 		return slice[len(slice)-1]
 	},
 	"fieldNames": func(fields []field, qualifier string) (res string) {
@@ -450,36 +457,32 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 
 	errorType := types.Universe.Lookup("error").Type()
 
-	// TODO(hxjiang): if input parameter is not named (meaning it's not used),
-	// pass the zero value to the function call.
-	// TODO(hxjiang): if the input parameter is named, define the field by using
-	// the parameter's name instead of in%d.
 	// TODO(hxjiang): handle special case for ctx.Context input.
-	for index := range sig.Params().Len() {
-		var name string
-		if index == 0 {
-			name = "in"
+	for i := range sig.Params().Len() {
+		param := sig.Params().At(i)
+		name, typ := param.Name(), param.Type()
+		f := field{Type: types.TypeString(typ, qf)}
+		if name == "" || name == "_" {
+			f.Value = typesinternal.ZeroString(typ, qf)
 		} else {
-			name = fmt.Sprintf("in%d", index+1)
+			f.Name = name
 		}
-		data.Func.Args = append(data.Func.Args, field{
-			Name: name,
-			Type: types.TypeString(sig.Params().At(index).Type(), qf),
-		})
+		data.Func.Args = append(data.Func.Args, f)
 	}
 
-	for index := range sig.Results().Len() {
+	for i := range sig.Results().Len() {
+		typ := sig.Results().At(i).Type()
 		var name string
-		if index == sig.Results().Len()-1 && types.Identical(sig.Results().At(index).Type(), errorType) {
+		if i == sig.Results().Len()-1 && types.Identical(typ, errorType) {
 			name = "gotErr"
-		} else if index == 0 {
+		} else if i == 0 {
 			name = "got"
 		} else {
-			name = fmt.Sprintf("got%d", index+1)
+			name = fmt.Sprintf("got%d", i+1)
 		}
 		data.Func.Results = append(data.Func.Results, field{
 			Name: name,
-			Type: types.TypeString(sig.Results().At(index).Type(), qf),
+			Type: types.TypeString(typ, qf),
 		})
 	}
 
@@ -587,25 +590,25 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 
 		if constructor != nil {
 			data.Receiver.Constructor = &function{Name: constructor.Name()}
-			for index := range constructor.Signature().Params().Len() {
-				var name string
-				if index == 0 {
-					name = "in"
+			for i := range constructor.Signature().Params().Len() {
+				param := constructor.Signature().Params().At(i)
+				name, typ := param.Name(), param.Type()
+				f := field{Type: types.TypeString(typ, qf)}
+				if name == "" || name == "_" {
+					f.Value = typesinternal.ZeroString(typ, qf)
 				} else {
-					name = fmt.Sprintf("in%d", index+1)
+					f.Name = name
 				}
-				data.Receiver.Constructor.Args = append(data.Receiver.Constructor.Args, field{
-					Name: name,
-					Type: types.TypeString(constructor.Signature().Params().At(index).Type(), qf),
-				})
+				data.Receiver.Constructor.Args = append(data.Receiver.Constructor.Args, f)
 			}
-			for index := range constructor.Signature().Results().Len() {
+			for i := range constructor.Signature().Results().Len() {
+				typ := constructor.Signature().Results().At(i).Type()
 				var name string
-				if index == 0 {
+				if i == 0 {
 					// The first return value must be of type T, *T, or a type whose named
 					// type is the same as named type of T.
 					name = varName
-				} else if index == constructor.Signature().Results().Len()-1 && types.Identical(constructor.Signature().Results().At(index).Type(), errorType) {
+				} else if i == constructor.Signature().Results().Len()-1 && types.Identical(typ, errorType) {
 					name = "err"
 				} else {
 					// Drop any return values beyond the first and the last.
@@ -614,8 +617,44 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 				}
 				data.Receiver.Constructor.Results = append(data.Receiver.Constructor.Results, field{
 					Name: name,
-					Type: types.TypeString(constructor.Signature().Results().At(index).Type(), qf),
+					Type: types.TypeString(typ, qf),
 				})
+			}
+		}
+	}
+
+	// Resolves duplicate parameter names between the function and its
+	// receiver's constructor. It adds prefix to the constructor's parameters
+	// until no conflicts remain.
+	if data.Receiver != nil && data.Receiver.Constructor != nil {
+		seen := map[string]bool{}
+		for _, f := range data.Func.Args {
+			if f.Name == "" {
+				continue
+			}
+			seen[f.Name] = true
+		}
+
+		// "" for no change, "c" for constructor, "i" for input.
+		for _, prefix := range []string{"", "c", "c_", "i", "i_"} {
+			conflict := false
+			for _, f := range data.Receiver.Constructor.Args {
+				if f.Name == "" {
+					continue
+				}
+				if seen[prefix+f.Name] {
+					conflict = true
+					break
+				}
+			}
+			if !conflict {
+				for i, f := range data.Receiver.Constructor.Args {
+					if f.Name == "" {
+						continue
+					}
+					data.Receiver.Constructor.Args[i].Name = prefix + data.Receiver.Constructor.Args[i].Name
+				}
+				break
 			}
 		}
 	}
