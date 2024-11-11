@@ -76,6 +76,7 @@ type ClientOptions struct {
 	CompletionDeprecated                       bool
 	SupportedResourceOperations                []protocol.ResourceOperationKind
 	CodeActionResolveOptions                   []string
+	ShowDocumentSupported                      bool
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -872,6 +873,9 @@ func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps pr
 		o.InsertTextFormat = protocol.SnippetTextFormat
 	}
 	o.InsertReplaceSupported = caps.TextDocument.Completion.CompletionItem.InsertReplaceSupport
+	if caps.Window.ShowDocument != nil {
+		o.ShowDocumentSupported = caps.Window.ShowDocument.Support
+	}
 	// Check if the client supports configuration messages.
 	o.ConfigurationSupported = caps.Workspace.Configuration
 	o.DynamicConfigurationSupported = caps.Workspace.DidChangeConfiguration.DynamicRegistration

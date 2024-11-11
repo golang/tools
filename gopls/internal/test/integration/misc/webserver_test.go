@@ -73,10 +73,11 @@ func (G[T]) F(int, int, int, int, int, int, int, ...int) {}
 		// downcall, this time for a "file:" URL, causing the
 		// client editor to navigate to the source file.
 		t.Log("extracted /src URL", srcURL)
+		collectDocs := env.Awaiter.ListenToShownDocuments()
 		get(t, srcURL)
 
 		// Check that that shown location is that of NewFunc.
-		shownSource := shownDocument(t, env, "file:")
+		shownSource := shownDocument(t, collectDocs(), "file:")
 		gotLoc := protocol.Location{
 			URI:   protocol.DocumentURI(shownSource.URI), // fishy conversion
 			Range: *shownSource.Selection,
@@ -87,6 +88,70 @@ func (G[T]) F(int, int, int, int, int, int, int, ...int) {}
 			t.Errorf("got location %v, want %v", gotLoc, wantLoc)
 		}
 	})
+}
+
+func TestShowDocumentUnsupported(t *testing.T) {
+	const files = `
+-- go.mod --
+module example.com
+
+-- a.go --
+package a
+
+const A = 1
+`
+
+	for _, supported := range []bool{false, true} {
+		t.Run(fmt.Sprintf("supported=%v", supported), func(t *testing.T) {
+			opts := []RunOption{Modes(Default)}
+			if !supported {
+				opts = append(opts, CapabilitiesJSON([]byte(`
+{
+	"window": {
+		"showDocument": {
+			"support": false
+		}
+	}
+}`)))
+			}
+			WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {
+				env.OpenFile("a.go")
+				// Invoke the "Browse package documentation" code
+				// action to start the server.
+				actions := env.CodeAction(env.Sandbox.Workdir.EntireFile("a.go"), nil, 0)
+				docAction, err := codeActionByKind(actions, settings.GoDoc)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				// Execute the command.
+				// Its side effect should be a single showDocument request.
+				params := &protocol.ExecuteCommandParams{
+					Command:   docAction.Command.Command,
+					Arguments: docAction.Command.Arguments,
+				}
+				var result any
+				collectDocs := env.Awaiter.ListenToShownDocuments()
+				collectMessages := env.Awaiter.ListenToShownMessages()
+				env.ExecuteCommand(params, &result)
+
+				wantDocs, wantMessages := 0, 1
+				if supported {
+					wantDocs, wantMessages = 1, 0
+				}
+
+				docs := collectDocs()
+				messages := collectMessages()
+
+				if gotDocs := len(docs); gotDocs != wantDocs {
+					t.Errorf("GoDoc: got %d showDocument requests, want %d", gotDocs, wantDocs)
+				}
+				if gotMessages := len(messages); gotMessages != wantMessages {
+					t.Errorf("GoDoc: got %d showMessage requests, want %d", gotMessages, wantMessages)
+				}
+			})
+		})
+	}
 }
 
 func TestPkgDocNoPanic66449(t *testing.T) {
@@ -353,9 +418,10 @@ func viewPkgDoc(t *testing.T, env *Env, loc protocol.Location) protocol.URI {
 		Arguments: docAction.Command.Arguments,
 	}
 	var result any
+	collectDocs := env.Awaiter.ListenToShownDocuments()
 	env.ExecuteCommand(params, &result)
 
-	doc := shownDocument(t, env, "http:")
+	doc := shownDocument(t, collectDocs(), "http:")
 	if doc == nil {
 		t.Fatalf("no showDocument call had 'http:' prefix")
 	}
@@ -408,8 +474,9 @@ func f(buf bytes.Buffer, greeting string) {
 			Arguments: action.Command.Arguments,
 		}
 		var result command.DebuggingResult
+		collectDocs := env.Awaiter.ListenToShownDocuments()
 		env.ExecuteCommand(params, &result)
-		doc := shownDocument(t, env, "http:")
+		doc := shownDocument(t, collectDocs(), "http:")
 		if doc == nil {
 			t.Fatalf("no showDocument call had 'file:' prefix")
 		}
@@ -467,8 +534,9 @@ func g() {
 			Arguments: action.Command.Arguments,
 		}
 		var result command.DebuggingResult
+		collectDocs := env.Awaiter.ListenToShownDocuments()
 		env.ExecuteCommand(params, &result)
-		doc := shownDocument(t, env, "http:")
+		doc := shownDocument(t, collectDocs(), "http:")
 		if doc == nil {
 			t.Fatalf("no showDocument call had 'file:' prefix")
 		}
@@ -506,11 +574,8 @@ func g() {
 // shownDocument returns the first shown document matching the URI prefix.
 // It may be nil.
 // As a side effect, it clears the list of accumulated shown documents.
-func shownDocument(t *testing.T, env *Env, prefix string) *protocol.ShowDocumentParams {
+func shownDocument(t *testing.T, shown []*protocol.ShowDocumentParams, prefix string) *protocol.ShowDocumentParams {
 	t.Helper()
-	var shown []*protocol.ShowDocumentParams
-	env.Await(ShownDocuments(&shown))
-	env.Awaiter.ResetShownDocuments() // REVIEWERS: seems like a hack; better ideas?
 	var first *protocol.ShowDocumentParams
 	for _, sd := range shown {
 		if strings.HasPrefix(sd.URI, prefix) {

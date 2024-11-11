@@ -719,7 +719,7 @@ func (c *commandHandler) Doc(ctx context.Context, args command.DocArgs) (protoco
 		// Direct the client to open the /pkg page.
 		result = web.PkgURL(deps.snapshot.View().ID(), pkgpath, fragment)
 		if args.ShowDocument {
-			openClientBrowser(ctx, c.s.client, result)
+			openClientBrowser(ctx, c.s.client, "Doc", result, c.s.Options())
 		}
 
 		return nil
@@ -1158,7 +1158,7 @@ func (c *commandHandler) StartDebugging(ctx context.Context, args command.Debugg
 		return result, fmt.Errorf("starting debug server: %w", err)
 	}
 	result.URLs = []string{"http://" + listenedAddr}
-	openClientBrowser(ctx, c.s.client, result.URLs[0])
+	openClientBrowser(ctx, c.s.client, "Debug", result.URLs[0], c.s.Options())
 	return result, nil
 }
 
@@ -1560,8 +1560,21 @@ func showMessage(ctx context.Context, cli protocol.Client, typ protocol.MessageT
 
 // openClientBrowser causes the LSP client to open the specified URL
 // in an external browser.
-func openClientBrowser(ctx context.Context, cli protocol.Client, url protocol.URI) {
-	showDocumentImpl(ctx, cli, url, nil)
+//
+// If the client does not support window/showDocument, a window/showMessage
+// request is instead used, with the format "$title: open your browser to $url".
+func openClientBrowser(ctx context.Context, cli protocol.Client, title string, url protocol.URI, opts *settings.Options) {
+	if opts.ShowDocumentSupported {
+		showDocumentImpl(ctx, cli, url, nil, opts)
+	} else {
+		params := &protocol.ShowMessageParams{
+			Type:    protocol.Info,
+			Message: fmt.Sprintf("%s: open your browser to %s", title, url),
+		}
+		if err := cli.ShowMessage(ctx, params); err != nil {
+			event.Error(ctx, "failed to show brower url", err)
+		}
+	}
 }
 
 // openClientEditor causes the LSP client to open the specified document
@@ -1569,11 +1582,17 @@ func openClientBrowser(ctx context.Context, cli protocol.Client, url protocol.UR
 //
 // Note that VS Code 1.87.2 doesn't currently raise the window; this is
 // https://github.com/microsoft/vscode/issues/207634
-func openClientEditor(ctx context.Context, cli protocol.Client, loc protocol.Location) {
-	showDocumentImpl(ctx, cli, protocol.URI(loc.URI), &loc.Range)
+func openClientEditor(ctx context.Context, cli protocol.Client, loc protocol.Location, opts *settings.Options) {
+	if !opts.ShowDocumentSupported {
+		return // no op
+	}
+	showDocumentImpl(ctx, cli, protocol.URI(loc.URI), &loc.Range, opts)
 }
 
-func showDocumentImpl(ctx context.Context, cli protocol.Client, url protocol.URI, rangeOpt *protocol.Range) {
+func showDocumentImpl(ctx context.Context, cli protocol.Client, url protocol.URI, rangeOpt *protocol.Range, opts *settings.Options) {
+	if !opts.ShowDocumentSupported {
+		return // no op
+	}
 	// In principle we shouldn't send a showDocument request to a
 	// client that doesn't support it, as reported by
 	// ShowDocumentClientCapabilities. But even clients that do
@@ -1690,7 +1709,7 @@ func (c *commandHandler) FreeSymbols(ctx context.Context, viewID string, loc pro
 		return err
 	}
 	url := web.freesymbolsURL(viewID, loc)
-	openClientBrowser(ctx, c.s.client, url)
+	openClientBrowser(ctx, c.s.client, "Free symbols", url, c.s.Options())
 	return nil
 }
 
@@ -1700,12 +1719,14 @@ func (c *commandHandler) Assembly(ctx context.Context, viewID, packageID, symbol
 		return err
 	}
 	url := web.assemblyURL(viewID, packageID, symbol)
-	openClientBrowser(ctx, c.s.client, url)
+	openClientBrowser(ctx, c.s.client, "Assembly", url, c.s.Options())
 	return nil
 }
 
 func (c *commandHandler) ClientOpenURL(ctx context.Context, url string) error {
-	openClientBrowser(ctx, c.s.client, url)
+	// Fall back to "Gopls: open your browser..." if we must send a showMessage
+	// request, since we don't know the context of this command.
+	openClientBrowser(ctx, c.s.client, "Gopls", url, c.s.Options())
 	return nil
 }
 

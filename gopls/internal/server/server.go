@@ -303,7 +303,7 @@ func (s *server) initWeb() (*web, error) {
 		openClientEditor(req.Context(), s.client, protocol.Location{
 			URI:   uri,
 			Range: protocol.Range{Start: posn, End: posn},
-		})
+		}, s.Options())
 	})
 
 	// The /pkg/PATH&view=... handler shows package documentation for PATH.
