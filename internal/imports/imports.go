@@ -126,8 +126,12 @@ func formatFile(fset *token.FileSet, file *ast.File, src []byte, adjust func(ori
 
 	mergeImports(file)
 	sortImports(opt.LocalPrefix, fset.File(file.FileStart), file)
-	var spacesBefore []string
+	var spacesBefore []string // import paths we need spaces before
 	for _, impSection := range astutil.Imports(fset, file) {
+		// Within each block of contiguous imports, see if any
+		// import lines are in different group numbers. If so,
+		// we'll need to put a space between them so it's
+		// compatible with gofmt.
 		lastGroup := -1
 		for _, importSpec := range impSection {
 			importPath, _ := strconv.Unquote(importSpec.Path.Value)
