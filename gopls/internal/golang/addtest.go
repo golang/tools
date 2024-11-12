@@ -457,12 +457,21 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 
 	errorType := types.Universe.Lookup("error").Type()
 
-	// TODO(hxjiang): handle special case for ctx.Context input.
+	var isContextType = func(t types.Type) bool {
+		named, ok := t.(*types.Named)
+		if !ok {
+			return false
+		}
+		return named.Obj().Pkg().Path() == "context" && named.Obj().Name() == "Context"
+	}
+
 	for i := range sig.Params().Len() {
 		param := sig.Params().At(i)
 		name, typ := param.Name(), param.Type()
 		f := field{Type: types.TypeString(typ, qf)}
-		if name == "" || name == "_" {
+		if i == 0 && isContextType(typ) {
+			f.Value = qf(types.NewPackage("context", "context")) + ".Background()"
+		} else if name == "" || name == "_" {
 			f.Value = typesinternal.ZeroString(typ, qf)
 		} else {
 			f.Name = name
@@ -594,7 +603,9 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 				param := constructor.Signature().Params().At(i)
 				name, typ := param.Name(), param.Type()
 				f := field{Type: types.TypeString(typ, qf)}
-				if name == "" || name == "_" {
+				if i == 0 && isContextType(typ) {
+					f.Value = qf(types.NewPackage("context", "context")) + ".Background()"
+				} else if name == "" || name == "_" {
 					f.Value = typesinternal.ZeroString(typ, qf)
 				} else {
 					f.Name = name

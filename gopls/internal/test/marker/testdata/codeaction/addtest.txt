@@ -1319,3 +1319,100 @@ func (r *BarInputFunction) Method(one string, _ func(time.Time) *time.Time) {} /
 +    })
 +  }
 +}
+-- contextinput/contextinput.go --
+package main
+
+import "context"
+
+func Function(ctx context.Context, _, _ string) (out, out1, out2 string) {return "", "", ""} //@codeactionedit("Function", "source.addTest", function_context)
+
+type Foo struct {}
+
+func NewFoo(ctx context.Context) (*Foo, error) {return nil, nil}
+
+func (*Foo) Method(ctx context.Context, _, _ string)  (out, out1, out2 string) {return "", "", ""} //@codeactionedit("Method", "source.addTest", method_context)
+-- contextinput/contextinput_test.go --
+package main_test
+
+import renamedctx "context"
+
+var local renamedctx.Context
+
+-- @function_context/contextinput/contextinput_test.go --
+@@ -3 +3,3 @@
+-import renamedctx "context"
++import (
++	renamedctx "context"
++	"testing"
+@@ -5 +7,3 @@
++	"golang.org/lsptests/addtest/contextinput"
++)
++
+@@ -7 +12,26 @@
++
++func TestFunction(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    want string
++    want2 string
++    want3 string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      got, got2, got3 := main.Function(renamedctx.Background(), "", "")
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Function() = %v, want %v", got, tt.want)
++      }
++      if true {
++        t.Errorf("Function() = %v, want %v", got2, tt.want2)
++      }
++      if true {
++        t.Errorf("Function() = %v, want %v", got3, tt.want3)
++      }
++    })
++  }
++}
+-- @method_context/contextinput/contextinput_test.go --
+@@ -3 +3,3 @@
+-import renamedctx "context"
++import (
++	renamedctx "context"
++	"testing"
+@@ -5 +7,3 @@
++	"golang.org/lsptests/addtest/contextinput"
++)
++
+@@ -7 +12,30 @@
++
++func TestFoo_Method(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    want string
++    want2 string
++    want3 string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      f, err := main.NewFoo(renamedctx.Background())
++      if err != nil {
++        t.Fatalf("could not contruct receiver type: %v", err)
++      }
++      got, got2, got3 := f.Method(renamedctx.Background(), "", "")
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("Method() = %v, want %v", got, tt.want)
++      }
++      if true {
++        t.Errorf("Method() = %v, want %v", got2, tt.want2)
++      }
++      if true {
++        t.Errorf("Method() = %v, want %v", got3, tt.want3)
++      }
++    })
++  }
++}
