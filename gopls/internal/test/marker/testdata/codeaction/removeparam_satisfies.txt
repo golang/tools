@@ -18,30 +18,15 @@ package rm
 
 type T int
 
-func (t T) Foo(x int) { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", basic)
+func (t T) Foo(x int) { //@codeaction("x", "refactor.rewrite.removeUnusedParam", result=basic)
 }
 
--- use/use.go --
-package use
-
-import "example.com/rm"
-
-type Fooer interface{
-	Foo(int)
-}
-
-var _ Fooer = rm.T(0)
-
-func _() {
-	var x rm.T
-	x.Foo(1)
-}
 -- @basic/p.go --
 package rm
 
 type T int
 
-func (t T) Foo() { //@codeaction("x", "x", "refactor.rewrite.removeUnusedParam", basic)
+func (t T) Foo() { //@codeaction("x", "refactor.rewrite.removeUnusedParam", result=basic)
 }
 
 -- @basic/use/use.go --
@@ -59,4 +44,19 @@ func _() {
 	var x rm.T
 	var t rm.T = x
 	t.Foo()
+}
+-- use/use.go --
+package use
+
+import "example.com/rm"
+
+type Fooer interface{
+	Foo(int)
+}
+
+var _ Fooer = rm.T(0)
+
+func _() {
+	var x rm.T
+	x.Foo(1)
 }

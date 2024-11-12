@@ -17,53 +17,53 @@ import (
 
 func foo() {
 	var s string
-	s = "hello" //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a1)
-	s = `hello` //@codeactionedit("`", "refactor.rewrite.changeQuote", a2)
-	s = "hello\tworld" //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a3)
-	s = `hello	world` //@codeactionedit("`", "refactor.rewrite.changeQuote", a4)
-	s = "hello\nworld" //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a5)
+	s = "hello" //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a1)
+	s = `hello` //@codeaction("`", "refactor.rewrite.changeQuote", edit=a2)
+	s = "hello\tworld" //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a3)
+	s = `hello	world` //@codeaction("`", "refactor.rewrite.changeQuote", edit=a4)
+	s = "hello\nworld" //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a5)
 	// add a comment  to avoid affect diff compute
 	s = `hello
-world` //@codeactionedit("`", "refactor.rewrite.changeQuote", a6)
-	s = "hello\"world" //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a7)
-	s = `hello"world` //@codeactionedit("`", "refactor.rewrite.changeQuote", a8)
-	s = "hello\x1bworld" //@codeactionerr(`"`, "", "refactor.rewrite.changeQuote", re"found 0 CodeActions")
-	s = "hello`world" //@codeactionerr(`"`, "", "refactor.rewrite.changeQuote", re"found 0 CodeActions")
-	s = "hello\x7fworld" //@codeactionerr(`"`, "", "refactor.rewrite.changeQuote", re"found 0 CodeActions")
+world` //@codeaction("`", "refactor.rewrite.changeQuote", edit=a6)
+	s = "hello\"world" //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a7)
+	s = `hello"world` //@codeaction("`", "refactor.rewrite.changeQuote", edit=a8)
+	s = "hello\x1bworld" //@codeaction(`"`, "refactor.rewrite.changeQuote", err=re"found 0 CodeActions")
+	s = "hello`world" //@codeaction(`"`, "refactor.rewrite.changeQuote", err=re"found 0 CodeActions")
+	s = "hello\x7fworld" //@codeaction(`"`, "refactor.rewrite.changeQuote", err=re"found 0 CodeActions")
 	fmt.Println(s)
 }
 
 -- @a1/a.go --
 @@ -9 +9 @@
--	s = "hello" //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a1)
-+	s = `hello` //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a1)
+-	s = "hello" //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a1)
++	s = `hello` //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a1)
 -- @a2/a.go --
 @@ -10 +10 @@
--	s = `hello` //@codeactionedit("`", "refactor.rewrite.changeQuote", a2)
-+	s = "hello" //@codeactionedit("`", "refactor.rewrite.changeQuote", a2)
+-	s = `hello` //@codeaction("`", "refactor.rewrite.changeQuote", edit=a2)
++	s = "hello" //@codeaction("`", "refactor.rewrite.changeQuote", edit=a2)
 -- @a3/a.go --
 @@ -11 +11 @@
--	s = "hello\tworld" //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a3)
-+	s = `hello	world` //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a3)
+-	s = "hello\tworld" //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a3)
++	s = `hello	world` //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a3)
 -- @a4/a.go --
 @@ -12 +12 @@
--	s = `hello	world` //@codeactionedit("`", "refactor.rewrite.changeQuote", a4)
-+	s = "hello\tworld" //@codeactionedit("`", "refactor.rewrite.changeQuote", a4)
+-	s = `hello	world` //@codeaction("`", "refactor.rewrite.changeQuote", edit=a4)
++	s = "hello\tworld" //@codeaction("`", "refactor.rewrite.changeQuote", edit=a4)
 -- @a5/a.go --
 @@ -13 +13,2 @@
--	s = "hello\nworld" //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a5)
+-	s = "hello\nworld" //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a5)
 +	s = `hello
-+world` //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a5)
++world` //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a5)
 -- @a6/a.go --
 @@ -15,2 +15 @@
 -	s = `hello
--world` //@codeactionedit("`", "refactor.rewrite.changeQuote", a6)
-+	s = "hello\nworld" //@codeactionedit("`", "refactor.rewrite.changeQuote", a6)
+-world` //@codeaction("`", "refactor.rewrite.changeQuote", edit=a6)
++	s = "hello\nworld" //@codeaction("`", "refactor.rewrite.changeQuote", edit=a6)
 -- @a7/a.go --
 @@ -17 +17 @@
--	s = "hello\"world" //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a7)
-+	s = `hello"world` //@codeactionedit(`"`, "refactor.rewrite.changeQuote", a7)
+-	s = "hello\"world" //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a7)
++	s = `hello"world` //@codeaction(`"`, "refactor.rewrite.changeQuote", edit=a7)
 -- @a8/a.go --
 @@ -18 +18 @@
--	s = `hello"world` //@codeactionedit("`", "refactor.rewrite.changeQuote", a8)
-+	s = "hello\"world" //@codeactionedit("`", "refactor.rewrite.changeQuote", a8)
+-	s = `hello"world` //@codeaction("`", "refactor.rewrite.changeQuote", edit=a8)
++	s = "hello\"world" //@codeaction("`", "refactor.rewrite.changeQuote", edit=a8)

@@ -6,9 +6,9 @@
 Package marker defines a framework for running "marker" tests, each
 defined by a file in the testdata subdirectory.
 
-Use this command to run the tests:
+Use this command to run the tests, from the gopls module:
 
-	$ go test ./gopls/internal/test/marker [-update]
+	$ go test ./internal/test/marker [-update]
 
 A marker test uses the '//@' marker syntax of the x/tools/internal/expect package
 to annotate source code with various information such as locations and
@@ -100,21 +100,17 @@ The following markers are supported within marker tests:
     completion candidate produced at the given location with provided label
     results in the given golden state.
 
-  - codeaction(start, end, kind, golden): specifies a code action
-    to request for the given range. To support multi-line ranges, the range
-    is defined to be between start.Start and end.End. The golden directory
-    contains changed file content after the code action is applied.
+  - codeaction(start location, kind string, end=location, edit=golden, result=golden, err=stringMatcher)
 
-    TODO(rfindley): now that 'location' supports multi-line matches, replace
-    uses of 'codeaction' with codeactionedit.
+    Specifies a code action to request at the location, with given kind.
 
-  - codeactionedit(location, kind, golden): a shorter form of
-    codeaction. Invokes a code action of the given kind for the given
-    in-line range, and compares the resulting formatted unified *edits*
-    (notably, not the full file content) with the golden directory.
+    If end is set, the location is defined to be between start.Start and end.End.
 
-  - codeactionerr(start, end, kind, wantError): specifies a codeaction that
-    fails with an error that matches the expectation.
+    Exactly one of edit, result, or err must be set.
+    If edit is set, it is a golden reference to the edits resulting from the code action.
+    If result is set, it is a golden reference to the full set of changed files
+    resulting from the code action.
+    If err is set, it is the code action error.
 
   - codelens(location, title): specifies that a codelens is expected at the
     given location, with given title. Must be used in conjunction with
@@ -136,7 +132,8 @@ The following markers are supported within marker tests:
     but end positions are ignored unless exact=true.
 
     TODO(adonovan): in the older marker framework, the annotation asserted
-    two additional fields (source="compiler", kind="error"). Restore them?
+    two additional fields (source="compiler", kind="error"). Restore them using
+    optional named arguments.
 
   - def(src, dst location): performs a textDocument/definition request at
     the src location, and check the result points to the dst location.
@@ -208,17 +205,6 @@ The following markers are supported within marker tests:
     placeholder. If placeholder is "", this is treated as a negative
     assertion and prepareRename should return nil.
 
-  - rename(location, new, golden): specifies a renaming of the
-    identifier at the specified location to the new name.
-    The golden directory contains the transformed files.
-
-  - renameerr(location, new, wantError): specifies a renaming that
-    fails with an error that matches the expectation.
-
-  - signature(location, label, active): specifies that
-    signatureHelp at the given location should match the provided string, with
-    the active parameter (an index) highlighted.
-
   - quickfix(location, regexp, golden): like diag, the location and
     regexp identify an expected diagnostic, which must have exactly one
     associated "quickfix" code action.
@@ -243,6 +229,17 @@ The following markers are supported within marker tests:
     request at the first location and asserts that the result is the set of
     'want' locations. The first want location must be the declaration
     (assumedly unique).
+
+  - rename(location, new, golden): specifies a renaming of the
+    identifier at the specified location to the new name.
+    The golden directory contains the transformed files.
+
+  - renameerr(location, new, wantError): specifies a renaming that
+    fails with an error that matches the expectation.
+
+  - signature(location, label, active): specifies that
+    signatureHelp at the given location should match the provided string, with
+    the active parameter (an index) highlighted.
 
   - snippet(location, string OR completionItem, snippet): executes a
     textDocument/completion request at the location, and searches for a result
@@ -288,20 +285,26 @@ the following tokens as defined by the Go spec:
 These values are passed as arguments to the corresponding parameter of the
 test function. Additional value conversions may occur for these argument ->
 parameter type pairs:
+
   - string->regexp: the argument is parsed as a regular expressions.
+
   - string->location: the argument is converted to the location of the first
     instance of the argument in the file content starting from the beginning of
     the line containing the note. Multi-line matches are permitted, but the
     match must begin before the note.
+
   - regexp->location: the argument is converted to the location of the first
     match for the argument in the file content starting from the beginning of
     the line containing the note. Multi-line matches are permitted, but the
     match must begin before the note. If the regular expression contains
     exactly one subgroup, the position of the subgroup is used rather than the
     position of the submatch.
+
   - name->location: the argument is replaced by the named location.
+
   - name->Golden: the argument is used to look up golden content prefixed by
     @<argument>.
+
   - {string,regexp,identifier}->stringMatcher: a stringMatcher type
     specifies an expected string, either in the form of a substring
     that must be present, a regular expression that it must match, or an
@@ -331,7 +334,7 @@ Here is a complete example:
 In this example, the @hover annotation tells the test runner to run the
 hoverMarker function, which has parameters:
 
-	(mark marker, src, dsc protocol.Location, g *Golden).
+	(mark marker, src, dst protocol.Location, g *Golden).
 
 The first argument holds the test context, including fake editor with open
 files, and sandboxed directory.
@@ -369,9 +372,6 @@ Note that -update does not cause missing @diag or @loc markers to be added.
   - Provide some means by which locations in the standard library
     (or builtin.go) can be named, so that, for example, we can we
     can assert that MyError implements the built-in error type.
-  - If possible, improve handling for optional arguments. Rather than have
-    multiple variations of a marker, it would be nice to support a more
-    flexible signature: can codeaction, codeactionedit, codeactionerr, and
-    quickfix be consolidated?
+  - Eliminate all *err markers, preferring named arguments.
 */
 package marker

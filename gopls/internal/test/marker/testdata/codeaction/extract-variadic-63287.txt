@@ -9,7 +9,7 @@ go 1.18
 -- a/a.go --
 package a
 
-//@codeactionedit(block, "refactor.extract.function", out)
+//@codeaction(block, "refactor.extract.function", edit=out)
 
 func _() {
 	var logf func(string, ...any)

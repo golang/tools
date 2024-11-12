@@ -61,19 +61,19 @@ func (notificationTwo) isNotification() {}
 func doSwitch() {
 	var b data.TypeB
 	switch b {
-	case data.TypeBOne: //@codeactionedit(":", "refactor.rewrite.fillSwitch", a1)
+	case data.TypeBOne: //@codeaction(":", "refactor.rewrite.fillSwitch", edit=a1)
 	}
 
 	var a typeA
 	switch a {
-	case typeAThree: //@codeactionedit(":", "refactor.rewrite.fillSwitch", a2)
+	case typeAThree: //@codeaction(":", "refactor.rewrite.fillSwitch", edit=a2)
 	}
 
 	var n notification
-	switch n.(type) { //@codeactionedit("{", "refactor.rewrite.fillSwitch", a3)
+	switch n.(type) { //@codeaction("{", "refactor.rewrite.fillSwitch", edit=a3)
 	}
 
-	switch nt := n.(type) { //@codeactionedit("{", "refactor.rewrite.fillSwitch", a4)
+	switch nt := n.(type) { //@codeaction("{", "refactor.rewrite.fillSwitch", edit=a4)
 	}
 
 	var s struct {
@@ -81,7 +81,7 @@ func doSwitch() {
 	}
 
 	switch s.a {
-	case typeAThree: //@codeactionedit(":", "refactor.rewrite.fillSwitch", a5)
+	case typeAThree: //@codeaction(":", "refactor.rewrite.fillSwitch", edit=a5)
 	}
 }
 -- @a1/a.go --

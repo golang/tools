@@ -9,7 +9,14 @@ go 1.21
 -- a/a.go --
 package a
 
-func A(x, unused int) int { //@codeaction("unused", "unused", "refactor.rewrite.removeUnusedParam", a)
+func A(x, unused int) int { //@codeaction("unused", "refactor.rewrite.removeUnusedParam", result=a)
+	return x
+}
+
+-- @a/a/a.go --
+package a
+
+func A(x int) int { //@codeaction("unused", "refactor.rewrite.removeUnusedParam", result=a)
 	return x
 }
 
@@ -24,10 +31,3 @@ func main(){
 
 	) //@diag(")", re"not enough arguments")
 }
--- @a/a/a.go --
-package a
-
-func A(x int) int { //@codeaction("unused", "unused", "refactor.rewrite.removeUnusedParam", a)
-	return x
-}
-

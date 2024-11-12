@@ -6,18 +6,18 @@ This test exercises function and method extraction.
 -- basic.go --
 package extract
 
-//@codeactionedit(A_XLessThanYP, "refactor.extract.method", meth1)
-//@codeactionedit(A_XLessThanYP, "refactor.extract.function", func1)
-//@codeactionedit(A_AddP1, "refactor.extract.method", meth2)
-//@codeactionedit(A_AddP1, "refactor.extract.function", func2)
-//@codeactionedit(A_AddP2, "refactor.extract.method", meth3)
-//@codeactionedit(A_AddP2, "refactor.extract.function", func3)
-//@codeactionedit(A_XLessThanY, "refactor.extract.method", meth4)
-//@codeactionedit(A_XLessThanY, "refactor.extract.function", func4)
-//@codeactionedit(A_Add1, "refactor.extract.method", meth5)
-//@codeactionedit(A_Add1, "refactor.extract.function", func5)
-//@codeactionedit(A_Add2, "refactor.extract.method", meth6)
-//@codeactionedit(A_Add2, "refactor.extract.function", func6)
+//@codeaction(A_XLessThanYP, "refactor.extract.method", edit=meth1)
+//@codeaction(A_XLessThanYP, "refactor.extract.function", edit=func1)
+//@codeaction(A_AddP1, "refactor.extract.method", edit=meth2)
+//@codeaction(A_AddP1, "refactor.extract.function", edit=func2)
+//@codeaction(A_AddP2, "refactor.extract.method", edit=meth3)
+//@codeaction(A_AddP2, "refactor.extract.function", edit=func3)
+//@codeaction(A_XLessThanY, "refactor.extract.method", edit=meth4)
+//@codeaction(A_XLessThanY, "refactor.extract.function", edit=func4)
+//@codeaction(A_Add1, "refactor.extract.method", edit=meth5)
+//@codeaction(A_Add1, "refactor.extract.function", edit=func5)
+//@codeaction(A_Add2, "refactor.extract.method", edit=meth6)
+//@codeaction(A_Add2, "refactor.extract.function", edit=func6)
 
 type A struct {
 	x int
@@ -162,12 +162,12 @@ import (
 	"testing"
 )
 
-//@codeactionedit(B_AddP, "refactor.extract.method", contextMeth1)
-//@codeactionedit(B_AddP, "refactor.extract.function", contextFunc1)
-//@codeactionedit(B_LongList, "refactor.extract.method", contextMeth2)
-//@codeactionedit(B_LongList, "refactor.extract.function", contextFunc2)
-//@codeactionedit(B_AddPWithB, "refactor.extract.function", contextFuncB)
-//@codeactionedit(B_LongListWithT, "refactor.extract.function", contextFuncT)
+//@codeaction(B_AddP, "refactor.extract.method", edit=contextMeth1)
+//@codeaction(B_AddP, "refactor.extract.function", edit=contextFunc1)
+//@codeaction(B_LongList, "refactor.extract.method", edit=contextMeth2)
+//@codeaction(B_LongList, "refactor.extract.function", edit=contextFunc2)
+//@codeaction(B_AddPWithB, "refactor.extract.function", edit=contextFuncB)
+//@codeaction(B_LongListWithT, "refactor.extract.function", edit=contextFuncT)
 
 type B struct {
 	x int
