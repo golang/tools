@@ -122,14 +122,12 @@ func ApplyFixes(fixes []*ImportFix, filename string, src []byte, opt *Options, e
 // with the original source (formatFile's src parameter) and the
 // formatted file, and returns the postpocessed result.
 func formatFile(fset *token.FileSet, file *ast.File, src []byte, adjust func(orig []byte, src []byte) []byte, opt *Options) ([]byte, error) {
+	hasCRLF := bytes.Contains(src, []byte("\r\n"))
+
 	mergeImports(file)
 	sortImports(opt.LocalPrefix, fset.File(file.FileStart), file)
-	var spacesBefore []string // import paths we need spaces before
+	var spacesBefore []string
 	for _, impSection := range astutil.Imports(fset, file) {
-		// Within each block of contiguous imports, see if any
-		// import lines are in different group numbers. If so,
-		// we'll need to put a space between them so it's
-		// compatible with gofmt.
 		lastGroup := -1
 		for _, importSpec := range impSection {
 			importPath, _ := strconv.Unquote(importSpec.Path.Value)
@@ -139,7 +137,6 @@ func formatFile(fset *token.FileSet, file *ast.File, src []byte, adjust func(ori
 			}
 			lastGroup = groupNum
 		}
-
 	}
 
 	printerMode := printer.UseSpaces
@@ -168,6 +165,11 @@ func formatFile(fset *token.FileSet, file *ast.File, src []byte, adjust func(ori
 	if err != nil {
 		return nil, err
 	}
+
+	if hasCRLF {
+		out = bytes.ReplaceAll(out, []byte("\n"), []byte("\r\n"))
+	}
+
 	return out, nil
 }
 
