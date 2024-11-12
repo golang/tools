@@ -2,10 +2,9 @@
 
 [![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools)](https://pkg.go.dev/golang.org/x/tools)
 
-This repository provides the `golang.org/x/tools` module, comprising
-various tools and packages mostly for static analysis of Go programs,
-some of which are listed below.
-Use the "Go reference" link above for more information about any package.
+This **Repository** offers the [`golang.org/x/tools`](https://pkg.go.dev/golang.org/x/tools) module, which includes a collection of tools and packages primarily designed for static analysis of Go programs.
+Below are some of the tools available
+
 
 It also contains the
 [`golang.org/x/tools/gopls`](https://pkg.go.dev/golang.org/x/tools/gopls)
@@ -14,9 +13,11 @@ An LSP server analyses the source code of a project and
 responds to requests from a wide range of editors such as VSCode and
 Vim, allowing them to support IDE-like functionality.
 
+For further details about any specific package, please refer to the [`reference`](https://pkg.go.dev/golang.org/x/tools) 
+
 <!-- List only packages of general interest below. -->
 
-Selected commands:
+### Selected commands:
 
 - `cmd/goimports` formats a Go program like `go fmt` and additionally
   inserts import statements for any packages required by the file
@@ -26,12 +27,12 @@ Selected commands:
 - `cmd/stringer` generates declarations (including a `String` method) for "enum" types.
 - `cmd/toolstash` is a utility to simplify working with multiple versions of the Go toolchain.
 
-These commands may be fetched with a command such as
+### Commands may be fetched with a `Command` 
 ```
 go install golang.org/x/tools/cmd/goimports@latest
 ```
 
-Selected packages:
+### Selected packages:
 
 - `go/ssa` provides a static single-assignment form (SSA) intermediate
   representation (IR) for Go programs, similar to a typical compiler,
@@ -57,7 +58,7 @@ Selected packages:
 - `go/types/objectpath` provides a stable naming scheme for named
   entities ("objects") in the `go/types` API.
 
-Numerous other packages provide more esoteric functionality.
+- Numerous other packages provide more esoteric functionality.
 
 <!-- Some that didn't make the cut:
 
@@ -75,18 +76,22 @@ golang.org/x/tools/txtar
 
 ## Contributing
 
-This repository uses Gerrit for code changes.
-To learn how to submit changes, see https://golang.org/doc/contribute.html.
+ - This repository uses Gerrit for code changes.
+ 
+ - To learn how to submit changes, see [this](https://golang.org/doc/contribute.html)
 
-The main issue tracker for the tools repository is located at
+## Issues
+
+ - The main issue tracker for the tools repository is located at
 https://github.com/golang/go/issues. Prefix your issue with "x/tools/(your
 subdir):" in the subject line, so it is easy to find.
 
-### JavaScript and CSS Formatting
+## JavaScript and CSS Formatting
 
-This repository uses [prettier](https://prettier.io/) to format JS and CSS files.
+ - This repository uses [prettier](https://prettier.io/) to format JS and CSS files.
 
-The version of `prettier` used is 1.18.2.
+ - The version of `prettier` used is 1.18.2.
 
-It is encouraged that all JS and CSS code be run through this before submitting
-a change. However, it is not a strict requirement enforced by CI.
+## Note
+
+ - Although not strictly enforced by CI, we highly encourage running all JS and CSS code through this before submitting changes. It helps maintain code quality and consistency in the project.
