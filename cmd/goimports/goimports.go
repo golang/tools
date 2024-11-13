@@ -143,7 +143,7 @@ func processFile(filename string, in io.Reader, out io.Writer, argType argumentT
 		return err
 	}
 
-	if !bytes.Equal(src, res) {
+	if !compareByLine(src, res) {
 		// formatting has changed
 		if *list {
 			fmt.Fprintln(out, filename)
@@ -181,6 +181,26 @@ func processFile(filename string, in io.Reader, out io.Writer, argType argumentT
 	}
 
 	return err
+}
+
+func compareByLine(src, dst []byte) bool {
+	src = bytes.Replace(src, []byte("\r\n"), []byte("\n"), -1)
+	// dst is already normalized by imports.Process
+
+	linesA := bytes.Split(src, []byte("\n"))
+	linesB := bytes.Split(dst, []byte("\n"))
+
+	if len(linesA) != len(linesB) {
+		return false
+	}
+
+	for i := range linesA {
+		if !bytes.Equal(linesA[i], linesB[i]) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func visitFile(path string, f os.FileInfo, err error) error {
