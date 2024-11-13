@@ -12,6 +12,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"slices"
 	"sort"
 	"strings"
 	"text/scanner"
@@ -1214,10 +1215,14 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 			}
 			var name string
 			name, idx = generateAvailableIdentifier(pos, path, pkg, info, "returnValue", idx)
+			z := analysisinternal.ZeroValue(file, pkg, typ)
+			if z == nil {
+				return nil, nil, fmt.Errorf("can't generate zero value for %T", typ)
+			}
 			retVars = append(retVars, &returnVariable{
 				name:    ast.NewIdent(name),
 				decl:    &ast.Field{Type: expr},
-				zeroVal: analysisinternal.ZeroValue(file, pkg, typ),
+				zeroVal: z,
 			})
 		}
 	}
@@ -1250,8 +1255,7 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 			break
 		}
 		if val == nil {
-			return fmt.Errorf(
-				"could not find matching AST expression for %T", returnType.Type)
+			return fmt.Errorf("could not find matching AST expression for %T", returnType.Type)
 		}
 		zeroVals = append(zeroVals, val)
 	}
@@ -1266,7 +1270,7 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 			return false
 		}
 		if n, ok := n.(*ast.ReturnStmt); ok {
-			n.Results = append(zeroVals, n.Results...)
+			n.Results = slices.Concat(zeroVals, n.Results)
 			return false
 		}
 		return true

@@ -1,0 +1,52 @@
+
+-- a.go --
+package a
+
+import (
+	"fmt"
+	"encoding/json"
+)
+
+func F() error {
+	a, err := json.Marshal(0) //@codeaction("a", end, "refactor.extract.function", out)
+	if err != nil {
+		return fmt.Errorf("1: %w", err)
+	}
+	b, err := json.Marshal(0)
+	if err != nil {
+		return fmt.Errorf("2: %w", err)
+	} //@loc(end, "}")
+	fmt.Println(a, b)
+	return nil
+}
+
+-- @out/a.go --
+package a
+
+import (
+	"fmt"
+	"encoding/json"
+)
+
+func F() error {
+	//@codeaction("a", end, "refactor.extract.function", out)
+	a, b, shouldReturn, returnValue := newFunction()
+	if shouldReturn {
+		return returnValue
+	} //@loc(end, "}")
+	fmt.Println(a, b)
+	return nil
+}
+
+func newFunction() ([]byte, []byte, bool, error) {
+	a, err := json.Marshal(0)
+	if err != nil {
+		return nil, nil, true, fmt.Errorf("1: %w", err)
+	}
+	b, err := json.Marshal(0)
+	if err != nil {
+		return nil, nil, true, fmt.Errorf("2: %w", err)
+	}
+	return a, b, false, nil
+}
+
