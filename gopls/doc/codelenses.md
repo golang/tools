@@ -97,16 +97,15 @@ Default: off
 
 File type: Go
 
-## `run_govulncheck`: Run govulncheck
+## `run_govulncheck`: Run govulncheck (legacy)
 
 
-This codelens source annotates the `module` directive in a
-go.mod file with a command to run Govulncheck.
+This codelens source annotates the `module` directive in a go.mod file
+with a command to run Govulncheck asynchronously.
 
-[Govulncheck](https://go.dev/blog/vuln) is a static
-analysis tool that computes the set of functions reachable
-within your application, including dependencies;
-queries a database of known security vulnerabilities; and
+[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that
+computes the set of functions reachable within your application, including
+dependencies; queries a database of known security vulnerabilities; and
 reports any potential problems it finds.
 
 
@@ -154,6 +153,22 @@ necessary package dependencies.
 
 
 Default: on
+
+File type: go.mod
+
+## `vulncheck`: Run govulncheck
+
+
+This codelens source annotates the `module` directive in a go.mod file
+with a command to run govulncheck synchronously.
+
+[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that
+computes the set of functions reachable within your application, including
+dependencies; queries a database of known security vulnerabilities; and
+reports any potential problems it finds.
+
+
+Default: off
 
 File type: go.mod
 

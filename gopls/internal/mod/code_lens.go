@@ -21,10 +21,11 @@ import (
 // CodeLensSources returns the sources of code lenses for go.mod files.
 func CodeLensSources() map[settings.CodeLensSource]cache.CodeLensSourceFunc {
 	return map[settings.CodeLensSource]cache.CodeLensSourceFunc{
-		settings.CodeLensUpgradeDependency: upgradeLenses,   // commands: CheckUpgrades, UpgradeDependency
-		settings.CodeLensTidy:              tidyLens,        // commands: Tidy
-		settings.CodeLensVendor:            vendorLens,      // commands: Vendor
-		settings.CodeLensRunGovulncheck:    vulncheckLenses, // commands: RunGovulncheck
+		settings.CodeLensUpgradeDependency: upgradeLenses,        // commands: CheckUpgrades, UpgradeDependency
+		settings.CodeLensTidy:              tidyLens,             // commands: Tidy
+		settings.CodeLensVendor:            vendorLens,           // commands: Vendor
+		settings.CodeLensVulncheck:         vulncheckLenses,      // commands: Vulncheck
+		settings.CodeLensRunGovulncheck:    runGovulncheckLenses, // commands: RunGovulncheck
 	}
 }
 
@@ -149,6 +150,29 @@ func firstRequireRange(fh file.Handle, pm *cache.ParsedModule) (protocol.Range, 
 }
 
 func vulncheckLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+	pm, err := snapshot.ParseMod(ctx, fh)
+	if err != nil || pm.File == nil {
+		return nil, err
+	}
+	// Place the codelenses near the module statement.
+	// A module may not have the require block,
+	// but vulnerabilities can exist in standard libraries.
+	uri := fh.URI()
+	rng, err := moduleStmtRange(fh, pm)
+	if err != nil {
+		return nil, err
+	}
+
+	vulncheck := command.NewVulncheckCommand("Run govulncheck", command.VulncheckArgs{
+		URI:     uri,
+		Pattern: "./...",
+	})
+	return []protocol.CodeLens{
+		{Range: rng, Command: vulncheck},
+	}, nil
+}
+
+func runGovulncheckLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil || pm.File == nil {
 		return nil, err

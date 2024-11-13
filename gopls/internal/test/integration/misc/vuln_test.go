@@ -7,6 +7,7 @@ package misc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -51,7 +52,10 @@ package foo
 	})
 }
 
-func TestRunGovulncheckError2(t *testing.T) {
+func TestVulncheckError(t *testing.T) {
+	// This test checks an error of the gopls.vulncheck command, which should be
+	// returned synchronously.
+
 	const files = `
 -- go.mod --
 module mod.com
@@ -69,12 +73,13 @@ func F() { // build error incomplete
 		Settings{
 			"codelenses": map[string]bool{
 				"run_govulncheck": true,
+				"vulncheck":       true,
 			},
 		},
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
-		var result command.RunVulncheckResult
-		err := env.Editor.ExecuteCodeLensCommand(env.Ctx, "go.mod", command.RunGovulncheck, &result)
+		var result command.VulncheckResult
+		err := env.Editor.ExecuteCodeLensCommand(env.Ctx, "go.mod", command.Vulncheck, &result)
 		if err == nil {
 			t.Fatalf("govulncheck succeeded unexpectedly: %v", result)
 		}
@@ -185,37 +190,54 @@ func main() {
 		t.Fatal(err)
 	}
 	defer db.Clean()
-	WithOptions(
-		EnvVars{
-			// Let the analyzer read vulnerabilities data from the testdata/vulndb.
-			"GOVULNDB": db.URI(),
-			// When fetchinging stdlib package vulnerability info,
-			// behave as if our go version is go1.19 for this testing.
-			// The default behavior is to run `go env GOVERSION` (which isn't mutable env var).
-			cache.GoVersionForVulnTest:        "go1.19",
-			"_GOPLS_TEST_BINARY_RUN_AS_GOPLS": "true", // needed to run `gopls vulncheck`.
-		},
-		Settings{
-			"codelenses": map[string]bool{
-				"run_govulncheck": true,
-			},
-		},
-	).Run(t, files, func(t *testing.T, env *Env) {
-		env.OpenFile("go.mod")
 
-		// Run Command included in the codelens.
-		var result command.RunVulncheckResult
-		env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
+	for _, legacy := range []bool{false, true} {
+		t.Run(fmt.Sprintf("legacy=%v", legacy), func(t *testing.T) {
+			WithOptions(
+				EnvVars{
+					// Let the analyzer read vulnerabilities data from the testdata/vulndb.
+					"GOVULNDB": db.URI(),
+					// When fetchinging stdlib package vulnerability info,
+					// behave as if our go version is go1.19 for this testing.
+					// The default behavior is to run `go env GOVERSION` (which isn't mutable env var).
+					cache.GoVersionForVulnTest:        "go1.19",
+					"_GOPLS_TEST_BINARY_RUN_AS_GOPLS": "true", // needed to run `gopls vulncheck`.
+				},
+				Settings{
+					"codelenses": map[string]bool{
+						"run_govulncheck": true,
+						"vulncheck":       true,
+					},
+				},
+			).Run(t, files, func(t *testing.T, env *Env) {
+				env.OpenFile("go.mod")
 
-		env.OnceMet(
-			CompletedProgress(server.GoVulncheckCommandTitle, nil),
-			ShownMessage("Found GOSTDLIB"),
-			NoDiagnostics(ForFile("go.mod")),
-		)
-		testFetchVulncheckResult(t, env, "go.mod", result.Result, map[string]fetchVulncheckResult{
-			"go.mod": {IDs: []string{"GOSTDLIB"}, Mode: vulncheck.ModeGovulncheck},
+				// Run Command included in the codelens.
+
+				var result *vulncheck.Result
+				var expectation Expectation
+				if legacy {
+					var r command.RunVulncheckResult
+					env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &r)
+					expectation = CompletedProgressToken(r.Token, nil)
+				} else {
+					var r command.VulncheckResult
+					env.ExecuteCodeLensCommand("go.mod", command.Vulncheck, &r)
+					result = r.Result
+					expectation = CompletedProgress(server.GoVulncheckCommandTitle, nil)
+				}
+
+				env.OnceMet(
+					expectation,
+					ShownMessage("Found GOSTDLIB"),
+					NoDiagnostics(ForFile("go.mod")),
+				)
+				testFetchVulncheckResult(t, env, "go.mod", result, map[string]fetchVulncheckResult{
+					"go.mod": {IDs: []string{"GOSTDLIB"}, Mode: vulncheck.ModeGovulncheck},
+				})
+			})
 		})
-	})
+	}
 }
 
 func TestFetchVulncheckResultStd(t *testing.T) {
@@ -592,7 +614,7 @@ func TestRunVulncheckPackageDiagnostics(t *testing.T) {
 					env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
 					gotDiagnostics := &protocol.PublishDiagnosticsParams{}
 					env.OnceMet(
-						CompletedProgress(server.GoVulncheckCommandTitle, nil),
+						CompletedProgressToken(result.Token, nil),
 						ShownMessage("Found"),
 					)
 					env.OnceMet(
@@ -640,7 +662,7 @@ func TestRunGovulncheck_Expiry(t *testing.T) {
 		var result command.RunVulncheckResult
 		env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
 		env.OnceMet(
-			CompletedProgress(server.GoVulncheckCommandTitle, nil),
+			CompletedProgressToken(result.Token, nil),
 			ShownMessage("Found"),
 		)
 		// Sleep long enough for the results to expire.
@@ -671,7 +693,7 @@ func TestRunVulncheckWarning(t *testing.T) {
 		env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
 		gotDiagnostics := &protocol.PublishDiagnosticsParams{}
 		env.OnceMet(
-			CompletedProgress(server.GoVulncheckCommandTitle, nil),
+			CompletedProgressToken(result.Token, nil),
 			ShownMessage("Found"),
 		)
 		// Vulncheck diagnostics asynchronous to the vulncheck command.
@@ -680,7 +702,7 @@ func TestRunVulncheckWarning(t *testing.T) {
 			ReadDiagnostics("go.mod", gotDiagnostics),
 		)
 
-		testFetchVulncheckResult(t, env, "go.mod", result.Result, map[string]fetchVulncheckResult{
+		testFetchVulncheckResult(t, env, "go.mod", nil, map[string]fetchVulncheckResult{
 			// All vulnerabilities (symbol-level, import-level, module-level) are reported.
 			"go.mod": {IDs: []string{"GO-2022-01", "GO-2022-02", "GO-2022-03", "GO-2022-04"}, Mode: vulncheck.ModeGovulncheck},
 		})
@@ -826,7 +848,7 @@ func TestGovulncheckInfo(t *testing.T) {
 		env.ExecuteCodeLensCommand("go.mod", command.RunGovulncheck, &result)
 		gotDiagnostics := &protocol.PublishDiagnosticsParams{}
 		env.OnceMet(
-			CompletedProgress(server.GoVulncheckCommandTitle, nil),
+			CompletedProgressToken(result.Token, nil),
 			ShownMessage("No vulnerabilities found"), // only count affecting vulnerabilities.
 		)
 
@@ -836,7 +858,7 @@ func TestGovulncheckInfo(t *testing.T) {
 			ReadDiagnostics("go.mod", gotDiagnostics),
 		)
 
-		testFetchVulncheckResult(t, env, "go.mod", result.Result, map[string]fetchVulncheckResult{
+		testFetchVulncheckResult(t, env, "go.mod", nil, map[string]fetchVulncheckResult{
 			"go.mod": {IDs: []string{"GO-2022-02", "GO-2022-04"}, Mode: vulncheck.ModeGovulncheck},
 		})
 		// wantDiagnostics maps a module path in the require
