@@ -370,6 +370,8 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 
 // conventionalAcronyms contains conventional acronyms for type names
 // in lower case. For example, "ctx" for "context" and "err" for "error".
+//
+// Keep this up to date with golang.conventionalVarNames.
 var conventionalAcronyms = map[string]string{
 	"context":        "ctx",
 	"error":          "err",
@@ -382,11 +384,6 @@ var conventionalAcronyms = map[string]string{
 // non-identifier runes. For example, "[]int" becomes "i", and
 // "struct { i int }" becomes "s".
 func abbreviateTypeName(s string) string {
-	var (
-		b            strings.Builder
-		useNextUpper bool
-	)
-
 	// Trim off leading non-letters. We trim everything between "[" and
 	// "]" to handle array types like "[someConst]int".
 	var inBracket bool
@@ -407,27 +404,7 @@ func abbreviateTypeName(s string) string {
 		return acr
 	}
 
-	for i, r := range s {
-		// Stop if we encounter a non-identifier rune.
-		if !unicode.IsLetter(r) && !unicode.IsNumber(r) {
-			break
-		}
-
-		if i == 0 {
-			b.WriteRune(unicode.ToLower(r))
-		}
-
-		if unicode.IsUpper(r) {
-			if useNextUpper {
-				b.WriteRune(unicode.ToLower(r))
-				useNextUpper = false
-			}
-		} else {
-			useNextUpper = true
-		}
-	}
-
-	return b.String()
+	return golang.AbbreviateVarName(s)
 }
 
 // compositeLiteral adds a composite literal completion item for the given typeName.

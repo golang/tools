@@ -12,6 +12,7 @@ import (
 	"go/types"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -362,4 +363,37 @@ func btoi(b bool) int {
 	} else {
 		return 0
 	}
+}
+
+// AbbreviateVarName returns an abbreviated var name based on the given full
+// name (which may be a type name, for example).
+//
+// See the simple heuristics documented in line.
+func AbbreviateVarName(s string) string {
+	var (
+		b            strings.Builder
+		useNextUpper bool
+	)
+	for i, r := range s {
+		// Stop if we encounter a non-identifier rune.
+		if !unicode.IsLetter(r) && !unicode.IsNumber(r) {
+			break
+		}
+
+		// Otherwise, take the first letter from word boundaries, assuming
+		// camelCase.
+		if i == 0 {
+			b.WriteRune(unicode.ToLower(r))
+		}
+
+		if unicode.IsUpper(r) {
+			if useNextUpper {
+				b.WriteRune(unicode.ToLower(r))
+				useNextUpper = false
+			}
+		} else {
+			useNextUpper = true
+		}
+	}
+	return b.String()
 }

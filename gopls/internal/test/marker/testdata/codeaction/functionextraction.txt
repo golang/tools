@@ -56,9 +56,9 @@ package extract
 func _() bool {
 	x := 1
 	//@codeaction("if", ifend, "refactor.extract.function", return)
-	shouldReturn, returnValue := newFunction(x)
+	shouldReturn, b := newFunction(x)
 	if shouldReturn {
-		return returnValue
+		return b
 	} //@loc(ifend, "}")
 	return false
 }
@@ -124,9 +124,9 @@ func _() (int, string, error) {
 	x := 1
 	y := "hello"
 	//@codeaction("z", rcEnd, "refactor.extract.function", rc)
-	z, shouldReturn, returnValue, returnValue1, returnValue2 := newFunction(y, x)
+	z, shouldReturn, i, s, err := newFunction(y, x)
 	if shouldReturn {
-		return returnValue, returnValue1, returnValue2
+		return i, s, err
 	} //@loc(rcEnd, "}")
 	return x, z, nil
 }
@@ -205,9 +205,9 @@ import "go/ast"
 func _() {
 	ast.Inspect(ast.NewIdent("a"), func(n ast.Node) bool {
 		//@codeaction("if", rflEnd, "refactor.extract.function", rfl)
-		shouldReturn, returnValue := newFunction(n)
+		shouldReturn, b := newFunction(n)
 		if shouldReturn {
-			return returnValue
+			return b
 		} //@loc(rflEnd, "}")
 		return false
 	})
@@ -272,9 +272,9 @@ package extract
 func _() string {
 	x := 1
 	//@codeaction("if", riEnd, "refactor.extract.function", ri)
-	shouldReturn, returnValue := newFunction(x)
+	shouldReturn, s := newFunction(x)
 	if shouldReturn {
-		return returnValue
+		return s
 	} //@loc(riEnd, "}")
 	x = 2
 	return "b"
