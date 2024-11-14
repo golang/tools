@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // The prefix for this error message changed in Go 1.20.
@@ -221,7 +222,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 			Names: []*ast.Ident{
 				ast.NewIdent(name),
 			},
-			Type: analysisinternal.TypeExpr(file, pkg, paramTypes[i]),
+			Type: typesinternal.TypeExpr(file, pkg, paramTypes[i]),
 		})
 	}
 
@@ -229,7 +230,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 	retTypes := typesutil.TypesFromContext(info, path[1:], path[1].Pos())
 	for _, rt := range retTypes {
 		rets.List = append(rets.List, &ast.Field{
-			Type: analysisinternal.TypeExpr(file, pkg, rt),
+			Type: typesinternal.TypeExpr(file, pkg, rt),
 		})
 	}
 

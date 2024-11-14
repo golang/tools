@@ -349,8 +349,8 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 		}
 
 	case *types.Map:
-		k := analysisinternal.TypeExpr(f, pkg, u.Key())
-		v := analysisinternal.TypeExpr(f, pkg, u.Elem())
+		k := typesinternal.TypeExpr(f, pkg, u.Key())
+		v := typesinternal.TypeExpr(f, pkg, u.Elem())
 		if k == nil || v == nil {
 			return nil
 		}
@@ -361,7 +361,7 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 			},
 		}
 	case *types.Slice:
-		s := analysisinternal.TypeExpr(f, pkg, u.Elem())
+		s := typesinternal.TypeExpr(f, pkg, u.Elem())
 		if s == nil {
 			return nil
 		}
@@ -372,7 +372,7 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 		}
 
 	case *types.Array:
-		a := analysisinternal.TypeExpr(f, pkg, u.Elem())
+		a := typesinternal.TypeExpr(f, pkg, u.Elem())
 		if a == nil {
 			return nil
 		}
@@ -386,7 +386,7 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 		}
 
 	case *types.Chan:
-		v := analysisinternal.TypeExpr(f, pkg, u.Elem())
+		v := typesinternal.TypeExpr(f, pkg, u.Elem())
 		if v == nil {
 			return nil
 		}
@@ -405,7 +405,7 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 		}
 
 	case *types.Struct:
-		s := analysisinternal.TypeExpr(f, pkg, typ)
+		s := typesinternal.TypeExpr(f, pkg, typ)
 		if s == nil {
 			return nil
 		}
@@ -416,7 +416,7 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 	case *types.Signature:
 		var params []*ast.Field
 		for i := 0; i < u.Params().Len(); i++ {
-			p := analysisinternal.TypeExpr(f, pkg, u.Params().At(i).Type())
+			p := typesinternal.TypeExpr(f, pkg, u.Params().At(i).Type())
 			if p == nil {
 				return nil
 			}
@@ -431,7 +431,7 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 		}
 		var returns []*ast.Field
 		for i := 0; i < u.Results().Len(); i++ {
-			r := analysisinternal.TypeExpr(f, pkg, u.Results().At(i).Type())
+			r := typesinternal.TypeExpr(f, pkg, u.Results().At(i).Type())
 			if r == nil {
 				return nil
 			}

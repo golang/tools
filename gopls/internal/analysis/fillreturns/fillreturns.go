@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -161,7 +162,7 @@ outer:
 				if t := info.TypeOf(val); t == nil || !matchingTypes(t, retTyp) {
 					continue
 				}
-				if !analysisinternal.IsZeroValue(val) {
+				if !typesinternal.IsZeroExpr(val) {
 					match, idx = val, j
 					break
 				}
@@ -183,7 +184,7 @@ outer:
 				// If no identifier matches the pattern, generate a zero value.
 				if best := fuzzy.BestMatch(retTyp.String(), names); best != "" {
 					fixed[i] = ast.NewIdent(best)
-				} else if zero := analysisinternal.ZeroValue(file, pass.Pkg, retTyp); zero != nil {
+				} else if zero := typesinternal.ZeroExpr(file, pass.Pkg, retTyp); zero != nil {
 					fixed[i] = zero
 				} else {
 					return nil, nil
@@ -194,7 +195,7 @@ outer:
 		// Remove any non-matching "zero values" from the leftover values.
 		var nonZeroRemaining []ast.Expr
 		for _, expr := range remaining {
-			if !analysisinternal.IsZeroValue(expr) {
+			if !typesinternal.IsZeroExpr(expr) {
 				nonZeroRemaining = append(nonZeroRemaining, expr)
 			}
 		}

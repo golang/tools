@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
@@ -360,7 +361,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 			// The blank identifier is always a local variable
 			continue
 		}
-		typ := analysisinternal.TypeExpr(file, pkg, v.obj.Type())
+		typ := typesinternal.TypeExpr(file, pkg, v.obj.Type())
 		if typ == nil {
 			return nil, nil, fmt.Errorf("nil AST expression for type: %v", v.obj.Name())
 		}
@@ -1233,7 +1234,7 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 				return nil, nil, fmt.Errorf(
 					"failed type conversion, AST expression: %T", field.Type)
 			}
-			expr := analysisinternal.TypeExpr(file, pkg, typ)
+			expr := typesinternal.TypeExpr(file, pkg, typ)
 			if expr == nil {
 				return nil, nil, fmt.Errorf("nil AST expression")
 			}
@@ -1253,7 +1254,7 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 				}
 				retName, idx := generateNameOutsideOfRange(start, end, path, pkg, info, bestName, nameIdx[bestName])
 				nameIdx[bestName] = idx
-				z := analysisinternal.ZeroValue(file, pkg, typ)
+				z := typesinternal.ZeroExpr(file, pkg, typ)
 				if z == nil {
 					return nil, nil, fmt.Errorf("can't generate zero value for %T", typ)
 				}
@@ -1332,7 +1333,7 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 			if typ != returnType.Type {
 				continue
 			}
-			val = analysisinternal.ZeroValue(file, pkg, obj.Type())
+			val = typesinternal.ZeroExpr(file, pkg, obj.Type())
 			break
 		}
 		if val == nil {
