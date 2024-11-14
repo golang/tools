@@ -375,7 +375,7 @@ func (s *Snapshot) RunGoModUpdateCommands(ctx context.Context, modURI protocol.D
 	// TODO(rfindley): we must use ModFlag and ModFile here (rather than simply
 	// setting Args), because without knowing the verb, we can't know whether
 	// ModFlag is appropriate. Refactor so that args can be set by the caller.
-	inv, cleanupInvocation, err := s.GoCommandInvocation(true, modURI.DirPath(), "", nil, "GOWORK=off")
+	inv, cleanupInvocation, err := s.GoCommandInvocation(NetworkOK, modURI.DirPath(), "", nil, "GOWORK=off")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -449,6 +449,15 @@ func TempModDir(ctx context.Context, fs file.Source, modURI protocol.DocumentURI
 	return dir, cleanup, nil
 }
 
+// AllowNetwork determines whether Go commands are permitted to use the
+// network. (Controlled via GOPROXY=off.)
+type AllowNetwork bool
+
+const (
+	NoNetwork AllowNetwork = false
+	NetworkOK AllowNetwork = true
+)
+
 // GoCommandInvocation populates inv with configuration for running go commands
 // on the snapshot.
 //
@@ -459,10 +468,8 @@ func TempModDir(ctx context.Context, fs file.Source, modURI protocol.DocumentURI
 // additional refactoring is still required: the responsibility for Env and
 // BuildFlags should be more clearly expressed in the API.
 //
-// If allowNetwork is set, do not set GOPROXY=off.
-//
-// TODO(rfindley): use a named boolean for allowNetwork.
-func (s *Snapshot) GoCommandInvocation(allowNetwork bool, dir, verb string, args []string, env ...string) (_ *gocommand.Invocation, cleanup func(), _ error) {
+// If allowNetwork is NoNetwork, set GOPROXY=off.
+func (s *Snapshot) GoCommandInvocation(allowNetwork AllowNetwork, dir, verb string, args []string, env ...string) (_ *gocommand.Invocation, cleanup func(), _ error) {
 	inv := &gocommand.Invocation{
 		Verb:       verb,
 		Args:       args,
@@ -687,7 +694,7 @@ func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI
 	//  - ...but uri is not unloadable
 	if (shouldLoad || len(ids) == 0) && !unloadable {
 		scope := fileLoadScope(uri)
-		err := s.load(ctx, false, scope)
+		err := s.load(ctx, NoNetwork, scope)
 
 		//
 		// Return the context error here as the current operation is no longer
@@ -1254,7 +1261,7 @@ func (s *Snapshot) reloadWorkspace(ctx context.Context) {
 		scopes = []loadScope{viewLoadScope{}}
 	}
 
-	err := s.load(ctx, false, scopes...)
+	err := s.load(ctx, NoNetwork, scopes...)
 
 	// Unless the context was canceled, set "shouldLoad" to false for all
 	// of the metadata we attempted to load.

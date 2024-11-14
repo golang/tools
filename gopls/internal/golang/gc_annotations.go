@@ -56,7 +56,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 	if !strings.HasPrefix(outDir, "/") {
 		outDirURI = protocol.DocumentURI(strings.Replace(string(outDirURI), "file:///", "file://", 1))
 	}
-	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, pkgDir, "build", []string{
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NoNetwork, pkgDir, "build", []string{
 		fmt.Sprintf("-gcflags=-json=0,%s", outDirURI),
 		fmt.Sprintf("-o=%s", tmpFile.Name()),
 		".",

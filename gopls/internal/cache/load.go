@@ -43,7 +43,7 @@ var errNoPackages = errors.New("no packages returned")
 // errors associated with specific modules.
 //
 // If scopes contains a file scope there must be exactly one scope.
-func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadScope) (err error) {
+func (s *Snapshot) load(ctx context.Context, allowNetwork AllowNetwork, scopes ...loadScope) (err error) {
 	if ctx.Err() != nil {
 		// Check context cancellation before incrementing id below: a load on a
 		// cancelled context should be a no-op.
@@ -363,7 +363,7 @@ func (m *moduleErrorMap) Error() string {
 // multiple modules in one config, so buildOverlay needs to filter overlays by
 // module.
 // TODO(rfindley): ^^ is this still true?
-func (s *Snapshot) config(ctx context.Context, allowNetwork bool) *packages.Config {
+func (s *Snapshot) config(ctx context.Context, allowNetwork AllowNetwork) *packages.Config {
 	cfg := &packages.Config{
 		Context:    ctx,
 		Dir:        s.view.root.Path(),

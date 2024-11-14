@@ -688,7 +688,7 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 	if len(scopes) > 0 {
 		scopes = append(scopes, packageLoadScope("builtin"))
 	}
-	loadErr := s.load(ctx, true, scopes...)
+	loadErr := s.load(ctx, NetworkOK, scopes...)
 
 	// A failure is retryable if it may have been due to context cancellation,
 	// and this is not the initial workspace load (firstAttempt==true).

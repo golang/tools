@@ -30,7 +30,7 @@ import (
 // - cross-link jumps and block labels, like github.com/aclements/objbrowse.
 func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, symbol string, web Web) ([]byte, error) {
 	// Compile the package with -S, and capture its stderr stream.
-	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, pkg.Metadata().CompiledGoFiles[0].DirPath(), "build", []string{"-gcflags=-S", "."})
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NoNetwork, pkg.Metadata().CompiledGoFiles[0].DirPath(), "build", []string{"-gcflags=-S", "."})
 	if err != nil {
 		return nil, err // e.g. failed to write overlays (rare)
 	}
