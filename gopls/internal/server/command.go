@@ -1294,8 +1294,6 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 	}, func(ctx context.Context, deps commandDeps) error {
 		tokenChan <- deps.work.Token()
 
-		jsonrpc2.Async(ctx) // run this in parallel with other requests: vulncheck can be slow.
-
 		workDoneWriter := progress.NewWorkDoneWriter(ctx, deps.work)
 		dir := filepath.Dir(args.URI.Path())
 		pattern := args.Pattern
