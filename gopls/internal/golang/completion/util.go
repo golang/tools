@@ -299,10 +299,15 @@ func formatZeroValue(T types.Type, qf types.Qualifier) string {
 	}
 }
 
-// isBasicKind returns whether t is a basic type of kind k.
-func isBasicKind(t types.Type, k types.BasicInfo) bool {
+// isBasicType returns whether t has property information i.
+func isBasicType(t types.Type, i types.BasicInfo) bool {
 	b, _ := t.Underlying().(*types.Basic)
-	return b != nil && b.Info()&k > 0
+	return b != nil && b.Info()&i > 0
+}
+
+func isBasicKind(t types.Type, k types.BasicKind) bool {
+	b, _ := t.Underlying().(*types.Basic)
+	return b != nil && b.Kind() == k
 }
 
 func (c *completer) editText(from, to token.Pos, newText string) ([]protocol.TextEdit, error) {
