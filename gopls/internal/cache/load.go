@@ -376,21 +376,23 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 
 	if metadata.IsCommandLineArguments(id) {
 		var f string // file to use as disambiguating suffix
-		if len(pkg.CompiledGoFiles) > 0 {
-			f = pkg.CompiledGoFiles[0]
+		if len(pkg.GoFiles) > 0 {
+			f = pkg.GoFiles[0]
 
-			// If there are multiple files,
-			// we can't use only the first.
-			// (Can this happen? #64557)
-			if len(pkg.CompiledGoFiles) > 1 {
-				bug.Reportf("unexpected files in command-line-arguments package: %v", pkg.CompiledGoFiles)
+			// If there are multiple files, we can't use only the first. Note that we
+			// consider GoFiles, rather than CompiledGoFiles, as there can be
+			// multiple CompiledGoFiles in the presence of cgo processing, whereas a
+			// command-line-arguments package should always have exactly one nominal
+			// Go source file. (See golang/go#64557.)
+			if len(pkg.GoFiles) > 1 {
+				bug.Reportf("unexpected files in command-line-arguments package: %v", pkg.GoFiles)
 				return nil
 			}
 		} else if len(pkg.IgnoredFiles) > 0 {
 			// A file=empty.go query results in IgnoredFiles=[empty.go].
 			f = pkg.IgnoredFiles[0]
 		} else {
-			bug.Reportf("command-line-arguments package has neither CompiledGoFiles nor IgnoredFiles")
+			bug.Reportf("command-line-arguments package has neither GoFiles nor IgnoredFiles")
 			return nil
 		}
 		id = PackageID(pkg.ID + f)
