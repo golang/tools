@@ -76,6 +76,7 @@ type ClientOptions struct {
 	CompletionDeprecated                       bool
 	SupportedResourceOperations                []protocol.ResourceOperationKind
 	CodeActionResolveOptions                   []string
+	ShowDocumentSupported                      bool
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -250,13 +251,23 @@ const (
 
 	// Run govulncheck
 	//
-	// This codelens source annotates the `module` directive in a
-	// go.mod file with a command to run Govulncheck.
+	// This codelens source annotates the `module` directive in a go.mod file
+	// with a command to run govulncheck synchronously.
 	//
-	// [Govulncheck](https://go.dev/blog/vuln) is a static
-	// analysis tool that computes the set of functions reachable
-	// within your application, including dependencies;
-	// queries a database of known security vulnerabilities; and
+	// [Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that
+	// computes the set of functions reachable within your application, including
+	// dependencies; queries a database of known security vulnerabilities; and
+	// reports any potential problems it finds.
+	CodeLensVulncheck CodeLensSource = "vulncheck"
+
+	// Run govulncheck (legacy)
+	//
+	// This codelens source annotates the `module` directive in a go.mod file
+	// with a command to run Govulncheck asynchronously.
+	//
+	// [Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that
+	// computes the set of functions reachable within your application, including
+	// dependencies; queries a database of known security vulnerabilities; and
 	// reports any potential problems it finds.
 	CodeLensRunGovulncheck CodeLensSource = "run_govulncheck"
 
@@ -862,6 +873,9 @@ func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps pr
 		o.InsertTextFormat = protocol.SnippetTextFormat
 	}
 	o.InsertReplaceSupported = caps.TextDocument.Completion.CompletionItem.InsertReplaceSupport
+	if caps.Window.ShowDocument != nil {
+		o.ShowDocumentSupported = caps.Window.ShowDocument.Support
+	}
 	// Check if the client supports configuration messages.
 	o.ConfigurationSupported = caps.Workspace.Configuration
 	o.DynamicConfigurationSupported = caps.Workspace.DidChangeConfiguration.DynamicRegistration

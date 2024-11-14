@@ -186,16 +186,30 @@ type Interface interface {
 	// runner.
 	StopProfile(context.Context, StopProfileArgs) (StopProfileResult, error)
 
-	// RunGovulncheck: Run vulncheck
+	// GoVulncheck: run vulncheck synchronously.
 	//
 	// Run vulnerability check (`govulncheck`).
 	//
-	// This command is asynchronous; clients must wait for the 'end' progress notification.
+	// This command is synchronous, and returns the govulncheck result.
+	Vulncheck(context.Context, VulncheckArgs) (VulncheckResult, error)
+
+	// RunGovulncheck: Run vulncheck asynchronously.
+	//
+	// Run vulnerability check (`govulncheck`).
+	//
+	// This command is asynchronous; clients must wait for the 'end' progress
+	// notification and then retrieve results using gopls.fetch_vulncheck_result.
+	//
+	// Deprecated: clients should call gopls.vulncheck instead, which returns the
+	// actual vulncheck result.
 	RunGovulncheck(context.Context, VulncheckArgs) (RunVulncheckResult, error)
 
 	// FetchVulncheckResult: Get known vulncheck result
 	//
 	// Fetch the result of latest vulnerability check (`govulncheck`).
+	//
+	// Deprecated: clients should call gopls.vulncheck instead, which returns the
+	// actual vulncheck result.
 	FetchVulncheckResult(context.Context, URIArg) (map[protocol.DocumentURI]*vulncheck.Result, error)
 
 	// MemStats: Fetch memory statistics
@@ -506,13 +520,12 @@ type VulncheckArgs struct {
 type RunVulncheckResult struct {
 	// Token holds the progress token for LSP workDone reporting of the vulncheck
 	// invocation.
-	//
-	// Deprecated: previously, this was used as a signal to retrieve the result
-	// using gopls.fetch_vulncheck_result. Clients should ignore this field:
-	// gopls.vulncheck now runs synchronously, and returns a result in the Result
-	// field.
 	Token protocol.ProgressToken
+}
 
+// GovulncheckResult holds the result of synchronously running the vulncheck
+// command.
+type VulncheckResult struct {
 	// Result holds the result of running vulncheck.
 	Result *vulncheck.Result
 }

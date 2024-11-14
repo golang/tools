@@ -1627,7 +1627,12 @@ func computeSizeOffsetInfo(pkg *cache.Package, path []ast.Node, obj types.Object
 		var tStruct *types.Struct
 		for _, n := range path {
 			if n, ok := n.(*ast.StructType); ok {
-				tStruct = pkg.TypesInfo().TypeOf(n).(*types.Struct)
+				t, ok := pkg.TypesInfo().TypeOf(n).(*types.Struct)
+				if ok {
+					// golang/go#69150: TypeOf(n) was observed not to be a Struct (likely
+					// nil) in some cases.
+					tStruct = t
+				}
 				break
 			}
 		}

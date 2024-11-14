@@ -342,7 +342,8 @@ func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
 	capabilities.TextDocument.Completion.CompletionItem.SnippetSupport = true
 	capabilities.TextDocument.Completion.CompletionItem.InsertReplaceSupport = true
 	capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
-	capabilities.Window.WorkDoneProgress = true // support window/workDoneProgress
+	capabilities.Window.WorkDoneProgress = true                                                // support window/workDoneProgress
+	capabilities.Window.ShowDocument = &protocol.ShowDocumentClientCapabilities{Support: true} // support window/showDocument
 	capabilities.TextDocument.SemanticTokens.TokenTypes = []string{
 		"namespace", "type", "class", "enum", "interface",
 		"struct", "typeParameter", "parameter", "variable", "property", "enumMember",

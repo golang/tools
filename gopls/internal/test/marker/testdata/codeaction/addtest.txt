@@ -18,7 +18,7 @@ go 1.18
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.23
+//go:build go1.18
 
 // Package main is for lsp test.
 package main
@@ -26,12 +26,17 @@ package main
 func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", with_copyright)
 
 -- @with_copyright/withcopyright/copyright_test.go --
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,29 @@
 +// Copyright 2020 The Go Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
 +
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/withcopyright"
++	"testing"
++)
 +
 +func TestFoo(t *testing.T) {
 +  tests := []struct {
@@ -52,7 +57,7 @@ func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest"
 +  }
 +}
 -- withoutcopyright/copyright.go --
-//go:build go1.23
+//go:build go1.18
 
 // Package copyright is for lsp test.
 package copyright
@@ -60,8 +65,13 @@ package copyright
 func Foo(in string) string {return in} //@codeactionedit("Foo", "source.addTest", without_copyright)
 
 -- @without_copyright/withoutcopyright/copyright_test.go --
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,25 @@
 +package copyright_test
++
++import(
++	"golang.org/lsptests/addtest/withoutcopyright"
++	"testing"
++)
 +
 +func TestFoo(t *testing.T) {
 +  tests := []struct {
@@ -91,8 +101,13 @@ type Bar struct {}
 func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("ExportedMethod", "source.addTest", missing_test_file_exported_recv_exported_method)
 
 -- @missing_test_file_exported_function/missingtestfile/missingtestfile_test.go --
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,25 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/missingtestfile"
++	"testing"
++)
 +
 +func TestExportedFunction(t *testing.T) {
 +  tests := []struct {
@@ -113,8 +128,13 @@ func (*Bar) ExportedMethod(in string) string {return in} //@codeactionedit("Expo
 +  }
 +}
 -- @missing_test_file_exported_recv_exported_method/missingtestfile/missingtestfile_test.go --
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,27 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/missingtestfile"
++	"testing"
++)
 +
 +func TestBar_ExportedMethod(t *testing.T) {
 +  tests := []struct {
@@ -156,7 +176,10 @@ func (*foo) unexportedMethod(in string) string {return in} //@codeactionedit("un
 package main
 
 -- @xpackage_exported_function/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,18 @@
+@@ -3 +3,21 @@
++import "testing"
++
++
 +func TestExportedFunction(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -176,7 +199,10 @@ package main
 +  }
 +}
 -- @xpackage_unexported_function/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,18 @@
+@@ -3 +3,21 @@
++import "testing"
++
++
 +func Test_unexportedFunction(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -196,7 +222,10 @@ package main
 +  }
 +}
 -- @xpackage_exported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,20 @@
+@@ -3 +3,23 @@
++import "testing"
++
++
 +func TestBar_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -218,7 +247,10 @@ package main
 +  }
 +}
 -- @xpackage_exported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,20 @@
+@@ -3 +3,23 @@
++import "testing"
++
++
 +func TestBar_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -240,7 +272,10 @@ package main
 +  }
 +}
 -- @xpackage_unexported_recv_exported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,20 @@
+@@ -3 +3,23 @@
++import "testing"
++
++
 +func Test_foo_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -262,7 +297,10 @@ package main
 +  }
 +}
 -- @xpackage_unexported_recv_unexported_method/xpackagetestfile/xpackagetestfile_test.go --
-@@ -3 +3,20 @@
+@@ -3 +3,23 @@
++import "testing"
++
++
 +func Test_foo_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -321,7 +359,10 @@ func (Qux) method(in string) string {return in} //@codeactionedit("method", "sou
 package main
 
 -- @pointer_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,20 @@
+@@ -3 +3,23 @@
++import "testing"
++
++
 +func TestBar_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -343,7 +384,10 @@ package main
 +  }
 +}
 -- @pointer_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,20 @@
+@@ -3 +3,23 @@
++import "testing"
++
++
 +func TestBar_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -365,7 +409,10 @@ package main
 +  }
 +}
 -- @alias_receiver_exported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,20 @@
+@@ -3 +3,23 @@
++import "testing"
++
++
 +func Test_foo_ExportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -387,7 +434,10 @@ package main
 +  }
 +}
 -- @alias_receiver_unexported_method/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,20 @@
+@@ -3 +3,23 @@
++import "testing"
++
++
 +func Test_foo_unexportedMethod(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -409,7 +459,10 @@ package main
 +  }
 +}
 -- @alias_constructor_on_underlying_type/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,19 @@
+@@ -3 +3,22 @@
++import "testing"
++
++
 +func Test_baz_method(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -430,7 +483,10 @@ package main
 +  }
 +}
 -- @alias_constructor_on_different_alias_type/aliasreceiver/aliasreceiver_test.go --
-@@ -3 +3,22 @@
+@@ -3 +3,25 @@
++import "testing"
++
++
 +func TestQux_method(t *testing.T) {
 +  tests := []struct {
 +    name string // description of this test case
@@ -459,8 +515,13 @@ package main
 func Foo(in, in1, in2, in3 string) (out, out1, out2 string) {return in, in, in} //@codeactionedit("Foo", "source.addTest", multi_input_output)
 
 -- @multi_input_output/multiinputoutput/multiinputoutput_test.go --
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,39 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/multiinputoutput"
++	"testing"
++)
 +
 +func TestFoo(t *testing.T) {
 +  type args struct {
@@ -500,15 +561,25 @@ package main
 import (
   mytime "time"
   myast "go/ast"
+  mytest "testing"
 )
+
+var local mytest.T
 
 func Foo(t mytime.Time, a *myast.Node) (mytime.Time, *myast.Node) {return t, a} //@codeactionedit("Foo", "source.addTest", xpackage_rename)
 
 -- @xpackage_rename/xpackagerename/xpackagerename_test.go --
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,35 @@
 +package main_test
 +
-+func TestFoo(t *testing.T) {
++import(
++	myast "go/ast"
++	"golang.org/lsptests/addtest/xpackagerename"
++	mytest "testing"
++	mytime "time"
++)
++
++func TestFoo(t *mytest.T) {
 +  type args struct {
 +    in mytime.Time
 +    in2 *myast.Node
@@ -522,7 +593,7 @@ func Foo(t mytime.Time, a *myast.Node) (mytime.Time, *myast.Node) {return t, a} 
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    t.Run(tt.name, func(t *testing.T) {
++    t.Run(tt.name, func(t *mytest.T) {
 +      got, got2 := main.Foo(tt.args.in, tt.args.in2)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
@@ -540,7 +611,10 @@ package main
 import (
   mytime "time"
   myast "go/ast"
+  mytest "testing"
 )
+
+var local mytest.T
 
 func Foo(t mytime.Time, a *myast.Node) (mytime.Time, *myast.Node) {return t, a} //@codeactionedit("Foo", "source.addTest", xtest_package_rename)
 
@@ -548,16 +622,22 @@ func Foo(t mytime.Time, a *myast.Node) (mytime.Time, *myast.Node) {return t, a} 
 package main_test
 
 import (
-  yourtime "time"
-  yourast "go/ast"
+	yourast "go/ast"
+	yourtest "testing"
+	yourtime "time"
 )
 
 var fooTime = yourtime.Time{}
 var fooNode = yourast.Node{}
+var fooT yourtest.T
 
 -- @xtest_package_rename/xtestpackagerename/xtestpackagerename_test.go --
-@@ -11 +11,26 @@
-+func TestFoo(t *testing.T) {
+@@ -7 +7,2 @@
++
++	"golang.org/lsptests/addtest/xtestpackagerename"
+@@ -13 +15,27 @@
++
++func TestFoo(t *yourtest.T) {
 +  type args struct {
 +    in yourtime.Time
 +    in2 *yourast.Node
@@ -571,7 +651,7 @@ var fooNode = yourast.Node{}
 +    // TODO: Add test cases.
 +  }
 +  for _, tt := range tests {
-+    t.Run(tt.name, func(t *testing.T) {
++    t.Run(tt.name, func(t *yourtest.T) {
 +      got, got2 := main.Foo(tt.args.in, tt.args.in2)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
@@ -591,8 +671,13 @@ func StringErr() (string, error) {return "", nil} //@codeactionedit("StringErr",
 func MultipleStringErr() (string, string, string, error) {return "", "", "", nil} //@codeactionedit("MultipleStringErr", "source.addTest", return_multiple_string_error)
 
 -- @return_only_error/returnwitherror/returnwitherror_test.go --
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,29 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/returnwitherror"
++	"testing"
++)
 +
 +func TestOnlyErr(t *testing.T) {
 +  tests := []struct {
@@ -617,8 +702,13 @@ func MultipleStringErr() (string, string, string, error) {return "", "", "", nil
 +  }
 +}
 -- @return_string_error/returnwitherror/returnwitherror_test.go --
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,34 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/returnwitherror"
++	"testing"
++)
 +
 +func TestStringErr(t *testing.T) {
 +  tests := []struct {
@@ -648,8 +738,13 @@ func MultipleStringErr() (string, string, string, error) {return "", "", "", nil
 +  }
 +}
 -- @return_multiple_string_error/returnwitherror/returnwitherror_test.go --
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,42 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/returnwitherror"
++	"testing"
++)
 +
 +func TestMultipleStringErr(t *testing.T) {
 +  tests := []struct {
@@ -718,8 +813,13 @@ type ReturnPtrError struct {}
 func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("Method", "source.addTest", constructor_return_ptr_error)
 
 -- @constructor_return_type/constructor/constructor_test.go --
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,26 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/constructor"
++	"testing"
++)
 +
 +func TestReturnType_Method(t *testing.T) {
 +  tests := []struct {
@@ -741,8 +841,13 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +  }
 +}
 -- @constructor_return_type_error/constructor/constructor_test.go --
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,29 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/constructor"
++	"testing"
++)
 +
 +func TestReturnTypeError_Method(t *testing.T) {
 +  tests := []struct {
@@ -767,8 +872,13 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +  }
 +}
 -- @constructor_return_ptr/constructor/constructor_test.go --
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,26 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/constructor"
++	"testing"
++)
 +
 +func TestReturnPtr_Method(t *testing.T) {
 +  tests := []struct {
@@ -790,8 +900,13 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeactionedit("M
 +  }
 +}
 -- @constructor_return_ptr_error/constructor/constructor_test.go --
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,29 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/constructor"
++	"testing"
++)
 +
 +func TestReturnPtrError_Method(t *testing.T) {
 +  tests := []struct {
@@ -835,8 +950,13 @@ type Bar struct{}
 func (*Bar) Method(in string) string {return in} //@codeactionedit("Method", "source.addTest", constructor_comparison_alphabetical)
 
 -- @constructor_comparison_new/constructorcomparison/constructorcomparison_test.go --
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,26 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/constructorcomparison"
++	"testing"
++)
 +
 +func TestFoo_Method(t *testing.T) {
 +  tests := []struct {
@@ -858,8 +978,13 @@ func (*Bar) Method(in string) string {return in} //@codeactionedit("Method", "so
 +  }
 +}
 -- @constructor_comparison_alphabetical/constructorcomparison/constructorcomparison_test.go --
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,29 @@
 +package main_test
++
++import(
++	"golang.org/lsptests/addtest/constructorcomparison"
++	"testing"
++)
 +
 +func TestBar_Method(t *testing.T) {
 +  tests := []struct {

@@ -112,6 +112,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 		if err != nil {
 			return nil, bug.Errorf("finding %s in %s: %v", ref.URI, refpkg.Metadata().ID, err)
 		}
+
 		start, end, err := pgf.RangePos(ref.Range)
 		if err != nil {
 			return nil, err // e.g. invalid range
@@ -137,6 +138,20 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 			//    use(func(...) { f(...) })
 			return nil, fmt.Errorf("cannot inline: found non-call function reference %v", ref)
 		}
+
+		// Heuristic: ignore references that overlap with type checker errors, as they may
+		// lead to invalid results (see golang/go#70268).
+		hasTypeErrors := false
+		for _, typeErr := range refpkg.TypeErrors() {
+			if call.Lparen <= typeErr.Pos && typeErr.Pos <= call.Rparen {
+				hasTypeErrors = true
+			}
+		}
+
+		if hasTypeErrors {
+			continue
+		}
+
 		// Sanity check.
 		if obj := refpkg.TypesInfo().ObjectOf(name); obj == nil ||
 			obj.Name() != origDecl.Name.Name ||

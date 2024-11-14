@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -34,6 +35,10 @@ type Env struct {
 	Awaiter *Awaiter
 }
 
+// nextAwaiterRegistration is used to create unique IDs for various Awaiter
+// registrations.
+var nextAwaiterRegistration atomic.Uint64
+
 // An Awaiter keeps track of relevant LSP state, so that it may be asserted
 // upon with Expectations.
 //
@@ -46,9 +51,13 @@ type Awaiter struct {
 
 	mu sync.Mutex
 	// For simplicity, each waiter gets a unique ID.
-	nextWaiterID int
-	state        State
-	waiters      map[int]*condition
+	state   State
+	waiters map[uint64]*condition
+
+	// collectors map a registration to the collection of messages that have been
+	// received since the registration was created.
+	docCollectors     map[uint64][]*protocol.ShowDocumentParams
+	messageCollectors map[uint64][]*protocol.ShowMessageParams
 }
 
 func NewAwaiter(workdir *fake.Workdir) *Awaiter {
@@ -60,7 +69,7 @@ func NewAwaiter(workdir *fake.Workdir) *Awaiter {
 			startedWork:   make(map[string]uint64),
 			completedWork: make(map[string]uint64),
 		},
-		waiters: make(map[int]*condition),
+		waiters: make(map[uint64]*condition),
 	}
 }
 
@@ -78,9 +87,6 @@ func (a *Awaiter) Hooks() fake.ClientHooks {
 		OnUnregisterCapability:   a.onUnregisterCapability,
 	}
 }
-
-// ResetShownDocuments resets the set of accumulated ShownDocuments seen so far.
-func (a *Awaiter) ResetShownDocuments() { a.state.showDocument = nil }
 
 // State encapsulates the server state TODO: explain more
 type State struct {
@@ -171,18 +177,76 @@ func (a *Awaiter) onShowDocument(_ context.Context, params *protocol.ShowDocumen
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// Update any outstanding listeners.
+	for id, s := range a.docCollectors {
+		a.docCollectors[id] = append(s, params)
+	}
+
 	a.state.showDocument = append(a.state.showDocument, params)
 	a.checkConditionsLocked()
 	return nil
 }
 
-func (a *Awaiter) onShowMessage(_ context.Context, m *protocol.ShowMessageParams) error {
+// ListenToShownDocuments registers a listener to incoming showDocument
+// notifications. Call the resulting func to deregister the listener and
+// receive all notifications that have occurred since the listener was
+// registered.
+func (a *Awaiter) ListenToShownDocuments() func() []*protocol.ShowDocumentParams {
+	id := nextAwaiterRegistration.Add(1)
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	a.state.showMessage = append(a.state.showMessage, m)
+	if a.docCollectors == nil {
+		a.docCollectors = make(map[uint64][]*protocol.ShowDocumentParams)
+	}
+	a.docCollectors[id] = nil
+
+	return func() []*protocol.ShowDocumentParams {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		params := a.docCollectors[id]
+		delete(a.docCollectors, id)
+		return params
+	}
+}
+
+func (a *Awaiter) onShowMessage(_ context.Context, params *protocol.ShowMessageParams) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Update any outstanding listeners.
+	for id, s := range a.messageCollectors {
+		a.messageCollectors[id] = append(s, params)
+	}
+
+	a.state.showMessage = append(a.state.showMessage, params)
 	a.checkConditionsLocked()
 	return nil
+}
+
+// ListenToShownDocuments registers a listener to incoming showDocument
+// notifications. Call the resulting func to deregister the listener and
+// receive all notifications that have occurred since the listener was
+// registered.
+func (a *Awaiter) ListenToShownMessages() func() []*protocol.ShowMessageParams {
+	id := nextAwaiterRegistration.Add(1)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.messageCollectors == nil {
+		a.messageCollectors = make(map[uint64][]*protocol.ShowMessageParams)
+	}
+	a.messageCollectors[id] = nil
+
+	return func() []*protocol.ShowMessageParams {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		params := a.messageCollectors[id]
+		delete(a.messageCollectors, id)
+		return params
+	}
 }
 
 func (a *Awaiter) onShowMessageRequest(_ context.Context, m *protocol.ShowMessageRequestParams) error {
@@ -332,8 +396,7 @@ func (a *Awaiter) Await(ctx context.Context, expectations ...Expectation) error 
 		expectations: expectations,
 		verdict:      make(chan Verdict),
 	}
-	a.waiters[a.nextWaiterID] = cond
-	a.nextWaiterID++
+	a.waiters[nextAwaiterRegistration.Add(1)] = cond
 	a.mu.Unlock()
 
 	var err error

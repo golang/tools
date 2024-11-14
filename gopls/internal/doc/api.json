@@ -811,7 +811,7 @@
 						},
 						{
 							"Name": "\"run_govulncheck\"",
-							"Doc": "`\"run_govulncheck\"`: Run govulncheck\n\nThis codelens source annotates the `module` directive in a\ngo.mod file with a command to run Govulncheck.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static\nanalysis tool that computes the set of functions reachable\nwithin your application, including dependencies;\nqueries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
+							"Doc": "`\"run_govulncheck\"`: Run govulncheck (legacy)\n\nThis codelens source annotates the `module` directive in a go.mod file\nwith a command to run Govulncheck asynchronously.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that\ncomputes the set of functions reachable within your application, including\ndependencies; queries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
 							"Default": "false"
 						},
 						{
@@ -833,6 +833,11 @@
 							"Name": "\"vendor\"",
 							"Doc": "`\"vendor\"`: Update vendor directory\n\nThis codelens source annotates the `module` directive in a\ngo.mod file with a command to run [`go mod\nvendor`](https://go.dev/ref/mod#go-mod-vendor), which\ncreates or updates the directory named `vendor` in the\nmodule root so that it contains an up-to-date copy of all\nnecessary package dependencies.\n",
 							"Default": "true"
+						},
+						{
+							"Name": "\"vulncheck\"",
+							"Doc": "`\"vulncheck\"`: Run govulncheck\n\nThis codelens source annotates the `module` directive in a go.mod file\nwith a command to run govulncheck synchronously.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that\ncomputes the set of functions reachable within your application, including\ndependencies; queries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
+							"Default": "false"
 						}
 					]
 				},
@@ -953,8 +958,8 @@
 		{
 			"FileType": "go.mod",
 			"Lens": "run_govulncheck",
-			"Title": "Run govulncheck",
-			"Doc": "\nThis codelens source annotates the `module` directive in a\ngo.mod file with a command to run Govulncheck.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static\nanalysis tool that computes the set of functions reachable\nwithin your application, including dependencies;\nqueries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
+			"Title": "Run govulncheck (legacy)",
+			"Doc": "\nThis codelens source annotates the `module` directive in a go.mod file\nwith a command to run Govulncheck asynchronously.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that\ncomputes the set of functions reachable within your application, including\ndependencies; queries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
 			"Default": false
 		},
 		{
@@ -977,6 +982,13 @@
 			"Title": "Update vendor directory",
 			"Doc": "\nThis codelens source annotates the `module` directive in a\ngo.mod file with a command to run [`go mod\nvendor`](https://go.dev/ref/mod#go-mod-vendor), which\ncreates or updates the directory named `vendor` in the\nmodule root so that it contains an up-to-date copy of all\nnecessary package dependencies.\n",
 			"Default": true
+		},
+		{
+			"FileType": "go.mod",
+			"Lens": "vulncheck",
+			"Title": "Run govulncheck",
+			"Doc": "\nThis codelens source annotates the `module` directive in a go.mod file\nwith a command to run govulncheck synchronously.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that\ncomputes the set of functions reachable within your application, including\ndependencies; queries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
+			"Default": false
 		}
 	],
 	"Analyzers": [

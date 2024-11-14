@@ -65,6 +65,7 @@ const (
 	UpgradeDependency       Command = "gopls.upgrade_dependency"
 	Vendor                  Command = "gopls.vendor"
 	Views                   Command = "gopls.views"
+	Vulncheck               Command = "gopls.vulncheck"
 	WorkspaceStats          Command = "gopls.workspace_stats"
 )
 
@@ -110,6 +111,7 @@ var Commands = []Command{
 	UpgradeDependency,
 	Vendor,
 	Views,
+	Vulncheck,
 	WorkspaceStats,
 }
 
@@ -350,6 +352,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 		return nil, s.Vendor(ctx, a0)
 	case Views:
 		return s.Views(ctx)
+	case Vulncheck:
+		var a0 VulncheckArgs
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.Vulncheck(ctx, a0)
 	case WorkspaceStats:
 		return s.WorkspaceStats(ctx)
 	}
@@ -681,6 +689,14 @@ func NewViewsCommand(title string) *protocol.Command {
 		Title:     title,
 		Command:   Views.String(),
 		Arguments: MustMarshalArgs(),
+	}
+}
+
+func NewVulncheckCommand(title string, a0 VulncheckArgs) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   Vulncheck.String(),
+		Arguments: MustMarshalArgs(a0),
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -392,6 +393,22 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 		return err
 	}
 
+	// For legacy reasons, gopls.run_govulncheck must run asynchronously.
+	// TODO(golang/vscode-go#3572): remove this (along with the
+	// gopls.run_govulncheck command entirely) once VS Code only uses the new
+	// gopls.vulncheck command.
+	if c.params.Command == "gopls.run_govulncheck" {
+		if cfg.progress == "" {
+			log.Fatalf("asynchronous command gopls.run_govulncheck does not enable progress reporting")
+		}
+		go func() {
+			if err := runcmd(); err != nil {
+				showMessage(ctx, c.s.client, protocol.Error, err.Error())
+			}
+		}()
+		return nil
+	}
+
 	return runcmd()
 }
 
@@ -702,7 +719,7 @@ func (c *commandHandler) Doc(ctx context.Context, args command.DocArgs) (protoco
 		// Direct the client to open the /pkg page.
 		result = web.PkgURL(deps.snapshot.View().ID(), pkgpath, fragment)
 		if args.ShowDocument {
-			openClientBrowser(ctx, c.s.client, result)
+			openClientBrowser(ctx, c.s.client, "Doc", result, c.s.Options())
 		}
 
 		return nil
@@ -1141,7 +1158,7 @@ func (c *commandHandler) StartDebugging(ctx context.Context, args command.Debugg
 		return result, fmt.Errorf("starting debug server: %w", err)
 	}
 	result.URLs = []string{"http://" + listenedAddr}
-	openClientBrowser(ctx, c.s.client, result.URLs[0])
+	openClientBrowser(ctx, c.s.client, "Debug", result.URLs[0], c.s.Options())
 	return result, nil
 }
 
@@ -1210,22 +1227,17 @@ func (c *commandHandler) FetchVulncheckResult(ctx context.Context, arg command.U
 
 const GoVulncheckCommandTitle = "govulncheck"
 
-func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.VulncheckArgs) (command.RunVulncheckResult, error) {
+func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckArgs) (command.VulncheckResult, error) {
 	if args.URI == "" {
-		return command.RunVulncheckResult{}, errors.New("VulncheckArgs is missing URI field")
+		return command.VulncheckResult{}, errors.New("VulncheckArgs is missing URI field")
 	}
 
-	var commandResult command.RunVulncheckResult
+	var commandResult command.VulncheckResult
 	err := c.run(ctx, commandConfig{
 		progress:    GoVulncheckCommandTitle,
 		requireSave: true, // govulncheck cannot honor overlays
 		forURI:      args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		// For compatibility with the legacy asynchronous API, return the workdone
-		// token that clients used to use to identify when this vulncheck
-		// invocation is complete.
-		commandResult.Token = deps.work.Token()
-
 		jsonrpc2.Async(ctx) // run this in parallel with other requests: vulncheck can be slow.
 
 		workDoneWriter := progress.NewWorkDoneWriter(ctx, deps.work)
@@ -1271,9 +1283,88 @@ func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.Vulnch
 		return nil
 	})
 	if err != nil {
-		return command.RunVulncheckResult{}, err
+		return command.VulncheckResult{}, err
 	}
 	return commandResult, nil
+}
+
+// RunGovulncheck is like Vulncheck (in fact, a copy), but is tweaked slightly
+// to run asynchronously rather than return a result.
+//
+// This logic was copied, rather than factored out, as this implementation is
+// slated for deletion.
+//
+// TODO(golang/vscode-go#3572)
+func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.VulncheckArgs) (command.RunVulncheckResult, error) {
+	if args.URI == "" {
+		return command.RunVulncheckResult{}, errors.New("VulncheckArgs is missing URI field")
+	}
+
+	// Return the workdone token so that clients can identify when this
+	// vulncheck invocation is complete.
+	//
+	// Since the run function executes asynchronously, we use a channel to
+	// synchronize the start of the run and return the token.
+	tokenChan := make(chan protocol.ProgressToken, 1)
+	err := c.run(ctx, commandConfig{
+		progress:    GoVulncheckCommandTitle,
+		requireSave: true, // govulncheck cannot honor overlays
+		forURI:      args.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		tokenChan <- deps.work.Token()
+
+		jsonrpc2.Async(ctx) // run this in parallel with other requests: vulncheck can be slow.
+
+		workDoneWriter := progress.NewWorkDoneWriter(ctx, deps.work)
+		dir := filepath.Dir(args.URI.Path())
+		pattern := args.Pattern
+
+		result, err := scan.RunGovulncheck(ctx, pattern, deps.snapshot, dir, workDoneWriter)
+		if err != nil {
+			return err
+		}
+
+		snapshot, release, err := c.s.session.InvalidateView(ctx, deps.snapshot.View(), cache.StateChange{
+			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI: result},
+		})
+		if err != nil {
+			return err
+		}
+		defer release()
+
+		// Diagnosing with the background context ensures new snapshots are fully
+		// diagnosed.
+		c.s.diagnoseSnapshot(snapshot.BackgroundContext(), snapshot, nil, 0)
+
+		affecting := make(map[string]bool, len(result.Entries))
+		for _, finding := range result.Findings {
+			if len(finding.Trace) > 1 { // at least 2 frames if callstack exists (vulnerability, entry)
+				affecting[finding.OSV] = true
+			}
+		}
+		if len(affecting) == 0 {
+			showMessage(ctx, c.s.client, protocol.Info, "No vulnerabilities found")
+			return nil
+		}
+		affectingOSVs := make([]string, 0, len(affecting))
+		for id := range affecting {
+			affectingOSVs = append(affectingOSVs, id)
+		}
+		sort.Strings(affectingOSVs)
+
+		showMessage(ctx, c.s.client, protocol.Warning, fmt.Sprintf("Found %v", strings.Join(affectingOSVs, ", ")))
+
+		return nil
+	})
+	if err != nil {
+		return command.RunVulncheckResult{}, err
+	}
+	select {
+	case <-ctx.Done():
+		return command.RunVulncheckResult{}, ctx.Err()
+	case token := <-tokenChan:
+		return command.RunVulncheckResult{Token: token}, nil
+	}
 }
 
 // MemStats implements the MemStats command. It returns an error as a
@@ -1469,8 +1560,21 @@ func showMessage(ctx context.Context, cli protocol.Client, typ protocol.MessageT
 
 // openClientBrowser causes the LSP client to open the specified URL
 // in an external browser.
-func openClientBrowser(ctx context.Context, cli protocol.Client, url protocol.URI) {
-	showDocumentImpl(ctx, cli, url, nil)
+//
+// If the client does not support window/showDocument, a window/showMessage
+// request is instead used, with the format "$title: open your browser to $url".
+func openClientBrowser(ctx context.Context, cli protocol.Client, title string, url protocol.URI, opts *settings.Options) {
+	if opts.ShowDocumentSupported {
+		showDocumentImpl(ctx, cli, url, nil, opts)
+	} else {
+		params := &protocol.ShowMessageParams{
+			Type:    protocol.Info,
+			Message: fmt.Sprintf("%s: open your browser to %s", title, url),
+		}
+		if err := cli.ShowMessage(ctx, params); err != nil {
+			event.Error(ctx, "failed to show brower url", err)
+		}
+	}
 }
 
 // openClientEditor causes the LSP client to open the specified document
@@ -1478,11 +1582,17 @@ func openClientBrowser(ctx context.Context, cli protocol.Client, url protocol.UR
 //
 // Note that VS Code 1.87.2 doesn't currently raise the window; this is
 // https://github.com/microsoft/vscode/issues/207634
-func openClientEditor(ctx context.Context, cli protocol.Client, loc protocol.Location) {
-	showDocumentImpl(ctx, cli, protocol.URI(loc.URI), &loc.Range)
+func openClientEditor(ctx context.Context, cli protocol.Client, loc protocol.Location, opts *settings.Options) {
+	if !opts.ShowDocumentSupported {
+		return // no op
+	}
+	showDocumentImpl(ctx, cli, protocol.URI(loc.URI), &loc.Range, opts)
 }
 
-func showDocumentImpl(ctx context.Context, cli protocol.Client, url protocol.URI, rangeOpt *protocol.Range) {
+func showDocumentImpl(ctx context.Context, cli protocol.Client, url protocol.URI, rangeOpt *protocol.Range, opts *settings.Options) {
+	if !opts.ShowDocumentSupported {
+		return // no op
+	}
 	// In principle we shouldn't send a showDocument request to a
 	// client that doesn't support it, as reported by
 	// ShowDocumentClientCapabilities. But even clients that do
@@ -1599,7 +1709,7 @@ func (c *commandHandler) FreeSymbols(ctx context.Context, viewID string, loc pro
 		return err
 	}
 	url := web.freesymbolsURL(viewID, loc)
-	openClientBrowser(ctx, c.s.client, url)
+	openClientBrowser(ctx, c.s.client, "Free symbols", url, c.s.Options())
 	return nil
 }
 
@@ -1609,12 +1719,14 @@ func (c *commandHandler) Assembly(ctx context.Context, viewID, packageID, symbol
 		return err
 	}
 	url := web.assemblyURL(viewID, packageID, symbol)
-	openClientBrowser(ctx, c.s.client, url)
+	openClientBrowser(ctx, c.s.client, "Assembly", url, c.s.Options())
 	return nil
 }
 
 func (c *commandHandler) ClientOpenURL(ctx context.Context, url string) error {
-	openClientBrowser(ctx, c.s.client, url)
+	// Fall back to "Gopls: open your browser..." if we must send a showMessage
+	// request, since we don't know the context of this command.
+	openClientBrowser(ctx, c.s.client, "Gopls", url, c.s.Options())
 	return nil
 }
 

@@ -452,6 +452,34 @@ type WorkStatus struct {
 	EndMsg string
 }
 
+// CompletedProgress expects that workDone progress is complete for the given
+// progress token. When non-nil WorkStatus is provided, it will be filled
+// when the expectation is met.
+//
+// If the token is not a progress token that the client has seen, this
+// expectation is Unmeetable.
+func CompletedProgressToken(token protocol.ProgressToken, into *WorkStatus) Expectation {
+	check := func(s State) Verdict {
+		work, ok := s.work[token]
+		if !ok {
+			return Unmeetable // TODO(rfindley): refactor to allow the verdict to explain this result
+		}
+		if work.complete {
+			if into != nil {
+				into.Msg = work.msg
+				into.EndMsg = work.endMsg
+			}
+			return Met
+		}
+		return Unmet
+	}
+	desc := fmt.Sprintf("completed work for token %v", token)
+	return Expectation{
+		Check:       check,
+		Description: desc,
+	}
+}
+
 // CompletedProgress expects that there is exactly one workDone progress with
 // the given title, and is satisfied when that progress completes. If it is
 // met, the corresponding status is written to the into argument.
