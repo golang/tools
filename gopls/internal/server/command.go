@@ -50,6 +50,15 @@ func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCom
 	ctx, done := event.Start(ctx, "lsp.Server.executeCommand")
 	defer done()
 
+	// For test synchronization, always create a progress notification.
+	//
+	// This may be in addition to user-facing progress notifications created in
+	// the course of command execution.
+	if s.Options().VerboseWorkDoneProgress {
+		work := s.progress.Start(ctx, params.Command, "Verbose: running command...", nil, nil)
+		defer work.End(ctx, "Done.")
+	}
+
 	var found bool
 	for _, name := range s.Options().SupportedCommands {
 		if name == params.Command {
