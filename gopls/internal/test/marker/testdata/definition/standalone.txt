@@ -40,3 +40,4 @@ import "golang.org/lsptests/a"
 func main() {
 	a.F() //@hovererr("F", "no package")
 }
+

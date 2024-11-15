@@ -146,6 +146,12 @@ func Test(t *testing.T) {
 				testenv.SkipAfterGoCommand1Point(t, go1point)
 			}
 			if test.cgo {
+				if os.Getenv("CGO_ENABLED") == "0" {
+					// NeedsTool causes the test to fail if cgo is available but disabled
+					// on the current platform through the environment. I'm not sure why it
+					// behaves this way, but if CGO_ENABLED=0 is set, we want to skip.
+					t.Skip("skipping due to CGO_ENABLED=0")
+				}
 				testenv.NeedsTool(t, "cgo")
 			}
 			config := fake.EditorConfig{

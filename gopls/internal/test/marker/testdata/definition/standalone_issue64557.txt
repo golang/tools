@@ -1,5 +1,8 @@
 This test checks that we can load standalone files that use cgo.
 
+-- flags --
+-cgo
+
 -- go.mod --
 module example.com
 

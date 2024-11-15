@@ -163,37 +163,21 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork AllowNetwork, scopes .
 		// package. We don't support this; theoretically we could, but it seems
 		// unnecessarily complicated.
 		//
-		// Prior to golang/go#64233 we just assumed that we'd get exactly one
-		// package here. The categorization of bug reports below may be a bit
-		// verbose, but anticipates that perhaps we don't fully understand
-		// possible failure modes.
-		errorf := bug.Errorf
-		if s.view.typ == GoPackagesDriverView {
-			errorf = fmt.Errorf // all bets are off
-		}
-		for _, pkg := range pkgs {
-			// Don't report bugs if any packages have errors.
-			// For example: given go list errors, go/packages may synthesize a
-			// package with ID equal to the query.
-			if len(pkg.Errors) > 0 {
-				errorf = fmt.Errorf
-				break
-			}
-		}
-
+		// It's possible that we get no packages here, for example if the file is a
+		// cgo file and cgo is not enabled.
 		var standalonePkg *packages.Package
 		for _, pkg := range pkgs {
 			if pkg.ID == "command-line-arguments" {
 				if standalonePkg != nil {
-					return errorf("go/packages returned multiple standalone packages")
+					return fmt.Errorf("go/packages returned multiple standalone packages")
 				}
 				standalonePkg = pkg
 			} else if pkg.ForTest == "" && !strings.HasSuffix(pkg.ID, ".test") {
-				return errorf("go/packages returned unexpected package %q for standalone file", pkg.ID)
+				return fmt.Errorf("go/packages returned unexpected package %q for standalone file", pkg.ID)
 			}
 		}
 		if standalonePkg == nil {
-			return errorf("go/packages failed to return non-test standalone package")
+			return fmt.Errorf("go/packages failed to return non-test standalone package")
 		}
 		if len(standalonePkg.CompiledGoFiles) > 0 {
 			pkgs = []*packages.Package{standalonePkg}
