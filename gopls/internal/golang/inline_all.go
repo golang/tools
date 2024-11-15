@@ -152,11 +152,16 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 			continue
 		}
 
+		if typeutil.StaticCallee(refpkg.TypesInfo(), call) == nil {
+			continue // dynamic call
+		}
+
 		// Sanity check.
 		if obj := refpkg.TypesInfo().ObjectOf(name); obj == nil ||
 			obj.Name() != origDecl.Name.Name ||
 			obj.Pkg() == nil ||
 			obj.Pkg().Path() != string(pkg.Metadata().PkgPath) {
+
 			return nil, bug.Errorf("cannot inline: corrupted reference %v", ref)
 		}
 

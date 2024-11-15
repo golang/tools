@@ -4,6 +4,7 @@ Specifically, check
 1. basic removal of unused parameters, when the receiver is named, locally and
    across package boundaries
 2. handling of unnamed receivers
+3. no panics related to references through interface satisfaction
 
 -- go.mod --
 module example.com/rm
@@ -37,6 +38,16 @@ func _() {
 
 func sideEffects() int
 
+type Fooer interface {
+	Foo(int)
+}
+
+// Dynamic calls aren't rewritten.
+// Previously, this would cause a bug report or crash (golang/go#69896).
+func _(f Fooer) {
+	f.Foo(1)
+}
+
 -- @basic/basic.go --
 package rm
 
@@ -66,6 +77,16 @@ func _() {
 }
 
 func sideEffects() int
+
+type Fooer interface {
+	Foo(int)
+}
+
+// Dynamic calls aren't rewritten.
+// Previously, this would cause a bug report or crash (golang/go#69896).
+func _(f Fooer) {
+	f.Foo(1)
+}
 -- missingrecv.go --
 package rm
 
