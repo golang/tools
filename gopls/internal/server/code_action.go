@@ -265,7 +265,10 @@ func (s *server) codeActionsMatchingDiagnostics(ctx context.Context, uri protoco
 	var actions []protocol.CodeAction
 	var unbundled []protocol.Diagnostic // diagnostics without bundled code actions in their Data field
 	for _, pd := range pds {
-		bundled := cache.BundledLazyFixes(pd)
+		bundled, err := cache.BundledLazyFixes(pd)
+		if err != nil {
+			return nil, err
+		}
 		if len(bundled) > 0 {
 			for _, fix := range bundled {
 				if enabled(fix.Kind) {
