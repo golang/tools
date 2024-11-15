@@ -78,13 +78,7 @@ func zeroConst(t types.Type) *Const {
 func (c *Const) RelString(from *types.Package) string {
 	var s string
 	if c.Value == nil {
-		if _, ok := c.typ.(*types.TypeParam); ok {
-			// Type parameter's underlying type may be interface that is
-			// nillable. A better zero value of type parameter is *new(T).
-			s = typesinternal.ZeroString(c.typ, types.RelativeTo(from))
-		} else {
-			s = typesinternal.ZeroString(c.typ.Underlying(), types.RelativeTo(from))
-		}
+		s = typesinternal.ZeroString(c.typ, types.RelativeTo(from))
 	} else if c.Value.Kind() == constant.String {
 		s = constant.StringVal(c.Value)
 		const max = 20

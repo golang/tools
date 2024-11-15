@@ -58,11 +58,11 @@ func Baz(b bool) {
 
 // func Do(b bool) I:
 //    ...
-//   t1 = (C).Foo(struct{}{}:Z)
+//   t1 = (C).Foo(Z{}:Z)
 //   t2 = NewY()
 //   t3 = make I <- B (t2)
 //   return t3
 
 // WANT:
 // Baz: Do(b) -> Do; invoke t0.Foo() -> A.Foo, B.Foo
-// Do: (C).Foo(struct{}{}:Z) -> C.Foo; NewY() -> NewY
+// Do: (C).Foo(Z{}:Z) -> C.Foo; NewY() -> NewY
