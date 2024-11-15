@@ -16,6 +16,10 @@ import (
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
+	// TODO(mknyszek): Add "unfortunate" package once CL 627777 lands. That CL changes
+	// the internals of the sync package structures to carry an explicit noCopy to prevent
+	// problems from changes to the implementations of those structures, such as these
+	// tests failing, or a bad user experience.
 	analysistest.Run(t, testdata, copylock.Analyzer, "a", "typeparams", "issue67787")
 }
 
