@@ -644,7 +644,16 @@ func importLookup(mp *metadata.Package, source metadata.Source) func(PackagePath
 			if prevID, ok := impMap[depPath]; ok {
 				// debugging #63822
 				if prevID != depID {
-					bug.Reportf("inconsistent view of dependencies")
+					prev := source.Metadata(prevID)
+					curr := source.Metadata(depID)
+					switch {
+					case prev == nil || curr == nil:
+						bug.Reportf("inconsistent view of dependencies (missing dep)")
+					case prev.ForTest != curr.ForTest:
+						bug.Reportf("inconsistent view of dependencies (mismatching ForTest)")
+					default:
+						bug.Reportf("inconsistent view of dependencies")
+					}
 				}
 				continue
 			}
