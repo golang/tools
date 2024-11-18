@@ -842,26 +842,6 @@ Default: on.
 
 Package documentation: [timeformat](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/timeformat)
 
-<a id='undeclaredname'></a>
-## `undeclaredname`: suggested fixes for "undeclared name: <>"
-
-
-This checker provides suggested fixes for type errors of the
-type "undeclared name: <>". It will either insert a new statement,
-such as:
-
-	<> :=
-
-or a new function declaration, such as:
-
-	func <>(inferred parameters) {
-		panic("implement me!")
-	}
-
-Default: on.
-
-Package documentation: [undeclaredname](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/undeclaredname)
-
 <a id='unmarshal'></a>
 ## `unmarshal`: report passing non-pointer or non-interface values to unmarshal
 

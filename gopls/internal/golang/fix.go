@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
-	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -65,6 +64,7 @@ const (
 	fixInvertIfCondition       = "invert_if_condition"
 	fixSplitLines              = "split_lines"
 	fixJoinLines               = "join_lines"
+	fixCreateUndeclared        = "create_undeclared"
 	fixMissingInterfaceMethods = "stub_missing_interface_method"
 	fixMissingCalledFunction   = "stub_missing_called_function"
 )
@@ -99,7 +99,6 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		// These match the Diagnostic.Category.
 		embeddirective.FixCategory: addEmbedImport,
 		fillstruct.FixCategory:     singleFile(fillstruct.SuggestedFix),
-		undeclaredname.FixCategory: singleFile(undeclaredname.SuggestedFix),
 
 		// Ad-hoc fixers: these are used when the command is
 		// constructed directly by logic in server/code_action.
@@ -110,6 +109,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fixInvertIfCondition:       singleFile(invertIfCondition),
 		fixSplitLines:              singleFile(splitLines),
 		fixJoinLines:               singleFile(joinLines),
+		fixCreateUndeclared:        singleFile(CreateUndeclared),
 		fixMissingInterfaceMethods: stubMissingInterfaceMethodsFixer,
 		fixMissingCalledFunction:   stubMissingCalledFunctionFixer,
 	}

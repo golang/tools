@@ -272,23 +272,28 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 
 	concType, pointer := concreteType(ret.Results[returnIdx], info)
 	if concType == nil || concType.Obj().Pkg() == nil {
-		return nil, nil
+		return nil, nil // result is not a named or *named or alias thereof
 	}
+	// Inv: the return is not a spread return,
+	// such as "return f()" where f() has tuple type.
 	conc := concType.Obj()
 	if conc.Parent() != conc.Pkg().Scope() {
 		return nil, fmt.Errorf("local type %q cannot be stubbed", conc.Name())
 	}
 
-	funcType := enclosingFunction(path, info)
-	if funcType == nil {
+	sig := typesutil.EnclosingSignature(path, info)
+	if sig.Results() == nil {
 		return nil, fmt.Errorf("could not find the enclosing function of the return statement")
 	}
-	if len(funcType.Results.List) != len(ret.Results) {
+	rets := sig.Results()
+	// The return operands and function results must match.
+	// (Spread returns were rejected earlier.)
+	if rets.Len() != len(ret.Results) {
 		return nil, fmt.Errorf("%d-operand return statement in %d-result function",
 			len(ret.Results),
-			len(funcType.Results.List))
+			rets.Len())
 	}
-	iface := ifaceType(funcType.Results.List[returnIdx].Type, info)
+	iface := ifaceObjFromType(rets.At(returnIdx).Type())
 	if iface == nil {
 		return nil, nil
 	}
@@ -441,22 +446,4 @@ func concreteType(e ast.Expr, info *types.Info) (*types.Named, bool) {
 		return nil, false
 	}
 	return named, isPtr
-}
-
-// enclosingFunction returns the signature and type of the function
-// enclosing the given position.
-func enclosingFunction(path []ast.Node, info *types.Info) *ast.FuncType {
-	for _, node := range path {
-		switch t := node.(type) {
-		case *ast.FuncDecl:
-			if _, ok := info.Defs[t.Name]; ok {
-				return t.Type
-			}
-		case *ast.FuncLit:
-			if _, ok := info.Types[t]; ok {
-				return t.Type
-			}
-		}
-	}
-	return nil
 }

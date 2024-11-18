@@ -170,6 +170,25 @@ type closer struct{}
 +func (c closer) Close() error {
 +	panic("unimplemented")
 +}
+-- successive_function_return.go --
+package stub
+
+import (
+	"io"
+)
+
+func _() (a, b int, c io.Closer) {
+	return 1, 2, closer2{} //@quickfix("c", re"does not implement", successive)
+}
+
+type closer2 struct{}
+-- @successive/successive_function_return.go --
+@@ -12 +12,5 @@
++
++// Close implements io.Closer.
++func (c closer2) Close() error {
++	panic("unimplemented")
++}
 -- generic_receiver.go --
 package stub
 

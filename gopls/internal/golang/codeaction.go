@@ -302,7 +302,7 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 			continue
 		}
 
-		msg := typeError.Error()
+		msg := typeError.Msg
 		switch {
 		// "Missing method" error? (stubmethods)
 		// Offer a "Declare missing methods of INTERFACE" code action.
@@ -328,6 +328,17 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 			if si != nil {
 				msg := fmt.Sprintf("Declare missing method %s.%s", si.Receiver.Obj().Name(), si.MethodName)
 				req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
+			}
+
+		// "undeclared name: x" or "undefined: x" compiler error.
+		// Offer a "Create variable/function x" code action.
+		// See [fixUndeclared] for command implementation.
+		case strings.HasPrefix(msg, "undeclared name: "),
+			strings.HasPrefix(msg, "undefined: "):
+			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
+			title := undeclaredFixTitle(path, msg)
+			if title != "" {
+				req.addApplyFixAction(title, fixCreateUndeclared, req.loc)
 			}
 		}
 	}

@@ -91,7 +91,7 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos
 // Emit writes to out the missing method based on type info of si.Receiver and CallExpr.
 func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	params := si.collectParams()
-	rets := typesFromContext(si.info, si.path, si.path[0].Pos())
+	rets := typesutil.TypesFromContext(si.info, si.path, si.path[0].Pos())
 	recv := si.Receiver.Obj()
 	// Pointer receiver?
 	var star string
@@ -191,116 +191,6 @@ func (si *CallStubInfo) collectParams() []param {
 		}
 	}
 	return params
-}
-
-// typesFromContext returns the type (or perhaps zero or multiple types)
-// of the "hole" into which the expression identified by path must fit.
-//
-// For example, given
-//
-//	s, i := "", 0
-//	s, i = EXPR
-//
-// the hole that must be filled by EXPR has type (string, int).
-//
-// It returns nil on failure.
-func typesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.Type {
-	var typs []types.Type
-	parent := parentNode(path)
-	if parent == nil {
-		return nil
-	}
-	switch parent := parent.(type) {
-	case *ast.AssignStmt:
-		// Append all lhs's type
-		if len(parent.Rhs) == 1 {
-			for _, lhs := range parent.Lhs {
-				t := info.TypeOf(lhs)
-				if t != nil && !containsInvalid(t) {
-					t = types.Default(t)
-				} else {
-					t = anyType
-				}
-				typs = append(typs, t)
-			}
-			break
-		}
-
-		// Lhs and Rhs counts do not match, give up
-		if len(parent.Lhs) != len(parent.Rhs) {
-			break
-		}
-
-		// Append corresponding index of lhs's type
-		for i, rhs := range parent.Rhs {
-			if rhs.Pos() <= pos && pos <= rhs.End() {
-				t := info.TypeOf(parent.Lhs[i])
-				if t != nil && !containsInvalid(t) {
-					t = types.Default(t)
-				} else {
-					t = anyType
-				}
-				typs = append(typs, t)
-				break
-			}
-		}
-	case *ast.CallExpr:
-		// Find argument containing pos.
-		argIdx := -1
-		for i, callArg := range parent.Args {
-			if callArg.Pos() <= pos && pos <= callArg.End() {
-				argIdx = i
-				break
-			}
-		}
-		if argIdx == -1 {
-			break
-		}
-
-		t := info.TypeOf(parent.Fun)
-		if t == nil {
-			break
-		}
-
-		if sig, ok := t.Underlying().(*types.Signature); ok {
-			var paramType types.Type
-			if sig.Variadic() && argIdx >= sig.Params().Len()-1 {
-				v := sig.Params().At(sig.Params().Len() - 1)
-				if s, _ := v.Type().(*types.Slice); s != nil {
-					paramType = s.Elem()
-				}
-			} else if argIdx < sig.Params().Len() {
-				paramType = sig.Params().At(argIdx).Type()
-			} else {
-				break
-			}
-			if paramType == nil || containsInvalid(paramType) {
-				paramType = anyType
-			}
-			typs = append(typs, paramType)
-		}
-	default:
-		// TODO: support other common kinds of "holes", e.g.
-		//   x + EXPR         => typeof(x)
-		//   !EXPR            => bool
-		//   var x int = EXPR => int
-		//   etc.
-	}
-	return typs
-}
-
-// parentNode returns the nodes immediately enclosing path[0],
-// ignoring parens.
-func parentNode(path []ast.Node) ast.Node {
-	if len(path) <= 1 {
-		return nil
-	}
-	for _, n := range path[1:] {
-		if _, ok := n.(*ast.ParenExpr); !ok {
-			return n
-		}
-	}
-	return nil
 }
 
 // containsInvalid checks if the type name contains "invalid type",
