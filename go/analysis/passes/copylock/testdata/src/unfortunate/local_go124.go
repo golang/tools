@@ -12,8 +12,8 @@ import "sync"
 
 type LocalOnce sync.Once
 
-func (LocalOnce) Bad() {} // want "Bad passes lock by value: a.LocalOnce contains sync.noCopy"
+func (LocalOnce) Bad() {} // want "Bad passes lock by value: unfortunate.LocalOnce contains sync.noCopy"
 
 type LocalMutex sync.Mutex
 
-func (LocalMutex) Bad() {} // want "Bad passes lock by value: a.LocalMutex contains sync.noCopy"
+func (LocalMutex) Bad() {} // want "Bad passes lock by value: unfortunate.LocalMutex contains sync.noCopy"
