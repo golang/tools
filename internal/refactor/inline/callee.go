@@ -202,19 +202,19 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 					objidx, ok := freeObjIndex[obj]
 					if !ok {
 						objidx = len(freeObjIndex)
-						var pkgpath, pkgname string
+						var pkgPath, pkgName string
 						if pn, ok := obj.(*types.PkgName); ok {
-							pkgpath = pn.Imported().Path()
-							pkgname = pn.Imported().Name()
+							pkgPath = pn.Imported().Path()
+							pkgName = pn.Imported().Name()
 						} else if obj.Pkg() != nil {
-							pkgpath = obj.Pkg().Path()
-							pkgname = obj.Pkg().Name()
+							pkgPath = obj.Pkg().Path()
+							pkgName = obj.Pkg().Name()
 						}
 						freeObjs = append(freeObjs, object{
 							Name:     obj.Name(),
 							Kind:     objectKind(obj),
-							PkgName:  pkgname,
-							PkgPath:  pkgpath,
+							PkgName:  pkgName,
+							PkgPath:  pkgPath,
 							ValidPos: obj.Pos().IsValid(),
 						})
 						freeObjIndex[obj] = objidx
