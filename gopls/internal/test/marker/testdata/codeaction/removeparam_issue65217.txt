@@ -48,7 +48,6 @@ func _() {
 
 func _() {
 	var s S
-	var _ S = s
 	i := f(s.Int())
 	_ = i
 }

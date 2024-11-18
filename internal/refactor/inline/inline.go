@@ -763,11 +763,15 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 					n := len(params) - 1
 					ordinary, extra := args[:n], args[n:]
 					var elts []ast.Expr
+					freevars := make(map[string]bool)
 					pure, effects := true, false
 					for _, arg := range extra {
 						elts = append(elts, arg.expr)
 						pure = pure && arg.pure
 						effects = effects || arg.effects
+						for k, v := range arg.freevars {
+							freevars[k] = v
+						}
 					}
 					args = append(ordinary, &argument{
 						expr: &ast.CompositeLit{
@@ -779,7 +783,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 						pure:       pure,
 						effects:    effects,
 						duplicable: false,
-						freevars:   nil, // not needed
+						freevars:   freevars,
 					})
 				}
 			}
@@ -1453,9 +1457,26 @@ next:
 					// references among other arguments which have non-zero references
 					// within the callee.
 					if v, ok := caller.lookup(free).(*types.Var); ok && within(v.Pos(), caller.enclosingFunc.Body) && !isUsedOutsideCall(caller, v) {
-						logf("keeping param %q: arg contains perhaps the last reference to caller local %v @ %v",
-							param.info.Name, v, caller.Fset.PositionFor(v.Pos(), false))
-						continue next
+
+						// Check to see if the substituted var is used within other args
+						// whose corresponding params ARE used in the callee
+						usedElsewhere := func() bool {
+							for i, param := range params {
+								if i < len(args) && len(param.info.Refs) > 0 { // excludes original param
+									for name := range args[i].freevars {
+										if caller.lookup(name) == v {
+											return true
+										}
+									}
+								}
+							}
+							return false
+						}
+						if !usedElsewhere() {
+							logf("keeping param %q: arg contains perhaps the last reference to caller local %v @ %v",
+								param.info.Name, v, caller.Fset.PositionFor(v.Pos(), false))
+							continue next
+						}
 					}
 				}
 			}

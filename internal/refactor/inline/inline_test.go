@@ -731,13 +731,25 @@ func TestSubstitution(t *testing.T) {
 			`func _() { var local int; _ = local }`,
 		},
 		{
-			"Arguments that are used are detected",
+			"Arguments that are used by other arguments are detected",
 			`func f(x, y int) { print(x) }`,
 			`func _() { var z int; f(z, z) }`,
+			`func _() { var z int; print(z) }`,
+		},
+		{
+			"Arguments that are used by other variadic arguments are detected",
+			`func f(x int, ys ...int) { print(ys) }`,
+			`func _() { var z int; f(z, 1, 2, 3, z) }`,
+			`func _() { var z int; print([]int{1, 2, 3, z}) }`,
+		},
+		{
+			"Arguments that are used by other variadic arguments are detected, 2",
+			`func f(x int, ys ...int) { print(ys) }`,
+			`func _() { var z int; f(z) }`,
 			`func _() {
 	var z int
 	var _ int = z
-	print(z)
+	print([]int{})
 }`,
 		},
 		{
