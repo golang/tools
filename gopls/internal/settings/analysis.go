@@ -54,7 +54,6 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/simplifycompositelit"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyrange"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyslice"
-	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
 	"golang.org/x/tools/gopls/internal/analysis/useany"
@@ -176,7 +175,6 @@ func init() {
 		{analyzer: fillreturns.Analyzer, enabled: true},
 		{analyzer: nonewvars.Analyzer, enabled: true},
 		{analyzer: noresultvalues.Analyzer, enabled: true},
-		{analyzer: undeclaredname.Analyzer, enabled: true},
 		// TODO(rfindley): why isn't the 'unusedvariable' analyzer enabled, if it
 		// is only enhancing type errors with suggested fixes?
 		//

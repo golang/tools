@@ -125,3 +125,31 @@ func uniqueArguments() {
 +func undefinedUniqueArguments(s1 string, i int, s2 string) {
 +	panic("unimplemented")
 +}
+-- param.go --
+package missingfunction
+
+func inferFromParam() {
+	f(as_param()) //@quickfix("as_param", re"undefined", infer_param)
+}
+
+func f(i int) {}
+-- @infer_param/param.go --
+@@ -7 +7,4 @@
++func as_param() int {
++	panic("unimplemented")
++}
++
+-- assign.go --
+package missingfunction
+
+func inferFromAssign() {
+	i := 42
+	i = i
+	i = assign() //@quickfix("assign", re"undefined", infer_assign)
+}
+-- @infer_assign/assign.go --
+@@ -8 +8,4 @@
++
++func assign() int {
++	panic("unimplemented")
++}
