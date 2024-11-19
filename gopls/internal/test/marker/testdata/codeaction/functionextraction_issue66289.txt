@@ -29,7 +29,6 @@ import (
 )
 
 func F() error {
-	//@codeaction("a", "refactor.extract.function", end=endF, result=F)
 	a, b, shouldReturn, err := newFunction()
 	if shouldReturn {
 		return err
@@ -39,7 +38,7 @@ func F() error {
 }
 
 func newFunction() ([]byte, []byte, bool, error) {
-	a, err := json.Marshal(0)
+	a, err := json.Marshal(0) //@codeaction("a", "refactor.extract.function", end=endF, result=F)
 	if err != nil {
 		return nil, nil, true, fmt.Errorf("1: %w", err)
 	}
@@ -78,7 +77,6 @@ import (
 )
 
 func G() (x, y int) {
-	//@codeaction("v", "refactor.extract.function", end=endG, result=G)
 	v, shouldReturn, x1, y1 := newFunction()
 	if shouldReturn {
 		return x1, y1
@@ -88,7 +86,7 @@ func G() (x, y int) {
 }
 
 func newFunction() (int, bool, int, int) {
-	v := rand.Int()
+	v := rand.Int() //@codeaction("v", "refactor.extract.function", end=endG, result=G)
 	if v < 0 {
 		return 0, true, 1, 2
 	}

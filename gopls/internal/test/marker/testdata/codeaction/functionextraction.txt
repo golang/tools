@@ -17,12 +17,11 @@ func _() { //@codeaction("{", "refactor.extract.function", end=closeBracket, res
 package extract
 
 func _() { //@codeaction("{", "refactor.extract.function", end=closeBracket, result=outer)
-	//@codeaction("a", "refactor.extract.function", end=end, result=inner)
 	newFunction() //@loc(end, "4")
 }
 
 func newFunction() {
-	a := 1
+	a := 1 //@codeaction("a", "refactor.extract.function", end=end, result=inner)
 	_ = a + 4
 } //@loc(closeBracket, "}")
 
@@ -30,12 +29,11 @@ func newFunction() {
 package extract
 
 func _() { //@codeaction("{", "refactor.extract.function", end=closeBracket, result=outer)
-	//@codeaction("a", "refactor.extract.function", end=end, result=inner)
 	newFunction() //@loc(end, "4")
 }
 
 func newFunction() {
-	a := 1
+	a := 1 //@codeaction("a", "refactor.extract.function", end=end, result=inner)
 	_ = a + 4
 } //@loc(closeBracket, "}")
 
@@ -55,7 +53,6 @@ package extract
 
 func _() bool {
 	x := 1
-	//@codeaction("if", "refactor.extract.function", end=ifend, result=return)
 	shouldReturn, b := newFunction(x)
 	if shouldReturn {
 		return b
@@ -64,7 +61,7 @@ func _() bool {
 }
 
 func newFunction(x int) (bool, bool) {
-	if x == 0 {
+	if x == 0 { //@codeaction("if", "refactor.extract.function", end=ifend, result=return)
 		return true, true
 	}
 	return false, false
@@ -85,12 +82,11 @@ func _() bool {
 package extract
 
 func _() bool {
-	//@codeaction("x", "refactor.extract.function", end=rnnEnd, result=rnn)
 	return newFunction() //@loc(rnnEnd, "false")
 }
 
 func newFunction() bool {
-	x := 1
+	x := 1 //@codeaction("x", "refactor.extract.function", end=rnnEnd, result=rnn)
 	if x == 0 {
 		return true
 	}
@@ -123,7 +119,6 @@ import "fmt"
 func _() (int, string, error) {
 	x := 1
 	y := "hello"
-	//@codeaction("z", "refactor.extract.function", end=rcEnd, result=rc)
 	z, shouldReturn, i, s, err := newFunction(y, x)
 	if shouldReturn {
 		return i, s, err
@@ -132,7 +127,7 @@ func _() (int, string, error) {
 }
 
 func newFunction(y string, x int) (string, bool, int, string, error) {
-	z := "bye"
+	z := "bye" //@codeaction("z", "refactor.extract.function", end=rcEnd, result=rc)
 	if y == z {
 		return "", true, x, y, fmt.Errorf("same")
 	} else if false {
@@ -168,12 +163,11 @@ import "fmt"
 func _() (int, string, error) {
 	x := 1
 	y := "hello"
-	//@codeaction("z", "refactor.extract.function", end=rcnnEnd, result=rcnn)
 	return newFunction(y, x) //@loc(rcnnEnd, "nil")
 }
 
 func newFunction(y string, x int) (int, string, error) {
-	z := "bye"
+	z := "bye" //@codeaction("z", "refactor.extract.function", end=rcnnEnd, result=rcnn)
 	if y == z {
 		return x, y, fmt.Errorf("same")
 	} else if false {
@@ -204,7 +198,6 @@ import "go/ast"
 
 func _() {
 	ast.Inspect(ast.NewIdent("a"), func(n ast.Node) bool {
-		//@codeaction("if", "refactor.extract.function", end=rflEnd, result=rfl)
 		shouldReturn, b := newFunction(n)
 		if shouldReturn {
 			return b
@@ -214,7 +207,7 @@ func _() {
 }
 
 func newFunction(n ast.Node) (bool, bool) {
-	if n == nil {
+	if n == nil { //@codeaction("if", "refactor.extract.function", end=rflEnd, result=rfl)
 		return true, true
 	}
 	return false, false
@@ -241,13 +234,12 @@ import "go/ast"
 
 func _() {
 	ast.Inspect(ast.NewIdent("a"), func(n ast.Node) bool {
-		//@codeaction("if", "refactor.extract.function", end=rflnnEnd, result=rflnn)
 		return newFunction(n) //@loc(rflnnEnd, "false")
 	})
 }
 
 func newFunction(n ast.Node) bool {
-	if n == nil {
+	if n == nil { //@codeaction("if", "refactor.extract.function", end=rflnnEnd, result=rflnn)
 		return true
 	}
 	return false
@@ -271,7 +263,6 @@ package extract
 
 func _() string {
 	x := 1
-	//@codeaction("if", "refactor.extract.function", end=riEnd, result=ri)
 	shouldReturn, s := newFunction(x)
 	if shouldReturn {
 		return s
@@ -281,7 +272,7 @@ func _() string {
 }
 
 func newFunction(x int) (bool, string) {
-	if x == 0 {
+	if x == 0 { //@codeaction("if", "refactor.extract.function", end=riEnd, result=ri)
 		x = 3
 		return true, "a"
 	}
@@ -306,12 +297,11 @@ package extract
 
 func _() string {
 	x := 1
-	//@codeaction("if", "refactor.extract.function", end=rinnEnd, result=rinn)
 	return newFunction(x) //@loc(rinnEnd, "\"b\"")
 }
 
 func newFunction(x int) string {
-	if x == 0 {
+	if x == 0 { //@codeaction("if", "refactor.extract.function", end=rinnEnd, result=rinn)
 		x = 3
 		return "a"
 	}
@@ -336,7 +326,6 @@ package extract
 
 func _() {
 	a := 1
-	//@codeaction("a", "refactor.extract.function", end=araend, result=ara)
 	a = newFunction(a) //@loc(araend, "2")
 
 	b := a * 2 //@codeaction("b", "refactor.extract.function", end=arbend, result=arb)
@@ -344,7 +333,7 @@ func _() {
 }
 
 func newFunction(a int) int {
-	a = 5
+	a = 5 //@codeaction("a", "refactor.extract.function", end=araend, result=ara)
 	a = a + 2
 	return a
 }
@@ -357,12 +346,11 @@ func _() {
 	a = 5     //@codeaction("a", "refactor.extract.function", end=araend, result=ara)
 	a = a + 2 //@loc(araend, "2")
 
-	//@codeaction("b", "refactor.extract.function", end=arbend, result=arb)
 	newFunction(a)  //@loc(arbend, "4")
 }
 
 func newFunction(a int) {
-	b := a * 2
+	b := a * 2 //@codeaction("b", "refactor.extract.function", end=arbend, result=arb)
 	_ = b + 4
 }
 
@@ -412,13 +400,12 @@ package extract
 
 func _() {
 	var a []int
-	//@codeaction("a", "refactor.extract.function", end=siEnd, result=si)
 	a, b := newFunction(a)           //@loc(siEnd, "4")
 	a = append(a, b)
 }
 
 func newFunction(a []int) ([]int, int) {
-	a = append(a, 2)
+	a = append(a, 2) //@codeaction("a", "refactor.extract.function", end=siEnd, result=si)
 	b := 4
 	return a, b
 }
@@ -441,13 +428,12 @@ package extract
 func _() {
 	var b []int
 	var a int
-	//@codeaction("a", "refactor.extract.function", end=srEnd, result=sr)
 	b = newFunction(a, b) //@loc(srEnd, ")")
 	b[0] = 1
 }
 
 func newFunction(a int, b []int) []int {
-	a = 2
+	a = 2 //@codeaction("a", "refactor.extract.function", end=srEnd, result=sr)
 	b = []int{}
 	b = append(b, a)
 	return b
@@ -472,7 +458,6 @@ package extract
 
 func _() {
 	var b []int
-	//@codeaction("a", "refactor.extract.function", end=upEnd, result=up)
 	a, b := newFunction(b) //@loc(upEnd, ")")
 	b[0] = 1
 	if a == 2 {
@@ -481,7 +466,7 @@ func _() {
 }
 
 func newFunction(b []int) (int, []int) {
-	a := 2
+	a := 2 //@codeaction("a", "refactor.extract.function", end=upEnd, result=up)
 	b = []int{}
 	b = append(b, a)
 	return a, b
@@ -503,9 +488,6 @@ func _() {
 package extract
 
 func _() {
-	/* comment in the middle of a line */
-	//@codeaction("a", "refactor.extract.function", end=commentEnd, result=comment1)
-	// Comment on its own line  //@codeaction("Comment", "refactor.extract.function", end=commentEnd, result=comment2)
 	newFunction() //@loc(commentEnd, "4"),codeaction("_", "refactor.extract.function", end=lastComment, result=comment3)
 	// Comment right after 3 + 4
 
@@ -513,8 +495,8 @@ func _() {
 }
 
 func newFunction() {
-	a := 1
-
+	a := /* comment in the middle of a line */ 1 //@codeaction("a", "refactor.extract.function", end=commentEnd, result=comment1)
+	// Comment on its own line  //@codeaction("Comment", "refactor.extract.function", end=commentEnd, result=comment2)
 	_ = a + 4
 }
 
@@ -602,12 +584,11 @@ import "slices"
 
 // issue go#64821
 func _() {
-	//@codeaction("var", "refactor.extract.function", end=anonEnd, result=anon1)
 	newFunction() //@loc(anonEnd, ")")
 }
 
 func newFunction() {
-	var s []string
+	var s []string //@codeaction("var", "refactor.extract.function", end=anonEnd, result=anon1)
 	slices.SortFunc(s, func(a, b string) int {
 		return cmp.Compare(a, b)
 	})

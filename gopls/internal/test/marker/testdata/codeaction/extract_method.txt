@@ -237,20 +237,14 @@ func (b *B) LongListWithT(ctx context.Context, t *testing.T) (int, error) {
 +}
 +
 -- @contextFuncB/context.go --
-@@ -33 +33,6 @@
--	sum := b.x + b.y //@loc(B_AddPWithB, re`(?s:^.*?Err\(\))`)
-+	//@loc(B_AddPWithB, re`(?s:^.*?Err\(\))`)
+@@ -33 +33,4 @@
 +	return newFunction(ctx, tB, b)
 +}
 +
 +func newFunction(ctx context.Context, tB *testing.B, b *B) (int, error) {
-+	sum := b.x + b.y
 -- @contextFuncT/context.go --
-@@ -42 +42,6 @@
--	p4 := p1 + p2 //@loc(B_LongListWithT, re`(?s:^.*?Err\(\))`)
-+	//@loc(B_LongListWithT, re`(?s:^.*?Err\(\))`)
+@@ -42 +42,4 @@
 +	return newFunction(ctx, t, p1, p2, p3)
 +}
 +
 +func newFunction(ctx context.Context, t *testing.T, p1 int, p2 int, p3 int) (int, error) {
-+	p4 := p1 + p2
