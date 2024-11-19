@@ -180,7 +180,7 @@ func Ellipsis2(_ int, rest ...int) { //@codeaction("_", "refactor.rewrite.remove
 }
 
 func _() {
-	Ellipsis2(2, []int{3}...)
+	Ellipsis2(2, 3)
 	func(_, blank0 int, rest ...int) {
 		Ellipsis2(blank0, rest...)
 	}(h())

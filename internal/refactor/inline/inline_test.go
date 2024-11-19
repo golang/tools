@@ -1044,6 +1044,12 @@ func TestVariadic(t *testing.T) {
 			`func _(slice []any) { println(slice) }`,
 		},
 		{
+			"Undo variadic elimination",
+			`func f(args ...int) []int { return append([]int{1}, args...) }`,
+			`func _(a, b int) { f(a, b) }`,
+			`func _(a, b int) { _ = append([]int{1}, a, b) }`,
+		},
+		{
 			"Variadic elimination (literalization).",
 			`func f(x any, rest ...any) { defer println(x, rest) }`, // defer => literalization
 			`func _() { f(1, 2, 3) }`,

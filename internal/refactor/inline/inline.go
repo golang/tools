@@ -41,11 +41,13 @@ type Caller struct {
 	enclosingFunc *ast.FuncDecl // top-level function/method enclosing the call, if any
 }
 
+type logger = func(string, ...any)
+
 // Options specifies parameters affecting the inliner algorithm.
 // All fields are optional.
 type Options struct {
-	Logf          func(string, ...any) // log output function, records decision-making process
-	IgnoreEffects bool                 // ignore potential side effects of arguments (unsound)
+	Logf          logger // log output function, records decision-making process
+	IgnoreEffects bool   // ignore potential side effects of arguments (unsound)
 }
 
 // Result holds the result of code transformation.
@@ -737,11 +739,22 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		return nil, err // "can't happen"
 	}
 
-	// replaceCalleeID replaces an identifier in the callee.
-	// The replacement tree must not belong to the caller; use cloneNode as needed.
-	replaceCalleeID := func(offset int, repl ast.Expr) {
-		id := findIdent(calleeDecl, calleeDecl.Pos()+token.Pos(offset))
+	// replaceCalleeID replaces an identifier in the callee. See [replacer] for
+	// more detailed semantics.
+	replaceCalleeID := func(offset int, repl ast.Expr, unpackVariadic bool) {
+		path, id := findIdent(calleeDecl, calleeDecl.Pos()+token.Pos(offset))
 		logf("- replace id %q @ #%d to %q", id.Name, offset, debugFormatNode(calleeFset, repl))
+		// Replace f([]T{a, b, c}...) with f(a, b, c).
+		if lit, ok := repl.(*ast.CompositeLit); ok && unpackVariadic && len(path) > 0 {
+			if call, ok := last(path).(*ast.CallExpr); ok &&
+				call.Ellipsis.IsValid() &&
+				id == last(call.Args) {
+
+				call.Args = append(call.Args[:len(call.Args)-1], lit.Elts...)
+				call.Ellipsis = token.NoPos
+				return
+			}
+		}
 		replaceNode(calleeDecl, id, repl)
 	}
 
@@ -749,7 +762,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	// (The same tree may be spliced in multiple times, resulting in a DAG.)
 	for _, ref := range callee.FreeRefs {
 		if repl := objRenames[ref.Object]; repl != nil {
-			replaceCalleeID(ref.Offset, repl)
+			replaceCalleeID(ref.Offset, repl, false)
 		}
 	}
 
@@ -825,6 +838,10 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 					// nop
 				} else {
 					// ordinary call: f(a1, ... aN) -> f([]T{a1, ..., aN})
+					//
+					// Substitution of []T{...} in the callee body may lead to
+					// g([]T{a1, ..., aN}...), which we simplify to g(a1, ..., an)
+					// later; see replaceCalleeID.
 					n := len(params) - 1
 					ordinary, extra := args[:n], args[n:]
 					var elts []ast.Expr
@@ -849,6 +866,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 						effects:    effects,
 						duplicable: false,
 						freevars:   freevars,
+						variadic:   true,
 					})
 				}
 			}
@@ -1297,6 +1315,7 @@ type argument struct {
 	duplicable    bool            // expr may be duplicated
 	freevars      map[string]bool // free names of expr
 	substitutable bool            // is candidate for substitution
+	variadic      bool            // is explicit []T{...} for eliminated variadic
 }
 
 // arguments returns the effective arguments of the call.
@@ -1452,6 +1471,12 @@ type parameter struct {
 	variadic  bool       // (final) parameter is unsimplified ...T
 }
 
+// A replacer replaces an identifier at the given offset in the callee.
+// The replacement tree must not belong to the caller; use cloneNode as needed.
+// If unpackVariadic is set, the replacement is a composite resulting from
+// variadic elimination, and may be unpackeded into variadic calls.
+type replacer = func(offset int, repl ast.Expr, unpackVariadic bool)
+
 // substitute implements parameter elimination by substitution.
 //
 // It considers each parameter and its corresponding argument in turn
@@ -1471,7 +1496,7 @@ type parameter struct {
 // parameter, and is provided with its relative offset and replacement
 // expression (argument), and the corresponding elements of params and
 // args are replaced by nil.
-func substitute(logf func(string, ...any), caller *Caller, params []*parameter, args []*argument, effects []int, falcon falconResult, replaceCalleeID func(offset int, repl ast.Expr)) {
+func substitute(logf logger, caller *Caller, params []*parameter, args []*argument, effects []int, falcon falconResult, replace replacer) {
 	// Inv:
 	//  in        calls to     variadic, len(args) >= len(params)-1
 	//  in spread calls to non-variadic, len(args) <  len(params)
@@ -1621,7 +1646,7 @@ next:
 			logf("replacing parameter %q by argument %q",
 				param.info.Name, debugFormatNode(caller.Fset, arg.expr))
 			for _, ref := range param.info.Refs {
-				replaceCalleeID(ref, internalastutil.CloneNode(arg.expr).(ast.Expr))
+				replace(ref, internalastutil.CloneNode(arg.expr).(ast.Expr), arg.variadic)
 			}
 			params[i] = nil // substituted
 			args[i] = nil   // substituted
@@ -1666,7 +1691,7 @@ func isUsedOutsideCall(caller *Caller, v *types.Var) bool {
 // TODO(adonovan): we could obtain a finer result rejecting only the
 // freevars of each failed constraint, and processing constraints in
 // order of increasing arity, but failures are quite rare.
-func checkFalconConstraints(logf func(string, ...any), params []*parameter, args []*argument, falcon falconResult) {
+func checkFalconConstraints(logf logger, params []*parameter, args []*argument, falcon falconResult) {
 	// Create a dummy package, as this is the only
 	// way to create an environment for CheckExpr.
 	pkg := types.NewPackage("falcon", "falcon")
@@ -1764,7 +1789,7 @@ func checkFalconConstraints(logf func(string, ...any), params []*parameter, args
 // current argument. Subsequent iterations cannot introduce hazards
 // with that argument because they can result only in additional
 // binding of lower-ordered arguments.
-func resolveEffects(logf func(string, ...any), args []*argument, effects []int) {
+func resolveEffects(logf logger, args []*argument, effects []int) {
 	effectStr := func(effects bool, idx int) string {
 		i := fmt.Sprint(idx)
 		if idx == len(args) {
@@ -1923,7 +1948,7 @@ type bindingDeclInfo struct {
 //
 // Strategies may impose additional checks on return
 // conversions, labels, defer, etc.
-func createBindingDecl(logf func(string, ...any), caller *Caller, args []*argument, calleeDecl *ast.FuncDecl, results []*paramInfo) *bindingDeclInfo {
+func createBindingDecl(logf logger, caller *Caller, args []*argument, calleeDecl *ast.FuncDecl, results []*paramInfo) *bindingDeclInfo {
 	// Spread calls are tricky as they may not align with the
 	// parameters' field groupings nor types.
 	// For example, given
@@ -2745,26 +2770,38 @@ func clearPositions(root ast.Node) {
 	})
 }
 
-// findIdent returns the Ident beneath root that has the given pos.
-func findIdent(root ast.Node, pos token.Pos) *ast.Ident {
+// findIdent finds the Ident beneath root that has the given pos.
+// It returns the path to the ident (excluding the ident), and the ident
+// itself, where the path is the sequence of ast.Nodes encountered in a
+// depth-first search to find ident.
+func findIdent(root ast.Node, pos token.Pos) ([]ast.Node, *ast.Ident) {
 	// TODO(adonovan): opt: skip subtrees that don't contain pos.
-	var found *ast.Ident
+	var (
+		path  []ast.Node
+		found *ast.Ident
+	)
 	ast.Inspect(root, func(n ast.Node) bool {
 		if found != nil {
+			return false
+		}
+		if n == nil {
+			path = path[:len(path)-1]
 			return false
 		}
 		if id, ok := n.(*ast.Ident); ok {
 			if id.Pos() == pos {
 				found = id
+				return true
 			}
 		}
+		path = append(path, n)
 		return true
 	})
 	if found == nil {
 		panic(fmt.Sprintf("findIdent %d not found in %s",
 			pos, debugFormatNode(token.NewFileSet(), root)))
 	}
-	return found
+	return path, found
 }
 
 func prepend[T any](elem T, slice ...T) []T {
