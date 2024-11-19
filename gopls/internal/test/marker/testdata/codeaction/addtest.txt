@@ -13,7 +13,7 @@ go 1.18
 	"addTestSourceCodeAction": true
 }
 
--- withcopyright/copyright.go --
+-- copyrightandbuildconstraint/copyrightandbuildconstraint.go --
 // Copyright 2020 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -23,18 +23,20 @@ go 1.18
 // Package main is for lsp test.
 package main
 
-func Foo(in string) string {return in} //@codeaction("Foo", "source.addTest", edit=with_copyright)
+func Foo(in string) string {return in} //@codeaction("Foo", "source.addTest", edit=with_copyright_build_constraint)
 
--- @with_copyright/withcopyright/copyright_test.go --
-@@ -0,0 +1,30 @@
+-- @with_copyright_build_constraint/copyrightandbuildconstraint/copyrightandbuildconstraint_test.go --
+@@ -0,0 +1,32 @@
 +// Copyright 2020 The Go Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
 +
++//go:build go1.18
++
 +package main_test
 +
 +import(
-+	"golang.org/lsptests/addtest/withcopyright"
++	"golang.org/lsptests/addtest/copyrightandbuildconstraint"
 +	"testing"
 +)
 +
@@ -57,20 +59,22 @@ func Foo(in string) string {return in} //@codeaction("Foo", "source.addTest", ed
 +    })
 +  }
 +}
--- withoutcopyright/copyright.go --
+-- buildconstraint/buildconstraint.go --
 //go:build go1.18
 
 // Package copyright is for lsp test.
 package copyright
 
-func Foo(in string) string {return in} //@codeaction("Foo", "source.addTest", edit=without_copyright)
+func Foo(in string) string {return in} //@codeaction("Foo", "source.addTest", edit=with_build_constraint)
 
--- @without_copyright/withoutcopyright/copyright_test.go --
-@@ -0,0 +1,26 @@
+-- @with_build_constraint/buildconstraint/buildconstraint_test.go --
+@@ -0,0 +1,28 @@
++//go:build go1.18
++
 +package copyright_test
 +
 +import(
-+	"golang.org/lsptests/addtest/withoutcopyright"
++	"golang.org/lsptests/addtest/buildconstraint"
 +	"testing"
 +)
 +

@@ -133,6 +133,26 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	}
 
 	var buf bytes.Buffer
+	if c := copyrightComment(pgf.File); c != nil {
+		start, end, err := pgf.NodeOffsets(c)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(pgf.Src[start:end])
+		// One empty line between copyright header and following.
+		buf.WriteString("\n\n")
+	}
+
+	if c := buildConstraintComment(pgf.File); c != nil {
+		start, end, err := pgf.NodeOffsets(c)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(pgf.Src[start:end])
+		// One empty line between build constraint and following.
+		buf.WriteString("\n\n")
+	}
+
 	fmt.Fprintf(&buf, "package %s\n", pgf.File.Name.Name)
 	if len(adds) > 0 {
 		buf.WriteString("import (")
@@ -154,7 +174,6 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	fileStart := pgf.File.FileStart
 	buf.Write(pgf.Src[start-fileStart : end-fileStart])
 
-	// TODO: attempt to duplicate the copyright header, if any.
 	newFileContent, err := format.Source(buf.Bytes())
 	if err != nil {
 		return nil, err

@@ -330,22 +330,28 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		// package decl based on the originating file.
 		// Search for something that looks like a copyright header, to replicate
 		// in the new file.
-		if groups := pgf.File.Comments; len(groups) > 0 {
-			// Copyright should appear before package decl and must be the first
-			// comment group.
-			// Avoid copying any other comment like package doc or directive comment.
-			if c := groups[0]; c.Pos() < pgf.File.Package && c != pgf.File.Doc &&
-				!isDirective(c.List[0].Text) &&
-				strings.Contains(strings.ToLower(c.List[0].Text), "copyright") {
-				start, end, err := pgf.NodeOffsets(c)
-				if err != nil {
-					return nil, err
-				}
-				header.Write(pgf.Src[start:end])
-				// One empty line between copyright header and package decl.
-				header.WriteString("\n\n")
+		if c := copyrightComment(pgf.File); c != nil {
+			start, end, err := pgf.NodeOffsets(c)
+			if err != nil {
+				return nil, err
 			}
+			header.Write(pgf.Src[start:end])
+			// One empty line between copyright header and following.
+			header.WriteString("\n\n")
 		}
+
+		// If this test file was created by gopls, add build constraints
+		// matching the non-test file.
+		if c := buildConstraintComment(pgf.File); c != nil {
+			start, end, err := pgf.NodeOffsets(c)
+			if err != nil {
+				return nil, err
+			}
+			header.Write(pgf.Src[start:end])
+			// One empty line between build constraint and following.
+			header.WriteString("\n\n")
+		}
+
 		fmt.Fprintf(&header, "package %s_test\n", pkg.Types().Name())
 
 		// Write the copyright and package decl to the beginning of the file.

@@ -397,3 +397,45 @@ func AbbreviateVarName(s string) string {
 	}
 	return b.String()
 }
+
+// copyrightComment returns the copyright comment group from the input file, or
+// nil if not found.
+func copyrightComment(file *ast.File) *ast.CommentGroup {
+	if len(file.Comments) == 0 {
+		return nil
+	}
+
+	// Copyright should appear before package decl and must be the first
+	// comment group.
+	if c := file.Comments[0]; c.Pos() < file.Package && c != file.Doc &&
+		!isDirective(c.List[0].Text) &&
+		strings.Contains(strings.ToLower(c.List[0].Text), "copyright") {
+		return c
+	}
+
+	return nil
+}
+
+var buildConstraintRe = regexp.MustCompile(`^//(go:build|\s*\+build).*`)
+
+// buildConstraintComment returns the build constraint comment from the input
+// file.
+// Returns nil if not found.
+func buildConstraintComment(file *ast.File) *ast.Comment {
+	for _, cg := range file.Comments {
+		// In Go files a build constraint must appear before the package clause.
+		// See https://pkg.go.dev/cmd/go#hdr-Build_constraints
+		if cg.Pos() > file.Package {
+			return nil
+		}
+
+		for _, c := range cg.List {
+			// TODO: use ast.ParseDirective when available (#68021).
+			if buildConstraintRe.MatchString(c.Text) {
+				return c
+			}
+		}
+	}
+
+	return nil
+}

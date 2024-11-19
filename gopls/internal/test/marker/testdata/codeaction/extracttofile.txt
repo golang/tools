@@ -275,3 +275,77 @@ func F() {} //@codeaction("func", "refactor.extract.toNewFile", edit=blank_impor
 -    return time1.Now().string()
 -}
 -
+-- copyright.go --
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package main
+
+// docs
+const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=copyright)
+
+-- @copyright/c.go --
+@@ -0,0 +1,8 @@
++// Copyright 2020 The Go Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style
++// license that can be found in the LICENSE file.
++
++package main
++
++// docs
++const C = ""
+-- @copyright/copyright.go --
+@@ -7,2 +7 @@
+-// docs
+-const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=copyright)
++//@codeaction("const", "refactor.extract.toNewFile", edit=copyright)
+-- buildconstraint.go --
+//go:build go1.18
+
+package main
+
+// docs
+const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=buildconstraint)
+
+-- @buildconstraint/buildconstraint.go --
+@@ -5,2 +5 @@
+-// docs
+-const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=buildconstraint)
++//@codeaction("const", "refactor.extract.toNewFile", edit=buildconstraint)
+-- @buildconstraint/c.go --
+@@ -0,0 +1,6 @@
++//go:build go1.18
++
++package main
++
++// docs
++const C = ""
+-- copyrightandbuildconstraint.go --
+// Copyright 2020 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//go:build go1.18
+
+package main
+
+// docs
+const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=copyrightandbuildconstraint)
+-- @copyrightandbuildconstraint/c.go --
+@@ -0,0 +1,10 @@
++// Copyright 2020 The Go Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style
++// license that can be found in the LICENSE file.
++
++//go:build go1.18
++
++package main
++
++// docs
++const C = ""
+-- @copyrightandbuildconstraint/copyrightandbuildconstraint.go --
+@@ -9,2 +9 @@
+-// docs
+-const C = "" //@codeaction("const", "refactor.extract.toNewFile", edit=copyrightandbuildconstraint)
++//@codeaction("const", "refactor.extract.toNewFile", edit=copyrightandbuildconstraint)
