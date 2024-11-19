@@ -92,7 +92,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 	// NarrowestPackageForFile/RangePos/suggestedFixToEdits
 	// steps.)
 	if fix == unusedparams.FixCategory {
-		return RemoveUnusedParameter(ctx, fh, rng, snapshot)
+		return removeParam(ctx, snapshot, fh, rng)
 	}
 
 	fixers := map[string]fixer{

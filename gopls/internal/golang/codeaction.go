@@ -244,6 +244,8 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorRewriteInvertIf, fn: refactorRewriteInvertIf},
 	{kind: settings.RefactorRewriteJoinLines, fn: refactorRewriteJoinLines, needPkg: true},
 	{kind: settings.RefactorRewriteRemoveUnusedParam, fn: refactorRewriteRemoveUnusedParam, needPkg: true},
+	{kind: settings.RefactorRewriteMoveParamLeft, fn: refactorRewriteMoveParamLeft, needPkg: true},
+	{kind: settings.RefactorRewriteMoveParamRight, fn: refactorRewriteMoveParamRight, needPkg: true},
 	{kind: settings.RefactorRewriteSplitLines, fn: refactorRewriteSplitLines, needPkg: true},
 
 	// Note: don't forget to update the allow-list in Server.CodeAction
@@ -509,13 +511,67 @@ func addTest(ctx context.Context, req *codeActionsRequest) error {
 	return nil
 }
 
+// identityTransform returns a change signature transformation that leaves the
+// given fieldlist unmodified.
+func identityTransform(fields *ast.FieldList) []command.ChangeSignatureParam {
+	var id []command.ChangeSignatureParam
+	for i := 0; i < fields.NumFields(); i++ {
+		id = append(id, command.ChangeSignatureParam{OldIndex: i})
+	}
+	return id
+}
+
 // refactorRewriteRemoveUnusedParam produces "Remove unused parameter" code actions.
 // See [server.commandHandler.ChangeSignature] for command implementation.
 func refactorRewriteRemoveUnusedParam(ctx context.Context, req *codeActionsRequest) error {
-	if canRemoveParameter(req.pkg, req.pgf, req.loc.Range) {
-		cmd := command.NewChangeSignatureCommand("Refactor: remove unused parameter", command.ChangeSignatureArgs{
-			RemoveParameter: req.loc,
-			ResolveEdits:    req.resolveEdits(),
+	if info := removableParameter(req.pkg, req.pgf, req.loc.Range); info != nil {
+		var transform []command.ChangeSignatureParam
+		for i := 0; i < info.decl.Type.Params.NumFields(); i++ {
+			if i != info.paramIndex {
+				transform = append(transform, command.ChangeSignatureParam{OldIndex: i})
+			}
+		}
+		cmd := command.NewChangeSignatureCommand("Remove unused parameter", command.ChangeSignatureArgs{
+			Location:     req.loc,
+			NewParams:    transform,
+			NewResults:   identityTransform(info.decl.Type.Results),
+			ResolveEdits: req.resolveEdits(),
+		})
+		req.addCommandAction(cmd, true)
+	}
+	return nil
+}
+
+func refactorRewriteMoveParamLeft(ctx context.Context, req *codeActionsRequest) error {
+	if info := findParam(req.pgf, req.loc.Range); info != nil && info.paramIndex > 0 {
+
+		transform := identityTransform(info.decl.Type.Params)
+		transform[info.paramIndex] = command.ChangeSignatureParam{OldIndex: info.paramIndex - 1}
+		transform[info.paramIndex-1] = command.ChangeSignatureParam{OldIndex: info.paramIndex}
+		cmd := command.NewChangeSignatureCommand("Move parameter left", command.ChangeSignatureArgs{
+			Location:     req.loc,
+			NewParams:    transform,
+			NewResults:   identityTransform(info.decl.Type.Results),
+			ResolveEdits: req.resolveEdits(),
+		})
+
+		req.addCommandAction(cmd, true)
+	}
+	return nil
+}
+
+func refactorRewriteMoveParamRight(ctx context.Context, req *codeActionsRequest) error {
+	if info := findParam(req.pgf, req.loc.Range); info != nil && info.paramIndex >= 0 && // found a param
+		info.paramIndex < info.decl.Type.Params.NumFields()-1 { // not the last param
+
+		transform := identityTransform(info.decl.Type.Params)
+		transform[info.paramIndex] = command.ChangeSignatureParam{OldIndex: info.paramIndex + 1}
+		transform[info.paramIndex+1] = command.ChangeSignatureParam{OldIndex: info.paramIndex}
+		cmd := command.NewChangeSignatureCommand("Move parameter right", command.ChangeSignatureArgs{
+			Location:     req.loc,
+			NewParams:    transform,
+			NewResults:   identityTransform(info.decl.Type.Results),
+			ResolveEdits: req.resolveEdits(),
 		})
 		req.addCommandAction(cmd, true)
 	}
@@ -588,10 +644,10 @@ func refactorRewriteFillSwitch(ctx context.Context, req *codeActionsRequest) err
 	return nil
 }
 
-// canRemoveParameter reports whether we can remove the function parameter
-// indicated by the given [start, end) range.
+// removableParameter returns paramInfo about a removable parameter indicated
+// by the given [start, end) range, or nil if no such removal is available.
 //
-// This is true if:
+// Removing a parameter is possible if
 //   - there are no parse or type errors, and
 //   - [start, end) is contained within an unused field or parameter name
 //   - ... of a non-method function declaration.
@@ -600,33 +656,30 @@ func refactorRewriteFillSwitch(ctx context.Context, req *codeActionsRequest) err
 // much more precisely, allowing it to report its findings as diagnostics.)
 //
 // TODO(adonovan): inline into refactorRewriteRemoveUnusedParam.
-func canRemoveParameter(pkg *cache.Package, pgf *parsego.File, rng protocol.Range) bool {
+func removableParameter(pkg *cache.Package, pgf *parsego.File, rng protocol.Range) *paramInfo {
 	if perrors, terrors := pkg.ParseErrors(), pkg.TypeErrors(); len(perrors) > 0 || len(terrors) > 0 {
-		return false // can't remove parameters from packages with errors
+		return nil // can't remove parameters from packages with errors
 	}
-	info, err := findParam(pgf, rng)
-	if err != nil {
-		return false // e.g. invalid range
-	}
-	if info.field == nil {
-		return false // range does not span a parameter
+	info := findParam(pgf, rng)
+	if info == nil || info.field == nil {
+		return nil // range does not span a parameter
 	}
 	if info.decl.Body == nil {
-		return false // external function
+		return nil // external function
 	}
 	if len(info.field.Names) == 0 {
-		return true // no names => field is unused
+		return info // no names => field is unused
 	}
 	if info.name == nil {
-		return false // no name is indicated
+		return nil // no name is indicated
 	}
 	if info.name.Name == "_" {
-		return true // trivially unused
+		return info // trivially unused
 	}
 
 	obj := pkg.TypesInfo().Defs[info.name]
 	if obj == nil {
-		return false // something went wrong
+		return nil // something went wrong
 	}
 
 	used := false
@@ -636,7 +689,10 @@ func canRemoveParameter(pkg *cache.Package, pgf *parsego.File, rng protocol.Rang
 		}
 		return !used // keep going until we find a use
 	})
-	return !used
+	if used {
+		return nil
+	}
+	return info
 }
 
 // refactorInlineCall produces "Inline call to FUNC" code actions.

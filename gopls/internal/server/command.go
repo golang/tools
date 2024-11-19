@@ -1615,10 +1615,23 @@ func showDocumentImpl(ctx context.Context, cli protocol.Client, url protocol.URI
 func (c *commandHandler) ChangeSignature(ctx context.Context, args command.ChangeSignatureArgs) (*protocol.WorkspaceEdit, error) {
 	var result *protocol.WorkspaceEdit
 	err := c.run(ctx, commandConfig{
-		forURI: args.RemoveParameter.URI,
+		forURI: args.Location.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
-		// For now, gopls only supports removing unused parameters.
-		docedits, err := golang.RemoveUnusedParameter(ctx, deps.fh, args.RemoveParameter.Range, deps.snapshot)
+		pkg, pgf, err := golang.NarrowestPackageForFile(ctx, deps.snapshot, args.Location.URI)
+		if err != nil {
+			return err
+		}
+
+		// For now, gopls only supports parameter permutation or removal.
+		var perm []int
+		for _, newParam := range args.NewParams {
+			if newParam.NewField != "" {
+				return fmt.Errorf("adding new parameters is currently unsupported")
+			}
+			perm = append(perm, newParam.OldIndex)
+		}
+
+		docedits, err := golang.ChangeSignature(ctx, deps.snapshot, pkg, pgf, args.Location.Range, perm)
 		if err != nil {
 			return err
 		}

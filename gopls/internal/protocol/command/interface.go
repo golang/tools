@@ -16,6 +16,8 @@ package command
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/vulncheck"
@@ -582,10 +584,66 @@ type AddTelemetryCountersArgs struct {
 }
 
 // ChangeSignatureArgs specifies a "change signature" refactoring to perform.
+//
+// The new signature is expressed via the NewParams and NewResults fields. The
+// elements of these lists each describe a new field of the signature, by
+// either referencing a field in the old signature or by defining a new field:
+//   - If the element is an integer, it references a positional parameter in the
+//     old signature.
+//   - If the element is a string, it is parsed as a new field to add.
+//
+// Suppose we have a function `F(a, b int) (string, error)`. Here are some
+// examples of refactoring this signature in practice, eliding the 'Location'
+// and 'ResolveEdits' fields.
+//   - `{ "NewParams": [0], "NewResults": [0, 1] }` removes the second parameter
+//   - `{ "NewParams": [1, 0], "NewResults": [0, 1] }` flips the parameter order
+//   - `{ "NewParams": [0, 1, "a int"], "NewResults": [0, 1] }` adds a new field
+//   - `{ "NewParams": [1, 2], "NewResults": [1] }` drops the `error` result
 type ChangeSignatureArgs struct {
-	RemoveParameter protocol.Location
+	// Location is any range inside the function signature. By convention, this
+	// is the same location provided in the codeAction request.
+	Location protocol.Location // a range inside of the function signature, as passed to CodeAction
+
+	// NewParams describes parameters of the new signature.
+	// An int value references a parameter in the old signature by index.
+	// A string value describes a new parameter field (e.g. "x int").
+	NewParams []ChangeSignatureParam
+
+	// NewResults describes results of the new signature (see above).
+	// An int value references a result in the old signature by index.
+	// A string value describes a new result field (e.g. "err error").
+	NewResults []ChangeSignatureParam
+
 	// Whether to resolve and return the edits.
 	ResolveEdits bool
+}
+
+// ChangeSignatureParam implements the API described in the doc string of
+// [ChangeSignatureArgs]: a union of JSON int | string.
+type ChangeSignatureParam struct {
+	OldIndex int
+	NewField string
+}
+
+func (a *ChangeSignatureParam) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		a.NewField = s
+		return nil
+	}
+	var i int
+	if err := json.Unmarshal(b, &i); err == nil {
+		a.OldIndex = i
+		return nil
+	}
+	return fmt.Errorf("must be int or string")
+}
+
+func (a ChangeSignatureParam) MarshalJSON() ([]byte, error) {
+	if a.NewField != "" {
+		return json.Marshal(a.NewField)
+	}
+	return json.Marshal(a.OldIndex)
 }
 
 // DiagnoseFilesArgs specifies a set of files for which diagnostics are wanted.

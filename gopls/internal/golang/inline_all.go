@@ -125,6 +125,8 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 		)
 		path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 		name, _ = path[0].(*ast.Ident)
+
+		// TODO(rfindley): handle method expressions correctly.
 		if _, ok := path[1].(*ast.SelectorExpr); ok {
 			call, _ = path[2].(*ast.CallExpr)
 		} else {

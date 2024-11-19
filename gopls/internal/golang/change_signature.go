@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/imports"
@@ -30,20 +31,121 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
-// RemoveUnusedParameter computes a refactoring to remove the parameter
-// indicated by the given range, which must be contained within an unused
-// parameter name or field.
+// Changing a signature works as follows, supposing we have the following
+// original function declaration:
 //
-// This operation is a work in progress. Remaining TODO:
-//   - Handle function assignment correctly.
-//   - Improve the extra newlines in output.
-//   - Stream type checking via ForEachPackage.
-//   - Avoid unnecessary additional type checking.
-func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Range, snapshot *cache.Snapshot) ([]protocol.DocumentChange, error) {
+//  func Foo(a, b, c int)
+//
+// Step 1: Write the declaration according to the given signature change. For
+// example, given the parameter transformation [2, 0, 1], we construct a new
+// ast.FuncDecl for the signature:
+//
+//   func Foo0(c, a, b int)
+//
+// Step 2: Build a wrapper function that delegates to the new function.
+// With this example, the wrapper would look like this:
+//
+//   func Foo1(a, b, c int) {
+//     Foo0(c, a, b int)
+//   }
+//
+// Step 3: Swap in the wrapper for the original, and inline all calls. The
+// trick here is to rename Foo1 to Foo, inline all calls (replacing them with
+// a call to Foo0), and then rename Foo0 back to Foo, using a simple string
+// replacement.
+//
+// For example, given a call
+//
+// 	func _() {
+// 		Foo(1, 2, 3)
+// 	}
+//
+// The inlining results in
+//
+// 	func _() {
+// 		Foo0(3, 1, 2)
+// 	}
+//
+// And then renaming results in
+//
+// 	func _() {
+//  	Foo(3, 1, 2)
+// 	}
+//
+// And the desired signature rewriting has occurred! Note: in practice, we
+// don't use the names Foo0 and Foo1, as they are too likely to conflict with
+// an existing declaration name. (Instead, we use the prefix G_o_ + p_l_s)
+//
+// The advantage of going through the inliner is that we get all of the
+// semantic considerations for free: the inliner will check for side effects
+// of arguments, check if the last use of a variable is being removed, check
+// for unnecessary imports, etc.
+//
+// Furthermore, by running the change signature rewriting through the inliner,
+// we ensure that the inliner gets better to the point that it can handle a
+// change signature rewrite just as well as if we had implemented change
+// signature as its own operation. For example, suppose we support reordering
+// the results of a function. In that case, the wrapper would be:
+//
+// 	func Foo1() (int, int) {
+// 		y, x := Foo0()
+// 		return x, y
+// 	}
+//
+// And a call would be rewritten from
+//
+// 	x, y := Foo()
+//
+// To
+//
+//  r1, r2 := Foo()
+//  x, y := r2, r1
+//
+// In order to make this idiomatic, we'd have to teach the inliner to rewrite
+// this as y, x := Foo(). The simplest and most general way to achieve this is
+// to teach the inliner to recognize when a variable is redundant (r1 and r2,
+// in this case), lifting declarations. That's probably a very useful skill for
+// the inliner to have.
+
+// removeParam computes a refactoring to remove the parameter indicated by the
+// given range.
+func removeParam(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) ([]protocol.DocumentChange, error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
 	}
+	// Find the unused parameter to remove.
+	info := findParam(pgf, rng)
+	if info == nil || info.paramIndex == -1 {
+		return nil, fmt.Errorf("no param found")
+	}
+	// Write a transformation to remove the param.
+	var newParams []int
+	for i := 0; i < info.decl.Type.Params.NumFields(); i++ {
+		if i != info.paramIndex {
+			newParams = append(newParams, i)
+		}
+	}
+	return ChangeSignature(ctx, snapshot, pkg, pgf, rng, newParams)
+}
+
+// ChangeSignature computes a refactoring to update the signature according to
+// the provided parameter transformation, for the signature definition
+// surrounding rng.
+//
+// newParams expresses the new parameters for the signature in terms of the old
+// parameters. Each entry in newParams is the index of the new parameter in the
+// original parameter list. For example, given func Foo(a, b, c int) and newParams
+// [2, 0, 1], the resulting changed signature is Foo(c, a, b int). If newParams
+// omits an index of the original signature, that parameter is removed.
+//
+// This operation is a work in progress. Remaining TODO:
+//   - Handle adding parameters.
+//   - Handle adding/removing/reordering results.
+//   - Improve the extra newlines in output.
+//   - Stream type checking via ForEachPackage.
+//   - Avoid unnecessary additional type checking.
+func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, rng protocol.Range, newParams []int) ([]protocol.DocumentChange, error) {
 
 	// Changes to our heuristics for whether we can remove a parameter must also
 	// be reflected in the canRemoveParameter helper.
@@ -57,69 +159,135 @@ func RemoveUnusedParameter(ctx context.Context, fh file.Handle, rng protocol.Ran
 		return nil, fmt.Errorf("can't change signatures for packages with parse or type errors: (e.g. %s)", sample)
 	}
 
-	info, err := findParam(pgf, rng)
-	if err != nil {
-		return nil, err // e.g. invalid range
-	}
-	if info.field == nil {
+	info := findParam(pgf, rng)
+	if info == nil || info.field == nil {
 		return nil, fmt.Errorf("failed to find field")
 	}
 
-	// Create the new declaration, which is a copy of the original decl with the
-	// unnecessary parameter removed.
-	newDecl := internalastutil.CloneNode(info.decl)
-	if info.name != nil {
-		names := remove(newDecl.Type.Params.List[info.fieldIndex].Names, info.nameIndex)
-		newDecl.Type.Params.List[info.fieldIndex].Names = names
-	}
-	if len(newDecl.Type.Params.List[info.fieldIndex].Names) == 0 {
-		// Unnamed, or final name was removed: in either case, remove the field.
-		newDecl.Type.Params.List = remove(newDecl.Type.Params.List, info.fieldIndex)
+	// Step 1: create the new declaration, which is a copy of the original decl
+	// with the rewritten signature.
+
+	// Flatten, transform and regroup fields, using the flatField intermediate
+	// representation. A flatField is the result of flattening an *ast.FieldList
+	// along with type information.
+	type flatField struct {
+		name     string // empty if the field is unnamed
+		typeExpr ast.Expr
+		typ      types.Type
 	}
 
-	// Compute inputs into building a wrapper function around the modified
-	// signature.
+	var newParamFields []flatField
+	for id, field := range goplsastutil.FlatFields(info.decl.Type.Params) {
+		typ := pkg.TypesInfo().TypeOf(field.Type)
+		if typ == nil {
+			return nil, fmt.Errorf("missing field type for field #%d", len(newParamFields))
+		}
+		field := flatField{
+			typeExpr: field.Type,
+			typ:      typ,
+		}
+		if id != nil {
+			field.name = id.Name
+		}
+		newParamFields = append(newParamFields, field)
+	}
+
+	// Select the new parameter fields.
+	newParamFields, ok := selectElements(newParamFields, newParams)
+	if !ok {
+		return nil, fmt.Errorf("failed to apply parameter transformation %v", newParams)
+	}
+
+	// writeFields performs the regrouping of named fields.
+	writeFields := func(flatFields []flatField) *ast.FieldList {
+		list := new(ast.FieldList)
+		for i, f := range flatFields {
+			var field *ast.Field
+			if i > 0 && f.name != "" && flatFields[i-1].name != "" && types.Identical(f.typ, flatFields[i-1].typ) {
+				// Group named fields if they have the same type.
+				field = list.List[len(list.List)-1]
+			} else {
+				// Otherwise, create a new field.
+				field = &ast.Field{
+					Type: internalastutil.CloneNode(f.typeExpr),
+				}
+				list.List = append(list.List, field)
+			}
+			if f.name != "" {
+				field.Names = append(field.Names, ast.NewIdent(f.name))
+			}
+		}
+		return list
+	}
+
+	newDecl := internalastutil.CloneNode(info.decl)
+	newDecl.Type.Params = writeFields(newParamFields)
+
+	// Step 2: build a wrapper function calling the new declaration.
+
 	var (
-		params   = internalastutil.CloneNode(info.decl.Type.Params) // "_" names will be modified
-		args     []ast.Expr                                         // arguments to delegate
+		params   = internalastutil.CloneNode(info.decl.Type.Params) // parameters of wrapper func: "_" names must be modified
+		args     = make([]ast.Expr, len(newParams))                 // arguments to the delegated call
 		variadic = false                                            // whether the signature is variadic
 	)
 	{
-		allNames := make(map[string]bool) // for renaming blanks
+		// Record names used by non-blank parameters, just in case the user had a
+		// parameter named 'blank0', which would conflict with the synthetic names
+		// we construct below.
+		// TODO(rfindley): add an integration test for this behavior.
+		nonBlankNames := make(map[string]bool) // for detecting conflicts with renamed blanks
 		for _, fld := range params.List {
 			for _, n := range fld.Names {
 				if n.Name != "_" {
-					allNames[n.Name] = true
+					nonBlankNames[n.Name] = true
 				}
+			}
+			if len(fld.Names) == 0 {
+				// All parameters must have a non-blank name. For convenience, give
+				// this field a blank name.
+				fld.Names = append(fld.Names, ast.NewIdent("_")) // will be named below
 			}
 		}
+		// oldParams maps parameters to their argument in the delegated call.
+		// In other words, it is the inverse of newParams, but it is represented as
+		// a map rather than a slice, as not every old param need exist in
+		// newParams.
+		oldParams := make(map[int]int)
+		for new, old := range newParams {
+			oldParams[old] = new
+		}
 		blanks := 0
-		for i, fld := range params.List {
-			for j, n := range fld.Names {
-				if i == info.fieldIndex && j == info.nameIndex {
-					continue
-				}
-				if n.Name == "_" {
-					// Create names for blank (_) parameters so the delegating wrapper
-					// can refer to them.
-					for {
-						newName := fmt.Sprintf("blank%d", blanks)
-						blanks++
-						if !allNames[newName] {
-							n.Name = newName
-							break
-						}
+		paramIndex := 0 // global param index.
+		for id, field := range goplsastutil.FlatFields(params) {
+			argIndex, ok := oldParams[paramIndex]
+			paramIndex++
+			if !ok {
+				continue // parameter is removed
+			}
+			if id.Name == "_" { // from above: every field has names
+				// Create names for blank (_) parameters so the delegating wrapper
+				// can refer to them.
+				for {
+					// These names will not be seen by the user, so give them an
+					// arbitrary name.
+					newName := fmt.Sprintf("blank%d", blanks)
+					blanks++
+					if !nonBlankNames[newName] {
+						id.Name = newName
+						break
 					}
 				}
-				args = append(args, &ast.Ident{Name: n.Name})
-				if i == len(params.List)-1 {
-					_, variadic = fld.Type.(*ast.Ellipsis)
-				}
 			}
+			args[argIndex] = ast.NewIdent(id.Name)
+			// Record whether the call has an ellipsis.
+			// (Only the last loop iteration matters.)
+			_, variadic = field.Type.(*ast.Ellipsis)
 		}
 	}
 
-	// Rewrite all referring calls.
+	// Step 3: Rewrite all referring calls, by swapping in the wrapper and
+	// inlining all.
+
 	newContent, err := rewriteCalls(ctx, signatureRewrite{
 		snapshot: snapshot,
 		pkg:      pkg,
@@ -239,24 +407,23 @@ func rewriteSignature(fset *token.FileSet, declIdx int, src0 []byte, newDecl *as
 // paramInfo records information about a param identified by a position.
 type paramInfo struct {
 	decl       *ast.FuncDecl // enclosing func decl (non-nil)
-	fieldIndex int           // index of Field in Decl.Type.Params, or -1
+	paramIndex int           // index of param among all params, or -1
 	field      *ast.Field    // enclosing field of Decl, or nil if range not among parameters
-	nameIndex  int           // index of Name in Field.Names, or nil
 	name       *ast.Ident    // indicated name (either enclosing, or Field.Names[0] if len(Field.Names) == 1)
 }
 
 // findParam finds the parameter information spanned by the given range.
-func findParam(pgf *parsego.File, rng protocol.Range) (*paramInfo, error) {
+func findParam(pgf *parsego.File, rng protocol.Range) *paramInfo {
+	info := paramInfo{paramIndex: -1}
 	start, end, err := pgf.RangePos(rng)
 	if err != nil {
-		return nil, err
+		return nil
 	}
 
 	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 	var (
 		id    *ast.Ident
 		field *ast.Field
-		decl  *ast.FuncDecl
 	)
 	// Find the outermost enclosing node of each kind, whether or not they match
 	// the semantics described in the docstring.
@@ -267,37 +434,42 @@ func findParam(pgf *parsego.File, rng protocol.Range) (*paramInfo, error) {
 		case *ast.Field:
 			field = n
 		case *ast.FuncDecl:
-			decl = n
+			info.decl = n
 		}
 	}
-	// Check the conditions described in the docstring.
-	if decl == nil {
-		return nil, fmt.Errorf("range is not within a function declaration")
+	if info.decl == nil || field == nil {
+		return nil
 	}
-	info := &paramInfo{
-		fieldIndex: -1,
-		nameIndex:  -1,
-		decl:       decl,
-	}
-	for fi, f := range decl.Type.Params.List {
+	pi := 0
+	// Search for field and id among parameters of decl.
+	// This search may fail, even if one or both of id and field are non nil:
+	// field could be from a result or local declaration, and id could be part of
+	// the field type rather than names.
+	for _, f := range info.decl.Type.Params.List {
 		if f == field {
-			info.fieldIndex = fi
+			info.paramIndex = pi // may be modified later
 			info.field = f
-			for ni, n := range f.Names {
+			for _, n := range f.Names {
 				if n == id {
-					info.nameIndex = ni
+					info.paramIndex = pi
 					info.name = n
 					break
 				}
+				pi++
 			}
 			if info.name == nil && len(info.field.Names) == 1 {
-				info.nameIndex = 0
 				info.name = info.field.Names[0]
 			}
 			break
+		} else {
+			m := len(f.Names)
+			if m == 0 {
+				m = 1
+			}
+			pi += m
 		}
 	}
-	return info, nil
+	return &info
 }
 
 // signatureRewrite defines a rewritten function signature.
@@ -579,6 +751,22 @@ var goVersionRx = regexp.MustCompile(`^go([1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
 func remove[T any](s []T, i int) []T {
 	return append(s[:i], s[i+1:]...)
+}
+
+// selectElements returns a new array of elements of s indicated by the
+// provided list of indices. It returns false if any index was out of bounds.
+//
+// For example, given the slice []string{"a", "b", "c", "d"}, the
+// indices []int{3, 0, 1} results in the slice []string{"d", "a", "b"}.
+func selectElements[T any](s []T, indices []int) ([]T, bool) {
+	res := make([]T, len(indices))
+	for i, index := range indices {
+		if index < 0 || index >= len(s) {
+			return nil, false
+		}
+		res[i] = s[index]
+	}
+	return res, true
 }
 
 // replaceFileDecl replaces old with new in the file described by pgf.
