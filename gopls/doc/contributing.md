@@ -3,9 +3,52 @@
 This documentation augments the general documentation for contributing to the
 x/tools repository, described at the [repository root](../../CONTRIBUTING.md).
 
-Contributions are welcome, but since development is so active, we request that
-you file an issue and claim it before starting to work on something. Otherwise,
-it is likely that we might already be working on a fix for your issue.
+Contributions are welcome! However, development is fast moving,
+and we are limited in our capacity to review contributions.
+So, before sending a CL, please please please:
+
+- **file an issue** for a bug or feature request, if one does not
+  exist already. This allows us to identify redundant requests, or to
+  merge a specific problem into a more general one, and to assess the
+  importance of the problem.
+
+- **claim it for yourself** by commenting on the issue or, if you are
+  able, by assigning the issue to yourself. This helps us avoid two
+  people working on the same problem.
+
+- **propose an implementation plan** in the issue tracker for CLs of
+  any complexity. It is much more efficient to discuss the plan at a
+  high level before we start getting bogged down in the details of
+  a code review.
+
+When you send a CL, it should include:
+
+- a **CL description** that summarizes the change,
+  motivates why it is necessary,
+  explains it at a high level,
+  contrasts it with more obvious or simpler approaches, and
+  links to relevant issues;
+- **tests** (integration tests or marker tests);
+- **documentation**, for new or modified features; and
+- **release notes**, for new features or significant changes.
+
+During code review, please address all reviewer comments.
+Some comments result in straightforward code changes;
+others demand a more complex response.
+When a reviewer asks a question, the best response is
+often not to respond to it directly, but to change the
+code to avoid raising the question,
+for example by making the code self-explanatory.
+It's fine to disagree with a comment,
+point out a reviewer's mistake,
+or offer to address a comment in a follow-up change,
+leaving a TODO comment in the current CL.
+But please don't dismiss or quietly ignore a comment without action,
+as it may lead reviewers to repeat themselves,
+or to serious problems being neglected.
+
+For more detail, see the Go project's
+[contribution guidelines](https://golang.org/doc/contribute.html).
 
 ## Finding issues
 
