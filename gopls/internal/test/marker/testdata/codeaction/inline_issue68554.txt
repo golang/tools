@@ -1,0 +1,38 @@
+This test checks that inlining removes unnecessary interface conversions.
+
+-- main.go --
+package main
+
+import (
+	"fmt"
+	"io"
+)
+
+func f(d discard) {
+	g(d) //@codeaction("g", "refactor.inline.call", result=out)
+}
+
+func g(w io.Writer) { fmt.Println(w) }
+
+var d discard
+type discard struct{}
+func (discard) Write(p []byte) (int, error) { return len(p), nil }
+-- @out/main.go --
+package main
+
+import (
+	"fmt"
+	"io"
+)
+
+func f(d discard) {
+	fmt.Println(d) //@codeaction("g", "refactor.inline.call", result=out)
+}
+
+func g(w io.Writer) { fmt.Println(w) }
+
+var d discard
+
+type discard struct{}
+
+func (discard) Write(p []byte) (int, error) { return len(p), nil }

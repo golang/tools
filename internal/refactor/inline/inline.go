@@ -1604,40 +1604,6 @@ next:
 	for i, param := range params {
 		if arg := args[i]; arg.substitutable {
 
-			// Wrap the argument in an explicit conversion if
-			// substitution might materially change its type.
-			// (We already did the necessary shadowing check
-			// on the parameter type syntax.)
-			//
-			// This is only needed for substituted arguments. All
-			// other arguments are given explicit types in either
-			// a binding decl or when using the literalization
-			// strategy.
-
-			// If the types are identical, we can eliminate
-			// redundant type conversions such as this:
-			//
-			// Callee:
-			//    func f(i int32) { print(i) }
-			// Caller:
-			//    func g() { f(int32(1)) }
-			// Inlined as:
-			//    func g() { print(int32(int32(1)))
-			//
-			// Recall that non-trivial does not imply non-identical
-			// for constant conversions; however, at this point state.arguments
-			// has already re-typechecked the constant and set arg.type to
-			// its (possibly "untyped") inherent type, so
-			// the conversion from untyped 1 to int32 is non-trivial even
-			// though both arg and param have identical types (int32).
-			if len(param.info.Refs) > 0 &&
-				!types.Identical(arg.typ, param.obj.Type()) &&
-				!trivialConversion(arg.constant, arg.typ, param.obj.Type()) {
-				arg.expr = convert(param.fieldType, arg.expr)
-				logf("param %q: adding explicit %s -> %s conversion around argument",
-					param.info.Name, arg.typ, param.obj.Type())
-			}
-
 			// It is safe to substitute param and replace it with arg.
 			// The formatter introduces parens as needed for precedence.
 			//
@@ -1646,12 +1612,70 @@ next:
 			logf("replacing parameter %q by argument %q",
 				param.info.Name, debugFormatNode(caller.Fset, arg.expr))
 			for _, ref := range param.info.Refs {
-				replace(ref, internalastutil.CloneNode(arg.expr).(ast.Expr), arg.variadic)
+				// If the reference requires exact type agreement (as reported by
+				// param.info.NeedType), wrap the argument in an explicit conversion
+				// if substitution might materially change its type. (We already did
+				// the necessary shadowing check on the parameter type syntax.)
+				//
+				// This is only needed for substituted arguments. All other arguments
+				// are given explicit types in either a binding decl or when using the
+				// literalization strategy.
+
+				// If the types are identical, we can eliminate
+				// redundant type conversions such as this:
+				//
+				// Callee:
+				//    func f(i int32) { print(i) }
+				// Caller:
+				//    func g() { f(int32(1)) }
+				// Inlined as:
+				//    func g() { print(int32(int32(1)))
+				//
+				// Recall that non-trivial does not imply non-identical
+				// for constant conversions; however, at this point state.arguments
+				// has already re-typechecked the constant and set arg.type to
+				// its (possibly "untyped") inherent type, so
+				// the conversion from untyped 1 to int32 is non-trivial even
+				// though both arg and param have identical types (int32).
+				argExpr := arg.expr
+				if ref.NeedType &&
+					!types.Identical(arg.typ, param.obj.Type()) &&
+					!trivialConversion(arg.constant, arg.typ, param.obj.Type()) {
+
+					// If arg.expr is already an interface call, strip it.
+					if call, ok := argExpr.(*ast.CallExpr); ok && len(call.Args) == 1 {
+						if typ, ok := isConversion(caller.Info, call); ok && isNonTypeParamInterface(typ) {
+							argExpr = call.Args[0]
+						}
+					}
+
+					argExpr = convert(param.fieldType, argExpr)
+					logf("param %q (offset %d): adding explicit %s -> %s conversion around argument",
+						param.info.Name, ref.Offset, arg.typ, param.obj.Type())
+				}
+				replace(ref.Offset, internalastutil.CloneNode(argExpr).(ast.Expr), arg.variadic)
 			}
 			params[i] = nil // substituted
 			args[i] = nil   // substituted
 		}
 	}
+}
+
+// isConversion reports whether the given call is a type conversion, returning
+// (operand, true) if so.
+//
+// If the call is not a conversion, it returns (nil, false).
+func isConversion(info *types.Info, call *ast.CallExpr) (types.Type, bool) {
+	if tv, ok := info.Types[call.Fun]; ok && tv.IsType() {
+		return tv.Type, true
+	}
+	return nil, false
+}
+
+// isNonTypeParamInterface reports whether t is a non-type parameter interface
+// type.
+func isNonTypeParamInterface(t types.Type) bool {
+	return !typeparams.IsTypeParam(t) && types.IsInterface(t)
 }
 
 // isUsedOutsideCall reports whether v is used outside of caller.Call, within

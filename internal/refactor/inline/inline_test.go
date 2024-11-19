@@ -1509,6 +1509,88 @@ func TestRedundantConversions(t *testing.T) {
 			`func _() { f(int32(1))  }`,
 			`func _() { print(int32(1)) }`,
 		},
+		{
+			"No type conversion for argument to interface parameter",
+			`type T int; func f(x any) { g(x) }; func g(any) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g(T(1)) }`,
+		},
+		{
+			"No type conversion for parenthesized argument to interface parameter",
+			`type T int; func f(x any) { g((x)) }; func g(any) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g((T(1))) }`,
+		},
+		{
+			"Type conversion for argument to type parameter",
+			`type T int; func f(x any) { g(x) }; func g[P any](P) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g(any(T(1))) }`,
+		},
+		{
+			"Strip redundant interface conversions",
+			`type T interface{ M() }; func f(x any) { g(x) }; func g[P any](P) {}`,
+			`func _() { f(T(nil)) }`,
+			`func _() { g(any(nil)) }`,
+		},
+		{
+			"No type conversion for argument to variadic interface parameter",
+			`type T int; func f(x ...any) { g(x...) }; func g(...any) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g(T(1)) }`,
+		},
+		{
+			"Type conversion for variadic argument",
+			`type T int; func f(x ...any) { g(x...) }; func g(...any) {}`,
+			`func _() { f([]any{T(1)}...) }`,
+			`func _() { g([]any{T(1)}...) }`,
+		},
+		{
+			"No type conversion for assignment to an explicit interface type",
+			`type T int; func f(x any) { var y any; y = x; _ = y }`,
+			`func _() { f(T(1)) }`,
+			`func _() {
+	var y any
+	y = T(1)
+	_ = y
+}`,
+		},
+		{
+			"No type conversion for initializer of an explicit interface type",
+			`type T int; func f(x any) { var y any = x; _ = y }`,
+			`func _() { f(T(1)) }`,
+			`func _() {
+	var y any = T(1)
+	_ = y
+}`,
+		},
+		{
+			"No type conversion for use as a composite literal key",
+			`type T int; func f(x any) { _ = map[any]any{x: 1} }`,
+			`func _() { f(T(1)) }`,
+			`func _() { _ = map[any]any{T(1): 1} }`,
+		},
+		{
+			"No type conversion for use as a composite literal value",
+			`type T int; func f(x any) { _ = []any{x} }`,
+			`func _() { f(T(1)) }`,
+			`func _() { _ = []any{T(1)} }`,
+		},
+		{
+			"No type conversion for use as a composite literal field",
+			`type T int; func f(x any) { _ = struct{ F any }{F: x} }`,
+			`func _() { f(T(1)) }`,
+			`func _() { _ = struct{ F any }{F: T(1)} }`,
+		},
+		{
+			"No type conversion for use in a send statement",
+			`type T int; func f(x any) { var c chan any; c <- x }`,
+			`func _() { f(T(1)) }`,
+			`func _() {
+	var c chan any
+	c <- T(1)
+}`,
+		},
 	})
 }
 
