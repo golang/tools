@@ -592,7 +592,7 @@ func main() {
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		got, _ := env.Hover(env.RegexpSearch("main.go", "F"))
-		const wantRE = "\\[`a.F` in gopls doc viewer\\]\\(http://127.0.0.1:[0-9]+/gopls/[^/]+/pkg/example.com\\?view=[0-9]+#F\\)" // no version
+		const wantRE = "\\[`a.F` in gopls doc viewer\\]\\(http://127.0.0.1:[0-9]+/gopls/[^/]+/pkg/example.com/a\\?view=[0-9]+#F\\)" // no version
 		if m, err := regexp.MatchString(wantRE, got.Value); err != nil {
 			t.Fatalf("bad regexp in test: %v", err)
 		} else if !m {

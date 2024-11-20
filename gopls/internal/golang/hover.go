@@ -72,9 +72,12 @@ type hoverJSON struct {
 	// SymbolName is the human-readable name to use for the symbol in links.
 	SymbolName string `json:"symbolName"`
 
-	// LinkPath is the pkg.go.dev link for the given symbol.
-	// For example, the "go/ast" part of "pkg.go.dev/go/ast#Node".
-	// It may have a module version suffix "@v1.2.3".
+	// LinkPath is the path of the package enclosing the given symbol,
+	// with the module portion (if any) replaced by "module@version".
+	//
+	// For example: "github.com/google/go-github/v48@v48.1.0/github".
+	//
+	// Use LinkTarget + "/" + LinkPath + "#" + LinkAnchor to form a pkgsite URL.
 	LinkPath string `json:"linkPath"`
 
 	// LinkAnchor is the pkg.go.dev link anchor for the given symbol.
@@ -1367,7 +1370,16 @@ func formatLink(h *hoverJSON, options *settings.Options, pkgURL func(path Packag
 	var url protocol.URI
 	var caption string
 	if pkgURL != nil { // LinksInHover == "gopls"
-		path, _, _ := strings.Cut(h.LinkPath, "@") // remove optional module version suffix
+		// Discard optional module version portion.
+		// (Ideally the hoverJSON would retain the structure...)
+		path := h.LinkPath
+		if module, versionDir, ok := strings.Cut(h.LinkPath, "@"); ok {
+			// "module@version/dir"
+			path = module
+			if _, dir, ok := strings.Cut(versionDir, "/"); ok {
+				path += "/" + dir
+			}
+		}
 		url = pkgURL(PackagePath(path), h.LinkAnchor)
 		caption = "in gopls doc viewer"
 	} else {
