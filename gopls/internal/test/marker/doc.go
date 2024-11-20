@@ -10,16 +10,26 @@ Use this command to run the tests, from the gopls module:
 
 	$ go test ./internal/test/marker [-update]
 
-A marker test uses the '//@' marker syntax of the x/tools/internal/expect package
-to annotate source code with various information such as locations and
-arguments of LSP operations to be executed by the test. The syntax following
-'@' is parsed as a comma-separated list of ordinary Go function calls, for
-example
+A marker test uses the '//@' syntax of the x/tools/internal/expect package to
+annotate source code with various information such as locations and arguments
+of LSP operations to be executed by the test. The syntax following '@' is
+parsed as a comma-separated list of Go-like function calls, which we refer to
+as 'markers' (or sometimes 'marks'), for example
 
-	//@foo(a, "b", 3),bar(0)
+	//@ foo(a, "b", 3), bar(0)
 
-and delegates to a corresponding function to perform LSP-related operations.
-See the Marker types documentation below for a list of supported markers.
+Unlike ordinary Go, the marker syntax also supports optional named arguments
+using the syntax name=value. If provided, named arguments must appear after all
+positional arguments, though their ordering with respect to other named
+arguments does not matter. For example
+
+	//@ foo(a, "b", d=4, c=3)
+
+Each marker causes a corresponding function to be called in the test. Some
+markers are declarations; for example, @loc declares a name for a source
+location. Others have effects, such as executing an LSP operation and asserting
+that it behaved as expected. See the Marker types documentation below for the
+list of all supported markers.
 
 Each call argument is converted to the type of the corresponding parameter of
 the designated function. The conversion logic may use the surrounding context,
@@ -39,26 +49,30 @@ There are several types of file within the test archive that are given special
 treatment by the test runner:
 
   - "skip": the presence of this file causes the test to be skipped, with
-    the file content used as the skip message.
+    its content used as the skip message.
 
   - "flags": this file is treated as a whitespace-separated list of flags
     that configure the MarkerTest instance. Supported flags:
-    -{min,max}_go=go1.20 sets the {min,max}imum Go version for the test
-    (inclusive)
-    -cgo requires that CGO_ENABLED is set and the cgo tool is available
+
+    -{min,max}_go=go1.20 sets the {min,max}imum Go runtime version for the test
+    (inclusive).
+    -{min,max}_go_command=go1.20 sets the {min,max}imum Go command version for
+    the test (inclusive).
+    -cgo requires that CGO_ENABLED is set and the cgo tool is available.
     -write_sumfile=a,b,c instructs the test runner to generate go.sum files
     in these directories before running the test.
     -skip_goos=a,b,c instructs the test runner to skip the test for the
     listed GOOS values.
     -skip_goarch=a,b,c does the same for GOARCH.
-    -ignore_extra_diags suppresses errors for unmatched diagnostics
     TODO(rfindley): using build constraint expressions for -skip_go{os,arch} would
     be clearer.
+    -ignore_extra_diags suppresses errors for unmatched diagnostics
     -filter_builtins=false disables the filtering of builtins from
     completion results.
     -filter_keywords=false disables the filtering of keywords from
     completion results.
     -errors_ok=true suppresses errors for Error level log entries.
+
     TODO(rfindley): support flag values containing whitespace.
 
   - "settings.json": this file is parsed as JSON, and used as the
@@ -106,11 +120,10 @@ The following markers are supported within marker tests:
 
     If end is set, the location is defined to be between start.Start and end.End.
 
-    Exactly one of edit, result, or err must be set.
-    If edit is set, it is a golden reference to the edits resulting from the code action.
-    If result is set, it is a golden reference to the full set of changed files
-    resulting from the code action.
-    If err is set, it is the code action error.
+    Exactly one of edit, result, or err must be set. If edit is set, it is a
+    golden reference to the edits resulting from the code action. If result is
+    set, it is a golden reference to the full set of changed files resulting
+    from the code action. If err is set, it is the code action error.
 
   - codelens(location, title): specifies that a codelens is expected at the
     given location, with given title. Must be used in conjunction with
@@ -131,8 +144,8 @@ The following markers are supported within marker tests:
     The specified location must match the start position of the diagnostic,
     but end positions are ignored unless exact=true.
 
-    TODO(adonovan): in the older marker framework, the annotation asserted
-    two additional fields (source="compiler", kind="error"). Restore them using
+    TODO(adonovan): in the older marker framework, the annotation asserted two
+    additional fields (source="compiler", kind="error"). Restore them using
     optional named arguments.
 
   - def(src, dst location): performs a textDocument/definition request at
