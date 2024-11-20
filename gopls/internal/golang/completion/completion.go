@@ -709,7 +709,7 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 	}
 
 	// Struct literals are handled entirely separately.
-	if c.wantStructFieldCompletions() {
+	if wantStructFieldCompletions(c.enclosingCompositeLiteral) {
 		// If we are definitely completing a struct field name, deep completions
 		// don't make sense.
 		if c.enclosingCompositeLiteral.inKey {
@@ -1160,12 +1160,11 @@ func (c *completer) addFieldItems(fields *ast.FieldList) {
 	}
 }
 
-func (c *completer) wantStructFieldCompletions() bool {
-	clInfo := c.enclosingCompositeLiteral
-	if clInfo == nil {
+func wantStructFieldCompletions(enclosingCl *compLitInfo) bool {
+	if enclosingCl == nil {
 		return false
 	}
-	return is[*types.Struct](clInfo.clType) && (clInfo.inKey || clInfo.maybeInFieldName)
+	return is[*types.Struct](enclosingCl.clType) && (enclosingCl.inKey || enclosingCl.maybeInFieldName)
 }
 
 func (c *completer) wantTypeName() bool {
@@ -2307,9 +2306,13 @@ Nodes:
 		case *ast.AssignStmt:
 			return expectedAssignStmtCandidate(c, node, inf)
 		case *ast.ValueSpec:
-			return expectedValueSpecCandidate(c, node, inf)
+			inf.objType = expectedValueSpecType(c, node)
+			return
 		case *ast.ReturnStmt:
-			return expectedReturnStmtCandidate(c, node, inf)
+			if c.enclosingFunc != nil {
+				inf.objType = expectedReturnStmtType(c.enclosingFunc.sig, node, c.pos)
+			}
+			return inf
 		case *ast.SendStmt:
 			return expectedSendStmtCandidate(c, node, inf)
 		case *ast.CallExpr:
@@ -2329,9 +2332,9 @@ Nodes:
 					}
 
 					targs := c.getTypeArgs(node)
-					expectedResults := reverseInferExpectedCallExprResults(c, i)
-					substs := makeTypeParamSubstitions(sig, targs, expectedResults)
-					inst := instantiateSignature(sig, substs)
+					res := inferExpectedCallExprResults(c, i)
+					substs := reverseInferTypeArgs(sig, targs, res)
+					inst := instantiate(sig, substs)
 					if inst != nil {
 						// TODO(jacobz): If partial signature instantiation becomes possible,
 						// make needsExactType only true if necessary.
@@ -2413,7 +2416,7 @@ Nodes:
 						inf.objType = ct
 						inf.typeName.wantTypeName = true
 						inf.typeName.isTypeParam = true
-						inf = c.reverseInferExpectedTypeParam(i+1, 0, inf)
+						inf = c.inferExpectedTypeArgs(i+1, 0, inf)
 					}
 				}
 			}
@@ -2426,7 +2429,7 @@ Nodes:
 						inf.objType = ct
 						inf.typeName.wantTypeName = true
 						inf.typeName.isTypeParam = true
-						inf = c.reverseInferExpectedTypeParam(i+1, typeParamIdx, inf)
+						inf = c.inferExpectedTypeArgs(i+1, typeParamIdx, inf)
 					}
 				}
 			}
@@ -2465,7 +2468,7 @@ Nodes:
 	return inf
 }
 
-// reverseInferExpectedCallExprResults takes the index of a call expression within the completion
+// inferExpectedCallExprResults takes the index of a call expression within the completion
 // path and uses its surroundings to infer the expected result tuple of the call's signature.
 // Returns the signature result tuple as a slice, or nil if reverse type inference fails.
 //
@@ -2477,12 +2480,9 @@ Nodes:
 // var y TypeB
 // x, y := generic(<cursor>, <cursor>)
 //
-// reverseInferExpectedCallExprResults can determine that the expected result type of the function is (TypeA, TypeB)
-func reverseInferExpectedCallExprResults(c *completer, callNodeIdx int) []types.Type {
-	callNode := c.path[callNodeIdx].(*ast.CallExpr)
-	if callNode == nil {
-		return nil
-	}
+// inferExpectedCallExprResults can determine that the expected result type of the function is (TypeA, TypeB)
+func inferExpectedCallExprResults(c *completer, callNodeIdx int) []types.Type {
+	callNode, _ := c.path[callNodeIdx].(*ast.CallExpr)
 
 	if len(c.path) <= callNodeIdx+1 {
 		return nil
@@ -2497,7 +2497,7 @@ func reverseInferExpectedCallExprResults(c *completer, callNodeIdx int) []types.
 	switch node := c.path[callNodeIdx+1].(type) {
 	case *ast.KeyValueExpr:
 		c.enclosingCompositeLiteral = enclosingCompositeLiteral(c.path[callNodeIdx:], callNode.Pos(), c.pkg.TypesInfo())
-		if !c.wantStructFieldCompletions() {
+		if !wantStructFieldCompletions(c.enclosingCompositeLiteral) {
 			expectedResults = append(expectedResults, c.expectedCompositeLiteralType())
 		}
 		// undo side effect
@@ -2511,7 +2511,7 @@ func reverseInferExpectedCallExprResults(c *completer, callNodeIdx int) []types.
 			expectedResults = append(expectedResults, inf.objType)
 		}
 	case *ast.ValueSpec:
-		if resultType := expectedValueSpecCandidate(c, node, inf).objType; resultType != nil {
+		if resultType := expectedValueSpecType(c, node); resultType != nil {
 			expectedResults = append(expectedResults, resultType)
 		}
 	case *ast.SendStmt:
@@ -2536,14 +2536,16 @@ func reverseInferExpectedCallExprResults(c *completer, callNodeIdx int) []types.
 					for i := range enclosingResults.Len() {
 						expectedResults[i] = enclosingResults.At(i).Type()
 					}
-					break
+					return expectedResults
 				}
 			}
 		}
 
-		if resultType := expectedReturnStmtCandidate(c, node, inf).objType; resultType != nil {
+		if resultType := expectedReturnStmtType(c.enclosingFunc.sig, node, c.pos); resultType != nil {
 			expectedResults = append(expectedResults, resultType)
 		}
+	case *ast.CallExpr:
+		// TODO (this one is tricky)
 	}
 	return expectedResults
 }
@@ -2562,13 +2564,13 @@ func expectedSendStmtCandidate(c *completer, node *ast.SendStmt, inf candidateIn
 	return inf
 }
 
-// expectedValueSpecCandidate returns information about the expected candidate
-// for a ValueSpec at the query position.
-func expectedValueSpecCandidate(c *completer, node *ast.ValueSpec, inf candidateInference) candidateInference {
+// expectedValueSpecType returns the expected type of a ValueSpec at the query
+// position.
+func expectedValueSpecType(c *completer, node *ast.ValueSpec) types.Type {
 	if node.Type != nil && c.pos > node.Type.End() {
-		inf.objType = c.pkg.TypesInfo().TypeOf(node.Type)
+		return c.pkg.TypesInfo().TypeOf(node.Type)
 	}
-	return inf
+	return nil
 }
 
 // expectedAssignStmtCandidate returns information about the expected candidate
@@ -2601,19 +2603,14 @@ func expectedAssignStmtCandidate(c *completer, node *ast.AssignStmt, inf candida
 	return inf
 }
 
-// expectedReturnStmtCandidate returns information about the expected candidate
-// for a ReturnStmt at the query position.
-func expectedReturnStmtCandidate(c *completer, node *ast.ReturnStmt, inf candidateInference) candidateInference {
-	if c.enclosingFunc != nil {
-		sig := c.enclosingFunc.sig
-		// Find signature result that corresponds to our return statement.
-		if resultIdx := exprAtPos(c.pos, node.Results); resultIdx < len(node.Results) {
-			if resultIdx < sig.Results().Len() {
-				inf.objType = sig.Results().At(resultIdx).Type()
-			}
+// expectedReturnStmtType returns nil if enclosingSig is nil
+func expectedReturnStmtType(enclosingSig *types.Signature, node *ast.ReturnStmt, pos token.Pos) types.Type {
+	if enclosingSig != nil {
+		if resultIdx := exprAtPos(pos, node.Results); resultIdx < len(node.Results) {
+			return enclosingSig.Results().At(resultIdx).Type()
 		}
 	}
-	return inf
+	return nil
 }
 
 // Returns the number of type arguments in a callExpr
@@ -2634,14 +2631,13 @@ func (c *completer) getTypeArgs(callExpr *ast.CallExpr) []types.Type {
 	return targs
 }
 
-// makeTypeParamSubstitions takes a generic signature, a list of passed type arguments, and the expected concrete return types
+// reverseInferTypeArgs takes a generic signature, a list of passed type arguments, and the expected concrete return types
 // inferred from the signature's call site. If possible, it returns a list of types that could be used as the type arguments
 // to the signature. If not possible, it returns nil.
 //
 // Does not panic if any of the arguments are nil.
-func makeTypeParamSubstitions(sig *types.Signature, typeArgs []types.Type, expectedResults []types.Type) []types.Type {
-	if len(expectedResults) == 0 || sig == nil || sig.TypeParams().Len() == 0 ||
-		sig.Results().Len() != len(expectedResults) {
+func reverseInferTypeArgs(sig *types.Signature, typeArgs []types.Type, expectedResults []types.Type) []types.Type {
+	if len(expectedResults) == 0 || sig == nil || sig.TypeParams().Len() == 0 || sig.Results().Len() != len(expectedResults) {
 		return nil
 	}
 
@@ -2676,12 +2672,12 @@ func makeTypeParamSubstitions(sig *types.Signature, typeArgs []types.Type, expec
 	return substs
 }
 
-// reverseInferExpectedTypeParam gives a type param candidateInference based on the surroundings of it's call site.
+// inferExpectedTypeArgs gives a type param candidateInference based on the surroundings of it's call site.
 // If successful, the inf parameter is returned with only it's objType field updated.
 //
 // callNodeIdx is the index within the completion path of the type parameter's parent call expression.
 // typeParamIdx is the index of the type parameter at the completion pos.
-func (c *completer) reverseInferExpectedTypeParam(callNodeIdx int, typeParamIdx int, inf candidateInference) candidateInference {
+func (c *completer) inferExpectedTypeArgs(callNodeIdx int, typeParamIdx int, inf candidateInference) candidateInference {
 	if len(c.path) <= callNodeIdx {
 		return inf
 	}
@@ -2693,11 +2689,11 @@ func (c *completer) reverseInferExpectedTypeParam(callNodeIdx int, typeParamIdx 
 
 	// Infer the type parameters in a function call based on it's context
 	sig := c.pkg.TypesInfo().Types[callNode.Fun].Type.(*types.Signature)
-	expectedResults := reverseInferExpectedCallExprResults(c, callNodeIdx)
+	expectedResults := inferExpectedCallExprResults(c, callNodeIdx)
 	if typeParamIdx < 0 || typeParamIdx >= sig.TypeParams().Len() {
 		return inf
 	}
-	substs := makeTypeParamSubstitions(sig, nil, expectedResults)
+	substs := reverseInferTypeArgs(sig, nil, expectedResults)
 	if substs == nil || substs[typeParamIdx] == nil {
 		return inf
 	}
@@ -2708,7 +2704,7 @@ func (c *completer) reverseInferExpectedTypeParam(callNodeIdx int, typeParamIdx 
 
 // Instantiates a signature with a set of type parameters.
 // Wrapper around types.Instantiate but bad arguments won't cause a panic.
-func instantiateSignature(sig *types.Signature, substs []types.Type) *types.Signature {
+func instantiate(sig *types.Signature, substs []types.Type) *types.Signature {
 	if substs == nil || sig == nil || len(substs) != sig.TypeParams().Len() {
 		return nil
 	}
@@ -3146,7 +3142,7 @@ func (c *completer) matchingCandidate(cand *candidate) bool {
 	}
 
 	// Bail out early if we are completing a field name in a composite literal.
-	if v, ok := cand.obj.(*types.Var); ok && v.IsField() && c.wantStructFieldCompletions() {
+	if v, ok := cand.obj.(*types.Var); ok && v.IsField() && wantStructFieldCompletions(c.enclosingCompositeLiteral) {
 		return true
 	}
 
