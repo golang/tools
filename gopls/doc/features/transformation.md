@@ -67,6 +67,7 @@ Gopls supports the following code actions:
 - [`source.doc`](web.md#doc)
 - [`source.freesymbols`](web.md#freesymbols)
 - `source.test` (undocumented) <!-- TODO: fix that -->
+- [`source.addTest`](#source.addTest)
 - [`gopls.doc.features`](README.md), which opens gopls' index of features in a browser
 - [`refactor.extract.function`](#extract)
 - [`refactor.extract.method`](#extract)
@@ -210,6 +211,45 @@ Client support:
   ```
 - **CLI**: `gopls fix -a file.go:#offset source.organizeImports`
 
+<a name='source.addTest'></a>
+## `source.addTest`: Add test for function or method
+
+If the selected chunk of code is part of a function or method declaration F,
+gopls will offer the "Add test for F" code action, which adds a new test for the
+selected function in the corresponding `_test.go` file. The generated test takes
+into account its signature, including input parameters and results.
+
+**Test file**: if the `_test.go` file does not exist, gopls creates it, based on
+the name of the current file (`a.go` -> `a_test.go`), copying any copyright and
+build constraint comments from the original file.
+
+**Test package**: for new files that test code in package `p`, the test file
+uses `p_test` package name whenever possible, to encourage testing only exported
+functions. (If the test file already exists, the new test is added to that file.)
+
+**Parameters**: each of the function's non-blank parameters becomes an item in
+the struct used for the table-driven test. (For each blank `_` parameter, the
+value has no effect, so the test provides a zero-valued argument.)
+
+**Contexts**: If the first parameter is `context.Context`, the test passes
+`context.Background()`.
+
+**Results**: the function's results are assigned to variables (`got`, `got2`,
+and so on) and compared with expected values (`want`, `want2`, etc.`) defined in
+the test case struct. The user should edit the logic to perform the appropriate
+comparison. If the final result is an `error`, the test case defines a `wantErr`
+boolean.
+
+**Method receivers**: When testing a method `T.F` or `(*T).F`, the test must
+construct an instance of T to pass as the receiver. Gopls searches the package
+for a suitable function that constructs a value of type T or *T, optionally with
+an error, preferring a function named `NewT`.
+
+**Imports**: Gopls adds missing imports to the test file, using the last
+corresponding import specifier from the original file. It avoids duplicate
+imports, preserving any existing imports in the test file.
+
+<img title="Add test for func" src="../assets/add-test-for-func.png" width='80%'>
 
 <a name='rename'></a>
 ## Rename

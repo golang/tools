@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/token"
 	"go/types"
 	"os"
@@ -34,124 +35,124 @@ import (
 
 const testTmplString = `
 func {{.TestFuncName}}(t *{{.TestingPackageName}}.T) {
-  {{- /* Test cases struct declaration and empty initialization. */}}
-  tests := []struct {
-    name string // description of this test case
+	{{- /* Test cases struct declaration and empty initialization. */}}
+	tests := []struct {
+		name string // description of this test case
 
-    {{- $commentPrinted := false }}
-    {{- if and .Receiver .Receiver.Constructor}}
-    {{- range .Receiver.Constructor.Args}}
-    {{- if .Name}}
-    {{- if not $commentPrinted}}
-    // Named input parameters for receiver constructor.
-    {{- $commentPrinted = true }}
-    {{- end}}
-    {{.Name}} {{.Type}}
-    {{- end}}
-    {{- end}}
-    {{- end}}
+		{{- $commentPrinted := false }}
+		{{- if and .Receiver .Receiver.Constructor}}
+		{{- range .Receiver.Constructor.Args}}
+		{{- if .Name}}
+		{{- if not $commentPrinted}}
+		// Named input parameters for receiver constructor.
+		{{- $commentPrinted = true }}
+		{{- end}}
+		{{.Name}} {{.Type}}
+		{{- end}}
+		{{- end}}
+		{{- end}}
 
-    {{- $commentPrinted := false }}
-    {{- range .Func.Args}}
-    {{- if .Name}}
-    {{- if not $commentPrinted}}
-    // Named input parameters for target function.
-    {{- $commentPrinted = true }}
-    {{- end}}
-    {{.Name}} {{.Type}}
-    {{- end}}
-    {{- end}}
+		{{- $commentPrinted := false }}
+		{{- range .Func.Args}}
+		{{- if .Name}}
+		{{- if not $commentPrinted}}
+		// Named input parameters for target function.
+		{{- $commentPrinted = true }}
+		{{- end}}
+		{{.Name}} {{.Type}}
+		{{- end}}
+		{{- end}}
 
-    {{- range $index, $res := .Func.Results}}
-    {{- if eq $res.Name "gotErr"}}
-    wantErr bool
-    {{- else if eq $index 0}}
-    want {{$res.Type}}
-    {{- else}}
-    want{{add $index 1}} {{$res.Type}}
-    {{- end}}
-    {{- end}}
-  }{
-    // TODO: Add test cases.
-  }
+		{{- range $index, $res := .Func.Results}}
+		{{- if eq $res.Name "gotErr"}}
+		wantErr bool
+		{{- else if eq $index 0}}
+		want {{$res.Type}}
+		{{- else}}
+		want{{add $index 1}} {{$res.Type}}
+		{{- end}}
+		{{- end}}
+	}{
+		// TODO: Add test cases.
+	}
 
-  {{- /* Loop over all the test cases. */}}
-  for _, tt := range tests {
-    t.Run(tt.name, func(t *{{.TestingPackageName}}.T) {
-      {{- /* Constructor or empty initialization. */}}
-      {{- if .Receiver}}
-      {{- if .Receiver.Constructor}}
-      {{- /* Receiver variable by calling constructor. */}}
-      {{fieldNames .Receiver.Constructor.Results ""}} := {{if .PackageName}}{{.PackageName}}.{{end}}
-      {{- .Receiver.Constructor.Name}}
+	{{- /* Loop over all the test cases. */}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *{{.TestingPackageName}}.T) {
+			{{- /* Constructor or empty initialization. */}}
+			{{- if .Receiver}}
+			{{- if .Receiver.Constructor}}
+			{{- /* Receiver variable by calling constructor. */}}
+			{{fieldNames .Receiver.Constructor.Results ""}} := {{if .PackageName}}{{.PackageName}}.{{end}}
+			{{- .Receiver.Constructor.Name}}
 
-      {{- /* Constructor input parameters. */ -}}
-      (
-        {{- range $index, $arg := .Receiver.Constructor.Args}}
-        {{- if ne $index 0}}, {{end}}
-        {{- if .Name}}tt.{{.Name}}{{else}}{{.Value}}{{end}}
-        {{- end -}}
-      )
+			{{- /* Constructor input parameters. */ -}}
+			(
+				{{- range $index, $arg := .Receiver.Constructor.Args}}
+				{{- if ne $index 0}}, {{end}}
+				{{- if .Name}}tt.{{.Name}}{{else}}{{.Value}}{{end}}
+				{{- end -}}
+			)
 
-      {{- /* Handles the error return from constructor. */}}
-      {{- $last := last .Receiver.Constructor.Results}}
-      {{- if eq $last.Type "error"}}
-      if err != nil {
-        t.Fatalf("could not construct receiver type: %v", err)
-      }
-      {{- end}}
-      {{- else}}
-      {{- /* Receiver variable declaration. */}}
-      // TODO: construct the receiver type.
-      var {{.Receiver.Var.Name}} {{.Receiver.Var.Type}}
-      {{- end}}
-      {{- end}}
+			{{- /* Handles the error return from constructor. */}}
+			{{- $last := last .Receiver.Constructor.Results}}
+			{{- if eq $last.Type "error"}}
+			if err != nil {
+				t.Fatalf("could not construct receiver type: %v", err)
+			}
+			{{- end}}
+			{{- else}}
+			{{- /* Receiver variable declaration. */}}
+			// TODO: construct the receiver type.
+			var {{.Receiver.Var.Name}} {{.Receiver.Var.Type}}
+			{{- end}}
+			{{- end}}
 
-      {{- /* Got variables. */}}
-      {{if .Func.Results}}{{fieldNames .Func.Results ""}} := {{end}}
+			{{- /* Got variables. */}}
+			{{if .Func.Results}}{{fieldNames .Func.Results ""}} := {{end}}
 
-      {{- /* Call expression. */}}
-      {{- if .Receiver}}{{/* Call method by VAR.METHOD. */}}
-      {{- .Receiver.Var.Name}}.
-      {{- else if .PackageName}}{{/* Call function by PACKAGE.FUNC. */}}
-      {{- .PackageName}}.
-      {{- end}}{{.Func.Name}}
+			{{- /* Call expression. */}}
+			{{- if .Receiver}}{{/* Call method by VAR.METHOD. */}}
+			{{- .Receiver.Var.Name}}.
+			{{- else if .PackageName}}{{/* Call function by PACKAGE.FUNC. */}}
+			{{- .PackageName}}.
+			{{- end}}{{.Func.Name}}
 
-      {{- /* Input parameters. */ -}}
-      (
-        {{- range $index, $arg := .Func.Args}}
-        {{- if ne $index 0}}, {{end}}
-        {{- if .Name}}tt.{{.Name}}{{else}}{{.Value}}{{end}}
-        {{- end -}}
-      )
+			{{- /* Input parameters. */ -}}
+			(
+				{{- range $index, $arg := .Func.Args}}
+				{{- if ne $index 0}}, {{end}}
+				{{- if .Name}}tt.{{.Name}}{{else}}{{.Value}}{{end}}
+				{{- end -}}
+			)
 
-      {{- /* Handles the returned error before the rest of return value. */}}
-      {{- $last := last .Func.Results}}
-      {{- if eq $last.Type "error"}}
-      if gotErr != nil {
-        if !tt.wantErr {
-          t.Errorf("{{$.Func.Name}}() failed: %v", gotErr)
-        }
-        return
-      }
-      if tt.wantErr {
-        t.Fatal("{{$.Func.Name}}() succeeded unexpectedly")
-      }
-      {{- end}}
+			{{- /* Handles the returned error before the rest of return value. */}}
+			{{- $last := last .Func.Results}}
+			{{- if eq $last.Type "error"}}
+			if gotErr != nil {
+				if !tt.wantErr {
+					t.Errorf("{{$.Func.Name}}() failed: %v", gotErr)
+				}
+				return
+			}
+			if tt.wantErr {
+				t.Fatal("{{$.Func.Name}}() succeeded unexpectedly")
+			}
+			{{- end}}
 
-      {{- /* Compare the returned values except for the last returned error. */}}
-      {{- if or (and .Func.Results (ne $last.Type "error")) (and (gt (len .Func.Results) 1) (eq $last.Type "error"))}}
-      // TODO: update the condition below to compare got with tt.want.
-      {{- range $index, $res := .Func.Results}}
-      {{- if ne $res.Name "gotErr"}}
-      if true {
-        t.Errorf("{{$.Func.Name}}() = %v, want %v", {{.Name}}, tt.{{if eq $index 0}}want{{else}}want{{add $index 1}}{{end}})
-      }
-      {{- end}}
-      {{- end}}
-      {{- end}}
-    })
-  }
+			{{- /* Compare the returned values except for the last returned error. */}}
+			{{- if or (and .Func.Results (ne $last.Type "error")) (and (gt (len .Func.Results) 1) (eq $last.Type "error"))}}
+			// TODO: update the condition below to compare got with tt.want.
+			{{- range $index, $res := .Func.Results}}
+			{{- if ne $res.Name "gotErr"}}
+			if true {
+				t.Errorf("{{$.Func.Name}}() = %v, want %v", {{.Name}}, tt.{{if eq $index 0}}want{{else}}want{{add $index 1}}{{end}})
+			}
+			{{- end}}
+			{{- end}}
+			{{- end}}
+		})
+	}
 }
 `
 
@@ -250,7 +251,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		for _, spec := range file.Imports {
 			// TODO(hxjiang): support dot imports.
 			if spec.Name != nil && spec.Name.Name == "." {
-				return nil, fmt.Errorf("\"add a test for func\" does not support files containing dot imports")
+				return nil, fmt.Errorf("\"add test for func\" does not support files containing dot imports")
 			}
 			path, err := strconv.Unquote(spec.Path.Value)
 			if err != nil {
@@ -783,10 +784,15 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		return nil, err
 	}
 
+	formatted, err := format.Source(test.Bytes())
+	if err != nil {
+		return nil, err
+	}
+
 	edits = append(edits,
 		protocol.TextEdit{
 			Range:   eofRange,
-			NewText: test.String(),
+			NewText: string(formatted),
 		})
 
 	return append(changes, protocol.DocumentChangeEdit(testFH, edits)), nil

@@ -136,7 +136,6 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 				LinkifyShowMessage:          false,
 				IncludeReplaceInWorkspace:   false,
 				ZeroConfig:                  true,
-				AddTestSourceCodeAction:     false,
 			},
 		}
 	})

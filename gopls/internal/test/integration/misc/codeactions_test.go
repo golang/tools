@@ -64,6 +64,7 @@ func g() {}
 		}
 
 		check("src/a.go",
+			settings.AddTest,
 			settings.GoAssembly,
 			settings.GoDoc,
 			settings.GoFreeSymbols,

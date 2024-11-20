@@ -479,14 +479,9 @@ func refactorExtractToNewFile(ctx context.Context, req *codeActionsRequest) erro
 	return nil
 }
 
-// addTest produces "Add a test for FUNC" code actions.
+// addTest produces "Add test for FUNC" code actions.
 // See [server.commandHandler.AddTest] for command implementation.
 func addTest(ctx context.Context, req *codeActionsRequest) error {
-	// Reject if the feature is turned off.
-	if !req.snapshot.Options().AddTestSourceCodeAction {
-		return nil
-	}
-
 	// Reject test package.
 	if req.pkg.Metadata().ForTest != "" {
 		return nil
@@ -507,7 +502,7 @@ func addTest(ctx context.Context, req *codeActionsRequest) error {
 		return nil
 	}
 
-	cmd := command.NewAddTestCommand("Add a test for "+decl.Name.String(), req.loc)
+	cmd := command.NewAddTestCommand("Add test for "+decl.Name.String(), req.loc)
 	req.addCommandAction(cmd, true)
 
 	// TODO(hxjiang): add code action for generate test for package/file.

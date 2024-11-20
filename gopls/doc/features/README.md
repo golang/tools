@@ -50,6 +50,7 @@ when making significant changes to existing features or when adding new ones.
   - [Extract](transformation.md#refactor.extract): extract selection to a new file/function/variable
   - [Inline](transformation.md#refactor.inline.call): inline a call to a function or method
   - [Miscellaneous rewrites](transformation.md#refactor.rewrite): various Go-specific refactorings
+  - [Add test for func](transformation.md#source.addTest): create a test for the selected function
 - [Web-based queries](web.md): commands that open a browser page
   - [Package documentation](web.md#doc): browse documentation for current Go package
   - [Free symbols](web.md#freesymbols): show symbols used by a selected block of code
