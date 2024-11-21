@@ -43,6 +43,20 @@ import (
 // ID and Errors (if present) will always be filled.
 // [Load] may return more information than requested.
 //
+// The Mode flag is a union of several bits named NeedName,
+// NeedFiles, and so on, each of which determines whether
+// a given field of Package (Name, Files, etc) should be
+// populated.
+//
+// For convenience, we provide named constants for the most
+// common combinations of Need flags:
+//
+//	[LoadFiles]     lists of files in each package
+//	[LoadImports]   ... plus imports
+//	[LoadTypes]     ... plus type information
+//	[LoadSyntax]    ... plus type-annotated syntax
+//	[LoadAllSyntax] ... for all dependencies
+//
 // Unfortunately there are a number of open bugs related to
 // interactions among the LoadMode bits:
 //   - https://github.com/golang/go/issues/56633
@@ -109,33 +123,18 @@ const (
 
 const (
 	// LoadFiles loads the name and file names for the initial packages.
-	//
-	// Deprecated: LoadFiles exists for historical compatibility
-	// and should not be used. Please directly specify the needed fields using the Need values.
 	LoadFiles = NeedName | NeedFiles | NeedCompiledGoFiles
 
 	// LoadImports loads the name, file names, and import mapping for the initial packages.
-	//
-	// Deprecated: LoadImports exists for historical compatibility
-	// and should not be used. Please directly specify the needed fields using the Need values.
 	LoadImports = LoadFiles | NeedImports
 
 	// LoadTypes loads exported type information for the initial packages.
-	//
-	// Deprecated: LoadTypes exists for historical compatibility
-	// and should not be used. Please directly specify the needed fields using the Need values.
 	LoadTypes = LoadImports | NeedTypes | NeedTypesSizes
 
 	// LoadSyntax loads typed syntax for the initial packages.
-	//
-	// Deprecated: LoadSyntax exists for historical compatibility
-	// and should not be used. Please directly specify the needed fields using the Need values.
 	LoadSyntax = LoadTypes | NeedSyntax | NeedTypesInfo
 
 	// LoadAllSyntax loads typed syntax for the initial packages and all dependencies.
-	//
-	// Deprecated: LoadAllSyntax exists for historical compatibility
-	// and should not be used. Please directly specify the needed fields using the Need values.
 	LoadAllSyntax = LoadSyntax | NeedDeps
 
 	// Deprecated: NeedExportsFile is a historical misspelling of NeedExportFile.
