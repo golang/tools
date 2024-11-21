@@ -1487,6 +1487,12 @@ func TestSubstitutionPreservesParameterType(t *testing.T) {
 			`func _() { T(1).g() }`,
 		},
 		{
+			"Implicit dereference is made explicit", // TODO(rfindley): fix unnecessary literalization.
+			`type T struct{ field int }; func (x T) f(y T) bool { return x == y && x.field == x.g() }; func (x T) g() int { return 0 }`,
+			`func _() { var t *T; var y T; _ = t.f(y) }`,
+			`func _() { var t *T; var y T; _ = func() bool { var x T = *t; return x == y && x.field == x.g() }() }`,
+		},
+		{
 			"Check for shadowing error on type used in the conversion.",
 			`func f(x T) { _ = &x == (*T)(nil) }; type T int16`,
 			`func _() { type T bool; f(1) }`,
@@ -1845,14 +1851,22 @@ func deepHash(n ast.Node) any {
 				visit(v.Elem())
 			}
 
-		case reflect.Array, reflect.Chan, reflect.Func, reflect.Map, reflect.UnsafePointer:
-			panic(v) // unreachable in AST
+		case reflect.String:
+			writeUint64(uint64(v.Len()))
+			hasher.Write([]byte(v.String()))
 
-		default: // bool, string, number
-			if v.Kind() == reflect.String { // proper framing
-				writeUint64(uint64(v.Len()))
-			}
+		case reflect.Int:
+			writeUint64(uint64(v.Int()))
+
+		case reflect.Uint:
+			writeUint64(uint64(v.Uint()))
+
+		case reflect.Bool, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			// Bools and fixed width numbers can be handled by binary.Write.
 			binary.Write(hasher, le, v.Interface())
+
+		default: // reflect.Array, reflect.Chan, reflect.Func, reflect.Map, reflect.UnsafePointer, reflect.Uintptr
+			panic(v) // unreachable in AST
 		}
 	}
 	visit(reflect.ValueOf(n))
@@ -1860,4 +1874,24 @@ func deepHash(n ast.Node) any {
 	var hash [sha256.Size]byte
 	hasher.Sum(hash[:0])
 	return hash
+}
+
+func TestDeepHash(t *testing.T) {
+	// This test reproduces a bug in DeepHash that was encountered during work on
+	// the inliner.
+	//
+	// TODO(rfindley): consider replacing this with a fuzz test.
+	id := &ast.Ident{
+		NamePos: 2,
+		Name:    "t",
+	}
+	c := &ast.CallExpr{
+		Fun: id,
+	}
+	h1 := deepHash(c)
+	id.NamePos = 1
+	h2 := deepHash(c)
+	if h1 == h2 {
+		t.Fatal("bad")
+	}
 }

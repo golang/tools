@@ -1354,6 +1354,10 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		Type: calleeDecl.Type,
 		Body: calleeDecl.Body,
 	}
+	// clear positions before prepending the binding decl below, since the
+	// binding decl contains syntax from the caller and we must not mutate the
+	// caller. (This was a prior bug.)
+	clearPositions(funcLit)
 
 	// Literalization can still make use of a binding
 	// decl as it gives a more natural reading order:
@@ -1375,7 +1379,6 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		Ellipsis: token.NoPos, // f(slice...) is always simplified
 		Args:     remainingArgs,
 	}
-	clearPositions(newCall.Fun)
 	res.old = caller.Call
 	res.new = newCall
 	return res, nil
