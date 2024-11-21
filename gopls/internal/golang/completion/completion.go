@@ -38,6 +38,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
@@ -2303,12 +2304,12 @@ Nodes:
 				break Nodes
 			}
 		case *ast.AssignStmt:
-			objType, assignees := expectedAssignStmtTypes(c, node)
+			objType, assignees := expectedAssignStmtTypes(c.pkg, node, c.pos)
 			inf.objType = objType
 			inf.assignees = assignees
 			return inf
 		case *ast.ValueSpec:
-			inf.objType = expectedValueSpecType(c, node)
+			inf.objType = expectedValueSpecType(c.pkg, node, c.pos)
 			return
 		case *ast.ReturnStmt:
 			if c.enclosingFunc != nil {
@@ -2316,7 +2317,7 @@ Nodes:
 			}
 			return inf
 		case *ast.SendStmt:
-			if typ := expectedSendStmtType(c, node); typ != nil {
+			if typ := expectedSendStmtType(c.pkg, node, c.pos); typ != nil {
 				inf.objType = typ
 			}
 			return inf
@@ -2491,7 +2492,11 @@ Nodes:
 //
 // inferExpectedResultTypes can determine that the expected result type of the function is (TypeA, TypeB)
 func inferExpectedResultTypes(c *completer, callNodeIdx int) []types.Type {
-	callNode, _ := c.path[callNodeIdx].(*ast.CallExpr)
+	callNode, ok := c.path[callNodeIdx].(*ast.CallExpr)
+	if !ok {
+		bug.Reportf("inferExpectedResultTypes given callNodeIndex: %v which is not a ast.CallExpr\n", callNodeIdx)
+		return nil
+	}
 
 	if len(c.path) <= callNodeIdx+1 {
 		return nil
@@ -2506,21 +2511,21 @@ func inferExpectedResultTypes(c *completer, callNodeIdx int) []types.Type {
 	case *ast.KeyValueExpr:
 		enclosingCompositeLiteral := enclosingCompositeLiteral(c.path[callNodeIdx:], callNode.Pos(), c.pkg.TypesInfo())
 		if !wantStructFieldCompletions(enclosingCompositeLiteral) {
-			expectedResults = append(expectedResults, expectedCompositeLiteralType(enclosingCompositeLiteral, c.pos))
+			expectedResults = append(expectedResults, expectedCompositeLiteralType(enclosingCompositeLiteral, callNode.Pos()))
 		}
 	case *ast.AssignStmt:
-		objType, assignees := expectedAssignStmtTypes(c, node)
+		objType, assignees := expectedAssignStmtTypes(c.pkg, node, c.pos)
 		if len(assignees) > 0 {
 			return assignees
 		} else if objType != nil {
 			expectedResults = append(expectedResults, objType)
 		}
 	case *ast.ValueSpec:
-		if resultType := expectedValueSpecType(c, node); resultType != nil {
+		if resultType := expectedValueSpecType(c.pkg, node, c.pos); resultType != nil {
 			expectedResults = append(expectedResults, resultType)
 		}
 	case *ast.SendStmt:
-		if resultType := expectedSendStmtType(c, node); resultType != nil {
+		if resultType := expectedSendStmtType(c.pkg, node, c.pos); resultType != nil {
 			expectedResults = append(expectedResults, resultType)
 		}
 	case *ast.ReturnStmt:
@@ -2550,17 +2555,20 @@ func inferExpectedResultTypes(c *completer, callNodeIdx int) []types.Type {
 			expectedResults = append(expectedResults, resultType)
 		}
 	case *ast.CallExpr:
-		// TODO (this one is tricky)
+		// TODO(jacobz): This is a difficult case because the normal CallExpr candidateInference
+		// leans on control flow which is inaccessible in this helper function.
+		// It would probably take a significant refactor to a recursive solution to make this case
+		// work cleanly. For now it's unimplemented.
 	}
 	return expectedResults
 }
 
 // expectedSendStmtType return the expected type at the position.
 // Returns nil if unknown.
-func expectedSendStmtType(c *completer, node *ast.SendStmt) types.Type {
+func expectedSendStmtType(pkg *cache.Package, node *ast.SendStmt, pos token.Pos) types.Type {
 	// Make sure we are on right side of arrow (e.g. "foo <- <>").
-	if c.pos > node.Arrow+1 {
-		if tv, ok := c.pkg.TypesInfo().Types[node.Chan]; ok {
+	if pos > node.Arrow+1 {
+		if tv, ok := pkg.TypesInfo().Types[node.Chan]; ok {
 			if ch, ok := tv.Type.Underlying().(*types.Chan); ok {
 				return ch.Elem()
 			}
@@ -2571,22 +2579,24 @@ func expectedSendStmtType(c *completer, node *ast.SendStmt) types.Type {
 
 // expectedValueSpecType returns the expected type of a ValueSpec at the query
 // position.
-func expectedValueSpecType(c *completer, node *ast.ValueSpec) types.Type {
-	if node.Type != nil && c.pos > node.Type.End() {
-		return c.pkg.TypesInfo().TypeOf(node.Type)
+func expectedValueSpecType(pkg *cache.Package, node *ast.ValueSpec, pos token.Pos) types.Type {
+	if node.Type != nil && pos > node.Type.End() {
+		return pkg.TypesInfo().TypeOf(node.Type)
 	}
 	return nil
 }
 
-// expectedAssignStmtTypes returns the inference objType and assignees for the assignment.
-func expectedAssignStmtTypes(c *completer, node *ast.AssignStmt) (objType types.Type, assignees []types.Type) {
+// expectedAssignStmtTypes returns objType containing the inferred type at the
+// completion position and as well as all the types of all the LHS assignees, which are
+// used to suggest function calls with multiple results.
+func expectedAssignStmtTypes(pkg *cache.Package, node *ast.AssignStmt, pos token.Pos) (objType types.Type, assignees []types.Type) {
 	// Only rank completions if you are on the right side of the token.
-	if c.pos > node.TokPos {
-		i := exprAtPos(c.pos, node.Rhs)
+	if pos > node.TokPos {
+		i := exprAtPos(pos, node.Rhs)
 		if i >= len(node.Lhs) {
 			i = len(node.Lhs) - 1
 		}
-		if tv, ok := c.pkg.TypesInfo().Types[node.Lhs[i]]; ok {
+		if tv, ok := pkg.TypesInfo().Types[node.Lhs[i]]; ok {
 			objType = tv.Type
 		}
 
@@ -2595,13 +2605,13 @@ func expectedAssignStmtTypes(c *completer, node *ast.AssignStmt) (objType types.
 		// matching result values.
 		if len(node.Rhs) <= 1 {
 			for _, lhs := range node.Lhs {
-				assignees = append(assignees, c.pkg.TypesInfo().TypeOf(lhs))
+				assignees = append(assignees, pkg.TypesInfo().TypeOf(lhs))
 			}
 		} else {
 			// Otherwise, record our single assignee, even if its type is
 			// not available. We use this info to downrank functions
 			// with the wrong number of result values.
-			assignees = append(assignees, c.pkg.TypesInfo().TypeOf(node.Lhs[i]))
+			assignees = append(assignees, pkg.TypesInfo().TypeOf(node.Lhs[i]))
 		}
 	}
 	return objType, assignees
