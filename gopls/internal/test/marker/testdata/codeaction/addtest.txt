@@ -100,11 +100,21 @@ func Foo(in string) string {return in} //@codeaction("Foo", "source.addTest", ed
 -- missingtestfile/missingtestfile.go --
 package main
 
-func ExportedFunction(in string) string {return in} //@codeaction("ExportedFunction", "source.addTest", edit=missing_test_file_exported_function)
-
 type Bar struct {}
 
+type foo struct {}
+
+func ExportedFunction(in string) string {return in} //@codeaction("ExportedFunction", "source.addTest", edit=missing_test_file_exported_function)
+
+func UnexportedInputParam(in string, f foo) string {return in} //@codeaction("UnexportedInputParam", "source.addTest", edit=missing_test_file_function_unexported_input)
+
+func unexportedFunction(in string) string {return in} //@codeaction("unexportedFunction", "source.addTest", edit=missing_test_file_unexported_function)
+
 func (*Bar) ExportedMethod(in string) string {return in} //@codeaction("ExportedMethod", "source.addTest", edit=missing_test_file_exported_recv_exported_method)
+
+func (*Bar) UnexportedInputParam(in string, f foo) string {return in} //@codeaction("UnexportedInputParam", "source.addTest", edit=missing_test_file_method_unexported_input)
+
+func (*foo) ExportedMethod(in string) string {return in} //@codeaction("ExportedMethod", "source.addTest", edit=missing_test_file_unexported_recv)
 
 -- @missing_test_file_exported_function/missingtestfile/missingtestfile_test.go --
 @@ -0,0 +1,26 @@
@@ -157,6 +167,112 @@ func (*Bar) ExportedMethod(in string) string {return in} //@codeaction("Exported
 +      // TODO: construct the receiver type.
 +      var b main.Bar
 +      got := b.ExportedMethod(tt.in)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
++      }
++    })
++  }
++}
+-- @missing_test_file_function_unexported_input/missingtestfile/missingtestfile_test.go --
+@@ -0,0 +1,24 @@
++package main
++
++import "testing"
++
++func TestUnexportedInputParam(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for target function.
++    in string
++    f foo
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      got := UnexportedInputParam(tt.in, tt.f)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("UnexportedInputParam() = %v, want %v", got, tt.want)
++      }
++    })
++  }
++}
+-- @missing_test_file_method_unexported_input/missingtestfile/missingtestfile_test.go --
+@@ -0,0 +1,26 @@
++package main
++
++import "testing"
++
++func TestBar_UnexportedInputParam(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for target function.
++    in string
++    f foo
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      // TODO: construct the receiver type.
++      var b Bar
++      got := b.UnexportedInputParam(tt.in, tt.f)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("UnexportedInputParam() = %v, want %v", got, tt.want)
++      }
++    })
++  }
++}
+-- @missing_test_file_unexported_function/missingtestfile/missingtestfile_test.go --
+@@ -0,0 +1,23 @@
++package main
++
++import "testing"
++
++func Test_unexportedFunction(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for target function.
++    in string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      got := unexportedFunction(tt.in)
++      // TODO: update the condition below to compare got with tt.want.
++      if true {
++        t.Errorf("unexportedFunction() = %v, want %v", got, tt.want)
++      }
++    })
++  }
++}
+-- @missing_test_file_unexported_recv/missingtestfile/missingtestfile_test.go --
+@@ -0,0 +1,25 @@
++package main
++
++import "testing"
++
++func Test_foo_ExportedMethod(t *testing.T) {
++  tests := []struct {
++    name string // description of this test case
++    // Named input parameters for target function.
++    in string
++    want string
++  }{
++    // TODO: Add test cases.
++  }
++  for _, tt := range tests {
++    t.Run(tt.name, func(t *testing.T) {
++      // TODO: construct the receiver type.
++      var f foo
++      got := f.ExportedMethod(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
 +      if true {
 +        t.Errorf("ExportedMethod() = %v, want %v", got, tt.want)
@@ -519,7 +635,7 @@ package main
 +    t.Run(tt.name, func(t *testing.T) {
 +      q, err := newQux1()
 +      if err != nil {
-+        t.Fatalf("could not contruct receiver type: %v", err)
++        t.Fatalf("could not construct receiver type: %v", err)
 +      }
 +      got := q.method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
@@ -877,7 +993,7 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeaction("Metho
 +    t.Run(tt.name, func(t *testing.T) {
 +      r, err := main.NewReturnTypeError()
 +      if err != nil {
-+        t.Fatalf("could not contruct receiver type: %v", err)
++        t.Fatalf("could not construct receiver type: %v", err)
 +      }
 +      got := r.Method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
@@ -938,7 +1054,7 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeaction("Metho
 +    t.Run(tt.name, func(t *testing.T) {
 +      r, err := main.NewReturnPtrError()
 +      if err != nil {
-+        t.Fatalf("could not contruct receiver type: %v", err)
++        t.Fatalf("could not construct receiver type: %v", err)
 +      }
 +      got := r.Method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
@@ -1018,7 +1134,7 @@ func (*Bar) Method(in string) string {return in} //@codeaction("Method", "source
 +    t.Run(tt.name, func(t *testing.T) {
 +      b, err := main.ABar()
 +      if err != nil {
-+        t.Fatalf("could not contruct receiver type: %v", err)
++        t.Fatalf("could not construct receiver type: %v", err)
 +      }
 +      got := b.Method(tt.in)
 +      // TODO: update the condition below to compare got with tt.want.
@@ -1403,7 +1519,7 @@ var local renamedctx.Context
 +    t.Run(tt.name, func(t *testing.T) {
 +      f, err := main.NewFoo(renamedctx.Background())
 +      if err != nil {
-+        t.Fatalf("could not contruct receiver type: %v", err)
++        t.Fatalf("could not construct receiver type: %v", err)
 +      }
 +      got, got2, got3 := f.Method(renamedctx.Background(), "", "")
 +      // TODO: update the condition below to compare got with tt.want.

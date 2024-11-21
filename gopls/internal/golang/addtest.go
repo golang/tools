@@ -97,7 +97,7 @@ func {{.TestFuncName}}(t *{{.TestingPackageName}}.T) {
       {{- $last := last .Receiver.Constructor.Results}}
       {{- if eq $last.Type "error"}}
       if err != nil {
-        t.Fatalf("could not contruct receiver type: %v", err)
+        t.Fatalf("could not construct receiver type: %v", err)
       }
       {{- end}}
       {{- else}}
@@ -309,12 +309,29 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		// edits contains all the text edits to be applied to the test file.
 		edits []protocol.TextEdit
 		// xtest indicates whether the test file use package x or x_test.
-		// TODO(hxjiang): For now, we try to interpret the user's intention by
-		// reading the foo_test.go's package name. Instead, we can discuss the option
-		// to interpret the user's intention by which function they are selecting.
-		// Have one file for x_test package testing, one file for x package testing.
+		// TODO(hxjiang): We can discuss the option to interpret the user's
+		// intention by which function they are selecting. Have one file for
+		// x_test package testing, one file for x package testing.
 		xtest = true
 	)
+
+	start, end, err := pgf.RangePos(loc.Range)
+	if err != nil {
+		return nil, err
+	}
+
+	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	if len(path) < 2 {
+		return nil, fmt.Errorf("no enclosing function")
+	}
+
+	decl, ok := path[len(path)-2].(*ast.FuncDecl)
+	if !ok {
+		return nil, fmt.Errorf("no enclosing function")
+	}
+
+	fn := pkg.TypesInfo().Defs[decl.Name].(*types.Func)
+	sig := fn.Signature()
 
 	testPGF, err := snapshot.ParseGo(ctx, testFH, parsego.Header)
 	if err != nil {
@@ -352,7 +369,53 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 			header.WriteString("\n\n")
 		}
 
-		fmt.Fprintf(&header, "package %s_test\n", pkg.Types().Name())
+		// Determine if a new test file should use in-package test (package x)
+		// or external test (package x_test). If any of the function parameters
+		// reference an unexported object, we cannot write out test cases from
+		// an x_test package.
+		externalTestOK := func() bool {
+			if !fn.Exported() {
+				return false
+			}
+			if fn.Signature().Recv() != nil {
+				if _, ident, _ := goplsastutil.UnpackRecv(decl.Recv.List[0].Type); ident == nil || !ident.IsExported() {
+					return false
+				}
+			}
+			refsUnexported := false
+			ast.Inspect(decl, func(n ast.Node) bool {
+				// The original function refs to an unexported object from the
+				// same package, so further inspection is unnecessary.
+				if refsUnexported {
+					return false
+				}
+				switch t := n.(type) {
+				case *ast.BlockStmt:
+					// Avoid inspect the function body.
+					return false
+				case *ast.Ident:
+					// Use test variant (package foo) if the function signature
+					// references any unexported objects (like types or
+					// constants) from the same package.
+					// Note: types.PkgName is excluded from this check as it's
+					// always defined in the same package.
+					if obj, ok := pkg.TypesInfo().Uses[t]; ok && !obj.Exported() && obj.Pkg() == pkg.Types() && !is[*types.PkgName](obj) {
+						refsUnexported = true
+					}
+					return false
+				default:
+					return true
+				}
+			})
+			return !refsUnexported
+		}
+
+		xtest = externalTestOK()
+		if xtest {
+			fmt.Fprintf(&header, "package %s_test\n", pkg.Types().Name())
+		} else {
+			fmt.Fprintf(&header, "package %s\n", pkg.Types().Name())
+		}
 
 		// Write the copyright and package decl to the beginning of the file.
 		edits = append(edits, protocol.TextEdit{
@@ -412,24 +475,6 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		return p.Name()
 	}
 
-	start, end, err := pgf.RangePos(loc.Range)
-	if err != nil {
-		return nil, err
-	}
-
-	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-	if len(path) < 2 {
-		return nil, fmt.Errorf("no enclosing function")
-	}
-
-	decl, ok := path[len(path)-2].(*ast.FuncDecl)
-	if !ok {
-		return nil, fmt.Errorf("no enclosing function")
-	}
-
-	fn := pkg.TypesInfo().Defs[decl.Name].(*types.Func)
-	sig := fn.Signature()
-
 	if xtest {
 		// Reject if function/method is unexported.
 		if !fn.Exported() {
@@ -438,7 +483,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 
 		// Reject if receiver is unexported.
 		if sig.Recv() != nil {
-			if _, ident, _ := goplsastutil.UnpackRecv(decl.Recv.List[0].Type); !ident.IsExported() {
+			if _, ident, _ := goplsastutil.UnpackRecv(decl.Recv.List[0].Type); ident == nil || !ident.IsExported() {
 				return nil, fmt.Errorf("cannot add external test for method %s.%s as receiver type is not exported", ident.Name, decl.Name)
 			}
 		}
