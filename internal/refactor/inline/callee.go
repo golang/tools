@@ -395,6 +395,11 @@ type paramInfo struct {
 type refInfo struct {
 	Offset   int  // FuncDecl-relative byte offset of parameter ref within body
 	NeedType bool // type of substituted arg must be identical to type of param
+	// IsSelectionOperand indicates whether the parameter reference is the
+	// operand of a selection (param.f). If so, and param's argument is itself
+	// a receiver parameter (a common case), we don't need to desugar (&v or *ptr)
+	// the selection: if param.Method is a valid selection, then so is param.fieldOrMethod.
+	IsSelectionOperand bool
 }
 
 // analyzeParams computes information about parameters of function fn,
@@ -476,8 +481,9 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 					// the substituted expression is an untyped constant or unnamed type.
 					ifaceParam := isNonTypeParamInterface(v.Type())
 					ref := refInfo{
-						Offset:   int(n.Pos() - decl.Pos()),
-						NeedType: !ifaceParam || !isAssignableOperand(info, stack),
+						Offset:             int(n.Pos() - decl.Pos()),
+						NeedType:           !ifaceParam || !isAssignableOperand(info, stack),
+						IsSelectionOperand: isSelectionOperand(stack),
 					}
 					pinfo.Refs = append(pinfo.Refs, ref)
 					pinfo.Shadow = addShadows(pinfo.Shadow, info, pinfo.Name, stack)
@@ -510,21 +516,7 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 // then passing a different (yet assignable) type may affect type inference,
 // and so isAssignableOperand reports false.
 func isAssignableOperand(info *types.Info, stack []ast.Node) bool {
-	var (
-		parent  ast.Node                         // the parent node surrounding expr
-		expr, _ = stack[len(stack)-1].(ast.Expr) // the relevant expr, after stripping parentheses
-	)
-	if expr == nil {
-		return false
-	}
-	for i := len(stack) - 2; i >= 0; i-- {
-		if pexpr, ok := stack[i].(*ast.ParenExpr); ok {
-			expr = pexpr
-		} else {
-			parent = stack[i]
-			break
-		}
-	}
+	parent, expr := exprContext(stack)
 	if parent == nil {
 		return false
 	}
@@ -598,6 +590,40 @@ func isAssignableOperand(info *types.Info, stack []ast.Node) bool {
 	}
 
 	return false // In all other cases, preserve the parameter type.
+}
+
+// exprContext returns the innermost parent->child expression nodes for the
+// given outer-to-inner stack, after stripping parentheses.
+//
+// If no such context exists, returns (nil, nil).
+func exprContext(stack []ast.Node) (parent ast.Node, expr ast.Expr) {
+	expr, _ = stack[len(stack)-1].(ast.Expr)
+	if expr == nil {
+		return nil, nil
+	}
+	for i := len(stack) - 2; i >= 0; i-- {
+		if pexpr, ok := stack[i].(*ast.ParenExpr); ok {
+			expr = pexpr
+		} else {
+			parent = stack[i]
+			break
+		}
+	}
+	if parent == nil {
+		return nil, nil
+	}
+	return parent, expr
+}
+
+// isSelectionOperand reports whether the innermost node of stack is operand
+// (x) of a selection x.f.
+func isSelectionOperand(stack []ast.Node) bool {
+	parent, expr := exprContext(stack)
+	if parent == nil {
+		return false
+	}
+	sel, ok := parent.(*ast.SelectorExpr)
+	return ok && sel.X == expr
 }
 
 // addShadows returns the shadows set augmented by the set of names

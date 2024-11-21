@@ -128,7 +128,7 @@ func (Missing) M(a, c, r0 int) (r1 int) { //@codeaction("b", "refactor.rewrite.r
 
 func _() {
 	m := &Missing{}
-	_ = (*m).M(1, 3, 4)
+	_ = m.M(1, 3, 4)
 }
 -- @missingrecv/missingrecvuse/p.go --
 package missingrecvuse

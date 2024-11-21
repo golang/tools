@@ -1487,10 +1487,22 @@ func TestSubstitutionPreservesParameterType(t *testing.T) {
 			`func _() { T(1).g() }`,
 		},
 		{
-			"Implicit dereference is made explicit", // TODO(rfindley): fix unnecessary literalization.
-			`type T struct{ field int }; func (x T) f(y T) bool { return x == y && x.field == x.g() }; func (x T) g() int { return 0 }`,
-			`func _() { var t *T; var y T; _ = t.f(y) }`,
-			`func _() { var t *T; var y T; _ = func() bool { var x T = *t; return x == y && x.field == x.g() }() }`,
+			"Implicit reference is made explicit outside of selector",
+			`type T int; func (x *T) f() bool { return x == x.id() }; func (x *T) id() *T { return x }`,
+			`func _() { var t T; _ = t.f() }`,
+			`func _() { var t T; _ = &t == t.id() }`,
+		},
+		{
+			"Implicit parenthesized reference is not made explicit in selector",
+			`type T int; func (x *T) f() bool { return x == (x).id() }; func (x *T) id() *T { return x }`,
+			`func _() { var t T; _ = t.f() }`,
+			`func _() { var t T; _ = &t == (t).id() }`,
+		},
+		{
+			"Implicit dereference is made explicit outside of selector", // TODO(rfindley): avoid unnecessary literalization here
+			`type T int; func (x T) f() bool { return x == x.id() }; func (x T) id() T { return x }`,
+			`func _() { var t *T; _ = t.f() }`,
+			`func _() { var t *T; _ = func() bool { var x T = *t; return x == x.id() }() }`,
 		},
 		{
 			"Check for shadowing error on type used in the conversion.",

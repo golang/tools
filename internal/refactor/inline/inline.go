@@ -224,7 +224,7 @@ func (st *state) inline() (*Result, error) {
 		f, err = parser.ParseFile(fset, "callee.go", content, mode)
 		if err != nil {
 			// Something has gone very wrong.
-			logf("failed to reparse <<%s>>", string(content)) // debugging
+			logf("failed to reparse <<%s>>: %v", string(content), err) // debugging
 			return err
 		}
 		return nil
@@ -1395,6 +1395,7 @@ type argument struct {
 	freevars      map[string]bool // free names of expr
 	substitutable bool            // is candidate for substitution
 	variadic      bool            // is explicit []T{...} for eliminated variadic
+	desugaredRecv bool            // is *recv or &recv, where operator was elided
 }
 
 // arguments returns the effective arguments of the call.
@@ -1488,12 +1489,14 @@ func (st *state) arguments(caller *Caller, calleeDecl *ast.FuncDecl, assign1 fun
 				// &recv
 				arg.expr = &ast.UnaryExpr{Op: token.AND, X: arg.expr}
 				arg.typ = types.NewPointer(arg.typ)
+				arg.desugaredRecv = true
 			} else if argIsPtr && !paramIsPtr {
 				// *recv
 				arg.expr = &ast.StarExpr{X: arg.expr}
 				arg.typ = typeparams.Deref(arg.typ)
 				arg.duplicable = false
 				arg.pure = false
+				arg.desugaredRecv = true
 			}
 		}
 	}
@@ -1691,6 +1694,23 @@ next:
 			logf("replacing parameter %q by argument %q",
 				param.info.Name, debugFormatNode(caller.Fset, arg.expr))
 			for _, ref := range param.info.Refs {
+				// Apply any transformations necessary for this reference.
+				argExpr := arg.expr
+
+				// If the reference itself is being selected, and we applied desugaring
+				// (an explicit &x or *x), we can undo that desugaring here as it is
+				// not necessary for a selector. We don't need to check addressability
+				// here because if we desugared, the receiver must have been
+				// addressable.
+				if ref.IsSelectionOperand && arg.desugaredRecv {
+					switch e := argExpr.(type) {
+					case *ast.UnaryExpr:
+						argExpr = e.X
+					case *ast.StarExpr:
+						argExpr = e.X
+					}
+				}
+
 				// If the reference requires exact type agreement (as reported by
 				// param.info.NeedType), wrap the argument in an explicit conversion
 				// if substitution might materially change its type. (We already did
@@ -1699,7 +1719,7 @@ next:
 				// This is only needed for substituted arguments. All other arguments
 				// are given explicit types in either a binding decl or when using the
 				// literalization strategy.
-
+				//
 				// If the types are identical, we can eliminate
 				// redundant type conversions such as this:
 				//
@@ -1716,7 +1736,6 @@ next:
 				// its (possibly "untyped") inherent type, so
 				// the conversion from untyped 1 to int32 is non-trivial even
 				// though both arg and param have identical types (int32).
-				argExpr := arg.expr
 				if ref.NeedType &&
 					!types.Identical(arg.typ, param.obj.Type()) &&
 					!trivialConversion(arg.constant, arg.typ, param.obj.Type()) {
