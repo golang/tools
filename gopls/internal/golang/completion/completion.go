@@ -2586,9 +2586,10 @@ func expectedValueSpecType(pkg *cache.Package, node *ast.ValueSpec, pos token.Po
 	return nil
 }
 
-// expectedAssignStmtTypes returns objType containing the inferred type at the
-// completion position and as well as all the types of all the LHS assignees, which are
-// used to suggest function calls with multiple results.
+// expectedAssignStmtTypes analyzes the provided assignStmt, and checks
+// to see if the provided pos is within a RHS expresison. If so, it report
+// the expected type of that expression, and the LHS type(s) to which it
+// is being assigned.
 func expectedAssignStmtTypes(pkg *cache.Package, node *ast.AssignStmt, pos token.Pos) (objType types.Type, assignees []types.Type) {
 	// Only rank completions if you are on the right side of the token.
 	if pos > node.TokPos {
