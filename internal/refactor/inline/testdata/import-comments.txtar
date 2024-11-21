@@ -1,0 +1,113 @@
+This file checks various handling of comments when adding imports.
+
+-- go.mod --
+module testdata
+go 1.12
+
+-- a/empty.go --
+package a // This is package a.
+
+func _() {
+	a() //@ inline(re"a", empty)
+}
+
+-- empty --
+package a // This is package a.
+
+import "testdata/b"
+
+func _() {
+	b.B() //@ inline(re"a", empty)
+}
+-- a/existing.go --
+package a // This is package a.
+
+// This is an import block.
+import (
+	// This is an import of io.
+	"io"
+
+	// This is an import of c.
+	"testdata/c"
+)
+
+var (
+	// This is an io.Writer.
+	_ io.Writer
+	// This is c.C
+	_ c.C
+)
+
+func _() {
+	a() //@ inline(re"a", existing)
+}
+
+-- existing --
+package a // This is package a.
+
+// This is an import block.
+import (
+	// This is an import of io.
+	"io"
+
+	// This is an import of c.
+	"testdata/b"
+	"testdata/c"
+)
+
+var (
+	// This is an io.Writer.
+	_ io.Writer
+	// This is c.C
+	_ c.C
+)
+
+func _() {
+	b.B() //@ inline(re"a", existing)
+}
+
+-- a/noparens.go --
+package a // This is package a.
+
+// This is an import of c.
+import "testdata/c"
+
+func _() {
+	var _ c.C
+	a() //@ inline(re"a", noparens)
+}
+
+-- noparens --
+package a // This is package a.
+
+// This is an import of c.
+import (
+	"testdata/b"
+	"testdata/c"
+)
+
+func _() {
+	var _ c.C
+	b.B() //@ inline(re"a", noparens)
+}
+
+-- a/a.go --
+package a
+
+// This is an import of b.
+import "testdata/b"
+
+func a() {
+	// This is a call to B.
+	b.B()
+}
+
+-- b/b.go --
+package b
+
+func B() {}
+
+-- c/c.go --
+package c
+
+type C int

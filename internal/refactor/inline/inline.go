@@ -11,6 +11,7 @@ import (
 	"go/constant"
 	"go/format"
 	"go/parser"
+	"go/printer"
 	"go/token"
 	"go/types"
 	pathpkg "path"
@@ -202,17 +203,37 @@ func (st *state) inline() (*Result, error) {
 		}
 	}
 
+	// File rewriting. This proceeds in multiple passes, in order to maximally
+	// preserve comment positioning. (This could be greatly simplified once
+	// comments are stored in the tree.)
+	//
 	// Don't call replaceNode(caller.File, res.old, res.new)
 	// as it mutates the caller's syntax tree.
 	// Instead, splice the file, replacing the extent of the "old"
 	// node by a formatting of the "new" node, and re-parse.
 	// We'll fix up the imports on this new tree, and format again.
-	var f *ast.File
+	//
+	// Inv: f is the result of parsing content, using fset.
+	var (
+		content = caller.Content
+		fset    = caller.Fset
+		f       *ast.File // parsed below
+	)
+	reparse := func() error {
+		const mode = parser.ParseComments | parser.SkipObjectResolution | parser.AllErrors
+		f, err = parser.ParseFile(fset, "callee.go", content, mode)
+		if err != nil {
+			// Something has gone very wrong.
+			logf("failed to reparse <<%s>>", string(content)) // debugging
+			return err
+		}
+		return nil
+	}
 	{
-		start := offsetOf(caller.Fset, res.old.Pos())
-		end := offsetOf(caller.Fset, res.old.End())
+		start := offsetOf(fset, res.old.Pos())
+		end := offsetOf(fset, res.old.End())
 		var out bytes.Buffer
-		out.Write(caller.Content[:start])
+		out.Write(content[:start])
 		// TODO(adonovan): might it make more sense to use
 		// callee.Fset when formatting res.new?
 		// The new tree is a mix of (cloned) caller nodes for
@@ -232,21 +253,18 @@ func (st *state) inline() (*Result, error) {
 				if i > 0 {
 					out.WriteByte('\n')
 				}
-				if err := format.Node(&out, caller.Fset, stmt); err != nil {
+				if err := format.Node(&out, fset, stmt); err != nil {
 					return nil, err
 				}
 			}
 		} else {
-			if err := format.Node(&out, caller.Fset, res.new); err != nil {
+			if err := format.Node(&out, fset, res.new); err != nil {
 				return nil, err
 			}
 		}
-		out.Write(caller.Content[end:])
-		const mode = parser.ParseComments | parser.SkipObjectResolution | parser.AllErrors
-		f, err = parser.ParseFile(caller.Fset, "callee.go", &out, mode)
-		if err != nil {
-			// Something has gone very wrong.
-			logf("failed to parse <<%s>>", &out) // debugging
+		out.Write(content[end:])
+		content = out.Bytes()
+		if err := reparse(); err != nil {
 			return nil, err
 		}
 	}
@@ -257,15 +275,58 @@ func (st *state) inline() (*Result, error) {
 	// to avoid migration of pre-import comments.
 	// The imports will be organized below.
 	if len(res.newImports) > 0 {
-		var importDecl *ast.GenDecl
+		// If we have imports to add, do so independent of the rest of the file.
+		// Otherwise, the length of the new imports may consume floating comments,
+		// causing them to be printed inside the imports block.
+		var (
+			importDecl    *ast.GenDecl
+			comments      []*ast.CommentGroup // relevant comments.
+			before, after []byte              // pre- and post-amble for the imports block.
+		)
 		if len(f.Imports) > 0 {
 			// Append specs to existing import decl
 			importDecl = f.Decls[0].(*ast.GenDecl)
+			for _, comment := range f.Comments {
+				// Filter comments. Don't use CommentMap.Filter here, because we don't
+				// want to include comments that document the import decl itself, for
+				// example:
+				//
+				//  // We don't want this comment to be duplicated.
+				//  import (
+				//    "something"
+				//  )
+				if importDecl.Pos() <= comment.Pos() && comment.Pos() < importDecl.End() {
+					comments = append(comments, comment)
+				}
+			}
+			before = content[:offsetOf(fset, importDecl.Pos())]
+			importDecl.Doc = nil // present in before
+			after = content[offsetOf(fset, importDecl.End()):]
 		} else {
 			// Insert new import decl.
 			importDecl = &ast.GenDecl{Tok: token.IMPORT}
 			f.Decls = prepend[ast.Decl](importDecl, f.Decls...)
+
+			// Make room for the new declaration after the package declaration.
+			pkgEnd := f.Name.End()
+			file := fset.File(pkgEnd)
+			if file == nil {
+				logf("internal error: missing pkg file")
+				return nil, fmt.Errorf("missing pkg file for %s", f.Name.Name)
+			}
+			// Preserve any comments after the package declaration, by splicing in
+			// the new import block after the end of the package declaration line.
+			line := file.Line(pkgEnd)
+			if line < len(file.Lines()) { // line numbers are 1-based
+				nextLinePos := file.LineStart(line + 1)
+				nextLine := offsetOf(fset, nextLinePos)
+				before = slices.Concat(content[:nextLine], []byte("\n"))
+				after = slices.Concat([]byte("\n\n"), content[nextLine:])
+			} else {
+				before = slices.Concat(content, []byte("\n\n"))
+			}
 		}
+		// Add new imports.
 		for _, imp := range res.newImports {
 			// Check that the new imports are accessible.
 			path, _ := strconv.Unquote(imp.spec.Path.Value)
@@ -273,6 +334,21 @@ func (st *state) inline() (*Result, error) {
 				return nil, fmt.Errorf("can't inline function %v as its body refers to inaccessible package %q", callee, path)
 			}
 			importDecl.Specs = append(importDecl.Specs, imp.spec)
+		}
+		var out bytes.Buffer
+		out.Write(before)
+		commented := &printer.CommentedNode{
+			Node:     importDecl,
+			Comments: comments,
+		}
+		if err := format.Node(&out, fset, commented); err != nil {
+			logf("failed to format new importDecl: %v", err) // debugging
+			return nil, err
+		}
+		out.Write(after)
+		content = out.Bytes()
+		if err := reparse(); err != nil {
+			return nil, err
 		}
 	}
 
