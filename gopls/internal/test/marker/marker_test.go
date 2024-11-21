@@ -112,6 +112,7 @@ func Test(t *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
+
 			if test.skipReason != "" {
 				t.Skip(test.skipReason)
 			}
@@ -154,6 +155,7 @@ func Test(t *testing.T) {
 				}
 				testenv.NeedsTool(t, "cgo")
 			}
+
 			config := fake.EditorConfig{
 				Settings:         test.settings,
 				CapabilitiesJSON: test.capabilities,
@@ -177,6 +179,7 @@ func Test(t *testing.T) {
 				diags:      make(map[protocol.Location][]protocol.Diagnostic),
 				extraNotes: make(map[protocol.DocumentURI]map[string][]*expect.Note),
 			}
+
 			// TODO(rfindley): make it easier to clean up the integration test environment.
 			defer run.env.Editor.Shutdown(context.Background()) // ignore error
 			defer run.env.Sandbox.Close()                       // ignore error
@@ -346,7 +349,16 @@ func (mark marker) mapper() *protocol.Mapper {
 	return mapper
 }
 
-// errorf reports an error with a prefix indicating the position of the marker note.
+// error reports an error with a prefix indicating the position of the marker
+// note.
+func (mark marker) error(args ...any) {
+	mark.T().Helper()
+	msg := fmt.Sprint(args...)
+	mark.T().Errorf("%s: %s", mark.run.fmtPos(mark.note.Pos), msg)
+}
+
+// errorf reports a formatted error with a prefix indicating the position of
+// the marker note.
 //
 // It formats the error message using mark.sprintf.
 func (mark marker) errorf(format string, args ...any) {
@@ -402,7 +414,7 @@ func valueMarkerFunc(fn any) func(marker) {
 		args := append([]any{mark}, mark.note.Args[1:]...)
 		argValues, err := convertArgs(mark, ftype, args)
 		if err != nil {
-			mark.errorf("converting args: %v", err)
+			mark.error(err)
 			return
 		}
 		results := reflect.ValueOf(fn).Call(argValues)
@@ -445,7 +457,7 @@ func actionMarkerFunc(fn any, allowedNames ...string) func(marker) {
 		args := append([]any{mark}, mark.note.Args...)
 		argValues, err := convertArgs(mark, ftype, args)
 		if err != nil {
-			mark.errorf("converting args: %v", err)
+			mark.error(err)
 			return
 		}
 		reflect.ValueOf(fn).Call(argValues)
@@ -540,9 +552,10 @@ func is[T any](arg any) bool {
 
 // Supported value marker functions. See [valueMarkerFunc] for more details.
 var valueMarkerFuncs = map[string]func(marker){
-	"loc":   valueMarkerFunc(locMarker),
-	"item":  valueMarkerFunc(completionItemMarker),
-	"hiloc": valueMarkerFunc(highlightLocationMarker),
+	"loc":    valueMarkerFunc(locMarker),
+	"item":   valueMarkerFunc(completionItemMarker),
+	"hiloc":  valueMarkerFunc(highlightLocationMarker),
+	"defloc": valueMarkerFunc(defLocMarker),
 }
 
 // Supported action marker functions. See [actionMarkerFunc] for more details.
@@ -1029,21 +1042,9 @@ func (run *markerTestRun) fmtPos(pos token.Pos) string {
 // archive-relative paths for files and including the line number in the full
 // archive file.
 func (run *markerTestRun) fmtLoc(loc protocol.Location) string {
-	formatted := run.fmtLocDetails(loc, true)
-	if formatted == "" {
+	if loc == (protocol.Location{}) {
 		run.env.T.Errorf("unable to find %s in test archive", loc)
 		return "<invalid location>"
-	}
-	return formatted
-}
-
-// See fmtLoc. If includeTxtPos is not set, the position in the full archive
-// file is omitted.
-//
-// If the location cannot be found within the archive, fmtLocDetails returns "".
-func (run *markerTestRun) fmtLocDetails(loc protocol.Location, includeTxtPos bool) string {
-	if loc == (protocol.Location{}) {
-		return ""
 	}
 	lines := bytes.Count(run.test.archive.Comment, []byte("\n"))
 	var name string
@@ -1057,39 +1058,74 @@ func (run *markerTestRun) fmtLocDetails(loc protocol.Location, includeTxtPos boo
 		lines += bytes.Count(f.Data, []byte("\n"))
 	}
 	if name == "" {
-		return ""
+		// Fall back to formatting the "lsp" location.
+		// These will be in UTF-16, but we probably don't need to clarify that,
+		// since it will be implied by the file:// URI format.
+		return summarizeLoc(string(loc.URI),
+			int(loc.Range.Start.Line), int(loc.Range.Start.Character),
+			int(loc.Range.End.Line), int(loc.Range.End.Character))
 	}
+	name, startLine, startCol, endLine, endCol := run.mapLocation(loc)
+	innerSpan := summarizeLoc(name, startLine, startCol, endLine, endCol)
+	outerSpan := summarizeLoc(run.test.name, lines+startLine, startCol, lines+endLine, endCol)
+	return fmt.Sprintf("%s (%s)", innerSpan, outerSpan)
+}
+
+// mapLocation returns the relative path and utf8 span of the corresponding
+// location, which must be a valid location in an archive file.
+func (run *markerTestRun) mapLocation(loc protocol.Location) (name string, startLine, startCol, endLine, endCol int) {
+	// Note: Editor.Mapper fails if loc.URI is not open, but we always open all
+	// archive files, so this is probably OK.
+	//
+	// In the future, we may want to have the editor read contents from disk if
+	// the URI is not open.
+	name = run.env.Sandbox.Workdir.URIToPath(loc.URI)
 	m, err := run.env.Editor.Mapper(name)
 	if err != nil {
 		run.env.T.Errorf("internal error: %v", err)
-		return "<invalid location>"
+		return
 	}
 	start, end, err := m.RangeOffsets(loc.Range)
 	if err != nil {
 		run.env.T.Errorf("error formatting location %s: %v", loc, err)
+		return
+	}
+	startLine, startCol = m.OffsetLineCol8(start)
+	endLine, endCol = m.OffsetLineCol8(end)
+	return name, startLine, startCol, endLine, endCol
+}
+
+// fmtLocForGolden is like fmtLoc, but chooses more succinct and stable
+// formatting, such as would be used for formatting locations in Golden
+// content.
+func (run *markerTestRun) fmtLocForGolden(loc protocol.Location) string {
+	if loc == (protocol.Location{}) {
 		return "<invalid location>"
 	}
-	var (
-		startLine, startCol8 = m.OffsetLineCol8(start)
-		endLine, endCol8     = m.OffsetLineCol8(end)
-	)
-	innerSpan := fmt.Sprintf("%d:%d", startLine, startCol8)       // relative to the embedded file
-	outerSpan := fmt.Sprintf("%d:%d", lines+startLine, startCol8) // relative to the archive file
-	if start != end {
-		if endLine == startLine {
-			innerSpan += fmt.Sprintf("-%d", endCol8)
-			outerSpan += fmt.Sprintf("-%d", endCol8)
-		} else {
-			innerSpan += fmt.Sprintf("-%d:%d", endLine, endCol8)
-			outerSpan += fmt.Sprintf("-%d:%d", lines+endLine, endCol8)
-		}
+	name := run.env.Sandbox.Workdir.URIToPath(loc.URI)
+	// Note: we check IsAbs on filepaths rather than the slash-ified name for
+	// accurate handling of windows drive letters.
+	if filepath.IsAbs(filepath.FromSlash(name)) {
+		// Don't format any position information in this case, since it will be
+		// volatile.
+		return "<external>"
 	}
+	return summarizeLoc(run.mapLocation(loc))
+}
 
-	if includeTxtPos {
-		return fmt.Sprintf("%s:%s (%s:%s)", name, innerSpan, run.test.name, outerSpan)
-	} else {
-		return fmt.Sprintf("%s:%s", name, innerSpan)
+// summarizeLoc formats a summary of the given location, in the form
+//
+//	<name>:<startLine>:<startCol>[-[<endLine>:]endCol]
+func summarizeLoc(name string, startLine, startCol, endLine, endCol int) string {
+	span := fmt.Sprintf("%s:%d:%d", name, startLine, startCol)
+	if startLine != endLine || startCol != endCol {
+		span += "-"
+		if endLine != startLine {
+			span += fmt.Sprintf("%d:", endLine)
+		}
+		span += fmt.Sprintf("%d", endCol)
 	}
+	return span
 }
 
 // ---- converters ----
@@ -1144,7 +1180,7 @@ func convert(mark marker, arg any, paramType reflect.Type) (any, error) {
 	if converter, ok := customConverters[paramType]; ok {
 		arg2, err := converter(mark, arg)
 		if err != nil {
-			return nil, fmt.Errorf("converting for input type %T to %v: %v", arg, paramType, err)
+			return nil, err
 		}
 		arg = arg2
 	}
@@ -1763,9 +1799,14 @@ func hoverErrMarker(mark marker, src protocol.Location, em stringMatcher) {
 	em.checkErr(mark, err)
 }
 
-// locMarker implements the @loc marker. It is executed before other
-// markers, so that locations are available.
+// locMarker implements the @loc marker.
 func locMarker(mark marker, loc protocol.Location) protocol.Location { return loc }
+
+// defLocMarker implements the @defloc marker, which binds a location to the
+// (first) result of a jump-to-definition request.
+func defLocMarker(mark marker, loc protocol.Location) protocol.Location {
+	return mark.run.env.GoToDefinition(loc)
+}
 
 // diagMarker implements the @diag marker. It eliminates diagnostics from
 // the observed set in mark.test.
@@ -2101,7 +2142,7 @@ func documentLinkMarker(mark marker, g *Golden) {
 			continue
 		}
 		loc := protocol.Location{URI: mark.uri(), Range: l.Range}
-		fmt.Fprintln(&b, mark.run.fmtLocDetails(loc, false), *l.Target)
+		fmt.Fprintln(&b, mark.run.fmtLocForGolden(loc), *l.Target)
 	}
 
 	compareGolden(mark, b.Bytes(), g)
@@ -2554,9 +2595,7 @@ func workspaceSymbolMarker(mark marker, query string, golden *Golden) {
 	for _, s := range gotSymbols {
 		// Omit the txtar position of the symbol location; otherwise edits to the
 		// txtar archive lead to unexpected failures.
-		loc := mark.run.fmtLocDetails(s.Location, false)
-		// TODO(rfindley): can we do better here, by detecting if the location is
-		// relative to GOROOT?
+		loc := mark.run.fmtLocForGolden(s.Location)
 		if loc == "" {
 			loc = "<unknown>"
 		}

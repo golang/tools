@@ -102,13 +102,41 @@ treatment by the test runner:
 
 # Marker types
 
-Markers are of two kinds. A few are "value markers" (e.g. @item), which are
-processed in a first pass and each computes a value that may be referred to
-by name later. Most are "action markers", which are processed in a second
-pass and take some action such as testing an LSP operation; they may refer
-to values computed by value markers.
+Markers are of two kinds: "value markers" and "action markers". Value markers
+are processed in a first pass, and define named values that may be referred to
+as arguments to action markers. For example, the @loc marker defines a named
+location that may be used wherever a location is expected. Value markers cannot
+refer to names defined by other value markers. Action markers are processed in
+a second pass and perform some action such as testing an LSP operation.
 
-The following markers are supported within marker tests:
+Below, we list supported markers using function signatures, augmented with the
+named argument support name=value, as described above. The types referred to in
+the signatures below are described in the Argument conversion section.
+
+Here is the list of supported value markers:
+
+  - loc(name, location): specifies the name for a location in the source. These
+    locations may be referenced by other markers. Naturally, the location
+    argument may be specified only as a string or regular expression in the
+    first pass.
+
+  - defloc(name, location): performs a textDocument/defintiion request at the
+    src location, and binds the result to the given name. This may be used to
+    refer to positions in the standard library.
+
+  - hiloc(name, location, kind): defines a documentHighlight value of the
+    given location and kind. Use its label in a @highlightall marker to
+    indicate the expected result of a highlight query.
+
+  - item(name, details, kind): defines a completionItem with the provided
+    fields. This information is not positional, and therefore @item markers
+    may occur anywhere in the source. Use in conjunction with @complete,
+    @snippet, or @rank.
+
+    TODO(rfindley): rethink whether floating @item annotations are the best
+    way to specify completion results.
+
+Here is the list of supported action markers:
 
   - acceptcompletion(location, label, golden): specifies that accepting the
     completion candidate produced at the given location with provided label
@@ -177,10 +205,6 @@ The following markers are supported within marker tests:
     textDocument/highlight request at the given src location, which should
     highlight the provided dst locations and kinds.
 
-  - hiloc(label, location, kind): defines a documentHighlight value of the
-    given location and kind. Use its label in a @highlightall marker to
-    indicate the expected result of a highlight query.
-
   - hover(src, dst location, sm stringMatcher): performs a textDocument/hover
     at the src location, and checks that the result is the dst location, with
     matching hover content.
@@ -197,17 +221,6 @@ The following markers are supported within marker tests:
     the set of call.From locations matches want.
     (These locations are the declarations of the functions enclosing
     the calls, not the calls themselves.)
-
-  - item(label, details, kind): defines a completionItem with the provided
-    fields. This information is not positional, and therefore @item markers
-    may occur anywhere in the source. Used in conjunction with @complete,
-    @snippet, or @rank.
-
-    TODO(rfindley): rethink whether floating @item annotations are the best
-    way to specify completion results.
-
-  - loc(name, location): specifies the name for a location in the source. These
-    locations may be referenced by other markers.
 
   - outgoingcalls(src location, want ...location): makes a
     callHierarchy/outgoingCalls query at the src location, and checks that
@@ -382,9 +395,6 @@ Note that -update does not cause missing @diag or @loc markers to be added.
 # TODO
 
   - Rename the files .txtar.
-  - Provide some means by which locations in the standard library
-    (or builtin.go) can be named, so that, for example, we can we
-    can assert that MyError implements the built-in error type.
   - Eliminate all *err markers, preferring named arguments.
 */
 package marker
