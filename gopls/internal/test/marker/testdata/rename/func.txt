@@ -1,0 +1,55 @@
+This test checks basic functionality for renaming (=changing) a function
+signature.
+
+-- go.mod --
+module example.com
+
+go 1.20
+
+-- a/a.go --
+package a
+
+//@rename(Foo, "func(i int, s string)", unchanged)
+//@rename(Foo, "func(s string, i int)", reverse)
+//@rename(Foo, "func(s string)", dropi)
+//@rename(Foo, "func(i int)", drops)
+//@rename(Foo, "func()", dropboth)
+//@renameerr(Foo, "func(i int, s string, t bool)", "not yet supported")
+//@renameerr(Foo, "func(i string)", "not yet supported")
+//@renameerr(Foo, "func(i int, s string) int", "not yet supported")
+
+func Foo(i int, s string) { //@loc(Foo, "func")
+}
+
+func _() {
+	Foo(0, "hi")
+}
+-- @dropboth/a/a.go --
+@@ -12 +12 @@
+-func Foo(i int, s string) { //@loc(Foo, "func")
++func Foo() { //@loc(Foo, "func")
+@@ -16 +16 @@
+-	Foo(0, "hi")
++	Foo()
+-- @dropi/a/a.go --
+@@ -12 +12 @@
+-func Foo(i int, s string) { //@loc(Foo, "func")
++func Foo(s string) { //@loc(Foo, "func")
+@@ -16 +16 @@
+-	Foo(0, "hi")
++	Foo("hi")
+-- @drops/a/a.go --
+@@ -12 +12 @@
+-func Foo(i int, s string) { //@loc(Foo, "func")
++func Foo(i int) { //@loc(Foo, "func")
+@@ -16 +16 @@
+-	Foo(0, "hi")
++	Foo(0)
+-- @reverse/a/a.go --
+@@ -12 +12 @@
+-func Foo(i int, s string) { //@loc(Foo, "func")
++func Foo(s string, i int) { //@loc(Foo, "func")
+@@ -16 +16 @@
+-	Foo(0, "hi")
++	Foo("hi", 0)
+-- @unchanged/a/a.go --

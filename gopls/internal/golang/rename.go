@@ -42,10 +42,13 @@ package golang
 // - FileID-based de-duplication of edits to different URIs for the same file.
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/parser"
+	"go/printer"
 	"go/token"
 	"go/types"
 	"path"
@@ -64,8 +67,10 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typesinternal"
@@ -126,6 +131,15 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// Check if we're in a 'func' keyword. If so, we hijack the renaming to
+	// change the function signature.
+	if item, err := prepareRenameFuncSignature(pgf, pos); err != nil {
+		return nil, nil, err
+	} else if item != nil {
+		return item, nil, nil
+	}
+
 	targets, node, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 	if err != nil {
 		return nil, nil, err
@@ -193,6 +207,169 @@ func prepareRenamePackageName(ctx context.Context, snapshot *cache.Snapshot, pgf
 	}, nil
 }
 
+// prepareRenameFuncSignature prepares a change signature refactoring initiated
+// through invoking a rename request at the 'func' keyword of a function
+// declaration.
+//
+// The resulting text is the signature of the function, which may be edited to
+// the new signature.
+func prepareRenameFuncSignature(pgf *parsego.File, pos token.Pos) (*PrepareItem, error) {
+	fdecl := funcKeywordDecl(pgf, pos)
+	if fdecl == nil {
+		return nil, nil
+	}
+	ftyp := nameBlankParams(fdecl.Type)
+	var buf bytes.Buffer
+	if err := printer.Fprint(&buf, token.NewFileSet(), ftyp); err != nil { // use a new fileset so that the signature is formatted on a single line
+		return nil, err
+	}
+	rng, err := pgf.PosRange(ftyp.Func, ftyp.Func+token.Pos(len("func")))
+	if err != nil {
+		return nil, err
+	}
+	text := buf.String()
+	return &PrepareItem{
+		Range: rng,
+		Text:  text,
+	}, nil
+}
+
+// nameBlankParams returns a copy of ftype with blank or unnamed params
+// assigned a unique name.
+func nameBlankParams(ftype *ast.FuncType) *ast.FuncType {
+	ftype = internalastutil.CloneNode(ftype)
+
+	// First, collect existing names.
+	scope := make(map[string]bool)
+	for name := range goplsastutil.FlatFields(ftype.Params) {
+		if name != nil {
+			scope[name.Name] = true
+		}
+	}
+	blanks := 0
+	for name, field := range goplsastutil.FlatFields(ftype.Params) {
+		if name == nil {
+			name = ast.NewIdent("_")
+			field.Names = append(field.Names, name) // ok to append
+		}
+		if name.Name == "" || name.Name == "_" {
+			for {
+				newName := fmt.Sprintf("_%d", blanks)
+				blanks++
+				if !scope[newName] {
+					name.Name = newName
+					break
+				}
+			}
+		}
+	}
+	return ftype
+}
+
+// renameFuncSignature computes and applies the effective change signature
+// operation resulting from a 'renamed' (=rewritten) signature.
+func renameFuncSignature(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position, newName string) (map[protocol.DocumentURI][]protocol.TextEdit, error) {
+	// Find the renamed signature.
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, f.URI())
+	if err != nil {
+		return nil, err
+	}
+	pos, err := pgf.PositionPos(pp)
+	if err != nil {
+		return nil, err
+	}
+	fdecl := funcKeywordDecl(pgf, pos)
+	if fdecl == nil {
+		return nil, nil
+	}
+	ftyp := nameBlankParams(fdecl.Type)
+
+	// Parse the user's requested new signature.
+	parsed, err := parser.ParseExpr(newName)
+	if err != nil {
+		return nil, err
+	}
+	newType, _ := parsed.(*ast.FuncType)
+	if newType == nil {
+		return nil, fmt.Errorf("parsed signature is %T, not a function type", parsed)
+	}
+
+	// Check results, before we get into handling permutations of parameters.
+	if got, want := newType.Results.NumFields(), ftyp.Results.NumFields(); got != want {
+		return nil, fmt.Errorf("changing results not yet supported (got %d results, want %d)", got, want)
+	}
+	var resultTypes []string
+	for _, field := range goplsastutil.FlatFields(ftyp.Results) {
+		resultTypes = append(resultTypes, FormatNode(token.NewFileSet(), field.Type))
+	}
+	resultIndex := 0
+	for _, field := range goplsastutil.FlatFields(newType.Results) {
+		if FormatNode(token.NewFileSet(), field.Type) != resultTypes[resultIndex] {
+			return nil, fmt.Errorf("changing results not yet supported")
+		}
+		resultIndex++
+	}
+
+	type paramInfo struct {
+		idx int
+		typ string
+	}
+	oldParams := make(map[string]paramInfo)
+	for name, field := range goplsastutil.FlatFields(ftyp.Params) {
+		oldParams[name.Name] = paramInfo{
+			idx: len(oldParams),
+			typ: types.ExprString(field.Type),
+		}
+	}
+
+	var newParams []int
+	for name, field := range goplsastutil.FlatFields(newType.Params) {
+		if name == nil {
+			return nil, fmt.Errorf("need named fields")
+		}
+		info, ok := oldParams[name.Name]
+		if !ok {
+			return nil, fmt.Errorf("couldn't find name %s: adding parameters not yet supported", name)
+		}
+		if newType := types.ExprString(field.Type); newType != info.typ {
+			return nil, fmt.Errorf("changing types (%s to %s) not yet supported", info.typ, newType)
+		}
+		newParams = append(newParams, info.idx)
+	}
+
+	rng, err := pgf.PosRange(ftyp.Func, ftyp.Func)
+	if err != nil {
+		return nil, err
+	}
+	changes, err := ChangeSignature(ctx, snapshot, pkg, pgf, rng, newParams)
+	if err != nil {
+		return nil, err
+	}
+	transposed := make(map[protocol.DocumentURI][]protocol.TextEdit)
+	for _, change := range changes {
+		transposed[change.TextDocumentEdit.TextDocument.URI] = protocol.AsTextEdits(change.TextDocumentEdit.Edits)
+	}
+	return transposed, nil
+}
+
+// funcKeywordDecl returns the FuncDecl for which pos is in the 'func' keyword,
+// if any.
+func funcKeywordDecl(pgf *parsego.File, pos token.Pos) *ast.FuncDecl {
+	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
+	if len(path) < 1 {
+		return nil
+	}
+	fdecl, _ := path[0].(*ast.FuncDecl)
+	if fdecl == nil {
+		return nil
+	}
+	ftyp := fdecl.Type
+	if pos < ftyp.Func || pos > ftyp.Func+token.Pos(len("func")) { // tolerate renaming immediately after 'func'
+		return nil
+	}
+	return fdecl
+}
+
 func checkRenamable(obj types.Object) error {
 	switch obj := obj.(type) {
 	case *types.Var:
@@ -218,6 +395,12 @@ func checkRenamable(obj types.Object) error {
 func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position, newName string) (map[protocol.DocumentURI][]protocol.TextEdit, bool, error) {
 	ctx, done := event.Start(ctx, "golang.Rename")
 	defer done()
+
+	if edits, err := renameFuncSignature(ctx, snapshot, f, pp, newName); err != nil {
+		return nil, false, err
+	} else if edits != nil {
+		return edits, false, nil
+	}
 
 	if !isValidIdentifier(newName) {
 		return nil, false, fmt.Errorf("invalid identifier to rename: %q", newName)

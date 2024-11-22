@@ -226,10 +226,11 @@ Here is the list of supported action markers:
     callHierarchy/outgoingCalls query at the src location, and checks that
     the set of call.To locations matches want.
 
-  - preparerename(src, spn, placeholder): asserts that a textDocument/prepareRename
-    request at the src location expands to the spn location, with given
-    placeholder. If placeholder is "", this is treated as a negative
-    assertion and prepareRename should return nil.
+  - preparerename(src location, placeholder string, span=location): asserts
+    that a textDocument/prepareRename request at the src location has the given
+    placeholder text. If present, the optional span argument is verified to be
+    the span of the prepareRename result. If placeholder is "", this is treated
+    as a negative assertion and prepareRename should return nil.
 
   - quickfix(location, regexp, golden): like diag, the location and
     regexp identify an expected diagnostic, which must have exactly one

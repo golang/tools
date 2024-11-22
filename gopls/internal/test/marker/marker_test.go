@@ -513,7 +513,12 @@ func namedArg[T any](mark marker, name string, dflt T) T {
 		if e, ok := v.(T); ok {
 			return e
 		} else {
-			mark.errorf("invalid value for %q: %v", name, v)
+			v, err := convert(mark, v, reflect.TypeOf(dflt))
+			if err != nil {
+				mark.errorf("invalid value for %q: could not convert %v (%T) to %T", name, v, v, dflt)
+				return dflt
+			}
+			return v.(T)
 		}
 	}
 	return dflt
@@ -579,7 +584,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"incomingcalls":    actionMarkerFunc(incomingCallsMarker),
 	"inlayhints":       actionMarkerFunc(inlayhintsMarker),
 	"outgoingcalls":    actionMarkerFunc(outgoingCallsMarker),
-	"preparerename":    actionMarkerFunc(prepareRenameMarker),
+	"preparerename":    actionMarkerFunc(prepareRenameMarker, "span"),
 	"rank":             actionMarkerFunc(rankMarker),
 	"refs":             actionMarkerFunc(refsMarker),
 	"rename":           actionMarkerFunc(renameMarker),
@@ -2474,7 +2479,7 @@ func inlayhintsMarker(mark marker, g *Golden) {
 	compareGolden(mark, got, g)
 }
 
-func prepareRenameMarker(mark marker, src, spn protocol.Location, placeholder string) {
+func prepareRenameMarker(mark marker, src protocol.Location, placeholder string) {
 	params := &protocol.PrepareRenameParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
 	}
@@ -2488,7 +2493,15 @@ func prepareRenameMarker(mark marker, src, spn protocol.Location, placeholder st
 		}
 		return
 	}
-	want := &protocol.PrepareRenameResult{Range: spn.Range, Placeholder: placeholder}
+
+	want := &protocol.PrepareRenameResult{
+		Placeholder: placeholder,
+	}
+	if span := namedArg(mark, "span", protocol.Location{}); span != (protocol.Location{}) {
+		want.Range = span.Range
+	} else {
+		got.Range = protocol.Range{} // ignore Range
+	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		mark.errorf("mismatching PrepareRename result:\n%s", diff)
 	}

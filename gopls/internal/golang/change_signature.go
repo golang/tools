@@ -146,7 +146,6 @@ func removeParam(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 //   - Stream type checking via ForEachPackage.
 //   - Avoid unnecessary additional type checking.
 func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, rng protocol.Range, newParams []int) ([]protocol.DocumentChange, error) {
-
 	// Changes to our heuristics for whether we can remove a parameter must also
 	// be reflected in the canRemoveParameter helper.
 	if perrors, terrors := pkg.ParseErrors(), pkg.TypeErrors(); len(perrors) > 0 || len(terrors) > 0 {
@@ -160,8 +159,8 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 	}
 
 	info := findParam(pgf, rng)
-	if info == nil || info.field == nil {
-		return nil, fmt.Errorf("failed to find field")
+	if info == nil || info.decl == nil {
+		return nil, fmt.Errorf("failed to find declaration")
 	}
 
 	// Step 1: create the new declaration, which is a copy of the original decl
@@ -437,8 +436,11 @@ func findParam(pgf *parsego.File, rng protocol.Range) *paramInfo {
 			info.decl = n
 		}
 	}
-	if info.decl == nil || field == nil {
+	if info.decl == nil {
 		return nil
+	}
+	if field == nil {
+		return &info
 	}
 	pi := 0
 	// Search for field and id among parameters of decl.
