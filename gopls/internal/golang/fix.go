@@ -35,7 +35,8 @@ import (
 // The supplied token positions (start, end) must belong to
 // pkg.FileSet(), and the returned positions
 // (SuggestedFix.TextEdits[*].{Pos,End}) must belong to the returned
-// FileSet.
+// FileSet, which is not necessarily the same.
+// (See [insertDeclsAfter] for explanation.)
 //
 // A fixer may return (nil, nil) if no fix is available.
 type fixer func(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error)

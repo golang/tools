@@ -1,0 +1,55 @@
+This is a regression test for #70519, in which the ellipsis
+of a variadic call would go missing after split/join lines.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+var a, b, c []any
+func f(any, any, ...any)
+
+func _() {
+	f(a, b, c...) //@codeaction("a", "refactor.rewrite.splitLines", result=split)
+
+	f(
+		a,
+		b,
+		c..., /*@codeaction("c", "refactor.rewrite.joinLines", result=joined)*/
+	)
+}
+
+-- @split/a/a.go --
+package a
+
+var a, b, c []any
+func f(any, any, ...any)
+
+func _() {
+	f(
+		a,
+		b,
+		c...,
+	) //@codeaction("a", "refactor.rewrite.splitLines", result=split)
+
+	f(
+		a,
+		b,
+		c..., /*@codeaction("c", "refactor.rewrite.joinLines", result=joined)*/
+	)
+}
+
+-- @joined/a/a.go --
+package a
+
+var a, b, c []any
+func f(any, any, ...any)
+
+func _() {
+	f(a, b, c...) //@codeaction("a", "refactor.rewrite.splitLines", result=split)
+
+	f(a, b, c..., /*@codeaction("c", "refactor.rewrite.joinLines", result=joined)*/)
+}
+
