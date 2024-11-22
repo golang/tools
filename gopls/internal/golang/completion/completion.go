@@ -2337,17 +2337,19 @@ Nodes:
 						return inf
 					}
 
-					targs := c.getTypeArgs(node)
-					res := inferExpectedResultTypes(c, i)
-					substs := reverseInferTypeArgs(sig, targs, res)
-					inst := instantiate(sig, substs)
-					if inst != nil {
-						// TODO(jacobz): If partial signature instantiation becomes possible,
-						// make needsExactType only true if necessary.
-						// Currently ambigious cases resolve to a correct, but occassionally,
-						// superfluous conversion expression wrapping the completion.
-						inf.needsExactType = true
-						sig = inst
+					if sig.TypeParams().Len() > 0 {
+						targs := c.getTypeArgs(node)
+						res := inferExpectedResultTypes(c, i)
+						substs := reverseInferTypeArgs(sig, targs, res)
+						inst := instantiate(sig, substs)
+						if inst != nil {
+							// TODO(jacobz): If partial signature instantiation becomes possible,
+							// make needsExactType only true if necessary.
+							// Currently, ambigious cases always resolve to a conversion expression
+							// wrapping the completion, which is occassionally superfluous.
+							inf.needsExactType = true
+							sig = inst
+						}
 					}
 
 					inf = c.expectedCallParamType(inf, node, sig)
