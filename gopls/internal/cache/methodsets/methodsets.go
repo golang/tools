@@ -52,8 +52,10 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/types/objectpath"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // An Index records the non-empty method sets of all package-level
@@ -223,16 +225,40 @@ func (b *indexBuilder) build(fset *token.FileSet, pkg *types.Package) *Index {
 			return
 		}
 
-		m.Posn = objectPos(method)
-		m.PkgPath = b.string(method.Pkg().Path())
-
 		// Instantiations of generic methods don't have an
 		// object path, so we use the generic.
-		if p, err := objectpathFor(method.Origin()); err != nil {
-			panic(err) // can't happen for a method of a package-level type
-		} else {
-			m.ObjectPath = b.string(string(p))
+		p, err := objectpathFor(method.Origin())
+		if err != nil {
+			// This should never happen for a method of a package-level type.
+			// ...but it does (golang/go#70418).
+			// Refine the crash into various bug reports.
+			report := func() {
+				bug.Reportf("missing object path for %s", method.FullName())
+			}
+			sig := method.Signature()
+			if sig.Recv() == nil {
+				report()
+				return
+			}
+			_, named := typesinternal.ReceiverNamed(sig.Recv())
+			switch {
+			case named == nil:
+				report()
+			case sig.TypeParams().Len() > 0:
+				report()
+			case method.Origin() != method:
+				report() // instantiated?
+			case sig.RecvTypeParams().Len() > 0:
+				report() // generic?
+			default:
+				report()
+			}
+			return
 		}
+
+		m.Posn = objectPos(method)
+		m.PkgPath = b.string(method.Pkg().Path())
+		m.ObjectPath = b.string(string(p))
 	}
 
 	// We ignore aliases, though in principle they could define a
