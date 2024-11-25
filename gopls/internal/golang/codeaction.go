@@ -236,7 +236,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorExtractFunction, fn: refactorExtractFunction},
 	{kind: settings.RefactorExtractMethod, fn: refactorExtractMethod},
 	{kind: settings.RefactorExtractToNewFile, fn: refactorExtractToNewFile},
-	{kind: settings.RefactorExtractVariable, fn: refactorExtractVariable},
+	{kind: settings.RefactorExtractVariable, fn: refactorExtractVariable, needPkg: true},
 	{kind: settings.RefactorInlineCall, fn: refactorInlineCall, needPkg: true},
 	{kind: settings.RefactorRewriteChangeQuote, fn: refactorRewriteChangeQuote},
 	{kind: settings.RefactorRewriteFillStruct, fn: refactorRewriteFillStruct, needPkg: true},
@@ -465,7 +465,7 @@ func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
 // refactorExtractVariable produces "Extract variable" code actions.
 // See [extractVariable] for command implementation.
 func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error {
-	if _, _, ok, _ := canExtractVariable(req.start, req.end, req.pgf.File); ok {
+	if _, _, ok, _ := canExtractVariable(req.pkg.TypesInfo(), req.pgf.File, req.start, req.end); ok {
 		req.addApplyFixAction("Extract variable", fixExtractVariable, req.loc)
 	}
 	return nil

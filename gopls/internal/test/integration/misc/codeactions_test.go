@@ -69,7 +69,6 @@ func g() {}
 			settings.GoDoc,
 			settings.GoFreeSymbols,
 			settings.GoplsDocFeatures,
-			settings.RefactorExtractVariable,
 			settings.RefactorInlineCall)
 		check("gen/a.go",
 			settings.GoAssembly,

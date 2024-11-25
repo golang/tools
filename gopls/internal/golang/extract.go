@@ -28,19 +28,14 @@ import (
 
 func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	tokFile := fset.File(file.FileStart)
-	expr, path, ok, err := canExtractVariable(start, end, file)
+	expr, path, ok, err := canExtractVariable(info, file, start, end)
 	if !ok {
 		return nil, nil, fmt.Errorf("extractVariable: cannot extract %s: %v", safetoken.StartPosition(fset, start), err)
 	}
 
-	// Create new AST node for extracted code.
+	// Create new AST node for extracted expression.
 	var lhsNames []string
 	switch expr := expr.(type) {
-	// TODO: stricter rules for selectorExpr.
-	case *ast.BasicLit, *ast.CompositeLit, *ast.IndexExpr, *ast.SliceExpr,
-		*ast.UnaryExpr, *ast.BinaryExpr, *ast.SelectorExpr:
-		lhsName, _ := generateAvailableName(expr.Pos(), path, pkg, info, "x", 0)
-		lhsNames = append(lhsNames, lhsName)
 	case *ast.CallExpr:
 		tup, ok := info.TypeOf(expr).(*types.Tuple)
 		if !ok {
@@ -57,8 +52,11 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 			lhsName, idx = generateAvailableName(expr.Pos(), path, pkg, info, "x", idx)
 			lhsNames = append(lhsNames, lhsName)
 		}
+
 	default:
-		return nil, nil, fmt.Errorf("cannot extract %T", expr)
+		// TODO: stricter rules for selectorExpr.
+		lhsName, _ := generateAvailableName(expr.Pos(), path, pkg, info, "x", 0)
+		lhsNames = append(lhsNames, lhsName)
 	}
 
 	// TODO: There is a bug here: for a variable declared in a labeled
@@ -110,33 +108,31 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 
 // canExtractVariable reports whether the code in the given range can be
 // extracted to a variable.
-func canExtractVariable(start, end token.Pos, file *ast.File) (ast.Expr, []ast.Node, bool, error) {
+func canExtractVariable(info *types.Info, file *ast.File, start, end token.Pos) (ast.Expr, []ast.Node, bool, error) {
 	if start == end {
-		return nil, nil, false, fmt.Errorf("start and end are equal")
+		return nil, nil, false, fmt.Errorf("empty selection")
 	}
-	path, _ := astutil.PathEnclosingInterval(file, start, end)
+	path, exact := astutil.PathEnclosingInterval(file, start, end)
+	if !exact {
+		return nil, nil, false, fmt.Errorf("selection is not an expression")
+	}
 	if len(path) == 0 {
-		return nil, nil, false, fmt.Errorf("no path enclosing interval")
+		return nil, nil, false, bug.Errorf("no path enclosing interval")
 	}
 	for _, n := range path {
 		if _, ok := n.(*ast.ImportSpec); ok {
 			return nil, nil, false, fmt.Errorf("cannot extract variable in an import block")
 		}
 	}
-	node := path[0]
-	if start != node.Pos() || end != node.End() {
-		return nil, nil, false, fmt.Errorf("range does not map to an AST node")
-	}
-	expr, ok := node.(ast.Expr)
+	expr, ok := path[0].(ast.Expr)
 	if !ok {
-		return nil, nil, false, fmt.Errorf("node is not an expression")
+		return nil, nil, false, fmt.Errorf("selection is not an expression") // e.g. statement
 	}
-	switch expr.(type) {
-	case *ast.BasicLit, *ast.CompositeLit, *ast.IndexExpr, *ast.CallExpr,
-		*ast.SliceExpr, *ast.UnaryExpr, *ast.BinaryExpr, *ast.SelectorExpr:
-		return expr, path, true, nil
+	if tv, ok := info.Types[expr]; !ok || !tv.IsValue() || tv.Type == nil || tv.HasOk() {
+		// e.g. type, builtin, x.(type), 2-valued m[k], or ill-typed
+		return nil, nil, false, fmt.Errorf("selection is not a single-valued expression")
 	}
-	return nil, nil, false, fmt.Errorf("cannot extract an %T to a variable", expr)
+	return expr, path, true, nil
 }
 
 // Calculate indentation for insertion.
