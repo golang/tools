@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
@@ -114,6 +115,22 @@ func (pgf *File) RangePos(r protocol.Range) (token.Pos, token.Pos, error) {
 		return token.NoPos, token.NoPos, err
 	}
 	return pgf.Tok.Pos(start), pgf.Tok.Pos(end), nil
+}
+
+// CheckNode asserts that the Node's positions are valid w.r.t. pgf.Tok.
+func (pgf *File) CheckNode(node ast.Node) {
+	// Avoid safetoken.Offsets, and put each assertion on its own source line.
+	pgf.CheckPos(node.Pos())
+	pgf.CheckPos(node.End())
+}
+
+// CheckPos asserts that the position is valid w.r.t. pgf.Tok.
+func (pgf *File) CheckPos(pos token.Pos) {
+	if !pos.IsValid() {
+		bug.Report("invalid token.Pos")
+	} else if _, err := safetoken.Offset(pgf.Tok, pos); err != nil {
+		bug.Report("token.Pos out of range")
+	}
 }
 
 // Resolve lazily resolves ast.Ident.Objects in the enclosed syntax tree.
