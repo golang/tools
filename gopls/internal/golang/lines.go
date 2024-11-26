@@ -151,6 +151,15 @@ func processLines(fset *token.FileSet, items []ast.Node, comments []*ast.Comment
 		}
 
 		edits = append(edits, analysis.TextEdit{Pos: pos, End: end, NewText: []byte(sep + indent)})
+
+		// Print the Ellipsis if we synthesized one earlier.
+		if is[*ast.Ellipsis](nodes[i]) {
+			edits = append(edits, analysis.TextEdit{
+				Pos:     nodes[i].End(),
+				End:     nodes[i].End(),
+				NewText: []byte("..."),
+			})
+		}
 	}
 
 	return &analysis.SuggestedFix{TextEdits: edits}
@@ -204,6 +213,18 @@ func findSplitJoinTarget(fset *token.FileSet, file *ast.File, src []byte, start,
 	case *ast.CallExpr:
 		for _, arg := range node.Args {
 			items = append(items, arg)
+		}
+
+		// Preserve "..." by wrapping the last
+		// argument in an Ellipsis node
+		// with the same Pos/End as the argument.
+		// See corresponding logic in processLines.
+		if node.Ellipsis.IsValid() {
+			last := &items[len(items)-1]
+			*last = &ast.Ellipsis{
+				Ellipsis: (*last).Pos(),      // determines Ellipsis.Pos()
+				Elt:      (*last).(ast.Expr), // determines Ellipsis.End()
+			}
 		}
 	case *ast.CompositeLit:
 		for _, arg := range node.Elts {

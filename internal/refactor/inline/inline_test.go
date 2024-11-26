@@ -731,13 +731,25 @@ func TestSubstitution(t *testing.T) {
 			`func _() { var local int; _ = local }`,
 		},
 		{
-			"Arguments that are used are detected",
+			"Arguments that are used by other arguments are detected",
 			`func f(x, y int) { print(x) }`,
 			`func _() { var z int; f(z, z) }`,
+			`func _() { var z int; print(z) }`,
+		},
+		{
+			"Arguments that are used by other variadic arguments are detected",
+			`func f(x int, ys ...int) { print(ys) }`,
+			`func _() { var z int; f(z, 1, 2, 3, z) }`,
+			`func _() { var z int; print([]int{1, 2, 3, z}) }`,
+		},
+		{
+			"Arguments that are used by other variadic arguments are detected, 2",
+			`func f(x int, ys ...int) { print(ys) }`,
+			`func _() { var z int; f(z) }`,
 			`func _() {
 	var z int
 	var _ int = z
-	print(z)
+	print([]int{})
 }`,
 		},
 		{
@@ -1030,6 +1042,12 @@ func TestVariadic(t *testing.T) {
 			`func f(args ...any) { println(args) }`,
 			`func _(slice []any) { f(slice...) }`,
 			`func _(slice []any) { println(slice) }`,
+		},
+		{
+			"Undo variadic elimination",
+			`func f(args ...int) []int { return append([]int{1}, args...) }`,
+			`func _(a, b int) { f(a, b) }`,
+			`func _(a, b int) { _ = append([]int{1}, a, b) }`,
 		},
 		{
 			"Variadic elimination (literalization).",
@@ -1469,6 +1487,24 @@ func TestSubstitutionPreservesParameterType(t *testing.T) {
 			`func _() { T(1).g() }`,
 		},
 		{
+			"Implicit reference is made explicit outside of selector",
+			`type T int; func (x *T) f() bool { return x == x.id() }; func (x *T) id() *T { return x }`,
+			`func _() { var t T; _ = t.f() }`,
+			`func _() { var t T; _ = &t == t.id() }`,
+		},
+		{
+			"Implicit parenthesized reference is not made explicit in selector",
+			`type T int; func (x *T) f() bool { return x == (x).id() }; func (x *T) id() *T { return x }`,
+			`func _() { var t T; _ = t.f() }`,
+			`func _() { var t T; _ = &t == (t).id() }`,
+		},
+		{
+			"Implicit dereference is made explicit outside of selector", // TODO(rfindley): avoid unnecessary literalization here
+			`type T int; func (x T) f() bool { return x == x.id() }; func (x T) id() T { return x }`,
+			`func _() { var t *T; _ = t.f() }`,
+			`func _() { var t *T; _ = func() bool { var x T = *t; return x == x.id() }() }`,
+		},
+		{
 			"Check for shadowing error on type used in the conversion.",
 			`func f(x T) { _ = &x == (*T)(nil) }; type T int16`,
 			`func _() { type T bool; f(1) }`,
@@ -1490,6 +1526,88 @@ func TestRedundantConversions(t *testing.T) {
 			`func f(i int32) { print(i) }`,
 			`func _() { f(int32(1))  }`,
 			`func _() { print(int32(1)) }`,
+		},
+		{
+			"No type conversion for argument to interface parameter",
+			`type T int; func f(x any) { g(x) }; func g(any) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g(T(1)) }`,
+		},
+		{
+			"No type conversion for parenthesized argument to interface parameter",
+			`type T int; func f(x any) { g((x)) }; func g(any) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g((T(1))) }`,
+		},
+		{
+			"Type conversion for argument to type parameter",
+			`type T int; func f(x any) { g(x) }; func g[P any](P) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g(any(T(1))) }`,
+		},
+		{
+			"Strip redundant interface conversions",
+			`type T interface{ M() }; func f(x any) { g(x) }; func g[P any](P) {}`,
+			`func _() { f(T(nil)) }`,
+			`func _() { g(any(nil)) }`,
+		},
+		{
+			"No type conversion for argument to variadic interface parameter",
+			`type T int; func f(x ...any) { g(x...) }; func g(...any) {}`,
+			`func _() { f(T(1)) }`,
+			`func _() { g(T(1)) }`,
+		},
+		{
+			"Type conversion for variadic argument",
+			`type T int; func f(x ...any) { g(x...) }; func g(...any) {}`,
+			`func _() { f([]any{T(1)}...) }`,
+			`func _() { g([]any{T(1)}...) }`,
+		},
+		{
+			"No type conversion for assignment to an explicit interface type",
+			`type T int; func f(x any) { var y any; y = x; _ = y }`,
+			`func _() { f(T(1)) }`,
+			`func _() {
+	var y any
+	y = T(1)
+	_ = y
+}`,
+		},
+		{
+			"No type conversion for initializer of an explicit interface type",
+			`type T int; func f(x any) { var y any = x; _ = y }`,
+			`func _() { f(T(1)) }`,
+			`func _() {
+	var y any = T(1)
+	_ = y
+}`,
+		},
+		{
+			"No type conversion for use as a composite literal key",
+			`type T int; func f(x any) { _ = map[any]any{x: 1} }`,
+			`func _() { f(T(1)) }`,
+			`func _() { _ = map[any]any{T(1): 1} }`,
+		},
+		{
+			"No type conversion for use as a composite literal value",
+			`type T int; func f(x any) { _ = []any{x} }`,
+			`func _() { f(T(1)) }`,
+			`func _() { _ = []any{T(1)} }`,
+		},
+		{
+			"No type conversion for use as a composite literal field",
+			`type T int; func f(x any) { _ = struct{ F any }{F: x} }`,
+			`func _() { f(T(1)) }`,
+			`func _() { _ = struct{ F any }{F: T(1)} }`,
+		},
+		{
+			"No type conversion for use in a send statement",
+			`type T int; func f(x any) { var c chan any; c <- x }`,
+			`func _() { f(T(1)) }`,
+			`func _() {
+	var c chan any
+	c <- T(1)
+}`,
 		},
 	})
 }
@@ -1745,14 +1863,22 @@ func deepHash(n ast.Node) any {
 				visit(v.Elem())
 			}
 
-		case reflect.Array, reflect.Chan, reflect.Func, reflect.Map, reflect.UnsafePointer:
-			panic(v) // unreachable in AST
+		case reflect.String:
+			writeUint64(uint64(v.Len()))
+			hasher.Write([]byte(v.String()))
 
-		default: // bool, string, number
-			if v.Kind() == reflect.String { // proper framing
-				writeUint64(uint64(v.Len()))
-			}
+		case reflect.Int:
+			writeUint64(uint64(v.Int()))
+
+		case reflect.Uint:
+			writeUint64(uint64(v.Uint()))
+
+		case reflect.Bool, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			// Bools and fixed width numbers can be handled by binary.Write.
 			binary.Write(hasher, le, v.Interface())
+
+		default: // reflect.Array, reflect.Chan, reflect.Func, reflect.Map, reflect.UnsafePointer, reflect.Uintptr
+			panic(v) // unreachable in AST
 		}
 	}
 	visit(reflect.ValueOf(n))
@@ -1760,4 +1886,24 @@ func deepHash(n ast.Node) any {
 	var hash [sha256.Size]byte
 	hasher.Sum(hash[:0])
 	return hash
+}
+
+func TestDeepHash(t *testing.T) {
+	// This test reproduces a bug in DeepHash that was encountered during work on
+	// the inliner.
+	//
+	// TODO(rfindley): consider replacing this with a fuzz test.
+	id := &ast.Ident{
+		NamePos: 2,
+		Name:    "t",
+	}
+	c := &ast.CallExpr{
+		Fun: id,
+	}
+	h1 := deepHash(c)
+	id.NamePos = 1
+	h2 := deepHash(c)
+	if h1 == h2 {
+		t.Fatal("bad")
+	}
 }

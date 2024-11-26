@@ -23,7 +23,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/memoize"
 )
 
@@ -108,12 +107,8 @@ func modTidyImpl(ctx context.Context, snapshot *Snapshot, pm *ParsedModule) (*Ti
 	}
 	defer cleanup()
 
-	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
-		Verb:       "mod",
-		Args:       []string{"tidy", "-modfile=" + filepath.Join(tempDir, "go.mod")},
-		Env:        []string{"GOWORK=off"},
-		WorkingDir: pm.URI.Dir().Path(),
-	})
+	args := []string{"tidy", "-modfile=" + filepath.Join(tempDir, "go.mod")}
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(NoNetwork, pm.URI.DirPath(), "mod", args, "GOWORK=off")
 	if err != nil {
 		return nil, err
 	}

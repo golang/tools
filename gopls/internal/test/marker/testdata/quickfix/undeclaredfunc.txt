@@ -13,7 +13,7 @@ func _() int { return f(1, "") } //@quickfix(re"f.1", re"unde(fined|clared name)
 -func _() int { return f(1, "") } //@quickfix(re"f.1", re"unde(fined|clared name): f", x)
 +func _() int { return f(1, "") }
 @@ -5 +5,4 @@
-+func f(i int, s string) {
++func f(i int, s string) int {
 +	panic("unimplemented")
 +} //@quickfix(re"f.1", re"unde(fined|clared name): f", x)
 +

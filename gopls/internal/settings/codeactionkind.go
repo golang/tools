@@ -91,6 +91,8 @@ const (
 	RefactorRewriteInvertIf          protocol.CodeActionKind = "refactor.rewrite.invertIf"
 	RefactorRewriteJoinLines         protocol.CodeActionKind = "refactor.rewrite.joinLines"
 	RefactorRewriteRemoveUnusedParam protocol.CodeActionKind = "refactor.rewrite.removeUnusedParam"
+	RefactorRewriteMoveParamLeft     protocol.CodeActionKind = "refactor.rewrite.moveParamLeft"
+	RefactorRewriteMoveParamRight    protocol.CodeActionKind = "refactor.rewrite.moveParamRight"
 	RefactorRewriteSplitLines        protocol.CodeActionKind = "refactor.rewrite.splitLines"
 
 	// refactor.inline

@@ -11,6 +11,7 @@ import (
 	"go/constant"
 	"go/format"
 	"go/parser"
+	"go/printer"
 	"go/token"
 	"go/types"
 	pathpkg "path"
@@ -41,11 +42,13 @@ type Caller struct {
 	enclosingFunc *ast.FuncDecl // top-level function/method enclosing the call, if any
 }
 
+type logger = func(string, ...any)
+
 // Options specifies parameters affecting the inliner algorithm.
 // All fields are optional.
 type Options struct {
-	Logf          func(string, ...any) // log output function, records decision-making process
-	IgnoreEffects bool                 // ignore potential side effects of arguments (unsound)
+	Logf          logger // log output function, records decision-making process
+	IgnoreEffects bool   // ignore potential side effects of arguments (unsound)
 }
 
 // Result holds the result of code transformation.
@@ -200,17 +203,37 @@ func (st *state) inline() (*Result, error) {
 		}
 	}
 
+	// File rewriting. This proceeds in multiple passes, in order to maximally
+	// preserve comment positioning. (This could be greatly simplified once
+	// comments are stored in the tree.)
+	//
 	// Don't call replaceNode(caller.File, res.old, res.new)
 	// as it mutates the caller's syntax tree.
 	// Instead, splice the file, replacing the extent of the "old"
 	// node by a formatting of the "new" node, and re-parse.
 	// We'll fix up the imports on this new tree, and format again.
-	var f *ast.File
+	//
+	// Inv: f is the result of parsing content, using fset.
+	var (
+		content = caller.Content
+		fset    = caller.Fset
+		f       *ast.File // parsed below
+	)
+	reparse := func() error {
+		const mode = parser.ParseComments | parser.SkipObjectResolution | parser.AllErrors
+		f, err = parser.ParseFile(fset, "callee.go", content, mode)
+		if err != nil {
+			// Something has gone very wrong.
+			logf("failed to reparse <<%s>>: %v", string(content), err) // debugging
+			return err
+		}
+		return nil
+	}
 	{
-		start := offsetOf(caller.Fset, res.old.Pos())
-		end := offsetOf(caller.Fset, res.old.End())
+		start := offsetOf(fset, res.old.Pos())
+		end := offsetOf(fset, res.old.End())
 		var out bytes.Buffer
-		out.Write(caller.Content[:start])
+		out.Write(content[:start])
 		// TODO(adonovan): might it make more sense to use
 		// callee.Fset when formatting res.new?
 		// The new tree is a mix of (cloned) caller nodes for
@@ -230,21 +253,18 @@ func (st *state) inline() (*Result, error) {
 				if i > 0 {
 					out.WriteByte('\n')
 				}
-				if err := format.Node(&out, caller.Fset, stmt); err != nil {
+				if err := format.Node(&out, fset, stmt); err != nil {
 					return nil, err
 				}
 			}
 		} else {
-			if err := format.Node(&out, caller.Fset, res.new); err != nil {
+			if err := format.Node(&out, fset, res.new); err != nil {
 				return nil, err
 			}
 		}
-		out.Write(caller.Content[end:])
-		const mode = parser.ParseComments | parser.SkipObjectResolution | parser.AllErrors
-		f, err = parser.ParseFile(caller.Fset, "callee.go", &out, mode)
-		if err != nil {
-			// Something has gone very wrong.
-			logf("failed to parse <<%s>>", &out) // debugging
+		out.Write(content[end:])
+		content = out.Bytes()
+		if err := reparse(); err != nil {
 			return nil, err
 		}
 	}
@@ -255,15 +275,58 @@ func (st *state) inline() (*Result, error) {
 	// to avoid migration of pre-import comments.
 	// The imports will be organized below.
 	if len(res.newImports) > 0 {
-		var importDecl *ast.GenDecl
+		// If we have imports to add, do so independent of the rest of the file.
+		// Otherwise, the length of the new imports may consume floating comments,
+		// causing them to be printed inside the imports block.
+		var (
+			importDecl    *ast.GenDecl
+			comments      []*ast.CommentGroup // relevant comments.
+			before, after []byte              // pre- and post-amble for the imports block.
+		)
 		if len(f.Imports) > 0 {
 			// Append specs to existing import decl
 			importDecl = f.Decls[0].(*ast.GenDecl)
+			for _, comment := range f.Comments {
+				// Filter comments. Don't use CommentMap.Filter here, because we don't
+				// want to include comments that document the import decl itself, for
+				// example:
+				//
+				//  // We don't want this comment to be duplicated.
+				//  import (
+				//    "something"
+				//  )
+				if importDecl.Pos() <= comment.Pos() && comment.Pos() < importDecl.End() {
+					comments = append(comments, comment)
+				}
+			}
+			before = content[:offsetOf(fset, importDecl.Pos())]
+			importDecl.Doc = nil // present in before
+			after = content[offsetOf(fset, importDecl.End()):]
 		} else {
 			// Insert new import decl.
 			importDecl = &ast.GenDecl{Tok: token.IMPORT}
 			f.Decls = prepend[ast.Decl](importDecl, f.Decls...)
+
+			// Make room for the new declaration after the package declaration.
+			pkgEnd := f.Name.End()
+			file := fset.File(pkgEnd)
+			if file == nil {
+				logf("internal error: missing pkg file")
+				return nil, fmt.Errorf("missing pkg file for %s", f.Name.Name)
+			}
+			// Preserve any comments after the package declaration, by splicing in
+			// the new import block after the end of the package declaration line.
+			line := file.Line(pkgEnd)
+			if line < len(file.Lines()) { // line numbers are 1-based
+				nextLinePos := file.LineStart(line + 1)
+				nextLine := offsetOf(fset, nextLinePos)
+				before = slices.Concat(content[:nextLine], []byte("\n"))
+				after = slices.Concat([]byte("\n\n"), content[nextLine:])
+			} else {
+				before = slices.Concat(content, []byte("\n\n"))
+			}
 		}
+		// Add new imports.
 		for _, imp := range res.newImports {
 			// Check that the new imports are accessible.
 			path, _ := strconv.Unquote(imp.spec.Path.Value)
@@ -272,6 +335,21 @@ func (st *state) inline() (*Result, error) {
 			}
 			importDecl.Specs = append(importDecl.Specs, imp.spec)
 		}
+		var out bytes.Buffer
+		out.Write(before)
+		commented := &printer.CommentedNode{
+			Node:     importDecl,
+			Comments: comments,
+		}
+		if err := format.Node(&out, fset, commented); err != nil {
+			logf("failed to format new importDecl: %v", err) // debugging
+			return nil, err
+		}
+		out.Write(after)
+		content = out.Bytes()
+		if err := reparse(); err != nil {
+			return nil, err
+		}
 	}
 
 	// Delete imports referenced only by caller.Call.Fun.
@@ -279,7 +357,8 @@ func (st *state) inline() (*Result, error) {
 	// (We can't let imports.Process take care of it as it may
 	// mistake obsolete imports for missing new imports when the
 	// names are similar, as is common during a package migration.)
-	for _, specToDelete := range res.oldImports {
+	for _, oldImport := range res.oldImports {
+		specToDelete := oldImport.spec
 		for _, decl := range f.Decls {
 			if decl, ok := decl.(*ast.GenDecl); ok && decl.Tok == token.IMPORT {
 				decl.Specs = slicesDeleteFunc(decl.Specs, func(spec ast.Spec) bool {
@@ -375,17 +454,23 @@ func (st *state) inline() (*Result, error) {
 		Content:     newSrc,
 		Literalized: literalized,
 	}, nil
-
 }
 
+// An oldImport is an import that will be deleted from the caller file.
+type oldImport struct {
+	pkgName *types.PkgName
+	spec    *ast.ImportSpec
+}
+
+// A newImport is an import that will be added to the caller file.
 type newImport struct {
 	pkgName string
 	spec    *ast.ImportSpec
 }
 
 type inlineCallResult struct {
-	newImports []newImport       // to add
-	oldImports []*ast.ImportSpec // to remove
+	newImports []newImport // to add
+	oldImports []oldImport // to remove
 
 	// If elideBraces is set, old is an ast.Stmt and new is an ast.BlockStmt to
 	// be spliced in. This allows the inlining analysis to assert that inlining
@@ -412,6 +497,9 @@ type inlineCallResult struct {
 // transformation replacing the call and adding new variable
 // declarations, for example, or replacing a call statement by zero or
 // many statements.)
+// NOTE(rfindley): we've sort-of done this, with the 'elideBraces' flag that
+// allows inlining a statement list. However, due to loss of comments, more
+// sophisticated rewrites are challenging.
 //
 // TODO(adonovan): in earlier drafts, the transformation was expressed
 // by splicing substrings of the two source files because syntax
@@ -421,6 +509,33 @@ type inlineCallResult struct {
 // candidate for evaluating an alternative fully self-contained tree
 // representation, such as any proposed solution to #20744, or even
 // dst or some private fork of go/ast.)
+// TODO(rfindley): see if we can reduce the amount of comment lossiness by
+// using printer.CommentedNode, which has been useful elsewhere.
+//
+// TODO(rfindley): inlineCall is getting very long, and very stateful, making
+// it very hard to read. The following refactoring may improve readability and
+// maintainability:
+//   - Rename 'state' to 'callsite', since that is what it encapsulates.
+//   - Add results of pre-processing analysis into the callsite struct, such as
+//     the effective importMap, new/old imports, arguments, etc. Essentially
+//     anything that resulted from initial analysis of the call site, and which
+//     may be useful to inlining strategies.
+//   - Delegate this call site analysis to a constructor or initializer, such
+//     as 'analyzeCallsite', so that it does not consume bandwidth in the
+//     'inlineCall' logical flow.
+//   - Once analyzeCallsite returns, the callsite is immutable, much in the
+//     same way as the Callee and Caller are immutable.
+//   - Decide on a standard interface for strategies (and substrategies), such
+//     that they may be delegated to a separate method on callsite.
+//
+// In this way, the logical flow of inline call will clearly follow the
+// following structure:
+//  1. Analyze the call site.
+//  2. Try strategies, in order, until one succeeds.
+//  3. Process the results.
+//
+// If any expensive analysis may be avoided by earlier strategies, it can be
+// encapsulated in its own type and passed to subsequent strategies.
 func (st *state) inlineCall() (*inlineCallResult, error) {
 	logf, caller, callee := st.opts.Logf, st.caller, &st.callee.impl
 
@@ -469,38 +584,82 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		assign1 = func(v *types.Var) bool { return !updatedLocals[v] }
 	}
 
-	// import map, initially populated with caller imports.
+	// import map, initially populated with caller imports, and updated below
+	// with new imports necessary to reference free symbols in the callee.
 	//
-	// For simplicity we ignore existing dot imports, so that a
-	// qualified identifier (QI) in the callee is always
-	// represented by a QI in the caller, allowing us to treat a
-	// QI like a selection on a package name.
+	// For simplicity we ignore existing dot imports, so that a qualified
+	// identifier (QI) in the callee is always represented by a QI in the caller,
+	// allowing us to treat a QI like a selection on a package name.
 	importMap := make(map[string][]string) // maps package path to local name(s)
+	var oldImports []oldImport             // imports referenced only by caller.Call.Fun
+
 	for _, imp := range caller.File.Imports {
-		if pkgname, ok := importedPkgName(caller.Info, imp); ok &&
-			pkgname.Name() != "." &&
-			pkgname.Name() != "_" {
-			path := pkgname.Imported().Path()
-			importMap[path] = append(importMap[path], pkgname.Name())
+		if pkgName, ok := importedPkgName(caller.Info, imp); ok &&
+			pkgName.Name() != "." &&
+			pkgName.Name() != "_" {
+
+			// If the import's sole use is in caller.Call.Fun of the form p.F(...),
+			// where p.F is a qualified identifier, the p import may not be
+			// necessary.
+			//
+			// Only the qualified identifier case matters, as other references to
+			// imported package names in the Call.Fun expression (e.g.
+			// x.after(3*time.Second).f() or time.Second.String()) will remain after
+			// inlining, as arguments.
+			//
+			// If that is the case, proactively check if any of the callee FreeObjs
+			// need this import. Doing so eagerly simplifies the resulting logic.
+			needed := true
+			sel, ok := ast.Unparen(caller.Call.Fun).(*ast.SelectorExpr)
+			if ok && soleUse(caller.Info, pkgName) == sel.X {
+				needed = false // no longer needed by caller
+				// Check to see if any of the inlined free objects need this package.
+				for _, obj := range callee.FreeObjs {
+					if obj.PkgPath == pkgName.Imported().Path() && !obj.Shadow[pkgName.Name()] {
+						needed = true // needed by callee
+						break
+					}
+				}
+			}
+
+			if needed {
+				path := pkgName.Imported().Path()
+				importMap[path] = append(importMap[path], pkgName.Name())
+			} else {
+				oldImports = append(oldImports, oldImport{pkgName: pkgName, spec: imp})
+			}
 		}
 	}
 
-	var oldImports []*ast.ImportSpec // imports referenced only caller.Call.Fun
-
-	// localImportName returns the local name for a given imported package path.
-	var newImports []newImport
-	localImportName := func(obj *object) string {
-		// Does an import exist?
-		for _, name := range importMap[obj.PkgPath] {
-			// Check that either the import preexisted,
-			// or that it was newly added (no PkgName) but is not shadowed,
-			// either in the callee (shadows) or caller (caller.lookup).
-			if !obj.Shadow[name] {
+	// importName finds an existing import name to use in a particular shadowing
+	// context. It is used to determine the set of new imports in
+	// getOrMakeImportName, and is also used for writing out names in inlining
+	// strategies below.
+	importName := func(pkgPath string, shadow map[string]bool) string {
+		for _, name := range importMap[pkgPath] {
+			// Check that either the import preexisted, or that it was newly added
+			// (no PkgName) but is not shadowed, either in the callee (shadows) or
+			// caller (caller.lookup).
+			if !shadow[name] {
 				found := caller.lookup(name)
 				if is[*types.PkgName](found) || found == nil {
 					return name
 				}
 			}
+		}
+		return ""
+	}
+
+	// keep track of new imports that are necessary to reference any free names
+	// in the callee.
+	var newImports []newImport
+
+	// getOrMakeImportName returns the local name for a given imported package path,
+	// adding one if it doesn't exists.
+	getOrMakeImportName := func(pkgPath, pkgName string, shadow map[string]bool) string {
+		// Does an import already exist that works in this shadowing context?
+		if name := importName(pkgPath, shadow); name != "" {
+			return name
 		}
 
 		newlyAdded := func(name string) bool {
@@ -515,33 +674,17 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		// shadowedInCaller reports whether a candidate package name
 		// already refers to a declaration in the caller.
 		shadowedInCaller := func(name string) bool {
-			existing := caller.lookup(name)
-
-			// If the candidate refers to a PkgName p whose sole use is
-			// in caller.Call.Fun of the form p.F(...), where p.F is a
-			// qualified identifier, the p import will be deleted,
-			// so it's safe (and better) to recycle the name.
-			//
-			// Only the qualified identifier case matters, as other
-			// references to imported package names in the Call.Fun
-			// expression (e.g. x.after(3*time.Second).f()
-			// or time.Second.String()) will remain after
-			// inlining, as arguments.
-			if pkgName, ok := existing.(*types.PkgName); ok {
-				if sel, ok := ast.Unparen(caller.Call.Fun).(*ast.SelectorExpr); ok {
-					if sole := soleUse(caller.Info, pkgName); sole == sel.X {
-						for _, spec := range caller.File.Imports {
-							pkgName2, ok := importedPkgName(caller.Info, spec)
-							if ok && pkgName2 == pkgName {
-								oldImports = append(oldImports, spec)
-								return false
-							}
-						}
-					}
+			obj := caller.lookup(name)
+			if obj == nil {
+				return false
+			}
+			// If obj will be removed, the name is available.
+			for _, old := range oldImports {
+				if old.pkgName == obj {
+					return false
 				}
 			}
-
-			return existing != nil
+			return true
 		}
 
 		// import added by callee
@@ -555,29 +698,28 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		// TODO(rfindley): is it worth preserving local package names for callee
 		// imports? Are they likely to be better or worse than the name we choose
 		// here?
-		base := obj.PkgName
+		base := pkgName
 		name := base
-		for n := 0; obj.Shadow[name] || shadowedInCaller(name) || newlyAdded(name) || name == "init"; n++ {
+		for n := 0; shadow[name] || shadowedInCaller(name) || newlyAdded(name) || name == "init"; n++ {
 			name = fmt.Sprintf("%s%d", base, n)
 		}
-
-		logf("adding import %s %q", name, obj.PkgPath)
+		logf("adding import %s %q", name, pkgPath)
 		spec := &ast.ImportSpec{
 			Path: &ast.BasicLit{
 				Kind:  token.STRING,
-				Value: strconv.Quote(obj.PkgPath),
+				Value: strconv.Quote(pkgPath),
 			},
 		}
 		// Use explicit pkgname (out of necessity) when it differs from the declared name,
 		// or (for good style) when it differs from base(pkgpath).
-		if name != obj.PkgName || name != pathpkg.Base(obj.PkgPath) {
+		if name != pkgName || name != pathpkg.Base(pkgPath) {
 			spec.Name = makeIdent(name)
 		}
 		newImports = append(newImports, newImport{
 			pkgName: name,
 			spec:    spec,
 		})
-		importMap[obj.PkgPath] = append(importMap[obj.PkgPath], name)
+		importMap[pkgPath] = append(importMap[pkgPath], name)
 		return name
 	}
 
@@ -607,7 +749,8 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		var newName ast.Expr
 		if obj.Kind == "pkgname" {
 			// Use locally appropriate import, creating as needed.
-			newName = makeIdent(localImportName(&obj)) // imported package
+			n := getOrMakeImportName(obj.PkgPath, obj.PkgName, obj.Shadow)
+			newName = makeIdent(n) // imported package
 		} else if !obj.ValidPos {
 			// Built-in function, type, or value (e.g. nil, zero):
 			// check not shadowed at caller.
@@ -651,7 +794,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 
 			// Form a qualified identifier, pkg.Name.
 			if qualify {
-				pkgName := localImportName(&obj)
+				pkgName := getOrMakeImportName(obj.PkgPath, obj.PkgName, obj.Shadow)
 				newName = &ast.SelectorExpr{
 					X:   makeIdent(pkgName),
 					Sel: makeIdent(obj.Name),
@@ -672,11 +815,22 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		return nil, err // "can't happen"
 	}
 
-	// replaceCalleeID replaces an identifier in the callee.
-	// The replacement tree must not belong to the caller; use cloneNode as needed.
-	replaceCalleeID := func(offset int, repl ast.Expr) {
-		id := findIdent(calleeDecl, calleeDecl.Pos()+token.Pos(offset))
+	// replaceCalleeID replaces an identifier in the callee. See [replacer] for
+	// more detailed semantics.
+	replaceCalleeID := func(offset int, repl ast.Expr, unpackVariadic bool) {
+		path, id := findIdent(calleeDecl, calleeDecl.Pos()+token.Pos(offset))
 		logf("- replace id %q @ #%d to %q", id.Name, offset, debugFormatNode(calleeFset, repl))
+		// Replace f([]T{a, b, c}...) with f(a, b, c).
+		if lit, ok := repl.(*ast.CompositeLit); ok && unpackVariadic && len(path) > 0 {
+			if call, ok := last(path).(*ast.CallExpr); ok &&
+				call.Ellipsis.IsValid() &&
+				id == last(call.Args) {
+
+				call.Args = append(call.Args[:len(call.Args)-1], lit.Elts...)
+				call.Ellipsis = token.NoPos
+				return
+			}
+		}
 		replaceNode(calleeDecl, id, repl)
 	}
 
@@ -684,7 +838,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	// (The same tree may be spliced in multiple times, resulting in a DAG.)
 	for _, ref := range callee.FreeRefs {
 		if repl := objRenames[ref.Object]; repl != nil {
-			replaceCalleeID(ref.Offset, repl)
+			replaceCalleeID(ref.Offset, repl, false)
 		}
 	}
 
@@ -760,14 +914,22 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 					// nop
 				} else {
 					// ordinary call: f(a1, ... aN) -> f([]T{a1, ..., aN})
+					//
+					// Substitution of []T{...} in the callee body may lead to
+					// g([]T{a1, ..., aN}...), which we simplify to g(a1, ..., an)
+					// later; see replaceCalleeID.
 					n := len(params) - 1
 					ordinary, extra := args[:n], args[n:]
 					var elts []ast.Expr
+					freevars := make(map[string]bool)
 					pure, effects := true, false
 					for _, arg := range extra {
 						elts = append(elts, arg.expr)
 						pure = pure && arg.pure
 						effects = effects || arg.effects
+						for k, v := range arg.freevars {
+							freevars[k] = v
+						}
 					}
 					args = append(ordinary, &argument{
 						expr: &ast.CompositeLit{
@@ -779,7 +941,8 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 						pure:       pure,
 						effects:    effects,
 						duplicable: false,
-						freevars:   nil, // not needed
+						freevars:   freevars,
+						variadic:   true,
 					})
 				}
 			}
@@ -988,8 +1151,9 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 			(!needBindingDecl || (bindingDecl != nil && len(bindingDecl.names) == 0)) {
 
 			// Reduces to: { var (bindings); lhs... := rhs... }
-			if newStmts, ok := st.assignStmts(stmt, results); ok {
+			if newStmts, ok := st.assignStmts(stmt, results, importName); ok {
 				logf("strategy: reduce assign-context call to { return exprs }")
+
 				clearPositions(calleeDecl.Body)
 
 				block := &ast.BlockStmt{
@@ -1190,6 +1354,10 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		Type: calleeDecl.Type,
 		Body: calleeDecl.Body,
 	}
+	// clear positions before prepending the binding decl below, since the
+	// binding decl contains syntax from the caller and we must not mutate the
+	// caller. (This was a prior bug.)
+	clearPositions(funcLit)
 
 	// Literalization can still make use of a binding
 	// decl as it gives a more natural reading order:
@@ -1211,7 +1379,6 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		Ellipsis: token.NoPos, // f(slice...) is always simplified
 		Args:     remainingArgs,
 	}
-	clearPositions(newCall.Fun)
 	res.old = caller.Call
 	res.new = newCall
 	return res, nil
@@ -1227,6 +1394,8 @@ type argument struct {
 	duplicable    bool            // expr may be duplicated
 	freevars      map[string]bool // free names of expr
 	substitutable bool            // is candidate for substitution
+	variadic      bool            // is explicit []T{...} for eliminated variadic
+	desugaredRecv bool            // is *recv or &recv, where operator was elided
 }
 
 // arguments returns the effective arguments of the call.
@@ -1320,12 +1489,14 @@ func (st *state) arguments(caller *Caller, calleeDecl *ast.FuncDecl, assign1 fun
 				// &recv
 				arg.expr = &ast.UnaryExpr{Op: token.AND, X: arg.expr}
 				arg.typ = types.NewPointer(arg.typ)
+				arg.desugaredRecv = true
 			} else if argIsPtr && !paramIsPtr {
 				// *recv
 				arg.expr = &ast.StarExpr{X: arg.expr}
 				arg.typ = typeparams.Deref(arg.typ)
 				arg.duplicable = false
 				arg.pure = false
+				arg.desugaredRecv = true
 			}
 		}
 	}
@@ -1382,6 +1553,12 @@ type parameter struct {
 	variadic  bool       // (final) parameter is unsimplified ...T
 }
 
+// A replacer replaces an identifier at the given offset in the callee.
+// The replacement tree must not belong to the caller; use cloneNode as needed.
+// If unpackVariadic is set, the replacement is a composite resulting from
+// variadic elimination, and may be unpackeded into variadic calls.
+type replacer = func(offset int, repl ast.Expr, unpackVariadic bool)
+
 // substitute implements parameter elimination by substitution.
 //
 // It considers each parameter and its corresponding argument in turn
@@ -1401,7 +1578,7 @@ type parameter struct {
 // parameter, and is provided with its relative offset and replacement
 // expression (argument), and the corresponding elements of params and
 // args are replaced by nil.
-func substitute(logf func(string, ...any), caller *Caller, params []*parameter, args []*argument, effects []int, falcon falconResult, replaceCalleeID func(offset int, repl ast.Expr)) {
+func substitute(logf logger, caller *Caller, params []*parameter, args []*argument, effects []int, falcon falconResult, replace replacer) {
 	// Inv:
 	//  in        calls to     variadic, len(args) >= len(params)-1
 	//  in spread calls to non-variadic, len(args) <  len(params)
@@ -1453,9 +1630,26 @@ next:
 					// references among other arguments which have non-zero references
 					// within the callee.
 					if v, ok := caller.lookup(free).(*types.Var); ok && within(v.Pos(), caller.enclosingFunc.Body) && !isUsedOutsideCall(caller, v) {
-						logf("keeping param %q: arg contains perhaps the last reference to caller local %v @ %v",
-							param.info.Name, v, caller.Fset.PositionFor(v.Pos(), false))
-						continue next
+
+						// Check to see if the substituted var is used within other args
+						// whose corresponding params ARE used in the callee
+						usedElsewhere := func() bool {
+							for i, param := range params {
+								if i < len(args) && len(param.info.Refs) > 0 { // excludes original param
+									for name := range args[i].freevars {
+										if caller.lookup(name) == v {
+											return true
+										}
+									}
+								}
+							}
+							return false
+						}
+						if !usedElsewhere() {
+							logf("keeping param %q: arg contains perhaps the last reference to caller local %v @ %v",
+								param.info.Name, v, caller.Fset.PositionFor(v.Pos(), false))
+							continue next
+						}
 					}
 				}
 			}
@@ -1492,40 +1686,6 @@ next:
 	for i, param := range params {
 		if arg := args[i]; arg.substitutable {
 
-			// Wrap the argument in an explicit conversion if
-			// substitution might materially change its type.
-			// (We already did the necessary shadowing check
-			// on the parameter type syntax.)
-			//
-			// This is only needed for substituted arguments. All
-			// other arguments are given explicit types in either
-			// a binding decl or when using the literalization
-			// strategy.
-
-			// If the types are identical, we can eliminate
-			// redundant type conversions such as this:
-			//
-			// Callee:
-			//    func f(i int32) { print(i) }
-			// Caller:
-			//    func g() { f(int32(1)) }
-			// Inlined as:
-			//    func g() { print(int32(int32(1)))
-			//
-			// Recall that non-trivial does not imply non-identical
-			// for constant conversions; however, at this point state.arguments
-			// has already re-typechecked the constant and set arg.type to
-			// its (possibly "untyped") inherent type, so
-			// the conversion from untyped 1 to int32 is non-trivial even
-			// though both arg and param have identical types (int32).
-			if len(param.info.Refs) > 0 &&
-				!types.Identical(arg.typ, param.obj.Type()) &&
-				!trivialConversion(arg.constant, arg.typ, param.obj.Type()) {
-				arg.expr = convert(param.fieldType, arg.expr)
-				logf("param %q: adding explicit %s -> %s conversion around argument",
-					param.info.Name, arg.typ, param.obj.Type())
-			}
-
 			// It is safe to substitute param and replace it with arg.
 			// The formatter introduces parens as needed for precedence.
 			//
@@ -1534,12 +1694,86 @@ next:
 			logf("replacing parameter %q by argument %q",
 				param.info.Name, debugFormatNode(caller.Fset, arg.expr))
 			for _, ref := range param.info.Refs {
-				replaceCalleeID(ref, internalastutil.CloneNode(arg.expr).(ast.Expr))
+				// Apply any transformations necessary for this reference.
+				argExpr := arg.expr
+
+				// If the reference itself is being selected, and we applied desugaring
+				// (an explicit &x or *x), we can undo that desugaring here as it is
+				// not necessary for a selector. We don't need to check addressability
+				// here because if we desugared, the receiver must have been
+				// addressable.
+				if ref.IsSelectionOperand && arg.desugaredRecv {
+					switch e := argExpr.(type) {
+					case *ast.UnaryExpr:
+						argExpr = e.X
+					case *ast.StarExpr:
+						argExpr = e.X
+					}
+				}
+
+				// If the reference requires exact type agreement (as reported by
+				// param.info.NeedType), wrap the argument in an explicit conversion
+				// if substitution might materially change its type. (We already did
+				// the necessary shadowing check on the parameter type syntax.)
+				//
+				// This is only needed for substituted arguments. All other arguments
+				// are given explicit types in either a binding decl or when using the
+				// literalization strategy.
+				//
+				// If the types are identical, we can eliminate
+				// redundant type conversions such as this:
+				//
+				// Callee:
+				//    func f(i int32) { print(i) }
+				// Caller:
+				//    func g() { f(int32(1)) }
+				// Inlined as:
+				//    func g() { print(int32(int32(1)))
+				//
+				// Recall that non-trivial does not imply non-identical
+				// for constant conversions; however, at this point state.arguments
+				// has already re-typechecked the constant and set arg.type to
+				// its (possibly "untyped") inherent type, so
+				// the conversion from untyped 1 to int32 is non-trivial even
+				// though both arg and param have identical types (int32).
+				if ref.NeedType &&
+					!types.Identical(arg.typ, param.obj.Type()) &&
+					!trivialConversion(arg.constant, arg.typ, param.obj.Type()) {
+
+					// If arg.expr is already an interface call, strip it.
+					if call, ok := argExpr.(*ast.CallExpr); ok && len(call.Args) == 1 {
+						if typ, ok := isConversion(caller.Info, call); ok && isNonTypeParamInterface(typ) {
+							argExpr = call.Args[0]
+						}
+					}
+
+					argExpr = convert(param.fieldType, argExpr)
+					logf("param %q (offset %d): adding explicit %s -> %s conversion around argument",
+						param.info.Name, ref.Offset, arg.typ, param.obj.Type())
+				}
+				replace(ref.Offset, internalastutil.CloneNode(argExpr).(ast.Expr), arg.variadic)
 			}
 			params[i] = nil // substituted
 			args[i] = nil   // substituted
 		}
 	}
+}
+
+// isConversion reports whether the given call is a type conversion, returning
+// (operand, true) if so.
+//
+// If the call is not a conversion, it returns (nil, false).
+func isConversion(info *types.Info, call *ast.CallExpr) (types.Type, bool) {
+	if tv, ok := info.Types[call.Fun]; ok && tv.IsType() {
+		return tv.Type, true
+	}
+	return nil, false
+}
+
+// isNonTypeParamInterface reports whether t is a non-type parameter interface
+// type.
+func isNonTypeParamInterface(t types.Type) bool {
+	return !typeparams.IsTypeParam(t) && types.IsInterface(t)
 }
 
 // isUsedOutsideCall reports whether v is used outside of caller.Call, within
@@ -1579,7 +1813,7 @@ func isUsedOutsideCall(caller *Caller, v *types.Var) bool {
 // TODO(adonovan): we could obtain a finer result rejecting only the
 // freevars of each failed constraint, and processing constraints in
 // order of increasing arity, but failures are quite rare.
-func checkFalconConstraints(logf func(string, ...any), params []*parameter, args []*argument, falcon falconResult) {
+func checkFalconConstraints(logf logger, params []*parameter, args []*argument, falcon falconResult) {
 	// Create a dummy package, as this is the only
 	// way to create an environment for CheckExpr.
 	pkg := types.NewPackage("falcon", "falcon")
@@ -1677,7 +1911,7 @@ func checkFalconConstraints(logf func(string, ...any), params []*parameter, args
 // current argument. Subsequent iterations cannot introduce hazards
 // with that argument because they can result only in additional
 // binding of lower-ordered arguments.
-func resolveEffects(logf func(string, ...any), args []*argument, effects []int) {
+func resolveEffects(logf logger, args []*argument, effects []int) {
 	effectStr := func(effects bool, idx int) string {
 		i := fmt.Sprint(idx)
 		if idx == len(args) {
@@ -1836,7 +2070,7 @@ type bindingDeclInfo struct {
 //
 // Strategies may impose additional checks on return
 // conversions, labels, defer, etc.
-func createBindingDecl(logf func(string, ...any), caller *Caller, args []*argument, calleeDecl *ast.FuncDecl, results []*paramInfo) *bindingDeclInfo {
+func createBindingDecl(logf logger, caller *Caller, args []*argument, calleeDecl *ast.FuncDecl, results []*paramInfo) *bindingDeclInfo {
 	// Spread calls are tricky as they may not align with the
 	// parameters' field groupings nor types.
 	// For example, given
@@ -2658,26 +2892,38 @@ func clearPositions(root ast.Node) {
 	})
 }
 
-// findIdent returns the Ident beneath root that has the given pos.
-func findIdent(root ast.Node, pos token.Pos) *ast.Ident {
+// findIdent finds the Ident beneath root that has the given pos.
+// It returns the path to the ident (excluding the ident), and the ident
+// itself, where the path is the sequence of ast.Nodes encountered in a
+// depth-first search to find ident.
+func findIdent(root ast.Node, pos token.Pos) ([]ast.Node, *ast.Ident) {
 	// TODO(adonovan): opt: skip subtrees that don't contain pos.
-	var found *ast.Ident
+	var (
+		path  []ast.Node
+		found *ast.Ident
+	)
 	ast.Inspect(root, func(n ast.Node) bool {
 		if found != nil {
+			return false
+		}
+		if n == nil {
+			path = path[:len(path)-1]
 			return false
 		}
 		if id, ok := n.(*ast.Ident); ok {
 			if id.Pos() == pos {
 				found = id
+				return true
 			}
 		}
+		path = append(path, n)
 		return true
 	})
 	if found == nil {
 		panic(fmt.Sprintf("findIdent %d not found in %s",
 			pos, debugFormatNode(token.NewFileSet(), root)))
 	}
-	return found
+	return path, found
 }
 
 func prepend[T any](elem T, slice ...T) []T {
@@ -2869,6 +3115,15 @@ func declares(stmts []ast.Stmt) map[string]bool {
 	return names
 }
 
+// A importNameFunc is used to query local import names in the caller, in a
+// particular shadowing context.
+//
+// The shadow map contains additional names shadowed in the inlined code, at
+// the position the local import name is to be used. The shadow map only needs
+// to contain newly introduced names in the inlined code; names shadowed at the
+// caller are handled automatically.
+type importNameFunc = func(pkgPath string, shadow map[string]bool) string
+
 // assignStmts rewrites a statement assigning the results of a call into zero
 // or more statements that assign its return operands, or (nil, false) if no
 // such rewrite is possible. The set of bindings created by the result of
@@ -2911,7 +3166,7 @@ func declares(stmts []ast.Stmt) map[string]bool {
 //
 // Note: assignStmts may return (nil, true) if it determines that the rewritten
 // assignment consists only of _ = nil assignments.
-func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Expr) ([]ast.Stmt, bool) {
+func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Expr, importName importNameFunc) ([]ast.Stmt, bool) {
 	logf, caller, callee := st.opts.Logf, st.caller, &st.callee.impl
 
 	assert(len(callee.Returns) == 1, "unexpected multiple returns")
@@ -3014,18 +3269,23 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 	// Inlining techniques below will need to write type information in order to
 	// preserve the correct types of LHS identifiers.
 	//
-	// writeType is a simple helper to write out type expressions.
+	// typeExpr is a simple helper to write out type expressions. It currently
+	// handles (possibly qualified) type names.
+	//
 	// TODO(rfindley):
-	//   1. handle qualified type names (potentially adding new imports)
-	//   2. expand this to handle more type expressions.
-	//   3. refactor to share logic with callee rewriting.
+	//   1. expand this to handle more type expressions.
+	//   2. refactor to share logic with callee rewriting.
 	universeAny := types.Universe.Lookup("any")
-	typeExpr := func(typ types.Type, shadows ...map[string]bool) ast.Expr {
-		var typeName string
+	typeExpr := func(typ types.Type, shadow map[string]bool) ast.Expr {
+		var (
+			typeName string
+			obj      *types.TypeName // nil for basic types
+		)
 		switch typ := typ.(type) {
 		case *types.Basic:
 			typeName = typ.Name()
 		case interface{ Obj() *types.TypeName }: // Named, Alias, TypeParam
+			obj = typ.Obj()
 			typeName = typ.Obj().Name()
 		}
 
@@ -3039,15 +3299,20 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 			return nil
 		}
 
-		for _, shadow := range shadows {
+		if obj == nil || obj.Pkg() == nil || obj.Pkg() == caller.Types { // local type or builtin
 			if shadow[typeName] {
 				logf("cannot write shadowed type name %q", typeName)
 				return nil
 			}
-		}
-		obj, _ := caller.lookup(typeName).(*types.TypeName)
-		if obj != nil && types.Identical(obj.Type(), typ) {
-			return ast.NewIdent(typeName)
+			obj, _ := caller.lookup(typeName).(*types.TypeName)
+			if obj != nil && types.Identical(obj.Type(), typ) {
+				return ast.NewIdent(typeName)
+			}
+		} else if pkgName := importName(obj.Pkg().Path(), shadow); pkgName != "" {
+			return &ast.SelectorExpr{
+				X:   ast.NewIdent(pkgName),
+				Sel: ast.NewIdent(typeName),
+			}
 		}
 		return nil
 	}
@@ -3166,7 +3431,7 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 		idx := origIdxs[i]
 		if nonTrivial[idx] && defs[idx] != nil {
 			typ := caller.Info.TypeOf(lhs[i])
-			texpr := typeExpr(typ)
+			texpr := typeExpr(typ, nil)
 			if texpr == nil {
 				return nil, false
 			}

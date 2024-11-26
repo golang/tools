@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gocommand"
 )
 
 // GCOptimizationDetails invokes the Go compiler on the specified
@@ -33,7 +32,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 	if len(mp.CompiledGoFiles) == 0 {
 		return nil, nil
 	}
-	pkgDir := filepath.Dir(mp.CompiledGoFiles[0].Path())
+	pkgDir := mp.CompiledGoFiles[0].DirPath()
 	outDir, err := os.MkdirTemp("", fmt.Sprintf("gopls-%d.details", os.Getpid()))
 	if err != nil {
 		return nil, err
@@ -57,14 +56,10 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 	if !strings.HasPrefix(outDir, "/") {
 		outDirURI = protocol.DocumentURI(strings.Replace(string(outDirURI), "file:///", "file://", 1))
 	}
-	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(false, &gocommand.Invocation{
-		Verb: "build",
-		Args: []string{
-			fmt.Sprintf("-gcflags=-json=0,%s", outDirURI),
-			fmt.Sprintf("-o=%s", tmpFile.Name()),
-			".",
-		},
-		WorkingDir: pkgDir,
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NoNetwork, pkgDir, "build", []string{
+		fmt.Sprintf("-gcflags=-json=0,%s", outDirURI),
+		fmt.Sprintf("-o=%s", tmpFile.Name()),
+		".",
 	})
 	if err != nil {
 		return nil, err
@@ -91,7 +86,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 		if fh == nil {
 			continue
 		}
-		if pkgDir != filepath.Dir(fh.URI().Path()) {
+		if pkgDir != fh.URI().DirPath() {
 			// https://github.com/golang/go/issues/42198
 			// sometimes the detail diagnostics generated for files
 			// outside the package can never be taken back.

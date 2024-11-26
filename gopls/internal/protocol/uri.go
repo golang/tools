@@ -90,7 +90,13 @@ func (uri DocumentURI) Path() string {
 func (uri DocumentURI) Dir() DocumentURI {
 	// This function could be more efficiently implemented by avoiding any call
 	// to Path(), but at least consolidates URI manipulation.
-	return URIFromPath(filepath.Dir(uri.Path()))
+	return URIFromPath(uri.DirPath())
+}
+
+// DirPath returns the file path to the directory containing this URI, which
+// must be a file URI.
+func (uri DocumentURI) DirPath() string {
+	return filepath.Dir(uri.Path())
 }
 
 // Encloses reports whether uri's path, considered as a sequence of segments,

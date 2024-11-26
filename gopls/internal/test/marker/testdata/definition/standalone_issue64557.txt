@@ -1,0 +1,30 @@
+This test checks that we can load standalone files that use cgo.
+
+-- flags --
+-cgo
+
+-- go.mod --
+module example.com
+
+-- main.go --
+//go:build ignore
+
+package main
+
+import (
+	"C"
+
+	"example.com/a"
+)
+
+func F() {} //@loc(F, "F")
+
+func main() {
+	F() //@def("F", F)
+	println(a.A) //@def("A", A)
+}
+
+-- a/a.go --
+package a
+
+const A = 0 //@loc(A, "A")

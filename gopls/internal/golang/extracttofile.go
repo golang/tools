@@ -97,6 +97,8 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	if !ok {
 		return nil, bug.Errorf("invalid selection")
 	}
+	pgf.CheckPos(start) // #70553
+	// Inv: start is valid wrt pgf.Tok.
 
 	// select trailing empty lines
 	offset, err := safetoken.Offset(pgf.Tok, end)
@@ -104,7 +106,10 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		return nil, err
 	}
 	rest := pgf.Src[offset:]
-	end += token.Pos(len(rest) - len(bytes.TrimLeft(rest, " \t\n")))
+	spaces := len(rest) - len(bytes.TrimLeft(rest, " \t\n"))
+	end += token.Pos(spaces)
+	pgf.CheckPos(end) // #70553
+	// Inv: end is valid wrt pgf.Tok.
 
 	replaceRange, err := pgf.PosRange(start, end)
 	if err != nil {
@@ -133,6 +138,26 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	}
 
 	var buf bytes.Buffer
+	if c := copyrightComment(pgf.File); c != nil {
+		start, end, err := pgf.NodeOffsets(c)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(pgf.Src[start:end])
+		// One empty line between copyright header and following.
+		buf.WriteString("\n\n")
+	}
+
+	if c := buildConstraintComment(pgf.File); c != nil {
+		start, end, err := pgf.NodeOffsets(c)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(pgf.Src[start:end])
+		// One empty line between build constraint and following.
+		buf.WriteString("\n\n")
+	}
+
 	fmt.Fprintf(&buf, "package %s\n", pgf.File.Name.Name)
 	if len(adds) > 0 {
 		buf.WriteString("import (")
@@ -146,15 +171,15 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		buf.WriteString(")\n")
 	}
 
-	newFile, err := chooseNewFile(ctx, snapshot, pgf.URI.Dir().Path(), firstSymbol)
+	newFile, err := chooseNewFile(ctx, snapshot, pgf.URI.DirPath(), firstSymbol)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", errorPrefix, err)
 	}
 
 	fileStart := pgf.File.FileStart
+	pgf.CheckPos(fileStart) // #70553
 	buf.Write(pgf.Src[start-fileStart : end-fileStart])
 
-	// TODO: attempt to duplicate the copyright header, if any.
 	newFileContent, err := format.Source(buf.Bytes())
 	if err != nil {
 		return nil, err
@@ -202,31 +227,42 @@ func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, 
 	firstName := ""
 	for _, decl := range pgf.File.Decls {
 		if posRangeIntersects(start, end, decl.Pos(), decl.End()) {
-			var id *ast.Ident
-			switch v := decl.(type) {
+			var (
+				comment *ast.CommentGroup // (include comment preceding decl)
+				id      *ast.Ident
+			)
+			switch decl := decl.(type) {
 			case *ast.BadDecl:
 				return 0, 0, "", false
+
 			case *ast.FuncDecl:
 				// if only selecting keyword "func" or function name, extend selection to the
 				// whole function
-				if posRangeContains(v.Pos(), v.Name.End(), start, end) {
-					start, end = v.Pos(), v.End()
+				if posRangeContains(decl.Pos(), decl.Name.End(), start, end) {
+					pgf.CheckNode(decl) // #70553
+					start, end = decl.Pos(), decl.End()
+					// Inv: start, end are valid wrt pgf.Tok.
 				}
-				id = v.Name
+				comment = decl.Doc
+				id = decl.Name
+
 			case *ast.GenDecl:
 				// selection cannot intersect an import declaration
-				if v.Tok == token.IMPORT {
+				if decl.Tok == token.IMPORT {
 					return 0, 0, "", false
 				}
 				// if only selecting keyword "type", "const", or "var", extend selection to the
 				// whole declaration
-				if v.Tok == token.TYPE && posRangeContains(v.Pos(), v.Pos()+token.Pos(len("type")), start, end) ||
-					v.Tok == token.CONST && posRangeContains(v.Pos(), v.Pos()+token.Pos(len("const")), start, end) ||
-					v.Tok == token.VAR && posRangeContains(v.Pos(), v.Pos()+token.Pos(len("var")), start, end) {
-					start, end = v.Pos(), v.End()
+				if decl.Tok == token.TYPE && posRangeContains(decl.Pos(), decl.Pos()+token.Pos(len("type")), start, end) ||
+					decl.Tok == token.CONST && posRangeContains(decl.Pos(), decl.Pos()+token.Pos(len("const")), start, end) ||
+					decl.Tok == token.VAR && posRangeContains(decl.Pos(), decl.Pos()+token.Pos(len("var")), start, end) {
+					pgf.CheckNode(decl) // #70553
+					start, end = decl.Pos(), decl.End()
+					// Inv: start, end are valid wrt pgf.Tok.
 				}
-				if len(v.Specs) > 0 {
-					switch spec := v.Specs[0].(type) {
+				comment = decl.Doc
+				if len(decl.Specs) > 0 {
+					switch spec := decl.Specs[0].(type) {
 					case *ast.TypeSpec:
 						id = spec.Name
 					case *ast.ValueSpec:
@@ -242,16 +278,10 @@ func selectedToplevelDecls(pgf *parsego.File, start, end token.Pos) (token.Pos, 
 				// may be "_"
 				firstName = id.Name
 			}
-			// extends selection to docs comments
-			var c *ast.CommentGroup
-			switch decl := decl.(type) {
-			case *ast.GenDecl:
-				c = decl.Doc
-			case *ast.FuncDecl:
-				c = decl.Doc
-			}
-			if c != nil && c.Pos() < start {
-				start = c.Pos()
+			if comment != nil && comment.Pos() < start {
+				pgf.CheckNode(comment) // #70553
+				start = comment.Pos()
+				// Inv: start is valid wrt pgf.Tok.
 			}
 		}
 	}

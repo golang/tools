@@ -16,7 +16,7 @@ import (
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.Run(t, testdata, copylock.Analyzer, "a", "typeparams", "issue67787")
+	analysistest.Run(t, testdata, copylock.Analyzer, "a", "typeparams", "issue67787", "unfortunate")
 }
 
 func TestVersions22(t *testing.T) {

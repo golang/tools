@@ -168,6 +168,7 @@ func NewT1() *T1 { return &T1{T} }
 	// parse or type errors in the code.
 	noop := &analysis.Analyzer{
 		Name:     "noop",
+		Doc:      "noop",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 		Run: func(pass *analysis.Pass) (interface{}, error) {
 			return nil, nil
@@ -179,6 +180,7 @@ func NewT1() *T1 { return &T1{T} }
 	// regardless of parse or type errors in the code.
 	noopWithFact := &analysis.Analyzer{
 		Name:     "noopfact",
+		Doc:      "noopfact",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 		Run: func(pass *analysis.Pass) (interface{}, error) {
 			return nil, nil

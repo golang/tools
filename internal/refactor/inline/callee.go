@@ -202,19 +202,19 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 					objidx, ok := freeObjIndex[obj]
 					if !ok {
 						objidx = len(freeObjIndex)
-						var pkgpath, pkgname string
+						var pkgPath, pkgName string
 						if pn, ok := obj.(*types.PkgName); ok {
-							pkgpath = pn.Imported().Path()
-							pkgname = pn.Imported().Name()
+							pkgPath = pn.Imported().Path()
+							pkgName = pn.Imported().Name()
 						} else if obj.Pkg() != nil {
-							pkgpath = obj.Pkg().Path()
-							pkgname = obj.Pkg().Name()
+							pkgPath = obj.Pkg().Path()
+							pkgName = obj.Pkg().Name()
 						}
 						freeObjs = append(freeObjs, object{
 							Name:     obj.Name(),
 							Kind:     objectKind(obj),
-							PkgName:  pkgname,
-							PkgPath:  pkgpath,
+							PkgName:  pkgName,
+							PkgPath:  pkgPath,
 							ValidPos: obj.Pos().IsValid(),
 						})
 						freeObjIndex[obj] = objidx
@@ -387,9 +387,19 @@ type paramInfo struct {
 	IsResult   bool            // false for receiver or parameter, true for result variable
 	Assigned   bool            // parameter appears on left side of an assignment statement
 	Escapes    bool            // parameter has its address taken
-	Refs       []int           // FuncDecl-relative byte offset of parameter ref within body
+	Refs       []refInfo       // information about references to parameter within body
 	Shadow     map[string]bool // names shadowed at one of the above refs
 	FalconType string          // name of this parameter's type (if basic) in the falcon system
+}
+
+type refInfo struct {
+	Offset   int  // FuncDecl-relative byte offset of parameter ref within body
+	NeedType bool // type of substituted arg must be identical to type of param
+	// IsSelectionOperand indicates whether the parameter reference is the
+	// operand of a selection (param.f). If so, and param's argument is itself
+	// a receiver parameter (a common case), we don't need to desugar (&v or *ptr)
+	// the selection: if param.Method is a valid selection, then so is param.fieldOrMethod.
+	IsSelectionOperand bool
 }
 
 // analyzeParams computes information about parameters of function fn,
@@ -458,10 +468,24 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 		if id, ok := n.(*ast.Ident); ok {
 			if v, ok := info.Uses[id].(*types.Var); ok {
 				if pinfo, ok := paramInfos[v]; ok {
-					// Record location of ref to parameter/result
-					// and any intervening (shadowing) names.
-					offset := int(n.Pos() - decl.Pos())
-					pinfo.Refs = append(pinfo.Refs, offset)
+					// Record ref information, and any intervening (shadowing) names.
+					//
+					// If the parameter v has an interface type, and the reference id
+					// appears in a context where assignability rules apply, there may be
+					// an implicit interface-to-interface widening. In that case it is
+					// not necessary to insert an explicit conversion from the argument
+					// to the parameter's type.
+					//
+					// Contrapositively, if param is not an interface type, then the
+					// assignment may lose type information, for example in the case that
+					// the substituted expression is an untyped constant or unnamed type.
+					ifaceParam := isNonTypeParamInterface(v.Type())
+					ref := refInfo{
+						Offset:             int(n.Pos() - decl.Pos()),
+						NeedType:           !ifaceParam || !isAssignableOperand(info, stack),
+						IsSelectionOperand: isSelectionOperand(stack),
+					}
+					pinfo.Refs = append(pinfo.Refs, ref)
 					pinfo.Shadow = addShadows(pinfo.Shadow, info, pinfo.Name, stack)
 				}
 			}
@@ -480,6 +504,127 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 }
 
 // -- callee helpers --
+
+// isAssignableOperand reports whether the given outer-to-inner stack has an
+// innermost expression operand for which assignability rules apply, meaning it
+// is used in a position where its type need only be assignable to the type
+// implied by its surrounding syntax.
+//
+// As this function is intended to be used for inlining analysis, it reports
+// false in one case where the operand technically need only be assignable: if
+// the type being assigned to is a call argument and contains type parameters,
+// then passing a different (yet assignable) type may affect type inference,
+// and so isAssignableOperand reports false.
+func isAssignableOperand(info *types.Info, stack []ast.Node) bool {
+	parent, expr := exprContext(stack)
+	if parent == nil {
+		return false
+	}
+
+	// Types do not need to match for assignment to a variable.
+	if assign, ok := parent.(*ast.AssignStmt); ok && assign.Tok == token.ASSIGN {
+		for _, v := range assign.Rhs {
+			if v == expr {
+				return true
+			}
+		}
+	}
+
+	// Types do not need to match for an initializer with known type.
+	if spec, ok := parent.(*ast.ValueSpec); ok && spec.Type != nil {
+		for _, v := range spec.Values {
+			if v == expr {
+				return true
+			}
+		}
+	}
+
+	// Types do not need to match for composite literal keys, values, or
+	// fields.
+	if kv, ok := parent.(*ast.KeyValueExpr); ok {
+		if kv.Key == expr || kv.Value == expr {
+			return true
+		}
+	}
+	if lit, ok := parent.(*ast.CompositeLit); ok {
+		for _, v := range lit.Elts {
+			if v == expr {
+				return true
+			}
+		}
+	}
+
+	// Types do not need to match for values sent to a channel.
+	if send, ok := parent.(*ast.SendStmt); ok {
+		if send.Value == expr {
+			return true
+		}
+	}
+
+	// Types do not need to match for an argument to a call, unless the
+	// corresponding parameter has type parameters, as in that case the
+	// argument type may affect inference.
+	if call, ok := parent.(*ast.CallExpr); ok {
+		for i, arg := range call.Args {
+			if arg == expr {
+				if fn, _ := typeutil.Callee(info, call).(*types.Func); fn != nil { // Incidentally, this check rejects a conversion T(id).
+					sig := fn.Type().(*types.Signature)
+
+					// Find the relevant parameter type, accounting for variadics.
+					var paramType types.Type
+					if plen := sig.Params().Len(); sig.Variadic() && i >= plen-1 && !call.Ellipsis.IsValid() {
+						if s, ok := sig.Params().At(plen - 1).Type().(*types.Slice); ok {
+							paramType = s.Elem()
+						}
+					} else if i < plen {
+						paramType = sig.Params().At(i).Type()
+					}
+
+					if paramType != nil && !new(typeparams.Free).Has(paramType) {
+						return true
+					}
+				}
+				break
+			}
+		}
+	}
+
+	return false // In all other cases, preserve the parameter type.
+}
+
+// exprContext returns the innermost parent->child expression nodes for the
+// given outer-to-inner stack, after stripping parentheses.
+//
+// If no such context exists, returns (nil, nil).
+func exprContext(stack []ast.Node) (parent ast.Node, expr ast.Expr) {
+	expr, _ = stack[len(stack)-1].(ast.Expr)
+	if expr == nil {
+		return nil, nil
+	}
+	for i := len(stack) - 2; i >= 0; i-- {
+		if pexpr, ok := stack[i].(*ast.ParenExpr); ok {
+			expr = pexpr
+		} else {
+			parent = stack[i]
+			break
+		}
+	}
+	if parent == nil {
+		return nil, nil
+	}
+	return parent, expr
+}
+
+// isSelectionOperand reports whether the innermost node of stack is operand
+// (x) of a selection x.f.
+func isSelectionOperand(stack []ast.Node) bool {
+	parent, expr := exprContext(stack)
+	if parent == nil {
+		return false
+	}
+	sel, ok := parent.(*ast.SelectorExpr)
+	return ok && sel.X == expr
+}
 
 // addShadows returns the shadows set augmented by the set of names
 // locally shadowed at the location of the reference in the callee

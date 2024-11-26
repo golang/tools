@@ -67,7 +67,7 @@ func basic() (uint8, uint16, uint32, uint64, int8, int16, int32, int64, float32,
 }
 
 func complex() (*int, []int, [2]int, map[int]int) {
-	return nil, nil, nil, nil // want "return values"
+	return nil, nil, [2]int{}, nil // want "return values"
 }
 
 func structsAndInterfaces() (T, url.URL, T1, I, I1, io.Reader, Client, ast2.Stmt) {

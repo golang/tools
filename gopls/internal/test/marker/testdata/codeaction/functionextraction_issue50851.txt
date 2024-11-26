@@ -1,0 +1,35 @@
+This test checks that function extraction moves comments along with the
+extracted code.
+
+-- main.go --
+package main
+
+type F struct{}
+
+func (f *F) func1() {
+	println("a")
+
+	println("b") //@ codeaction("print", "refactor.extract.function", end=end, result=result)
+	// This line prints the third letter of the alphabet.
+	println("c") //@loc(end, ")")
+
+	println("d")
+}
+-- @result/main.go --
+package main
+
+type F struct{}
+
+func (f *F) func1() {
+	println("a")
+
+	newFunction() //@loc(end, ")")
+
+	println("d")
+}
+
+func newFunction() {
+	println("b") //@ codeaction("print", "refactor.extract.function", end=end, result=result)
+	// This line prints the third letter of the alphabet.
+	println("c")
+}

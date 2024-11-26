@@ -191,13 +191,12 @@ func bundleLazyFixes(sd *Diagnostic) bool {
 
 // BundledLazyFixes extracts any bundled codeActions from the
 // diag.Data field.
-func BundledLazyFixes(diag protocol.Diagnostic) []protocol.CodeAction {
+func BundledLazyFixes(diag protocol.Diagnostic) ([]protocol.CodeAction, error) {
 	var fix lazyFixesJSON
 	if diag.Data != nil {
 		err := protocol.UnmarshalJSON(*diag.Data, &fix)
 		if err != nil {
-			bug.Reportf("unmarshalling lazy fix: %v", err)
-			return nil
+			return nil, fmt.Errorf("unmarshalling fix from diagnostic data: %v", err)
 		}
 	}
 
@@ -205,8 +204,7 @@ func BundledLazyFixes(diag protocol.Diagnostic) []protocol.CodeAction {
 	for _, action := range fix.Actions {
 		// See bundleLazyFixes: for now we only support bundling commands.
 		if action.Edit != nil {
-			bug.Reportf("bundled fix %q includes workspace edits", action.Title)
-			continue
+			return nil, fmt.Errorf("bundled fix %q includes workspace edits", action.Title)
 		}
 		// associate the action with the incoming diagnostic
 		// (Note that this does not mutate the fix.Fixes slice).
@@ -214,5 +212,5 @@ func BundledLazyFixes(diag protocol.Diagnostic) []protocol.CodeAction {
 		actions = append(actions, action)
 	}
 
-	return actions
+	return actions, nil
 }

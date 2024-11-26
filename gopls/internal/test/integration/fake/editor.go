@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
@@ -136,6 +138,10 @@ type EditorConfig struct {
 	// If non-nil, MessageResponder is used to respond to ShowMessageRequest
 	// messages.
 	MessageResponder func(params *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error)
+
+	// MaxMessageDelay is used for fuzzing message delivery to reproduce test
+	// flakes.
+	MaxMessageDelay time.Duration
 }
 
 // NewEditor creates a new Editor.
@@ -162,16 +168,29 @@ func (e *Editor) Connect(ctx context.Context, connector servertest.Connector, ho
 	e.serverConn = conn
 	e.Server = protocol.ServerDispatcher(conn)
 	e.client = &Client{editor: e, hooks: hooks}
-	conn.Go(bgCtx,
-		protocol.Handlers(
-			protocol.ClientHandler(e.client,
-				jsonrpc2.MethodNotFound)))
+	handler := protocol.ClientHandler(e.client, jsonrpc2.MethodNotFound)
+	if e.config.MaxMessageDelay > 0 {
+		handler = DelayedHandler(e.config.MaxMessageDelay, handler)
+	}
+	conn.Go(bgCtx, protocol.Handlers(handler))
 
 	if err := e.initialize(ctx); err != nil {
 		return nil, err
 	}
 	e.sandbox.Workdir.AddWatcher(e.onFileChanges)
 	return e, nil
+}
+
+// DelayedHandler waits [0, maxDelay) before handling each message.
+func DelayedHandler(maxDelay time.Duration, handler jsonrpc2.Handler) jsonrpc2.Handler {
+	return func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
+		delay := time.Duration(rand.Int64N(int64(maxDelay)))
+		select {
+		case <-ctx.Done():
+		case <-time.After(delay):
+		}
+		return handler(ctx, reply, req)
+	}
 }
 
 func (e *Editor) Stats() CallCounts {

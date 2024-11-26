@@ -12,7 +12,7 @@ package extract
 import "fmt"
 
 func main() {
-	x := []rune{} //@codeaction("x", end, "refactor.extract.function", ext)
+	x := []rune{} //@codeaction("x", "refactor.extract.function", end=end, result=ext)
 	s := "HELLO"
 	for _, c := range s {
 		x = append(x, c)
@@ -26,13 +26,12 @@ package extract
 import "fmt"
 
 func main() {
-	//@codeaction("x", end, "refactor.extract.function", ext)
 	x := newFunction() //@loc(end, "}")
 	fmt.Printf("%x\n", x)
 }
 
 func newFunction() []rune {
-	x := []rune{}
+	x := []rune{} //@codeaction("x", "refactor.extract.function", end=end, result=ext)
 	s := "HELLO"
 	for _, c := range s {
 		x = append(x, c)

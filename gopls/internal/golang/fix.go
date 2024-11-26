@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
-	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -36,7 +35,8 @@ import (
 // The supplied token positions (start, end) must belong to
 // pkg.FileSet(), and the returned positions
 // (SuggestedFix.TextEdits[*].{Pos,End}) must belong to the returned
-// FileSet.
+// FileSet, which is not necessarily the same.
+// (See [insertDeclsAfter] for explanation.)
 //
 // A fixer may return (nil, nil) if no fix is available.
 type fixer func(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error)
@@ -65,6 +65,7 @@ const (
 	fixInvertIfCondition       = "invert_if_condition"
 	fixSplitLines              = "split_lines"
 	fixJoinLines               = "join_lines"
+	fixCreateUndeclared        = "create_undeclared"
 	fixMissingInterfaceMethods = "stub_missing_interface_method"
 	fixMissingCalledFunction   = "stub_missing_called_function"
 )
@@ -91,7 +92,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 	// NarrowestPackageForFile/RangePos/suggestedFixToEdits
 	// steps.)
 	if fix == unusedparams.FixCategory {
-		return RemoveUnusedParameter(ctx, fh, rng, snapshot)
+		return removeParam(ctx, snapshot, fh, rng)
 	}
 
 	fixers := map[string]fixer{
@@ -99,7 +100,6 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		// These match the Diagnostic.Category.
 		embeddirective.FixCategory: addEmbedImport,
 		fillstruct.FixCategory:     singleFile(fillstruct.SuggestedFix),
-		undeclaredname.FixCategory: singleFile(undeclaredname.SuggestedFix),
 
 		// Ad-hoc fixers: these are used when the command is
 		// constructed directly by logic in server/code_action.
@@ -110,6 +110,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fixInvertIfCondition:       singleFile(invertIfCondition),
 		fixSplitLines:              singleFile(splitLines),
 		fixJoinLines:               singleFile(joinLines),
+		fixCreateUndeclared:        singleFile(CreateUndeclared),
 		fixMissingInterfaceMethods: stubMissingInterfaceMethodsFixer,
 		fixMissingCalledFunction:   stubMissingCalledFunctionFixer,
 	}

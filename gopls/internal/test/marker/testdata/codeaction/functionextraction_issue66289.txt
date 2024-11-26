@@ -1,0 +1,97 @@
+
+-- a.go --
+package a
+
+import (
+	"fmt"
+	"encoding/json"
+)
+
+func F() error {
+	a, err := json.Marshal(0) //@codeaction("a", "refactor.extract.function", end=endF, result=F)
+	if err != nil {
+		return fmt.Errorf("1: %w", err)
+	}
+	b, err := json.Marshal(0)
+	if err != nil {
+		return fmt.Errorf("2: %w", err)
+	} //@loc(endF, "}")
+	fmt.Println(a, b)
+	return nil
+}
+
+-- @F/a.go --
+package a
+
+import (
+	"fmt"
+	"encoding/json"
+)
+
+func F() error {
+	a, b, shouldReturn, err := newFunction()
+	if shouldReturn {
+		return err
+	} //@loc(endF, "}")
+	fmt.Println(a, b)
+	return nil
+}
+
+func newFunction() ([]byte, []byte, bool, error) {
+	a, err := json.Marshal(0) //@codeaction("a", "refactor.extract.function", end=endF, result=F)
+	if err != nil {
+		return nil, nil, true, fmt.Errorf("1: %w", err)
+	}
+	b, err := json.Marshal(0)
+	if err != nil {
+		return nil, nil, true, fmt.Errorf("2: %w", err)
+	}
+	return a, b, false, nil
+}
+
+-- b.go --
+package a
+
+import (
+	"fmt"
+	"math/rand"
+)
+
+func G() (x, y int) {
+	v := rand.Int() //@codeaction("v", "refactor.extract.function", end=endG, result=G)
+	if v < 0 {
+		return 1, 2
+	}
+	if v > 0 {
+		return 3, 4
+	} //@loc(endG, "}")
+	fmt.Println(v)
+	return 5, 6
+}
+-- @G/b.go --
+package a
+
+import (
+	"fmt"
+	"math/rand"
+)
+
+func G() (x, y int) {
+	v, shouldReturn, x1, y1 := newFunction()
+	if shouldReturn {
+		return x1, y1
+	} //@loc(endG, "}")
+	fmt.Println(v)
+	return 5, 6
+}
+
+func newFunction() (int, bool, int, int) {
+	v := rand.Int() //@codeaction("v", "refactor.extract.function", end=endG, result=G)
+	if v < 0 {
+		return 0, true, 1, 2
+	}
+	if v > 0 {
+		return 0, true, 3, 4
+	}
+	return v, false, 0, 0
+}

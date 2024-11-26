@@ -3212,6 +3212,8 @@ func foo() int {
 
 // TestDirAndForTest tests the new fields added as part of golang/go#38445.
 func TestDirAndForTest(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
 	dir := writeTree(t, `
 -- go.mod --
 module example.com
@@ -3232,15 +3234,13 @@ func Bar() int { return 2 }
 package a_test
 
 import (
-	"testing"
-
 	"example.com/a"
 	"example.com/b"
 )
 
-func TestFooBar(t *testing.T) {
+func _() {
 	if got := a.Foo() + a.Bar() + b.Baz(); got != 6 {
-		t.Errorf("whoops!")
+		panic("whoops")
 	}
 }
 

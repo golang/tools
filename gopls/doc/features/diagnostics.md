@@ -197,6 +197,56 @@ func (f Foo) bar(s string, i int) string {
 }
 ```
 
+### `CreateUndeclared`: Create missing declaration for "undeclared name: X"
+
+A Go compiler error "undeclared name: X" indicates that a variable or function is being used before
+it has been declared in the current scope. In this scenario, gopls offers a quick fix to create the declaration.
+
+#### Declare a new variable
+
+When you reference a variable that hasn't been declared:
+
+```go
+func main() {
+  x := 42
+  min(x, y) // error: undefined: y
+}
+```
+
+The quick fix would be:
+
+```go
+func main() {
+  x := 42
+  y :=
+  min(x, y)
+}
+```
+
+#### Declare a new function
+
+Similarly, if you call a function that hasn't been declared:
+
+```go
+func main() {
+  var s string
+  s = doSomething(42) // error: undefined: doSomething
+}
+```
+
+Gopls will insert a new function declaration below,
+inferring its type from the call:
+
+```go
+func main() {
+  var s string
+  s = doSomething(42)
+}
+
+func doSomething(i int) string {
+  panic("unimplemented")
+}
+```
 <!--
 
 dorky details and deletia:

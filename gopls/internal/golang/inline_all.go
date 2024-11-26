@@ -125,6 +125,8 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 		)
 		path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 		name, _ = path[0].(*ast.Ident)
+
+		// TODO(rfindley): handle method expressions correctly.
 		if _, ok := path[1].(*ast.SelectorExpr); ok {
 			call, _ = path[2].(*ast.CallExpr)
 		} else {
@@ -152,11 +154,16 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 			continue
 		}
 
+		if typeutil.StaticCallee(refpkg.TypesInfo(), call) == nil {
+			continue // dynamic call
+		}
+
 		// Sanity check.
 		if obj := refpkg.TypesInfo().ObjectOf(name); obj == nil ||
 			obj.Name() != origDecl.Name.Name ||
 			obj.Pkg() == nil ||
 			obj.Pkg().Path() != string(pkg.Metadata().PkgPath) {
+
 			return nil, bug.Errorf("cannot inline: corrupted reference %v", ref)
 		}
 

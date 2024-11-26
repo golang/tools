@@ -38,6 +38,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
@@ -132,6 +133,33 @@ func (i *CompletionItem) Snippet() string {
 		return i.snippet.String()
 	}
 	return i.InsertText
+}
+
+// addConversion wraps the existing completionItem in a conversion expression.
+// Only affects the receiver's InsertText and snippet fields, not the Label.
+// An empty conv argument has no effect.
+func (i *CompletionItem) addConversion(c *completer, conv conversionEdits) error {
+	if conv.prefix != "" {
+		// If we are in a selector, add an edit to place prefix before selector.
+		if sel := enclosingSelector(c.path, c.pos); sel != nil {
+			edits, err := c.editText(sel.Pos(), sel.Pos(), conv.prefix)
+			if err != nil {
+				return err
+			}
+			i.AdditionalTextEdits = append(i.AdditionalTextEdits, edits...)
+		} else {
+			// If there is no selector, just stick the prefix at the start.
+			i.InsertText = conv.prefix + i.InsertText
+			i.snippet.PrependText(conv.prefix)
+		}
+	}
+
+	if conv.suffix != "" {
+		i.InsertText += conv.suffix
+		i.snippet.WriteText(conv.suffix)
+	}
+
+	return nil
 }
 
 // Scoring constants are used for weighting the relevance of different candidates.
@@ -682,7 +710,7 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 	}
 
 	// Struct literals are handled entirely separately.
-	if c.wantStructFieldCompletions() {
+	if wantStructFieldCompletions(c.enclosingCompositeLiteral) {
 		// If we are definitely completing a struct field name, deep completions
 		// don't make sense.
 		if c.enclosingCompositeLiteral.inKey {
@@ -1133,12 +1161,11 @@ func (c *completer) addFieldItems(fields *ast.FieldList) {
 	}
 }
 
-func (c *completer) wantStructFieldCompletions() bool {
-	clInfo := c.enclosingCompositeLiteral
-	if clInfo == nil {
+func wantStructFieldCompletions(enclosingCl *compLitInfo) bool {
+	if enclosingCl == nil {
 		return false
 	}
-	return is[*types.Struct](clInfo.clType) && (clInfo.inKey || clInfo.maybeInFieldName)
+	return is[*types.Struct](enclosingCl.clType) && (enclosingCl.inKey || enclosingCl.maybeInFieldName)
 }
 
 func (c *completer) wantTypeName() bool {
@@ -2039,8 +2066,7 @@ func enclosingFunction(path []ast.Node, info *types.Info) *funcInfo {
 	return nil
 }
 
-func (c *completer) expectedCompositeLiteralType() types.Type {
-	clInfo := c.enclosingCompositeLiteral
+func expectedCompositeLiteralType(clInfo *compLitInfo, pos token.Pos) types.Type {
 	switch t := clInfo.clType.(type) {
 	case *types.Slice:
 		if clInfo.inKey {
@@ -2079,7 +2105,7 @@ func (c *completer) expectedCompositeLiteralType() types.Type {
 
 			// The order of the literal fields must match the order in the struct definition.
 			// Find the element that the position belongs to and suggest that field's type.
-			if i := exprAtPos(c.pos, clInfo.cl.Elts); i < t.NumFields() {
+			if i := exprAtPos(pos, clInfo.cl.Elts); i < t.NumFields() {
 				return t.Field(i).Type()
 			}
 		}
@@ -2164,6 +2190,25 @@ type candidateInference struct {
 	// convertibleTo is a type our candidate type must be convertible to.
 	convertibleTo types.Type
 
+	// needsExactType is true if the candidate type must be exactly the type of
+	// the objType, e.g. an interface rather than it's implementors.
+	//
+	// This is necessary when objType is derived using reverse type inference:
+	// any different (but assignable) type may lead to different type inference,
+	// which may no longer be valid.
+	//
+	// For example, consider the following scenario:
+	//
+	//   func f[T any](x T) []T { return []T{x} }
+	//
+	//   var s []any = f(_)
+	//
+	// Reverse type inference would infer that the type at _ must be 'any', but
+	// that does not mean that any object in the lexical scope is valid: the type of
+	// the object must be *exactly* any, otherwise type inference will cause the
+	// slice assignment to fail.
+	needsExactType bool
+
 	// typeName holds information about the expected type name at
 	// position, if any.
 	typeName typeNameInference
@@ -2235,7 +2280,7 @@ func expectedCandidate(ctx context.Context, c *completer) (inf candidateInferenc
 	inf.typeName = expectTypeName(c)
 
 	if c.enclosingCompositeLiteral != nil {
-		inf.objType = c.expectedCompositeLiteralType()
+		inf.objType = expectedCompositeLiteralType(c.enclosingCompositeLiteral, c.pos)
 	}
 
 Nodes:
@@ -2259,34 +2304,21 @@ Nodes:
 				break Nodes
 			}
 		case *ast.AssignStmt:
-			// Only rank completions if you are on the right side of the token.
-			if c.pos > node.TokPos {
-				i := exprAtPos(c.pos, node.Rhs)
-				if i >= len(node.Lhs) {
-					i = len(node.Lhs) - 1
-				}
-				if tv, ok := c.pkg.TypesInfo().Types[node.Lhs[i]]; ok {
-					inf.objType = tv.Type
-				}
-
-				// If we have a single expression on the RHS, record the LHS
-				// assignees so we can favor multi-return function calls with
-				// matching result values.
-				if len(node.Rhs) <= 1 {
-					for _, lhs := range node.Lhs {
-						inf.assignees = append(inf.assignees, c.pkg.TypesInfo().TypeOf(lhs))
-					}
-				} else {
-					// Otherwise, record our single assignee, even if its type is
-					// not available. We use this info to downrank functions
-					// with the wrong number of result values.
-					inf.assignees = append(inf.assignees, c.pkg.TypesInfo().TypeOf(node.Lhs[i]))
-				}
-			}
+			objType, assignees := expectedAssignStmtTypes(c.pkg, node, c.pos)
+			inf.objType = objType
+			inf.assignees = assignees
 			return inf
 		case *ast.ValueSpec:
-			if node.Type != nil && c.pos > node.Type.End() {
-				inf.objType = c.pkg.TypesInfo().TypeOf(node.Type)
+			inf.objType = expectedValueSpecType(c.pkg, node, c.pos)
+			return
+		case *ast.ReturnStmt:
+			if c.enclosingFunc != nil {
+				inf.objType = expectedReturnStmtType(c.enclosingFunc.sig, node, c.pos)
+			}
+			return inf
+		case *ast.SendStmt:
+			if typ := expectedSendStmtType(c.pkg, node, c.pos); typ != nil {
+				inf.objType = typ
 			}
 			return inf
 		case *ast.CallExpr:
@@ -2299,22 +2331,27 @@ Nodes:
 					break Nodes
 				}
 
-				sig, _ := c.pkg.TypesInfo().Types[node.Fun].Type.(*types.Signature)
+				if sig, ok := c.pkg.TypesInfo().Types[node.Fun].Type.(*types.Signature); ok {
+					// Out of bounds arguments get no inference completion.
+					if !sig.Variadic() && exprAtPos(c.pos, node.Args) >= sig.Params().Len() {
+						return inf
+					}
 
-				if sig != nil && sig.TypeParams().Len() > 0 {
-					// If we are completing a generic func call, re-check the call expression.
-					// This allows type param inference to work in cases like:
-					//
-					// func foo[T any](T) {}
-					// foo[int](<>) // <- get "int" completions instead of "T"
-					//
-					// TODO: remove this after https://go.dev/issue/52503
-					info := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
-					types.CheckExpr(c.pkg.FileSet(), c.pkg.Types(), node.Fun.Pos(), node.Fun, info)
-					sig, _ = info.Types[node.Fun].Type.(*types.Signature)
-				}
+					if sig.TypeParams().Len() > 0 {
+						targs := c.getTypeArgs(node)
+						res := inferExpectedResultTypes(c, i)
+						substs := reverseInferTypeArgs(sig, targs, res)
+						inst := instantiate(sig, substs)
+						if inst != nil {
+							// TODO(jacobz): If partial signature instantiation becomes possible,
+							// make needsExactType only true if necessary.
+							// Currently, ambigious cases always resolve to a conversion expression
+							// wrapping the completion, which is occassionally superfluous.
+							inf.needsExactType = true
+							sig = inst
+						}
+					}
 
-				if sig != nil {
 					inf = c.expectedCallParamType(inf, node, sig)
 				}
 
@@ -2344,17 +2381,6 @@ Nodes:
 
 				return inf
 			}
-		case *ast.ReturnStmt:
-			if c.enclosingFunc != nil {
-				sig := c.enclosingFunc.sig
-				// Find signature result that corresponds to our return statement.
-				if resultIdx := exprAtPos(c.pos, node.Results); resultIdx < len(node.Results) {
-					if resultIdx < sig.Results().Len() {
-						inf.objType = sig.Results().At(resultIdx).Type()
-					}
-				}
-			}
-			return inf
 		case *ast.CaseClause:
 			if swtch, ok := findSwitchStmt(c.path[i+1:], c.pos, node).(*ast.SwitchStmt); ok {
 				if tv, ok := c.pkg.TypesInfo().Types[swtch.Tag]; ok {
@@ -2398,6 +2424,9 @@ Nodes:
 						inf.objType = ct
 						inf.typeName.wantTypeName = true
 						inf.typeName.isTypeParam = true
+						if typ := c.inferExpectedTypeArg(i+1, 0); typ != nil {
+							inf.objType = typ
+						}
 					}
 				}
 			}
@@ -2405,20 +2434,14 @@ Nodes:
 		case *ast.IndexListExpr:
 			if node.Lbrack < c.pos && c.pos <= node.Rbrack {
 				if tv, ok := c.pkg.TypesInfo().Types[node.X]; ok {
-					if ct := expectedConstraint(tv.Type, exprAtPos(c.pos, node.Indices)); ct != nil {
+					typeParamIdx := exprAtPos(c.pos, node.Indices)
+					if ct := expectedConstraint(tv.Type, typeParamIdx); ct != nil {
 						inf.objType = ct
 						inf.typeName.wantTypeName = true
 						inf.typeName.isTypeParam = true
-					}
-				}
-			}
-			return inf
-		case *ast.SendStmt:
-			// Make sure we are on right side of arrow (e.g. "foo <- <>").
-			if c.pos > node.Arrow+1 {
-				if tv, ok := c.pkg.TypesInfo().Types[node.Chan]; ok {
-					if ch, ok := tv.Type.Underlying().(*types.Chan); ok {
-						inf.objType = ch.Elem()
+						if typ := c.inferExpectedTypeArg(i+1, typeParamIdx); typ != nil {
+							inf.objType = typ
+						}
 					}
 				}
 			}
@@ -2455,6 +2478,267 @@ Nodes:
 	}
 
 	return inf
+}
+
+// inferExpectedResultTypes takes the index of a call expression within the completion
+// path and uses its surroundings to infer the expected result tuple of the call's signature.
+// Returns the signature result tuple as a slice, or nil if reverse type inference fails.
+//
+// # For example
+//
+// func generic[T any, U any](a T, b U) (T, U) { ... }
+//
+// var x TypeA
+// var y TypeB
+// x, y := generic(<cursor>, <cursor>)
+//
+// inferExpectedResultTypes can determine that the expected result type of the function is (TypeA, TypeB)
+func inferExpectedResultTypes(c *completer, callNodeIdx int) []types.Type {
+	callNode, ok := c.path[callNodeIdx].(*ast.CallExpr)
+	if !ok {
+		bug.Reportf("inferExpectedResultTypes given callNodeIndex: %v which is not a ast.CallExpr\n", callNodeIdx)
+		return nil
+	}
+
+	if len(c.path) <= callNodeIdx+1 {
+		return nil
+	}
+
+	var expectedResults []types.Type
+
+	// Check the parents of the call node to extract the expected result types of the call signature.
+	// Currently reverse inferences are only supported with the the following parent expressions,
+	// however this list isn't exhaustive.
+	switch node := c.path[callNodeIdx+1].(type) {
+	case *ast.KeyValueExpr:
+		enclosingCompositeLiteral := enclosingCompositeLiteral(c.path[callNodeIdx:], callNode.Pos(), c.pkg.TypesInfo())
+		if !wantStructFieldCompletions(enclosingCompositeLiteral) {
+			expectedResults = append(expectedResults, expectedCompositeLiteralType(enclosingCompositeLiteral, callNode.Pos()))
+		}
+	case *ast.AssignStmt:
+		objType, assignees := expectedAssignStmtTypes(c.pkg, node, c.pos)
+		if len(assignees) > 0 {
+			return assignees
+		} else if objType != nil {
+			expectedResults = append(expectedResults, objType)
+		}
+	case *ast.ValueSpec:
+		if resultType := expectedValueSpecType(c.pkg, node, c.pos); resultType != nil {
+			expectedResults = append(expectedResults, resultType)
+		}
+	case *ast.SendStmt:
+		if resultType := expectedSendStmtType(c.pkg, node, c.pos); resultType != nil {
+			expectedResults = append(expectedResults, resultType)
+		}
+	case *ast.ReturnStmt:
+		if c.enclosingFunc == nil {
+			return nil
+		}
+
+		// As a special case for reverse call inference in
+		//
+		// return foo(<cursor>)
+		//
+		// Pull the result type from the enclosing function
+		if exprAtPos(c.pos, node.Results) == 0 {
+			if callSig := c.pkg.TypesInfo().Types[callNode.Fun].Type.(*types.Signature); callSig != nil {
+				enclosingResults := c.enclosingFunc.sig.Results()
+				if callSig.Results().Len() == enclosingResults.Len() {
+					expectedResults = make([]types.Type, enclosingResults.Len())
+					for i := range enclosingResults.Len() {
+						expectedResults[i] = enclosingResults.At(i).Type()
+					}
+					return expectedResults
+				}
+			}
+		}
+
+		if resultType := expectedReturnStmtType(c.enclosingFunc.sig, node, c.pos); resultType != nil {
+			expectedResults = append(expectedResults, resultType)
+		}
+	case *ast.CallExpr:
+		// TODO(jacobz): This is a difficult case because the normal CallExpr candidateInference
+		// leans on control flow which is inaccessible in this helper function.
+		// It would probably take a significant refactor to a recursive solution to make this case
+		// work cleanly. For now it's unimplemented.
+	}
+	return expectedResults
+}
+
+// expectedSendStmtType return the expected type at the position.
+// Returns nil if unknown.
+func expectedSendStmtType(pkg *cache.Package, node *ast.SendStmt, pos token.Pos) types.Type {
+	// Make sure we are on right side of arrow (e.g. "foo <- <>").
+	if pos > node.Arrow+1 {
+		if tv, ok := pkg.TypesInfo().Types[node.Chan]; ok {
+			if ch, ok := tv.Type.Underlying().(*types.Chan); ok {
+				return ch.Elem()
+			}
+		}
+	}
+	return nil
+}
+
+// expectedValueSpecType returns the expected type of a ValueSpec at the query
+// position.
+func expectedValueSpecType(pkg *cache.Package, node *ast.ValueSpec, pos token.Pos) types.Type {
+	if node.Type != nil && pos > node.Type.End() {
+		return pkg.TypesInfo().TypeOf(node.Type)
+	}
+	return nil
+}
+
+// expectedAssignStmtTypes analyzes the provided assignStmt, and checks
+// to see if the provided pos is within a RHS expresison. If so, it report
+// the expected type of that expression, and the LHS type(s) to which it
+// is being assigned.
+func expectedAssignStmtTypes(pkg *cache.Package, node *ast.AssignStmt, pos token.Pos) (objType types.Type, assignees []types.Type) {
+	// Only rank completions if you are on the right side of the token.
+	if pos > node.TokPos {
+		i := exprAtPos(pos, node.Rhs)
+		if i >= len(node.Lhs) {
+			i = len(node.Lhs) - 1
+		}
+		if tv, ok := pkg.TypesInfo().Types[node.Lhs[i]]; ok {
+			objType = tv.Type
+		}
+
+		// If we have a single expression on the RHS, record the LHS
+		// assignees so we can favor multi-return function calls with
+		// matching result values.
+		if len(node.Rhs) <= 1 {
+			for _, lhs := range node.Lhs {
+				assignees = append(assignees, pkg.TypesInfo().TypeOf(lhs))
+			}
+		} else {
+			// Otherwise, record our single assignee, even if its type is
+			// not available. We use this info to downrank functions
+			// with the wrong number of result values.
+			assignees = append(assignees, pkg.TypesInfo().TypeOf(node.Lhs[i]))
+		}
+	}
+	return objType, assignees
+}
+
+// expectedReturnStmtType returns the expected type of a return statement.
+// Returns nil if enclosingSig is nil.
+func expectedReturnStmtType(enclosingSig *types.Signature, node *ast.ReturnStmt, pos token.Pos) types.Type {
+	if enclosingSig != nil {
+		if resultIdx := exprAtPos(pos, node.Results); resultIdx < len(node.Results) {
+			return enclosingSig.Results().At(resultIdx).Type()
+		}
+	}
+	return nil
+}
+
+// Returns the number of type arguments in a callExpr
+func (c *completer) getTypeArgs(callExpr *ast.CallExpr) []types.Type {
+	var targs []types.Type
+	switch fun := callExpr.Fun.(type) {
+	case *ast.IndexListExpr:
+		for i := range fun.Indices {
+			if typ, ok := c.pkg.TypesInfo().Types[fun.Indices[i]]; ok && typeIsValid(typ.Type) {
+				targs = append(targs, typ.Type)
+			}
+		}
+	case *ast.IndexExpr:
+		if typ, ok := c.pkg.TypesInfo().Types[fun.Index]; ok && typeIsValid(typ.Type) {
+			targs = []types.Type{typ.Type}
+		}
+	}
+	return targs
+}
+
+// reverseInferTypeArgs takes a generic signature, a list of passed type arguments, and the expected concrete return types
+// inferred from the signature's call site. If possible, it returns a list of types that could be used as the type arguments
+// to the signature. If not possible, it returns nil.
+//
+// Does not panic if any of the arguments are nil.
+func reverseInferTypeArgs(sig *types.Signature, typeArgs []types.Type, expectedResults []types.Type) []types.Type {
+	if len(expectedResults) == 0 || sig == nil || sig.TypeParams().Len() == 0 || sig.Results().Len() != len(expectedResults) {
+		return nil
+	}
+
+	tparams := make([]*types.TypeParam, sig.TypeParams().Len())
+	for i := range sig.TypeParams().Len() {
+		tparams[i] = sig.TypeParams().At(i)
+	}
+
+	for i := len(typeArgs); i < sig.TypeParams().Len(); i++ {
+		typeArgs = append(typeArgs, nil)
+	}
+
+	u := newUnifier(tparams, typeArgs)
+	for i, assignee := range expectedResults {
+		// Unify does not check the constraints of the type parameters.
+		// Checks must be applied after.
+		if !u.unify(sig.Results().At(i).Type(), assignee, unifyModeExact) {
+			return nil
+		}
+	}
+
+	substs := make([]types.Type, sig.TypeParams().Len())
+	for i := 0; i < sig.TypeParams().Len(); i++ {
+		if sub := u.handles[sig.TypeParams().At(i)]; sub != nil && *sub != nil {
+			// Ensure the inferred subst is assignable to the type parameter's constraint.
+			if !assignableTo(*sub, sig.TypeParams().At(i).Constraint()) {
+				return nil
+			}
+			substs[i] = *sub
+		}
+	}
+	return substs
+}
+
+// inferExpectedTypeArg gives a type param candidateInference based on the surroundings of it's call site.
+// If successful, the inf parameter is returned with only it's objType field updated.
+//
+// callNodeIdx is the index within the completion path of the type parameter's parent call expression.
+// typeParamIdx is the index of the type parameter at the completion pos.
+func (c *completer) inferExpectedTypeArg(callNodeIdx int, typeParamIdx int) types.Type {
+	if len(c.path) <= callNodeIdx {
+		return nil
+	}
+
+	callNode, ok := c.path[callNodeIdx].(*ast.CallExpr)
+	if !ok {
+		return nil
+	}
+
+	// Infer the type parameters in a function call based on it's context
+	sig := c.pkg.TypesInfo().Types[callNode.Fun].Type.(*types.Signature)
+	expectedResults := inferExpectedResultTypes(c, callNodeIdx)
+	if typeParamIdx < 0 || typeParamIdx >= sig.TypeParams().Len() {
+		return nil
+	}
+	substs := reverseInferTypeArgs(sig, nil, expectedResults)
+	if substs == nil || substs[typeParamIdx] == nil {
+		return nil
+	}
+
+	return substs[typeParamIdx]
+}
+
+// Instantiates a signature with a set of type parameters.
+// Wrapper around types.Instantiate but bad arguments won't cause a panic.
+func instantiate(sig *types.Signature, substs []types.Type) *types.Signature {
+	if substs == nil || sig == nil || len(substs) != sig.TypeParams().Len() {
+		return nil
+	}
+
+	for i := range substs {
+		if substs[i] == nil {
+			substs[i] = sig.TypeParams().At(i)
+		}
+	}
+
+	if inst, err := types.Instantiate(nil, sig, substs, true); err == nil {
+		if inst, ok := inst.(*types.Signature); ok {
+			return inst
+		}
+	}
+
+	return nil
 }
 
 func (c *completer) expectedCallParamType(inf candidateInference, node *ast.CallExpr, sig *types.Signature) candidateInference {
@@ -2875,7 +3159,7 @@ func (c *completer) matchingCandidate(cand *candidate) bool {
 	}
 
 	// Bail out early if we are completing a field name in a composite literal.
-	if v, ok := cand.obj.(*types.Var); ok && v.IsField() && c.wantStructFieldCompletions() {
+	if v, ok := cand.obj.(*types.Var); ok && v.IsField() && wantStructFieldCompletions(c.enclosingCompositeLiteral) {
 		return true
 	}
 
@@ -2970,6 +3254,14 @@ func (ci *candidateInference) candTypeMatches(cand *candidate) bool {
 
 			if expType == variadicType {
 				cand.mods = append(cand.mods, takeDotDotDot)
+			}
+
+			// Candidate matches, but isn't exactly identical to the expected type.
+			// Apply a conversion to allow it to match.
+			if ci.needsExactType && !types.Identical(candType, expType) {
+				cand.convertTo = expType
+				// Ranks barely lower if it needs a conversion, even though it's perfectly valid.
+				cand.score *= 0.95
 			}
 
 			// Lower candidate score for untyped conversions. This avoids
@@ -3161,6 +3453,9 @@ func (c *completer) matchingTypeName(cand *candidate) bool {
 		return false
 	}
 
+	wantExactTypeParam := c.inference.typeName.isTypeParam &&
+		c.inference.typeName.wantTypeName && c.inference.needsExactType
+
 	typeMatches := func(candType types.Type) bool {
 		// Take into account any type name modifier prefixes.
 		candType = c.inference.applyTypeNameModifiers(candType)
@@ -3177,6 +3472,13 @@ func (c *completer) matchingTypeName(cand *candidate) bool {
 					return false
 				}
 			}
+		}
+
+		// Suggest the exact type when performing reverse type inference.
+		// x = Foo[<>]()
+		// Where x is an interface kind, only suggest the interface type rather than its implementors
+		if wantExactTypeParam && types.Identical(candType, c.inference.objType) {
+			return true
 		}
 
 		if c.inference.typeName.wantComparable && !types.Comparable(candType) {

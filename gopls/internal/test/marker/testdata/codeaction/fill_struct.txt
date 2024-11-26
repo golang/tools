@@ -28,49 +28,49 @@ type basicStruct struct {
 	foo int
 }
 
-var _ = basicStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a1)
+var _ = basicStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a1)
 
 type twoArgStruct struct {
 	foo int
 	bar string
 }
 
-var _ = twoArgStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a2)
+var _ = twoArgStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a2)
 
 type nestedStruct struct {
 	bar   string
 	basic basicStruct
 }
 
-var _ = nestedStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a3)
+var _ = nestedStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a3)
 
-var _ = data.B{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a4)
+var _ = data.B{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a4)
 -- @a1/a.go --
 @@ -11 +11,3 @@
--var _ = basicStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a1)
+-var _ = basicStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a1)
 +var _ = basicStruct{
 +	foo: 0,
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", a1)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a1)
 -- @a2/a.go --
 @@ -18 +18,4 @@
--var _ = twoArgStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a2)
+-var _ = twoArgStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a2)
 +var _ = twoArgStruct{
 +	foo: 0,
 +	bar: "",
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", a2)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a2)
 -- @a3/a.go --
 @@ -25 +25,4 @@
--var _ = nestedStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a3)
+-var _ = nestedStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a3)
 +var _ = nestedStruct{
 +	bar:   "",
 +	basic: basicStruct{},
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", a3)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a3)
 -- @a4/a.go --
 @@ -27 +27,3 @@
--var _ = data.B{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a4)
+-var _ = data.B{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a4)
 +var _ = data.B{
 +	ExportedInt: 0,
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", a4)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a4)
 -- a2.go --
 package fillstruct
 
@@ -82,57 +82,57 @@ type typedStruct struct {
 	a  [2]string
 }
 
-var _ = typedStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a21)
+var _ = typedStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a21)
 
 type funStruct struct {
 	fn func(i int) int
 }
 
-var _ = funStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a22)
+var _ = funStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a22)
 
 type funStructComplex struct {
 	fn func(i int, s string) (string, int)
 }
 
-var _ = funStructComplex{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a23)
+var _ = funStructComplex{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a23)
 
 type funStructEmpty struct {
 	fn func()
 }
 
-var _ = funStructEmpty{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a24)
+var _ = funStructEmpty{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a24)
 
 -- @a21/a2.go --
 @@ -11 +11,7 @@
--var _ = typedStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a21)
+-var _ = typedStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a21)
 +var _ = typedStruct{
 +	m:  map[string]int{},
 +	s:  []int{},
 +	c:  make(chan int),
 +	c1: make(<-chan int),
 +	a:  [2]string{},
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", a21)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a21)
 -- @a22/a2.go --
 @@ -17 +17,4 @@
--var _ = funStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a22)
+-var _ = funStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a22)
 +var _ = funStruct{
 +	fn: func(i int) int {
 +	},
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", a22)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a22)
 -- @a23/a2.go --
 @@ -23 +23,4 @@
--var _ = funStructComplex{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a23)
+-var _ = funStructComplex{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a23)
 +var _ = funStructComplex{
 +	fn: func(i int, s string) (string, int) {
 +	},
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", a23)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a23)
 -- @a24/a2.go --
 @@ -29 +29,4 @@
--var _ = funStructEmpty{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a24)
+-var _ = funStructEmpty{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a24)
 +var _ = funStructEmpty{
 +	fn: func() {
 +	},
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", a24)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a24)
 -- a3.go --
 package fillstruct
 
@@ -150,7 +150,7 @@ type Bar struct {
 	Y *Foo
 }
 
-var _ = Bar{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a31)
+var _ = Bar{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a31)
 
 type importedStruct struct {
 	m  map[*ast.CompositeLit]ast.Field
@@ -161,7 +161,7 @@ type importedStruct struct {
 	st ast.CompositeLit
 }
 
-var _ = importedStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a32)
+var _ = importedStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a32)
 
 type pointerBuiltinStruct struct {
 	b *bool
@@ -169,23 +169,23 @@ type pointerBuiltinStruct struct {
 	i *int
 }
 
-var _ = pointerBuiltinStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a33)
+var _ = pointerBuiltinStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a33)
 
 var _ = []ast.BasicLit{
-	{}, //@codeactionedit("}", "refactor.rewrite.fillStruct", a34)
+	{}, //@codeaction("}", "refactor.rewrite.fillStruct", edit=a34)
 }
 
-var _ = []ast.BasicLit{{}} //@codeactionedit("}", "refactor.rewrite.fillStruct", a35)
+var _ = []ast.BasicLit{{}} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a35)
 -- @a31/a3.go --
 @@ -17 +17,4 @@
--var _ = Bar{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a31)
+-var _ = Bar{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a31)
 +var _ = Bar{
 +	X: &Foo{},
 +	Y: &Foo{},
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", a31)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a31)
 -- @a32/a3.go --
 @@ -28 +28,9 @@
--var _ = importedStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a32)
+-var _ = importedStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a32)
 +var _ = importedStruct{
 +	m: map[*ast.CompositeLit]ast.Field{},
 +	s: []ast.BadExpr{},
@@ -194,31 +194,31 @@ var _ = []ast.BasicLit{{}} //@codeactionedit("}", "refactor.rewrite.fillStruct",
 +	fn: func(ast_decl ast.DeclStmt) ast.Ellipsis {
 +	},
 +	st: ast.CompositeLit{},
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", a32)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a32)
 -- @a33/a3.go --
 @@ -36 +36,5 @@
--var _ = pointerBuiltinStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a33)
+-var _ = pointerBuiltinStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a33)
 +var _ = pointerBuiltinStruct{
 +	b: new(bool),
 +	s: new(string),
 +	i: new(int),
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", a33)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a33)
 -- @a34/a3.go --
 @@ -39 +39,5 @@
--	{}, //@codeactionedit("}", "refactor.rewrite.fillStruct", a34)
+-	{}, //@codeaction("}", "refactor.rewrite.fillStruct", edit=a34)
 +	{
 +		ValuePos: 0,
 +		Kind:     0,
 +		Value:    "",
-+	}, //@codeactionedit("}", "refactor.rewrite.fillStruct", a34)
++	}, //@codeaction("}", "refactor.rewrite.fillStruct", edit=a34)
 -- @a35/a3.go --
 @@ -42 +42,5 @@
--var _ = []ast.BasicLit{{}} //@codeactionedit("}", "refactor.rewrite.fillStruct", a35)
+-var _ = []ast.BasicLit{{}} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a35)
 +var _ = []ast.BasicLit{{
 +	ValuePos: 0,
 +	Kind:     0,
 +	Value:    "",
-+}} //@codeactionedit("}", "refactor.rewrite.fillStruct", a35)
++}} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a35)
 -- a4.go --
 package fillstruct
 
@@ -244,48 +244,48 @@ type assignStruct struct {
 
 func fill() {
 	var x int
-	var _ = iStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a41)
+	var _ = iStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a41)
 
 	var s string
-	var _ = sStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a42)
+	var _ = sStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a42)
 
 	var n int
 	_ = []int{}
 	if true {
 		arr := []int{1, 2}
 	}
-	var _ = multiFill{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a43)
+	var _ = multiFill{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a43)
 
 	var node *ast.CompositeLit
-	var _ = assignStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a45)
+	var _ = assignStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a45)
 }
 
 -- @a41/a4.go --
 @@ -25 +25,3 @@
--	var _ = iStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a41)
+-	var _ = iStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a41)
 +	var _ = iStruct{
 +		X: x,
-+	} //@codeactionedit("}", "refactor.rewrite.fillStruct", a41)
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a41)
 -- @a42/a4.go --
 @@ -28 +28,3 @@
--	var _ = sStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a42)
+-	var _ = sStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a42)
 +	var _ = sStruct{
 +		str: s,
-+	} //@codeactionedit("}", "refactor.rewrite.fillStruct", a42)
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a42)
 -- @a43/a4.go --
 @@ -35 +35,5 @@
--	var _ = multiFill{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a43)
+-	var _ = multiFill{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a43)
 +	var _ = multiFill{
 +		num:   n,
 +		strin: s,
 +		arr:   []int{},
-+	} //@codeactionedit("}", "refactor.rewrite.fillStruct", a43)
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a43)
 -- @a45/a4.go --
 @@ -38 +38,3 @@
--	var _ = assignStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", a45)
+-	var _ = assignStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a45)
 +	var _ = assignStruct{
 +		n: node,
-+	} //@codeactionedit("}", "refactor.rewrite.fillStruct", a45)
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a45)
 -- fillStruct.go --
 package fillstruct
 
@@ -306,42 +306,42 @@ type StructA3 struct {
 }
 
 func fill() {
-	a := StructA{}  //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct1)
-	b := StructA2{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct2)
-	c := StructA3{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct3)
+	a := StructA{}  //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct1)
+	b := StructA2{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct2)
+	c := StructA3{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct3)
 	if true {
-		_ = StructA3{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct4)
+		_ = StructA3{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct4)
 	}
 }
 
 -- @fillStruct1/fillStruct.go --
 @@ -20 +20,7 @@
--	a := StructA{}  //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct1)
+-	a := StructA{}  //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct1)
 +	a := StructA{
 +		unexportedIntField: 0,
 +		ExportedIntField:   0,
 +		MapA:               map[int]string{},
 +		Array:              []int{},
 +		StructB:            StructB{},
-+	}  //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct1)
++	}  //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct1)
 -- @fillStruct2/fillStruct.go --
 @@ -21 +21,3 @@
--	b := StructA2{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct2)
+-	b := StructA2{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct2)
 +	b := StructA2{
 +		B: &StructB{},
-+	} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct2)
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct2)
 -- @fillStruct3/fillStruct.go --
 @@ -22 +22,3 @@
--	c := StructA3{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct3)
+-	c := StructA3{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct3)
 +	c := StructA3{
 +		B: StructB{},
-+	} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct3)
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct3)
 -- @fillStruct4/fillStruct.go --
 @@ -24 +24,3 @@
--		_ = StructA3{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct4)
+-		_ = StructA3{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct4)
 +		_ = StructA3{
 +			B: StructB{},
-+		} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct4)
++		} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct4)
 -- fillStruct_anon.go --
 package fillstruct
 
@@ -355,16 +355,16 @@ type StructAnon struct {
 }
 
 func fill() {
-	_ := StructAnon{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_anon)
+	_ := StructAnon{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_anon)
 }
 -- @fillStruct_anon/fillStruct_anon.go --
 @@ -13 +13,5 @@
--	_ := StructAnon{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_anon)
+-	_ := StructAnon{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_anon)
 +	_ := StructAnon{
 +		a: struct{}{},
 +		b: map[string]interface{}{},
 +		c: map[string]struct{d int; e bool}{},
-+	} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_anon)
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_anon)
 -- fillStruct_nested.go --
 package fillstruct
 
@@ -378,16 +378,16 @@ type StructC struct {
 
 func nested() {
 	c := StructB{
-		StructC: StructC{}, //@codeactionedit("}", "refactor.rewrite.fillStruct", fill_nested)
+		StructC: StructC{}, //@codeaction("}", "refactor.rewrite.fillStruct", edit=fill_nested)
 	}
 }
 
 -- @fill_nested/fillStruct_nested.go --
 @@ -13 +13,3 @@
--		StructC: StructC{}, //@codeactionedit("}", "refactor.rewrite.fillStruct", fill_nested)
+-		StructC: StructC{}, //@codeaction("}", "refactor.rewrite.fillStruct", edit=fill_nested)
 +		StructC: StructC{
 +			unexportedInt: 0,
-+		}, //@codeactionedit("}", "refactor.rewrite.fillStruct", fill_nested)
++		}, //@codeaction("}", "refactor.rewrite.fillStruct", edit=fill_nested)
 -- fillStruct_package.go --
 package fillstruct
 
@@ -398,25 +398,25 @@ import (
 )
 
 func unexported() {
-	a := data.B{}   //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_package1)
-	_ = h2.Client{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_package2)
+	a := data.B{}   //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_package1)
+	_ = h2.Client{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_package2)
 }
 -- @fillStruct_package1/fillStruct_package.go --
 @@ -10 +10,3 @@
--	a := data.B{}   //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_package1)
+-	a := data.B{}   //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_package1)
 +	a := data.B{
 +		ExportedInt: 0,
-+	}   //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_package1)
++	}   //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_package1)
 -- @fillStruct_package2/fillStruct_package.go --
 @@ -11 +11,7 @@
--	_ = h2.Client{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_package2)
+-	_ = h2.Client{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_package2)
 +	_ = h2.Client{
 +		Transport: nil,
 +		CheckRedirect: func(req *h2.Request, via []*h2.Request) error {
 +		},
 +		Jar:     nil,
 +		Timeout: 0,
-+	} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_package2)
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_package2)
 -- fillStruct_partial.go --
 package fillstruct
 
@@ -434,13 +434,13 @@ type StructPartialB struct {
 func fill() {
 	a := StructPartialA{
 		PrefilledInt: 5,
-	} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_partial1)
+	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_partial1)
 	b := StructPartialB{
 		/* this comment should disappear */
 		PrefilledInt: 7, // This comment should be blown away.
 		/* As should
 		this one */
-	} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_partial2)
+	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_partial2)
 }
 
 -- @fillStruct_partial1/fillStruct_partial.go --
@@ -465,15 +465,15 @@ type StructD struct {
 }
 
 func spaces() {
-	d := StructD{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_spaces)
+	d := StructD{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_spaces)
 }
 
 -- @fillStruct_spaces/fillStruct_spaces.go --
 @@ -8 +8,3 @@
--	d := StructD{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_spaces)
+-	d := StructD{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_spaces)
 +	d := StructD{
 +		ExportedIntField: 0,
-+	} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_spaces)
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_spaces)
 -- fillStruct_unsafe.go --
 package fillstruct
 
@@ -485,16 +485,16 @@ type unsafeStruct struct {
 }
 
 func fill() {
-	_ := unsafeStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_unsafe)
+	_ := unsafeStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_unsafe)
 }
 
 -- @fillStruct_unsafe/fillStruct_unsafe.go --
 @@ -11 +11,4 @@
--	_ := unsafeStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_unsafe)
+-	_ := unsafeStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_unsafe)
 +	_ := unsafeStruct{
 +		x: 0,
 +		p: nil,
-+	} //@codeactionedit("}", "refactor.rewrite.fillStruct", fillStruct_unsafe)
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_unsafe)
 -- typeparams.go --
 package fillstruct
 
@@ -506,59 +506,59 @@ type basicStructWithTypeParams[T any] struct {
 	foo T
 }
 
-var _ = basicStructWithTypeParams[int]{} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams1)
+var _ = basicStructWithTypeParams[int]{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams1)
 
 type twoArgStructWithTypeParams[F, B any] struct {
 	foo F
 	bar B
 }
 
-var _ = twoArgStructWithTypeParams[string, int]{} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams2)
+var _ = twoArgStructWithTypeParams[string, int]{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams2)
 
 var _ = twoArgStructWithTypeParams[int, string]{
 	bar: "bar",
-} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams3)
+} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams3)
 
 type nestedStructWithTypeParams struct {
 	bar   string
 	basic basicStructWithTypeParams[int]
 }
 
-var _ = nestedStructWithTypeParams{} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams4)
+var _ = nestedStructWithTypeParams{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams4)
 
 func _[T any]() {
 	type S struct{ t T }
-	_ = S{} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams5)
+	_ = S{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams5)
 }
 -- @typeparams1/typeparams.go --
 @@ -11 +11,3 @@
--var _ = basicStructWithTypeParams[int]{} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams1)
+-var _ = basicStructWithTypeParams[int]{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams1)
 +var _ = basicStructWithTypeParams[int]{
 +	foo: 0,
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams1)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams1)
 -- @typeparams2/typeparams.go --
 @@ -18 +18,4 @@
--var _ = twoArgStructWithTypeParams[string, int]{} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams2)
+-var _ = twoArgStructWithTypeParams[string, int]{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams2)
 +var _ = twoArgStructWithTypeParams[string, int]{
 +	foo: "",
 +	bar: 0,
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams2)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams2)
 -- @typeparams3/typeparams.go --
 @@ -21 +21 @@
 +	foo: 0,
 -- @typeparams4/typeparams.go --
 @@ -29 +29,4 @@
--var _ = nestedStructWithTypeParams{} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams4)
+-var _ = nestedStructWithTypeParams{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams4)
 +var _ = nestedStructWithTypeParams{
 +	bar:   "",
 +	basic: basicStructWithTypeParams{},
-+} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams4)
++} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams4)
 -- @typeparams5/typeparams.go --
 @@ -33 +33,3 @@
--	_ = S{} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams5)
+-	_ = S{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams5)
 +	_ = S{
 +		t: *new(T),
-+	} //@codeactionedit("}", "refactor.rewrite.fillStruct", typeparams5)
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams5)
 -- issue63921.go --
 package fillstruct
 
@@ -571,5 +571,5 @@ type invalidStruct struct {
 func _() {
   // Note: the golden content for issue63921 is empty: fillstruct produces no
   // edits, but does not panic.
-  invalidStruct{} //@codeactionedit("}", "refactor.rewrite.fillStruct", issue63921)
+  invalidStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921)
 }

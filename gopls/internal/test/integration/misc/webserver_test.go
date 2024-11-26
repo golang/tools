@@ -135,6 +135,11 @@ const A = 1
 				collectMessages := env.Awaiter.ListenToShownMessages()
 				env.ExecuteCommand(params, &result)
 
+				// golang/go#70342: just because the command has finished does not mean
+				// that we will have received the necessary notifications. Synchronize
+				// using progress reports.
+				env.Await(CompletedWork(params.Command, 1, false))
+
 				wantDocs, wantMessages := 0, 1
 				if supported {
 					wantDocs, wantMessages = 1, 0
@@ -144,10 +149,10 @@ const A = 1
 				messages := collectMessages()
 
 				if gotDocs := len(docs); gotDocs != wantDocs {
-					t.Errorf("GoDoc: got %d showDocument requests, want %d", gotDocs, wantDocs)
+					t.Errorf("gopls.doc: got %d showDocument requests, want %d", gotDocs, wantDocs)
 				}
 				if gotMessages := len(messages); gotMessages != wantMessages {
-					t.Errorf("GoDoc: got %d showMessage requests, want %d", gotMessages, wantMessages)
+					t.Errorf("gopls.doc: got %d showMessage requests, want %d", gotMessages, wantMessages)
 				}
 			})
 		})

@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/types"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -25,8 +26,8 @@ import (
 	"golang.org/x/tools/gopls/internal/util/immutable"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/packagesinternal"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/xcontext"
 )
 
@@ -42,7 +43,7 @@ var errNoPackages = errors.New("no packages returned")
 // errors associated with specific modules.
 //
 // If scopes contains a file scope there must be exactly one scope.
-func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadScope) (err error) {
+func (s *Snapshot) load(ctx context.Context, allowNetwork AllowNetwork, scopes ...loadScope) (err error) {
 	if ctx.Err() != nil {
 		// Check context cancellation before incrementing id below: a load on a
 		// cancelled context should be a no-op.
@@ -57,6 +58,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 	// Keep track of module query -> module path so that we can later correlate query
 	// errors with errors.
 	moduleQueries := make(map[string]string)
+
 	for _, scope := range scopes {
 		switch scope := scope.(type) {
 		case packageLoadScope:
@@ -118,21 +120,13 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 
 	startTime := time.Now()
 
-	inv, cleanupInvocation, err := s.GoCommandInvocation(allowNetwork, &gocommand.Invocation{
-		WorkingDir: s.view.root.Path(),
-	})
-	if err != nil {
-		return err
-	}
-	defer cleanupInvocation()
-
 	// Set a last resort deadline on packages.Load since it calls the go
 	// command, which may hang indefinitely if it has a bug. golang/go#42132
 	// and golang/go#42255 have more context.
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
-	cfg := s.config(ctx, inv)
+	cfg := s.config(ctx, allowNetwork)
 	pkgs, err := packages.Load(cfg, query...)
 
 	// If the context was canceled, return early. Otherwise, we might be
@@ -169,37 +163,21 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		// package. We don't support this; theoretically we could, but it seems
 		// unnecessarily complicated.
 		//
-		// Prior to golang/go#64233 we just assumed that we'd get exactly one
-		// package here. The categorization of bug reports below may be a bit
-		// verbose, but anticipates that perhaps we don't fully understand
-		// possible failure modes.
-		errorf := bug.Errorf
-		if s.view.typ == GoPackagesDriverView {
-			errorf = fmt.Errorf // all bets are off
-		}
-		for _, pkg := range pkgs {
-			// Don't report bugs if any packages have errors.
-			// For example: given go list errors, go/packages may synthesize a
-			// package with ID equal to the query.
-			if len(pkg.Errors) > 0 {
-				errorf = fmt.Errorf
-				break
-			}
-		}
-
+		// It's possible that we get no packages here, for example if the file is a
+		// cgo file and cgo is not enabled.
 		var standalonePkg *packages.Package
 		for _, pkg := range pkgs {
 			if pkg.ID == "command-line-arguments" {
 				if standalonePkg != nil {
-					return errorf("go/packages returned multiple standalone packages")
+					return fmt.Errorf("go/packages returned multiple standalone packages")
 				}
 				standalonePkg = pkg
 			} else if pkg.ForTest == "" && !strings.HasSuffix(pkg.ID, ".test") {
-				return errorf("go/packages returned unexpected package %q for standalone file", pkg.ID)
+				return fmt.Errorf("go/packages returned unexpected package %q for standalone file", pkg.ID)
 			}
 		}
 		if standalonePkg == nil {
-			return errorf("go/packages failed to return non-test standalone package")
+			return fmt.Errorf("go/packages failed to return non-test standalone package")
 		}
 		if len(standalonePkg.CompiledGoFiles) > 0 {
 			pkgs = []*packages.Package{standalonePkg}
@@ -278,7 +256,7 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork bool, scopes ...loadSc
 		if allFilesExcluded(pkg.GoFiles, filterFunc) {
 			continue
 		}
-		buildMetadata(newMetadata, pkg, cfg.Dir, standalone, s.view.typ != GoPackagesDriverView)
+		buildMetadata(newMetadata, cfg.Dir, standalone, pkg)
 	}
 
 	s.mu.Lock()
@@ -362,6 +340,48 @@ func (m *moduleErrorMap) Error() string {
 	return buf.String()
 }
 
+// config returns the configuration used for the snapshot's interaction with
+// the go/packages API. It uses the given working directory.
+//
+// TODO(rstambler): go/packages requires that we do not provide overlays for
+// multiple modules in one config, so buildOverlay needs to filter overlays by
+// module.
+// TODO(rfindley): ^^ is this still true?
+func (s *Snapshot) config(ctx context.Context, allowNetwork AllowNetwork) *packages.Config {
+	cfg := &packages.Config{
+		Context:    ctx,
+		Dir:        s.view.root.Path(),
+		Env:        s.view.Env(),
+		BuildFlags: slices.Clone(s.view.folder.Options.BuildFlags),
+		Mode: packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedCompiledGoFiles |
+			packages.NeedImports |
+			packages.NeedDeps |
+			packages.NeedTypesSizes |
+			packages.NeedModule |
+			packages.NeedEmbedFiles |
+			packages.LoadMode(packagesinternal.DepsErrors) |
+			packages.NeedForTest,
+		Fset:    nil, // we do our own parsing
+		Overlay: s.buildOverlays(),
+		Logf: func(format string, args ...interface{}) {
+			if s.view.folder.Options.VerboseOutput {
+				event.Log(ctx, fmt.Sprintf(format, args...))
+			}
+		},
+		Tests: true,
+	}
+	if !allowNetwork {
+		cfg.Env = append(cfg.Env, "GOPROXY=off")
+	}
+	// We want to type check cgo code if go/types supports it.
+	if typesinternal.SetUsesCgo(&types.Config{}) {
+		cfg.Mode |= packages.LoadMode(packagesinternal.TypecheckCgo)
+	}
+	return cfg
+}
+
 // buildMetadata populates the updates map with metadata updates to
 // apply, based on the given pkg. It recurs through pkg.Imports to ensure that
 // metadata exists for all dependencies.
@@ -369,28 +389,30 @@ func (m *moduleErrorMap) Error() string {
 // Returns the metadata.Package that was built (or which was already present in
 // updates), or nil if the package could not be built. Notably, the resulting
 // metadata.Package may have an ID that differs from pkg.ID.
-func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Package, loadDir string, standalone, goListView bool) *metadata.Package {
+func buildMetadata(updates map[PackageID]*metadata.Package, loadDir string, standalone bool, pkg *packages.Package) *metadata.Package {
 	// Allow for multiple ad-hoc packages in the workspace (see #47584).
 	pkgPath := PackagePath(pkg.PkgPath)
 	id := PackageID(pkg.ID)
 
 	if metadata.IsCommandLineArguments(id) {
 		var f string // file to use as disambiguating suffix
-		if len(pkg.CompiledGoFiles) > 0 {
-			f = pkg.CompiledGoFiles[0]
+		if len(pkg.GoFiles) > 0 {
+			f = pkg.GoFiles[0]
 
-			// If there are multiple files,
-			// we can't use only the first.
-			// (Can this happen? #64557)
-			if len(pkg.CompiledGoFiles) > 1 {
-				bug.Reportf("unexpected files in command-line-arguments package: %v", pkg.CompiledGoFiles)
+			// If there are multiple files, we can't use only the first. Note that we
+			// consider GoFiles, rather than CompiledGoFiles, as there can be
+			// multiple CompiledGoFiles in the presence of cgo processing, whereas a
+			// command-line-arguments package should always have exactly one nominal
+			// Go source file. (See golang/go#64557.)
+			if len(pkg.GoFiles) > 1 {
+				bug.Reportf("unexpected files in command-line-arguments package: %v", pkg.GoFiles)
 				return nil
 			}
 		} else if len(pkg.IgnoredFiles) > 0 {
 			// A file=empty.go query results in IgnoredFiles=[empty.go].
 			f = pkg.IgnoredFiles[0]
 		} else {
-			bug.Reportf("command-line-arguments package has neither CompiledGoFiles nor IgnoredFiles")
+			bug.Reportf("command-line-arguments package has neither GoFiles nor IgnoredFiles")
 			return nil
 		}
 		id = PackageID(pkg.ID + f)
@@ -522,7 +544,7 @@ func buildMetadata(updates map[PackageID]*metadata.Package, pkg *packages.Packag
 			continue
 		}
 
-		dep := buildMetadata(updates, imported, loadDir, false, goListView) // only top level packages can be standalone
+		dep := buildMetadata(updates, loadDir, false, imported) // only top level packages can be standalone
 
 		// Don't record edges to packages with no name, as they cause trouble for
 		// the importer (golang/go#60952).

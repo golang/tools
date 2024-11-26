@@ -191,7 +191,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		} else {
 			dirs = append(dirs, def.folder.Env.GOMODCACHE)
 			for m := range def.workspaceModFiles {
-				dirs = append(dirs, filepath.Dir(m.Path()))
+				dirs = append(dirs, m.DirPath())
 			}
 		}
 		ignoreFilter = newIgnoreFilter(dirs)

@@ -54,10 +54,10 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/simplifycompositelit"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyrange"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyslice"
-	"golang.org/x/tools/gopls/internal/analysis/undeclaredname"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
 	"golang.org/x/tools/gopls/internal/analysis/useany"
+	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
@@ -145,12 +145,13 @@ func init() {
 		{analyzer: unusedresult.Analyzer, enabled: true},
 
 		// not suitable for vet:
-		// - some (nilness) use go/ssa; see #59714.
+		// - some (nilness, yield) use go/ssa; see #59714.
 		// - others don't meet the "frequency" criterion;
 		//   see GOROOT/src/cmd/vet/README.
 		{analyzer: atomicalign.Analyzer, enabled: true},
 		{analyzer: deepequalerrors.Analyzer, enabled: true},
 		{analyzer: nilness.Analyzer, enabled: true}, // uses go/ssa
+		{analyzer: yield.Analyzer, enabled: true},   // uses go/ssa
 		{analyzer: sortslice.Analyzer, enabled: true},
 		{analyzer: embeddirective.Analyzer, enabled: true},
 
@@ -174,7 +175,6 @@ func init() {
 		{analyzer: fillreturns.Analyzer, enabled: true},
 		{analyzer: nonewvars.Analyzer, enabled: true},
 		{analyzer: noresultvalues.Analyzer, enabled: true},
-		{analyzer: undeclaredname.Analyzer, enabled: true},
 		// TODO(rfindley): why isn't the 'unusedvariable' analyzer enabled, if it
 		// is only enhancing type errors with suggested fixes?
 		//

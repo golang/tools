@@ -113,7 +113,7 @@ func vendorLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (
 	cmd := command.NewVendorCommand(title, command.URIArg{URI: uri})
 	// Change the message depending on whether or not the module already has a
 	// vendor directory.
-	vendorDir := filepath.Join(filepath.Dir(fh.URI().Path()), "vendor")
+	vendorDir := filepath.Join(fh.URI().DirPath(), "vendor")
 	if info, _ := os.Stat(vendorDir); info != nil && info.IsDir() {
 		title = "Sync vendor directory"
 	}

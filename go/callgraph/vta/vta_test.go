@@ -21,7 +21,7 @@ import (
 )
 
 func TestVTACallGraph(t *testing.T) {
-	errDiff := func(want, got, missing []string) {
+	errDiff := func(t *testing.T, want, got, missing []string) {
 		t.Errorf("got:\n%s\n\nwant:\n%s\n\nmissing:\n%s\n\ndiff:\n%s",
 			strings.Join(got, "\n"),
 			strings.Join(want, "\n"),
@@ -60,14 +60,14 @@ func TestVTACallGraph(t *testing.T) {
 			g := CallGraph(ssautil.AllFunctions(prog), nil)
 			got := callGraphStr(g)
 			if missing := setdiff(want, got); len(missing) > 0 {
-				errDiff(want, got, missing)
+				errDiff(t, want, got, missing)
 			}
 
 			// Repeat the test with explicit CHA initial call graph.
 			g = CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
 			got = callGraphStr(g)
 			if missing := setdiff(want, got); len(missing) > 0 {
-				errDiff(want, got, missing)
+				errDiff(t, want, got, missing)
 			}
 		})
 	}
@@ -140,7 +140,7 @@ func TestVTAPanicMissingDefinitions(t *testing.T) {
 	}
 	for _, r := range res {
 		if r.Err != nil {
-			t.Errorf("want no error for package %v; got %v", r.Pass.Pkg.Path(), r.Err)
+			t.Errorf("want no error for package %v; got %v", r.Action.Package.Types.Path(), r.Err)
 		}
 	}
 }

@@ -6,20 +6,30 @@
 Package marker defines a framework for running "marker" tests, each
 defined by a file in the testdata subdirectory.
 
-Use this command to run the tests:
+Use this command to run the tests, from the gopls module:
 
-	$ go test ./gopls/internal/test/marker [-update]
+	$ go test ./internal/test/marker [-update]
 
-A marker test uses the '//@' marker syntax of the x/tools/internal/expect package
-to annotate source code with various information such as locations and
-arguments of LSP operations to be executed by the test. The syntax following
-'@' is parsed as a comma-separated list of ordinary Go function calls, for
-example
+A marker test uses the '//@' syntax of the x/tools/internal/expect package to
+annotate source code with various information such as locations and arguments
+of LSP operations to be executed by the test. The syntax following '@' is
+parsed as a comma-separated list of Go-like function calls, which we refer to
+as 'markers' (or sometimes 'marks'), for example
 
-	//@foo(a, "b", 3),bar(0)
+	//@ foo(a, "b", 3), bar(0)
 
-and delegates to a corresponding function to perform LSP-related operations.
-See the Marker types documentation below for a list of supported markers.
+Unlike ordinary Go, the marker syntax also supports optional named arguments
+using the syntax name=value. If provided, named arguments must appear after all
+positional arguments, though their ordering with respect to other named
+arguments does not matter. For example
+
+	//@ foo(a, "b", d=4, c=3)
+
+Each marker causes a corresponding function to be called in the test. Some
+markers are declarations; for example, @loc declares a name for a source
+location. Others have effects, such as executing an LSP operation and asserting
+that it behaved as expected. See the Marker types documentation below for the
+list of all supported markers.
 
 Each call argument is converted to the type of the corresponding parameter of
 the designated function. The conversion logic may use the surrounding context,
@@ -39,26 +49,30 @@ There are several types of file within the test archive that are given special
 treatment by the test runner:
 
   - "skip": the presence of this file causes the test to be skipped, with
-    the file content used as the skip message.
+    its content used as the skip message.
 
   - "flags": this file is treated as a whitespace-separated list of flags
     that configure the MarkerTest instance. Supported flags:
-    -{min,max}_go=go1.20 sets the {min,max}imum Go version for the test
-    (inclusive)
-    -cgo requires that CGO_ENABLED is set and the cgo tool is available
+
+    -{min,max}_go=go1.20 sets the {min,max}imum Go runtime version for the test
+    (inclusive).
+    -{min,max}_go_command=go1.20 sets the {min,max}imum Go command version for
+    the test (inclusive).
+    -cgo requires that CGO_ENABLED is set and the cgo tool is available.
     -write_sumfile=a,b,c instructs the test runner to generate go.sum files
     in these directories before running the test.
     -skip_goos=a,b,c instructs the test runner to skip the test for the
     listed GOOS values.
     -skip_goarch=a,b,c does the same for GOARCH.
-    -ignore_extra_diags suppresses errors for unmatched diagnostics
     TODO(rfindley): using build constraint expressions for -skip_go{os,arch} would
     be clearer.
+    -ignore_extra_diags suppresses errors for unmatched diagnostics
     -filter_builtins=false disables the filtering of builtins from
     completion results.
     -filter_keywords=false disables the filtering of keywords from
     completion results.
     -errors_ok=true suppresses errors for Error level log entries.
+
     TODO(rfindley): support flag values containing whitespace.
 
   - "settings.json": this file is parsed as JSON, and used as the
@@ -88,33 +102,56 @@ treatment by the test runner:
 
 # Marker types
 
-Markers are of two kinds. A few are "value markers" (e.g. @item), which are
-processed in a first pass and each computes a value that may be referred to
-by name later. Most are "action markers", which are processed in a second
-pass and take some action such as testing an LSP operation; they may refer
-to values computed by value markers.
+Markers are of two kinds: "value markers" and "action markers". Value markers
+are processed in a first pass, and define named values that may be referred to
+as arguments to action markers. For example, the @loc marker defines a named
+location that may be used wherever a location is expected. Value markers cannot
+refer to names defined by other value markers. Action markers are processed in
+a second pass and perform some action such as testing an LSP operation.
 
-The following markers are supported within marker tests:
+Below, we list supported markers using function signatures, augmented with the
+named argument support name=value, as described above. The types referred to in
+the signatures below are described in the Argument conversion section.
+
+Here is the list of supported value markers:
+
+  - loc(name, location): specifies the name for a location in the source. These
+    locations may be referenced by other markers. Naturally, the location
+    argument may be specified only as a string or regular expression in the
+    first pass.
+
+  - defloc(name, location): performs a textDocument/defintiion request at the
+    src location, and binds the result to the given name. This may be used to
+    refer to positions in the standard library.
+
+  - hiloc(name, location, kind): defines a documentHighlight value of the
+    given location and kind. Use its label in a @highlightall marker to
+    indicate the expected result of a highlight query.
+
+  - item(name, details, kind): defines a completionItem with the provided
+    fields. This information is not positional, and therefore @item markers
+    may occur anywhere in the source. Use in conjunction with @complete,
+    @snippet, or @rank.
+
+    TODO(rfindley): rethink whether floating @item annotations are the best
+    way to specify completion results.
+
+Here is the list of supported action markers:
 
   - acceptcompletion(location, label, golden): specifies that accepting the
     completion candidate produced at the given location with provided label
     results in the given golden state.
 
-  - codeaction(start, end, kind, golden): specifies a code action
-    to request for the given range. To support multi-line ranges, the range
-    is defined to be between start.Start and end.End. The golden directory
-    contains changed file content after the code action is applied.
+  - codeaction(start location, kind string, end=location, edit=golden, result=golden, err=stringMatcher)
 
-    TODO(rfindley): now that 'location' supports multi-line matches, replace
-    uses of 'codeaction' with codeactionedit.
+    Specifies a code action to request at the location, with given kind.
 
-  - codeactionedit(location, kind, golden): a shorter form of
-    codeaction. Invokes a code action of the given kind for the given
-    in-line range, and compares the resulting formatted unified *edits*
-    (notably, not the full file content) with the golden directory.
+    If end is set, the location is defined to be between start.Start and end.End.
 
-  - codeactionerr(start, end, kind, wantError): specifies a codeaction that
-    fails with an error that matches the expectation.
+    Exactly one of edit, result, or err must be set. If edit is set, it is a
+    golden reference to the edits resulting from the code action. If result is
+    set, it is a golden reference to the full set of changed files resulting
+    from the code action. If err is set, it is the code action error.
 
   - codelens(location, title): specifies that a codelens is expected at the
     given location, with given title. Must be used in conjunction with
@@ -135,8 +172,9 @@ The following markers are supported within marker tests:
     The specified location must match the start position of the diagnostic,
     but end positions are ignored unless exact=true.
 
-    TODO(adonovan): in the older marker framework, the annotation asserted
-    two additional fields (source="compiler", kind="error"). Restore them?
+    TODO(adonovan): in the older marker framework, the annotation asserted two
+    additional fields (source="compiler", kind="error"). Restore them using
+    optional named arguments.
 
   - def(src, dst location): performs a textDocument/definition request at
     the src location, and check the result points to the dst location.
@@ -167,10 +205,6 @@ The following markers are supported within marker tests:
     textDocument/highlight request at the given src location, which should
     highlight the provided dst locations and kinds.
 
-  - hiloc(label, location, kind): defines a documentHighlight value of the
-    given location and kind. Use its label in a @highlightall marker to
-    indicate the expected result of a highlight query.
-
   - hover(src, dst location, sm stringMatcher): performs a textDocument/hover
     at the src location, and checks that the result is the dst location, with
     matching hover content.
@@ -188,36 +222,15 @@ The following markers are supported within marker tests:
     (These locations are the declarations of the functions enclosing
     the calls, not the calls themselves.)
 
-  - item(label, details, kind): defines a completionItem with the provided
-    fields. This information is not positional, and therefore @item markers
-    may occur anywhere in the source. Used in conjunction with @complete,
-    @snippet, or @rank.
-
-    TODO(rfindley): rethink whether floating @item annotations are the best
-    way to specify completion results.
-
-  - loc(name, location): specifies the name for a location in the source. These
-    locations may be referenced by other markers.
-
   - outgoingcalls(src location, want ...location): makes a
     callHierarchy/outgoingCalls query at the src location, and checks that
     the set of call.To locations matches want.
 
-  - preparerename(src, spn, placeholder): asserts that a textDocument/prepareRename
-    request at the src location expands to the spn location, with given
-    placeholder. If placeholder is "", this is treated as a negative
-    assertion and prepareRename should return nil.
-
-  - rename(location, new, golden): specifies a renaming of the
-    identifier at the specified location to the new name.
-    The golden directory contains the transformed files.
-
-  - renameerr(location, new, wantError): specifies a renaming that
-    fails with an error that matches the expectation.
-
-  - signature(location, label, active): specifies that
-    signatureHelp at the given location should match the provided string, with
-    the active parameter (an index) highlighted.
+  - preparerename(src location, placeholder string, span=location): asserts
+    that a textDocument/prepareRename request at the src location has the given
+    placeholder text. If present, the optional span argument is verified to be
+    the span of the prepareRename result. If placeholder is "", this is treated
+    as a negative assertion and prepareRename should return nil.
 
   - quickfix(location, regexp, golden): like diag, the location and
     regexp identify an expected diagnostic, which must have exactly one
@@ -243,6 +256,17 @@ The following markers are supported within marker tests:
     request at the first location and asserts that the result is the set of
     'want' locations. The first want location must be the declaration
     (assumedly unique).
+
+  - rename(location, new, golden): specifies a renaming of the
+    identifier at the specified location to the new name.
+    The golden directory contains the transformed files.
+
+  - renameerr(location, new, wantError): specifies a renaming that
+    fails with an error that matches the expectation.
+
+  - signature(location, label, active): specifies that
+    signatureHelp at the given location should match the provided string, with
+    the active parameter (an index) highlighted.
 
   - snippet(location, string OR completionItem, snippet): executes a
     textDocument/completion request at the location, and searches for a result
@@ -288,20 +312,26 @@ the following tokens as defined by the Go spec:
 These values are passed as arguments to the corresponding parameter of the
 test function. Additional value conversions may occur for these argument ->
 parameter type pairs:
+
   - string->regexp: the argument is parsed as a regular expressions.
+
   - string->location: the argument is converted to the location of the first
     instance of the argument in the file content starting from the beginning of
     the line containing the note. Multi-line matches are permitted, but the
     match must begin before the note.
+
   - regexp->location: the argument is converted to the location of the first
     match for the argument in the file content starting from the beginning of
     the line containing the note. Multi-line matches are permitted, but the
     match must begin before the note. If the regular expression contains
     exactly one subgroup, the position of the subgroup is used rather than the
     position of the submatch.
+
   - name->location: the argument is replaced by the named location.
+
   - name->Golden: the argument is used to look up golden content prefixed by
     @<argument>.
+
   - {string,regexp,identifier}->stringMatcher: a stringMatcher type
     specifies an expected string, either in the form of a substring
     that must be present, a regular expression that it must match, or an
@@ -331,7 +361,7 @@ Here is a complete example:
 In this example, the @hover annotation tells the test runner to run the
 hoverMarker function, which has parameters:
 
-	(mark marker, src, dsc protocol.Location, g *Golden).
+	(mark marker, src, dst protocol.Location, g *Golden).
 
 The first argument holds the test context, including fake editor with open
 files, and sandboxed directory.
@@ -366,12 +396,6 @@ Note that -update does not cause missing @diag or @loc markers to be added.
 # TODO
 
   - Rename the files .txtar.
-  - Provide some means by which locations in the standard library
-    (or builtin.go) can be named, so that, for example, we can we
-    can assert that MyError implements the built-in error type.
-  - If possible, improve handling for optional arguments. Rather than have
-    multiple variations of a marker, it would be nice to support a more
-    flexible signature: can codeaction, codeactionedit, codeactionerr, and
-    quickfix be consolidated?
+  - Eliminate all *err markers, preferring named arguments.
 */
 package marker

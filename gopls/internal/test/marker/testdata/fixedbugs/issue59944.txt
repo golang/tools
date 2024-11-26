@@ -4,8 +4,12 @@ the methodset of its receiver type.
 
 Adapted from the code in question from the issue.
 
+The flag -ignore_extra_diags is included, as this bug was fixed in Go 1.24, so
+that now the code below may produce a diagnostic.
+
 -- flags --
 -cgo
+-ignore_extra_diags
 
 -- go.mod --
 module example.com

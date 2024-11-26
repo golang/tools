@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package undeclaredname
+package golang
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -18,70 +17,32 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/typesinternal"
 )
-
-//go:embed doc.go
-var doc string
-
-var Analyzer = &analysis.Analyzer{
-	Name:             "undeclaredname",
-	Doc:              analysisinternal.MustExtractDoc(doc, "undeclaredname"),
-	Requires:         []*analysis.Analyzer{},
-	Run:              run,
-	RunDespiteErrors: true,
-	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/undeclaredname",
-}
 
 // The prefix for this error message changed in Go 1.20.
 var undeclaredNamePrefixes = []string{"undeclared name: ", "undefined: "}
 
-func run(pass *analysis.Pass) (interface{}, error) {
-	for _, err := range pass.TypeErrors {
-		runForError(pass, err)
-	}
-	return nil, nil
-}
-
-func runForError(pass *analysis.Pass, err types.Error) {
+// undeclaredFixTitle generates a code action title for "undeclared name" errors,
+// suggesting the creation of the missing variable or function if applicable.
+func undeclaredFixTitle(path []ast.Node, errMsg string) string {
 	// Extract symbol name from error.
 	var name string
 	for _, prefix := range undeclaredNamePrefixes {
-		if !strings.HasPrefix(err.Msg, prefix) {
+		if !strings.HasPrefix(errMsg, prefix) {
 			continue
 		}
-		name = strings.TrimPrefix(err.Msg, prefix)
-	}
-	if name == "" {
-		return
-	}
-
-	// Find file enclosing error.
-	var file *ast.File
-	for _, f := range pass.Files {
-		if f.FileStart <= err.Pos && err.Pos < f.FileEnd {
-			file = f
-			break
-		}
-	}
-	if file == nil {
-		return
-	}
-
-	// Find path to identifier in the error.
-	path, _ := astutil.PathEnclosingInterval(file, err.Pos, err.Pos)
-	if len(path) < 2 {
-		return
+		name = strings.TrimPrefix(errMsg, prefix)
 	}
 	ident, ok := path[0].(*ast.Ident)
 	if !ok || ident.Name != name {
-		return
+		return ""
 	}
-
-	// Skip selector expressions because it might be too complex
-	// to try and provide a suggested fix for fields and methods.
+	// TODO: support create undeclared field
 	if _, ok := path[1].(*ast.SelectorExpr); ok {
-		return
+		return ""
 	}
 
 	// Undeclared quick fixes only work in function bodies.
@@ -89,16 +50,16 @@ func runForError(pass *analysis.Pass, err types.Error) {
 	for i := range path {
 		if _, inFunc = path[i].(*ast.FuncDecl); inFunc {
 			if i == 0 {
-				return
+				return ""
 			}
 			if _, isBody := path[i-1].(*ast.BlockStmt); !isBody {
-				return
+				return ""
 			}
 			break
 		}
 	}
 	if !inFunc {
-		return
+		return ""
 	}
 
 	// Offer a fix.
@@ -106,22 +67,11 @@ func runForError(pass *analysis.Pass, err types.Error) {
 	if isCallPosition(path) {
 		noun = "function"
 	}
-	pass.Report(analysis.Diagnostic{
-		Pos:      err.Pos,
-		End:      err.Pos + token.Pos(len(name)),
-		Message:  err.Msg,
-		Category: FixCategory,
-		SuggestedFixes: []analysis.SuggestedFix{{
-			Message: fmt.Sprintf("Create %s %q", noun, name),
-			// No TextEdits => computed by a gopls command
-		}},
-	})
+	return fmt.Sprintf("Create %s %s", noun, name)
 }
 
-const FixCategory = "undeclaredname" // recognized by gopls ApplyFix
-
-// SuggestedFix computes the edits for the lazy (no-edits) fix suggested by the analyzer.
-func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
+// CreateUndeclared generates a suggested declaration for an undeclared variable or function.
+func CreateUndeclared(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	pos := start // don't use the end
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if len(path) < 2 {
@@ -156,7 +106,6 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	// Create the new local variable statement.
 	newStmt := fmt.Sprintf("%s := %s", ident.Name, indent)
 	return fset, &analysis.SuggestedFix{
-		Message: fmt.Sprintf("Create variable %q", ident.Name),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     insertBeforeStmt.Pos(),
 			End:     insertBeforeStmt.Pos(),
@@ -273,16 +222,23 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 			Names: []*ast.Ident{
 				ast.NewIdent(name),
 			},
-			Type: analysisinternal.TypeExpr(file, pkg, paramTypes[i]),
+			Type: typesinternal.TypeExpr(file, pkg, paramTypes[i]),
+		})
+	}
+
+	rets := &ast.FieldList{}
+	retTypes := typesutil.TypesFromContext(info, path[1:], path[1].Pos())
+	for _, rt := range retTypes {
+		rets.List = append(rets.List, &ast.Field{
+			Type: typesinternal.TypeExpr(file, pkg, rt),
 		})
 	}
 
 	decl := &ast.FuncDecl{
 		Name: ast.NewIdent(ident.Name),
 		Type: &ast.FuncType{
-			Params: params,
-			// TODO(golang/go#47558): Also handle result
-			// parameters here based on context of CallExpr.
+			Params:  params,
+			Results: rets,
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
@@ -305,7 +261,6 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 		return nil, nil, err
 	}
 	return fset, &analysis.SuggestedFix{
-		Message: fmt.Sprintf("Create function %q", ident.Name),
 		TextEdits: []analysis.TextEdit{{
 			Pos:     pos,
 			End:     pos,
@@ -351,9 +306,4 @@ func isCallPosition(path []ast.Node) bool {
 	return len(path) > 1 &&
 		is[*ast.CallExpr](path[1]) &&
 		path[1].(*ast.CallExpr).Fun == path[0]
-}
-
-func is[T any](x any) bool {
-	_, ok := x.(T)
-	return ok
 }

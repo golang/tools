@@ -1,0 +1,72 @@
+This is the test case from golang/go#67335, where the inlining resulted in bad
+formatting.
+
+-- go.mod --
+module example.com
+
+go 1.20
+
+-- define/my/typ/foo.go --
+package typ
+type T int
+
+-- some/other/pkg/foo.go --
+package pkg
+import "context"
+import "example.com/define/my/typ"
+func Foo(typ.T) context.Context{ return nil }
+
+-- one/more/pkg/foo.go --
+package pkg
+func Bar() {}
+
+-- to/be/inlined/foo.go --
+package inlined
+
+import "context"
+import "example.com/some/other/pkg"
+import "example.com/define/my/typ"
+
+func Baz(ctx context.Context) context.Context {
+	return pkg.Foo(typ.T(5))
+}
+
+-- b/c/foo.go --
+package c
+import (
+	"context"
+	"example.com/to/be/inlined"
+	"example.com/one/more/pkg"
+)
+
+const (
+	// This is a variable
+	someConst = 5
+)
+
+func foo() {
+	inlined.Baz(context.TODO()) //@ codeaction("Baz", "refactor.inline.call", result=inline)
+	pkg.Bar()
+}
+
+-- @inline/b/c/foo.go --
+package c
+
+import (
+	"context"
+
+	"example.com/define/my/typ"
+	"example.com/one/more/pkg"
+	pkg0 "example.com/some/other/pkg"
+)
+
+const (
+	// This is a variable
+	someConst = 5
+)
+
+func foo() {
+	var _ context.Context = context.TODO()
+	pkg0.Foo(typ.T(5)) //@ codeaction("Baz", "refactor.inline.call", result=inline)
+	pkg.Bar()
+}

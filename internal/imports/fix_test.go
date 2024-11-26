@@ -1652,9 +1652,9 @@ var _ = bytes.Buffer
 }
 
 func TestStdlibSelfImports(t *testing.T) {
-	const input = `package ecdsa
+	const input = `package rc4
 
-var _ = ecdsa.GenerateKey
+var _ = rc4.NewCipher
 `
 
 	testConfig{
@@ -1663,7 +1663,7 @@ var _ = ecdsa.GenerateKey
 			Files: fm{"x.go": "package x"},
 		},
 	}.test(t, func(t *goimportTest) {
-		got, err := t.processNonModule(filepath.Join(t.goroot, "src/crypto/ecdsa/foo.go"), []byte(input), nil)
+		got, err := t.processNonModule(filepath.Join(t.goroot, "src/crypto/rc4/foo.go"), []byte(input), nil)
 		if err != nil {
 			t.Fatalf("Process() = %v", err)
 		}

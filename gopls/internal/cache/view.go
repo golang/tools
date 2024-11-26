@@ -356,6 +356,16 @@ func (v *View) Folder() *Folder {
 	return v.folder
 }
 
+// Env returns the environment to use for running go commands in this view.
+func (v *View) Env() []string {
+	return slices.Concat(
+		os.Environ(),
+		v.folder.Options.EnvSlice(),
+		[]string{"GO111MODULE=" + v.adjustedGO111MODULE()},
+		v.EnvOverlay(),
+	)
+}
+
 // UpdateFolders updates the set of views for the new folders.
 //
 // Calling this causes each view to be reinitialized.
@@ -663,11 +673,10 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 				addError(modURI, fmt.Errorf("no module path for %s", modURI))
 				continue
 			}
-			moduleDir := filepath.Dir(modURI.Path())
 			// Previously, we loaded <modulepath>/... for each module path, but that
 			// is actually incorrect when the pattern may match packages in more than
 			// one module. See golang/go#59458 for more details.
-			scopes = append(scopes, moduleLoadScope{dir: moduleDir, modulePath: parsed.File.Module.Mod.Path})
+			scopes = append(scopes, moduleLoadScope{dir: modURI.DirPath(), modulePath: parsed.File.Module.Mod.Path})
 		}
 	} else {
 		scopes = append(scopes, viewLoadScope{})
@@ -679,7 +688,7 @@ func (s *Snapshot) initialize(ctx context.Context, firstAttempt bool) {
 	if len(scopes) > 0 {
 		scopes = append(scopes, packageLoadScope("builtin"))
 	}
-	loadErr := s.load(ctx, true, scopes...)
+	loadErr := s.load(ctx, NetworkOK, scopes...)
 
 	// A failure is retryable if it may have been due to context cancellation,
 	// and this is not the initial workspace load (firstAttempt==true).
@@ -816,7 +825,7 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 	}
 	dir := folder.Dir.Path()
 	if forFile != nil {
-		dir = filepath.Dir(forFile.URI().Path())
+		dir = forFile.URI().DirPath()
 	}
 
 	def := new(viewDefinition)

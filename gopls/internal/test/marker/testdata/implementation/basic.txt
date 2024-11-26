@@ -43,6 +43,12 @@ type embedsImpP struct { //@loc(embedsImpP, "embedsImpP")
 	ImpP //@implementation("ImpP", Laugher, OtherLaugher)
 }
 
+var _ error //@defloc(StdError, "error")
+
+type MyError struct {} //@implementation("MyError", StdError)
+
+func (MyError) Error() string { return "bah" }
+
 -- other/other.go --
 package other
 
