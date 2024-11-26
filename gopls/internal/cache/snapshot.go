@@ -125,10 +125,6 @@ type Snapshot struct {
 	// It may invalidated when a file's content changes.
 	files *fileMap
 
-	// symbolizeHandles maps each file URI to a handle for the future
-	// result of computing the symbols declared in that file.
-	symbolizeHandles *persistent.Map[protocol.DocumentURI, *memoize.Promise] // *memoize.Promise[symbolizeResult]
-
 	// packages maps a packageKey to a *packageHandle.
 	// It may be invalidated when a file's content changes.
 	//
@@ -236,7 +232,6 @@ func (s *Snapshot) decref() {
 	if s.refcount == 0 {
 		s.packages.Destroy()
 		s.files.destroy()
-		s.symbolizeHandles.Destroy()
 		s.parseModHandles.Destroy()
 		s.parseWorkHandles.Destroy()
 		s.modTidyHandles.Destroy()
@@ -525,6 +520,7 @@ const (
 	exportDataKind  = "export"
 	diagnosticsKind = "diagnostics"
 	typerefsKind    = "typerefs"
+	symbolsKind     = "symbols"
 )
 
 // PackageDiagnostics returns diagnostics for files contained in specified
@@ -950,9 +946,20 @@ func (s *Snapshot) WorkspaceMetadata(ctx context.Context) ([]*metadata.Package, 
 	return meta, nil
 }
 
-// isWorkspacePackage reports whether the given package ID refers to a
-// workspace package for the snapshot.
-func (s *Snapshot) isWorkspacePackage(id PackageID) bool {
+// WorkspacePackages returns the map of workspace package to package path.
+//
+// The set of workspace packages is updated after every load. A package is a
+// workspace package if and only if it is present in this map.
+func (s *Snapshot) WorkspacePackages() immutable.Map[PackageID, PackagePath] {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.workspacePackages
+}
+
+// IsWorkspacePackage reports whether the given package ID refers to a
+// workspace package for the Snapshot. It is equivalent to looking up the
+// package in [Snapshot.WorkspacePackages].
+func (s *Snapshot) IsWorkspacePackage(id PackageID) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, ok := s.workspacePackages.Value(id)
@@ -1503,7 +1510,6 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		fullAnalysisKeys:  s.fullAnalysisKeys.Clone(),
 		factyAnalysisKeys: s.factyAnalysisKeys.Clone(),
 		files:             s.files.clone(changedFiles),
-		symbolizeHandles:  cloneWithout(s.symbolizeHandles, changedFiles, nil),
 		workspacePackages: s.workspacePackages,
 		shouldLoad:        s.shouldLoad.Clone(),      // not cloneWithout: shouldLoad is cleared on loads
 		unloadableFiles:   s.unloadableFiles.Clone(), // not cloneWithout: typing in a file doesn't necessarily make it loadable

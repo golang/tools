@@ -6,260 +6,98 @@ package cache
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
-	"go/ast"
+	"go/parser"
 	"go/token"
-	"go/types"
 	"runtime"
-	"strings"
-	"sync"
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/cache/symbols"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/event"
 )
-
-// Symbol holds a precomputed symbol value. Note: we avoid using the
-// protocol.SymbolInformation struct here in order to reduce the size of each
-// symbol.
-type Symbol struct {
-	Name  string
-	Kind  protocol.SymbolKind
-	Range protocol.Range
-}
 
 // Symbols extracts and returns symbol information for every file contained in
 // a loaded package. It awaits snapshot loading.
 //
 // If workspaceOnly is set, this only includes symbols from files in a
 // workspace package. Otherwise, it returns symbols from all loaded packages.
-func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protocol.DocumentURI][]Symbol, error) {
-	var (
-		meta []*metadata.Package
-		err  error
-	)
-	if workspaceOnly {
-		meta, err = s.WorkspaceMetadata(ctx)
-	} else {
-		meta, err = s.AllMetadata(ctx)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("loading metadata: %v", err)
-	}
+func (s *Snapshot) Symbols(ctx context.Context, ids ...PackageID) ([]*symbols.Package, error) {
+	meta := s.MetadataGraph()
 
-	goFiles := make(map[protocol.DocumentURI]struct{})
-	for _, mp := range meta {
-		for _, uri := range mp.GoFiles {
-			goFiles[uri] = struct{}{}
-		}
-		for _, uri := range mp.CompiledGoFiles {
-			goFiles[uri] = struct{}{}
-		}
-	}
+	res := make([]*symbols.Package, len(ids))
+	var g errgroup.Group
+	g.SetLimit(runtime.GOMAXPROCS(-1)) // symbolizing is cpu bound
+	for i, id := range ids {
+		g.Go(func() error {
+			mp := meta.Packages[id]
+			if mp == nil {
+				return bug.Errorf("missing metadata for %q", id)
+			}
 
-	// Symbolize them in parallel.
-	var (
-		group    errgroup.Group
-		nprocs   = 2 * runtime.GOMAXPROCS(-1) // symbolize is a mix of I/O and CPU
-		resultMu sync.Mutex
-		result   = make(map[protocol.DocumentURI][]Symbol)
-	)
-	group.SetLimit(nprocs)
-	for uri := range goFiles {
-		uri := uri
-		group.Go(func() error {
-			symbols, err := s.symbolize(ctx, uri)
+			key, fhs, err := symbolKey(ctx, mp, s)
 			if err != nil {
 				return err
 			}
-			resultMu.Lock()
-			result[uri] = symbols
-			resultMu.Unlock()
+
+			if data, err := filecache.Get(symbolsKind, key); err == nil {
+				res[i] = symbols.Decode(data)
+				return nil
+			} else if err != filecache.ErrNotFound {
+				bug.Reportf("internal error reading symbol data: %v", err)
+			}
+
+			pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), parsego.Full&^parser.ParseComments, false, fhs...)
+			if err != nil {
+				return err
+			}
+			pkg := symbols.New(pgfs)
+
+			// Store the resulting data in the cache.
+			go func() {
+				data := pkg.Encode()
+				if err := filecache.Set(symbolsKind, key, data); err != nil {
+					event.Error(ctx, fmt.Sprintf("storing symbol data for %s", id), err)
+				}
+			}()
+
+			res[i] = pkg
 			return nil
 		})
 	}
-	// Keep going on errors, but log the first failure.
-	// Partial results are better than no symbol results.
-	if err := group.Wait(); err != nil {
-		event.Error(ctx, "getting snapshot symbols", err)
-	}
-	return result, nil
+
+	return res, g.Wait()
 }
 
-// symbolize returns the result of symbolizing the file identified by uri, using a cache.
-func (s *Snapshot) symbolize(ctx context.Context, uri protocol.DocumentURI) ([]Symbol, error) {
-
-	s.mu.Lock()
-	entry, hit := s.symbolizeHandles.Get(uri)
-	s.mu.Unlock()
-
-	type symbolizeResult struct {
-		symbols []Symbol
-		err     error
-	}
-
-	// Cache miss?
-	if !hit {
-		fh, err := s.ReadFile(ctx, uri)
-		if err != nil {
-			return nil, err
-		}
-		type symbolHandleKey file.Hash
-		key := symbolHandleKey(fh.Identity().Hash)
-		promise, release := s.store.Promise(key, func(ctx context.Context, arg interface{}) interface{} {
-			symbols, err := symbolizeImpl(ctx, arg.(*Snapshot), fh)
-			return symbolizeResult{symbols, err}
-		})
-
-		entry = promise
-
-		s.mu.Lock()
-		s.symbolizeHandles.Set(uri, entry, func(_, _ interface{}) { release() })
-		s.mu.Unlock()
-	}
-
-	// Await result.
-	v, err := s.awaitPromise(ctx, entry)
-	if err != nil {
-		return nil, err
-	}
-	res := v.(symbolizeResult)
-	return res.symbols, res.err
-}
-
-// symbolizeImpl reads and parses a file and extracts symbols from it.
-func symbolizeImpl(ctx context.Context, snapshot *Snapshot, fh file.Handle) ([]Symbol, error) {
-	pgfs, err := snapshot.view.parseCache.parseFiles(ctx, token.NewFileSet(), parsego.Full, false, fh)
-	if err != nil {
-		return nil, err
-	}
-
-	w := &symbolWalker{
-		tokFile: pgfs[0].Tok,
-		mapper:  pgfs[0].Mapper,
-	}
-	w.fileDecls(pgfs[0].File.Decls)
-
-	return w.symbols, w.firstError
-}
-
-type symbolWalker struct {
-	// for computing positions
-	tokFile *token.File
-	mapper  *protocol.Mapper
-
-	symbols    []Symbol
-	firstError error
-}
-
-func (w *symbolWalker) atNode(node ast.Node, name string, kind protocol.SymbolKind, path ...*ast.Ident) {
-	var b strings.Builder
-	for _, ident := range path {
-		if ident != nil {
-			b.WriteString(ident.Name)
-			b.WriteString(".")
-		}
-	}
-	b.WriteString(name)
-
-	rng, err := w.mapper.NodeRange(w.tokFile, node)
-	if err != nil {
-		w.error(err)
-		return
-	}
-	sym := Symbol{
-		Name:  b.String(),
-		Kind:  kind,
-		Range: rng,
-	}
-	w.symbols = append(w.symbols, sym)
-}
-
-func (w *symbolWalker) error(err error) {
-	if err != nil && w.firstError == nil {
-		w.firstError = err
-	}
-}
-
-func (w *symbolWalker) fileDecls(decls []ast.Decl) {
-	for _, decl := range decls {
-		switch decl := decl.(type) {
-		case *ast.FuncDecl:
-			kind := protocol.Function
-			var recv *ast.Ident
-			if decl.Recv.NumFields() > 0 {
-				kind = protocol.Method
-				_, recv, _ = astutil.UnpackRecv(decl.Recv.List[0].Type)
-			}
-			w.atNode(decl.Name, decl.Name.Name, kind, recv)
-		case *ast.GenDecl:
-			for _, spec := range decl.Specs {
-				switch spec := spec.(type) {
-				case *ast.TypeSpec:
-					kind := guessKind(spec)
-					w.atNode(spec.Name, spec.Name.Name, kind)
-					w.walkType(spec.Type, spec.Name)
-				case *ast.ValueSpec:
-					for _, name := range spec.Names {
-						kind := protocol.Variable
-						if decl.Tok == token.CONST {
-							kind = protocol.Constant
-						}
-						w.atNode(name, name.Name, kind)
-					}
+func symbolKey(ctx context.Context, mp *metadata.Package, fs file.Source) (file.Hash, []file.Handle, error) {
+	seen := make(map[protocol.DocumentURI]bool)
+	var fhs []file.Handle
+	for _, list := range [][]protocol.DocumentURI{mp.GoFiles, mp.CompiledGoFiles} {
+		for _, uri := range list {
+			if !seen[uri] {
+				seen[uri] = true
+				fh, err := fs.ReadFile(ctx, uri)
+				if err != nil {
+					return file.Hash{}, nil, err // context cancelled
 				}
+				fhs = append(fhs, fh)
 			}
 		}
 	}
-}
 
-func guessKind(spec *ast.TypeSpec) protocol.SymbolKind {
-	switch spec.Type.(type) {
-	case *ast.InterfaceType:
-		return protocol.Interface
-	case *ast.StructType:
-		return protocol.Struct
-	case *ast.FuncType:
-		return protocol.Function
+	hasher := sha256.New()
+	fmt.Fprintf(hasher, "symbols: %s\n", mp.PkgPath)
+	fmt.Fprintf(hasher, "files: %d\n", len(fhs))
+	for _, fh := range fhs {
+		fmt.Fprintln(hasher, fh.Identity())
 	}
-	return protocol.Class
-}
-
-// walkType processes symbols related to a type expression. path is path of
-// nested type identifiers to the type expression.
-func (w *symbolWalker) walkType(typ ast.Expr, path ...*ast.Ident) {
-	switch st := typ.(type) {
-	case *ast.StructType:
-		for _, field := range st.Fields.List {
-			w.walkField(field, protocol.Field, protocol.Field, path...)
-		}
-	case *ast.InterfaceType:
-		for _, field := range st.Methods.List {
-			w.walkField(field, protocol.Interface, protocol.Method, path...)
-		}
-	}
-}
-
-// walkField processes symbols related to the struct field or interface method.
-//
-// unnamedKind and namedKind are the symbol kinds if the field is resp. unnamed
-// or named. path is the path of nested identifiers containing the field.
-func (w *symbolWalker) walkField(field *ast.Field, unnamedKind, namedKind protocol.SymbolKind, path ...*ast.Ident) {
-	if len(field.Names) == 0 {
-		switch typ := field.Type.(type) {
-		case *ast.SelectorExpr:
-			// embedded qualified type
-			w.atNode(field, typ.Sel.Name, unnamedKind, path...)
-		default:
-			w.atNode(field, types.ExprString(field.Type), unnamedKind, path...)
-		}
-	}
-	for _, name := range field.Names {
-		w.atNode(name, name.Name, namedKind, path...)
-		w.walkType(field.Type, append(path, name)...)
-	}
+	var hash file.Hash
+	hasher.Sum(hash[:0])
+	return hash, fhs, nil
 }

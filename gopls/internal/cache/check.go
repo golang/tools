@@ -1720,7 +1720,7 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 		}
 
 		directImporter := depsError.ImportStack[directImporterIdx]
-		if snapshot.isWorkspacePackage(PackageID(directImporter)) {
+		if snapshot.IsWorkspacePackage(PackageID(directImporter)) {
 			continue
 		}
 		relevantErrors = append(relevantErrors, depsError)
@@ -1766,7 +1766,7 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 	for _, depErr := range relevantErrors {
 		for i := len(depErr.ImportStack) - 1; i >= 0; i-- {
 			item := depErr.ImportStack[i]
-			if snapshot.isWorkspacePackage(PackageID(item)) {
+			if snapshot.IsWorkspacePackage(PackageID(item)) {
 				break
 			}
 

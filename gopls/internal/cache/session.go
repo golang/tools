@@ -251,7 +251,6 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		factyAnalysisKeys: new(persistent.Map[PackageID, file.Hash]),
 		meta:              new(metadata.Graph),
 		files:             newFileMap(),
-		symbolizeHandles:  new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),
 		shouldLoad:        new(persistent.Map[PackageID, []PackagePath]),
 		unloadableFiles:   new(persistent.Set[protocol.DocumentURI]),
 		parseModHandles:   new(persistent.Map[protocol.DocumentURI, *memoize.Promise]),

@@ -612,22 +612,6 @@ func computeLoadDiagnostics(ctx context.Context, snapshot *Snapshot, mp *metadat
 	return diags
 }
 
-// IsWorkspacePackage reports whether id points to a workspace package in s.
-//
-// Currently, the result depends on the current set of loaded packages, and so
-// is not guaranteed to be stable.
-func (s *Snapshot) IsWorkspacePackage(ctx context.Context, id PackageID) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	mg := s.meta
-	m := mg.Packages[id]
-	if m == nil {
-		return false
-	}
-	return isWorkspacePackageLocked(ctx, s, mg, m)
-}
-
 // isWorkspacePackageLocked reports whether p is a workspace package for the
 // snapshot s.
 //

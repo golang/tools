@@ -5,16 +5,19 @@
 package golang
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/symbols"
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -291,8 +294,8 @@ func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherTyp
 	// Extract symbols from all files.
 	var work []symbolFile
 	var roots []string
-	seen := make(map[protocol.DocumentURI]bool)
-	// TODO(adonovan): opt: parallelize this loop? How often is len > 1?
+	seen := make(map[protocol.DocumentURI]*metadata.Package) // only scan each file once
+
 	for _, snapshot := range snapshots {
 		// Use the root view URIs for determining (lexically)
 		// whether a URI is in any open workspace.
@@ -303,32 +306,84 @@ func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherTyp
 		filterer := cache.NewFilterer(filters)
 		folder := filepath.ToSlash(folderURI.Path())
 
-		workspaceOnly := true
+		var (
+			mps []*metadata.Package
+			err error
+		)
 		if snapshot.Options().SymbolScope == settings.AllSymbolScope {
-			workspaceOnly = false
+			mps, err = snapshot.AllMetadata(ctx)
+		} else {
+			mps, err = snapshot.WorkspaceMetadata(ctx)
 		}
-		symbols, err := snapshot.Symbols(ctx, workspaceOnly)
+		if err != nil {
+			return nil, err
+		}
+		metadata.RemoveIntermediateTestVariants(&mps)
+
+		// We'll process packages in order to consider candidate symbols.
+		//
+		// The order here doesn't matter for correctness, but can affect
+		// performance:
+		//  - As workspace packages score higher than non-workspace packages,
+		//    sort them first to increase the likelihood that non-workspace
+		//    symbols are skipped.
+		//  - As files can be contained in multiple packages, sort by wider
+		//    packages first, to cover all files with fewer packages.
+		workspacePackages := snapshot.WorkspacePackages()
+		slices.SortFunc(mps, func(a, b *metadata.Package) int {
+			_, aworkspace := workspacePackages.Value(a.ID)
+			_, bworkspace := workspacePackages.Value(b.ID)
+			if cmp := boolCompare(aworkspace, bworkspace); cmp != 0 {
+				return -cmp // workspace packages first
+			}
+			return -cmp.Compare(len(a.CompiledGoFiles), len(b.CompiledGoFiles)) // widest first
+		})
+
+		// Filter out unneeded mps in place, and collect file<->package
+		// associations.
+		var ids []metadata.PackageID
+		for _, mp := range mps {
+			used := false
+			for _, list := range [][]protocol.DocumentURI{mp.GoFiles, mp.CompiledGoFiles} {
+				for _, uri := range list {
+					if _, ok := seen[uri]; !ok {
+						seen[uri] = mp
+						used = true
+					}
+				}
+			}
+			if used {
+				mps[len(ids)] = mp
+				ids = append(ids, mp.ID)
+			}
+		}
+		mps = mps[:len(ids)]
+
+		symbolPkgs, err := snapshot.Symbols(ctx, ids...)
 		if err != nil {
 			return nil, err
 		}
 
-		for uri, syms := range symbols {
-			norm := filepath.ToSlash(uri.Path())
-			nm := strings.TrimPrefix(norm, folder)
-			if filterer.Disallow(nm) {
+		for i, sp := range symbolPkgs {
+			if sp == nil {
 				continue
 			}
-			// Only scan each file once.
-			if seen[uri] {
-				continue
+			mp := mps[i]
+			for i, syms := range sp.Symbols {
+				uri := sp.Files[i]
+				norm := filepath.ToSlash(uri.Path())
+				nm := strings.TrimPrefix(norm, folder)
+				if filterer.Disallow(nm) {
+					continue
+				}
+				// Only scan each file once.
+				if seen[uri] != mp {
+					continue
+				}
+				// seen[uri] = true
+				_, workspace := workspacePackages.Value(mp.ID)
+				work = append(work, symbolFile{mp, uri, syms, workspace})
 			}
-			meta, err := NarrowestMetadataForFile(ctx, snapshot, uri)
-			if err != nil {
-				event.Error(ctx, fmt.Sprintf("missing metadata for %q", uri), err)
-				continue
-			}
-			seen[uri] = true
-			work = append(work, symbolFile{uri, meta, syms})
 		}
 	}
 
@@ -343,7 +398,7 @@ func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherTyp
 			store := new(symbolStore)
 			// Assign files to workers in round-robin fashion.
 			for j := i; j < len(work); j += nmatchers {
-				matchFile(store, symbolizer, matcher, roots, work[j])
+				matchFile(store, symbolizer, matcher, work[j])
 			}
 			results <- store
 		}(i)
@@ -354,7 +409,9 @@ func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherTyp
 	for i := 0; i < nmatchers; i++ {
 		store := <-results
 		for _, syms := range store.res {
-			unified.store(syms)
+			if syms != nil {
+				unified.store(syms)
+			}
 		}
 	}
 	return unified.results(), nil
@@ -362,16 +419,17 @@ func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherTyp
 
 // symbolFile holds symbol information for a single file.
 type symbolFile struct {
-	uri  protocol.DocumentURI
-	mp   *metadata.Package
-	syms []cache.Symbol
+	mp        *metadata.Package
+	uri       protocol.DocumentURI
+	syms      []symbols.Symbol
+	workspace bool
 }
 
 // matchFile scans a symbol file and adds matching symbols to the store.
-func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, roots []string, i symbolFile) {
+func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, f symbolFile) {
 	space := make([]string, 0, 3)
-	for _, sym := range i.syms {
-		symbolParts, score := symbolizer(space, sym.Name, i.mp, matcher)
+	for _, sym := range f.syms {
+		symbolParts, score := symbolizer(space, sym.Name, f.mp, matcher)
 
 		// Check if the score is too low before applying any downranking.
 		if store.tooLow(score) {
@@ -404,6 +462,10 @@ func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, r
 			depthFactor = 0.01
 		)
 
+		// TODO(rfindley): compute this downranking *before* calling the symbolizer
+		// (which is expensive), so that we can pre-filter candidates whose score
+		// will always be too low, even with a perfect match.
+
 		startWord := true
 		exported := true
 		depth := 0.0
@@ -419,18 +481,8 @@ func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, r
 			}
 		}
 
-		// TODO(rfindley): use metadata to determine if the file is in a workspace
-		// package, rather than this heuristic.
-		inWorkspace := false
-		for _, root := range roots {
-			if strings.HasPrefix(string(i.uri), root) {
-				inWorkspace = true
-				break
-			}
-		}
-
 		// Apply downranking based on workspace position.
-		if !inWorkspace {
+		if !f.workspace {
 			score *= nonWorkspaceFactor
 			if !exported {
 				score *= nonWorkspaceUnexportedFactor
@@ -447,80 +499,70 @@ func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, r
 			continue
 		}
 
-		si := symbolInformation{
-			score:     score,
-			symbol:    strings.Join(symbolParts, ""),
-			kind:      sym.Kind,
-			uri:       i.uri,
-			rng:       sym.Range,
-			container: string(i.mp.PkgPath),
+		si := &scoredSymbol{
+			score: score,
+			info: protocol.SymbolInformation{
+				Name: strings.Join(symbolParts, ""),
+				Kind: sym.Kind,
+				Location: protocol.Location{
+					URI:   f.uri,
+					Range: sym.Range,
+				},
+				ContainerName: string(f.mp.PkgPath),
+			},
 		}
 		store.store(si)
 	}
 }
 
 type symbolStore struct {
-	res [maxSymbols]symbolInformation
+	res [maxSymbols]*scoredSymbol
 }
 
 // store inserts si into the sorted results, if si has a high enough score.
-func (sc *symbolStore) store(si symbolInformation) {
-	if sc.tooLow(si.score) {
+func (sc *symbolStore) store(ss *scoredSymbol) {
+	if sc.tooLow(ss.score) {
 		return
 	}
 	insertAt := sort.Search(len(sc.res), func(i int) bool {
+		if sc.res[i] == nil {
+			return true
+		}
 		// Sort by score, then symbol length, and finally lexically.
-		if sc.res[i].score != si.score {
-			return sc.res[i].score < si.score
+		if ss.score != sc.res[i].score {
+			return ss.score > sc.res[i].score
 		}
-		if len(sc.res[i].symbol) != len(si.symbol) {
-			return len(sc.res[i].symbol) > len(si.symbol)
+		if cmp := cmp.Compare(len(ss.info.Name), len(sc.res[i].info.Name)); cmp != 0 {
+			return cmp < 0 // shortest first
 		}
-		return sc.res[i].symbol > si.symbol
+		return ss.info.Name < sc.res[i].info.Name
 	})
 	if insertAt < len(sc.res)-1 {
 		copy(sc.res[insertAt+1:], sc.res[insertAt:len(sc.res)-1])
 	}
-	sc.res[insertAt] = si
+	sc.res[insertAt] = ss
 }
 
 func (sc *symbolStore) tooLow(score float64) bool {
-	return score <= sc.res[len(sc.res)-1].score
+	last := sc.res[len(sc.res)-1]
+	if last == nil {
+		return false
+	}
+	return score <= last.score
 }
 
 func (sc *symbolStore) results() []protocol.SymbolInformation {
 	var res []protocol.SymbolInformation
 	for _, si := range sc.res {
-		if si.score <= 0 {
+		if si == nil || si.score <= 0 {
 			return res
 		}
-		res = append(res, si.asProtocolSymbolInformation())
+		res = append(res, si.info)
 	}
 	return res
 }
 
-// symbolInformation is a cut-down version of protocol.SymbolInformation that
-// allows struct values of this type to be used as map keys.
-type symbolInformation struct {
-	score     float64
-	symbol    string
-	container string
-	kind      protocol.SymbolKind
-	uri       protocol.DocumentURI
-	rng       protocol.Range
-}
-
-// asProtocolSymbolInformation converts s to a protocol.SymbolInformation value.
-//
-// TODO: work out how to handle tags if/when they are needed.
-func (s symbolInformation) asProtocolSymbolInformation() protocol.SymbolInformation {
-	return protocol.SymbolInformation{
-		Name: s.symbol,
-		Kind: s.kind,
-		Location: protocol.Location{
-			URI:   s.uri,
-			Range: s.rng,
-		},
-		ContainerName: s.container,
-	}
+type scoredSymbol struct {
+	score float64
+	info  protocol.SymbolInformation
 }

@@ -342,6 +342,12 @@ func btoi(b bool) int {
 	}
 }
 
+// boolCompare is a comparison function for booleans, returning -1 if x < y, 0
+// if x == y, and 1 if x > y, where false < true.
+func boolCompare(x, y bool) int {
+	return btoi(x) - btoi(y)
+}
+
 // AbbreviateVarName returns an abbreviated var name based on the given full
 // name (which may be a type name, for example).
 //
