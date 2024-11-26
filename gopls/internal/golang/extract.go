@@ -708,9 +708,6 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 			continue
 		}
 		typ := typesinternal.TypeExpr(file, pkg, v.obj.Type())
-		if typ == nil {
-			return nil, nil, fmt.Errorf("nil AST expression for type: %v", v.obj.Name())
-		}
 		seenVars[v.obj] = typ
 		identifier := ast.NewIdent(v.obj.Name())
 		// An identifier must meet three conditions to become a return value of the
@@ -1597,10 +1594,6 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 				return nil, nil, fmt.Errorf(
 					"failed type conversion, AST expression: %T", field.Type)
 			}
-			expr := typesinternal.TypeExpr(file, pkg, typ)
-			if expr == nil {
-				return nil, nil, fmt.Errorf("nil AST expression")
-			}
 			names := []string{""}
 			if len(field.Names) > 0 {
 				names = nil
@@ -1617,13 +1610,13 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 				}
 				retName, idx := freshNameOutsideRange(info, file, path[0].Pos(), start, end, bestName, nameIdx[bestName])
 				nameIdx[bestName] = idx
-				z := typesinternal.ZeroExpr(file, pkg, typ)
-				if z == nil {
+				z, isValid := typesinternal.ZeroExpr(file, pkg, typ)
+				if !isValid {
 					return nil, nil, fmt.Errorf("can't generate zero value for %T", typ)
 				}
 				retVars = append(retVars, &returnVariable{
 					name:    ast.NewIdent(retName),
-					decl:    &ast.Field{Type: expr},
+					decl:    &ast.Field{Type: typesinternal.TypeExpr(file, pkg, typ)},
 					zeroVal: z,
 				})
 			}
@@ -1692,14 +1685,15 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 	// Create "zero values" for each type.
 	for _, returnType := range returnTypes {
 		var val ast.Expr
+		var isValid bool
 		for obj, typ := range seenVars {
 			if typ != returnType.Type {
 				continue
 			}
-			val = typesinternal.ZeroExpr(file, pkg, obj.Type())
+			val, isValid = typesinternal.ZeroExpr(file, pkg, obj.Type())
 			break
 		}
-		if val == nil {
+		if !isValid {
 			return fmt.Errorf("could not find matching AST expression for %T", returnType.Type)
 		}
 		zeroVals = append(zeroVals, val)

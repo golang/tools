@@ -138,10 +138,11 @@ func CreateUndeclared(fset *token.FileSet, start, end token.Pos, content []byte,
 		// Default to 0.
 		typs = []types.Type{types.Typ[types.Int]}
 	}
+	expr, _ := typesinternal.ZeroExpr(file, pkg, typs[0])
 	assignStmt := &ast.AssignStmt{
 		Lhs: []ast.Expr{ast.NewIdent(ident.Name)},
 		Tok: token.DEFINE,
-		Rhs: []ast.Expr{typesinternal.ZeroExpr(file, pkg, typs[0])},
+		Rhs: []ast.Expr{expr},
 	}
 	var buf bytes.Buffer
 	if err := format.Node(&buf, fset, assignStmt); err != nil {

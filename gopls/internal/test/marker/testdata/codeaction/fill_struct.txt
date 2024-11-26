@@ -113,24 +113,27 @@ var _ = funStructEmpty{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=
 +	a:  [2]string{},
 +} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a21)
 -- @a22/a2.go --
-@@ -17 +17,4 @@
+@@ -17 +17,5 @@
 -var _ = funStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a22)
 +var _ = funStruct{
 +	fn: func(i int) int {
++		panic("TODO")
 +	},
 +} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a22)
 -- @a23/a2.go --
-@@ -23 +23,4 @@
+@@ -23 +23,5 @@
 -var _ = funStructComplex{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a23)
 +var _ = funStructComplex{
 +	fn: func(i int, s string) (string, int) {
++		panic("TODO")
 +	},
 +} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a23)
 -- @a24/a2.go --
-@@ -29 +29,4 @@
+@@ -29 +29,5 @@
 -var _ = funStructEmpty{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a24)
 +var _ = funStructEmpty{
 +	fn: func() {
++		panic("TODO")
 +	},
 +} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a24)
 -- a3.go --
@@ -184,7 +187,7 @@ var _ = []ast.BasicLit{{}} //@codeaction("}", "refactor.rewrite.fillStruct", edi
 +	Y: &Foo{},
 +} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a31)
 -- @a32/a3.go --
-@@ -28 +28,9 @@
+@@ -28 +28,10 @@
 -var _ = importedStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a32)
 +var _ = importedStruct{
 +	m: map[*ast.CompositeLit]ast.Field{},
@@ -192,6 +195,7 @@ var _ = []ast.BasicLit{{}} //@codeaction("}", "refactor.rewrite.fillStruct", edi
 +	a: [3]token.Token{},
 +	c: make(chan ast.EmptyStmt),
 +	fn: func(ast_decl ast.DeclStmt) ast.Ellipsis {
++		panic("TODO")
 +	},
 +	st: ast.CompositeLit{},
 +} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a32)
@@ -289,6 +293,8 @@ func fill() {
 -- fillStruct.go --
 package fillstruct
 
+type StructB struct{}
+
 type StructA struct {
 	unexportedIntField int
 	ExportedIntField   int
@@ -315,7 +321,7 @@ func fill() {
 }
 
 -- @fillStruct1/fillStruct.go --
-@@ -20 +20,7 @@
+@@ -22 +22,7 @@
 -	a := StructA{}  //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct1)
 +	a := StructA{
 +		unexportedIntField: 0,
@@ -325,19 +331,19 @@ func fill() {
 +		StructB:            StructB{},
 +	}  //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct1)
 -- @fillStruct2/fillStruct.go --
-@@ -21 +21,3 @@
+@@ -23 +23,3 @@
 -	b := StructA2{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct2)
 +	b := StructA2{
 +		B: &StructB{},
 +	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct2)
 -- @fillStruct3/fillStruct.go --
-@@ -22 +22,3 @@
+@@ -24 +24,3 @@
 -	c := StructA3{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct3)
 +	c := StructA3{
 +		B: StructB{},
 +	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct3)
 -- @fillStruct4/fillStruct.go --
-@@ -24 +24,3 @@
+@@ -26 +26,3 @@
 -		_ = StructA3{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct4)
 +		_ = StructA3{
 +			B: StructB{},
@@ -408,11 +414,12 @@ func unexported() {
 +		ExportedInt: 0,
 +	}   //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_package1)
 -- @fillStruct_package2/fillStruct_package.go --
-@@ -11 +11,7 @@
+@@ -11 +11,8 @@
 -	_ = h2.Client{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_package2)
 +	_ = h2.Client{
 +		Transport: nil,
 +		CheckRedirect: func(req *h2.Request, via []*h2.Request) error {
++			panic("TODO")
 +		},
 +		Jar:     nil,
 +		Timeout: 0,
@@ -529,6 +536,21 @@ var _ = nestedStructWithTypeParams{} //@codeaction("}", "refactor.rewrite.fillSt
 func _[T any]() {
 	type S struct{ t T }
 	_ = S{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams5)
+
+	type P struct{ t *T }
+	_ = P{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams6)
+
+	type Alias[u any] = struct {
+		x u
+		y *T
+	}
+	_ = Alias[string]{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams7)
+
+	type Named[u any] struct {
+		x u
+		y T
+	}
+	_ = Named[int]{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams8)
 }
 -- @typeparams1/typeparams.go --
 @@ -11 +11,3 @@
@@ -551,7 +573,7 @@ func _[T any]() {
 -var _ = nestedStructWithTypeParams{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams4)
 +var _ = nestedStructWithTypeParams{
 +	bar:   "",
-+	basic: basicStructWithTypeParams{},
++	basic: basicStructWithTypeParams[int]{},
 +} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams4)
 -- @typeparams5/typeparams.go --
 @@ -33 +33,3 @@
@@ -559,6 +581,26 @@ func _[T any]() {
 +	_ = S{
 +		t: *new(T),
 +	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams5)
+-- @typeparams6/typeparams.go --
+@@ -36 +36,3 @@
+-	_ = P{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams6)
++	_ = P{
++		t: new(T),
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams6)
+-- @typeparams7/typeparams.go --
+@@ -42 +42,4 @@
+-	_ = Alias[string]{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams7)
++	_ = Alias[string]{
++		x: "",
++		y: new(T),
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams7)
+-- @typeparams8/typeparams.go --
+@@ -48 +48,4 @@
+-	_ = Named[int]{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams8)
++	_ = Named[int]{
++		x: 0,
++		y: *new(T),
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams8)
 -- issue63921.go --
 package fillstruct
 
@@ -573,3 +615,111 @@ func _() {
   // edits, but does not panic.
   invalidStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=issue63921)
 }
+-- named/named.go --
+package named
+
+type foo struct {}
+type aliasFoo = foo
+
+func _() {
+	type namedInt int
+	type namedString string
+	type namedBool bool
+	type namedPointer *foo
+	type namedSlice []foo
+	type namedInterface interface{ Error() string }
+	type namedChan chan int
+	type namedMap map[string]foo
+	type namedSignature func(string) string
+	type namedStruct struct{}
+	type namedArray [3]foo
+	type namedAlias aliasFoo
+
+	type bar struct {
+		namedInt namedInt
+		namedString namedString
+		namedBool namedBool
+		namedPointer namedPointer
+		namedSlice namedSlice
+		namedInterface namedInterface
+		namedChan namedChan
+		namedMap namedMap
+		namedSignature namedSignature
+		namedStruct namedStruct
+		namedArray namedArray
+		namedAlias namedAlias
+	}
+
+	bar{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=named)
+}
+-- @named/named/named.go --
+@@ -35 +35,14 @@
+-	bar{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=named)
++	bar{
++		namedInt:       0,
++		namedString:    "",
++		namedBool:      false,
++		namedPointer:   nil,
++		namedSlice:     namedSlice{},
++		namedInterface: nil,
++		namedChan:      nil,
++		namedMap:       namedMap{},
++		namedSignature: nil,
++		namedStruct:    namedStruct{},
++		namedArray:     namedArray{},
++		namedAlias:     namedAlias{},
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=named)
+-- alias/alias.go --
+package alias
+
+type foo struct {}
+type aliasFoo = foo
+
+func _() {
+	type aliasInt = int
+	type aliasString = string
+	type aliasBool = bool
+	type aliasPointer = *foo
+	type aliasSlice = []foo
+	type aliasInterface = interface{ Error() string }
+	type aliasChan = chan int
+	type aliasMap = map[string]foo
+	type aliasSignature = func(string) string
+	type aliasStruct = struct{ bar string }
+	type aliasArray = [3]foo
+	type aliasNamed = foo
+
+	type bar struct {
+		aliasInt aliasInt
+		aliasString aliasString
+		aliasBool aliasBool
+		aliasPointer aliasPointer
+		aliasSlice aliasSlice
+		aliasInterface aliasInterface
+		aliasChan aliasChan
+		aliasMap aliasMap
+		aliasSignature aliasSignature
+		aliasStruct aliasStruct
+		aliasArray aliasArray
+		aliasNamed aliasNamed
+	}
+
+	bar{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=alias)
+}
+-- @alias/alias/alias.go --
+@@ -35 +35,14 @@
+-	bar{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=alias)
++	bar{
++		aliasInt:       0,
++		aliasString:    "",
++		aliasBool:      false,
++		aliasPointer:   nil,
++		aliasSlice:     aliasSlice{},
++		aliasInterface: nil,
++		aliasChan:      nil,
++		aliasMap:       aliasMap{},
++		aliasSignature: nil,
++		aliasStruct:    aliasStruct{},
++		aliasArray:     aliasArray{},
++		aliasNamed:     aliasNamed{},
++	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=alias)

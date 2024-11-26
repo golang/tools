@@ -232,8 +232,8 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 			// NOTE: We currently match on the name of the field key rather than the field type.
 			if best := fuzzy.BestMatch(fieldName, names); best != "" {
 				kv.Value = ast.NewIdent(best)
-			} else if v := populateValue(file, pkg, fieldTyp); v != nil {
-				kv.Value = v
+			} else if expr, isValid := populateValue(file, pkg, fieldTyp); isValid {
+				kv.Value = expr
 			} else {
 				return nil, nil, nil // no fix to suggest
 			}
@@ -328,70 +328,41 @@ func indent(str, ind []byte) []byte {
 //
 // The reasoning here is that users will call fillstruct with the intention of
 // initializing the struct, in which case setting these fields to nil has no effect.
-//
-// populateValue returns nil if the value cannot be filled.
-func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
-	switch u := typ.Underlying().(type) {
-	case *types.Basic:
-		switch {
-		case u.Info()&types.IsNumeric != 0:
-			return &ast.BasicLit{Kind: token.INT, Value: "0"}
-		case u.Info()&types.IsBoolean != 0:
-			return &ast.Ident{Name: "false"}
-		case u.Info()&types.IsString != 0:
-			return &ast.BasicLit{Kind: token.STRING, Value: `""`}
-		case u.Kind() == types.UnsafePointer:
-			return ast.NewIdent("nil")
-		case u.Kind() == types.Invalid:
-			return nil
+func populateValue(f *ast.File, pkg *types.Package, typ types.Type) (_ ast.Expr, isValid bool) {
+	switch t := typ.(type) {
+	case *types.TypeParam, *types.Interface, *types.Struct, *types.Basic:
+		return typesinternal.ZeroExpr(f, pkg, t)
+
+	case *types.Alias, *types.Named:
+		switch t.Underlying().(type) {
+		// Avoid typesinternal.ZeroExpr here as we don't want to return nil.
+		case *types.Map, *types.Slice:
+			return &ast.CompositeLit{
+				Type: typesinternal.TypeExpr(f, pkg, t),
+			}, true
 		default:
-			panic(fmt.Sprintf("unknown basic type %v", u))
+			return typesinternal.ZeroExpr(f, pkg, t)
 		}
 
-	case *types.Map:
-		k := typesinternal.TypeExpr(f, pkg, u.Key())
-		v := typesinternal.TypeExpr(f, pkg, u.Elem())
-		if k == nil || v == nil {
-			return nil
-		}
+	// Avoid typesinternal.ZeroExpr here as we don't want to return nil.
+	case *types.Map, *types.Slice:
 		return &ast.CompositeLit{
-			Type: &ast.MapType{
-				Key:   k,
-				Value: v,
-			},
-		}
-	case *types.Slice:
-		s := typesinternal.TypeExpr(f, pkg, u.Elem())
-		if s == nil {
-			return nil
-		}
-		return &ast.CompositeLit{
-			Type: &ast.ArrayType{
-				Elt: s,
-			},
-		}
+			Type: typesinternal.TypeExpr(f, pkg, t),
+		}, true
 
 	case *types.Array:
-		a := typesinternal.TypeExpr(f, pkg, u.Elem())
-		if a == nil {
-			return nil
-		}
 		return &ast.CompositeLit{
 			Type: &ast.ArrayType{
-				Elt: a,
+				Elt: typesinternal.TypeExpr(f, pkg, t.Elem()),
 				Len: &ast.BasicLit{
-					Kind: token.INT, Value: fmt.Sprintf("%v", u.Len()),
+					Kind: token.INT, Value: fmt.Sprintf("%v", t.Len()),
 				},
 			},
-		}
+		}, true
 
 	case *types.Chan:
-		v := typesinternal.TypeExpr(f, pkg, u.Elem())
-		if v == nil {
-			return nil
-		}
-		dir := ast.ChanDir(u.Dir())
-		if u.Dir() == types.SendRecv {
+		dir := ast.ChanDir(t.Dir())
+		if t.Dir() == types.SendRecv {
 			dir = ast.SEND | ast.RECV
 		}
 		return &ast.CallExpr{
@@ -399,60 +370,35 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 			Args: []ast.Expr{
 				&ast.ChanType{
 					Dir:   dir,
-					Value: v,
+					Value: typesinternal.TypeExpr(f, pkg, t.Elem()),
 				},
 			},
-		}
-
-	case *types.Struct:
-		s := typesinternal.TypeExpr(f, pkg, typ)
-		if s == nil {
-			return nil
-		}
-		return &ast.CompositeLit{
-			Type: s,
-		}
+		}, true
 
 	case *types.Signature:
-		var params []*ast.Field
-		for i := 0; i < u.Params().Len(); i++ {
-			p := typesinternal.TypeExpr(f, pkg, u.Params().At(i).Type())
-			if p == nil {
-				return nil
-			}
-			params = append(params, &ast.Field{
-				Type: p,
-				Names: []*ast.Ident{
-					{
-						Name: u.Params().At(i).Name(),
+		return &ast.FuncLit{
+			Type: typesinternal.TypeExpr(f, pkg, t).(*ast.FuncType),
+			// The body of the function literal contains a panic statement to
+			// avoid type errors.
+			Body: &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.ExprStmt{
+						X: &ast.CallExpr{
+							Fun: ast.NewIdent("panic"),
+							Args: []ast.Expr{
+								&ast.BasicLit{
+									Kind:  token.STRING,
+									Value: `"TODO"`,
+								},
+							},
+						},
 					},
 				},
-			})
-		}
-		var returns []*ast.Field
-		for i := 0; i < u.Results().Len(); i++ {
-			r := typesinternal.TypeExpr(f, pkg, u.Results().At(i).Type())
-			if r == nil {
-				return nil
-			}
-			returns = append(returns, &ast.Field{
-				Type: r,
-			})
-		}
-		return &ast.FuncLit{
-			Type: &ast.FuncType{
-				Params: &ast.FieldList{
-					List: params,
-				},
-				Results: &ast.FieldList{
-					List: returns,
-				},
 			},
-			Body: &ast.BlockStmt{},
-		}
+		}, true
 
 	case *types.Pointer:
-		switch types.Unalias(u.Elem()).(type) {
+		switch tt := types.Unalias(t.Elem()).(type) {
 		case *types.Basic:
 			return &ast.CallExpr{
 				Fun: &ast.Ident{
@@ -460,38 +406,31 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 				},
 				Args: []ast.Expr{
 					&ast.Ident{
-						Name: u.Elem().String(),
+						Name: t.Elem().String(),
 					},
 				},
-			}
+			}, true
+		// Pointer to type parameter should return new(T) instead of &*new(T).
+		case *types.TypeParam:
+			return &ast.CallExpr{
+				Fun: &ast.Ident{
+					Name: "new",
+				},
+				Args: []ast.Expr{
+					&ast.Ident{
+						Name: tt.Obj().Name(),
+					},
+				},
+			}, true
 		default:
-			x := populateValue(f, pkg, u.Elem())
-			if x == nil {
-				return nil
-			}
+			// TODO(hxjiang): & prefix only works if populateValue returns a
+			// composite literal T{} or the expression new(T).
+			expr, isValid := populateValue(f, pkg, t.Elem())
 			return &ast.UnaryExpr{
 				Op: token.AND,
-				X:  x,
-			}
+				X:  expr,
+			}, isValid
 		}
-
-	case *types.Interface:
-		if param, ok := types.Unalias(typ).(*types.TypeParam); ok {
-			// *new(T) is the zero value of a type parameter T.
-			// TODO(adonovan): one could give a more specific zero
-			// value if the type has a core type that is, say,
-			// always a number or a pointer. See go/ssa for details.
-			return &ast.StarExpr{
-				X: &ast.CallExpr{
-					Fun: ast.NewIdent("new"),
-					Args: []ast.Expr{
-						ast.NewIdent(param.Obj().Name()),
-					},
-				},
-			}
-		}
-
-		return ast.NewIdent("nil")
 	}
-	return nil
+	return nil, false
 }

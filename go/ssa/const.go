@@ -78,7 +78,7 @@ func zeroConst(t types.Type) *Const {
 func (c *Const) RelString(from *types.Package) string {
 	var s string
 	if c.Value == nil {
-		s = typesinternal.ZeroString(c.typ, types.RelativeTo(from))
+		s, _ = typesinternal.ZeroString(c.typ, types.RelativeTo(from))
 	} else if c.Value.Kind() == constant.String {
 		s = constant.StringVal(c.Value)
 		const max = 20

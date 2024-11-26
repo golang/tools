@@ -16,10 +16,15 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
 func TestZeroValue(t *testing.T) {
+	if testenv.Go1Point() == 23 {
+		testenv.NeedsGoExperiment(t, "aliastypeparams")
+	}
+
 	// This test only refernece types/functions defined within the same package.
 	// We can safely drop the package name when encountered.
 	qf := types.Qualifier(func(p *types.Package) string {
@@ -32,6 +37,8 @@ type foo struct{
 	bar string
 }
 
+type aliasFoo = foo
+
 type namedInt int
 type namedString string
 type namedBool bool
@@ -43,6 +50,7 @@ type namedMap map[string]foo
 type namedSignature func(string) string
 type namedStruct struct{ bar string }
 type namedArray [3]foo
+type namedAlias aliasFoo
 
 type aliasInt = int
 type aliasString = string
@@ -55,8 +63,30 @@ type aliasMap = map[string]foo
 type aliasSignature = func(string) string
 type aliasStruct = struct{ bar string }
 type aliasArray = [3]foo
+type aliasNamed = foo
 
 func _[T any]() {
+	type aliasTypeParam = T
+
+	// type aliasWithTypeParam[u any] = struct {
+	// 	x u
+	// 	y T
+	// }
+	// type aliasWithTypeParams[u, q any] = struct {
+	// 	x u
+	// 	y q
+	// 	z T
+	// }
+
+	type namedWithTypeParam[u any] struct {
+		x u
+		y T
+	}
+	type namedWithTypeParams[u, q any] struct{
+		x u
+		y q
+		z T
+	}
 	var (
 		_ int // 0
 		_ bool // false
@@ -80,6 +110,7 @@ func _[T any]() {
 		_ namedSignature // nil
 		_ namedStruct // namedStruct{}
 		_ namedArray // namedArray{}
+		_ namedAlias // namedAlias{}
 
 		_ aliasInt // 0
 		_ aliasString // ""
@@ -91,6 +122,7 @@ func _[T any]() {
 		_ aliasSignature // nil
 		_ aliasStruct // aliasStruct{}
 		_ aliasArray // aliasArray{}
+		_ aliasNamed // aliasNamed{}
 
 		_ [4]string // [4]string{}
 		_ [5]foo // [5]foo{}
@@ -98,6 +130,17 @@ func _[T any]() {
 		_ struct{f foo} // struct{f foo}{}
 
 		_ T // *new(T)
+		_ *T // nil
+
+		_ aliasTypeParam // *new(T)
+		_ *aliasTypeParam // nil
+
+		// TODO(hxjiang): add test for alias type param after stop supporting go1.22.
+		// _ aliasWithTypeParam[int] // aliasWithTypeParam[int]{}
+		// _ aliasWithTypeParams[int, string] // aliasWithTypeParams[int, string]{}
+
+		_ namedWithTypeParam[int] // namedWithTypeParam[int]{}
+		_ namedWithTypeParams[int, string] // namedWithTypeParams[int, string]{}
 	)
 }
 `
@@ -122,9 +165,9 @@ func _[T any]() {
 		t.Fatalf("the last decl of the file is not FuncDecl")
 	}
 
-	decl, ok := fun.Body.List[0].(*ast.DeclStmt).Decl.(*ast.GenDecl)
+	decl, ok := fun.Body.List[len(fun.Body.List)-1].(*ast.DeclStmt).Decl.(*ast.GenDecl)
 	if !ok {
-		t.Fatalf("the first statement of the function is not GenDecl")
+		t.Fatalf("the last statement of the function is not GenDecl")
 	}
 
 	for _, spec := range decl.Specs {
@@ -135,12 +178,12 @@ func _[T any]() {
 		want := strings.TrimSpace(s.Comment.Text())
 
 		typ := info.TypeOf(s.Type)
-		got := typesinternal.ZeroString(typ, qf)
+		got, _ := typesinternal.ZeroString(typ, qf)
 		if got != want {
 			t.Errorf("%s: ZeroString() = %q, want zero value %q", fset.Position(spec.Pos()), got, want)
 		}
 
-		zeroExpr := typesinternal.ZeroExpr(f, pkg, typ)
+		zeroExpr, _ := typesinternal.ZeroExpr(f, pkg, typ)
 		var bytes bytes.Buffer
 		printer.Fprint(&bytes, fset, zeroExpr)
 		got = bytes.String()

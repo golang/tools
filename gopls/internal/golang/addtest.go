@@ -497,7 +497,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		if i == 0 && isContextType(typ) {
 			f.Value = qf(types.NewPackage("context", "context")) + ".Background()"
 		} else if name == "" || name == "_" {
-			f.Value = typesinternal.ZeroString(typ, qf)
+			f.Value, _ = typesinternal.ZeroString(typ, qf)
 		} else {
 			f.Name = name
 		}
@@ -631,7 +631,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 				if i == 0 && isContextType(typ) {
 					f.Value = qf(types.NewPackage("context", "context")) + ".Background()"
 				} else if name == "" || name == "_" {
-					f.Value = typesinternal.ZeroString(typ, qf)
+					f.Value, _ = typesinternal.ZeroString(typ, qf)
 				} else {
 					f.Name = name
 				}
