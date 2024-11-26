@@ -229,25 +229,16 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		return nil, fmt.Errorf("package has type errors: %v", errors[0])
 	}
 
-	type packageInfo struct {
-		name    string
-		renamed bool
-	}
-
+	// All three maps map the path of an imported package to
+	// the local name if explicit or "" otherwise.
 	var (
-		// fileImports is a map contains all the path imported in the original
-		// file foo.go.
-		fileImports map[string]packageInfo
-		// testImports is a map contains all the path already imported in test
-		// file foo_test.go.
-		testImports map[string]packageInfo
-		// extraImportsis a map from package path to local package name that
-		// need to be imported for the test function.
-		extraImports = make(map[string]packageInfo)
+		fileImports  map[string]string         // imports in foo.go file
+		testImports  map[string]string         // imports in foo_test.go file
+		extraImports = make(map[string]string) // imports to add to test file
 	)
 
-	var collectImports = func(file *ast.File) (map[string]packageInfo, error) {
-		imps := make(map[string]packageInfo)
+	var collectImports = func(file *ast.File) (map[string]string, error) {
+		imps := make(map[string]string)
 		for _, spec := range file.Imports {
 			// TODO(hxjiang): support dot imports.
 			if spec.Name != nil && spec.Name.Name == "." {
@@ -261,29 +252,9 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 				if spec.Name.Name == "_" {
 					continue
 				}
-				imps[path] = packageInfo{spec.Name.Name, true}
+				imps[path] = spec.Name.Name
 			} else {
-				// The package name might differ from the base of its import
-				// path. For example, "/path/to/package/foo" could declare a
-				// package named "bar". Look up the target package ensures the
-				// accurate package name reference.
-				//
-				// While it's best practice to rename imported packages when
-				// their name differs from the base path (e.g.,
-				// "import bar \"path/to/package/foo\""), this is not mandatory.
-				id := pkg.Metadata().DepsByImpPath[metadata.ImportPath(path)]
-				if metadata.IsCommandLineArguments(id) {
-					return nil, fmt.Errorf("can not import command-line-arguments package")
-				}
-				if id == "" { // guess upon missing.
-					imps[path] = packageInfo{imports.ImportPathToAssumedName(path), false}
-				} else {
-					fromPkg, ok := snapshot.MetadataGraph().Packages[id]
-					if !ok {
-						return nil, fmt.Errorf("package id %v does not exist", id)
-					}
-					imps[path] = packageInfo{string(fromPkg.Name), false}
-				}
+				imps[path] = ""
 			}
 		}
 		return imps, nil
@@ -454,25 +425,27 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 	// If the package is not imported in test file foo_test.go, it is added to
 	// extraImports map.
 	qf := func(p *types.Package) string {
-		// When generating test in x packages, any type/function defined in the same
-		// x package can emit package name.
+		// References from an in-package test should not be qualified.
 		if !xtest && p == pkg.Types() {
 			return ""
 		}
 		// Prefer using the package name if already defined in foo_test.go
 		if local, ok := testImports[p.Path()]; ok {
-			return local.name
+			if local != "" {
+				return local
+			} else {
+				return p.Name()
+			}
 		}
 		// TODO(hxjiang): we should consult the scope of the test package to
 		// ensure these new imports do not shadow any package-level names.
-		// If not already imported by foo_test.go, consult the foo.go import map.
-		if local, ok := fileImports[p.Path()]; ok {
-			// The package that contains this type need to be added to the import
-			// list in foo_test.go.
+		// Prefer the local import name (if any) used in the package under test.
+		if local, ok := fileImports[p.Path()]; ok && local != "" {
 			extraImports[p.Path()] = local
-			return local.name
+			return local
 		}
-		extraImports[p.Path()] = packageInfo{name: p.Name()}
+		// Fall back to the package name since there is no renaming.
+		extraImports[p.Path()] = ""
 		return p.Name()
 	}
 
@@ -728,11 +701,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 	// imports. Otherwise, we can simply write out the imports to the new file.
 	if testPGF != nil {
 		var importFixes []*imports.ImportFix
-		for path, info := range extraImports {
-			name := ""
-			if info.renamed {
-				name = info.name
-			}
+		for path, name := range extraImports {
 			importFixes = append(importFixes, &imports.ImportFix{
 				StmtInfo: imports.ImportInfo{
 					ImportPath: path,
@@ -750,9 +719,9 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		var importsBuffer bytes.Buffer
 		if len(extraImports) == 1 {
 			importsBuffer.WriteString("\nimport ")
-			for path, info := range extraImports {
-				if info.renamed {
-					importsBuffer.WriteString(info.name + " ")
+			for path, name := range extraImports {
+				if name != "" {
+					importsBuffer.WriteString(name + " ")
 				}
 				importsBuffer.WriteString(fmt.Sprintf("\"%s\"\n", path))
 			}
@@ -766,8 +735,8 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 			sort.Strings(paths)
 			for _, path := range paths {
 				importsBuffer.WriteString("\n\t")
-				if extraImports[path].renamed {
-					importsBuffer.WriteString(extraImports[path].name + " ")
+				if name := extraImports[path]; name != "" {
+					importsBuffer.WriteString(name + " ")
 				}
 				importsBuffer.WriteString(fmt.Sprintf("\"%s\"", path))
 			}
