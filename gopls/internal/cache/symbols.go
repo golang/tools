@@ -6,15 +6,21 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
+	"runtime"
 	"strings"
+	"sync"
 
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/internal/event"
 )
 
 // Symbol holds a precomputed symbol value. Note: we avoid using the
@@ -24,6 +30,64 @@ type Symbol struct {
 	Name  string
 	Kind  protocol.SymbolKind
 	Range protocol.Range
+}
+
+// Symbols extracts and returns symbol information for every file contained in
+// a loaded package. It awaits snapshot loading.
+//
+// If workspaceOnly is set, this only includes symbols from files in a
+// workspace package. Otherwise, it returns symbols from all loaded packages.
+func (s *Snapshot) Symbols(ctx context.Context, workspaceOnly bool) (map[protocol.DocumentURI][]Symbol, error) {
+	var (
+		meta []*metadata.Package
+		err  error
+	)
+	if workspaceOnly {
+		meta, err = s.WorkspaceMetadata(ctx)
+	} else {
+		meta, err = s.AllMetadata(ctx)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("loading metadata: %v", err)
+	}
+
+	goFiles := make(map[protocol.DocumentURI]struct{})
+	for _, mp := range meta {
+		for _, uri := range mp.GoFiles {
+			goFiles[uri] = struct{}{}
+		}
+		for _, uri := range mp.CompiledGoFiles {
+			goFiles[uri] = struct{}{}
+		}
+	}
+
+	// Symbolize them in parallel.
+	var (
+		group    errgroup.Group
+		nprocs   = 2 * runtime.GOMAXPROCS(-1) // symbolize is a mix of I/O and CPU
+		resultMu sync.Mutex
+		result   = make(map[protocol.DocumentURI][]Symbol)
+	)
+	group.SetLimit(nprocs)
+	for uri := range goFiles {
+		uri := uri
+		group.Go(func() error {
+			symbols, err := s.symbolize(ctx, uri)
+			if err != nil {
+				return err
+			}
+			resultMu.Lock()
+			result[uri] = symbols
+			resultMu.Unlock()
+			return nil
+		})
+	}
+	// Keep going on errors, but log the first failure.
+	// Partial results are better than no symbol results.
+	if err := group.Wait(); err != nil {
+		event.Error(ctx, "getting snapshot symbols", err)
+	}
+	return result, nil
 }
 
 // symbolize returns the result of symbolizing the file identified by uri, using a cache.
