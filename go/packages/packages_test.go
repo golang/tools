@@ -3177,6 +3177,51 @@ func TestIssue69606b(t *testing.T) {
 	}
 }
 
+// TestIssue70394 tests materializing an alias type defined in a package (m/a)
+// in another package (m/b) where the types for m/b are coming from the compiler,
+// e.g. `go list -compiled=true ... m/b`.
+func TestIssue70394(t *testing.T) {
+	// TODO(taking): backport https://go.dev/cl/604099 so that this works on 23.
+	testenv.NeedsGo1Point(t, 24)
+	testenv.NeedsTool(t, "go") // requires go list.
+	testenv.NeedsGoBuild(t)    // requires the compiler for export data.
+
+	t.Setenv("GODEBUG", "gotypesalias=1")
+
+	dir := t.TempDir()
+	overlay := map[string][]byte{
+		filepath.Join(dir, "go.mod"): []byte("module m"), // go version of the module does not matter.
+		filepath.Join(dir, "a/a.go"): []byte(`package a; type A = int32`),
+		filepath.Join(dir, "b/b.go"): []byte(`package b; import "m/a"; var V a.A`),
+	}
+	cfg := &packages.Config{
+		Dir:     dir,
+		Mode:    packages.NeedTypes, // just NeedsTypes allows for loading export data.
+		Overlay: overlay,
+		Env:     append(os.Environ(), "GOFLAGS=-mod=vendor", "GOWORK=off"),
+	}
+	pkgs, err := packages.Load(cfg, "m/b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := packages.PrintErrors(pkgs); errs > 0 {
+		t.Fatalf("Got %d errors while loading packages.", errs)
+	}
+	if len(pkgs) != 1 {
+		t.Fatalf("Loaded %d packages. expected 1", len(pkgs))
+	}
+
+	pkg := pkgs[0]
+	scope := pkg.Types.Scope()
+	obj := scope.Lookup("V")
+	if obj == nil {
+		t.Fatalf("Failed to find object %q in package %q", "V", pkg)
+	}
+	if _, ok := obj.Type().(*types.Alias); !ok {
+		t.Errorf("Object %q has type %q. expected an alias", obj, obj.Type())
+	}
+}
+
 // TestNeedTypesInfoOnly tests when NeedTypesInfo was set and NeedSyntax & NeedTypes were not,
 // Load should include the TypesInfo of packages properly
 func TestLoadTypesInfoWithoutSyntaxOrTypes(t *testing.T) {
