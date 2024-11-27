@@ -6,13 +6,17 @@ package folding //@foldingrange(raw)
 import (
 	"fmt"
 	_ "log"
+	"sort"
+	"time"
 )
 
 import _ "os"
 
 // bar is a function.
 // With a multiline doc comment.
-func bar() string {
+func bar() (
+	string,
+) {
 	/* This is a single line comment */
 	switch {
 	case true:
@@ -76,19 +80,74 @@ func bar() string {
 this string
 is not indented`
 }
+
+func _() {
+	slice := []int{1, 2, 3}
+	sort.Slice(slice, func(i, j int) bool {
+		a, b := slice[i], slice[j]
+		return a < b
+	})
+
+	sort.Slice(slice, func(i, j int) bool { return slice[i] < slice[j] })
+
+	sort.Slice(
+		slice,
+		func(i, j int) bool {
+			return slice[i] < slice[j]
+		},
+	)
+
+	fmt.Println(
+		1, 2, 3,
+		4,
+	)
+
+	fmt.Println(1, 2, 3,
+		4, 5, 6,
+		7, 8, 9,
+		10)
+
+	// Call with ellipsis.
+	_ = fmt.Errorf(
+		"test %d %d",
+		[]any{1, 2, 3}...,
+	)
+
+	// Check multiline string.
+	fmt.Println(
+		`multi
+		line
+		string
+		`,
+		1, 2, 3,
+	)
+
+	// Call without arguments.
+	_ = time.Now()
+}
+
+func _(
+	a int, b int,
+	c int,
+) {
+}
 -- @raw --
 package folding //@foldingrange(raw)
 
 import (<0 kind="imports">
 	"fmt"
 	_ "log"
+	"sort"
+	"time"
 </0>)
 
 import _ "os"
 
 // bar is a function.<1 kind="comment">
 // With a multiline doc comment.</1>
-func bar(<2 kind=""></2>) string {<3 kind="">
+func bar() (<2 kind="">
+	string,
+</2>) {<3 kind="">
 	/* This is a single line comment */
 	switch {<4 kind="">
 	case true:<5 kind="">
@@ -152,3 +211,54 @@ func bar(<2 kind=""></2>) string {<3 kind="">
 this string
 is not indented`</34>
 </3>}
+
+func _() {<35 kind="">
+	slice := []int{<36 kind="">1, 2, 3</36>}
+	sort.Slice(<37 kind="">slice, func(<38 kind="">i, j int</38>) bool {<39 kind="">
+		a, b := slice[i], slice[j]
+		return a < b
+	</39>}</37>)
+
+	sort.Slice(<40 kind="">slice, func(<41 kind="">i, j int</41>) bool {<42 kind=""> return slice[i] < slice[j] </42>}</40>)
+
+	sort.Slice(<43 kind="">
+		slice,
+		func(<44 kind="">i, j int</44>) bool {<45 kind="">
+			return slice[i] < slice[j]
+		</45>},
+	</43>)
+
+	fmt.Println(<46 kind="">
+		1, 2, 3,
+		4,
+	</46>)
+
+	fmt.Println(<47 kind="">1, 2, 3,
+		4, 5, 6,
+		7, 8, 9,
+		10</47>)
+
+	// Call with ellipsis.
+	_ = fmt.Errorf(<48 kind="">
+		"test %d %d",
+		[]any{<49 kind="">1, 2, 3</49>}...,
+	</48>)
+
+	// Check multiline string.
+	fmt.Println(<50 kind="">
+		<51 kind="">`multi
+		line
+		string
+		`</51>,
+		1, 2, 3,
+	</50>)
+
+	// Call without arguments.
+	_ = time.Now()
+</35>}
+
+func _(<52 kind="">
+	a int, b int,
+	c int,
+</52>) {<53 kind="">
+</53>}

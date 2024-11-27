@@ -5,6 +5,7 @@
 package golang
 
 import (
+	"bytes"
 	"context"
 	"go/ast"
 	"go/token"
@@ -73,15 +74,12 @@ func foldingRangeFunc(pgf *parsego.File, n ast.Node, lineFoldingOnly bool) *Fold
 	// TODO(suzmue): include trailing empty lines before the closing
 	// parenthesis/brace.
 	var kind protocol.FoldingRangeKind
+	// start and end define the range of content to fold away.
 	var start, end token.Pos
 	switch n := n.(type) {
 	case *ast.BlockStmt:
 		// Fold between positions of or lines between "{" and "}".
-		var startList, endList token.Pos
-		if num := len(n.List); num != 0 {
-			startList, endList = n.List[0].Pos(), n.List[num-1].End()
-		}
-		start, end = validLineFoldingRange(pgf.Tok, n.Lbrace, n.Rbrace, startList, endList, lineFoldingOnly)
+		start, end = getLineFoldingRange(pgf, n.Lbrace, n.Rbrace, lineFoldingOnly)
 	case *ast.CaseClause:
 		// Fold from position of ":" to end.
 		start, end = n.Colon+1, n.End()
@@ -89,26 +87,18 @@ func foldingRangeFunc(pgf *parsego.File, n ast.Node, lineFoldingOnly bool) *Fold
 		// Fold from position of ":" to end.
 		start, end = n.Colon+1, n.End()
 	case *ast.CallExpr:
-		// Fold from position of "(" to position of ")".
-		start, end = n.Lparen+1, n.Rparen
+		// Fold between positions of or lines between "(" and ")".
+		start, end = getLineFoldingRange(pgf, n.Lparen, n.Rparen, lineFoldingOnly)
 	case *ast.FieldList:
 		// Fold between positions of or lines between opening parenthesis/brace and closing parenthesis/brace.
-		var startList, endList token.Pos
-		if num := len(n.List); num != 0 {
-			startList, endList = n.List[0].Pos(), n.List[num-1].End()
-		}
-		start, end = validLineFoldingRange(pgf.Tok, n.Opening, n.Closing, startList, endList, lineFoldingOnly)
+		start, end = getLineFoldingRange(pgf, n.Opening, n.Closing, lineFoldingOnly)
 	case *ast.GenDecl:
 		// If this is an import declaration, set the kind to be protocol.Imports.
 		if n.Tok == token.IMPORT {
 			kind = protocol.Imports
 		}
 		// Fold between positions of or lines between "(" and ")".
-		var startSpecs, endSpecs token.Pos
-		if num := len(n.Specs); num != 0 {
-			startSpecs, endSpecs = n.Specs[0].Pos(), n.Specs[num-1].End()
-		}
-		start, end = validLineFoldingRange(pgf.Tok, n.Lparen, n.Rparen, startSpecs, endSpecs, lineFoldingOnly)
+		start, end = getLineFoldingRange(pgf, n.Lparen, n.Rparen, lineFoldingOnly)
 	case *ast.BasicLit:
 		// Fold raw string literals from position of "`" to position of "`".
 		if n.Kind == token.STRING && len(n.Value) >= 2 && n.Value[0] == '`' && n.Value[len(n.Value)-1] == '`' {
@@ -116,15 +106,15 @@ func foldingRangeFunc(pgf *parsego.File, n ast.Node, lineFoldingOnly bool) *Fold
 		}
 	case *ast.CompositeLit:
 		// Fold between positions of or lines between "{" and "}".
-		var startElts, endElts token.Pos
-		if num := len(n.Elts); num != 0 {
-			startElts, endElts = n.Elts[0].Pos(), n.Elts[num-1].End()
-		}
-		start, end = validLineFoldingRange(pgf.Tok, n.Lbrace, n.Rbrace, startElts, endElts, lineFoldingOnly)
+		start, end = getLineFoldingRange(pgf, n.Lbrace, n.Rbrace, lineFoldingOnly)
 	}
 
 	// Check that folding positions are valid.
 	if !start.IsValid() || !end.IsValid() {
+		return nil
+	}
+	if start == end {
+		// Nothing to fold.
 		return nil
 	}
 	// in line folding mode, do not fold if the start and end lines are the same.
@@ -133,7 +123,8 @@ func foldingRangeFunc(pgf *parsego.File, n ast.Node, lineFoldingOnly bool) *Fold
 	}
 	mrng, err := pgf.PosMappedRange(start, end)
 	if err != nil {
-		bug.Errorf("%w", err) // can't happen
+		bug.Reportf("failed to create mapped range: %s", err) // can't happen
+		return nil
 	}
 	return &FoldingRangeInfo{
 		MappedRange: mrng,
@@ -141,26 +132,67 @@ func foldingRangeFunc(pgf *parsego.File, n ast.Node, lineFoldingOnly bool) *Fold
 	}
 }
 
-// validLineFoldingRange returns start and end token.Pos for folding range if the range is valid.
-// returns token.NoPos otherwise, which fails token.IsValid check
-func validLineFoldingRange(tokFile *token.File, open, close, start, end token.Pos, lineFoldingOnly bool) (token.Pos, token.Pos) {
-	if lineFoldingOnly {
-		if !open.IsValid() || !close.IsValid() {
-			return token.NoPos, token.NoPos
-		}
-
-		// Don't want to fold if the start/end is on the same line as the open/close
-		// as an example, the example below should *not* fold:
-		// var x = [2]string{"d",
-		// "e" }
-		if safetoken.Line(tokFile, open) == safetoken.Line(tokFile, start) ||
-			safetoken.Line(tokFile, close) == safetoken.Line(tokFile, end) {
-			return token.NoPos, token.NoPos
-		}
-
-		return open + 1, end
+// getLineFoldingRange returns the folding range for nodes with parentheses/braces/brackets
+// that potentially can take up multiple lines.
+func getLineFoldingRange(pgf *parsego.File, open, close token.Pos, lineFoldingOnly bool) (token.Pos, token.Pos) {
+	if !open.IsValid() || !close.IsValid() {
+		return token.NoPos, token.NoPos
 	}
-	return open + 1, close
+	if open+1 == close {
+		// Nothing to fold: (), {} or [].
+		return token.NoPos, token.NoPos
+	}
+
+	if !lineFoldingOnly {
+		// Can fold between opening and closing parenthesis/brace
+		// even if they are on the same line.
+		return open + 1, close
+	}
+
+	// Clients with "LineFoldingOnly" set to true can fold only full lines.
+	// So, we return a folding range only when the closing parenthesis/brace
+	// and the end of the last argument/statement/element are on different lines.
+	//
+	// We could skip the check for the opening parenthesis/brace and start of
+	// the first argument/statement/element. For example, the following code
+	//
+	//	var x = []string{"a",
+	//	"b",
+	//	"c" }
+	//
+	// can be folded to
+	//
+	//	var x = []string{"a", ...
+	//	"c" }
+	//
+	// However, this might look confusing. So, check the lines of "open" and
+	// "start" positions as well.
+
+	// isOnlySpaceBetween returns true if there are only space characters between "from" and "to".
+	isOnlySpaceBetween := func(from token.Pos, to token.Pos) bool {
+		start, end, err := safetoken.Offsets(pgf.Tok, from, to)
+		if err != nil {
+			bug.Reportf("failed to get offsets: %s", err) // can't happen
+			return false
+		}
+		return len(bytes.TrimSpace(pgf.Src[start:end])) == 0
+	}
+
+	nextLine := safetoken.Line(pgf.Tok, open) + 1
+	if nextLine > pgf.Tok.LineCount() {
+		return token.NoPos, token.NoPos
+	}
+	nextLineStart := pgf.Tok.LineStart(nextLine)
+	if !isOnlySpaceBetween(open+1, nextLineStart) {
+		return token.NoPos, token.NoPos
+	}
+
+	prevLineEnd := pgf.Tok.LineStart(safetoken.Line(pgf.Tok, close)) - 1 // there must be a previous line
+	if !isOnlySpaceBetween(prevLineEnd, close) {
+		return token.NoPos, token.NoPos
+	}
+
+	return open + 1, prevLineEnd
 }
 
 // commentsFoldingRange returns the folding ranges for all comment blocks in file.
@@ -185,7 +217,8 @@ func commentsFoldingRange(pgf *parsego.File) (comments []*FoldingRangeInfo) {
 		}
 		mrng, err := pgf.PosMappedRange(endLinePos, commentGrp.End())
 		if err != nil {
-			bug.Errorf("%w", err) // can't happen
+			bug.Reportf("failed to create mapped range: %s", err) // can't happen
+			continue
 		}
 		comments = append(comments, &FoldingRangeInfo{
 			// Fold from the end of the first line comment to the end of the comment block.
