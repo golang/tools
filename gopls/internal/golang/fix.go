@@ -112,7 +112,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fixInvertIfCondition:       singleFile(invertIfCondition),
 		fixSplitLines:              singleFile(splitLines),
 		fixJoinLines:               singleFile(joinLines),
-		fixCreateUndeclared:        singleFile(CreateUndeclared),
+		fixCreateUndeclared:        singleFile(createUndeclared),
 		fixMissingInterfaceMethods: stubMissingInterfaceMethodsFixer,
 		fixMissingCalledFunction:   stubMissingCalledFunctionFixer,
 	}
