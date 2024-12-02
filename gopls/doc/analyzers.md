@@ -976,6 +976,37 @@ Default: off. Enable by setting `"analyses": {"useany": true}`.
 
 Package documentation: [useany](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/useany)
 
+<a id='waitgroup'></a>
+## `waitgroup`: check for misuses of sync.WaitGroup
+
+
+This analyzer detects mistaken calls to the (*sync.WaitGroup).Add
+method from inside a new goroutine, causing Add to race with Wait:
+
+	// WRONG
+	var wg sync.WaitGroup
+	go func() {
+	        wg.Add(1) // "WaitGroup.Add called from inside new goroutine"
+	        defer wg.Done()
+	        ...
+	}()
+	wg.Wait() // (may return prematurely before new goroutine starts)
+
+The correct code calls Add before starting the goroutine:
+
+	// RIGHT
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		...
+	}()
+	wg.Wait()
+
+Default: on.
+
+Package documentation: [waitgroup](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/waitgroup)
+
 <a id='yield'></a>
 ## `yield`: report calls to yield where the result is ignored
 

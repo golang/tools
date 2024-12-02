@@ -66,6 +66,14 @@ func _() {
 	slog.Info("msg", 1) //@diag("1", re`slog.Info arg "1" should be a string or a slog.Attr`)
 }
 
+// waitgroup
+func _() {
+	var wg sync.WaitGroup
+	go func() {
+		wg.Add(1) //@diag("(", re"WaitGroup.Add called from inside new goroutine")
+	}()
+}
+
 -- cgocall/cgocall.go --
 package cgocall
 
