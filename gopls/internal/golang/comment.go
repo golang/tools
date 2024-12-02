@@ -12,6 +12,7 @@ import (
 	"go/doc/comment"
 	"go/token"
 	"go/types"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -19,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
@@ -154,6 +156,18 @@ func lookupDocLinkSymbol(pkg *cache.Package, pgf *parsego.File, name string) typ
 	// Try treating the prefix as a package name,
 	// allowing for non-renaming and renaming imports.
 	fileScope := pkg.TypesInfo().Scopes[pgf.File]
+	if fileScope == nil {
+		// This is theoretically possible if pgf is a GoFile but not a
+		// CompiledGoFile. However, we do not know how to produce such a package
+		// without using an external GoPackagesDriver.
+		// See if this is the source of golang/go#70635
+		if slices.Contains(pkg.CompiledGoFiles(), pgf) {
+			bug.Reportf("missing file scope for compiled file")
+		} else {
+			bug.Reportf("missing file scope for non-compiled file")
+		}
+		return nil
+	}
 	pkgname, ok := fileScope.Lookup(prefix).(*types.PkgName) // ok => prefix is imported name
 	if !ok {
 		// Handle renaming import, e.g.
