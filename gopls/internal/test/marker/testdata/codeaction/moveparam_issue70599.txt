@@ -41,8 +41,8 @@ func Cache(value any, key [32]byte) { //@codeaction("key", "refactor.rewrite.mov
 
 func _() {
 	var k Hash
-	Cache(0, [32]byte(k))
-	Cache(1, [32]byte(Hash{}))
+	Cache(0, k)
+	Cache(1, Hash{})
 	Cache(2, [32]byte{})
 }
 -- shortvardecl.go --

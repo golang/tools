@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // A Callee holds information about an inlinable function. Gob-serializable.
@@ -382,19 +383,22 @@ func parseCompact(content []byte) (*token.FileSet, *ast.FuncDecl, error) {
 
 // A paramInfo records information about a callee receiver, parameter, or result variable.
 type paramInfo struct {
-	Name       string          // parameter name (may be blank, or even "")
-	Index      int             // index within signature
-	IsResult   bool            // false for receiver or parameter, true for result variable
-	Assigned   bool            // parameter appears on left side of an assignment statement
-	Escapes    bool            // parameter has its address taken
-	Refs       []refInfo       // information about references to parameter within body
-	Shadow     map[string]bool // names shadowed at one of the above refs
-	FalconType string          // name of this parameter's type (if basic) in the falcon system
+	Name        string          // parameter name (may be blank, or even "")
+	Index       int             // index within signature
+	IsResult    bool            // false for receiver or parameter, true for result variable
+	IsInterface bool            // parameter has a (non-type parameter) interface type
+	Assigned    bool            // parameter appears on left side of an assignment statement
+	Escapes     bool            // parameter has its address taken
+	Refs        []refInfo       // information about references to parameter within body
+	Shadow      map[string]bool // names shadowed at one of the above refs
+	FalconType  string          // name of this parameter's type (if basic) in the falcon system
 }
 
 type refInfo struct {
-	Offset   int  // FuncDecl-relative byte offset of parameter ref within body
-	NeedType bool // type of substituted arg must be identical to type of param
+	Offset           int  // FuncDecl-relative byte offset of parameter ref within body
+	Assignable       bool // ref appears in context of assignment to known type
+	IfaceAssignment  bool // ref is being assigned to an interface
+	AffectsInference bool // ref type may affect type inference
 	// IsSelectionOperand indicates whether the parameter reference is the
 	// operand of a selection (param.f). If so, and param's argument is itself
 	// a receiver parameter (a common case), we don't need to desugar (&v or *ptr)
@@ -421,9 +425,10 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 		sig := fnobj.Type().(*types.Signature)
 		newParamInfo := func(param *types.Var, isResult bool) *paramInfo {
 			info := &paramInfo{
-				Name:     param.Name(),
-				IsResult: isResult,
-				Index:    len(paramInfos),
+				Name:        param.Name(),
+				IsResult:    isResult,
+				Index:       len(paramInfos),
+				IsInterface: isNonTypeParamInterface(param.Type()),
 			}
 			paramInfos[param] = info
 			return info
@@ -479,10 +484,12 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 					// Contrapositively, if param is not an interface type, then the
 					// assignment may lose type information, for example in the case that
 					// the substituted expression is an untyped constant or unnamed type.
-					ifaceParam := isNonTypeParamInterface(v.Type())
+					assignable, ifaceAssign, affectsInference := analyzeAssignment(info, stack)
 					ref := refInfo{
 						Offset:             int(n.Pos() - decl.Pos()),
-						NeedType:           !ifaceParam || !isAssignableOperand(info, stack),
+						Assignable:         assignable,
+						IfaceAssignment:    ifaceAssign,
+						AffectsInference:   affectsInference,
 						IsSelectionOperand: isSelectionOperand(stack),
 					}
 					pinfo.Refs = append(pinfo.Refs, ref)
@@ -505,27 +512,58 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 
 // -- callee helpers --
 
-// isAssignableOperand reports whether the given outer-to-inner stack has an
-// innermost expression operand for which assignability rules apply, meaning it
-// is used in a position where its type need only be assignable to the type
-// implied by its surrounding syntax.
+// analyzeAssignment looks at the the given stack, and analyzes certain
+// attributes of the innermost expression.
 //
-// As this function is intended to be used for inlining analysis, it reports
-// false in one case where the operand technically need only be assignable: if
-// the type being assigned to is a call argument and contains type parameters,
-// then passing a different (yet assignable) type may affect type inference,
-// and so isAssignableOperand reports false.
-func isAssignableOperand(info *types.Info, stack []ast.Node) bool {
-	parent, expr := exprContext(stack)
+// In all cases we 'fail closed' when we cannot detect (or for simplicity
+// choose not to detect) the condition in question, meaning we err on the side
+// of the more restrictive rule. This is noted for each result below.
+//
+//   - assignable reports whether the expression is used in a position where
+//     assignability rules apply, such as in an actual assignment, as call
+//     argument, or in a send to a channel. Defaults to 'false'. If assignable
+//     is false, the other two results are irrelevant.
+//   - ifaceAssign reports whether that assignment is to an interface type.
+//     This is important as we want to preserve the concrete type in that
+//     assignment. Defaults to 'true'. Notably, if the assigned type is a type
+//     parameter, we assume that it could have interface type.
+//   - affectsInference is (somewhat vaguely) defined as whether or not the
+//     type of the operand may affect the type of the surrounding syntax,
+//     through type inference. It is infeasible to completely reverse engineer
+//     type inference, so we over approximate: if the expression is an argument
+//     to a call to a generic function (but not method!) that uses type
+//     parameters, assume that unification of that argument may affect the
+//     inferred types.
+func analyzeAssignment(info *types.Info, stack []ast.Node) (assignable, ifaceAssign, affectsInference bool) {
+	remaining, parent, expr := exprContext(stack)
 	if parent == nil {
-		return false
+		return false, false, false
 	}
 
+	// TODO(golang/go#70638): simplify when types.Info records implicit conversions.
+
 	// Types do not need to match for assignment to a variable.
-	if assign, ok := parent.(*ast.AssignStmt); ok && assign.Tok == token.ASSIGN {
-		for _, v := range assign.Rhs {
+	if assign, ok := parent.(*ast.AssignStmt); ok {
+		for i, v := range assign.Rhs {
 			if v == expr {
-				return true
+				if i >= len(assign.Lhs) {
+					return false, false, false // ill typed
+				}
+				// Check to see if the assignment is to an interface type.
+				if i < len(assign.Lhs) {
+					// TODO: We could handle spread calls here, but in current usage expr
+					// is an ident.
+					if id, _ := assign.Lhs[i].(*ast.Ident); id != nil && info.Defs[id] != nil {
+						// Types must match for a defining identifier in a short variable
+						// declaration.
+						return false, false, false
+					}
+					// In all other cases, types should be known.
+					typ := info.TypeOf(assign.Lhs[i])
+					return true, typ == nil || types.IsInterface(typ), false
+				}
+				// Default:
+				return assign.Tok == token.ASSIGN, true, false
 			}
 		}
 	}
@@ -534,22 +572,79 @@ func isAssignableOperand(info *types.Info, stack []ast.Node) bool {
 	if spec, ok := parent.(*ast.ValueSpec); ok && spec.Type != nil {
 		for _, v := range spec.Values {
 			if v == expr {
-				return true
+				typ := info.TypeOf(spec.Type)
+				return true, typ == nil || types.IsInterface(typ), false
 			}
+		}
+	}
+
+	// Types do not need to match for index expresions.
+	if ix, ok := parent.(*ast.IndexExpr); ok {
+		if ix.Index == expr {
+			typ := info.TypeOf(ix.X)
+			if typ == nil {
+				return true, true, false
+			}
+			m, _ := typeparams.CoreType(typ).(*types.Map)
+			return true, m == nil || types.IsInterface(m.Key()), false
 		}
 	}
 
 	// Types do not need to match for composite literal keys, values, or
 	// fields.
 	if kv, ok := parent.(*ast.KeyValueExpr); ok {
-		if kv.Key == expr || kv.Value == expr {
-			return true
+		var under types.Type
+		if len(remaining) > 0 {
+			if complit, ok := remaining[len(remaining)-1].(*ast.CompositeLit); ok {
+				if typ := info.TypeOf(complit); typ != nil {
+					// Unpointer to allow for pointers to slices or arrays, which are
+					// permitted as the types of nested composite literals without a type
+					// name.
+					under = typesinternal.Unpointer(typeparams.CoreType(typ))
+				}
+			}
+		}
+		if kv.Key == expr { // M{expr: ...}: assign to map key
+			m, _ := under.(*types.Map)
+			return true, m == nil || types.IsInterface(m.Key()), false
+		}
+		if kv.Value == expr {
+			switch under := under.(type) {
+			case interface{ Elem() types.Type }: // T{...: expr}: assign to map/array/slice element
+				return true, types.IsInterface(under.Elem()), false
+			case *types.Struct: // Struct{k: expr}
+				if id, _ := kv.Key.(*ast.Ident); id != nil {
+					for fi := 0; fi < under.NumFields(); fi++ {
+						field := under.Field(fi)
+						if info.Uses[id] == field {
+							return true, types.IsInterface(field.Type()), false
+						}
+					}
+				}
+			default:
+				return true, true, false
+			}
 		}
 	}
 	if lit, ok := parent.(*ast.CompositeLit); ok {
-		for _, v := range lit.Elts {
+		for i, v := range lit.Elts {
 			if v == expr {
-				return true
+				typ := info.TypeOf(lit)
+				if typ == nil {
+					return true, true, false
+				}
+				// As in the KeyValueExpr case above, unpointer to handle pointers to
+				// array/slice literals.
+				under := typesinternal.Unpointer(typeparams.CoreType(typ))
+				switch under := under.(type) {
+				case interface{ Elem() types.Type }: // T{expr}: assign to map/array/slice element
+					return true, types.IsInterface(under.Elem()), false
+				case *types.Struct: // Struct{expr}: assign to unkeyed struct field
+					if i < under.NumFields() {
+						return true, types.IsInterface(under.Field(i).Type()), false
+					}
+				}
+				return true, true, false
 			}
 		}
 	}
@@ -557,7 +652,12 @@ func isAssignableOperand(info *types.Info, stack []ast.Node) bool {
 	// Types do not need to match for values sent to a channel.
 	if send, ok := parent.(*ast.SendStmt); ok {
 		if send.Value == expr {
-			return true
+			typ := info.TypeOf(send.Chan)
+			if typ == nil {
+				return true, true, false
+			}
+			ch, _ := typeparams.CoreType(typ).(*types.Chan)
+			return true, ch == nil || types.IsInterface(ch.Elem()), false
 		}
 	}
 
@@ -565,43 +665,62 @@ func isAssignableOperand(info *types.Info, stack []ast.Node) bool {
 	// corresponding parameter has type parameters, as in that case the
 	// argument type may affect inference.
 	if call, ok := parent.(*ast.CallExpr); ok {
+		if _, ok := isConversion(info, call); ok {
+			return false, false, false // redundant conversions are handled at the call site
+		}
+		// Ordinary call. Could be a call of a func, builtin, or function value.
 		for i, arg := range call.Args {
 			if arg == expr {
-				if fn, _ := typeutil.Callee(info, call).(*types.Func); fn != nil { // Incidentally, this check rejects a conversion T(id).
-					sig := fn.Type().(*types.Signature)
-
-					// Find the relevant parameter type, accounting for variadics.
-					var paramType types.Type
-					if plen := sig.Params().Len(); sig.Variadic() && i >= plen-1 && !call.Ellipsis.IsValid() {
-						if s, ok := sig.Params().At(plen - 1).Type().(*types.Slice); ok {
-							paramType = s.Elem()
-						}
-					} else if i < plen {
-						paramType = sig.Params().At(i).Type()
-					}
-
-					if paramType != nil && !new(typeparams.Free).Has(paramType) {
-						return true
-					}
+				typ := info.TypeOf(call.Fun)
+				if typ == nil {
+					return true, true, false
 				}
-				break
+				sig, _ := typeparams.CoreType(typ).(*types.Signature)
+				if sig != nil {
+					// Find the relevant parameter type, accounting for variadics.
+					paramType := paramTypeAtIndex(sig, call, i)
+					ifaceAssign := paramType == nil || types.IsInterface(paramType)
+					affectsInference := false
+					if fn := typeutil.StaticCallee(info, call); fn != nil {
+						if sig2 := fn.Type().(*types.Signature); sig2.Recv() == nil {
+							originParamType := paramTypeAtIndex(sig2, call, i)
+							affectsInference = originParamType == nil || new(typeparams.Free).Has(originParamType)
+						}
+					}
+					return true, ifaceAssign, affectsInference
+				}
 			}
 		}
 	}
 
-	return false // In all other cases, preserve the parameter type.
+	return false, false, false
+}
+
+// paramTypeAtIndex returns the effective parameter type at the given argument
+// index in call, if valid.
+func paramTypeAtIndex(sig *types.Signature, call *ast.CallExpr, index int) types.Type {
+	if plen := sig.Params().Len(); sig.Variadic() && index >= plen-1 && !call.Ellipsis.IsValid() {
+		if s, ok := sig.Params().At(plen - 1).Type().(*types.Slice); ok {
+			return s.Elem()
+		}
+	} else if index < plen {
+		return sig.Params().At(index).Type()
+	}
+	return nil // ill typed
 }
 
 // exprContext returns the innermost parent->child expression nodes for the
-// given outer-to-inner stack, after stripping parentheses.
+// given outer-to-inner stack, after stripping parentheses, along with the
+// remaining stack up to the parent node.
 //
 // If no such context exists, returns (nil, nil).
-func exprContext(stack []ast.Node) (parent ast.Node, expr ast.Expr) {
+func exprContext(stack []ast.Node) (remaining []ast.Node, parent ast.Node, expr ast.Expr) {
 	expr, _ = stack[len(stack)-1].(ast.Expr)
 	if expr == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	for i := len(stack) - 2; i >= 0; i-- {
+	i := len(stack) - 2
+	for ; i >= 0; i-- {
 		if pexpr, ok := stack[i].(*ast.ParenExpr); ok {
 			expr = pexpr
 		} else {
@@ -610,15 +729,16 @@ func exprContext(stack []ast.Node) (parent ast.Node, expr ast.Expr) {
 		}
 	}
 	if parent == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	return parent, expr
+	// inv: i is the index of parent in the stack.
+	return stack[:i], parent, expr
 }
 
 // isSelectionOperand reports whether the innermost node of stack is operand
 // (x) of a selection x.f.
 func isSelectionOperand(stack []ast.Node) bool {
-	parent, expr := exprContext(stack)
+	_, parent, expr := exprContext(stack)
 	if parent == nil {
 		return false
 	}

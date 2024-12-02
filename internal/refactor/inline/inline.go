@@ -1711,10 +1711,19 @@ next:
 					}
 				}
 
-				// If the reference requires exact type agreement (as reported by
-				// param.info.NeedType), wrap the argument in an explicit conversion
-				// if substitution might materially change its type. (We already did
-				// the necessary shadowing check on the parameter type syntax.)
+				// If the reference requires exact type agreement between parameter and
+				// argument, wrap the argument in an explicit conversion if
+				// substitution might materially change its type. (We already did the
+				// necessary shadowing check on the parameter type syntax.)
+				//
+				// The types must agree in any of these cases:
+				// - the argument affects type inference;
+				// - the reference's concrete type is assigned to an interface type;
+				// - the reference is not an assignment, nor a trivial conversion of an untyped constant.
+				//
+				// In all other cases, no explicit conversion is necessary as either
+				// the type does not matter, or must have already agreed for well-typed
+				// code.
 				//
 				// This is only needed for substituted arguments. All other arguments
 				// are given explicit types in either a binding decl or when using the
@@ -1724,21 +1733,24 @@ next:
 				// redundant type conversions such as this:
 				//
 				// Callee:
-				//    func f(i int32) { print(i) }
+				//    func f(i int32) { fmt.Println(i) }
 				// Caller:
 				//    func g() { f(int32(1)) }
 				// Inlined as:
-				//    func g() { print(int32(int32(1)))
+				//    func g() { fmt.Println(int32(int32(1)))
 				//
-				// Recall that non-trivial does not imply non-identical
-				// for constant conversions; however, at this point state.arguments
-				// has already re-typechecked the constant and set arg.type to
-				// its (possibly "untyped") inherent type, so
-				// the conversion from untyped 1 to int32 is non-trivial even
-				// though both arg and param have identical types (int32).
-				if ref.NeedType &&
-					!types.Identical(arg.typ, param.obj.Type()) &&
-					!trivialConversion(arg.constant, arg.typ, param.obj.Type()) {
+				// Recall that non-trivial does not imply non-identical for constant
+				// conversions; however, at this point state.arguments has already
+				// re-typechecked the constant and set arg.type to its (possibly
+				// "untyped") inherent type, so the conversion from untyped 1 to int32
+				// is non-trivial even though both arg and param have identical types
+				// (int32).
+				needType := ref.AffectsInference ||
+					(ref.Assignable && ref.IfaceAssignment && !param.info.IsInterface) ||
+					(!ref.Assignable && !trivialConversion(arg.constant, arg.typ, param.obj.Type()))
+
+				if needType &&
+					!types.Identical(types.Default(arg.typ), param.obj.Type()) {
 
 					// If arg.expr is already an interface call, strip it.
 					if call, ok := argExpr.(*ast.CallExpr); ok && len(call.Args) == 1 {
