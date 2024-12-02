@@ -548,7 +548,12 @@ func refactorRewriteRemoveUnusedParam(ctx context.Context, req *codeActionsReque
 }
 
 func refactorRewriteMoveParamLeft(ctx context.Context, req *codeActionsRequest) error {
-	if info := findParam(req.pgf, req.loc.Range); info != nil && info.paramIndex > 0 {
+	if info := findParam(req.pgf, req.loc.Range); info != nil &&
+		info.paramIndex > 0 &&
+		!is[*ast.Ellipsis](info.field.Type) {
+
+		// ^^ we can't currently handle moving a variadic param.
+		// TODO(rfindley): implement.
 
 		transform := identityTransform(info.decl.Type.Params)
 		transform[info.paramIndex] = command.ChangeSignatureParam{OldIndex: info.paramIndex - 1}
@@ -566,19 +571,27 @@ func refactorRewriteMoveParamLeft(ctx context.Context, req *codeActionsRequest) 
 }
 
 func refactorRewriteMoveParamRight(ctx context.Context, req *codeActionsRequest) error {
-	if info := findParam(req.pgf, req.loc.Range); info != nil && info.paramIndex >= 0 && // found a param
-		info.paramIndex < info.decl.Type.Params.NumFields()-1 { // not the last param
+	if info := findParam(req.pgf, req.loc.Range); info != nil && info.paramIndex >= 0 {
+		params := info.decl.Type.Params
+		nparams := params.NumFields()
+		if info.paramIndex < nparams-1 { // not the last param
+			if info.paramIndex == nparams-2 && is[*ast.Ellipsis](params.List[len(params.List)-1].Type) {
+				// We can't currently handle moving a variadic param.
+				// TODO(rfindley): implement.
+				return nil
+			}
 
-		transform := identityTransform(info.decl.Type.Params)
-		transform[info.paramIndex] = command.ChangeSignatureParam{OldIndex: info.paramIndex + 1}
-		transform[info.paramIndex+1] = command.ChangeSignatureParam{OldIndex: info.paramIndex}
-		cmd := command.NewChangeSignatureCommand("Move parameter right", command.ChangeSignatureArgs{
-			Location:     req.loc,
-			NewParams:    transform,
-			NewResults:   identityTransform(info.decl.Type.Results),
-			ResolveEdits: req.resolveEdits(),
-		})
-		req.addCommandAction(cmd, true)
+			transform := identityTransform(info.decl.Type.Params)
+			transform[info.paramIndex] = command.ChangeSignatureParam{OldIndex: info.paramIndex + 1}
+			transform[info.paramIndex+1] = command.ChangeSignatureParam{OldIndex: info.paramIndex}
+			cmd := command.NewChangeSignatureCommand("Move parameter right", command.ChangeSignatureArgs{
+				Location:     req.loc,
+				NewParams:    transform,
+				NewResults:   identityTransform(info.decl.Type.Results),
+				ResolveEdits: req.resolveEdits(),
+			})
+			req.addCommandAction(cmd, true)
+		}
 	}
 	return nil
 }

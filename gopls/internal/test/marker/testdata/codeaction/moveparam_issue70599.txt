@@ -94,7 +94,7 @@ package a
 // We should not offer movement involving variadic parameters if it is not well
 // supported.
 
-func Variadic(x int, y ...string) { //@codeaction("x", "refactor.rewrite.moveParamRight", err="type checking rewritten package")
+func Variadic(x int, y ...string) { //@codeaction("x", "refactor.rewrite.moveParamRight", err="0 CodeActions"), codeaction("y", "refactor.rewrite.moveParamLeft", err="0 CodeActions")
 }
 
 func _() {
