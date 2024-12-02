@@ -3266,10 +3266,9 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 	//
 	// This works as long as we don't need to write any additional type
 	// information.
-	if callerStmt.Tok == token.ASSIGN && // LHS types already determined before call
-		len(nonTrivial) == 0 { // no non-trivial conversions to worry about
+	if len(nonTrivial) == 0 { // no non-trivial conversions to worry about
 
-		logf("substrategy: slice assignment")
+		logf("substrategy: splice assignment")
 		return []ast.Stmt{&ast.AssignStmt{
 			Lhs:    lhs,
 			Tok:    callerStmt.Tok,

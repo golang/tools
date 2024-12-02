@@ -1,7 +1,5 @@
-This test reproduces various bugs encountered while bug-bashing on the movement
-refactoring.
-
-TODO(rfindley): fix these bugs.
+This test checks the fixes for bugs encountered while bug-bashing on the
+movement refactoring.
 
 -- go.mod --
 module example.com
@@ -74,8 +72,7 @@ func Short(y, x int) (int, int) { //@codeaction("x", "refactor.rewrite.moveParam
 }
 
 func _() {
-	var x, y int
-	x, y = Short(1, 0)
+	x, y := Short(1, 0)
 	_, _ = x, y
 }
 
