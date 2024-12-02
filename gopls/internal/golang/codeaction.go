@@ -504,6 +504,11 @@ func addTest(ctx context.Context, req *codeActionsRequest) error {
 		return nil
 	}
 
+	// TODO(hxjiang): support functions with type parameter.
+	if decl.Type.TypeParams != nil {
+		return nil
+	}
+
 	cmd := command.NewAddTestCommand("Add test for "+decl.Name.String(), req.loc)
 	req.addCommandAction(cmd, true)
 
