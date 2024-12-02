@@ -77,7 +77,7 @@ type postfixTmplArgs struct {
 	snip           snippet.Builder
 	importIfNeeded func(pkgPath string, scope *types.Scope) (name string, edits []protocol.TextEdit, err error)
 	edits          []protocol.TextEdit
-	qf             types.Qualifier
+	qual           types.Qualifier
 	varNames       map[string]bool
 	placeholders   bool
 	currentTabStop int
@@ -437,12 +437,12 @@ func (a *postfixTmplArgs) TypeName(t types.Type) (string, error) {
 	if t == nil || t == types.Typ[types.Invalid] {
 		return "", fmt.Errorf("invalid type: %v", t)
 	}
-	return types.TypeString(t, a.qf), nil
+	return types.TypeString(t, a.qual), nil
 }
 
 // Zero return the zero value representation of type t
 func (a *postfixTmplArgs) Zero(t types.Type) string {
-	zero, _ := typesinternal.ZeroString(t, a.qf)
+	zero, _ := typesinternal.ZeroString(t, a.qual)
 	return zero
 }
 
@@ -588,7 +588,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 			Type:           selType,
 			FuncResults:    funcResults,
 			sel:            sel,
-			qf:             c.qf,
+			qual:           c.qual,
 			importIfNeeded: c.importIfNeeded,
 			scope:          scope,
 			varNames:       make(map[string]bool),

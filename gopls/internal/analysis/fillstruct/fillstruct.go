@@ -199,6 +199,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 		fieldTyps = append(fieldTyps, field.Type())
 	}
 	matches := analysisinternal.MatchingIdents(fieldTyps, file, start, info, pkg)
+	qual := typesinternal.FileQualifier(file, pkg)
 	var elts []ast.Expr
 	for i, fieldTyp := range fieldTyps {
 		if fieldTyp == nil {
@@ -232,7 +233,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 			// NOTE: We currently match on the name of the field key rather than the field type.
 			if best := fuzzy.BestMatch(fieldName, names); best != "" {
 				kv.Value = ast.NewIdent(best)
-			} else if expr, isValid := populateValue(file, pkg, fieldTyp); isValid {
+			} else if expr, isValid := populateValue(fieldTyp, qual); isValid {
 				kv.Value = expr
 			} else {
 				return nil, nil, nil // no fix to suggest
@@ -328,32 +329,35 @@ func indent(str, ind []byte) []byte {
 //
 // The reasoning here is that users will call fillstruct with the intention of
 // initializing the struct, in which case setting these fields to nil has no effect.
-func populateValue(f *ast.File, pkg *types.Package, typ types.Type) (_ ast.Expr, isValid bool) {
+//
+// If the input contains an invalid type, populateValue may panic or return
+// expression that may not compile.
+func populateValue(typ types.Type, qual types.Qualifier) (_ ast.Expr, isValid bool) {
 	switch t := typ.(type) {
 	case *types.TypeParam, *types.Interface, *types.Struct, *types.Basic:
-		return typesinternal.ZeroExpr(f, pkg, t)
+		return typesinternal.ZeroExpr(t, qual)
 
 	case *types.Alias, *types.Named:
 		switch t.Underlying().(type) {
 		// Avoid typesinternal.ZeroExpr here as we don't want to return nil.
 		case *types.Map, *types.Slice:
 			return &ast.CompositeLit{
-				Type: typesinternal.TypeExpr(f, pkg, t),
+				Type: typesinternal.TypeExpr(t, qual),
 			}, true
 		default:
-			return typesinternal.ZeroExpr(f, pkg, t)
+			return typesinternal.ZeroExpr(t, qual)
 		}
 
 	// Avoid typesinternal.ZeroExpr here as we don't want to return nil.
 	case *types.Map, *types.Slice:
 		return &ast.CompositeLit{
-			Type: typesinternal.TypeExpr(f, pkg, t),
+			Type: typesinternal.TypeExpr(t, qual),
 		}, true
 
 	case *types.Array:
 		return &ast.CompositeLit{
 			Type: &ast.ArrayType{
-				Elt: typesinternal.TypeExpr(f, pkg, t.Elem()),
+				Elt: typesinternal.TypeExpr(t.Elem(), qual),
 				Len: &ast.BasicLit{
 					Kind: token.INT, Value: fmt.Sprintf("%v", t.Len()),
 				},
@@ -370,14 +374,14 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) (_ ast.Expr,
 			Args: []ast.Expr{
 				&ast.ChanType{
 					Dir:   dir,
-					Value: typesinternal.TypeExpr(f, pkg, t.Elem()),
+					Value: typesinternal.TypeExpr(t.Elem(), qual),
 				},
 			},
 		}, true
 
 	case *types.Signature:
 		return &ast.FuncLit{
-			Type: typesinternal.TypeExpr(f, pkg, t).(*ast.FuncType),
+			Type: typesinternal.TypeExpr(t, qual).(*ast.FuncType),
 			// The body of the function literal contains a panic statement to
 			// avoid type errors.
 			Body: &ast.BlockStmt{
@@ -425,7 +429,7 @@ func populateValue(f *ast.File, pkg *types.Package, typ types.Type) (_ ast.Expr,
 		default:
 			// TODO(hxjiang): & prefix only works if populateValue returns a
 			// composite literal T{} or the expression new(T).
-			expr, isValid := populateValue(f, pkg, t.Elem())
+			expr, isValid := populateValue(t.Elem(), qual)
 			return &ast.UnaryExpr{
 				Op: token.AND,
 				X:  expr,

@@ -138,7 +138,7 @@ func CreateUndeclared(fset *token.FileSet, start, end token.Pos, content []byte,
 		// Default to 0.
 		typs = []types.Type{types.Typ[types.Int]}
 	}
-	expr, _ := typesinternal.ZeroExpr(file, pkg, typs[0])
+	expr, _ := typesinternal.ZeroExpr(typs[0], typesinternal.FileQualifier(file, pkg))
 	assignStmt := &ast.AssignStmt{
 		Lhs: []ast.Expr{ast.NewIdent(ident.Name)},
 		Tok: token.DEFINE,
@@ -282,7 +282,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 	}
 
 	params := &ast.FieldList{}
-
+	qual := typesinternal.FileQualifier(file, pkg)
 	for i, name := range paramNames {
 		if suffix, repeats := nameCounts[name]; repeats {
 			nameCounts[name]++
@@ -306,7 +306,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 			Names: []*ast.Ident{
 				ast.NewIdent(name),
 			},
-			Type: typesinternal.TypeExpr(file, pkg, paramTypes[i]),
+			Type: typesinternal.TypeExpr(paramTypes[i], qual),
 		})
 	}
 
@@ -314,7 +314,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 	retTypes := typesutil.TypesFromContext(info, path[1:], path[1].Pos())
 	for _, rt := range retTypes {
 		rets.List = append(rets.List, &ast.Field{
-			Type: typesinternal.TypeExpr(file, pkg, rt),
+			Type: typesinternal.TypeExpr(rt, qual),
 		})
 	}
 

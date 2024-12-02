@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
@@ -48,7 +47,7 @@ func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pR
 	}
 
 	info := pkg.TypesInfo()
-	q := typesutil.FileQualifier(pgf.File, pkg.Types(), info)
+	q := typesinternal.FileQualifier(pgf.File, pkg.Types())
 
 	// Set the range to the full file if the range is not valid.
 	start, end := pgf.File.FileStart, pgf.File.FileEnd

@@ -51,7 +51,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 
 	var (
 		label         = cand.name
-		detail        = types.TypeString(obj.Type(), c.qf)
+		detail        = types.TypeString(obj.Type(), c.qual)
 		insert        = label
 		kind          = protocol.TextCompletion
 		snip          snippet.Builder
@@ -71,7 +71,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 
 	switch obj := obj.(type) {
 	case *types.TypeName:
-		detail, kind = golang.FormatType(obj.Type(), c.qf)
+		detail, kind = golang.FormatType(obj.Type(), c.qual)
 	case *types.Const:
 		kind = protocol.ConstantCompletion
 	case *types.Var:
@@ -79,7 +79,7 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 			detail = "struct{...}" // for anonymous unaliased struct types
 		} else if obj.IsField() {
 			var err error
-			detail, err = golang.FormatVarType(ctx, c.snapshot, c.pkg, obj, c.qf, c.mq)
+			detail, err = golang.FormatVarType(ctx, c.snapshot, c.pkg, obj, c.qual, c.mq)
 			if err != nil {
 				return CompletionItem{}, err
 			}
@@ -128,7 +128,7 @@ Suffixes:
 		switch mod {
 		case invoke:
 			if sig, ok := funcType.Underlying().(*types.Signature); ok {
-				s, err := golang.NewSignature(ctx, c.snapshot, c.pkg, sig, nil, c.qf, c.mq)
+				s, err := golang.NewSignature(ctx, c.snapshot, c.pkg, sig, nil, c.qual, c.mq)
 				if err != nil {
 					return CompletionItem{}, err
 				}
@@ -288,7 +288,7 @@ func (c *completer) formatConversion(convertTo types.Type) conversionEdits {
 		return conversionEdits{}
 	}
 
-	typeName := types.TypeString(convertTo, c.qf)
+	typeName := types.TypeString(convertTo, c.qual)
 	switch t := convertTo.(type) {
 	// We need extra parens when casting to these types. For example,
 	// we need "(*int)(foo)", not "*int(foo)".
@@ -299,7 +299,7 @@ func (c *completer) formatConversion(convertTo types.Type) conversionEdits {
 		// must need a conversion here. However, if the target type is untyped,
 		// don't suggest converting to e.g. "untyped float" (golang/go#62141).
 		if t.Info()&types.IsUntyped != 0 {
-			typeName = types.TypeString(types.Default(convertTo), c.qf)
+			typeName = types.TypeString(types.Default(convertTo), c.qual)
 		}
 	}
 	return conversionEdits{prefix: typeName + "(", suffix: ")"}

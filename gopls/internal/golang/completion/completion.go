@@ -40,7 +40,6 @@ import (
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/stdlib"
@@ -205,7 +204,7 @@ func (ipm insensitivePrefixMatcher) Score(candidateLabel string) float32 {
 type completer struct {
 	snapshot *cache.Snapshot
 	pkg      *cache.Package
-	qf       types.Qualifier          // for qualifying typed expressions
+	qual     types.Qualifier          // for qualifying typed expressions
 	mq       golang.MetadataQualifier // for syntactic qualifying
 	opts     *completionOptions
 
@@ -602,7 +601,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	c := &completer{
 		pkg:      pkg,
 		snapshot: snapshot,
-		qf:       typesutil.FileQualifier(pgf.File, pkg.Types(), info),
+		qual:     typesinternal.FileQualifier(pgf.File, pkg.Types()),
 		mq:       golang.MetadataQualifierForFile(snapshot, pgf.File, pkg.Metadata()),
 		completionContext: completionContext{
 			triggerCharacter: protoContext.TriggerCharacter,
@@ -1768,7 +1767,7 @@ func (c *completer) injectType(ctx context.Context, t types.Type) {
 			// a named type whose name is literally "[]int". This allows
 			// us to reuse our object based completion machinery.
 			fakeNamedType := candidate{
-				obj:   types.NewTypeName(token.NoPos, nil, types.TypeString(t, c.qf), t),
+				obj:   types.NewTypeName(token.NoPos, nil, types.TypeString(t, c.qual), t),
 				score: stdScore,
 			}
 			// Make sure the type name matches before considering

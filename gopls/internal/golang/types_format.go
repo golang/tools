@@ -25,7 +25,7 @@ import (
 )
 
 // FormatType returns the detail and kind for a types.Type.
-func FormatType(typ types.Type, qf types.Qualifier) (detail string, kind protocol.CompletionItemKind) {
+func FormatType(typ types.Type, qual types.Qualifier) (detail string, kind protocol.CompletionItemKind) {
 	typ = typ.Underlying()
 	if types.IsInterface(typ) {
 		detail = "interface{...}"
@@ -34,7 +34,7 @@ func FormatType(typ types.Type, qf types.Qualifier) (detail string, kind protoco
 		detail = "struct{...}"
 		kind = protocol.StructCompletion
 	} else {
-		detail = types.TypeString(typ, qf)
+		detail = types.TypeString(typ, qual)
 		kind = protocol.ClassCompletion
 	}
 	return detail, kind
@@ -178,7 +178,7 @@ func formatFieldList(ctx context.Context, fset *token.FileSet, list *ast.FieldLi
 }
 
 // NewSignature returns formatted signature for a types.Signature struct.
-func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, sig *types.Signature, comment *ast.CommentGroup, qf types.Qualifier, mq MetadataQualifier) (*signature, error) {
+func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, sig *types.Signature, comment *ast.CommentGroup, qual types.Qualifier, mq MetadataQualifier) (*signature, error) {
 	var tparams []string
 	tpList := sig.TypeParams()
 	for i := 0; i < tpList.Len(); i++ {
@@ -191,7 +191,7 @@ func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, si
 	params := make([]string, 0, sig.Params().Len())
 	for i := 0; i < sig.Params().Len(); i++ {
 		el := sig.Params().At(i)
-		typ, err := FormatVarType(ctx, s, pkg, el, qf, mq)
+		typ, err := FormatVarType(ctx, s, pkg, el, qual, mq)
 		if err != nil {
 			return nil, err
 		}
@@ -212,7 +212,7 @@ func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, si
 			needResultParens = true
 		}
 		el := sig.Results().At(i)
-		typ, err := FormatVarType(ctx, s, pkg, el, qf, mq)
+		typ, err := FormatVarType(ctx, s, pkg, el, qual, mq)
 		if err != nil {
 			return nil, err
 		}
@@ -255,8 +255,8 @@ var invalidTypeString = types.Typ[types.Invalid].String()
 //
 // TODO(rfindley): this function could return the actual name used in syntax,
 // for better parameter names.
-func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.Package, obj *types.Var, qf types.Qualifier, mq MetadataQualifier) (string, error) {
-	typeString := types.TypeString(obj.Type(), qf)
+func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.Package, obj *types.Var, qual types.Qualifier, mq MetadataQualifier) (string, error) {
+	typeString := types.TypeString(obj.Type(), qual)
 	// Fast path: if the type string does not contain 'invalid type', we no
 	// longer need to do any special handling, thanks to materialized aliases in
 	// Go 1.23+.

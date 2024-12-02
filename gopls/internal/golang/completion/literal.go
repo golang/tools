@@ -79,7 +79,7 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 	}
 
 	var (
-		qf         = c.qf
+		qual       = c.qual
 		sel        = enclosingSelector(c.path, c.pos)
 		conversion conversionEdits
 	)
@@ -91,10 +91,10 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 	// Don't qualify the type name if we are in a selector expression
 	// since the package name is already present.
 	if sel != nil {
-		qf = func(_ *types.Package) string { return "" }
+		qual = func(_ *types.Package) string { return "" }
 	}
 
-	snip, typeName := c.typeNameSnippet(literalType, qf)
+	snip, typeName := c.typeNameSnippet(literalType, qual)
 
 	// A type name of "[]int" doesn't work very will with the matcher
 	// since "[" isn't a valid identifier prefix. Here we strip off the
@@ -102,9 +102,9 @@ func (c *completer) literal(ctx context.Context, literalType types.Type, imp *im
 	matchName := typeName
 	switch t := literalType.(type) {
 	case *types.Slice:
-		matchName = types.TypeString(t.Elem(), qf)
+		matchName = types.TypeString(t.Elem(), qual)
 	case *types.Array:
-		matchName = types.TypeString(t.Elem(), qf)
+		matchName = types.TypeString(t.Elem(), qual)
 	}
 
 	addlEdits, err := c.importEdits(imp)
@@ -298,7 +298,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 		// of "i int, j int".
 		if i == sig.Params().Len()-1 || !types.Identical(p.Type(), sig.Params().At(i+1).Type()) {
 			snip.WriteText(" ")
-			typeStr, err := golang.FormatVarType(ctx, c.snapshot, c.pkg, p, c.qf, c.mq)
+			typeStr, err := golang.FormatVarType(ctx, c.snapshot, c.pkg, p, c.qual, c.mq)
 			if err != nil {
 				// In general, the only error we should encounter while formatting is
 				// context cancellation.
@@ -356,7 +356,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 			snip.WriteText(name + " ")
 		}
 
-		text, err := golang.FormatVarType(ctx, c.snapshot, c.pkg, r, c.qf, c.mq)
+		text, err := golang.FormatVarType(ctx, c.snapshot, c.pkg, r, c.qual, c.mq)
 		if err != nil {
 			// In general, the only error we should encounter while formatting is
 			// context cancellation.
@@ -513,7 +513,7 @@ func (c *completer) makeCall(snip *snippet.Builder, typeName string, secondArg s
 }
 
 // Create a snippet for a type name where type params become placeholders.
-func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) (*snippet.Builder, string) {
+func (c *completer) typeNameSnippet(literalType types.Type, qual types.Qualifier) (*snippet.Builder, string) {
 	var (
 		snip     snippet.Builder
 		typeName string
@@ -526,7 +526,7 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 		// Inv: pnt is not "error" or "unsafe.Pointer", so pnt.Obj() != nil and has a Pkg().
 
 		// We are not "fully instantiated" meaning we have type params that must be specified.
-		if pkg := qf(pnt.Obj().Pkg()); pkg != "" {
+		if pkg := qual(pnt.Obj().Pkg()); pkg != "" {
 			typeName = pkg + "."
 		}
 
@@ -540,7 +540,7 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 					snip.WriteText(", ")
 				}
 				snip.WritePlaceholder(func(snip *snippet.Builder) {
-					snip.WriteText(types.TypeString(tparams.At(i), qf))
+					snip.WriteText(types.TypeString(tparams.At(i), qual))
 				})
 			}
 		} else {
@@ -550,7 +550,7 @@ func (c *completer) typeNameSnippet(literalType types.Type, qf types.Qualifier) 
 		typeName += "[...]"
 	} else {
 		// We don't have unspecified type params so use default type formatting.
-		typeName = types.TypeString(literalType, qf)
+		typeName = types.TypeString(literalType, qual)
 		snip.WriteText(typeName)
 	}
 

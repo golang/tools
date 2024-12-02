@@ -27,7 +27,7 @@ func TestZeroValue(t *testing.T) {
 
 	// This test only refernece types/functions defined within the same package.
 	// We can safely drop the package name when encountered.
-	qf := types.Qualifier(func(p *types.Package) string {
+	qual := types.Qualifier(func(p *types.Package) string {
 		return ""
 	})
 	src := `
@@ -178,12 +178,12 @@ func _[T any]() {
 		want := strings.TrimSpace(s.Comment.Text())
 
 		typ := info.TypeOf(s.Type)
-		got, _ := typesinternal.ZeroString(typ, qf)
+		got, _ := typesinternal.ZeroString(typ, qual)
 		if got != want {
 			t.Errorf("%s: ZeroString() = %q, want zero value %q", fset.Position(spec.Pos()), got, want)
 		}
 
-		zeroExpr, _ := typesinternal.ZeroExpr(f, pkg, typ)
+		zeroExpr, _ := typesinternal.ZeroExpr(typ, typesinternal.FileQualifier(f, pkg))
 		var bytes bytes.Buffer
 		printer.Fprint(&bytes, fset, zeroExpr)
 		got = bytes.String()

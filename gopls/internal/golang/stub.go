@@ -84,7 +84,7 @@ func insertDeclsAfter(ctx context.Context, snapshot *cache.Snapshot, mp *metadat
 	}
 
 	// Build import environment for the declaring file.
-	// (typesutil.FileQualifier works only for complete
+	// (typesinternal.FileQualifier works only for complete
 	// import mappings, and requires types.)
 	importEnv := make(map[ImportPath]string) // value is local name
 	for _, imp := range declPGF.File.Imports {

@@ -694,6 +694,8 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 	// of using "x, y, z := fn()" style assignment statements.
 	var canRedefineCount int
 
+	qual := typesinternal.FileQualifier(file, pkg)
+
 	// Each identifier in the selected block must become (1) a parameter to the
 	// extracted function, (2) a return value of the extracted function, or (3) a local
 	// variable in the extracted function. Determine the outcome(s) for each variable
@@ -707,7 +709,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 			// The blank identifier is always a local variable
 			continue
 		}
-		typ := typesinternal.TypeExpr(file, pkg, v.obj.Type())
+		typ := typesinternal.TypeExpr(v.obj.Type(), qual)
 		seenVars[v.obj] = typ
 		identifier := ast.NewIdent(v.obj.Name())
 		// An identifier must meet three conditions to become a return value of the
@@ -878,7 +880,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 			// signature of the extracted function as described above. Adjust all of
 			// the return statements in the extracted function to reflect this change in
 			// signature.
-			if err := adjustReturnStatements(returnTypes, seenVars, file, pkg, extractedBlock); err != nil {
+			if err := adjustReturnStatements(returnTypes, seenVars, extractedBlock, qual); err != nil {
 				return nil, nil, err
 			}
 		}
@@ -1588,6 +1590,7 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 	// Generate information for the values in the return signature of the enclosing function.
 	if enclosing.Results != nil {
 		nameIdx := make(map[string]int) // last integral suffixes of generated names
+		qual := typesinternal.FileQualifier(file, pkg)
 		for _, field := range enclosing.Results.List {
 			typ := info.TypeOf(field.Type)
 			if typ == nil {
@@ -1610,13 +1613,13 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 				}
 				retName, idx := freshNameOutsideRange(info, file, path[0].Pos(), start, end, bestName, nameIdx[bestName])
 				nameIdx[bestName] = idx
-				z, isValid := typesinternal.ZeroExpr(file, pkg, typ)
+				z, isValid := typesinternal.ZeroExpr(typ, qual)
 				if !isValid {
 					return nil, nil, fmt.Errorf("can't generate zero value for %T", typ)
 				}
 				retVars = append(retVars, &returnVariable{
 					name:    ast.NewIdent(retName),
-					decl:    &ast.Field{Type: typesinternal.TypeExpr(file, pkg, typ)},
+					decl:    &ast.Field{Type: typesinternal.TypeExpr(typ, qual)},
 					zeroVal: z,
 				})
 			}
@@ -1680,7 +1683,7 @@ func varNameForType(t types.Type) (string, bool) {
 
 // adjustReturnStatements adds "zero values" of the given types to each return statement
 // in the given AST node.
-func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]ast.Expr, file *ast.File, pkg *types.Package, extractedBlock *ast.BlockStmt) error {
+func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]ast.Expr, extractedBlock *ast.BlockStmt, qual types.Qualifier) error {
 	var zeroVals []ast.Expr
 	// Create "zero values" for each type.
 	for _, returnType := range returnTypes {
@@ -1690,7 +1693,7 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 			if typ != returnType.Type {
 				continue
 			}
-			val, isValid = typesinternal.ZeroExpr(file, pkg, obj.Type())
+			val, isValid = typesinternal.ZeroExpr(obj.Type(), qual)
 			break
 		}
 		if !isValid {

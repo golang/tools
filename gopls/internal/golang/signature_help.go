@@ -18,8 +18,8 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // SignatureHelp returns information about the signature of the innermost
@@ -105,7 +105,7 @@ loop:
 	}
 	// Inv: sig != nil
 
-	qf := typesutil.FileQualifier(pgf.File, pkg.Types(), info)
+	qual := typesinternal.FileQualifier(pgf.File, pkg.Types())
 
 	// Get the object representing the function, if available.
 	// There is no object in certain cases such as calling a function returned by
@@ -156,7 +156,7 @@ loop:
 		name = "func"
 	}
 	mq := MetadataQualifierForFile(snapshot, pgf.File, pkg.Metadata())
-	s, err := NewSignature(ctx, snapshot, pkg, sig, comment, qf, mq)
+	s, err := NewSignature(ctx, snapshot, pkg, sig, comment, qual, mq)
 	if err != nil {
 		return nil, 0, err
 	}

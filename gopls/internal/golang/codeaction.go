@@ -27,7 +27,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -318,8 +317,8 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
 			si := stubmethods.GetIfaceStubInfo(req.pkg.FileSet(), info, path, start)
 			if si != nil {
-				qf := typesutil.FileQualifier(req.pgf.File, si.Concrete.Obj().Pkg(), info)
-				iface := types.TypeString(si.Interface.Type(), qf)
+				qual := typesinternal.FileQualifier(req.pgf.File, si.Concrete.Obj().Pkg())
+				iface := types.TypeString(si.Interface.Type(), qual)
 				msg := fmt.Sprintf("Declare missing methods of %s", iface)
 				req.addApplyFixAction(msg, fixMissingInterfaceMethods, req.loc)
 			}

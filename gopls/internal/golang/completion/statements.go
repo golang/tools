@@ -295,7 +295,7 @@ func (c *completer) addErrCheck() {
 	} else {
 		snip.WriteText("return ")
 		for i := 0; i < result.Len()-1; i++ {
-			if zero, isValid := typesinternal.ZeroString(result.At(i).Type(), c.qf); isValid {
+			if zero, isValid := typesinternal.ZeroString(result.At(i).Type(), c.qual); isValid {
 				snip.WriteText(zero)
 			}
 			snip.WriteText(", ")
@@ -407,7 +407,7 @@ func (c *completer) addReturnZeroValues() {
 			fmt.Fprintf(&label, ", ")
 		}
 
-		zero, isValid := typesinternal.ZeroString(result.At(i).Type(), c.qf)
+		zero, isValid := typesinternal.ZeroString(result.At(i).Type(), c.qual)
 		if !isValid {
 			zero = ""
 		}

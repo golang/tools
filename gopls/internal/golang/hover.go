@@ -37,7 +37,6 @@ import (
 	gastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -274,7 +273,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 
 	// By convention, we qualify hover information relative to the package
 	// from which the request originated.
-	qf := typesutil.FileQualifier(pgf.File, pkg.Types(), pkg.TypesInfo())
+	qual := typesinternal.FileQualifier(pgf.File, pkg.Types())
 
 	// Handle type switch identifiers as a special case, since they don't have an
 	// object.
@@ -282,7 +281,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// There's not much useful information to provide.
 	if selectedType != nil {
 		fakeObj := types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), selectedType)
-		signature := types.ObjectString(fakeObj, qf)
+		signature := types.ObjectString(fakeObj, qual)
 		return *hoverRange, &hoverResult{
 			signature:  signature,
 			singleLine: signature,
@@ -309,7 +308,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	docText := comment.Text()
 
 	// By default, types.ObjectString provides a reasonable signature.
-	signature := objectString(obj, qf, declPos, declPGF.Tok, spec)
+	signature := objectString(obj, qual, declPos, declPGF.Tok, spec)
 	singleLineSignature := signature
 
 	// Display struct tag for struct fields at the end of the signature.
@@ -320,7 +319,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// TODO(rfindley): we could do much better for inferred signatures.
 	// TODO(adonovan): fuse the two calls below.
 	if inferred := inferredSignature(pkg.TypesInfo(), ident); inferred != nil {
-		if s := inferredSignatureString(obj, qf, inferred); s != "" {
+		if s := inferredSignatureString(obj, qual, inferred); s != "" {
 			signature = s
 		}
 	}
@@ -453,7 +452,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			for _, f := range prom {
 				fmt.Fprintf(w, "%s\t%s\t// through %s\t\n",
 					f.field.Name(),
-					types.TypeString(f.field.Type(), qf),
+					types.TypeString(f.field.Type(), qual),
 					f.path)
 			}
 			w.Flush()
@@ -497,7 +496,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			}
 
 			// Use objectString for its prettier rendering of method receivers.
-			b.WriteString(objectString(m.Obj(), qf, token.NoPos, nil, nil))
+			b.WriteString(objectString(m.Obj(), qual, token.NoPos, nil, nil))
 		}
 		methods = b.String()
 
@@ -1015,19 +1014,19 @@ func hoverEmbed(fh file.Handle, rng protocol.Range, pattern string) (protocol.Ra
 // inferredSignatureString is a wrapper around the types.ObjectString function
 // that adds more information to inferred signatures. It will return an empty string
 // if the passed types.Object is not a signature.
-func inferredSignatureString(obj types.Object, qf types.Qualifier, inferred *types.Signature) string {
+func inferredSignatureString(obj types.Object, qual types.Qualifier, inferred *types.Signature) string {
 	// If the signature type was inferred, prefer the inferred signature with a
 	// comment showing the generic signature.
 	if sig, _ := obj.Type().Underlying().(*types.Signature); sig != nil && sig.TypeParams().Len() > 0 && inferred != nil {
 		obj2 := types.NewFunc(obj.Pos(), obj.Pkg(), obj.Name(), inferred)
-		str := types.ObjectString(obj2, qf)
+		str := types.ObjectString(obj2, qual)
 		// Try to avoid overly long lines.
 		if len(str) > 60 {
 			str += "\n"
 		} else {
 			str += " "
 		}
-		str += "// " + types.TypeString(sig, qf)
+		str += "// " + types.TypeString(sig, qual)
 		return str
 	}
 	return ""
@@ -1039,8 +1038,8 @@ func inferredSignatureString(obj types.Object, qf types.Qualifier, inferred *typ
 // syntax, and file must be the token.File describing its positions.
 //
 // Precondition: obj is not a built-in function or method.
-func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file *token.File, spec ast.Spec) string {
-	str := types.ObjectString(obj, qf)
+func objectString(obj types.Object, qual types.Qualifier, declPos token.Pos, file *token.File, spec ast.Spec) string {
+	str := types.ObjectString(obj, qual)
 
 	switch obj := obj.(type) {
 	case *types.Func:
@@ -1067,16 +1066,16 @@ func objectString(obj types.Object, qf types.Qualifier, declPos token.Pos, file 
 					buf.WriteString(name)
 					buf.WriteString(" ")
 				}
-				types.WriteType(&buf, recv.Type(), qf)
+				types.WriteType(&buf, recv.Type(), qual)
 			}
 			buf.WriteByte(')')
 			buf.WriteByte(' ') // space (go/types uses a period)
-		} else if s := qf(obj.Pkg()); s != "" {
+		} else if s := qual(obj.Pkg()); s != "" {
 			buf.WriteString(s)
 			buf.WriteString(".")
 		}
 		buf.WriteString(obj.Name())
-		types.WriteSignature(&buf, sig, qf)
+		types.WriteSignature(&buf, sig, qual)
 		str = buf.String()
 
 	case *types.Const:

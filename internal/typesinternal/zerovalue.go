@@ -9,7 +9,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strconv"
 	"strings"
 )
 
@@ -26,11 +25,13 @@ import (
 //
 // This string can be used on the right-hand side of an assignment where the
 // left-hand side has that explicit type.
+// References to named types are qualified by an appropriate (optional)
+// qualifier function.
 // Exception: This does not apply to tuples. Their string representation is
 // informational only and cannot be used in an assignment.
 //
 // See [ZeroExpr] for a variant that returns an [ast.Expr].
-func ZeroString(t types.Type, qf types.Qualifier) (_ string, isValid bool) {
+func ZeroString(t types.Type, qual types.Qualifier) (_ string, isValid bool) {
 	switch t := t.(type) {
 	case *types.Basic:
 		switch {
@@ -62,30 +63,30 @@ func ZeroString(t types.Type, qf types.Qualifier) (_ string, isValid bool) {
 	case *types.Named:
 		switch under := t.Underlying().(type) {
 		case *types.Struct, *types.Array:
-			return types.TypeString(t, qf) + "{}", true
+			return types.TypeString(t, qual) + "{}", true
 		default:
-			return ZeroString(under, qf)
+			return ZeroString(under, qual)
 		}
 
 	case *types.Alias:
 		switch t.Underlying().(type) {
 		case *types.Struct, *types.Array:
-			return types.TypeString(t, qf) + "{}", true
+			return types.TypeString(t, qual) + "{}", true
 		default:
 			// A type parameter can have alias but alias type's underlying type
 			// can never be a type parameter.
 			// Use types.Unalias to preserve the info of type parameter instead
 			// of call Underlying() going right through and get the underlying
 			// type of the type parameter which is always an interface.
-			return ZeroString(types.Unalias(t), qf)
+			return ZeroString(types.Unalias(t), qual)
 		}
 
 	case *types.Array, *types.Struct:
-		return types.TypeString(t, qf) + "{}", true
+		return types.TypeString(t, qual) + "{}", true
 
 	case *types.TypeParam:
 		// Assumes func new is not shadowed.
-		return "*new(" + types.TypeString(t, qf) + ")", true
+		return "*new(" + types.TypeString(t, qual) + ")", true
 
 	case *types.Tuple:
 		// Tuples are not normal values.
@@ -93,7 +94,7 @@ func ZeroString(t types.Type, qf types.Qualifier) (_ string, isValid bool) {
 		isValid := true
 		components := make([]string, t.Len())
 		for i := 0; i < t.Len(); i++ {
-			comp, ok := ZeroString(t.At(i).Type(), qf)
+			comp, ok := ZeroString(t.At(i).Type(), qual)
 
 			components[i] = comp
 			isValid = isValid && ok
@@ -119,10 +120,11 @@ func ZeroString(t types.Type, qf types.Qualifier) (_ string, isValid bool) {
 // the validity of the expression.
 //
 // This function is designed for types suitable for variables and should not be
-// used with Tuple or Union types.
+// used with Tuple or Union types.References to named types are qualified by an
+// appropriate (optional) qualifier function.
 //
 // See [ZeroString] for a variant that returns a string.
-func ZeroExpr(f *ast.File, pkg *types.Package, t types.Type) (_ ast.Expr, isValid bool) {
+func ZeroExpr(t types.Type, qual types.Qualifier) (_ ast.Expr, isValid bool) {
 	switch t := t.(type) {
 	case *types.Basic:
 		switch {
@@ -155,25 +157,25 @@ func ZeroExpr(f *ast.File, pkg *types.Package, t types.Type) (_ ast.Expr, isVali
 		switch under := t.Underlying().(type) {
 		case *types.Struct, *types.Array:
 			return &ast.CompositeLit{
-				Type: TypeExpr(f, pkg, t),
+				Type: TypeExpr(t, qual),
 			}, true
 		default:
-			return ZeroExpr(f, pkg, under)
+			return ZeroExpr(under, qual)
 		}
 
 	case *types.Alias:
 		switch t.Underlying().(type) {
 		case *types.Struct, *types.Array:
 			return &ast.CompositeLit{
-				Type: TypeExpr(f, pkg, t),
+				Type: TypeExpr(t, qual),
 			}, true
 		default:
-			return ZeroExpr(f, pkg, types.Unalias(t))
+			return ZeroExpr(types.Unalias(t), qual)
 		}
 
 	case *types.Array, *types.Struct:
 		return &ast.CompositeLit{
-			Type: TypeExpr(f, pkg, t),
+			Type: TypeExpr(t, qual),
 		}, true
 
 	case *types.TypeParam:
@@ -217,16 +219,14 @@ func IsZeroExpr(expr ast.Expr) bool {
 }
 
 // TypeExpr returns syntax for the specified type. References to named types
-// from packages other than pkg are qualified by an appropriate package name, as
-// defined by the import environment of file.
+// are qualified by an appropriate (optional) qualifier function.
 // It may panic for types such as Tuple or Union.
-func TypeExpr(f *ast.File, pkg *types.Package, t types.Type) ast.Expr {
+func TypeExpr(t types.Type, qual types.Qualifier) ast.Expr {
 	switch t := t.(type) {
 	case *types.Basic:
 		switch t.Kind() {
 		case types.UnsafePointer:
-			// TODO(hxjiang): replace the implementation with types.Qualifier.
-			return &ast.SelectorExpr{X: ast.NewIdent("unsafe"), Sel: ast.NewIdent("Pointer")}
+			return &ast.SelectorExpr{X: ast.NewIdent(qual(types.NewPackage("unsafe", "unsafe"))), Sel: ast.NewIdent("Pointer")}
 		default:
 			return ast.NewIdent(t.Name())
 		}
@@ -234,7 +234,7 @@ func TypeExpr(f *ast.File, pkg *types.Package, t types.Type) ast.Expr {
 	case *types.Pointer:
 		return &ast.UnaryExpr{
 			Op: token.MUL,
-			X:  TypeExpr(f, pkg, t.Elem()),
+			X:  TypeExpr(t.Elem(), qual),
 		}
 
 	case *types.Array:
@@ -243,18 +243,18 @@ func TypeExpr(f *ast.File, pkg *types.Package, t types.Type) ast.Expr {
 				Kind:  token.INT,
 				Value: fmt.Sprintf("%d", t.Len()),
 			},
-			Elt: TypeExpr(f, pkg, t.Elem()),
+			Elt: TypeExpr(t.Elem(), qual),
 		}
 
 	case *types.Slice:
 		return &ast.ArrayType{
-			Elt: TypeExpr(f, pkg, t.Elem()),
+			Elt: TypeExpr(t.Elem(), qual),
 		}
 
 	case *types.Map:
 		return &ast.MapType{
-			Key:   TypeExpr(f, pkg, t.Key()),
-			Value: TypeExpr(f, pkg, t.Elem()),
+			Key:   TypeExpr(t.Key(), qual),
+			Value: TypeExpr(t.Elem(), qual),
 		}
 
 	case *types.Chan:
@@ -264,14 +264,14 @@ func TypeExpr(f *ast.File, pkg *types.Package, t types.Type) ast.Expr {
 		}
 		return &ast.ChanType{
 			Dir:   dir,
-			Value: TypeExpr(f, pkg, t.Elem()),
+			Value: TypeExpr(t.Elem(), qual),
 		}
 
 	case *types.Signature:
 		var params []*ast.Field
 		for i := 0; i < t.Params().Len(); i++ {
 			params = append(params, &ast.Field{
-				Type: TypeExpr(f, pkg, t.Params().At(i).Type()),
+				Type: TypeExpr(t.Params().At(i).Type(), qual),
 				Names: []*ast.Ident{
 					{
 						Name: t.Params().At(i).Name(),
@@ -286,7 +286,7 @@ func TypeExpr(f *ast.File, pkg *types.Package, t types.Type) ast.Expr {
 		var returns []*ast.Field
 		for i := 0; i < t.Results().Len(); i++ {
 			returns = append(returns, &ast.Field{
-				Type: TypeExpr(f, pkg, t.Results().At(i).Type()),
+				Type: TypeExpr(t.Results().At(i).Type(), qual),
 			})
 		}
 		return &ast.FuncType{
@@ -299,21 +299,8 @@ func TypeExpr(f *ast.File, pkg *types.Package, t types.Type) ast.Expr {
 		}
 
 	case *types.TypeParam:
-		if t.Obj().Pkg() == pkg || t.Obj().Pkg() == nil {
-			return ast.NewIdent(t.Obj().Name())
-		}
-		pkgName := t.Obj().Pkg().Name()
-
-		// TODO(hxjiang): replace the implementation with types.Qualifier.
-		// If the file already imports the package under another name, use that.
-		for _, cand := range f.Imports {
-			if path, _ := strconv.Unquote(cand.Path.Value); path == t.Obj().Pkg().Path() {
-				if cand.Name != nil && cand.Name.Name != "" {
-					pkgName = cand.Name.Name
-				}
-			}
-		}
-		if pkgName == "." {
+		pkgName := qual(t.Obj().Pkg())
+		if pkgName == "" || t.Obj().Pkg() == nil {
 			return ast.NewIdent(t.Obj().Name())
 		}
 		return &ast.SelectorExpr{
@@ -327,22 +314,10 @@ func TypeExpr(f *ast.File, pkg *types.Package, t types.Type) ast.Expr {
 	// NamedOrAlias.
 	case NamedOrAlias:
 		var expr ast.Expr = ast.NewIdent(t.Obj().Name())
-		if p := t.Obj().Pkg(); p != nil && p != pkg {
-			pkgName := p.Name()
-			// TODO(hxjiang): replace the implementation with types.Qualifier.
-			// If the file already imports the package under another name, use that.
-			for _, cand := range f.Imports {
-				if path, _ := strconv.Unquote(cand.Path.Value); path == p.Path() {
-					if cand.Name != nil && cand.Name.Name != "" {
-						pkgName = cand.Name.Name
-					}
-				}
-			}
-			if pkgName != "." && pkgName != "" {
-				expr = &ast.SelectorExpr{
-					X:   ast.NewIdent(pkgName),
-					Sel: ast.NewIdent(t.Obj().Name()),
-				}
+		if pkgName := qual(t.Obj().Pkg()); pkgName != "." && pkgName != "" {
+			expr = &ast.SelectorExpr{
+				X:   ast.NewIdent(pkgName),
+				Sel: expr.(*ast.Ident),
 			}
 		}
 
@@ -352,7 +327,7 @@ func TypeExpr(f *ast.File, pkg *types.Package, t types.Type) ast.Expr {
 			if typeArgs := hasTypeArgs.TypeArgs(); typeArgs != nil && typeArgs.Len() > 0 {
 				var indices []ast.Expr
 				for i := range typeArgs.Len() {
-					indices = append(indices, TypeExpr(f, pkg, typeArgs.At(i)))
+					indices = append(indices, TypeExpr(typeArgs.At(i), qual))
 				}
 				expr = &ast.IndexListExpr{
 					X:       expr,
@@ -389,7 +364,7 @@ func TypeExpr(f *ast.File, pkg *types.Package, t types.Type) ast.Expr {
 		var union ast.Expr
 		for i := range t.Len() {
 			term := t.Term(i)
-			termExpr := TypeExpr(f, pkg, term.Type())
+			termExpr := TypeExpr(term.Type(), qual)
 			if term.Tilde() {
 				termExpr = &ast.UnaryExpr{
 					Op: token.TILDE,

@@ -155,6 +155,7 @@ outer:
 			retTyps = append(retTyps, retTyp)
 		}
 		matches := analysisinternal.MatchingIdents(retTyps, file, ret.Pos(), info, pass.Pkg)
+		qual := typesinternal.FileQualifier(file, pass.Pkg)
 		for i, retTyp := range retTyps {
 			var match ast.Expr
 			var idx int
@@ -184,7 +185,7 @@ outer:
 				// If no identifier matches the pattern, generate a zero value.
 				if best := fuzzy.BestMatch(retTyp.String(), names); best != "" {
 					fixed[i] = ast.NewIdent(best)
-				} else if zero, isValid := typesinternal.ZeroExpr(file, pass.Pkg, retTyp); isValid {
+				} else if zero, isValid := typesinternal.ZeroExpr(retTyp, qual); isValid {
 					fixed[i] = zero
 				} else {
 					return nil, nil
