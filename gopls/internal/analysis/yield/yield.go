@@ -93,6 +93,21 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		// yield call to another yield call--possible the same one,
 		// following all block successors except "if yield() { ... }";
 		// in such cases we know that yield returned true.
+		//
+		// Note that this is a "may" dataflow analysis: it
+		// reports when a yield function _may_ be called again
+		// without a positive intervening check, but it is
+		// possible that the check is beyond the ability of
+		// the representation to detect, perhaps involving
+		// sophisticated use of booleans, indirect state (not
+		// in SSA registers), or multiple flow paths some of
+		// which are infeasible.
+		//
+		// A "must" analysis (which would report when a second
+		// yield call can only be reached after failing the
+		// boolean check) would be too conservative.
+		// In particular, the most common mistake is to
+		// forget to check the boolean at all.
 		for call, info := range ssaYieldCalls {
 			visited := make([]bool, len(fn.Blocks)) // visited BasicBlock.Indexes
 
