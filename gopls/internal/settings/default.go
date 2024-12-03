@@ -61,6 +61,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						RefactorRewriteRemoveUnusedParam: true,
 						RefactorRewriteSplitLines:        true,
 						RefactorInlineCall:               true,
+						RefactorExtractConstant:          true,
 						RefactorExtractFunction:          true,
 						RefactorExtractMethod:            true,
 						RefactorExtractVariable:          true,

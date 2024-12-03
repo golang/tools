@@ -69,14 +69,18 @@ func TypeErrorEndPos(fset *token.FileSet, src []byte, start token.Pos) token.Pos
 // Some examples:
 //
 // Basic Example:
-// z := 1
-// y := z + x
+//
+//	z := 1
+//	y := z + x
+//
 // If x is undeclared, then this function would return `y := z + x`, so that we
 // can insert `x := ` on the line before `y := z + x`.
 //
 // If stmt example:
-// if z == 1 {
-// } else if z == y {}
+//
+//	if z == 1 {
+//	} else if z == y {}
+//
 // If y is undeclared, then this function would return `if z == 1 {`, because we cannot
 // insert a statement between an if and an else if statement. As a result, we need to find
 // the top of the if chain to insert `y := ` before.

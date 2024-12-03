@@ -1,4 +1,4 @@
-This test checks that extract variable permits:
+This test checks that extract variable/constant permits:
 - extraneous whitespace in the selection
 - function literals
 - pointer dereference expressions
@@ -8,7 +8,7 @@ This test checks that extract variable permits:
 package a
 
 func _(ptr *int) {
-	var _ = 1 + 2 + 3 //@codeaction("1 + 2 ", "refactor.extract.variable", edit=spaces)
+	var _ = 1 + 2 + 3 //@codeaction("1 + 2 ", "refactor.extract.constant", edit=spaces)
 	var _ = func() {} //@codeaction("func() {}", "refactor.extract.variable", edit=funclit)
 	var _ = *ptr      //@codeaction("*ptr", "refactor.extract.variable", edit=ptr)
 	var _ = (ptr)     //@codeaction("(ptr)", "refactor.extract.variable", edit=paren)
@@ -16,9 +16,9 @@ func _(ptr *int) {
 
 -- @spaces/a.go --
 @@ -4 +4,2 @@
--	var _ = 1 + 2 + 3 //@codeaction("1 + 2 ", "refactor.extract.variable", edit=spaces)
-+	x := 1 + 2
-+	var _ = x+ 3 //@codeaction("1 + 2 ", "refactor.extract.variable", edit=spaces)
+-	var _ = 1 + 2 + 3 //@codeaction("1 + 2 ", "refactor.extract.constant", edit=spaces)
++	const x = 1 + 2
++	var _ = x+ 3 //@codeaction("1 + 2 ", "refactor.extract.constant", edit=spaces)
 -- @funclit/a.go --
 @@ -5 +5,2 @@
 -	var _ = func() {} //@codeaction("func() {}", "refactor.extract.variable", edit=funclit)

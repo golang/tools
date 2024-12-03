@@ -58,7 +58,7 @@ func singleFile(fixer1 singleFileFixer) fixer {
 
 // Names of ApplyFix.Fix created directly by the CodeAction handler.
 const (
-	fixExtractVariable         = "extract_variable"
+	fixExtractVariable         = "extract_variable" // (or constant)
 	fixExtractFunction         = "extract_function"
 	fixExtractMethod           = "extract_method"
 	fixInlineCall              = "inline_call"

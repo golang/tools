@@ -69,6 +69,7 @@ Gopls supports the following code actions:
 - `source.test` (undocumented) <!-- TODO: fix that -->
 - [`source.addTest`](#source.addTest)
 - [`gopls.doc.features`](README.md), which opens gopls' index of features in a browser
+- [`refactor.extract.constant`](#extract)
 - [`refactor.extract.function`](#extract)
 - [`refactor.extract.method`](#extract)
 - [`refactor.extract.toNewFile`](#extract.toNewFile)
@@ -358,6 +359,9 @@ newly created declaration that contains the selected code:
   ![Before extracting a var](../assets/extract-var-before.png)
   ![After extracting a var](../assets/extract-var-after.png)
 
+- **`refactor.extract.constant** does the same thing for a constant
+  expression, introducing a local const declaration.
+
 If the default name for the new declaration is already in use, gopls
 generates a fresh name.
 
@@ -380,11 +384,9 @@ number of cases where it falls short, including:
 
 The following Extract features are planned for 2024 but not yet supported:
 
-- **Extract constant** is a variant of "Extract variable" to be
-  offered when the expression is constant; see golang/go#37170.
 - **Extract parameter struct** will replace two or more parameters of a
   function by a struct type with one field per parameter; see golang/go#65552.
-  <!-- TODO(adonovan): review and land https://go.dev/cl/563235. -->
+  <!-- TODO(adonovan): review and land https://go.dev/cl/620995. -->
   <!-- Should this operation update all callers? That's more of a Change Signature. -->
 - **Extract interface for type** will create a declaration of an
   interface type with all the methods of the selected concrete type;

@@ -26,12 +26,14 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
+// extractVariable implements the refactor.extract.{variable,constant} CodeAction command.
 func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	tokFile := fset.File(file.FileStart)
-	expr, path, ok, err := canExtractVariable(info, file, start, end)
-	if !ok {
-		return nil, nil, fmt.Errorf("extractVariable: cannot extract %s: %v", safetoken.StartPosition(fset, start), err)
+	expr, path, err := canExtractVariable(info, file, start, end)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot extract %s: %v", safetoken.StartPosition(fset, start), err)
 	}
+	constant := info.Types[expr].Value != nil
 
 	// Create new AST node for extracted expression.
 	var lhsNames []string
@@ -39,35 +41,57 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 	case *ast.CallExpr:
 		tup, ok := info.TypeOf(expr).(*types.Tuple)
 		if !ok {
-			// If the call expression only has one return value, we can treat it the
-			// same as our standard extract variable case.
-			lhsName, _ := generateAvailableName(expr.Pos(), path, pkg, info, "x", 0)
-			lhsNames = append(lhsNames, lhsName)
-			break
-		}
-		idx := 0
-		for i := 0; i < tup.Len(); i++ {
-			// Generate a unique variable for each return value.
-			var lhsName string
-			lhsName, idx = generateAvailableName(expr.Pos(), path, pkg, info, "x", idx)
-			lhsNames = append(lhsNames, lhsName)
+			// conversion or single-valued call:
+			// treat it the same as our standard extract variable case.
+			name, _ := generateAvailableName(expr.Pos(), path, pkg, info, "x", 0)
+			lhsNames = append(lhsNames, name)
+
+		} else {
+			// call with multiple results
+			idx := 0
+			for range tup.Len() {
+				// Generate a unique variable for each result.
+				var name string
+				name, idx = generateAvailableName(expr.Pos(), path, pkg, info, "x", idx)
+				lhsNames = append(lhsNames, name)
+			}
 		}
 
 	default:
 		// TODO: stricter rules for selectorExpr.
-		lhsName, _ := generateAvailableName(expr.Pos(), path, pkg, info, "x", 0)
-		lhsNames = append(lhsNames, lhsName)
+		name, _ := generateAvailableName(expr.Pos(), path, pkg, info, "x", 0)
+		lhsNames = append(lhsNames, name)
 	}
 
 	// TODO: There is a bug here: for a variable declared in a labeled
 	// switch/for statement it returns the for/switch statement itself
-	// which produces the below code which is a compiler error e.g.
-	// label:
-	// switch r1 := r() { ... break label ... }
+	// which produces the below code which is a compiler error. e.g.
+	//     label:
+	//         switch r1 := r() { ... break label ... }
 	// On extracting "r()" to a variable
-	// label:
-	// x := r()
-	// switch r1 := x { ... break label ... } // compiler error
+	//     label:
+	//         x := r()
+	//         switch r1 := x { ... break label ... } // compiler error
+	//
+	// TODO(golang/go#70563): Another bug: extracting the
+	// expression to the recommended place may cause it to migrate
+	// across one or more declarations that it references.
+	//
+	// Before:
+	//   if x := 1; cond {
+	//   } else if y := «x + 2»; cond {
+	//   }
+	//
+	// After:
+	//   x1 := x + 2 // error: undefined x
+	//   if x := 1; cond {
+	//   } else if y := x1; cond {
+	//   }
+	//
+	// TODO(golang/go#70665): Another bug (or limitation): this
+	// operation fails at top-level:
+	//   package p
+	//   var x = «1 + 2» // error
 	insertBeforeStmt := analysisinternal.StmtToInsertVarBefore(path)
 	if insertBeforeStmt == nil {
 		return nil, nil, fmt.Errorf("cannot find location to insert extraction")
@@ -78,16 +102,59 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 	}
 	newLineIndent := "\n" + indent
 
-	lhs := strings.Join(lhsNames, ", ")
-	assignStmt := &ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent(lhs)},
-		Tok: token.DEFINE,
-		Rhs: []ast.Expr{expr},
+	// Create statement to declare extracted var/const.
+	//
+	// TODO(adonovan): beware the const decls are not valid short
+	// statements, so if fixing #70563 causes
+	// StmtToInsertVarBefore to evolve to permit declarations in
+	// the "pre" part of an IfStmt, like so:
+	//   Before:
+	//	if cond {
+	//      } else if «1 + 2» > 0 {
+	//      }
+	//   After:
+	//	if x := 1 + 2; cond {
+	//      } else if x > 0 {
+	//      }
+	// then it will need to become aware that this is invalid
+	// for constants.
+	//
+	// Conversely, a short var decl stmt is not valid at top level,
+	// so when we fix #70665, we'll need to use a var decl.
+	var declStmt ast.Stmt
+	if constant {
+		// const x = expr
+		declStmt = &ast.DeclStmt{
+			Decl: &ast.GenDecl{
+				Tok: token.CONST,
+				Specs: []ast.Spec{
+					&ast.ValueSpec{
+						Names:  []*ast.Ident{ast.NewIdent(lhsNames[0])}, // there can be only one
+						Values: []ast.Expr{expr},
+					},
+				},
+			},
+		}
+
+	} else {
+		// var: x1, ... xn := expr
+		var lhs []ast.Expr
+		for _, name := range lhsNames {
+			lhs = append(lhs, ast.NewIdent(name))
+		}
+		declStmt = &ast.AssignStmt{
+			Tok: token.DEFINE,
+			Lhs: lhs,
+			Rhs: []ast.Expr{expr},
+		}
 	}
+
+	// Format and indent the declaration.
 	var buf bytes.Buffer
-	if err := format.Node(&buf, fset, assignStmt); err != nil {
+	if err := format.Node(&buf, fset, declStmt); err != nil {
 		return nil, nil, err
 	}
+	// TODO(adonovan): not sound for `...` string literals containing newlines.
 	assignment := strings.ReplaceAll(buf.String(), "\n", newLineIndent) + newLineIndent
 
 	return fset, &analysis.SuggestedFix{
@@ -100,39 +167,39 @@ func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file
 			{
 				Pos:     start,
 				End:     end,
-				NewText: []byte(lhs),
+				NewText: []byte(strings.Join(lhsNames, ", ")),
 			},
 		},
 	}, nil
 }
 
 // canExtractVariable reports whether the code in the given range can be
-// extracted to a variable.
-func canExtractVariable(info *types.Info, file *ast.File, start, end token.Pos) (ast.Expr, []ast.Node, bool, error) {
+// extracted to a variable (or constant).
+func canExtractVariable(info *types.Info, file *ast.File, start, end token.Pos) (ast.Expr, []ast.Node, error) {
 	if start == end {
-		return nil, nil, false, fmt.Errorf("empty selection")
+		return nil, nil, fmt.Errorf("empty selection")
 	}
 	path, exact := astutil.PathEnclosingInterval(file, start, end)
 	if !exact {
-		return nil, nil, false, fmt.Errorf("selection is not an expression")
+		return nil, nil, fmt.Errorf("selection is not an expression")
 	}
 	if len(path) == 0 {
-		return nil, nil, false, bug.Errorf("no path enclosing interval")
+		return nil, nil, bug.Errorf("no path enclosing interval")
 	}
 	for _, n := range path {
 		if _, ok := n.(*ast.ImportSpec); ok {
-			return nil, nil, false, fmt.Errorf("cannot extract variable in an import block")
+			return nil, nil, fmt.Errorf("cannot extract variable or constant in an import block")
 		}
 	}
 	expr, ok := path[0].(ast.Expr)
 	if !ok {
-		return nil, nil, false, fmt.Errorf("selection is not an expression") // e.g. statement
+		return nil, nil, fmt.Errorf("selection is not an expression") // e.g. statement
 	}
 	if tv, ok := info.Types[expr]; !ok || !tv.IsValue() || tv.Type == nil || tv.HasOk() {
 		// e.g. type, builtin, x.(type), 2-valued m[k], or ill-typed
-		return nil, nil, false, fmt.Errorf("selection is not a single-valued expression")
+		return nil, nil, fmt.Errorf("selection is not a single-valued expression")
 	}
-	return expr, path, true, nil
+	return expr, path, nil
 }
 
 // Calculate indentation for insertion.

@@ -51,6 +51,7 @@ Valid kinds include:
 	quickfix
 	refactor
 	refactor.extract
+	refactor.extract.constant
 	refactor.extract.function
 	refactor.extract.method
 	refactor.extract.toNewFile

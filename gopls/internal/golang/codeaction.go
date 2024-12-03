@@ -236,6 +236,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorExtractFunction, fn: refactorExtractFunction},
 	{kind: settings.RefactorExtractMethod, fn: refactorExtractMethod},
 	{kind: settings.RefactorExtractToNewFile, fn: refactorExtractToNewFile},
+	{kind: settings.RefactorExtractConstant, fn: refactorExtractVariable, needPkg: true},
 	{kind: settings.RefactorExtractVariable, fn: refactorExtractVariable, needPkg: true},
 	{kind: settings.RefactorInlineCall, fn: refactorInlineCall, needPkg: true},
 	{kind: settings.RefactorRewriteChangeQuote, fn: refactorRewriteChangeQuote},
@@ -462,11 +463,25 @@ func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
 	return nil
 }
 
-// refactorExtractVariable produces "Extract variable" code actions.
+// refactorExtractVariable produces "Extract variable|constant" code actions.
 // See [extractVariable] for command implementation.
 func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error {
-	if _, _, ok, _ := canExtractVariable(req.pkg.TypesInfo(), req.pgf.File, req.start, req.end); ok {
-		req.addApplyFixAction("Extract variable", fixExtractVariable, req.loc)
+	info := req.pkg.TypesInfo()
+	if expr, _, err := canExtractVariable(info, req.pgf.File, req.start, req.end); err == nil {
+		// Offer one of refactor.extract.{constant,variable}
+		// based on the constness of the expression; this is a
+		// limitation of the codeActionProducers mechanism.
+		// Beware that future evolutions of the refactorings
+		// may make them diverge to become non-complementary,
+		// for example because "if const x = ...; y {" is illegal.
+		constant := info.Types[expr].Value != nil
+		if (req.kind == settings.RefactorExtractConstant) == constant {
+			title := "Extract variable"
+			if constant {
+				title = "Extract constant"
+			}
+			req.addApplyFixAction(title, fixExtractVariable, req.loc)
+		}
 	}
 	return nil
 }
