@@ -162,8 +162,8 @@ func FindPkg(path, srcDir string) (filename, id string) {
 // the corresponding package object to the packages map, and returns the object.
 // The packages map must contain all packages already imported.
 //
-// TODO(taking): Import is only used in tests. Move to gcimporter_test.
-func Import(packages map[string]*types.Package, path, srcDir string, lookup func(path string) (io.ReadCloser, error)) (pkg *types.Package, err error) {
+// Import is only used in tests.
+func Import(fset *token.FileSet, packages map[string]*types.Package, path, srcDir string, lookup func(path string) (io.ReadCloser, error)) (pkg *types.Package, err error) {
 	var rc io.ReadCloser
 	var filename, id string
 	if lookup != nil {
@@ -227,10 +227,6 @@ func Import(packages map[string]*types.Package, path, srcDir string, lookup func
 		return nil, fmt.Errorf("no data to load a package from for path %s", id)
 	}
 
-	// TODO(gri): allow clients of go/importer to provide a FileSet.
-	// Or, define a new standard go/types/gcexportdata package.
-	fset := token.NewFileSet()
-
 	// Select appropriate importer.
 	switch data[0] {
 	case 'v', 'c', 'd':
@@ -241,8 +237,7 @@ func Import(packages map[string]*types.Package, path, srcDir string, lookup func
 		// indexed: emitted by cmd/compile till go1.19;
 		// now used only for serializing go/types.
 		// See https://github.com/golang/go/issues/69491.
-		_, pkg, err := IImportData(fset, packages, data[1:], id)
-		return pkg, err
+		return nil, fmt.Errorf("indexed (i) import format is no longer supported")
 
 	case 'u':
 		// unified: emitted by cmd/compile since go1.20.
