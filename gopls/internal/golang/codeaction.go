@@ -5,6 +5,7 @@
 package golang
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -328,14 +329,23 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 			}
 
 		// "type X has no field or method Y" compiler error.
-		// Offer a "Declare missing method T.f" code action.
-		// See [stubMissingCalledFunctionFixer] for command implementation.
 		case strings.Contains(msg, "has no field or method"):
 			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
+
+			// Offer a "Declare missing method T.f" code action if a CallStubInfo found.
+			// See [stubMissingCalledFunctionFixer] for command implementation.
 			si := stubmethods.GetCallStubInfo(req.pkg.FileSet(), info, path, start)
 			if si != nil {
 				msg := fmt.Sprintf("Declare missing method %s.%s", si.Receiver.Obj().Name(), si.MethodName)
 				req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
+			} else {
+				// Offer a "Declare missing field T.f" code action.
+				// See [stubMissingStructFieldFixer] for command implementation.
+				fi := GetFieldStubInfo(req.pkg.FileSet(), info, path)
+				if fi != nil {
+					msg := fmt.Sprintf("Declare missing struct field %s.%s", fi.Named.Obj().Name(), fi.Expr.Sel.Name)
+					req.addApplyFixAction(msg, fixMissingStructField, req.loc)
+				}
 			}
 
 		// "undeclared name: X" or "undefined: X" compiler error.
@@ -351,6 +361,75 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 		}
 	}
 
+	return nil
+}
+
+func GetFieldStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node) *StructFieldInfo {
+	for _, node := range path {
+		n, ok := node.(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+		tv, ok := info.Types[n.X]
+		if !ok {
+			break
+		}
+
+		named, ok := tv.Type.(*types.Named)
+		if !ok {
+			break
+		}
+
+		structType, ok := named.Underlying().(*types.Struct)
+		if !ok {
+			break
+		}
+
+		return &StructFieldInfo{
+			Fset:   fset,
+			Expr:   n,
+			Struct: structType,
+			Named:  named,
+			Info:   info,
+			Path:   path,
+		}
+	}
+
+	return nil
+}
+
+type StructFieldInfo struct {
+	Fset   *token.FileSet
+	Expr   *ast.SelectorExpr
+	Struct *types.Struct
+	Named  *types.Named
+	Info   *types.Info
+	Path   []ast.Node
+}
+
+// Emit writes to out the missing field based on type info.
+func (si *StructFieldInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
+	if si.Expr == nil || si.Expr.Sel == nil {
+		return fmt.Errorf("invalid selector expression")
+	}
+
+	// Get types from context at the selector expression position
+	typesFromContext := typesutil.TypesFromContext(si.Info, si.Path, si.Expr.Pos())
+
+	// Default to interface{} if we couldn't determine the type from context
+	var fieldType types.Type
+	if len(typesFromContext) > 0 && typesFromContext[0] != nil {
+		fieldType = typesFromContext[0]
+	} else {
+		// Create a new interface{} type
+		fieldType = types.NewInterfaceType(nil, nil)
+	}
+
+	tpl := "\n\t%s %s"
+	if si.Struct.NumFields() == 0 {
+		tpl += "\n"
+	}
+	fmt.Fprintf(out, tpl, si.Expr.Sel.Name, types.TypeString(fieldType, qual))
 	return nil
 }
 
