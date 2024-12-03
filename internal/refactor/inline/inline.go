@@ -615,7 +615,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 				needed = false // no longer needed by caller
 				// Check to see if any of the inlined free objects need this package.
 				for _, obj := range callee.FreeObjs {
-					if obj.PkgPath == pkgName.Imported().Path() && !obj.Shadow[pkgName.Name()] {
+					if obj.PkgPath == pkgName.Imported().Path() && obj.Shadow[pkgName.Name()] == 0 {
 						needed = true // needed by callee
 						break
 					}
@@ -635,12 +635,12 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	// context. It is used to determine the set of new imports in
 	// getOrMakeImportName, and is also used for writing out names in inlining
 	// strategies below.
-	importName := func(pkgPath string, shadow map[string]bool) string {
+	importName := func(pkgPath string, shadow shadowMap) string {
 		for _, name := range importMap[pkgPath] {
 			// Check that either the import preexisted, or that it was newly added
 			// (no PkgName) but is not shadowed, either in the callee (shadows) or
 			// caller (caller.lookup).
-			if !shadow[name] {
+			if shadow[name] == 0 {
 				found := caller.lookup(name)
 				if is[*types.PkgName](found) || found == nil {
 					return name
@@ -656,7 +656,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 
 	// getOrMakeImportName returns the local name for a given imported package path,
 	// adding one if it doesn't exists.
-	getOrMakeImportName := func(pkgPath, pkgName string, shadow map[string]bool) string {
+	getOrMakeImportName := func(pkgPath, pkgName string, shadow shadowMap) string {
 		// Does an import already exist that works in this shadowing context?
 		if name := importName(pkgPath, shadow); name != "" {
 			return name
@@ -700,7 +700,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		// here?
 		base := pkgName
 		name := base
-		for n := 0; shadow[name] || shadowedInCaller(name) || newlyAdded(name) || name == "init"; n++ {
+		for n := 0; shadow[name] != 0 || shadowedInCaller(name) || newlyAdded(name) || name == "init"; n++ {
 			name = fmt.Sprintf("%s%d", base, n)
 		}
 		logf("adding import %s %q", name, pkgPath)
@@ -1393,7 +1393,6 @@ type argument struct {
 	effects       bool            // expr has effects (updates variables)
 	duplicable    bool            // expr may be duplicated
 	freevars      map[string]bool // free names of expr
-	substitutable bool            // is candidate for substitution
 	variadic      bool            // is explicit []T{...} for eliminated variadic
 	desugaredRecv bool            // is *recv or &recv, where operator was elided
 }
@@ -1586,9 +1585,24 @@ func substitute(logf logger, caller *Caller, params []*parameter, args []*argume
 	// (In spread calls len(args) = 1, or 2 if call has receiver.)
 	// Non-spread variadics have been simplified away already,
 	// so the args[i] lookup is safe if we stop after the spread arg.
+	assert(len(args) <= len(params), "too many arguments")
+
+	// Collect candidates for substitution.
+	//
+	// An argument is a candidate if it is not otherwise rejected, and any free
+	// variables that are shadowed only by other parameters.
+	//
+	// Therefore, substitution candidates are represented by a graph, where edges
+	// lead from each argument to the other arguments that, if substituted, would
+	// allow the argument to be substituted. We collect these edges in the
+	// [substGraph]. Any node that is known not to be elided from the graph.
+	// Arguments in this graph with no edges are substitutable independent of
+	// other nodes, though they may be removed due to falcon or effects analysis.
+	sg := make(substGraph)
 next:
 	for i, param := range params {
 		arg := args[i]
+
 		// Check argument against parameter.
 		//
 		// Beware: don't use types.Info on arg since
@@ -1655,36 +1669,118 @@ next:
 			}
 		}
 
-		// Check for shadowing.
+		// Arg is a potential substition candidate: analyze its shadowing.
 		//
 		// Consider inlining a call f(z, 1) to
-		// func f(x, y int) int { z := y; return x + y + z }:
+		//
+		// 	func f(x, y int) int { z := y; return x + y + z }
+		//
 		// we can't replace x in the body by z (or any
-		// expression that has z as a free identifier)
-		// because there's an intervening declaration of z
-		// that would shadow the caller's one.
+		// expression that has z as a free identifier) because there's an
+		// intervening declaration of z that would shadow the caller's one.
+		//
+		// However, we *could* replace x in the body by y, as long as the y
+		// parameter is also removed by substitution.
+
+		sg[arg] = nil // Absent shadowing, the arg is substitutable.
+
 		for free := range arg.freevars {
-			if param.info.Shadow[free] {
-				logf("keeping param %q: cannot replace with argument as it has free ref to %s that is shadowed", param.info.Name, free)
-				continue next // shadowing conflict
+			switch s := param.info.Shadow[free]; {
+			case s < 0:
+				// Shadowed by a non-parameter symbol, so arg is not substitutable.
+				delete(sg, arg)
+			case s > 0:
+				// Shadowed by a parameter; arg may be substitutable, if only shadowed
+				// by other substitutable parameters.
+				if s > len(args) {
+					// Defensive: this should not happen in the current factoring, since
+					// spread arguments are already handled.
+					delete(sg, arg)
+				}
+				if edges, ok := sg[arg]; ok {
+					sg[arg] = append(edges, args[s-1])
+				}
 			}
 		}
-
-		arg.substitutable = true // may be substituted, if effects permit
 	}
 
-	// Reject constant arguments as substitution candidates
-	// if they cause violation of falcon constraints.
-	checkFalconConstraints(logf, params, args, falcon)
+	// Process the initial state of the substitution graph.
+	sg.prune()
+
+	// Now we check various conditions on the substituted argument set as a
+	// whole. These conditions reject substitution candidates, but since their
+	// analysis depends on the full set of candidates, we do not process side
+	// effects of their candidate rejection until after the analysis completes,
+	// in a call to prune. After pruning, we must re-run the analysis to check
+	// for additional rejections.
+	//
+	// Here's an example of that in practice:
+	//
+	// 	var a [3]int
+	//
+	// 	func falcon(x, y, z int) {
+	// 		_ = x + a[y+z]
+	// 	}
+	//
+	// 	func _() {
+	// 		var y int
+	// 		const x, z = 1, 2
+	// 		falcon(y, x, z)
+	// 	}
+	//
+	// In this example, arguments 0 and 1 are shadowed by each other's
+	// corresponding parameter, and so each can be substituted only if they are
+	// both substituted. But the fallible constant analysis finds a violated
+	// constraint: x + z = 3, and so the constant array index would cause a
+	// compile-time error if argument 1 (x) were substituted. Therefore,
+	// following the falcon analysis, we must also prune argument 0.
+	//
+	// As far as I (rfindley) can tell, the falcon analysis should always succeed
+	// after the first pass, as it's not possible for additional bindings to
+	// cause new constraint failures. Nevertheless, we re-run it to be sure.
+	//
+	// However, the same cannot be said of the effects analysis, as demonstrated
+	// by this example:
+	//
+	// 	func effects(w, x, y, z int) {
+	// 		_ = x + w + y + z
+	// 	}
+
+	// 	func _() {
+	// 		v := 0
+	// 		w := func() int { v++; return 0 }
+	// 		x := func() int { v++; return 0 }
+	// 		y := func() int { v++; return 0 }
+	// 		effects(x(), w(), y(), x()) //@ inline(re"effects", effects)
+	// 	}
+	//
+	// In this example, arguments 0, 1, and 3 are related by the substitution
+	// graph. The first effects analysis implies that arguments 0 and 1 must be
+	// bound, and therefore argument 3 must be bound. But then a subsequent
+	// effects analysis forces argument 2 to also be bound.
+
+	// Reject constant arguments as substitution candidates if they cause
+	// violation of falcon constraints.
+	//
+	// Keep redoing the analysis until we no longer reject additional arguments,
+	// as the set of substituted parameters affects the falcon package.
+	for checkFalconConstraints(logf, params, args, falcon, sg) {
+		sg.prune()
+	}
 
 	// As a final step, introduce bindings to resolve any
 	// evaluation order hazards. This must be done last, as
 	// additional subsequent bindings could introduce new hazards.
-	resolveEffects(logf, args, effects)
+	//
+	// As with the falcon analysis, keep redoing the analysis until the no more
+	// arguments are rejected.
+	for resolveEffects(logf, args, effects, sg) {
+		sg.prune()
+	}
 
 	// The remaining candidates are safe to substitute.
 	for i, param := range params {
-		if arg := args[i]; arg.substitutable {
+		if arg := args[i]; sg.has(arg) {
 
 			// It is safe to substitute param and replace it with arg.
 			// The formatter introduces parens as needed for precedence.
@@ -1825,7 +1921,7 @@ func isUsedOutsideCall(caller *Caller, v *types.Var) bool {
 // TODO(adonovan): we could obtain a finer result rejecting only the
 // freevars of each failed constraint, and processing constraints in
 // order of increasing arity, but failures are quite rare.
-func checkFalconConstraints(logf logger, params []*parameter, args []*argument, falcon falconResult) {
+func checkFalconConstraints(logf logger, params []*parameter, args []*argument, falcon falconResult, sg substGraph) bool {
 	// Create a dummy package, as this is the only
 	// way to create an environment for CheckExpr.
 	pkg := types.NewPackage("falcon", "falcon")
@@ -1844,7 +1940,7 @@ func checkFalconConstraints(logf logger, params []*parameter, args []*argument, 
 			continue // unreferenced
 		}
 		arg := args[i]
-		if arg.constant != nil && arg.substitutable && param.info.FalconType != "" {
+		if arg.constant != nil && sg.has(arg) && param.info.FalconType != "" {
 			t := pkg.Scope().Lookup(param.info.FalconType).Type()
 			pkg.Scope().Insert(types.NewConst(token.NoPos, pkg, name, t, arg.constant))
 			logf("falcon env: const %s %s = %v", name, param.info.FalconType, arg.constant)
@@ -1855,11 +1951,12 @@ func checkFalconConstraints(logf logger, params []*parameter, args []*argument, 
 		}
 	}
 	if nconst == 0 {
-		return // nothing to do
+		return false // nothing to do
 	}
 
 	// Parse and evaluate the constraints in the environment.
 	fset := token.NewFileSet()
+	removed := false
 	for _, falcon := range falcon.Constraints {
 		expr, err := parser.ParseExprFrom(fset, "falcon", falcon, 0)
 		if err != nil {
@@ -1868,15 +1965,16 @@ func checkFalconConstraints(logf logger, params []*parameter, args []*argument, 
 		if err := types.CheckExpr(fset, pkg, token.NoPos, expr, nil); err != nil {
 			logf("falcon: constraint %s violated: %v", falcon, err)
 			for j, arg := range args {
-				if arg.constant != nil && arg.substitutable {
+				if arg.constant != nil && sg.has(arg) {
 					logf("keeping param %q due falcon violation", params[j].info.Name)
-					arg.substitutable = false
+					removed = sg.remove(arg) || removed
 				}
 			}
 			break
 		}
 		logf("falcon: constraint %s satisfied", falcon)
 	}
+	return removed
 }
 
 // resolveEffects marks arguments as non-substitutable to resolve
@@ -1923,7 +2021,7 @@ func checkFalconConstraints(logf logger, params []*parameter, args []*argument, 
 // current argument. Subsequent iterations cannot introduce hazards
 // with that argument because they can result only in additional
 // binding of lower-ordered arguments.
-func resolveEffects(logf logger, args []*argument, effects []int) {
+func resolveEffects(logf logger, args []*argument, effects []int, sg substGraph) bool {
 	effectStr := func(effects bool, idx int) string {
 		i := fmt.Sprint(idx)
 		if idx == len(args) {
@@ -1931,9 +2029,10 @@ func resolveEffects(logf logger, args []*argument, effects []int) {
 		}
 		return string("RW"[btoi(effects)]) + i
 	}
+	removed := false
 	for i := len(args) - 1; i >= 0; i-- {
 		argi := args[i]
-		if argi.substitutable && !argi.pure {
+		if sg.has(argi) && !argi.pure {
 			// i is not bound: check whether it must be bound due to hazards.
 			idx := index(effects, i)
 			if idx >= 0 {
@@ -1952,25 +2051,111 @@ func resolveEffects(logf logger, args []*argument, effects []int) {
 					if ji > i && (jw || argi.effects) { // out of order evaluation
 						logf("binding argument %s: preceded by %s",
 							effectStr(argi.effects, i), effectStr(jw, ji))
-						argi.substitutable = false
+
+						removed = sg.remove(argi) || removed
 						break
 					}
 				}
 			}
 		}
-		if !argi.substitutable {
+		if !sg.has(argi) {
 			for j := 0; j < i; j++ {
 				argj := args[j]
 				if argj.pure {
 					continue
 				}
-				if (argi.effects || argj.effects) && argj.substitutable {
+				if (argi.effects || argj.effects) && sg.has(argj) {
 					logf("binding argument %s: %s is bound",
 						effectStr(argj.effects, j), effectStr(argi.effects, i))
-					argj.substitutable = false
+
+					removed = sg.remove(argj) || removed
 				}
 			}
 		}
+	}
+	return removed
+}
+
+// A substGraph is a directed graph representing arguments that may be
+// substituted, provided all of their related arguments (or "dependencies") are
+// also substituted. The candidates arguments for substitution are the keys in
+// this graph, and the edges represent shadowing of free variables of the key
+// by parameters corresponding to the dependency arguments.
+//
+// Any argument not present as a map key is known not to be substitutable. Some
+// arguments may have edges leading to other arguments that are not present in
+// the graph. In this case, those arguments also cannot be substituted, because
+// they have free variables that are shadowed by parameters that cannot be
+// substituted. Calling [substGraph.prune] removes these arguments from the
+// graph.
+//
+// The 'prune' operation is not built into the 'remove' step both because
+// analyses (falcon, effects) need local information about each argument
+// independent of dependencies, and for the efficiency of pruning once en masse
+// after each analysis.
+type substGraph map[*argument][]*argument
+
+// has reports whether arg is a candidate for substitution.
+func (g substGraph) has(arg *argument) bool {
+	_, ok := g[arg]
+	return ok
+}
+
+// remove marks arg as not substitutable, reporting whether the arg was
+// previously substitutable.
+//
+// remove does not have side effects on other arguments that may be
+// unsubstitutable as a result of their dependency being removed.
+// Call [substGraph.prune] to propagate these side effects, removing dependent
+// arguments.
+func (g substGraph) remove(arg *argument) bool {
+	pre := len(g)
+	delete(g, arg)
+	return len(g) < pre
+}
+
+// prune updates the graph to remove any keys that reach other arguments not
+// present in the graph.
+func (g substGraph) prune() {
+	// visit visits the forward transitive closure of arg and reports whether any
+	// missing argument was encountered, removing all nodes on the path to it
+	// from arg.
+	//
+	// The seen map is used for cycle breaking. In the presence of cycles, visit
+	// may report a false positive for an intermediate argument. For example,
+	// consider the following graph, where only a and b are candidates for
+	// substitution (meaning, only a and b are present in the graph).
+	//
+	//   a ↔ b
+	//   ↓
+	//  [c]
+	//
+	// In this case, starting a visit from a, visit(b, seen) may report 'true',
+	// because c has not yet been considered. For this reason, we must guarantee
+	// that visit is called with an empty seen map at least once for each node.
+	var visit func(*argument, map[*argument]unit) bool
+	visit = func(arg *argument, seen map[*argument]unit) bool {
+		deps, ok := g[arg]
+		if !ok {
+			return false
+		}
+		if _, ok := seen[arg]; !ok {
+			seen[arg] = unit{}
+			for _, dep := range deps {
+				if !visit(dep, seen) {
+					delete(g, arg)
+					return false
+				}
+			}
+		}
+		return true
+	}
+	for arg := range g {
+		// Remove any argument that is, or transitively depends upon,
+		// an unsubstitutable argument.
+		//
+		// Each visitation gets a fresh cycle-breaking set.
+		visit(arg, make(map[*argument]unit))
 	}
 }
 
@@ -2149,8 +2334,8 @@ func createBindingDecl(logf logger, caller *Caller, args []*argument, calleeDecl
 	for _, field := range calleeDecl.Type.Params.List {
 		// Each field (param group) becomes a ValueSpec.
 		spec := &ast.ValueSpec{
-			Names:  field.Names,
-			Type:   field.Type,
+			Names:  cleanNodes(field.Names),
+			Type:   cleanNode(field.Type),
 			Values: values[:len(field.Names)],
 		}
 		values = values[len(field.Names):]
@@ -2181,8 +2366,8 @@ func createBindingDecl(logf logger, caller *Caller, args []*argument, calleeDecl
 			}
 			if len(names) > 0 {
 				spec := &ast.ValueSpec{
-					Names: names,
-					Type:  field.Type,
+					Names: cleanNodes(names),
+					Type:  cleanNode(field.Type),
 				}
 				if shadow(spec) {
 					return nil
@@ -2865,6 +3050,24 @@ func replaceNode(root ast.Node, from, to ast.Node) {
 	}
 }
 
+// cleanNode returns a clone of node with positions cleared.
+//
+// It should be used for any callee nodes that are formatted using the caller
+// file set.
+func cleanNode[T ast.Node](node T) T {
+	clone := internalastutil.CloneNode(node)
+	clearPositions(clone)
+	return clone
+}
+
+func cleanNodes[T ast.Node](nodes []T) []T {
+	var clean []T
+	for _, node := range nodes {
+		clean = append(clean, cleanNode(node))
+	}
+	return clean
+}
+
 // clearPositions destroys token.Pos information within the tree rooted at root,
 // as positions in callee trees may cause caller comments to be emitted prematurely.
 //
@@ -3134,7 +3337,7 @@ func declares(stmts []ast.Stmt) map[string]bool {
 // the position the local import name is to be used. The shadow map only needs
 // to contain newly introduced names in the inlined code; names shadowed at the
 // caller are handled automatically.
-type importNameFunc = func(pkgPath string, shadow map[string]bool) string
+type importNameFunc = func(pkgPath string, shadow shadowMap) string
 
 // assignStmts rewrites a statement assigning the results of a call into zero
 // or more statements that assign its return operands, or (nil, false) if no
@@ -3287,7 +3490,7 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 	//   1. expand this to handle more type expressions.
 	//   2. refactor to share logic with callee rewriting.
 	universeAny := types.Universe.Lookup("any")
-	typeExpr := func(typ types.Type, shadow map[string]bool) ast.Expr {
+	typeExpr := func(typ types.Type, shadow shadowMap) ast.Expr {
 		var (
 			typeName string
 			obj      *types.TypeName // nil for basic types
@@ -3311,7 +3514,7 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 		}
 
 		if obj == nil || obj.Pkg() == nil || obj.Pkg() == caller.Types { // local type or builtin
-			if shadow[typeName] {
+			if shadow[typeName] != 0 {
 				logf("cannot write shadowed type name %q", typeName)
 				return nil
 			}
@@ -3358,7 +3561,7 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 		var (
 			specs    []ast.Spec
 			specIdxs []int
-			shadow   = make(map[string]bool)
+			shadow   = make(shadowMap)
 		)
 		failed := false
 		byType.Iterate(func(typ types.Type, v any) {

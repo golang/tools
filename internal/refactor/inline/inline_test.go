@@ -1225,6 +1225,60 @@ func TestEmbeddedFields(t *testing.T) {
 	})
 }
 
+func TestSubstitutionGroups(t *testing.T) {
+	runTests(t, []testcase{
+		{
+			// b -> a
+			"Basic",
+			`func f(a, b int) { print(a, b) }`,
+			`func _() { var a int; f(a, a) }`,
+			`func _() { var a int; print(a, a) }`,
+		},
+		{
+			// a <-> b
+			"Cocycle",
+			`func f(a, b int) { print(a, b) }`,
+			`func _() { var a, b int; f(a+b, a+b) }`,
+			`func _() { var a, b int; print(a+b, a+b) }`,
+		},
+		{
+			// a <-> b
+			// a -> c
+			// Don't compute b as substitutable due to bad cycle traversal.
+			"Middle cycle",
+			`func f(a, b, c int) { var d int; print(a, b, c, d) }`,
+			`func _() { var a, b, c, d int; f(a+b+c, a+b, d) }`,
+			`func _() {
+	var a, b, c, d int
+	{
+		var a, b, c int = a + b + c, a + b, d
+		var d int
+		print(a, b, c, d)
+	}
+}`,
+		},
+		{
+			// a -> b
+			// b -> c
+			// b -> d
+			// c
+			//
+			// Only c should be substitutable.
+			"Singleton",
+			`func f(a, b, c, d int) { var e int; print(a, b, c, d, e) }`,
+			`func _() { var a, b, c, d, e int; f(a+b, c+d, c, e) }`,
+			`func _() {
+	var a, b, c, d, e int
+	{
+		var a, b, d int = a + b, c + d, e
+		var e int
+		print(a, b, c, d, e)
+	}
+}`,
+		},
+	})
+}
+
 func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 	runTests(t, []testcase{
 		{
@@ -1313,7 +1367,7 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 		},
 		{
 			// In this example, the set() call is rejected as a substitution
-			// candidate due to a shadowing conflict (x). This must entail that the
+			// candidate due to a shadowing conflict (z). This must entail that the
 			// selection x.y (R) is also rejected, because it is lower numbered.
 			//
 			// Incidentally this program (which panics when executed) illustrates
@@ -1321,12 +1375,13 @@ func TestSubstitutionPreservesArgumentEffectOrder(t *testing.T) {
 			// as x.y are not ordered wrt writes, depending on the compiler.
 			// Changing x.y to identity(x).y forces the ordering and avoids the panic.
 			"Hazards with args already rejected (e.g. due to shadowing) are detected too.",
-			`func f(x, y int) int { return x + y }; func set[T any](ptr *T, old, new T) int { println(old); *ptr = new; return 0; }`,
-			`func _() { x := new(struct{ y int }); f(x.y, set(&x, x, nil)) }`,
+			`func f(x, y int) (z int) { return x + y }; func set[T any](ptr *T, old, new T) int { println(old); *ptr = new; return 0; }`,
+			`func _() { x := new(struct{ y int }); z := x; f(x.y, set(&x, z, nil)) }`,
 			`func _() {
 	x := new(struct{ y int })
+	z := x
 	{
-		var x, y int = x.y, set(&x, x, nil)
+		var x, y int = x.y, set(&x, z, nil)
 		_ = x + y
 	}
 }`,

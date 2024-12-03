@@ -73,8 +73,8 @@ type object struct {
 	PkgName string // name of object's package (or imported package if kind="pkgname")
 	// TODO(rfindley): should we also track LocalPkgName here? Do we want to
 	// preserve the local package name?
-	ValidPos bool            // Object.Pos().IsValid()
-	Shadow   map[string]bool // names shadowed at one of the object's refs
+	ValidPos bool      // Object.Pos().IsValid()
+	Shadow   shadowMap // shadowing info for the object's refs
 }
 
 // AnalyzeCallee analyzes a function that is a candidate for inlining
@@ -125,6 +125,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 	// Record the location of all free references in the FuncDecl.
 	// (Parameters are not free by this definition.)
 	var (
+		fieldObjs    = fieldObjs(sig)
 		freeObjIndex = make(map[types.Object]int)
 		freeObjs     []object
 		freeRefs     []freeRef // free refs that may need renaming
@@ -221,7 +222,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 						freeObjIndex[obj] = objidx
 					}
 
-					freeObjs[objidx].Shadow = addShadows(freeObjs[objidx].Shadow, info, obj.Name(), stack)
+					freeObjs[objidx].Shadow = freeObjs[objidx].Shadow.add(info, fieldObjs, obj.Name(), stack)
 
 					freeRefs = append(freeRefs, freeRef{
 						Offset: int(n.Pos() - decl.Pos()),
@@ -383,15 +384,15 @@ func parseCompact(content []byte) (*token.FileSet, *ast.FuncDecl, error) {
 
 // A paramInfo records information about a callee receiver, parameter, or result variable.
 type paramInfo struct {
-	Name        string          // parameter name (may be blank, or even "")
-	Index       int             // index within signature
-	IsResult    bool            // false for receiver or parameter, true for result variable
-	IsInterface bool            // parameter has a (non-type parameter) interface type
-	Assigned    bool            // parameter appears on left side of an assignment statement
-	Escapes     bool            // parameter has its address taken
-	Refs        []refInfo       // information about references to parameter within body
-	Shadow      map[string]bool // names shadowed at one of the above refs
-	FalconType  string          // name of this parameter's type (if basic) in the falcon system
+	Name        string    // parameter name (may be blank, or even "")
+	Index       int       // index within signature
+	IsResult    bool      // false for receiver or parameter, true for result variable
+	IsInterface bool      // parameter has a (non-type parameter) interface type
+	Assigned    bool      // parameter appears on left side of an assignment statement
+	Escapes     bool      // parameter has its address taken
+	Refs        []refInfo // information about references to parameter within body
+	Shadow      shadowMap // shadowing info for the above refs; see [shadowMap]
+	FalconType  string    // name of this parameter's type (if basic) in the falcon system
 }
 
 type refInfo struct {
@@ -419,10 +420,10 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 		panic(fmt.Sprintf("%s: no func object for %q",
 			fset.PositionFor(decl.Name.Pos(), false), decl.Name)) // ill-typed?
 	}
+	sig := fnobj.Type().(*types.Signature)
 
 	paramInfos := make(map[*types.Var]*paramInfo)
 	{
-		sig := fnobj.Type().(*types.Signature)
 		newParamInfo := func(param *types.Var, isResult bool) *paramInfo {
 			info := &paramInfo{
 				Name:        param.Name(),
@@ -461,6 +462,7 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 	//
 	// TODO(adonovan): combine this traversal with the one that computes
 	// FreeRefs. The tricky part is that calleefx needs this one first.
+	fieldObjs := fieldObjs(sig)
 	var stack []ast.Node
 	stack = append(stack, decl.Type) // for scope of function itself
 	ast.Inspect(decl.Body, func(n ast.Node) bool {
@@ -493,7 +495,7 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 						IsSelectionOperand: isSelectionOperand(stack),
 					}
 					pinfo.Refs = append(pinfo.Refs, ref)
-					pinfo.Shadow = addShadows(pinfo.Shadow, info, pinfo.Name, stack)
+					pinfo.Shadow = pinfo.Shadow.add(info, fieldObjs, pinfo.Name, stack)
 				}
 			}
 		}
@@ -746,27 +748,66 @@ func isSelectionOperand(stack []ast.Node) bool {
 	return ok && sel.X == expr
 }
 
-// addShadows returns the shadows set augmented by the set of names
+// A shadowMap records information about shadowing at any of the parameter's
+// references within the callee decl.
+//
+// For each name shadowed at a reference to the parameter within the callee
+// body, shadow map records the 1-based index of the callee decl parameter
+// causing the shadowing, or -1, if the shadowing is not due to a callee decl.
+// A value of zero (or missing) indicates no shadowing. By convention,
+// self-shadowing is excluded from the map.
+//
+// For example, in the following callee
+//
+//	func f(a, b int) int {
+//		c := 2 + b
+//		return a + c
+//	}
+//
+// the shadow map of a is {b: 2, c: -1}, because b is shadowed by the 2nd
+// parameter. The shadow map of b is {a: 1}, because c is not shadowed at the
+// use of b.
+type shadowMap map[string]int
+
+// addShadows returns the [shadowMap] augmented by the set of names
 // locally shadowed at the location of the reference in the callee
 // (identified by the stack). The name of the reference itself is
 // excluded.
 //
 // These shadowed names may not be used in a replacement expression
 // for the reference.
-func addShadows(shadows map[string]bool, info *types.Info, exclude string, stack []ast.Node) map[string]bool {
+func (s shadowMap) add(info *types.Info, paramIndexes map[types.Object]int, exclude string, stack []ast.Node) shadowMap {
 	for _, n := range stack {
 		if scope := scopeFor(info, n); scope != nil {
 			for _, name := range scope.Names() {
 				if name != exclude {
-					if shadows == nil {
-						shadows = make(map[string]bool)
+					if s == nil {
+						s = make(shadowMap)
 					}
-					shadows[name] = true
+					obj := scope.Lookup(name)
+					if idx, ok := paramIndexes[obj]; ok {
+						s[name] = idx + 1
+					} else {
+						s[name] = -1
+					}
 				}
 			}
 		}
 	}
-	return shadows
+	return s
+}
+
+// fieldObjs returns a map of each types.Object defined by the given signature
+// to its index in the parameter list. Parameters with missing or blank name
+// are skipped.
+func fieldObjs(sig *types.Signature) map[types.Object]int {
+	m := make(map[types.Object]int)
+	for i := range sig.Params().Len() {
+		if p := sig.Params().At(i); p.Name() != "" && p.Name() != "_" {
+			m[p] = i
+		}
+	}
+	return m
 }
 
 func isField(obj types.Object) bool {
