@@ -6,6 +6,7 @@ formatting, simplifications), code repair (fixes), and editing support
 (filling in struct literals and switch statements).
 
 Code transformations are not a single category in the LSP:
+
 - A few, such as Formatting and Rename, are primary operations in the
   protocol.
 - Some transformations are exposed through [Code Lenses](../codelenses.md),
@@ -43,6 +44,7 @@ or to cause the server to send other requests to the client,
 such as a `showDocument` request to open a report in a web browser.
 
 The main difference between code lenses and code actions is this:
+
 - a `codeLens` request obtains commands for the entire file.
   Each command specifies its applicable source range,
   and typically appears as an annotation on that source range.
@@ -82,6 +84,8 @@ Gopls supports the following code actions:
 - [`refactor.rewrite.joinLines`](#refactor.rewrite.joinLines)
 - [`refactor.rewrite.removeUnusedParam`](#refactor.rewrite.removeUnusedParam)
 - [`refactor.rewrite.splitLines`](#refactor.rewrite.splitLines)
+- [`refactor.rewrite.moveParamLeft`](#refactor.rewrite.moveParamLeft)
+- [`refactor.rewrite.moveParamRight`](#refactor.rewrite.moveParamRight)
 
 Gopls reports some code actions twice, with two different kinds, so
 that they appear in multiple UI elements: simplifications,
@@ -99,6 +103,7 @@ that, in the course of reporting a diagnostic about a problem,
 also suggest a fix.
 A `codeActions` request will return any fixes accompanying diagnostics
 for the current selection.
+
 <!-- Some gopls-internal analyzers compute fixes lazily by
      reporting an empty list of TextEdits and a Diagnostic.Category
      recognized by gopls that enables corresponding logic in the
@@ -117,6 +122,7 @@ for the current selection.
 -->
 
 Caveats:
+
 - Many of gopls code transformations are limited by Go's syntax tree
   representation, which currently records comments not in the tree
   but in a side table; consequently, transformations such as Extract
@@ -158,10 +164,12 @@ Most clients are configured to format files and organize imports
 whenever a file is saved.
 
 Settings:
+
 - The [`gofumpt`](../settings.md#gofumpt) setting causes gopls to use an
   alternative formatter, [`github.com/mvdan/gofumpt`](https://pkg.go.dev/mvdan.cc/gofumpt).
 
 Client support:
+
 - **VS Code**: Formats on save by default. Use `Format document` menu item (`⌥⇧F`) to invoke manually.
 - **Emacs + eglot**: Use `M-x eglot-format-buffer` to format. Attach it to `before-save-hook` to format on save. For formatting combined with organize-imports, many users take the legacy approach of setting `"goimports"` as their `gofmt-command` using [go-mode](https://github.com/dominikh/go-mode.el), and adding `gofmt-before-save` to `before-save-hook`. An LSP-based solution requires code such as https://github.com/joaotavora/eglot/discussions/1409.
 - **CLI**: `gopls format file.go`
@@ -194,6 +202,7 @@ Settings:
   should appear after standard and third-party packages in the sort order.
 
 Client support:
+
 - **VS Code**: automatically invokes `source.organizeImports` before save.
   To disable it, use the snippet below, and invoke the "Organize Imports" command manually as needed.
   ```
@@ -243,7 +252,7 @@ boolean.
 
 **Method receivers**: When testing a method `T.F` or `(*T).F`, the test must
 construct an instance of T to pass as the receiver. Gopls searches the package
-for a suitable function that constructs a value of type T or *T, optionally with
+for a suitable function that constructs a value of type T or \*T, optionally with
 an error, preferring a function named `NewT`.
 
 **Imports**: Gopls adds missing imports to the test file, using the last
@@ -305,9 +314,10 @@ Similar problems may arise with packages that use reflection, such as
 judgment and testing.
 
 Some tips for best results:
+
 - There is currently no special support for renaming all receivers of
   a family of methods at once, so you will need to rename one receiver
-  one at a  time (golang/go#41892).
+  one at a time (golang/go#41892).
 - The safety checks performed by the Rename algorithm require type
   information. If the program is grossly malformed, there may be
   insufficient information for it to run (golang/go#41870),
@@ -328,11 +338,11 @@ in the latter half of this 2015 GothamGo talk:
 [Using go/types for Code Comprehension and Refactoring Tools](https://www.youtube.com/watch?v=p_cz7AxVdfg).
 
 Client support:
+
 - **VS Code**: Use "[Rename symbol](https://code.visualstudio.com/docs/editor/editingevolved#_rename-symbol)" menu item (`F2`).
 - **Emacs + eglot**: Use `M-x eglot-rename`, or `M-x go-rename` from [go-mode](https://github.com/dominikh/go-mode.el).
 - **Vim + coc.nvim**: Use the `coc-rename` command.
 - **CLI**: `gopls rename file.go:#offset newname`
-
 
 <a name='refactor.extract'></a>
 ## `refactor.extract`: Extract function/method/variable
@@ -392,7 +402,6 @@ The following Extract features are planned for 2024 but not yet supported:
   interface type with all the methods of the selected concrete type;
   see golang/go#65721 and golang/go#46665.
 
-
 <a name='refactor.extract.toNewFile'></a>
 ## `refactor.extract.toNewFile`: Extract declarations to new file
 
@@ -409,8 +418,8 @@ first token of the declaration, such as `func` or `type`.
 ![Before: select the declarations to move](../assets/extract-to-new-file-before.png)
 ![After: the new file is based on the first symbol name](../assets/extract-to-new-file-after.png)
 
-
 <a name='refactor.inline.call'></a>
+
 ## `refactor.inline.call`: Inline call to function
 
 For a `codeActions` request where the selection is (or is within) a
@@ -418,6 +427,7 @@ call of a function or method, gopls will return a command of kind
 `refactor.inline.call`, whose effect is to inline the function call.
 
 The screenshots below show a call to `sum` before and after inlining:
+
 <!-- source code used for images:
 
 func six() int {
@@ -432,6 +442,7 @@ func sum(values ...int) int {
 	return total
 }
 -->
+
 ![Before: select Refactor... Inline call to sum](../inline-before.png)
 ![After: the call has been replaced by the sum logic](../inline-after.png)
 
@@ -484,13 +495,16 @@ func f(s string) {
 	fmt.Println(s)
 }
 ```
+
 a call `f("hello")` will be inlined to:
+
 ```go
 	func() {
 		defer fmt.Println("goodbye")
 		fmt.Println("hello")
 	}()
 ```
+
 Although the parameter was eliminated, the function call remains.
 
 An inliner is a bit like an optimizing compiler.
@@ -539,18 +553,17 @@ Here are some of the technical challenges involved in sound inlining:
   `Printf` by qualified references such as `fmt.Printf`, and add an
   import of package `fmt` as needed.
 
-- **Implicit conversions:** When passing an argument to a function, it
-  is implicitly converted to the parameter type.
-  If we eliminate the parameter variable, we don't want to
-  lose the conversion as it may be important.
-  For example, in `func f(x any) { y := x; fmt.Printf("%T", &y) }` the
-  type of variable y is `any`, so the program prints `"*interface{}"`.
-  But if inlining the call `f(1)` were to produce the statement `y :=
-  1`, then the type of y would have changed to `int`, which could
-  cause a compile error or, as in this case, a bug, as the program
-  now prints `"*int"`. When the inliner substitutes a parameter variable
-  by its argument value, it may need to introduce explicit conversions
-  of each value to the original parameter type, such as `y := any(1)`.
+- **Implicit conversions:** When passing an argument to a function, it is
+  implicitly converted to the parameter type. If we eliminate the parameter
+  variable, we don't want to lose the conversion as it may be important. For
+  example, in `func f(x any) { y := x; fmt.Printf("%T", &y) }` the type of
+  variable y is `any`, so the program prints `"*interface{}"`. But if inlining
+  the call `f(1)` were to produce the statement `y := 1`, then the type of y
+  would have changed to `int`, which could cause a compile error or, as in this
+  case, a bug, as the program now prints `"*int"`. When the inliner substitutes
+  a parameter variable by its argument value, it may need to introduce explicit
+  conversions of each value to the original parameter type, such as `y :=
+  any(1)`.
 
 - **Last reference:** When an argument expression has no effects
   and its corresponding parameter is never used, the expression
@@ -577,6 +590,7 @@ code actions whose kinds are children of `refactor.rewrite`.
 The [`unusedparams` analyzer](../analyzers.md#unusedparams) reports a
 diagnostic for each parameter that is not used within the function body.
 For example:
+
 ```go
 func f(x, y int) { // "unused parameter: x"
 	fmt.Println(y)
@@ -606,6 +620,50 @@ effects, as in the example below.
 Observe that in the first call, the argument `chargeCreditCard()` was
 not deleted because of potential side effects, whereas in the second
 call, the argument 2, a constant, was safely deleted.
+
+<a name='refactor.rewrite.moveParamLeft'></a>
+<a name='refactor.rewrite.moveParamRight'></a>
+### `refactor.rewrite.moveParam{Left,Right}`: Move function parameters
+
+When the selection is a parameter in a function or method signature, gopls
+offers a code action to move the parameter left or right (if feasible),
+updating all callers accordingly.
+
+For example:
+
+```go
+func Foo(x, y int) int {
+    return x + y
+}
+
+func _() {
+    _ = Foo(0, 1)
+}
+```
+
+becomes
+
+```go
+func Foo(y, x int) int {
+    return x + y
+}
+
+func _() {
+    _ = Foo(1, 0)
+}
+```
+
+following a request to move `x` right, or `y` left.
+
+This is a primitive building block of more general "Change signature"
+operations. We plan to generalize this to arbitrary signature rewriting, but
+the language server protocol does not currently offer good support for user
+input into refactoring operations (see
+[microsoft/language-server-protocol#1164](https://github.com/microsoft/language-server-protocol/issues/1164)).
+Therefore, any such refactoring will require custom client-side logic. (As a
+very hacky workaround, you can express arbitrary parameter movement by invoking
+Rename on the `func` keyword of a function declaration, but this interface is
+just a temporary stopgap.)
 
 <a name='refactor.rewrite.changeQuote'></a>
 ### `refactor.rewrite.changeQuote`: Convert string literal between raw and interpreted
@@ -673,6 +731,7 @@ func() (
 	z rune,
 )
 ```
+
 Observe that in the last two cases, each
 [group](https://pkg.go.dev/go/ast#Field) of parameters or results is
 treated as a single item.
@@ -683,6 +742,7 @@ respectively, or trivial (fewer than two items).
 
 These code actions are not offered for lists containing `//`-style
 comments, which run to the end of the line.
+
 <!-- Strictly, line comments make only "join" (but not "split") infeasible. -->
 
 <a name='refactor.rewrite.fillStruct'></a>
