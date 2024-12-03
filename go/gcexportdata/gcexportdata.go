@@ -111,19 +111,13 @@ func NewReader(r io.Reader) (io.Reader, error) {
 		return nil, err
 	}
 
-	if size >= 0 {
-		// We were given an archive and found the __.PKGDEF in it.
-		// This tells us the size of the export data, and we don't
-		// need to return the entire file.
-		return &io.LimitedReader{
-			R: buf,
-			N: size,
-		}, nil
-	} else {
-		// We were given an object file. As such, we don't know how large
-		// the export data is and must return the entire file.
-		return buf, nil
-	}
+	// We were given an archive and found the __.PKGDEF in it.
+	// This tells us the size of the export data, and we don't
+	// need to return the entire file.
+	return &io.LimitedReader{
+		R: buf,
+		N: size,
+	}, nil
 }
 
 // readAll works the same way as io.ReadAll, but avoids allocations and copies

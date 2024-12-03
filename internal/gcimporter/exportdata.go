@@ -43,7 +43,7 @@ func readGopackHeader(r *bufio.Reader) (name string, size int64, err error) {
 // file by reading from it. The reader must be positioned at the
 // start of the file before calling this function. The hdr result
 // is the string before the export data, either "$$" or "$$B".
-// The size result is the length of the export data in bytes, or -1 if not known.
+// The size result is the length of the export data in bytes.
 //
 // This function is needed by [gcexportdata.Read], which must
 // accept inputs produced by the last two releases of cmd/compile,
@@ -67,6 +67,7 @@ func FindExportData(r *bufio.Reader) (hdr string, size int64, err error) {
 	if name, size, err = readGopackHeader(r); err != nil {
 		return
 	}
+	arsize := size
 
 	// First entry should be __.PKGDEF.
 	if name != "__.PKGDEF" {
@@ -99,8 +100,11 @@ func FindExportData(r *bufio.Reader) (hdr string, size int64, err error) {
 		size -= int64(len(line))
 	}
 	hdr = string(line)
+	// TODO(taking): Return an error when hdr != "$$B\n".
+	// TODO(taking): Remove end-of-section marker "\n$$\n" from size.
+
 	if size < 0 {
-		size = -1
+		err = fmt.Errorf("invalid size (%d) in the archive file: %d bytes remain without section headers (recompile package)", arsize, size)
 	}
 
 	return
