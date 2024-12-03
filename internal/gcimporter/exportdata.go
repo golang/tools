@@ -42,7 +42,7 @@ func readGopackHeader(r *bufio.Reader) (name string, size int64, err error) {
 // export data section of an underlying cmd/compile created archive
 // file by reading from it. The reader must be positioned at the
 // start of the file before calling this function.
-// The size result is the length of the export data in bytes.
+// This returns the length of the export data in bytes.
 //
 // This function is needed by [gcexportdata.Read], which must
 // accept inputs produced by the last two releases of cmd/compile,
@@ -62,11 +62,12 @@ func FindExportData(r *bufio.Reader) (size int64, err error) {
 	}
 
 	// Archive file. Scan to __.PKGDEF.
+	var arsize int64
 	var name string
-	if name, size, err = readGopackHeader(r); err != nil {
+	if name, arsize, err = readGopackHeader(r); err != nil {
 		return
 	}
-	arsize := size
+	size = arsize
 
 	// First entry should be __.PKGDEF.
 	if name != "__.PKGDEF" {
@@ -105,7 +106,21 @@ func FindExportData(r *bufio.Reader) (size int64, err error) {
 		err = fmt.Errorf("unknown export data header: %q", hdr)
 		return
 	}
-	// TODO(taking): Remove end-of-section marker "\n$$\n" from size.
+
+	// For files with a binary export data header "$$B\n",
+	// these are always terminated by an end-of-section marker "\n$$\n".
+	// So the last bytes must always be this constant.
+	//
+	// The end-of-section marker is not a part of the export data itself.
+	// Do not include these in size.
+	//
+	// It would be nice to have sanity check that the final bytes after
+	// the export data are indeed the end-of-section marker. The split
+	// of gcexportdata.NewReader and gcexportdata.Read make checking this
+	// ugly so gcimporter gives up enforcing this. The compiler and go/types
+	// importer do enforce this, which seems good enough.
+	const endofsection = "\n$$\n"
+	size -= int64(len(endofsection))
 
 	if size < 0 {
 		err = fmt.Errorf("invalid size (%d) in the archive file: %d bytes remain without section headers (recompile package)", arsize, size)

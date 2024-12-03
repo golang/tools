@@ -327,6 +327,7 @@ func TestVersionHandling(t *testing.T) {
 			t.Fatal(err)
 		}
 		// 2) find export data
+		// Index is an incorrect but 'good enough for tests' way to find the end of the export data.
 		i := bytes.Index(data, []byte("\n$$B\n")) + 5
 		j := bytes.Index(data[i:], []byte("\n$$\n")) + i
 		if i < 0 || j < 0 || i > j {
