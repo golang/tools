@@ -641,7 +641,11 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[protocol.Docume
 	}
 
 	post := func(got []byte) []byte { return bytes.ReplaceAll(got, []byte(tag), nil) }
-	return inlineAllCalls(ctx, logf, rw.snapshot, rw.pkg, rw.pgf, rw.origDecl, calleeInfo, post)
+	opts := &inline.Options{
+		Logf:          logf,
+		IgnoreEffects: true,
+	}
+	return inlineAllCalls(ctx, rw.snapshot, rw.pkg, rw.pgf, rw.origDecl, calleeInfo, post, opts)
 }
 
 // reTypeCheck re-type checks orig with new file contents defined by fileMask.
