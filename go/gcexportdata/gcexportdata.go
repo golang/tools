@@ -106,7 +106,7 @@ func Find(importPath, srcDir string) (filename, path string) {
 // additional trailing data beyond the end of the export data.
 func NewReader(r io.Reader) (io.Reader, error) {
 	buf := bufio.NewReader(r)
-	_, size, err := gcimporter.FindExportData(buf)
+	size, err := gcimporter.FindExportData(buf)
 	if err != nil {
 		return nil, err
 	}

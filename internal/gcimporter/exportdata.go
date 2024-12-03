@@ -41,14 +41,13 @@ func readGopackHeader(r *bufio.Reader) (name string, size int64, err error) {
 // FindExportData positions the reader r at the beginning of the
 // export data section of an underlying cmd/compile created archive
 // file by reading from it. The reader must be positioned at the
-// start of the file before calling this function. The hdr result
-// is the string before the export data, either "$$" or "$$B".
+// start of the file before calling this function.
 // The size result is the length of the export data in bytes.
 //
 // This function is needed by [gcexportdata.Read], which must
 // accept inputs produced by the last two releases of cmd/compile,
 // plus tip.
-func FindExportData(r *bufio.Reader) (hdr string, size int64, err error) {
+func FindExportData(r *bufio.Reader) (size int64, err error) {
 	// Read first line to make sure this is an object file.
 	line, err := r.ReadSlice('\n')
 	if err != nil {
@@ -90,8 +89,8 @@ func FindExportData(r *bufio.Reader) (hdr string, size int64, err error) {
 		return
 	}
 
-	// Skip over object header to export data.
-	// Begins after first line starting with $$.
+	// Skip over object headers to get to the export data section header "$$B\n".
+	// Object headers are lines that do not start with '$'.
 	for line[0] != '$' {
 		if line, err = r.ReadSlice('\n'); err != nil {
 			err = fmt.Errorf("can't find export data (%v)", err)
@@ -99,12 +98,18 @@ func FindExportData(r *bufio.Reader) (hdr string, size int64, err error) {
 		}
 		size -= int64(len(line))
 	}
-	hdr = string(line)
-	// TODO(taking): Return an error when hdr != "$$B\n".
+
+	// Check for the binary export data section header "$$B\n".
+	hdr := string(line)
+	if hdr != "$$B\n" {
+		err = fmt.Errorf("unknown export data header: %q", hdr)
+		return
+	}
 	// TODO(taking): Remove end-of-section marker "\n$$\n" from size.
 
 	if size < 0 {
 		err = fmt.Errorf("invalid size (%d) in the archive file: %d bytes remain without section headers (recompile package)", arsize, size)
+		return
 	}
 
 	return
