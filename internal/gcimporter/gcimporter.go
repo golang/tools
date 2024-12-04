@@ -46,7 +46,7 @@ const (
 // Import is only used in tests.
 func Import(fset *token.FileSet, packages map[string]*types.Package, path, srcDir string, lookup func(path string) (io.ReadCloser, error)) (pkg *types.Package, err error) {
 	var rc io.ReadCloser
-	var filename, id string
+	var id string
 	if lookup != nil {
 		// With custom lookup specified, assume that caller has
 		// converted path to a canonical import path for use in the map.
@@ -65,6 +65,7 @@ func Import(fset *token.FileSet, packages map[string]*types.Package, path, srcDi
 		}
 		rc = f
 	} else {
+		var filename string
 		filename, id, err = FindPkg(path, srcDir)
 		if filename == "" {
 			if path == "unsafe" {
@@ -93,43 +94,15 @@ func Import(fset *token.FileSet, packages map[string]*types.Package, path, srcDi
 	}
 	defer rc.Close()
 
-	var size int64
 	buf := bufio.NewReader(rc)
-	if size, err = FindExportData(buf); err != nil {
-		return
-	}
-
-	var data []byte
-	data, err = io.ReadAll(buf)
+	data, err := ReadUnified(buf)
 	if err != nil {
+		err = fmt.Errorf("import %q: %v", path, err)
 		return
 	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("no data to load a package from for path %s", id)
-	}
 
-	// Select appropriate importer.
-	switch data[0] {
-	case 'v', 'c', 'd':
-		// binary: emitted by cmd/compile till go1.10; obsolete.
-		return nil, fmt.Errorf("binary (%c) import format is no longer supported", data[0])
+	// unified: emitted by cmd/compile since go1.20.
+	_, pkg, err = UImportData(fset, packages, data, id)
 
-	case 'i':
-		// indexed: emitted by cmd/compile till go1.19;
-		// now used only for serializing go/types.
-		// See https://github.com/golang/go/issues/69491.
-		return nil, fmt.Errorf("indexed (i) import format is no longer supported")
-
-	case 'u':
-		// unified: emitted by cmd/compile since go1.20.
-		_, pkg, err := UImportData(fset, packages, data[1:size], id)
-		return pkg, err
-
-	default:
-		l := len(data)
-		if l > 10 {
-			l = 10
-		}
-		return nil, fmt.Errorf("unexpected export data with prefix %q for path %s", string(data[:l]), id)
-	}
+	return
 }

@@ -31,58 +31,33 @@ import (
 // accept inputs produced by the last two releases of cmd/compile,
 // plus tip.
 func FindExportData(r *bufio.Reader) (size int64, err error) {
-	// Read first line to make sure this is an object file.
-	line, err := r.ReadSlice('\n')
+	arsize, err := FindPackageDefinition(r)
 	if err != nil {
-		err = fmt.Errorf("can't find export data (%v)", err)
-		return
-	}
-
-	// Is the first line an archive file signature?
-	if string(line) != "!<arch>\n" {
-		err = fmt.Errorf("not the start of an archive file (%q)", line)
-		return
-	}
-
-	// Archive file with the first file being __.PKGDEF.
-	arsize := readArchiveHeader(r, "__.PKGDEF")
-	if arsize <= 0 {
-		err = fmt.Errorf("not a package file")
 		return
 	}
 	size = int64(arsize)
 
-	// Read first line of __.PKGDEF data, so that line
-	// is once again the first line of the input.
-	if line, err = r.ReadSlice('\n'); err != nil {
-		err = fmt.Errorf("can't find export data (%v)", err)
+	objapi, headers, err := ReadObjectHeaders(r)
+	if err != nil {
 		return
 	}
-	size -= int64(len(line))
-
-	// Now at __.PKGDEF in archive or still at beginning of file.
-	// Either way, line should begin with "go object ".
-	if !strings.HasPrefix(string(line), "go object ") {
-		err = fmt.Errorf("not a Go object file")
-		return
-	}
-
-	// Skip over object headers to get to the export data section header "$$B\n".
-	// Object headers are lines that do not start with '$'.
-	for line[0] != '$' {
-		if line, err = r.ReadSlice('\n'); err != nil {
-			err = fmt.Errorf("can't find export data (%v)", err)
-			return
-		}
-		size -= int64(len(line))
+	size -= int64(len(objapi))
+	for _, h := range headers {
+		size -= int64(len(h))
 	}
 
 	// Check for the binary export data section header "$$B\n".
+	// TODO(taking): Unify with ReadExportDataHeader so that it stops at the 'u' instead of reading
+	line, err := r.ReadSlice('\n')
+	if err != nil {
+		return
+	}
 	hdr := string(line)
 	if hdr != "$$B\n" {
 		err = fmt.Errorf("unknown export data header: %q", hdr)
 		return
 	}
+	size -= int64(len(hdr))
 
 	// For files with a binary export data header "$$B\n",
 	// these are always terminated by an end-of-section marker "\n$$\n".
