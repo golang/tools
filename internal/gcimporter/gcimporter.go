@@ -65,12 +65,12 @@ func Import(fset *token.FileSet, packages map[string]*types.Package, path, srcDi
 		}
 		rc = f
 	} else {
-		filename, id = FindPkg(path, srcDir)
+		filename, id, err = FindPkg(path, srcDir)
 		if filename == "" {
 			if path == "unsafe" {
 				return types.Unsafe, nil
 			}
-			return nil, fmt.Errorf("can't find import: %q", id)
+			return nil, err
 		}
 
 		// no need to re-import if the package was imported completely before

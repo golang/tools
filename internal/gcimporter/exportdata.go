@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// This file is a copy of $GOROOT/src/go/internal/gcimporter/exportdata.go.
-
-// This file implements FindExportData.
+// This file should be kept in sync with $GOROOT/src/internal/exportdata/exportdata.go.
+// This file also additionally implements FindExportData for gcexportdata.NewReader.
 
 package gcimporter
 
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"go/build"
 	"os"
@@ -110,10 +110,13 @@ func FindExportData(r *bufio.Reader) (size int64, err error) {
 // path based on package information provided by build.Import (using
 // the build.Default build.Context). A relative srcDir is interpreted
 // relative to the current working directory.
-// If no file was found, an empty filename is returned.
-func FindPkg(path, srcDir string) (filename, id string) {
+//
+// FindPkg is only used in tests within x/tools.
+func FindPkg(path, srcDir string) (filename, id string, err error) {
+	// TODO(taking): Move internal/exportdata.FindPkg into its own file,
+	// and then this copy into a _test package.
 	if path == "" {
-		return
+		return "", "", errors.New("path is empty")
 	}
 
 	var noext string
@@ -124,20 +127,23 @@ func FindPkg(path, srcDir string) (filename, id string) {
 		if abs, err := filepath.Abs(srcDir); err == nil { // see issue 14282
 			srcDir = abs
 		}
-		bp, _ := build.Import(path, srcDir, build.FindOnly|build.AllowBinary)
+		var bp *build.Package
+		bp, err = build.Import(path, srcDir, build.FindOnly|build.AllowBinary)
 		if bp.PkgObj == "" {
-			var ok bool
 			if bp.Goroot && bp.Dir != "" {
-				filename, ok = lookupGorootExport(bp.Dir)
+				filename, err = lookupGorootExport(bp.Dir)
+				if err == nil {
+					_, err = os.Stat(filename)
+				}
+				if err == nil {
+					return filename, bp.ImportPath, nil
+				}
 			}
-			if !ok {
-				id = path // make sure we have an id to print in error message
-				return
-			}
+			goto notfound
 		} else {
 			noext = strings.TrimSuffix(bp.PkgObj, ".a")
-			id = bp.ImportPath
 		}
+		id = bp.ImportPath
 
 	case build.IsLocalImport(path):
 		// "./x" -> "/this/directory/x.ext", "/this/directory/x"
@@ -158,27 +164,28 @@ func FindPkg(path, srcDir string) (filename, id string) {
 		}
 	}
 
-	if filename != "" {
-		if f, err := os.Stat(filename); err == nil && !f.IsDir() {
-			return
-		}
-	}
-
 	// try extensions
 	for _, ext := range pkgExts {
 		filename = noext + ext
-		if f, err := os.Stat(filename); err == nil && !f.IsDir() {
-			return
+		f, statErr := os.Stat(filename)
+		if statErr == nil && !f.IsDir() {
+			return filename, id, nil
+		}
+		if err == nil {
+			err = statErr
 		}
 	}
 
-	filename = "" // not found
-	return
+notfound:
+	if err == nil {
+		return "", path, fmt.Errorf("can't find import: %q", path)
+	}
+	return "", path, fmt.Errorf("can't find import: %q: %w", path, err)
 }
 
-var pkgExts = [...]string{".a", ".o"}
+var pkgExts = [...]string{".a", ".o"} // a file from the build cache will have no extension
 
-var exportMap sync.Map // package dir → func() (string, bool)
+var exportMap sync.Map // package dir → func() (string, error)
 
 // lookupGorootExport returns the location of the export data
 // (normally found in the build cache, but located in GOROOT/pkg
@@ -187,34 +194,42 @@ var exportMap sync.Map // package dir → func() (string, bool)
 // (We use the package's directory instead of its import path
 // mainly to simplify handling of the packages in src/vendor
 // and cmd/vendor.)
-func lookupGorootExport(pkgDir string) (string, bool) {
+//
+// lookupGorootExport is only used in tests within x/tools.
+func lookupGorootExport(pkgDir string) (string, error) {
 	f, ok := exportMap.Load(pkgDir)
 	if !ok {
 		var (
 			listOnce   sync.Once
 			exportPath string
+			err        error
 		)
-		f, _ = exportMap.LoadOrStore(pkgDir, func() (string, bool) {
+		f, _ = exportMap.LoadOrStore(pkgDir, func() (string, error) {
 			listOnce.Do(func() {
-				cmd := exec.Command("go", "list", "-export", "-f", "{{.Export}}", pkgDir)
+				cmd := exec.Command(filepath.Join(build.Default.GOROOT, "bin", "go"), "list", "-export", "-f", "{{.Export}}", pkgDir)
 				cmd.Dir = build.Default.GOROOT
+				cmd.Env = append(os.Environ(), "PWD="+cmd.Dir, "GOROOT="+build.Default.GOROOT)
 				var output []byte
-				output, err := cmd.Output()
+				output, err = cmd.Output()
 				if err != nil {
+					if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
+						err = errors.New(string(ee.Stderr))
+					}
 					return
 				}
 
 				exports := strings.Split(string(bytes.TrimSpace(output)), "\n")
 				if len(exports) != 1 {
+					err = fmt.Errorf("go list reported %d exports; expected 1", len(exports))
 					return
 				}
 
 				exportPath = exports[0]
 			})
 
-			return exportPath, exportPath != ""
+			return exportPath, err
 		})
 	}
 
-	return f.(func() (string, bool))()
+	return f.(func() (string, error))()
 }

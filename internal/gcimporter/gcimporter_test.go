@@ -129,9 +129,9 @@ func testImportTestdata(t *testing.T) {
 
 	packageFiles := map[string]string{}
 	for _, pkg := range []string{"go/ast", "go/token"} {
-		export, _ := gcimporter.FindPkg(pkg, "testdata")
+		export, _, err := gcimporter.FindPkg(pkg, "testdata")
 		if export == "" {
-			t.Fatalf("no export data found for %s", pkg)
+			t.Fatalf("no export data found for %s: %s", pkg, err)
 		}
 		packageFiles[pkg] = export
 	}
@@ -587,9 +587,9 @@ func TestIssue13566(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	jsonExport, _ := gcimporter.FindPkg("encoding/json", "testdata")
+	jsonExport, _, err := gcimporter.FindPkg("encoding/json", "testdata")
 	if jsonExport == "" {
-		t.Fatalf("no export data found for encoding/json")
+		t.Fatalf("no export data found for encoding/json: %s", err)
 	}
 
 	compilePkg(t, "testdata", "a.go", testoutdir, map[string]string{"encoding/json": jsonExport}, apkg(testoutdir))
