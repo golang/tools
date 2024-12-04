@@ -17,8 +17,8 @@ func _(ptr *int) {
 -- @spaces/a.go --
 @@ -4 +4,2 @@
 -	var _ = 1 + 2 + 3 //@codeaction("1 + 2 ", "refactor.extract.constant", edit=spaces)
-+	const x = 1 + 2
-+	var _ = x+ 3 //@codeaction("1 + 2 ", "refactor.extract.constant", edit=spaces)
++	const k = 1 + 2
++	var _ = k+ 3 //@codeaction("1 + 2 ", "refactor.extract.constant", edit=spaces)
 -- @funclit/a.go --
 @@ -5 +5,2 @@
 -	var _ = func() {} //@codeaction("func() {}", "refactor.extract.variable", edit=funclit)

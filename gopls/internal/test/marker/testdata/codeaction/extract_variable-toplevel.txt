@@ -1,0 +1,51 @@
+This test checks the behavior of the 'extract variable/constant' code action
+at top level (outside any function). See issue #70665.
+
+-- a.go --
+package a
+
+const length = len("hello") + 2 //@codeaction(`len("hello")`, "refactor.extract.constant", edit=lenhello)
+
+var slice = append([]int{}, 1, 2, 3) //@codeaction("[]int{}", "refactor.extract.variable", edit=sliceliteral)
+
+type SHA256 [32]byte //@codeaction("32", "refactor.extract.constant", edit=arraylen)
+
+func f([2]int) {} //@codeaction("2", "refactor.extract.constant", edit=paramtypearraylen)
+
+-- @lenhello/a.go --
+@@ -3 +3,2 @@
+-const length = len("hello") + 2 //@codeaction(`len("hello")`, "refactor.extract.constant", edit=lenhello)
++const k = len("hello")
++const length = k + 2 //@codeaction(`len("hello")`, "refactor.extract.constant", edit=lenhello)
+-- @sliceliteral/a.go --
+@@ -5 +5,2 @@
+-var slice = append([]int{}, 1, 2, 3) //@codeaction("[]int{}", "refactor.extract.variable", edit=sliceliteral)
++var x = []int{}
++var slice = append(x, 1, 2, 3) //@codeaction("[]int{}", "refactor.extract.variable", edit=sliceliteral)
+-- @arraylen/a.go --
+@@ -7 +7,2 @@
+-type SHA256 [32]byte //@codeaction("32", "refactor.extract.constant", edit=arraylen)
++const k = 32
++type SHA256 [k]byte //@codeaction("32", "refactor.extract.constant", edit=arraylen)
+-- @paramtypearraylen/a.go --
+@@ -9 +9,2 @@
+-func f([2]int) {} //@codeaction("2", "refactor.extract.constant", edit=paramtypearraylen)
++const k = 2
++func f([k]int) {} //@codeaction("2", "refactor.extract.constant", edit=paramtypearraylen)
+-- b/b.go --
+package b
+
+// Check that package- and file-level name collisions are avoided.
+
+import x3 "errors"
+
+var x, x1, x2 any // these names are taken already
+var _ = x3.New("")
+var a, b int
+var c = a + b //@codeaction("a + b", "refactor.extract.variable", edit=fresh)
+
+-- @fresh/b/b.go --
+@@ -10 +10,2 @@
+-var c = a + b //@codeaction("a + b", "refactor.extract.variable", edit=fresh)
++var x4 = a + b
++var c = x4 //@codeaction("a + b", "refactor.extract.variable", edit=fresh)

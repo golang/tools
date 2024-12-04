@@ -65,8 +65,9 @@ func TypeErrorEndPos(fset *token.FileSet, src []byte, start token.Pos) token.Pos
 	return end
 }
 
-// StmtToInsertVarBefore returns the ast.Stmt before which we can safely insert a new variable.
-// Some examples:
+// StmtToInsertVarBefore returns the ast.Stmt before which we can
+// safely insert a new var declaration, or nil if the path denotes a
+// node outside any statement.
 //
 // Basic Example:
 //
@@ -93,7 +94,7 @@ func StmtToInsertVarBefore(path []ast.Node) ast.Stmt {
 		}
 	}
 	if enclosingIndex == -1 {
-		return nil
+		return nil // no enclosing statement: outside function
 	}
 	enclosingStmt := path[enclosingIndex]
 	switch enclosingStmt.(type) {
@@ -101,6 +102,9 @@ func StmtToInsertVarBefore(path []ast.Node) ast.Stmt {
 		// The enclosingStmt is inside of the if declaration,
 		// We need to check if we are in an else-if stmt and
 		// get the base if statement.
+		// TODO(adonovan): for non-constants, it may be preferable
+		// to add the decl as the Init field of the innermost
+		// enclosing ast.IfStmt.
 		return baseIfStmt(path, enclosingIndex)
 	case *ast.CaseClause:
 		// Get the enclosing switch stmt if the enclosingStmt is

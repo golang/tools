@@ -132,6 +132,9 @@ func findFileInDeps(s metadata.Source, mp *metadata.Package, uri protocol.Docume
 
 // CollectScopes returns all scopes in an ast path, ordered as innermost scope
 // first.
+//
+// TODO(adonovan): move this to golang/completion and simplify to use
+// Scopes.Innermost and LookupParent instead.
 func CollectScopes(info *types.Info, path []ast.Node, pos token.Pos) []*types.Scope {
 	// scopes[i], where i<len(path), is the possibly nil Scope of path[i].
 	var scopes []*types.Scope
