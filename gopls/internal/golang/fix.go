@@ -68,6 +68,7 @@ const (
 	fixCreateUndeclared        = "create_undeclared"
 	fixMissingInterfaceMethods = "stub_missing_interface_method"
 	fixMissingCalledFunction   = "stub_missing_called_function"
+	fixMissingStructField      = "stub_missing_struct_field"
 )
 
 // ApplyFix applies the specified kind of suggested fix to the given
@@ -113,6 +114,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		fixCreateUndeclared:        singleFile(CreateUndeclared),
 		fixMissingInterfaceMethods: stubMissingInterfaceMethodsFixer,
 		fixMissingCalledFunction:   stubMissingCalledFunctionFixer,
+		fixMissingStructField:      stubMissingStructFieldFixer,
 	}
 	fixer, ok := fixers[fix]
 	if !ok {

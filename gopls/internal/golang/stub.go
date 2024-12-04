@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go/ast"
 	"go/format"
 	"go/parser"
 	"go/token"
@@ -49,6 +50,18 @@ func stubMissingCalledFunctionFixer(ctx context.Context, snapshot *cache.Snapsho
 		return nil, nil, fmt.Errorf("invalid type request")
 	}
 	return insertDeclsAfter(ctx, snapshot, pkg.Metadata(), si.Fset, si.After, si.Emit)
+}
+
+// stubMissingStructFieldFixer returns a suggested fix to declare the missing
+// field that the user may want to generate based on SelectorExpr
+// at the cursor position.
+func stubMissingStructFieldFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	fi := GetFieldStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes)
+	if fi == nil {
+		return nil, nil, fmt.Errorf("invalid type request")
+	}
+	return insertStructField(ctx, snapshot, pkg.Metadata(), fi)
 }
 
 // An emitter writes new top-level declarations into an existing
@@ -237,4 +250,67 @@ func trimVersionSuffix(path string) string {
 		return dir // sans "/v2"
 	}
 	return path
+}
+
+func insertStructField(ctx context.Context, snapshot *cache.Snapshot, meta *metadata.Package, fieldInfo *StructFieldInfo) (*token.FileSet, *analysis.SuggestedFix, error) {
+	if fieldInfo == nil {
+		return nil, nil, fmt.Errorf("no field info provided")
+	}
+
+	// get the file containing the struct definition using the position
+	declPGF, _, err := parseFull(ctx, snapshot, fieldInfo.Fset, fieldInfo.Named.Obj().Pos())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse file declaring struct: %w", err)
+	}
+	if declPGF.Fixed() {
+		return nil, nil, fmt.Errorf("file contains parse errors: %s", declPGF.URI)
+	}
+
+	// find the struct type declaration
+	var structType *ast.StructType
+	ast.Inspect(declPGF.File, func(n ast.Node) bool {
+		if typeSpec, ok := n.(*ast.TypeSpec); ok {
+			if typeSpec.Name.Name == fieldInfo.Named.Obj().Name() {
+				if st, ok := typeSpec.Type.(*ast.StructType); ok {
+					structType = st
+					return false
+				}
+			}
+		}
+		return true
+	})
+
+	if structType == nil {
+		return nil, nil, fmt.Errorf("could not find struct definition")
+	}
+
+	// find the position to insert the new field (end of struct fields)
+	insertPos := structType.Fields.Closing - 1
+	if insertPos == structType.Fields.Opening {
+		// struct has no fields yet
+		insertPos = structType.Fields.Closing
+	}
+
+	var buf bytes.Buffer
+	if err := fieldInfo.Emit(&buf, types.RelativeTo(fieldInfo.Named.Obj().Pkg())); err != nil {
+		return nil, nil, err
+	}
+
+	_, err = declPGF.Mapper.PosRange(declPGF.Tok, insertPos, insertPos)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	textEdit := analysis.TextEdit{
+		Pos:     insertPos,
+		End:     insertPos,
+		NewText: []byte(buf.String()),
+	}
+
+	fix := &analysis.SuggestedFix{
+		Message:   fmt.Sprintf("Add field %s to struct %s", fieldInfo.Expr.Sel.Name, fieldInfo.Named.Obj().Name()),
+		TextEdits: []analysis.TextEdit{textEdit},
+	}
+
+	return fieldInfo.Fset, fix, nil
 }

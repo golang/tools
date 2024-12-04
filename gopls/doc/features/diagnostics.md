@@ -248,6 +248,35 @@ func doSomething(i int) string {
   panic("unimplemented")
 }
 ```
+
+### `StubMissingStructField`: Declare missing field T.f
+
+When you attempt to access a field on a type that does not have the field,
+the compiler will report an error such as "type X has no field or method Y".
+In this scenario, gopls now offers a quick fix to generate a stub declaration of
+the missing field, inferring its type from the accessing type or assigning a designated value.
+
+Consider the following code where `Foo` does not have a field `bar`:
+
+```go
+type Foo struct{}
+
+func main() {
+  var s string
+  f := Foo{}
+  s = f.bar // error: f.bar undefined (type Foo has no field or method bar)
+}
+```
+
+Gopls will offer a quick fix, "Declare missing field Foo.bar".
+When invoked, it creates the following declaration:
+
+```go
+type Foo struct{
+  bar string
+}
+```
+
 <!--
 
 dorky details and deletia:
