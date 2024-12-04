@@ -11,32 +11,8 @@ package gcimporter
 import (
 	"bufio"
 	"fmt"
-	"io"
-	"strconv"
 	"strings"
 )
-
-func readGopackHeader(r *bufio.Reader) (name string, size int64, err error) {
-	// See $GOROOT/include/ar.h.
-	hdr := make([]byte, 16+12+6+6+8+10+2)
-	_, err = io.ReadFull(r, hdr)
-	if err != nil {
-		return
-	}
-	// leave for debugging
-	if false {
-		fmt.Printf("header: %s", hdr)
-	}
-	s := strings.TrimSpace(string(hdr[16+12+6+6+8:][:10]))
-	length, err := strconv.Atoi(s)
-	size = int64(length)
-	if err != nil || hdr[len(hdr)-2] != '`' || hdr[len(hdr)-1] != '\n' {
-		err = fmt.Errorf("invalid archive header")
-		return
-	}
-	name = strings.TrimSpace(string(hdr[:16]))
-	return
-}
 
 // FindExportData positions the reader r at the beginning of the
 // export data section of an underlying cmd/compile created archive
@@ -61,19 +37,13 @@ func FindExportData(r *bufio.Reader) (size int64, err error) {
 		return
 	}
 
-	// Archive file. Scan to __.PKGDEF.
-	var arsize int64
-	var name string
-	if name, arsize, err = readGopackHeader(r); err != nil {
+	// Archive file with the first file being __.PKGDEF.
+	arsize := readArchiveHeader(r, "__.PKGDEF")
+	if arsize <= 0 {
+		err = fmt.Errorf("not a package file")
 		return
 	}
-	size = arsize
-
-	// First entry should be __.PKGDEF.
-	if name != "__.PKGDEF" {
-		err = fmt.Errorf("go archive is missing __.PKGDEF")
-		return
-	}
+	size = int64(arsize)
 
 	// Read first line of __.PKGDEF data, so that line
 	// is once again the first line of the input.
