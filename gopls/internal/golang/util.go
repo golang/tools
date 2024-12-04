@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -128,31 +127,6 @@ func findFileInDeps(s metadata.Source, mp *metadata.Package, uri protocol.Docume
 		return nil
 	}
 	return search(mp)
-}
-
-// CollectScopes returns all scopes in an ast path, ordered as innermost scope
-// first.
-//
-// TODO(adonovan): move this to golang/completion and simplify to use
-// Scopes.Innermost and LookupParent instead.
-func CollectScopes(info *types.Info, path []ast.Node, pos token.Pos) []*types.Scope {
-	// scopes[i], where i<len(path), is the possibly nil Scope of path[i].
-	var scopes []*types.Scope
-	for _, n := range path {
-		// Include *FuncType scope if pos is inside the function body.
-		switch node := n.(type) {
-		case *ast.FuncDecl:
-			if node.Body != nil && astutil.NodeContains(node.Body, pos) {
-				n = node.Type
-			}
-		case *ast.FuncLit:
-			if node.Body != nil && astutil.NodeContains(node.Body, pos) {
-				n = node.Type
-			}
-		}
-		scopes = append(scopes, info.Scopes[n])
-	}
-	return scopes
 }
 
 // requalifier returns a function that re-qualifies identifiers and qualified

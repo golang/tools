@@ -294,6 +294,11 @@ type completer struct {
 	// including nil values for nodes that don't defined a scope. It
 	// also includes our package scope and the universal scope at the
 	// end.
+	//
+	// (It is tempting to replace this with fileScope.Innermost(pos)
+	// and simply follow the Scope.Parent chain, but we need to
+	// preserve the pairwise association of scopes[i] and path[i]
+	// because there is no way to get from the Scope to the Node.)
 	scopes []*types.Scope
 }
 
@@ -530,6 +535,8 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return nil, nil, fmt.Errorf("cannot find node enclosing position")
 	}
 
+	info := pkg.TypesInfo()
+
 	// Check if completion at this position is valid. If not, return early.
 	switch n := path[0].(type) {
 	case *ast.BasicLit:
@@ -548,7 +555,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		}
 	case *ast.Ident:
 		// Don't offer completions for (most) defining identifiers.
-		if obj, ok := pkg.TypesInfo().Defs[n]; ok {
+		if obj, ok := info.Defs[n]; ok {
 			if v, ok := obj.(*types.Var); ok && v.IsField() && v.Embedded() {
 				// Allow completion of anonymous fields, since they may reference type
 				// names.
@@ -570,21 +577,31 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		}
 	}
 
-	// Collect all surrounding scopes, innermost first.
-	scopes := golang.CollectScopes(pkg.TypesInfo(), path, pos)
+	// Collect all surrounding scopes, innermost first, inserting
+	// nils as needed to preserve the correspondence with path[i].
+	var scopes []*types.Scope
+	for _, n := range path {
+		switch node := n.(type) {
+		case *ast.FuncDecl:
+			n = node.Type
+		case *ast.FuncLit:
+			n = node.Type
+		}
+		scopes = append(scopes, info.Scopes[n])
+	}
 	scopes = append(scopes, pkg.Types().Scope(), types.Universe)
 
 	var goversion string // "" => no version check
 	// Prior go1.22, the behavior of FileVersion is not useful to us.
 	if slices.Contains(build.Default.ReleaseTags, "go1.22") {
-		goversion = versions.FileVersion(pkg.TypesInfo(), pgf.File) // may be ""
+		goversion = versions.FileVersion(info, pgf.File) // may be ""
 	}
 
 	opts := snapshot.Options()
 	c := &completer{
 		pkg:      pkg,
 		snapshot: snapshot,
-		qf:       typesutil.FileQualifier(pgf.File, pkg.Types(), pkg.TypesInfo()),
+		qf:       typesutil.FileQualifier(pgf.File, pkg.Types(), info),
 		mq:       golang.MetadataQualifierForFile(snapshot, pgf.File, pkg.Metadata()),
 		completionContext: completionContext{
 			triggerCharacter: protoContext.TriggerCharacter,
@@ -598,8 +615,8 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		path:                      path,
 		pos:                       pos,
 		seen:                      make(map[types.Object]bool),
-		enclosingFunc:             enclosingFunction(path, pkg.TypesInfo()),
-		enclosingCompositeLiteral: enclosingCompositeLiteral(path, pos, pkg.TypesInfo()),
+		enclosingFunc:             enclosingFunction(path, info),
+		enclosingCompositeLiteral: enclosingCompositeLiteral(path, pos, info),
 		deepState: deepCompletionState{
 			enabled: opts.DeepCompletion,
 		},
@@ -1612,7 +1629,7 @@ func (c *completer) lexical(ctx context.Context) error {
 		for _, name := range scope.Names() {
 			declScope, obj := scope.LookupParent(name, c.pos)
 			if declScope != scope {
-				continue // Name was declared in some enclosing scope, or not at all.
+				continue // scope of name starts after c.pos
 			}
 
 			// If obj's type is invalid, find the AST node that defines the lexical block
