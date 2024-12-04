@@ -2,7 +2,8 @@ Basic tests of inlining a call on the RHS of an assignment.
 
 -- go.mod --
 module testdata
-go 1.12
+
+go 1.20
 
 -- a/a1.go --
 package a
@@ -104,13 +105,11 @@ package a
 
 import (
 	"testdata/b"
-	"testdata/c"
 )
 
 func _() {
 	var y int
-	var x c.C
-	x, y = b.B1() //@ inline(re"B", b2)
+	x, y := b.B1() //@ inline(re"B", b2)
 	_, _ = x, y
 }
 -- b3 --

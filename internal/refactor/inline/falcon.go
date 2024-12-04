@@ -446,7 +446,7 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 			// - for an array or *array, use [n]int.
 			// The last two entail progressively stronger index checks.
 			var ct ast.Expr // type syntax for constraint
-			switch t := t.(type) {
+			switch t := typeparams.CoreType(t).(type) {
 			case *types.Map:
 				if types.IsInterface(t.Key()) {
 					ct = &ast.MapType{
@@ -465,7 +465,7 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 					Elt: makeIdent(st.int),
 				}
 			default:
-				panic(t)
+				panic(fmt.Sprintf("%T: %v", t, t))
 			}
 			st.emitUnique(ct, uniques)
 		}

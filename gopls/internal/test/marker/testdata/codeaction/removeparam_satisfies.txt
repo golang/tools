@@ -42,8 +42,7 @@ var _ Fooer = rm.T(0)
 
 func _() {
 	var x rm.T
-	var t rm.T = x
-	t.Foo()
+	x.Foo()
 }
 -- use/use.go --
 package use

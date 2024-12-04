@@ -1530,3 +1530,13 @@ var local renamedctx.Context
 +		})
 +	}
 +}
+-- typeparameter/typeparameter.go --
+package main
+
+func Function[T any] () {} // no suggested fix
+
+type Foo struct {}
+
+func NewFoo()
+
+func (*Foo) Method[T any]() {} // no suggested fix

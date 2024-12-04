@@ -99,6 +99,7 @@ const (
 	RefactorInlineCall protocol.CodeActionKind = "refactor.inline.call"
 
 	// refactor.extract
+	RefactorExtractConstant  protocol.CodeActionKind = "refactor.extract.constant"
 	RefactorExtractFunction  protocol.CodeActionKind = "refactor.extract.function"
 	RefactorExtractMethod    protocol.CodeActionKind = "refactor.extract.method"
 	RefactorExtractVariable  protocol.CodeActionKind = "refactor.extract.variable"

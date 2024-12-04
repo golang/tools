@@ -67,16 +67,13 @@ package a
 
 import (
 	"mod.test/b"
-	"mod.test/c"
 )
 
 func _() {
-	var _ c.C = <-b.Chan
 	b.B(<-b.Chan)
 }
 
 func _() {
-	var _ c.C = <-b.Chan
 	b.B(<-b.Chan)
 }
 -- @b/a/a2.go --
@@ -84,13 +81,10 @@ package a
 
 import (
 	"mod.test/b"
-	"mod.test/c"
 )
 
 func _() {
-	var _ c.C = <-b.Chan
 	b.B(<-b.Chan)
-	var _ c.C = <-b.Chan
 	b.B(<-b.Chan)
 }
 -- @b/a/a1.go --
@@ -98,11 +92,9 @@ package a
 
 import (
 	"mod.test/b"
-	"mod.test/c"
 )
 
 func _() {
-	var _ c.C = <-b.Chan
 	b.B(<-b.Chan)
 }
 -- @b/a/a4.go --
@@ -113,11 +105,9 @@ package a
 import (
 	"mod.test/b"
 	. "mod.test/b"
-	"mod.test/c"
 )
 
 func _() {
-	var _ c.C = <-Chan
 	b.B(<-Chan)
 }
 -- @b/b/b.go --

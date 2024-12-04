@@ -83,3 +83,38 @@ func tricky(in io.ReadCloser) func(yield func(string, error) bool) {
 		}
 	}
 }
+
+// Regression test for issue #70598.
+func shortCircuitAND(yield func(int) bool) {
+	ok := yield(1)
+	ok = ok && yield(2)
+	ok = ok && yield(3)
+	ok = ok && yield(4)
+}
+
+// This example has a bug because a false yield(2) may be followed by yield(3).
+func tricky2(yield func(int) bool) {
+	cleanup := func() {}
+	ok := yield(1)          // want "yield may be called again .on L104"
+	stop := !ok || yield(2) // want "yield may be called again .on L104"
+	if stop {
+		cleanup()
+	} else {
+		// dominated by !stop => !(!ok || yield(2)) => yield(1) && !yield(2): bad.
+		yield(3)
+	}
+}
+
+// This example is sound, but the analyzer reports a false positive.
+// TODO(adonovan): prune infeasible paths more carefully.
+func tricky3(yield func(int) bool) {
+	cleanup := func() {}
+	ok := yield(1)           // want "yield may be called again .on L118"
+	stop := !ok || !yield(2) // want "yield may be called again .on L118"
+	if stop {
+		cleanup()
+	} else {
+		// dominated by !stop => !(!ok || !yield(2)) => yield(1) && yield(2): good.
+		yield(3)
+	}
+}

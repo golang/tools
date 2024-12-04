@@ -1,0 +1,113 @@
+This test checks that parameter shadowing is avoided for substitution groups,
+as well as the examples of recursive pruning of these groups based on falcon
+and effects analysis.
+
+-- go.mod --
+module testdata
+
+go 1.20
+
+-- falcon.go --
+package a
+
+var a [3]int
+
+func falcon(x, y, z int) {
+	_ = x + a[y+z]
+}
+
+func _() {
+	var y int
+	const x, z = 1, 2
+	falcon(y, x, z) //@ inline(re"falcon", falcon)
+}
+
+-- falcon --
+package a
+
+var a [3]int
+
+func falcon(x, y, z int) {
+	_ = x + a[y+z]
+}
+
+func _() {
+	var y int
+	const x, z = 1, 2
+	{
+		var x, y, z int = y, x, z
+		_ = x + a[y+z]
+	} //@ inline(re"falcon", falcon)
+}
+
+-- effects.go --
+package a
+
+func effects(w, x, y, z int) {
+	_ = x + w + y + z
+}
+
+func _() {
+  v := 0
+  w := func() int { v++; return 0 }
+  x := func() int { v++; return 0 }
+  y := func() int { v++; return 0 }
+	effects(x(), w(), y(), x()) //@ inline(re"effects", effects)
+}
+
+-- effects --
+package a
+
+func effects(w, x, y, z int) {
+	_ = x + w + y + z
+}
+
+func _() {
+	v := 0
+	w := func() int { v++; return 0 }
+	x := func() int { v++; return 0 }
+	y := func() int { v++; return 0 }
+	{
+		var w, x, y, z int = x(), w(), y(), x()
+		_ = x + w + y + z
+	} //@ inline(re"effects", effects)
+}
+
+-- negative.go --
+package a
+
+func _() {
+	i := -1
+	if negative1(i, i) { //@ inline(re"negative1", negative1)
+		i := 0
+		_ = i
+	}
+}
+
+func negative1(i, j int) bool {
+	return negative2(j, i)
+}
+
+func negative2(i, j int) bool {
+	return i < 0
+}
+
+-- negative1 --
+package a
+
+func _() {
+	i := -1
+	if negative2(i, i) { //@ inline(re"negative1", negative1)
+		i := 0
+		_ = i
+	}
+}
+
+func negative1(i, j int) bool {
+	return negative2(j, i)
+}
+
+func negative2(i, j int) bool {
+	return i < 0
+}
+

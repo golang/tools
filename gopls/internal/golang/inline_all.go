@@ -44,7 +44,7 @@ import (
 //
 // The code below notes where are assumptions are made that only hold true in
 // the case of parameter removal (annotated with 'Assumption:')
-func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte) (map[protocol.DocumentURI][]byte, error) {
+func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte, opts *inline.Options) (map[protocol.DocumentURI][]byte, error) {
 	// Collect references.
 	var refs []protocol.Location
 	{
@@ -215,7 +215,7 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 				Call:    calls[currentCall],
 				Content: content,
 			}
-			res, err := inline.Inline(caller, callee, &inline.Options{Logf: logf})
+			res, err := inline.Inline(caller, callee, opts)
 			if err != nil {
 				return nil, fmt.Errorf("inlining failed: %v", err)
 			}
@@ -252,6 +252,10 @@ func inlineAllCalls(ctx context.Context, logf func(string, ...any), snapshot *ca
 			// anything in the surrounding scope.
 			//
 			// TODO(rfindley): improve this.
+			logf := func(string, ...any) {}
+			if opts != nil {
+				logf = opts.Logf
+			}
 			tpkg, tinfo, err = reTypeCheck(logf, callInfo.pkg, map[protocol.DocumentURI]*ast.File{uri: file}, true)
 			if err != nil {
 				return nil, bug.Errorf("type checking after inlining failed: %v", err)

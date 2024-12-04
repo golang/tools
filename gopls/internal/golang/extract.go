@@ -26,113 +26,201 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
+// extractVariable implements the refactor.extract.{variable,constant} CodeAction command.
 func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	tokFile := fset.File(file.FileStart)
-	expr, path, ok, err := canExtractVariable(info, file, start, end)
-	if !ok {
-		return nil, nil, fmt.Errorf("extractVariable: cannot extract %s: %v", safetoken.StartPosition(fset, start), err)
+	expr, path, err := canExtractVariable(info, file, start, end)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot extract %s: %v", safetoken.StartPosition(fset, start), err)
 	}
+	constant := info.Types[expr].Value != nil
 
-	// Create new AST node for extracted expression.
+	// Generate name(s) for new declaration.
+	baseName := cond(constant, "k", "x")
 	var lhsNames []string
 	switch expr := expr.(type) {
 	case *ast.CallExpr:
 		tup, ok := info.TypeOf(expr).(*types.Tuple)
 		if !ok {
-			// If the call expression only has one return value, we can treat it the
-			// same as our standard extract variable case.
-			lhsName, _ := generateAvailableName(expr.Pos(), path, pkg, info, "x", 0)
-			lhsNames = append(lhsNames, lhsName)
-			break
-		}
-		idx := 0
-		for i := 0; i < tup.Len(); i++ {
-			// Generate a unique variable for each return value.
-			var lhsName string
-			lhsName, idx = generateAvailableName(expr.Pos(), path, pkg, info, "x", idx)
-			lhsNames = append(lhsNames, lhsName)
+			// conversion or single-valued call:
+			// treat it the same as our standard extract variable case.
+			name, _ := freshName(info, file, expr.Pos(), baseName, 0)
+			lhsNames = append(lhsNames, name)
+
+		} else {
+			// call with multiple results
+			idx := 0
+			for range tup.Len() {
+				// Generate a unique variable for each result.
+				var name string
+				name, idx = freshName(info, file, expr.Pos(), baseName, idx)
+				lhsNames = append(lhsNames, name)
+			}
 		}
 
 	default:
 		// TODO: stricter rules for selectorExpr.
-		lhsName, _ := generateAvailableName(expr.Pos(), path, pkg, info, "x", 0)
-		lhsNames = append(lhsNames, lhsName)
+		name, _ := freshName(info, file, expr.Pos(), baseName, 0)
+		lhsNames = append(lhsNames, name)
 	}
 
 	// TODO: There is a bug here: for a variable declared in a labeled
 	// switch/for statement it returns the for/switch statement itself
-	// which produces the below code which is a compiler error e.g.
-	// label:
-	// switch r1 := r() { ... break label ... }
+	// which produces the below code which is a compiler error. e.g.
+	//     label:
+	//         switch r1 := r() { ... break label ... }
 	// On extracting "r()" to a variable
-	// label:
-	// x := r()
-	// switch r1 := x { ... break label ... } // compiler error
-	insertBeforeStmt := analysisinternal.StmtToInsertVarBefore(path)
-	if insertBeforeStmt == nil {
-		return nil, nil, fmt.Errorf("cannot find location to insert extraction")
-	}
-	indent, err := calculateIndentation(src, tokFile, insertBeforeStmt)
-	if err != nil {
-		return nil, nil, err
-	}
-	newLineIndent := "\n" + indent
+	//     label:
+	//         x := r()
+	//         switch r1 := x { ... break label ... } // compiler error
+	//
+	// TODO(golang/go#70563): Another bug: extracting the
+	// expression to the recommended place may cause it to migrate
+	// across one or more declarations that it references.
+	//
+	// Before:
+	//   if x := 1; cond {
+	//   } else if y := «x + 2»; cond {
+	//   }
+	//
+	// After:
+	//   x1 := x + 2 // error: undefined x
+	//   if x := 1; cond {
+	//   } else if y := x1; cond {
+	//   }
+	var (
+		insertPos   token.Pos
+		indentation string
+		stmtOK      bool // ok to use ":=" instead of var/const decl?
+	)
+	if before := analysisinternal.StmtToInsertVarBefore(path); before != nil {
+		// Within function: compute appropriate statement indentation.
+		indent, err := calculateIndentation(src, tokFile, before)
+		if err != nil {
+			return nil, nil, err
+		}
+		insertPos = before.Pos()
+		indentation = "\n" + indent
 
-	lhs := strings.Join(lhsNames, ", ")
-	assignStmt := &ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent(lhs)},
-		Tok: token.DEFINE,
-		Rhs: []ast.Expr{expr},
+		// Currently, we always extract a constant expression
+		// to a const declaration (and logic in CodeAction
+		// assumes that we do so); this is conservative because
+		// it preserves its constant-ness.
+		//
+		// In future, constant expressions used only in
+		// contexts where constant-ness isn't important could
+		// be profitably extracted to a var declaration or :=
+		// statement, especially if the latter is the Init of
+		// an {If,For,Switch}Stmt.
+		stmtOK = !constant
+	} else {
+		// Outside any statement: insert before the current
+		// declaration, without indentation.
+		currentDecl := path[len(path)-2]
+		insertPos = currentDecl.Pos()
+		indentation = "\n"
 	}
+
+	// Create statement to declare extracted var/const.
+	//
+	// TODO(adonovan): beware the const decls are not valid short
+	// statements, so if fixing #70563 causes
+	// StmtToInsertVarBefore to evolve to permit declarations in
+	// the "pre" part of an IfStmt, like so:
+	//   Before:
+	//	if cond {
+	//      } else if «1 + 2» > 0 {
+	//      }
+	//   After:
+	//	if x := 1 + 2; cond {
+	//      } else if x > 0 {
+	//      }
+	// then it will need to become aware that this is invalid
+	// for constants.
+	//
+	// Conversely, a short var decl stmt is not valid at top level,
+	// so when we fix #70665, we'll need to use a var decl.
+	var newNode ast.Node
+	if !stmtOK {
+		// var/const x1, ..., xn = expr
+		var names []*ast.Ident
+		for _, name := range lhsNames {
+			names = append(names, ast.NewIdent(name))
+		}
+		newNode = &ast.GenDecl{
+			Tok: cond(constant, token.CONST, token.VAR),
+			Specs: []ast.Spec{
+				&ast.ValueSpec{
+					Names:  names,
+					Values: []ast.Expr{expr},
+				},
+			},
+		}
+
+	} else {
+		// var: x1, ... xn := expr
+		var lhs []ast.Expr
+		for _, name := range lhsNames {
+			lhs = append(lhs, ast.NewIdent(name))
+		}
+		newNode = &ast.AssignStmt{
+			Tok: token.DEFINE,
+			Lhs: lhs,
+			Rhs: []ast.Expr{expr},
+		}
+	}
+
+	// Format and indent the declaration.
 	var buf bytes.Buffer
-	if err := format.Node(&buf, fset, assignStmt); err != nil {
+	if err := format.Node(&buf, fset, newNode); err != nil {
 		return nil, nil, err
 	}
-	assignment := strings.ReplaceAll(buf.String(), "\n", newLineIndent) + newLineIndent
+	// TODO(adonovan): not sound for `...` string literals containing newlines.
+	assignment := strings.ReplaceAll(buf.String(), "\n", indentation) + indentation
 
 	return fset, &analysis.SuggestedFix{
 		TextEdits: []analysis.TextEdit{
 			{
-				Pos:     insertBeforeStmt.Pos(),
-				End:     insertBeforeStmt.Pos(),
+				Pos:     insertPos,
+				End:     insertPos,
 				NewText: []byte(assignment),
 			},
 			{
 				Pos:     start,
 				End:     end,
-				NewText: []byte(lhs),
+				NewText: []byte(strings.Join(lhsNames, ", ")),
 			},
 		},
 	}, nil
 }
 
 // canExtractVariable reports whether the code in the given range can be
-// extracted to a variable.
-func canExtractVariable(info *types.Info, file *ast.File, start, end token.Pos) (ast.Expr, []ast.Node, bool, error) {
+// extracted to a variable (or constant).
+func canExtractVariable(info *types.Info, file *ast.File, start, end token.Pos) (ast.Expr, []ast.Node, error) {
 	if start == end {
-		return nil, nil, false, fmt.Errorf("empty selection")
+		return nil, nil, fmt.Errorf("empty selection")
 	}
 	path, exact := astutil.PathEnclosingInterval(file, start, end)
 	if !exact {
-		return nil, nil, false, fmt.Errorf("selection is not an expression")
+		return nil, nil, fmt.Errorf("selection is not an expression")
 	}
 	if len(path) == 0 {
-		return nil, nil, false, bug.Errorf("no path enclosing interval")
+		return nil, nil, bug.Errorf("no path enclosing interval")
 	}
 	for _, n := range path {
 		if _, ok := n.(*ast.ImportSpec); ok {
-			return nil, nil, false, fmt.Errorf("cannot extract variable in an import block")
+			return nil, nil, fmt.Errorf("cannot extract variable or constant in an import block")
 		}
 	}
 	expr, ok := path[0].(ast.Expr)
 	if !ok {
-		return nil, nil, false, fmt.Errorf("selection is not an expression") // e.g. statement
+		return nil, nil, fmt.Errorf("selection is not an expression") // e.g. statement
 	}
 	if tv, ok := info.Types[expr]; !ok || !tv.IsValue() || tv.Type == nil || tv.HasOk() {
 		// e.g. type, builtin, x.(type), 2-valued m[k], or ill-typed
-		return nil, nil, false, fmt.Errorf("selection is not a single-valued expression")
+		return nil, nil, fmt.Errorf("selection is not a single-valued expression")
 	}
-	return expr, path, true, nil
+	return expr, path, nil
 }
 
 // Calculate indentation for insertion.
@@ -148,40 +236,36 @@ func calculateIndentation(content []byte, tok *token.File, insertBeforeStmt ast.
 	return string(content[lineOffset:stmtOffset]), nil
 }
 
-// generateAvailableName adjusts the new function name until there are no collisions in scope.
-// Possible collisions include other function and variable names. Returns the next index to check for prefix.
-func generateAvailableName(pos token.Pos, path []ast.Node, pkg *types.Package, info *types.Info, prefix string, idx int) (string, int) {
-	scopes := CollectScopes(info, path, pos)
-	scopes = append(scopes, pkg.Scope())
+// freshName returns an identifier based on prefix (perhaps with a
+// numeric suffix) that is not in scope at the specified position
+// within the file. It returns the next numeric suffix to use.
+func freshName(info *types.Info, file *ast.File, pos token.Pos, prefix string, idx int) (string, int) {
+	scope := info.Scopes[file].Innermost(pos)
 	return generateName(idx, prefix, func(name string) bool {
-		for _, scope := range scopes {
-			if scope != nil && scope.Lookup(name) != nil {
-				return true
-			}
-		}
-		return false
+		obj, _ := scope.LookupParent(name, pos)
+		return obj != nil
 	})
 }
 
-// generateNameOutsideOfRange is like generateAvailableName, but ignores names
+// freshNameOutsideRange is like [freshName], but ignores names
 // declared between start and end for the purposes of detecting conflicts.
 //
 // This is used for function extraction, where [start, end) will be extracted
 // to a new scope.
-func generateNameOutsideOfRange(start, end token.Pos, path []ast.Node, pkg *types.Package, info *types.Info, prefix string, idx int) (string, int) {
-	scopes := CollectScopes(info, path, start)
-	scopes = append(scopes, pkg.Scope())
+func freshNameOutsideRange(info *types.Info, file *ast.File, pos, start, end token.Pos, prefix string, idx int) (string, int) {
+	scope := info.Scopes[file].Innermost(pos)
 	return generateName(idx, prefix, func(name string) bool {
-		for _, scope := range scopes {
-			if scope != nil {
-				if obj := scope.Lookup(name); obj != nil {
-					// Only report a collision if the object declaration was outside the
-					// extracted range.
-					if obj.Pos() < start || end <= obj.Pos() {
-						return true
-					}
-				}
+		// Only report a collision if the object declaration
+		// was outside the extracted range.
+		for scope != nil {
+			obj, declScope := scope.LookupParent(name, pos)
+			if obj == nil {
+				return false // undeclared
 			}
+			if !(start <= obj.Pos() && obj.Pos() < end) {
+				return true // declared outside ignored range
+			}
+			scope = declScope.Parent()
 		}
 		return false
 	})
@@ -573,7 +657,7 @@ func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte
 		// TODO(suzmue): generate a name that does not conflict for "newMethod".
 		funName = "newMethod"
 	} else {
-		funName, _ = generateAvailableName(start, path, pkg, info, "newFunction", 0)
+		funName, _ = freshName(info, file, start, "newFunction", 0)
 	}
 	extractedFunCall := generateFuncCall(hasNonNestedReturn, hasReturnValues, params,
 		append(returns, getNames(retVars)...), funName, sym, receiverName)
@@ -1223,7 +1307,7 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 	var cond *ast.Ident
 	if !hasNonNestedReturns {
 		// Generate information for the added bool value.
-		name, _ := generateNameOutsideOfRange(start, end, path, pkg, info, "shouldReturn", 0)
+		name, _ := freshNameOutsideRange(info, file, path[0].Pos(), start, end, "shouldReturn", 0)
 		cond = &ast.Ident{Name: name}
 		retVars = append(retVars, &returnVariable{
 			name:    cond,
@@ -1258,7 +1342,7 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 				} else if n, ok := varNameForType(typ); ok {
 					bestName = n
 				}
-				retName, idx := generateNameOutsideOfRange(start, end, path, pkg, info, bestName, nameIdx[bestName])
+				retName, idx := freshNameOutsideRange(info, file, path[0].Pos(), start, end, bestName, nameIdx[bestName])
 				nameIdx[bestName] = idx
 				z := typesinternal.ZeroExpr(file, pkg, typ)
 				if z == nil {
@@ -1472,4 +1556,12 @@ func getDecls(retVars []*returnVariable) []*ast.Field {
 		decls = append(decls, retVar.decl)
 	}
 	return decls
+}
+
+func cond[T any](cond bool, t, f T) T {
+	if cond {
+		return t
+	} else {
+		return f
+	}
 }

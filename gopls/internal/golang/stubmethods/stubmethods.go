@@ -13,9 +13,11 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"golang.org/x/tools/internal/typesinternal"
 	"strings"
 
+	"golang.org/x/tools/internal/typesinternal"
+
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
@@ -282,8 +284,9 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 	}
 
 	sig := typesutil.EnclosingSignature(path, info)
-	if sig.Results() == nil {
-		return nil, fmt.Errorf("could not find the enclosing function of the return statement")
+	if sig == nil {
+		// golang/go#70666: this bug may be reached in practice.
+		return nil, bug.Errorf("could not find the enclosing function of the return statement")
 	}
 	rets := sig.Results()
 	// The return operands and function results must match.

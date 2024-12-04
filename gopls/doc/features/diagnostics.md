@@ -213,12 +213,13 @@ func main() {
 }
 ```
 
-The quick fix would be:
+The quick fix would insert a declaration with a default
+value inferring its type from the context:
 
 ```go
 func main() {
   x := 42
-  y :=
+  y := 0
   min(x, y)
 }
 ```

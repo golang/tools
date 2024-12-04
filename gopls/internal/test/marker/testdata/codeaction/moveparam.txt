@@ -70,10 +70,7 @@ func b() int { return 2 }
 var _ = basic.Foo(2, 1)
 
 // Check that we can refactor a call with effects in a toplevel var decl.
-var _ = func() int {
-	var a int = a()
-	return basic.Foo(b(), a)
-}()
+var _ = basic.Foo(b(), a())
 
 func _() {
 	// check various refactorings in a function body, and comment handling.

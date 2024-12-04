@@ -15,6 +15,8 @@ package folding //@foldingrange(raw)
 import (
 	"fmt"
 	_ "log"
+	"sort"
+	"time"
 )
 
 import _ "os"
@@ -85,12 +87,65 @@ func bar() string {
 this string
 is not indented`
 }
+
+func _() {
+	slice := []int{1, 2, 3}
+	sort.Slice(slice, func(i, j int) bool {
+		a, b := slice[i], slice[j]
+		return a < b
+	})
+
+	sort.Slice(slice, func(i, j int) bool { return slice[i] < slice[j] })
+
+	sort.Slice(
+		slice,
+		func(i, j int) bool {
+			return slice[i] < slice[j]
+		},
+	)
+
+	fmt.Println(
+		1, 2, 3,
+		4,
+	)
+
+	fmt.Println(1, 2, 3,
+		4, 5, 6,
+		7, 8, 9,
+		10)
+
+	// Call with ellipsis.
+	_ = fmt.Errorf(
+		"test %d %d",
+		[]any{1, 2, 3}...,
+	)
+
+	// Check multiline string.
+	fmt.Println(
+		`multi
+		line
+		string
+		`,
+		1, 2, 3,
+	)
+
+	// Call without arguments.
+	_ = time.Now()
+}
+
+func _(
+	a int, b int,
+	c int,
+) {
+}
 -- @raw --
 package folding //@foldingrange(raw)
 
 import (<0 kind="imports">
 	"fmt"
-	_ "log"</0>
+	_ "log"
+	"sort"
+	"time"</0>
 )
 
 import _ "os"
@@ -122,7 +177,7 @@ func bar() string {<2 kind="">
 	_ = []int{<11 kind="">
 		1,
 		2,
-		3</11>,
+		3,</11>
 	}
 	_ = [2]string{"d",
 		"e",
@@ -130,7 +185,7 @@ func bar() string {<2 kind="">
 	_ = map[string]int{<12 kind="">
 		"a": 1,
 		"b": 2,
-		"c": 3</12>,
+		"c": 3,</12>
 	}
 	type T struct {<13 kind="">
 		f string
@@ -140,7 +195,7 @@ func bar() string {<2 kind="">
 	_ = T{<14 kind="">
 		f: "j",
 		g: 4,
-		h: "i"</14>,
+		h: "i",</14>
 	}
 	x, y := make(chan bool), make(chan bool)
 	select {<15 kind="">
@@ -160,4 +215,55 @@ func bar() string {<2 kind="">
 	return <22 kind="">`
 this string
 is not indented`</2></22>
+}
+
+func _() {<23 kind="">
+	slice := []int{1, 2, 3}
+	sort.Slice(slice, func(i, j int) bool {<24 kind="">
+		a, b := slice[i], slice[j]
+		return a < b</24>
+	})
+
+	sort.Slice(slice, func(i, j int) bool { return slice[i] < slice[j] })
+
+	sort.Slice(<25 kind="">
+		slice,
+		func(i, j int) bool {<26 kind="">
+			return slice[i] < slice[j]</26>
+		},</25>
+	)
+
+	fmt.Println(<27 kind="">
+		1, 2, 3,
+		4,</27>
+	)
+
+	fmt.Println(1, 2, 3,
+		4, 5, 6,
+		7, 8, 9,
+		10)
+
+	// Call with ellipsis.
+	_ = fmt.Errorf(<28 kind="">
+		"test %d %d",
+		[]any{1, 2, 3}...,</28>
+	)
+
+	// Check multiline string.
+	fmt.Println(<29 kind="">
+		<30 kind="">`multi
+		line
+		string
+		`</30>,
+		1, 2, 3,</29>
+	)
+
+	// Call without arguments.
+	_ = time.Now()</23>
+}
+
+func _(<31 kind="">
+	a int, b int,
+	c int,</31>
+) {
 }

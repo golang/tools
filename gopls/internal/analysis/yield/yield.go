@@ -20,6 +20,7 @@ import (
 	_ "embed"
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 
@@ -92,6 +93,21 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		// yield call to another yield call--possible the same one,
 		// following all block successors except "if yield() { ... }";
 		// in such cases we know that yield returned true.
+		//
+		// Note that this is a "may" dataflow analysis: it
+		// reports when a yield function _may_ be called again
+		// without a positive intervening check, but it is
+		// possible that the check is beyond the ability of
+		// the representation to detect, perhaps involving
+		// sophisticated use of booleans, indirect state (not
+		// in SSA registers), or multiple flow paths some of
+		// which are infeasible.
+		//
+		// A "must" analysis (which would report when a second
+		// yield call can only be reached after failing the
+		// boolean check) would be too conservative.
+		// In particular, the most common mistake is to
+		// forget to check the boolean at all.
 		for call, info := range ssaYieldCalls {
 			visited := make([]bool, len(fn.Blocks)) // visited BasicBlock.Indexes
 
@@ -119,9 +135,34 @@ func run(pass *analysis.Pass) (interface{}, error) {
 							// In that case visit only the "if !yield()" block.
 							cond := instr.Cond
 							t, f := b.Succs[0], b.Succs[1]
-							if unop, ok := cond.(*ssa.UnOp); ok && unop.Op == token.NOT {
-								cond, t, f = unop.X, f, t
+
+							// Strip off any NOT operator.
+							cond, t, f = unnegate(cond, t, f)
+
+							// As a peephole optimization for this special case:
+							//   ok := yield()
+							//   ok = ok && yield()
+							//   ok = ok && yield()
+							// which in SSA becomes:
+							//   yield()
+							//   phi(false, yield())
+							//   phi(false, yield())
+							// we reduce a cond of phi(false, x) to just x.
+							if phi, ok := cond.(*ssa.Phi); ok {
+								var nonFalse []ssa.Value
+								for _, v := range phi.Edges {
+									if c, ok := v.(*ssa.Const); ok &&
+										!constant.BoolVal(c.Value) {
+										continue // constant false
+									}
+									nonFalse = append(nonFalse, v)
+								}
+								if len(nonFalse) == 1 {
+									cond = nonFalse[0]
+									cond, t, f = unnegate(cond, t, f)
+								}
 							}
+
 							if cond, ok := cond.(*ssa.Call); ok && ssaYieldCalls[cond] != nil {
 								// Skip the successor reached by "if yield() { ... }".
 							} else {
@@ -142,4 +183,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	}
 
 	return nil, nil
+}
+
+func unnegate(cond ssa.Value, t, f *ssa.BasicBlock) (_ ssa.Value, _, _ *ssa.BasicBlock) {
+	if unop, ok := cond.(*ssa.UnOp); ok && unop.Op == token.NOT {
+		return unop.X, f, t
+	}
+	return cond, t, f
 }

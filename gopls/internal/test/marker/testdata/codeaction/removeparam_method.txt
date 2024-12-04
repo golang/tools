@@ -68,11 +68,7 @@ import "example.com/rm"
 
 func _() {
 	x := new(rm.Basic)
-	var (
-		t rm.Basic = *x
-		_ int      = sideEffects()
-	)
-	t.Foo()
+	x.Foo()
 	rm.Basic(1).Foo()
 }
 
@@ -137,7 +133,6 @@ import "example.com/rm"
 
 func _() {
 	x := rm.Missing{}
-	var _ int = sideEffects()
 	x.M(1, 3, 4)
 }
 

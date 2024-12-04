@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"go/token"
@@ -2250,10 +2251,12 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 		}
 	}
 	if len(candidates) != 1 {
+		var msg bytes.Buffer
+		fmt.Fprintf(&msg, "found %d CodeActions of kind %s for this diagnostic, want 1", len(candidates), kind)
 		for _, act := range actions {
-			env.T.Logf("found CodeAction Kind=%s Title=%q", act.Kind, act.Title)
+			fmt.Fprintf(&msg, "\n\tfound %q (%s)", act.Title, act.Kind)
 		}
-		return nil, fmt.Errorf("found %d CodeActions of kind %s for this diagnostic, want 1", len(candidates), kind)
+		return nil, errors.New(msg.String())
 	}
 	action := candidates[0]
 

@@ -257,8 +257,3 @@ func EnclosingSignature(path []ast.Node, info *types.Info) *types.Signature {
 	}
 	return nil
 }
-
-func is[T any](x any) bool {
-	_, ok := x.(T)
-	return ok
-}

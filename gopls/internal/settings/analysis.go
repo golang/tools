@@ -45,6 +45,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/unsafeptr"
 	"golang.org/x/tools/go/analysis/passes/unusedresult"
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
+	"golang.org/x/tools/go/analysis/passes/waitgroup"
 	"golang.org/x/tools/gopls/internal/analysis/deprecated"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
@@ -154,6 +155,7 @@ func init() {
 		{analyzer: yield.Analyzer, enabled: true},   // uses go/ssa
 		{analyzer: sortslice.Analyzer, enabled: true},
 		{analyzer: embeddirective.Analyzer, enabled: true},
+		{analyzer: waitgroup.Analyzer, enabled: true}, // to appear in cmd/vet@go1.25
 
 		// disabled due to high false positives
 		{analyzer: shadow.Analyzer, enabled: false}, // very noisy

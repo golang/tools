@@ -16,7 +16,6 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
@@ -87,31 +86,116 @@ func CreateUndeclared(fset *token.FileSet, start, end token.Pos, content []byte,
 	if isCallPosition(path) {
 		return newFunctionDeclaration(path, file, pkg, info, fset)
 	}
+	var (
+		firstRef     *ast.Ident // We should insert the new declaration before the first occurrence of the undefined ident.
+		assignTokPos token.Pos
+		funcDecl     = path[len(path)-2].(*ast.FuncDecl) // This is already ensured by [undeclaredFixTitle].
+		parent       = ast.Node(funcDecl)
+	)
+	// Search from enclosing FuncDecl to path[0], since we can not use := syntax outside function.
+	// Adds the missing colon after the first undefined symbol
+	// when it sits in lhs of an AssignStmt.
+	ast.Inspect(funcDecl, func(n ast.Node) bool {
+		if n == nil || firstRef != nil {
+			return false
+		}
+		if n, ok := n.(*ast.Ident); ok && n.Name == ident.Name && info.ObjectOf(n) == nil {
+			firstRef = n
+			// Only consider adding colon at the first occurrence.
+			if pos, ok := replaceableAssign(info, n, parent); ok {
+				assignTokPos = pos
+				return false
+			}
+		}
+		parent = n
+		return true
+	})
+	if assignTokPos.IsValid() {
+		return fset, &analysis.SuggestedFix{
+			TextEdits: []analysis.TextEdit{{
+				Pos:     assignTokPos,
+				End:     assignTokPos,
+				NewText: []byte(":"),
+			}},
+		}, nil
+	}
 
-	// Get the place to insert the new statement.
-	insertBeforeStmt := analysisinternal.StmtToInsertVarBefore(path)
+	// firstRef should never be nil, at least one ident at cursor position should be found,
+	// but be defensive.
+	if firstRef == nil {
+		return nil, nil, fmt.Errorf("no identifier found")
+	}
+	p, _ := astutil.PathEnclosingInterval(file, firstRef.Pos(), firstRef.Pos())
+	insertBeforeStmt := analysisinternal.StmtToInsertVarBefore(p)
 	if insertBeforeStmt == nil {
 		return nil, nil, fmt.Errorf("could not locate insertion point")
 	}
-
-	insertBefore := safetoken.StartPosition(fset, insertBeforeStmt.Pos()).Offset
-
-	// Get the indent to add on the line after the new statement.
-	// Since this will have a parse error, we can not use format.Source().
-	contentBeforeStmt, indent := content[:insertBefore], "\n"
-	if nl := bytes.LastIndex(contentBeforeStmt, []byte("\n")); nl != -1 {
-		indent = string(contentBeforeStmt[nl:])
+	indent, err := calculateIndentation(content, fset.File(file.FileStart), insertBeforeStmt)
+	if err != nil {
+		return nil, nil, err
 	}
+	typs := typesutil.TypesFromContext(info, path, start)
+	if typs == nil {
+		// Default to 0.
+		typs = []types.Type{types.Typ[types.Int]}
+	}
+	assignStmt := &ast.AssignStmt{
+		Lhs: []ast.Expr{ast.NewIdent(ident.Name)},
+		Tok: token.DEFINE,
+		Rhs: []ast.Expr{typesinternal.ZeroExpr(file, pkg, typs[0])},
+	}
+	var buf bytes.Buffer
+	if err := format.Node(&buf, fset, assignStmt); err != nil {
+		return nil, nil, err
+	}
+	newLineIndent := "\n" + indent
+	assignment := strings.ReplaceAll(buf.String(), "\n", newLineIndent) + newLineIndent
 
-	// Create the new local variable statement.
-	newStmt := fmt.Sprintf("%s := %s", ident.Name, indent)
 	return fset, &analysis.SuggestedFix{
-		TextEdits: []analysis.TextEdit{{
-			Pos:     insertBeforeStmt.Pos(),
-			End:     insertBeforeStmt.Pos(),
-			NewText: []byte(newStmt),
-		}},
+		TextEdits: []analysis.TextEdit{
+			{
+				Pos:     insertBeforeStmt.Pos(),
+				End:     insertBeforeStmt.Pos(),
+				NewText: []byte(assignment),
+			},
+		},
 	}, nil
+}
+
+// replaceableAssign returns position of token.ASSIGN if ident meets the following conditions:
+// 1) parent node must be an *ast.AssignStmt with Tok set to token.ASSIGN.
+// 2) ident must not be self assignment.
+//
+// For example, we should not add a colon when
+// a = a + 1
+// ^   ^ cursor here
+func replaceableAssign(info *types.Info, ident *ast.Ident, parent ast.Node) (token.Pos, bool) {
+	var pos token.Pos
+	if assign, ok := parent.(*ast.AssignStmt); ok && assign.Tok == token.ASSIGN {
+		for _, rhs := range assign.Rhs {
+			if referencesIdent(info, rhs, ident) {
+				return pos, false
+			}
+		}
+		return assign.TokPos, true
+	}
+	return pos, false
+}
+
+// referencesIdent checks whether the given undefined ident appears in the given expression.
+func referencesIdent(info *types.Info, expr ast.Expr, ident *ast.Ident) bool {
+	var hasIdent bool
+	ast.Inspect(expr, func(n ast.Node) bool {
+		if n == nil {
+			return false
+		}
+		if i, ok := n.(*ast.Ident); ok && i.Name == ident.Name && info.ObjectOf(i) == nil {
+			hasIdent = true
+			return false
+		}
+		return true
+	})
+	return hasIdent
 }
 
 func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package, info *types.Info, fset *token.FileSet) (*token.FileSet, *analysis.SuggestedFix, error) {

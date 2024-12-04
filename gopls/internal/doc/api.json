@@ -610,6 +610,11 @@
 							"Default": "false"
 						},
 						{
+							"Name": "\"waitgroup\"",
+							"Doc": "check for misuses of sync.WaitGroup\n\nThis analyzer detects mistaken calls to the (*sync.WaitGroup).Add\nmethod from inside a new goroutine, causing Add to race with Wait:\n\n\t// WRONG\n\tvar wg sync.WaitGroup\n\tgo func() {\n\t        wg.Add(1) // \"WaitGroup.Add called from inside new goroutine\"\n\t        defer wg.Done()\n\t        ...\n\t}()\n\twg.Wait() // (may return prematurely before new goroutine starts)\n\nThe correct code calls Add before starting the goroutine:\n\n\t// RIGHT\n\tvar wg sync.WaitGroup\n\twg.Add(1)\n\tgo func() {\n\t\tdefer wg.Done()\n\t\t...\n\t}()\n\twg.Wait()",
+							"Default": "true"
+						},
+						{
 							"Name": "\"yield\"",
 							"Doc": "report calls to yield where the result is ignored\n\nAfter a yield function returns false, the caller should not call\nthe yield function again; generally the iterator should return\npromptly.\n\nThis example fails to check the result of the call to yield,\ncausing this analyzer to report a diagnostic:\n\n\tyield(1) // yield may be called again (on L2) after returning false\n\tyield(2)\n\nThe corrected code is either this:\n\n\tif yield(1) { yield(2) }\n\nor simply:\n\n\t_ = yield(1) \u0026\u0026 yield(2)\n\nIt is not always a mistake to ignore the result of yield.\nFor example, this is a valid single-element iterator:\n\n\tyield(1) // ok to ignore result\n\treturn\n\nIt is only a mistake when the yield call that returned false may be\nfollowed by another call.",
 							"Default": "true"
@@ -1297,6 +1302,12 @@
 			"Doc": "check for constraints that could be simplified to \"any\"",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/useany",
 			"Default": false
+		},
+		{
+			"Name": "waitgroup",
+			"Doc": "check for misuses of sync.WaitGroup\n\nThis analyzer detects mistaken calls to the (*sync.WaitGroup).Add\nmethod from inside a new goroutine, causing Add to race with Wait:\n\n\t// WRONG\n\tvar wg sync.WaitGroup\n\tgo func() {\n\t        wg.Add(1) // \"WaitGroup.Add called from inside new goroutine\"\n\t        defer wg.Done()\n\t        ...\n\t}()\n\twg.Wait() // (may return prematurely before new goroutine starts)\n\nThe correct code calls Add before starting the goroutine:\n\n\t// RIGHT\n\tvar wg sync.WaitGroup\n\twg.Add(1)\n\tgo func() {\n\t\tdefer wg.Done()\n\t\t...\n\t}()\n\twg.Wait()",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/waitgroup",
+			"Default": true
 		},
 		{
 			"Name": "yield",

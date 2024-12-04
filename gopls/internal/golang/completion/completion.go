@@ -2624,7 +2624,7 @@ func expectedAssignStmtTypes(pkg *cache.Package, node *ast.AssignStmt, pos token
 // Returns nil if enclosingSig is nil.
 func expectedReturnStmtType(enclosingSig *types.Signature, node *ast.ReturnStmt, pos token.Pos) types.Type {
 	if enclosingSig != nil {
-		if resultIdx := exprAtPos(pos, node.Results); resultIdx < len(node.Results) {
+		if resultIdx := exprAtPos(pos, node.Results); resultIdx < enclosingSig.Results().Len() {
 			return enclosingSig.Results().At(resultIdx).Type()
 		}
 	}

@@ -1,0 +1,23 @@
+This test reproduces the crash of golang/go#70636, an out of bounds error when
+analyzing a return statement with more results than the signature expects.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+go 1.21
+
+-- p.go --
+package p
+
+var xx int
+var xy string
+
+
+func _() {
+	return Foo(x) //@ rank(re"x()", "xx", "xy")
+}
+
+func Foo[T any](t T) T {}
