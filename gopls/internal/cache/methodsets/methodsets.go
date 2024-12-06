@@ -44,12 +44,11 @@ package methodsets
 // single 64-bit mask is quite effective. See CL 452060 for details.
 
 import (
-	"fmt"
 	"go/token"
 	"go/types"
 	"hash/crc32"
-	"strconv"
-	"strings"
+	"slices"
+	"sync/atomic"
 
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -95,7 +94,7 @@ type Location struct {
 // A Key represents the method set of a given type in a form suitable
 // to pass to the (*Index).Search method of many different Indexes.
 type Key struct {
-	mset gobMethodSet // note: lacks position information
+	mset *gobMethodSet // note: lacks position information
 }
 
 // KeyOf returns the search key for the method sets of a given type.
@@ -123,7 +122,7 @@ type Result struct {
 //
 // The result does not include the error.Error method.
 // TODO(adonovan): give this special case a more systematic treatment.
-func (index *Index) Search(key Key, methodID string) []Result {
+func (index *Index) Search(key Key, method *types.Func) []Result {
 	var results []Result
 	for _, candidate := range index.pkg.MethodSets {
 		// Traditionally this feature doesn't report
@@ -133,30 +132,22 @@ func (index *Index) Search(key Key, methodID string) []Result {
 		if candidate.IsInterface && key.mset.IsInterface {
 			continue
 		}
-		if !satisfies(candidate, key.mset) && !satisfies(key.mset, candidate) {
+
+		if !implements(candidate, key.mset) && !implements(key.mset, candidate) {
 			continue
 		}
 
-		if candidate.Tricky {
-			// If any interface method is tricky then extra
-			// checking may be needed to eliminate a false positive.
-			// TODO(adonovan): implement it.
-		}
-
-		if methodID == "" {
+		if method == nil {
 			results = append(results, Result{Location: index.location(candidate.Posn)})
 		} else {
 			for _, m := range candidate.Methods {
-				// Here we exploit knowledge of the shape of the fingerprint string.
-				if strings.HasPrefix(m.Fingerprint, methodID) &&
-					m.Fingerprint[len(methodID)] == '(' {
-
+				if m.ID == method.Id() {
 					// Don't report error.Error among the results:
 					// it has no true source location, no package,
 					// and is excluded from the xrefs index.
 					if m.PkgPath == 0 || m.ObjectPath == 0 {
-						if methodID != "Error" {
-							panic("missing info for" + methodID)
+						if m.ID != "Error" {
+							panic("missing info for" + m.ID)
 						}
 						continue
 					}
@@ -174,23 +165,48 @@ func (index *Index) Search(key Key, methodID string) []Result {
 	return results
 }
 
-// satisfies does a fast check for whether x satisfies y.
-func satisfies(x, y gobMethodSet) bool {
-	return y.IsInterface && x.Mask&y.Mask == y.Mask && subset(y, x)
-}
+// implements reports whether x implements y.
+func implements(x, y *gobMethodSet) bool {
+	if !y.IsInterface {
+		return false
+	}
 
-// subset reports whether method set x is a subset of y.
-func subset(x, y gobMethodSet) bool {
-outer:
-	for _, mx := range x.Methods {
-		for _, my := range y.Methods {
-			if mx.Sum == my.Sum && mx.Fingerprint == my.Fingerprint {
-				continue outer // found; try next x method
+	// Fast path: neither method set is tricky, so all methods can
+	// be compared by equality of ID and Fingerprint, and the
+	// entire subset check can be done using the bit mask.
+	if !x.Tricky && !y.Tricky {
+		if x.Mask&y.Mask != y.Mask {
+			return false // x lacks a method of interface y
+		}
+	}
+
+	// At least one operand is tricky (e.g. contains a type parameter),
+	// so we must used tree-based matching (unification).
+
+	// nonmatching reports whether interface method 'my' lacks
+	// a matching method in set x. (The sense is inverted for use
+	// with slice.ContainsFunc below.)
+	nonmatching := func(my *gobMethod) bool {
+		for _, mx := range x.Methods {
+			if mx.ID == my.ID {
+				var match bool
+				if !mx.Tricky && !my.Tricky {
+					// Fast path: neither method is tricky,
+					// so a string match is sufficient.
+					match = mx.Sum&my.Sum == my.Sum && mx.Fingerprint == my.Fingerprint
+				} else {
+					match = unify(mx.parse(), my.parse())
+				}
+				return !match
 			}
 		}
-		return false // method of x not found in y
+		return true // method of y not found in x
 	}
-	return true // all methods of x found in y
+
+	// Each interface method must have a match.
+	// (This would be more readable with a DeMorganized
+	// variant of ContainsFunc.)
+	return !slices.ContainsFunc(y.Methods, nonmatching)
 }
 
 func (index *Index) location(posn gobPosition) Location {
@@ -296,7 +312,7 @@ func (b *indexBuilder) string(s string) int {
 // It calls the optional setIndexInfo function for each gobMethod.
 // This is used during index construction, but not search (KeyOf),
 // to store extra information.
-func methodSetInfo(t types.Type, setIndexInfo func(*gobMethod, *types.Func)) gobMethodSet {
+func methodSetInfo(t types.Type, setIndexInfo func(*gobMethod, *types.Func)) *gobMethodSet {
 	// For non-interface types, use *T
 	// (if T is not already a pointer)
 	// since it may have more methods.
@@ -305,21 +321,24 @@ func methodSetInfo(t types.Type, setIndexInfo func(*gobMethod, *types.Func)) gob
 	// Convert the method set into a compact summary.
 	var mask uint64
 	tricky := false
-	methods := make([]gobMethod, mset.Len())
+	var buf []byte
+	methods := make([]*gobMethod, mset.Len())
 	for i := 0; i < mset.Len(); i++ {
 		m := mset.At(i).Obj().(*types.Func)
-		fp, isTricky := fingerprint(m)
+		id := m.Id()
+		fp, isTricky := fingerprint(m.Signature())
 		if isTricky {
 			tricky = true
 		}
-		sum := crc32.ChecksumIEEE([]byte(fp))
-		methods[i] = gobMethod{Fingerprint: fp, Sum: sum}
+		buf = append(append(buf[:0], id...), fp...)
+		sum := crc32.ChecksumIEEE(buf)
+		methods[i] = &gobMethod{ID: id, Fingerprint: fp, Sum: sum, Tricky: isTricky}
 		if setIndexInfo != nil {
-			setIndexInfo(&methods[i], m) // set Position, PkgPath, ObjectPath
+			setIndexInfo(methods[i], m) // set Position, PkgPath, ObjectPath
 		}
 		mask |= 1 << uint64(((sum>>24)^(sum>>16)^(sum>>8)^sum)&0x3f)
 	}
-	return gobMethodSet{
+	return &gobMethodSet{
 		IsInterface: types.IsInterface(t),
 		Tricky:      tricky,
 		Mask:        mask,
@@ -337,149 +356,6 @@ func EnsurePointer(T types.Type) types.Type {
 	return T
 }
 
-// fingerprint returns an encoding of a method signature such that two
-// methods with equal encodings have identical types, except for a few
-// tricky types whose encodings may spuriously match and whose exact
-// identity computation requires the type checker to eliminate false
-// positives (which are rare). The boolean result indicates whether
-// the result was one of these tricky types.
-//
-// In the standard library, 99.8% of package-level types have a
-// non-tricky method-set.  The most common exceptions are due to type
-// parameters.
-//
-// The fingerprint string starts with method.Id() + "(".
-func fingerprint(method *types.Func) (string, bool) {
-	var buf strings.Builder
-	tricky := false
-	var fprint func(t types.Type)
-	fprint = func(t types.Type) {
-		switch t := t.(type) {
-		case *types.Alias:
-			fprint(types.Unalias(t))
-
-		case *types.Named:
-			tname := t.Obj()
-			if tname.Pkg() != nil {
-				buf.WriteString(strconv.Quote(tname.Pkg().Path()))
-				buf.WriteByte('.')
-			} else if tname.Name() != "error" && tname.Name() != "comparable" {
-				panic(tname) // error and comparable the only named types with no package
-			}
-			buf.WriteString(tname.Name())
-
-		case *types.Array:
-			fmt.Fprintf(&buf, "[%d]", t.Len())
-			fprint(t.Elem())
-
-		case *types.Slice:
-			buf.WriteString("[]")
-			fprint(t.Elem())
-
-		case *types.Pointer:
-			buf.WriteByte('*')
-			fprint(t.Elem())
-
-		case *types.Map:
-			buf.WriteString("map[")
-			fprint(t.Key())
-			buf.WriteByte(']')
-			fprint(t.Elem())
-
-		case *types.Chan:
-			switch t.Dir() {
-			case types.SendRecv:
-				buf.WriteString("chan ")
-			case types.SendOnly:
-				buf.WriteString("<-chan ")
-			case types.RecvOnly:
-				buf.WriteString("chan<- ")
-			}
-			fprint(t.Elem())
-
-		case *types.Tuple:
-			buf.WriteByte('(')
-			for i := 0; i < t.Len(); i++ {
-				if i > 0 {
-					buf.WriteByte(',')
-				}
-				fprint(t.At(i).Type())
-			}
-			buf.WriteByte(')')
-
-		case *types.Basic:
-			// Use canonical names for uint8 and int32 aliases.
-			switch t.Kind() {
-			case types.Byte:
-				buf.WriteString("byte")
-			case types.Rune:
-				buf.WriteString("rune")
-			default:
-				buf.WriteString(t.String())
-			}
-
-		case *types.Signature:
-			buf.WriteString("func")
-			fprint(t.Params())
-			if t.Variadic() {
-				buf.WriteString("...") // not quite Go syntax
-			}
-			fprint(t.Results())
-
-		case *types.Struct:
-			// Non-empty unnamed struct types in method
-			// signatures are vanishingly rare.
-			buf.WriteString("struct{")
-			for i := 0; i < t.NumFields(); i++ {
-				if i > 0 {
-					buf.WriteByte(';')
-				}
-				f := t.Field(i)
-				// This isn't quite right for embedded type aliases.
-				// (See types.TypeString(StructType) and #44410 for context.)
-				// But this is vanishingly rare.
-				if !f.Embedded() {
-					buf.WriteString(f.Id())
-					buf.WriteByte(' ')
-				}
-				fprint(f.Type())
-				if tag := t.Tag(i); tag != "" {
-					buf.WriteByte(' ')
-					buf.WriteString(strconv.Quote(tag))
-				}
-			}
-			buf.WriteString("}")
-
-		case *types.Interface:
-			if t.NumMethods() == 0 {
-				buf.WriteString("any") // common case
-			} else {
-				// Interface assignability is particularly
-				// tricky due to the possibility of recursion.
-				tricky = true
-				// We could still give more disambiguating precision
-				// than "..." if we wanted to.
-				buf.WriteString("interface{...}")
-			}
-
-		case *types.TypeParam:
-			tricky = true
-			// TODO(adonovan): refine this by adding a numeric suffix
-			// indicating the index among the receiver type's parameters.
-			buf.WriteByte('?')
-
-		default: // incl. *types.Union
-			panic(t)
-		}
-	}
-
-	buf.WriteString(method.Id()) // e.g. "pkg.Type"
-	sig := method.Signature()
-	fprint(sig.Params())
-	fprint(sig.Results())
-	return buf.String(), tricky
-}
-
 // -- serial format of index --
 
 // (The name says gob but in fact we use frob.)
@@ -488,31 +364,48 @@ var packageCodec = frob.CodecFor[gobPackage]()
 // A gobPackage records the method set of each package-level type for a single package.
 type gobPackage struct {
 	Strings    []string // index of strings used by gobPosition.File, gobMethod.{Pkg,Object}Path
-	MethodSets []gobMethodSet
+	MethodSets []*gobMethodSet
 }
 
 // A gobMethodSet records the method set of a single type.
 type gobMethodSet struct {
 	Posn        gobPosition
 	IsInterface bool
-	Tricky      bool   // at least one method is tricky; assignability requires go/types
+	Tricky      bool   // at least one method is tricky; fingerprint must be parsed + unified
 	Mask        uint64 // mask with 1 bit from each of methods[*].sum
-	Methods     []gobMethod
+	Methods     []*gobMethod
 }
 
 // A gobMethod records the name, type, and position of a single method.
 type gobMethod struct {
-	Fingerprint string // string of form "methodID(params...)(results)"
-	Sum         uint32 // checksum of fingerprint
+	ID          string // (*types.Func).Id() value of method
+	Fingerprint string // encoding of types as string of form "(params)(results)"
+	Sum         uint32 // checksum of ID + fingerprint
+	Tricky      bool   // method type contains tricky features (type params, interface types)
 
 	// index records only (zero in KeyOf; also for index of error.Error).
 	Posn       gobPosition // location of method declaration
 	PkgPath    int         // path of package containing method declaration
 	ObjectPath int         // object path of method relative to PkgPath
+
+	// internal fields (not serialized)
+	tree atomic.Pointer[sexpr] // fingerprint tree, parsed on demand
 }
 
 // A gobPosition records the file, offset, and length of an identifier.
 type gobPosition struct {
 	File        int // index into gobPackage.Strings
 	Offset, Len int // in bytes
+}
+
+// parse returns the method's parsed fingerprint tree.
+// It may return a new instance or a cached one.
+func (m *gobMethod) parse() sexpr {
+	ptr := m.tree.Load()
+	if ptr == nil {
+		tree := parseFingerprint(m.Fingerprint)
+		ptr = &tree
+		m.tree.Store(ptr) // may race; that's ok
+	}
+	return *ptr
 }

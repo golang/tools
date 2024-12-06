@@ -120,19 +120,19 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	// (For methods, report the corresponding method names.)
 	//
 	// This logic is reused for local queries.
-	typeOrMethod := func(obj types.Object) (types.Type, string) {
+	typeOrMethod := func(obj types.Object) (types.Type, *types.Func) {
 		switch obj := obj.(type) {
 		case *types.TypeName:
-			return obj.Type(), ""
+			return obj.Type(), nil
 		case *types.Func:
 			// For methods, use the receiver type, which may be anonymous.
 			if recv := obj.Signature().Recv(); recv != nil {
-				return recv.Type(), obj.Id()
+				return recv.Type(), obj
 			}
 		}
-		return nil, ""
+		return nil, nil
 	}
-	queryType, queryMethodID := typeOrMethod(obj)
+	queryType, queryMethod := typeOrMethod(obj)
 	if queryType == nil {
 		return nil, bug.Errorf("%s is not a type or method", obj.Name()) // should have been handled by implementsObj
 	}
@@ -211,13 +211,13 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 			if !ok {
 				return ErrNoIdentFound // checked earlier
 			}
-			// Shadow obj, queryType, and queryMethodID in this package.
+			// Shadow obj, queryType, and queryMethod in this package.
 			obj := declPkg.TypesInfo().ObjectOf(id) // may be nil
-			queryType, queryMethodID := typeOrMethod(obj)
+			queryType, queryMethod := typeOrMethod(obj)
 			if queryType == nil {
 				return fmt.Errorf("querying method sets in package %q: %v", pkgID, err)
 			}
-			localLocs, err := localImplementations(ctx, snapshot, declPkg, queryType, queryMethodID)
+			localLocs, err := localImplementations(ctx, snapshot, declPkg, queryType, queryMethod)
 			if err != nil {
 				return fmt.Errorf("querying local implementations %q: %v", pkgID, err)
 			}
@@ -231,7 +231,7 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	for _, index := range indexes {
 		index := index
 		group.Go(func() error {
-			for _, res := range index.Search(key, queryMethodID) {
+			for _, res := range index.Search(key, queryMethod) {
 				loc := res.Location
 				// Map offsets to protocol.Locations in parallel (may involve I/O).
 				group.Go(func() error {
@@ -335,14 +335,14 @@ func implementsObj(ctx context.Context, snapshot *cache.Snapshot, uri protocol.D
 // types that are assignable to/from the query type, and returns a new
 // unordered array of their locations.
 //
-// If methodID is non-empty, the function instead returns the location
+// If method is non-nil, the function instead returns the location
 // of each type's method (if any) of that ID.
 //
 // ("Local" refers to the search within the same package, but this
 // function's results may include type declarations that are local to
 // a function body. The global search index excludes such types
 // because reliably naming such types is hard.)
-func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, queryType types.Type, methodID string) ([]protocol.Location, error) {
+func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, queryType types.Type, method *types.Func) ([]protocol.Location, error) {
 	queryType = methodsets.EnsurePointer(queryType)
 
 	// Scan through all type declarations in the syntax.
@@ -380,7 +380,7 @@ func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 				return true
 			}
 
-			if methodID == "" {
+			if method == nil {
 				// Found matching type.
 				locs = append(locs, mustLocation(pgf, spec.Name))
 				return true
@@ -393,13 +393,13 @@ func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 			// We could recursively search pkg.Imports for it,
 			// but it's easier to walk the method set.
 			for i := 0; i < mset.Len(); i++ {
-				method := mset.At(i).Obj()
-				if method.Id() == methodID {
-					posn := safetoken.StartPosition(pkg.FileSet(), method.Pos())
+				m := mset.At(i).Obj()
+				if m.Id() == method.Id() {
+					posn := safetoken.StartPosition(pkg.FileSet(), m.Pos())
 					methodLocs = append(methodLocs, methodsets.Location{
 						Filename: posn.Filename,
 						Start:    posn.Offset,
-						End:      posn.Offset + len(method.Name()),
+						End:      posn.Offset + len(m.Name()),
 					})
 					break
 				}

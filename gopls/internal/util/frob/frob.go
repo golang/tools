@@ -12,8 +12,7 @@
 //   - Interface values are not supported; this avoids the need for
 //     the encoding to describe types.
 //
-//   - Types that recursively contain private struct fields are not
-//     permitted.
+//   - Private struct fields are ignored.
 //
 //   - The encoding is unspecified and subject to change, so the encoder
 //     and decoder must exactly agree on their implementation and on the
@@ -104,7 +103,7 @@ func frobFor(t reflect.Type) *frob {
 			for i := 0; i < fr.t.NumField(); i++ {
 				field := fr.t.Field(i)
 				if field.PkgPath != "" {
-					panic(fmt.Sprintf("unexported field %v", field))
+					continue // skip unexported field
 				}
 				fr.addElem(field.Type)
 			}

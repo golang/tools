@@ -524,7 +524,7 @@ func expandMethodSearch(ctx context.Context, snapshot *cache.Snapshot, workspace
 		index := index
 		group.Go(func() error {
 			// Consult index for matching methods.
-			results := index.Search(key, method.Name())
+			results := index.Search(key, method)
 			if len(results) == 0 {
 				return nil
 			}

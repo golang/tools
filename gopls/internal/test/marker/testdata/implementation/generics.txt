@@ -11,20 +11,20 @@ type GenIface[T any] interface { //@loc(GenIface, "GenIface"),implementation("Ge
 	F(int, string, T) //@loc(GenIfaceF, "F"),implementation("F", GCF)
 }
 
-type GenConc[U any] int //@loc(GenConc, "GenConc"),implementation("GenConc", GI)
+type GenConc[U any] int //@loc(GenConc, "GenConc"),implementation("GenConc", GI, GIString)
 
 func (GenConc[V]) F(int, string, V) {} //@loc(GenConcF, "F"),implementation("F", GIF)
 
-type GenConcString struct{ GenConc[string] } //@loc(GenConcString, "GenConcString"),implementation(GenConcString, GIString)
+type GenConcString struct{ GenConc[string] } //@loc(GenConcString, "GenConcString"),implementation(GenConcString, GIString, GI)
 
 -- other/other.go --
 package other
 
-type GI[T any] interface { //@loc(GI, "GI"),implementation("GI", GenConc)
+type GI[T any] interface { //@loc(GI, "GI"),implementation("GI", GenConc, GenConcString)
 	F(int, string, T) //@loc(GIF, "F"),implementation("F", GenConcF)
 }
 
-type GIString GI[string] //@loc(GIString, "GIString"),implementation("GIString", GenConcString)
+type GIString GI[string] //@loc(GIString, "GIString"),implementation("GIString", GenConcString, GenConc)
 
 type GC[U any] int //@loc(GC, "GC"),implementation("GC", GenIface)
 

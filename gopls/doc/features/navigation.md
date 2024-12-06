@@ -107,7 +107,14 @@ types with methods due to embedding) may be missing from the results.
      but that is not consistent with the "scalable" gopls design.
 -->
 
-Generic types are currently not fully supported; see golang/go#59224.
+If either the target type or the candidate type are generic, the
+results will include the candidate type if there is any instantiation
+of the two types that would allow one to implement the other.
+(Note: the matcher doesn't current implement full unification, so type
+parameters are treated like wildcards that may match arbitrary
+types, without regard to consistency of substitutions across the
+method set or even within a single method.
+This may lead to occasional spurious matches.)
 
 Client support:
 - **VS Code**: Use [Go to Implementations](https://code.visualstudio.com/docs/editor/editingevolved#_go-to-implementation) (`⌘F12`).
