@@ -266,9 +266,10 @@ type completer struct {
 	// matcher matches the candidates against the surrounding prefix.
 	matcher matcher
 
-	// methodSetCache caches the types.NewMethodSet call, which is relatively
+	// methodSetCache caches the [types.NewMethodSet] call, which is relatively
 	// expensive and can be called many times for the same type while searching
 	// for deep completions.
+	// TODO(adonovan): use [typeutil.MethodSetCache], which exists for this purpose.
 	methodSetCache map[methodSetKey]*types.MethodSet
 
 	// tooNewSymbolsCache is a cache of

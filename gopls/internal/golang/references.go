@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/types/objectpath"
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
@@ -579,6 +580,8 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 		}
 	}
 
+	var msets typeutil.MethodSetCache
+
 	// matches reports whether obj either is or corresponds to a target.
 	// (Correspondence is defined as usual for interface methods.)
 	matches := func(obj types.Object) bool {
@@ -588,7 +591,7 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 		if methodRecvs != nil && obj.Name() == methodName {
 			if orecv := effectiveReceiver(obj); orecv != nil {
 				for _, mrecv := range methodRecvs {
-					if concreteImplementsIntf(orecv, mrecv) {
+					if concreteImplementsIntf(&msets, orecv, mrecv) {
 						return true
 					}
 				}

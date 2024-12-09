@@ -1,0 +1,26 @@
+Test of special case of 'implementation' query: aliases of basic types
+(rune vs int32) in the "tricky" (=generic) algorithm for unifying
+method signatures.
+
+We test both the local (intra-package) and global (cross-package)
+algorithms.
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- a/a.go --
+package a
+
+type C[T any] struct{}
+func (C[T]) F(rune, T) {} //@ loc(aCF, "F"), implementation("F", aIF, bIF)
+
+type I[T any] interface{ F(int32, T) } //@ loc(aIF, "F"), implementation("F", aCF, bCF)
+
+-- b/b.go --
+package b
+
+type C[T any] struct{}
+func (C[T]) F(rune, T) {} //@ loc(bCF, "F"), implementation("F", aIF, bIF)
+
+type I[T any] interface{ F(int32, T) } //@ loc(bIF, "F"), implementation("F", aCF, bCF)
