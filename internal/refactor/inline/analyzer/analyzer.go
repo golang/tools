@@ -9,8 +9,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"os"
-	"strings"
+	"slices"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -20,28 +19,26 @@ import (
 	"golang.org/x/tools/internal/refactor/inline"
 )
 
-const Doc = `inline calls to functions with "inlineme" doc comment`
+const Doc = `inline calls to functions with "//go:fix inline" doc comment`
 
 var Analyzer = &analysis.Analyzer{
 	Name:      "inline",
 	Doc:       Doc,
 	URL:       "https://pkg.go.dev/golang.org/x/tools/internal/refactor/inline/analyzer",
 	Run:       run,
-	FactTypes: []analysis.Fact{new(inlineMeFact)},
+	FactTypes: []analysis.Fact{new(goFixInlineFact)},
 	Requires:  []*analysis.Analyzer{inspect.Analyzer},
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	// Memoize repeated calls for same file.
-	// TODO(adonovan): the analysis.Pass should abstract this (#62292)
-	// as the driver may not be reading directly from the file system.
 	fileContent := make(map[string][]byte)
 	readFile := func(node ast.Node) ([]byte, error) {
 		filename := pass.Fset.File(node.Pos()).Name()
 		content, ok := fileContent[filename]
 		if !ok {
 			var err error
-			content, err = os.ReadFile(filename)
+			content, err = pass.ReadFile(filename)
 			if err != nil {
 				return nil, err
 			}
@@ -50,40 +47,37 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		return content, nil
 	}
 
-	// Pass 1: find functions annotated with an "inlineme"
-	// comment, and export a fact for each one.
+	// Pass 1: find functions annotated with a "//go:fix inline"
+	// comment (the syntax proposed by #32816),
+	// and export a fact for each one.
 	inlinable := make(map[*types.Func]*inline.Callee) // memoization of fact import (nil => no fact)
 	for _, file := range pass.Files {
 		for _, decl := range file.Decls {
-			if decl, ok := decl.(*ast.FuncDecl); ok {
-				// TODO(adonovan): this is just a placeholder.
-				// Use the precise go:fix syntax in the proposal.
-				// Beware that //go: comments are treated specially
-				// by (*ast.CommentGroup).Text().
-				// TODO(adonovan): alternatively, consider using
-				// the universal annotation mechanism sketched in
-				// https://go.dev/cl/489835 (which doesn't yet have
-				// a proper proposal).
-				if strings.Contains(decl.Doc.Text(), "inlineme") {
-					content, err := readFile(file)
-					if err != nil {
-						pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: cannot read source file: %v", err)
-						continue
-					}
-					callee, err := inline.AnalyzeCallee(discard, pass.Fset, pass.Pkg, pass.TypesInfo, decl, content)
-					if err != nil {
-						pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: %v", err)
-						continue
-					}
-					fn := pass.TypesInfo.Defs[decl.Name].(*types.Func)
-					pass.ExportObjectFact(fn, &inlineMeFact{callee})
-					inlinable[fn] = callee
+			if decl, ok := decl.(*ast.FuncDecl); ok &&
+				slices.ContainsFunc(directives(decl.Doc), func(d *directive) bool {
+					return d.Tool == "go" && d.Name == "fix" && d.Args == "inline"
+				}) {
+
+				content, err := readFile(decl)
+				if err != nil {
+					pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: cannot read source file: %v", err)
+					continue
 				}
+				callee, err := inline.AnalyzeCallee(discard, pass.Fset, pass.Pkg, pass.TypesInfo, decl, content)
+				if err != nil {
+					pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: %v", err)
+					continue
+				}
+				fn := pass.TypesInfo.Defs[decl.Name].(*types.Func)
+				pass.ExportObjectFact(fn, &goFixInlineFact{callee})
+				inlinable[fn] = callee
 			}
 		}
 	}
 
 	// Pass 2. Inline each static call to an inlinable function.
+	//
+	// TODO(adonovan):  handle multiple diffs that each add the same import.
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
 		(*ast.File)(nil),
@@ -100,7 +94,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			// Inlinable?
 			callee, ok := inlinable[fn]
 			if !ok {
-				var fact inlineMeFact
+				var fact goFixInlineFact
 				if pass.ImportObjectFact(fn, &fact) {
 					callee = fact.Callee
 					inlinable[fn] = callee
@@ -127,6 +121,16 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			res, err := inline.Inline(caller, callee, &inline.Options{Logf: discard})
 			if err != nil {
 				pass.Reportf(call.Lparen, "%v", err)
+				return
+			}
+			if res.Literalized {
+				// Users are not fond of inlinings that literalize
+				// f(x) to func() { ... }(), so avoid them.
+				//
+				// (Unfortunately the inliner is very timid,
+				// and often literalizes when it cannot prove that
+				// reducing the call is safe; the user of this tool
+				// has no indication of what the problem is.)
 				return
 			}
 			got := res.Content
@@ -156,9 +160,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-type inlineMeFact struct{ Callee *inline.Callee }
+// A goFixInlineFact is exported for each function marked "//go:fix inline".
+// It holds information about the callee to support inlining.
+type goFixInlineFact struct{ Callee *inline.Callee }
 
-func (f *inlineMeFact) String() string { return "inlineme " + f.Callee.String() }
-func (*inlineMeFact) AFact()           {}
+func (f *goFixInlineFact) String() string { return "goFixInline " + f.Callee.String() }
+func (*goFixInlineFact) AFact()           {}
 
 func discard(string, ...any) {}

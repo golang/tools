@@ -8,10 +8,10 @@ func f() {
 
 type T struct{}
 
-// inlineme
-func One() int { return one } // want One:`inlineme a.One`
+//go:fix inline
+func One() int { return one } // want One:`goFixInline a.One`
 
 const one = 1
 
-// inlineme
-func (T) Two() int { return 2 } // want Two:`inlineme \(a.T\).Two`
+//go:fix inline
+func (T) Two() int { return 2 } // want Two:`goFixInline \(a.T\).Two`
