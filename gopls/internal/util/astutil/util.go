@@ -7,6 +7,7 @@ package astutil
 import (
 	"go/ast"
 	"go/token"
+	"reflect"
 
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -68,4 +69,84 @@ L: // unpack receiver type
 // Precondition: n must not be nil.
 func NodeContains(n ast.Node, pos token.Pos) bool {
 	return n.Pos() <= pos && pos <= n.End()
+}
+
+// Equal recursively compares two AST nodes for structural equality,
+// ignoring position fields. If both of them are nil, considered them equal.
+// Use identical to compare two ast.Ident.
+func Equal(x, y ast.Node, identical func(x, y *ast.Ident) bool) bool {
+	if x == nil || y == nil {
+		return x == y
+	}
+	return equal(reflect.ValueOf(x), reflect.ValueOf(y), identical)
+}
+
+func equal(x, y reflect.Value, identical func(x, y *ast.Ident) bool) bool {
+	// Ensure types are the same
+	if x.Type() != y.Type() {
+		return false
+	}
+	switch x.Kind() {
+	case reflect.Pointer:
+		if x.IsNil() || y.IsNil() {
+			return x.IsNil() == y.IsNil()
+		}
+		switch t := x.Interface().(type) {
+		// Skip fields of types potentially involved in cycles.
+		case *ast.Object, *ast.Scope, *ast.CommentGroup:
+			return true
+		case *ast.Ident:
+			return identical(t, y.Interface().(*ast.Ident))
+		default:
+			return equal(x.Elem(), y.Elem(), identical)
+		}
+	case reflect.Interface:
+		if x.IsNil() || y.IsNil() {
+			return x.IsNil() == y.IsNil()
+		}
+		return equal(x.Elem(), y.Elem(), identical)
+	case reflect.Struct:
+		for i := range x.NumField() {
+			switch x.Type().Field(i).Type {
+			// Skip position fields
+			case reflect.TypeFor[token.Pos]():
+				// Subtle: CallExpr.Variadic(Ellipsis) and ChanType.Arrow is semantically significant.
+				// We need to check that both x and y have either a zero or non-zero token.Pos.
+				if (x.Type().Field(i).Name == "Arrow" && x.Type() == reflect.TypeFor[ast.ChanType]()) ||
+					(x.Type().Field(i).Name == "Ellipsis" && x.Type() == reflect.TypeFor[ast.CallExpr]()) {
+					xPos := x.Field(i).Interface().(token.Pos)
+					yPos := y.Field(i).Interface().(token.Pos)
+					if xPos.IsValid() != yPos.IsValid() {
+						return false
+					}
+				}
+			default:
+				if !equal(x.Field(i), y.Field(i), identical) {
+					return false
+				}
+			}
+		}
+		return true
+	case reflect.Slice:
+		if x.IsNil() || y.IsNil() {
+			return x.IsNil() == y.IsNil()
+		}
+		if x.Len() != y.Len() {
+			return false
+		}
+		for i := range x.Len() {
+			if !equal(x.Index(i), y.Index(i), identical) {
+				return false
+			}
+		}
+		return true
+	case reflect.String:
+		return x.String() == y.String()
+	case reflect.Bool:
+		return x.Bool() == y.Bool()
+	case reflect.Int:
+		return x.Int() == y.Int()
+	default:
+		panic(x)
+	}
 }
