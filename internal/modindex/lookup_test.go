@@ -28,26 +28,32 @@ var thedata = tdata{
 	fname: "cloud.google.com/go/longrunning@v0.4.1/foo.go",
 	pkg:   "foo",
 	items: []titem{
-		// these need to be in alphabetical order by symbol
-		{"func Foo() {}", result{"Foo", Func, 0, nil}},
-		{"const FooC = 23", result{"FooC", Const, 0, nil}},
-		{"func FooF(int, float) error {return nil}", result{"FooF", Func, 1,
+		// these need to be in alphabetical order
+		{"func Foo() {}", result{"Foo", Func, false, 0, nil}},
+		{"const FooC = 23", result{"FooC", Const, false, 0, nil}},
+		{"func FooF(int, float) error {return nil}", result{"FooF", Func, false, 1,
 			[]Field{{"_", "int"}, {"_", "float"}}}},
-		{"type FooT struct{}", result{"FooT", Type, 0, nil}},
-		{"var FooV int", result{"FooV", Var, 0, nil}},
-		{"func Ⱋoox(x int) {}", result{"Ⱋoox", Func, 0, []Field{{"x", "int"}}}},
+		{"type FooT struct{}", result{"FooT", Type, false, 0, nil}},
+		{"var FooV int", result{"FooV", Var, false, 0, nil}},
+		{"func Goo() {}", result{"Goo", Func, false, 0, nil}},
+		{"/*Deprecated: too weird\n*/\n// Another Goo\nvar GooVV int", result{"GooVV", Var, true, 0, nil}},
+		{"func Ⱋoox(x int) {}", result{"Ⱋoox", Func, false, 0, []Field{{"x", "int"}}}},
 	},
 }
 
 type result struct {
-	name   string
-	typ    LexType
-	result int
-	sig    []Field
+	name       string
+	typ        LexType
+	deprecated bool
+	result     int
+	sig        []Field
 }
 
 func okresult(r result, p Candidate) bool {
 	if r.name != p.Name || r.typ != p.Type || r.result != int(p.Results) {
+		return false
+	}
+	if r.deprecated != p.Deprecated {
 		return false
 	}
 	if len(r.sig) != len(p.Sig) {
@@ -78,7 +84,6 @@ func TestLookup(t *testing.T) {
 	// get all the symbols
 	p := ix.Lookup("foo", "", true)
 	if len(p) != len(thedata.items) {
-		// we should have gotten them all
 		t.Errorf("got %d possibilities for pkg foo, expected %d", len(p), len(thedata.items))
 	}
 	for i, r := range thedata.items {
