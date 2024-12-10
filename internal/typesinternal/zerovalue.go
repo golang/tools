@@ -80,6 +80,11 @@ func ZeroString(t types.Type, qf types.Qualifier) string {
 // ZeroExpr is defined for types that are suitable for variables.
 // It may panic for other types such as Tuple or Union.
 // See [ZeroString] for a variant that returns a string.
+//
+// TODO(rfindley): improve the behavior of this function in the presence of
+// invalid types. It should probably not return nil for
+// types.Typ[types.Invalid], but must to preserve previous behavior.
+// (golang/go#70744)
 func ZeroExpr(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 	switch t := typ.(type) {
 	case *types.Basic:
@@ -94,6 +99,8 @@ func ZeroExpr(f *ast.File, pkg *types.Package, typ types.Type) ast.Expr {
 			fallthrough
 		case t.Kind() == types.UntypedNil:
 			return ast.NewIdent("nil")
+		case t == types.Typ[types.Invalid]:
+			return nil
 		default:
 			panic(fmt.Sprint("ZeroExpr for unexpected type:", t))
 		}

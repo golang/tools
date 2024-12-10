@@ -277,6 +277,31 @@ func prevStmt(pos token.Pos, path []ast.Node) ast.Stmt {
 	return nil
 }
 
+// formatZeroValue produces Go code representing the zero value of T. It
+// returns the empty string if T is invalid.
+//
+// TODO(rfindley): use typesinternal.ZeroString once we can sort out how to
+// propagate invalid types (see golang/go#70744).
+func formatZeroValue(T types.Type, qf types.Qualifier) string {
+	switch u := T.Underlying().(type) {
+	case *types.Basic:
+		switch {
+		case u.Info()&types.IsNumeric > 0:
+			return "0"
+		case u.Info()&types.IsString > 0:
+			return `""`
+		case u.Info()&types.IsBoolean > 0:
+			return "false"
+		default:
+			return ""
+		}
+	case *types.Pointer, *types.Interface, *types.Chan, *types.Map, *types.Slice, *types.Signature:
+		return "nil"
+	default:
+		return types.TypeString(T, qf) + "{}"
+	}
+}
+
 // isBasicKind returns whether t is a basic type of kind k.
 func isBasicKind(t types.Type, k types.BasicInfo) bool {
 	b, _ := t.Underlying().(*types.Basic)

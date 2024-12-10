@@ -98,6 +98,20 @@ func two() error {
 	//@snippet("", stmtTwoIfErrReturn, "if s.err != nil {\n\treturn ${1:s.err}\n\\}")
 }
 
+-- if_err_check_return3.go --
+package statements
+
+import "os"
+
+// Check that completion logic handles an invalid return type.
+func badReturn() (NotAType, error) {
+	_, err := os.Open("foo")
+	//@snippet("", stmtOneIfErrReturn, "if err != nil {\n\treturn , ${1:err}\n\\}")
+
+	_, err = os.Open("foo")
+	if er //@snippet(" //", stmtOneErrReturn, "err != nil {\n\treturn , ${1:err}\n\\}")
+}
+
 -- if_err_check_test.go --
 package statements
 
@@ -131,4 +145,11 @@ func foo() (int, string, error) {
 
 func bar() (int, string, error) {
 	return //@snippet(" ", stmtReturnZeroValues, "return ${1:0}, ${2:\"\"}, ${3:nil}")
+}
+
+
+//@item(stmtReturnInvalidValues, `return `)
+
+func invalidReturnStatement() NotAType {
+	return //@snippet(" ", stmtReturnInvalidValues, "return ${1:}")
 }
