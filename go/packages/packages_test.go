@@ -3339,6 +3339,31 @@ func Foo() int { return a.Foo() }
 	t.Logf("Packages: %+v", pkgs)
 }
 
+// TestMainPackagePathInModeTypes tests (*types.Package).Path() for
+// main packages in mode NeedTypes, a regression test for #70742, a
+// bug in cmd/compile's export data that caused them to appear as
+// "main". (The PkgPath field was always correct.)
+func TestMainPackagePathInModeTypes(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
+	cfg := &packages.Config{Mode: packages.NeedName | packages.NeedTypes}
+	pkgs, err := packages.Load(cfg, "cmd/go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := pkgs[0]
+	if p.PkgPath != "cmd/go" ||
+		p.Name != "main" ||
+		p.Types.Path() != "cmd/go" ||
+		p.Types.Name() != "main" {
+		t.Errorf("PkgPath=%q Name=%q Types.Path=%q Types.Name=%q; want (cmd/go, main) both times)",
+			p.PkgPath,
+			p.Name,
+			p.Types.Name(),
+			p.Types.Path())
+	}
+}
+
 func writeTree(t *testing.T, archive string) string {
 	root := t.TempDir()
 
