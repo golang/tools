@@ -399,17 +399,13 @@ Default: `true`.
 ### `hoverKind enum`
 
 hoverKind controls the information that appears in the hover text.
-SingleLine and Structured are intended for use only by authors of editor plugins.
+SingleLine is intended for use only by authors of editor plugins.
 
 Must be one of:
 
 * `"FullDocumentation"`
 * `"NoDocumentation"`
 * `"SingleLine"`
-* `"Structured"` is an experimental setting that returns a structured hover format.
-This format separates the signature from the documentation, so that the client
-can do more manipulation of these fields.\
-This should only be used by clients that support this behavior.
 * `"SynopsisDocumentation"`
 
 Default: `"FullDocumentation"`.

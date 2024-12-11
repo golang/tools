@@ -7,7 +7,6 @@ package golang
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -45,50 +44,41 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
-// hoverJSON contains the structured result of a hover query. It is
-// formatted in one of several formats as determined by the HoverKind
-// setting, one of which is JSON.
-//
-// We believe this is used only by govim.
-// TODO(adonovan): see if we can wean all clients of this interface.
-type hoverJSON struct {
-	// Synopsis is a single sentence synopsis of the symbol's documentation.
+// hoverResult contains the (internal) result of a hover query.
+// It is formatted in one of several formats as determined by the
+// HoverKind setting.
+type hoverResult struct {
+	// synopsis is a single sentence synopsis of the symbol's documentation.
 	//
-	// TODO(adonovan): in what syntax? It (usually) comes from doc.Synopsis,
+	// TODO(adonovan): in what syntax? It (usually) comes from doc.synopsis,
 	// which produces "Text" form, but it may be fed to
 	// DocCommentToMarkdown, which expects doc comment syntax.
-	Synopsis string `json:"synopsis"`
+	synopsis string
 
-	// FullDocumentation is the symbol's full documentation.
-	FullDocumentation string `json:"fullDocumentation"`
+	// fullDocumentation is the symbol's full documentation.
+	fullDocumentation string
 
-	// Signature is the symbol's signature.
-	Signature string `json:"signature"`
+	// signature is the symbol's signature.
+	signature string
 
-	// SingleLine is a single line describing the symbol.
+	// singleLine is a single line describing the symbol.
 	// This is recommended only for use in clients that show a single line for hover.
-	SingleLine string `json:"singleLine"`
+	singleLine string
 
-	// SymbolName is the human-readable name to use for the symbol in links.
-	SymbolName string `json:"symbolName"`
+	// symbolName is the human-readable name to use for the symbol in links.
+	symbolName string
 
-	// LinkPath is the path of the package enclosing the given symbol,
+	// linkPath is the path of the package enclosing the given symbol,
 	// with the module portion (if any) replaced by "module@version".
 	//
 	// For example: "github.com/google/go-github/v48@v48.1.0/github".
 	//
-	// Use LinkTarget + "/" + LinkPath + "#" + LinkAnchor to form a pkgsite URL.
-	LinkPath string `json:"linkPath"`
+	// Use LinkTarget + "/" + linkPath + "#" + LinkAnchor to form a pkgsite URL.
+	linkPath string
 
-	// LinkAnchor is the pkg.go.dev link anchor for the given symbol.
+	// linkAnchor is the pkg.go.dev link anchor for the given symbol.
 	// For example, the "Node" part of "pkg.go.dev/go/ast#Node".
-	LinkAnchor string `json:"linkAnchor"`
-
-	// New fields go below, and are unexported. The existing
-	// exported fields are underspecified and have already
-	// constrained our movements too much. A detailed JSON
-	// interface might be nice, but it needs a design and a
-	// precise specification.
+	linkAnchor string
 
 	// typeDecl is the declaration syntax for a type,
 	// or "" for a non-type.
@@ -142,7 +132,7 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 // if the position is valid but we fail to compute hover information.
 //
 // TODO(adonovan): strength-reduce file.Handle to protocol.DocumentURI.
-func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) (protocol.Range, *hoverJSON, error) {
+func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) (protocol.Range, *hoverResult, error) {
 	// Check for hover inside the builtin file before attempting type checking
 	// below. NarrowestPackageForFile may or may not succeed, depending on
 	// whether this is a GOROOT view, but even if it does succeed the resulting
@@ -241,14 +231,14 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// identifier.
 	for _, spec := range pgf.File.Imports {
 		if gastutil.NodeContains(spec, pos) {
-			rng, hoverJSON, err := hoverImport(ctx, snapshot, pkg, pgf, spec)
+			rng, hoverRes, err := hoverImport(ctx, snapshot, pkg, pgf, spec)
 			if err != nil {
 				return protocol.Range{}, nil, err
 			}
 			if hoverRange == nil {
 				hoverRange = &rng
 			}
-			return *hoverRange, hoverJSON, nil // (hoverJSON may be nil)
+			return *hoverRange, hoverRes, nil // (hoverRes may be nil)
 		}
 	}
 	// Handle hovering over (non-import-path) literals.
@@ -287,10 +277,10 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	if selectedType != nil {
 		fakeObj := types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), selectedType)
 		signature := types.ObjectString(fakeObj, qf)
-		return *hoverRange, &hoverJSON{
-			Signature:  signature,
-			SingleLine: signature,
-			SymbolName: fakeObj.Name(),
+		return *hoverRange, &hoverResult{
+			signature:  signature,
+			singleLine: signature,
+			symbolName: fakeObj.Name(),
 		}, nil
 	}
 
@@ -618,14 +608,14 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		footer = fmt.Sprintf("Added in %v", sym.Version)
 	}
 
-	return *hoverRange, &hoverJSON{
-		Synopsis:          doc.Synopsis(docText),
-		FullDocumentation: docText,
-		SingleLine:        singleLineSignature,
-		SymbolName:        linkName,
-		Signature:         signature,
-		LinkPath:          linkPath,
-		LinkAnchor:        anchor,
+	return *hoverRange, &hoverResult{
+		synopsis:          doc.Synopsis(docText),
+		fullDocumentation: docText,
+		singleLine:        singleLineSignature,
+		symbolName:        linkName,
+		signature:         signature,
+		linkPath:          linkPath,
+		linkAnchor:        anchor,
 		typeDecl:          typeDecl,
 		methods:           methods,
 		promotedFields:    fields,
@@ -635,15 +625,15 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 
 // hoverBuiltin computes hover information when hovering over a builtin
 // identifier.
-func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) (*hoverJSON, error) {
+func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) (*hoverResult, error) {
 	// Special handling for error.Error, which is the only builtin method.
 	//
 	// TODO(rfindley): can this be unified with the handling below?
 	if obj.Name() == "Error" {
 		signature := obj.String()
-		return &hoverJSON{
-			Signature:  signature,
-			SingleLine: signature,
+		return &hoverResult{
+			signature:  signature,
+			singleLine: signature,
 			// TODO(rfindley): these are better than the current behavior.
 			// SymbolName: "(error).Error",
 			// LinkPath:   "builtin",
@@ -685,14 +675,14 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 	signature = replacer.Replace(signature)
 
 	docText := comment.Text()
-	return &hoverJSON{
-		Synopsis:          doc.Synopsis(docText),
-		FullDocumentation: docText,
-		Signature:         signature,
-		SingleLine:        obj.String(),
-		SymbolName:        obj.Name(),
-		LinkPath:          "builtin",
-		LinkAnchor:        obj.Name(),
+	return &hoverResult{
+		synopsis:          doc.Synopsis(docText),
+		fullDocumentation: docText,
+		signature:         signature,
+		singleLine:        obj.String(),
+		symbolName:        obj.Name(),
+		linkPath:          "builtin",
+		linkAnchor:        obj.Name(),
 	}, nil
 }
 
@@ -700,7 +690,7 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 // imp in the file pgf of pkg.
 //
 // If we do not have metadata for the hovered import, it returns _
-func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, imp *ast.ImportSpec) (protocol.Range, *hoverJSON, error) {
+func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, imp *ast.ImportSpec) (protocol.Range, *hoverResult, error) {
 	rng, err := pgf.NodeRange(imp.Path)
 	if err != nil {
 		return protocol.Range{}, nil, err
@@ -743,16 +733,16 @@ func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Packa
 	}
 
 	docText := comment.Text()
-	return rng, &hoverJSON{
-		Signature:         "package " + string(impMetadata.Name),
-		Synopsis:          doc.Synopsis(docText),
-		FullDocumentation: docText,
+	return rng, &hoverResult{
+		signature:         "package " + string(impMetadata.Name),
+		synopsis:          doc.Synopsis(docText),
+		fullDocumentation: docText,
 	}, nil
 }
 
 // hoverPackageName computes hover information for the package name of the file
 // pgf in pkg.
-func hoverPackageName(pkg *cache.Package, pgf *parsego.File) (protocol.Range, *hoverJSON, error) {
+func hoverPackageName(pkg *cache.Package, pgf *parsego.File) (protocol.Range, *hoverResult, error) {
 	var comment *ast.CommentGroup
 	for _, pgf := range pkg.CompiledGoFiles() {
 		if pgf.File.Doc != nil {
@@ -801,10 +791,10 @@ func hoverPackageName(pkg *cache.Package, pgf *parsego.File) (protocol.Range, *h
 		footer += fmt.Sprintf(" - %s: %s", attr.title, attr.value)
 	}
 
-	return rng, &hoverJSON{
-		Signature:         "package " + string(pkg.Metadata().Name),
-		Synopsis:          doc.Synopsis(docText),
-		FullDocumentation: docText,
+	return rng, &hoverResult{
+		signature:         "package " + string(pkg.Metadata().Name),
+		synopsis:          doc.Synopsis(docText),
+		fullDocumentation: docText,
 		footer:            footer,
 	}, nil
 }
@@ -816,7 +806,7 @@ func hoverPackageName(pkg *cache.Package, pgf *parsego.File) (protocol.Range, *h
 // For example, hovering over "\u2211" in "foo \u2211 bar" yields:
 //
 //	'∑', U+2211, N-ARY SUMMATION
-func hoverLit(pgf *parsego.File, lit *ast.BasicLit, pos token.Pos) (protocol.Range, *hoverJSON, error) {
+func hoverLit(pgf *parsego.File, lit *ast.BasicLit, pos token.Pos) (protocol.Range, *hoverResult, error) {
 	var (
 		value      string    // if non-empty, a constant value to format in hover
 		r          rune      // if non-zero, format a description of this rune in hover
@@ -929,15 +919,15 @@ func hoverLit(pgf *parsego.File, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 		fmt.Fprintf(&b, "U+%04X, %s", r, runeName)
 	}
 	hover := b.String()
-	return rng, &hoverJSON{
-		Synopsis:          hover,
-		FullDocumentation: hover,
+	return rng, &hoverResult{
+		synopsis:          hover,
+		fullDocumentation: hover,
 	}, nil
 }
 
 // hoverEmbed computes hover information for a filepath.Match pattern.
 // Assumes that the pattern is relative to the location of fh.
-func hoverEmbed(fh file.Handle, rng protocol.Range, pattern string) (protocol.Range, *hoverJSON, error) {
+func hoverEmbed(fh file.Handle, rng protocol.Range, pattern string) (protocol.Range, *hoverResult, error) {
 	s := &strings.Builder{}
 
 	dir := fh.URI().DirPath()
@@ -969,12 +959,12 @@ func hoverEmbed(fh file.Handle, rng protocol.Range, pattern string) (protocol.Ra
 		fmt.Fprintf(s, "%s\n\n", m)
 	}
 
-	json := &hoverJSON{
-		Signature:         fmt.Sprintf("Embedding %q", pattern),
-		Synopsis:          s.String(),
-		FullDocumentation: s.String(),
+	res := &hoverResult{
+		signature:         fmt.Sprintf("Embedding %q", pattern),
+		synopsis:          s.String(),
+		fullDocumentation: s.String(),
 	}
-	return rng, json, nil
+	return rng, res, nil
 }
 
 // inferredSignatureString is a wrapper around the types.ObjectString function
@@ -1196,7 +1186,7 @@ func parseFull(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSe
 }
 
 // If pkgURL is non-nil, it should be used to generate doc links.
-func formatHover(h *hoverJSON, options *settings.Options, pkgURL func(path PackagePath, fragment string) protocol.URI) (string, error) {
+func formatHover(h *hoverResult, options *settings.Options, pkgURL func(path PackagePath, fragment string) protocol.URI) (string, error) {
 	markdown := options.PreferredContentFormat == protocol.Markdown
 	maybeFenced := func(s string) string {
 		if s != "" && markdown {
@@ -1207,17 +1197,10 @@ func formatHover(h *hoverJSON, options *settings.Options, pkgURL func(path Packa
 
 	switch options.HoverKind {
 	case settings.SingleLine:
-		return h.SingleLine, nil
+		return h.singleLine, nil
 
 	case settings.NoDocumentation:
-		return maybeFenced(h.Signature), nil
-
-	case settings.Structured:
-		b, err := json.Marshal(h)
-		if err != nil {
-			return "", err
-		}
-		return string(b), nil
+		return maybeFenced(h.signature), nil
 
 	case settings.SynopsisDocumentation, settings.FullDocumentation:
 		var sections [][]string // assembled below
@@ -1228,20 +1211,20 @@ func formatHover(h *hoverJSON, options *settings.Options, pkgURL func(path Packa
 		// but not Signature, which is redundant (= TypeDecl + "\n" + Methods).
 		// For all other symbols, we display Signature;
 		// TypeDecl and Methods are empty.
-		// (This awkwardness is to preserve JSON compatibility.)
+		// (Now that JSON is no more, we could rationalize this.)
 		if h.typeDecl != "" {
 			sections = append(sections, []string{maybeFenced(h.typeDecl)})
 		} else {
-			sections = append(sections, []string{maybeFenced(h.Signature)})
+			sections = append(sections, []string{maybeFenced(h.signature)})
 		}
 
 		// Doc section.
 		var doc string
 		switch options.HoverKind {
 		case settings.SynopsisDocumentation:
-			doc = h.Synopsis
+			doc = h.synopsis
 		case settings.FullDocumentation:
-			doc = h.FullDocumentation
+			doc = h.fullDocumentation
 		}
 		if options.PreferredContentFormat == protocol.Markdown {
 			doc = DocCommentToMarkdown(doc, options)
@@ -1363,35 +1346,35 @@ func StdSymbolOf(obj types.Object) *stdlib.Symbol {
 }
 
 // If pkgURL is non-nil, it should be used to generate doc links.
-func formatLink(h *hoverJSON, options *settings.Options, pkgURL func(path PackagePath, fragment string) protocol.URI) string {
-	if options.LinksInHover == settings.LinksInHover_None || h.LinkPath == "" {
+func formatLink(h *hoverResult, options *settings.Options, pkgURL func(path PackagePath, fragment string) protocol.URI) string {
+	if options.LinksInHover == settings.LinksInHover_None || h.linkPath == "" {
 		return ""
 	}
 	var url protocol.URI
 	var caption string
 	if pkgURL != nil { // LinksInHover == "gopls"
 		// Discard optional module version portion.
-		// (Ideally the hoverJSON would retain the structure...)
-		path := h.LinkPath
-		if module, versionDir, ok := strings.Cut(h.LinkPath, "@"); ok {
+		// (Ideally the hoverResult would retain the structure...)
+		path := h.linkPath
+		if module, versionDir, ok := strings.Cut(h.linkPath, "@"); ok {
 			// "module@version/dir"
 			path = module
 			if _, dir, ok := strings.Cut(versionDir, "/"); ok {
 				path += "/" + dir
 			}
 		}
-		url = pkgURL(PackagePath(path), h.LinkAnchor)
+		url = pkgURL(PackagePath(path), h.linkAnchor)
 		caption = "in gopls doc viewer"
 	} else {
 		if options.LinkTarget == "" {
 			return ""
 		}
-		url = cache.BuildLink(options.LinkTarget, h.LinkPath, h.LinkAnchor)
+		url = cache.BuildLink(options.LinkTarget, h.linkPath, h.linkAnchor)
 		caption = "on " + options.LinkTarget
 	}
 	switch options.PreferredContentFormat {
 	case protocol.Markdown:
-		return fmt.Sprintf("[`%s` %s](%s)", h.SymbolName, caption, url)
+		return fmt.Sprintf("[`%s` %s](%s)", h.symbolName, caption, url)
 	case protocol.PlainText:
 		return ""
 	default:

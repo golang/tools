@@ -95,7 +95,7 @@
 			{
 				"Name": "hoverKind",
 				"Type": "enum",
-				"Doc": "hoverKind controls the information that appears in the hover text.\nSingleLine and Structured are intended for use only by authors of editor plugins.\n",
+				"Doc": "hoverKind controls the information that appears in the hover text.\nSingleLine is intended for use only by authors of editor plugins.\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null
@@ -112,10 +112,6 @@
 					{
 						"Value": "\"SingleLine\"",
 						"Doc": ""
-					},
-					{
-						"Value": "\"Structured\"",
-						"Doc": "`\"Structured\"` is an experimental setting that returns a structured hover format.\nThis format separates the signature from the documentation, so that the client\ncan do more manipulation of these fields.\n\nThis should only be used by clients that support this behavior.\n"
 					},
 					{
 						"Value": "\"SynopsisDocumentation\"",

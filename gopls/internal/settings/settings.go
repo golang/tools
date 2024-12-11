@@ -346,7 +346,7 @@ type CompletionOptions struct {
 // Note: DocumentationOptions must be comparable with reflect.DeepEqual.
 type DocumentationOptions struct {
 	// HoverKind controls the information that appears in the hover text.
-	// SingleLine and Structured are intended for use only by authors of editor plugins.
+	// SingleLine is intended for use only by authors of editor plugins.
 	HoverKind HoverKind
 
 	// LinkTarget is the base URL for links to Go package
@@ -791,13 +791,6 @@ const (
 	NoDocumentation       HoverKind = "NoDocumentation"
 	SynopsisDocumentation HoverKind = "SynopsisDocumentation"
 	FullDocumentation     HoverKind = "FullDocumentation"
-
-	// Structured is an experimental setting that returns a structured hover format.
-	// This format separates the signature from the documentation, so that the client
-	// can do more manipulation of these fields.
-	//
-	// This should only be used by clients that support this behavior.
-	Structured HoverKind = "Structured"
 )
 
 type VulncheckMode string
@@ -1021,12 +1014,14 @@ func (o *Options) setOne(name string, value any) error {
 			AllSymbolScope)
 
 	case "hoverKind":
+		if s, ok := value.(string); ok && strings.EqualFold(s, "structured") {
+			return deprecatedError("the experimental hoverKind='structured' setting was removed in gopls/v0.18.0 (https://go.dev/issue/70233)")
+		}
 		return setEnum(&o.HoverKind, value,
 			NoDocumentation,
 			SingleLine,
 			SynopsisDocumentation,
-			FullDocumentation,
-			Structured)
+			FullDocumentation)
 
 	case "linkTarget":
 		return setString(&o.LinkTarget, value)

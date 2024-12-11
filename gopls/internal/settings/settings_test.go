@@ -91,17 +91,33 @@ func TestOptions_Set(t *testing.T) {
 			},
 		},
 		{
-			name:  "hoverKind",
-			value: "Structured",
+			name:      "hoverKind",
+			value:     "Structured",
+			wantError: true,
 			check: func(o Options) bool {
-				return o.HoverKind == Structured
+				return o.HoverKind == FullDocumentation
+			},
+		},
+		{
+			name:      "ui.documentation.hoverKind",
+			value:     "Structured",
+			wantError: true,
+			check: func(o Options) bool {
+				return o.HoverKind == FullDocumentation
+			},
+		},
+		{
+			name:  "hoverKind",
+			value: "FullDocumentation",
+			check: func(o Options) bool {
+				return o.HoverKind == FullDocumentation
 			},
 		},
 		{
 			name:  "ui.documentation.hoverKind",
-			value: "Structured",
+			value: "FullDocumentation",
 			check: func(o Options) bool {
-				return o.HoverKind == Structured
+				return o.HoverKind == FullDocumentation
 			},
 		},
 		{
