@@ -5,8 +5,6 @@
 // Indexed package import.
 // See iexport.go for the export data format.
 
-// This file is a copy of $GOROOT/src/go/internal/gcimporter/iimport.go.
-
 package gcimporter
 
 import (
