@@ -466,6 +466,11 @@
 							"Default": "true"
 						},
 						{
+							"Name": "\"modernize\"",
+							"Doc": "simplify code by using modern constructs\n\nThis analyzer reports opportunities for simplifying and clarifying\nexisting code by using more modern features of Go, such as:\n\n  - replacing if/else conditional assignments by a call to the\n    built-in min or max functions.",
+							"Default": "true"
+						},
+						{
 							"Name": "\"nilfunc\"",
 							"Doc": "check for useless comparisons between functions and nil\n\nA useless comparison is one like f == nil as opposed to f() == nil.",
 							"Default": "true"
@@ -1129,6 +1134,12 @@
 			"Name": "lostcancel",
 			"Doc": "check cancel func returned by context.WithCancel is called\n\nThe cancellation function returned by context.WithCancel, WithTimeout,\nWithDeadline and variants such as WithCancelCause must be called,\nor the new context will remain live until its parent context is cancelled.\n(The background context is never cancelled.)",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/lostcancel",
+			"Default": true
+		},
+		{
+			"Name": "modernize",
+			"Doc": "simplify code by using modern constructs\n\nThis analyzer reports opportunities for simplifying and clarifying\nexisting code by using more modern features of Go, such as:\n\n  - replacing if/else conditional assignments by a call to the\n    built-in min or max functions.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize",
 			"Default": true
 		},
 		{

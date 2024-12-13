@@ -436,6 +436,20 @@ Default: on.
 
 Package documentation: [lostcancel](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/lostcancel)
 
+<a id='modernize'></a>
+## `modernize`: simplify code by using modern constructs
+
+
+This analyzer reports opportunities for simplifying and clarifying
+existing code by using more modern features of Go, such as:
+
+  - replacing if/else conditional assignments by a call to the
+    built-in min or max functions.
+
+Default: on.
+
+Package documentation: [modernize](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize)
+
 <a id='nilfunc'></a>
 ## `nilfunc`: check for useless comparisons between functions and nil
 

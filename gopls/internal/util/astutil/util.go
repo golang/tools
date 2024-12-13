@@ -87,10 +87,15 @@ func NodeContains(n ast.Node, pos token.Pos) bool {
 	return start <= pos && pos <= end
 }
 
-// Equal recursively compares two nodes for structural equality,
-// ignoring fields of type [token.Pos] and [ast.Object].
-// The operands x and y may be nil. A nil slice is not equal to an empty slice.
-// The provided identical function reports whether two identifiers should be considered identical.
+// Equal reports whether two nodes are structurally equal,
+// ignoring fields of type [token.Pos], [ast.Object],
+// and [ast.Scope], and comments.
+//
+// The operands x and y may be nil.
+// A nil slice is not equal to an empty slice.
+//
+// The provided function determines whether two identifiers
+// should be considered identical.
 func Equal(x, y ast.Node, identical func(x, y *ast.Ident) bool) bool {
 	if x == nil || y == nil {
 		return x == y
