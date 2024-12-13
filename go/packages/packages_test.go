@@ -2322,8 +2322,8 @@ func TestLoadModeStrings(t *testing.T) {
 			"(NeedName|NeedExportFile)",
 		},
 		{
-			packages.NeedForTest | packages.NeedEmbedFiles | packages.NeedEmbedPatterns,
-			"(NeedForTest|NeedEmbedFiles|NeedEmbedPatterns)",
+			packages.NeedForTest | packages.NeedTarget | packages.NeedEmbedFiles | packages.NeedEmbedPatterns,
+			"(NeedForTest|NeedEmbedFiles|NeedEmbedPatterns|NeedTarget)",
 		},
 		{
 			packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedDeps | packages.NeedExportFile | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedTypesSizes,
@@ -2334,8 +2334,8 @@ func TestLoadModeStrings(t *testing.T) {
 			"(NeedName|NeedModule)",
 		},
 		{
-			packages.NeedName | 0x10000, // off the end (future use)
-			"(NeedName|0x10000)",
+			packages.NeedName | 0x100000, // off the end (future use)
+			"(NeedName|0x100000)",
 		},
 		{
 			packages.NeedName | 0x400, // needInternalDepsErrors
@@ -3335,6 +3335,53 @@ func Foo() int { return a.Foo() }
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Load returned mismatching ForTest fields (ID->result -want +got):\n%s", diff)
+	}
+	t.Logf("Packages: %+v", pkgs)
+}
+
+// TestTarget tests the new field added as part of golang/go#38445.
+// The test uses GOPATH mode because non-main packages don't usually
+// have install targets in module mode.
+func TestTarget(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
+	dir := writeTree(t, `
+-- gopath/src/a/a.go --
+package a
+
+func Foo() {}
+-- gopath/src/b/b.go --
+package main
+
+import "a"
+
+func main() {
+	a.Foo()
+}
+`)
+	gopath := filepath.Join(dir, "gopath")
+
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName | packages.NeedTarget,
+		Env:  []string{"GOPATH=" + gopath, "GO111MODULE=off"},
+	}, filepath.Join(gopath, "src", "..."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var goexe string
+	if runtime.GOOS == "windows" {
+		goexe = ".exe"
+	}
+	want := map[string]string{
+		"a": filepath.Join(gopath, "pkg", runtime.GOOS+"_"+runtime.GOARCH, "a.a"),
+		"b": filepath.Join(gopath, "bin", "b"+goexe),
+	}
+	got := make(map[string]string)
+	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
+		got[pkg.PkgPath] = pkg.Target
+	})
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Load returned mismatching Target fields (pkgpath->target -want +got):\n%s", diff)
 	}
 	t.Logf("Packages: %+v", pkgs)
 }
