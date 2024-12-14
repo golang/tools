@@ -467,7 +467,7 @@
 						},
 						{
 							"Name": "\"modernize\"",
-							"Doc": "simplify code by using modern constructs\n\nThis analyzer reports opportunities for simplifying and clarifying\nexisting code by using more modern features of Go, such as:\n\n  - replacing if/else conditional assignments by a call to the\n    built-in min or max functions.",
+							"Doc": "simplify code by using modern constructs\n\nThis analyzer reports opportunities for simplifying and clarifying\nexisting code by using more modern features of Go, such as:\n\n  - replacing if/else conditional assignments by a call to the\n    built-in min or max functions.\n  - replacing sort.Slice(x, func(i, j int) bool) { return s[i] \u003c s[j] }\n    by slices.Sort(s).",
 							"Default": "true"
 						},
 						{
@@ -1138,7 +1138,7 @@
 		},
 		{
 			"Name": "modernize",
-			"Doc": "simplify code by using modern constructs\n\nThis analyzer reports opportunities for simplifying and clarifying\nexisting code by using more modern features of Go, such as:\n\n  - replacing if/else conditional assignments by a call to the\n    built-in min or max functions.",
+			"Doc": "simplify code by using modern constructs\n\nThis analyzer reports opportunities for simplifying and clarifying\nexisting code by using more modern features of Go, such as:\n\n  - replacing if/else conditional assignments by a call to the\n    built-in min or max functions.\n  - replacing sort.Slice(x, func(i, j int) bool) { return s[i] \u003c s[j] }\n    by slices.Sort(s).",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize",
 			"Default": true
 		},

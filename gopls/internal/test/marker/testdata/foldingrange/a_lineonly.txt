@@ -92,15 +92,15 @@ func _() {
 	slice := []int{1, 2, 3}
 	sort.Slice(slice, func(i, j int) bool {
 		a, b := slice[i], slice[j]
-		return a < b
+		return a > b
 	})
 
-	sort.Slice(slice, func(i, j int) bool { return slice[i] < slice[j] })
+	sort.Slice(slice, func(i, j int) bool { return slice[i] > slice[j] })
 
 	sort.Slice(
 		slice,
 		func(i, j int) bool {
-			return slice[i] < slice[j]
+			return slice[i] > slice[j]
 		},
 	)
 
@@ -221,15 +221,15 @@ func _() {<23 kind="">
 	slice := []int{1, 2, 3}
 	sort.Slice(slice, func(i, j int) bool {<24 kind="">
 		a, b := slice[i], slice[j]
-		return a < b</24>
+		return a > b</24>
 	})
 
-	sort.Slice(slice, func(i, j int) bool { return slice[i] < slice[j] })
+	sort.Slice(slice, func(i, j int) bool { return slice[i] > slice[j] })
 
 	sort.Slice(<25 kind="">
 		slice,
 		func(i, j int) bool {<26 kind="">
-			return slice[i] < slice[j]</26>
+			return slice[i] > slice[j]</26>
 		},</25>
 	)
 

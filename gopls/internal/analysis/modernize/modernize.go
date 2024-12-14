@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/format"
 	"go/token"
+	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -30,11 +31,26 @@ var Analyzer = &analysis.Analyzer{
 
 func run(pass *analysis.Pass) (any, error) {
 	minmax(pass)
+	sortslice(pass)
+
 	// TODO(adonovan): more modernizers here; see #70815.
+	// Consider interleaving passes with the same inspection
+	// criteria (e.g. CallExpr).
+
 	return nil, nil
 }
 
 // -- helpers --
+
+// TODO(adonovan): factor with analysisutil.Imports.
+func _imports(pkg *types.Package, path string) bool {
+	for _, imp := range pkg.Imports() {
+		if imp.Path() == path {
+			return true
+		}
+	}
+	return false
+}
 
 // equalSyntax reports whether x and y are syntactically equal (ignoring comments).
 func equalSyntax(x, y ast.Expr) bool {

@@ -13,4 +13,6 @@
 //
 //   - replacing if/else conditional assignments by a call to the
 //     built-in min or max functions.
+//   - replacing sort.Slice(x, func(i, j int) bool) { return s[i] < s[j] }
+//     by slices.Sort(s).
 package modernize
