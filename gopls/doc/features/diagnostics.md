@@ -299,7 +299,7 @@ dorky details and deletia:
 
 - **Experimental analyzers**. Gopls has some analyzers that are not
   enabled by default, because they produce too high a rate of false
-  positives. For example, fieldalignment, shadow, useany.
+  positives. For example, fieldalignment, shadow.
 
 Note: fillstruct is not a real analyzer.
 

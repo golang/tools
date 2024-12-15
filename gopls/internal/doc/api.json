@@ -467,7 +467,7 @@
 						},
 						{
 							"Name": "\"modernize\"",
-							"Doc": "simplify code by using modern constructs\n\nThis analyzer reports opportunities for simplifying and clarifying\nexisting code by using more modern features of Go, such as:\n\n  - replacing if/else conditional assignments by a call to the\n    built-in min or max functions.\n  - replacing sort.Slice(x, func(i, j int) bool) { return s[i] \u003c s[j] }\n    by slices.Sort(s).",
+							"Doc": "simplify code by using modern constructs\n\nThis analyzer reports opportunities for simplifying and clarifying\nexisting code by using more modern features of Go, such as:\n\n  - replacing if/else conditional assignments by a call to the\n    built-in min or max functions added in go1.21;\n  - replacing sort.Slice(x, func(i, j int) bool) { return s[i] \u003c s[j] }\n    by a call to slices.Sort(s), added in go1.21;\n  - replacing interface{} by the 'any' type added in go1.18;",
 							"Default": "true"
 						},
 						{
@@ -604,11 +604,6 @@
 							"Name": "\"unusedwrite\"",
 							"Doc": "checks for unused writes\n\nThe analyzer reports instances of writes to struct fields and\narrays that are never read. Specifically, when a struct object\nor an array is copied, its elements are copied implicitly by\nthe compiler, and any element write to this copy does nothing\nwith the original object.\n\nFor example:\n\n\ttype T struct { x int }\n\n\tfunc f(input []T) {\n\t\tfor i, v := range input {  // v is a copy\n\t\t\tv.x = i  // unused write to field x\n\t\t}\n\t}\n\nAnother example is about non-pointer receiver:\n\n\ttype T struct { x int }\n\n\tfunc (t T) f() {  // t is a copy\n\t\tt.x = i  // unused write to field x\n\t}",
 							"Default": "true"
-						},
-						{
-							"Name": "\"useany\"",
-							"Doc": "check for constraints that could be simplified to \"any\"",
-							"Default": "false"
 						},
 						{
 							"Name": "\"waitgroup\"",
@@ -1138,7 +1133,7 @@
 		},
 		{
 			"Name": "modernize",
-			"Doc": "simplify code by using modern constructs\n\nThis analyzer reports opportunities for simplifying and clarifying\nexisting code by using more modern features of Go, such as:\n\n  - replacing if/else conditional assignments by a call to the\n    built-in min or max functions.\n  - replacing sort.Slice(x, func(i, j int) bool) { return s[i] \u003c s[j] }\n    by slices.Sort(s).",
+			"Doc": "simplify code by using modern constructs\n\nThis analyzer reports opportunities for simplifying and clarifying\nexisting code by using more modern features of Go, such as:\n\n  - replacing if/else conditional assignments by a call to the\n    built-in min or max functions added in go1.21;\n  - replacing sort.Slice(x, func(i, j int) bool) { return s[i] \u003c s[j] }\n    by a call to slices.Sort(s), added in go1.21;\n  - replacing interface{} by the 'any' type added in go1.18;",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize",
 			"Default": true
 		},
@@ -1303,12 +1298,6 @@
 			"Doc": "checks for unused writes\n\nThe analyzer reports instances of writes to struct fields and\narrays that are never read. Specifically, when a struct object\nor an array is copied, its elements are copied implicitly by\nthe compiler, and any element write to this copy does nothing\nwith the original object.\n\nFor example:\n\n\ttype T struct { x int }\n\n\tfunc f(input []T) {\n\t\tfor i, v := range input {  // v is a copy\n\t\t\tv.x = i  // unused write to field x\n\t\t}\n\t}\n\nAnother example is about non-pointer receiver:\n\n\ttype T struct { x int }\n\n\tfunc (t T) f() {  // t is a copy\n\t\tt.x = i  // unused write to field x\n\t}",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unusedwrite",
 			"Default": true
-		},
-		{
-			"Name": "useany",
-			"Doc": "check for constraints that could be simplified to \"any\"",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/useany",
-			"Default": false
 		},
 		{
 			"Name": "waitgroup",

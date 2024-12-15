@@ -122,8 +122,8 @@ func _() {
 	var mu myUint
 	mu = conv //@rank(" //", convertD, convertE)
 
-	// don't downrank constants when assigning to interface{}
-	var _ interface{} = c //@rank(" //", convertD, complex)
+	// don't downrank constants when assigning to any
+	var _ any = c //@rank(" //", convertD, complex)
 
 	var _ time.Duration = conv //@rank(" //", convertD, convertE),snippet(" //", convertE, "time.Duration(convE)")
 

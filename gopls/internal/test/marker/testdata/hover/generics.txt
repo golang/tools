@@ -107,7 +107,7 @@ type parameter P interface{~int | string}
 -- inferred.go --
 package generics
 
-func app[S interface{ ~[]E }, E interface{}](s S, e E) S {
+func app[S interface{ ~[]E }, E any](s S, e E) S {
 	return append(s, e)
 }
 
@@ -120,5 +120,5 @@ func _() {
 
 -- @appint --
 ```go
-func app(s []int, e int) []int // func[S interface{~[]E}, E interface{}](s S, e E) S
+func app(s []int, e int) []int // func[S interface{~[]E}, E any](s S, e E) S
 ```

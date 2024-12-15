@@ -173,7 +173,7 @@ import "fmt"
 func TypeStuff() {
 	var x string
 
-	switch y := interface{}(x).(type) { //@loc(y, "y"), hover("y", "y", y) , def("y", y)
+	switch y := any(x).(type) { //@loc(y, "y"), hover("y", "y", y) , def("y", y)
 	case int: //@loc(intY, "int")
 		fmt.Printf("%v", y) //@hover("y", "y", inty), def("y", y)
 	case string: //@loc(stringY, "string")
@@ -191,7 +191,7 @@ var y string
 ```
 -- @y --
 ```go
-var y interface{}
+var y any
 ```
 -- a/h.go --
 package a
@@ -310,7 +310,7 @@ func _() {
 			// test key
 			key string //@loc(testInputKey, "key")
 			// test value
-			value interface{} //@loc(testInputValue, "value")
+			value any //@loc(testInputValue, "value")
 		}
 		result struct {
 			v <-chan struct {
@@ -413,7 +413,7 @@ def(bFunc, Things)
 */
 
 func _() {
-	var x interface{}
+	var x any
 	switch x := x.(type) { //@hover("x", "x", xInterface)
 	case string: //@loc(eString, "string")
 		fmt.Println(x) //@hover("x", "x", xString)
@@ -427,7 +427,7 @@ var x int
 ```
 -- @xInterface --
 ```go
-var x interface{}
+var x any
 ```
 -- @xString --
 ```go

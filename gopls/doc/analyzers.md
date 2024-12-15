@@ -444,9 +444,10 @@ This analyzer reports opportunities for simplifying and clarifying
 existing code by using more modern features of Go, such as:
 
   - replacing if/else conditional assignments by a call to the
-    built-in min or max functions.
+    built-in min or max functions added in go1.21;
   - replacing sort.Slice(x, func(i, j int) bool) { return s[i] < s[j] }
-    by slices.Sort(s).
+    by a call to slices.Sort(s), added in go1.21;
+  - replacing interface{} by the 'any' type added in go1.18;
 
 Default: on.
 
@@ -982,15 +983,6 @@ Another example is about non-pointer receiver:
 Default: on.
 
 Package documentation: [unusedwrite](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unusedwrite)
-
-<a id='useany'></a>
-## `useany`: check for constraints that could be simplified to "any"
-
-
-
-Default: off. Enable by setting `"analyses": {"useany": true}`.
-
-Package documentation: [useany](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/useany)
 
 <a id='waitgroup'></a>
 ## `waitgroup`: check for misuses of sync.WaitGroup

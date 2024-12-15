@@ -8,7 +8,7 @@ copylocks, printf, slog, tests, timeformat, nilness, and cgocall.
 
 -- go.mod --
 module example.com
-go 1.12
+go 1.18
 
 -- flags --
 -cgo
@@ -35,7 +35,7 @@ func _() {
 	printfWrapper("%s") //@diag(re`printfWrapper\(.*?\)`, re"example.com.printfWrapper format %s reads arg #1, but call has 0 args")
 }
 
-func printfWrapper(format string, args ...interface{}) {
+func printfWrapper(format string, args ...any) {
 	fmt.Printf(format, args...)
 }
 

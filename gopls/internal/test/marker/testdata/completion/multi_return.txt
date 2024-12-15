@@ -46,7 +46,7 @@ func _() {
 }
 
 func _() {
-	var baz func(...interface{})
+	var baz func(...any)
 
 	var otterNap func() (int, int) //@item(multiTwo, "otterNap", "func() (int, int)", "var")
 	var one int                    //@item(multiOne, "one", "int", "var")

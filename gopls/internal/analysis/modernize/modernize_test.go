@@ -14,5 +14,6 @@ import (
 func Test(t *testing.T) {
 	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), modernize.Analyzer,
 		"minmax",
-		"sortslice")
+		"sortslice",
+		"efaceany")
 }

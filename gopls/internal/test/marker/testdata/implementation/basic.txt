@@ -2,7 +2,7 @@ Basic test of implementation query.
 
 -- go.mod --
 module example.com
-go 1.12
+go 1.18
 
 -- implementation/implementation.go --
 package implementation
@@ -35,7 +35,7 @@ type cryer int //@implementation("cryer", Cryer)
 
 func (cryer) Cry(other.CryType) {} //@loc(CryImpl, "Cry"),implementation("Cry", Cry)
 
-type Empty interface{} //@implementation("Empty")
+type Empty any //@implementation("Empty")
 
 var _ interface{ Joke() } //@implementation("Joke", ImpJoker)
 

@@ -347,7 +347,7 @@ package fillstruct
 
 type StructAnon struct {
 	a struct{}
-	b map[string]interface{}
+	b map[string]any
 	c map[string]struct {
 		d int
 		e bool
@@ -362,7 +362,7 @@ func fill() {
 -	_ := StructAnon{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_anon)
 +	_ := StructAnon{
 +		a: struct{}{},
-+		b: map[string]interface{}{},
++		b: map[string]any{},
 +		c: map[string]struct{d int; e bool}{},
 +	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_anon)
 -- fillStruct_nested.go --

@@ -2,7 +2,7 @@ This test verifies that we fine implementations of the built-in error interface.
 
 -- go.mod --
 module example.com
-go 1.12
+go 1.18
 
 -- p.go --
 package p

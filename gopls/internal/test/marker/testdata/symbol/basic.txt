@@ -70,7 +70,7 @@ type WithEmbeddeds interface {
 	io.Writer
 }
 
-type EmptyInterface interface{}
+type EmptyInterface any
 
 func Dunk() int { return 0 }
 
@@ -86,7 +86,7 @@ Alias "string"
 BoolAlias "bool"
 Boolean "bool"
 Dunk "func() int"
-EmptyInterface "interface{}"
+EmptyInterface "any"
 EmptyStruct "struct{}"
 Foo "struct{...}" +6 lines
 Foo.Bar "int"

@@ -58,7 +58,6 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/simplifyslice"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
-	"golang.org/x/tools/gopls/internal/analysis/useany"
 	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
 )
@@ -162,7 +161,6 @@ func init() {
 
 		// disabled due to high false positives
 		{analyzer: shadow.Analyzer, enabled: false}, // very noisy
-		{analyzer: useany.Analyzer, enabled: false}, // never a bug
 		// fieldalignment is not even off-by-default; see #67762.
 
 		// "simplifiers": analyzers that offer mere style fixes

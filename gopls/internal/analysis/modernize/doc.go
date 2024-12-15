@@ -12,7 +12,8 @@
 // existing code by using more modern features of Go, such as:
 //
 //   - replacing if/else conditional assignments by a call to the
-//     built-in min or max functions.
+//     built-in min or max functions added in go1.21;
 //   - replacing sort.Slice(x, func(i, j int) bool) { return s[i] < s[j] }
-//     by slices.Sort(s).
+//     by a call to slices.Sort(s), added in go1.21;
+//   - replacing interface{} by the 'any' type added in go1.18;
 package modernize

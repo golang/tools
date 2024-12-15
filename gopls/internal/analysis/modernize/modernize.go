@@ -30,12 +30,34 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (any, error) {
+	// Decorate pass.Report to suppress diagnostics in generated files.
+	//
+	// TODO(adonovan): opt: do this more efficiently by interleaving
+	// the micro-passes (as described below) and preemptively skipping
+	// the entire subtree for each generated *ast.File.
+	{
+		// Gather information whether file is generated or not.
+		generated := make(map[*token.File]bool)
+		for _, file := range pass.Files {
+			if ast.IsGenerated(file) {
+				generated[pass.Fset.File(file.FileStart)] = true
+			}
+		}
+		report := pass.Report
+		pass.Report = func(diag analysis.Diagnostic) {
+			if _, ok := generated[pass.Fset.File(diag.Pos)]; ok {
+				return // skip checking if it's generated code
+			}
+			report(diag)
+		}
+	}
+
 	minmax(pass)
 	sortslice(pass)
+	efaceany(pass)
 
 	// TODO(adonovan): more modernizers here; see #70815.
-	// Consider interleaving passes with the same inspection
-	// criteria (e.g. CallExpr).
+	// TODO(adonovan): opt: interleave these micro-passes within a single inspection.
 
 	return nil, nil
 }

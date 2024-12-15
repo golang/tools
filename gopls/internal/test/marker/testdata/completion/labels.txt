@@ -36,7 +36,7 @@ Foo1: //@item(label1, "Foo1", "label", "const")
 		}
 
 	Foo4: //@item(label4, "Foo4", "label", "const")
-		switch interface{}(a).(type) {
+		switch any(a).(type) {
 		case int:
 			break F //@complete(" //", label4, label1)
 		}

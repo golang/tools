@@ -378,7 +378,7 @@ func funcLitType() {
 }
 
 func compositeLitType() {
-	foo := map[string]interface{}{"": ""}
+	foo := map[string]any{"": ""}
 }
 
 -- @vartypes --
@@ -400,6 +400,6 @@ func funcLitType() {
 }
 
 func compositeLitType() {
-	foo< map[string]interface{}> := map[string]interface{}{"": ""}
+	foo< map[string]any> := map[string]any{"": ""}
 }
 

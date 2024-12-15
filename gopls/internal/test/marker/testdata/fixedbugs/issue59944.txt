@@ -32,6 +32,6 @@ type Layout = C.struct_layout
 
 // Bindingf is a printf wrapper. This was necessary to trigger the panic in
 // objectpath while encoding facts.
-func (l *Layout) Bindingf(format string, args ...interface{}) {
+func (l *Layout) Bindingf(format string, args ...any) {
 	fmt.Printf(format, args...)
 }

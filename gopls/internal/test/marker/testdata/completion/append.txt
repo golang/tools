@@ -22,7 +22,7 @@ func _() {
 	)
 
 	append(aStrings, a)                     //@rank(")", appendString, appendInt)
-	var _ interface{} = append(aStrings, a) //@rank(")", appendString, appendInt)
+	var _ any = append(aStrings, a) //@rank(")", appendString, appendInt)
 	var _ []string = append(oops, a)        //@rank(")", appendString, appendInt)
 
 	foo(append())                  //@rank("))", appendStrings, appendInt),rank("))", appendStrings, appendString)

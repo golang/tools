@@ -11,6 +11,6 @@ This test verifies gopls does not crash on fake "resolved" types.
 -- unresolved.go --
 package unresolved
 
-func foo(interface{}) {
+func foo(any) {
 	foo(func(i, j f //@complete(" //")
 }
