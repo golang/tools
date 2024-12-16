@@ -493,16 +493,16 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string
 		return
 	}
 
-	maxArgNum := firstArg
+	maxArgIndex := firstArg
 	anyIndex := false
 	// Check formats against args.
 	for _, directive := range directives {
 		if (directive.Prec != nil && directive.Prec.Index != -1) ||
 			(directive.Width != nil && directive.Width.Index != -1) ||
-			(directive.Verb != nil && directive.Verb.Index != -1) {
+			(directive.Verb.Index != -1) {
 			anyIndex = true
 		}
-		if !okPrintfArg(pass, call, &maxArgNum, name, directive) { // One error per format is enough.
+		if !okPrintfArg(pass, call, &maxArgIndex, firstArg, name, directive) { // One error per format is enough.
 			return
 		}
 		if directive.Verb.Verb == 'w' {
@@ -514,7 +514,7 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string
 		}
 	}
 	// Dotdotdot is hard.
-	if call.Ellipsis.IsValid() && maxArgNum >= len(call.Args)-1 {
+	if call.Ellipsis.IsValid() && maxArgIndex >= len(call.Args)-1 {
 		return
 	}
 	// If any formats are indexed, extra arguments are ignored.
@@ -522,8 +522,8 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string
 		return
 	}
 	// There should be no leftover arguments.
-	if maxArgNum != len(call.Args) {
-		expect := maxArgNum - firstArg
+	if maxArgIndex != len(call.Args) {
+		expect := maxArgIndex - firstArg
 		numArgs := len(call.Args) - firstArg
 		pass.ReportRangef(call, "%s call needs %v but has %v", name, count(expect, "arg"), count(numArgs, "arg"))
 	}
@@ -592,7 +592,7 @@ var printVerbs = []printVerb{
 // okPrintfArg compares the FormatDirective to the arguments actually present,
 // reporting any discrepancies it can discern. If the final argument is ellipsissed,
 // there's little it can do for that.
-func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgNum *int, name string, directive *fmtstr.FormatDirective) (ok bool) {
+func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firstArg int, name string, directive *fmtstr.FormatDirective) (ok bool) {
 	verb := directive.Verb.Verb
 	var v printVerb
 	found := false
@@ -607,8 +607,8 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgNum *int, name s
 	// Could verb's arg implement fmt.Formatter?
 	// Skip check for the %w verb, which requires an error.
 	formatter := false
-	if v.typ != argError && directive.Verb.ArgNum < len(call.Args) {
-		if tv, ok := pass.TypesInfo.Types[call.Args[directive.Verb.ArgNum]]; ok {
+	if v.typ != argError && directive.Verb.ArgIndex < len(call.Args) {
+		if tv, ok := pass.TypesInfo.Types[call.Args[directive.Verb.ArgIndex]]; ok {
 			formatter = isFormatter(tv.Type)
 		}
 	}
@@ -630,22 +630,23 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgNum *int, name s
 			}
 		}
 	}
-	var argNums []int
-	if directive.Width != nil && directive.Width.ArgNum != -1 {
-		argNums = append(argNums, directive.Width.ArgNum)
-	}
-	if directive.Prec != nil && directive.Prec.ArgNum != -1 {
-		argNums = append(argNums, directive.Prec.ArgNum)
-	}
 
-	// Verb is good. If len(argNums)>0, we have something like %.*s and all
-	// args in argNums must be an integer.
-	for i := 0; i < len(argNums); i++ {
-		argNum := argNums[i]
-		if !argCanBeChecked(pass, call, argNums[i], directive, name) {
+	var argIndexes []int
+	// First check for *.
+	if directive.Width != nil && directive.Width.ArgIndex != -1 {
+		argIndexes = append(argIndexes, directive.Width.ArgIndex)
+	}
+	if directive.Prec != nil && directive.Prec.ArgIndex != -1 {
+		argIndexes = append(argIndexes, directive.Prec.ArgIndex)
+	}
+	// If len(argIndexes)>0, we have something like %.*s and all
+	// indexes in argIndexes must be an integer.
+	for i := 0; i < len(argIndexes); i++ {
+		argIndex := argIndexes[i]
+		if !argCanBeChecked(pass, call, argIndex, firstArg, directive, name) {
 			return
 		}
-		arg := call.Args[argNum]
+		arg := call.Args[argIndex]
 		if reason, ok := matchArgType(pass, argInt, arg); !ok {
 			details := ""
 			if reason != "" {
@@ -657,25 +658,28 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgNum *int, name s
 	}
 
 	// Collect to update maxArgNum in one loop.
-	if directive.Verb != nil && directive.Verb.ArgNum != -1 && verb != '%' {
-		argNums = append(argNums, directive.Verb.ArgNum)
+	if directive.Verb.ArgIndex != -1 && verb != '%' {
+		argIndexes = append(argIndexes, directive.Verb.ArgIndex)
 	}
-	for _, n := range argNums {
-		if n >= *maxArgNum {
-			*maxArgNum = n + 1
+	for _, index := range argIndexes {
+		if index >= *maxArgIndex {
+			*maxArgIndex = index + 1
 		}
 	}
 
+	// Special case for '%', go will print "fmt.Printf("%10.2%%dhello", 4)"
+	// as "%4hello", discard any runes between the two '%'s, and treat the verb '%'
+	// as an ordinary rune, so early return to skip the type check.
 	if verb == '%' || formatter {
 		return true
 	}
 
 	// Now check verb's type.
-	argNum := argNums[len(argNums)-1]
-	if !argCanBeChecked(pass, call, argNums[len(argNums)-1], directive, name) {
+	verbArgIndex := directive.Verb.ArgIndex
+	if !argCanBeChecked(pass, call, verbArgIndex, firstArg, directive, name) {
 		return false
 	}
-	arg := call.Args[argNum]
+	arg := call.Args[verbArgIndex]
 	if isFunctionValue(pass, arg) && verb != 'p' && verb != 'T' {
 		pass.ReportRangef(call, "%s format %s arg %s is a func value, not called", name, directive.Format, analysisutil.Format(pass.Fset, arg))
 		return false
@@ -778,24 +782,24 @@ func isFunctionValue(pass *analysis.Pass, e ast.Expr) bool {
 // argCanBeChecked reports whether the specified argument is statically present;
 // it may be beyond the list of arguments or in a terminal slice... argument, which
 // means we can't see it.
-func argCanBeChecked(pass *analysis.Pass, call *ast.CallExpr, argNum int, directive *fmtstr.FormatDirective, name string) bool {
-	if argNum <= 0 {
+func argCanBeChecked(pass *analysis.Pass, call *ast.CallExpr, argIndex, firstArg int, directive *fmtstr.FormatDirective, name string) bool {
+	if argIndex <= 0 {
 		// Shouldn't happen, so catch it with prejudice.
-		panic("negative arg num")
+		panic("negative argIndex")
 	}
-	if argNum < len(call.Args)-1 {
+	if argIndex < len(call.Args)-1 {
 		return true // Always OK.
 	}
 	if call.Ellipsis.IsValid() {
 		return false // We just can't tell; there could be many more arguments.
 	}
-	if argNum < len(call.Args) {
+	if argIndex < len(call.Args) {
 		return true
 	}
 	// There are bad indexes in the format or there are fewer arguments than the format needs.
 	// This is the argument number relative to the format: Printf("%s", "hi") will give 1 for the "hi".
-	arg := argNum - directive.FirstArg + 1 // People think of arguments as 1-indexed.
-	pass.ReportRangef(call, "%s format %s reads arg #%d, but call has %v", name, directive.Format, arg, count(len(call.Args)-directive.FirstArg, "arg"))
+	arg := argIndex - firstArg + 1 // People think of arguments as 1-indexed.
+	pass.ReportRangef(call, "%s format %s reads arg #%d, but call has %v", name, directive.Format, arg, count(len(call.Args)-firstArg, "arg"))
 	return false
 }
 

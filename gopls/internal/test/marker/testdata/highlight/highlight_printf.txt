@@ -33,6 +33,11 @@ func VerbIsPercentage() {
 	fmt.Printf("%4.2% %d", 6) //@hiloc(z1, "%d", write),hiloc(z2, "6", read),highlightall(z1, z2)
 }
 
+func SpecialChars() {
+	fmt.Printf("Hello \n %s, you \t \n have %d new messages!", "Alice", 5) //@hiloc(specials, "%s", write),hiloc(specialargs0, "\"Alice\"", read),highlightall(specials, specialargs0)
+	fmt.Printf("Hello \n %s, you \t \n have %d new messages!", "Alice", 5) //@hiloc(speciald, "%d", write),hiloc(specialargs1, "5", read),highlightall(speciald, specialargs1)
+}
+
 func Indexed() {
 	fmt.Printf("%[1]d", 3) //@hiloc(i1, "%[1]d", write),hiloc(i2, "3", read),highlightall(i1, i2)
 	fmt.Printf("%[1]*d", 3, 6) //@hiloc(i3, "[1]*", write),hiloc(i4, "3", read),hiloc(i5, "d", write),hiloc(i6, "6", read),highlightall(i3, i4),highlightall(i5, i6)
