@@ -51,11 +51,11 @@ func ParsePrintf(info *types.Info, call *ast.CallExpr) ([]*FormatDirective, erro
 			return nil, err
 		}
 
-		state.addRange(i)
+		state.addOffset(i)
 		states = append(states, state)
 
 		w = len(state.Format)
-		// Do not waste an augument for '%'.
+		// Do not waste an argument for '%'.
 		if state.Verb.Verb != '%' {
 			argNum = state.argNum + 1
 		}
@@ -68,7 +68,7 @@ func ParsePrintf(info *types.Info, call *ast.CallExpr) ([]*FormatDirective, erro
 // if the directive is malformed. The firstArg and argNum parameters help determine how
 // arguments map to this directive.
 //
-// Parse sequence: '%' -> flags? -> index? -> width(*)? -> '.'? -> index? -> precision(*)? -> index? -> verb.
+// Parse sequence: '%' -> flags -> {[N]* or width} -> .{[N]* or precision} -> [N] -> verb.
 func parsePrintfVerb(call *ast.CallExpr, format string, firstArg, argNum int) (*FormatDirective, error) {
 	state := &FormatDirective{
 		Format:       format,
@@ -190,23 +190,22 @@ type FormatDirective struct {
 	nbytes       int
 }
 
-// Type of size specifier encountered for width or precision.
 type SizeKind int
 
 const (
-	Literal     SizeKind = iota // A literal number, e.g. "4" in "%4d"
-	Star                        // A dynamic size from an argument, e.g. "%*d"
-	IndexedStar                 // A dynamic size with an explicit index, e.g. "%[2]*d"
+	Literal         SizeKind = iota // A literal number, e.g. "4" in "%4d"
+	Asterisk                        // A dynamic size from an argument, e.g. "%*d"
+	IndexedAsterisk                 // A dynamic size with an explicit index, e.g. "%[2]*d"
 )
 
 // DirectiveSize describes a width or precision in a format directive.
-// Depending on Kind, it may represent a literal number, a star, or an indexed star.
+// Depending on Kind, it may represent a literal number, a asterisk, or an indexed asterisk.
 type DirectiveSize struct {
 	Kind   SizeKind // Type of size specifier
 	Range  posRange // Position of the size specifier within the directive
 	Size   int      // The literal size if Kind == Literal, otherwise -1
-	Index  int      // If Kind == IndexedStar, the argument index used to obtain the size
-	ArgNum int      // The argument position if Kind == Star or IndexedStar, relative to CallExpr.
+	Index  int      // If Kind == IndexedAsterisk, the argument index used to obtain the size
+	ArgNum int      // The argument position if Kind == Asterisk or IndexedAsterisk, relative to CallExpr.
 }
 
 // DirectiveVerb represents the verb character of a format directive (e.g., 'd', 's', 'f').
@@ -222,9 +221,9 @@ type posRange struct {
 	Start, End int
 }
 
-// addRange adjusts the recorded positions in Verb, Width, Prec, and the
+// addOffset adjusts the recorded positions in Verb, Width, Prec, and the
 // directive's overall Range to be relative to the position in the full format string.
-func (s *FormatDirective) addRange(parsedLen int) {
+func (s *FormatDirective) addOffset(parsedLen int) {
 	if s.Verb != nil {
 		s.Verb.Range.Start += parsedLen
 		s.Verb.Range.End += parsedLen
@@ -287,6 +286,7 @@ func (s *FormatDirective) parseIndex() error {
 		s.index = num
 		s.indexPos = start - 1
 	}
+
 	ok := true
 	if s.nbytes == len(s.Format) || s.nbytes == start || s.Format[s.nbytes] != ']' {
 		ok = false // syntax error is either missing "]" or invalid index.
@@ -300,6 +300,7 @@ func (s *FormatDirective) parseIndex() error {
 	if err != nil || !ok || arg32 <= 0 || arg32 > int64(len(s.call.Args)-s.FirstArg) {
 		return fmt.Errorf("format has invalid argument index [%s]", s.Format[start:s.nbytes])
 	}
+
 	s.nbytes++ // skip ']'
 	arg := int(arg32)
 	arg += s.FirstArg - 1 // We want to zero-index the actual arguments.
@@ -327,7 +328,7 @@ func (s *FormatDirective) parseSize(kind sizeType) {
 			// Absorb it.
 			s.indexPending = false
 			size := &DirectiveSize{
-				Kind: IndexedStar,
+				Kind: IndexedAsterisk,
 				Size: -1,
 				Range: posRange{
 					Start: s.indexPos,
@@ -347,9 +348,9 @@ func (s *FormatDirective) parseSize(kind sizeType) {
 				panic(kind)
 			}
 		} else {
-			// Non-indexed star: "%*d".
+			// Non-indexed asterisk: "%*d".
 			size := &DirectiveSize{
-				Kind: Star,
+				Kind: Asterisk,
 				Size: -1,
 				Range: posRange{
 					Start: s.nbytes - 1,
@@ -398,7 +399,7 @@ func (s *FormatDirective) parseSize(kind sizeType) {
 }
 
 // parsePrecision checks if there's a precision specified after a '.' character.
-// If found, it may also parse an index or a star. Returns an error if any index
+// If found, it may also parse an index or an asterisk. Returns an error if any index
 // parsing fails.
 func (s *FormatDirective) parsePrecision() error {
 	// If there's a period, there may be a precision.

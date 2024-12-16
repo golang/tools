@@ -16,8 +16,8 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	gastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/fmtstr"
 )
 
 func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.DocumentHighlight, error) {
@@ -73,18 +73,21 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, po
 // which should be the result of astutil.PathEnclosingInterval.
 func highlightPath(path []ast.Node, file *ast.File, info *types.Info, pos token.Pos) (map[posRange]protocol.DocumentHighlightKind, error) {
 	result := make(map[posRange]protocol.DocumentHighlightKind)
-	// Inside a printf-style call?
+
+	// Inside a printf-style call, printf("...%v...", arg)?
+	// Treat each corresponding ("%v", arg) pair as a highlight class.
 	for _, node := range path {
 		if call, ok := node.(*ast.CallExpr); ok {
-			for _, args := range call.Args {
-				// Only try when pos is in right side of the format String.
-				if basicList, ok := args.(*ast.BasicLit); ok && basicList.Pos() < pos &&
-					basicList.Kind == token.STRING && strings.Contains(basicList.Value, "%") {
-					highlightPrintf(basicList, call, pos, result)
+			idx := fmtstr.FormatStringIndex(info, call)
+			if idx >= 0 && idx < len(call.Args) {
+				format, ok := fmtstr.StringConstantExpr(info, call.Args[idx])
+				if ok && strings.Contains(format, "%") {
+					highlightPrintf(info, call, call.Args[idx].Pos(), pos, result)
 				}
 			}
 		}
 	}
+
 	switch node := path[0].(type) {
 	case *ast.BasicLit:
 		// Import path string literal?
@@ -145,259 +148,74 @@ func highlightPath(path []ast.Node, file *ast.File, info *types.Info, pos token.
 	return result, nil
 }
 
-// highlightPrintf identifies and highlights the relationships between placeholders
-// in a format string and their corresponding variadic arguments in a printf-style
-// function call.
-//
+// highlightPrintf highlights directives in a format string and their corresponding
+// variadic arguments in a printf-style function call.
 // For example:
 //
 // fmt.Printf("Hello %s, you scored %d", name, score)
 //
 // If the cursor is on %s or name, highlightPrintf will highlight %s as a write operation,
 // and name as a read operation.
-func highlightPrintf(directive *ast.BasicLit, call *ast.CallExpr, pos token.Pos, result map[posRange]protocol.DocumentHighlightKind) {
-	// Two '%'s are interpreted as one '%'(escaped), let's replace them with spaces.
-	format := strings.Replace(directive.Value, "%%", "  ", -1)
-	if strings.Contains(directive.Value, "%[") ||
-		strings.Contains(directive.Value, "%p") ||
-		strings.Contains(directive.Value, "%T") {
-		// parsef can not handle these cases.
-		return
-	}
-	expectedVariadicArgs := make([]ast.Expr, strings.Count(format, "%"))
-	firstVariadic := -1
-	for i, arg := range call.Args {
-		if directive == arg {
-			firstVariadic = i + 1
-			argsLen := len(call.Args) - i - 1
-			if argsLen > len(expectedVariadicArgs) {
-				// Translate from Printf(a0,"%d %d",5, 6, 7) to [5, 6]
-				copy(expectedVariadicArgs, call.Args[firstVariadic:firstVariadic+len(expectedVariadicArgs)])
-			} else {
-				// Translate from Printf(a0,"%d %d %s",5, 6) to [5, 6, nil]
-				copy(expectedVariadicArgs[:argsLen], call.Args[firstVariadic:])
-			}
-			break
-		}
-	}
-	formatItems, err := parsef(format, directive.Pos(), expectedVariadicArgs...)
+func highlightPrintf(info *types.Info, call *ast.CallExpr, formatPos token.Pos, cursorPos token.Pos, result map[posRange]protocol.DocumentHighlightKind) {
+	directives, err := fmtstr.ParsePrintf(info, call)
 	if err != nil {
 		return
 	}
-	var percent formatPercent
-	// Cursor in argument.
-	if pos > directive.End() {
-		var curVariadic int
-		// Which variadic argument cursor sits inside.
-		for i := firstVariadic; i < len(call.Args); i++ {
-			if gastutil.NodeContains(call.Args[i], pos) {
-				// Offset relative to formatItems.
-				curVariadic = i - firstVariadic
-				break
-			}
+
+	highlight := func(start, end token.Pos, argNum int) bool {
+		var (
+			rangeStart = formatPos + token.Pos(start) + 1 // add offset for leading '"'
+			rangeEnd   = formatPos + token.Pos(end) + 1   // add offset for leading '"'
+			arg        ast.Expr                           // may not exist
+		)
+		if len(call.Args) > argNum {
+			arg = call.Args[argNum]
 		}
-		index := -1
-		for _, item := range formatItems {
-			switch item := item.(type) {
-			case formatPercent:
-				percent = item
-				index++
-			case formatVerb:
-				if token.Pos(percent).IsValid() {
-					if index == curVariadic {
-						// Placeholders behave like writting values from arguments to themselves,
-						// so highlight them with Write semantic.
-						highlightRange(result, token.Pos(percent), item.rang.end, protocol.Write)
-						highlightRange(result, item.operand.Pos(), item.operand.End(), protocol.Read)
-						return
-					}
-					percent = formatPercent(token.NoPos)
-				}
+
+		// Highlight the directive and its potential argument if the cursor is within etheir range.
+		if (cursorPos >= rangeStart && cursorPos < rangeEnd) || (arg != nil && cursorPos >= arg.Pos() && cursorPos < arg.End()) {
+			highlightRange(result, rangeStart, rangeEnd, protocol.Write)
+			if arg != nil {
+				highlightRange(result, arg.Pos(), arg.End(), protocol.Read)
 			}
+			return true
 		}
-	} else {
-		// Cursor in format string.
-		for _, item := range formatItems {
-			switch item := item.(type) {
-			case formatPercent:
-				percent = item
-			case formatVerb:
-				if token.Pos(percent).IsValid() {
-					if token.Pos(percent) <= pos && pos <= item.rang.end {
-						highlightRange(result, token.Pos(percent), item.rang.end, protocol.Write)
-						if item.operand != nil {
-							highlightRange(result, item.operand.Pos(), item.operand.End(), protocol.Read)
-						}
-						return
-					}
-					percent = formatPercent(token.NoPos)
-				}
-			}
-		}
-	}
-}
-
-// Below are formatting directives definitions.
-type formatPercent token.Pos
-type formatLiteral struct {
-	literal string
-	rang    posRange
-}
-type formatFlags struct {
-	flag string
-	rang posRange
-}
-type formatWidth struct {
-	width int
-	rang  posRange
-}
-type formatPrec struct {
-	prec int
-	rang posRange
-}
-type formatVerb struct {
-	verb    rune
-	rang    posRange
-	operand ast.Expr // verb's corresponding operand, may be nil
-}
-
-type formatItem interface {
-	formatItem()
-}
-
-func (formatPercent) formatItem() {}
-func (formatLiteral) formatItem() {}
-func (formatVerb) formatItem()    {}
-func (formatWidth) formatItem()   {}
-func (formatFlags) formatItem()   {}
-func (formatPrec) formatItem()    {}
-
-type formatFunc func(fmt.State, rune)
-
-var _ fmt.Formatter = formatFunc(nil)
-
-func (f formatFunc) Format(st fmt.State, verb rune) { f(st, verb) }
-
-// parsef parses a printf-style format string into its constituent components together with
-// their position in the source code, including [formatLiteral], formatting directives
-// [formatFlags], [formatPrecision], [formatWidth], [formatPrecision], [formatVerb], and its operand.
-//
-// If format contains explicit argument indexes, eg. fmt.Sprintf("%[2]d %[1]d\n", 11, 22),
-// the returned range will not be correct.
-// If an invalid argument is given for a verb, such as providing a string to %d, the returned error will
-// contain a description of the problem.
-func parsef(format string, pos token.Pos, args ...ast.Expr) ([]formatItem, error) {
-	const sep = "__GOPLS_SEP__"
-	// A conversion represents a single % operation and its operand.
-	type conversion struct {
-		verb    rune
-		width   int    // or -1
-		prec    int    // or -1
-		flag    string // some of "-+# 0"
-		operand ast.Expr
-	}
-	var convs []conversion
-	wrappers := make([]any, len(args))
-	for i, operand := range args {
-		wrappers[i] = formatFunc(func(st fmt.State, verb rune) {
-			st.Write([]byte(sep))
-			width, ok := st.Width()
-			if !ok {
-				width = -1
-			}
-			prec, ok := st.Precision()
-			if !ok {
-				prec = -1
-			}
-			flag := ""
-			for _, b := range "-+# 0" {
-				if st.Flag(int(b)) {
-					flag += string(b)
-				}
-			}
-			convs = append(convs, conversion{
-				verb:    verb,
-				width:   width,
-				prec:    prec,
-				flag:    flag,
-				operand: operand,
-			})
-		})
+		return false
 	}
 
-	// Interleave the literals and the conversions.
-	var formatItems []formatItem
-	s := fmt.Sprintf(format, wrappers...)
-	// All errors begin with the string "%!".
-	if strings.Contains(s, "%!") {
-		return nil, fmt.Errorf("%s", strings.Replace(s, sep, "", -1))
-	}
-	for i, word := range strings.Split(s, sep) {
-		if word != "" {
-			formatItems = append(formatItems, formatLiteral{
-				literal: word,
-				rang: posRange{
-					start: pos,
-					end:   pos + token.Pos(len(word)),
-				},
-			})
-			pos = pos + token.Pos(len(word))
+	// If width or prec has any *, we can not highlight the full range from % to verb,
+	// because it will overlap with the sub-range of *, for example:
+	//
+	// fmt.Printf("%*[3]d", 4, 5, 6)
+	//               ^  ^ we can only highlight this range when cursor in 6. '*' as a one-rune range will
+	//               highlight for 4.
+	anyAsterisk := false
+	for _, directive := range directives {
+		width, prec, verb := directive.Width, directive.Prec, directive.Verb
+		if (prec != nil && prec.Kind != fmtstr.Literal) ||
+			(width != nil && width.Kind != fmtstr.Literal) {
+			anyAsterisk = true
 		}
-		if i < len(convs) {
-			conv := convs[i]
-			// Collect %.
-			formatItems = append(formatItems, formatPercent(pos))
-			pos += 1
-			// Collect flags.
-			if flag := conv.flag; flag != "" {
-				length := token.Pos(len(conv.flag))
-				formatItems = append(formatItems, formatFlags{
-					flag: flag,
-					rang: posRange{
-						start: pos,
-						end:   pos + length,
-					},
-				})
-				pos += length
+
+		// Try highlight Width.
+		if width != nil && width.ArgNum != -1 && highlight(token.Pos(width.Range.Start), token.Pos(width.Range.End), width.ArgNum) {
+			return
+		}
+
+		// Try highlight Prec.
+		if prec != nil && prec.ArgNum != -1 && highlight(token.Pos(prec.Range.Start), token.Pos(prec.Range.End), prec.ArgNum) {
+			return
+		}
+
+		// Try highlight Verb.
+		if verb.Verb != '%' {
+			if anyAsterisk && highlight(token.Pos(verb.Range.Start), token.Pos(verb.Range.End), verb.ArgNum) {
+				return
+			} else if highlight(token.Pos(directive.Range.Start), token.Pos(directive.Range.End), verb.ArgNum) {
+				return
 			}
-			// Collect width.
-			if width := conv.width; conv.width != -1 {
-				length := token.Pos(len(fmt.Sprintf("%d", conv.width)))
-				formatItems = append(formatItems, formatWidth{
-					width: width,
-					rang: posRange{
-						start: pos,
-						end:   pos + length,
-					},
-				})
-				pos += length
-			}
-			// Collect precision, which starts with a dot.
-			if prec := conv.prec; conv.prec != -1 {
-				length := token.Pos(len(fmt.Sprintf("%d", conv.prec))) + 1
-				formatItems = append(formatItems, formatPrec{
-					prec: prec,
-					rang: posRange{
-						start: pos,
-						end:   pos + length,
-					},
-				})
-				pos += length
-			}
-			// Collect verb, which must be present.
-			length := token.Pos(len(string(conv.verb)))
-			formatItems = append(formatItems, formatVerb{
-				verb: conv.verb,
-				rang: posRange{
-					start: pos,
-					end:   pos + length,
-				},
-				operand: conv.operand,
-			})
-			pos += length
 		}
 	}
-	return formatItems, nil
 }
 
 type posRange struct {
