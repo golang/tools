@@ -51,7 +51,7 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, po
 			}
 		}
 	}
-	result, err := highlightPath(path, pgf.File, pkg.TypesInfo(), pos)
+	result, err := highlightPath(pkg.TypesInfo(), path, pos)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, po
 
 // highlightPath returns ranges to highlight for the given enclosing path,
 // which should be the result of astutil.PathEnclosingInterval.
-func highlightPath(path []ast.Node, file *ast.File, info *types.Info, pos token.Pos) (map[posRange]protocol.DocumentHighlightKind, error) {
+func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[posRange]protocol.DocumentHighlightKind, error) {
 	result := make(map[posRange]protocol.DocumentHighlightKind)
 
 	// Inside a printf-style call, printf("...%v...", arg)?
@@ -88,6 +88,7 @@ func highlightPath(path []ast.Node, file *ast.File, info *types.Info, pos token.
 		}
 	}
 
+	file := path[len(path)-1].(*ast.File)
 	switch node := path[0].(type) {
 	case *ast.BasicLit:
 		// Import path string literal?
@@ -162,17 +163,17 @@ func highlightPrintf(info *types.Info, call *ast.CallExpr, formatPos token.Pos, 
 		return
 	}
 
-	highlight := func(start, end token.Pos, argNum int) bool {
+	// highlightPair highlights the directive and its potential argument pair if the cursor is within either range.
+	highlightPair := func(start, end token.Pos, argIndex int) bool {
 		var (
 			rangeStart = formatPos + token.Pos(start) + 1 // add offset for leading '"'
 			rangeEnd   = formatPos + token.Pos(end) + 1   // add offset for leading '"'
 			arg        ast.Expr                           // may not exist
 		)
-		if len(call.Args) > argNum {
-			arg = call.Args[argNum]
+		if len(call.Args) > argIndex {
+			arg = call.Args[argIndex]
 		}
 
-		// Highlight the directive and its potential argument if the cursor is within etheir range.
 		if (cursorPos >= rangeStart && cursorPos < rangeEnd) || (arg != nil && cursorPos >= arg.Pos() && cursorPos < arg.End()) {
 			highlightRange(result, rangeStart, rangeEnd, protocol.Write)
 			if arg != nil {
@@ -192,26 +193,28 @@ func highlightPrintf(info *types.Info, call *ast.CallExpr, formatPos token.Pos, 
 	anyAsterisk := false
 	for _, directive := range directives {
 		width, prec, verb := directive.Width, directive.Prec, directive.Verb
-		if (prec != nil && prec.Kind != fmtstr.Literal) ||
-			(width != nil && width.Kind != fmtstr.Literal) {
+		// Try highlight Width if there is a *.
+		if width != nil && width.ArgIndex != -1 {
 			anyAsterisk = true
+			if highlightPair(token.Pos(width.Range.Start), token.Pos(width.Range.End), width.ArgIndex) {
+				return
+			}
 		}
 
-		// Try highlight Width.
-		if width != nil && width.ArgNum != -1 && highlight(token.Pos(width.Range.Start), token.Pos(width.Range.End), width.ArgNum) {
-			return
-		}
-
-		// Try highlight Prec.
-		if prec != nil && prec.ArgNum != -1 && highlight(token.Pos(prec.Range.Start), token.Pos(prec.Range.End), prec.ArgNum) {
-			return
+		// Try highlight Precision if there is a *.
+		if prec != nil && prec.ArgIndex != -1 {
+			anyAsterisk = true
+			if highlightPair(token.Pos(prec.Range.Start), token.Pos(prec.Range.End), prec.ArgIndex) {
+				return
+			}
 		}
 
 		// Try highlight Verb.
 		if verb.Verb != '%' {
-			if anyAsterisk && highlight(token.Pos(verb.Range.Start), token.Pos(verb.Range.End), verb.ArgNum) {
+			// If any * is found inside directive, narrow the highlight range.
+			if anyAsterisk && highlightPair(token.Pos(verb.Range.Start), token.Pos(verb.Range.End), verb.ArgIndex) {
 				return
-			} else if highlight(token.Pos(directive.Range.Start), token.Pos(directive.Range.End), verb.ArgNum) {
+			} else if highlightPair(token.Pos(directive.Range.Start), token.Pos(directive.Range.End), verb.ArgIndex) {
 				return
 			}
 		}
