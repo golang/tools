@@ -15,12 +15,13 @@ import (
 	"regexp"
 	"strings"
 
+	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/astutil"
+	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/event"
 )
@@ -84,6 +85,32 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return locations, err // may be success or failure
 	}
 
+	// Handle the case where the cursor is on a return statement by jumping to the result variables.
+	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
+	if is[*ast.ReturnStmt](path[0]) {
+		var funcType *ast.FuncType
+		for _, n := range path {
+			switch n := n.(type) {
+			case *ast.FuncLit:
+				funcType = n.Type
+			case *ast.FuncDecl:
+				funcType = n.Type
+			}
+			if funcType != nil {
+				break
+			}
+		}
+		// Inv: funcType != nil, as a return stmt cannot appear outside a function.
+		if funcType.Results == nil {
+			return nil, nil // no result variables
+		}
+		loc, err := pgf.NodeLocation(funcType.Results)
+		if err != nil {
+			return nil, err
+		}
+		return []protocol.Location{loc}, nil
+	}
+
 	// The general case: the cursor is on an identifier.
 	_, obj, _ := referencedObject(pkg, pgf, pos)
 	if obj == nil {
@@ -102,7 +129,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	for _, decl := range pgf.File.Decls {
 		if decl, ok := decl.(*ast.FuncDecl); ok &&
 			decl.Body == nil &&
-			astutil.NodeContains(decl.Name, pos) {
+			goplsastutil.NodeContains(decl.Name, pos) {
 			return nonGoDefinition(ctx, snapshot, pkg, decl.Name.Name)
 		}
 	}

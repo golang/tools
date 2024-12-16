@@ -24,6 +24,7 @@ A definition query also works in these unexpected places:
   it returns the location of the embedded file.
 - On the declaration of a non-Go function (a `func` with no body),
   it returns the location of the assembly implementation, if any,
+- On a **return statement**, it returns the location of the function's result variables.
 
 <!-- On a built-in symbol such as `append` or `unsafe.Pointer`, `definition` reports
 the location of the declaration in the builtin or unsafe pseudo-packages,
