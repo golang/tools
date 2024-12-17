@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil/cursor"
 )
 
 //go:embed doc.go
@@ -141,7 +142,7 @@ func run(pass *analysis.Pass) (any, error) {
 		(*ast.FuncDecl)(nil),
 		(*ast.FuncLit)(nil),
 	}
-	inspect.WithStack(filter, func(n ast.Node, push bool, stack []ast.Node) bool {
+	cursor.Root(inspect).Inspect(filter, func(c cursor.Cursor, push bool) bool {
 		// (We always return true so that we visit nested FuncLits.)
 
 		if !push {
@@ -153,7 +154,7 @@ func run(pass *analysis.Pass) (any, error) {
 			ftype *ast.FuncType
 			body  *ast.BlockStmt
 		)
-		switch n := n.(type) {
+		switch n := c.Node().(type) {
 		case *ast.FuncDecl:
 			// We can't analyze non-Go functions.
 			if n.Body == nil {
@@ -182,7 +183,8 @@ func run(pass *analysis.Pass) (any, error) {
 			// Find the symbol for the variable (if any)
 			// to which the FuncLit is bound.
 			// (We don't bother to allow ParenExprs.)
-			switch parent := stack[len(stack)-2].(type) {
+			stack := c.Stack(nil)
+			switch parent := stack[len(stack)-2].Node().(type) {
 			case *ast.AssignStmt:
 				// f  = func() {...}
 				// f := func() {...}

@@ -36,6 +36,7 @@ package inspector
 
 import (
 	"go/ast"
+	_ "unsafe"
 )
 
 // An Inspector provides methods for inspecting
@@ -43,6 +44,9 @@ import (
 type Inspector struct {
 	events []event
 }
+
+//go:linkname events
+func events(in *Inspector) []event { return in.events }
 
 // New returns an Inspector for the specified syntax trees.
 func New(files []*ast.File) *Inspector {
