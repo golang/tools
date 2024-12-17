@@ -71,7 +71,6 @@ func main() {
 
 var (
 	once sync.Once
-	prog *ssa.Program
 	main *ssa.Function
 )
 
@@ -82,7 +81,7 @@ func example(t testing.TB) (*ssa.Program, *ssa.Function) {
 		prog.Build()
 		main = ssapkgs[0].Members["main"].(*ssa.Function)
 	})
-	return prog, main
+	return main.Prog, main
 }
 
 var stats bool = false // print stats?
