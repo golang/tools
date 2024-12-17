@@ -815,12 +815,12 @@ func goAssembly(ctx context.Context, req *codeActionsRequest) error {
 				sym.WriteString(".")
 				if sig.Recv() != nil {
 					if isPtr, named := typesinternal.ReceiverNamed(sig.Recv()); named != nil {
-						sym.WriteString("(")
 						if isPtr {
-							sym.WriteString("*")
+							fmt.Fprintf(&sym, "(*%s)", named.Obj().Name())
+						} else {
+							sym.WriteString(named.Obj().Name())
 						}
-						sym.WriteString(named.Obj().Name())
-						sym.WriteString(").")
+						sym.WriteByte('.')
 					}
 				}
 				sym.WriteString(fn.Name())
