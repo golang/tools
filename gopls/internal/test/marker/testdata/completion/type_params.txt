@@ -15,11 +15,13 @@ package typeparams
 
 func one[a int | string]()            {}
 func two[a int | string, b float64 | int]() {}
+type three[a any] int
 
 func _() {
 	one[]() //@rank("]", string, float64)
 	two[]() //@rank("]", int, float64)
 	two[int, f]() //@rank("]", float64, float32)
+	int(three[]) //@rank("]") // must not crash (golang/go#70889)
 }
 
 func slices[a []int | []float64]() {} //@item(tpInts, "[]int", "[]int", "type"),item(tpFloats, "[]float64", "[]float64", "type")
