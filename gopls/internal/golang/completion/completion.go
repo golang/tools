@@ -2690,7 +2690,7 @@ func reverseInferTypeArgs(sig *types.Signature, typeArgs []types.Type, expectedR
 	return substs
 }
 
-// inferExpectedTypeArg gives a type param candidateInference based on the surroundings of it's call site.
+// inferExpectedTypeArg gives a type param candidateInference based on the surroundings of its call site.
 // If successful, the inf parameter is returned with only it's objType field updated.
 //
 // callNodeIdx is the index within the completion path of the type parameter's parent call expression.
@@ -2704,9 +2704,12 @@ func (c *completer) inferExpectedTypeArg(callNodeIdx int, typeParamIdx int) type
 	if !ok {
 		return nil
 	}
+	sig, ok := c.pkg.TypesInfo().Types[callNode.Fun].Type.(*types.Signature)
+	if !ok {
+		return nil
+	}
 
-	// Infer the type parameters in a function call based on it's context
-	sig := c.pkg.TypesInfo().Types[callNode.Fun].Type.(*types.Signature)
+	// Infer the type parameters in a function call based on context
 	expectedResults := inferExpectedResultTypes(c, callNodeIdx)
 	if typeParamIdx < 0 || typeParamIdx >= sig.TypeParams().Len() {
 		return nil
