@@ -76,6 +76,7 @@ Gopls supports the following code actions:
 - [`refactor.extract.method`](#extract)
 - [`refactor.extract.toNewFile`](#extract.toNewFile)
 - [`refactor.extract.variable`](#extract)
+- [`refactor.extract.variable-all`](#extract)
 - [`refactor.inline.call`](#refactor.inline.call)
 - [`refactor.rewrite.changeQuote`](#refactor.rewrite.changeQuote)
 - [`refactor.rewrite.fillStruct`](#refactor.rewrite.fillStruct)
@@ -364,14 +365,22 @@ newly created declaration that contains the selected code:
   will be a method of the same receiver type.
 
 - **`refactor.extract.variable`** replaces an expression by a reference to a new
-  local variable named `x` initialized by the expression:
+  local variable named `newVar` initialized by the expression:
 
   ![Before extracting a var](../assets/extract-var-before.png)
   ![After extracting a var](../assets/extract-var-after.png)
 
 - **`refactor.extract.constant** does the same thing for a constant
   expression, introducing a local const declaration.
+- **`refactor.extract.variable-all`** replaces all occurrences of the selected expression
+within the function with a reference to a new local variable named `newVar`.
+This extracts the expression once and reuses it wherever it appears in the function.
 
+  ![Before extracting all occurrences of EXPR](../assets/extract-var-all-before.png)
+  ![After extracting all occurrences of EXPR](../assets/extract-var-all-after.png)
+
+  - **`refactor.extract.constant-all** does the same thing for a constant
+  expression, introducing a local const declaration.
 If the default name for the new declaration is already in use, gopls
 generates a fresh name.
 
@@ -387,10 +396,8 @@ number of cases where it falls short, including:
 
 - https://github.com/golang/go/issues/66289
 - https://github.com/golang/go/issues/65944
-- https://github.com/golang/go/issues/64821
 - https://github.com/golang/go/issues/63394
 - https://github.com/golang/go/issues/61496
-- https://github.com/golang/go/issues/50851
 
 The following Extract features are planned for 2024 but not yet supported:
 

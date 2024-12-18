@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
-	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -126,9 +125,9 @@ func CreateUndeclared(fset *token.FileSet, start, end token.Pos, content []byte,
 		return nil, nil, fmt.Errorf("no identifier found")
 	}
 	p, _ := astutil.PathEnclosingInterval(file, firstRef.Pos(), firstRef.Pos())
-	insertBeforeStmt := analysisinternal.StmtToInsertVarBefore(p)
-	if insertBeforeStmt == nil {
-		return nil, nil, fmt.Errorf("could not locate insertion point")
+	insertBeforeStmt, err := stmtToInsertVarBefore(p, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not locate insertion point: %v", err)
 	}
 	indent, err := calculateIndentation(content, fset.File(file.FileStart), insertBeforeStmt)
 	if err != nil {

@@ -25,5 +25,5 @@ func main() {
 -- @type_switch_func_call/extract_switch.go --
 @@ -10 +10,2 @@
 -	switch r := f().(type) { //@codeaction("f()", "refactor.extract.variable", edit=type_switch_func_call)
-+	x := f()
-+	switch r := x.(type) { //@codeaction("f()", "refactor.extract.variable", edit=type_switch_func_call)
++	newVar := f()
++	switch r := newVar.(type) { //@codeaction("f()", "refactor.extract.variable", edit=type_switch_func_call)
