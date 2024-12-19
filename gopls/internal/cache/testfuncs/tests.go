@@ -281,7 +281,7 @@ func testKind(sig *types.Signature) (*types.TypeName, bool) {
 	}
 
 	named, ok := ptr.Elem().(*types.Named)
-	if !ok || named.Obj().Pkg().Path() != "testing" {
+	if !ok || named.Obj().Pkg() == nil || named.Obj().Pkg().Path() != "testing" {
 		return nil, false
 	}
 
