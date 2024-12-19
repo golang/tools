@@ -85,11 +85,13 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return locations, err // may be success or failure
 	}
 
-	// Handle the case where the cursor is on a return statement by jumping to the result variables.
+	// Handle definition requests for various special kinds of syntax node.
 	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
-	if is[*ast.ReturnStmt](path[0]) {
+	switch node := path[0].(type) {
+	// Handle the case where the cursor is on a return statement by jumping to the result variables.
+	case *ast.ReturnStmt:
 		var funcType *ast.FuncType
-		for _, n := range path {
+		for _, n := range path[1:] {
 			switch n := n.(type) {
 			case *ast.FuncLit:
 				funcType = n.Type
@@ -109,6 +111,61 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 			return nil, err
 		}
 		return []protocol.Location{loc}, nil
+
+	case *ast.BranchStmt:
+		// Handle the case where the cursor is on a goto, break or continue statement by returning the
+		// location of the label, the closing brace of the relevant block statement, or the
+		// start of the relevant loop, respectively.
+		label, isLabeled := pkg.TypesInfo().Uses[node.Label].(*types.Label)
+		switch node.Tok {
+		case token.GOTO:
+			if isLabeled {
+				loc, err := pgf.PosLocation(label.Pos(), label.Pos()+token.Pos(len(label.Name())))
+				if err != nil {
+					return nil, err
+				}
+				return []protocol.Location{loc}, nil
+			} else {
+				// Workaround for #70957.
+				// TODO(madelinekalil): delete when go1.25 fixes it.
+				return nil, nil
+			}
+		case token.BREAK, token.CONTINUE:
+			// Find innermost relevant ancestor for break/continue.
+			for i, n := range path[1:] {
+				if isLabeled {
+					l, ok := path[1:][i+1].(*ast.LabeledStmt)
+					if !(ok && l.Label.Name == label.Name()) {
+						continue
+					}
+				}
+				switch n.(type) {
+				case *ast.ForStmt, *ast.RangeStmt:
+					var start, end token.Pos
+					if node.Tok == token.BREAK {
+						start, end = n.End()-token.Pos(len("}")), n.End()
+					} else { // CONTINUE
+						start, end = n.Pos(), n.Pos()+token.Pos(len("for"))
+					}
+					loc, err := pgf.PosLocation(start, end)
+					if err != nil {
+						return nil, err
+					}
+					return []protocol.Location{loc}, nil
+				case *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+					if node.Tok == token.BREAK {
+						loc, err := pgf.PosLocation(n.End()-1, n.End())
+						if err != nil {
+							return nil, err
+						}
+						return []protocol.Location{loc}, nil
+					}
+				case *ast.FuncDecl, *ast.FuncLit:
+					// bad syntax; avoid jumping outside the current function
+					return nil, nil
+				}
+			}
+		}
 	}
 
 	// The general case: the cursor is on an identifier.

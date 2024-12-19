@@ -25,6 +25,9 @@ A definition query also works in these unexpected places:
 - On the declaration of a non-Go function (a `func` with no body),
   it returns the location of the assembly implementation, if any,
 - On a **return statement**, it returns the location of the function's result variables.
+- On a **goto**, **break**, or **continue** statement, it returns the
+  location of the label, the closing brace of the relevant block statement, or the
+  start of the relevant loop, respectively.
 
 <!-- On a built-in symbol such as `append` or `unsafe.Pointer`, `definition` reports
 the location of the declaration in the builtin or unsafe pseudo-packages,
