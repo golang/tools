@@ -80,9 +80,9 @@ func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[posRan
 		if call, ok := node.(*ast.CallExpr); ok {
 			idx := fmtstr.FormatStringIndex(info, call)
 			if idx >= 0 && idx < len(call.Args) {
-				format, ok := fmtstr.StringConstantExpr(info, call.Args[idx])
-				if ok && strings.Contains(format, "%") {
-					highlightPrintf(info, call, call.Args[idx].Pos(), pos, result)
+				// We only care string literal, so fmt.Sprint("a"+"b%s", "bar") won't highlight.
+				if lit, ok := call.Args[idx].(*ast.BasicLit); ok && strings.Contains(lit.Value, "%") {
+					highlightPrintf(info, call, call.Args[idx].Pos(), pos, lit.Value, result)
 				}
 			}
 		}
@@ -157,8 +157,8 @@ func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[posRan
 //
 // If the cursor is on %s or name, highlightPrintf will highlight %s as a write operation,
 // and name as a read operation.
-func highlightPrintf(info *types.Info, call *ast.CallExpr, formatPos token.Pos, cursorPos token.Pos, result map[posRange]protocol.DocumentHighlightKind) {
-	directives, err := fmtstr.ParsePrintf(info, call)
+func highlightPrintf(info *types.Info, call *ast.CallExpr, formatPos token.Pos, cursorPos token.Pos, format string, result map[posRange]protocol.DocumentHighlightKind) {
+	directives, err := fmtstr.ParsePrintf(info, call, format)
 	if err != nil {
 		return
 	}
@@ -166,9 +166,9 @@ func highlightPrintf(info *types.Info, call *ast.CallExpr, formatPos token.Pos, 
 	// highlightPair highlights the directive and its potential argument pair if the cursor is within either range.
 	highlightPair := func(start, end token.Pos, argIndex int) bool {
 		var (
-			rangeStart = formatPos + token.Pos(start) + 1 // add offset for leading '"'
-			rangeEnd   = formatPos + token.Pos(end) + 1   // add offset for leading '"'
-			arg        ast.Expr                           // may not exist
+			rangeStart = formatPos + token.Pos(start)
+			rangeEnd   = formatPos + token.Pos(end)
+			arg        ast.Expr // may not exist
 		)
 		if len(call.Args) > argIndex {
 			arg = call.Args[argIndex]
