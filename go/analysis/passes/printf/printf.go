@@ -9,6 +9,7 @@ import (
 	_ "embed"
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"reflect"
@@ -453,7 +454,7 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string
 		return
 	}
 	formatArg := call.Args[idx]
-	format, ok := fmtstr.StringConstantExpr(pass.TypesInfo, formatArg)
+	format, ok := stringConstantExpr(pass.TypesInfo, formatArg)
 	if !ok {
 		// Format string argument is non-constant.
 
@@ -487,7 +488,11 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string
 		}
 		return
 	}
-	directives, err := fmtstr.ParsePrintf(pass.TypesInfo, call)
+
+	// Pass the string constant value so
+	// fmt.Sprintf("%"+("s"), "hi", 3) can be reported as
+	// "fmt.Sprintf call needs 1 arg but has 2 args".
+	directives, err := fmtstr.ParsePrintf(pass.TypesInfo, call, format)
 	if err != nil {
 		pass.ReportRangef(call.Fun, "%s %s", name, err.Error())
 		return
@@ -857,7 +862,7 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, name string) {
 	}
 
 	arg := args[0]
-	if s, ok := fmtstr.StringConstantExpr(pass.TypesInfo, arg); ok {
+	if s, ok := stringConstantExpr(pass.TypesInfo, arg); ok {
 		// Ignore trailing % character
 		// The % in "abc 0.0%" couldn't be a formatting directive.
 		s = strings.TrimSuffix(s, "%")
@@ -871,7 +876,7 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, name string) {
 	if strings.HasSuffix(name, "ln") {
 		// The last item, if a string, should not have a newline.
 		arg = args[len(args)-1]
-		if s, ok := fmtstr.StringConstantExpr(pass.TypesInfo, arg); ok {
+		if s, ok := stringConstantExpr(pass.TypesInfo, arg); ok {
 			if strings.HasSuffix(s, "\n") {
 				pass.ReportRangef(call, "%s arg list ends with redundant newline", name)
 			}
@@ -885,6 +890,17 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, name string) {
 			pass.ReportRangef(call, "%s arg %s causes recursive call to %s method", name, analysisutil.Format(pass.Fset, arg), methodName)
 		}
 	}
+}
+
+// StringConstantExpr returns expression's string constant value.
+//
+// ("", false) is returned if expression isn't a string constant.
+func stringConstantExpr(info *types.Info, expr ast.Expr) (string, bool) {
+	lit := info.Types[expr].Value
+	if lit != nil && lit.Kind() == constant.String {
+		return constant.StringVal(lit), true
+	}
+	return "", false
 }
 
 // count(n, what) returns "1 what" or "N whats"

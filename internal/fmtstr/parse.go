@@ -1,4 +1,4 @@
-// Copyright 2010 The Go Authors. All rights reserved.
+// Copyright 2024 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -7,7 +7,6 @@ package fmtstr
 import (
 	"fmt"
 	"go/ast"
-	"go/constant"
 	"go/types"
 	"strconv"
 	"strings"
@@ -67,22 +66,17 @@ type posRange struct {
 }
 
 // ParsePrintf takes a printf-like call expression,
-// extracts the format string, and parses out all format directives. Each
-// directive describes flags, width, precision, verb, and argument indexing.
-// This function returns a slice of parsed FormatDirective objects or an error
-// if parsing fails. It does not perform any validation of flags, verbs, and
-// existence of corresponding argument.
-//
-// Typical use case: Validate arguments passed to a Printf-like function call,
-// DocumentHighlight, Hover, or SemanticHighlight.
-func ParsePrintf(info *types.Info, call *ast.CallExpr) ([]*FormatDirective, error) {
+// extracts the format string, and parses out all format directives.
+// It returns a slice of parsed [FormatDirective] which describes
+// flags, width, precision, verb, and argument indexing, or an error
+// if parsing fails. It does not perform any validation of flags, verbs, nor the
+// existence of corresponding arguments.
+// The provided format may differ from the one in CallExpr, such as a concatenated string or a string
+// referred to by the argument in CallExpr.
+func ParsePrintf(info *types.Info, call *ast.CallExpr, format string) ([]*FormatDirective, error) {
 	idx := FormatStringIndex(info, call)
 	if idx < 0 || idx >= len(call.Args) {
 		return nil, fmt.Errorf("not a valid printf-like call")
-	}
-	format, ok := StringConstantExpr(info, call.Args[idx])
-	if !ok {
-		return nil, fmt.Errorf("non-constant format string")
 	}
 	if !strings.Contains(format, "%") {
 		return nil, fmt.Errorf("call has arguments but no formatting directives")
@@ -206,17 +200,6 @@ func FormatStringIndex(info *types.Info, call *ast.CallExpr) int {
 		return -1
 	}
 	return idx
-}
-
-// StringConstantExpr returns expression's string constant value.
-//
-// ("", false) is returned if expression isn't a string constant.
-func StringConstantExpr(info *types.Info, expr ast.Expr) (string, bool) {
-	lit := info.Types[expr].Value
-	if lit != nil && lit.Kind() == constant.String {
-		return constant.StringVal(lit), true
-	}
-	return "", false
 }
 
 // addOffset adjusts the recorded positions in Verb, Width, Prec, and the
