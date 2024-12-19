@@ -124,6 +124,7 @@ func TestFoo2(t *testing.T)
 package foo
 import "testing"
 func TestFoo(t *testing.T)
+func Issue70927(*error)
 
 -- foo2_test.go --
 package foo_test
