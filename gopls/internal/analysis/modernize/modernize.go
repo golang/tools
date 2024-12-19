@@ -5,6 +5,7 @@
 package modernize
 
 import (
+	"bytes"
 	_ "embed"
 	"go/ast"
 	"go/format"
@@ -55,9 +56,16 @@ func run(pass *analysis.Pass) (any, error) {
 	minmax(pass)
 	sortslice(pass)
 	efaceany(pass)
+	appendclipped(pass)
 
-	// TODO(adonovan): more modernizers here; see #70815.
-	// TODO(adonovan): opt: interleave these micro-passes within a single inspection.
+	// TODO(adonovan):
+	// - more modernizers here; see #70815.
+	// - opt: interleave these micro-passes within a single inspection.
+	// - solve the "duplicate import" problem (#68765) when a number of
+	//   fixes in the same file are applied in parallel and all add
+	//   the same import. The tests exhibit the problem.
+	// - should all diagnostics be of the form "x can be modernized by y"
+	//   or is that a foolish consistency?
 
 	return nil, nil
 }
@@ -81,8 +89,20 @@ func equalSyntax(x, y ast.Expr) bool {
 }
 
 // formatNode formats n.
-func formatNode(fset *token.FileSet, n ast.Node) string {
-	var buf strings.Builder
+func formatNode(fset *token.FileSet, n ast.Node) []byte {
+	var buf bytes.Buffer
 	format.Node(&buf, fset, n) // ignore errors
+	return buf.Bytes()
+}
+
+// formatExprs formats a comma-separated list of expressions.
+func formatExprs(fset *token.FileSet, exprs []ast.Expr) string {
+	var buf strings.Builder
+	for i, e := range exprs {
+		if i > 0 {
+			buf.WriteString(",  ")
+		}
+		format.Node(&buf, fset, e) // ignore errors
+	}
 	return buf.String()
 }

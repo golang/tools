@@ -16,4 +16,6 @@
 //   - replacing sort.Slice(x, func(i, j int) bool) { return s[i] < s[j] }
 //     by a call to slices.Sort(s), added in go1.21;
 //   - replacing interface{} by the 'any' type added in go1.18;
+//   - replacing append([]T(nil), s...) by slices.Clone(s) or
+//     slices.Concat(s), added in go1.21;
 package modernize
