@@ -66,6 +66,13 @@ L: // unpack receiver type
 // The end point will also be inclusive, which will to allow hovering when the
 // cursor is behind some nodes.
 //
+// Beware that, for unfortunate historical reasons, the Pos/End extent
+// of an ast.File runs from the start of its package declaration
+// (excluding copyright comments, build tags, and package
+// documentation) to the end of its last declaration (excluding any
+// trailing comments). To test whether a position lies anywhere within
+// a file, use f.FileStart <= pos && pos <= f.FileEnd instead.
+//
 // Precondition: n must not be nil.
 func NodeContains(n ast.Node, pos token.Pos) bool {
 	return n.Pos() <= pos && pos <= n.End()

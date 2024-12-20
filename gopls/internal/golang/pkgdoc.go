@@ -270,6 +270,13 @@ type Web interface {
 // The posURL function returns a URL that when visited, has the side
 // effect of causing gopls to direct the client editor to navigate to
 // the specified file/line/column position, in UTF-8 coordinates.
+//
+// TODO(adonovan): this function could use some unit tests; we
+// shouldn't have to use integration tests to cover microdetails of
+// HTML rendering. (It is tempting to abstract this function so that
+// it depends only on FileSet/File/Types/TypeInfo/etc, but we should
+// bend the tests to the production interfaces, not the other way
+// around.)
 func PackageDocHTML(viewID string, pkg *cache.Package, web Web) ([]byte, error) {
 	// We can't use doc.NewFromFiles (even with doc.PreserveAST
 	// mode) as it calls ast.NewPackage which assumes that each

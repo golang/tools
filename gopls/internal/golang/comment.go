@@ -12,6 +12,7 @@ import (
 	"go/doc/comment"
 	"go/token"
 	"go/types"
+	pathpkg "path"
 	"slices"
 	"strings"
 
@@ -19,7 +20,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
@@ -230,15 +230,18 @@ func lookupDocLinkSymbol(pkg *cache.Package, pgf *parsego.File, name string) typ
 //
 // [doc comment]: https://go.dev/doc/comment
 func newDocCommentParser(pkg *cache.Package) func(fileNode ast.Node, text string) *comment.Doc {
-	var currentFileNode ast.Node // node whose enclosing file's import mapping should be used
+	var currentFilePos token.Pos // pos whose enclosing file's import mapping should be used
 	parser := &comment.Parser{
 		LookupPackage: func(name string) (importPath string, ok bool) {
 			for _, f := range pkg.Syntax() {
 				// Different files in the same package have
 				// different import mappings. Use the provided
 				// syntax node to find the correct file.
-				if astutil.NodeContains(f, currentFileNode.Pos()) {
-					// First try the actual imported package name.
+				//
+				// (Avoid [astutil.NodeContains] on ast.File as
+				// it excludes the package doc comment.)
+				if f.FileStart <= currentFilePos && currentFilePos <= f.FileEnd {
+					// First try each actual imported package name.
 					for _, imp := range f.Imports {
 						pkgName := pkg.TypesInfo().PkgNameOf(imp)
 						if pkgName != nil && pkgName.Name() == name {
@@ -246,8 +249,8 @@ func newDocCommentParser(pkg *cache.Package) func(fileNode ast.Node, text string
 						}
 					}
 
-					// Then try the imported package name, as some
-					// packages are typically imported under a
+					// Then try each imported package's declared name,
+					// as some packages are typically imported under a
 					// non-default name (e.g. pathpkg "path") but
 					// may be referred to in doc links using their
 					// canonical name.
@@ -255,6 +258,21 @@ func newDocCommentParser(pkg *cache.Package) func(fileNode ast.Node, text string
 						pkgName := pkg.TypesInfo().PkgNameOf(imp)
 						if pkgName != nil && pkgName.Imported().Name() == name {
 							return pkgName.Imported().Path(), true
+						}
+					}
+
+					// Finally try matching the last segment of each import
+					// path imported by any file in the package, as the
+					// doc comment may appear in a different file from the
+					// import.
+					//
+					// Ideally we would look up the DepsByPkgPath value
+					// (a PackageID) in the metadata graph and use the
+					// package's declared name instead of this heuristic,
+					// but we don't have access to the graph here.
+					for path := range pkg.Metadata().DepsByPkgPath {
+						if pathpkg.Base(trimVersionSuffix(string(path))) == name {
+							return string(path), true
 						}
 					}
 
@@ -279,7 +297,7 @@ func newDocCommentParser(pkg *cache.Package) func(fileNode ast.Node, text string
 		},
 	}
 	return func(fileNode ast.Node, text string) *comment.Doc {
-		currentFileNode = fileNode
+		currentFilePos = fileNode.Pos()
 		return parser.Parse(text)
 	}
 }

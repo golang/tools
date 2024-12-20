@@ -349,10 +349,11 @@ module mod.com
 go 1.20
 
 -- a/a1.go --
+// Package a refers to [b.T] [b.U] [alias.D] [d.D] [c.T] [c.U] [nope.Nope]
 package a
 
-import "b"
-import alias "d"
+import "mod.com/b"
+import alias "mod.com/d"
 
 // [b.T] indeed refers to b.T.
 //
@@ -363,7 +364,7 @@ type A1 int
 -- a/a2.go --
 package a
 
-import b "c"
+import b "mod.com/c"
 
 // [b.U] actually refers to c.U.
 type A2 int
@@ -393,14 +394,24 @@ type D int
 		// Check that the doc links are resolved using the
 		// appropriate import mapping for the file in which
 		// they appear.
-		checkMatch(t, true, doc, `pkg/b\?.*#T">b.T</a> indeed refers to b.T`)
-		checkMatch(t, true, doc, `pkg/c\?.*#U">b.U</a> actually refers to c.U`)
+		checkMatch(t, true, doc, `pkg/mod.com/b\?.*#T">b.T</a> indeed refers to b.T`)
+		checkMatch(t, true, doc, `pkg/mod.com/c\?.*#U">b.U</a> actually refers to c.U`)
 
 		// Check that doc links can be resolved using either
 		// the original or the local name when they refer to a
 		// renaming import. (Local names are preferred.)
-		checkMatch(t, true, doc, `pkg/d\?.*#D">alias.D</a> refers to d.D`)
-		checkMatch(t, true, doc, `pkg/d\?.*#D">d.D</a> also refers to d.D`)
+		checkMatch(t, true, doc, `pkg/mod.com/d\?.*#D">alias.D</a> refers to d.D`)
+		checkMatch(t, true, doc, `pkg/mod.com/d\?.*#D">d.D</a> also refers to d.D`)
+
+		// Check that links in the package doc comment are
+		// resolved, and relative to the correct file (a1.go).
+		checkMatch(t, true, doc, `Package a refers to.*pkg/mod.com/b\?.*#T">b.T</a>`)
+		checkMatch(t, true, doc, `Package a refers to.*pkg/mod.com/b\?.*#U">b.U</a>`)
+		checkMatch(t, true, doc, `Package a refers to.*pkg/mod.com/d\?.*#D">alias.D</a>`)
+		checkMatch(t, true, doc, `Package a refers to.*pkg/mod.com/d\?.*#D">d.D</a>`)
+		checkMatch(t, true, doc, `Package a refers to.*pkg/mod.com/c\?.*#T">c.T</a>`)
+		checkMatch(t, true, doc, `Package a refers to.*pkg/mod.com/c\?.*#U">c.U</a>`)
+		checkMatch(t, true, doc, `Package a refers to.* \[nope.Nope\]`)
 	})
 }
 
