@@ -62,20 +62,29 @@ L: // unpack receiver type
 	return
 }
 
-// NodeContains returns true if a node encloses a given position pos.
-// The end point will also be inclusive, which will to allow hovering when the
-// cursor is behind some nodes.
+// NodeContains reports whether the Pos/End range of node n encloses
+// the given position pos.
 //
-// Beware that, for unfortunate historical reasons, the Pos/End extent
-// of an ast.File runs from the start of its package declaration
-// (excluding copyright comments, build tags, and package
-// documentation) to the end of its last declaration (excluding any
-// trailing comments). To test whether a position lies anywhere within
-// a file, use f.FileStart <= pos && pos <= f.FileEnd instead.
+// It is inclusive of both end points, to allow hovering (etc) when
+// the cursor is immediately after a node.
+//
+// For unfortunate historical reasons, the Pos/End extent of an
+// ast.File runs from the start of its package declaration---excluding
+// copyright comments, build tags, and package documentation---to the
+// end of its last declaration, excluding any trailing comments. So,
+// as a special case, if n is an [ast.File], NodeContains uses
+// n.FileStart <= pos && pos <= n.FileEnd to report whether the
+// position lies anywhere within the file.
 //
 // Precondition: n must not be nil.
 func NodeContains(n ast.Node, pos token.Pos) bool {
-	return n.Pos() <= pos && pos <= n.End()
+	var start, end token.Pos
+	if file, ok := n.(*ast.File); ok {
+		start, end = file.FileStart, file.FileEnd // entire file
+	} else {
+		start, end = n.Pos(), n.End()
+	}
+	return start <= pos && pos <= end
 }
 
 // Equal recursively compares two nodes for structural equality,

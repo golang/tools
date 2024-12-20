@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
@@ -237,10 +238,7 @@ func newDocCommentParser(pkg *cache.Package) func(fileNode ast.Node, text string
 				// Different files in the same package have
 				// different import mappings. Use the provided
 				// syntax node to find the correct file.
-				//
-				// (Avoid [astutil.NodeContains] on ast.File as
-				// it excludes the package doc comment.)
-				if f.FileStart <= currentFilePos && currentFilePos <= f.FileEnd {
+				if astutil.NodeContains(f, currentFilePos) {
 					// First try each actual imported package name.
 					for _, imp := range f.Imports {
 						pkgName := pkg.TypesInfo().PkgNameOf(imp)
