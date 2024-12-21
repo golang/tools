@@ -3236,20 +3236,53 @@ type $$Lexer interface {
 type $$Parser interface {
 	Parse($$Lexer) int
 	Lookahead() int
+	Debug() int
+	ErrorVerbose() bool
+	SetDebug(level int)
+	SetErrorVerbose(verbose bool)
 }
 
 type $$ParserImpl struct {
-	lval  $$SymType
-	stack [$$InitialStackSize]$$SymType
-	char  int
+	lval         $$SymType
+	stack        [$$InitialStackSize]$$SymType
+	char         int
+	debug        int
+	errorVerbose bool
 }
 
 func (p *$$ParserImpl) Lookahead() int {
 	return p.char
 }
 
+func (p *$$ParserImpl) Debug() int {
+	return p.debug
+}
+
+func (p *$$ParserImpl) SetDebug(level int) {
+	p.debug = level
+}
+
+func (p *$$ParserImpl) ErrorVerbose() bool {
+	return p.errorVerbose
+}
+
+func (p *$$ParserImpl) SetErrorVerbose(verbose bool) {
+	p.errorVerbose = verbose
+}
+
+
 func $$NewParser() $$Parser {
-	return &$$ParserImpl{}
+	return &$$ParserImpl{
+		debug:        $$Debug,
+		errorVerbose: $$ErrorVerbose,
+	}
+}
+
+func $$NewParserExt(debug int, errorVerbose bool) $$Parser {
+	return &$$ParserImpl{
+		debug:        debug,
+		errorVerbose: errorVerbose,
+	}
 }
 
 const $$Flag = -1000
@@ -3272,10 +3305,10 @@ func $$Statname(s int) string {
 	return __yyfmt__.Sprintf("state-%v", s)
 }
 
-func $$ErrorMessage(state, lookAhead int) string {
+func ($$rcvr *$$ParserImpl) $$ErrorMessage(state, lookAhead int) string {
 	const TOKSTART = 4
 
-	if !$$ErrorVerbose {
+	if !$$rcvr.errorVerbose {
 		return "syntax error"
 	}
 
@@ -3336,7 +3369,7 @@ func $$ErrorMessage(state, lookAhead int) string {
 	return res
 }
 
-func $$lex1(lex $$Lexer, lval *$$SymType) (char, token int) {
+func ($$rcvr *$$ParserImpl) $$lex1(lex $$Lexer, lval *$$SymType) (char, token int) {
 	token = 0
 	char = lex.Lex(lval)
 	if char <= 0 {
@@ -3365,7 +3398,7 @@ out:
 	if token == 0 {
 		token = int($$Tok2[1]) /* unknown char */
 	}
-	if $$Debug >= 3 {
+	if $$rcvr.debug >= 3 {
 		__yyfmt__.Printf("lex %s(%d)\n", $$Tokname(token), uint(char))
 	}
 	return char, token
@@ -3373,6 +3406,10 @@ out:
 
 func $$Parse($$lex $$Lexer) int {
 	return $$NewParser().Parse($$lex)
+}
+
+func $$ParseExt(debug int, errorVerbose bool, $$lex $$Lexer) int {
+	return $$NewParserExt(debug, errorVerbose).Parse($$lex)
 }
 
 func ($$rcvr *$$ParserImpl) Parse($$lex $$Lexer) int {
@@ -3404,7 +3441,7 @@ ret1:
 
 $$stack:
 	/* put a state and value onto the stack */
-	if $$Debug >= 4 {
+	if $$rcvr.debug >= 4 {
 		__yyfmt__.Printf("char %v in %v\n", $$Tokname($$token), $$Statname($$state))
 	}
 
@@ -3423,7 +3460,7 @@ $$newstate:
 		goto $$default /* simple state */
 	}
 	if $$rcvr.char < 0 {
-		$$rcvr.char, $$token = $$lex1($$lex, &$$rcvr.lval)
+		$$rcvr.char, $$token = $$rcvr.$$lex1($$lex, &$$rcvr.lval)
 	}
 	$$n += $$token
 	if $$n < 0 || $$n >= $$Last {
@@ -3446,7 +3483,7 @@ $$default:
 	$$n = int($$Def[$$state])
 	if $$n == -2 {
 		if $$rcvr.char < 0 {
-			$$rcvr.char, $$token = $$lex1($$lex, &$$rcvr.lval)
+			$$rcvr.char, $$token = $$rcvr.$$lex1($$lex, &$$rcvr.lval)
 		}
 
 		/* look through exception table */
@@ -3472,9 +3509,9 @@ $$default:
 		/* error ... attempt to resume parsing */
 		switch Errflag {
 		case 0: /* brand new error */
-			$$lex.Error($$ErrorMessage($$state, $$token))
+			$$lex.Error($$rcvr.$$ErrorMessage($$state, $$token))
 			Nerrs++
-			if $$Debug >= 1 {
+			if $$rcvr.debug >= 1 {
 				__yyfmt__.Printf("%s", $$Statname($$state))
 				__yyfmt__.Printf(" saw %s\n", $$Tokname($$token))
 			}
@@ -3494,7 +3531,7 @@ $$default:
 				}
 
 				/* the current p has no shift on "error", pop stack */
-				if $$Debug >= 2 {
+				if $$rcvr.debug >= 2 {
 					__yyfmt__.Printf("error recovery pops state %d\n", $$S[$$p].yys)
 				}
 				$$p--
@@ -3503,7 +3540,7 @@ $$default:
 			goto ret1
 
 		case 3: /* no shift yet; clobber input char */
-			if $$Debug >= 2 {
+			if $$rcvr.debug >= 2 {
 				__yyfmt__.Printf("error recovery discards %s\n", $$Tokname($$token))
 			}
 			if $$token == $$EofCode {
@@ -3516,7 +3553,7 @@ $$default:
 	}
 
 	/* reduction by production $$n */
-	if $$Debug >= 2 {
+	if $$rcvr.debug >= 2 {
 		__yyfmt__.Printf("reduce %v in:\n\t%v\n", $$n, $$Statname($$state))
 	}
 
