@@ -57,6 +57,7 @@ func run(pass *analysis.Pass) (any, error) {
 	sortslice(pass)
 	efaceany(pass)
 	appendclipped(pass)
+	bloop(pass)
 
 	// TODO(adonovan):
 	// - more modernizers here; see #70815.
@@ -105,4 +106,19 @@ func formatExprs(fset *token.FileSet, exprs []ast.Expr) string {
 		format.Node(&buf, fset, e) // ignore errors
 	}
 	return buf.String()
+}
+
+// isZeroLiteral reports whether e is the literal 0.
+func isZeroLiteral(e ast.Expr) bool {
+	lit, ok := e.(*ast.BasicLit)
+	return ok && lit.Kind == token.INT && lit.Value == "0"
+}
+
+// isPackageLevel reports whether obj is the package-level symbol pkg.Name.
+func isPackageLevel(obj types.Object, pkgpath, name string) bool {
+	pkg := obj.Pkg()
+	return pkg != nil &&
+		obj.Parent() == pkg.Scope() &&
+		obj.Pkg().Path() == pkgpath &&
+		obj.Name() == name
 }

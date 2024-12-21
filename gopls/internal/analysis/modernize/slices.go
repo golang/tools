@@ -9,7 +9,6 @@ package modernize
 import (
 	"fmt"
 	"go/ast"
-	"go/token"
 	"go/types"
 	"slices"
 
@@ -197,10 +196,6 @@ func isClippedSlice(info *types.Info, e ast.Expr) (clipped, empty bool) {
 	switch e := e.(type) {
 	case *ast.SliceExpr:
 		// x[:0:0], x[:len(x):len(x)], x[:k:k], x[:0]
-		isZeroLiteral := func(e ast.Expr) bool {
-			lit, ok := e.(*ast.BasicLit)
-			return ok && lit.Kind == token.INT && lit.Value == "0"
-		}
 		clipped = e.Slice3 && e.High != nil && e.Max != nil && equalSyntax(e.High, e.Max) // x[:k:k]
 		empty = e.High != nil && isZeroLiteral(e.High)                                    // x[:0:*]
 		return

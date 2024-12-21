@@ -16,5 +16,6 @@ func Test(t *testing.T) {
 		"minmax",
 		"sortslice",
 		"efaceany",
-		"appendclipped")
+		"appendclipped",
+		"bloop")
 }

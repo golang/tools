@@ -116,13 +116,7 @@ func isQualifiedIdent(info *types.Info, e ast.Expr, pkgpath, name string) bool {
 		return false
 	}
 	obj, ok := info.Uses[id]
-	return ok && isPackageLevel(obj) && obj.Pkg().Path() == pkgpath && id.Name == name
-}
-
-// isPackageLevel reports whether obj is a package-level func/var/const/type.
-func isPackageLevel(obj types.Object) bool {
-	pkg := obj.Pkg()
-	return pkg != nil && obj.Parent() == pkg.Scope()
+	return ok && isPackageLevel(obj, pkgpath, name)
 }
 
 // enclosingFile returns the file enclosing pos.

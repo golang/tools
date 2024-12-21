@@ -150,13 +150,20 @@ func (c Cursor) Inspect(types []ast.Node, f func(c Cursor, push bool) (descend b
 	}
 }
 
-// Stack returns the stack of enclosing nodes,
+// Stack returns the stack of enclosing nodes, outermost first:
 // from the [ast.File] down to the current cursor's node.
 //
 // To amortize allocation, it appends to the provided slice, which
 // must be empty.
 //
 // Stack must not be called on the Root node.
+//
+// TODO(adonovan): perhaps this should be replaced by:
+//
+//	func (Cursor) Ancestors(filter []ast.Node) iter.Seq[Cursor]
+//
+// returning a filtering iterator up the parent chain.
+// This finesses the question of allocation entirely.
 func (c Cursor) Stack(stack []Cursor) []Cursor {
 	if len(stack) > 0 {
 		panic("stack is non-empty")

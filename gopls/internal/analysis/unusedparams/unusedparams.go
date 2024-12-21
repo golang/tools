@@ -183,8 +183,7 @@ func run(pass *analysis.Pass) (any, error) {
 			// Find the symbol for the variable (if any)
 			// to which the FuncLit is bound.
 			// (We don't bother to allow ParenExprs.)
-			stack := c.Stack(nil)
-			switch parent := stack[len(stack)-2].Node().(type) {
+			switch parent := c.Parent().Node().(type) {
 			case *ast.AssignStmt:
 				// f  = func() {...}
 				// f := func() {...}
