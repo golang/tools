@@ -13,7 +13,7 @@ import (
 )
 
 // UnpackRecv unpacks a receiver type expression, reporting whether it is a
-// pointer recever, along with the type name identifier and any receiver type
+// pointer receiver, along with the type name identifier and any receiver type
 // parameter identifiers.
 //
 // Copied (with modifications) from go/types.
