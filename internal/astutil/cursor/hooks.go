@@ -18,9 +18,10 @@ import (
 // Copied from inspector.event; must remain in sync.
 // (Note that the linkname effects a type coercion too.)
 type event struct {
-	node  ast.Node
-	typ   uint64 // typeOf(node) on push event, or union of typ strictly between push and pop events on pop events
-	index int    // index of corresponding push or pop event (relative to this event's index, +ve=push, -ve=pop)
+	node   ast.Node
+	typ    uint64 // typeOf(node) on push event, or union of typ strictly between push and pop events on pop events
+	index  int32  // index of corresponding push or pop event (relative to this event's index, +ve=push, -ve=pop)
+	parent int32  // index of parent's push node (defined for push nodes only)
 }
 
 //go:linkname maskOf golang.org/x/tools/go/ast/inspector.maskOf

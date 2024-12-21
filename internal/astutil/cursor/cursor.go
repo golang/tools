@@ -31,7 +31,7 @@ import (
 // Call [Root] to obtain a valid cursor.
 type Cursor struct {
 	in    *inspector.Inspector
-	index int // index of push node; -1 for virtual root node
+	index int32 // index of push node; -1 for virtual root node
 }
 
 // Root returns a cursor for the virtual root node,
@@ -63,9 +63,9 @@ func (c Cursor) String() string {
 }
 
 // indices return the [start, end) half-open interval of event indices.
-func (c Cursor) indices() (int, int) {
+func (c Cursor) indices() (int32, int32) {
 	if c.index < 0 {
-		return 0, len(c.events()) // root: all events
+		return 0, int32(len(c.events())) // root: all events
 	} else {
 		return c.index, c.events()[c.index].index + 1 // just one subtree
 	}
@@ -154,10 +154,7 @@ func (c Cursor) Inspect(types []ast.Node, f func(c Cursor, push bool) (descend b
 // from the [ast.File] down to the current cursor's node.
 //
 // To amortize allocation, it appends to the provided slice, which
-// must be empty. Even so, a traversal that frequently calls Stack on
-// a Cursor may be slower than using [Inspector.WithStack].
-// For best performance, call Stack selectively, or use
-// [Cursor.Parent] instead where practical.
+// must be empty.
 //
 // Stack must not be called on the Root node.
 func (c Cursor) Stack(stack []Cursor) []Cursor {
@@ -168,30 +165,9 @@ func (c Cursor) Stack(stack []Cursor) []Cursor {
 		panic("Cursor.Stack called on Root node")
 	}
 
-	// The events[i] operation is a hotspot due to the bounds
-	// check, unpredictable load, and high cache miss rate.
-	// This could be mitigated two ways:
-	//
-	// 1. Reducing the size of the event struct by 25% by changing
-	//    event.node to just the value portion (unsafe.Pointer) of
-	//    the interface. (The ast.Node itab can be reconstructed
-	//    from the event.typ bitmask.) This was measured in CL 637740
-	//    but found to deliver disappointing gains (<10%).
-	//
-	// 2. Change event.index to uint32 (which is plenty). Though this
-	//    wouldn't change the size of the table, it would create
-	//    space for an explicit parent index, making Parent and
-	//    Stack optimal.
-
 	events := c.events()
-	for i := c.index; i >= 0; i-- {
-		if j := events[i].index; j > i {
-			// push
-			stack = append(stack, Cursor{c.in, i})
-		} else {
-			// pop: skip to before corresponding push
-			i = j
-		}
+	for i := c.index; i >= 0; i = events[i].parent {
+		stack = append(stack, Cursor{c.in, i})
 	}
 	slices.Reverse(stack)
 	return stack
@@ -200,25 +176,12 @@ func (c Cursor) Stack(stack []Cursor) []Cursor {
 // Parent returns the parent of the current node.
 //
 // Parent must not be called on the Root node (whose [Cursor.Node] returns nil).
-//
-// The cost of this operation is proportional to the number of the
-// node's preceding siblings.
 func (c Cursor) Parent() Cursor {
 	if c.index < 0 {
 		panic("Cursor.Parent called on Root node")
 	}
 
-	events := c.events()
-	i := c.index - 1
-	for i >= 0 {
-		if j := events[i].index; j > i { // push?
-			break
-		} else {
-			// pop: skip to before corresponding push
-			i = j - 1
-		}
-	}
-	return Cursor{c.in, i}
+	return Cursor{c.in, c.events()[c.index].parent}
 }
 
 // NextSibling returns the cursor for the next sibling node in the
@@ -234,7 +197,7 @@ func (c Cursor) NextSibling() (Cursor, bool) {
 
 	events := c.events()
 	i := events[c.index].index + 1 // after corresponding pop
-	if i < len(events) {
+	if i < int32(len(events)) {
 		if events[i].index > i { // push?
 			return Cursor{c.in, i}, true
 		}
@@ -267,8 +230,8 @@ func (c Cursor) PrevSibling() (Cursor, bool) {
 // or zero if it has no children.
 func (c Cursor) FirstChild() (Cursor, bool) {
 	events := c.events()
-	i := c.index + 1                            // i=0 if c is root
-	if i < len(events) && events[i].index > i { // push?
+	i := c.index + 1                                   // i=0 if c is root
+	if i < int32(len(events)) && events[i].index > i { // push?
 		return Cursor{c.in, i}, true
 	}
 	return Cursor{}, false
@@ -359,7 +322,7 @@ func (c Cursor) FindPos(start, end token.Pos) (Cursor, bool) {
 	// This algorithm could be implemented using c.Inspect,
 	// but it is about 2.5x slower.
 
-	best := -1 // push index of latest (=innermost) node containing range
+	best := int32(-1) // push index of latest (=innermost) node containing range
 	for i, limit := c.indices(); i < limit; i++ {
 		ev := events[i]
 		if ev.index > i { // push?
