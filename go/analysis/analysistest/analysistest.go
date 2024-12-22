@@ -193,9 +193,16 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 					}
 					file, endfile := act.Package.Fset.File(start), act.Package.Fset.File(end)
 					if file == nil || endfile == nil || file != endfile {
+						fileName := func(p token.Pos) string {
+							file := act.Package.Fset.File(p)
+							if file != nil {
+								return file.Name()
+							}
+							return fmt.Sprintf("<invalid file pos: %v>", p)
+						}
 						t.Errorf(
 							"diagnostic for analysis %v contains Suggested Fix with malformed spanning files %v and %v",
-							act.Analyzer.Name, file.Name(), endfile.Name())
+							act.Analyzer.Name, fileName(start), fileName(end))
 						continue
 					}
 					if _, ok := fileContents[file]; !ok {
