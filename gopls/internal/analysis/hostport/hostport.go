@@ -164,8 +164,7 @@ func run(pass *analysis.Pass) (any, error) {
 				// Search for decl of addrVar within common ancestor of addrVar and Dial call.
 				if addrVar, ok := info.Uses[address].(*types.Var); ok {
 					pos := addrVar.Pos()
-					// TODO(adonovan): use Cursor.Ancestors iterator when available.
-					for _, curAncestor := range curCall.Stack(nil) {
+					for curAncestor := range curCall.Ancestors() {
 						if curIdent, ok := curAncestor.FindPos(pos, pos); ok {
 							// curIdent is the declaring ast.Ident of addr.
 							switch parent := curIdent.Parent().Node().(type) {

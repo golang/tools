@@ -15,6 +15,7 @@ import (
 	"iter"
 	"log"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -151,6 +152,13 @@ func g() {
 			stack := curCall.Stack(nil)
 			if got, want := fmt.Sprint(stack), "[*ast.File *ast.FuncDecl *ast.BlockStmt *ast.ExprStmt *ast.CallExpr]"; got != want {
 				t.Errorf("curCall.Stack() = %q, want %q", got, want)
+			}
+
+			// Ancestors = Reverse(Stack[:last]).
+			stack = stack[:len(stack)-1]
+			slices.Reverse(stack)
+			if got, want := slices.Collect(curCall.Ancestors()), stack; !reflect.DeepEqual(got, want) {
+				t.Errorf("Ancestors = %v, Reverse(Stack - last element) = %v", got, want)
 			}
 		}
 
@@ -381,6 +389,15 @@ func BenchmarkInspectCalls(b *testing.B) {
 	// And if the calls to Stack are very selective,
 	// or are replaced by 2 calls to Parent, it runs
 	// 27% faster than WithStack.
+	//
+	// But the purpose of inspect.WithStack is not to obtain the
+	// stack on every node, but to perform a traversal in which it
+	// one as the _option_ to access the stack if it should be
+	// needed, but the need is rare and usually only for a small
+	// portion. Arguably, because Cursor traversals always
+	// provide, at no extra cost, the option to access the
+	// complete stack, the right comparison is the plain Cursor
+	// benchmark below.
 	b.Run("CursorStack", func(b *testing.B) {
 		var ncalls int
 		for range b.N {
@@ -388,6 +405,28 @@ func BenchmarkInspectCalls(b *testing.B) {
 			for cur := range cursor.Root(inspect).Preorder(callExprs...) {
 				_ = cur.Node().(*ast.CallExpr)
 				stack = cur.Stack(stack[:0])
+				ncalls++
+			}
+		}
+	})
+
+	b.Run("Cursor", func(b *testing.B) {
+		var ncalls int
+		for range b.N {
+			for cur := range cursor.Root(inspect).Preorder(callExprs...) {
+				_ = cur.Node().(*ast.CallExpr)
+				ncalls++
+			}
+		}
+	})
+
+	b.Run("CursorAncestors", func(b *testing.B) {
+		var ncalls int
+		for range b.N {
+			for cur := range cursor.Root(inspect).Preorder(callExprs...) {
+				_ = cur.Node().(*ast.CallExpr)
+				for range cur.Ancestors() {
+				}
 				ncalls++
 			}
 		}
