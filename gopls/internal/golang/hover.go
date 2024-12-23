@@ -1349,7 +1349,7 @@ func StdSymbolOf(obj types.Object) *stdlib.Symbol {
 	// Handle Method.
 	if fn, _ := obj.(*types.Func); fn != nil {
 		isPtr, named := typesinternal.ReceiverNamed(fn.Signature().Recv())
-		if isPackageLevel(named.Obj()) {
+		if named != nil && isPackageLevel(named.Obj()) {
 			for _, s := range symbols {
 				if s.Kind != stdlib.Method {
 					continue
