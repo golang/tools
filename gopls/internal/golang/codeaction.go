@@ -335,9 +335,9 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 				req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
 			}
 
-		// "undeclared name: x" or "undefined: x" compiler error.
-		// Offer a "Create variable/function x" code action.
-		// See [fixUndeclared] for command implementation.
+		// "undeclared name: X" or "undefined: X" compiler error.
+		// Offer a "Create variable/function X" code action.
+		// See [createUndeclared] for command implementation.
 		case strings.HasPrefix(msg, "undeclared name: "),
 			strings.HasPrefix(msg, "undefined: "):
 			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
