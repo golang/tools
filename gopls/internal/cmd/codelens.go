@@ -42,10 +42,10 @@ is executed, and its output is printed to stdout.
 
 Example:
 
-	$ gopls codelens a_test.go                    # list code lenses in a file
-	$ gopls codelens a_test.go:10                 # list code lenses on line 10
-	$ gopls codelens a_test.go gopls.test         # list gopls.test commands
-	$ gopls codelens -run a_test.go:10 gopls.test # run a specific test
+	$ gopls codelens a_test.go                     # list code lenses in a file
+	$ gopls codelens a_test.go:10                  # list code lenses on line 10
+	$ gopls codelens a_test.go gopls.test          # list gopls.test commands
+	$ gopls codelens -exec a_test.go:10 gopls.test # run a specific test
 
 codelens-flags:
 `)
