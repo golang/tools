@@ -221,8 +221,3 @@ func isClippedSlice(info *types.Info, e ast.Expr) (clipped, empty bool) {
 	}
 	return false, false
 }
-
-var (
-	builtinAppend = types.Universe.Lookup("append")
-	builtinNil    = types.Universe.Lookup("nil")
-)

@@ -53,11 +53,12 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	}
 
-	minmax(pass)
-	sortslice(pass)
-	efaceany(pass)
 	appendclipped(pass)
 	bloop(pass)
+	efaceany(pass)
+	mapsloop(pass)
+	minmax(pass)
+	sortslice(pass)
 
 	// TODO(adonovan):
 	// - more modernizers here; see #70815.
@@ -122,3 +123,10 @@ func isPackageLevel(obj types.Object, pkgpath, name string) bool {
 		obj.Pkg().Path() == pkgpath &&
 		obj.Name() == name
 }
+
+var (
+	builtinAppend = types.Universe.Lookup("append")
+	builtinBool   = types.Universe.Lookup("bool")
+	builtinMake   = types.Universe.Lookup("make")
+	builtinNil    = types.Universe.Lookup("nil")
+)

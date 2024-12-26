@@ -13,9 +13,11 @@ import (
 
 func Test(t *testing.T) {
 	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), modernize.Analyzer,
+		"appendclipped",
+		"bloop",
+		"efaceany",
+		"mapsloop",
 		"minmax",
 		"sortslice",
-		"efaceany",
-		"appendclipped",
-		"bloop")
+	)
 }
