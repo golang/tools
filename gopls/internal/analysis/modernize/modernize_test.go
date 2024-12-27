@@ -16,6 +16,7 @@ func Test(t *testing.T) {
 		"appendclipped",
 		"bloop",
 		"efaceany",
+		"fmtappendf",
 		"mapsloop",
 		"minmax",
 		"sortslice",

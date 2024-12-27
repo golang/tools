@@ -1,0 +1,36 @@
+package fmtappendf
+
+import (
+	"fmt"
+)
+
+func two() string {
+	return "two"
+}
+
+func bye() {
+	bye := fmt.Appendf(nil, "bye %d", 1) // want "Replace .*Sprintf.* with fmt.Appendf"
+	print(bye)
+}
+
+func funcsandvars() {
+	one := "one"
+	bye := fmt.Appendf(nil, "bye %d %s %s", 1, two(), one) // want "Replace .*Sprintf.* with fmt.Appendf"
+	print(bye)
+}
+
+func typealias() {
+	type b = byte
+	type bt = []byte
+	bye := fmt.Appendf(nil, "bye %d", 1) // want "Replace .*Sprintf.* with fmt.Appendf"
+	print(bye)
+	bye = fmt.Appendf(nil, "bye %d", 1) // want "Replace .*Sprintf.* with fmt.Appendf"
+	print(bye)
+}
+
+func otherprints() {
+	sprint := fmt.Append(nil, "bye %d", 1) // want "Replace .*Sprintf.* with fmt.Appendf"
+	print(sprint)
+	sprintln := fmt.Appendln(nil, "bye %d", 1) // want "Replace .*Sprintf.* with fmt.Appendf"
+	print(sprintln)
+}

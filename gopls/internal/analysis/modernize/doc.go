@@ -21,4 +21,6 @@
 //   - replacing a loop around an m[k]=v map update by a call
 //     to one of the Collect, Copy, Clone, or Insert functions
 //     from the maps package, added in go1.21;
+//   - replacing []byte(fmt.Sprintf...) by fmt.Appendf(nil, ...),
+//     added in go1.19;
 package modernize

@@ -68,24 +68,25 @@ func appendclipped(pass *analysis.Pass) {
 
 			// Special case for common but redundant clone of os.Environ().
 			// append(zerocap, os.Environ()...) -> os.Environ()
-			if scall, ok := s.(*ast.CallExpr); ok &&
-				isQualifiedIdent(info, scall.Fun, "os", "Environ") {
+			if scall, ok := s.(*ast.CallExpr); ok {
+				if id := isQualifiedIdent(info, scall.Fun, "os", "Environ"); id != nil {
 
-				pass.Report(analysis.Diagnostic{
-					Pos:      call.Pos(),
-					End:      call.End(),
-					Category: "slicesclone",
-					Message:  "Redundant clone of os.Environ()",
-					SuggestedFixes: []analysis.SuggestedFix{{
-						Message: "Eliminate redundant clone",
-						TextEdits: []analysis.TextEdit{{
-							Pos:     call.Pos(),
-							End:     call.End(),
-							NewText: formatNode(pass.Fset, s),
+					pass.Report(analysis.Diagnostic{
+						Pos:      call.Pos(),
+						End:      call.End(),
+						Category: "slicesclone",
+						Message:  "Redundant clone of os.Environ()",
+						SuggestedFixes: []analysis.SuggestedFix{{
+							Message: "Eliminate redundant clone",
+							TextEdits: []analysis.TextEdit{{
+								Pos:     call.Pos(),
+								End:     call.End(),
+								NewText: formatNode(pass.Fset, s),
+							}},
 						}},
-					}},
-				})
-				return
+					})
+					return
+				}
 			}
 
 			// append(zerocap, s...) -> slices.Clone(s)
@@ -199,7 +200,7 @@ func isClippedSlice(info *types.Info, e ast.Expr) (clipped, empty bool) {
 		}
 
 		// slices.Clip(x)?
-		if isQualifiedIdent(info, e.Fun, "slices", "Clip") {
+		if id := isQualifiedIdent(info, e.Fun, "slices", "Clip"); id != nil {
 			return true, false
 		}
 

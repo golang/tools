@@ -43,8 +43,8 @@ func sortslice(pass *analysis.Pass) {
 	check := func(file *ast.File, call *ast.CallExpr) {
 		// call to sort.Slice{,Stable}?
 		var stable string
-		if isQualifiedIdent(info, call.Fun, "sort", "Slice") {
-		} else if isQualifiedIdent(info, call.Fun, "sort", "SliceStable") {
+		if isQualifiedIdent(info, call.Fun, "sort", "Slice") != nil {
+		} else if isQualifiedIdent(info, call.Fun, "sort", "SliceStable") != nil {
 			stable = "Stable"
 		} else {
 			return
@@ -112,8 +112,8 @@ func sortslice(pass *analysis.Pass) {
 	}
 }
 
-// isQualifiedIdent reports whether e is a reference to pkg.Name.
-func isQualifiedIdent(info *types.Info, e ast.Expr, pkgpath, name string) bool {
+// isQualifiedIdent reports whether e is a reference to pkg.Name. If so, it returns the identifier.
+func isQualifiedIdent(info *types.Info, e ast.Expr, pkgpath, name string) *ast.Ident {
 	var id *ast.Ident
 	switch e := e.(type) {
 	case *ast.Ident:
@@ -121,8 +121,11 @@ func isQualifiedIdent(info *types.Info, e ast.Expr, pkgpath, name string) bool {
 	case *ast.SelectorExpr:
 		id = e.Sel
 	default:
-		return false
+		return nil
 	}
 	obj, ok := info.Uses[id]
-	return ok && isPackageLevel(obj, pkgpath, name)
+	if ok && isPackageLevel(obj, pkgpath, name) {
+		return id
+	}
+	return nil
 }

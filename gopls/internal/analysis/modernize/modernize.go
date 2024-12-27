@@ -60,6 +60,7 @@ func run(pass *analysis.Pass) (any, error) {
 	appendclipped(pass)
 	bloop(pass)
 	efaceany(pass)
+	fmtappendf(pass)
 	mapsloop(pass)
 	minmax(pass)
 	sortslice(pass)
@@ -147,4 +148,5 @@ var (
 	builtinBool   = types.Universe.Lookup("bool")
 	builtinMake   = types.Universe.Lookup("make")
 	builtinNil    = types.Universe.Lookup("nil")
+	byteSliceType = types.NewSlice(types.Typ[types.Byte])
 )
