@@ -28,126 +28,134 @@ import (
 // - "x := a" or "x = a" or "var x = a" in pattern 2
 // - "x < b" or "a < b" in pattern 2
 func minmax(pass *analysis.Pass) {
+
+	// check is called for all statements of this form:
+	//   if a < b { lhs = rhs }
+	check := func(curIfStmt cursor.Cursor, compare *ast.BinaryExpr) {
+		var (
+			ifStmt  = curIfStmt.Node().(*ast.IfStmt)
+			tassign = ifStmt.Body.List[0].(*ast.AssignStmt)
+			a       = compare.X
+			b       = compare.Y
+			lhs     = tassign.Lhs[0]
+			rhs     = tassign.Rhs[0]
+			scope   = pass.TypesInfo.Scopes[ifStmt.Body]
+			sign    = isInequality(compare.Op)
+		)
+
+		if fblock, ok := ifStmt.Else.(*ast.BlockStmt); ok && isAssignBlock(fblock) {
+			fassign := fblock.List[0].(*ast.AssignStmt)
+
+			// Have: if a < b { lhs = rhs } else { lhs2 = rhs2 }
+			lhs2 := fassign.Lhs[0]
+			rhs2 := fassign.Rhs[0]
+
+			// For pattern 1, check that:
+			// - lhs = lhs2
+			// - {rhs,rhs2} = {a,b}
+			if equalSyntax(lhs, lhs2) {
+				if equalSyntax(rhs, a) && equalSyntax(rhs2, b) {
+					sign = +sign
+				} else if equalSyntax(rhs2, a) || equalSyntax(rhs, b) {
+					sign = -sign
+				} else {
+					return
+				}
+
+				sym := cond(sign < 0, "min", "max")
+
+				if _, obj := scope.LookupParent(sym, ifStmt.Pos()); !is[*types.Builtin](obj) {
+					return // min/max function is shadowed
+				}
+
+				// pattern 1
+				//
+				// TODO(adonovan): if lhs is declared "var lhs T" on preceding line,
+				// simplify the whole thing to "lhs := min(a, b)".
+				pass.Report(analysis.Diagnostic{
+					// Highlight the condition a < b.
+					Pos:      compare.Pos(),
+					End:      compare.End(),
+					Category: "minmax",
+					Message:  fmt.Sprintf("if/else statement can be modernized using %s", sym),
+					SuggestedFixes: []analysis.SuggestedFix{{
+						Message: fmt.Sprintf("Replace if statement with %s", sym),
+						TextEdits: []analysis.TextEdit{{
+							// Replace IfStmt with lhs = min(a, b).
+							Pos: ifStmt.Pos(),
+							End: ifStmt.End(),
+							NewText: []byte(fmt.Sprintf("%s = %s(%s, %s)",
+								formatNode(pass.Fset, lhs),
+								sym,
+								formatNode(pass.Fset, a),
+								formatNode(pass.Fset, b))),
+						}},
+					}},
+				})
+			}
+
+		} else if prev, ok := curIfStmt.PrevSibling(); ok && is[*ast.AssignStmt](prev.Node()) {
+			fassign := prev.Node().(*ast.AssignStmt)
+
+			// Have: lhs2 = rhs2; if a < b { lhs = rhs }
+			// For pattern 2, check that
+			// - lhs = lhs2
+			// - {rhs,rhs2} = {a,b}, but allow lhs2 to
+			//   stand for rhs2.
+			// TODO(adonovan): accept "var lhs2 = rhs2" form too.
+			lhs2 := fassign.Lhs[0]
+			rhs2 := fassign.Rhs[0]
+
+			if equalSyntax(lhs, lhs2) {
+				if equalSyntax(rhs, a) && (equalSyntax(rhs2, b) || equalSyntax(lhs2, b)) {
+					sign = +sign
+				} else if (equalSyntax(rhs2, a) || equalSyntax(lhs2, a)) && equalSyntax(rhs, b) {
+					sign = -sign
+				} else {
+					return
+				}
+				sym := cond(sign < 0, "min", "max")
+
+				if _, obj := scope.LookupParent(sym, ifStmt.Pos()); !is[*types.Builtin](obj) {
+					return // min/max function is shadowed
+				}
+
+				// pattern 2
+				pass.Report(analysis.Diagnostic{
+					// Highlight the condition a < b.
+					Pos:      compare.Pos(),
+					End:      compare.End(),
+					Category: "minmax",
+					Message:  fmt.Sprintf("if statement can be modernized using %s", sym),
+					SuggestedFixes: []analysis.SuggestedFix{{
+						Message: fmt.Sprintf("Replace if/else with %s", sym),
+						TextEdits: []analysis.TextEdit{{
+							// Replace rhs2 and IfStmt with min(a, b)
+							Pos: rhs2.Pos(),
+							End: ifStmt.End(),
+							NewText: []byte(fmt.Sprintf("%s(%s, %s)",
+								sym,
+								formatNode(pass.Fset, a),
+								formatNode(pass.Fset, b))),
+						}},
+					}},
+				})
+			}
+		}
+	}
+
+	// Find all "if a < b { lhs = rhs }" statements.
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.21") {
+		for curIfStmt := range curFile.Preorder((*ast.IfStmt)(nil)) {
+			ifStmt := curIfStmt.Node().(*ast.IfStmt)
 
-	for curIfStmt := range cursor.Root(inspect).Preorder((*ast.IfStmt)(nil)) {
-		ifStmt := curIfStmt.Node().(*ast.IfStmt)
+			if compare, ok := ifStmt.Cond.(*ast.BinaryExpr); ok &&
+				isInequality(compare.Op) != 0 &&
+				isAssignBlock(ifStmt.Body) {
 
-		if compare, ok := ifStmt.Cond.(*ast.BinaryExpr); ok &&
-			isInequality(compare.Op) != 0 &&
-			isAssignBlock(ifStmt.Body) {
-
-			tassign := ifStmt.Body.List[0].(*ast.AssignStmt)
-
-			// Have: if a < b { lhs = rhs }
-			var (
-				a   = compare.X
-				b   = compare.Y
-				lhs = tassign.Lhs[0]
-				rhs = tassign.Rhs[0]
-			)
-
-			scope := pass.TypesInfo.Scopes[ifStmt.Body]
-			sign := isInequality(compare.Op)
-
-			if fblock, ok := ifStmt.Else.(*ast.BlockStmt); ok && isAssignBlock(fblock) {
-				fassign := fblock.List[0].(*ast.AssignStmt)
-
-				// Have: if a < b { lhs = rhs } else { lhs2 = rhs2 }
-				lhs2 := fassign.Lhs[0]
-				rhs2 := fassign.Rhs[0]
-
-				// For pattern 1, check that:
-				// - lhs = lhs2
-				// - {rhs,rhs2} = {a,b}
-				if equalSyntax(lhs, lhs2) {
-					if equalSyntax(rhs, a) && equalSyntax(rhs2, b) {
-						sign = +sign
-					} else if equalSyntax(rhs2, a) || equalSyntax(rhs, b) {
-						sign = -sign
-					} else {
-						continue
-					}
-
-					sym := cond(sign < 0, "min", "max")
-
-					if _, obj := scope.LookupParent(sym, ifStmt.Pos()); !is[*types.Builtin](obj) {
-						continue // min/max function is shadowed
-					}
-
-					// pattern 1
-					//
-					// TODO(adonovan): if lhs is declared "var lhs T" on preceding line,
-					// simplify the whole thing to "lhs := min(a, b)".
-					pass.Report(analysis.Diagnostic{
-						// Highlight the condition a < b.
-						Pos:      compare.Pos(),
-						End:      compare.End(),
-						Category: "minmax",
-						Message:  fmt.Sprintf("if/else statement can be modernized using %s", sym),
-						SuggestedFixes: []analysis.SuggestedFix{{
-							Message: fmt.Sprintf("Replace if statement with %s", sym),
-							TextEdits: []analysis.TextEdit{{
-								// Replace IfStmt with lhs = min(a, b).
-								Pos: ifStmt.Pos(),
-								End: ifStmt.End(),
-								NewText: []byte(fmt.Sprintf("%s = %s(%s, %s)",
-									formatNode(pass.Fset, lhs),
-									sym,
-									formatNode(pass.Fset, a),
-									formatNode(pass.Fset, b))),
-							}},
-						}},
-					})
-				}
-
-			} else if prev, ok := curIfStmt.PrevSibling(); ok && is[*ast.AssignStmt](prev.Node()) {
-				fassign := prev.Node().(*ast.AssignStmt)
-
-				// Have: lhs2 = rhs2; if a < b { lhs = rhs }
-				// For pattern 2, check that
-				// - lhs = lhs2
-				// - {rhs,rhs2} = {a,b}, but allow lhs2 to
-				//   stand for rhs2.
-				// TODO(adonovan): accept "var lhs2 = rhs2" form too.
-				lhs2 := fassign.Lhs[0]
-				rhs2 := fassign.Rhs[0]
-
-				if equalSyntax(lhs, lhs2) {
-					if equalSyntax(rhs, a) && (equalSyntax(rhs2, b) || equalSyntax(lhs2, b)) {
-						sign = +sign
-					} else if (equalSyntax(rhs2, a) || equalSyntax(lhs2, a)) && equalSyntax(rhs, b) {
-						sign = -sign
-					} else {
-						continue
-					}
-					sym := cond(sign < 0, "min", "max")
-
-					if _, obj := scope.LookupParent(sym, ifStmt.Pos()); !is[*types.Builtin](obj) {
-						continue // min/max function is shadowed
-					}
-
-					// pattern 2
-					pass.Report(analysis.Diagnostic{
-						// Highlight the condition a < b.
-						Pos:      compare.Pos(),
-						End:      compare.End(),
-						Category: "minmax",
-						Message:  fmt.Sprintf("if statement can be modernized using %s", sym),
-						SuggestedFixes: []analysis.SuggestedFix{{
-							Message: fmt.Sprintf("Replace if/else with %s", sym),
-							TextEdits: []analysis.TextEdit{{
-								// Replace rhs2 and IfStmt with min(a, b)
-								Pos: rhs2.Pos(),
-								End: ifStmt.End(),
-								NewText: []byte(fmt.Sprintf("%s(%s, %s)",
-									sym,
-									formatNode(pass.Fset, a),
-									formatNode(pass.Fset, b))),
-							}},
-						}},
-					})
-				}
+				// Have: if a < b { lhs = rhs }
+				check(curIfStmt, compare)
 			}
 		}
 	}

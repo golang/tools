@@ -16,8 +16,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/astutil/cursor"
-	"golang.org/x/tools/internal/versions"
 )
 
 // The appendclipped pass offers to simplify a tower of append calls:
@@ -45,12 +43,14 @@ func appendclipped(pass *analysis.Pass) {
 		return
 	}
 
+	info := pass.TypesInfo
+
 	// sliceArgs is a non-empty (reversed) list of slices to be concatenated.
-	simplifyAppendEllipsis := func(call *ast.CallExpr, base ast.Expr, sliceArgs []ast.Expr) {
+	simplifyAppendEllipsis := func(file *ast.File, call *ast.CallExpr, base ast.Expr, sliceArgs []ast.Expr) {
 		// Only appends whose base is a clipped slice can be simplified:
 		// We must conservatively assume an append to an unclipped slice
 		// such as append(y[:0], x...) is intended to have effects on y.
-		clipped, empty := isClippedSlice(pass.TypesInfo, base)
+		clipped, empty := isClippedSlice(info, base)
 		if !clipped {
 			return
 		}
@@ -69,7 +69,7 @@ func appendclipped(pass *analysis.Pass) {
 			// Special case for common but redundant clone of os.Environ().
 			// append(zerocap, os.Environ()...) -> os.Environ()
 			if scall, ok := s.(*ast.CallExpr); ok &&
-				isQualifiedIdent(pass.TypesInfo, scall.Fun, "os", "Environ") {
+				isQualifiedIdent(info, scall.Fun, "os", "Environ") {
 
 				pass.Report(analysis.Diagnostic{
 					Pos:      call.Pos(),
@@ -89,8 +89,7 @@ func appendclipped(pass *analysis.Pass) {
 			}
 
 			// append(zerocap, s...) -> slices.Clone(s)
-			file := enclosingFile(pass, call.Pos())
-			slicesName, importEdits := analysisinternal.AddImport(pass.TypesInfo, file, call.Pos(), "slices", "slices")
+			slicesName, importEdits := analysisinternal.AddImport(info, file, call.Pos(), "slices", "slices")
 			pass.Report(analysis.Diagnostic{
 				Pos:      call.Pos(),
 				End:      call.End(),
@@ -114,8 +113,7 @@ func appendclipped(pass *analysis.Pass) {
 		// - slices.Clone(s)   -> s
 		// - s[:len(s):len(s)] -> s
 		// - slices.Clip(s)    -> s
-		file := enclosingFile(pass, call.Pos())
-		slicesName, importEdits := analysisinternal.AddImport(pass.TypesInfo, file, call.Pos(), "slices", "slices")
+		slicesName, importEdits := analysisinternal.AddImport(info, file, call.Pos(), "slices", "slices")
 		pass.Report(analysis.Diagnostic{
 			Pos:      call.Pos(),
 			End:      call.End(),
@@ -137,46 +135,38 @@ func appendclipped(pass *analysis.Pass) {
 
 	// Visit calls of form append(x, y...).
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	filter := []ast.Node{(*ast.File)(nil), (*ast.CallExpr)(nil)}
-	cursor.Root(inspect).Inspect(filter, func(cur cursor.Cursor, push bool) (descend bool) {
-		if push {
-			switch n := cur.Node().(type) {
-			case *ast.File:
-				if versions.Before(pass.TypesInfo.FileVersions[n], "go1.21") {
-					return false
-				}
+	for curFile := range filesUsing(inspect, info, "go1.21") {
+		file := curFile.Node().(*ast.File)
 
-			case *ast.CallExpr:
-				call := n
-				if skip[call] {
-					return true
-				}
+		for curCall := range curFile.Preorder((*ast.CallExpr)(nil)) {
+			call := curCall.Node().(*ast.CallExpr)
+			if skip[call] {
+				continue
+			}
 
-				// Recursively unwrap ellipsis calls to append, so
-				//   append(append(append(base, a...), b..., c...)
-				// yields (base, [c b a]).
-				base, slices := ast.Expr(call), []ast.Expr(nil) // base case: (call, nil)
-			again:
-				if call, ok := base.(*ast.CallExpr); ok {
-					if id, ok := call.Fun.(*ast.Ident); ok &&
-						call.Ellipsis.IsValid() &&
-						len(call.Args) == 2 &&
-						pass.TypesInfo.Uses[id] == builtinAppend {
+			// Recursively unwrap ellipsis calls to append, so
+			//   append(append(append(base, a...), b..., c...)
+			// yields (base, [c b a]).
+			base, slices := ast.Expr(call), []ast.Expr(nil) // base case: (call, nil)
+		again:
+			if call, ok := base.(*ast.CallExpr); ok {
+				if id, ok := call.Fun.(*ast.Ident); ok &&
+					call.Ellipsis.IsValid() &&
+					len(call.Args) == 2 &&
+					info.Uses[id] == builtinAppend {
 
-						// Have: append(base, s...)
-						base, slices = call.Args[0], append(slices, call.Args[1])
-						skip[call] = true
-						goto again
-					}
-				}
-
-				if len(slices) > 0 {
-					simplifyAppendEllipsis(call, base, slices)
+					// Have: append(base, s...)
+					base, slices = call.Args[0], append(slices, call.Args[1])
+					skip[call] = true
+					goto again
 				}
 			}
+
+			if len(slices) > 0 {
+				simplifyAppendEllipsis(file, call, base, slices)
+			}
 		}
-		return true
-	})
+	}
 }
 
 // isClippedSlice reports whether e denotes a slice that is definitely

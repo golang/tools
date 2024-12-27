@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal"
-	"golang.org/x/tools/internal/versions"
 )
 
 // bloop updates benchmarks that use "for range b.N", replacing it
@@ -82,19 +81,13 @@ func bloop(pass *analysis.Pass) {
 
 	// Find all for/range statements.
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	filter := []ast.Node{
-		(*ast.File)(nil),
+	loops := []ast.Node{
 		(*ast.ForStmt)(nil),
 		(*ast.RangeStmt)(nil),
 	}
-	cursor.Root(inspect).Inspect(filter, func(cur cursor.Cursor, push bool) (descend bool) {
-		if push {
-			switch n := cur.Node().(type) {
-			case *ast.File:
-				if versions.Before(info.FileVersions[n], "go1.24") {
-					return false
-				}
-
+	for curFile := range filesUsing(inspect, info, "go1.24") {
+		for curLoop := range curFile.Preorder(loops...) {
+			switch n := curLoop.Node().(type) {
 			case *ast.ForStmt:
 				// for _; i < b.N; _ {}
 				if cmp, ok := n.Cond.(*ast.BinaryExpr); ok && cmp.Op == token.LSS {
@@ -108,7 +101,7 @@ func bloop(pass *analysis.Pass) {
 						//  for i := 0; i < b.N; i++ {
 						//    ...no references to i...
 						//  }
-						body, _ := cur.LastChild()
+						body, _ := curLoop.LastChild()
 						if assign, ok := n.Init.(*ast.AssignStmt); ok &&
 							assign.Tok == token.DEFINE &&
 							len(assign.Rhs) == 1 &&
@@ -129,7 +122,7 @@ func bloop(pass *analysis.Pass) {
 							Message:  "b.N can be modernized using b.Loop()",
 							SuggestedFixes: []analysis.SuggestedFix{{
 								Message:   "Replace b.N with b.Loop()",
-								TextEdits: edits(cur, sel.X, delStart, delEnd),
+								TextEdits: edits(curLoop, sel.X, delStart, delEnd),
 							}},
 						})
 					}
@@ -153,14 +146,13 @@ func bloop(pass *analysis.Pass) {
 						Message:  "b.N can be modernized using b.Loop()",
 						SuggestedFixes: []analysis.SuggestedFix{{
 							Message:   "Replace b.N with b.Loop()",
-							TextEdits: edits(cur, sel.X, n.Range, n.X.End()),
+							TextEdits: edits(curLoop, sel.X, n.Range, n.X.End()),
 						}},
 					})
 				}
 			}
 		}
-		return true
-	})
+	}
 }
 
 // isPtrToNamed reports whether t is type "*pkgpath.Name".

@@ -13,7 +13,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
@@ -39,16 +38,16 @@ func sortslice(pass *analysis.Pass) {
 		return
 	}
 
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	info := pass.TypesInfo
-	for call := range inspector.All[*ast.CallExpr](inspect) {
+
+	check := func(file *ast.File, call *ast.CallExpr) {
 		// call to sort.Slice{,Stable}?
 		var stable string
 		if isQualifiedIdent(info, call.Fun, "sort", "Slice") {
 		} else if isQualifiedIdent(info, call.Fun, "sort", "SliceStable") {
 			stable = "Stable"
 		} else {
-			continue
+			return
 		}
 
 		if lit, ok := call.Args[1].(*ast.FuncLit); ok && len(lit.Body.List) == 1 {
@@ -72,8 +71,7 @@ func sortslice(pass *analysis.Pass) {
 				if isIndex(compare.X, i) && isIndex(compare.Y, j) {
 					// Have: sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 
-					file := enclosingFile(pass, call.Pos())
-					slicesName, importEdits := analysisinternal.AddImport(pass.TypesInfo, file, call.Pos(), "slices", "slices")
+					slicesName, importEdits := analysisinternal.AddImport(info, file, call.Pos(), "slices", "slices")
 
 					pass.Report(analysis.Diagnostic{
 						// Highlight "sort.Slice".
@@ -102,6 +100,16 @@ func sortslice(pass *analysis.Pass) {
 			}
 		}
 	}
+
+	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	for curFile := range filesUsing(inspect, info, "go1.21") {
+		file := curFile.Node().(*ast.File)
+
+		for curCall := range curFile.Preorder((*ast.CallExpr)(nil)) {
+			call := curCall.Node().(*ast.CallExpr)
+			check(file, call)
+		}
+	}
 }
 
 // isQualifiedIdent reports whether e is a reference to pkg.Name.
@@ -117,15 +125,4 @@ func isQualifiedIdent(info *types.Info, e ast.Expr, pkgpath, name string) bool {
 	}
 	obj, ok := info.Uses[id]
 	return ok && isPackageLevel(obj, pkgpath, name)
-}
-
-// enclosingFile returns the file enclosing pos.
-// (It walks over the list of files, so is not terribly efficient.)
-func enclosingFile(pass *analysis.Pass, pos token.Pos) *ast.File {
-	for _, file := range pass.Files {
-		if astutil.NodeContains(file, pos) {
-			return file
-		}
-	}
-	return nil
 }
