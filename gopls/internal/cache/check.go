@@ -33,6 +33,7 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
@@ -1314,13 +1315,7 @@ func typerefsKey(id PackageID, imports map[ImportPath]*metadata.Package, compile
 
 	fmt.Fprintf(hasher, "typerefs: %s\n", id)
 
-	importPaths := make([]string, 0, len(imports))
-	for impPath := range imports {
-		importPaths = append(importPaths, string(impPath))
-	}
-	sort.Strings(importPaths)
-	for _, importPath := range importPaths {
-		imp := imports[ImportPath(importPath)]
+	for importPath, imp := range moremaps.Sorted(imports) {
 		// TODO(rfindley): strength reduce the typerefs.Export API to guarantee
 		// that it only depends on these attributes of dependencies.
 		fmt.Fprintf(hasher, "import %s %s %s", importPath, imp.ID, imp.Name)
@@ -1431,13 +1426,8 @@ func localPackageKey(inputs *typeCheckInputs) file.Hash {
 	fmt.Fprintf(hasher, "go %s\n", inputs.goVersion)
 
 	// import map
-	importPaths := make([]string, 0, len(inputs.depsByImpPath))
-	for impPath := range inputs.depsByImpPath {
-		importPaths = append(importPaths, string(impPath))
-	}
-	sort.Strings(importPaths)
-	for _, impPath := range importPaths {
-		fmt.Fprintf(hasher, "import %s %s", impPath, string(inputs.depsByImpPath[ImportPath(impPath)]))
+	for impPath, depID := range moremaps.Sorted(inputs.depsByImpPath) {
+		fmt.Fprintf(hasher, "import %s %s", impPath, depID)
 	}
 
 	// file names and contents

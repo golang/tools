@@ -17,7 +17,6 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -29,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -727,15 +727,10 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 			}
 		} else {
 			importsBuffer.WriteString("\nimport(")
-			// Loop over the map in sorted order ensures deterministic outcome.
-			paths := make([]string, 0, len(extraImports))
-			for key := range extraImports {
-				paths = append(paths, key)
-			}
-			sort.Strings(paths)
-			for _, path := range paths {
+			// Sort for determinism.
+			for path, name := range moremaps.Sorted(extraImports) {
 				importsBuffer.WriteString("\n\t")
-				if name := extraImports[path]; name != "" {
+				if name != "" {
 					importsBuffer.WriteString(name + " ")
 				}
 				importsBuffer.WriteString(fmt.Sprintf("\"%s\"", path))

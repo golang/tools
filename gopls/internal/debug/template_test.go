@@ -15,7 +15,6 @@ import (
 	"html/template"
 	"os"
 	"runtime"
-	"sort"
 	"strings"
 	"testing"
 
@@ -24,6 +23,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -110,13 +110,7 @@ func TestTemplates(t *testing.T) {
 		}
 	}
 	// now check all the known templates, in alphabetic order, for determinacy
-	keys := []string{}
-	for k := range templates {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		v := templates[k]
+	for k, v := range moremaps.Sorted(templates) {
 		// the FuncMap is an annoyance; should not be necessary
 		if err := templatecheck.CheckHTML(v.tmpl, v.data); err != nil {
 			t.Errorf("%s: %v", k, err)

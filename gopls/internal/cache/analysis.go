@@ -490,14 +490,7 @@ func (an *analysisNode) summaryHash() file.Hash {
 		fmt.Fprintf(hasher, "compiles: %t\n", an.summary.Compiles)
 
 		// action results: errors and facts
-		actions := an.summary.Actions
-		names := make([]string, 0, len(actions))
-		for name := range actions {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			summary := actions[name]
+		for name, summary := range moremaps.Sorted(an.summary.Actions) {
 			fmt.Fprintf(hasher, "action %s\n", name)
 			if summary.Err != "" {
 				fmt.Fprintf(hasher, "error %s\n", summary.Err)

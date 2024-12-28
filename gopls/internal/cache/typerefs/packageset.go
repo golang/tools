@@ -7,11 +7,11 @@ package typerefs
 import (
 	"fmt"
 	"math/bits"
-	"sort"
 	"strings"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 )
 
 // PackageIndex stores common data to enable efficient representation of
@@ -123,13 +123,7 @@ func (s *PackageSet) Contains(id metadata.PackageID) bool {
 
 // Elems calls f for each element of the set in ascending order.
 func (s *PackageSet) Elems(f func(IndexID)) {
-	blockIndexes := make([]int, 0, len(s.sparse))
-	for k := range s.sparse {
-		blockIndexes = append(blockIndexes, k)
-	}
-	sort.Ints(blockIndexes)
-	for _, i := range blockIndexes {
-		v := s.sparse[i]
+	for i, v := range moremaps.Sorted(s.sparse) {
 		for b := 0; b < blockSize; b++ {
 			if (v & (1 << b)) != 0 {
 				f(IndexID(i*blockSize + b))

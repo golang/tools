@@ -6,6 +6,7 @@ package fuzzy_test
 
 import (
 	"bytes"
+	"slices"
 	"sort"
 	"testing"
 
@@ -83,17 +84,9 @@ func TestWordSplit(t *testing.T) {
 }
 
 func diffStringLists(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
 	sort.Strings(a)
 	sort.Strings(b)
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(a, b)
 }
 
 var lastSegmentSplitTests = []struct {
