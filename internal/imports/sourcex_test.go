@@ -93,7 +93,7 @@ type dirs struct {
 func testDirs(t *testing.T) dirs {
 	t.Helper()
 	dir := t.TempDir()
-	modindex.IndexDir = func() (string, error) { return dir, nil }
+	modindex.IndexDir = dir
 	x := dirs{
 		tmpdir:   dir,
 		cachedir: filepath.Join(dir, "pkg", "mod"),

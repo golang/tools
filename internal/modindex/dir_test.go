@@ -47,10 +47,8 @@ var idtests = []id{
 }
 
 func testModCache(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	IndexDir = func() (string, error) { return dir, nil }
-	return dir
+	IndexDir = t.TempDir()
+	return IndexDir
 }
 
 // add a trivial package to the test module cache
@@ -211,11 +209,7 @@ func TestMissingCachedir(t *testing.T) {
 	if err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
-	ixd, err := IndexDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	des, err := os.ReadDir(ixd)
+	des, err := os.ReadDir(IndexDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,11 +226,7 @@ func TestMissingIndex(t *testing.T) {
 	} else if !ok {
 		t.Error("Update returned !ok")
 	}
-	ixd, err := IndexDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	des, err := os.ReadDir(ixd)
+	des, err := os.ReadDir(IndexDir)
 	if err != nil {
 		t.Fatal(err)
 	}

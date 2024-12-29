@@ -93,10 +93,7 @@ func query(dir string) {
 	panic("implement")
 }
 func clean(_ string) {
-	des, err := modindex.IndexDir()
-	if err != nil {
-		log.Fatal(err)
-	}
+	des := modindex.IndexDir
 	// look at the files starting with 'index'
 	// the current ones of each version are pointed to by
 	// index-name-%d files. Any others more than an hour old
