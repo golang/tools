@@ -324,14 +324,18 @@ func (s *server) findMatchingDiagnostics(uri protocol.DocumentURI, pd protocol.D
 	defer s.diagnosticsMu.Unlock()
 
 	var sds []*cache.Diagnostic
-	for _, viewDiags := range s.diagnostics[uri].byView {
-		for _, sd := range viewDiags.diagnostics {
-			sameDiagnostic := (pd.Message == strings.TrimSpace(sd.Message) && // extra space may have been trimmed when converting to protocol.Diagnostic
-				protocol.CompareRange(pd.Range, sd.Range) == 0 &&
-				pd.Source == string(sd.Source))
+	if fileDiags := s.diagnostics[uri]; fileDiags != nil {
+		for _, viewDiags := range fileDiags.byView {
+			for _, sd := range viewDiags.diagnostics {
+				// extra space may have been trimmed when
+				// converting to protocol.Diagnostic
+				sameDiagnostic := pd.Message == strings.TrimSpace(sd.Message) &&
+					protocol.CompareRange(pd.Range, sd.Range) == 0 &&
+					pd.Source == string(sd.Source)
 
-			if sameDiagnostic {
-				sds = append(sds, sd)
+				if sameDiagnostic {
+					sds = append(sds, sd)
+				}
 			}
 		}
 	}
