@@ -304,8 +304,10 @@ func (c Cursor) LastChild() (Cursor, bool) {
 // - [ast.AssignStmt] (Lhs, Rhs)
 //
 // So, do not assume that the previous sibling of an ast.Stmt is also
-// an ast.Stmt unless you have established that, say, its parent is a
-// BlockStmt.
+// an ast.Stmt, or if it is, that they are executed sequentially,
+// unless you have established that, say, its parent is a BlockStmt.
+// For example, given "for S1; ; S2 {}", the predecessor of S2 is S1,
+// even though they are not executed in sequence.
 func (c Cursor) Children() iter.Seq[Cursor] {
 	return func(yield func(Cursor) bool) {
 		c, ok := c.FirstChild()

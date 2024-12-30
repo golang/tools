@@ -49,6 +49,9 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 		report := pass.Report
 		pass.Report = func(diag analysis.Diagnostic) {
+			if diag.Category == "" {
+				panic("Diagnostic.Category is unset")
+			}
 			if _, ok := generated[pass.Fset.File(diag.Pos)]; ok {
 				return // skip checking if it's generated code
 			}
@@ -62,6 +65,7 @@ func run(pass *analysis.Pass) (any, error) {
 	fmtappendf(pass)
 	mapsloop(pass)
 	minmax(pass)
+	slicescontains(pass)
 	sortslice(pass)
 	testingContext(pass)
 
@@ -120,7 +124,9 @@ var (
 	builtinAny    = types.Universe.Lookup("any")
 	builtinAppend = types.Universe.Lookup("append")
 	builtinBool   = types.Universe.Lookup("bool")
+	builtinFalse  = types.Universe.Lookup("false")
 	builtinMake   = types.Universe.Lookup("make")
 	builtinNil    = types.Universe.Lookup("nil")
+	builtinTrue   = types.Universe.Lookup("true")
 	byteSliceType = types.NewSlice(types.Typ[types.Byte])
 )

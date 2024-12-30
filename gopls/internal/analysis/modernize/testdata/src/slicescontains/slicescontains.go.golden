@@ -1,0 +1,85 @@
+package slicescontains
+
+import "slices"
+
+var _ = slices.Contains[[]int] // force import of "slices" to avoid duplicate import edits
+
+func nopeNoBreak(slice []int, needle int) {
+	for i := range slice {
+		if slice[i] == needle {
+			println("found")
+		}
+	}
+}
+
+func rangeIndex(slice []int, needle int) {
+	if slices.Contains(slice, needle) {
+		println("found")
+	}
+}
+
+func rangeValue(slice []int, needle int) {
+	if slices.Contains(slice, needle) {
+		println("found")
+	}
+}
+
+func returns(slice []int, needle int) {
+	if slices.Contains(slice, needle) {
+		println("found")
+		return
+	}
+}
+
+func assignTrueBreak(slice []int, needle int) {
+	found := slices.Contains(slice, needle)
+	print(found)
+}
+
+func assignFalseBreak(slice []int, needle int) { // TODO: treat this specially like booleanTrue
+	found := true
+	if slices.Contains(slice, needle) {
+		found = false
+	}
+	print(found)
+}
+
+func assignFalseBreakInSelectSwitch(slice []int, needle int) {
+	// Exercise RangeStmt in CommClause, CaseClause.
+	select {
+	default:
+		found := slices.Contains(slice, needle)
+		print(found)
+	}
+	switch {
+	default:
+		found := slices.Contains(slice, needle)
+		print(found)
+	}
+}
+
+func returnTrue(slice []int, needle int) bool {
+	return slices.Contains(slice, needle)
+}
+
+func returnFalse(slice []int, needle int) bool {
+	return !slices.Contains(slice, needle)
+}
+
+func containsFunc(slice []int, needle int) bool {
+	return slices.ContainsFunc(slice, predicate)
+}
+
+func nopeLoopBodyHasFreeContinuation(slice []int, needle int) bool {
+	for _, elem := range slice {
+		if predicate(elem) {
+			if needle == 7 {
+				continue // this statement defeats loop elimination
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func predicate(int) bool

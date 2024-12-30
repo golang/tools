@@ -5,6 +5,7 @@
 package modernize
 
 // This file defines modernizers that use the "slices" package.
+// TODO(adonovan): actually let's split them up and rename this file.
 
 import (
 	"fmt"
