@@ -809,9 +809,10 @@ func (s *Session) invalidateViewLocked(ctx context.Context, v *View, changed Sta
 // If forURI is non-empty, this view should be the best view including forURI.
 // Otherwise, it is the default view for the folder.
 //
-// defineView only returns an error in the event of context cancellation.
+// defineView may return an error if the context is cancelled, or the
+// workspace folder path is invalid.
 //
-// Note: keep this function in sync with bestView.
+// Note: keep this function in sync with [RelevantViews].
 //
 // TODO(rfindley): we should be able to remove the error return, as
 // findModules is going away, and all other I/O is memoized.
@@ -838,11 +839,11 @@ func defineView(ctx context.Context, fs file.Source, folder *Folder, forFile fil
 		// add those constraints to the viewDefinition's environment.
 
 		// Content trimming is nontrivial, so do this outside of the loop below.
-		// Keep this in sync with bestView.
+		// Keep this in sync with [RelevantViews].
 		path := forFile.URI().Path()
 		if content, err := forFile.Content(); err == nil {
 			// Note the err == nil condition above: by convention a non-existent file
-			// does not have any constraints. See the related note in bestView: this
+			// does not have any constraints. See the related note in [RelevantViews]: this
 			// choice of behavior shouldn't actually matter. In this case, we should
 			// only call defineView with Overlays, which always have content.
 			content = trimContentForPortMatch(content)

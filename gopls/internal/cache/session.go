@@ -348,7 +348,7 @@ func (s *Session) View(id string) (*View, error) {
 // SnapshotOf returns a Snapshot corresponding to the given URI.
 //
 // In the case where the file can be  can be associated with a View by
-// bestViewForURI (based on directory information alone, without package
+// [RelevantViews] (based on directory information alone, without package
 // metadata), SnapshotOf returns the current Snapshot for that View. Otherwise,
 // it awaits loading package metadata and returns a Snapshot for the first View
 // containing a real (=not command-line-arguments) package for the file.
@@ -551,13 +551,12 @@ checkFiles:
 		}
 		def, err = defineView(ctx, fs, folder, fh)
 		if err != nil {
-			// We should never call selectViewDefs with a cancellable context, so
-			// this should never fail.
-			return nil, bug.Errorf("failed to define view for open file: %v", err)
+			// e.g. folder path is invalid?
+			return nil, fmt.Errorf("failed to define view for open file: %v", err)
 		}
 		// It need not strictly be the case that the best view for a file is
 		// distinct from other views, as the logic of getViewDefinition and
-		// bestViewForURI does not align perfectly. This is not necessarily a bug:
+		// [RelevantViews] does not align perfectly. This is not necessarily a bug:
 		// there may be files for which we can't construct a valid view.
 		//
 		// Nevertheless, we should not create redundant views.
@@ -572,7 +571,7 @@ checkFiles:
 	return defs, nil
 }
 
-// The viewDefiner interface allows the bestView algorithm to operate on both
+// The viewDefiner interface allows the [RelevantViews] algorithm to operate on both
 // Views and viewDefinitions.
 type viewDefiner interface{ definition() *viewDefinition }
 
