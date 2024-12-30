@@ -62,7 +62,12 @@ type memKey struct {
 
 // Get retrieves from the cache and returns the value most recently
 // supplied to Set(kind, key), possibly by another process.
-// Get returns ErrNotFound if the value was not found.
+//
+// Get returns ErrNotFound if the value was not found. The first call
+// to Get may fail due to ENOSPC or deletion of the process's
+// executable. Other causes of failure include deletion or corruption
+// of the cache (by external meddling) while gopls is running, or
+// faulty hardware; see issue #67433.
 //
 // Callers should not modify the returned array.
 func Get(kind string, key [32]byte) ([]byte, error) {
@@ -79,6 +84,8 @@ func Get(kind string, key [32]byte) ([]byte, error) {
 	// Read the index file, which provides the name of the CAS file.
 	indexName, err := filename(kind, key)
 	if err != nil {
+		// e.g. ENOSPC, deletion of executable (first time only);
+		// deletion of cache (at any time).
 		return nil, err
 	}
 	indexData, err := os.ReadFile(indexName)
@@ -100,7 +107,7 @@ func Get(kind string, key [32]byte) ([]byte, error) {
 	// engineered hash collision, which is infeasible.
 	casName, err := filename(casKind, valueHash)
 	if err != nil {
-		return nil, err
+		return nil, err // see above for possible causes
 	}
 	value, _ := os.ReadFile(casName) // ignore error
 	if sha256.Sum256(value) != valueHash {
@@ -138,6 +145,13 @@ func Get(kind string, key [32]byte) ([]byte, error) {
 var ErrNotFound = fmt.Errorf("not found")
 
 // Set updates the value in the cache.
+//
+// Set may fail due to:
+// - failure to access/create the cache (first call only);
+// - out of space (ENOSPC);
+// - deletion of the cache concurrent with a call to Set;
+// - faulty hardware.
+// See issue #67433.
 func Set(kind string, key [32]byte, value []byte) error {
 	memCache.Set(memKey{kind, key}, value, len(value))
 
@@ -353,13 +367,13 @@ func getCacheDir() (string, error) {
 		// Compute the hash of this executable (~20ms) and create a subdirectory.
 		hash, err := hashExecutable()
 		if err != nil {
-			cacheDirErr = fmt.Errorf("can't hash gopls executable: %v", err)
+			cacheDirErr = fmt.Errorf("can't hash gopls executable: %w", err)
 		}
 		// Use only 32 bits of the digest to avoid unwieldy filenames.
 		// It's not an adversarial situation.
 		cacheDir = filepath.Join(goplsDir, fmt.Sprintf("%x", hash[:4]))
 		if err := os.MkdirAll(cacheDir, 0700); err != nil {
-			cacheDirErr = fmt.Errorf("can't create cache: %v", err)
+			cacheDirErr = fmt.Errorf("can't create cache: %w", err)
 		}
 	})
 	return cacheDir, cacheDirErr
