@@ -219,8 +219,8 @@ func lspName(methodName string) string {
 //
 // For example:
 //
-//	"RunTests" -> []string{"Run", "Tests"}
-//	"GCDetails" -> []string{"GC", "Details"}
+//	"RunTests"      -> []string{"Run", "Tests"}
+//	"ClientOpenURL" -> []string{"Client", "Open", "URL"}
 func splitCamel(s string) []string {
 	var words []string
 	for len(s) > 0 {

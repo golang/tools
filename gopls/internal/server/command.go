@@ -1025,23 +1025,19 @@ func (s *server) getUpgrades(ctx context.Context, snapshot *cache.Snapshot, uri 
 }
 
 func (c *commandHandler) GCDetails(ctx context.Context, uri protocol.DocumentURI) error {
-	return c.ToggleGCDetails(ctx, command.URIArg{URI: uri})
-}
-
-func (c *commandHandler) ToggleGCDetails(ctx context.Context, args command.URIArg) error {
 	return c.run(ctx, commandConfig{
-		progress: "Toggling GC Details",
-		forURI:   args.URI,
+		progress: "Toggling display of compiler optimization details",
+		forURI:   uri,
 	}, func(ctx context.Context, deps commandDeps) error {
-		return c.modifyState(ctx, FromToggleGCDetails, func() (*cache.Snapshot, func(), error) {
+		return c.modifyState(ctx, FromToggleCompilerOptDetails, func() (*cache.Snapshot, func(), error) {
 			meta, err := golang.NarrowestMetadataForFile(ctx, deps.snapshot, deps.fh.URI())
 			if err != nil {
 				return nil, nil, err
 			}
-			wantDetails := !deps.snapshot.WantGCDetails(meta.ID) // toggle the gc details state
+			want := !deps.snapshot.WantCompilerOptDetails(meta.ID) // toggle per-package flag
 			return c.s.session.InvalidateView(ctx, deps.snapshot.View(), cache.StateChange{
-				GCDetails: map[metadata.PackageID]bool{
-					meta.ID: wantDetails,
+				CompilerOptDetails: map[metadata.PackageID]bool{
+					meta.ID: want,
 				},
 			})
 		})

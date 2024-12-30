@@ -183,9 +183,9 @@ type Snapshot struct {
 	// vulns maps each go.mod file's URI to its known vulnerabilities.
 	vulns *persistent.Map[protocol.DocumentURI, *vulncheck.Result]
 
-	// gcOptimizationDetails describes the packages for which we want
-	// optimization details to be included in the diagnostics.
-	gcOptimizationDetails map[metadata.PackageID]unit
+	// compilerOptDetails describes the packages for which we want
+	// compiler optimization details to be included in the diagnostics.
+	compilerOptDetails map[metadata.PackageID]unit
 
 	// Concurrent type checking:
 	// typeCheckMu guards the ongoing type checking batch, and reference count of
@@ -1492,7 +1492,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 
 	// TODO(rfindley): reorganize this function to make the derivation of
 	// needsDiagnosis clearer.
-	needsDiagnosis := len(changed.GCDetails) > 0 || len(changed.ModuleUpgrades) > 0 || len(changed.Vulns) > 0
+	needsDiagnosis := len(changed.CompilerOptDetails) > 0 || len(changed.ModuleUpgrades) > 0 || len(changed.Vulns) > 0
 
 	bgCtx, cancel := context.WithCancel(bgCtx)
 	result := &Snapshot{
@@ -1522,22 +1522,22 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		vulns:             cloneWith(s.vulns, changed.Vulns),
 	}
 
-	// Compute the new set of packages for which we want gc details, after
-	// applying changed.GCDetails.
-	if len(s.gcOptimizationDetails) > 0 || len(changed.GCDetails) > 0 {
-		newGCDetails := make(map[metadata.PackageID]unit)
-		for id := range s.gcOptimizationDetails {
-			if _, ok := changed.GCDetails[id]; !ok {
-				newGCDetails[id] = unit{} // no change
+	// Compute the new set of packages for which we want compiler
+	// optimization details, after applying changed.CompilerOptDetails.
+	if len(s.compilerOptDetails) > 0 || len(changed.CompilerOptDetails) > 0 {
+		newCompilerOptDetails := make(map[metadata.PackageID]unit)
+		for id := range s.compilerOptDetails {
+			if _, ok := changed.CompilerOptDetails[id]; !ok {
+				newCompilerOptDetails[id] = unit{} // no change
 			}
 		}
-		for id, want := range changed.GCDetails {
+		for id, want := range changed.CompilerOptDetails {
 			if want {
-				newGCDetails[id] = unit{}
+				newCompilerOptDetails[id] = unit{}
 			}
 		}
-		if len(newGCDetails) > 0 {
-			result.gcOptimizationDetails = newGCDetails
+		if len(newCompilerOptDetails) > 0 {
+			result.compilerOptDetails = newCompilerOptDetails
 		}
 	}
 
@@ -2161,10 +2161,10 @@ func (s *Snapshot) setBuiltin(path string) {
 	s.builtin = protocol.URIFromPath(path)
 }
 
-// WantGCDetails reports whether to compute GC optimization details for the
-// specified package.
-func (s *Snapshot) WantGCDetails(id metadata.PackageID) bool {
-	_, ok := s.gcOptimizationDetails[id]
+// WantCompilerOptDetails reports whether to compute compiler
+// optimization details for the specified package.
+func (s *Snapshot) WantCompilerOptDetails(id metadata.PackageID) bool {
+	_, ok := s.compilerOptDetails[id]
 	return ok
 }
 

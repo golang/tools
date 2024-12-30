@@ -23,10 +23,9 @@ import (
 // CodeLensSources returns the supported sources of code lenses for Go files.
 func CodeLensSources() map[settings.CodeLensSource]cache.CodeLensSourceFunc {
 	return map[settings.CodeLensSource]cache.CodeLensSourceFunc{
-		settings.CodeLensGenerate:      goGenerateCodeLens,    // commands: Generate
-		settings.CodeLensTest:          runTestCodeLens,       // commands: Test
-		settings.CodeLensRegenerateCgo: regenerateCgoLens,     // commands: RegenerateCgo
-		settings.CodeLensGCDetails:     toggleDetailsCodeLens, // commands: GCDetails
+		settings.CodeLensGenerate:      goGenerateCodeLens, // commands: Generate
+		settings.CodeLensTest:          runTestCodeLens,    // commands: Test
+		settings.CodeLensRegenerateCgo: regenerateCgoLens,  // commands: RegenerateCgo
 	}
 }
 
@@ -194,23 +193,5 @@ func regenerateCgoLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 	}
 	puri := fh.URI()
 	cmd := command.NewRegenerateCgoCommand("regenerate cgo definitions", command.URIArg{URI: puri})
-	return []protocol.CodeLens{{Range: rng, Command: cmd}}, nil
-}
-
-func toggleDetailsCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
-	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
-	if err != nil {
-		return nil, err
-	}
-	if !pgf.File.Package.IsValid() {
-		// Without a package name we have nowhere to put the codelens, so give up.
-		return nil, nil
-	}
-	rng, err := pgf.PosRange(pgf.File.Package, pgf.File.Package)
-	if err != nil {
-		return nil, err
-	}
-	puri := fh.URI()
-	cmd := command.NewGCDetailsCommand("Toggle gc annotation details", puri)
 	return []protocol.CodeLens{{Range: rng, Command: cmd}}, nil
 }

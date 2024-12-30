@@ -70,6 +70,7 @@ Gopls supports the following code actions:
 - [`source.freesymbols`](web.md#freesymbols)
 - `source.test` (undocumented) <!-- TODO: fix that -->
 - [`source.addTest`](#source.addTest)
+- [`source.toggleCompilerOptDetails`](diagnostics.md#toggleCompilerOptDetails)
 - [`gopls.doc.features`](README.md), which opens gopls' index of features in a browser
 - [`refactor.extract.constant`](#extract)
 - [`refactor.extract.function`](#extract)

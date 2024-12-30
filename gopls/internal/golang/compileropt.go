@@ -20,15 +20,10 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-// GCOptimizationDetails invokes the Go compiler on the specified
-// package and reports its log of optimizations decisions as a set of
-// diagnostics.
-//
-// TODO(adonovan): this feature needs more consistent and informative naming.
-// Now that the compiler is cmd/compile, "GC" now means only "garbage collection".
-// I propose "(Toggle|Display) Go compiler optimization details" in the UI,
-// and CompilerOptimizationDetails for this function and compileropts.go for the file.
-func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.Package) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
+// CompilerOptDetails invokes the Go compiler with the "-json=0,dir"
+// flag on the specified package, parses its log of optimization
+// decisions, and returns them as a set of diagnostics.
+func CompilerOptDetails(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.Package) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	if len(mp.CompiledGoFiles) == 0 {
 		return nil, nil
 	}
@@ -39,7 +34,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 	}
 	defer func() {
 		if err := os.RemoveAll(outDir); err != nil {
-			event.Error(ctx, "cleaning gcdetails dir", err)
+			event.Error(ctx, "cleaning details dir", err)
 		}
 	}()
 
@@ -51,13 +46,13 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 	defer os.Remove(tmpFile.Name())
 
 	outDirURI := protocol.URIFromPath(outDir)
-	// GC details doesn't handle Windows URIs in the form of "file:///C:/...",
+	// details doesn't handle Windows URIs in the form of "file:///C:/...",
 	// so rewrite them to "file://C:/...". See golang/go#41614.
 	if !strings.HasPrefix(outDir, "/") {
 		outDirURI = protocol.DocumentURI(strings.Replace(string(outDirURI), "file:///", "file://", 1))
 	}
 	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NoNetwork, pkgDir, "build", []string{
-		fmt.Sprintf("-gcflags=-json=0,%s", outDirURI),
+		fmt.Sprintf("-gcflags=-json=0,%s", outDirURI), // JSON schema version 0
 		fmt.Sprintf("-o=%s", tmpFile.Name()),
 		".",
 	})
@@ -97,6 +92,7 @@ func GCOptimizationDetails(ctx context.Context, snapshot *cache.Snapshot, mp *me
 	return reports, parseError
 }
 
+// parseDetailsFile parses the file written by the Go compiler which contains a JSON-encoded protocol.Diagnostic.
 func parseDetailsFile(filename string, options *settings.Options) (protocol.DocumentURI, []*cache.Diagnostic, error) {
 	buf, err := os.ReadFile(filename)
 	if err != nil {
@@ -136,13 +132,27 @@ func parseDetailsFile(filename string, options *settings.Options) (protocol.Docu
 		if !showDiagnostic(msg, d.Source, options) {
 			continue
 		}
+
+		// zeroIndexedRange subtracts 1 from the line and
+		// range, because the compiler output neglects to
+		// convert from 1-based UTF-8 coordinates to 0-based UTF-16.
+		// (See GOROOT/src/cmd/compile/internal/logopt/log_opts.go.)
+		// TODO(rfindley): also translate UTF-8 to UTF-16.
+		zeroIndexedRange := func(rng protocol.Range) protocol.Range {
+			return protocol.Range{
+				Start: protocol.Position{
+					Line:      rng.Start.Line - 1,
+					Character: rng.Start.Character - 1,
+				},
+				End: protocol.Position{
+					Line:      rng.End.Line - 1,
+					Character: rng.End.Character - 1,
+				},
+			}
+		}
+
 		var related []protocol.DiagnosticRelatedInformation
 		for _, ri := range d.RelatedInformation {
-			// TODO(rfindley): The compiler uses LSP-like JSON to encode gc details,
-			// however the positions it uses are 1-based UTF-8:
-			// https://github.com/golang/go/blob/master/src/cmd/compile/internal/logopt/log_opts.go
-			//
-			// Here, we adjust for 0-based positions, but do not translate UTF-8 to UTF-16.
 			related = append(related, protocol.DiagnosticRelatedInformation{
 				Location: protocol.Location{
 					URI:   ri.Location.URI,
@@ -156,7 +166,7 @@ func parseDetailsFile(filename string, options *settings.Options) (protocol.Docu
 			Range:    zeroIndexedRange(d.Range),
 			Message:  msg,
 			Severity: d.Severity,
-			Source:   cache.OptimizationDetailsError, // d.Source is always "go compiler" as of 1.16, use our own
+			Source:   cache.CompilerOptDetailsInfo, // d.Source is always "go compiler" as of 1.16, use our own
 			Tags:     d.Tags,
 			Related:  related,
 		}
@@ -175,6 +185,26 @@ func showDiagnostic(msg, source string, o *settings.Options) bool {
 	if o.Annotations == nil {
 		return true
 	}
+
+	// The strings below were gathered by grepping the source of
+	// cmd/compile for literal arguments in calls to logopt.LogOpt.
+	// (It is not a well defined set.)
+	//
+	// - canInlineFunction
+	// - cannotInlineCall
+	// - cannotInlineFunction
+	// - escape
+	// - escapes
+	// - isInBounds
+	// - isSliceInBounds
+	// - leak
+	// - nilcheck
+	//
+	// Additional ones not handled by logic below:
+	// - copy
+	// - iteration-variable-to-{heap,stack}
+	// - loop-modified-{range,for}
+
 	switch {
 	case strings.HasPrefix(msg, "canInline") ||
 		strings.HasPrefix(msg, "cannotInline") ||
@@ -189,20 +219,6 @@ func showDiagnostic(msg, source string, o *settings.Options) bool {
 		return o.Annotations[settings.Bounds]
 	}
 	return false
-}
-
-// The range produced by the compiler is 1-indexed, so subtract range by 1.
-func zeroIndexedRange(rng protocol.Range) protocol.Range {
-	return protocol.Range{
-		Start: protocol.Position{
-			Line:      rng.Start.Line - 1,
-			Character: rng.Start.Character - 1,
-		},
-		End: protocol.Position{
-			Line:      rng.End.Line - 1,
-			Character: rng.End.Character - 1,
-		},
-	}
 }
 
 func findJSONFiles(dir string) ([]string, error) {

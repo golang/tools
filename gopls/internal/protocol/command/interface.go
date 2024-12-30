@@ -132,17 +132,15 @@ type Interface interface {
 	// Runs `go get` to fetch a package.
 	GoGetPackage(context.Context, GoGetPackageArgs) error
 
-	// GCDetails: Toggle gc_details
+	// GCDetails: Toggle display of compiler optimization details
 	//
-	// Toggle the calculation of gc annotations.
+	// Toggle the per-package flag that causes Go compiler
+	// optimization decisions to be reported as diagnostics.
+	//
+	// (The name is a legacy of a time when the Go compiler was
+	// known as "gc". Renaming the command would break custom
+	// client-side logic in VS Code.)
 	GCDetails(context.Context, protocol.DocumentURI) error
-
-	// TODO: deprecate GCDetails in favor of ToggleGCDetails below.
-
-	// ToggleGCDetails: Toggle gc_details
-	//
-	// Toggle the calculation of gc annotations.
-	ToggleGCDetails(context.Context, URIArg) error
 
 	// ListKnownPackages: List known packages
 	//

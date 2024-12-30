@@ -49,6 +49,26 @@ build`. Gopls doesn't actually run the compiler; that would be too
   The example above shows a `printf` formatting mistake. The diagnostic contains
   a link to the documentation for the `printf` analyzer.
 
+There is an optional third source of diagnostics:
+
+<a id='toggleCompilerOptDetails'/>
+
+- **Compiler optimization details** are diagnostics that report
+  details relevant to optimization decisions made by the Go
+  compiler, such as whether a variable escapes or a slice index
+  requires a bounds check.
+
+  Optimization decisions include:
+  whether a variable escapes, and how escape is inferred;
+  whether a nil-pointer check is implied or eliminated; and
+  whether a function can be inlined.
+
+  This source is disabled by default but can be enabled on a
+  package-by-package basis by invoking the
+  `source.toggleCompilerOptDetails` ("Toggle compiler optimization
+  details") code action.
+
+
 ## Recomputation of diagnostics
 
 By default, diagnostics are automatically recomputed each time the source files

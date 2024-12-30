@@ -231,6 +231,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.GoDoc, fn: goDoc, needPkg: true},
 	{kind: settings.GoFreeSymbols, fn: goFreeSymbols},
 	{kind: settings.GoTest, fn: goTest},
+	{kind: settings.GoToggleCompilerOptDetails, fn: toggleCompilerOptDetails},
 	{kind: settings.GoplsDocFeatures, fn: goplsDocFeatures},
 	{kind: settings.RefactorExtractFunction, fn: refactorExtractFunction},
 	{kind: settings.RefactorExtractMethod, fn: refactorExtractMethod},
@@ -869,5 +870,13 @@ func goAssembly(ctx context.Context, req *codeActionsRequest) error {
 			}
 		}
 	}
+	return nil
+}
+
+// toggleCompilerOptDetails produces "Toggle compiler optimization details" code action.
+// See [server.commandHandler.ToggleCompilerOptDetails] for command implementation.
+func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) error {
+	cmd := command.NewGCDetailsCommand("Toggle compiler optimization details", req.fh.URI())
+	req.addCommandAction(cmd, false)
 	return nil
 }

@@ -16,6 +16,10 @@ import (
 	"golang.org/x/tools/gopls/internal/util/frob"
 )
 
+// An Annotation is a category of Go compiler optimization diagnostic.
+//
+// TODO(adonovan): this seems like a large control surface. Let's
+// remove it, and just show all kinds when the flag is enabled.
 type Annotation string
 
 const (
@@ -175,7 +179,6 @@ type UIOptions struct {
 	// ...
 	//   "codelenses": {
 	//     "generate": false,  // Don't show the `go generate` lens.
-	//     "gc_details": true  // Show a code lens toggling the display of gc's choices.
 	//   }
 	// ...
 	// }
@@ -209,25 +212,6 @@ type CodeLensSource string
 // matches the name of one of the command.Commands returned by it,
 // but that isn't essential.)
 const (
-	// Toggle display of Go compiler optimization decisions
-	//
-	// This codelens source causes the `package` declaration of
-	// each file to be annotated with a command to toggle the
-	// state of the per-session variable that controls whether
-	// optimization decisions from the Go compiler (formerly known
-	// as "gc") should be displayed as diagnostics.
-	//
-	// Optimization decisions include:
-	// - whether a variable escapes, and how escape is inferred;
-	// - whether a nil-pointer check is implied or eliminated;
-	// - whether a function can be inlined.
-	//
-	// TODO(adonovan): this source is off by default because the
-	// annotation is annoying and because VS Code has a separate
-	// "Toggle gc details" command. Replace it with a Code Action
-	// ("Source action...").
-	CodeLensGCDetails CodeLensSource = "gc_details"
-
 	// Run `go generate`
 	//
 	// This codelens source annotates any `//go:generate` comments
@@ -442,8 +426,10 @@ type DiagnosticOptions struct {
 	// [Staticcheck's website](https://staticcheck.io/docs/checks/).
 	Staticcheck bool `status:"experimental"`
 
-	// Annotations specifies the various kinds of optimization diagnostics
-	// that should be reported by the gc_details command.
+	// Annotations specifies the various kinds of compiler
+	// optimization details that should be reported as diagnostics
+	// when enabled for a package by the "Toggle compiler
+	// optimization details" (`gopls.gc_details`) command.
 	Annotations map[Annotation]bool `status:"experimental"`
 
 	// Vulncheck enables vulnerability scanning.

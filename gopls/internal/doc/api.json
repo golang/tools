@@ -638,7 +638,7 @@
 			{
 				"Name": "annotations",
 				"Type": "map[enum]bool",
-				"Doc": "annotations specifies the various kinds of optimization diagnostics\nthat should be reported by the gc_details command.\n",
+				"Doc": "annotations specifies the various kinds of compiler\noptimization details that should be reported as diagnostics\nwhen enabled for a package by the \"Toggle compiler\noptimization details\" (`gopls.gc_details`) command.\n",
 				"EnumKeys": {
 					"ValueType": "bool",
 					"Keys": [
@@ -791,15 +791,10 @@
 			{
 				"Name": "codelenses",
 				"Type": "map[enum]bool",
-				"Doc": "codelenses overrides the enabled/disabled state of each of gopls'\nsources of [Code Lenses](codelenses.md).\n\nExample Usage:\n\n```json5\n\"gopls\": {\n...\n  \"codelenses\": {\n    \"generate\": false,  // Don't show the `go generate` lens.\n    \"gc_details\": true  // Show a code lens toggling the display of gc's choices.\n  }\n...\n}\n```\n",
+				"Doc": "codelenses overrides the enabled/disabled state of each of gopls'\nsources of [Code Lenses](codelenses.md).\n\nExample Usage:\n\n```json5\n\"gopls\": {\n...\n  \"codelenses\": {\n    \"generate\": false,  // Don't show the `go generate` lens.\n  }\n...\n}\n```\n",
 				"EnumKeys": {
 					"ValueType": "bool",
 					"Keys": [
-						{
-							"Name": "\"gc_details\"",
-							"Doc": "`\"gc_details\"`: Toggle display of Go compiler optimization decisions\n\nThis codelens source causes the `package` declaration of\neach file to be annotated with a command to toggle the\nstate of the per-session variable that controls whether\noptimization decisions from the Go compiler (formerly known\nas \"gc\") should be displayed as diagnostics.\n\nOptimization decisions include:\n- whether a variable escapes, and how escape is inferred;\n- whether a nil-pointer check is implied or eliminated;\n- whether a function can be inlined.\n\nTODO(adonovan): this source is off by default because the\nannotation is annoying and because VS Code has a separate\n\"Toggle gc details\" command. Replace it with a Code Action\n(\"Source action...\").\n",
-							"Default": "false"
-						},
 						{
 							"Name": "\"generate\"",
 							"Doc": "`\"generate\"`: Run `go generate`\n\nThis codelens source annotates any `//go:generate` comments\nwith commands to run `go generate` in this directory, on\nall directories recursively beneath this one.\n\nSee [Generating code](https://go.dev/blog/generate) for\nmore details.\n",
@@ -843,7 +838,7 @@
 					]
 				},
 				"EnumValues": null,
-				"Default": "{\"gc_details\":false,\"generate\":true,\"regenerate_cgo\":true,\"run_govulncheck\":false,\"tidy\":true,\"upgrade_dependency\":true,\"vendor\":true}",
+				"Default": "{\"generate\":true,\"regenerate_cgo\":true,\"run_govulncheck\":false,\"tidy\":true,\"upgrade_dependency\":true,\"vendor\":true}",
 				"Status": "",
 				"Hierarchy": "ui"
 			},
@@ -928,13 +923,6 @@
 		]
 	},
 	"Lenses": [
-		{
-			"FileType": "Go",
-			"Lens": "gc_details",
-			"Title": "Toggle display of Go compiler optimization decisions",
-			"Doc": "\nThis codelens source causes the `package` declaration of\neach file to be annotated with a command to toggle the\nstate of the per-session variable that controls whether\noptimization decisions from the Go compiler (formerly known\nas \"gc\") should be displayed as diagnostics.\n\nOptimization decisions include:\n- whether a variable escapes, and how escape is inferred;\n- whether a nil-pointer check is implied or eliminated;\n- whether a function can be inlined.\n\nTODO(adonovan): this source is off by default because the\nannotation is annoying and because VS Code has a separate\n\"Toggle gc details\" command. Replace it with a Code Action\n(\"Source action...\").\n",
-			"Default": false
-		},
 		{
 			"FileType": "Go",
 			"Lens": "generate",

@@ -61,9 +61,9 @@ const (
 	// ResetGoModDiagnostics command.
 	FromResetGoModDiagnostics
 
-	// FromToggleGCDetails refers to state changes resulting from toggling
-	// gc_details on or off for a package.
-	FromToggleGCDetails
+	// FromToggleCompilerOptDetails refers to state changes resulting from toggling
+	// a package's compiler optimization details flag.
+	FromToggleCompilerOptDetails
 )
 
 func (m ModificationSource) String() string {

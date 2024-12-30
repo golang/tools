@@ -122,7 +122,6 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						CodeLensGenerate:          true,
 						CodeLensRegenerateCgo:     true,
 						CodeLensTidy:              true,
-						CodeLensGCDetails:         false,
 						CodeLensUpgradeDependency: true,
 						CodeLensVendor:            true,
 						CodeLensRunGovulncheck:    false, // TODO(hyangah): enable

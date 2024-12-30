@@ -75,11 +75,12 @@ import "golang.org/x/tools/gopls/internal/protocol"
 // is not VS Code's default behavior; see editor.codeActionsOnSave.)
 const (
 	// source
-	GoAssembly    protocol.CodeActionKind = "source.assembly"
-	GoDoc         protocol.CodeActionKind = "source.doc"
-	GoFreeSymbols protocol.CodeActionKind = "source.freesymbols"
-	GoTest        protocol.CodeActionKind = "source.test"
-	AddTest       protocol.CodeActionKind = "source.addTest"
+	GoAssembly                 protocol.CodeActionKind = "source.assembly"
+	GoDoc                      protocol.CodeActionKind = "source.doc"
+	GoFreeSymbols              protocol.CodeActionKind = "source.freesymbols"
+	GoTest                     protocol.CodeActionKind = "source.test"
+	GoToggleCompilerOptDetails protocol.CodeActionKind = "source.toggleCompilerOptDetails"
+	AddTest                    protocol.CodeActionKind = "source.addTest"
 
 	// gopls
 	GoplsDocFeatures protocol.CodeActionKind = "gopls.doc.features"

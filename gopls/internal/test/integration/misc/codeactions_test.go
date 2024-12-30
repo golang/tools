@@ -68,12 +68,14 @@ func g() {}
 			settings.GoAssembly,
 			settings.GoDoc,
 			settings.GoFreeSymbols,
+			settings.GoToggleCompilerOptDetails,
 			settings.GoplsDocFeatures,
 			settings.RefactorInlineCall)
 		check("gen/a.go",
 			settings.GoAssembly,
 			settings.GoDoc,
 			settings.GoFreeSymbols,
+			settings.GoToggleCompilerOptDetails,
 			settings.GoplsDocFeatures)
 	})
 }

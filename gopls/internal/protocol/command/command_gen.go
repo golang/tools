@@ -60,7 +60,6 @@ const (
 	StopProfile             Command = "gopls.stop_profile"
 	Test                    Command = "gopls.test"
 	Tidy                    Command = "gopls.tidy"
-	ToggleGCDetails         Command = "gopls.toggle_gc_details"
 	UpdateGoSum             Command = "gopls.update_go_sum"
 	UpgradeDependency       Command = "gopls.upgrade_dependency"
 	Vendor                  Command = "gopls.vendor"
@@ -106,7 +105,6 @@ var Commands = []Command{
 	StopProfile,
 	Test,
 	Tidy,
-	ToggleGCDetails,
 	UpdateGoSum,
 	UpgradeDependency,
 	Vendor,
@@ -326,12 +324,6 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.Tidy(ctx, a0)
-	case ToggleGCDetails:
-		var a0 URIArg
-		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
-			return nil, err
-		}
-		return nil, s.ToggleGCDetails(ctx, a0)
 	case UpdateGoSum:
 		var a0 URIArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -648,14 +640,6 @@ func NewTidyCommand(title string, a0 URIArgs) *protocol.Command {
 	return &protocol.Command{
 		Title:     title,
 		Command:   Tidy.String(),
-		Arguments: MustMarshalArgs(a0),
-	}
-}
-
-func NewToggleGCDetailsCommand(title string, a0 URIArg) *protocol.Command {
-	return &protocol.Command{
-		Title:     title,
-		Command:   ToggleGCDetails.String(),
 		Arguments: MustMarshalArgs(a0),
 	}
 }

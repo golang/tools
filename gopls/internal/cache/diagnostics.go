@@ -95,21 +95,24 @@ func (d *Diagnostic) Hash() file.Hash {
 	return hash
 }
 
+// A DiagnosticSource identifies the source of a diagnostic.
+//
+// Its value may be one of the distinguished string values below, or
+// the Name of an [analysis.Analyzer].
 type DiagnosticSource string
 
 const (
-	UnknownError             DiagnosticSource = "<Unknown source>"
-	ListError                DiagnosticSource = "go list"
-	ParseError               DiagnosticSource = "syntax"
-	TypeError                DiagnosticSource = "compiler"
-	ModTidyError             DiagnosticSource = "go mod tidy"
-	OptimizationDetailsError DiagnosticSource = "optimizer details"
-	UpgradeNotification      DiagnosticSource = "upgrade available"
-	Vulncheck                DiagnosticSource = "vulncheck imports"
-	Govulncheck              DiagnosticSource = "govulncheck"
-	TemplateError            DiagnosticSource = "template"
-	WorkFileError            DiagnosticSource = "go.work file"
-	ConsistencyInfo          DiagnosticSource = "consistency"
+	UnknownError           DiagnosticSource = "<Unknown source>"
+	ListError              DiagnosticSource = "go list"
+	ParseError             DiagnosticSource = "syntax"
+	TypeError              DiagnosticSource = "compiler"
+	ModTidyError           DiagnosticSource = "go mod tidy"
+	CompilerOptDetailsInfo DiagnosticSource = "optimizer details" // cmd/compile -json=0,dir
+	UpgradeNotification    DiagnosticSource = "upgrade available"
+	Vulncheck              DiagnosticSource = "vulncheck imports"
+	Govulncheck            DiagnosticSource = "govulncheck"
+	TemplateError          DiagnosticSource = "template"
+	WorkFileError          DiagnosticSource = "go.work file"
 )
 
 // A SuggestedFix represents a suggested fix (for a diagnostic)

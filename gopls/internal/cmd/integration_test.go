@@ -994,6 +994,8 @@ type C struct{}
 		res.checkExit(true)
 		got := res.stdout
 		want := `command	"Browse documentation for package a" [source.doc]` +
+			"\n" +
+			`command	"Toggle compiler optimization details" [source.toggleCompilerOptDetails]` +
 			"\n"
 		if got != want {
 			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)

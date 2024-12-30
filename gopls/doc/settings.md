@@ -184,13 +184,12 @@ Example Usage:
 ...
   "codelenses": {
     "generate": false,  // Don't show the `go generate` lens.
-    "gc_details": true  // Show a code lens toggling the display of gc's choices.
   }
 ...
 }
 ```
 
-Default: `{"gc_details":false,"generate":true,"regenerate_cgo":true,"run_govulncheck":false,"tidy":true,"upgrade_dependency":true,"vendor":true}`.
+Default: `{"generate":true,"regenerate_cgo":true,"run_govulncheck":false,"tidy":true,"upgrade_dependency":true,"vendor":true}`.
 
 <a id='semanticTokens'></a>
 ### `semanticTokens bool`
@@ -321,8 +320,10 @@ Default: `false`.
 
 **This setting is experimental and may be deleted.**
 
-annotations specifies the various kinds of optimization diagnostics
-that should be reported by the gc_details command.
+annotations specifies the various kinds of compiler
+optimization details that should be reported as diagnostics
+when enabled for a package by the "Toggle compiler
+optimization details" (`gopls.gc_details`) command.
 
 Each enum must be one of:
 

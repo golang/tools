@@ -192,7 +192,8 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 					settings.GoDoc,
 					settings.GoFreeSymbols,
 					settings.GoAssembly,
-					settings.GoplsDocFeatures:
+					settings.GoplsDocFeatures,
+					settings.GoToggleCompilerOptDetails:
 					return false // read-only query
 				}
 				return true // potential write operation
