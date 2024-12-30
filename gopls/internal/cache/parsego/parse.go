@@ -21,6 +21,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"reflect"
+	"slices"
 
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -629,27 +630,17 @@ func readKeyword(pos token.Pos, tok *token.File, src []byte) string {
 func fixArrayType(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte) bool {
 	// Our expected input is a bad expression that looks like "[]someExpr".
 
-	from := bad.Pos()
-	to := bad.End()
-
-	if !from.IsValid() || !to.IsValid() {
-		return false
-	}
-
-	exprBytes := make([]byte, 0, int(to-from)+3)
-	// Avoid doing tok.Offset(to) since that panics if badExpr ends at EOF.
-	// It also panics if the position is not in the range of the file, and
-	// badExprs may not necessarily have good positions, so check first.
-	fromOffset, toOffset, err := safetoken.Offsets(tok, from, to-1)
+	from, to := bad.Pos(), bad.End()
+	fromOffset, toOffset, err := safetoken.Offsets(tok, from, to)
 	if err != nil {
 		return false
 	}
-	exprBytes = append(exprBytes, src[fromOffset:toOffset+1]...)
-	exprBytes = bytes.TrimSpace(exprBytes)
+
+	exprBytes := bytes.TrimSpace(slices.Clone(src[fromOffset:toOffset]))
 
 	// If our expression ends in "]" (e.g. "[]"), add a phantom selector
 	// so we can complete directly after the "[]".
-	if len(exprBytes) > 0 && exprBytes[len(exprBytes)-1] == ']' {
+	if bytes.HasSuffix(exprBytes, []byte("]")) {
 		exprBytes = append(exprBytes, '_')
 	}
 
