@@ -233,7 +233,7 @@ Gopls reports the following token types:
 
 Gopls also reports the following standard modifiers:
 
-- `"defaultLibrary": predeclared symbols
+- `"defaultLibrary"`: predeclared symbols
 - `"definition"`: the declaring identifier of a symbol
 - `"readonly"`: for constants
 
