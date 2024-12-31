@@ -189,7 +189,7 @@ func parseRow(s string) (vr versionedRow, ok bool) {
 	case strings.HasPrefix(rest, "func "):
 		vr.kind = "func"
 		rest = rest[len("func "):]
-		if i := strings.IndexByte(rest, '('); i != -1 {
+		if i := strings.IndexAny(rest, "[("); i != -1 {
 			vr.name = rest[:i]
 			return vr, true
 		}

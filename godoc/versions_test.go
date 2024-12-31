@@ -65,6 +65,27 @@ func TestParseVersionRow(t *testing.T) {
 				recv: "Encoding",
 			},
 		},
+		{
+			// Function with type parameters.
+			// Taken from "go/src/api/go1.21.txt".
+			row: "pkg cmp, func Compare[$0 Ordered]($0, $0) int #59488",
+			want: versionedRow{
+				pkg:  "cmp",
+				kind: "func",
+				name: "Compare",
+			},
+		},
+		{
+			// Function without type parameter but have "[" after
+			// "(" should have works as is.
+			// Taken from "go/src/api/go1.21.txt".
+			row: "pkg bytes, func ContainsFunc([]uint8, func(int32) bool) bool #54386",
+			want: versionedRow{
+				pkg:  "bytes",
+				kind: "func",
+				name: "ContainsFunc",
+			},
+		},
 	}
 
 	for i, tt := range tests {
