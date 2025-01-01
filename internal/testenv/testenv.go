@@ -364,7 +364,7 @@ func NeedsGo1Point(t testing.TB, x int) {
 	}
 }
 
-// SkipAfterGo1Point skips t if the ambient go command version in the PATH of
+// SkipAfterGoCommand1Point skips t if the ambient go command version in the PATH of
 // the current process is newer than 1.x.
 //
 // SkipAfterGoCommand1Point memoizes the result of running the go command, so

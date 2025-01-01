@@ -3222,7 +3222,7 @@ func TestIssue70394(t *testing.T) {
 	}
 }
 
-// TestNeedTypesInfoOnly tests when NeedTypesInfo was set and NeedSyntax & NeedTypes were not,
+// TestLoadTypesInfoWithoutSyntaxOrTypes tests when NeedTypesInfo was set and NeedSyntax & NeedTypes were not,
 // Load should include the TypesInfo of packages properly
 func TestLoadTypesInfoWithoutSyntaxOrTypes(t *testing.T) {
 	testAllOrModulesParallel(t, testLoadTypesInfoWithoutSyntaxOrTypes)

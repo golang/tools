@@ -112,7 +112,7 @@ type Type struct {
 	Line    int     `json:"line"`    // JSON source line
 }
 
-// ParsedLiteral is Type.Value when Type.Kind is "literal"
+// ParseLiteral is Type.Value when Type.Kind is "literal"
 type ParseLiteral struct {
 	Properties `json:"properties"`
 }

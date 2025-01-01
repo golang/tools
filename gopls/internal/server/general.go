@@ -610,7 +610,7 @@ func (s *server) fileOf(ctx context.Context, uri protocol.DocumentURI) (file.Han
 	return fh, snapshot, release, nil
 }
 
-// shutdown implements the 'shutdown' LSP handler. It releases resources
+// Shutdown implements the 'shutdown' LSP handler. It releases resources
 // associated with the server and waits for all ongoing work to complete.
 func (s *server) Shutdown(ctx context.Context) error {
 	ctx, done := event.Start(ctx, "lsp.Server.shutdown")

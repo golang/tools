@@ -225,7 +225,7 @@ func (a *Awaiter) onShowMessage(_ context.Context, params *protocol.ShowMessageP
 	return nil
 }
 
-// ListenToShownDocuments registers a listener to incoming showDocument
+// ListenToShownMessages registers a listener to incoming showMessage
 // notifications. Call the resulting func to deregister the listener and
 // receive all notifications that have occurred since the listener was
 // registered.

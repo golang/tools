@@ -22,7 +22,7 @@ func Group[K comparable, V any](s []V, key func(V) K) map[K][]V {
 	return m
 }
 
-// Keys returns the keys of the map M, like slices.Collect(maps.Keys(m)).
+// KeySlice returns the keys of the map M, like slices.Collect(maps.Keys(m)).
 func KeySlice[M ~map[K]V, K comparable, V any](m M) []K {
 	r := make([]K, 0, len(m))
 	for k := range m {

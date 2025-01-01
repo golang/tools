@@ -172,7 +172,7 @@ func (req *codeActionsRequest) addCommandAction(cmd *protocol.Command, allowReso
 	req.addAction(act)
 }
 
-// addCommandAction adds an edit-based CodeAction to the result.
+// addEditAction adds an edit-based CodeAction to the result.
 func (req *codeActionsRequest) addEditAction(title string, fixedDiagnostics []protocol.Diagnostic, changes ...protocol.DocumentChange) {
 	req.addAction(protocol.CodeAction{
 		Title:       title,
@@ -648,7 +648,7 @@ func refactorRewriteChangeQuote(ctx context.Context, req *codeActionsRequest) er
 	return nil
 }
 
-// refactorRewriteChangeQuote produces "Invert 'if' condition" code actions.
+// refactorRewriteInvertIf produces "Invert 'if' condition" code actions.
 // See [invertIfCondition] for command implementation.
 func refactorRewriteInvertIf(ctx context.Context, req *codeActionsRequest) error {
 	if _, ok, _ := canInvertIfCondition(req.pgf.File, req.start, req.end); ok {

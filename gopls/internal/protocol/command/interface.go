@@ -525,7 +525,7 @@ type RunVulncheckResult struct {
 	Token protocol.ProgressToken
 }
 
-// GovulncheckResult holds the result of synchronously running the vulncheck
+// VulncheckResult holds the result of synchronously running the vulncheck
 // command.
 type VulncheckResult struct {
 	// Result holds the result of running vulncheck.
@@ -695,7 +695,7 @@ type PackagesResult struct {
 	// Packages is an unordered list of package metadata.
 	Packages []Package
 
-	// Modules maps module path to module metadata for
+	// Module maps module path to module metadata for
 	// all the modules of the returned Packages.
 	Module map[string]Module
 }

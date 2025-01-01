@@ -452,7 +452,7 @@ type WorkStatus struct {
 	EndMsg string
 }
 
-// CompletedProgress expects that workDone progress is complete for the given
+// CompletedProgressToken expects that workDone progress is complete for the given
 // progress token. When non-nil WorkStatus is provided, it will be filled
 // when the expectation is met.
 //

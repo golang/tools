@@ -244,7 +244,7 @@ func writeIndexToFile(x *Index, fd *os.File) error {
 // tests can override this
 var IndexDir = indexDir
 
-// IndexDir computes the directory containing the index
+// indexDir computes the directory containing the index
 func indexDir() (string, error) {
 	dir, err := os.UserCacheDir()
 	if err != nil {

@@ -47,7 +47,7 @@ type wireRequest struct {
 	ID *ID `json:"id,omitempty"`
 }
 
-// WireResponse is a reply to a Request.
+// wireResponse is a reply to a Request.
 // It will always have the ID field set to tie it back to a request, and will
 // have either the Result or Error fields set depending on whether it is a
 // success or failure response.

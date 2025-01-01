@@ -769,7 +769,7 @@ func isSelectionOperand(stack []ast.Node) bool {
 // use of b.
 type shadowMap map[string]int
 
-// addShadows returns the [shadowMap] augmented by the set of names
+// add returns the [shadowMap] augmented by the set of names
 // locally shadowed at the location of the reference in the callee
 // (identified by the stack). The name of the reference itself is
 // excluded.

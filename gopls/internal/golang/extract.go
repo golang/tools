@@ -1654,7 +1654,7 @@ var conventionalVarNames = map[objKey]string{
 	{"http", "ResponseWriter"}: "rw", // Note: same as [AbbreviateVarName].
 }
 
-// varNameForTypeName chooses a "good" name for a variable with the given type,
+// varNameForType chooses a "good" name for a variable with the given type,
 // if possible. Otherwise, it returns "", false.
 //
 // For special types, it uses known conventional names.

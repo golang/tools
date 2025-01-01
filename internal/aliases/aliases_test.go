@@ -81,7 +81,7 @@ func TestNewAlias(t *testing.T) {
 	}
 }
 
-// TestNewAlias tests that alias.NewAlias can create a parameterized alias
+// TestNewParameterizedAlias tests that alias.NewAlias can create a parameterized alias
 // A[T] of a type whose underlying and Unaliased type is *T. The test then
 // instantiates A[Named] and checks that the underlying and Unaliased type
 // of A[Named] is *Named.

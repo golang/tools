@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-// selectionRange defines the textDocument/selectionRange feature,
+// SelectionRange defines the textDocument/selectionRange feature,
 // which, given a list of positions within a file,
 // reports a linked list of enclosing syntactic blocks, innermost first.
 //

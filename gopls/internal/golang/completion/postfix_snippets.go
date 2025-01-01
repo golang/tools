@@ -69,7 +69,7 @@ type postfixTmplArgs struct {
 	// Type is the type of "foo.bar" in "foo.bar.print!".
 	Type types.Type
 
-	// FuncResult are results of the enclosed function
+	// FuncResults are results of the enclosed function
 	FuncResults []*types.Var
 
 	sel            *ast.SelectorExpr
