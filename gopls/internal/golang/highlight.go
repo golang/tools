@@ -164,7 +164,7 @@ func highlightPrintf(info *types.Info, call *ast.CallExpr, formatPos token.Pos, 
 	}
 
 	// highlightPair highlights the directive and its potential argument pair if the cursor is within either range.
-	highlightPair := func(start, end token.Pos, argIndex int) bool {
+	highlightPair := func(start, end token.Pos, argIndex int) {
 		var (
 			rangeStart = formatPos + token.Pos(start)
 			rangeEnd   = formatPos + token.Pos(end)
@@ -179,43 +179,38 @@ func highlightPrintf(info *types.Info, call *ast.CallExpr, formatPos token.Pos, 
 			if arg != nil {
 				highlightRange(result, arg.Pos(), arg.End(), protocol.Read)
 			}
-			return true
 		}
-		return false
 	}
 
-	// If width or prec has any *, we can not highlight the full range from % to verb,
-	// because it will overlap with the sub-range of *, for example:
-	//
-	// fmt.Printf("%*[3]d", 4, 5, 6)
-	//               ^  ^ we can only highlight this range when cursor in 6. '*' as a one-rune range will
-	//               highlight for 4.
-	anyAsterisk := false
 	for _, directive := range directives {
+		// If width or prec has any *, we can not highlight the full range from % to verb,
+		// because it will overlap with the sub-range of *, for example:
+		//
+		// fmt.Printf("%*[3]d", 4, 5, 6)
+		//               ^  ^ we can only highlight this range when cursor in 6. '*' as a one-rune range will
+		//               highlight for 4.
+		anyAsterisk := false
+
 		width, prec, verb := directive.Width, directive.Prec, directive.Verb
 		// Try highlight Width if there is a *.
 		if width != nil && width.ArgIndex != -1 {
 			anyAsterisk = true
-			if highlightPair(token.Pos(width.Range.Start), token.Pos(width.Range.End), width.ArgIndex) {
-				return
-			}
+			highlightPair(token.Pos(width.Range.Start), token.Pos(width.Range.End), width.ArgIndex)
 		}
 
 		// Try highlight Precision if there is a *.
 		if prec != nil && prec.ArgIndex != -1 {
 			anyAsterisk = true
-			if highlightPair(token.Pos(prec.Range.Start), token.Pos(prec.Range.End), prec.ArgIndex) {
-				return
-			}
+			highlightPair(token.Pos(prec.Range.Start), token.Pos(prec.Range.End), prec.ArgIndex)
 		}
 
 		// Try highlight Verb.
 		if verb.Verb != '%' {
 			// If any * is found inside directive, narrow the highlight range.
-			if anyAsterisk && highlightPair(token.Pos(verb.Range.Start), token.Pos(verb.Range.End), verb.ArgIndex) {
-				return
-			} else if highlightPair(token.Pos(directive.Range.Start), token.Pos(directive.Range.End), verb.ArgIndex) {
-				return
+			if anyAsterisk {
+				highlightPair(token.Pos(verb.Range.Start), token.Pos(verb.Range.End), verb.ArgIndex)
+			} else {
+				highlightPair(token.Pos(directive.Range.Start), token.Pos(directive.Range.End), verb.ArgIndex)
 			}
 		}
 	}
