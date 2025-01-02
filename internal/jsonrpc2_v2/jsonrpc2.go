@@ -112,15 +112,6 @@ func (a *async) done() {
 	close(a.ready)
 }
 
-func (a *async) isDone() bool {
-	select {
-	case <-a.ready:
-		return true
-	default:
-		return false
-	}
-}
-
 func (a *async) wait() error {
 	<-a.ready
 	err := <-a.firstErr

@@ -22,9 +22,6 @@ func is[T any](x any) bool {
 	return ok
 }
 
-// TODO(adonovan): use go1.21's slices.Clone.
-func clone[T any](slice []T) []T { return append([]T{}, slice...) }
-
 // TODO(adonovan): use go1.21's slices.Index.
 func index[T comparable](slice []T, x T) int {
 	for i, elem := range slice {

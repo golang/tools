@@ -358,6 +358,7 @@ func CreateMmapFile(outDwarf string, size int64) (*os.File, []byte) {
 	return dwarfFile, buffer
 }
 
+// (dead code; retained for debugging)
 func describe(exem *macho.FileTOC) {
 	note("Type = %s, Flags=0x%x", exem.Type, uint32(exem.Flags))
 	for i, l := range exem.Loads {

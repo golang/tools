@@ -303,15 +303,6 @@ func ext۰time۰Sleep(fr *frame, args []value) value {
 	return nil
 }
 
-func valueToBytes(v value) []byte {
-	in := v.([]value)
-	b := make([]byte, len(in))
-	for i := range in {
-		b[i] = in[i].(byte)
-	}
-	return b
-}
-
 func ext۰os۰Getenv(fr *frame, args []value) value {
 	name := args[0].(string)
 	switch name {

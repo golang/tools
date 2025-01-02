@@ -16,6 +16,7 @@ import (
 	"strings"
 )
 
+// (used only by tests)
 func checkCopyright(dir string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {

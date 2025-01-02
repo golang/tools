@@ -2999,30 +2999,6 @@ func constant(p *packages.Package, name string) *types.Const {
 	return c.(*types.Const)
 }
 
-func copyAll(srcPath, dstPath string) error {
-	return filepath.Walk(srcPath, func(path string, info os.FileInfo, _ error) error {
-		if info.IsDir() {
-			return nil
-		}
-		contents, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(srcPath, path)
-		if err != nil {
-			return err
-		}
-		dstFilePath := strings.Replace(filepath.Join(dstPath, rel), "definitelynot_go.mod", "go.mod", -1)
-		if err := os.MkdirAll(filepath.Dir(dstFilePath), 0755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(dstFilePath, contents, 0644); err != nil {
-			return err
-		}
-		return nil
-	})
-}
-
 func TestExportFile(t *testing.T) {
 	// This used to trigger the log.Fatal in loadFromExportData.
 	// See go.dev/issue/45584.

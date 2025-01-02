@@ -188,11 +188,6 @@ func doMain() error {
 // e.g. --flag=one --flag=two would produce []string{"one", "two"}.
 type stringListValue []string
 
-func newStringListValue(val []string, p *[]string) *stringListValue {
-	*p = val
-	return (*stringListValue)(p)
-}
-
 func (ss *stringListValue) Get() interface{} { return []string(*ss) }
 
 func (ss *stringListValue) String() string { return fmt.Sprintf("%q", *ss) }

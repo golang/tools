@@ -93,20 +93,6 @@ func typeName(fname string) string {
 	return fmt.Sprintf("%c%s", base[0]+'A'-'a', base[1:len(base)-len(".go")])
 }
 
-func moreTests(t *testing.T, dirname, prefix string) []string {
-	x, err := os.ReadDir(dirname)
-	if err != nil {
-		// error, but try the rest of the tests
-		t.Errorf("can't read type param tess from %s: %v", dirname, err)
-		return nil
-	}
-	names := make([]string, len(x))
-	for i, f := range x {
-		names[i] = prefix + "/" + f.Name()
-	}
-	return names
-}
-
 // TestTags verifies that the -tags flag works as advertised.
 func TestTags(t *testing.T) {
 	stringer := stringerPath(t)

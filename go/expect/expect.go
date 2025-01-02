@@ -120,10 +120,3 @@ func MatchBefore(fset *token.FileSet, readFile ReadFile, end token.Pos, pattern 
 	}
 	return f.Pos(startOffset + matchStart), f.Pos(startOffset + matchEnd), nil
 }
-
-func lineEnd(f *token.File, line int) token.Pos {
-	if line >= f.LineCount() {
-		return token.Pos(f.Base() + f.Size())
-	}
-	return f.LineStart(line + 1)
-}

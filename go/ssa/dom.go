@@ -318,6 +318,7 @@ func printDomTreeText(buf *bytes.Buffer, v *BasicBlock, indent int) {
 
 // printDomTreeDot prints the dominator tree of f in AT&T GraphViz
 // (.dot) format.
+// (unused; retained for debugging)
 func printDomTreeDot(buf *bytes.Buffer, f *Function) {
 	fmt.Fprintln(buf, "//", f)
 	fmt.Fprintln(buf, "digraph domtree {")

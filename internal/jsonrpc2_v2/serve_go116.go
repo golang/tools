@@ -8,12 +8,7 @@
 package jsonrpc2
 
 import (
-	"errors"
 	"net"
 )
 
 var errClosed = net.ErrClosed
-
-func isErrClosed(err error) bool {
-	return errors.Is(err, errClosed)
-}
