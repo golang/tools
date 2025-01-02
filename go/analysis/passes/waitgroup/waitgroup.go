@@ -9,7 +9,6 @@ package waitgroup
 import (
 	_ "embed"
 	"go/ast"
-	"go/types"
 	"reflect"
 
 	"golang.org/x/tools/go/analysis"
@@ -17,7 +16,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
 //go:embed doc.go
@@ -32,7 +31,7 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	if !analysisutil.Imports(pass.Pkg, "sync") {
+	if !analysisinternal.Imports(pass.Pkg, "sync") {
 		return nil, nil // doesn't directly import sync
 	}
 
@@ -44,8 +43,8 @@ func run(pass *analysis.Pass) (any, error) {
 	inspect.WithStack(nodeFilter, func(n ast.Node, push bool, stack []ast.Node) (proceed bool) {
 		if push {
 			call := n.(*ast.CallExpr)
-			if fn, ok := typeutil.Callee(pass.TypesInfo, call).(*types.Func); ok &&
-				isMethodNamed(fn, "sync", "WaitGroup", "Add") &&
+			obj := typeutil.Callee(pass.TypesInfo, call)
+			if analysisinternal.IsMethodNamed(obj, "sync", "WaitGroup", "Add") &&
 				hasSuffix(stack, wantSuffix) &&
 				backindex(stack, 1) == backindex(stack, 2).(*ast.BlockStmt).List[0] { // ExprStmt must be Block's first stmt
 
@@ -84,19 +83,6 @@ func hasSuffix(stack, suffix []ast.Node) bool {
 		}
 	}
 	return true
-}
-
-// isMethodNamed reports whether f is a method with the specified
-// package, receiver type, and method names.
-func isMethodNamed(fn *types.Func, pkg, recv, name string) bool {
-	if fn.Pkg() != nil && fn.Pkg().Path() == pkg && fn.Name() == name {
-		if r := fn.Type().(*types.Signature).Recv(); r != nil {
-			if _, gotRecv := typesinternal.ReceiverNamed(r); gotRecv != nil {
-				return gotRecv.Obj().Name() == recv
-			}
-		}
-	}
-	return false
 }
 
 // backindex is like [slices.Index] but from the back of the slice.

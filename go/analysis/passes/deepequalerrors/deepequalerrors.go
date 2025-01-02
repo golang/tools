@@ -12,9 +12,9 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
 const Doc = `check for calls of reflect.DeepEqual on error values
@@ -34,8 +34,8 @@ var Analyzer = &analysis.Analyzer{
 	Run:      run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
-	if !analysisutil.Imports(pass.Pkg, "reflect") {
+func run(pass *analysis.Pass) (any, error) {
+	if !analysisinternal.Imports(pass.Pkg, "reflect") {
 		return nil, nil // doesn't directly import reflect
 	}
 
@@ -46,8 +46,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		call := n.(*ast.CallExpr)
-		fn, _ := typeutil.Callee(pass.TypesInfo, call).(*types.Func)
-		if analysisutil.IsFunctionNamed(fn, "reflect", "DeepEqual") && hasError(pass, call.Args[0]) && hasError(pass, call.Args[1]) {
+		obj := typeutil.Callee(pass.TypesInfo, call)
+		if analysisinternal.IsFunctionNamed(obj, "reflect", "DeepEqual") && hasError(pass, call.Args[0]) && hasError(pass, call.Args[1]) {
 			pass.ReportRangef(call, "avoid using reflect.DeepEqual with errors")
 		}
 	})

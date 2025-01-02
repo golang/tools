@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil/cursor"
 )
 
@@ -85,10 +86,10 @@ func minmax(pass *analysis.Pass) {
 							Pos: ifStmt.Pos(),
 							End: ifStmt.End(),
 							NewText: fmt.Appendf(nil, "%s = %s(%s, %s)",
-								formatNode(pass.Fset, lhs),
+								analysisinternal.Format(pass.Fset, lhs),
 								sym,
-								formatNode(pass.Fset, a),
-								formatNode(pass.Fset, b)),
+								analysisinternal.Format(pass.Fset, a),
+								analysisinternal.Format(pass.Fset, b)),
 						}},
 					}},
 				})
@@ -135,8 +136,8 @@ func minmax(pass *analysis.Pass) {
 							End: ifStmt.End(),
 							NewText: fmt.Appendf(nil, "%s(%s, %s)",
 								sym,
-								formatNode(pass.Fset, a),
-								formatNode(pass.Fset, b)),
+								analysisinternal.Format(pass.Fset, a),
+								analysisinternal.Format(pass.Fset, b)),
 						}},
 					}},
 				})

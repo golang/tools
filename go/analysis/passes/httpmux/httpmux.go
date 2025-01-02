@@ -14,9 +14,9 @@ import (
 	"golang.org/x/mod/semver"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -45,7 +45,7 @@ func run(pass *analysis.Pass) (any, error) {
 			return nil, nil
 		}
 	}
-	if !analysisutil.Imports(pass.Pkg, "net/http") {
+	if !analysisinternal.Imports(pass.Pkg, "net/http") {
 		return nil, nil
 	}
 	// Look for calls to ServeMux.Handle or ServeMux.HandleFunc.
@@ -78,7 +78,7 @@ func isServeMuxRegisterCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	if fn == nil {
 		return false
 	}
-	if analysisutil.IsFunctionNamed(fn, "net/http", "Handle", "HandleFunc") {
+	if analysisinternal.IsFunctionNamed(fn, "net/http", "Handle", "HandleFunc") {
 		return true
 	}
 	if !isMethodNamed(fn, "net/http", "Handle", "HandleFunc") {
@@ -86,11 +86,13 @@ func isServeMuxRegisterCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	}
 	recv := fn.Type().(*types.Signature).Recv() // isMethodNamed() -> non-nil
 	isPtr, named := typesinternal.ReceiverNamed(recv)
-	return isPtr && analysisutil.IsNamedType(named, "net/http", "ServeMux")
+	return isPtr && analysisinternal.IsTypeNamed(named, "net/http", "ServeMux")
 }
 
 // isMethodNamed reports when a function f is a method,
 // in a package with the path pkgPath and the name of f is in names.
+//
+// (Unlike [analysisinternal.IsMethodNamed], it ignores the receiver type name.)
 func isMethodNamed(f *types.Func, pkgPath string, names ...string) bool {
 	if f == nil {
 		return false

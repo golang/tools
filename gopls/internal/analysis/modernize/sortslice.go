@@ -9,10 +9,12 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
@@ -34,7 +36,7 @@ import (
 //   - sort.Sort(x) where x has a named slice type whose Less method is the natural order.
 //     -> sort.Slice(x)
 func sortslice(pass *analysis.Pass) {
-	if !_imports(pass.Pkg, "sort") {
+	if !analysisinternal.Imports(pass.Pkg, "sort") {
 		return
 	}
 
@@ -42,13 +44,11 @@ func sortslice(pass *analysis.Pass) {
 
 	check := func(file *ast.File, call *ast.CallExpr) {
 		// call to sort.Slice{,Stable}?
-		var stable string
-		if isQualifiedIdent(info, call.Fun, "sort", "Slice") != nil {
-		} else if isQualifiedIdent(info, call.Fun, "sort", "SliceStable") != nil {
-			stable = "Stable"
-		} else {
+		obj := typeutil.Callee(info, call)
+		if !analysisinternal.IsFunctionNamed(obj, "sort", "Slice", "SliceStable") {
 			return
 		}
+		stable := cond(strings.HasSuffix(obj.Name(), "Stable"), "Stable", "")
 
 		if lit, ok := call.Args[1].(*ast.FuncLit); ok && len(lit.Body.List) == 1 {
 			sig := info.Types[lit.Type].Type.(*types.Signature)
@@ -110,22 +110,4 @@ func sortslice(pass *analysis.Pass) {
 			check(file, call)
 		}
 	}
-}
-
-// isQualifiedIdent reports whether e is a reference to pkg.Name. If so, it returns the identifier.
-func isQualifiedIdent(info *types.Info, e ast.Expr, pkgpath, name string) *ast.Ident {
-	var id *ast.Ident
-	switch e := e.(type) {
-	case *ast.Ident:
-		id = e //  e.g. dot import
-	case *ast.SelectorExpr:
-		id = e.Sel
-	default:
-		return nil
-	}
-	obj, ok := info.Uses[id]
-	if ok && isPackageLevel(obj, pkgpath, name) {
-		return id
-	}
-	return nil
 }

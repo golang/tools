@@ -141,7 +141,7 @@ func mapsloop(pass *analysis.Pass) {
 			newText = fmt.Appendf(nil, "%s.%s(%s)",
 				mapsName,
 				funcName,
-				formatNode(pass.Fset, x))
+				analysisinternal.Format(pass.Fset, x))
 		} else {
 			// Replace loop with call statement.
 			start, end = rng.Pos(), rng.End()
@@ -149,8 +149,8 @@ func mapsloop(pass *analysis.Pass) {
 			newText = fmt.Appendf(nil, "%s.%s(%s, %s)",
 				mapsName,
 				funcName,
-				formatNode(pass.Fset, m),
-				formatNode(pass.Fset, x))
+				analysisinternal.Format(pass.Fset, m),
+				analysisinternal.Format(pass.Fset, x))
 		}
 		pass.Report(analysis.Diagnostic{
 			Pos:      assign.Lhs[0].Pos(),
@@ -197,8 +197,8 @@ func mapsloop(pass *analysis.Pass) {
 // iter.Seq[K, V] and returns K and V if so.
 func assignableToIterSeq2(t types.Type) (k, v types.Type, ok bool) {
 	// The only named type assignable to iter.Seq2 is iter.Seq2.
-	if named, isNamed := t.(*types.Named); isNamed {
-		if !isPackageLevel(named.Obj(), "iter", "Seq2") {
+	if is[*types.Named](t) {
+		if !analysisinternal.IsTypeNamed(t, "iter", "Seq2") {
 			return
 		}
 		t = t.Underlying()

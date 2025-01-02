@@ -5,7 +5,6 @@
 package modernize
 
 import (
-	"bytes"
 	_ "embed"
 	"go/ast"
 	"go/format"
@@ -79,27 +78,10 @@ func run(pass *analysis.Pass) (any, error) {
 
 // -- helpers --
 
-// TODO(adonovan): factor with analysisutil.Imports.
-func _imports(pkg *types.Package, path string) bool {
-	for _, imp := range pkg.Imports() {
-		if imp.Path() == path {
-			return true
-		}
-	}
-	return false
-}
-
 // equalSyntax reports whether x and y are syntactically equal (ignoring comments).
 func equalSyntax(x, y ast.Expr) bool {
 	sameName := func(x, y *ast.Ident) bool { return x.Name == y.Name }
 	return astutil.Equal(x, y, sameName)
-}
-
-// formatNode formats n.
-func formatNode(fset *token.FileSet, n ast.Node) []byte {
-	var buf bytes.Buffer
-	format.Node(&buf, fset, n) // ignore errors
-	return buf.Bytes()
 }
 
 // formatExprs formats a comma-separated list of expressions.
@@ -118,15 +100,6 @@ func formatExprs(fset *token.FileSet, exprs []ast.Expr) string {
 func isZeroLiteral(e ast.Expr) bool {
 	lit, ok := e.(*ast.BasicLit)
 	return ok && lit.Kind == token.INT && lit.Value == "0"
-}
-
-// isPackageLevel reports whether obj is the package-level symbol pkg.Name.
-func isPackageLevel(obj types.Object, pkgpath, name string) bool {
-	pkg := obj.Pkg()
-	return pkg != nil &&
-		obj.Parent() == pkg.Scope() &&
-		obj.Pkg().Path() == pkgpath &&
-		obj.Name() == name
 }
 
 // filesUsing returns a cursor for each *ast.File in the inspector

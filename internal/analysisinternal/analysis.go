@@ -10,13 +10,17 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/printer"
 	"go/scanner"
 	"go/token"
 	"go/types"
 	"os"
 	pathpkg "path"
+	"slices"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 func TypeErrorEndPos(fset *token.FileSet, src []byte, start token.Pos) token.Pos {
@@ -225,8 +229,8 @@ func AddImport(info *types.Info, file *ast.File, pos token.Pos, pkgpath, preferr
 	// Is there an existing import of this package?
 	// If so, are we in its scope? (not shadowed)
 	for _, spec := range file.Imports {
-		pkgname, ok := importedPkgName(info, spec)
-		if ok && pkgname.Imported().Path() == pkgpath {
+		pkgname := info.PkgNameOf(spec)
+		if pkgname != nil && pkgname.Imported().Path() == pkgpath {
 			if _, obj := scope.LookupParent(pkgname.Name(), pos); obj == pkgname {
 				return pkgname.Name(), nil
 			}
@@ -273,15 +277,76 @@ func AddImport(info *types.Info, file *ast.File, pos token.Pos, pkgpath, preferr
 	}}
 }
 
-// importedPkgName returns the PkgName object declared by an ImportSpec.
-// TODO(adonovan): use go1.22's Info.PkgNameOf.
-func importedPkgName(info *types.Info, imp *ast.ImportSpec) (*types.PkgName, bool) {
-	var obj types.Object
-	if imp.Name != nil {
-		obj = info.Defs[imp.Name]
-	} else {
-		obj = info.Implicits[imp]
+// Format returns a string representation of the expression e.
+func Format(fset *token.FileSet, e ast.Expr) string {
+	var buf strings.Builder
+	printer.Fprint(&buf, fset, e) // ignore errors
+	return buf.String()
+}
+
+// Imports returns true if path is imported by pkg.
+func Imports(pkg *types.Package, path string) bool {
+	for _, imp := range pkg.Imports() {
+		if imp.Path() == path {
+			return true
+		}
 	}
-	pkgname, ok := obj.(*types.PkgName)
-	return pkgname, ok
+	return false
+}
+
+// IsTypeNamed reports whether t is (or is an alias for) a
+// package-level defined type with the given package path and one of
+// the given names. It returns false if t is nil.
+//
+// This function avoids allocating the concatenation of "pkg.Name",
+// which is important for the performance of syntax matching.
+func IsTypeNamed(t types.Type, pkgPath string, names ...string) bool {
+	if named, ok := types.Unalias(t).(*types.Named); ok {
+		tname := named.Obj()
+		return tname != nil &&
+			isPackageLevel(tname) &&
+			tname.Pkg().Path() == pkgPath &&
+			slices.Contains(names, tname.Name())
+	}
+	return false
+}
+
+// IsFunctionNamed reports whether obj is a package-level function
+// defined in the given package and has one of the given names.
+// It returns false if obj is nil.
+//
+// This function avoids allocating the concatenation of "pkg.Name",
+// which is important for the performance of syntax matching.
+func IsFunctionNamed(obj types.Object, pkgPath string, names ...string) bool {
+	f, ok := obj.(*types.Func)
+	return ok &&
+		isPackageLevel(obj) &&
+		f.Pkg().Path() == pkgPath &&
+		f.Type().(*types.Signature).Recv() == nil &&
+		slices.Contains(names, f.Name())
+}
+
+// IsMethodNamed reports whether obj is a method defined on a
+// package-level type with the given package and type name, and has
+// one of the given names. It returns false if obj is nil.
+//
+// This function avoids allocating the concatenation of "pkg.TypeName.Name",
+// which is important for the performance of syntax matching.
+func IsMethodNamed(obj types.Object, pkgPath string, typeName string, names ...string) bool {
+	if fn, ok := obj.(*types.Func); ok {
+		if recv := fn.Type().(*types.Signature).Recv(); recv != nil {
+			_, T := typesinternal.ReceiverNamed(recv)
+			return IsTypeNamed(T, pkgPath, typeName) &&
+				slices.Contains(names, fn.Name())
+		}
+	}
+	return false
+}
+
+// isPackageLevel reports whether obj is a package-level symbol.
+//
+// TODO(adonovan): publish in typesinternal and factor with
+// gopls/internal/golang/rename_check.go, refactor/rename/util.go.
+func isPackageLevel(obj types.Object) bool {
+	return obj.Pkg() != nil && obj.Parent() == obj.Pkg().Scope()
 }

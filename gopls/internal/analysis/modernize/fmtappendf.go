@@ -7,10 +7,13 @@ package modernize
 import (
 	"go/ast"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
 // The fmtappend function replaces []byte(fmt.Sprintf(...)) by
@@ -25,17 +28,20 @@ func fmtappendf(pass *analysis.Pass) {
 			if tv.IsType() && types.Identical(tv.Type, byteSliceType) {
 				call, ok := conv.Args[0].(*ast.CallExpr)
 				if ok {
-					var appendText = ""
-					var id *ast.Ident
-					if id = isQualifiedIdent(info, call.Fun, "fmt", "Sprintf"); id != nil {
-						appendText = "Appendf"
-					} else if id = isQualifiedIdent(info, call.Fun, "fmt", "Sprint"); id != nil {
-						appendText = "Append"
-					} else if id = isQualifiedIdent(info, call.Fun, "fmt", "Sprintln"); id != nil {
-						appendText = "Appendln"
-					} else {
+					obj := typeutil.Callee(info, call)
+					if !analysisinternal.IsFunctionNamed(obj, "fmt", "Sprintf", "Sprintln", "Sprint") {
 						continue
 					}
+
+					// Find "Sprint" identifier.
+					var id *ast.Ident
+					switch e := ast.Unparen(call.Fun).(type) {
+					case *ast.SelectorExpr:
+						id = e.Sel // "fmt.Sprint"
+					case *ast.Ident:
+						id = e // "Sprint" after `import . "fmt"`
+					}
+
 					pass.Report(analysis.Diagnostic{
 						Pos:      conv.Pos(),
 						End:      conv.End(),
@@ -57,7 +63,7 @@ func fmtappendf(pass *analysis.Pass) {
 								{
 									Pos:     id.Pos(),
 									End:     id.End(),
-									NewText: []byte(appendText), // replace Sprint with Append
+									NewText: []byte(strings.Replace(obj.Name(), "Sprint", "Append", 1)),
 								},
 								{
 									Pos:     call.Lparen + 1,

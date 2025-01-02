@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
@@ -69,8 +70,8 @@ func appendclipped(pass *analysis.Pass) {
 			// Special case for common but redundant clone of os.Environ().
 			// append(zerocap, os.Environ()...) -> os.Environ()
 			if scall, ok := s.(*ast.CallExpr); ok {
-				if id := isQualifiedIdent(info, scall.Fun, "os", "Environ"); id != nil {
-
+				obj := typeutil.Callee(info, scall)
+				if analysisinternal.IsFunctionNamed(obj, "os", "Environ") {
 					pass.Report(analysis.Diagnostic{
 						Pos:      call.Pos(),
 						End:      call.End(),
@@ -81,7 +82,7 @@ func appendclipped(pass *analysis.Pass) {
 							TextEdits: []analysis.TextEdit{{
 								Pos:     call.Pos(),
 								End:     call.End(),
-								NewText: formatNode(pass.Fset, s),
+								NewText: []byte(analysisinternal.Format(pass.Fset, s)),
 							}},
 						}},
 					})
@@ -101,7 +102,7 @@ func appendclipped(pass *analysis.Pass) {
 					TextEdits: append(importEdits, []analysis.TextEdit{{
 						Pos:     call.Pos(),
 						End:     call.End(),
-						NewText: []byte(fmt.Sprintf("%s.Clone(%s)", slicesName, formatNode(pass.Fset, s))),
+						NewText: fmt.Appendf(nil, "%s.Clone(%s)", slicesName, analysisinternal.Format(pass.Fset, s)),
 					}}...),
 				}},
 			})
@@ -125,7 +126,7 @@ func appendclipped(pass *analysis.Pass) {
 				TextEdits: append(importEdits, []analysis.TextEdit{{
 					Pos:     call.Pos(),
 					End:     call.End(),
-					NewText: []byte(fmt.Sprintf("%s.Concat(%s)", slicesName, formatExprs(pass.Fset, sliceArgs))),
+					NewText: fmt.Appendf(nil, "%s.Concat(%s)", slicesName, formatExprs(pass.Fset, sliceArgs)),
 				}}...),
 			}},
 		})
@@ -200,7 +201,8 @@ func isClippedSlice(info *types.Info, e ast.Expr) (clipped, empty bool) {
 		}
 
 		// slices.Clip(x)?
-		if id := isQualifiedIdent(info, e.Fun, "slices", "Clip"); id != nil {
+		obj := typeutil.Callee(info, e)
+		if analysisinternal.IsFunctionNamed(obj, "slices", "Clip") {
 			return true, false
 		}
 

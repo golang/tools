@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -27,7 +28,7 @@ import (
 //	for i := 0; i < b.N; i++ {}  =>   for b.Loop() {}
 //	for range b.N {}
 func bloop(pass *analysis.Pass) {
-	if !_imports(pass.Pkg, "testing") {
+	if !analysisinternal.Imports(pass.Pkg, "testing") {
 		return
 	}
 
@@ -52,12 +53,8 @@ func bloop(pass *analysis.Pass) {
 					return false // not preceding: stop
 				}
 				if call, ok := stmt.X.(*ast.CallExpr); ok {
-					fn := typeutil.StaticCallee(info, call)
-					if fn != nil &&
-						(isMethod(fn, "testing", "B", "StopTimer") ||
-							isMethod(fn, "testing", "B", "StartTimer") ||
-							isMethod(fn, "testing", "B", "ResetTimer")) {
-
+					obj := typeutil.Callee(info, call)
+					if analysisinternal.IsMethodNamed(obj, "testing", "B", "StopTimer", "StartTimer", "ResetTimer") {
 						// Delete call statement.
 						// TODO(adonovan): delete following newline, or
 						// up to start of next stmt? (May delete a comment.)
@@ -75,7 +72,7 @@ func bloop(pass *analysis.Pass) {
 		return append(edits, analysis.TextEdit{
 			Pos:     start,
 			End:     end,
-			NewText: fmt.Appendf(nil, "%s.Loop()", formatNode(pass.Fset, b)),
+			NewText: fmt.Appendf(nil, "%s.Loop()", analysisinternal.Format(pass.Fset, b)),
 		})
 	}
 
@@ -93,7 +90,7 @@ func bloop(pass *analysis.Pass) {
 				if cmp, ok := n.Cond.(*ast.BinaryExpr); ok && cmp.Op == token.LSS {
 					if sel, ok := cmp.Y.(*ast.SelectorExpr); ok &&
 						sel.Sel.Name == "N" &&
-						isPtrToNamed(info.TypeOf(sel.X), "testing", "B") {
+						isTestingB(info.TypeOf(sel.X)) {
 
 						delStart, delEnd := n.Cond.Pos(), n.Cond.End()
 
@@ -136,7 +133,7 @@ func bloop(pass *analysis.Pass) {
 					n.Key == nil &&
 					n.Value == nil &&
 					sel.Sel.Name == "N" &&
-					isPtrToNamed(info.TypeOf(sel.X), "testing", "B") {
+					isTestingB(info.TypeOf(sel.X)) {
 
 					pass.Report(analysis.Diagnostic{
 						// Highlight "range b.N".
@@ -155,15 +152,8 @@ func bloop(pass *analysis.Pass) {
 	}
 }
 
-// isPtrToNamed reports whether t is type "*pkgpath.Name".
-func isPtrToNamed(t types.Type, pkgpath, name string) bool {
-	if ptr, ok := t.(*types.Pointer); ok {
-		named, ok := ptr.Elem().(*types.Named)
-		return ok &&
-			named.Obj().Name() == name &&
-			named.Obj().Pkg().Path() == pkgpath
-	}
-	return false
+func isTestingB(t types.Type) bool {
+	return analysisinternal.IsTypeNamed(typesinternal.Unpointer(t), "testing", "B")
 }
 
 // uses reports whether the subtree cur contains a use of obj.
@@ -172,17 +162,6 @@ func uses(info *types.Info, cur cursor.Cursor, obj types.Object) bool {
 		if info.Uses[curId.Node().(*ast.Ident)] == obj {
 			return true
 		}
-	}
-	return false
-}
-
-// isMethod reports whether fn is pkgpath.(T).Name.
-func isMethod(fn *types.Func, pkgpath, T, name string) bool {
-	if recv := fn.Signature().Recv(); recv != nil {
-		_, recvName := typesinternal.ReceiverNamed(recv)
-		return recvName != nil &&
-			isPackageLevel(recvName.Obj(), pkgpath, T) &&
-			fn.Name() == name
 	}
 	return false
 }
