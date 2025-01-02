@@ -28,6 +28,8 @@ func (s S) b() {}
 func (s *S) PA() {}
 func (s *S) pb() {}
 
+var _ = (*S).pb
+
 -- a/a.go --
 package a
 

@@ -36,6 +36,8 @@ func (T) M() {}
 // m is not exported, and so should not be linkable.
 func (T) m() {}
 
+var _ = T.m
+
 func _() {
 	var t T
 

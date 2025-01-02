@@ -586,6 +586,11 @@
 							"Default": "true"
 						},
 						{
+							"Name": "\"unusedfunc\"",
+							"Doc": "check for unused functions and methods\n\nThe unusedfunc analyzer reports functions and methods that are\nnever referenced outside of their own declaration.\n\nA function is considered unused if it is unexported and not\nreferenced (except within its own declaration).\n\nA method is considered unused if it is unexported, not referenced\n(except within its own declaration), and its name does not match\nthat of any method of an interface type declared within the same\npackage.\n\nThe tool may report a false positive for a declaration of an\nunexported function that is referenced from another package using\nthe go:linkname mechanism, if the declaration's doc comment does\nnot also have a go:linkname comment. (Such code is in any case\nstrongly discouraged: linkname annotations, if they must be used at\nall, should be used on both the declaration and the alias.)\n\nThe unusedfunc algorithm is not as precise as the\ngolang.org/x/tools/cmd/deadcode tool, but it has the advantage that\nit runs within the modular analysis framework, enabling near\nreal-time feedback within gopls.",
+							"Default": "true"
+						},
+						{
 							"Name": "\"unusedparams\"",
 							"Doc": "check for unused parameters of functions\n\nThe unusedparams analyzer checks functions to see if there are\nany parameters that are not being used.\n\nTo ensure soundness, it ignores:\n  - \"address-taken\" functions, that is, functions that are used as\n    a value rather than being called directly; their signatures may\n    be required to conform to a func type.\n  - exported functions or methods, since they may be address-taken\n    in another package.\n  - unexported methods whose name matches an interface method\n    declared in the same package, since the method's signature\n    may be required to conform to the interface type.\n  - functions with empty bodies, or containing just a call to panic.\n  - parameters that are unnamed, or named \"_\", the blank identifier.\n\nThe analyzer suggests a fix of replacing the parameter name by \"_\",\nbut in such cases a deeper fix can be obtained by invoking the\n\"Refactor: remove unused parameter\" code action, which will\neliminate the parameter entirely, along with all corresponding\narguments at call sites, while taking care to preserve any side\neffects in the argument expressions; see\nhttps://github.com/golang/tools/releases/tag/gopls%2Fv0.14.",
 							"Default": "true"
@@ -1227,6 +1232,12 @@
 			"Name": "unsafeptr",
 			"Doc": "check for invalid conversions of uintptr to unsafe.Pointer\n\nThe unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer\nto convert integers to pointers. A conversion from uintptr to\nunsafe.Pointer is invalid if it implies that there is a uintptr-typed\nword in memory that holds a pointer value, because that word will be\ninvisible to stack copying and to the garbage collector.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unsafeptr",
+			"Default": true
+		},
+		{
+			"Name": "unusedfunc",
+			"Doc": "check for unused functions and methods\n\nThe unusedfunc analyzer reports functions and methods that are\nnever referenced outside of their own declaration.\n\nA function is considered unused if it is unexported and not\nreferenced (except within its own declaration).\n\nA method is considered unused if it is unexported, not referenced\n(except within its own declaration), and its name does not match\nthat of any method of an interface type declared within the same\npackage.\n\nThe tool may report a false positive for a declaration of an\nunexported function that is referenced from another package using\nthe go:linkname mechanism, if the declaration's doc comment does\nnot also have a go:linkname comment. (Such code is in any case\nstrongly discouraged: linkname annotations, if they must be used at\nall, should be used on both the declaration and the alias.)\n\nThe unusedfunc algorithm is not as precise as the\ngolang.org/x/tools/cmd/deadcode tool, but it has the advantage that\nit runs within the modular analysis framework, enabling near\nreal-time feedback within gopls.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedfunc",
 			"Default": true
 		},
 		{

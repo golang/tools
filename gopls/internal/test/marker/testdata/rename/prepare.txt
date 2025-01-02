@@ -33,6 +33,8 @@ func (*Y) Bobby() {}
 -- good/good0.go --
 package good
 
+var _ = stuff
+
 func stuff() { //@item(good_stuff, "stuff", "func()", "func"),preparerename("stu", "stuff", span="stuff")
 	x := 5
 	random2(x) //@preparerename("dom", "random2", span="random2")
@@ -44,6 +46,8 @@ package good
 import (
 	"golang.org/lsptests/types" //@item(types_import, "types", "\"golang.org/lsptests/types\"", "package")
 )
+
+var _ = random
 
 func random() int { //@item(good_random, "random", "func() int", "func")
 	_ = "random() int" //@preparerename("random", "")

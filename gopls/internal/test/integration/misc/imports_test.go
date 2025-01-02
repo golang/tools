@@ -66,7 +66,7 @@ package main
 import "fmt"
 
 //this comment is necessary for failure
-func a() {
+func _() {
 	fmt.Println("hello")
 }
 `
@@ -96,7 +96,7 @@ func f(x float64) float64 {
 -- b.go --
 package foo
 
-func g() {
+func _() {
 	_ = rand.Int63()
 }
 `

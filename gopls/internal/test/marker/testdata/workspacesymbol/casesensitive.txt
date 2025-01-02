@@ -77,6 +77,8 @@ func Dunk() int { return 0 }
 
 func dunk() {}
 
+var _ = dunk
+
 -- p/p.go --
 package p
 

@@ -76,6 +76,8 @@ func Dunk() int { return 0 }
 
 func dunk() {}
 
+var _ = dunk
+
 -- @want --
 (*Quux).Do "func()"
 (Foo).Baz "func() string" +2 lines

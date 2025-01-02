@@ -79,7 +79,7 @@ package func_call
 
 import "fmt"
 
-func a() {
+func F() {
 	fmt.Println(
 		1 /*@codeaction("1", "refactor.rewrite.joinLines", result=func_call)*/,
 		2,
@@ -93,7 +93,7 @@ package func_call
 
 import "fmt"
 
-func a() {
+func F() {
 	fmt.Println(1 /*@codeaction("1", "refactor.rewrite.joinLines", result=func_call)*/, 2, 3, fmt.Sprintf("hello %d", 4))
 }
 
@@ -102,7 +102,7 @@ package indent
 
 import "fmt"
 
-func a() {
+func F() {
 	fmt.Println(
         1,
         2,
@@ -118,7 +118,7 @@ package indent
 
 import "fmt"
 
-func a() {
+func F() {
 	fmt.Println(
         1,
         2,
@@ -134,7 +134,7 @@ type A struct{
 	b int
 }
 
-func a() {
+func F() {
 	_ = A{
 		a: 1,
 		b: 2 /*@codeaction("b", "refactor.rewrite.joinLines", result=structelts)*/,
@@ -149,14 +149,14 @@ type A struct{
 	b int
 }
 
-func a() {
+func F() {
 	_ = A{a: 1, b: 2 /*@codeaction("b", "refactor.rewrite.joinLines", result=structelts)*/}
 }
 
 -- sliceelts/sliceelts.go --
 package sliceelts
 
-func a() {
+func F() {
 	_ = []int{
 		1 /*@codeaction("1", "refactor.rewrite.joinLines", result=sliceelts)*/,
 		2,
@@ -166,14 +166,14 @@ func a() {
 -- @sliceelts/sliceelts/sliceelts.go --
 package sliceelts
 
-func a() {
+func F() {
 	_ = []int{1 /*@codeaction("1", "refactor.rewrite.joinLines", result=sliceelts)*/, 2}
 }
 
 -- mapelts/mapelts.go --
 package mapelts
 
-func a() {
+func F() {
 	_ = map[string]int{
 		"a": 1 /*@codeaction("1", "refactor.rewrite.joinLines", result=mapelts)*/,
 		"b": 2,
@@ -183,7 +183,7 @@ func a() {
 -- @mapelts/mapelts/mapelts.go --
 package mapelts
 
-func a() {
+func F() {
 	_ = map[string]int{"a": 1 /*@codeaction("1", "refactor.rewrite.joinLines", result=mapelts)*/, "b": 2}
 }
 

@@ -21,9 +21,9 @@ import (
 
 import _ "os"
 
-// bar is a function.
+// Bar is a function.
 // With a multiline doc comment.
-func bar() string {
+func Bar() string {
 	/* This is a single line comment */
 	switch {
 	case true:
@@ -150,9 +150,9 @@ import (<0 kind="imports">
 
 import _ "os"
 
-// bar is a function.<1 kind="comment">
+// Bar is a function.<1 kind="comment">
 // With a multiline doc comment.</1>
-func bar() string {<2 kind="">
+func Bar() string {<2 kind="">
 	/* This is a single line comment */
 	switch {<3 kind="">
 	case true:<4 kind="">

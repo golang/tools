@@ -6,7 +6,7 @@ package main
 
 type F struct{}
 
-func (f *F) func1() {
+func (f *F) _() {
 	println("a")
 
 	println("b") //@ codeaction("print", "refactor.extract.function", end=end, result=result)
@@ -20,7 +20,7 @@ package main
 
 type F struct{}
 
-func (f *F) func1() {
+func (f *F) _() {
 	println("a")
 
 	newFunction() //@loc(end, ")")

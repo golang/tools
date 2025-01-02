@@ -13,7 +13,7 @@ import (
 //go:embed embed.txt //@quickfix("//go:embed", re`must import "embed"`, fix_import)
 var t string
 
-func unused() {
+func _() {
 	_ = os.Stdin
 	_ = io.EOF
 }

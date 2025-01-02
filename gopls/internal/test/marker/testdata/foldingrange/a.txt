@@ -12,9 +12,9 @@ import (
 
 import _ "os"
 
-// bar is a function.
+// Bar is a function.
 // With a multiline doc comment.
-func bar() (
+func Bar() (
 	string,
 ) {
 	/* This is a single line comment */
@@ -143,9 +143,9 @@ import (<0 kind="imports">
 
 import _ "os"
 
-// bar is a function.<1 kind="comment">
+// Bar is a function.<1 kind="comment">
 // With a multiline doc comment.</1>
-func bar() (<2 kind="">
+func Bar() (<2 kind="">
 	string,
 </2>) {<3 kind="">
 	/* This is a single line comment */

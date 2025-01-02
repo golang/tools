@@ -24,10 +24,15 @@ func _[P ~[]int]() {
 	_ = P{}
 }
 
+var _ = I.m
+
 -- @mToM/a.go --
 @@ -5 +5 @@
 -func (I) m() {} //@rename("m", "M", mToM)
 +func (I) M() {} //@rename("m", "M", mToM)
+@@ -11 +11 @@
+-var _ = I.m
++var _ = I.M
 -- g.go --
 package a
 

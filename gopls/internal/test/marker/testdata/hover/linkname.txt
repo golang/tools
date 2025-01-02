@@ -22,6 +22,8 @@ func bar() string {
 	return "foo by bar"
 }
 
+var _ = bar
+
 -- @bar --
 ```go
 func bar() string

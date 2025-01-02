@@ -44,7 +44,7 @@ const (
 	someConst = 5
 )
 
-func foo() {
+func _() {
 	inlined.Baz(context.TODO()) //@ codeaction("Baz", "refactor.inline.call", result=inline)
 	pkg.Bar()
 }
@@ -65,7 +65,7 @@ const (
 	someConst = 5
 )
 
-func foo() {
+func _() {
 	var _ context.Context = context.TODO()
 	pkg0.Foo(typ.T(5)) //@ codeaction("Baz", "refactor.inline.call", result=inline)
 	pkg.Bar()

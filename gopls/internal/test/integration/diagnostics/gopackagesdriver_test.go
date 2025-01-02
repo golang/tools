@@ -25,9 +25,6 @@ go 1.12
 package foo
 
 import "mod.com/hello"
-
-func f() {
-}
 `
 	WithOptions(
 		FakeGoPackagesDriver(t),

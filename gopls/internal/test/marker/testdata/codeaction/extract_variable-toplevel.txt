@@ -10,7 +10,7 @@ var slice = append([]int{}, 1, 2, 3) //@codeaction("[]int{}", "refactor.extract.
 
 type SHA256 [32]byte //@codeaction("32", "refactor.extract.constant", edit=arraylen)
 
-func f([2]int) {} //@codeaction("2", "refactor.extract.constant", edit=paramtypearraylen)
+func F([2]int) {} //@codeaction("2", "refactor.extract.constant", edit=paramtypearraylen)
 
 -- @lenhello/a.go --
 @@ -3 +3,2 @@
@@ -29,9 +29,9 @@ func f([2]int) {} //@codeaction("2", "refactor.extract.constant", edit=paramtype
 +type SHA256 [newConst]byte //@codeaction("32", "refactor.extract.constant", edit=arraylen)
 -- @paramtypearraylen/a.go --
 @@ -9 +9,2 @@
--func f([2]int) {} //@codeaction("2", "refactor.extract.constant", edit=paramtypearraylen)
+-func F([2]int) {} //@codeaction("2", "refactor.extract.constant", edit=paramtypearraylen)
 +const newConst = 2
-+func f([newConst]int) {} //@codeaction("2", "refactor.extract.constant", edit=paramtypearraylen)
++func F([newConst]int) {} //@codeaction("2", "refactor.extract.constant", edit=paramtypearraylen)
 -- b/b.go --
 package b
 

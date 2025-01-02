@@ -79,7 +79,7 @@ go 1.12
 	).Run(t, onlyMod, func(t *testing.T, env *Env) {
 		env.CreateBuffer("main.go", `package main
 
-func m() {
+func _() {
 	log.Println()
 }
 `)

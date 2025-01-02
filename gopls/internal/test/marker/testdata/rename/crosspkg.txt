@@ -29,6 +29,8 @@ func _() {
 	x.F() //@rename("F", "G", FToG)
 }
 
+var _ = C.g
+
 -- crosspkg/other/other.go --
 package other
 

@@ -1,0 +1,26 @@
+package a
+
+func main() {
+	_ = live
+}
+
+// -- functions --
+
+func Exported() {}
+
+func live() {}
+
+//go:linkname foo
+func apparentlyDeadButHasPrecedingLinknameComment() {}
+
+// -- methods --
+
+type ExportedType int
+type unexportedType int
+
+func (ExportedType) Exported()   {}
+func (unexportedType) Exported() {}
+
+func (x ExportedType) dynamic() {} // matches name of interface method => live
+
+type _ interface{ dynamic() }

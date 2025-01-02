@@ -10,7 +10,7 @@ package a
 
 import "log"
 
-func breakLoop() {
+func BreakLoop() {
 	for i := 0; i < 10; i++ {
 		if i > 6 {
 			break //@def("break", rbrace1)
@@ -18,7 +18,7 @@ func breakLoop() {
 	} //@loc(rbrace1, `}`)
 }
 
-func breakNestedLoop() {
+func BreakNestedLoop() {
 	for i := 0; i < 10; i++ {
 		for j := 0; j < 5; j++ {
 			if j > 1 {
@@ -28,7 +28,7 @@ func breakNestedLoop() {
 	}
 }
 
-func breakNestedLoopWithLabel() {
+func BreakNestedLoopWithLabel() {
 	Outer:
 	for i := 0; i < 10; i++ {
 		for j := 0; j < 5; j++ {
@@ -39,7 +39,7 @@ func breakNestedLoopWithLabel() {
 	} //@loc(outerparen, `}`)
 }
 
-func breakSwitch(i int) {
+func BreakSwitch(i int) {
 	switch i {
 		case 1:
 			break //@def("break", rbrace4)
@@ -50,7 +50,7 @@ func breakSwitch(i int) {
 	} //@loc(rbrace4, `}`)
 }
 
-func breakSwitchLabel(i int) {
+func BreakSwitchLabel(i int) {
 loop:
 	for {
 		switch i {
@@ -64,7 +64,7 @@ loop:
 	} //@loc(loopparen, `}`)
 }
 
-func breakSelect(c, quit chan int) {
+func BreakSelect(c, quit chan int) {
 	x, y := 0, 1
 	for {
 		select {
@@ -78,7 +78,7 @@ func breakSelect(c, quit chan int) {
 	}
 }
 
-func breakWithContinue() {
+func BreakWithContinue() {
 	for j := 0; j < 5; j++ {
 		if (j < 4) {
 			continue
@@ -87,7 +87,7 @@ func breakWithContinue() {
 	} //@loc(rbrace6, `}`)
 }
 
-func gotoNestedLoop() {
+func GotoNestedLoop() {
 	Outer: //@loc(outer, "Outer")
 	for i := 0; i < 10; i++ {
 		for j := 0; j < 5; j++ {
@@ -98,7 +98,7 @@ func gotoNestedLoop() {
 	}
 }
 
-func continueLoop() {
+func ContinueLoop() {
 	for j := 0; j < 5; j++ { //@loc(for3, `for`)
 		if (j < 4) {
 			continue //@def("continue", for3)
@@ -107,7 +107,7 @@ func continueLoop() {
 	}
 }
 
-func continueDoubleLoop() {
+func ContinueDoubleLoop() {
 	for i := 0; i < 10; i++ { //@loc(for4, `for`)
 		for j := 0; j < 5; j++ {
 			if (j > 1) {
@@ -120,7 +120,7 @@ func continueDoubleLoop() {
 	}
 }
 
-func breakInBlockStmt() {
+func BreakInBlockStmt() {
 	for {
 		if 0 < 10 {
 			{
@@ -130,7 +130,7 @@ func breakInBlockStmt() {
 	} //@loc(rbrace9, `}`)
 }
 
-func breakInLabeledStmt() {
+func BreakInLabeledStmt() {
 	outer:
 	for {
 		goto inner
@@ -139,7 +139,7 @@ func breakInLabeledStmt() {
 	} //@loc(for5, `}`)
 }
 
-func breakToLabel(n int) {
+func BreakToLabel(n int) {
 	outer1:
 		switch n {
 			case 1:
@@ -152,7 +152,7 @@ func breakToLabel(n int) {
 		} //@loc(outer1, "}")
 }
 
-func continueToLabel(n int) {
+func ContinueToLabel(n int) {
 	outer1:
 		for { //@loc(outer2, "for")
 			switch n {

@@ -56,6 +56,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/simplifycompositelit"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyrange"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyslice"
+	"golang.org/x/tools/gopls/internal/analysis/unusedfunc"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
 	"golang.org/x/tools/gopls/internal/analysis/yield"
@@ -171,6 +172,7 @@ func init() {
 		// other simplifiers:
 		{analyzer: infertypeargs.Analyzer, enabled: true, severity: protocol.SeverityHint},
 		{analyzer: unusedparams.Analyzer, enabled: true},
+		{analyzer: unusedfunc.Analyzer, enabled: true},
 		{analyzer: unusedwrite.Analyzer, enabled: true}, // uses go/ssa
 
 		// type-error analyzers

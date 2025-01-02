@@ -8,7 +8,7 @@ import (
 	"io"
 )
 
-func f(d discard) {
+func _(d discard) {
 	g(d) //@codeaction("g", "refactor.inline.call", result=out)
 }
 
@@ -25,7 +25,7 @@ import (
 	"io"
 )
 
-func f(d discard) {
+func _(d discard) {
 	fmt.Println(d) //@codeaction("g", "refactor.inline.call", result=out)
 }
 

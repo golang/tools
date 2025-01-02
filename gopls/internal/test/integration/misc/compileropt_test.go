@@ -63,7 +63,7 @@ func main() {
 		// edited buffers, thanks to the magic of overlays.
 		env.SetBufferContent("main.go", `
 package main
-func main() {}
+func main() { _ = f }
 func f(x int) *int { return &x }`)
 		env.AfterChange(Diagnostics(
 			ForFile("main.go"),

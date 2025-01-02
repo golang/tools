@@ -25,8 +25,8 @@ func Conv(s string) int {
 	return int(i)
 }
 
-// unsafeConv converts s to a byte slice using [unsafe.Pointer]. hover("Pointer", "Pointer", unsafePointer)
-func unsafeConv(s string) []byte {
+// UnsafeConv converts s to a byte slice using [unsafe.Pointer]. hover("Pointer", "Pointer", unsafePointer)
+func UnsafeConv(s string) []byte {
 	p := unsafe.StringData(s)
 	b := unsafe.Slice(p, len(s))
 	return b

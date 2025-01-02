@@ -3,12 +3,12 @@ This test performs basic coverage of 'rename' within a single package.
 -- basic.go --
 package p
 
-func f(x int) { println(x) } //@rename("x", "y", xToy)
+func _(x int) { println(x) } //@rename("x", "y", xToy)
 
 -- @xToy/basic.go --
 @@ -3 +3 @@
--func f(x int) { println(x) } //@rename("x", "y", xToy)
-+func f(y int) { println(y) } //@rename("x", "y", xToy)
+-func _(x int) { println(x) } //@rename("x", "y", xToy)
++func _(y int) { println(y) } //@rename("x", "y", xToy)
 -- alias.go --
 package p
 

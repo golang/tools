@@ -433,7 +433,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 	// For analysis, we use the *widest* package for each open file,
 	// for two reasons:
 	//
-	// - Correctness: some analyzers (e.g. unusedparam) depend
+	// - Correctness: some analyzers (e.g. unused{param,func}) depend
 	//   on it. If applied to a non-test package for which a
 	//   corresponding test package exists, they make assumptions
 	//   that are falsified in the test package, for example that

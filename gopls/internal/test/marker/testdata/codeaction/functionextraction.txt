@@ -367,6 +367,8 @@ func newFunction1() int {
 	return 1
 }
 
+var _ = newFunction1
+
 -- @scope/scope.go --
 package extract
 
@@ -384,6 +386,8 @@ func newFunction2(newFunction int) int {
 func newFunction1() int {
 	return 1
 }
+
+var _ = newFunction1
 
 -- smart_initialization.go --
 package extract

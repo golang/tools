@@ -755,10 +755,6 @@ func reTypeCheck(logf func(string, ...any), orig *cache.Package, fileMask map[pr
 // TODO(golang/go#63472): this looks wrong with the new Go version syntax.
 var goVersionRx = regexp.MustCompile(`^go([1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
-func remove[T any](s []T, i int) []T {
-	return append(s[:i], s[i+1:]...)
-}
-
 // selectElements returns a new array of elements of s indicated by the
 // provided list of indices. It returns false if any index was out of bounds.
 //

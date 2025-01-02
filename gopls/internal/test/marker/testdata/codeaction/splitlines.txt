@@ -79,7 +79,7 @@ package func_call
 
 import "fmt"
 
-func a() {
+func F() {
 	fmt.Println(1, 2, 3, fmt.Sprintf("hello %d", 4)) //@codeaction("1", "refactor.rewrite.splitLines", result=func_call)
 }
 
@@ -88,7 +88,7 @@ package func_call
 
 import "fmt"
 
-func a() {
+func F() {
 	fmt.Println(
 		1,
 		2,
@@ -102,7 +102,7 @@ package indent
 
 import "fmt"
 
-func a() {
+func F() {
 	fmt.Println(1, 2, 3, fmt.Sprintf("hello %d", 4)) //@codeaction("hello", "refactor.rewrite.splitLines", result=indent)
 }
 
@@ -111,7 +111,7 @@ package indent
 
 import "fmt"
 
-func a() {
+func F() {
 	fmt.Println(1, 2, 3, fmt.Sprintf(
 		"hello %d",
 		4,
@@ -123,7 +123,7 @@ package indent2
 
 import "fmt"
 
-func a() {
+func F() {
 	fmt.
 		Println(1, 2, 3, fmt.Sprintf("hello %d", 4)) //@codeaction("1", "refactor.rewrite.splitLines", result=indent2)
 }
@@ -133,7 +133,7 @@ package indent2
 
 import "fmt"
 
-func a() {
+func F() {
 	fmt.
 		Println(
 			1,
@@ -151,7 +151,7 @@ type A struct{
 	b int
 }
 
-func a() {
+func F() {
 	_ = A{a: 1, b: 2} //@codeaction("b", "refactor.rewrite.splitLines", result=structelts)
 }
 
@@ -163,7 +163,7 @@ type A struct{
 	b int
 }
 
-func a() {
+func F() {
 	_ = A{
 		a: 1,
 		b: 2,
@@ -173,14 +173,14 @@ func a() {
 -- sliceelts/sliceelts.go --
 package sliceelts
 
-func a() {
+func F() {
 	_ = []int{1, 2} //@codeaction("1", "refactor.rewrite.splitLines", result=sliceelts)
 }
 
 -- @sliceelts/sliceelts/sliceelts.go --
 package sliceelts
 
-func a() {
+func F() {
 	_ = []int{
 		1,
 		2,
@@ -190,14 +190,14 @@ func a() {
 -- mapelts/mapelts.go --
 package mapelts
 
-func a() {
+func F() {
 	_ = map[string]int{"a": 1, "b": 2} //@codeaction("1", "refactor.rewrite.splitLines", result=mapelts)
 }
 
 -- @mapelts/mapelts/mapelts.go --
 package mapelts
 
-func a() {
+func F() {
 	_ = map[string]int{
 		"a": 1,
 		"b": 2,

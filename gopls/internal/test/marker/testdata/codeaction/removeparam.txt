@@ -60,6 +60,8 @@ func _() {
 	a.A(f(), 1)
 }
 
+var _ = g
+
 -- @a/a/a2.go --
 package a
 
@@ -96,6 +98,8 @@ func g() int {
 func _() {
 	a.A(f())
 }
+
+var _ = g
 -- field/field.go --
 package field
 
