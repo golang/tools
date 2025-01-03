@@ -3363,7 +3363,7 @@ func main() {
 
 	pkgs, err := packages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedTarget,
-		Env:  []string{"GOPATH=" + gopath, "GO111MODULE=off"},
+		Env:  append(os.Environ(), "GOPATH=" + gopath, "GO111MODULE=off"),
 	}, filepath.Join(gopath, "src", "..."))
 	if err != nil {
 		t.Fatal(err)
