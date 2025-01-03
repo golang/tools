@@ -172,12 +172,10 @@ for {{.VarName .KeyType "k" | .Placeholder}}, {{.VarName .ElemType "v" | .Placeh
 {{- end}}`,
 }, {
 	label:   "clear",
-	details: "clear map contents",
-	body: `{{if and (eq .Kind "map") .StmtOK -}}
-{{$k := (.VarName .KeyType "k")}}for {{$k}} := range {{.X}} {
-	delete({{.X}}, {{$k}})
-}
-{{end}}`,
+	details: "clear contents",
+	body: `{{if and (eq .Kind "map" "slice") .StmtOK -}}
+clear({{.X}})
+{{- end}}`,
 }, {
 	label:   "keys",
 	details: "create slice of keys",
