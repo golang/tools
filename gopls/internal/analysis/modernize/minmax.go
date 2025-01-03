@@ -84,11 +84,11 @@ func minmax(pass *analysis.Pass) {
 							// Replace IfStmt with lhs = min(a, b).
 							Pos: ifStmt.Pos(),
 							End: ifStmt.End(),
-							NewText: []byte(fmt.Sprintf("%s = %s(%s, %s)",
+							NewText: fmt.Appendf(nil, "%s = %s(%s, %s)",
 								formatNode(pass.Fset, lhs),
 								sym,
 								formatNode(pass.Fset, a),
-								formatNode(pass.Fset, b))),
+								formatNode(pass.Fset, b)),
 						}},
 					}},
 				})
@@ -133,10 +133,10 @@ func minmax(pass *analysis.Pass) {
 							// Replace rhs2 and IfStmt with min(a, b)
 							Pos: rhs2.Pos(),
 							End: ifStmt.End(),
-							NewText: []byte(fmt.Sprintf("%s(%s, %s)",
+							NewText: fmt.Appendf(nil, "%s(%s, %s)",
 								sym,
 								formatNode(pass.Fset, a),
-								formatNode(pass.Fset, b))),
+								formatNode(pass.Fset, b)),
 						}},
 					}},
 				})
@@ -151,6 +151,7 @@ func minmax(pass *analysis.Pass) {
 			ifStmt := curIfStmt.Node().(*ast.IfStmt)
 
 			if compare, ok := ifStmt.Cond.(*ast.BinaryExpr); ok &&
+				ifStmt.Init == nil &&
 				isInequality(compare.Op) != 0 &&
 				isAssignBlock(ifStmt.Body) {
 

@@ -63,3 +63,11 @@ func shadowed() int {
 	}
 	return time
 }
+
+func nopeIfStmtHasInitStmt() {
+	x := 1
+	if y := 2; y < x { // silent: IfStmt has an Init stmt
+		x = y
+	}
+	print(x)
+}
