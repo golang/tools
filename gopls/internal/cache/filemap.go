@@ -5,6 +5,7 @@
 package cache
 
 import (
+	"iter"
 	"path/filepath"
 
 	"golang.org/x/tools/gopls/internal/file"
@@ -77,9 +78,9 @@ func (m *fileMap) get(key protocol.DocumentURI) (file.Handle, bool) {
 	return m.files.Get(key)
 }
 
-// foreach calls f for each (uri, fh) in the map.
-func (m *fileMap) foreach(f func(uri protocol.DocumentURI, fh file.Handle)) {
-	m.files.Range(f)
+// all returns the sequence of (uri, fh) entries in the map.
+func (m *fileMap) all() iter.Seq2[protocol.DocumentURI, file.Handle] {
+	return m.files.All()
 }
 
 // set stores the given file handle for key, updating overlays and directories
@@ -130,9 +131,9 @@ func (m *fileMap) delete(key protocol.DocumentURI) {
 // getOverlays returns a new unordered array of overlay files.
 func (m *fileMap) getOverlays() []*overlay {
 	var overlays []*overlay
-	m.overlays.Range(func(_ protocol.DocumentURI, o *overlay) {
+	for _, o := range m.overlays.All() {
 		overlays = append(overlays, o)
-	})
+	}
 	return overlays
 }
 
@@ -143,9 +144,9 @@ func (m *fileMap) getOverlays() []*overlay {
 func (m *fileMap) getDirs() *persistent.Set[string] {
 	if m.dirs == nil {
 		m.dirs = new(persistent.Set[string])
-		m.files.Range(func(u protocol.DocumentURI, _ file.Handle) {
-			m.addDirs(u)
-		})
+		for uri := range m.files.All() {
+			m.addDirs(uri)
+		}
 	}
 	return m.dirs
 }

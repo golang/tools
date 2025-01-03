@@ -262,11 +262,11 @@ func (s *Snapshot) load(ctx context.Context, allowNetwork AllowNetwork, scopes .
 	s.mu.Lock()
 
 	// Assert the invariant s.packages.Get(id).m == s.meta.metadata[id].
-	s.packages.Range(func(id PackageID, ph *packageHandle) {
+	for id, ph := range s.packages.All() {
 		if s.meta.Packages[id] != ph.mp {
 			panic("inconsistent metadata")
 		}
-	})
+	}
 
 	// Compute the minimal metadata updates (for Clone)
 	// required to preserve the above invariant.

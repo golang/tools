@@ -111,11 +111,11 @@ func diff[K constraints.Ordered](got *persistent.Set[K], want []K) string {
 		wantSet[w] = struct{}{}
 	}
 	var diff []string
-	got.Range(func(key K) {
+	for key := range got.All() {
 		if _, ok := wantSet[key]; !ok {
 			diff = append(diff, fmt.Sprintf("+%v", key))
 		}
-	})
+	}
 	for key := range wantSet {
 		if !got.Contains(key) {
 			diff = append(diff, fmt.Sprintf("-%v", key))

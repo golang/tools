@@ -1171,7 +1171,7 @@ func (s *Snapshot) Vulnerabilities(modfiles ...protocol.DocumentURI) map[protoco
 	defer s.mu.Unlock()
 
 	if len(modfiles) == 0 { // empty means all modfiles
-		modfiles = s.vulns.Keys()
+		modfiles = slices.Collect(s.vulns.Keys())
 	}
 	for _, modfile := range modfiles {
 		vuln, _ := s.vulns.Get(modfile)

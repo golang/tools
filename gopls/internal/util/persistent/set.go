@@ -4,7 +4,11 @@
 
 package persistent
 
-import "golang.org/x/tools/gopls/internal/util/constraints"
+import (
+	"iter"
+
+	"golang.org/x/tools/gopls/internal/util/constraints"
+)
 
 // Set is a collection of elements of type K.
 //
@@ -43,12 +47,14 @@ func (s *Set[K]) Contains(key K) bool {
 	return ok
 }
 
-// Range calls f sequentially in ascending key order for all entries in the set.
-func (s *Set[K]) Range(f func(key K)) {
-	if s.impl != nil {
-		s.impl.Range(func(key K, _ struct{}) {
-			f(key)
-		})
+// All returns the sequence of set elements in ascending order.
+func (s *Set[K]) All() iter.Seq[K] {
+	return func(yield func(K) bool) {
+		if s.impl != nil {
+			s.impl.root.forEach(func(k, _ any) bool {
+				return yield(k.(K))
+			})
+		}
 	}
 }
 

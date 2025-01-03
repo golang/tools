@@ -344,11 +344,11 @@ func (s *Snapshot) Templates() map[protocol.DocumentURI]file.Handle {
 	defer s.mu.Unlock()
 
 	tmpls := map[protocol.DocumentURI]file.Handle{}
-	s.files.foreach(func(k protocol.DocumentURI, fh file.Handle) {
+	for k, fh := range s.files.all() {
 		if s.FileKind(fh) == file.Tmpl {
 			tmpls[k] = fh
 		}
-	})
+	}
 	return tmpls
 }
 
@@ -864,13 +864,13 @@ func (s *Snapshot) addKnownSubdirs(patterns map[protocol.RelativePattern]unit, w
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.files.getDirs().Range(func(dir string) {
+	for dir := range s.files.getDirs().All() {
 		for _, wsDir := range wsDirs {
 			if pathutil.InDir(wsDir, dir) {
 				patterns[protocol.RelativePattern{Pattern: filepath.ToSlash(dir)}] = unit{}
 			}
 		}
-	})
+	}
 }
 
 // watchSubdirs reports whether gopls should request separate file watchers for
@@ -912,11 +912,11 @@ func (s *Snapshot) filesInDir(uri protocol.DocumentURI) []protocol.DocumentURI {
 		return nil
 	}
 	var files []protocol.DocumentURI
-	s.files.foreach(func(uri protocol.DocumentURI, _ file.Handle) {
+	for uri := range s.files.all() {
 		if pathutil.InDir(dir, uri.Path()) {
 			files = append(files, uri)
 		}
-	})
+	}
 	return files
 }
 
@@ -1029,13 +1029,11 @@ func (s *Snapshot) clearShouldLoad(scopes ...loadScope) {
 		case packageLoadScope:
 			scopePath := PackagePath(scope)
 			var toDelete []PackageID
-			s.shouldLoad.Range(func(id PackageID, pkgPaths []PackagePath) {
-				for _, pkgPath := range pkgPaths {
-					if pkgPath == scopePath {
-						toDelete = append(toDelete, id)
-					}
+			for id, pkgPaths := range s.shouldLoad.All() {
+				if slices.Contains(pkgPaths, scopePath) {
+					toDelete = append(toDelete, id)
 				}
-			})
+			}
 			for _, id := range toDelete {
 				s.shouldLoad.Delete(id)
 			}
@@ -1183,7 +1181,7 @@ func (s *Snapshot) reloadWorkspace(ctx context.Context) {
 	var scopes []loadScope
 	var seen map[PackagePath]bool
 	s.mu.Lock()
-	s.shouldLoad.Range(func(_ PackageID, pkgPaths []PackagePath) {
+	for _, pkgPaths := range s.shouldLoad.All() {
 		for _, pkgPath := range pkgPaths {
 			if seen == nil {
 				seen = make(map[PackagePath]bool)
@@ -1194,7 +1192,7 @@ func (s *Snapshot) reloadWorkspace(ctx context.Context) {
 			seen[pkgPath] = true
 			scopes = append(scopes, packageLoadScope(pkgPath))
 		}
-	})
+	}
 	s.mu.Unlock()
 
 	if len(scopes) == 0 {
@@ -1886,13 +1884,13 @@ func deleteMostRelevantModFile(m *persistent.Map[protocol.DocumentURI, *memoize.
 	var mostRelevant protocol.DocumentURI
 	changedFile := changed.Path()
 
-	m.Range(func(modURI protocol.DocumentURI, _ *memoize.Promise) {
+	for modURI := range m.All() {
 		if len(modURI) > len(mostRelevant) {
 			if pathutil.InDir(modURI.DirPath(), changedFile) {
 				mostRelevant = modURI
 			}
 		}
-	})
+	}
 	if mostRelevant != "" {
 		m.Delete(mostRelevant)
 	}

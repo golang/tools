@@ -240,12 +240,12 @@ func (vm *validatedMap) validate(t *testing.T) {
 	}
 
 	actualMap := make(map[int]int, len(vm.expected))
-	vm.impl.Range(func(key, value int) {
+	for key, value := range vm.impl.All() {
 		if other, ok := actualMap[key]; ok {
 			t.Fatalf("key is present twice, key: %d, first value: %d, second value: %d", key, value, other)
 		}
 		actualMap[key] = value
-	})
+	}
 
 	assertSameMap(t, actualMap, vm.expected)
 }
