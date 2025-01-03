@@ -799,6 +799,10 @@ func (s *Snapshot) fileWatchingGlobPatterns() map[protocol.RelativePattern]unit 
 		patterns[workPattern] = unit{}
 	}
 
+	for _, glob := range s.Options().WorkspaceFiles {
+		patterns[protocol.RelativePattern{Pattern: glob}] = unit{}
+	}
+
 	extensions := "go,mod,sum,work"
 	for _, ext := range s.Options().TemplateExtensions {
 		extensions += "," + ext
@@ -1540,21 +1544,28 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	}
 
 	reinit := false
-
-	// Changes to vendor tree may require reinitialization,
-	// either because of an initialization error
-	// (e.g. "inconsistent vendoring detected"), or because
-	// one or more modules may have moved into or out of the
-	// vendor tree after 'go mod vendor' or 'rm -fr vendor/'.
-	//
-	// In this case, we consider the actual modification to see if was a creation
-	// or deletion.
-	//
-	// TODO(rfindley): revisit the location of this check.
 	for _, mod := range changed.Modifications {
+		// Changes to vendor tree may require reinitialization,
+		// either because of an initialization error
+		// (e.g. "inconsistent vendoring detected"), or because
+		// one or more modules may have moved into or out of the
+		// vendor tree after 'go mod vendor' or 'rm -fr vendor/'.
+		//
+		// In this case, we consider the actual modification to see if was a creation
+		// or deletion.
+		//
+		// TODO(rfindley): revisit the location of this check.
 		if inVendor(mod.URI) && (mod.Action == file.Create || mod.Action == file.Delete) ||
 			strings.HasSuffix(string(mod.URI), "/vendor/modules.txt") {
 
+			reinit = true
+			break
+		}
+
+		// Changes to workspace files, as a rule of thumb, should require reinitialization. Since their behavior
+		// is generally user-defined, we want to do something sensible by re-triggering a query to the active GOPACKAGESDRIVER,
+		// and reloading the state of the workspace.
+		if isWorkspaceFile(mod.URI, s.view.folder.Options.WorkspaceFiles) && (mod.Action == file.Save || mod.OnDisk) {
 			reinit = true
 			break
 		}

@@ -100,6 +100,19 @@
 				"DeprecationMessage": ""
 			},
 			{
+				"Name": "workspaceFiles",
+				"Type": "[]string",
+				"Doc": "workspaceFiles configures the set of globs that match files defining the logical build of the current workspace.\nAny on-disk changes to any files matching a glob specified here will trigger a reload of the workspace.\n\nThis setting need only be customized in environments with a custom GOPACKAGESDRIVER.\n",
+				"EnumKeys": {
+					"ValueType": "",
+					"Keys": null
+				},
+				"EnumValues": null,
+				"Default": "[]",
+				"Status": "",
+				"Hierarchy": "build"
+			},
+			{
 				"Name": "hoverKind",
 				"Type": "enum",
 				"Doc": "hoverKind controls the information that appears in the hover text.\nSingleLine is intended for use only by authors of editor plugins.\n",

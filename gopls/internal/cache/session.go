@@ -775,6 +775,25 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 	// changed on disk.
 	checkViews := false
 
+	// Hack: collect folders from existing views.
+	// TODO(golang/go#57979): we really should track folders independent of
+	// Views, but since we always have a default View for each folder, this
+	// works for now.
+	var folders []*Folder // preserve folder order
+	workspaceFileGlobsSet := make(map[string]bool)
+	seen := make(map[*Folder]unit)
+	for _, v := range s.views {
+		if _, ok := seen[v.folder]; ok {
+			continue
+		}
+		seen[v.folder] = unit{}
+		folders = append(folders, v.folder)
+		for _, glob := range v.folder.Options.WorkspaceFiles {
+			workspaceFileGlobsSet[glob] = true
+		}
+	}
+	workspaceFileGlobs := slices.Collect(maps.Keys(workspaceFileGlobsSet))
+
 	changed := make(map[protocol.DocumentURI]file.Handle)
 	for _, c := range modifications {
 		fh := mustReadFile(ctx, s, c.URI)
@@ -790,7 +809,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 		// TODO(rfindley): go.work files need not be named "go.work" -- we need to
 		// check each view's source to handle the case of an explicit GOWORK value.
 		// Write a test that fails, and fix this.
-		if (isGoWork(c.URI) || isGoMod(c.URI)) && (c.Action == file.Save || c.OnDisk) {
+		if (isGoWork(c.URI) || isGoMod(c.URI) || isWorkspaceFile(c.URI, workspaceFileGlobs)) && (c.Action == file.Save || c.OnDisk) {
 			checkViews = true
 		}
 
@@ -817,20 +836,6 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 	}
 
 	if checkViews {
-		// Hack: collect folders from existing views.
-		// TODO(golang/go#57979): we really should track folders independent of
-		// Views, but since we always have a default View for each folder, this
-		// works for now.
-		var folders []*Folder // preserve folder order
-		seen := make(map[*Folder]unit)
-		for _, v := range s.views {
-			if _, ok := seen[v.folder]; ok {
-				continue
-			}
-			seen[v.folder] = unit{}
-			folders = append(folders, v.folder)
-		}
-
 		var openFiles []protocol.DocumentURI
 		for _, o := range s.Overlays() {
 			openFiles = append(openFiles, o.URI())
@@ -1085,11 +1090,12 @@ func (b brokenFile) Content() ([]byte, error)  { return nil, b.err }
 //
 // This set includes
 //  1. all go.mod and go.work files in the workspace; and
-//  2. for each Snapshot, its modules (or directory for ad-hoc views). In
+//  2. all files defined by the WorkspaceFiles option in BuildOptions (to support custom GOPACKAGESDRIVERS); and
+//  3. for each Snapshot, its modules (or directory for ad-hoc views). In
 //     module mode, this is the set of active modules (and for VS Code, all
 //     workspace directories within them, due to golang/go#42348).
 //
-// The watch for workspace go.work and go.mod files in (1) is sufficient to
+// The watch for workspace files in (1) is sufficient to
 // capture changes to the repo structure that may affect the set of views.
 // Whenever this set changes, we reload the workspace and invalidate memoized
 // files.
