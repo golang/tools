@@ -89,12 +89,6 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 				},
 				UIOptions: UIOptions{
 					DiagnosticOptions: DiagnosticOptions{
-						Annotations: map[Annotation]bool{
-							Bounds: true,
-							Escape: true,
-							Inline: true,
-							Nil:    true,
-						},
 						Vulncheck:                 ModeVulncheckOff,
 						DiagnosticsDelay:          1 * time.Second,
 						DiagnosticsTrigger:        DiagnosticsOnEdit,

@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -69,10 +68,9 @@ func CompilerOptDetails(ctx context.Context, snapshot *cache.Snapshot, mp *metad
 		return nil, err
 	}
 	reports := make(map[protocol.DocumentURI][]*cache.Diagnostic)
-	opts := snapshot.Options()
 	var parseError error
 	for _, fn := range files {
-		uri, diagnostics, err := parseDetailsFile(fn, opts)
+		uri, diagnostics, err := parseDetailsFile(fn)
 		if err != nil {
 			// expect errors for all the files, save 1
 			parseError = err
@@ -93,7 +91,7 @@ func CompilerOptDetails(ctx context.Context, snapshot *cache.Snapshot, mp *metad
 }
 
 // parseDetailsFile parses the file written by the Go compiler which contains a JSON-encoded protocol.Diagnostic.
-func parseDetailsFile(filename string, options *settings.Options) (protocol.DocumentURI, []*cache.Diagnostic, error) {
+func parseDetailsFile(filename string) (protocol.DocumentURI, []*cache.Diagnostic, error) {
 	buf, err := os.ReadFile(filename)
 	if err != nil {
 		return "", nil, err
@@ -124,13 +122,29 @@ func parseDetailsFile(filename string, options *settings.Options) (protocol.Docu
 		if err := dec.Decode(d); err != nil {
 			return "", nil, err
 		}
+		if d.Source != "go compiler" {
+			continue
+		}
 		d.Tags = []protocol.DiagnosticTag{} // must be an actual slice
 		msg := d.Code.(string)
 		if msg != "" {
+			// Typical message prefixes gathered by grepping the source of
+			// cmd/compile for literal arguments in calls to logopt.LogOpt.
+			// (It is not a well defined set.)
+			//
+			// - canInlineFunction
+			// - cannotInlineCall
+			// - cannotInlineFunction
+			// - copy
+			// - escape
+			// - escapes
+			// - isInBounds
+			// - isSliceInBounds
+			// - iteration-variable-to-{heap,stack}
+			// - leak
+			// - loop-modified-{range,for}
+			// - nilcheck
 			msg = fmt.Sprintf("%s(%s)", msg, d.Message)
-		}
-		if !showDiagnostic(msg, d.Source, options) {
-			continue
 		}
 
 		// zeroIndexedRange subtracts 1 from the line and
@@ -174,51 +188,6 @@ func parseDetailsFile(filename string, options *settings.Options) (protocol.Docu
 		i++
 	}
 	return uri, diagnostics, nil
-}
-
-// showDiagnostic reports whether a given diagnostic should be shown to the end
-// user, given the current options.
-func showDiagnostic(msg, source string, o *settings.Options) bool {
-	if source != "go compiler" {
-		return false
-	}
-	if o.Annotations == nil {
-		return true
-	}
-
-	// The strings below were gathered by grepping the source of
-	// cmd/compile for literal arguments in calls to logopt.LogOpt.
-	// (It is not a well defined set.)
-	//
-	// - canInlineFunction
-	// - cannotInlineCall
-	// - cannotInlineFunction
-	// - escape
-	// - escapes
-	// - isInBounds
-	// - isSliceInBounds
-	// - leak
-	// - nilcheck
-	//
-	// Additional ones not handled by logic below:
-	// - copy
-	// - iteration-variable-to-{heap,stack}
-	// - loop-modified-{range,for}
-
-	switch {
-	case strings.HasPrefix(msg, "canInline") ||
-		strings.HasPrefix(msg, "cannotInline") ||
-		strings.HasPrefix(msg, "inlineCall"):
-		return o.Annotations[settings.Inline]
-	case strings.HasPrefix(msg, "escape") || msg == "leak":
-		return o.Annotations[settings.Escape]
-	case strings.HasPrefix(msg, "nilcheck"):
-		return o.Annotations[settings.Nil]
-	case strings.HasPrefix(msg, "isInBounds") ||
-		strings.HasPrefix(msg, "isSliceInBounds"):
-		return o.Annotations[settings.Bounds]
-	}
-	return false
 }
 
 func findJSONFiles(dir string) ([]string, error) {

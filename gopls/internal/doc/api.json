@@ -636,40 +636,6 @@
 				"Hierarchy": "ui.diagnostic"
 			},
 			{
-				"Name": "annotations",
-				"Type": "map[enum]bool",
-				"Doc": "annotations specifies the various kinds of compiler\noptimization details that should be reported as diagnostics\nwhen enabled for a package by the \"Toggle compiler\noptimization details\" (`gopls.gc_details`) command.\n",
-				"EnumKeys": {
-					"ValueType": "bool",
-					"Keys": [
-						{
-							"Name": "\"bounds\"",
-							"Doc": "`\"bounds\"` controls bounds checking diagnostics.\n",
-							"Default": "true"
-						},
-						{
-							"Name": "\"escape\"",
-							"Doc": "`\"escape\"` controls diagnostics about escape choices.\n",
-							"Default": "true"
-						},
-						{
-							"Name": "\"inline\"",
-							"Doc": "`\"inline\"` controls diagnostics about inlining choices.\n",
-							"Default": "true"
-						},
-						{
-							"Name": "\"nil\"",
-							"Doc": "`\"nil\"` controls nil checks.\n",
-							"Default": "true"
-						}
-					]
-				},
-				"EnumValues": null,
-				"Default": "{\"bounds\":true,\"escape\":true,\"inline\":true,\"nil\":true}",
-				"Status": "experimental",
-				"Hierarchy": "ui.diagnostic"
-			},
-			{
 				"Name": "vulncheck",
 				"Type": "enum",
 				"Doc": "vulncheck enables vulnerability scanning.\n",

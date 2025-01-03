@@ -16,26 +16,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/frob"
 )
 
-// An Annotation is a category of Go compiler optimization diagnostic.
-//
-// TODO(adonovan): this seems like a large control surface. Let's
-// remove it, and just show all kinds when the flag is enabled.
-type Annotation string
-
-const (
-	// Nil controls nil checks.
-	Nil Annotation = "nil"
-
-	// Escape controls diagnostics about escape choices.
-	Escape Annotation = "escape"
-
-	// Inline controls diagnostics about inlining choices.
-	Inline Annotation = "inline"
-
-	// Bounds controls bounds checking diagnostics.
-	Bounds Annotation = "bounds"
-)
-
 // Options holds various configuration that affects Gopls execution, organized
 // by the nature or origin of the settings.
 //
@@ -425,12 +405,6 @@ type DiagnosticOptions struct {
 	// These analyses are documented on
 	// [Staticcheck's website](https://staticcheck.io/docs/checks/).
 	Staticcheck bool `status:"experimental"`
-
-	// Annotations specifies the various kinds of compiler
-	// optimization details that should be reported as diagnostics
-	// when enabled for a package by the "Toggle compiler
-	// optimization details" (`gopls.gc_details`) command.
-	Annotations map[Annotation]bool `status:"experimental"`
 
 	// Vulncheck enables vulnerability scanning.
 	Vulncheck VulncheckMode `status:"experimental"`
@@ -1043,7 +1017,7 @@ func (o *Options) setOne(name string, value any) error {
 		return setBoolMap(&o.Hints, value)
 
 	case "annotations":
-		return setAnnotationMap(&o.Annotations, value)
+		return deprecatedError("the 'annotations' setting was removed in gopls/v0.18.0; all compiler optimization details are now shown")
 
 	case "vulncheck":
 		return setEnum(&o.Vulncheck, value,
@@ -1296,48 +1270,6 @@ func setDuration(dest *time.Duration, value any) error {
 		return err
 	}
 	*dest = parsed
-	return nil
-}
-
-func setAnnotationMap(dest *map[Annotation]bool, value any) error {
-	all, err := asBoolMap[string](value)
-	if err != nil {
-		return err
-	}
-	if all == nil {
-		return nil
-	}
-	// Default to everything enabled by default.
-	m := make(map[Annotation]bool)
-	for k, enabled := range all {
-		var a Annotation
-		if err := setEnum(&a, k,
-			Nil,
-			Escape,
-			Inline,
-			Bounds); err != nil {
-			// In case of an error, process any legacy values.
-			switch k {
-			case "noEscape":
-				m[Escape] = false
-				return fmt.Errorf(`"noEscape" is deprecated, set "Escape: false" instead`)
-			case "noNilcheck":
-				m[Nil] = false
-				return fmt.Errorf(`"noNilcheck" is deprecated, set "Nil: false" instead`)
-
-			case "noInline":
-				m[Inline] = false
-				return fmt.Errorf(`"noInline" is deprecated, set "Inline: false" instead`)
-			case "noBounds":
-				m[Bounds] = false
-				return fmt.Errorf(`"noBounds" is deprecated, set "Bounds: false" instead`)
-			default:
-				return err
-			}
-		}
-		m[a] = enabled
-	}
-	*dest = m
 	return nil
 }
 
