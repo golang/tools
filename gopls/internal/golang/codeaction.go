@@ -442,8 +442,10 @@ func goplsDocFeatures(ctx context.Context, req *codeActionsRequest) error {
 // See [server.commandHandler.Doc] for command implementation.
 func goDoc(ctx context.Context, req *codeActionsRequest) error {
 	_, _, title := DocFragment(req.pkg, req.pgf, req.start, req.end)
-	cmd := command.NewDocCommand(title, command.DocArgs{Location: req.loc, ShowDocument: true})
-	req.addCommandAction(cmd, false)
+	if title != "" {
+		cmd := command.NewDocCommand(title, command.DocArgs{Location: req.loc, ShowDocument: true})
+		req.addCommandAction(cmd, false)
+	}
 	return nil
 }
 
