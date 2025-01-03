@@ -3157,8 +3157,7 @@ func TestIssue69606b(t *testing.T) {
 // in another package (m/b) where the types for m/b are coming from the compiler,
 // e.g. `go list -compiled=true ... m/b`.
 func TestIssue70394(t *testing.T) {
-	// TODO(taking): backport https://go.dev/cl/604099 so that this works on 23.
-	testenv.NeedsGo1Point(t, 24)
+	testenv.NeedsGo1Point(t, 23)
 	testenv.NeedsTool(t, "go") // requires go list.
 	testenv.NeedsGoBuild(t)    // requires the compiler for export data.
 
@@ -3339,7 +3338,7 @@ func main() {
 
 	pkgs, err := packages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedTarget,
-		Env:  append(os.Environ(), "GOPATH=" + gopath, "GO111MODULE=off"),
+		Env:  append(os.Environ(), "GOPATH="+gopath, "GO111MODULE=off"),
 	}, filepath.Join(gopath, "src", "..."))
 	if err != nil {
 		t.Fatal(err)
