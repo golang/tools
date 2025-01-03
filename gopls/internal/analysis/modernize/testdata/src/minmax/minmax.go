@@ -71,3 +71,13 @@ func nopeIfStmtHasInitStmt() {
 	}
 	print(x)
 }
+
+// Regression test for a bug: fix was "y := max(x, y)".
+func oops() {
+	x := 1
+	y := 2
+	if x > y { // want "if statement can be modernized using max"
+		y = x
+	}
+	print(y)
+}

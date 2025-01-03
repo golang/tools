@@ -11,12 +11,12 @@ func ifmax(a, b int) {
 }
 
 func ifminvariant(a, b int) {
-	x := min(x, b)
+	x := min(a, b)
 	print(x)
 }
 
 func ifmaxvariant(a, b int) {
-	x := min(a, x)
+	x := min(a, b)
 	print(x)
 }
 
@@ -50,4 +50,11 @@ func nopeIfStmtHasInitStmt() {
 		x = y
 	}
 	print(x)
+}
+
+// Regression test for a bug: fix was "y := max(x, y)".
+func oops() {
+	x := 1
+	y := max(x, 2)
+	print(y)
 }

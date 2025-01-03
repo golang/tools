@@ -98,19 +98,23 @@ func minmax(pass *analysis.Pass) {
 		} else if prev, ok := curIfStmt.PrevSibling(); ok && is[*ast.AssignStmt](prev.Node()) {
 			fassign := prev.Node().(*ast.AssignStmt)
 
-			// Have: lhs2 = rhs2; if a < b { lhs = rhs }
+			// Have: lhs0 = rhs0; if a < b { lhs = rhs }
+			//
 			// For pattern 2, check that
-			// - lhs = lhs2
-			// - {rhs,rhs2} = {a,b}, but allow lhs2 to
-			//   stand for rhs2.
-			// TODO(adonovan): accept "var lhs2 = rhs2" form too.
-			lhs2 := fassign.Lhs[0]
-			rhs2 := fassign.Rhs[0]
+			// - lhs = lhs0
+			// - {a,b} = {rhs,rhs0} or {rhs,lhs0}
+			//   The replacement must use rhs0 not lhs0 though.
+			//   For example, we accept this variant:
+			//     lhs = x; if lhs < y { lhs = y }   =>   lhs = min(x, y), not min(lhs, y)
+			//
+			// TODO(adonovan): accept "var lhs0 = rhs0" form too.
+			lhs0 := fassign.Lhs[0]
+			rhs0 := fassign.Rhs[0]
 
-			if equalSyntax(lhs, lhs2) {
-				if equalSyntax(rhs, a) && (equalSyntax(rhs2, b) || equalSyntax(lhs2, b)) {
+			if equalSyntax(lhs, lhs0) {
+				if equalSyntax(rhs, a) && (equalSyntax(rhs0, b) || equalSyntax(lhs0, b)) {
 					sign = +sign
-				} else if (equalSyntax(rhs2, a) || equalSyntax(lhs2, a)) && equalSyntax(rhs, b) {
+				} else if (equalSyntax(rhs0, a) || equalSyntax(lhs0, a)) && equalSyntax(rhs, b) {
 					sign = -sign
 				} else {
 					return
@@ -119,6 +123,15 @@ func minmax(pass *analysis.Pass) {
 
 				if _, obj := scope.LookupParent(sym, ifStmt.Pos()); !is[*types.Builtin](obj) {
 					return // min/max function is shadowed
+				}
+
+				// Permit lhs0 to stand for rhs0 in the matching,
+				// but don't actually reduce to lhs0 = min(lhs0, rhs)
+				// since the "=" could be a ":=". Use min(rhs0, rhs).
+				if equalSyntax(lhs0, a) {
+					a = rhs0
+				} else if equalSyntax(lhs0, b) {
+					b = rhs0
 				}
 
 				// pattern 2
@@ -131,8 +144,8 @@ func minmax(pass *analysis.Pass) {
 					SuggestedFixes: []analysis.SuggestedFix{{
 						Message: fmt.Sprintf("Replace if/else with %s", sym),
 						TextEdits: []analysis.TextEdit{{
-							// Replace rhs2 and IfStmt with min(a, b)
-							Pos: rhs2.Pos(),
+							// Replace rhs0 and IfStmt with min(a, b)
+							Pos: rhs0.Pos(),
 							End: ifStmt.End(),
 							NewText: fmt.Appendf(nil, "%s(%s, %s)",
 								sym,
