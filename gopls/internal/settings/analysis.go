@@ -197,13 +197,7 @@ func init() {
 		{analyzer: fillreturns.Analyzer},
 		{analyzer: nonewvars.Analyzer},
 		{analyzer: noresultvalues.Analyzer},
-		// TODO(rfindley): why isn't the 'unusedvariable' analyzer enabled, if it
-		// is only enhancing type errors with suggested fixes?
-		//
-		// In particular, enabling this analyzer could cause unused variables to be
-		// greyed out, (due to the 'deletions only' fix). That seems like a nice UI
-		// feature.
-		{analyzer: unusedvariable.Analyzer, nonDefault: true},
+		{analyzer: unusedvariable.Analyzer, nonDefault: true}, // not fully baked; see #54373
 	}
 	for _, analyzer := range analyzers {
 		DefaultAnalyzers[analyzer.analyzer.Name] = analyzer
