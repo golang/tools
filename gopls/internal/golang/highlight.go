@@ -12,12 +12,12 @@ import (
 	"go/types"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
-	"golang.org/x/tools/go/ast/astutil"
+	astutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fmtstr"
 )
@@ -210,11 +210,11 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.
 
 	// highlightPair highlights the operation and its potential argument pair if the cursor is within either range.
 	highlightPair := func(rang fmtstr.Range, argIndex int) {
-		rangeStart, err := posInStringLiteral(lit, rang.Start)
+		rangeStart, err := internalastutil.PosInStringLiteral(lit, rang.Start)
 		if err != nil {
 			return
 		}
-		rangeEnd, err := posInStringLiteral(lit, rang.End)
+		rangeEnd, err := internalastutil.PosInStringLiteral(lit, rang.End)
 		if err != nil {
 			return
 		}
@@ -275,38 +275,6 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.
 			highlightRange(result, rang.start, rang.end, protocol.Write)
 		}
 	}
-}
-
-// posInStringLiteral returns the position within a string literal
-// corresponding to the specified byte offset within the logical
-// string that it denotes.
-func posInStringLiteral(lit *ast.BasicLit, offset int) (token.Pos, error) {
-	raw := lit.Value
-
-	value, err := strconv.Unquote(raw)
-	if err != nil {
-		return 0, err
-	}
-	if !(0 <= offset && offset <= len(value)) {
-		return 0, fmt.Errorf("invalid offset")
-	}
-
-	// remove quotes
-	quote := raw[0] // '"' or '`'
-	raw = raw[1 : len(raw)-1]
-
-	var (
-		i   = 0                // byte index within logical value
-		pos = lit.ValuePos + 1 // position within literal
-	)
-	for raw != "" && i < offset {
-		r, _, rest, _ := strconv.UnquoteChar(raw, quote) // can't fail
-		sz := len(raw) - len(rest)                       // length of literal char in raw bytes
-		pos += token.Pos(sz)
-		raw = raw[sz:]
-		i += utf8.RuneLen(r)
-	}
-	return pos, nil
 }
 
 type posRange struct {

@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"go/types"
 	"iter"
+	"regexp"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -65,6 +66,7 @@ func run(pass *analysis.Pass) (any, error) {
 	fmtappendf(pass)
 	mapsloop(pass)
 	minmax(pass)
+	omitzero(pass)
 	slicescontains(pass)
 	sortslice(pass)
 	testingContext(pass)
@@ -121,12 +123,13 @@ func filesUsing(inspect *inspector.Inspector, info *types.Info, version string) 
 }
 
 var (
-	builtinAny    = types.Universe.Lookup("any")
-	builtinAppend = types.Universe.Lookup("append")
-	builtinBool   = types.Universe.Lookup("bool")
-	builtinFalse  = types.Universe.Lookup("false")
-	builtinMake   = types.Universe.Lookup("make")
-	builtinNil    = types.Universe.Lookup("nil")
-	builtinTrue   = types.Universe.Lookup("true")
-	byteSliceType = types.NewSlice(types.Typ[types.Byte])
+	builtinAny     = types.Universe.Lookup("any")
+	builtinAppend  = types.Universe.Lookup("append")
+	builtinBool    = types.Universe.Lookup("bool")
+	builtinFalse   = types.Universe.Lookup("false")
+	builtinMake    = types.Universe.Lookup("make")
+	builtinNil     = types.Universe.Lookup("nil")
+	builtinTrue    = types.Universe.Lookup("true")
+	byteSliceType  = types.NewSlice(types.Typ[types.Byte])
+	omitemptyRegex = regexp.MustCompile(`(?:^json| json):"[^"]*(,omitempty)(?:"|,[^"]*")\s?`)
 )
