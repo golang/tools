@@ -43,9 +43,9 @@ func init() {
 			}
 
 			StaticcheckAnalyzers[a.Analyzer.Name] = &Analyzer{
-				analyzer: a.Analyzer,
-				enabled:  !a.Doc.NonDefault,
-				severity: mapSeverity(a.Doc.Severity),
+				analyzer:   a.Analyzer,
+				nonDefault: a.Doc.NonDefault,
+				severity:   mapSeverity(a.Doc.Severity),
 			}
 		}
 	}
