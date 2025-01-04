@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
@@ -106,7 +107,11 @@ type View struct {
 	// background contexts created for this view.
 	baseCtx context.Context
 
+	// importsState is for the old imports code
 	importsState *importsState
+
+	// maintain the current module cache index
+	modcacheState *modcacheState
 
 	// pkgIndex is an index of package IDs, for efficient storage of typerefs.
 	pkgIndex *typerefs.PackageIndex
@@ -1143,9 +1148,7 @@ func (s *Snapshot) ModuleUpgrades(modfile protocol.DocumentURI) map[string]strin
 	defer s.mu.Unlock()
 	upgrades := map[string]string{}
 	orig, _ := s.moduleUpgrades.Get(modfile)
-	for mod, ver := range orig {
-		upgrades[mod] = ver
-	}
+	maps.Copy(upgrades, orig)
 	return upgrades
 }
 

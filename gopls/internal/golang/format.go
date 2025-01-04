@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
@@ -120,7 +121,7 @@ func allImportsFixes(ctx context.Context, snapshot *cache.Snapshot, pgf *parsego
 	defer done()
 
 	if err := snapshot.RunProcessEnvFunc(ctx, func(ctx context.Context, opts *imports.Options) error {
-		allFixEdits, editsPerFix, err = computeImportEdits(ctx, pgf, snapshot.View().Folder().Env.GOROOT, opts)
+		allFixEdits, editsPerFix, err = computeImportEdits(ctx, pgf, snapshot, opts)
 		return err
 	}); err != nil {
 		return nil, nil, fmt.Errorf("allImportsFixes: %v", err)
@@ -130,12 +131,22 @@ func allImportsFixes(ctx context.Context, snapshot *cache.Snapshot, pgf *parsego
 
 // computeImportEdits computes a set of edits that perform one or all of the
 // necessary import fixes.
-func computeImportEdits(ctx context.Context, pgf *parsego.File, goroot string, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*importFix, err error) {
+func computeImportEdits(ctx context.Context, pgf *parsego.File, snapshot *cache.Snapshot, options *imports.Options) (allFixEdits []protocol.TextEdit, editsPerFix []*importFix, err error) {
+	goroot := snapshot.View().Folder().Env.GOROOT
 	filename := pgf.URI.Path()
 
 	// Build up basic information about the original file.
 	isource, err := imports.NewProcessEnvSource(options.Env, filename, pgf.File.Name.Name)
-	allFixes, err := imports.FixImports(ctx, filename, pgf.Src, goroot, options.Env.Logf, isource)
+	var source imports.Source
+	switch snapshot.Options().ImportsSource {
+	case settings.ImportsSourceGopls:
+		source = snapshot.NewGoplsSource(isource)
+	case settings.ImportsSourceOff: // for cider, which has no file system
+		source = nil
+	case settings.ImportsSourceGoimports:
+		source = isource
+	}
+	allFixes, err := imports.FixImports(ctx, filename, pgf.Src, goroot, options.Env.Logf, source)
 	if err != nil {
 		return nil, nil, err
 	}

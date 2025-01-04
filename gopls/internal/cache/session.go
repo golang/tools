@@ -8,10 +8,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -218,7 +218,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 			ModCache:       s.cache.modCache.dirCache(def.folder.Env.GOMODCACHE),
 		}
 		if def.folder.Options.VerboseOutput {
-			pe.Logf = func(format string, args ...interface{}) {
+			pe.Logf = func(format string, args ...any) {
 				event.Log(ctx, fmt.Sprintf(format, args...))
 			}
 		}
@@ -236,6 +236,9 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		fs:                   s.overlayFS,
 		viewDefinition:       def,
 		importsState:         newImportsState(backgroundCtx, s.cache.modCache, pe),
+	}
+	if def.folder.Options.ImportsSource != "off" {
+		v.modcacheState = newModcacheState(def.folder.Env.GOMODCACHE)
 	}
 
 	s.snapshotWG.Add(1)
@@ -833,9 +836,7 @@ func (s *Session) DidModifyFiles(ctx context.Context, modifications []file.Modif
 			openFiles = append(openFiles, o.URI())
 		}
 		// Sort for determinism.
-		sort.Slice(openFiles, func(i, j int) bool {
-			return openFiles[i] < openFiles[j]
-		})
+		slices.Sort(openFiles)
 
 		// TODO(rfindley): can we avoid running the go command (go env)
 		// synchronously to change processing? Can we assume that the env did not
@@ -1124,9 +1125,7 @@ func (s *Session) FileWatchingGlobPatterns(ctx context.Context) map[protocol.Rel
 		if err != nil {
 			continue // view is shut down; continue with others
 		}
-		for k, v := range snapshot.fileWatchingGlobPatterns() {
-			patterns[k] = v
-		}
+		maps.Copy(patterns, snapshot.fileWatchingGlobPatterns())
 		release()
 	}
 	return patterns

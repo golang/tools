@@ -53,6 +53,7 @@ type ClientOptions struct {
 	PreferredContentFormat                     protocol.MarkupKind
 	LineFoldingOnly                            bool
 	HierarchicalDocumentSymbolSupport          bool
+	ImportsSource                              ImportsSourceEnum `status:"experimental"`
 	SemanticTypes                              []string
 	SemanticMods                               []string
 	RelatedInformationSupported                bool
@@ -697,6 +698,19 @@ func (s ImportShortcut) ShowDefinition() bool {
 	return s == BothShortcuts || s == DefinitionShortcut
 }
 
+// ImportsSourceEnum has legal values:
+//
+// - `off` to disable searching the file system for imports
+// - `gopls` to use the metadata graph and module cache index
+// - `goimports` for the old behavior, to be deprecated
+type ImportsSourceEnum string
+
+const (
+	ImportsSourceOff       ImportsSourceEnum = "off"
+	ImportsSourceGopls                       = "gopls"
+	ImportsSourceGoimports                   = "goimports"
+)
+
 type Matcher string
 
 const (
@@ -949,6 +963,11 @@ func (o *Options) setOne(name string, value any) error {
 		return setBool(&o.CompleteUnimported, value)
 	case "completionBudget":
 		return setDuration(&o.CompletionBudget, value)
+	case "importsSource":
+		return setEnum(&o.ImportsSource, value,
+			ImportsSourceOff,
+			ImportsSourceGopls,
+			ImportsSourceGoimports)
 	case "matcher":
 		return setEnum(&o.Matcher, value,
 			Fuzzy,
@@ -1033,9 +1052,7 @@ func (o *Options) setOne(name string, value any) error {
 			o.Codelenses = make(map[CodeLensSource]bool)
 		}
 		o.Codelenses = maps.Clone(o.Codelenses)
-		for source, enabled := range lensOverrides {
-			o.Codelenses[source] = enabled
-		}
+		maps.Copy(o.Codelenses, lensOverrides)
 
 		if name == "codelens" {
 			return deprecatedError("codelenses")
