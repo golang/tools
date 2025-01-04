@@ -183,9 +183,9 @@ type Snapshot struct {
 	// vulns maps each go.mod file's URI to its known vulnerabilities.
 	vulns *persistent.Map[protocol.DocumentURI, *vulncheck.Result]
 
-	// compilerOptDetails describes the packages for which we want
-	// compiler optimization details to be included in the diagnostics.
-	compilerOptDetails map[metadata.PackageID]unit
+	// compilerOptDetails is the set of directories whose packages
+	// and tests need compiler optimization details in the diagnostics.
+	compilerOptDetails map[protocol.DocumentURI]unit
 
 	// Concurrent type checking:
 	// typeCheckMu guards the ongoing type checking batch, and reference count of
@@ -1523,15 +1523,15 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	// Compute the new set of packages for which we want compiler
 	// optimization details, after applying changed.CompilerOptDetails.
 	if len(s.compilerOptDetails) > 0 || len(changed.CompilerOptDetails) > 0 {
-		newCompilerOptDetails := make(map[metadata.PackageID]unit)
-		for id := range s.compilerOptDetails {
-			if _, ok := changed.CompilerOptDetails[id]; !ok {
-				newCompilerOptDetails[id] = unit{} // no change
+		newCompilerOptDetails := make(map[protocol.DocumentURI]unit)
+		for dir := range s.compilerOptDetails {
+			if _, ok := changed.CompilerOptDetails[dir]; !ok {
+				newCompilerOptDetails[dir] = unit{} // no change
 			}
 		}
-		for id, want := range changed.CompilerOptDetails {
+		for dir, want := range changed.CompilerOptDetails {
 			if want {
-				newCompilerOptDetails[id] = unit{}
+				newCompilerOptDetails[dir] = unit{}
 			}
 		}
 		if len(newCompilerOptDetails) > 0 {
@@ -2160,9 +2160,9 @@ func (s *Snapshot) setBuiltin(path string) {
 }
 
 // WantCompilerOptDetails reports whether to compute compiler
-// optimization details for the specified package.
-func (s *Snapshot) WantCompilerOptDetails(id metadata.PackageID) bool {
-	_, ok := s.compilerOptDetails[id]
+// optimization details for packages and tests in the given directory.
+func (s *Snapshot) WantCompilerOptDetails(dir protocol.DocumentURI) bool {
+	_, ok := s.compilerOptDetails[dir]
 	return ok
 }
 

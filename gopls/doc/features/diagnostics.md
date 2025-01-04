@@ -65,8 +65,12 @@ There is an optional third source of diagnostics:
 
   This source is disabled by default but can be enabled on a
   package-by-package basis by invoking the
-  `source.toggleCompilerOptDetails` ("Toggle compiler optimization
+  `source.toggleCompilerOptDetails` ("{Show,Hide} compiler optimization
   details") code action.
+
+  Remember that the compiler's optimizer runs only on packages that
+  are transitively free from errors, so optimization diagnostics
+  will not be shown on packages that do not build.
 
 
 ## Recomputation of diagnostics

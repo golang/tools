@@ -11,22 +11,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
-	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
 )
 
 // CompilerOptDetails invokes the Go compiler with the "-json=0,dir"
-// flag on the specified package, parses its log of optimization
-// decisions, and returns them as a set of diagnostics.
-func CompilerOptDetails(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.Package) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
-	if len(mp.CompiledGoFiles) == 0 {
-		return nil, nil
-	}
-	pkgDir := mp.CompiledGoFiles[0].DirPath()
+// flag on the packages and tests in the specified directory, parses
+// its log of optimization decisions, and returns them as a set of
+// diagnostics.
+func CompilerOptDetails(ctx context.Context, snapshot *cache.Snapshot, pkgDir protocol.DocumentURI) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	outDir, err := os.MkdirTemp("", fmt.Sprintf("gopls-%d.details", os.Getpid()))
 	if err != nil {
 		return nil, err
@@ -37,22 +34,20 @@ func CompilerOptDetails(ctx context.Context, snapshot *cache.Snapshot, mp *metad
 		}
 	}()
 
-	tmpFile, err := os.CreateTemp(os.TempDir(), "gopls-x")
-	if err != nil {
-		return nil, err
-	}
-	tmpFile.Close() // ignore error
-	defer os.Remove(tmpFile.Name())
-
 	outDirURI := protocol.URIFromPath(outDir)
 	// details doesn't handle Windows URIs in the form of "file:///C:/...",
 	// so rewrite them to "file://C:/...". See golang/go#41614.
 	if !strings.HasPrefix(outDir, "/") {
 		outDirURI = protocol.DocumentURI(strings.Replace(string(outDirURI), "file:///", "file://", 1))
 	}
-	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NoNetwork, pkgDir, "build", []string{
+
+	// We use "go test -c" not "go build" as it covers all three packages
+	// (p, "p [p.test]", "p_test [p.test]") in the directory, if they exist.
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NoNetwork, pkgDir.Path(), "test", []string{
+		"-c",
+		"-vet=off", // weirdly -c doesn't disable vet
 		fmt.Sprintf("-gcflags=-json=0,%s", outDirURI), // JSON schema version 0
-		fmt.Sprintf("-o=%s", tmpFile.Name()),
+		fmt.Sprintf("-o=%s", cond(runtime.GOOS == "windows", "NUL", "/dev/null")),
 		".",
 	})
 	if err != nil {
@@ -79,7 +74,8 @@ func CompilerOptDetails(ctx context.Context, snapshot *cache.Snapshot, mp *metad
 		if fh == nil {
 			continue
 		}
-		if pkgDir != fh.URI().DirPath() {
+		if pkgDir != fh.URI().Dir() {
+			// Filter compiler diagnostics to the requested directory.
 			// https://github.com/golang/go/issues/42198
 			// sometimes the detail diagnostics generated for files
 			// outside the package can never be taken back.

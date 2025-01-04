@@ -11,6 +11,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"sort"
@@ -105,6 +106,8 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 			req.pkg = nil
 		}
 		if err := p.fn(ctx, req); err != nil {
+			// TODO(adonovan): most errors in code action providers should
+			// not block other providers; see https://go.dev/issue/71275.
 			return nil, err
 		}
 	}
@@ -879,10 +882,22 @@ func goAssembly(ctx context.Context, req *codeActionsRequest) error {
 	return nil
 }
 
-// toggleCompilerOptDetails produces "Toggle compiler optimization details" code action.
-// See [server.commandHandler.ToggleCompilerOptDetails] for command implementation.
+// toggleCompilerOptDetails produces "{Show,Hide} compiler optimization details" code action.
+// See [server.commandHandler.GCDetails] for command implementation.
 func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) error {
-	cmd := command.NewGCDetailsCommand("Toggle compiler optimization details", req.fh.URI())
-	req.addCommandAction(cmd, false)
+	// TODO(adonovan): errors from code action providers should probably be
+	// logged, even if they aren't visible to the client; see https://go.dev/issue/71275.
+	if meta, err := NarrowestMetadataForFile(ctx, req.snapshot, req.fh.URI()); err == nil {
+		if len(meta.CompiledGoFiles) == 0 {
+			return fmt.Errorf("package %q does not compile file %q", meta.ID, req.fh.URI())
+		}
+		dir := meta.CompiledGoFiles[0].Dir()
+
+		title := fmt.Sprintf("%s compiler optimization details for %q",
+			cond(req.snapshot.WantCompilerOptDetails(dir), "Hide", "Show"),
+			filepath.Base(dir.Path()))
+		cmd := command.NewGCDetailsCommand(title, req.fh.URI())
+		req.addCommandAction(cmd, false)
+	}
 	return nil
 }

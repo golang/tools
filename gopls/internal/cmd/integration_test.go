@@ -950,12 +950,12 @@ func TestCodeAction(t *testing.T) {
 module example.com
 go 1.18
 
--- a.go --
+-- a/a.go --
 package a
 type T int
 func f() (int, string) { return }
 
--- b.go --
+-- a/b.go --
 package a
 import "io"
 var _ io.Reader = C{}
@@ -970,14 +970,14 @@ type C struct{}
 	}
 	// list code actions in file
 	{
-		res := gopls(t, tree, "codeaction", "a.go")
+		res := gopls(t, tree, "codeaction", "a/a.go")
 		res.checkExit(true)
 		res.checkStdout(`edit	"Fill in return values" \[quickfix\]`)
 		res.checkStdout(`command	"Browse documentation for package a" \[source.doc\]`)
 	}
 	// list code actions in file, filtering by title
 	{
-		res := gopls(t, tree, "codeaction", "-title=Browse.*doc", "a.go")
+		res := gopls(t, tree, "codeaction", "-title=Browse.*doc", "a/a.go")
 		res.checkExit(true)
 		got := res.stdout
 		want := `command	"Browse gopls feature documentation" [gopls.doc.features]` +
@@ -990,12 +990,12 @@ type C struct{}
 	}
 	// list code actions in file, filtering (hierarchically) by kind
 	{
-		res := gopls(t, tree, "codeaction", "-kind=source", "a.go")
+		res := gopls(t, tree, "codeaction", "-kind=source", "a/a.go")
 		res.checkExit(true)
 		got := res.stdout
 		want := `command	"Browse documentation for package a" [source.doc]` +
 			"\n" +
-			`command	"Toggle compiler optimization details" [source.toggleCompilerOptDetails]` +
+			`command	"Show compiler optimization details for \"a\"" [source.toggleCompilerOptDetails]` +
 			"\n"
 		if got != want {
 			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)
@@ -1003,13 +1003,13 @@ type C struct{}
 	}
 	// list code actions at position (of io.Reader)
 	{
-		res := gopls(t, tree, "codeaction", "b.go:#31")
+		res := gopls(t, tree, "codeaction", "a/b.go:#31")
 		res.checkExit(true)
 		res.checkStdout(`command	"Browse documentation for type io.Reader" \[source.doc]`)
 	}
 	// list quick fixes at position (of type T)
 	{
-		res := gopls(t, tree, "codeaction", "-kind=quickfix", "a.go:#15")
+		res := gopls(t, tree, "codeaction", "-kind=quickfix", "a/a.go:#15")
 		res.checkExit(true)
 		got := res.stdout
 		want := `edit	"Fill in return values" [quickfix]` + "\n"
@@ -1019,7 +1019,7 @@ type C struct{}
 	}
 	// success, with explicit CodeAction kind and diagnostics span.
 	{
-		res := gopls(t, tree, "codeaction", "-kind=quickfix", "-exec", "b.go:#40")
+		res := gopls(t, tree, "codeaction", "-kind=quickfix", "-exec", "a/b.go:#40")
 		res.checkExit(true)
 		got := res.stdout
 		want := `

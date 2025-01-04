@@ -561,25 +561,26 @@ func (s *server) compilerOptDetailsDiagnostics(ctx context.Context, snapshot *ca
 	// TODO(rfindley): This should memoize its results if the package has not changed.
 	// Consider that these points, in combination with the note below about
 	// races, suggest that compiler optimization details should be tracked on the Snapshot.
-	var detailPkgs map[metadata.PackageID]*metadata.Package
-	for _, mp := range toDiagnose {
-		if snapshot.WantCompilerOptDetails(mp.ID) {
-			if detailPkgs == nil {
-				detailPkgs = make(map[metadata.PackageID]*metadata.Package)
-			}
-			detailPkgs[mp.ID] = mp
-		}
-	}
-
 	diagnostics := make(diagMap)
-	for _, mp := range detailPkgs {
-		perFileDiags, err := golang.CompilerOptDetails(ctx, snapshot, mp)
-		if err != nil {
-			event.Error(ctx, "warning: compiler optimization details", err, append(snapshot.Labels(), label.Package.Of(string(mp.ID)))...)
+	seenDirs := make(map[protocol.DocumentURI]bool)
+	for _, mp := range toDiagnose {
+		if len(mp.CompiledGoFiles) == 0 {
 			continue
 		}
-		for uri, diags := range perFileDiags {
-			diagnostics[uri] = append(diagnostics[uri], diags...)
+		dir := mp.CompiledGoFiles[0].Dir()
+		if snapshot.WantCompilerOptDetails(dir) {
+			if !seenDirs[dir] {
+				seenDirs[dir] = true
+
+				perFileDiags, err := golang.CompilerOptDetails(ctx, snapshot, dir)
+				if err != nil {
+					event.Error(ctx, "warning: compiler optimization details", err, append(snapshot.Labels(), label.URI.Of(dir))...)
+					continue
+				}
+				for uri, diags := range perFileDiags {
+					diagnostics[uri] = append(diagnostics[uri], diags...)
+				}
+			}
 		}
 	}
 	return diagnostics, nil

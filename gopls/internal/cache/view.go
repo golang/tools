@@ -27,7 +27,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/typerefs"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -745,7 +744,7 @@ type StateChange struct {
 	Files              map[protocol.DocumentURI]file.Handle
 	ModuleUpgrades     map[protocol.DocumentURI]map[string]string
 	Vulns              map[protocol.DocumentURI]*vulncheck.Result
-	CompilerOptDetails map[metadata.PackageID]bool // package -> whether or not we want details
+	CompilerOptDetails map[protocol.DocumentURI]bool // package directory -> whether or not we want details
 }
 
 // InvalidateView processes the provided state change, invalidating any derived
