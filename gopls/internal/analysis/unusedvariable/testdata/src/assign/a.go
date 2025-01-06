@@ -65,6 +65,17 @@ func commentAbove() {
 	v := "s" // want `declared (and|but) not used`
 }
 
+func commentBelow() {
+	v := "s" // want `declared (and|but) not used`
+	// v is a variable
+}
+
+func commentSpaceBelow() {
+	v := "s" // want `declared (and|but) not used`
+
+	// v is a variable
+}
+
 func fBool() bool {
 	return true
 }

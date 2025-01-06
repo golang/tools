@@ -197,7 +197,7 @@ func init() {
 		{analyzer: fillreturns.Analyzer},
 		{analyzer: nonewvars.Analyzer},
 		{analyzer: noresultvalues.Analyzer},
-		{analyzer: unusedvariable.Analyzer, nonDefault: true}, // not fully baked; see #54373
+		{analyzer: unusedvariable.Analyzer},
 	}
 	for _, analyzer := range analyzers {
 		DefaultAnalyzers[analyzer.analyzer.Name] = analyzer

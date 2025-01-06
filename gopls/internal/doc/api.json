@@ -608,7 +608,7 @@
 						{
 							"Name": "\"unusedvariable\"",
 							"Doc": "check for unused variables and suggest fixes",
-							"Default": "false"
+							"Default": "true"
 						},
 						{
 							"Name": "\"unusedwrite\"",
@@ -1267,7 +1267,7 @@
 			"Name": "unusedvariable",
 			"Doc": "check for unused variables and suggest fixes",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedvariable",
-			"Default": false
+			"Default": true
 		},
 		{
 			"Name": "unusedwrite",

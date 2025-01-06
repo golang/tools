@@ -50,6 +50,14 @@ func commentAbove() {
 	// v is a variable
 }
 
+func commentBelow() {
+	// v is a variable
+}
+
+func commentSpaceBelow() {
+	// v is a variable
+}
+
 func fBool() bool {
 	return true
 }

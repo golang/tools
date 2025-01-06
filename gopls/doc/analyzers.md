@@ -1011,7 +1011,7 @@ Package documentation: [unusedresult](https://pkg.go.dev/golang.org/x/tools/go/a
 
 
 
-Default: off. Enable by setting `"analyses": {"unusedvariable": true}`.
+Default: on.
 
 Package documentation: [unusedvariable](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedvariable)
 
