@@ -10,12 +10,14 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/fmtstr"
 )
 
 func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.DocumentHighlight, error) {
@@ -49,7 +51,7 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, po
 			}
 		}
 	}
-	result, err := highlightPath(path, pgf.File, pkg.TypesInfo())
+	result, err := highlightPath(pkg.TypesInfo(), path, pos)
 	if err != nil {
 		return nil, err
 	}
@@ -69,8 +71,24 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, po
 
 // highlightPath returns ranges to highlight for the given enclosing path,
 // which should be the result of astutil.PathEnclosingInterval.
-func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRange]protocol.DocumentHighlightKind, error) {
+func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[posRange]protocol.DocumentHighlightKind, error) {
 	result := make(map[posRange]protocol.DocumentHighlightKind)
+
+	// Inside a printf-style call, printf("...%v...", arg)?
+	// Treat each corresponding ("%v", arg) pair as a highlight class.
+	for _, node := range path {
+		if call, ok := node.(*ast.CallExpr); ok {
+			idx := formatStringIndex(info, call)
+			if idx >= 0 && idx < len(call.Args) {
+				// We only care string literal, so fmt.Sprint("a"+"b%s", "bar") won't highlight.
+				if lit, ok := call.Args[idx].(*ast.BasicLit); ok && strings.Contains(lit.Value, "%") {
+					highlightPrintf(call, idx, pos, lit.Value, result)
+				}
+			}
+		}
+	}
+
+	file := path[len(path)-1].(*ast.File)
 	switch node := path[0].(type) {
 	case *ast.BasicLit:
 		// Import path string literal?
@@ -129,6 +147,117 @@ func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRa
 	}
 
 	return result, nil
+}
+
+// formatStringIndex returns the index of the format string (the last
+// non-variadic parameter) within the given printf-like call
+// expression, or -1 if unknown.
+func formatStringIndex(info *types.Info, call *ast.CallExpr) int {
+	typ := info.Types[call.Fun].Type
+	if typ == nil {
+		return -1 // missing type
+	}
+	sig, ok := typ.(*types.Signature)
+	if !ok {
+		return -1 // ill-typed
+	}
+	if !sig.Variadic() {
+		// Skip checking non-variadic functions.
+		return -1
+	}
+	idx := sig.Params().Len() - 2
+	if idx < 0 {
+		// Skip checking variadic functions without
+		// fixed arguments.
+		return -1
+	}
+	return idx
+}
+
+// highlightPrintf highlights operations in a format string and their corresponding
+// variadic arguments in a printf-style function call.
+// For example:
+//
+// fmt.Printf("Hello %s, you scored %d", name, score)
+//
+// If the cursor is on %s or name, it will highlight %s as a write operation,
+// and name as a read operation.
+func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, format string, result map[posRange]protocol.DocumentHighlightKind) {
+	operations, err := fmtstr.Parse(format, idx)
+	if err != nil {
+		return
+	}
+
+	// fmt.Printf("%[1]d %[1].2d", 3)
+	//
+	// When cursor is in `%[1]d`, we record `3` being successfully highlighted.
+	// And because we will also record `%[1].2d`'s corresponding arguments index is `3`
+	// in `visited`, even though it will not highlight any item in the first pass,
+	// in the second pass we can correctly highlight it. So the three are the same class.
+	succeededArg := 0
+	visited := make(map[posRange]int, 0)
+
+	formatPos := call.Args[idx].Pos()
+	// highlightPair highlights the operation and its potential argument pair if the cursor is within either range.
+	highlightPair := func(start, end token.Pos, argIndex int) {
+		var (
+			rangeStart = formatPos + token.Pos(start)
+			rangeEnd   = formatPos + token.Pos(end)
+			arg        ast.Expr // may not exist
+		)
+		visited[posRange{start: rangeStart, end: rangeEnd}] = argIndex
+		if len(call.Args) > argIndex {
+			arg = call.Args[argIndex]
+		}
+
+		if (cursorPos >= rangeStart && cursorPos < rangeEnd) || (arg != nil && cursorPos >= arg.Pos() && cursorPos < arg.End()) {
+			highlightRange(result, rangeStart, rangeEnd, protocol.Write)
+			if arg != nil {
+				succeededArg = argIndex
+				highlightRange(result, arg.Pos(), arg.End(), protocol.Read)
+			}
+		}
+	}
+
+	for _, operation := range operations {
+		// If width or prec has any *, we can not highlight the full range from % to verb,
+		// because it will overlap with the sub-range of *, for example:
+		//
+		// fmt.Printf("%*[3]d", 4, 5, 6)
+		//               ^  ^ we can only highlight this range when cursor in 6. '*' as a one-rune range will
+		//               highlight for 4.
+		anyAsterisk := false
+
+		width, prec, verb := operation.Width, operation.Prec, operation.Verb
+		// Try highlight Width if there is a *.
+		if width.Dynamic != -1 {
+			anyAsterisk = true
+			highlightPair(token.Pos(width.Range.Start), token.Pos(width.Range.End), width.Dynamic)
+		}
+
+		// Try highlight Precision if there is a *.
+		if prec.Dynamic != -1 {
+			anyAsterisk = true
+			highlightPair(token.Pos(prec.Range.Start), token.Pos(prec.Range.End), prec.Dynamic)
+		}
+
+		// Try highlight Verb.
+		if verb.Verb != '%' {
+			// If any * is found inside operation, narrow the highlight range.
+			if anyAsterisk {
+				highlightPair(token.Pos(verb.Range.Start), token.Pos(verb.Range.End), verb.ArgIndex)
+			} else {
+				highlightPair(token.Pos(operation.Range.Start), token.Pos(operation.Range.End), verb.ArgIndex)
+			}
+		}
+	}
+
+	// Second pass, try to highlight those missed operations.
+	for rang, argIndex := range visited {
+		if succeededArg == argIndex {
+			highlightRange(result, rang.start, rang.end, protocol.Write)
+		}
+	}
 }
 
 type posRange struct {
