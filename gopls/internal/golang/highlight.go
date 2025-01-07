@@ -10,14 +10,12 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/fmtstr"
 )
 
 func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.DocumentHighlight, error) {
@@ -51,7 +49,7 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, po
 			}
 		}
 	}
-	result, err := highlightPath(pkg.TypesInfo(), path, pos)
+	result, err := highlightPath(path, pgf.File, pkg.TypesInfo())
 	if err != nil {
 		return nil, err
 	}
@@ -71,24 +69,8 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, po
 
 // highlightPath returns ranges to highlight for the given enclosing path,
 // which should be the result of astutil.PathEnclosingInterval.
-func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[posRange]protocol.DocumentHighlightKind, error) {
+func highlightPath(path []ast.Node, file *ast.File, info *types.Info) (map[posRange]protocol.DocumentHighlightKind, error) {
 	result := make(map[posRange]protocol.DocumentHighlightKind)
-
-	// Inside a printf-style call, printf("...%v...", arg)?
-	// Treat each corresponding ("%v", arg) pair as a highlight class.
-	for _, node := range path {
-		if call, ok := node.(*ast.CallExpr); ok {
-			idx := fmtstr.FormatStringIndex(info, call)
-			if idx >= 0 && idx < len(call.Args) {
-				// We only care string literal, so fmt.Sprint("a"+"b%s", "bar") won't highlight.
-				if lit, ok := call.Args[idx].(*ast.BasicLit); ok && strings.Contains(lit.Value, "%") {
-					highlightPrintf(info, call, call.Args[idx].Pos(), pos, lit.Value, result)
-				}
-			}
-		}
-	}
-
-	file := path[len(path)-1].(*ast.File)
 	switch node := path[0].(type) {
 	case *ast.BasicLit:
 		// Import path string literal?
@@ -147,73 +129,6 @@ func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[posRan
 	}
 
 	return result, nil
-}
-
-// highlightPrintf highlights directives in a format string and their corresponding
-// variadic arguments in a printf-style function call.
-// For example:
-//
-// fmt.Printf("Hello %s, you scored %d", name, score)
-//
-// If the cursor is on %s or name, highlightPrintf will highlight %s as a write operation,
-// and name as a read operation.
-func highlightPrintf(info *types.Info, call *ast.CallExpr, formatPos token.Pos, cursorPos token.Pos, format string, result map[posRange]protocol.DocumentHighlightKind) {
-	directives, err := fmtstr.ParsePrintf(info, call, format)
-	if err != nil {
-		return
-	}
-
-	// highlightPair highlights the directive and its potential argument pair if the cursor is within either range.
-	highlightPair := func(start, end token.Pos, argIndex int) {
-		var (
-			rangeStart = formatPos + token.Pos(start)
-			rangeEnd   = formatPos + token.Pos(end)
-			arg        ast.Expr // may not exist
-		)
-		if len(call.Args) > argIndex {
-			arg = call.Args[argIndex]
-		}
-
-		if (cursorPos >= rangeStart && cursorPos < rangeEnd) || (arg != nil && cursorPos >= arg.Pos() && cursorPos < arg.End()) {
-			highlightRange(result, rangeStart, rangeEnd, protocol.Write)
-			if arg != nil {
-				highlightRange(result, arg.Pos(), arg.End(), protocol.Read)
-			}
-		}
-	}
-
-	for _, directive := range directives {
-		// If width or prec has any *, we can not highlight the full range from % to verb,
-		// because it will overlap with the sub-range of *, for example:
-		//
-		// fmt.Printf("%*[3]d", 4, 5, 6)
-		//               ^  ^ we can only highlight this range when cursor in 6. '*' as a one-rune range will
-		//               highlight for 4.
-		anyAsterisk := false
-
-		width, prec, verb := directive.Width, directive.Prec, directive.Verb
-		// Try highlight Width if there is a *.
-		if width != nil && width.ArgIndex != -1 {
-			anyAsterisk = true
-			highlightPair(token.Pos(width.Range.Start), token.Pos(width.Range.End), width.ArgIndex)
-		}
-
-		// Try highlight Precision if there is a *.
-		if prec != nil && prec.ArgIndex != -1 {
-			anyAsterisk = true
-			highlightPair(token.Pos(prec.Range.Start), token.Pos(prec.Range.End), prec.ArgIndex)
-		}
-
-		// Try highlight Verb.
-		if verb.Verb != '%' {
-			// If any * is found inside directive, narrow the highlight range.
-			if anyAsterisk {
-				highlightPair(token.Pos(verb.Range.Start), token.Pos(verb.Range.End), verb.ArgIndex)
-			} else {
-				highlightPair(token.Pos(directive.Range.Start), token.Pos(directive.Range.End), verb.ArgIndex)
-			}
-		}
-	}
 }
 
 type posRange struct {

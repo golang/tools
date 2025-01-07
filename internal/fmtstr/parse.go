@@ -2,30 +2,31 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Package fmtstr defines a parser for format strings as used by [fmt.Printf].
+
 package fmtstr
 
 import (
 	"fmt"
-	"go/ast"
-	"go/types"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
-// FormatDirective holds the parsed representation of a printf directive such as "%3.*[4]d".
-// It is constructed by [ParsePrintf].
-type FormatDirective struct {
-	Format string         // Full directive, e.g. "%[2]*.3d"
-	Range  posRange       // The range of Format within the overall format string
-	Flags  []byte         // Formatting flags, e.g. ['-', '0']
-	Width  *DirectiveSize // Width specifier, if any (e.g., '3' in '%3d')
-	Prec   *DirectiveSize // Precision specifier, if any (e.g., '.4' in '%.4f')
-	Verb   DirectiveVerb  // Verb specifier, guaranteed to exist (e.g., '[1]d' in '%[1]d')
+// Operation holds the parsed representation of a printf operation such as "%3.*[4]d".
+// It is constructed by [Parse].
+type Operation struct {
+	Text  string // Full text of the operation, e.g. "%[2]*.3d"
+	Verb  Verb   // Verb specifier, guaranteed to exist, e.g., 'd' in '%[1]d'
+	Range Range  // The range of Text within the overall format string
+	Flags []byte // Formatting flags, e.g. "-0"
+	Width Size   // Width specifier, e.g., '3' in '%3d'
+	Prec  Size   // Precision specifier, e.g., '.4' in '%.4f'
+}
 
-	// Parsing state (not used after parsing):
-	firstArg     int // Index of the first argument after the format string
-	call         *ast.CallExpr
+type state struct {
+	operation    *Operation
+	firstArg     int  // Index of the first argument after the format string
 	argNum       int  // Which argument we're expecting to format now.
 	hasIndex     bool // Whether the argument is indexed.
 	index        int  // The encountered index
@@ -34,97 +35,99 @@ type FormatDirective struct {
 	nbytes       int  // number of bytes of the format string consumed.
 }
 
-type SizeKind int
+// Size describes a width or precision in a format operation.
+// It may represent a literal number, a asterisk, or an indexed asterisk.
+//
+// Zero value of Size means non-exsistence.
+type Size struct {
+	// At most one of these two fields is non-zero.
+	Fixed   int // e.g. 4 from "%4d"
+	Dynamic int // index of argument providing dynamic size (e.g. %*d or %[3]*d)
 
-const (
-	Literal         SizeKind = iota // A literal number, e.g. "4" in "%4d"
-	Asterisk                        // A dynamic size from an argument, e.g. "%*d"
-	IndexedAsterisk                 // A dynamic size with an explicit index, e.g. "%[2]*d"
-)
-
-// DirectiveSize describes a width or precision in a format directive.
-// Depending on Kind, it may represent a literal number, a asterisk, or an indexed asterisk.
-type DirectiveSize struct {
-	Kind     SizeKind // Type of size specifier
-	Range    posRange // Position of the size specifier within the directive
-	Size     int      // The literal size if Kind == Literal, otherwise -1
-	Index    int      // If Kind == IndexedAsterisk, the argument index used to obtain the size, otherwise -1
-	ArgIndex int      // The argument index if Kind == Asterisk or IndexedAsterisk relative to CallExpr, otherwise -1
+	Index int   // If the width or precision uses an indexed argument (e.g. 2 in %[2]d), this is the index.
+	Range Range // Position of the size specifier within the operation
 }
 
-// DirectiveVerb represents the verb character of a format directive (e.g., 'd', 's', 'f').
+func (s Size) IsZero() bool {
+	return s.Fixed == 0 && s.Dynamic == 0
+}
+
+// Verb represents the verb character of a format operation (e.g., 'd', 's', 'f').
 // It also includes positional information and any explicit argument indexing.
-type DirectiveVerb struct {
+type Verb struct {
 	Verb     rune
-	Range    posRange // The positional range of the verb in the format string
-	Index    int      // If the verb uses an indexed argument, this is the index, otherwise -1
-	ArgIndex int      // The argument index associated with this verb, relative to CallExpr, otherwise -1
+	Range    Range // The positional range of the verb in the format string
+	Index    int   // If the verb uses an indexed argument, this is the index, otherwise -1
+	ArgIndex int   // The argument index associated with this verb, relative to CallExpr, otherwise -1
 }
 
-type posRange struct {
+// byte offsets of format string
+type Range struct {
 	Start, End int
 }
 
-// ParsePrintf takes a printf-like call expression,
-// extracts the format string, and parses out all format directives.
-// It returns a slice of parsed [FormatDirective] which describes
-// flags, width, precision, verb, and argument indexing, or an error
-// if parsing fails. It does not perform any validation of flags, verbs, nor the
-// existence of corresponding arguments.
-// The provided format may differ from the one in CallExpr, such as a concatenated string or a string
+// Parse takes a format string and its index in the printf-like call,
+// parses out all format operations. it returns a slice of parsed
+// [Operation] which describes flags, width, precision, verb, and argument indexing,
+// or an error if parsing fails.
+//
+// All error messages are in predicate form ("call has a problem")
+// so that they may be affixed into a subject ("log.Printf ").
+// See https://go-review.googlesource.com/c/tools/+/632598/comment/9d980373_e6460abf/
+//
+// It does not perform any validation of flags, verbs, nor the
+// existence of corresponding arguments. The provided format string may differ
+// from the one in CallExpr, such as a concatenated string or a string
 // referred to by the argument in CallExpr.
-func ParsePrintf(info *types.Info, call *ast.CallExpr, format string) ([]*FormatDirective, error) {
-	idx := FormatStringIndex(info, call)
-	if idx < 0 || idx >= len(call.Args) {
-		return nil, fmt.Errorf("not a valid printf-like call")
-	}
+func Parse(format string, idx int) ([]*Operation, error) {
 	if !strings.Contains(format, "%") {
 		return nil, fmt.Errorf("call has arguments but no formatting directives")
 	}
 
 	firstArg := idx + 1 // Arguments are immediately after format string.
 	argNum := firstArg
-	var states []*FormatDirective
+	var operations []*Operation
 	for i, w := 0, 0; i < len(format); i += w {
 		w = 1
 		if format[i] != '%' {
 			continue
 		}
-		state, err := parsePrintfVerb(call, format[i:], firstArg, argNum)
+		state, err := parseOperation(format[i:], firstArg, argNum)
 		if err != nil {
 			return nil, err
 		}
 
-		state.addOffset(i)
-		states = append(states, state)
+		state.operation.addOffset(i)
+		operations = append(operations, state.operation)
 
-		w = len(state.Format)
+		w = len(state.operation.Text)
 		// Do not waste an argument for '%'.
-		if state.Verb.Verb != '%' {
+		if state.operation.Verb.Verb != '%' {
 			argNum = state.argNum + 1
 		}
 	}
-	return states, nil
+	return operations, nil
 }
 
-// parsePrintfVerb parses one format directive starting at the given substring `format`,
-// which should begin with '%'. It returns a fully populated FormatDirective or an error
-// if the directive is malformed. The firstArg and argNum parameters help determine how
-// arguments map to this directive.
+// parseOperation parses one format operation starting at the given substring `format`,
+// which should begin with '%'. It returns a fully populated state or an error
+// if the operation is malformed. The firstArg and argNum parameters help determine how
+// arguments map to this operation.
 //
 // Parse sequence: '%' -> flags -> {[N]* or width} -> .{[N]* or precision} -> [N] -> verb.
-func parsePrintfVerb(call *ast.CallExpr, format string, firstArg, argNum int) (*FormatDirective, error) {
-	state := &FormatDirective{
-		Format:       format,
-		Flags:        make([]byte, 0, 5),
+func parseOperation(format string, firstArg, argNum int) (*state, error) {
+	state := &state{
+		operation: &Operation{
+			Text:  format,
+			Flags: make([]byte, 0, 5),
+		},
 		firstArg:     firstArg,
-		call:         call,
 		argNum:       argNum,
 		hasIndex:     false,
 		index:        0,
 		indexPos:     0,
 		indexPending: false,
-		nbytes:       1, // There's guaranteed to be a percent sign.
+		nbytes:       len("%"), // There's guaranteed to be a percent sign.
 	}
 	// There may be flags.
 	state.parseFlags()
@@ -144,16 +147,16 @@ func parsePrintfVerb(call *ast.CallExpr, format string, firstArg, argNum int) (*
 			return nil, err
 		}
 	}
-	if state.nbytes == len(state.Format) {
-		return nil, fmt.Errorf("format %s is missing verb at end of string", state.Format)
+	if state.nbytes == len(state.operation.Text) {
+		return nil, fmt.Errorf("format %s is missing verb at end of string", state.operation.Text)
 	}
-	verb, w := utf8.DecodeRuneInString(state.Format[state.nbytes:])
+	verb, w := utf8.DecodeRuneInString(state.operation.Text[state.nbytes:])
 
 	// Ensure there must be a verb.
 	if state.indexPending {
-		state.Verb = DirectiveVerb{
+		state.operation.Verb = Verb{
 			Verb: verb,
-			Range: posRange{
+			Range: Range{
 				Start: state.indexPos,
 				End:   state.nbytes + w,
 			},
@@ -161,9 +164,9 @@ func parsePrintfVerb(call *ast.CallExpr, format string, firstArg, argNum int) (*
 			ArgIndex: state.argNum,
 		}
 	} else {
-		state.Verb = DirectiveVerb{
+		state.operation.Verb = Verb{
 			Verb: verb,
-			Range: posRange{
+			Range: Range{
 				Start: state.nbytes,
 				End:   state.nbytes + w,
 			},
@@ -173,59 +176,34 @@ func parsePrintfVerb(call *ast.CallExpr, format string, firstArg, argNum int) (*
 	}
 
 	state.nbytes += w
-	state.Format = state.Format[:state.nbytes]
+	state.operation.Text = state.operation.Text[:state.nbytes]
 	return state, nil
 }
 
-// FormatStringIndex returns the index of the format string (the last
-// non-variadic parameter) within the given printf-like call
-// expression, or -1 if unknown.
-func FormatStringIndex(info *types.Info, call *ast.CallExpr) int {
-	typ := info.Types[call.Fun].Type
-	if typ == nil {
-		return -1 // missing type
-	}
-	sig, ok := typ.(*types.Signature)
-	if !ok {
-		return -1 // ill-typed
-	}
-	if !sig.Variadic() {
-		// Skip checking non-variadic functions.
-		return -1
-	}
-	idx := sig.Params().Len() - 2
-	if idx < 0 {
-		// Skip checking variadic functions without
-		// fixed arguments.
-		return -1
-	}
-	return idx
-}
-
 // addOffset adjusts the recorded positions in Verb, Width, Prec, and the
-// directive's overall Range to be relative to the position in the full format string.
-func (s *FormatDirective) addOffset(parsedLen int) {
+// operation's overall Range to be relative to the position in the full format string.
+func (s *Operation) addOffset(parsedLen int) {
 	s.Verb.Range.Start += parsedLen
 	s.Verb.Range.End += parsedLen
 
 	s.Range.Start = parsedLen
 	s.Range.End = s.Verb.Range.End
-	if s.Prec != nil {
+	if !s.Prec.IsZero() {
 		s.Prec.Range.Start += parsedLen
 		s.Prec.Range.End += parsedLen
 	}
-	if s.Width != nil {
+	if !s.Width.IsZero() {
 		s.Width.Range.Start += parsedLen
 		s.Width.Range.End += parsedLen
 	}
 }
 
 // parseFlags accepts any printf flags.
-func (s *FormatDirective) parseFlags() {
-	for s.nbytes < len(s.Format) {
-		switch c := s.Format[s.nbytes]; c {
+func (s *state) parseFlags() {
+	for s.nbytes < len(s.operation.Text) {
+		switch c := s.operation.Text[s.nbytes]; c {
 		case '#', '0', '+', '-', ' ':
-			s.Flags = append(s.Flags, c)
+			s.operation.Flags = append(s.operation.Flags, c)
 			s.nbytes++
 		default:
 			return
@@ -236,8 +214,8 @@ func (s *FormatDirective) parseFlags() {
 // parseIndex parses an argument index of the form "[n]" that can appear
 // in a printf directive (e.g., "%[2]d"). Returns an error if syntax is
 // malformed or index is invalid.
-func (s *FormatDirective) parseIndex() error {
-	if s.nbytes == len(s.Format) || s.Format[s.nbytes] != '[' {
+func (s *state) parseIndex() error {
+	if s.nbytes == len(s.operation.Text) || s.operation.Text[s.nbytes] != '[' {
 		return nil
 	}
 	// Argument index present.
@@ -250,17 +228,17 @@ func (s *FormatDirective) parseIndex() error {
 	}
 
 	ok := true
-	if s.nbytes == len(s.Format) || s.nbytes == start || s.Format[s.nbytes] != ']' {
+	if s.nbytes == len(s.operation.Text) || s.nbytes == start || s.operation.Text[s.nbytes] != ']' {
 		ok = false // syntax error is either missing "]" or invalid index.
-		s.nbytes = strings.Index(s.Format[start:], "]")
+		s.nbytes = strings.Index(s.operation.Text[start:], "]")
 		if s.nbytes < 0 {
-			return fmt.Errorf("format %s is missing closing ]", s.Format)
+			return fmt.Errorf("format %s is missing closing ]", s.operation.Text)
 		}
 		s.nbytes = s.nbytes + start
 	}
-	arg32, err := strconv.ParseInt(s.Format[start:s.nbytes], 10, 32)
-	if err != nil || !ok || arg32 <= 0 || arg32 > int64(len(s.call.Args)-s.firstArg) {
-		return fmt.Errorf("format has invalid argument index [%s]", s.Format[start:s.nbytes])
+	arg32, err := strconv.ParseInt(s.operation.Text[start:s.nbytes], 10, 32)
+	if err != nil || !ok || arg32 <= 0 {
+		return fmt.Errorf("format has invalid argument index [%s]", s.operation.Text[start:s.nbytes])
 	}
 
 	s.nbytes++ // skip ']'
@@ -273,13 +251,13 @@ func (s *FormatDirective) parseIndex() error {
 }
 
 // scanNum advances through a decimal number if present, which represents a [Size] or [Index].
-func (s *FormatDirective) scanNum() (int, bool) {
+func (s *state) scanNum() (int, bool) {
 	start := s.nbytes
-	for ; s.nbytes < len(s.Format); s.nbytes++ {
-		c := s.Format[s.nbytes]
+	for ; s.nbytes < len(s.operation.Text); s.nbytes++ {
+		c := s.operation.Text[s.nbytes]
 		if c < '0' || '9' < c {
 			if start < s.nbytes {
-				num, _ := strconv.ParseInt(s.Format[start:s.nbytes], 10, 32)
+				num, _ := strconv.ParseInt(s.operation.Text[start:s.nbytes], 10, 32)
 				return int(num), true
 			} else {
 				return 0, false
@@ -297,54 +275,47 @@ const (
 )
 
 // parseSize parses a width or precision specifier. It handles literal numeric
-// values (e.g., "%3d"), asterisk values (e.g., "%*d"), or indexed asterisk
-// values (e.g., "%[2]*d"). The kind parameter specifies whether it's parsing
-// a Width or a Precision.
-func (s *FormatDirective) parseSize(kind sizeType) {
-	if s.nbytes < len(s.Format) && s.Format[s.nbytes] == '*' {
+// values (e.g., "%3d"), asterisk values (e.g., "%*d"), or indexed asterisk values (e.g., "%[2]*d").
+func (s *state) parseSize(kind sizeType) {
+	if s.nbytes < len(s.operation.Text) && s.operation.Text[s.nbytes] == '*' {
 		s.nbytes++
 		if s.indexPending {
 			// Absorb it.
 			s.indexPending = false
-			size := &DirectiveSize{
-				Kind: IndexedAsterisk,
-				Size: -1,
-				Range: posRange{
+			size := Size{
+				Dynamic: s.argNum,
+				Index:   s.index,
+				Range: Range{
 					Start: s.indexPos,
 					End:   s.nbytes,
 				},
-				Index:    s.index,
-				ArgIndex: s.argNum,
 			}
 			switch kind {
 			case Width:
-				s.Width = size
+				s.operation.Width = size
 			case Precision:
 				// Include the leading '.'.
-				size.Range.Start -= 1
-				s.Prec = size
+				size.Range.Start -= len(".")
+				s.operation.Prec = size
 			default:
 				panic(kind)
 			}
 		} else {
 			// Non-indexed asterisk: "%*d".
-			size := &DirectiveSize{
-				Kind: Asterisk,
-				Size: -1,
-				Range: posRange{
+			size := Size{
+				Dynamic: s.argNum,
+				Range: Range{
 					Start: s.nbytes - 1,
 					End:   s.nbytes,
 				},
-				Index:    -1,
-				ArgIndex: s.argNum,
 			}
 			switch kind {
 			case Width:
-				s.Width = size
+				s.operation.Width = size
 			case Precision:
 				// For precision, include the '.' in the range.
 				size.Range.Start -= 1
-				s.Prec = size
+				s.operation.Prec = size
 			default:
 				panic(kind)
 			}
@@ -353,23 +324,20 @@ func (s *FormatDirective) parseSize(kind sizeType) {
 	} else { // Literal number, e.g. "%10d"
 		start := s.nbytes
 		if num, ok := s.scanNum(); ok {
-			size := &DirectiveSize{
-				Kind: Literal,
-				Size: num,
-				Range: posRange{
+			size := Size{
+				Fixed: num,
+				Range: Range{
 					Start: start,
 					End:   s.nbytes,
 				},
-				Index:    -1,
-				ArgIndex: -1,
 			}
 			switch kind {
 			case Width:
-				s.Width = size
+				s.operation.Width = size
 			case Precision:
 				// Include the leading '.'.
 				size.Range.Start -= 1
-				s.Prec = size
+				s.operation.Prec = size
 			default:
 				panic(kind)
 			}
@@ -380,9 +348,9 @@ func (s *FormatDirective) parseSize(kind sizeType) {
 // parsePrecision checks if there's a precision specified after a '.' character.
 // If found, it may also parse an index or an asterisk. Returns an error if any index
 // parsing fails.
-func (s *FormatDirective) parsePrecision() error {
+func (s *state) parsePrecision() error {
 	// If there's a period, there may be a precision.
-	if s.nbytes < len(s.Format) && s.Format[s.nbytes] == '.' {
+	if s.nbytes < len(s.operation.Text) && s.operation.Text[s.nbytes] == '.' {
 		s.nbytes++
 		if err := s.parseIndex(); err != nil {
 			return err

@@ -447,9 +447,34 @@ func isFormatter(typ types.Type) bool {
 		types.Identical(sig.Params().At(1).Type(), types.Typ[types.Rune])
 }
 
+// FormatStringIndex returns the index of the format string (the last
+// non-variadic parameter) within the given printf-like call
+// expression, or -1 if unknown.
+func FormatStringIndex(info *types.Info, call *ast.CallExpr) int {
+	typ := info.Types[call.Fun].Type
+	if typ == nil {
+		return -1 // missing type
+	}
+	sig, ok := typ.(*types.Signature)
+	if !ok {
+		return -1 // ill-typed
+	}
+	if !sig.Variadic() {
+		// Skip checking non-variadic functions.
+		return -1
+	}
+	idx := sig.Params().Len() - 2
+	if idx < 0 {
+		// Skip checking variadic functions without
+		// fixed arguments.
+		return -1
+	}
+	return idx
+}
+
 // checkPrintf checks a call to a formatted print routine such as Printf.
 func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string) {
-	idx := fmtstr.FormatStringIndex(pass.TypesInfo, call)
+	idx := FormatStringIndex(pass.TypesInfo, call)
 	if idx < 0 || idx >= len(call.Args) {
 		return
 	}
@@ -492,9 +517,9 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string
 	// Pass the string constant value so
 	// fmt.Sprintf("%"+("s"), "hi", 3) can be reported as
 	// "fmt.Sprintf call needs 1 arg but has 2 args".
-	directives, err := fmtstr.ParsePrintf(pass.TypesInfo, call, format)
+	directives, err := fmtstr.Parse(format, idx)
 	if err != nil {
-		pass.ReportRangef(call.Fun, "%s %s", name, err.Error())
+		pass.ReportRangef(call.Args[idx], "%s %s", name, err)
 		return
 	}
 
@@ -502,9 +527,9 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string
 	anyIndex := false
 	// Check formats against args.
 	for _, directive := range directives {
-		if (directive.Prec != nil && directive.Prec.Index != -1) ||
-			(directive.Width != nil && directive.Width.Index != -1) ||
-			(directive.Verb.Index != -1) {
+		if (directive.Prec.Index > 0) ||
+			(directive.Width.Index > 0) ||
+			(directive.Verb.Index > 0) {
 			anyIndex = true
 		}
 		if !okPrintfArg(pass, call, &maxArgIndex, firstArg, name, directive) { // One error per format is enough.
@@ -597,7 +622,7 @@ var printVerbs = []printVerb{
 // okPrintfArg compares the FormatDirective to the arguments actually present,
 // reporting any discrepancies it can discern. If the final argument is ellipsissed,
 // there's little it can do for that.
-func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firstArg int, name string, directive *fmtstr.FormatDirective) (ok bool) {
+func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firstArg int, name string, directive *fmtstr.Operation) (ok bool) {
 	verb := directive.Verb.Verb
 	var v printVerb
 	found := false
@@ -620,7 +645,7 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 
 	if !formatter {
 		if !found {
-			pass.ReportRangef(call, "%s format %s has unknown verb %c", name, directive.Format, verb)
+			pass.ReportRangef(call, "%s format %s has unknown verb %c", name, directive.Text, verb)
 			return false
 		}
 		for _, flag := range directive.Flags {
@@ -630,7 +655,7 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 				continue
 			}
 			if !strings.ContainsRune(v.flags, rune(flag)) {
-				pass.ReportRangef(call, "%s format %s has unrecognized flag %c", name, directive.Format, flag)
+				pass.ReportRangef(call, "%s format %s has unrecognized flag %c", name, directive.Text, flag)
 				return false
 			}
 		}
@@ -638,11 +663,11 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 
 	var argIndexes []int
 	// First check for *.
-	if directive.Width != nil && directive.Width.ArgIndex != -1 {
-		argIndexes = append(argIndexes, directive.Width.ArgIndex)
+	if directive.Width.Dynamic > 0 {
+		argIndexes = append(argIndexes, directive.Width.Dynamic)
 	}
-	if directive.Prec != nil && directive.Prec.ArgIndex != -1 {
-		argIndexes = append(argIndexes, directive.Prec.ArgIndex)
+	if directive.Prec.Dynamic > 0 {
+		argIndexes = append(argIndexes, directive.Prec.Dynamic)
 	}
 	// If len(argIndexes)>0, we have something like %.*s and all
 	// indexes in argIndexes must be an integer.
@@ -657,7 +682,7 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 			if reason != "" {
 				details = " (" + reason + ")"
 			}
-			pass.ReportRangef(call, "%s format %s uses non-int %s%s as argument of *", name, directive.Format, analysisutil.Format(pass.Fset, arg), details)
+			pass.ReportRangef(call, "%s format %s uses non-int %s%s as argument of *", name, directive.Text, analysisutil.Format(pass.Fset, arg), details)
 			return false
 		}
 	}
@@ -686,7 +711,7 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 	}
 	arg := call.Args[verbArgIndex]
 	if isFunctionValue(pass, arg) && verb != 'p' && verb != 'T' {
-		pass.ReportRangef(call, "%s format %s arg %s is a func value, not called", name, directive.Format, analysisutil.Format(pass.Fset, arg))
+		pass.ReportRangef(call, "%s format %s arg %s is a func value, not called", name, directive.Text, analysisutil.Format(pass.Fset, arg))
 		return false
 	}
 	if reason, ok := matchArgType(pass, v.typ, arg); !ok {
@@ -698,12 +723,12 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 		if reason != "" {
 			details = " (" + reason + ")"
 		}
-		pass.ReportRangef(call, "%s format %s has arg %s of wrong type %s%s", name, directive.Format, analysisutil.Format(pass.Fset, arg), typeString, details)
+		pass.ReportRangef(call, "%s format %s has arg %s of wrong type %s%s", name, directive.Text, analysisutil.Format(pass.Fset, arg), typeString, details)
 		return false
 	}
 	if v.typ&argString != 0 && v.verb != 'T' && !bytes.Contains(directive.Flags, []byte{'#'}) {
 		if methodName, ok := recursiveStringer(pass, arg); ok {
-			pass.ReportRangef(call, "%s format %s with arg %s causes recursive %s method call", name, directive.Format, analysisutil.Format(pass.Fset, arg), methodName)
+			pass.ReportRangef(call, "%s format %s with arg %s causes recursive %s method call", name, directive.Text, analysisutil.Format(pass.Fset, arg), methodName)
 			return false
 		}
 	}
@@ -787,7 +812,7 @@ func isFunctionValue(pass *analysis.Pass, e ast.Expr) bool {
 // argCanBeChecked reports whether the specified argument is statically present;
 // it may be beyond the list of arguments or in a terminal slice... argument, which
 // means we can't see it.
-func argCanBeChecked(pass *analysis.Pass, call *ast.CallExpr, argIndex, firstArg int, directive *fmtstr.FormatDirective, name string) bool {
+func argCanBeChecked(pass *analysis.Pass, call *ast.CallExpr, argIndex, firstArg int, directive *fmtstr.Operation, name string) bool {
 	if argIndex <= 0 {
 		// Shouldn't happen, so catch it with prejudice.
 		panic("negative argIndex")
@@ -804,7 +829,7 @@ func argCanBeChecked(pass *analysis.Pass, call *ast.CallExpr, argIndex, firstArg
 	// There are bad indexes in the format or there are fewer arguments than the format needs.
 	// This is the argument number relative to the format: Printf("%s", "hi") will give 1 for the "hi".
 	arg := argIndex - firstArg + 1 // People think of arguments as 1-indexed.
-	pass.ReportRangef(call, "%s format %s reads arg #%d, but call has %v", name, directive.Format, arg, count(len(call.Args)-firstArg, "arg"))
+	pass.ReportRangef(call, "%s format %s reads arg #%d, but call has %v", name, directive.Text, arg, count(len(call.Args)-firstArg, "arg"))
 	return false
 }
 
