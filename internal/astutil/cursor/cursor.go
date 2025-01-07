@@ -197,6 +197,8 @@ func (c Cursor) Parent() Cursor {
 // the last node in the list, or is not part of a list.
 //
 // NextSibling must not be called on the Root node.
+//
+// See note at [Cursor.Children].
 func (c Cursor) NextSibling() (Cursor, bool) {
 	if c.index < 0 {
 		panic("Cursor.NextSibling called on Root node")
@@ -218,6 +220,8 @@ func (c Cursor) NextSibling() (Cursor, bool) {
 // the first node in the list, or is not part of a list.
 //
 // It must not be called on the Root node.
+//
+// See note at [Cursor.Children].
 func (c Cursor) PrevSibling() (Cursor, bool) {
 	if c.index < 0 {
 		panic("Cursor.PrevSibling called on Root node")
@@ -266,6 +270,26 @@ func (c Cursor) LastChild() (Cursor, bool) {
 
 // Children returns an iterator over the direct children of the
 // current node, if any.
+//
+// When using Children, NextChild, and PrevChild, bear in mind that a
+// Node's children may come from different fields, some of which may
+// be lists of nodes without a distinguished intervening container
+// such as [ast.BlockStmt].
+//
+// For example, [ast.CaseClause] has a field List of expressions and a
+// field Body of statements, so the children of a CaseClause are a mix
+// of expressions and statements. Other nodes that have "uncontained"
+// list fields include:
+//
+// - [ast.ValueSpec] (Names, Values)
+// - [ast.CompositeLit] (Type, Elts)
+// - [ast.IndexListExpr] (X, Indices)
+// - [ast.CallExpr] (Fun, Args)
+// - [ast.AssignStmt] (Lhs, Rhs)
+//
+// So, do not assume that the previous sibling of an ast.Stmt is also
+// an ast.Stmt unless you have established that, say, its parent is a
+// BlockStmt.
 func (c Cursor) Children() iter.Seq[Cursor] {
 	return func(yield func(Cursor) bool) {
 		c, ok := c.FirstChild()
