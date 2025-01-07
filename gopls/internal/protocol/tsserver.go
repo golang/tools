@@ -80,7 +80,7 @@ type Server interface {
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_documentLink
 	DocumentLink(context.Context, *DocumentLinkParams) ([]DocumentLink, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_documentSymbol
-	DocumentSymbol(context.Context, *DocumentSymbolParams) ([]interface{}, error)
+	DocumentSymbol(context.Context, *DocumentSymbolParams) ([]any, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_foldingRange
 	FoldingRange(context.Context, *FoldingRangeParams) ([]FoldingRange, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_formatting
@@ -120,7 +120,7 @@ type Server interface {
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_semanticTokens_full
 	SemanticTokensFull(context.Context, *SemanticTokensParams) (*SemanticTokens, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_semanticTokens_full_delta
-	SemanticTokensFullDelta(context.Context, *SemanticTokensDeltaParams) (interface{}, error)
+	SemanticTokensFullDelta(context.Context, *SemanticTokensDeltaParams) (any, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_semanticTokens_range
 	SemanticTokensRange(context.Context, *SemanticTokensRangeParams) (*SemanticTokens, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_signatureHelp
@@ -152,7 +152,7 @@ type Server interface {
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_didRenameFiles
 	DidRenameFiles(context.Context, *RenameFilesParams) error
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_executeCommand
-	ExecuteCommand(context.Context, *ExecuteCommandParams) (interface{}, error)
+	ExecuteCommand(context.Context, *ExecuteCommandParams) (any, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_symbol
 	Symbol(context.Context, *WorkspaceSymbolParams) ([]SymbolInformation, error)
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workspace_textDocumentContent
@@ -1083,8 +1083,8 @@ func (s *serverDispatcher) DocumentLink(ctx context.Context, params *DocumentLin
 	}
 	return result, nil
 }
-func (s *serverDispatcher) DocumentSymbol(ctx context.Context, params *DocumentSymbolParams) ([]interface{}, error) {
-	var result []interface{}
+func (s *serverDispatcher) DocumentSymbol(ctx context.Context, params *DocumentSymbolParams) ([]any, error) {
+	var result []any
 	if err := s.sender.Call(ctx, "textDocument/documentSymbol", params, &result); err != nil {
 		return nil, err
 	}
@@ -1223,8 +1223,8 @@ func (s *serverDispatcher) SemanticTokensFull(ctx context.Context, params *Seman
 	}
 	return result, nil
 }
-func (s *serverDispatcher) SemanticTokensFullDelta(ctx context.Context, params *SemanticTokensDeltaParams) (interface{}, error) {
-	var result interface{}
+func (s *serverDispatcher) SemanticTokensFullDelta(ctx context.Context, params *SemanticTokensDeltaParams) (any, error) {
+	var result any
 	if err := s.sender.Call(ctx, "textDocument/semanticTokens/full/delta", params, &result); err != nil {
 		return nil, err
 	}
@@ -1303,8 +1303,8 @@ func (s *serverDispatcher) DidDeleteFiles(ctx context.Context, params *DeleteFil
 func (s *serverDispatcher) DidRenameFiles(ctx context.Context, params *RenameFilesParams) error {
 	return s.sender.Notify(ctx, "workspace/didRenameFiles", params)
 }
-func (s *serverDispatcher) ExecuteCommand(ctx context.Context, params *ExecuteCommandParams) (interface{}, error) {
-	var result interface{}
+func (s *serverDispatcher) ExecuteCommand(ctx context.Context, params *ExecuteCommandParams) (any, error) {
+	var result any
 	if err := s.sender.Call(ctx, "workspace/executeCommand", params, &result); err != nil {
 		return nil, err
 	}

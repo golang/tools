@@ -33,8 +33,8 @@ type ClientCloser interface {
 type connSender interface {
 	io.Closer
 
-	Notify(ctx context.Context, method string, params interface{}) error
-	Call(ctx context.Context, method string, params, result interface{}) error
+	Notify(ctx context.Context, method string, params any) error
+	Call(ctx context.Context, method string, params, result any) error
 }
 
 type clientDispatcher struct {
@@ -59,11 +59,11 @@ func (c clientConn) Close() error {
 	return c.conn.Close()
 }
 
-func (c clientConn) Notify(ctx context.Context, method string, params interface{}) error {
+func (c clientConn) Notify(ctx context.Context, method string, params any) error {
 	return c.conn.Notify(ctx, method, params)
 }
 
-func (c clientConn) Call(ctx context.Context, method string, params interface{}, result interface{}) error {
+func (c clientConn) Call(ctx context.Context, method string, params any, result any) error {
 	id, err := c.conn.Call(ctx, method, params, result)
 	if ctx.Err() != nil {
 		cancelCall(ctx, c, id)
@@ -83,11 +83,11 @@ func (c clientConnV2) Close() error {
 	return c.conn.Close()
 }
 
-func (c clientConnV2) Notify(ctx context.Context, method string, params interface{}) error {
+func (c clientConnV2) Notify(ctx context.Context, method string, params any) error {
 	return c.conn.Notify(ctx, method, params)
 }
 
-func (c clientConnV2) Call(ctx context.Context, method string, params interface{}, result interface{}) error {
+func (c clientConnV2) Call(ctx context.Context, method string, params any, result any) error {
 	call := c.conn.Call(ctx, method, params)
 	err := call.Await(ctx, result)
 	if ctx.Err() != nil {
@@ -126,16 +126,16 @@ func ClientHandler(client Client, handler jsonrpc2.Handler) jsonrpc2.Handler {
 }
 
 func ClientHandlerV2(client Client) jsonrpc2_v2.Handler {
-	return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+	return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 		if ctx.Err() != nil {
 			return nil, RequestCancelledErrorV2
 		}
 		req1 := req2to1(req)
 		var (
-			result interface{}
+			result any
 			resErr error
 		)
-		replier := func(_ context.Context, res interface{}, err error) error {
+		replier := func(_ context.Context, res any, err error) error {
 			if err != nil {
 				resErr = err
 				return nil
@@ -166,16 +166,16 @@ func ServerHandler(server Server, handler jsonrpc2.Handler) jsonrpc2.Handler {
 }
 
 func ServerHandlerV2(server Server) jsonrpc2_v2.Handler {
-	return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+	return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 		if ctx.Err() != nil {
 			return nil, RequestCancelledErrorV2
 		}
 		req1 := req2to1(req)
 		var (
-			result interface{}
+			result any
 			resErr error
 		)
-		replier := func(_ context.Context, res interface{}, err error) error {
+		replier := func(_ context.Context, res any, err error) error {
 			if err != nil {
 				resErr = err
 				return nil
@@ -232,7 +232,7 @@ func CancelHandler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 			// be careful about racing between the two paths.
 			// TODO(iancottrell): Add a test that watches the stream and verifies the response
 			// for the cancelled request flows.
-			replyWithDetachedContext := func(ctx context.Context, resp interface{}, err error) error {
+			replyWithDetachedContext := func(ctx context.Context, resp any, err error) error {
 				// https://microsoft.github.io/language-server-protocol/specifications/specification-current/#cancelRequest
 				if ctx.Err() != nil && err == nil {
 					err = RequestCancelledError
@@ -257,7 +257,7 @@ func CancelHandler(handler jsonrpc2.Handler) jsonrpc2.Handler {
 	}
 }
 
-func Call(ctx context.Context, conn jsonrpc2.Conn, method string, params interface{}, result interface{}) error {
+func Call(ctx context.Context, conn jsonrpc2.Conn, method string, params any, result any) error {
 	id, err := conn.Call(ctx, method, params, result)
 	if ctx.Err() != nil {
 		cancelCall(ctx, clientConn{conn}, id)

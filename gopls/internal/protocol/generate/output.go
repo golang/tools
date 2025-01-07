@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -219,8 +220,8 @@ func genStructs(model *Model) {
 		fmt.Fprintf(out, "//\n")
 		out.WriteString(lspLink(model, camelCase(s.Name)))
 		fmt.Fprintf(out, "type %s struct {%s\n", nm, linex(s.Line))
-		// for gpls compatibilitye, embed most extensions, but expand the rest some day
-		props := append([]NameType{}, s.Properties...)
+		// for gopls compatibility, embed most extensions, but expand the rest some day
+		props := slices.Clone(s.Properties)
 		if s.Name == "SymbolInformation" { // but expand this one
 			for _, ex := range s.Extends {
 				fmt.Fprintf(out, "\t// extends %s\n", ex.Name)
@@ -242,7 +243,7 @@ func genStructs(model *Model) {
 
 	// base types
 	// (For URI and DocumentURI, see ../uri.go.)
-	types["LSPAny"] = "type LSPAny = interface{}\n"
+	types["LSPAny"] = "type LSPAny = any\n"
 	// A special case, the only previously existing Or type
 	types["DocumentDiagnosticReport"] = "type DocumentDiagnosticReport = Or_DocumentDiagnosticReport // (alias) \n"
 
@@ -318,7 +319,7 @@ func genGenTypes() {
 			sort.Strings(names)
 			fmt.Fprintf(out, "// created for Or %v\n", names)
 			fmt.Fprintf(out, "type %s struct {%s\n", nm, linex(nt.line+1))
-			fmt.Fprintf(out, "\tValue interface{} `json:\"value\"`\n")
+			fmt.Fprintf(out, "\tValue any `json:\"value\"`\n")
 		case "and":
 			fmt.Fprintf(out, "// created for And\n")
 			fmt.Fprintf(out, "type %s struct {%s\n", nm, linex(nt.line+1))

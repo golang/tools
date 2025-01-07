@@ -135,7 +135,7 @@ type CallHierarchyItem struct {
 	SelectionRange Range `json:"selectionRange"`
 	// A data entry field that is preserved between a call hierarchy prepare and
 	// incoming calls or outgoing calls requests.
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 // Call hierarchy options used during static registration.
@@ -196,7 +196,7 @@ type CallHierarchyRegistrationOptions struct {
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#cancelParams
 type CancelParams struct {
 	// The request id to cancel.
-	ID interface{} `json:"id"`
+	ID any `json:"id"`
 }
 
 // Additional information that describes document changes.
@@ -249,7 +249,7 @@ type ClientCapabilities struct {
 	// @since 3.16.0
 	General *GeneralClientCapabilities `json:"general,omitempty"`
 	// Experimental client capabilities.
-	Experimental interface{} `json:"experimental,omitempty"`
+	Experimental any `json:"experimental,omitempty"`
 }
 
 // @since 3.18.0
@@ -758,7 +758,7 @@ type CodeLens struct {
 	Command *Command `json:"command,omitempty"`
 	// A data entry field that is preserved on a code lens item between
 	// a {@link CodeLensRequest} and a {@link CodeLensResolveRequest}
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 // The client capabilities  of a {@link CodeLensRequest}.
@@ -1047,7 +1047,7 @@ type CompletionItem struct {
 	Command *Command `json:"command,omitempty"`
 	// A data entry field that is preserved on a completion item between a
 	// {@link CompletionRequest} and a {@link CompletionResolveRequest}.
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 // In many cases the items of an actual completion result share the same
@@ -1085,7 +1085,7 @@ type CompletionItemDefaults struct {
 	// A default data value.
 	//
 	// @since 3.17.0
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 // The kind of a completion entry.
@@ -1413,7 +1413,7 @@ type Diagnostic struct {
 	// always provide a severity value.
 	Severity DiagnosticSeverity `json:"severity,omitempty"`
 	// The diagnostic's code, which usually appear in the user interface.
-	Code interface{} `json:"code,omitempty"`
+	Code any `json:"code,omitempty"`
 	// An optional property to describe the error code.
 	// Requires the code field (above) to be present/not null.
 	//
@@ -1563,7 +1563,7 @@ type DidChangeConfigurationClientCapabilities struct {
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didChangeConfigurationParams
 type DidChangeConfigurationParams struct {
 	// The actual changed settings
-	Settings interface{} `json:"settings"`
+	Settings any `json:"settings"`
 }
 
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#didChangeConfigurationRegistrationOptions
@@ -1789,7 +1789,7 @@ type DocumentDiagnosticReportKind string
 //
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#documentDiagnosticReportPartialResult
 type DocumentDiagnosticReportPartialResult struct {
-	RelatedDocuments map[DocumentURI]interface{} `json:"relatedDocuments"`
+	RelatedDocuments map[DocumentURI]any `json:"relatedDocuments"`
 }
 
 // A document filter describes a top level text document or
@@ -1899,7 +1899,7 @@ type DocumentLink struct {
 	Tooltip string `json:"tooltip,omitempty"`
 	// A data entry field that is preserved on a document link between a
 	// DocumentLinkRequest and a DocumentLinkResolveRequest.
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 // The client capabilities of a {@link DocumentLinkRequest}.
@@ -2702,7 +2702,7 @@ type InlayHint struct {
 	PaddingRight bool `json:"paddingRight,omitempty"`
 	// A data entry field that is preserved on an inlay hint between
 	// a `textDocument/inlayHint` and a `inlayHint/resolve` request.
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 // Inlay hint client capabilities.
@@ -3053,13 +3053,13 @@ type InsertTextFormat uint32
 //
 // @since 3.16.0
 type InsertTextMode uint32
-type LSPAny = interface{}
+type LSPAny = any
 
 // LSP arrays.
 // @since 3.17.0
 //
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#lSPArray
-type LSPArray = []interface{} // (alias)
+type LSPArray = []any // (alias)
 type LSPErrorCodes int32
 
 // LSP object definition.
@@ -3623,337 +3623,337 @@ type OptionalVersionedTextDocumentIdentifier struct {
 
 // created for Or [Location LocationUriOnly]
 type OrPLocation_workspace_symbol struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [[]string string]
 type OrPSection_workspace_didChangeConfiguration struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [MarkupContent string]
 type OrPTooltipPLabel struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [MarkupContent string]
 type OrPTooltip_textDocument_inlayHint struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [int32 string]
 type Or_CancelParams_id struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [ClientSemanticTokensRequestFullDelta bool]
 type Or_ClientSemanticTokensRequestOptions_full struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [Lit_ClientSemanticTokensRequestOptions_range_Item1 bool]
 type Or_ClientSemanticTokensRequestOptions_range struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [EditRangeWithInsertReplace Range]
 type Or_CompletionItemDefaults_editRange struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [MarkupContent string]
 type Or_CompletionItem_documentation struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [InsertReplaceEdit TextEdit]
 type Or_CompletionItem_textEdit struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [Location []Location]
 type Or_Definition struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [int32 string]
 type Or_Diagnostic_code struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [RelatedFullDocumentDiagnosticReport RelatedUnchangedDocumentDiagnosticReport]
 type Or_DocumentDiagnosticReport struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [FullDocumentDiagnosticReport UnchangedDocumentDiagnosticReport]
 type Or_DocumentDiagnosticReportPartialResult_relatedDocuments_Value struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [NotebookCellTextDocumentFilter TextDocumentFilter]
 type Or_DocumentFilter struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [Pattern RelativePattern]
 type Or_GlobPattern struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [MarkedString MarkupContent []MarkedString]
 type Or_Hover_contents struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [[]InlayHintLabelPart string]
 type Or_InlayHint_label struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [StringValue string]
 type Or_InlineCompletionItem_insertText struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [InlineValueEvaluatableExpression InlineValueText InlineValueVariableLookup]
 type Or_InlineValue struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [MarkedStringWithLanguage string]
 type Or_MarkedString struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [NotebookDocumentFilter string]
 type Or_NotebookCellTextDocumentFilter_notebook struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [NotebookDocumentFilterNotebookType NotebookDocumentFilterPattern NotebookDocumentFilterScheme]
 type Or_NotebookDocumentFilter struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [NotebookDocumentFilter string]
 type Or_NotebookDocumentFilterWithCells_notebook struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [NotebookDocumentFilter string]
 type Or_NotebookDocumentFilterWithNotebook_notebook struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [NotebookDocumentFilterWithCells NotebookDocumentFilterWithNotebook]
 type Or_NotebookDocumentSyncOptions_notebookSelector_Elem struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [FullDocumentDiagnosticReport UnchangedDocumentDiagnosticReport]
 type Or_RelatedFullDocumentDiagnosticReport_relatedDocuments_Value struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [FullDocumentDiagnosticReport UnchangedDocumentDiagnosticReport]
 type Or_RelatedUnchangedDocumentDiagnosticReport_relatedDocuments_Value struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [CodeAction Command]
 type Or_Result_textDocument_codeAction_Item0_Elem struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [InlineCompletionList []InlineCompletionItem]
 type Or_Result_textDocument_inlineCompletion struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [SemanticTokensFullDelta bool]
 type Or_SemanticTokensOptions_full struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [PRangeESemanticTokensOptions bool]
 type Or_SemanticTokensOptions_range struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [CallHierarchyOptions CallHierarchyRegistrationOptions bool]
 type Or_ServerCapabilities_callHierarchyProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [CodeActionOptions bool]
 type Or_ServerCapabilities_codeActionProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [DocumentColorOptions DocumentColorRegistrationOptions bool]
 type Or_ServerCapabilities_colorProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [DeclarationOptions DeclarationRegistrationOptions bool]
 type Or_ServerCapabilities_declarationProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [DefinitionOptions bool]
 type Or_ServerCapabilities_definitionProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [DiagnosticOptions DiagnosticRegistrationOptions]
 type Or_ServerCapabilities_diagnosticProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [DocumentFormattingOptions bool]
 type Or_ServerCapabilities_documentFormattingProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [DocumentHighlightOptions bool]
 type Or_ServerCapabilities_documentHighlightProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [DocumentRangeFormattingOptions bool]
 type Or_ServerCapabilities_documentRangeFormattingProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [DocumentSymbolOptions bool]
 type Or_ServerCapabilities_documentSymbolProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [FoldingRangeOptions FoldingRangeRegistrationOptions bool]
 type Or_ServerCapabilities_foldingRangeProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [HoverOptions bool]
 type Or_ServerCapabilities_hoverProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [ImplementationOptions ImplementationRegistrationOptions bool]
 type Or_ServerCapabilities_implementationProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [InlayHintOptions InlayHintRegistrationOptions bool]
 type Or_ServerCapabilities_inlayHintProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [InlineCompletionOptions bool]
 type Or_ServerCapabilities_inlineCompletionProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [InlineValueOptions InlineValueRegistrationOptions bool]
 type Or_ServerCapabilities_inlineValueProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [LinkedEditingRangeOptions LinkedEditingRangeRegistrationOptions bool]
 type Or_ServerCapabilities_linkedEditingRangeProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [MonikerOptions MonikerRegistrationOptions bool]
 type Or_ServerCapabilities_monikerProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [NotebookDocumentSyncOptions NotebookDocumentSyncRegistrationOptions]
 type Or_ServerCapabilities_notebookDocumentSync struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [ReferenceOptions bool]
 type Or_ServerCapabilities_referencesProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [RenameOptions bool]
 type Or_ServerCapabilities_renameProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [SelectionRangeOptions SelectionRangeRegistrationOptions bool]
 type Or_ServerCapabilities_selectionRangeProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [SemanticTokensOptions SemanticTokensRegistrationOptions]
 type Or_ServerCapabilities_semanticTokensProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [TextDocumentSyncKind TextDocumentSyncOptions]
 type Or_ServerCapabilities_textDocumentSync struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [TypeDefinitionOptions TypeDefinitionRegistrationOptions bool]
 type Or_ServerCapabilities_typeDefinitionProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [TypeHierarchyOptions TypeHierarchyRegistrationOptions bool]
 type Or_ServerCapabilities_typeHierarchyProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [WorkspaceSymbolOptions bool]
 type Or_ServerCapabilities_workspaceSymbolProvider struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [MarkupContent string]
 type Or_SignatureInformation_documentation struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [AnnotatedTextEdit SnippetTextEdit TextEdit]
 type Or_TextDocumentEdit_edits_Elem struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [TextDocumentFilterLanguage TextDocumentFilterPattern TextDocumentFilterScheme]
 type Or_TextDocumentFilter struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [SaveOptions bool]
 type Or_TextDocumentSyncOptions_save struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [WorkspaceFullDocumentDiagnosticReport WorkspaceUnchangedDocumentDiagnosticReport]
 type Or_WorkspaceDocumentDiagnosticReport struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [CreateFile DeleteFile RenameFile TextDocumentEdit]
 type Or_WorkspaceEdit_documentChanges_Elem struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [TextDocumentContentOptions TextDocumentContentRegistrationOptions]
 type Or_WorkspaceOptions_textDocumentContent struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Or [Declaration []DeclarationLink]
 type Or_textDocument_declaration struct {
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // created for Literal (Lit_SemanticTokensOptions_range_Item1)
@@ -4122,11 +4122,11 @@ type ProgressParams struct {
 	// The progress token provided by the client or server.
 	Token ProgressToken `json:"token"`
 	// The progress data.
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#progressToken
-type ProgressToken = interface{} // (alias)
+type ProgressToken = any // (alias)
 // The publish diagnostic client capabilities.
 //
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#publishDiagnosticsClientCapabilities
@@ -4227,7 +4227,7 @@ type Registration struct {
 	// The method / capability to register for.
 	Method string `json:"method"`
 	// Options necessary for the registration.
-	RegisterOptions interface{} `json:"registerOptions,omitempty"`
+	RegisterOptions any `json:"registerOptions,omitempty"`
 }
 
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#registrationParams
@@ -4262,7 +4262,7 @@ type RelatedFullDocumentDiagnosticReport struct {
 	// a.cpp and result in errors in a header file b.hpp.
 	//
 	// @since 3.17.0
-	RelatedDocuments map[DocumentURI]interface{} `json:"relatedDocuments,omitempty"`
+	RelatedDocuments map[DocumentURI]any `json:"relatedDocuments,omitempty"`
 	FullDocumentDiagnosticReport
 }
 
@@ -4279,7 +4279,7 @@ type RelatedUnchangedDocumentDiagnosticReport struct {
 	// a.cpp and result in errors in a header file b.hpp.
 	//
 	// @since 3.17.0
-	RelatedDocuments map[DocumentURI]interface{} `json:"relatedDocuments,omitempty"`
+	RelatedDocuments map[DocumentURI]any `json:"relatedDocuments,omitempty"`
 	UnchangedDocumentDiagnosticReport
 }
 
@@ -4691,7 +4691,7 @@ type ServerCapabilities struct {
 	// Defines how text documents are synced. Is either a detailed structure
 	// defining each notification or for backwards compatibility the
 	// TextDocumentSyncKind number.
-	TextDocumentSync interface{} `json:"textDocumentSync,omitempty"`
+	TextDocumentSync any `json:"textDocumentSync,omitempty"`
 	// Defines how notebook documents are synced.
 	//
 	// @since 3.17.0
@@ -4719,7 +4719,7 @@ type ServerCapabilities struct {
 	// The server provides code actions. CodeActionOptions may only be
 	// specified if the client states that it supports
 	// `codeActionLiteralSupport` in its initial `initialize` request.
-	CodeActionProvider interface{} `json:"codeActionProvider,omitempty"`
+	CodeActionProvider any `json:"codeActionProvider,omitempty"`
 	// The server provides code lens.
 	CodeLensProvider *CodeLensOptions `json:"codeLensProvider,omitempty"`
 	// The server provides document link support.
@@ -4737,7 +4737,7 @@ type ServerCapabilities struct {
 	// The server provides rename support. RenameOptions may only be
 	// specified if the client states that it supports
 	// `prepareSupport` in its initial `initialize` request.
-	RenameProvider interface{} `json:"renameProvider,omitempty"`
+	RenameProvider any `json:"renameProvider,omitempty"`
 	// The server provides folding provider support.
 	FoldingRangeProvider *Or_ServerCapabilities_foldingRangeProvider `json:"foldingRangeProvider,omitempty"`
 	// The server provides selection range support.
@@ -4755,7 +4755,7 @@ type ServerCapabilities struct {
 	// The server provides semantic tokens support.
 	//
 	// @since 3.16.0
-	SemanticTokensProvider interface{} `json:"semanticTokensProvider,omitempty"`
+	SemanticTokensProvider any `json:"semanticTokensProvider,omitempty"`
 	// The server provides moniker support.
 	//
 	// @since 3.16.0
@@ -4771,7 +4771,7 @@ type ServerCapabilities struct {
 	// The server provides inlay hints.
 	//
 	// @since 3.17.0
-	InlayHintProvider interface{} `json:"inlayHintProvider,omitempty"`
+	InlayHintProvider any `json:"inlayHintProvider,omitempty"`
 	// The server has support for pull model diagnostics.
 	//
 	// @since 3.17.0
@@ -4784,7 +4784,7 @@ type ServerCapabilities struct {
 	// Workspace specific server capabilities.
 	Workspace *WorkspaceOptions `json:"workspace,omitempty"`
 	// Experimental server capabilities.
-	Experimental interface{} `json:"experimental,omitempty"`
+	Experimental any `json:"experimental,omitempty"`
 }
 
 // @since 3.18.0
@@ -5590,7 +5590,7 @@ type TypeHierarchyItem struct {
 	// supertypes or subtypes requests. It could also be used to identify the
 	// type hierarchy in the server, helping improve the performance on
 	// resolving supertypes and subtypes.
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 }
 
 // Type hierarchy options used during static registration.
@@ -6132,7 +6132,7 @@ type WorkspaceSymbol struct {
 	Location OrPLocation_workspace_symbol `json:"location"`
 	// A data entry field that is preserved on a workspace symbol between a
 	// workspace symbol request and a workspace symbol resolve request.
-	Data interface{} `json:"data,omitempty"`
+	Data any `json:"data,omitempty"`
 	BaseSymbolInformation
 }
 
@@ -6244,7 +6244,7 @@ type XInitializeParams struct {
 	// The capabilities provided by the client (editor or tool)
 	Capabilities ClientCapabilities `json:"capabilities"`
 	// User provided initialization options.
-	InitializationOptions interface{} `json:"initializationOptions,omitempty"`
+	InitializationOptions any `json:"initializationOptions,omitempty"`
 	// The initial trace setting. If omitted trace is disabled ('off').
 	Trace *TraceValue `json:"trace,omitempty"`
 	WorkDoneProgressParams
@@ -6287,7 +6287,7 @@ type _InitializeParams struct {
 	// The capabilities provided by the client (editor or tool)
 	Capabilities ClientCapabilities `json:"capabilities"`
 	// User provided initialization options.
-	InitializationOptions interface{} `json:"initializationOptions,omitempty"`
+	InitializationOptions any `json:"initializationOptions,omitempty"`
 	// The initial trace setting. If omitted trace is disabled ('off').
 	Trace *TraceValue `json:"trace,omitempty"`
 	WorkDoneProgressParams

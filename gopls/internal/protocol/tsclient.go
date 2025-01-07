@@ -26,7 +26,7 @@ type Client interface {
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#client_unregisterCapability
 	UnregisterCapability(context.Context, *UnregistrationParams) error
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#telemetry_event
-	Event(context.Context, *interface{}) error
+	Event(context.Context, *any) error
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#textDocument_publishDiagnostics
 	PublishDiagnostics(context.Context, *PublishDiagnosticsParams) error
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#window_logMessage
@@ -97,7 +97,7 @@ func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, 
 		return true, reply(ctx, nil, err)
 
 	case "telemetry/event":
-		var params interface{}
+		var params any
 		if err := UnmarshalJSON(r.Params(), &params); err != nil {
 			return true, sendParseError(ctx, reply, err)
 		}
@@ -236,7 +236,7 @@ func (s *clientDispatcher) RegisterCapability(ctx context.Context, params *Regis
 func (s *clientDispatcher) UnregisterCapability(ctx context.Context, params *UnregistrationParams) error {
 	return s.sender.Call(ctx, "client/unregisterCapability", params, nil)
 }
-func (s *clientDispatcher) Event(ctx context.Context, params *interface{}) error {
+func (s *clientDispatcher) Event(ctx context.Context, params *any) error {
 	return s.sender.Notify(ctx, "telemetry/event", params)
 }
 func (s *clientDispatcher) PublishDiagnostics(ctx context.Context, params *PublishDiagnosticsParams) error {

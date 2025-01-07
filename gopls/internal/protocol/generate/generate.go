@@ -64,7 +64,7 @@ func propStar(name string, t NameType, gotype string) (string, string) {
 		star = "" // passed by reference, so no need for *
 	} else {
 		switch gotype {
-		case "bool", "uint32", "int32", "string", "interface{}":
+		case "bool", "uint32", "int32", "string", "interface{}", "any":
 			star = "" // gopls compatibility if t.Optional
 		}
 	}

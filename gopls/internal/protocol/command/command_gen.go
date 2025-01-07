@@ -113,7 +113,7 @@ var Commands = []Command{
 	WorkspaceStats,
 }
 
-func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (interface{}, error) {
+func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (any, error) {
 	switch Command(params.Command) {
 	case AddDependency:
 		var a0 DependencyArgs

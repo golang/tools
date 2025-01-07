@@ -53,7 +53,7 @@ var Commands = []Command {
 {{- end}}
 }
 
-func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (interface{}, error) {
+func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Interface) (any, error) {
 	switch Command(params.Command) {
 	{{- range .Commands}}
 	case {{.MethodName}}:
