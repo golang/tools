@@ -21,6 +21,7 @@ func Test(t *testing.T) {
 		"minmax",
 		"omitzero",
 		"slicescontains",
+		"slicesdelete",
 		"sortslice",
 		"testingcontext",
 	)

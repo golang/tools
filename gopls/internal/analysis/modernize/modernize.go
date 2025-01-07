@@ -68,6 +68,7 @@ func run(pass *analysis.Pass) (any, error) {
 	minmax(pass)
 	omitzero(pass)
 	slicescontains(pass)
+	slicesdelete(pass)
 	sortslice(pass)
 	testingContext(pass)
 
