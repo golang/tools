@@ -371,6 +371,31 @@ var isPrint = stringSet{
 	"(testing.TB).Skipf":  true,
 }
 
+// formatStringIndex returns the index of the format string (the last
+// non-variadic parameter) within the given printf-like call
+// expression, or -1 if unknown.
+func formatStringIndex(pass *analysis.Pass, call *ast.CallExpr) int {
+	typ := pass.TypesInfo.Types[call.Fun].Type
+	if typ == nil {
+		return -1 // missing type
+	}
+	sig, ok := typ.(*types.Signature)
+	if !ok {
+		return -1 // ill-typed
+	}
+	if !sig.Variadic() {
+		// Skip checking non-variadic functions.
+		return -1
+	}
+	idx := sig.Params().Len() - 2
+	if idx < 0 {
+		// Skip checking variadic functions without
+		// fixed arguments.
+		return -1
+	}
+	return idx
+}
+
 // stringConstantExpr returns expression's string constant value.
 //
 // ("", false) is returned if expression isn't a string
@@ -458,34 +483,9 @@ func isFormatter(typ types.Type) bool {
 		types.Identical(sig.Params().At(1).Type(), types.Typ[types.Rune])
 }
 
-// formatStringIndex returns the index of the format string (the last
-// non-variadic parameter) within the given printf-like call
-// expression, or -1 if unknown.
-func formatStringIndex(info *types.Info, call *ast.CallExpr) int {
-	typ := info.Types[call.Fun].Type
-	if typ == nil {
-		return -1 // missing type
-	}
-	sig, ok := typ.(*types.Signature)
-	if !ok {
-		return -1 // ill-typed
-	}
-	if !sig.Variadic() {
-		// Skip checking non-variadic functions.
-		return -1
-	}
-	idx := sig.Params().Len() - 2
-	if idx < 0 {
-		// Skip checking variadic functions without
-		// fixed arguments.
-		return -1
-	}
-	return idx
-}
-
 // checkPrintf checks a call to a formatted print routine such as Printf.
 func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string) {
-	idx := formatStringIndex(pass.TypesInfo, call)
+	idx := formatStringIndex(pass, call)
 	if idx < 0 || idx >= len(call.Args) {
 		return
 	}
