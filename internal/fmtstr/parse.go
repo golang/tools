@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 // Package fmtstr defines a parser for format strings as used by [fmt.Printf].
-
 package fmtstr
 
 import (
@@ -56,7 +55,6 @@ type Range struct {
 //
 // All error messages are in predicate form ("call has a problem")
 // so that they may be affixed into a subject ("log.Printf ").
-// See https://go-review.googlesource.com/c/tools/+/632598/comment/9d980373_e6460abf/
 //
 // The flags will only be a subset of ['#', '0', '+', '-', ' '].
 // It does not perform any validation of verbs, nor the
@@ -195,11 +193,11 @@ func (s *Operation) addOffset(parsedLen int) {
 	s.Range.End = s.Verb.Range.End
 
 	// one of Fixed or Dynamic is non-negative means existence.
-	if s.Prec.Fixed == -1 && s.Prec.Dynamic == -1 {
+	if s.Prec.Fixed != -1 || s.Prec.Dynamic != -1 {
 		s.Prec.Range.Start += parsedLen
 		s.Prec.Range.End += parsedLen
 	}
-	if s.Width.Fixed == -1 && s.Width.Dynamic == -1 {
+	if s.Width.Fixed != -1 || s.Width.Dynamic != -1 {
 		s.Width.Range.Start += parsedLen
 		s.Width.Range.End += parsedLen
 	}

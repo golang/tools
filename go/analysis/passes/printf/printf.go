@@ -532,7 +532,6 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string
 	if err != nil {
 		// All error messages are in predicate form ("call has a problem")
 		// so that they may be affixed into a subject ("log.Printf ").
-		// See https://go-review.googlesource.com/c/tools/+/632598/comment/9d980373_e6460abf/
 		pass.ReportRangef(call.Args[idx], "%s %s", name, err)
 		return
 	}
@@ -697,7 +696,7 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 			if reason != "" {
 				details = " (" + reason + ")"
 			}
-			pass.ReportRangef(call, "%s format %s uses non-int %s%s as argument of *", name, operation.Text, analysisutil.Format(pass.Fset, arg), details)
+			pass.ReportRangef(call, "%s format %s uses non-int %s%s as argument of *", name, operation.Text, analysisinternal.Format(pass.Fset, arg), details)
 			return false
 		}
 	}
@@ -724,7 +723,7 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 	}
 	arg := call.Args[verbArgIndex]
 	if isFunctionValue(pass, arg) && verb != 'p' && verb != 'T' {
-		pass.ReportRangef(call, "%s format %s arg %s is a func value, not called", name, operation.Text, analysisutil.Format(pass.Fset, arg))
+		pass.ReportRangef(call, "%s format %s arg %s is a func value, not called", name, operation.Text, analysisinternal.Format(pass.Fset, arg))
 		return false
 	}
 	if reason, ok := matchArgType(pass, v.typ, arg); !ok {
@@ -736,12 +735,12 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 		if reason != "" {
 			details = " (" + reason + ")"
 		}
-		pass.ReportRangef(call, "%s format %s has arg %s of wrong type %s%s", name, operation.Text, analysisutil.Format(pass.Fset, arg), typeString, details)
+		pass.ReportRangef(call, "%s format %s has arg %s of wrong type %s%s", name, operation.Text, analysisinternal.Format(pass.Fset, arg), typeString, details)
 		return false
 	}
 	if v.typ&argString != 0 && v.verb != 'T' && !strings.Contains(operation.Flags, "#") {
 		if methodName, ok := recursiveStringer(pass, arg); ok {
-			pass.ReportRangef(call, "%s format %s with arg %s causes recursive %s method call", name, operation.Text, analysisutil.Format(pass.Fset, arg), methodName)
+			pass.ReportRangef(call, "%s format %s with arg %s causes recursive %s method call", name, operation.Text, analysisinternal.Format(pass.Fset, arg), methodName)
 			return false
 		}
 	}
@@ -893,7 +892,7 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, name string) {
 		if sel, ok := call.Args[0].(*ast.SelectorExpr); ok {
 			if x, ok := sel.X.(*ast.Ident); ok {
 				if x.Name == "os" && strings.HasPrefix(sel.Sel.Name, "Std") {
-					pass.ReportRangef(call, "%s does not take io.Writer but has first arg %s", name, analysisutil.Format(pass.Fset, call.Args[0]))
+					pass.ReportRangef(call, "%s does not take io.Writer but has first arg %s", name, analysisinternal.Format(pass.Fset, call.Args[0]))
 				}
 			}
 		}
@@ -922,10 +921,10 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, name string) {
 	}
 	for _, arg := range args {
 		if isFunctionValue(pass, arg) {
-			pass.ReportRangef(call, "%s arg %s is a func value, not called", name, analysisutil.Format(pass.Fset, arg))
+			pass.ReportRangef(call, "%s arg %s is a func value, not called", name, analysisinternal.Format(pass.Fset, arg))
 		}
 		if methodName, ok := recursiveStringer(pass, arg); ok {
-			pass.ReportRangef(call, "%s arg %s causes recursive call to %s method", name, analysisutil.Format(pass.Fset, arg), methodName)
+			pass.ReportRangef(call, "%s arg %s causes recursive call to %s method", name, analysisinternal.Format(pass.Fset, arg), methodName)
 		}
 	}
 }
