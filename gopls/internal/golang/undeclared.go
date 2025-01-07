@@ -68,8 +68,8 @@ func undeclaredFixTitle(path []ast.Node, errMsg string) string {
 	return fmt.Sprintf("Create %s %s", noun, name)
 }
 
-// createUndeclared generates a suggested declaration for an undeclared variable or function.
-func createUndeclared(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
+// CreateUndeclared generates a suggested declaration for an undeclared variable or function.
+func CreateUndeclared(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	pos := start // don't use the end
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if len(path) < 2 {

@@ -16,44 +16,32 @@ import (
 // Operation holds the parsed representation of a printf operation such as "%3.*[4]d".
 // It is constructed by [Parse].
 type Operation struct {
-	Text  string // Full text of the operation, e.g. "%[2]*.3d"
-	Verb  Verb   // Verb specifier, guaranteed to exist, e.g., 'd' in '%[1]d'
-	Range Range  // The range of Text within the overall format string
-	Flags []byte // Formatting flags, e.g. ['-', '0']
-	Width *Size  // Width specifier, e.g., '3' in '%3d'
-	Prec  *Size  // Precision specifier, e.g., '.4' in '%.4f'
+	Text  string // full text of the operation, e.g. "%[2]*.3d"
+	Verb  Verb   // verb specifier, guaranteed to exist, e.g., 'd' in '%[1]d'
+	Range Range  // the range of Text within the overall format string
+	Flags string // formatting flags, e.g. "-0"
+	Width Size   // width specifier, e.g., '3' in '%3d'
+	Prec  Size   // precision specifier, e.g., '.4' in '%.4f'
 }
 
-// Internal parsing state to operation.
-type state struct {
-	operation    *Operation
-	firstArg     int  // Index of the first argument after the format string
-	argNum       int  // Which argument we're expecting to format now.
-	hasIndex     bool // Whether the argument is indexed.
-	index        int  // The encountered index
-	indexPos     int  // The encountered index's offset
-	indexPending bool // Whether we have an indexed argument that has not resolved.
-	nbytes       int  // number of bytes of the format string consumed.
-}
-
-// Size describes a width or precision in a format operation.
-// It may represent a literal number, an asterisk, or an indexed asterisk.
+// Size describes an optional width or precision in a format operation.
+// It may represent no value, a literal number, an asterisk, or an indexed asterisk.
 type Size struct {
 	// At most one of these two fields is non-negative.
-	Fixed   int // e.g. 4 from "%4d", otherwise -1.
-	Dynamic int // index of argument providing dynamic size (e.g. %*d or %[3]*d), otherwise -1.
+	Fixed   int // e.g. 4 from "%4d", otherwise -1
+	Dynamic int // index of argument providing dynamic size (e.g. %*d or %[3]*d), otherwise -1
 
-	Index int   // If the width or precision uses an indexed argument (e.g. 2 in %[2]*d), this is the index, otherwise -1.
-	Range Range // Position of the size specifier within the operation
+	Index int   // If the width or precision uses an indexed argument (e.g. 2 in %[2]*d), this is the index, otherwise -1
+	Range Range // position of the size specifier within the operation
 }
 
 // Verb represents the verb character of a format operation (e.g., 'd', 's', 'f').
 // It also includes positional information and any explicit argument indexing.
 type Verb struct {
 	Verb     rune
-	Range    Range // The positional range of the verb in the format string
-	Index    int   // The index of an indexed argument, (e.g. 2 in %[2]d), otherwise -1.
-	ArgIndex int   // The argument index (0-based) associated with this verb, relative to CallExpr.
+	Range    Range // positional range of the verb in the format string
+	Index    int   // index of an indexed argument, (e.g. 2 in %[2]d), otherwise -1
+	ArgIndex int   // argument index (0-based) associated with this verb, relative to CallExpr
 }
 
 // byte offsets of format string
@@ -105,6 +93,18 @@ func Parse(format string, idx int) ([]*Operation, error) {
 	return operations, nil
 }
 
+// Internal parsing state to operation.
+type state struct {
+	operation    *Operation
+	firstArg     int  // index of the first argument after the format string
+	argNum       int  // which argument we're expecting to format now
+	hasIndex     bool // whether the argument is indexed
+	index        int  // the encountered index
+	indexPos     int  // the encountered index's offset
+	indexPending bool // whether we have an indexed argument that has not resolved
+	nbytes       int  // number of bytes of the format string consumed
+}
+
 // parseOperation parses one format operation starting at the given substring `format`,
 // which should begin with '%'. It returns a fully populated state or an error
 // if the operation is malformed. The firstArg and argNum parameters help determine how
@@ -114,8 +114,17 @@ func Parse(format string, idx int) ([]*Operation, error) {
 func parseOperation(format string, firstArg, argNum int) (*state, error) {
 	state := &state{
 		operation: &Operation{
-			Text:  format,
-			Flags: make([]byte, 0),
+			Text: format,
+			Width: Size{
+				Fixed:   -1,
+				Dynamic: -1,
+				Index:   -1,
+			},
+			Prec: Size{
+				Fixed:   -1,
+				Dynamic: -1,
+				Index:   -1,
+			},
 		},
 		firstArg:     firstArg,
 		argNum:       argNum,
@@ -184,11 +193,13 @@ func (s *Operation) addOffset(parsedLen int) {
 
 	s.Range.Start = parsedLen
 	s.Range.End = s.Verb.Range.End
-	if s.Prec != nil {
+
+	// one of Fixed or Dynamic is non-negative means existence.
+	if s.Prec.Fixed == -1 && s.Prec.Dynamic == -1 {
 		s.Prec.Range.Start += parsedLen
 		s.Prec.Range.End += parsedLen
 	}
-	if s.Width != nil {
+	if s.Width.Fixed == -1 && s.Width.Dynamic == -1 {
 		s.Width.Range.Start += parsedLen
 		s.Width.Range.End += parsedLen
 	}
@@ -196,15 +207,14 @@ func (s *Operation) addOffset(parsedLen int) {
 
 // parseFlags accepts any printf flags.
 func (s *state) parseFlags() {
-	for s.nbytes < len(s.operation.Text) {
-		switch c := s.operation.Text[s.nbytes]; c {
-		case '#', '0', '+', '-', ' ':
-			s.operation.Flags = append(s.operation.Flags, c)
-			s.nbytes++
-		default:
-			return
-		}
-	}
+	s.operation.Flags = prefixOf(s.operation.Text[s.nbytes:], "#0+- ")
+	s.nbytes += len(s.operation.Flags)
+}
+
+// prefixOf returns the prefix of s composed only of runes from the specified set.
+func prefixOf(s, set string) string {
+	rest := strings.TrimLeft(s, set)
+	return s[:len(s)-len(rest)]
 }
 
 // parseIndex parses an argument index of the form "[n]" that can appear
@@ -278,7 +288,7 @@ func (s *state) parseSize(kind sizeType) {
 		if s.indexPending {
 			// Absorb it.
 			s.indexPending = false
-			size := &Size{
+			size := Size{
 				Fixed:   -1,
 				Dynamic: s.argNum,
 				Index:   s.index,
@@ -299,7 +309,7 @@ func (s *state) parseSize(kind sizeType) {
 			}
 		} else {
 			// Non-indexed asterisk: "%*d".
-			size := &Size{
+			size := Size{
 				Dynamic: s.argNum,
 				Index:   -1,
 				Fixed:   -1,
@@ -323,7 +333,7 @@ func (s *state) parseSize(kind sizeType) {
 	} else { // Literal number, e.g. "%10d"
 		start := s.nbytes
 		if num, ok := s.scanNum(); ok {
-			size := &Size{
+			size := Size{
 				Fixed:   num,
 				Index:   -1,
 				Dynamic: -1,

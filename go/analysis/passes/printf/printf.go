@@ -5,7 +5,6 @@
 package printf
 
 import (
-	"bytes"
 	_ "embed"
 	"fmt"
 	"go/ast"
@@ -372,6 +371,18 @@ var isPrint = stringSet{
 	"(testing.TB).Skipf":  true,
 }
 
+// stringConstantExpr returns expression's string constant value.
+//
+// ("", false) is returned if expression isn't a string
+// constant.
+func stringConstantExpr(pass *analysis.Pass, expr ast.Expr) (string, bool) {
+	lit := pass.TypesInfo.Types[expr].Value
+	if lit != nil && lit.Kind() == constant.String {
+		return constant.StringVal(lit), true
+	}
+	return "", false
+}
+
 // checkCall triggers the print-specific checks if the call invokes a print function.
 func checkCall(pass *analysis.Pass) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -447,10 +458,10 @@ func isFormatter(typ types.Type) bool {
 		types.Identical(sig.Params().At(1).Type(), types.Typ[types.Rune])
 }
 
-// FormatStringIndex returns the index of the format string (the last
+// formatStringIndex returns the index of the format string (the last
 // non-variadic parameter) within the given printf-like call
 // expression, or -1 if unknown.
-func FormatStringIndex(info *types.Info, call *ast.CallExpr) int {
+func formatStringIndex(info *types.Info, call *ast.CallExpr) int {
 	typ := info.Types[call.Fun].Type
 	if typ == nil {
 		return -1 // missing type
@@ -474,12 +485,12 @@ func FormatStringIndex(info *types.Info, call *ast.CallExpr) int {
 
 // checkPrintf checks a call to a formatted print routine such as Printf.
 func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string) {
-	idx := FormatStringIndex(pass.TypesInfo, call)
+	idx := formatStringIndex(pass.TypesInfo, call)
 	if idx < 0 || idx >= len(call.Args) {
 		return
 	}
 	formatArg := call.Args[idx]
-	format, ok := stringConstantExpr(pass.TypesInfo, formatArg)
+	format, ok := stringConstantExpr(pass, formatArg)
 	if !ok {
 		// Format string argument is non-constant.
 
@@ -519,20 +530,25 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string
 	// "fmt.Sprintf call needs 1 arg but has 2 args".
 	operations, err := fmtstr.Parse(format, idx)
 	if err != nil {
+		// All error messages are in predicate form ("call has a problem")
+		// so that they may be affixed into a subject ("log.Printf ").
+		// See https://go-review.googlesource.com/c/tools/+/632598/comment/9d980373_e6460abf/
 		pass.ReportRangef(call.Args[idx], "%s %s", name, err)
 		return
 	}
 
-	maxArgIndex := firstArg
+	// index of the highest used index.
+	maxArgIndex := firstArg - 1
 	anyIndex := false
 	// Check formats against args.
 	for _, operation := range operations {
-		if operation.Prec != nil && operation.Prec.Index != -1 ||
-			operation.Width != nil && operation.Width.Index != -1 ||
+		if operation.Prec.Index != -1 ||
+			operation.Width.Index != -1 ||
 			operation.Verb.Index != -1 {
 			anyIndex = true
 		}
-		if !okPrintfArg(pass, call, &maxArgIndex, firstArg, name, operation) { // One error per format is enough.
+		if !okPrintfArg(pass, call, &maxArgIndex, firstArg, name, operation) {
+			// One error per format is enough.
 			return
 		}
 		if operation.Verb.Verb == 'w' {
@@ -544,7 +560,7 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string
 		}
 	}
 	// Dotdotdot is hard.
-	if call.Ellipsis.IsValid() && maxArgIndex >= len(call.Args)-1 {
+	if call.Ellipsis.IsValid() && maxArgIndex >= len(call.Args)-2 {
 		return
 	}
 	// If any formats are indexed, extra arguments are ignored.
@@ -552,8 +568,8 @@ func checkPrintf(pass *analysis.Pass, kind Kind, call *ast.CallExpr, name string
 		return
 	}
 	// There should be no leftover arguments.
-	if maxArgIndex != len(call.Args) {
-		expect := maxArgIndex - firstArg
+	if maxArgIndex+1 < len(call.Args) {
+		expect := maxArgIndex + 1 - firstArg
 		numArgs := len(call.Args) - firstArg
 		pass.ReportRangef(call, "%s call needs %v but has %v", name, count(expect, "arg"), count(numArgs, "arg"))
 	}
@@ -620,8 +636,8 @@ var printVerbs = []printVerb{
 }
 
 // okPrintfArg compares the operation to the arguments actually present,
-// reporting any discrepancies it can discern. If the final argument is ellipsissed,
-// there's little it can do for that.
+// reporting any discrepancies it can discern, maxArgIndex was the index of the highest used index.
+// If the final argument is ellipsissed, there's little it can do for that.
 func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firstArg int, name string, operation *fmtstr.Operation) (ok bool) {
 	verb := operation.Verb.Verb
 	var v printVerb
@@ -663,16 +679,15 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 
 	var argIndexes []int
 	// First check for *.
-	if operation.Width != nil && operation.Width.Dynamic != -1 {
+	if operation.Width.Dynamic != -1 {
 		argIndexes = append(argIndexes, operation.Width.Dynamic)
 	}
-	if operation.Prec != nil && operation.Prec.Dynamic > 0 {
+	if operation.Prec.Dynamic != -1 {
 		argIndexes = append(argIndexes, operation.Prec.Dynamic)
 	}
 	// If len(argIndexes)>0, we have something like %.*s and all
 	// indexes in argIndexes must be an integer.
-	for i := 0; i < len(argIndexes); i++ {
-		argIndex := argIndexes[i]
+	for _, argIndex := range argIndexes {
 		if !argCanBeChecked(pass, call, argIndex, firstArg, operation, name) {
 			return
 		}
@@ -692,9 +707,7 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 		argIndexes = append(argIndexes, operation.Verb.ArgIndex)
 	}
 	for _, index := range argIndexes {
-		if index >= *maxArgIndex {
-			*maxArgIndex = index + 1
-		}
+		*maxArgIndex = max(*maxArgIndex, index)
 	}
 
 	// Special case for '%', go will print "fmt.Printf("%10.2%%dhello", 4)"
@@ -726,7 +739,7 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 		pass.ReportRangef(call, "%s format %s has arg %s of wrong type %s%s", name, operation.Text, analysisutil.Format(pass.Fset, arg), typeString, details)
 		return false
 	}
-	if v.typ&argString != 0 && v.verb != 'T' && !bytes.Contains(operation.Flags, []byte{'#'}) {
+	if v.typ&argString != 0 && v.verb != 'T' && !strings.Contains(operation.Flags, "#") {
 		if methodName, ok := recursiveStringer(pass, arg); ok {
 			pass.ReportRangef(call, "%s format %s with arg %s causes recursive %s method call", name, operation.Text, analysisutil.Format(pass.Fset, arg), methodName)
 			return false
@@ -887,7 +900,7 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, name string) {
 	}
 
 	arg := args[0]
-	if s, ok := stringConstantExpr(pass.TypesInfo, arg); ok {
+	if s, ok := stringConstantExpr(pass, arg); ok {
 		// Ignore trailing % character
 		// The % in "abc 0.0%" couldn't be a formatting directive.
 		s = strings.TrimSuffix(s, "%")
@@ -901,7 +914,7 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, name string) {
 	if strings.HasSuffix(name, "ln") {
 		// The last item, if a string, should not have a newline.
 		arg = args[len(args)-1]
-		if s, ok := stringConstantExpr(pass.TypesInfo, arg); ok {
+		if s, ok := stringConstantExpr(pass, arg); ok {
 			if strings.HasSuffix(s, "\n") {
 				pass.ReportRangef(call, "%s arg list ends with redundant newline", name)
 			}
@@ -915,17 +928,6 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, name string) {
 			pass.ReportRangef(call, "%s arg %s causes recursive call to %s method", name, analysisutil.Format(pass.Fset, arg), methodName)
 		}
 	}
-}
-
-// StringConstantExpr returns expression's string constant value.
-//
-// ("", false) is returned if expression isn't a string constant.
-func stringConstantExpr(info *types.Info, expr ast.Expr) (string, bool) {
-	lit := info.Types[expr].Value
-	if lit != nil && lit.Kind() == constant.String {
-		return constant.StringVal(lit), true
-	}
-	return "", false
 }
 
 // count(n, what) returns "1 what" or "N whats"
