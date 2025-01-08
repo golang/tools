@@ -94,6 +94,8 @@ var (
 
 	daysFlag = flag.Int("days", 7, "number of previous days of telemetry data to read")
 
+	dryRun = flag.Bool("n", false, "dry run, avoid updating issues")
+
 	authToken string // mandatory GitHub authentication token (for R/W issues access)
 )
 
@@ -559,6 +561,12 @@ func updateIssues(issues []*Issue, stacks map[string]map[Info]int64, stackToURL 
 			newStackIDs = append(newStackIDs, id)
 			writeStackComment(comment, stack, id, stackToURL[stack], stacks[stack])
 		}
+
+		if *dryRun {
+			log.Printf("DRY RUN: would add stacks %s to issue #%d", newStackIDs, issue.Number)
+			continue
+		}
+
 		if err := addIssueComment(issue.Number, comment.String()); err != nil {
 			log.Println(err)
 			continue
