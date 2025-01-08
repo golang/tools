@@ -52,6 +52,7 @@ import (
 	"go/format"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -2323,7 +2324,7 @@ func wrstate(i int) {
 	var pp, qq int
 
 	if len(errors) > 0 {
-		actions := append([]int(nil), temp1...)
+		actions := slices.Clone(temp1)
 		defaultAction := ERRCODE
 		if lastred != 0 {
 			defaultAction = -lastred
@@ -3176,7 +3177,7 @@ func create(s string) *bufio.Writer {
 }
 
 // write out error comment
-func lerrorf(lineno int, s string, v ...interface{}) {
+func lerrorf(lineno int, s string, v ...any) {
 	nerrors++
 	fmt.Fprintf(stderr, s, v...)
 	fmt.Fprintf(stderr, ": %v:%v\n", infile, lineno)
@@ -3186,7 +3187,7 @@ func lerrorf(lineno int, s string, v ...interface{}) {
 	}
 }
 
-func errorf(s string, v ...interface{}) {
+func errorf(s string, v ...any) {
 	lerrorf(lineno, s, v...)
 }
 

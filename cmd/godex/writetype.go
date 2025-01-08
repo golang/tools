@@ -111,7 +111,7 @@ func (p *printer) writeTypeInternal(this *types.Package, typ types.Type, visited
 		//
 		n := t.NumMethods()
 		if n == 0 {
-			p.print("interface{}")
+			p.print("any")
 			return
 		}
 

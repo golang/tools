@@ -13,7 +13,7 @@ import (
 type fileTest struct {
 	file        string
 	hdr         FileHeader
-	loads       []interface{}
+	loads       []any
 	sections    []*SectionHeader
 	relocations map[string][]Reloc
 }
@@ -22,7 +22,7 @@ var fileTests = []fileTest{
 	{
 		"testdata/gcc-386-darwin-exec",
 		FileHeader{0xfeedface, Cpu386, 0x3, 0x2, 0xc, 0x3c0, 0x85},
-		[]interface{}{
+		[]any{
 			&SegmentHeader{LcSegment, 0x38, "__PAGEZERO", 0x0, 0x1000, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0},
 			&SegmentHeader{LcSegment, 0xc0, "__TEXT", 0x1000, 0x1000, 0x0, 0x1000, 0x7, 0x5, 0x2, 0x0, 0},
 			&SegmentHeader{LcSegment, 0xc0, "__DATA", 0x2000, 0x1000, 0x1000, 0x1000, 0x7, 0x3, 0x2, 0x0, 2},
@@ -48,7 +48,7 @@ var fileTests = []fileTest{
 	{
 		"testdata/gcc-amd64-darwin-exec",
 		FileHeader{0xfeedfacf, CpuAmd64, 0x80000003, 0x2, 0xb, 0x568, 0x85},
-		[]interface{}{
+		[]any{
 			&SegmentHeader{LcSegment64, 0x48, "__PAGEZERO", 0x0, 0x100000000, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0},
 			&SegmentHeader{LcSegment64, 0x1d8, "__TEXT", 0x100000000, 0x1000, 0x0, 0x1000, 0x7, 0x5, 0x5, 0x0, 0},
 			&SegmentHeader{LcSegment64, 0x138, "__DATA", 0x100001000, 0x1000, 0x1000, 0x1000, 0x7, 0x3, 0x3, 0x0, 5},
@@ -76,7 +76,7 @@ var fileTests = []fileTest{
 	{
 		"testdata/gcc-amd64-darwin-exec-debug",
 		FileHeader{0xfeedfacf, CpuAmd64, 0x80000003, 0xa, 0x4, 0x5a0, 0},
-		[]interface{}{
+		[]any{
 			nil, // LC_UUID
 			&SegmentHeader{LcSegment64, 0x1d8, "__TEXT", 0x100000000, 0x1000, 0x0, 0x0, 0x7, 0x5, 0x5, 0x0, 0},
 			&SegmentHeader{LcSegment64, 0x138, "__DATA", 0x100001000, 0x1000, 0x0, 0x0, 0x7, 0x3, 0x3, 0x0, 5},
@@ -104,7 +104,7 @@ var fileTests = []fileTest{
 	{
 		"testdata/clang-386-darwin-exec-with-rpath",
 		FileHeader{0xfeedface, Cpu386, 0x3, 0x2, 0x10, 0x42c, 0x1200085},
-		[]interface{}{
+		[]any{
 			nil, // LC_SEGMENT
 			nil, // LC_SEGMENT
 			nil, // LC_SEGMENT
@@ -128,7 +128,7 @@ var fileTests = []fileTest{
 	{
 		"testdata/clang-amd64-darwin-exec-with-rpath",
 		FileHeader{0xfeedfacf, CpuAmd64, 0x80000003, 0x2, 0x10, 0x4c8, 0x200085},
-		[]interface{}{
+		[]any{
 			nil, // LC_SEGMENT
 			nil, // LC_SEGMENT
 			nil, // LC_SEGMENT
@@ -155,7 +155,7 @@ var fileTests = []fileTest{
 		nil,
 		nil,
 		map[string][]Reloc{
-			"__text": []Reloc{
+			"__text": {
 				{
 					Addr:      0x1d,
 					Type:      uint8(GENERIC_RELOC_VANILLA),
@@ -190,7 +190,7 @@ var fileTests = []fileTest{
 		nil,
 		nil,
 		map[string][]Reloc{
-			"__text": []Reloc{
+			"__text": {
 				{
 					Addr:   0x19,
 					Type:   uint8(X86_64_RELOC_BRANCH),
@@ -208,7 +208,7 @@ var fileTests = []fileTest{
 					Value:  2,
 				},
 			},
-			"__compact_unwind": []Reloc{
+			"__compact_unwind": {
 				{
 					Addr:   0x0,
 					Type:   uint8(X86_64_RELOC_UNSIGNED),

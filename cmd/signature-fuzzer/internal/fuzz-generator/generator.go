@@ -445,7 +445,7 @@ func writeCom(b *bytes.Buffer, i int) {
 
 var Verbctl int = 0
 
-func verb(vlevel int, s string, a ...interface{}) {
+func verb(vlevel int, s string, a ...any) {
 	if Verbctl >= vlevel {
 		fmt.Printf(s, a...)
 		fmt.Printf("\n")
@@ -856,10 +856,7 @@ func (s *genstate) GenFunc(fidx int, pidx int) *funcdef {
 		f.returns = append(f.returns, r)
 	}
 	spw := uint(s.wr.Intn(11))
-	rstack := 1 << spw
-	if rstack < 4 {
-		rstack = 4
-	}
+	rstack := max(1<<spw, 4)
 	f.rstack = rstack
 	return f
 }
@@ -1572,7 +1569,7 @@ func (s *genstate) emitParamChecks(f *funcdef, b *bytes.Buffer, pidx int, value 
 // where we randomly choose to either pass a param through to the
 // function literal, or have the param captured by the closure, then
 // check its value in the defer.
-func (s *genstate) emitDeferChecks(f *funcdef, b *bytes.Buffer, pidx int, value int) int {
+func (s *genstate) emitDeferChecks(f *funcdef, b *bytes.Buffer, value int) int {
 
 	if len(f.params) == 0 {
 		return value
@@ -1762,7 +1759,7 @@ func (s *genstate) emitChecker(f *funcdef, b *bytes.Buffer, pidx int, emit bool)
 	// defer testing
 	if s.tunables.doDefer && f.dodefc < s.tunables.deferFraction {
 		s.wr.Checkpoint("before defer checks")
-		_ = s.emitDeferChecks(f, b, pidx, value)
+		_ = s.emitDeferChecks(f, b, value)
 	}
 
 	// returns

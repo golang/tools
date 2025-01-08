@@ -29,7 +29,7 @@ import (
 
 // Several tests expect the type Foo generated in some package.
 func expectFooString(pkg string) []byte {
-	return []byte(fmt.Sprintf(`
+	return fmt.Appendf(nil, `
 // Header comment ignored.
 
 package %s
@@ -54,7 +54,7 @@ func (i Foo) String() string {
 		return "Foo(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
 	return _Foo_name[_Foo_index[i]:_Foo_index[i+1]]
-}`, pkg))
+}`, pkg)
 }
 
 func TestMultifileStringer(t *testing.T) {

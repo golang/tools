@@ -32,10 +32,7 @@ func (p stringparm) GenValue(s *genstate, f *funcdef, value int, caller bool) (s
 	ns := len(letters) - 9
 	nel := int(s.wr.Intn(8))
 	st := int(s.wr.Intn(int64(ns)))
-	en := st + nel
-	if en > ns {
-		en = ns
-	}
+	en := min(st+nel, ns)
 	return "\"" + string(letters[st:en]) + "\"", value + 1
 }
 

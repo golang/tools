@@ -43,19 +43,19 @@ var forcetmpcleanflag = flag.Bool("forcetmpclean", false, "[Testing only] force 
 var cleancacheflag = flag.Bool("cleancache", true, "[Testing only] don't clean the go cache")
 var raceflag = flag.Bool("race", false, "[Testing only] build generated code with -race")
 
-func verb(vlevel int, s string, a ...interface{}) {
+func verb(vlevel int, s string, a ...any) {
 	if *verbflag >= vlevel {
 		fmt.Printf(s, a...)
 		fmt.Printf("\n")
 	}
 }
 
-func warn(s string, a ...interface{}) {
+func warn(s string, a ...any) {
 	fmt.Fprintf(os.Stderr, s, a...)
 	fmt.Fprintf(os.Stderr, "\n")
 }
 
-func fatal(s string, a ...interface{}) {
+func fatal(s string, a ...any) {
 	fmt.Fprintf(os.Stderr, s, a...)
 	fmt.Fprintf(os.Stderr, "\n")
 	os.Exit(1)

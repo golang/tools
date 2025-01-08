@@ -16,7 +16,7 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
-func canRace(t *testing.T) bool {
+func canRace() bool {
 	_, err := exec.Command("go", "run", "-race", "./testdata/himom.go").CombinedOutput()
 	return err == nil
 }
@@ -70,7 +70,7 @@ func testRace(t *testing.T, binaryPath string) {
 	// For this test to work, the current test platform has to support the
 	// race detector. Check to see if that is the case by running a very
 	// simple Go program through it.
-	if !canRace(t) {
+	if !canRace() {
 		t.Skip("current platform does not appear to support the race detector")
 	}
 

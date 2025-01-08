@@ -48,7 +48,7 @@ func (p *printer) print(s string) {
 	}
 }
 
-func (p *printer) printf(format string, args ...interface{}) {
+func (p *printer) printf(format string, args ...any) {
 	p.print(fmt.Sprintf(format, args...))
 }
 

@@ -71,14 +71,14 @@ func serverAddress(t *testing.T) string {
 	return ln.Addr().String()
 }
 
-func waitForServerReady(t *testing.T, ctx context.Context, cmd *exec.Cmd, addr string) {
+func waitForServerReady(t *testing.T, ctx context.Context, addr string) {
 	waitForServer(t, ctx,
 		fmt.Sprintf("http://%v/", addr),
 		"Go Documentation Server",
 		false)
 }
 
-func waitForSearchReady(t *testing.T, ctx context.Context, cmd *exec.Cmd, addr string) {
+func waitForSearchReady(t *testing.T, ctx context.Context, _ *exec.Cmd, addr string) {
 	waitForServer(t, ctx,
 		fmt.Sprintf("http://%v/search?q=FALLTHROUGH", addr),
 		"The list of tokens.",
@@ -208,7 +208,7 @@ func testWeb(t *testing.T, x packagestest.Exporter, bin string, withIndex bool) 
 	e := packagestest.Export(t, x, []packagestest.Module{
 		{
 			Name: "godoc.test/repo1",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"a/a.go": `// Package a is a package in godoc.test/repo1.
 package a; import _ "godoc.test/repo2/a"; const Name = "repo1a"`,
 				"b/b.go": `package b; const Name = "repo1b"`,
@@ -216,7 +216,7 @@ package a; import _ "godoc.test/repo2/a"; const Name = "repo1a"`,
 		},
 		{
 			Name: "godoc.test/repo2",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"a/a.go": `package a; const Name = "repo2a"`,
 				"b/b.go": `package b; const Name = "repo2b"`,
 			},
@@ -261,7 +261,7 @@ package a; import _ "godoc.test/repo2/a"; const Name = "repo1a"`,
 	if withIndex {
 		waitForSearchReady(t, ctx, cmd, addr)
 	} else {
-		waitForServerReady(t, ctx, cmd, addr)
+		waitForServerReady(t, ctx, addr)
 		waitUntilScanComplete(t, ctx, addr)
 	}
 

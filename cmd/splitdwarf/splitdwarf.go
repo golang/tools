@@ -35,11 +35,11 @@ const (
 	pageAlign = 12 // 4096 = 1 << 12
 )
 
-func note(format string, why ...interface{}) {
+func note(format string, why ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", why...)
 }
 
-func fail(format string, why ...interface{}) {
+func fail(format string, why ...any) {
 	note(format, why...)
 	os.Exit(1)
 }
@@ -191,7 +191,7 @@ for input_exe need to allow writing.
 
 	exeNeedsUuid := uuid == nil
 	if exeNeedsUuid {
-		uuid = &macho.Uuid{macho.UuidCmd{LoadCmd: macho.LcUuid}}
+		uuid = &macho.Uuid{UuidCmd: macho.UuidCmd{LoadCmd: macho.LcUuid}}
 		uuid.Len = uuid.LoadSize(newtoc)
 		copy(uuid.Id[0:], contentuuid(&exeMacho.FileTOC)[0:16])
 		uuid.Id[6] = uuid.Id[6]&^0xf0 | 0x40 // version 4 (pseudo-random); see section 4.1.3
