@@ -336,7 +336,8 @@ func IsMethodNamed(obj types.Object, pkgPath string, typeName string, names ...s
 	if fn, ok := obj.(*types.Func); ok {
 		if recv := fn.Type().(*types.Signature).Recv(); recv != nil {
 			_, T := typesinternal.ReceiverNamed(recv)
-			return IsTypeNamed(T, pkgPath, typeName) &&
+			return T != nil &&
+				IsTypeNamed(T, pkgPath, typeName) &&
 				slices.Contains(names, fn.Name())
 		}
 	}
