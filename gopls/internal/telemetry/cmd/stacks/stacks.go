@@ -184,12 +184,12 @@ func main() {
 					distinctStacks++
 
 					info := Info{
-						Program:   prog.Program,
-						Version:   prog.Version,
-						GoVersion: prog.GoVersion,
-						GOOS:      prog.GOOS,
-						GOARCH:    prog.GOARCH,
-						Client:    clientSuffix,
+						Program:        prog.Program,
+						ProgramVersion: prog.Version,
+						GoVersion:      prog.GoVersion,
+						GOOS:           prog.GOOS,
+						GOARCH:         prog.GOARCH,
+						Client:         clientSuffix,
 					}
 					for stack, count := range prog.Stacks {
 						counts := stacks[stack]
@@ -432,15 +432,15 @@ func main() {
 // Info is used as a key for de-duping and aggregating.
 // Do not add detail about particular records (e.g. data, telemetry URL).
 type Info struct {
-	Program            string // "golang.org/x/tools/gopls"
-	Version, GoVersion string // e.g. "gopls/v0.16.1", "go1.23"
-	GOOS, GOARCH       string
-	Client             string // e.g. "vscode"
+	Program                   string // "golang.org/x/tools/gopls"
+	ProgramVersion, GoVersion string // e.g. "v0.16.1", "go1.23"
+	GOOS, GOARCH              string
+	Client                    string // e.g. "vscode"
 }
 
 func (info Info) String() string {
 	return fmt.Sprintf("%s@%s %s %s/%s %s",
-		info.Program, info.Version,
+		info.Program, info.ProgramVersion,
 		info.GoVersion, info.GOOS, info.GOARCH,
 		info.Client)
 }
@@ -543,7 +543,7 @@ func writeStackComment(body *bytes.Buffer, stack, id string, jsonURL string, cou
 		id, jsonURL)
 
 	// Read the mapping from symbols to file/line.
-	pclntab, err := readPCLineTable(info)
+	pclntab, err := readPCLineTable(info, defaultStacksDir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -631,7 +631,7 @@ func frameURL(pclntab map[string]FileLine, info Info, frame string) string {
 		}
 
 		return fmt.Sprintf("https://cs.opensource.google/go/x/tools/+/%s:%s;l=%d",
-			"gopls/"+info.Version, rest, linenum)
+			"gopls/"+info.ProgramVersion, rest, linenum)
 	}
 
 	// other x/ module dependency?
@@ -770,63 +770,90 @@ type FileLine struct {
 	line int
 }
 
+const defaultStacksDir = "/tmp/stacks-cache"
+
 // readPCLineTable builds the gopls executable specified by info,
 // reads its PC-to-line-number table, and returns the file/line of
 // each TEXT symbol.
-func readPCLineTable(info Info) (map[string]FileLine, error) {
+//
+// stacksDir is a semi-durable temp directory (i.e. lasts for at least a few
+// hours) to hold recent sources and executables.
+func readPCLineTable(info Info, stacksDir string) (map[string]FileLine, error) {
 	// The stacks dir will be a semi-durable temp directory
 	// (i.e. lasts for at least hours) holding source trees
 	// and executables we have built recently.
 	//
 	// Each subdir will hold a specific revision.
-	stacksDir := "/tmp/gopls-stacks"
 	if err := os.MkdirAll(stacksDir, 0777); err != nil {
 		return nil, fmt.Errorf("can't create stacks dir: %v", err)
 	}
 
-	// Fetch the source for the tools repo,
-	// shallow-cloning just the desired revision.
-	// (Skip if it's already cloned.)
-	revDir := filepath.Join(stacksDir, info.Version)
-	if !fileExists(filepath.Join(revDir, "go.mod")) {
-		// We check for presence of the go.mod file,
-		// not just the directory itself, as the /tmp reaper
-		// often removes stale files before removing their directories.
-		// Remove those stale directories now.
-		_ = os.RemoveAll(revDir) // ignore errors
-
-		log.Printf("cloning tools@gopls/%s", info.Version)
-		if err := shallowClone(revDir, "https://go.googlesource.com/tools", "gopls/"+info.Version); err != nil {
+	// When building a subrepo tool, we must clone the source of the
+	// subrepo, and run go build from that checkout.
+	//
+	// When building a main repo tool, no need to clone or change
+	// directories. GOTOOLCHAIN is sufficient to fetch and build the
+	// appropriate version.
+	var buildDir string
+	switch info.Program {
+	case "golang.org/x/tools/gopls":
+		// Fetch the source for the tools repo,
+		// shallow-cloning just the desired revision.
+		// (Skip if it's already cloned.)
+		revDir := filepath.Join(stacksDir, info.ProgramVersion)
+		if !fileExists(filepath.Join(revDir, "go.mod")) {
+			// We check for presence of the go.mod file,
+			// not just the directory itself, as the /tmp reaper
+			// often removes stale files before removing their directories.
+			// Remove those stale directories now.
 			_ = os.RemoveAll(revDir) // ignore errors
-			return nil, fmt.Errorf("clone: %v", err)
+
+			log.Printf("cloning tools@gopls/%s", info.ProgramVersion)
+			if err := shallowClone(revDir, "https://go.googlesource.com/tools", "gopls/"+info.ProgramVersion); err != nil {
+				_ = os.RemoveAll(revDir) // ignore errors
+				return nil, fmt.Errorf("clone: %v", err)
+			}
 		}
+
+		// gopls is in its own module, we must build from there.
+		buildDir = filepath.Join(revDir, "gopls")
+	case "cmd/compile":
+		// Nothing to do, GOTOOLCHAIN is sufficient.
+	default:
+		return nil, fmt.Errorf("don't know how to build unknown program %s", info.Program)
 	}
+
+	// No slashes in file name.
+	escapedProg := strings.Replace(info.Program, "/", "_", -1)
 
 	// Build the executable with the correct GOTOOLCHAIN, GOOS, GOARCH.
 	// Use -trimpath for normalized file names.
 	// (Skip if it's already built.)
-	exe := fmt.Sprintf("exe-%s.%s-%s", info.GoVersion, info.GOOS, info.GOARCH)
-	cmd := exec.Command("go", "build", "-trimpath", "-o", "../"+exe)
-	cmd.Stderr = os.Stderr
-	cmd.Dir = filepath.Join(revDir, "gopls")
-	cmd.Env = append(os.Environ(),
-		"GOTOOLCHAIN="+info.GoVersion,
-		"GOOS="+info.GOOS,
-		"GOARCH="+info.GOARCH,
-	)
-	if !fileExists(filepath.Join(revDir, exe)) {
+	exe := fmt.Sprintf("exe-%s-%s.%s-%s", escapedProg, info.GoVersion, info.GOOS, info.GOARCH)
+	exe = filepath.Join(stacksDir, exe)
+
+	if !fileExists(exe) {
 		log.Printf("building %s@%s with %s for %s/%s",
-			info.Program, info.Version, info.GoVersion, info.GOOS, info.GOARCH)
+			info.Program, info.ProgramVersion, info.GoVersion, info.GOOS, info.GOARCH)
+
+		cmd := exec.Command("go", "build", "-trimpath", "-o", exe, info.Program)
+		cmd.Stderr = os.Stderr
+		cmd.Dir = buildDir
+		cmd.Env = append(os.Environ(),
+			"GOTOOLCHAIN="+info.GoVersion,
+			"GOOS="+info.GOOS,
+			"GOARCH="+info.GOARCH,
+			"GOWORK=off",
+		)
 		if err := cmd.Run(); err != nil {
-			return nil, fmt.Errorf("building: %v (rm -fr /tmp/gopls-stacks?)", err)
+			return nil, fmt.Errorf("building: %v (rm -fr %s?)", err, stacksDir)
 		}
 	}
 
 	// Read pclntab of executable.
-	cmd = exec.Command("go", "tool", "objdump", exe)
+	cmd := exec.Command("go", "tool", "objdump", exe)
 	cmd.Stdout = new(strings.Builder)
 	cmd.Stderr = os.Stderr
-	cmd.Dir = revDir
 	cmd.Env = append(os.Environ(),
 		"GOTOOLCHAIN="+info.GoVersion,
 		"GOOS="+info.GOOS,
