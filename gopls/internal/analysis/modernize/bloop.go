@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil/cursor"
-	"golang.org/x/tools/internal/typesinternal"
 )
 
 // bloop updates benchmarks that use "for range b.N", replacing it
@@ -90,7 +89,7 @@ func bloop(pass *analysis.Pass) {
 				if cmp, ok := n.Cond.(*ast.BinaryExpr); ok && cmp.Op == token.LSS {
 					if sel, ok := cmp.Y.(*ast.SelectorExpr); ok &&
 						sel.Sel.Name == "N" &&
-						isTestingB(info.TypeOf(sel.X)) {
+						analysisinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") {
 
 						delStart, delEnd := n.Cond.Pos(), n.Cond.End()
 
@@ -133,7 +132,7 @@ func bloop(pass *analysis.Pass) {
 					n.Key == nil &&
 					n.Value == nil &&
 					sel.Sel.Name == "N" &&
-					isTestingB(info.TypeOf(sel.X)) {
+					analysisinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") {
 
 					pass.Report(analysis.Diagnostic{
 						// Highlight "range b.N".
@@ -150,10 +149,6 @@ func bloop(pass *analysis.Pass) {
 			}
 		}
 	}
-}
-
-func isTestingB(t types.Type) bool {
-	return analysisinternal.IsTypeNamed(typesinternal.Unpointer(t), "testing", "B")
 }
 
 // uses reports whether the subtree cur contains a use of obj.

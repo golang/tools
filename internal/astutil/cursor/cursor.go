@@ -191,10 +191,10 @@ func (c Cursor) Parent() Cursor {
 	return Cursor{c.in, c.events()[c.index].parent}
 }
 
-// NextSibling returns the cursor for the next sibling node in the
-// same list (for example, of files, decls, specs, statements, fields,
-// or expressions) as the current node. It returns zero if the node is
-// the last node in the list, or is not part of a list.
+// NextSibling returns the cursor for the next sibling node in the same list
+// (for example, of files, decls, specs, statements, fields, or expressions) as
+// the current node. It returns (zero, false) if the node is the last node in
+// the list, or is not part of a list.
 //
 // NextSibling must not be called on the Root node.
 //

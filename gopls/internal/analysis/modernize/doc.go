@@ -23,4 +23,6 @@
 //     from the maps package, added in go1.21;
 //   - replacing []byte(fmt.Sprintf...) by fmt.Appendf(nil, ...),
 //     added in go1.19;
+//   - replacing uses of context.WithCancel in tests with t.Context, added in
+//     go1.24;
 package modernize

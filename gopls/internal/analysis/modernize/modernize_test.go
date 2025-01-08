@@ -20,5 +20,6 @@ func Test(t *testing.T) {
 		"mapsloop",
 		"minmax",
 		"sortslice",
+		"testingcontext",
 	)
 }

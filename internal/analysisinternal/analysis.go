@@ -311,6 +311,17 @@ func IsTypeNamed(t types.Type, pkgPath string, names ...string) bool {
 	return false
 }
 
+// IsPointerToNamed reports whether t is (or is an alias for) a pointer to a
+// package-level defined type with the given package path and one of the given
+// names. It returns false if t is not a pointer type.
+func IsPointerToNamed(t types.Type, pkgPath string, names ...string) bool {
+	r := typesinternal.Unpointer(t)
+	if r == t {
+		return false
+	}
+	return IsTypeNamed(r, pkgPath, names...)
+}
+
 // IsFunctionNamed reports whether obj is a package-level function
 // defined in the given package and has one of the given names.
 // It returns false if obj is nil.
