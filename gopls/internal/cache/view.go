@@ -492,6 +492,7 @@ func (v *View) shutdown() {
 	// Cancel the initial workspace load if it is still running.
 	v.cancelInitialWorkspaceLoad()
 	v.importsState.stopTimer()
+	v.modcacheState.stopTimer()
 
 	v.snapshotMu.Lock()
 	if v.snapshot != nil {

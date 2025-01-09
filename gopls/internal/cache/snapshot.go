@@ -198,7 +198,7 @@ type Snapshot struct {
 
 var _ memoize.RefCounted = (*Snapshot)(nil) // snapshots are reference-counted
 
-func (s *Snapshot) awaitPromise(ctx context.Context, p *memoize.Promise) (interface{}, error) {
+func (s *Snapshot) awaitPromise(ctx context.Context, p *memoize.Promise) (any, error) {
 	return p.Get(ctx, s)
 }
 

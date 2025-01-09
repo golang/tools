@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/gopls/internal/vulncheck"
@@ -237,7 +238,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		viewDefinition:       def,
 		importsState:         newImportsState(backgroundCtx, s.cache.modCache, pe),
 	}
-	if def.folder.Options.ImportsSource != "off" {
+	if def.folder.Options.ImportsSource != settings.ImportsSourceOff {
 		v.modcacheState = newModcacheState(def.folder.Env.GOMODCACHE)
 	}
 
