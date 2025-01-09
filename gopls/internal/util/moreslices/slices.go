@@ -18,3 +18,13 @@ func Remove[T comparable](slice []T, elem T) []T {
 	}
 	return out
 }
+
+// ConvertStrings converts a slice of type A (with underlying type string)
+// to a slice of type B (with underlying type string).
+func ConvertStrings[B, A ~string](input []A) []B {
+	result := make([]B, len(input))
+	for i, v := range input {
+		result[i] = B(string(v))
+	}
+	return result
+}

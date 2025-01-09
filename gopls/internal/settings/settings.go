@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/util/frob"
 )
 
@@ -173,8 +174,18 @@ type UIOptions struct {
 	// NoSemanticString turns off the sending of the semantic token 'string'
 	NoSemanticString bool `status:"experimental"`
 
-	// NoSemanticNumber  turns off the sending of the semantic token 'number'
+	// NoSemanticNumber turns off the sending of the semantic token 'number'
 	NoSemanticNumber bool `status:"experimental"`
+
+	// SemanticTokenTypes configures the semantic token types. It allows
+	// disabling types by setting each value to false.
+	// By default, all types are enabled.
+	SemanticTokenTypes map[string]bool `status:"experimental"`
+
+	// SemanticTokenModifiers configures the semantic token modifiers. It allows
+	// disabling modifiers by setting each value to false.
+	// By default, all modifiers are enabled.
+	SemanticTokenModifiers map[string]bool `status:"experimental"`
 }
 
 // A CodeLensSource identifies an (algorithmic) source of code lenses.
@@ -1082,11 +1093,18 @@ func (o *Options) setOne(name string, value any) error {
 	case "semanticTokens":
 		return setBool(&o.SemanticTokens, value)
 
+	// TODO(hxjiang): deprecate noSemanticString and noSemanticNumber.
 	case "noSemanticString":
 		return setBool(&o.NoSemanticString, value)
 
 	case "noSemanticNumber":
 		return setBool(&o.NoSemanticNumber, value)
+
+	case "semanticTokenTypes":
+		return setBoolMap(&o.SemanticTokenTypes, value)
+
+	case "semanticTokenModifiers":
+		return setBoolMap(&o.SemanticTokenModifiers, value)
 
 	case "expandWorkspaceToModule":
 		// See golang/go#63536: we can consider deprecating
@@ -1231,6 +1249,30 @@ func (o *Options) setOne(name string, value any) error {
 		return fmt.Errorf("unexpected setting")
 	}
 	return nil
+}
+
+// EnabledSemanticTokenModifiers returns a map of modifiers to boolean.
+func (o *Options) EnabledSemanticTokenModifiers() map[semtok.Modifier]bool {
+	copy := make(map[semtok.Modifier]bool, len(o.SemanticTokenModifiers))
+	for k, v := range o.SemanticTokenModifiers {
+		copy[semtok.Modifier(k)] = v
+	}
+	return copy
+}
+
+// EncodeSemanticTokenTypes returns a map of types to boolean.
+func (o *Options) EnabledSemanticTokenTypes() map[semtok.Type]bool {
+	copy := make(map[semtok.Type]bool, len(o.SemanticTokenTypes))
+	for k, v := range o.SemanticTokenModifiers {
+		copy[semtok.Type(k)] = v
+	}
+	if o.NoSemanticString {
+		copy[semtok.TokString] = false
+	}
+	if o.NoSemanticNumber {
+		copy[semtok.TokNumber] = false
+	}
+	return copy
 }
 
 // A SoftError is an error that does not affect the functionality of gopls.

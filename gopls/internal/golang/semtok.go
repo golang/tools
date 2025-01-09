@@ -82,10 +82,8 @@ func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 	return &protocol.SemanticTokens{
 		Data: semtok.Encode(
 			tv.tokens,
-			snapshot.Options().NoSemanticString,
-			snapshot.Options().NoSemanticNumber,
-			snapshot.Options().SemanticTypes,
-			snapshot.Options().SemanticMods),
+			snapshot.Options().EnabledSemanticTokenTypes(),
+			snapshot.Options().EnabledSemanticTokenModifiers()),
 		ResultID: time.Now().String(), // for delta requests, but we've never seen any
 	}, nil
 }
@@ -242,7 +240,7 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 }
 
 // token emits a token of the specified extent and semantics.
-func (tv *tokenVisitor) token(start token.Pos, length int, typ semtok.TokenType, modifiers ...semtok.Modifier) {
+func (tv *tokenVisitor) token(start token.Pos, length int, typ semtok.Type, modifiers ...semtok.Modifier) {
 	if !start.IsValid() {
 		return
 	}
@@ -463,7 +461,7 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 	return true
 }
 
-func (tv *tokenVisitor) appendObjectModifiers(mods []semtok.Modifier, obj types.Object) (semtok.TokenType, []semtok.Modifier) {
+func (tv *tokenVisitor) appendObjectModifiers(mods []semtok.Modifier, obj types.Object) (semtok.Type, []semtok.Modifier) {
 	if obj.Pkg() == nil {
 		mods = append(mods, semtok.ModDefaultLibrary)
 	}
@@ -559,7 +557,7 @@ func appendTypeModifiers(mods []semtok.Modifier, t types.Type) []semtok.Modifier
 
 func (tv *tokenVisitor) ident(id *ast.Ident) {
 	var (
-		tok  semtok.TokenType
+		tok  semtok.Type
 		mods []semtok.Modifier
 		obj  types.Object
 		ok   bool
@@ -623,7 +621,7 @@ func (tv *tokenVisitor) isParam(pos token.Pos) bool {
 // def), use the parse stack.
 // A lot of these only happen when the package doesn't compile,
 // but in that case it is all best-effort from the parse tree.
-func (tv *tokenVisitor) unkIdent(id *ast.Ident) (semtok.TokenType, []semtok.Modifier) {
+func (tv *tokenVisitor) unkIdent(id *ast.Ident) (semtok.Type, []semtok.Modifier) {
 	def := []semtok.Modifier{semtok.ModDefinition}
 	n := len(tv.stack) - 2 // parent of Ident; stack is [File ... Ident]
 	if n < 0 {
@@ -746,7 +744,7 @@ func (tv *tokenVisitor) unkIdent(id *ast.Ident) (semtok.TokenType, []semtok.Modi
 }
 
 // multiline emits a multiline token (`string` or /*comment*/).
-func (tv *tokenVisitor) multiline(start, end token.Pos, tok semtok.TokenType) {
+func (tv *tokenVisitor) multiline(start, end token.Pos, tok semtok.Type) {
 	// TODO(adonovan): test with non-ASCII.
 
 	f := tv.fset.File(start)

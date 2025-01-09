@@ -215,9 +215,31 @@ Default: `false`.
 
 **This setting is experimental and may be deleted.**
 
-noSemanticNumber  turns off the sending of the semantic token 'number'
+noSemanticNumber turns off the sending of the semantic token 'number'
 
 Default: `false`.
+
+<a id='semanticTokenTypes'></a>
+### `semanticTokenTypes map[string]bool`
+
+**This setting is experimental and may be deleted.**
+
+semanticTokenTypes configures the semantic token types. It allows
+disabling types by setting each value to false.
+By default, all types are enabled.
+
+Default: `{}`.
+
+<a id='semanticTokenModifiers'></a>
+### `semanticTokenModifiers map[string]bool`
+
+**This setting is experimental and may be deleted.**
+
+semanticTokenModifiers configures the semantic token modifiers. It allows
+disabling modifiers by setting each value to false.
+By default, all modifiers are enabled.
+
+Default: `{}`.
 
 <a id='completion'></a>
 ## Completion

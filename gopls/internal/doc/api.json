@@ -847,13 +847,39 @@
 			{
 				"Name": "noSemanticNumber",
 				"Type": "bool",
-				"Doc": "noSemanticNumber  turns off the sending of the semantic token 'number'\n",
+				"Doc": "noSemanticNumber turns off the sending of the semantic token 'number'\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null
 				},
 				"EnumValues": null,
 				"Default": "false",
+				"Status": "experimental",
+				"Hierarchy": "ui"
+			},
+			{
+				"Name": "semanticTokenTypes",
+				"Type": "map[string]bool",
+				"Doc": "semanticTokenTypes configures the semantic token types. It allows\ndisabling types by setting each value to false.\nBy default, all types are enabled.\n",
+				"EnumKeys": {
+					"ValueType": "",
+					"Keys": null
+				},
+				"EnumValues": null,
+				"Default": "{}",
+				"Status": "experimental",
+				"Hierarchy": "ui"
+			},
+			{
+				"Name": "semanticTokenModifiers",
+				"Type": "map[string]bool",
+				"Doc": "semanticTokenModifiers configures the semantic token modifiers. It allows\ndisabling modifiers by setting each value to false.\nBy default, all modifiers are enabled.\n",
+				"EnumKeys": {
+					"ValueType": "",
+					"Keys": null
+				},
+				"EnumValues": null,
+				"Default": "{}",
 				"Status": "experimental",
 				"Hierarchy": "ui"
 			},

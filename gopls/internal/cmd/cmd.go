@@ -27,10 +27,12 @@ import (
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/server"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	bugpkg "golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/tool"
@@ -299,7 +301,7 @@ func (app *Application) featureCommands() []tool.Application {
 		&prepareRename{app: app},
 		&references{app: app},
 		&rename{app: app},
-		&semtok{app: app},
+		&semanticToken{app: app},
 		&signature{app: app},
 		&stats{app: app},
 		&symbols{app: app},
@@ -322,7 +324,6 @@ func (app *Application) connect(ctx context.Context) (*connection, error) {
 		options := settings.DefaultOptions(app.options)
 		svr = server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
 		ctx = protocol.WithClient(ctx, client)
-
 	} else {
 		// remote
 		netConn, err := lsprpc.ConnectToRemote(ctx, app.Remote)
@@ -362,8 +363,8 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Range = &protocol.Or_ClientSemanticTokensRequestOptions_range{Value: true}
 	//params.Capabilities.TextDocument.SemanticTokens.Requests.Range.Value = true
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
-	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = protocol.SemanticTypes()
-	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = protocol.SemanticModifiers()
+	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = moreslices.ConvertStrings[string](semtok.TokenTypes)
+	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = moreslices.ConvertStrings[string](semtok.TokenModifiers)
 	params.Capabilities.TextDocument.CodeAction = protocol.CodeActionClientCapabilities{
 		CodeActionLiteralSupport: protocol.ClientCodeActionLiteralOptions{
 			CodeActionKind: protocol.ClientCodeActionKindOptions{
@@ -376,7 +377,7 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 	params.InitializationOptions = map[string]interface{}{
 		"symbolMatcher": string(opts.SymbolMatcher),
 	}
-	if _, err := c.Server.Initialize(ctx, params); err != nil {
+	if c.initializeResult, err = c.Server.Initialize(ctx, params); err != nil {
 		return err
 	}
 	if err := c.Server.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
@@ -388,6 +389,9 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 type connection struct {
 	protocol.Server
 	client *cmdClient
+	// initializeResult keep the initialize protocol response from server
+	// including server capabilities.
+	initializeResult *protocol.InitializeResult
 }
 
 // cmdClient defines the protocol.Client interface behavior of the gopls CLI tool.

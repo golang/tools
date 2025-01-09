@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/settings"
 )
 
@@ -40,15 +41,15 @@ import (
 //    0-based: lines and character positions are 1 less than in
 //      the gopls coordinate system
 
-type semtok struct {
+type semanticToken struct {
 	app *Application
 }
 
-func (c *semtok) Name() string      { return "semtok" }
-func (c *semtok) Parent() string    { return c.app.Name() }
-func (c *semtok) Usage() string     { return "<filename>" }
-func (c *semtok) ShortHelp() string { return "show semantic tokens for the specified file" }
-func (c *semtok) DetailedHelp(f *flag.FlagSet) {
+func (c *semanticToken) Name() string      { return "semtok" }
+func (c *semanticToken) Parent() string    { return c.app.Name() }
+func (c *semanticToken) Usage() string     { return "<filename>" }
+func (c *semanticToken) ShortHelp() string { return "show semantic tokens for the specified file" }
+func (c *semanticToken) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), `
 Example: show the semantic tokens for this file:
 
@@ -59,7 +60,7 @@ Example: show the semantic tokens for this file:
 
 // Run performs the semtok on the files specified by args and prints the
 // results to stdout in the format described above.
-func (c *semtok) Run(ctx context.Context, args ...string) error {
+func (c *semanticToken) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("expected one file name, got %d", len(args))
 	}
@@ -97,14 +98,16 @@ func (c *semtok) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	return decorate(file, resp.Data)
+	return decorate(conn.initializeResult.Capabilities.SemanticTokensProvider.(protocol.SemanticTokensOptions).Legend, file, resp.Data)
 }
 
+// mark provides a human-readable representation of protocol.SemanticTokens.
+// It translates token types and modifiers to strings instead of uint32 values.
 type mark struct {
 	line, offset int // 1-based, from RangeSpan
 	len          int // bytes, not runes
-	typ          string
-	mods         []string
+	typ          semtok.Type
+	mods         []semtok.Modifier
 }
 
 // prefixes for semantic token comments
@@ -136,8 +139,10 @@ func markLine(m mark, lines [][]byte) {
 	lines[m.line-1] = l
 }
 
-func decorate(file *cmdFile, result []uint32) error {
-	marks := newMarks(file, result)
+// decorate translates semantic token data (protocol.SemanticTokens) from its
+// raw []uint32 format into a human-readable representation and prints it to stdout.
+func decorate(legend protocol.SemanticTokensLegend, file *cmdFile, data []uint32) error {
+	marks := newMarks(legend, file, data)
 	if len(marks) == 0 {
 		return nil
 	}
@@ -150,25 +155,25 @@ func decorate(file *cmdFile, result []uint32) error {
 	return nil
 }
 
-func newMarks(file *cmdFile, d []uint32) []mark {
+func newMarks(legend protocol.SemanticTokensLegend, file *cmdFile, data []uint32) []mark {
 	ans := []mark{}
 	// the following two loops could be merged, at the cost
 	// of making the logic slightly more complicated to understand
 	// first, convert from deltas to absolute, in LSP coordinates
-	lspLine := make([]uint32, len(d)/5)
-	lspChar := make([]uint32, len(d)/5)
+	lspLine := make([]uint32, len(data)/5)
+	lspChar := make([]uint32, len(data)/5)
 	var line, char uint32
-	for i := 0; 5*i < len(d); i++ {
-		lspLine[i] = line + d[5*i+0]
-		if d[5*i+0] > 0 {
+	for i := 0; 5*i < len(data); i++ {
+		lspLine[i] = line + data[5*i+0]
+		if data[5*i+0] > 0 {
 			char = 0
 		}
-		lspChar[i] = char + d[5*i+1]
+		lspChar[i] = char + data[5*i+1]
 		char = lspChar[i]
 		line = lspLine[i]
 	}
 	// second, convert to gopls coordinates
-	for i := 0; 5*i < len(d); i++ {
+	for i := 0; 5*i < len(data); i++ {
 		pr := protocol.Range{
 			Start: protocol.Position{
 				Line:      lspLine[i],
@@ -176,19 +181,30 @@ func newMarks(file *cmdFile, d []uint32) []mark {
 			},
 			End: protocol.Position{
 				Line:      lspLine[i],
-				Character: lspChar[i] + d[5*i+2],
+				Character: lspChar[i] + data[5*i+2],
 			},
 		}
 		spn, err := file.rangeSpan(pr)
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		var mods []semtok.Modifier
+		{
+			n := int(data[5*i+4])
+			for i, mod := range legend.TokenModifiers {
+				if (n & (1 << i)) != 0 {
+					mods = append(mods, semtok.Modifier(mod))
+				}
+			}
+		}
+
 		m := mark{
 			line:   spn.Start().Line(),
 			offset: spn.Start().Column(),
 			len:    spn.End().Column() - spn.Start().Column(),
-			typ:    protocol.SemType(int(d[5*i+3])),
-			mods:   protocol.SemMods(int(d[5*i+4])),
+			typ:    semtok.Type(legend.TokenTypes[data[5*i+3]]),
+			mods:   mods,
 		}
 		ans = append(ans, m)
 	}

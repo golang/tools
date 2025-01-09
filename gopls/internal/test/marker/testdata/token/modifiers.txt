@@ -1,0 +1,61 @@
+This test checks the output of semanticTokens modifiers.
+(including test for #70219.)
+
+-- settings.json --
+{
+	"semanticTokens": true
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- standard.go --
+package modifiers
+
+func _() {
+	a, b := false, true //@ token("false", "variable", "readonly defaultLibrary"), token("true", "variable", "readonly defaultLibrary")
+}
+
+const (
+	c = iota //@ token("iota", "variable", "readonly defaultLibrary number")
+)
+
+-- custom.go --
+package modifiers
+
+type Foo struct{}
+
+func _() {
+	var array [2]string //@ token("array", "variable", "definition array")
+	array = [2]string{"", ""} //@ token("array", "variable", "array")
+
+	var b bool //@ token("b", "variable", "definition bool")
+	b = true //@ token("b", "variable", "bool")
+
+	var c chan string //@ token("c", "variable", "definition chan")
+	c = make(chan string) //@ token("c", "variable", "chan")
+
+	type inter interface{} //@ token("inter", "type", "definition interface")
+
+	var m map[string]string //@ token("m", "variable", "definition map")
+	m = make(map[string]string) //@ token("m", "variable", "map")
+
+	var number int //@ token("number", "variable", "definition number")
+	number = 1 //@ token("number", "variable", "number")
+
+	var ptr *Foo //@ token("ptr", "variable", "definition pointer")
+	ptr = nil //@ token("ptr", "variable", "pointer")
+
+	var sig func(string) //@ token("sig", "variable", "definition signature")
+	sig = nil //@ token("sig", "variable", "signature")
+
+	var slice []string //@ token("slice", "variable", "definition slice")
+	slice = nil //@ token("slice", "variable", "slice")
+
+	var str string //@ token("str", "variable", "definition string")
+	str = "" //@ token("str", "variable", "string")
+
+	var foo Foo //@ token("foo", "variable", "definition struct")
+	foo = Foo{} //@ token("foo", "variable", "struct")
+}
+
