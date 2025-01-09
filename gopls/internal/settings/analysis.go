@@ -88,12 +88,35 @@ func (a *Analyzer) EnabledByDefault() bool { return !a.nonDefault }
 // TODO(rfindley): revisit.
 func (a *Analyzer) ActionKinds() []protocol.CodeActionKind { return a.actionKinds }
 
-// Severity is the severity set for diagnostics reported by this
-// analyzer. If left unset it defaults to Warning.
+// Severity is the severity set for diagnostics reported by this analyzer.
+// The default severity is SeverityWarning.
 //
-// Note: diagnostics with severity protocol.SeverityHint do not show up in
-// the VS Code "problems" tab.
-func (a *Analyzer) Severity() protocol.DiagnosticSeverity { return a.severity }
+// While the LSP spec does not specify how severity should be used, here are
+// some guiding heuristics:
+//   - Error: for parse and type errors, which would stop the build.
+//   - Warning: for analyzer diagnostics reporting likely bugs.
+//   - Info: for analyzer diagnostics that do not indicate bugs, but may
+//     suggest inaccurate or superfluous code.
+//   - Hint: for analyzer diagnostics that do not indicate mistakes, but offer
+//     simplifications or modernizations. By their nature, hints should
+//     generally carry quick fixes.
+//
+// The difference between Info and Hint is particularly subtle. Importantly,
+// Hint diagnostics do not appear in the Problems tab in VS Code, so they are
+// less intrusive than Info diagnostics. The rule of thumb is this: use Info if
+// the diagnostic is not a bug, but the author probably didn't mean to write
+// the code that way. Use Hint if the diagnostic is not a bug and the author
+// indended to write the code that way, but there is a simpler or more modern
+// way to express the same logic. An 'unused' diagnostic is Info level, since
+// the author probably didn't mean to check in unreachable code. A 'modernize'
+// or 'deprecated' diagnostic is Hint level, since the author intended to write
+// the code that way, but now there is a better way.
+func (a *Analyzer) Severity() protocol.DiagnosticSeverity {
+	if a.severity == 0 {
+		return protocol.SeverityWarning
+	}
+	return a.severity
+}
 
 // Tags is extra tags (unnecessary, deprecated, etc) for diagnostics
 // reported by this analyzer.
@@ -109,6 +132,7 @@ func (a *Analyzer) String() string { return a.analyzer.String() }
 var DefaultAnalyzers = make(map[string]*Analyzer) // initialized below
 
 func init() {
+	// See [Analyzer.Severity] for guidance on setting analyzer severity below.
 	analyzers := []*Analyzer{
 		// The traditional vet suite:
 		{analyzer: appends.Analyzer},
@@ -190,10 +214,12 @@ func init() {
 		{analyzer: unusedparams.Analyzer, severity: protocol.SeverityInformation},
 		{analyzer: unusedfunc.Analyzer, severity: protocol.SeverityInformation},
 		{analyzer: unusedwrite.Analyzer, severity: protocol.SeverityInformation}, // uses go/ssa
-		{analyzer: modernize.Analyzer, severity: protocol.SeverityInformation},
+		{analyzer: modernize.Analyzer, severity: protocol.SeverityHint},
 
 		// type-error analyzers
 		// These analyzers enrich go/types errors with suggested fixes.
+		// Since they exist only to attach their fixes to type errors, their
+		// severity is irrelevant.
 		{analyzer: fillreturns.Analyzer},
 		{analyzer: nonewvars.Analyzer},
 		{analyzer: noresultvalues.Analyzer},

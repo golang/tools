@@ -270,15 +270,10 @@ func toSourceDiagnostic(srcAnalyzer *settings.Analyzer, gobDiag *gobDiagnostic) 
 		related = append(related, protocol.DiagnosticRelatedInformation(gobRelated))
 	}
 
-	severity := srcAnalyzer.Severity()
-	if severity == 0 {
-		severity = protocol.SeverityWarning
-	}
-
 	diag := &Diagnostic{
 		URI:      gobDiag.Location.URI,
 		Range:    gobDiag.Location.Range,
-		Severity: severity,
+		Severity: srcAnalyzer.Severity(),
 		Code:     gobDiag.Code,
 		CodeHref: gobDiag.CodeHref,
 		Source:   DiagnosticSource(gobDiag.Source),

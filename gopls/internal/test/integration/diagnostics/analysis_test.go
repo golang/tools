@@ -125,3 +125,32 @@ func main() {
 		}
 	})
 }
+
+func TestAnalysisFiltering(t *testing.T) {
+	// This test checks that hint level diagnostics are only surfaced for open
+	// files.
+
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.20
+
+-- a.go --
+package p
+
+var x interface{}
+
+-- b.go --
+package p
+
+var y interface{}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+		env.AfterChange(
+			Diagnostics(ForFile("a.go"), WithMessage("replaced by any")),
+			NoDiagnostics(ForFile("b.go")),
+		)
+	})
+}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -511,6 +512,24 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 		// TODO(rfindley): here and above, we should avoid using the first result
 		// if err is non-nil (though as of today it's OK).
 		analysisDiags, err = golang.Analyze(ctx, snapshot, toAnalyze, s.progress)
+
+		// Filter out Hint diagnostics for closed files.
+		// VS Code already omits Hint diagnostics in the Problems tab, but other
+		// clients do not. This filter makes the visibility of Hints more similar
+		// across clients.
+		for uri, diags := range analysisDiags {
+			if !snapshot.IsOpen(uri) {
+				newDiags := slices.DeleteFunc(diags, func(diag *cache.Diagnostic) bool {
+					return diag.Severity == protocol.SeverityHint
+				})
+				if len(newDiags) == 0 {
+					delete(analysisDiags, uri)
+				} else {
+					analysisDiags[uri] = newDiags
+				}
+			}
+		}
+
 		if err != nil {
 			event.Error(ctx, "warning: analyzing package", err, append(snapshot.Labels(), label.Package.Of(keys.Join(moremaps.KeySlice(toDiagnose))))...)
 			return
