@@ -257,13 +257,6 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 		return f.emit(mi)
 	}
 
-	// In the common case, the typesets of src and dst are singletons
-	// and we emit an appropriate conversion. But if either contains
-	// a type parameter, the conversion may represent a cross product,
-	// in which case which we emit a MultiConvert.
-	dst_terms := typeSetOf(ut_dst)
-	src_terms := typeSetOf(ut_src)
-
 	// conversionCase describes an instruction pattern that maybe emitted to
 	// model d <- s for d in dst_terms and s in src_terms.
 	// Multiple conversions can match the same pattern.
@@ -321,13 +314,14 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 	}
 
 	var classifications conversionCase
-	for _, s := range src_terms {
-		us := s.Type().Underlying()
-		for _, d := range dst_terms {
-			ud := d.Type().Underlying()
-			classifications |= classify(us, ud)
-		}
-	}
+	underIs(ut_src, func(us types.Type) bool {
+		return underIs(ut_dst, func(ud types.Type) bool {
+			if us != nil && ud != nil {
+				classifications |= classify(us, ud)
+			}
+			return classifications != 0
+		})
+	})
 	if classifications == 0 {
 		panic(fmt.Sprintf("in %s: cannot convert %s (%s) to %s", f, val, val.Type(), typ))
 	}
@@ -381,8 +375,8 @@ func emitConv(f *Function, val Value, typ types.Type) Value {
 		c.setType(typ)
 		return f.emit(c)
 
-	default: // multiple conversion
-		c := &MultiConvert{X: val, from: src_terms, to: dst_terms}
+	default: // The conversion represents a cross product.
+		c := &MultiConvert{X: val, from: t_src, to: typ}
 		c.setType(typ)
 		return f.emit(c)
 	}

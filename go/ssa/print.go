@@ -180,8 +180,8 @@ func (v *MultiConvert) String() string {
 	var b strings.Builder
 	b.WriteString(printConv("multiconvert", v, v.X))
 	b.WriteString(" [")
-	for i, s := range v.from {
-		for j, d := range v.to {
+	for i, s := range termListOf(v.from) {
+		for j, d := range termListOf(v.to) {
 			if i != 0 || j != 0 {
 				b.WriteString(" | ")
 			}

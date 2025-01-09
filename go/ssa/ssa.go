@@ -719,9 +719,8 @@ type Convert struct {
 //	t1 = multiconvert D <- S (t0) [*[2]rune <- []rune | string <- []rune]
 type MultiConvert struct {
 	register
-	X    Value
-	from []*types.Term
-	to   []*types.Term
+	X        Value
+	from, to types.Type
 }
 
 // ChangeInterface constructs a value of one interface type from a

@@ -10,7 +10,77 @@ import (
 	"golang.org/x/tools/internal/typeparams"
 )
 
-// Utilities for dealing with core types.
+// Utilities for dealing with type sets.
+
+const debug = false
+
+// typeset is an iterator over the (type/underlying type) pairs of the
+// specific type terms of the type set implied by t.
+// If t is a type parameter, the implied type set is the type set of t's constraint.
+// In that case, if there are no specific terms, typeset calls yield with (nil, nil).
+// If t is not a type parameter, the implied type set consists of just t.
+// In any case, typeset is guaranteed to call yield at least once.
+func typeset(typ types.Type, yield func(t, u types.Type) bool) {
+	switch typ := types.Unalias(typ).(type) {
+	case *types.TypeParam, *types.Interface:
+		terms := termListOf(typ)
+		if len(terms) == 0 {
+			yield(nil, nil)
+			return
+		}
+		for _, term := range terms {
+			u := types.Unalias(term.Type())
+			if !term.Tilde() {
+				u = u.Underlying()
+			}
+			if debug {
+				assert(types.Identical(u, u.Underlying()), "Unalias(x) == under(x) for ~x terms")
+			}
+			if !yield(term.Type(), u) {
+				break
+			}
+		}
+		return
+	default:
+		yield(typ, typ.Underlying())
+	}
+}
+
+// termListOf returns the type set of typ as a normalized term set. Returns an empty set on an error.
+func termListOf(typ types.Type) []*types.Term {
+	// This is a adaptation of x/exp/typeparams.NormalTerms which x/tools cannot depend on.
+	var terms []*types.Term
+	var err error
+	// typeSetOf(t) == typeSetOf(Unalias(t))
+	switch typ := types.Unalias(typ).(type) {
+	case *types.TypeParam:
+		terms, err = typeparams.StructuralTerms(typ)
+	case *types.Union:
+		terms, err = typeparams.UnionTermSet(typ)
+	case *types.Interface:
+		terms, err = typeparams.InterfaceTermSet(typ)
+	default:
+		// Common case.
+		// Specializing the len=1 case to avoid a slice
+		// had no measurable space/time benefit.
+		terms = []*types.Term{types.NewTerm(false, typ)}
+	}
+
+	if err != nil {
+		return nil
+	}
+	return terms
+}
+
+// typeSetIsEmpty returns true if a typeset is empty.
+func typeSetIsEmpty(typ types.Type) bool {
+	var empty bool
+	typeset(typ, func(t, _ types.Type) bool {
+		empty = t == nil
+		return false
+	})
+	return empty
+}
 
 // isBytestring returns true if T has the same terms as interface{[]byte | string}.
 // These act like a core type for some operations: slice expressions, append and copy.
@@ -38,47 +108,16 @@ func isBytestring(T types.Type) bool {
 	return ok && hasBytes && hasString
 }
 
-// typeSetOf returns the type set of typ as a normalized term set. Returns an empty set on an error.
-func typeSetOf(typ types.Type) []*types.Term {
-	// This is a adaptation of x/exp/typeparams.NormalTerms which x/tools cannot depend on.
-	var terms []*types.Term
-	var err error
-	// typeSetOf(t) == typeSetOf(Unalias(t))
-	switch typ := types.Unalias(typ).(type) {
-	case *types.TypeParam:
-		terms, err = typeparams.StructuralTerms(typ)
-	case *types.Union:
-		terms, err = typeparams.UnionTermSet(typ)
-	case *types.Interface:
-		terms, err = typeparams.InterfaceTermSet(typ)
-	default:
-		// Common case.
-		// Specializing the len=1 case to avoid a slice
-		// had no measurable space/time benefit.
-		terms = []*types.Term{types.NewTerm(false, typ)}
-	}
-
-	if err != nil {
-		return nil
-	}
-	return terms
-}
-
 // underIs calls f with the underlying types of the type terms
 // of the type set of typ and reports whether all calls to f returned true.
 // If there are no specific terms, underIs returns the result of f(nil).
 func underIs(typ types.Type, f func(types.Type) bool) bool {
-	s := typeSetOf(typ)
-	if len(s) == 0 {
-		return f(nil)
-	}
-	for _, t := range s {
-		u := t.Type().Underlying()
-		if !f(u) {
-			return false
-		}
-	}
-	return true
+	var ok bool
+	typeset(typ, func(t, u types.Type) bool {
+		ok = f(u)
+		return ok
+	})
+	return ok
 }
 
 // indexType returns the element type and index mode of a IndexExpr over a type.
@@ -98,22 +137,24 @@ func indexType(typ types.Type) (types.Type, indexMode) {
 	case *types.Basic:
 		return tByte, ixValue // must be a string
 	case *types.Interface:
-		tset := typeSetOf(U)
-		if len(tset) == 0 {
-			return nil, ixInvalid // no underlying terms or error is empty.
-		}
-		elem, mode := indexType(tset[0].Type())
-		for _, t := range tset[1:] {
-			e, m := indexType(t.Type())
-			if !types.Identical(elem, e) { // if type checked, just a sanity check
-				return nil, ixInvalid
+		var elem types.Type
+		mode := ixInvalid
+		typeset(typ, func(t, _ types.Type) bool {
+			if t == nil {
+				return false // empty set
+			}
+			e, m := indexType(t)
+			if elem == nil {
+				elem, mode = e, m
+			}
+			if debug && !types.Identical(elem, e) { // if type checked, just a sanity check
+				mode = ixInvalid
+				return false
 			}
 			// Update the mode to the most constrained address type.
 			mode = mode.meet(m)
-			if mode == ixInvalid {
-				return nil, ixInvalid // fast exit
-			}
-		}
+			return mode != ixInvalid
+		})
 		return elem, mode
 	}
 	return nil, ixInvalid
