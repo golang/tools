@@ -856,7 +856,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 				if recv, ok := types.Unalias(sel.recv).(*types.TypeParam); ok {
 					// Emit a nil check if any possible instantiation of the
 					// type parameter is an interface type.
-					if typeSetOf(recv).Len() > 0 {
+					if len(typeSetOf(recv)) > 0 {
 						// recv has a concrete term its typeset.
 						// So it cannot be instantiated as an interface.
 						//

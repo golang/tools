@@ -22,30 +22,24 @@ func isBytestring(T types.Type) bool {
 		return false
 	}
 
-	tset := typeSetOf(U)
-	if tset.Len() != 2 {
-		return false
-	}
 	hasBytes, hasString := false, false
-	underIs(tset, func(t types.Type) bool {
+	ok := underIs(U, func(t types.Type) bool {
 		switch {
 		case isString(t):
 			hasString = true
+			return true
 		case isByteSlice(t):
 			hasBytes = true
+			return true
+		default:
+			return false
 		}
-		return hasBytes || hasString
 	})
-	return hasBytes && hasString
+	return ok && hasBytes && hasString
 }
 
-// termList is a list of types.
-type termList []*types.Term            // type terms of the type set
-func (s termList) Len() int            { return len(s) }
-func (s termList) At(i int) types.Type { return s[i].Type() }
-
-// typeSetOf returns the type set of typ. Returns an empty typeset on an error.
-func typeSetOf(typ types.Type) termList {
+// typeSetOf returns the type set of typ as a normalized term set. Returns an empty set on an error.
+func typeSetOf(typ types.Type) []*types.Term {
 	// This is a adaptation of x/exp/typeparams.NormalTerms which x/tools cannot depend on.
 	var terms []*types.Term
 	var err error
@@ -65,20 +59,21 @@ func typeSetOf(typ types.Type) termList {
 	}
 
 	if err != nil {
-		return termList(nil)
+		return nil
 	}
-	return termList(terms)
+	return terms
 }
 
-// underIs calls f with the underlying types of the specific type terms
-// of s and reports whether all calls to f returned true. If there are
-// no specific terms, underIs returns the result of f(nil).
-func underIs(s termList, f func(types.Type) bool) bool {
-	if s.Len() == 0 {
+// underIs calls f with the underlying types of the type terms
+// of the type set of typ and reports whether all calls to f returned true.
+// If there are no specific terms, underIs returns the result of f(nil).
+func underIs(typ types.Type, f func(types.Type) bool) bool {
+	s := typeSetOf(typ)
+	if len(s) == 0 {
 		return f(nil)
 	}
-	for i := 0; i < s.Len(); i++ {
-		u := s.At(i).Underlying()
+	for _, t := range s {
+		u := t.Type().Underlying()
 		if !f(u) {
 			return false
 		}
@@ -87,7 +82,7 @@ func underIs(s termList, f func(types.Type) bool) bool {
 }
 
 // indexType returns the element type and index mode of a IndexExpr over a type.
-// It returns (nil, invalid) if the type is not indexable; this should never occur in a well-typed program.
+// It returns an invalid mode if the type is not indexable; this should never occur in a well-typed program.
 func indexType(typ types.Type) (types.Type, indexMode) {
 	switch U := typ.Underlying().(type) {
 	case *types.Array:
@@ -104,22 +99,22 @@ func indexType(typ types.Type) (types.Type, indexMode) {
 		return tByte, ixValue // must be a string
 	case *types.Interface:
 		tset := typeSetOf(U)
-		if tset.Len() == 0 {
+		if len(tset) == 0 {
 			return nil, ixInvalid // no underlying terms or error is empty.
 		}
-
-		elem, mode := indexType(tset.At(0))
-		for i := 1; i < tset.Len() && mode != ixInvalid; i++ {
-			e, m := indexType(tset.At(i))
+		elem, mode := indexType(tset[0].Type())
+		for _, t := range tset[1:] {
+			e, m := indexType(t.Type())
 			if !types.Identical(elem, e) { // if type checked, just a sanity check
 				return nil, ixInvalid
 			}
 			// Update the mode to the most constrained address type.
 			mode = mode.meet(m)
+			if mode == ixInvalid {
+				return nil, ixInvalid // fast exit
+			}
 		}
-		if mode != ixInvalid {
-			return elem, mode
-		}
+		return elem, mode
 	}
 	return nil, ixInvalid
 }

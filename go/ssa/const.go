@@ -45,7 +45,7 @@ func soleTypeKind(typ types.Type) types.BasicInfo {
 	// Candidates (perhaps all) are eliminated during the type-set
 	// iteration, which executes at least once.
 	state := types.IsBoolean | types.IsInteger | types.IsString
-	underIs(typeSetOf(typ), func(ut types.Type) bool {
+	underIs(typ, func(ut types.Type) bool {
 		var c types.BasicInfo
 		if t, ok := ut.(*types.Basic); ok {
 			c = t.Info()
@@ -126,7 +126,7 @@ func (c *Const) IsNil() bool {
 // nillable reports whether *new(T) == nil is legal for type T.
 func nillable(t types.Type) bool {
 	if typeparams.IsTypeParam(t) {
-		return underIs(typeSetOf(t), func(u types.Type) bool {
+		return underIs(t, func(u types.Type) bool {
 			// empty type set (u==nil) => any underlying types => not nillable
 			return u != nil && nillable(u)
 		})

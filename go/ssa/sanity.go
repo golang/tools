@@ -142,8 +142,8 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 	case *ChangeType:
 	case *SliceToArrayPointer:
 	case *Convert:
-		if from := instr.X.Type(); !isBasicConvTypes(typeSetOf(from)) {
-			if to := instr.Type(); !isBasicConvTypes(typeSetOf(to)) {
+		if from := instr.X.Type(); !isBasicConvTypes(from) {
+			if to := instr.Type(); !isBasicConvTypes(to) {
 				s.errorf("convert %s -> %s: at least one type must be basic (or all basic, []byte, or []rune)", from, to)
 			}
 		}
