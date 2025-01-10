@@ -41,11 +41,19 @@ type Options struct {
 	TabIndent bool // Use tabs for indent (true if nil *Options provided)
 	TabWidth  int  // Tab width (8 if nil *Options provided)
 
-	FormatOnly bool // Disable the insertion and deletion of imports
+	FormatOnly     bool // Disable the insertion and deletion of imports
+	RegroupImports bool // Remove blank line in imports.
 }
 
 // Process implements golang.org/x/tools/imports.Process with explicit context in opt.Env.
 func Process(filename string, src []byte, opt *Options) (formatted []byte, err error) {
+	if opt.RegroupImports {
+		src, err = removeBlankLineInImport(filename, src)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	fileSet := token.NewFileSet()
 	var parserMode parser.Mode
 	if opt.Comments {
@@ -356,4 +364,50 @@ func addImportSpaces(r io.Reader, breaks []string) ([]byte, error) {
 		fmt.Fprint(&out, s)
 	}
 	return out.Bytes(), nil
+}
+
+// removeBlankLineInImport remove blank line in import block.
+func removeBlankLineInImport(filename string, src []byte) (out []byte, rerr error) {
+	tokenSet := token.NewFileSet()
+	astFile, err := parser.ParseFile(tokenSet, filename, src, parser.ParseComments)
+	if err != nil {
+		return src, err
+	}
+
+	if len(astFile.Decls) <= 1 {
+		return src, nil
+	}
+	tokenFile := tokenSet.File(astFile.Pos())
+
+	for i := 0; i < len(astFile.Decls); i++ {
+		decl := astFile.Decls[i]
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.IMPORT || declImports(gen, "C") {
+			continue
+		}
+
+		if !gen.Lparen.IsValid() {
+			// Not a block: sorted by default.
+			continue
+		}
+
+		lpLine := tokenFile.Line(gen.Lparen)
+		rpLine := tokenFile.Line(gen.Rparen)
+		src = removeEmptyLine(src, lpLine, rpLine)
+	}
+
+	return src, nil
+}
+
+func removeEmptyLine(src []byte, l, r int) []byte {
+	lines := bytes.Split(src, []byte("\n"))
+	for i := l; i < r; i++ {
+		if i < len(lines) && len(bytes.TrimSpace(lines[i])) == 0 {
+			lines = append(lines[:i], lines[i+1:]...)
+			i--
+			r--
+		}
+	}
+
+	return bytes.Join(lines, []byte("\n"))
 }
