@@ -10,7 +10,9 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -74,15 +76,16 @@ func Highlight(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, po
 func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[posRange]protocol.DocumentHighlightKind, error) {
 	result := make(map[posRange]protocol.DocumentHighlightKind)
 
-	// Inside a printf-style call, printf("...%v...", arg)?
+	// Inside a call to a printf-like function (as identified
+	// by a simple heuristic).
 	// Treat each corresponding ("%v", arg) pair as a highlight class.
 	for _, node := range path {
 		if call, ok := node.(*ast.CallExpr); ok {
 			idx := formatStringIndex(info, call)
 			if idx >= 0 && idx < len(call.Args) {
-				// We only care string literal, so fmt.Sprint("a"+"b%s", "bar") won't highlight.
-				if lit, ok := call.Args[idx].(*ast.BasicLit); ok && strings.Contains(lit.Value, "%") {
-					highlightPrintf(call, idx, pos, lit.Value, result)
+				// We only care about literal format strings, so fmt.Sprint("a"+"b%s", "bar") won't be highlighted.
+				if lit, ok := call.Args[idx].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					highlightPrintf(call, idx, pos, lit, result)
 				}
 			}
 		}
@@ -175,14 +178,21 @@ func formatStringIndex(info *types.Info, call *ast.CallExpr) int {
 }
 
 // highlightPrintf highlights operations in a format string and their corresponding
-// variadic arguments in a printf-style function call.
+// variadic arguments in a (possible) printf-style function call.
 // For example:
 //
 // fmt.Printf("Hello %s, you scored %d", name, score)
 //
 // If the cursor is on %s or name, it will highlight %s as a write operation,
 // and name as a read operation.
-func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, format string, result map[posRange]protocol.DocumentHighlightKind) {
+func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.BasicLit, result map[posRange]protocol.DocumentHighlightKind) {
+	format, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return
+	}
+	if !strings.Contains(format, "%") {
+		return
+	}
 	operations, err := fmtstr.Parse(format, idx)
 	if err != nil {
 		return
@@ -199,18 +209,17 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, format st
 
 	formatPos := call.Args[idx].Pos()
 	// highlightPair highlights the operation and its potential argument pair if the cursor is within either range.
-	highlightPair := func(start, end token.Pos, argIndex int) {
+	highlightPair := func(rang fmtstr.Range, argIndex int) {
 		var (
-			rangeStart = formatPos + token.Pos(start)
-			rangeEnd   = formatPos + token.Pos(end)
+			rangeStart = formatPos + token.Pos(offsetInStringLiteral(lit.Value, format, rang.Start))
+			rangeEnd   = formatPos + token.Pos(offsetInStringLiteral(lit.Value, format, rang.End-1)+1)
 			arg        ast.Expr // may not exist
 		)
-		visited[posRange{start: rangeStart, end: rangeEnd}] = argIndex
-		if len(call.Args) > argIndex {
+		visited[posRange{rangeStart, rangeEnd}] = argIndex
+		if argIndex < len(call.Args) {
 			arg = call.Args[argIndex]
 		}
-
-		if (cursorPos >= rangeStart && cursorPos < rangeEnd) || (arg != nil && cursorPos >= arg.Pos() && cursorPos < arg.End()) {
+		if rangeStart <= cursorPos && cursorPos < rangeEnd || arg != nil && arg.Pos() <= cursorPos && cursorPos < arg.End() {
 			highlightRange(result, rangeStart, rangeEnd, protocol.Write)
 			if arg != nil {
 				succeededArg = argIndex
@@ -219,35 +228,34 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, format st
 		}
 	}
 
-	for _, operation := range operations {
+	for _, op := range operations {
 		// If width or prec has any *, we can not highlight the full range from % to verb,
 		// because it will overlap with the sub-range of *, for example:
 		//
 		// fmt.Printf("%*[3]d", 4, 5, 6)
 		//               ^  ^ we can only highlight this range when cursor in 6. '*' as a one-rune range will
 		//               highlight for 4.
-		anyAsterisk := false
+		hasAsterisk := false
 
-		width, prec, verb := operation.Width, operation.Prec, operation.Verb
 		// Try highlight Width if there is a *.
-		if width.Dynamic != -1 {
-			anyAsterisk = true
-			highlightPair(token.Pos(width.Range.Start), token.Pos(width.Range.End), width.Dynamic)
+		if op.Width.Dynamic != -1 {
+			hasAsterisk = true
+			highlightPair(op.Width.Range, op.Width.Dynamic)
 		}
 
 		// Try highlight Precision if there is a *.
-		if prec.Dynamic != -1 {
-			anyAsterisk = true
-			highlightPair(token.Pos(prec.Range.Start), token.Pos(prec.Range.End), prec.Dynamic)
+		if op.Prec.Dynamic != -1 {
+			hasAsterisk = true
+			highlightPair(op.Prec.Range, op.Prec.Dynamic)
 		}
 
 		// Try highlight Verb.
-		if verb.Verb != '%' {
+		if op.Verb.Verb != '%' {
 			// If any * is found inside operation, narrow the highlight range.
-			if anyAsterisk {
-				highlightPair(token.Pos(verb.Range.Start), token.Pos(verb.Range.End), verb.ArgIndex)
+			if hasAsterisk {
+				highlightPair(op.Verb.Range, op.Verb.ArgIndex)
 			} else {
-				highlightPair(token.Pos(operation.Range.Start), token.Pos(operation.Range.End), verb.ArgIndex)
+				highlightPair(op.Range, op.Verb.ArgIndex)
 			}
 		}
 	}
@@ -258,6 +266,67 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, format st
 			highlightRange(result, rang.start, rang.end, protocol.Write)
 		}
 	}
+}
+
+// offsetInStringLiteral maps an offset in the unquoted string to
+// relative to the literal string.
+func offsetInStringLiteral(literal string, unquoted string, logicalOffset int) int {
+	literalIdx := 1 // Skip the initial quote char.
+	logIdx := 0
+
+	// Advance by one unquoted rune and the corresponding literal string.
+	advanceRune := func() {
+		r, size := utf8.DecodeRuneInString(unquoted[logIdx:])
+		if r == utf8.RuneError && size <= 1 {
+			// Malformed UTF-8 or end of string,
+			// move one byte in both strings to avoid infinite loops.
+			logIdx++
+			literalIdx++
+			return
+		}
+		logIdx += size
+
+		if literalIdx >= len(literal)-1 {
+			return
+		}
+
+		if literal[literalIdx] == '\\' {
+			remain := literal[literalIdx:]
+			escLen := 0
+			if len(remain) < 2 {
+				escLen = 1 // just the '\'
+			}
+			switch remain[1] {
+			case 'x':
+				escLen = 4
+			case 'u':
+				escLen = 6
+			case 'U':
+				escLen = 10
+			case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', '"':
+				escLen = 2
+			case '0', '1', '2', '3', '4', '5', '6', '7':
+				escLen = 4
+			default:
+				return
+			}
+			literalIdx += escLen
+		} else {
+			// non-escaped character
+			literalIdx++
+		}
+	}
+
+	for logIdx < len(unquoted) && (logIdx < logicalOffset) && literalIdx < len(literal)-1 {
+		advanceRune()
+	}
+
+	// Clamp it to ensure we don't exceed array bounds.
+	if literalIdx >= len(literal)-1 {
+		literalIdx = len(literal) - 1
+	}
+
+	return literalIdx
 }
 
 type posRange struct {
