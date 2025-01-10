@@ -121,9 +121,13 @@ func filename(uri DocumentURI) (string, error) {
 			if b < ' ' || b == 0x7f || // control character
 				b == '%' || b == '+' || // URI escape
 				b == ':' || // Windows drive letter
-				b == '@' || b == '&' || b == '?' { // authority or query
+				b == '&' || b == '?' { // authority or query
 				goto slow
 			}
+			// We do not reject '@' as it cannot be part of the
+			// authority (e.g. user:pass@example.com) in a
+			// "file:///" URL, and '@' commonly appears in file
+			// paths such as GOMODCACHE/module@version/...
 		}
 		return rest, nil
 	}
