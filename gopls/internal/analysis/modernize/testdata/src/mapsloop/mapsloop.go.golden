@@ -110,3 +110,11 @@ func nopeBodyNotASingleton(src map[int]string) {
 		println() // nope: other things in the loop body
 	}
 }
+
+// Regression test for https://github.com/golang/go/issues/70815#issuecomment-2581999787.
+func nopeAssignmentHasIncrementOperator(src map[int]int) {
+	dst := make(map[int]int)
+	for k, v := range src {
+		dst[k] += v
+	}
+}

@@ -179,7 +179,11 @@ func mapsloop(pass *analysis.Pass) {
 
 			if rng.Tok == token.DEFINE && rng.Key != nil && rng.Value != nil && len(rng.Body.List) == 1 {
 				// Have: for k, v := range x { S }
-				if assign, ok := rng.Body.List[0].(*ast.AssignStmt); ok && len(assign.Lhs) == 1 {
+				if assign, ok := rng.Body.List[0].(*ast.AssignStmt); ok &&
+					assign.Tok == token.ASSIGN &&
+					len(assign.Lhs) == 1 {
+					// Have: for k, v := range x { lhs = rhs }
+
 					if index, ok := assign.Lhs[0].(*ast.IndexExpr); ok &&
 						equalSyntax(rng.Key, index.Index) &&
 						equalSyntax(rng.Value, assign.Rhs[0]) {
