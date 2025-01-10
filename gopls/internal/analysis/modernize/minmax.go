@@ -95,7 +95,7 @@ func minmax(pass *analysis.Pass) {
 				})
 			}
 
-		} else if prev, ok := curIfStmt.PrevSibling(); ok && is[*ast.AssignStmt](prev.Node()) {
+		} else if prev, ok := curIfStmt.PrevSibling(); ok && isSimpleAssign(prev.Node()) {
 			fassign := prev.Node().(*ast.AssignStmt)
 
 			// Have: lhs0 = rhs0; if a < b { lhs = rhs }
@@ -193,8 +193,17 @@ func isAssignBlock(b *ast.BlockStmt) bool {
 	if len(b.List) != 1 {
 		return false
 	}
-	assign, ok := b.List[0].(*ast.AssignStmt)
-	return ok && assign.Tok == token.ASSIGN && len(assign.Lhs) == 1 && len(assign.Rhs) == 1
+	// Inv: the sole statement cannot be { lhs := rhs }.
+	return isSimpleAssign(b.List[0])
+}
+
+// isSimpleAssign reports whether n has the form "lhs = rhs" or "lhs := rhs".
+func isSimpleAssign(n ast.Node) bool {
+	assign, ok := n.(*ast.AssignStmt)
+	return ok &&
+		(assign.Tok == token.ASSIGN || assign.Tok == token.DEFINE) &&
+		len(assign.Lhs) == 1 &&
+		len(assign.Rhs) == 1
 }
 
 // -- utils --

@@ -81,3 +81,14 @@ func oops() {
 	}
 	print(y)
 }
+
+// Regression test for a bug: += is not a simple assignment.
+func nopeAssignHasIncrementOperator() {
+	x := 1
+	y := 0
+	y += 2
+	if x > y {
+		y = x
+	}
+	print(y)
+}
