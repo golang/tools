@@ -48,24 +48,7 @@ func typeset(typ types.Type, yield func(t, u types.Type) bool) {
 
 // termListOf returns the type set of typ as a normalized term set. Returns an empty set on an error.
 func termListOf(typ types.Type) []*types.Term {
-	// This is a adaptation of x/exp/typeparams.NormalTerms which x/tools cannot depend on.
-	var terms []*types.Term
-	var err error
-	// typeSetOf(t) == typeSetOf(Unalias(t))
-	switch typ := types.Unalias(typ).(type) {
-	case *types.TypeParam:
-		terms, err = typeparams.StructuralTerms(typ)
-	case *types.Union:
-		terms, err = typeparams.UnionTermSet(typ)
-	case *types.Interface:
-		terms, err = typeparams.InterfaceTermSet(typ)
-	default:
-		// Common case.
-		// Specializing the len=1 case to avoid a slice
-		// had no measurable space/time benefit.
-		terms = []*types.Term{types.NewTerm(false, typ)}
-	}
-
+	terms, err := typeparams.NormalTerms(typ)
 	if err != nil {
 		return nil
 	}
