@@ -145,6 +145,27 @@ var programs = map[string]ProgramConfig{
 			"internal/util/bug.",
 		},
 	},
+	"cmd/compile": {
+		Program:        "cmd/compile",
+		SearchLabel:    "compiler/telemetry-wins",
+		NewIssuePrefix: "cmd/compile",
+		NewIssueLabels: []string{
+			"compiler/runtime",
+			"compiler/telemetry-wins",
+			"NeedsInvestigation",
+		},
+		MatchSymbolPrefix: "cmd/compile",
+		IgnoreSymbolContains: []string{
+			// Various "fatal" wrappers.
+			"Fatal", // base.Fatal*, ssa.Value.Fatal*, etc.
+			"cmd/compile/internal/base.Assert",
+			"cmd/compile/internal/noder.assert",
+			"cmd/compile/internal/ssa.Compile.func1", // basically a Fatalf wrapper.
+			// Panic recovery.
+			"cmd/compile/internal/types2.(*Checker).handleBailout",
+			"cmd/compile/internal/gc.handlePanic",
+		},
+	},
 }
 
 func main() {
