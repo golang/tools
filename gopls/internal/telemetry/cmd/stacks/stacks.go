@@ -391,19 +391,14 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 // predicates.
 func readIssues(pcfg ProgramConfig) ([]*Issue, error) {
 	// Query GitHub for all existing GitHub issues with the report label.
-	//
-	// TODO(adonovan): by default GitHub returns at most 30
-	// issues; we have lifted this to 100 using per_page=%d, but
-	// that won't work forever; use paging.
-	query := fmt.Sprintf("is:issue label:%s", pcfg.SearchLabel)
-	res, err := searchIssues(query)
+	issues, err := searchIssues(pcfg.SearchLabel)
 	if err != nil {
-		log.Fatalf("GitHub issues query %q failed: %v", query, err)
+		log.Fatalf("GitHub issues label %q search failed: %v", pcfg.SearchLabel, err)
 	}
 
 	// Extract and validate predicate expressions in ```#!stacks...``` code blocks.
 	// See the package doc comment for the grammar.
-	for _, issue := range res.Items {
+	for _, issue := range issues {
 		block := findPredicateBlock(issue.Body)
 		if block != "" {
 			expr, err := parser.ParseExpr(block)
@@ -480,7 +475,7 @@ func readIssues(pcfg ProgramConfig) ([]*Issue, error) {
 		}
 	}
 
-	return res.Items, nil
+	return issues, nil
 }
 
 // claimStack maps each stack ID to its issue (if any).
@@ -798,28 +793,58 @@ func frameURL(pclntab map[string]FileLine, info Info, frame string) string {
 // -- GitHub search --
 
 // searchIssues queries the GitHub issue tracker.
-func searchIssues(query string) (*IssuesSearchResult, error) {
-	q := url.QueryEscape(query)
+func searchIssues(label string) ([]*Issue, error) {
+	label = url.QueryEscape(label)
 
-	req, err := http.NewRequest("GET", "https://api.github.com/search/issues?q="+q+"&per_page=100", nil)
-	if err != nil {
-		return nil, err
+	// Slurp all issues with the telemetry label.
+	//
+	// The pagination link headers have an annoying format, but ultimately
+	// are just ?page=1, ?page=2, etc with no extra state. So just keep
+	// trying new pages until we get no more results.
+	//
+	// NOTE: With this scheme, GitHub clearly has no protection against
+	// race conditions, so presumably we could get duplicate issues or miss
+	// issues across pages.
+
+	getPage := func(page int) ([]*Issue, error) {
+		url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues?state=all&labels=%s&per_page=100&page=%d", label, page)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Add("Authorization", "Bearer "+authToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("search query %s failed: %s (body: %s)", url, resp.Status, body)
+		}
+		var r []*Issue
+		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+			return nil, err
+		}
+
+		return r, nil
 	}
-	req.Header.Add("Authorization", "Bearer "+authToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
+
+	var results []*Issue
+	for page := 1; ; page++ {
+		r, err := getPage(page)
+		if err != nil {
+			return nil, err
+		}
+		if len(r) == 0 {
+			// No more results.
+			break
+		}
+
+		results = append(results, r...)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("search query failed: %s (body: %s)", resp.Status, body)
-	}
-	var result IssuesSearchResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+
+	return results, nil
 }
 
 // updateIssueBody updates the body of the numbered issue.
@@ -882,12 +907,7 @@ func addIssueComment(number int, comment string) error {
 	return nil
 }
 
-// See https://developer.github.com/v3/search/#search-issues.
-
-type IssuesSearchResult struct {
-	TotalCount int `json:"total_count"`
-	Items      []*Issue
-}
+// See https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#list-repository-issues.
 
 type Issue struct {
 	Number    int
