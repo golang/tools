@@ -194,49 +194,50 @@ func traverse(files []*ast.File) []event {
 		extent += int(f.End() - f.Pos())
 	}
 	// This estimate is based on the net/http package.
-	capacity := extent * 33 / 100
-	if capacity > 1e6 {
-		capacity = 1e6 // impose some reasonable maximum
+	capacity := min(extent*33/100, 1e6) // impose some reasonable maximum (1M)
+
+	v := &visitor{
+		events: make([]event, 0, capacity),
+		stack:  []event{{index: -1}}, // include an extra event so file nodes have a parent
 	}
-	events := make([]event, 0, capacity)
-
-	var stack []event
-	stack = append(stack, event{index: -1}) // include an extra event so file nodes have a parent
-	for _, f := range files {
-		ast.Inspect(f, func(n ast.Node) bool {
-			if n != nil {
-				// push
-				ev := event{
-					node:   n,
-					typ:    0,                  // temporarily used to accumulate type bits of subtree
-					index:  int32(len(events)), // push event temporarily holds own index
-					parent: stack[len(stack)-1].index,
-				}
-				stack = append(stack, ev)
-				events = append(events, ev)
-
-				// 2B nodes ought to be enough for anyone!
-				if int32(len(events)) < 0 {
-					panic("event index exceeded int32")
-				}
-			} else {
-				// pop
-				top := len(stack) - 1
-				ev := stack[top]
-				typ := typeOf(ev.node)
-				push := ev.index
-				parent := top - 1
-
-				events[push].typ = typ                  // set type of push
-				stack[parent].typ |= typ | ev.typ       // parent's typ contains push and pop's typs.
-				events[push].index = int32(len(events)) // make push refer to pop
-
-				stack = stack[:top]
-				events = append(events, ev)
-			}
-			return true
-		})
+	for _, file := range files {
+		walk(v, file)
 	}
+	return v.events
+}
 
-	return events
+type visitor struct {
+	events []event
+	stack  []event
+}
+
+func (v *visitor) push(n ast.Node) {
+	ev := event{
+		node:   n,
+		typ:    0,                    // temporarily used to accumulate type bits of subtree
+		index:  int32(len(v.events)), // push event temporarily holds own index
+		parent: v.stack[len(v.stack)-1].index,
+	}
+	v.stack = append(v.stack, ev)
+	v.events = append(v.events, ev)
+
+	// 2B nodes ought to be enough for anyone!
+	if int32(len(v.events)) < 0 {
+		panic("event index exceeded int32")
+	}
+}
+
+func (v *visitor) pop() {
+	top := len(v.stack) - 1
+	ev := v.stack[top]
+	typ := typeOf(ev.node)
+	push := ev.index
+	parent := top - 1
+
+	v.events[push].typ = typ                    // set type of push
+	v.stack[parent].typ |= typ | ev.typ         // parent's typ contains push and pop's typs.
+	v.events[push].index = int32(len(v.events)) // make push refer to pop
+
+	v.stack = v.stack[:top]
+	v.events = append(v.events, ev)
 }
