@@ -1,0 +1,40 @@
+This test checks the behavior of the 'remove dot import' code action.
+
+-- go.mod --
+module golang.org/lsptests/removedotimport
+
+go 1.18
+
+-- a.go --
+package dotimport
+
+// Base case: action is OK.
+
+import (
+	. "fmt" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a1)
+	. "bytes" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a2)
+)
+
+var _ = a
+
+func a() {
+	Println("hello")
+
+	buf := NewBuffer(nil)
+	buf.Grow(10)
+}
+
+-- @a1/a.go --
+@@ -6 +6 @@
+-	. "fmt" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a1)
++	"fmt" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a1)
+@@ -13 +13 @@
+-	Println("hello")
++	fmt.Println("hello")
+-- @a2/a.go --
+@@ -7 +7 @@
+-	. "bytes" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a2)
++	"bytes" //@codeaction(`.`, "refactor.rewrite.eliminateDotImport", edit=a2)
+@@ -15 +15 @@
+-	buf := NewBuffer(nil)
++	buf := bytes.NewBuffer(nil)

@@ -86,15 +86,16 @@ const (
 	GoplsDocFeatures protocol.CodeActionKind = "gopls.doc.features"
 
 	// refactor.rewrite
-	RefactorRewriteChangeQuote       protocol.CodeActionKind = "refactor.rewrite.changeQuote"
-	RefactorRewriteFillStruct        protocol.CodeActionKind = "refactor.rewrite.fillStruct"
-	RefactorRewriteFillSwitch        protocol.CodeActionKind = "refactor.rewrite.fillSwitch"
-	RefactorRewriteInvertIf          protocol.CodeActionKind = "refactor.rewrite.invertIf"
-	RefactorRewriteJoinLines         protocol.CodeActionKind = "refactor.rewrite.joinLines"
-	RefactorRewriteRemoveUnusedParam protocol.CodeActionKind = "refactor.rewrite.removeUnusedParam"
-	RefactorRewriteMoveParamLeft     protocol.CodeActionKind = "refactor.rewrite.moveParamLeft"
-	RefactorRewriteMoveParamRight    protocol.CodeActionKind = "refactor.rewrite.moveParamRight"
-	RefactorRewriteSplitLines        protocol.CodeActionKind = "refactor.rewrite.splitLines"
+	RefactorRewriteChangeQuote        protocol.CodeActionKind = "refactor.rewrite.changeQuote"
+	RefactorRewriteFillStruct         protocol.CodeActionKind = "refactor.rewrite.fillStruct"
+	RefactorRewriteFillSwitch         protocol.CodeActionKind = "refactor.rewrite.fillSwitch"
+	RefactorRewriteInvertIf           protocol.CodeActionKind = "refactor.rewrite.invertIf"
+	RefactorRewriteJoinLines          protocol.CodeActionKind = "refactor.rewrite.joinLines"
+	RefactorRewriteRemoveUnusedParam  protocol.CodeActionKind = "refactor.rewrite.removeUnusedParam"
+	RefactorRewriteMoveParamLeft      protocol.CodeActionKind = "refactor.rewrite.moveParamLeft"
+	RefactorRewriteMoveParamRight     protocol.CodeActionKind = "refactor.rewrite.moveParamRight"
+	RefactorRewriteSplitLines         protocol.CodeActionKind = "refactor.rewrite.splitLines"
+	RefactorRewriteEliminateDotImport protocol.CodeActionKind = "refactor.rewrite.eliminateDotImport"
 
 	// refactor.inline
 	RefactorInlineCall protocol.CodeActionKind = "refactor.inline.call"

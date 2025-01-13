@@ -260,6 +260,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorRewriteMoveParamLeft, fn: refactorRewriteMoveParamLeft, needPkg: true},
 	{kind: settings.RefactorRewriteMoveParamRight, fn: refactorRewriteMoveParamRight, needPkg: true},
 	{kind: settings.RefactorRewriteSplitLines, fn: refactorRewriteSplitLines, needPkg: true},
+	{kind: settings.RefactorRewriteEliminateDotImport, fn: refactorRewriteEliminateDotImport, needPkg: true},
 
 	// Note: don't forget to update the allow-list in Server.CodeAction
 	// when adding new query operations like GoTest and GoDoc that
@@ -675,6 +676,105 @@ func refactorRewriteSplitLines(ctx context.Context, req *codeActionsRequest) err
 	if msg, ok, _ := canSplitLines(req.pgf.Cursor, req.pkg.FileSet(), req.start, req.end); ok {
 		req.addApplyFixAction(msg, fixSplitLines, req.loc)
 	}
+	return nil
+}
+
+func refactorRewriteEliminateDotImport(ctx context.Context, req *codeActionsRequest) error {
+	// Figure out if the request is placed over a dot import.
+	var importSpec *ast.ImportSpec
+	for _, imp := range req.pgf.File.Imports {
+		if posRangeContains(imp.Pos(), imp.End(), req.start, req.end) {
+			importSpec = imp
+			break
+		}
+	}
+	if importSpec == nil {
+		return nil
+	}
+	if importSpec.Name == nil || importSpec.Name.Name != "." {
+		return nil
+	}
+
+	// dotImported package path and its imported name after removing the dot.
+	imported := req.pkg.TypesInfo().PkgNameOf(importSpec).Imported()
+	newName := imported.Name()
+
+	rng, err := req.pgf.PosRange(importSpec.Name.Pos(), importSpec.Path.Pos())
+	if err != nil {
+		return err
+	}
+	// Delete the '.' part of the import.
+	edits := []protocol.TextEdit{{
+		Range: rng,
+	}}
+
+	fileScope, ok := req.pkg.TypesInfo().Scopes[req.pgf.File]
+	if !ok {
+		return nil
+	}
+
+	// Go through each use of the dot imported package, checking its scope for
+	// shadowing and calculating an edit to qualify the identifier.
+	var stack []ast.Node
+	ast.Inspect(req.pgf.File, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1] // pop
+			return false
+		}
+		stack = append(stack, n) // push
+
+		ident, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		// Only keep identifiers that use a symbol from the
+		// dot imported package.
+		use := req.pkg.TypesInfo().Uses[ident]
+		if use == nil || use.Pkg() == nil {
+			return true
+		}
+		if use.Pkg() != imported {
+			return true
+		}
+
+		// Only qualify unqualified identifiers (due to dot imports).
+		// All other references to a symbol imported from another package
+		// are nested within a select expression (pkg.Foo, v.Method, v.Field).
+		if is[*ast.SelectorExpr](stack[len(stack)-2]) {
+			return true
+		}
+
+		// Make sure that the package name will not be shadowed by something else in scope.
+		// If it is then we cannot offer this particular code action.
+		//
+		// TODO: If the object found in scope is the package imported without a
+		// dot, or some builtin not used in the file, the code action could be
+		// allowed to go through.
+		sc := fileScope.Innermost(ident.Pos())
+		if sc == nil {
+			return true
+		}
+		_, obj := sc.LookupParent(newName, ident.Pos())
+		if obj != nil {
+			return true
+		}
+
+		rng, err := req.pgf.PosRange(ident.Pos(), ident.Pos()) // sic, zero-width range before ident
+		if err != nil {
+			return true
+		}
+		edits = append(edits, protocol.TextEdit{
+			Range:   rng,
+			NewText: newName + ".",
+		})
+
+		return true
+	})
+
+	req.addEditAction("Eliminate dot import", nil, protocol.DocumentChangeEdit(
+		req.fh,
+		edits,
+	))
 	return nil
 }
 
