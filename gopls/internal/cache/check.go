@@ -1290,6 +1290,7 @@ func (s *Snapshot) typerefData(ctx context.Context, id PackageID, imports map[Im
 		return data, nil
 	} else if err != filecache.ErrNotFound {
 		bug.Reportf("internal error reading typerefs data: %v", err)
+		// Unexpected error: treat as cache miss, and fall through.
 	}
 
 	pgfs, err := s.view.parseCache.parseFiles(ctx, token.NewFileSet(), parsego.Full&^parser.ParseComments, true, cgfs...)

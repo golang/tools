@@ -244,8 +244,8 @@ func (fr *frob) Decode(data []byte, ptr any) {
 		panic(fmt.Sprintf("got %v, want %v", rv.Type(), fr.t))
 	}
 	rd := &reader{data}
-	if string(rd.bytes(4)) != magic {
-		panic("not a frob-encoded message")
+	if len(data) < len(magic) || string(rd.bytes(len(magic))) != magic {
+		panic("not a frob-encoded message") // (likely an empty message)
 	}
 	fr.decode(rd, rv)
 	if len(rd.data) > 0 {
