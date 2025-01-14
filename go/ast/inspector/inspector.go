@@ -37,6 +37,8 @@ package inspector
 import (
 	"go/ast"
 	_ "unsafe"
+
+	"golang.org/x/tools/internal/astutil/edge"
 )
 
 // An Inspector provides methods for inspecting
@@ -47,6 +49,21 @@ type Inspector struct {
 
 //go:linkname events
 func events(in *Inspector) []event { return in.events }
+
+func packEdgeKindAndIndex(ek edge.Kind, index int) int32 {
+	return int32(uint32(index+1)<<7 | uint32(ek))
+}
+
+// unpackEdgeKindAndIndex unpacks the edge kind and edge index (within
+// an []ast.Node slice) from the parent field of a pop event.
+//
+//go:linkname unpackEdgeKindAndIndex
+func unpackEdgeKindAndIndex(x int32) (edge.Kind, int) {
+	// The "parent" field of a pop node holds the
+	// edge Kind in the lower 7 bits and the index+1
+	// in the upper 25.
+	return edge.Kind(x & 0x7f), int(x>>7) - 1
+}
 
 // New returns an Inspector for the specified syntax trees.
 func New(files []*ast.File) *Inspector {
@@ -59,7 +76,7 @@ type event struct {
 	node   ast.Node
 	typ    uint64 // typeOf(node) on push event, or union of typ strictly between push and pop events on pop events
 	index  int32  // index of corresponding push or pop event
-	parent int32  // index of parent's push node (defined for push nodes only)
+	parent int32  // index of parent's push node (push nodes only), or packed edge kind/index (pop nodes only)
 }
 
 // TODO: Experiment with storing only the second word of event.node (unsafe.Pointer).
@@ -201,7 +218,7 @@ func traverse(files []*ast.File) []event {
 		stack:  []item{{index: -1}}, // include an extra event so file nodes have a parent
 	}
 	for _, file := range files {
-		walk(v, file)
+		walk(v, edge.Invalid, -1, file)
 	}
 	return v.events
 }
@@ -212,12 +229,13 @@ type visitor struct {
 }
 
 type item struct {
-	index       int32  // index of current node's push event
-	parentIndex int32  // index of parent node's push event
-	typAccum    uint64 // accumulated type bits of current node's descendents
+	index            int32  // index of current node's push event
+	parentIndex      int32  // index of parent node's push event
+	typAccum         uint64 // accumulated type bits of current node's descendents
+	edgeKindAndIndex int32  // edge.Kind and index, bit packed
 }
 
-func (v *visitor) push(node ast.Node) {
+func (v *visitor) push(ek edge.Kind, eindex int, node ast.Node) {
 	var (
 		index       = int32(len(v.events))
 		parentIndex = v.stack[len(v.stack)-1].index
@@ -229,13 +247,19 @@ func (v *visitor) push(node ast.Node) {
 		index:  0, // (pop index is set later by visitor.pop)
 	})
 	v.stack = append(v.stack, item{
-		index:       index,
-		parentIndex: parentIndex,
+		index:            index,
+		parentIndex:      parentIndex,
+		edgeKindAndIndex: packEdgeKindAndIndex(ek, eindex),
 	})
 
 	// 2B nodes ought to be enough for anyone!
 	if int32(len(v.events)) < 0 {
 		panic("event index exceeded int32")
+	}
+
+	// 32M elements in an []ast.Node ought to be enough for anyone!
+	if ek2, eindex2 := unpackEdgeKindAndIndex(packEdgeKindAndIndex(ek, eindex)); ek2 != ek || eindex2 != eindex {
+		panic("Node slice index exceeded uint25")
 	}
 }
 
@@ -252,8 +276,9 @@ func (v *visitor) pop(node ast.Node) {
 	v.stack = v.stack[:top]
 
 	v.events = append(v.events, event{
-		node:  node,
-		typ:   current.typAccum,
-		index: current.index,
+		node:   node,
+		typ:    current.typAccum,
+		index:  current.index,
+		parent: int32(current.edgeKindAndIndex), // see [unpackEdgeKindAndIndex]
 	})
 }

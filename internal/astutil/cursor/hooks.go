@@ -11,6 +11,7 @@ import (
 	_ "unsafe" // for go:linkname
 
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/astutil/edge"
 )
 
 // This file defines backdoor access to inspector.
@@ -21,7 +22,7 @@ type event struct {
 	node   ast.Node
 	typ    uint64 // typeOf(node) on push event, or union of typ strictly between push and pop events on pop events
 	index  int32  // index of corresponding push or pop event (relative to this event's index, +ve=push, -ve=pop)
-	parent int32  // index of parent's push node (defined for push nodes only)
+	parent int32  // index of parent's push node (push nodes only); or edge and index, bit packed (pop nodes only)
 }
 
 //go:linkname maskOf golang.org/x/tools/go/ast/inspector.maskOf
@@ -29,5 +30,8 @@ func maskOf(nodes []ast.Node) uint64
 
 //go:linkname events golang.org/x/tools/go/ast/inspector.events
 func events(in *inspector.Inspector) []event
+
+//go:linkname unpackEdgeKindAndIndex golang.org/x/tools/go/ast/inspector.unpackEdgeKindAndIndex
+func unpackEdgeKindAndIndex(int32) (edge.Kind, int)
 
 func (c Cursor) events() []event { return events(c.in) }
