@@ -53,3 +53,10 @@ func Indexed() {
 func MultipleIndexed() {
 	fmt.Printf("%[1]d %[1].2d", 3) //@hiloc(m1, "%[1]d", write),hiloc(m2, "3", read),hiloc(m3, "%[1].2d", write),highlightall(m1, m2, m3)
 }
+
+// This test checks that gopls doesn't crash (index out of bounds)
+// while haven't fill the last non-variadic argument.
+func NoEffectOnUnfinishedArg() {
+	var s string //@hiloc(var, "s", write)
+	fmt.Fprintf(s) //@hiloc(firstArg, "s", read),highlightall(var, firstArg)
+}
