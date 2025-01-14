@@ -335,5 +335,5 @@ func walk(v *visitor, node ast.Node) {
 		panic(fmt.Sprintf("Walk: unexpected node type %T", n))
 	}
 
-	v.pop()
+	v.pop(node)
 }

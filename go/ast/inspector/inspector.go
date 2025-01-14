@@ -198,7 +198,7 @@ func traverse(files []*ast.File) []event {
 
 	v := &visitor{
 		events: make([]event, 0, capacity),
-		stack:  []event{{index: -1}}, // include an extra event so file nodes have a parent
+		stack:  []item{{index: -1}}, // include an extra event so file nodes have a parent
 	}
 	for _, file := range files {
 		walk(v, file)
@@ -208,18 +208,30 @@ func traverse(files []*ast.File) []event {
 
 type visitor struct {
 	events []event
-	stack  []event
+	stack  []item
 }
 
-func (v *visitor) push(n ast.Node) {
-	ev := event{
-		node:   n,
-		typ:    0,                    // temporarily used to accumulate type bits of subtree
-		index:  int32(len(v.events)), // push event temporarily holds own index
-		parent: v.stack[len(v.stack)-1].index,
-	}
-	v.stack = append(v.stack, ev)
-	v.events = append(v.events, ev)
+type item struct {
+	index       int32  // index of current node's push event
+	parentIndex int32  // index of parent node's push event
+	typAccum    uint64 // accumulated type bits of current node's descendents
+}
+
+func (v *visitor) push(node ast.Node) {
+	var (
+		index       = int32(len(v.events))
+		parentIndex = v.stack[len(v.stack)-1].index
+	)
+	v.events = append(v.events, event{
+		node:   node,
+		parent: parentIndex,
+		typ:    typeOf(node),
+		index:  0, // (pop index is set later by visitor.pop)
+	})
+	v.stack = append(v.stack, item{
+		index:       index,
+		parentIndex: parentIndex,
+	})
 
 	// 2B nodes ought to be enough for anyone!
 	if int32(len(v.events)) < 0 {
@@ -227,17 +239,21 @@ func (v *visitor) push(n ast.Node) {
 	}
 }
 
-func (v *visitor) pop() {
+func (v *visitor) pop(node ast.Node) {
 	top := len(v.stack) - 1
-	ev := v.stack[top]
-	typ := typeOf(ev.node)
-	push := ev.index
-	parent := top - 1
+	current := v.stack[top]
 
-	v.events[push].typ = typ                    // set type of push
-	v.stack[parent].typ |= typ | ev.typ         // parent's typ contains push and pop's typs.
-	v.events[push].index = int32(len(v.events)) // make push refer to pop
+	push := &v.events[current.index]
+	parent := &v.stack[top-1]
+
+	push.index = int32(len(v.events))              // make push event refer to pop
+	parent.typAccum |= current.typAccum | push.typ // accumulate type bits into parent
 
 	v.stack = v.stack[:top]
-	v.events = append(v.events, ev)
+
+	v.events = append(v.events, event{
+		node:  node,
+		typ:   current.typAccum,
+		index: current.index,
+	})
 }
