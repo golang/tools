@@ -1011,6 +1011,7 @@ func readPCLineTable(info Info, stacksDir string) (map[string]FileLine, error) {
 		cmd.Dir = buildDir
 		cmd.Env = append(os.Environ(),
 			"GOTOOLCHAIN="+info.GoVersion,
+			"GOEXPERIMENT=", // Don't forward GOEXPERIMENT from current environment since the GOTOOLCHAIN selected might not support the same experiments.
 			"GOOS="+info.GOOS,
 			"GOARCH="+info.GOARCH,
 			"GOWORK=off",
@@ -1026,6 +1027,7 @@ func readPCLineTable(info Info, stacksDir string) (map[string]FileLine, error) {
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(),
 		"GOTOOLCHAIN="+info.GoVersion,
+		"GOEXPERIMENT=", // Don't forward GOEXPERIMENT from current environment since the GOTOOLCHAIN selected might not support the same experiments.
 		"GOOS="+info.GOOS,
 		"GOARCH="+info.GOARCH,
 	)
