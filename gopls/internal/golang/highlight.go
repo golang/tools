@@ -81,12 +81,9 @@ func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[posRan
 	// Treat each corresponding ("%v", arg) pair as a highlight class.
 	for _, node := range path {
 		if call, ok := node.(*ast.CallExpr); ok {
-			idx := formatStringIndex(info, call)
-			if idx >= 0 && idx < len(call.Args) {
-				// We only care about literal format strings, so fmt.Sprint("a"+"b%s", "bar") won't be highlighted.
-				if lit, ok := call.Args[idx].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-					highlightPrintf(call, idx, pos, lit, result)
-				}
+			lit, idx := formatStringAndIndex(info, call)
+			if idx != -1 {
+				highlightPrintf(call, idx, pos, lit, result)
 			}
 		}
 	}
@@ -152,29 +149,33 @@ func highlightPath(info *types.Info, path []ast.Node, pos token.Pos) (map[posRan
 	return result, nil
 }
 
-// formatStringIndex returns the index of the format string (the last
+// formatStringAndIndex returns the BasicLit and index of the BasicLit (the last
 // non-variadic parameter) within the given printf-like call
-// expression, or -1 if unknown.
-func formatStringIndex(info *types.Info, call *ast.CallExpr) int {
+// expression, returns -1 as index if unknown.
+func formatStringAndIndex(info *types.Info, call *ast.CallExpr) (*ast.BasicLit, int) {
 	typ := info.Types[call.Fun].Type
 	if typ == nil {
-		return -1 // missing type
+		return nil, -1 // missing type
 	}
 	sig, ok := typ.(*types.Signature)
 	if !ok {
-		return -1 // ill-typed
+		return nil, -1 // ill-typed
 	}
 	if !sig.Variadic() {
 		// Skip checking non-variadic functions.
-		return -1
+		return nil, -1
 	}
 	idx := sig.Params().Len() - 2
 	if idx < 0 {
 		// Skip checking variadic functions without
 		// fixed arguments.
-		return -1
+		return nil, -1
 	}
-	return idx
+	// We only care about literal format strings, so fmt.Sprint("a"+"b%s", "bar") won't be highlighted.
+	if lit, ok := call.Args[idx].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+		return lit, idx
+	}
+	return nil, -1
 }
 
 // highlightPrintf highlights operations in a format string and their corresponding
@@ -207,19 +208,27 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.
 	succeededArg := 0
 	visited := make(map[posRange]int, 0)
 
-	formatPos := call.Args[idx].Pos()
 	// highlightPair highlights the operation and its potential argument pair if the cursor is within either range.
 	highlightPair := func(rang fmtstr.Range, argIndex int) {
-		var (
-			rangeStart = formatPos + token.Pos(offsetInStringLiteral(lit.Value, format, rang.Start))
-			rangeEnd   = formatPos + token.Pos(offsetInStringLiteral(lit.Value, format, rang.End-1)+1)
-			arg        ast.Expr // may not exist
-		)
+		rangeStart, err := posInStringLiteral(lit, rang.Start)
+		if err != nil {
+			return
+		}
+		rangeEnd, err := posInStringLiteral(lit, rang.End)
+		if err != nil {
+			return
+		}
 		visited[posRange{rangeStart, rangeEnd}] = argIndex
+
+		var arg ast.Expr
 		if argIndex < len(call.Args) {
 			arg = call.Args[argIndex]
 		}
-		if rangeStart <= cursorPos && cursorPos < rangeEnd || arg != nil && arg.Pos() <= cursorPos && cursorPos < arg.End() {
+
+		// cursorPos can't equal to end position, otherwise the two
+		// neighborhood such as (%[2]*d) are both highlighted if cursor in "*" (ending of [2]*).
+		if rangeStart <= cursorPos && cursorPos < rangeEnd ||
+			arg != nil && arg.Pos() <= cursorPos && cursorPos < arg.End() {
 			highlightRange(result, rangeStart, rangeEnd, protocol.Write)
 			if arg != nil {
 				succeededArg = argIndex
@@ -268,65 +277,36 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.
 	}
 }
 
-// offsetInStringLiteral maps an offset in the unquoted string to
-// relative to the literal string.
-func offsetInStringLiteral(literal string, unquoted string, logicalOffset int) int {
-	literalIdx := 1 // Skip the initial quote char.
-	logIdx := 0
+// posInStringLiteral returns the position within a string literal
+// corresponding to the specified byte offset within the logical
+// string that it denotes.
+func posInStringLiteral(lit *ast.BasicLit, offset int) (token.Pos, error) {
+	raw := lit.Value
 
-	// Advance by one unquoted rune and the corresponding literal string.
-	advanceRune := func() {
-		r, size := utf8.DecodeRuneInString(unquoted[logIdx:])
-		if r == utf8.RuneError && size <= 1 {
-			// Malformed UTF-8 or end of string,
-			// move one byte in both strings to avoid infinite loops.
-			logIdx++
-			literalIdx++
-			return
-		}
-		logIdx += size
-
-		if literalIdx >= len(literal)-1 {
-			return
-		}
-
-		if literal[literalIdx] == '\\' {
-			remain := literal[literalIdx:]
-			escLen := 0
-			if len(remain) < 2 {
-				escLen = 1 // just the '\'
-			}
-			switch remain[1] {
-			case 'x':
-				escLen = 4
-			case 'u':
-				escLen = 6
-			case 'U':
-				escLen = 10
-			case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', '"':
-				escLen = 2
-			case '0', '1', '2', '3', '4', '5', '6', '7':
-				escLen = 4
-			default:
-				return
-			}
-			literalIdx += escLen
-		} else {
-			// non-escaped character
-			literalIdx++
-		}
+	value, err := strconv.Unquote(raw)
+	if err != nil {
+		return 0, err
+	}
+	if !(0 <= offset && offset <= len(value)) {
+		return 0, fmt.Errorf("invalid offset")
 	}
 
-	for logIdx < len(unquoted) && (logIdx < logicalOffset) && literalIdx < len(literal)-1 {
-		advanceRune()
-	}
+	// remove quotes
+	quote := raw[0] // '"' or '`'
+	raw = raw[1 : len(raw)-1]
 
-	// Clamp it to ensure we don't exceed array bounds.
-	if literalIdx >= len(literal)-1 {
-		literalIdx = len(literal) - 1
+	var (
+		i   = 0                // byte index within logical value
+		pos = lit.ValuePos + 1 // position within literal
+	)
+	for raw != "" && i < offset {
+		r, _, rest, _ := strconv.UnquoteChar(raw, quote) // can't fail
+		sz := len(raw) - len(rest)                       // length of literal char in raw bytes
+		pos += token.Pos(sz)
+		raw = raw[sz:]
+		i += utf8.RuneLen(r)
 	}
-
-	return literalIdx
+	return pos, nil
 }
 
 type posRange struct {
