@@ -164,7 +164,7 @@ func uses(info *types.Info, cur cursor.Cursor, obj types.Object) bool {
 // enclosingFunc returns the cursor for the innermost Func{Decl,Lit}
 // that encloses c, if any.
 func enclosingFunc(c cursor.Cursor) (cursor.Cursor, bool) {
-	for curAncestor := range c.Ancestors((*ast.FuncLit)(nil), (*ast.FuncDecl)(nil)) {
+	for curAncestor := range c.Ancestors((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
 		return curAncestor, true
 	}
 	return cursor.Cursor{}, false

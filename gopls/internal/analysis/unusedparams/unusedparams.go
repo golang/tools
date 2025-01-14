@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil/cursor"
+	"golang.org/x/tools/internal/astutil/edge"
 )
 
 //go:embed doc.go
@@ -187,24 +188,22 @@ func run(pass *analysis.Pass) (any, error) {
 			case *ast.AssignStmt:
 				// f  = func() {...}
 				// f := func() {...}
-				for i, rhs := range parent.Rhs {
-					if rhs == n {
-						if id, ok := parent.Lhs[i].(*ast.Ident); ok {
-							fn = pass.TypesInfo.ObjectOf(id)
+				if e, idx := c.Edge(); e == edge.AssignStmt_Rhs {
+					// Inv: n == AssignStmt.Rhs[idx]
+					if id, ok := parent.Lhs[idx].(*ast.Ident); ok {
+						fn = pass.TypesInfo.ObjectOf(id)
 
-							// Edge case: f = func() {...}
-							// should not count as a use.
-							if pass.TypesInfo.Uses[id] != nil {
-								usesOutsideCall[fn] = moreslices.Remove(usesOutsideCall[fn], id)
-							}
-
-							if fn == nil && id.Name == "_" {
-								// Edge case: _ = func() {...}
-								// has no var. Fake one.
-								fn = types.NewVar(id.Pos(), pass.Pkg, id.Name, pass.TypesInfo.TypeOf(n))
-							}
+						// Edge case: f = func() {...}
+						// should not count as a use.
+						if pass.TypesInfo.Uses[id] != nil {
+							usesOutsideCall[fn] = moreslices.Remove(usesOutsideCall[fn], id)
 						}
-						break
+
+						if fn == nil && id.Name == "_" {
+							// Edge case: _ = func() {...}
+							// has no var. Fake one.
+							fn = types.NewVar(id.Pos(), pass.Pkg, id.Name, pass.TypesInfo.TypeOf(n))
+						}
 					}
 				}
 
