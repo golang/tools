@@ -803,7 +803,11 @@ func goTest(ctx context.Context, req *codeActionsRequest) error {
 		return nil
 	}
 
-	cmd := command.NewTestCommand("Run tests and benchmarks", req.loc.URI, tests, benchmarks)
+	cmd := command.NewRunTestsCommand("Run tests and benchmarks", command.RunTestsArgs{
+		URI:        req.loc.URI,
+		Tests:      tests,
+		Benchmarks: benchmarks,
+	})
 	req.addCommandAction(cmd, false)
 	return nil
 }

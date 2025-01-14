@@ -47,13 +47,19 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	}
 	puri := fh.URI()
 	for _, fn := range testFuncs {
-		cmd := command.NewTestCommand("run test", puri, []string{fn.name}, nil)
+		cmd := command.NewRunTestsCommand("run test", command.RunTestsArgs{
+			URI:   puri,
+			Tests: []string{fn.name},
+		})
 		rng := protocol.Range{Start: fn.rng.Start, End: fn.rng.Start}
 		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: cmd})
 	}
 
 	for _, fn := range benchFuncs {
-		cmd := command.NewTestCommand("run benchmark", puri, nil, []string{fn.name})
+		cmd := command.NewRunTestsCommand("run benchmark", command.RunTestsArgs{
+			URI:        puri,
+			Benchmarks: []string{fn.name},
+		})
 		rng := protocol.Range{Start: fn.rng.Start, End: fn.rng.Start}
 		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: cmd})
 	}
@@ -72,7 +78,10 @@ func runTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 		for _, fn := range benchFuncs {
 			benches = append(benches, fn.name)
 		}
-		cmd := command.NewTestCommand("run file benchmarks", puri, nil, benches)
+		cmd := command.NewRunTestsCommand("run file benchmarks", command.RunTestsArgs{
+			URI:        puri,
+			Benchmarks: benches,
+		})
 		codeLens = append(codeLens, protocol.CodeLens{Range: rng, Command: cmd})
 	}
 	return codeLens, nil

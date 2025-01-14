@@ -683,15 +683,6 @@ func dropDependency(pm *cache.ParsedModule, modulePath string) ([]protocol.TextE
 	return protocol.EditsFromDiffEdits(pm.Mapper, diff)
 }
 
-// Test is an alias for RunTests (with splayed arguments).
-func (c *commandHandler) Test(ctx context.Context, uri protocol.DocumentURI, tests, benchmarks []string) error {
-	return c.RunTests(ctx, command.RunTestsArgs{
-		URI:        uri,
-		Tests:      tests,
-		Benchmarks: benchmarks,
-	})
-}
-
 func (c *commandHandler) Doc(ctx context.Context, args command.DocArgs) (protocol.URI, error) {
 	if args.Location.URI == "" {
 		return "", errors.New("missing location URI")

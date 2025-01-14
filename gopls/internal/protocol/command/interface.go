@@ -47,19 +47,7 @@ type Interface interface {
 	// Applies a fix to a region of source code.
 	ApplyFix(context.Context, ApplyFixArgs) (*protocol.WorkspaceEdit, error)
 
-	// Test: Run test(s) (legacy)
-	//
-	// Runs `go test` for a specific set of test or benchmark functions.
-	//
-	// This command is asynchronous; wait for the 'end' progress notification.
-	//
-	// This command is an alias for RunTests; the only difference
-	// is the form of the parameters.
-	//
-	// TODO(adonovan): eliminate it.
-	Test(context.Context, protocol.DocumentURI, []string, []string) error
-
-	// Test: Run test(s)
+	// RunTests: Run tests
 	//
 	// Runs `go test` for a specific set of test or benchmark functions.
 	//

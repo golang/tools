@@ -213,8 +213,8 @@ func TestFail(t *testing.T) { t.Fatal("fail") }
 	{
 		res := gopls(t, tree, "codelens", "./a/a_test.go")
 		res.checkExit(true)
-		res.checkStdout(`a_test.go:3: "run test" \[gopls.test\]`)
-		res.checkStdout(`a_test.go:4: "run test" \[gopls.test\]`)
+		res.checkStdout(`a_test.go:3: "run test" \[gopls.run_tests\]`)
+		res.checkStdout(`a_test.go:4: "run test" \[gopls.run_tests\]`)
 	}
 	// no codelens with title/position
 	{
