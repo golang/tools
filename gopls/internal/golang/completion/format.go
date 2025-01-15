@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/typesinternal"
 )
 
 var (
@@ -60,9 +59,12 @@ func (c *completer) item(ctx context.Context, cand candidate) (CompletionItem, e
 	if obj.Type() == nil {
 		detail = ""
 	}
-	if isTypeName(obj) && c.wantTypeParams() {
-		// obj is a *types.TypeName, so its type must be Alias|Named.
-		tparams := typesinternal.TypeParams(obj.Type().(typesinternal.NamedOrAlias))
+
+	type hasTypeParams interface{ TypeParams() *types.TypeParamList }
+	if genericType, _ := obj.Type().(hasTypeParams); genericType != nil && isTypeName(obj) && c.wantTypeParams() {
+		// golang/go#71044: note that type names can be basic types, even in
+		// receiver position, for invalid code.
+		tparams := genericType.TypeParams()
 		label += typesutil.FormatTypeParams(tparams)
 		insert = label // maintain invariant above (label == insert)
 	}
