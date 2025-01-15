@@ -360,6 +360,12 @@ func TestCursor_Edge(t *testing.T) {
 				e.NodeType(), parent.Node())
 		}
 
+		// Check consistency of c.Edge.Get(c.Parent().Node()) == c.Node().
+		if got := e.Get(parent.Node(), idx); got != cur.Node() {
+			t.Errorf("cur=%v@%s: %s.Get(cur.Parent().Node(), %d) = %T@%s, want cur.Node()",
+				cur, netFset.Position(cur.Node().Pos()), e, idx, got, netFset.Position(got.Pos()))
+		}
+
 		// Check that reflection on the parent finds the current node.
 		fv := reflect.ValueOf(parent.Node()).Elem().FieldByName(e.FieldName())
 		if idx >= 0 {
@@ -372,6 +378,11 @@ func TestCursor_Edge(t *testing.T) {
 		if got != cur.Node() {
 			t.Errorf("%v.Edge = (%v, %d); FieldName/Index reflection gave %T@%s, not original node",
 				cur, e, idx, got, netFset.Position(got.Pos()))
+		}
+
+		// Check that Cursor.Child is the reverse of Parent.
+		if cur.Parent().Child(cur.Node()) != cur {
+			t.Errorf("Cursor.Parent.Child = %v, want %v", cur.Parent().Child(cur.Node()), cur)
 		}
 	}
 }

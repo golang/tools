@@ -15,6 +15,7 @@
 package cursor
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"iter"
@@ -225,6 +226,34 @@ func (c Cursor) Edge() (edge.Kind, int) {
 	events := c.events()
 	pop := events[c.index].index
 	return unpackEdgeKindAndIndex(events[pop].parent)
+}
+
+// Child returns the cursor for n, which must be a direct child of c's Node.
+//
+// Child must not be called on the Root node (whose [Cursor.Node] returns nil).
+func (c Cursor) Child(n ast.Node) Cursor {
+	if c.index < 0 {
+		panic("Cursor.Child called on Root node")
+	}
+
+	if false {
+		// reference implementation
+		for child := range c.Children() {
+			if child.Node() == n {
+				return child
+			}
+		}
+
+	} else {
+		// optimized implementation
+		events := c.events()
+		for i := c.index + 1; events[i].index > i; i = events[i].index + 1 {
+			if events[i].node == n {
+				return Cursor{c.in, i}
+			}
+		}
+	}
+	panic(fmt.Sprintf("Child(%T): not a child of %v", n, c))
 }
 
 // NextSibling returns the cursor for the next sibling node in the same list

@@ -21,17 +21,33 @@ func (k Kind) String() string {
 		return "<invalid>"
 	}
 	info := fieldInfos[k]
-	return fmt.Sprintf("%v.%s", info.nodeType.Elem().Name(), info.fieldName)
+	return fmt.Sprintf("%v.%s", info.nodeType.Elem().Name(), info.name)
 }
 
 // NodeType returns the pointer-to-struct type of the ast.Node implementation.
 func (k Kind) NodeType() reflect.Type { return fieldInfos[k].nodeType }
 
 // FieldName returns the name of the field.
-func (k Kind) FieldName() string { return fieldInfos[k].fieldName }
+func (k Kind) FieldName() string { return fieldInfos[k].name }
 
 // FieldType returns the declared type of the field.
 func (k Kind) FieldType() reflect.Type { return fieldInfos[k].fieldType }
+
+// Get returns the direct child of n identified by (k, idx).
+// n's type must match k.NodeType().
+// idx must be a valid slice index, or -1 for a non-slice.
+func (k Kind) Get(n ast.Node, idx int) ast.Node {
+	if k.NodeType() != reflect.TypeOf(n) {
+		panic(fmt.Sprintf("%v.Get(%T): invalid node type", k, n))
+	}
+	v := reflect.ValueOf(n).Elem().Field(fieldInfos[k].index)
+	if idx != -1 {
+		v = v.Index(idx) // asserts valid index
+	} else {
+		// (The type assertion below asserts that v is not a slice.)
+	}
+	return v.Interface().(ast.Node) // may be nil
+}
 
 const (
 	Invalid Kind = iota // for nodes at the root of the traversal
@@ -156,7 +172,8 @@ var _ = [1 << 7]struct{}{}[maxKind]
 
 type fieldInfo struct {
 	nodeType  reflect.Type // pointer-to-struct type of ast.Node implementation
-	fieldName string
+	name      string
+	index     int
 	fieldType reflect.Type
 }
 
@@ -166,7 +183,7 @@ func info[N ast.Node](fieldName string) fieldInfo {
 	if !ok {
 		panic(fieldName)
 	}
-	return fieldInfo{nodePtrType, fieldName, f.Type}
+	return fieldInfo{nodePtrType, fieldName, f.Index[0], f.Type}
 }
 
 var fieldInfos = [...]fieldInfo{
