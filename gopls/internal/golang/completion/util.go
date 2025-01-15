@@ -284,7 +284,7 @@ func isBasicKind(t types.Type, k types.BasicInfo) bool {
 }
 
 func (c *completer) editText(from, to token.Pos, newText string) ([]protocol.TextEdit, error) {
-	start, end, err := safetoken.Offsets(c.tokFile, from, to)
+	start, end, err := safetoken.Offsets(c.pgf.Tok, from, to)
 	if err != nil {
 		return nil, err // can't happen: from/to came from c
 	}

@@ -79,3 +79,9 @@ func Multiline() int { //@item(multiline, "Multiline", "func() int", "func")
 	// //@complete(" ", multiline)
 	return 0
 }
+
+// This test checks that gopls does not panic if the receiver is syntactically
+// present but empty.
+//
+// //@complete(" ")
+func () _() {}

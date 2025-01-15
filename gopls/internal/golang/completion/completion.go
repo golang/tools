@@ -31,6 +31,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/golang"
@@ -218,17 +219,16 @@ type completer struct {
 	// filename is the name of the file associated with this completion request.
 	filename string
 
-	// file is the AST of the file associated with this completion request.
-	file *ast.File
+	// pgf is the AST of the file associated with this completion request.
+	pgf *parsego.File // debugging
 
 	// goversion is the version of Go in force in the file, as
 	// defined by x/tools/internal/versions. Empty if unknown.
 	// Since go1.22 it should always be known.
 	goversion string
 
-	// (tokFile, pos) is the position at which the request was triggered.
-	tokFile *token.File
-	pos     token.Pos
+	// pos is the position at which the request was triggered.
+	pos token.Pos
 
 	// path is the path of AST nodes enclosing the position.
 	path []ast.Node
@@ -410,7 +410,7 @@ func (c *completer) setSurrounding(ident *ast.Ident) {
 		content: ident.Name,
 		cursor:  c.pos,
 		// Overwrite the prefix only.
-		tokFile: c.tokFile,
+		tokFile: c.pgf.Tok,
 		start:   ident.Pos(),
 		end:     ident.End(),
 		mapper:  c.mapper,
@@ -435,7 +435,7 @@ func (c *completer) getSurrounding() *Selection {
 		c.surrounding = &Selection{
 			content: "",
 			cursor:  c.pos,
-			tokFile: c.tokFile,
+			tokFile: c.pgf.Tok,
 			start:   c.pos,
 			end:     c.pos,
 			mapper:  c.mapper,
@@ -609,8 +609,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		},
 		fh:                        fh,
 		filename:                  fh.URI().Path(),
-		tokFile:                   pgf.Tok,
-		file:                      pgf.File,
+		pgf:                       pgf,
 		goversion:                 goversion,
 		path:                      path,
 		pos:                       pos,
@@ -711,7 +710,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 // search queue or completion items directly for different completion contexts.
 func (c *completer) collectCompletions(ctx context.Context) error {
 	// Inside import blocks, return completions for unimported packages.
-	for _, importSpec := range c.file.Imports {
+	for _, importSpec := range c.pgf.File.Imports {
 		if !(importSpec.Path.Pos() <= c.pos && c.pos <= importSpec.Path.End()) {
 			continue
 		}
@@ -719,7 +718,7 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 	}
 
 	// Inside comments, offer completions for the name of the relevant symbol.
-	for _, comment := range c.file.Comments {
+	for _, comment := range c.pgf.File.Comments {
 		if comment.Pos() < c.pos && c.pos <= comment.End() {
 			c.populateCommentCompletions(comment)
 			return nil
@@ -749,7 +748,7 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 
 	switch n := c.path[0].(type) {
 	case *ast.Ident:
-		if c.file.Name == n {
+		if c.pgf.File.Name == n {
 			return c.packageNameCompletions(ctx, c.fh.URI(), n)
 		} else if sel, ok := c.path[1].(*ast.SelectorExpr); ok && sel.Sel == n {
 			// Is this the Sel part of a selector?
@@ -921,14 +920,14 @@ func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) erro
 	c.surrounding = &Selection{
 		content: content,
 		cursor:  c.pos,
-		tokFile: c.tokFile,
+		tokFile: c.pgf.Tok,
 		start:   start,
 		end:     end,
 		mapper:  c.mapper,
 	}
 
 	seenImports := make(map[string]struct{})
-	for _, importSpec := range c.file.Imports {
+	for _, importSpec := range c.pgf.File.Imports {
 		if importSpec.Path.Value == importPath {
 			continue
 		}
@@ -1024,7 +1023,7 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 	c.setSurroundingForComment(comment)
 
 	// Using the next line pos, grab and parse the exported symbol on that line
-	for _, n := range c.file.Decls {
+	for _, n := range c.pgf.File.Decls {
 		declLine := safetoken.Line(file, n.Pos())
 		// if the comment is not in, directly above or on the same line as a declaration
 		if declLine != commentLine && declLine != commentLine+1 &&
@@ -1080,8 +1079,33 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 
 			// collect receiver struct fields
 			if node.Recv != nil {
-				sig := c.pkg.TypesInfo().Defs[node.Name].(*types.Func).Signature()
-				_, named := typesinternal.ReceiverNamed(sig.Recv()) // may be nil if ill-typed
+				obj := c.pkg.TypesInfo().Defs[node.Name]
+				switch obj.(type) {
+				case nil:
+					report := func() {
+						bug.Reportf("missing def for func %s", node.Name)
+					}
+					// Debugging golang/go#71273.
+					if !slices.Contains(c.pkg.CompiledGoFiles(), c.pgf) {
+						if c.snapshot.View().Type() == cache.GoPackagesDriverView {
+							report()
+						} else {
+							report()
+						}
+					} else {
+						report()
+					}
+					continue
+				case *types.Func:
+				default:
+					bug.Reportf("unexpected func obj type %T for %s", obj, node.Name)
+				}
+				sig := obj.(*types.Func).Signature()
+				recv := sig.Recv()
+				if recv == nil {
+					continue // may be nil if ill-typed
+				}
+				_, named := typesinternal.ReceiverNamed(recv)
 				if named != nil {
 					if recvStruct, ok := named.Underlying().(*types.Struct); ok {
 						for i := 0; i < recvStruct.NumFields(); i++ {
@@ -1133,7 +1157,7 @@ func (c *completer) setSurroundingForComment(comments *ast.CommentGroup) {
 	c.surrounding = &Selection{
 		content: cursorComment.Text[start:end],
 		cursor:  c.pos,
-		tokFile: c.tokFile,
+		tokFile: c.pgf.Tok,
 		start:   token.Pos(int(cursorComment.Slash) + start),
 		end:     token.Pos(int(cursorComment.Slash) + end),
 		mapper:  c.mapper,
@@ -1437,7 +1461,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 		return nil
 	}
 
-	goversion := c.pkg.TypesInfo().FileVersions[c.file]
+	goversion := c.pkg.TypesInfo().FileVersions[c.pgf.File]
 
 	// Extract the package-level candidates using a quick parse.
 	var g errgroup.Group
@@ -1694,7 +1718,7 @@ func (c *completer) lexical(ctx context.Context) error {
 				// Make sure the package name isn't already in use by another
 				// object, and that this file doesn't import the package yet.
 				// TODO(adonovan): what if pkg.Path has vendor/ prefix?
-				if _, ok := seen[pkg.Name()]; !ok && pkg != c.pkg.Types() && !alreadyImports(c.file, golang.ImportPath(pkg.Path())) {
+				if _, ok := seen[pkg.Name()]; !ok && pkg != c.pkg.Types() && !alreadyImports(c.pgf.File, golang.ImportPath(pkg.Path())) {
 					seen[pkg.Name()] = struct{}{}
 					obj := types.NewPkgName(0, nil, pkg.Name(), pkg)
 					imp := &importInfo{

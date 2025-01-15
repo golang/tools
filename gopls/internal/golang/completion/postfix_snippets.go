@@ -653,7 +653,7 @@ func (c *completer) importIfNeeded(pkgPath string, scope *types.Scope) (string, 
 	defaultName := imports.ImportPathToAssumedName(pkgPath)
 
 	// Check if file already imports pkgPath.
-	for _, s := range c.file.Imports {
+	for _, s := range c.pgf.File.Imports {
 		// TODO(adonovan): what if pkgPath has a vendor/ suffix?
 		// This may be the cause of go.dev/issue/56291.
 		if string(metadata.UnquoteImportPath(s)) == pkgPath {
