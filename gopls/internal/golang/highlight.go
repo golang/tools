@@ -166,9 +166,9 @@ func formatStringAndIndex(info *types.Info, call *ast.CallExpr) (*ast.BasicLit, 
 		return nil, -1
 	}
 	idx := sig.Params().Len() - 2
-	if idx < 0 {
-		// Skip checking variadic functions without
-		// fixed arguments.
+	if !(0 <= idx && idx < len(call.Args)) {
+		// Skip checking functions without a format string parameter, or
+		// missing the corresponding format argument.
 		return nil, -1
 	}
 	// We only care about literal format strings, so fmt.Sprint("a"+"b%s", "bar") won't be highlighted.
