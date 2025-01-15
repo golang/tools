@@ -989,6 +989,11 @@ func readPCLineTable(info Info, stacksDir string) (map[string]FileLine, error) {
 		buildDir = filepath.Join(revDir, "gopls")
 	case "cmd/compile":
 		// Nothing to do, GOTOOLCHAIN is sufficient.
+
+		// Switch build directories so if we happen to be in Go module
+		// directory its go.mod doesn't restrict the toolchain versions
+		// we're allowed to use.
+		buildDir = "/"
 	default:
 		return nil, fmt.Errorf("don't know how to build unknown program %s", info.Program)
 	}
@@ -1014,7 +1019,6 @@ func readPCLineTable(info Info, stacksDir string) (map[string]FileLine, error) {
 			"GOEXPERIMENT=", // Don't forward GOEXPERIMENT from current environment since the GOTOOLCHAIN selected might not support the same experiments.
 			"GOOS="+info.GOOS,
 			"GOARCH="+info.GOARCH,
-			"GOWORK=off",
 		)
 		if err := cmd.Run(); err != nil {
 			return nil, fmt.Errorf("building: %v (rm -fr %s?)", err, stacksDir)
