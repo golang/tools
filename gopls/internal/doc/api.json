@@ -12,7 +12,8 @@
 				"EnumValues": null,
 				"Default": "[]",
 				"Status": "",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "env",
@@ -25,7 +26,8 @@
 				"EnumValues": null,
 				"Default": "{}",
 				"Status": "",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "directoryFilters",
@@ -38,7 +40,8 @@
 				"EnumValues": null,
 				"Default": "[\"-**/node_modules\"]",
 				"Status": "",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "templateExtensions",
@@ -51,7 +54,8 @@
 				"EnumValues": null,
 				"Default": "[]",
 				"Status": "",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "memoryMode",
@@ -64,7 +68,8 @@
 				"EnumValues": null,
 				"Default": "\"\"",
 				"Status": "experimental",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "expandWorkspaceToModule",
@@ -77,7 +82,8 @@
 				"EnumValues": null,
 				"Default": "true",
 				"Status": "experimental",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "standaloneTags",
@@ -90,7 +96,8 @@
 				"EnumValues": null,
 				"Default": "[\"ignore\"]",
 				"Status": "",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "hoverKind",
@@ -120,7 +127,8 @@
 				],
 				"Default": "\"FullDocumentation\"",
 				"Status": "",
-				"Hierarchy": "ui.documentation"
+				"Hierarchy": "ui.documentation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "linkTarget",
@@ -133,7 +141,8 @@
 				"EnumValues": null,
 				"Default": "\"pkg.go.dev\"",
 				"Status": "",
-				"Hierarchy": "ui.documentation"
+				"Hierarchy": "ui.documentation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "linksInHover",
@@ -159,7 +168,8 @@
 				],
 				"Default": "true",
 				"Status": "",
-				"Hierarchy": "ui.documentation"
+				"Hierarchy": "ui.documentation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "usePlaceholders",
@@ -172,7 +182,8 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "",
-				"Hierarchy": "ui.completion"
+				"Hierarchy": "ui.completion",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "completionBudget",
@@ -185,7 +196,8 @@
 				"EnumValues": null,
 				"Default": "\"100ms\"",
 				"Status": "debug",
-				"Hierarchy": "ui.completion"
+				"Hierarchy": "ui.completion",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "matcher",
@@ -211,7 +223,8 @@
 				],
 				"Default": "\"Fuzzy\"",
 				"Status": "advanced",
-				"Hierarchy": "ui.completion"
+				"Hierarchy": "ui.completion",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "experimentalPostfixCompletions",
@@ -224,7 +237,8 @@
 				"EnumValues": null,
 				"Default": "true",
 				"Status": "experimental",
-				"Hierarchy": "ui.completion"
+				"Hierarchy": "ui.completion",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "completeFunctionCalls",
@@ -237,7 +251,8 @@
 				"EnumValues": null,
 				"Default": "true",
 				"Status": "",
-				"Hierarchy": "ui.completion"
+				"Hierarchy": "ui.completion",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "importShortcut",
@@ -263,7 +278,8 @@
 				],
 				"Default": "\"Both\"",
 				"Status": "",
-				"Hierarchy": "ui.navigation"
+				"Hierarchy": "ui.navigation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "symbolMatcher",
@@ -293,7 +309,8 @@
 				],
 				"Default": "\"FastFuzzy\"",
 				"Status": "advanced",
-				"Hierarchy": "ui.navigation"
+				"Hierarchy": "ui.navigation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "symbolStyle",
@@ -319,7 +336,8 @@
 				],
 				"Default": "\"Dynamic\"",
 				"Status": "advanced",
-				"Hierarchy": "ui.navigation"
+				"Hierarchy": "ui.navigation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "symbolScope",
@@ -341,7 +359,8 @@
 				],
 				"Default": "\"all\"",
 				"Status": "",
-				"Hierarchy": "ui.navigation"
+				"Hierarchy": "ui.navigation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "analyses",
@@ -630,7 +649,8 @@
 				"EnumValues": null,
 				"Default": "{}",
 				"Status": "",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "staticcheck",
@@ -643,7 +663,8 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "experimental",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "vulncheck",
@@ -665,7 +686,8 @@
 				],
 				"Default": "\"Off\"",
 				"Status": "experimental",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "diagnosticsDelay",
@@ -678,7 +700,8 @@
 				"EnumValues": null,
 				"Default": "\"1s\"",
 				"Status": "advanced",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "diagnosticsTrigger",
@@ -700,7 +723,8 @@
 				],
 				"Default": "\"Edit\"",
 				"Status": "experimental",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "analysisProgressReporting",
@@ -713,7 +737,8 @@
 				"EnumValues": null,
 				"Default": "true",
 				"Status": "",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "hints",
@@ -762,7 +787,8 @@
 				"EnumValues": null,
 				"Default": "{}",
 				"Status": "experimental",
-				"Hierarchy": "ui.inlayhint"
+				"Hierarchy": "ui.inlayhint",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "codelenses",
@@ -816,7 +842,8 @@
 				"EnumValues": null,
 				"Default": "{\"generate\":true,\"regenerate_cgo\":true,\"run_govulncheck\":false,\"tidy\":true,\"upgrade_dependency\":true,\"vendor\":true}",
 				"Status": "",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "semanticTokens",
@@ -829,12 +856,13 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "experimental",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "noSemanticString",
 				"Type": "bool",
-				"Doc": "noSemanticString turns off the sending of the semantic token 'string'\n",
+				"Doc": "noSemanticString turns off the sending of the semantic token 'string'\n\nDeprecated: Use SemanticTokenTypes[\"string\"] = false instead. See\ngolang/vscode-go#3632\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null
@@ -842,12 +870,13 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "experimental",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": "use SemanticTokenTypes[\"string\"] = false instead. See\ngolang/vscode-go#3632\n"
 			},
 			{
 				"Name": "noSemanticNumber",
 				"Type": "bool",
-				"Doc": "noSemanticNumber turns off the sending of the semantic token 'number'\n",
+				"Doc": "noSemanticNumber turns off the sending of the semantic token 'number'\n\nDeprecated: Use SemanticTokenTypes[\"number\"] = false instead. See\ngolang/vscode-go#3632.\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null
@@ -855,7 +884,8 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "experimental",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": "use SemanticTokenTypes[\"number\"] = false instead. See\ngolang/vscode-go#3632.\n"
 			},
 			{
 				"Name": "semanticTokenTypes",
@@ -868,7 +898,8 @@
 				"EnumValues": null,
 				"Default": "{}",
 				"Status": "experimental",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "semanticTokenModifiers",
@@ -881,7 +912,8 @@
 				"EnumValues": null,
 				"Default": "{}",
 				"Status": "experimental",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "local",
@@ -894,7 +926,8 @@
 				"EnumValues": null,
 				"Default": "\"\"",
 				"Status": "",
-				"Hierarchy": "formatting"
+				"Hierarchy": "formatting",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "gofumpt",
@@ -907,7 +940,8 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "",
-				"Hierarchy": "formatting"
+				"Hierarchy": "formatting",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "verboseOutput",
@@ -920,7 +954,8 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "debug",
-				"Hierarchy": ""
+				"Hierarchy": "",
+				"DeprecationMessage": ""
 			}
 		]
 	},

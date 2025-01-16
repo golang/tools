@@ -208,6 +208,9 @@ Default: `false`.
 
 noSemanticString turns off the sending of the semantic token 'string'
 
+Deprecated: Use SemanticTokenTypes["string"] = false instead. See
+golang/vscode-go#3632
+
 Default: `false`.
 
 <a id='noSemanticNumber'></a>
@@ -216,6 +219,9 @@ Default: `false`.
 **This setting is experimental and may be deleted.**
 
 noSemanticNumber turns off the sending of the semantic token 'number'
+
+Deprecated: Use SemanticTokenTypes["number"] = false instead. See
+golang/vscode-go#3632.
 
 Default: `false`.
 

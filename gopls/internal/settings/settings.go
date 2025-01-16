@@ -172,9 +172,15 @@ type UIOptions struct {
 	SemanticTokens bool `status:"experimental"`
 
 	// NoSemanticString turns off the sending of the semantic token 'string'
+	//
+	// Deprecated: Use SemanticTokenTypes["string"] = false instead. See
+	// golang/vscode-go#3632
 	NoSemanticString bool `status:"experimental"`
 
 	// NoSemanticNumber turns off the sending of the semantic token 'number'
+	//
+	// Deprecated: Use SemanticTokenTypes["number"] = false instead. See
+	// golang/vscode-go#3632.
 	NoSemanticNumber bool `status:"experimental"`
 
 	// SemanticTokenTypes configures the semantic token types. It allows
@@ -1095,10 +1101,16 @@ func (o *Options) setOne(name string, value any) error {
 
 	// TODO(hxjiang): deprecate noSemanticString and noSemanticNumber.
 	case "noSemanticString":
-		return setBool(&o.NoSemanticString, value)
+		if err := setBool(&o.NoSemanticString, value); err != nil {
+			return err
+		}
+		return &SoftError{fmt.Sprintf("noSemanticString setting is deprecated, use semanticTokenTypes instead (though you can continue to apply them for the time being).")}
 
 	case "noSemanticNumber":
-		return setBool(&o.NoSemanticNumber, value)
+		if err := setBool(&o.NoSemanticNumber, value); err != nil {
+			return nil
+		}
+		return &SoftError{fmt.Sprintf("noSemanticNumber setting is deprecated, use semanticTokenTypes instead (though you can continue to apply them for the time being).")}
 
 	case "semanticTokenTypes":
 		return setBoolMap(&o.SemanticTokenTypes, value)

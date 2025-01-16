@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
+	internalastutil "golang.org/x/tools/internal/astutil"
 )
 
 //go:embed doc.go
@@ -155,26 +156,8 @@ type deprecatedNames struct {
 // them both as Facts and the return value. This is a simplified copy
 // of staticcheck's fact_deprecated analyzer.
 func collectDeprecatedNames(pass *analysis.Pass, ins *inspector.Inspector) (deprecatedNames, error) {
-	extractDeprecatedMessage := func(docs []*ast.CommentGroup) string {
-		for _, doc := range docs {
-			if doc == nil {
-				continue
-			}
-			parts := strings.Split(doc.Text(), "\n\n")
-			for _, part := range parts {
-				if !strings.HasPrefix(part, "Deprecated: ") {
-					continue
-				}
-				alt := part[len("Deprecated: "):]
-				alt = strings.Replace(alt, "\n", " ", -1)
-				return strings.TrimSpace(alt)
-			}
-		}
-		return ""
-	}
-
 	doDocs := func(names []*ast.Ident, docs *ast.CommentGroup) {
-		alt := extractDeprecatedMessage([]*ast.CommentGroup{docs})
+		alt := strings.TrimPrefix(internalastutil.Deprecation(docs), "Deprecated: ")
 		if alt == "" {
 			return
 		}
@@ -185,19 +168,21 @@ func collectDeprecatedNames(pass *analysis.Pass, ins *inspector.Inspector) (depr
 		}
 	}
 
-	var docs []*ast.CommentGroup
-	for _, f := range pass.Files {
-		docs = append(docs, f.Doc)
-	}
-	if alt := extractDeprecatedMessage(docs); alt != "" {
-		// Don't mark package syscall as deprecated, even though
-		// it is. A lot of people still use it for simple
-		// constants like SIGKILL, and I am not comfortable
-		// telling them to use x/sys for that.
-		if pass.Pkg.Path() != "syscall" {
-			pass.ExportPackageFact(&deprecationFact{alt})
+	// Is package deprecated?
+	//
+	// Don't mark package syscall as deprecated, even though
+	// it is. A lot of people still use it for simple
+	// constants like SIGKILL, and I am not comfortable
+	// telling them to use x/sys for that.
+	if pass.Pkg.Path() != "syscall" {
+		for _, f := range pass.Files {
+			if depr := internalastutil.Deprecation(f.Doc); depr != "" {
+				pass.ExportPackageFact(&deprecationFact{depr})
+				break
+			}
 		}
 	}
+
 	nodeFilter := []ast.Node{
 		(*ast.GenDecl)(nil),
 		(*ast.FuncDecl)(nil),

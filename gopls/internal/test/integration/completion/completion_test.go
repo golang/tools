@@ -471,12 +471,12 @@ module test.com
 go 1.16
 -- prog.go --
 package waste
-// Deprecated, use newFoof
+// Deprecated: use newFoof.
 func fooFunc() bool {
 	return false
 }
 
-// Deprecated
+// Deprecated: bad.
 const badPi = 3.14
 
 func doit() {

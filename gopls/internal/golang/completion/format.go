@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 )
@@ -261,10 +262,7 @@ Suffixes:
 	} else {
 		item.Documentation = doc.Synopsis(comment.Text())
 	}
-	// The desired pattern is `^// Deprecated`, but the prefix has been removed
-	// TODO(rfindley): It doesn't look like this does the right thing for
-	// multi-line comments.
-	if strings.HasPrefix(comment.Text(), "Deprecated") {
+	if internalastutil.Deprecation(comment) != "" {
 		if c.snapshot.Options().CompletionTags {
 			item.Tags = []protocol.CompletionItemTag{protocol.ComplDeprecated}
 		} else if c.snapshot.Options().CompletionDeprecated {

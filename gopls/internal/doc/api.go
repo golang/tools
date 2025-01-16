@@ -27,14 +27,15 @@ type API struct {
 }
 
 type Option struct {
-	Name       string
-	Type       string // T = bool | string | int | enum | any | []T | map[T]T | time.Duration
-	Doc        string
-	EnumKeys   EnumKeys
-	EnumValues []EnumValue
-	Default    string
-	Status     string
-	Hierarchy  string
+	Name               string
+	Type               string // T = bool | string | int | enum | any | []T | map[T]T | time.Duration
+	Doc                string
+	EnumKeys           EnumKeys
+	EnumValues         []EnumValue
+	Default            string
+	Status             string
+	Hierarchy          string
+	DeprecationMessage string
 }
 
 type EnumKeys struct {
