@@ -167,6 +167,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 		act := result.Action
 
 		// file -> message -> edits
+		// TODO(adonovan): this mapping assumes fix.Messages are unique across analyzers.
 		fileEdits := make(map[*token.File]map[string][]diff.Edit)
 		fileContents := make(map[*token.File][]byte)
 
@@ -178,6 +179,8 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 				if inTools && len(fix.TextEdits) == 0 && diag.Category == "" {
 					t.Errorf("missing Diagnostic.Category for SuggestedFix without TextEdits (gopls requires the category for the name of the fix command")
 				}
+
+				// TODO(adonovan): factor in common with go/analysis/internal/checker.validateEdits.
 
 				for _, edit := range fix.TextEdits {
 					start, end := edit.Pos, edit.End
@@ -275,7 +278,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 				}
 			} else {
 				// all suggested fixes are represented by a single file
-
+				// TODO(adonovan): fix: this makes no sense if len(fixes) > 1.
 				var catchallEdits []diff.Edit
 				for _, edits := range fixes {
 					catchallEdits = append(catchallEdits, edits...)

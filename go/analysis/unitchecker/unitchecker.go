@@ -386,7 +386,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 				AllPackageFacts:   func() []analysis.PackageFact { return facts.AllPackageFacts(factFilter) },
 				Module:            module,
 			}
-			pass.ReadFile = analysisinternal.MakeReadFile(pass)
+			pass.ReadFile = analysisinternal.CheckedReadFile(pass, os.ReadFile)
 
 			t0 := time.Now()
 			act.result, act.err = a.Run(pass)

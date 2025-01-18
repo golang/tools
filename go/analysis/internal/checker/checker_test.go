@@ -25,6 +25,7 @@ import (
 
 func TestApplyFixes(t *testing.T) {
 	testenv.NeedsGoPackages(t)
+	testenv.RedirectStderr(t) // associated checker.Run output with this test
 
 	files := map[string]string{
 		"rename/test.go": `package rename
@@ -114,10 +115,12 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					{Pos: ident.Pos(), End: ident.End(), NewText: []byte("lorem ipsum")},
 				}...)
 			case duplicate:
+				// Duplicate (non-insertion) edits are disallowed,
+				// so this is a buggy analyzer, and validatedFixes should reject it.
 				edits = append(edits, edits...)
 			case other:
 				if pass.Analyzer.Name == other {
-					edits[0].Pos = edits[0].Pos + 1 // shift by one to mismatch analyzer and other
+					edits[0].Pos++ // shift by one to mismatch analyzer and other
 				}
 			}
 			pass.Report(analysis.Diagnostic{
@@ -133,6 +136,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 func TestRunDespiteErrors(t *testing.T) {
 	testenv.NeedsGoPackages(t)
+	testenv.RedirectStderr(t) // associate checker.Run output with this test
 
 	files := map[string]string{
 		"rderr/test.go": `package rderr
@@ -360,4 +364,7 @@ hello from other
 	if !ran {
 		t.Error("analyzer did not run")
 	}
+
+	// TODO(adonovan): test that fixes are applied to the
+	// pass.ReadFile virtual file tree.
 }

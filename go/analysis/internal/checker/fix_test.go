@@ -77,16 +77,23 @@ func fix(t *testing.T, dir, analyzers string, wantExit int, patterns ...string) 
 		return strings.ReplaceAll(s, os.TempDir(), "os.TempDir/")
 	}
 	outBytes, err := cmd.CombinedOutput()
+	switch err := err.(type) {
+	case nil:
+		// success
+	case *exec.ExitError:
+		if code := err.ExitCode(); code != wantExit {
+			// plan9 ExitCode() currently only returns 0 for success or 1 for failure
+			if !(runtime.GOOS == "plan9" && wantExit != exitCodeSuccess && code != exitCodeSuccess) {
+				t.Errorf("exit code was %d, want %d", code, wantExit)
+			}
+		}
+	default:
+		t.Fatalf("failed to execute multichecker: %v", err)
+	}
+
 	out := clean(string(outBytes))
 	t.Logf("$ %s\n%s", clean(fmt.Sprint(cmd)), out)
-	if err, ok := err.(*exec.ExitError); !ok {
-		t.Fatalf("failed to execute multichecker: %v", err)
-	} else if err.ExitCode() != wantExit {
-		// plan9 ExitCode() currently only returns 0 for success or 1 for failure
-		if !(runtime.GOOS == "plan9" && wantExit != exitCodeSuccess && err.ExitCode() != exitCodeSuccess) {
-			t.Errorf("exit code was %d, want %d", err.ExitCode(), wantExit)
-		}
-	}
+
 	return out
 }
 
@@ -253,6 +260,7 @@ func Foo() {
 	}
 	defer cleanup()
 
+	// The 'rename' and 'other' analyzers suggest conflicting fixes.
 	out := fix(t, dir, "rename,other", exitCodeFailed, "other")
 
 	pattern := `.*conflicting edits from other and rename on .*foo.go`
