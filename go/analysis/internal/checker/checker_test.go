@@ -5,8 +5,6 @@
 package checker_test
 
 import (
-	"fmt"
-	"go/ast"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,7 +15,6 @@ import (
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/internal/checker"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
@@ -66,101 +63,6 @@ func Foo() {
 	}
 
 	defer cleanup()
-}
-
-var renameAnalyzer = &analysis.Analyzer{
-	Name:             "rename",
-	Requires:         []*analysis.Analyzer{inspect.Analyzer},
-	Run:              run,
-	Doc:              "renames symbols named bar to baz",
-	RunDespiteErrors: true,
-}
-
-var otherAnalyzer = &analysis.Analyzer{ // like analyzer but with a different Name.
-	Name:     "other",
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
-	Run:      run,
-	Doc:      "renames symbols named bar to baz only in package 'other'",
-}
-
-func run(pass *analysis.Pass) (interface{}, error) {
-	// TODO(adonovan): replace this entangled test with something completely data-driven.
-	const (
-		from      = "bar"
-		to        = "baz"
-		conflict  = "conflict"  // add conflicting edits to package conflict.
-		duplicate = "duplicate" // add duplicate edits to package conflict.
-		other     = "other"     // add conflicting edits to package other from different analyzers.
-	)
-
-	if pass.Analyzer.Name == other {
-		if pass.Pkg.Name() != other {
-			return nil, nil // only apply Analyzer other to packages named other
-		}
-	}
-
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	nodeFilter := []ast.Node{(*ast.Ident)(nil)}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		ident := n.(*ast.Ident)
-		if ident.Name == from {
-			msg := fmt.Sprintf("renaming %q to %q", from, to)
-			edits := []analysis.TextEdit{
-				{Pos: ident.Pos(), End: ident.End(), NewText: []byte(to)},
-			}
-			switch pass.Pkg.Name() {
-			case conflict:
-				// Conflicting edits are legal, so long as they appear in different fixes.
-				pass.Report(analysis.Diagnostic{
-					Pos:     ident.Pos(),
-					End:     ident.End(),
-					Message: msg,
-					SuggestedFixes: []analysis.SuggestedFix{{
-						Message: msg, TextEdits: []analysis.TextEdit{
-							{Pos: ident.Pos() - 1, End: ident.End(), NewText: []byte(to)},
-						},
-					}},
-				})
-				pass.Report(analysis.Diagnostic{
-					Pos:     ident.Pos(),
-					End:     ident.End(),
-					Message: msg,
-					SuggestedFixes: []analysis.SuggestedFix{{
-						Message: msg, TextEdits: []analysis.TextEdit{
-							{Pos: ident.Pos(), End: ident.End() - 1, NewText: []byte(to)},
-						},
-					}},
-				})
-				pass.Report(analysis.Diagnostic{
-					Pos:     ident.Pos(),
-					End:     ident.End(),
-					Message: msg,
-					SuggestedFixes: []analysis.SuggestedFix{{
-						Message: msg, TextEdits: []analysis.TextEdit{
-							{Pos: ident.Pos(), End: ident.End(), NewText: []byte("lorem ipsum")},
-						},
-					}},
-				})
-				return
-
-			case duplicate:
-				// Duplicate (non-insertion) edits are disallowed,
-				// so this is a buggy analyzer, and validatedFixes should reject it.
-				edits = append(edits, edits...)
-			case other:
-				if pass.Analyzer.Name == other {
-					edits[0].Pos++ // shift by one to mismatch analyzer and other
-				}
-			}
-			pass.Report(analysis.Diagnostic{
-				Pos:            ident.Pos(),
-				End:            ident.End(),
-				Message:        msg,
-				SuggestedFixes: []analysis.SuggestedFix{{Message: msg, TextEdits: edits}}})
-		}
-	})
-
-	return nil, nil
 }
 
 func TestRunDespiteErrors(t *testing.T) {

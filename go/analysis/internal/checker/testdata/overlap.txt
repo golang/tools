@@ -1,0 +1,34 @@
+# This test exercises an edge case of merging.
+#
+# Two analyzers generate overlapping fixes for this package:
+# - 'rename' changes "bar" to "baz"
+# - 'marker' changes  "ar" to "baz"
+# Historically this used to cause a conflict, but as it happens,
+# the new merge algorithm splits the rename fix, since it overlaps
+# the marker fix, into two subedits:
+# - a deletion of "b" and
+# - an edit from "ar" to "baz".
+# The deletion is of course nonoverlapping, and the edit,
+# by happy chance, is identical to the marker fix, so the two
+# are coalesced.
+#
+# (This is a pretty unlikely situation, but it corresponds
+# to a historical test, TestOther, that used to check for
+# a conflict, and it seemed wrong to delete it without explanation.)
+
+checker -rename -marker -fix example.com/a
+exit 3
+
+-- go.mod --
+module example.com
+go 1.22
+
+-- a/a.go --
+package a
+
+func f(bar int) {} //@ fix("ar", "baz")
+
+-- want/a/a.go --
+package a
+
+func f(baz int) {} //@ fix("ar", "baz")

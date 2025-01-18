@@ -1,0 +1,36 @@
+# Basic test of -diff: ensure that stdout contains a diff,
+# and the file system is unchanged.
+#
+# (Most tests of fixes should use want/* not -diff + stdout
+# to avoid dependency on the diff algorithm.)
+#
+# File slashes assume non-Windows.
+
+skip GOOS=windows
+checker -rename -fix -diff example.com/p
+exit 3
+stderr renaming "bar" to "baz"
+
+-- go.mod --
+module example.com
+go 1.22
+
+-- p/p.go --
+package p
+
+var bar int
+
+-- want/p/p.go --
+package p
+
+var bar int
+
+-- stdout --
+--- /TMP/p/p.go (old)
++++ /TMP/p/p.go (new)
+@@ -1,4 +1,3 @@
+ package p
+ 
+-var bar int
+-
++var baz int
