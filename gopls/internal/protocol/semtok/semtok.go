@@ -102,6 +102,7 @@ const (
 	ModArray     Modifier = "array"
 	ModBool      Modifier = "bool"
 	ModChan      Modifier = "chan"
+	ModFormat    Modifier = "format" // for format string directives such as "%s"
 	ModInterface Modifier = "interface"
 	ModMap       Modifier = "map"
 	ModNumber    Modifier = "number"
@@ -123,6 +124,7 @@ var TokenModifiers = []Modifier{
 	ModArray,
 	ModBool,
 	ModChan,
+	ModFormat,
 	ModInterface,
 	ModMap,
 	ModNumber,

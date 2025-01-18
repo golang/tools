@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fmtstr"
@@ -210,11 +211,7 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.
 
 	// highlightPair highlights the operation and its potential argument pair if the cursor is within either range.
 	highlightPair := func(rang fmtstr.Range, argIndex int) {
-		rangeStart, err := internalastutil.PosInStringLiteral(lit, rang.Start)
-		if err != nil {
-			return
-		}
-		rangeEnd, err := internalastutil.PosInStringLiteral(lit, rang.End)
+		rangeStart, rangeEnd, err := internalastutil.RangeInStringLiteral(lit, rang.Start, rang.End)
 		if err != nil {
 			return
 		}
@@ -226,9 +223,9 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.
 		}
 
 		// cursorPos can't equal to end position, otherwise the two
-		// neighborhood such as (%[2]*d) are both highlighted if cursor in "*" (ending of [2]*).
+		// neighborhood such as (%[2]*d) are both highlighted if cursor in "d" (ending of [2]*).
 		if rangeStart <= cursorPos && cursorPos < rangeEnd ||
-			arg != nil && arg.Pos() <= cursorPos && cursorPos < arg.End() {
+			arg != nil && goplsastutil.NodeContains(arg, cursorPos) {
 			highlightRange(result, rangeStart, rangeEnd, protocol.Write)
 			if arg != nil {
 				succeededArg = argIndex

@@ -54,14 +54,15 @@ and change over time. (Nonetheless, a minimal implementation would not return `k
 `number`, `comment`, or `string`.)
 
 The maximal position isn't particularly well-specified either. To chose one example, a
-format string might have formatting codes (`%[4]-3.6f`), escape sequences (`\U00010604`), and regular
+format string might have formatting codes (`%-[4].6f`), escape sequences (`\U00010604`), and regular
 characters. Should these all be distinguished? One could even imagine distinguishing
 different runes by their Unicode language assignment, or some other Unicode property, such as
-being [confusable](http://www.unicode.org/Public/security/10.0.0/confusables.txt).
+being [confusable](http://www.unicode.org/Public/security/10.0.0/confusables.txt). While gopls does not fully adhere to such distinctions,
+it does recognizes formatting directives within strings, decorating them with "format" modifiers,
+providing more precise semantic highlighting in format strings.
 
-Gopls does not come close to either of these principles.  Semantic tokens are returned for
-identifiers, keywords, operators, comments, and literals. (Semantic tokens do not
-cover the file. They are not returned for
+Semantic tokens are returned for identifiers, keywords, operators, comments, and literals.
+(Semantic tokens do not cover the file. They are not returned for
 white space or punctuation, and there is no semantic token for labels.)
 The following describes more precisely what gopls
 does, with a few notes on possible alternative choices.
