@@ -68,7 +68,6 @@ func okresult(r result, p Candidate) bool {
 }
 
 func TestLookup(t *testing.T) {
-	log.SetFlags(log.Lshortfile)
 	dir := testModCache(t)
 	wrtData(t, dir, thedata)
 	if _, err := indexModCache(dir, true); err != nil {
@@ -131,5 +130,69 @@ func wrtData(t *testing.T, dir string, data tdata) {
 	fd.WriteString(fmt.Sprintf("package %s\n", data.pkg))
 	for _, item := range data.items {
 		fd.WriteString(item.code + "\n")
+	}
+}
+
+func TestLookupAll(t *testing.T) {
+	log.SetFlags(log.Lshortfile)
+	dir := testModCache(t)
+	wrtModule := func(mod string, nms ...string) {
+		dname := filepath.Join(dir, mod)
+		if err := os.MkdirAll(dname, 0755); err != nil {
+			t.Fatal(err)
+		}
+		fname := filepath.Join(dname, "foo.go")
+		fd, err := os.Create(fname)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer fd.Close()
+		if _, err := fd.WriteString(fmt.Sprintf("package foo\n")); err != nil {
+			t.Fatal(err)
+		}
+		for _, nm := range nms {
+			fd.WriteString(fmt.Sprintf("func %s() {}\n", nm))
+		}
+	}
+	wrtModule("a.com/go/x4@v1.1.1", "A", "B", "C", "D")
+	wrtModule("b.com/go/x3@v1.2.1", "A", "B", "C")
+	wrtModule("c.com/go/x5@v1.3.1", "A", "B", "C", "D", "E")
+
+	if _, err := indexModCache(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	ix, err := ReadIndex(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cands := ix.Lookup("foo", "A", false)
+	if len(cands) != 3 {
+		t.Errorf("got %d candidates for A, expected 3", len(cands))
+	}
+	got := ix.LookupAll("foo", "A", "B", "C", "D")
+	if len(got) != 2 {
+		t.Errorf("got %d candidates for A,B,C,D, expected 2", len(got))
+	}
+	got = ix.LookupAll("foo", []string{"A", "B", "C", "D", "E"}...)
+	if len(got) != 1 {
+		t.Errorf("got %d candidates for A,B,C,D,E, expected 1", len(got))
+	}
+}
+
+func TestUniquify(t *testing.T) {
+	var v []string
+	for i := 1; i < 4; i++ {
+		v = append(v, "A")
+		w := uniquify(v)
+		if len(w) != 1 {
+			t.Errorf("got %d, expected 1", len(w))
+		}
+	}
+	for i := 1; i < 3; i++ {
+		v = append(v, "B", "C")
+		w := uniquify(v)
+		if len(w) != 3 {
+			t.Errorf("got %d, expected 3", len(w))
+		}
 	}
 }
