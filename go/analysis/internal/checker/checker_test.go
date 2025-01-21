@@ -84,6 +84,7 @@ var otherAnalyzer = &analysis.Analyzer{ // like analyzer but with a different Na
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
+	// TODO(adonovan): replace this entangled test with something completely data-driven.
 	const (
 		from      = "bar"
 		to        = "baz"
@@ -109,11 +110,39 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			}
 			switch pass.Pkg.Name() {
 			case conflict:
-				edits = append(edits, []analysis.TextEdit{
-					{Pos: ident.Pos() - 1, End: ident.End(), NewText: []byte(to)},
-					{Pos: ident.Pos(), End: ident.End() - 1, NewText: []byte(to)},
-					{Pos: ident.Pos(), End: ident.End(), NewText: []byte("lorem ipsum")},
-				}...)
+				// Conflicting edits are legal, so long as they appear in different fixes.
+				pass.Report(analysis.Diagnostic{
+					Pos:     ident.Pos(),
+					End:     ident.End(),
+					Message: msg,
+					SuggestedFixes: []analysis.SuggestedFix{{
+						Message: msg, TextEdits: []analysis.TextEdit{
+							{Pos: ident.Pos() - 1, End: ident.End(), NewText: []byte(to)},
+						},
+					}},
+				})
+				pass.Report(analysis.Diagnostic{
+					Pos:     ident.Pos(),
+					End:     ident.End(),
+					Message: msg,
+					SuggestedFixes: []analysis.SuggestedFix{{
+						Message: msg, TextEdits: []analysis.TextEdit{
+							{Pos: ident.Pos(), End: ident.End() - 1, NewText: []byte(to)},
+						},
+					}},
+				})
+				pass.Report(analysis.Diagnostic{
+					Pos:     ident.Pos(),
+					End:     ident.End(),
+					Message: msg,
+					SuggestedFixes: []analysis.SuggestedFix{{
+						Message: msg, TextEdits: []analysis.TextEdit{
+							{Pos: ident.Pos(), End: ident.End(), NewText: []byte("lorem ipsum")},
+						},
+					}},
+				})
+				return
+
 			case duplicate:
 				// Duplicate (non-insertion) edits are disallowed,
 				// so this is a buggy analyzer, and validatedFixes should reject it.

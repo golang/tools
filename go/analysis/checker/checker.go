@@ -337,8 +337,14 @@ func (act *Action) execOnce() {
 		TypeErrors:   act.Package.TypeErrors,
 		Module:       module,
 
-		ResultOf:          inputs,
-		Report:            func(d analysis.Diagnostic) { act.Diagnostics = append(act.Diagnostics, d) },
+		ResultOf: inputs,
+		Report: func(d analysis.Diagnostic) {
+			// Assert that SuggestedFixes are well formed.
+			if err := analysisinternal.ValidateFixes(act.Package.Fset, act.Analyzer, d.SuggestedFixes); err != nil {
+				panic(err)
+			}
+			act.Diagnostics = append(act.Diagnostics, d)
+		},
 		ImportObjectFact:  act.ObjectFact,
 		ExportObjectFact:  act.exportObjectFact,
 		ImportPackageFact: act.PackageFact,

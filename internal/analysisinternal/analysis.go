@@ -8,6 +8,7 @@ package analysisinternal
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"go/ast"
 	"go/printer"
@@ -355,4 +356,91 @@ func IsMethodNamed(obj types.Object, pkgPath string, typeName string, names ...s
 // gopls/internal/golang/rename_check.go, refactor/rename/util.go.
 func isPackageLevel(obj types.Object) bool {
 	return obj.Pkg() != nil && obj.Parent() == obj.Pkg().Scope()
+}
+
+// ValidateFixes validates the set of fixes for a single diagnostic.
+// Any error indicates a bug in the originating analyzer.
+//
+// It updates fixes so that fixes[*].End.IsValid().
+//
+// It may be used as part of an analysis driver implementation.
+func ValidateFixes(fset *token.FileSet, a *analysis.Analyzer, fixes []analysis.SuggestedFix) error {
+	fixMessages := make(map[string]bool)
+	for i := range fixes {
+		fix := &fixes[i]
+		if fixMessages[fix.Message] {
+			return fmt.Errorf("analyzer %q suggests two fixes with same Message (%s)", a.Name, fix.Message)
+		}
+		fixMessages[fix.Message] = true
+		if err := validateFix(fset, fix); err != nil {
+			return fmt.Errorf("analyzer %q suggests invalid fix (%s): %v", a.Name, fix.Message, err)
+		}
+	}
+	return nil
+}
+
+// validateFix validates a single fix.
+// Any error indicates a bug in the originating analyzer.
+//
+// It updates fix so that fix.End.IsValid().
+func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
+
+	// Stably sort edits by Pos. This ordering puts insertions
+	// (end = start) before deletions (end > start) at the same
+	// point, but uses a stable sort to preserve the order of
+	// multiple insertions at the same point.
+	slices.SortStableFunc(fix.TextEdits, func(x, y analysis.TextEdit) int {
+		if sign := cmp.Compare(x.Pos, y.Pos); sign != 0 {
+			return sign
+		}
+		return cmp.Compare(x.End, y.End)
+	})
+
+	var prev *analysis.TextEdit
+	for i := range fix.TextEdits {
+		edit := &fix.TextEdits[i]
+
+		// Validate edit individually.
+		start := edit.Pos
+		file := fset.File(start)
+		if file == nil {
+			return fmt.Errorf("missing file info for pos (%v)", edit.Pos)
+		}
+		if end := edit.End; end.IsValid() {
+			if end < start {
+				return fmt.Errorf("pos (%v) > end (%v)", edit.Pos, edit.End)
+			}
+			endFile := fset.File(end)
+			if endFile == nil {
+				return fmt.Errorf("malformed end position %v", end)
+			}
+			if endFile != file {
+				return fmt.Errorf("edit spans files %v and %v", file.Name(), endFile.Name())
+			}
+		} else {
+			edit.End = start // update the SuggestedFix
+		}
+		if eof := token.Pos(file.Base() + file.Size()); edit.End > eof {
+			return fmt.Errorf("end is (%v) beyond end of file (%v)", edit.End, eof)
+		}
+
+		// Validate the sequence of edits:
+		// properly ordered, no overlapping deletions
+		if prev != nil && edit.Pos < prev.End {
+			xpos := fset.Position(prev.Pos)
+			xend := fset.Position(prev.End)
+			ypos := fset.Position(edit.Pos)
+			yend := fset.Position(edit.End)
+			return fmt.Errorf("overlapping edits to %s (%d:%d-%d:%d and %d:%d-%d:%d)",
+				xpos.Filename,
+				xpos.Line, xpos.Column,
+				xend.Line, xend.Column,
+				ypos.Line, ypos.Column,
+				yend.Line, yend.Column,
+			)
+		}
+		prev = edit
+	}
+
+	return nil
 }
