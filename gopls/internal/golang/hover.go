@@ -138,6 +138,28 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 	}, nil
 }
 
+// findRhsTypeDecl finds an alias's rhs type and returns its declaration.
+// The rhs of an alias might be an alias as well, but we feel this is a rare case.
+// It returns an empty string if the given obj is not an alias.
+func findRhsTypeDecl(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, obj types.Object) (string, error) {
+	if alias, ok := obj.Type().(*types.Alias); ok {
+		// we choose Rhs instead of types.Unalias to make the connection between original alias
+		// and the corresponding aliased type clearer.
+		// types.Unalias brings confusion because it breaks the connection from A to C given
+		// the alias chain like 'type ( A = B; B =C ; )' except we show all transitive alias
+		// from start to the end. As it's rare, we don't do so.
+		t := alias.Rhs()
+		switch o := t.(type) {
+		case *types.Named:
+			obj = o.Obj()
+			declPGF1, declPos1, _ := parseFull(ctx, snapshot, pkg.FileSet(), obj.Pos())
+			realTypeDecl, _, err := typeDeclContent(declPGF1, declPos1, obj)
+			return realTypeDecl, err
+		}
+	}
+	return "", nil
+}
+
 // hover computes hover information at the given position. If we do not support
 // hovering at the position, it returns _, nil, nil: an error is only returned
 // if the position is valid but we fail to compute hover information.
@@ -404,46 +426,20 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	_, isTypeName := obj.(*types.TypeName)
 	_, isTypeParam := types.Unalias(obj.Type()).(*types.TypeParam)
 	if isTypeName && !isTypeParam {
-		spec, ok := spec.(*ast.TypeSpec)
-		if !ok {
-			// We cannot find a TypeSpec for this type or alias declaration
-			// (that is not a type parameter or a built-in).
-			// This should be impossible even for ill-formed trees;
-			// we suspect that AST repair may be creating inconsistent
-			// positions. Don't report a bug in that case. (#64241)
-			errorf := fmt.Errorf
-			if !declPGF.Fixed() {
-				errorf = bug.Errorf
-			}
-			return protocol.Range{}, nil, errorf("type name %q without type spec", obj.Name())
+		var spec1 *ast.TypeSpec
+		typeDecl, spec1, err = typeDeclContent(declPGF, declPos, obj)
+		if err != nil {
+			return protocol.Range{}, nil, err
 		}
 
-		// Format the type's declaration syntax.
-		{
-			// Don't duplicate comments.
-			spec2 := *spec
-			spec2.Doc = nil
-			spec2.Comment = nil
-
-			var b strings.Builder
-			b.WriteString("type ")
-			fset := tokeninternal.FileSetFor(declPGF.Tok)
-			// TODO(adonovan): use a smarter formatter that omits
-			// inaccessible fields (non-exported ones from other packages).
-			if err := format.Node(&b, fset, &spec2); err != nil {
-				return protocol.Range{}, nil, err
+		// Splice in size/offset at end of first line.
+		//   "type T struct { // size=..."
+		if sizeOffset != "" {
+			nl := strings.IndexByte(typeDecl, '\n')
+			if nl < 0 {
+				nl = len(typeDecl)
 			}
-			typeDecl = b.String()
-
-			// Splice in size/offset at end of first line.
-			//   "type T struct { // size=..."
-			if sizeOffset != "" {
-				nl := strings.IndexByte(typeDecl, '\n')
-				if nl < 0 {
-					nl = len(typeDecl)
-				}
-				typeDecl = typeDecl[:nl] + " // " + sizeOffset + typeDecl[nl:]
-			}
+			typeDecl = typeDecl[:nl] + " // " + sizeOffset + typeDecl[nl:]
 		}
 
 		// Promoted fields
@@ -478,7 +474,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		// already been displayed when the node was formatted
 		// above. Don't list these again.
 		var skip map[string]bool
-		if iface, ok := spec.Type.(*ast.InterfaceType); ok {
+		if iface, ok := spec1.Type.(*ast.InterfaceType); ok {
 			if iface.Methods.List != nil {
 				for _, m := range iface.Methods.List {
 					if len(m.Names) == 1 {
@@ -518,6 +514,12 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		if sizeOffset != "" {
 			signature += " // " + sizeOffset
 		}
+	}
+
+	// realTypeDecl is defined to store the underlying definition of an alias.
+	realTypeDecl, _ := findRhsTypeDecl(ctx, snapshot, pkg, obj) // tolerate the error
+	if realTypeDecl != "" {
+		typeDecl += fmt.Sprintf("\n\n%s", realTypeDecl)
 	}
 
 	// Compute link data (on pkg.go.dev or other documentation host).
@@ -638,6 +640,39 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		promotedFields:    fields,
 		footer:            footer,
 	}, nil
+}
+
+// typeDeclContent returns a well formatted type definition.
+func typeDeclContent(declPGF *parsego.File, declPos token.Pos, obj types.Object) (string, *ast.TypeSpec, error) {
+	_, spec, _ := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^3
+	// Don't duplicate comments.
+	spec1, ok := spec.(*ast.TypeSpec)
+	if !ok {
+		// We cannot find a TypeSpec for this type or alias declaration
+		// (that is not a type parameter or a built-in).
+		// This should be impossible even for ill-formed trees;
+		// we suspect that AST repair may be creating inconsistent
+		// positions. Don't report a bug in that case. (#64241)
+		errorf := fmt.Errorf
+		if !declPGF.Fixed() {
+			errorf = bug.Errorf
+		}
+		return "", nil, errorf("type name %q without type spec", obj.Name())
+	}
+	spec2 := *spec1
+	spec2.Doc = nil
+	spec2.Comment = nil
+
+	var b strings.Builder
+	b.WriteString("type ")
+	fset := tokeninternal.FileSetFor(declPGF.Tok)
+	// TODO(adonovan): use a smarter formatter that omits
+	// inaccessible fields (non-exported ones from other packages).
+	if err := format.Node(&b, fset, &spec2); err != nil {
+		return "", nil, err
+	}
+	typeDecl := b.String()
+	return typeDecl, spec1, nil
 }
 
 // hoverBuiltin computes hover information when hovering over a builtin
