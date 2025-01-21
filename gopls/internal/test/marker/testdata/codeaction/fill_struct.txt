@@ -364,12 +364,15 @@ func fill() {
 	_ := StructAnon{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_anon)
 }
 -- @fillStruct_anon/fillStruct_anon.go --
-@@ -13 +13,5 @@
+@@ -13 +13,8 @@
 -	_ := StructAnon{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_anon)
 +	_ := StructAnon{
 +		a: struct{}{},
 +		b: map[string]any{},
-+		c: map[string]struct{d int; e bool}{},
++		c: map[string]struct {
++			d int
++			e bool
++		}{},
 +	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_anon)
 -- fillStruct_nested.go --
 package fillstruct
@@ -457,13 +460,8 @@ func fill() {
 +		UnfilledInt:    0,
 +		StructPartialB: StructPartialB{},
 -- @fillStruct_partial2/fillStruct_partial.go --
-@@ -19,4 +19,2 @@
--		/* this comment should disappear */
--		PrefilledInt: 7, // This comment should be blown away.
--		/* As should
--		this one */
-+		PrefilledInt: 7,
-+		UnfilledInt:  0,
+@@ -23 +23 @@
++		UnfilledInt: 0,
 -- fillStruct_spaces.go --
 package fillstruct
 
@@ -566,7 +564,7 @@ func _[T any]() {
 +	bar: 0,
 +} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams2)
 -- @typeparams3/typeparams.go --
-@@ -21 +21 @@
+@@ -22 +22 @@
 +	foo: 0,
 -- @typeparams4/typeparams.go --
 @@ -29 +29,4 @@
@@ -723,3 +721,33 @@ func _() {
 +		aliasArray:     aliasArray{},
 +		aliasNamed:     aliasNamed{},
 +	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=alias)
+-- preserveformat/preserveformat.go --
+package preserveformat
+
+type (
+	Node struct {
+		Value int
+	}
+	Graph struct {
+		Nodes []*Node `json:""`
+		Edges map[*Node]*Node
+		Other string
+	}
+)
+
+func _() {
+	_ := &Graph{
+		// comments at the start preserved
+		Nodes: []*Node{
+			{Value: 0}, // comments in the middle preserved
+			// between lines
+			{Value: 0},
+		}, // another comment
+		// comment group
+		// below
+	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=preserveformat)
+}
+-- @preserveformat/preserveformat/preserveformat.go --
+@@ -24 +24,2 @@
++		Edges: map[*Node]*Node{},
++		Other: "",
