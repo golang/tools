@@ -21,7 +21,7 @@ func TestHoverUnexported(t *testing.T) {
 -- golang.org/x/structs@v1.0.0/go.mod --
 module golang.org/x/structs
 
-go 1.12
+go 1.21
 
 -- golang.org/x/structs@v1.0.0/types.go --
 package structs
@@ -40,12 +40,9 @@ func printMixed(m Mixed) {
 -- go.mod --
 module mod.com
 
-go 1.12
+go 1.21
 
 require golang.org/x/structs v1.0.0
--- go.sum --
-golang.org/x/structs v1.0.0 h1:Ito/a7hBYZaNKShFrZKjfBA/SIPvmBrcPCBWPx5QeKk=
-golang.org/x/structs v1.0.0/go.mod h1:47gkSIdo5AaQaWJS0upVORsxfEr1LL1MWv9dmYF3iq4=
 -- main.go --
 package main
 
@@ -60,6 +57,7 @@ func main() {
 	// TODO: use a nested workspace folder here.
 	WithOptions(
 		ProxyFiles(proxy),
+		WriteGoSum("."),
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		mixedLoc := env.RegexpSearch("main.go", "Mixed")
