@@ -564,11 +564,6 @@ func updateIssues(issues []*Issue, stacks map[string]map[Info]int64, stackToURL 
 			writeStackComment(comment, stack, id, stackToURL[stack], stacks[stack])
 		}
 
-		if *dryRun {
-			log.Printf("DRY RUN: would add stacks %s to issue #%d", newStackIDs, issue.Number)
-			continue
-		}
-
 		if err := addIssueComment(issue.Number, comment.String()); err != nil {
 			log.Println(err)
 			continue
@@ -870,19 +865,8 @@ func updateIssueBody(number int, body string) error {
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d", number)
-	req, err := http.NewRequest("PATCH", url, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Add("Authorization", "Bearer "+authToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("issue update failed: %s (body: %s)", resp.Status, body)
+	if err := requestChange("PATCH", url, data, http.StatusOK); err != nil {
+		return fmt.Errorf("updating issue: %v", err)
 	}
 	return nil
 }
@@ -900,7 +884,20 @@ func addIssueComment(number int, comment string) error {
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d/comments", number)
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	if err := requestChange("POST", url, data, http.StatusCreated); err != nil {
+		return fmt.Errorf("creating issue comment: %v", err)
+	}
+	return nil
+}
+
+// requestChange sends a request to url using method, which may change the state at the server.
+// The data is sent as the request body, and wantStatus is the expected response status code.
+func requestChange(method, url string, data []byte, wantStatus int) error {
+	if *dryRun {
+		log.Printf("DRY RUN: %s %s", method, url)
+		return nil
+	}
+	req, err := http.NewRequest(method, url, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
@@ -910,9 +907,9 @@ func addIssueComment(number int, comment string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != wantStatus {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to create issue comment: %s (body: %s)", resp.Status, body)
+		return fmt.Errorf("request failed: %s (body: %s)", resp.Status, body)
 	}
 	return nil
 }
