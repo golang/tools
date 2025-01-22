@@ -303,8 +303,7 @@ func (info Info) String() string {
 //
 // stacks is a map of stack text to program metadata to stack+metadata report
 // count.
-// TODO(jba): fix distinctStacks doc? It seems to be the number of telemetry.ProgramReports, not the number of stacks.
-// distinctStacks is the sum of all counts in stacks.
+// distinctStacks is the number of distinct stacks across all reports.
 // stackToURL maps the stack text to the oldest telemetry JSON report it was
 // included in.
 func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64, distinctStacks int, stackToURL map[string]string, err error) {
@@ -363,8 +362,6 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 					}
 				}
 
-				distinctStacks++
-
 				info := Info{
 					Program:        prog.Program,
 					ProgramVersion: prog.Version,
@@ -382,6 +379,7 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 					counts[info] += count
 					stackToURL[stack] = url
 				}
+				distinctStacks += len(prog.Stacks)
 			}
 		}
 	}
