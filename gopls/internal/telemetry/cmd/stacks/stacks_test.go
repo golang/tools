@@ -75,3 +75,53 @@ func TestReadPCLineTable(t *testing.T) {
 		})
 	}
 }
+
+func TestParsePredicate(t *testing.T) {
+	for _, tc := range []struct {
+		expr string
+		arg  string
+		want bool
+	}{
+		{`"x"`, `"x"`, true},
+		{`"x"`, `"axe"`, true}, // literals match by strings.Contains
+		{`"x"`, `"y"`, false},
+		{`!"x"`, "x", false},
+		{`!"x"`, "y", true},
+		{`"x" && "y"`, "xy", true},
+		{`"x" && "y"`, "x", false},
+		{`"x" && "y"`, "y", false},
+		{`"xz" && "zy"`, "xzy", true}, // matches need not be disjoint
+		{`"x" || "y"`, "xy", true},
+		{`"x" || "y"`, "x", true},
+		{`"x" || "y"`, "y", true},
+		{`"x" || "y"`, "z", false},
+	} {
+		eval, err := parsePredicate(tc.expr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := eval(tc.arg)
+		if got != tc.want {
+			t.Errorf("%s applied to %q: got %t, want %t", tc.expr, tc.arg, got, tc.want)
+		}
+	}
+}
+
+func TestParsePredicateError(t *testing.T) {
+	// Validate that bad predicates return errors.
+	for _, expr := range []string{
+		``,
+		`1`,
+		`foo`, // an identifier, not a literal
+		`"x" + "y"`,
+		`"x" &&`,
+		`~"x"`,
+		`f(1)`,
+	} {
+		if _, err := parsePredicate(expr); err == nil {
+			t.Errorf("%s: got nil, want error", expr)
+		} else {
+			t.Logf("%s: %v", expr, err)
+		}
+	}
+}

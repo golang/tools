@@ -404,81 +404,97 @@ func readIssues(pcfg ProgramConfig) ([]*Issue, error) {
 	for _, issue := range issues {
 		block := findPredicateBlock(issue.Body)
 		if block != "" {
-			expr, err := parser.ParseExpr(block)
+			pred, err := parsePredicate(block)
 			if err != nil {
 				log.Printf("invalid predicate in issue #%d: %v\n<<%s>>",
 					issue.Number, err, block)
 				continue
 			}
-			var validate func(ast.Expr) error
-			validate = func(e ast.Expr) error {
-				switch e := e.(type) {
-				case *ast.UnaryExpr:
-					if e.Op != token.NOT {
-						return fmt.Errorf("invalid op: %s", e.Op)
-					}
-					return validate(e.X)
-
-				case *ast.BinaryExpr:
-					if e.Op != token.LAND && e.Op != token.LOR {
-						return fmt.Errorf("invalid op: %s", e.Op)
-					}
-					if err := validate(e.X); err != nil {
-						return err
-					}
-					return validate(e.Y)
-
-				case *ast.ParenExpr:
-					return validate(e.X)
-
-				case *ast.BasicLit:
-					if e.Kind != token.STRING {
-						return fmt.Errorf("invalid literal (%s)", e.Kind)
-					}
-					if _, err := strconv.Unquote(e.Value); err != nil {
-						return err
-					}
-
-				default:
-					return fmt.Errorf("syntax error (%T)", e)
-				}
-				return nil
-			}
-			if err := validate(expr); err != nil {
-				log.Printf("invalid predicate in issue #%d: %v\n<<%s>>",
-					issue.Number, err, block)
-				continue
-			}
 			issue.predicateText = block
-			issue.predicate = func(stack string) bool {
-				var eval func(ast.Expr) bool
-				eval = func(e ast.Expr) bool {
-					switch e := e.(type) {
-					case *ast.UnaryExpr:
-						return !eval(e.X)
-
-					case *ast.BinaryExpr:
-						if e.Op == token.LAND {
-							return eval(e.X) && eval(e.Y)
-						} else {
-							return eval(e.X) || eval(e.Y)
-						}
-
-					case *ast.ParenExpr:
-						return eval(e.X)
-
-					case *ast.BasicLit:
-						substr, _ := strconv.Unquote(e.Value)
-						return strings.Contains(stack, substr)
-					}
-					panic("unreachable")
-				}
-				return eval(expr)
-			}
+			issue.predicate = pred
 		}
 	}
 
 	return issues, nil
+}
+
+// parsePredicate parses a predicate expression, returning a function that evaluates
+// the predicate on a stack.
+// The expression must match this grammar:
+//
+//	expr = "string literal"
+//	     | ( expr )
+//	     | ! expr
+//	     | expr && expr
+//	     | expr || expr
+func parsePredicate(s string) (func(string) bool, error) {
+	expr, err := parser.ParseExpr(s)
+	if err != nil {
+		return nil, fmt.Errorf("parse error: %w", err)
+	}
+	var validate func(ast.Expr) error
+	validate = func(e ast.Expr) error {
+		switch e := e.(type) {
+		case *ast.UnaryExpr:
+			if e.Op != token.NOT {
+				return fmt.Errorf("invalid op: %s", e.Op)
+			}
+			return validate(e.X)
+
+		case *ast.BinaryExpr:
+			if e.Op != token.LAND && e.Op != token.LOR {
+				return fmt.Errorf("invalid op: %s", e.Op)
+			}
+			if err := validate(e.X); err != nil {
+				return err
+			}
+			return validate(e.Y)
+
+		case *ast.ParenExpr:
+			return validate(e.X)
+
+		case *ast.BasicLit:
+			if e.Kind != token.STRING {
+				return fmt.Errorf("invalid literal (%s)", e.Kind)
+			}
+			if _, err := strconv.Unquote(e.Value); err != nil {
+				return err
+			}
+
+		default:
+			return fmt.Errorf("syntax error (%T)", e)
+		}
+		return nil
+	}
+	if err := validate(expr); err != nil {
+		return nil, err
+	}
+
+	return func(stack string) bool {
+		var eval func(ast.Expr) bool
+		eval = func(e ast.Expr) bool {
+			switch e := e.(type) {
+			case *ast.UnaryExpr:
+				return !eval(e.X)
+
+			case *ast.BinaryExpr:
+				if e.Op == token.LAND {
+					return eval(e.X) && eval(e.Y)
+				} else {
+					return eval(e.X) || eval(e.Y)
+				}
+
+			case *ast.ParenExpr:
+				return eval(e.X)
+
+			case *ast.BasicLit:
+				substr, _ := strconv.Unquote(e.Value)
+				return strings.Contains(stack, substr)
+			}
+			panic("unreachable")
+		}
+		return eval(expr)
+	}, nil
 }
 
 // claimStack maps each stack ID to its issue (if any).
