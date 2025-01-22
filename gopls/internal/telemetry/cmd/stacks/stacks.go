@@ -410,7 +410,6 @@ func readIssues(pcfg ProgramConfig) ([]*Issue, error) {
 					issue.Number, err, block)
 				continue
 			}
-			issue.predicateText = block
 			issue.predicate = pred
 		}
 	}
@@ -930,8 +929,7 @@ type Issue struct {
 	Body      string    // in Markdown format
 
 	// Set by readIssues.
-	predicateText string            // text of ```#!stacks...``` predicate block
-	predicate     func(string) bool // matching predicate over stack text
+	predicate func(string) bool // matching predicate over stack text
 
 	// Set by claimIssues.
 	newStacks []string // new stacks to add to existing issue (comments and IDs)
