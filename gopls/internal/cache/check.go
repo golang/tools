@@ -492,9 +492,59 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 						return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904) (using GOPACKAGESDRIVER)",
 							pkg.Name(), item.Name, id, item.Path)
 					} else {
-						return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904)",
-							pkg.Name(), item.Name, id, item.Path)
-
+						// There's a package in the export data with the same path as the
+						// imported package, but a different name.
+						//
+						// This is observed to occur (very frequently!) in telemetry, yet
+						// we don't yet have a plausible explanation: any self import or
+						// circular import should have resulted in a broken import, which
+						// can't be referenced by export data. (Any type qualified by the
+						// broken import name will be invalid.)
+						//
+						// However, there are some mechanisms that could potentially be
+						// involved:
+						//  1. go/types will synthesize package names based on the import
+						//     path for fake packages (but as mentioned above, I don't think
+						//     these can be referenced by export data.)
+						//  2. Test variants have the same path as non-test variant. Could
+						//     that somehow be involved? (I don't see how, particularly using
+						//     the go list driver, but nevertheless it's worth considering.)
+						//  3. Command-line arguments and main packages may have special
+						//     handling that we don't fully understand.
+						// Try to sort these potential causes into unique stacks, as well
+						// as a few other pathological scenarios.
+						report := func() error {
+							return bug.Errorf("internal error: package name is %q, want %q (id=%q, path=%q) (see issue #60904)",
+								pkg.Name(), item.Name, id, item.Path)
+						}
+						impliedName := ""
+						if i := strings.LastIndex(item.Path, "/"); i >= 0 {
+							impliedName = item.Path[i+1:]
+						}
+						switch {
+						case pkg.Name() == "":
+							return report()
+						case item.Name == "":
+							return report()
+						case metadata.IsCommandLineArguments(mp.ID):
+							return report()
+						case mp.ForTest != "":
+							return report()
+						case len(mp.CompiledGoFiles) == 0:
+							return report()
+						case len(mp.Errors) > 0:
+							return report()
+						case impliedName != "" && impliedName != string(mp.Name):
+							return report()
+						case len(mp.CompiledGoFiles) != len(mp.GoFiles):
+							return report()
+						case mp.Module == nil:
+							return report()
+						case mp.Name == "main":
+							return report()
+						default:
+							return report()
+						}
 					}
 				}
 			} else {
