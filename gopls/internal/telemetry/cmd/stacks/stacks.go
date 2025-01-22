@@ -21,7 +21,8 @@
 //     single ID in the issue body suffices to record the
 //     association. But most problems are exhibited in a variety of
 //     ways, leading to multiple field reports of similar but
-//     distinct stacks.
+//     distinct stacks. Hence the following way to associate stacks
+//     with issues.
 //
 //  2. Each GitHub issue body may start with a code block of this form:
 //
@@ -302,6 +303,7 @@ func (info Info) String() string {
 //
 // stacks is a map of stack text to program metadata to stack+metadata report
 // count.
+// TODO(jba): fix distinctStacks doc? It seems to be the number of telemetry.ProgramReports, not the number of stacks.
 // distinctStacks is the sum of all counts in stacks.
 // stackToURL maps the stack text to the oldest telemetry JSON report it was
 // included in.
@@ -339,14 +341,19 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 				if len(prog.Stacks) == 0 {
 					continue
 				}
+				// Ignore @devel versions as they correspond to
+				// ephemeral (and often numerous) variations of
+				// the program as we work on a fix to a bug.
+				if prog.Version == "devel" {
+					continue
+				}
 
 				// Include applicable client names (e.g. vscode, eglot) for gopls.
 				var clientSuffix string
 				if pcfg.IncludeClient {
 					var clients []string
 					for key := range prog.Counters {
-						client := strings.TrimPrefix(key, "gopls/client:")
-						if client != key {
+						if client, ok := strings.CutPrefix(key, "gopls/client:"); ok {
 							clients = append(clients, client)
 						}
 					}
@@ -354,13 +361,6 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 					if len(clients) > 0 {
 						clientSuffix = strings.Join(clients, ",")
 					}
-				}
-
-				// Ignore @devel versions as they correspond to
-				// ephemeral (and often numerous) variations of
-				// the program as we work on a fix to a bug.
-				if prog.Version == "devel" {
-					continue
 				}
 
 				distinctStacks++
@@ -395,6 +395,7 @@ func readIssues(pcfg ProgramConfig) ([]*Issue, error) {
 	// Query GitHub for all existing GitHub issues with the report label.
 	issues, err := searchIssues(pcfg.SearchLabel)
 	if err != nil {
+		// TODO(jba): return error instead of dying, or doc.
 		log.Fatalf("GitHub issues label %q search failed: %v", pcfg.SearchLabel, err)
 	}
 
@@ -496,20 +497,6 @@ func readIssues(pcfg ProgramConfig) ([]*Issue, error) {
 // We log an error if two different issues attempt to claim
 // the same stack.
 func claimStacks(issues []*Issue, stacks map[string]map[Info]int64) map[string]*Issue {
-	// Map each stack ID to its issue.
-	//
-	// An issue can claim a stack two ways:
-	//
-	// 1. if the issue body contains the ID of the stack. Matching
-	//    is a little loose but base64 will rarely produce words
-	//    that appear in the body by chance.
-	//
-	// 2. if the issue body contains a ```#!stacks``` predicate
-	//    that matches the stack.
-	//
-	// We report an error if two different issues attempt to claim
-	// the same stack.
-	//
 	// This is O(new stacks x existing issues).
 	claimedBy := make(map[string]*Issue)
 	for stack := range stacks {
