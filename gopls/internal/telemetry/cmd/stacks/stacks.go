@@ -41,8 +41,10 @@
 //     >       | expr && expr
 //     >       | expr || expr
 //
-//     Each string literal implies a substring match on the stack;
+//     Each string literal must match complete words on the stack;
 //     the other productions are boolean operations.
+//     As an example of literal matching, "fu+12" matches "x:fu+12 "
+//     but not "fu:123" or "snafu+12".
 //
 //     The stacks command gathers all such predicates out of the
 //     labelled issues and evaluates each one against each new stack.
@@ -76,6 +78,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -424,11 +427,21 @@ func readIssues(pcfg ProgramConfig) ([]*Issue, error) {
 //	     | ! expr
 //	     | expr && expr
 //	     | expr || expr
+//
+// The value of a string literal is whether it is a substring of the stack, respecting word boundaries.
+// That is, a literal L behaves like the regular expression \bL'\b, where L' is L with
+// regexp metacharacters quoted.
 func parsePredicate(s string) (func(string) bool, error) {
 	expr, err := parser.ParseExpr(s)
 	if err != nil {
 		return nil, fmt.Errorf("parse error: %w", err)
 	}
+
+	// Cache compiled regexps since we need them more than once.
+	literalRegexps := make(map[*ast.BasicLit]*regexp.Regexp)
+
+	// Check for errors in the predicate so we can report them now,
+	// ensuring that evaluation is error-free.
 	var validate func(ast.Expr) error
 	validate = func(e ast.Expr) error {
 		switch e := e.(type) {
@@ -454,9 +467,15 @@ func parsePredicate(s string) (func(string) bool, error) {
 			if e.Kind != token.STRING {
 				return fmt.Errorf("invalid literal (%s)", e.Kind)
 			}
-			if _, err := strconv.Unquote(e.Value); err != nil {
+			lit, err := strconv.Unquote(e.Value)
+			if err != nil {
 				return err
 			}
+			// The literal should match complete words. It may match multiple words,
+			// if it contains non-word runes like whitespace; but it must match word
+			// boundaries at each end.
+			// The constructed regular expression is always valid.
+			literalRegexps[e] = regexp.MustCompile(`\b` + regexp.QuoteMeta(lit) + `\b`)
 
 		default:
 			return fmt.Errorf("syntax error (%T)", e)
@@ -485,8 +504,7 @@ func parsePredicate(s string) (func(string) bool, error) {
 				return eval(e.X)
 
 			case *ast.BasicLit:
-				substr, _ := strconv.Unquote(e.Value)
-				return strings.Contains(stack, substr)
+				return literalRegexps[e].MatchString(stack)
 			}
 			panic("unreachable")
 		}

@@ -83,15 +83,23 @@ func TestParsePredicate(t *testing.T) {
 		want bool
 	}{
 		{`"x"`, `"x"`, true},
-		{`"x"`, `"axe"`, true}, // literals match by strings.Contains
+		{`"x"`, `"axe"`, false}, // literals match whole words
+		{`"x"`, "val:x+5", true},
+		{`"fu+12"`, "x:fu+12,", true},
+		{`"fu+12"`, "snafu+12,", false},
+		{`"fu+12"`, "x:fu+123,", false},
+		{`"a.*b"`, "a.*b", true},  // regexp metachars are escaped
+		{`"a.*b"`, "axxb", false}, // ditto
 		{`"x"`, `"y"`, false},
 		{`!"x"`, "x", false},
 		{`!"x"`, "y", true},
-		{`"x" && "y"`, "xy", true},
+		{`"x" && "y"`, "xy", false},
+		{`"x" && "y"`, "x y", true},
 		{`"x" && "y"`, "x", false},
 		{`"x" && "y"`, "y", false},
-		{`"xz" && "zy"`, "xzy", true}, // matches need not be disjoint
-		{`"x" || "y"`, "xy", true},
+		{`"xz" && "zy"`, "xzy", false},
+		{`"xz" && "zy"`, "zy,xz", true},
+		{`"x" || "y"`, "x\ny", true},
 		{`"x" || "y"`, "x", true},
 		{`"x" || "y"`, "y", true},
 		{`"x" || "y"`, "z", false},

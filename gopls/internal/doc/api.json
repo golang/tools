@@ -110,7 +110,8 @@
 				"EnumValues": null,
 				"Default": "[]",
 				"Status": "",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "hoverKind",
