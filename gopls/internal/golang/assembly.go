@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/util/morestrings"
 )
 
 // AssemblyHTML returns an HTML document containing an assembly listing of the selected function.
@@ -103,7 +104,7 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pack
 		// Skip filenames of the form "<foo>".
 		if parts := insnRx.FindStringSubmatch(line); parts != nil {
 			link := "     " // if unknown
-			if file, linenum, ok := cutLast(parts[2], ":"); ok && !strings.HasPrefix(file, "<") {
+			if file, linenum, ok := morestrings.CutLast(parts[2], ":"); ok && !strings.HasPrefix(file, "<") {
 				if linenum, err := strconv.Atoi(linenum); err == nil {
 					text := fmt.Sprintf("L%04d", linenum)
 					link = sourceLink(text, web.SrcURL(file, linenum, 1))
@@ -116,12 +117,4 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pack
 		buf.WriteByte('\n')
 	}
 	return buf.Bytes(), nil
-}
-
-// cutLast is the "last" analogue of [strings.Cut].
-func cutLast(s, sep string) (before, after string, ok bool) {
-	if i := strings.LastIndex(s, sep); i >= 0 {
-		return s[:i], s[i+len(sep):], true
-	}
-	return s, "", false
 }

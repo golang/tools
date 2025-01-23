@@ -77,6 +77,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -86,10 +87,12 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/mod/semver"
 	"golang.org/x/sys/unix"
 	"golang.org/x/telemetry"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
+	"golang.org/x/tools/gopls/internal/util/morestrings"
 )
 
 // flags
@@ -243,8 +246,15 @@ func main() {
 		if issue, ok := claimedBy[id]; ok {
 			// existing issue, already updated above, just store
 			// the summary.
+			state := issue.State
+			if issue.State == "closed" && issue.StateReason == "completed" {
+				state = "completed"
+			}
 			summary := fmt.Sprintf("#%d: %s [%s]",
-				issue.Number, issue.Title, issue.State)
+				issue.Number, issue.Title, state)
+			if state == "completed" && issue.Milestone != nil {
+				summary += " milestone " + strings.TrimPrefix(issue.Milestone.Title, "gopls/")
+			}
 			existingIssues[summary] += total
 		} else {
 			// new issue, need to create GitHub issue and store
@@ -266,7 +276,7 @@ func main() {
 		for _, summary := range keys {
 			count := issues[summary]
 			// Show closed issues in "white".
-			if isTerminal(os.Stdout) && strings.Contains(summary, "[closed]") {
+			if isTerminal(os.Stdout) && (strings.Contains(summary, "[closed]") || strings.Contains(summary, "[completed]")) {
 				// ESC + "[" + n + "m" => change color to n
 				// (37 = white, 0 = default)
 				summary = "\x1B[37m" + summary + "\x1B[0m"
@@ -590,14 +600,64 @@ func updateIssues(cli *githubClient, issues []*Issue, stacks map[string]map[Info
 			body += "\nDups:"
 		}
 		body += " " + strings.Join(newStackIDs, " ")
-		if err := cli.updateIssueBody(issue.Number, body); err != nil {
-			log.Printf("added comment to issue #%d but failed to update body: %v",
+
+		update := updateIssue{number: issue.Number, Body: body}
+		if shouldReopen(issue, stacks) {
+			update.State = "open"
+			update.StateReason = "reopened"
+		}
+		if err := cli.updateIssue(update); err != nil {
+			log.Printf("added comment to issue #%d but failed to update: %v",
 				issue.Number, err)
 			continue
 		}
 
 		log.Printf("added stacks %s to issue #%d", newStackIDs, issue.Number)
 	}
+}
+
+// An issue should be re-opened if it was closed as fixed, and at least one of the
+// new stacks happened since the version containing the fix.
+func shouldReopen(issue *Issue, stacks map[string]map[Info]int64) bool {
+	if !issue.isFixed() {
+		return false
+	}
+	issueProgram, issueVersion, ok := parseMilestone(issue.Milestone)
+	if !ok {
+		return false
+	}
+	// TODO(jba?): handle other programs
+	if issueProgram != "gopls" {
+		return false
+	}
+	for _, stack := range issue.newStacks {
+		for info := range stacks[stack] {
+			if path.Base(info.Program) == issueProgram && semver.Compare(info.ProgramVersion, issueVersion) >= 0 {
+				log.Printf("reopening issue #%d: purportedly fixed in %s@%s, but found a new stack from version %s",
+					issue.Number, issueProgram, issueVersion, info.ProgramVersion)
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// An issue is fixed if it was closed because it was completed.
+func (i *Issue) isFixed() bool {
+	return i.State == "closed" && i.StateReason == "completed"
+}
+
+// parseMilestone parses a the title of a GitHub milestone that is in the format
+// PROGRAM/VERSION. For example, "gopls/v0.17.0".
+func parseMilestone(m *Milestone) (program, version string, ok bool) {
+	if m == nil {
+		return "", "", false
+	}
+	program, version, ok = morestrings.CutLast(m.Title, "/")
+	if !ok || program == "" || version == "" || version[0] != 'v' {
+		return "", "", false
+	}
+	return program, version, true
 }
 
 // stackID returns a 32-bit identifier for a stack
@@ -819,16 +879,27 @@ type githubClient struct {
 	changes       []any  // slice of (addIssueComment | updateIssueBody)
 }
 
+func (cli *githubClient) takeChanges() []any {
+	r := cli.changes
+	cli.changes = nil
+	return r
+}
+
 // addIssueComment is a change for creating a comment on an issue.
 type addIssueComment struct {
 	number  int
 	comment string
 }
 
-// updateIssueBody is a change for modifying an existing issue's body.
-type updateIssueBody struct {
-	number int
-	body   string
+// updateIssue is a change for modifying an existing issue.
+// It includes the issue number and the fields that can be updated on a GitHub issue.
+// A JSON-marshaled updateIssue can be used as the body of the update request sent to GitHub.
+// See https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#update-an-issue.
+type updateIssue struct {
+	number      int    // issue number; must be unexported
+	Body        string `json:"body,omitempty"`
+	State       string `json:"state,omitempty"`        // "open" or "closed"
+	StateReason string `json:"state_reason,omitempty"` // "completed", "not_planned", "reopened"
 }
 
 // -- GitHub search --
@@ -888,24 +959,19 @@ func (cli *githubClient) searchIssues(label string) ([]*Issue, error) {
 	return results, nil
 }
 
-// updateIssueBody updates the body of the numbered issue.
-func (cli *githubClient) updateIssueBody(number int, body string) error {
+// updateIssue updates the numbered issue.
+func (cli *githubClient) updateIssue(update updateIssue) error {
 	if cli.divertChanges {
-		cli.changes = append(cli.changes, updateIssueBody{number, body})
+		cli.changes = append(cli.changes, update)
 		return nil
 	}
 
-	// https://docs.github.com/en/rest/issues/comments#update-an-issue
-	var payload struct {
-		Body string `json:"body"`
-	}
-	payload.Body = body
-	data, err := json.Marshal(payload)
+	data, err := json.Marshal(update)
 	if err != nil {
 		return err
 	}
 
-	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d", number)
+	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d", update.number)
 	if err := cli.requestChange("PATCH", url, data, http.StatusOK); err != nil {
 		return fmt.Errorf("updating issue: %v", err)
 	}
@@ -963,13 +1029,15 @@ func (cli *githubClient) requestChange(method, url string, data []byte, wantStat
 // See https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#list-repository-issues.
 
 type Issue struct {
-	Number    int
-	HTMLURL   string `json:"html_url"`
-	Title     string
-	State     string
-	User      *User
-	CreatedAt time.Time `json:"created_at"`
-	Body      string    // in Markdown format
+	Number      int
+	HTMLURL     string `json:"html_url"`
+	Title       string
+	State       string
+	StateReason string `json:"state_reason"`
+	User        *User
+	CreatedAt   time.Time `json:"created_at"`
+	Body        string    // in Markdown format
+	Milestone   *Milestone
 
 	// Set by readIssues.
 	predicate func(string) bool // matching predicate over stack text
@@ -981,6 +1049,10 @@ type Issue struct {
 type User struct {
 	Login   string
 	HTMLURL string `json:"html_url"`
+}
+
+type Milestone struct {
+	Title string
 }
 
 // -- pclntab --
