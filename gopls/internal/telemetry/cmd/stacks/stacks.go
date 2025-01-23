@@ -99,8 +99,6 @@ var (
 	daysFlag = flag.Int("days", 7, "number of previous days of telemetry data to read")
 
 	dryRun = flag.Bool("n", false, "dry run, avoid updating issues")
-
-	authToken string // mandatory GitHub authentication token (for R/W issues access)
 )
 
 // ProgramConfig is the configuration for processing reports for a specific
@@ -179,6 +177,8 @@ func main() {
 	log.SetPrefix("stacks: ")
 	flag.Parse()
 
+	var ghclient *githubClient
+
 	// Read GitHub authentication token from $HOME/.stacks.token.
 	//
 	// You can create one using the flow at: GitHub > You > Settings >
@@ -198,12 +198,9 @@ func main() {
 		tokenFile := filepath.Join(home, ".stacks.token")
 		content, err := os.ReadFile(tokenFile)
 		if err != nil {
-			if !os.IsNotExist(err) {
-				log.Fatalf("cannot read GitHub authentication token: %v", err)
-			}
-			log.Fatalf("no file %s containing GitHub authentication token.", tokenFile)
+			log.Fatalf("cannot read GitHub authentication token: %v", err)
 		}
-		authToken = string(bytes.TrimSpace(content))
+		ghclient = &githubClient{authToken: string(bytes.TrimSpace(content))}
 	}
 
 	pcfg, ok := programs[*programFlag]
@@ -217,7 +214,7 @@ func main() {
 		log.Fatalf("Error reading reports: %v", err)
 	}
 
-	issues, err := readIssues(pcfg)
+	issues, err := readIssues(ghclient, pcfg)
 	if err != nil {
 		log.Fatalf("Error reading issues: %v", err)
 	}
@@ -226,7 +223,7 @@ func main() {
 	claimedBy := claimStacks(issues, stacks)
 
 	// Update existing issues that claimed new stacks.
-	updateIssues(issues, stacks, stackToURL)
+	updateIssues(ghclient, issues, stacks, stackToURL)
 
 	// For each stack, show existing issue or create a new one.
 	// Aggregate stack IDs by issue summary.
@@ -392,9 +389,9 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 
 // readIssues returns all existing issues for the given program and parses any
 // predicates.
-func readIssues(pcfg ProgramConfig) ([]*Issue, error) {
+func readIssues(cli *githubClient, pcfg ProgramConfig) ([]*Issue, error) {
 	// Query GitHub for all existing GitHub issues with the report label.
-	issues, err := searchIssues(pcfg.SearchLabel)
+	issues, err := cli.searchIssues(pcfg.SearchLabel)
 	if err != nil {
 		// TODO(jba): return error instead of dying, or doc.
 		log.Fatalf("GitHub issues label %q search failed: %v", pcfg.SearchLabel, err)
@@ -564,7 +561,7 @@ func claimStacks(issues []*Issue, stacks map[string]map[Info]int64) map[string]*
 }
 
 // updateIssues updates existing issues that claimed new stacks by predicate.
-func updateIssues(issues []*Issue, stacks map[string]map[Info]int64, stackToURL map[string]string) {
+func updateIssues(cli *githubClient, issues []*Issue, stacks map[string]map[Info]int64, stackToURL map[string]string) {
 	for _, issue := range issues {
 		if len(issue.newStacks) == 0 {
 			continue
@@ -580,7 +577,7 @@ func updateIssues(issues []*Issue, stacks map[string]map[Info]int64, stackToURL 
 			writeStackComment(comment, stack, id, stackToURL[stack], stacks[stack])
 		}
 
-		if err := addIssueComment(issue.Number, comment.String()); err != nil {
+		if err := cli.addIssueComment(issue.Number, comment.String()); err != nil {
 			log.Println(err)
 			continue
 		}
@@ -593,7 +590,7 @@ func updateIssues(issues []*Issue, stacks map[string]map[Info]int64, stackToURL 
 			body += "\nDups:"
 		}
 		body += " " + strings.Join(newStackIDs, " ")
-		if err := updateIssueBody(issue.Number, body); err != nil {
+		if err := cli.updateIssueBody(issue.Number, body); err != nil {
 			log.Printf("added comment to issue #%d but failed to update body: %v",
 				issue.Number, err)
 			continue
@@ -811,10 +808,17 @@ func frameURL(pclntab map[string]FileLine, info Info, frame string) string {
 	return ""
 }
 
+// -- GitHub client --
+
+// A githubClient interacts with GitHub.
+type githubClient struct {
+	authToken string // mandatory GitHub authentication token (for R/W issues access)
+}
+
 // -- GitHub search --
 
 // searchIssues queries the GitHub issue tracker.
-func searchIssues(label string) ([]*Issue, error) {
+func (cli *githubClient) searchIssues(label string) ([]*Issue, error) {
 	label = url.QueryEscape(label)
 
 	// Slurp all issues with the telemetry label.
@@ -833,7 +837,7 @@ func searchIssues(label string) ([]*Issue, error) {
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Add("Authorization", "Bearer "+authToken)
+		req.Header.Add("Authorization", "Bearer "+cli.authToken)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, err
@@ -869,7 +873,7 @@ func searchIssues(label string) ([]*Issue, error) {
 }
 
 // updateIssueBody updates the body of the numbered issue.
-func updateIssueBody(number int, body string) error {
+func (cli *githubClient) updateIssueBody(number int, body string) error {
 	// https://docs.github.com/en/rest/issues/comments#update-an-issue
 	var payload struct {
 		Body string `json:"body"`
@@ -881,14 +885,14 @@ func updateIssueBody(number int, body string) error {
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d", number)
-	if err := requestChange("PATCH", url, data, http.StatusOK); err != nil {
+	if err := cli.requestChange("PATCH", url, data, http.StatusOK); err != nil {
 		return fmt.Errorf("updating issue: %v", err)
 	}
 	return nil
 }
 
 // addIssueComment adds a markdown comment to the numbered issue.
-func addIssueComment(number int, comment string) error {
+func (cli *githubClient) addIssueComment(number int, comment string) error {
 	// https://docs.github.com/en/rest/issues/comments#create-an-issue-comment
 	var payload struct {
 		Body string `json:"body"`
@@ -900,7 +904,7 @@ func addIssueComment(number int, comment string) error {
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d/comments", number)
-	if err := requestChange("POST", url, data, http.StatusCreated); err != nil {
+	if err := cli.requestChange("POST", url, data, http.StatusCreated); err != nil {
 		return fmt.Errorf("creating issue comment: %v", err)
 	}
 	return nil
@@ -908,7 +912,7 @@ func addIssueComment(number int, comment string) error {
 
 // requestChange sends a request to url using method, which may change the state at the server.
 // The data is sent as the request body, and wantStatus is the expected response status code.
-func requestChange(method, url string, data []byte, wantStatus int) error {
+func (cli *githubClient) requestChange(method, url string, data []byte, wantStatus int) error {
 	if *dryRun {
 		log.Printf("DRY RUN: %s %s", method, url)
 		return nil
@@ -917,7 +921,7 @@ func requestChange(method, url string, data []byte, wantStatus int) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Add("Authorization", "Bearer "+authToken)
+	req.Header.Add("Authorization", "Bearer "+cli.authToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
