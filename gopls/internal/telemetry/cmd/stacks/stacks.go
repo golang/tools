@@ -811,8 +811,24 @@ func frameURL(pclntab map[string]FileLine, info Info, frame string) string {
 // -- GitHub client --
 
 // A githubClient interacts with GitHub.
+// During testing, updates to GitHub are saved in changes instead of being applied.
+// Reads from GitHub occur normally.
 type githubClient struct {
-	authToken string // mandatory GitHub authentication token (for R/W issues access)
+	authToken     string // mandatory GitHub authentication token (for R/W issues access)
+	divertChanges bool   // divert attempted GitHub changes to the changes field instead of executing them
+	changes       []any  // slice of (addIssueComment | updateIssueBody)
+}
+
+// addIssueComment is a change for creating a comment on an issue.
+type addIssueComment struct {
+	number  int
+	comment string
+}
+
+// updateIssueBody is a change for modifying an existing issue's body.
+type updateIssueBody struct {
+	number int
+	body   string
 }
 
 // -- GitHub search --
@@ -874,6 +890,11 @@ func (cli *githubClient) searchIssues(label string) ([]*Issue, error) {
 
 // updateIssueBody updates the body of the numbered issue.
 func (cli *githubClient) updateIssueBody(number int, body string) error {
+	if cli.divertChanges {
+		cli.changes = append(cli.changes, updateIssueBody{number, body})
+		return nil
+	}
+
 	// https://docs.github.com/en/rest/issues/comments#update-an-issue
 	var payload struct {
 		Body string `json:"body"`
@@ -893,6 +914,11 @@ func (cli *githubClient) updateIssueBody(number int, body string) error {
 
 // addIssueComment adds a markdown comment to the numbered issue.
 func (cli *githubClient) addIssueComment(number int, comment string) error {
+	if cli.divertChanges {
+		cli.changes = append(cli.changes, addIssueComment{number, comment})
+		return nil
+	}
+
 	// https://docs.github.com/en/rest/issues/comments#create-an-issue-comment
 	var payload struct {
 		Body string `json:"body"`

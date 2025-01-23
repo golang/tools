@@ -7,6 +7,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -128,8 +129,54 @@ func TestParsePredicateError(t *testing.T) {
 	} {
 		if _, err := parsePredicate(expr); err == nil {
 			t.Errorf("%s: got nil, want error", expr)
-		} else {
-			t.Logf("%s: %v", expr, err)
 		}
+	}
+}
+
+// which takes the bulk of the time.
+func TestUpdateIssues(t *testing.T) {
+	if testing.Short() {
+		t.Skip("downloads source from the internet, skipping in -short")
+	}
+	c := &githubClient{divertChanges: true}
+	issues := []*Issue{{Number: 1, newStacks: []string{"stack1"}}}
+	info := Info{
+		Program:        "golang.org/x/tools/gopls",
+		ProgramVersion: "v0.16.1",
+	}
+	const stack1 = "stack1"
+	id1 := stackID(stack1)
+	stacks := map[string]map[Info]int64{stack1: map[Info]int64{info: 3}}
+	stacksToURL := map[string]string{stack1: "URL1"}
+	updateIssues(c, issues, stacks, stacksToURL)
+
+	if g, w := len(c.changes), 2; g != w {
+		t.Fatalf("got %d changes, want %d", g, w)
+	}
+	// The first change creates an issue comment.
+	cic, ok := c.changes[0].(addIssueComment)
+	if !ok {
+		t.Fatalf("got %T, want addIssueComment", c.changes[0])
+	}
+	if cic.number != 1 {
+		t.Errorf("issue number: got %d, want 1", cic.number)
+	}
+	for _, want := range []string{"URL1", stack1, id1, "golang.org/x/tools/gopls@v0.16.1"} {
+		if !strings.Contains(cic.comment, want) {
+			t.Errorf("missing %q in comment:\n%s", want, cic.comment)
+		}
+	}
+
+	// The second change updates the issue body.
+	ui, ok := c.changes[1].(updateIssueBody)
+	if !ok {
+		t.Fatalf("got %T, want updateIssueBody", c.changes[1])
+	}
+	if ui.number != 1 {
+		t.Errorf("issue number: got %d, want 1", cic.number)
+	}
+	want := "Dups: " + id1
+	if !strings.Contains(ui.body, want) {
+		t.Errorf("missing %q in body %q", want, ui.body)
 	}
 }
