@@ -626,13 +626,23 @@ func shouldReopen(issue *Issue, stacks map[string]map[Info]int64) bool {
 	if !ok {
 		return false
 	}
-	// TODO(jba?): handle other programs
-	if issueProgram != "gopls" {
-		return false
+
+	matchProgram := func(infoProg string) bool {
+		switch issueProgram {
+		case "gopls":
+			return path.Base(infoProg) == issueProgram
+		case "go":
+			// At present, we only care about compiler stacks.
+			// Issues should have milestones like "Go1.24".
+			return infoProg == "cmd/compile"
+		default:
+			return false
+		}
 	}
+
 	for _, stack := range issue.newStacks {
 		for info := range stacks[stack] {
-			if path.Base(info.Program) == issueProgram && semver.Compare(info.ProgramVersion, issueVersion) >= 0 {
+			if matchProgram(info.Program) && semver.Compare(semVer(info.ProgramVersion), issueVersion) >= 0 {
 				log.Printf("reopening issue #%d: purportedly fixed in %s@%s, but found a new stack from version %s",
 					issue.Number, issueProgram, issueVersion, info.ProgramVersion)
 				return true
@@ -647,17 +657,44 @@ func (i *Issue) isFixed() bool {
 	return i.State == "closed" && i.StateReason == "completed"
 }
 
-// parseMilestone parses a the title of a GitHub milestone that is in the format
-// PROGRAM/VERSION. For example, "gopls/v0.17.0".
+// parseMilestone parses a the title of a GitHub milestone.
+// If  it is in the format PROGRAM/VERSION (for example, "gopls/v0.17.0"),
+// then it returns PROGRAM and VERSION.
+// If it is in the format Go1.X, then it returns "go" as the program and
+// "v1.X" or "v1.X.0" as the version.
+// Otherwise, the last return value is false.
 func parseMilestone(m *Milestone) (program, version string, ok bool) {
 	if m == nil {
 		return "", "", false
+	}
+	if strings.HasPrefix(m.Title, "Go") {
+		v := semVer(m.Title)
+		if !semver.IsValid(v) {
+			return "", "", false
+		}
+		return "go", v, true
 	}
 	program, version, ok = morestrings.CutLast(m.Title, "/")
 	if !ok || program == "" || version == "" || version[0] != 'v' {
 		return "", "", false
 	}
 	return program, version, true
+}
+
+// semVer returns a semantic version for its argument, which may already be
+// a semantic version, or may be a Go version.
+//
+//	 v1.2.3 => v1.2.3
+//		go1.24 => v1.24
+//		Go1.23.5 => v1.23.5
+//	 goHome => vHome
+//
+// It returns "", false if the go version is in the wrong format.
+func semVer(v string) string {
+	if strings.HasPrefix(v, "go") || strings.HasPrefix(v, "Go") {
+		return "v" + v[2:]
+	}
+	return v
 }
 
 // stackID returns a 32-bit identifier for a stack

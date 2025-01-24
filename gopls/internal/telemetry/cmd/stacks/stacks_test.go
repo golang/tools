@@ -269,7 +269,8 @@ func TestMarshalUpdateIssueFields(t *testing.T) {
 func TestShouldReopen(t *testing.T) {
 	const stack = "stack"
 	const gopls = "golang.org/x/tools/gopls"
-	const milestoneVersion = "v0.2.0"
+	goplsMilestone := &Milestone{Title: "gopls/v0.2.0"}
+	goMilestone := &Milestone{Title: "Go1.23"}
 
 	for _, tc := range []struct {
 		name  string
@@ -279,44 +280,61 @@ func TestShouldReopen(t *testing.T) {
 	}{
 		{
 			"issue open",
-			Issue{State: "open"},
+			Issue{State: "open", Milestone: goplsMilestone},
 			Info{Program: gopls, ProgramVersion: "v0.2.0"},
 			false,
 		},
 		{
 			"issue closed but not fixed",
-			Issue{State: "closed", StateReason: "not_planned"},
+			Issue{State: "closed", StateReason: "not_planned", Milestone: goplsMilestone},
 			Info{Program: gopls, ProgramVersion: "v0.2.0"},
 			false,
 		},
 		{
 			"different program",
-			Issue{State: "closed", StateReason: "completed"},
+			Issue{State: "closed", StateReason: "completed", Milestone: goplsMilestone},
 			Info{Program: "other", ProgramVersion: "v0.2.0"},
 			false,
 		},
 		{
 			"later version",
-			Issue{State: "closed", StateReason: "completed"},
+			Issue{State: "closed", StateReason: "completed", Milestone: goplsMilestone},
 			Info{Program: gopls, ProgramVersion: "v0.3.0"},
 			true,
 		},
 		{
 			"earlier version",
-			Issue{State: "closed", StateReason: "completed"},
+			Issue{State: "closed", StateReason: "completed", Milestone: goplsMilestone},
 			Info{Program: gopls, ProgramVersion: "v0.1.0"},
 			false,
 		},
 		{
 			"same version",
-			Issue{State: "closed", StateReason: "completed"},
+			Issue{State: "closed", StateReason: "completed", Milestone: goplsMilestone},
 			Info{Program: gopls, ProgramVersion: "v0.2.0"},
+			true,
+		},
+		{
+			"compiler later version",
+			Issue{State: "closed", StateReason: "completed", Milestone: goMilestone},
+			Info{Program: "cmd/compile", ProgramVersion: "go1.24"},
+			true,
+		},
+		{
+			"compiler earlier version",
+			Issue{State: "closed", StateReason: "completed", Milestone: goMilestone},
+			Info{Program: "cmd/compile", ProgramVersion: "go1.22"},
+			false,
+		},
+		{
+			"compiler same version",
+			Issue{State: "closed", StateReason: "completed", Milestone: goMilestone},
+			Info{Program: "cmd/compile", ProgramVersion: "go1.23"},
 			true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.issue.Number = 1
-			tc.issue.Milestone = &Milestone{Title: "gopls/" + milestoneVersion}
 			tc.issue.newStacks = []string{stack}
 			got := shouldReopen(&tc.issue, map[string]map[Info]int64{stack: map[Info]int64{tc.info: 1}})
 			if got != tc.want {
