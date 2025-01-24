@@ -426,7 +426,7 @@ func runCmdContext(ctx context.Context, cmd *exec.Cmd) (err error) {
 // cause of a hanging Go command, and then exits with log.Fatalf.
 func handleHangingGoCommand(start time.Time, cmd *exec.Cmd, resChan chan error) {
 	switch runtime.GOOS {
-	case "linux", "darwin", "freebsd", "netbsd":
+	case "linux", "darwin", "freebsd", "netbsd", "openbsd":
 		fmt.Fprintln(os.Stderr, `DETECTED A HANGING GO COMMAND
 
 			The gopls test runner has detected a hanging go command. In order to debug
