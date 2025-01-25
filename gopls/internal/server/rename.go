@@ -31,7 +31,7 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 	}
 
 	// Because we don't handle directory renaming within golang.Rename, golang.Rename returns
-	// boolean value isPkgRenaming to determine whether an DocumentChanges of type RenameFile should
+	// boolean value isPkgRenaming to determine whether any DocumentChanges of type RenameFile should
 	// be added to the return protocol.WorkspaceEdit value.
 	edits, isPkgRenaming, err := golang.Rename(ctx, snapshot, fh, params.Position, params.NewName)
 	if err != nil {

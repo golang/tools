@@ -615,7 +615,7 @@
 						},
 						{
 							"Name": "\"unreachable\"",
-							"Doc": "check for unreachable code\n\nThe unreachable analyzer finds statements that execution can never reach\nbecause they are preceded by an return statement, a call to panic, an\ninfinite loop, or similar constructs.",
+							"Doc": "check for unreachable code\n\nThe unreachable analyzer finds statements that execution can never reach\nbecause they are preceded by a return statement, a call to panic, an\ninfinite loop, or similar constructs.",
 							"Default": "true"
 						},
 						{
@@ -1310,7 +1310,7 @@
 		},
 		{
 			"Name": "unreachable",
-			"Doc": "check for unreachable code\n\nThe unreachable analyzer finds statements that execution can never reach\nbecause they are preceded by an return statement, a call to panic, an\ninfinite loop, or similar constructs.",
+			"Doc": "check for unreachable code\n\nThe unreachable analyzer finds statements that execution can never reach\nbecause they are preceded by a return statement, a call to panic, an\ninfinite loop, or similar constructs.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unreachable",
 			"Default": true
 		},

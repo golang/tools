@@ -414,7 +414,7 @@ func formatDefault(reflectField reflect.Value) (string, error) {
 	return string(defBytes), err
 }
 
-// valueDoc transforms a docstring documenting an constant identifier to a
+// valueDoc transforms a docstring documenting a constant identifier to a
 // docstring documenting its value.
 //
 // If doc is of the form "Foo is a bar", it returns '`"fooValue"` is a bar'. If

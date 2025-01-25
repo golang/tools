@@ -13,7 +13,7 @@
 // output to stdout. If any position arguments are provided stdin is ignored
 // and the arguments are assumed to be input files to convert.
 //
-// The -o flag provides an path to write output files to. If only one positional
+// The -o flag provides a path to write output files to. If only one positional
 // argument is specified it may be a file path or an existing directory, if there are
 // multiple inputs specified it must be a directory. If a directory is provided
 // the name of the file will be the SHA-256 hash of its contents.

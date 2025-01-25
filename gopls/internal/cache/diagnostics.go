@@ -31,7 +31,7 @@ type InitializationError struct {
 
 func byURI(d *Diagnostic) protocol.DocumentURI { return d.URI } // For use in maps.Group.
 
-// An Diagnostic corresponds to an LSP Diagnostic.
+// A Diagnostic corresponds to an LSP Diagnostic.
 // https://microsoft.github.io/language-server-protocol/specification#diagnostic
 //
 // It is (effectively) gob-serializable; see {encode,decode}Diagnostics.

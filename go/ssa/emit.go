@@ -18,7 +18,7 @@ import (
 // emitAlloc emits to f a new Alloc instruction allocating a variable
 // of type typ.
 //
-// The caller must set Alloc.Heap=true (for an heap-allocated variable)
+// The caller must set Alloc.Heap=true (for a heap-allocated variable)
 // or add the Alloc to f.Locals (for a frame-allocated variable).
 //
 // During building, a variable in f.Locals may have its Heap flag

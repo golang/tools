@@ -28,7 +28,7 @@ import (
 	"golang.org/x/tools/internal/event/label"
 )
 
-// An Runner will run go command invocations and serialize
+// A Runner will run go command invocations and serialize
 // them if it sees a concurrency error.
 type Runner struct {
 	// once guards the runner initialization.

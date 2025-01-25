@@ -411,7 +411,7 @@ func (e *Exported) rangeConverter(n *expect.Note, args []interface{}) (Range, []
 			eof := tokFile.Pos(tokFile.Size())
 			return newRange(tokFile, eof, eof), args, nil
 		default:
-			// look up an marker by name
+			// look up a marker by name
 			mark, ok := e.markers[string(arg)]
 			if !ok {
 				return Range{}, nil, fmt.Errorf("cannot find marker %v", arg)
