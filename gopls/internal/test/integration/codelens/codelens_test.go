@@ -261,9 +261,6 @@ module mod.com/a
 go 1.22
 
 require golang.org/x/hello v1.2.3
--- go.sum --
-golang.org/x/hello v1.2.3 h1:7Wesfkx/uBd+eFgPrq0irYj/1XfmbvLV8jZ/W7C2Dwg=
-golang.org/x/hello v1.2.3/go.mod h1:OgtlzsxVMUUdsdQCIDYgaauCTH47B8T8vofouNJfzgY=
 -- main.go --
 package main
 
@@ -282,6 +279,7 @@ require golang.org/x/hello v1.3.3
 `
 
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(proxyWithLatest),
 	).Run(t, shouldUpdateDep, func(t *testing.T, env *Env) {
 		env.RunGoCommand("mod", "vendor")
@@ -335,11 +333,6 @@ require golang.org/x/hello v1.0.0
 require golang.org/x/unused v1.0.0
 
 // EOF
--- go.sum --
-golang.org/x/hello v1.0.0 h1:qbzE1/qT0/zojAMd/JcPsO2Vb9K4Bkeyq0vB2JGMmsw=
-golang.org/x/hello v1.0.0/go.mod h1:WW7ER2MRNXWA6c8/4bDIek4Hc/+DofTrMaQQitGXcco=
-golang.org/x/unused v1.0.0 h1:LecSbCn5P3vTcxubungSt1Pn4D/WocCaiWOPDC0y0rw=
-golang.org/x/unused v1.0.0/go.mod h1:ihoW8SgWzugwwj0N2SfLfPZCxTB1QOVfhMfB5PWTQ8U=
 -- main.go --
 package main
 
@@ -349,7 +342,10 @@ func main() {
 	_ = hi.Goodbye
 }
 `
-	WithOptions(ProxyFiles(proxy)).Run(t, shouldRemoveDep, func(t *testing.T, env *Env) {
+	WithOptions(
+		WriteGoSum("."),
+		ProxyFiles(proxy),
+	).Run(t, shouldRemoveDep, func(t *testing.T, env *Env) {
 		env.OpenFile("go.mod")
 		env.RegexpReplace("go.mod", "// EOF", "// EOF unsaved edit") // unsaved edits ok
 		env.ExecuteCodeLensCommand("go.mod", command.Tidy, nil)

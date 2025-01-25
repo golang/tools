@@ -808,7 +808,6 @@ go 1.12
 require (
 	example.com v1.2.3
 )
--- go.sum --
 -- main.go --
 package main
 
@@ -918,11 +917,6 @@ module mod.com
 go 1.12
 
 require hasdep.com v1.2.3
--- go.sum --
-example.com v1.2.3 h1:ihBTGWGjTU3V4ZJ9OmHITkU9WQ4lGdQkMjgyLFk0FaY=
-example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
-hasdep.com v1.2.3 h1:00y+N5oD+SpKoqV1zP2VOPawcW65Zb9NebANY3GSzGI=
-hasdep.com v1.2.3/go.mod h1:ePVZOlez+KZEOejfLPGL2n4i8qiAjrkhQZ4wcImqAes=
 -- main.go --
 package main
 
@@ -957,19 +951,13 @@ go 1.12
 
 require hasdep.com v1.2.3
 require random.com v1.2.3
--- go.sum --
-example.com v1.2.3 h1:ihBTGWGjTU3V4ZJ9OmHITkU9WQ4lGdQkMjgyLFk0FaY=
-example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
-hasdep.com v1.2.3 h1:00y+N5oD+SpKoqV1zP2VOPawcW65Zb9NebANY3GSzGI=
-hasdep.com v1.2.3/go.mod h1:ePVZOlez+KZEOejfLPGL2n4i8qiAjrkhQZ4wcImqAes=
-random.com v1.2.3 h1:PzYTykzqqH6+qU0dIgh9iPFbfb4Mm8zNBjWWreRKtx0=
-random.com v1.2.3/go.mod h1:8EGj+8a4Hw1clAp8vbaeHAsKE4sbm536FP7nKyXO+qQ=
 -- main.go --
 package main
 
 func main() {}
 `
 		WithOptions(
+			WriteGoSum("."),
 			ProxyFiles(proxy),
 		).Run(t, mod, func(t *testing.T, env *Env) {
 			d := &protocol.PublishDiagnosticsParams{}
@@ -1010,7 +998,6 @@ go 1.12
 require (
 	example.com v1.2.3
 )
--- go.sum --
 -- main.go --
 package main
 
@@ -1078,7 +1065,6 @@ func Goodbye() {
 module mod.com
 
 go 1.12
--- go.sum --
 -- main.go --
 package main
 

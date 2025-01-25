@@ -309,9 +309,6 @@ module a.com
 require c.com v1.2.3
 
 exclude b.com v1.2.3
--- go.sum --
-c.com v1.2.3 h1:n07Dz9fYmpNqvZMwZi5NEqFcSHbvLa9lacMX+/g25tw=
-c.com v1.2.3/go.mod h1:/4TyYgU9Nu5tA4NymP5xyqE8R2VMzGD3TbJCwCOvHAg=
 -- main.go --
 package a
 
@@ -320,6 +317,7 @@ func main() {
 }
 `
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(proxy),
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OnceMet(

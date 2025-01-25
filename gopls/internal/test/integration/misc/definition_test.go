@@ -466,10 +466,6 @@ module example.com/a
 go 1.14
 require other.com/b v1.0.0
 
--- go.sum --
-other.com/b v1.0.0 h1:1wb3PMGdet5ojzrKl+0iNksRLnOM9Jw+7amBNqmYwqk=
-other.com/b v1.0.0/go.mod h1:TgHQFucl04oGT+vrUm/liAzukYHNxCwKNkQZEyn3m9g=
-
 -- a.go --
 package a
 import "other.com/b"
@@ -477,6 +473,7 @@ const _ = b.K
 
 `
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(proxy),
 		Modes(Default), // fails in 'experimental' mode
 	).Run(t, src, func(t *testing.T, env *Env) {
