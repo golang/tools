@@ -568,11 +568,13 @@ func RedirectStderr(t testing.TB) {
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
+	done := make(chan struct{})
 	go func() {
 		for sc := bufio.NewScanner(r); sc.Scan(); {
 			t.Log(sc.Text())
 		}
 		r.Close()
+		close(done)
 	}()
 
 	// Also do the same for the global logger.
@@ -590,5 +592,8 @@ func RedirectStderr(t testing.TB) {
 		log.SetOutput(savedWriter)
 		log.SetPrefix(savedPrefix)
 		log.SetFlags(savedFlags)
+
+		// Don't let test finish before final t.Log.
+		<-done
 	})
 }
