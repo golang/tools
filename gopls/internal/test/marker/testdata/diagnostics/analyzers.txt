@@ -74,6 +74,14 @@ func _() {
 	}()
 }
 
+// inline
+func _() {
+	f()  //@diag("f", re"inline call of analyzer.f")
+} 
+
+//go:fix inline
+func f() { fmt.Println(1) }
+
 -- cgocall/cgocall.go --
 package cgocall
 

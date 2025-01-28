@@ -376,6 +376,15 @@ Default: on.
 
 Package documentation: [infertypeargs](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs)
 
+<a id='inline'></a>
+## `inline`: inline calls to functions with "//go:fix inline" doc comment
+
+
+
+Default: on.
+
+Package documentation: [inline](https://pkg.go.dev/golang.org/x/tools/internal/refactor/inline/analyzer)
+
 <a id='loopclosure'></a>
 ## `loopclosure`: check references to loop variables from within nested functions
 
