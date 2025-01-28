@@ -158,9 +158,9 @@ func (fi mapFI) Mode() os.FileMode {
 	}
 	return 0444
 }
-func (fi mapFI) Name() string     { return pathpkg.Base(fi.name) }
-func (fi mapFI) Size() int64      { return int64(fi.size) }
-func (fi mapFI) Sys() interface{} { return nil }
+func (fi mapFI) Name() string { return pathpkg.Base(fi.name) }
+func (fi mapFI) Size() int64  { return int64(fi.size) }
+func (fi mapFI) Sys() any     { return nil }
 
 type nopCloser struct {
 	io.ReadSeeker

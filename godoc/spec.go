@@ -38,7 +38,7 @@ func (p *ebnfParser) next() {
 	p.lit = p.scanner.TokenText()
 }
 
-func (p *ebnfParser) printf(format string, args ...interface{}) {
+func (p *ebnfParser) printf(format string, args ...any) {
 	p.flush()
 	fmt.Fprintf(p.out, format, args...)
 }

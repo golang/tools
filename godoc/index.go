@@ -71,10 +71,10 @@ import (
 // InterfaceSlice is a helper type for sorting interface
 // slices according to some slice-specific sort criteria.
 
-type comparer func(x, y interface{}) bool
+type comparer func(x, y any) bool
 
 type interfaceSlice struct {
-	slice []interface{}
+	slice []any
 	less  comparer
 }
 
@@ -87,7 +87,7 @@ type interfaceSlice struct {
 // runs. For instance, a RunList containing pairs (x, y) may be compressed
 // into a RunList containing pair runs (x, {y}) where each run consists of
 // a list of y's with the same x.
-type RunList []interface{}
+type RunList []any
 
 func (h RunList) sort(less comparer) {
 	sort.Sort(&interfaceSlice{h, less})
@@ -99,7 +99,7 @@ func (p *interfaceSlice) Swap(i, j int)      { p.slice[i], p.slice[j] = p.slice[
 
 // Compress entries which are the same according to a sort criteria
 // (specified by less) into "runs".
-func (h RunList) reduce(less comparer, newRun func(h RunList) interface{}) RunList {
+func (h RunList) reduce(less comparer, newRun func(h RunList) any) RunList {
 	if len(h) == 0 {
 		return nil
 	}
@@ -143,10 +143,10 @@ func (k KindRun) Less(i, j int) bool { return k[i].Lori() < k[j].Lori() }
 func (k KindRun) Swap(i, j int)      { k[i], k[j] = k[j], k[i] }
 
 // FileRun contents are sorted by Kind for the reduction into KindRuns.
-func lessKind(x, y interface{}) bool { return x.(SpotInfo).Kind() < y.(SpotInfo).Kind() }
+func lessKind(x, y any) bool { return x.(SpotInfo).Kind() < y.(SpotInfo).Kind() }
 
 // newKindRun allocates a new KindRun from the SpotInfo run h.
-func newKindRun(h RunList) interface{} {
+func newKindRun(h RunList) any {
 	run := make(KindRun, len(h))
 	for i, x := range h {
 		run[i] = x.(SpotInfo)
@@ -214,7 +214,7 @@ type FileRun struct {
 }
 
 // Spots are sorted by file path for the reduction into FileRuns.
-func lessSpot(x, y interface{}) bool {
+func lessSpot(x, y any) bool {
 	fx := x.(Spot).File
 	fy := y.(Spot).File
 	// same as "return fx.Path() < fy.Path()" but w/o computing the file path first
@@ -224,7 +224,7 @@ func lessSpot(x, y interface{}) bool {
 }
 
 // newFileRun allocates a new FileRun from the Spot run h.
-func newFileRun(h RunList) interface{} {
+func newFileRun(h RunList) any {
 	file := h[0].(Spot).File
 
 	// reduce the list of Spots into a list of KindRuns
@@ -257,12 +257,12 @@ func (p *PakRun) Less(i, j int) bool { return p.Files[i].File.Name < p.Files[j].
 func (p *PakRun) Swap(i, j int)      { p.Files[i], p.Files[j] = p.Files[j], p.Files[i] }
 
 // FileRuns are sorted by package for the reduction into PakRuns.
-func lessFileRun(x, y interface{}) bool {
+func lessFileRun(x, y any) bool {
 	return x.(*FileRun).File.Pak.less(y.(*FileRun).File.Pak)
 }
 
 // newPakRun allocates a new PakRun from the *FileRun run h.
-func newPakRun(h RunList) interface{} {
+func newPakRun(h RunList) any {
 	pak := h[0].(*FileRun).File.Pak
 	files := make([]*FileRun, len(h))
 	for i, x := range h {
@@ -280,7 +280,7 @@ func newPakRun(h RunList) interface{} {
 type HitList []*PakRun
 
 // PakRuns are sorted by package.
-func lessPakRun(x, y interface{}) bool { return x.(*PakRun).Pak.less(y.(*PakRun).Pak) }
+func lessPakRun(x, y any) bool { return x.(*PakRun).Pak.less(y.(*PakRun).Pak) }
 
 func reduce(h0 RunList) HitList {
 	// reduce a list of Spots into a list of FileRuns
@@ -325,10 +325,10 @@ type AltWords struct {
 }
 
 // wordPairs are sorted by their canonical spelling.
-func lessWordPair(x, y interface{}) bool { return x.(*wordPair).canon < y.(*wordPair).canon }
+func lessWordPair(x, y any) bool { return x.(*wordPair).canon < y.(*wordPair).canon }
 
 // newAltWords allocates a new AltWords from the *wordPair run h.
-func newAltWords(h RunList) interface{} {
+func newAltWords(h RunList) any {
 	canon := h[0].(*wordPair).canon
 	alts := make([]string, len(h))
 	for i, x := range h {
@@ -1159,7 +1159,7 @@ func (x *Index) WriteTo(w io.Writer) (n int64, err error) {
 		return 0, err
 	}
 	if fulltext {
-		encode := func(x interface{}) error {
+		encode := func(x any) error {
 			return gob.NewEncoder(w).Encode(x)
 		}
 		if err := x.fset.Write(encode); err != nil {
@@ -1199,7 +1199,7 @@ func (x *Index) ReadFrom(r io.Reader) (n int64, err error) {
 	x.opts = fx.Opts
 	if fx.Fulltext {
 		x.fset = token.NewFileSet()
-		decode := func(x interface{}) error {
+		decode := func(x any) error {
 			return gob.NewDecoder(r).Decode(x)
 		}
 		if err := x.fset.Read(decode); err != nil {

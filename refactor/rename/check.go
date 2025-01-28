@@ -19,7 +19,7 @@ import (
 )
 
 // errorf reports an error (e.g. conflict) and prevents file modification.
-func (r *renamer) errorf(pos token.Pos, format string, args ...interface{}) {
+func (r *renamer) errorf(pos token.Pos, format string, args ...any) {
 	r.hadConflicts = true
 	reportError(r.iprog.Fset.Position(pos), fmt.Sprintf(format, args...))
 }

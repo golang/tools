@@ -18,18 +18,18 @@ import (
 // access to it and records the time the value was last set.
 type RWValue struct {
 	mutex     sync.RWMutex
-	value     interface{}
+	value     any
 	timestamp time.Time // time of last set()
 }
 
-func (v *RWValue) Set(value interface{}) {
+func (v *RWValue) Set(value any) {
 	v.mutex.Lock()
 	v.value = value
 	v.timestamp = time.Now()
 	v.mutex.Unlock()
 }
 
-func (v *RWValue) Get() (interface{}, time.Time) {
+func (v *RWValue) Get() (any, time.Time) {
 	v.mutex.RLock()
 	defer v.mutex.RUnlock()
 	return v.value, v.timestamp

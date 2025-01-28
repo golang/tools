@@ -190,13 +190,13 @@ func (p *Presentation) infoSnippet_htmlFunc(info SpotInfo) string {
 	return `<span class="alert">no snippet text available</span>`
 }
 
-func (p *Presentation) nodeFunc(info *PageInfo, node interface{}) string {
+func (p *Presentation) nodeFunc(info *PageInfo, node any) string {
 	var buf bytes.Buffer
 	p.writeNode(&buf, info, info.FSet, node)
 	return buf.String()
 }
 
-func (p *Presentation) node_htmlFunc(info *PageInfo, node interface{}, linkify bool) string {
+func (p *Presentation) node_htmlFunc(info *PageInfo, node any, linkify bool) string {
 	var buf1 bytes.Buffer
 	p.writeNode(&buf1, info, info.FSet, node)
 
@@ -477,9 +477,9 @@ func srcBreadcrumbFunc(relpath string) string {
 	return buf.String()
 }
 
-func newPosLink_urlFunc(srcPosLinkFunc func(s string, line, low, high int) string) func(info *PageInfo, n interface{}) string {
+func newPosLink_urlFunc(srcPosLinkFunc func(s string, line, low, high int) string) func(info *PageInfo, n any) string {
 	// n must be an ast.Node or a *doc.Note
-	return func(info *PageInfo, n interface{}) string {
+	return func(info *PageInfo, n any) string {
 		var pos, end token.Pos
 
 		switch n := n.(type) {
@@ -839,7 +839,7 @@ func replaceLeadingIndentation(body, oldIndent, newIndent string) string {
 // The provided fset must be non-nil. The pageInfo is optional. If
 // present, the pageInfo is used to add comments to struct fields to
 // say which version of Go introduced them.
-func (p *Presentation) writeNode(w io.Writer, pageInfo *PageInfo, fset *token.FileSet, x interface{}) {
+func (p *Presentation) writeNode(w io.Writer, pageInfo *PageInfo, fset *token.FileSet, x any) {
 	// convert trailing tabs into spaces using a tconv filter
 	// to ensure a good outcome in most browsers (there may still
 	// be tabs in comments and strings, but converting those into
@@ -918,7 +918,7 @@ var slashSlash = []byte("//")
 
 // WriteNode writes x to w.
 // TODO(bgarcia) Is this method needed? It's just a wrapper for p.writeNode.
-func (p *Presentation) WriteNode(w io.Writer, fset *token.FileSet, x interface{}) {
+func (p *Presentation) WriteNode(w io.Writer, fset *token.FileSet, x any) {
 	p.writeNode(w, nil, fset, x)
 }
 
