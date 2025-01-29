@@ -450,3 +450,75 @@ func concreteType(e ast.Expr, info *types.Info) (*types.Named, bool) {
 	}
 	return named, isPtr
 }
+
+func GetFieldStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node) *StructFieldInfo {
+	for _, node := range path {
+		n, ok := node.(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+		tv, ok := info.Types[n.X]
+		if !ok {
+			break
+		}
+
+		named, ok := tv.Type.(*types.Named)
+		if !ok {
+			break
+		}
+
+		structType, ok := named.Underlying().(*types.Struct)
+		if !ok {
+			break
+		}
+
+		return &StructFieldInfo{
+			Fset:   fset,
+			Expr:   n,
+			Struct: structType,
+			Named:  named,
+			Info:   info,
+			Path:   path,
+		}
+	}
+
+	return nil
+}
+
+// StructFieldInfo describes f field in x.f where x has a named struct type
+type StructFieldInfo struct {
+	Fset   *token.FileSet
+	Expr   *ast.SelectorExpr
+	Struct *types.Struct
+	Named  *types.Named
+	Info   *types.Info
+	Path   []ast.Node
+}
+
+// Emit writes to out the missing field based on type info.
+func (si *StructFieldInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
+	if si.Expr == nil || si.Expr.Sel == nil {
+		return fmt.Errorf("invalid selector expression")
+	}
+
+	// Get types from context at the selector expression position
+	typesFromContext := typesutil.TypesFromContext(si.Info, si.Path, si.Expr.Pos())
+
+	// Default to interface{} if we couldn't determine the type from context
+	var fieldType types.Type
+	if len(typesFromContext) > 0 {
+		fieldType = typesFromContext[0]
+	} else {
+		// Create a new interface{} type
+		fieldType = types.Universe.Lookup("any").Type()
+	}
+
+	out.Write([]byte{'\n', '\t'})
+	out.WriteString(si.Expr.Sel.Name)
+	out.WriteByte(' ')
+	out.WriteString(types.TypeString(fieldType, qual))
+	if si.Struct.NumFields() == 0 {
+		out.WriteByte('\n')
+	}
+	return nil
+}

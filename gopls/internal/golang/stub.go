@@ -57,7 +57,7 @@ func stubMissingCalledFunctionFixer(ctx context.Context, snapshot *cache.Snapsho
 // at the cursor position.
 func stubMissingStructFieldFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-	fi := GetFieldStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes)
+	fi := stubmethods.GetFieldStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes)
 	if fi == nil {
 		return nil, nil, fmt.Errorf("invalid type request")
 	}
@@ -252,7 +252,7 @@ func trimVersionSuffix(path string) string {
 	return path
 }
 
-func insertStructField(ctx context.Context, snapshot *cache.Snapshot, meta *metadata.Package, fieldInfo *StructFieldInfo) (*token.FileSet, *analysis.SuggestedFix, error) {
+func insertStructField(ctx context.Context, snapshot *cache.Snapshot, meta *metadata.Package, fieldInfo *stubmethods.StructFieldInfo) (*token.FileSet, *analysis.SuggestedFix, error) {
 	if fieldInfo == nil {
 		return nil, nil, fmt.Errorf("no field info provided")
 	}
@@ -304,13 +304,11 @@ func insertStructField(ctx context.Context, snapshot *cache.Snapshot, meta *meta
 	textEdit := analysis.TextEdit{
 		Pos:     insertPos,
 		End:     insertPos,
-		NewText: []byte(buf.String()),
+		NewText: buf.Bytes(),
 	}
 
-	fix := &analysis.SuggestedFix{
+	return fieldInfo.Fset, &analysis.SuggestedFix{
 		Message:   fmt.Sprintf("Add field %s to struct %s", fieldInfo.Expr.Sel.Name, fieldInfo.Named.Obj().Name()),
 		TextEdits: []analysis.TextEdit{textEdit},
-	}
-
-	return fieldInfo.Fset, fix, nil
+	}, nil
 }

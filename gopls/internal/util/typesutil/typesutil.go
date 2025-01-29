@@ -186,9 +186,9 @@ func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.
 		}
 	case *ast.SelectorExpr:
 		for _, n := range path {
-			assignExpr, ok := n.(*ast.AssignStmt)
+			assign, ok := n.(*ast.AssignStmt)
 			if ok {
-				for _, rh := range assignExpr.Rhs {
+				for _, rh := range assign.Rhs {
 					// basic types
 					basicLit, ok := rh.(*ast.BasicLit)
 					if ok {
