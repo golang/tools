@@ -76,8 +76,8 @@ func _() {
 
 // inline
 func _() {
-	f()  //@diag("f", re"inline call of analyzer.f")
-} 
+	f()  //@diag("f", re"Call of analyzer.f should be inlined")
+}
 
 //go:fix inline
 func f() { fmt.Println(1) }
