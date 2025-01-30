@@ -299,7 +299,7 @@ func IsTypeNamed(t types.Type, pkgPath string, names ...string) bool {
 	if named, ok := types.Unalias(t).(*types.Named); ok {
 		tname := named.Obj()
 		return tname != nil &&
-			isPackageLevel(tname) &&
+			typesinternal.IsPackageLevel(tname) &&
 			tname.Pkg().Path() == pkgPath &&
 			slices.Contains(names, tname.Name())
 	}
@@ -326,7 +326,7 @@ func IsPointerToNamed(t types.Type, pkgPath string, names ...string) bool {
 func IsFunctionNamed(obj types.Object, pkgPath string, names ...string) bool {
 	f, ok := obj.(*types.Func)
 	return ok &&
-		isPackageLevel(obj) &&
+		typesinternal.IsPackageLevel(obj) &&
 		f.Pkg().Path() == pkgPath &&
 		f.Type().(*types.Signature).Recv() == nil &&
 		slices.Contains(names, f.Name())
@@ -348,14 +348,6 @@ func IsMethodNamed(obj types.Object, pkgPath string, typeName string, names ...s
 		}
 	}
 	return false
-}
-
-// isPackageLevel reports whether obj is a package-level symbol.
-//
-// TODO(adonovan): publish in typesinternal and factor with
-// gopls/internal/golang/rename_check.go, refactor/rename/util.go.
-func isPackageLevel(obj types.Object) bool {
-	return obj.Pkg() != nil && obj.Parent() == obj.Pkg().Scope()
 }
 
 // ValidateFixes validates the set of fixes for a single diagnostic.

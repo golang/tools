@@ -140,7 +140,7 @@ func DocFragment(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (p
 	}
 
 	// package-level symbol?
-	if isPackageLevel(sym) {
+	if typesinternal.IsPackageLevel(sym) {
 		return pkgpath, sym.Name(), makeTitle(objectKind(sym), sym.Pkg(), sym.Name())
 	}
 

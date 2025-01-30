@@ -36,7 +36,7 @@ func (r *renamer) check(from types.Object) {
 		r.checkInFileBlock(from_)
 	} else if from_, ok := from.(*types.Label); ok {
 		r.checkLabel(from_)
-	} else if isPackageLevel(from) {
+	} else if typesinternal.IsPackageLevel(from) {
 		r.checkInPackageBlock(from)
 	} else if v, ok := from.(*types.Var); ok && v.IsField() {
 		r.checkStructField(v)

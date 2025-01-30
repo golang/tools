@@ -100,7 +100,7 @@ func (r *renamer) check(from types.Object) {
 		r.checkInFileBlock(from_)
 	} else if from_, ok := from.(*types.Label); ok {
 		r.checkLabel(from_)
-	} else if isPackageLevel(from) {
+	} else if typesinternal.IsPackageLevel(from) {
 		r.checkInPackageBlock(from)
 	} else if v, ok := from.(*types.Var); ok && v.IsField() {
 		r.checkStructField(v)
@@ -947,13 +947,6 @@ func isLocal(obj types.Object) bool {
 		depth++
 	}
 	return depth >= 4
-}
-
-func isPackageLevel(obj types.Object) bool {
-	if obj == nil {
-		return false
-	}
-	return obj.Pkg().Scope().Lookup(obj.Name()) == obj
 }
 
 // -- Plundered from go/scanner: ---------------------------------------
