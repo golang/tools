@@ -47,6 +47,7 @@ const (
 	MaybePromptForTelemetry Command = "gopls.maybe_prompt_for_telemetry"
 	MemStats                Command = "gopls.mem_stats"
 	Modules                 Command = "gopls.modules"
+	PackageSymbols          Command = "gopls.package_symbols"
 	Packages                Command = "gopls.packages"
 	RegenerateCgo           Command = "gopls.regenerate_cgo"
 	RemoveDependency        Command = "gopls.remove_dependency"
@@ -91,6 +92,7 @@ var Commands = []Command{
 	MaybePromptForTelemetry,
 	MemStats,
 	Modules,
+	PackageSymbols,
 	Packages,
 	RegenerateCgo,
 	RemoveDependency,
@@ -246,6 +248,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return s.Modules(ctx, a0)
+	case PackageSymbols:
+		var a0 PackageSymbolsArgs
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.PackageSymbols(ctx, a0)
 	case Packages:
 		var a0 PackagesArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -526,6 +534,14 @@ func NewModulesCommand(title string, a0 ModulesArgs) *protocol.Command {
 	return &protocol.Command{
 		Title:     title,
 		Command:   Modules.String(),
+		Arguments: MustMarshalArgs(a0),
+	}
+}
+
+func NewPackageSymbolsCommand(title string, a0 PackageSymbolsArgs) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   PackageSymbols.String(),
 		Arguments: MustMarshalArgs(a0),
 	}
 }

@@ -1735,3 +1735,28 @@ func (c *commandHandler) ScanImports(ctx context.Context) error {
 	}
 	return nil
 }
+
+func (c *commandHandler) PackageSymbols(ctx context.Context, args command.PackageSymbolsArgs) (command.PackageSymbolsResult, error) {
+	var result command.PackageSymbolsResult
+	err := c.run(ctx, commandConfig{
+		forURI: args.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		res, err := golang.PackageSymbols(ctx, deps.snapshot, args.URI)
+		if err != nil {
+			return err
+		}
+		result = res
+		return nil
+	})
+
+	// sort symbols for determinism
+	sort.SliceStable(result.Symbols, func(i, j int) bool {
+		iv, jv := result.Symbols[i], result.Symbols[j]
+		if iv.Name == jv.Name {
+			return iv.Range.Start.Line < jv.Range.Start.Line
+		}
+		return iv.Name < jv.Name
+	})
+
+	return result, err
+}
