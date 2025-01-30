@@ -1000,6 +1000,8 @@ arguments at call sites, while taking care to preserve any side
 effects in the argument expressions; see
 https://github.com/golang/tools/releases/tag/gopls%2Fv0.14.
 
+This analyzer ignores generated code.
+
 Default: on.
 
 Package documentation: [unusedparams](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedparams)
