@@ -49,7 +49,7 @@ const in5,
 //
 //go:fix inline
 const (
-	a = iota
+	a = iota // want `invalid //go:fix inline directive: const value is iota`
 	b
 	in7 = one
 )
@@ -67,4 +67,32 @@ func _() {
 
 	in1 := 1 // don't inline lvalues
 	_ = in1
+}
+
+const (
+	x = 1
+	//go:fix inline
+	in8 = x
+)
+
+func shadow() {
+	var x int // shadows x at package scope
+
+	//go:fix inline
+	const a = iota // want `invalid //go:fix inline directive: const value is iota`
+
+	const iota = 2
+	// Below this point, iota is an ordinary constant.
+
+	//go:fix inline
+	const b = iota
+
+	x = a // a is defined with the predeclared iota, so it cannot be inlined
+	x = iota // want `Constant b should be inlined`
+
+	// Don't offer to inline in8, because the result, "x", would mean something different
+	// in this scope than it does in the scope where in8 is defined.
+	x = in8
+
+	_ = x
 }
