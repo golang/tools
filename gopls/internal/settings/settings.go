@@ -63,6 +63,9 @@ type ClientOptions struct {
 	SupportedResourceOperations                []protocol.ResourceOperationKind
 	CodeActionResolveOptions                   []string
 	ShowDocumentSupported                      bool
+	// SupportedWorkDoneProgressFormats specifies the formats supported by the
+	// client for handling workdone progress metadata.
+	SupportedWorkDoneProgressFormats map[WorkDoneProgressStyle]bool
 }
 
 // ServerOptions holds LSP-specific configuration that is provided by the
@@ -585,6 +588,10 @@ func (u *UserOptions) SetEnvSlice(env []string) {
 	}
 }
 
+type WorkDoneProgressStyle string
+
+const WorkDoneProgressStyleLog WorkDoneProgressStyle = "log"
+
 // InternalOptions contains settings that are not intended for use by the
 // average user. These may be settings used by tests or outdated settings that
 // will soon be deprecated. Some of these settings may not even be configurable
@@ -899,6 +906,16 @@ func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps pr
 	// Check if the client supports code actions resolving.
 	if caps.TextDocument.CodeAction.DataSupport && caps.TextDocument.CodeAction.ResolveSupport != nil {
 		o.CodeActionResolveOptions = caps.TextDocument.CodeAction.ResolveSupport.Properties
+	}
+
+	// Client experimental capabilities.
+	if experimental, ok := caps.Experimental.(map[string]any); ok {
+		if formats, ok := experimental["progressMessageStyles"].([]any); ok {
+			o.SupportedWorkDoneProgressFormats = make(map[WorkDoneProgressStyle]bool, len(formats))
+			for _, f := range formats {
+				o.SupportedWorkDoneProgressFormats[WorkDoneProgressStyle(f.(string))] = true
+			}
+		}
 	}
 }
 

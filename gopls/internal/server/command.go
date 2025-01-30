@@ -309,10 +309,11 @@ func (c *commandHandler) AddTest(ctx context.Context, loc protocol.Location) (*p
 
 // commandConfig configures common command set-up and execution.
 type commandConfig struct {
-	requireSave bool                 // whether all files must be saved for the command to work
-	progress    string               // title to use for progress reporting. If empty, no progress will be reported.
-	forView     string               // view to resolve to a snapshot; incompatible with forURI
-	forURI      protocol.DocumentURI // URI to resolve to a snapshot. If unset, snapshot will be nil.
+	requireSave   bool                           // whether all files must be saved for the command to work
+	progress      string                         // title to use for progress reporting. If empty, no progress will be reported.
+	progressStyle settings.WorkDoneProgressStyle // style information for client-side progress display.
+	forView       string                         // view to resolve to a snapshot; incompatible with forURI
+	forURI        protocol.DocumentURI           // URI to resolve to a snapshot. If unset, snapshot will be nil.
 }
 
 // commandDeps is evaluated from a commandConfig. Note that not all fields may
@@ -382,7 +383,11 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 
 	ctx, cancel := context.WithCancel(xcontext.Detach(ctx))
 	if cfg.progress != "" {
-		deps.work = c.s.progress.Start(ctx, cfg.progress, "Running...", c.params.WorkDoneToken, cancel)
+		header := ""
+		if _, ok := c.s.options.SupportedWorkDoneProgressFormats[cfg.progressStyle]; ok && cfg.progressStyle != "" {
+			header = fmt.Sprintf("style: %s\n\n", cfg.progressStyle)
+		}
+		deps.work = c.s.progress.Start(ctx, cfg.progress, header+"Running...", c.params.WorkDoneToken, cancel)
 	}
 	runcmd := func() error {
 		defer release()
@@ -1214,9 +1219,10 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 
 	var commandResult command.VulncheckResult
 	err := c.run(ctx, commandConfig{
-		progress:    GoVulncheckCommandTitle,
-		requireSave: true, // govulncheck cannot honor overlays
-		forURI:      args.URI,
+		progress:      GoVulncheckCommandTitle,
+		progressStyle: settings.WorkDoneProgressStyleLog,
+		requireSave:   true, // govulncheck cannot honor overlays
+		forURI:        args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		jsonrpc2.Async(ctx) // run this in parallel with other requests: vulncheck can be slow.
 
@@ -1276,6 +1282,7 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 // slated for deletion.
 //
 // TODO(golang/vscode-go#3572)
+// TODO(hxjiang): deprecate gopls.run_govulncheck.
 func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.VulncheckArgs) (command.RunVulncheckResult, error) {
 	if args.URI == "" {
 		return command.RunVulncheckResult{}, errors.New("VulncheckArgs is missing URI field")
