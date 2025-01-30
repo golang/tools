@@ -26,7 +26,15 @@ func Foo(a string, b int) (c bool) {
 func Bar(float64, ...byte) {
 }
 
+func FooArr(a []int) {
+
+}
+
 type myStruct struct{}
+
+type Bar struct {
+	A, B, C, D string
+}
 
 func (*myStruct) foo(e *json.Decoder) (*big.Int, error) {
 	return nil, nil
@@ -114,6 +122,14 @@ func Qux() {
 	AliasSlice()    //@signature(")", "AliasSlice(a []*Alias) (b Alias)", 0)
 	AliasMap()      //@signature(")", "AliasMap(a map[*Alias]StringAlias) (b map[*Alias]StringAlias, c map[*Alias]StringAlias)", 0)
 	OtherAliasMap() //@signature(")", "OtherAliasMap(a map[Alias]OtherAlias, b map[Alias]OtherAlias) map[Alias]OtherAlias", 0)
+
+	var l []Foo
+	l = append(l, Foo{ //@signature(",", "append(slice []Type, elems ...Type) []Type", 0)
+		A: "hello", //@signature(",", "", 0)
+		B: "world", //@signature(",", "", 0)
+	})
+
+	FooArr([]int{1, 2, 3, 4, 5}) //@signature("1", "", 0)
 }
 
 func Hello(func()) {}
