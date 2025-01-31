@@ -6,6 +6,7 @@ package golang
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"go/ast"
 	"go/token"
@@ -20,14 +21,8 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
-// FoldingRangeInfo holds range and kind info of folding for an ast.Node
-type FoldingRangeInfo struct {
-	Range protocol.Range
-	Kind  protocol.FoldingRangeKind
-}
-
 // FoldingRange gets all of the folding range for f.
-func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, lineFoldingOnly bool) (ranges []*FoldingRangeInfo, err error) {
+func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, lineFoldingOnly bool) ([]protocol.FoldingRange, error) {
 	// TODO(suzmue): consider limiting the number of folding ranges returned, and
 	// implement a way to prioritize folding ranges in that case.
 	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
@@ -48,27 +43,29 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 	}
 
 	// Get folding ranges for comments separately as they are not walked by ast.Inspect.
-	ranges = append(ranges, commentsFoldingRange(pgf)...)
+	ranges := commentsFoldingRange(pgf)
 
-	visit := func(n ast.Node) bool {
-		rng := foldingRangeFunc(pgf, n, lineFoldingOnly)
-		if rng != nil {
+	// Walk the ast and collect folding ranges.
+	ast.Inspect(pgf.File, func(n ast.Node) bool {
+		if rng, ok := foldingRangeFunc(pgf, n, lineFoldingOnly); ok {
 			ranges = append(ranges, rng)
 		}
 		return true
-	}
-	// Walk the ast and collect folding ranges.
-	ast.Inspect(pgf.File, visit)
+	})
 
-	slices.SortFunc(ranges, func(x, y *FoldingRangeInfo) int {
-		return protocol.CompareRange(x.Range, y.Range)
+	// Sort by start position.
+	slices.SortFunc(ranges, func(x, y protocol.FoldingRange) int {
+		if d := cmp.Compare(x.StartLine, y.StartLine); d != 0 {
+			return d
+		}
+		return cmp.Compare(x.StartCharacter, y.StartCharacter)
 	})
 
 	return ranges, nil
 }
 
 // foldingRangeFunc calculates the line folding range for ast.Node n
-func foldingRangeFunc(pgf *parsego.File, n ast.Node, lineFoldingOnly bool) *FoldingRangeInfo {
+func foldingRangeFunc(pgf *parsego.File, n ast.Node, lineFoldingOnly bool) (protocol.FoldingRange, bool) {
 	// TODO(suzmue): include trailing empty lines before the closing
 	// parenthesis/brace.
 	var kind protocol.FoldingRangeKind
@@ -109,25 +106,22 @@ func foldingRangeFunc(pgf *parsego.File, n ast.Node, lineFoldingOnly bool) *Fold
 
 	// Check that folding positions are valid.
 	if !start.IsValid() || !end.IsValid() {
-		return nil
+		return protocol.FoldingRange{}, false
 	}
 	if start == end {
 		// Nothing to fold.
-		return nil
+		return protocol.FoldingRange{}, false
 	}
 	// in line folding mode, do not fold if the start and end lines are the same.
 	if lineFoldingOnly && safetoken.Line(pgf.Tok, start) == safetoken.Line(pgf.Tok, end) {
-		return nil
+		return protocol.FoldingRange{}, false
 	}
 	rng, err := pgf.PosRange(start, end)
 	if err != nil {
 		bug.Reportf("failed to create range: %s", err) // can't happen
-		return nil
+		return protocol.FoldingRange{}, false
 	}
-	return &FoldingRangeInfo{
-		Range: rng,
-		Kind:  kind,
-	}
+	return foldingRange(kind, rng), true
 }
 
 // getLineFoldingRange returns the folding range for nodes with parentheses/braces/brackets
@@ -196,7 +190,7 @@ func getLineFoldingRange(pgf *parsego.File, open, close token.Pos, lineFoldingOn
 // commentsFoldingRange returns the folding ranges for all comment blocks in file.
 // The folding range starts at the end of the first line of the comment block, and ends at the end of the
 // comment block and has kind protocol.Comment.
-func commentsFoldingRange(pgf *parsego.File) (comments []*FoldingRangeInfo) {
+func commentsFoldingRange(pgf *parsego.File) (comments []protocol.FoldingRange) {
 	tokFile := pgf.Tok
 	for _, commentGrp := range pgf.File.Comments {
 		startGrpLine, endGrpLine := safetoken.Line(tokFile, commentGrp.Pos()), safetoken.Line(tokFile, commentGrp.End())
@@ -218,11 +212,19 @@ func commentsFoldingRange(pgf *parsego.File) (comments []*FoldingRangeInfo) {
 			bug.Reportf("failed to create mapped range: %s", err) // can't happen
 			continue
 		}
-		comments = append(comments, &FoldingRangeInfo{
-			// Fold from the end of the first line comment to the end of the comment block.
-			Range: rng,
-			Kind:  protocol.Comment,
-		})
+		// Fold from the end of the first line comment to the end of the comment block.
+		comments = append(comments, foldingRange(protocol.Comment, rng))
 	}
 	return comments
+}
+
+func foldingRange(kind protocol.FoldingRangeKind, rng protocol.Range) protocol.FoldingRange {
+	return protocol.FoldingRange{
+		// I have no idea why LSP doesn't use a protocol.Range here.
+		StartLine:      rng.Start.Line,
+		StartCharacter: rng.Start.Character,
+		EndLine:        rng.End.Line,
+		EndCharacter:   rng.End.Character,
+		Kind:           string(kind),
+	}
 }

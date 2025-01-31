@@ -26,24 +26,5 @@ func (s *server) FoldingRange(ctx context.Context, params *protocol.FoldingRange
 	if snapshot.FileKind(fh) != file.Go {
 		return nil, nil // empty result
 	}
-	ranges, err := golang.FoldingRange(ctx, snapshot, fh, snapshot.Options().LineFoldingOnly)
-	if err != nil {
-		return nil, err
-	}
-	return toProtocolFoldingRanges(ranges)
-}
-
-func toProtocolFoldingRanges(ranges []*golang.FoldingRangeInfo) ([]protocol.FoldingRange, error) {
-	result := make([]protocol.FoldingRange, 0, len(ranges))
-	for _, info := range ranges {
-		rng := info.Range
-		result = append(result, protocol.FoldingRange{
-			StartLine:      rng.Start.Line,
-			StartCharacter: rng.Start.Character,
-			EndLine:        rng.End.Line,
-			EndCharacter:   rng.End.Character,
-			Kind:           string(info.Kind),
-		})
-	}
-	return result, nil
+	return golang.FoldingRange(ctx, snapshot, fh, snapshot.Options().LineFoldingOnly)
 }
