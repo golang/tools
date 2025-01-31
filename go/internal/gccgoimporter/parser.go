@@ -309,6 +309,7 @@ func (p *parser) parseParam(pkg *types.Package) (param *types.Var, isVariadic bo
 func (p *parser) parseVar(pkg *types.Package) *types.Var {
 	name := p.parseName()
 	v := types.NewVar(token.NoPos, pkg, name, p.parseType(pkg))
+	typesinternal.SetVarKind(v, typesinternal.PackageVar)
 	if name[0] == '.' || name[0] == '<' {
 		// This is an unexported variable,
 		// or a variable defined in a different package.

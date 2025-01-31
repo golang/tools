@@ -227,7 +227,7 @@ func (subst *subster) var_(v *types.Var) *types.Var {
 			if v.IsField() {
 				return types.NewField(v.Pos(), v.Pkg(), v.Name(), typ, v.Embedded())
 			}
-			return types.NewVar(v.Pos(), v.Pkg(), v.Name(), typ)
+			return types.NewParam(v.Pos(), v.Pkg(), v.Name(), typ)
 		}
 	}
 	return v

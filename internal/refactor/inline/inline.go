@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/imports"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // A Caller describes the function call and its enclosing context.
@@ -1950,7 +1951,9 @@ func checkFalconConstraints(logf logger, params []*parameter, args []*argument, 
 			logf("falcon env: const %s %s = %v", name, param.info.FalconType, arg.constant)
 			nconst++
 		} else {
-			pkg.Scope().Insert(types.NewVar(token.NoPos, pkg, name, arg.typ))
+			v := types.NewVar(token.NoPos, pkg, name, arg.typ)
+			typesinternal.SetVarKind(v, typesinternal.PackageVar)
+			pkg.Scope().Insert(v)
 			logf("falcon env: var %s %s", name, arg.typ)
 		}
 	}

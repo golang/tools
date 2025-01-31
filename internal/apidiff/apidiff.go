@@ -216,7 +216,7 @@ func removeNamesFromSignature(t types.Type) types.Type {
 		var vars []*types.Var
 		for i := 0; i < p.Len(); i++ {
 			v := p.At(i)
-			vars = append(vars, types.NewVar(v.Pos(), v.Pkg(), "", types.Unalias(v.Type())))
+			vars = append(vars, types.NewParam(v.Pos(), v.Pkg(), "", types.Unalias(v.Type())))
 		}
 		return types.NewTuple(vars...)
 	}

@@ -667,7 +667,7 @@ window.addEventListener('load', function() {
 				cloneTparams(sig.TypeParams()),
 				types.NewTuple(append(
 					slices.Collect(tupleVariables(sig.Params()))[:3],
-					types.NewVar(0, nil, "", types.Typ[types.Invalid]))...),
+					types.NewParam(0, nil, "", types.Typ[types.Invalid]))...),
 				sig.Results(),
 				false) // any final ...T parameter is truncated
 		}

@@ -280,12 +280,13 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	//
 	// There's not much useful information to provide.
 	if selectedType != nil {
-		fakeObj := types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), selectedType)
-		signature := types.ObjectString(fakeObj, qual)
+		v := types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), selectedType)
+		typesinternal.SetVarKind(v, typesinternal.LocalVar)
+		signature := types.ObjectString(v, qual)
 		return *hoverRange, &hoverResult{
 			signature:  signature,
 			singleLine: signature,
-			symbolName: fakeObj.Name(),
+			symbolName: v.Name(),
 		}, nil
 	}
 

@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/astutil/edge"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -201,8 +202,10 @@ func run(pass *analysis.Pass) (any, error) {
 
 						if fn == nil && id.Name == "_" {
 							// Edge case: _ = func() {...}
-							// has no var. Fake one.
-							fn = types.NewVar(id.Pos(), pass.Pkg, id.Name, pass.TypesInfo.TypeOf(n))
+							// has no local var. Fake one.
+							v := types.NewVar(id.Pos(), pass.Pkg, id.Name, pass.TypesInfo.TypeOf(n))
+							typesinternal.SetVarKind(v, typesinternal.LocalVar)
+							fn = v
 						}
 					}
 				}
