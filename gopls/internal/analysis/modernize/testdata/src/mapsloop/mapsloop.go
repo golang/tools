@@ -20,6 +20,13 @@ func useCopy(dst, src map[int]string) {
 	}
 }
 
+func useCopyGeneric[K comparable, V any, M ~map[K]V](dst, src M) {
+	// Replace loop by maps.Copy.
+	for key, value := range src {
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
+	}
+}
+
 func useClone(src map[int]string) {
 	// Replace make(...) by maps.Clone.
 	dst := make(map[int]string, len(src))
@@ -144,5 +151,26 @@ func nopeAssignmentHasIncrementOperator(src map[int]int) {
 	dst := make(map[int]int)
 	for k, v := range src {
 		dst[k] += v
+	}
+}
+
+func nopeNotAMap(src map[int]string) {
+	var dst []string
+	for k, v := range src {
+		dst[k] = v
+	}
+}
+
+func nopeNotAMapGeneric[E any, M ~map[int]E, S ~[]E](src M) {
+	var dst S
+	for k, v := range src {
+		dst[k] = v
+	}
+}
+
+func nopeHasImplicitWidening(src map[string]int) {
+	dst := make(map[string]any)
+	for k, v := range src {
+		dst[k] = v
 	}
 }

@@ -186,9 +186,12 @@ func mapsloop(pass *analysis.Pass) {
 				assign := rng.Body.List[0].(*ast.AssignStmt)
 				if index, ok := assign.Lhs[0].(*ast.IndexExpr); ok &&
 					equalSyntax(rng.Key, index.Index) &&
-					equalSyntax(rng.Value, assign.Rhs[0]) {
+					equalSyntax(rng.Value, assign.Rhs[0]) &&
+					is[*types.Map](typeparams.CoreType(info.TypeOf(index.X))) &&
+					types.Identical(info.TypeOf(index), info.TypeOf(rng.Value)) { // m[k], v
 
 					// Have: for k, v := range x { m[k] = v }
+					// where there is no implicit conversion.
 					check(file, curRange, assign, index.X, rng.X)
 				}
 			}
