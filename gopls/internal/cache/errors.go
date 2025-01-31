@@ -453,14 +453,14 @@ func parseGoListImportCycleError(ctx context.Context, e packages.Error, mp *meta
 		// Search file imports for the import that is causing the import cycle.
 		for _, imp := range pgf.File.Imports {
 			if imp.Path.Value == circImp {
-				rng, err := pgf.NodeMappedRange(imp)
+				rng, err := pgf.NodeRange(imp)
 				if err != nil {
 					return nil, nil
 				}
 
 				return &Diagnostic{
 					URI:      pgf.URI,
-					Range:    rng.Range(),
+					Range:    rng,
 					Severity: protocol.SeverityError,
 					Source:   ListError,
 					Message:  msg,

@@ -9,7 +9,7 @@ import (
 	"context"
 	"go/ast"
 	"go/token"
-	"sort"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -22,8 +22,8 @@ import (
 
 // FoldingRangeInfo holds range and kind info of folding for an ast.Node
 type FoldingRangeInfo struct {
-	MappedRange protocol.MappedRange
-	Kind        protocol.FoldingRangeKind
+	Range protocol.Range
+	Kind  protocol.FoldingRangeKind
 }
 
 // FoldingRange gets all of the folding range for f.
@@ -60,10 +60,8 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 	// Walk the ast and collect folding ranges.
 	ast.Inspect(pgf.File, visit)
 
-	sort.Slice(ranges, func(i, j int) bool {
-		irng := ranges[i].MappedRange.Range()
-		jrng := ranges[j].MappedRange.Range()
-		return protocol.CompareRange(irng, jrng) < 0
+	slices.SortFunc(ranges, func(x, y *FoldingRangeInfo) int {
+		return protocol.CompareRange(x.Range, y.Range)
 	})
 
 	return ranges, nil
@@ -121,14 +119,14 @@ func foldingRangeFunc(pgf *parsego.File, n ast.Node, lineFoldingOnly bool) *Fold
 	if lineFoldingOnly && safetoken.Line(pgf.Tok, start) == safetoken.Line(pgf.Tok, end) {
 		return nil
 	}
-	mrng, err := pgf.PosMappedRange(start, end)
+	rng, err := pgf.PosRange(start, end)
 	if err != nil {
-		bug.Reportf("failed to create mapped range: %s", err) // can't happen
+		bug.Reportf("failed to create range: %s", err) // can't happen
 		return nil
 	}
 	return &FoldingRangeInfo{
-		MappedRange: mrng,
-		Kind:        kind,
+		Range: rng,
+		Kind:  kind,
 	}
 }
 
@@ -215,15 +213,15 @@ func commentsFoldingRange(pgf *parsego.File) (comments []*FoldingRangeInfo) {
 			// folding range start at the end of the first line.
 			endLinePos = token.Pos(int(startPos) + len(strings.Split(firstComment.Text, "\n")[0]))
 		}
-		mrng, err := pgf.PosMappedRange(endLinePos, commentGrp.End())
+		rng, err := pgf.PosRange(endLinePos, commentGrp.End())
 		if err != nil {
 			bug.Reportf("failed to create mapped range: %s", err) // can't happen
 			continue
 		}
 		comments = append(comments, &FoldingRangeInfo{
 			// Fold from the end of the first line comment to the end of the comment block.
-			MappedRange: mrng,
-			Kind:        protocol.Comment,
+			Range: rng,
+			Kind:  protocol.Comment,
 		})
 	}
 	return comments

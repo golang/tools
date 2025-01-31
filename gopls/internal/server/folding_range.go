@@ -36,7 +36,7 @@ func (s *server) FoldingRange(ctx context.Context, params *protocol.FoldingRange
 func toProtocolFoldingRanges(ranges []*golang.FoldingRangeInfo) ([]protocol.FoldingRange, error) {
 	result := make([]protocol.FoldingRange, 0, len(ranges))
 	for _, info := range ranges {
-		rng := info.MappedRange.Range()
+		rng := info.Range
 		result = append(result, protocol.FoldingRange{
 			StartLine:      rng.Start.Line,
 			StartCharacter: rng.Start.Character,

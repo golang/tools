@@ -772,9 +772,6 @@ func (c *cmdClient) openFile(uri protocol.DocumentURI) *cmdFile {
 	return c.getFile(uri)
 }
 
-// TODO(adonovan): provide convenience helpers to:
-// - map a (URI, protocol.Range) to a MappedRange;
-// - parse a command-line argument to a MappedRange.
 func (c *connection) openFile(ctx context.Context, uri protocol.DocumentURI) (*cmdFile, error) {
 	file := c.client.openFile(uri)
 	if file.err != nil {

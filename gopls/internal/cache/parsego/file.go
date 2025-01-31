@@ -76,12 +76,6 @@ func (pgf *File) PosRange(start, end token.Pos) (protocol.Range, error) {
 	return pgf.Mapper.PosRange(pgf.Tok, start, end)
 }
 
-// PosMappedRange returns a MappedRange for the token.Pos interval in this file.
-// A MappedRange can be converted to any other form.
-func (pgf *File) PosMappedRange(start, end token.Pos) (protocol.MappedRange, error) {
-	return pgf.Mapper.PosMappedRange(pgf.Tok, start, end)
-}
-
 // PosLocation returns a protocol Location for the token.Pos interval in this file.
 func (pgf *File) PosLocation(start, end token.Pos) (protocol.Location, error) {
 	return pgf.Mapper.PosLocation(pgf.Tok, start, end)
@@ -95,12 +89,6 @@ func (pgf *File) NodeRange(node ast.Node) (protocol.Range, error) {
 // NodeOffsets returns offsets for the ast.Node.
 func (pgf *File) NodeOffsets(node ast.Node) (start int, end int, _ error) {
 	return safetoken.Offsets(pgf.Tok, node.Pos(), node.End())
-}
-
-// NodeMappedRange returns a MappedRange for the ast.Node interval in this file.
-// A MappedRange can be converted to any other form.
-func (pgf *File) NodeMappedRange(node ast.Node) (protocol.MappedRange, error) {
-	return pgf.Mapper.NodeMappedRange(pgf.Tok, node)
 }
 
 // NodeLocation returns a protocol Location for the ast.Node interval in this file.
