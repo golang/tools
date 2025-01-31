@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/refactor/inline"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const Doc = `inline calls to functions with "//go:fix inline" doc comment`
@@ -106,8 +107,13 @@ func run(pass *analysis.Pass) (any, error) {
 								RHSName:    rhs.Name(),
 								RHSPkgPath: rhs.Pkg().Path(),
 							}
-							pass.ExportObjectFact(lhs, con)
 							inlinableConsts[lhs] = con
+							// Create a fact only if the LHS is exported and defined at top level.
+							// We create a fact even if the RHS is non-exported,
+							// so we can warn about uses in other packages.
+							if lhs.Exported() && typesinternal.IsPackageLevel(lhs) {
+								pass.ExportObjectFact(lhs, con)
+							}
 						}
 					}
 				}

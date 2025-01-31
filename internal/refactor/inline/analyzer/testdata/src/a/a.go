@@ -20,26 +20,28 @@ func (T) Two() int { return 2 } // want Two:`goFixInline \(a.T\).Two`
 
 // Constants.
 
+const Uno = 1
+
 //go:fix inline
-const in1 = one // want in1: `goFixInline const "a".one`
+const In1 = Uno // want In1: `goFixInline const "a".Uno`
 
 const (
 	no1 = one
 
 	//go:fix inline
-	in2 = one // want in2: `goFixInline const "a".one`
+	In2 = one // want In2: `goFixInline const "a".one`
 )
 
 //go:fix inline
 const (
-	in3  = one // want in3: `goFixInline const "a".one`
-	in4  = one // want in4: `goFixInline const "a".one`
-	bad1 = 1   // want `invalid //go:fix inline directive: const value is not the name of another constant`
+	in3  = one
+	in4  = one
+	bad1 = 1 // want `invalid //go:fix inline directive: const value is not the name of another constant`
 )
 
 //go:fix inline
-const in5, // want in5: `goFixInline const "a".one`
-	in6, // want in6: `goFixInline const "a".one`
+const in5,
+	in6,
 	bad2 = one, one,
 	one + 1 // want `invalid //go:fix inline directive: const value is not the name of another constant`
 
@@ -49,12 +51,12 @@ const in5, // want in5: `goFixInline const "a".one`
 const (
 	a = iota
 	b
-	in7 = one // want in7: `goFixInline const "a".one`
+	in7 = one
 )
 
 func _() {
-	x := in1 // want `Constant in1 should be inlined`
-	x = in2  // want `Constant in2 should be inlined`
+	x := In1 // want `Constant In1 should be inlined`
+	x = In2  // want `Constant In2 should be inlined`
 	x = in3  // want `Constant in3 should be inlined`
 	x = in4  // want `Constant in4 should be inlined`
 	x = in5  // want `Constant in5 should be inlined`
