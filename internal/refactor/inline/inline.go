@@ -1004,53 +1004,57 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		logf("strategy: reduce call to empty body")
 
 		// Evaluate the arguments for effects and delete the call entirely.
-		stmt := callStmt(caller.path, false) // cannot fail
-		res.old = stmt
-		if nargs := len(remainingArgs); nargs > 0 {
-			// Emit "_, _ = args" to discard results.
+		// Note(golang/go#71486): stmt can be nil if the call is in a go or defer
+		// statement.
+		// TODO: discard go or defer statements as well.
+		if stmt := callStmt(caller.path, false); stmt != nil {
+			res.old = stmt
+			if nargs := len(remainingArgs); nargs > 0 {
+				// Emit "_, _ = args" to discard results.
 
-			// TODO(adonovan): if args is the []T{a1, ..., an}
-			// literal synthesized during variadic simplification,
-			// consider unwrapping it to its (pure) elements.
-			// Perhaps there's no harm doing this for any slice literal.
+				// TODO(adonovan): if args is the []T{a1, ..., an}
+				// literal synthesized during variadic simplification,
+				// consider unwrapping it to its (pure) elements.
+				// Perhaps there's no harm doing this for any slice literal.
 
-			// Make correction for spread calls
-			// f(g()) or recv.f(g()) where g() is a tuple.
-			if last := last(args); last != nil && last.spread {
-				nspread := last.typ.(*types.Tuple).Len()
-				if len(args) > 1 { // [recv, g()]
-					// A single AssignStmt cannot discard both, so use a 2-spec var decl.
-					res.new = &ast.GenDecl{
-						Tok: token.VAR,
-						Specs: []ast.Spec{
-							&ast.ValueSpec{
-								Names:  []*ast.Ident{makeIdent("_")},
-								Values: []ast.Expr{args[0].expr},
+				// Make correction for spread calls
+				// f(g()) or recv.f(g()) where g() is a tuple.
+				if last := last(args); last != nil && last.spread {
+					nspread := last.typ.(*types.Tuple).Len()
+					if len(args) > 1 { // [recv, g()]
+						// A single AssignStmt cannot discard both, so use a 2-spec var decl.
+						res.new = &ast.GenDecl{
+							Tok: token.VAR,
+							Specs: []ast.Spec{
+								&ast.ValueSpec{
+									Names:  []*ast.Ident{makeIdent("_")},
+									Values: []ast.Expr{args[0].expr},
+								},
+								&ast.ValueSpec{
+									Names:  blanks[*ast.Ident](nspread),
+									Values: []ast.Expr{args[1].expr},
+								},
 							},
-							&ast.ValueSpec{
-								Names:  blanks[*ast.Ident](nspread),
-								Values: []ast.Expr{args[1].expr},
-							},
-						},
+						}
+						return res, nil
 					}
-					return res, nil
+
+					// Sole argument is spread call.
+					nargs = nspread
 				}
 
-				// Sole argument is spread call.
-				nargs = nspread
-			}
+				res.new = &ast.AssignStmt{
+					Lhs: blanks[ast.Expr](nargs),
+					Tok: token.ASSIGN,
+					Rhs: remainingArgs,
+				}
 
-			res.new = &ast.AssignStmt{
-				Lhs: blanks[ast.Expr](nargs),
-				Tok: token.ASSIGN,
-				Rhs: remainingArgs,
+			} else {
+				// No remaining arguments: delete call statement entirely
+				res.new = &ast.EmptyStmt{}
 			}
-
-		} else {
-			// No remaining arguments: delete call statement entirely
-			res.new = &ast.EmptyStmt{}
+			return res, nil
 		}
-		return res, nil
 	}
 
 	// If all parameters have been substituted and no result
