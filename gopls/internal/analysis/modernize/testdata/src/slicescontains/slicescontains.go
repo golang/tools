@@ -127,3 +127,22 @@ func nopeLoopBodyHasFreeContinuation(slice []int, needle int) bool {
 }
 
 func predicate(int) bool
+
+// Regression tests for bad fixes when needle
+// and haystack have different types (#71313):
+
+func nopeNeedleHaystackDifferentTypes(x any, args []error) {
+	for _, arg := range args {
+		if arg == x {
+			return
+		}
+	}
+}
+
+func nopeNeedleHaystackDifferentTypes2(x error, args []any) {
+	for _, arg := range args {
+		if arg == x {
+			return
+		}
+	}
+}

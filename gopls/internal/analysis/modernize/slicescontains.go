@@ -85,12 +85,32 @@ func slicescontains(pass *analysis.Pass) {
 		switch cond := ifStmt.Cond.(type) {
 		case *ast.BinaryExpr:
 			if cond.Op == token.EQL {
+				var elem ast.Expr
 				if isSliceElem(cond.X) {
 					funcName = "Contains"
+					elem = cond.X
 					arg2 = cond.Y // "if elem == needle"
 				} else if isSliceElem(cond.Y) {
 					funcName = "Contains"
+					elem = cond.Y
 					arg2 = cond.X // "if needle == elem"
+				}
+
+				// Reject if elem and needle have different types.
+				if elem != nil {
+					tElem := info.TypeOf(elem)
+					tNeedle := info.TypeOf(arg2)
+					if !types.Identical(tElem, tNeedle) {
+						// Avoid ill-typed slices.Contains([]error, any).
+						if !types.AssignableTo(tNeedle, tElem) {
+							return
+						}
+						// TODO(adonovan): relax this check to allow
+						//   slices.Contains([]error, error(any)),
+						// inserting an explicit widening conversion
+						// around the needle.
+						return
+					}
 				}
 			}
 
