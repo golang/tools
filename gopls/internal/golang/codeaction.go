@@ -41,7 +41,6 @@ import (
 //
 // See ../protocol/codeactionkind.go for some code action theory.
 func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, diagnostics []protocol.Diagnostic, enabled func(protocol.CodeActionKind) bool, trigger protocol.CodeActionTriggerKind) (actions []protocol.CodeAction, _ error) {
-
 	loc := protocol.Location{URI: fh.URI(), Range: rng}
 
 	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
@@ -335,14 +334,23 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 			}
 
 		// "type X has no field or method Y" compiler error.
-		// Offer a "Declare missing method T.f" code action.
-		// See [stubMissingCalledFunctionFixer] for command implementation.
 		case strings.Contains(msg, "has no field or method"):
 			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
+
+			// Offer a "Declare missing method T.f" code action if a CallStubInfo found.
+			// See [stubMissingCalledFunctionFixer] for command implementation.
 			si := stubmethods.GetCallStubInfo(req.pkg.FileSet(), info, path, start)
 			if si != nil {
 				msg := fmt.Sprintf("Declare missing method %s.%s", si.Receiver.Obj().Name(), si.MethodName)
 				req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
+			} else {
+				// Offer a "Declare missing field T.f" code action.
+				// See [stubMissingStructFieldFixer] for command implementation.
+				fi := stubmethods.GetFieldStubInfo(req.pkg.FileSet(), info, path)
+				if fi != nil {
+					msg := fmt.Sprintf("Declare missing struct field %s.%s", fi.Named.Obj().Name(), fi.Expr.Sel.Name)
+					req.addApplyFixAction(msg, fixMissingStructField, req.loc)
+				}
 			}
 
 		// "undeclared name: X" or "undefined: X" compiler error.
