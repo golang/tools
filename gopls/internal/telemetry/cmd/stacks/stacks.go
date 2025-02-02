@@ -150,6 +150,7 @@ var programs = map[string]ProgramConfig{
 		MatchSymbolPrefix: "golang.org/x/tools/gopls/",
 		IgnoreSymbolContains: []string{
 			"internal/util/bug.",
+			"internal/bug.", // former name in gopls/0.14.2
 		},
 	},
 	"cmd/compile": {
