@@ -96,76 +96,11 @@ func insertDeclsAfter(ctx context.Context, snapshot *cache.Snapshot, mp *metadat
 		return nil, nil, bug.Errorf("can't find metadata for file %s among dependencies of %s", declPGF.URI, mp)
 	}
 
-	// Build import environment for the declaring file.
-	// (typesinternal.FileQualifier works only for complete
-	// import mappings, and requires types.)
-	importEnv := make(map[ImportPath]string) // value is local name
-	for _, imp := range declPGF.File.Imports {
-		importPath := metadata.UnquoteImportPath(imp)
-		var name string
-		if imp.Name != nil {
-			name = imp.Name.Name
-			if name == "_" {
-				continue
-			} else if name == "." {
-				name = "" // see types.Qualifier
-			}
-		} else {
-			// Use the correct name from the metadata of the imported
-			// package---not a guess based on the import path.
-			mp := snapshot.Metadata(declMeta.DepsByImpPath[importPath])
-			if mp == nil {
-				continue // can't happen?
-			}
-			name = string(mp.Name)
-		}
-		importEnv[importPath] = name // latest alias wins
+	newImports := make([]newImport, 0, len(declPGF.File.Imports))
+	qual := newNamedImportQual(declPGF, snapshot, declMeta, sym, &newImports)
+	if len(newImports) != 0 {
+		println()
 	}
-
-	// Create a package name qualifier that uses the
-	// locally appropriate imported package name.
-	// It records any needed new imports.
-	// TODO(adonovan): factor with golang.FormatVarType?
-	//
-	// Prior to CL 469155 this logic preserved any renaming
-	// imports from the file that declares the interface
-	// method--ostensibly the preferred name for imports of
-	// frequently renamed packages such as protobufs.
-	// Now we use the package's declared name. If this turns out
-	// to be a mistake, then use parseHeader(si.iface.Pos()).
-	//
-	type newImport struct{ name, importPath string }
-	var newImports []newImport // for AddNamedImport
-	qual := func(pkg *types.Package) string {
-		// TODO(adonovan): don't ignore vendor prefix.
-		//
-		// Ignore the current package import.
-		if pkg.Path() == sym.Pkg().Path() {
-			return ""
-		}
-
-		importPath := ImportPath(pkg.Path())
-		name, ok := importEnv[importPath]
-		if !ok {
-			// Insert new import using package's declared name.
-			//
-			// TODO(adonovan): resolve conflict between declared
-			// name and existing file-level (declPGF.File.Imports)
-			// or package-level (sym.Pkg.Scope) decls by
-			// generating a fresh name.
-			name = pkg.Name()
-			importEnv[importPath] = name
-			new := newImport{importPath: string(importPath)}
-			// For clarity, use a renaming import whenever the
-			// local name does not match the path's last segment.
-			if name != pathpkg.Base(trimVersionSuffix(new.importPath)) {
-				new.name = name
-			}
-			newImports = append(newImports, new)
-		}
-		return name
-	}
-
 	// Compute insertion point for new declarations:
 	// after the top-level declaration enclosing the (package-level) type.
 	insertOffset, err := safetoken.Offset(declPGF.Tok, declPGF.File.End())
@@ -252,7 +187,7 @@ func trimVersionSuffix(path string) string {
 	return path
 }
 
-func insertStructField(ctx context.Context, snapshot *cache.Snapshot, meta *metadata.Package, fieldInfo *stubmethods.StructFieldInfo) (*token.FileSet, *analysis.SuggestedFix, error) {
+func insertStructField(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.Package, fieldInfo *stubmethods.StructFieldInfo) (*token.FileSet, *analysis.SuggestedFix, error) {
 	if fieldInfo == nil {
 		return nil, nil, fmt.Errorf("no field info provided")
 	}
@@ -284,6 +219,15 @@ func insertStructField(ctx context.Context, snapshot *cache.Snapshot, meta *meta
 		return nil, nil, fmt.Errorf("could not find struct definition")
 	}
 
+	// Find metadata for the symbol's declaring package
+	// as we'll need its import mapping.
+	declMeta := findFileInDeps(snapshot, mp, declPGF.URI)
+	if declMeta == nil {
+		return nil, nil, bug.Errorf("can't find metadata for file %s among dependencies of %s", declPGF.URI, mp)
+	}
+
+	qual := newNamedImportQual(declPGF, snapshot, declMeta, fieldInfo.Named.Obj(), new([]newImport))
+
 	// find the position to insert the new field (end of struct fields)
 	insertPos := structType.Fields.Closing - 1
 	if insertPos == structType.Fields.Opening {
@@ -292,7 +236,7 @@ func insertStructField(ctx context.Context, snapshot *cache.Snapshot, meta *meta
 	}
 
 	var buf bytes.Buffer
-	if err := fieldInfo.Emit(&buf, types.RelativeTo(fieldInfo.Named.Obj().Pkg())); err != nil {
+	if err := fieldInfo.Emit(&buf, qual); err != nil {
 		return nil, nil, err
 	}
 
@@ -311,4 +255,79 @@ func insertStructField(ctx context.Context, snapshot *cache.Snapshot, meta *meta
 		Message:   fmt.Sprintf("Add field %s to struct %s", fieldInfo.Expr.Sel.Name, fieldInfo.Named.Obj().Name()),
 		TextEdits: []analysis.TextEdit{textEdit},
 	}, nil
+}
+
+type newImport struct {
+	name       string
+	importPath string
+}
+
+func newNamedImportQual(declPGF *parsego.File, snapshot *cache.Snapshot, declMeta *metadata.Package, sym types.Object, newImports *[]newImport) func(*types.Package) string {
+	// Build import environment for the declaring file.
+	// (typesinternal.FileQualifier works only for complete
+	// import mappings, and requires types.)
+	importEnv := make(map[ImportPath]string) // value is local name
+	for _, imp := range declPGF.File.Imports {
+		importPath := metadata.UnquoteImportPath(imp)
+		var name string
+		if imp.Name != nil {
+			name = imp.Name.Name
+			if name == "_" {
+				continue
+			} else if name == "." {
+				name = "" // see types.Qualifier
+			}
+		} else {
+			// Use the correct name from the metadata of the imported
+			// package---not a guess based on the import path.
+			mp := snapshot.Metadata(declMeta.DepsByImpPath[importPath])
+			if mp == nil {
+				continue // can't happen?
+			}
+			name = string(mp.Name)
+		}
+		importEnv[importPath] = name // latest alias wins
+	}
+
+	// Create a package name qualifier that uses the
+	// locally appropriate imported package name.
+	// It records any needed new imports.
+	// TODO(adonovan): factor with golang.FormatVarType?
+	//
+	// Prior to CL 469155 this logic preserved any renaming
+	// imports from the file that declares the interface
+	// method--ostensibly the preferred name for imports of
+	// frequently renamed packages such as protobufs.
+	// Now we use the package's declared name. If this turns out
+	// to be a mistake, then use parseHeader(si.iface.Pos()).
+	//
+	return func(pkg *types.Package) string {
+		// TODO(adonovan): don't ignore vendor prefix.
+		//
+		// Ignore the current package import.
+		if pkg.Path() == sym.Pkg().Path() {
+			return ""
+		}
+
+		importPath := ImportPath(pkg.Path())
+		name, ok := importEnv[importPath]
+		if !ok {
+			// Insert new import using package's declared name.
+			//
+			// TODO(adonovan): resolve conflict between declared
+			// name and existing file-level (declPGF.File.Imports)
+			// or package-level (sym.Pkg.Scope) decls by
+			// generating a fresh name.
+			name = pkg.Name()
+			importEnv[importPath] = name
+			new := newImport{importPath: string(importPath)}
+			// For clarity, use a renaming import whenever the
+			// local name does not match the path's last segment.
+			if name != pathpkg.Base(trimVersionSuffix(new.importPath)) {
+				new.name = name
+			}
+			*newImports = append(*newImports, new)
+		}
+		return name
+	}
 }

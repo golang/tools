@@ -9,7 +9,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strconv"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/util/astutil"
@@ -235,88 +234,28 @@ func EnclosingSignature(path []ast.Node, info *types.Info) *types.Signature {
 	return nil
 }
 
-func typeFromExprAssignExpr(exprs, opposite []ast.Expr, info *types.Info, path []ast.Node, pos token.Pos, validType func(t types.Type) types.Type) []types.Type {
+func typeFromExprAssignExpr(exprs, opposites []ast.Expr, info *types.Info, path []ast.Node, pos token.Pos, validType func(t types.Type) types.Type) []types.Type {
 	typs := make([]types.Type, 0)
 	// Append all lhs's type
 	if len(exprs) == 1 {
-		for _, lhs := range opposite {
-			t := adjustedPackageType(info, path, lhs)
+		for i := range opposites {
+			t := info.TypeOf(opposites[i])
 			typs = append(typs, validType(t))
 		}
 		return typs
 	}
 	// Lhs and Rhs counts do not match, give up
-	if len(opposite) != len(exprs) {
+	if len(opposites) != len(exprs) {
 		return typs
 	}
 	// Append corresponding index of lhs's type
-	for i, rhs := range exprs {
-		if rhs.Pos() <= pos && pos <= rhs.End() {
-			t := adjustedPackageType(info, path, opposite[i])
+	for i := range exprs {
+		if exprs[i].Pos() <= pos && pos <= exprs[i].End() {
+			t := info.TypeOf(opposites[i])
 			typs = append(typs, validType(t))
 			break
 		}
 	}
 
 	return typs
-}
-
-func adjustedPackageType(info *types.Info, path []ast.Node, expr ast.Expr) types.Type {
-	t := info.TypeOf(expr)
-	if t == nil {
-		return nil
-	}
-
-	if containsInvalid(t) {
-		return types.Universe.Lookup("any").Type()
-	}
-
-	t = types.Default(t)
-	if named, ok := t.(*types.Named); ok {
-		if pkg := named.Obj().Pkg(); pkg != nil {
-			// find the file in the path that contains this assignment
-			var file *ast.File
-			for _, n := range path {
-				if f, ok := n.(*ast.File); ok {
-					file = f
-					break
-				}
-			}
-
-			if file != nil {
-				for i := range file.Scope.Objects {
-					// named is in the scope and requires no package
-					if named.Obj().Name() == file.Scope.Objects[i].Name {
-						return t
-					}
-				}
-
-				// look for any import spec that imports this package
-				var pkgName string
-				for _, imp := range file.Imports {
-					if path, _ := strconv.Unquote(imp.Path.Value); path == pkg.Path() {
-						// use the alias if specified, otherwise use package name
-						if imp.Name != nil {
-							pkgName = imp.Name.Name
-						} else {
-							pkgName = pkg.Name()
-						}
-						break
-					}
-				}
-				// fallback to package name if no import found
-				if pkgName == "" {
-					pkgName = pkg.Name()
-				}
-
-				// create new package with the correct name (either alias or original)
-				newPkg := types.NewPackage(pkgName, pkgName)
-				newName := types.NewTypeName(named.Obj().Pos(), newPkg, named.Obj().Name(), nil)
-				t = types.NewNamed(newName, named.Underlying(), nil)
-			}
-		}
-		return t
-	}
-
-	return t
 }
