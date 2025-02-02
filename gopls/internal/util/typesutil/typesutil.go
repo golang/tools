@@ -11,6 +11,8 @@ import (
 	"go/types"
 	"strconv"
 	"strings"
+
+	"golang.org/x/tools/gopls/internal/util/astutil"
 )
 
 // FormatTypeParams turns TypeParamList into its Go representation, such as:
@@ -61,25 +63,17 @@ func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.
 
 	switch parent := parent.(type) {
 	case *ast.AssignStmt:
-		// Append all lhs's type
-		if len(parent.Rhs) == 1 {
-			for _, lhs := range parent.Lhs {
-				t := info.TypeOf(lhs)
-				typs = append(typs, validType(t))
-			}
-			break
-		}
-		// Lhs and Rhs counts do not match, give up
-		if len(parent.Lhs) != len(parent.Rhs) {
-			break
-		}
-		// Append corresponding index of lhs's type
-		for i, rhs := range parent.Rhs {
-			if rhs.Pos() <= pos && pos <= rhs.End() {
-				t := info.TypeOf(parent.Lhs[i])
-				typs = append(typs, validType(t))
+		right := false
+		for _, rhs := range parent.Rhs {
+			if astutil.NodeContains(rhs, pos) {
+				right = true
 				break
 			}
+		}
+		if right {
+			typs = append(typs, typeFromExprAssignExpr(parent.Rhs, parent.Lhs, info, path, pos, validType)...)
+		} else {
+			typs = append(typs, typeFromExprAssignExpr(parent.Lhs, parent.Rhs, info, path, pos, validType)...)
 		}
 	case *ast.ValueSpec:
 		if len(parent.Values) == 1 {
@@ -188,113 +182,7 @@ func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.
 		for _, n := range path {
 			assign, ok := n.(*ast.AssignStmt)
 			if ok {
-				for _, rh := range assign.Rhs {
-					// basic types
-					basicLit, ok := rh.(*ast.BasicLit)
-					if ok {
-						switch basicLit.Kind {
-						case token.INT:
-							typs = append(typs, types.Typ[types.Int])
-						case token.FLOAT:
-							typs = append(typs, types.Typ[types.Float64])
-						case token.IMAG:
-							typs = append(typs, types.Typ[types.Complex128])
-						case token.STRING:
-							typs = append(typs, types.Typ[types.String])
-						case token.CHAR:
-							typs = append(typs, types.Typ[types.Rune])
-						}
-						break
-					}
-					callExpr, ok := rh.(*ast.CallExpr)
-					if ok {
-						if ident, ok := callExpr.Fun.(*ast.Ident); ok && ident.Name == "make" && len(callExpr.Args) > 0 {
-							arg := callExpr.Args[0]
-							composite, ok := arg.(*ast.CompositeLit)
-							if ok {
-								t := typeFromExpr(info, path, composite)
-								typs = append(typs, t)
-								break
-							}
-							if t := info.TypeOf(arg); t != nil {
-								typs = append(typs, validType(t))
-							}
-						}
-						if ident, ok := callExpr.Fun.(*ast.Ident); ok && ident.Name == "new" && len(callExpr.Args) > 0 {
-							arg := callExpr.Args[0]
-							composite, ok := arg.(*ast.CompositeLit)
-							if ok {
-								t := typeFromExpr(info, path, composite)
-								t = types.NewPointer(t)
-								typs = append(typs, t)
-								break
-							}
-							if t := info.TypeOf(arg); t != nil {
-								if !containsInvalid(t) {
-									t = types.Default(t)
-									t = types.NewPointer(t)
-								} else {
-									t = anyType
-								}
-								typs = append(typs, t)
-							}
-						}
-						break
-					}
-					// a variable
-					ident, ok := rh.(*ast.Ident)
-					if ok {
-						if t := typeFromExpr(info, path, ident); t != nil {
-							typs = append(typs, t)
-						}
-						break
-					}
-
-					selectorExpr, ok := rh.(*ast.SelectorExpr)
-					if ok {
-						if t := typeFromExpr(info, path, selectorExpr.Sel); t != nil {
-							typs = append(typs, t)
-						}
-						break
-					}
-					// composite
-					composite, ok := rh.(*ast.CompositeLit)
-					if ok {
-						t := typeFromExpr(info, path, composite)
-						typs = append(typs, t)
-						break
-					}
-					// a pointer
-					un, ok := rh.(*ast.UnaryExpr)
-					if ok && un.Op == token.AND {
-						composite, ok := un.X.(*ast.CompositeLit)
-						if !ok {
-							break
-						}
-						if t := info.TypeOf(composite); t != nil {
-							if !containsInvalid(t) {
-								t = types.Default(t)
-								t = types.NewPointer(t)
-							} else {
-								t = anyType
-							}
-							typs = append(typs, t)
-						}
-					}
-					starExpr, ok := rh.(*ast.StarExpr)
-					if ok {
-						ident, ok := starExpr.X.(*ast.Ident)
-						if ok {
-							if t := typeFromExpr(info, path, ident); t != nil {
-								if pointer, ok := t.(*types.Pointer); ok {
-									t = pointer.Elem()
-								}
-								typs = append(typs, t)
-							}
-							break
-						}
-					}
-				}
+				return TypesFromContext(info, path[1:], assign.Pos())
 			}
 		}
 
@@ -347,54 +235,88 @@ func EnclosingSignature(path []ast.Node, info *types.Info) *types.Signature {
 	return nil
 }
 
-func typeFromExpr(info *types.Info, path []ast.Node, expr ast.Expr) types.Type {
+func typeFromExprAssignExpr(exprs, opposite []ast.Expr, info *types.Info, path []ast.Node, pos token.Pos, validType func(t types.Type) types.Type) []types.Type {
+	typs := make([]types.Type, 0)
+	// Append all lhs's type
+	if len(exprs) == 1 {
+		for _, lhs := range opposite {
+			t := adjustedPackageType(info, path, lhs)
+			typs = append(typs, validType(t))
+		}
+		return typs
+	}
+	// Lhs and Rhs counts do not match, give up
+	if len(opposite) != len(exprs) {
+		return typs
+	}
+	// Append corresponding index of lhs's type
+	for i, rhs := range exprs {
+		if rhs.Pos() <= pos && pos <= rhs.End() {
+			t := adjustedPackageType(info, path, opposite[i])
+			typs = append(typs, validType(t))
+			break
+		}
+	}
+
+	return typs
+}
+
+func adjustedPackageType(info *types.Info, path []ast.Node, expr ast.Expr) types.Type {
 	t := info.TypeOf(expr)
 	if t == nil {
 		return nil
 	}
 
-	if !containsInvalid(t) {
-		t = types.Default(t)
-		if named, ok := t.(*types.Named); ok {
-			if pkg := named.Obj().Pkg(); pkg != nil {
-				// find the file in the path that contains this assignment
-				var file *ast.File
-				for _, n := range path {
-					if f, ok := n.(*ast.File); ok {
-						file = f
+	if containsInvalid(t) {
+		return types.Universe.Lookup("any").Type()
+	}
+
+	t = types.Default(t)
+	if named, ok := t.(*types.Named); ok {
+		if pkg := named.Obj().Pkg(); pkg != nil {
+			// find the file in the path that contains this assignment
+			var file *ast.File
+			for _, n := range path {
+				if f, ok := n.(*ast.File); ok {
+					file = f
+					break
+				}
+			}
+
+			if file != nil {
+				for i := range file.Scope.Objects {
+					// named is in the scope and requires no package
+					if named.Obj().Name() == file.Scope.Objects[i].Name {
+						return t
+					}
+				}
+
+				// look for any import spec that imports this package
+				var pkgName string
+				for _, imp := range file.Imports {
+					if path, _ := strconv.Unquote(imp.Path.Value); path == pkg.Path() {
+						// use the alias if specified, otherwise use package name
+						if imp.Name != nil {
+							pkgName = imp.Name.Name
+						} else {
+							pkgName = pkg.Name()
+						}
 						break
 					}
 				}
-
-				if file != nil {
-					// look for any import spec that imports this package
-					var pkgName string
-					for _, imp := range file.Imports {
-						if path, _ := strconv.Unquote(imp.Path.Value); path == pkg.Path() {
-							// use the alias if specified, otherwise use package name
-							if imp.Name != nil {
-								pkgName = imp.Name.Name
-							} else {
-								pkgName = pkg.Name()
-							}
-							break
-						}
-					}
-					// fallback to package name if no import found
-					if pkgName == "" {
-						pkgName = pkg.Name()
-					}
-
-					// create new package with the correct name (either alias or original)
-					newPkg := types.NewPackage(pkgName, pkgName)
-					newName := types.NewTypeName(named.Obj().Pos(), newPkg, named.Obj().Name(), nil)
-					t = types.NewNamed(newName, named.Underlying(), nil)
+				// fallback to package name if no import found
+				if pkgName == "" {
+					pkgName = pkg.Name()
 				}
+
+				// create new package with the correct name (either alias or original)
+				newPkg := types.NewPackage(pkgName, pkgName)
+				newName := types.NewTypeName(named.Obj().Pos(), newPkg, named.Obj().Name(), nil)
+				t = types.NewNamed(newName, named.Underlying(), nil)
 			}
-			return t
 		}
-	} else {
-		t = types.Universe.Lookup("any").Type()
+		return t
 	}
+
 	return t
 }
