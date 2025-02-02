@@ -97,10 +97,9 @@ func insertDeclsAfter(ctx context.Context, snapshot *cache.Snapshot, mp *metadat
 	}
 
 	newImports := make([]newImport, 0, len(declPGF.File.Imports))
-	qual := newNamedImportQual(declPGF, snapshot, declMeta, sym, &newImports)
-	if len(newImports) != 0 {
-		println()
-	}
+	qual := newNamedImportQual(declPGF, snapshot, declMeta, sym, func(imp newImport) {
+		newImports = append(newImports, imp)
+	})
 	// Compute insertion point for new declarations:
 	// after the top-level declaration enclosing the (package-level) type.
 	insertOffset, err := safetoken.Offset(declPGF.Tok, declPGF.File.End())
@@ -226,7 +225,7 @@ func insertStructField(ctx context.Context, snapshot *cache.Snapshot, mp *metada
 		return nil, nil, bug.Errorf("can't find metadata for file %s among dependencies of %s", declPGF.URI, mp)
 	}
 
-	qual := newNamedImportQual(declPGF, snapshot, declMeta, fieldInfo.Named.Obj(), new([]newImport))
+	qual := newNamedImportQual(declPGF, snapshot, declMeta, fieldInfo.Named.Obj(), func(imp newImport) { /* discard */ })
 
 	// find the position to insert the new field (end of struct fields)
 	insertPos := structType.Fields.Closing - 1
@@ -262,7 +261,7 @@ type newImport struct {
 	importPath string
 }
 
-func newNamedImportQual(declPGF *parsego.File, snapshot *cache.Snapshot, declMeta *metadata.Package, sym types.Object, newImports *[]newImport) func(*types.Package) string {
+func newNamedImportQual(declPGF *parsego.File, snapshot *cache.Snapshot, declMeta *metadata.Package, sym types.Object, newImportHandler func(imp newImport)) func(*types.Package) string {
 	// Build import environment for the declaring file.
 	// (typesinternal.FileQualifier works only for complete
 	// import mappings, and requires types.)
@@ -326,7 +325,7 @@ func newNamedImportQual(declPGF *parsego.File, snapshot *cache.Snapshot, declMet
 			if name != pathpkg.Base(trimVersionSuffix(new.importPath)) {
 				new.name = name
 			}
-			*newImports = append(*newImports, new)
+			newImportHandler(new)
 		}
 		return name
 	}
