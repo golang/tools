@@ -495,7 +495,7 @@
 						},
 						{
 							"Name": "\"inline\"",
-							"Doc": "inline calls to functions with \"//go:fix inline\" doc comment",
+							"Doc": "inline functions and forward constants\n\nThe inline analyzer inlines functions that are marked for inlining\nand forwards constants that are marked for forwarding.",
 							"Default": "true"
 						},
 						{
@@ -1171,7 +1171,7 @@
 		},
 		{
 			"Name": "inline",
-			"Doc": "inline calls to functions with \"//go:fix inline\" doc comment",
+			"Doc": "inline functions and forward constants\n\nThe inline analyzer inlines functions that are marked for inlining\nand forwards constants that are marked for forwarding.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/internal/refactor/inline/analyzer",
 			"Default": true
 		},

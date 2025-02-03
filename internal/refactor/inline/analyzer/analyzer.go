@@ -11,21 +11,24 @@ import (
 	"go/types"
 	"slices"
 
+	_ "embed"
+
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
-// TODO(jba): replace with better doc.
-const Doc = `inline calls to functions with "//go:fix inline" doc comment`
+//go:embed doc.go
+var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:      "inline",
-	Doc:       Doc,
+	Doc:       analysisinternal.MustExtractDoc(doc, "inline"),
 	URL:       "https://pkg.go.dev/golang.org/x/tools/internal/refactor/inline/analyzer",
 	Run:       run,
 	FactTypes: []analysis.Fact{new(goFixInlineFuncFact), new(goFixForwardConstFact)},

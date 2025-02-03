@@ -377,9 +377,11 @@ Default: on.
 Package documentation: [infertypeargs](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs)
 
 <a id='inline'></a>
-## `inline`: inline calls to functions with "//go:fix inline" doc comment
+## `inline`: inline functions and forward constants
 
 
+The inline analyzer inlines functions that are marked for inlining
+and forwards constants that are marked for forwarding.
 
 Default: on.
 
