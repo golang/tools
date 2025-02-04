@@ -258,6 +258,9 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// The general case: compute hover information for the object referenced by
 	// the identifier at pos.
 	ident, obj, selectedType := referencedObject(pkg, pgf, pos)
+	if obj == nil || ident == nil {
+		return protocol.Range{}, nil, nil // no object to hover
+	}
 
 	if pkgName, ok := obj.(*types.PkgName); ok {
 		rng, hoverRes, err := hoverPackageIdent(ctx, snapshot, pkg, pgf, ident, pkgName.Imported().Path())
@@ -268,10 +271,6 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			hoverRange = &rng
 		}
 		return *hoverRange, hoverRes, nil // (hoverRes may be nil)
-	}
-
-	if obj == nil || ident == nil {
-		return protocol.Range{}, nil, nil // no object to hover
 	}
 
 	// Unless otherwise specified, rng covers the ident being hovered.
