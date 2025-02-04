@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -254,8 +255,15 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 					t.Errorf("%s.golden has leading comment; we don't know what to do with it", file.Name())
 					continue
 				}
-
-				for sf, edits := range fixes {
+				// Sort map keys for determinism in tests.
+				// TODO(jba): replace with slices.Sorted(maps.Keys(fixes)) when go.mod >= 1.23.
+				var keys []string
+				for k := range fixes {
+					keys = append(keys, k)
+				}
+				slices.Sort(keys)
+				for _, sf := range keys {
+					edits := fixes[sf]
 					found := false
 					for _, vf := range ar.Files {
 						if vf.Name == sf {
@@ -279,9 +287,16 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 			} else {
 				// all suggested fixes are represented by a single file
 				// TODO(adonovan): fix: this makes no sense if len(fixes) > 1.
+				// Sort map keys for determinism in tests.
+				// TODO(jba): replace with slices.Sorted(maps.Keys(fixes)) when go.mod >= 1.23.
+				var keys []string
+				for k := range fixes {
+					keys = append(keys, k)
+				}
+				slices.Sort(keys)
 				var catchallEdits []diff.Edit
-				for _, edits := range fixes {
-					catchallEdits = append(catchallEdits, edits...)
+				for _, k := range keys {
+					catchallEdits = append(catchallEdits, fixes[k]...)
 				}
 
 				if err := applyDiffsAndCompare(orig, ar.Comment, catchallEdits, file.Name()); err != nil {

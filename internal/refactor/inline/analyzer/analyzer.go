@@ -123,6 +123,7 @@ func run(pass *analysis.Pass) (any, error) {
 						rhs := pass.TypesInfo.Uses[rhsID].(*types.Const) // must be so in a well-typed program
 						con := &goFixForwardConstFact{
 							RHSName:    rhs.Name(),
+							RHSPkgName: rhs.Pkg().Name(),
 							RHSPkgPath: rhs.Pkg().Path(),
 						}
 						if rhs.Pkg() == pass.Pkg {
@@ -148,9 +149,11 @@ func run(pass *analysis.Pass) (any, error) {
 	nodeFilter = []ast.Node{
 		(*ast.File)(nil),
 		(*ast.CallExpr)(nil),
+		(*ast.SelectorExpr)(nil),
 		(*ast.Ident)(nil),
 	}
 	var currentFile *ast.File
+	var currentSel *ast.SelectorExpr
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		if file, ok := n.(*ast.File); ok {
 			currentFile = file
@@ -224,62 +227,87 @@ func run(pass *analysis.Pass) (any, error) {
 				})
 			}
 
-		// TODO(jba): case *ast.SelectorExpr for RHSs that are qualified uses of constants.
+		case *ast.SelectorExpr:
+			currentSel = n
 
 		case *ast.Ident:
 			// If the identifier is a use of a forwardable constant, suggest forwarding it.
 			if con, ok := pass.TypesInfo.Uses[n].(*types.Const); ok {
-				incon, ok := forwardableConsts[con]
+				fcon, ok := forwardableConsts[con]
 				if !ok {
 					var fact goFixForwardConstFact
 					if pass.ImportObjectFact(con, &fact) {
-						incon = &fact
-						forwardableConsts[con] = incon
+						fcon = &fact
+						forwardableConsts[con] = fcon
 					}
 				}
-				if incon == nil {
+				if fcon == nil {
 					return // nope
 				}
-				//
-				// We have an identifier A here (n),
-				// and an forwardable "const A = B" elsewhere (incon).
+
+				// If n is qualified by a package identifier, we'll need the full selector expression.
+				var sel *ast.SelectorExpr
+				if currentSel != nil && n == currentSel.Sel {
+					sel = currentSel
+					currentSel = nil
+				}
+
+				// We have an identifier A here (n), possibly qualified by a package identifier (sel.X),
+				// and a forwardable "const A = B" elsewhere (fcon).
 				// Consider replacing A with B.
+
 				// Check that the expression we are inlining (B) means the same thing
 				// (refers to the same object) in n's scope as it does in A's scope.
-				if incon.rhsObj != nil {
-					// Both expressions are in the current package.
-					// incon.rhsObj is the object referred to by B in the definition of A.
+				// If the RHS is not in the current package, AddImport will handle
+				// shadowing, so we only need to worry about when both expressions
+				// are in the current package.
+				if pass.Pkg.Path() == fcon.RHSPkgPath {
+					// fcon.rhsObj is the object referred to by B in the definition of A.
 					scope := pass.TypesInfo.Scopes[currentFile].Innermost(n.Pos()) // n's scope
-					_, obj := scope.LookupParent(incon.RHSName, n.Pos())           // what "B" means in n's scope
+					_, obj := scope.LookupParent(fcon.RHSName, n.Pos())            // what "B" means in n's scope
 					if obj == nil {
 						// Should be impossible: if code at n can refer to the LHS,
 						// it can refer to the RHS.
-						panic(fmt.Sprintf("no object for forwardable const %s RHS %s", n.Name, incon.RHSName))
+						panic(fmt.Sprintf("no object for forwardable const %s RHS %s", n.Name, fcon.RHSName))
 					}
-					if obj != incon.rhsObj {
-						// "B" means something different here than at the forwardable const's scope
+					if obj != fcon.rhsObj {
+						// "B" means something different here than at the forwardable const's scope.
 						return
 					}
-				} else {
-					// TODO(jba): handle the cross-package case by checking the package ID.
 				}
 				importPrefix := ""
-				if incon.RHSPkgPath != con.Pkg().Path() {
-					importID := maybeAddImportPath(currentFile, incon.RHSPkgPath)
+				var edits []analysis.TextEdit
+				if fcon.RHSPkgPath != pass.Pkg.Path() {
+					// TODO(jba): fix AddImport so that it returns "." if an existing dot import will work.
+					// We will need to tell AddImport the name of the identifier we want to qualify (fcon.RHSName here).
+					importID, eds := analysisinternal.AddImport(
+						pass.TypesInfo, currentFile, n.Pos(), fcon.RHSPkgPath, fcon.RHSPkgName)
 					importPrefix = importID + "."
+					edits = eds
 				}
-				newText := importPrefix + incon.RHSName
+				var (
+					pos  = n.Pos()
+					end  = n.End()
+					name = n.Name
+				)
+				// Replace the entire SelectorExpr if there is one.
+				if sel != nil {
+					pos = sel.Pos()
+					end = sel.End()
+					name = sel.X.(*ast.Ident).Name + "." + n.Name
+				}
+				edits = append(edits, analysis.TextEdit{
+					Pos:     pos,
+					End:     end,
+					NewText: []byte(importPrefix + fcon.RHSName),
+				})
 				pass.Report(analysis.Diagnostic{
-					Pos:     n.Pos(),
-					End:     n.End(),
-					Message: fmt.Sprintf("Constant %s should be forwarded", n.Name),
+					Pos:     pos,
+					End:     end,
+					Message: fmt.Sprintf("Constant %s should be forwarded", name),
 					SuggestedFixes: []analysis.SuggestedFix{{
-						Message: fmt.Sprintf("Forward constant %s", n.Name),
-						TextEdits: []analysis.TextEdit{{
-							Pos:     n.Pos(),
-							End:     n.End(),
-							NewText: []byte(newText),
-						}},
+						Message:   fmt.Sprintf("Forward constant %s", name),
+						TextEdits: edits,
 					}},
 				})
 			}
@@ -297,11 +325,6 @@ func hasFixDirective(cg *ast.CommentGroup, name string) bool {
 	})
 }
 
-func maybeAddImportPath(f *ast.File, path string) string {
-	// TODO(jba): implement this in terms of analysisinternal.AddImport(info, file, pos, path, localname).
-	return "unimp"
-}
-
 // A goFixInlineFuncFact is exported for each function marked "//go:fix inline".
 // It holds information about the callee to support inlining.
 type goFixInlineFuncFact struct{ Callee *inline.Callee }
@@ -315,6 +338,7 @@ type goFixForwardConstFact struct {
 	// Information about "const LHSName = RHSName".
 	RHSName    string
 	RHSPkgPath string
+	RHSPkgName string
 	rhsObj     types.Object // for current package
 }
 
