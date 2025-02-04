@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/astutil/cursor"
+	"golang.org/x/tools/internal/astutil/edge"
 )
 
 // net/http package
@@ -127,6 +128,13 @@ func g() {
 
 	for curFunc := range cursor.Root(inspect).Preorder(funcDecls...) {
 		_ = curFunc.Node().(*ast.FuncDecl)
+
+		// Check edge and index.
+		if e, idx := curFunc.Edge(); e != edge.File_Decls || idx != nfuncs {
+			t.Errorf("%v.Edge() = (%v, %v),  want edge.File_Decls, %d",
+				curFunc, e, idx, nfuncs)
+		}
+
 		nfuncs++
 		stack := curFunc.Stack(nil)
 
@@ -326,6 +334,46 @@ func TestCursor_FindNode(t *testing.T) {
 	}
 
 	// TODO(adonovan): FindPos needs a test (not just a benchmark).
+}
+
+func TestCursor_Edge(t *testing.T) {
+	root := cursor.Root(netInspect)
+	for cur := range root.Preorder() {
+		if cur == root {
+			continue // root node
+		}
+
+		e, idx := cur.Edge()
+		parent := cur.Parent()
+
+		// ast.File, child of root?
+		if parent.Node() == nil {
+			if e != edge.Invalid || idx != -1 {
+				t.Errorf("%v.Edge = (%v, %d), want (Invalid, -1)", cur, e, idx)
+			}
+			continue
+		}
+
+		// Check Edge.NodeType matches type of Parent.Node.
+		if e.NodeType() != reflect.TypeOf(parent.Node()) {
+			t.Errorf("Edge.NodeType = %v, Parent.Node has type %T",
+				e.NodeType(), parent.Node())
+		}
+
+		// Check that reflection on the parent finds the current node.
+		fv := reflect.ValueOf(parent.Node()).Elem().FieldByName(e.FieldName())
+		if idx >= 0 {
+			fv = fv.Index(idx) // element of []ast.Node
+		}
+		if fv.Kind() == reflect.Interface {
+			fv = fv.Elem() // e.g. ast.Expr -> *ast.Ident
+		}
+		got := fv.Interface().(ast.Node)
+		if got != cur.Node() {
+			t.Errorf("%v.Edge = (%v, %d); FieldName/Index reflection gave %T@%s, not original node",
+				cur, e, idx, got, netFset.Position(got.Pos()))
+		}
+	}
 }
 
 func is[T any](x any) bool {

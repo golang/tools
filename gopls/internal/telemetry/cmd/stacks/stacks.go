@@ -21,7 +21,8 @@
 //     single ID in the issue body suffices to record the
 //     association. But most problems are exhibited in a variety of
 //     ways, leading to multiple field reports of similar but
-//     distinct stacks.
+//     distinct stacks. Hence the following way to associate stacks
+//     with issues.
 //
 //  2. Each GitHub issue body may start with a code block of this form:
 //
@@ -40,8 +41,10 @@
 //     >       | expr && expr
 //     >       | expr || expr
 //
-//     Each string literal implies a substring match on the stack;
+//     Each string literal must match complete words on the stack;
 //     the other productions are boolean operations.
+//     As an example of literal matching, "fu+12" matches "x:fu+12 "
+//     but not "fu:123" or "snafu+12".
 //
 //     The stacks command gathers all such predicates out of the
 //     labelled issues and evaluates each one against each new stack.
@@ -74,7 +77,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -82,10 +87,12 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/mod/semver"
 	"golang.org/x/sys/unix"
 	"golang.org/x/telemetry"
 	"golang.org/x/tools/gopls/internal/util/browser"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
+	"golang.org/x/tools/gopls/internal/util/morestrings"
 )
 
 // flags
@@ -94,7 +101,7 @@ var (
 
 	daysFlag = flag.Int("days", 7, "number of previous days of telemetry data to read")
 
-	authToken string // mandatory GitHub authentication token (for R/W issues access)
+	dryRun = flag.Bool("n", false, "dry run, avoid updating issues")
 )
 
 // ProgramConfig is the configuration for processing reports for a specific
@@ -173,6 +180,8 @@ func main() {
 	log.SetPrefix("stacks: ")
 	flag.Parse()
 
+	var ghclient *githubClient
+
 	// Read GitHub authentication token from $HOME/.stacks.token.
 	//
 	// You can create one using the flow at: GitHub > You > Settings >
@@ -192,12 +201,9 @@ func main() {
 		tokenFile := filepath.Join(home, ".stacks.token")
 		content, err := os.ReadFile(tokenFile)
 		if err != nil {
-			if !os.IsNotExist(err) {
-				log.Fatalf("cannot read GitHub authentication token: %v", err)
-			}
-			log.Fatalf("no file %s containing GitHub authentication token.", tokenFile)
+			log.Fatalf("cannot read GitHub authentication token: %v", err)
 		}
-		authToken = string(bytes.TrimSpace(content))
+		ghclient = &githubClient{authToken: string(bytes.TrimSpace(content))}
 	}
 
 	pcfg, ok := programs[*programFlag]
@@ -211,7 +217,7 @@ func main() {
 		log.Fatalf("Error reading reports: %v", err)
 	}
 
-	issues, err := readIssues(pcfg)
+	issues, err := readIssues(ghclient, pcfg)
 	if err != nil {
 		log.Fatalf("Error reading issues: %v", err)
 	}
@@ -220,7 +226,7 @@ func main() {
 	claimedBy := claimStacks(issues, stacks)
 
 	// Update existing issues that claimed new stacks.
-	updateIssues(issues, stacks, stackToURL)
+	updateIssues(ghclient, issues, stacks, stackToURL)
 
 	// For each stack, show existing issue or create a new one.
 	// Aggregate stack IDs by issue summary.
@@ -240,8 +246,15 @@ func main() {
 		if issue, ok := claimedBy[id]; ok {
 			// existing issue, already updated above, just store
 			// the summary.
+			state := issue.State
+			if issue.State == "closed" && issue.StateReason == "completed" {
+				state = "completed"
+			}
 			summary := fmt.Sprintf("#%d: %s [%s]",
-				issue.Number, issue.Title, issue.State)
+				issue.Number, issue.Title, state)
+			if state == "completed" && issue.Milestone != nil {
+				summary += " milestone " + strings.TrimPrefix(issue.Milestone.Title, "gopls/")
+			}
 			existingIssues[summary] += total
 		} else {
 			// new issue, need to create GitHub issue and store
@@ -263,7 +276,7 @@ func main() {
 		for _, summary := range keys {
 			count := issues[summary]
 			// Show closed issues in "white".
-			if isTerminal(os.Stdout) && strings.Contains(summary, "[closed]") {
+			if isTerminal(os.Stdout) && (strings.Contains(summary, "[closed]") || strings.Contains(summary, "[completed]")) {
 				// ESC + "[" + n + "m" => change color to n
 				// (37 = white, 0 = default)
 				summary = "\x1B[37m" + summary + "\x1B[0m"
@@ -300,7 +313,7 @@ func (info Info) String() string {
 //
 // stacks is a map of stack text to program metadata to stack+metadata report
 // count.
-// distinctStacks is the sum of all counts in stacks.
+// distinctStacks is the number of distinct stacks across all reports.
 // stackToURL maps the stack text to the oldest telemetry JSON report it was
 // included in.
 func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64, distinctStacks int, stackToURL map[string]string, err error) {
@@ -337,14 +350,19 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 				if len(prog.Stacks) == 0 {
 					continue
 				}
+				// Ignore @devel versions as they correspond to
+				// ephemeral (and often numerous) variations of
+				// the program as we work on a fix to a bug.
+				if prog.Version == "devel" {
+					continue
+				}
 
 				// Include applicable client names (e.g. vscode, eglot) for gopls.
 				var clientSuffix string
 				if pcfg.IncludeClient {
 					var clients []string
 					for key := range prog.Counters {
-						client := strings.TrimPrefix(key, "gopls/client:")
-						if client != key {
+						if client, ok := strings.CutPrefix(key, "gopls/client:"); ok {
 							clients = append(clients, client)
 						}
 					}
@@ -353,15 +371,6 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 						clientSuffix = strings.Join(clients, ",")
 					}
 				}
-
-				// Ignore @devel versions as they correspond to
-				// ephemeral (and often numerous) variations of
-				// the program as we work on a fix to a bug.
-				if prog.Version == "devel" {
-					continue
-				}
-
-				distinctStacks++
 
 				info := Info{
 					Program:        prog.Program,
@@ -380,6 +389,7 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 					counts[info] += count
 					stackToURL[stack] = url
 				}
+				distinctStacks += len(prog.Stacks)
 			}
 		}
 	}
@@ -389,10 +399,11 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 
 // readIssues returns all existing issues for the given program and parses any
 // predicates.
-func readIssues(pcfg ProgramConfig) ([]*Issue, error) {
+func readIssues(cli *githubClient, pcfg ProgramConfig) ([]*Issue, error) {
 	// Query GitHub for all existing GitHub issues with the report label.
-	issues, err := searchIssues(pcfg.SearchLabel)
+	issues, err := cli.searchIssues(pcfg.SearchLabel)
 	if err != nil {
+		// TODO(jba): return error instead of dying, or doc.
 		log.Fatalf("GitHub issues label %q search failed: %v", pcfg.SearchLabel, err)
 	}
 
@@ -401,81 +412,111 @@ func readIssues(pcfg ProgramConfig) ([]*Issue, error) {
 	for _, issue := range issues {
 		block := findPredicateBlock(issue.Body)
 		if block != "" {
-			expr, err := parser.ParseExpr(block)
+			pred, err := parsePredicate(block)
 			if err != nil {
 				log.Printf("invalid predicate in issue #%d: %v\n<<%s>>",
 					issue.Number, err, block)
 				continue
 			}
-			var validate func(ast.Expr) error
-			validate = func(e ast.Expr) error {
-				switch e := e.(type) {
-				case *ast.UnaryExpr:
-					if e.Op != token.NOT {
-						return fmt.Errorf("invalid op: %s", e.Op)
-					}
-					return validate(e.X)
-
-				case *ast.BinaryExpr:
-					if e.Op != token.LAND && e.Op != token.LOR {
-						return fmt.Errorf("invalid op: %s", e.Op)
-					}
-					if err := validate(e.X); err != nil {
-						return err
-					}
-					return validate(e.Y)
-
-				case *ast.ParenExpr:
-					return validate(e.X)
-
-				case *ast.BasicLit:
-					if e.Kind != token.STRING {
-						return fmt.Errorf("invalid literal (%s)", e.Kind)
-					}
-					if _, err := strconv.Unquote(e.Value); err != nil {
-						return err
-					}
-
-				default:
-					return fmt.Errorf("syntax error (%T)", e)
-				}
-				return nil
-			}
-			if err := validate(expr); err != nil {
-				log.Printf("invalid predicate in issue #%d: %v\n<<%s>>",
-					issue.Number, err, block)
-				continue
-			}
-			issue.predicateText = block
-			issue.predicate = func(stack string) bool {
-				var eval func(ast.Expr) bool
-				eval = func(e ast.Expr) bool {
-					switch e := e.(type) {
-					case *ast.UnaryExpr:
-						return !eval(e.X)
-
-					case *ast.BinaryExpr:
-						if e.Op == token.LAND {
-							return eval(e.X) && eval(e.Y)
-						} else {
-							return eval(e.X) || eval(e.Y)
-						}
-
-					case *ast.ParenExpr:
-						return eval(e.X)
-
-					case *ast.BasicLit:
-						substr, _ := strconv.Unquote(e.Value)
-						return strings.Contains(stack, substr)
-					}
-					panic("unreachable")
-				}
-				return eval(expr)
-			}
+			issue.predicate = pred
 		}
 	}
 
 	return issues, nil
+}
+
+// parsePredicate parses a predicate expression, returning a function that evaluates
+// the predicate on a stack.
+// The expression must match this grammar:
+//
+//	expr = "string literal"
+//	     | ( expr )
+//	     | ! expr
+//	     | expr && expr
+//	     | expr || expr
+//
+// The value of a string literal is whether it is a substring of the stack, respecting word boundaries.
+// That is, a literal L behaves like the regular expression \bL'\b, where L' is L with
+// regexp metacharacters quoted.
+func parsePredicate(s string) (func(string) bool, error) {
+	expr, err := parser.ParseExpr(s)
+	if err != nil {
+		return nil, fmt.Errorf("parse error: %w", err)
+	}
+
+	// Cache compiled regexps since we need them more than once.
+	literalRegexps := make(map[*ast.BasicLit]*regexp.Regexp)
+
+	// Check for errors in the predicate so we can report them now,
+	// ensuring that evaluation is error-free.
+	var validate func(ast.Expr) error
+	validate = func(e ast.Expr) error {
+		switch e := e.(type) {
+		case *ast.UnaryExpr:
+			if e.Op != token.NOT {
+				return fmt.Errorf("invalid op: %s", e.Op)
+			}
+			return validate(e.X)
+
+		case *ast.BinaryExpr:
+			if e.Op != token.LAND && e.Op != token.LOR {
+				return fmt.Errorf("invalid op: %s", e.Op)
+			}
+			if err := validate(e.X); err != nil {
+				return err
+			}
+			return validate(e.Y)
+
+		case *ast.ParenExpr:
+			return validate(e.X)
+
+		case *ast.BasicLit:
+			if e.Kind != token.STRING {
+				return fmt.Errorf("invalid literal (%s)", e.Kind)
+			}
+			lit, err := strconv.Unquote(e.Value)
+			if err != nil {
+				return err
+			}
+			// The literal should match complete words. It may match multiple words,
+			// if it contains non-word runes like whitespace; but it must match word
+			// boundaries at each end.
+			// The constructed regular expression is always valid.
+			literalRegexps[e] = regexp.MustCompile(`\b` + regexp.QuoteMeta(lit) + `\b`)
+
+		default:
+			return fmt.Errorf("syntax error (%T)", e)
+		}
+		return nil
+	}
+	if err := validate(expr); err != nil {
+		return nil, err
+	}
+
+	return func(stack string) bool {
+		var eval func(ast.Expr) bool
+		eval = func(e ast.Expr) bool {
+			switch e := e.(type) {
+			case *ast.UnaryExpr:
+				return !eval(e.X)
+
+			case *ast.BinaryExpr:
+				if e.Op == token.LAND {
+					return eval(e.X) && eval(e.Y)
+				} else {
+					return eval(e.X) || eval(e.Y)
+				}
+
+			case *ast.ParenExpr:
+				return eval(e.X)
+
+			case *ast.BasicLit:
+				return literalRegexps[e].MatchString(stack)
+			}
+			panic("unreachable")
+		}
+		return eval(expr)
+	}, nil
 }
 
 // claimStack maps each stack ID to its issue (if any).
@@ -494,20 +535,6 @@ func readIssues(pcfg ProgramConfig) ([]*Issue, error) {
 // We log an error if two different issues attempt to claim
 // the same stack.
 func claimStacks(issues []*Issue, stacks map[string]map[Info]int64) map[string]*Issue {
-	// Map each stack ID to its issue.
-	//
-	// An issue can claim a stack two ways:
-	//
-	// 1. if the issue body contains the ID of the stack. Matching
-	//    is a little loose but base64 will rarely produce words
-	//    that appear in the body by chance.
-	//
-	// 2. if the issue body contains a ```#!stacks``` predicate
-	//    that matches the stack.
-	//
-	// We report an error if two different issues attempt to claim
-	// the same stack.
-	//
 	// This is O(new stacks x existing issues).
 	claimedBy := make(map[string]*Issue)
 	for stack := range stacks {
@@ -544,7 +571,7 @@ func claimStacks(issues []*Issue, stacks map[string]map[Info]int64) map[string]*
 }
 
 // updateIssues updates existing issues that claimed new stacks by predicate.
-func updateIssues(issues []*Issue, stacks map[string]map[Info]int64, stackToURL map[string]string) {
+func updateIssues(cli *githubClient, issues []*Issue, stacks map[string]map[Info]int64, stackToURL map[string]string) {
 	for _, issue := range issues {
 		if len(issue.newStacks) == 0 {
 			continue
@@ -559,7 +586,8 @@ func updateIssues(issues []*Issue, stacks map[string]map[Info]int64, stackToURL 
 			newStackIDs = append(newStackIDs, id)
 			writeStackComment(comment, stack, id, stackToURL[stack], stacks[stack])
 		}
-		if err := addIssueComment(issue.Number, comment.String()); err != nil {
+
+		if err := cli.addIssueComment(issue.Number, comment.String()); err != nil {
 			log.Println(err)
 			continue
 		}
@@ -572,14 +600,101 @@ func updateIssues(issues []*Issue, stacks map[string]map[Info]int64, stackToURL 
 			body += "\nDups:"
 		}
 		body += " " + strings.Join(newStackIDs, " ")
-		if err := updateIssueBody(issue.Number, body); err != nil {
-			log.Printf("added comment to issue #%d but failed to update body: %v",
+
+		update := updateIssue{number: issue.Number, Body: body}
+		if shouldReopen(issue, stacks) {
+			update.State = "open"
+			update.StateReason = "reopened"
+		}
+		if err := cli.updateIssue(update); err != nil {
+			log.Printf("added comment to issue #%d but failed to update: %v",
 				issue.Number, err)
 			continue
 		}
 
 		log.Printf("added stacks %s to issue #%d", newStackIDs, issue.Number)
 	}
+}
+
+// An issue should be re-opened if it was closed as fixed, and at least one of the
+// new stacks happened since the version containing the fix.
+func shouldReopen(issue *Issue, stacks map[string]map[Info]int64) bool {
+	if !issue.isFixed() {
+		return false
+	}
+	issueProgram, issueVersion, ok := parseMilestone(issue.Milestone)
+	if !ok {
+		return false
+	}
+
+	matchProgram := func(infoProg string) bool {
+		switch issueProgram {
+		case "gopls":
+			return path.Base(infoProg) == issueProgram
+		case "go":
+			// At present, we only care about compiler stacks.
+			// Issues should have milestones like "Go1.24".
+			return infoProg == "cmd/compile"
+		default:
+			return false
+		}
+	}
+
+	for _, stack := range issue.newStacks {
+		for info := range stacks[stack] {
+			if matchProgram(info.Program) && semver.Compare(semVer(info.ProgramVersion), issueVersion) >= 0 {
+				log.Printf("reopening issue #%d: purportedly fixed in %s@%s, but found a new stack from version %s",
+					issue.Number, issueProgram, issueVersion, info.ProgramVersion)
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// An issue is fixed if it was closed because it was completed.
+func (i *Issue) isFixed() bool {
+	return i.State == "closed" && i.StateReason == "completed"
+}
+
+// parseMilestone parses a the title of a GitHub milestone.
+// If  it is in the format PROGRAM/VERSION (for example, "gopls/v0.17.0"),
+// then it returns PROGRAM and VERSION.
+// If it is in the format Go1.X, then it returns "go" as the program and
+// "v1.X" or "v1.X.0" as the version.
+// Otherwise, the last return value is false.
+func parseMilestone(m *Milestone) (program, version string, ok bool) {
+	if m == nil {
+		return "", "", false
+	}
+	if strings.HasPrefix(m.Title, "Go") {
+		v := semVer(m.Title)
+		if !semver.IsValid(v) {
+			return "", "", false
+		}
+		return "go", v, true
+	}
+	program, version, ok = morestrings.CutLast(m.Title, "/")
+	if !ok || program == "" || version == "" || version[0] != 'v' {
+		return "", "", false
+	}
+	return program, version, true
+}
+
+// semVer returns a semantic version for its argument, which may already be
+// a semantic version, or may be a Go version.
+//
+//	 v1.2.3 => v1.2.3
+//		go1.24 => v1.24
+//		Go1.23.5 => v1.23.5
+//	 goHome => vHome
+//
+// It returns "", false if the go version is in the wrong format.
+func semVer(v string) string {
+	if strings.HasPrefix(v, "go") || strings.HasPrefix(v, "Go") {
+		return "v" + v[2:]
+	}
+	return v
 }
 
 // stackID returns a 32-bit identifier for a stack
@@ -790,10 +905,44 @@ func frameURL(pclntab map[string]FileLine, info Info, frame string) string {
 	return ""
 }
 
+// -- GitHub client --
+
+// A githubClient interacts with GitHub.
+// During testing, updates to GitHub are saved in changes instead of being applied.
+// Reads from GitHub occur normally.
+type githubClient struct {
+	authToken     string // mandatory GitHub authentication token (for R/W issues access)
+	divertChanges bool   // divert attempted GitHub changes to the changes field instead of executing them
+	changes       []any  // slice of (addIssueComment | updateIssueBody)
+}
+
+func (cli *githubClient) takeChanges() []any {
+	r := cli.changes
+	cli.changes = nil
+	return r
+}
+
+// addIssueComment is a change for creating a comment on an issue.
+type addIssueComment struct {
+	number  int
+	comment string
+}
+
+// updateIssue is a change for modifying an existing issue.
+// It includes the issue number and the fields that can be updated on a GitHub issue.
+// A JSON-marshaled updateIssue can be used as the body of the update request sent to GitHub.
+// See https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#update-an-issue.
+type updateIssue struct {
+	number      int    // issue number; must be unexported
+	Body        string `json:"body,omitempty"`
+	State       string `json:"state,omitempty"`        // "open" or "closed"
+	StateReason string `json:"state_reason,omitempty"` // "completed", "not_planned", "reopened"
+}
+
 // -- GitHub search --
 
 // searchIssues queries the GitHub issue tracker.
-func searchIssues(label string) ([]*Issue, error) {
+func (cli *githubClient) searchIssues(label string) ([]*Issue, error) {
 	label = url.QueryEscape(label)
 
 	// Slurp all issues with the telemetry label.
@@ -812,7 +961,7 @@ func searchIssues(label string) ([]*Issue, error) {
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Add("Authorization", "Bearer "+authToken)
+		req.Header.Add("Authorization", "Bearer "+cli.authToken)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, err
@@ -847,38 +996,32 @@ func searchIssues(label string) ([]*Issue, error) {
 	return results, nil
 }
 
-// updateIssueBody updates the body of the numbered issue.
-func updateIssueBody(number int, body string) error {
-	// https://docs.github.com/en/rest/issues/comments#update-an-issue
-	var payload struct {
-		Body string `json:"body"`
+// updateIssue updates the numbered issue.
+func (cli *githubClient) updateIssue(update updateIssue) error {
+	if cli.divertChanges {
+		cli.changes = append(cli.changes, update)
+		return nil
 	}
-	payload.Body = body
-	data, err := json.Marshal(payload)
+
+	data, err := json.Marshal(update)
 	if err != nil {
 		return err
 	}
 
-	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d", number)
-	req, err := http.NewRequest("PATCH", url, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Add("Authorization", "Bearer "+authToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("issue update failed: %s (body: %s)", resp.Status, body)
+	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d", update.number)
+	if err := cli.requestChange("PATCH", url, data, http.StatusOK); err != nil {
+		return fmt.Errorf("updating issue: %v", err)
 	}
 	return nil
 }
 
 // addIssueComment adds a markdown comment to the numbered issue.
-func addIssueComment(number int, comment string) error {
+func (cli *githubClient) addIssueComment(number int, comment string) error {
+	if cli.divertChanges {
+		cli.changes = append(cli.changes, addIssueComment{number, comment})
+		return nil
+	}
+
 	// https://docs.github.com/en/rest/issues/comments#create-an-issue-comment
 	var payload struct {
 		Body string `json:"body"`
@@ -890,19 +1033,32 @@ func addIssueComment(number int, comment string) error {
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d/comments", number)
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	if err := cli.requestChange("POST", url, data, http.StatusCreated); err != nil {
+		return fmt.Errorf("creating issue comment: %v", err)
+	}
+	return nil
+}
+
+// requestChange sends a request to url using method, which may change the state at the server.
+// The data is sent as the request body, and wantStatus is the expected response status code.
+func (cli *githubClient) requestChange(method, url string, data []byte, wantStatus int) error {
+	if *dryRun {
+		log.Printf("DRY RUN: %s %s", method, url)
+		return nil
+	}
+	req, err := http.NewRequest(method, url, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
-	req.Header.Add("Authorization", "Bearer "+authToken)
+	req.Header.Add("Authorization", "Bearer "+cli.authToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != wantStatus {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to create issue comment: %s (body: %s)", resp.Status, body)
+		return fmt.Errorf("request failed: %s (body: %s)", resp.Status, body)
 	}
 	return nil
 }
@@ -910,17 +1066,18 @@ func addIssueComment(number int, comment string) error {
 // See https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#list-repository-issues.
 
 type Issue struct {
-	Number    int
-	HTMLURL   string `json:"html_url"`
-	Title     string
-	State     string
-	User      *User
-	CreatedAt time.Time `json:"created_at"`
-	Body      string    // in Markdown format
+	Number      int
+	HTMLURL     string `json:"html_url"`
+	Title       string
+	State       string
+	StateReason string `json:"state_reason"`
+	User        *User
+	CreatedAt   time.Time `json:"created_at"`
+	Body        string    // in Markdown format
+	Milestone   *Milestone
 
 	// Set by readIssues.
-	predicateText string            // text of ```#!stacks...``` predicate block
-	predicate     func(string) bool // matching predicate over stack text
+	predicate func(string) bool // matching predicate over stack text
 
 	// Set by claimIssues.
 	newStacks []string // new stacks to add to existing issue (comments and IDs)
@@ -929,6 +1086,10 @@ type Issue struct {
 type User struct {
 	Login   string
 	HTMLURL string `json:"html_url"`
+}
+
+type Milestone struct {
+	Title string
 }
 
 // -- pclntab --

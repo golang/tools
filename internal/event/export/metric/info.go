@@ -31,7 +31,7 @@ type HistogramInt64 struct {
 	Buckets []int64
 }
 
-// HistogramFloat64 represents the construction information for an float64 histogram metric.
+// HistogramFloat64 represents the construction information for a float64 histogram metric.
 type HistogramFloat64 struct {
 	// Name is the unique name of this metric.
 	Name string

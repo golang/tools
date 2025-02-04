@@ -516,6 +516,9 @@ type RunVulncheckResult struct {
 type VulncheckResult struct {
 	// Result holds the result of running vulncheck.
 	Result *vulncheck.Result
+	// Token holds the progress token used to report progress during back to the
+	// LSP client during vulncheck execution.
+	Token protocol.ProgressToken
 }
 
 // MemStatsResult holds selected fields from runtime.MemStats.

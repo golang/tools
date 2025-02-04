@@ -12,7 +12,8 @@
 				"EnumValues": null,
 				"Default": "[]",
 				"Status": "",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "env",
@@ -25,7 +26,8 @@
 				"EnumValues": null,
 				"Default": "{}",
 				"Status": "",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "directoryFilters",
@@ -38,7 +40,8 @@
 				"EnumValues": null,
 				"Default": "[\"-**/node_modules\"]",
 				"Status": "",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "templateExtensions",
@@ -51,7 +54,8 @@
 				"EnumValues": null,
 				"Default": "[]",
 				"Status": "",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "memoryMode",
@@ -64,7 +68,8 @@
 				"EnumValues": null,
 				"Default": "\"\"",
 				"Status": "experimental",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "expandWorkspaceToModule",
@@ -77,7 +82,8 @@
 				"EnumValues": null,
 				"Default": "true",
 				"Status": "experimental",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "standaloneTags",
@@ -90,7 +96,22 @@
 				"EnumValues": null,
 				"Default": "[\"ignore\"]",
 				"Status": "",
-				"Hierarchy": "build"
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
+			},
+			{
+				"Name": "workspaceFiles",
+				"Type": "[]string",
+				"Doc": "workspaceFiles configures the set of globs that match files defining the logical build of the current workspace.\nAny on-disk changes to any files matching a glob specified here will trigger a reload of the workspace.\n\nThis setting need only be customized in environments with a custom GOPACKAGESDRIVER.\n",
+				"EnumKeys": {
+					"ValueType": "",
+					"Keys": null
+				},
+				"EnumValues": null,
+				"Default": "[]",
+				"Status": "",
+				"Hierarchy": "build",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "hoverKind",
@@ -120,7 +141,8 @@
 				],
 				"Default": "\"FullDocumentation\"",
 				"Status": "",
-				"Hierarchy": "ui.documentation"
+				"Hierarchy": "ui.documentation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "linkTarget",
@@ -133,7 +155,8 @@
 				"EnumValues": null,
 				"Default": "\"pkg.go.dev\"",
 				"Status": "",
-				"Hierarchy": "ui.documentation"
+				"Hierarchy": "ui.documentation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "linksInHover",
@@ -159,7 +182,8 @@
 				],
 				"Default": "true",
 				"Status": "",
-				"Hierarchy": "ui.documentation"
+				"Hierarchy": "ui.documentation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "usePlaceholders",
@@ -172,7 +196,8 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "",
-				"Hierarchy": "ui.completion"
+				"Hierarchy": "ui.completion",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "completionBudget",
@@ -185,7 +210,8 @@
 				"EnumValues": null,
 				"Default": "\"100ms\"",
 				"Status": "debug",
-				"Hierarchy": "ui.completion"
+				"Hierarchy": "ui.completion",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "matcher",
@@ -211,7 +237,8 @@
 				],
 				"Default": "\"Fuzzy\"",
 				"Status": "advanced",
-				"Hierarchy": "ui.completion"
+				"Hierarchy": "ui.completion",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "experimentalPostfixCompletions",
@@ -224,7 +251,8 @@
 				"EnumValues": null,
 				"Default": "true",
 				"Status": "experimental",
-				"Hierarchy": "ui.completion"
+				"Hierarchy": "ui.completion",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "completeFunctionCalls",
@@ -237,7 +265,8 @@
 				"EnumValues": null,
 				"Default": "true",
 				"Status": "",
-				"Hierarchy": "ui.completion"
+				"Hierarchy": "ui.completion",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "importShortcut",
@@ -263,7 +292,8 @@
 				],
 				"Default": "\"Both\"",
 				"Status": "",
-				"Hierarchy": "ui.navigation"
+				"Hierarchy": "ui.navigation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "symbolMatcher",
@@ -293,7 +323,8 @@
 				],
 				"Default": "\"FastFuzzy\"",
 				"Status": "advanced",
-				"Hierarchy": "ui.navigation"
+				"Hierarchy": "ui.navigation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "symbolStyle",
@@ -319,7 +350,8 @@
 				],
 				"Default": "\"Dynamic\"",
 				"Status": "advanced",
-				"Hierarchy": "ui.navigation"
+				"Hierarchy": "ui.navigation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "symbolScope",
@@ -341,7 +373,8 @@
 				],
 				"Default": "\"all\"",
 				"Status": "",
-				"Hierarchy": "ui.navigation"
+				"Hierarchy": "ui.navigation",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "analyses",
@@ -458,6 +491,11 @@
 						{
 							"Name": "\"infertypeargs\"",
 							"Doc": "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
+							"Default": "true"
+						},
+						{
+							"Name": "\"inline\"",
+							"Doc": "inline calls to functions with \"//go:fix inline\" doc comment",
 							"Default": "true"
 						},
 						{
@@ -582,7 +620,7 @@
 						},
 						{
 							"Name": "\"unreachable\"",
-							"Doc": "check for unreachable code\n\nThe unreachable analyzer finds statements that execution can never reach\nbecause they are preceded by an return statement, a call to panic, an\ninfinite loop, or similar constructs.",
+							"Doc": "check for unreachable code\n\nThe unreachable analyzer finds statements that execution can never reach\nbecause they are preceded by a return statement, a call to panic, an\ninfinite loop, or similar constructs.",
 							"Default": "true"
 						},
 						{
@@ -630,7 +668,8 @@
 				"EnumValues": null,
 				"Default": "{}",
 				"Status": "",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "staticcheck",
@@ -643,7 +682,8 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "experimental",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "vulncheck",
@@ -665,7 +705,8 @@
 				],
 				"Default": "\"Off\"",
 				"Status": "experimental",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "diagnosticsDelay",
@@ -678,7 +719,8 @@
 				"EnumValues": null,
 				"Default": "\"1s\"",
 				"Status": "advanced",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "diagnosticsTrigger",
@@ -700,7 +742,8 @@
 				],
 				"Default": "\"Edit\"",
 				"Status": "experimental",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "analysisProgressReporting",
@@ -713,7 +756,8 @@
 				"EnumValues": null,
 				"Default": "true",
 				"Status": "",
-				"Hierarchy": "ui.diagnostic"
+				"Hierarchy": "ui.diagnostic",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "hints",
@@ -762,7 +806,8 @@
 				"EnumValues": null,
 				"Default": "{}",
 				"Status": "experimental",
-				"Hierarchy": "ui.inlayhint"
+				"Hierarchy": "ui.inlayhint",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "codelenses",
@@ -816,7 +861,8 @@
 				"EnumValues": null,
 				"Default": "{\"generate\":true,\"regenerate_cgo\":true,\"run_govulncheck\":false,\"tidy\":true,\"upgrade_dependency\":true,\"vendor\":true}",
 				"Status": "",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "semanticTokens",
@@ -829,12 +875,13 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "experimental",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "noSemanticString",
 				"Type": "bool",
-				"Doc": "noSemanticString turns off the sending of the semantic token 'string'\n",
+				"Doc": "noSemanticString turns off the sending of the semantic token 'string'\n\nDeprecated: Use SemanticTokenTypes[\"string\"] = false instead. See\ngolang/vscode-go#3632\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null
@@ -842,12 +889,13 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "experimental",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": "use SemanticTokenTypes[\"string\"] = false instead. See\ngolang/vscode-go#3632\n"
 			},
 			{
 				"Name": "noSemanticNumber",
 				"Type": "bool",
-				"Doc": "noSemanticNumber turns off the sending of the semantic token 'number'\n",
+				"Doc": "noSemanticNumber turns off the sending of the semantic token 'number'\n\nDeprecated: Use SemanticTokenTypes[\"number\"] = false instead. See\ngolang/vscode-go#3632.\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null
@@ -855,7 +903,8 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "experimental",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": "use SemanticTokenTypes[\"number\"] = false instead. See\ngolang/vscode-go#3632.\n"
 			},
 			{
 				"Name": "semanticTokenTypes",
@@ -868,7 +917,8 @@
 				"EnumValues": null,
 				"Default": "{}",
 				"Status": "experimental",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "semanticTokenModifiers",
@@ -881,7 +931,8 @@
 				"EnumValues": null,
 				"Default": "{}",
 				"Status": "experimental",
-				"Hierarchy": "ui"
+				"Hierarchy": "ui",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "local",
@@ -894,7 +945,8 @@
 				"EnumValues": null,
 				"Default": "\"\"",
 				"Status": "",
-				"Hierarchy": "formatting"
+				"Hierarchy": "formatting",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "gofumpt",
@@ -907,7 +959,8 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "",
-				"Hierarchy": "formatting"
+				"Hierarchy": "formatting",
+				"DeprecationMessage": ""
 			},
 			{
 				"Name": "verboseOutput",
@@ -920,7 +973,8 @@
 				"EnumValues": null,
 				"Default": "false",
 				"Status": "debug",
-				"Hierarchy": ""
+				"Hierarchy": "",
+				"DeprecationMessage": ""
 			}
 		]
 	},
@@ -1116,6 +1170,12 @@
 			"Default": true
 		},
 		{
+			"Name": "inline",
+			"Doc": "inline calls to functions with \"//go:fix inline\" doc comment",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/internal/refactor/inline/analyzer",
+			"Default": true
+		},
+		{
 			"Name": "loopclosure",
 			"Doc": "check references to loop variables from within nested functions\n\nThis analyzer reports places where a function literal references the\niteration variable of an enclosing loop, and the loop calls the function\nin such a way (e.g. with go or defer) that it may outlive the loop\niteration and possibly observe the wrong value of the variable.\n\nNote: An iteration variable can only outlive a loop iteration in Go versions \u003c=1.21.\nIn Go 1.22 and later, the loop variable lifetimes changed to create a new\niteration variable per loop iteration. (See go.dev/issue/60078.)\n\nIn this example, all the deferred functions run after the loop has\ncompleted, so all observe the final value of v [\u003cgo1.22].\n\n\tfor _, v := range list {\n\t    defer func() {\n\t        use(v) // incorrect\n\t    }()\n\t}\n\nOne fix is to create a new variable for each iteration of the loop:\n\n\tfor _, v := range list {\n\t    v := v // new var per iteration\n\t    defer func() {\n\t        use(v) // ok\n\t    }()\n\t}\n\nAfter Go version 1.22, the previous two for loops are equivalent\nand both are correct.\n\nThe next example uses a go statement and has a similar problem [\u003cgo1.22].\nIn addition, it has a data race because the loop updates v\nconcurrent with the goroutines accessing it.\n\n\tfor _, v := range elem {\n\t    go func() {\n\t        use(v)  // incorrect, and a data race\n\t    }()\n\t}\n\nA fix is the same as before. The checker also reports problems\nin goroutines started by golang.org/x/sync/errgroup.Group.\nA hard-to-spot variant of this form is common in parallel tests:\n\n\tfunc Test(t *testing.T) {\n\t    for _, test := range tests {\n\t        t.Run(test.name, func(t *testing.T) {\n\t            t.Parallel()\n\t            use(test) // incorrect, and a data race\n\t        })\n\t    }\n\t}\n\nThe t.Parallel() call causes the rest of the function to execute\nconcurrent with the loop [\u003cgo1.22].\n\nThe analyzer reports references only in the last statement,\nas it is not deep enough to understand the effects of subsequent\nstatements that might render the reference benign.\n(\"Last statement\" is defined recursively in compound\nstatements such as if, switch, and select.)\n\nSee: https://golang.org/doc/go_faq.html#closures_and_goroutines",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/loopclosure",
@@ -1261,7 +1321,7 @@
 		},
 		{
 			"Name": "unreachable",
-			"Doc": "check for unreachable code\n\nThe unreachable analyzer finds statements that execution can never reach\nbecause they are preceded by an return statement, a call to panic, an\ninfinite loop, or similar constructs.",
+			"Doc": "check for unreachable code\n\nThe unreachable analyzer finds statements that execution can never reach\nbecause they are preceded by a return statement, a call to panic, an\ninfinite loop, or similar constructs.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unreachable",
 			"Default": true
 		},

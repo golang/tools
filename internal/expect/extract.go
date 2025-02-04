@@ -21,7 +21,7 @@ import (
 const commentStart = "@"
 const commentStartLen = len(commentStart)
 
-// Identifier is the type for an identifier in an Note argument list.
+// Identifier is the type for an identifier in a Note argument list.
 type Identifier string
 
 // Parse collects all the notes present in a file.

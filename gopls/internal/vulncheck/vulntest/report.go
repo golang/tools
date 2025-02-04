@@ -104,7 +104,7 @@ type Package struct {
 	DerivedSymbols []string `yaml:"derived_symbols,omitempty"`
 }
 
-// Version is an SemVer 2.0.0 semantic version with no leading "v" prefix,
+// Version is a SemVer 2.0.0 semantic version with no leading "v" prefix,
 // as used by OSV.
 type Version string
 

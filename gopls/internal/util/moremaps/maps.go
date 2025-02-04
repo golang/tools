@@ -31,7 +31,7 @@ func KeySlice[M ~map[K]V, K comparable, V any](m M) []K {
 	return r
 }
 
-// Values returns the values of the map M, like slices.Collect(maps.Values(m)).
+// ValueSlice returns the values of the map M, like slices.Collect(maps.Values(m)).
 func ValueSlice[M ~map[K]V, K comparable, V any](m M) []V {
 	r := make([]V, 0, len(m))
 	for _, v := range m {
@@ -60,7 +60,7 @@ func Sorted[M ~map[K]V, K cmp.Ordered, V any](m M) iter.Seq2[K, V] {
 	}
 }
 
-// SortedFunc returns an iterator over the entries of m in key order.
+// SortedFunc returns an iterator over the entries of m in the key order determined by cmp.
 func SortedFunc[M ~map[K]V, K comparable, V any](m M, cmp func(x, y K) int) iter.Seq2[K, V] {
 	// TODO(adonovan): use maps.SortedFunc if proposal #68598 is accepted.
 	return func(yield func(K, V) bool) {

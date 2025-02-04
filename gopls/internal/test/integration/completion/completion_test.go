@@ -276,9 +276,6 @@ module mod.com
 go 1.14
 
 require example.com v1.2.3
--- go.sum --
-example.com v1.2.3 h1:ihBTGWGjTU3V4ZJ9OmHITkU9WQ4lGdQkMjgyLFk0FaY=
-example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
 -- main.go --
 package main
 
@@ -295,6 +292,7 @@ func _() {
 }
 `
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(proxy),
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		// Make sure the dependency is in the module cache and accessible for
@@ -347,9 +345,6 @@ module mod.com
 go 1.14
 
 require example.com v1.2.3
--- go.sum --
-example.com v1.2.3 h1:ihBTGWGjTU3V4ZJ9OmHITkU9WQ4lGdQkMjgyLFk0FaY=
-example.com v1.2.3/go.mod h1:Y2Rc5rVWjWur0h3pd9aEvK5Pof8YKDANh9gHA2Maujo=
 -- useblah.go --
 // +build hidden
 
@@ -361,7 +356,9 @@ package mainmod
 
 const Name = "mainmod"
 `
-	WithOptions(ProxyFiles(proxy)).Run(t, files, func(t *testing.T, env *Env) {
+	WithOptions(
+		WriteGoSum("."),
+		ProxyFiles(proxy)).Run(t, files, func(t *testing.T, env *Env) {
 		env.CreateBuffer("import.go", "package pkg\nvar _ = mainmod.Name\n")
 		env.SaveBuffer("import.go")
 		content := env.ReadWorkspaceFile("import.go")
@@ -471,12 +468,12 @@ module test.com
 go 1.16
 -- prog.go --
 package waste
-// Deprecated, use newFoof
+// Deprecated: use newFoof.
 func fooFunc() bool {
 	return false
 }
 
-// Deprecated
+// Deprecated: bad.
 const badPi = 3.14
 
 func doit() {

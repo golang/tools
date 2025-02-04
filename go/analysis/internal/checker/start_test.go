@@ -22,6 +22,7 @@ import (
 // of the file takes effect.
 func TestStartFixes(t *testing.T) {
 	testenv.NeedsGoPackages(t)
+	testenv.RedirectStderr(t) // associated checker.Run output with this test
 
 	files := map[string]string{
 		"comment/doc.go": `/* Package comment */

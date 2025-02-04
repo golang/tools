@@ -1131,6 +1131,11 @@ func (act *action) exec(ctx context.Context) (any, *actionSummary, error) {
 		TypeErrors:   apkg.typeErrors,
 		ResultOf:     inputs,
 		Report: func(d analysis.Diagnostic) {
+			// Assert that SuggestedFixes are well formed.
+			if err := analysisinternal.ValidateFixes(apkg.pkg.FileSet(), analyzer, d.SuggestedFixes); err != nil {
+				bug.Reportf("invalid SuggestedFixes: %v", err)
+				d.SuggestedFixes = nil
+			}
 			diagnostic, err := toGobDiagnostic(posToLocation, analyzer, d)
 			if err != nil {
 				// Don't bug.Report here: these errors all originate in

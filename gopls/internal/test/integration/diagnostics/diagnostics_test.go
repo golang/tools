@@ -421,9 +421,6 @@ module mod.com
 go 1.12
 
 require foo.test v1.2.3
--- go.sum --
-foo.test v1.2.3 h1:TMA+lyd1ck0TqjSFpNe4T6cf/K6TYkoHwOOcMBMjaEw=
-foo.test v1.2.3/go.mod h1:Ij3kyLIe5lzjycjh13NL8I2gX0quZuTdW0MnmlwGBL4=
 -- print.go --
 package lib
 
@@ -451,6 +448,7 @@ const Answer = 42
 
 func TestResolveDiagnosticWithDownload(t *testing.T) {
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(testPackageWithRequireProxy),
 	).Run(t, testPackageWithRequire, func(t *testing.T, env *Env) {
 		env.OpenFile("print.go")
@@ -1753,9 +1751,6 @@ module mod.com
 go 1.12
 
 require nested.com v1.0.0
--- go.sum --
-nested.com v1.0.0 h1:I6spLE4CgFqMdBPc+wTV2asDO2QJ3tU0YAT+jkLeN1I=
-nested.com v1.0.0/go.mod h1:ly53UzXQgVjSlV7wicdBB4p8BxfytuGT1Xcyv0ReJfI=
 -- main.go --
 package main
 
@@ -1779,6 +1774,7 @@ package hello
 func helloHelper() {}
 `
 	WithOptions(
+		WriteGoSum("."),
 		ProxyFiles(proxy),
 		Modes(Default),
 	).Run(t, nested, func(t *testing.T, env *Env) {

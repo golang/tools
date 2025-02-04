@@ -133,7 +133,7 @@ func _() {
 				"message": "self-assignment of i to i",
 				"suggested_fixes": \[
 					\{
-						"message": "Remove",
+						"message": "Remove self-assignment",
 						"edits": \[
 							\{
 								"filename": "([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?c/c.go",

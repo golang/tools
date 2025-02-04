@@ -17,6 +17,7 @@ import (
 	"log"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,7 +29,9 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/fmtstr"
 )
 
 // semDebug enables comprehensive logging of decisions
@@ -323,16 +326,17 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 	case *ast.AssignStmt:
 		tv.token(n.TokPos, len(n.Tok.String()), semtok.TokOperator)
 	case *ast.BasicLit:
-		if strings.Contains(n.Value, "\n") {
-			// has to be a string.
-			tv.multiline(n.Pos(), n.End(), semtok.TokString)
-			break
-		}
-		what := semtok.TokNumber
 		if n.Kind == token.STRING {
-			what = semtok.TokString
+			if strings.Contains(n.Value, "\n") {
+				// has to be a string.
+				tv.multiline(n.Pos(), n.End(), semtok.TokString)
+			} else if !tv.formatString(n) {
+				// not a format string, color the whole as a TokString.
+				tv.token(n.Pos(), len(n.Value), semtok.TokString)
+			}
+		} else {
+			tv.token(n.Pos(), len(n.Value), semtok.TokNumber)
 		}
-		tv.token(n.Pos(), len(n.Value), what)
 	case *ast.BinaryExpr:
 		tv.token(n.OpPos, len(n.Op.String()), semtok.TokOperator)
 	case *ast.BlockStmt:
@@ -458,6 +462,56 @@ func (tv *tokenVisitor) inspect(n ast.Node) (descend bool) {
 	default:
 		tv.errorf("failed to implement %T", n)
 	}
+	return true
+}
+
+// formatString tries to report directives and string literals
+// inside a (possible) printf-like call, it returns false and does nothing
+// if the string is not a format string.
+func (tv *tokenVisitor) formatString(lit *ast.BasicLit) bool {
+	if len(tv.stack) <= 1 {
+		return false
+	}
+	call, ok := tv.stack[len(tv.stack)-2].(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	lastNonVariadic, idx := formatStringAndIndex(tv.info, call)
+	if idx == -1 || lit != lastNonVariadic {
+		return false
+	}
+	format, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return false
+	}
+	if !strings.Contains(format, "%") {
+		return false
+	}
+	operations, err := fmtstr.Parse(format, idx)
+	if err != nil {
+		return false
+	}
+
+	// It's a format string, compute interleaved sub range of directives and literals.
+	// pos tracks literal substring position within the overall BasicLit.
+	pos := lit.ValuePos
+	for _, op := range operations {
+		// Skip "%%".
+		if op.Verb.Verb == '%' {
+			continue
+		}
+		rangeStart, rangeEnd, err := astutil.RangeInStringLiteral(lit, op.Range.Start, op.Range.End)
+		if err != nil {
+			return false
+		}
+		// Report literal substring.
+		tv.token(pos, int(rangeStart-pos), semtok.TokString)
+		// Report formatting directive.
+		tv.token(rangeStart, int(rangeEnd-rangeStart), semtok.TokString, semtok.ModFormat)
+		pos = rangeEnd
+	}
+	// Report remaining literal substring.
+	tv.token(pos, int(lit.End()-pos), semtok.TokString)
 	return true
 }
 

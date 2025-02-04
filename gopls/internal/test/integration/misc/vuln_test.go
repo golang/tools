@@ -368,13 +368,6 @@ require (
 	golang.org/amod v1.0.0 // indirect
 	golang.org/bmod v0.5.0 // indirect
 )
--- go.sum --
-golang.org/amod v1.0.0 h1:EUQOI2m5NhQZijXZf8WimSnnWubaFNrrKUH/PopTN8k=
-golang.org/amod v1.0.0/go.mod h1:yvny5/2OtYFomKt8ax+WJGvN6pfN1pqjGnn7DQLUi6E=
-golang.org/bmod v0.5.0 h1:KgvUulMyMiYRB7suKA0x+DfWRVdeyPgVJvcishTH+ng=
-golang.org/bmod v0.5.0/go.mod h1:f6o+OhF66nz/0BBc/sbCsshyPRKMSxZIlG50B/bsM4c=
-golang.org/cmod v1.1.3 h1:PJ7rZFTk7xGAunBRDa0wDe7rZjZ9R/vr1S2QkVVCngQ=
-golang.org/cmod v1.1.3/go.mod h1:eCR8dnmvLYQomdeAZRCPgS5JJihXtqOQrpEkNj5feQA=
 -- x/x.go --
 package x
 
@@ -497,7 +490,7 @@ func vulnTestEnv(proxyData string) (*vulntest.DB, []RunOption, error) {
 		"_GOPLS_TEST_BINARY_RUN_AS_GOPLS": "true", // needed to run `gopls vulncheck`.
 		"GOSUMDB":                         "off",
 	}
-	return db, []RunOption{ProxyFiles(proxyData), ev, settings}, nil
+	return db, []RunOption{ProxyFiles(proxyData), ev, settings, WriteGoSum(".")}, nil
 }
 
 func TestRunVulncheckPackageDiagnostics(t *testing.T) {
@@ -675,7 +668,7 @@ func TestRunGovulncheck_Expiry(t *testing.T) {
 	})
 }
 
-func stringify(a interface{}) string {
+func stringify(a any) string {
 	data, _ := json.Marshal(a)
 	return string(data)
 }
@@ -814,9 +807,6 @@ go 1.18
 
 require golang.org/bmod v0.5.0
 
--- go.sum --
-golang.org/bmod v0.5.0 h1:MT/ysNRGbCiURc5qThRFWaZ5+rK3pQRPo9w7dYZfMDk=
-golang.org/bmod v0.5.0/go.mod h1:k+zl+Ucu4yLIjndMIuWzD/MnOHy06wqr3rD++y0abVs=
 -- x/x.go --
 package x
 

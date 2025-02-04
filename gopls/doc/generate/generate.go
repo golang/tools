@@ -44,6 +44,7 @@ import (
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	internalastutil "golang.org/x/tools/internal/astutil"
 )
 
 func main() {
@@ -221,11 +222,13 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		if len(path) < 2 {
 			return nil, fmt.Errorf("could not find AST node for field %v", typesField)
 		}
+
 		// The AST field gives us the doc.
 		astField, ok := path[1].(*ast.Field)
 		if !ok {
 			return nil, fmt.Errorf("unexpected AST path %v", path)
 		}
+		description, deprecation := astField.Doc.Text(), internalastutil.Deprecation(astField.Doc)
 
 		// The reflect field gives us the default value.
 		reflectField := category.FieldByName(typesField.Name())
@@ -285,14 +288,15 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		status := reflectStructField.Tag.Get("status")
 
 		opts = append(opts, &doc.Option{
-			Name:       name,
-			Type:       typ,
-			Doc:        lowerFirst(astField.Doc.Text()),
-			Default:    def,
-			EnumKeys:   enumKeys,
-			EnumValues: enums[typesField.Type()],
-			Status:     status,
-			Hierarchy:  hierarchy,
+			Name:               name,
+			Type:               typ,
+			Doc:                lowerFirst(description),
+			Default:            def,
+			EnumKeys:           enumKeys,
+			EnumValues:         enums[typesField.Type()],
+			Status:             status,
+			Hierarchy:          hierarchy,
+			DeprecationMessage: lowerFirst(strings.TrimPrefix(deprecation, "Deprecated: ")),
 		})
 	}
 	return opts, nil
@@ -410,7 +414,7 @@ func formatDefault(reflectField reflect.Value) (string, error) {
 	return string(defBytes), err
 }
 
-// valueDoc transforms a docstring documenting an constant identifier to a
+// valueDoc transforms a docstring documenting a constant identifier to a
 // docstring documenting its value.
 //
 // If doc is of the form "Foo is a bar", it returns '`"fooValue"` is a bar'. If

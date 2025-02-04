@@ -1,17 +1,6 @@
 This test checks the behavior of the 'fill struct' code action, with resolve support.
 See fill_struct.txt for same test without resolve support.
 
--- capabilities.json --
-{
-	"textDocument": {
-		"codeAction": {
-			"dataSupport": true,
-			"resolveSupport": {
-				"properties": ["edit"]
-			}
-		}
-	}
-}
 -- flags --
 -ignore_extra_diags
 
@@ -373,12 +362,15 @@ func fill() {
 	_ := StructAnon{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_anon)
 }
 -- @fillStruct_anon/fillStruct_anon.go --
-@@ -13 +13,5 @@
+@@ -13 +13,8 @@
 -	_ := StructAnon{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_anon)
 +	_ := StructAnon{
 +		a: struct{}{},
 +		b: map[string]any{},
-+		c: map[string]struct{d int; e bool}{},
++		c: map[string]struct {
++			d int
++			e bool
++		}{},
 +	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_anon)
 -- fillStruct_nested.go --
 package fillstruct
@@ -452,8 +444,8 @@ func fill() {
 		PrefilledInt: 5,
 	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_partial1)
 	b := StructPartialB{
-		/* this comment should disappear */
-		PrefilledInt: 7, // This comment should be blown away.
+		/* this comment should be preserved */
+		PrefilledInt: 7, // This comment should be preserved.
 		/* As should
 		this one */
 	} //@codeaction("}", "refactor.rewrite.fillStruct", edit=fillStruct_partial2)
@@ -466,13 +458,8 @@ func fill() {
 +		UnfilledInt:    0,
 +		StructPartialB: StructPartialB{},
 -- @fillStruct_partial2/fillStruct_partial.go --
-@@ -19,4 +19,2 @@
--		/* this comment should disappear */
--		PrefilledInt: 7, // This comment should be blown away.
--		/* As should
--		this one */
-+		PrefilledInt: 7,
-+		UnfilledInt:  0,
+@@ -23 +23 @@
++		UnfilledInt: 0,
 -- fillStruct_spaces.go --
 package fillstruct
 
@@ -575,7 +562,7 @@ func _[T any]() {
 +	bar: 0,
 +} //@codeaction("}", "refactor.rewrite.fillStruct", edit=typeparams2)
 -- @typeparams3/typeparams.go --
-@@ -21 +21 @@
+@@ -22 +22 @@
 +	foo: 0,
 -- @typeparams4/typeparams.go --
 @@ -29 +29,4 @@

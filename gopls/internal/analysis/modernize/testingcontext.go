@@ -9,7 +9,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -20,6 +19,7 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil/cursor"
+	"golang.org/x/tools/internal/astutil/edge"
 )
 
 // The testingContext pass replaces calls to context.WithCancel from within
@@ -107,27 +107,23 @@ func testingContext(pass *analysis.Pass) {
 
 		// Check that we are in a test func.
 		var testObj types.Object // relevant testing.{T,B,F}, or nil
-
-		// TODO(rfindley): use cur.Ancestors when it is available.
-		stack := cur.Stack(nil)
-		slices.Reverse(stack)
-	findTestObj:
-		for _, ancestor := range stack {
-			switch n := ancestor.Node().(type) {
+		if curFunc, ok := enclosingFunc(cur); ok {
+			switch n := curFunc.Node().(type) {
 			case *ast.FuncLit:
-				if call, ok := ancestor.Parent().Node().(*ast.CallExpr); ok && len(call.Args) == 2 && call.Args[1] == n {
-					obj := typeutil.Callee(info, call)
+				if e, idx := curFunc.Edge(); e == edge.CallExpr_Args && idx == 1 {
+					// Have: call(..., func(...) { ...context.WithCancel(...)... })
+					obj := typeutil.Callee(info, curFunc.Parent().Node().(*ast.CallExpr))
 					if (analysisinternal.IsMethodNamed(obj, "testing", "T", "Run") ||
 						analysisinternal.IsMethodNamed(obj, "testing", "B", "Run")) &&
 						len(n.Type.Params.List[0].Names) == 1 {
 
+						// Have tb.Run(..., func(..., tb *testing.[TB]) { ...context.WithCancel(...)... }
 						testObj = info.Defs[n.Type.Params.List[0].Names[0]]
 					}
 				}
-				break findTestObj
+
 			case *ast.FuncDecl:
 				testObj = isTestFn(info, n)
-				break findTestObj
 			}
 		}
 

@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/astutil/edge"
 )
 
 // A Cursor represents an [ast.Node]. It is immutable.
@@ -207,6 +208,25 @@ func (c Cursor) Parent() Cursor {
 	return Cursor{c.in, c.events()[c.index].parent}
 }
 
+// Edge returns the identity of the field in the parent node
+// that holds this cursor's node, and if it is a list, the index within it.
+//
+// For example, f(x, y) is a CallExpr whose three children are Idents.
+// f has edge kind [edge.CallExpr_Fun] and index -1.
+// x and y have kind [edge.CallExpr_Args] and indices 0 and 1, respectively.
+//
+// Edge must not be called on the Root node (whose [Cursor.Node] returns nil).
+//
+// If called on a child of the Root node, it returns ([edge.Invalid], -1).
+func (c Cursor) Edge() (edge.Kind, int) {
+	if c.index < 0 {
+		panic("Cursor.Edge called on Root node")
+	}
+	events := c.events()
+	pop := events[c.index].index
+	return unpackEdgeKindAndIndex(events[pop].parent)
+}
+
 // NextSibling returns the cursor for the next sibling node in the same list
 // (for example, of files, decls, specs, statements, fields, or expressions) as
 // the current node. It returns (zero, false) if the node is the last node in
@@ -305,7 +325,8 @@ func (c Cursor) LastChild() (Cursor, bool) {
 //
 // So, do not assume that the previous sibling of an ast.Stmt is also
 // an ast.Stmt, or if it is, that they are executed sequentially,
-// unless you have established that, say, its parent is a BlockStmt.
+// unless you have established that, say, its parent is a BlockStmt
+// or its [Cursor.Edge] is [edge.BlockStmt_List].
 // For example, given "for S1; ; S2 {}", the predecessor of S2 is S1,
 // even though they are not executed in sequence.
 func (c Cursor) Children() iter.Seq[Cursor] {

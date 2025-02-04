@@ -1,17 +1,6 @@
 This test exercises basic 'stub methods' functionality, with resolve support.
 See basic.txt for the same test without resolve support.
 
--- capabilities.json --
-{
-	"textDocument": {
-		"codeAction": {
-			"dataSupport": true,
-			"resolveSupport": {
-				"properties": ["edit"]
-			}
-		}
-	}
-}
 -- go.mod --
 module example.com
 go 1.12

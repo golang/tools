@@ -214,7 +214,7 @@ func TestRuntimeTypes(t *testing.T) {
 		input string
 		want  []string
 	}{
-		// An package-level type is needed.
+		// A package-level type is needed.
 		{`package A; type T struct{}; func (T) f() {}; var x any = T{}`,
 			[]string{"*p.T", "p.T"},
 		},

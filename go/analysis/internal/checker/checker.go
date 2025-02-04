@@ -20,6 +20,7 @@ import (
 	"go/token"
 	"io"
 	"io/ioutil"
+
 	"log"
 	"os"
 	"runtime"
@@ -139,6 +140,9 @@ func Run(args []string, analyzers []*analysis.Analyzer) int {
 		return 1
 	}
 
+	// TODO(adonovan): simplify exit code logic by using a single
+	// exit code variable and applying "code = max(code, X)" each
+	// time an error of code X occurs.
 	pkgsExitCode := 0
 	// Print package and module errors regardless of RunDespiteErrors.
 	// Do not exit if there are errors, yet.

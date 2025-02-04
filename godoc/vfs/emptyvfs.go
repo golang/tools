@@ -84,6 +84,6 @@ func (e *emptyVFS) IsDir() bool {
 	return true
 }
 
-func (e *emptyVFS) Sys() interface{} {
+func (e *emptyVFS) Sys() any {
 	return nil
 }

@@ -336,7 +336,7 @@ func TestPropagation(t *testing.T) {
 				"Local(t2)": "A;B;C",
 			},
 		},
-		// The outer loop of subsumed-scc pushes A an B through the graph.
+		// The outer loop of subsumed-scc pushes A and B through the graph.
 		{name: "subsumed-scc", graph: suite["subsumed-scc"],
 			want: map[string]string{
 				"Local(t0)": "A;B",

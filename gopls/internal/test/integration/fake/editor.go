@@ -379,6 +379,10 @@ func clientCapabilities(cfg EditorConfig) (protocol.ClientCapabilities, error) {
 	}
 	// Request that the server provide its complete list of code action kinds.
 	capabilities.TextDocument.CodeAction = protocol.CodeActionClientCapabilities{
+		DataSupport: true,
+		ResolveSupport: &protocol.ClientCodeActionResolveOptions{
+			Properties: []string{"edit"},
+		},
 		CodeActionLiteralSupport: protocol.ClientCodeActionLiteralOptions{
 			CodeActionKind: protocol.ClientCodeActionKindOptions{
 				ValueSet: []protocol.CodeActionKind{protocol.Empty}, // => all

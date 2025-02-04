@@ -1229,6 +1229,7 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 			return err
 		}
 		commandResult.Result = result
+		commandResult.Token = deps.work.Token()
 
 		snapshot, release, err := c.s.session.InvalidateView(ctx, deps.snapshot.View(), cache.StateChange{
 			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI: result},

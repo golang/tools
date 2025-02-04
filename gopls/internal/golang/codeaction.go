@@ -154,7 +154,14 @@ func (req *codeActionsRequest) addApplyFixAction(title, fix string, loc protocol
 // then the command is embedded into the code action data field so
 // that the client can later ask the server to "resolve" a command
 // into an edit that they can preview and apply selectively.
-// Set allowResolveEdits only for actions that generate edits.
+// IMPORTANT: set allowResolveEdits only for actions that are 'edit aware',
+// meaning they can detect when they are being executed in the context of a
+// codeAction/resolve request, and return edits rather than applying them using
+// workspace/applyEdit. In golang/go#71405, edits were being apply during the
+// codeAction/resolve request handler.
+// TODO(rfindley): refactor the command and code lens registration APIs so that
+// resolve edit support is inferred from the command signature, not dependent
+// on coordination between codeAction and command logic.
 //
 // Otherwise, the command is set as the code action operation.
 func (req *codeActionsRequest) addCommandAction(cmd *protocol.Command, allowResolveEdits bool) {
@@ -528,7 +535,7 @@ func refactorExtractVariableAll(ctx context.Context, req *codeActionsRequest) er
 func refactorExtractToNewFile(ctx context.Context, req *codeActionsRequest) error {
 	if canExtractToNewFile(req.pgf, req.start, req.end) {
 		cmd := command.NewExtractToNewFileCommand("Extract declarations to new file", req.loc)
-		req.addCommandAction(cmd, true)
+		req.addCommandAction(cmd, false)
 	}
 	return nil
 }
@@ -562,7 +569,7 @@ func addTest(ctx context.Context, req *codeActionsRequest) error {
 	}
 
 	cmd := command.NewAddTestCommand("Add test for "+decl.Name.String(), req.loc)
-	req.addCommandAction(cmd, true)
+	req.addCommandAction(cmd, false)
 
 	// TODO(hxjiang): add code action for generate test for package/file.
 	return nil

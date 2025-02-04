@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"go/printer"
 	"go/token"
 	"go/types"
 	"strings"
@@ -168,26 +169,16 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	// Check which types have already been filled in. (we only want to fill in
 	// the unfilled types, or else we'll blat user-supplied details)
 	prefilledFields := map[string]ast.Expr{}
+	var elts []ast.Expr
 	for _, e := range expr.Elts {
 		if kv, ok := e.(*ast.KeyValueExpr); ok {
 			if key, ok := kv.Key.(*ast.Ident); ok {
 				prefilledFields[key.Name] = kv.Value
+				elts = append(elts, kv)
 			}
 		}
 	}
 
-	// Use a new fileset to build up a token.File for the new composite
-	// literal. We need one line for foo{, one line for }, and one line for
-	// each field we're going to set. format.Node only cares about line
-	// numbers, so we don't need to set columns, and each line can be
-	// 1 byte long.
-	// TODO(adonovan): why is this necessary? The position information
-	// is going to be wrong for the existing trees in prefilledFields.
-	// Can't the formatter just do its best with an empty fileset?
-	fakeFset := token.NewFileSet()
-	tok := fakeFset.AddFile("", -1, fieldCount+2)
-
-	line := 2 // account for 1-based lines and the left brace
 	var fieldTyps []types.Type
 	for i := 0; i < fieldCount; i++ {
 		field := tStruct.Field(i)
@@ -200,67 +191,46 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	}
 	matches := analysisinternal.MatchingIdents(fieldTyps, file, start, info, pkg)
 	qual := typesinternal.FileQualifier(file, pkg)
-	var elts []ast.Expr
+
 	for i, fieldTyp := range fieldTyps {
 		if fieldTyp == nil {
 			continue // TODO(adonovan): is this reachable?
 		}
 		fieldName := tStruct.Field(i).Name()
-
-		tok.AddLine(line - 1) // add 1 byte per line
-		if line > tok.LineCount() {
-			panic(fmt.Sprintf("invalid line number %v (of %v) for fillstruct", line, tok.LineCount()))
+		if _, ok := prefilledFields[fieldName]; ok {
+			// We already stored these when looping over expr.Elt.
+			// Want to preserve the original order of prefilled fields
+			continue
 		}
-		pos := tok.LineStart(line)
 
 		kv := &ast.KeyValueExpr{
 			Key: &ast.Ident{
-				NamePos: pos,
-				Name:    fieldName,
+				Name: fieldName,
 			},
-			Colon: pos,
 		}
-		if expr, ok := prefilledFields[fieldName]; ok {
+
+		names, ok := matches[fieldTyp]
+		if !ok {
+			return nil, nil, fmt.Errorf("invalid struct field type: %v", fieldTyp)
+		}
+
+		// Find the name most similar to the field name.
+		// If no name matches the pattern, generate a zero value.
+		// NOTE: We currently match on the name of the field key rather than the field type.
+		if best := fuzzy.BestMatch(fieldName, names); best != "" {
+			kv.Value = ast.NewIdent(best)
+		} else if expr, isValid := populateValue(fieldTyp, qual); isValid {
 			kv.Value = expr
 		} else {
-			names, ok := matches[fieldTyp]
-			if !ok {
-				return nil, nil, fmt.Errorf("invalid struct field type: %v", fieldTyp)
-			}
-
-			// Find the name most similar to the field name.
-			// If no name matches the pattern, generate a zero value.
-			// NOTE: We currently match on the name of the field key rather than the field type.
-			if best := fuzzy.BestMatch(fieldName, names); best != "" {
-				kv.Value = ast.NewIdent(best)
-			} else if expr, isValid := populateValue(fieldTyp, qual); isValid {
-				kv.Value = expr
-			} else {
-				return nil, nil, nil // no fix to suggest
-			}
+			return nil, nil, nil // no fix to suggest
 		}
+
 		elts = append(elts, kv)
-		line++
 	}
 
 	// If all of the struct's fields are unexported, we have nothing to do.
 	if len(elts) == 0 {
 		return nil, nil, fmt.Errorf("no elements to fill")
-	}
-
-	// Add the final line for the right brace. Offset is the number of
-	// bytes already added plus 1.
-	tok.AddLine(len(elts) + 1)
-	line = len(elts) + 2
-	if line > tok.LineCount() {
-		panic(fmt.Sprintf("invalid line number %v (of %v) for fillstruct", line, tok.LineCount()))
-	}
-
-	cl := &ast.CompositeLit{
-		Type:   expr.Type,
-		Lbrace: tok.LineStart(1),
-		Elts:   elts,
-		Rbrace: tok.LineStart(line),
 	}
 
 	// Find the line on which the composite literal is declared.
@@ -274,26 +244,66 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	index := bytes.Index(firstLine, trimmed)
 	whitespace := firstLine[:index]
 
-	// First pass through the formatter: turn the expr into a string.
-	var formatBuf bytes.Buffer
-	if err := format.Node(&formatBuf, fakeFset, cl); err != nil {
-		return nil, nil, fmt.Errorf("failed to run first format on:\n%s\ngot err: %v", cl.Type, err)
-	}
-	sug := indent(formatBuf.Bytes(), whitespace)
-
-	if len(prefilledFields) > 0 {
-		// Attempt a second pass through the formatter to line up columns.
-		sourced, err := format.Source(sug)
-		if err == nil {
-			sug = indent(sourced, whitespace)
+	// Write a new composite literal "_{...}" composed of all prefilled and new elements,
+	// preserving existing formatting and comments.
+	// An alternative would be to only format the new fields,
+	// but by printing the entire composite literal, we ensure
+	// that the result is gofmt'ed.
+	var buf bytes.Buffer
+	buf.WriteString("_{\n")
+	fcmap := ast.NewCommentMap(fset, file, file.Comments)
+	comments := fcmap.Filter(expr).Comments() // comments inside the expr, in source order
+	for _, elt := range elts {
+		// Print comments before the current elt
+		for len(comments) > 0 && comments[0].Pos() < elt.Pos() {
+			for _, co := range comments[0].List {
+				fmt.Fprintln(&buf, co.Text)
+			}
+			comments = comments[1:]
 		}
+
+		// Print the current elt with comments
+		eltcomments := fcmap.Filter(elt).Comments()
+		if err := format.Node(&buf, fset, &printer.CommentedNode{Node: elt, Comments: eltcomments}); err != nil {
+			return nil, nil, err
+		}
+		buf.WriteString(",")
+
+		// Prune comments up to the end of the elt
+		for len(comments) > 0 && comments[0].Pos() < elt.End() {
+			comments = comments[1:]
+		}
+
+		// Write comments associated with the current elt that appear after it
+		// printer.CommentedNode only prints comments inside the elt.
+		for _, cg := range eltcomments {
+			for _, co := range cg.List {
+				if co.Pos() >= elt.End() {
+					fmt.Fprintln(&buf, co.Text)
+					if len(comments) > 0 {
+						comments = comments[1:]
+					}
+				}
+			}
+		}
+		buf.WriteString("\n")
 	}
+	buf.WriteString("}")
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sug := indent(formatted, whitespace)
+	// Remove _
+	idx := bytes.IndexByte(sug, '{') // cannot fail
+	sug = sug[idx:]
 
 	return fset, &analysis.SuggestedFix{
 		TextEdits: []analysis.TextEdit{
 			{
-				Pos:     expr.Pos(),
-				End:     expr.End(),
+				Pos:     expr.Lbrace,
+				End:     expr.Rbrace + token.Pos(len("}")),
 				NewText: sug,
 			},
 		},

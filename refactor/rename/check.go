@@ -19,7 +19,7 @@ import (
 )
 
 // errorf reports an error (e.g. conflict) and prevents file modification.
-func (r *renamer) errorf(pos token.Pos, format string, args ...interface{}) {
+func (r *renamer) errorf(pos token.Pos, format string, args ...any) {
 	r.hadConflicts = true
 	reportError(r.iprog.Fset.Position(pos), fmt.Sprintf(format, args...))
 }
@@ -36,7 +36,7 @@ func (r *renamer) check(from types.Object) {
 		r.checkInFileBlock(from_)
 	} else if from_, ok := from.(*types.Label); ok {
 		r.checkLabel(from_)
-	} else if isPackageLevel(from) {
+	} else if typesinternal.IsPackageLevel(from) {
 		r.checkInPackageBlock(from)
 	} else if v, ok := from.(*types.Var); ok && v.IsField() {
 		r.checkStructField(v)

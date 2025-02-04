@@ -143,6 +143,16 @@ This setting is only supported when gopls is built with Go 1.16 or later.
 
 Default: `["ignore"]`.
 
+<a id='workspaceFiles'></a>
+### `workspaceFiles []string`
+
+workspaceFiles configures the set of globs that match files defining the logical build of the current workspace.
+Any on-disk changes to any files matching a glob specified here will trigger a reload of the workspace.
+
+This setting need only be customized in environments with a custom GOPACKAGESDRIVER.
+
+Default: `[]`.
+
 <a id='formatting'></a>
 ## Formatting
 
@@ -208,6 +218,9 @@ Default: `false`.
 
 noSemanticString turns off the sending of the semantic token 'string'
 
+Deprecated: Use SemanticTokenTypes["string"] = false instead. See
+golang/vscode-go#3632
+
 Default: `false`.
 
 <a id='noSemanticNumber'></a>
@@ -216,6 +229,9 @@ Default: `false`.
 **This setting is experimental and may be deleted.**
 
 noSemanticNumber turns off the sending of the semantic token 'number'
+
+Deprecated: Use SemanticTokenTypes["number"] = false instead. See
+golang/vscode-go#3632.
 
 Default: `false`.
 

@@ -2223,6 +2223,18 @@ func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Ran
 // specified location and kind, and captures the resulting document changes.
 // If diag is non-nil, it is used as the code action context.
 func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, kind protocol.CodeActionKind, diag *protocol.Diagnostic) ([]protocol.DocumentChange, error) {
+	// Collect any server-initiated changes created by workspace/applyEdit.
+	//
+	// We set up this handler immediately, not right before executing the code
+	// action command, so we can assert that neither the codeAction request nor
+	// codeAction resolve request cause edits as a side effect (golang/go#71405).
+	var changes []protocol.DocumentChange
+	restore := env.Editor.Client().SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
+		changes = append(changes, wsedit.DocumentChanges...)
+		return nil
+	})
+	defer restore()
+
 	// Request all code actions that apply to the diagnostic.
 	// A production client would set Only=[kind],
 	// but we can give a better error if we don't filter.
@@ -2311,14 +2323,6 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 		// The server then makes an ApplyEdit RPC to the client,
 		// whose WorkspaceEditFunc hook temporarily gathers the edits
 		// instead of applying them.
-
-		var changes []protocol.DocumentChange
-		cli := env.Editor.Client()
-		restore := cli.SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
-			changes = append(changes, wsedit.DocumentChanges...)
-			return nil
-		})
-		defer restore()
 
 		if _, err := env.Editor.Server.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
 			Command:   action.Command.Command,

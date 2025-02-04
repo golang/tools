@@ -19,7 +19,9 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
+	"golang.org/x/tools/go/analysis/checker"
 	"golang.org/x/tools/go/analysis/multichecker"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -77,16 +79,23 @@ func fix(t *testing.T, dir, analyzers string, wantExit int, patterns ...string) 
 		return strings.ReplaceAll(s, os.TempDir(), "os.TempDir/")
 	}
 	outBytes, err := cmd.CombinedOutput()
+	switch err := err.(type) {
+	case nil:
+		// success
+	case *exec.ExitError:
+		if code := err.ExitCode(); code != wantExit {
+			// plan9 ExitCode() currently only returns 0 for success or 1 for failure
+			if !(runtime.GOOS == "plan9" && wantExit != exitCodeSuccess && code != exitCodeSuccess) {
+				t.Errorf("exit code was %d, want %d", code, wantExit)
+			}
+		}
+	default:
+		t.Fatalf("failed to execute multichecker: %v", err)
+	}
+
 	out := clean(string(outBytes))
 	t.Logf("$ %s\n%s", clean(fmt.Sprint(cmd)), out)
-	if err, ok := err.(*exec.ExitError); !ok {
-		t.Fatalf("failed to execute multichecker: %v", err)
-	} else if err.ExitCode() != wantExit {
-		// plan9 ExitCode() currently only returns 0 for success or 1 for failure
-		if !(runtime.GOOS == "plan9" && wantExit != exitCodeSuccess && err.ExitCode() != exitCodeSuccess) {
-			t.Errorf("exit code was %d, want %d", err.ExitCode(), wantExit)
-		}
-	}
+
 	return out
 }
 
@@ -113,15 +122,6 @@ func InTestFile() {
 // the end
 `,
 		"rename/foo_test.go": `package rename_test
-
-func Foo() {
-	bar := 14
-	_ = bar
-}
-
-// the end
-`,
-		"duplicate/dup.go": `package duplicate
 
 func Foo() {
 	bar := 14
@@ -159,15 +159,6 @@ func Foo() {
 
 // the end
 `,
-		"duplicate/dup.go": `package duplicate
-
-func Foo() {
-	baz := 14
-	_ = baz
-}
-
-// the end
-`,
 	}
 	dir, cleanup, err := analysistest.WriteFiles(files)
 	if err != nil {
@@ -175,7 +166,7 @@ func Foo() {
 	}
 	defer cleanup()
 
-	fix(t, dir, "rename,other", exitCodeDiagnostics, "rename", "duplicate")
+	fix(t, dir, "rename,other", exitCodeDiagnostics, "rename")
 
 	for name, want := range fixed {
 		path := path.Join(dir, "src", name)
@@ -186,6 +177,117 @@ func Foo() {
 		if got := string(contents); got != want {
 			t.Errorf("contents of %s file did not match expectations. got=%s, want=%s", path, got, want)
 		}
+	}
+}
+
+// TestReportInvalidDiagnostic tests that a call to pass.Report with
+// certain kind of invalid diagnostic (e.g. conflicting fixes)
+// promptly results in a panic.
+func TestReportInvalidDiagnostic(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
+	// Load the errors package.
+	cfg := &packages.Config{Mode: packages.LoadAllSyntax}
+	initial, err := packages.Load(cfg, "errors")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name string
+		want string
+		diag func(pos token.Pos) analysis.Diagnostic
+	}{
+		// Diagnostic has two alternative fixes with the same Message.
+		{
+			"duplicate message",
+			`analyzer "a" suggests two fixes with same Message \(fix\)`,
+			func(pos token.Pos) analysis.Diagnostic {
+				return analysis.Diagnostic{
+					Pos:     pos,
+					Message: "oops",
+					SuggestedFixes: []analysis.SuggestedFix{
+						{Message: "fix"},
+						{Message: "fix"},
+					},
+				}
+			},
+		},
+		// TextEdit has invalid Pos.
+		{
+			"bad Pos",
+			`analyzer "a" suggests invalid fix .*: missing file info for pos`,
+			func(pos token.Pos) analysis.Diagnostic {
+				return analysis.Diagnostic{
+					Pos:     pos,
+					Message: "oops",
+					SuggestedFixes: []analysis.SuggestedFix{
+						{
+							Message:   "fix",
+							TextEdits: []analysis.TextEdit{{}},
+						},
+					},
+				}
+			},
+		},
+		// TextEdit has invalid End.
+		{
+			"End < Pos",
+			`analyzer "a" suggests invalid fix .*: pos .* > end`,
+			func(pos token.Pos) analysis.Diagnostic {
+				return analysis.Diagnostic{
+					Pos:     pos,
+					Message: "oops",
+					SuggestedFixes: []analysis.SuggestedFix{
+						{
+							Message: "fix",
+							TextEdits: []analysis.TextEdit{{
+								Pos: pos + 2,
+								End: pos,
+							}},
+						},
+					},
+				}
+			},
+		},
+		// Two TextEdits overlap.
+		{
+			"overlapping edits",
+			`analyzer "a" suggests invalid fix .*: overlapping edits to .*errors.go \(1:1-1:3 and 1:2-1:4\)`,
+			func(pos token.Pos) analysis.Diagnostic {
+				return analysis.Diagnostic{
+					Pos:     pos,
+					Message: "oops",
+					SuggestedFixes: []analysis.SuggestedFix{
+						{
+							Message: "fix",
+							TextEdits: []analysis.TextEdit{
+								{Pos: pos, End: pos + 2},
+								{Pos: pos + 1, End: pos + 3},
+							},
+						},
+					},
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reached := false
+			a := &analysis.Analyzer{Name: "a", Doc: "doc", Run: func(pass *analysis.Pass) (any, error) {
+				reached = true
+				panics(t, test.want, func() {
+					pos := pass.Files[0].FileStart
+					pass.Report(test.diag(pos))
+				})
+				return nil, nil
+			}}
+			if _, err := checker.Analyze([]*analysis.Analyzer{a}, initial, &checker.Options{}); err != nil {
+				t.Fatalf("Analyze failed: %v", err)
+			}
+			if !reached {
+				t.Error("analyzer was never invoked")
+			}
+		})
 	}
 }
 
@@ -253,6 +355,7 @@ func Foo() {
 	}
 	defer cleanup()
 
+	// The 'rename' and 'other' analyzers suggest conflicting fixes.
 	out := fix(t, dir, "rename,other", exitCodeFailed, "other")
 
 	pattern := `.*conflicting edits from other and rename on .*foo.go`
@@ -324,4 +427,18 @@ func init() {
 			return nil, nil
 		},
 	}
+}
+
+// panics asserts that f() panics with with a value whose printed form matches the regexp want.
+func panics(t *testing.T, want string, f func()) {
+	defer func() {
+		if x := recover(); x == nil {
+			t.Errorf("function returned normally, wanted panic")
+		} else if m, err := regexp.MatchString(want, fmt.Sprint(x)); err != nil {
+			t.Errorf("panics: invalid regexp %q", want)
+		} else if !m {
+			t.Errorf("function panicked with value %q, want match for %q", x, want)
+		}
+	}()
+	f()
 }

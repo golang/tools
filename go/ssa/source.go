@@ -191,7 +191,7 @@ func (prog *Program) packageLevelMember(obj types.Object) Member {
 }
 
 // FuncValue returns the SSA function or (non-interface) method
-// denoted by the specified func symbol. It returns nil id the symbol
+// denoted by the specified func symbol. It returns nil if the symbol
 // denotes an interface method, or belongs to a package that was not
 // created by prog.CreatePackage.
 func (prog *Program) FuncValue(obj *types.Func) *Function {

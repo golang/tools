@@ -120,7 +120,7 @@ Here is the list of supported value markers:
     argument may be specified only as a string or regular expression in the
     first pass.
 
-  - defloc(name, location): performs a textDocument/defintiion request at the
+  - defloc(name, location): performs a textDocument/definition request at the
     src location, and binds the result to the given name. This may be used to
     refer to positions in the standard library.
 

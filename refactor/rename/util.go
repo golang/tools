@@ -61,10 +61,6 @@ func isLocal(obj types.Object) bool {
 	return depth >= 4
 }
 
-func isPackageLevel(obj types.Object) bool {
-	return obj.Pkg().Scope().Lookup(obj.Name()) == obj
-}
-
 // -- Plundered from go/scanner: ---------------------------------------
 
 func isLetter(ch rune) bool {

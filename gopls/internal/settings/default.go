@@ -87,6 +87,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 					DirectoryFilters:        []string{"-**/node_modules"},
 					TemplateExtensions:      []string{},
 					StandaloneTags:          []string{"ignore"},
+					WorkspaceFiles:          []string{},
 				},
 				UIOptions: UIOptions{
 					DiagnosticOptions: DiagnosticOptions{

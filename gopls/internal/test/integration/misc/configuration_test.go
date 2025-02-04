@@ -186,7 +186,7 @@ var ErrFoo = errors.New("foo")
 		cfg.Env = map[string]string{
 			"AN_ARBITRARY_VAR": "FOO",
 		}
-		cfg.Settings = map[string]interface{}{
+		cfg.Settings = map[string]any{
 			"staticcheck": true,
 		}
 		env.ChangeConfiguration(cfg)

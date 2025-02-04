@@ -5,7 +5,7 @@
 //go:build !appengine
 // +build !appengine
 
-// Package socket implements an WebSocket-based playground backend.
+// Package socket implements a WebSocket-based playground backend.
 // Clients connect to a websocket handler and send run/kill commands, and
 // the server sends the output and exit status of the running processes.
 // Multiple clients running multiple processes may be served concurrently.

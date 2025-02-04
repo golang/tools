@@ -21,9 +21,10 @@ func TestFillStruct(t *testing.T) {
 		capabilities string
 		wantCommand  bool
 	}{
-		{"default", "{}", true},
-		{"no data", `{ "textDocument": {"codeAction": {	"resolveSupport": { "properties": ["edit"] } } } }`, true},
-		{"resolve support", `{ "textDocument": {"codeAction": {	"dataSupport": true, "resolveSupport": { "properties": ["edit"] } } } }`, false},
+		{"default", "{}", false},
+		{"no data support", `{"textDocument": {"codeAction": {"dataSupport": false, "resolveSupport": {"properties": ["edit"]}}}}`, true},
+		{"no resolve support", `{"textDocument": {"codeAction": {"dataSupport": true, "resolveSupport": {"properties": []}}}}`, true},
+		{"data and resolve support", `{"textDocument": {"codeAction": {"dataSupport": true, "resolveSupport": {"properties": ["edit"]}}}}`, false},
 	}
 
 	const basic = `

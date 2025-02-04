@@ -194,7 +194,7 @@ func main() {}
 		)
 
 		cfg := env.Editor.Config()
-		cfg.Settings = map[string]interface{}{
+		cfg.Settings = map[string]any{
 			"standaloneTags": []string{"ignore"},
 		}
 		env.ChangeConfiguration(cfg)

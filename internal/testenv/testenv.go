@@ -7,10 +7,12 @@
 package testenv
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"go/build"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -552,4 +554,46 @@ func NeedsGOROOTDir(t *testing.T, dir string) {
 			t.Skipf("skipping: GOROOT/%s not present", dir)
 		}
 	}
+}
+
+// RedirectStderr causes os.Stderr (and the global logger) to be
+// temporarily replaced so that writes to it are sent to t.Log.
+// It is restored at test cleanup.
+func RedirectStderr(t testing.TB) {
+	t.Setenv("RedirectStderr", "") // side effect: assert t.Parallel wasn't called
+
+	// TODO(adonovan): if https://go.dev/issue/59928 is accepted,
+	// simply set w = t.Output() and dispense with the pipe.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		for sc := bufio.NewScanner(r); sc.Scan(); {
+			t.Log(sc.Text())
+		}
+		r.Close()
+		close(done)
+	}()
+
+	// Also do the same for the global logger.
+	savedWriter, savedPrefix, savedFlags := log.Writer(), log.Prefix(), log.Flags()
+	log.SetPrefix("log: ")
+	log.SetOutput(w)
+	log.SetFlags(0)
+
+	oldStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() {
+		w.Close() // ignore error
+		os.Stderr = oldStderr
+
+		log.SetOutput(savedWriter)
+		log.SetPrefix(savedPrefix)
+		log.SetFlags(savedFlags)
+
+		// Don't let test finish before final t.Log.
+		<-done
+	})
 }

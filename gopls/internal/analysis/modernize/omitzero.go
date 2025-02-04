@@ -35,11 +35,7 @@ func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Fi
 		// No omitempty in json tag
 		return
 	}
-	omitEmptyPos, err := astutil.PosInStringLiteral(curField.Tag, match[2])
-	if err != nil {
-		return
-	}
-	omitEmptyEnd, err := astutil.PosInStringLiteral(curField.Tag, match[3])
+	omitEmptyPos, omitEmptyEnd, err := astutil.RangeInStringLiteral(curField.Tag, match[2], match[3])
 	if err != nil {
 		return
 	}
