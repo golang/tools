@@ -453,11 +453,28 @@ func concreteType(e ast.Expr, info *types.Info) (*types.Named, bool) {
 
 func GetFieldStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node) *StructFieldInfo {
 	for _, node := range path {
-		n, ok := node.(*ast.SelectorExpr)
+		s, ok := node.(*ast.SelectorExpr)
 		if !ok {
 			continue
 		}
-		tv, ok := info.Types[n.X]
+		// If recvExpr is a package name, compiler error would be
+		// e.g., "undefined: http.bar", thus will not hit this code path.
+		recvExpr := s.X
+		recvType, _ := concreteType(recvExpr, info)
+
+		if recvType == nil || recvType.Obj().Pkg() == nil {
+			return nil
+		}
+
+		// A method of a function-local type cannot be stubbed
+		// since there's nowhere to put the methods.
+		recv := recvType.Obj()
+		if recv.Parent() != recv.Pkg().Scope() {
+			return nil
+		}
+
+		obj := types.Object(recv)
+		tv, ok := info.Types[s.X]
 		if !ok {
 			break
 		}
@@ -474,11 +491,12 @@ func GetFieldStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node) *S
 
 		return &StructFieldInfo{
 			Fset:   fset,
-			Expr:   n,
+			Expr:   s,
 			Struct: structType,
 			Named:  named,
 			Info:   info,
 			Path:   path,
+			Object: obj,
 		}
 	}
 
@@ -493,6 +511,7 @@ type StructFieldInfo struct {
 	Named  *types.Named
 	Info   *types.Info
 	Path   []ast.Node
+	Object types.Object
 }
 
 // Emit writes to out the missing field based on type info.
