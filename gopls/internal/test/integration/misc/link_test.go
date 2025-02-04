@@ -59,6 +59,7 @@ module import.test
 
 go 1.12
 -- import.test@v1.2.3/pkg/const.go --
+// package documentation
 package pkg
 
 
@@ -106,6 +107,7 @@ const Hello = "Hello"
 			pkgReplaceLink      = "https://pkg.go.dev/replace.test@v1.2.4/replace"
 			pkgReplaceFixedLink = "https://pkg.go.dev/replace.fixed.test@v1.2.4/fixed"
 			pkgAnotherLink      = "https://pkg.go.dev/another.test@v1.2.3/another"
+			pkgDoc              = "package documentation"
 		)
 
 		// First, check that we get the expected links via hover and documentLink.

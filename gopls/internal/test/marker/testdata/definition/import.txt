@@ -53,7 +53,7 @@ var _ Foo
 variable of type foo.Foo
 -- @myFoo --
 ```go
-package myFoo ("mod.com/foo")
+package foo
 ```
 
 ---

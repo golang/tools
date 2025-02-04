@@ -229,6 +229,94 @@ func main() {
 	})
 }
 
+func TestHoverPackageIdent(t *testing.T) {
+	const packageDoc1 = "Package lib1 hover documentation"
+	const packageDoc2 = "Package lib2 hover documentation"
+	tests := []struct {
+		hoverIdent string
+		want       string
+		wantError  bool
+	}{
+		{
+			"lib1",
+			packageDoc1,
+			false,
+		},
+		{
+			"lib2",
+			packageDoc2,
+			false,
+		},
+		{
+			"lib3",
+			"",
+			false,
+		},
+		{
+			"lib4",
+			"",
+			true,
+		},
+	}
+	source := fmt.Sprintf(`
+-- go.mod --
+module mod.com
+
+go 1.12
+-- lib1/a.go --
+// %s
+package lib1
+
+const C = 1
+
+-- lib1/b.go --
+package lib1
+
+const D = 1
+
+-- lib2/a.go --
+// %s
+package lib2
+
+const E = 1
+
+-- lib3/a.go --
+package lib3
+
+const F = 1
+
+-- main.go --
+package main
+
+import (
+	"mod.com/lib1"
+	"mod.com/lib2"
+	"mod.com/lib3"
+	"mod.com/lib4"
+)
+
+func main() {
+	println(lib1.C)
+	println(lib2.E)
+	println(lib3.F)
+	println(lib4.Z)
+}
+	`, packageDoc1, packageDoc2)
+	Run(t, source, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		for _, test := range tests {
+			got, _, err := env.Editor.Hover(env.Ctx, env.RegexpSearch("main.go", "("+test.hoverIdent+")\\."))
+			if test.wantError {
+				if err == nil {
+					t.Errorf("Hover(%q) succeeded unexpectedly", test.hoverIdent)
+				}
+			} else if !strings.Contains(got.Value, test.want) {
+				t.Errorf("Hover(%q): got:\n%q\nwant:\n%q", test.hoverIdent, got.Value, test.want)
+			}
+		}
+	})
+}
+
 // for x/tools/gopls: unhandled named anchor on the hover #57048
 func TestHoverTags(t *testing.T) {
 	const source = `

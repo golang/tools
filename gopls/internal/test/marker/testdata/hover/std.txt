@@ -67,8 +67,13 @@ Name returns the object's (package-local, unqualified) name.
 [`(types.TypeName).Name` on pkg.go.dev](https://pkg.go.dev/go/types#TypeName.Name)
 -- @hoverTypes --
 ```go
-package types ("go/types")
+package types
 ```
+
+---
+
+Package types declares the data types and implements the algorithms for type-checking of Go packages.
+
 
 ---
 
