@@ -13,6 +13,8 @@ import (
 // -- plundered from the future (CL 605517, issue #68021) --
 
 // TODO(adonovan): replace with ast.Directive after go1.24 (#68021).
+// Beware of our local mods to handle analysistest
+// "want" comments on the same line.
 
 // A directive is a comment line with special meaning to the Go
 // toolchain or another tool. It has the form:
@@ -48,6 +50,9 @@ func directives(g *ast.CommentGroup) (res []*directive) {
 					tool, nameargs = "", tool
 				}
 				name, args, _ := strings.Cut(nameargs, " ") // tab??
+				// Permit an additional line comment after the args, chiefly to support
+				// [golang.org/x/tools/go/analysis/analysistest].
+				args, _, _ = strings.Cut(args, "//")
 				res = append(res, &directive{
 					Pos:  c.Slash,
 					Tool: tool,
