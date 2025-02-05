@@ -279,6 +279,6 @@ func (v *visitor) pop(node ast.Node) {
 		node:   node,
 		typ:    current.typAccum,
 		index:  current.index,
-		parent: int32(current.edgeKindAndIndex), // see [unpackEdgeKindAndIndex]
+		parent: current.edgeKindAndIndex, // see [unpackEdgeKindAndIndex]
 	})
 }

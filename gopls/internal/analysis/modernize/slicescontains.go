@@ -179,6 +179,11 @@ func slicescontains(pass *analysis.Pass) {
 		}
 
 		// Last statement of body must return/break out of the loop.
+		//
+		// TODO(adonovan): opt:consider avoiding FindNode with new API of form:
+		//    curRange.Get(edge.RangeStmt_Body, -1).
+		//             Get(edge.BodyStmt_List, 0).
+		//             Get(edge.IfStmt_Body)
 		curBody, _ := curRange.FindNode(body)
 		curLastStmt, _ := curBody.LastChild()
 

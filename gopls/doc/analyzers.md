@@ -493,9 +493,11 @@ existing code by using more modern features of Go, such as:
     added in go1.19;
   - replacing uses of context.WithCancel in tests with t.Context, added in
     go1.24;
-  - replacing omitempty by omitzero on structs, added in go 1.24;
+  - replacing omitempty by omitzero on structs, added in go1.24;
   - replacing append(s[:i], s[i+1]...) by slices.Delete(s, i, i+1),
     added in go1.21
+  - replacing a 3-clause for i := 0; i < n; i++ {} loop by
+    for i := range n {}, added in go1.22;
 
 Default: on.
 

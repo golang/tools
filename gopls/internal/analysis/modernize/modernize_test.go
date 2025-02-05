@@ -20,6 +20,7 @@ func Test(t *testing.T) {
 		"mapsloop",
 		"minmax",
 		"omitzero",
+		"rangeint",
 		"slicescontains",
 		"slicesdelete",
 		"sortslice",

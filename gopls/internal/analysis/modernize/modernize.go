@@ -67,6 +67,7 @@ func run(pass *analysis.Pass) (any, error) {
 	mapsloop(pass)
 	minmax(pass)
 	omitzero(pass)
+	rangeint(pass)
 	slicescontains(pass)
 	slicesdelete(pass)
 	sortslice(pass)
