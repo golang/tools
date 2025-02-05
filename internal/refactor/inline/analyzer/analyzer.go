@@ -9,7 +9,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"slices"
 
 	_ "embed"
 
@@ -63,41 +62,46 @@ func run(pass *analysis.Pass) (any, error) {
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		switch decl := n.(type) {
 		case *ast.FuncDecl:
-			if hasFixDirective(decl.Doc, "inline") {
-				content, err := readFile(decl)
-				if err != nil {
-					pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: cannot read source file: %v", err)
-					return
-				}
-				callee, err := inline.AnalyzeCallee(discard, pass.Fset, pass.Pkg, pass.TypesInfo, decl, content)
-				if err != nil {
-					pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: %v", err)
-					return
-				}
-				fn := pass.TypesInfo.Defs[decl.Name].(*types.Func)
-				pass.ExportObjectFact(fn, &goFixInlineFuncFact{callee})
-				inlinableFuncs[fn] = callee
-			} else if hasFixDirective(decl.Doc, "forward") {
+			hasInline, hasForward := fixDirectives(decl.Doc)
+			if hasForward {
 				pass.Reportf(decl.Doc.Pos(), "use //go:fix inline for functions")
+				return
 			}
+			if !hasInline {
+				return
+			}
+			content, err := readFile(decl)
+			if err != nil {
+				pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: cannot read source file: %v", err)
+				return
+			}
+			callee, err := inline.AnalyzeCallee(discard, pass.Fset, pass.Pkg, pass.TypesInfo, decl, content)
+			if err != nil {
+				pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: %v", err)
+				return
+			}
+			fn := pass.TypesInfo.Defs[decl.Name].(*types.Func)
+			pass.ExportObjectFact(fn, &goFixInlineFuncFact{callee})
+			inlinableFuncs[fn] = callee
 
 		case *ast.GenDecl:
 			if decl.Tok != token.CONST {
 				return
 			}
-			if hasFixDirective(decl.Doc, "inline") {
+			declInline, declForward := fixDirectives(decl.Doc)
+			if declInline {
 				pass.Reportf(decl.Doc.Pos(), "use //go:fix forward for constants")
 				return
 			}
 			// Accept forward directives on the entire decl as well as individual specs.
-			declForward := hasFixDirective(decl.Doc, "forward")
 			for _, spec := range decl.Specs {
 				spec := spec.(*ast.ValueSpec) // guaranteed by Tok == CONST
-				if hasFixDirective(spec.Doc, "inline") {
+				specInline, specForward := fixDirectives(spec.Doc)
+				if specInline {
 					pass.Reportf(spec.Doc.Pos(), "use //go:fix forward for constants")
 					return
 				}
-				if declForward || hasFixDirective(spec.Doc, "forward") {
+				if declForward || specForward {
 					for i, name := range spec.Names {
 						if i >= len(spec.Values) {
 							// Possible following an iota.
@@ -317,12 +321,20 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// hasFixDirective reports whether cg has a directive
-// of the form "//go:fix " + name.
-func hasFixDirective(cg *ast.CommentGroup, name string) bool {
-	return slices.ContainsFunc(directives(cg), func(d *directive) bool {
-		return d.Tool == "go" && d.Name == "fix" && d.Args == name
-	})
+// fixDirectives reports the presence of "//go:fix inline" and "//go:fix forward"
+// directives in the comments.
+func fixDirectives(cg *ast.CommentGroup) (inline, forward bool) {
+	for _, d := range directives(cg) {
+		if d.Tool == "go" && d.Name == "fix" {
+			switch d.Args {
+			case "inline":
+				inline = true
+			case "forward":
+				forward = true
+			}
+		}
+	}
+	return
 }
 
 // A goFixInlineFuncFact is exported for each function marked "//go:fix inline".
