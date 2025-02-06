@@ -8,12 +8,12 @@
 // The inline command applies the inliner to the specified packages of
 // Go source code. Run with:
 //
-//	$ go run ./internal/refactor/inline/analyzer/main.go -fix packages...
+//	$ go run ./internal/analysis/gofix/main.go -fix packages...
 package main
 
 import (
 	"golang.org/x/tools/go/analysis/singlechecker"
-	inlineanalyzer "golang.org/x/tools/internal/refactor/inline/analyzer"
+	"golang.org/x/tools/gopls/internal/analysis/gofix"
 )
 
-func main() { singlechecker.Main(inlineanalyzer.Analyzer) }
+func main() { singlechecker.Main(gofix.Analyzer) }

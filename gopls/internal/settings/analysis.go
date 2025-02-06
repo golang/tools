@@ -49,6 +49,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/deprecated"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
+	"golang.org/x/tools/gopls/internal/analysis/gofix"
 	"golang.org/x/tools/gopls/internal/analysis/hostport"
 	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
 	"golang.org/x/tools/gopls/internal/analysis/modernize"
@@ -62,7 +63,6 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
 	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
-	inline "golang.org/x/tools/internal/refactor/inline/analyzer"
 )
 
 // Analyzer augments a [analysis.Analyzer] with additional LSP configuration.
@@ -211,7 +211,7 @@ func init() {
 			severity:    protocol.SeverityInformation,
 		},
 		// other simplifiers
-		{analyzer: inline.Analyzer, severity: protocol.SeverityHint},
+		{analyzer: gofix.Analyzer, severity: protocol.SeverityHint},
 		{analyzer: infertypeargs.Analyzer, severity: protocol.SeverityInformation},
 		{analyzer: unusedparams.Analyzer, severity: protocol.SeverityInformation},
 		{analyzer: unusedfunc.Analyzer, severity: protocol.SeverityInformation},

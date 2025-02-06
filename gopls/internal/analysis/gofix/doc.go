@@ -3,16 +3,16 @@
 // license that can be found in the LICENSE file.
 
 /*
-Package analyzer defines an Analyzer that inlines calls to functions
+Package gofix defines an Analyzer that inlines calls to functions
 marked with a "//go:fix inline" doc comment,
 and forwards uses of constants
 marked with a "//go:fix forward" doc comment.
 
-# Analyzer inline
+# Analyzer gofix
 
-inline: inline functions and forward constants
+gofix: apply fixes based on go:fix comment directives
 
-The inline analyzer inlines functions that are marked for inlining
+The gofix analyzer inlines functions that are marked for inlining
 and forwards constants that are marked for forwarding.
 
 # Functions
@@ -80,4 +80,4 @@ or before a group, applying to every constant in the group:
 
 The proposal https://go.dev/issue/32816 introduces the "//go:fix" directives.
 */
-package analyzer
+package gofix

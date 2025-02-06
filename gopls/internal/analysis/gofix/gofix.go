@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package analyzer
+package gofix
 
 import (
 	"fmt"
@@ -26,9 +26,9 @@ import (
 var doc string
 
 var Analyzer = &analysis.Analyzer{
-	Name:      "inline",
-	Doc:       analysisinternal.MustExtractDoc(doc, "inline"),
-	URL:       "https://pkg.go.dev/golang.org/x/tools/internal/refactor/inline/analyzer",
+	Name:      "gofix",
+	Doc:       analysisinternal.MustExtractDoc(doc, "gofix"),
+	URL:       "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix",
 	Run:       run,
 	FactTypes: []analysis.Fact{new(goFixInlineFuncFact), new(goFixForwardConstFact)},
 	Requires:  []*analysis.Analyzer{inspect.Analyzer},

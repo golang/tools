@@ -290,6 +290,17 @@ Default: on.
 
 Package documentation: [framepointer](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/framepointer)
 
+<a id='gofix'></a>
+## `gofix`: apply fixes based on go:fix comment directives
+
+
+The gofix analyzer inlines functions that are marked for inlining
+and forwards constants that are marked for forwarding.
+
+Default: on.
+
+Package documentation: [gofix](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix)
+
 <a id='hostport'></a>
 ## `hostport`: check format of addresses passed to net.Dial
 
@@ -375,17 +386,6 @@ inferred from function arguments, or from other type arguments:
 Default: on.
 
 Package documentation: [infertypeargs](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs)
-
-<a id='inline'></a>
-## `inline`: inline functions and forward constants
-
-
-The inline analyzer inlines functions that are marked for inlining
-and forwards constants that are marked for forwarding.
-
-Default: on.
-
-Package documentation: [inline](https://pkg.go.dev/golang.org/x/tools/internal/refactor/inline/analyzer)
 
 <a id='loopclosure'></a>
 ## `loopclosure`: check references to loop variables from within nested functions

@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package analyzer_test
+package gofix_test
 
 import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
-	inlineanalyzer "golang.org/x/tools/internal/refactor/inline/analyzer"
+	"golang.org/x/tools/gopls/internal/analysis/gofix"
 )
 
 func TestAnalyzer(t *testing.T) {
-	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), inlineanalyzer.Analyzer, "a", "b")
+	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), gofix.Analyzer, "a", "b")
 }

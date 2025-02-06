@@ -474,6 +474,11 @@
 							"Default": "true"
 						},
 						{
+							"Name": "\"gofix\"",
+							"Doc": "apply fixes based on go:fix comment directives\n\nThe gofix analyzer inlines functions that are marked for inlining\nand forwards constants that are marked for forwarding.",
+							"Default": "true"
+						},
+						{
 							"Name": "\"hostport\"",
 							"Doc": "check format of addresses passed to net.Dial\n\nThis analyzer flags code that produce network address strings using\nfmt.Sprintf, as in this example:\n\n    addr := fmt.Sprintf(\"%s:%d\", host, 12345) // \"will not work with IPv6\"\n    ...\n    conn, err := net.Dial(\"tcp\", addr)       // \"when passed to dial here\"\n\nThe analyzer suggests a fix to use the correct approach, a call to\nnet.JoinHostPort:\n\n    addr := net.JoinHostPort(host, \"12345\")\n    ...\n    conn, err := net.Dial(\"tcp\", addr)\n\nA similar diagnostic and fix are produced for a format string of \"%s:%s\".\n",
 							"Default": "true"
@@ -491,11 +496,6 @@
 						{
 							"Name": "\"infertypeargs\"",
 							"Doc": "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
-							"Default": "true"
-						},
-						{
-							"Name": "\"inline\"",
-							"Doc": "inline functions and forward constants\n\nThe inline analyzer inlines functions that are marked for inlining\nand forwards constants that are marked for forwarding.",
 							"Default": "true"
 						},
 						{
@@ -1146,6 +1146,12 @@
 			"Default": true
 		},
 		{
+			"Name": "gofix",
+			"Doc": "apply fixes based on go:fix comment directives\n\nThe gofix analyzer inlines functions that are marked for inlining\nand forwards constants that are marked for forwarding.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix",
+			"Default": true
+		},
+		{
 			"Name": "hostport",
 			"Doc": "check format of addresses passed to net.Dial\n\nThis analyzer flags code that produce network address strings using\nfmt.Sprintf, as in this example:\n\n    addr := fmt.Sprintf(\"%s:%d\", host, 12345) // \"will not work with IPv6\"\n    ...\n    conn, err := net.Dial(\"tcp\", addr)       // \"when passed to dial here\"\n\nThe analyzer suggests a fix to use the correct approach, a call to\nnet.JoinHostPort:\n\n    addr := net.JoinHostPort(host, \"12345\")\n    ...\n    conn, err := net.Dial(\"tcp\", addr)\n\nA similar diagnostic and fix are produced for a format string of \"%s:%s\".\n",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/hostport",
@@ -1167,12 +1173,6 @@
 			"Name": "infertypeargs",
 			"Doc": "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/infertypeargs",
-			"Default": true
-		},
-		{
-			"Name": "inline",
-			"Doc": "inline functions and forward constants\n\nThe inline analyzer inlines functions that are marked for inlining\nand forwards constants that are marked for forwarding.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/internal/refactor/inline/analyzer",
 			"Default": true
 		},
 		{
