@@ -185,6 +185,42 @@ func _() {
 	foo
 }`,
 		},
+		{
+			descr: descr("dot import unshadowed"),
+			src: `package a
+
+import . "fmt"
+
+func _() {
+	«. fmt»
+}`,
+			want: `package a
+
+import . "fmt"
+
+func _() {
+	.
+}`,
+		},
+		{
+			descr: descr("dot import shadowed"),
+			src: `package a
+
+import . "fmt"
+
+func _(Print fmt.Stringer) {
+	«fmt fmt»
+}`,
+			want: `package a
+
+import "fmt"
+
+import . "fmt"
+
+func _(Print fmt.Stringer) {
+	fmt
+}`,
+		},
 	} {
 		t.Run(test.descr, func(t *testing.T) {
 			// splice marker
@@ -218,7 +254,8 @@ func _() {
 			conf.Check(f.Name.Name, fset, []*ast.File{f}, info)
 
 			// add import
-			name, edits := analysisinternal.AddImport(info, f, pos, path, name)
+			// The "Print" argument is only relevant for dot-import tests.
+			name, prefix, edits := analysisinternal.AddImport(info, f, name, path, "Print", pos)
 
 			var edit analysis.TextEdit
 			switch len(edits) {
@@ -227,6 +264,15 @@ func _() {
 				edit = edits[0]
 			default:
 				t.Fatalf("expected at most one edit, got %d", len(edits))
+			}
+
+			// prefix is a simple function of name.
+			wantPrefix := name + "."
+			if name == "." {
+				wantPrefix = ""
+			}
+			if prefix != wantPrefix {
+				t.Errorf("got prefix %q, want %q", prefix, wantPrefix)
 			}
 
 			// apply patch

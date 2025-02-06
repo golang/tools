@@ -158,9 +158,9 @@ func slicescontains(pass *analysis.Pass) {
 		}
 
 		// Prepare slices.Contains{,Func} call.
-		slicesName, importEdits := analysisinternal.AddImport(info, file, rng.Pos(), "slices", "slices")
-		contains := fmt.Sprintf("%s.%s(%s, %s)",
-			slicesName,
+		_, prefix, importEdits := analysisinternal.AddImport(info, file, "slices", "slices", funcName, rng.Pos())
+		contains := fmt.Sprintf("%s%s(%s, %s)",
+			prefix,
 			funcName,
 			analysisinternal.Format(pass.Fset, rng.X),
 			analysisinternal.Format(pass.Fset, arg2))

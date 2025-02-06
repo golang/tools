@@ -211,10 +211,17 @@ func CheckReadable(pass *analysis.Pass, filename string) error {
 // that import is in scope at pos. If so, it returns the name under
 // which it was imported and a zero edit. Otherwise, it adds a new
 // import of pkgpath, using a name derived from the preferred name,
-// and returns the chosen name along with the edit for the new import.
+// and returns the chosen name, a prefix to be concatenated with member
+// to form a qualified name, and the edit for the new import.
+//
+// In the special case that pkgpath is dot-imported then member, the
+// identifer for which the import is being added, is consulted. If
+// member is not shadowed at pos, AddImport returns (".", "", nil).
+// (AddImport accepts the caller's implicit claim that the imported
+// package declares member.)
 //
 // It does not mutate its arguments.
-func AddImport(info *types.Info, file *ast.File, pos token.Pos, pkgpath, preferredName string) (name string, newImport []analysis.TextEdit) {
+func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member string, pos token.Pos) (name, prefix string, newImport []analysis.TextEdit) {
 	// Find innermost enclosing lexical block.
 	scope := info.Scopes[file].Innermost(pos)
 	if scope == nil {
@@ -226,8 +233,14 @@ func AddImport(info *types.Info, file *ast.File, pos token.Pos, pkgpath, preferr
 	for _, spec := range file.Imports {
 		pkgname := info.PkgNameOf(spec)
 		if pkgname != nil && pkgname.Imported().Path() == pkgpath {
-			if _, obj := scope.LookupParent(pkgname.Name(), pos); obj == pkgname {
-				return pkgname.Name(), nil
+			name = pkgname.Name()
+			if name == "." {
+				// The scope of ident must be the file scope.
+				if s, _ := scope.LookupParent(member, pos); s == info.Scopes[file] {
+					return name, "", nil
+				}
+			} else if _, obj := scope.LookupParent(name, pos); obj == pkgname {
+				return name, name + ".", nil
 			}
 		}
 	}
@@ -265,7 +278,7 @@ func AddImport(info *types.Info, file *ast.File, pos token.Pos, pkgpath, preferr
 			before = decl0.Doc
 		}
 	}
-	return newName, []analysis.TextEdit{{
+	return newName, newName + ".", []analysis.TextEdit{{
 		Pos:     before.Pos(),
 		End:     before.Pos(),
 		NewText: []byte(newText),

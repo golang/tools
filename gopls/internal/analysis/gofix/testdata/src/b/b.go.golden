@@ -2,8 +2,6 @@ package b
 
 import a0 "a"
 
-import "c"
-
 import (
 	"a"
 	. "c"
@@ -29,7 +27,7 @@ func g() {
 	// a second import of "a" will be added with a new package identifer.
 	x = a0.Uno // want `Constant in2 should be inlined`
 
-	x = c.C // want `Constant in3 should be inlined`
+	x = C // want `Constant in3 should be inlined`
 
 	_ = a
 	_ = x

@@ -92,7 +92,7 @@ func appendclipped(pass *analysis.Pass) {
 			}
 
 			// append(zerocap, s...) -> slices.Clone(s)
-			slicesName, importEdits := analysisinternal.AddImport(info, file, call.Pos(), "slices", "slices")
+			_, prefix, importEdits := analysisinternal.AddImport(info, file, "slices", "slices", "Clone", call.Pos())
 			pass.Report(analysis.Diagnostic{
 				Pos:      call.Pos(),
 				End:      call.End(),
@@ -103,7 +103,7 @@ func appendclipped(pass *analysis.Pass) {
 					TextEdits: append(importEdits, []analysis.TextEdit{{
 						Pos:     call.Pos(),
 						End:     call.End(),
-						NewText: fmt.Appendf(nil, "%s.Clone(%s)", slicesName, analysisinternal.Format(pass.Fset, s)),
+						NewText: fmt.Appendf(nil, "%sClone(%s)", prefix, analysisinternal.Format(pass.Fset, s)),
 					}}...),
 				}},
 			})
@@ -116,7 +116,7 @@ func appendclipped(pass *analysis.Pass) {
 		// - slices.Clone(s)   -> s
 		// - s[:len(s):len(s)] -> s
 		// - slices.Clip(s)    -> s
-		slicesName, importEdits := analysisinternal.AddImport(info, file, call.Pos(), "slices", "slices")
+		_, prefix, importEdits := analysisinternal.AddImport(info, file, "slices", "slices", "Concat", call.Pos())
 		pass.Report(analysis.Diagnostic{
 			Pos:      call.Pos(),
 			End:      call.End(),
@@ -127,7 +127,7 @@ func appendclipped(pass *analysis.Pass) {
 				TextEdits: append(importEdits, []analysis.TextEdit{{
 					Pos:     call.Pos(),
 					End:     call.End(),
-					NewText: fmt.Appendf(nil, "%s.Concat(%s)", slicesName, formatExprs(pass.Fset, sliceArgs)),
+					NewText: fmt.Appendf(nil, "%sConcat(%s)", prefix, formatExprs(pass.Fset, sliceArgs)),
 				}}...),
 			}},
 		})

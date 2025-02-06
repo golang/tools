@@ -24,7 +24,7 @@ func slicesdelete(pass *analysis.Pass) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	info := pass.TypesInfo
 	report := func(file *ast.File, call *ast.CallExpr, slice1, slice2 *ast.SliceExpr) {
-		slicesName, edits := analysisinternal.AddImport(info, file, call.Pos(), "slices", "slices")
+		_, prefix, edits := analysisinternal.AddImport(info, file, "slices", "slices", "Delete", call.Pos())
 		pass.Report(analysis.Diagnostic{
 			Pos:      call.Pos(),
 			End:      call.End(),
@@ -37,7 +37,7 @@ func slicesdelete(pass *analysis.Pass) {
 					{
 						Pos:     call.Fun.Pos(),
 						End:     call.Fun.End(),
-						NewText: []byte(slicesName + ".Delete"),
+						NewText: []byte(prefix + "Delete"),
 					},
 					// Delete ellipsis.
 					{

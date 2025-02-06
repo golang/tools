@@ -1,0 +1,19 @@
+//go:build go1.23
+
+package mapsloop
+
+import . "maps"
+
+var _ = Clone[M] // force "maps" import so that each diagnostic doesn't add one
+
+func useCopyDot(dst, src map[int]string) {
+	// Replace loop by maps.Copy.
+	Copy(dst, src)
+}
+
+func useCloneDot(src map[int]string) {
+	// Replace make(...) by maps.Clone.
+	dst := Clone(src)
+	println(dst)
+}
+

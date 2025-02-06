@@ -262,15 +262,13 @@ func run(pass *analysis.Pass) (any, error) {
 						continue
 					}
 				}
-				importPrefix := ""
-				var edits []analysis.TextEdit
+				var (
+					importPrefix string
+					edits        []analysis.TextEdit
+				)
 				if fcon.RHSPkgPath != pass.Pkg.Path() {
-					// TODO(jba): fix AddImport so that it returns "." if an existing dot import will work.
-					// We will need to tell AddImport the name of the identifier we want to qualify (fcon.RHSName here).
-					importID, eds := analysisinternal.AddImport(
-						pass.TypesInfo, curFile, n.Pos(), fcon.RHSPkgPath, fcon.RHSPkgName)
-					importPrefix = importID + "."
-					edits = eds
+					_, importPrefix, edits = analysisinternal.AddImport(
+						pass.TypesInfo, curFile, fcon.RHSPkgName, fcon.RHSPkgPath, fcon.RHSName, n.Pos())
 				}
 				var (
 					pos  = n.Pos()
