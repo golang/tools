@@ -146,10 +146,12 @@ Default: `["ignore"]`.
 <a id='workspaceFiles'></a>
 ### `workspaceFiles []string`
 
-workspaceFiles configures the set of globs that match files defining the logical build of the current workspace.
-Any on-disk changes to any files matching a glob specified here will trigger a reload of the workspace.
+workspaceFiles configures the set of globs that match files defining the
+logical build of the current workspace. Any on-disk changes to any files
+matching a glob specified here will trigger a reload of the workspace.
 
-This setting need only be customized in environments with a custom GOPACKAGESDRIVER.
+This setting need only be customized in environments with a custom
+GOPACKAGESDRIVER.
 
 Default: `[]`.
 

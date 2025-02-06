@@ -145,10 +145,12 @@ type BuildOptions struct {
 	// This setting is only supported when gopls is built with Go 1.16 or later.
 	StandaloneTags []string
 
-	// WorkspaceFiles configures the set of globs that match files defining the logical build of the current workspace.
-	// Any on-disk changes to any files matching a glob specified here will trigger a reload of the workspace.
+	// WorkspaceFiles configures the set of globs that match files defining the
+	// logical build of the current workspace. Any on-disk changes to any files
+	// matching a glob specified here will trigger a reload of the workspace.
 	//
-	// This setting need only be customized in environments with a custom GOPACKAGESDRIVER.
+	// This setting need only be customized in environments with a custom
+	// GOPACKAGESDRIVER.
 	WorkspaceFiles []string
 }
 
