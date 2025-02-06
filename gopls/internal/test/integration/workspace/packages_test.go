@@ -119,12 +119,14 @@ package foo
 import "testing"
 func Foo()
 func TestFoo2(t *testing.T)
+func foo()
 
 -- foo_test.go --
 package foo
 import "testing"
 func TestFoo(t *testing.T)
 func Issue70927(*error)
+func Test_foo(t *testing.T)
 
 -- foo2_test.go --
 package foo_test
@@ -164,6 +166,7 @@ func Test(*testing.T)
 							URI: env.Editor.DocumentURI("foo_test.go"),
 							Tests: []command.TestCase{
 								{Name: "TestFoo"},
+								{Name: "Test_foo"},
 							},
 						},
 					},
@@ -188,6 +191,7 @@ func Test(*testing.T)
 				},
 			}, []string{
 				"func TestFoo(t *testing.T)",
+				"func Test_foo(t *testing.T)",
 				"func TestBar(t *testing.T) {}",
 			})
 		})
@@ -242,6 +246,7 @@ func Test(*testing.T)
 							URI: env.Editor.DocumentURI("foo_test.go"),
 							Tests: []command.TestCase{
 								{Name: "TestFoo"},
+								{Name: "Test_foo"},
 							},
 						},
 					},
@@ -282,6 +287,7 @@ func Test(*testing.T)
 				},
 			}, []string{
 				"func TestFoo(t *testing.T)",
+				"func Test_foo(t *testing.T)",
 				"func TestBaz(*testing.T)",
 				"func BenchmarkBaz(*testing.B)",
 				"func FuzzBaz(*testing.F)",
