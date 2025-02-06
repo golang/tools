@@ -16,7 +16,10 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil/cursor"
+	"golang.org/x/tools/internal/astutil/edge"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/typesinternal"
@@ -49,6 +52,12 @@ func run(pass *analysis.Pass) (any, error) {
 			fileContent[filename] = content
 		}
 		return content, nil
+	}
+
+	// Return the unique ast.File for a cursor.
+	currentFile := func(c cursor.Cursor) *ast.File {
+		cf, _ := moreiters.First(c.Ancestors((*ast.File)(nil)))
+		return cf.Node().(*ast.File)
 	}
 
 	// Pass 1: find functions and constants annotated with an appropriate "//go:fix"
@@ -150,19 +159,8 @@ func run(pass *analysis.Pass) (any, error) {
 	// and forward each reference to a forwardable constant.
 	//
 	// TODO(adonovan):  handle multiple diffs that each add the same import.
-	nodeFilter = []ast.Node{
-		(*ast.File)(nil),
-		(*ast.CallExpr)(nil),
-		(*ast.SelectorExpr)(nil),
-		(*ast.Ident)(nil),
-	}
-	var currentFile *ast.File
-	var currentSel *ast.SelectorExpr
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		if file, ok := n.(*ast.File); ok {
-			currentFile = file
-			return
-		}
+	for cur := range cursor.Root(inspect).Preorder((*ast.CallExpr)(nil), (*ast.Ident)(nil)) {
+		n := cur.Node()
 		switch n := n.(type) {
 		case *ast.CallExpr:
 			call := n
@@ -177,27 +175,28 @@ func run(pass *analysis.Pass) (any, error) {
 					}
 				}
 				if callee == nil {
-					return // nope
+					continue // nope
 				}
 
 				// Inline the call.
 				content, err := readFile(call)
 				if err != nil {
 					pass.Reportf(call.Lparen, "invalid inlining candidate: cannot read source file: %v", err)
-					return
+					continue
 				}
+				curFile := currentFile(cur)
 				caller := &inline.Caller{
 					Fset:    pass.Fset,
 					Types:   pass.Pkg,
 					Info:    pass.TypesInfo,
-					File:    currentFile,
+					File:    curFile,
 					Call:    call,
 					Content: content,
 				}
 				res, err := inline.Inline(caller, callee, &inline.Options{Logf: discard})
 				if err != nil {
 					pass.Reportf(call.Lparen, "%v", err)
-					return
+					continue
 				}
 				if res.Literalized {
 					// Users are not fond of inlinings that literalize
@@ -207,7 +206,7 @@ func run(pass *analysis.Pass) (any, error) {
 					// and often literalizes when it cannot prove that
 					// reducing the call is safe; the user of this tool
 					// has no indication of what the problem is.)
-					return
+					continue
 				}
 				got := res.Content
 
@@ -215,8 +214,8 @@ func run(pass *analysis.Pass) (any, error) {
 				var textEdits []analysis.TextEdit
 				for _, edit := range diff.Bytes(content, got) {
 					textEdits = append(textEdits, analysis.TextEdit{
-						Pos:     currentFile.FileStart + token.Pos(edit.Start),
-						End:     currentFile.FileStart + token.Pos(edit.End),
+						Pos:     curFile.FileStart + token.Pos(edit.Start),
+						End:     curFile.FileStart + token.Pos(edit.End),
 						NewText: []byte(edit.New),
 					})
 				}
@@ -231,9 +230,6 @@ func run(pass *analysis.Pass) (any, error) {
 				})
 			}
 
-		case *ast.SelectorExpr:
-			currentSel = n
-
 		case *ast.Ident:
 			// If the identifier is a use of a forwardable constant, suggest forwarding it.
 			if con, ok := pass.TypesInfo.Uses[n].(*types.Const); ok {
@@ -246,15 +242,15 @@ func run(pass *analysis.Pass) (any, error) {
 					}
 				}
 				if fcon == nil {
-					return // nope
+					continue // nope
 				}
 
 				// If n is qualified by a package identifier, we'll need the full selector expression.
 				var sel *ast.SelectorExpr
-				if currentSel != nil && n == currentSel.Sel {
-					sel = currentSel
-					currentSel = nil
+				if e, _ := cur.Edge(); e == edge.SelectorExpr_Sel {
+					sel = cur.Parent().Node().(*ast.SelectorExpr)
 				}
+				curFile := currentFile(cur)
 
 				// We have an identifier A here (n), possibly qualified by a package identifier (sel.X),
 				// and a forwardable "const A = B" elsewhere (fcon).
@@ -267,8 +263,8 @@ func run(pass *analysis.Pass) (any, error) {
 				// are in the current package.
 				if pass.Pkg.Path() == fcon.RHSPkgPath {
 					// fcon.rhsObj is the object referred to by B in the definition of A.
-					scope := pass.TypesInfo.Scopes[currentFile].Innermost(n.Pos()) // n's scope
-					_, obj := scope.LookupParent(fcon.RHSName, n.Pos())            // what "B" means in n's scope
+					scope := pass.TypesInfo.Scopes[curFile].Innermost(n.Pos()) // n's scope
+					_, obj := scope.LookupParent(fcon.RHSName, n.Pos())        // what "B" means in n's scope
 					if obj == nil {
 						// Should be impossible: if code at n can refer to the LHS,
 						// it can refer to the RHS.
@@ -276,7 +272,7 @@ func run(pass *analysis.Pass) (any, error) {
 					}
 					if obj != fcon.rhsObj {
 						// "B" means something different here than at the forwardable const's scope.
-						return
+						continue
 					}
 				}
 				importPrefix := ""
@@ -285,7 +281,7 @@ func run(pass *analysis.Pass) (any, error) {
 					// TODO(jba): fix AddImport so that it returns "." if an existing dot import will work.
 					// We will need to tell AddImport the name of the identifier we want to qualify (fcon.RHSName here).
 					importID, eds := analysisinternal.AddImport(
-						pass.TypesInfo, currentFile, n.Pos(), fcon.RHSPkgPath, fcon.RHSPkgName)
+						pass.TypesInfo, curFile, n.Pos(), fcon.RHSPkgPath, fcon.RHSPkgName)
 					importPrefix = importID + "."
 					edits = eds
 				}
@@ -316,7 +312,7 @@ func run(pass *analysis.Pass) (any, error) {
 				})
 			}
 		}
-	})
+	}
 
 	return nil, nil
 }
