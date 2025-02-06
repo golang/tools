@@ -1,5 +1,15 @@
 github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c h1:pxW6RcqyfI9/kWtOwnv/G+AzdKuy2ZrqINhenH4HyNs=
 github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
+github.com/fatih/camelcase v1.0.0 h1:hxNvNX/xYBp0ovncs8WyWZrOrpBNub/JfaMvbURyft8=
+github.com/fatih/camelcase v1.0.0/go.mod h1:yN2Sb0lFhZJUdVvtELVWefmrXpuZESvPmqwoZc+/fpc=
+github.com/fatih/gomodifytags v1.16.0 h1:B65npXIXSk44F6c1hZGE1NazSnt+eXvtdEOG2Uy+QdU=
+github.com/fatih/gomodifytags v1.16.0/go.mod h1:TbUyEjH1Zo0GkJd2Q52oVYqYcJ0eGNqG8bsiOb75P9c=
+github.com/fatih/gomodifytags v1.17.1-0.20250325171527-8c663b1c0765 h1:T+oCz1SRpqkn4meT0PiAX5vM8HcESrWvsAzyvy0Vdh0=
+github.com/fatih/gomodifytags v1.17.1-0.20250325171527-8c663b1c0765/go.mod h1:YVLagR57bBxMai8IAEc7V4E/MWUYi0oUutLrZcTcnI8=
+github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c h1:dDSgAjoOMp8da3egfz0t2S+t8RGOpEmEXZubcGuc0Bg=
+github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c/go.mod h1:YVLagR57bBxMai8IAEc7V4E/MWUYi0oUutLrZcTcnI8=
+github.com/fatih/structtag v1.2.0 h1:/OdNE99OxoI/PqaW/SuSK9uxxT3f/tcSZgon/ssNSx4=
+github.com/fatih/structtag v1.2.0/go.mod h1:mBJUNpUnHmRKrKlQQlmCrh5PuhftFbNv8Ys4/aAZl94=
 github.com/go-quicktest/qt v1.101.0 h1:O1K29Txy5P2OK0dGo59b7b0LR6wKfIhttaAhHUyn7eI=
 github.com/go-quicktest/qt v1.101.0/go.mod h1:14Bz/f7NwaXPtdYEgzsx46kqSxVwTbzVZsDC26tQJow=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=

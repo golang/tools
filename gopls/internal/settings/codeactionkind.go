@@ -97,6 +97,8 @@ const (
 	RefactorRewriteMoveParamRight     protocol.CodeActionKind = "refactor.rewrite.moveParamRight"
 	RefactorRewriteSplitLines         protocol.CodeActionKind = "refactor.rewrite.splitLines"
 	RefactorRewriteEliminateDotImport protocol.CodeActionKind = "refactor.rewrite.eliminateDotImport"
+	RefactorRewriteAddTags            protocol.CodeActionKind = "refactor.rewrite.addTags"
+	RefactorRewriteRemoveTags         protocol.CodeActionKind = "refactor.rewrite.removeTags"
 
 	// refactor.inline
 	RefactorInlineCall protocol.CodeActionKind = "refactor.inline.call"

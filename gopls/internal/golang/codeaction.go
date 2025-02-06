@@ -27,6 +27,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -262,6 +263,8 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorRewriteMoveParamRight, fn: refactorRewriteMoveParamRight, needPkg: true},
 	{kind: settings.RefactorRewriteSplitLines, fn: refactorRewriteSplitLines, needPkg: true},
 	{kind: settings.RefactorRewriteEliminateDotImport, fn: refactorRewriteEliminateDotImport, needPkg: true},
+	{kind: settings.RefactorRewriteAddTags, fn: refactorRewriteAddStructTags, needPkg: true},
+	{kind: settings.RefactorRewriteRemoveTags, fn: refactorRewriteRemoveStructTags, needPkg: true},
 	{kind: settings.GoplsDocFeatures, fn: goplsDocFeatures}, // offer this one last (#72742)
 
 	// Note: don't forget to update the allow-list in Server.CodeAction
@@ -807,6 +810,82 @@ func refactorRewriteFillSwitch(ctx context.Context, req *codeActionsRequest) err
 		req.addEditAction(diag.Message, nil, changes...)
 	}
 
+	return nil
+}
+
+// selectionContainsStructField returns true if the given struct contains a
+// field between start and end pos. If needsTag is true, it only returns true if
+// the struct field found contains a struct tag.
+func selectionContainsStructField(node *ast.StructType, start, end token.Pos, needsTag bool) bool {
+	for _, field := range node.Fields.List {
+		if start <= field.End() && end >= field.Pos() {
+			if !needsTag || field.Tag != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// selectionContainsStruct returns true if there exists a struct containing
+// fields within start and end positions. If removeTags is true, it means the
+// current command is for remove tags rather than add tags, so we only return
+// true if the struct field found contains a struct tag to remove.
+func selectionContainsStruct(cursor cursor.Cursor, start, end token.Pos, removeTags bool) bool {
+	cur, ok := cursor.FindByPos(start, end)
+	if !ok {
+		return false
+	}
+	if _, ok := cur.Node().(*ast.StructType); ok {
+		return true
+	}
+
+	// Handles case where selection is within struct.
+	for c := range cur.Enclosing((*ast.StructType)(nil)) {
+		if selectionContainsStructField(c.Node().(*ast.StructType), start, end, removeTags) {
+			return true
+		}
+	}
+
+	// Handles case where selection contains struct but may contain other nodes, including other structs.
+	for c := range cur.Preorder((*ast.StructType)(nil)) {
+		node := c.Node().(*ast.StructType)
+		// Check that at least one field is located within the selection. If we are removing tags, that field
+		// must also have a struct tag, otherwise we do not provide the code action.
+		if selectionContainsStructField(node, start, end, removeTags) {
+			return true
+		}
+	}
+	return false
+}
+
+// refactorRewriteAddStructTags produces "Add struct tags" code actions.
+// See [server.commandHandler.ModifyTags] for command implementation.
+func refactorRewriteAddStructTags(ctx context.Context, req *codeActionsRequest) error {
+	if selectionContainsStruct(req.pgf.Cursor, req.start, req.end, false) {
+		// TODO(mkalil): Prompt user for modification args once we have dialogue capabilities.
+		cmdAdd := command.NewModifyTagsCommand("Add struct tags", command.ModifyTagsArgs{
+			URI:   req.loc.URI,
+			Range: req.loc.Range,
+			Add:   "json",
+		})
+		req.addCommandAction(cmdAdd, false)
+	}
+	return nil
+}
+
+// refactorRewriteRemoveStructTags produces "Remove struct tags" code actions.
+// See [server.commandHandler.ModifyTags] for command implementation.
+func refactorRewriteRemoveStructTags(ctx context.Context, req *codeActionsRequest) error {
+	// TODO(mkalil): Prompt user for modification args once we have dialogue capabilities.
+	if selectionContainsStruct(req.pgf.Cursor, req.start, req.end, true) {
+		cmdRemove := command.NewModifyTagsCommand("Remove struct tags", command.ModifyTagsArgs{
+			URI:   req.loc.URI,
+			Range: req.loc.Range,
+			Clear: true,
+		})
+		req.addCommandAction(cmdRemove, false)
+	}
 	return nil
 }
 

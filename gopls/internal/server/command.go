@@ -10,6 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/format"
+	"go/token"
 	"io"
 	"log"
 	"os"
@@ -22,6 +25,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/fatih/gomodifytags/modifytags"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/telemetry/counter"
 	"golang.org/x/tools/go/ast/astutil"
@@ -38,6 +42,8 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
+	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -1763,4 +1769,137 @@ func (c *commandHandler) PackageSymbols(ctx context.Context, args command.Packag
 	})
 
 	return result, err
+}
+
+// optionsStringToMap transforms comma-separated options of the form
+// "foo=bar,baz=quux" to a go map. Returns nil if any options are malformed.
+func optionsStringToMap(options string) (map[string][]string, error) {
+	optionsMap := make(map[string][]string)
+	for item := range strings.SplitSeq(options, ",") {
+		key, option, found := strings.Cut(item, "=")
+		if !found {
+			return nil, fmt.Errorf("invalid option %q", item)
+		}
+		optionsMap[key] = append(optionsMap[key], option)
+	}
+	return optionsMap, nil
+}
+
+func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTagsArgs) error {
+	return c.run(ctx, commandConfig{
+		progress: "Modifying tags",
+		forURI:   args.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		m := &modifytags.Modification{
+			Clear:        args.Clear,
+			ClearOptions: args.ClearOptions,
+			ValueFormat:  args.ValueFormat,
+			Overwrite:    args.Overwrite,
+		}
+
+		transform, err := parseTransform(args.Transform)
+		if err != nil {
+			return err
+		}
+		m.Transform = transform
+
+		if args.Add != "" {
+			m.Add = strings.Split(args.Add, ",")
+		}
+		if args.AddOptions != "" {
+			if options, err := optionsStringToMap(args.AddOptions); err != nil {
+				return err
+			} else {
+				m.AddOptions = options
+			}
+		}
+		if args.Remove != "" {
+			m.Remove = strings.Split(args.Remove, ",")
+		}
+		if args.RemoveOptions != "" {
+			if options, err := optionsStringToMap(args.RemoveOptions); err != nil {
+				return err
+			} else {
+				m.RemoveOptions = options
+			}
+		}
+		fh, err := deps.snapshot.ReadFile(ctx, args.URI)
+		if err != nil {
+			return err
+		}
+		pgf, err := deps.snapshot.ParseGo(ctx, fh, parsego.Full)
+		if err != nil {
+			return fmt.Errorf("error fetching package file: %v", err)
+		}
+		start, end, err := pgf.RangePos(args.Range)
+		if err != nil {
+			return fmt.Errorf("error getting position information: %v", err)
+		}
+		// If the cursor is at a point and not a selection, we should use the entire enclosing struct.
+		if start == end {
+			cur, ok := pgf.Cursor.FindByPos(start, end)
+			if !ok {
+				return fmt.Errorf("error finding start and end positions: %v", err)
+			}
+			start, end, err = findEnclosingStruct(cur)
+			if err != nil {
+				return fmt.Errorf("error finding enclosing struct: %v", err)
+			}
+		}
+
+		// Create a copy of the file node in order to avoid race conditions when we modify the node in Apply.
+		cloned := internalastutil.CloneNode(pgf.File)
+		fset := tokeninternal.FileSetFor(pgf.Tok)
+
+		if err = m.Apply(fset, cloned, start, end); err != nil {
+			return fmt.Errorf("could not modify tags: %v", err)
+		}
+
+		// Construct a list of DocumentChanges based on the diff between the formatted node and the
+		// original file content.
+		var after bytes.Buffer
+		if err := format.Node(&after, fset, cloned); err != nil {
+			return err
+		}
+		edits := diff.Bytes(pgf.Src, after.Bytes())
+		if len(edits) == 0 {
+			return nil
+		}
+		textedits, err := protocol.EditsFromDiffEdits(pgf.Mapper, edits)
+		if err != nil {
+			return fmt.Errorf("error computing edits for %s: %v", args.URI, err)
+		}
+		return applyChanges(ctx, c.s.client, []protocol.DocumentChange{
+			protocol.DocumentChangeEdit(fh, textedits),
+		})
+	})
+}
+
+// Finds the start and end positions of the enclosing struct or returns an error if none is found.
+func findEnclosingStruct(c cursor.Cursor) (token.Pos, token.Pos, error) {
+	for cur := range c.Enclosing((*ast.StructType)(nil)) {
+		return cur.Node().Pos(), cur.Node().End(), nil
+	}
+	return token.NoPos, token.NoPos, fmt.Errorf("no struct enclosing the given positions")
+}
+
+func parseTransform(input string) (modifytags.Transform, error) {
+	switch input {
+	case "camelcase":
+		return modifytags.CamelCase, nil
+	case "lispcase":
+		return modifytags.LispCase, nil
+	case "pascalcase":
+		return modifytags.PascalCase, nil
+	case "titlecase":
+		return modifytags.TitleCase, nil
+	case "keep":
+		return modifytags.Keep, nil
+	case "":
+		fallthrough
+	case "snakecase":
+		return modifytags.SnakeCase, nil
+	default:
+		return modifytags.SnakeCase, fmt.Errorf("invalid Transform value")
+	}
 }

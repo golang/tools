@@ -25,9 +25,9 @@ END
 # are known to have the same license.
 mods=$(go list -deps -f '{{with .Module}}{{.Path}}{{end}}' golang.org/x/tools/gopls | sort -u | grep -v golang.org)
 for mod in $mods; do
-  # Find the license file, either LICENSE or COPYING, and add it to the result.
+  # Find the license file, either LICENSE, COPYING, or LICENSE.md and add it to the result.
   dir=$(go list -m -f {{.Dir}} $mod)
-  license=$(ls -1 $dir | grep -E -i '^(LICENSE|COPYING)$')
+  license=$(ls -1 $dir | grep -E -i '^(LICENSE|LICENSE.md|COPYING)?$')
   echo "-- $mod $license --" >> $tempfile
   echo >> $tempfile
   sed 's/^-- / &/' $dir/$license >> $tempfile

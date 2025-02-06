@@ -1,0 +1,31 @@
+This test checks the behavior of the 'Add struct tags' code action.
+
+-- flags --
+-ignore_extra_diags
+
+-- addtags.go --
+package addtags
+
+type A struct {
+	x int //@codeaction("x", "refactor.rewrite.addTags", edit=singleline)
+	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.addTags", edit=twolines)
+	z int //@codeaction(re`()n`, "refactor.rewrite.addTags", edit=entirestruct)
+}
+-- @entirestruct/addtags.go --
+@@ -4,3 +4,3 @@
+-	x int //@codeaction("x", "refactor.rewrite.addTags", edit=singleline)
+-	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.addTags", edit=twolines)
+-	z int //@codeaction(re`()n`, "refactor.rewrite.addTags", edit=entirestruct)
++	x int `json:"x"` //@codeaction("x", "refactor.rewrite.addTags", edit=singleline)
++	y int `json:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.addTags", edit=twolines)
++	z int `json:"z"` //@codeaction(re`()n`, "refactor.rewrite.addTags", edit=entirestruct)
+-- @singleline/addtags.go --
+@@ -4 +4 @@
+-	x int //@codeaction("x", "refactor.rewrite.addTags", edit=singleline)
++	x int `json:"x"` //@codeaction("x", "refactor.rewrite.addTags", edit=singleline)
+-- @twolines/addtags.go --
+@@ -5,2 +5,2 @@
+-	y int //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.addTags", edit=twolines)
+-	z int //@codeaction(re`()n`, "refactor.rewrite.addTags", edit=entirestruct)
++	y int `json:"y"` //@codeaction(re`(?s)y.*.z int`, "refactor.rewrite.addTags", edit=twolines)
++	z int `json:"z"` //@codeaction(re`()n`, "refactor.rewrite.addTags", edit=entirestruct)
