@@ -276,6 +276,19 @@ func main() {
 		allCounters       = []string{acceptanceCounter, declinedCounter, attempt1Counter}
 	)
 
+	// To avoid (but not prevent) the flakes encountered in golang/go#68659, we
+	// need to perform our first read before starting to increment counters.
+	//
+	// ReadCounter checks to see if the counter file needs to be rotated before
+	// reading. When files are rotated, all previous counts are lost. Calling
+	// ReadCounter here reduces the window for a flake due to this rotation (the
+	// file was originally was located during countertest.Open in TestMain).
+	//
+	// golang/go#71590 tracks the larger problems with the countertest library.
+	//
+	// (The counter name below is arbitrary.)
+	_, _ = countertest.ReadCounter(counter.New("issue68659"))
+
 	// We must increment counters in order for the initial reads below to
 	// succeed.
 	//
