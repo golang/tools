@@ -1,5 +1,21 @@
 package slicesdelete
 
+import "slices"
+
+import "slices"
+
+import "slices"
+
+import "slices"
+
+import "slices"
+
+import "slices"
+
+import "slices"
+
+import "slices"
+
 var g struct{ f []int }
 
 func slicesdelete(test, other []byte, i int) {
