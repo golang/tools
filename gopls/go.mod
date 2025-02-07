@@ -12,7 +12,7 @@ require (
 	golang.org/x/sys v0.29.0
 	golang.org/x/telemetry v0.0.0-20241220003058-cc96b6e0d3d9
 	golang.org/x/text v0.21.0
-	golang.org/x/tools v0.29.1-0.20250207161200-6ca134497510
+	golang.org/x/tools v0.29.1-0.20250207173059-30439fc82a98
 	golang.org/x/vuln v1.1.3
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.5.1
@@ -26,5 +26,3 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20241210194714-1829a127f884 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 )
-
-replace golang.org/x/tools => ../
