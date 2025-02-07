@@ -4,16 +4,12 @@ import "slices"
 
 import "slices"
 
-import "slices"
-
 import "sort"
 
 type myint int
 
 func _(s []myint) {
 	slices.Sort(s) // want "sort.Slice can be modernized using slices.Sort"
-	
-	slices.SortStable(s) // want "sort.SliceStable can be modernized using slices.SortStable"
 }
 
 func _(x *struct{ s []int }) {
