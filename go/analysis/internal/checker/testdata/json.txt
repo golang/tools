@@ -1,0 +1,42 @@
+# Test basic JSON output.
+#
+# File slashes assume non-Windows.
+
+skip GOOS=windows
+checker -rename -json example.com/p
+exit 0
+
+-- go.mod --
+module example.com
+go 1.22
+
+-- p/p.go --
+package p
+
+func f(bar int) {}
+
+-- stdout --
+{
+	"example.com/p": {
+		"rename": [
+			{
+				"posn": "/TMP/p/p.go:3:8",
+				"message": "renaming \"bar\" to \"baz\"",
+				"suggested_fixes": [
+					{
+						"message": "renaming \"bar\" to \"baz\"",
+						"edits": [
+							{
+								"filename": "/TMP/p/p.go",
+								"start": 18,
+								"end": 21,
+								"new": "baz"
+							}
+						]
+					}
+				]
+			}
+		]
+	}
+}
+

@@ -1,0 +1,21 @@
+# Test that a missing SuggestedFix.End position is correctly
+# interpreted as if equal to SuggestedFix.Pos (see issue #64199).
+
+checker -noend -fix example.com/a
+exit 3
+stderr say hello
+
+-- go.mod --
+module example.com
+go 1.22
+
+-- a/a.go --
+package a
+
+func f() {}
+
+-- want/a/a.go --
+package a
+
+/*hello*/
+func f() {}

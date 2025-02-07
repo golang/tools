@@ -36,6 +36,12 @@ import (
 // and populates it with a GOPATH-style project using filemap (which
 // maps file names to contents). On success it returns the name of the
 // directory and a cleanup function to delete it.
+//
+// TODO(adonovan): provide a newer version that accepts a testing.T,
+// calls T.TempDir, and calls T.Fatal on any error, avoiding the need
+// to return cleanup or err:
+//
+//	func WriteFilesToTmp(t *testing.T filemap map[string]string) string
 func WriteFiles(filemap map[string]string) (dir string, cleanup func(), err error) {
 	gopath, err := os.MkdirTemp("", "analysistest")
 	if err != nil {

@@ -26,3 +26,5 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20241210194714-1829a127f884 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 )
+
+replace golang.org/x/tools => ../

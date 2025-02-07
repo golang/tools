@@ -1,0 +1,60 @@
+# Test of import de-duplication behavior.
+#
+# In packages a and b, there are three fixes,
+# each adding one of two imports, but in different order.
+#
+# In package a, the fixes are [foo, foo, bar],
+# and they are resolved as follows:
+# - foo is applied    -> [foo]
+# - foo is coalesced  -> [foo]
+# - bar is applied    -> [foo bar]
+# The result is then formatted to [bar foo].
+#
+# In package b, the fixes are [foo, bar, foo]:
+# - foo is applied   -> [foo]
+# - bar is applied   -> [foo bar]
+# - foo is coalesced -> [foo bar]
+# The same result is again formatted to [bar foo].
+#
+# In more complex examples, the result
+# may be more subtly order-dependent.
+
+checker -marker -fix example.com/a example.com/b
+exit 3
+
+-- go.mod --
+module example.com
+go 1.22
+
+-- a/a.go --
+package a
+
+import (
+	//@ fix1("()//", "\"foo\"\n"), fix2("()//", "\"foo\"\n"), fix3("()//", "\"bar\"\n")
+)
+
+-- want/a/a.go --
+package a
+
+import (
+	"bar"
+	"foo"
+	// @ fix1("()//", "\"foo\"\n"), fix2("()//", "\"foo\"\n"), fix3("()//", "\"bar\"\n")
+)
+
+-- b/b.go --
+package b
+
+import (
+	//@ fix1("()//", "\"foo\"\n"), fix2("()//", "\"bar\"\n"), fix3("()//", "\"foo\"\n")
+)
+
+-- want/b/b.go --
+package b
+
+import (
+	"bar"
+	"foo"
+	// @ fix1("()//", "\"foo\"\n"), fix2("()//", "\"bar\"\n"), fix3("()//", "\"foo\"\n")
+)
+

@@ -1,0 +1,29 @@
+# Test that duplicate imports--and, more generally, duplicate
+# identical insertions--are coalesced.
+
+checker -marker -fix example.com/a
+exit 3
+
+-- go.mod --
+module example.com
+go 1.22
+
+-- a/a.go --
+package a
+
+import (
+	_ "errors"
+	//@ fix1("()//", `"foo"`), fix2("()//", `"foo"`)
+)
+
+func f() {} //@ fix1("()}", "n++"), fix2("()}", "n++")
+
+-- want/a/a.go --
+package a
+
+import (
+	_ "errors"
+	"foo" //@ fix1("()//", `"foo"`), fix2("()//", `"foo"`)
+)
+
+func f() { n++ } //@ fix1("()}", "n++"), fix2("()}", "n++")

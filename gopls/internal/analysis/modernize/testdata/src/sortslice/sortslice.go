@@ -6,8 +6,6 @@ type myint int
 
 func _(s []myint) {
 	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] }) // want "sort.Slice can be modernized using slices.Sort"
-
-	sort.SliceStable(s, func(i, j int) bool { return s[i] < s[j] }) // want "sort.SliceStable can be modernized using slices.SortStable"
 }
 
 func _(x *struct{ s []int }) {
