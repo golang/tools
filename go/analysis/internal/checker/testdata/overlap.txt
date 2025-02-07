@@ -15,9 +15,12 @@
 # (This is a pretty unlikely situation, but it corresponds
 # to a historical test, TestOther, that used to check for
 # a conflict, and it seemed wrong to delete it without explanation.)
+#
+# The fixes are silently and successfully applied.
 
-checker -rename -marker -fix example.com/a
-exit 3
+checker -rename -marker -fix -v example.com/a
+stderr applied 2 fixes, updated 1 file
+exit 0
 
 -- go.mod --
 module example.com

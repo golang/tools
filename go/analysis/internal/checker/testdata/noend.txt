@@ -2,8 +2,7 @@
 # interpreted as if equal to SuggestedFix.Pos (see issue #64199).
 
 checker -noend -fix example.com/a
-exit 3
-stderr say hello
+exit 0
 
 -- go.mod --
 module example.com

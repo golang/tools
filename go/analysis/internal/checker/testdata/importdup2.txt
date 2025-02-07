@@ -19,8 +19,9 @@
 # In more complex examples, the result
 # may be more subtly order-dependent.
 
-checker -marker -fix example.com/a example.com/b
-exit 3
+checker -marker -fix -v example.com/a example.com/b
+stderr applied 6 fixes, updated 2 files
+exit 0
 
 -- go.mod --
 module example.com

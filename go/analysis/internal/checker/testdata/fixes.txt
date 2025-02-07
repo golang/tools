@@ -2,9 +2,9 @@
 # particular when processing duplicate fixes for overlapping packages
 # in the same directory ("p", "p [p.test]", "p_test [p.test]").
 
-checker -rename -fix example.com/p
-exit 3
-stderr renaming "bar" to "baz"
+checker -rename -fix -v example.com/p
+stderr applied 8 fixes, updated 3 files
+exit 0
 
 -- go.mod --
 module example.com

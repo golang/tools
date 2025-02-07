@@ -49,8 +49,10 @@ func Foo() {
 		t.Fatal(err)
 	}
 	path := filepath.Join(testdata, "src/rename/test.go")
+
 	checker.Fix = true
 	checker.Run([]string{"file=" + path}, []*analysis.Analyzer{renameAnalyzer})
+	checker.Fix = false
 
 	contents, err := os.ReadFile(path)
 	if err != nil {
@@ -138,31 +140,33 @@ func NewT1() *T1 { return &T1{T} }
 		// package from source. For the rest, it asks 'go list' for export data,
 		// which fails because the compiler encounters the type error.  Since the
 		// errors come from 'go list', the driver doesn't run the analyzer.
-		{name: "despite-error", pattern: []string{rderrFile}, analyzers: []*analysis.Analyzer{noop}, code: 1},
+		{name: "despite-error", pattern: []string{rderrFile}, analyzers: []*analysis.Analyzer{noop}, code: exitCodeFailed},
 		// The noopfact analyzer does use facts, so the driver loads source for
 		// all dependencies, does type checking itself, recognizes the error as a
 		// type error, and runs the analyzer.
-		{name: "despite-error-fact", pattern: []string{rderrFile}, analyzers: []*analysis.Analyzer{noopWithFact}, code: 1},
+		{name: "despite-error-fact", pattern: []string{rderrFile}, analyzers: []*analysis.Analyzer{noopWithFact}, code: exitCodeFailed},
 		// combination of parse/type errors and no errors
-		{name: "despite-error-and-no-error", pattern: []string{rderrFile, "sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
+		{name: "despite-error-and-no-error", pattern: []string{rderrFile, "sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: exitCodeFailed},
 		// non-existing package error
-		{name: "no-package", pattern: []string{"xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: 1},
-		{name: "no-package-despite-error", pattern: []string{"abc"}, analyzers: []*analysis.Analyzer{noop}, code: 1},
-		{name: "no-multi-package-despite-error", pattern: []string{"xyz", "abc"}, analyzers: []*analysis.Analyzer{noop}, code: 1},
+		{name: "no-package", pattern: []string{"xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: exitCodeFailed},
+		{name: "no-package-despite-error", pattern: []string{"abc"}, analyzers: []*analysis.Analyzer{noop}, code: exitCodeFailed},
+		{name: "no-multi-package-despite-error", pattern: []string{"xyz", "abc"}, analyzers: []*analysis.Analyzer{noop}, code: exitCodeFailed},
 		// combination of type/parsing and different errors
-		{name: "different-errors", pattern: []string{rderrFile, "xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
+		{name: "different-errors", pattern: []string{rderrFile, "xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: exitCodeFailed},
 		// non existing dir error
-		{name: "no-match-dir", pattern: []string{"file=non/existing/dir"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
+		{name: "no-match-dir", pattern: []string{"file=non/existing/dir"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: exitCodeFailed},
 		// no errors
-		{name: "no-errors", pattern: []string{"sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 0},
+		{name: "no-errors", pattern: []string{"sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: exitCodeSuccess},
 		// duplicate list error with no findings
-		{name: "list-error", pattern: []string{cperrFile}, analyzers: []*analysis.Analyzer{noop}, code: 1},
+		{name: "list-error", pattern: []string{cperrFile}, analyzers: []*analysis.Analyzer{noop}, code: exitCodeFailed},
 		// duplicate list errors with findings (issue #67790)
-		{name: "list-error-findings", pattern: []string{cperrFile}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: 3},
+		{name: "list-error-findings", pattern: []string{cperrFile}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: exitCodeDiagnostics},
 	} {
-		if got := checker.Run(test.pattern, test.analyzers); got != test.code {
-			t.Errorf("got incorrect exit code %d for test %s; want %d", got, test.name, test.code)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			if got := checker.Run(test.pattern, test.analyzers); got != test.code {
+				t.Errorf("got incorrect exit code %d for test %s; want %d", got, test.name, test.code)
+			}
+		})
 	}
 }
 

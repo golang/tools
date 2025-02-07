@@ -52,9 +52,9 @@ func TestMain(m *testing.M) {
 }
 
 const (
-	exitCodeSuccess     = 0 // success (no diagnostics)
+	exitCodeSuccess     = 0 // success (no diagnostics, or successful -fix)
 	exitCodeFailed      = 1 // analysis failed to run
-	exitCodeDiagnostics = 3 // diagnostics were reported
+	exitCodeDiagnostics = 3 // diagnostics were reported (and no -fix)
 )
 
 // TestReportInvalidDiagnostic tests that a call to pass.Report with
