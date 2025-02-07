@@ -281,6 +281,9 @@ func TestScript(t *testing.T) {
 						t.Logf("%s: $ %s\nstdout:\n%s\nstderr:\n%s", prefix, clean(cmd), stdout, lastStderr)
 					}
 
+					// Keep error reporting logic below consistent with
+					// applyDiffsAndCompare in ../../analysistest/analysistest.go!
+
 					unified := func(xlabel, ylabel string, x, y []byte) string {
 						x = append(slices.Clip(bytes.TrimSpace(x)), '\n')
 						y = append(slices.Clip(bytes.TrimSpace(y)), '\n')

@@ -2,8 +2,6 @@ package sortslice
 
 import "slices"
 
-import "slices"
-
 import "sort"
 
 type myint int
