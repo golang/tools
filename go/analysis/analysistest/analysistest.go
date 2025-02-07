@@ -174,62 +174,27 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 		act := result.Action
 
 		// file -> message -> edits
-		// TODO(adonovan): this mapping assumes fix.Messages are unique across analyzers.
+		// TODO(adonovan): this mapping assumes fix.Messages are unique across analyzers,
+		// whereas they are only unique within a given Diagnostic.
 		fileEdits := make(map[*token.File]map[string][]diff.Edit)
-		fileContents := make(map[*token.File][]byte)
 
-		// Validate edits, prepare the fileEdits map and read the file contents.
+		// We may assume that fixes are validated upon creation in Pass.Report.
+		// Group fixes by file and message.
 		for _, diag := range act.Diagnostics {
 			for _, fix := range diag.SuggestedFixes {
-
 				// Assert that lazy fixes have a Category (#65578, #65087).
 				if inTools && len(fix.TextEdits) == 0 && diag.Category == "" {
 					t.Errorf("missing Diagnostic.Category for SuggestedFix without TextEdits (gopls requires the category for the name of the fix command")
 				}
 
-				// TODO(adonovan): factor in common with go/analysis/internal/checker.validateEdits.
-
 				for _, edit := range fix.TextEdits {
-					start, end := edit.Pos, edit.End
-					if !end.IsValid() {
-						end = start
-					}
-					// Validate the edit.
-					if start > end {
-						t.Errorf(
-							"diagnostic for analysis %v contains Suggested Fix with malformed edit: pos (%v) > end (%v)",
-							act.Analyzer.Name, start, end)
-						continue
-					}
-					file := act.Package.Fset.File(start)
-					if file == nil {
-						t.Errorf("diagnostic for analysis %v contains Suggested Fix with malformed start position %v", act.Analyzer.Name, start)
-						continue
-					}
-					endFile := act.Package.Fset.File(end)
-					if endFile == nil {
-						t.Errorf("diagnostic for analysis %v contains Suggested Fix with malformed end position %v", act.Analyzer.Name, end)
-						continue
-					}
-					if file != endFile {
-						t.Errorf(
-							"diagnostic for analysis %v contains Suggested Fix with malformed spanning files %v and %v",
-							act.Analyzer.Name, file.Name(), endFile.Name())
-						continue
-					}
-					if _, ok := fileContents[file]; !ok {
-						contents, err := os.ReadFile(file.Name())
-						if err != nil {
-							t.Errorf("error reading %s: %v", file.Name(), err)
-						}
-						fileContents[file] = contents
-					}
+					file := act.Package.Fset.File(edit.Pos)
 					if _, ok := fileEdits[file]; !ok {
 						fileEdits[file] = make(map[string][]diff.Edit)
 					}
 					fileEdits[file][fix.Message] = append(fileEdits[file][fix.Message], diff.Edit{
-						Start: file.Offset(start),
-						End:   file.Offset(end),
+						Start: file.Offset(edit.Pos),
+						End:   file.Offset(edit.End),
 						New:   string(edit.NewText),
 					})
 				}
@@ -238,9 +203,10 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 
 		for file, fixes := range fileEdits {
 			// Get the original file contents.
-			orig, ok := fileContents[file]
-			if !ok {
-				t.Errorf("could not find file contents for %s", file.Name())
+			// TODO(adonovan): plumb pass.ReadFile.
+			orig, err := os.ReadFile(file.Name())
+			if err != nil {
+				t.Errorf("error reading %s: %v", file.Name(), err)
 				continue
 			}
 
