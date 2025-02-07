@@ -475,7 +475,7 @@
 						},
 						{
 							"Name": "\"gofix\"",
-							"Doc": "apply fixes based on go:fix comment directives\n\nThe gofix analyzer inlines functions that are marked for inlining\nand forwards constants that are marked for forwarding.",
+							"Doc": "apply fixes based on go:fix comment directives\n\nThe gofix analyzer inlines functions and constants that are marked for inlining.",
 							"Default": "true"
 						},
 						{
@@ -1147,7 +1147,7 @@
 		},
 		{
 			"Name": "gofix",
-			"Doc": "apply fixes based on go:fix comment directives\n\nThe gofix analyzer inlines functions that are marked for inlining\nand forwards constants that are marked for forwarding.",
+			"Doc": "apply fixes based on go:fix comment directives\n\nThe gofix analyzer inlines functions and constants that are marked for inlining.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix",
 			"Default": true
 		},

@@ -33,7 +33,7 @@ var Analyzer = &analysis.Analyzer{
 	Doc:       analysisinternal.MustExtractDoc(doc, "gofix"),
 	URL:       "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix",
 	Run:       run,
-	FactTypes: []analysis.Fact{new(goFixInlineFuncFact), new(goFixForwardConstFact)},
+	FactTypes: []analysis.Fact{new(goFixInlineFuncFact), new(goFixInlineConstFact)},
 	Requires:  []*analysis.Analyzer{inspect.Analyzer},
 }
 
@@ -64,19 +64,14 @@ func run(pass *analysis.Pass) (any, error) {
 	// comment (the syntax proposed by #32816),
 	// and export a fact for each one.
 	inlinableFuncs := make(map[*types.Func]*inline.Callee) // memoization of fact import (nil => no fact)
-	forwardableConsts := make(map[*types.Const]*goFixForwardConstFact)
+	inlinableConsts := make(map[*types.Const]*goFixInlineConstFact)
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{(*ast.FuncDecl)(nil), (*ast.GenDecl)(nil)}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		switch decl := n.(type) {
 		case *ast.FuncDecl:
-			hasInline, hasForward := fixDirectives(decl.Doc)
-			if hasForward {
-				pass.Reportf(decl.Doc.Pos(), "use //go:fix inline for functions")
-				return
-			}
-			if !hasInline {
+			if !hasFixInline(decl.Doc) {
 				return
 			}
 			content, err := readFile(decl)
@@ -97,20 +92,12 @@ func run(pass *analysis.Pass) (any, error) {
 			if decl.Tok != token.CONST {
 				return
 			}
-			declInline, declForward := fixDirectives(decl.Doc)
-			if declInline {
-				pass.Reportf(decl.Doc.Pos(), "use //go:fix forward for constants")
-				return
-			}
-			// Accept forward directives on the entire decl as well as individual specs.
+			declInline := hasFixInline(decl.Doc)
+			// Accept inline directives on the entire decl as well as individual specs.
 			for _, spec := range decl.Specs {
 				spec := spec.(*ast.ValueSpec) // guaranteed by Tok == CONST
-				specInline, specForward := fixDirectives(spec.Doc)
-				if specInline {
-					pass.Reportf(spec.Doc.Pos(), "use //go:fix forward for constants")
-					return
-				}
-				if declForward || specForward {
+				specInline := hasFixInline(spec.Doc)
+				if declInline || specInline {
 					for i, name := range spec.Names {
 						if i >= len(spec.Values) {
 							// Possible following an iota.
@@ -120,21 +107,21 @@ func run(pass *analysis.Pass) (any, error) {
 						var rhsID *ast.Ident
 						switch e := val.(type) {
 						case *ast.Ident:
-							// Constants defined with the predeclared iota cannot be forwarded.
+							// Constants defined with the predeclared iota cannot be inlined.
 							if pass.TypesInfo.Uses[e] == builtinIota {
-								pass.Reportf(val.Pos(), "invalid //go:fix forward directive: const value is iota")
+								pass.Reportf(val.Pos(), "invalid //go:fix inline directive: const value is iota")
 								continue
 							}
 							rhsID = e
 						case *ast.SelectorExpr:
 							rhsID = e.Sel
 						default:
-							pass.Reportf(val.Pos(), "invalid //go:fix forward directive: const value is not the name of another constant")
+							pass.Reportf(val.Pos(), "invalid //go:fix inline directive: const value is not the name of another constant")
 							continue
 						}
 						lhs := pass.TypesInfo.Defs[name].(*types.Const)
 						rhs := pass.TypesInfo.Uses[rhsID].(*types.Const) // must be so in a well-typed program
-						con := &goFixForwardConstFact{
+						con := &goFixInlineConstFact{
 							RHSName:    rhs.Name(),
 							RHSPkgName: rhs.Pkg().Name(),
 							RHSPkgPath: rhs.Pkg().Path(),
@@ -142,7 +129,7 @@ func run(pass *analysis.Pass) (any, error) {
 						if rhs.Pkg() == pass.Pkg {
 							con.rhsObj = rhs
 						}
-						forwardableConsts[lhs] = con
+						inlinableConsts[lhs] = con
 						// Create a fact only if the LHS is exported and defined at top level.
 						// We create a fact even if the RHS is non-exported,
 						// so we can warn uses in other packages.
@@ -155,8 +142,8 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	})
 
-	// Pass 2. Inline each static call to an inlinable function,
-	// and forward each reference to a forwardable constant.
+	// Pass 2. Inline each static call to an inlinable function
+	// and each reference to an inlinable constant.
 	//
 	// TODO(adonovan):  handle multiple diffs that each add the same import.
 	for cur := range cursor.Root(inspect).Preorder((*ast.CallExpr)(nil), (*ast.Ident)(nil)) {
@@ -231,14 +218,14 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 
 		case *ast.Ident:
-			// If the identifier is a use of a forwardable constant, suggest forwarding it.
+			// If the identifier is a use of an inlinable constant, suggest inlining it.
 			if con, ok := pass.TypesInfo.Uses[n].(*types.Const); ok {
-				fcon, ok := forwardableConsts[con]
+				fcon, ok := inlinableConsts[con]
 				if !ok {
-					var fact goFixForwardConstFact
+					var fact goFixInlineConstFact
 					if pass.ImportObjectFact(con, &fact) {
 						fcon = &fact
-						forwardableConsts[con] = fcon
+						inlinableConsts[con] = fcon
 					}
 				}
 				if fcon == nil {
@@ -253,7 +240,7 @@ func run(pass *analysis.Pass) (any, error) {
 				curFile := currentFile(cur)
 
 				// We have an identifier A here (n), possibly qualified by a package identifier (sel.X),
-				// and a forwardable "const A = B" elsewhere (fcon).
+				// and an inlinable "const A = B" elsewhere (fcon).
 				// Consider replacing A with B.
 
 				// Check that the expression we are inlining (B) means the same thing
@@ -268,10 +255,10 @@ func run(pass *analysis.Pass) (any, error) {
 					if obj == nil {
 						// Should be impossible: if code at n can refer to the LHS,
 						// it can refer to the RHS.
-						panic(fmt.Sprintf("no object for forwardable const %s RHS %s", n.Name, fcon.RHSName))
+						panic(fmt.Sprintf("no object for inlinable const %s RHS %s", n.Name, fcon.RHSName))
 					}
 					if obj != fcon.rhsObj {
-						// "B" means something different here than at the forwardable const's scope.
+						// "B" means something different here than at the inlinable const's scope.
 						continue
 					}
 				}
@@ -304,9 +291,9 @@ func run(pass *analysis.Pass) (any, error) {
 				pass.Report(analysis.Diagnostic{
 					Pos:     pos,
 					End:     end,
-					Message: fmt.Sprintf("Constant %s should be forwarded", name),
+					Message: fmt.Sprintf("Constant %s should be inlined", name),
 					SuggestedFixes: []analysis.SuggestedFix{{
-						Message:   fmt.Sprintf("Forward constant %s", name),
+						Message:   fmt.Sprintf("Inline constant %s", name),
 						TextEdits: edits,
 					}},
 				})
@@ -317,20 +304,15 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// fixDirectives reports the presence of "//go:fix inline" and "//go:fix forward"
-// directives in the comments.
-func fixDirectives(cg *ast.CommentGroup) (inline, forward bool) {
+// hasFixInline reports the presence of a "//go:fix inline" directive
+// in the comments.
+func hasFixInline(cg *ast.CommentGroup) bool {
 	for _, d := range directives(cg) {
-		if d.Tool == "go" && d.Name == "fix" {
-			switch d.Args {
-			case "inline":
-				inline = true
-			case "forward":
-				forward = true
-			}
+		if d.Tool == "go" && d.Name == "fix" && d.Args == "inline" {
+			return true
 		}
 	}
-	return
+	return false
 }
 
 // A goFixInlineFuncFact is exported for each function marked "//go:fix inline".
@@ -340,9 +322,9 @@ type goFixInlineFuncFact struct{ Callee *inline.Callee }
 func (f *goFixInlineFuncFact) String() string { return "goFixInline " + f.Callee.String() }
 func (*goFixInlineFuncFact) AFact()           {}
 
-// A goFixForwardConstFact is exported for each constant marked "//go:fix forward".
-// It holds information about a forwardable constant. Gob-serializable.
-type goFixForwardConstFact struct {
+// A goFixInlineConstFact is exported for each constant marked "//go:fix inline".
+// It holds information about an inlinable constant. Gob-serializable.
+type goFixInlineConstFact struct {
 	// Information about "const LHSName = RHSName".
 	RHSName    string
 	RHSPkgPath string
@@ -350,11 +332,11 @@ type goFixForwardConstFact struct {
 	rhsObj     types.Object // for current package
 }
 
-func (c *goFixForwardConstFact) String() string {
-	return fmt.Sprintf("goFixForward const %q.%s", c.RHSPkgPath, c.RHSName)
+func (c *goFixInlineConstFact) String() string {
+	return fmt.Sprintf("goFixInline const %q.%s", c.RHSPkgPath, c.RHSName)
 }
 
-func (*goFixForwardConstFact) AFact() {}
+func (*goFixInlineConstFact) AFact() {}
 
 func discard(string, ...any) {}
 

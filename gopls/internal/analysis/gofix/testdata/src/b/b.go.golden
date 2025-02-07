@@ -15,21 +15,21 @@ func f() {
 	_ = 2 // want `Call of \(a.T\).Two should be inlined`
 }
 
-//go:fix forward
+//go:fix inline
 const in2 = a.Uno
 
-//go:fix forward
+//go:fix inline
 const in3 = C // c.C, by dot import
 
 func g() {
-	x := a.Uno // want `Constant a\.In1 should be forwarded`
+	x := a.Uno // want `Constant a\.In1 should be inlined`
 
 	a := 1
 	// Although the package identifier "a" is shadowed here,
 	// a second import of "a" will be added with a new package identifer.
-	x = a0.Uno // want `Constant in2 should be forwarded`
+	x = a0.Uno // want `Constant in2 should be inlined`
 
-	x = c.C // want `Constant in3 should be forwarded`
+	x = c.C // want `Constant in3 should be inlined`
 
 	_ = a
 	_ = x

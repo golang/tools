@@ -294,8 +294,7 @@ Package documentation: [framepointer](https://pkg.go.dev/golang.org/x/tools/go/a
 ## `gofix`: apply fixes based on go:fix comment directives
 
 
-The gofix analyzer inlines functions that are marked for inlining
-and forwards constants that are marked for forwarding.
+The gofix analyzer inlines functions and constants that are marked for inlining.
 
 Default: on.
 

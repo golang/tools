@@ -4,16 +4,14 @@
 
 /*
 Package gofix defines an Analyzer that inlines calls to functions
-marked with a "//go:fix inline" doc comment,
-and forwards uses of constants
-marked with a "//go:fix forward" doc comment.
+and uses of constants
+marked with a "//go:fix inline" doc comment.
 
 # Analyzer gofix
 
 gofix: apply fixes based on go:fix comment directives
 
-The gofix analyzer inlines functions that are marked for inlining
-and forwards constants that are marked for forwarding.
+The gofix analyzer inlines functions and constants that are marked for inlining.
 
 # Functions
 
@@ -48,31 +46,31 @@ to enable automatic migration.
 
 # Constants
 
-Given a constant that is marked for forwarding, like this one:
+Given a constant that is marked for inlining, like this one:
 
-	//go:fix forward
+	//go:fix inline
 	const Ptr = Pointer
 
 this analyzer will recommend that uses of Ptr should be replaced with Pointer.
 
-As with inlining, forwarding can be used to replace deprecated constants and
+As with functions, inlining can be used to replace deprecated constants and
 constants in obsolete packages.
 
-A constant definition can be marked for forwarding only if it refers to another
+A constant definition can be marked for inlining only if it refers to another
 named constant.
 
-The "//go:fix forward" comment must appear before a single const declaration on its own,
+The "//go:fix inline" comment must appear before a single const declaration on its own,
 as above; before a const declaration that is part of a group, as in this case:
 
 	const (
 	   C = 1
-	   //go:fix forward
+	   //go:fix inline
 	   Ptr = Pointer
 	)
 
 or before a group, applying to every constant in the group:
 
-	//go:fix forward
+	//go:fix inline
 	const (
 		Ptr = Pointer
 	    Val = Value
