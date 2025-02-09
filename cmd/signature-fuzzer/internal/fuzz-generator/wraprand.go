@@ -6,7 +6,7 @@ package generator
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"runtime"
 	"strings"
@@ -20,8 +20,7 @@ const (
 )
 
 func NewWrapRand(seed int64, ctl int) *wraprand {
-	rand.Seed(seed)
-	return &wraprand{seed: seed, ctl: ctl}
+	return &wraprand{seed: seed, ctl: ctl, rand: rand.New(rand.NewPCG(0, uint64(seed)))}
 }
 
 type wraprand struct {
@@ -32,6 +31,7 @@ type wraprand struct {
 	tag       string
 	calls     []string
 	ctl       int
+	rand      *rand.Rand
 }
 
 func (w *wraprand) captureCall(tag string, val string) {
@@ -59,7 +59,7 @@ func (w *wraprand) captureCall(tag string, val string) {
 
 func (w *wraprand) Intn(n int64) int64 {
 	w.intncalls++
-	rv := rand.Int63n(n)
+	rv := w.rand.Int64N(n)
 	if w.ctl&RandCtlCapture != 0 {
 		w.captureCall("Intn", fmt.Sprintf("%d", rv))
 	}
@@ -68,7 +68,7 @@ func (w *wraprand) Intn(n int64) int64 {
 
 func (w *wraprand) Float32() float32 {
 	w.f32calls++
-	rv := rand.Float32()
+	rv := w.rand.Float32()
 	if w.ctl&RandCtlCapture != 0 {
 		w.captureCall("Float32", fmt.Sprintf("%f", rv))
 	}
@@ -77,7 +77,7 @@ func (w *wraprand) Float32() float32 {
 
 func (w *wraprand) NormFloat64() float64 {
 	w.f64calls++
-	rv := rand.NormFloat64()
+	rv := w.rand.NormFloat64()
 	if w.ctl&RandCtlCapture != 0 {
 		w.captureCall("NormFloat64", fmt.Sprintf("%f", rv))
 	}
@@ -85,7 +85,7 @@ func (w *wraprand) NormFloat64() float64 {
 }
 
 func (w *wraprand) emitCalls(fn string) {
-	outf, err := os.OpenFile(fn, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+	outf, err := os.OpenFile(fn, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
 	if err != nil {
 		panic(err)
 	}
