@@ -255,16 +255,16 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 		newName = fmt.Sprintf("%s%d", preferredName, i)
 	}
 
-	// For now, keep it real simple: create a new import
-	// declaration before the first existing declaration (which
-	// must exist), including its comments, and let goimports tidy it up.
+	// Create a new import declaration either before the first existing
+	// declaration (which must exist), including its comments; or
+	// inside the declaration, if it is an import group.
 	//
 	// Use a renaming import whenever the preferred name is not
 	// available, or the chosen name does not match the last
 	// segment of its path.
-	newText := fmt.Sprintf("import %q\n\n", pkgpath)
+	newText := fmt.Sprintf("%q", pkgpath)
 	if newName != preferredName || newName != pathpkg.Base(pkgpath) {
-		newText = fmt.Sprintf("import %s %q\n\n", newName, pkgpath)
+		newText = fmt.Sprintf("%s %q", newName, pkgpath)
 	}
 	decl0 := file.Decls[0]
 	var before ast.Node = decl0
@@ -278,9 +278,17 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 			before = decl0.Doc
 		}
 	}
+	// If the first decl is an import group, add this new import at the end.
+	if gd, ok := before.(*ast.GenDecl); ok && gd.Tok == token.IMPORT && gd.Rparen.IsValid() {
+		pos = gd.Rparen
+		newText = "\t" + newText + "\n"
+	} else {
+		pos = before.Pos()
+		newText = "import " + newText + "\n\n"
+	}
 	return newName, newName + ".", []analysis.TextEdit{{
-		Pos:     before.Pos(),
-		End:     before.Pos(),
+		Pos:     pos,
+		End:     pos,
 		NewText: []byte(newText),
 	}}
 }

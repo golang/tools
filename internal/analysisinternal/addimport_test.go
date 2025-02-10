@@ -221,6 +221,28 @@ func _(Print fmt.Stringer) {
 	fmt
 }`,
 		},
+		{
+			descr: descr("add import to group"),
+			src: `package a
+
+import (
+	"io"
+)
+
+func _(io.Reader) {
+	«fmt fmt»
+}`,
+			want: `package a
+
+import (
+	"io"
+	"fmt"
+)
+
+func _(io.Reader) {
+	fmt
+}`,
+		},
 	} {
 		t.Run(test.descr, func(t *testing.T) {
 			// splice marker
