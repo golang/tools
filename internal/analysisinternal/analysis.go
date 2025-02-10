@@ -449,3 +449,30 @@ func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
 
 	return nil
 }
+
+// CanImport reports whether one package is allowed to import another.
+//
+// TODO(adonovan): allow customization of the accessibility relation
+// (e.g. for Bazel).
+func CanImport(from, to string) bool {
+	// TODO(adonovan): better segment hygiene.
+	if to == "internal" || strings.HasPrefix(to, "internal/") {
+		// Special case: only std packages may import internal/...
+		// We can't reliably know whether we're in std, so we
+		// use a heuristic on the first segment.
+		first, _, _ := strings.Cut(from, "/")
+		if strings.Contains(first, ".") {
+			return false // example.com/foo ∉ std
+		}
+		if first == "testdata" {
+			return false // testdata/foo ∉ std
+		}
+	}
+	if strings.HasSuffix(to, "/internal") {
+		return strings.HasPrefix(from, to[:len(to)-len("/internal")])
+	}
+	if i := strings.LastIndex(to, "/internal/"); i >= 0 {
+		return strings.HasPrefix(from, to[:i])
+	}
+	return true
+}
