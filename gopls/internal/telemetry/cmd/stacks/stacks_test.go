@@ -85,13 +85,15 @@ func TestParsePredicate(t *testing.T) {
 		want bool
 	}{
 		{`"x"`, `"x"`, true},
-		{`"x"`, `"axe"`, false}, // literals match whole words
+		{`"x"`, `"axe"`, false}, // literals must match word ends
+		{`"xe"`, `"axe"`, true},
 		{`"x"`, "val:x+5", true},
 		{`"fu+12"`, "x:fu+12,", true},
-		{`"fu+12"`, "snafu+12,", false},
+		{`"fu+12"`, "snafu+12,", true}, // literals needn't match word start
 		{`"fu+12"`, "x:fu+123,", false},
-		{`"a.*b"`, "a.*b", true},  // regexp metachars are escaped
-		{`"a.*b"`, "axxb", false}, // ditto
+		{`"foo:+12"`, "dir/foo:+12,", true}, // literals needn't match word start
+		{`"a.*b"`, "a.*b", true},            // regexp metachars are escaped
+		{`"a.*b"`, "axxb", false},           // ditto
 		{`"x"`, `"y"`, false},
 		{`!"x"`, "x", false},
 		{`!"x"`, "y", true},
