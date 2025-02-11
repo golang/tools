@@ -220,15 +220,15 @@ func run(pass *analysis.Pass) (any, error) {
 		case *ast.Ident:
 			// If the identifier is a use of an inlinable constant, suggest inlining it.
 			if con, ok := pass.TypesInfo.Uses[n].(*types.Const); ok {
-				fcon, ok := inlinableConsts[con]
+				incon, ok := inlinableConsts[con]
 				if !ok {
 					var fact goFixInlineConstFact
 					if pass.ImportObjectFact(con, &fact) {
-						fcon = &fact
-						inlinableConsts[con] = fcon
+						incon = &fact
+						inlinableConsts[con] = incon
 					}
 				}
-				if fcon == nil {
+				if incon == nil {
 					continue // nope
 				}
 
@@ -248,20 +248,20 @@ func run(pass *analysis.Pass) (any, error) {
 				// If the RHS is not in the current package, AddImport will handle
 				// shadowing, so we only need to worry about when both expressions
 				// are in the current package.
-				if pass.Pkg.Path() == fcon.RHSPkgPath {
+				if pass.Pkg.Path() == incon.RHSPkgPath {
 					// fcon.rhsObj is the object referred to by B in the definition of A.
 					scope := pass.TypesInfo.Scopes[curFile].Innermost(n.Pos()) // n's scope
-					_, obj := scope.LookupParent(fcon.RHSName, n.Pos())        // what "B" means in n's scope
+					_, obj := scope.LookupParent(incon.RHSName, n.Pos())       // what "B" means in n's scope
 					if obj == nil {
 						// Should be impossible: if code at n can refer to the LHS,
 						// it can refer to the RHS.
-						panic(fmt.Sprintf("no object for inlinable const %s RHS %s", n.Name, fcon.RHSName))
+						panic(fmt.Sprintf("no object for inlinable const %s RHS %s", n.Name, incon.RHSName))
 					}
-					if obj != fcon.rhsObj {
+					if obj != incon.rhsObj {
 						// "B" means something different here than at the inlinable const's scope.
 						continue
 					}
-				} else if !analysisinternal.CanImport(pass.Pkg.Path(), fcon.RHSPkgPath) {
+				} else if !analysisinternal.CanImport(pass.Pkg.Path(), incon.RHSPkgPath) {
 					// If this package can't see the RHS's package, we can't inline.
 					continue
 				}
@@ -269,9 +269,9 @@ func run(pass *analysis.Pass) (any, error) {
 					importPrefix string
 					edits        []analysis.TextEdit
 				)
-				if fcon.RHSPkgPath != pass.Pkg.Path() {
+				if incon.RHSPkgPath != pass.Pkg.Path() {
 					_, importPrefix, edits = analysisinternal.AddImport(
-						pass.TypesInfo, curFile, fcon.RHSPkgName, fcon.RHSPkgPath, fcon.RHSName, n.Pos())
+						pass.TypesInfo, curFile, incon.RHSPkgName, incon.RHSPkgPath, incon.RHSName, n.Pos())
 				}
 				var (
 					pos  = n.Pos()
@@ -287,7 +287,7 @@ func run(pass *analysis.Pass) (any, error) {
 				edits = append(edits, analysis.TextEdit{
 					Pos:     pos,
 					End:     end,
-					NewText: []byte(importPrefix + fcon.RHSName),
+					NewText: []byte(importPrefix + incon.RHSName),
 				})
 				pass.Report(analysis.Diagnostic{
 					Pos:     pos,
