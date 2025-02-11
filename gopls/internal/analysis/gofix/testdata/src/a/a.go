@@ -1,5 +1,7 @@
 package a
 
+import "a/internal"
+
 // Functions.
 
 func f() {
@@ -74,6 +76,9 @@ const (
 	//go:fix inline
 	in8 = x
 )
+
+//go:fix inline
+const D = internal.D // want D: `goFixInline const "a/internal".D`
 
 func shadow() {
 	var x int // shadows x at package scope

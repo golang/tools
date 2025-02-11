@@ -261,6 +261,9 @@ func run(pass *analysis.Pass) (any, error) {
 						// "B" means something different here than at the inlinable const's scope.
 						continue
 					}
+				} else if !analysisinternal.CanImport(pass.Pkg.Path(), fcon.RHSPkgPath) {
+					// If this package can't see the RHS's package, we can't inline.
+					continue
 				}
 				var (
 					importPrefix string
