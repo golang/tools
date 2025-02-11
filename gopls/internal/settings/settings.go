@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
+	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/frob"
 )
 
@@ -822,10 +823,18 @@ const (
 	// TODO: support "Manual"?
 )
 
-// Set updates *options based on the provided JSON value:
+type CounterPath = telemetry.CounterPath
+
+// Set updates *Options based on the provided JSON value:
 // null, bool, string, number, array, or object.
+//
+// The applied result describes settings that were applied. Each CounterPath
+// contains at least the name of the setting, but may also include sub-setting
+// names for settings that are themselves maps, and/or a non-empty bucket name
+// when bucketing is desirable.
+//
 // On failure, it returns one or more non-nil errors.
-func (o *Options) Set(value any) (errors []error) {
+func (o *Options) Set(value any) (applied []CounterPath, errs []error) {
 	switch value := value.(type) {
 	case nil:
 	case map[string]any:
@@ -840,19 +849,32 @@ func (o *Options) Set(value any) (errors []error) {
 			name = split[len(split)-1]
 
 			if _, ok := seen[name]; ok {
-				errors = append(errors, fmt.Errorf("duplicate value for %s", name))
+				errs = append(errs, fmt.Errorf("duplicate value for %s", name))
 			}
 			seen[name] = struct{}{}
 
-			if err := o.setOne(name, value); err != nil {
+			paths, err := o.setOne(name, value)
+			if err != nil {
 				err := fmt.Errorf("setting option %q: %w", name, err)
-				errors = append(errors, err)
+				errs = append(errs, err)
+			}
+			_, soft := err.(*SoftError)
+			if err == nil || soft {
+				if len(paths) == 0 {
+					path := CounterPath{name, ""}
+					applied = append(applied, path)
+				} else {
+					for _, subpath := range paths {
+						path := append(CounterPath{name}, subpath...)
+						applied = append(applied, path)
+					}
+				}
 			}
 		}
 	default:
-		errors = append(errors, fmt.Errorf("invalid options type %T (want JSON null or object)", value))
+		errs = append(errs, fmt.Errorf("invalid options type %T (want JSON null or object)", value))
 	}
-	return errors
+	return applied, errs
 }
 
 func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps protocol.ClientCapabilities) {
@@ -955,14 +977,26 @@ func validateDirectoryFilter(ifilter string) (string, error) {
 }
 
 // setOne updates a field of o based on the name and value.
+//
+// The applied result describes the counter values to be updated as a result of
+// the applied setting. If the result is nil, the default counter for this
+// setting should be updated.
+//
+// For example, if the setting name is "foo",
+//   - If applied is nil, update the count for "foo".
+//   - If applied is []CounterPath{{"bucket"}}, update the count for
+//     foo:bucket.
+//   - If applied is []CounterPath{{"a","b"}, {"c","d"}}, update foo/a:b and
+//     foo/c:d.
+//
 // It returns an error if the value was invalid or duplicate.
 // It is the caller's responsibility to augment the error with 'name'.
-func (o *Options) setOne(name string, value any) error {
+func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error) {
 	switch name {
 	case "env":
 		env, ok := value.(map[string]any)
 		if !ok {
-			return fmt.Errorf("invalid type %T (want JSON object)", value)
+			return nil, fmt.Errorf("invalid type %T (want JSON object)", value)
 		}
 		if o.Env == nil {
 			o.Env = make(map[string]string)
@@ -973,30 +1007,32 @@ func (o *Options) setOne(name string, value any) error {
 			case string, int:
 				o.Env[k] = fmt.Sprint(v)
 			default:
-				return fmt.Errorf("invalid map value %T (want string)", v)
+				return nil, fmt.Errorf("invalid map value %T (want string)", v)
 			}
 		}
+		return nil, nil
 
 	case "buildFlags":
-		return setStringSlice(&o.BuildFlags, value)
+		return nil, setStringSlice(&o.BuildFlags, value)
 
 	case "directoryFilters":
 		filterStrings, err := asStringSlice(value)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var filters []string
 		for _, filterStr := range filterStrings {
 			filter, err := validateDirectoryFilter(filterStr)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			filters = append(filters, strings.TrimRight(filepath.FromSlash(filter), "/"))
 		}
 		o.DirectoryFilters = filters
+		return nil, nil
 
 	case "workspaceFiles":
-		return setStringSlice(&o.WorkspaceFiles, value)
+		return nil, setStringSlice(&o.WorkspaceFiles, value)
 	case "completionDocumentation":
 		return setBool(&o.CompletionDocumentation, value)
 	case "usePlaceholders":
@@ -1006,7 +1042,7 @@ func (o *Options) setOne(name string, value any) error {
 	case "completeUnimported":
 		return setBool(&o.CompleteUnimported, value)
 	case "completionBudget":
-		return setDuration(&o.CompletionBudget, value)
+		return nil, setDuration(&o.CompletionBudget, value)
 	case "importsSource":
 		return setEnum(&o.ImportsSource, value,
 			ImportsSourceOff,
@@ -1038,7 +1074,7 @@ func (o *Options) setOne(name string, value any) error {
 
 	case "hoverKind":
 		if s, ok := value.(string); ok && strings.EqualFold(s, "structured") {
-			return deprecatedError("the experimental hoverKind='structured' setting was removed in gopls/v0.18.0 (https://go.dev/issue/70233)")
+			return nil, deprecatedError("the experimental hoverKind='structured' setting was removed in gopls/v0.18.0 (https://go.dev/issue/70233)")
 		}
 		return setEnum(&o.HoverKind, value,
 			NoDocumentation,
@@ -1047,7 +1083,7 @@ func (o *Options) setOne(name string, value any) error {
 			FullDocumentation)
 
 	case "linkTarget":
-		return setString(&o.LinkTarget, value)
+		return nil, setString(&o.LinkTarget, value)
 
 	case "linksInHover":
 		switch value {
@@ -1058,9 +1094,9 @@ func (o *Options) setOne(name string, value any) error {
 		case "gopls":
 			o.LinksInHover = LinksInHover_Gopls
 		default:
-			return fmt.Errorf(`invalid value %s; expect false, true, or "gopls"`,
-				value)
+			return nil, fmt.Errorf(`invalid value %s; expect false, true, or "gopls"`, value)
 		}
+		return nil, nil
 
 	case "importShortcut":
 		return setEnum(&o.ImportShortcut, value,
@@ -1069,18 +1105,20 @@ func (o *Options) setOne(name string, value any) error {
 			DefinitionShortcut)
 
 	case "analyses":
-		if err := setBoolMap(&o.Analyses, value); err != nil {
-			return err
+		counts, err := setBoolMap(&o.Analyses, value)
+		if err != nil {
+			return nil, err
 		}
 		if o.Analyses["fieldalignment"] {
-			return deprecatedError("the 'fieldalignment' analyzer was removed in gopls/v0.17.0; instead, hover over struct fields to see size/offset information (https://go.dev/issue/66861)")
+			return counts, deprecatedError("the 'fieldalignment' analyzer was removed in gopls/v0.17.0; instead, hover over struct fields to see size/offset information (https://go.dev/issue/66861)")
 		}
+		return counts, nil
 
 	case "hints":
 		return setBoolMap(&o.Hints, value)
 
 	case "annotations":
-		return deprecatedError("the 'annotations' setting was removed in gopls/v0.18.0; all compiler optimization details are now shown")
+		return nil, deprecatedError("the 'annotations' setting was removed in gopls/v0.18.0; all compiler optimization details are now shown")
 
 	case "vulncheck":
 		return setEnum(&o.Vulncheck, value,
@@ -1090,7 +1128,7 @@ func (o *Options) setOne(name string, value any) error {
 	case "codelenses", "codelens":
 		lensOverrides, err := asBoolMap[CodeLensSource](value)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if o.Codelenses == nil {
 			o.Codelenses = make(map[CodeLensSource]bool)
@@ -1098,15 +1136,21 @@ func (o *Options) setOne(name string, value any) error {
 		o.Codelenses = maps.Clone(o.Codelenses)
 		maps.Copy(o.Codelenses, lensOverrides)
 
-		if name == "codelens" {
-			return deprecatedError("codelenses")
+		var counts []CounterPath
+		for k, v := range lensOverrides {
+			counts = append(counts, CounterPath{string(k), fmt.Sprint(v)})
 		}
+
+		if name == "codelens" {
+			return counts, deprecatedError("codelenses")
+		}
+		return counts, nil
 
 	case "staticcheck":
 		return setBool(&o.Staticcheck, value)
 
 	case "local":
-		return setString(&o.Local, value)
+		return nil, setString(&o.Local, value)
 
 	case "verboseOutput":
 		return setBool(&o.VerboseOutput, value)
@@ -1128,16 +1172,18 @@ func (o *Options) setOne(name string, value any) error {
 
 	// TODO(hxjiang): deprecate noSemanticString and noSemanticNumber.
 	case "noSemanticString":
-		if err := setBool(&o.NoSemanticString, value); err != nil {
-			return err
+		counts, err := setBool(&o.NoSemanticString, value)
+		if err != nil {
+			return nil, err
 		}
-		return &SoftError{fmt.Sprintf("noSemanticString setting is deprecated, use semanticTokenTypes instead (though you can continue to apply them for the time being).")}
+		return counts, &SoftError{"noSemanticString setting is deprecated, use semanticTokenTypes instead (though you can continue to apply them for the time being)."}
 
 	case "noSemanticNumber":
-		if err := setBool(&o.NoSemanticNumber, value); err != nil {
-			return nil
+		counts, err := setBool(&o.NoSemanticNumber, value)
+		if err != nil {
+			return nil, err
 		}
-		return &SoftError{fmt.Sprintf("noSemanticNumber setting is deprecated, use semanticTokenTypes instead (though you can continue to apply them for the time being).")}
+		return counts, &SoftError{"noSemanticNumber setting is deprecated, use semanticTokenTypes instead (though you can continue to apply them for the time being)."}
 
 	case "semanticTokenTypes":
 		return setBoolMap(&o.SemanticTokenTypes, value)
@@ -1157,15 +1203,16 @@ func (o *Options) setOne(name string, value any) error {
 	case "templateExtensions":
 		switch value := value.(type) {
 		case []any:
-			return setStringSlice(&o.TemplateExtensions, value)
+			return nil, setStringSlice(&o.TemplateExtensions, value)
 		case nil:
 			o.TemplateExtensions = nil
 		default:
-			return fmt.Errorf("unexpected type %T (want JSON array of string)", value)
+			return nil, fmt.Errorf("unexpected type %T (want JSON array of string)", value)
 		}
+		return nil, nil
 
 	case "diagnosticsDelay":
-		return setDuration(&o.DiagnosticsDelay, value)
+		return nil, setDuration(&o.DiagnosticsDelay, value)
 
 	case "diagnosticsTrigger":
 		return setEnum(&o.DiagnosticsTrigger, value,
@@ -1175,11 +1222,8 @@ func (o *Options) setOne(name string, value any) error {
 	case "analysisProgressReporting":
 		return setBool(&o.AnalysisProgressReporting, value)
 
-	case "allowImplicitNetworkAccess":
-		return deprecatedError("")
-
 	case "standaloneTags":
-		return setStringSlice(&o.StandaloneTags, value)
+		return nil, setStringSlice(&o.StandaloneTags, value)
 
 	case "subdirWatchPatterns":
 		return setEnum(&o.SubdirWatchPatterns, value,
@@ -1188,7 +1232,7 @@ func (o *Options) setOne(name string, value any) error {
 			SubdirWatchPatternsAuto)
 
 	case "reportAnalysisProgressAfter":
-		return setDuration(&o.ReportAnalysisProgressAfter, value)
+		return nil, setDuration(&o.ReportAnalysisProgressAfter, value)
 
 	case "telemetryPrompt":
 		return setBool(&o.TelemetryPrompt, value)
@@ -1213,50 +1257,54 @@ func (o *Options) setOne(name string, value any) error {
 
 	// renamed
 	case "experimentalDisabledAnalyses":
-		return deprecatedError("analyses")
+		return nil, deprecatedError("analyses")
 
 	case "disableDeepCompletion":
-		return deprecatedError("deepCompletion")
+		return nil, deprecatedError("deepCompletion")
 
 	case "disableFuzzyMatching":
-		return deprecatedError("fuzzyMatching")
+		return nil, deprecatedError("fuzzyMatching")
 
 	case "wantCompletionDocumentation":
-		return deprecatedError("completionDocumentation")
+		return nil, deprecatedError("completionDocumentation")
 
 	case "wantUnimportedCompletions":
-		return deprecatedError("completeUnimported")
+		return nil, deprecatedError("completeUnimported")
 
 	case "fuzzyMatching":
-		return deprecatedError("matcher")
+		return nil, deprecatedError("matcher")
 
 	case "caseSensitiveCompletion":
-		return deprecatedError("matcher")
+		return nil, deprecatedError("matcher")
 
 	case "experimentalDiagnosticsDelay":
-		return deprecatedError("diagnosticsDelay")
+		return nil, deprecatedError("diagnosticsDelay")
 
 	// deprecated
+
+	case "allowImplicitNetworkAccess":
+		return nil, deprecatedError("")
+
 	case "memoryMode":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "tempModFile":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "experimentalWorkspaceModule":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "experimentalTemplateSupport":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "experimentalWatchedFileDelay":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "experimentalPackageCacheKey":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "allowModfileModifications":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "allExperiments":
 		// golang/go#65548: this setting is a no-op, but we fail don't report it as
@@ -1265,29 +1313,29 @@ func (o *Options) setOne(name string, value any) error {
 		// If, in the future, VS Code stops injecting this, we could theoretically
 		// report an error here, but it also seems harmless to keep ignoring this
 		// setting forever.
+		return nil, nil
 
 	case "experimentalUseInvalidMetadata":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "newDiff":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "wantSuggestedFixes":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "noIncrementalSync":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "watchFileChanges":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	case "go-diff":
-		return deprecatedError("")
+		return nil, deprecatedError("")
 
 	default:
-		return fmt.Errorf("unexpected setting")
+		return nil, fmt.Errorf("unexpected setting")
 	}
-	return nil
 }
 
 // EnabledSemanticTokenModifiers returns a map of modifiers to boolean.
@@ -1323,11 +1371,6 @@ func (e *SoftError) Error() string {
 	return e.msg
 }
 
-// softErrorf reports a soft error related to the current option.
-func softErrorf(format string, args ...any) error {
-	return &SoftError{fmt.Sprintf(format, args...)}
-}
-
 // deprecatedError reports the current setting as deprecated.
 // The optional replacement is suggested to the user.
 func deprecatedError(replacement string) error {
@@ -1341,13 +1384,13 @@ func deprecatedError(replacement string) error {
 // setT() and asT() helpers: the setT forms write to the 'dest *T'
 // variable only on success, to reduce boilerplate in Option.set.
 
-func setBool(dest *bool, value any) error {
+func setBool(dest *bool, value any) ([]CounterPath, error) {
 	b, err := asBool(value)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	*dest = b
-	return nil
+	return []CounterPath{{fmt.Sprint(b)}}, nil
 }
 
 func asBool(value any) (bool, error) {
@@ -1371,13 +1414,17 @@ func setDuration(dest *time.Duration, value any) error {
 	return nil
 }
 
-func setBoolMap[K ~string](dest *map[K]bool, value any) error {
+func setBoolMap[K ~string](dest *map[K]bool, value any) ([]CounterPath, error) {
 	m, err := asBoolMap[K](value)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	*dest = m
-	return nil
+	var counts []CounterPath
+	for k, v := range m {
+		counts = append(counts, CounterPath{string(k), fmt.Sprint(v)})
+	}
+	return counts, nil
 }
 
 func asBoolMap[K ~string](value any) (map[K]bool, error) {
@@ -1438,13 +1485,13 @@ func asStringSlice(value any) ([]string, error) {
 	return slice, nil
 }
 
-func setEnum[S ~string](dest *S, value any, options ...S) error {
+func setEnum[S ~string](dest *S, value any, options ...S) ([]CounterPath, error) {
 	enum, err := asEnum(value, options...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	*dest = enum
-	return nil
+	return []CounterPath{{string(enum)}}, nil
 }
 
 func asEnum[S ~string](value any, options ...S) (S, error) {

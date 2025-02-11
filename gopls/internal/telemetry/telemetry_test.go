@@ -119,6 +119,50 @@ func TestTelemetry(t *testing.T) {
 	}
 }
 
+func TestSettingTelemetry(t *testing.T) {
+	// counters that should be incremented by each session
+	sessionCounters := []*counter.Counter{
+		counter.New("gopls/setting/diagnosticsDelay"),
+		counter.New("gopls/setting/staticcheck:true"),
+		counter.New("gopls/setting/noSemanticString:true"),
+		counter.New("gopls/setting/analyses/deprecated:false"),
+	}
+
+	initialCounts := make([]uint64, len(sessionCounters))
+	for i, c := range sessionCounters {
+		count, err := countertest.ReadCounter(c)
+		if err != nil {
+			continue // counter db not open, or counter not found
+		}
+		initialCounts[i] = count
+	}
+
+	// Run gopls.
+	WithOptions(
+		Modes(Default),
+		Settings{
+			"staticcheck": true,
+			"analyses": map[string]bool{
+				"deprecated": false,
+			},
+			"diagnosticsDelay": "0s",
+			"noSemanticString": true,
+		},
+	).Run(t, "", func(_ *testing.T, env *Env) {
+	})
+
+	for i, c := range sessionCounters {
+		count, err := countertest.ReadCounter(c)
+		if err != nil {
+			t.Errorf("ReadCounter(%q) failed: %v", c.Name(), err)
+			continue
+		}
+		if count <= initialCounts[i] {
+			t.Errorf("ReadCounter(%q) = %d, want > %d", c.Name(), count, initialCounts[i])
+		}
+	}
+}
+
 func addForwardedCounters(env *Env, names []string, values []int64) {
 	args, err := command.MarshalArgs(command.AddTelemetryCountersArgs{
 		Names: names, Values: values,
