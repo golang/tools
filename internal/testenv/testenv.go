@@ -278,6 +278,16 @@ func NeedsGoBuild(t testing.TB) {
 	NeedsTool(t, "go")
 }
 
+// NeedsDefaultImporter skips t if the test uses the default importer,
+// returned by [go/importer.Default].
+func NeedsDefaultImporter(t testing.TB) {
+	t.Helper()
+	// The default importer may call `go list`
+	// (in src/internal/exportdata/exportdata.go:lookupGorootExport),
+	// so check for the go tool.
+	NeedsTool(t, "go")
+}
+
 // ExitIfSmallMachine emits a helpful diagnostic and calls os.Exit(0) if the
 // current machine is a builder known to have scarce resources.
 //

@@ -18,9 +18,12 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestAddImport(t *testing.T) {
+	testenv.NeedsDefaultImporter(t)
+
 	descr := func(s string) string {
 		if _, _, line, ok := runtime.Caller(1); ok {
 			return fmt.Sprintf("L%d %s", line, s)
@@ -270,6 +273,9 @@ func _(io.Reader) {
 				Implicits: make(map[ast.Node]types.Object),
 			}
 			conf := &types.Config{
+				// We don't want to fail if there is an error during type checking:
+				// the error may be because we're missing an import, and adding imports
+				// is the whole point of AddImport.
 				Error:    func(err error) { t.Log(err) },
 				Importer: importer.Default(),
 			}
