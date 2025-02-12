@@ -101,3 +101,18 @@ func shadow() {
 
 	_ = x
 }
+
+// Type aliases
+
+//go:fix inline
+type A = T // want A: `goFixInline alias "a".T`
+
+var _ A // want `Type alias A should be inlined`
+
+type B = []T // nope: only named RHSs
+
+//go:fix inline
+type AA = // want AA: `goFixInline alias "a".A`
+A         // want `Type alias A should be inlined`
+
+var _ AA // want `Type alias AA should be inlined`
