@@ -8,8 +8,7 @@
 
 skip GOOS=windows
 checker -rename -fix -diff example.com/p
-exit 3
-stderr renaming "bar" to "baz"
+exit 0
 
 -- go.mod --
 module example.com

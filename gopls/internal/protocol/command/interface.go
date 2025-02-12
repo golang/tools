@@ -814,6 +814,9 @@ type PackageSymbol struct {
 
 	Detail string `json:"detail,omitempty"`
 
+	// protocol.SymbolKind maps an integer to an enum:
+	// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolKind
+	// i.e. File = 1
 	Kind protocol.SymbolKind `json:"kind"`
 
 	Tags []protocol.SymbolTag `json:"tags,omitempty"`

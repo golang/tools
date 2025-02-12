@@ -70,7 +70,8 @@ func sortslice(pass *analysis.Pass) {
 				if isIndex(compare.X, i) && isIndex(compare.Y, j) {
 					// Have: sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 
-					slicesName, importEdits := analysisinternal.AddImport(info, file, call.Pos(), "slices", "slices")
+					_, prefix, importEdits := analysisinternal.AddImport(
+						info, file, "slices", "slices", "Sort", call.Pos())
 
 					pass.Report(analysis.Diagnostic{
 						// Highlight "sort.Slice".
@@ -85,7 +86,7 @@ func sortslice(pass *analysis.Pass) {
 									// Replace sort.Slice with slices.Sort.
 									Pos:     call.Fun.Pos(),
 									End:     call.Fun.End(),
-									NewText: []byte(slicesName + ".Sort"),
+									NewText: []byte(prefix + "Sort"),
 								},
 								{
 									// Eliminate FuncLit.

@@ -52,17 +52,20 @@ func appendclipped(pass *analysis.Pass) {
 		// Only appends whose base is a clipped slice can be simplified:
 		// We must conservatively assume an append to an unclipped slice
 		// such as append(y[:0], x...) is intended to have effects on y.
-		clipped, empty := isClippedSlice(info, base)
-		if !clipped {
+		clipped, empty := clippedSlice(info, base)
+		if clipped == nil {
 			return
 		}
 
 		// If the (clipped) base is empty, it may be safely ignored.
-		// Otherwise treat it as just another arg (the first) to Concat.
+		// Otherwise treat it (or its unclipped subexpression, if possible)
+		// as just another arg (the first) to Concat.
 		if !empty {
-			sliceArgs = append(sliceArgs, base)
+			sliceArgs = append(sliceArgs, clipped)
 		}
 		slices.Reverse(sliceArgs)
+
+		// TODO(adonovan): simplify sliceArgs[0] further: slices.Clone(s) -> s
 
 		// Concat of a single (non-trivial) slice degenerates to Clone.
 		if len(sliceArgs) == 1 {
@@ -92,7 +95,7 @@ func appendclipped(pass *analysis.Pass) {
 			}
 
 			// append(zerocap, s...) -> slices.Clone(s)
-			slicesName, importEdits := analysisinternal.AddImport(info, file, call.Pos(), "slices", "slices")
+			_, prefix, importEdits := analysisinternal.AddImport(info, file, "slices", "slices", "Clone", call.Pos())
 			pass.Report(analysis.Diagnostic{
 				Pos:      call.Pos(),
 				End:      call.End(),
@@ -103,7 +106,7 @@ func appendclipped(pass *analysis.Pass) {
 					TextEdits: append(importEdits, []analysis.TextEdit{{
 						Pos:     call.Pos(),
 						End:     call.End(),
-						NewText: fmt.Appendf(nil, "%s.Clone(%s)", slicesName, analysisinternal.Format(pass.Fset, s)),
+						NewText: fmt.Appendf(nil, "%sClone(%s)", prefix, analysisinternal.Format(pass.Fset, s)),
 					}}...),
 				}},
 			})
@@ -111,12 +114,7 @@ func appendclipped(pass *analysis.Pass) {
 		}
 
 		// append(append(append(base, a...), b..., c...) -> slices.Concat(base, a, b, c)
-		//
-		// TODO(adonovan): simplify sliceArgs[0] further:
-		// - slices.Clone(s)   -> s
-		// - s[:len(s):len(s)] -> s
-		// - slices.Clip(s)    -> s
-		slicesName, importEdits := analysisinternal.AddImport(info, file, call.Pos(), "slices", "slices")
+		_, prefix, importEdits := analysisinternal.AddImport(info, file, "slices", "slices", "Concat", call.Pos())
 		pass.Report(analysis.Diagnostic{
 			Pos:      call.Pos(),
 			End:      call.End(),
@@ -127,7 +125,7 @@ func appendclipped(pass *analysis.Pass) {
 				TextEdits: append(importEdits, []analysis.TextEdit{{
 					Pos:     call.Pos(),
 					End:     call.End(),
-					NewText: fmt.Appendf(nil, "%s.Concat(%s)", slicesName, formatExprs(pass.Fset, sliceArgs)),
+					NewText: fmt.Appendf(nil, "%sConcat(%s)", prefix, formatExprs(pass.Fset, sliceArgs)),
 				}}...),
 			}},
 		})
@@ -172,25 +170,36 @@ func appendclipped(pass *analysis.Pass) {
 	}
 }
 
-// isClippedSlice reports whether e denotes a slice that is definitely
-// clipped, that is, its len(s)==cap(s).
+// clippedSlice returns res != nil if e denotes a slice that is
+// definitely clipped, that is, its len(s)==cap(s).
 //
-// In addition, it reports whether the slice is definitely empty.
+// The value of res is either the same as e or is a subexpression of e
+// that denotes the same slice but without the clipping operation.
+//
+// In addition, it reports whether the slice is definitely empty,
 //
 // Examples of clipped slices:
 //
 //	x[:0:0]				(empty)
 //	[]T(nil)			(empty)
 //	Slice{}				(empty)
-//	x[:len(x):len(x)]		(nonempty)
+//	x[:len(x):len(x)]		(nonempty)  res=x
 //	x[:k:k]	 	         	(nonempty)
-//	slices.Clip(x)			(nonempty)
-func isClippedSlice(info *types.Info, e ast.Expr) (clipped, empty bool) {
+//	slices.Clip(x)			(nonempty)  res=x
+func clippedSlice(info *types.Info, e ast.Expr) (res ast.Expr, empty bool) {
 	switch e := e.(type) {
 	case *ast.SliceExpr:
-		// x[:0:0], x[:len(x):len(x)], x[:k:k], x[:0]
-		clipped = e.Slice3 && e.High != nil && e.Max != nil && equalSyntax(e.High, e.Max) // x[:k:k]
-		empty = e.High != nil && isZeroLiteral(e.High)                                    // x[:0:*]
+		// x[:0:0], x[:len(x):len(x)], x[:k:k]
+		if e.Slice3 && e.High != nil && e.Max != nil && equalSyntax(e.High, e.Max) { // x[:k:k]
+			res = e
+			empty = isZeroLiteral(e.High) // x[:0:0]
+			if call, ok := e.High.(*ast.CallExpr); ok &&
+				typeutil.Callee(info, call) == builtinLen &&
+				equalSyntax(call.Args[0], e.X) {
+				res = e.X // x[:len(x):len(x)] -> x
+			}
+			return
+		}
 		return
 
 	case *ast.CallExpr:
@@ -198,20 +207,20 @@ func isClippedSlice(info *types.Info, e ast.Expr) (clipped, empty bool) {
 		if info.Types[e.Fun].IsType() &&
 			is[*ast.Ident](e.Args[0]) &&
 			info.Uses[e.Args[0].(*ast.Ident)] == builtinNil {
-			return true, true
+			return e, true
 		}
 
 		// slices.Clip(x)?
 		obj := typeutil.Callee(info, e)
 		if analysisinternal.IsFunctionNamed(obj, "slices", "Clip") {
-			return true, false
+			return e.Args[0], false // slices.Clip(x) -> x
 		}
 
 	case *ast.CompositeLit:
 		// Slice{}?
 		if len(e.Elts) == 0 {
-			return true, true
+			return e, true
 		}
 	}
-	return false, false
+	return nil, false
 }

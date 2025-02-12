@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/telemetry"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/goversion"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
@@ -74,7 +75,11 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 	// TODO(rfindley): eliminate this defer.
 	defer func() { s.SetOptions(options) }()
 
-	s.handleOptionErrors(ctx, options.Set(params.InitializationOptions))
+	// Process initialization options.
+	{
+		res, errs := options.Set(params.InitializationOptions)
+		s.handleOptionResult(ctx, res, errs)
+	}
 	options.ForClientCapabilities(params.ClientInfo, params.Capabilities)
 
 	if options.ShowBugReports {
@@ -541,7 +546,8 @@ func (s *server) fetchFolderOptions(ctx context.Context, folder protocol.Documen
 
 	opts = opts.Clone()
 	for _, config := range configs {
-		s.handleOptionErrors(ctx, opts.Set(config))
+		res, errs := opts.Set(config)
+		s.handleOptionResult(ctx, res, errs)
 	}
 	return opts, nil
 }
@@ -555,7 +561,12 @@ func (s *server) eventuallyShowMessage(ctx context.Context, msg *protocol.ShowMe
 	s.notifications = append(s.notifications, msg)
 }
 
-func (s *server) handleOptionErrors(ctx context.Context, optionErrors []error) {
+func (s *server) handleOptionResult(ctx context.Context, applied []telemetry.CounterPath, optionErrors []error) {
+	for _, path := range applied {
+		path = append(settings.CounterPath{"gopls", "setting"}, path...)
+		counter.Inc(path.FullName())
+	}
+
 	var warnings, errs []string
 	for _, err := range optionErrors {
 		if err == nil {

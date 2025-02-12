@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
 // The slicesdelete pass attempts to replace instances of append(s[:i], s[i+k:]...)
@@ -22,7 +23,8 @@ import (
 func slicesdelete(pass *analysis.Pass) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	info := pass.TypesInfo
-	report := func(call *ast.CallExpr, slice1, slice2 *ast.SliceExpr) {
+	report := func(file *ast.File, call *ast.CallExpr, slice1, slice2 *ast.SliceExpr) {
+		_, prefix, edits := analysisinternal.AddImport(info, file, "slices", "slices", "Delete", call.Pos())
 		pass.Report(analysis.Diagnostic{
 			Pos:      call.Pos(),
 			End:      call.End(),
@@ -30,12 +32,12 @@ func slicesdelete(pass *analysis.Pass) {
 			Message:  "Replace append with slices.Delete",
 			SuggestedFixes: []analysis.SuggestedFix{{
 				Message: "Replace append with slices.Delete",
-				TextEdits: []analysis.TextEdit{
+				TextEdits: append(edits, []analysis.TextEdit{
 					// Change name of called function.
 					{
 						Pos:     call.Fun.Pos(),
 						End:     call.Fun.End(),
-						NewText: []byte("slices.Delete"),
+						NewText: []byte(prefix + "Delete"),
 					},
 					// Delete ellipsis.
 					{
@@ -69,11 +71,12 @@ func slicesdelete(pass *analysis.Pass) {
 						Pos: slice2.Low.End(),
 						End: slice2.Rbrack + 1,
 					},
-				},
+				}...),
 			}},
 		})
 	}
 	for curFile := range filesUsing(inspect, info, "go1.21") {
+		file := curFile.Node().(*ast.File)
 		for curCall := range curFile.Preorder((*ast.CallExpr)(nil)) {
 			call := curCall.Node().(*ast.CallExpr)
 			if id, ok := call.Fun.(*ast.Ident); ok && len(call.Args) == 2 {
@@ -88,7 +91,7 @@ func slicesdelete(pass *analysis.Pass) {
 						equalSyntax(slice1.X, slice2.X) &&
 						increasingSliceIndices(info, slice1.High, slice2.Low) {
 						// Have append(s[:a], s[b:]...) where we can verify a < b.
-						report(call, slice1, slice2)
+						report(file, call, slice1, slice2)
 					}
 				}
 			}

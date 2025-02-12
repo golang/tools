@@ -294,8 +294,7 @@ Package documentation: [framepointer](https://pkg.go.dev/golang.org/x/tools/go/a
 ## `gofix`: apply fixes based on go:fix comment directives
 
 
-The gofix analyzer inlines functions that are marked for inlining
-and forwards constants that are marked for forwarding.
+The gofix analyzer inlines functions and constants that are marked for inlining.
 
 Default: on.
 
@@ -498,6 +497,8 @@ existing code by using more modern features of Go, such as:
     added in go1.21
   - replacing a 3-clause for i := 0; i < n; i++ {} loop by
     for i := range n {}, added in go1.22;
+  - replacing Split in "for range strings.Split(...)" by go1.24's
+    more efficient SplitSeq;
 
 Default: on.
 

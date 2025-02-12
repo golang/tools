@@ -70,6 +70,7 @@ func run(pass *analysis.Pass) (any, error) {
 	rangeint(pass)
 	slicescontains(pass)
 	slicesdelete(pass)
+	splitseq(pass)
 	sortslice(pass)
 	testingContext(pass)
 
@@ -129,6 +130,7 @@ var (
 	builtinAppend  = types.Universe.Lookup("append")
 	builtinBool    = types.Universe.Lookup("bool")
 	builtinFalse   = types.Universe.Lookup("false")
+	builtinLen     = types.Universe.Lookup("len")
 	builtinMake    = types.Universe.Lookup("make")
 	builtinNil     = types.Universe.Lookup("nil")
 	builtinTrue    = types.Universe.Lookup("true")

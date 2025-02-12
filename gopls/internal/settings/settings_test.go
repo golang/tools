@@ -206,7 +206,7 @@ func TestOptions_Set(t *testing.T) {
 
 	for _, test := range tests {
 		var opts Options
-		err := opts.Set(map[string]any{test.name: test.value})
+		_, err := opts.Set(map[string]any{test.name: test.value})
 		if err != nil {
 			if !test.wantError {
 				t.Errorf("Options.set(%q, %v) failed: %v",

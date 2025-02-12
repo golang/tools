@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/imports"
+	"golang.org/x/tools/internal/analysisinternal"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
@@ -331,7 +332,7 @@ func (st *state) inline() (*Result, error) {
 		for _, imp := range res.newImports {
 			// Check that the new imports are accessible.
 			path, _ := strconv.Unquote(imp.spec.Path.Value)
-			if !canImport(caller.Types.Path(), path) {
+			if !analysisinternal.CanImport(caller.Types.Path(), path) {
 				return nil, fmt.Errorf("can't inline function %v as its body refers to inaccessible package %q", callee, path)
 			}
 			importDecl.Specs = append(importDecl.Specs, imp.spec)
@@ -3194,30 +3195,6 @@ func last[T any](slice []T) T {
 		return slice[n-1]
 	}
 	return *new(T)
-}
-
-// canImport reports whether one package is allowed to import another.
-//
-// TODO(adonovan): allow customization of the accessibility relation
-// (e.g. for Bazel).
-func canImport(from, to string) bool {
-	// TODO(adonovan): better segment hygiene.
-	if strings.HasPrefix(to, "internal/") {
-		// Special case: only std packages may import internal/...
-		// We can't reliably know whether we're in std, so we
-		// use a heuristic on the first segment.
-		first, _, _ := strings.Cut(from, "/")
-		if strings.Contains(first, ".") {
-			return false // example.com/foo ∉ std
-		}
-		if first == "testdata" {
-			return false // testdata/foo ∉ std
-		}
-	}
-	if i := strings.LastIndex(to, "/internal/"); i >= 0 {
-		return strings.HasPrefix(from, to[:i])
-	}
-	return true
 }
 
 // consistentOffsets reports whether the portion of caller.Content

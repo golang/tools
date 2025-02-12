@@ -211,10 +211,17 @@ func CheckReadable(pass *analysis.Pass, filename string) error {
 // that import is in scope at pos. If so, it returns the name under
 // which it was imported and a zero edit. Otherwise, it adds a new
 // import of pkgpath, using a name derived from the preferred name,
-// and returns the chosen name along with the edit for the new import.
+// and returns the chosen name, a prefix to be concatenated with member
+// to form a qualified name, and the edit for the new import.
+//
+// In the special case that pkgpath is dot-imported then member, the
+// identifer for which the import is being added, is consulted. If
+// member is not shadowed at pos, AddImport returns (".", "", nil).
+// (AddImport accepts the caller's implicit claim that the imported
+// package declares member.)
 //
 // It does not mutate its arguments.
-func AddImport(info *types.Info, file *ast.File, pos token.Pos, pkgpath, preferredName string) (name string, newImport []analysis.TextEdit) {
+func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member string, pos token.Pos) (name, prefix string, newImport []analysis.TextEdit) {
 	// Find innermost enclosing lexical block.
 	scope := info.Scopes[file].Innermost(pos)
 	if scope == nil {
@@ -226,8 +233,14 @@ func AddImport(info *types.Info, file *ast.File, pos token.Pos, pkgpath, preferr
 	for _, spec := range file.Imports {
 		pkgname := info.PkgNameOf(spec)
 		if pkgname != nil && pkgname.Imported().Path() == pkgpath {
-			if _, obj := scope.LookupParent(pkgname.Name(), pos); obj == pkgname {
-				return pkgname.Name(), nil
+			name = pkgname.Name()
+			if name == "." {
+				// The scope of ident must be the file scope.
+				if s, _ := scope.LookupParent(member, pos); s == info.Scopes[file] {
+					return name, "", nil
+				}
+			} else if _, obj := scope.LookupParent(name, pos); obj == pkgname {
+				return name, name + ".", nil
 			}
 		}
 	}
@@ -242,16 +255,16 @@ func AddImport(info *types.Info, file *ast.File, pos token.Pos, pkgpath, preferr
 		newName = fmt.Sprintf("%s%d", preferredName, i)
 	}
 
-	// For now, keep it real simple: create a new import
-	// declaration before the first existing declaration (which
-	// must exist), including its comments, and let goimports tidy it up.
+	// Create a new import declaration either before the first existing
+	// declaration (which must exist), including its comments; or
+	// inside the declaration, if it is an import group.
 	//
 	// Use a renaming import whenever the preferred name is not
 	// available, or the chosen name does not match the last
 	// segment of its path.
-	newText := fmt.Sprintf("import %q\n\n", pkgpath)
+	newText := fmt.Sprintf("%q", pkgpath)
 	if newName != preferredName || newName != pathpkg.Base(pkgpath) {
-		newText = fmt.Sprintf("import %s %q\n\n", newName, pkgpath)
+		newText = fmt.Sprintf("%s %q", newName, pkgpath)
 	}
 	decl0 := file.Decls[0]
 	var before ast.Node = decl0
@@ -265,9 +278,17 @@ func AddImport(info *types.Info, file *ast.File, pos token.Pos, pkgpath, preferr
 			before = decl0.Doc
 		}
 	}
-	return newName, []analysis.TextEdit{{
-		Pos:     before.Pos(),
-		End:     before.Pos(),
+	// If the first decl is an import group, add this new import at the end.
+	if gd, ok := before.(*ast.GenDecl); ok && gd.Tok == token.IMPORT && gd.Rparen.IsValid() {
+		pos = gd.Rparen
+		newText = "\t" + newText + "\n"
+	} else {
+		pos = before.Pos()
+		newText = "import " + newText + "\n\n"
+	}
+	return newName, newName + ".", []analysis.TextEdit{{
+		Pos:     pos,
+		End:     pos,
 		NewText: []byte(newText),
 	}}
 }
@@ -435,4 +456,31 @@ func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
 	}
 
 	return nil
+}
+
+// CanImport reports whether one package is allowed to import another.
+//
+// TODO(adonovan): allow customization of the accessibility relation
+// (e.g. for Bazel).
+func CanImport(from, to string) bool {
+	// TODO(adonovan): better segment hygiene.
+	if to == "internal" || strings.HasPrefix(to, "internal/") {
+		// Special case: only std packages may import internal/...
+		// We can't reliably know whether we're in std, so we
+		// use a heuristic on the first segment.
+		first, _, _ := strings.Cut(from, "/")
+		if strings.Contains(first, ".") {
+			return false // example.com/foo ∉ std
+		}
+		if first == "testdata" {
+			return false // testdata/foo ∉ std
+		}
+	}
+	if strings.HasSuffix(to, "/internal") {
+		return strings.HasPrefix(from, to[:len(to)-len("/internal")])
+	}
+	if i := strings.LastIndex(to, "/internal/"); i >= 0 {
+		return strings.HasPrefix(from, to[:i])
+	}
+	return true
 }

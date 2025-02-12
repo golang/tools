@@ -52,9 +52,9 @@ func TestMain(m *testing.M) {
 }
 
 const (
-	exitCodeSuccess     = 0 // success (no diagnostics)
+	exitCodeSuccess     = 0 // success (no diagnostics, or successful -fix)
 	exitCodeFailed      = 1 // analysis failed to run
-	exitCodeDiagnostics = 3 // diagnostics were reported
+	exitCodeDiagnostics = 3 // diagnostics were reported (and no -fix)
 )
 
 // TestReportInvalidDiagnostic tests that a call to pass.Report with
@@ -280,6 +280,9 @@ func TestScript(t *testing.T) {
 					if false {
 						t.Logf("%s: $ %s\nstdout:\n%s\nstderr:\n%s", prefix, clean(cmd), stdout, lastStderr)
 					}
+
+					// Keep error reporting logic below consistent with
+					// applyDiffsAndCompare in ../../analysistest/analysistest.go!
 
 					unified := func(xlabel, ylabel string, x, y []byte) string {
 						x = append(slices.Clip(bytes.TrimSpace(x)), '\n')

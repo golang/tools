@@ -23,6 +23,7 @@ func Test(t *testing.T) {
 		"rangeint",
 		"slicescontains",
 		"slicesdelete",
+		"splitseq",
 		"sortslice",
 		"testingcontext",
 	)
