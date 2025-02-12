@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/tools/godoc"
 	"golang.org/x/tools/godoc/redirect"
-	"golang.org/x/tools/godoc/vfs"
+	"golang.org/x/tools/vfs"
 
 	_ "golang.org/x/tools/playground" // register "/compile" playground redirect
 )
