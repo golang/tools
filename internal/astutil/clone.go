@@ -25,7 +25,7 @@ func cloneNode(n ast.Node) ast.Node {
 	}
 	clone = func(x reflect.Value) reflect.Value {
 		switch x.Kind() {
-		case reflect.Ptr:
+		case reflect.Pointer:
 			if x.IsNil() {
 				return x
 			}

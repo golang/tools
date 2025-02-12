@@ -2981,7 +2981,7 @@ func replaceNode(root ast.Node, from, to ast.Node) {
 	var visit func(reflect.Value)
 	visit = func(v reflect.Value) {
 		switch v.Kind() {
-		case reflect.Ptr:
+		case reflect.Pointer:
 			if v.Interface() == from {
 				found = true
 

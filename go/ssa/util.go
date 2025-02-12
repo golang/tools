@@ -195,7 +195,7 @@ func makeLen(T types.Type) *Builtin {
 	lenParams := types.NewTuple(anonVar(T))
 	return &Builtin{
 		name: "len",
-		sig:  types.NewSignature(nil, lenParams, lenResults, false),
+		sig:  types.NewSignatureType(nil, nil, nil, lenParams, lenResults, false),
 	}
 }
 

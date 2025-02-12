@@ -203,7 +203,7 @@ func testSuite() map[string]*vtaGraph {
 	a := newNamedType("A")
 	b := newNamedType("B")
 	c := newNamedType("C")
-	sig := types.NewSignature(nil, types.NewTuple(), types.NewTuple(), false)
+	sig := types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(), false)
 
 	f1 := &ssa.Function{Signature: sig}
 	setName(f1, "F1")

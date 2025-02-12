@@ -106,9 +106,7 @@ func (b *builder) buildWrapper(fn *Function) {
 			var c Call
 			c.Call.Value = &Builtin{
 				name: "ssa:wrapnilchk",
-				sig: types.NewSignature(nil,
-					types.NewTuple(anonVar(fn.method.recv), anonVar(tString), anonVar(tString)),
-					types.NewTuple(anonVar(fn.method.recv)), false),
+				sig:  types.NewSignatureType(nil, nil, nil, types.NewTuple(anonVar(fn.method.recv), anonVar(tString), anonVar(tString)), types.NewTuple(anonVar(fn.method.recv)), false),
 			}
 			c.Call.Args = []Value{
 				v,
@@ -262,7 +260,7 @@ func createThunk(prog *Program, sel *selection) *Function {
 }
 
 func changeRecv(s *types.Signature, recv *types.Var) *types.Signature {
-	return types.NewSignature(recv, s.Params(), s.Results(), s.Variadic())
+	return types.NewSignatureType(recv, nil, nil, s.Params(), s.Results(), s.Variadic())
 }
 
 // A local version of *types.Selection.

@@ -14,8 +14,6 @@ import (
 	"runtime"
 	"strings"
 	"unicode"
-
-	"golang.org/x/tools/go/ast/astutil"
 )
 
 func objectKind(obj types.Object) string {
@@ -93,7 +91,7 @@ func sameFile(x, y string) bool {
 	return false
 }
 
-func unparen(e ast.Expr) ast.Expr { return astutil.Unparen(e) }
+func unparen(e ast.Expr) ast.Expr { return ast.Unparen(e) }
 
 func is[T any](x any) bool {
 	_, ok := x.(T)

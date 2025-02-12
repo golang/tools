@@ -308,7 +308,7 @@ func (unreachable) F() {} // not reachable in export data
 	if err != nil {
 		t.Fatal(err)
 	}
-	conf := types.Config{Importer: importer.For("source", nil)}
+	conf := types.Config{Importer: importer.ForCompiler(token.NewFileSet(), "source", nil)}
 	info := &types.Info{
 		Defs: make(map[*ast.Ident]types.Object),
 	}
