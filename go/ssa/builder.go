@@ -559,7 +559,7 @@ func (sb *storebuf) emit(fn *Function) {
 // literal that may reference parts of the LHS.
 func (b *builder) assign(fn *Function, loc lvalue, e ast.Expr, isZero bool, sb *storebuf) {
 	// Can we initialize it in place?
-	if e, ok := unparen(e).(*ast.CompositeLit); ok {
+	if e, ok := ast.Unparen(e).(*ast.CompositeLit); ok {
 		// A CompositeLit never evaluates to a pointer,
 		// so if the type of the location is a pointer,
 		// an &-operation is implied.
@@ -614,7 +614,7 @@ func (b *builder) assign(fn *Function, loc lvalue, e ast.Expr, isZero bool, sb *
 // expr lowers a single-result expression e to SSA form, emitting code
 // to fn and returning the Value defined by the expression.
 func (b *builder) expr(fn *Function, e ast.Expr) Value {
-	e = unparen(e)
+	e = ast.Unparen(e)
 
 	tv := fn.info.Types[e]
 
@@ -704,7 +704,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			return y
 		}
 		// Call to "intrinsic" built-ins, e.g. new, make, panic.
-		if id, ok := unparen(e.Fun).(*ast.Ident); ok {
+		if id, ok := ast.Unparen(e.Fun).(*ast.Ident); ok {
 			if obj, ok := fn.info.Uses[id].(*types.Builtin); ok {
 				if v := b.builtin(fn, obj, e.Args, fn.typ(tv.Type), e.Lparen); v != nil {
 					return v
@@ -721,7 +721,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 		switch e.Op {
 		case token.AND: // &X --- potentially escaping.
 			addr := b.addr(fn, e.X, true)
-			if _, ok := unparen(e.X).(*ast.StarExpr); ok {
+			if _, ok := ast.Unparen(e.X).(*ast.StarExpr); ok {
 				// &*p must panic if p is nil (http://golang.org/s/go12nil).
 				// For simplicity, we'll just (suboptimally) rely
 				// on the side effects of a load.
@@ -1002,7 +1002,7 @@ func (b *builder) setCallFunc(fn *Function, e *ast.CallExpr, c *CallCommon) {
 	c.pos = e.Lparen
 
 	// Is this a method call?
-	if selector, ok := unparen(e.Fun).(*ast.SelectorExpr); ok {
+	if selector, ok := ast.Unparen(e.Fun).(*ast.SelectorExpr); ok {
 		sel := fn.selection(selector)
 		if sel != nil && sel.kind == types.MethodVal {
 			obj := sel.obj.(*types.Func)
@@ -1372,7 +1372,7 @@ func (b *builder) compLit(fn *Function, addr Value, e *ast.CompositeLit, isZero 
 			// An &-operation may be implied:
 			//	map[*struct{}]bool{&struct{}{}: true}
 			wantAddr := false
-			if _, ok := unparen(e.Key).(*ast.CompositeLit); ok {
+			if _, ok := ast.Unparen(e.Key).(*ast.CompositeLit); ok {
 				wantAddr = isPointerCore(t.Key())
 			}
 
@@ -1547,9 +1547,9 @@ func (b *builder) typeSwitchStmt(fn *Function, s *ast.TypeSwitchStmt, label *lbl
 	var x Value
 	switch ass := s.Assign.(type) {
 	case *ast.ExprStmt: // x.(type)
-		x = b.expr(fn, unparen(ass.X).(*ast.TypeAssertExpr).X)
+		x = b.expr(fn, ast.Unparen(ass.X).(*ast.TypeAssertExpr).X)
 	case *ast.AssignStmt: // y := x.(type)
-		x = b.expr(fn, unparen(ass.Rhs[0]).(*ast.TypeAssertExpr).X)
+		x = b.expr(fn, ast.Unparen(ass.Rhs[0]).(*ast.TypeAssertExpr).X)
 	}
 
 	done := fn.newBasicBlock("typeswitch.done")
@@ -1667,7 +1667,7 @@ func (b *builder) selectStmt(fn *Function, s *ast.SelectStmt, label *lblock) {
 			}
 
 		case *ast.AssignStmt: // x := <-ch
-			recv := unparen(comm.Rhs[0]).(*ast.UnaryExpr)
+			recv := ast.Unparen(comm.Rhs[0]).(*ast.UnaryExpr)
 			st = &SelectState{
 				Dir:  types.RecvOnly,
 				Chan: b.expr(fn, recv.X),
@@ -1678,7 +1678,7 @@ func (b *builder) selectStmt(fn *Function, s *ast.SelectStmt, label *lblock) {
 			}
 
 		case *ast.ExprStmt: // <-ch
-			recv := unparen(comm.X).(*ast.UnaryExpr)
+			recv := ast.Unparen(comm.X).(*ast.UnaryExpr)
 			st = &SelectState{
 				Dir:  types.RecvOnly,
 				Chan: b.expr(fn, recv.X),

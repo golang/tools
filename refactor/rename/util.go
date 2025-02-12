@@ -5,7 +5,6 @@
 package rename
 
 import (
-	"go/ast"
 	"go/token"
 	"go/types"
 	"os"
@@ -90,8 +89,6 @@ func sameFile(x, y string) bool {
 	}
 	return false
 }
-
-func unparen(e ast.Expr) ast.Expr { return ast.Unparen(e) }
 
 func is[T any](x any) bool {
 	_, ok := x.(T)
