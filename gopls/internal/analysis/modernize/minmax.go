@@ -57,7 +57,7 @@ func minmax(pass *analysis.Pass) {
 			if equalSyntax(lhs, lhs2) {
 				if equalSyntax(rhs, a) && equalSyntax(rhs2, b) {
 					sign = +sign
-				} else if equalSyntax(rhs2, a) || equalSyntax(rhs, b) {
+				} else if equalSyntax(rhs2, a) && equalSyntax(rhs, b) {
 					sign = -sign
 				} else {
 					return
