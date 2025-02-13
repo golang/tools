@@ -19,16 +19,11 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/tokeninternal"
 )
 
-// IsGenerated gets and reads the file denoted by uri and reports
-// whether it contains a "generated file" comment as described at
-// https://golang.org/s/generatedcode.
-//
-// TODO(adonovan): opt: this function does too much.
-// Move snapshot.ReadFile into the caller (most of which have already done it).
+// IsGenerated reads and parses the header of the file denoted by uri
+// and reports whether it [ast.IsGenerated].
 func IsGenerated(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) bool {
 	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
@@ -38,17 +33,7 @@ func IsGenerated(ctx context.Context, snapshot *cache.Snapshot, uri protocol.Doc
 	if err != nil {
 		return false
 	}
-	for _, commentGroup := range pgf.File.Comments {
-		for _, comment := range commentGroup.List {
-			if matched := generatedRx.MatchString(comment.Text); matched {
-				// Check if comment is at the beginning of the line in source.
-				if safetoken.Position(pgf.Tok, comment.Slash).Column == 1 {
-					return true
-				}
-			}
-		}
-	}
-	return false
+	return ast.IsGenerated(pgf.File)
 }
 
 // adjustedObjEnd returns the end position of obj, possibly modified for
@@ -75,11 +60,6 @@ func adjustedObjEnd(obj types.Object) token.Pos {
 	}
 	return obj.Pos() + token.Pos(nameLen)
 }
-
-// Matches cgo generated comment as well as the proposed standard:
-//
-//	https://golang.org/s/generatedcode
-var generatedRx = regexp.MustCompile(`// .*DO NOT EDIT\.?`)
 
 // FormatNode returns the "pretty-print" output for an ast node.
 func FormatNode(fset *token.FileSet, n ast.Node) string {

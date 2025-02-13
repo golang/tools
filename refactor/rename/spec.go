@@ -19,7 +19,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -321,7 +320,7 @@ func findFromObjectsInFile(iprog *loader.Program, spec *spec) ([]types.Object, e
 
 			if spec.offset != 0 {
 				// We cannot refactor generated files since position information is invalidated.
-				if generated(f, thisFile) {
+				if ast.IsGenerated(f) {
 					return nil, fmt.Errorf("cannot rename identifiers in generated file containing DO NOT EDIT marker: %s", thisFile.Name())
 				}
 
@@ -565,26 +564,4 @@ func ambiguityError(fset *token.FileSet, objects []types.Object) error {
 	}
 	return fmt.Errorf("ambiguous specifier %s matches %s",
 		objects[0].Name(), buf.String())
-}
-
-// Matches cgo generated comment as well as the proposed standard:
-//
-//	https://golang.org/s/generatedcode
-var generatedRx = regexp.MustCompile(`// .*DO NOT EDIT\.?`)
-
-// generated reports whether ast.File is a generated file.
-func generated(f *ast.File, tokenFile *token.File) bool {
-
-	// Iterate over the comments in the file
-	for _, commentGroup := range f.Comments {
-		for _, comment := range commentGroup.List {
-			if matched := generatedRx.MatchString(comment.Text); matched {
-				// Check if comment is at the beginning of the line in source
-				if pos := tokenFile.Position(comment.Slash); pos.Column == 1 {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
