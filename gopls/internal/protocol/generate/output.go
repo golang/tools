@@ -273,10 +273,17 @@ func genProps(out *bytes.Buffer, props []NameType, name string) {
 			tp = newNm
 		}
 		// it's a pointer if it is optional, or for gopls compatibility
-		opt, star := propStar(name, p, tp)
-		json := fmt.Sprintf(" `json:\"%s%s\"`", p.Name, opt)
+		omit, star := propStar(name, p, tp)
+		json := fmt.Sprintf(" `json:\"%s\"`", p.Name)
+		if omit {
+			json = fmt.Sprintf(" `json:\"%s,omitempty\"`", p.Name)
+		}
 		generateDoc(out, p.Documentation)
-		fmt.Fprintf(out, "\t%s %s%s %s\n", goName(p.Name), star, tp, json)
+		if star {
+			fmt.Fprintf(out, "\t%s *%s %s\n", goName(p.Name), tp, json)
+		} else {
+			fmt.Fprintf(out, "\t%s %s %s\n", goName(p.Name), tp, json)
+		}
 	}
 }
 
