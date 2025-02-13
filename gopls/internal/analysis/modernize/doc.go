@@ -32,4 +32,13 @@
 //     for i := range n {}, added in go1.22;
 //   - replacing Split in "for range strings.Split(...)" by go1.24's
 //     more efficient SplitSeq;
+//
+// To apply all modernization fixes en masse, you can use the
+// following command:
+//
+//	$ go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test ./...
+//
+// If the tool warns of conflicting fixes, you may need to run it more
+// than once until it has applied all fixes cleanly. This command is
+// not an officially supported interface and may change in the future.
 package modernize
