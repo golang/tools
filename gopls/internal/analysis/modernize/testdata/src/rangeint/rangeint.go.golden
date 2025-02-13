@@ -1,6 +1,6 @@
 package rangeint
 
-func _(i int, s struct{ i int }) {
+func _(i int, s struct{ i int }, slice []int) {
 	for i := range 10 { // want "for loop can be modernized using range over int"
 		println(i)
 	}
@@ -8,6 +8,9 @@ func _(i int, s struct{ i int }) {
 	}
 	for range 10 { // want "for loop can be modernized using range over int"
 		// i unused within loop
+	}
+	for i := range slice { // want "for loop can be modernized using range over int"
+		println(slice[i])
 	}
 
 	// nope
