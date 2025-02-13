@@ -1741,6 +1741,10 @@ func (c *commandHandler) PackageSymbols(ctx context.Context, args command.Packag
 	err := c.run(ctx, commandConfig{
 		forURI: args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
+		if deps.snapshot.FileKind(deps.fh) != file.Go {
+			// golang/vscode-go#3681: fail silently, to avoid spurious error popups.
+			return nil
+		}
 		res, err := golang.PackageSymbols(ctx, deps.snapshot, args.URI)
 		if err != nil {
 			return err

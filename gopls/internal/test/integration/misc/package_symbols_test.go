@@ -16,6 +16,11 @@ import (
 
 func TestPackageSymbols(t *testing.T) {
 	const files = `
+-- go.mod --
+module example.com
+
+go 1.20
+
 -- a.go --
 package a
 
@@ -33,68 +38,74 @@ func (s *S) M2() {}
 func (s *S) M3() {}
 
 func F() {}
+-- unloaded.go --
+//go:build unloaded
+
+package a
+
+var Unloaded int
 `
 	integration.Run(t, files, func(t *testing.T, env *integration.Env) {
-		a_uri := env.Sandbox.Workdir.URI("a.go")
-		b_uri := env.Sandbox.Workdir.URI("b.go")
+		aURI := env.Sandbox.Workdir.URI("a.go")
+		bURI := env.Sandbox.Workdir.URI("b.go")
 		args, err := command.MarshalArgs(command.PackageSymbolsArgs{
-			URI: a_uri,
+			URI: aURI,
 		})
 		if err != nil {
-			t.Fatalf("failed to MarshalArgs: %v", err)
+			t.Fatal(err)
 		}
 
 		var res command.PackageSymbolsResult
 		env.ExecuteCommand(&protocol.ExecuteCommandParams{
-			Command:   "gopls.package_symbols",
+			Command:   command.PackageSymbols.String(),
 			Arguments: args,
 		}, &res)
 
 		want := command.PackageSymbolsResult{
 			PackageName: "a",
-			Files:       []protocol.DocumentURI{a_uri, b_uri},
+			Files:       []protocol.DocumentURI{aURI, bURI},
 			Symbols: []command.PackageSymbol{
-				{
-					Name: "A",
-					Kind: protocol.Variable,
-					File: 0,
-				},
-				{
-					Name: "F",
-					Kind: protocol.Function,
-					File: 1,
-				},
-				{
-					Name: "S",
-					Kind: protocol.Struct,
-					File: 0,
-					Children: []command.PackageSymbol{
-						{
-							Name: "M1",
-							Kind: protocol.Method,
-							File: 0,
-						},
-						{
-							Name: "M2",
-							Kind: protocol.Method,
-							File: 1,
-						},
-						{
-							Name: "M3",
-							Kind: protocol.Method,
-							File: 1,
-						},
-					},
-				},
-				{
-					Name: "b",
-					Kind: protocol.Variable,
-					File: 1,
-				},
+				{Name: "A", Kind: protocol.Variable, File: 0},
+				{Name: "F", Kind: protocol.Function, File: 1},
+				{Name: "S", Kind: protocol.Struct, File: 0, Children: []command.PackageSymbol{
+					{Name: "M1", Kind: protocol.Method, File: 0},
+					{Name: "M2", Kind: protocol.Method, File: 1},
+					{Name: "M3", Kind: protocol.Method, File: 1},
+				}},
+				{Name: "b", Kind: protocol.Variable, File: 1},
 			},
 		}
-		if diff := cmp.Diff(want, res, cmpopts.IgnoreFields(command.PackageSymbol{}, "Range", "SelectionRange", "Detail")); diff != "" {
-			t.Errorf("gopls.package_symbols returned unexpected diff (-want +got):\n%s", diff)
+		ignore := cmpopts.IgnoreFields(command.PackageSymbol{}, "Range", "SelectionRange", "Detail")
+		if diff := cmp.Diff(want, res, ignore); diff != "" {
+			t.Errorf("package_symbols returned unexpected diff (-want +got):\n%s", diff)
+		}
+
+		for file, want := range map[string]command.PackageSymbolsResult{
+			"go.mod": {},
+			"unloaded.go": {
+				PackageName: "a",
+				Files:       []protocol.DocumentURI{env.Sandbox.Workdir.URI("unloaded.go")},
+				Symbols: []command.PackageSymbol{
+					{Name: "Unloaded", Kind: protocol.Variable, File: 0},
+				},
+			},
+		} {
+			uri := env.Sandbox.Workdir.URI(file)
+			args, err := command.MarshalArgs(command.PackageSymbolsArgs{
+				URI: uri,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var res command.PackageSymbolsResult
+			env.ExecuteCommand(&protocol.ExecuteCommandParams{
+				Command:   command.PackageSymbols.String(),
+				Arguments: args,
+			}, &res)
+
+			if diff := cmp.Diff(want, res, ignore); diff != "" {
+				t.Errorf("package_symbols returned unexpected diff (-want +got):\n%s", diff)
+			}
 		}
 	})
 }
