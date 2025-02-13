@@ -37,63 +37,60 @@ var Analyzer = &analysis.Analyzer{
 	Requires:  []*analysis.Analyzer{inspect.Analyzer},
 }
 
+// analyzer holds the state for this analysis.
+type analyzer struct {
+	pass *analysis.Pass
+	root cursor.Cursor
+	// memoization of repeated calls for same file.
+	fileContent map[string][]byte
+	// memoization of fact imports (nil => no fact)
+	inlinableFuncs   map[*types.Func]*inline.Callee
+	inlinableConsts  map[*types.Const]*goFixInlineConstFact
+	inlinableAliases map[*types.TypeName]*goFixInlineAliasFact
+}
+
 func run(pass *analysis.Pass) (any, error) {
-	// Memoize repeated calls for same file.
-	fileContent := make(map[string][]byte)
-	readFile := func(node ast.Node) ([]byte, error) {
-		filename := pass.Fset.File(node.Pos()).Name()
-		content, ok := fileContent[filename]
-		if !ok {
-			var err error
-			content, err = pass.ReadFile(filename)
-			if err != nil {
-				return nil, err
-			}
-			fileContent[filename] = content
-		}
-		return content, nil
+	a := &analyzer{
+		pass:             pass,
+		root:             cursor.Root(pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)),
+		fileContent:      make(map[string][]byte),
+		inlinableFuncs:   make(map[*types.Func]*inline.Callee),
+		inlinableConsts:  make(map[*types.Const]*goFixInlineConstFact),
+		inlinableAliases: make(map[*types.TypeName]*goFixInlineAliasFact),
 	}
+	a.find()
+	a.inline()
+	return nil, nil
+}
 
-	// Return the unique ast.File for a cursor.
-	currentFile := func(c cursor.Cursor) *ast.File {
-		cf, _ := moreiters.First(c.Ancestors((*ast.File)(nil)))
-		return cf.Node().(*ast.File)
-	}
-
-	// Pass 1: find functions and constants annotated with an appropriate "//go:fix"
-	// comment (the syntax proposed by #32816),
-	// and export a fact for each one.
-	var (
-		inlinableFuncs   = make(map[*types.Func]*inline.Callee) // memoization of fact import (nil => no fact)
-		inlinableConsts  = make(map[*types.Const]*goFixInlineConstFact)
-		inlinableAliases = make(map[*types.TypeName]*goFixInlineAliasFact)
-	)
-
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	nodeFilter := []ast.Node{(*ast.FuncDecl)(nil), (*ast.GenDecl)(nil)}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		switch decl := n.(type) {
+// find finds functions and constants annotated with an appropriate "//go:fix"
+// comment (the syntax proposed by #32816),
+// and exports a fact for each one.
+func (a *analyzer) find() {
+	info := a.pass.TypesInfo
+	for cur := range a.root.Preorder((*ast.FuncDecl)(nil), (*ast.GenDecl)(nil)) {
+		switch decl := cur.Node().(type) {
 		case *ast.FuncDecl:
 			if !hasFixInline(decl.Doc) {
-				return
+				continue
 			}
-			content, err := readFile(decl)
+			content, err := a.readFile(decl)
 			if err != nil {
-				pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: cannot read source file: %v", err)
-				return
+				a.pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: cannot read source file: %v", err)
+				continue
 			}
-			callee, err := inline.AnalyzeCallee(discard, pass.Fset, pass.Pkg, pass.TypesInfo, decl, content)
+			callee, err := inline.AnalyzeCallee(discard, a.pass.Fset, a.pass.Pkg, info, decl, content)
 			if err != nil {
-				pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: %v", err)
-				return
+				a.pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: %v", err)
+				continue
 			}
-			fn := pass.TypesInfo.Defs[decl.Name].(*types.Func)
-			pass.ExportObjectFact(fn, &goFixInlineFuncFact{callee})
-			inlinableFuncs[fn] = callee
+			fn := info.Defs[decl.Name].(*types.Func)
+			a.pass.ExportObjectFact(fn, &goFixInlineFuncFact{callee})
+			a.inlinableFuncs[fn] = callee
 
 		case *ast.GenDecl:
 			if decl.Tok != token.CONST && decl.Tok != token.TYPE {
-				return
+				continue
 			}
 			declInline := hasFixInline(decl.Doc)
 			// Accept inline directives on the entire decl as well as individual specs.
@@ -104,7 +101,7 @@ func run(pass *analysis.Pass) (any, error) {
 						continue
 					}
 					if !spec.Assign.IsValid() {
-						pass.Reportf(spec.Pos(), "invalid //go:fix inline directive: not a type alias")
+						a.pass.Reportf(spec.Pos(), "invalid //go:fix inline directive: not a type alias")
 						continue
 					}
 					if spec.TypeParams != nil {
@@ -122,23 +119,23 @@ func run(pass *analysis.Pass) (any, error) {
 					default:
 						continue
 					}
-					lhs := pass.TypesInfo.Defs[spec.Name].(*types.TypeName)
+					lhs := info.Defs[spec.Name].(*types.TypeName)
 					// more (jba): test one alias pointing to another alias
-					rhs := pass.TypesInfo.Uses[rhsID].(*types.TypeName)
+					rhs := info.Uses[rhsID].(*types.TypeName)
 					typ := &goFixInlineAliasFact{
 						RHSName:    rhs.Name(),
 						RHSPkgName: rhs.Pkg().Name(),
 						RHSPkgPath: rhs.Pkg().Path(),
 					}
-					if rhs.Pkg() == pass.Pkg {
+					if rhs.Pkg() == a.pass.Pkg {
 						typ.rhsObj = rhs
 					}
-					inlinableAliases[lhs] = typ
+					a.inlinableAliases[lhs] = typ
 					// Create a fact only if the LHS is exported and defined at top level.
 					// We create a fact even if the RHS is non-exported,
 					// so we can warn about uses in other packages.
 					if lhs.Exported() && typesinternal.IsPackageLevel(lhs) {
-						pass.ExportObjectFact(lhs, typ)
+						a.pass.ExportObjectFact(lhs, typ)
 					}
 
 				case *ast.ValueSpec: // Tok == CONST
@@ -154,58 +151,65 @@ func run(pass *analysis.Pass) (any, error) {
 							switch e := val.(type) {
 							case *ast.Ident:
 								// Constants defined with the predeclared iota cannot be inlined.
-								if pass.TypesInfo.Uses[e] == builtinIota {
-									pass.Reportf(val.Pos(), "invalid //go:fix inline directive: const value is iota")
+								if info.Uses[e] == builtinIota {
+									a.pass.Reportf(val.Pos(), "invalid //go:fix inline directive: const value is iota")
 									continue
 								}
 								rhsID = e
 							case *ast.SelectorExpr:
 								rhsID = e.Sel
 							default:
-								pass.Reportf(val.Pos(), "invalid //go:fix inline directive: const value is not the name of another constant")
+								a.pass.Reportf(val.Pos(), "invalid //go:fix inline directive: const value is not the name of another constant")
 								continue
 							}
-							lhs := pass.TypesInfo.Defs[name].(*types.Const)
-							rhs := pass.TypesInfo.Uses[rhsID].(*types.Const) // must be so in a well-typed program
+							lhs := info.Defs[name].(*types.Const)
+							rhs := info.Uses[rhsID].(*types.Const) // must be so in a well-typed program
 							con := &goFixInlineConstFact{
 								RHSName:    rhs.Name(),
 								RHSPkgName: rhs.Pkg().Name(),
 								RHSPkgPath: rhs.Pkg().Path(),
 							}
-							if rhs.Pkg() == pass.Pkg {
+							if rhs.Pkg() == a.pass.Pkg {
 								con.rhsObj = rhs
 							}
-							inlinableConsts[lhs] = con
+							a.inlinableConsts[lhs] = con
 							// Create a fact only if the LHS is exported and defined at top level.
 							// We create a fact even if the RHS is non-exported,
 							// so we can warn about uses in other packages.
 							if lhs.Exported() && typesinternal.IsPackageLevel(lhs) {
-								pass.ExportObjectFact(lhs, con)
+								a.pass.ExportObjectFact(lhs, con)
 							}
 						}
 					}
 				}
 			}
 		}
-	})
+	}
+}
 
-	// Pass 2. Inline each static call to an inlinable function
-	// and each reference to an inlinable constant or type alias.
-	//
-	// TODO(adonovan):  handle multiple diffs that each add the same import.
-	for cur := range cursor.Root(inspect).Preorder((*ast.CallExpr)(nil), (*ast.Ident)(nil)) {
-		n := cur.Node()
-		switch n := n.(type) {
+// inline inlines each static call to an inlinable function
+// and each reference to an inlinable constant or type alias.
+//
+// TODO(adonovan):  handle multiple diffs that each add the same import.
+func (a *analyzer) inline() {
+	// Return the unique ast.File for a cursor.
+	currentFile := func(c cursor.Cursor) *ast.File {
+		cf, _ := moreiters.First(c.Ancestors((*ast.File)(nil)))
+		return cf.Node().(*ast.File)
+	}
+
+	for cur := range a.root.Preorder((*ast.CallExpr)(nil), (*ast.Ident)(nil)) {
+		switch n := cur.Node().(type) {
 		case *ast.CallExpr:
 			call := n
-			if fn := typeutil.StaticCallee(pass.TypesInfo, call); fn != nil {
+			if fn := typeutil.StaticCallee(a.pass.TypesInfo, call); fn != nil {
 				// Inlinable?
-				callee, ok := inlinableFuncs[fn]
+				callee, ok := a.inlinableFuncs[fn]
 				if !ok {
 					var fact goFixInlineFuncFact
-					if pass.ImportObjectFact(fn, &fact) {
+					if a.pass.ImportObjectFact(fn, &fact) {
 						callee = fact.Callee
-						inlinableFuncs[fn] = callee
+						a.inlinableFuncs[fn] = callee
 					}
 				}
 				if callee == nil {
@@ -213,23 +217,23 @@ func run(pass *analysis.Pass) (any, error) {
 				}
 
 				// Inline the call.
-				content, err := readFile(call)
+				content, err := a.readFile(call)
 				if err != nil {
-					pass.Reportf(call.Lparen, "invalid inlining candidate: cannot read source file: %v", err)
+					a.pass.Reportf(call.Lparen, "invalid inlining candidate: cannot read source file: %v", err)
 					continue
 				}
 				curFile := currentFile(cur)
 				caller := &inline.Caller{
-					Fset:    pass.Fset,
-					Types:   pass.Pkg,
-					Info:    pass.TypesInfo,
+					Fset:    a.pass.Fset,
+					Types:   a.pass.Pkg,
+					Info:    a.pass.TypesInfo,
 					File:    curFile,
 					Call:    call,
 					Content: content,
 				}
 				res, err := inline.Inline(caller, callee, &inline.Options{Logf: discard})
 				if err != nil {
-					pass.Reportf(call.Lparen, "%v", err)
+					a.pass.Reportf(call.Lparen, "%v", err)
 					continue
 				}
 				if res.Literalized {
@@ -253,7 +257,7 @@ func run(pass *analysis.Pass) (any, error) {
 						NewText: []byte(edit.New),
 					})
 				}
-				pass.Report(analysis.Diagnostic{
+				a.pass.Report(analysis.Diagnostic{
 					Pos:     call.Pos(),
 					End:     call.End(),
 					Message: fmt.Sprintf("Call of %v should be inlined", callee),
@@ -268,13 +272,13 @@ func run(pass *analysis.Pass) (any, error) {
 			// If the identifier is a use of an inlinable type alias, suggest inlining it.
 			// TODO(jba): much of this code is shared with the constant case, below.
 			// Try to factor more of it out, unless it will change anyway when we move beyond simple RHS's.
-			if ali, ok := pass.TypesInfo.Uses[n].(*types.TypeName); ok {
-				inalias, ok := inlinableAliases[ali]
+			if ali, ok := a.pass.TypesInfo.Uses[n].(*types.TypeName); ok {
+				inalias, ok := a.inlinableAliases[ali]
 				if !ok {
 					var fact goFixInlineAliasFact
-					if pass.ImportObjectFact(ali, &fact) {
+					if a.pass.ImportObjectFact(ali, &fact) {
 						inalias = &fact
-						inlinableAliases[ali] = inalias
+						a.inlinableAliases[ali] = inalias
 					}
 				}
 				if inalias == nil {
@@ -291,10 +295,10 @@ func run(pass *analysis.Pass) (any, error) {
 				// If the RHS is not in the current package, AddImport will handle
 				// shadowing, so we only need to worry about when both expressions
 				// are in the current package.
-				if pass.Pkg.Path() == inalias.RHSPkgPath {
+				if a.pass.Pkg.Path() == inalias.RHSPkgPath {
 					// fcon.rhsObj is the object referred to by B in the definition of A.
-					scope := pass.TypesInfo.Scopes[curFile].Innermost(n.Pos()) // n's scope
-					_, obj := scope.LookupParent(inalias.RHSName, n.Pos())     // what "B" means in n's scope
+					scope := a.pass.TypesInfo.Scopes[curFile].Innermost(n.Pos()) // n's scope
+					_, obj := scope.LookupParent(inalias.RHSName, n.Pos())       // what "B" means in n's scope
 					if obj == nil {
 						// Should be impossible: if code at n can refer to the LHS,
 						// it can refer to the RHS.
@@ -304,7 +308,7 @@ func run(pass *analysis.Pass) (any, error) {
 						// "B" means something different here than at the inlinable const's scope.
 						continue
 					}
-				} else if !analysisinternal.CanImport(pass.Pkg.Path(), inalias.RHSPkgPath) {
+				} else if !analysisinternal.CanImport(a.pass.Pkg.Path(), inalias.RHSPkgPath) {
 					// If this package can't see the RHS's package, we can't inline.
 					continue
 				}
@@ -312,26 +316,26 @@ func run(pass *analysis.Pass) (any, error) {
 					importPrefix string
 					edits        []analysis.TextEdit
 				)
-				if inalias.RHSPkgPath != pass.Pkg.Path() {
+				if inalias.RHSPkgPath != a.pass.Pkg.Path() {
 					_, importPrefix, edits = analysisinternal.AddImport(
-						pass.TypesInfo, curFile, inalias.RHSPkgName, inalias.RHSPkgPath, inalias.RHSName, n.Pos())
+						a.pass.TypesInfo, curFile, inalias.RHSPkgName, inalias.RHSPkgPath, inalias.RHSName, n.Pos())
 				}
 				// If n is qualified by a package identifier, we'll need the full selector expression.
 				var expr ast.Expr = n
 				if e, _ := cur.Edge(); e == edge.SelectorExpr_Sel {
 					expr = cur.Parent().Node().(ast.Expr)
 				}
-				reportInline(pass, "type alias", "Type alias", expr, edits, importPrefix+inalias.RHSName)
+				a.reportInline("type alias", "Type alias", expr, edits, importPrefix+inalias.RHSName)
 				continue
 			}
 			// If the identifier is a use of an inlinable constant, suggest inlining it.
-			if con, ok := pass.TypesInfo.Uses[n].(*types.Const); ok {
-				incon, ok := inlinableConsts[con]
+			if con, ok := a.pass.TypesInfo.Uses[n].(*types.Const); ok {
+				incon, ok := a.inlinableConsts[con]
 				if !ok {
 					var fact goFixInlineConstFact
-					if pass.ImportObjectFact(con, &fact) {
+					if a.pass.ImportObjectFact(con, &fact) {
 						incon = &fact
-						inlinableConsts[con] = incon
+						a.inlinableConsts[con] = incon
 					}
 				}
 				if incon == nil {
@@ -350,10 +354,10 @@ func run(pass *analysis.Pass) (any, error) {
 				// If the RHS is not in the current package, AddImport will handle
 				// shadowing, so we only need to worry about when both expressions
 				// are in the current package.
-				if pass.Pkg.Path() == incon.RHSPkgPath {
+				if a.pass.Pkg.Path() == incon.RHSPkgPath {
 					// incon.rhsObj is the object referred to by B in the definition of A.
-					scope := pass.TypesInfo.Scopes[curFile].Innermost(n.Pos()) // n's scope
-					_, obj := scope.LookupParent(incon.RHSName, n.Pos())       // what "B" means in n's scope
+					scope := a.pass.TypesInfo.Scopes[curFile].Innermost(n.Pos()) // n's scope
+					_, obj := scope.LookupParent(incon.RHSName, n.Pos())         // what "B" means in n's scope
 					if obj == nil {
 						// Should be impossible: if code at n can refer to the LHS,
 						// it can refer to the RHS.
@@ -363,7 +367,7 @@ func run(pass *analysis.Pass) (any, error) {
 						// "B" means something different here than at the inlinable const's scope.
 						continue
 					}
-				} else if !analysisinternal.CanImport(pass.Pkg.Path(), incon.RHSPkgPath) {
+				} else if !analysisinternal.CanImport(a.pass.Pkg.Path(), incon.RHSPkgPath) {
 					// If this package can't see the RHS's package, we can't inline.
 					continue
 				}
@@ -371,32 +375,30 @@ func run(pass *analysis.Pass) (any, error) {
 					importPrefix string
 					edits        []analysis.TextEdit
 				)
-				if incon.RHSPkgPath != pass.Pkg.Path() {
+				if incon.RHSPkgPath != a.pass.Pkg.Path() {
 					_, importPrefix, edits = analysisinternal.AddImport(
-						pass.TypesInfo, curFile, incon.RHSPkgName, incon.RHSPkgPath, incon.RHSName, n.Pos())
+						a.pass.TypesInfo, curFile, incon.RHSPkgName, incon.RHSPkgPath, incon.RHSName, n.Pos())
 				}
 				// If n is qualified by a package identifier, we'll need the full selector expression.
 				var expr ast.Expr = n
 				if e, _ := cur.Edge(); e == edge.SelectorExpr_Sel {
 					expr = cur.Parent().Node().(ast.Expr)
 				}
-				reportInline(pass, "constant", "Constant", expr, edits, importPrefix+incon.RHSName)
+				a.reportInline("constant", "Constant", expr, edits, importPrefix+incon.RHSName)
 			}
 		}
 	}
-
-	return nil, nil
 }
 
 // reportInline reports a diagnostic for fixing an inlinable name.
-func reportInline(pass *analysis.Pass, kind, capKind string, ident ast.Expr, edits []analysis.TextEdit, newText string) {
+func (a *analyzer) reportInline(kind, capKind string, ident ast.Expr, edits []analysis.TextEdit, newText string) {
 	edits = append(edits, analysis.TextEdit{
 		Pos:     ident.Pos(),
 		End:     ident.End(),
 		NewText: []byte(newText),
 	})
-	name := analysisinternal.Format(pass.Fset, ident)
-	pass.Report(analysis.Diagnostic{
+	name := analysisinternal.Format(a.pass.Fset, ident)
+	a.pass.Report(analysis.Diagnostic{
 		Pos:     ident.Pos(),
 		End:     ident.End(),
 		Message: fmt.Sprintf("%s %s should be inlined", capKind, name),
@@ -405,6 +407,20 @@ func reportInline(pass *analysis.Pass, kind, capKind string, ident ast.Expr, edi
 			TextEdits: edits,
 		}},
 	})
+}
+
+func (a *analyzer) readFile(node ast.Node) ([]byte, error) {
+	filename := a.pass.Fset.File(node.Pos()).Name()
+	content, ok := a.fileContent[filename]
+	if !ok {
+		var err error
+		content, err = a.pass.ReadFile(filename)
+		if err != nil {
+			return nil, err
+		}
+		a.fileContent[filename] = content
+	}
+	return content, nil
 }
 
 // hasFixInline reports the presence of a "//go:fix inline" directive
