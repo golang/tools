@@ -13,4 +13,11 @@ func m() {
 	}
 	for _ = range maps { // want "simplify range expression"
 	}
+	for _, _ = range maps { // want "simplify range expression"
+	}
+	for _, v := range maps { // nope
+		println(v)
+	}
+	for range maps { // nope
+	}
 }

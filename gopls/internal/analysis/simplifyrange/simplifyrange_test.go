@@ -5,8 +5,6 @@
 package simplifyrange_test
 
 import (
-	"go/build"
-	"slices"
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
@@ -14,9 +12,8 @@ import (
 )
 
 func Test(t *testing.T) {
-	testdata := analysistest.TestData()
-	analysistest.RunWithSuggestedFixes(t, testdata, simplifyrange.Analyzer, "a", "generatedcode")
-	if slices.Contains(build.Default.ReleaseTags, "go1.23") { // uses iter.Seq
-		analysistest.RunWithSuggestedFixes(t, testdata, simplifyrange.Analyzer, "rangeoverfunc")
-	}
+	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), simplifyrange.Analyzer,
+		"a",
+		"generatedcode",
+		"rangeoverfunc")
 }
