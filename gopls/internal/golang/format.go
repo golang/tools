@@ -152,6 +152,9 @@ func computeImportEdits(ctx context.Context, pgf *parsego.File, snapshot *cache.
 	case settings.ImportsSourceGoimports:
 		source = isource
 	}
+	// imports require a current metadata graph
+	// TODO(rfindlay) improve the API
+	snapshot.WorkspaceMetadata(ctx)
 	allFixes, err := imports.FixImports(ctx, filename, pgf.Src, goroot, options.Env.Logf, source)
 	if err != nil {
 		return nil, nil, err

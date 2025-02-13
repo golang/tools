@@ -212,7 +212,7 @@ func (s *goplsSource) resolveWorkspaceReferences(filename string, missing import
 	// keep track of used syms and found results by package name
 	// TODO: avoid import cycles (is current package in forward closure)
 	founds := make(map[string][]found)
-	for i := 0; i < len(ids); i++ {
+	for i := range len(ids) {
 		nm := string(pkgs[i].Name)
 		if satisfies(syms[i], missing[nm]) {
 			got := &imports.Result{

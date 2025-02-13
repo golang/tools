@@ -401,6 +401,31 @@ return nil
 		}
 	})
 }
+
+// use the import from a different package in the same module
+func Test44510(t *testing.T) {
+	const files = `-- go.mod --
+module test
+go 1.19
+-- foo/foo.go --
+package main
+import strs "strings"
+var _ = strs.Count
+-- bar/bar.go --
+package main
+var _ = strs.Builder
+`
+	WithOptions(
+		WriteGoSum("."),
+	).Run(t, files, func(T *testing.T, env *Env) {
+		env.OpenFile("bar/bar.go")
+		env.SaveBuffer("bar/bar.go")
+		buf := env.BufferText("bar/bar.go")
+		if !strings.Contains(buf, "strs") {
+			t.Error(buf)
+		}
+	})
+}
 func TestRelativeReplace(t *testing.T) {
 	const files = `
 -- go.mod --
@@ -685,6 +710,36 @@ func Test() {
 		buf := env.BufferText("caller/caller_test.go")
 		if !strings.Contains(buf, "mod.com/a") {
 			t.Errorf("got %q, expected a mod.com/a", buf)
+		}
+	})
+}
+
+// this test replaces 'package bar' with 'package foo'
+// saves the file, and then looks for the import in the main package.s
+func Test67973(t *testing.T) {
+	const files = `-- go.mod --
+module hello
+go 1.19
+-- hello.go --
+package main
+var _ = foo.Bar
+-- internal/foo/foo.go --
+package bar
+func Bar() {}
+`
+	WithOptions(
+		Settings{"importsSource": settings.ImportsSourceGopls},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("hello.go")
+		env.AfterChange(env.DoneWithOpen())
+		env.SaveBuffer("hello.go")
+		env.OpenFile("internal/foo/foo.go")
+		env.RegexpReplace("internal/foo/foo.go", "bar", "foo")
+		env.SaveBuffer("internal/foo/foo.go")
+		env.SaveBuffer("hello.go")
+		buf := env.BufferText("hello.go")
+		if !strings.Contains(buf, "internal/foo") {
+			t.Errorf(`expected import "hello/internal/foo" but got %q`, buf)
 		}
 	})
 }
