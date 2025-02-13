@@ -378,7 +378,7 @@ var lockerType *types.Interface
 
 // Construct a sync.Locker interface type.
 func init() {
-	nullary := types.NewSignature(nil, nil, nil, false) // func()
+	nullary := types.NewSignatureType(nil, nil, nil, nil, nil, false) // func()
 	methods := []*types.Func{
 		types.NewFunc(token.NoPos, nil, "Lock", nullary),
 		types.NewFunc(token.NoPos, nil, "Unlock", nullary),

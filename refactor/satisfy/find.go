@@ -126,13 +126,13 @@ func (f *Finder) exprN(e ast.Expr) types.Type {
 
 	case *ast.CallExpr:
 		// x, err := f(args)
-		sig := coreType(f.expr(e.Fun)).(*types.Signature)
+		sig := typeparams.CoreType(f.expr(e.Fun)).(*types.Signature)
 		f.call(sig, e.Args)
 
 	case *ast.IndexExpr:
 		// y, ok := x[i]
 		x := f.expr(e.X)
-		f.assign(f.expr(e.Index), coreType(x).(*types.Map).Key())
+		f.assign(f.expr(e.Index), typeparams.CoreType(x).(*types.Map).Key())
 
 	case *ast.TypeAssertExpr:
 		// y, ok := x.(T)
@@ -213,7 +213,7 @@ func (f *Finder) builtin(obj *types.Builtin, sig *types.Signature, args []ast.Ex
 			f.expr(args[1])
 		} else {
 			// append(x, y, z)
-			tElem := coreType(s).(*types.Slice).Elem()
+			tElem := typeparams.CoreType(s).(*types.Slice).Elem()
 			for _, arg := range args[1:] {
 				f.assign(tElem, f.expr(arg))
 			}
@@ -222,7 +222,7 @@ func (f *Finder) builtin(obj *types.Builtin, sig *types.Signature, args []ast.Ex
 	case "delete":
 		m := f.expr(args[0])
 		k := f.expr(args[1])
-		f.assign(coreType(m).(*types.Map).Key(), k)
+		f.assign(typeparams.CoreType(m).(*types.Map).Key(), k)
 
 	default:
 		// ordinary call
@@ -273,7 +273,7 @@ func (f *Finder) assign(lhs, rhs types.Type) {
 	if types.Identical(lhs, rhs) {
 		return
 	}
-	if !isInterface(lhs) {
+	if !types.IsInterface(lhs) {
 		return
 	}
 
@@ -354,7 +354,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 		f.sig = saved
 
 	case *ast.CompositeLit:
-		switch T := coreType(typeparams.Deref(tv.Type)).(type) {
+		switch T := typeparams.CoreType(typeparams.Deref(tv.Type)).(type) {
 		case *types.Struct:
 			for i, elem := range e.Elts {
 				if kv, ok := elem.(*ast.KeyValueExpr); ok {
@@ -405,7 +405,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			// x[i] or m[k] -- index or lookup operation
 			x := f.expr(e.X)
 			i := f.expr(e.Index)
-			if ux, ok := coreType(x).(*types.Map); ok {
+			if ux, ok := typeparams.CoreType(x).(*types.Map); ok {
 				f.assign(ux.Key(), i)
 			}
 		}
@@ -440,7 +440,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			// unsafe call. Treat calls to functions in unsafe like ordinary calls,
 			// except that their signature cannot be determined by their func obj.
 			// Without this special handling, f.expr(e.Fun) would fail below.
-			if s, ok := unparen(e.Fun).(*ast.SelectorExpr); ok {
+			if s, ok := ast.Unparen(e.Fun).(*ast.SelectorExpr); ok {
 				if obj, ok := f.info.Uses[s.Sel].(*types.Builtin); ok && obj.Pkg().Path() == "unsafe" {
 					sig := f.info.Types[e.Fun].Type.(*types.Signature)
 					f.call(sig, e.Args)
@@ -449,7 +449,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			}
 
 			// builtin call
-			if id, ok := unparen(e.Fun).(*ast.Ident); ok {
+			if id, ok := ast.Unparen(e.Fun).(*ast.Ident); ok {
 				if obj, ok := f.info.Uses[id].(*types.Builtin); ok {
 					sig := f.info.Types[id].Type.(*types.Signature)
 					f.builtin(obj, sig, e.Args)
@@ -458,7 +458,7 @@ func (f *Finder) expr(e ast.Expr) types.Type {
 			}
 
 			// ordinary call
-			f.call(coreType(f.expr(e.Fun)).(*types.Signature), e.Args)
+			f.call(typeparams.CoreType(f.expr(e.Fun)).(*types.Signature), e.Args)
 		}
 
 	case *ast.StarExpr:
@@ -518,7 +518,7 @@ func (f *Finder) stmt(s ast.Stmt) {
 	case *ast.SendStmt:
 		ch := f.expr(s.Chan)
 		val := f.expr(s.Value)
-		f.assign(coreType(ch).(*types.Chan).Elem(), val)
+		f.assign(typeparams.CoreType(ch).(*types.Chan).Elem(), val)
 
 	case *ast.IncDecStmt:
 		f.expr(s.X)
@@ -622,9 +622,9 @@ func (f *Finder) stmt(s ast.Stmt) {
 		var I types.Type
 		switch ass := s.Assign.(type) {
 		case *ast.ExprStmt: // x.(type)
-			I = f.expr(unparen(ass.X).(*ast.TypeAssertExpr).X)
+			I = f.expr(ast.Unparen(ass.X).(*ast.TypeAssertExpr).X)
 		case *ast.AssignStmt: // y := x.(type)
-			I = f.expr(unparen(ass.Rhs[0]).(*ast.TypeAssertExpr).X)
+			I = f.expr(ast.Unparen(ass.Rhs[0]).(*ast.TypeAssertExpr).X)
 		}
 		for _, cc := range s.Body.List {
 			cc := cc.(*ast.CaseClause)
@@ -668,7 +668,7 @@ func (f *Finder) stmt(s ast.Stmt) {
 				var xelem types.Type
 				// Keys of array, *array, slice, string aren't interesting
 				// since the RHS key type is just an int.
-				switch ux := coreType(x).(type) {
+				switch ux := typeparams.CoreType(x).(type) {
 				case *types.Chan:
 					xelem = ux.Elem()
 				case *types.Map:
@@ -683,13 +683,13 @@ func (f *Finder) stmt(s ast.Stmt) {
 				var xelem types.Type
 				// Values of type strings aren't interesting because
 				// the RHS value type is just a rune.
-				switch ux := coreType(x).(type) {
+				switch ux := typeparams.CoreType(x).(type) {
 				case *types.Array:
 					xelem = ux.Elem()
 				case *types.Map:
 					xelem = ux.Elem()
 				case *types.Pointer: // *array
-					xelem = coreType(typeparams.Deref(ux)).(*types.Array).Elem()
+					xelem = typeparams.CoreType(typeparams.Deref(ux)).(*types.Array).Elem()
 				case *types.Slice:
 					xelem = ux.Elem()
 				}
@@ -706,12 +706,6 @@ func (f *Finder) stmt(s ast.Stmt) {
 }
 
 // -- Plundered from golang.org/x/tools/go/ssa -----------------
-
-func unparen(e ast.Expr) ast.Expr { return ast.Unparen(e) }
-
-func isInterface(T types.Type) bool { return types.IsInterface(T) }
-
-func coreType(T types.Type) types.Type { return typeparams.CoreType(T) }
 
 func instance(info *types.Info, expr ast.Expr) bool {
 	var id *ast.Ident

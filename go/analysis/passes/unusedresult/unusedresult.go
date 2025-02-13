@@ -130,9 +130,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 }
 
 // func() string
-var sigNoArgsStringResult = types.NewSignature(nil, nil,
-	types.NewTuple(types.NewParam(token.NoPos, nil, "", types.Typ[types.String])),
-	false)
+var sigNoArgsStringResult = types.NewSignatureType(nil, nil, nil, nil, types.NewTuple(types.NewParam(token.NoPos, nil, "", types.Typ[types.String])), false)
 
 type stringSetFlag map[string]bool
 

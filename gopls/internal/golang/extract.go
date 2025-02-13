@@ -1229,7 +1229,7 @@ func collectFreeVars(info *types.Info, file *ast.File, start, end token.Pos, nod
 	// return value acts as an indicator for where it was defined.
 	var sel func(n *ast.SelectorExpr) (types.Object, bool)
 	sel = func(n *ast.SelectorExpr) (types.Object, bool) {
-		switch x := astutil.Unparen(n.X).(type) {
+		switch x := ast.Unparen(n.X).(type) {
 		case *ast.SelectorExpr:
 			return sel(x)
 		case *ast.Ident:

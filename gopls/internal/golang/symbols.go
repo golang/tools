@@ -86,17 +86,22 @@ func PackageSymbols(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 	ctx, done := event.Start(ctx, "source.PackageSymbols")
 	defer done()
 
-	mp, err := NarrowestMetadataForFile(ctx, snapshot, uri)
-	if err != nil {
-		return command.PackageSymbolsResult{}, err
+	pkgFiles := []protocol.DocumentURI{uri}
+
+	// golang/vscode-go#3681: do our best if the file is not in a package.
+	// TODO(rfindley): revisit this in the future once there is more graceful
+	// handling in VS Code.
+	if mp, err := NarrowestMetadataForFile(ctx, snapshot, uri); err == nil {
+		pkgFiles = mp.CompiledGoFiles
 	}
-	pkgfiles := mp.CompiledGoFiles
-	// Maps receiver name to the methods that use it
-	receiverToMethods := make(map[string][]command.PackageSymbol)
-	// Maps type symbol name to its index in symbols
-	typeSymbolToIdx := make(map[string]int)
-	var symbols []command.PackageSymbol
-	for fidx, f := range pkgfiles {
+
+	var (
+		pkgName           string
+		symbols           []command.PackageSymbol
+		receiverToMethods = make(map[string][]command.PackageSymbol) // receiver name -> methods
+		typeSymbolToIdx   = make(map[string]int)                     // type name -> index in symbols
+	)
+	for fidx, f := range pkgFiles {
 		fh, err := snapshot.ReadFile(ctx, f)
 		if err != nil {
 			return command.PackageSymbolsResult{}, err
@@ -104,6 +109,9 @@ func PackageSymbols(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 		if err != nil {
 			return command.PackageSymbolsResult{}, err
+		}
+		if pkgName == "" && pgf.File != nil && pgf.File.Name != nil {
+			pkgName = pgf.File.Name.Name
 		}
 		for _, decl := range pgf.File.Decls {
 			switch decl := decl.(type) {
@@ -154,8 +162,8 @@ func PackageSymbols(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 		}
 	}
 	return command.PackageSymbolsResult{
-		PackageName: string(mp.Name),
-		Files:       pkgfiles,
+		PackageName: pkgName,
+		Files:       pkgFiles,
 		Symbols:     symbols,
 	}, nil
 

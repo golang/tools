@@ -250,7 +250,7 @@ func addFlags(f *flag.FlagSet, field reflect.StructField, value reflect.Value) *
 		child := value.Type().Field(i)
 		v := value.Field(i)
 		// make sure we have a pointer
-		if v.Kind() != reflect.Ptr {
+		if v.Kind() != reflect.Pointer {
 			v = v.Addr()
 		}
 		// check if that field is a flag or contains flags
@@ -289,7 +289,7 @@ func addFlag(f *flag.FlagSet, value reflect.Value, flagName string, help string)
 func resolve(v reflect.Value) reflect.Value {
 	for {
 		switch v.Kind() {
-		case reflect.Interface, reflect.Ptr:
+		case reflect.Interface, reflect.Pointer:
 			v = v.Elem()
 		default:
 			return v

@@ -141,6 +141,8 @@ const (
 	LoadAllSyntax = LoadSyntax | NeedDeps
 
 	// Deprecated: NeedExportsFile is a historical misspelling of NeedExportFile.
+	//
+	//go:fix inline
 	NeedExportsFile = NeedExportFile
 )
 

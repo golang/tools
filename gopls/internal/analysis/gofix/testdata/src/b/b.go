@@ -28,3 +28,5 @@ func g() {
 	_ = a
 	_ = x
 }
+
+const d = a.D // nope: a.D refers to a constant in a package that is not visible here.

@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/astutil/edge"
@@ -96,6 +98,14 @@ func rangeint(pass *analysis.Pass) {
 								Pos: index.Pos(),
 								End: init.Rhs[0].Pos(),
 							})
+						}
+
+						// If limit is len(slice),
+						// simplify "range len(slice)" to "range slice".
+						if call, ok := limit.(*ast.CallExpr); ok &&
+							typeutil.Callee(info, call) == builtinLen &&
+							is[*types.Slice](info.TypeOf(call.Args[0]).Underlying()) {
+							limit = call.Args[0]
 						}
 
 						pass.Report(analysis.Diagnostic{

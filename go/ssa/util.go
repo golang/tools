@@ -35,8 +35,6 @@ func assert(p bool, msg string) {
 
 //// AST utilities
 
-func unparen(e ast.Expr) ast.Expr { return ast.Unparen(e) }
-
 // isBlankIdent returns true iff e is an Ident with name "_".
 // They have no associated types.Object, and thus no type.
 func isBlankIdent(e ast.Expr) bool {
@@ -195,7 +193,7 @@ func makeLen(T types.Type) *Builtin {
 	lenParams := types.NewTuple(anonVar(T))
 	return &Builtin{
 		name: "len",
-		sig:  types.NewSignature(nil, lenParams, lenResults, false),
+		sig:  types.NewSignatureType(nil, nil, nil, lenParams, lenResults, false),
 	}
 }
 

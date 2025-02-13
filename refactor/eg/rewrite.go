@@ -338,7 +338,7 @@ func (tr *Transformer) subst(env map[string]ast.Expr, pattern, pos reflect.Value
 		}
 		return v
 
-	case reflect.Ptr:
+	case reflect.Pointer:
 		v := reflect.New(p.Type()).Elem()
 		if elem := p.Elem(); elem.IsValid() {
 			v.Set(tr.subst(env, elem, pos).Addr())

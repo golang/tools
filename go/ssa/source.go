@@ -153,7 +153,7 @@ func findNamedFunc(pkg *Package, pos token.Pos) *Function {
 // the ssa.Value.)
 func (f *Function) ValueForExpr(e ast.Expr) (value Value, isAddr bool) {
 	if f.debugInfo() { // (opt)
-		e = unparen(e)
+		e = ast.Unparen(e)
 		for _, b := range f.Blocks {
 			for _, instr := range b.Instrs {
 				if ref, ok := instr.(*DebugRef); ok {

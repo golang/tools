@@ -155,7 +155,7 @@ func parseObjectSpec(spec *spec, main string) error {
 	}
 
 	if e, ok := e.(*ast.SelectorExpr); ok {
-		x := unparen(e.X)
+		x := ast.Unparen(e.X)
 
 		// Strip off star constructor, if any.
 		if star, ok := x.(*ast.StarExpr); ok {
@@ -172,7 +172,7 @@ func parseObjectSpec(spec *spec, main string) error {
 
 		if x, ok := x.(*ast.SelectorExpr); ok {
 			// field/method of type e.g. ("encoding/json".Decoder).Decode
-			y := unparen(x.X)
+			y := ast.Unparen(x.X)
 			if pkg := parseImportPath(y); pkg != "" {
 				spec.pkg = pkg               // e.g. "encoding/json"
 				spec.pkgMember = x.Sel.Name  // e.g. "Decoder"

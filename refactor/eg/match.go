@@ -13,8 +13,6 @@ import (
 	"log"
 	"os"
 	"reflect"
-
-	"golang.org/x/tools/go/ast/astutil"
 )
 
 // matchExpr reports whether pattern x matches y.
@@ -34,8 +32,8 @@ func (tr *Transformer) matchExpr(x, y ast.Expr) bool {
 	if x == nil || y == nil {
 		return false
 	}
-	x = unparen(x)
-	y = unparen(y)
+	x = ast.Unparen(x)
+	y = ast.Unparen(y)
 
 	// Is x a wildcard?  (a reference to a 'before' parameter)
 	if xobj, ok := tr.wildcardObj(x); ok {
@@ -228,8 +226,6 @@ func (tr *Transformer) matchWildcard(xobj *types.Var, y ast.Expr) bool {
 }
 
 // -- utilities --------------------------------------------------------
-
-func unparen(e ast.Expr) ast.Expr { return astutil.Unparen(e) }
 
 // isRef returns the object referred to by this (possibly qualified)
 // identifier, or nil if the node is not a referring identifier.
