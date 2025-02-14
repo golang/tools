@@ -117,6 +117,22 @@ const (
 const (
 	/* foo */
 	A = iota
+	// doc comment
+	C
+
+	/* bar */
+	D
+	// doc comment
+	E // line comment
+)
+`,
+			groupComment: []string{"foo", "foo", "bar", "bar"},
+		},
+		{
+			src: `package test
+const (
+	/* foo */
+	A = iota
 	B
 
 	/* bar */
