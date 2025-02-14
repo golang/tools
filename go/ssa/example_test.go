@@ -3,9 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build !android && !ios && (unix || aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris || plan9 || windows)
-// +build !android
-// +build !ios
-// +build unix aix darwin dragonfly freebsd linux netbsd openbsd solaris plan9 windows
 
 package ssa_test
 

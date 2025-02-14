@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build ignore
-// +build ignore
 
 // The copyfiles script copies the contents of the internal cmd/go robustio
 // package to the current directory, with adjustments to make it build.

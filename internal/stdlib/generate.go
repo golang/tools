@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build ignore
-// +build ignore
 
 // The generate command reads all the GOROOT/api/go1.*.txt files and
 // generates a single combined manifest.go file containing the Go

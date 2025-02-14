@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build ignore
-// +build ignore
 
 // This file provides an example command for static checkers
 // conforming to the golang.org/x/tools/go/analysis API.
