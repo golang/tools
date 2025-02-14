@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build go1.23
+
 // The play program is a playground for go/types: a simple web-based
 // text editor into which the user can enter a Go program, select a
 // region, and see type information about it.
@@ -35,7 +37,6 @@ import (
 
 // TODO(adonovan):
 // - show line numbers next to textarea.
-// - show a (tree) breakdown of the representation of the expression's type.
 // - mention this in the go/types tutorial.
 // - display versions of go/types and go command.
 
@@ -297,6 +298,10 @@ func formatObj(out *strings.Builder, fset *token.FileSet, ref string, obj types.
 	}
 	fmt.Fprintf(out, "\n\n")
 
+	fmt.Fprintf(out, "Type:\n")
+	describeType(out, obj.Type())
+	fmt.Fprintf(out, "\n")
+
 	// method set
 	if methods := typeutil.IntuitiveMethodSet(obj.Type(), nil); len(methods) > 0 {
 		fmt.Fprintf(out, "Methods:\n")
@@ -316,6 +321,65 @@ func formatObj(out *strings.Builder, fset *token.FileSet, ref string, obj types.
 		fmt.Fprintf(out, "%d:%d-%d:%d: %s\n",
 			start.Line, start.Column, end.Line, end.Column, scope)
 	}
+}
+
+// describeType formats t to out in a way that makes it clear what methods to call on t to
+// get at its parts.
+// describeType assumes t was constructed by the type checker, so it doesn't check
+// for recursion. The type checker replaces recursive alias types, which are illegal,
+// with a BasicType that says as much. Other types that it constructs are recursive
+// only via a name, and this function does not traverse names.
+func describeType(out *strings.Builder, t types.Type) {
+	depth := -1
+
+	var ft func(string, types.Type)
+	ft = func(prefix string, t types.Type) {
+		depth++
+		defer func() { depth-- }()
+
+		for range depth {
+			fmt.Fprint(out, ".  ")
+		}
+
+		fmt.Fprintf(out, "%s%T:", prefix, t)
+		switch t := t.(type) {
+		case *types.Basic:
+			fmt.Fprintf(out, " Name: %q\n", t.Name())
+		case *types.Pointer:
+			fmt.Fprintln(out)
+			ft("Elem: ", t.Elem())
+		case *types.Slice:
+			fmt.Fprintln(out)
+			ft("Elem: ", t.Elem())
+		case *types.Array:
+			fmt.Fprintf(out, " Len: %d\n", t.Len())
+			ft("Elem: ", t.Elem())
+		case *types.Map:
+			fmt.Fprintln(out)
+			ft("Key:  ", t.Key())
+			ft("Elem: ", t.Elem())
+		case *types.Chan:
+			fmt.Fprintf(out, " Dir: %s\n", chanDirs[t.Dir()])
+			ft("Elem: ", t.Elem())
+		case *types.Alias:
+			fmt.Fprintf(out, " Name: %q\n", t.Obj().Name())
+			ft("Rhs: ", t.Rhs())
+		default:
+			// For types we may have missed or which have too much to bother with,
+			// print their string representation.
+			// TODO(jba): print more about struct types (their fields) and interface and named
+			// types (their methods).
+			fmt.Fprintf(out, " %s\n", t)
+		}
+	}
+
+	ft("", t)
+}
+
+var chanDirs = []string{
+	"SendRecv",
+	"SendOnly",
+	"RecvOnly",
 }
 
 func handleRoot(w http.ResponseWriter, req *http.Request) { io.WriteString(w, mainHTML) }
