@@ -5,7 +5,9 @@
 package metadata
 
 import (
+	"iter"
 	"sort"
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -99,6 +101,11 @@ func newGraph(pkgs map[PackageID]*Package) *Graph {
 		for _, uri := range mp.GoFiles {
 			uris[uri] = struct{}{}
 		}
+		for _, uri := range mp.OtherFiles {
+			if strings.HasSuffix(string(uri), ".s") { // assembly
+				uris[uri] = struct{}{}
+			}
+		}
 		for uri := range uris {
 			uriIDs[uri] = append(uriIDs[uri], id)
 		}
@@ -158,6 +165,35 @@ func (g *Graph) ReverseReflexiveTransitiveClosure(ids ...PackageID) map[PackageI
 	}
 	visitAll(ids)
 	return seen
+}
+
+// ForwardReflexiveTransitiveClosure returns an iterator over the
+// specified nodes and all their forward dependencies, in an arbitrary
+// topological (dependencies-first) order. The order may vary.
+func (g *Graph) ForwardReflexiveTransitiveClosure(ids ...PackageID) iter.Seq[*Package] {
+	return func(yield func(*Package) bool) {
+		seen := make(map[PackageID]bool)
+		var visit func(PackageID) bool
+		visit = func(id PackageID) bool {
+			if !seen[id] {
+				seen[id] = true
+				if mp := g.Packages[id]; mp != nil {
+					for _, depID := range mp.DepsByPkgPath {
+						if !visit(depID) {
+							return false
+						}
+					}
+					if !yield(mp) {
+						return false
+					}
+				}
+			}
+			return true
+		}
+		for _, id := range ids {
+			visit(id)
+		}
+	}
 }
 
 // breakImportCycles breaks import cycles in the metadata by deleting

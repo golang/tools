@@ -773,10 +773,25 @@ func (c *connection) openFile(ctx context.Context, uri protocol.DocumentURI) (*c
 		return nil, file.err
 	}
 
+	// Choose language ID from file extension.
+	var langID protocol.LanguageKind // "" eventually maps to file.UnknownKind
+	switch filepath.Ext(uri.Path()) {
+	case ".go":
+		langID = "go"
+	case ".mod":
+		langID = "go.mod"
+	case ".sum":
+		langID = "go.sum"
+	case ".work":
+		langID = "go.work"
+	case ".s":
+		langID = "go.s"
+	}
+
 	p := &protocol.DidOpenTextDocumentParams{
 		TextDocument: protocol.TextDocumentItem{
 			URI:        uri,
-			LanguageID: "go",
+			LanguageID: langID,
 			Version:    1,
 			Text:       string(file.mapper.Content),
 		},

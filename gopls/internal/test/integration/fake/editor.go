@@ -113,11 +113,12 @@ type EditorConfig struct {
 
 	// Map of language ID -> regexp to match, used to set the file type of new
 	// buffers. Applied as an overlay on top of the following defaults:
-	//  "go" -> ".*\.go"
+	//  "go"     -> ".*\.go"
 	//  "go.mod" -> "go\.mod"
 	//  "go.sum" -> "go\.sum"
 	//  "gotmpl" -> ".*tmpl"
-	FileAssociations map[string]string
+	//  "go.s"   -> ".*\.s"
+	FileAssociations map[protocol.LanguageKind]string
 
 	// Settings holds user-provided configuration for the LSP server.
 	Settings map[string]any
@@ -619,27 +620,28 @@ func (e *Editor) sendDidOpen(ctx context.Context, item protocol.TextDocumentItem
 	return nil
 }
 
-var defaultFileAssociations = map[string]*regexp.Regexp{
+var defaultFileAssociations = map[protocol.LanguageKind]*regexp.Regexp{
 	"go":      regexp.MustCompile(`^.*\.go$`), // '$' is important: don't match .gotmpl!
 	"go.mod":  regexp.MustCompile(`^go\.mod$`),
 	"go.sum":  regexp.MustCompile(`^go(\.work)?\.sum$`),
 	"go.work": regexp.MustCompile(`^go\.work$`),
 	"gotmpl":  regexp.MustCompile(`^.*tmpl$`),
+	"go.s":    regexp.MustCompile(`\.s$`),
 }
 
 // languageID returns the language identifier for the path p given the user
 // configured fileAssociations.
-func languageID(p string, fileAssociations map[string]string) protocol.LanguageKind {
+func languageID(p string, fileAssociations map[protocol.LanguageKind]string) protocol.LanguageKind {
 	base := path.Base(p)
 	for lang, re := range fileAssociations {
 		re := regexp.MustCompile(re)
 		if re.MatchString(base) {
-			return protocol.LanguageKind(lang)
+			return lang
 		}
 	}
 	for lang, re := range defaultFileAssociations {
 		if re.MatchString(base) {
-			return protocol.LanguageKind(lang)
+			return lang
 		}
 	}
 	return ""

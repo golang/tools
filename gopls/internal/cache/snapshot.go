@@ -323,6 +323,8 @@ func fileKind(fh file.Handle) file.Kind {
 		return file.Sum
 	case ".work":
 		return file.Work
+	case ".s":
+		return file.Asm
 	}
 	return file.UnknownKind
 }
@@ -645,6 +647,21 @@ func (s *Snapshot) Tests(ctx context.Context, ids ...PackageID) ([]*testfuncs.In
 	return indexes, s.forEachPackage(ctx, ids, pre, post)
 }
 
+// NarrowestMetadataForFile returns metadata for the narrowest package
+// (the one with the fewest files) that encloses the specified file.
+// The result may be a test variant, but never an intermediate test variant.
+func (snapshot *Snapshot) NarrowestMetadataForFile(ctx context.Context, uri protocol.DocumentURI) (*metadata.Package, error) {
+	mps, err := snapshot.MetadataForFile(ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+	metadata.RemoveIntermediateTestVariants(&mps)
+	if len(mps) == 0 {
+		return nil, fmt.Errorf("no package metadata for file %s", uri)
+	}
+	return mps[0], nil
+}
+
 // MetadataForFile returns a new slice containing metadata for each
 // package containing the Go file identified by uri, ordered by the
 // number of CompiledGoFiles (i.e. "narrowest" to "widest" package),
@@ -652,6 +669,10 @@ func (s *Snapshot) Tests(ctx context.Context, ids ...PackageID) ([]*testfuncs.In
 // The result may include tests and intermediate test variants of
 // importable packages.
 // It returns an error if the context was cancelled.
+//
+// TODO(adonovan): in nearly all cases the caller must use
+// [metadata.RemoveIntermediateTestVariants]. Make this a parameter to
+// force the caller to consider it (and reduce code).
 func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI) ([]*metadata.Package, error) {
 	if s.view.typ == AdHocView {
 		// As described in golang/go#57209, in ad-hoc workspaces (where we load ./

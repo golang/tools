@@ -218,6 +218,10 @@ type fakeFileHandle struct {
 	hash file.Hash
 }
 
+func (h fakeFileHandle) String() string {
+	return h.uri.Path()
+}
+
 func (h fakeFileHandle) URI() protocol.DocumentURI {
 	return h.uri
 }

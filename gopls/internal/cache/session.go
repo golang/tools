@@ -1084,6 +1084,7 @@ type brokenFile struct {
 	err error
 }
 
+func (b brokenFile) String() string            { return b.uri.Path() }
 func (b brokenFile) URI() protocol.DocumentURI { return b.uri }
 func (b brokenFile) Identity() file.Identity   { return file.Identity{URI: b.uri} }
 func (b brokenFile) SameContentsOnDisk() bool  { return false }

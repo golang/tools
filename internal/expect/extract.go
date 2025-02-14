@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	goscanner "go/scanner"
 	"go/token"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -32,21 +34,54 @@ type Identifier string
 // See the package documentation for details about the syntax of those
 // notes.
 func Parse(fset *token.FileSet, filename string, content []byte) ([]*Note, error) {
-	var src any
-	if content != nil {
-		src = content
+	if content == nil {
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			return nil, err
+		}
+		content = data
 	}
+
 	switch filepath.Ext(filename) {
+	case ".s":
+		// The assembler uses a custom scanner,
+		// but the go/scanner package is close
+		// enough: we only want the comments.
+		file := fset.AddFile(filename, -1, len(content))
+		var scan goscanner.Scanner
+		scan.Init(file, content, nil, goscanner.ScanComments)
+
+		var notes []*Note
+		for {
+			pos, tok, lit := scan.Scan()
+			if tok == token.EOF {
+				break
+			}
+			if tok == token.COMMENT {
+				text, adjust := getAdjustedNote(lit)
+				if text == "" {
+					continue
+				}
+				parsed, err := parse(fset, pos+token.Pos(adjust), text)
+				if err != nil {
+					return nil, err
+				}
+				notes = append(notes, parsed...)
+			}
+		}
+		return notes, nil
+
 	case ".go":
-		// TODO: We should write this in terms of the scanner.
+		// TODO: We should write this in terms of the scanner, like the .s case above.
 		// there are ways you can break the parser such that it will not add all the
 		// comments to the ast, which may result in files where the tests are silently
 		// not run.
-		file, err := parser.ParseFile(fset, filename, src, parser.ParseComments|parser.AllErrors|parser.SkipObjectResolution)
+		file, err := parser.ParseFile(fset, filename, content, parser.ParseComments|parser.AllErrors|parser.SkipObjectResolution)
 		if file == nil {
 			return nil, err
 		}
 		return ExtractGo(fset, file)
+
 	case ".mod":
 		file, err := modfile.Parse(filename, content, nil)
 		if err != nil {
@@ -64,6 +99,7 @@ func Parse(fset *token.FileSet, filename string, content []byte) ([]*Note, error
 			note.Pos += token.Pos(f.Base())
 		}
 		return notes, nil
+
 	case ".work":
 		file, err := modfile.ParseWork(filename, content, nil)
 		if err != nil {

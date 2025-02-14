@@ -41,6 +41,8 @@ type diskFile struct {
 	err     error
 }
 
+func (h *diskFile) String() string { return h.uri.Path() }
+
 func (h *diskFile) URI() protocol.DocumentURI { return h.uri }
 
 func (h *diskFile) Identity() file.Identity {

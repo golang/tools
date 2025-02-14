@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/goasm"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -37,6 +38,8 @@ func (s *server) Definition(ctx context.Context, params *protocol.DefinitionPara
 		return template.Definition(snapshot, fh, params.Position)
 	case file.Go:
 		return golang.Definition(ctx, snapshot, fh, params.Position)
+	case file.Asm:
+		return goasm.Definition(ctx, snapshot, fh, params.Position)
 	default:
 		return nil, fmt.Errorf("can't find definitions for file type %s", kind)
 	}

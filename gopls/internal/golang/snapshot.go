@@ -14,19 +14,9 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
-// NarrowestMetadataForFile returns metadata for the narrowest package
-// (the one with the fewest files) that encloses the specified file.
-// The result may be a test variant, but never an intermediate test variant.
+//go:fix inline
 func NarrowestMetadataForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*metadata.Package, error) {
-	mps, err := snapshot.MetadataForFile(ctx, uri)
-	if err != nil {
-		return nil, err
-	}
-	metadata.RemoveIntermediateTestVariants(&mps)
-	if len(mps) == 0 {
-		return nil, fmt.Errorf("no package metadata for file %s", uri)
-	}
-	return mps[0], nil
+	return snapshot.NarrowestMetadataForFile(ctx, uri)
 }
 
 // NarrowestPackageForFile is a convenience function that selects the narrowest
