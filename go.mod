@@ -12,5 +12,3 @@ require (
 )
 
 require golang.org/x/sys v0.30.0 // indirect
-
-replace golang.org/x/tools => ../
