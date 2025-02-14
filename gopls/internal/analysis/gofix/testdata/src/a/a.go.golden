@@ -105,14 +105,63 @@ func shadow() {
 // Type aliases
 
 //go:fix inline
-type A = T // want A: `goFixInline alias "a".T`
+type A = T // want A: `goFixInline alias`
 
 var _ T // want `Type alias A should be inlined`
 
-type B = []T // nope: only named RHSs
-
 //go:fix inline
-type AA = // want AA: `goFixInline alias "a".A`
+type AA = // want AA: `goFixInline alias`
 T         // want `Type alias A should be inlined`
 
 var _ A // want `Type alias AA should be inlined`
+
+//go:fix inline
+type (
+	B = []T                 // want B: `goFixInline alias`
+	C = map[*string][]error // want C: `goFixInline alias`
+)
+
+var _ []T // want `Type alias B should be inlined`
+var _ map[*string][]error // want `Type alias C should be inlined`
+
+//go:fix inline
+type E = map[[Uno]string][]*T // want `invalid //go:fix inline directive: array types not supported`
+
+var _ E // nothing should happen here
+
+//go:fix inline
+type F = map[internal.T]T // want F: `goFixInline alias`
+
+var _ map[internal.T]T // want `Type alias F should be inlined`
+
+//go:fix inline
+type G = []chan *internal.T // want G: `goFixInline alias`
+
+var _ []chan *internal.T // want `Type alias G should be inlined`
+
+// local shadowing
+func _() {
+	type string = int
+	const T = 1
+
+	var _ B // nope: B's RHS contains T, which is shadowed
+	var _ C // nope: C's RHS contains string, which is shadowed
+}
+
+
+// local inlining
+func _[P any]() {
+	const a = 1
+	//go:fix inline
+	const b = a
+
+	x := a // want `Constant b should be inlined`
+
+	//go:fix inline
+	type u = []P
+
+	var y []P // want `Type alias u should be inlined`
+
+	_ = x
+	_ = y
+}

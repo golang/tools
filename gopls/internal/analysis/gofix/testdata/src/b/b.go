@@ -32,3 +32,8 @@ func g() {
 const d = a.D // nope: a.D refers to a constant in a package that is not visible here.
 
 var _ a.A // want `Type alias a\.A should be inlined`
+var _ a.B // want `Type alias a\.B should be inlined`
+var _ a.C // want `Type alias a\.C should be inlined`
+var _ R   // want `Type alias R should be inlined`
+
+var _ a.G // nope: a.G refers to a type in a package that is not visible here

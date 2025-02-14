@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 
 	_ "embed"
 
@@ -118,32 +119,31 @@ func (a *analyzer) findAlias(spec *ast.TypeSpec, declInline bool) {
 		a.pass.Reportf(spec.Pos(), "invalid //go:fix inline directive: not a type alias")
 		return
 	}
+
+	// Disallow inlines of type expressions containing array types.
+	// Given an array type like [N]int where N is a named constant, go/types provides
+	// only the value of the constant as an int64. So inlining A in this code:
+	//
+	//    const N = 5
+	//    type A = [N]int
+	//
+	// would result in [5]int, breaking the connection with N.
+	// TODO(jba): accept type expressions where the array size is a literal integer
+	for n := range ast.Preorder(spec.Type) {
+		if ar, ok := n.(*ast.ArrayType); ok && ar.Len != nil {
+			a.pass.Reportf(spec.Pos(), "invalid //go:fix inline directive: array types not supported")
+			return
+		}
+	}
+
 	if spec.TypeParams != nil {
 		// TODO(jba): handle generic aliases
 		return
 	}
-	// The alias must refer to another named type.
-	// TODO(jba): generalize to more type expressions.
-	var rhsID *ast.Ident
-	switch e := ast.Unparen(spec.Type).(type) {
-	case *ast.Ident:
-		rhsID = e
-	case *ast.SelectorExpr:
-		rhsID = e.Sel
-	default:
-		return
-	}
+
+	// Remember that this is an inlinable alias.
+	typ := &goFixInlineAliasFact{}
 	lhs := a.pass.TypesInfo.Defs[spec.Name].(*types.TypeName)
-	// more (jba): test one alias pointing to another alias
-	rhs := a.pass.TypesInfo.Uses[rhsID].(*types.TypeName)
-	typ := &goFixInlineAliasFact{
-		RHSName:    rhs.Name(),
-		RHSPkgName: rhs.Pkg().Name(),
-		RHSPkgPath: rhs.Pkg().Path(),
-	}
-	if rhs.Pkg() == a.pass.Pkg {
-		typ.rhsObj = rhs
-	}
 	a.inlinableAliases[lhs] = typ
 	// Create a fact only if the LHS is exported and defined at top level.
 	// We create a fact even if the RHS is non-exported,
@@ -302,49 +302,148 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, cur cursor.Cursor) {
 	if inalias == nil {
 		return // nope
 	}
+
+	// Get the alias's RHS. It has everything we need to format the replacement text.
+	rhs := tn.Type().(*types.Alias).Rhs()
+
+	curPath := a.pass.Pkg.Path()
 	curFile := currentFile(cur)
-
-	// We have an identifier A here (n), possibly qualified by a package identifier (sel.X,
-	// where sel is the parent of X), // and an inlinable "type A = B" elsewhere (inali).
-	// Consider replacing A with B.
-
-	// Check that the expression we are inlining (B) means the same thing
-	// (refers to the same object) in n's scope as it does in A's scope.
-	// If the RHS is not in the current package, AddImport will handle
-	// shadowing, so we only need to worry about when both expressions
-	// are in the current package.
 	n := cur.Node().(*ast.Ident)
-	if a.pass.Pkg.Path() == inalias.RHSPkgPath {
-		// fcon.rhsObj is the object referred to by B in the definition of A.
-		scope := a.pass.TypesInfo.Scopes[curFile].Innermost(n.Pos()) // n's scope
-		_, obj := scope.LookupParent(inalias.RHSName, n.Pos())       // what "B" means in n's scope
-		if obj == nil {
-			// Should be impossible: if code at n can refer to the LHS,
-			// it can refer to the RHS.
-			panic(fmt.Sprintf("no object for inlinable alias %s RHS %s", n.Name, inalias.RHSName))
-		}
-		if obj != inalias.rhsObj {
-			// "B" means something different here than at the inlinable const's scope.
-			return
-		}
-	} else if !analysisinternal.CanImport(a.pass.Pkg.Path(), inalias.RHSPkgPath) {
-		// If this package can't see the RHS's package, we can't inline.
-		return
-	}
+	// We have an identifier A here (n), possibly qualified by a package
+	// identifier (sel.n), and an inlinable "type A = rhs" elsewhere.
+	//
+	// We can replace A with rhs if no name in rhs is shadowed at n's position,
+	// and every package in rhs is importable by the current package.
+
 	var (
-		importPrefix string
-		edits        []analysis.TextEdit
+		importPrefixes = map[string]string{curPath: ""} // from pkg path to prefix
+		edits          []analysis.TextEdit
 	)
-	if inalias.RHSPkgPath != a.pass.Pkg.Path() {
-		_, importPrefix, edits = analysisinternal.AddImport(
-			a.pass.TypesInfo, curFile, inalias.RHSPkgName, inalias.RHSPkgPath, inalias.RHSName, n.Pos())
+	for _, tn := range typenames(rhs) {
+		var pkgPath, pkgName string
+		if pkg := tn.Pkg(); pkg != nil {
+			pkgPath = pkg.Path()
+			pkgName = pkg.Name()
+		}
+		if pkgPath == "" || pkgPath == curPath {
+			// The name is in the current package or the universe scope, so no import
+			// is required. Check that it is not shadowed (that is, that the type
+			// it refers to in rhs is the same one it refers to at n).
+			scope := a.pass.TypesInfo.Scopes[curFile].Innermost(n.Pos()) // n's scope
+			_, obj := scope.LookupParent(tn.Name(), n.Pos())             // what qn.name means in n's scope
+			if obj != tn {                                               // shadowed
+				return
+			}
+		} else if !analysisinternal.CanImport(a.pass.Pkg.Path(), pkgPath) {
+			// If this package can't see the package of this part of rhs, we can't inline.
+			return
+		} else if _, ok := importPrefixes[pkgPath]; !ok {
+			// Use AddImport to add pkgPath if it's not there already. Associate the prefix it assigns
+			// with the package path for use by the TypeString qualifier below.
+			_, prefix, eds := analysisinternal.AddImport(
+				a.pass.TypesInfo, curFile, pkgName, pkgPath, tn.Name(), n.Pos())
+			importPrefixes[pkgPath] = strings.TrimSuffix(prefix, ".")
+			edits = append(edits, eds...)
+		}
 	}
 	// If n is qualified by a package identifier, we'll need the full selector expression.
 	var expr ast.Expr = n
 	if e, _ := cur.Edge(); e == edge.SelectorExpr_Sel {
 		expr = cur.Parent().Node().(ast.Expr)
 	}
-	a.reportInline("type alias", "Type alias", expr, edits, importPrefix+inalias.RHSName)
+	// To get the replacement text, render the alias RHS using the package prefixes
+	// we assigned above.
+	newText := types.TypeString(rhs, func(p *types.Package) string {
+		if p == a.pass.Pkg {
+			return ""
+		}
+		if prefix, ok := importPrefixes[p.Path()]; ok {
+			return prefix
+		}
+		panic(fmt.Sprintf("in %q, package path %q has no import prefix", rhs, p.Path()))
+	})
+	a.reportInline("type alias", "Type alias", expr, edits, newText)
+}
+
+// typenames returns the TypeNames for types within t (including t itself) that have
+// them: basic types, named types and alias types.
+// The same name may appear more than once.
+func typenames(t types.Type) []*types.TypeName {
+	var tns []*types.TypeName
+
+	var visit func(types.Type)
+
+	// TODO(jba): when typesinternal.NamedOrAlias adds TypeArgs, replace this type literal with it.
+	namedOrAlias := func(t interface {
+		TypeArgs() *types.TypeList
+		Obj() *types.TypeName
+	}) {
+		tns = append(tns, t.Obj())
+		args := t.TypeArgs()
+		// TODO(jba): replace with TypeList.Types when this file is at 1.24.
+		for i := range args.Len() {
+			visit(args.At(i))
+		}
+	}
+
+	visit = func(t types.Type) {
+		switch t := t.(type) {
+		case *types.Basic:
+			tns = append(tns, types.Universe.Lookup(t.Name()).(*types.TypeName))
+		case *types.Named:
+			namedOrAlias(t)
+		case *types.Alias:
+			namedOrAlias(t)
+		case *types.TypeParam:
+			tns = append(tns, t.Obj())
+		case *types.Pointer:
+			visit(t.Elem())
+		case *types.Slice:
+			visit(t.Elem())
+		case *types.Array:
+			visit(t.Elem())
+		case *types.Chan:
+			visit(t.Elem())
+		case *types.Map:
+			visit(t.Key())
+			visit(t.Elem())
+		case *types.Struct:
+			// TODO(jba): replace with Struct.Fields when this file is at 1.24.
+			for i := range t.NumFields() {
+				visit(t.Field(i).Type())
+			}
+		case *types.Signature:
+			// Ignore the receiver: although it may be present, it has no meaning
+			// in a type expression.
+			// Ditto for receiver type params.
+			// Also, function type params cannot appear in a type expression.
+			if t.TypeParams() != nil {
+				panic("Signature.TypeParams in type expression")
+			}
+			visit(t.Params())
+			visit(t.Results())
+		case *types.Interface:
+			for i := range t.NumEmbeddeds() {
+				visit(t.EmbeddedType(i))
+			}
+			for i := range t.NumExplicitMethods() {
+				visit(t.ExplicitMethod(i).Type())
+			}
+		case *types.Tuple:
+			// TODO(jba): replace with Tuple.Variables when this file is at 1.24.
+			for i := range t.Len() {
+				visit(t.At(i).Type())
+			}
+		case *types.Union:
+			panic("Union in type expression")
+		default:
+			panic(fmt.Sprintf("unknown type %T", t))
+		}
+	}
+
+	visit(t)
+
+	return tns
 }
 
 // If con is an inlinable constant, suggest inlining its use at cur.
@@ -481,20 +580,11 @@ func (c *goFixInlineConstFact) String() string {
 func (*goFixInlineConstFact) AFact() {}
 
 // A goFixInlineAliasFact is exported for each type alias marked "//go:fix inline".
-// It holds information about an inlinable type alias. Gob-serializable.
-type goFixInlineAliasFact struct {
-	// Information about "type LHSName = RHSName".
-	RHSName    string
-	RHSPkgPath string
-	RHSPkgName string
-	rhsObj     types.Object // for current package
-}
+// It holds no information; its mere existence demonstrates that an alias is inlinable.
+type goFixInlineAliasFact struct{}
 
-func (c *goFixInlineAliasFact) String() string {
-	return fmt.Sprintf("goFixInline alias %q.%s", c.RHSPkgPath, c.RHSName)
-}
-
-func (*goFixInlineAliasFact) AFact() {}
+func (c *goFixInlineAliasFact) String() string { return "goFixInline alias" }
+func (*goFixInlineAliasFact) AFact()           {}
 
 func discard(string, ...any) {}
 

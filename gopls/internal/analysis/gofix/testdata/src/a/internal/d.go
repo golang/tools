@@ -3,3 +3,5 @@
 package internal
 
 const D = 1
+
+type T int
