@@ -87,9 +87,9 @@ func mapsloop(pass *analysis.Pass) {
 				// Have: m = rhs; for k, v := range x { m[k] = v }
 				var newMap bool
 				rhs := assign.Rhs[0]
-				switch rhs := rhs.(type) {
+				switch rhs := ast.Unparen(rhs).(type) {
 				case *ast.CallExpr:
-					if id, ok := rhs.Fun.(*ast.Ident); ok &&
+					if id, ok := ast.Unparen(rhs.Fun).(*ast.Ident); ok &&
 						info.Uses[id] == builtinMake {
 						// Have: m = make(...)
 						newMap = true

@@ -26,6 +26,16 @@ func useCopyGeneric[K comparable, V any, M ~map[K]V](dst, src M) {
 func useClone(src map[int]string) {
 	// Replace make(...) by maps.Clone.
 	dst := maps.Clone(src)
+
+	dst = maps.Clone(src)
+	println(dst)
+}
+
+func useCloneParen(src map[int]string) {
+	// Replace (make)(...) by maps.Clone.
+	dst := maps.Clone(src)
+
+	dst = maps.Clone(src)
 	println(dst)
 }
 

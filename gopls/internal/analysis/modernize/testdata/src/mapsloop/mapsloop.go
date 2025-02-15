@@ -33,6 +33,25 @@ func useClone(src map[int]string) {
 	for key, value := range src {
 		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Clone"
 	}
+
+	dst = map[int]string{}
+	for key, value := range src {
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Clone"
+	}
+	println(dst)
+}
+
+func useCloneParen(src map[int]string) {
+	// Replace (make)(...) by maps.Clone.
+	dst := (make)(map[int]string, len(src))
+	for key, value := range src {
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Clone"
+	}
+
+	dst = (map[int]string{})
+	for key, value := range src {
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Clone"
+	}
 	println(dst)
 }
 
