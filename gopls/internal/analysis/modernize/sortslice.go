@@ -57,45 +57,46 @@ func sortslice(pass *analysis.Pass) {
 			i := sig.Params().At(0)
 			j := sig.Params().At(1)
 
-			ret := lit.Body.List[0].(*ast.ReturnStmt)
-			if compare, ok := ret.Results[0].(*ast.BinaryExpr); ok && compare.Op == token.LSS {
-				// isIndex reports whether e is s[v].
-				isIndex := func(e ast.Expr, v *types.Var) bool {
-					index, ok := e.(*ast.IndexExpr)
-					return ok &&
-						equalSyntax(index.X, s) &&
-						is[*ast.Ident](index.Index) &&
-						info.Uses[index.Index.(*ast.Ident)] == v
-				}
-				if isIndex(compare.X, i) && isIndex(compare.Y, j) {
-					// Have: sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+			if ret, ok := lit.Body.List[0].(*ast.ReturnStmt); ok {
+				if compare, ok := ret.Results[0].(*ast.BinaryExpr); ok && compare.Op == token.LSS {
+					// isIndex reports whether e is s[v].
+					isIndex := func(e ast.Expr, v *types.Var) bool {
+						index, ok := e.(*ast.IndexExpr)
+						return ok &&
+							equalSyntax(index.X, s) &&
+							is[*ast.Ident](index.Index) &&
+							info.Uses[index.Index.(*ast.Ident)] == v
+					}
+					if isIndex(compare.X, i) && isIndex(compare.Y, j) {
+						// Have: sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 
-					_, prefix, importEdits := analysisinternal.AddImport(
-						info, file, "slices", "slices", "Sort", call.Pos())
+						_, prefix, importEdits := analysisinternal.AddImport(
+							info, file, "slices", "slices", "Sort", call.Pos())
 
-					pass.Report(analysis.Diagnostic{
-						// Highlight "sort.Slice".
-						Pos:      call.Fun.Pos(),
-						End:      call.Fun.End(),
-						Category: "sortslice",
-						Message:  fmt.Sprintf("sort.Slice can be modernized using slices.Sort"),
-						SuggestedFixes: []analysis.SuggestedFix{{
-							Message: fmt.Sprintf("Replace sort.Slice call by slices.Sort"),
-							TextEdits: append(importEdits, []analysis.TextEdit{
-								{
-									// Replace sort.Slice with slices.Sort.
-									Pos:     call.Fun.Pos(),
-									End:     call.Fun.End(),
-									NewText: []byte(prefix + "Sort"),
-								},
-								{
-									// Eliminate FuncLit.
-									Pos: call.Args[0].End(),
-									End: call.Rparen,
-								},
-							}...),
-						}},
-					})
+						pass.Report(analysis.Diagnostic{
+							// Highlight "sort.Slice".
+							Pos:      call.Fun.Pos(),
+							End:      call.Fun.End(),
+							Category: "sortslice",
+							Message:  fmt.Sprintf("sort.Slice can be modernized using slices.Sort"),
+							SuggestedFixes: []analysis.SuggestedFix{{
+								Message: fmt.Sprintf("Replace sort.Slice call by slices.Sort"),
+								TextEdits: append(importEdits, []analysis.TextEdit{
+									{
+										// Replace sort.Slice with slices.Sort.
+										Pos:     call.Fun.Pos(),
+										End:     call.Fun.End(),
+										NewText: []byte(prefix + "Sort"),
+									},
+									{
+										// Eliminate FuncLit.
+										Pos: call.Args[0].End(),
+										End: call.Rparen,
+									},
+								}...),
+							}},
+						})
+					}
 				}
 			}
 		}
