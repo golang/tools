@@ -7,16 +7,17 @@
 package nonewvars
 
 import (
-	"bytes"
 	_ "embed"
 	"go/ast"
-	"go/format"
 	"go/token"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil/cursor"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -33,57 +34,45 @@ var Analyzer = &analysis.Analyzer{
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	if len(pass.TypeErrors) == 0 {
-		return nil, nil
-	}
 
-	nodeFilter := []ast.Node{(*ast.AssignStmt)(nil)}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		assignStmt, _ := n.(*ast.AssignStmt)
-		// We only care about ":=".
-		if assignStmt.Tok != token.DEFINE {
-			return
+	for _, typeErr := range pass.TypeErrors {
+		if typeErr.Msg != "no new variables on left side of :=" {
+			continue // irrelevant error
+		}
+		_, start, end, ok := typesinternal.ErrorCodeStartEnd(typeErr)
+		if !ok {
+			continue // can't get position info
+		}
+		curErr, ok := cursor.Root(inspect).FindPos(start, end)
+		if !ok {
+			continue // can't find errant node
 		}
 
-		var file *ast.File
-		for _, f := range pass.Files {
-			if f.FileStart <= assignStmt.Pos() && assignStmt.Pos() < f.FileEnd {
-				file = f
-				break
+		// Find enclosing assignment (which may be curErr itself).
+		assign, ok := curErr.Node().(*ast.AssignStmt)
+		if !ok {
+			cur, ok := moreiters.First(curErr.Ancestors((*ast.AssignStmt)(nil)))
+			if !ok {
+				continue // no enclosing assignment
 			}
+			assign = cur.Node().(*ast.AssignStmt)
 		}
-		if file == nil {
-			return
+		if assign.Tok != token.DEFINE {
+			continue // not a := statement
 		}
 
-		for _, err := range pass.TypeErrors {
-			if !FixesError(err.Msg) {
-				continue
-			}
-			if assignStmt.Pos() > err.Pos || err.Pos >= assignStmt.End() {
-				continue
-			}
-			var buf bytes.Buffer
-			if err := format.Node(&buf, pass.Fset, file); err != nil {
-				continue
-			}
-			pass.Report(analysis.Diagnostic{
-				Pos:     err.Pos,
-				End:     analysisinternal.TypeErrorEndPos(pass.Fset, buf.Bytes(), err.Pos),
-				Message: err.Msg,
-				SuggestedFixes: []analysis.SuggestedFix{{
-					Message: "Change ':=' to '='",
-					TextEdits: []analysis.TextEdit{{
-						Pos: err.Pos,
-						End: err.Pos + 1,
-					}},
+		pass.Report(analysis.Diagnostic{
+			Pos:     assign.TokPos,
+			End:     assign.TokPos + token.Pos(len(":=")),
+			Message: typeErr.Msg,
+			SuggestedFixes: []analysis.SuggestedFix{{
+				Message: "Change ':=' to '='",
+				TextEdits: []analysis.TextEdit{{
+					Pos: assign.TokPos,
+					End: assign.TokPos + token.Pos(len(":")),
 				}},
-			})
-		}
-	})
+			}},
+		})
+	}
 	return nil, nil
-}
-
-func FixesError(msg string) bool {
-	return msg == "no new variables on left side of :="
 }

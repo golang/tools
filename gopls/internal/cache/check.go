@@ -2001,7 +2001,7 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 	batch := func(related []types.Error) {
 		var diags []*Diagnostic
 		for i, e := range related {
-			code, start, end, ok := typesinternal.ReadGo116ErrorData(e)
+			code, start, end, ok := typesinternal.ErrorCodeStartEnd(e)
 			if !ok || !start.IsValid() || !end.IsValid() {
 				start, end = e.Pos, e.Pos
 				code = 0
@@ -2075,6 +2075,9 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 
 			if end == start {
 				// Expand the end position to a more meaningful span.
+				//
+				// TODO(adonovan): It is the type checker's responsibility
+				// to ensure that (start, end) are meaningful; see #71803.
 				end = analysisinternal.TypeErrorEndPos(e.Fset, pgf.Src, start)
 
 				// debugging golang/go#65960

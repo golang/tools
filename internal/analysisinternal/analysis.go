@@ -23,6 +23,8 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
+// Deprecated: this heuristic is ill-defined.
+// TODO(adonovan): move to sole use in gopls/internal/cache.
 func TypeErrorEndPos(fset *token.FileSet, src []byte, start token.Pos) token.Pos {
 	// Get the end position for the type error.
 	file := fset.File(start)

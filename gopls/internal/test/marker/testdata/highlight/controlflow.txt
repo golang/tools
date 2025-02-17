@@ -68,7 +68,6 @@ func _() {
 }
 
 func _() () {
-	// TODO(golang/go#65966): fix the triplicate diagnostics here.
-	return 0 //@hiloc(ret2, "0", text), diag("0", re"too many return"), diag("0", re"too many return"), diag("0", re"too many return")
+	return 0 //@hiloc(ret2, "0", text), diag("0", re"too many return")
 	//@highlight(ret2, ret2)
 }

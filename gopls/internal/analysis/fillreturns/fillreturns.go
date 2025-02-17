@@ -15,9 +15,12 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/fuzzy"
+	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -27,105 +30,41 @@ var doc string
 var Analyzer = &analysis.Analyzer{
 	Name:             "fillreturns",
 	Doc:              analysisinternal.MustExtractDoc(doc, "fillreturns"),
+	Requires:         []*analysis.Analyzer{inspect.Analyzer},
 	Run:              run,
 	RunDespiteErrors: true,
 	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/fillreturns",
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
+	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	info := pass.TypesInfo
-	if info == nil {
-		return nil, fmt.Errorf("nil TypeInfo")
-	}
 
 outer:
 	for _, typeErr := range pass.TypeErrors {
-		// Filter out the errors that are not relevant to this analyzer.
-		if !FixesError(typeErr) {
-			continue
+		if !fixesError(typeErr) {
+			continue // irrelevant type error
 		}
-		var file *ast.File
-		for _, f := range pass.Files {
-			if f.FileStart <= typeErr.Pos && typeErr.Pos <= f.FileEnd {
-				file = f
-				break
+		_, start, end, ok := typesinternal.ErrorCodeStartEnd(typeErr)
+		if !ok {
+			continue // no position information
+		}
+		curErr, ok := cursor.Root(inspect).FindPos(start, end)
+		if !ok {
+			continue // can't find node
+		}
+
+		// Find cursor for enclosing return statement (which may be curErr itself).
+		curRet := curErr
+		if _, ok := curRet.Node().(*ast.ReturnStmt); !ok {
+			curRet, ok = moreiters.First(curErr.Ancestors((*ast.ReturnStmt)(nil)))
+			if !ok {
+				continue // no enclosing return
 			}
 		}
-		if file == nil {
-			continue
-		}
+		ret := curRet.Node().(*ast.ReturnStmt)
 
-		// Get the end position of the error.
-		// (This heuristic assumes that the buffer is formatted,
-		// at least up to the end position of the error.)
-		var buf bytes.Buffer
-		if err := format.Node(&buf, pass.Fset, file); err != nil {
-			continue
-		}
-		typeErrEndPos := analysisinternal.TypeErrorEndPos(pass.Fset, buf.Bytes(), typeErr.Pos)
-
-		// TODO(rfindley): much of the error handling code below returns, when it
-		// should probably continue.
-
-		// Get the path for the relevant range.
-		path, _ := astutil.PathEnclosingInterval(file, typeErr.Pos, typeErrEndPos)
-		if len(path) == 0 {
-			return nil, nil
-		}
-
-		// Find the enclosing return statement.
-		var ret *ast.ReturnStmt
-		var retIdx int
-		for i, n := range path {
-			if r, ok := n.(*ast.ReturnStmt); ok {
-				ret = r
-				retIdx = i
-				break
-			}
-		}
-		if ret == nil {
-			return nil, nil
-		}
-
-		// Get the function type that encloses the ReturnStmt.
-		var enclosingFunc *ast.FuncType
-		for _, n := range path[retIdx+1:] {
-			switch node := n.(type) {
-			case *ast.FuncLit:
-				enclosingFunc = node.Type
-			case *ast.FuncDecl:
-				enclosingFunc = node.Type
-			}
-			if enclosingFunc != nil {
-				break
-			}
-		}
-		if enclosingFunc == nil || enclosingFunc.Results == nil {
-			continue
-		}
-
-		// Skip any generic enclosing functions, since type parameters don't
-		// have 0 values.
-		// TODO(rfindley): We should be able to handle this if the return
-		// values are all concrete types.
-		if tparams := enclosingFunc.TypeParams; tparams != nil && tparams.NumFields() > 0 {
-			return nil, nil
-		}
-
-		// Find the function declaration that encloses the ReturnStmt.
-		var outer *ast.FuncDecl
-		for _, p := range path {
-			if p, ok := p.(*ast.FuncDecl); ok {
-				outer = p
-				break
-			}
-		}
-		if outer == nil {
-			return nil, nil
-		}
-
-		// Skip any return statements that contain function calls with multiple
-		// return values.
+		// Skip if any return argument is a tuple-valued function call.
 		for _, expr := range ret.Results {
 			e, ok := expr.(*ast.CallExpr)
 			if !ok {
@@ -136,24 +75,47 @@ outer:
 			}
 		}
 
+		// Get type of innermost enclosing function.
+		var funcType *ast.FuncType
+		curFunc, _ := enclosingFunc(curRet) // can't fail
+		switch fn := curFunc.Node().(type) {
+		case *ast.FuncLit:
+			funcType = fn.Type
+		case *ast.FuncDecl:
+			funcType = fn.Type
+
+			// Skip generic functions since type parameters don't have zero values.
+			// TODO(rfindley): We should be able to handle this if the return
+			// values are all concrete types.
+			if funcType.TypeParams.NumFields() > 0 {
+				continue
+			}
+		}
+		if funcType.Results == nil {
+			continue
+		}
+
 		// Duplicate the return values to track which values have been matched.
 		remaining := make([]ast.Expr, len(ret.Results))
 		copy(remaining, ret.Results)
 
-		fixed := make([]ast.Expr, len(enclosingFunc.Results.List))
+		fixed := make([]ast.Expr, len(funcType.Results.List))
 
 		// For each value in the return function declaration, find the leftmost element
 		// in the return statement that has the desired type. If no such element exists,
 		// fill in the missing value with the appropriate "zero" value.
 		// Beware that type information may be incomplete.
 		var retTyps []types.Type
-		for _, ret := range enclosingFunc.Results.List {
+		for _, ret := range funcType.Results.List {
 			retTyp := info.TypeOf(ret.Type)
 			if retTyp == nil {
 				return nil, nil
 			}
 			retTyps = append(retTyps, retTyp)
 		}
+
+		curFile, _ := moreiters.First(curRet.Ancestors((*ast.File)(nil)))
+		file := curFile.Node().(*ast.File)
 		matches := analysisinternal.MatchingIdents(retTyps, file, ret.Pos(), info, pass.Pkg)
 		qual := typesinternal.FileQualifier(file, pass.Pkg)
 		for i, retTyp := range retTyps {
@@ -215,8 +177,8 @@ outer:
 		}
 
 		pass.Report(analysis.Diagnostic{
-			Pos:     typeErr.Pos,
-			End:     typeErrEndPos,
+			Pos:     start,
+			End:     end,
 			Message: typeErr.Msg,
 			SuggestedFixes: []analysis.SuggestedFix{{
 				Message: "Fill in return values",
@@ -255,7 +217,7 @@ var wrongReturnNumRegexes = []*regexp.Regexp{
 	regexp.MustCompile(`not enough return values`),
 }
 
-func FixesError(err types.Error) bool {
+func fixesError(err types.Error) bool {
 	msg := strings.TrimSpace(err.Msg)
 	for _, rx := range wrongReturnNumRegexes {
 		if rx.MatchString(msg) {
@@ -263,4 +225,13 @@ func FixesError(err types.Error) bool {
 		}
 	}
 	return false
+}
+
+// enclosingFunc returns the cursor for the innermost Func{Decl,Lit}
+// that encloses c, if any.
+func enclosingFunc(c cursor.Cursor) (cursor.Cursor, bool) {
+	for curAncestor := range c.Ancestors((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
+		return curAncestor, true
+	}
+	return cursor.Cursor{}, false
 }

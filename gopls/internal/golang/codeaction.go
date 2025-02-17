@@ -309,7 +309,7 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 	for _, typeError := range req.pkg.TypeErrors() {
 		// Does type error overlap with CodeAction range?
 		start, end := typeError.Pos, typeError.Pos
-		if _, _, endPos, ok := typesinternal.ReadGo116ErrorData(typeError); ok {
+		if _, _, endPos, ok := typesinternal.ErrorCodeStartEnd(typeError); ok {
 			end = endPos
 		}
 		typeErrorRange, err := req.pgf.PosRange(start, end)
