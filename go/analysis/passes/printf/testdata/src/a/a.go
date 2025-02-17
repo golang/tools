@@ -154,6 +154,8 @@ func PrintfTests() {
 	fmt.Println("%v", "hi")                     // want "fmt.Println call has possible Printf formatting directive %v"
 	fmt.Println("%T", "hi")                     // want "fmt.Println call has possible Printf formatting directive %T"
 	fmt.Println("%s"+" there", "hi")            // want "fmt.Println call has possible Printf formatting directive %s"
+	fmt.Println("http://foo.com?q%2Fabc")       // no diagnostic: %XX is excepted
+	fmt.Println("http://foo.com?q%2Fabc-%s")    // want"fmt.Println call has possible Printf formatting directive %s"
 	fmt.Println("0.0%")                         // correct (trailing % couldn't be a formatting directive)
 	fmt.Printf("%s", "hi", 3)                   // want "fmt.Printf call needs 1 arg but has 2 args"
 	_ = fmt.Sprintf("%"+("s"), "hi", 3)         // want "fmt.Sprintf call needs 1 arg but has 2 args"
