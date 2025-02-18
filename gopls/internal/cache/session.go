@@ -238,7 +238,12 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		viewDefinition:       def,
 		importsState:         newImportsState(backgroundCtx, s.cache.modCache, pe),
 	}
-	if def.folder.Options.ImportsSource != settings.ImportsSourceOff {
+
+	// Keep this in sync with golang.computeImportEdits.
+	//
+	// TODO(rfindley): encapsulate the imports state logic so that the handling
+	// for Options.ImportsSource is in a single location.
+	if def.folder.Options.ImportsSource == settings.ImportsSourceGopls {
 		v.modcacheState = newModcacheState(def.folder.Env.GOMODCACHE)
 	}
 

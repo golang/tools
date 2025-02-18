@@ -137,7 +137,13 @@ func computeImportEdits(ctx context.Context, pgf *parsego.File, snapshot *cache.
 
 	// Build up basic information about the original file.
 	isource, err := imports.NewProcessEnvSource(options.Env, filename, pgf.File.Name.Name)
+	if err != nil {
+		return nil, nil, err
+	}
 	var source imports.Source
+
+	// Keep this in sync with [cache.Session.createView] (see the TODO there: we
+	// should factor out the handling of the ImportsSource setting).
 	switch snapshot.Options().ImportsSource {
 	case settings.ImportsSourceGopls:
 		source = snapshot.NewGoplsSource(isource)
