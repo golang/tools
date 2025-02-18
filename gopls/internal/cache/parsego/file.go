@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil/cursor"
 )
 
 // A File contains the results of parsing a Go file.
@@ -31,6 +32,8 @@ type File struct {
 	// Source code used to build the AST. It may be different from the
 	// actual content of the file if we have fixed the AST.
 	Src []byte
+
+	Cursor cursor.Cursor // cursor of *ast.File, sans sibling files
 
 	// fixedSrc and fixedAST report on "fixing" that occurred during parsing of
 	// this file.
@@ -69,6 +72,11 @@ func (pgf *File) PositionPos(p protocol.Position) (token.Pos, error) {
 		return token.NoPos, err
 	}
 	return safetoken.Pos(pgf.Tok, offset)
+}
+
+// PosPosition returns a protocol Position for the token.Pos in this file.
+func (pgf *File) PosPosition(pos token.Pos) (protocol.Position, error) {
+	return pgf.Mapper.PosPosition(pgf.Tok, pos)
 }
 
 // PosRange returns a protocol Range for the token.Pos interval in this file.

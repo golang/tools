@@ -46,12 +46,84 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 	ranges := commentsFoldingRange(pgf)
 
 	// Walk the ast and collect folding ranges.
-	ast.Inspect(pgf.File, func(n ast.Node) bool {
-		if rng, ok := foldingRangeFunc(pgf, n, lineFoldingOnly); ok {
-			ranges = append(ranges, rng)
+	filter := []ast.Node{
+		(*ast.BasicLit)(nil),
+		(*ast.BlockStmt)(nil),
+		(*ast.CallExpr)(nil),
+		(*ast.CaseClause)(nil),
+		(*ast.CommClause)(nil),
+		(*ast.CompositeLit)(nil),
+		(*ast.FieldList)(nil),
+		(*ast.GenDecl)(nil),
+	}
+	for cur := range pgf.Cursor.Preorder(filter...) {
+		// TODO(suzmue): include trailing empty lines before the closing
+		// parenthesis/brace.
+		var kind protocol.FoldingRangeKind
+		// start and end define the range of content to fold away.
+		var start, end token.Pos
+		switch n := cur.Node().(type) {
+		case *ast.BlockStmt:
+			// Fold between positions of or lines between "{" and "}".
+			start, end = getLineFoldingRange(pgf, n.Lbrace, n.Rbrace, lineFoldingOnly)
+
+		case *ast.CaseClause:
+			// Fold from position of ":" to end.
+			start, end = n.Colon+1, n.End()
+
+		case *ast.CommClause:
+			// Fold from position of ":" to end.
+			start, end = n.Colon+1, n.End()
+
+		case *ast.CallExpr:
+			// Fold between positions of or lines between "(" and ")".
+			start, end = getLineFoldingRange(pgf, n.Lparen, n.Rparen, lineFoldingOnly)
+
+		case *ast.FieldList:
+			// Fold between positions of or lines between opening parenthesis/brace and closing parenthesis/brace.
+			start, end = getLineFoldingRange(pgf, n.Opening, n.Closing, lineFoldingOnly)
+
+		case *ast.GenDecl:
+			// If this is an import declaration, set the kind to be protocol.Imports.
+			if n.Tok == token.IMPORT {
+				kind = protocol.Imports
+			}
+			// Fold between positions of or lines between "(" and ")".
+			start, end = getLineFoldingRange(pgf, n.Lparen, n.Rparen, lineFoldingOnly)
+
+		case *ast.BasicLit:
+			// Fold raw string literals from position of "`" to position of "`".
+			if n.Kind == token.STRING && len(n.Value) >= 2 && n.Value[0] == '`' && n.Value[len(n.Value)-1] == '`' {
+				start, end = n.Pos(), n.End()
+			}
+
+		case *ast.CompositeLit:
+			// Fold between positions of or lines between "{" and "}".
+			start, end = getLineFoldingRange(pgf, n.Lbrace, n.Rbrace, lineFoldingOnly)
+
+		default:
+			panic(n)
 		}
-		return true
-	})
+
+		// Check that folding positions are valid.
+		if !start.IsValid() || !end.IsValid() {
+			continue
+		}
+		if start == end {
+			// Nothing to fold.
+			continue
+		}
+		// in line folding mode, do not fold if the start and end lines are the same.
+		if lineFoldingOnly && safetoken.Line(pgf.Tok, start) == safetoken.Line(pgf.Tok, end) {
+			continue
+		}
+		rng, err := pgf.PosRange(start, end)
+		if err != nil {
+			bug.Reportf("failed to create range: %s", err) // can't happen
+			continue
+		}
+		ranges = append(ranges, foldingRange(kind, rng))
+	}
 
 	// Sort by start position.
 	slices.SortFunc(ranges, func(x, y protocol.FoldingRange) int {
@@ -62,66 +134,6 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 	})
 
 	return ranges, nil
-}
-
-// foldingRangeFunc calculates the line folding range for ast.Node n
-func foldingRangeFunc(pgf *parsego.File, n ast.Node, lineFoldingOnly bool) (protocol.FoldingRange, bool) {
-	// TODO(suzmue): include trailing empty lines before the closing
-	// parenthesis/brace.
-	var kind protocol.FoldingRangeKind
-	// start and end define the range of content to fold away.
-	var start, end token.Pos
-	switch n := n.(type) {
-	case *ast.BlockStmt:
-		// Fold between positions of or lines between "{" and "}".
-		start, end = getLineFoldingRange(pgf, n.Lbrace, n.Rbrace, lineFoldingOnly)
-	case *ast.CaseClause:
-		// Fold from position of ":" to end.
-		start, end = n.Colon+1, n.End()
-	case *ast.CommClause:
-		// Fold from position of ":" to end.
-		start, end = n.Colon+1, n.End()
-	case *ast.CallExpr:
-		// Fold between positions of or lines between "(" and ")".
-		start, end = getLineFoldingRange(pgf, n.Lparen, n.Rparen, lineFoldingOnly)
-	case *ast.FieldList:
-		// Fold between positions of or lines between opening parenthesis/brace and closing parenthesis/brace.
-		start, end = getLineFoldingRange(pgf, n.Opening, n.Closing, lineFoldingOnly)
-	case *ast.GenDecl:
-		// If this is an import declaration, set the kind to be protocol.Imports.
-		if n.Tok == token.IMPORT {
-			kind = protocol.Imports
-		}
-		// Fold between positions of or lines between "(" and ")".
-		start, end = getLineFoldingRange(pgf, n.Lparen, n.Rparen, lineFoldingOnly)
-	case *ast.BasicLit:
-		// Fold raw string literals from position of "`" to position of "`".
-		if n.Kind == token.STRING && len(n.Value) >= 2 && n.Value[0] == '`' && n.Value[len(n.Value)-1] == '`' {
-			start, end = n.Pos(), n.End()
-		}
-	case *ast.CompositeLit:
-		// Fold between positions of or lines between "{" and "}".
-		start, end = getLineFoldingRange(pgf, n.Lbrace, n.Rbrace, lineFoldingOnly)
-	}
-
-	// Check that folding positions are valid.
-	if !start.IsValid() || !end.IsValid() {
-		return protocol.FoldingRange{}, false
-	}
-	if start == end {
-		// Nothing to fold.
-		return protocol.FoldingRange{}, false
-	}
-	// in line folding mode, do not fold if the start and end lines are the same.
-	if lineFoldingOnly && safetoken.Line(pgf.Tok, start) == safetoken.Line(pgf.Tok, end) {
-		return protocol.FoldingRange{}, false
-	}
-	rng, err := pgf.PosRange(start, end)
-	if err != nil {
-		bug.Reportf("failed to create range: %s", err) // can't happen
-		return protocol.FoldingRange{}, false
-	}
-	return foldingRange(kind, rng), true
 }
 
 // getLineFoldingRange returns the folding range for nodes with parentheses/braces/brackets
