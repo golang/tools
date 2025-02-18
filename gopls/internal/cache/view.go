@@ -109,7 +109,10 @@ type View struct {
 	// importsState is for the old imports code
 	importsState *importsState
 
-	// maintain the current module cache index
+	// modcacheState is the replacement for importsState, to be used for
+	// goimports operations when the imports source is "gopls".
+	//
+	// It may be nil, if the imports source is not "gopls".
 	modcacheState *modcacheState
 
 	// pkgIndex is an index of package IDs, for efficient storage of typerefs.
@@ -492,7 +495,9 @@ func (v *View) shutdown() {
 	// Cancel the initial workspace load if it is still running.
 	v.cancelInitialWorkspaceLoad()
 	v.importsState.stopTimer()
-	v.modcacheState.stopTimer()
+	if v.modcacheState != nil {
+		v.modcacheState.stopTimer()
+	}
 
 	v.snapshotMu.Lock()
 	if v.snapshot != nil {
