@@ -24,17 +24,18 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
 // extractVariable implements the refactor.extract.{variable,constant} CodeAction command.
-func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, _ *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	return extractExprs(fset, start, end, src, file, info, false)
+func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, _ *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
+	return extractExprs(fset, start, end, src, curFile, info, false)
 }
 
 // extractVariableAll implements the refactor.extract.{variable,constant}-all CodeAction command.
-func extractVariableAll(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, _ *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	return extractExprs(fset, start, end, src, file, info, true)
+func extractVariableAll(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, _ *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
+	return extractExprs(fset, start, end, src, curFile, info, true)
 }
 
 // extractExprs replaces occurrence(s) of a specified expression within the same function
@@ -43,9 +44,11 @@ func extractVariableAll(fset *token.FileSet, start, end token.Pos, src []byte, f
 //
 // The new variable/constant is declared as close as possible to the first found expression
 // within the deepest common scope accessible to all candidate occurrences.
-func extractExprs(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, info *types.Info, all bool) (*token.FileSet, *analysis.SuggestedFix, error) {
+func extractExprs(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, info *types.Info, all bool) (*token.FileSet, *analysis.SuggestedFix, error) {
+	file := curFile.Node().(*ast.File)
+	// TODO(adonovan): simplify, using Cursor.
 	tokFile := fset.File(file.FileStart)
-	exprs, err := canExtractVariable(info, file, start, end, all)
+	exprs, err := canExtractVariable(info, curFile, start, end, all)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot extract: %v", err)
 	}
@@ -381,10 +384,12 @@ func stmtToInsertVarBefore(path []ast.Node, variables []*variable) (ast.Stmt, er
 // canExtractVariable reports whether the code in the given range can be
 // extracted to a variable (or constant). It returns the selected expression or, if 'all',
 // all structurally equivalent expressions within the same function body, in lexical order.
-func canExtractVariable(info *types.Info, file *ast.File, start, end token.Pos, all bool) ([]ast.Expr, error) {
+func canExtractVariable(info *types.Info, curFile cursor.Cursor, start, end token.Pos, all bool) ([]ast.Expr, error) {
 	if start == end {
 		return nil, fmt.Errorf("empty selection")
 	}
+	file := curFile.Node().(*ast.File)
+	// TODO(adonovan): simplify, using Cursor.
 	path, exact := astutil.PathEnclosingInterval(file, start, end)
 	if !exact {
 		return nil, fmt.Errorf("selection is not an expression")
@@ -571,13 +576,13 @@ type returnVariable struct {
 }
 
 // extractMethod refactors the selected block of code into a new method.
-func extractMethod(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	return extractFunctionMethod(fset, start, end, src, file, pkg, info, true)
+func extractMethod(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
+	return extractFunctionMethod(fset, start, end, src, curFile, pkg, info, true)
 }
 
 // extractFunction refactors the selected block of code into a new function.
-func extractFunction(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	return extractFunctionMethod(fset, start, end, src, file, pkg, info, false)
+func extractFunction(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
+	return extractFunctionMethod(fset, start, end, src, curFile, pkg, info, false)
 }
 
 // extractFunctionMethod refactors the selected block of code into a new function/method.
@@ -588,17 +593,19 @@ func extractFunction(fset *token.FileSet, start, end token.Pos, src []byte, file
 // and return values of the extracted function/method. Lastly, we construct the call
 // of the function/method and insert this call as well as the extracted function/method into
 // their proper locations.
-func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info, isMethod bool) (*token.FileSet, *analysis.SuggestedFix, error) {
+func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, pkg *types.Package, info *types.Info, isMethod bool) (*token.FileSet, *analysis.SuggestedFix, error) {
 	errorPrefix := "extractFunction"
 	if isMethod {
 		errorPrefix = "extractMethod"
 	}
 
+	file := curFile.Node().(*ast.File)
+	// TODO(adonovan): simplify, using Cursor.
 	tok := fset.File(file.FileStart)
 	if tok == nil {
 		return nil, nil, bug.Errorf("no file for position")
 	}
-	p, ok, methodOk, err := canExtractFunction(tok, start, end, src, file)
+	p, ok, methodOk, err := canExtractFunction(tok, start, end, src, curFile)
 	if (!ok && !isMethod) || (!methodOk && isMethod) {
 		return nil, nil, fmt.Errorf("%s: cannot extract %s: %v", errorPrefix,
 			safetoken.StartPosition(fset, start), err)
@@ -1086,7 +1093,10 @@ func moveParamToFrontIfFound(params []ast.Expr, paramTypes []*ast.Field, x, sel 
 // their cursors for whitespace. To support this use case, we must manually adjust the
 // ranges to match the correct AST node. In this particular example, we would adjust
 // rng.Start forward to the start of 'if' and rng.End backward to after '}'.
-func adjustRangeForCommentsAndWhiteSpace(tok *token.File, start, end token.Pos, content []byte, file *ast.File) (token.Pos, token.Pos, error) {
+func adjustRangeForCommentsAndWhiteSpace(tok *token.File, start, end token.Pos, content []byte, curFile cursor.Cursor) (token.Pos, token.Pos, error) {
+	file := curFile.Node().(*ast.File)
+	// TODO(adonovan): simplify, using Cursor.
+
 	// Adjust the end of the range to after leading whitespace and comments.
 	prevStart := token.NoPos
 	startComment := sort.Search(len(file.Comments), func(i int) bool {
@@ -1410,12 +1420,14 @@ type fnExtractParams struct {
 
 // canExtractFunction reports whether the code in the given range can be
 // extracted to a function.
-func canExtractFunction(tok *token.File, start, end token.Pos, src []byte, file *ast.File) (*fnExtractParams, bool, bool, error) {
+func canExtractFunction(tok *token.File, start, end token.Pos, src []byte, curFile cursor.Cursor) (*fnExtractParams, bool, bool, error) {
 	if start == end {
 		return nil, false, false, fmt.Errorf("start and end are equal")
 	}
 	var err error
-	start, end, err = adjustRangeForCommentsAndWhiteSpace(tok, start, end, src, file)
+	file := curFile.Node().(*ast.File)
+	// TODO(adonovan): simplify, using Cursor.
+	start, end, err = adjustRangeForCommentsAndWhiteSpace(tok, start, end, src, curFile)
 	if err != nil {
 		return nil, false, false, err
 	}

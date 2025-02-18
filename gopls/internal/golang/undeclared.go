@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -69,8 +70,10 @@ func undeclaredFixTitle(path []ast.Node, errMsg string) string {
 }
 
 // createUndeclared generates a suggested declaration for an undeclared variable or function.
-func createUndeclared(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
+func createUndeclared(fset *token.FileSet, start, end token.Pos, content []byte, curFile cursor.Cursor, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	pos := start // don't use the end
+	file := curFile.Node().(*ast.File)
+	// TODO(adonovan): simplify, using Cursor.
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if len(path) < 2 {
 		return nil, nil, fmt.Errorf("no expression found")

@@ -31,8 +31,7 @@ import (
 // methods of the concrete type that is assigned to an interface type
 // at the cursor position.
 func stubMissingInterfaceMethodsFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-	si := stubmethods.GetIfaceStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes, start)
+	si := stubmethods.GetIfaceStubInfo(pkg.FileSet(), pkg.TypesInfo(), pgf, start, end)
 	if si == nil {
 		return nil, nil, fmt.Errorf("nil interface request")
 	}
@@ -43,8 +42,7 @@ func stubMissingInterfaceMethodsFixer(ctx context.Context, snapshot *cache.Snaps
 // method that the user may want to generate based on CallExpr
 // at the cursor position.
 func stubMissingCalledFunctionFixer(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-	nodes, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-	si := stubmethods.GetCallStubInfo(pkg.FileSet(), pkg.TypesInfo(), nodes, start)
+	si := stubmethods.GetCallStubInfo(pkg.FileSet(), pkg.TypesInfo(), pgf, start, end)
 	if si == nil {
 		return nil, nil, fmt.Errorf("invalid type request")
 	}

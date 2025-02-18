@@ -7,7 +7,6 @@ package golang
 import (
 	"context"
 	"fmt"
-	"go/ast"
 	"go/token"
 	"go/types"
 
@@ -20,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/imports"
 )
 
@@ -47,12 +47,12 @@ type fixer func(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf 
 // TODO(adonovan): move fillstruct and undeclaredname into this
 // package, so we can remove the import restriction and push
 // the singleFile wrapper down into each singleFileFixer?
-type singleFileFixer func(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error)
+type singleFileFixer func(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error)
 
 // singleFile adapts a single-file fixer to a Fixer.
 func singleFile(fixer1 singleFileFixer) fixer {
 	return func(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-		return fixer1(pkg.FileSet(), start, end, pgf.Src, pgf.File, pkg.Types(), pkg.TypesInfo())
+		return fixer1(pkg.FileSet(), start, end, pgf.Src, pgf.Cursor, pkg.Types(), pkg.TypesInfo())
 	}
 }
 

@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -129,15 +130,15 @@ const FixCategory = "fillstruct" // recognized by gopls ApplyFix
 
 // SuggestedFix computes the suggested fix for the kinds of
 // diagnostics produced by the Analyzer above.
-func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
+func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, curFile cursor.Cursor, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
 	if info == nil {
 		return nil, nil, fmt.Errorf("nil types.Info")
 	}
 
 	pos := start // don't use the end
 
-	// TODO(rstambler): Using ast.Inspect would probably be more efficient than
-	// calling PathEnclosingInterval. Switch this approach.
+	// TODO(adonovan): simplify, using Cursor.
+	file := curFile.Node().(*ast.File)
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if len(path) == 0 {
 		return nil, nil, fmt.Errorf("no enclosing ast.Node")

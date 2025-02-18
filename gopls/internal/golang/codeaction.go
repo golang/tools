@@ -325,8 +325,7 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 		case strings.Contains(msg, "missing method"),
 			strings.HasPrefix(msg, "cannot convert"),
 			strings.Contains(msg, "not implement"):
-			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
-			si := stubmethods.GetIfaceStubInfo(req.pkg.FileSet(), info, path, start)
+			si := stubmethods.GetIfaceStubInfo(req.pkg.FileSet(), info, req.pgf, start, end)
 			if si != nil {
 				qual := typesinternal.FileQualifier(req.pgf.File, si.Concrete.Obj().Pkg())
 				iface := types.TypeString(si.Interface.Type(), qual)
@@ -338,8 +337,7 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 		// Offer a "Declare missing method T.f" code action.
 		// See [stubMissingCalledFunctionFixer] for command implementation.
 		case strings.Contains(msg, "has no field or method"):
-			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
-			si := stubmethods.GetCallStubInfo(req.pkg.FileSet(), info, path, start)
+			si := stubmethods.GetCallStubInfo(req.pkg.FileSet(), info, req.pgf, start, end)
 			if si != nil {
 				msg := fmt.Sprintf("Declare missing method %s.%s", si.Receiver.Obj().Name(), si.MethodName)
 				req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
@@ -462,7 +460,7 @@ func goDoc(ctx context.Context, req *codeActionsRequest) error {
 // refactorExtractFunction produces "Extract function" code actions.
 // See [extractFunction] for command implementation.
 func refactorExtractFunction(ctx context.Context, req *codeActionsRequest) error {
-	if _, ok, _, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.File); ok {
+	if _, ok, _, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.Cursor); ok {
 		req.addApplyFixAction("Extract function", fixExtractFunction, req.loc)
 	}
 	return nil
@@ -471,7 +469,7 @@ func refactorExtractFunction(ctx context.Context, req *codeActionsRequest) error
 // refactorExtractMethod produces "Extract method" code actions.
 // See [extractMethod] for command implementation.
 func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
-	if _, ok, methodOK, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.File); ok && methodOK {
+	if _, ok, methodOK, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.Cursor); ok && methodOK {
 		req.addApplyFixAction("Extract method", fixExtractMethod, req.loc)
 	}
 	return nil
@@ -481,7 +479,7 @@ func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
 // See [extractVariable] for command implementation.
 func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error {
 	info := req.pkg.TypesInfo()
-	if exprs, err := canExtractVariable(info, req.pgf.File, req.start, req.end, false); err == nil {
+	if exprs, err := canExtractVariable(info, req.pgf.Cursor, req.start, req.end, false); err == nil {
 		// Offer one of refactor.extract.{constant,variable}
 		// based on the constness of the expression; this is a
 		// limitation of the codeActionProducers mechanism.
@@ -507,7 +505,7 @@ func refactorExtractVariableAll(ctx context.Context, req *codeActionsRequest) er
 	info := req.pkg.TypesInfo()
 	// Don't suggest if only one expr is found,
 	// otherwise it will duplicate with [refactorExtractVariable]
-	if exprs, err := canExtractVariable(info, req.pgf.File, req.start, req.end, true); err == nil && len(exprs) > 1 {
+	if exprs, err := canExtractVariable(info, req.pgf.Cursor, req.start, req.end, true); err == nil && len(exprs) > 1 {
 		start, end, err := req.pgf.NodeOffsets(exprs[0])
 		if err != nil {
 			return err
@@ -664,7 +662,7 @@ func refactorRewriteChangeQuote(ctx context.Context, req *codeActionsRequest) er
 // refactorRewriteInvertIf produces "Invert 'if' condition" code actions.
 // See [invertIfCondition] for command implementation.
 func refactorRewriteInvertIf(ctx context.Context, req *codeActionsRequest) error {
-	if _, ok, _ := canInvertIfCondition(req.pgf.File, req.start, req.end); ok {
+	if _, ok, _ := canInvertIfCondition(req.pgf.Cursor, req.start, req.end); ok {
 		req.addApplyFixAction("Invert 'if' condition", fixInvertIfCondition, req.loc)
 	}
 	return nil
@@ -674,7 +672,7 @@ func refactorRewriteInvertIf(ctx context.Context, req *codeActionsRequest) error
 // See [splitLines] for command implementation.
 func refactorRewriteSplitLines(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): opt: don't set needPkg just for FileSet.
-	if msg, ok, _ := canSplitLines(req.pgf.File, req.pkg.FileSet(), req.start, req.end); ok {
+	if msg, ok, _ := canSplitLines(req.pgf.Cursor, req.pkg.FileSet(), req.start, req.end); ok {
 		req.addApplyFixAction(msg, fixSplitLines, req.loc)
 	}
 	return nil
@@ -684,7 +682,7 @@ func refactorRewriteSplitLines(ctx context.Context, req *codeActionsRequest) err
 // See [joinLines] for command implementation.
 func refactorRewriteJoinLines(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): opt: don't set needPkg just for FileSet.
-	if msg, ok, _ := canJoinLines(req.pgf.File, req.pkg.FileSet(), req.start, req.end); ok {
+	if msg, ok, _ := canJoinLines(req.pgf.Cursor, req.pkg.FileSet(), req.start, req.end); ok {
 		req.addApplyFixAction(msg, fixJoinLines, req.loc)
 	}
 	return nil

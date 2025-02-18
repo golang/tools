@@ -20,12 +20,13 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil/cursor"
 )
 
 // canSplitLines checks whether we can split lists of elements inside
 // an enclosing curly bracket/parens into separate lines.
-func canSplitLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
-	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, file, nil, start, end)
+func canSplitLines(curFile cursor.Cursor, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
+	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, curFile, nil, start, end)
 	if itemType == "" {
 		return "", false, nil
 	}
@@ -47,8 +48,8 @@ func canSplitLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (s
 
 // canJoinLines checks whether we can join lists of elements inside an
 // enclosing curly bracket/parens into a single line.
-func canJoinLines(file *ast.File, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
-	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, file, nil, start, end)
+func canJoinLines(curFile cursor.Cursor, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
+	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, curFile, nil, start, end)
 	if itemType == "" {
 		return "", false, nil
 	}
@@ -84,8 +85,8 @@ func canSplitJoinLines(items []ast.Node, comments []*ast.CommentGroup) bool {
 }
 
 // splitLines is a singleFile fixer.
-func splitLines(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, _ *types.Package, _ *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	itemType, items, comments, indent, braceOpen, braceClose := findSplitJoinTarget(fset, file, src, start, end)
+func splitLines(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, _ *types.Package, _ *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
+	itemType, items, comments, indent, braceOpen, braceClose := findSplitJoinTarget(fset, curFile, src, start, end)
 	if itemType == "" {
 		return nil, nil, nil // no fix available
 	}
@@ -94,8 +95,8 @@ func splitLines(fset *token.FileSet, start, end token.Pos, src []byte, file *ast
 }
 
 // joinLines is a singleFile fixer.
-func joinLines(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, _ *types.Package, _ *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	itemType, items, comments, _, braceOpen, braceClose := findSplitJoinTarget(fset, file, src, start, end)
+func joinLines(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, _ *types.Package, _ *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
+	itemType, items, comments, _, braceOpen, braceClose := findSplitJoinTarget(fset, curFile, src, start, end)
 	if itemType == "" {
 		return nil, nil, nil // no fix available
 	}
@@ -166,10 +167,13 @@ func processLines(fset *token.FileSet, items []ast.Node, comments []*ast.Comment
 }
 
 // findSplitJoinTarget returns the first curly bracket/parens that encloses the current cursor.
-func findSplitJoinTarget(fset *token.FileSet, file *ast.File, src []byte, start, end token.Pos) (itemType string, items []ast.Node, comments []*ast.CommentGroup, indent string, open, close token.Pos) {
+func findSplitJoinTarget(fset *token.FileSet, curFile cursor.Cursor, src []byte, start, end token.Pos) (itemType string, items []ast.Node, comments []*ast.CommentGroup, indent string, open, close token.Pos) {
 	isCursorInside := func(nodePos, nodeEnd token.Pos) bool {
 		return nodePos < start && end < nodeEnd
 	}
+
+	file := curFile.Node().(*ast.File)
+	// TODO(adonovan): simplify, using Cursor.
 
 	findTarget := func() (targetType string, target ast.Node, open, close token.Pos) {
 		path, _ := astutil.PathEnclosingInterval(file, start, end)
