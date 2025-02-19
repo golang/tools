@@ -36,6 +36,7 @@ module import.test
 
 go 1.12
 -- import.test@v1.2.3/pkg/const.go --
+// package documentation
 package pkg
 
 const Hello = "Hello"
@@ -49,10 +50,11 @@ const Hello = "Hello"
 
 		modLink := "https://pkg.go.dev/mod/import.test@v1.2.3"
 		pkgLink := "https://pkg.go.dev/import.test@v1.2.3/pkg"
+		pkgDoc := "package documentation"
 
 		// First, check that we get the expected links via hover and documentLink.
 		content, _ := env.Hover(env.RegexpSearch("main.go", "pkg.Hello"))
-		if content == nil || !strings.Contains(content.Value, pkgLink) {
+		if content == nil || !strings.Contains(content.Value, pkgDoc) {
 			t.Errorf("hover: got %v in main.go, want contains %q", content, pkgLink)
 		}
 		content, _ = env.Hover(env.RegexpSearch("go.mod", "import.test"))
