@@ -428,15 +428,21 @@ func (c Cursor) FindPos(start, end token.Pos) (Cursor, bool) {
 		ev := events[i]
 		if ev.index > i { // push?
 			n := ev.node
-			var nodeStart, nodeEnd token.Pos
+			var nodeEnd token.Pos
 			if file, ok := n.(*ast.File); ok {
-				nodeStart, nodeEnd = file.FileStart, file.FileEnd
+				nodeEnd = file.FileEnd
+				// Note: files may be out of Pos order.
+				if file.FileStart > start {
+					i = ev.index // disjoint, after; skip to next file
+					continue
+				}
 			} else {
-				nodeStart, nodeEnd = n.Pos(), n.End()
+				nodeEnd = n.End()
+				if n.Pos() > start {
+					break // disjoint, after; stop
+				}
 			}
-			if nodeStart > start {
-				break // disjoint, after; stop
-			}
+			// Inv: node.{Pos,FileStart} <= start
 			if end <= nodeEnd {
 				// node fully contains target range
 				best = i

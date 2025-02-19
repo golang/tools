@@ -14,6 +14,7 @@ import (
 	"go/token"
 	"iter"
 	"log"
+	"math/rand"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -332,8 +333,31 @@ func TestCursor_FindNode(t *testing.T) {
 			}
 		}
 	}
+}
 
-	// TODO(adonovan): FindPos needs a test (not just a benchmark).
+// TestCursor_FindPos_order ensures that FindPos does not assume files are in Pos order.
+func TestCursor_FindPos_order(t *testing.T) {
+	// Pick an arbitrary decl.
+	target := netFiles[7].Decls[0]
+
+	// Find the target decl by its position.
+	cur, ok := cursor.Root(netInspect).FindPos(target.Pos(), target.End())
+	if !ok || cur.Node() != target {
+		t.Fatalf("unshuffled: FindPos(%T) = (%v, %t)", target, cur, ok)
+	}
+
+	// Shuffle the files out of Pos order.
+	files := slices.Clone(netFiles)
+	rand.Shuffle(len(files), func(i, j int) {
+		files[i], files[j] = files[j], files[i]
+	})
+
+	// Find it again.
+	inspect := inspector.New(files)
+	cur, ok = cursor.Root(inspect).FindPos(target.Pos(), target.End())
+	if !ok || cur.Node() != target {
+		t.Fatalf("shuffled: FindPos(%T) = (%v, %t)", target, cur, ok)
+	}
 }
 
 func TestCursor_Edge(t *testing.T) {
