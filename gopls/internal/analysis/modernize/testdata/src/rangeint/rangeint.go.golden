@@ -12,6 +12,9 @@ func _(i int, s struct{ i int }, slice []int) {
 	for i := range slice { // want "for loop can be modernized using range over int"
 		println(slice[i])
 	}
+	for range len("") { // want "for loop can be modernized using range over int"
+		// NB: not simplified to range ""
+	}
 
 	// nope
 	for i := 0; i < 10; { // nope: missing increment
@@ -38,3 +41,13 @@ func _(i int, s struct{ i int }, slice []int) {
 }
 
 func f() int { return 0 }
+
+// Repro for part of #71847: ("for range n is invalid if the loop body contains i++"):
+func _(s string) {
+	var i int                    // (this is necessary)
+	for i = 0; i < len(s); i++ { // nope: loop body increments i
+		if true {
+			i++ // nope
+		}
+	}
+}

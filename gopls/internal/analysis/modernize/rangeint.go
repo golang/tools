@@ -75,7 +75,7 @@ func rangeint(pass *analysis.Pass) {
 						// Have: for i = 0; i < limit; i++ {}
 
 						// Find references to i within the loop body.
-						v := info.Defs[index]
+						v := info.ObjectOf(index)
 						used := false
 						for curId := range curLoop.Child(loop.Body).Preorder((*ast.Ident)(nil)) {
 							id := curId.Node().(*ast.Ident)
