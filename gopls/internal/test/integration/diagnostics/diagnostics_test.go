@@ -562,7 +562,7 @@ func _() {
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.AfterChange(
-			Diagnostics(AtPosition("main.go", 5, 8)),
+			Diagnostics(AtPosition("main.go", 5, 6)),
 			ReadDiagnostics("main.go", &d),
 		)
 		if fixes := env.GetQuickFixes("main.go", d.Diagnostics); len(fixes) != 0 {
