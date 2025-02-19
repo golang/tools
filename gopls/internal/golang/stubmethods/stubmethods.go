@@ -450,3 +450,94 @@ func concreteType(e ast.Expr, info *types.Info) (*types.Named, bool) {
 	}
 	return named, isPtr
 }
+
+func GetFieldStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node) *StructFieldInfo {
+	for _, node := range path {
+		s, ok := node.(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+		// If recvExpr is a package name, compiler error would be
+		// e.g., "undefined: http.bar", thus will not hit this code path.
+		recvExpr := s.X
+		recvType, _ := concreteType(recvExpr, info)
+
+		if recvType == nil || recvType.Obj().Pkg() == nil {
+			return nil
+		}
+
+		// A method of a function-local type cannot be stubbed
+		// since there's nowhere to put the methods.
+		recv := recvType.Obj()
+		if recv.Parent() != recv.Pkg().Scope() {
+			return nil
+		}
+
+		obj := types.Object(recv)
+		tv, ok := info.Types[s.X]
+		if !ok {
+			break
+		}
+
+		named, ok := tv.Type.(*types.Named)
+		if !ok {
+			break
+		}
+
+		structType, ok := named.Underlying().(*types.Struct)
+		if !ok {
+			break
+		}
+
+		return &StructFieldInfo{
+			Fset:   fset,
+			Expr:   s,
+			Struct: structType,
+			Named:  named,
+			Info:   info,
+			Path:   path,
+			Object: obj,
+		}
+	}
+
+	return nil
+}
+
+// StructFieldInfo describes f field in x.f where x has a named struct type
+type StructFieldInfo struct {
+	Fset   *token.FileSet
+	Expr   *ast.SelectorExpr
+	Struct *types.Struct
+	Named  *types.Named
+	Info   *types.Info
+	Path   []ast.Node
+	Object types.Object
+}
+
+// Emit writes to out the missing field based on type info.
+func (si *StructFieldInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
+	if si.Expr == nil || si.Expr.Sel == nil {
+		return fmt.Errorf("invalid selector expression")
+	}
+
+	// Get types from context at the selector expression position
+	typesFromContext := typesutil.TypesFromContext(si.Info, si.Path, si.Expr.Pos())
+
+	// Default to interface{} if we couldn't determine the type from context
+	var fieldType types.Type
+	if len(typesFromContext) > 0 {
+		fieldType = typesFromContext[0]
+	} else {
+		// Create a new interface{} type
+		fieldType = types.Universe.Lookup("any").Type()
+	}
+
+	out.Write([]byte{'\n', '\t'})
+	out.WriteString(si.Expr.Sel.Name)
+	out.WriteByte(' ')
+	out.WriteString(types.TypeString(fieldType, qual))
+	if si.Struct.NumFields() == 0 {
+		out.WriteByte('\n')
+	}
+	return nil
+}

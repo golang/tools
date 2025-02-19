@@ -10,6 +10,8 @@ import (
 	"go/token"
 	"go/types"
 	"strings"
+
+	"golang.org/x/tools/gopls/internal/util/astutil"
 )
 
 // FormatTypeParams turns TypeParamList into its Go representation, such as:
@@ -60,25 +62,17 @@ func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.
 
 	switch parent := parent.(type) {
 	case *ast.AssignStmt:
-		// Append all lhs's type
-		if len(parent.Rhs) == 1 {
-			for _, lhs := range parent.Lhs {
-				t := info.TypeOf(lhs)
-				typs = append(typs, validType(t))
-			}
-			break
-		}
-		// Lhs and Rhs counts do not match, give up
-		if len(parent.Lhs) != len(parent.Rhs) {
-			break
-		}
-		// Append corresponding index of lhs's type
-		for i, rhs := range parent.Rhs {
-			if rhs.Pos() <= pos && pos <= rhs.End() {
-				t := info.TypeOf(parent.Lhs[i])
-				typs = append(typs, validType(t))
+		right := false
+		for _, rhs := range parent.Rhs {
+			if astutil.NodeContains(rhs, pos) {
+				right = true
 				break
 			}
+		}
+		if right {
+			typs = append(typs, typeFromExprAssignExpr(parent.Rhs, parent.Lhs, info, path, pos, validType)...)
+		} else {
+			typs = append(typs, typeFromExprAssignExpr(parent.Lhs, parent.Rhs, info, path, pos, validType)...)
 		}
 	case *ast.ValueSpec:
 		if len(parent.Values) == 1 {
@@ -183,6 +177,14 @@ func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.
 			t := info.TypeOf(parent.X)
 			typs = append(typs, validType(t))
 		}
+	case *ast.SelectorExpr:
+		for _, n := range path {
+			assign, ok := n.(*ast.AssignStmt)
+			if ok {
+				return TypesFromContext(info, path[1:], assign.Pos())
+			}
+		}
+
 	default:
 		// TODO: support other kinds of "holes" as the need arises.
 	}
@@ -230,4 +232,30 @@ func EnclosingSignature(path []ast.Node, info *types.Info) *types.Signature {
 		}
 	}
 	return nil
+}
+
+func typeFromExprAssignExpr(exprs, opposites []ast.Expr, info *types.Info, path []ast.Node, pos token.Pos, validType func(t types.Type) types.Type) []types.Type {
+	typs := make([]types.Type, 0)
+	// Append all lhs's type
+	if len(exprs) == 1 {
+		for i := range opposites {
+			t := info.TypeOf(opposites[i])
+			typs = append(typs, validType(t))
+		}
+		return typs
+	}
+	// Lhs and Rhs counts do not match, give up
+	if len(opposites) != len(exprs) {
+		return typs
+	}
+	// Append corresponding index of lhs's type
+	for i := range exprs {
+		if exprs[i].Pos() <= pos && pos <= exprs[i].End() {
+			t := info.TypeOf(opposites[i])
+			typs = append(typs, validType(t))
+			break
+		}
+	}
+
+	return typs
 }
