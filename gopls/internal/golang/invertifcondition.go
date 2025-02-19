@@ -8,18 +8,24 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil/cursor"
 )
 
 // invertIfCondition is a singleFileFixFunc that inverts an if/else statement
-func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, _ *types.Package, _ *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	ifStatement, _, err := canInvertIfCondition(curFile, start, end)
+func invertIfCondition(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	var (
+		fset = pkg.FileSet()
+		src  = pgf.Src
+	)
+
+	ifStatement, _, err := canInvertIfCondition(pgf.Cursor, start, end)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -12,13 +12,14 @@ import (
 	"bytes"
 	"go/ast"
 	"go/token"
-	"go/types"
 	"slices"
 	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil/cursor"
 )
@@ -85,23 +86,25 @@ func canSplitJoinLines(items []ast.Node, comments []*ast.CommentGroup) bool {
 }
 
 // splitLines is a singleFile fixer.
-func splitLines(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, _ *types.Package, _ *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	itemType, items, comments, indent, braceOpen, braceClose := findSplitJoinTarget(fset, curFile, src, start, end)
+func splitLines(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	fset := pkg.FileSet()
+	itemType, items, comments, indent, braceOpen, braceClose := findSplitJoinTarget(fset, pgf.Cursor, pgf.Src, start, end)
 	if itemType == "" {
 		return nil, nil, nil // no fix available
 	}
 
-	return fset, processLines(fset, items, comments, src, braceOpen, braceClose, ",\n", "\n", ",\n"+indent, indent+"\t"), nil
+	return fset, processLines(fset, items, comments, pgf.Src, braceOpen, braceClose, ",\n", "\n", ",\n"+indent, indent+"\t"), nil
 }
 
 // joinLines is a singleFile fixer.
-func joinLines(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, _ *types.Package, _ *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	itemType, items, comments, _, braceOpen, braceClose := findSplitJoinTarget(fset, curFile, src, start, end)
+func joinLines(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	fset := pkg.FileSet()
+	itemType, items, comments, _, braceOpen, braceClose := findSplitJoinTarget(fset, pgf.Cursor, pgf.Src, start, end)
 	if itemType == "" {
 		return nil, nil, nil // no fix available
 	}
 
-	return fset, processLines(fset, items, comments, src, braceOpen, braceClose, ", ", "", "", ""), nil
+	return fset, processLines(fset, items, comments, pgf.Src, braceOpen, braceClose, ", ", "", "", ""), nil
 }
 
 // processLines is the common operation for both split and join lines because this split/join operation is

@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"go/token"
-	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
@@ -19,7 +18,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/imports"
 )
 
@@ -41,18 +39,14 @@ import (
 // A fixer may return (nil, nil) if no fix is available.
 type fixer func(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error)
 
-// A singleFileFixer is a Fixer that inspects only a single file,
-// and does not depend on data types from the cache package.
-//
-// TODO(adonovan): move fillstruct and undeclaredname into this
-// package, so we can remove the import restriction and push
-// the singleFile wrapper down into each singleFileFixer?
-type singleFileFixer func(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error)
+// A singleFileFixer is a [fixer] that inspects only a single file.
+type singleFileFixer func(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error)
 
-// singleFile adapts a single-file fixer to a Fixer.
+// singleFile adapts a [singleFileFixer] to a [fixer]
+// by discarding the snapshot and the context it needs.
 func singleFile(fixer1 singleFileFixer) fixer {
-	return func(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-		return fixer1(pkg.FileSet(), start, end, pgf.Src, pgf.Cursor, pkg.Types(), pkg.TypesInfo())
+	return func(_ context.Context, _ *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+		return fixer1(pkg, pgf, start, end)
 	}
 }
 

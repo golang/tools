@@ -20,6 +20,8 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
@@ -29,13 +31,13 @@ import (
 )
 
 // extractVariable implements the refactor.extract.{variable,constant} CodeAction command.
-func extractVariable(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, _ *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	return extractExprs(fset, start, end, src, curFile, info, false)
+func extractVariable(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	return extractExprs(pkg, pgf, start, end, false)
 }
 
 // extractVariableAll implements the refactor.extract.{variable,constant}-all CodeAction command.
-func extractVariableAll(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, _ *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	return extractExprs(fset, start, end, src, curFile, info, true)
+func extractVariableAll(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	return extractExprs(pkg, pgf, start, end, true)
 }
 
 // extractExprs replaces occurrence(s) of a specified expression within the same function
@@ -44,11 +46,15 @@ func extractVariableAll(fset *token.FileSet, start, end token.Pos, src []byte, c
 //
 // The new variable/constant is declared as close as possible to the first found expression
 // within the deepest common scope accessible to all candidate occurrences.
-func extractExprs(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, info *types.Info, all bool) (*token.FileSet, *analysis.SuggestedFix, error) {
-	file := curFile.Node().(*ast.File)
+func extractExprs(pkg *cache.Package, pgf *parsego.File, start, end token.Pos, all bool) (*token.FileSet, *analysis.SuggestedFix, error) {
+	var (
+		fset = pkg.FileSet()
+		info = pkg.TypesInfo()
+		file = pgf.File
+	)
 	// TODO(adonovan): simplify, using Cursor.
 	tokFile := fset.File(file.FileStart)
-	exprs, err := canExtractVariable(info, curFile, start, end, all)
+	exprs, err := canExtractVariable(info, pgf.Cursor, start, end, all)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot extract: %v", err)
 	}
@@ -157,7 +163,7 @@ Outer:
 			return nil, nil, fmt.Errorf("cannot find location to insert extraction: %v", err)
 		}
 		// Within function: compute appropriate statement indentation.
-		indent, err := calculateIndentation(src, tokFile, before)
+		indent, err := calculateIndentation(pgf.Src, tokFile, before)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -576,13 +582,13 @@ type returnVariable struct {
 }
 
 // extractMethod refactors the selected block of code into a new method.
-func extractMethod(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	return extractFunctionMethod(fset, start, end, src, curFile, pkg, info, true)
+func extractMethod(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	return extractFunctionMethod(pkg, pgf, start, end, true)
 }
 
 // extractFunction refactors the selected block of code into a new function.
-func extractFunction(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	return extractFunctionMethod(fset, start, end, src, curFile, pkg, info, false)
+func extractFunction(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	return extractFunctionMethod(pkg, pgf, start, end, false)
 }
 
 // extractFunctionMethod refactors the selected block of code into a new function/method.
@@ -593,19 +599,26 @@ func extractFunction(fset *token.FileSet, start, end token.Pos, src []byte, curF
 // and return values of the extracted function/method. Lastly, we construct the call
 // of the function/method and insert this call as well as the extracted function/method into
 // their proper locations.
-func extractFunctionMethod(fset *token.FileSet, start, end token.Pos, src []byte, curFile cursor.Cursor, pkg *types.Package, info *types.Info, isMethod bool) (*token.FileSet, *analysis.SuggestedFix, error) {
+func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end token.Pos, isMethod bool) (*token.FileSet, *analysis.SuggestedFix, error) {
+	var (
+		fset = cpkg.FileSet()
+		pkg  = cpkg.Types()
+		info = cpkg.TypesInfo()
+		src  = pgf.Src
+	)
+
 	errorPrefix := "extractFunction"
 	if isMethod {
 		errorPrefix = "extractMethod"
 	}
 
-	file := curFile.Node().(*ast.File)
+	file := pgf.Cursor.Node().(*ast.File)
 	// TODO(adonovan): simplify, using Cursor.
 	tok := fset.File(file.FileStart)
 	if tok == nil {
 		return nil, nil, bug.Errorf("no file for position")
 	}
-	p, ok, methodOk, err := canExtractFunction(tok, start, end, src, curFile)
+	p, ok, methodOk, err := canExtractFunction(tok, start, end, src, pgf.Cursor)
 	if (!ok && !isMethod) || (!methodOk && isMethod) {
 		return nil, nil, fmt.Errorf("%s: cannot extract %s: %v", errorPrefix,
 			safetoken.StartPosition(fset, start), err)
