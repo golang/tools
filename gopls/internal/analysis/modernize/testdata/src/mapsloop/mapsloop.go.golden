@@ -23,19 +23,27 @@ func useCopyGeneric[K comparable, V any, M ~map[K]V](dst, src M) {
 	maps.Copy(dst, src)
 }
 
-func useClone(src map[int]string) {
-	// Replace make(...) by maps.Clone.
-	dst := maps.Clone(src)
+func useCopyNotClone(src map[int]string) {
+	// Clone is tempting but wrong when src may be nil; see #71844.
 
-	dst = maps.Clone(src)
+	// Replace make(...) by maps.Copy.
+	dst := make(map[int]string, len(src))
+	maps.Copy(dst, src)
+
+	dst = map[int]string{}
+	maps.Copy(dst, src)
 	println(dst)
 }
 
-func useCloneParen(src map[int]string) {
-	// Replace (make)(...) by maps.Clone.
-	dst := maps.Clone(src)
+func useCopyParen(src map[int]string) {
+	// Clone is tempting but wrong when src may be nil; see #71844.
 
-	dst = maps.Clone(src)
+	// Replace (make)(...) by maps.Clone.
+	dst := (make)(map[int]string, len(src))
+	maps.Copy(dst, src)
+
+	dst = (map[int]string{})
+	maps.Copy(dst, src)
 	println(dst)
 }
 
@@ -54,24 +62,33 @@ func useCopy_typesDiffer2(src map[int]string) {
 }
 
 func useClone_typesDiffer3(src map[int]string) {
+	// Clone is tempting but wrong when src may be nil; see #71844.
+
 	// Replace loop and make(...) as maps.Clone(src) returns map[int]string
 	// which is assignable to M.
 	var dst M
-	dst = maps.Clone(src)
+	dst = make(M, len(src))
+	maps.Copy(dst, src)
 	println(dst)
 }
 
 func useClone_typesDiffer4(src map[int]string) {
+	// Clone is tempting but wrong when src may be nil; see #71844.
+
 	// Replace loop and make(...) as maps.Clone(src) returns map[int]string
 	// which is assignable to M.
 	var dst M
-	dst = maps.Clone(src)
+	dst = make(M, len(src))
+	maps.Copy(dst, src)
 	println(dst)
 }
 
 func useClone_generic[Map ~map[K]V, K comparable, V any](src Map) {
+	// Clone is tempting but wrong when src may be nil; see #71844.
+
 	// Replace loop and make(...) by maps.Clone
-	dst := maps.Clone(src)
+	dst := make(Map, len(src))
+	maps.Copy(dst, src)
 	println(dst)
 }
 

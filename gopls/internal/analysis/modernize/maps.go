@@ -32,7 +32,7 @@ import (
 //
 //	maps.Copy(m, x)		(x is map)
 //	maps.Insert(m, x)       (x is iter.Seq2)
-//	m = maps.Clone(x)       (x is map, m is a new map)
+//	m = maps.Clone(x)       (x is a non-nil map, m is a new map)
 //	m = maps.Collect(x)     (x is iter.Seq2, m is a new map)
 //
 // A map is newly created if the preceding statement has one of these
@@ -77,6 +77,8 @@ func mapsloop(pass *analysis.Pass) {
 		// Is the preceding statement of the form
 		//    m = make(M) or M{}
 		// and can we replace its RHS with slices.{Clone,Collect}?
+		//
+		// Beware: if x may be nil, we cannot use Clone as it preserves nilness.
 		var mrhs ast.Expr // make(M) or M{}, or nil
 		if curPrev, ok := curRange.PrevSibling(); ok {
 			if assign, ok := curPrev.Node().(*ast.AssignStmt); ok &&
@@ -121,6 +123,16 @@ func mapsloop(pass *analysis.Pass) {
 						if types.AssignableTo(tx, trhs) {
 							mrhs = rhs
 						}
+					}
+
+					// Temporarily disable the transformation to the
+					// (nil-preserving) maps.Clone until we can prove
+					// that x is non-nil. This is rarely possible,
+					// and may require control flow analysis
+					// (e.g. a dominating "if len(x)" check).
+					// See #71844.
+					if xmap {
+						mrhs = nil
 					}
 				}
 			}

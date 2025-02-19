@@ -12,8 +12,10 @@ func useCopyDot(dst, src map[int]string) {
 }
 
 func useCloneDot(src map[int]string) {
-	// Replace make(...) by maps.Clone.
-	dst := Clone(src)
+	// Clone is tempting but wrong when src may be nil; see #71844.
+
+	// Replace make(...) by maps.Copy.
+	dst := make(map[int]string, len(src))
+	Copy(dst, src)
 	println(dst)
 }
-
