@@ -740,8 +740,8 @@ type ImportsSourceEnum string
 
 const (
 	ImportsSourceOff       ImportsSourceEnum = "off"
-	ImportsSourceGopls                       = "gopls"
-	ImportsSourceGoimports                   = "goimports"
+	ImportsSourceGopls     ImportsSourceEnum = "gopls"
+	ImportsSourceGoimports ImportsSourceEnum = "goimports"
 )
 
 type Matcher string
@@ -967,7 +967,7 @@ func validateDirectoryFilter(ifilter string) (string, error) {
 		if seg != "**" {
 			for _, op := range unsupportedOps {
 				if strings.Contains(seg, op) {
-					return "", fmt.Errorf("invalid filter %v, operator %v not supported. If you want to have this operator supported, consider filing an issue.", filter, op)
+					return "", fmt.Errorf("invalid filter %v, operator %v not supported. If you want to have this operator supported, consider filing an issue", filter, op)
 				}
 			}
 		}
@@ -1374,7 +1374,7 @@ func (e *SoftError) Error() string {
 // deprecatedError reports the current setting as deprecated.
 // The optional replacement is suggested to the user.
 func deprecatedError(replacement string) error {
-	msg := fmt.Sprintf("this setting is deprecated")
+	msg := "this setting is deprecated"
 	if replacement != "" {
 		msg = fmt.Sprintf("%s, use %q instead", msg, replacement)
 	}

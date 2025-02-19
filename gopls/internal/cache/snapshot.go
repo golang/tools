@@ -1301,7 +1301,7 @@ searchOverlays:
 			// where the file is inside a workspace module, but perhaps no packages
 			// were loaded for that module.
 			_, loadedMod := loadedModFiles[goMod]
-			_, workspaceMod := s.view.viewDefinition.workspaceModFiles[goMod]
+			_, workspaceMod := s.view.workspaceModFiles[goMod]
 			// If we have a relevant go.mod file, check whether the file is orphaned
 			// due to its go.mod file being inactive. We could also offer a
 			// prescriptive diagnostic in the case that there is no go.mod file, but

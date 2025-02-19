@@ -61,9 +61,7 @@ func (s *goplsSource) ResolveReferences(ctx context.Context, filename string, mi
 	// collect the ones that are still
 	needed := maps.Clone(missing)
 	for _, a := range fromWS {
-		if _, ok := needed[a.Package.Name]; ok {
-			delete(needed, a.Package.Name)
-		}
+		delete(needed, a.Package.Name)
 	}
 	// when debug (below) is gone, change this to: if len(needed) == 0 {return fromWS, nil}
 	var fromCache []*result
@@ -184,10 +182,13 @@ type found struct {
 func (s *goplsSource) resolveWorkspaceReferences(filename string, missing imports.References) ([]*imports.Result, error) {
 	uri := protocol.URIFromPath(filename)
 	mypkgs, err := s.S.MetadataForFile(s.ctx, uri)
-	if len(mypkgs) != 1 {
-		// what does this mean? can it happen?
+	if err != nil {
+		return nil, err
 	}
-	mypkg := mypkgs[0]
+	if len(mypkgs) == 0 {
+		return nil, nil
+	}
+	mypkg := mypkgs[0] // narrowest package
 	// search the metadata graph for package ids correstponding to missing
 	g := s.S.MetadataGraph()
 	var ids []metadata.PackageID

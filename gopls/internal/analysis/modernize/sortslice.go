@@ -5,7 +5,6 @@
 package modernize
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -78,9 +77,9 @@ func sortslice(pass *analysis.Pass) {
 							Pos:      call.Fun.Pos(),
 							End:      call.Fun.End(),
 							Category: "sortslice",
-							Message:  fmt.Sprintf("sort.Slice can be modernized using slices.Sort"),
+							Message:  "sort.Slice can be modernized using slices.Sort",
 							SuggestedFixes: []analysis.SuggestedFix{{
-								Message: fmt.Sprintf("Replace sort.Slice call by slices.Sort"),
+								Message: "Replace sort.Slice call by slices.Sort",
 								TextEdits: append(importEdits, []analysis.TextEdit{
 									{
 										// Replace sort.Slice with slices.Sort.

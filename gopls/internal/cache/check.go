@@ -44,11 +44,6 @@ import (
 	"golang.org/x/tools/internal/versions"
 )
 
-// Various optimizations that should not affect correctness.
-const (
-	preserveImportGraph = true // hold on to the import graph for open packages
-)
-
 type unit = struct{}
 
 // A typeCheckBatch holds data for a logical type-checking operation, which may
@@ -95,21 +90,6 @@ func (b *typeCheckBatch) getHandle(id PackageID) *packageHandle {
 	b.handleMu.Lock()
 	defer b.handleMu.Unlock()
 	return b._handles[id]
-}
-
-// A futurePackage is a future result of type checking or importing a package,
-// to be cached in a map.
-//
-// The goroutine that creates the futurePackage is responsible for evaluating
-// its value, and closing the done channel.
-type futurePackage struct {
-	done chan unit
-	v    pkgOrErr
-}
-
-type pkgOrErr struct {
-	pkg *types.Package
-	err error
 }
 
 // TypeCheck parses and type-checks the specified packages,
@@ -701,8 +681,7 @@ func importLookup(mp *metadata.Package, source metadata.Source) func(PackagePath
 
 	// search scans children the next package in pending, looking for pkgPath.
 	// Invariant: whenever search is called, pkgPath is not yet mapped.
-	var search func(pkgPath PackagePath) (PackageID, bool)
-	search = func(pkgPath PackagePath) (id PackageID, found bool) {
+	search := func(pkgPath PackagePath) (id PackageID, found bool) {
 		pkg := pending[0]
 		pending = pending[1:]
 		for depPath, depID := range pkg.DepsByPkgPath {

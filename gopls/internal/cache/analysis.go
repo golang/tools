@@ -822,8 +822,7 @@ func typesLookup(pkg *types.Package) func(string) *types.Package {
 	)
 
 	// search scans children the next package in pending, looking for pkgPath.
-	var search func(pkgPath string) (*types.Package, int)
-	search = func(pkgPath string) (sought *types.Package, numPending int) {
+	search := func(pkgPath string) (sought *types.Package, numPending int) {
 		mu.Lock()
 		defer mu.Unlock()
 

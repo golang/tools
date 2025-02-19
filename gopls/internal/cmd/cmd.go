@@ -310,11 +310,6 @@ func (app *Application) featureCommands() []tool.Application {
 	}
 }
 
-var (
-	internalMu          sync.Mutex
-	internalConnections = make(map[string]*connection)
-)
-
 // connect creates and initializes a new in-process gopls session.
 func (app *Application) connect(ctx context.Context) (*connection, error) {
 	client := newClient(app)
@@ -377,10 +372,10 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 	params.InitializationOptions = map[string]interface{}{
 		"symbolMatcher": string(opts.SymbolMatcher),
 	}
-	if c.initializeResult, err = c.Server.Initialize(ctx, params); err != nil {
+	if c.initializeResult, err = c.Initialize(ctx, params); err != nil {
 		return err
 	}
-	if err := c.Server.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
+	if err := c.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
 		return err
 	}
 	return nil

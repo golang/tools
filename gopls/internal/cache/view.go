@@ -20,7 +20,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -1252,8 +1251,6 @@ func globsMatchPath(globs, target string) bool {
 	}
 	return false
 }
-
-var modFlagRegexp = regexp.MustCompile(`-mod[ =](\w+)`)
 
 // TODO(rfindley): clean up the redundancy of allFilesExcluded,
 // pathExcludedByFilterFunc, pathExcludedByFilter, view.filterFunc...

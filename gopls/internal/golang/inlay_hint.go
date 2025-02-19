@@ -255,6 +255,9 @@ func constantValues(info *types.Info, pgf *parsego.File, qual types.Qualifier, c
 func compositeLiteralFields(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur cursor.Cursor, add func(protocol.InlayHint)) {
 	for curCompLit := range cur.Preorder((*ast.CompositeLit)(nil)) {
 		compLit, ok := curCompLit.Node().(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
 		typ := info.TypeOf(compLit)
 		if typ == nil {
 			continue

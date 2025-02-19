@@ -375,7 +375,7 @@ func stmtToInsertVarBefore(path []ast.Node, variables []*variable) (ast.Stmt, er
 		}
 		return parent, nil
 	}
-	return enclosingStmt.(ast.Stmt), nil
+	return enclosingStmt, nil
 }
 
 // canExtractVariable reports whether the code in the given range can be

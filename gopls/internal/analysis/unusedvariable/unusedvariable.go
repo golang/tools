@@ -47,7 +47,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if len(match) > 0 {
 				varName := match[1]
 				// Beginning in Go 1.23, go/types began quoting vars as `v'.
-				varName = strings.Trim(varName, "'`'")
+				varName = strings.Trim(varName, "`'")
 
 				err := runForError(pass, typeErr, varName)
 				if err != nil {
