@@ -26,7 +26,7 @@ var Analyzer = &analysis.Analyzer{
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyrange",
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	// Gather information whether file is generated or not
 	generated := make(map[*token.File]bool)
 	for _, file := range pass.Files {

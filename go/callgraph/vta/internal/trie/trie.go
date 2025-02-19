@@ -55,7 +55,7 @@ func (m Map) Size() int {
 	}
 	return m.n.size()
 }
-func (m Map) Lookup(k uint64) (interface{}, bool) {
+func (m Map) Lookup(k uint64) (any, bool) {
 	if m.n != nil {
 		if leaf := m.n.find(key(k)); leaf != nil {
 			return leaf.v, true
@@ -68,7 +68,7 @@ func (m Map) Lookup(k uint64) (interface{}, bool) {
 // %s string conversion for <value>.
 func (m Map) String() string {
 	var kvs []string
-	m.Range(func(u uint64, i interface{}) bool {
+	m.Range(func(u uint64, i any) bool {
 		kvs = append(kvs, fmt.Sprintf("%d: %s", u, i))
 		return true
 	})
@@ -78,7 +78,7 @@ func (m Map) String() string {
 // Range over the leaf (key, value) pairs in the map in order and
 // applies cb(key, value) to each. Stops early if cb returns false.
 // Returns true if all elements were visited without stopping early.
-func (m Map) Range(cb func(uint64, interface{}) bool) bool {
+func (m Map) Range(cb func(uint64, any) bool) bool {
 	if m.n != nil {
 		return m.n.visit(cb)
 	}
@@ -100,9 +100,9 @@ func (m Map) DeepEqual(other Map) bool {
 }
 
 // Elems are the (k,v) elements in the Map as a map[uint64]interface{}
-func Elems(m Map) map[uint64]interface{} {
-	dest := make(map[uint64]interface{}, m.Size())
-	m.Range(func(k uint64, v interface{}) bool {
+func Elems(m Map) map[uint64]any {
+	dest := make(map[uint64]any, m.Size())
+	m.Range(func(k uint64, v any) bool {
 		dest[k] = v
 		return true
 	})
@@ -117,7 +117,7 @@ type node interface {
 	// visit the leaves (key, value) pairs in the map in order and
 	// applies cb(key, value) to each. Stops early if cb returns false.
 	// Returns true if all elements were visited without stopping early.
-	visit(cb func(uint64, interface{}) bool) bool
+	visit(cb func(uint64, any) bool) bool
 
 	// Two nodes contain the same elements regardless of scope.
 	deepEqual(node) bool
@@ -139,7 +139,7 @@ type empty struct {
 // leaf represents a single <key, value> pair.
 type leaf struct {
 	k key
-	v interface{}
+	v any
 }
 
 // branch represents a tree node within the Patricia trie.
@@ -215,13 +215,13 @@ func (br *branch) deepEqual(m node) bool {
 	return false
 }
 
-func (*empty) visit(cb func(uint64, interface{}) bool) bool {
+func (*empty) visit(cb func(uint64, any) bool) bool {
 	return true
 }
-func (l *leaf) visit(cb func(uint64, interface{}) bool) bool {
+func (l *leaf) visit(cb func(uint64, any) bool) bool {
 	return cb(uint64(l.k), l.v)
 }
-func (br *branch) visit(cb func(uint64, interface{}) bool) bool {
+func (br *branch) visit(cb func(uint64, any) bool) bool {
 	if !br.left.visit(cb) {
 		return false
 	}

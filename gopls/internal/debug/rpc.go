@@ -209,7 +209,7 @@ func getStatusCode(span *export.Span) string {
 	return ""
 }
 
-func (r *Rpcs) getData(req *http.Request) interface{} {
+func (r *Rpcs) getData(req *http.Request) any {
 	return r
 }
 

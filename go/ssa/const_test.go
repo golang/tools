@@ -39,9 +39,9 @@ func TestConstString(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		expr     string      // type expression
-		constant interface{} // constant value
-		want     string      // expected String() value
+		expr     string // type expression
+		constant any    // constant value
+		want     string // expected String() value
 	}{
 		{"int", int64(0), "0:int"},
 		{"int64", int64(0), "0:int64"},

@@ -62,7 +62,7 @@ var commentAnalyzer = &analysis.Analyzer{
 	Run:      commentRun,
 }
 
-func commentRun(pass *analysis.Pass) (interface{}, error) {
+func commentRun(pass *analysis.Pass) (any, error) {
 	const (
 		from = "/* Package comment */"
 		to   = "// Package comment"

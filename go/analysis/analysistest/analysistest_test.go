@@ -262,6 +262,6 @@ type T string
 
 type errorfunc func(string)
 
-func (f errorfunc) Errorf(format string, args ...interface{}) {
+func (f errorfunc) Errorf(format string, args ...any) {
 	f(fmt.Sprintf(format, args...))
 }

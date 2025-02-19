@@ -118,7 +118,7 @@ func runChangeDiagnosticsBenchmark(b *testing.B, test changeTest, save bool, ope
 			Env: map[string]string{
 				"GOPATH": sharedEnv.Sandbox.GOPATH(),
 			},
-			Settings: map[string]interface{}{
+			Settings: map[string]any{
 				"diagnosticsDelay": "0s",
 			},
 		}

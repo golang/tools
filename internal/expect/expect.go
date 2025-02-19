@@ -86,7 +86,7 @@ type ReadFile func(filename string) ([]byte, error)
 // MatchBefore returns the range of the line that matched the pattern, and
 // invalid positions if there was no match, or an error if the line could not be
 // found.
-func MatchBefore(fset *token.FileSet, readFile ReadFile, end token.Pos, pattern interface{}) (token.Pos, token.Pos, error) {
+func MatchBefore(fset *token.FileSet, readFile ReadFile, end token.Pos, pattern any) (token.Pos, token.Pos, error) {
 	f := fset.File(end)
 	content, err := readFile(f.Name())
 	if err != nil {

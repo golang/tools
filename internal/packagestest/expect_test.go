@@ -19,7 +19,7 @@ func TestExpect(t *testing.T) {
 	}})
 	defer exported.Cleanup()
 	checkCount := 0
-	if err := exported.Expect(map[string]interface{}{
+	if err := exported.Expect(map[string]any{
 		"check": func(src, target token.Position) {
 			checkCount++
 		},

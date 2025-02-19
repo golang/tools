@@ -103,7 +103,7 @@ func (c *Client) LogMessage(ctx context.Context, params *protocol.LogMessagePara
 	return nil
 }
 
-func (c *Client) Event(ctx context.Context, event *interface{}) error {
+func (c *Client) Event(ctx context.Context, event *any) error {
 	return nil
 }
 
@@ -118,8 +118,8 @@ func (c *Client) WorkspaceFolders(context.Context) ([]protocol.WorkspaceFolder, 
 	return []protocol.WorkspaceFolder{}, nil
 }
 
-func (c *Client) Configuration(_ context.Context, p *protocol.ParamConfiguration) ([]interface{}, error) {
-	results := make([]interface{}, len(p.Items))
+func (c *Client) Configuration(_ context.Context, p *protocol.ParamConfiguration) ([]any, error) {
+	results := make([]any, len(p.Items))
 	for i, item := range p.Items {
 		if item.ScopeURI != nil && *item.ScopeURI == "" {
 			return nil, fmt.Errorf(`malformed ScopeURI ""`)

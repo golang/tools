@@ -45,14 +45,14 @@ func (s *Snapshot) ParseMod(ctx context.Context, fh file.Handle) (*ParsedModule,
 
 	// cache miss?
 	if !hit {
-		promise, release := s.store.Promise(parseModKey(fh.Identity()), func(ctx context.Context, _ interface{}) interface{} {
+		promise, release := s.store.Promise(parseModKey(fh.Identity()), func(ctx context.Context, _ any) any {
 			parsed, err := parseModImpl(ctx, fh)
 			return parseModResult{parsed, err}
 		})
 
 		entry = promise
 		s.mu.Lock()
-		s.parseModHandles.Set(uri, entry, func(_, _ interface{}) { release() })
+		s.parseModHandles.Set(uri, entry, func(_, _ any) { release() })
 		s.mu.Unlock()
 	}
 
@@ -131,14 +131,14 @@ func (s *Snapshot) ParseWork(ctx context.Context, fh file.Handle) (*ParsedWorkFi
 
 	// cache miss?
 	if !hit {
-		handle, release := s.store.Promise(parseWorkKey(fh.Identity()), func(ctx context.Context, _ interface{}) interface{} {
+		handle, release := s.store.Promise(parseWorkKey(fh.Identity()), func(ctx context.Context, _ any) any {
 			parsed, err := parseWorkImpl(ctx, fh)
 			return parseWorkResult{parsed, err}
 		})
 
 		entry = handle
 		s.mu.Lock()
-		s.parseWorkHandles.Set(uri, entry, func(_, _ interface{}) { release() })
+		s.parseWorkHandles.Set(uri, entry, func(_, _ any) { release() })
 		s.mu.Unlock()
 	}
 
@@ -212,7 +212,7 @@ func (s *Snapshot) ModWhy(ctx context.Context, fh file.Handle) (map[string]strin
 
 	// cache miss?
 	if !hit {
-		handle := memoize.NewPromise("modWhy", func(ctx context.Context, arg interface{}) interface{} {
+		handle := memoize.NewPromise("modWhy", func(ctx context.Context, arg any) any {
 			why, err := modWhyImpl(ctx, arg.(*Snapshot), fh)
 			return modWhyResult{why, err}
 		})

@@ -109,7 +109,7 @@ type frame struct {
 	defers           *deferred
 	result           value
 	panicking        bool
-	panic            interface{}
+	panic            any
 	phitemps         []value // temporaries for parallel phi assignment
 }
 

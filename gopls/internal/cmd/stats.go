@@ -164,7 +164,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	}
 
 	// Filter JSON output to fields that are consistent with s.Anon.
-	okFields := make(map[string]interface{})
+	okFields := make(map[string]any)
 	{
 		v := reflect.ValueOf(stats)
 		t := v.Type()

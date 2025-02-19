@@ -28,7 +28,7 @@ var Analyzer = &analysis.Analyzer{
 
 const FixCategory = "addembedimport" // recognized by gopls ApplyFix
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
 		comments := embedDirectiveComments(f)
 		if len(comments) == 0 {

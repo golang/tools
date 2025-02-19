@@ -885,7 +885,7 @@ type action struct {
 	vdeps      map[PackageID]*analysisNode // vertical dependencies
 
 	// results of action.exec():
-	result  interface{} // result of Run function, of type a.ResultType
+	result  any // result of Run function, of type a.ResultType
 	summary *actionSummary
 	err     error
 }
@@ -964,7 +964,7 @@ func (act *action) exec(ctx context.Context) (any, *actionSummary, error) {
 	}
 
 	// Gather analysis Result values from horizontal dependencies.
-	inputs := make(map[*analysis.Analyzer]interface{})
+	inputs := make(map[*analysis.Analyzer]any)
 	for _, dep := range act.hdeps {
 		inputs[dep.a] = dep.result
 	}
@@ -1178,7 +1178,7 @@ func (act *action) exec(ctx context.Context) (any, *actionSummary, error) {
 
 	// Recover from panics (only) within the analyzer logic.
 	// (Use an anonymous function to limit the recover scope.)
-	var result interface{}
+	var result any
 	func() {
 		start := time.Now()
 		defer func() {

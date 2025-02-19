@@ -51,7 +51,7 @@ import (
 )
 
 // errorf reports an error (e.g. conflict) and prevents file modification.
-func (r *renamer) errorf(pos token.Pos, format string, args ...interface{}) {
+func (r *renamer) errorf(pos token.Pos, format string, args ...any) {
 	// Conflict error messages in the old gorename tool (whence this
 	// logic originated) contain rich information associated with
 	// multiple source lines, such as:

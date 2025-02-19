@@ -26,7 +26,7 @@ type Canceler struct {
 	Conn *jsonrpc2_v2.Connection
 }
 
-func (c *Canceler) Preempt(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+func (c *Canceler) Preempt(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 	if req.Method != "$/cancelRequest" {
 		return nil, jsonrpc2_v2.ErrNotHandled
 	}
@@ -65,7 +65,7 @@ func (b *ForwardBinder) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) 
 	serverConn, err := jsonrpc2_v2.Dial(context.Background(), b.dialer, clientBinder)
 	if err != nil {
 		return jsonrpc2_v2.ConnectionOptions{
-			Handler: jsonrpc2_v2.HandlerFunc(func(context.Context, *jsonrpc2_v2.Request) (interface{}, error) {
+			Handler: jsonrpc2_v2.HandlerFunc(func(context.Context, *jsonrpc2_v2.Request) (any, error) {
 				return nil, fmt.Errorf("%w: %v", jsonrpc2_v2.ErrInternal, err)
 			}),
 		}

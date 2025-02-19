@@ -107,7 +107,7 @@ func NewT1() *T1 { return &T1{T} }
 		Name:     "noop",
 		Doc:      "noop",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
-		Run: func(pass *analysis.Pass) (interface{}, error) {
+		Run: func(pass *analysis.Pass) (any, error) {
 			return nil, nil
 		},
 		RunDespiteErrors: true,
@@ -119,7 +119,7 @@ func NewT1() *T1 { return &T1{T} }
 		Name:     "noopfact",
 		Doc:      "noopfact",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
-		Run: func(pass *analysis.Pass) (interface{}, error) {
+		Run: func(pass *analysis.Pass) (any, error) {
 			return nil, nil
 		},
 		RunDespiteErrors: true,
@@ -185,7 +185,7 @@ func TestURL(t *testing.T) {
 		Name: "pkgname",
 		Doc:  "trivial analyzer that reports package names",
 		URL:  "https://pkg.go.dev/golang.org/x/tools/go/analysis/internal/checker",
-		Run: func(p *analysis.Pass) (interface{}, error) {
+		Run: func(p *analysis.Pass) (any, error) {
 			for _, f := range p.Files {
 				p.ReportRangef(f.Name, "package name is %s", f.Name.Name)
 			}

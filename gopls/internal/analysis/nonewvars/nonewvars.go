@@ -32,7 +32,7 @@ var Analyzer = &analysis.Analyzer{
 	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/nonewvars",
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	for _, typeErr := range pass.TypeErrors {

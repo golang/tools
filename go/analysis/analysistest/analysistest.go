@@ -76,7 +76,7 @@ var TestData = func() string {
 
 // Testing is an abstraction of a *testing.T.
 type Testing interface {
-	Errorf(format string, args ...interface{})
+	Errorf(format string, args ...any)
 }
 
 // RunWithSuggestedFixes behaves like Run, but additionally applies

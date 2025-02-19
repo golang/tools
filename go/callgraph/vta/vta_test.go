@@ -118,7 +118,7 @@ func TestVTAProgVsFuncSet(t *testing.T) {
 // available, which can happen when using analysis package. A successful
 // test simply does not panic.
 func TestVTAPanicMissingDefinitions(t *testing.T) {
-	run := func(pass *analysis.Pass) (interface{}, error) {
+	run := func(pass *analysis.Pass) (any, error) {
 		s := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 		CallGraph(ssautil.AllFunctions(s.Pkg.Prog), cha.CallGraph(s.Pkg.Prog))
 		return nil, nil

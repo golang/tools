@@ -369,7 +369,7 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 	}
 	params.Capabilities.Window.WorkDoneProgress = true
 
-	params.InitializationOptions = map[string]interface{}{
+	params.InitializationOptions = map[string]any{
 		"symbolMatcher": string(opts.SymbolMatcher),
 	}
 	if c.initializeResult, err = c.Initialize(ctx, params); err != nil {
@@ -468,7 +468,7 @@ func (c *cmdClient) LogMessage(ctx context.Context, p *protocol.LogMessageParams
 	return nil
 }
 
-func (c *cmdClient) Event(ctx context.Context, t *interface{}) error { return nil }
+func (c *cmdClient) Event(ctx context.Context, t *any) error { return nil }
 
 func (c *cmdClient) RegisterCapability(ctx context.Context, p *protocol.RegistrationParams) error {
 	return nil
@@ -482,13 +482,13 @@ func (c *cmdClient) WorkspaceFolders(ctx context.Context) ([]protocol.WorkspaceF
 	return nil, nil
 }
 
-func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfiguration) ([]interface{}, error) {
-	results := make([]interface{}, len(p.Items))
+func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfiguration) ([]any, error) {
+	results := make([]any, len(p.Items))
 	for i, item := range p.Items {
 		if item.Section != "gopls" {
 			continue
 		}
-		m := map[string]interface{}{
+		m := map[string]any{
 			"analyses": map[string]any{
 				"fillreturns":    true,
 				"nonewvars":      true,
@@ -658,7 +658,7 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 	// TODO(golang/go#60122): replace the gopls.diagnose_files
 	// command with support for textDocument/diagnostic,
 	// so that we don't need to do this de-duplication.
-	type key [6]interface{}
+	type key [6]any
 	seen := make(map[key]bool)
 	out := file.diagnostics[:0]
 	for _, d := range file.diagnostics {

@@ -11,7 +11,7 @@ import (
 
 func TestValidate(t *testing.T) {
 	var (
-		run = func(p *Pass) (interface{}, error) {
+		run = func(p *Pass) (any, error) {
 			return nil, nil
 		}
 		dependsOnSelf = &Analyzer{
@@ -130,7 +130,7 @@ func TestCycleInRequiresGraphErrorMessage(t *testing.T) {
 func TestValidateEmptyDoc(t *testing.T) {
 	withoutDoc := &Analyzer{
 		Name: "withoutDoc",
-		Run: func(p *Pass) (interface{}, error) {
+		Run: func(p *Pass) (any, error) {
 			return nil, nil
 		},
 	}

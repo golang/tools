@@ -29,7 +29,7 @@ import (
 
 var templates = map[string]struct {
 	tmpl *template.Template
-	data interface{} // a value of the needed type
+	data any // a value of the needed type
 }{
 	"MainTmpl":    {debug.MainTmpl, &debug.Instance{}},
 	"DebugTmpl":   {debug.DebugTmpl, nil},

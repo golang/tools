@@ -37,7 +37,7 @@ var Analyzer = &analysis.Analyzer{
 // An example where it does not:
 //       x, y := b[:n], b[n:]
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	// Gather information whether file is generated or not
 	generated := make(map[*token.File]bool)
 	for _, file := range pass.Files {

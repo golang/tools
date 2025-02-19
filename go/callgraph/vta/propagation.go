@@ -120,7 +120,7 @@ func (ptm propTypeMap) propTypes(n node) func(yield func(propType) bool) {
 	// (https://go.dev/issue/65237).
 	return func(yield func(propType) bool) {
 		if types := ptm[n]; types != nil {
-			types.M.Range(func(_ uint64, elem interface{}) bool {
+			types.M.Range(func(_ uint64, elem any) bool {
 				return yield(elem.(propType))
 			})
 		}

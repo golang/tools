@@ -930,7 +930,7 @@ package foo
 		res3 := goplsWithEnv(t, tree, []string{"GOPACKAGESDRIVER=off"}, "stats", "-anon")
 		res3.checkExit(true)
 
-		var statsAsMap3 map[string]interface{}
+		var statsAsMap3 map[string]any
 		if err := json.Unmarshal([]byte(res3.stdout), &statsAsMap3); err != nil {
 			t.Fatalf("failed to unmarshal JSON output of stats command: %v", err)
 		}
@@ -1212,7 +1212,7 @@ func (res *result) checkOutput(pattern, name, content string) {
 }
 
 // toJSON decodes res.stdout as JSON into to *ptr and reports its success.
-func (res *result) toJSON(ptr interface{}) bool {
+func (res *result) toJSON(ptr any) bool {
 	if err := json.Unmarshal([]byte(res.stdout), ptr); err != nil {
 		res.t.Errorf("invalid JSON %v", err)
 		return false

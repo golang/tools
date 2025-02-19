@@ -53,7 +53,7 @@ type featuresFact struct {
 func (f *featuresFact) AFact()         {}
 func (f *featuresFact) String() string { return f.Features.String() }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	direct := genericfeatures.ForPackage(inspect, pass.TypesInfo)

@@ -56,7 +56,7 @@ func (b *ServerBinder) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) j
 	serverHandler := protocol.ServerHandlerV2(server)
 	// Wrap the server handler to inject the client into each request context, so
 	// that log events are reflected back to the client.
-	wrapped := jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+	wrapped := jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 		ctx = protocol.WithClient(ctx, client)
 		return serverHandler.Handle(ctx, req)
 	})

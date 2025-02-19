@@ -282,7 +282,7 @@ func (a *Awaiter) onProgress(_ context.Context, m *protocol.ProgressParams) erro
 	if !ok {
 		panic(fmt.Sprintf("got progress report for unknown report %v: %v", m.Token, m))
 	}
-	v := m.Value.(map[string]interface{})
+	v := m.Value.(map[string]any)
 	switch kind := v["kind"]; kind {
 	case "begin":
 		work.title = v["title"].(string)

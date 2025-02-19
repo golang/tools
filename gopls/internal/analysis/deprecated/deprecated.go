@@ -36,7 +36,7 @@ var Analyzer = &analysis.Analyzer{
 }
 
 // checkDeprecated is a simplified copy of staticcheck.CheckDeprecated.
-func checkDeprecated(pass *analysis.Pass) (interface{}, error) {
+func checkDeprecated(pass *analysis.Pass) (any, error) {
 	inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	deprs, err := collectDeprecatedNames(pass, inspector)

@@ -23,7 +23,7 @@ func main() {
 	fail := &analysis.Analyzer{
 		Name: "fail",
 		Doc:  "always fail on a package 'sort'",
-		Run: func(pass *analysis.Pass) (interface{}, error) {
+		Run: func(pass *analysis.Pass) (any, error) {
 			if pass.Pkg.Path() == "sort" {
 				return nil, fmt.Errorf("failed")
 			}

@@ -365,7 +365,7 @@ func (s *Snapshot) config(ctx context.Context, allowNetwork AllowNetwork) *packa
 			packages.NeedForTest,
 		Fset:    nil, // we do our own parsing
 		Overlay: s.buildOverlays(),
-		Logf: func(format string, args ...interface{}) {
+		Logf: func(format string, args ...any) {
 			if s.view.folder.Options.VerboseOutput {
 				event.Log(ctx, fmt.Sprintf(format, args...))
 			}

@@ -101,7 +101,7 @@ type Module struct {
 	// The keys are the file fragment that follows the module name, the value can
 	// be a string or byte slice, in which case it is the contents of the
 	// file, otherwise it must be a Writer function.
-	Files map[string]interface{}
+	Files map[string]any
 
 	// Overlay is the set of source file overlays for the module.
 	// The keys are the file fragment as in the Files configuration.
@@ -483,7 +483,7 @@ func GroupFilesByModules(root string) ([]Module, error) {
 
 	primarymod := &Module{
 		Name:    root,
-		Files:   make(map[string]interface{}),
+		Files:   make(map[string]any),
 		Overlay: make(map[string][]byte),
 	}
 	mods := map[string]*Module{
@@ -573,7 +573,7 @@ func GroupFilesByModules(root string) ([]Module, error) {
 		}
 		mods[path] = &Module{
 			Name:    filepath.ToSlash(module),
-			Files:   make(map[string]interface{}),
+			Files:   make(map[string]any),
 			Overlay: make(map[string][]byte),
 		}
 		currentModule = path
@@ -591,8 +591,8 @@ func GroupFilesByModules(root string) ([]Module, error) {
 // This is to enable the common case in tests where you have a full copy of the
 // package in your testdata.
 // This will panic if there is any kind of error trying to walk the file tree.
-func MustCopyFileTree(root string) map[string]interface{} {
-	result := map[string]interface{}{}
+func MustCopyFileTree(root string) map[string]any {
+	result := map[string]any{}
 	if err := filepath.Walk(filepath.FromSlash(root), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err

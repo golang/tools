@@ -19,14 +19,14 @@ import (
 var Entries = keys.New("metric_entries", "The set of metrics calculated for an event")
 
 type Config struct {
-	subscribers map[interface{}][]subscriber
+	subscribers map[any][]subscriber
 }
 
 type subscriber func(time.Time, label.Map, label.Label) Data
 
 func (e *Config) subscribe(key label.Key, s subscriber) {
 	if e.subscribers == nil {
-		e.subscribers = make(map[interface{}][]subscriber)
+		e.subscribers = make(map[any][]subscriber)
 	}
 	e.subscribers[key] = append(e.subscribers[key], s)
 }

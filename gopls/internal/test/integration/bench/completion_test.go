@@ -282,7 +282,7 @@ func runCompletion(b *testing.B, test completionTest, followingEdit, completeUni
 
 	env := repo.newEnv(b, fake.EditorConfig{
 		Env: envvars,
-		Settings: map[string]interface{}{
+		Settings: map[string]any{
 			"completeUnimported": completeUnimported,
 			"completionBudget":   budget,
 		},

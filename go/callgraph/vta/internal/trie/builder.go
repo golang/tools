@@ -14,13 +14,13 @@ package trie
 //
 // Collisions functions may be applied whenever a value is inserted
 // or two maps are merged, or intersected.
-type Collision func(lhs interface{}, rhs interface{}) interface{}
+type Collision func(lhs any, rhs any) any
 
 // TakeLhs always returns the left value in a collision.
-func TakeLhs(lhs, rhs interface{}) interface{} { return lhs }
+func TakeLhs(lhs, rhs any) any { return lhs }
 
 // TakeRhs always returns the right hand side in a collision.
-func TakeRhs(lhs, rhs interface{}) interface{} { return rhs }
+func TakeRhs(lhs, rhs any) any { return rhs }
 
 // Builder creates new Map. Each Builder has a unique Scope.
 //
@@ -78,7 +78,7 @@ func (b *Builder) Empty() Map { return Map{b.Scope(), b.empty} }
 //	if _, ok := m[k]; ok { m[k] = c(m[k], v} else { m[k] = v}
 //
 // An insertion or update happened whenever Insert(m, ...) != m .
-func (b *Builder) InsertWith(c Collision, m Map, k uint64, v interface{}) Map {
+func (b *Builder) InsertWith(c Collision, m Map, k uint64, v any) Map {
 	m = b.Clone(m)
 	return Map{b.Scope(), b.insert(c, m.n, b.mkLeaf(key(k), v), false)}
 }
@@ -92,7 +92,7 @@ func (b *Builder) InsertWith(c Collision, m Map, k uint64, v interface{}) Map {
 //	if _, ok := m[k]; ok { m[k] = val }
 //
 // This is equivalent to b.Merge(m, b.Create({k: v})).
-func (b *Builder) Insert(m Map, k uint64, v interface{}) Map {
+func (b *Builder) Insert(m Map, k uint64, v any) Map {
 	return b.InsertWith(TakeLhs, m, k, v)
 }
 
@@ -100,7 +100,7 @@ func (b *Builder) Insert(m Map, k uint64, v interface{}) Map {
 // updating a map[uint64]interface{} by:
 //
 //	m[key] = val
-func (b *Builder) Update(m Map, key uint64, val interface{}) Map {
+func (b *Builder) Update(m Map, key uint64, val any) Map {
 	return b.InsertWith(TakeRhs, m, key, val)
 }
 
@@ -185,14 +185,14 @@ func (b *Builder) MutEmpty() MutMap {
 
 // Insert an element into the map using the collision function for the builder.
 // Returns true if the element was inserted.
-func (mm *MutMap) Insert(k uint64, v interface{}) bool {
+func (mm *MutMap) Insert(k uint64, v any) bool {
 	old := mm.M
 	mm.M = mm.B.Insert(old, k, v)
 	return old != mm.M
 }
 
 // Updates an element in the map. Returns true if the map was updated.
-func (mm *MutMap) Update(k uint64, v interface{}) bool {
+func (mm *MutMap) Update(k uint64, v any) bool {
 	old := mm.M
 	mm.M = mm.B.Update(old, k, v)
 	return old != mm.M
@@ -221,7 +221,7 @@ func (mm *MutMap) Intersect(other Map) bool {
 	return old != mm.M
 }
 
-func (b *Builder) Create(m map[uint64]interface{}) Map {
+func (b *Builder) Create(m map[uint64]any) Map {
 	var leaves []*leaf
 	for k, v := range m {
 		leaves = append(leaves, b.mkLeaf(key(k), v))
@@ -259,7 +259,7 @@ func (b *Builder) create(leaves []*leaf) node {
 }
 
 // mkLeaf returns the hash-consed representative of (k, v) in the current scope.
-func (b *Builder) mkLeaf(k key, v interface{}) *leaf {
+func (b *Builder) mkLeaf(k key, v any) *leaf {
 	rep, ok := b.leaves[leaf{k, v}]
 	if !ok {
 		rep = &leaf{k, v} // heap-allocated copy

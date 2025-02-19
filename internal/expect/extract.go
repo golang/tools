@@ -32,7 +32,7 @@ type Identifier string
 // See the package documentation for details about the syntax of those
 // notes.
 func Parse(fset *token.FileSet, filename string, content []byte) ([]*Note, error) {
-	var src interface{}
+	var src any
 	if content != nil {
 		src = content
 	}
@@ -220,7 +220,7 @@ func (t *tokens) Pos() token.Pos {
 	return t.base + token.Pos(t.scanner.Position.Offset)
 }
 
-func (t *tokens) Errorf(msg string, args ...interface{}) {
+func (t *tokens) Errorf(msg string, args ...any) {
 	if t.err != nil {
 		return
 	}

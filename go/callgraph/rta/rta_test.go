@@ -220,7 +220,7 @@ func check(t *testing.T, f *ast.File, pkg *ssa.Package, res *rta.Result) {
 	// Check runtime types.
 	{
 		got := make(stringset)
-		res.RuntimeTypes.Iterate(func(key types.Type, value interface{}) {
+		res.RuntimeTypes.Iterate(func(key types.Type, value any) {
 			if !value.(bool) { // accessible to reflection
 				typ := types.TypeString(types.Unalias(key), types.RelativeTo(pkg.Pkg))
 				got[typ] = true

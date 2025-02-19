@@ -25,12 +25,12 @@ type Conn interface {
 	// The response will be unmarshaled from JSON into the result.
 	// The id returned will be unique from this connection, and can be used for
 	// logging or tracking.
-	Call(ctx context.Context, method string, params, result interface{}) (ID, error)
+	Call(ctx context.Context, method string, params, result any) (ID, error)
 
 	// Notify invokes the target method but does not wait for a response.
 	// The params will be marshaled to JSON before sending over the wire, and will
 	// be handed to the method invoked.
-	Notify(ctx context.Context, method string, params interface{}) error
+	Notify(ctx context.Context, method string, params any) error
 
 	// Go starts a goroutine to handle the connection.
 	// It must be called exactly once for each Conn.
@@ -76,7 +76,7 @@ func NewConn(s Stream) Conn {
 	return conn
 }
 
-func (c *conn) Notify(ctx context.Context, method string, params interface{}) (err error) {
+func (c *conn) Notify(ctx context.Context, method string, params any) (err error) {
 	notify, err := NewNotification(method, params)
 	if err != nil {
 		return fmt.Errorf("marshaling notify parameters: %v", err)
@@ -96,7 +96,7 @@ func (c *conn) Notify(ctx context.Context, method string, params interface{}) (e
 	return err
 }
 
-func (c *conn) Call(ctx context.Context, method string, params, result interface{}) (_ ID, err error) {
+func (c *conn) Call(ctx context.Context, method string, params, result any) (_ ID, err error) {
 	// generate a new request identifier
 	id := ID{number: atomic.AddInt64(&c.seq, 1)}
 	call, err := NewCall(id, method, params)
@@ -153,7 +153,7 @@ func (c *conn) Call(ctx context.Context, method string, params, result interface
 }
 
 func (c *conn) replier(req Request, spanDone func()) Replier {
-	return func(ctx context.Context, result interface{}, err error) error {
+	return func(ctx context.Context, result any, err error) error {
 		defer func() {
 			recordStatus(ctx, err)
 			spanDone()
