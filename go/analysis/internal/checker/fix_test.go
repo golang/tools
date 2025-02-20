@@ -93,7 +93,7 @@ func TestReportInvalidDiagnostic(t *testing.T) {
 		// TextEdit has invalid Pos.
 		{
 			"bad Pos",
-			`analyzer "a" suggests invalid fix .*: missing file info for pos`,
+			`analyzer "a" suggests invalid fix .*: no token.File for TextEdit.Pos .0.`,
 			func(pos token.Pos) analysis.Diagnostic {
 				return analysis.Diagnostic{
 					Pos:     pos,
@@ -110,7 +110,7 @@ func TestReportInvalidDiagnostic(t *testing.T) {
 		// TextEdit has invalid End.
 		{
 			"End < Pos",
-			`analyzer "a" suggests invalid fix .*: pos .* > end`,
+			`analyzer "a" suggests invalid fix .*: TextEdit.Pos .* > TextEdit.End .*`,
 			func(pos token.Pos) analysis.Diagnostic {
 				return analysis.Diagnostic{
 					Pos:     pos,

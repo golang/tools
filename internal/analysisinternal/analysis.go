@@ -419,18 +419,19 @@ func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
 		start := edit.Pos
 		file := fset.File(start)
 		if file == nil {
-			return fmt.Errorf("missing file info for pos (%v)", edit.Pos)
+			return fmt.Errorf("no token.File for TextEdit.Pos (%v)", edit.Pos)
 		}
 		if end := edit.End; end.IsValid() {
 			if end < start {
-				return fmt.Errorf("pos (%v) > end (%v)", edit.Pos, edit.End)
+				return fmt.Errorf("TextEdit.Pos (%v) > TextEdit.End (%v)", edit.Pos, edit.End)
 			}
 			endFile := fset.File(end)
 			if endFile == nil {
-				return fmt.Errorf("malformed end position %v", end)
+				return fmt.Errorf("no token.File for TextEdit.End (%v; File(start).FileEnd is %d)", end, file.Base()+file.Size())
 			}
 			if endFile != file {
-				return fmt.Errorf("edit spans files %v and %v", file.Name(), endFile.Name())
+				return fmt.Errorf("edit #%d spans files (%v and %v)",
+					i, file.Position(edit.Pos), endFile.Position(edit.End))
 			}
 		} else {
 			edit.End = start // update the SuggestedFix
