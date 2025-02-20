@@ -971,7 +971,10 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 		sandbox.Close() // ignore error
 		t.Fatal(err)
 	}
-	if err := awaiter.Await(ctx, integration.InitialWorkspaceLoad); err != nil {
+	if err := awaiter.Await(ctx, integration.OnceMet(
+		integration.InitialWorkspaceLoad,
+		integration.NoShownMessage(""),
+	)); err != nil {
 		sandbox.Close() // ignore error
 		t.Fatal(err)
 	}

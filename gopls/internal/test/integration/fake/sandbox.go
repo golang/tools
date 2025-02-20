@@ -208,6 +208,7 @@ func (sb *Sandbox) GoEnv() map[string]string {
 		"GO111MODULE":      "",
 		"GOSUMDB":          "off",
 		"GOPACKAGESDRIVER": "off",
+		"GOTOOLCHAIN":      "local", // tests should not download toolchains
 	}
 	if testenv.Go1Point() >= 5 {
 		vars["GOMODCACHE"] = ""
