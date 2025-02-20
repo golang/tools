@@ -12,7 +12,7 @@ require (
 	golang.org/x/sys v0.30.0
 	golang.org/x/telemetry v0.0.0-20241220003058-cc96b6e0d3d9
 	golang.org/x/text v0.22.0
-	golang.org/x/tools v0.30.1-0.20250219175915-7140b0d6aa64
+	golang.org/x/tools v0.30.1-0.20250220174815-31e3bb2b8fd1
 	golang.org/x/vuln v1.1.3
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.5.1
