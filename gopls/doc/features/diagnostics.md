@@ -51,7 +51,7 @@ build`. Gopls doesn't actually run the compiler; that would be too
 
 There is an optional third source of diagnostics:
 
-<a id='toggleCompilerOptDetails'/>
+<a id='toggleCompilerOptDetails'></a>
 
 - **Compiler optimization details** are diagnostics that report
   details relevant to optimization decisions made by the Go
