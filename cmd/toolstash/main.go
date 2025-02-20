@@ -225,7 +225,7 @@ func main() {
 		return
 	}
 
-	tool = cmd[0]
+	tool = exeName(cmd[0])
 	if i := strings.LastIndexAny(tool, `/\`); i >= 0 {
 		tool = tool[i+1:]
 	}
@@ -530,7 +530,7 @@ func runCmd(cmd []string, keepLog bool, logName string) (output []byte, err erro
 		}()
 	}
 
-	xcmd := exec.Command(cmd[0], cmd[1:]...)
+	xcmd := exec.Command(exeName(cmd[0]), cmd[1:]...)
 	if !keepLog {
 		return xcmd.CombinedOutput()
 	}
@@ -571,9 +571,10 @@ func save() {
 		if !shouldSave(name) {
 			continue
 		}
-		src := filepath.Join(binDir, name)
+		bin := exeName(name)
+		src := filepath.Join(binDir, bin)
 		if _, err := os.Stat(src); err == nil {
-			cp(src, filepath.Join(stashDir, name))
+			cp(src, filepath.Join(stashDir, bin))
 		}
 	}
 
@@ -640,4 +641,11 @@ func cp(src, dst string) {
 	if err := os.WriteFile(dst, data, 0777); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func exeName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
