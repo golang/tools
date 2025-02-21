@@ -1116,7 +1116,7 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 			return nil, err
 		}
 		if o.Analyses["fieldalignment"] {
-			return counts, deprecatedError("the 'fieldalignment' analyzer was removed in gopls/v0.17.0; instead, hover over struct fields to see size/offset information (https://go.dev/issue/66861)")
+			return counts, &SoftError{"the 'fieldalignment' analyzer was removed in gopls/v0.17.0; instead, hover over struct fields to see size/offset information (https://go.dev/issue/66861)"}
 		}
 		return counts, nil
 
@@ -1124,7 +1124,7 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 		return setBoolMap(&o.Hints, value)
 
 	case "annotations":
-		return nil, deprecatedError("the 'annotations' setting was removed in gopls/v0.18.0; all compiler optimization details are now shown")
+		return nil, &SoftError{"the 'annotations' setting was removed in gopls/v0.18.0; all compiler optimization details are now shown"}
 
 	case "vulncheck":
 		return setEnum(&o.Vulncheck, value,
