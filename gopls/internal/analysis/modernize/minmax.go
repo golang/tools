@@ -95,7 +95,7 @@ func minmax(pass *analysis.Pass) {
 				})
 			}
 
-		} else if prev, ok := curIfStmt.PrevSibling(); ok && isSimpleAssign(prev.Node()) {
+		} else if prev, ok := curIfStmt.PrevSibling(); ok && isSimpleAssign(prev.Node()) && ifStmt.Else == nil {
 			fassign := prev.Node().(*ast.AssignStmt)
 
 			// Have: lhs0 = rhs0; if a < b { lhs = rhs }
