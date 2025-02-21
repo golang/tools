@@ -57,20 +57,20 @@ type hoverResult struct {
 	// TODO(adonovan): in what syntax? It (usually) comes from doc.Synopsis,
 	// which produces "Text" form, but it may be fed to
 	// DocCommentToMarkdown, which expects doc comment syntax.
-	Synopsis string
+	Synopsis string `json:"synopsis"`
 
 	// FullDocumentation is the symbol's full documentation.
-	FullDocumentation string
+	FullDocumentation string `json:"fullDocumentation"`
 
 	// Signature is the symbol's Signature.
-	Signature string
+	Signature string `json:"signature"`
 
 	// SingleLine is a single line describing the symbol.
 	// This is recommended only for use in clients that show a single line for hover.
-	SingleLine string
+	SingleLine string `json:"singleLine"`
 
 	// SymbolName is the human-readable name to use for the symbol in links.
-	SymbolName string
+	SymbolName string `json:"symbolName"`
 
 	// LinkPath is the path of the package enclosing the given symbol,
 	// with the module portion (if any) replaced by "module@version".
@@ -78,11 +78,11 @@ type hoverResult struct {
 	// For example: "github.com/google/go-github/v48@v48.1.0/github".
 	//
 	// Use LinkTarget + "/" + LinkPath + "#" + LinkAnchor to form a pkgsite URL.
-	LinkPath string
+	LinkPath string `json:"linkPath"`
 
 	// LinkAnchor is the pkg.go.dev link anchor for the given symbol.
 	// For example, the "Node" part of "pkg.go.dev/go/ast#Node".
-	LinkAnchor string
+	LinkAnchor string `json:"linkAnchor"`
 
 	// New fields go below, and are unexported. The existing
 	// exported fields are underspecified and have already
