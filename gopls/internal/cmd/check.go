@@ -16,7 +16,8 @@ import (
 
 // check implements the check verb for gopls.
 type check struct {
-	app *Application
+	app      *Application
+	Severity string `flag:"severity" help:"minimum diagnostic severity (hint, info, warning, or error)"`
 }
 
 func (c *check) Name() string      { return "check" }
@@ -35,6 +36,20 @@ Example: show the diagnostic results of this file:
 // Run performs the check on the files specified by args and prints the
 // results to stdout.
 func (c *check) Run(ctx context.Context, args ...string) error {
+	severityCutoff := protocol.SeverityWarning
+	switch c.Severity {
+	case "hint":
+		severityCutoff = protocol.SeverityHint
+	case "info":
+		severityCutoff = protocol.SeverityInformation
+	case "warning":
+		// default
+	case "error":
+		severityCutoff = protocol.SeverityError
+	default:
+		return fmt.Errorf("unrecognized -severity value %q", c.Severity)
+	}
+
 	if len(args) == 0 {
 		return nil
 	}
@@ -95,6 +110,9 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 		file.diagnosticsMu.Unlock()
 
 		for _, diag := range diags {
+			if diag.Severity > severityCutoff { // lower severity value => greater severity, counterintuitively
+				continue
+			}
 			if err := print(file.uri, diag.Range, diag.Message); err != nil {
 				return err
 			}
