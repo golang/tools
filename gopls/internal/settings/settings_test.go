@@ -91,19 +91,19 @@ func TestOptions_Set(t *testing.T) {
 			},
 		},
 		{
-			name:      "hoverKind",
-			value:     "Structured",
-			wantError: true,
+			name:  "hoverKind",
+			value: "Structured",
+			// wantError: true, // TODO(rfindley): reinstate this error
 			check: func(o Options) bool {
-				return o.HoverKind == FullDocumentation
+				return o.HoverKind == Structured
 			},
 		},
 		{
-			name:      "ui.documentation.hoverKind",
-			value:     "Structured",
-			wantError: true,
+			name:  "ui.documentation.hoverKind",
+			value: "Structured",
+			// wantError: true, // TODO(rfindley): reinstate this error
 			check: func(o Options) bool {
-				return o.HoverKind == FullDocumentation
+				return o.HoverKind == Structured
 			},
 		},
 		{

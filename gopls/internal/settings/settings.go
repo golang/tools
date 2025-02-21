@@ -798,6 +798,11 @@ const (
 	NoDocumentation       HoverKind = "NoDocumentation"
 	SynopsisDocumentation HoverKind = "SynopsisDocumentation"
 	FullDocumentation     HoverKind = "FullDocumentation"
+
+	// Structured is a misguided experimental setting that returns a JSON
+	// hover format. This setting should not be used, as it will be removed in a
+	// future release of gopls.
+	Structured HoverKind = "Structured"
 )
 
 type VulncheckMode string
@@ -1073,14 +1078,15 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 			AllSymbolScope)
 
 	case "hoverKind":
-		if s, ok := value.(string); ok && strings.EqualFold(s, "structured") {
-			return nil, deprecatedError("the experimental hoverKind='structured' setting was removed in gopls/v0.18.0 (https://go.dev/issue/70233)")
-		}
+		// TODO(rfindley): reinstate the deprecation of Structured hover by making
+		// it a warning in gopls v0.N+1, and removing it in gopls v0.N+2.
 		return setEnum(&o.HoverKind, value,
 			NoDocumentation,
 			SingleLine,
 			SynopsisDocumentation,
-			FullDocumentation)
+			FullDocumentation,
+			Structured,
+		)
 
 	case "linkTarget":
 		return nil, setString(&o.LinkTarget, value)

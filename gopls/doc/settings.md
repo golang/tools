@@ -428,6 +428,9 @@ Must be one of:
 * `"FullDocumentation"`
 * `"NoDocumentation"`
 * `"SingleLine"`
+* `"Structured"` is a misguided experimental setting that returns a JSON
+hover format. This setting should not be used, as it will be removed in a
+future release of gopls.
 * `"SynopsisDocumentation"`
 
 Default: `"FullDocumentation"`.
