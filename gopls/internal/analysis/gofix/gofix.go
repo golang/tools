@@ -372,28 +372,21 @@ func typenames(t types.Type) []*types.TypeName {
 	var tns []*types.TypeName
 
 	var visit func(types.Type)
-
-	// TODO(jba): when typesinternal.NamedOrAlias adds TypeArgs, replace this type literal with it.
-	namedOrAlias := func(t interface {
-		TypeArgs() *types.TypeList
-		Obj() *types.TypeName
-	}) {
-		tns = append(tns, t.Obj())
-		args := t.TypeArgs()
-		// TODO(jba): replace with TypeList.Types when this file is at 1.24.
-		for i := range args.Len() {
-			visit(args.At(i))
-		}
-	}
-
 	visit = func(t types.Type) {
+		if hasName, ok := t.(interface{ Obj() *types.TypeName }); ok {
+			tns = append(tns, hasName.Obj())
+		}
 		switch t := t.(type) {
 		case *types.Basic:
 			tns = append(tns, types.Universe.Lookup(t.Name()).(*types.TypeName))
 		case *types.Named:
-			namedOrAlias(t)
+			for t := range t.TypeArgs().Types() {
+				visit(t)
+			}
 		case *types.Alias:
-			namedOrAlias(t)
+			for t := range t.TypeArgs().Types() {
+				visit(t)
+			}
 		case *types.TypeParam:
 			tns = append(tns, t.Obj())
 		case *types.Pointer:
@@ -408,9 +401,8 @@ func typenames(t types.Type) []*types.TypeName {
 			visit(t.Key())
 			visit(t.Elem())
 		case *types.Struct:
-			// TODO(jba): replace with Struct.Fields when this file is at 1.24.
-			for i := range t.NumFields() {
-				visit(t.Field(i).Type())
+			for f := range t.Fields() {
+				visit(f.Type())
 			}
 		case *types.Signature:
 			// Ignore the receiver: although it may be present, it has no meaning
@@ -430,9 +422,8 @@ func typenames(t types.Type) []*types.TypeName {
 				visit(t.ExplicitMethod(i).Type())
 			}
 		case *types.Tuple:
-			// TODO(jba): replace with Tuple.Variables when this file is at 1.24.
-			for i := range t.Len() {
-				visit(t.At(i).Type())
+			for v := range t.Variables() {
+				visit(v.Type())
 			}
 		case *types.Union:
 			panic("Union in type expression")
