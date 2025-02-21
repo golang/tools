@@ -135,6 +135,10 @@
 						"Doc": ""
 					},
 					{
+						"Value": "\"Structured\"",
+						"Doc": "`\"Structured\"` is a misguided experimental setting that returns a JSON\nhover format. This setting should not be used, as it will be removed in a\nfuture release of gopls.\n"
+					},
+					{
 						"Value": "\"SynopsisDocumentation\"",
 						"Doc": ""
 					}
