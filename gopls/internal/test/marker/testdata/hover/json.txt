@@ -28,6 +28,6 @@ func MyFunc(i int) string { //@ hover("MyFunc", "MyFunc", MyFunc)
 	return ""
 }
 -- @MyFunc --
-{"Synopsis":"MyFunc is a function.","FullDocumentation":"MyFunc is a function.\n","Signature":"func MyFunc(i int) string","SingleLine":"func MyFunc(i int) string","SymbolName":"p.MyFunc","LinkPath":"example.com/p","LinkAnchor":"MyFunc"}
+{"synopsis":"MyFunc is a function.","fullDocumentation":"MyFunc is a function.\n","signature":"func MyFunc(i int) string","singleLine":"func MyFunc(i int) string","symbolName":"p.MyFunc","linkPath":"example.com/p","linkAnchor":"MyFunc"}
 -- @MyType --
-{"Synopsis":"MyType is a type.","FullDocumentation":"MyType is a type.\n","Signature":"type MyType struct { // size=24 (0x18)\n\tF int    // a field\n\tS string // a string field\n}\n","SingleLine":"type MyType struct{F int; S string}","SymbolName":"p.MyType","LinkPath":"example.com/p","LinkAnchor":"MyType"}
+{"synopsis":"MyType is a type.","fullDocumentation":"MyType is a type.\n","signature":"type MyType struct { // size=24 (0x18)\n\tF int    // a field\n\tS string // a string field\n}\n","singleLine":"type MyType struct{F int; S string}","symbolName":"p.MyType","linkPath":"example.com/p","linkAnchor":"MyType"}
