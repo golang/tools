@@ -39,7 +39,6 @@ import (
 	"go/token"
 	"go/types"
 	"html"
-	"iter"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -666,7 +665,7 @@ window.addEventListener('load', function() {
 				cloneTparams(sig.RecvTypeParams()),
 				cloneTparams(sig.TypeParams()),
 				types.NewTuple(append(
-					slices.Collect(tupleVariables(sig.Params()))[:3],
+					slices.Collect(sig.Params().Variables())[:3],
 					types.NewParam(0, nil, "", types.Typ[types.Invalid]))...),
 				sig.Results(),
 				false) // any final ...T parameter is truncated
@@ -850,18 +849,4 @@ window.addEventListener('load', function() {
 	fmt.Fprintf(&buf, "</html>\n")
 
 	return buf.Bytes(), nil
-}
-
-// tupleVariables returns a go1.23 iterator over the variables of a tuple type.
-//
-// Example: for v := range tuple.Variables() { ... }
-// TODO(adonovan): use t.Variables in go1.24.
-func tupleVariables(t *types.Tuple) iter.Seq[*types.Var] {
-	return func(yield func(v *types.Var) bool) {
-		for i := range t.Len() {
-			if !yield(t.At(i)) {
-				break
-			}
-		}
-	}
 }

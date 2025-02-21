@@ -126,7 +126,7 @@ var _ = unsafe.Slice(nil, 0)
 
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
-		for _, name := range strings.Fields(
+		for name := range strings.FieldsSeq(
 			"iota error int nil append iota Pointer Sizeof Alignof Add Slice") {
 			loc := env.RegexpSearch("a.go", `\b`+name+`\b`)
 
