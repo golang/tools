@@ -262,6 +262,17 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		return protocol.Range{}, nil, nil // no object to hover
 	}
 
+	if pkgName, ok := obj.(*types.PkgName); ok {
+		rng, hoverRes, err := hoverPackageIdent(ctx, snapshot, pkg, pgf, ident, pkgName.Imported().Path())
+		if err != nil {
+			return protocol.Range{}, nil, err
+		}
+		if hoverRange == nil {
+			hoverRange = &rng
+		}
+		return *hoverRange, hoverRes, nil // (hoverRes may be nil)
+	}
+
 	// Unless otherwise specified, rng covers the ident being hovered.
 	if hoverRange == nil {
 		rng, err := pgf.NodeRange(ident)
@@ -692,27 +703,22 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 	}, nil
 }
 
-// hoverImport computes hover information when hovering over the import path of
-// imp in the file pgf of pkg.
+// hoverPackageRef computes hover information when hovering over the import path or ident of
+// imp in the file pgf of pkg or over the identifier for an imported pkg.
 //
 // If we do not have metadata for the hovered import, it returns _
-func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, imp *ast.ImportSpec) (protocol.Range, *hoverResult, error) {
-	rng, err := pgf.NodeRange(imp.Path)
-	if err != nil {
-		return protocol.Range{}, nil, err
-	}
-
+func hoverPackageRef(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, imp *ast.ImportSpec) (*hoverResult, error) {
 	importPath := metadata.UnquoteImportPath(imp)
 	if importPath == "" {
-		return protocol.Range{}, nil, fmt.Errorf("invalid import path")
+		return nil, fmt.Errorf("invalid import path")
 	}
 	impID := pkg.Metadata().DepsByImpPath[importPath]
 	if impID == "" {
-		return protocol.Range{}, nil, fmt.Errorf("no package data for import %q", importPath)
+		return nil, fmt.Errorf("no package data for import %q", importPath)
 	}
 	impMetadata := snapshot.Metadata(impID)
 	if impMetadata == nil {
-		return protocol.Range{}, nil, bug.Errorf("failed to resolve import ID %q", impID)
+		return nil, bug.Errorf("failed to resolve import ID %q", impID)
 	}
 
 	// Find the first file with a package doc comment.
@@ -721,14 +727,14 @@ func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Packa
 		fh, err := snapshot.ReadFile(ctx, f)
 		if err != nil {
 			if ctx.Err() != nil {
-				return protocol.Range{}, nil, ctx.Err()
+				return nil, ctx.Err()
 			}
 			continue
 		}
 		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Header)
 		if err != nil {
 			if ctx.Err() != nil {
-				return protocol.Range{}, nil, ctx.Err()
+				return nil, ctx.Err()
 			}
 			continue
 		}
@@ -739,11 +745,55 @@ func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Packa
 	}
 
 	docText := comment.Text()
-	return rng, &hoverResult{
+	return &hoverResult{
 		signature:         "package " + string(impMetadata.Name),
 		synopsis:          doc.Synopsis(docText),
 		fullDocumentation: docText,
 	}, nil
+}
+
+// hoverImport computes hover information when hovering over the import path of
+// imp in the file pgf of pkg.
+//
+// If we do not have metadata for the hovered import, it returns _
+func hoverImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, imp *ast.ImportSpec) (protocol.Range, *hoverResult, error) {
+	rng, err := pgf.NodeRange(imp.Path)
+	if err != nil {
+		return protocol.Range{}, nil, err
+	}
+	hoverRes, err := hoverPackageRef(ctx, snapshot, pkg, imp)
+	if err != nil {
+		return protocol.Range{}, nil, err
+	}
+	return rng, hoverRes, err
+}
+
+// hoverPackageIdent computes hover information when hovering over the identifier
+// of an imported pkg.
+//
+// If we do not have metadata for the hovered import, it returns _
+func hoverPackageIdent(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, ident *ast.Ident, path string) (protocol.Range, *hoverResult, error) {
+
+	for _, spec := range pgf.File.Imports {
+		importPathString, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			return protocol.Range{}, nil, err
+		}
+		if importPathString != path {
+			continue
+		}
+		rng, err := pgf.NodeRange(ident)
+		if err != nil {
+			return protocol.Range{}, nil, err
+		}
+		hoverRes, err := hoverPackageRef(ctx, snapshot, pkg, spec)
+		if err != nil {
+			return protocol.Range{}, nil, err
+		}
+		return rng, hoverRes, nil // (hoverRes may be nil)
+	}
+
+	return protocol.Range{}, nil, fmt.Errorf("invalid import path")
 }
 
 // hoverPackageName computes hover information for the package name of the file
