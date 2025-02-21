@@ -22,6 +22,11 @@ func TestAnalyzer(t *testing.T) {
 	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), Analyzer, "a", "b")
 }
 
+func TestDirectiveAnalyzer(t *testing.T) {
+	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), DirectiveAnalyzer, "directive")
+
+}
+
 func TestTypesWithNames(t *testing.T) {
 	// Test setup inspired by internal/analysisinternal/addimport_test.go.
 	testenv.NeedsDefaultImporter(t)

@@ -5,7 +5,8 @@
 /*
 Package gofix defines an Analyzer that inlines calls to functions
 and uses of constants
-marked with a "//go:fix inline" doc comment.
+marked with a "//go:fix inline" directive.
+A second analyzer only checks uses of the directive.
 
 # Analyzer gofix
 
@@ -81,5 +82,12 @@ The proposal https://go.dev/issue/32816 introduces the "//go:fix" directives.
 You can use this (officially unsupported) command to apply gofix fixes en masse:
 
 	$ go run golang.org/x/tools/gopls/internal/analysis/gofix/cmd/gofix@latest -test ./...
+
+# Analyzer gofixdirective
+
+gofixdirective: validate uses of gofix comment directives
+
+The gofixdirective analyzer checks "//go:fix inline" directives for correctness.
+See the documentation for the gofix analyzer for more about "/go:fix inline".
 */
 package gofix

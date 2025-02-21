@@ -34,7 +34,20 @@ var Analyzer = &analysis.Analyzer{
 	Name: "gofix",
 	Doc:  analysisinternal.MustExtractDoc(doc, "gofix"),
 	URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix",
-	Run:  run,
+	Run:  func(pass *analysis.Pass) (any, error) { return run(pass, true) },
+	FactTypes: []analysis.Fact{
+		(*goFixInlineFuncFact)(nil),
+		(*goFixInlineConstFact)(nil),
+		(*goFixInlineAliasFact)(nil),
+	},
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+}
+
+var DirectiveAnalyzer = &analysis.Analyzer{
+	Name: "gofixdirective",
+	Doc:  analysisinternal.MustExtractDoc(doc, "gofixdirective"),
+	URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix",
+	Run:  func(pass *analysis.Pass) (any, error) { return run(pass, false) },
 	FactTypes: []analysis.Fact{
 		(*goFixInlineFuncFact)(nil),
 		(*goFixInlineConstFact)(nil),
@@ -46,6 +59,7 @@ var Analyzer = &analysis.Analyzer{
 // analyzer holds the state for this analysis.
 type analyzer struct {
 	pass *analysis.Pass
+	fix  bool // only suggest fixes if true; else, just check directives
 	root cursor.Cursor
 	// memoization of repeated calls for same file.
 	fileContent map[string][]byte
@@ -55,9 +69,10 @@ type analyzer struct {
 	inlinableAliases map[*types.TypeName]*goFixInlineAliasFact
 }
 
-func run(pass *analysis.Pass) (any, error) {
+func run(pass *analysis.Pass, fix bool) (any, error) {
 	a := &analyzer{
 		pass:             pass,
+		fix:              fix,
 		root:             cursor.Root(pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)),
 		fileContent:      make(map[string][]byte),
 		inlinableFuncs:   make(map[*types.Func]*inline.Callee),
@@ -256,6 +271,10 @@ func (a *analyzer) inlineCall(call *ast.CallExpr, cur cursor.Cursor) {
 			a.pass.Reportf(call.Lparen, "%v", err)
 			return
 		}
+		if !a.fix {
+			return
+		}
+
 		if res.Literalized {
 			// Users are not fond of inlinings that literalize
 			// f(x) to func() { ... }(), so avoid them.
@@ -533,6 +552,9 @@ func (a *analyzer) inlineConst(con *types.Const, cur cursor.Cursor) {
 
 // reportInline reports a diagnostic for fixing an inlinable name.
 func (a *analyzer) reportInline(kind, capKind string, ident ast.Expr, edits []analysis.TextEdit, newText string) {
+	if !a.fix {
+		return
+	}
 	edits = append(edits, analysis.TextEdit{
 		Pos:     ident.Pos(),
 		End:     ident.End(),
