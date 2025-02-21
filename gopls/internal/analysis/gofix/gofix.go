@@ -148,9 +148,12 @@ func (a *analyzer) findAlias(spec *ast.TypeSpec, declInline bool) {
 	//    type A = [N]int
 	//
 	// would result in [5]int, breaking the connection with N.
-	// TODO(jba): accept type expressions where the array size is a literal integer
 	for n := range ast.Preorder(spec.Type) {
 		if ar, ok := n.(*ast.ArrayType); ok && ar.Len != nil {
+			// Make an exception when the array length is a literal int.
+			if lit, ok := ast.Unparen(ar.Len).(*ast.BasicLit); ok && lit.Kind == token.INT {
+				continue
+			}
 			a.pass.Reportf(spec.Pos(), "invalid //go:fix inline directive: array types not supported")
 			return
 		}

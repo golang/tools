@@ -129,6 +129,13 @@ type E = map[[Uno]string][]*T // want `invalid //go:fix inline directive: array 
 
 var _ E // nothing should happen here
 
+// literal array lengths are OK
+//
+//go:fix inline
+type EL = map[[2]string][]*T // want EL: `goFixInline alias`
+
+var _ EL // want `Type alias EL should be inlined`
+
 //go:fix inline
 type F = map[internal.T]T // want F: `goFixInline alias`
 
