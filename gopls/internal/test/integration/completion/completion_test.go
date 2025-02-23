@@ -1212,25 +1212,21 @@ func TestDoubleParamReturnCompletion(t *testing.T) {
 	Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
 
-		compl := env.RegexpSearch("a.go", `DoubleWrap\[()\]\(\)`)
-		result := env.Completion(compl)
-
-		wantLabel := []string{"InterfaceA", "TypeA", "InterfaceB", "TypeB", "TypeC"}
-
-		for i, item := range result.Items[:len(wantLabel)] {
-			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
-				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
-			}
+		tests := map[string][]string{
+			`DoubleWrap\[()\]\(\)`:              {"InterfaceA", "TypeA", "InterfaceB", "TypeB", "TypeC"},
+			`DoubleWrap\[InterfaceA, (_)\]\(\)`: {"InterfaceB", "TypeB", "TypeX", "InterfaceA", "TypeA"},
 		}
 
-		compl = env.RegexpSearch("a.go", `DoubleWrap\[InterfaceA, (_)\]\(\)`)
-		result = env.Completion(compl)
-
-		wantLabel = []string{"InterfaceB", "TypeB", "TypeX", "InterfaceA", "TypeA"}
-
-		for i, item := range result.Items[:len(wantLabel)] {
-			if diff := cmp.Diff(wantLabel[i], item.Label); diff != "" {
-				t.Errorf("Completion: unexpected label mismatch (-want +got):\n%s", diff)
+		for re, wantLabels := range tests {
+			compl := env.RegexpSearch("a.go", re)
+			result := env.Completion(compl)
+			if len(result.Items) < len(wantLabels) {
+				t.Fatalf("Completion(%q) returned mismatching labels: got %v, want at least labels %v", re, result.Items, wantLabels)
+			}
+			for i, item := range result.Items[:len(wantLabels)] {
+				if diff := cmp.Diff(wantLabels[i], item.Label); diff != "" {
+					t.Errorf("Completion(%q): unexpected label mismatch (-want +got):\n%s", re, diff)
+				}
 			}
 		}
 	})
