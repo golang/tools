@@ -96,6 +96,9 @@ func Test(t *testing.T) {
 		if strings.HasPrefix(builder, "darwin-") || strings.Contains(builder, "solaris") {
 			t.Skip("golang/go#64473: skipping with -short: this test is too slow on darwin and solaris builders")
 		}
+		if strings.HasSuffix(builder, "freebsd-amd64-race") {
+			t.Skip("golang/go#71731: the marker tests are too slow to run on the amd64-race builder")
+		}
 	}
 	// The marker tests must be able to run go/packages.Load.
 	testenv.NeedsGoPackages(t)
@@ -658,7 +661,7 @@ type stringListValue []string
 
 func (l *stringListValue) Set(s string) error {
 	if s != "" {
-		for _, d := range strings.Split(s, ",") {
+		for d := range strings.SplitSeq(s, ",") {
 			*l = append(*l, strings.TrimSpace(d))
 		}
 	}
@@ -1838,7 +1841,7 @@ func removeDiagnostic(mark marker, loc protocol.Location, matchEnd bool, re *reg
 	diags := mark.run.diags[key]
 	for i, diag := range diags {
 		if re.MatchString(diag.Message) && (!matchEnd || diag.Range.End == loc.Range.End) {
-			mark.run.diags[key] = append(diags[:i], diags[i+1:]...)
+			mark.run.diags[key] = slices.Delete(diags, i, i+1)
 			return diag, true
 		}
 	}
