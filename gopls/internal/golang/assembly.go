@@ -16,6 +16,8 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"io"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,39 +28,33 @@ import (
 
 // AssemblyHTML returns an HTML document containing an assembly listing of the selected function.
 //
-// TODO(adonovan):
-// - display a "Compiling..." message as a cold build can be slow.
-// - cross-link jumps and block labels, like github.com/aclements/objbrowse.
-func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, symbol string, web Web) ([]byte, error) {
-	// Compile the package with -S, and capture its stderr stream.
+// TODO(adonovan): cross-link jumps and block labels, like github.com/aclements/objbrowse.
+func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, w http.ResponseWriter, pkg *cache.Package, symbol string, web Web) {
+	// Prepare to compile the package with -S, and capture its stderr stream.
 	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NoNetwork, pkg.Metadata().CompiledGoFiles[0].DirPath(), "build", []string{"-gcflags=-S", "."})
 	if err != nil {
-		return nil, err // e.g. failed to write overlays (rare)
+		// e.g. failed to write overlays (rare)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	defer cleanupInvocation()
-	_, stderr, err, _ := snapshot.View().GoCommandRunner().RunRaw(ctx, *inv)
-	if err != nil {
-		return nil, err // e.g. won't compile
-	}
-	content := stderr.String()
 
 	escape := html.EscapeString
 
-	// Produce the report.
+	// Emit the start of the report.
 	title := fmt.Sprintf("%s assembly for %s",
 		escape(snapshot.View().GOARCH()),
 		escape(symbol))
-	var buf bytes.Buffer
-	buf.WriteString(`<!DOCTYPE html>
+	io.WriteString(w, `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>` + escape(title) + `</title>
+  <title>`+escape(title)+`</title>
   <link rel="stylesheet" href="/assets/common.css">
   <script src="/assets/common.js"></script>
 </head>
 <body>
-<h1>` + title + `</h1>
+<h1>`+title+`</h1>
 <p>
   <a href='https://go.dev/doc/asm'>A Quick Guide to Go's Assembler</a>
 </p>
@@ -69,11 +65,23 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pack
   Click on a source line marker <code>L1234</code> to navigate your editor there.
   (VS Code users: please upvote <a href='https://github.com/microsoft/vscode/issues/208093'>#208093</a>)
 </p>
-<p>
-  Reload the page to recompile.
-</p>
+<p id='compiling'>Compiling...</p>
 <pre>
 `)
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
+	// Compile the package.
+	_, stderr, err, _ := snapshot.View().GoCommandRunner().RunRaw(ctx, *inv)
+	if err != nil {
+		// e.g. won't compile
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Write the rest of the report.
+	content := stderr.String()
 
 	// insnRx matches an assembly instruction line.
 	// Submatch groups are: (offset-hex-dec, file-line-column, instruction).
@@ -88,7 +96,8 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pack
 	//
 	// Allow matches of symbol, symbol.func1, symbol.deferwrap, etc.
 	on := false
-	for _, line := range strings.Split(content, "\n") {
+	var buf bytes.Buffer
+	for line := range strings.SplitSeq(content, "\n") {
 		// start of function symbol?
 		if strings.Contains(line, " STEXT ") {
 			on = strings.HasPrefix(line, symbol) &&
@@ -116,5 +125,14 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pack
 		}
 		buf.WriteByte('\n')
 	}
-	return buf.Bytes(), nil
+
+	// Update the "Compiling..." message.
+	buf.WriteString(`
+</pre>
+<script>
+document.getElementById('compiling').innerText = 'Reload the page to recompile.';
+</script>
+</body>`)
+
+	w.Write(buf.Bytes())
 }
