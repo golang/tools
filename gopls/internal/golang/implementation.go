@@ -665,6 +665,7 @@ func pathEnclosingObjNode(f *ast.File, pos token.Pos) []ast.Node {
 			// handled this by calling astutil.PathEnclosingInterval twice,
 			// once for "pos" and once for "pos-1".
 			found = n.Pos() <= pos && pos <= n.End()
+
 		case *ast.ImportSpec:
 			if n.Path.Pos() <= pos && pos < n.Path.End() {
 				found = true
@@ -674,6 +675,7 @@ func pathEnclosingObjNode(f *ast.File, pos token.Pos) []ast.Node {
 					path = append(path, n.Name)
 				}
 			}
+
 		case *ast.StarExpr:
 			// Follow star expressions to the inner identifier.
 			if pos == n.Star {
@@ -690,7 +692,6 @@ func pathEnclosingObjNode(f *ast.File, pos token.Pos) []ast.Node {
 
 	// Reverse path so leaf is first element.
 	slices.Reverse(path)
-
 	return path
 }
 
