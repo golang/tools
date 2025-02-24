@@ -945,43 +945,65 @@ func goAssembly(ctx context.Context, req *codeActionsRequest) error {
 	// directly to (say) a lambda of interest.
 	// Perhaps we could scroll to STEXT for the innermost
 	// enclosing nested function?
-	path, _ := astutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
-	if len(path) >= 2 { // [... FuncDecl File]
-		if decl, ok := path[len(path)-2].(*ast.FuncDecl); ok {
-			if fn, ok := req.pkg.TypesInfo().Defs[decl.Name].(*types.Func); ok {
-				sig := fn.Signature()
 
-				// Compute the linker symbol of the enclosing function.
-				var sym strings.Builder
-				if fn.Pkg().Name() == "main" {
-					sym.WriteString("main")
-				} else {
-					sym.WriteString(fn.Pkg().Path())
-				}
-				sym.WriteString(".")
-				if sig.Recv() != nil {
-					if isPtr, named := typesinternal.ReceiverNamed(sig.Recv()); named != nil {
-						if isPtr {
-							fmt.Fprintf(&sym, "(*%s)", named.Obj().Name())
-						} else {
-							sym.WriteString(named.Obj().Name())
+	// Compute the linker symbol of the enclosing function or var initializer.
+	var sym strings.Builder
+	if pkg := req.pkg.Types(); pkg.Name() == "main" {
+		sym.WriteString("main")
+	} else {
+		sym.WriteString(pkg.Path())
+	}
+	sym.WriteString(".")
+
+	curSel, _ := req.pgf.Cursor.FindPos(req.start, req.end)
+	for cur := range curSel.Ancestors((*ast.FuncDecl)(nil), (*ast.ValueSpec)(nil)) {
+		var name string // in command title
+		switch node := cur.Node().(type) {
+		case *ast.FuncDecl:
+			// package-level func or method
+			if fn, ok := req.pkg.TypesInfo().Defs[node.Name].(*types.Func); ok &&
+				fn.Name() != "_" { // blank functions are not compiled
+
+				// Source-level init functions are compiled (along with
+				// package-level var initializers) in into a single pkg.init
+				// function, so this falls out of the logic below.
+
+				if sig := fn.Signature(); sig.TypeParams() == nil && sig.RecvTypeParams() == nil { // generic => no assembly
+					if sig.Recv() != nil {
+						if isPtr, named := typesinternal.ReceiverNamed(sig.Recv()); named != nil {
+							if isPtr {
+								fmt.Fprintf(&sym, "(*%s)", named.Obj().Name())
+							} else {
+								sym.WriteString(named.Obj().Name())
+							}
+							sym.WriteByte('.')
 						}
-						sym.WriteByte('.')
 					}
-				}
-				sym.WriteString(fn.Name())
+					sym.WriteString(fn.Name())
 
-				if fn.Name() != "_" && // blank functions are not compiled
-					(fn.Name() != "init" || sig.Recv() != nil) && // init functions aren't linker functions
-					sig.TypeParams() == nil && sig.RecvTypeParams() == nil { // generic => no assembly
-					cmd := command.NewAssemblyCommand(
-						fmt.Sprintf("Browse %s assembly for %s", view.GOARCH(), decl.Name),
-						view.ID(),
-						string(req.pkg.Metadata().ID),
-						sym.String())
-					req.addCommandAction(cmd, false)
+					name = node.Name.Name // success
 				}
 			}
+
+		case *ast.ValueSpec:
+			// package-level var initializer?
+			if len(node.Names) > 0 && len(node.Values) > 0 {
+				v := req.pkg.TypesInfo().Defs[node.Names[0]]
+				if v != nil && typesinternal.IsPackageLevel(v) {
+					sym.WriteString("init")
+					name = "package initializer" // success
+				}
+			}
+		}
+
+		if name != "" {
+			cmd := command.NewAssemblyCommand(
+				fmt.Sprintf("Browse %s assembly for %s", view.GOARCH(), name),
+				view.ID(),
+				string(req.pkg.Metadata().ID),
+				sym.String())
+			req.addCommandAction(cmd, false)
+			break
 		}
 	}
 	return nil

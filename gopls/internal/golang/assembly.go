@@ -29,6 +29,8 @@ import (
 // AssemblyHTML returns an HTML document containing an assembly listing of the selected function.
 //
 // TODO(adonovan): cross-link jumps and block labels, like github.com/aclements/objbrowse.
+//
+// See gopls/internal/test/integration/misc/webserver_test.go for tests.
 func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, w http.ResponseWriter, pkg *cache.Package, symbol string, web Web) {
 	// Prepare to compile the package with -S, and capture its stderr stream.
 	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NoNetwork, pkg.Metadata().CompiledGoFiles[0].DirPath(), "build", []string{"-gcflags=-S", "."})
@@ -72,11 +74,26 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, w http.Response
 		flusher.Flush()
 	}
 
+	// At this point errors must be reported by writing HTML.
+	// To do this, set "status" return early.
+
+	var buf bytes.Buffer
+	status := "Reload the page to recompile."
+	defer func() {
+		// Update the "Compiling..." message.
+		fmt.Fprintf(&buf, `
+</pre>
+<script>
+document.getElementById('compiling').innerText = %q;
+</script>
+</body>`, status)
+		w.Write(buf.Bytes())
+	}()
+
 	// Compile the package.
 	_, stderr, err, _ := snapshot.View().GoCommandRunner().RunRaw(ctx, *inv)
 	if err != nil {
-		// e.g. won't compile
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		status = fmt.Sprintf("compilation failed: %v", err)
 		return
 	}
 
@@ -96,7 +113,6 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, w http.Response
 	//
 	// Allow matches of symbol, symbol.func1, symbol.deferwrap, etc.
 	on := false
-	var buf bytes.Buffer
 	for line := range strings.SplitSeq(content, "\n") {
 		// start of function symbol?
 		if strings.Contains(line, " STEXT ") {
@@ -125,14 +141,4 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, w http.Response
 		}
 		buf.WriteByte('\n')
 	}
-
-	// Update the "Compiling..." message.
-	buf.WriteString(`
-</pre>
-<script>
-document.getElementById('compiling').innerText = 'Reload the page to recompile.';
-</script>
-</body>`)
-
-	w.Write(buf.Bytes())
 }
