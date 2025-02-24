@@ -375,15 +375,10 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// use the default build config for all other types, even
 	// if they embed platform-variant types.
 	//
-	var sizeOffset string // optional size/offset description
-	// debugging #69362: unexpected nil Defs[ident] value (?)
-	_ = ident.Pos()          // (can't be nil due to check after referencedObject)
-	_ = pkg.TypesInfo()      // (can't be nil due to check in call to inferredSignature)
-	_ = pkg.TypesInfo().Defs // (can't be nil due to nature of cache.Package)
-	if def, ok := pkg.TypesInfo().Defs[ident]; ok {
-		_ = def.Pos() // can't be nil due to reasoning in #69362.
-	}
-	if def, ok := pkg.TypesInfo().Defs[ident]; ok && ident.Pos() == def.Pos() {
+	var sizeOffset string
+
+	// As painfully learned in golang/go#69362, Defs can contain nil entries.
+	if def, _ := pkg.TypesInfo().Defs[ident]; def != nil && ident.Pos() == def.Pos() {
 		// This is the declaring identifier.
 		// (We can't simply use ident.Pos() == obj.Pos() because
 		// referencedObject prefers the TypeName for an embedded field).
