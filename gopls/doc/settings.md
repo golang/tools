@@ -355,6 +355,30 @@ These analyses are documented on
 
 Default: `false`.
 
+<a id='annotations'></a>
+### `annotations map[enum]bool`
+
+annotations specifies the various kinds of compiler
+optimization details that should be reported as diagnostics
+when enabled for a package by the "Toggle compiler
+optimization details" (`gopls.gc_details`) command.
+
+(Some users care only about one kind of annotation in their
+profiling efforts. More importantly, in large packages, the
+number of annotations can sometimes overwhelm the user
+interface and exceed the per-file diagnostic limit.)
+
+TODO(adonovan): rename this field to CompilerOptDetail.
+
+Each enum must be one of:
+
+* `"bounds"` controls bounds checking diagnostics.
+* `"escape"` controls diagnostics about escape choices.
+* `"inline"` controls diagnostics about inlining choices.
+* `"nil"` controls nil checks.
+
+Default: `{"bounds":true,"escape":true,"inline":true,"nil":true}`.
+
 <a id='vulncheck'></a>
 ### `vulncheck enum`
 
