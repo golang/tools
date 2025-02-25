@@ -181,6 +181,17 @@ func TestOptions_Set(t *testing.T) {
 			},
 		},
 		{
+			name: "annotations",
+			value: map[string]any{
+				"Nil":      false,
+				"noBounds": true,
+			},
+			wantError: true,
+			check: func(o Options) bool {
+				return !o.Annotations[Nil] && !o.Annotations[Bounds]
+			},
+		},
+		{
 			name:      "vulncheck",
 			value:     []any{"invalid"},
 			wantError: true,
