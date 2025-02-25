@@ -4,7 +4,11 @@ func _(i int, s struct{ i int }, slice []int) {
 	for i := 0; i < 10; i++ { // want "for loop can be modernized using range over int"
 		println(i)
 	}
-	for i = 0; i < f(); i++ { // want "for loop can be modernized using range over int"
+	{
+		var i int
+		for i = 0; i < f(); i++ { // want "for loop can be modernized using range over int"
+		}
+		// NB: no uses of i after loop.
 	}
 	for i := 0; i < 10; i++ { // want "for loop can be modernized using range over int"
 		// i unused within loop
@@ -50,4 +54,15 @@ func _(s string) {
 			i++ // nope
 		}
 	}
+}
+
+// Repro for #71952: for and range loops have different final values
+// on i (n and n-1, respectively) so we can't offer the fix if i is
+// used after the loop.
+func nopePostconditionDiffers() {
+	i := 0
+	for i = 0; i < 5; i++ {
+		println(i)
+	}
+	println(i) // must print 5, not 4
 }

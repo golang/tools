@@ -100,6 +100,18 @@ func rangeint(pass *analysis.Pass) {
 							})
 						}
 
+						// If i is used after the loop,
+						// don't offer a fix, as a range loop
+						// leaves i with a different final value (limit-1).
+						if init.Tok == token.ASSIGN {
+							for curId := range curLoop.Parent().Preorder((*ast.Ident)(nil)) {
+								id := curId.Node().(*ast.Ident)
+								if id.Pos() > loop.End() && info.Uses[id] == v {
+									continue nextLoop
+								}
+							}
+						}
+
 						// If limit is len(slice),
 						// simplify "range len(slice)" to "range slice".
 						if call, ok := limit.(*ast.CallExpr); ok &&
