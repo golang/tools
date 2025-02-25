@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/astutil/edge"
 	"golang.org/x/tools/internal/diff"
@@ -598,7 +599,7 @@ func currentFile(c cursor.Cursor) *ast.File {
 // hasFixInline reports the presence of a "//go:fix inline" directive
 // in the comments.
 func hasFixInline(cg *ast.CommentGroup) bool {
-	for _, d := range directives(cg) {
+	for _, d := range internalastutil.Directives(cg) {
 		if d.Tool == "go" && d.Name == "fix" && d.Args == "inline" {
 			return true
 		}

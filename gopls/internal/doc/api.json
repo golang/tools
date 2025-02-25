@@ -124,23 +124,28 @@
 				"EnumValues": [
 					{
 						"Value": "\"FullDocumentation\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					},
 					{
 						"Value": "\"NoDocumentation\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					},
 					{
 						"Value": "\"SingleLine\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					},
 					{
 						"Value": "\"Structured\"",
-						"Doc": "`\"Structured\"` is a misguided experimental setting that returns a JSON\nhover format. This setting should not be used, as it will be removed in a\nfuture release of gopls.\n"
+						"Doc": "`\"Structured\"` is a misguided experimental setting that returns a JSON\nhover format. This setting should not be used, as it will be removed in a\nfuture release of gopls.\n",
+						"Status": ""
 					},
 					{
 						"Value": "\"SynopsisDocumentation\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					}
 				],
 				"Default": "\"FullDocumentation\"",
@@ -173,15 +178,18 @@
 				"EnumValues": [
 					{
 						"Value": "false",
-						"Doc": "false: do not show links"
+						"Doc": "false: do not show links",
+						"Status": ""
 					},
 					{
 						"Value": "true",
-						"Doc": "true: show links to the `linkTarget` domain"
+						"Doc": "true: show links to the `linkTarget` domain",
+						"Status": ""
 					},
 					{
 						"Value": "\"gopls\"",
-						"Doc": "`\"gopls\"`: show links to gopls' internal documentation viewer"
+						"Doc": "`\"gopls\"`: show links to gopls' internal documentation viewer",
+						"Status": ""
 					}
 				],
 				"Default": "true",
@@ -228,15 +236,18 @@
 				"EnumValues": [
 					{
 						"Value": "\"CaseInsensitive\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					},
 					{
 						"Value": "\"CaseSensitive\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					},
 					{
 						"Value": "\"Fuzzy\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					}
 				],
 				"Default": "\"Fuzzy\"",
@@ -283,15 +294,18 @@
 				"EnumValues": [
 					{
 						"Value": "\"Both\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					},
 					{
 						"Value": "\"Definition\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					},
 					{
 						"Value": "\"Link\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					}
 				],
 				"Default": "\"Both\"",
@@ -310,19 +324,23 @@
 				"EnumValues": [
 					{
 						"Value": "\"CaseInsensitive\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					},
 					{
 						"Value": "\"CaseSensitive\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					},
 					{
 						"Value": "\"FastFuzzy\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					},
 					{
 						"Value": "\"Fuzzy\"",
-						"Doc": ""
+						"Doc": "",
+						"Status": ""
 					}
 				],
 				"Default": "\"FastFuzzy\"",
@@ -341,15 +359,18 @@
 				"EnumValues": [
 					{
 						"Value": "\"Dynamic\"",
-						"Doc": "`\"Dynamic\"` uses whichever qualifier results in the highest scoring\nmatch for the given symbol query. Here a \"qualifier\" is any \"/\" or \".\"\ndelimited suffix of the fully qualified symbol. i.e. \"to/pkg.Foo.Field\" or\njust \"Foo.Field\".\n"
+						"Doc": "`\"Dynamic\"` uses whichever qualifier results in the highest scoring\nmatch for the given symbol query. Here a \"qualifier\" is any \"/\" or \".\"\ndelimited suffix of the fully qualified symbol. i.e. \"to/pkg.Foo.Field\" or\njust \"Foo.Field\".\n",
+						"Status": ""
 					},
 					{
 						"Value": "\"Full\"",
-						"Doc": "`\"Full\"` is fully qualified symbols, i.e.\n\"path/to/pkg.Foo.Field\".\n"
+						"Doc": "`\"Full\"` is fully qualified symbols, i.e.\n\"path/to/pkg.Foo.Field\".\n",
+						"Status": ""
 					},
 					{
 						"Value": "\"Package\"",
-						"Doc": "`\"Package\"` is package qualified symbols i.e.\n\"pkg.Foo.Field\".\n"
+						"Doc": "`\"Package\"` is package qualified symbols i.e.\n\"pkg.Foo.Field\".\n",
+						"Status": ""
 					}
 				],
 				"Default": "\"Dynamic\"",
@@ -368,11 +389,13 @@
 				"EnumValues": [
 					{
 						"Value": "\"all\"",
-						"Doc": "`\"all\"` matches symbols in any loaded package, including\ndependencies.\n"
+						"Doc": "`\"all\"` matches symbols in any loaded package, including\ndependencies.\n",
+						"Status": ""
 					},
 					{
 						"Value": "\"workspace\"",
-						"Doc": "`\"workspace\"` matches symbols in workspace packages only.\n"
+						"Doc": "`\"workspace\"` matches symbols in workspace packages only.\n",
+						"Status": ""
 					}
 				],
 				"Default": "\"all\"",
@@ -390,282 +413,338 @@
 						{
 							"Name": "\"appends\"",
 							"Doc": "check for missing values after append\n\nThis checker reports calls to append that pass\nno values to be appended to the slice.\n\n\ts := []string{\"a\", \"b\", \"c\"}\n\t_ = append(s)\n\nSuch calls are always no-ops and often indicate an\nunderlying mistake.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"asmdecl\"",
 							"Doc": "report mismatches between assembly files and Go declarations",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"assign\"",
 							"Doc": "check for useless assignments\n\nThis checker reports assignments of the form x = x or a[i] = a[i].\nThese are almost always useless, and even when they aren't they are\nusually a mistake.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"atomic\"",
 							"Doc": "check for common mistakes using the sync/atomic package\n\nThe atomic checker looks for assignment statements of the form:\n\n\tx = atomic.AddUint64(\u0026x, 1)\n\nwhich are not atomic.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"atomicalign\"",
 							"Doc": "check for non-64-bits-aligned arguments to sync/atomic functions",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"bools\"",
 							"Doc": "check for common mistakes involving boolean operators",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"buildtag\"",
 							"Doc": "check //go:build and // +build directives",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"cgocall\"",
 							"Doc": "detect some violations of the cgo pointer passing rules\n\nCheck for invalid cgo pointer passing.\nThis looks for code that uses cgo to call C code passing values\nwhose types are almost always invalid according to the cgo pointer\nsharing rules.\nSpecifically, it warns about attempts to pass a Go chan, map, func,\nor slice to C, either directly, or via a pointer, array, or struct.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"composites\"",
 							"Doc": "check for unkeyed composite literals\n\nThis analyzer reports a diagnostic for composite literals of struct\ntypes imported from another package that do not use the field-keyed\nsyntax. Such literals are fragile because the addition of a new field\n(even if unexported) to the struct will cause compilation to fail.\n\nAs an example,\n\n\terr = \u0026net.DNSConfigError{err}\n\nshould be replaced by:\n\n\terr = \u0026net.DNSConfigError{Err: err}\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"copylocks\"",
 							"Doc": "check for locks erroneously passed by value\n\nInadvertently copying a value containing a lock, such as sync.Mutex or\nsync.WaitGroup, may cause both copies to malfunction. Generally such\nvalues should be referred to through a pointer.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"deepequalerrors\"",
 							"Doc": "check for calls of reflect.DeepEqual on error values\n\nThe deepequalerrors checker looks for calls of the form:\n\n    reflect.DeepEqual(err1, err2)\n\nwhere err1 and err2 are errors. Using reflect.DeepEqual to compare\nerrors is discouraged.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"defers\"",
 							"Doc": "report common mistakes in defer statements\n\nThe defers analyzer reports a diagnostic when a defer statement would\nresult in a non-deferred call to time.Since, as experience has shown\nthat this is nearly always a mistake.\n\nFor example:\n\n\tstart := time.Now()\n\t...\n\tdefer recordLatency(time.Since(start)) // error: call to time.Since is not deferred\n\nThe correct code is:\n\n\tdefer func() { recordLatency(time.Since(start)) }()",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"deprecated\"",
 							"Doc": "check for use of deprecated identifiers\n\nThe deprecated analyzer looks for deprecated symbols and package\nimports.\n\nSee https://go.dev/wiki/Deprecated to learn about Go's convention\nfor documenting and signaling deprecated identifiers.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"directive\"",
 							"Doc": "check Go toolchain directives such as //go:debug\n\nThis analyzer checks for problems with known Go toolchain directives\nin all Go source files in a package directory, even those excluded by\n//go:build constraints, and all non-Go source files too.\n\nFor //go:debug (see https://go.dev/doc/godebug), the analyzer checks\nthat the directives are placed only in Go source files, only above the\npackage comment, and only in package main or *_test.go files.\n\nSupport for other known directives may be added in the future.\n\nThis analyzer does not check //go:build, which is handled by the\nbuildtag analyzer.\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"embed\"",
 							"Doc": "check //go:embed directive usage\n\nThis analyzer checks that the embed package is imported if //go:embed\ndirectives are present, providing a suggested fix to add the import if\nit is missing.\n\nThis analyzer also checks that //go:embed directives precede the\ndeclaration of a single variable.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"errorsas\"",
 							"Doc": "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analysis reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"fillreturns\"",
 							"Doc": "suggest fixes for errors due to an incorrect number of return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"wrong number of return values (want %d, got %d)\". For example:\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn\n\t}\n\nwill turn into\n\n\tfunc m() (int, string, *bool, error) {\n\t\treturn 0, \"\", nil, nil\n\t}\n\nThis functionality is similar to https://github.com/sqs/goreturns.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"framepointer\"",
 							"Doc": "report assembly that clobbers the frame pointer before saving it",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"gofix\"",
 							"Doc": "apply fixes based on go:fix comment directives\n\nThe gofix analyzer inlines functions and constants that are marked for inlining.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"hostport\"",
 							"Doc": "check format of addresses passed to net.Dial\n\nThis analyzer flags code that produce network address strings using\nfmt.Sprintf, as in this example:\n\n    addr := fmt.Sprintf(\"%s:%d\", host, 12345) // \"will not work with IPv6\"\n    ...\n    conn, err := net.Dial(\"tcp\", addr)       // \"when passed to dial here\"\n\nThe analyzer suggests a fix to use the correct approach, a call to\nnet.JoinHostPort:\n\n    addr := net.JoinHostPort(host, \"12345\")\n    ...\n    conn, err := net.Dial(\"tcp\", addr)\n\nA similar diagnostic and fix are produced for a format string of \"%s:%s\".\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"httpresponse\"",
 							"Doc": "check for mistakes using HTTP responses\n\nA common mistake when using the net/http package is to defer a function\ncall to close the http.Response Body before checking the error that\ndetermines whether the response is valid:\n\n\tresp, err := http.Head(url)\n\tdefer resp.Body.Close()\n\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n\t// (defer statement belongs here)\n\nThis checker helps uncover latent nil dereference bugs by reporting a\ndiagnostic for such mistakes.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"ifaceassert\"",
 							"Doc": "detect impossible interface-to-interface type assertions\n\nThis checker flags type assertions v.(T) and corresponding type-switch cases\nin which the static type V of v is an interface that cannot possibly implement\nthe target interface T. This occurs when V and T contain methods with the same\nname but different signatures. Example:\n\n\tvar v interface {\n\t\tRead()\n\t}\n\t_ = v.(io.Reader)\n\nThe Read method in v has a different signature than the Read method in\nio.Reader, so this assertion cannot succeed.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"infertypeargs\"",
 							"Doc": "check for unnecessary type arguments in call expressions\n\nExplicit type arguments may be omitted from call expressions if they can be\ninferred from function arguments, or from other type arguments:\n\n\tfunc f[T any](T) {}\n\t\n\tfunc _() {\n\t\tf[string](\"foo\") // string could be inferred\n\t}\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"loopclosure\"",
 							"Doc": "check references to loop variables from within nested functions\n\nThis analyzer reports places where a function literal references the\niteration variable of an enclosing loop, and the loop calls the function\nin such a way (e.g. with go or defer) that it may outlive the loop\niteration and possibly observe the wrong value of the variable.\n\nNote: An iteration variable can only outlive a loop iteration in Go versions \u003c=1.21.\nIn Go 1.22 and later, the loop variable lifetimes changed to create a new\niteration variable per loop iteration. (See go.dev/issue/60078.)\n\nIn this example, all the deferred functions run after the loop has\ncompleted, so all observe the final value of v [\u003cgo1.22].\n\n\tfor _, v := range list {\n\t    defer func() {\n\t        use(v) // incorrect\n\t    }()\n\t}\n\nOne fix is to create a new variable for each iteration of the loop:\n\n\tfor _, v := range list {\n\t    v := v // new var per iteration\n\t    defer func() {\n\t        use(v) // ok\n\t    }()\n\t}\n\nAfter Go version 1.22, the previous two for loops are equivalent\nand both are correct.\n\nThe next example uses a go statement and has a similar problem [\u003cgo1.22].\nIn addition, it has a data race because the loop updates v\nconcurrent with the goroutines accessing it.\n\n\tfor _, v := range elem {\n\t    go func() {\n\t        use(v)  // incorrect, and a data race\n\t    }()\n\t}\n\nA fix is the same as before. The checker also reports problems\nin goroutines started by golang.org/x/sync/errgroup.Group.\nA hard-to-spot variant of this form is common in parallel tests:\n\n\tfunc Test(t *testing.T) {\n\t    for _, test := range tests {\n\t        t.Run(test.name, func(t *testing.T) {\n\t            t.Parallel()\n\t            use(test) // incorrect, and a data race\n\t        })\n\t    }\n\t}\n\nThe t.Parallel() call causes the rest of the function to execute\nconcurrent with the loop [\u003cgo1.22].\n\nThe analyzer reports references only in the last statement,\nas it is not deep enough to understand the effects of subsequent\nstatements that might render the reference benign.\n(\"Last statement\" is defined recursively in compound\nstatements such as if, switch, and select.)\n\nSee: https://golang.org/doc/go_faq.html#closures_and_goroutines",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"lostcancel\"",
 							"Doc": "check cancel func returned by context.WithCancel is called\n\nThe cancellation function returned by context.WithCancel, WithTimeout,\nWithDeadline and variants such as WithCancelCause must be called,\nor the new context will remain live until its parent context is cancelled.\n(The background context is never cancelled.)",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"modernize\"",
 							"Doc": "simplify code by using modern constructs\n\nThis analyzer reports opportunities for simplifying and clarifying\nexisting code by using more modern features of Go, such as:\n\n  - replacing an if/else conditional assignment by a call to the\n    built-in min or max functions added in go1.21;\n  - replacing sort.Slice(x, func(i, j int) bool) { return s[i] \u003c s[j] }\n    by a call to slices.Sort(s), added in go1.21;\n  - replacing interface{} by the 'any' type added in go1.18;\n  - replacing append([]T(nil), s...) by slices.Clone(s) or\n    slices.Concat(s), added in go1.21;\n  - replacing a loop around an m[k]=v map update by a call\n    to one of the Collect, Copy, Clone, or Insert functions\n    from the maps package, added in go1.21;\n  - replacing []byte(fmt.Sprintf...) by fmt.Appendf(nil, ...),\n    added in go1.19;\n  - replacing uses of context.WithCancel in tests with t.Context, added in\n    go1.24;\n  - replacing omitempty by omitzero on structs, added in go1.24;\n  - replacing append(s[:i], s[i+1]...) by slices.Delete(s, i, i+1),\n    added in go1.21\n  - replacing a 3-clause for i := 0; i \u003c n; i++ {} loop by\n    for i := range n {}, added in go1.22;\n  - replacing Split in \"for range strings.Split(...)\" by go1.24's\n    more efficient SplitSeq, or Fields with FieldSeq;\n\nTo apply all modernization fixes en masse, you can use the\nfollowing command:\n\n\t$ go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test ./...\n\nIf the tool warns of conflicting fixes, you may need to run it more\nthan once until it has applied all fixes cleanly. This command is\nnot an officially supported interface and may change in the future.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"nilfunc\"",
 							"Doc": "check for useless comparisons between functions and nil\n\nA useless comparison is one like f == nil as opposed to f() == nil.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"nilness\"",
 							"Doc": "check for redundant or impossible nil comparisons\n\nThe nilness checker inspects the control-flow graph of each function in\na package and reports nil pointer dereferences, degenerate nil\npointers, and panics with nil values. A degenerate comparison is of the form\nx==nil or x!=nil where x is statically known to be nil or non-nil. These are\noften a mistake, especially in control flow related to errors. Panics with nil\nvalues are checked because they are not detectable by\n\n\tif r := recover(); r != nil {\n\nThis check reports conditions such as:\n\n\tif f == nil { // impossible condition (f is a function)\n\t}\n\nand:\n\n\tp := \u0026v\n\t...\n\tif p != nil { // tautological condition\n\t}\n\nand:\n\n\tif p == nil {\n\t\tprint(*p) // nil dereference\n\t}\n\nand:\n\n\tif p == nil {\n\t\tpanic(p)\n\t}\n\nSometimes the control flow may be quite complex, making bugs hard\nto spot. In the example below, the err.Error expression is\nguaranteed to panic because, after the first return, err must be\nnil. The intervening loop is just a distraction.\n\n\t...\n\terr := g.Wait()\n\tif err != nil {\n\t\treturn err\n\t}\n\tpartialSuccess := false\n\tfor _, err := range errs {\n\t\tif err == nil {\n\t\t\tpartialSuccess = true\n\t\t\tbreak\n\t\t}\n\t}\n\tif partialSuccess {\n\t\treportStatus(StatusMessage{\n\t\t\tCode:   code.ERROR,\n\t\t\tDetail: err.Error(), // \"nil dereference in dynamic method call\"\n\t\t})\n\t\treturn nil\n\t}\n\n...",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"nonewvars\"",
 							"Doc": "suggested fixes for \"no new vars on left side of :=\"\n\nThis checker provides suggested fixes for type errors of the\ntype \"no new vars on left side of :=\". For example:\n\n\tz := 1\n\tz := 2\n\nwill turn into\n\n\tz := 1\n\tz = 2",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"noresultvalues\"",
 							"Doc": "suggested fixes for unexpected return values\n\nThis checker provides suggested fixes for type errors of the\ntype \"no result values expected\" or \"too many return values\".\nFor example:\n\n\tfunc z() { return nil }\n\nwill turn into\n\n\tfunc z() { return }",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"printf\"",
 							"Doc": "check consistency of Printf format strings and arguments\n\nThe check applies to calls of the formatting functions such as\n[fmt.Printf] and [fmt.Sprintf], as well as any detected wrappers of\nthose functions such as [log.Printf]. It reports a variety of\nmistakes such as syntax errors in the format string and mismatches\n(of number and type) between the verbs and their arguments.\n\nSee the documentation of the fmt package for the complete set of\nformat operators and their operand types.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"shadow\"",
 							"Doc": "check for possible unintended shadowing of variables\n\nThis analyzer check for shadowed variables.\nA shadowed variable is a variable declared in an inner scope\nwith the same name and type as a variable in an outer scope,\nand where the outer variable is mentioned after the inner one\nis declared.\n\n(This definition can be refined; the module generates too many\nfalse positives and is not yet enabled by default.)\n\nFor example:\n\n\tfunc BadRead(f *os.File, buf []byte) error {\n\t\tvar err error\n\t\tfor {\n\t\t\tn, err := f.Read(buf) // shadows the function variable 'err'\n\t\t\tif err != nil {\n\t\t\t\tbreak // causes return of wrong value\n\t\t\t}\n\t\t\tfoo(buf)\n\t\t}\n\t\treturn err\n\t}",
-							"Default": "false"
+							"Default": "false",
+							"Status": ""
 						},
 						{
 							"Name": "\"shift\"",
 							"Doc": "check for shifts that equal or exceed the width of the integer",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"sigchanyzer\"",
 							"Doc": "check for unbuffered channel of os.Signal\n\nThis checker reports call expression of the form\n\n\tsignal.Notify(c \u003c-chan os.Signal, sig ...os.Signal),\n\nwhere c is an unbuffered channel, which can be at risk of missing the signal.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"simplifycompositelit\"",
 							"Doc": "check for composite literal simplifications\n\nAn array, slice, or map composite literal of the form:\n\n\t[]T{T{}, T{}}\n\nwill be simplified to:\n\n\t[]T{{}, {}}\n\nThis is one of the simplifications that \"gofmt -s\" applies.\n\nThis analyzer ignores generated code.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"simplifyrange\"",
 							"Doc": "check for range statement simplifications\n\nA range of the form:\n\n\tfor x, _ = range v {...}\n\nwill be simplified to:\n\n\tfor x = range v {...}\n\nA range of the form:\n\n\tfor _ = range v {...}\n\nwill be simplified to:\n\n\tfor range v {...}\n\nThis is one of the simplifications that \"gofmt -s\" applies.\n\nThis analyzer ignores generated code.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"simplifyslice\"",
 							"Doc": "check for slice simplifications\n\nA slice expression of the form:\n\n\ts[a:len(s)]\n\nwill be simplified to:\n\n\ts[a:]\n\nThis is one of the simplifications that \"gofmt -s\" applies.\n\nThis analyzer ignores generated code.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"slog\"",
 							"Doc": "check for invalid structured logging calls\n\nThe slog checker looks for calls to functions from the log/slog\npackage that take alternating key-value pairs. It reports calls\nwhere an argument in a key position is neither a string nor a\nslog.Attr, and where a final key is missing its value.\nFor example,it would report\n\n\tslog.Warn(\"message\", 11, \"k\") // slog.Warn arg \"11\" should be a string or a slog.Attr\n\nand\n\n\tslog.Info(\"message\", \"k1\", v1, \"k2\") // call to slog.Info missing a final value",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"sortslice\"",
 							"Doc": "check the argument type of sort.Slice\n\nsort.Slice requires an argument of a slice type. Check that\nthe interface{} value passed to sort.Slice is actually a slice.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"stdmethods\"",
 							"Doc": "check signature of methods of well-known interfaces\n\nSometimes a type may be intended to satisfy an interface but may fail to\ndo so because of a mistake in its method signature.\nFor example, the result of this WriteTo method should be (int64, error),\nnot error, to satisfy io.WriterTo:\n\n\ttype myWriterTo struct{...}\n\tfunc (myWriterTo) WriteTo(w io.Writer) error { ... }\n\nThis check ensures that each method whose name matches one of several\nwell-known interface methods from the standard library has the correct\nsignature for that interface.\n\nChecked method names include:\n\n\tFormat GobEncode GobDecode MarshalJSON MarshalXML\n\tPeek ReadByte ReadFrom ReadRune Scan Seek\n\tUnmarshalJSON UnreadByte UnreadRune WriteByte\n\tWriteTo",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"stdversion\"",
 							"Doc": "report uses of too-new standard library symbols\n\nThe stdversion analyzer reports references to symbols in the standard\nlibrary that were introduced by a Go release higher than the one in\nforce in the referring file. (Recall that the file's Go version is\ndefined by the 'go' directive its module's go.mod file, or by a\n\"//go:build go1.X\" build tag at the top of the file.)\n\nThe analyzer does not report a diagnostic for a reference to a \"too\nnew\" field or method of a type that is itself \"too new\", as this may\nhave false positives, for example if fields or methods are accessed\nthrough a type alias that is guarded by a Go version constraint.\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"stringintconv\"",
 							"Doc": "check for string(int) conversions\n\nThis checker flags conversions of the form string(x) where x is an integer\n(but not byte or rune) type. Such conversions are discouraged because they\nreturn the UTF-8 representation of the Unicode code point x, and not a decimal\nstring representation of x as one might expect. Furthermore, if x denotes an\ninvalid code point, the conversion cannot be statically rejected.\n\nFor conversions that intend on using the code point, consider replacing them\nwith string(rune(x)). Otherwise, strconv.Itoa and its equivalents return the\nstring representation of the value in the desired base.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"structtag\"",
 							"Doc": "check that struct field tags conform to reflect.StructTag.Get\n\nAlso report certain struct tags (json, xml) used with unexported fields.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"testinggoroutine\"",
 							"Doc": "report calls to (*testing.T).Fatal from goroutines started by a test\n\nFunctions that abruptly terminate a test, such as the Fatal, Fatalf, FailNow, and\nSkip{,f,Now} methods of *testing.T, must be called from the test goroutine itself.\nThis checker detects calls to these functions that occur within a goroutine\nstarted by the test. For example:\n\n\tfunc TestFoo(t *testing.T) {\n\t    go func() {\n\t        t.Fatal(\"oops\") // error: (*T).Fatal called from non-test goroutine\n\t    }()\n\t}",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"tests\"",
 							"Doc": "check for common mistaken usages of tests and examples\n\nThe tests checker walks Test, Benchmark, Fuzzing and Example functions checking\nmalformed names, wrong signatures and examples documenting non-existent\nidentifiers.\n\nPlease see the documentation for package testing in golang.org/pkg/testing\nfor the conventions that are enforced for Tests, Benchmarks, and Examples.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"timeformat\"",
 							"Doc": "check for calls of (time.Time).Format or time.Parse with 2006-02-01\n\nThe timeformat checker looks for time formats with the 2006-02-01 (yyyy-dd-mm)\nformat. Internationally, \"yyyy-dd-mm\" does not occur in common calendar date\nstandards, and so it is more likely that 2006-01-02 (yyyy-mm-dd) was intended.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"unmarshal\"",
 							"Doc": "report passing non-pointer or non-interface values to unmarshal\n\nThe unmarshal analysis reports calls to functions such as json.Unmarshal\nin which the argument type is not a pointer or an interface.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"unreachable\"",
 							"Doc": "check for unreachable code\n\nThe unreachable analyzer finds statements that execution can never reach\nbecause they are preceded by a return statement, a call to panic, an\ninfinite loop, or similar constructs.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"unsafeptr\"",
 							"Doc": "check for invalid conversions of uintptr to unsafe.Pointer\n\nThe unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer\nto convert integers to pointers. A conversion from uintptr to\nunsafe.Pointer is invalid if it implies that there is a uintptr-typed\nword in memory that holds a pointer value, because that word will be\ninvisible to stack copying and to the garbage collector.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"unusedfunc\"",
 							"Doc": "check for unused functions and methods\n\nThe unusedfunc analyzer reports functions and methods that are\nnever referenced outside of their own declaration.\n\nA function is considered unused if it is unexported and not\nreferenced (except within its own declaration).\n\nA method is considered unused if it is unexported, not referenced\n(except within its own declaration), and its name does not match\nthat of any method of an interface type declared within the same\npackage.\n\nThe tool may report false positives in some situations, for\nexample:\n\n  - For a declaration of an unexported function that is referenced\n    from another package using the go:linkname mechanism, if the\n    declaration's doc comment does not also have a go:linkname\n    comment.\n\n    (Such code is in any case strongly discouraged: linkname\n    annotations, if they must be used at all, should be used on both\n    the declaration and the alias.)\n\n  - For compiler intrinsics in the \"runtime\" package that, though\n    never referenced, are known to the compiler and are called\n    indirectly by compiled object code.\n\n  - For functions called only from assembly.\n\n  - For functions called only from files whose build tags are not\n    selected in the current build configuration.\n\nSee https://github.com/golang/go/issues/71686 for discussion of\nthese limitations.\n\nThe unusedfunc algorithm is not as precise as the\ngolang.org/x/tools/cmd/deadcode tool, but it has the advantage that\nit runs within the modular analysis framework, enabling near\nreal-time feedback within gopls.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"unusedparams\"",
 							"Doc": "check for unused parameters of functions\n\nThe unusedparams analyzer checks functions to see if there are\nany parameters that are not being used.\n\nTo ensure soundness, it ignores:\n  - \"address-taken\" functions, that is, functions that are used as\n    a value rather than being called directly; their signatures may\n    be required to conform to a func type.\n  - exported functions or methods, since they may be address-taken\n    in another package.\n  - unexported methods whose name matches an interface method\n    declared in the same package, since the method's signature\n    may be required to conform to the interface type.\n  - functions with empty bodies, or containing just a call to panic.\n  - parameters that are unnamed, or named \"_\", the blank identifier.\n\nThe analyzer suggests a fix of replacing the parameter name by \"_\",\nbut in such cases a deeper fix can be obtained by invoking the\n\"Refactor: remove unused parameter\" code action, which will\neliminate the parameter entirely, along with all corresponding\narguments at call sites, while taking care to preserve any side\neffects in the argument expressions; see\nhttps://github.com/golang/tools/releases/tag/gopls%2Fv0.14.\n\nThis analyzer ignores generated code.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"unusedresult\"",
 							"Doc": "check for unused results of calls to some functions\n\nSome functions like fmt.Errorf return a result and have no side\neffects, so it is always a mistake to discard the result. Other\nfunctions may return an error that must not be ignored, or a cleanup\noperation that must be called. This analyzer reports calls to\nfunctions like these when the result of the call is ignored.\n\nThe set of functions may be controlled using flags.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"unusedvariable\"",
 							"Doc": "check for unused variables and suggest fixes",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"unusedwrite\"",
 							"Doc": "checks for unused writes\n\nThe analyzer reports instances of writes to struct fields and\narrays that are never read. Specifically, when a struct object\nor an array is copied, its elements are copied implicitly by\nthe compiler, and any element write to this copy does nothing\nwith the original object.\n\nFor example:\n\n\ttype T struct { x int }\n\n\tfunc f(input []T) {\n\t\tfor i, v := range input {  // v is a copy\n\t\t\tv.x = i  // unused write to field x\n\t\t}\n\t}\n\nAnother example is about non-pointer receiver:\n\n\ttype T struct { x int }\n\n\tfunc (t T) f() {  // t is a copy\n\t\tt.x = i  // unused write to field x\n\t}",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"waitgroup\"",
 							"Doc": "check for misuses of sync.WaitGroup\n\nThis analyzer detects mistaken calls to the (*sync.WaitGroup).Add\nmethod from inside a new goroutine, causing Add to race with Wait:\n\n\t// WRONG\n\tvar wg sync.WaitGroup\n\tgo func() {\n\t        wg.Add(1) // \"WaitGroup.Add called from inside new goroutine\"\n\t        defer wg.Done()\n\t        ...\n\t}()\n\twg.Wait() // (may return prematurely before new goroutine starts)\n\nThe correct code calls Add before starting the goroutine:\n\n\t// RIGHT\n\tvar wg sync.WaitGroup\n\twg.Add(1)\n\tgo func() {\n\t\tdefer wg.Done()\n\t\t...\n\t}()\n\twg.Wait()",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"yield\"",
 							"Doc": "report calls to yield where the result is ignored\n\nAfter a yield function returns false, the caller should not call\nthe yield function again; generally the iterator should return\npromptly.\n\nThis example fails to check the result of the call to yield,\ncausing this analyzer to report a diagnostic:\n\n\tyield(1) // yield may be called again (on L2) after returning false\n\tyield(2)\n\nThe corrected code is either this:\n\n\tif yield(1) { yield(2) }\n\nor simply:\n\n\t_ = yield(1) \u0026\u0026 yield(2)\n\nIt is not always a mistake to ignore the result of yield.\nFor example, this is a valid single-element iterator:\n\n\tyield(1) // ok to ignore result\n\treturn\n\nIt is only a mistake when the yield call that returned false may be\nfollowed by another call.",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						}
 					]
 				},
@@ -699,22 +778,26 @@
 						{
 							"Name": "\"bounds\"",
 							"Doc": "`\"bounds\"` controls bounds checking diagnostics.\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"escape\"",
 							"Doc": "`\"escape\"` controls diagnostics about escape choices.\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"inline\"",
 							"Doc": "`\"inline\"` controls diagnostics about inlining choices.\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"nil\"",
 							"Doc": "`\"nil\"` controls nil checks.\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						}
 					]
 				},
@@ -735,11 +818,13 @@
 				"EnumValues": [
 					{
 						"Value": "\"Imports\"",
-						"Doc": "`\"Imports\"`: In Imports mode, `gopls` will report vulnerabilities that affect packages\ndirectly and indirectly used by the analyzed main module.\n"
+						"Doc": "`\"Imports\"`: In Imports mode, `gopls` will report vulnerabilities that affect packages\ndirectly and indirectly used by the analyzed main module.\n",
+						"Status": ""
 					},
 					{
 						"Value": "\"Off\"",
-						"Doc": "`\"Off\"`: Disable vulnerability analysis.\n"
+						"Doc": "`\"Off\"`: Disable vulnerability analysis.\n",
+						"Status": ""
 					}
 				],
 				"Default": "\"Off\"",
@@ -772,11 +857,13 @@
 				"EnumValues": [
 					{
 						"Value": "\"Edit\"",
-						"Doc": "`\"Edit\"`: Trigger diagnostics on file edit and save. (default)\n"
+						"Doc": "`\"Edit\"`: Trigger diagnostics on file edit and save. (default)\n",
+						"Status": ""
 					},
 					{
 						"Value": "\"Save\"",
-						"Doc": "`\"Save\"`: Trigger diagnostics only on file save. Events like initial workspace load\nor configuration change will still trigger diagnostics.\n"
+						"Doc": "`\"Save\"`: Trigger diagnostics only on file save. Events like initial workspace load\nor configuration change will still trigger diagnostics.\n",
+						"Status": ""
 					}
 				],
 				"Default": "\"Edit\"",
@@ -808,37 +895,44 @@
 						{
 							"Name": "\"assignVariableTypes\"",
 							"Doc": "`\"assignVariableTypes\"` controls inlay hints for variable types in assign statements:\n```go\n\ti/* int*/, j/* int*/ := 0, len(r)-1\n```\n",
-							"Default": "false"
+							"Default": "false",
+							"Status": ""
 						},
 						{
 							"Name": "\"compositeLiteralFields\"",
 							"Doc": "`\"compositeLiteralFields\"` inlay hints for composite literal field names:\n```go\n\t{/*in: */\"Hello, world\", /*want: */\"dlrow ,olleH\"}\n```\n",
-							"Default": "false"
+							"Default": "false",
+							"Status": ""
 						},
 						{
 							"Name": "\"compositeLiteralTypes\"",
 							"Doc": "`\"compositeLiteralTypes\"` controls inlay hints for composite literal types:\n```go\n\tfor _, c := range []struct {\n\t\tin, want string\n\t}{\n\t\t/*struct{ in string; want string }*/{\"Hello, world\", \"dlrow ,olleH\"},\n\t}\n```\n",
-							"Default": "false"
+							"Default": "false",
+							"Status": ""
 						},
 						{
 							"Name": "\"constantValues\"",
 							"Doc": "`\"constantValues\"` controls inlay hints for constant values:\n```go\n\tconst (\n\t\tKindNone   Kind = iota/* = 0*/\n\t\tKindPrint/*  = 1*/\n\t\tKindPrintf/* = 2*/\n\t\tKindErrorf/* = 3*/\n\t)\n```\n",
-							"Default": "false"
+							"Default": "false",
+							"Status": ""
 						},
 						{
 							"Name": "\"functionTypeParameters\"",
 							"Doc": "`\"functionTypeParameters\"` inlay hints for implicit type parameters on generic functions:\n```go\n\tmyFoo/*[int, string]*/(1, \"hello\")\n```\n",
-							"Default": "false"
+							"Default": "false",
+							"Status": ""
 						},
 						{
 							"Name": "\"parameterNames\"",
 							"Doc": "`\"parameterNames\"` controls inlay hints for parameter names:\n```go\n\tparseInt(/* str: */ \"123\", /* radix: */ 8)\n```\n",
-							"Default": "false"
+							"Default": "false",
+							"Status": ""
 						},
 						{
 							"Name": "\"rangeVariableTypes\"",
 							"Doc": "`\"rangeVariableTypes\"` controls inlay hints for variable types in range statements:\n```go\n\tfor k/* int*/, v/* string*/ := range []string{} {\n\t\tfmt.Println(k, v)\n\t}\n```\n",
-							"Default": "false"
+							"Default": "false",
+							"Status": ""
 						}
 					]
 				},
@@ -858,42 +952,50 @@
 						{
 							"Name": "\"generate\"",
 							"Doc": "`\"generate\"`: Run `go generate`\n\nThis codelens source annotates any `//go:generate` comments\nwith commands to run `go generate` in this directory, on\nall directories recursively beneath this one.\n\nSee [Generating code](https://go.dev/blog/generate) for\nmore details.\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"regenerate_cgo\"",
 							"Doc": "`\"regenerate_cgo\"`: Re-generate cgo declarations\n\nThis codelens source annotates an `import \"C\"` declaration\nwith a command to re-run the [cgo\ncommand](https://pkg.go.dev/cmd/cgo) to regenerate the\ncorresponding Go declarations.\n\nUse this after editing the C code in comments attached to\nthe import, or in C header files included by it.\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"run_govulncheck\"",
 							"Doc": "`\"run_govulncheck\"`: Run govulncheck (legacy)\n\nThis codelens source annotates the `module` directive in a go.mod file\nwith a command to run Govulncheck asynchronously.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that\ncomputes the set of functions reachable within your application, including\ndependencies; queries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
-							"Default": "false"
+							"Default": "false",
+							"Status": "experimental"
 						},
 						{
 							"Name": "\"test\"",
 							"Doc": "`\"test\"`: Run tests and benchmarks\n\nThis codelens source annotates each `Test` and `Benchmark`\nfunction in a `*_test.go` file with a command to run it.\n\nThis source is off by default because VS Code has\na client-side custom UI for testing, and because progress\nnotifications are not a great UX for streamed test output.\nSee:\n- golang/go#67400 for a discussion of this feature.\n- https://github.com/joaotavora/eglot/discussions/1402\n  for an alternative approach.\n",
-							"Default": "false"
+							"Default": "false",
+							"Status": ""
 						},
 						{
 							"Name": "\"tidy\"",
 							"Doc": "`\"tidy\"`: Tidy go.mod file\n\nThis codelens source annotates the `module` directive in a\ngo.mod file with a command to run [`go mod\ntidy`](https://go.dev/ref/mod#go-mod-tidy), which ensures\nthat the go.mod file matches the source code in the module.\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"upgrade_dependency\"",
 							"Doc": "`\"upgrade_dependency\"`: Update dependencies\n\nThis codelens source annotates the `module` directive in a\ngo.mod file with commands to:\n\n- check for available upgrades,\n- upgrade direct dependencies, and\n- upgrade all dependencies transitively.\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"vendor\"",
 							"Doc": "`\"vendor\"`: Update vendor directory\n\nThis codelens source annotates the `module` directive in a\ngo.mod file with a command to run [`go mod\nvendor`](https://go.dev/ref/mod#go-mod-vendor), which\ncreates or updates the directory named `vendor` in the\nmodule root so that it contains an up-to-date copy of all\nnecessary package dependencies.\n",
-							"Default": "true"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"vulncheck\"",
 							"Doc": "`\"vulncheck\"`: Run govulncheck\n\nThis codelens source annotates the `module` directive in a go.mod file\nwith a command to run govulncheck synchronously.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that\ncomputes the set of functions reachable within your application, including\ndependencies; queries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
-							"Default": "false"
+							"Default": "false",
+							"Status": "experimental"
 						}
 					]
 				},
@@ -1023,56 +1125,64 @@
 			"Lens": "generate",
 			"Title": "Run `go generate`",
 			"Doc": "\nThis codelens source annotates any `//go:generate` comments\nwith commands to run `go generate` in this directory, on\nall directories recursively beneath this one.\n\nSee [Generating code](https://go.dev/blog/generate) for\nmore details.\n",
-			"Default": true
+			"Default": true,
+			"Status": ""
 		},
 		{
 			"FileType": "Go",
 			"Lens": "regenerate_cgo",
 			"Title": "Re-generate cgo declarations",
 			"Doc": "\nThis codelens source annotates an `import \"C\"` declaration\nwith a command to re-run the [cgo\ncommand](https://pkg.go.dev/cmd/cgo) to regenerate the\ncorresponding Go declarations.\n\nUse this after editing the C code in comments attached to\nthe import, or in C header files included by it.\n",
-			"Default": true
+			"Default": true,
+			"Status": ""
 		},
 		{
 			"FileType": "Go",
 			"Lens": "test",
 			"Title": "Run tests and benchmarks",
 			"Doc": "\nThis codelens source annotates each `Test` and `Benchmark`\nfunction in a `*_test.go` file with a command to run it.\n\nThis source is off by default because VS Code has\na client-side custom UI for testing, and because progress\nnotifications are not a great UX for streamed test output.\nSee:\n- golang/go#67400 for a discussion of this feature.\n- https://github.com/joaotavora/eglot/discussions/1402\n  for an alternative approach.\n",
-			"Default": false
+			"Default": false,
+			"Status": ""
 		},
 		{
 			"FileType": "go.mod",
 			"Lens": "run_govulncheck",
 			"Title": "Run govulncheck (legacy)",
 			"Doc": "\nThis codelens source annotates the `module` directive in a go.mod file\nwith a command to run Govulncheck asynchronously.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that\ncomputes the set of functions reachable within your application, including\ndependencies; queries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
-			"Default": false
+			"Default": false,
+			"Status": "experimental"
 		},
 		{
 			"FileType": "go.mod",
 			"Lens": "tidy",
 			"Title": "Tidy go.mod file",
 			"Doc": "\nThis codelens source annotates the `module` directive in a\ngo.mod file with a command to run [`go mod\ntidy`](https://go.dev/ref/mod#go-mod-tidy), which ensures\nthat the go.mod file matches the source code in the module.\n",
-			"Default": true
+			"Default": true,
+			"Status": ""
 		},
 		{
 			"FileType": "go.mod",
 			"Lens": "upgrade_dependency",
 			"Title": "Update dependencies",
 			"Doc": "\nThis codelens source annotates the `module` directive in a\ngo.mod file with commands to:\n\n- check for available upgrades,\n- upgrade direct dependencies, and\n- upgrade all dependencies transitively.\n",
-			"Default": true
+			"Default": true,
+			"Status": ""
 		},
 		{
 			"FileType": "go.mod",
 			"Lens": "vendor",
 			"Title": "Update vendor directory",
 			"Doc": "\nThis codelens source annotates the `module` directive in a\ngo.mod file with a command to run [`go mod\nvendor`](https://go.dev/ref/mod#go-mod-vendor), which\ncreates or updates the directory named `vendor` in the\nmodule root so that it contains an up-to-date copy of all\nnecessary package dependencies.\n",
-			"Default": true
+			"Default": true,
+			"Status": ""
 		},
 		{
 			"FileType": "go.mod",
 			"Lens": "vulncheck",
 			"Title": "Run govulncheck",
 			"Doc": "\nThis codelens source annotates the `module` directive in a go.mod file\nwith a command to run govulncheck synchronously.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that\ncomputes the set of functions reachable within your application, including\ndependencies; queries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
-			"Default": false
+			"Default": false,
+			"Status": "experimental"
 		}
 	],
 	"Analyzers": [
@@ -1417,37 +1527,44 @@
 		{
 			"Name": "assignVariableTypes",
 			"Doc": "`\"assignVariableTypes\"` controls inlay hints for variable types in assign statements:\n```go\n\ti/* int*/, j/* int*/ := 0, len(r)-1\n```\n",
-			"Default": false
+			"Default": false,
+			"Status": ""
 		},
 		{
 			"Name": "compositeLiteralFields",
 			"Doc": "`\"compositeLiteralFields\"` inlay hints for composite literal field names:\n```go\n\t{/*in: */\"Hello, world\", /*want: */\"dlrow ,olleH\"}\n```\n",
-			"Default": false
+			"Default": false,
+			"Status": ""
 		},
 		{
 			"Name": "compositeLiteralTypes",
 			"Doc": "`\"compositeLiteralTypes\"` controls inlay hints for composite literal types:\n```go\n\tfor _, c := range []struct {\n\t\tin, want string\n\t}{\n\t\t/*struct{ in string; want string }*/{\"Hello, world\", \"dlrow ,olleH\"},\n\t}\n```\n",
-			"Default": false
+			"Default": false,
+			"Status": ""
 		},
 		{
 			"Name": "constantValues",
 			"Doc": "`\"constantValues\"` controls inlay hints for constant values:\n```go\n\tconst (\n\t\tKindNone   Kind = iota/* = 0*/\n\t\tKindPrint/*  = 1*/\n\t\tKindPrintf/* = 2*/\n\t\tKindErrorf/* = 3*/\n\t)\n```\n",
-			"Default": false
+			"Default": false,
+			"Status": ""
 		},
 		{
 			"Name": "functionTypeParameters",
 			"Doc": "`\"functionTypeParameters\"` inlay hints for implicit type parameters on generic functions:\n```go\n\tmyFoo/*[int, string]*/(1, \"hello\")\n```\n",
-			"Default": false
+			"Default": false,
+			"Status": ""
 		},
 		{
 			"Name": "parameterNames",
 			"Doc": "`\"parameterNames\"` controls inlay hints for parameter names:\n```go\n\tparseInt(/* str: */ \"123\", /* radix: */ 8)\n```\n",
-			"Default": false
+			"Default": false,
+			"Status": ""
 		},
 		{
 			"Name": "rangeVariableTypes",
 			"Doc": "`\"rangeVariableTypes\"` controls inlay hints for variable types in range statements:\n```go\n\tfor k/* int*/, v/* string*/ := range []string{} {\n\t\tfmt.Println(k, v)\n\t}\n```\n",
-			"Default": false
+			"Default": false,
+			"Status": ""
 		}
 	]
 }

@@ -47,11 +47,13 @@ type EnumKey struct {
 	Name    string // in JSON syntax (quoted)
 	Doc     string
 	Default string
+	Status  string // = "" | "advanced" | "experimental" | "deprecated"
 }
 
 type EnumValue struct {
-	Value string // in JSON syntax (quoted)
-	Doc   string // doc comment; always starts with `Value`
+	Value  string // in JSON syntax (quoted)
+	Doc    string // doc comment; always starts with `Value`
+	Status string // = "" | "advanced" | "experimental" | "deprecated"
 }
 
 type Lens struct {
@@ -60,6 +62,7 @@ type Lens struct {
 	Title    string
 	Doc      string
 	Default  bool
+	Status   string // = "" | "advanced" | "experimental" | "deprecated"
 }
 
 type Analyzer struct {
@@ -73,4 +76,5 @@ type Hint struct {
 	Name    string
 	Doc     string
 	Default bool
+	Status  string // = "" | "advanced" | "experimental" | "deprecated"
 }

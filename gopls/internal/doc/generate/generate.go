@@ -317,9 +317,17 @@ func loadEnums(pkg *packages.Package) (map[types.Type][]doc.EnumValue, error) {
 		spec := path[1].(*ast.ValueSpec)
 		value := cnst.Val().ExactString()
 		docstring := valueDoc(cnst.Name(), value, spec.Doc.Text())
+		var status string
+		for _, d := range internalastutil.Directives(spec.Doc) {
+			if d.Tool == "gopls" && d.Name == "status" {
+				status = d.Args
+				break
+			}
+		}
 		v := doc.EnumValue{
-			Value: value,
-			Doc:   docstring,
+			Value:  value,
+			Doc:    docstring,
+			Status: status,
 		}
 		enums[obj.Type()] = append(enums[obj.Type()], v)
 	}
@@ -354,6 +362,7 @@ func collectEnumKeys(m *types.Map, reflectField reflect.Value, enumValues []doc.
 		keys = append(keys, doc.EnumKey{
 			Name:    v.Value,
 			Doc:     v.Doc,
+			Status:  v.Status,
 			Default: def,
 		})
 	}
@@ -436,6 +445,7 @@ func loadLenses(settingsPkg *packages.Package, defaults map[settings.CodeLensSou
 	// Find the CodeLensSource enums among the files of the protocol package.
 	// Map each enum value to its doc comment.
 	enumDoc := make(map[string]string)
+	enumStatus := make(map[string]string)
 	for _, f := range settingsPkg.Syntax {
 		for _, decl := range f.Decls {
 			if decl, ok := decl.(*ast.GenDecl); ok && decl.Tok == token.CONST {
@@ -455,6 +465,12 @@ func loadLenses(settingsPkg *packages.Package, defaults map[settings.CodeLensSou
 							return nil, fmt.Errorf("%s: %s lacks doc comment", posn, spec.Names[0].Name)
 						}
 						enumDoc[value] = spec.Doc.Text()
+						for _, d := range internalastutil.Directives(spec.Doc) {
+							if d.Tool == "gopls" && d.Name == "status" {
+								enumStatus[value] = d.Args
+								break
+							}
+						}
 					}
 				}
 			}
@@ -479,6 +495,7 @@ func loadLenses(settingsPkg *packages.Package, defaults map[settings.CodeLensSou
 				Title:    title,
 				Doc:      docText,
 				Default:  defaults[source],
+				Status:   enumStatus[string(source)],
 			})
 		}
 		return nil
@@ -518,8 +535,9 @@ func loadHints(settingsPkg *packages.Package) ([]*doc.Hint, error) {
 	for _, enumVal := range enums[inlayHint] {
 		name, _ := strconv.Unquote(enumVal.Value)
 		hints = append(hints, &doc.Hint{
-			Name: name,
-			Doc:  enumVal.Doc,
+			Name:   name,
+			Doc:    enumVal.Doc,
+			Status: enumVal.Status,
 		})
 	}
 	return hints, nil
@@ -600,17 +618,7 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 				fmt.Fprintf(&buf, "### `%s %s`\n\n", opt.Name, opt.Type)
 
 				// status
-				switch opt.Status {
-				case "":
-				case "advanced":
-					fmt.Fprint(&buf, "**This is an advanced setting and should not be configured by most `gopls` users.**\n\n")
-				case "debug":
-					fmt.Fprint(&buf, "**This setting is for debugging purposes only.**\n\n")
-				case "experimental":
-					fmt.Fprint(&buf, "**This setting is experimental and may be deleted.**\n\n")
-				default:
-					fmt.Fprintf(&buf, "**Status: %s.**\n\n", opt.Status)
-				}
+				writeStatus(&buf, opt.Status)
 
 				// doc comment
 				buf.WriteString(opt.Doc)
@@ -649,6 +657,22 @@ func rewriteSettings(prevContent []byte, api *doc.API) ([]byte, error) {
 		content = newContent
 	}
 	return content, nil
+}
+
+// writeStatus emits a Markdown paragraph to buf about the status of a feature,
+// if nonempty.
+func writeStatus(buf *bytes.Buffer, status string) {
+	switch status {
+	case "":
+	case "advanced":
+		fmt.Fprint(buf, "**This is an advanced setting and should not be configured by most `gopls` users.**\n\n")
+	case "debug":
+		fmt.Fprint(buf, "**This setting is for debugging purposes only.**\n\n")
+	case "experimental":
+		fmt.Fprint(buf, "**This setting is experimental and may be deleted.**\n\n")
+	default:
+		fmt.Fprintf(buf, "**Status: %s.**\n\n", status)
+	}
 }
 
 var parBreakRE = regexp.MustCompile("\n{2,}")
@@ -722,6 +746,7 @@ func rewriteCodeLenses(prevContent []byte, api *doc.API) ([]byte, error) {
 	var buf bytes.Buffer
 	for _, lens := range api.Lenses {
 		fmt.Fprintf(&buf, "## `%s`: %s\n\n", lens.Lens, lens.Title)
+		writeStatus(&buf, lens.Status)
 		fmt.Fprintf(&buf, "%s\n\n", lens.Doc)
 		fmt.Fprintf(&buf, "Default: %v\n\n", onOff(lens.Default))
 		fmt.Fprintf(&buf, "File type: %s\n\n", lens.FileType)
