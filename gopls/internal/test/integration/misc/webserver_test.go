@@ -604,18 +604,24 @@ func init() {
 		// Check that code in a package-level var initializer is found too.
 		{
 			report := asmFor(`f\(123\)`)
-			checkMatch(t, true, report, `TEXT.*example.com/a.init`)
-			checkMatch(t, true, report, `MOV.?	\$123`)
-			checkMatch(t, true, report, `MOV.?	\$456`)
-			checkMatch(t, true, report, `CALL	example.com/a.f`)
+			switch runtime.GOARCH {
+			case "amd64", "arm64":
+				checkMatch(t, true, report, `TEXT.*example.com/a.init`)
+				checkMatch(t, true, report, `MOV.?	\$123`)
+				checkMatch(t, true, report, `MOV.?	\$456`)
+				checkMatch(t, true, report, `CALL	example.com/a.f`)
+			}
 		}
 
 		// And code in a source-level init function.
 		{
 			report := asmFor(`f\(789\)`)
-			checkMatch(t, true, report, `TEXT.*example.com/a.init`)
-			checkMatch(t, true, report, `MOV.?	\$789`)
-			checkMatch(t, true, report, `CALL	example.com/a.f`)
+			switch runtime.GOARCH {
+			case "amd64", "arm64":
+				checkMatch(t, true, report, `TEXT.*example.com/a.init`)
+				checkMatch(t, true, report, `MOV.?	\$789`)
+				checkMatch(t, true, report, `CALL	example.com/a.f`)
+			}
 		}
 	})
 }
