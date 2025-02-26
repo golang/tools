@@ -337,12 +337,16 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 				msg := fmt.Sprintf("Declare missing method %s.%s", si.Receiver.Obj().Name(), si.MethodName)
 				req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
 			} else {
-				// Offer a "Declare missing field T.f" code action.
+				// Offer a "Declare missing field T.f" code action AND "Declare missing method T.f" as specified above
 				// See [stubMissingStructFieldFixer] for command implementation.
 				fi := stubmethods.GetFieldStubInfo(req.pkg.FileSet(), info, path)
 				if fi != nil {
 					msg := fmt.Sprintf("Declare missing struct field %s.%s", fi.Named.Obj().Name(), fi.Expr.Sel.Name)
 					req.addApplyFixAction(msg, fixMissingStructField, req.loc)
+
+					// undeclared field might be a method
+					msg = fmt.Sprintf("Declare missing method %s.%s", fi.Named.Obj().Name(), fi.Expr.Sel.Name)
+					req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
 				}
 			}
 

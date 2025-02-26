@@ -204,7 +204,7 @@ func insertStructField(ctx context.Context, snapshot *cache.Snapshot, mp *metada
 	var structType *ast.StructType
 	ast.Inspect(declPGF.File, func(n ast.Node) bool {
 		if typeSpec, ok := n.(*ast.TypeSpec); ok {
-			if typeSpec.Name.Name == fieldInfo.Object.Name() {
+			if typeSpec.Name.Name == fieldInfo.Named.Obj().Name() {
 				if st, ok := typeSpec.Type.(*ast.StructType); ok {
 					structType = st
 					return false

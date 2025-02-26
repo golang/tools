@@ -62,17 +62,11 @@ func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.
 
 	switch parent := parent.(type) {
 	case *ast.AssignStmt:
-		right := false
-		for _, rhs := range parent.Rhs {
-			if astutil.NodeContains(rhs, pos) {
-				right = true
-				break
-			}
-		}
+		right := pos > parent.TokPos
 		if right {
-			typs = append(typs, typeFromExprAssignExpr(parent.Rhs, parent.Lhs, info, path, pos, validType)...)
+			typs = append(typs, typeFromExprAssignExpr(parent.Rhs, parent.Lhs, info, pos, validType)...)
 		} else {
-			typs = append(typs, typeFromExprAssignExpr(parent.Lhs, parent.Rhs, info, path, pos, validType)...)
+			typs = append(typs, typeFromExprAssignExpr(parent.Lhs, parent.Rhs, info, pos, validType)...)
 		}
 	case *ast.ValueSpec:
 		if len(parent.Values) == 1 {
@@ -234,7 +228,10 @@ func EnclosingSignature(path []ast.Node, info *types.Info) *types.Signature {
 	return nil
 }
 
-func typeFromExprAssignExpr(exprs, opposites []ast.Expr, info *types.Info, path []ast.Node, pos token.Pos, validType func(t types.Type) types.Type) []types.Type {
+// typeFromExprAssignExpr extracts a type from a given expression
+// f.x = v
+// where v - a value which type the function extracts
+func typeFromExprAssignExpr(exprs, opposites []ast.Expr, info *types.Info, pos token.Pos, validType func(t types.Type) types.Type) []types.Type {
 	typs := make([]types.Type, 0)
 	// Append all lhs's type
 	if len(exprs) == 1 {
@@ -250,7 +247,7 @@ func typeFromExprAssignExpr(exprs, opposites []ast.Expr, info *types.Info, path 
 	}
 	// Append corresponding index of lhs's type
 	for i := range exprs {
-		if exprs[i].Pos() <= pos && pos <= exprs[i].End() {
+		if astutil.NodeContains(exprs[i], pos) {
 			t := info.TypeOf(opposites[i])
 			typs = append(typs, validType(t))
 			break
