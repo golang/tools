@@ -63,9 +63,6 @@ type Application struct {
 	// VeryVerbose enables a higher level of verbosity in logging output.
 	VeryVerbose bool `flag:"vv,veryverbose" help:"very verbose output"`
 
-	// Control ocagent export of telemetry
-	OCAgent string `flag:"ocagent" help:"the address of the ocagent (e.g. http://localhost:55678), or off"`
-
 	// PrepareOptions is called to update the options when a new view is built.
 	// It is primarily to allow the behavior of gopls to be modified by hooks.
 	PrepareOptions func(*settings.Options)
@@ -98,8 +95,6 @@ func (app *Application) verbose() bool {
 // New returns a new Application ready to run.
 func New() *Application {
 	app := &Application{
-		OCAgent: "off", //TODO: Remove this line to default the exporter to on
-
 		Serve: Serve{
 			RemoteListenTimeout: 1 * time.Minute,
 		},
@@ -238,7 +233,7 @@ func (app *Application) Run(ctx context.Context, args ...string) error {
 	// executable, and immediately runs a gc.
 	filecache.Start()
 
-	ctx = debug.WithInstance(ctx, app.OCAgent)
+	ctx = debug.WithInstance(ctx)
 	if len(args) == 0 {
 		s := flag.NewFlagSet(app.Name(), flag.ExitOnError)
 		return tool.Run(ctx, s, &app.Serve, args)

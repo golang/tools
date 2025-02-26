@@ -33,7 +33,6 @@ import (
 	"golang.org/x/tools/internal/event/core"
 	"golang.org/x/tools/internal/event/export"
 	"golang.org/x/tools/internal/event/export/metric"
-	"golang.org/x/tools/internal/event/export/ocagent"
 	"golang.org/x/tools/internal/event/export/prometheus"
 	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/event/label"
@@ -51,13 +50,11 @@ type Instance struct {
 	Logfile       string
 	StartTime     time.Time
 	ServerAddress string
-	OCAgentConfig string
 
 	LogWriter io.Writer
 
 	exporter event.Exporter
 
-	ocagent    *ocagent.Exporter
 	prometheus *prometheus.Exporter
 	rpcs       *Rpcs
 	traces     *traces
@@ -363,16 +360,11 @@ func GetInstance(ctx context.Context) *Instance {
 
 // WithInstance creates debug instance ready for use using the supplied
 // configuration and stores it in the returned context.
-func WithInstance(ctx context.Context, agent string) context.Context {
+func WithInstance(ctx context.Context) context.Context {
 	i := &Instance{
-		StartTime:     time.Now(),
-		OCAgentConfig: agent,
+		StartTime: time.Now(),
 	}
 	i.LogWriter = os.Stderr
-	ocConfig := ocagent.Discover()
-	//TODO: we should not need to adjust the discovered configuration
-	ocConfig.Address = i.OCAgentConfig
-	i.ocagent = ocagent.Connect(ocConfig)
 	i.prometheus = prometheus.New()
 	i.rpcs = &Rpcs{}
 	i.traces = &traces{}
@@ -541,9 +533,6 @@ func messageType(l log.Level) protocol.MessageType {
 
 func makeInstanceExporter(i *Instance) event.Exporter {
 	exporter := func(ctx context.Context, ev core.Event, lm label.Map) context.Context {
-		if i.ocagent != nil {
-			ctx = i.ocagent.ProcessEvent(ctx, ev, lm)
-		}
 		if i.prometheus != nil {
 			ctx = i.prometheus.ProcessEvent(ctx, ev, lm)
 		}
