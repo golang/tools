@@ -30,12 +30,16 @@ import (
 var doc string
 
 var Analyzer = &analysis.Analyzer{
-	Name:      "gofix",
-	Doc:       analysisinternal.MustExtractDoc(doc, "gofix"),
-	URL:       "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix",
-	Run:       run,
-	FactTypes: []analysis.Fact{new(goFixInlineFuncFact), new(goFixInlineConstFact)},
-	Requires:  []*analysis.Analyzer{inspect.Analyzer},
+	Name: "gofix",
+	Doc:  analysisinternal.MustExtractDoc(doc, "gofix"),
+	URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix",
+	Run:  run,
+	FactTypes: []analysis.Fact{
+		(*goFixInlineFuncFact)(nil),
+		(*goFixInlineConstFact)(nil),
+		(*goFixInlineAliasFact)(nil),
+	},
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
 }
 
 // analyzer holds the state for this analysis.
