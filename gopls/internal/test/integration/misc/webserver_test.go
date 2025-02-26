@@ -605,8 +605,8 @@ func init() {
 		{
 			report := asmFor(`f\(123\)`)
 			checkMatch(t, true, report, `TEXT.*example.com/a.init`)
-			checkMatch(t, true, report, `MOV.	\$123`)
-			checkMatch(t, true, report, `MOV.	\$456`)
+			checkMatch(t, true, report, `MOV.?	\$123`)
+			checkMatch(t, true, report, `MOV.?	\$456`)
 			checkMatch(t, true, report, `CALL	example.com/a.f`)
 		}
 
@@ -614,7 +614,7 @@ func init() {
 		{
 			report := asmFor(`f\(789\)`)
 			checkMatch(t, true, report, `TEXT.*example.com/a.init`)
-			checkMatch(t, true, report, `MOV.	\$789`)
+			checkMatch(t, true, report, `MOV.?	\$789`)
 			checkMatch(t, true, report, `CALL	example.com/a.f`)
 		}
 	})
