@@ -1356,7 +1356,7 @@ func (o *Options) EnabledSemanticTokenModifiers() map[semtok.Modifier]bool {
 // EncodeSemanticTokenTypes returns a map of types to boolean.
 func (o *Options) EnabledSemanticTokenTypes() map[semtok.Type]bool {
 	copy := make(map[semtok.Type]bool, len(o.SemanticTokenTypes))
-	for k, v := range o.SemanticTokenModifiers {
+	for k, v := range o.SemanticTokenTypes {
 		copy[semtok.Type(k)] = v
 	}
 	if o.NoSemanticString {
