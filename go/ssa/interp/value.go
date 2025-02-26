@@ -48,7 +48,7 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 )
 
-type value interface{}
+type value any
 
 type tuple []value
 
@@ -123,7 +123,7 @@ func usesBuiltinMap(t types.Type) bool {
 	panic(fmt.Sprintf("invalid map key type: %T", t))
 }
 
-func (x array) eq(t types.Type, _y interface{}) bool {
+func (x array) eq(t types.Type, _y any) bool {
 	y := _y.(array)
 	tElt := t.Underlying().(*types.Array).Elem()
 	for i, xi := range x {
@@ -143,7 +143,7 @@ func (x array) hash(t types.Type) int {
 	return h
 }
 
-func (x structure) eq(t types.Type, _y interface{}) bool {
+func (x structure) eq(t types.Type, _y any) bool {
 	y := _y.(structure)
 	tStruct := t.Underlying().(*types.Struct)
 	for i, n := 0, tStruct.NumFields(); i < n; i++ {
@@ -175,7 +175,7 @@ func sameType(x, y types.Type) bool {
 	return y != nil && types.Identical(x, y)
 }
 
-func (x iface) eq(t types.Type, _y interface{}) bool {
+func (x iface) eq(t types.Type, _y any) bool {
 	y := _y.(iface)
 	return sameType(x.t, y.t) && (x.t == nil || equals(x.t, x.v, y.v))
 }
@@ -188,7 +188,7 @@ func (x rtype) hash(_ types.Type) int {
 	return hashType(x.t)
 }
 
-func (x rtype) eq(_ types.Type, y interface{}) bool {
+func (x rtype) eq(_ types.Type, y any) bool {
 	return types.Identical(x.t, y.(rtype).t)
 }
 

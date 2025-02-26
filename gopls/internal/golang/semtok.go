@@ -616,7 +616,7 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 		obj  types.Object
 		ok   bool
 	)
-	if obj, ok = tv.info.Defs[id]; obj != nil {
+	if obj, _ = tv.info.Defs[id]; obj != nil {
 		// definition
 		mods = append(mods, semtok.ModDefinition)
 		tok, mods = tv.appendObjectModifiers(mods, obj)

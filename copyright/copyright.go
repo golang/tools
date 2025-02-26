@@ -75,7 +75,7 @@ func checkFile(toolsDir, filename string) (bool, error) {
 		return false, err
 	}
 	// Don't require headers on generated files.
-	if isGenerated(fset, parsed) {
+	if ast.IsGenerated(parsed) {
 		return false, nil
 	}
 	shouldAddCopyright := true
@@ -90,25 +90,4 @@ func checkFile(toolsDir, filename string) (bool, error) {
 		}
 	}
 	return shouldAddCopyright, nil
-}
-
-// Copied from golang.org/x/tools/gopls/internal/golang/util.go.
-// Matches cgo generated comment as well as the proposed standard:
-//
-//	https://golang.org/s/generatedcode
-var generatedRx = regexp.MustCompile(`// .*DO NOT EDIT\.?`)
-
-func isGenerated(fset *token.FileSet, file *ast.File) bool {
-	for _, commentGroup := range file.Comments {
-		for _, comment := range commentGroup.List {
-			if matched := generatedRx.MatchString(comment.Text); !matched {
-				continue
-			}
-			// Check if comment is at the beginning of the line in source.
-			if pos := fset.Position(comment.Slash); pos.Column == 1 {
-				return true
-			}
-		}
-	}
-	return false
 }

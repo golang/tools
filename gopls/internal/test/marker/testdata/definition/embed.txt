@@ -322,6 +322,8 @@ func (a.A) Hi()
 -- @aAlias --
 ```go
 type aAlias = a.A // size=16 (0x10)
+
+type A string
 ```
 
 ---

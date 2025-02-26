@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil/cursor"
 )
 
 // A File contains the results of parsing a Go file.
@@ -31,6 +32,8 @@ type File struct {
 	// Source code used to build the AST. It may be different from the
 	// actual content of the file if we have fixed the AST.
 	Src []byte
+
+	Cursor cursor.Cursor // cursor of *ast.File, sans sibling files
 
 	// fixedSrc and fixedAST report on "fixing" that occurred during parsing of
 	// this file.
@@ -71,15 +74,14 @@ func (pgf *File) PositionPos(p protocol.Position) (token.Pos, error) {
 	return safetoken.Pos(pgf.Tok, offset)
 }
 
+// PosPosition returns a protocol Position for the token.Pos in this file.
+func (pgf *File) PosPosition(pos token.Pos) (protocol.Position, error) {
+	return pgf.Mapper.PosPosition(pgf.Tok, pos)
+}
+
 // PosRange returns a protocol Range for the token.Pos interval in this file.
 func (pgf *File) PosRange(start, end token.Pos) (protocol.Range, error) {
 	return pgf.Mapper.PosRange(pgf.Tok, start, end)
-}
-
-// PosMappedRange returns a MappedRange for the token.Pos interval in this file.
-// A MappedRange can be converted to any other form.
-func (pgf *File) PosMappedRange(start, end token.Pos) (protocol.MappedRange, error) {
-	return pgf.Mapper.PosMappedRange(pgf.Tok, start, end)
 }
 
 // PosLocation returns a protocol Location for the token.Pos interval in this file.
@@ -95,12 +97,6 @@ func (pgf *File) NodeRange(node ast.Node) (protocol.Range, error) {
 // NodeOffsets returns offsets for the ast.Node.
 func (pgf *File) NodeOffsets(node ast.Node) (start int, end int, _ error) {
 	return safetoken.Offsets(pgf.Tok, node.Pos(), node.End())
-}
-
-// NodeMappedRange returns a MappedRange for the ast.Node interval in this file.
-// A MappedRange can be converted to any other form.
-func (pgf *File) NodeMappedRange(node ast.Node) (protocol.MappedRange, error) {
-	return pgf.Mapper.NodeMappedRange(pgf.Tok, node)
 }
 
 // NodeLocation returns a protocol Location for the ast.Node interval in this file.

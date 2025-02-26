@@ -323,20 +323,20 @@ func addGoEnvToInitializeRequest(ctx context.Context, r jsonrpc2.Request) (jsonr
 	if err := json.Unmarshal(r.Params(), &params); err != nil {
 		return nil, err
 	}
-	var opts map[string]interface{}
+	var opts map[string]any
 	switch v := params.InitializationOptions.(type) {
 	case nil:
-		opts = make(map[string]interface{})
-	case map[string]interface{}:
+		opts = make(map[string]any)
+	case map[string]any:
 		opts = v
 	default:
 		return nil, fmt.Errorf("unexpected type for InitializationOptions: %T", v)
 	}
 	envOpt, ok := opts["env"]
 	if !ok {
-		envOpt = make(map[string]interface{})
+		envOpt = make(map[string]any)
 	}
-	env, ok := envOpt.(map[string]interface{})
+	env, ok := envOpt.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf(`env option is %T, expected a map`, envOpt)
 	}
@@ -368,7 +368,7 @@ func (f *forwarder) replyWithDebugAddress(outerCtx context.Context, r jsonrpc2.R
 		event.Log(outerCtx, "no debug instance to start")
 		return r
 	}
-	return func(ctx context.Context, result interface{}, outerErr error) error {
+	return func(ctx context.Context, result any, outerErr error) error {
 		if outerErr != nil {
 			return r(ctx, result, outerErr)
 		}

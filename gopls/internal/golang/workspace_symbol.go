@@ -293,14 +293,12 @@ func (c comboMatcher) match(chunks []string) (int, float64) {
 func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherType settings.SymbolMatcher, symbolizer symbolizer, query string) ([]protocol.SymbolInformation, error) {
 	// Extract symbols from all files.
 	var work []symbolFile
-	var roots []string
 	seen := make(map[protocol.DocumentURI]*metadata.Package) // only scan each file once
 
 	for _, snapshot := range snapshots {
 		// Use the root view URIs for determining (lexically)
 		// whether a URI is in any open workspace.
 		folderURI := snapshot.Folder()
-		roots = append(roots, strings.TrimRight(string(folderURI), "/"))
 
 		filters := snapshot.Options().DirectoryFilters
 		filterer := cache.NewFilterer(filters)

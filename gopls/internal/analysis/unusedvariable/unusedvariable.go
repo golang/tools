@@ -13,10 +13,12 @@ import (
 	"go/token"
 	"go/types"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
@@ -45,7 +47,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if len(match) > 0 {
 				varName := match[1]
 				// Beginning in Go 1.23, go/types began quoting vars as `v'.
-				varName = strings.Trim(varName, "'`'")
+				varName = strings.Trim(varName, "`'")
 
 				err := runForError(pass, typeErr, varName)
 				if err != nil {
@@ -165,16 +167,13 @@ func removeVariableFromSpec(pass *analysis.Pass, path []ast.Node, stmt *ast.Valu
 		// Find parent DeclStmt and delete it
 		for _, node := range path {
 			if declStmt, ok := node.(*ast.DeclStmt); ok {
-				edits := deleteStmtFromBlock(pass.Fset, path, declStmt)
-				if len(edits) == 0 {
-					return nil // can this happen?
-				}
-				return []analysis.SuggestedFix{
-					{
+				if edits := deleteStmtFromBlock(pass.Fset, path, declStmt); len(edits) > 0 {
+					return []analysis.SuggestedFix{{
 						Message:   suggestedFixMessage(ident.Name),
 						TextEdits: edits,
-					},
+					}}
 				}
+				return nil
 			}
 		}
 	}
@@ -222,16 +221,13 @@ func removeVariableFromAssignment(fset *token.FileSet, path []ast.Node, stmt *as
 		}
 
 		// RHS does not have any side effects, delete the whole statement
-		edits := deleteStmtFromBlock(fset, path, stmt)
-		if len(edits) == 0 {
-			return nil // can this happen?
-		}
-		return []analysis.SuggestedFix{
-			{
+		if edits := deleteStmtFromBlock(fset, path, stmt); len(edits) > 0 {
+			return []analysis.SuggestedFix{{
 				Message:   suggestedFixMessage(ident.Name),
 				TextEdits: edits,
-			},
+			}}
 		}
+		return nil
 	}
 
 	// Otherwise replace ident with `_`
@@ -253,34 +249,48 @@ func suggestedFixMessage(name string) string {
 	return fmt.Sprintf("Remove variable %s", name)
 }
 
+// deleteStmtFromBlock returns the edits to remove stmt if its parent is a BlockStmt.
+// (stmt is not necessarily the leaf, path[0].)
+//
+// It returns nil if the parent is not a block, as in these examples:
+//
+//	switch STMT; {}
+//	switch { default: STMT }
+//	select { default: STMT }
+//
+// TODO(adonovan): handle these cases too.
 func deleteStmtFromBlock(fset *token.FileSet, path []ast.Node, stmt ast.Stmt) []analysis.TextEdit {
-	// Find innermost enclosing BlockStmt.
-	var block *ast.BlockStmt
-	for i := range path {
-		if blockStmt, ok := path[i].(*ast.BlockStmt); ok {
-			block = blockStmt
-			break
-		}
+	// TODO(adonovan): simplify using Cursor API.
+	i := slices.Index(path, ast.Node(stmt)) // must be present
+	block, ok := path[i+1].(*ast.BlockStmt)
+	if !ok {
+		return nil // parent is not a BlockStmt
 	}
 
-	nodeIndex := -1
-	for i, blockStmt := range block.List {
-		if blockStmt == stmt {
-			nodeIndex = i
-			break
-		}
-	}
-
-	// The statement we need to delete was not found in BlockStmt
+	nodeIndex := slices.Index(block.List, stmt)
 	if nodeIndex == -1 {
+		bug.Reportf("%s: Stmt not found in BlockStmt.List", safetoken.StartPosition(fset, stmt.Pos())) // refine #71812
+		return nil
+	}
+
+	if !stmt.Pos().IsValid() {
+		bug.Reportf("%s: invalid Stmt.Pos", safetoken.StartPosition(fset, stmt.Pos())) // refine #71812
 		return nil
 	}
 
 	// Delete until the end of the block unless there is another statement after
 	// the one we are trying to delete
 	end := block.Rbrace
+	if !end.IsValid() {
+		bug.Reportf("%s: BlockStmt has no Rbrace", safetoken.StartPosition(fset, block.Pos())) // refine #71812
+		return nil
+	}
 	if nodeIndex < len(block.List)-1 {
 		end = block.List[nodeIndex+1].Pos()
+		if end < stmt.Pos() {
+			bug.Reportf("%s: BlockStmt.List[last].Pos > BlockStmt.Rbrace", safetoken.StartPosition(fset, block.Pos())) // refine #71812
+			return nil
+		}
 	}
 
 	// Account for comments within the block containing the statement
@@ -298,7 +308,7 @@ outer:
 				// If a comment exists within the current block, after the unused variable statement,
 				// and before the next statement, we shouldn't delete it.
 				if coLine > stmtEndLine {
-					end = co.Pos()
+					end = co.Pos() // preserves invariant stmt.Pos <= end (#71812)
 					break outer
 				}
 				if co.Pos() > end {
@@ -308,12 +318,11 @@ outer:
 		}
 	}
 
-	return []analysis.TextEdit{
-		{
-			Pos: stmt.Pos(),
-			End: end,
-		},
-	}
+	// Delete statement and optional following comment.
+	return []analysis.TextEdit{{
+		Pos: stmt.Pos(),
+		End: end,
+	}}
 }
 
 // exprMayHaveSideEffects reports whether the expression may have side effects

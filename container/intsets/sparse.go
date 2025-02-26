@@ -267,7 +267,7 @@ func (s *Sparse) init() {
 		// loop.  Fail fast before this occurs.
 		// We don't want to call panic here because it prevents the
 		// inlining of this function.
-		_ = (interface{}(nil)).(to_copy_a_sparse_you_must_call_its_Copy_method)
+		_ = (any(nil)).(to_copy_a_sparse_you_must_call_its_Copy_method)
 	}
 }
 

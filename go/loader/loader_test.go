@@ -5,7 +5,6 @@
 // No testdata on Android.
 
 //go:build !android
-// +build !android
 
 package loader_test
 

@@ -18,7 +18,7 @@ func TestMarker(t *testing.T) {
 		filename      string
 		expectNotes   int
 		expectMarkers map[string]string
-		expectChecks  map[string][]interface{}
+		expectChecks  map[string][]any
 	}{
 		{
 			filename:    "testdata/test.go",
@@ -36,7 +36,7 @@ func TestMarker(t *testing.T) {
 				"NonIdentifier": "+",
 				"StringMarker":  "\"hello\"",
 			},
-			expectChecks: map[string][]interface{}{
+			expectChecks: map[string][]any{
 				"αSimpleMarker": nil,
 				"StringAndInt":  {"Number %d", int64(12)},
 				"Bool":          {true},
@@ -140,7 +140,7 @@ func TestMarker(t *testing.T) {
 	}
 }
 
-func checkMarker(t *testing.T, fset *token.FileSet, readFile expect.ReadFile, markers map[string]token.Pos, pos token.Pos, name string, pattern interface{}) {
+func checkMarker(t *testing.T, fset *token.FileSet, readFile expect.ReadFile, markers map[string]token.Pos, pos token.Pos, name string, pattern any) {
 	start, end, err := expect.MatchBefore(fset, readFile, pos, pattern)
 	if err != nil {
 		t.Errorf("%v: MatchBefore failed: %v", fset.Position(pos), err)

@@ -40,7 +40,7 @@ func (s *Snapshot) ModVuln(ctx context.Context, modURI protocol.DocumentURI) (*v
 
 	// Cache miss?
 	if !hit {
-		handle := memoize.NewPromise("modVuln", func(ctx context.Context, arg interface{}) interface{} {
+		handle := memoize.NewPromise("modVuln", func(ctx context.Context, arg any) any {
 			result, err := modVulnImpl(ctx, arg.(*Snapshot))
 			return modVuln{result, err}
 		})

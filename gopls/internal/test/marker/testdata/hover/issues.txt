@@ -20,3 +20,15 @@ package issue64237
 import "golang.org/lsptests/nonexistant" //@diag("\"golang", re"could not import")
 
 var _ = nonexistant.Value //@hovererr("nonexistant", "no package data")
+
+-- issue69362/p.go --
+package issue69362
+
+// golang/go#69362: hover panics over undefined implicits.
+
+func _() {
+	switch x := y.(type) { //@diag("y", re"undefined"), hover("x", "x", "")
+	case int:
+		_ = x
+	}
+}

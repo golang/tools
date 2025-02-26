@@ -491,7 +491,7 @@ func (r *renamer) update() error {
 	for _, info := range r.packages {
 		for _, f := range info.Files {
 			tokenFile := r.iprog.Fset.File(f.FileStart)
-			if filesToUpdate[tokenFile] && generated(f, tokenFile) {
+			if filesToUpdate[tokenFile] && ast.IsGenerated(f) {
 				generatedFileNames = append(generatedFileNames, tokenFile.Name())
 			}
 		}

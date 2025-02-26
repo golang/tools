@@ -28,6 +28,8 @@ const (
 	Tmpl
 	// Work is a go.work file.
 	Work
+	// Asm is a Go assembly (.s) file.
+	Asm
 )
 
 func (k Kind) String() string {
@@ -42,13 +44,15 @@ func (k Kind) String() string {
 		return "tmpl"
 	case Work:
 		return "go.work"
+	case Asm:
+		return "Go assembly"
 	default:
 		return fmt.Sprintf("internal error: unknown file kind %d", k)
 	}
 }
 
 // KindForLang returns the gopls file [Kind] associated with the given LSP
-// LanguageKind string from protocol.TextDocumentItem.LanguageID,
+// LanguageKind string from the LanguageID field of [protocol.TextDocumentItem],
 // or UnknownKind if the language is not one recognized by gopls.
 func KindForLang(langID protocol.LanguageKind) Kind {
 	switch langID {
@@ -62,6 +66,8 @@ func KindForLang(langID protocol.LanguageKind) Kind {
 		return Tmpl
 	case "go.work":
 		return Work
+	case "go.s":
+		return Asm
 	default:
 		return UnknownKind
 	}

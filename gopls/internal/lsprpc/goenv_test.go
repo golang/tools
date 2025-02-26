@@ -21,7 +21,7 @@ import (
 
 func GoEnvMiddleware() (Middleware, error) {
 	return BindHandler(func(delegate jsonrpc2_v2.Handler) jsonrpc2_v2.Handler {
-		return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+		return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 			if req.Method == "initialize" {
 				if err := addGoEnvToInitializeRequestV2(ctx, req); err != nil {
 					event.Error(ctx, "adding go env to initialize", err)
@@ -39,20 +39,20 @@ func addGoEnvToInitializeRequestV2(ctx context.Context, req *jsonrpc2_v2.Request
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return err
 	}
-	var opts map[string]interface{}
+	var opts map[string]any
 	switch v := params.InitializationOptions.(type) {
 	case nil:
-		opts = make(map[string]interface{})
-	case map[string]interface{}:
+		opts = make(map[string]any)
+	case map[string]any:
 		opts = v
 	default:
 		return fmt.Errorf("unexpected type for InitializationOptions: %T", v)
 	}
 	envOpt, ok := opts["env"]
 	if !ok {
-		envOpt = make(map[string]interface{})
+		envOpt = make(map[string]any)
 	}
-	env, ok := envOpt.(map[string]interface{})
+	env, ok := envOpt.(map[string]any)
 	if !ok {
 		return fmt.Errorf("env option is %T, expected a map", envOpt)
 	}
@@ -108,8 +108,8 @@ func TestGoEnvMiddleware(t *testing.T) {
 	conn := env.dial(ctx, t, l.Dialer(), noopBinder, true)
 	dispatch := protocol.ServerDispatcherV2(conn)
 	initParams := &protocol.ParamInitialize{}
-	initParams.InitializationOptions = map[string]interface{}{
-		"env": map[string]interface{}{
+	initParams.InitializationOptions = map[string]any{
+		"env": map[string]any{
 			"GONOPROXY": "example.com",
 		},
 	}
@@ -120,7 +120,7 @@ func TestGoEnvMiddleware(t *testing.T) {
 	if server.params == nil {
 		t.Fatalf("initialize params are unset")
 	}
-	envOpts := server.params.InitializationOptions.(map[string]interface{})["env"].(map[string]interface{})
+	envOpts := server.params.InitializationOptions.(map[string]any)["env"].(map[string]any)
 
 	// Check for an arbitrary Go variable. It should be set.
 	if _, ok := envOpts["GOPRIVATE"]; !ok {

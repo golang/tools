@@ -15,6 +15,7 @@
 package cursor
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"iter"
@@ -22,6 +23,7 @@ import (
 	"slices"
 
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/astutil/edge"
 )
 
 // A Cursor represents an [ast.Node]. It is immutable.
@@ -207,6 +209,53 @@ func (c Cursor) Parent() Cursor {
 	return Cursor{c.in, c.events()[c.index].parent}
 }
 
+// Edge returns the identity of the field in the parent node
+// that holds this cursor's node, and if it is a list, the index within it.
+//
+// For example, f(x, y) is a CallExpr whose three children are Idents.
+// f has edge kind [edge.CallExpr_Fun] and index -1.
+// x and y have kind [edge.CallExpr_Args] and indices 0 and 1, respectively.
+//
+// Edge must not be called on the Root node (whose [Cursor.Node] returns nil).
+//
+// If called on a child of the Root node, it returns ([edge.Invalid], -1).
+func (c Cursor) Edge() (edge.Kind, int) {
+	if c.index < 0 {
+		panic("Cursor.Edge called on Root node")
+	}
+	events := c.events()
+	pop := events[c.index].index
+	return unpackEdgeKindAndIndex(events[pop].parent)
+}
+
+// Child returns the cursor for n, which must be a direct child of c's Node.
+//
+// Child must not be called on the Root node (whose [Cursor.Node] returns nil).
+func (c Cursor) Child(n ast.Node) Cursor {
+	if c.index < 0 {
+		panic("Cursor.Child called on Root node")
+	}
+
+	if false {
+		// reference implementation
+		for child := range c.Children() {
+			if child.Node() == n {
+				return child
+			}
+		}
+
+	} else {
+		// optimized implementation
+		events := c.events()
+		for i := c.index + 1; events[i].index > i; i = events[i].index + 1 {
+			if events[i].node == n {
+				return Cursor{c.in, i}
+			}
+		}
+	}
+	panic(fmt.Sprintf("Child(%T): not a child of %v", n, c))
+}
+
 // NextSibling returns the cursor for the next sibling node in the same list
 // (for example, of files, decls, specs, statements, fields, or expressions) as
 // the current node. It returns (zero, false) if the node is the last node in
@@ -305,7 +354,8 @@ func (c Cursor) LastChild() (Cursor, bool) {
 //
 // So, do not assume that the previous sibling of an ast.Stmt is also
 // an ast.Stmt, or if it is, that they are executed sequentially,
-// unless you have established that, say, its parent is a BlockStmt.
+// unless you have established that, say, its parent is a BlockStmt
+// or its [Cursor.Edge] is [edge.BlockStmt_List].
 // For example, given "for S1; ; S2 {}", the predecessor of S2 is S1,
 // even though they are not executed in sequence.
 func (c Cursor) Children() iter.Seq[Cursor] {
@@ -357,6 +407,8 @@ func (c Cursor) FindNode(n ast.Node) (Cursor, bool) {
 
 // FindPos returns the cursor for the innermost node n in the tree
 // rooted at c such that n.Pos() <= start && end <= n.End().
+// (For an *ast.File, it uses the bounds n.FileStart-n.FileEnd.)
+//
 // It returns zero if none is found.
 // Precondition: start <= end.
 //
@@ -375,10 +427,22 @@ func (c Cursor) FindPos(start, end token.Pos) (Cursor, bool) {
 	for i, limit := c.indices(); i < limit; i++ {
 		ev := events[i]
 		if ev.index > i { // push?
-			if ev.node.Pos() > start {
-				break // disjoint, after; stop
+			n := ev.node
+			var nodeEnd token.Pos
+			if file, ok := n.(*ast.File); ok {
+				nodeEnd = file.FileEnd
+				// Note: files may be out of Pos order.
+				if file.FileStart > start {
+					i = ev.index // disjoint, after; skip to next file
+					continue
+				}
+			} else {
+				nodeEnd = n.End()
+				if n.Pos() > start {
+					break // disjoint, after; stop
+				}
 			}
-			nodeEnd := ev.node.End()
+			// Inv: node.{Pos,FileStart} <= start
 			if end <= nodeEnd {
 				// node fully contains target range
 				best = i

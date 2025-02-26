@@ -134,7 +134,7 @@ func (v Version) Canonical() string {
 // single-element mapping of type to URL.
 type Reference osv.Reference
 
-func (r *Reference) MarshalYAML() (interface{}, error) {
+func (r *Reference) MarshalYAML() (any, error) {
 	return map[string]string{
 		strings.ToLower(string(r.Type)): r.URL,
 	}, nil

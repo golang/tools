@@ -20,11 +20,41 @@ func useCopy(dst, src map[int]string) {
 	}
 }
 
-func useClone(src map[int]string) {
-	// Replace make(...) by maps.Clone.
+func useCopyGeneric[K comparable, V any, M ~map[K]V](dst, src M) {
+	// Replace loop by maps.Copy.
+	for key, value := range src {
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
+	}
+}
+
+func useCopyNotClone(src map[int]string) {
+	// Clone is tempting but wrong when src may be nil; see #71844.
+
+	// Replace make(...) by maps.Copy.
 	dst := make(map[int]string, len(src))
 	for key, value := range src {
-		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Clone"
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
+	}
+
+	dst = map[int]string{}
+	for key, value := range src {
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
+	}
+	println(dst)
+}
+
+func useCopyParen(src map[int]string) {
+	// Clone is tempting but wrong when src may be nil; see #71844.
+
+	// Replace (make)(...) by maps.Clone.
+	dst := (make)(map[int]string, len(src))
+	for key, value := range src {
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
+	}
+
+	dst = (map[int]string{})
+	for key, value := range src {
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
 	}
 	println(dst)
 }
@@ -48,32 +78,38 @@ func useCopy_typesDiffer2(src map[int]string) {
 }
 
 func useClone_typesDiffer3(src map[int]string) {
+	// Clone is tempting but wrong when src may be nil; see #71844.
+
 	// Replace loop and make(...) as maps.Clone(src) returns map[int]string
 	// which is assignable to M.
 	var dst M
 	dst = make(M, len(src))
 	for key, value := range src {
-		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Clone"
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
 	}
 	println(dst)
 }
 
 func useClone_typesDiffer4(src map[int]string) {
+	// Clone is tempting but wrong when src may be nil; see #71844.
+
 	// Replace loop and make(...) as maps.Clone(src) returns map[int]string
 	// which is assignable to M.
 	var dst M
 	dst = make(M, len(src))
 	for key, value := range src {
-		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Clone"
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
 	}
 	println(dst)
 }
 
 func useClone_generic[Map ~map[K]V, K comparable, V any](src Map) {
+	// Clone is tempting but wrong when src may be nil; see #71844.
+
 	// Replace loop and make(...) by maps.Clone
 	dst := make(Map, len(src))
 	for key, value := range src {
-		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Clone"
+		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
 	}
 	println(dst)
 }
@@ -144,5 +180,26 @@ func nopeAssignmentHasIncrementOperator(src map[int]int) {
 	dst := make(map[int]int)
 	for k, v := range src {
 		dst[k] += v
+	}
+}
+
+func nopeNotAMap(src map[int]string) {
+	var dst []string
+	for k, v := range src {
+		dst[k] = v
+	}
+}
+
+func nopeNotAMapGeneric[E any, M ~map[int]E, S ~[]E](src M) {
+	var dst S
+	for k, v := range src {
+		dst[k] = v
+	}
+}
+
+func nopeHasImplicitWidening(src map[string]int) {
+	dst := make(map[string]any)
+	for k, v := range src {
+		dst[k] = v
 	}
 }

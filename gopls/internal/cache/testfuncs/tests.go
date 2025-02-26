@@ -8,8 +8,9 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/types"
-	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -234,13 +235,6 @@ func findFunc(files []*parsego.File, info *types.Info, body *ast.BlockStmt, expr
 	return nil, nil
 }
 
-var (
-	reTest      = regexp.MustCompile(`^Test([A-Z]|$)`)
-	reBenchmark = regexp.MustCompile(`^Benchmark([A-Z]|$)`)
-	reFuzz      = regexp.MustCompile(`^Fuzz([A-Z]|$)`)
-	reExample   = regexp.MustCompile(`^Example([A-Z]|$)`)
-)
-
 // isTestOrExample reports whether the given func is a testing func or an
 // example func (or neither). isTestOrExample returns (true, false) for testing
 // funcs, (false, true) for example funcs, and (false, false) otherwise.
@@ -248,7 +242,7 @@ func isTestOrExample(fn *types.Func) (isTest, isExample bool) {
 	sig := fn.Type().(*types.Signature)
 	if sig.Params().Len() == 0 &&
 		sig.Results().Len() == 0 {
-		return false, reExample.MatchString(fn.Name())
+		return false, isTestName(fn.Name(), "Example")
 	}
 
 	kind, ok := testKind(sig)
@@ -257,14 +251,31 @@ func isTestOrExample(fn *types.Func) (isTest, isExample bool) {
 	}
 	switch kind.Name() {
 	case "T":
-		return reTest.MatchString(fn.Name()), false
+		return isTestName(fn.Name(), "Test"), false
 	case "B":
-		return reBenchmark.MatchString(fn.Name()), false
+		return isTestName(fn.Name(), "Benchmark"), false
 	case "F":
-		return reFuzz.MatchString(fn.Name()), false
+		return isTestName(fn.Name(), "Fuzz"), false
 	default:
 		return false, false // "can't happen" (see testKind)
 	}
+}
+
+// isTestName reports whether name is a valid test name for the test kind
+// indicated by the given prefix ("Test", "Benchmark", etc.).
+//
+// Adapted from go/analysis/passes/tests.
+func isTestName(name, prefix string) bool {
+	suffix, ok := strings.CutPrefix(name, prefix)
+	if !ok {
+		return false
+	}
+	if len(suffix) == 0 {
+		// "Test" is ok.
+		return true
+	}
+	r, _ := utf8.DecodeRuneInString(suffix)
+	return !unicode.IsLower(r)
 }
 
 // testKind returns the parameter type TypeName of a test, benchmark, or fuzz

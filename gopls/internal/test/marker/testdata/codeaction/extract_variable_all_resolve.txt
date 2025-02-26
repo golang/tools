@@ -1,5 +1,5 @@
 This test checks the behavior of the 'replace all occurrences of expression' code action, with resolve support.
-See extract_expressions.txt for the same test without resolve support.
+See extract_variable_all.txt for the same test without resolve support.
 
 -- capabilities.json --
 {

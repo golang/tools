@@ -294,6 +294,9 @@ type Interface interface {
 	// language server client), there should never be a case where Modules is
 	// called on a path that has not already been loaded.
 	Modules(context.Context, ModulesArgs) (ModulesResult, error)
+
+	// PackageSymbols: Return information about symbols in the given file's package.
+	PackageSymbols(context.Context, PackageSymbolsArgs) (PackageSymbolsResult, error)
 }
 
 type RunTestsArgs struct {
@@ -516,6 +519,9 @@ type RunVulncheckResult struct {
 type VulncheckResult struct {
 	// Result holds the result of running vulncheck.
 	Result *vulncheck.Result
+	// Token holds the progress token used to report progress during back to the
+	// LSP client during vulncheck execution.
+	Token protocol.ProgressToken
 }
 
 // MemStatsResult holds selected fields from runtime.MemStats.
@@ -788,4 +794,39 @@ type ModulesArgs struct {
 
 type ModulesResult struct {
 	Modules []Module
+}
+
+type PackageSymbolsArgs struct {
+	URI protocol.DocumentURI
+}
+
+type PackageSymbolsResult struct {
+	PackageName string
+	// Files is a list of files in the given URI's package.
+	Files   []protocol.DocumentURI
+	Symbols []PackageSymbol
+}
+
+// PackageSymbol has the same fields as DocumentSymbol, with an additional int field "File"
+// which stores the index of the symbol's file in the PackageSymbolsResult.Files array
+type PackageSymbol struct {
+	Name string `json:"name"`
+
+	Detail string `json:"detail,omitempty"`
+
+	// protocol.SymbolKind maps an integer to an enum:
+	// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolKind
+	// i.e. File = 1
+	Kind protocol.SymbolKind `json:"kind"`
+
+	Tags []protocol.SymbolTag `json:"tags,omitempty"`
+
+	Range protocol.Range `json:"range"`
+
+	SelectionRange protocol.Range `json:"selectionRange"`
+
+	Children []PackageSymbol `json:"children,omitempty"`
+
+	// Index of this symbol's file in PackageSymbolsResult.Files
+	File int `json:"file,omitempty"`
 }

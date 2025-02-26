@@ -101,3 +101,20 @@ func _() {
 	var x T
 	_ = x //@ inline(re"empty", empty4)
 }
+
+-- a/a5.go --
+package a
+
+func _() {
+	go empty() //@ inline(re"empty", empty5)
+}
+
+func empty() {}
+-- empty5 --
+package a
+
+func _() {
+	go func() {}() //@ inline(re"empty", empty5)
+}
+
+func empty() {}

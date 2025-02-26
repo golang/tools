@@ -114,7 +114,7 @@ func (s *server) ResolveWorkspaceSymbol(context.Context, *protocol.WorkspaceSymb
 	return nil, notImplemented("ResolveWorkspaceSymbol")
 }
 
-func (s *server) SemanticTokensFullDelta(context.Context, *protocol.SemanticTokensDeltaParams) (interface{}, error) {
+func (s *server) SemanticTokensFullDelta(context.Context, *protocol.SemanticTokensDeltaParams) (any, error) {
 	return nil, notImplemented("SemanticTokensFullDelta")
 }
 

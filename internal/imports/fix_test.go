@@ -1680,7 +1680,7 @@ type testConfig struct {
 }
 
 // fm is the type for a packagestest.Module's Files, abbreviated for shorter lines.
-type fm map[string]interface{}
+type fm map[string]any
 
 func (c testConfig) test(t *testing.T, fn func(*goimportTest)) {
 	t.Helper()

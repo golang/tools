@@ -297,7 +297,7 @@ func freeRefs(pkg *types.Package, info *types.Info, file *ast.File, start, end t
 
 		// Compute dotted path.
 		objects := append(suffix, obj)
-		if obj.Pkg() != nil && obj.Pkg() != pkg && isPackageLevel(obj) { // dot import
+		if obj.Pkg() != nil && obj.Pkg() != pkg && typesinternal.IsPackageLevel(obj) { // dot import
 			// Synthesize the implicit PkgName.
 			pkgName := types.NewPkgName(token.NoPos, pkg, obj.Pkg().Name(), obj.Pkg())
 			parent = fileScope
@@ -342,7 +342,7 @@ func freeRefs(pkg *types.Package, info *types.Info, file *ast.File, start, end t
 		for {
 			suffix = append(suffix, info.Uses[sel.Sel])
 
-			switch x := astutil.Unparen(sel.X).(type) {
+			switch x := ast.Unparen(sel.X).(type) {
 			case *ast.Ident:
 				return id(x, suffix)
 			default:

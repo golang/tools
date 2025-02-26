@@ -96,6 +96,9 @@ func Test(t *testing.T) {
 		if strings.HasPrefix(builder, "darwin-") || strings.Contains(builder, "solaris") {
 			t.Skip("golang/go#64473: skipping with -short: this test is too slow on darwin and solaris builders")
 		}
+		if strings.HasSuffix(builder, "freebsd-amd64-race") {
+			t.Skip("golang/go#71731: the marker tests are too slow to run on the amd64-race builder")
+		}
 	}
 	// The marker tests must be able to run go/packages.Load.
 	testenv.NeedsGoPackages(t)
@@ -658,7 +661,7 @@ type stringListValue []string
 
 func (l *stringListValue) Set(s string) error {
 	if s != "" {
-		for _, d := range strings.Split(s, ",") {
+		for d := range strings.SplitSeq(s, ",") {
 			*l = append(*l, strings.TrimSpace(d))
 		}
 	}
@@ -971,7 +974,10 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 		sandbox.Close() // ignore error
 		t.Fatal(err)
 	}
-	if err := awaiter.Await(ctx, integration.InitialWorkspaceLoad); err != nil {
+	if err := awaiter.Await(ctx, integration.OnceMet(
+		integration.InitialWorkspaceLoad,
+		integration.NoShownMessage(""),
+	)); err != nil {
 		sandbox.Close() // ignore error
 		t.Fatal(err)
 	}
@@ -1835,7 +1841,7 @@ func removeDiagnostic(mark marker, loc protocol.Location, matchEnd bool, re *reg
 	diags := mark.run.diags[key]
 	for i, diag := range diags {
 		if re.MatchString(diag.Message) && (!matchEnd || diag.Range.End == loc.Range.End) {
-			mark.run.diags[key] = append(diags[:i], diags[i+1:]...)
+			mark.run.diags[key] = slices.Delete(diags, i, i+1)
 			return diag, true
 		}
 	}
@@ -2223,6 +2229,18 @@ func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Ran
 // specified location and kind, and captures the resulting document changes.
 // If diag is non-nil, it is used as the code action context.
 func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, kind protocol.CodeActionKind, diag *protocol.Diagnostic) ([]protocol.DocumentChange, error) {
+	// Collect any server-initiated changes created by workspace/applyEdit.
+	//
+	// We set up this handler immediately, not right before executing the code
+	// action command, so we can assert that neither the codeAction request nor
+	// codeAction resolve request cause edits as a side effect (golang/go#71405).
+	var changes []protocol.DocumentChange
+	restore := env.Editor.Client().SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
+		changes = append(changes, wsedit.DocumentChanges...)
+		return nil
+	})
+	defer restore()
+
 	// Request all code actions that apply to the diagnostic.
 	// A production client would set Only=[kind],
 	// but we can give a better error if we don't filter.
@@ -2311,14 +2329,6 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 		// The server then makes an ApplyEdit RPC to the client,
 		// whose WorkspaceEditFunc hook temporarily gathers the edits
 		// instead of applying them.
-
-		var changes []protocol.DocumentChange
-		cli := env.Editor.Client()
-		restore := cli.SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
-			changes = append(changes, wsedit.DocumentChanges...)
-			return nil
-		})
-		defer restore()
 
 		if _, err := env.Editor.Server.ExecuteCommand(env.Ctx, &protocol.ExecuteCommandParams{
 			Command:   action.Command.Command,

@@ -1,6 +1,15 @@
 This test checks the behavior of the 'fill switch' code action.
 See fill_switch_resolve.txt for same test with resolve support.
 
+-- capabilities.json --
+{
+	"textDocument": {
+		"codeAction": {
+			"dataSupport": false,
+			"resolveSupport": {}
+		}
+	}
+}
 -- flags --
 -ignore_extra_diags
 

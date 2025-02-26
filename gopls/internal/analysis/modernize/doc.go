@@ -25,7 +25,20 @@
 //     added in go1.19;
 //   - replacing uses of context.WithCancel in tests with t.Context, added in
 //     go1.24;
-//   - replacing omitempty by omitzero on structs, added in go 1.24;
+//   - replacing omitempty by omitzero on structs, added in go1.24;
 //   - replacing append(s[:i], s[i+1]...) by slices.Delete(s, i, i+1),
 //     added in go1.21
+//   - replacing a 3-clause for i := 0; i < n; i++ {} loop by
+//     for i := range n {}, added in go1.22;
+//   - replacing Split in "for range strings.Split(...)" by go1.24's
+//     more efficient SplitSeq;
+//
+// To apply all modernization fixes en masse, you can use the
+// following command:
+//
+//	$ go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test ./...
+//
+// If the tool warns of conflicting fixes, you may need to run it more
+// than once until it has applied all fixes cleanly. This command is
+// not an officially supported interface and may change in the future.
 package modernize

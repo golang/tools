@@ -15,9 +15,9 @@ import (
 	. "golang.org/x/tools/gopls/internal/lsprpc"
 )
 
-func CommandInterceptor(command string, run func(*protocol.ExecuteCommandParams) (interface{}, error)) Middleware {
+func CommandInterceptor(command string, run func(*protocol.ExecuteCommandParams) (any, error)) Middleware {
 	return BindHandler(func(delegate jsonrpc2_v2.Handler) jsonrpc2_v2.Handler {
-		return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (interface{}, error) {
+		return jsonrpc2_v2.HandlerFunc(func(ctx context.Context, req *jsonrpc2_v2.Request) (any, error) {
 			if req.Method == "workspace/executeCommand" {
 				var params protocol.ExecuteCommandParams
 				if err := json.Unmarshal(req.Params, &params); err == nil {
@@ -35,9 +35,9 @@ func CommandInterceptor(command string, run func(*protocol.ExecuteCommandParams)
 func TestCommandInterceptor(t *testing.T) {
 	const command = "foo"
 	caught := false
-	intercept := func(_ *protocol.ExecuteCommandParams) (interface{}, error) {
+	intercept := func(_ *protocol.ExecuteCommandParams) (any, error) {
 		caught = true
-		return map[string]interface{}{}, nil
+		return map[string]any{}, nil
 	}
 
 	ctx := context.Background()
@@ -50,7 +50,7 @@ func TestCommandInterceptor(t *testing.T) {
 	params := &protocol.ExecuteCommandParams{
 		Command: command,
 	}
-	var res interface{}
+	var res any
 	err := conn.Call(ctx, "workspace/executeCommand", params).Await(ctx, &res)
 	if err != nil {
 		t.Fatal(err)

@@ -91,19 +91,19 @@ func TestOptions_Set(t *testing.T) {
 			},
 		},
 		{
-			name:      "hoverKind",
-			value:     "Structured",
-			wantError: true,
+			name:  "hoverKind",
+			value: "Structured",
+			// wantError: true, // TODO(rfindley): reinstate this error
 			check: func(o Options) bool {
-				return o.HoverKind == FullDocumentation
+				return o.HoverKind == Structured
 			},
 		},
 		{
-			name:      "ui.documentation.hoverKind",
-			value:     "Structured",
-			wantError: true,
+			name:  "ui.documentation.hoverKind",
+			value: "Structured",
+			// wantError: true, // TODO(rfindley): reinstate this error
 			check: func(o Options) bool {
-				return o.HoverKind == FullDocumentation
+				return o.HoverKind == Structured
 			},
 		},
 		{
@@ -206,7 +206,7 @@ func TestOptions_Set(t *testing.T) {
 
 	for _, test := range tests {
 		var opts Options
-		err := opts.Set(map[string]any{test.name: test.value})
+		_, err := opts.Set(map[string]any{test.name: test.value})
 		if err != nil {
 			if !test.wantError {
 				t.Errorf("Options.set(%q, %v) failed: %v",

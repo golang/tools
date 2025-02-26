@@ -231,7 +231,7 @@ func reflectKind(t types.Type) reflect.Kind {
 	case *types.Map:
 		return reflect.Map
 	case *types.Pointer:
-		return reflect.Ptr
+		return reflect.Pointer
 	case *types.Slice:
 		return reflect.Slice
 	case *types.Struct:
@@ -510,7 +510,7 @@ func newMethod(pkg *ssa.Package, recvType types.Type, name string) *ssa.Function
 	// that is needed is the "pointerness" of Recv.Type, and for
 	// now, we'll set it to always be false since we're only
 	// concerned with rtype.  Encapsulate this better.
-	sig := types.NewSignature(types.NewVar(token.NoPos, nil, "recv", recvType), nil, nil, false)
+	sig := types.NewSignatureType(types.NewParam(token.NoPos, nil, "recv", recvType), nil, nil, nil, nil, false)
 	fn := pkg.Prog.NewFunction(name, sig, "fake reflect method")
 	fn.Pkg = pkg
 	return fn

@@ -96,7 +96,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	}
 
 	if len(locs) == 0 {
-		return fmt.Errorf("%v: not an identifier", from)
+		return fmt.Errorf("%v: no definition location (not an identifier?)", from)
 	}
 	file, err = conn.openFile(ctx, locs[0].URI)
 	if err != nil {

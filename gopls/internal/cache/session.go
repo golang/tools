@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/gopls/internal/vulncheck"
@@ -237,7 +238,12 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		viewDefinition:       def,
 		importsState:         newImportsState(backgroundCtx, s.cache.modCache, pe),
 	}
-	if def.folder.Options.ImportsSource != "off" {
+
+	// Keep this in sync with golang.computeImportEdits.
+	//
+	// TODO(rfindley): encapsulate the imports state logic so that the handling
+	// for Options.ImportsSource is in a single location.
+	if def.folder.Options.ImportsSource == settings.ImportsSourceGopls {
 		v.modcacheState = newModcacheState(def.folder.Env.GOMODCACHE)
 	}
 
@@ -1078,6 +1084,7 @@ type brokenFile struct {
 	err error
 }
 
+func (b brokenFile) String() string            { return b.uri.Path() }
 func (b brokenFile) URI() protocol.DocumentURI { return b.uri }
 func (b brokenFile) Identity() file.Identity   { return file.Identity{URI: b.uri} }
 func (b brokenFile) SameContentsOnDisk() bool  { return false }

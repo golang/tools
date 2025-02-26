@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build unix || aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris || windows
-// +build unix aix darwin dragonfly freebsd linux netbsd openbsd solaris windows
 
 // The stress utility is intended for catching sporadic failures.
 // It runs a given process in parallel in a loop and collects any failures.

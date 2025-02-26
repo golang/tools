@@ -114,7 +114,7 @@ func parseBuffer(buf []byte) *Parsed {
 			matches := parseErrR.FindStringSubmatch(err.Error())
 			if len(matches) == 2 {
 				// suppress the error by giving it a function with the right name
-				funcs[matches[1]] = func() interface{} { return nil }
+				funcs[matches[1]] = func() any { return nil }
 				t, err = template.New("").Funcs(funcs).Parse(string(ans.buf))
 				continue
 			}

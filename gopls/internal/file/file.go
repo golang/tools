@@ -49,6 +49,8 @@ type Handle interface {
 	// Content returns the contents of a file.
 	// If the file is not available, returns a nil slice and an error.
 	Content() ([]byte, error)
+	// String returns the file's path.
+	String() string
 }
 
 // A Source maps URIs to Handles.

@@ -352,17 +352,14 @@ func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 	var locs []protocol.Location
 	var methodLocs []methodsets.Location
 	for _, pgf := range pkg.CompiledGoFiles() {
-		ast.Inspect(pgf.File, func(n ast.Node) bool {
-			spec, ok := n.(*ast.TypeSpec)
-			if !ok {
-				return true // not a type declaration
-			}
+		for cur := range pgf.Cursor.Preorder((*ast.TypeSpec)(nil)) {
+			spec := cur.Node().(*ast.TypeSpec)
 			def := pkg.TypesInfo().Defs[spec.Name]
 			if def == nil {
-				return true // "can't happen" for types
+				continue // "can't happen" for types
 			}
 			if def.(*types.TypeName).IsAlias() {
-				return true // skip type aliases to avoid duplicate reporting
+				continue // skip type aliases to avoid duplicate reporting
 			}
 			candidateType := methodsets.EnsurePointer(def.Type())
 
@@ -373,20 +370,20 @@ func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 			// TODO(adonovan): UX: report I/I pairs too?
 			// The same question appears in the global algorithm (methodsets).
 			if !concreteImplementsIntf(&msets, candidateType, queryType) {
-				return true // not assignable
+				continue // not assignable
 			}
 
 			// Ignore types with empty method sets.
 			// (No point reporting that every type satisfies 'any'.)
 			mset := msets.MethodSet(candidateType)
 			if mset.Len() == 0 {
-				return true
+				continue
 			}
 
 			if method == nil {
 				// Found matching type.
 				locs = append(locs, mustLocation(pgf, spec.Name))
-				return true
+				continue
 			}
 
 			// Find corresponding method.
@@ -407,8 +404,7 @@ func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 					break
 				}
 			}
-			return true
-		})
+		}
 	}
 
 	// Finally convert method positions to protocol form by reading the files.

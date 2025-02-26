@@ -14,9 +14,11 @@ import (
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
@@ -47,7 +49,7 @@ func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pR
 	}
 
 	info := pkg.TypesInfo()
-	q := typesinternal.FileQualifier(pgf.File, pkg.Types())
+	qual := typesinternal.FileQualifier(pgf.File, pkg.Types())
 
 	// Set the range to the full file if the range is not valid.
 	start, end := pgf.File.FileStart, pgf.File.FileEnd
@@ -63,20 +65,16 @@ func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pR
 	}
 
 	var hints []protocol.InlayHint
-	ast.Inspect(pgf.File, func(node ast.Node) bool {
-		// If not in range, we can stop looking.
-		if node == nil || node.End() < start || node.Pos() > end {
-			return false
-		}
+	if curSubrange, ok := pgf.Cursor.FindPos(start, end); ok {
+		add := func(hint protocol.InlayHint) { hints = append(hints, hint) }
 		for _, fn := range enabledHints {
-			hints = append(hints, fn(node, pgf.Mapper, pgf.Tok, info, &q)...)
+			fn(info, pgf, qual, curSubrange, add)
 		}
-		return true
-	})
+	}
 	return hints, nil
 }
 
-type inlayHintFunc func(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, q *types.Qualifier) []protocol.InlayHint
+type inlayHintFunc func(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur cursor.Cursor, add func(protocol.InlayHint))
 
 var allInlayHints = map[settings.InlayHint]inlayHintFunc{
 	settings.AssignVariableTypes:        assignVariableTypes,
@@ -88,259 +86,246 @@ var allInlayHints = map[settings.InlayHint]inlayHintFunc{
 	settings.FunctionTypeParameters:     funcTypeParams,
 }
 
-func parameterNames(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, _ *types.Qualifier) []protocol.InlayHint {
-	callExpr, ok := node.(*ast.CallExpr)
-	if !ok {
-		return nil
-	}
-	t := info.TypeOf(callExpr.Fun)
-	if t == nil {
-		return nil
-	}
-	signature, ok := typeparams.CoreType(t).(*types.Signature)
-	if !ok {
-		return nil
-	}
-
-	var hints []protocol.InlayHint
-	for i, v := range callExpr.Args {
-		start, err := m.PosPosition(tf, v.Pos())
-		if err != nil {
+func parameterNames(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur cursor.Cursor, add func(protocol.InlayHint)) {
+	for curCall := range cur.Preorder((*ast.CallExpr)(nil)) {
+		callExpr := curCall.Node().(*ast.CallExpr)
+		t := info.TypeOf(callExpr.Fun)
+		if t == nil {
 			continue
 		}
-		params := signature.Params()
-		// When a function has variadic params, we skip args after
-		// params.Len().
-		if i > params.Len()-1 {
-			break
-		}
-		param := params.At(i)
-		// param.Name is empty for built-ins like append
-		if param.Name() == "" {
-			continue
-		}
-		// Skip the parameter name hint if the arg matches
-		// the parameter name.
-		if i, ok := v.(*ast.Ident); ok && i.Name == param.Name() {
-			continue
-		}
-
-		label := param.Name()
-		if signature.Variadic() && i == params.Len()-1 {
-			label = label + "..."
-		}
-		hints = append(hints, protocol.InlayHint{
-			Position:     start,
-			Label:        buildLabel(label + ":"),
-			Kind:         protocol.Parameter,
-			PaddingRight: true,
-		})
-	}
-	return hints
-}
-
-func funcTypeParams(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, _ *types.Qualifier) []protocol.InlayHint {
-	ce, ok := node.(*ast.CallExpr)
-	if !ok {
-		return nil
-	}
-	id, ok := ce.Fun.(*ast.Ident)
-	if !ok {
-		return nil
-	}
-	inst := info.Instances[id]
-	if inst.TypeArgs == nil {
-		return nil
-	}
-	start, err := m.PosPosition(tf, id.End())
-	if err != nil {
-		return nil
-	}
-	var args []string
-	for i := 0; i < inst.TypeArgs.Len(); i++ {
-		args = append(args, inst.TypeArgs.At(i).String())
-	}
-	if len(args) == 0 {
-		return nil
-	}
-	return []protocol.InlayHint{{
-		Position: start,
-		Label:    buildLabel("[" + strings.Join(args, ", ") + "]"),
-		Kind:     protocol.Type,
-	}}
-}
-
-func assignVariableTypes(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, q *types.Qualifier) []protocol.InlayHint {
-	stmt, ok := node.(*ast.AssignStmt)
-	if !ok || stmt.Tok != token.DEFINE {
-		return nil
-	}
-
-	var hints []protocol.InlayHint
-	for _, v := range stmt.Lhs {
-		if h := variableType(v, m, tf, info, q); h != nil {
-			hints = append(hints, *h)
-		}
-	}
-	return hints
-}
-
-func rangeVariableTypes(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, q *types.Qualifier) []protocol.InlayHint {
-	rStmt, ok := node.(*ast.RangeStmt)
-	if !ok {
-		return nil
-	}
-	var hints []protocol.InlayHint
-	if h := variableType(rStmt.Key, m, tf, info, q); h != nil {
-		hints = append(hints, *h)
-	}
-	if h := variableType(rStmt.Value, m, tf, info, q); h != nil {
-		hints = append(hints, *h)
-	}
-	return hints
-}
-
-func variableType(e ast.Expr, m *protocol.Mapper, tf *token.File, info *types.Info, q *types.Qualifier) *protocol.InlayHint {
-	typ := info.TypeOf(e)
-	if typ == nil {
-		return nil
-	}
-	end, err := m.PosPosition(tf, e.End())
-	if err != nil {
-		return nil
-	}
-	return &protocol.InlayHint{
-		Position:    end,
-		Label:       buildLabel(types.TypeString(typ, *q)),
-		Kind:        protocol.Type,
-		PaddingLeft: true,
-	}
-}
-
-func constantValues(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, _ *types.Qualifier) []protocol.InlayHint {
-	genDecl, ok := node.(*ast.GenDecl)
-	if !ok || genDecl.Tok != token.CONST {
-		return nil
-	}
-
-	var hints []protocol.InlayHint
-	for _, v := range genDecl.Specs {
-		spec, ok := v.(*ast.ValueSpec)
+		signature, ok := typeparams.CoreType(t).(*types.Signature)
 		if !ok {
 			continue
 		}
-		end, err := m.PosPosition(tf, v.End())
-		if err != nil {
-			continue
-		}
-		// Show hints when values are missing or at least one value is not
-		// a basic literal.
-		showHints := len(spec.Values) == 0
-		checkValues := len(spec.Names) == len(spec.Values)
-		var values []string
-		for i, w := range spec.Names {
-			obj, ok := info.ObjectOf(w).(*types.Const)
-			if !ok || obj.Val().Kind() == constant.Unknown {
-				return nil
-			}
-			if checkValues {
-				switch spec.Values[i].(type) {
-				case *ast.BadExpr:
-					return nil
-				case *ast.BasicLit:
-				default:
-					if obj.Val().Kind() != constant.Bool {
-						showHints = true
-					}
-				}
-			}
-			values = append(values, fmt.Sprintf("%v", obj.Val()))
-		}
-		if !showHints || len(values) == 0 {
-			continue
-		}
-		hints = append(hints, protocol.InlayHint{
-			Position:    end,
-			Label:       buildLabel("= " + strings.Join(values, ", ")),
-			PaddingLeft: true,
-		})
-	}
-	return hints
-}
 
-func compositeLiteralFields(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, _ *types.Qualifier) []protocol.InlayHint {
-	compLit, ok := node.(*ast.CompositeLit)
-	if !ok {
-		return nil
-	}
-	typ := info.TypeOf(compLit)
-	if typ == nil {
-		return nil
-	}
-	typ = typesinternal.Unpointer(typ)
-	strct, ok := typeparams.CoreType(typ).(*types.Struct)
-	if !ok {
-		return nil
-	}
-
-	var hints []protocol.InlayHint
-	var allEdits []protocol.TextEdit
-	for i, v := range compLit.Elts {
-		if _, ok := v.(*ast.KeyValueExpr); !ok {
-			start, err := m.PosPosition(tf, v.Pos())
+		for i, v := range callExpr.Args {
+			start, err := pgf.PosPosition(v.Pos())
 			if err != nil {
 				continue
 			}
-			if i > strct.NumFields()-1 {
+			params := signature.Params()
+			// When a function has variadic params, we skip args after
+			// params.Len().
+			if i > params.Len()-1 {
 				break
 			}
-			hints = append(hints, protocol.InlayHint{
+			param := params.At(i)
+			// param.Name is empty for built-ins like append
+			if param.Name() == "" {
+				continue
+			}
+			// Skip the parameter name hint if the arg matches
+			// the parameter name.
+			if i, ok := v.(*ast.Ident); ok && i.Name == param.Name() {
+				continue
+			}
+
+			label := param.Name()
+			if signature.Variadic() && i == params.Len()-1 {
+				label = label + "..."
+			}
+			add(protocol.InlayHint{
 				Position:     start,
-				Label:        buildLabel(strct.Field(i).Name() + ":"),
+				Label:        buildLabel(label + ":"),
 				Kind:         protocol.Parameter,
 				PaddingRight: true,
 			})
-			allEdits = append(allEdits, protocol.TextEdit{
-				Range:   protocol.Range{Start: start, End: start},
-				NewText: strct.Field(i).Name() + ": ",
+		}
+	}
+}
+
+func funcTypeParams(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur cursor.Cursor, add func(protocol.InlayHint)) {
+	for curCall := range cur.Preorder((*ast.CallExpr)(nil)) {
+		call := curCall.Node().(*ast.CallExpr)
+		id, ok := call.Fun.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		inst := info.Instances[id]
+		if inst.TypeArgs == nil {
+			continue
+		}
+		start, err := pgf.PosPosition(id.End())
+		if err != nil {
+			continue
+		}
+		var args []string
+		for i := 0; i < inst.TypeArgs.Len(); i++ {
+			args = append(args, inst.TypeArgs.At(i).String())
+		}
+		if len(args) == 0 {
+			continue
+		}
+		add(protocol.InlayHint{
+			Position: start,
+			Label:    buildLabel("[" + strings.Join(args, ", ") + "]"),
+			Kind:     protocol.Type,
+		})
+	}
+}
+
+func assignVariableTypes(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur cursor.Cursor, add func(protocol.InlayHint)) {
+	for curAssign := range cur.Preorder((*ast.AssignStmt)(nil)) {
+		stmt := curAssign.Node().(*ast.AssignStmt)
+		if stmt.Tok != token.DEFINE {
+			continue
+		}
+		for _, v := range stmt.Lhs {
+			variableType(info, pgf, qual, v, add)
+		}
+	}
+}
+
+func rangeVariableTypes(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur cursor.Cursor, add func(protocol.InlayHint)) {
+	for curRange := range cur.Preorder((*ast.RangeStmt)(nil)) {
+		rStmt := curRange.Node().(*ast.RangeStmt)
+		variableType(info, pgf, qual, rStmt.Key, add)
+		variableType(info, pgf, qual, rStmt.Value, add)
+	}
+}
+
+func variableType(info *types.Info, pgf *parsego.File, qual types.Qualifier, e ast.Expr, add func(protocol.InlayHint)) {
+	typ := info.TypeOf(e)
+	if typ == nil {
+		return
+	}
+	end, err := pgf.PosPosition(e.End())
+	if err != nil {
+		return
+	}
+	add(protocol.InlayHint{
+		Position:    end,
+		Label:       buildLabel(types.TypeString(typ, qual)),
+		Kind:        protocol.Type,
+		PaddingLeft: true,
+	})
+}
+
+func constantValues(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur cursor.Cursor, add func(protocol.InlayHint)) {
+	for curDecl := range cur.Preorder((*ast.GenDecl)(nil)) {
+		genDecl := curDecl.Node().(*ast.GenDecl)
+		if genDecl.Tok != token.CONST {
+			continue
+		}
+
+		for _, v := range genDecl.Specs {
+			spec, ok := v.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			end, err := pgf.PosPosition(v.End())
+			if err != nil {
+				continue
+			}
+			// Show hints when values are missing or at least one value is not
+			// a basic literal.
+			showHints := len(spec.Values) == 0
+			checkValues := len(spec.Names) == len(spec.Values)
+			var values []string
+			for i, w := range spec.Names {
+				obj, ok := info.ObjectOf(w).(*types.Const)
+				if !ok || obj.Val().Kind() == constant.Unknown {
+					continue
+				}
+				if checkValues {
+					switch spec.Values[i].(type) {
+					case *ast.BadExpr:
+						continue
+					case *ast.BasicLit:
+					default:
+						if obj.Val().Kind() != constant.Bool {
+							showHints = true
+						}
+					}
+				}
+				values = append(values, fmt.Sprintf("%v", obj.Val()))
+			}
+			if !showHints || len(values) == 0 {
+				continue
+			}
+			add(protocol.InlayHint{
+				Position:    end,
+				Label:       buildLabel("= " + strings.Join(values, ", ")),
+				PaddingLeft: true,
 			})
 		}
 	}
-	// It is not allowed to have a mix of keyed and unkeyed fields, so
-	// have the text edits add keys to all fields.
-	for i := range hints {
-		hints[i].TextEdits = allEdits
-	}
-	return hints
 }
 
-func compositeLiteralTypes(node ast.Node, m *protocol.Mapper, tf *token.File, info *types.Info, q *types.Qualifier) []protocol.InlayHint {
-	compLit, ok := node.(*ast.CompositeLit)
-	if !ok {
-		return nil
+func compositeLiteralFields(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur cursor.Cursor, add func(protocol.InlayHint)) {
+	for curCompLit := range cur.Preorder((*ast.CompositeLit)(nil)) {
+		compLit, ok := curCompLit.Node().(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		typ := info.TypeOf(compLit)
+		if typ == nil {
+			continue
+		}
+		typ = typesinternal.Unpointer(typ)
+		strct, ok := typeparams.CoreType(typ).(*types.Struct)
+		if !ok {
+			continue
+		}
+
+		var hints []protocol.InlayHint
+		var allEdits []protocol.TextEdit
+		for i, v := range compLit.Elts {
+			if _, ok := v.(*ast.KeyValueExpr); !ok {
+				start, err := pgf.PosPosition(v.Pos())
+				if err != nil {
+					continue
+				}
+				if i > strct.NumFields()-1 {
+					break
+				}
+				hints = append(hints, protocol.InlayHint{
+					Position:     start,
+					Label:        buildLabel(strct.Field(i).Name() + ":"),
+					Kind:         protocol.Parameter,
+					PaddingRight: true,
+				})
+				allEdits = append(allEdits, protocol.TextEdit{
+					Range:   protocol.Range{Start: start, End: start},
+					NewText: strct.Field(i).Name() + ": ",
+				})
+			}
+		}
+		// It is not allowed to have a mix of keyed and unkeyed fields, so
+		// have the text edits add keys to all fields.
+		for i := range hints {
+			hints[i].TextEdits = allEdits
+			add(hints[i])
+		}
 	}
-	typ := info.TypeOf(compLit)
-	if typ == nil {
-		return nil
+}
+
+func compositeLiteralTypes(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur cursor.Cursor, add func(protocol.InlayHint)) {
+	for curCompLit := range cur.Preorder((*ast.CompositeLit)(nil)) {
+		compLit := curCompLit.Node().(*ast.CompositeLit)
+		typ := info.TypeOf(compLit)
+		if typ == nil {
+			continue
+		}
+		if compLit.Type != nil {
+			continue
+		}
+		prefix := ""
+		if t, ok := typeparams.CoreType(typ).(*types.Pointer); ok {
+			typ = t.Elem()
+			prefix = "&"
+		}
+		// The type for this composite literal is implicit, add an inlay hint.
+		start, err := pgf.PosPosition(compLit.Lbrace)
+		if err != nil {
+			continue
+		}
+		add(protocol.InlayHint{
+			Position: start,
+			Label:    buildLabel(fmt.Sprintf("%s%s", prefix, types.TypeString(typ, qual))),
+			Kind:     protocol.Type,
+		})
 	}
-	if compLit.Type != nil {
-		return nil
-	}
-	prefix := ""
-	if t, ok := typeparams.CoreType(typ).(*types.Pointer); ok {
-		typ = t.Elem()
-		prefix = "&"
-	}
-	// The type for this composite literal is implicit, add an inlay hint.
-	start, err := m.PosPosition(tf, compLit.Lbrace)
-	if err != nil {
-		return nil
-	}
-	return []protocol.InlayHint{{
-		Position: start,
-		Label:    buildLabel(fmt.Sprintf("%s%s", prefix, types.TypeString(typ, *q))),
-		Kind:     protocol.Type,
-	}}
 }
 
 func buildLabel(s string) []protocol.InlayHintLabelPart {

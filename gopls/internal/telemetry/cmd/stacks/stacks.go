@@ -150,6 +150,7 @@ var programs = map[string]ProgramConfig{
 		MatchSymbolPrefix: "golang.org/x/tools/gopls/",
 		IgnoreSymbolContains: []string{
 			"internal/util/bug.",
+			"internal/bug.", // former name in gopls/0.14.2
 		},
 	},
 	"cmd/compile": {
@@ -478,11 +479,20 @@ func parsePredicate(s string) (func(string) bool, error) {
 			if err != nil {
 				return err
 			}
-			// The literal should match complete words. It may match multiple words,
-			// if it contains non-word runes like whitespace; but it must match word
-			// boundaries at each end.
+			// The end of the literal (usually "symbol",
+			// "pkg.symbol", or "pkg.symbol:+1") must
+			// match a word boundary. However, the start
+			// of the literal need not: an input line such
+			// as "domain.name/dir/pkg.symbol:+1" should
+			// match literal "pkg.symbol", but the slash
+			// is not a word boundary (witness:
+			// https://go.dev/play/p/w-8ev_VUBSq).
+			//
+			// It may match multiple words if it contains
+			// non-word runes like whitespace.
+			//
 			// The constructed regular expression is always valid.
-			literalRegexps[e] = regexp.MustCompile(`\b` + regexp.QuoteMeta(lit) + `\b`)
+			literalRegexps[e] = regexp.MustCompile(regexp.QuoteMeta(lit) + `\b`)
 
 		default:
 			return fmt.Errorf("syntax error (%T)", e)
@@ -1082,6 +1092,8 @@ type Issue struct {
 	// Set by claimIssues.
 	newStacks []string // new stacks to add to existing issue (comments and IDs)
 }
+
+func (issue *Issue) String() string { return fmt.Sprintf("#%d", issue.Number) }
 
 type User struct {
 	Login   string

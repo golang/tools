@@ -23,11 +23,13 @@ import (
 	"reflect"
 	"slices"
 
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 )
@@ -153,6 +155,11 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 	}
 	assert(file != nil, "nil *ast.File")
 
+	// Provide a cursor for fast and convenient navigation.
+	inspect := inspector.New([]*ast.File{file})
+	curFile, _ := cursor.Root(inspect).FirstChild()
+	_ = curFile.Node().(*ast.File)
+
 	return &File{
 		URI:      uri,
 		Mode:     mode,
@@ -161,6 +168,7 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 		fixedAST: fixedAST,
 		File:     file,
 		Tok:      tok,
+		Cursor:   curFile,
 		Mapper:   protocol.NewMapper(uri, src),
 		ParseErr: parseErr,
 	}, fixes

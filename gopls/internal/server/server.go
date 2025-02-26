@@ -447,12 +447,7 @@ func (s *server) initWeb() (*web, error) {
 		pkg := pkgs[0]
 
 		// Produce report.
-		html, err := golang.AssemblyHTML(ctx, snapshot, pkg, symbol, web)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Write(html)
+		golang.AssemblyHTML(ctx, snapshot, w, pkg, symbol, web)
 	})
 
 	return web, nil

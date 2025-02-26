@@ -25,6 +25,8 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
@@ -129,15 +131,15 @@ const FixCategory = "fillstruct" // recognized by gopls ApplyFix
 
 // SuggestedFix computes the suggested fix for the kinds of
 // diagnostics produced by the Analyzer above.
-func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	if info == nil {
-		return nil, nil, fmt.Errorf("nil types.Info")
-	}
-
-	pos := start // don't use the end
-
-	// TODO(rstambler): Using ast.Inspect would probably be more efficient than
-	// calling PathEnclosingInterval. Switch this approach.
+func SuggestedFix(cpkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	var (
+		fset = cpkg.FileSet()
+		pkg  = cpkg.Types()
+		info = cpkg.TypesInfo()
+		pos  = start // don't use end
+	)
+	// TODO(adonovan): simplify, using Cursor.
+	file := pgf.Cursor.Node().(*ast.File)
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if len(path) == 0 {
 		return nil, nil, fmt.Errorf("no enclosing ast.Node")
@@ -234,7 +236,7 @@ func SuggestedFix(fset *token.FileSet, start, end token.Pos, content []byte, fil
 	}
 
 	// Find the line on which the composite literal is declared.
-	split := bytes.Split(content, []byte("\n"))
+	split := bytes.Split(pgf.Src, []byte("\n"))
 	lineNumber := safetoken.StartPosition(fset, expr.Lbrace).Line
 	firstLine := split[lineNumber-1] // lines are 1-indexed
 

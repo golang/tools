@@ -5,9 +5,8 @@
 package noresultvalues
 
 import (
-	"bytes"
 	"go/ast"
-	"go/format"
+	"go/token"
 	"strings"
 
 	_ "embed"
@@ -15,7 +14,10 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil/cursor"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -30,57 +32,42 @@ var Analyzer = &analysis.Analyzer{
 	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/noresultvalues",
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	if len(pass.TypeErrors) == 0 {
-		return nil, nil
-	}
 
-	nodeFilter := []ast.Node{(*ast.ReturnStmt)(nil)}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		retStmt, _ := n.(*ast.ReturnStmt)
-
-		var file *ast.File
-		for _, f := range pass.Files {
-			if f.FileStart <= retStmt.Pos() && retStmt.Pos() < f.FileEnd {
-				file = f
-				break
-			}
+	for _, typErr := range pass.TypeErrors {
+		if !fixesError(typErr.Msg) {
+			continue // irrelevant error
 		}
-		if file == nil {
-			return
+		_, start, end, ok := typesinternal.ErrorCodeStartEnd(typErr)
+		if !ok {
+			continue // can't get position info
 		}
-
-		for _, err := range pass.TypeErrors {
-			if !FixesError(err.Msg) {
-				continue
-			}
-			if retStmt.Pos() >= err.Pos || err.Pos >= retStmt.End() {
-				continue
-			}
-			var buf bytes.Buffer
-			if err := format.Node(&buf, pass.Fset, file); err != nil {
-				continue
-			}
+		curErr, ok := cursor.Root(inspect).FindPos(start, end)
+		if !ok {
+			continue // can't find errant node
+		}
+		// Find first enclosing return statement, if any.
+		if curRet, ok := moreiters.First(curErr.Ancestors((*ast.ReturnStmt)(nil))); ok {
+			ret := curRet.Node()
 			pass.Report(analysis.Diagnostic{
-				Pos:     err.Pos,
-				End:     analysisinternal.TypeErrorEndPos(pass.Fset, buf.Bytes(), err.Pos),
-				Message: err.Msg,
+				Pos:     start,
+				End:     end,
+				Message: typErr.Msg,
 				SuggestedFixes: []analysis.SuggestedFix{{
 					Message: "Delete return values",
 					TextEdits: []analysis.TextEdit{{
-						Pos:     retStmt.Pos(),
-						End:     retStmt.End(),
-						NewText: []byte("return"),
+						Pos: ret.Pos() + token.Pos(len("return")),
+						End: ret.End(),
 					}},
 				}},
 			})
 		}
-	})
+	}
 	return nil, nil
 }
 
-func FixesError(msg string) bool {
+func fixesError(msg string) bool {
 	return msg == "no result values expected" ||
 		strings.HasPrefix(msg, "too many return values") && strings.Contains(msg, "want ()")
 }

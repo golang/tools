@@ -108,6 +108,12 @@ var C int
 -- c/c2.go --
 package c
 var C int
+-- d/d.go --
+package d
+
+import "io/ioutil"
+
+var _ = ioutil.ReadFile
 `)
 
 	// no files
@@ -140,6 +146,22 @@ var C int
 		res.checkExit(true)
 		res.checkStdout(`c2.go:2:5-6: C redeclared in this block`)
 		res.checkStdout(`c.go:2:5-6: - other declaration of C`)
+	}
+
+	// No deprecated (hint) diagnostic without -severity.
+	{
+		res := gopls(t, tree, "check", "./d/d.go")
+		res.checkExit(true)
+		if len(res.stdout) > 0 {
+			t.Errorf("check ./d/d.go returned unexpected output:\n%s", res.stdout)
+		}
+	}
+
+	// Deprecated (hint) diagnostics with -severity=hint
+	{
+		res := gopls(t, tree, "check", "-severity=hint", "./d/d.go")
+		res.checkExit(true)
+		res.checkStdout(`ioutil.ReadFile is deprecated`)
 	}
 }
 
@@ -930,7 +952,7 @@ package foo
 		res3 := goplsWithEnv(t, tree, []string{"GOPACKAGESDRIVER=off"}, "stats", "-anon")
 		res3.checkExit(true)
 
-		var statsAsMap3 map[string]interface{}
+		var statsAsMap3 map[string]any
 		if err := json.Unmarshal([]byte(res3.stdout), &statsAsMap3); err != nil {
 			t.Fatalf("failed to unmarshal JSON output of stats command: %v", err)
 		}
@@ -1212,7 +1234,7 @@ func (res *result) checkOutput(pattern, name, content string) {
 }
 
 // toJSON decodes res.stdout as JSON into to *ptr and reports its success.
-func (res *result) toJSON(ptr interface{}) bool {
+func (res *result) toJSON(ptr any) bool {
 	if err := json.Unmarshal([]byte(res.stdout), ptr); err != nil {
 		res.t.Errorf("invalid JSON %v", err)
 		return false

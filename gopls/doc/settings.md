@@ -146,10 +146,12 @@ Default: `["ignore"]`.
 <a id='workspaceFiles'></a>
 ### `workspaceFiles []string`
 
-workspaceFiles configures the set of globs that match files defining the logical build of the current workspace.
-Any on-disk changes to any files matching a glob specified here will trigger a reload of the workspace.
+workspaceFiles configures the set of globs that match files defining the
+logical build of the current workspace. Any on-disk changes to any files
+matching a glob specified here will trigger a reload of the workspace.
 
-This setting need only be customized in environments with a custom GOPACKAGESDRIVER.
+This setting need only be customized in environments with a custom
+GOPACKAGESDRIVER.
 
 Default: `[]`.
 
@@ -426,6 +428,9 @@ Must be one of:
 * `"FullDocumentation"`
 * `"NoDocumentation"`
 * `"SingleLine"`
+* `"Structured"` is a misguided experimental setting that returns a JSON
+hover format. This setting should not be used, as it will be removed in a
+future release of gopls.
 * `"SynopsisDocumentation"`
 
 Default: `"FullDocumentation"`.

@@ -46,7 +46,7 @@ import (
 	"golang.org/x/tools/internal/xcontext"
 )
 
-func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (interface{}, error) {
+func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (any, error) {
 	ctx, done := event.Start(ctx, "lsp.Server.executeCommand")
 	defer done()
 
@@ -309,10 +309,11 @@ func (c *commandHandler) AddTest(ctx context.Context, loc protocol.Location) (*p
 
 // commandConfig configures common command set-up and execution.
 type commandConfig struct {
-	requireSave bool                 // whether all files must be saved for the command to work
-	progress    string               // title to use for progress reporting. If empty, no progress will be reported.
-	forView     string               // view to resolve to a snapshot; incompatible with forURI
-	forURI      protocol.DocumentURI // URI to resolve to a snapshot. If unset, snapshot will be nil.
+	requireSave   bool                           // whether all files must be saved for the command to work
+	progress      string                         // title to use for progress reporting. If empty, no progress will be reported.
+	progressStyle settings.WorkDoneProgressStyle // style information for client-side progress display.
+	forView       string                         // view to resolve to a snapshot; incompatible with forURI
+	forURI        protocol.DocumentURI           // URI to resolve to a snapshot. If unset, snapshot will be nil.
 }
 
 // commandDeps is evaluated from a commandConfig. Note that not all fields may
@@ -382,7 +383,11 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 
 	ctx, cancel := context.WithCancel(xcontext.Detach(ctx))
 	if cfg.progress != "" {
-		deps.work = c.s.progress.Start(ctx, cfg.progress, "Running...", c.params.WorkDoneToken, cancel)
+		header := ""
+		if _, ok := c.s.options.SupportedWorkDoneProgressFormats[cfg.progressStyle]; ok && cfg.progressStyle != "" {
+			header = fmt.Sprintf("style: %s\n\n", cfg.progressStyle)
+		}
+		deps.work = c.s.progress.Start(ctx, cfg.progress, header+"Running...", c.params.WorkDoneToken, cancel)
 	}
 	runcmd := func() error {
 		defer release()
@@ -1214,9 +1219,10 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 
 	var commandResult command.VulncheckResult
 	err := c.run(ctx, commandConfig{
-		progress:    GoVulncheckCommandTitle,
-		requireSave: true, // govulncheck cannot honor overlays
-		forURI:      args.URI,
+		progress:      GoVulncheckCommandTitle,
+		progressStyle: settings.WorkDoneProgressStyleLog,
+		requireSave:   true, // govulncheck cannot honor overlays
+		forURI:        args.URI,
 	}, func(ctx context.Context, deps commandDeps) error {
 		jsonrpc2.Async(ctx) // run this in parallel with other requests: vulncheck can be slow.
 
@@ -1229,6 +1235,7 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 			return err
 		}
 		commandResult.Result = result
+		commandResult.Token = deps.work.Token()
 
 		snapshot, release, err := c.s.session.InvalidateView(ctx, deps.snapshot.View(), cache.StateChange{
 			Vulns: map[protocol.DocumentURI]*vulncheck.Result{args.URI: result},
@@ -1275,6 +1282,7 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 // slated for deletion.
 //
 // TODO(golang/vscode-go#3572)
+// TODO(hxjiang): deprecate gopls.run_govulncheck.
 func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.VulncheckArgs) (command.RunVulncheckResult, error) {
 	if args.URI == "" {
 		return command.RunVulncheckResult{}, errors.New("VulncheckArgs is missing URI field")
@@ -1726,4 +1734,33 @@ func (c *commandHandler) ScanImports(ctx context.Context) error {
 		v.ScanImports()
 	}
 	return nil
+}
+
+func (c *commandHandler) PackageSymbols(ctx context.Context, args command.PackageSymbolsArgs) (command.PackageSymbolsResult, error) {
+	var result command.PackageSymbolsResult
+	err := c.run(ctx, commandConfig{
+		forURI: args.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		if deps.snapshot.FileKind(deps.fh) != file.Go {
+			// golang/vscode-go#3681: fail silently, to avoid spurious error popups.
+			return nil
+		}
+		res, err := golang.PackageSymbols(ctx, deps.snapshot, args.URI)
+		if err != nil {
+			return err
+		}
+		result = res
+		return nil
+	})
+
+	// sort symbols for determinism
+	sort.SliceStable(result.Symbols, func(i, j int) bool {
+		iv, jv := result.Symbols[i], result.Symbols[j]
+		if iv.Name == jv.Name {
+			return iv.Range.Start.Line < jv.Range.Start.Line
+		}
+		return iv.Name < jv.Name
+	})
+
+	return result, err
 }

@@ -32,7 +32,7 @@ func testOverlayChangesPackageName(t *testing.T, exporter packagestest.Exporter)
 	log.SetFlags(log.Lshortfile)
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"a.go": "package foo\nfunc f(){}\n",
 		},
 		Overlay: map[string][]byte{
@@ -62,7 +62,7 @@ func testOverlayChangesBothPackageNames(t *testing.T, exporter packagestest.Expo
 	log.SetFlags(log.Lshortfile)
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"a.go":      "package foo\nfunc g(){}\n",
 			"a_test.go": "package foo\nfunc f(){}\n",
 		},
@@ -110,7 +110,7 @@ func TestOverlayChangesTestPackageName(t *testing.T) {
 func testOverlayChangesTestPackageName(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"a_test.go": "package foo\nfunc f(){}\n",
 		},
 		Overlay: map[string][]byte{
@@ -194,7 +194,7 @@ func TestHello(t *testing.T) {
 	// First, get the source of truth by loading the package, all on disk.
 	onDisk := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"a/a.go":        aFile,
 			"a/a_test.go":   aTestVariant,
 			"a/a_x_test.go": aXTest,
@@ -213,7 +213,7 @@ func TestHello(t *testing.T) {
 
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"a/a.go":        aFile,
 			"a/a_test.go":   aTestVariant,
 			"a/a_x_test.go": ``, // empty x test on disk
@@ -248,7 +248,7 @@ func TestOverlay(t *testing.T) { testAllOrModulesParallel(t, testOverlay) }
 func testOverlay(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"a/a.go":      `package a; import "golang.org/fake/b"; const A = "a" + b.B`,
 			"b/b.go":      `package b; import "golang.org/fake/c"; const B = "b" + c.C`,
 			"c/c.go":      `package c; const C = "c"`,
@@ -316,7 +316,7 @@ func TestOverlayDeps(t *testing.T) { testAllOrModulesParallel(t, testOverlayDeps
 func testOverlayDeps(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"c/c.go":      `package c; const C = "c"`,
 			"c/c_test.go": `package c; import "testing"; func TestC(t *testing.T) {}`,
 		},
@@ -366,7 +366,7 @@ func testNewPackagesInOverlay(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{
 		{
 			Name: "golang.org/fake",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"a/a.go": `package a; import "golang.org/fake/b"; const A = "a" + b.B`,
 				"b/b.go": `package b; import "golang.org/fake/c"; const B = "b" + c.C`,
 				"c/c.go": `package c; const C = "c"`,
@@ -375,7 +375,7 @@ func testNewPackagesInOverlay(t *testing.T, exporter packagestest.Exporter) {
 		},
 		{
 			Name: "example.com/extramodule",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"pkg/x.go": "package pkg\n",
 			},
 		},
@@ -471,7 +471,7 @@ func testOverlayNewPackageAndTest(t *testing.T, exporter packagestest.Exporter) 
 	exported := packagestest.Export(t, exporter, []packagestest.Module{
 		{
 			Name: "golang.org/fake",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"foo.txt": "placeholder",
 			},
 		},
@@ -623,7 +623,7 @@ func TestOverlayGOPATHVendoring(t *testing.T) {
 
 	exported := packagestest.Export(t, packagestest.GOPATH, []packagestest.Module{{
 		Name: "golang.org/fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"vendor/vendor.com/foo/foo.go": `package foo; const X = "hi"`,
 			"user/user.go":                 `package user`,
 		},
@@ -652,7 +652,7 @@ func TestContainsOverlay(t *testing.T) { testAllOrModulesParallel(t, testContain
 func testContainsOverlay(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"a/a.go": `package a; import "golang.org/fake/b"`,
 			"b/b.go": `package b; import "golang.org/fake/c"`,
 			"c/c.go": `package c`,
@@ -681,7 +681,7 @@ func TestContainsOverlayXTest(t *testing.T) { testAllOrModulesParallel(t, testCo
 func testContainsOverlayXTest(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{{
 		Name: "golang.org/fake",
-		Files: map[string]interface{}{
+		Files: map[string]any{
 			"a/a.go": `package a; import "golang.org/fake/b"`,
 			"b/b.go": `package b; import "golang.org/fake/c"`,
 			"c/c.go": `package c`,
@@ -717,7 +717,7 @@ func testInvalidFilesBeforeOverlay(t *testing.T, exporter packagestest.Exporter)
 	exported := packagestest.Export(t, exporter, []packagestest.Module{
 		{
 			Name: "golang.org/fake",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"d/d.go":  ``,
 				"main.go": ``,
 			},
@@ -754,7 +754,7 @@ func testInvalidFilesBeforeOverlayContains(t *testing.T, exporter packagestest.E
 	exported := packagestest.Export(t, exporter, []packagestest.Module{
 		{
 			Name: "golang.org/fake",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"d/d.go":      `package d; import "net/http"; const Get = http.MethodGet; const Hello = "hello";`,
 				"d/util.go":   ``,
 				"d/d_test.go": ``,
@@ -861,7 +861,7 @@ func testInvalidXTestInGOPATH(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{
 		{
 			Name: "golang.org/fake",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"x/x.go":      `package x`,
 				"x/x_test.go": ``,
 			},
@@ -892,7 +892,7 @@ func testAddImportInOverlay(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{
 		{
 			Name: "golang.org/fake",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"a/a.go": `package a
 
 import (
@@ -961,7 +961,7 @@ func testLoadDifferentPatterns(t *testing.T, exporter packagestest.Exporter) {
 	exported := packagestest.Export(t, exporter, []packagestest.Module{
 		{
 			Name: "golang.org/fake",
-			Files: map[string]interface{}{
+			Files: map[string]any{
 				"foo.txt": "placeholder",
 				"b/b.go": `package b
 import "golang.org/fake/a"

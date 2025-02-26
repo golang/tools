@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // exprAtPos returns the index of the expression containing pos.
@@ -126,7 +127,9 @@ func resolveInvalid(fset *token.FileSet, obj types.Object, node ast.Node, info *
 	// Construct a fake type for the object and return a fake object with this type.
 	typename := golang.FormatNode(fset, resultExpr)
 	typ := types.NewNamed(types.NewTypeName(token.NoPos, obj.Pkg(), typename, nil), types.Typ[types.Invalid], nil)
-	return types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), typ)
+	v := types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), typ)
+	typesinternal.SetVarKind(v, typesinternal.PackageVar)
+	return v
 }
 
 // TODO(adonovan): inline these.

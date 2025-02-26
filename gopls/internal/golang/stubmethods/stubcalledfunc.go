@@ -13,6 +13,8 @@ import (
 	"strings"
 	"unicode"
 
+	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -34,7 +36,9 @@ type CallStubInfo struct {
 
 // GetCallStubInfo extracts necessary information to generate a method definition from
 // a CallExpr.
-func GetCallStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos token.Pos) *CallStubInfo {
+func GetCallStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, start, end token.Pos) *CallStubInfo {
+	// TODO(adonovan): simplify, using pgf.Cursor.
+	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 	for i, n := range path {
 		switch n := n.(type) {
 		case *ast.CallExpr:

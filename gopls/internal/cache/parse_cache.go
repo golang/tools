@@ -195,7 +195,7 @@ func (c *parseCache) startParse(mode parser.Mode, purgeFuncBodies bool, fhs ...f
 		}
 
 		uri := fh.URI()
-		promise := memoize.NewPromise("parseCache.parse", func(ctx context.Context, _ interface{}) interface{} {
+		promise := memoize.NewPromise("parseCache.parse", func(ctx context.Context, _ any) any {
 			// Allocate 2*len(content)+parsePadding to allow for re-parsing once
 			// inside of parseGoSrc without exceeding the allocated space.
 			base, nextBase := c.allocateSpace(2*len(content) + parsePadding)
@@ -404,13 +404,13 @@ func (q queue) Swap(i, j int) {
 	q[j].lruIndex = j
 }
 
-func (q *queue) Push(x interface{}) {
+func (q *queue) Push(x any) {
 	e := x.(*parseCacheEntry)
 	e.lruIndex = len(*q)
 	*q = append(*q, e)
 }
 
-func (q *queue) Pop() interface{} {
+func (q *queue) Pop() any {
 	last := len(*q) - 1
 	e := (*q)[last]
 	(*q)[last] = nil // aid GC

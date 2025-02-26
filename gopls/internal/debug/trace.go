@@ -277,7 +277,7 @@ func (t *traces) addRecentLocked(span *traceSpan, start bool) {
 }
 
 // getData returns the TraceResults rendered by TraceTmpl for the /trace[/name] endpoint.
-func (t *traces) getData(req *http.Request) interface{} {
+func (t *traces) getData(req *http.Request) any {
 	// TODO(adonovan): the HTTP request doesn't acquire the mutex
 	// for t or for each span! Audit and fix.
 

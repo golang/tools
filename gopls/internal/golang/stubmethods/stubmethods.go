@@ -15,8 +15,10 @@ import (
 	"go/types"
 	"strings"
 
+	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
@@ -49,7 +51,12 @@ type IfaceStubInfo struct {
 // function call. This is essentially what the refactor/satisfy does,
 // more generally. Refactor to share logic, after auditing 'satisfy'
 // for safety on ill-typed code.
-func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node, pos token.Pos) *IfaceStubInfo {
+func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, pos, end token.Pos) *IfaceStubInfo {
+	// TODO(adonovan): simplify, using Cursor:
+	//   curErr, _ := pgf.Cursor.FindPos(pos, end)
+	//   for cur := range curErr.Ancestors() {
+	// 	  switch n := cur.Node().(type) {...
+	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, end)
 	for _, n := range path {
 		switch n := n.(type) {
 		case *ast.ValueSpec:
@@ -452,7 +459,8 @@ func concreteType(info *types.Info, e ast.Expr) (*types.Named, bool) {
 }
 
 // GetFieldStubInfo creates a StructFieldInfo instance to generate a struct field in a given SelectorExpr
-func GetFieldStubInfo(fset *token.FileSet, info *types.Info, path []ast.Node) *StructFieldInfo {
+func GetFieldStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, start, end token.Pos) *StructFieldInfo {
+	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 	for _, node := range path {
 		s, ok := node.(*ast.SelectorExpr)
 		if !ok {

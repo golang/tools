@@ -32,7 +32,7 @@ type SSA struct {
 	SrcFuncs []*ssa.Function
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	// We must create a new Program for each Package because the
 	// analysis API provides no place to hang a Program shared by
 	// all Packages. Consequently, SSA Packages and Functions do not

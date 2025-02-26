@@ -371,7 +371,7 @@ func (r *rta) interfaces(C types.Type) []*types.Interface {
 
 		// Ascertain set of interfaces C implements
 		// and update the 'implements' relation.
-		r.interfaceTypes.Iterate(func(I types.Type, v interface{}) {
+		r.interfaceTypes.Iterate(func(I types.Type, v any) {
 			iinfo := v.(*interfaceTypeInfo)
 			if I := types.Unalias(I).(*types.Interface); implements(cinfo, iinfo) {
 				iinfo.implementations = append(iinfo.implementations, C)
@@ -400,7 +400,7 @@ func (r *rta) implementations(I *types.Interface) []types.Type {
 
 		// Ascertain set of concrete types that implement I
 		// and update the 'implements' relation.
-		r.concreteTypes.Iterate(func(C types.Type, v interface{}) {
+		r.concreteTypes.Iterate(func(C types.Type, v any) {
 			cinfo := v.(*concreteTypeInfo)
 			if implements(cinfo, iinfo) {
 				cinfo.implements = append(cinfo.implements, I)

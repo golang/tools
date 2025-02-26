@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"testing"
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
@@ -165,6 +166,36 @@ func newModcacheState(dir string) *modcacheState {
 	s.refreshTimer = newRefreshTimer(s.refreshIndex)
 	go s.refreshIndex()
 	return s
+}
+
+func (s *modcacheState) GetIndex() (*modindex.Index, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ix := s.index
+	if ix == nil || len(ix.Entries) == 0 {
+		var err error
+		// this should only happen near the beginning of a session
+		// (or in tests)
+		ix, err = modindex.ReadIndex(s.dir)
+		if err != nil {
+			return nil, fmt.Errorf("ReadIndex %w", err)
+		}
+		if !testing.Testing() {
+			return ix, nil
+		}
+		if ix == nil || len(ix.Entries) == 0 {
+			err = modindex.Create(s.dir)
+			if err != nil {
+				return nil, fmt.Errorf("creating index %w", err)
+			}
+			ix, err = modindex.ReadIndex(s.dir)
+			if err != nil {
+				return nil, fmt.Errorf("read index after create %w", err)
+			}
+			s.index = ix
+		}
+	}
+	return s.index, nil
 }
 
 func (s *modcacheState) refreshIndex() {

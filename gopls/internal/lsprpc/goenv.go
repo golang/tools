@@ -12,7 +12,7 @@ import (
 	"golang.org/x/tools/internal/gocommand"
 )
 
-func getGoEnv(ctx context.Context, env map[string]interface{}) (map[string]string, error) {
+func getGoEnv(ctx context.Context, env map[string]any) (map[string]string, error) {
 	var runEnv []string
 	for k, v := range env {
 		runEnv = append(runEnv, fmt.Sprintf("%s=%s", k, v))

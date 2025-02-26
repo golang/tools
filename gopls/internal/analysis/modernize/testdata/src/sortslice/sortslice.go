@@ -6,8 +6,6 @@ type myint int
 
 func _(s []myint) {
 	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] }) // want "sort.Slice can be modernized using slices.Sort"
-
-	sort.SliceStable(s, func(i, j int) bool { return s[i] < s[j] }) // want "sort.SliceStable can be modernized using slices.SortStable"
 }
 
 func _(x *struct{ s []int }) {
@@ -22,6 +20,16 @@ func _(s []int) {
 	sort.Slice(s, func(i, j int) bool { return s[j] < s[i] }) // nope: wrong index var
 }
 
-func _(s2 []struct{ x int }) {
+func _(sense bool, s2 []struct{ x int }) {
 	sort.Slice(s2, func(i, j int) bool { return s2[i].x < s2[j].x }) // nope: not a simple index operation
+
+	// Regression test for a crash: the sole statement of a
+	// comparison func body is not necessarily a return!
+	sort.Slice(s2, func(i, j int) bool {
+		if sense {
+			return s2[i].x < s2[j].x
+		} else {
+			return s2[i].x > s2[j].x
+		}
+	})
 }

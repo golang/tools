@@ -92,3 +92,26 @@ func nopeAssignHasIncrementOperator() {
 	}
 	print(y)
 }
+
+// Regression test for https://github.com/golang/go/issues/71721.
+func nopeNotAMinimum(x, y int) int {
+	// A value of -1 or 0 will use a default value (30).
+	if x <= 0 {
+		y = 30
+	} else {
+		y = x
+	}
+	return y
+}
+
+// Regression test for https://github.com/golang/go/issues/71847#issuecomment-2673491596
+func nopeHasElseBlock(x int) int {
+	y := x
+	// Before, this was erroneously reduced to y = max(x, 0)
+	if y < 0 {
+		y = 0
+	} else {
+		y += 2
+	}
+	return y
+}

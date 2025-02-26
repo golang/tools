@@ -602,14 +602,12 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 
 	// Scan through syntax looking for uses of one of the target objects.
 	for _, pgf := range pkg.CompiledGoFiles() {
-		ast.Inspect(pgf.File, func(n ast.Node) bool {
-			if id, ok := n.(*ast.Ident); ok {
-				if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {
-					report(mustLocation(pgf, id), false)
-				}
+		for curId := range pgf.Cursor.Preorder((*ast.Ident)(nil)) {
+			id := curId.Node().(*ast.Ident)
+			if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {
+				report(mustLocation(pgf, id), false)
 			}
-			return true
-		})
+		}
 	}
 	return nil
 }

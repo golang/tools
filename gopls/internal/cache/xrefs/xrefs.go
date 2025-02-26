@@ -44,8 +44,8 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 	objectpathFor := new(objectpath.Encoder).For
 
 	for fileIndex, pgf := range files {
-		ast.Inspect(pgf.File, func(n ast.Node) bool {
-			switch n := n.(type) {
+		for cur := range pgf.Cursor.Preorder((*ast.Ident)(nil), (*ast.ImportSpec)(nil)) {
+			switch n := cur.Node().(type) {
 			case *ast.Ident:
 				// Report a reference for each identifier that
 				// uses a symbol exported from another package.
@@ -68,7 +68,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 							if err != nil {
 								// Capitalized but not exported
 								// (e.g. local const/var/type).
-								return true
+								continue
 							}
 							gobObj = &gobObject{Path: path}
 							objects[obj] = gobObj
@@ -91,7 +91,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 				// string to the imported package.
 				pkgname := info.PkgNameOf(n)
 				if pkgname == nil {
-					return true // missing import
+					continue // missing import
 				}
 				objects := getObjects(pkgname.Imported())
 				gobObj, ok := objects[nil]
@@ -109,8 +109,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 					bug.Reportf("out of bounds import spec %+v", n.Path)
 				}
 			}
-			return true
-		})
+		}
 	}
 
 	// Flatten the maps into slices, and sort for determinism.

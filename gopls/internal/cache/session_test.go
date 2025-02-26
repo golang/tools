@@ -337,7 +337,8 @@ replace (
 			for _, f := range test.folders {
 				opts := settings.DefaultOptions()
 				if f.options != nil {
-					for _, err := range opts.Set(f.options(dir)) {
+					_, errs := opts.Set(f.options(dir))
+					for _, err := range errs {
 						t.Fatal(err)
 					}
 				}

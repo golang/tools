@@ -1,0 +1,30 @@
+# Conflicting edits are legal, so long as they appear in different fixes.
+# The driver will apply them in some order, and discard those that conflict.
+#
+# fix1 appears first, so is applied first; it succeeds.
+# fix2 and fix3 conflict with it and are rejected.
+
+checker -marker -fix example.com/a
+exit 1
+stderr applied 1 of 3 fixes; 1 files updated...Re-run
+
+-- go.mod --
+module example.com
+
+go 1.22
+
+-- a/a.go --
+package a
+
+func f() {
+	bar := 12 //@ fix1("\tbar", "baz"), fix2("ar ", "baz"), fix3("bar", "lorem ipsum")
+	_ = bar   //@ fix1(" bar", "baz")
+}
+
+-- want/a/a.go --
+package a
+
+func f() {
+	baz := 12 //@ fix1("\tbar", "baz"), fix2("ar ", "baz"), fix3("bar", "lorem ipsum")
+	_ = baz   //@ fix1(" bar", "baz")
+}

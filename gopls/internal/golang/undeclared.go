@@ -16,6 +16,8 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -69,8 +71,14 @@ func undeclaredFixTitle(path []ast.Node, errMsg string) string {
 }
 
 // createUndeclared generates a suggested declaration for an undeclared variable or function.
-func createUndeclared(fset *token.FileSet, start, end token.Pos, content []byte, file *ast.File, pkg *types.Package, info *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	pos := start // don't use the end
+func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	var (
+		fset = pkg.FileSet()
+		info = pkg.TypesInfo()
+		file = pgf.File
+		pos  = start // don't use end
+	)
+	// TODO(adonovan): simplify, using Cursor.
 	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 	if len(path) < 2 {
 		return nil, nil, fmt.Errorf("no expression found")
@@ -83,7 +91,7 @@ func createUndeclared(fset *token.FileSet, start, end token.Pos, content []byte,
 	// Check for a possible call expression, in which case we should add a
 	// new function declaration.
 	if isCallPosition(path) {
-		return newFunctionDeclaration(path, file, pkg, info, fset)
+		return newFunctionDeclaration(path, file, pkg.Types(), info, fset)
 	}
 	var (
 		firstRef     *ast.Ident // We should insert the new declaration before the first occurrence of the undefined ident.
@@ -129,7 +137,7 @@ func createUndeclared(fset *token.FileSet, start, end token.Pos, content []byte,
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not locate insertion point: %v", err)
 	}
-	indent, err := calculateIndentation(content, fset.File(file.FileStart), insertBeforeStmt)
+	indent, err := calculateIndentation(pgf.Src, fset.File(file.FileStart), insertBeforeStmt)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -138,7 +146,7 @@ func createUndeclared(fset *token.FileSet, start, end token.Pos, content []byte,
 		// Default to 0.
 		typs = []types.Type{types.Typ[types.Int]}
 	}
-	expr, _ := typesinternal.ZeroExpr(typs[0], typesinternal.FileQualifier(file, pkg))
+	expr, _ := typesinternal.ZeroExpr(typs[0], typesinternal.FileQualifier(file, pkg.Types()))
 	assignStmt := &ast.AssignStmt{
 		Lhs: []ast.Expr{ast.NewIdent(ident.Name)},
 		Tok: token.DEFINE,

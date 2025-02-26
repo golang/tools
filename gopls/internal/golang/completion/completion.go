@@ -668,7 +668,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 
 	err = c.collectCompletions(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to collect completions: %v", err)
 	}
 
 	// Deep search collected candidates and their members for more candidates.
@@ -688,7 +688,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	for _, callback := range c.completionCallbacks {
 		if deadline == nil || time.Now().Before(*deadline) {
 			if err := c.snapshot.RunProcessEnvFunc(ctx, callback); err != nil {
-				return nil, nil, err
+				return nil, nil, fmt.Errorf("failed to run goimports callback: %v", err)
 			}
 		}
 	}
@@ -989,7 +989,10 @@ func (c *completer) populateImportCompletions(searchImport *ast.ImportSpec) erro
 	}
 
 	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
-		return imports.GetImportPaths(ctx, searchImports, prefix, c.filename, c.pkg.Types().Name(), opts.Env)
+		if err := imports.GetImportPaths(ctx, searchImports, prefix, c.filename, c.pkg.Types().Name(), opts.Env); err != nil {
+			return fmt.Errorf("getting import paths: %v", err)
+		}
+		return nil
 	})
 	return nil
 }
@@ -1529,7 +1532,10 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 
 	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
 		defer cancel()
-		return imports.GetPackageExports(ctx, add, id.Name, c.filename, c.pkg.Types().Name(), opts.Env)
+		if err := imports.GetPackageExports(ctx, add, id.Name, c.filename, c.pkg.Types().Name(), opts.Env); err != nil {
+			return fmt.Errorf("getting package exports: %v", err)
+		}
+		return nil
 	})
 	return nil
 }
@@ -1916,7 +1922,10 @@ func (c *completer) unimportedPackages(ctx context.Context, seen map[string]stru
 	}
 
 	c.completionCallbacks = append(c.completionCallbacks, func(ctx context.Context, opts *imports.Options) error {
-		return imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.Types().Name(), opts.Env)
+		if err := imports.GetAllCandidates(ctx, add, prefix, c.filename, c.pkg.Types().Name(), opts.Env); err != nil {
+			return fmt.Errorf("getting completion candidates: %v", err)
+		}
+		return nil
 	})
 
 	return nil

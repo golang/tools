@@ -153,7 +153,14 @@ func (req *codeActionsRequest) addApplyFixAction(title, fix string, loc protocol
 // then the command is embedded into the code action data field so
 // that the client can later ask the server to "resolve" a command
 // into an edit that they can preview and apply selectively.
-// Set allowResolveEdits only for actions that generate edits.
+// IMPORTANT: set allowResolveEdits only for actions that are 'edit aware',
+// meaning they can detect when they are being executed in the context of a
+// codeAction/resolve request, and return edits rather than applying them using
+// workspace/applyEdit. In golang/go#71405, edits were being apply during the
+// codeAction/resolve request handler.
+// TODO(rfindley): refactor the command and code lens registration APIs so that
+// resolve edit support is inferred from the command signature, not dependent
+// on coordination between codeAction and command logic.
 //
 // Otherwise, the command is set as the code action operation.
 func (req *codeActionsRequest) addCommandAction(cmd *protocol.Command, allowResolveEdits bool) {
@@ -252,6 +259,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorRewriteMoveParamLeft, fn: refactorRewriteMoveParamLeft, needPkg: true},
 	{kind: settings.RefactorRewriteMoveParamRight, fn: refactorRewriteMoveParamRight, needPkg: true},
 	{kind: settings.RefactorRewriteSplitLines, fn: refactorRewriteSplitLines, needPkg: true},
+	{kind: settings.RefactorRewriteEliminateDotImport, fn: refactorRewriteEliminateDotImport, needPkg: true},
 
 	// Note: don't forget to update the allow-list in Server.CodeAction
 	// when adding new query operations like GoTest and GoDoc that
@@ -301,7 +309,7 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 	for _, typeError := range req.pkg.TypeErrors() {
 		// Does type error overlap with CodeAction range?
 		start, end := typeError.Pos, typeError.Pos
-		if _, _, endPos, ok := typesinternal.ReadGo116ErrorData(typeError); ok {
+		if _, _, endPos, ok := typesinternal.ErrorCodeStartEnd(typeError); ok {
 			end = endPos
 		}
 		typeErrorRange, err := req.pgf.PosRange(start, end)
@@ -317,8 +325,7 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 		case strings.Contains(msg, "missing method"),
 			strings.HasPrefix(msg, "cannot convert"),
 			strings.Contains(msg, "not implement"):
-			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
-			si := stubmethods.GetIfaceStubInfo(req.pkg.FileSet(), info, path, start)
+			si := stubmethods.GetIfaceStubInfo(req.pkg.FileSet(), info, req.pgf, start, end)
 			if si != nil {
 				qual := typesinternal.FileQualifier(req.pgf.File, si.Concrete.Obj().Pkg())
 				iface := types.TypeString(si.Interface.Type(), qual)
@@ -328,25 +335,21 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 
 		// "type X has no field or method Y" compiler error.
 		case strings.Contains(msg, "has no field or method"):
-			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
-
-			// Offer a "Declare missing method T.f" code action if a CallStubInfo found.
+			// Offer a "Declare missing method T.f" code action.
 			// See [stubMissingCalledFunctionFixer] for command implementation.
-			si := stubmethods.GetCallStubInfo(req.pkg.FileSet(), info, path, start)
+			si := stubmethods.GetCallStubInfo(req.pkg.FileSet(), info, req.pgf, start, end)
 			if si != nil {
 				msg := fmt.Sprintf("Declare missing method %s.%s", si.Receiver.Obj().Name(), si.MethodName)
 				req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
 			} else {
-				// Offer a "Declare missing field T.f" code action AND "Declare missing method T.f" as specified above
-				// See [stubMissingStructFieldFixer] for command implementation.
-				fi := stubmethods.GetFieldStubInfo(req.pkg.FileSet(), info, path)
+				fi := stubmethods.GetFieldStubInfo(req.pkg.FileSet(), info, req.pgf, start, end)
 				if fi != nil {
 					msg := fmt.Sprintf("Declare missing struct field %s.%s", fi.Named.Obj().Name(), fi.Expr.Sel.Name)
 					req.addApplyFixAction(msg, fixMissingStructField, req.loc)
 
 					// undeclared field might be a method
-					msg = fmt.Sprintf("Declare missing method %s.%s", fi.Named.Obj().Name(), fi.Expr.Sel.Name)
-					req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
+					// msg = fmt.Sprintf("Declare missing method %s.%s", fi.Named.Obj().Name(), fi.Expr.Sel.Name)
+					// req.addApplyFixAction(msg, fixMissingCalledFunction, req.loc)
 				}
 			}
 
@@ -467,7 +470,7 @@ func goDoc(ctx context.Context, req *codeActionsRequest) error {
 // refactorExtractFunction produces "Extract function" code actions.
 // See [extractFunction] for command implementation.
 func refactorExtractFunction(ctx context.Context, req *codeActionsRequest) error {
-	if _, ok, _, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.File); ok {
+	if _, ok, _, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.Cursor); ok {
 		req.addApplyFixAction("Extract function", fixExtractFunction, req.loc)
 	}
 	return nil
@@ -476,7 +479,7 @@ func refactorExtractFunction(ctx context.Context, req *codeActionsRequest) error
 // refactorExtractMethod produces "Extract method" code actions.
 // See [extractMethod] for command implementation.
 func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
-	if _, ok, methodOK, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.File); ok && methodOK {
+	if _, ok, methodOK, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.Cursor); ok && methodOK {
 		req.addApplyFixAction("Extract method", fixExtractMethod, req.loc)
 	}
 	return nil
@@ -486,7 +489,7 @@ func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
 // See [extractVariable] for command implementation.
 func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error {
 	info := req.pkg.TypesInfo()
-	if exprs, err := canExtractVariable(info, req.pgf.File, req.start, req.end, false); err == nil {
+	if exprs, err := canExtractVariable(info, req.pgf.Cursor, req.start, req.end, false); err == nil {
 		// Offer one of refactor.extract.{constant,variable}
 		// based on the constness of the expression; this is a
 		// limitation of the codeActionProducers mechanism.
@@ -512,7 +515,7 @@ func refactorExtractVariableAll(ctx context.Context, req *codeActionsRequest) er
 	info := req.pkg.TypesInfo()
 	// Don't suggest if only one expr is found,
 	// otherwise it will duplicate with [refactorExtractVariable]
-	if exprs, err := canExtractVariable(info, req.pgf.File, req.start, req.end, true); err == nil && len(exprs) > 1 {
+	if exprs, err := canExtractVariable(info, req.pgf.Cursor, req.start, req.end, true); err == nil && len(exprs) > 1 {
 		start, end, err := req.pgf.NodeOffsets(exprs[0])
 		if err != nil {
 			return err
@@ -540,7 +543,7 @@ func refactorExtractVariableAll(ctx context.Context, req *codeActionsRequest) er
 func refactorExtractToNewFile(ctx context.Context, req *codeActionsRequest) error {
 	if canExtractToNewFile(req.pgf, req.start, req.end) {
 		cmd := command.NewExtractToNewFileCommand("Extract declarations to new file", req.loc)
-		req.addCommandAction(cmd, true)
+		req.addCommandAction(cmd, false)
 	}
 	return nil
 }
@@ -574,7 +577,7 @@ func addTest(ctx context.Context, req *codeActionsRequest) error {
 	}
 
 	cmd := command.NewAddTestCommand("Add test for "+decl.Name.String(), req.loc)
-	req.addCommandAction(cmd, true)
+	req.addCommandAction(cmd, false)
 
 	// TODO(hxjiang): add code action for generate test for package/file.
 	return nil
@@ -669,7 +672,7 @@ func refactorRewriteChangeQuote(ctx context.Context, req *codeActionsRequest) er
 // refactorRewriteInvertIf produces "Invert 'if' condition" code actions.
 // See [invertIfCondition] for command implementation.
 func refactorRewriteInvertIf(ctx context.Context, req *codeActionsRequest) error {
-	if _, ok, _ := canInvertIfCondition(req.pgf.File, req.start, req.end); ok {
+	if _, ok, _ := canInvertIfCondition(req.pgf.Cursor, req.start, req.end); ok {
 		req.addApplyFixAction("Invert 'if' condition", fixInvertIfCondition, req.loc)
 	}
 	return nil
@@ -679,9 +682,108 @@ func refactorRewriteInvertIf(ctx context.Context, req *codeActionsRequest) error
 // See [splitLines] for command implementation.
 func refactorRewriteSplitLines(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): opt: don't set needPkg just for FileSet.
-	if msg, ok, _ := canSplitLines(req.pgf.File, req.pkg.FileSet(), req.start, req.end); ok {
+	if msg, ok, _ := canSplitLines(req.pgf.Cursor, req.pkg.FileSet(), req.start, req.end); ok {
 		req.addApplyFixAction(msg, fixSplitLines, req.loc)
 	}
+	return nil
+}
+
+func refactorRewriteEliminateDotImport(ctx context.Context, req *codeActionsRequest) error {
+	// Figure out if the request is placed over a dot import.
+	var importSpec *ast.ImportSpec
+	for _, imp := range req.pgf.File.Imports {
+		if posRangeContains(imp.Pos(), imp.End(), req.start, req.end) {
+			importSpec = imp
+			break
+		}
+	}
+	if importSpec == nil {
+		return nil
+	}
+	if importSpec.Name == nil || importSpec.Name.Name != "." {
+		return nil
+	}
+
+	// dotImported package path and its imported name after removing the dot.
+	imported := req.pkg.TypesInfo().PkgNameOf(importSpec).Imported()
+	newName := imported.Name()
+
+	rng, err := req.pgf.PosRange(importSpec.Name.Pos(), importSpec.Path.Pos())
+	if err != nil {
+		return err
+	}
+	// Delete the '.' part of the import.
+	edits := []protocol.TextEdit{{
+		Range: rng,
+	}}
+
+	fileScope, ok := req.pkg.TypesInfo().Scopes[req.pgf.File]
+	if !ok {
+		return nil
+	}
+
+	// Go through each use of the dot imported package, checking its scope for
+	// shadowing and calculating an edit to qualify the identifier.
+	var stack []ast.Node
+	ast.Inspect(req.pgf.File, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1] // pop
+			return false
+		}
+		stack = append(stack, n) // push
+
+		ident, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		// Only keep identifiers that use a symbol from the
+		// dot imported package.
+		use := req.pkg.TypesInfo().Uses[ident]
+		if use == nil || use.Pkg() == nil {
+			return true
+		}
+		if use.Pkg() != imported {
+			return true
+		}
+
+		// Only qualify unqualified identifiers (due to dot imports).
+		// All other references to a symbol imported from another package
+		// are nested within a select expression (pkg.Foo, v.Method, v.Field).
+		if is[*ast.SelectorExpr](stack[len(stack)-2]) {
+			return true
+		}
+
+		// Make sure that the package name will not be shadowed by something else in scope.
+		// If it is then we cannot offer this particular code action.
+		//
+		// TODO: If the object found in scope is the package imported without a
+		// dot, or some builtin not used in the file, the code action could be
+		// allowed to go through.
+		sc := fileScope.Innermost(ident.Pos())
+		if sc == nil {
+			return true
+		}
+		_, obj := sc.LookupParent(newName, ident.Pos())
+		if obj != nil {
+			return true
+		}
+
+		rng, err := req.pgf.PosRange(ident.Pos(), ident.Pos()) // sic, zero-width range before ident
+		if err != nil {
+			return true
+		}
+		edits = append(edits, protocol.TextEdit{
+			Range:   rng,
+			NewText: newName + ".",
+		})
+
+		return true
+	})
+
+	req.addEditAction("Eliminate dot import", nil, protocol.DocumentChangeEdit(
+		req.fh,
+		edits,
+	))
 	return nil
 }
 
@@ -689,7 +791,7 @@ func refactorRewriteSplitLines(ctx context.Context, req *codeActionsRequest) err
 // See [joinLines] for command implementation.
 func refactorRewriteJoinLines(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): opt: don't set needPkg just for FileSet.
-	if msg, ok, _ := canJoinLines(req.pgf.File, req.pkg.FileSet(), req.start, req.end); ok {
+	if msg, ok, _ := canJoinLines(req.pgf.Cursor, req.pkg.FileSet(), req.start, req.end); ok {
 		req.addApplyFixAction(msg, fixJoinLines, req.loc)
 	}
 	return nil
@@ -852,43 +954,65 @@ func goAssembly(ctx context.Context, req *codeActionsRequest) error {
 	// directly to (say) a lambda of interest.
 	// Perhaps we could scroll to STEXT for the innermost
 	// enclosing nested function?
-	path, _ := astutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
-	if len(path) >= 2 { // [... FuncDecl File]
-		if decl, ok := path[len(path)-2].(*ast.FuncDecl); ok {
-			if fn, ok := req.pkg.TypesInfo().Defs[decl.Name].(*types.Func); ok {
-				sig := fn.Signature()
 
-				// Compute the linker symbol of the enclosing function.
-				var sym strings.Builder
-				if fn.Pkg().Name() == "main" {
-					sym.WriteString("main")
-				} else {
-					sym.WriteString(fn.Pkg().Path())
-				}
-				sym.WriteString(".")
-				if sig.Recv() != nil {
-					if isPtr, named := typesinternal.ReceiverNamed(sig.Recv()); named != nil {
-						if isPtr {
-							fmt.Fprintf(&sym, "(*%s)", named.Obj().Name())
-						} else {
-							sym.WriteString(named.Obj().Name())
+	// Compute the linker symbol of the enclosing function or var initializer.
+	var sym strings.Builder
+	if pkg := req.pkg.Types(); pkg.Name() == "main" {
+		sym.WriteString("main")
+	} else {
+		sym.WriteString(pkg.Path())
+	}
+	sym.WriteString(".")
+
+	curSel, _ := req.pgf.Cursor.FindPos(req.start, req.end)
+	for cur := range curSel.Ancestors((*ast.FuncDecl)(nil), (*ast.ValueSpec)(nil)) {
+		var name string // in command title
+		switch node := cur.Node().(type) {
+		case *ast.FuncDecl:
+			// package-level func or method
+			if fn, ok := req.pkg.TypesInfo().Defs[node.Name].(*types.Func); ok &&
+				fn.Name() != "_" { // blank functions are not compiled
+
+				// Source-level init functions are compiled (along with
+				// package-level var initializers) in into a single pkg.init
+				// function, so this falls out of the logic below.
+
+				if sig := fn.Signature(); sig.TypeParams() == nil && sig.RecvTypeParams() == nil { // generic => no assembly
+					if sig.Recv() != nil {
+						if isPtr, named := typesinternal.ReceiverNamed(sig.Recv()); named != nil {
+							if isPtr {
+								fmt.Fprintf(&sym, "(*%s)", named.Obj().Name())
+							} else {
+								sym.WriteString(named.Obj().Name())
+							}
+							sym.WriteByte('.')
 						}
-						sym.WriteByte('.')
 					}
-				}
-				sym.WriteString(fn.Name())
+					sym.WriteString(fn.Name())
 
-				if fn.Name() != "_" && // blank functions are not compiled
-					(fn.Name() != "init" || sig.Recv() != nil) && // init functions aren't linker functions
-					sig.TypeParams() == nil && sig.RecvTypeParams() == nil { // generic => no assembly
-					cmd := command.NewAssemblyCommand(
-						fmt.Sprintf("Browse %s assembly for %s", view.GOARCH(), decl.Name),
-						view.ID(),
-						string(req.pkg.Metadata().ID),
-						sym.String())
-					req.addCommandAction(cmd, false)
+					name = node.Name.Name // success
 				}
 			}
+
+		case *ast.ValueSpec:
+			// package-level var initializer?
+			if len(node.Names) > 0 && len(node.Values) > 0 {
+				v := req.pkg.TypesInfo().Defs[node.Names[0]]
+				if v != nil && typesinternal.IsPackageLevel(v) {
+					sym.WriteString("init")
+					name = "package initializer" // success
+				}
+			}
+		}
+
+		if name != "" {
+			cmd := command.NewAssemblyCommand(
+				fmt.Sprintf("Browse %s assembly for %s", view.GOARCH(), name),
+				view.ID(),
+				string(req.pkg.Metadata().ID),
+				sym.String())
+			req.addCommandAction(cmd, false)
+			break
 		}
 	}
 	return nil

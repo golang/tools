@@ -53,7 +53,7 @@ type pairsFact []string
 func (f *pairsFact) AFact()         {}
 func (f *pairsFact) String() string { return "pairs(" + strings.Join(*f, ", ") + ")" }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	result := make(map[string]string)
 
 	// At each import, print the fact from the imported

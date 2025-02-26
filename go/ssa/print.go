@@ -387,7 +387,7 @@ func (s *MapUpdate) String() string {
 
 func (s *DebugRef) String() string {
 	p := s.Parent().Prog.Fset.Position(s.Pos())
-	var descr interface{}
+	var descr any
 	if s.object != nil {
 		descr = s.object // e.g. "var x int"
 	} else {

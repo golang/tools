@@ -164,17 +164,15 @@ func goLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]p
 
 	// Gather links found in string literals.
 	var str []*ast.BasicLit
-	ast.Inspect(pgf.File, func(node ast.Node) bool {
-		switch n := node.(type) {
-		case *ast.ImportSpec:
-			return false // don't process import strings again
-		case *ast.BasicLit:
-			if n.Kind == token.STRING {
-				str = append(str, n)
+	for curLit := range pgf.Cursor.Preorder((*ast.BasicLit)(nil)) {
+		lit := curLit.Node().(*ast.BasicLit)
+		if lit.Kind == token.STRING {
+			if _, ok := curLit.Parent().Node().(*ast.ImportSpec); ok {
+				continue // ignore import strings
 			}
+			str = append(str, lit)
 		}
-		return true
-	})
+	}
 	for _, s := range str {
 		strOffset, err := safetoken.Offset(pgf.Tok, s.Pos())
 		if err != nil {

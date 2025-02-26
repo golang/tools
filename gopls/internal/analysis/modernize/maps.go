@@ -32,7 +32,7 @@ import (
 //
 //	maps.Copy(m, x)		(x is map)
 //	maps.Insert(m, x)       (x is iter.Seq2)
-//	m = maps.Clone(x)       (x is map, m is a new map)
+//	m = maps.Clone(x)       (x is a non-nil map, m is a new map)
 //	m = maps.Collect(x)     (x is iter.Seq2, m is a new map)
 //
 // A map is newly created if the preceding statement has one of these
@@ -77,6 +77,8 @@ func mapsloop(pass *analysis.Pass) {
 		// Is the preceding statement of the form
 		//    m = make(M) or M{}
 		// and can we replace its RHS with slices.{Clone,Collect}?
+		//
+		// Beware: if x may be nil, we cannot use Clone as it preserves nilness.
 		var mrhs ast.Expr // make(M) or M{}, or nil
 		if curPrev, ok := curRange.PrevSibling(); ok {
 			if assign, ok := curPrev.Node().(*ast.AssignStmt); ok &&
@@ -87,9 +89,9 @@ func mapsloop(pass *analysis.Pass) {
 				// Have: m = rhs; for k, v := range x { m[k] = v }
 				var newMap bool
 				rhs := assign.Rhs[0]
-				switch rhs := rhs.(type) {
+				switch rhs := ast.Unparen(rhs).(type) {
 				case *ast.CallExpr:
-					if id, ok := rhs.Fun.(*ast.Ident); ok &&
+					if id, ok := ast.Unparen(rhs.Fun).(*ast.Ident); ok &&
 						info.Uses[id] == builtinMake {
 						// Have: m = make(...)
 						newMap = true
@@ -122,32 +124,47 @@ func mapsloop(pass *analysis.Pass) {
 							mrhs = rhs
 						}
 					}
+
+					// Temporarily disable the transformation to the
+					// (nil-preserving) maps.Clone until we can prove
+					// that x is non-nil. This is rarely possible,
+					// and may require control flow analysis
+					// (e.g. a dominating "if len(x)" check).
+					// See #71844.
+					if xmap {
+						mrhs = nil
+					}
 				}
 			}
 		}
 
-		// Choose function, report diagnostic, and suggest fix.
+		// Choose function.
+		var funcName string
+		if mrhs != nil {
+			funcName = cond(xmap, "Clone", "Collect")
+		} else {
+			funcName = cond(xmap, "Copy", "Insert")
+		}
+
+		// Report diagnostic, and suggest fix.
 		rng := curRange.Node()
-		mapsName, importEdits := analysisinternal.AddImport(info, file, rng.Pos(), "maps", "maps")
+		_, prefix, importEdits := analysisinternal.AddImport(info, file, "maps", "maps", funcName, rng.Pos())
 		var (
-			funcName   string
 			newText    []byte
 			start, end token.Pos
 		)
 		if mrhs != nil {
 			// Replace RHS of preceding m=... assignment (and loop) with expression.
 			start, end = mrhs.Pos(), rng.End()
-			funcName = cond(xmap, "Clone", "Collect")
-			newText = fmt.Appendf(nil, "%s.%s(%s)",
-				mapsName,
+			newText = fmt.Appendf(nil, "%s%s(%s)",
+				prefix,
 				funcName,
 				analysisinternal.Format(pass.Fset, x))
 		} else {
 			// Replace loop with call statement.
 			start, end = rng.Pos(), rng.End()
-			funcName = cond(xmap, "Copy", "Insert")
-			newText = fmt.Appendf(nil, "%s.%s(%s, %s)",
-				mapsName,
+			newText = fmt.Appendf(nil, "%s%s(%s, %s)",
+				prefix,
 				funcName,
 				analysisinternal.Format(pass.Fset, m),
 				analysisinternal.Format(pass.Fset, x))
@@ -186,9 +203,12 @@ func mapsloop(pass *analysis.Pass) {
 				assign := rng.Body.List[0].(*ast.AssignStmt)
 				if index, ok := assign.Lhs[0].(*ast.IndexExpr); ok &&
 					equalSyntax(rng.Key, index.Index) &&
-					equalSyntax(rng.Value, assign.Rhs[0]) {
+					equalSyntax(rng.Value, assign.Rhs[0]) &&
+					is[*types.Map](typeparams.CoreType(info.TypeOf(index.X))) &&
+					types.Identical(info.TypeOf(index), info.TypeOf(rng.Value)) { // m[k], v
 
 					// Have: for k, v := range x { m[k] = v }
+					// where there is no implicit conversion.
 					check(file, curRange, assign, index.X, rng.X)
 				}
 			}

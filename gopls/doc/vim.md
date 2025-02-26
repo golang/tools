@@ -230,5 +230,5 @@ require('lspconfig').gopls.setup({
 [govim-install]: https://github.com/myitcv/govim/blob/master/README.md#govim---go-development-plugin-for-vim8
 [nvim-docs]: https://neovim.io/doc/user/lsp.html
 [nvim-install]: https://github.com/neovim/neovim/wiki/Installing-Neovim
-[nvim-lspconfig]: https://github.com/neovim/nvim-lspconfig/blob/master/doc/server_configurations.md#gopls
+[nvim-lspconfig]: https://github.com/neovim/nvim-lspconfig/blob/master/doc/configs.md#gopls
 [nvim-lspconfig-imports]: https://github.com/neovim/nvim-lspconfig/issues/115

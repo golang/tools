@@ -44,11 +44,6 @@ import (
 	"golang.org/x/tools/internal/versions"
 )
 
-// Various optimizations that should not affect correctness.
-const (
-	preserveImportGraph = true // hold on to the import graph for open packages
-)
-
 type unit = struct{}
 
 // A typeCheckBatch holds data for a logical type-checking operation, which may
@@ -95,21 +90,6 @@ func (b *typeCheckBatch) getHandle(id PackageID) *packageHandle {
 	b.handleMu.Lock()
 	defer b.handleMu.Unlock()
 	return b._handles[id]
-}
-
-// A futurePackage is a future result of type checking or importing a package,
-// to be cached in a map.
-//
-// The goroutine that creates the futurePackage is responsible for evaluating
-// its value, and closing the done channel.
-type futurePackage struct {
-	done chan unit
-	v    pkgOrErr
-}
-
-type pkgOrErr struct {
-	pkg *types.Package
-	err error
 }
 
 // TypeCheck parses and type-checks the specified packages,
@@ -548,7 +528,13 @@ func (b *typeCheckBatch) importPackage(ctx context.Context, mp *metadata.Package
 					}
 				}
 			} else {
-				id = importLookup(PackagePath(item.Path))
+				var alt PackageID
+				id, alt = importLookup(PackagePath(item.Path))
+				if alt != "" {
+					// Any bug leading to this scenario would have already been reported
+					// in importLookup.
+					return fmt.Errorf("inconsistent metadata during import: for package path %q, found both IDs %q and %q", item.Path, id, alt)
+				}
 				var err error
 				pkg, err = b.getImportPackage(ctx, id)
 				if err != nil {
@@ -665,8 +651,12 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 // a given package path, based on the forward transitive closure of the initial
 // package (id).
 //
+// If the second result is non-empty, it is another ID discovered in the import
+// graph for the same package path. This means the import graph is
+// incoherent--see #63822 and the long comment below.
+//
 // The resulting function is not concurrency safe.
-func importLookup(mp *metadata.Package, source metadata.Source) func(PackagePath) PackageID {
+func importLookup(mp *metadata.Package, source metadata.Source) func(PackagePath) (id, altID PackageID) {
 	assert(mp != nil, "nil metadata")
 
 	// This function implements an incremental depth first scan through the
@@ -680,6 +670,10 @@ func importLookup(mp *metadata.Package, source metadata.Source) func(PackagePath
 		mp.PkgPath: mp.ID,
 	}
 
+	// altIDs records alternative IDs for the given path, to report inconsistent
+	// metadata.
+	var altIDs map[PackagePath]PackageID
+
 	// pending is a FIFO queue of package metadata that has yet to have its
 	// dependencies fully scanned.
 	// Invariant: all entries in pending are already mapped in impMap.
@@ -687,21 +681,89 @@ func importLookup(mp *metadata.Package, source metadata.Source) func(PackagePath
 
 	// search scans children the next package in pending, looking for pkgPath.
 	// Invariant: whenever search is called, pkgPath is not yet mapped.
-	var search func(pkgPath PackagePath) (PackageID, bool)
-	search = func(pkgPath PackagePath) (id PackageID, found bool) {
+	search := func(pkgPath PackagePath) (id PackageID, found bool) {
 		pkg := pending[0]
 		pending = pending[1:]
 		for depPath, depID := range pkg.DepsByPkgPath {
 			if prevID, ok := impMap[depPath]; ok {
 				// debugging #63822
 				if prevID != depID {
+					if altIDs == nil {
+						altIDs = make(map[PackagePath]PackageID)
+					}
+					if _, ok := altIDs[depPath]; !ok {
+						altIDs[depPath] = depID
+					}
 					prev := source.Metadata(prevID)
 					curr := source.Metadata(depID)
 					switch {
 					case prev == nil || curr == nil:
 						bug.Reportf("inconsistent view of dependencies (missing dep)")
 					case prev.ForTest != curr.ForTest:
-						bug.Reportf("inconsistent view of dependencies (mismatching ForTest)")
+						// This case is unfortunately understood to be possible.
+						//
+						// To explain this, consider a package a_test testing the package
+						// a, and for brevity denote by b' the intermediate test variant of
+						// the package b, which is created for the import graph of a_test,
+						// if b imports a.
+						//
+						// Now imagine that we have the following import graph, where
+						// higher packages import lower ones.
+						//
+						//       a_test
+						//      / \
+						//     b'  c
+						//    / \ /
+						//   a   d
+						//
+						// In this graph, there is one intermediate test variant b',
+						// because b imports a and so b' must hold the test variant import.
+						//
+						// Now, imagine that an on-disk change (perhaps due to a branch
+						// switch) affects the above import graph such that d imports a.
+						//
+						//       a_test
+						//      / \
+						//     b'  c*
+						//    / \ /
+						//   /   d*
+						//  a---/
+						//
+						// In this case, c and d should really be intermediate test
+						// variants, because they reach a. However, suppose that gopls does
+						// not know this yet (as indicated by '*').
+						//
+						// Now suppose that the metadata of package c is invalidated, for
+						// example due to a change in an unrelated import or an added file.
+						// This will invalidate the metadata of c and a_test (but NOT b),
+						// and now gopls observes this graph:
+						//
+						//       a_test
+						//      / \
+						//     b'  c'
+						//    /|   |
+						//   / d   d'
+						//  a-----/
+						//
+						// That is: a_test now sees c', which sees d', but since b was not
+						// invalidated, gopls still thinks that b' imports d (not d')!
+						//
+						// The problem, of course, is that gopls never observed the change
+						// to d, which would have invalidated b. This may be due to racing
+						// file watching events, in which case the problem should
+						// self-correct when gopls sees the change to d, or it may be due
+						// to d being outside the coverage of gopls' file watching glob
+						// patterns, or it may be due to buggy or entirely absent
+						// client-side file watching.
+						//
+						// TODO(rfindley): fix this, one way or another. It would be hard
+						// or impossible to repair gopls' state here, during type checking.
+						// However, we could perhaps reload metadata in Snapshot.load until
+						// we achieve a consistent state, or better, until the loaded state
+						// is consistent with our view of the filesystem, by making the Go
+						// command report digests of the files it reads. Both of those are
+						// tricker than they may seem, and have significant performance
+						// implications.
 					default:
 						bug.Reportf("inconsistent view of dependencies")
 					}
@@ -723,16 +785,16 @@ func importLookup(mp *metadata.Package, source metadata.Source) func(PackagePath
 		return id, found
 	}
 
-	return func(pkgPath PackagePath) PackageID {
+	return func(pkgPath PackagePath) (id, altID PackageID) {
 		if id, ok := impMap[pkgPath]; ok {
-			return id
+			return id, altIDs[pkgPath]
 		}
 		for len(pending) > 0 {
 			if id, found := search(pkgPath); found {
-				return id
+				return id, altIDs[pkgPath]
 			}
 		}
-		return ""
+		return "", ""
 	}
 }
 
@@ -1918,7 +1980,7 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 	batch := func(related []types.Error) {
 		var diags []*Diagnostic
 		for i, e := range related {
-			code, start, end, ok := typesinternal.ReadGo116ErrorData(e)
+			code, start, end, ok := typesinternal.ErrorCodeStartEnd(e)
 			if !ok || !start.IsValid() || !end.IsValid() {
 				start, end = e.Pos, e.Pos
 				code = 0
@@ -1992,6 +2054,9 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 
 			if end == start {
 				// Expand the end position to a more meaningful span.
+				//
+				// TODO(adonovan): It is the type checker's responsibility
+				// to ensure that (start, end) are meaningful; see #71803.
 				end = analysisinternal.TypeErrorEndPos(e.Fset, pgf.Src, start)
 
 				// debugging golang/go#65960

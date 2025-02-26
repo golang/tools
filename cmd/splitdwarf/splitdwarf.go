@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd
-// +build aix darwin dragonfly freebsd linux netbsd openbsd
 
 /*
 Splitdwarf uncompresses and copies the DWARF segment of a Mach-O

@@ -290,6 +290,16 @@ Default: on.
 
 Package documentation: [framepointer](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/framepointer)
 
+<a id='gofix'></a>
+## `gofix`: apply fixes based on go:fix comment directives
+
+
+The gofix analyzer inlines functions and constants that are marked for inlining.
+
+Default: on.
+
+Package documentation: [gofix](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix)
+
 <a id='hostport'></a>
 ## `hostport`: check format of addresses passed to net.Dial
 
@@ -482,9 +492,22 @@ existing code by using more modern features of Go, such as:
     added in go1.19;
   - replacing uses of context.WithCancel in tests with t.Context, added in
     go1.24;
-  - replacing omitempty by omitzero on structs, added in go 1.24;
+  - replacing omitempty by omitzero on structs, added in go1.24;
   - replacing append(s[:i], s[i+1]...) by slices.Delete(s, i, i+1),
     added in go1.21
+  - replacing a 3-clause for i := 0; i < n; i++ {} loop by
+    for i := range n {}, added in go1.22;
+  - replacing Split in "for range strings.Split(...)" by go1.24's
+    more efficient SplitSeq;
+
+To apply all modernization fixes en masse, you can use the
+following command:
+
+	$ go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test ./...
+
+If the tool warns of conflicting fixes, you may need to run it more
+than once until it has applied all fixes cleanly. This command is
+not an officially supported interface and may change in the future.
 
 Default: on.
 
@@ -948,12 +971,29 @@ A method is considered unused if it is unexported, not referenced
 that of any method of an interface type declared within the same
 package.
 
-The tool may report a false positive for a declaration of an
-unexported function that is referenced from another package using
-the go:linkname mechanism, if the declaration's doc comment does
-not also have a go:linkname comment. (Such code is in any case
-strongly discouraged: linkname annotations, if they must be used at
-all, should be used on both the declaration and the alias.)
+The tool may report false positives in some situations, for
+example:
+
+  - For a declaration of an unexported function that is referenced
+    from another package using the go:linkname mechanism, if the
+    declaration's doc comment does not also have a go:linkname
+    comment.
+
+    (Such code is in any case strongly discouraged: linkname
+    annotations, if they must be used at all, should be used on both
+    the declaration and the alias.)
+
+  - For compiler intrinsics in the "runtime" package that, though
+    never referenced, are known to the compiler and are called
+    indirectly by compiled object code.
+
+  - For functions called only from assembly.
+
+  - For functions called only from files whose build tags are not
+    selected in the current build configuration.
+
+See https://github.com/golang/go/issues/71686 for discussion of
+these limitations.
 
 The unusedfunc algorithm is not as precise as the
 golang.org/x/tools/cmd/deadcode tool, but it has the advantage that
@@ -990,6 +1030,8 @@ eliminate the parameter entirely, along with all corresponding
 arguments at call sites, while taking care to preserve any side
 effects in the argument expressions; see
 https://github.com/golang/tools/releases/tag/gopls%2Fv0.14.
+
+This analyzer ignores generated code.
 
 Default: on.
 

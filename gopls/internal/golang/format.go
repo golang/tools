@@ -35,15 +35,16 @@ func Format(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]pr
 	ctx, done := event.Start(ctx, "golang.Format")
 	defer done()
 
-	// Generated files shouldn't be edited. So, don't format them
-	if IsGenerated(ctx, snapshot, fh.URI()) {
-		return nil, fmt.Errorf("can't format %q: file is generated", fh.URI().Path())
-	}
-
 	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
 		return nil, err
 	}
+
+	// Generated files shouldn't be edited. So, don't format them.
+	if ast.IsGenerated(pgf.File) {
+		return nil, fmt.Errorf("can't format %q: file is generated", fh.URI().Path())
+	}
+
 	// Even if this file has parse errors, it might still be possible to format it.
 	// Using format.Node on an AST with errors may result in code being modified.
 	// Attempt to format the source of this file instead.
@@ -137,7 +138,13 @@ func computeImportEdits(ctx context.Context, pgf *parsego.File, snapshot *cache.
 
 	// Build up basic information about the original file.
 	isource, err := imports.NewProcessEnvSource(options.Env, filename, pgf.File.Name.Name)
+	if err != nil {
+		return nil, nil, err
+	}
 	var source imports.Source
+
+	// Keep this in sync with [cache.Session.createView] (see the TODO there: we
+	// should factor out the handling of the ImportsSource setting).
 	switch snapshot.Options().ImportsSource {
 	case settings.ImportsSourceGopls:
 		source = snapshot.NewGoplsSource(isource)
@@ -146,6 +153,9 @@ func computeImportEdits(ctx context.Context, pgf *parsego.File, snapshot *cache.
 	case settings.ImportsSourceGoimports:
 		source = isource
 	}
+	// imports require a current metadata graph
+	// TODO(rfindlay) improve the API
+	snapshot.WorkspaceMetadata(ctx)
 	allFixes, err := imports.FixImports(ctx, filename, pgf.Src, goroot, options.Env.Logf, source)
 	if err != nil {
 		return nil, nil, err

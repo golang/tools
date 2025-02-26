@@ -555,7 +555,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 			// objectpath, the classifies them as local vars, but as
 			// they came from export data they lack syntax and the
 			// correct scope tree (issue #61294).
-			if !obj.(*types.Var).IsField() && !isPackageLevel(obj) {
+			if !obj.(*types.Var).IsField() && !typesinternal.IsPackageLevel(obj) {
 				goto skipObjectPath
 			}
 		}
@@ -1345,7 +1345,7 @@ func (r *renamer) updateCommentDocLinks() (map[protocol.DocumentURI][]diff.Edit,
 		recvName := ""
 		// Doc links can reference only exported package-level objects
 		// and methods of exported package-level named types.
-		if !isPackageLevel(obj) {
+		if !typesinternal.IsPackageLevel(obj) {
 			obj, isFunc := obj.(*types.Func)
 			if !isFunc {
 				continue
@@ -1363,7 +1363,7 @@ func (r *renamer) updateCommentDocLinks() (map[protocol.DocumentURI][]diff.Edit,
 				continue
 			}
 			name := named.Origin().Obj()
-			if !name.Exported() || !isPackageLevel(name) {
+			if !name.Exported() || !typesinternal.IsPackageLevel(name) {
 				continue
 			}
 			recvName = name.Name()

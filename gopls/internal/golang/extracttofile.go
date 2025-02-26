@@ -95,7 +95,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 
 	start, end, firstSymbol, ok := selectedToplevelDecls(pgf, start, end)
 	if !ok {
-		return nil, bug.Errorf("invalid selection")
+		return nil, fmt.Errorf("invalid selection")
 	}
 	pgf.CheckPos(start) // #70553
 	// Inv: start is valid wrt pgf.Tok.

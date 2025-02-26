@@ -32,7 +32,7 @@ type Identifier string
 // See the package documentation for details about the syntax of those
 // notes.
 func Parse(fset *token.FileSet, filename string, content []byte) ([]*Note, error) {
-	var src interface{}
+	var src any
 	if content != nil {
 		src = content
 	}
@@ -220,7 +220,7 @@ func (t *tokens) Pos() token.Pos {
 	return t.base + token.Pos(t.scanner.Position.Offset)
 }
 
-func (t *tokens) Errorf(msg string, args ...interface{}) {
+func (t *tokens) Errorf(msg string, args ...any) {
 	if t.err != nil {
 		return
 	}
@@ -280,9 +280,9 @@ func parseNote(t *tokens) *Note {
 	}
 }
 
-func parseArgumentList(t *tokens) []interface{} {
-	args := []interface{}{} // @name() is represented by a non-nil empty slice.
-	t.Consume()             // '('
+func parseArgumentList(t *tokens) []any {
+	args := []any{} // @name() is represented by a non-nil empty slice.
+	t.Consume()     // '('
 	t.Skip('\n')
 	for t.Token() != ')' {
 		args = append(args, parseArgument(t))
@@ -300,7 +300,7 @@ func parseArgumentList(t *tokens) []interface{} {
 	return args
 }
 
-func parseArgument(t *tokens) interface{} {
+func parseArgument(t *tokens) any {
 	switch t.Token() {
 	case scanner.Ident:
 		v := t.Consume()

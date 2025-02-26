@@ -1,0 +1,81 @@
+This test checks gopls behavior when hovering over alias type.
+
+-- flags --
+-skip_goarch=386,arm
+
+-- go.mod --
+module mod.com
+
+-- main.go --
+package main
+
+import "mod.com/a"
+import "mod.com/b"
+
+type ToTypeDecl = b.RealType //@hover("ToTypeDecl", "ToTypeDecl", ToTypeDecl)
+
+type ToAlias = a.Alias //@hover("ToAlias", "ToAlias", ToAlias)
+
+type ToAliasWithComment = a.AliasWithComment //@hover("ToAliasWithComment", "ToAliasWithComment", ToAliasWithComment)
+
+-- a/a.go --
+package a
+import "mod.com/b"
+
+type Alias = b.RealType
+
+// AliasWithComment is a type alias with comments.
+type AliasWithComment = b.RealType
+
+-- b/b.go --
+package b
+// RealType is a real type rather than an alias type.
+type RealType struct {
+	Name string
+	Age int
+}
+
+-- @ToTypeDecl --
+```go
+type ToTypeDecl = b.RealType // size=24 (0x18)
+
+type RealType struct {
+	Name string
+	Age  int
+}
+```
+
+---
+
+@hover("ToTypeDecl", "ToTypeDecl", ToTypeDecl)
+
+
+---
+
+[`main.ToTypeDecl` on pkg.go.dev](https://pkg.go.dev/mod.com#ToTypeDecl)
+-- @ToAlias --
+```go
+type ToAlias = a.Alias // size=24 (0x18)
+```
+
+---
+
+@hover("ToAlias", "ToAlias", ToAlias)
+
+
+---
+
+[`main.ToAlias` on pkg.go.dev](https://pkg.go.dev/mod.com#ToAlias)
+-- @ToAliasWithComment --
+```go
+type ToAliasWithComment = a.AliasWithComment // size=24 (0x18)
+```
+
+---
+
+@hover("ToAliasWithComment", "ToAliasWithComment", ToAliasWithComment)
+
+
+---
+
+[`main.ToAliasWithComment` on pkg.go.dev](https://pkg.go.dev/mod.com#ToAliasWithComment)

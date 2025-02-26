@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build !appengine
-// +build !appengine
 
 // Package socket implements a WebSocket-based playground backend.
 // Clients connect to a websocket handler and send run/kill commands, and

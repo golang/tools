@@ -72,9 +72,10 @@ loop:
 				fnval = callExpr.Fun
 				break loop
 			}
-		case *ast.FuncLit, *ast.FuncType:
-			// The user is within an anonymous function,
-			// which may be the parameter to the *ast.CallExpr.
+		case *ast.FuncLit, *ast.FuncType, *ast.CompositeLit:
+			// The user is within an anonymous function or
+			// a composite literal, which may be the argument
+			// to the *ast.CallExpr.
 			// Don't show signature help in this case.
 			return nil, 0, nil
 		case *ast.BasicLit:

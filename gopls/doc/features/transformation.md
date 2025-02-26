@@ -814,3 +814,12 @@ which HTML documents are composed:
 
 ![Before "Add cases for Addr"](../assets/fill-switch-enum-before.png)
 ![After "Add cases for Addr"](../assets/fill-switch-enum-after.png)
+
+
+<a name='refactor.rewrite.eliminateDotImport'></a>
+### `refactor.rewrite.eliminateDotImport`: Eliminate dot import
+
+When the cursor is on a dot import gopls can offer the "Eliminate dot import"
+code action, which removes the dot from the import and qualifies uses of the
+package throughout the file. This code action is offered only if
+each use of the package can be qualified without collisions with existing names.

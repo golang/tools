@@ -7,6 +7,7 @@ package analysistest
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"go/format"
 	"go/token"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +37,12 @@ import (
 // and populates it with a GOPATH-style project using filemap (which
 // maps file names to contents). On success it returns the name of the
 // directory and a cleanup function to delete it.
+//
+// TODO(adonovan): provide a newer version that accepts a testing.T,
+// calls T.TempDir, and calls T.Fatal on any error, avoiding the need
+// to return cleanup or err:
+//
+//	func WriteFilesToTmp(t *testing.T filemap map[string]string) string
 func WriteFiles(filemap map[string]string) (dir string, cleanup func(), err error) {
 	gopath, err := os.MkdirTemp("", "analysistest")
 	if err != nil {
@@ -68,19 +76,27 @@ var TestData = func() string {
 
 // Testing is an abstraction of a *testing.T.
 type Testing interface {
-	Errorf(format string, args ...interface{})
+	Errorf(format string, args ...any)
 }
 
-// RunWithSuggestedFixes behaves like Run, but additionally verifies suggested fixes.
-// It uses golden files placed alongside the source code under analysis:
-// suggested fixes for code in example.go will be compared against example.go.golden.
+// RunWithSuggestedFixes behaves like Run, but additionally applies
+// suggested fixes and verifies their output.
 //
-// Golden files can be formatted in one of two ways: as plain Go source code, or as txtar archives.
-// In the first case, all suggested fixes will be applied to the original source, which will then be compared against the golden file.
-// In the second case, suggested fixes will be grouped by their messages, and each set of fixes will be applied and tested separately.
-// Each section in the archive corresponds to a single message.
+// It uses golden files, placed alongside each source file, to express
+// the desired output: the expected transformation of file example.go
+// is specified in file example.go.golden.
 //
-// A golden file using txtar may look like this:
+// Golden files may be of two forms: a plain Go source file, or a
+// txtar archive.
+//
+// A plain Go source file indicates the expected result of applying
+// all suggested fixes to the original file.
+//
+// A txtar archive specifies, in each section, the expected result of
+// applying all suggested fixes of a given message to the original
+// file; the name of the archive section is the fix's message. In this
+// way, the various alternative fixes offered by a single diagnostic
+// can be tested independently. Here's an example:
 //
 //	-- turn into single negation --
 //	package pkg
@@ -102,41 +118,28 @@ type Testing interface {
 //
 // # Conflicts
 //
-// A single analysis pass may offer two or more suggested fixes that
-// (1) conflict but are nonetheless logically composable, (e.g.
-// because both update the import declaration), or (2) are
-// fundamentally incompatible (e.g. alternative fixes to the same
-// statement).
+// Regardless of the form of the golden file, it is possible for
+// multiple fixes to conflict, either because they overlap, or are
+// close enough together that the particular diff algorithm cannot
+// separate them.
 //
-// It is up to the driver to decide how to apply such fixes. A
-// sophisticated driver could attempt to resolve conflicts of the
-// first kind, but this test driver simply reports the fact of the
-// conflict with the expectation that the user will split their tests
-// into nonconflicting parts.
+// RunWithSuggestedFixes uses a simple three-way merge to accumulate
+// fixes, similar to a git merge. The merge algorithm may be able to
+// coalesce identical edits, for example duplicate imports of the same
+// package. (Bear in mind that this is an editorial decision. In
+// general, coalescing identical edits may not be correct: consider
+// two statements that increment the same counter.)
 //
-// Conflicts of the second kind can be avoided by giving the
-// alternative fixes different names (SuggestedFix.Message) and
-// defining the .golden file as a multi-section txtar file with a
-// named section for each alternative fix, as shown above.
+// If there are conflicts, the test fails. In any case, the
+// non-conflicting edits will be compared against the expected output.
+// In this situation, we recommend that you increase the textual
+// separation between conflicting parts or, if that fails, split
+// your tests into smaller parts.
 //
-// Analyzers that compute fixes from a textual diff of the
-// before/after file contents (instead of directly from syntax tree
-// positions) may produce fixes that, although logically
-// non-conflicting, nonetheless conflict due to the particulars of the
-// diff algorithm. In such cases it may suffice to introduce
-// sufficient separation of the statements in the test input so that
-// the computed diffs do not overlap. If that fails, break the test
-// into smaller parts.
-//
-// TODO(adonovan): the behavior of RunWithSuggestedFixes as documented
-// above is impractical for tests that report multiple diagnostics and
-// offer multiple alternative fixes for the same diagnostic, and it is
-// inconsistent with the interpretation of multiple diagnostics
-// described at Diagnostic.SuggestedFixes.
-// We need to rethink the analyzer testing API to better support such
-// cases. In the meantime, users of RunWithSuggestedFixes testing
-// analyzers that offer alternative fixes are advised to put each fix
-// in a separate .go file in the testdata.
+// If a diagnostic offers multiple fixes for the same problem, they
+// are almost certain to conflict, so in this case you should define
+// the expected output using a multi-section txtar file as described
+// above.
 func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns ...string) []*Result {
 	results := Run(t, dir, a, patterns...)
 
@@ -166,153 +169,165 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 	for _, result := range results {
 		act := result.Action
 
-		// file -> message -> edits
-		// TODO(adonovan): this mapping assumes fix.Messages are unique across analyzers.
-		fileEdits := make(map[*token.File]map[string][]diff.Edit)
-		fileContents := make(map[*token.File][]byte)
-
-		// Validate edits, prepare the fileEdits map and read the file contents.
+		// For each fix, split its edits by file and convert to diff form.
+		var (
+			// fixEdits: message -> fixes -> filename -> edits
+			//
+			// TODO(adonovan): this mapping assumes fix.Messages
+			// are unique across analyzers, whereas they are only
+			// unique within a given Diagnostic.
+			fixEdits     = make(map[string][]map[string][]diff.Edit)
+			allFilenames = make(map[string]bool)
+		)
 		for _, diag := range act.Diagnostics {
+			// Fixes are validated upon creation in Pass.Report.
 			for _, fix := range diag.SuggestedFixes {
-
 				// Assert that lazy fixes have a Category (#65578, #65087).
 				if inTools && len(fix.TextEdits) == 0 && diag.Category == "" {
 					t.Errorf("missing Diagnostic.Category for SuggestedFix without TextEdits (gopls requires the category for the name of the fix command")
 				}
 
-				// TODO(adonovan): factor in common with go/analysis/internal/checker.validateEdits.
-
+				// Convert edits to diff form.
+				// Group fixes by message and file.
+				edits := make(map[string][]diff.Edit)
 				for _, edit := range fix.TextEdits {
-					start, end := edit.Pos, edit.End
-					if !end.IsValid() {
-						end = start
-					}
-					// Validate the edit.
-					if start > end {
-						t.Errorf(
-							"diagnostic for analysis %v contains Suggested Fix with malformed edit: pos (%v) > end (%v)",
-							act.Analyzer.Name, start, end)
-						continue
-					}
-					file := act.Package.Fset.File(start)
-					if file == nil {
-						t.Errorf("diagnostic for analysis %v contains Suggested Fix with malformed start position %v", act.Analyzer.Name, start)
-						continue
-					}
-					endFile := act.Package.Fset.File(end)
-					if endFile == nil {
-						t.Errorf("diagnostic for analysis %v contains Suggested Fix with malformed end position %v", act.Analyzer.Name, end)
-						continue
-					}
-					if file != endFile {
-						t.Errorf(
-							"diagnostic for analysis %v contains Suggested Fix with malformed spanning files %v and %v",
-							act.Analyzer.Name, file.Name(), endFile.Name())
-						continue
-					}
-					if _, ok := fileContents[file]; !ok {
-						contents, err := os.ReadFile(file.Name())
-						if err != nil {
-							t.Errorf("error reading %s: %v", file.Name(), err)
-						}
-						fileContents[file] = contents
-					}
-					if _, ok := fileEdits[file]; !ok {
-						fileEdits[file] = make(map[string][]diff.Edit)
-					}
-					fileEdits[file][fix.Message] = append(fileEdits[file][fix.Message], diff.Edit{
-						Start: file.Offset(start),
-						End:   file.Offset(end),
+					file := act.Package.Fset.File(edit.Pos)
+					allFilenames[file.Name()] = true
+					edits[file.Name()] = append(edits[file.Name()], diff.Edit{
+						Start: file.Offset(edit.Pos),
+						End:   file.Offset(edit.End),
 						New:   string(edit.NewText),
 					})
 				}
+				fixEdits[fix.Message] = append(fixEdits[fix.Message], edits)
 			}
 		}
 
-		for file, fixes := range fileEdits {
-			// Get the original file contents.
-			orig, ok := fileContents[file]
+		merge := func(file, message string, x, y []diff.Edit) []diff.Edit {
+			z, ok := diff.Merge(x, y)
 			if !ok {
-				t.Errorf("could not find file contents for %s", file.Name())
-				continue
+				t.Errorf("in file %s, conflict applying fix %q", file, message)
+				return x // discard y
 			}
+			return z
+		}
 
-			// Get the golden file and read the contents.
-			ar, err := txtar.ParseFile(file.Name() + ".golden")
+		// Because the checking is driven by original
+		// filenames, there is no way to express that a fix
+		// (e.g. extract declaration) creates a new file.
+		for _, filename := range sortedKeys(allFilenames) {
+			// Read the original file.
+			content, err := os.ReadFile(filename)
 			if err != nil {
-				t.Errorf("error reading %s.golden: %v", file.Name(), err)
+				t.Errorf("error reading %s: %v", filename, err)
 				continue
 			}
 
-			if len(ar.Files) > 0 {
-				// one virtual file per kind of suggested fix
+			// check checks that the accumulated edits applied
+			// to the original content yield the wanted content.
+			check := func(prefix string, accumulated []diff.Edit, want []byte) {
+				if err := applyDiffsAndCompare(filename, content, want, accumulated); err != nil {
+					t.Errorf("%s: %s", prefix, err)
+				}
+			}
 
-				if len(ar.Comment) != 0 {
-					// we allow either just the comment, or just virtual
-					// files, not both. it is not clear how "both" should
-					// behave.
-					t.Errorf("%s.golden has leading comment; we don't know what to do with it", file.Name())
+			// Read the golden file. It may have one of two forms:
+			// (1) A txtar archive with one section per fix title,
+			//     including all fixes of just that title.
+			// (2) The expected output for file.Name after all (?) fixes are applied.
+			//     This form requires that no diagnostic has multiple fixes.
+			ar, err := txtar.ParseFile(filename + ".golden")
+			if err != nil {
+				t.Errorf("error reading %s.golden: %v", filename, err)
+				continue
+			}
+			if len(ar.Files) > 0 {
+				// Form #1: one archive section per kind of suggested fix.
+				if len(ar.Comment) > 0 {
+					// Disallow the combination of comment and archive sections.
+					t.Errorf("%s.golden has leading comment; we don't know what to do with it", filename)
 					continue
 				}
 
-				for sf, edits := range fixes {
-					found := false
-					for _, vf := range ar.Files {
-						if vf.Name == sf {
-							found = true
-							// the file may contain multiple trailing
-							// newlines if the user places empty lines
-							// between files in the archive. normalize
-							// this to a single newline.
-							golden := append(bytes.TrimRight(vf.Data, "\n"), '\n')
-
-							if err := applyDiffsAndCompare(orig, golden, edits, file.Name()); err != nil {
-								t.Errorf("%s", err)
-							}
-							break
-						}
+				// Each archive section is named for a fix.Message.
+				// Accumulate the parts of the fix that apply to the current file,
+				// using a simple three-way merge, discarding conflicts,
+				// then apply the merged edits and compare to the archive section.
+				for _, section := range ar.Files {
+					message, want := section.Name, section.Data
+					var accumulated []diff.Edit
+					for _, fix := range fixEdits[message] {
+						accumulated = merge(filename, message, accumulated, fix[filename])
 					}
-					if !found {
-						t.Errorf("no section for suggested fix %q in %s.golden", sf, file.Name())
-					}
+					check(fmt.Sprintf("all fixes of message %q", message), accumulated, want)
 				}
+
 			} else {
-				// all suggested fixes are represented by a single file
-				// TODO(adonovan): fix: this makes no sense if len(fixes) > 1.
-				var catchallEdits []diff.Edit
-				for _, edits := range fixes {
-					catchallEdits = append(catchallEdits, edits...)
+				// Form #2: all suggested fixes are represented by a single file.
+				want := ar.Comment
+				var accumulated []diff.Edit
+				for _, message := range sortedKeys(fixEdits) {
+					for _, fix := range fixEdits[message] {
+						accumulated = merge(filename, message, accumulated, fix[filename])
+					}
 				}
-
-				if err := applyDiffsAndCompare(orig, ar.Comment, catchallEdits, file.Name()); err != nil {
-					t.Errorf("%s", err)
-				}
+				check("all fixes", accumulated, want)
 			}
 		}
 	}
+
 	return results
 }
 
-// applyDiffsAndCompare applies edits to src and compares the results against
-// golden after formatting both. fileName is use solely for error reporting.
-func applyDiffsAndCompare(src, golden []byte, edits []diff.Edit, fileName string) error {
-	out, err := diff.ApplyBytes(src, edits)
-	if err != nil {
-		return fmt.Errorf("%s: error applying fixes: %v (see possible explanations at RunWithSuggestedFixes)", fileName, err)
+// applyDiffsAndCompare applies edits to original and compares the results against
+// want after formatting both. fileName is use solely for error reporting.
+func applyDiffsAndCompare(filename string, original, want []byte, edits []diff.Edit) error {
+	// Relativize filename, for tidier errors.
+	if cwd, err := os.Getwd(); err == nil {
+		if rel, err := filepath.Rel(cwd, filename); err == nil {
+			filename = rel
+		}
 	}
-	wantRaw, err := format.Source(golden)
-	if err != nil {
-		return fmt.Errorf("%s.golden: error formatting golden file: %v\n%s", fileName, err, out)
-	}
-	want := string(wantRaw)
 
-	formatted, err := format.Source(out)
-	if err != nil {
-		return fmt.Errorf("%s: error formatting resulting source: %v\n%s", fileName, err, out)
+	if len(edits) == 0 {
+		return fmt.Errorf("%s: no edits", filename)
 	}
-	if got := string(formatted); got != want {
-		unified := diff.Unified(fileName+".golden", "actual", want, got)
-		return fmt.Errorf("suggested fixes failed for %s:\n%s", fileName, unified)
+	fixedBytes, err := diff.ApplyBytes(original, edits)
+	if err != nil {
+		return fmt.Errorf("%s: error applying fixes: %v (see possible explanations at RunWithSuggestedFixes)", filename, err)
+	}
+	fixed, err := format.Source(fixedBytes)
+	if err != nil {
+		return fmt.Errorf("%s: error formatting resulting source: %v\n%s", filename, err, fixed)
+	}
+
+	want, err = format.Source(want)
+	if err != nil {
+		return fmt.Errorf("%s.golden: error formatting golden file: %v\n%s", filename, err, fixed)
+	}
+
+	// Keep error reporting logic below consistent with
+	// TestScript in ../internal/checker/fix_test.go!
+
+	unified := func(xlabel, ylabel string, x, y []byte) string {
+		x = append(slices.Clip(bytes.TrimSpace(x)), '\n')
+		y = append(slices.Clip(bytes.TrimSpace(y)), '\n')
+		return diff.Unified(xlabel, ylabel, string(x), string(y))
+	}
+
+	if diff := unified(filename+" (fixed)", filename+" (want)", fixed, want); diff != "" {
+		return fmt.Errorf("unexpected %s content:\n"+
+			"-- original --\n%s\n"+
+			"-- fixed --\n%s\n"+
+			"-- want --\n%s\n"+
+			"-- diff original fixed --\n%s\n"+
+			"-- diff fixed want --\n%s",
+			filename,
+			original,
+			fixed,
+			want,
+			unified(filename+" (original)", filename+" (fixed)", original, fixed),
+			diff)
 	}
 	return nil
 }
@@ -752,4 +767,14 @@ func parseExpectations(text string) (lineDelta int, expects []expectation, err e
 func sanitize(gopath, filename string) string {
 	prefix := gopath + string(os.PathSeparator) + "src" + string(os.PathSeparator)
 	return filepath.ToSlash(strings.TrimPrefix(filename, prefix))
+}
+
+// TODO(adonovan): use better stuff from go1.23.
+func sortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
+	keys := make([]K, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
 }

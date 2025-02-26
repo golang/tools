@@ -5,11 +5,9 @@
 package modernize
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -25,13 +23,15 @@ import (
 //		sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 //	  =>	slices.Sort(s)
 //
-// It also supports the SliceStable variant.
+// There is no slices.SortStable.
 //
 // TODO(adonovan): support
 //
 //   - sort.Slice(s, func(i, j int) bool { return s[i] ... s[j] })
-//     -> slices.SortFunc(s, func(x, y int) bool { return x ... y })
-//     iff all uses of i, j can be replaced by s[i], s[j].
+//     -> slices.SortFunc(s, func(x, y T) int { return x ... y })
+//     iff all uses of i, j can be replaced by s[i], s[j] and "<" can be replaced with cmp.Compare.
+//
+//   - As above for sort.SliceStable -> slices.SortStableFunc.
 //
 //   - sort.Sort(x) where x has a named slice type whose Less method is the natural order.
 //     -> sort.Slice(x)
@@ -43,13 +43,11 @@ func sortslice(pass *analysis.Pass) {
 	info := pass.TypesInfo
 
 	check := func(file *ast.File, call *ast.CallExpr) {
-		// call to sort.Slice{,Stable}?
+		// call to sort.Slice?
 		obj := typeutil.Callee(info, call)
-		if !analysisinternal.IsFunctionNamed(obj, "sort", "Slice", "SliceStable") {
+		if !analysisinternal.IsFunctionNamed(obj, "sort", "Slice") {
 			return
 		}
-		stable := cond(strings.HasSuffix(obj.Name(), "Stable"), "Stable", "")
-
 		if lit, ok := call.Args[1].(*ast.FuncLit); ok && len(lit.Body.List) == 1 {
 			sig := info.Types[lit.Type].Type.(*types.Signature)
 
@@ -58,44 +56,46 @@ func sortslice(pass *analysis.Pass) {
 			i := sig.Params().At(0)
 			j := sig.Params().At(1)
 
-			ret := lit.Body.List[0].(*ast.ReturnStmt)
-			if compare, ok := ret.Results[0].(*ast.BinaryExpr); ok && compare.Op == token.LSS {
-				// isIndex reports whether e is s[v].
-				isIndex := func(e ast.Expr, v *types.Var) bool {
-					index, ok := e.(*ast.IndexExpr)
-					return ok &&
-						equalSyntax(index.X, s) &&
-						is[*ast.Ident](index.Index) &&
-						info.Uses[index.Index.(*ast.Ident)] == v
-				}
-				if isIndex(compare.X, i) && isIndex(compare.Y, j) {
-					// Have: sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+			if ret, ok := lit.Body.List[0].(*ast.ReturnStmt); ok {
+				if compare, ok := ret.Results[0].(*ast.BinaryExpr); ok && compare.Op == token.LSS {
+					// isIndex reports whether e is s[v].
+					isIndex := func(e ast.Expr, v *types.Var) bool {
+						index, ok := e.(*ast.IndexExpr)
+						return ok &&
+							equalSyntax(index.X, s) &&
+							is[*ast.Ident](index.Index) &&
+							info.Uses[index.Index.(*ast.Ident)] == v
+					}
+					if isIndex(compare.X, i) && isIndex(compare.Y, j) {
+						// Have: sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 
-					slicesName, importEdits := analysisinternal.AddImport(info, file, call.Pos(), "slices", "slices")
+						_, prefix, importEdits := analysisinternal.AddImport(
+							info, file, "slices", "slices", "Sort", call.Pos())
 
-					pass.Report(analysis.Diagnostic{
-						// Highlight "sort.Slice".
-						Pos:      call.Fun.Pos(),
-						End:      call.Fun.End(),
-						Category: "sortslice",
-						Message:  fmt.Sprintf("sort.Slice%[1]s can be modernized using slices.Sort%[1]s", stable),
-						SuggestedFixes: []analysis.SuggestedFix{{
-							Message: fmt.Sprintf("Replace sort.Slice%[1]s call by slices.Sort%[1]s", stable),
-							TextEdits: append(importEdits, []analysis.TextEdit{
-								{
-									// Replace sort.Slice with slices.Sort.
-									Pos:     call.Fun.Pos(),
-									End:     call.Fun.End(),
-									NewText: []byte(slicesName + ".Sort" + stable),
-								},
-								{
-									// Eliminate FuncLit.
-									Pos: call.Args[0].End(),
-									End: call.Rparen,
-								},
-							}...),
-						}},
-					})
+						pass.Report(analysis.Diagnostic{
+							// Highlight "sort.Slice".
+							Pos:      call.Fun.Pos(),
+							End:      call.Fun.End(),
+							Category: "sortslice",
+							Message:  "sort.Slice can be modernized using slices.Sort",
+							SuggestedFixes: []analysis.SuggestedFix{{
+								Message: "Replace sort.Slice call by slices.Sort",
+								TextEdits: append(importEdits, []analysis.TextEdit{
+									{
+										// Replace sort.Slice with slices.Sort.
+										Pos:     call.Fun.Pos(),
+										End:     call.Fun.End(),
+										NewText: []byte(prefix + "Sort"),
+									},
+									{
+										// Eliminate FuncLit.
+										Pos: call.Args[0].End(),
+										End: call.Rparen,
+									},
+								}...),
+							}},
+						})
+					}
 				}
 			}
 		}

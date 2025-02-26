@@ -5,14 +5,17 @@
 package integration
 
 import (
+	"bytes"
 	"fmt"
+	"maps"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/server"
+	"golang.org/x/tools/gopls/internal/util/constraints"
 )
 
 var (
@@ -55,16 +58,11 @@ func (v Verdict) String() string {
 //
 // Expectations are combinators. By composing them, tests may express
 // complex expectations in terms of simpler ones.
-//
-// TODO(rfindley): as expectations are combined, it becomes harder to identify
-// why they failed. A better signature for Check would be
-//
-//	func(State) (Verdict, string)
-//
-// returning a reason for the verdict that can be composed similarly to
-// descriptions.
 type Expectation struct {
-	Check func(State) Verdict
+	// Check returns the verdict of this expectation for the given state.
+	// If the vertict is not [Met], the second result should return a reason
+	// that the verdict is not (yet) met.
+	Check func(State) (Verdict, string)
 
 	// Description holds a noun-phrase identifying what the expectation checks.
 	//
@@ -74,27 +72,93 @@ type Expectation struct {
 
 // OnceMet returns an Expectation that, once the precondition is met, asserts
 // that mustMeet is met.
-func OnceMet(precondition Expectation, mustMeets ...Expectation) Expectation {
-	check := func(s State) Verdict {
-		switch pre := precondition.Check(s); pre {
-		case Unmeetable:
-			return Unmeetable
+func OnceMet(pre, post Expectation) Expectation {
+	check := func(s State) (Verdict, string) {
+		switch v, why := pre.Check(s); v {
+		case Unmeetable, Unmet:
+			return v, fmt.Sprintf("precondition is %s: %s", v, why)
 		case Met:
-			for _, mustMeet := range mustMeets {
-				verdict := mustMeet.Check(s)
-				if verdict != Met {
-					return Unmeetable
-				}
+			v, why := post.Check(s)
+			if v != Met {
+				return Unmeetable, fmt.Sprintf("postcondition is not met:\n%s", indent(why))
 			}
-			return Met
+			return Met, ""
 		default:
-			return Unmet
+			panic(fmt.Sprintf("unknown precondition verdict %s", v))
 		}
 	}
-	description := describeExpectations(mustMeets...)
+	desc := fmt.Sprintf("once the following is met:\n%s\nmust have:\n%s",
+		indent(pre.Description), indent(post.Description))
 	return Expectation{
 		Check:       check,
-		Description: fmt.Sprintf("once %q is met, must have:\n%s", precondition.Description, description),
+		Description: desc,
+	}
+}
+
+// Not inverts the sense of an expectation: a met expectation is unmet, and an
+// unmet expectation is met.
+func Not(e Expectation) Expectation {
+	check := func(s State) (Verdict, string) {
+		switch v, _ := e.Check(s); v {
+		case Met:
+			return Unmet, "condition unexpectedly satisfied"
+		case Unmet, Unmeetable:
+			return Met, ""
+		default:
+			panic(fmt.Sprintf("unexpected verdict %v", v))
+		}
+	}
+	return Expectation{
+		Check:       check,
+		Description: fmt.Sprintf("not: %s", e.Description),
+	}
+}
+
+// AnyOf returns an expectation that is satisfied when any of the given
+// expectations is met.
+func AnyOf(anyOf ...Expectation) Expectation {
+	if len(anyOf) == 1 {
+		return anyOf[0] // avoid unnecessary boilerplate
+	}
+	check := func(s State) (Verdict, string) {
+		for _, e := range anyOf {
+			verdict, _ := e.Check(s)
+			if verdict == Met {
+				return Met, ""
+			}
+		}
+		return Unmet, "none of the expectations were met"
+	}
+	description := describeExpectations(anyOf...)
+	return Expectation{
+		Check:       check,
+		Description: fmt.Sprintf("any of:\n%s", description),
+	}
+}
+
+// AllOf expects that all given expectations are met.
+func AllOf(allOf ...Expectation) Expectation {
+	if len(allOf) == 1 {
+		return allOf[0] // avoid unnecessary boilerplate
+	}
+	check := func(s State) (Verdict, string) {
+		var (
+			verdict = Met
+			reason  string
+		)
+		for _, e := range allOf {
+			v, why := e.Check(s)
+			if v > verdict {
+				verdict = v
+				reason = why
+			}
+		}
+		return verdict, reason
+	}
+	desc := describeExpectations(allOf...)
+	return Expectation{
+		Check:       check,
+		Description: fmt.Sprintf("all of:\n%s", indent(desc)),
 	}
 }
 
@@ -106,85 +170,19 @@ func describeExpectations(expectations ...Expectation) string {
 	return strings.Join(descriptions, "\n")
 }
 
-// Not inverts the sense of an expectation: a met expectation is unmet, and an
-// unmet expectation is met.
-func Not(e Expectation) Expectation {
-	check := func(s State) Verdict {
-		switch v := e.Check(s); v {
-		case Met:
-			return Unmet
-		case Unmet, Unmeetable:
-			return Met
-		default:
-			panic(fmt.Sprintf("unexpected verdict %v", v))
-		}
-	}
-	description := describeExpectations(e)
-	return Expectation{
-		Check:       check,
-		Description: fmt.Sprintf("not: %s", description),
-	}
-}
-
-// AnyOf returns an expectation that is satisfied when any of the given
-// expectations is met.
-func AnyOf(anyOf ...Expectation) Expectation {
-	check := func(s State) Verdict {
-		for _, e := range anyOf {
-			verdict := e.Check(s)
-			if verdict == Met {
-				return Met
-			}
-		}
-		return Unmet
-	}
-	description := describeExpectations(anyOf...)
-	return Expectation{
-		Check:       check,
-		Description: fmt.Sprintf("Any of:\n%s", description),
-	}
-}
-
-// AllOf expects that all given expectations are met.
-//
-// TODO(rfindley): the problem with these types of combinators (OnceMet, AnyOf
-// and AllOf) is that we lose the information of *why* they failed: the Awaiter
-// is not smart enough to look inside.
-//
-// Refactor the API such that the Check function is responsible for explaining
-// why an expectation failed. This should allow us to significantly improve
-// test output: we won't need to summarize state at all, as the verdict
-// explanation itself should describe clearly why the expectation not met.
-func AllOf(allOf ...Expectation) Expectation {
-	check := func(s State) Verdict {
-		verdict := Met
-		for _, e := range allOf {
-			if v := e.Check(s); v > verdict {
-				verdict = v
-			}
-		}
-		return verdict
-	}
-	description := describeExpectations(allOf...)
-	return Expectation{
-		Check:       check,
-		Description: fmt.Sprintf("All of:\n%s", description),
-	}
-}
-
 // ReadDiagnostics is an Expectation that stores the current diagnostics for
 // fileName in into, whenever it is evaluated.
 //
 // It can be used in combination with OnceMet or AfterChange to capture the
 // state of diagnostics when other expectations are satisfied.
 func ReadDiagnostics(fileName string, into *protocol.PublishDiagnosticsParams) Expectation {
-	check := func(s State) Verdict {
+	check := func(s State) (Verdict, string) {
 		diags, ok := s.diagnostics[fileName]
 		if !ok {
-			return Unmeetable
+			return Unmeetable, fmt.Sprintf("no diagnostics for %q", fileName)
 		}
 		*into = *diags
-		return Met
+		return Met, ""
 	}
 	return Expectation{
 		Check:       check,
@@ -198,13 +196,10 @@ func ReadDiagnostics(fileName string, into *protocol.PublishDiagnosticsParams) E
 // It can be used in combination with OnceMet or AfterChange to capture the
 // state of diagnostics when other expectations are satisfied.
 func ReadAllDiagnostics(into *map[string]*protocol.PublishDiagnosticsParams) Expectation {
-	check := func(s State) Verdict {
-		allDiags := make(map[string]*protocol.PublishDiagnosticsParams)
-		for name, diags := range s.diagnostics {
-			allDiags[name] = diags
-		}
+	check := func(s State) (Verdict, string) {
+		allDiags := maps.Clone(s.diagnostics)
 		*into = allDiags
-		return Met
+		return Met, ""
 	}
 	return Expectation{
 		Check:       check,
@@ -215,13 +210,13 @@ func ReadAllDiagnostics(into *map[string]*protocol.PublishDiagnosticsParams) Exp
 // ShownDocument asserts that the client has received a
 // ShowDocumentRequest for the given URI.
 func ShownDocument(uri protocol.URI) Expectation {
-	check := func(s State) Verdict {
+	check := func(s State) (Verdict, string) {
 		for _, params := range s.showDocument {
 			if params.URI == uri {
-				return Met
+				return Met, ""
 			}
 		}
-		return Unmet
+		return Unmet, fmt.Sprintf("no ShowDocumentRequest received for %s", uri)
 	}
 	return Expectation{
 		Check:       check,
@@ -236,9 +231,9 @@ func ShownDocument(uri protocol.URI) Expectation {
 // capture the set of showDocument requests when other expectations
 // are satisfied.
 func ShownDocuments(into *[]*protocol.ShowDocumentParams) Expectation {
-	check := func(s State) Verdict {
+	check := func(s State) (Verdict, string) {
 		*into = append(*into, s.showDocument...)
-		return Met
+		return Met, ""
 	}
 	return Expectation{
 		Check:       check,
@@ -247,31 +242,39 @@ func ShownDocuments(into *[]*protocol.ShowDocumentParams) Expectation {
 }
 
 // NoShownMessage asserts that the editor has not received a ShowMessage.
-func NoShownMessage(subString string) Expectation {
-	check := func(s State) Verdict {
+func NoShownMessage(containing string) Expectation {
+	check := func(s State) (Verdict, string) {
 		for _, m := range s.showMessage {
-			if strings.Contains(m.Message, subString) {
-				return Unmeetable
+			if strings.Contains(m.Message, containing) {
+				// Format the message (which may contain newlines) as a block quote.
+				msg := fmt.Sprintf("\"\"\"\n%s\n\"\"\"", strings.TrimSpace(m.Message))
+				return Unmeetable, fmt.Sprintf("observed the following message:\n%s", indent(msg))
 			}
 		}
-		return Met
+		return Met, ""
+	}
+	var desc string
+	if containing != "" {
+		desc = fmt.Sprintf("received no ShowMessage containing %q", containing)
+	} else {
+		desc = "received no ShowMessage requests"
 	}
 	return Expectation{
 		Check:       check,
-		Description: fmt.Sprintf("no ShowMessage received containing %q", subString),
+		Description: desc,
 	}
 }
 
 // ShownMessage asserts that the editor has received a ShowMessageRequest
 // containing the given substring.
 func ShownMessage(containing string) Expectation {
-	check := func(s State) Verdict {
+	check := func(s State) (Verdict, string) {
 		for _, m := range s.showMessage {
 			if strings.Contains(m.Message, containing) {
-				return Met
+				return Met, ""
 			}
 		}
-		return Unmet
+		return Unmet, fmt.Sprintf("no ShowMessage containing %q", containing)
 	}
 	return Expectation{
 		Check:       check,
@@ -281,22 +284,22 @@ func ShownMessage(containing string) Expectation {
 
 // ShownMessageRequest asserts that the editor has received a
 // ShowMessageRequest with message matching the given regular expression.
-func ShownMessageRequest(messageRegexp string) Expectation {
-	msgRE := regexp.MustCompile(messageRegexp)
-	check := func(s State) Verdict {
+func ShownMessageRequest(matchingRegexp string) Expectation {
+	msgRE := regexp.MustCompile(matchingRegexp)
+	check := func(s State) (Verdict, string) {
 		if len(s.showMessageRequest) == 0 {
-			return Unmet
+			return Unmet, "no ShowMessageRequest have been received"
 		}
 		for _, m := range s.showMessageRequest {
 			if msgRE.MatchString(m.Message) {
-				return Met
+				return Met, ""
 			}
 		}
-		return Unmet
+		return Unmet, fmt.Sprintf("no ShowMessageRequest (out of %d) match %q", len(s.showMessageRequest), matchingRegexp)
 	}
 	return Expectation{
 		Check:       check,
-		Description: fmt.Sprintf("ShowMessageRequest matching %q", messageRegexp),
+		Description: fmt.Sprintf("ShowMessageRequest matching %q", matchingRegexp),
 	}
 }
 
@@ -328,9 +331,7 @@ func (e *Env) DoneDiagnosingChanges() Expectation {
 	}
 
 	// Sort for stability.
-	sort.Slice(expected, func(i, j int) bool {
-		return expected[i] < expected[j]
-	})
+	slices.Sort(expected)
 
 	var all []Expectation
 	for _, source := range expected {
@@ -411,15 +412,16 @@ func (e *Env) DoneWithClose() Expectation {
 //
 // See CompletedWork.
 func StartedWork(title string, atLeast uint64) Expectation {
-	check := func(s State) Verdict {
-		if s.startedWork[title] >= atLeast {
-			return Met
+	check := func(s State) (Verdict, string) {
+		started := s.startedWork[title]
+		if started >= atLeast {
+			return Met, ""
 		}
-		return Unmet
+		return Unmet, fmt.Sprintf("started work %d %s", started, pluralize("time", started))
 	}
 	return Expectation{
 		Check:       check,
-		Description: fmt.Sprintf("started work %q at least %d time(s)", title, atLeast),
+		Description: fmt.Sprintf("started work %q at least %d %s", title, atLeast, pluralize("time", atLeast)),
 	}
 }
 
@@ -428,21 +430,29 @@ func StartedWork(title string, atLeast uint64) Expectation {
 // Since the Progress API doesn't include any hidden metadata, we must use the
 // progress notification title to identify the work we expect to be completed.
 func CompletedWork(title string, count uint64, atLeast bool) Expectation {
-	check := func(s State) Verdict {
+	check := func(s State) (Verdict, string) {
 		completed := s.completedWork[title]
 		if completed == count || atLeast && completed > count {
-			return Met
+			return Met, ""
 		}
-		return Unmet
+		return Unmet, fmt.Sprintf("completed %d %s", completed, pluralize("time", completed))
 	}
-	desc := fmt.Sprintf("completed work %q %v times", title, count)
+	desc := fmt.Sprintf("completed work %q %v %s", title, count, pluralize("time", count))
 	if atLeast {
-		desc = fmt.Sprintf("completed work %q at least %d time(s)", title, count)
+		desc = fmt.Sprintf("completed work %q at least %d %s", title, count, pluralize("time", count))
 	}
 	return Expectation{
 		Check:       check,
 		Description: desc,
 	}
+}
+
+// pluralize adds an 's' suffix to name if n > 1.
+func pluralize[T constraints.Integer](name string, n T) string {
+	if n > 1 {
+		return name + "s"
+	}
+	return name
 }
 
 type WorkStatus struct {
@@ -459,24 +469,23 @@ type WorkStatus struct {
 // If the token is not a progress token that the client has seen, this
 // expectation is Unmeetable.
 func CompletedProgressToken(token protocol.ProgressToken, into *WorkStatus) Expectation {
-	check := func(s State) Verdict {
+	check := func(s State) (Verdict, string) {
 		work, ok := s.work[token]
 		if !ok {
-			return Unmeetable // TODO(rfindley): refactor to allow the verdict to explain this result
+			return Unmeetable, "no matching work items"
 		}
 		if work.complete {
 			if into != nil {
 				into.Msg = work.msg
 				into.EndMsg = work.endMsg
 			}
-			return Met
+			return Met, ""
 		}
-		return Unmet
+		return Unmet, fmt.Sprintf("work is not complete; last message: %q", work.msg)
 	}
-	desc := fmt.Sprintf("completed work for token %v", token)
 	return Expectation{
 		Check:       check,
-		Description: desc,
+		Description: fmt.Sprintf("completed work for token %v", token),
 	}
 }
 
@@ -488,28 +497,27 @@ func CompletedProgressToken(token protocol.ProgressToken, into *WorkStatus) Expe
 // This expectation is a vestige of older workarounds for asynchronous command
 // execution.
 func CompletedProgress(title string, into *WorkStatus) Expectation {
-	check := func(s State) Verdict {
+	check := func(s State) (Verdict, string) {
 		var work *workProgress
 		for _, w := range s.work {
 			if w.title == title {
 				if work != nil {
-					// TODO(rfindley): refactor to allow the verdict to explain this result
-					return Unmeetable // multiple matches
+					return Unmeetable, "multiple matching work items"
 				}
 				work = w
 			}
 		}
 		if work == nil {
-			return Unmeetable // zero matches
+			return Unmeetable, "no matching work items"
 		}
 		if work.complete {
 			if into != nil {
 				into.Msg = work.msg
 				into.EndMsg = work.endMsg
 			}
-			return Met
+			return Met, ""
 		}
-		return Unmet
+		return Unmet, fmt.Sprintf("work is not complete; last message: %q", work.msg)
 	}
 	desc := fmt.Sprintf("exactly 1 completed workDoneProgress with title %v", title)
 	return Expectation{
@@ -522,16 +530,16 @@ func CompletedProgress(title string, into *WorkStatus) Expectation {
 // be an exact match, whereas the given msg must only be contained in the work
 // item's message.
 func OutstandingWork(title, msg string) Expectation {
-	check := func(s State) Verdict {
+	check := func(s State) (Verdict, string) {
 		for _, work := range s.work {
 			if work.complete {
 				continue
 			}
 			if work.title == title && strings.Contains(work.msg, msg) {
-				return Met
+				return Met, ""
 			}
 		}
-		return Unmet
+		return Unmet, "no matching work"
 	}
 	return Expectation{
 		Check:       check,
@@ -548,7 +556,7 @@ func OutstandingWork(title, msg string) Expectation {
 // TODO(rfindley): consider refactoring to treat outstanding work the same way
 // we treat diagnostics: with an algebra of filters.
 func NoOutstandingWork(ignore func(title, msg string) bool) Expectation {
-	check := func(s State) Verdict {
+	check := func(s State) (Verdict, string) {
 		for _, w := range s.work {
 			if w.complete {
 				continue
@@ -563,9 +571,9 @@ func NoOutstandingWork(ignore func(title, msg string) bool) Expectation {
 			if ignore != nil && ignore(w.title, w.msg) {
 				continue
 			}
-			return Unmet
+			return Unmet, fmt.Sprintf("found outstanding work %q: %q", w.title, w.msg)
 		}
-		return Met
+		return Met, ""
 	}
 	return Expectation{
 		Check:       check,
@@ -600,7 +608,7 @@ func LogMatching(typ protocol.MessageType, re string, count int, atLeast bool) E
 	if err != nil {
 		panic(err)
 	}
-	check := func(state State) Verdict {
+	check := func(state State) (Verdict, string) {
 		var found int
 		for _, msg := range state.logs {
 			if msg.Type == typ && rec.Match([]byte(msg.Message)) {
@@ -609,14 +617,15 @@ func LogMatching(typ protocol.MessageType, re string, count int, atLeast bool) E
 		}
 		// Check for an exact or "at least" match.
 		if found == count || (found >= count && atLeast) {
-			return Met
+			return Met, ""
 		}
 		// If we require an exact count, and have received more than expected, the
 		// expectation can never be met.
+		verdict := Unmet
 		if found > count && !atLeast {
-			return Unmeetable
+			verdict = Unmeetable
 		}
-		return Unmet
+		return verdict, fmt.Sprintf("found %d matching logs", found)
 	}
 	desc := fmt.Sprintf("log message matching %q expected %v times", re, count)
 	if atLeast {
@@ -640,20 +649,24 @@ func NoLogMatching(typ protocol.MessageType, re string) Expectation {
 			panic(err)
 		}
 	}
-	check := func(state State) Verdict {
+	check := func(state State) (Verdict, string) {
 		for _, msg := range state.logs {
 			if msg.Type != typ {
 				continue
 			}
 			if r == nil || r.Match([]byte(msg.Message)) {
-				return Unmeetable
+				return Unmeetable, fmt.Sprintf("found matching log %q", msg.Message)
 			}
 		}
-		return Met
+		return Met, ""
+	}
+	desc := fmt.Sprintf("no %s log messages", typ)
+	if re != "" {
+		desc += fmt.Sprintf(" matching %q", re)
 	}
 	return Expectation{
 		Check:       check,
-		Description: fmt.Sprintf("no log message matching %q", re),
+		Description: desc,
 	}
 }
 
@@ -673,18 +686,18 @@ func NoFileWatchMatching(re string) Expectation {
 	}
 }
 
-func checkFileWatch(re string, onMatch, onNoMatch Verdict) func(State) Verdict {
+func checkFileWatch(re string, onMatch, onNoMatch Verdict) func(State) (Verdict, string) {
 	rec := regexp.MustCompile(re)
-	return func(s State) Verdict {
+	return func(s State) (Verdict, string) {
 		r := s.registeredCapabilities["workspace/didChangeWatchedFiles"]
-		watchers := jsonProperty(r.RegisterOptions, "watchers").([]interface{})
+		watchers := jsonProperty(r.RegisterOptions, "watchers").([]any)
 		for _, watcher := range watchers {
 			pattern := jsonProperty(watcher, "globPattern").(string)
 			if rec.MatchString(pattern) {
-				return onMatch
+				return onMatch, fmt.Sprintf("matches watcher pattern %q", pattern)
 			}
 		}
-		return onNoMatch
+		return onNoMatch, "no matching watchers"
 	}
 }
 
@@ -699,18 +712,22 @@ func checkFileWatch(re string, onMatch, onNoMatch Verdict) func(State) Verdict {
 //	}
 //
 // Then jsonProperty(obj, "foo", "bar") will be 3.
-func jsonProperty(obj interface{}, path ...string) interface{} {
+func jsonProperty(obj any, path ...string) any {
 	if len(path) == 0 || obj == nil {
 		return obj
 	}
-	m := obj.(map[string]interface{})
+	m := obj.(map[string]any)
 	return jsonProperty(m[path[0]], path[1:]...)
+}
+
+func formatDiagnostic(d protocol.Diagnostic) string {
+	return fmt.Sprintf("%d:%d [%s]: %s\n", d.Range.Start.Line, d.Range.Start.Character, d.Source, d.Message)
 }
 
 // Diagnostics asserts that there is at least one diagnostic matching the given
 // filters.
 func Diagnostics(filters ...DiagnosticFilter) Expectation {
-	check := func(s State) Verdict {
+	check := func(s State) (Verdict, string) {
 		diags := flattenDiagnostics(s)
 		for _, filter := range filters {
 			var filtered []flatDiagnostic
@@ -720,14 +737,22 @@ func Diagnostics(filters ...DiagnosticFilter) Expectation {
 				}
 			}
 			if len(filtered) == 0 {
-				// TODO(rfindley): if/when expectations describe their own failure, we
-				// can provide more useful information here as to which filter caused
-				// the failure.
-				return Unmet
+				// Reprinting the description of the filters is too verbose.
+				//
+				// We can probably do better here, but for now just format the
+				// diagnostics.
+				var b bytes.Buffer
+				for name, params := range s.diagnostics {
+					fmt.Fprintf(&b, "\t%s (version %d):\n", name, params.Version)
+					for _, d := range params.Diagnostics {
+						fmt.Fprintf(&b, "\t\t%s", formatDiagnostic(d))
+					}
+				}
+				return Unmet, fmt.Sprintf("diagnostics:\n%s", b.String())
 			}
 			diags = filtered
 		}
-		return Met
+		return Met, ""
 	}
 	var descs []string
 	for _, filter := range filters {
@@ -743,7 +768,7 @@ func Diagnostics(filters ...DiagnosticFilter) Expectation {
 // filters. Notably, if no filters are supplied this assertion checks that
 // there are no diagnostics at all, for any file.
 func NoDiagnostics(filters ...DiagnosticFilter) Expectation {
-	check := func(s State) Verdict {
+	check := func(s State) (Verdict, string) {
 		diags := flattenDiagnostics(s)
 		for _, filter := range filters {
 			var filtered []flatDiagnostic
@@ -755,9 +780,11 @@ func NoDiagnostics(filters ...DiagnosticFilter) Expectation {
 			diags = filtered
 		}
 		if len(diags) > 0 {
-			return Unmet
+			d := diags[0]
+			why := fmt.Sprintf("have diagnostic: %s: %v", d.name, formatDiagnostic(d.diag))
+			return Unmet, why
 		}
-		return Met
+		return Met, ""
 	}
 	var descs []string
 	for _, filter := range filters {

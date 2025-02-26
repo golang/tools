@@ -39,11 +39,6 @@ func Test_fingerprint(t *testing.T) {
 	// (Non-tricky types only.)
 	var fingerprints typeutil.Map
 
-	type eqclass struct {
-		class map[types.Type]bool
-		fp    string
-	}
-
 	for _, pkg := range pkgs {
 		switch pkg.Types.Path() {
 		case "unsafe", "builtin":

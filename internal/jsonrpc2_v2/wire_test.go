@@ -63,7 +63,7 @@ func TestWireMessage(t *testing.T) {
 	}
 }
 
-func newNotification(method string, params interface{}) jsonrpc2.Message {
+func newNotification(method string, params any) jsonrpc2.Message {
 	msg, err := jsonrpc2.NewNotification(method, params)
 	if err != nil {
 		panic(err)
@@ -71,7 +71,7 @@ func newNotification(method string, params interface{}) jsonrpc2.Message {
 	return msg
 }
 
-func newID(id interface{}) jsonrpc2.ID {
+func newID(id any) jsonrpc2.ID {
 	switch v := id.(type) {
 	case nil:
 		return jsonrpc2.ID{}
@@ -86,7 +86,7 @@ func newID(id interface{}) jsonrpc2.ID {
 	}
 }
 
-func newCall(id interface{}, method string, params interface{}) jsonrpc2.Message {
+func newCall(id any, method string, params any) jsonrpc2.Message {
 	msg, err := jsonrpc2.NewCall(newID(id), method, params)
 	if err != nil {
 		panic(err)
@@ -94,7 +94,7 @@ func newCall(id interface{}, method string, params interface{}) jsonrpc2.Message
 	return msg
 }
 
-func newResponse(id interface{}, result interface{}, rerr error) jsonrpc2.Message {
+func newResponse(id any, result any, rerr error) jsonrpc2.Message {
 	msg, err := jsonrpc2.NewResponse(newID(id), result, rerr)
 	if err != nil {
 		panic(err)

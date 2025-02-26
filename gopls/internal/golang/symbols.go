@@ -15,6 +15,8 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -72,6 +74,118 @@ func DocumentSymbols(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 		}
 	}
 	return symbols, nil
+}
+
+// PackageSymbols returns a list of symbols in the narrowest package for the given file (specified
+// by its URI).
+// Methods with receivers are stored as children under the symbol for their receiver type.
+// The PackageSymbol data type contains the same fields as protocol.DocumentSymbol, with
+// an additional int field "File" that stores the index of that symbol's file in the
+// PackageSymbolsResult.Files.
+func PackageSymbols(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (command.PackageSymbolsResult, error) {
+	ctx, done := event.Start(ctx, "source.PackageSymbols")
+	defer done()
+
+	pkgFiles := []protocol.DocumentURI{uri}
+
+	// golang/vscode-go#3681: do our best if the file is not in a package.
+	// TODO(rfindley): revisit this in the future once there is more graceful
+	// handling in VS Code.
+	if mp, err := NarrowestMetadataForFile(ctx, snapshot, uri); err == nil {
+		pkgFiles = mp.CompiledGoFiles
+	}
+
+	var (
+		pkgName           string
+		symbols           []command.PackageSymbol
+		receiverToMethods = make(map[string][]command.PackageSymbol) // receiver name -> methods
+		typeSymbolToIdx   = make(map[string]int)                     // type name -> index in symbols
+	)
+	for fidx, f := range pkgFiles {
+		fh, err := snapshot.ReadFile(ctx, f)
+		if err != nil {
+			return command.PackageSymbolsResult{}, err
+		}
+		pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
+		if err != nil {
+			return command.PackageSymbolsResult{}, err
+		}
+		if pkgName == "" && pgf.File != nil && pgf.File.Name != nil {
+			pkgName = pgf.File.Name.Name
+		}
+		for _, decl := range pgf.File.Decls {
+			switch decl := decl.(type) {
+			case *ast.FuncDecl:
+				if decl.Name.Name == "_" {
+					continue
+				}
+				if fs, err := funcSymbol(pgf.Mapper, pgf.Tok, decl); err == nil {
+					// If function is a method, prepend the type of the method.
+					// Don't add the method as its own symbol; store it so we can
+					// add it as a child of the receiver type later
+					if decl.Recv != nil && len(decl.Recv.List) > 0 {
+						_, rname, _ := astutil.UnpackRecv(decl.Recv.List[0].Type)
+						receiverToMethods[rname.String()] = append(receiverToMethods[rname.String()], toPackageSymbol(fidx, fs))
+					} else {
+						symbols = append(symbols, toPackageSymbol(fidx, fs))
+					}
+				}
+			case *ast.GenDecl:
+				for _, spec := range decl.Specs {
+					switch spec := spec.(type) {
+					case *ast.TypeSpec:
+						if spec.Name.Name == "_" {
+							continue
+						}
+						if ts, err := typeSymbol(pgf.Mapper, pgf.Tok, spec); err == nil {
+							typeSymbolToIdx[ts.Name] = len(symbols)
+							symbols = append(symbols, toPackageSymbol(fidx, ts))
+						}
+					case *ast.ValueSpec:
+						for _, name := range spec.Names {
+							if name.Name == "_" {
+								continue
+							}
+							if vs, err := varSymbol(pgf.Mapper, pgf.Tok, spec, name, decl.Tok == token.CONST); err == nil {
+								symbols = append(symbols, toPackageSymbol(fidx, vs))
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	// Add methods as the child of their receiver type symbol
+	for recv, methods := range receiverToMethods {
+		if i, ok := typeSymbolToIdx[recv]; ok {
+			symbols[i].Children = append(symbols[i].Children, methods...)
+		}
+	}
+	return command.PackageSymbolsResult{
+		PackageName: pkgName,
+		Files:       pkgFiles,
+		Symbols:     symbols,
+	}, nil
+
+}
+
+func toPackageSymbol(fileIndex int, s protocol.DocumentSymbol) command.PackageSymbol {
+	var res command.PackageSymbol
+	res.Name = s.Name
+	res.Detail = s.Detail
+	res.Kind = s.Kind
+	res.Tags = s.Tags
+	res.Range = s.Range
+	res.SelectionRange = s.SelectionRange
+
+	children := make([]command.PackageSymbol, len(s.Children))
+	for i, c := range s.Children {
+		children[i] = toPackageSymbol(fileIndex, c)
+	}
+	res.Children = children
+
+	res.File = fileIndex
+	return res
 }
 
 func funcSymbol(m *protocol.Mapper, tf *token.File, decl *ast.FuncDecl) (protocol.DocumentSymbol, error) {

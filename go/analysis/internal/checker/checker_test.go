@@ -5,8 +5,6 @@
 package checker_test
 
 import (
-	"fmt"
-	"go/ast"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,7 +15,6 @@ import (
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/internal/checker"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
@@ -52,8 +49,10 @@ func Foo() {
 		t.Fatal(err)
 	}
 	path := filepath.Join(testdata, "src/rename/test.go")
+
 	checker.Fix = true
 	checker.Run([]string{"file=" + path}, []*analysis.Analyzer{renameAnalyzer})
+	checker.Fix = false
 
 	contents, err := os.ReadFile(path)
 	if err != nil {
@@ -66,101 +65,6 @@ func Foo() {
 	}
 
 	defer cleanup()
-}
-
-var renameAnalyzer = &analysis.Analyzer{
-	Name:             "rename",
-	Requires:         []*analysis.Analyzer{inspect.Analyzer},
-	Run:              run,
-	Doc:              "renames symbols named bar to baz",
-	RunDespiteErrors: true,
-}
-
-var otherAnalyzer = &analysis.Analyzer{ // like analyzer but with a different Name.
-	Name:     "other",
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
-	Run:      run,
-	Doc:      "renames symbols named bar to baz only in package 'other'",
-}
-
-func run(pass *analysis.Pass) (interface{}, error) {
-	// TODO(adonovan): replace this entangled test with something completely data-driven.
-	const (
-		from      = "bar"
-		to        = "baz"
-		conflict  = "conflict"  // add conflicting edits to package conflict.
-		duplicate = "duplicate" // add duplicate edits to package conflict.
-		other     = "other"     // add conflicting edits to package other from different analyzers.
-	)
-
-	if pass.Analyzer.Name == other {
-		if pass.Pkg.Name() != other {
-			return nil, nil // only apply Analyzer other to packages named other
-		}
-	}
-
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	nodeFilter := []ast.Node{(*ast.Ident)(nil)}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		ident := n.(*ast.Ident)
-		if ident.Name == from {
-			msg := fmt.Sprintf("renaming %q to %q", from, to)
-			edits := []analysis.TextEdit{
-				{Pos: ident.Pos(), End: ident.End(), NewText: []byte(to)},
-			}
-			switch pass.Pkg.Name() {
-			case conflict:
-				// Conflicting edits are legal, so long as they appear in different fixes.
-				pass.Report(analysis.Diagnostic{
-					Pos:     ident.Pos(),
-					End:     ident.End(),
-					Message: msg,
-					SuggestedFixes: []analysis.SuggestedFix{{
-						Message: msg, TextEdits: []analysis.TextEdit{
-							{Pos: ident.Pos() - 1, End: ident.End(), NewText: []byte(to)},
-						},
-					}},
-				})
-				pass.Report(analysis.Diagnostic{
-					Pos:     ident.Pos(),
-					End:     ident.End(),
-					Message: msg,
-					SuggestedFixes: []analysis.SuggestedFix{{
-						Message: msg, TextEdits: []analysis.TextEdit{
-							{Pos: ident.Pos(), End: ident.End() - 1, NewText: []byte(to)},
-						},
-					}},
-				})
-				pass.Report(analysis.Diagnostic{
-					Pos:     ident.Pos(),
-					End:     ident.End(),
-					Message: msg,
-					SuggestedFixes: []analysis.SuggestedFix{{
-						Message: msg, TextEdits: []analysis.TextEdit{
-							{Pos: ident.Pos(), End: ident.End(), NewText: []byte("lorem ipsum")},
-						},
-					}},
-				})
-				return
-
-			case duplicate:
-				// Duplicate (non-insertion) edits are disallowed,
-				// so this is a buggy analyzer, and validatedFixes should reject it.
-				edits = append(edits, edits...)
-			case other:
-				if pass.Analyzer.Name == other {
-					edits[0].Pos++ // shift by one to mismatch analyzer and other
-				}
-			}
-			pass.Report(analysis.Diagnostic{
-				Pos:            ident.Pos(),
-				End:            ident.End(),
-				Message:        msg,
-				SuggestedFixes: []analysis.SuggestedFix{{Message: msg, TextEdits: edits}}})
-		}
-	})
-
-	return nil, nil
 }
 
 func TestRunDespiteErrors(t *testing.T) {
@@ -203,7 +107,7 @@ func NewT1() *T1 { return &T1{T} }
 		Name:     "noop",
 		Doc:      "noop",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
-		Run: func(pass *analysis.Pass) (interface{}, error) {
+		Run: func(pass *analysis.Pass) (any, error) {
 			return nil, nil
 		},
 		RunDespiteErrors: true,
@@ -215,7 +119,7 @@ func NewT1() *T1 { return &T1{T} }
 		Name:     "noopfact",
 		Doc:      "noopfact",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
-		Run: func(pass *analysis.Pass) (interface{}, error) {
+		Run: func(pass *analysis.Pass) (any, error) {
 			return nil, nil
 		},
 		RunDespiteErrors: true,
@@ -236,31 +140,33 @@ func NewT1() *T1 { return &T1{T} }
 		// package from source. For the rest, it asks 'go list' for export data,
 		// which fails because the compiler encounters the type error.  Since the
 		// errors come from 'go list', the driver doesn't run the analyzer.
-		{name: "despite-error", pattern: []string{rderrFile}, analyzers: []*analysis.Analyzer{noop}, code: 1},
+		{name: "despite-error", pattern: []string{rderrFile}, analyzers: []*analysis.Analyzer{noop}, code: exitCodeFailed},
 		// The noopfact analyzer does use facts, so the driver loads source for
 		// all dependencies, does type checking itself, recognizes the error as a
 		// type error, and runs the analyzer.
-		{name: "despite-error-fact", pattern: []string{rderrFile}, analyzers: []*analysis.Analyzer{noopWithFact}, code: 1},
+		{name: "despite-error-fact", pattern: []string{rderrFile}, analyzers: []*analysis.Analyzer{noopWithFact}, code: exitCodeFailed},
 		// combination of parse/type errors and no errors
-		{name: "despite-error-and-no-error", pattern: []string{rderrFile, "sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
+		{name: "despite-error-and-no-error", pattern: []string{rderrFile, "sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: exitCodeFailed},
 		// non-existing package error
-		{name: "no-package", pattern: []string{"xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: 1},
-		{name: "no-package-despite-error", pattern: []string{"abc"}, analyzers: []*analysis.Analyzer{noop}, code: 1},
-		{name: "no-multi-package-despite-error", pattern: []string{"xyz", "abc"}, analyzers: []*analysis.Analyzer{noop}, code: 1},
+		{name: "no-package", pattern: []string{"xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: exitCodeFailed},
+		{name: "no-package-despite-error", pattern: []string{"abc"}, analyzers: []*analysis.Analyzer{noop}, code: exitCodeFailed},
+		{name: "no-multi-package-despite-error", pattern: []string{"xyz", "abc"}, analyzers: []*analysis.Analyzer{noop}, code: exitCodeFailed},
 		// combination of type/parsing and different errors
-		{name: "different-errors", pattern: []string{rderrFile, "xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
+		{name: "different-errors", pattern: []string{rderrFile, "xyz"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: exitCodeFailed},
 		// non existing dir error
-		{name: "no-match-dir", pattern: []string{"file=non/existing/dir"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 1},
+		{name: "no-match-dir", pattern: []string{"file=non/existing/dir"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: exitCodeFailed},
 		// no errors
-		{name: "no-errors", pattern: []string{"sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: 0},
+		{name: "no-errors", pattern: []string{"sort"}, analyzers: []*analysis.Analyzer{renameAnalyzer, noop}, code: exitCodeSuccess},
 		// duplicate list error with no findings
-		{name: "list-error", pattern: []string{cperrFile}, analyzers: []*analysis.Analyzer{noop}, code: 1},
+		{name: "list-error", pattern: []string{cperrFile}, analyzers: []*analysis.Analyzer{noop}, code: exitCodeFailed},
 		// duplicate list errors with findings (issue #67790)
-		{name: "list-error-findings", pattern: []string{cperrFile}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: 3},
+		{name: "list-error-findings", pattern: []string{cperrFile}, analyzers: []*analysis.Analyzer{renameAnalyzer}, code: exitCodeDiagnostics},
 	} {
-		if got := checker.Run(test.pattern, test.analyzers); got != test.code {
-			t.Errorf("got incorrect exit code %d for test %s; want %d", got, test.name, test.code)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			if got := checker.Run(test.pattern, test.analyzers); got != test.code {
+				t.Errorf("got incorrect exit code %d for test %s; want %d", got, test.name, test.code)
+			}
+		})
 	}
 }
 
@@ -279,7 +185,7 @@ func TestURL(t *testing.T) {
 		Name: "pkgname",
 		Doc:  "trivial analyzer that reports package names",
 		URL:  "https://pkg.go.dev/golang.org/x/tools/go/analysis/internal/checker",
-		Run: func(p *analysis.Pass) (interface{}, error) {
+		Run: func(p *analysis.Pass) (any, error) {
 			for _, f := range p.Files {
 				p.ReportRangef(f.Name, "package name is %s", f.Name.Name)
 			}

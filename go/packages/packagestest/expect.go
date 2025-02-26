@@ -72,7 +72,7 @@ const (
 //
 // It is safe to call this repeatedly with different method sets, but it is
 // not safe to call it concurrently.
-func (e *Exported) Expect(methods map[string]interface{}) error {
+func (e *Exported) Expect(methods map[string]any) error {
 	if err := e.getNotes(); err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func (e *Exported) Expect(methods map[string]interface{}) error {
 			n = &expect.Note{
 				Pos:  n.Pos,
 				Name: markMethod,
-				Args: []interface{}{n.Name, n.Name},
+				Args: []any{n.Name, n.Name},
 			}
 		}
 		mi, ok := ms[n.Name]
@@ -222,7 +222,7 @@ func (e *Exported) getMarkers() error {
 	}
 	// set markers early so that we don't call getMarkers again from Expect
 	e.markers = make(map[string]Range)
-	return e.Expect(map[string]interface{}{
+	return e.Expect(map[string]any{
 		markMethod: e.Mark,
 	})
 }
@@ -243,7 +243,7 @@ var (
 // It takes the args remaining, and returns the args it did not consume.
 // This allows a converter to consume 0 args for well known types, or multiple
 // args for compound types.
-type converter func(*expect.Note, []interface{}) (reflect.Value, []interface{}, error)
+type converter func(*expect.Note, []any) (reflect.Value, []any, error)
 
 // method is used to track information about Invoke methods that is expensive to
 // calculate so that we can work it out once rather than per marker.
@@ -259,19 +259,19 @@ type method struct {
 func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 	switch {
 	case pt == noteType:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			return reflect.ValueOf(n), args, nil
 		}, nil
 	case pt == fsetType:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			return reflect.ValueOf(e.ExpectFileSet), args, nil
 		}, nil
 	case pt == exportedType:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			return reflect.ValueOf(e), args, nil
 		}, nil
 	case pt == posType:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			r, remains, err := e.rangeConverter(n, args)
 			if err != nil {
 				return reflect.Value{}, nil, err
@@ -279,7 +279,7 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 			return reflect.ValueOf(r.Start), remains, nil
 		}, nil
 	case pt == positionType:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			r, remains, err := e.rangeConverter(n, args)
 			if err != nil {
 				return reflect.Value{}, nil, err
@@ -287,7 +287,7 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 			return reflect.ValueOf(e.ExpectFileSet.Position(r.Start)), remains, nil
 		}, nil
 	case pt == rangeType:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			r, remains, err := e.rangeConverter(n, args)
 			if err != nil {
 				return reflect.Value{}, nil, err
@@ -295,7 +295,7 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 			return reflect.ValueOf(r), remains, nil
 		}, nil
 	case pt == identifierType:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			if len(args) < 1 {
 				return reflect.Value{}, nil, fmt.Errorf("missing argument")
 			}
@@ -310,7 +310,7 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 		}, nil
 
 	case pt == regexType:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			if len(args) < 1 {
 				return reflect.Value{}, nil, fmt.Errorf("missing argument")
 			}
@@ -323,7 +323,7 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 		}, nil
 
 	case pt.Kind() == reflect.String:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			if len(args) < 1 {
 				return reflect.Value{}, nil, fmt.Errorf("missing argument")
 			}
@@ -339,7 +339,7 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 			}
 		}, nil
 	case pt.Kind() == reflect.Int64:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			if len(args) < 1 {
 				return reflect.Value{}, nil, fmt.Errorf("missing argument")
 			}
@@ -353,7 +353,7 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 			}
 		}, nil
 	case pt.Kind() == reflect.Bool:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			if len(args) < 1 {
 				return reflect.Value{}, nil, fmt.Errorf("missing argument")
 			}
@@ -366,7 +366,7 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 			return reflect.ValueOf(b), args, nil
 		}, nil
 	case pt.Kind() == reflect.Slice:
-		return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+		return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 			converter, err := e.buildConverter(pt.Elem())
 			if err != nil {
 				return reflect.Value{}, nil, err
@@ -384,7 +384,7 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 		}, nil
 	default:
 		if pt.Kind() == reflect.Interface && pt.NumMethod() == 0 {
-			return func(n *expect.Note, args []interface{}) (reflect.Value, []interface{}, error) {
+			return func(n *expect.Note, args []any) (reflect.Value, []any, error) {
 				if len(args) < 1 {
 					return reflect.Value{}, nil, fmt.Errorf("missing argument")
 				}
@@ -395,7 +395,7 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 	}
 }
 
-func (e *Exported) rangeConverter(n *expect.Note, args []interface{}) (Range, []interface{}, error) {
+func (e *Exported) rangeConverter(n *expect.Note, args []any) (Range, []any, error) {
 	tokFile := e.ExpectFileSet.File(n.Pos)
 	if len(args) < 1 {
 		return Range{}, nil, fmt.Errorf("missing argument")

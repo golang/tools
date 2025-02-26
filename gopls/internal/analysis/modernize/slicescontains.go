@@ -85,12 +85,32 @@ func slicescontains(pass *analysis.Pass) {
 		switch cond := ifStmt.Cond.(type) {
 		case *ast.BinaryExpr:
 			if cond.Op == token.EQL {
+				var elem ast.Expr
 				if isSliceElem(cond.X) {
 					funcName = "Contains"
+					elem = cond.X
 					arg2 = cond.Y // "if elem == needle"
 				} else if isSliceElem(cond.Y) {
 					funcName = "Contains"
+					elem = cond.Y
 					arg2 = cond.X // "if needle == elem"
+				}
+
+				// Reject if elem and needle have different types.
+				if elem != nil {
+					tElem := info.TypeOf(elem)
+					tNeedle := info.TypeOf(arg2)
+					if !types.Identical(tElem, tNeedle) {
+						// Avoid ill-typed slices.Contains([]error, any).
+						if !types.AssignableTo(tNeedle, tElem) {
+							return
+						}
+						// TODO(adonovan): relax this check to allow
+						//   slices.Contains([]error, error(any)),
+						// inserting an explicit widening conversion
+						// around the needle.
+						return
+					}
 				}
 			}
 
@@ -138,9 +158,9 @@ func slicescontains(pass *analysis.Pass) {
 		}
 
 		// Prepare slices.Contains{,Func} call.
-		slicesName, importEdits := analysisinternal.AddImport(info, file, rng.Pos(), "slices", "slices")
-		contains := fmt.Sprintf("%s.%s(%s, %s)",
-			slicesName,
+		_, prefix, importEdits := analysisinternal.AddImport(info, file, "slices", "slices", funcName, rng.Pos())
+		contains := fmt.Sprintf("%s%s(%s, %s)",
+			prefix,
 			funcName,
 			analysisinternal.Format(pass.Fset, rng.X),
 			analysisinternal.Format(pass.Fset, arg2))
@@ -159,6 +179,11 @@ func slicescontains(pass *analysis.Pass) {
 		}
 
 		// Last statement of body must return/break out of the loop.
+		//
+		// TODO(adonovan): opt:consider avoiding FindNode with new API of form:
+		//    curRange.Get(edge.RangeStmt_Body, -1).
+		//             Get(edge.BodyStmt_List, 0).
+		//             Get(edge.IfStmt_Body)
 		curBody, _ := curRange.FindNode(body)
 		curLastStmt, _ := curBody.LastChild()
 

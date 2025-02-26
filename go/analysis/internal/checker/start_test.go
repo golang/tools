@@ -40,6 +40,7 @@ package comment
 	path := filepath.Join(testdata, "src/comment/doc.go")
 	checker.Fix = true
 	checker.Run([]string{"file=" + path}, []*analysis.Analyzer{commentAnalyzer})
+	checker.Fix = false
 
 	contents, err := os.ReadFile(path)
 	if err != nil {
@@ -61,7 +62,7 @@ var commentAnalyzer = &analysis.Analyzer{
 	Run:      commentRun,
 }
 
-func commentRun(pass *analysis.Pass) (interface{}, error) {
+func commentRun(pass *analysis.Pass) (any, error) {
 	const (
 		from = "/* Package comment */"
 		to   = "// Package comment"

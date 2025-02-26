@@ -64,6 +64,8 @@ type overlay struct {
 	saved bool
 }
 
+func (o *overlay) String() string { return o.uri.Path() }
+
 func (o *overlay) URI() protocol.DocumentURI { return o.uri }
 
 func (o *overlay) Identity() file.Identity {

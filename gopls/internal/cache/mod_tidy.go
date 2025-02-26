@@ -76,7 +76,7 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 			return nil, err
 		}
 
-		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg interface{}) interface{} {
+		handle := memoize.NewPromise("modTidy", func(ctx context.Context, arg any) any {
 			tidied, err := modTidyImpl(ctx, arg.(*Snapshot), pm)
 			return modTidyResult{tidied, err}
 		})

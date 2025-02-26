@@ -1977,7 +1977,7 @@ func deepHash(n ast.Node) any {
 	var visit func(reflect.Value)
 	visit = func(v reflect.Value) {
 		switch v.Kind() {
-		case reflect.Ptr:
+		case reflect.Pointer:
 			ptr := v.UnsafePointer()
 			writeUint64(uint64(uintptr(ptr)))
 			if !v.IsNil() {

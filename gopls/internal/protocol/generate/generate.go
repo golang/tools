@@ -54,39 +54,44 @@ func generateDoc(out *bytes.Buffer, doc string) {
 
 // decide if a property is optional, and if it needs a *
 // return ",omitempty" if it is optional, and "*" if it needs a pointer
-func propStar(name string, t NameType, gotype string) (string, string) {
-	var opt, star string
+func propStar(name string, t NameType, gotype string) (omitempty, indirect bool) {
 	if t.Optional {
-		star = "*"
-		opt = ",omitempty"
-	}
-	if strings.HasPrefix(gotype, "[]") || strings.HasPrefix(gotype, "map[") {
-		star = "" // passed by reference, so no need for *
-	} else {
 		switch gotype {
-		case "bool", "uint32", "int32", "string", "interface{}", "any":
-			star = "" // gopls compatibility if t.Optional
+		case "uint32", "int32":
+			// in FoldingRange.endLine, 0 and empty have different semantics
+			// There seem to be no other cases.
+		default:
+			indirect = true
+			omitempty = true
 		}
 	}
-	ostar, oopt := star, opt
+	if strings.HasPrefix(gotype, "[]") || strings.HasPrefix(gotype, "map[") {
+		indirect = false // passed by reference, so no need for *
+	} else {
+		switch gotype {
+		case "bool", "string", "interface{}", "any":
+			indirect = false // gopls compatibility if t.Optional
+		}
+	}
+	oind, oomit := indirect, omitempty
 	if newStar, ok := goplsStar[prop{name, t.Name}]; ok {
 		switch newStar {
 		case nothing:
-			star, opt = "", ""
+			indirect, omitempty = false, false
 		case wantStar:
-			star, opt = "*", ""
+			indirect, omitempty = false, false
 		case wantOpt:
-			star, opt = "", ",omitempty"
+			indirect, omitempty = false, true
 		case wantOptStar:
-			star, opt = "*", ",omitempty"
+			indirect, omitempty = true, true
 		}
-		if star == ostar && opt == oopt { // no change
-			log.Printf("goplsStar[ {%q, %q} ](%d) useless %s/%s %s/%s", name, t.Name, t.Line, ostar, star, oopt, opt)
+		if indirect == oind && omitempty == oomit { // no change
+			log.Printf("goplsStar[ {%q, %q} ](%d) useless %v/%v %v/%v", name, t.Name, t.Line, oind, indirect, oomit, omitempty)
 		}
 		usedGoplsStar[prop{name, t.Name}] = true
 	}
 
-	return opt, star
+	return
 }
 
 func goName(s string) string {

@@ -1,0 +1,59 @@
+# Ensure that fixes are applied correctly, in
+# particular when processing duplicate fixes for overlapping packages
+# in the same directory ("p", "p [p.test]", "p_test [p.test]").
+
+checker -rename -fix -v example.com/p
+stderr applied 8 fixes, updated 3 files
+exit 0
+
+-- go.mod --
+module example.com
+go 1.22
+
+-- p/p.go --
+package p
+
+func Foo() {
+	bar := 12
+	_ = bar
+}
+
+-- p/p_test.go --
+package p
+
+func InTestFile() {
+	bar := 13
+	_ = bar
+}
+
+-- p/p_x_test.go --
+package p_test
+
+func Foo() {
+	bar := 14
+	_ = bar
+}
+
+-- want/p/p.go --
+package p
+
+func Foo() {
+	baz := 12
+	_ = baz
+}
+
+-- want/p/p_test.go --
+package p
+
+func InTestFile() {
+	baz := 13
+	_ = baz
+}
+
+-- want/p/p_x_test.go --
+package p_test
+
+func Foo() {
+	baz := 14
+	_ = baz
+}

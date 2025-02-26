@@ -26,7 +26,7 @@ import (
 var analyzer = &analysis.Analyzer{
 	Name: "versiontest",
 	Doc:  "off",
-	Run: func(pass *analysis.Pass) (interface{}, error) {
+	Run: func(pass *analysis.Pass) (any, error) {
 		pass.Reportf(pass.Files[0].Package, "goversion=%s", pass.Pkg.GoVersion())
 		return nil, nil
 	},

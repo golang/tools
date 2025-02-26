@@ -8,17 +8,24 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil/cursor"
 )
 
 // invertIfCondition is a singleFileFixFunc that inverts an if/else statement
-func invertIfCondition(fset *token.FileSet, start, end token.Pos, src []byte, file *ast.File, _ *types.Package, _ *types.Info) (*token.FileSet, *analysis.SuggestedFix, error) {
-	ifStatement, _, err := canInvertIfCondition(file, start, end)
+func invertIfCondition(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	var (
+		fset = pkg.FileSet()
+		src  = pgf.Src
+	)
+
+	ifStatement, _, err := canInvertIfCondition(pgf.Cursor, start, end)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -241,7 +248,9 @@ func invertAndOr(fset *token.FileSet, expr *ast.BinaryExpr, src []byte) ([]byte,
 
 // canInvertIfCondition reports whether we can do invert-if-condition on the
 // code in the given range.
-func canInvertIfCondition(file *ast.File, start, end token.Pos) (*ast.IfStmt, bool, error) {
+func canInvertIfCondition(curFile cursor.Cursor, start, end token.Pos) (*ast.IfStmt, bool, error) {
+	file := curFile.Node().(*ast.File)
+	// TODO(adonovan): simplify, using Cursor.
 	path, _ := astutil.PathEnclosingInterval(file, start, end)
 	for _, node := range path {
 		stmt, isIfStatement := node.(*ast.IfStmt)

@@ -55,7 +55,7 @@ type ApplyWorkspaceEditResult struct {
 	// Depending on the client's failure handling strategy `failedChange` might
 	// contain the index of the change that failed. This property is only available
 	// if the client signals a `failureHandlingStrategy` in its client capabilities.
-	FailedChange uint32 `json:"failedChange,omitempty"`
+	FailedChange uint32 `json:"failedChange"`
 }
 
 // A base for all symbol information.
@@ -2377,12 +2377,12 @@ type FoldingRange struct {
 	// To be valid, the end must be zero or larger and smaller than the number of lines in the document.
 	StartLine uint32 `json:"startLine"`
 	// The zero-based character offset from where the folded range starts. If not defined, defaults to the length of the start line.
-	StartCharacter uint32 `json:"startCharacter,omitempty"`
+	StartCharacter uint32 `json:"startCharacter"`
 	// The zero-based end line of the range to fold. The folded area ends with the line's last character.
 	// To be valid, the end must be zero or larger and smaller than the number of lines in the document.
 	EndLine uint32 `json:"endLine"`
 	// The zero-based character offset before the folded range ends. If not defined, defaults to the length of the end line.
-	EndCharacter uint32 `json:"endCharacter,omitempty"`
+	EndCharacter uint32 `json:"endCharacter"`
 	// Describes the kind of the folding range such as 'comment' or 'region'. The kind
 	// is used to categorize folding ranges and used by commands like 'Fold all comments'.
 	// See {@link FoldingRangeKind} for an enumeration of standardized kinds.
@@ -2405,7 +2405,7 @@ type FoldingRangeClientCapabilities struct {
 	// The maximum number of folding ranges that the client prefers to receive
 	// per document. The value serves as a hint, servers are free to follow the
 	// limit.
-	RangeLimit uint32 `json:"rangeLimit,omitempty"`
+	RangeLimit uint32 `json:"rangeLimit"`
 	// If set, the client signals that it only supports folding complete lines.
 	// If set, client will ignore specified `startCharacter` and `endCharacter`
 	// properties in a FoldingRange.
@@ -4148,7 +4148,7 @@ type PublishDiagnosticsParams struct {
 	// Optional the version number of the document the diagnostics are published for.
 	//
 	// @since 3.15.0
-	Version int32 `json:"version,omitempty"`
+	Version int32 `json:"version"`
 	// An array of diagnostic information items.
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
@@ -4907,7 +4907,7 @@ type SignatureHelp struct {
 	//
 	// In future version of the protocol this property might become
 	// mandatory to better express this.
-	ActiveSignature uint32 `json:"activeSignature,omitempty"`
+	ActiveSignature uint32 `json:"activeSignature"`
 	// The active parameter of the active signature.
 	//
 	// If `null`, no parameter of the signature is active (for example a named
@@ -4924,7 +4924,7 @@ type SignatureHelp struct {
 	// In future version of the protocol this property might become
 	// mandatory (but still nullable) to better express the active parameter if
 	// the active signature does have any.
-	ActiveParameter uint32 `json:"activeParameter,omitempty"`
+	ActiveParameter uint32 `json:"activeParameter"`
 }
 
 // Client Capabilities for a {@link SignatureHelpRequest}.
@@ -5036,7 +5036,7 @@ type SignatureInformation struct {
 	// `SignatureHelp.activeParameter`.
 	//
 	// @since 3.16.0
-	ActiveParameter uint32 `json:"activeParameter,omitempty"`
+	ActiveParameter uint32 `json:"activeParameter"`
 }
 
 // An interactive text edit.
@@ -5261,7 +5261,7 @@ type TextDocumentContentChangePartial struct {
 	// The optional length of the range that got replaced.
 	//
 	// @deprecated use range instead.
-	RangeLength uint32 `json:"rangeLength,omitempty"`
+	RangeLength uint32 `json:"rangeLength"`
 	// The new text for the provided range.
 	Text string `json:"text"`
 }
@@ -5764,7 +5764,7 @@ type WorkDoneProgressBegin struct {
 	//
 	// The value should be steadily rising. Clients are free to ignore values
 	// that are not following this rule. The value range is [0, 100].
-	Percentage uint32 `json:"percentage,omitempty"`
+	Percentage uint32 `json:"percentage"`
 }
 
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workDoneProgressCancelParams
@@ -5824,7 +5824,7 @@ type WorkDoneProgressReport struct {
 	//
 	// The value should be steadily rising. Clients are free to ignore values
 	// that are not following this rule. The value range is [0, 100]
-	Percentage uint32 `json:"percentage,omitempty"`
+	Percentage uint32 `json:"percentage"`
 }
 
 // Workspace specific client capabilities.
