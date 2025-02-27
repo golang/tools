@@ -82,6 +82,9 @@ func DocumentSymbols(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 // The PackageSymbol data type contains the same fields as protocol.DocumentSymbol, with
 // an additional int field "File" that stores the index of that symbol's file in the
 // PackageSymbolsResult.Files.
+// Symbols are gathered using syntax rather than type information because type checking is
+// significantly slower. Syntax information provides enough value to the user without
+// causing a lag when loading symbol information across different files.
 func PackageSymbols(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (command.PackageSymbolsResult, error) {
 	ctx, done := event.Start(ctx, "source.PackageSymbols")
 	defer done()
