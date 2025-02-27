@@ -12,6 +12,7 @@ import (
 	"go/ast"
 	"go/types"
 	"slices"
+	"strconv"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -27,6 +28,10 @@ import (
 // with a call to go1.21's slices.Concat(base, a, b, c), or simpler
 // replacements such as slices.Clone(a) in degenerate cases.
 //
+// We offer bytes.Clone in preference to slices.Clone where
+// appropriate, if the package already imports "bytes";
+// their behaviors are identical.
+//
 // The base expression must denote a clipped slice (see [isClipped]
 // for definition), otherwise the replacement might eliminate intended
 // side effects to the base slice's array.
@@ -41,7 +46,8 @@ import (
 // The fix does not always preserve nilness the of base slice when the
 // addends (a, b, c) are all empty.
 func appendclipped(pass *analysis.Pass) {
-	if pass.Pkg.Path() == "slices" {
+	switch pass.Pkg.Path() {
+	case "slices", "bytes":
 		return
 	}
 
@@ -94,15 +100,32 @@ func appendclipped(pass *analysis.Pass) {
 				}
 			}
 
-			// append(zerocap, s...) -> slices.Clone(s)
-			_, prefix, importEdits := analysisinternal.AddImport(info, file, "slices", "slices", "Clone", call.Pos())
+			// If the slice type is []byte, and the file imports
+			// "bytes" but not "slices", prefer the (behaviorally
+			// identical) bytes.Clone for local consistency.
+			// https://go.dev/issue/70815#issuecomment-2671572984
+			fileImports := func(path string) bool {
+				return slices.ContainsFunc(file.Imports, func(spec *ast.ImportSpec) bool {
+					value, _ := strconv.Unquote(spec.Path.Value)
+					return value == path
+				})
+			}
+			clonepkg := cond(
+				types.Identical(info.TypeOf(call), byteSliceType) &&
+					!fileImports("slices") && fileImports("bytes"),
+				"bytes",
+				"slices")
+
+			// append(zerocap, s...) -> slices.Clone(s) or bytes.Clone(s)
+			_, prefix, importEdits := analysisinternal.AddImport(info, file, clonepkg, clonepkg, "Clone", call.Pos())
+			message := fmt.Sprintf("Replace append with %s.Clone", clonepkg)
 			pass.Report(analysis.Diagnostic{
 				Pos:      call.Pos(),
 				End:      call.End(),
 				Category: "slicesclone",
-				Message:  "Replace append with slices.Clone",
+				Message:  message,
 				SuggestedFixes: []analysis.SuggestedFix{{
-					Message: "Replace append with slices.Clone",
+					Message: message,
 					TextEdits: append(importEdits, []analysis.TextEdit{{
 						Pos:     call.Pos(),
 						End:     call.End(),
