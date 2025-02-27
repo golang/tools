@@ -559,7 +559,7 @@ func fixImportsDefault(fset *token.FileSet, f *ast.File, filename string, env *P
 		return err
 	}
 	apply(fset, f, fixes)
-	return err
+	return nil
 }
 
 // getFixes gets the import fixes that need to be made to f in order to fix the imports.
