@@ -31,6 +31,8 @@ import (
 //   - The ':=' may be replaced by '='.
 //   - The fix may remove "i :=" if it would become unused.
 //
+// TODO(adonovan): permit variants such as "i := int64(0)".
+//
 // Restrictions:
 //   - The variable i must not be assigned or address-taken within the
 //     loop, because a "for range int" loop does not respect assignments
@@ -120,6 +122,31 @@ func rangeint(pass *analysis.Pass) {
 							limit = call.Args[0]
 						}
 
+						// If the limit is a untyped constant of non-integer type,
+						// such as "const limit = 1e3", its effective type may
+						// differ between the two forms.
+						// In a for loop, it must be comparable with int i,
+						//    for i := 0; i < limit; i++
+						// but in a range loop it would become a float,
+						//    for i := range limit {}
+						// which is a type error. We need to convert it to int
+						// in this case.
+						//
+						// Unfortunately go/types discards the untyped type
+						// (but see Untyped in golang/go#70638) so we must
+						// re-type check the expression to detect this case.
+						var beforeLimit, afterLimit string
+						if v := info.Types[limit].Value; v != nil {
+							beforeLimit, afterLimit = "int(", ")"
+							info2 := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
+							if types.CheckExpr(pass.Fset, pass.Pkg, limit.Pos(), limit, info2) == nil {
+								tLimit := types.Default(info2.TypeOf(limit))
+								if types.AssignableTo(tLimit, types.Typ[types.Int]) {
+									beforeLimit, afterLimit = "", ""
+								}
+							}
+						}
+
 						pass.Report(analysis.Diagnostic{
 							Pos:      init.Pos(),
 							End:      inc.End(),
@@ -133,14 +160,29 @@ func rangeint(pass *analysis.Pass) {
 									//     -----              ---
 									//          -------
 									// for i := range  limit      {}
+
+									// Delete init.
 									{
 										Pos:     init.Rhs[0].Pos(),
 										End:     limit.Pos(),
 										NewText: []byte("range "),
 									},
+									// Add "int(" before limit, if needed.
+									{
+										Pos:     limit.Pos(),
+										End:     limit.Pos(),
+										NewText: []byte(beforeLimit),
+									},
+									// Delete inc.
 									{
 										Pos: limit.End(),
 										End: inc.End(),
+									},
+									// Add ")" after limit, if needed.
+									{
+										Pos:     limit.End(),
+										End:     limit.End(),
+										NewText: []byte(afterLimit),
 									},
 								}...),
 							}},
