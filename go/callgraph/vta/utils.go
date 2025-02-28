@@ -6,6 +6,7 @@ package vta
 
 import (
 	"go/types"
+	"iter"
 
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/internal/typeparams"
@@ -147,10 +148,8 @@ func sliceArrayElem(t types.Type) types.Type {
 	}
 }
 
-// siteCallees returns a go1.23 iterator for the callees for call site `c`.
-func siteCallees(c ssa.CallInstruction, callees calleesFunc) func(yield func(*ssa.Function) bool) {
-	// TODO: when x/tools uses go1.23, change callers to use range-over-func
-	// (https://go.dev/issue/65237).
+// siteCallees returns an iterator for the callees for call site `c`.
+func siteCallees(c ssa.CallInstruction, callees calleesFunc) iter.Seq[*ssa.Function] {
 	return func(yield func(*ssa.Function) bool) {
 		for _, callee := range callees(c) {
 			if !yield(callee) {

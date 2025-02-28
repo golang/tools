@@ -15,11 +15,13 @@ import (
 	"go/types"
 	"io"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -290,9 +292,7 @@ func main() {
 
 	// Build array of jsonPackage objects.
 	var packages []any
-	pkgpaths := keys(byPkgPath)
-	sort.Strings(pkgpaths)
-	for _, pkgpath := range pkgpaths {
+	for _, pkgpath := range slices.Sorted(maps.Keys(byPkgPath)) {
 		if !filter.MatchString(pkgpath) {
 			continue
 		}
@@ -303,7 +303,7 @@ func main() {
 		// declaration order. This tends to keep related
 		// methods such as (T).Marshal and (*T).Unmarshal
 		// together better than sorting.
-		fns := keys(m)
+		fns := slices.Collect(maps.Keys(m))
 		sort.Slice(fns, func(i, j int) bool {
 			xposn := prog.Fset.Position(fns[i].Pos())
 			yposn := prog.Fset.Position(fns[j].Pos())
@@ -368,7 +368,7 @@ func prettyName(fn *ssa.Function, qualified bool) string {
 		// anonymous?
 		if fn.Parent() != nil {
 			format(fn.Parent())
-			i := index(fn.Parent().AnonFuncs, fn)
+			i := slices.Index(fn.Parent().AnonFuncs, fn)
 			fmt.Fprintf(&buf, "$%d", i+1)
 			return
 		}
@@ -427,7 +427,7 @@ func pathSearch(roots []*ssa.Function, res *rta.Result, targets map[*ssa.Functio
 	// Sort roots into preferred order.
 	importsTesting := func(fn *ssa.Function) bool {
 		isTesting := func(p *types.Package) bool { return p.Path() == "testing" }
-		return containsFunc(fn.Pkg.Pkg.Imports(), isTesting)
+		return slices.ContainsFunc(fn.Pkg.Pkg.Imports(), isTesting)
 	}
 	sort.Slice(roots, func(i, j int) bool {
 		x, y := roots[i], roots[j]
@@ -461,7 +461,7 @@ func pathSearch(roots []*ssa.Function, res *rta.Result, targets map[*ssa.Functio
 					for {
 						edge := seen[node]
 						if edge == nil {
-							reverse(path)
+							slices.Reverse(path)
 							return path
 						}
 						path = append(path, edge)
@@ -564,44 +564,4 @@ type jsonPosition struct {
 
 func (p jsonPosition) String() string {
 	return fmt.Sprintf("%s:%d:%d", p.File, p.Line, p.Col)
-}
-
-// -- from the future --
-
-// TODO(adonovan): use go1.22's slices and maps packages.
-
-func containsFunc[S ~[]E, E any](s S, f func(E) bool) bool {
-	return indexFunc(s, f) >= 0
-}
-
-func indexFunc[S ~[]E, E any](s S, f func(E) bool) int {
-	for i := range s {
-		if f(s[i]) {
-			return i
-		}
-	}
-	return -1
-}
-
-func index[S ~[]E, E comparable](s S, v E) int {
-	for i := range s {
-		if v == s[i] {
-			return i
-		}
-	}
-	return -1
-}
-
-func reverse[S ~[]E, E any](s S) {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
-}
-
-func keys[M ~map[K]V, K comparable, V any](m M) []K {
-	r := make([]K, 0, len(m))
-	for k := range m {
-		r = append(r, k)
-	}
-	return r
 }

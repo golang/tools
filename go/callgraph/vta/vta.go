@@ -126,12 +126,11 @@ func (c *constructor) resolves(call ssa.CallInstruction) []*ssa.Function {
 	// Cover the case of dynamic higher-order and interface calls.
 	var res []*ssa.Function
 	resolved := resolve(call, c.types, c.cache)
-	siteCallees(call, c.callees)(func(f *ssa.Function) bool {
+	for f := range siteCallees(call, c.callees) {
 		if _, ok := resolved[f]; ok {
 			res = append(res, f)
 		}
-		return true
-	})
+	}
 	return res
 }
 
@@ -140,12 +139,11 @@ func (c *constructor) resolves(call ssa.CallInstruction) []*ssa.Function {
 func resolve(c ssa.CallInstruction, types propTypeMap, cache methodCache) map[*ssa.Function]empty {
 	fns := make(map[*ssa.Function]empty)
 	n := local{val: c.Common().Value}
-	types.propTypes(n)(func(p propType) bool {
+	for p := range types.propTypes(n) {
 		for _, f := range propFunc(p, c, cache) {
 			fns[f] = empty{}
 		}
-		return true
-	})
+	}
 	return fns
 }
 

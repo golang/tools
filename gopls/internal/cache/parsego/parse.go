@@ -27,7 +27,6 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/diff"
@@ -65,39 +64,8 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 	}
 	// Inv: file != nil.
 
-	// Workaround for #70162 (missing File{Start,End} when
-	// parsing empty file) with go1.23.
-	//
-	// When parsing an empty file, or one without a valid
-	// package declaration, the go1.23 parser bails out before
-	// setting FileStart and End.
-	//
-	// This leaves us no way to find the original
-	// token.File that ParseFile created, so as a
-	// workaround, we recreate the token.File, and
-	// populate the FileStart and FileEnd fields.
-	//
-	// See also #53202.
 	tokenFile := func(file *ast.File) *token.File {
-		tok := fset.File(file.FileStart)
-		if tok == nil {
-			// Invalid File.FileStart (also File.{Package,Name.Pos}).
-			if file.Package.IsValid() {
-				bug.Report("ast.File has valid Package but no FileStart")
-			}
-			if file.Name.Pos().IsValid() {
-				bug.Report("ast.File has valid Name.Pos but no FileStart")
-			}
-			tok = fset.AddFile(uri.Path(), -1, len(src))
-			tok.SetLinesForContent(src)
-			// If the File contained any valid token.Pos values,
-			// they would all be invalid wrt the new token.File,
-			// but we have established that it lacks FileStart,
-			// Package, and Name.Pos.
-			file.FileStart = token.Pos(tok.Base())
-			file.FileEnd = token.Pos(tok.Base() + tok.Size())
-		}
-		return tok
+		return fset.File(file.FileStart)
 	}
 
 	tok := tokenFile(file)

@@ -43,6 +43,7 @@ import (
 	"go/token"
 	"math/big"
 	"os"
+	"slices"
 
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -105,23 +106,7 @@ func buildDomFrontier(fn *Function) domFrontier {
 }
 
 func removeInstr(refs []Instruction, instr Instruction) []Instruction {
-	return removeInstrsIf(refs, func(i Instruction) bool { return i == instr })
-}
-
-func removeInstrsIf(refs []Instruction, p func(Instruction) bool) []Instruction {
-	// TODO(taking): replace with go1.22 slices.DeleteFunc.
-	i := 0
-	for _, ref := range refs {
-		if p(ref) {
-			continue
-		}
-		refs[i] = ref
-		i++
-	}
-	for j := i; j != len(refs); j++ {
-		refs[j] = nil // aid GC
-	}
-	return refs[:i]
+	return slices.DeleteFunc(refs, func(i Instruction) bool { return i == instr })
 }
 
 // lift replaces local and new Allocs accessed only with

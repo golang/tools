@@ -68,15 +68,15 @@ type aliasNamed = foo
 func _[T any]() {
 	type aliasTypeParam = T
 
-	// type aliasWithTypeParam[u any] = struct {
-	// 	x u
-	// 	y T
-	// }
-	// type aliasWithTypeParams[u, q any] = struct {
-	// 	x u
-	// 	y q
-	// 	z T
-	// }
+	type aliasWithTypeParam[u any] = struct {
+		x u
+		y T
+	}
+	type aliasWithTypeParams[u, q any] = struct {
+		x u
+		y q
+		z T
+	}
 
 	type namedWithTypeParam[u any] struct {
 		x u
@@ -135,9 +135,8 @@ func _[T any]() {
 		_ aliasTypeParam // *new(T)
 		_ *aliasTypeParam // nil
 
-		// TODO(hxjiang): add test for alias type param after stop supporting go1.22.
-		// _ aliasWithTypeParam[int] // aliasWithTypeParam[int]{}
-		// _ aliasWithTypeParams[int, string] // aliasWithTypeParams[int, string]{}
+		_ aliasWithTypeParam[int] // aliasWithTypeParam[int]{}
+		_ aliasWithTypeParams[int, string] // aliasWithTypeParams[int, string]{}
 
 		_ namedWithTypeParam[int] // namedWithTypeParam[int]{}
 		_ namedWithTypeParams[int, string] // namedWithTypeParams[int, string]{}

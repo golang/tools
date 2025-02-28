@@ -9,6 +9,8 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -142,12 +144,7 @@ func TestForEachElement(t *testing.T) {
 			}
 		}
 		if fail {
-			for k := range got {
-				t.Logf("got element: %s", k)
-			}
-			// TODO(adonovan): use this when go1.23 is assured:
-			// t.Logf("got elements:\n%s",
-			// 	strings.Join(slices.Sorted(maps.Keys(got)), "\n"))
+			t.Logf("got elements:\n%s", strings.Join(slices.Sorted(maps.Keys(got)), "\n"))
 		}
 	}
 }

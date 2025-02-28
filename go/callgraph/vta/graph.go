@@ -633,12 +633,12 @@ func (b *builder) call(c ssa.CallInstruction) {
 		return
 	}
 
-	siteCallees(c, b.callees)(func(f *ssa.Function) bool {
+	for f := range siteCallees(c, b.callees) {
 		addArgumentFlows(b, c, f)
 
 		site, ok := c.(ssa.Value)
 		if !ok {
-			return true // go or defer
+			continue // go or defer
 		}
 
 		results := f.Signature.Results()
@@ -653,8 +653,7 @@ func (b *builder) call(c ssa.CallInstruction) {
 				b.addInFlowEdge(resultVar{f: f, index: i}, local)
 			}
 		}
-		return true
-	})
+	}
 }
 
 func addArgumentFlows(b *builder, c ssa.CallInstruction, f *ssa.Function) {

@@ -98,10 +98,9 @@ func nodeToTypeString(pMap propTypeMap) map[string]string {
 	nodeToTypeStr := make(map[string]string)
 	for node := range pMap {
 		var propStrings []string
-		pMap.propTypes(node)(func(prop propType) bool {
+		for prop := range pMap.propTypes(node) {
 			propStrings = append(propStrings, propTypeString(prop))
-			return true
-		})
+		}
 		sort.Strings(propStrings)
 		nodeToTypeStr[node.String()] = strings.Join(propStrings, ";")
 	}

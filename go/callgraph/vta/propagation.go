@@ -6,6 +6,7 @@ package vta
 
 import (
 	"go/types"
+	"iter"
 	"slices"
 
 	"golang.org/x/tools/go/callgraph/vta/internal/trie"
@@ -113,11 +114,9 @@ type propType struct {
 // the role of a map from nodes to a set of propTypes.
 type propTypeMap map[node]*trie.MutMap
 
-// propTypes returns a go1.23 iterator for the propTypes associated with
+// propTypes returns an iterator for the propTypes associated with
 // node `n` in map `ptm`.
-func (ptm propTypeMap) propTypes(n node) func(yield func(propType) bool) {
-	// TODO: when x/tools uses go1.23, change callers to use range-over-func
-	// (https://go.dev/issue/65237).
+func (ptm propTypeMap) propTypes(n node) iter.Seq[propType] {
 	return func(yield func(propType) bool) {
 		if types := ptm[n]; types != nil {
 			types.M.Range(func(_ uint64, elem any) bool {

@@ -22,16 +22,6 @@ func is[T any](x any) bool {
 	return ok
 }
 
-// TODO(adonovan): use go1.21's slices.Index.
-func index[T comparable](slice []T, x T) int {
-	for i, elem := range slice {
-		if elem == x {
-			return i
-		}
-	}
-	return -1
-}
-
 func btoi(b bool) int {
 	if b {
 		return 1

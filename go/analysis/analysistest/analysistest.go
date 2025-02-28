@@ -7,12 +7,12 @@ package analysistest
 
 import (
 	"bytes"
-	"cmp"
 	"fmt"
 	"go/format"
 	"go/token"
 	"go/types"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -215,7 +215,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 		// Because the checking is driven by original
 		// filenames, there is no way to express that a fix
 		// (e.g. extract declaration) creates a new file.
-		for _, filename := range sortedKeys(allFilenames) {
+		for _, filename := range slices.Sorted(maps.Keys(allFilenames)) {
 			// Read the original file.
 			content, err := os.ReadFile(filename)
 			if err != nil {
@@ -266,7 +266,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 				// Form #2: all suggested fixes are represented by a single file.
 				want := ar.Comment
 				var accumulated []diff.Edit
-				for _, message := range sortedKeys(fixEdits) {
+				for _, message := range slices.Sorted(maps.Keys(fixEdits)) {
 					for _, fix := range fixEdits[message] {
 						accumulated = merge(filename, message, accumulated, fix[filename])
 					}
@@ -767,14 +767,4 @@ func parseExpectations(text string) (lineDelta int, expects []expectation, err e
 func sanitize(gopath, filename string) string {
 	prefix := gopath + string(os.PathSeparator) + "src" + string(os.PathSeparator)
 	return filepath.ToSlash(strings.TrimPrefix(filename, prefix))
-}
-
-// TODO(adonovan): use better stuff from go1.23.
-func sortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
-	keys := make([]K, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
 }

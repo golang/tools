@@ -363,7 +363,7 @@ func (st *state) inline() (*Result, error) {
 		specToDelete := oldImport.spec
 		for _, decl := range f.Decls {
 			if decl, ok := decl.(*ast.GenDecl); ok && decl.Tok == token.IMPORT {
-				decl.Specs = slicesDeleteFunc(decl.Specs, func(spec ast.Spec) bool {
+				decl.Specs = slices.DeleteFunc(decl.Specs, func(spec ast.Spec) bool {
 					imp := spec.(*ast.ImportSpec)
 					// Since we re-parsed the file, we can't match by identity;
 					// instead look for syntactic equivalence.
@@ -2042,7 +2042,7 @@ func resolveEffects(logf logger, args []*argument, effects []int, sg substGraph)
 		argi := args[i]
 		if sg.has(argi) && !argi.pure {
 			// i is not bound: check whether it must be bound due to hazards.
-			idx := index(effects, i)
+			idx := slices.Index(effects, i)
 			if idx >= 0 {
 				for _, j := range effects[:idx] {
 					var (
@@ -3710,34 +3710,3 @@ func soleUse(info *types.Info, obj types.Object) (sole *ast.Ident) {
 }
 
 type unit struct{} // for representing sets as maps
-
-// slicesDeleteFunc removes any elements from s for which del returns true,
-// returning the modified slice.
-// slicesDeleteFunc zeroes the elements between the new length and the original length.
-// TODO(adonovan): use go1.21 slices.DeleteFunc
-func slicesDeleteFunc[S ~[]E, E any](s S, del func(E) bool) S {
-	i := slicesIndexFunc(s, del)
-	if i == -1 {
-		return s
-	}
-	// Don't start copying elements until we find one to delete.
-	for j := i + 1; j < len(s); j++ {
-		if v := s[j]; !del(v) {
-			s[i] = v
-			i++
-		}
-	}
-	//	clear(s[i:]) // zero/nil out the obsolete elements, for GC
-	return s[:i]
-}
-
-// slicesIndexFunc returns the first index i satisfying f(s[i]),
-// or -1 if none do.
-func slicesIndexFunc[S ~[]E, E any](s S, f func(E) bool) int {
-	for i := range s {
-		if f(s[i]) {
-			return i
-		}
-	}
-	return -1
-}

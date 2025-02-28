@@ -430,12 +430,3 @@ textarea { width: 6in; }
 body { color: gray; }
 div#out { font-family: monospace; font-size: 80%; }
 `
-
-// TODO(adonovan): use go1.21 built-in.
-func min(x, y int) int {
-	if x < y {
-		return x
-	} else {
-		return y
-	}
-}

@@ -82,6 +82,8 @@ import (
 	"runtime"
 	"sync"
 
+	"slices"
+
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/versions"
 )
@@ -2021,8 +2023,8 @@ func (b *builder) forStmtGo122(fn *Function, s *ast.ForStmt, label *lblock) {
 		// Remove instructions for phi, load, and store.
 		// lift() will remove the unused i_next *Alloc.
 		isDead := func(i Instruction) bool { return dead[i] }
-		loop.Instrs = removeInstrsIf(loop.Instrs, isDead)
-		post.Instrs = removeInstrsIf(post.Instrs, isDead)
+		loop.Instrs = slices.DeleteFunc(loop.Instrs, isDead)
+		post.Instrs = slices.DeleteFunc(post.Instrs, isDead)
 	}
 }
 
