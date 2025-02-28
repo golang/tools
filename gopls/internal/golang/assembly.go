@@ -10,6 +10,9 @@ package golang
 // - ./codeaction.go - computes the symbol and offers the CodeAction command.
 // - ../server/command.go - handles the command by opening a web page.
 // - ../server/server.go - handles the HTTP request and calls this function.
+//
+// For language-server behavior in Go assembly language files,
+// see [golang.org/x/tools/gopls/internal/goasm].
 
 import (
 	"bytes"

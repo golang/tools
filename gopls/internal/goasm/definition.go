@@ -2,20 +2,20 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Package goasm provides language-server features for files in Go
+// assembly language (https://go.dev/doc/asm).
 package goasm
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"go/token"
-	"strings"
-	"unicode"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
 	"golang.org/x/tools/gopls/internal/util/morestrings"
 	"golang.org/x/tools/internal/event"
 )
@@ -41,21 +41,27 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return nil, err
 	}
 
+	// Parse the assembly.
+	//
+	// TODO(adonovan): make this just another
+	// attribute of the type-checked cache.Package.
+	file := asm.Parse(content)
+
 	// Figure out the selected symbol.
 	// For now, just find the identifier around the cursor.
-	//
-	// TODO(adonovan): use a real asm parser; see cmd/asm/internal/asm/parse.go.
-	// Ideally this would just be just another attribute of the
-	// type-checked cache.Package.
-	nonIdentRune := func(r rune) bool { return !isIdentRune(r) }
-	i := bytes.LastIndexFunc(content[:offset], nonIdentRune)
-	j := bytes.IndexFunc(content[offset:], nonIdentRune)
-	if j < 0 || j == 0 {
-		return nil, nil // identifier runs to EOF, or not an identifier
+	var found *asm.Ident
+	for _, id := range file.Idents {
+		if id.Offset <= offset && offset <= id.End() {
+			found = &id
+			break
+		}
 	}
-	sym := string(content[i+1 : offset+j])
-	sym = strings.ReplaceAll(sym, "·", ".") // (U+00B7 MIDDLE DOT)
-	sym = strings.ReplaceAll(sym, "∕", "/") // (U+2215 DIVISION SLASH)
+	if found == nil {
+		return nil, fmt.Errorf("not an identifier")
+	}
+
+	// Resolve a symbol with a "." prefix to the current package.
+	sym := found.Name
 	if sym != "" && sym[0] == '.' {
 		sym = string(mp.PkgPath) + sym
 	}
@@ -92,18 +98,23 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		if err == nil {
 			return []protocol.Location{loc}, nil
 		}
+
+	} else {
+		// local symbols (funcs, vars, labels)
+		for _, id := range file.Idents {
+			if id.Name == found.Name &&
+				(id.Kind == asm.Text || id.Kind == asm.Global || id.Kind == asm.Label) {
+
+				loc, err := mapper.OffsetLocation(id.Offset, id.End())
+				if err != nil {
+					return nil, err
+				}
+				return []protocol.Location{loc}, nil
+			}
+		}
 	}
 
-	// TODO(adonovan): support jump to var, block label, and other
-	// TEXT, DATA, and GLOBAL symbols in the same file. Needs asm parser.
-
 	return nil, nil
-}
-
-// The assembler allows center dot (· U+00B7) and
-// division slash (∕ U+2215) to work as identifier characters.
-func isIdentRune(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '·' || r == '∕'
 }
 
 // TODO(rfindley): avoid the duplicate column mapping here, by associating a

@@ -26,6 +26,9 @@ var _ = ff // pacify unusedfunc analyzer
 TEXT ·ff(SB), $16                       //@ loc(ffasm, "ff"), def("ff", ffgo)
         CALL    example·com∕b·B         //@ def("com", bB)
         JMP     ·ff                     //@ def("ff", ffgo)
+	JMP     label			//@ def("label", label)
+label:					//@ loc(label,"label")
+        RET
 
 -- b/b.go --
 package b
