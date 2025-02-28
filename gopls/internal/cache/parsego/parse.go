@@ -528,11 +528,11 @@ func fixInitStmt(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte)
 	}
 
 	// Try to extract a statement from the BadExpr.
-	start, end, err := safetoken.Offsets(tok, bad.Pos(), bad.End()-1)
+	start, end, err := safetoken.Offsets(tok, bad.Pos(), bad.End())
 	if err != nil {
 		return false
 	}
-	stmtBytes := src[start : end+1]
+	stmtBytes := src[start:end]
 	stmt, err := parseStmt(tok, bad.Pos(), stmtBytes)
 	if err != nil {
 		return false
