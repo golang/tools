@@ -51,3 +51,14 @@ func _(s string) {
 		}
 	}
 }
+
+// Non-integer untyped constants need to be explicitly converted to int.
+func issue71847d() {
+	const limit = 1e3            // float
+	for i := 0; i < limit; i++ { // want "for loop can be modernized using range over int"
+	}
+
+	const limit2 = 1 + 0i         // complex
+	for i := 0; i < limit2; i++ { // want "for loop can be modernized using range over int"
+	}
+}
