@@ -46,8 +46,9 @@ import (
 // The fix does not always preserve nilness the of base slice when the
 // addends (a, b, c) are all empty.
 func appendclipped(pass *analysis.Pass) {
-	switch pass.Pkg.Path() {
-	case "slices", "bytes":
+	// Skip the analyzer in packages where its
+	// fixes would create an import cycle.
+	if within(pass, "slices", "bytes", "runtime") {
 		return
 	}
 

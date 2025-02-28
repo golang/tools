@@ -14,3 +14,13 @@ func First[T any](seq iter.Seq[T]) (z T, ok bool) {
 	}
 	return z, false
 }
+
+// Contains reports whether x is an element of the sequence seq.
+func Contains[T comparable](seq iter.Seq[T], x T) bool {
+	for cand := range seq {
+		if cand == x {
+			return true
+		}
+	}
+	return false
+}

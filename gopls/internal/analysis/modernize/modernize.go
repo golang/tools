@@ -18,8 +18,10 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil/cursor"
+	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/versions"
 )
 
@@ -123,6 +125,26 @@ func filesUsing(inspect *inspector.Inspector, info *types.Info, version string) 
 			}
 		}
 	}
+}
+
+// within reports whether the current pass is analyzing one of the
+// specified standard packages or their dependencies.
+func within(pass *analysis.Pass, pkgs ...string) bool {
+	path := pass.Pkg.Path()
+	return standard(path) &&
+		moreiters.Contains(stdlib.Dependencies(pkgs...), path)
+}
+
+// standard reports whether the specified package path belongs to a
+// package in the standard library (including internal dependencies).
+func standard(path string) bool {
+	// A standard package has no dot in its first segment.
+	// (It may yet have a dot, e.g. "vendor/golang.org/x/foo".)
+	slash := strings.IndexByte(path, '/')
+	if slash < 0 {
+		slash = len(path)
+	}
+	return !strings.Contains(path[:slash], ".") && path != "testdata"
 }
 
 var (

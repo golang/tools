@@ -21,6 +21,12 @@ import (
 // Other variations that will also have suggested replacements include:
 // append(s[:i-1], s[i:]...) and append(s[:i+k1], s[i+k2:]) where k2 > k1.
 func slicesdelete(pass *analysis.Pass) {
+	// Skip the analyzer in packages where its
+	// fixes would create an import cycle.
+	if within(pass, "slices", "runtime") {
+		return
+	}
+
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	info := pass.TypesInfo
 	report := func(file *ast.File, call *ast.CallExpr, slice1, slice2 *ast.SliceExpr) {

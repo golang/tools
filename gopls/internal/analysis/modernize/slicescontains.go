@@ -47,8 +47,9 @@ import (
 // (Mostly this appears to be a desirable optimization, avoiding
 // redundantly repeated evaluation.)
 func slicescontains(pass *analysis.Pass) {
-	// Don't modify the slices package itself.
-	if pass.Pkg.Path() == "slices" {
+	// Skip the analyzer in packages where its
+	// fixes would create an import cycle.
+	if within(pass, "slices", "runtime") {
 		return
 	}
 
