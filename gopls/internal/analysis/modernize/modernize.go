@@ -80,6 +80,7 @@ func run(pass *analysis.Pass) (any, error) {
 	bloop(pass)
 	efaceany(pass)
 	fmtappendf(pass)
+	forvar(pass)
 	mapsloop(pass)
 	minmax(pass)
 	omitzero(pass)

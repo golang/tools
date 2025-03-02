@@ -493,7 +493,7 @@ func CanImport(from, to string) bool {
 // DeleteStmt returns the edits to remove stmt if it is contained
 // in a BlockStmt, CaseClause, CommClause, or is the STMT in switch STMT; ... {...}
 // The report function abstracts gopls' bug.Report.
-func DeleteStmt(fset *token.FileSet, astFile *ast.File, stmt ast.Stmt, report func(string, token.Pos)) []analysis.TextEdit {
+func DeleteStmt(fset *token.FileSet, astFile *ast.File, stmt ast.Stmt, report func(string, ...any)) []analysis.TextEdit {
 	// TODO: pass in the cursor to a ast.Stmt. callers should provide the Cursor
 	insp := inspector.New([]*ast.File{astFile})
 	root := cursor.Root(insp)

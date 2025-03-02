@@ -17,6 +17,7 @@ func Test(t *testing.T) {
 		"bloop",
 		"efaceany",
 		"fmtappendf",
+		"forvar",
 		"mapsloop",
 		"minmax",
 		"omitzero",
