@@ -2005,15 +2005,14 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 			posn := safetoken.StartPosition(e.Fset, start)
 			if !posn.IsValid() {
 				// All valid positions produced by the type checker should described by
-				// its fileset.
+				// its fileset, yet since type checker errors are associated with
+				// positions in the AST, and AST nodes can overflow the file
+				// (golang/go#48300), we can't rely on this.
 				//
-				// Note: in golang/go#64488, we observed an error that was positioned
-				// over fixed syntax, which overflowed its file. So it's definitely
-				// possible that we get here (it's hard to reason about fixing up the
-				// AST). Nevertheless, it's a bug.
-				if pkg.hasFixedFiles() {
-					bug.Reportf("internal error: type checker error %q outside its Fset (fixed files)", e)
-				} else {
+				// We should fix the parser, but in the meantime type errors are not
+				// significant if there are parse errors, so we can safely ignore this
+				// case.
+				if len(pkg.parseErrors) == 0 {
 					bug.Reportf("internal error: type checker error %q outside its Fset", e)
 				}
 				continue

@@ -532,6 +532,7 @@ func fixInitStmt(bad *ast.BadExpr, parent ast.Node, tok *token.File, src []byte)
 	if err != nil {
 		return false
 	}
+	assert(end <= len(src), "offset overflow") // golang/go#72026
 	stmtBytes := src[start:end]
 	stmt, err := parseStmt(tok, bad.Pos(), stmtBytes)
 	if err != nil {
