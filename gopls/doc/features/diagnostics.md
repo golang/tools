@@ -72,7 +72,6 @@ There is an optional third source of diagnostics:
   are transitively free from errors, so optimization diagnostics
   will not be shown on packages that do not build.
 
-
 ## Recomputation of diagnostics
 
 By default, diagnostics are automatically recomputed each time the source files
@@ -278,7 +277,7 @@ func doSomething(i int) string {
 When you attempt to access a field on a type that does not have the field,
 the compiler will report an error such as "type X has no field or method Y".
 In this scenario, gopls now offers a quick fix to generate a stub declaration of
-the missing field, inferring its type from the accessing type or assigning a designated value.
+the missing field, inferring its type from the context in which it is used.
 
 Consider the following code where `Foo` does not have a field `bar`:
 

@@ -458,36 +458,35 @@ func concreteType(info *types.Info, e ast.Expr) (*types.Named, bool) {
 	return named, isPtr
 }
 
-// GetFieldStubInfo creates a StructFieldInfo instance to generate a struct field in a given SelectorExpr
+// GetFieldStubInfo finds innermost enclosing selector x.f where x is a named struct type or a pointer to a struct type.
 func GetFieldStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, start, end token.Pos) *StructFieldInfo {
 	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 	for _, node := range path {
 		s, ok := node.(*ast.SelectorExpr)
-		if !ok {
-			continue
-		}
-		// If recvExpr is a package name, compiler error would be
-		// e.g., "undefined: http.bar", thus will not hit this code path.
-		recvExpr := s.X
-		recvNamed, _ := concreteType(info, recvExpr)
+		if ok {
+			// If recvExpr is a package name, compiler error would be
+			// e.g., "undefined: http.bar", thus will not hit this code path.
+			recvExpr := s.X
+			recvNamed, _ := concreteType(info, recvExpr)
 
-		if recvNamed == nil || recvNamed.Obj().Pkg() == nil {
-			return nil
-		}
+			if recvNamed == nil || recvNamed.Obj().Pkg() == nil {
+				return nil
+			}
 
-		structType, ok := recvNamed.Underlying().(*types.Struct)
-		if !ok {
-			break
-		}
+			structType, ok := recvNamed.Underlying().(*types.Struct)
+			if !ok {
+				break
+			}
 
-		// Have: x.f where x has a named struct type.
-		return &StructFieldInfo{
-			Fset:       fset,
-			Expr:       s,
-			Named:      recvNamed,
-			info:       info,
-			path:       path,
-			structType: structType,
+			// Have: x.f where x has a named struct type.
+			return &StructFieldInfo{
+				Fset:       fset,
+				Expr:       s,
+				Named:      recvNamed,
+				info:       info,
+				path:       path,
+				structType: structType,
+			}
 		}
 	}
 

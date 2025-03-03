@@ -198,23 +198,23 @@ func insertStructField(ctx context.Context, snapshot *cache.Snapshot, mp *metada
 	}
 
 	// find the struct type declaration
-	var structType *ast.StructType
-	ast.Inspect(declPGF.File, func(n ast.Node) bool {
-		if typeSpec, ok := n.(*ast.TypeSpec); ok {
-			if typeSpec.Name.Name == fieldInfo.Named.Obj().Name() {
-				if st, ok := typeSpec.Type.(*ast.StructType); ok {
-					structType = st
-					return false
-				}
-			}
-		}
-		return true
-	})
-
-	if structType == nil {
-		return nil, nil, fmt.Errorf("could not find struct definition")
+	pos := fieldInfo.Named.Obj().Pos()
+	endPos := pos + token.Pos(len(fieldInfo.Named.Obj().Name()))
+	curIdent, ok := declPGF.Cursor.FindPos(pos, endPos)
+	if !ok {
+		return nil, nil, fmt.Errorf("could not find identifier at position %v-%v", pos, endPos)
 	}
 
+	// Rest of the code remains the same
+	typeNode, ok := curIdent.NextSibling()
+	if !ok {
+		return nil, nil, fmt.Errorf("could not find type specification")
+	}
+
+	structType, ok := typeNode.Node().(*ast.StructType)
+	if !ok {
+		return nil, nil, fmt.Errorf("type at position %v is not a struct type", pos)
+	}
 	// Find metadata for the symbol's declaring package
 	// as we'll need its import mapping.
 	declMeta := findFileInDeps(snapshot, mp, declPGF.URI)
@@ -229,6 +229,10 @@ func insertStructField(ctx context.Context, snapshot *cache.Snapshot, mp *metada
 	if insertPos == structType.Fields.Opening {
 		// struct has no fields yet
 		insertPos = structType.Fields.Closing
+		_, err = declPGF.Mapper.PosRange(declPGF.Tok, insertPos, insertPos)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	var buf bytes.Buffer
@@ -236,20 +240,13 @@ func insertStructField(ctx context.Context, snapshot *cache.Snapshot, mp *metada
 		return nil, nil, err
 	}
 
-	_, err = declPGF.Mapper.PosRange(declPGF.Tok, insertPos, insertPos)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	textEdit := analysis.TextEdit{
-		Pos:     insertPos,
-		End:     insertPos,
-		NewText: buf.Bytes(),
-	}
-
 	return fieldInfo.Fset, &analysis.SuggestedFix{
-		Message:   fmt.Sprintf("Add field %s to struct %s", fieldInfo.Expr.Sel.Name, fieldInfo.Named.Obj().Name()),
-		TextEdits: []analysis.TextEdit{textEdit},
+		Message: fmt.Sprintf("Add field %s to struct %s", fieldInfo.Expr.Sel.Name, fieldInfo.Named.Obj().Name()),
+		TextEdits: []analysis.TextEdit{{
+			Pos:     insertPos,
+			End:     insertPos,
+			NewText: buf.Bytes(),
+		}},
 	}, nil
 }
 
