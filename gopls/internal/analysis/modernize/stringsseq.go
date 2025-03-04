@@ -5,6 +5,7 @@
 package modernize
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -17,8 +18,9 @@ import (
 	"golang.org/x/tools/internal/astutil/edge"
 )
 
-// splitseq offers a fix to replace a call to strings.Split with
-// SplitSeq when it is the operand of a range loop, either directly:
+// stringsseq offers a fix to replace a call to strings.Split with
+// SplitSeq or strings.Fields with FieldsSeq
+// when it is the operand of a range loop, either directly:
 //
 //	for _, line := range strings.Split() {...}
 //
@@ -29,7 +31,8 @@ import (
 //
 // Variants:
 // - bytes.SplitSeq
-func splitseq(pass *analysis.Pass) {
+// - bytes.FieldsSeq
+func stringsseq(pass *analysis.Pass) {
 	if !analysisinternal.Imports(pass.Pkg, "strings") &&
 		!analysisinternal.Imports(pass.Pkg, "bytes") {
 		return
@@ -88,21 +91,27 @@ func splitseq(pass *analysis.Pass) {
 					})
 				}
 
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok &&
-					(analysisinternal.IsFunctionNamed(typeutil.Callee(info, call), "strings", "Split") ||
-						analysisinternal.IsFunctionNamed(typeutil.Callee(info, call), "bytes", "Split")) {
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					continue
+				}
+
+				obj := typeutil.Callee(info, call)
+				if analysisinternal.IsFunctionNamed(obj, "strings", "Split", "Fields") ||
+					analysisinternal.IsFunctionNamed(obj, "bytes", "Split", "Fields") {
+					oldFnName := obj.Name()
+					seqFnName := fmt.Sprintf("%sSeq", oldFnName)
 					pass.Report(analysis.Diagnostic{
 						Pos:      sel.Pos(),
 						End:      sel.End(),
-						Category: "splitseq",
-						Message:  "Ranging over SplitSeq is more efficient",
+						Category: "stringsseq",
+						Message:  fmt.Sprintf("Ranging over %s is more efficient", seqFnName),
 						SuggestedFixes: []analysis.SuggestedFix{{
-							Message: "Replace Split with SplitSeq",
+							Message: fmt.Sprintf("Replace %s with %s", oldFnName, seqFnName),
 							TextEdits: append(edits, analysis.TextEdit{
-								// Split -> SplitSeq
 								Pos:     sel.Sel.Pos(),
 								End:     sel.Sel.End(),
-								NewText: []byte("SplitSeq")}),
+								NewText: []byte(seqFnName)}),
 						}},
 					})
 				}

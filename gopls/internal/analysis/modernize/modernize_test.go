@@ -24,6 +24,7 @@ func Test(t *testing.T) {
 		"slicescontains",
 		"slicesdelete",
 		"splitseq",
+		"fieldsseq",
 		"sortslice",
 		"testingcontext",
 	)

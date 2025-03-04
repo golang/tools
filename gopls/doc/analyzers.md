@@ -498,7 +498,7 @@ existing code by using more modern features of Go, such as:
   - replacing a 3-clause for i := 0; i < n; i++ {} loop by
     for i := range n {}, added in go1.22;
   - replacing Split in "for range strings.Split(...)" by go1.24's
-    more efficient SplitSeq;
+    more efficient SplitSeq, or Fields with FieldSeq;
 
 To apply all modernization fixes en masse, you can use the
 following command:
