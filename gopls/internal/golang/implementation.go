@@ -12,6 +12,7 @@ import (
 	"go/token"
 	"go/types"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -21,10 +22,13 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
+	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil/cursor"
+	"golang.org/x/tools/internal/astutil/edge"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -74,9 +78,26 @@ func Implementation(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 }
 
 func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.Location, error) {
-	// First, find the object referenced at the cursor by type checking the
-	// current package.
-	obj, pkg, err := implementsObj(ctx, snapshot, fh.URI(), pp)
+	// Type check the current package.
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, fh.URI())
+	if err != nil {
+		return nil, err
+	}
+	pos, err := pgf.PositionPos(pp)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find implementations based on func signatures.
+	if locs, err := implFuncs(pkg, pgf, pos); err != errNotHandled {
+		return locs, err
+	}
+
+	// Find implementations based on method sets.
+
+	// First, find the object referenced at the cursor.
+	// The object may be declared in a different package.
+	obj, err := implementsObj(pkg, pgf, pos)
 	if err != nil {
 		return nil, err
 	}
@@ -272,21 +293,9 @@ func offsetToLocation(ctx context.Context, snapshot *cache.Snapshot, filename st
 	return m.OffsetLocation(start, end)
 }
 
-// implementsObj returns the object to query for implementations, which is a
-// type name or method.
-//
-// The returned Package is the narrowest package containing ppos, which is the
-// package using the resulting obj but not necessarily the declaring package.
-func implementsObj(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, ppos protocol.Position) (types.Object, *cache.Package, error) {
-	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, uri)
-	if err != nil {
-		return nil, nil, err
-	}
-	pos, err := pgf.PositionPos(ppos)
-	if err != nil {
-		return nil, nil, err
-	}
-
+// implementsObj returns the object to query for implementations,
+// which is a type name or method.
+func implementsObj(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types.Object, error) {
 	// This function inherits the limitation of its predecessor in
 	// requiring the selection to be an identifier (of a type or
 	// method). But there's no fundamental reason why one could
@@ -299,11 +308,11 @@ func implementsObj(ctx context.Context, snapshot *cache.Snapshot, uri protocol.D
 	// TODO(adonovan): simplify: use objectsAt?
 	path := pathEnclosingObjNode(pgf.File, pos)
 	if path == nil {
-		return nil, nil, ErrNoIdentFound
+		return nil, ErrNoIdentFound
 	}
 	id, ok := path[0].(*ast.Ident)
 	if !ok {
-		return nil, nil, ErrNoIdentFound
+		return nil, ErrNoIdentFound
 	}
 
 	// Is the object a type or method? Reject other kinds.
@@ -319,17 +328,18 @@ func implementsObj(ctx context.Context, snapshot *cache.Snapshot, uri protocol.D
 		// ok
 	case *types.Func:
 		if obj.Signature().Recv() == nil {
-			return nil, nil, fmt.Errorf("%s is a function, not a method", id.Name)
+			return nil, fmt.Errorf("%s is a function, not a method (query at 'func' token to find matching signatures)", id.Name)
 		}
 	case nil:
-		return nil, nil, fmt.Errorf("%s denotes unknown object", id.Name)
+		return nil, fmt.Errorf("%s denotes unknown object", id.Name)
 	default:
 		// e.g. *types.Var -> "var".
 		kind := strings.ToLower(strings.TrimPrefix(reflect.TypeOf(obj).String(), "*types."))
-		return nil, nil, fmt.Errorf("%s is a %s, not a type", id.Name, kind)
+		// TODO(adonovan): improve upon "nil is a nil, not a type".
+		return nil, fmt.Errorf("%s is a %s, not a type", id.Name, kind)
 	}
 
-	return obj, pkg, nil
+	return obj, nil
 }
 
 // localImplementations searches within pkg for declarations of all
@@ -679,9 +689,236 @@ func pathEnclosingObjNode(f *ast.File, pos token.Pos) []ast.Node {
 	}
 
 	// Reverse path so leaf is first element.
-	for i := 0; i < len(path)/2; i++ {
-		path[i], path[len(path)-1-i] = path[len(path)-1-i], path[i]
-	}
+	slices.Reverse(path)
 
 	return path
+}
+
+// --- Implementations based on signature types --
+
+// implFuncs finds Implementations based on func types.
+//
+// Just as an interface type abstracts a set of concrete methods, a
+// function type abstracts a set of concrete functions. Gopls provides
+// analogous operations for navigating from abstract to concrete and
+// back in the domain of function types.
+//
+// A single type (for example http.HandlerFunc) can have both an
+// underlying type of function (types.Signature) and have methods that
+// cause it to implement an interface. To avoid a confusing user
+// interface we want to separate the two operations so that the user
+// can unambiguously specify the query they want.
+//
+// So, whereas Implementations queries on interface types are usually
+// keyed by an identifier of a named type, Implementations queries on
+// function types are keyed by the "func" keyword, or by the "(" of a
+// call expression. The query relates two sets of locations:
+//
+//  1. the "func" token of each function declaration (FuncDecl or
+//     FuncLit). These are analogous to declarations of concrete
+//     methods.
+//
+//  2. uses of abstract functions:
+//
+//     (a) the "func" token of each FuncType that is not part of
+//     Func{Decl,Lit}. These are analogous to interface{...} types.
+//
+//     (b) the "(" paren of each dynamic call on a value of an
+//     abstract function type. These are analogous to references to
+//     interface method names, but no names are involved, which has
+//     historically made them hard to search for.
+//
+// An Implementations query on a location in set 1 returns set 2,
+// and vice versa.
+//
+// implFuncs returns errNotHandled to indicate that we should try the
+// regular method-sets algorithm.
+func implFuncs(pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol.Location, error) {
+	curSel, ok := pgf.Cursor.FindPos(pos, pos)
+	if !ok {
+		return nil, fmt.Errorf("no code selected")
+	}
+
+	info := pkg.TypesInfo()
+
+	// Find innermost enclosing FuncType or CallExpr.
+	//
+	// We are looking for specific tokens (FuncType.Func and
+	// CallExpr.Lparen), but FindPos prefers an adjoining
+	// subexpression: given f(x) without additional spaces between
+	// tokens, FindPos always returns either f or x, never the
+	// CallExpr itself. Thus we must ascend the tree.
+	//
+	// Another subtlety: due to an edge case in go/ast, FindPos at
+	// FuncDecl.Type.Func does not return FuncDecl.Type, only the
+	// FuncDecl, because the orders of tree positions and tokens
+	// are inconsistent. Consequently, the ancestors for a "func"
+	// token of Func{Lit,Decl} do not include FuncType, hence the
+	// explicit cases below.
+	for _, cur := range curSel.Stack(nil) {
+		switch n := cur.Node().(type) {
+		case *ast.FuncDecl, *ast.FuncLit:
+			if inToken(n.Pos(), "func", pos) {
+				// Case 1: concrete function declaration.
+				// Report uses of corresponding function types.
+				switch n := n.(type) {
+				case *ast.FuncDecl:
+					return funcUses(pkg, info.Defs[n.Name].Type())
+				case *ast.FuncLit:
+					return funcUses(pkg, info.TypeOf(n.Type))
+				}
+			}
+
+		case *ast.FuncType:
+			if n.Func.IsValid() && inToken(n.Func, "func", pos) && !beneathFuncDef(cur) {
+				// Case 2a: function type.
+				// Report declarations of corresponding concrete functions.
+				return funcDefs(pkg, info.TypeOf(n))
+			}
+
+		case *ast.CallExpr:
+			if inToken(n.Lparen, "(", pos) {
+				t := dynamicFuncCallType(info, n)
+				if t == nil {
+					return nil, fmt.Errorf("not a dynamic function call")
+				}
+				// Case 2b: dynamic call of function value.
+				// Report declarations of corresponding concrete functions.
+				return funcDefs(pkg, t)
+			}
+		}
+	}
+
+	// It's probably a query of a named type or method.
+	// Fall back to the method-sets computation.
+	return nil, errNotHandled
+}
+
+var errNotHandled = errors.New("not handled")
+
+// funcUses returns all locations in the workspace that are dynamic
+// uses of the specified function type.
+func funcUses(pkg *cache.Package, t types.Type) ([]protocol.Location, error) {
+	var locs []protocol.Location
+
+	// local search
+	for _, pgf := range pkg.CompiledGoFiles() {
+		for cur := range pgf.Cursor.Preorder((*ast.CallExpr)(nil), (*ast.FuncType)(nil)) {
+			var pos, end token.Pos
+			var ftyp types.Type
+			switch n := cur.Node().(type) {
+			case *ast.CallExpr:
+				ftyp = dynamicFuncCallType(pkg.TypesInfo(), n)
+				pos, end = n.Lparen, n.Lparen+token.Pos(len("("))
+
+			case *ast.FuncType:
+				if !beneathFuncDef(cur) {
+					// func type (not def)
+					ftyp = pkg.TypesInfo().TypeOf(n)
+					pos, end = n.Func, n.Func+token.Pos(len("func"))
+				}
+			}
+			if ftyp == nil {
+				continue // missing type information
+			}
+			if unify(t, ftyp) {
+				loc, err := pgf.PosLocation(pos, end)
+				if err != nil {
+					return nil, err
+				}
+				locs = append(locs, loc)
+			}
+		}
+	}
+
+	// TODO(adonovan): implement global search
+
+	return locs, nil
+}
+
+// funcDefs returns all locations in the workspace that define
+// functions of the specified type.
+func funcDefs(pkg *cache.Package, t types.Type) ([]protocol.Location, error) {
+	var locs []protocol.Location
+
+	// local search
+	for _, pgf := range pkg.CompiledGoFiles() {
+		for curFn := range pgf.Cursor.Preorder((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
+			fn := curFn.Node()
+			var ftyp types.Type
+			switch fn := fn.(type) {
+			case *ast.FuncDecl:
+				ftyp = pkg.TypesInfo().Defs[fn.Name].Type()
+			case *ast.FuncLit:
+				ftyp = pkg.TypesInfo().TypeOf(fn)
+			}
+			if ftyp == nil {
+				continue // missing type information
+			}
+			if unify(t, ftyp) {
+				pos := fn.Pos()
+				loc, err := pgf.PosLocation(pos, pos+token.Pos(len("func")))
+				if err != nil {
+					return nil, err
+				}
+				locs = append(locs, loc)
+			}
+		}
+	}
+
+	// TODO(adonovan): implement global search, by analogy with
+	// methodsets algorithm.
+	//
+	// One optimization: if any signature type has free package
+	// names, look for matches only in packages among the rdeps of
+	// those packages.
+
+	return locs, nil
+}
+
+// beneathFuncDef reports whether the specified FuncType cursor is a
+// child of Func{Decl,Lit}.
+func beneathFuncDef(cur cursor.Cursor) bool {
+	ek, _ := cur.Edge()
+	switch ek {
+	case edge.FuncDecl_Type, edge.FuncLit_Type:
+		return true
+	}
+	return false
+}
+
+// dynamicFuncCallType reports whether call is a dynamic (non-method) function call.
+// If so, it returns the function type, otherwise nil.
+//
+// Tested via ../test/marker/testdata/implementation/signature.txt.
+func dynamicFuncCallType(info *types.Info, call *ast.CallExpr) types.Type {
+	fun := ast.Unparen(call.Fun)
+	tv := info.Types[fun]
+
+	// Reject conversion, or call to built-in.
+	if !tv.IsValue() {
+		return nil
+	}
+
+	// Reject call to named func/method.
+	if id, ok := fun.(*ast.Ident); ok && is[*types.Func](info.Uses[id]) {
+		return nil
+	}
+
+	// Reject method selections (T.method() or x.method())
+	if sel, ok := fun.(*ast.SelectorExpr); ok {
+		seln, ok := info.Selections[sel]
+		if !ok || seln.Kind() != types.FieldVal {
+			return nil
+		}
+	}
+
+	// TODO(adonovan): consider x() where x : TypeParam.
+	return tv.Type.Underlying() // e.g. x() or x.field()
+}
+
+// inToken reports whether pos is within the token of
+// the specified position and string.
+func inToken(tokPos token.Pos, tokStr string, pos token.Pos) bool {
+	return tokPos <= pos && pos <= tokPos+token.Pos(len(tokStr))
 }

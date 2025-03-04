@@ -584,7 +584,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"highlightall":     actionMarkerFunc(highlightAllMarker),
 	"hover":            actionMarkerFunc(hoverMarker),
 	"hovererr":         actionMarkerFunc(hoverErrMarker),
-	"implementation":   actionMarkerFunc(implementationMarker),
+	"implementation":   actionMarkerFunc(implementationMarker, "err"),
 	"incomingcalls":    actionMarkerFunc(incomingCallsMarker),
 	"inlayhints":       actionMarkerFunc(inlayhintsMarker),
 	"outgoingcalls":    actionMarkerFunc(outgoingCallsMarker),
@@ -2375,11 +2375,17 @@ func refsMarker(mark marker, src protocol.Location, want ...protocol.Location) {
 
 // implementationMarker implements the @implementation marker.
 func implementationMarker(mark marker, src protocol.Location, want ...protocol.Location) {
+	wantErr := namedArgFunc(mark, "err", convertStringMatcher, stringMatcher{})
+
 	got, err := mark.server().Implementation(mark.ctx(), &protocol.ImplementationParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(src),
 	})
-	if err != nil {
+	if err != nil && wantErr.empty() {
 		mark.errorf("implementation at %s failed: %v", src, err)
+		return
+	}
+	if !wantErr.empty() {
+		wantErr.checkErr(mark, err)
 		return
 	}
 	if err := compareLocations(mark, got, want); err != nil {

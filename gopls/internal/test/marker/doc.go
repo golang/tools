@@ -212,9 +212,10 @@ Here is the list of supported action markers:
   - hovererr(src, sm stringMatcher): performs a textDocument/hover at the src
     location, and checks that the error matches the given stringMatcher.
 
-  - implementations(src location, want ...location): makes a
-    textDocument/implementation query at the src location and
-    checks that the resulting set of locations matches want.
+  - implementation(src location, want ...location, err=stringMatcher):
+    makes a textDocument/implementation query at the src location and
+    checks that the resulting set of locations matches want. If err is
+    set, the implementation query must fail with the expected error.
 
   - incomingcalls(src location, want ...location): makes a
     callHierarchy/incomingCalls query at the src location, and checks that
