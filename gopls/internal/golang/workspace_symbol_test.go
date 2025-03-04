@@ -47,7 +47,7 @@ func TestParseQuery(t *testing.T) {
 	}
 }
 
-func TestFiltererDisallow(t *testing.T) {
+func TestPathIncludeFunc(t *testing.T) {
 	tests := []struct {
 		filters  []string
 		included []string
@@ -119,18 +119,24 @@ func TestFiltererDisallow(t *testing.T) {
 			[]string{"a/b/c.go", "bb"},
 			[]string{"b/c/d.go", "b"},
 		},
+		// golang/vscode-go#3692
+		{
+			[]string{"-**/foo", "+**/bar"},
+			[]string{"bar/a.go", "a/bar/b.go"},
+			[]string{"foo/a.go", "a/foo/b.go"},
+		},
 	}
 
 	for _, test := range tests {
-		filterer := cache.NewFilterer(test.filters)
+		pathIncluded := cache.PathIncludeFunc(test.filters)
 		for _, inc := range test.included {
-			if filterer.Disallow(inc) {
+			if !pathIncluded(inc) {
 				t.Errorf("Filters %v excluded %v, wanted included", test.filters, inc)
 			}
 		}
 
 		for _, exc := range test.excluded {
-			if !filterer.Disallow(exc) {
+			if pathIncluded(exc) {
 				t.Errorf("Filters %v included %v, wanted excluded", test.filters, exc)
 			}
 		}

@@ -11,45 +11,55 @@ import (
 	"strings"
 )
 
-type Filterer struct {
-	// Whether a filter is excluded depends on the operator (first char of the raw filter).
-	// Slices filters and excluded then should have the same length.
-	filters  []*regexp.Regexp
-	excluded []bool
-}
-
-// NewFilterer computes regular expression form of all raw filters
-func NewFilterer(rawFilters []string) *Filterer {
-	var f Filterer
-	for _, filter := range rawFilters {
+// PathIncludeFunc creates a function that determines if a given file path
+// should be included based on a set of inclusion/exclusion rules.
+//
+// The `rules` parameter is a slice of strings, where each string represents a
+// filtering rule. Each rule consists of an operator (`+` for inclusion, `-`
+// for exclusion) followed by a path pattern. See more detail of rules syntax
+// at [settings.BuildOptions.DirectoryFilters].
+//
+// Rules are evaluated in order, and the last matching rule determines
+// whether a path is included or excluded.
+//
+// Examples:
+//   - []{"-foo"}: Exclude "foo" at the current depth.
+//   - []{"-**foo"}: Exclude "foo" at any depth.
+//   - []{"+bar"}: Include "bar" at the current depth.
+//   - []{"-foo", "+foo/**/bar"}: Exclude all "foo" at current depth except
+//     directory "bar" under "foo" at any depth.
+func PathIncludeFunc(rules []string) func(string) bool {
+	var matchers []*regexp.Regexp
+	var included []bool
+	for _, filter := range rules {
 		filter = path.Clean(filepath.ToSlash(filter))
 		// TODO(dungtuanle): fix: validate [+-] prefix.
 		op, prefix := filter[0], filter[1:]
-		// convertFilterToRegexp adds "/" at the end of prefix to handle cases where a filter is a prefix of another filter.
+		// convertFilterToRegexp adds "/" at the end of prefix to handle cases
+		// where a filter is a prefix of another filter.
 		// For example, it prevents [+foobar, -foo] from excluding "foobar".
-		f.filters = append(f.filters, convertFilterToRegexp(filepath.ToSlash(prefix)))
-		f.excluded = append(f.excluded, op == '-')
+		matchers = append(matchers, convertFilterToRegexp(filepath.ToSlash(prefix)))
+		included = append(included, op == '+')
 	}
 
-	return &f
-}
-
-// Disallow return true if the path is excluded from the filterer's filters.
-func (f *Filterer) Disallow(path string) bool {
-	// Ensure trailing but not leading slash.
-	path = strings.TrimPrefix(path, "/")
-	if !strings.HasSuffix(path, "/") {
-		path += "/"
-	}
-
-	// TODO(adonovan): opt: iterate in reverse and break at first match.
-	excluded := false
-	for i, filter := range f.filters {
-		if filter.MatchString(path) {
-			excluded = f.excluded[i] // last match wins
+	return func(path string) bool {
+		// Ensure leading and trailing slashes.
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
 		}
+		if !strings.HasSuffix(path, "/") {
+			path += "/"
+		}
+
+		// TODO(adonovan): opt: iterate in reverse and break at first match.
+		include := true
+		for i, filter := range matchers {
+			if filter.MatchString(path) {
+				include = included[i] // last match wins
+			}
+		}
+		return include
 	}
-	return excluded
 }
 
 // convertFilterToRegexp replaces glob-like operator substrings in a string file path to their equivalent regex forms.
@@ -60,7 +70,7 @@ func convertFilterToRegexp(filter string) *regexp.Regexp {
 		return regexp.MustCompile(".*")
 	}
 	var ret strings.Builder
-	ret.WriteString("^")
+	ret.WriteString("^/")
 	segs := strings.Split(filter, "/")
 	for _, seg := range segs {
 		// Inv: seg != "" since path is clean.
@@ -77,7 +87,7 @@ func convertFilterToRegexp(filter string) *regexp.Regexp {
 	// BenchmarkWorkspaceSymbols time by ~20% (even though
 	// filter CPU time increased by only by ~2.5%) when the
 	// default filter was changed to "**/node_modules".
-	pattern = strings.TrimPrefix(pattern, "^.*")
+	pattern = strings.TrimPrefix(pattern, "^/.*")
 
 	return regexp.MustCompile(pattern)
 }

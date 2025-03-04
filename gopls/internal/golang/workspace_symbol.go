@@ -300,8 +300,7 @@ func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherTyp
 		// whether a URI is in any open workspace.
 		folderURI := snapshot.Folder()
 
-		filters := snapshot.Options().DirectoryFilters
-		filterer := cache.NewFilterer(filters)
+		pathIncluded := cache.PathIncludeFunc(snapshot.Options().DirectoryFilters)
 		folder := filepath.ToSlash(folderURI.Path())
 
 		var (
@@ -371,7 +370,7 @@ func collectSymbols(ctx context.Context, snapshots []*cache.Snapshot, matcherTyp
 				uri := sp.Files[i]
 				norm := filepath.ToSlash(uri.Path())
 				nm := strings.TrimPrefix(norm, folder)
-				if filterer.Disallow(nm) {
+				if !pathIncluded(nm) {
 					continue
 				}
 				// Only scan each file once.

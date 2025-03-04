@@ -477,11 +477,11 @@ func (v *View) filterFunc() func(protocol.DocumentURI) bool {
 			modcacheFilter := "-" + strings.TrimPrefix(filepath.ToSlash(pref), "/")
 			filters = append(filters, modcacheFilter)
 		}
-		filterer := NewFilterer(filters)
+		pathIncluded := PathIncludeFunc(filters)
 		v._filterFunc = func(uri protocol.DocumentURI) bool {
 			// Only filter relative to the configured root directory.
 			if pathutil.InDir(folderDir, uri.Path()) {
-				return relPathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), filterer)
+				return relPathExcludedByFilter(strings.TrimPrefix(uri.Path(), folderDir), pathIncluded)
 			}
 			return false
 		}
@@ -1264,7 +1264,7 @@ func allFilesExcluded(files []string, filterFunc func(protocol.DocumentURI) bool
 	return true
 }
 
-func relPathExcludedByFilter(path string, filterer *Filterer) bool {
+func relPathExcludedByFilter(path string, pathIncluded func(string) bool) bool {
 	path = strings.TrimPrefix(filepath.ToSlash(path), "/")
-	return filterer.Disallow(path)
+	return !pathIncluded(path)
 }

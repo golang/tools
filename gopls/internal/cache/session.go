@@ -169,14 +169,14 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 		// Compute a prefix match, respecting segment boundaries, by ensuring
 		// the pattern (dir) has a trailing slash.
 		dirPrefix := strings.TrimSuffix(string(def.folder.Dir), "/") + "/"
-		filterer := NewFilterer(def.folder.Options.DirectoryFilters)
+		pathIncluded := PathIncludeFunc(def.folder.Options.DirectoryFilters)
 		skipPath = func(dir string) bool {
 			uri := strings.TrimSuffix(string(protocol.URIFromPath(dir)), "/")
 			// Note that the logic below doesn't handle the case where uri ==
 			// v.folder.Dir, because there is no point in excluding the entire
 			// workspace folder!
 			if rel := strings.TrimPrefix(uri, dirPrefix); rel != uri {
-				return filterer.Disallow(rel)
+				return !pathIncluded(rel)
 			}
 			return false
 		}
