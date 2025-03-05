@@ -11,9 +11,7 @@
 //
 // Run it with this command:
 //
-//	$ cd gopls/internal/doc && go generate
-//
-// TODO(adonovan): move this package to gopls/internal/doc/generate.
+//	$ cd gopls/internal/doc/generate && go generate
 package main
 
 import (
