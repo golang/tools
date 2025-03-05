@@ -52,6 +52,7 @@ import (
 
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/fingerprint"
 	"golang.org/x/tools/gopls/internal/util/frob"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/typesinternal"
@@ -195,7 +196,7 @@ func implements(x, y *gobMethodSet) bool {
 					// so a string match is sufficient.
 					match = mx.Sum&my.Sum == my.Sum && mx.Fingerprint == my.Fingerprint
 				} else {
-					match = unify(mx.parse(), my.parse())
+					match = fingerprint.Matches(mx.parse(), my.parse())
 				}
 				return !match
 			}
@@ -326,7 +327,7 @@ func methodSetInfo(t types.Type, setIndexInfo func(*gobMethod, *types.Func)) *go
 	for i := 0; i < mset.Len(); i++ {
 		m := mset.At(i).Obj().(*types.Func)
 		id := m.Id()
-		fp, isTricky := fingerprint(m.Signature())
+		fp, isTricky := fingerprint.Encode(m.Signature())
 		if isTricky {
 			tricky = true
 		}
@@ -389,7 +390,7 @@ type gobMethod struct {
 	ObjectPath int         // object path of method relative to PkgPath
 
 	// internal fields (not serialized)
-	tree atomic.Pointer[sexpr] // fingerprint tree, parsed on demand
+	tree atomic.Pointer[fingerprint.Tree] // fingerprint tree, parsed on demand
 }
 
 // A gobPosition records the file, offset, and length of an identifier.
@@ -400,10 +401,10 @@ type gobPosition struct {
 
 // parse returns the method's parsed fingerprint tree.
 // It may return a new instance or a cached one.
-func (m *gobMethod) parse() sexpr {
+func (m *gobMethod) parse() fingerprint.Tree {
 	ptr := m.tree.Load()
 	if ptr == nil {
-		tree := parseFingerprint(m.Fingerprint)
+		tree := fingerprint.Parse(m.Fingerprint)
 		ptr = &tree
 		m.tree.Store(ptr) // may race; that's ok
 	}

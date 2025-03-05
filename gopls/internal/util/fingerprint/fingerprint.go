@@ -1,7 +1,13 @@
-// Copyright 2024 The Go Authors. All rights reserved.
+// Copyright 2025 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-package methodsets
+
+// Package fingerprint defines a function to [Encode] types as strings
+// with the property that identical types have equal string encodings,
+// in most cases. In the remaining cases (mostly involving generic
+// types), the encodings can be parsed using [Parse] into [Tree] form
+// and matched using [Matches].
+package fingerprint
 
 import (
 	"fmt"
@@ -11,6 +17,52 @@ import (
 	"strings"
 	"text/scanner"
 )
+
+// Encode returns an encoding of a [types.Type] such that, in
+// most cases, Encode(x) == Encode(y) iff [types.Identical](x, y).
+//
+// For a minority of types, mostly involving type parameters, identity
+// cannot be reduced to string comparison; these types are called
+// "tricky", and are indicated by the boolean result.
+//
+// In general, computing identity correctly for tricky types requires
+// the type checker. However, the fingerprint encoding can be parsed
+// by [Parse] into a [Tree] form that permits simple matching sufficient
+// to allow a type parameter to unify with any subtree; see [Match].
+//
+// In the standard library, 99.8% of package-level types have a
+// non-tricky method-set. The most common exceptions are due to type
+// parameters.
+//
+// fingerprint.Encode is defined only for the signature types of functions
+// and methods. It must not be called for "untyped" basic types, nor
+// the type of a generic function.
+func Encode(t types.Type) (_ string, tricky bool) { return fingerprint(t) }
+
+// A Tree is a parsed form of a fingerprint for use with [Matches].
+type Tree struct{ tree sexpr }
+
+// String returns the tree in an unspecified human-readable form.
+func (tree Tree) String() string {
+	var out strings.Builder
+	writeSexpr(&out, tree.tree)
+	return out.String()
+}
+
+// Parse parses a fingerprint into tree form.
+//
+// The input must have been produced by [Encode] at the same source
+// version; parsing is thus infallible.
+func Parse(fp string) Tree {
+	return Tree{parseFingerprint(fp)}
+}
+
+// Matches reports whether two fingerprint trees match, meaning that
+// under some conditions (for example, particular instantiations of
+// type parameters) the two types may be identical.
+func Matches(x, y Tree) bool {
+	return unify(x.tree, y.tree)
+}
 
 // Fingerprint syntax
 //
@@ -38,25 +90,6 @@ import (
 //
 //  field = IDENT IDENT STRING τ        -- name, embedded?, tag, type
 
-// fingerprint returns an encoding of a [types.Type] such that, in
-// most cases, fingerprint(x) == fingerprint(t) iff types.Identical(x, y).
-//
-// For a minority of types, mostly involving type parameters, identity
-// cannot be reduced to string comparison; these types are called
-// "tricky", and are indicated by the boolean result.
-//
-// In general, computing identity correctly for tricky types requires
-// the type checker. However, the fingerprint encoding can be parsed
-// by [parseFingerprint] into a tree form that permits simple matching
-// sufficient to allow a type parameter to unify with any subtree.
-//
-// In the standard library, 99.8% of package-level types have a
-// non-tricky method-set. The most common exceptions are due to type
-// parameters.
-//
-// fingerprint is defined only for the signature types of methods. It
-// must not be called for "untyped" basic types, nor the type of a
-// generic function.
 func fingerprint(t types.Type) (string, bool) {
 	var buf strings.Builder
 	tricky := false
@@ -202,8 +235,6 @@ func fingerprint(t types.Type) (string, bool) {
 	return buf.String(), tricky
 }
 
-const symTypeparam = "typeparam"
-
 // sexpr defines the representation of a fingerprint tree.
 type (
 	sexpr  any // = string | int | symbol | *cons | nil
@@ -270,12 +301,6 @@ func parseFingerprint(fp string) sexpr {
 	}
 
 	return parse()
-}
-
-func sexprString(x sexpr) string {
-	var out strings.Builder
-	writeSexpr(&out, x)
-	return out.String()
 }
 
 // writeSexpr formats an S-expression.
@@ -355,3 +380,5 @@ func isTypeParam(x sexpr) int {
 	}
 	return -1
 }
+
+const symTypeparam = "typeparam"

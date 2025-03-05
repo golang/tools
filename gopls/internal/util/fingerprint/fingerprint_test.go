@@ -1,13 +1,8 @@
-// Copyright 2024 The Go Authors. All rights reserved.
+// Copyright 2025 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package methodsets
-
-// This is an internal test of [fingerprint] and [unify].
-//
-// TODO(adonovan): avoid internal tests.
-// Break fingerprint.go off into its own package?
+package fingerprint_test
 
 import (
 	"go/types"
@@ -15,15 +10,15 @@ import (
 
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/gopls/internal/util/fingerprint"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
 
-// Test_fingerprint runs the fingerprint encoder, decoder, and printer
+// Test runs the fingerprint encoder, decoder, and printer
 // on the types of all package-level symbols in gopls, and ensures
 // that parse+print is lossless.
-func Test_fingerprint(t *testing.T) {
+func Test(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test")
 	}
@@ -54,7 +49,7 @@ func Test_fingerprint(t *testing.T) {
 				continue // untyped constant
 			}
 
-			fp, tricky := fingerprint(typ) // check Type encoder doesn't panic
+			fp, tricky := fingerprint.Encode(typ) // check Type encoder doesn't panic
 
 			// All equivalent (non-tricky) types have the same fingerprint.
 			if !tricky {
@@ -66,8 +61,8 @@ func Test_fingerprint(t *testing.T) {
 				}
 			}
 
-			tree := parseFingerprint(fp) // check parser doesn't panic
-			fp2 := sexprString(tree)     // check formatter doesn't pannic
+			tree := fingerprint.Parse(fp) // check parser doesn't panic
+			fp2 := tree.String()          // check formatter doesn't pannic
 
 			// A parse+print round-trip should be lossless.
 			if fp != fp2 {
@@ -79,12 +74,8 @@ func Test_fingerprint(t *testing.T) {
 	}
 }
 
-// Test_unify exercises the matching algorithm for generic types.
-func Test_unify(t *testing.T) {
-	if testenv.Go1Point() < 24 {
-		testenv.NeedsGoExperiment(t, "aliastypeparams") // testenv.Go1Point() >= 24 implies aliastypeparams=1
-	}
-
+// TestMatches exercises the matching algorithm for generic types.
+func TestMatches(t *testing.T) {
 	const src = `
 -- go.mod --
 module example.com
@@ -167,17 +158,17 @@ func E3(int8) uint32
 		a := lookup(test.a)
 		b := lookup(test.b)
 
-		afp, _ := fingerprint(a)
-		bfp, _ := fingerprint(b)
+		afp, _ := fingerprint.Encode(a)
+		bfp, _ := fingerprint.Encode(b)
 
-		atree := parseFingerprint(afp)
-		btree := parseFingerprint(bfp)
+		atree := fingerprint.Parse(afp)
+		btree := fingerprint.Parse(bfp)
 
-		got := unify(atree, btree)
+		got := fingerprint.Matches(atree, btree)
 		if got != test.want {
 			t.Errorf("a=%s b=%s method=%s: unify returned %t for these inputs:\n- %s\n- %s",
 				test.a, test.b, test.method,
-				got, sexprString(atree), sexprString(btree))
+				got, atree, btree)
 		}
 	}
 }
