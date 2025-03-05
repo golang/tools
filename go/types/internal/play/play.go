@@ -30,8 +30,10 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -160,6 +162,15 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 		if e, ok := n.(ast.Expr); ok && innermostExpr == nil {
 			innermostExpr = e
 		}
+	}
+	// Show the cursor stack too.
+	// It's usually the same, but may differ in edge
+	// cases (e.g. around FuncType.Func).
+	inspect := inspector.New([]*ast.File{file})
+	if cur, ok := cursor.Root(inspect).FindPos(startPos, endPos); ok {
+		fmt.Fprintf(out, "Cursor.FindPos().Stack() = %v\n", cur.Stack(nil))
+	} else {
+		fmt.Fprintf(out, "Cursor.FindPos() failed\n")
 	}
 	fmt.Fprintf(out, "\n")
 
