@@ -45,9 +45,11 @@ func TestEnabledCategory(t *testing.T) {
 		{"a", "-b", true},
 		{"a", "b", false},
 		{"a", "a,b", true},
-		{"a", "-b,-a", false},
-		{"a", "-b,-c", true},
-		{"a", "b,-c", false},
+		{"b", "a,b", true},
+		{"a", "-b,a", false},
+		{"b", "-b,a", false},
+		{"a", "a,-a", true}, // negation must be at beginning
+		{"a", "-b,c", true},
 		{"", "b", false},
 		{"", "", true},
 	} {

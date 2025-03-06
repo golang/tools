@@ -490,28 +490,17 @@ func CanImport(from, to string) bool {
 
 // EnabledCategory reports whether a given category is enabled by the specified
 // filter. filter is a comma-separated list of categories, optionally prefixed
-// with `-` to disable a category. All categories are enabled with an empty
-// filter.
+// with `-` to disable all provided categories. All categories are enabled with
+// an empty filter.
 func EnabledCategory(category, filter string) bool {
 	if filter == "" {
 		return true
 	}
-	// determines default behavior for categories not specified in the filter
-	var hasIncludes bool
+	// negation must be specified at the start
+	filter, exclude := strings.CutPrefix(filter, "-")
 	filters := strings.Split(filter, ",")
-	for _, f := range filters {
-		f, exclude := strings.CutPrefix(f, "-")
-		if exclude {
-			if f == category {
-				return false
-			}
-		} else {
-			hasIncludes = true
-			if f == category {
-				return true
-			}
-		}
-
+	if slices.Contains(filters, category) {
+		return !exclude
 	}
-	return !hasIncludes
+	return exclude
 }
