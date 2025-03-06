@@ -20,6 +20,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -486,4 +488,123 @@ func CanImport(from, to string) bool {
 		return strings.HasPrefix(from, to[:i])
 	}
 	return true
+}
+
+// DeleteStmt returns the edits to remove stmt if it is contained
+// in a BlockStmt, CaseClause, CommClause, or is the STMT in switch STMT; ... {...}
+// The report function abstracts gopls' bug.Report.
+func DeleteStmt(fset *token.FileSet, astFile *ast.File, stmt ast.Stmt, report func(string, token.Pos)) []analysis.TextEdit {
+	// TODO: pass in the cursor to a ast.Stmt. callers should provide the Cursor
+	insp := inspector.New([]*ast.File{astFile})
+	root := cursor.Root(insp)
+	cstmt, ok := root.FindNode(stmt)
+	if !ok {
+		report("%s not found in file", stmt.Pos())
+		return nil
+	}
+	// some paranoia
+	if !stmt.Pos().IsValid() || !stmt.End().IsValid() {
+		report("%s: stmt has invalid position", stmt.Pos())
+		return nil
+	}
+
+	// if the stmt is on a line by itself delete the whole line
+	// otherwise just delete the statement.
+
+	// this logic would be a lot simpler with the file contents, and somewhat simpler
+	// if the cursors included the comments.
+
+	tokFile := fset.File(stmt.Pos())
+	lineOf := tokFile.Line
+	stmtStartLine, stmtEndLine := lineOf(stmt.Pos()), lineOf(stmt.End())
+
+	var from, to token.Pos
+	// bounds of adjacent syntax/comments on same line, if any
+	limits := func(left, right token.Pos) {
+		if lineOf(left) == stmtStartLine {
+			from = left
+		}
+		if lineOf(right) == stmtEndLine {
+			to = right
+		}
+	}
+	// TODO(pjw): there are other places a statement might be removed:
+	// IfStmt = "if" [ SimpleStmt ";" ] Expression Block [ "else" ( IfStmt | Block ) ] .
+	// (removing the blocks requires more rewriting than this routine would do)
+	// CommCase   = "case" ( SendStmt | RecvStmt ) | "default" .
+	// (removing the stmt requires more rewriting, and it's unclear what the user means)
+	switch parent := cstmt.Parent().Node().(type) {
+	case *ast.SwitchStmt:
+		limits(parent.Switch, parent.Body.Lbrace)
+	case *ast.TypeSwitchStmt:
+		limits(parent.Switch, parent.Body.Lbrace)
+		if parent.Assign == stmt {
+			return nil // don't let the user break the type switch
+		}
+	case *ast.BlockStmt:
+		limits(parent.Lbrace, parent.Rbrace)
+	case *ast.CommClause:
+		limits(parent.Colon, cstmt.Parent().Parent().Node().(*ast.BlockStmt).Rbrace)
+		if parent.Comm == stmt {
+			return nil // maybe the user meant to remove the entire CommClause?
+		}
+	case *ast.CaseClause:
+		limits(parent.Colon, cstmt.Parent().Parent().Node().(*ast.BlockStmt).Rbrace)
+	case *ast.ForStmt:
+		limits(parent.For, parent.Body.Lbrace)
+
+	default:
+		return nil // not one of ours
+	}
+
+	if prev, found := cstmt.PrevSibling(); found && lineOf(prev.Node().End()) == stmtStartLine {
+		from = prev.Node().End() // preceding statement ends on same line
+	}
+	if next, found := cstmt.NextSibling(); found && lineOf(next.Node().Pos()) == stmtEndLine {
+		to = next.Node().Pos() // following statement begins on same line
+	}
+	// and now for the comments
+Outer:
+	for _, cg := range astFile.Comments {
+		for _, co := range cg.List {
+			if lineOf(co.End()) < stmtStartLine {
+				continue
+			} else if lineOf(co.Pos()) > stmtEndLine {
+				break Outer // no more are possible
+			}
+			if lineOf(co.End()) == stmtStartLine && co.End() < stmt.Pos() {
+				if !from.IsValid() || co.End() > from {
+					from = co.End()
+					continue // maybe there are more
+				}
+			}
+			if lineOf(co.Pos()) == stmtEndLine && co.Pos() > stmt.End() {
+				if !to.IsValid() || co.Pos() < to {
+					to = co.Pos()
+					continue // maybe there are more
+				}
+			}
+		}
+	}
+	// if either from or to is valid, just remove the statement
+	// otherwise remove the line
+	edit := analysis.TextEdit{Pos: stmt.Pos(), End: stmt.End()}
+	if from.IsValid() || to.IsValid() {
+		// remove just the statment.
+		// we can't tell if there is a ; or whitespace right after the statment
+		// ideally we'd like to remove the former and leave the latter
+		// (if gofmt has run, there likely won't be a ;)
+		// In type switches we know there's a semicolon somewhere after the statement,
+		// but the extra work for this special case is not worth it, as gofmt will fix it.
+		return []analysis.TextEdit{edit}
+	}
+	// remove the whole line
+	for lineOf(edit.Pos) == stmtStartLine {
+		edit.Pos--
+	}
+	edit.Pos++ // get back tostmtStartLine
+	for lineOf(edit.End) == stmtEndLine {
+		edit.End++
+	}
+	return []analysis.TextEdit{edit}
 }
