@@ -38,6 +38,10 @@
 //
 //	$ go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test ./...
 //
+// To apply a subset of modernization fixes, you can use the -category filter:
+//
+//	$ go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -category=efaceany,rangeint -test ./...
+//
 // If the tool warns of conflicting fixes, you may need to run it more
 // than once until it has applied all fixes cleanly. This command is
 // not an officially supported interface and may change in the future.

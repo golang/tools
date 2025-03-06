@@ -24,8 +24,9 @@ import (
 
 // flags common to all {single,multi,unit}checkers.
 var (
-	JSON    = false // -json
-	Context = -1    // -c=N: if N>0, display offending line plus N lines of context
+	JSON     = false // -json
+	Context  = -1    // -c=N: if N>0, display offending line plus N lines of context
+	Category = ""    // -category=... comma-separated list of categories (may be negated with -)
 )
 
 // Parse creates a flag for each of the analyzer's flags,
@@ -74,6 +75,7 @@ func Parse(analyzers []*analysis.Analyzer, multi bool) []*analysis.Analyzer {
 	// flags common to all checkers
 	flag.BoolVar(&JSON, "json", JSON, "emit JSON output")
 	flag.IntVar(&Context, "c", Context, `display offending line with this many lines of context`)
+	flag.StringVar(&Category, "category", Category, "filter diagnostics to comma-separated list of categories. categories prefixed with - are excluded")
 
 	// Add shims for legacy vet flags to enable existing
 	// scripts that run vet to continue to work.
