@@ -42,6 +42,9 @@
 //
 //	$ go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -category=efaceany,rangeint -test ./...
 //
+// A negated category list (e.g. "-category=-a,b") applies all fix categories
+// except a and b.
+//
 // If the tool warns of conflicting fixes, you may need to run it more
 // than once until it has applied all fixes cleanly. This command is
 // not an officially supported interface and may change in the future.
