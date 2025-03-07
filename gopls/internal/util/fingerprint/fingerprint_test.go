@@ -104,6 +104,7 @@ func C2[U any](int, int, ...U) bool { panic(0) }
 func C3(int, bool, ...string) rune
 func C4(int, bool, ...string)
 func C5(int, float64, bool, string) bool
+func C6(int, bool, ...string) bool
 
 func DAny[T any](Named[T]) { panic(0) }
 func DString(Named[string])
@@ -114,6 +115,17 @@ type Named[T any] struct { x T }
 func E1(byte) rune
 func E2(uint8) int32
 func E3(int8) uint32
+
+// generic vs. generic
+func F1[T any](T) { panic(0) }
+func F2[T any](*T) { panic(0) }
+func F3[T any](T, T) { panic(0) }
+func F4[U any](U, *U) {panic(0) }
+func F5[T, U any](T, U, U) { panic(0) }
+func F6[T any](T, int, T) { panic(0) }
+func F7[T any](bool, T, T) { panic(0) }
+func F8[V any](*V, int, int) { panic(0) }
+func F9[V any](V, *V, V) { panic(0) }
 `
 	pkg := testfiles.LoadPackages(t, txtar.Parse([]byte(src)), "./a")[0]
 	scope := pkg.Types.Scope()
@@ -128,11 +140,12 @@ func E3(int8) uint32
 		{"B", "String", "", true},
 		{"B", "Int", "", true},
 		{"B", "A", "", true},
-		{"C1", "C2", "", true}, // matches despite inconsistent substitution
-		{"C1", "C3", "", true},
+		{"C1", "C2", "", false},
+		{"C1", "C3", "", false},
 		{"C1", "C4", "", false},
 		{"C1", "C5", "", false},
-		{"C2", "C3", "", false}, // intransitive (C1≡C2 ^ C1≡C3)
+		{"C1", "C6", "", true},
+		{"C2", "C3", "", false},
 		{"C2", "C4", "", false},
 		{"C3", "C4", "", false},
 		{"DAny", "DString", "", true},
@@ -140,6 +153,13 @@ func E3(int8) uint32
 		{"DString", "DInt", "", false}, // different instantiations of Named
 		{"E1", "E2", "", true},         // byte and rune are just aliases
 		{"E2", "E3", "", false},
+		// The following tests cover all of the type param cases of unify.
+		{"F1", "F2", "", true},  // F1[*int] = F2[int]
+		{"F3", "F4", "", false}, // would require U identical to *U, prevented by occur check
+		{"F5", "F6", "", true},  // one param is bound, the other is not
+		{"F6", "F7", "", false}, // both are bound
+		{"F5", "F8", "", true},  // T=*int, U=int, V=int
+		{"F5", "F9", "", false}, // T is unbound, V is bound, and T occurs in V
 	} {
 		lookup := func(name string) types.Type {
 			obj := scope.Lookup(name)
@@ -155,20 +175,30 @@ func E3(int8) uint32
 			return obj.Type()
 		}
 
-		a := lookup(test.a)
-		b := lookup(test.b)
+		check := func(sa, sb string, want bool) {
+			t.Helper()
 
-		afp, _ := fingerprint.Encode(a)
-		bfp, _ := fingerprint.Encode(b)
+			a := lookup(sa)
+			b := lookup(sb)
 
-		atree := fingerprint.Parse(afp)
-		btree := fingerprint.Parse(bfp)
+			afp, _ := fingerprint.Encode(a)
+			bfp, _ := fingerprint.Encode(b)
 
-		got := fingerprint.Matches(atree, btree)
-		if got != test.want {
-			t.Errorf("a=%s b=%s method=%s: unify returned %t for these inputs:\n- %s\n- %s",
-				test.a, test.b, test.method,
-				got, atree, btree)
+			atree := fingerprint.Parse(afp)
+			btree := fingerprint.Parse(bfp)
+
+			got := fingerprint.Matches(atree, btree)
+			if got != want {
+				t.Errorf("a=%s b=%s method=%s: unify returned %t for these inputs:\n- %s\n- %s",
+					sa, sb, test.method, got, a, b)
+			}
 		}
+
+		check(test.a, test.b, test.want)
+		// Matches is symmetric
+		check(test.b, test.a, test.want)
+		// Matches is reflexive
+		check(test.a, test.a, true)
+		check(test.b, test.b, true)
 	}
 }

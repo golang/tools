@@ -338,44 +338,126 @@ func writeSexpr(out *strings.Builder, x sexpr) {
 	}
 }
 
-// unify reports whether the types of methods x and y match, in the
-// presence of type parameters, each of which matches anything at all.
-// (It's not true unification as we don't track substitutions.)
-//
-// TODO(adonovan): implement full unification.
+// unify reports whether x and y match, in the presence of type parameters.
+// The constraints on type parameters are ignored, but each type parameter must
+// have a consistent binding.
 func unify(x, y sexpr) bool {
-	if isTypeParam(x) >= 0 || isTypeParam(y) >= 0 {
-		return true // a type parameter matches anything
+
+	// maxTypeParam returns the maximum type parameter index in x.
+	var maxTypeParam func(x sexpr) int
+	maxTypeParam = func(x sexpr) int {
+		if i := typeParamIndex(x); i >= 0 {
+			return i
+		}
+		if c, ok := x.(*cons); ok {
+			return max(maxTypeParam(c.car), maxTypeParam(c.cdr))
+		}
+		return 0
 	}
-	if reflect.TypeOf(x) != reflect.TypeOf(y) {
-		return false // type mismatch
+
+	// xBindings[i] is the binding for type parameter #i in x, and similarly for y.
+	// Although type parameters are nominally bound to sexprs, each bindings[i]
+	// is a *sexpr, so unbound variables can share a binding.
+	xBindings := make([]*sexpr, maxTypeParam(x)+1)
+	for i := range len(xBindings) {
+		xBindings[i] = new(sexpr)
 	}
-	switch x := x.(type) {
-	case nil, string, int, symbol:
-		return x == y
-	case *cons:
-		y := y.(*cons)
-		if !unify(x.car, y.car) {
+	yBindings := make([]*sexpr, maxTypeParam(y)+1)
+	for i := range len(yBindings) {
+		yBindings[i] = new(sexpr)
+	}
+
+	// bind sets binding b to s from bindings if it does not occur in s.
+	bind := func(b *sexpr, s sexpr, bindings []*sexpr) bool {
+		// occurs reports whether b is present in s.
+		var occurs func(s sexpr) bool
+		occurs = func(s sexpr) bool {
+			if j := typeParamIndex(s); j >= 0 {
+				return b == bindings[j]
+			}
+			if c, ok := s.(*cons); ok {
+				return occurs(c.car) || occurs(c.cdr)
+			}
 			return false
 		}
-		if x.cdr == nil {
-			return y.cdr == nil
-		}
-		if y.cdr == nil {
+
+		if occurs(s) {
 			return false
 		}
-		return unify(x.cdr, y.cdr)
-	default:
-		panic(fmt.Sprintf("unify %T %T", x, y))
+		*b = s
+		return true
 	}
+
+	var uni func(x, y sexpr) bool
+	uni = func(x, y sexpr) bool {
+		var bx, by *sexpr
+		ix := typeParamIndex(x)
+		if ix >= 0 {
+			bx = xBindings[ix]
+		}
+		iy := typeParamIndex(y)
+		if iy >= 0 {
+			by = yBindings[iy]
+		}
+
+		if bx != nil || by != nil {
+			// If both args are type params and neither is bound, have them share a binding.
+			if bx != nil && by != nil && *bx == nil && *by == nil {
+				xBindings[ix] = yBindings[iy]
+				return true
+			}
+			// Treat param bindings like original args in what follows.
+			if bx != nil && *bx != nil {
+				x = *bx
+			}
+			if by != nil && *by != nil {
+				y = *by
+			}
+			// If the x param is unbound, bind it to y.
+			if bx != nil && *bx == nil {
+				return bind(bx, y, yBindings)
+			}
+			// If the y param is unbound, bind it to x.
+			if by != nil && *by == nil {
+				return bind(by, x, xBindings)
+			}
+			// Unify the binding of a bound parameter.
+			return uni(x, y)
+		}
+
+		// Neither arg is a type param.
+		if reflect.TypeOf(x) != reflect.TypeOf(y) {
+			return false // type mismatch
+		}
+		switch x := x.(type) {
+		case nil, string, int, symbol:
+			return x == y
+		case *cons:
+			y := y.(*cons)
+			if !uni(x.car, y.car) {
+				return false
+			}
+			if x.cdr == nil {
+				return y.cdr == nil
+			}
+			if y.cdr == nil {
+				return false
+			}
+			return uni(x.cdr, y.cdr)
+		default:
+			panic(fmt.Sprintf("unify %T %T", x, y))
+		}
+	}
+	// At least one param is bound. Unify its binding with the other.
+	return uni(x, y)
 }
 
-// isTypeParam returns the index of the type parameter,
+// typeParamIndex returns the index of the type parameter,
 // if x has the form "(typeparam INTEGER)", otherwise -1.
-func isTypeParam(x sexpr) int {
+func typeParamIndex(x sexpr) int {
 	if x, ok := x.(*cons); ok {
 		if sym, ok := x.car.(symbol); ok && sym == symTypeparam {
-			return 0
+			return x.cdr.(*cons).car.(int)
 		}
 	}
 	return -1
