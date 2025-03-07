@@ -343,7 +343,7 @@ func (act *Action) execOnce() {
 			if err := analysisinternal.ValidateFixes(act.Package.Fset, act.Analyzer, d.SuggestedFixes); err != nil {
 				panic(err)
 			}
-			if !analysisinternal.EnabledCategory(d.Category, analysisflags.Category) {
+			if !analysisinternal.EnabledCategory(analysisflags.Category, d.Category) {
 				return
 			}
 			act.Diagnostics = append(act.Diagnostics, d)

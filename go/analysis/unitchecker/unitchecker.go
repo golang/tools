@@ -385,7 +385,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 						log.Println(err)
 						d.SuggestedFixes = nil
 					}
-					if !analysisinternal.EnabledCategory(d.Category, analysisflags.Category) {
+					if !analysisinternal.EnabledCategory(analysisflags.Category, d.Category) {
 						return
 					}
 					act.diagnostics = append(act.diagnostics, d)

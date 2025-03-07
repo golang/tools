@@ -35,27 +35,27 @@ func TestCanImport(t *testing.T) {
 
 func TestEnabledCategory(t *testing.T) {
 	for _, tt := range []struct {
-		category string
 		filter   string
+		category string
 		want     bool
 	}{
-		{"a", "", true},
+		{"", "a", true},
 		{"a", "a", true},
-		{"a", "-a", false},
-		{"a", "-b", true},
-		{"a", "b", false},
-		{"a", "a,b", true},
-		{"b", "a,b", true},
-		{"a", "-b,a", false},
-		{"b", "-b,a", false},
-		{"a", "a,-a", true}, // negation must be at beginning
-		{"a", "-b,c", true},
-		{"", "b", false},
+		{"-a", "a", false},
+		{"-b", "a", true},
+		{"b", "a", false},
+		{"a,b", "a", true},
+		{"a,b", "b", true},
+		{"-b,a", "a", false},
+		{"-b,a", "b", false},
+		{"a,-a", "a", true}, // negation must be at beginning
+		{"-b,c", "a", true},
+		{"b", "", false},
 		{"", "", true},
 	} {
-		got := EnabledCategory(tt.category, tt.filter)
+		got := EnabledCategory(tt.filter, tt.category)
 		if got != tt.want {
-			t.Errorf("EnabledCategory(%q,%q) = %v, want %v", tt.category, tt.filter, got, tt.want)
+			t.Errorf("EnabledCategory(%q,%q) = %v, want %v", tt.filter, tt.category, got, tt.want)
 		}
 	}
 }

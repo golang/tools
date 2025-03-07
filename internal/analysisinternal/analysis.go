@@ -492,7 +492,7 @@ func CanImport(from, to string) bool {
 // filter. filter is a comma-separated list of categories, optionally prefixed
 // with `-` to disable all provided categories. All categories are enabled with
 // an empty filter.
-func EnabledCategory(category, filter string) bool {
+func EnabledCategory(filter, category string) bool {
 	if filter == "" {
 		return true
 	}
