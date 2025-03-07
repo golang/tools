@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"iter"
 
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/types/typeutil"
@@ -270,7 +271,7 @@ func (g *vtaGraph) numNodes() int {
 	return len(g.idx)
 }
 
-func (g *vtaGraph) successors(x idx) func(yield func(y idx) bool) {
+func (g *vtaGraph) successors(x idx) iter.Seq[idx] {
 	return func(yield func(y idx) bool) {
 		for y := range g.m[x] {
 			if !yield(y) {

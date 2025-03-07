@@ -148,7 +148,9 @@ func TestVtaGraph(t *testing.T) {
 		{n4, 0},
 	} {
 		sl := 0
-		g.successors(g.idx[test.n])(func(_ idx) bool { sl++; return true })
+		for range g.successors(g.idx[test.n]) {
+			sl++
+		}
 		if sl != test.l {
 			t.Errorf("want %d successors; got %d", test.l, sl)
 		}
@@ -163,10 +165,10 @@ func vtaGraphStr(g *vtaGraph) []string {
 	var vgs []string
 	for n := 0; n < g.numNodes(); n++ {
 		var succStr []string
-		g.successors(idx(n))(func(s idx) bool {
+		for s := range g.successors(idx(n)) {
 			succStr = append(succStr, g.node[s].String())
-			return true
-		})
+		}
+
 		sort.Strings(succStr)
 		entry := fmt.Sprintf("%v -> %v", g.node[n].String(), strings.Join(succStr, ", "))
 		vgs = append(vgs, removeModulePrefix(entry))

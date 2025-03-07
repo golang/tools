@@ -42,7 +42,7 @@ func scc(g *vtaGraph) (sccs [][]idx, idxToSccID []int) {
 		*ns = state{pre: nextPre, lowLink: nextPre, onStack: true}
 		stack = append(stack, n)
 
-		g.successors(n)(func(s idx) bool {
+		for s := range g.successors(n) {
 			if ss := &states[s]; ss.pre == 0 {
 				// Analyze successor s that has not been visited yet.
 				doSCC(s)
@@ -52,8 +52,7 @@ func scc(g *vtaGraph) (sccs [][]idx, idxToSccID []int) {
 				// in the current SCC.
 				ns.lowLink = min(ns.lowLink, ss.pre)
 			}
-			return true
-		})
+		}
 
 		// if n is a root node, pop the stack and generate a new SCC.
 		if ns.lowLink == ns.pre {
@@ -166,10 +165,9 @@ func propagate(graph *vtaGraph, canon *typeutil.Map) propTypeMap {
 	for i := len(sccs) - 1; i >= 0; i-- {
 		nextSccs := make(map[int]empty)
 		for _, n := range sccs[i] {
-			graph.successors(n)(func(succ idx) bool {
+			for succ := range graph.successors(n) {
 				nextSccs[idxToSccID[succ]] = empty{}
-				return true
-			})
+			}
 		}
 		// Propagate types to all successor SCCs.
 		for nextScc := range nextSccs {

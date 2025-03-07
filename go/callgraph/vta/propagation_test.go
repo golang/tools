@@ -123,17 +123,14 @@ func sccEqual(sccs1 []string, sccs2 []string) bool {
 //
 //	for every edge x -> y in g, nodeToScc[x] > nodeToScc[y]
 func isRevTopSorted(g *vtaGraph, idxToScc []int) bool {
-	result := true
-	for n := 0; n < len(idxToScc); n++ {
-		g.successors(idx(n))(func(s idx) bool {
+	for n := range idxToScc {
+		for s := range g.successors(idx(n)) {
 			if idxToScc[n] < idxToScc[s] {
-				result = false
 				return false
 			}
-			return true
-		})
+		}
 	}
-	return result
+	return true
 }
 
 func sccMapsConsistent(sccs [][]idx, idxToSccID []int) bool {

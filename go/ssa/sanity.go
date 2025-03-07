@@ -529,12 +529,10 @@ func (s *sanity) checkFunction(fn *Function) bool {
 	// Build the set of valid referrers.
 	s.instrs = make(map[Instruction]unit)
 
-	// TODO: switch to range-over-func when x/tools updates to 1.23.
 	// instrs are the instructions that are present in the function.
-	fn.instrs()(func(instr Instruction) bool {
+	for instr := range fn.instrs() {
 		s.instrs[instr] = unit{}
-		return true
-	})
+	}
 
 	// Check all Locals allocations appear in the function instruction.
 	for i, l := range fn.Locals {

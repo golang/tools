@@ -13,6 +13,7 @@ import (
 	"go/token"
 	"go/types"
 	"io"
+	"iter"
 	"os"
 	"strings"
 
@@ -187,8 +188,7 @@ func targetedBlock(f *Function, tok token.Token) *BasicBlock {
 }
 
 // instrs returns an iterator that returns each reachable instruction of the SSA function.
-// TODO: return an iter.Seq once x/tools is on 1.23
-func (f *Function) instrs() func(yield func(i Instruction) bool) {
+func (f *Function) instrs() iter.Seq[Instruction] {
 	return func(yield func(i Instruction) bool) {
 		for _, block := range f.Blocks {
 			for _, instr := range block.Instrs {
