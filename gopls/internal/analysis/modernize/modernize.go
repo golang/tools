@@ -12,6 +12,7 @@ import (
 	"go/types"
 	"iter"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -36,6 +37,15 @@ var Analyzer = &analysis.Analyzer{
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize",
 }
 
+// Stopgap until general solution in CL 655555 lands. A change to the
+// cmd/vet CLI requires a proposal whereas a change to an analyzer's
+// flag set does not.
+var category string
+
+func init() {
+	Analyzer.Flags.StringVar(&category, "category", "", "comma-separated list of categories to apply; with a leading '-', a list of categories to ignore")
+}
+
 func run(pass *analysis.Pass) (any, error) {
 	// Decorate pass.Report to suppress diagnostics in generated files.
 	//
@@ -54,6 +64,10 @@ func run(pass *analysis.Pass) (any, error) {
 		pass.Report = func(diag analysis.Diagnostic) {
 			if diag.Category == "" {
 				panic("Diagnostic.Category is unset")
+			}
+			// TODO(adonovan): stopgap until CL 655555 lands.
+			if !enabledCategory(category, diag.Category) {
+				return
 			}
 			if _, ok := generated[pass.Fset.File(diag.Pos)]; ok {
 				return // skip checking if it's generated code
@@ -76,14 +90,7 @@ func run(pass *analysis.Pass) (any, error) {
 	sortslice(pass)
 	testingContext(pass)
 
-	// TODO(adonovan):
-	// - more modernizers here; see #70815.
-	// - opt: interleave these micro-passes within a single inspection.
-	// - solve the "duplicate import" problem (#68765) when a number of
-	//   fixes in the same file are applied in parallel and all add
-	//   the same import. The tests exhibit the problem.
-	// - should all diagnostics be of the form "x can be modernized by y"
-	//   or is that a foolish consistency?
+	// TODO(adonovan): opt: interleave these micro-passes within a single inspection.
 
 	return nil, nil
 }
@@ -159,3 +166,22 @@ var (
 	byteSliceType  = types.NewSlice(types.Typ[types.Byte])
 	omitemptyRegex = regexp.MustCompile(`(?:^json| json):"[^"]*(,omitempty)(?:"|,[^"]*")\s?`)
 )
+
+// enabledCategory reports whether a given category is enabled by the specified
+// filter. filter is a comma-separated list of categories, optionally prefixed
+// with `-` to disable all provided categories. All categories are enabled with
+// an empty filter.
+//
+// (Will be superseded by https://go.dev/cl/655555.)
+func enabledCategory(filter, category string) bool {
+	if filter == "" {
+		return true
+	}
+	// negation must be specified at the start
+	filter, exclude := strings.CutPrefix(filter, "-")
+	filters := strings.Split(filter, ",")
+	if slices.Contains(filters, category) {
+		return !exclude
+	}
+	return exclude
+}
