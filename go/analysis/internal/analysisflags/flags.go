@@ -75,7 +75,7 @@ func Parse(analyzers []*analysis.Analyzer, multi bool) []*analysis.Analyzer {
 	// flags common to all checkers
 	flag.BoolVar(&JSON, "json", JSON, "emit JSON output")
 	flag.IntVar(&Context, "c", Context, `display offending line with this many lines of context`)
-	flag.StringVar(&Category, "category", Category, "filter diagnostics to comma-separated list of categories. a list prefixed with - excludes the listed categories")
+	flag.StringVar(&Category, "category", Category, "report only diagnostics of the specified categories (a comma-separated list); with a leading '-', discard diagnostics of the specified categories.")
 
 	// Add shims for legacy vet flags to enable existing
 	// scripts that run vet to continue to work.
