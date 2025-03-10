@@ -589,13 +589,15 @@ func init() {
 				checkMatch(t, true, report, `CALL	runtime.printlock`)
 				checkMatch(t, true, report, `CALL	runtime.printstring`)
 				checkMatch(t, true, report, `CALL	runtime.printunlock`)
-				checkMatch(t, true, report, `CALL	example.com/a.f.deferwrap1`)
+				checkMatch(t, true, report, `CALL	example.com/a.f.deferwrap`)
 				checkMatch(t, true, report, `RET`)
 				checkMatch(t, true, report, `CALL	runtime.morestack_noctxt`)
 			}
 
 			// Nested functions are also shown.
-			checkMatch(t, true, report, `TEXT.*example.com/a.f.deferwrap1`)
+			//
+			// The condition here was relaxed to unblock go.dev/cl/639515.
+			checkMatch(t, true, report, `example.com/a.f.deferwrap`)
 
 			// But other functions are not.
 			checkMatch(t, false, report, `TEXT.*example.com/a.g`)
