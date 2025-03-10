@@ -160,44 +160,6 @@ GOPATH: %s
 		}
 		return
 	}
-
-	gopath := firstGoPath()
-	if gopath == "" {
-		log.Fatal("Your GOPATH is not set, please set it")
-	}
-
-	rightdir := filepath.Join(gopath, "src", "golang.org", "x", *repo)
-	if !strings.HasPrefix(wd, rightdir) {
-		dirExists, err := exists(rightdir)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if !dirExists {
-			log.Fatalf("The repo you want to work on is currently not on your system.\n"+
-				"Run %q to obtain this repo\n"+
-				"then go to the directory %q\n",
-				"go get -d golang.org/x/"+*repo, rightdir)
-		}
-		log.Fatalf("Your current directory is:%q\n"+
-			"Working on golang/x/%v requires you be in %q\n",
-			wd, *repo, rightdir)
-	}
-}
-
-func firstGoPath() string {
-	list := filepath.SplitList(build.Default.GOPATH)
-	if len(list) < 1 {
-		return ""
-	}
-	return list[0]
-}
-
-func exists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return true, err
 }
 
 func inGoPath(wd string) bool {
