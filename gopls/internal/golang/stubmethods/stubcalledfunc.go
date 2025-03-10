@@ -51,7 +51,7 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, s
 			// If recvExpr is a package name, compiler error would be
 			// e.g., "undefined: http.bar", thus will not hit this code path.
 			recvExpr := s.X
-			recvType, pointer := concreteType(recvExpr, info)
+			recvType, pointer := concreteType(info, recvExpr)
 
 			if recvType == nil || recvType.Obj().Pkg() == nil {
 				return nil
