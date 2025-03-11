@@ -57,6 +57,7 @@ func NewIndex(files []*parsego.File, info *types.Info) *Index {
 	b := &indexBuilder{
 		fileIndex: make(map[protocol.DocumentURI]int),
 		subNames:  make(map[string]int),
+		visited:   make(map[*types.Func]bool),
 	}
 	return b.build(files, info)
 }
@@ -101,6 +102,7 @@ func (b *indexBuilder) build(files []*parsego.File, info *types.Info) *Index {
 			}
 
 			b.Files[i].Tests = append(b.Files[i].Tests, t)
+			b.visited[obj] = true
 
 			// Check for subtests
 			if isTest {
@@ -168,27 +170,48 @@ func (b *indexBuilder) findSubtests(parent gobTest, typ *ast.FuncType, body *ast
 		t.Location.Range, _ = file.NodeRange(call)
 		tests = append(tests, t)
 
-		if typ, body := findFunc(files, info, body, call.Args[1]); typ != nil {
-			tests = append(tests, b.findSubtests(t, typ, body, file, files, info)...)
+		fn, typ, body := findFunc(files, info, body, call.Args[1])
+		if typ == nil {
+			continue
 		}
+
+		// Function literals don't have an associated object
+		if fn == nil {
+			tests = append(tests, b.findSubtests(t, typ, body, file, files, info)...)
+			continue
+		}
+
+		// Never recurse if the second argument is a top-level test function
+		if isTest, _ := isTestOrExample(fn); isTest {
+			continue
+		}
+
+		// Don't recurse into functions that have already been visited
+		if b.visited[fn] {
+			continue
+		}
+
+		b.visited[fn] = true
+		tests = append(tests, b.findSubtests(t, typ, body, file, files, info)...)
 	}
 	return tests
 }
 
 // findFunc finds the type and body of the given expr, which may be a function
-// literal or reference to a declared function.
-//
-// If no function is found, findFunc returns (nil, nil).
-func findFunc(files []*parsego.File, info *types.Info, body *ast.BlockStmt, expr ast.Expr) (*ast.FuncType, *ast.BlockStmt) {
+// literal or reference to a declared function. If the expression is a declared
+// function, findFunc returns its [types.Func]. If the expression is a function
+// literal, findFunc returns nil for the first return value. If no function is
+// found, findFunc returns (nil, nil, nil).
+func findFunc(files []*parsego.File, info *types.Info, body *ast.BlockStmt, expr ast.Expr) (*types.Func, *ast.FuncType, *ast.BlockStmt) {
 	var obj types.Object
 	switch arg := expr.(type) {
 	case *ast.FuncLit:
-		return arg.Type, arg.Body
+		return nil, arg.Type, arg.Body
 
 	case *ast.Ident:
 		obj = info.ObjectOf(arg)
 		if obj == nil {
-			return nil, nil
+			return nil, nil, nil
 		}
 
 	case *ast.SelectorExpr:
@@ -198,12 +221,12 @@ func findFunc(files []*parsego.File, info *types.Info, body *ast.BlockStmt, expr
 		// complex. However, those cases should be rare.
 		sel, ok := info.Selections[arg]
 		if !ok {
-			return nil, nil
+			return nil, nil, nil
 		}
 		obj = sel.Obj()
 
 	default:
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	if v, ok := obj.(*types.Var); ok {
@@ -211,7 +234,7 @@ func findFunc(files []*parsego.File, info *types.Info, body *ast.BlockStmt, expr
 		// the file), but that doesn't account for assignment. If the variable
 		// is assigned multiple times, we could easily get the wrong one.
 		_, _ = v, body
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	for _, file := range files {
@@ -228,11 +251,11 @@ func findFunc(files []*parsego.File, info *types.Info, body *ast.BlockStmt, expr
 			}
 
 			if info.ObjectOf(decl.Name) == obj {
-				return decl.Type, decl.Body
+				return obj.(*types.Func), decl.Type, decl.Body
 			}
 		}
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 // isTestOrExample reports whether the given func is a testing func or an
@@ -308,6 +331,7 @@ type indexBuilder struct {
 	gobPackage
 	fileIndex map[protocol.DocumentURI]int
 	subNames  map[string]int
+	visited   map[*types.Func]bool
 }
 
 // -- serial format of index --

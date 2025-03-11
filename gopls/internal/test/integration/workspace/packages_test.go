@@ -433,6 +433,66 @@ func (X) SubtestMethod(t *testing.T) {
 	})
 }
 
+func TestRecursiveSubtest(t *testing.T) {
+	const files = `
+-- go.mod --
+module foo
+
+-- foo_test.go --
+package foo
+
+import "testing"
+
+func TestFoo(t *testing.T) { t.Run("Foo", TestFoo) }
+func TestBar(t *testing.T) { t.Run("Foo", TestFoo) }
+
+func TestBaz(t *testing.T) {
+	var sub func(t *testing.T)
+	sub = func(t *testing.T) { t.Run("Sub", sub) }
+	t.Run("Sub", sub)
+}
+`
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		checkPackages(t, env, []protocol.DocumentURI{env.Editor.DocumentURI("foo_test.go")}, false, command.NeedTests, []command.Package{
+			{
+				Path:       "foo",
+				ForTest:    "foo",
+				ModulePath: "foo",
+				TestFiles: []command.TestFile{
+					{
+						URI: env.Editor.DocumentURI("foo_test.go"),
+						Tests: []command.TestCase{
+							{Name: "TestFoo"},
+							{Name: "TestFoo/Foo"},
+							{Name: "TestBar"},
+							{Name: "TestBar/Foo"},
+							{Name: "TestBaz"},
+							{Name: "TestBaz/Sub"},
+						},
+					},
+				},
+			},
+		}, map[string]command.Module{
+			"foo": {
+				Path:  "foo",
+				GoMod: env.Editor.DocumentURI("go.mod"),
+			},
+		}, []string{
+			`func TestFoo(t *testing.T) { t.Run("Foo", TestFoo) }`,
+			`t.Run("Foo", TestFoo)`,
+			`func TestBar(t *testing.T) { t.Run("Foo", TestFoo) }`,
+			`t.Run("Foo", TestFoo)`,
+			`func TestBaz(t *testing.T) {
+	var sub func(t *testing.T)
+	sub = func(t *testing.T) { t.Run("Sub", sub) }
+	t.Run("Sub", sub)
+}`,
+			`t.Run("Sub", sub)`,
+		})
+	})
+}
+
 func checkPackages(t testing.TB, env *Env, files []protocol.DocumentURI, recursive bool, mode command.PackagesMode, wantPkg []command.Package, wantModule map[string]command.Module, wantSource []string) {
 	t.Helper()
 
