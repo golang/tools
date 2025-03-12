@@ -352,7 +352,7 @@ func unify(x, y sexpr) bool {
 		if c, ok := x.(*cons); ok {
 			return max(maxTypeParam(c.car), maxTypeParam(c.cdr))
 		}
-		return 0
+		return -1
 	}
 
 	// xBindings[i] is the binding for type parameter #i in x, and similarly for y.

@@ -2,80 +2,22 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package fingerprint_test
+package golang
 
 import (
 	"go/types"
 	"testing"
 
-	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/gopls/internal/util/fingerprint"
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
 
-// Test runs the fingerprint encoder, decoder, and printer
-// on the types of all package-level symbols in gopls, and ensures
-// that parse+print is lossless.
-func Test(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping slow test")
-	}
+// TODO(jba): test unify with some params already bound.
 
-	cfg := &packages.Config{Mode: packages.NeedTypes}
-	pkgs, err := packages.Load(cfg, "std", "golang.org/x/tools/gopls/...")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Record the fingerprint of each logical type (equivalence
-	// class of types.Types) and assert that they are all equal.
-	// (Non-tricky types only.)
-	var fingerprints typeutil.Map
-
-	for _, pkg := range pkgs {
-		switch pkg.Types.Path() {
-		case "unsafe", "builtin":
-			continue
-		}
-		scope := pkg.Types.Scope()
-		for _, name := range scope.Names() {
-			obj := scope.Lookup(name)
-			typ := obj.Type()
-
-			if basic, ok := typ.(*types.Basic); ok &&
-				basic.Info()&types.IsUntyped != 0 {
-				continue // untyped constant
-			}
-
-			fp, tricky := fingerprint.Encode(typ) // check Type encoder doesn't panic
-
-			// All equivalent (non-tricky) types have the same fingerprint.
-			if !tricky {
-				if prevfp, ok := fingerprints.At(typ).(string); !ok {
-					fingerprints.Set(typ, fp)
-				} else if fp != prevfp {
-					t.Errorf("inconsistent fingerprints for type %v:\n- old: %s\n- new: %s",
-						typ, fp, prevfp)
-				}
-			}
-
-			tree := fingerprint.Parse(fp) // check parser doesn't panic
-			fp2 := tree.String()          // check formatter doesn't pannic
-
-			// A parse+print round-trip should be lossless.
-			if fp != fp2 {
-				t.Errorf("%s: %v: parse+print changed fingerprint:\n"+
-					"was: %s\ngot: %s\ntype: %v",
-					pkg.Fset.Position(obj.Pos()), obj, fp, fp2, typ)
-			}
-		}
-	}
-}
-
-// TestMatches exercises the matching algorithm for generic types.
-func TestMatches(t *testing.T) {
+func TestUnifyEmptyInfo(t *testing.T) {
+	// Check unify with no initial bound type params.
+	// This is currently the only case in use.
+	// Test cases from TestMatches in gopls/internal/util/fingerprint/fingerprint_test.go.
 	const src = `
 -- go.mod --
 module example.com
@@ -120,7 +62,7 @@ func E3(int8) uint32
 func F1[T any](T) { panic(0) }
 func F2[T any](*T) { panic(0) }
 func F3[T any](T, T) { panic(0) }
-func F4[U any](U, *U) { panic(0) }
+func F4[U any](U, *U) {panic(0) }
 func F5[T, U any](T, U, U) { panic(0) }
 func F6[T any](T, int, T) { panic(0) }
 func F7[T any](bool, T, T) { panic(0) }
@@ -153,7 +95,7 @@ func F9[V any](V, *V, V) { panic(0) }
 		{"DString", "DInt", "", false}, // different instantiations of Named
 		{"E1", "E2", "", true},         // byte and rune are just aliases
 		{"E2", "E3", "", false},
-		// The following tests cover all of the type param cases of unify.
+		// // The following tests cover all of the type param cases of unify.
 		{"F1", "F2", "", true},  // F1[*int] = F2[int]
 		{"F3", "F4", "", false}, // would require U identical to *U, prevented by occur check
 		{"F5", "F6", "", true},  // one param is bound, the other is not
@@ -181,13 +123,7 @@ func F9[V any](V, *V, V) { panic(0) }
 			a := lookup(sa)
 			b := lookup(sb)
 
-			afp, _ := fingerprint.Encode(a)
-			bfp, _ := fingerprint.Encode(b)
-
-			atree := fingerprint.Parse(afp)
-			btree := fingerprint.Parse(bfp)
-
-			got := fingerprint.Matches(atree, btree)
+			got := unify(a, b, nil)
 			if got != want {
 				t.Errorf("a=%s b=%s method=%s: unify returned %t for these inputs:\n- %s\n- %s",
 					sa, sb, test.method, got, a, b)
@@ -195,9 +131,9 @@ func F9[V any](V, *V, V) { panic(0) }
 		}
 
 		check(test.a, test.b, test.want)
-		// Matches is symmetric
+		// unify is symmetric
 		check(test.b, test.a, test.want)
-		// Matches is reflexive
+		// unify is reflexive
 		check(test.a, test.a, true)
 		check(test.b, test.b, true)
 	}

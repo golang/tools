@@ -24,3 +24,24 @@ func Contains[T comparable](seq iter.Seq[T], x T) bool {
 	}
 	return false
 }
+
+// Every reports whether every pred(t) for t in seq returns true,
+// stopping at the first false element.
+func Every[T any](seq iter.Seq[T], pred func(T) bool) bool {
+	for t := range seq {
+		if !pred(t) {
+			return false
+		}
+	}
+	return true
+}
+
+// Any reports whether any pred(t) for t in seq returns true.
+func Any[T any](seq iter.Seq[T], pred func(T) bool) bool {
+	for t := range seq {
+		if pred(t) {
+			return true
+		}
+	}
+	return false
+}

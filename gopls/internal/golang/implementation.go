@@ -11,6 +11,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"iter"
 	"reflect"
 	"slices"
 	"sort"
@@ -26,6 +27,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/astutil/edge"
@@ -497,133 +499,306 @@ func concreteImplementsIntf(msets *typeutil.MethodSetCache, x, y types.Type) boo
 		if !ok {
 			return false // x lacks a method of y
 		}
-		if !unify(xm.Signature(), ym.Signature()) {
+		if !unify(xm.Signature(), ym.Signature(), nil) {
 			return false // signatures do not match
 		}
 	}
 	return true // all methods found
 }
 
-// unify reports whether the types of x and y match, allowing free
-// type parameters to stand for anything at all, without regard to
-// consistency of substitutions.
+// unify reports whether the types of x and y match.
 //
-// TODO(adonovan): implement proper unification (#63982), finding the
-// most general unifier across all the interface methods.
+// If unifier is nil, unify reports only whether it succeeded.
+// If unifier is non-nil, it is populated with the values
+// of type parameters determined during a successful unification.
+// If unification succeeds without binding a type parameter, that parameter
+// will not be present in the map.
 //
-// See also: unify in cache/methodsets/fingerprint, which uses a
-// similar ersatz unification approach on type fingerprints, for
-// the global index.
-func unify(x, y types.Type) bool {
-	x = types.Unalias(x)
-	y = types.Unalias(y)
+// On entry, the unifier's contents are treated as the values of already-bound type
+// parameters, constraining the unification.
+//
+// For example, if unifier is an empty (not nil) map on entry, then the types
+//
+//	func[T any](T, int)
+//
+// and
+//
+//	func[U any](bool, U)
+//
+// will unify, with T=bool and U=int.
+// That is, the contents of unifier after unify returns will be
+//
+//	{T: bool, U: int}
+//
+// where "T" is the type parameter T and "bool" is the basic type for bool.
+//
+// But if unifier is {T: int} is int on entry, then unification will fail, because T
+// does not unify with bool.
+//
+// See also: unify in cache/methodsets/fingerprint, which implements
+// unification for type fingerprints, for the global index.
+//
+// BUG: literal interfaces are not handled properly. But this function is currently
+// used only for signatures, where such types are very rare.
+func unify(x, y types.Type, unifier map[*types.TypeParam]types.Type) bool {
+	// bindings[tp] is the binding for type parameter tp.
+	// Although type parameters are nominally bound to types, each bindings[tp]
+	// is a pointer to a type, so unbound variables that unify can share a binding.
+	bindings := map[*types.TypeParam]*types.Type{}
 
-	// For now, allow a type parameter to match anything,
-	// without regard to consistency of substitutions.
-	if is[*types.TypeParam](x) || is[*types.TypeParam](y) {
+	// Bindings is initialized with pointers to the provided types.
+	for tp, t := range unifier {
+		bindings[tp] = &t
+	}
+
+	// bindingFor returns the *types.Type in bindings for tp if tp is not nil,
+	// creating one if needed.
+	bindingFor := func(tp *types.TypeParam) *types.Type {
+		if tp == nil {
+			return nil
+		}
+		b := bindings[tp]
+		if b == nil {
+			b = new(types.Type)
+			bindings[tp] = b
+		}
+		return b
+	}
+
+	// bind sets b to t if b does not occur in t.
+	bind := func(b *types.Type, t types.Type) bool {
+		for tp := range typeParams(t) {
+			if b == bindings[tp] {
+				return false // failed "occurs" check
+			}
+		}
+		*b = t
 		return true
 	}
 
-	if reflect.TypeOf(x) != reflect.TypeOf(y) {
-		return false // mismatched types
+	// uni performs the actual unification.
+	var uni func(x, y types.Type) bool
+	uni = func(x, y types.Type) bool {
+		x = types.Unalias(x)
+		y = types.Unalias(y)
+
+		tpx, _ := x.(*types.TypeParam)
+		tpy, _ := y.(*types.TypeParam)
+		if tpx != nil || tpy != nil {
+			bx := bindingFor(tpx)
+			by := bindingFor(tpy)
+
+			// If both args are type params and neither is bound, have them share a binding.
+			if bx != nil && by != nil && *bx == nil && *by == nil {
+				// Arbitrarily give y's binding to x.
+				bindings[tpx] = by
+				return true
+			}
+			// Treat param bindings like original args in what follows.
+			if bx != nil && *bx != nil {
+				x = *bx
+			}
+			if by != nil && *by != nil {
+				y = *by
+			}
+			// If the x param is unbound, bind it to y.
+			if bx != nil && *bx == nil {
+				return bind(bx, y)
+			}
+			// If the y param is unbound, bind it to x.
+			if by != nil && *by == nil {
+				return bind(by, x)
+			}
+			// Unify the binding of a bound parameter.
+			return uni(x, y)
+		}
+
+		// Neither arg is a type param.
+
+		if reflect.TypeOf(x) != reflect.TypeOf(y) {
+			return false // mismatched types
+		}
+
+		switch x := x.(type) {
+		case *types.Array:
+			y := y.(*types.Array)
+			return x.Len() == y.Len() &&
+				uni(x.Elem(), y.Elem())
+
+		case *types.Basic:
+			y := y.(*types.Basic)
+			return x.Kind() == y.Kind()
+
+		case *types.Chan:
+			y := y.(*types.Chan)
+			return x.Dir() == y.Dir() &&
+				uni(x.Elem(), y.Elem())
+
+		case *types.Interface:
+			y := y.(*types.Interface)
+			// TODO(adonovan,jba): fix: for correctness, we must check
+			// that both interfaces have the same set of methods
+			// modulo type parameters, while avoiding the risk of
+			// unbounded interface recursion.
+			//
+			// Since non-empty interface literals are vanishingly
+			// rare in methods signatures, we ignore this for now.
+			// If more precision is needed we could compare method
+			// names and arities, still without full recursion.
+			return x.NumMethods() == y.NumMethods()
+
+		case *types.Map:
+			y := y.(*types.Map)
+			return uni(x.Key(), y.Key()) &&
+				uni(x.Elem(), y.Elem())
+
+		case *types.Named:
+			y := y.(*types.Named)
+			if x.Origin() != y.Origin() {
+				return false // different named types
+			}
+			xtargs := x.TypeArgs()
+			ytargs := y.TypeArgs()
+			if xtargs.Len() != ytargs.Len() {
+				return false // arity error (ill-typed)
+			}
+			for i := range xtargs.Len() {
+				if !uni(xtargs.At(i), ytargs.At(i)) {
+					return false // mismatched type args
+				}
+			}
+			return true
+
+		case *types.Pointer:
+			y := y.(*types.Pointer)
+			return uni(x.Elem(), y.Elem())
+
+		case *types.Signature:
+			y := y.(*types.Signature)
+			return x.Variadic() == y.Variadic() &&
+				uni(x.Params(), y.Params()) &&
+				uni(x.Results(), y.Results())
+
+		case *types.Slice:
+			y := y.(*types.Slice)
+			return uni(x.Elem(), y.Elem())
+
+		case *types.Struct:
+			y := y.(*types.Struct)
+			if x.NumFields() != y.NumFields() {
+				return false
+			}
+			for i := range x.NumFields() {
+				xf := x.Field(i)
+				yf := y.Field(i)
+				if xf.Embedded() != yf.Embedded() ||
+					xf.Name() != yf.Name() ||
+					x.Tag(i) != y.Tag(i) ||
+					!xf.Exported() && xf.Pkg() != yf.Pkg() ||
+					!uni(xf.Type(), yf.Type()) {
+					return false
+				}
+			}
+			return true
+
+		case *types.Tuple:
+			y := y.(*types.Tuple)
+			if x.Len() != y.Len() {
+				return false
+			}
+			for i := range x.Len() {
+				if !uni(x.At(i).Type(), y.At(i).Type()) {
+					return false
+				}
+			}
+			return true
+
+		default: // incl. *Union, *TypeParam
+			panic(fmt.Sprintf("unexpected Type %#v", x))
+		}
 	}
 
-	switch x := x.(type) {
-	case *types.Array:
-		y := y.(*types.Array)
-		return x.Len() == y.Len() &&
-			unify(x.Elem(), y.Elem())
+	if !uni(x, y) {
+		return false
+	}
 
-	case *types.Basic:
-		y := y.(*types.Basic)
-		return x.Kind() == y.Kind()
-
-	case *types.Chan:
-		y := y.(*types.Chan)
-		return x.Dir() == y.Dir() &&
-			unify(x.Elem(), y.Elem())
-
-	case *types.Interface:
-		y := y.(*types.Interface)
-		// TODO(adonovan): fix: for correctness, we must check
-		// that both interfaces have the same set of methods
-		// modulo type parameters, while avoiding the risk of
-		// unbounded interface recursion.
-		//
-		// Since non-empty interface literals are vanishingly
-		// rare in methods signatures, we ignore this for now.
-		// If more precision is needed we could compare method
-		// names and arities, still without full recursion.
-		return x.NumMethods() == y.NumMethods()
-
-	case *types.Map:
-		y := y.(*types.Map)
-		return unify(x.Key(), y.Key()) &&
-			unify(x.Elem(), y.Elem())
-
-	case *types.Named:
-		y := y.(*types.Named)
-		if x.Origin() != y.Origin() {
-			return false // different named types
+	// Populate the input map with the resulting types.
+	if unifier != nil {
+		for tparam, tptr := range bindings {
+			unifier[tparam] = *tptr
 		}
-		xtargs := x.TypeArgs()
-		ytargs := y.TypeArgs()
-		if xtargs.Len() != ytargs.Len() {
-			return false // arity error (ill-typed)
-		}
-		for i := range xtargs.Len() {
-			if !unify(xtargs.At(i), ytargs.At(i)) {
-				return false // mismatched type args
+	}
+	return true
+}
+
+// typeParams yields all the free type parameters within t that are relevant for
+// unification.
+func typeParams(t types.Type) iter.Seq[*types.TypeParam] {
+
+	return func(yield func(*types.TypeParam) bool) {
+		seen := map[*types.TypeParam]bool{} // yield each type param only once
+
+		// tps(t) yields each TypeParam in t and returns false to stop.
+		var tps func(types.Type) bool
+		tps = func(t types.Type) bool {
+			t = types.Unalias(t)
+
+			switch t := t.(type) {
+			case *types.TypeParam:
+				if seen[t] {
+					return true
+				}
+				seen[t] = true
+				return yield(t)
+
+			case *types.Basic:
+				return true
+
+			case *types.Array:
+				return tps(t.Elem())
+
+			case *types.Chan:
+				return tps(t.Elem())
+
+			case *types.Interface:
+				// TODO(jba): implement.
+				return true
+
+			case *types.Map:
+				return tps(t.Key()) && tps(t.Elem())
+
+			case *types.Named:
+				if t.Origin() == t {
+					// generic type: look at type params
+					return moreiters.Every(t.TypeParams().TypeParams(),
+						func(tp *types.TypeParam) bool { return tps(tp) })
+				}
+				// instantiated type: look at type args
+				return moreiters.Every(t.TypeArgs().Types(), tps)
+
+			case *types.Pointer:
+				return tps(t.Elem())
+
+			case *types.Signature:
+				return tps(t.Params()) && tps(t.Results())
+
+			case *types.Slice:
+				return tps(t.Elem())
+
+			case *types.Struct:
+				return moreiters.Every(t.Fields(),
+					func(v *types.Var) bool { return tps(v.Type()) })
+
+			case *types.Tuple:
+				return moreiters.Every(t.Variables(),
+					func(v *types.Var) bool { return tps(v.Type()) })
+
+			default: // incl. *Union
+				panic(fmt.Sprintf("unexpected Type %#v", t))
 			}
 		}
-		return true
 
-	case *types.Pointer:
-		y := y.(*types.Pointer)
-		return unify(x.Elem(), y.Elem())
-
-	case *types.Signature:
-		y := y.(*types.Signature)
-		return x.Variadic() == y.Variadic() &&
-			unify(x.Params(), y.Params()) &&
-			unify(x.Results(), y.Results())
-
-	case *types.Slice:
-		y := y.(*types.Slice)
-		return unify(x.Elem(), y.Elem())
-
-	case *types.Struct:
-		y := y.(*types.Struct)
-		if x.NumFields() != y.NumFields() {
-			return false
-		}
-		for i := range x.NumFields() {
-			xf := x.Field(i)
-			yf := y.Field(i)
-			if xf.Embedded() != yf.Embedded() ||
-				xf.Name() != yf.Name() ||
-				x.Tag(i) != y.Tag(i) ||
-				!xf.Exported() && xf.Pkg() != yf.Pkg() ||
-				!unify(xf.Type(), yf.Type()) {
-				return false
-			}
-		}
-		return true
-
-	case *types.Tuple:
-		y := y.(*types.Tuple)
-		if x.Len() != y.Len() {
-			return false
-		}
-		for i := range x.Len() {
-			if !unify(x.At(i).Type(), y.At(i).Type()) {
-				return false
-			}
-		}
-		return true
-
-	default: // incl. *Union, *TypeParam
-		panic(fmt.Sprintf("unexpected Type %#v", x))
+		tps(t)
 	}
 }
 
@@ -822,7 +997,7 @@ func funcUses(pkg *cache.Package, t types.Type) ([]protocol.Location, error) {
 			if ftyp == nil {
 				continue // missing type information
 			}
-			if unify(t, ftyp) {
+			if unify(t, ftyp, nil) {
 				loc, err := pgf.PosLocation(pos, end)
 				if err != nil {
 					return nil, err
@@ -856,7 +1031,7 @@ func funcDefs(pkg *cache.Package, t types.Type) ([]protocol.Location, error) {
 			if ftyp == nil {
 				continue // missing type information
 			}
-			if unify(t, ftyp) {
+			if unify(t, ftyp, nil) {
 				pos := fn.Pos()
 				loc, err := pgf.PosLocation(pos, pos+token.Pos(len("func")))
 				if err != nil {
