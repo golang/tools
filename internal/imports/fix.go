@@ -585,7 +585,7 @@ func getFixesWithSource(ctx context.Context, fset *token.FileSet, f *ast.File, f
 	srcDir := filepath.Dir(abs)
 
 	if logf != nil {
-		logf("fixImports(filename=%q), srcDir=%q ...", filename, abs, srcDir)
+		logf("fixImports(filename=%q), srcDir=%q ...", filename, srcDir)
 	}
 
 	// First pass: looking only at f, and using the naive algorithm to
