@@ -77,3 +77,24 @@ func issue71847d() {
 	for i := 0; i < limit2; i++ { // want "for loop can be modernized using range over int"
 	}
 }
+
+func issue72726() {
+	var n, kd int
+	for i := 0; i < n; i++ { // want "for loop can be modernized using range over int"
+		// nope: j will be invisible once it's refactored to 'for j := range min(n-j, kd+1)'
+		for j := 0; j < min(n-j, kd+1); j++ { // nope
+			_, _ = i, j
+		}
+	}
+
+	for i := 0; i < i; i++ { // nope
+	}
+
+	var i int
+	for i = 0; i < i/2; i++ { // nope
+	}
+
+	var arr []int
+	for i = 0; i < arr[i]; i++ { // nope
+	}
+}

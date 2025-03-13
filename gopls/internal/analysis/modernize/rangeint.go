@@ -62,7 +62,15 @@ func rangeint(pass *analysis.Pass) {
 					compare.Op == token.LSS &&
 					equalSyntax(compare.X, init.Lhs[0]) {
 					// Have: for i = 0; i < limit; ... {}
+
 					limit := compare.Y
+					curLimit, _ := curLoop.FindNode(limit)
+					// Don't offer a fix if the limit expression depends on the loop index.
+					for cur := range curLimit.Preorder((*ast.Ident)(nil)) {
+						if cur.Node().(*ast.Ident).Name == index.Name {
+							continue nextLoop
+						}
+					}
 
 					// Skip loops up to b.N in benchmarks; see [bloop].
 					if sel, ok := limit.(*ast.SelectorExpr); ok &&
