@@ -15,6 +15,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
+	"iter"
 	pathpkg "path"
 	"slices"
 	"strings"
@@ -607,4 +608,25 @@ Outer:
 		edit.End++
 	}
 	return []analysis.TextEdit{edit}
+}
+
+// Comments returns an iterator over the comments overlapping the specified interval.
+func Comments(file *ast.File, start, end token.Pos) iter.Seq[*ast.Comment] {
+	// TODO(adonovan): optimize use binary O(log n) instead of linear O(n) search.
+	return func(yield func(*ast.Comment) bool) {
+		for _, cg := range file.Comments {
+			for _, co := range cg.List {
+				if co.Pos() > end {
+					return
+				}
+				if co.End() < start {
+					continue
+				}
+
+				if !yield(co) {
+					return
+				}
+			}
+		}
+	}
 }

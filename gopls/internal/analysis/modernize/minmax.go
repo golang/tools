@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -32,7 +33,7 @@ func minmax(pass *analysis.Pass) {
 
 	// check is called for all statements of this form:
 	//   if a < b { lhs = rhs }
-	check := func(curIfStmt cursor.Cursor, compare *ast.BinaryExpr) {
+	check := func(file *ast.File, curIfStmt cursor.Cursor, compare *ast.BinaryExpr) {
 		var (
 			ifStmt  = curIfStmt.Node().(*ast.IfStmt)
 			tassign = ifStmt.Body.List[0].(*ast.AssignStmt)
@@ -43,6 +44,14 @@ func minmax(pass *analysis.Pass) {
 			scope   = pass.TypesInfo.Scopes[ifStmt.Body]
 			sign    = isInequality(compare.Op)
 		)
+
+		allComments := func(file *ast.File, start, end token.Pos) string {
+			var buf strings.Builder
+			for co := range analysisinternal.Comments(file, start, end) {
+				_, _ = fmt.Fprintf(&buf, "%s\n", co.Text)
+			}
+			return buf.String()
+		}
 
 		if fblock, ok := ifStmt.Else.(*ast.BlockStmt); ok && isAssignBlock(fblock) {
 			fassign := fblock.List[0].(*ast.AssignStmt)
@@ -85,7 +94,8 @@ func minmax(pass *analysis.Pass) {
 							// Replace IfStmt with lhs = min(a, b).
 							Pos: ifStmt.Pos(),
 							End: ifStmt.End(),
-							NewText: fmt.Appendf(nil, "%s = %s(%s, %s)",
+							NewText: fmt.Appendf(nil, "%s%s = %s(%s, %s)",
+								allComments(file, ifStmt.Pos(), ifStmt.End()),
 								analysisinternal.Format(pass.Fset, lhs),
 								sym,
 								analysisinternal.Format(pass.Fset, a),
@@ -144,10 +154,13 @@ func minmax(pass *analysis.Pass) {
 					SuggestedFixes: []analysis.SuggestedFix{{
 						Message: fmt.Sprintf("Replace if/else with %s", sym),
 						TextEdits: []analysis.TextEdit{{
-							// Replace rhs0 and IfStmt with min(a, b)
-							Pos: rhs0.Pos(),
+							Pos: fassign.Pos(),
 							End: ifStmt.End(),
-							NewText: fmt.Appendf(nil, "%s(%s, %s)",
+							// Replace "x := a; if ... {}" with "x = min(...)", preserving comments.
+							NewText: fmt.Appendf(nil, "%s %s %s %s(%s, %s)",
+								allComments(file, fassign.Pos(), ifStmt.End()),
+								analysisinternal.Format(pass.Fset, lhs),
+								fassign.Tok.String(),
 								sym,
 								analysisinternal.Format(pass.Fset, a),
 								analysisinternal.Format(pass.Fset, b)),
@@ -161,16 +174,16 @@ func minmax(pass *analysis.Pass) {
 	// Find all "if a < b { lhs = rhs }" statements.
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.21") {
+		astFile := curFile.Node().(*ast.File)
 		for curIfStmt := range curFile.Preorder((*ast.IfStmt)(nil)) {
 			ifStmt := curIfStmt.Node().(*ast.IfStmt)
-
 			if compare, ok := ifStmt.Cond.(*ast.BinaryExpr); ok &&
 				ifStmt.Init == nil &&
 				isInequality(compare.Op) != 0 &&
 				isAssignBlock(ifStmt.Body) {
 
 				// Have: if a < b { lhs = rhs }
-				check(curIfStmt, compare)
+				check(astFile, curIfStmt, compare)
 			}
 		}
 	}

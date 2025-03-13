@@ -1,9 +1,12 @@
 package minmax
 
 func ifmin(a, b int) {
-	x := a
+	x := a // A
+	// B
 	if a < b { // want "if statement can be modernized using max"
-		x = b
+		// C
+		x = b // D
+		// E
 	}
 	print(x)
 }
@@ -33,20 +36,30 @@ func ifmaxvariant(a, b int) {
 }
 
 func ifelsemin(a, b int) {
-	var x int
+	var x int // A
+	// B
 	if a <= b { // want "if/else statement can be modernized using min"
-		x = a
+		// C
+		x = a // D
+		// E
 	} else {
-		x = b
+		// F
+		x = b // G
+		// H
 	}
 	print(x)
 }
 
 func ifelsemax(a, b int) {
-	var x int
+	// A
+	var x int // B
+	// C
 	if a >= b { // want "if/else statement can be modernized using max"
-		x = a
+		// D
+		x = a // E
+		// F
 	} else {
+		// G
 		x = b
 	}
 	print(x)
@@ -114,4 +127,12 @@ func nopeHasElseBlock(x int) int {
 		y += 2
 	}
 	return y
+}
+
+func fix72727(a, b int) {
+	o := a - 42
+	// some important comment. DO NOT REMOVE.
+	if o < b { // want "if statement can be modernized using max"
+		o = b
+	}
 }

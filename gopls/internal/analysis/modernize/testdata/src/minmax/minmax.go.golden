@@ -1,33 +1,57 @@
 package minmax
 
 func ifmin(a, b int) {
+	// A
+	// B
+	// want "if statement can be modernized using max"
+	// C
+	// D
+	// E
 	x := max(a, b)
 	print(x)
 }
 
 func ifmax(a, b int) {
+	// want "if statement can be modernized using min"
 	x := min(a, b)
 	print(x)
 }
 
 func ifminvariant(a, b int) {
+	// want "if statement can be modernized using min"
 	x := min(a, b)
 	print(x)
 }
 
 func ifmaxvariant(a, b int) {
+	// want "if statement can be modernized using min"
 	x := min(a, b)
 	print(x)
 }
 
 func ifelsemin(a, b int) {
-	var x int
+	var x int // A
+	// B
+	// want "if/else statement can be modernized using min"
+	// C
+	// D
+	// E
+	// F
+	// G
+	// H
 	x = min(a, b)
 	print(x)
 }
 
 func ifelsemax(a, b int) {
-	var x int
+	// A
+	var x int // B
+	// C
+	// want "if/else statement can be modernized using max"
+	// D
+	// E
+	// F
+	// G
 	x = max(a, b)
 	print(x)
 }
@@ -55,6 +79,7 @@ func nopeIfStmtHasInitStmt() {
 // Regression test for a bug: fix was "y := max(x, y)".
 func oops() {
 	x := 1
+	// want "if statement can be modernized using max"
 	y := max(x, 2)
 	print(y)
 }
@@ -91,4 +116,10 @@ func nopeHasElseBlock(x int) int {
 		y += 2
 	}
 	return y
+}
+
+func fix72727(a, b int) {
+	// some important comment. DO NOT REMOVE.
+	// want "if statement can be modernized using max"
+	o := max(a-42, b)
 }
