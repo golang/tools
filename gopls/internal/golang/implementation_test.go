@@ -14,7 +14,7 @@ import (
 )
 
 func TestUnify(t *testing.T) {
-	// Test cases from TestMatches in gopls/internal/util/fingerprint/fingerprint_test.go.
+	// Most cases from TestMatches in gopls/internal/util/fingerprint/fingerprint_test.go.
 	const src = `
 -- go.mod --
 module example.com
@@ -60,6 +60,7 @@ func F1[T any](T) { panic(0) }
 func F2[T any](*T) { panic(0) }
 func F3[T any](T, T) { panic(0) }
 func F4[U any](U, *U) {panic(0) }
+func F4a[U any](U, Named[U]) {panic(0) }
 func F5[T, U any](T, U, U) { panic(0) }
 func F6[T any](T, int, T) { panic(0) }
 func F7[T any](bool, T, T) { panic(0) }
@@ -73,6 +74,7 @@ func F9[V any](V, *V, V) { panic(0) }
 		intType    = types.Typ[types.Int]
 		stringType = types.Typ[types.String]
 	)
+
 	pkg := testfiles.LoadPackages(t, txtar.Parse([]byte(src)), "./a")[0]
 	scope := pkg.Types.Scope()
 
@@ -167,12 +169,14 @@ func F9[V any](V, *V, V) { panic(0) }
 		{
 			// F1[*int] = F2[int], for example
 			// F1's T is bound to a pointer to F2's T.
-			x:          "F1",
+			x: "F1",
+			// F2's T is unbound: any instantiation works.
 			y:          "F2",
 			want:       true,
 			wantParams: tmap{tparam("F1", 0): types.NewPointer(tparam("F2", 0))},
 		},
-		{x: "F3", y: "F4", want: false}, // would require U identical to *U, prevented by occur check
+		{x: "F3", y: "F4", want: false},  // would require U identical to *U, prevented by occur check
+		{x: "F3", y: "F4a", want: false}, // occur check through Named[T]
 		{
 			x:    "F5",
 			y:    "F6",
@@ -185,6 +189,24 @@ func F9[V any](V, *V, V) { panic(0) }
 		},
 		{x: "F6", y: "F7", want: false}, // both are bound
 		{
+			x:      "F5",
+			y:      "F6",
+			params: tmap{tparam("F6", 0): intType}, // consistent with the result
+			want:   true,
+			wantParams: tmap{
+				tparam("F5", 0): intType,
+				tparam("F5", 1): intType,
+				tparam("F6", 0): intType,
+			},
+		},
+		{
+			x:      "F5",
+			y:      "F6",
+			params: tmap{tparam("F6", 0): boolType}, // not consistent
+			want:   false,
+		},
+		{x: "F6", y: "F7", want: false}, // both are bound
+		{
 			// T=*V, U=int, V=int
 			x:    "F5",
 			y:    "F8",
@@ -194,8 +216,41 @@ func F9[V any](V, *V, V) { panic(0) }
 				tparam("F5", 1): intType,
 			},
 		},
+		{
+			// T=*V, U=int, V=int
+			// Partial initial information is fine, as long as it's consistent.
+			x:      "F5",
+			y:      "F8",
+			want:   true,
+			params: tmap{tparam("F5", 1): intType},
+			wantParams: tmap{
+				tparam("F5", 0): types.NewPointer(tparam("F8", 0)),
+				tparam("F5", 1): intType,
+			},
+		},
+		{
+			// T=*V, U=int, V=int
+			// Partial initial information is fine, as long as it's consistent.
+			x:      "F5",
+			y:      "F8",
+			want:   true,
+			params: tmap{tparam("F5", 0): types.NewPointer(tparam("F8", 0))},
+			wantParams: tmap{
+				tparam("F5", 0): types.NewPointer(tparam("F8", 0)),
+				tparam("F5", 1): intType,
+			},
+		},
 		{x: "F5", y: "F9", want: false}, // T is unbound, V is bound, and T occurs in V
+		{
+			// T bound to Named[T']
+			x:    "F1",
+			y:    "DAny",
+			want: true,
+			wantParams: tmap{
+				tparam("F1", 0): scope.Lookup("DAny").(*types.Func).Signature().Params().At(0).Type()},
+		},
 	} {
+
 		lookup := func(name string) types.Type {
 			obj := scope.Lookup(name)
 			if obj == nil {
@@ -226,14 +281,14 @@ func F9[V any](V, *V, V) { panic(0) }
 			got := unify(ta, tb, gotParams)
 			if got != want {
 				t.Errorf("a=%s b=%s method=%s: unify returned %t for these inputs:\n- %s\n- %s",
-					a, b, test.method, got, a, b)
+					a, b, test.method, got, ta, tb)
 				return
 			}
 			if !compareParams {
 				return
 			}
 			if !maps.EqualFunc(gotParams, test.wantParams, types.Identical) {
-				t.Errorf("x=%s y=%s method=%s: xParams: got %v, want %v",
+				t.Errorf("x=%s y=%s method=%s: params: got %v, want %v",
 					a, b, test.method, gotParams, test.wantParams)
 			}
 		}

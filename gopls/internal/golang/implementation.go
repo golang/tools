@@ -584,14 +584,27 @@ func unify(x, y types.Type, unifier map[*types.TypeParam]types.Type) bool {
 	}
 
 	// uni performs the actual unification.
+	depth := 0
 	var uni func(x, y types.Type) bool
 	uni = func(x, y types.Type) bool {
+		// Panic if recursion gets too deep, to detect bugs before
+		// overflowing the stack.
+		depth++
+		defer func() { depth-- }()
+		if depth > 100 {
+			panic("unify: max depth exceeded")
+		}
+
 		x = types.Unalias(x)
 		y = types.Unalias(y)
 
 		tpx, _ := x.(*types.TypeParam)
 		tpy, _ := y.(*types.TypeParam)
 		if tpx != nil || tpy != nil {
+			// Identical type params unify.
+			if tpx == tpy {
+				return true
+			}
 			bx := bindingFor(tpx)
 			by := bindingFor(tpy)
 
@@ -726,6 +739,7 @@ func unify(x, y types.Type, unifier map[*types.TypeParam]types.Type) bool {
 	}
 
 	if !uni(x, y) {
+		clear(unifier)
 		return false
 	}
 
