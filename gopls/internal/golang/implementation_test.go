@@ -6,17 +6,14 @@ package golang
 
 import (
 	"go/types"
+	"maps"
 	"testing"
 
 	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
 
-// TODO(jba): test unify with some params already bound.
-
-func TestUnifyEmptyInfo(t *testing.T) {
-	// Check unify with no initial bound type params.
-	// This is currently the only case in use.
+func TestUnify(t *testing.T) {
 	// Test cases from TestMatches in gopls/internal/util/fingerprint/fingerprint_test.go.
 	const src = `
 -- go.mod --
@@ -69,39 +66,135 @@ func F7[T any](bool, T, T) { panic(0) }
 func F8[V any](*V, int, int) { panic(0) }
 func F9[V any](V, *V, V) { panic(0) }
 `
+	type tmap = map[*types.TypeParam]types.Type
+
+	var (
+		boolType   = types.Typ[types.Bool]
+		intType    = types.Typ[types.Int]
+		stringType = types.Typ[types.String]
+	)
 	pkg := testfiles.LoadPackages(t, txtar.Parse([]byte(src)), "./a")[0]
 	scope := pkg.Types.Scope()
+
+	tparam := func(name string, index int) *types.TypeParam {
+		obj := scope.Lookup(name)
+		var tps *types.TypeParamList
+		switch obj := obj.(type) {
+		case *types.Func:
+			tps = obj.Signature().TypeParams()
+		case *types.TypeName:
+			if n, ok := obj.Type().(*types.Named); ok {
+				tps = n.TypeParams()
+			} else {
+				tps = obj.Type().(*types.Alias).TypeParams()
+			}
+		default:
+			t.Fatalf("unsupported object of type %T", obj)
+		}
+		return tps.At(index)
+	}
+
 	for _, test := range []struct {
-		a, b   string
-		method string // optional field or method
-		want   bool
+		x, y       string // the symbols in the above source code whose types to unify
+		method     string // optional field or method
+		params     tmap   // initial values of type params
+		want       bool   // success or failure
+		wantParams tmap   // expected output
 	}{
-		{"Eq", "casefold", "Equal", true},
-		{"A", "AString", "", true},
-		{"A", "Eq", "", false}, // completely unrelated
-		{"B", "String", "", true},
-		{"B", "Int", "", true},
-		{"B", "A", "", true},
-		{"C1", "C2", "", false},
-		{"C1", "C3", "", false},
-		{"C1", "C4", "", false},
-		{"C1", "C5", "", false},
-		{"C1", "C6", "", true},
-		{"C2", "C3", "", false},
-		{"C2", "C4", "", false},
-		{"C3", "C4", "", false},
-		{"DAny", "DString", "", true},
-		{"DAny", "DInt", "", true},
-		{"DString", "DInt", "", false}, // different instantiations of Named
-		{"E1", "E2", "", true},         // byte and rune are just aliases
-		{"E2", "E3", "", false},
-		// // The following tests cover all of the type param cases of unify.
-		{"F1", "F2", "", true},  // F1[*int] = F2[int]
-		{"F3", "F4", "", false}, // would require U identical to *U, prevented by occur check
-		{"F5", "F6", "", true},  // one param is bound, the other is not
-		{"F6", "F7", "", false}, // both are bound
-		{"F5", "F8", "", true},  // T=*int, U=int, V=int
-		{"F5", "F9", "", false}, // T is unbound, V is bound, and T occurs in V
+		{
+			// In Eq[T], T is bound to string.
+			x:          "Eq",
+			y:          "casefold",
+			method:     "Equal",
+			want:       true,
+			wantParams: tmap{tparam("Eq", 0): stringType},
+		},
+		{
+			// If we unify A[T] and A[string], T should be bound to string.
+			x:          "A",
+			y:          "AString",
+			want:       true,
+			wantParams: tmap{tparam("A", 0): stringType},
+		},
+		{x: "A", y: "Eq", want: false}, // completely unrelated
+		{
+			x:          "B",
+			y:          "String",
+			want:       true,
+			wantParams: tmap{tparam("B", 0): stringType},
+		},
+		{
+			x:          "B",
+			y:          "Int",
+			want:       true,
+			wantParams: tmap{tparam("B", 0): intType},
+		},
+		{
+			x:    "B",
+			y:    "A",
+			want: true,
+			// B's T is bound to A's struct { x T }
+			wantParams: tmap{tparam("B", 0): scope.Lookup("A").Type().Underlying()},
+		},
+		{
+			// C1's U unifies with C6's bool.
+			x:          "C1",
+			y:          "C6",
+			wantParams: tmap{tparam("C1", 0): boolType},
+			want:       true,
+		},
+		// C1 fails to unify with C2 because C1's T must be bound to both int and bool.
+		{x: "C1", y: "C2", want: false},
+		// The remaining "C" cases fail for less interesting reasons, usually different numbers
+		// or types of parameters or results.
+		{x: "C1", y: "C3", want: false},
+		{x: "C1", y: "C4", want: false},
+		{x: "C1", y: "C5", want: false},
+		{x: "C2", y: "C3", want: false},
+		{x: "C2", y: "C4", want: false},
+		{x: "C3", y: "C4", want: false},
+		{
+			x:          "DAny",
+			y:          "DString",
+			want:       true,
+			wantParams: tmap{tparam("DAny", 0): stringType},
+		},
+		{x: "DString", y: "DInt", want: false}, // different instantiations of Named
+		{x: "E1", y: "E2", want: true},         // byte and rune are just aliases
+		{x: "E2", y: "E3", want: false},
+
+		// The following tests cover all of the type param cases of unify.
+		{
+			// F1[*int] = F2[int], for example
+			// F1's T is bound to a pointer to F2's T.
+			x:          "F1",
+			y:          "F2",
+			want:       true,
+			wantParams: tmap{tparam("F1", 0): types.NewPointer(tparam("F2", 0))},
+		},
+		{x: "F3", y: "F4", want: false}, // would require U identical to *U, prevented by occur check
+		{
+			x:    "F5",
+			y:    "F6",
+			want: true,
+			wantParams: tmap{
+				tparam("F5", 0): intType,
+				tparam("F5", 1): intType,
+				tparam("F6", 0): intType,
+			},
+		},
+		{x: "F6", y: "F7", want: false}, // both are bound
+		{
+			// T=*V, U=int, V=int
+			x:    "F5",
+			y:    "F8",
+			want: true,
+			wantParams: tmap{
+				tparam("F5", 0): types.NewPointer(tparam("F8", 0)),
+				tparam("F5", 1): intType,
+			},
+		},
+		{x: "F5", y: "F9", want: false}, // T is unbound, V is bound, and T occurs in V
 	} {
 		lookup := func(name string) types.Type {
 			obj := scope.Lookup(name)
@@ -117,24 +210,39 @@ func F9[V any](V, *V, V) { panic(0) }
 			return obj.Type()
 		}
 
-		check := func(sa, sb string, want bool) {
+		check := func(a, b string, want, compareParams bool) {
 			t.Helper()
 
-			a := lookup(sa)
-			b := lookup(sb)
+			ta := lookup(a)
+			tb := lookup(b)
 
-			got := unify(a, b, nil)
+			var gotParams tmap
+			if test.params == nil {
+				// Get the unifier even if there are no input params.
+				gotParams = tmap{}
+			} else {
+				gotParams = maps.Clone(test.params)
+			}
+			got := unify(ta, tb, gotParams)
 			if got != want {
 				t.Errorf("a=%s b=%s method=%s: unify returned %t for these inputs:\n- %s\n- %s",
-					sa, sb, test.method, got, a, b)
+					a, b, test.method, got, a, b)
+				return
+			}
+			if !compareParams {
+				return
+			}
+			if !maps.EqualFunc(gotParams, test.wantParams, types.Identical) {
+				t.Errorf("x=%s y=%s method=%s: xParams: got %v, want %v",
+					a, b, test.method, gotParams, test.wantParams)
 			}
 		}
 
-		check(test.a, test.b, test.want)
+		check(test.x, test.y, test.want, true)
 		// unify is symmetric
-		check(test.b, test.a, test.want)
+		check(test.y, test.x, test.want, true)
 		// unify is reflexive
-		check(test.a, test.a, true)
-		check(test.b, test.b, true)
+		check(test.x, test.x, true, false)
+		check(test.y, test.y, true, false)
 	}
 }

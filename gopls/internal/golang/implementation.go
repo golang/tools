@@ -535,6 +535,13 @@ func concreteImplementsIntf(msets *typeutil.MethodSetCache, x, y types.Type) boo
 // But if unifier is {T: int} is int on entry, then unification will fail, because T
 // does not unify with bool.
 //
+// Unify does not preserve aliases. For example, given the following:
+//
+//	type String = string
+//	type A[T] = T
+//
+// unification succeeds with T bound to string, not String.
+//
 // See also: unify in cache/methodsets/fingerprint, which implements
 // unification for type fingerprints, for the global index.
 //
