@@ -266,10 +266,10 @@ func ConnectGoplsEnv(t testing.TB, ctx context.Context, sandbox *fake.Sandbox, c
 // longBuilders maps builders that are skipped when -short is set to a
 // (possibly empty) justification.
 var longBuilders = map[string]string{
-	"openbsd-amd64-64":        "go.dev/issue/42789",
-	"openbsd-386-64":          "go.dev/issue/42789",
-	"openbsd-386-68":          "go.dev/issue/42789",
-	"openbsd-amd64-68":        "go.dev/issue/42789",
+	"x_tools-gotip-openbsd-amd64":  "go.dev/issue/72145",
+	"x_tools-go1.24-openbsd-amd64": "go.dev/issue/72145",
+	"x_tools-go1.23-openbsd-amd64": "go.dev/issue/72145",
+
 	"darwin-amd64-10_12":      "",
 	"freebsd-amd64-race":      "",
 	"illumos-amd64":           "",
