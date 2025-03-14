@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil/cursor"
+	"golang.org/x/tools/internal/typeparams"
 )
 
 // The minmax pass replaces if/else statements with calls to min or max.
@@ -24,6 +25,10 @@ import (
 //
 //  1. if a < b { x = a } else { x = b }        =>      x = min(a, b)
 //  2. x = a; if a < b { x = b }                =>      x = max(a, b)
+//
+// Pattern 1 requires that a is not NaN, and pattern 2 requires that b
+// is not Nan. Since this is hard to prove, we reject floating-point
+// numbers.
 //
 // Variants:
 // - all four ordered comparisons
@@ -172,15 +177,17 @@ func minmax(pass *analysis.Pass) {
 	}
 
 	// Find all "if a < b { lhs = rhs }" statements.
+	info := pass.TypesInfo
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.21") {
+	for curFile := range filesUsing(inspect, info, "go1.21") {
 		astFile := curFile.Node().(*ast.File)
 		for curIfStmt := range curFile.Preorder((*ast.IfStmt)(nil)) {
 			ifStmt := curIfStmt.Node().(*ast.IfStmt)
 			if compare, ok := ifStmt.Cond.(*ast.BinaryExpr); ok &&
 				ifStmt.Init == nil &&
 				isInequality(compare.Op) != 0 &&
-				isAssignBlock(ifStmt.Body) {
+				isAssignBlock(ifStmt.Body) &&
+				!maybeNaN(info.TypeOf(ifStmt.Body.List[0].(*ast.AssignStmt).Lhs[0])) { // lhs
 
 				// Have: if a < b { lhs = rhs }
 				check(astFile, curIfStmt, compare)
@@ -217,6 +224,21 @@ func isSimpleAssign(n ast.Node) bool {
 		(assign.Tok == token.ASSIGN || assign.Tok == token.DEFINE) &&
 		len(assign.Lhs) == 1 &&
 		len(assign.Rhs) == 1
+}
+
+// maybeNaN reports whether t is (or may be) a floating-point type.
+func maybeNaN(t types.Type) bool {
+	// For now, we rely on core types.
+	// TODO(adonovan): In the post-core-types future,
+	// follow the approach of types.Checker.applyTypeFunc.
+	t = typeparams.CoreType(t)
+	if t == nil {
+		return true // fail safe
+	}
+	if basic, ok := t.(*types.Basic); ok && basic.Info()&types.IsFloat != 0 {
+		return true
+	}
+	return false
 }
 
 // -- utils --
