@@ -19,7 +19,7 @@ func Test(t *testing.T) {
 	printf.Analyzer.Flags.Set("funcs", "Warn,Warnf")
 
 	analysistest.Run(t, testdata, printf.Analyzer,
-		"a", "b", "nofmt", "nonconst", "typeparams", "issue68744", "issue70572")
+		"a", "b", "nofmt", "nonconst", "typeparams", "issue68744", "issue70572", "issue72850")
 }
 
 func TestNonConstantFmtString_Go123(t *testing.T) {

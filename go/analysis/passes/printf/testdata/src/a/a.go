@@ -83,7 +83,7 @@ func PrintfTests() {
 	fmt.Printf("%o %o", 3, i)
 	fmt.Printf("%O %O", 3, i)
 	fmt.Printf("%p", p)
-	fmt.Printf("%q %q %q %q", 3, i, 'x', r)
+	fmt.Printf("%q %q %q", byte(i), 'x', r)
 	fmt.Printf("%s %s %s", "hi", s, []byte{65})
 	fmt.Printf("%t %t", true, b)
 	fmt.Printf("%T %T", 3, i)
@@ -171,6 +171,8 @@ func PrintfTests() {
 	fmt.Printf("%q %q", multi()...)             // ok
 	fmt.Printf("%#q", `blah`)                   // ok
 	fmt.Printf("%#b", 3)                        // ok
+	fmt.Printf("%q", 3)                         // ok before go1.26 (#72850)
+
 	// printf("now is the time", "buddy")          // no error "a.printf call has arguments but no formatting directives"
 	Printf("now is the time", "buddy") // want "a.Printf call has arguments but no formatting directives"
 	Printf("hi")                       // ok

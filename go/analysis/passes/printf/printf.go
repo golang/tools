@@ -612,7 +612,7 @@ func checkPrintf(pass *analysis.Pass, fileVersion string, kind Kind, call *ast.C
 		// breaking existing tests and CI scripts.
 		if idx == len(call.Args)-1 &&
 			fileVersion != "" && // fail open
-			versions.AtLeast(fileVersion, "go1.24") {
+			versions.AtLeast(fileVersion, versions.Go1_24) {
 
 			pass.Report(analysis.Diagnostic{
 				Pos: formatArg.Pos(),
@@ -662,7 +662,7 @@ func checkPrintf(pass *analysis.Pass, fileVersion string, kind Kind, call *ast.C
 			anyIndex = true
 		}
 		rng := opRange(formatArg, op)
-		if !okPrintfArg(pass, call, rng, &maxArgIndex, firstArg, name, op) {
+		if !okPrintfArg(pass, fileVersion, call, rng, &maxArgIndex, firstArg, name, op) {
 			// One error per format is enough.
 			return
 		}
@@ -707,6 +707,7 @@ type printfArgType int
 
 const (
 	argBool printfArgType = 1 << iota
+	argByte
 	argInt
 	argRune
 	argString
@@ -751,7 +752,7 @@ var printVerbs = []printVerb{
 	{'o', sharpNumFlag, argInt | argPointer},
 	{'O', sharpNumFlag, argInt | argPointer},
 	{'p', "-#", argPointer},
-	{'q', " -+.0#", argRune | argInt | argString},
+	{'q', " -+.0#", argRune | argInt | argString}, // note: when analyzing go1.26 code, argInt => argByte
 	{'s', " -+.0", argString},
 	{'t', "-", argBool},
 	{'T', "-", anyType},
@@ -765,7 +766,7 @@ var printVerbs = []printVerb{
 // okPrintfArg compares the operation to the arguments actually present,
 // reporting any discrepancies it can discern, maxArgIndex was the index of the highest used index.
 // If the final argument is ellipsissed, there's little it can do for that.
-func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, rng analysis.Range, maxArgIndex *int, firstArg int, name string, operation *fmtstr.Operation) (ok bool) {
+func okPrintfArg(pass *analysis.Pass, fileVersion string, call *ast.CallExpr, rng analysis.Range, maxArgIndex *int, firstArg int, name string, operation *fmtstr.Operation) (ok bool) {
 	verb := operation.Verb.Verb
 	var v printVerb
 	found := false
@@ -775,6 +776,13 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, rng analysis.Range, ma
 			found = true
 			break
 		}
+	}
+
+	// When analyzing go1.26 code, rune and byte are the only %q integers (#72850).
+	if verb == 'q' &&
+		fileVersion != "" && // fail open
+		versions.AtLeast(fileVersion, versions.Go1_26) {
+		v.typ = argRune | argByte | argString
 	}
 
 	// Could verb's arg implement fmt.Formatter?
