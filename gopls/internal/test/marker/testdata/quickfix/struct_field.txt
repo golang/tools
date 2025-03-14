@@ -1,0 +1,132 @@
+This test checks the 'Declare missing struct field' quick fix.
+
+-- go.mod --
+module module
+
+-- package.go --
+package field
+
+import "module/another"
+import alias "module/second"
+
+type Struct struct{}
+
+type AnotherStruct struct {
+	Chan <-chan Struct
+}
+
+func do() {
+	a := AnotherStruct{}
+
+	s := Struct{}
+	s.intField = 42 //@quickfix("intField", re"has no field or method", value_field)
+
+	var mp map[string]string = map[string]string{"key": "value4"}
+	s.mapField = mp //@quickfix("mapField", re"has no field or method", var_field)
+
+	s.chanField = a.Chan //@quickfix("chanField", re"has no field or method", another_struct_field)
+	s.sliceField = make([]map[string]Struct, 0) //@quickfix("sliceField", re"has no field or method", make_field)
+	s.sliceIntField = []int{1, 2} //@quickfix("sliceIntField", re"has no field or method", slice_int_field)
+	s.another = another.Another{} //@quickfix("another", re"has no field or method", another_package)
+	s.alias = alias.Second{} //@quickfix("alias", re"has no field or method", alias)
+	var al alias.Second
+	s.implicitAlias = al //@quickfix("implicitAlias", re"has no field or method", implicit_alias)
+	s.imported = alias.Second{}.Imported //@quickfix("imported", re"has no field or method", auto_import)
+	s.newField = new(Struct) //@quickfix("newField", re"has no field or method", new_field)
+	s.pointerField = &Struct{} //@quickfix("pointerField", re"has no field or method", pointer)
+	var p *Struct
+	s.derefedField = *p //@quickfix("derefedField", re"has no field or method", deref)
+
+	a.properlyFormattedField = 42 //@quickfix("properlyFormattedField", re"has no field or method", formatted)
+}
+-- another/another.go --
+package another
+
+type Another struct {}
+-- second/second.go --
+package second
+
+import "module/imported"
+
+type Second struct{
+	Imported imported.Imported
+}
+-- imported/imported.go --
+package imported
+
+type Imported struct{}
+-- @value_field/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	intField int
++}
+-- @var_field/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	mapField map[string]string
++}
+-- @another_struct_field/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	chanField <-chan Struct
++}
+-- @slice_int_field/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	sliceIntField []int
++}
+-- @make_field/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	sliceField []map[string]Struct
++}
+-- @another_package/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	another another.Another
++}
+-- @alias/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	alias alias.Second
++}
+-- @implicit_alias/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	implicitAlias alias.Second
++}
+-- @auto_import/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	imported imported.Imported
++}
+-- @new_field/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	newField *Struct
++}
+-- @pointer/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	pointerField *Struct
++}
+-- @deref/package.go --
+@@ -6 +6,3 @@
+-type Struct struct{}
++type Struct struct{
++	derefedField Struct
++}
+-- @formatted/package.go --
+@@ -10 +10 @@
++	properlyFormattedField int
