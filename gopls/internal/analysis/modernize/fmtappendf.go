@@ -5,33 +5,35 @@
 package modernize
 
 import (
+	"fmt"
 	"go/ast"
 	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil/edge"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 // The fmtappend function replaces []byte(fmt.Sprintf(...)) by
-// fmt.Appendf(nil, ...).
+// fmt.Appendf(nil, ...), and similarly for Sprint, Sprintln.
 func fmtappendf(pass *analysis.Pass) {
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	info := pass.TypesInfo
-	for curFile := range filesUsing(inspect, info, "go1.19") {
-		for curCallExpr := range curFile.Preorder((*ast.CallExpr)(nil)) {
-			conv := curCallExpr.Node().(*ast.CallExpr)
-			tv := info.Types[conv.Fun]
-			if tv.IsType() && types.Identical(tv.Type, byteSliceType) {
-				call, ok := conv.Args[0].(*ast.CallExpr)
-				if ok {
-					obj := typeutil.Callee(info, call)
-					if !analysisinternal.IsFunctionNamed(obj, "fmt", "Sprintf", "Sprintln", "Sprint") {
-						continue
-					}
+	index := pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+	for _, fn := range []types.Object{
+		index.Object("fmt", "Sprintf"),
+		index.Object("fmt", "Sprintln"),
+		index.Object("fmt", "Sprint"),
+	} {
+		for curCall := range index.Calls(fn) {
+			call := curCall.Node().(*ast.CallExpr)
+			if ek, idx := curCall.ParentEdge(); ek == edge.CallExpr_Args && idx == 0 {
+				// Is parent a T(fmt.SprintX(...)) conversion?
+				conv := curCall.Parent().Node().(*ast.CallExpr)
+				tv := pass.TypesInfo.Types[conv.Fun]
+				if tv.IsType() && types.Identical(tv.Type, byteSliceType) &&
+					fileUses(pass.TypesInfo, curCall, "go1.19") {
+					// Have: []byte(fmt.SprintX(...))
 
 					// Find "Sprint" identifier.
 					var id *ast.Ident
@@ -42,13 +44,14 @@ func fmtappendf(pass *analysis.Pass) {
 						id = e // "Sprint" after `import . "fmt"`
 					}
 
+					old, new := fn.Name(), strings.Replace(fn.Name(), "Sprint", "Append", 1)
 					pass.Report(analysis.Diagnostic{
 						Pos:      conv.Pos(),
 						End:      conv.End(),
 						Category: "fmtappendf",
-						Message:  "Replace []byte(fmt.Sprintf...) with fmt.Appendf",
+						Message:  fmt.Sprintf("Replace []byte(fmt.%s...) with fmt.%s", old, new),
 						SuggestedFixes: []analysis.SuggestedFix{{
-							Message: "Replace []byte(fmt.Sprintf...) with fmt.Appendf",
+							Message: fmt.Sprintf("Replace []byte(fmt.%s...) with fmt.%s", old, new),
 							TextEdits: []analysis.TextEdit{
 								{
 									// delete "[]byte("
@@ -63,7 +66,7 @@ func fmtappendf(pass *analysis.Pass) {
 								{
 									Pos:     id.Pos(),
 									End:     id.End(),
-									NewText: []byte(strings.Replace(obj.Name(), "Sprint", "Append", 1)),
+									NewText: []byte(new),
 								},
 								{
 									Pos:     call.Lparen + 1,

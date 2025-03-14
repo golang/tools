@@ -29,8 +29,8 @@ func typealias() {
 }
 
 func otherprints() {
-	sprint := []byte(fmt.Sprint("bye %d", 1)) // want "Replace .*Sprintf.* with fmt.Appendf"
+	sprint := []byte(fmt.Sprint("bye %d", 1)) // want "Replace .*Sprint.* with fmt.Append"
 	print(sprint)
-	sprintln := []byte(fmt.Sprintln("bye %d", 1)) // want "Replace .*Sprintf.* with fmt.Appendf"
+	sprintln := []byte(fmt.Sprintln("bye %d", 1)) // want "Replace .*Sprintln.* with fmt.Appendln"
 	print(sprintln)
 }

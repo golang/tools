@@ -44,6 +44,37 @@ func Root(in *inspector.Inspector) Cursor {
 	return Cursor{in, -1}
 }
 
+// At returns the cursor at the specified index in the traversal,
+// which must have been obtained from [Cursor.Index] on a Cursor
+// belonging to the same Inspector.
+func At(in *inspector.Inspector, index int32) Cursor {
+	if index < 0 {
+		panic("negative index")
+	}
+	events := events(in)
+	if int(index) >= len(events) {
+		panic("index out of range for this inspector")
+	}
+	if events[index].index < index {
+		panic("invalid index") // (a push, not a pop)
+	}
+	return Cursor{in, index}
+}
+
+// Index returns the index of this cursor position within the package.
+//
+// Clients should not assume anything about the numeric Index value
+// except that it increases monotonically throughout the traversal.
+// It is provided for use with [At].
+//
+// Index must not be called on the Root node.
+func (c Cursor) Index() int32 {
+	if c.index < 0 {
+		panic("Index called on Root node")
+	}
+	return c.index
+}
+
 // Node returns the node at the current cursor position,
 // or nil for the cursor returned by [Inspector.Root].
 func (c Cursor) Node() ast.Node {

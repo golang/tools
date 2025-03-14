@@ -152,6 +152,7 @@ func bloop(pass *analysis.Pass) {
 }
 
 // uses reports whether the subtree cur contains a use of obj.
+// TODO(adonovan): opt: use typeindex.
 func uses(info *types.Info, cur cursor.Cursor, obj types.Object) bool {
 	for curId := range cur.Preorder((*ast.Ident)(nil)) {
 		if info.Uses[curId.Node().(*ast.Ident)] == obj {

@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
+	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/versions"
@@ -33,7 +34,7 @@ var doc string
 var Analyzer = &analysis.Analyzer{
 	Name:     "modernize",
 	Doc:      analysisinternal.MustExtractDoc(doc, "modernize"),
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Requires: []*analysis.Analyzer{inspect.Analyzer, typeindexanalyzer.Analyzer},
 	Run:      run,
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize",
 }
@@ -125,6 +126,9 @@ func isZeroIntLiteral(info *types.Info, e ast.Expr) bool {
 
 // filesUsing returns a cursor for each *ast.File in the inspector
 // that uses at least the specified version of Go (e.g. "go1.24").
+//
+// TODO(adonovan): opt: eliminate this function, instead following the
+// approach of [fmtappendf], which uses typeindex and [fileUses].
 func filesUsing(inspect *inspector.Inspector, info *types.Info, version string) iter.Seq[cursor.Cursor] {
 	return func(yield func(cursor.Cursor) bool) {
 		for curFile := range cursor.Root(inspect).Children() {
@@ -134,6 +138,17 @@ func filesUsing(inspect *inspector.Inspector, info *types.Info, version string) 
 			}
 		}
 	}
+}
+
+// fileUses reports whether the file containing the specified cursor
+// uses at least the specified version of Go (e.g. "go1.24").
+func fileUses(info *types.Info, c cursor.Cursor, version string) bool {
+	// TODO(adonovan): make Ancestors reflexive so !ok becomes impossible.
+	if curFile, ok := moreiters.First(c.Ancestors((*ast.File)(nil))); ok {
+		c = curFile
+	}
+	file := c.Node().(*ast.File)
+	return !versions.Before(info.FileVersions[file], version)
 }
 
 // within reports whether the current pass is analyzing one of the

@@ -447,7 +447,6 @@ func TestCursor_Edge(t *testing.T) {
 				t.Errorf("cur.Contains(cur.Parent().NextSibling()): %v", cur)
 			}
 		}
-
 	}
 }
 
