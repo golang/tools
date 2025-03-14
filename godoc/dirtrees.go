@@ -17,7 +17,7 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/tools/godoc/vfs"
+	"golang.org/x/tools/vfs"
 )
 
 // Conventional name for directories containing test data.
