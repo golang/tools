@@ -7,6 +7,7 @@ package cache
 import (
 	"bytes"
 	"go/build"
+	"go/build/constraint"
 	"go/parser"
 	"go/token"
 	"io"
@@ -173,12 +174,16 @@ func (p port) matches(path string, content []byte) bool {
 // without trimming content.
 func trimContentForPortMatch(content []byte) []byte {
 	buildComment := buildComment(content)
-	return []byte(buildComment + "\npackage p") // package name does not matter
+	// The package name does not matter, but +build lines
+	// require a blank line before the package declaration.
+	return []byte(buildComment + "\n\npackage p")
 }
 
 // buildComment returns the first matching //go:build comment in the given
 // content, or "" if none exists.
 func buildComment(content []byte) string {
+	var lines []string
+
 	f, err := parser.ParseFile(token.NewFileSet(), "", content, parser.PackageClauseOnly|parser.ParseComments)
 	if err != nil {
 		return ""
@@ -186,24 +191,15 @@ func buildComment(content []byte) string {
 
 	for _, cg := range f.Comments {
 		for _, c := range cg.List {
-			if isGoBuildComment(c.Text) {
+			if constraint.IsGoBuild(c.Text) {
+				// A file must have only one //go:build line.
 				return c.Text
+			}
+			if constraint.IsPlusBuild(c.Text) {
+				// A file may have several // +build lines.
+				lines = append(lines, c.Text)
 			}
 		}
 	}
-	return ""
-}
-
-// Adapted from go/build/build.go.
-//
-// TODO(rfindley): use constraint.IsGoBuild once we are on 1.19+.
-func isGoBuildComment(line string) bool {
-	const goBuildComment = "//go:build"
-	if !strings.HasPrefix(line, goBuildComment) {
-		return false
-	}
-	// Report whether //go:build is followed by a word boundary.
-	line = strings.TrimSpace(line)
-	rest := line[len(goBuildComment):]
-	return len(rest) == 0 || len(strings.TrimSpace(rest)) < len(rest)
+	return strings.Join(lines, "\n")
 }
