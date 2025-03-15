@@ -32,6 +32,7 @@ import (
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/astutil/edge"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // This file defines the new implementation of the 'implementation'
@@ -937,6 +938,9 @@ func implFuncs(pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol
 	}
 
 	info := pkg.TypesInfo()
+	if info.Types == nil || info.Defs == nil || info.Uses == nil {
+		panic("one of info.Types, .Defs or .Uses is nil")
+	}
 
 	// Find innermost enclosing FuncType or CallExpr.
 	//
@@ -1088,29 +1092,10 @@ func beneathFuncDef(cur cursor.Cursor) bool {
 //
 // Tested via ../test/marker/testdata/implementation/signature.txt.
 func dynamicFuncCallType(info *types.Info, call *ast.CallExpr) types.Type {
-	fun := ast.Unparen(call.Fun)
-	tv := info.Types[fun]
-
-	// Reject conversion, or call to built-in.
-	if !tv.IsValue() {
-		return nil
+	if typesinternal.ClassifyCall(info, call) == typesinternal.CallDynamic {
+		return info.Types[call.Fun].Type.Underlying()
 	}
-
-	// Reject call to named func/method.
-	if id, ok := fun.(*ast.Ident); ok && is[*types.Func](info.Uses[id]) {
-		return nil
-	}
-
-	// Reject method selections (T.method() or x.method())
-	if sel, ok := fun.(*ast.SelectorExpr); ok {
-		seln, ok := info.Selections[sel]
-		if !ok || seln.Kind() != types.FieldVal {
-			return nil
-		}
-	}
-
-	// TODO(adonovan): consider x() where x : TypeParam.
-	return tv.Type.Underlying() // e.g. x() or x.field()
+	return nil
 }
 
 // inToken reports whether pos is within the token of

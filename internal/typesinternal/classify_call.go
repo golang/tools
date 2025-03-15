@@ -42,19 +42,6 @@ func (k CallKind) String() string {
 // and further classifies function calls as static calls (where the function is known),
 // dynamic interface calls, and other dynamic calls.
 //
-// For static, interface and builtin calls, ClassifyCall returns the [types.Object]
-// for the name of the caller. For calls of instantiated functions and
-// methods, it returns the object for the corresponding generic function
-// or method on the generic type.
-// The relationships between the return values are:
-//
-//		CallKind       object
-//		CallStatic     *types.Func
-//	 	CallInterface  *types.Func
-//		CallBuiltin    *types.Builtin
-//		CallDynamic    nil
-//		CallConversion nil
-//
 // For the declarations:
 //
 //	func f() {}
@@ -66,33 +53,33 @@ func (k CallKind) String() string {
 //
 // ClassifyCall returns the following:
 //
-//	f()           CallStatic        the *types.Func for f
-//	g[int]()      CallStatic        the *types.Func for g[T]
-//	i.M()         CallInterface     the *types.Func for i.M
-//	min(1, 2)     CallBuiltin       the *types.Builtin for min
-//	v()           CallDynamic       nil
-//	s[0]()        CallDynamic       nil
-//	int(x)        CallConversion    nil
-//	[]byte("")    CallConversion    nil
-func ClassifyCall(info *types.Info, call *ast.CallExpr) (CallKind, types.Object) {
+//	f()           CallStatic
+//	g[int]()      CallStatic
+//	i.M()         CallInterface
+//	min(1, 2)     CallBuiltin
+//	v()           CallDynamic
+//	s[0]()        CallDynamic
+//	int(x)        CallConversion
+//	[]byte("")    CallConversion
+func ClassifyCall(info *types.Info, call *ast.CallExpr) CallKind {
 	if info.Types == nil {
 		panic("ClassifyCall: info.Types is nil")
 	}
 	if info.Types[call.Fun].IsType() {
-		return CallConversion, nil
+		return CallConversion
 	}
 	obj := Used(info, call.Fun)
 	// Classify the call by the type of the object, if any.
 	switch obj := obj.(type) {
 	case *types.Builtin:
-		return CallBuiltin, obj
+		return CallBuiltin
 	case *types.Func:
 		if interfaceMethod(obj) {
-			return CallInterface, obj
+			return CallInterface
 		}
-		return CallStatic, obj
+		return CallStatic
 	default:
-		return CallDynamic, nil
+		return CallDynamic
 	}
 }
 
