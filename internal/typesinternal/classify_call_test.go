@@ -19,9 +19,6 @@ import (
 )
 
 func TestClassifyCallAndUsed(t *testing.T) {
-	// This function directly tests ClassifyCall, but since that
-	// function's second return value is always the result of Used,
-	// it effectively tests Used as well.
 	const src = `
 		package p
 
@@ -78,13 +75,7 @@ func TestClassifyCallAndUsed(t *testing.T) {
 		Error:    func(err error) { t.Fatal(err) },
 		Importer: importer.Default(),
 	}
-	info := &types.Info{
-		Instances:  make(map[*ast.Ident]types.Instance),
-		Uses:       make(map[*ast.Ident]types.Object),
-		Defs:       make(map[*ast.Ident]types.Object),
-		Types:      make(map[ast.Expr]types.TypeAndValue),
-		Selections: make(map[*ast.SelectorExpr]*types.Selection),
-	}
+	info := ti.NewTypesInfo()
 	// parse
 	f, err := parser.ParseFile(fset, "classify.go", src, 0)
 	if err != nil {
@@ -108,30 +99,36 @@ func TestClassifyCallAndUsed(t *testing.T) {
 
 	printlnObj := types.Universe.Lookup("println")
 
+	typeParam := lookup("tests").Type().(*types.Signature).TypeParams().At(0).Obj()
+
+	// A unique value for marking that Used returns the same object as ClassifyCall.
+	same := &types.Label{}
+
 	// Expected Calls are in the order of CallExprs at the end of src, above.
 	wants := []struct {
-		kind ti.CallKind
-		obj  types.Object
+		kind        ti.CallKind
+		classifyObj types.Object // the object returned from ClassifyCall
+		usedObj     types.Object // the object returned from Used, sometimes different
 	}{
-		{ti.CallStatic, lookup("g")},         // g
-		{ti.CallDynamic, nil},                // f
-		{ti.CallBuiltin, printlnObj},         // println
-		{ti.CallStatic, member("S", "g")},    // z.g
-		{ti.CallStatic, member("S", "g")},    // a.b.c.g
-		{ti.CallStatic, member("S", "g")},    // S.g(z, 1)
-		{ti.CallDynamic, nil},                // z.f
-		{ti.CallInterface, member("I", "m")}, // I(nil).m
-		{ti.CallConversion, nil},             // I(nil)
-		{ti.CallDynamic, nil},                // m[0]
-		{ti.CallDynamic, nil},                // n[0]
-		{ti.CallStatic, lookup("F")},         // F[int]
-		{ti.CallStatic, lookup("F")},         // F[T]
-		{ti.CallDynamic, nil},                // f(){}
-		{ti.CallConversion, nil},             // []byte
-		{ti.CallConversion, nil},             // A[int]
-		{ti.CallConversion, nil},             // T
-		{ti.CallStatic, member("S", "g")},    // (z.g)
-		{ti.CallStatic, member("S", "g")},    // (z).g
+		{ti.CallStatic, lookup("g"), same},         // g
+		{ti.CallDynamic, nil, lookup("f")},         // f
+		{ti.CallBuiltin, printlnObj, same},         // println
+		{ti.CallStatic, member("S", "g"), same},    // z.g
+		{ti.CallStatic, member("S", "g"), same},    // a.b.c.g
+		{ti.CallStatic, member("S", "g"), same},    // S.g(z, 1)
+		{ti.CallDynamic, nil, member("z", "f")},    // z.f
+		{ti.CallInterface, member("I", "m"), same}, // I(nil).m
+		{ti.CallConversion, nil, lookup("I")},      // I(nil)
+		{ti.CallDynamic, nil, same},                // m[0]
+		{ti.CallDynamic, nil, same},                // n[0]
+		{ti.CallStatic, lookup("F"), same},         // F[int]
+		{ti.CallStatic, lookup("F"), same},         // F[T]
+		{ti.CallDynamic, nil, same},                // f(){}
+		{ti.CallConversion, nil, same},             // []byte
+		{ti.CallConversion, nil, lookup("A")},      // A[int]
+		{ti.CallConversion, nil, typeParam},        // T
+		{ti.CallStatic, member("S", "g"), same},    // (z.g)
+		{ti.CallStatic, member("S", "g"), same},    // (z).g
 	}
 
 	i := 0
@@ -152,8 +149,16 @@ func TestClassifyCallAndUsed(t *testing.T) {
 			if gotKind != want.kind {
 				t.Errorf("%s kind: got %s, want %s", prefix, gotKind, want.kind)
 			}
-			if gotObj != want.obj {
-				t.Errorf("%s obj: got %v (%[2]T), want %v", prefix, gotObj, want.obj)
+			if gotObj != want.classifyObj {
+				t.Errorf("%s obj: got %v (%[2]T), want %v", prefix, gotObj, want.classifyObj)
+			}
+
+			w := want.usedObj
+			if w == same {
+				w = want.classifyObj
+			}
+			if g := ti.Used(info, call.Fun); g != w {
+				t.Errorf("%s used obj: got %v (%[2]T), want %v", prefix, g, w)
 			}
 			i++
 		}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	_ "unsafe"
 )
 
 // CallKind describes the function position of an [*ast.CallExpr].
@@ -74,6 +75,9 @@ func (k CallKind) String() string {
 //	int(x)        CallConversion    nil
 //	[]byte("")    CallConversion    nil
 func ClassifyCall(info *types.Info, call *ast.CallExpr) (CallKind, types.Object) {
+	if info.Types == nil {
+		panic("ClassifyCall: info.Types is nil")
+	}
 	if info.Types[call.Fun].IsType() {
 		return CallConversion, nil
 	}
@@ -134,40 +138,8 @@ func Used(info *types.Info, e ast.Expr) types.Object {
 	return used(info, e)
 }
 
-// placeholder: will be moved and documented in the next CL.
-func used(info *types.Info, e ast.Expr) types.Object {
-	e = ast.Unparen(e)
-	// Look through type instantiation if necessary.
-	isIndexed := false
-	switch d := e.(type) {
-	case *ast.IndexExpr:
-		if info.Types[d.Index].IsType() {
-			e = d.X
-		}
-	case *ast.IndexListExpr:
-		e = d.X
-	}
-	var obj types.Object
-	switch e := e.(type) {
-	case *ast.Ident:
-		obj = info.Uses[e] // type, var, builtin, or declared func
-	case *ast.SelectorExpr:
-		if sel, ok := info.Selections[e]; ok {
-			obj = sel.Obj() // method or field
-		} else {
-			obj = info.Uses[e.Sel] // qualified identifier?
-		}
-	}
-	// If a variable like a slice or map is being indexed, do not
-	// return an object.
-	if _, ok := obj.(*types.Var); ok && isIndexed {
-		return nil
-	}
-	return obj
-}
+//go:linkname used golang.org/x/tools/go/types/typeutil.used
+func used(info *types.Info, e ast.Expr) types.Object
 
-// placeholder: will be moved and documented in the next CL.
-func interfaceMethod(f *types.Func) bool {
-	recv := f.Signature().Recv()
-	return recv != nil && types.IsInterface(recv.Type())
-}
+//go:linkname interfaceMethod golang.org/x/tools/go/types/typeutil.interfaceMethod
+func interfaceMethod(f *types.Func) bool

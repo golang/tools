@@ -122,6 +122,7 @@ func testStaticCallee(t *testing.T, contents []string) {
 	cfg := &types.Config{Importer: closure(packages)}
 	info := &types.Info{
 		Instances:    make(map[*ast.Ident]types.Instance),
+		Types:        make(map[ast.Expr]types.TypeAndValue),
 		Uses:         make(map[*ast.Ident]types.Object),
 		Selections:   make(map[*ast.SelectorExpr]*types.Selection),
 		FileVersions: make(map[*ast.File]string),
