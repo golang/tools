@@ -29,7 +29,7 @@ import (
 func iexport(fset *token.FileSet, version int, pkg *types.Package) ([]byte, error) {
 	var buf bytes.Buffer
 	const bundle, shallow = false, false
-	if err := gcimporter.IExportCommon(&buf, fset, bundle, shallow, version, []*types.Package{pkg}); err != nil {
+	if err := gcimporter.IExportCommon(&buf, fset, bundle, shallow, version, []*types.Package{pkg}, nil); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

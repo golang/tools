@@ -271,10 +271,10 @@ import (
 // file system, be sure to include a cryptographic digest of the executable in
 // the key to avoid version skew.
 //
-// If the provided reportf func is non-nil, it will be used for reporting bugs
-// encountered during export.
-// TODO(rfindley): remove reportf when we are confident enough in the new
-// objectpath encoding.
+// If the provided reportf func is non-nil, it is used for reporting
+// bugs (e.g. recovered panics) encountered during export, enabling us
+// to obtain via telemetry the stack that would otherwise be lost by
+// merely returning an error.
 func IExportShallow(fset *token.FileSet, pkg *types.Package, reportf ReportFunc) ([]byte, error) {
 	// In principle this operation can only fail if out.Write fails,
 	// but that's impossible for bytes.Buffer---and as a matter of
@@ -283,7 +283,7 @@ func IExportShallow(fset *token.FileSet, pkg *types.Package, reportf ReportFunc)
 	// TODO(adonovan): use byte slices throughout, avoiding copying.
 	const bundle, shallow = false, true
 	var out bytes.Buffer
-	err := iexportCommon(&out, fset, bundle, shallow, iexportVersion, []*types.Package{pkg})
+	err := iexportCommon(&out, fset, bundle, shallow, iexportVersion, []*types.Package{pkg}, reportf)
 	return out.Bytes(), err
 }
 
@@ -323,20 +323,27 @@ const bundleVersion = 0
 // so that calls to IImportData can override with a provided package path.
 func IExportData(out io.Writer, fset *token.FileSet, pkg *types.Package) error {
 	const bundle, shallow = false, false
-	return iexportCommon(out, fset, bundle, shallow, iexportVersion, []*types.Package{pkg})
+	return iexportCommon(out, fset, bundle, shallow, iexportVersion, []*types.Package{pkg}, nil)
 }
 
 // IExportBundle writes an indexed export bundle for pkgs to out.
 func IExportBundle(out io.Writer, fset *token.FileSet, pkgs []*types.Package) error {
 	const bundle, shallow = true, false
-	return iexportCommon(out, fset, bundle, shallow, iexportVersion, pkgs)
+	return iexportCommon(out, fset, bundle, shallow, iexportVersion, pkgs, nil)
 }
 
-func iexportCommon(out io.Writer, fset *token.FileSet, bundle, shallow bool, version int, pkgs []*types.Package) (err error) {
+func iexportCommon(out io.Writer, fset *token.FileSet, bundle, shallow bool, version int, pkgs []*types.Package, reportf ReportFunc) (err error) {
 	if !debug {
 		defer func() {
 			if e := recover(); e != nil {
+				// Report the stack via telemetry (see #71067).
+				if reportf != nil {
+					reportf("panic in exporter")
+				}
 				if ierr, ok := e.(internalError); ok {
+					// internalError usually means we exported a
+					// bad go/types data structure: a violation
+					// of an implicit precondition of Export.
 					err = ierr
 					return
 				}

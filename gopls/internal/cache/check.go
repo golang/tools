@@ -637,7 +637,10 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 	go func() {
 		exportData, err := gcimporter.IExportShallow(b.fset, pkg, bug.Reportf)
 		if err != nil {
-			bug.Reportf("exporting package %v: %v", ph.mp.ID, err)
+			// Internal error; the stack will have been reported via
+			// bug.Reportf within IExportShallow, so there's not much
+			// to do here (issue #71067).
+			event.Error(ctx, "IExportShallow failed", err, label.Package.Of(string(ph.mp.ID)))
 			return
 		}
 		if err := filecache.Set(exportDataKind, ph.key, exportData); err != nil {
