@@ -166,3 +166,66 @@ func H(x int) any { return &x }
 		)
 	})
 }
+
+// TestCompilerOptDetails_config exercises that the "want optimization
+// details" flag honors the "annotation" configuration setting.
+func TestCompilerOptDetails_config(t *testing.T) {
+	if runtime.GOOS == "android" {
+		t.Skipf("the compiler optimization details code action doesn't work on Android")
+	}
+
+	const mod = `
+-- go.mod --
+module mod.com
+go 1.18
+
+-- a/a.go --
+package a
+
+func F(x int) any { return &x         } // escape(x escapes to heap)
+func G()          { defer func(){} () } // cannotInlineFunction(unhandled op DEFER)
+`
+
+	for _, escape := range []bool{true, false} {
+		WithOptions(
+			Settings{"annotations": map[string]any{"inline": true, "escape": escape}},
+		).Run(t, mod, func(t *testing.T, env *Env) {
+			env.OpenFile("a/a.go")
+			actions := env.CodeActionForFile("a/a.go", nil)
+
+			docAction, err := codeActionByKind(actions, settings.GoToggleCompilerOptDetails)
+			if err != nil {
+				t.Fatal(err)
+			}
+			params := &protocol.ExecuteCommandParams{
+				Command:   docAction.Command.Command,
+				Arguments: docAction.Command.Arguments,
+			}
+			env.ExecuteCommand(params, nil)
+
+			env.OnceMet(
+				CompletedWork(server.DiagnosticWorkTitle(server.FromToggleCompilerOptDetails), 1, true),
+				cond(escape, Diagnostics, NoDiagnostics)(
+					ForFile("a/a.go"),
+					AtPosition("a/a.go", 2, 7),
+					WithMessage("x escapes to heap"),
+					WithSeverityTags("optimizer details", protocol.SeverityInformation, nil),
+				),
+				Diagnostics(
+					ForFile("a/a.go"),
+					AtPosition("a/a.go", 3, 5),
+					WithMessage("cannotInlineFunction(unhandled op DEFER)"),
+					WithSeverityTags("optimizer details", protocol.SeverityInformation, nil),
+				),
+			)
+		})
+	}
+}
+
+func cond[T any](cond bool, x, y T) T {
+	if cond {
+		return x
+	} else {
+		return y
+	}
+}
