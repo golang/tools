@@ -240,7 +240,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.GoAssembly, fn: goAssembly, needPkg: true},
 	{kind: settings.GoDoc, fn: goDoc, needPkg: true},
 	{kind: settings.GoFreeSymbols, fn: goFreeSymbols},
-	{kind: settings.GoTest, fn: goTest},
+	{kind: settings.GoTest, fn: goTest, needPkg: true},
 	{kind: settings.GoToggleCompilerOptDetails, fn: toggleCompilerOptDetails},
 	{kind: settings.GoplsDocFeatures, fn: goplsDocFeatures},
 	{kind: settings.RefactorExtractFunction, fn: refactorExtractFunction},
