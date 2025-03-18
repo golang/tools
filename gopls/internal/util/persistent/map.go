@@ -203,6 +203,8 @@ func (pm *Map[K, V]) SetAll(other *Map[K, V]) {
 // Set updates the value associated with the specified key.
 // If release is non-nil, it will be called with entry's key and value once the
 // key is no longer contained in the map or any clone.
+//
+// TODO(adonovan): fix release, which has the wrong type.
 func (pm *Map[K, V]) Set(key K, value V, release func(key, value any)) {
 	first := pm.root
 	second := newNodeWithRef(key, value, release)
