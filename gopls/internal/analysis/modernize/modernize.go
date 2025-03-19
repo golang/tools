@@ -187,3 +187,23 @@ func enabledCategory(filter, category string) bool {
 	}
 	return exclude
 }
+
+// isIdempotentExpr returns true if we can determine that
+// the passed expression is idempotent.
+func isIdempotentExpr(expr ast.Expr) bool {
+	isDeterministic := true
+	ast.Inspect(expr, func(n ast.Node) bool {
+        switch n.(type) {
+		case nil, *ast.Ident, *ast.BasicLit, *ast.BinaryExpr, *ast.UnaryExpr,
+			*ast.ParenExpr, *ast.SelectorExpr, *ast.IndexExpr, *ast.SliceExpr,
+			*ast.TypeAssertExpr, *ast.StarExpr, *ast.CompositeLit,
+			*ast.ArrayType, *ast.StructType, *ast.MapType, *ast.InterfaceType:
+			return true
+		default:
+			isDeterministic = false
+			return false
+		}
+	})
+	return isDeterministic
+}
+
