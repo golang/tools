@@ -1177,7 +1177,10 @@ func isValidIdentifierChar(char byte) bool {
 
 // adds struct fields, interface methods, function declaration fields to completion
 func (c *completer) addFieldItems(fields *ast.FieldList) {
-	if fields == nil {
+	// TODO: in golang/go#72828, we get here with a nil surrounding.
+	// This indicates a logic bug elsewhere: we should only be interrogating the
+	// surrounding if it is set.
+	if fields == nil || c.surrounding == nil {
 		return
 	}
 
