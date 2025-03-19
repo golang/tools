@@ -1,0 +1,13 @@
+package stringscutprefix
+
+import (
+	. "bytes"
+)
+
+// test supported cases of pattern 1
+func _() {
+	if after, ok := CutPrefix(bss, bspre); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
+		a := after
+		_ = a
+	}
+}

@@ -550,6 +550,9 @@ Categories of modernize diagnostic:
   - stringseq: replace Split in "for range strings.Split(...)" by go1.24's
     more efficient SplitSeq, or Fields with FieldSeq.
 
+  - stringscutprefix: replace some uses of HasPrefix followed by TrimPrefix with CutPrefix,
+    added to the strings package in go1.20.
+
 Default: on.
 
 Package documentation: [modernize](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize)

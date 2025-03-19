@@ -220,7 +220,7 @@ func CheckReadable(pass *analysis.Pass, filename string) error {
 // to form a qualified name, and the edit for the new import.
 //
 // In the special case that pkgpath is dot-imported then member, the
-// identifer for which the import is being added, is consulted. If
+// identifier for which the import is being added, is consulted. If
 // member is not shadowed at pos, AddImport returns (".", "", nil).
 // (AddImport accepts the caller's implicit claim that the imported
 // package declares member.)
@@ -252,13 +252,7 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 
 	// We must add a new import.
 	// Ensure we have a fresh name.
-	newName := preferredName
-	for i := 0; ; i++ {
-		if _, obj := scope.LookupParent(newName, pos); obj == nil {
-			break // fresh
-		}
-		newName = fmt.Sprintf("%s%d", preferredName, i)
-	}
+	newName := FreshName(scope, pos, preferredName)
 
 	// Create a new import declaration either before the first existing
 	// declaration (which must exist), including its comments; or
@@ -296,6 +290,19 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 		End:     pos,
 		NewText: []byte(newText),
 	}}
+}
+
+// FreshName returns the name of an identifier that is undefined
+// at the specified position, based on the preferred name.
+func FreshName(scope *types.Scope, pos token.Pos, preferred string) string {
+	newName := preferred
+	for i := 0; ; i++ {
+		if _, obj := scope.LookupParent(newName, pos); obj == nil {
+			break // fresh
+		}
+		newName = fmt.Sprintf("%s%d", preferred, i)
+	}
+	return newName
 }
 
 // Format returns a string representation of the expression e.

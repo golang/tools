@@ -87,6 +87,7 @@ func run(pass *analysis.Pass) (any, error) {
 	rangeint(pass)
 	slicescontains(pass)
 	slicesdelete(pass)
+	stringscutprefix(pass)
 	stringsseq(pass)
 	sortslice(pass)
 	testingContext(pass)
