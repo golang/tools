@@ -10,7 +10,7 @@
 // builds a list of push/pop events and their node type. Subsequent
 // method calls that request a traversal scan this list, rather than walk
 // the AST, and perform type filtering using efficient bit sets.
-// This representation is sometimes called a "balanced parenthesis tree".
+// This representation is sometimes called a "balanced parenthesis tree."
 //
 // Experiments suggest the inspector's traversals are about 2.5x faster
 // than ast.Inspect, but it may take around 5 traversals for this

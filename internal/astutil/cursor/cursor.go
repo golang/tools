@@ -210,37 +210,18 @@ func (c Cursor) Parent() Cursor {
 }
 
 // ParentEdge returns the identity of the field in the parent node
-// that holds this cursor's node.
+// that holds this cursor's node, and if it is a list, the index within it.
 //
 // For example, f(x, y) is a CallExpr whose three children are Idents.
-// f has edge kind [edge.CallExpr_Fun] and x and y have kind
-// [edge.CallExpr_Args].
+// f has edge kind [edge.CallExpr_Fun] and index -1.
+// x and y have kind [edge.CallExpr_Args] and indices 0 and 1, respectively.
 //
-// If called on a child of the Root node, it returns [edge.Invalid].
+// If called on a child of the Root node, it returns ([edge.Invalid], -1).
 //
 // ParentEdge must not be called on the Root node (whose [Cursor.Node] returns nil).
-func (c Cursor) ParentEdge() edge.Kind {
-	k, _ := c.parentEdgeAndIndex()
-	return k
-}
-
-// ParentIndex returns the slice index of this cursor's node within
-// the field of the parent node that holds it.
-//
-// For example, f(x, y) is a CallExpr whose three children are Idents.
-// x and y have indices 0 and 1, respectively; f has index -1.
-//
-// If called on a child of the Root node, it returns -1.
-//
-// ParentIndex must not be called on the Root node (whose [Cursor.Node] returns nil).
-func (c Cursor) ParentIndex() int {
-	_, idx := c.parentEdgeAndIndex()
-	return idx
-}
-
-func (c Cursor) parentEdgeAndIndex() (edge.Kind, int) {
+func (c Cursor) ParentEdge() (edge.Kind, int) {
 	if c.index < 0 {
-		panic("Cursor.Edge called on Root node")
+		panic("Cursor.ParentEdge called on Root node")
 	}
 	events := c.events()
 	pop := events[c.index].index
@@ -253,6 +234,8 @@ func (c Cursor) parentEdgeAndIndex() (edge.Kind, int) {
 // The indicated child node must exist.
 //
 // ChildAt must not be called on the Root node (whose [Cursor.Node] returns nil).
+//
+// Invariant: c.Parent().ChildAt(c.ParentEdge()) == c.
 func (c Cursor) ChildAt(k edge.Kind, idx int) Cursor {
 	target := packEdgeKindAndIndex(k, idx)
 

@@ -55,7 +55,7 @@ func stringsseq(pass *analysis.Pass) {
 			if !ok {
 				if id, ok := rng.X.(*ast.Ident); ok {
 					if v, ok := info.Uses[id].(*types.Var); ok {
-						if curRange.ParentEdge() == edge.BlockStmt_List && curRange.ParentIndex() > 0 {
+						if ek, idx := curRange.ParentEdge(); ek == edge.BlockStmt_List && idx > 0 {
 							curPrev, _ := curRange.PrevSibling()
 							if assign, ok := curPrev.Node().(*ast.AssignStmt); ok &&
 								assign.Tok == token.DEFINE &&

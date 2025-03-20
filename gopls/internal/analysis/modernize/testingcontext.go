@@ -110,8 +110,7 @@ func testingContext(pass *analysis.Pass) {
 		if curFunc, ok := enclosingFunc(cur); ok {
 			switch n := curFunc.Node().(type) {
 			case *ast.FuncLit:
-				if curFunc.ParentEdge() == edge.CallExpr_Args &&
-					curFunc.ParentIndex() == 1 {
+				if ek, idx := curFunc.ParentEdge(); ek == edge.CallExpr_Args && idx == 1 {
 					// Have: call(..., func(...) { ...context.WithCancel(...)... })
 					obj := typeutil.Callee(info, curFunc.Parent().Node().(*ast.CallExpr))
 					if (analysisinternal.IsMethodNamed(obj, "testing", "T", "Run") ||

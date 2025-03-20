@@ -215,10 +215,10 @@ func isScalarLvalue(curId cursor.Cursor) bool {
 	cur := curId
 
 	// Strip enclosing parens.
-	ek := cur.ParentEdge()
+	ek, _ := cur.ParentEdge()
 	for ek == edge.ParenExpr_X {
 		cur = cur.Parent()
-		ek = cur.ParentEdge()
+		ek, _ = cur.ParentEdge()
 	}
 
 	switch ek {

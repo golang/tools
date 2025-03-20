@@ -202,8 +202,7 @@ func run(pass *analysis.Pass) (any, error) {
 				case *ast.AssignStmt:
 					// f  = func() {...}
 					// f := func() {...}
-					if c.ParentEdge() == edge.AssignStmt_Rhs {
-						idx := c.ParentIndex()
+					if ek, idx := c.ParentEdge(); ek == edge.AssignStmt_Rhs {
 						// Inv: n == AssignStmt.Rhs[idx]
 						if id, ok := parent.Lhs[idx].(*ast.Ident); ok {
 							fn = pass.TypesInfo.ObjectOf(id)

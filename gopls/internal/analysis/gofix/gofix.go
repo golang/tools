@@ -386,13 +386,13 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId cursor.Cursor) {
 	//   pkg.Id[T]
 	//   pkg.Id[K, V]
 	var expr ast.Expr = id
-	if curId.ParentEdge() == edge.SelectorExpr_Sel {
+	if ek, _ := curId.ParentEdge(); ek == edge.SelectorExpr_Sel {
 		curId = curId.Parent()
 		expr = curId.Node().(ast.Expr)
 	}
 	// If expr is part of an IndexExpr or IndexListExpr, we'll need that node.
 	// Given C[int], TypeOf(C) is generic but TypeOf(C[int]) is instantiated.
-	switch curId.ParentEdge() {
+	switch ek, _ := curId.ParentEdge(); ek {
 	case edge.IndexExpr_X:
 		expr = curId.Parent().Node().(*ast.IndexExpr)
 	case edge.IndexListExpr_X:
@@ -548,7 +548,7 @@ func (a *analyzer) inlineConst(con *types.Const, cur cursor.Cursor) {
 	}
 	// If n is qualified by a package identifier, we'll need the full selector expression.
 	var expr ast.Expr = n
-	if cur.ParentEdge() == edge.SelectorExpr_Sel {
+	if ek, _ := cur.ParentEdge(); ek == edge.SelectorExpr_Sel {
 		expr = cur.Parent().Node().(ast.Expr)
 	}
 	a.reportInline("constant", "Constant", expr, edits, importPrefix+incon.RHSName)
