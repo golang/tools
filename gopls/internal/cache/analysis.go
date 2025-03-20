@@ -637,7 +637,7 @@ func (an *analysisNode) runCached(ctx context.Context, key file.Hash) (*analyzeS
 	return summary, nil
 }
 
-// analysisCacheKey returns a cache key that is a cryptographic digest
+// cacheKey returns a cache key that is a cryptographic digest
 // of the all the values that might affect type checking and analysis:
 // the analyzer names, package metadata, names and contents of
 // compiled Go files, and vdeps (successor) information

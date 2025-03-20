@@ -59,7 +59,7 @@ func TestMain(t *testing.M) {
 	os.Exit(t.Run())
 }
 
-// setups state each of the tests uses
+// setup state each of the tests uses
 func setup() error {
 	// create zipfs
 	b := new(bytes.Buffer)

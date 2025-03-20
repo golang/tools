@@ -211,7 +211,7 @@ var acceptedSchemes = map[string]bool{
 	"https": true,
 }
 
-// urlRegexp is the user-supplied regular expression to match URL.
+// findLinksInString is the user-supplied regular expression to match URL.
 // srcOffset is the start offset of 'src' within m's file.
 func findLinksInString(urlRegexp *regexp.Regexp, src string, srcOffset int, m *protocol.Mapper) ([]protocol.DocumentLink, error) {
 	var links []protocol.DocumentLink

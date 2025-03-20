@@ -817,7 +817,7 @@ func blockExit(fn *Function, block *BasicBlock, pos token.Pos) *exit {
 	return e
 }
 
-// blockExit creates a new exit to a yield fn that returns the source function.
+// returnExit creates a new exit to a yield fn that returns the source function.
 func returnExit(fn *Function, pos token.Pos) *exit {
 	e := &exit{
 		id:   unique(fn),

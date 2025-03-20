@@ -34,7 +34,7 @@ func ParseDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protoc
 	return collectDiagnostics(ctx, snapshot, parseDiagnostics)
 }
 
-// Diagnostics returns diagnostics from running go mod tidy.
+// TidyDiagnostics returns diagnostics from running go mod tidy.
 func TidyDiagnostics(ctx context.Context, snapshot *cache.Snapshot) (map[protocol.DocumentURI][]*cache.Diagnostic, error) {
 	ctx, done := event.Start(ctx, "mod.Diagnostics", snapshot.Labels()...)
 	defer done()

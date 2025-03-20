@@ -529,7 +529,7 @@ func parsePredicate(s string) (func(string) bool, error) {
 	}, nil
 }
 
-// claimStack maps each stack ID to its issue (if any).
+// claimStacks maps each stack ID to its issue (if any).
 //
 // It returns a map of stack text to the issue that claimed it.
 //
