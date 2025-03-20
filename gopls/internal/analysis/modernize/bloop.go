@@ -101,7 +101,7 @@ func bloop(pass *analysis.Pass) {
 						if assign, ok := n.Init.(*ast.AssignStmt); ok &&
 							assign.Tok == token.DEFINE &&
 							len(assign.Rhs) == 1 &&
-							isZeroLiteral(assign.Rhs[0]) &&
+							isZeroIntLiteral(info, assign.Rhs[0]) &&
 							is[*ast.IncDecStmt](n.Post) &&
 							n.Post.(*ast.IncDecStmt).Tok == token.INC &&
 							equalSyntax(n.Post.(*ast.IncDecStmt).X, assign.Lhs[0]) &&

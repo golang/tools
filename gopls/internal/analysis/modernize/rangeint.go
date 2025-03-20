@@ -31,8 +31,6 @@ import (
 //   - The ':=' may be replaced by '='.
 //   - The fix may remove "i :=" if it would become unused.
 //
-// TODO(adonovan): permit variants such as "i := int64(0)".
-//
 // Restrictions:
 //   - The variable i must not be assigned or address-taken within the
 //     loop, because a "for range int" loop does not respect assignments
@@ -54,7 +52,7 @@ func rangeint(pass *analysis.Pass) {
 			if init, ok := loop.Init.(*ast.AssignStmt); ok &&
 				isSimpleAssign(init) &&
 				is[*ast.Ident](init.Lhs[0]) &&
-				isZeroLiteral(init.Rhs[0]) {
+				isZeroIntLiteral(info, init.Rhs[0]) {
 				// Have: for i = 0; ... (or i := 0)
 				index := init.Lhs[0].(*ast.Ident)
 
@@ -145,11 +143,19 @@ func rangeint(pass *analysis.Pass) {
 						// re-type check the expression to detect this case.
 						var beforeLimit, afterLimit string
 						if v := info.Types[limit].Value; v != nil {
-							beforeLimit, afterLimit = "int(", ")"
+							tVar := info.TypeOf(init.Rhs[0])
+
+							// TODO(adonovan): use a types.Qualifier that respects the existing
+							// imports of this file that are visible (not shadowed) at the current position,
+							// and adds new imports as needed, similar to analysisinternal.AddImport.
+							// (Unfortunately types.Qualifier doesn't provide the name of the package
+							// member to be qualified, a qualifier cannot perform the necessary shadowing
+							// check for dot-imported names.)
+							beforeLimit, afterLimit = fmt.Sprintf("%s(", types.TypeString(tVar, (*types.Package).Name)), ")"
 							info2 := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
 							if types.CheckExpr(pass.Fset, pass.Pkg, limit.Pos(), limit, info2) == nil {
 								tLimit := types.Default(info2.TypeOf(limit))
-								if types.AssignableTo(tLimit, types.Typ[types.Int]) {
+								if types.AssignableTo(tLimit, tVar) {
 									beforeLimit, afterLimit = "", ""
 								}
 							}

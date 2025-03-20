@@ -7,6 +7,7 @@ package modernize
 import (
 	_ "embed"
 	"go/ast"
+	"go/constant"
 	"go/format"
 	"go/token"
 	"go/types"
@@ -117,10 +118,9 @@ func formatExprs(fset *token.FileSet, exprs []ast.Expr) string {
 	return buf.String()
 }
 
-// isZeroLiteral reports whether e is the literal 0.
-func isZeroLiteral(e ast.Expr) bool {
-	lit, ok := e.(*ast.BasicLit)
-	return ok && lit.Kind == token.INT && lit.Value == "0"
+// isZeroIntLiteral reports whether e is an integer whose value is 0.
+func isZeroIntLiteral(info *types.Info, e ast.Expr) bool {
+	return info.Types[e].Value == constant.MakeInt64(0)
 }
 
 // filesUsing returns a cursor for each *ast.File in the inspector

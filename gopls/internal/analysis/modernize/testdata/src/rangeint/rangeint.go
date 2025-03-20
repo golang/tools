@@ -1,9 +1,51 @@
 package rangeint
 
+import (
+	"os"
+	os1 "os"
+)
+
 func _(i int, s struct{ i int }, slice []int) {
 	for i := 0; i < 10; i++ { // want "for loop can be modernized using range over int"
 		println(i)
 	}
+	for j := int(0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+	for j := int8(0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+	for j := int16(0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+	for j := int32(0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+	for j := int64(0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+	for j := uint8(0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+	for j := uint16(0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+	for j := uint32(0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+	for j := uint64(0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+	for j := int8(0.); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+	for j := int8(.0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+	for j := os.FileMode(0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
+	}
+
 	{
 		var i int
 		for i = 0; i < f(); i++ { // want "for loop can be modernized using range over int"
@@ -21,6 +63,12 @@ func _(i int, s struct{ i int }, slice []int) {
 	}
 
 	// nope
+	for j := .0; j < 10; j++ { // nope: j is a float type
+		println(j)
+	}
+	for j := float64(0); j < 10; j++ { // nope: j is a float type
+		println(j)
+	}
 	for i := 0; i < 10; { // nope: missing increment
 	}
 	for i := 0; i < 10; i-- { // nope: negative increment
@@ -72,6 +120,10 @@ func issue71847d() {
 	const limit = 1e3            // float
 	for i := 0; i < limit; i++ { // want "for loop can be modernized using range over int"
 	}
+	for i := int(0); i < limit; i++ { // want "for loop can be modernized using range over int"
+	}
+	for i := uint(0); i < limit; i++ { // want "for loop can be modernized using range over int"
+	}
 
 	const limit2 = 1 + 0i         // complex
 	for i := 0; i < limit2; i++ { // want "for loop can be modernized using range over int"
@@ -96,5 +148,11 @@ func issue72726() {
 
 	var arr []int
 	for i = 0; i < arr[i]; i++ { // nope
+	}
+}
+
+func todo() {
+	for j := os1.FileMode(0); j < 10; j++ { // want "for loop can be modernized using range over int"
+		println(j)
 	}
 }
