@@ -107,7 +107,7 @@ func slicesdelete(pass *analysis.Pass) {
 
 // equalSliceX checks that we're dealing with the same slice
 func equalSliceX(slice1, slice2 *ast.SliceExpr) bool {
-    return equalSyntax(slice1.X, slice2.X) && isIdempotentExpr(slice1.X)
+	return equalSyntax(slice1.X, slice2.X) && isIdempotentExpr(slice1.X)
 }
 
 // Given two slice indices a and b, returns true if we can verify that a < b.

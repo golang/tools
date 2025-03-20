@@ -193,7 +193,7 @@ func enabledCategory(filter, category string) bool {
 func isIdempotentExpr(expr ast.Expr) bool {
 	isDeterministic := true
 	ast.Inspect(expr, func(n ast.Node) bool {
-        switch n.(type) {
+		switch n.(type) {
 		case nil, *ast.Ident, *ast.BasicLit, *ast.BinaryExpr, *ast.UnaryExpr,
 			*ast.ParenExpr, *ast.SelectorExpr, *ast.IndexExpr, *ast.SliceExpr,
 			*ast.TypeAssertExpr, *ast.StarExpr, *ast.CompositeLit,
@@ -206,4 +206,3 @@ func isIdempotentExpr(expr ast.Expr) bool {
 	})
 	return isDeterministic
 }
-
