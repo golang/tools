@@ -188,24 +188,24 @@ func enabledCategory(filter, category string) bool {
 	return exclude
 }
 
-// noEffects reports whether the expression has no side effects, i.e., it 
+// noEffects reports whether the expression has no side effects, i.e., it
 // does not modify the memory state. This function is conservative: it may
 // return false even when the expression has no effect.
 func noEffects(expr ast.Expr) bool {
 	noEffects := true
 	ast.Inspect(expr, func(n ast.Node) bool {
-        switch v := n.(type) {
+		switch v := n.(type) {
 		case nil, *ast.Ident, *ast.BasicLit, *ast.BinaryExpr, *ast.ParenExpr,
-            *ast.SelectorExpr, *ast.IndexExpr, *ast.SliceExpr, *ast.TypeAssertExpr,
-            *ast.StarExpr, *ast.CompositeLit, *ast.ArrayType, *ast.StructType,
-            *ast.MapType, *ast.InterfaceType, *ast.KeyValueExpr:
+			*ast.SelectorExpr, *ast.IndexExpr, *ast.SliceExpr, *ast.TypeAssertExpr,
+			*ast.StarExpr, *ast.CompositeLit, *ast.ArrayType, *ast.StructType,
+			*ast.MapType, *ast.InterfaceType, *ast.KeyValueExpr:
 			return true
-        case *ast.UnaryExpr:
-            if v.Op == token.ARROW {
-                noEffects = false
-                return false
-            }
-            return true
+		case *ast.UnaryExpr:
+			if v.Op == token.ARROW {
+				noEffects = false
+				return false
+			}
+			return true
 		default:
 			noEffects = false
 			return false
