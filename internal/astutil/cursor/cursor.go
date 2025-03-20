@@ -209,23 +209,67 @@ func (c Cursor) Parent() Cursor {
 	return Cursor{c.in, c.events()[c.index].parent}
 }
 
-// Edge returns the identity of the field in the parent node
-// that holds this cursor's node, and if it is a list, the index within it.
+// ParentEdge returns the identity of the field in the parent node
+// that holds this cursor's node.
 //
 // For example, f(x, y) is a CallExpr whose three children are Idents.
-// f has edge kind [edge.CallExpr_Fun] and index -1.
-// x and y have kind [edge.CallExpr_Args] and indices 0 and 1, respectively.
+// f has edge kind [edge.CallExpr_Fun] and x and y have kind
+// [edge.CallExpr_Args].
 //
-// Edge must not be called on the Root node (whose [Cursor.Node] returns nil).
+// If called on a child of the Root node, it returns [edge.Invalid].
 //
-// If called on a child of the Root node, it returns ([edge.Invalid], -1).
-func (c Cursor) Edge() (edge.Kind, int) {
+// ParentEdge must not be called on the Root node (whose [Cursor.Node] returns nil).
+func (c Cursor) ParentEdge() edge.Kind {
+	k, _ := c.parentEdgeAndIndex()
+	return k
+}
+
+// ParentIndex returns the slice index of this cursor's node within
+// the field of the parent node that holds it.
+//
+// For example, f(x, y) is a CallExpr whose three children are Idents.
+// x and y have indices 0 and 1, respectively; f has index -1.
+//
+// If called on a child of the Root node, it returns -1.
+//
+// ParentIndex must not be called on the Root node (whose [Cursor.Node] returns nil).
+func (c Cursor) ParentIndex() int {
+	_, idx := c.parentEdgeAndIndex()
+	return idx
+}
+
+func (c Cursor) parentEdgeAndIndex() (edge.Kind, int) {
 	if c.index < 0 {
 		panic("Cursor.Edge called on Root node")
 	}
 	events := c.events()
 	pop := events[c.index].index
 	return unpackEdgeKindAndIndex(events[pop].parent)
+}
+
+// ChildAt returns the cursor for the child of the
+// current node identified by its edge and index.
+// The index must be -1 if the edge.Kind is not a slice.
+// The indicated child node must exist.
+//
+// ChildAt must not be called on the Root node (whose [Cursor.Node] returns nil).
+func (c Cursor) ChildAt(k edge.Kind, idx int) Cursor {
+	target := packEdgeKindAndIndex(k, idx)
+
+	// Unfortunately there's no shortcut to looping.
+	events := c.events()
+	i := c.index + 1
+	for {
+		pop := events[i].index
+		if pop < i {
+			break
+		}
+		if events[pop].parent == target {
+			return Cursor{c.in, i}
+		}
+		i = pop + 1
+	}
+	panic(fmt.Sprintf("ChildAt(%v, %d): no such child of %v", k, idx, c))
 }
 
 // Child returns the cursor for n, which must be a direct child of c's Node.
@@ -355,7 +399,7 @@ func (c Cursor) LastChild() (Cursor, bool) {
 // So, do not assume that the previous sibling of an ast.Stmt is also
 // an ast.Stmt, or if it is, that they are executed sequentially,
 // unless you have established that, say, its parent is a BlockStmt
-// or its [Cursor.Edge] is [edge.BlockStmt_List].
+// or its [Cursor.ParentEdge] is [edge.BlockStmt_List].
 // For example, given "for S1; ; S2 {}", the predecessor of S2 is S1,
 // even though they are not executed in sequence.
 func (c Cursor) Children() iter.Seq[Cursor] {

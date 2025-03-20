@@ -31,6 +31,9 @@ func maskOf(nodes []ast.Node) uint64
 //go:linkname events golang.org/x/tools/go/ast/inspector.events
 func events(in *inspector.Inspector) []event
 
+//go:linkname packEdgeKindAndIndex golang.org/x/tools/go/ast/inspector.packEdgeKindAndIndex
+func packEdgeKindAndIndex(edge.Kind, int) int32
+
 //go:linkname unpackEdgeKindAndIndex golang.org/x/tools/go/ast/inspector.unpackEdgeKindAndIndex
 func unpackEdgeKindAndIndex(int32) (edge.Kind, int)
 

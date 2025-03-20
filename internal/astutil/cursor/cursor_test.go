@@ -131,9 +131,11 @@ func g() {
 		_ = curFunc.Node().(*ast.FuncDecl)
 
 		// Check edge and index.
-		if e, idx := curFunc.Edge(); e != edge.File_Decls || idx != nfuncs {
-			t.Errorf("%v.Edge() = (%v, %v),  want edge.File_Decls, %d",
-				curFunc, e, idx, nfuncs)
+		if k := curFunc.ParentEdge(); k != edge.File_Decls {
+			t.Errorf("%v.ParentEdge() = %v,  want edge.File_Decls", curFunc, k)
+		}
+		if idx := curFunc.ParentIndex(); idx != nfuncs {
+			t.Errorf("%v.ParentIndex() = %d, want %d", curFunc, idx, nfuncs)
 		}
 
 		nfuncs++
@@ -367,8 +369,11 @@ func TestCursor_Edge(t *testing.T) {
 			continue // root node
 		}
 
-		e, idx := cur.Edge()
-		parent := cur.Parent()
+		var (
+			parent = cur.Parent()
+			e      = cur.ParentEdge()
+			idx    = cur.ParentIndex()
+		)
 
 		// ast.File, child of root?
 		if parent.Node() == nil {
@@ -384,10 +389,16 @@ func TestCursor_Edge(t *testing.T) {
 				e.NodeType(), parent.Node())
 		}
 
-		// Check consistency of c.Edge.Get(c.Parent().Node()) == c.Node().
+		// Check c.Edge.Get(c.Parent.Node) == c.Node.
 		if got := e.Get(parent.Node(), idx); got != cur.Node() {
 			t.Errorf("cur=%v@%s: %s.Get(cur.Parent().Node(), %d) = %T@%s, want cur.Node()",
 				cur, netFset.Position(cur.Node().Pos()), e, idx, got, netFset.Position(got.Pos()))
+		}
+
+		// Check c.Parent.ChildAt(c.ParentEdge, c.ParentIndex) == c.
+		if got := parent.ChildAt(e, idx); got != cur {
+			t.Errorf("cur=%v@%s: cur.Parent().ChildAt(%v, %d) = %T@%s, want cur",
+				cur, netFset.Position(cur.Node().Pos()), e, idx, got.Node(), netFset.Position(got.Node().Pos()))
 		}
 
 		// Check that reflection on the parent finds the current node.
