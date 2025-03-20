@@ -94,7 +94,7 @@ func slicesdelete(pass *analysis.Pass) {
 					slice2, ok2 := call.Args[1].(*ast.SliceExpr)
 					if ok1 && slice1.Low == nil && !slice1.Slice3 &&
 						ok2 && slice2.High == nil && !slice2.Slice3 &&
-						equalSliceX(slice1, slice2) &&
+						equalSyntax(slice1.X, slice2.X) && isIdempotentExpr(slice1.X) &&
 						increasingSliceIndices(info, slice1.High, slice2.Low) {
 						// Have append(s[:a], s[b:]...) where we can verify a < b.
 						report(file, call, slice1, slice2)
@@ -103,11 +103,6 @@ func slicesdelete(pass *analysis.Pass) {
 			}
 		}
 	}
-}
-
-// equalSliceX checks that we're dealing with the same slice
-func equalSliceX(slice1, slice2 *ast.SliceExpr) bool {
-	return equalSyntax(slice1.X, slice2.X) && isIdempotentExpr(slice1.X)
 }
 
 // Given two slice indices a and b, returns true if we can verify that a < b.
