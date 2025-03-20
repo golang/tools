@@ -4,6 +4,8 @@ var g struct{ f []int }
 
 func h() []int { return []int{} }
 
+var ch chan []int
+
 func slicesdelete(test, other []byte, i int) {
 	const k = 1
 	_ = append(test[:i], test[i+1:]...) // want "Replace append with slices.Delete"
@@ -28,7 +30,9 @@ func slicesdelete(test, other []byte, i int) {
 
 	_ = append(g.f[:i], g.f[i+k:]...) // want "Replace append with slices.Delete"
 
-	_ = append(h()[:i], h()[i+1:]...) // potentially non idempotent expression
+	_ = append(h()[:i], h()[i+1:]...) // potentially has side effects
+
+	_ = append((<-ch)[:i], (<-ch)[i+1:]...) // has side effects
 
 	_ = append(test[:3], test[i+1:]...) // cannot verify a < b
 
