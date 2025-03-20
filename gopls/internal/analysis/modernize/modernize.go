@@ -188,21 +188,28 @@ func enabledCategory(filter, category string) bool {
 	return exclude
 }
 
-// isIdempotentExpr returns true if we can determine that
-// the passed expression is idempotent.
-func isIdempotentExpr(expr ast.Expr) bool {
-	isDeterministic := true
+// noEffects reports whether the expression has no side effects, i.e., it 
+// does not modify the memory state. This function is conservative: it may
+// return false even when the expression has no effect.
+func noEffects(expr ast.Expr) bool {
+	noEffects := true
 	ast.Inspect(expr, func(n ast.Node) bool {
-		switch n.(type) {
-		case nil, *ast.Ident, *ast.BasicLit, *ast.BinaryExpr, *ast.UnaryExpr,
-			*ast.ParenExpr, *ast.SelectorExpr, *ast.IndexExpr, *ast.SliceExpr,
-			*ast.TypeAssertExpr, *ast.StarExpr, *ast.CompositeLit,
-			*ast.ArrayType, *ast.StructType, *ast.MapType, *ast.InterfaceType:
+        switch v := n.(type) {
+		case nil, *ast.Ident, *ast.BasicLit, *ast.BinaryExpr, *ast.ParenExpr,
+            *ast.SelectorExpr, *ast.IndexExpr, *ast.SliceExpr, *ast.TypeAssertExpr,
+            *ast.StarExpr, *ast.CompositeLit, *ast.ArrayType, *ast.StructType,
+            *ast.MapType, *ast.InterfaceType, *ast.KeyValueExpr:
 			return true
+        case *ast.UnaryExpr:
+            if v.Op == token.ARROW {
+                noEffects = false
+                return false
+            }
+            return true
 		default:
-			isDeterministic = false
+			noEffects = false
 			return false
 		}
 	})
-	return isDeterministic
+	return noEffects
 }

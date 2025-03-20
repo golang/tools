@@ -94,7 +94,7 @@ func slicesdelete(pass *analysis.Pass) {
 					slice2, ok2 := call.Args[1].(*ast.SliceExpr)
 					if ok1 && slice1.Low == nil && !slice1.Slice3 &&
 						ok2 && slice2.High == nil && !slice2.Slice3 &&
-						equalSyntax(slice1.X, slice2.X) && isIdempotentExpr(slice1.X) &&
+						equalSyntax(slice1.X, slice2.X) && noEffects(slice1.X) &&
 						increasingSliceIndices(info, slice1.High, slice2.Low) {
 						// Have append(s[:a], s[b:]...) where we can verify a < b.
 						report(file, call, slice1, slice2)
