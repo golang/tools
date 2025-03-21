@@ -134,10 +134,7 @@ func (m *Matcher) ScoreChunks(chunks []string) float32 {
 			if sc < 0 {
 				sc = 0
 			}
-			normalizedScore := float32(sc) * m.scoreScale
-			if normalizedScore > 1 {
-				normalizedScore = 1
-			}
+			normalizedScore := min(float32(sc)*m.scoreScale, 1)
 
 			return normalizedScore
 		}
@@ -177,7 +174,7 @@ func (m *Matcher) MatchedRanges() []int {
 		i--
 	}
 	// Reverse slice.
-	for i := 0; i < len(ret)/2; i++ {
+	for i := range len(ret) / 2 {
 		ret[i], ret[len(ret)-1-i] = ret[len(ret)-1-i], ret[i]
 	}
 	return ret
@@ -211,7 +208,7 @@ func (m *Matcher) computeScore(candidate []byte, candidateLower []byte) int {
 	m.scores[0][0][0] = score(0, 0) // Start with 0.
 
 	segmentsLeft, lastSegStart := 1, 0
-	for i := 0; i < candLen; i++ {
+	for i := range candLen {
 		if m.roles[i] == RSep {
 			segmentsLeft++
 			lastSegStart = i + 1
@@ -304,7 +301,7 @@ func (m *Matcher) computeScore(candidate []byte, candidateLower []byte) int {
 
 			// Third dimension encodes whether there is a gap between the previous match and the current
 			// one.
-			for k := 0; k < 2; k++ {
+			for k := range 2 {
 				sc := m.scores[i-1][j-1][k].val() + charScore
 
 				isConsecutive := k == 1 || i-1 == 0 || i-1 == lastSegStart
@@ -342,7 +339,7 @@ func (m *Matcher) ScoreTable(candidate string) string {
 	var line1, line2, separator bytes.Buffer
 	line1.WriteString("\t")
 	line2.WriteString("\t")
-	for j := 0; j < len(m.pattern); j++ {
+	for j := range len(m.pattern) {
 		line1.WriteString(fmt.Sprintf("%c\t\t", m.pattern[j]))
 		separator.WriteString("----------------")
 	}

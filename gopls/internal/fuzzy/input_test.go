@@ -127,7 +127,7 @@ func BenchmarkRoles(b *testing.B) {
 	str := "AbstractSWTFactory"
 	out := make([]fuzzy.RuneRole, len(str))
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		fuzzy.RuneRoles([]byte(str), out)
 	}
 	b.SetBytes(int64(len(str)))
