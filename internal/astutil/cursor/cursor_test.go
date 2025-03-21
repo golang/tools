@@ -415,6 +415,39 @@ func TestCursor_Edge(t *testing.T) {
 		if cur.Parent().Child(cur.Node()) != cur {
 			t.Errorf("Cursor.Parent.Child = %v, want %v", cur.Parent().Child(cur.Node()), cur)
 		}
+
+		// Check invariants of Contains:
+
+		// A cursor contains itself.
+		if !cur.Contains(cur) {
+			t.Errorf("!cur.Contains(cur): %v", cur)
+		}
+		// A parent contains its child, but not the inverse.
+		if !parent.Contains(cur) {
+			t.Errorf("!cur.Parent().Contains(cur): %v", cur)
+		}
+		if cur.Contains(parent) {
+			t.Errorf("cur.Contains(cur.Parent()): %v", cur)
+		}
+		// A grandparent contains its grandchild, but not the inverse.
+		if grandparent := cur.Parent(); grandparent.Node() != nil {
+			if !grandparent.Contains(cur) {
+				t.Errorf("!cur.Parent().Parent().Contains(cur): %v", cur)
+			}
+			if cur.Contains(grandparent) {
+				t.Errorf("cur.Contains(cur.Parent().Parent()): %v", cur)
+			}
+		}
+		// A cursor and its uncle/aunt do not contain each other.
+		if uncle, ok := parent.NextSibling(); ok {
+			if uncle.Contains(cur) {
+				t.Errorf("cur.Parent().NextSibling().Contains(cur): %v", cur)
+			}
+			if cur.Contains(uncle) {
+				t.Errorf("cur.Contains(cur.Parent().NextSibling()): %v", cur)
+			}
+		}
+
 	}
 }
 

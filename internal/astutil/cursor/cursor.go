@@ -394,6 +394,18 @@ func (c Cursor) Children() iter.Seq[Cursor] {
 	}
 }
 
+// Contains reports whether c contains or is equal to c2.
+//
+// Both Cursors must belong to the same [Inspector];
+// neither may be its Root node.
+func (c Cursor) Contains(c2 Cursor) bool {
+	if c.in != c2.in {
+		panic("different inspectors")
+	}
+	events := c.events()
+	return c.index <= c2.index && events[c2.index].index <= events[c.index].index
+}
+
 // FindNode returns the cursor for node n if it belongs to the subtree
 // rooted at c. It returns zero if n is not found.
 func (c Cursor) FindNode(n ast.Node) (Cursor, bool) {
