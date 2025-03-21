@@ -73,28 +73,6 @@ func forvar(pass *analysis.Pass) {
 	}
 }
 
-// if the expression is an Ident, return its name
-func simplevar(expr ast.Expr) string {
-	if expr == nil {
-		return ""
-	}
-	if ident, ok := expr.(*ast.Ident); ok {
-		return ident.Name
-	}
-	return ""
-}
-
-func usefulRangeVars(loop *ast.RangeStmt) []string {
-	ans := make([]string, 0, 2)
-	if v := simplevar(loop.Key); v != "" {
-		ans = append(ans, v)
-	}
-	if v := simplevar(loop.Value); v != "" {
-		ans = append(ans, v)
-	}
-	return ans
-}
-
 // if the first statement is var := var, return var and the stmt
 func loopVarRedecl(body *ast.BlockStmt) (*ast.Ident, *ast.AssignStmt) {
 	if len(body.List) < 1 {
