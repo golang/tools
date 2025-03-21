@@ -46,6 +46,9 @@ import (
 // It may change cardinality of effects of the "needle" expression.
 // (Mostly this appears to be a desirable optimization, avoiding
 // redundantly repeated evaluation.)
+//
+// TODO(adonovan): Add a check that needle/predicate expression from
+// if-statement has no effects. Now the program behavior may change.
 func slicescontains(pass *analysis.Pass) {
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.

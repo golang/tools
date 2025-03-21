@@ -210,6 +210,9 @@ func appendclipped(pass *analysis.Pass) {
 //	x[:len(x):len(x)]		(nonempty)  res=x
 //	x[:k:k]	 	         	(nonempty)
 //	slices.Clip(x)			(nonempty)  res=x
+//
+// TODO(adonovan): Add a check that the expression x has no side effects in
+// case x[:len(x):len(x)] -> x. Now the program behavior may change.
 func clippedSlice(info *types.Info, e ast.Expr) (res ast.Expr, empty bool) {
 	switch e := e.(type) {
 	case *ast.SliceExpr:
