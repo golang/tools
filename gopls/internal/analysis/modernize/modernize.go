@@ -199,17 +199,18 @@ func noEffects(expr ast.Expr) bool {
 			*ast.SelectorExpr, *ast.IndexExpr, *ast.SliceExpr, *ast.TypeAssertExpr,
 			*ast.StarExpr, *ast.CompositeLit, *ast.ArrayType, *ast.StructType,
 			*ast.MapType, *ast.InterfaceType, *ast.KeyValueExpr:
-			return true
+			// no effect
 		case *ast.UnaryExpr:
+			// channel send <-ch has effects
 			if v.Op == token.ARROW {
 				noEffects = false
-				return false
 			}
-			return true
 		default:
+			// all other expressions have effects
 			noEffects = false
-			return false
 		}
+
+		return noEffects
 	})
 	return noEffects
 }
