@@ -102,6 +102,8 @@ func (s *server) saveLastCompletion(uri protocol.DocumentURI, version int32, ite
 	s.efficacyItems = items
 }
 
+// toProtocolCompletionItems converts the candidates to the protocol completion items,
+// the candidates must be sorted based on score as it will be respected by client side.
 func toProtocolCompletionItems(candidates []completion.CompletionItem, surrounding *completion.Selection, options *settings.Options) ([]protocol.CompletionItem, error) {
 	replaceRng, err := surrounding.Range()
 	if err != nil {

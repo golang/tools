@@ -62,7 +62,7 @@ func packageClauseCompletions(ctx context.Context, snapshot *cache.Snapshot, fh 
 			Score:      pkg.score,
 		})
 	}
-
+	sortItems(items)
 	return items, surrounding, nil
 }
 
@@ -197,11 +197,20 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 	}
 
 	matcher := fuzzy.NewMatcher(prefix)
+	var currentPackageName string
+	if variants, err := snapshot.MetadataForFile(ctx, fileURI); err == nil &&
+		len(variants) != 0 {
+		currentPackageName = string(variants[0].Name)
+	}
 
 	// Always try to suggest a main package
 	defer func() {
+		mainScore := lowScore
+		if currentPackageName == "main" {
+			mainScore = highScore
+		}
 		if score := float64(matcher.Score("main")); score > 0 {
-			packages = append(packages, toCandidate("main", score*lowScore))
+			packages = append(packages, toCandidate("main", score*mainScore))
 		}
 	}()
 
@@ -254,15 +263,20 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 		seenPkgs[testPkgName] = struct{}{}
 	}
 
-	// Add current directory name as a low relevance suggestion.
 	if _, ok := seenPkgs[pkgName]; !ok {
+		// Add current directory name as a low relevance suggestion.
+		dirNameScore := lowScore
+		// if current package name is empty, the dir name is the best choice.
+		if currentPackageName == "" {
+			dirNameScore = highScore
+		}
 		if score := float64(matcher.Score(string(pkgName))); score > 0 {
-			packages = append(packages, toCandidate(string(pkgName), score*lowScore))
+			packages = append(packages, toCandidate(string(pkgName), score*dirNameScore))
 		}
 
 		testPkgName := pkgName + "_test"
 		if score := float64(matcher.Score(string(testPkgName))); score > 0 {
-			packages = append(packages, toCandidate(string(testPkgName), score*lowScore))
+			packages = append(packages, toCandidate(string(testPkgName), score*dirNameScore))
 		}
 	}
 

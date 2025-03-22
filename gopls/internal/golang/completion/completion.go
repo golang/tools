@@ -164,14 +164,14 @@ func (i *CompletionItem) addConversion(c *completer, conv conversionEdits) error
 
 // Scoring constants are used for weighting the relevance of different candidates.
 const (
+	// lowScore indicates an irrelevant or not useful completion item.
+	lowScore float64 = 0.01
+
 	// stdScore is the base score for all completion items.
 	stdScore float64 = 1.0
 
 	// highScore indicates a very relevant completion item.
 	highScore float64 = 10.0
-
-	// lowScore indicates an irrelevant or not useful completion item.
-	lowScore float64 = 0.01
 )
 
 // matcher matches a candidate's label against the user input. The
@@ -702,7 +702,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	// depend on other candidates having already been collected.
 	c.addStatementCandidates()
 
-	c.sortItems()
+	sortItems(c.items)
 	return c.items, c.getSurrounding(), nil
 }
 
@@ -830,16 +830,16 @@ func (c *completer) scanToken(contents []byte) (token.Pos, token.Token, string) 
 	}
 }
 
-func (c *completer) sortItems() {
-	sort.SliceStable(c.items, func(i, j int) bool {
+func sortItems(items []CompletionItem) {
+	sort.SliceStable(items, func(i, j int) bool {
 		// Sort by score first.
-		if c.items[i].Score != c.items[j].Score {
-			return c.items[i].Score > c.items[j].Score
+		if items[i].Score != items[j].Score {
+			return items[i].Score > items[j].Score
 		}
 
 		// Then sort by label so order stays consistent. This also has the
 		// effect of preferring shorter candidates.
-		return c.items[i].Label < c.items[j].Label
+		return items[i].Label < items[j].Label
 	})
 }
 

@@ -53,6 +53,10 @@ func TestPackageCompletion(t *testing.T) {
 module mod.com
 
 go 1.12
+-- cmd/main.go --
+package main
+-- cmd/testfile.go --
+package
 -- fruits/apple.go --
 package apple
 
@@ -95,6 +99,13 @@ package
 		want          []string
 		editRegexp    string
 	}{
+		{
+			name:          "main package completion after package keyword",
+			filename:      "cmd/testfile.go",
+			triggerRegexp: "package()",
+			want:          []string{"package main", "package cmd", "package cmd_test"},
+			editRegexp:    "package",
+		},
 		{
 			name:          "package completion at valid position",
 			filename:      "fruits/testfile.go",
