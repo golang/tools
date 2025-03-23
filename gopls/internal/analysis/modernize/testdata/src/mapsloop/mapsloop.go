@@ -16,6 +16,7 @@ type M map[int]string
 func useCopy(dst, src map[int]string) {
 	// Replace loop by maps.Copy.
 	for key, value := range src {
+		// A
 		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
 	}
 }
@@ -23,6 +24,7 @@ func useCopy(dst, src map[int]string) {
 func useCopyGeneric[K comparable, V any, M ~map[K]V](dst, src M) {
 	// Replace loop by maps.Copy.
 	for key, value := range src {
+		// A
 		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
 	}
 }
@@ -32,12 +34,18 @@ func useCopyNotClone(src map[int]string) {
 
 	// Replace make(...) by maps.Copy.
 	dst := make(map[int]string, len(src))
+	// A
 	for key, value := range src {
+		// B
 		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
+		// C
 	}
 
+	// A
 	dst = map[int]string{}
+	// B
 	for key, value := range src {
+		// C
 		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Copy"
 	}
 	println(dst)
@@ -126,8 +134,10 @@ func useInsert_assignableToSeq2(dst map[int]string, src func(yield func(int, str
 func useCollect(src iter.Seq2[int, string]) {
 	// Replace loop and make(...) by maps.Collect.
 	var dst map[int]string
-	dst = make(map[int]string)
+	dst = make(map[int]string) // A
+	// B
 	for key, value := range src {
+		// C
 		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Collect"
 	}
 }
@@ -137,7 +147,9 @@ func useInsert_typesDifferAssign(src iter.Seq2[int, string]) {
 	// that is assignable to M.
 	var dst M
 	dst = make(M)
+	// A
 	for key, value := range src {
+		// B
 		dst[key] = value // want "Replace m\\[k\\]=v loop with maps.Collect"
 	}
 }

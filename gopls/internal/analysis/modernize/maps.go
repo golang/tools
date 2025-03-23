@@ -156,16 +156,35 @@ func mapsloop(pass *analysis.Pass) {
 			start, end token.Pos
 		)
 		if mrhs != nil {
-			// Replace RHS of preceding m=... assignment (and loop) with expression.
-			start, end = mrhs.Pos(), rng.End()
-			newText = fmt.Appendf(nil, "%s%s(%s)",
+			// Replace assignment and loop with expression.
+			//
+			//   m = make(...)
+			//   for k, v := range x { /* comments */ m[k] = v }
+			//
+			//   ->
+			//
+			//   /* comments */
+			//   m = maps.Copy(x)
+			curPrev, _ := curRange.PrevSibling()
+			start, end = curPrev.Node().Pos(), rng.End()
+			newText = fmt.Appendf(nil, "%s%s = %s%s(%s)",
+				allComments(file, start, end),
+				analysisinternal.Format(pass.Fset, m),
 				prefix,
 				funcName,
 				analysisinternal.Format(pass.Fset, x))
 		} else {
 			// Replace loop with call statement.
+			//
+			//   for k, v := range x { /* comments */ m[k] = v }
+			//
+			//   ->
+			//
+			//   /* comments */
+			//   maps.Copy(m, x)
 			start, end = rng.Pos(), rng.End()
-			newText = fmt.Appendf(nil, "%s%s(%s, %s)",
+			newText = fmt.Appendf(nil, "%s%s%s(%s, %s)",
+				allComments(file, start, end),
 				prefix,
 				funcName,
 				analysisinternal.Format(pass.Fset, m),

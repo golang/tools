@@ -8,6 +8,7 @@ var _ = Clone[M] // force "maps" import so that each diagnostic doesn't add one
 
 func useCopyDot(dst, src map[int]string) {
 	// Replace loop by maps.Copy.
+	// want "Replace m\\[k\\]=v loop with maps.Copy"
 	Copy(dst, src)
 }
 
@@ -16,6 +17,7 @@ func useCloneDot(src map[int]string) {
 
 	// Replace make(...) by maps.Copy.
 	dst := make(map[int]string, len(src))
+	// want "Replace m\\[k\\]=v loop with maps.Copy"
 	Copy(dst, src)
 	println(dst)
 }

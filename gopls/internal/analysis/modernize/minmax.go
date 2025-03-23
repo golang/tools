@@ -50,14 +50,6 @@ func minmax(pass *analysis.Pass) {
 			sign    = isInequality(compare.Op)
 		)
 
-		allComments := func(file *ast.File, start, end token.Pos) string {
-			var buf strings.Builder
-			for co := range analysisinternal.Comments(file, start, end) {
-				_, _ = fmt.Fprintf(&buf, "%s\n", co.Text)
-			}
-			return buf.String()
-		}
-
 		if fblock, ok := ifStmt.Else.(*ast.BlockStmt); ok && isAssignBlock(fblock) {
 			fassign := fblock.List[0].(*ast.AssignStmt)
 
@@ -194,6 +186,15 @@ func minmax(pass *analysis.Pass) {
 			}
 		}
 	}
+}
+
+// allComments collects all the comments from start to end.
+func allComments(file *ast.File, start, end token.Pos) string {
+	var buf strings.Builder
+	for co := range analysisinternal.Comments(file, start, end) {
+		_, _ = fmt.Fprintf(&buf, "%s\n", co.Text)
+	}
+	return buf.String()
 }
 
 // isInequality reports non-zero if tok is one of < <= => >:
