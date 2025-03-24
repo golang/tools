@@ -29,6 +29,7 @@ import (
 	"golang.org/x/tools/internal/expect"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
 	"golang.org/x/tools/txtar"
 )
 
@@ -56,10 +57,11 @@ func TestData(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			dir := t.TempDir()
-			if err := extractTxtar(ar, dir); err != nil {
+			fs, err := txtar.FS(ar)
+			if err != nil {
 				t.Fatal(err)
 			}
+			dir := testfiles.CopyToTmp(t, fs)
 
 			// Load packages.
 			cfg := &packages.Config{
@@ -1937,20 +1939,6 @@ func checkTranscode(callee *inline.Callee) error {
 	*callee = inline.Callee{}
 	if err := gob.NewDecoder(&enc).Decode(callee); err != nil {
 		return fmt.Errorf("internal error: gob decoding failed: %v", err)
-	}
-	return nil
-}
-
-// TODO(adonovan): publish this a helper (#61386).
-func extractTxtar(ar *txtar.Archive, dir string) error {
-	for _, file := range ar.Files {
-		name := filepath.Join(dir, file.Name)
-		if err := os.MkdirAll(filepath.Dir(name), 0777); err != nil {
-			return err
-		}
-		if err := os.WriteFile(name, file.Data, 0666); err != nil {
-			return err
-		}
 	}
 	return nil
 }
