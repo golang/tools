@@ -15,8 +15,11 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/astutil/edge"
+	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 // rangeint offers a fix to replace a 3-clause 'for' loop:
@@ -38,13 +41,23 @@ import (
 //   - The limit must not be b.N, to avoid redundancy with bloop's fixes.
 //
 // Caveats:
-//   - The fix will cause the limit expression to be evaluated exactly
-//     once, instead of once per iteration. The limit may be a function call
-//     (e.g. seq.Len()). The fix may change the cardinality of side effects.
+//
+// The fix causes the limit expression to be evaluated exactly once,
+// instead of once per iteration. So, to avoid changing the
+// cardinality of side effects, the limit expression must not involve
+// function calls (e.g. seq.Len()) or channel receives. Moreover, the
+// value of the limit expression must be loop invariant, which in
+// practice means it must take one of the following forms:
+//
+//   - a local variable that is assigned only once and not address-taken;
+//   - a constant; or
+//   - len(s), where s has the above properties.
 func rangeint(pass *analysis.Pass) {
 	info := pass.TypesInfo
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	typeindex := pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+
 	for curFile := range filesUsing(inspect, info, "go1.22") {
 	nextLoop:
 		for curLoop := range curFile.Preorder((*ast.ForStmt)(nil)) {
@@ -62,19 +75,39 @@ func rangeint(pass *analysis.Pass) {
 					// Have: for i = 0; i < limit; ... {}
 
 					limit := compare.Y
-					curLimit, _ := curLoop.FindNode(limit)
-					// Don't offer a fix if the limit expression depends on the loop index.
-					for cur := range curLimit.Preorder((*ast.Ident)(nil)) {
-						if cur.Node().(*ast.Ident).Name == index.Name {
-							continue nextLoop
-						}
+
+					// If limit is "len(slice)", simplify it to "slice".
+					//
+					// (Don't replace "for i := 0; i < len(map); i++"
+					// with "for range m" because it's too hard to prove
+					// that len(m) is loop-invariant).
+					if call, ok := limit.(*ast.CallExpr); ok &&
+						typeutil.Callee(info, call) == builtinLen &&
+						is[*types.Slice](info.TypeOf(call.Args[0]).Underlying()) {
+						limit = call.Args[0]
 					}
 
-					// Skip loops up to b.N in benchmarks; see [bloop].
-					if sel, ok := limit.(*ast.SelectorExpr); ok &&
-						sel.Sel.Name == "N" &&
-						analysisinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") {
-						continue // skip b.N
+					// Check the form of limit: must be a constant,
+					// or a local var that is not assigned or address-taken.
+					limitOK := false
+					if info.Types[limit].Value != nil {
+						limitOK = true // constant
+					} else if id, ok := limit.(*ast.Ident); ok {
+						if v, ok := info.Uses[id].(*types.Var); ok &&
+							!(v.Exported() && typesinternal.IsPackageLevel(v)) {
+							// limit is a local or unexported global var.
+							// (An exported global may have uses we can't see.)
+							for cur := range typeindex.Uses(v) {
+								if isScalarLvalue(info, cur) {
+									// Limit var is assigned or address-taken.
+									continue nextLoop
+								}
+							}
+							limitOK = true
+						}
+					}
+					if !limitOK {
+						continue nextLoop
 					}
 
 					if inc, ok := loop.Post.(*ast.IncDecStmt); ok &&
@@ -93,7 +126,7 @@ func rangeint(pass *analysis.Pass) {
 								// Reject if any is an l-value (assigned or address-taken):
 								// a "for range int" loop does not respect assignments to
 								// the loop variable.
-								if isScalarLvalue(curId) {
+								if isScalarLvalue(info, curId) {
 									continue nextLoop
 								}
 							}
@@ -213,7 +246,7 @@ func rangeint(pass *analysis.Pass) {
 //
 // This function is valid only for scalars (x = ...),
 // not for aggregates (x.a[i] = ...)
-func isScalarLvalue(curId cursor.Cursor) bool {
+func isScalarLvalue(info *types.Info, curId cursor.Cursor) bool {
 	// Unfortunately we can't simply use info.Types[e].Assignable()
 	// as it is always true for a variable even when that variable is
 	// used only as an r-value. So we must inspect enclosing syntax.
@@ -229,7 +262,14 @@ func isScalarLvalue(curId cursor.Cursor) bool {
 
 	switch ek {
 	case edge.AssignStmt_Lhs:
-		return true // i = j
+		assign := cur.Parent().Node().(*ast.AssignStmt)
+		if assign.Tok == token.ASSIGN {
+			return true // i = j
+		}
+		id := curId.Node().(*ast.Ident)
+		if v, ok := info.Defs[id]; ok && v.Pos() != id.Pos() {
+			return true // reassignment of i (i, j := 1, 2)
+		}
 	case edge.IncDecStmt_X:
 		return true // i++, i--
 	case edge.UnaryExpr_X:

@@ -48,7 +48,7 @@ func _(i int, s struct{ i int }, slice []int) {
 
 	{
 		var i int
-		for i = 0; i < f(); i++ { // want "for loop can be modernized using range over int"
+		for i = 0; i < 10; i++ { // want "for loop can be modernized using range over int"
 		}
 		// NB: no uses of i after loop.
 	}
@@ -90,7 +90,53 @@ func _(i int, s struct{ i int }, slice []int) {
 	for i := 0; i < 10; i++ { // nope: assigns i
 		i = 8
 	}
+
+	// The limit expression must be loop invariant;
+	// see https://github.com/golang/go/issues/72917
+	for i := 0; i < f(); i++ { // nope
+	}
+	{
+		var s struct{ limit int }
+		for i := 0; i < s.limit; i++ { // nope: limit is not a const or local var
+		}
+	}
+	{
+		const k = 10
+		for i := 0; i < k; i++ { // want "for loop can be modernized using range over int"
+		}
+	}
+	{
+		var limit = 10
+		for i := 0; i < limit; i++ { // want "for loop can be modernized using range over int"
+		}
+	}
+	{
+		var limit = 10
+		for i := 0; i < limit; i++ { // nope: limit is address-taken
+		}
+		print(&limit)
+	}
+	{
+		limit := 10
+		limit++
+		for i := 0; i < limit; i++ { // nope: limit is assigned other than by its declaration
+		}
+	}
+	for i := 0; i < Global; i++ { // nope: limit is an exported global var; may be updated elsewhere
+	}
+	for i := 0; i < len(table); i++ { // want "for loop can be modernized using range over int"
+	}
+	{
+		s := []string{}
+		for i := 0; i < len(s); i++ { // nope: limit is not loop-invariant
+			s = s[1:]
+		}
+	}
 }
+
+var Global int
+
+var table = []string{"hello", "world"}
 
 func f() int { return 0 }
 
