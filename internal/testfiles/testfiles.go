@@ -7,7 +7,6 @@
 package testfiles
 
 import (
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -46,7 +45,7 @@ import (
 func CopyToTmp(t testing.TB, src fs.FS, rename ...string) string {
 	dstdir := t.TempDir()
 
-	if err := copyFS(dstdir, src); err != nil {
+	if err := os.CopyFS(dstdir, src); err != nil {
 		t.Fatal(err)
 	}
 	for _, r := range rename {
@@ -62,33 +61,6 @@ func CopyToTmp(t testing.TB, src fs.FS, rename ...string) string {
 	}
 
 	return dstdir
-}
-
-// Copy the files in src to dst.
-// Use os.CopyFS when 1.23 can be used in x/tools.
-func copyFS(dstdir string, src fs.FS) error {
-	return fs.WalkDir(src, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		newpath := filepath.Join(dstdir, path)
-		if d.IsDir() {
-			return os.MkdirAll(newpath, 0777)
-		}
-		r, err := src.Open(path)
-		if err != nil {
-			return err
-		}
-		defer r.Close()
-
-		w, err := os.Create(newpath)
-		if err != nil {
-			return err
-		}
-		defer w.Close()
-		_, err = io.Copy(w, r)
-		return err
-	})
 }
 
 // ExtractTxtarFileToTmp read a txtar archive on a given path,
