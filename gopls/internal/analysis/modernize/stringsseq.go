@@ -14,8 +14,9 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil/edge"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 // stringsseq offers a fix to replace a call to strings.Split with
@@ -33,12 +34,20 @@ import (
 // - bytes.SplitSeq
 // - bytes.FieldsSeq
 func stringsseq(pass *analysis.Pass) {
-	if !analysisinternal.Imports(pass.Pkg, "strings") &&
-		!analysisinternal.Imports(pass.Pkg, "bytes") {
+	var (
+		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+		info    = pass.TypesInfo
+
+		stringsSplit  = index.Object("strings", "Split")
+		stringsFields = index.Object("strings", "Fields")
+		bytesSplit    = index.Object("bytes", "Split")
+		bytesFields   = index.Object("bytes", "Fields")
+	)
+	if !index.Used(stringsSplit, stringsFields, bytesSplit, bytesFields) {
 		return
 	}
-	info := pass.TypesInfo
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+
 	for curFile := range filesUsing(inspect, info, "go1.24") {
 		for curRange := range curFile.Preorder((*ast.RangeStmt)(nil)) {
 			rng := curRange.Node().(*ast.RangeStmt)
@@ -62,7 +71,7 @@ func stringsseq(pass *analysis.Pass) {
 								len(assign.Lhs) == 1 &&
 								len(assign.Rhs) == 1 &&
 								info.Defs[assign.Lhs[0].(*ast.Ident)] == v &&
-								soleUse(info, v) == id {
+								soleUseIs(index, v, id) {
 								// Have:
 								//    lines := ...
 								//    for _, line := range lines {...}
@@ -96,9 +105,8 @@ func stringsseq(pass *analysis.Pass) {
 					continue
 				}
 
-				obj := typeutil.Callee(info, call)
-				if analysisinternal.IsFunctionNamed(obj, "strings", "Split", "Fields") ||
-					analysisinternal.IsFunctionNamed(obj, "bytes", "Split", "Fields") {
+				switch obj := typeutil.Callee(info, call); obj {
+				case stringsSplit, stringsFields, bytesSplit, bytesFields:
 					oldFnName := obj.Name()
 					seqFnName := fmt.Sprintf("%sSeq", oldFnName)
 					pass.Report(analysis.Diagnostic{

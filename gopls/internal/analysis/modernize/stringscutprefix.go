@@ -14,6 +14,8 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 // stringscutprefix offers a fix to replace an if statement which
@@ -35,8 +37,15 @@ import (
 // Variants:
 // - bytes.HasPrefix usage as pattern 1.
 func stringscutprefix(pass *analysis.Pass) {
-	if !analysisinternal.Imports(pass.Pkg, "strings") &&
-		!analysisinternal.Imports(pass.Pkg, "bytes") {
+	var (
+		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+		info    = pass.TypesInfo
+
+		stringsTrimPrefix = index.Object("strings", "TrimPrefix")
+		bytesTrimPrefix   = index.Object("bytes", "TrimPrefix")
+	)
+	if !index.Used(stringsTrimPrefix, bytesTrimPrefix) {
 		return
 	}
 
@@ -45,8 +54,6 @@ func stringscutprefix(pass *analysis.Pass) {
 		fixedMessage = "Replace HasPrefix/TrimPrefix with CutPrefix"
 	)
 
-	info := pass.TypesInfo
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.20") {
 		for curIfStmt := range curFile.Preorder((*ast.IfStmt)(nil)) {
 			ifStmt := curIfStmt.Node().(*ast.IfStmt)
@@ -65,8 +72,7 @@ func stringscutprefix(pass *analysis.Pass) {
 				for curCall := range firstStmt.Preorder((*ast.CallExpr)(nil)) {
 					call1 := curCall.Node().(*ast.CallExpr)
 					obj1 := typeutil.Callee(info, call1)
-					if !analysisinternal.IsFunctionNamed(obj1, "strings", "TrimPrefix") &&
-						!analysisinternal.IsFunctionNamed(obj1, "bytes", "TrimPrefix") {
+					if obj1 != stringsTrimPrefix && obj1 != bytesTrimPrefix {
 						continue
 					}
 
@@ -140,7 +146,7 @@ func stringscutprefix(pass *analysis.Pass) {
 				if call, ok := assign.Rhs[0].(*ast.CallExpr); ok && assign.Tok == token.DEFINE {
 					lhs := assign.Lhs[0]
 					obj := typeutil.Callee(info, call)
-					if analysisinternal.IsFunctionNamed(obj, "strings", "TrimPrefix") &&
+					if obj == stringsTrimPrefix &&
 						(equalSyntax(lhs, bin.X) && equalSyntax(call.Args[0], bin.Y) ||
 							(equalSyntax(lhs, bin.Y) && equalSyntax(call.Args[0], bin.X))) {
 						okVarName := analysisinternal.FreshName(info.Scopes[ifStmt], ifStmt.Pos(), "ok")

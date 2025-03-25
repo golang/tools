@@ -15,8 +15,10 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 // The slicescontains pass identifies loops that can be replaced by a
@@ -56,7 +58,11 @@ func slicescontains(pass *analysis.Pass) {
 		return
 	}
 
-	info := pass.TypesInfo
+	var (
+		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+		info    = pass.TypesInfo
+	)
 
 	// check is called for each RangeStmt of this form:
 	//   for i, elem := range s { if cond { ... } }
@@ -144,8 +150,8 @@ func slicescontains(pass *analysis.Pass) {
 			if !ok {
 				panic(fmt.Sprintf("FindNode(%T) failed", n))
 			}
-			return uses(info, cur, info.Defs[rng.Key.(*ast.Ident)]) ||
-				rng.Value != nil && uses(info, cur, info.Defs[rng.Value.(*ast.Ident)])
+			return uses(index, cur, info.Defs[rng.Key.(*ast.Ident)]) ||
+				rng.Value != nil && uses(index, cur, info.Defs[rng.Value.(*ast.Ident)])
 		}
 		if usesRangeVar(body) {
 			// Body uses range var "i" or "elem".
@@ -349,7 +355,6 @@ func slicescontains(pass *analysis.Pass) {
 		}
 	}
 
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	for curFile := range filesUsing(inspect, info, "go1.21") {
 		file := curFile.Node().(*ast.File)
 

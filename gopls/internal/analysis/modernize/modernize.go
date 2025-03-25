@@ -140,15 +140,19 @@ func filesUsing(inspect *inspector.Inspector, info *types.Info, version string) 
 	}
 }
 
-// fileUses reports whether the file containing the specified cursor
-// uses at least the specified version of Go (e.g. "go1.24").
-func fileUses(info *types.Info, c cursor.Cursor, version string) bool {
+// fileUses reports whether the specified file uses at least the
+// specified version of Go (e.g. "go1.24").
+func fileUses(info *types.Info, file *ast.File, version string) bool {
+	return !versions.Before(info.FileVersions[file], version)
+}
+
+// enclosingFile returns the syntax tree for the file enclosing c.
+func enclosingFile(c cursor.Cursor) *ast.File {
 	// TODO(adonovan): make Ancestors reflexive so !ok becomes impossible.
 	if curFile, ok := moreiters.First(c.Ancestors((*ast.File)(nil))); ok {
 		c = curFile
 	}
-	file := c.Node().(*ast.File)
-	return !versions.Before(info.FileVersions[file], version)
+	return c.Node().(*ast.File)
 }
 
 // within reports whether the current pass is analyzing one of the

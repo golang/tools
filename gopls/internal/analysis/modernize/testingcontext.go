@@ -14,12 +14,11 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/astutil/cursor"
+	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil/edge"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 // The testingContext pass replaces calls to context.WithCancel from within
@@ -41,38 +40,32 @@ import (
 //   - the call is within a test or subtest function
 //   - the relevant testing.{T,B,F} is named and not shadowed at the call
 func testingContext(pass *analysis.Pass) {
-	if !analysisinternal.Imports(pass.Pkg, "testing") {
-		return
-	}
+	var (
+		index = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+		info  = pass.TypesInfo
 
-	info := pass.TypesInfo
+		contextWithCancel = index.Object("context", "WithCancel")
+	)
 
-	// checkCall finds eligible calls to context.WithCancel to replace.
-	checkCall := func(cur cursor.Cursor) {
+calls:
+	for cur := range index.Calls(contextWithCancel) {
 		call := cur.Node().(*ast.CallExpr)
-		obj := typeutil.Callee(info, call)
-		if !analysisinternal.IsFunctionNamed(obj, "context", "WithCancel") {
-			return
-		}
-
-		// Have: context.WithCancel(arg)
+		// Have: context.WithCancel(...)
 
 		arg, ok := call.Args[0].(*ast.CallExpr)
 		if !ok {
-			return
+			continue
 		}
-		if obj := typeutil.Callee(info, arg); !analysisinternal.IsFunctionNamed(obj, "context", "Background", "TODO") {
-			return
+		if !analysisinternal.IsFunctionNamed(typeutil.Callee(info, arg), "context", "Background", "TODO") {
+			continue
 		}
-
 		// Have: context.WithCancel(context.{Background,TODO}())
 
 		parent := cur.Parent()
 		assign, ok := parent.Node().(*ast.AssignStmt)
 		if !ok || assign.Tok != token.DEFINE {
-			return
+			continue
 		}
-
 		// Have: a, b := context.WithCancel(context.{Background,TODO}())
 
 		// Check that both a and b are declared, not redeclarations.
@@ -80,27 +73,27 @@ func testingContext(pass *analysis.Pass) {
 		for _, expr := range assign.Lhs {
 			id, ok := expr.(*ast.Ident)
 			if !ok {
-				return
+				continue calls
 			}
 			obj, ok := info.Defs[id]
 			if !ok {
-				return
+				continue calls
 			}
 			lhs = append(lhs, obj)
 		}
 
 		next, ok := parent.NextSibling()
 		if !ok {
-			return
+			continue
 		}
 		defr, ok := next.Node().(*ast.DeferStmt)
 		if !ok {
-			return
+			continue
 		}
-		if soleUse(info, lhs[1]) != defr.Call.Fun {
-			return
+		deferId, ok := defr.Call.Fun.(*ast.Ident)
+		if !ok || !soleUseIs(index, lhs[1], deferId) {
+			continue // b is used elsewhere
 		}
-
 		// Have:
 		// a, b := context.WithCancel(context.{Background,TODO}())
 		// defer b()
@@ -126,8 +119,7 @@ func testingContext(pass *analysis.Pass) {
 				testObj = isTestFn(info, n)
 			}
 		}
-
-		if testObj != nil {
+		if testObj != nil && fileUses(info, enclosingFile(cur), "go1.24") {
 			// Have a test function. Check that we can resolve the relevant
 			// testing.{T,B,F} at the current position.
 			if _, obj := lhs[0].Parent().LookupParent(testObj.Name(), lhs[0].Pos()); obj == testObj {
@@ -148,29 +140,19 @@ func testingContext(pass *analysis.Pass) {
 			}
 		}
 	}
-
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	for curFile := range filesUsing(inspect, info, "go1.24") {
-		for cur := range curFile.Preorder((*ast.CallExpr)(nil)) {
-			checkCall(cur)
-		}
-	}
 }
 
-// soleUse returns the ident that refers to obj, if there is exactly one.
-//
-// TODO(rfindley): consider factoring to share with gopls/internal/refactor/inline.
-func soleUse(info *types.Info, obj types.Object) (sole *ast.Ident) {
-	// This is not efficient, but it is called infrequently.
-	for id, obj2 := range info.Uses {
-		if obj2 == obj {
-			if sole != nil {
-				return nil // not unique
-			}
-			sole = id
+// soleUseIs reports whether id is the sole Ident that uses obj.
+// (It returns false if there were no uses of obj.)
+func soleUseIs(index *typeindex.Index, obj types.Object, id *ast.Ident) bool {
+	empty := true
+	for use := range index.Uses(obj) {
+		empty = false
+		if use.Node() != id {
+			return false
 		}
 	}
-	return sole
+	return !empty
 }
 
 // isTestFn checks whether fn is a test function (TestX, BenchmarkX, FuzzX),

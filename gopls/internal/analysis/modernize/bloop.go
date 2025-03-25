@@ -15,7 +15,9 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil/cursor"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 // bloop updates benchmarks that use "for range b.N", replacing it
@@ -31,7 +33,11 @@ func bloop(pass *analysis.Pass) {
 		return
 	}
 
-	info := pass.TypesInfo
+	var (
+		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+		info    = pass.TypesInfo
+	)
 
 	// edits computes the text edits for a matched for/range loop
 	// at the specified cursor. b is the *testing.B value, and
@@ -76,7 +82,6 @@ func bloop(pass *analysis.Pass) {
 	}
 
 	// Find all for/range statements.
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	loops := []ast.Node{
 		(*ast.ForStmt)(nil),
 		(*ast.RangeStmt)(nil),
@@ -105,7 +110,7 @@ func bloop(pass *analysis.Pass) {
 							is[*ast.IncDecStmt](n.Post) &&
 							n.Post.(*ast.IncDecStmt).Tok == token.INC &&
 							equalSyntax(n.Post.(*ast.IncDecStmt).X, assign.Lhs[0]) &&
-							!uses(info, body, info.Defs[assign.Lhs[0].(*ast.Ident)]) {
+							!uses(index, body, info.Defs[assign.Lhs[0].(*ast.Ident)]) {
 
 							delStart, delEnd = n.Init.Pos(), n.Post.End()
 						}
@@ -152,10 +157,9 @@ func bloop(pass *analysis.Pass) {
 }
 
 // uses reports whether the subtree cur contains a use of obj.
-// TODO(adonovan): opt: use typeindex.
-func uses(info *types.Info, cur cursor.Cursor, obj types.Object) bool {
-	for curId := range cur.Preorder((*ast.Ident)(nil)) {
-		if info.Uses[curId.Node().(*ast.Ident)] == obj {
+func uses(index *typeindex.Index, cur cursor.Cursor, obj types.Object) bool {
+	for use := range index.Uses(obj) {
+		if cur.Contains(use) {
 			return true
 		}
 	}

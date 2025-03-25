@@ -10,10 +10,9 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 // The sortslice pass replaces sort.Slice(slice, less) with
@@ -42,14 +41,13 @@ func sortslice(pass *analysis.Pass) {
 		return
 	}
 
-	info := pass.TypesInfo
-
-	check := func(file *ast.File, call *ast.CallExpr) {
-		// call to sort.Slice?
-		obj := typeutil.Callee(info, call)
-		if !analysisinternal.IsFunctionNamed(obj, "sort", "Slice") {
-			return
-		}
+	var (
+		info      = pass.TypesInfo
+		index     = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+		sortSlice = index.Object("sort", "Slice")
+	)
+	for curCall := range index.Calls(sortSlice) {
+		call := curCall.Node().(*ast.CallExpr)
 		if lit, ok := call.Args[1].(*ast.FuncLit); ok && len(lit.Body.List) == 1 {
 			sig := info.Types[lit.Type].Type.(*types.Signature)
 
@@ -68,7 +66,9 @@ func sortslice(pass *analysis.Pass) {
 							is[*ast.Ident](index.Index) &&
 							info.Uses[index.Index.(*ast.Ident)] == v
 					}
-					if isIndex(compare.X, i) && isIndex(compare.Y, j) {
+					file := enclosingFile(curCall)
+					if isIndex(compare.X, i) && isIndex(compare.Y, j) &&
+						fileUses(info, file, "go1.21") {
 						// Have: sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 
 						_, prefix, importEdits := analysisinternal.AddImport(
@@ -100,16 +100,6 @@ func sortslice(pass *analysis.Pass) {
 					}
 				}
 			}
-		}
-	}
-
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	for curFile := range filesUsing(inspect, info, "go1.21") {
-		file := curFile.Node().(*ast.File)
-
-		for curCall := range curFile.Preorder((*ast.CallExpr)(nil)) {
-			call := curCall.Node().(*ast.CallExpr)
-			check(file, call)
 		}
 	}
 }
