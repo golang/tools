@@ -263,8 +263,8 @@ func isScalarLvalue(info *types.Info, curId cursor.Cursor) bool {
 	switch ek {
 	case edge.AssignStmt_Lhs:
 		assign := cur.Parent().Node().(*ast.AssignStmt)
-		if assign.Tok == token.ASSIGN {
-			return true // i = j
+		if assign.Tok != token.DEFINE {
+			return true // i = j or i += j
 		}
 		id := curId.Node().(*ast.Ident)
 		if v, ok := info.Defs[id]; ok && v.Pos() != id.Pos() {

@@ -132,6 +132,9 @@ func _(i int, s struct{ i int }, slice []int) {
 			s = s[1:]
 		}
 	}
+	for i := 0; i < len(slice); i++ { // nope: i is incremented within loop
+		i += 1
+	}
 }
 
 var Global int
