@@ -15,10 +15,12 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/astutil/cursor"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 func TestIndex(t *testing.T) {
+	testenv.NeedsGoPackages(t)
 	var (
 		pkg        = loadNetHTTP(t)
 		inspect    = inspector.New(pkg.Syntax)
