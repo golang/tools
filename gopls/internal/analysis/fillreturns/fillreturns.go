@@ -55,12 +55,9 @@ outer:
 		}
 
 		// Find cursor for enclosing return statement (which may be curErr itself).
-		curRet := curErr
-		if _, ok := curRet.Node().(*ast.ReturnStmt); !ok {
-			curRet, ok = moreiters.First(curErr.Ancestors((*ast.ReturnStmt)(nil)))
-			if !ok {
-				continue // no enclosing return
-			}
+		curRet, ok := moreiters.First(curErr.Enclosing((*ast.ReturnStmt)(nil)))
+		if !ok {
+			continue // no enclosing return
 		}
 		ret := curRet.Node().(*ast.ReturnStmt)
 
@@ -114,7 +111,7 @@ outer:
 			retTyps = append(retTyps, retTyp)
 		}
 
-		curFile, _ := moreiters.First(curRet.Ancestors((*ast.File)(nil)))
+		curFile, _ := moreiters.First(curRet.Enclosing((*ast.File)(nil)))
 		file := curFile.Node().(*ast.File)
 		matches := analysisinternal.MatchingIdents(retTyps, file, ret.Pos(), info, pass.Pkg)
 		qual := typesinternal.FileQualifier(file, pass.Pkg)
@@ -230,8 +227,5 @@ func fixesError(err types.Error) bool {
 // enclosingFunc returns the cursor for the innermost Func{Decl,Lit}
 // that encloses c, if any.
 func enclosingFunc(c cursor.Cursor) (cursor.Cursor, bool) {
-	for curAncestor := range c.Ancestors((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
-		return curAncestor, true
-	}
-	return cursor.Cursor{}, false
+	return moreiters.First(c.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)))
 }

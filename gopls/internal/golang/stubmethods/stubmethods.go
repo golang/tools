@@ -54,7 +54,7 @@ type IfaceStubInfo struct {
 func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, pos, end token.Pos) *IfaceStubInfo {
 	// TODO(adonovan): simplify, using Cursor:
 	//   curErr, _ := pgf.Cursor.FindPos(pos, end)
-	//   for cur := range curErr.Ancestors() {
+	//   for cur := range curErr.Enclosing() {
 	// 	  switch n := cur.Node().(type) {...
 	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, end)
 	for _, n := range path {

@@ -956,7 +956,7 @@ func goAssembly(ctx context.Context, req *codeActionsRequest) error {
 	sym.WriteString(".")
 
 	curSel, _ := req.pgf.Cursor.FindPos(req.start, req.end)
-	for cur := range curSel.Ancestors((*ast.FuncDecl)(nil), (*ast.ValueSpec)(nil)) {
+	for cur := range curSel.Enclosing((*ast.FuncDecl)(nil), (*ast.ValueSpec)(nil)) {
 		var name string // in command title
 		switch node := cur.Node().(type) {
 		case *ast.FuncDecl:

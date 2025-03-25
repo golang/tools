@@ -162,11 +162,10 @@ func g() {
 				t.Errorf("curCall.Stack() = %q, want %q", got, want)
 			}
 
-			// Ancestors = Reverse(Stack[:last]).
-			stack = stack[:len(stack)-1]
+			// Enclosing = Reverse(Stack()).
 			slices.Reverse(stack)
-			if got, want := slices.Collect(curCall.Ancestors()), stack; !reflect.DeepEqual(got, want) {
-				t.Errorf("Ancestors = %v, Reverse(Stack - last element) = %v", got, want)
+			if got, want := slices.Collect(curCall.Enclosing()), stack; !reflect.DeepEqual(got, want) {
+				t.Errorf("Enclosing = %v, Reverse(Stack - last element) = %v", got, want)
 			}
 		}
 
@@ -542,12 +541,12 @@ func BenchmarkInspectCalls(b *testing.B) {
 		}
 	})
 
-	b.Run("CursorAncestors", func(b *testing.B) {
+	b.Run("CursorEnclosing", func(b *testing.B) {
 		var ncalls int
 		for range b.N {
 			for cur := range cursor.Root(inspect).Preorder(callExprs...) {
 				_ = cur.Node().(*ast.CallExpr)
-				for range cur.Ancestors() {
+				for range cur.Enclosing() {
 				}
 				ncalls++
 			}

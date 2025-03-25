@@ -48,7 +48,7 @@ func run(pass *analysis.Pass) (any, error) {
 			continue // can't find errant node
 		}
 		// Find first enclosing return statement, if any.
-		if curRet, ok := moreiters.First(curErr.Ancestors((*ast.ReturnStmt)(nil))); ok {
+		if curRet, ok := moreiters.First(curErr.Enclosing((*ast.ReturnStmt)(nil))); ok {
 			ret := curRet.Node()
 			pass.Report(analysis.Diagnostic{
 				Pos:     start,

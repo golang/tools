@@ -198,30 +198,29 @@ func (c Cursor) Stack(stack []Cursor) []Cursor {
 		panic("Cursor.Stack called on Root node")
 	}
 
-	stack = append(stack, c)
-	stack = slices.AppendSeq(stack, c.Ancestors())
+	stack = slices.AppendSeq(stack, c.Enclosing())
 	slices.Reverse(stack)
 	return stack
 }
 
-// Ancestors returns an iterator over the ancestors of the current
-// node, starting with [Cursor.Parent].
+// Enclosing returns an iterator over the nodes enclosing the current
+// current node, starting with the Cursor itself.
 //
-// Ancestors must not be called on the Root node (whose [Cursor.Node] returns nil).
+// Enclosing must not be called on the Root node (whose [Cursor.Node] returns nil).
 //
 // The types argument, if non-empty, enables type-based filtering of
-// events: the sequence includes only ancestors whose type matches an
-// element of the types slice.
-func (c Cursor) Ancestors(types ...ast.Node) iter.Seq[Cursor] {
+// events: the sequence includes only enclosing nodes whose type
+// matches an element of the types slice.
+func (c Cursor) Enclosing(types ...ast.Node) iter.Seq[Cursor] {
 	if c.index < 0 {
-		panic("Cursor.Ancestors called on Root node")
+		panic("Cursor.Enclosing called on Root node")
 	}
 
 	mask := maskOf(types)
 
 	return func(yield func(Cursor) bool) {
 		events := c.events()
-		for i := events[c.index].parent; i >= 0; i = events[i].parent {
+		for i := c.index; i >= 0; i = events[i].parent {
 			if events[i].typ&mask != 0 && !yield(Cursor{c.in, i}) {
 				break
 			}

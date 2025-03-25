@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil/cursor"
@@ -169,8 +170,5 @@ func uses(index *typeindex.Index, cur cursor.Cursor, obj types.Object) bool {
 // enclosingFunc returns the cursor for the innermost Func{Decl,Lit}
 // that encloses c, if any.
 func enclosingFunc(c cursor.Cursor) (cursor.Cursor, bool) {
-	for curAncestor := range c.Ancestors((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
-		return curAncestor, true
-	}
-	return cursor.Cursor{}, false
+	return moreiters.First(c.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)))
 }

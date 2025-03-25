@@ -188,7 +188,7 @@ func (ix *Index) Calls(callee types.Object) iter.Seq[cursor.Cursor] {
 			// CallExpr ancestor: we have to make sure the
 			// ident is in the CallExpr.Fun position, otherwise
 			// f(f, f) would have two spurious matches.
-			// Avoiding Ancestors is also significantly faster.
+			// Avoiding Enclosing is also significantly faster.
 
 			// inverse unparen: f -> (f)
 			for ek == edge.ParenExpr_X {

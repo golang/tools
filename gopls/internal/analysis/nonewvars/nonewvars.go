@@ -49,14 +49,11 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 
 		// Find enclosing assignment (which may be curErr itself).
-		assign, ok := curErr.Node().(*ast.AssignStmt)
+		curAssign, ok := moreiters.First(curErr.Enclosing((*ast.AssignStmt)(nil)))
 		if !ok {
-			cur, ok := moreiters.First(curErr.Ancestors((*ast.AssignStmt)(nil)))
-			if !ok {
-				continue // no enclosing assignment
-			}
-			assign = cur.Node().(*ast.AssignStmt)
+			continue // no enclosing assignment
 		}
+		assign := curAssign.Node().(*ast.AssignStmt)
 		if assign.Tok != token.DEFINE {
 			continue // not a := statement
 		}

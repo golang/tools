@@ -148,10 +148,7 @@ func fileUses(info *types.Info, file *ast.File, version string) bool {
 
 // enclosingFile returns the syntax tree for the file enclosing c.
 func enclosingFile(c cursor.Cursor) *ast.File {
-	// TODO(adonovan): make Ancestors reflexive so !ok becomes impossible.
-	if curFile, ok := moreiters.First(c.Ancestors((*ast.File)(nil))); ok {
-		c = curFile
-	}
+	c, _ = moreiters.First(c.Enclosing((*ast.File)(nil)))
 	return c.Node().(*ast.File)
 }
 

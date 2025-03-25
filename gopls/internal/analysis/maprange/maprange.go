@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
@@ -152,10 +153,7 @@ func isSet(expr ast.Expr) bool {
 // fileUses reports whether the file containing the specified cursor
 // uses at least the specified version of Go (e.g. "go1.24").
 func fileUses(info *types.Info, c cursor.Cursor, version string) bool {
-	// TODO(adonovan): make Ancestors reflexive so !ok becomes impossible.
-	if curFile, ok := moreiters.First(c.Ancestors((*ast.File)(nil))); ok {
-		c = curFile
-	}
+	c, _ = moreiters.First(c.Enclosing((*ast.File)(nil)))
 	file := c.Node().(*ast.File)
 	return !versions.Before(info.FileVersions[file], version)
 }

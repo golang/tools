@@ -592,7 +592,7 @@ func (a *analyzer) readFile(node ast.Node) ([]byte, error) {
 
 // currentFile returns the unique ast.File for a cursor.
 func currentFile(c cursor.Cursor) *ast.File {
-	cf, _ := moreiters.First(c.Ancestors((*ast.File)(nil)))
+	cf, _ := moreiters.First(c.Enclosing((*ast.File)(nil)))
 	return cf.Node().(*ast.File)
 }
 
