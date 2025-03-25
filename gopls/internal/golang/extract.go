@@ -15,6 +15,7 @@ import (
 	"go/types"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"text/scanner"
 
@@ -914,6 +915,123 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		}
 	}
 
+	// Determine if the extracted block contains any free branch statements, for
+	// example: "continue label" where "label" is declared outside of the
+	// extracted block, or continue inside a "for" statement where the for
+	// statement is declared outside of the extracted block.
+
+	// If the extracted block contains free branch statements, we add another
+	// return value "ctrl" to the extracted function that will be used to
+	// determine the control flow. See the following example, where === denotes
+	// the range to be extracted.
+	//
+	// Before:
+	// func f(cond bool) {
+	//      for range "abc" {
+	//      ==============
+	//      if cond {
+	//          continue
+	//      }
+	//      ==============
+	//      println(0)
+	//      }
+	// }
+
+	// After:
+	// func f(cond bool) {
+	//      for range "abc" {
+	//      ctrl := newFunction(cond)
+	//      switch ctrl {
+	//      case 1:
+	//          continue
+	//      }
+	//      println(0)
+	//      }
+	// }
+	//
+	// func newFunction(cond bool) int {
+	//      if cond {
+	//          return 1
+	//      }
+	//      return 0
+	// }
+	//
+
+	curSel, _ := pgf.Cursor.FindPos(start, end) // since canExtractFunction succeeded, this will always return a valid cursor
+	freeBranches := freeBranches(info, curSel, start, end)
+
+	// Generate an unused identifier for the control value.
+	ctrlVar, _ := freshName(info, file, start, "ctrl", 0)
+	if len(freeBranches) > 0 {
+
+		zeroValExpr := &ast.BasicLit{
+			Kind:  token.INT,
+			Value: "0",
+		}
+		var branchStmts []*ast.BranchStmt
+		var stack []ast.Node
+		// Add the zero "ctrl" value to each return statement in the extracted block.
+		ast.Inspect(extractedBlock, func(n ast.Node) bool {
+			if n != nil {
+				stack = append(stack, n)
+			} else {
+				stack = stack[:len(stack)-1]
+			}
+			switch n := n.(type) {
+			case *ast.ReturnStmt:
+				n.Results = append(n.Results, zeroValExpr)
+			case *ast.BranchStmt:
+				// Collect a list of branch statements in the extracted block to examine later.
+				if isFreeBranchStmt(stack) {
+					branchStmts = append(branchStmts, n)
+				}
+			case *ast.FuncLit:
+				// Don't descend into nested functions. When we return false
+				// here, ast.Inspect does not give us a "pop" event when leaving
+				// the subtree, so we need to pop here. (golang/go#73319)
+				stack = stack[:len(stack)-1]
+				return false
+			}
+			return true
+		})
+
+		// Construct a return statement to replace each free branch statement in the extracted block. It should have
+		// zero values for all return parameters except one, "ctrl", which dictates which continuation to follow.
+		var freeCtrlStmtReturns []ast.Expr
+		// Create "zero values" for each type.
+		for _, returnType := range returnTypes {
+			var val ast.Expr
+			var isValid bool
+			for obj, typ := range seenVars {
+				if typ == returnType.Type {
+					val, isValid = typesinternal.ZeroExpr(obj.Type(), qual)
+					break
+				}
+			}
+			if !isValid {
+				return nil, nil, fmt.Errorf("could not find matching AST expression for %T", returnType.Type)
+			}
+			freeCtrlStmtReturns = append(freeCtrlStmtReturns, val)
+		}
+		freeCtrlStmtReturns = append(freeCtrlStmtReturns, getZeroVals(retVars)...)
+
+		for i, branchStmt := range branchStmts {
+			replaceBranchStmtWithReturnStmt(extractedBlock, branchStmt, &ast.ReturnStmt{
+				Return: branchStmt.Pos(),
+				Results: append(slices.Clip(freeCtrlStmtReturns), &ast.BasicLit{
+					Kind:  token.INT,
+					Value: strconv.Itoa(i + 1), // start with 1 because 0 is reserved for base case
+				}),
+			})
+
+		}
+		retVars = append(retVars, &returnVariable{
+			name:    ast.NewIdent(ctrlVar),
+			decl:    &ast.Field{Type: ast.NewIdent("int")},
+			zeroVal: zeroValExpr,
+		})
+	}
+
 	// Add a return statement to the end of the new function. This return statement must include
 	// the values for the types of the original extracted function signature and (if a return
 	// statement is present in the selection) enclosing function signature.
@@ -1042,6 +1160,22 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 			strings.ReplaceAll(ifBuf.String(), "\n", newLineIndent)
 		fullReplacement.WriteString(ifstatement)
 	}
+
+	// Add the switch statement for free branch statements after the new function call.
+	if len(freeBranches) > 0 {
+		fmt.Fprintf(&fullReplacement, "%[1]sswitch %[2]s {%[1]s", newLineIndent, ctrlVar)
+		for i, br := range freeBranches {
+			// Preserve spacing at the beginning of the line containing the branch statement.
+			startPos := tok.LineStart(safetoken.Line(tok, br.Pos()))
+			start, end, err := safetoken.Offsets(tok, startPos, br.End())
+			if err != nil {
+				return nil, nil, err
+			}
+			fmt.Fprintf(&fullReplacement, "case %d:\n%s%s", i+1, pgf.Src[start:end], newLineIndent)
+		}
+		fullReplacement.WriteString("}")
+	}
+
 	fullReplacement.Write(after)
 	fullReplacement.WriteString("\n\n")       // add newlines after the enclosing function
 	fullReplacement.Write(newFuncBuf.Bytes()) // insert the extracted function
@@ -1271,6 +1405,9 @@ func collectFreeVars(info *types.Info, file *ast.File, start, end token.Pos, nod
 			var obj types.Object
 			var isFree, prune bool
 			switch n := n.(type) {
+			case *ast.BranchStmt:
+				// Avoid including labels attached to branch statements.
+				return false
 			case *ast.Ident:
 				obj, isFree = id(n)
 			case *ast.SelectorExpr:
@@ -1706,8 +1843,8 @@ func varNameForType(t types.Type) (string, bool) {
 	return AbbreviateVarName(typeName), true
 }
 
-// adjustReturnStatements adds "zero values" of the given types to each return statement
-// in the given AST node.
+// adjustReturnStatements adds "zero values" of the given types to each return
+// statement in the given AST node.
 func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]ast.Expr, extractedBlock *ast.BlockStmt, qual types.Qualifier) error {
 	var zeroVals []ast.Expr
 	// Create "zero values" for each type.
@@ -1715,11 +1852,10 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 		var val ast.Expr
 		var isValid bool
 		for obj, typ := range seenVars {
-			if typ != returnType.Type {
-				continue
+			if typ == returnType.Type {
+				val, isValid = typesinternal.ZeroExpr(obj.Type(), qual)
+				break
 			}
-			val, isValid = typesinternal.ZeroExpr(obj.Type(), qual)
-			break
 		}
 		if !isValid {
 			return fmt.Errorf("could not find matching AST expression for %T", returnType.Type)
@@ -1859,4 +1995,123 @@ func cond[T any](cond bool, t, f T) T {
 	} else {
 		return f
 	}
+}
+
+// replaceBranchStmtWithReturnStmt modifies the ast node to replace the given
+// branch statement with the given return statement.
+func replaceBranchStmtWithReturnStmt(block ast.Node, br *ast.BranchStmt, ret *ast.ReturnStmt) {
+	ast.Inspect(block, func(n ast.Node) bool {
+		// Look for the branch statement within a BlockStmt or CaseClause.
+		switch n := n.(type) {
+		case *ast.BlockStmt:
+			for i, stmt := range n.List {
+				if stmt == br {
+					n.List[i] = ret
+					return false
+				}
+			}
+		case *ast.CaseClause:
+			for i, stmt := range n.Body {
+				if stmt.Pos() == br.Pos() {
+					n.Body[i] = ret
+					return false
+				}
+			}
+		}
+		return true
+	})
+}
+
+// freeBranches returns all branch statements beneath cur whose continuation
+// lies outside the (start, end) range.
+func freeBranches(info *types.Info, cur cursor.Cursor, start, end token.Pos) (free []*ast.BranchStmt) {
+nextBranch:
+	for curBr := range cur.Preorder((*ast.BranchStmt)(nil)) {
+		br := curBr.Node().(*ast.BranchStmt)
+		if br.End() < start || br.Pos() > end {
+			continue
+		}
+		label, _ := info.Uses[br.Label].(*types.Label)
+		if label != nil && !(start <= label.Pos() && label.Pos() <= end) {
+			free = append(free, br)
+			continue
+		}
+		if br.Tok == token.BREAK || br.Tok == token.CONTINUE {
+			filter := []ast.Node{
+				(*ast.ForStmt)(nil),
+				(*ast.RangeStmt)(nil),
+				(*ast.SwitchStmt)(nil),
+				(*ast.TypeSwitchStmt)(nil),
+				(*ast.SelectStmt)(nil),
+			}
+			// Find innermost relevant ancestor for break/continue.
+			for curAncestor := range curBr.Ancestors(filter...) {
+				if l, ok := curAncestor.Parent().Node().(*ast.LabeledStmt); ok &&
+					label != nil &&
+					l.Label.Name == label.Name() {
+					continue
+				}
+				switch n := curAncestor.Node().(type) {
+				case *ast.ForStmt, *ast.RangeStmt:
+					if n.Pos() < start {
+						free = append(free, br)
+					}
+					continue nextBranch
+				case *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+					if br.Tok == token.BREAK {
+						if n.Pos() < start {
+							free = append(free, br)
+						}
+						continue nextBranch
+					}
+				}
+			}
+		}
+	}
+	return
+}
+
+// isFreeBranchStmt returns true if the relevant ancestor for the branch
+// statement at stack[len(stack)-1] cannot be found in the stack. This is used
+// when we are examining the extracted block, since type information isn't
+// available. We need to find the location of the label without using
+// types.Info.
+func isFreeBranchStmt(stack []ast.Node) bool {
+	switch node := stack[len(stack)-1].(type) {
+	case *ast.BranchStmt:
+		isLabeled := node.Label != nil
+		switch node.Tok {
+		case token.GOTO:
+			if isLabeled {
+				return !enclosingLabel(stack, node.Label.Name)
+			}
+		case token.BREAK, token.CONTINUE:
+			// Find innermost relevant ancestor for break/continue.
+			for i := len(stack) - 2; i >= 0; i-- {
+				n := stack[i]
+				if isLabeled {
+					l, ok := n.(*ast.LabeledStmt)
+					if !(ok && l.Label.Name == node.Label.Name) {
+						continue
+					}
+				}
+				switch n.(type) {
+				case *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+					return false
+				}
+			}
+		}
+	}
+	// We didn't find the relevant ancestor on the path, so this must be a free branch statement.
+	return true
+}
+
+// enclosingLabel returns true if the given label is found on the stack.
+func enclosingLabel(stack []ast.Node, label string) bool {
+	for _, n := range stack {
+		if labelStmt, ok := n.(*ast.LabeledStmt); ok && labelStmt.Label.Name == label {
+			return true
+		}
+	}
+	return false
 }
