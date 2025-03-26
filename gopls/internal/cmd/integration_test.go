@@ -508,6 +508,14 @@ func f() {
 func TestImplementations(t *testing.T) {
 	t.Parallel()
 
+	// types.CheckExpr, now used in the rangeint modernizer, had a
+	// data race (#71817) that was fixed in go1.25 and backported
+	// to go1.24 but not to go1.23. Although in principle it could
+	// affect a lot of tests, it (weirdly) only seems to show up
+	// in this one (#72082). Rather than backport again, we
+	// suppress this test.
+	testenv.NeedsGo1Point(t, 24)
+
 	tree := writeTree(t, `
 -- a.go --
 package a
