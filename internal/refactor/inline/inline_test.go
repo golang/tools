@@ -34,6 +34,28 @@ import (
 )
 
 // TestData executes test scenarios specified by files in testdata/*.txtar.
+// Each txtar file describes two sets of files, some containing Go source
+// and others expected results.
+//
+// The Go source files and go.mod are parsed and type-checked as a Go module.
+// Some of these files contain marker comments (in a form described below) describing
+// the inlinings to perform and whether they should succeed or fail. A marker
+// indicating success refers to another file in the txtar, not a .go
+// file, that should contain the contents of the first file after inlining.
+//
+// The marker format for success is
+//
+//	@inline(re"pat", wantfile)
+//
+// The first call in the marker's line that matches pat is inlined, and the contents
+// of the resulting file must match the contents of wantfile.
+//
+// The marker format for failure is
+//
+//	@inline(re"pat", re"errpat")
+//
+// The first argument selects the call for inlining as before, and the second
+// is a regular expression that must match the text of resulting error.
 func TestData(t *testing.T) {
 	testenv.NeedsGoPackages(t)
 
@@ -120,8 +142,9 @@ func TestData(t *testing.T) {
 						var want any
 						switch x := note.Args[1].(type) {
 						case string, expect.Identifier:
+							name := fmt.Sprint(x)
 							for _, file := range ar.Files {
-								if file.Name == fmt.Sprint(x) {
+								if file.Name == name {
 									want = file.Data
 									break
 								}
