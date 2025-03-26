@@ -586,52 +586,10 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		assign1 = func(v *types.Var) bool { return !updatedLocals[v] }
 	}
 
-	// import map, initially populated with caller imports, and updated below
+	// Build a map, initially populated with caller imports, and updated below
 	// with new imports necessary to reference free symbols in the callee.
-	//
-	// For simplicity we ignore existing dot imports, so that a qualified
-	// identifier (QI) in the callee is always represented by a QI in the caller,
-	// allowing us to treat a QI like a selection on a package name.
-	importMap := make(map[string][]string) // maps package path to local name(s)
-	var oldImports []oldImport             // imports referenced only by caller.Call.Fun
-
-	for _, imp := range caller.File.Imports {
-		if pkgName, ok := importedPkgName(caller.Info, imp); ok &&
-			pkgName.Name() != "." &&
-			pkgName.Name() != "_" {
-
-			// If the import's sole use is in caller.Call.Fun of the form p.F(...),
-			// where p.F is a qualified identifier, the p import may not be
-			// necessary.
-			//
-			// Only the qualified identifier case matters, as other references to
-			// imported package names in the Call.Fun expression (e.g.
-			// x.after(3*time.Second).f() or time.Second.String()) will remain after
-			// inlining, as arguments.
-			//
-			// If that is the case, proactively check if any of the callee FreeObjs
-			// need this import. Doing so eagerly simplifies the resulting logic.
-			needed := true
-			sel, ok := ast.Unparen(caller.Call.Fun).(*ast.SelectorExpr)
-			if ok && soleUse(caller.Info, pkgName) == sel.X {
-				needed = false // no longer needed by caller
-				// Check to see if any of the inlined free objects need this package.
-				for _, obj := range callee.FreeObjs {
-					if obj.PkgPath == pkgName.Imported().Path() && obj.Shadow[pkgName.Name()] == 0 {
-						needed = true // needed by callee
-						break
-					}
-				}
-			}
-
-			if needed {
-				path := pkgName.Imported().Path()
-				importMap[path] = append(importMap[path], pkgName.Name())
-			} else {
-				oldImports = append(oldImports, oldImport{pkgName: pkgName, spec: imp})
-			}
-		}
-	}
+	// oldImports are caller imports that won't be needed after inlining.
+	importMap, oldImports := callerImportMap(caller, callee)
 
 	// importName finds an existing import name to use in a particular shadowing
 	// context. It is used to determine the set of new imports in
@@ -1388,6 +1346,56 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	res.old = caller.Call
 	res.new = newCall
 	return res, nil
+}
+
+// callerImportMap returns a map from package paths in the caller's file to local names.
+// The map excludes imports not needed by the caller or callee after inlining; the second
+// return value holds these.
+func callerImportMap(caller *Caller, callee *gobCallee) (map[string][]string, []oldImport) {
+	// For simplicity we ignore existing dot imports, so that a qualified
+	// identifier (QI) in the callee is always represented by a QI in the caller,
+	// allowing us to treat a QI like a selection on a package name.
+	importMap := make(map[string][]string) // maps package path to local name(s)
+	var oldImports []oldImport             // imports referenced only by caller.Call.Fun
+
+	for _, imp := range caller.File.Imports {
+		if pkgName, ok := importedPkgName(caller.Info, imp); ok &&
+			pkgName.Name() != "." &&
+			pkgName.Name() != "_" {
+
+			// If the import's sole use is in caller.Call.Fun of the form p.F(...),
+			// where p.F is a qualified identifier, the p import may not be
+			// necessary.
+			//
+			// Only the qualified identifier case matters, as other references to
+			// imported package names in the Call.Fun expression (e.g.
+			// x.after(3*time.Second).f() or time.Second.String()) will remain after
+			// inlining, as arguments.
+			//
+			// If that is the case, proactively check if any of the callee FreeObjs
+			// need this import. Doing so eagerly simplifies the resulting logic.
+			needed := true
+			sel, ok := ast.Unparen(caller.Call.Fun).(*ast.SelectorExpr)
+			if ok && soleUse(caller.Info, pkgName) == sel.X {
+				needed = false // no longer needed by caller
+				// Check to see if any of the inlined free objects need this package.
+				for _, obj := range callee.FreeObjs {
+					if obj.PkgPath == pkgName.Imported().Path() && obj.Shadow[pkgName.Name()] == 0 {
+						needed = true // needed by callee
+						break
+					}
+				}
+			}
+
+			if needed {
+				path := pkgName.Imported().Path()
+				importMap[path] = append(importMap[path], pkgName.Name())
+			} else {
+				oldImports = append(oldImports, oldImport{pkgName: pkgName, spec: imp})
+			}
+		}
+	}
+	return importMap, oldImports
 }
 
 type argument struct {
