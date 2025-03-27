@@ -31,7 +31,7 @@ const (
 //	}
 //
 // is [1 0 -2 2], indicating reads of y and x, followed by the unknown
-// effects of the g() call. and finally the read of parameter z. This
+// effects of the g() call, and finally the read of parameter z. This
 // information is used during inlining to ascertain when it is safe
 // for parameter references to be replaced by their corresponding
 // argument expressions. Such substitutions are permitted only when

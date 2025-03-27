@@ -14,6 +14,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/types/typeutil"
@@ -303,7 +304,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 						return nil, tuple.At(i).Type()
 					}
 				}
-				for i := 0; i < sig.Results().Len(); i++ {
+				for i := range sig.Results().Len() {
 					expr, typ := argInfo(i)
 					var flags returnOperandFlags
 					if typ == types.Typ[types.UntypedNil] { // untyped nil is preserved by go/types
@@ -572,11 +573,9 @@ func analyzeAssignment(info *types.Info, stack []ast.Node) (assignable, ifaceAss
 
 	// Types do not need to match for an initializer with known type.
 	if spec, ok := parent.(*ast.ValueSpec); ok && spec.Type != nil {
-		for _, v := range spec.Values {
-			if v == expr {
-				typ := info.TypeOf(spec.Type)
-				return true, typ == nil || types.IsInterface(typ), false
-			}
+		if slices.Contains(spec.Values, expr) {
+			typ := info.TypeOf(spec.Type)
+			return true, typ == nil || types.IsInterface(typ), false
 		}
 	}
 
@@ -616,7 +615,7 @@ func analyzeAssignment(info *types.Info, stack []ast.Node) (assignable, ifaceAss
 				return true, types.IsInterface(under.Elem()), false
 			case *types.Struct: // Struct{k: expr}
 				if id, _ := kv.Key.(*ast.Ident); id != nil {
-					for fi := 0; fi < under.NumFields(); fi++ {
+					for fi := range under.NumFields() {
 						field := under.Field(fi)
 						if info.Uses[id] == field {
 							return true, types.IsInterface(field.Type()), false
@@ -715,7 +714,7 @@ func paramTypeAtIndex(sig *types.Signature, call *ast.CallExpr, index int) types
 // given outer-to-inner stack, after stripping parentheses, along with the
 // remaining stack up to the parent node.
 //
-// If no such context exists, returns (nil, nil).
+// If no such context exists, returns (nil, nil, nil).
 func exprContext(stack []ast.Node) (remaining []ast.Node, parent ast.Node, expr ast.Expr) {
 	expr, _ = stack[len(stack)-1].(ast.Expr)
 	if expr == nil {

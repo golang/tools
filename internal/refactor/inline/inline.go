@@ -534,7 +534,7 @@ func newImportState(logf func(string, ...any), caller *Caller, callee *gobCallee
 
 // importName finds an existing import name to use in a particular shadowing
 // context. It is used to determine the set of new imports in
-// getOrMakeImportName, and is also used for writing out names in inlining
+// localName, and is also used for writing out names in inlining
 // strategies below.
 func (i *importState) importName(pkgPath string, shadow shadowMap) string {
 	for _, name := range i.importMap[pkgPath] {
@@ -560,12 +560,7 @@ func (i *importState) localName(pkgPath, pkgName string, shadow shadowMap) strin
 	}
 
 	newlyAdded := func(name string) bool {
-		for _, new := range i.newImports {
-			if new.pkgName == name {
-				return true
-			}
-		}
-		return false
+		return slices.ContainsFunc(i.newImports, func(n newImport) bool { return n.pkgName == name })
 	}
 
 	// shadowedInCaller reports whether a candidate package name
@@ -576,12 +571,7 @@ func (i *importState) localName(pkgPath, pkgName string, shadow shadowMap) strin
 			return false
 		}
 		// If obj will be removed, the name is available.
-		for _, old := range i.oldImports {
-			if old.pkgName == obj {
-				return false
-			}
-		}
-		return true
+		return !slices.ContainsFunc(i.oldImports, func(o oldImport) bool { return o.pkgName == obj })
 	}
 
 	// import added by callee
@@ -3030,13 +3020,13 @@ func replaceNode(root ast.Node, from, to ast.Node) {
 			}
 
 		case reflect.Struct:
-			for i := 0; i < v.Type().NumField(); i++ {
+			for i := range v.Type().NumField() {
 				visit(v.Field(i))
 			}
 
 		case reflect.Slice:
 			compact := false
-			for i := 0; i < v.Len(); i++ {
+			for i := range v.Len() {
 				visit(v.Index(i))
 				if v.Index(i).IsNil() {
 					compact = true
@@ -3047,7 +3037,7 @@ func replaceNode(root ast.Node, from, to ast.Node) {
 				// (Do this is a second pass to avoid
 				// unnecessary writes in the common case.)
 				j := 0
-				for i := 0; i < v.Len(); i++ {
+				for i := range v.Len() {
 					if !v.Index(i).IsNil() {
 						v.Index(j).Set(v.Index(i))
 						j++
@@ -3107,7 +3097,7 @@ func clearPositions(root ast.Node) {
 		if n != nil {
 			v := reflect.ValueOf(n).Elem() // deref the pointer to struct
 			fields := v.Type().NumField()
-			for i := 0; i < fields; i++ {
+			for i := range fields {
 				f := v.Field(i)
 				// Clearing Pos arbitrarily is destructive,
 				// as its presence may be semantically significant
