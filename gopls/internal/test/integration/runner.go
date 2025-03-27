@@ -253,7 +253,7 @@ func ConnectGoplsEnv(t testing.TB, ctx context.Context, sandbox *fake.Sandbox, c
 		t.Fatal(err)
 	}
 	env := &Env{
-		T:       t,
+		TB:      t,
 		Ctx:     ctx,
 		Sandbox: sandbox,
 		Server:  connector,

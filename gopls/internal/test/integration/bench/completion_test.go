@@ -69,7 +69,7 @@ func endRangeInBuffer(env *Env, name string) protocol.Range {
 	m := protocol.NewMapper("", []byte(buffer))
 	rng, err := m.OffsetRange(len(buffer), len(buffer))
 	if err != nil {
-		env.T.Fatal(err)
+		env.TB.Fatal(err)
 	}
 	return rng
 }

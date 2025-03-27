@@ -321,7 +321,7 @@ type marker struct {
 func (m marker) ctx() context.Context { return m.run.env.Ctx }
 
 // T returns the testing.TB for this mark.
-func (m marker) T() testing.TB { return m.run.env.T }
+func (m marker) T() testing.TB { return m.run.env.TB }
 
 // server returns the LSP server for the marker test run.
 func (m marker) editor() *fake.Editor { return m.run.env.Editor }
@@ -982,7 +982,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 		t.Fatal(err)
 	}
 	return &integration.Env{
-		T:       t,
+		TB:      t,
 		Ctx:     ctx,
 		Editor:  editor,
 		Sandbox: sandbox,
@@ -1035,17 +1035,17 @@ func (c *marker) sprintf(format string, args ...any) string {
 func (run *markerTestRun) fmtPos(pos token.Pos) string {
 	file := run.test.fset.File(pos)
 	if file == nil {
-		run.env.T.Errorf("position %d not in test fileset", pos)
+		run.env.TB.Errorf("position %d not in test fileset", pos)
 		return "<invalid location>"
 	}
 	m, err := run.env.Editor.Mapper(file.Name())
 	if err != nil {
-		run.env.T.Errorf("%s", err)
+		run.env.TB.Errorf("%s", err)
 		return "<invalid location>"
 	}
 	loc, err := m.PosLocation(file, pos, pos)
 	if err != nil {
-		run.env.T.Errorf("Mapper(%s).PosLocation failed: %v", file.Name(), err)
+		run.env.TB.Errorf("Mapper(%s).PosLocation failed: %v", file.Name(), err)
 	}
 	return run.fmtLoc(loc)
 }
@@ -1055,7 +1055,7 @@ func (run *markerTestRun) fmtPos(pos token.Pos) string {
 // archive file.
 func (run *markerTestRun) fmtLoc(loc protocol.Location) string {
 	if loc == (protocol.Location{}) {
-		run.env.T.Errorf("unable to find %s in test archive", loc)
+		run.env.TB.Errorf("unable to find %s in test archive", loc)
 		return "<invalid location>"
 	}
 	lines := bytes.Count(run.test.archive.Comment, []byte("\n"))
@@ -1094,12 +1094,12 @@ func (run *markerTestRun) mapLocation(loc protocol.Location) (name string, start
 	name = run.env.Sandbox.Workdir.URIToPath(loc.URI)
 	m, err := run.env.Editor.Mapper(name)
 	if err != nil {
-		run.env.T.Errorf("internal error: %v", err)
+		run.env.TB.Errorf("internal error: %v", err)
 		return
 	}
 	start, end, err := m.RangeOffsets(loc.Range)
 	if err != nil {
-		run.env.T.Errorf("error formatting location %s: %v", loc, err)
+		run.env.TB.Errorf("error formatting location %s: %v", loc, err)
 		return
 	}
 	startLine, startCol = m.OffsetLineCol8(start)
@@ -2306,11 +2306,11 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 
 	if action.Edit != nil {
 		if len(action.Edit.Changes) > 0 {
-			env.T.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)
+			env.TB.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)
 		}
 		if action.Edit.DocumentChanges != nil {
 			if action.Command != nil {
-				env.T.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Command", action.Kind, action.Title)
+				env.TB.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Command", action.Kind, action.Title)
 			}
 			return action.Edit.DocumentChanges, nil
 		}

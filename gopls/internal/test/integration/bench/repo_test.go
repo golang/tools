@@ -211,7 +211,7 @@ func (r *repo) sharedEnv(tb testing.TB) *Env {
 	})
 
 	return &Env{
-		T:       tb,
+		TB:      tb,
 		Ctx:     context.Background(),
 		Editor:  r.editor,
 		Sandbox: r.sandbox,
@@ -238,7 +238,7 @@ func (r *repo) newEnv(tb testing.TB, config fake.EditorConfig, forOperation stri
 	}
 
 	return &Env{
-		T:       tb,
+		TB:      tb,
 		Ctx:     context.Background(),
 		Editor:  editor,
 		Sandbox: sandbox,

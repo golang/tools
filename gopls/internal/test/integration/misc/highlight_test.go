@@ -124,7 +124,7 @@ func main() {}`
 }
 
 func checkHighlights(env *Env, loc protocol.Location, highlightCount int) {
-	t := env.T
+	t := env.TB
 	t.Helper()
 
 	highlights := env.DocumentHighlight(loc)

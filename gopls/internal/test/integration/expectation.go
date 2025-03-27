@@ -352,7 +352,7 @@ func (e *Env) DoneDiagnosingChanges() Expectation {
 //   - workspace/didChangeWatchedFiles
 //   - workspace/didChangeConfiguration
 func (e *Env) AfterChange(expectations ...Expectation) {
-	e.T.Helper()
+	e.TB.Helper()
 	e.OnceMet(
 		e.DoneDiagnosingChanges(),
 		expectations...,

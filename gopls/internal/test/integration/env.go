@@ -21,7 +21,7 @@ import (
 // wrapper methods that hide the boilerplate of plumbing contexts and checking
 // errors.
 type Env struct {
-	T   testing.TB // TODO(rfindley): rename to TB
+	TB  testing.TB
 	Ctx context.Context
 
 	// Most tests should not need to access the scratch area, editor, server, or
@@ -311,9 +311,9 @@ func (a *Awaiter) checkConditionsLocked() {
 // Use AfterChange or OnceMet instead, so that the runner knows when to stop
 // waiting.
 func (e *Env) Await(expectations ...Expectation) {
-	e.T.Helper()
+	e.TB.Helper()
 	if err := e.Awaiter.Await(e.Ctx, AllOf(expectations...)); err != nil {
-		e.T.Fatal(err)
+		e.TB.Fatal(err)
 	}
 }
 
@@ -321,7 +321,7 @@ func (e *Env) Await(expectations ...Expectation) {
 // unmeetable. If it was met, OnceMet checks that the state meets all
 // expectations in mustMeets.
 func (e *Env) OnceMet(pre Expectation, mustMeets ...Expectation) {
-	e.T.Helper()
+	e.TB.Helper()
 	e.Await(OnceMet(pre, AllOf(mustMeets...)))
 }
 

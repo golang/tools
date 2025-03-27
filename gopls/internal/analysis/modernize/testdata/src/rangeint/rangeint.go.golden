@@ -214,17 +214,17 @@ func Fn(a int) T {
 }
 
 func issue73037() {
-    var q T
+	var q T
 	for a := range q { // want "for loop can be modernized using range over int"
-	    println(a)
+		println(a)
 	}
 	for a := Fn(0); a < q; a++ {
 		println(a)
 	}
-    var qa TAlias
-    for a := range qa { // want "for loop can be modernized using range over int"
-        println(a)
-    }
+	var qa TAlias
+	for a := range qa { // want "for loop can be modernized using range over int"
+		println(a)
+	}
 	for a := range T(10) { // want "for loop can be modernized using range over int"
 		for b := range T(10) { // want "for loop can be modernized using range over int"
 			println(a, b)
