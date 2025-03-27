@@ -205,3 +205,29 @@ func todo() {
 		println(j)
 	}
 }
+
+type T uint
+type TAlias = uint
+
+func Fn(a int) T {
+	return T(a)
+}
+
+func issue73037() {
+	var q T
+	for a := T(0); a < q; a++ { // want "for loop can be modernized using range over int"
+		println(a)
+	}
+	for a := Fn(0); a < q; a++ {
+		println(a)
+	}
+	var qa TAlias
+	for a := TAlias(0); a < qa; a++ { // want "for loop can be modernized using range over int"
+		println(a)
+	}
+	for a := T(0); a < 10; a++ { // want "for loop can be modernized using range over int"
+		for b := T(0); b < 10; b++ { // want "for loop can be modernized using range over int"
+			println(a, b)
+		}
+	}
+}

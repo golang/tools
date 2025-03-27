@@ -184,7 +184,7 @@ func rangeint(pass *analysis.Pass) {
 							// (Unfortunately types.Qualifier doesn't provide the name of the package
 							// member to be qualified, a qualifier cannot perform the necessary shadowing
 							// check for dot-imported names.)
-							beforeLimit, afterLimit = fmt.Sprintf("%s(", types.TypeString(tVar, (*types.Package).Name)), ")"
+							beforeLimit, afterLimit = fmt.Sprintf("%s(", types.TypeString(tVar, types.RelativeTo(pass.Pkg))), ")"
 							info2 := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
 							if types.CheckExpr(pass.Fset, pass.Pkg, limit.Pos(), limit, info2) == nil {
 								tLimit := types.Default(info2.TypeOf(limit))
