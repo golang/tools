@@ -2448,41 +2448,6 @@ func freeVars(info *types.Info, e ast.Expr) map[string]bool {
 	return free
 }
 
-// freeishNames computes an over-approximation to the free names
-// of the expression (type or term) t, inserting values into the map.
-//
-// If t is a type expression, the approximation is not too far off (see below). For
-// terms, it simply gathers all unqualified identifiers, ignoring scopes established
-// by function and composite literals, so in some cases it can over-estimate quite
-// a lot.
-//
-// Because we don't have go/types annotations, we can't give an exact
-// result in all cases. In particular, an array type [n]T might have a
-// size such as unsafe.Sizeof(func() int{stmts...}()) and now the
-// precise answer depends upon all the statement syntax too. But that
-// never happens in practice.
-func freeishNames(free map[string]bool, t ast.Expr) {
-	var visit func(n ast.Node) bool
-	visit = func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.Ident:
-			free[n.Name] = true
-
-		case *ast.SelectorExpr:
-			ast.Inspect(n.X, visit)
-			return false // don't visit .Sel
-
-		case *ast.Field:
-			// Visit Type (which may have free references)
-			// but not Names (which are defs, not uses).
-			ast.Inspect(n.Type, visit)
-			return false
-		}
-		return true
-	}
-	ast.Inspect(t, visit)
-}
-
 // effects reports whether an expression might change the state of the
 // program (through function calls and channel receives) and affect
 // the evaluation of subsequent expressions.
