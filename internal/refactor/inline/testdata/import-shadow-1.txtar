@@ -1,0 +1,48 @@
+This file is identical to import-shadow.txtar except
+that the imports in a/a.go are not grouped.
+That is unusual, since goimports and related tools
+form groups.
+
+The result of inlining (bresult) also looks strange,
+but again, goimports would fix it up.
+
+-- go.mod --
+module testdata
+go 1.12
+
+-- a/a.go --
+package a
+
+import "testdata/b"
+import "log"
+
+func A() {
+	const log = "shadow"
+	b.B() //@ inline(re"B", bresult)
+}
+
+var _ log.Logger
+
+-- b/b.go --
+package b
+
+import "log"
+
+func B() {
+	log.Printf("")
+}
+
+-- bresult --
+package a
+
+import (
+	log0 "log"
+)
+import "log"
+
+func A() {
+	const log = "shadow"
+	log0.Printf("") //@ inline(re"B", bresult)
+}
+
+var _ log.Logger

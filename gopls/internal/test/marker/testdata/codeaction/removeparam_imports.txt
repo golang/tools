@@ -65,9 +65,7 @@ func B(x, y c.C) { //@codeaction("x", "refactor.rewrite.removeUnusedParam", resu
 -- @b/a/a3.go --
 package a
 
-import (
-	"mod.test/b"
-)
+import "mod.test/b"
 
 func _() {
 	b.B(<-b.Chan)
@@ -79,9 +77,7 @@ func _() {
 -- @b/a/a2.go --
 package a
 
-import (
-	"mod.test/b"
-)
+import "mod.test/b"
 
 func _() {
 	b.B(<-b.Chan)
@@ -90,9 +86,7 @@ func _() {
 -- @b/a/a1.go --
 package a
 
-import (
-	"mod.test/b"
-)
+import "mod.test/b"
 
 func _() {
 	b.B(<-b.Chan)

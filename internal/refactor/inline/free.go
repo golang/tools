@@ -12,15 +12,19 @@ import (
 	"go/token"
 )
 
-// freeishNames computes an over-approximation to the free names of the AST
+// freeishNames computes an approximation to the free names of the AST
 // at node n based solely on syntax, inserting values into the map.
 //
 // In the absence of composite literals, the set of free names is exact. Composite
 // literals introduce an ambiguity that can only be resolved with type information:
 // whether F is a field name or a value in `T{F: ...}`.
-// This function conservatively assumes T is not a struct type, so the
-// resulting set may contain spurious entries that are not free lexical
-// references but are references to struct fields.
+// If includeComplitIdents is true, this function conservatively assumes
+// T is not a struct type, so freeishNames overapproximates: the resulting
+// set may contain spurious entries that are not free lexical references
+// but are references to struct fields.
+// If includeComplitIdents is false, this function assumes that T *is*
+// a struct type, so freeishNames underapproximates: the resulting set
+// may omit names that are free lexical references.
 //
 // The code is based on go/parser.resolveFile, but heavily simplified. Crucial
 // differences are:
@@ -29,16 +33,17 @@ import (
 //   - Labels are ignored: they do not refer to values.
 //   - This is never called on FuncDecls or ImportSpecs, so the function
 //     panics if it sees one.
-func freeishNames(free map[string]bool, n ast.Node) {
-	r := &freeVisitor{free: free}
-	ast.Walk(r, n)
-	assert(r.scope == nil, "unbalanced scopes")
+func freeishNames(free map[string]bool, n ast.Node, includeComplitIdents bool) {
+	v := &freeVisitor{free: free, includeComplitIdents: includeComplitIdents}
+	ast.Walk(v, n)
+	assert(v.scope == nil, "unbalanced scopes")
 }
 
 // A freeVisitor holds state for a free-name analysis.
 type freeVisitor struct {
-	scope *scope          // the current innermost scope
-	free  map[string]bool // free names seen so far
+	scope                *scope          // the current innermost scope
+	free                 map[string]bool // free names seen so far
+	includeComplitIdents bool            // include identifier key in composite literals
 }
 
 // scope contains all the names defined in a lexical scope.
@@ -93,9 +98,13 @@ func (v *freeVisitor) Visit(n ast.Node) ast.Visitor {
 					// an identifier used as a composite literal key is
 					// a struct field (if n.Type is a struct) or a value
 					// (if n.Type is a map, slice or array).
-					// Over-approximate by treating both cases as potentially
-					// free names.
-					v.resolve(ident)
+					if v.includeComplitIdents {
+						// Over-approximate by treating both cases as potentially
+						// free names.
+						v.resolve(ident)
+					} else {
+						// Under-approximate by ignoring potentially free names.
+					}
 				} else {
 					v.walk(kv.Key)
 				}

@@ -14,8 +14,10 @@ go 1.12
 -- a/a.go --
 package a
 
-import "testdata/b"
-import "log"
+import (
+	"testdata/b"
+	"log"
+)
 
 func A() {
 	const log = "shadow"

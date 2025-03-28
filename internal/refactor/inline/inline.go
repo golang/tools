@@ -22,7 +22,6 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/imports"
 	"golang.org/x/tools/internal/analysisinternal"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
@@ -271,12 +270,12 @@ func (st *state) inline() (*Result, error) {
 		}
 	}
 
-	// Add new imports.
-	//
+	// Add new imports that are still used.
+	newImports := trimNewImports(res.newImports, res.new)
 	// Insert new imports after last existing import,
 	// to avoid migration of pre-import comments.
 	// The imports will be organized below.
-	if len(res.newImports) > 0 {
+	if len(newImports) > 0 {
 		// If we have imports to add, do so independent of the rest of the file.
 		// Otherwise, the length of the new imports may consume floating comments,
 		// causing them to be printed inside the imports block.
@@ -329,7 +328,7 @@ func (st *state) inline() (*Result, error) {
 			}
 		}
 		// Add new imports.
-		for _, imp := range res.newImports {
+		for _, imp := range newImports {
 			// Check that the new imports are accessible.
 			path, _ := strconv.Unquote(imp.spec.Path.Value)
 			if !analysisinternal.CanImport(caller.Types.Path(), path) {
@@ -355,30 +354,14 @@ func (st *state) inline() (*Result, error) {
 	}
 
 	// Delete imports referenced only by caller.Call.Fun.
-	//
-	// (We can't let imports.Process take care of it as it may
-	// mistake obsolete imports for missing new imports when the
-	// names are similar, as is common during a package migration.)
 	for _, oldImport := range res.oldImports {
 		specToDelete := oldImport.spec
-		for _, decl := range f.Decls {
-			if decl, ok := decl.(*ast.GenDecl); ok && decl.Tok == token.IMPORT {
-				decl.Specs = slices.DeleteFunc(decl.Specs, func(spec ast.Spec) bool {
-					imp := spec.(*ast.ImportSpec)
-					// Since we re-parsed the file, we can't match by identity;
-					// instead look for syntactic equivalence.
-					return imp.Path.Value == specToDelete.Path.Value &&
-						(imp.Name != nil) == (specToDelete.Name != nil) &&
-						(imp.Name == nil || imp.Name.Name == specToDelete.Name.Name)
-				})
-
-				// Edge case: import "foo" => import ().
-				if !decl.Lparen.IsValid() {
-					decl.Lparen = decl.TokPos + token.Pos(len("import"))
-					decl.Rparen = decl.Lparen + 1
-				}
-			}
+		name := ""
+		if specToDelete.Name != nil {
+			name = specToDelete.Name.Name
 		}
+		path, _ := strconv.Unquote(specToDelete.Path.Value)
+		astutil.DeleteNamedImport(caller.Fset, f, name, path)
 	}
 
 	var out bytes.Buffer
@@ -386,66 +369,6 @@ func (st *state) inline() (*Result, error) {
 		return nil, err
 	}
 	newSrc := out.Bytes()
-
-	// Remove imports that are no longer referenced.
-	//
-	// It ought to be possible to compute the set of PkgNames used
-	// by the "old" code, compute the free identifiers of the
-	// "new" code using a syntax-only (no go/types) algorithm, and
-	// see if the reduction in the number of uses of any PkgName
-	// equals the number of times it appears in caller.Info.Uses,
-	// indicating that it is no longer referenced by res.new.
-	//
-	// However, the notorious ambiguity of resolving T{F: 0} makes this
-	// unreliable: without types, we can't tell whether F refers to
-	// a field of struct T, or a package-level const/var of a
-	// dot-imported (!) package.
-	//
-	// So, for now, we run imports.Process, which is
-	// unsatisfactory as it has to run the go command, and it
-	// looks at the user's module cache state--unnecessarily,
-	// since this step cannot add new imports.
-	//
-	// TODO(adonovan): replace with a simpler implementation since
-	// all the necessary imports are present but merely untidy.
-	// That will be faster, and also less prone to nondeterminism
-	// if there are bugs in our logic for import maintenance.
-	//
-	// However, golang.org/x/tools/internal/imports.ApplyFixes is
-	// too simple as it requires the caller to have figured out
-	// all the logical edits. In our case, we know all the new
-	// imports that are needed (see newImports), each of which can
-	// be specified as:
-	//
-	//   &imports.ImportFix{
-	//     StmtInfo: imports.ImportInfo{path, name,
-	//     IdentName: name,
-	//     FixType:   imports.AddImport,
-	//   }
-	//
-	// but we don't know which imports are made redundant by the
-	// inlining itself. For example, inlining a call to
-	// fmt.Println may make the "fmt" import redundant.
-	//
-	// Also, both imports.Process and internal/imports.ApplyFixes
-	// reformat the entire file, which is not ideal for clients
-	// such as gopls. (That said, the point of a canonical format
-	// is arguably that any tool can reformat as needed without
-	// this being inconvenient.)
-	//
-	// We could invoke imports.Process and parse its result,
-	// compare against the original AST, compute a list of import
-	// fixes, and return that too.
-
-	// Recompute imports only if there were existing ones.
-	if len(f.Imports) > 0 {
-		formatted, err := imports.Process("output", newSrc, nil)
-		if err != nil {
-			logf("cannot reformat: %v <<%s>>", err, &out)
-			return nil, err // cannot reformat (a bug?)
-		}
-		newSrc = formatted
-	}
 
 	literalized := false
 	if call, ok := res.new.(*ast.CallExpr); ok && is[*ast.FuncLit](call.Fun) {
@@ -608,6 +531,43 @@ func (i *importState) localName(pkgPath, pkgName string, shadow shadowMap) strin
 	})
 	i.importMap[pkgPath] = append(i.importMap[pkgPath], name)
 	return name
+}
+
+// trimNewImports removes imports that are no longer needed.
+//
+// The list of new imports as constructed by calls to [importState.localName]
+// includes all of the packages referenced by the callee.
+// But in the process of inlining, we may have dropped some of those references.
+// For example, if the callee looked like this:
+//
+//	func F(x int) (p.T) {... /* no mention of p */ ...}
+//
+// and we inlined by assignment:
+//
+//	v := ...
+//
+// then the reference to package p drops away.
+//
+// Remove the excess imports by seeing which remain in new, the expression
+// to be inlined.
+// We can find those by looking at the free names in new.
+// The list of free names cannot include spurious package names.
+// Free-name tracking is precise except for the case of an identifier
+// key in a composite literal, which names either a field or a value.
+// Neither fields nor values are package names.
+// Since they are not relevant to removing unused imports, we instruct
+// freeishNames to omit composite-literal keys that are identifiers.
+func trimNewImports(newImports []newImport, new ast.Node) []newImport {
+	free := map[string]bool{}
+	const omitComplitIdents = false
+	freeishNames(free, new, omitComplitIdents)
+	var res []newImport
+	for _, ni := range newImports {
+		if free[ni.pkgName] {
+			res = append(res, ni)
+		}
+	}
+	return res
 }
 
 type inlineCallResult struct {
@@ -2317,7 +2277,8 @@ func createBindingDecl(logf logger, caller *Caller, args []*argument, calleeDecl
 				free[name] = true
 			}
 		}
-		freeishNames(free, spec.Type)
+		const includeComplitIdents = true
+		freeishNames(free, spec.Type, includeComplitIdents)
 		for name := range free {
 			if names[name] {
 				logf("binding decl would shadow free name %q", name)
@@ -3390,12 +3351,14 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 		freeNames       = make(map[string]bool) // free(ish) names among rhs expressions
 		nonTrivial      = make(map[int]bool)    // indexes in rhs of nontrivial result conversions
 	)
+	const includeComplitIdents = true
+
 	for i, expr := range callerStmt.Rhs {
 		if expr == caller.Call {
 			assert(callIdx == -1, "malformed (duplicative) AST")
 			callIdx = i
 			for j, returnOperand := range returnOperands {
-				freeishNames(freeNames, returnOperand)
+				freeishNames(freeNames, returnOperand, includeComplitIdents)
 				rhs = append(rhs, returnOperand)
 				if resultInfo[j]&nonTrivialResult != 0 {
 					nonTrivial[i+j] = true
@@ -3408,7 +3371,7 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 			// We must clone before clearing positions, since e came from the caller.
 			expr = internalastutil.CloneNode(expr)
 			clearPositions(expr)
-			freeishNames(freeNames, expr)
+			freeishNames(freeNames, expr, includeComplitIdents)
 			rhs = append(rhs, expr)
 		}
 	}

@@ -54,7 +54,6 @@ package c
 
 import (
 	"context"
-
 	"example.com/define/my/typ"
 	"example.com/one/more/pkg"
 	pkg0 "example.com/some/other/pkg"

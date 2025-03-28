@@ -103,9 +103,7 @@ func _() {
 -- b2 --
 package a
 
-import (
-	"testdata/b"
-)
+import "testdata/b"
 
 func _() {
 	var y int
