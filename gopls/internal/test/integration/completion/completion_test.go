@@ -702,6 +702,7 @@ func F3[K comparable, V any](map[K]V, chan V) {}
 }
 
 func TestPackageMemberCompletionAfterSyntaxError(t *testing.T) {
+	// Update: not broken anymore, fixed.
 	// This test documents the current broken behavior due to golang/go#58833.
 	const src = `
 -- go.mod --
@@ -735,7 +736,7 @@ func main() {
 		// (In VSCode, "Abs" wrongly appears in the completion menu.)
 		// This is a consequence of poor error recovery in the parser
 		// causing "math.Ldex" to become a BadExpr.
-		want := "package main\n\nimport \"math\"\n\nfunc main() {\n\tmath.Sqrt(,0)\n\tmath.Ldexmath.Abs(${1:})\n}\n"
+		want := "package main\n\nimport \"math\"\n\nfunc main() {\n\tmath.Sqrt(,0)\n\tmath.Ldexp(${1:})\n}\n"
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("unimported completion (-want +got):\n%s", diff)
 		}
@@ -1434,6 +1435,213 @@ func main() {
 			if after[c] <= before[c] {
 				t.Errorf("%s did not increase", c.Name())
 			}
+		}
+	})
+}
+
+func TestCompletionAfterSyntaxError(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.14
+
+-- test1.go --
+package main
+
+func test1() {
+	minimum := 0
+	maximum := 0
+	minimum, max
+}
+
+-- test2.go --
+package main
+
+import "math"
+
+func test2() {
+	math.Sqrt(0), abs
+}
+
+-- test3.go --
+package main
+
+import "math"
+
+func test3() {
+	math.Sqrt(0), math.ab
+}
+
+-- test4.go --
+package main
+
+type person struct {
+	name string
+	age  int
+}
+
+func test4() {
+	p := person{}
+	p.name, age
+}
+
+-- test5.go --
+package main
+
+type person struct {
+	name string
+	age  int
+}
+
+func test5() {
+	p := person{}
+	p.name, p.ag
+}
+
+-- test6.go --
+package main
+
+import "math"
+
+func test6() {
+	math.Sqrt(,0)
+	abs
+}
+
+-- test7.go --
+package main
+
+import "math"
+
+func test7() {
+	math.Sqrt(,0)
+	math.ab
+}
+
+-- test8.go --
+package main
+
+func test8() {
+	minimum := 0
+	fmt.Println("minimum:" min)
+}
+
+-- test9.go --
+package main
+
+type person struct {
+	name string
+	age  int
+}
+
+func test9() {
+	p := person{}
+	fmt.Println("name:" p.na)
+}
+
+-- test10.go --
+package main
+
+type Foo struct {
+	bar  Bar
+	name string
+}
+
+type Bar struct {
+	baz string
+}
+
+func test10() {
+	f := Foo{}
+	f.name, f.bar.b
+}
+`
+	tests := []struct {
+		name string
+		file string
+		re   string
+		want string
+	}{
+		{
+			name: "test 1 variable completion after comma",
+			file: "test1.go",
+			re:   ", max()",
+			want: "package main\n\nfunc test1() {\n\tminimum := 0\n\tmaximum := 0\n\tminimum, maximum\n}\n\n",
+		},
+		{
+			name: "test 2 package member completion after comma",
+			file: "test2.go",
+			re:   "abs()",
+			want: "package main\n\nimport \"math\"\n\nfunc test2() {\n\tmath.Sqrt(0), math.Abs(${1:})\n}\n\n",
+		},
+		{
+			name: "test 3 package member completion after comma with period",
+			file: "test3.go",
+			re:   "math.ab()",
+			want: "package main\n\nimport \"math\"\n\nfunc test3() {\n\tmath.Sqrt(0), math.Abs(${1:})\n}\n\n",
+		},
+		{
+			name: "test 4 struct field completion after comma",
+			file: "test4.go",
+			re:   ", age()",
+			want: "package main\n\ntype person struct {\n\tname string\n\tage  int\n}\n\nfunc test4() {\n\tp := person{}\n\tp.name, p.age\n}\n\n",
+		},
+		{
+			name: "test 5 struct field completion after comma with period",
+			file: "test5.go",
+			re:   "p.ag()",
+			want: "package main\n\ntype person struct {\n\tname string\n\tage  int\n}\n\nfunc test5() {\n\tp := person{}\n\tp.name, p.age\n}\n\n",
+		},
+		{
+			name: "test 6 package member completion after BadExpr",
+			file: "test6.go",
+			re:   "abs()",
+			want: "package main\n\nimport \"math\"\n\nfunc test6() {\n\tmath.Sqrt(,0)\n\tmath.Abs(${1:})\n}\n\n",
+		},
+		{
+			name: "test 7 package member completion after BadExpr with period",
+			file: "test7.go",
+			re:   "math.ab()",
+			want: "package main\n\nimport \"math\"\n\nfunc test7() {\n\tmath.Sqrt(,0)\n\tmath.Abs(${1:})\n}\n\n",
+		},
+		{
+			name: "test 8 variable completion after missing comma",
+			file: "test8.go",
+			re:   ":\" min()",
+			want: "package main\n\nfunc test8() {\n\tminimum := 0\n\tfmt.Println(\"minimum:\" minimum)\n}\n\n",
+		},
+		{
+			name: "test 9 struct field completion after missing comma with period",
+			file: "test9.go",
+			re:   "p.na()",
+			want: "package main\n\ntype person struct {\n\tname string\n\tage  int\n}\n\nfunc test9() {\n\tp := person{}\n\tfmt.Println(\"name:\" p.name)\n}\n\n",
+		},
+		{
+			name: "test 10 complex struct field completion after comma with period",
+			file: "test10.go",
+			re:   "f.bar.b()",
+			want: "package main\n\ntype Foo struct {\n\tbar  Bar\n\tname string\n}\n\ntype Bar struct {\n\tbaz string\n}\n\nfunc test10() {\n\tf := Foo{}\n\tf.name, f.bar.baz\n}\n",
+		},
+	}
+
+	Run(t, files, func(t *testing.T, env *Env) {
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				env.OpenFile(test.file)
+				env.Await(env.DoneWithOpen())
+				loc := env.RegexpSearch(test.file, test.re)
+				completions := env.Completion(loc)
+				if len(completions.Items) == 0 {
+					t.Fatalf("no completion items")
+				}
+				env.AcceptCompletion(loc, completions.Items[0])
+				env.Await(env.DoneWithChange())
+				got := env.BufferText(test.file)
+				if diff := cmp.Diff(test.want, got); diff != "" {
+					t.Errorf("incorrect completion (-want +got):\n%s", diff)
+				}
+			})
 		}
 	})
 }
