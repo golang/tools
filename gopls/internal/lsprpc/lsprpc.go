@@ -392,7 +392,7 @@ func (f *forwarder) replyWithDebugAddress(outerCtx context.Context, r jsonrpc2.R
 		addr, err = di.Serve(outerCtx, addr)
 		if err != nil {
 			event.Error(outerCtx, "starting debug server", err)
-			return r(ctx, result, outerErr)
+			return r(ctx, result, err)
 		}
 		urls := []string{"http://" + addr}
 		modified.URLs = append(urls, modified.URLs...)
