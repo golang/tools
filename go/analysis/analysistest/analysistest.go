@@ -298,7 +298,7 @@ func applyDiffsAndCompare(filename string, original, want []byte, edits []diff.E
 	}
 	fixed, err := format.Source(fixedBytes)
 	if err != nil {
-		return fmt.Errorf("%s: error formatting resulting source: %v\n%s", filename, err, fixed)
+		return fmt.Errorf("%s: error formatting resulting source: %v\n%s", filename, err, fixedBytes)
 	}
 
 	want, err = format.Source(want)
