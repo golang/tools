@@ -7,9 +7,12 @@
 package typesinternal
 
 import (
+	"fmt"
+	"go/ast"
 	"go/token"
 	"go/types"
 	"reflect"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/tools/internal/aliases"
@@ -126,4 +129,37 @@ func Origin(t NamedOrAlias) NamedOrAlias {
 // IsPackageLevel reports whether obj is a package-level symbol.
 func IsPackageLevel(obj types.Object) bool {
 	return obj.Pkg() != nil && obj.Parent() == obj.Pkg().Scope()
+}
+
+// NewTypesInfo returns a *types.Info with all maps populated.
+func NewTypesInfo() *types.Info {
+	return &types.Info{
+		Types:        map[ast.Expr]types.TypeAndValue{},
+		Instances:    map[*ast.Ident]types.Instance{},
+		Defs:         map[*ast.Ident]types.Object{},
+		Uses:         map[*ast.Ident]types.Object{},
+		Implicits:    map[ast.Node]types.Object{},
+		Selections:   map[*ast.SelectorExpr]*types.Selection{},
+		Scopes:       map[ast.Node]*types.Scope{},
+		FileVersions: map[*ast.File]string{},
+	}
+}
+
+// RequiresFullInfo panics unless info has non-nil values for all maps.
+func RequiresFullInfo(info *types.Info) {
+	v := reflect.ValueOf(info).Elem()
+	t := v.Type()
+	var missing []string
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if f.Type.Kind() == reflect.Map && v.Field(i).IsNil() {
+			missing = append(missing, f.Name)
+		}
+	}
+	if len(missing) > 0 {
+		msg := fmt.Sprintf(`A fully populated types.Info value is required.
+This one is missing the following fields:
+%s`, strings.Join(missing, ", "))
+		panic(msg)
+	}
 }
