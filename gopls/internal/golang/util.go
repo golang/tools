@@ -361,9 +361,9 @@ func AbbreviateVarName(s string) string {
 	return b.String()
 }
 
-// copyrightComment returns the copyright comment group from the input file, or
+// CopyrightComment returns the copyright comment group from the input file, or
 // nil if not found.
-func copyrightComment(file *ast.File) *ast.CommentGroup {
+func CopyrightComment(file *ast.File) *ast.CommentGroup {
 	if len(file.Comments) == 0 {
 		return nil
 	}

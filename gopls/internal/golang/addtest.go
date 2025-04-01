@@ -319,7 +319,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		// package decl based on the originating file.
 		// Search for something that looks like a copyright header, to replicate
 		// in the new file.
-		if c := copyrightComment(pgf.File); c != nil {
+		if c := CopyrightComment(pgf.File); c != nil {
 			start, end, err := pgf.NodeOffsets(c)
 			if err != nil {
 				return nil, err

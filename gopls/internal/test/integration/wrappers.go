@@ -531,6 +531,14 @@ func (e *Env) Completion(loc protocol.Location) *protocol.CompletionList {
 	return completions
 }
 
+func (e *Env) DidCreateFiles(files ...protocol.DocumentURI) {
+	e.TB.Helper()
+	err := e.Editor.DidCreateFiles(e.Ctx, files...)
+	if err != nil {
+		e.TB.Fatal(err)
+	}
+}
+
 func (e *Env) SetSuggestionInsertReplaceMode(useReplaceMode bool) {
 	e.TB.Helper()
 	e.Editor.SetSuggestionInsertReplaceMode(e.Ctx, useReplaceMode)

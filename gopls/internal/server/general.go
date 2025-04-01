@@ -189,6 +189,15 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 					Supported:           true,
 					ChangeNotifications: "workspace/didChangeWorkspaceFolders",
 				},
+				FileOperations: &protocol.FileOperationOptions{
+					DidCreate: &protocol.FileOperationRegistrationOptions{
+						Filters: []protocol.FileOperationFilter{{
+							Scheme: "file",
+							// gopls is only interested with files in .go extension.
+							Pattern: protocol.FileOperationPattern{Glob: "**/*.go"},
+						}},
+					},
+				},
 			},
 		},
 		ServerInfo: &protocol.ServerInfo{

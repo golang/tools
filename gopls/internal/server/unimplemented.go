@@ -34,10 +34,6 @@ func (s *server) DidCloseNotebookDocument(context.Context, *protocol.DidCloseNot
 	return notImplemented("DidCloseNotebookDocument")
 }
 
-func (s *server) DidCreateFiles(context.Context, *protocol.CreateFilesParams) error {
-	return notImplemented("DidCreateFiles")
-}
-
 func (s *server) DidDeleteFiles(context.Context, *protocol.DeleteFilesParams) error {
 	return notImplemented("DidDeleteFiles")
 }

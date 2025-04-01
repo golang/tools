@@ -138,7 +138,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	}
 
 	var buf bytes.Buffer
-	if c := copyrightComment(pgf.File); c != nil {
+	if c := CopyrightComment(pgf.File); c != nil {
 		start, end, err := pgf.NodeOffsets(c)
 		if err != nil {
 			return nil, err

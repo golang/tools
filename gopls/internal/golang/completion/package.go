@@ -15,6 +15,7 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -26,6 +27,24 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
+
+// bestPackage offers the best package name for a package declaration when
+// one is not present in the given file.
+func bestPackage(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (string, error) {
+	suggestions, err := packageSuggestions(ctx, snapshot, uri, "")
+	if err != nil {
+		return "", err
+	}
+	// sort with the same way of sortItems.
+	sort.SliceStable(suggestions, func(i, j int) bool {
+		if suggestions[i].score != suggestions[j].score {
+			return suggestions[i].score > suggestions[j].score
+		}
+		return suggestions[i].name < suggestions[j].name
+	})
+
+	return suggestions[0].name, nil
+}
 
 // packageClauseCompletions offers completions for a package declaration when
 // one is not present in the given file.

@@ -1309,6 +1309,19 @@ func (e *Editor) Completion(ctx context.Context, loc protocol.Location) (*protoc
 	return completions, nil
 }
 
+func (e *Editor) DidCreateFiles(ctx context.Context, files ...protocol.DocumentURI) error {
+	if e.Server == nil {
+		return nil
+	}
+	params := &protocol.CreateFilesParams{}
+	for _, file := range files {
+		params.Files = append(params.Files, protocol.FileCreate{
+			URI: string(file),
+		})
+	}
+	return e.Server.DidCreateFiles(ctx, params)
+}
+
 func (e *Editor) SetSuggestionInsertReplaceMode(_ context.Context, useReplaceMode bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

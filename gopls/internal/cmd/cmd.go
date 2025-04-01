@@ -343,7 +343,8 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 
 	// Make sure to respect configured options when sending initialize request.
 	opts := settings.DefaultOptions(options)
-	// If you add an additional option here, you must update the map key in connect.
+	// If you add an additional option here,
+	// you must update the map key of settings.DefaultOptions called in (*Application).connect.
 	params.Capabilities.TextDocument.Hover = &protocol.HoverClientCapabilities{
 		ContentFormat: []protocol.MarkupKind{opts.PreferredContentFormat},
 	}
@@ -351,7 +352,7 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 	params.Capabilities.TextDocument.SemanticTokens = protocol.SemanticTokensClientCapabilities{}
 	params.Capabilities.TextDocument.SemanticTokens.Formats = []protocol.TokenFormat{"relative"}
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Range = &protocol.Or_ClientSemanticTokensRequestOptions_range{Value: true}
-	//params.Capabilities.TextDocument.SemanticTokens.Requests.Range.Value = true
+	// params.Capabilities.TextDocument.SemanticTokens.Requests.Range.Value = true
 	params.Capabilities.TextDocument.SemanticTokens.Requests.Full = &protocol.Or_ClientSemanticTokensRequestOptions_full{Value: true}
 	params.Capabilities.TextDocument.SemanticTokens.TokenTypes = moreslices.ConvertStrings[string](semtok.TokenTypes)
 	params.Capabilities.TextDocument.SemanticTokens.TokenModifiers = moreslices.ConvertStrings[string](semtok.TokenModifiers)
@@ -363,6 +364,9 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 		},
 	}
 	params.Capabilities.Window.WorkDoneProgress = true
+	params.Capabilities.Workspace.FileOperations = &protocol.FileOperationClientCapabilities{
+		DidCreate: true,
+	}
 
 	params.InitializationOptions = map[string]any{
 		"symbolMatcher": string(opts.SymbolMatcher),
@@ -817,10 +821,10 @@ func (c *connection) diagnoseFiles(ctx context.Context, files []protocol.Documen
 }
 
 func (c *connection) terminate(ctx context.Context) {
-	//TODO: do we need to handle errors on these calls?
+	// TODO: do we need to handle errors on these calls?
 	c.Shutdown(ctx)
-	//TODO: right now calling exit terminates the process, we should rethink that
-	//server.Exit(ctx)
+	// TODO: right now calling exit terminates the process, we should rethink that
+	// server.Exit(ctx)
 }
 
 // Implement io.Closer.
