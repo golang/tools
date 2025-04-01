@@ -1,0 +1,20 @@
+package waitgroup
+
+import (
+	"fmt"
+	. "sync"
+)
+
+// supported case for pattern 1.
+func _() {
+	var wg WaitGroup
+	// want "Goroutine creation can be simplified using WaitGroup.Go"
+	wg.Go(func() {
+		fmt.Println()
+	})
+
+	// want "Goroutine creation can be simplified using WaitGroup.Go"
+	wg.Go(func() {
+		fmt.Println()
+	})
+}

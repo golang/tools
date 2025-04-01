@@ -93,6 +93,7 @@ func run(pass *analysis.Pass) (any, error) {
 	stringsseq(pass)
 	sortslice(pass)
 	testingContext(pass)
+	waitgroup(pass)
 
 	// TODO(adonovan): opt: interleave these micro-passes within a single inspection.
 
@@ -121,7 +122,12 @@ func formatExprs(fset *token.FileSet, exprs []ast.Expr) string {
 
 // isZeroIntLiteral reports whether e is an integer whose value is 0.
 func isZeroIntLiteral(info *types.Info, e ast.Expr) bool {
-	return info.Types[e].Value == constant.MakeInt64(0)
+	return isIntLiteral(info, e, 0)
+}
+
+// isIntLiteral reports whether e is an integer with given value.
+func isIntLiteral(info *types.Info, e ast.Expr, n int64) bool {
+	return info.Types[e].Value == constant.MakeInt64(n)
 }
 
 // filesUsing returns a cursor for each *ast.File in the inspector

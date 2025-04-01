@@ -85,4 +85,6 @@
 //
 //   - stringscutprefix: replace some uses of HasPrefix followed by TrimPrefix with CutPrefix,
 //     added to the strings package in go1.20.
+//
+//   - waitgroup: replace old complex usages of sync.WaitGroup by less complex WaitGroup.Go method in go1.25.
 package modernize
