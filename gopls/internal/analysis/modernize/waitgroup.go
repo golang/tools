@@ -10,12 +10,9 @@ import (
 	"slices"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -32,100 +29,116 @@ import (
 //     =>
 //     wg.Go(go func() { ... })
 //
-// The wg.Done must occur within the first statement of the block in a defer format or last statement of the block,
-// and the offered fix only removes the first/last wg.Done call. It doesn't fix the existing wrong usage of sync.WaitGroup.
+// The wg.Done must occur within the first statement of the block in a
+// defer format or last statement of the block, and the offered fix
+// only removes the first/last wg.Done call. It doesn't fix existing
+// wrong usage of sync.WaitGroup.
+//
+// The use of WaitGroup.Go in pattern 1 implicitly introduces a
+// 'defer', which may change the behavior in the case of panic from
+// the "..." logic. In this instance, the change is safe: before and
+// after the transformation, an unhandled panic inevitably results in
+// a fatal crash. The fact that the transformed code calls wg.Done()
+// before the crash doesn't materially change anything. (If Done had
+// other effects, or blocked, or if WaitGroup.Go propagated panics
+// from child to parent goroutine, the argument would be different.)
 func waitgroup(pass *analysis.Pass) {
 	var (
-		inspect           = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 		index             = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info              = pass.TypesInfo
-		syncWaitGroup     = index.Object("sync", "WaitGroup")
 		syncWaitGroupAdd  = index.Selection("sync", "WaitGroup", "Add")
 		syncWaitGroupDone = index.Selection("sync", "WaitGroup", "Done")
 	)
-	if !index.Used(syncWaitGroup, syncWaitGroupAdd, syncWaitGroupDone) {
+	if !index.Used(syncWaitGroupDone) {
 		return
 	}
 
-	checkWaitGroup := func(file *ast.File, curGostmt cursor.Cursor) {
-		gostmt := curGostmt.Node().(*ast.GoStmt)
-
-		lit, ok := gostmt.Call.Fun.(*ast.FuncLit)
-		// go statement must have a no-arg function literal.
-		if !ok || len(gostmt.Call.Args) != 0 {
-			return
+	for curAddCall := range index.Calls(syncWaitGroupAdd) {
+		// Extract receiver from wg.Add call.
+		addCall := curAddCall.Node().(*ast.CallExpr)
+		if !isIntLiteral(info, addCall.Args[0], 1) {
+			continue // not a call to wg.Add(1)
 		}
+		// Inv: the Args[0] check ensures addCall is not of
+		// the form sync.WaitGroup.Add(&wg, 1).
+		addCallRecv := ast.Unparen(addCall.Fun).(*ast.SelectorExpr).X
 
-		// previous node must call wg.Add.
-		prev, ok := curGostmt.PrevSibling()
+		// Following statement must be go func() { ... } ().
+		addStmt, ok := curAddCall.Parent().Node().(*ast.ExprStmt)
 		if !ok {
-			return
+			continue // unnecessary parens?
 		}
-		prevNode := prev.Node()
-		if !is[*ast.ExprStmt](prevNode) || !is[*ast.CallExpr](prevNode.(*ast.ExprStmt).X) {
-			return
+		curNext, ok := curAddCall.Parent().NextSibling()
+		if !ok {
+			continue // no successor
 		}
-
-		prevCall := prevNode.(*ast.ExprStmt).X.(*ast.CallExpr)
-		if typeutil.Callee(info, prevCall) != syncWaitGroupAdd || !isIntLiteral(info, prevCall.Args[0], 1) {
-			return
+		goStmt, ok := curNext.Node().(*ast.GoStmt)
+		if !ok {
+			continue // not a go stmt
 		}
-
-		addCallRecv := ast.Unparen(prevCall.Fun).(*ast.SelectorExpr).X
+		lit, ok := goStmt.Call.Fun.(*ast.FuncLit)
+		if !ok || len(goStmt.Call.Args) != 0 {
+			continue // go argument is not func(){...}()
+		}
 		list := lit.Body.List
 		if len(list) == 0 {
-			return
+			continue
 		}
 
+		// Body must start with "defer wg.Done()" or end with "wg.Done()".
 		var doneStmt ast.Stmt
 		if deferStmt, ok := list[0].(*ast.DeferStmt); ok &&
 			typeutil.Callee(info, deferStmt.Call) == syncWaitGroupDone &&
 			equalSyntax(ast.Unparen(deferStmt.Call.Fun).(*ast.SelectorExpr).X, addCallRecv) {
-			// wg.Add(1); go    func() { defer wg.Done(); ... }()
-			// ---------  ------         ---------------       -
-			//            wg.Go(func() {                  ... } )
-			doneStmt = deferStmt
+			doneStmt = deferStmt // "defer wg.Done()"
+
 		} else if lastStmt, ok := list[len(list)-1].(*ast.ExprStmt); ok {
 			if doneCall, ok := lastStmt.X.(*ast.CallExpr); ok &&
 				typeutil.Callee(info, doneCall) == syncWaitGroupDone &&
 				equalSyntax(ast.Unparen(doneCall.Fun).(*ast.SelectorExpr).X, addCallRecv) {
-				// wg.Add(1); go    func() { ... ;wg.Done();}()
-				// ---------  ------              ---------- -
-				//            wg.Go(func() { ... }            )
-				doneStmt = lastStmt
+				doneStmt = lastStmt // "wg.Done()"
 			}
 		}
-		if doneStmt != nil {
-			pass.Report(analysis.Diagnostic{
-				Pos:      prevNode.Pos(),
-				End:      gostmt.End(),
-				Category: "waitgroup",
-				Message:  "Goroutine creation can be simplified using WaitGroup.Go",
-				SuggestedFixes: []analysis.SuggestedFix{{
-					Message: "Simplify by using WaitGroup.Go",
-					TextEdits: slices.Concat(
-						analysisinternal.DeleteStmt(pass.Fset, file, prevNode.(*ast.ExprStmt), nil),
-						analysisinternal.DeleteStmt(pass.Fset, file, doneStmt, nil),
-						[]analysis.TextEdit{
-							{
-								Pos:     gostmt.Pos(),
-								End:     gostmt.Call.Pos(),
-								NewText: fmt.Appendf(nil, "%s.Go(", addCallRecv),
-							},
-							{
-								Pos: gostmt.Call.Lparen,
-								End: gostmt.Call.Rparen,
-							},
-						},
-					),
-				}},
-			})
+		if doneStmt == nil {
+			continue
 		}
-	}
 
-	for curFile := range filesUsing(inspect, info, "go1.25") {
-		for curGostmt := range curFile.Preorder((*ast.GoStmt)(nil)) {
-			checkWaitGroup(curFile.Node().(*ast.File), curGostmt)
+		file := enclosingFile(curAddCall)
+		if !fileUses(info, file, "go1.25") {
+			continue
 		}
+
+		pass.Report(analysis.Diagnostic{
+			Pos:      addCall.Pos(),
+			End:      goStmt.End(),
+			Category: "waitgroup",
+			Message:  "Goroutine creation can be simplified using WaitGroup.Go",
+			SuggestedFixes: []analysis.SuggestedFix{{
+				Message: "Simplify by using WaitGroup.Go",
+				TextEdits: slices.Concat(
+					// delete "wg.Add(1)"
+					analysisinternal.DeleteStmt(pass.Fset, file, addStmt, nil),
+					// delete "wg.Done()" or "defer wg.Done()"
+					analysisinternal.DeleteStmt(pass.Fset, file, doneStmt, nil),
+					[]analysis.TextEdit{
+						// go    func()
+						// ------
+						// wg.Go(func()
+						{
+							Pos:     goStmt.Pos(),
+							End:     goStmt.Call.Pos(),
+							NewText: fmt.Appendf(nil, "%s.Go(", addCallRecv),
+						},
+						// ... }()
+						//      -
+						// ... } )
+						{
+							Pos: goStmt.Call.Lparen,
+							End: goStmt.Call.Rparen,
+						},
+					},
+				),
+			}},
+		})
 	}
 }
