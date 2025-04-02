@@ -839,6 +839,14 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		}
 	}
 
+	typeArgs := st.typeArguments(caller.Call)
+	if len(typeArgs) != len(callee.TypeParams) {
+		return nil, fmt.Errorf("cannot inline: type parameter inference is not yet supported")
+	}
+	if err := substituteTypeParams(logf, callee.TypeParams, typeArgs, params, replaceCalleeID); err != nil {
+		return nil, err
+	}
+
 	// Log effective arguments.
 	for i, arg := range args {
 		logf("arg #%d: %s pure=%t effects=%t duplicable=%t free=%v type=%v",
@@ -1378,6 +1386,35 @@ type argument struct {
 	desugaredRecv bool            // is *recv or &recv, where operator was elided
 }
 
+// typeArguments returns the type arguments of the call.
+// It only collects the arguments that are explicitly provided; it does
+// not attempt type inference.
+func (st *state) typeArguments(call *ast.CallExpr) []*argument {
+	var exprs []ast.Expr
+	switch d := ast.Unparen(call.Fun).(type) {
+	case *ast.IndexExpr:
+		exprs = []ast.Expr{d.Index}
+	case *ast.IndexListExpr:
+		exprs = d.Indices
+	default:
+		// No type  arguments
+		return nil
+	}
+	var args []*argument
+	for _, e := range exprs {
+		arg := &argument{expr: e, freevars: freeVars(st.caller.Info, e)}
+		// Wrap the instantiating type in parens when it's not an
+		// ident or qualified ident to prevent "if x == struct{}"
+		// parsing ambiguity, or "T(x)" where T = "*int" or "func()"
+		// from misparsing.
+		if _, ok := arg.expr.(*ast.Ident); !ok {
+			arg.expr = &ast.ParenExpr{X: arg.expr}
+		}
+		args = append(args, arg)
+	}
+	return args
+}
+
 // arguments returns the effective arguments of the call.
 //
 // If the receiver argument and parameter have
@@ -1413,6 +1450,9 @@ func (st *state) arguments(caller *Caller, calleeDecl *ast.FuncDecl, assign1 fun
 
 	callArgs := caller.Call.Args
 	if calleeDecl.Recv != nil {
+		if len(st.callee.impl.TypeParams) > 0 {
+			return nil, fmt.Errorf("cannot inline: generic methods not yet supported")
+		}
 		sel := ast.Unparen(caller.Call.Fun).(*ast.SelectorExpr)
 		seln := caller.Info.Selections[sel]
 		var recvArg ast.Expr
@@ -1536,8 +1576,51 @@ type parameter struct {
 // A replacer replaces an identifier at the given offset in the callee.
 // The replacement tree must not belong to the caller; use cloneNode as needed.
 // If unpackVariadic is set, the replacement is a composite resulting from
-// variadic elimination, and may be unpackeded into variadic calls.
+// variadic elimination, and may be unpacked into variadic calls.
 type replacer = func(offset int, repl ast.Expr, unpackVariadic bool)
+
+// substituteTypeParams replaces type parameters in the callee with the corresponding type arguments
+// from the call.
+func substituteTypeParams(logf logger, typeParams []*paramInfo, typeArgs []*argument, params []*parameter, replace replacer) error {
+	assert(len(typeParams) == len(typeArgs), "mismatched number of type params/args")
+	for i, paramInfo := range typeParams {
+		arg := typeArgs[i]
+		// Perform a simplified, conservative shadow analysis: fail if there is any shadowing.
+		for free := range arg.freevars {
+			if paramInfo.Shadow[free] != 0 {
+				return fmt.Errorf("cannot inline: type argument #%d (type parameter %s) is shadowed", i, paramInfo.Name)
+			}
+		}
+		logf("replacing type param %s with %s", paramInfo.Name, debugFormatNode(token.NewFileSet(), arg.expr))
+		for _, ref := range paramInfo.Refs {
+			replace(ref.Offset, internalastutil.CloneNode(arg.expr), false)
+		}
+		// Also replace parameter field types.
+		// TODO(jba): find a way to do this that is not so slow and clumsy.
+		// Ideally, we'd walk each p.fieldType once, replacing all type params together.
+		for _, p := range params {
+			if id, ok := p.fieldType.(*ast.Ident); ok && id.Name == paramInfo.Name {
+				p.fieldType = arg.expr
+			} else {
+				for _, id := range identsNamed(p.fieldType, paramInfo.Name) {
+					replaceNode(p.fieldType, id, arg.expr)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func identsNamed(n ast.Node, name string) []*ast.Ident {
+	var ids []*ast.Ident
+	ast.Inspect(n, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && id.Name == name {
+			ids = append(ids, id)
+		}
+		return true
+	})
+	return ids
+}
 
 // substitute implements parameter elimination by substitution.
 //
@@ -1664,7 +1747,6 @@ next:
 		// parameter is also removed by substitution.
 
 		sg[arg] = nil // Absent shadowing, the arg is substitutable.
-
 		for free := range arg.freevars {
 			switch s := param.info.Shadow[free]; {
 			case s < 0:

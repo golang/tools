@@ -1,0 +1,95 @@
+Inlining a call to a generic function.
+
+a1: explicit type args, no shadowing
+a2: the call uses type inference
+a3: the type argument is shadowed in the callee
+a4: ditto, with a more complicated arg
+a5: a free identifier in the callee is captured by a global
+    in the caller's scope (covered elsewhere; verifying for generics)
+-- go.mod --
+module testdata
+go 1.18
+
+-- a/a1.go --
+package a
+
+func _() {
+	f[int](1) //@ inline(re"f", a1)
+}
+
+func f[T any](x T) { print(x) }
+-- a1 --
+...
+func _() {
+	print(int(1)) //@ inline(re"f", a1)
+}
+
+-- a/a1a.go --
+package a
+
+func _() {
+	f[([]int)]([]int{1}) //@ inline(re"f", a1a)
+}
+
+func f[T any](x T) { print(x) }
+-- a1a --
+...
+func _() {
+	print(([]int)([]int{1})) //@ inline(re"f", a1a)
+}
+
+-- a/a2.go --
+package a
+
+func _() {
+	f(1) //@ inline(re"f", re"cannot inline.*type.*inference")
+}
+
+-- a/a3.go --
+package a
+
+func _() {
+	g[int]() //@ inline(re"g", re"cannot inline:.*shadow")
+}
+
+func g[T any]() {
+	type int bool
+	var x T
+	print(x)
+}
+
+-- a/a4.go --
+package a
+
+func _() {
+	g[map[int]string]()  //@ inline(re"g", re"cannot inline:.*shadow")
+}
+
+-- a/a5.go --
+package a
+
+import "testdata/b"
+
+type bool int
+
+func _() {
+	b.H[int]() //@ inline(re"H", re"cannot inline.*shadowed")
+}
+-- b/b.go --
+package b
+
+func H[T comparable]() {
+	var x map[T]bool
+	print(x)
+}
+
+-- a/a6.go --
+package a
+
+type G[T any] struct{}
+
+func (G[T]) f(x T) { print(x) }
+
+func _() {
+	G[int]{}.f[bool]() //@ inline(re"f", re"generic methods not yet supported")
+}
