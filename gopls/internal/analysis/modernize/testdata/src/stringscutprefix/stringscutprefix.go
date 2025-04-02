@@ -1,13 +1,11 @@
 package stringscutprefix
 
 import (
-	"bytes"
 	"strings"
 )
 
 var (
-	s, pre     string
-	bss, bspre []byte
+	s, pre string
 )
 
 // test supported cases of pattern 1
@@ -34,14 +32,6 @@ func _() {
 		_, _ = a, b
 	}
 
-	if bytes.HasPrefix(bss, bspre) { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
-		a := bytes.TrimPrefix(bss, bspre)
-		_ = a
-	}
-	if bytes.HasPrefix([]byte(""), []byte("")) { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
-		a := bytes.TrimPrefix([]byte(""), []byte(""))
-		_ = a
-	}
 	var a, b string
 	if strings.HasPrefix(s, "") { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
 		a, b = "", strings.TrimPrefix(s, "")

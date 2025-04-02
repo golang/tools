@@ -15,7 +15,7 @@ func _() {
 // test supported cases of pattern2
 func _() {
 	if after, ok := CutPrefix(s, pre); ok { // want "TrimPrefix can be simplified to CutPrefix"
-        println(after)
+		println(after)
 	}
 	if after, ok := CutPrefix(s, pre); ok { // want "TrimPrefix can be simplified to CutPrefix"
 		println(after)

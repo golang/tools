@@ -1,27 +1,25 @@
 package stringscutprefix
 
 import (
-	"bytes"
 	"strings"
 )
 
 var (
-	s, pre     string
-	bss, bspre []byte
+	s, pre string
 )
 
 // test supported cases of pattern 1
 func _() {
 	if after, ok := strings.CutPrefix(s, pre); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
-	    a := after
+		a := after
 		_ = a
 	}
 	if after, ok := strings.CutPrefix("", ""); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
-        a := after
+		a := after
 		_ = a
 	}
 	if after, ok := strings.CutPrefix(s, ""); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
-        println([]byte(after))
+		println([]byte(after))
 	}
 	if after, ok := strings.CutPrefix(s, ""); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
 		a, b := "", after
@@ -34,19 +32,11 @@ func _() {
 		_, _ = a, b
 	}
 
-    if after, ok := bytes.CutPrefix(bss, bspre); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
-        a := after
-        _ = a
-    }
-    if after, ok := bytes.CutPrefix([]byte(""), []byte("")); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
-        a := after
-        _ = a
-    }
-    var a, b string
-    if after, ok := strings.CutPrefix(s, ""); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
-        a, b = "", after
-        _, _ = a, b
-    }
+	var a, b string
+	if after, ok := strings.CutPrefix(s, ""); ok { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
+		a, b = "", after
+		_, _ = a, b
+	}
 }
 
 // test cases that are not supported by pattern1
@@ -81,12 +71,12 @@ func _() {
 	if after, ok := strings.CutPrefix(s, pre); ok { // want "TrimPrefix can be simplified to CutPrefix"
 		println(after)
 	}
-    if after, ok := strings.CutPrefix(s, pre); ok { // want "TrimPrefix can be simplified to CutPrefix"
-        println(strings.TrimPrefix(s, pre)) // noop here
-    }
-    if after, ok := strings.CutPrefix(s, ""); ok { // want "TrimPrefix can be simplified to CutPrefix"
-        println(after)
-    }
+	if after, ok := strings.CutPrefix(s, pre); ok { // want "TrimPrefix can be simplified to CutPrefix"
+		println(strings.TrimPrefix(s, pre)) // noop here
+	}
+	if after, ok := strings.CutPrefix(s, ""); ok { // want "TrimPrefix can be simplified to CutPrefix"
+		println(after)
+	}
 	var ok bool // define an ok variable to test the fix won't shadow it for its if stmt body
 	_ = ok
 	if after, ok0 := strings.CutPrefix(s, pre); ok0 { // want "TrimPrefix can be simplified to CutPrefix"

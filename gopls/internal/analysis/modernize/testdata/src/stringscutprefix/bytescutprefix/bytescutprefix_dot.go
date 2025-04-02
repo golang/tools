@@ -1,8 +1,10 @@
-package stringscutprefix
+package bytescutprefix
 
 import (
 	. "bytes"
 )
+
+var bss, bspre []byte
 
 // test supported cases of pattern 1
 func _() {

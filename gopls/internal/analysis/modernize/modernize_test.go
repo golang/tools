@@ -25,6 +25,7 @@ func Test(t *testing.T) {
 		"slicescontains",
 		"slicesdelete",
 		"stringscutprefix",
+		"stringscutprefix/bytescutprefix",
 		"splitseq",
 		"fieldsseq",
 		"sortslice",

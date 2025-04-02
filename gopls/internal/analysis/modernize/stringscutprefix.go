@@ -72,10 +72,12 @@ func stringscutprefix(pass *analysis.Pass) {
 				for curCall := range firstStmt.Preorder((*ast.CallExpr)(nil)) {
 					call1 := curCall.Node().(*ast.CallExpr)
 					obj1 := typeutil.Callee(info, call1)
-					if obj1 != stringsTrimPrefix && obj1 != bytesTrimPrefix {
+					// bytesTrimPrefix or stringsTrimPrefix might be nil if the file doesn't import it,
+					// so we need to ensure the obj1 is not nil otherwise the call1 is not TrimPrefix and cause a panic.
+					if obj1 == nil ||
+						obj1 != stringsTrimPrefix && obj1 != bytesTrimPrefix {
 						continue
 					}
-
 					// Have: if strings.HasPrefix(s0, pre0) { ...strings.TrimPrefix(s, pre)... }
 					var (
 						s0   = call.Args[0]
