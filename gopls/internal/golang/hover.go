@@ -287,6 +287,10 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		}
 	}
 
+	// By convention, we qualify hover information relative to the package
+	// from which the request originated.
+	qual := typesinternal.FileQualifier(pgf.File, pkg.Types())
+
 	// Handle hover over identifier.
 
 	// The general case: compute hover information for the object referenced by
@@ -304,10 +308,6 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		}
 		hoverRange = &rng
 	}
-
-	// By convention, we qualify hover information relative to the package
-	// from which the request originated.
-	qual := typesinternal.FileQualifier(pgf.File, pkg.Types())
 
 	// Handle type switch identifiers as a special case, since they don't have an
 	// object.
@@ -344,6 +344,42 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 
 	// By default, types.ObjectString provides a reasonable signature.
 	signature := objectString(obj, qual, declPos, declPGF.Tok, spec)
+
+	// When hovering over a reference to a promoted struct field,
+	// show the implicitly selected intervening fields.
+	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+	if !ok {
+		return protocol.Range{}, nil, fmt.Errorf("Invalid hover position, failed to get cursor")
+	}
+	if obj, ok := obj.(*types.Var); ok && obj.IsField() {
+		if selExpr, ok := cur.Parent().Node().(*ast.SelectorExpr); ok {
+			sel := pkg.TypesInfo().Selections[selExpr]
+			if len(sel.Index()) > 1 {
+				var buf bytes.Buffer
+				buf.WriteString(" // through ")
+				t := typesinternal.Unpointer(sel.Recv())
+				for i, index := range sel.Index()[:len(sel.Index())-1] {
+					if i > 0 {
+						buf.WriteString(", ")
+					}
+					field := typesinternal.Unpointer(t.Underlying()).(*types.Struct).Field(index)
+					t = field.Type()
+					// Inv: fieldType is N or *N for some NamedOrAlias type N.
+					if ptr, ok := t.(*types.Pointer); ok {
+						buf.WriteString("*")
+						t = ptr.Elem()
+					}
+					// Be defensive in case of ill-typed code:
+					if named, ok := t.(typesinternal.NamedOrAlias); ok {
+						buf.WriteString(named.Obj().Name())
+					}
+				}
+				// Update signature to include embedded struct info.
+				signature += buf.String()
+			}
+		}
+	}
+
 	singleLineSignature := signature
 
 	// Display struct tag for struct fields at the end of the signature.

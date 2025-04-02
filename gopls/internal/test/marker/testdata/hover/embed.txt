@@ -36,6 +36,54 @@ var p P //@hover("P", "P", P)
 
 var _ = P.m
 
+
+type A struct {
+	*B
+}
+
+type B struct {
+	*C
+}
+
+type C struct {
+	*D
+}
+
+type D struct {
+	E int
+}
+
+type X struct{
+	*Y
+}
+
+type Y struct {
+	*Z
+}
+
+type Z struct{
+	z int
+}
+
+var a A
+var _ = a.E //@hover("E", "E", E)
+
+var x struct {
+	*X
+}
+var _ = x.z //@hover("z", "z", Z)
+
+type Al2 = int
+type N struct{
+	x Al2
+	y struct{ ZA }
+}
+type Al = *N
+type S struct{ Al }
+type ZA = *Z
+var _ = new(S).x //@hover("x", "x", X)
+var _ = new(S).y.z //@hover("z", "z", Zz), hover("y", "y", y)
+
 -- @P --
 ```go
 type P struct {
@@ -61,3 +109,27 @@ func (P) m()
 ---
 
 [`p.P` on pkg.go.dev](https://pkg.go.dev/example.com#P)
+-- @E --
+```go
+field E int // through *B, *C, *D
+```
+
+---
+
+[`(p.D).E` on pkg.go.dev](https://pkg.go.dev/example.com#D.E)
+-- @Z --
+```go
+field z int // through *X, *Y, *Z
+```
+-- @X --
+```go
+field x Al2 // through Al
+```
+-- @Zz --
+```go
+field z int // through ZA
+```
+-- @y --
+```go
+field y struct{ZA} // through Al
+```

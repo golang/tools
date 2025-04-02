@@ -120,7 +120,7 @@ func (a.A) Hi()
 [`(a.A).Hi` on pkg.go.dev](https://pkg.go.dev/mod.com/a#A.Hi)
 -- @F --
 ```go
-field F int
+field F int // through embed
 ```
 
 ---
@@ -180,7 +180,7 @@ func (embed) M()
 [`(b.Embed).M` on pkg.go.dev](https://pkg.go.dev/mod.com/b#Embed.M)
 -- @RField2 --
 ```go
-field Field2 int
+field Field2 int // through S, R
 ```
 
 ---
@@ -278,7 +278,7 @@ field F1 string
 [`(b.S2).F1` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S2.F1)
 -- @S2F2 --
 ```go
-field F2 int
+field F2 int // through S2
 ```
 
 ---
@@ -291,7 +291,7 @@ field F2 int
 [`(b.S2).F2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S2.F2)
 -- @SField --
 ```go
-field Field int
+field Field int // through S
 ```
 
 ---

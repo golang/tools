@@ -59,7 +59,7 @@ func _() {
 }
 -- @Embed --
 ```go
-field Embed int64
+field Embed int64 // through E
 ```
 
 ---
