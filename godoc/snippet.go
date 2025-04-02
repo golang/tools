@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 )
 
 type Snippet struct {
@@ -41,10 +42,8 @@ func findSpec(list []ast.Spec, id *ast.Ident) ast.Spec {
 				return s
 			}
 		case *ast.ValueSpec:
-			for _, n := range s.Names {
-				if n == id {
-					return s
-				}
+			if slices.Contains(s.Names, id) {
+				return s
 			}
 		case *ast.TypeSpec:
 			if s.Name == id {

@@ -385,7 +385,7 @@ func (m *typeListMap) hash(ts []types.Type) uint32 {
 	// Some smallish prime far away from typeutil.Hash.
 	n := len(ts)
 	h := uint32(13619) + 2*uint32(n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		h += 3 * m.hasher.Hash(ts[i])
 	}
 	return h

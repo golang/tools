@@ -2912,7 +2912,7 @@ func _() {
 			wg sync.WaitGroup
 		)
 		wg.Add(n)
-		for i := 0; i < n; i++ {
+		for range n {
 			go func() {
 				defer wg.Done()
 				_, err := t.process("foo.com", "p/first.go", nil, nil)
@@ -2983,7 +2983,7 @@ func TestSymbolSearchStarvation(t *testing.T) {
 	}
 
 	var candidates []pkgDistance
-	for i := 0; i < candCount; i++ {
+	for i := range candCount {
 		name := fmt.Sprintf("bar%d", i)
 		candidates = append(candidates, pkgDistance{
 			pkg: &pkg{

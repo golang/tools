@@ -28,6 +28,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -439,12 +440,7 @@ func (p *process) cmd(dir string, args ...string) *exec.Cmd {
 }
 
 func isNacl() bool {
-	for _, v := range append(Environ(), os.Environ()...) {
-		if v == "GOOS=nacl" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(append(Environ(), os.Environ()...), "GOOS=nacl")
 }
 
 // naclCmd returns an *exec.Cmd that executes bin under native client.

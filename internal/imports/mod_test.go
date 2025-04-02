@@ -25,6 +25,8 @@ import (
 	"golang.org/x/tools/internal/proxydir"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
+	"maps"
+	"slices"
 )
 
 // Tests that we can find packages in the stdlib.
@@ -928,12 +930,7 @@ func scanToSlice(resolver Resolver, exclude []gopathwalk.RootType) ([]*pkg, erro
 	var result []*pkg
 	filter := &scanCallback{
 		rootFound: func(root gopathwalk.Root) bool {
-			for _, rt := range exclude {
-				if root.Type == rt {
-					return false
-				}
-			}
-			return true
+			return !slices.Contains(exclude, root.Type)
 		},
 		dirFound: func(pkg *pkg) bool {
 			return true
@@ -1023,9 +1020,7 @@ func setup(t *testing.T, extraEnv map[string]string, main, wd string) *modTest {
 		WorkingDir:  filepath.Join(mainDir, wd),
 		GocmdRunner: &gocommand.Runner{},
 	}
-	for k, v := range extraEnv {
-		env.Env[k] = v
-	}
+	maps.Copy(env.Env, extraEnv)
 	if *testDebug {
 		env.Logf = log.Printf
 	}

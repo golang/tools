@@ -236,7 +236,7 @@ func (set *pset) check(t *testing.T, msg string) {
 func randomPset(prng *rand.Rand, maxSize int) *pset {
 	set := makePset()
 	size := int(prng.Int()) % maxSize
-	for i := 0; i < size; i++ {
+	for range size {
 		// TODO(adonovan): benchmark how performance varies
 		// with this sparsity parameter.
 		n := int(prng.Int()) % 10000
@@ -252,7 +252,7 @@ func TestRandomMutations(t *testing.T) {
 
 	set := makePset()
 	prng := rand.New(rand.NewSource(0))
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		n := int(prng.Int())%2000 - 1000
 		if i%2 == 0 {
 			if debug {
@@ -278,9 +278,9 @@ func TestRandomMutations(t *testing.T) {
 func TestLowerBound(t *testing.T) {
 	// Use random sets of sizes from 0 to about 4000.
 	prng := rand.New(rand.NewSource(0))
-	for i := uint(0); i < 12; i++ {
+	for i := range uint(12) {
 		x := randomPset(prng, 1<<i)
-		for j := 0; j < 10000; j++ {
+		for j := range 10000 {
 			found := intsets.MaxInt
 			for e := range x.hash {
 				if e >= j && e < found {
@@ -302,7 +302,7 @@ func TestSetOperations(t *testing.T) {
 	// For each operator, we test variations such as
 	// Z.op(X, Y), Z.op(X, Z) and Z.op(Z, Y) to exercise
 	// the degenerate cases of each method implementation.
-	for i := uint(0); i < 12; i++ {
+	for i := range uint(12) {
 		X := randomPset(prng, 1<<i)
 		Y := randomPset(prng, 1<<i)
 
@@ -515,7 +515,7 @@ func TestIntersectionWith(t *testing.T) {
 func TestIntersects(t *testing.T) {
 	prng := rand.New(rand.NewSource(0))
 
-	for i := uint(0); i < 12; i++ {
+	for i := range uint(12) {
 		X, Y := randomPset(prng, 1<<i), randomPset(prng, 1<<i)
 		x, y := &X.bits, &Y.bits
 
@@ -554,7 +554,7 @@ func TestIntersects(t *testing.T) {
 func TestSubsetOf(t *testing.T) {
 	prng := rand.New(rand.NewSource(0))
 
-	for i := uint(0); i < 12; i++ {
+	for i := range uint(12) {
 		X, Y := randomPset(prng, 1<<i), randomPset(prng, 1<<i)
 		x, y := &X.bits, &Y.bits
 
@@ -690,7 +690,7 @@ func BenchmarkUnionDifferenceSparse(b *testing.B) {
 	prng := rand.New(rand.NewSource(0))
 	for tries := 0; tries < b.N; tries++ {
 		var x, y, z intsets.Sparse
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			n := int(prng.Int()) % 100000
 			if i%2 == 0 {
 				x.Insert(n)
@@ -707,7 +707,7 @@ func BenchmarkUnionDifferenceHashTable(b *testing.B) {
 	prng := rand.New(rand.NewSource(0))
 	for tries := 0; tries < b.N; tries++ {
 		x, y, z := make(map[int]bool), make(map[int]bool), make(map[int]bool)
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			n := int(prng.Int()) % 100000
 			if i%2 == 0 {
 				x[n] = true
@@ -735,7 +735,7 @@ func BenchmarkUnionDifferenceHashTable(b *testing.B) {
 func BenchmarkAppendTo(b *testing.B) {
 	prng := rand.New(rand.NewSource(0))
 	var x intsets.Sparse
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		x.Insert(int(prng.Int()) % 10000)
 	}
 	var space [1000]int

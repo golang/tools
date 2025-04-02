@@ -14,6 +14,7 @@ import (
 	"go/printer"
 	"go/token"
 	"go/types"
+	"maps"
 	"os"
 )
 
@@ -350,18 +351,10 @@ func stmtAndExpr(fn *ast.FuncDecl) ([]ast.Stmt, ast.Expr, error) {
 
 // mergeTypeInfo adds type info from src to dst.
 func mergeTypeInfo(dst, src *types.Info) {
-	for k, v := range src.Types {
-		dst.Types[k] = v
-	}
-	for k, v := range src.Defs {
-		dst.Defs[k] = v
-	}
-	for k, v := range src.Uses {
-		dst.Uses[k] = v
-	}
-	for k, v := range src.Selections {
-		dst.Selections[k] = v
-	}
+	maps.Copy(dst.Types, src.Types)
+	maps.Copy(dst.Defs, src.Defs)
+	maps.Copy(dst.Uses, src.Uses)
+	maps.Copy(dst.Selections, src.Selections)
 }
 
 // (debugging only)

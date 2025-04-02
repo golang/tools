@@ -236,6 +236,7 @@ import (
 	"io"
 	"math/big"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -465,7 +466,7 @@ func (p *iexporter) encodeFile(w *intWriter, file *token.File, needed []uint64) 
 	w.uint64(size)
 
 	// Sort the set of needed offsets. Duplicates are harmless.
-	sort.Slice(needed, func(i, j int) bool { return needed[i] < needed[j] })
+	slices.Sort(needed)
 
 	lines := file.Lines() // byte offset of each line start
 	w.uint64(uint64(len(lines)))
@@ -819,7 +820,7 @@ func (p *iexporter) doDecl(obj types.Object) {
 
 		n := named.NumMethods()
 		w.uint64(uint64(n))
-		for i := 0; i < n; i++ {
+		for i := range n {
 			m := named.Method(i)
 			w.pos(m.Pos())
 			w.string(m.Name())
@@ -1096,7 +1097,7 @@ func (w *exportWriter) doTyp(t types.Type, pkg *types.Package) {
 		w.pkg(fieldPkg)
 		w.uint64(uint64(n))
 
-		for i := 0; i < n; i++ {
+		for i := range n {
 			f := t.Field(i)
 			if w.p.shallow {
 				w.objectPath(f)
@@ -1145,7 +1146,7 @@ func (w *exportWriter) doTyp(t types.Type, pkg *types.Package) {
 		w.startType(unionType)
 		nt := t.Len()
 		w.uint64(uint64(nt))
-		for i := 0; i < nt; i++ {
+		for i := range nt {
 			term := t.Term(i)
 			w.bool(term.Tilde())
 			w.typ(term.Type(), pkg)
@@ -1274,7 +1275,7 @@ func tparamName(exportName string) string {
 func (w *exportWriter) paramList(tup *types.Tuple) {
 	n := tup.Len()
 	w.uint64(uint64(n))
-	for i := 0; i < n; i++ {
+	for i := range n {
 		w.param(tup.At(i))
 	}
 }

@@ -672,7 +672,7 @@ func TestIssue15517(t *testing.T) {
 	// file and package path are different, exposing the problem if present.
 	// The same issue occurs with vendoring.)
 	imports := make(map[string]*types.Package)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := gcimporter.Import(token.NewFileSet(), imports, "./././testdata/p", tmpdir, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -785,7 +785,7 @@ type K = StillBad[string]
 	// Use the interface instances concurrently.
 	for _, inst := range insts {
 		var wg sync.WaitGroup
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()

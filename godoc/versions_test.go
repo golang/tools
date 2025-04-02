@@ -6,6 +6,7 @@ package godoc
 
 import (
 	"go/build"
+	"slices"
 	"testing"
 
 	"golang.org/x/tools/internal/testenv"
@@ -102,12 +103,7 @@ func TestParseVersionRow(t *testing.T) {
 // hasTag checks whether a given release tag is contained in the current version
 // of the go binary.
 func hasTag(t string) bool {
-	for _, v := range build.Default.ReleaseTags {
-		if t == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(build.Default.ReleaseTags, t)
 }
 
 func TestAPIVersion(t *testing.T) {

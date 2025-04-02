@@ -39,7 +39,7 @@ to see the differences.`)
 // TestAppendQuote ensures that AppendQuote produces a valid literal.
 func TestAppendQuote(t *testing.T) {
 	var in, out bytes.Buffer
-	for r := rune(0); r < unicode.MaxRune; r++ {
+	for r := range unicode.MaxRune {
 		in.WriteRune(r)
 	}
 	appendQuote(&out, in.Bytes())

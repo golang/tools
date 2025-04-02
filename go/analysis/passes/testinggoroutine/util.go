@@ -7,6 +7,7 @@ package testinggoroutine
 import (
 	"go/ast"
 	"go/types"
+	"slices"
 
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -48,12 +49,7 @@ func isMethodNamed(f *types.Func, pkgPath string, names ...string) bool {
 	if f.Type().(*types.Signature).Recv() == nil {
 		return false
 	}
-	for _, n := range names {
-		if f.Name() == n {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(names, f.Name())
 }
 
 func funcIdent(fun ast.Expr) *ast.Ident {

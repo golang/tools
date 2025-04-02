@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -127,12 +128,7 @@ func waitForServer(t *testing.T, ctx context.Context, url, match string, reverse
 // hasTag checks whether a given release tag is contained in the current version
 // of the go binary.
 func hasTag(t string) bool {
-	for _, v := range build.Default.ReleaseTags {
-		if t == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(build.Default.ReleaseTags, t)
 }
 
 func TestURL(t *testing.T) {

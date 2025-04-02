@@ -105,7 +105,7 @@ func check(t *testing.T, f *ast.File, pkg *ssa.Package, res *rta.Result) {
 	expectation := func(f *ast.File) (string, int) {
 		for _, c := range f.Comments {
 			text := strings.TrimSpace(c.Text())
-			if t := strings.TrimPrefix(text, "WANT:\n"); t != text {
+			if t, ok := strings.CutPrefix(text, "WANT:\n"); ok {
 				return t, tokFile.Line(c.Pos())
 			}
 		}
@@ -134,7 +134,7 @@ func check(t *testing.T, f *ast.File, pkg *ssa.Package, res *rta.Result) {
 
 		// A leading "!" negates the assertion.
 		sense := true
-		if rest := strings.TrimPrefix(line, "!"); rest != line {
+		if rest, ok := strings.CutPrefix(line, "!"); ok {
 			sense = false
 			line = strings.TrimSpace(rest)
 			if line == "" {

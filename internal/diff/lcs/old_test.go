@@ -107,7 +107,7 @@ func TestRegressionOld003(t *testing.T) {
 
 func TestRandOld(t *testing.T) {
 	rand.Seed(1)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		// TODO(adonovan): use ASCII and bytesSeqs here? The use of
 		// non-ASCII isn't relevant to the property exercised by the test.
 		a := []rune(randstr("abω", 16))
@@ -186,7 +186,7 @@ func genBench(set string, n int) []struct{ before, after string } {
 	// before and after differing at least once, and about 5%
 	rand.Seed(3)
 	var ans []struct{ before, after string }
-	for i := 0; i < 24; i++ {
+	for range 24 {
 		// maybe b should have an approximately known number of diffs
 		a := randstr(set, n)
 		cnt := 0

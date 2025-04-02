@@ -26,6 +26,7 @@ import (
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
+	"maps"
 )
 
 // A Caller describes the function call and its enclosing context.
@@ -893,9 +894,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 						elts = append(elts, arg.expr)
 						pure = pure && arg.pure
 						effects = effects || arg.effects
-						for k, v := range arg.freevars {
-							freevars[k] = v
-						}
+						maps.Copy(freevars, arg.freevars)
 					}
 					args = append(ordinary, &argument{
 						expr: &ast.CompositeLit{

@@ -40,7 +40,7 @@ var inputs = []string{
 func expectation(f *ast.File) (string, token.Pos) {
 	for _, c := range f.Comments {
 		text := strings.TrimSpace(c.Text())
-		if t := strings.TrimPrefix(text, "WANT:\n"); t != text {
+		if t, ok := strings.CutPrefix(text, "WANT:\n"); ok {
 			return t, c.Pos()
 		}
 	}

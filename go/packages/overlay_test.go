@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 
@@ -93,7 +94,7 @@ func testOverlayChangesBothPackageNames(t *testing.T, exporter packagestest.Expo
 	if len(initial) != 3 {
 		t.Fatalf("expected 3 packages, got %v", len(initial))
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if ok := checkPkg(t, initial[i], want[i].id, want[i].name, want[i].count); !ok {
 			t.Errorf("%d: got {%s %s %d}, expected %v", i, initial[i].ID,
 				initial[i].Name, len(initial[i].Syntax), want[i])
@@ -139,7 +140,7 @@ func testOverlayChangesTestPackageName(t *testing.T, exporter packagestest.Expor
 	if len(initial) != 3 {
 		t.Fatalf("expected 3 packages, got %v", len(initial))
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if ok := checkPkg(t, initial[i], want[i].id, want[i].name, want[i].count); !ok {
 			t.Errorf("got {%s %s %d}, expected %v", initial[i].ID,
 				initial[i].Name, len(initial[i].Syntax), want[i])
@@ -824,11 +825,8 @@ func testInvalidFilesBeforeOverlayContains(t *testing.T, exporter packagestest.E
 					t.Fatalf("expected package ID %q, got %q", tt.wantID, pkg.ID)
 				}
 				var containsFile bool
-				for _, goFile := range pkg.CompiledGoFiles {
-					if f == goFile {
-						containsFile = true
-						break
-					}
+				if slices.Contains(pkg.CompiledGoFiles, f) {
+					containsFile = true
 				}
 				if !containsFile {
 					t.Fatalf("expected %s in CompiledGoFiles, got %v", f, pkg.CompiledGoFiles)
@@ -1054,7 +1052,7 @@ func TestOverlaysInReplace(t *testing.T) {
 	if err := os.Mkdir(dirB, 0775); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dirB, "go.mod"), []byte(fmt.Sprintf("module %s.com", dirB)), 0775); err != nil {
+	if err := os.WriteFile(filepath.Join(dirB, "go.mod"), fmt.Appendf(nil, "module %s.com", dirB), 0775); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(dirB, "inner"), 0775); err != nil {

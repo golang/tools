@@ -148,10 +148,7 @@ func init() {
 	// If $GOMAXPROCS isn't set, use the full capacity of the machine.
 	// For small machines, use at least 4 threads.
 	if os.Getenv("GOMAXPROCS") == "" {
-		n := runtime.NumCPU()
-		if n < 4 {
-			n = 4
-		}
+		n := max(runtime.NumCPU(), 4)
 		runtime.GOMAXPROCS(n)
 	}
 }

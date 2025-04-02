@@ -28,7 +28,7 @@ import (
 func want(f *ast.File) []string {
 	for _, c := range f.Comments {
 		text := strings.TrimSpace(c.Text())
-		if t := strings.TrimPrefix(text, "WANT:\n"); t != text {
+		if t, ok := strings.CutPrefix(text, "WANT:\n"); ok {
 			return strings.Split(t, "\n")
 		}
 	}

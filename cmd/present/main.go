@@ -73,8 +73,8 @@ func main() {
 
 	origin := &url.URL{Scheme: "http"}
 	if *originHost != "" {
-		if strings.HasPrefix(*originHost, "https://") {
-			*originHost = strings.TrimPrefix(*originHost, "https://")
+		if after, ok := strings.CutPrefix(*originHost, "https://"); ok {
+			*originHost = after
 			origin.Scheme = "https"
 		}
 		*originHost = strings.TrimPrefix(*originHost, "http://")

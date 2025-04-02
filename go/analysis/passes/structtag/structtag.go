@@ -13,6 +13,7 @@ import (
 	"go/types"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -167,11 +168,8 @@ func checkTagDuplicates(pass *analysis.Pass, tag, key string, nearest, field *ty
 	if i := strings.Index(val, ","); i >= 0 {
 		if key == "xml" {
 			// Use a separate namespace for XML attributes.
-			for _, opt := range strings.Split(val[i:], ",") {
-				if opt == "attr" {
-					key += " attribute" // Key is part of the error message.
-					break
-				}
+			if slices.Contains(strings.Split(val[i:], ","), "attr") {
+				key += " attribute" // Key is part of the error message.
 			}
 		}
 		val = val[:i]

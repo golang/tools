@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"slices"
 	"sort"
 )
 
@@ -43,7 +44,7 @@ func (b *BasicBlock) Dominates(c *BasicBlock) bool {
 // DomPreorder returns a new slice containing the blocks of f
 // in a preorder traversal of the dominator tree.
 func (f *Function) DomPreorder() []*BasicBlock {
-	slice := append([]*BasicBlock(nil), f.Blocks...)
+	slice := slices.Clone(f.Blocks)
 	sort.Slice(slice, func(i, j int) bool {
 		return slice[i].dom.pre < slice[j].dom.pre
 	})
@@ -54,7 +55,7 @@ func (f *Function) DomPreorder() []*BasicBlock {
 // in a postorder traversal of the dominator tree.
 // (This is not the same as a postdominance order.)
 func (f *Function) DomPostorder() []*BasicBlock {
-	slice := append([]*BasicBlock(nil), f.Blocks...)
+	slice := slices.Clone(f.Blocks)
 	sort.Slice(slice, func(i, j int) bool {
 		return slice[i].dom.post < slice[j].dom.post
 	})
@@ -277,8 +278,8 @@ func sanityCheckDomTree(f *Function) {
 	// Check the entire relation.  O(n^2).
 	// The Recover block (if any) must be treated specially so we skip it.
 	ok := true
-	for i := 0; i < n; i++ {
-		for j := 0; j < n; j++ {
+	for i := range n {
+		for j := range n {
 			b, c := f.Blocks[i], f.Blocks[j]
 			if c == f.Recover {
 				continue

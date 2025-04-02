@@ -159,7 +159,6 @@ var All = []Exporter{GOPATH, Modules}
 func TestAll(t *testing.T, f func(*testing.T, Exporter)) {
 	t.Helper()
 	for _, e := range All {
-		e := e // in case f calls t.Parallel
 		t.Run(e.Name(), func(t *testing.T) {
 			t.Helper()
 			f(t, e)
@@ -173,7 +172,6 @@ func TestAll(t *testing.T, f func(*testing.T, Exporter)) {
 func BenchmarkAll(b *testing.B, f func(*testing.B, Exporter)) {
 	b.Helper()
 	for _, e := range All {
-		e := e // in case f calls t.Parallel
 		b.Run(e.Name(), func(b *testing.B) {
 			b.Helper()
 			f(b, e)

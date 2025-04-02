@@ -52,7 +52,6 @@ func ForEachPackage(ctxt *build.Context, found func(importPath string, err error
 
 	var wg sync.WaitGroup
 	for _, root := range ctxt.SrcDirs() {
-		root := root
 		wg.Add(1)
 		go func() {
 			allPackages(ctxt, root, ch)
@@ -107,7 +106,6 @@ func allPackages(ctxt *build.Context, root string, ch chan<- item) {
 			ch <- item{pkg, err}
 		}
 		for _, fi := range files {
-			fi := fi
 			if fi.IsDir() {
 				wg.Add(1)
 				go func() {

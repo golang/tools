@@ -27,7 +27,6 @@ func TestTestdata(t *testing.T) {
 	}
 	files := append(filesP, filesMD...)
 	for _, file := range files {
-		file := file
 		name := filepath.Base(file)
 		if name == "README" {
 			continue

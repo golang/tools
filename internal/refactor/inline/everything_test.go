@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -193,7 +194,7 @@ func TestEverything(t *testing.T) {
 						t.Fatalf("transformed source does not parse: %v", err)
 					}
 					// Splice into original file list.
-					syntax := append([]*ast.File(nil), callerPkg.Syntax...)
+					syntax := slices.Clone(callerPkg.Syntax)
 					for i := range callerPkg.Syntax {
 						if syntax[i] == callerFile {
 							syntax[i] = f

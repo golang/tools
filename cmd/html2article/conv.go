@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -270,10 +271,8 @@ func hasClass(name string) selector {
 	return func(n *html.Node) bool {
 		for _, a := range n.Attr {
 			if a.Key == "class" {
-				for _, c := range strings.Fields(a.Val) {
-					if c == name {
-						return true
-					}
+				if slices.Contains(strings.Fields(a.Val), name) {
+					return true
 				}
 			}
 		}

@@ -34,7 +34,7 @@ import (
 var encVersion1 = "go test fuzz v1"
 
 func encodeByteSlice(b []byte) []byte {
-	return []byte(fmt.Sprintf("%s\n[]byte(%q)", encVersion1, b))
+	return fmt.Appendf(nil, "%s\n[]byte(%q)", encVersion1, b)
 }
 
 func usage() {

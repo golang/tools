@@ -12,6 +12,7 @@ import (
 	pathpkg "path"
 	"path/filepath"
 	"runtime"
+	"slices"
 )
 
 // We expose a new variable because otherwise we need to copy the findGOROOT logic again
@@ -45,10 +46,8 @@ type osFS struct {
 
 func isGoPath(path string) bool {
 	for _, bp := range filepath.SplitList(build.Default.GOPATH) {
-		for _, gp := range filepath.SplitList(path) {
-			if bp == gp {
-				return true
-			}
+		if slices.Contains(filepath.SplitList(path), bp) {
+			return true
 		}
 	}
 	return false

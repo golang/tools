@@ -172,7 +172,7 @@ func TestZipFSOpenSeek(t *testing.T) {
 			defer f.Close()
 
 			// test Seek() multiple times
-			for i := 0; i < 3; i++ {
+			for range 3 {
 				all, err := io.ReadAll(f)
 				if err != nil {
 					t.Error(err)

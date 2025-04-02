@@ -613,7 +613,6 @@ var indirect = R[int].M
 				"(p.S[int]).M[int]",
 			},
 		} {
-			entry := entry
 			t.Run(entry.name, func(t *testing.T) {
 				v := p.Var(entry.name)
 				if v == nil {
@@ -1011,7 +1010,6 @@ func TestGo117Builtins(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fset := token.NewFileSet()
@@ -1466,7 +1464,6 @@ func TestBuildPackageGo120(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fset := token.NewFileSet()

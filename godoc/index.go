@@ -65,6 +65,7 @@ import (
 
 	"golang.org/x/tools/godoc/util"
 	"golang.org/x/tools/godoc/vfs"
+	"maps"
 )
 
 // ----------------------------------------------------------------------------
@@ -862,9 +863,7 @@ func (x *Indexer) indexGoFile(dirname string, filename string, file *token.File,
 			dest = make(map[string]SpotKind)
 			x.exports[pkgPath] = dest
 		}
-		for k, v := range x.curPkgExports {
-			dest[k] = v
-		}
+		maps.Copy(dest, x.curPkgExports)
 	}
 }
 
@@ -1069,7 +1068,7 @@ func (c *Corpus) NewIndex() *Index {
 
 	// convert alist into a map of alternative spellings
 	alts := make(map[string]*AltWords)
-	for i := 0; i < len(alist); i++ {
+	for i := range alist {
 		a := alist[i].(*AltWords)
 		alts[a.Canon] = a
 	}

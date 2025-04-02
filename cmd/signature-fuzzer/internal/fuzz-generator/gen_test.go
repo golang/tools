@@ -35,7 +35,7 @@ func mkGenState() *genstate {
 func TestBasic(t *testing.T) {
 	checkTunables(tunables)
 	s := mkGenState()
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		s.wr = NewWrapRand(int64(i), RandCtlChecks|RandCtlPanic)
 		fp := s.GenFunc(i, i)
 		var buf bytes.Buffer
@@ -58,7 +58,7 @@ func TestMoreComplicated(t *testing.T) {
 
 	checkTunables(tunables)
 	s := mkGenState()
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		s.wr = NewWrapRand(int64(i), RandCtlChecks|RandCtlPanic)
 		fp := s.GenFunc(i, i)
 		var buf bytes.Buffer

@@ -114,7 +114,7 @@ func loggingHandler(h http.Handler) http.Handler {
 func handleURLFlag() {
 	// Try up to 10 fetches, following redirects.
 	urlstr := *urlFlag
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		// Prepare request.
 		u, err := url.Parse(urlstr)
 		if err != nil {

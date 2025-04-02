@@ -527,7 +527,7 @@ func check(t Testing, gopath string, act *checker.Action) {
 
 		// Any comment starting with "want" is treated
 		// as an expectation, even without following whitespace.
-		if rest := strings.TrimPrefix(text, "want"); rest != text {
+		if rest, ok := strings.CutPrefix(text, "want"); ok {
 			lineDelta, expects, err := parseExpectations(rest)
 			if err != nil {
 				t.Errorf("%s:%d: in 'want' comment: %s", filename, linenum, err)
@@ -579,7 +579,7 @@ func check(t Testing, gopath string, act *checker.Action) {
 	// ignored. (This was previously a hack in the respective
 	// analyzers' tests.)
 	if act.Analyzer.Name == "buildtag" || act.Analyzer.Name == "directive" {
-		files = append(files[:len(files):len(files)], act.Package.IgnoredFiles...)
+		files = slices.Concat(files, act.Package.IgnoredFiles)
 	}
 
 	for _, filename := range files {

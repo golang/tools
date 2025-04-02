@@ -64,7 +64,6 @@ func TestData(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, file := range files {
-		file := file
 		t.Run(filepath.Base(file), func(t *testing.T) {
 			t.Parallel()
 
@@ -1794,7 +1793,6 @@ func TestRedundantConversions(t *testing.T) {
 
 func runTests(t *testing.T, tests []testcase) {
 	for _, test := range tests {
-		test := test
 		t.Run(test.descr, func(t *testing.T) {
 			fset := token.NewFileSet()
 			mustParse := func(filename string, content any) *ast.File {
@@ -1885,7 +1883,7 @@ func runTests(t *testing.T, tests []testcase) {
 			res, err := doIt()
 
 			// Want error?
-			if rest := strings.TrimPrefix(test.want, "error: "); rest != test.want {
+			if rest, ok := strings.CutPrefix(test.want, "error: "); ok {
 				if err == nil {
 					t.Fatalf("unexpected success: want error matching %q", rest)
 				}

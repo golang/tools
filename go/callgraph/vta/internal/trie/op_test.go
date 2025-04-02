@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/go/callgraph/vta/internal/trie"
+	"maps"
 )
 
 // This file tests trie.Map by cross checking operations on a collection of
@@ -189,12 +190,8 @@ func (c builtinCollection) Intersect(l int, r int) {
 
 func (c builtinCollection) Merge(l int, r int) {
 	result := map[uint64]any{}
-	for k, v := range c[r] {
-		result[k] = v
-	}
-	for k, v := range c[l] {
-		result[k] = v
-	}
+	maps.Copy(result, c[r])
+	maps.Copy(result, c[l])
 	c[l] = result
 }
 
@@ -217,9 +214,7 @@ func (c builtinCollection) Average(l int, r int) {
 
 func (c builtinCollection) Assign(l, r int) {
 	m := map[uint64]any{}
-	for k, v := range c[r] {
-		m[k] = v
-	}
+	maps.Copy(m, c[r])
 	c[l] = m
 }
 
@@ -232,7 +227,7 @@ func newTriesCollection(size int) *trieCollection {
 		b:     trie.NewBuilder(),
 		tries: make([]trie.MutMap, size),
 	}
-	for i := 0; i < size; i++ {
+	for i := range size {
 		tc.tries[i] = tc.b.MutEmpty()
 	}
 	return tc
@@ -240,7 +235,7 @@ func newTriesCollection(size int) *trieCollection {
 
 func newMapsCollection(size int) *builtinCollection {
 	maps := make(builtinCollection, size)
-	for i := 0; i < size; i++ {
+	for i := range size {
 		maps[i] = map[uint64]any{}
 	}
 	return &maps
@@ -290,7 +285,7 @@ func (op operation) Apply(maps mapCollection) any {
 func distribution(dist map[opCode]int) []opCode {
 	var codes []opCode
 	for op, n := range dist {
-		for i := 0; i < n; i++ {
+		for range n {
 			codes = append(codes, op)
 		}
 	}
@@ -326,7 +321,7 @@ func randOperator(r *rand.Rand, opts options) operation {
 
 func randOperators(r *rand.Rand, numops int, opts options) []operation {
 	ops := make([]operation, numops)
-	for i := 0; i < numops; i++ {
+	for i := range numops {
 		ops[i] = randOperator(r, opts)
 	}
 	return ops

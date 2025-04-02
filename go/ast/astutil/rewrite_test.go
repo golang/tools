@@ -244,7 +244,6 @@ func vardecl(name, typ string) *ast.GenDecl {
 func TestRewrite(t *testing.T) {
 	t.Run("*", func(t *testing.T) {
 		for _, test := range rewriteTests {
-			test := test
 			t.Run(test.name, func(t *testing.T) {
 				t.Parallel()
 				fset := token.NewFileSet()

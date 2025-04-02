@@ -9,6 +9,7 @@ package interp
 
 import (
 	"bytes"
+	"maps"
 	"math"
 	"os"
 	"runtime"
@@ -30,7 +31,7 @@ var externals = make(map[string]externalFn)
 
 func init() {
 	// That little dot ۰ is an Arabic zero numeral (U+06F0), categories [Nd].
-	for k, v := range map[string]externalFn{
+	maps.Copy(externals, map[string]externalFn{
 		"(reflect.Value).Bool":            ext۰reflect۰Value۰Bool,
 		"(reflect.Value).CanAddr":         ext۰reflect۰Value۰CanAddr,
 		"(reflect.Value).CanInterface":    ext۰reflect۰Value۰CanInterface,
@@ -111,9 +112,7 @@ func init() {
 		"strings.ToLower":                 ext۰strings۰ToLower,
 		"time.Sleep":                      ext۰time۰Sleep,
 		"unicode/utf8.DecodeRuneInString": ext۰unicode۰utf8۰DecodeRuneInString,
-	} {
-		externals[k] = v
-	}
+	})
 }
 
 func ext۰bytes۰Equal(fr *frame, args []value) value {

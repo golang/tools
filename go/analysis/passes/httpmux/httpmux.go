@@ -9,6 +9,7 @@ import (
 	"go/constant"
 	"go/types"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -103,12 +104,7 @@ func isMethodNamed(f *types.Func, pkgPath string, names ...string) bool {
 	if f.Type().(*types.Signature).Recv() == nil {
 		return false // not a method
 	}
-	for _, n := range names {
-		if f.Name() == n {
-			return true
-		}
-	}
-	return false // not in names
+	return slices.Contains(names, f.Name())
 }
 
 // stringConstantExpr returns expression's string constant value.

@@ -453,7 +453,6 @@ func TestGolden(t *testing.T) {
 
 	dir := t.TempDir()
 	for _, test := range golden {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			input := "package test\n" + test.input
 			file := test.name + ".go"

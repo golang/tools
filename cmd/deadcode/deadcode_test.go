@@ -34,7 +34,6 @@ func Test(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, filename := range matches {
-		filename := filename
 		t.Run(filename, func(t *testing.T) {
 			t.Parallel()
 

@@ -374,7 +374,7 @@ func (s *blockSet) add(b *BasicBlock) bool {
 // returns its index, or returns -1 if empty.
 func (s *blockSet) take() int {
 	l := s.BitLen()
-	for i := 0; i < l; i++ {
+	for i := range l {
 		if s.Bit(i) == 1 {
 			s.SetBit(&s.Int, i, 0)
 			return i
@@ -403,10 +403,8 @@ func liftAlloc(df domFrontier, alloc *Alloc, newPhis newPhiMap, fresh *int) bool
 	// Don't lift result values in functions that defer
 	// calls that may recover from panic.
 	if fn := alloc.Parent(); fn.Recover != nil {
-		for _, nr := range fn.results {
-			if nr == alloc {
-				return false
-			}
+		if slices.Contains(fn.results, alloc) {
+			return false
 		}
 	}
 

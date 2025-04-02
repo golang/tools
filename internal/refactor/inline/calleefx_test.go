@@ -107,7 +107,6 @@ func TestCalleeEffects(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.descr, func(t *testing.T) {
 			fset := token.NewFileSet()
 			mustParse := func(filename string, content any) *ast.File {

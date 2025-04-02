@@ -1478,7 +1478,7 @@ func symnam(i int) string {
 
 // set elements 0 through n-1 to c
 func aryfil(v []int, n, c int) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		v[i] = c
 	}
 }
@@ -1840,7 +1840,7 @@ func closure(i int) {
 
 		nexts:
 			// initially fill the sets
-			for s := 0; s < n; s++ {
+			for s := range n {
 				prd := curres[s]
 
 				//
@@ -2609,7 +2609,7 @@ func callopt() {
 	if adb > 2 {
 		for p = 0; p <= maxa; p += 10 {
 			fmt.Fprintf(ftable, "%v  ", p)
-			for i = 0; i < 10; i++ {
+			for i = range 10 {
 				fmt.Fprintf(ftable, "%v  ", amem[p+i])
 			}
 			ftable.WriteRune('\n')
@@ -2653,7 +2653,7 @@ func gin(i int) {
 
 	// now, find amem place for it
 nextgp:
-	for p := 0; p < ACTSIZE; p++ {
+	for p := range ACTSIZE {
 		if amem[p] != 0 {
 			continue
 		}
@@ -3117,7 +3117,7 @@ func aryeq(a []int, b []int) int {
 	if len(b) != n {
 		return 0
 	}
-	for ll := 0; ll < n; ll++ {
+	for ll := range n {
 		if a[ll] != b[ll] {
 			return 0
 		}
