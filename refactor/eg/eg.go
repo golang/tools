@@ -8,6 +8,7 @@ package eg // import "golang.org/x/tools/refactor/eg"
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -159,6 +160,10 @@ type Transformer struct {
 // described in the package documentation.
 // tmplInfo is the type information for tmplFile.
 func NewTransformer(fset *token.FileSet, tmplPkg *types.Package, tmplFile *ast.File, tmplInfo *types.Info, verbose bool) (*Transformer, error) {
+	// These maps are required by types.Info.TypeOf.
+	if tmplInfo.Types == nil || tmplInfo.Defs == nil || tmplInfo.Uses == nil {
+		return nil, errors.New("eg.NewTransformer: types.Info argument missing one of Types, Defs or Uses")
+	}
 	// Check the template.
 	beforeSig := funcSig(tmplPkg, "before")
 	if beforeSig == nil {
