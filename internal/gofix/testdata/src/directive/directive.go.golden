@@ -68,4 +68,3 @@ type E = map[[Uno]string][]*T // want `invalid //go:fix inline directive: array 
 //
 //go:fix inline
 type EL = map[[2]string][]*T // want EL: `goFixInline alias`
-

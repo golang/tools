@@ -49,7 +49,6 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/deprecated"
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
-	"golang.org/x/tools/gopls/internal/analysis/gofix"
 	"golang.org/x/tools/gopls/internal/analysis/hostport"
 	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
 	"golang.org/x/tools/gopls/internal/analysis/modernize"
@@ -63,6 +62,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
 	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/gofix"
 )
 
 // Analyzer augments a [analysis.Analyzer] with additional LSP configuration.

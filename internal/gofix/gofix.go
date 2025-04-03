@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"iter"
 	"slices"
 	"strings"
 
@@ -18,7 +19,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/astutil/cursor"
@@ -330,7 +330,7 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId cursor.Cursor) {
 	// Remember the names of the alias's type params. When we check for shadowing
 	// later, we'll ignore these because they won't appear in the replacement text.
 	typeParamNames := map[*types.TypeName]bool{}
-	for tp := range alias.TypeParams().TypeParams() {
+	for tp := range listIter(alias.TypeParams()) {
 		typeParamNames[tp.Obj()] = true
 	}
 	rhs := alias.Rhs()
@@ -405,7 +405,7 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId cursor.Cursor) {
 		// A[int, Foo] as M[int, Foo].
 		// Don't validate instantiation: it can't panic unless we have a bug,
 		// in which case seeing the stack trace via telemetry would be helpful.
-		instAlias, _ := types.Instantiate(nil, alias, slices.Collect(targs.Types()), false)
+		instAlias, _ := types.Instantiate(nil, alias, slices.Collect(listIter(targs)), false)
 		rhs = instAlias.(*types.Alias).Rhs()
 	}
 	// To get the replacement text, render the alias RHS using the package prefixes
@@ -437,11 +437,11 @@ func typenames(t types.Type) []*types.TypeName {
 		case *types.Basic:
 			tns = append(tns, types.Universe.Lookup(t.Name()).(*types.TypeName))
 		case *types.Named:
-			for t := range t.TypeArgs().Types() {
+			for t := range listIter(t.TypeArgs()) {
 				visit(t)
 			}
 		case *types.Alias:
-			for t := range t.TypeArgs().Types() {
+			for t := range listIter(t.TypeArgs()) {
 				visit(t)
 			}
 		case *types.TypeParam:
@@ -458,8 +458,8 @@ func typenames(t types.Type) []*types.TypeName {
 			visit(t.Key())
 			visit(t.Elem())
 		case *types.Struct:
-			for f := range t.Fields() {
-				visit(f.Type())
+			for i := range t.NumFields() {
+				visit(t.Field(i).Type())
 			}
 		case *types.Signature:
 			// Ignore the receiver: although it may be present, it has no meaning
@@ -479,7 +479,7 @@ func typenames(t types.Type) []*types.TypeName {
 				visit(t.ExplicitMethod(i).Type())
 			}
 		case *types.Tuple:
-			for v := range t.Variables() {
+			for v := range listIter(t) {
 				visit(v.Type())
 			}
 		case *types.Union:
@@ -592,8 +592,10 @@ func (a *analyzer) readFile(node ast.Node) ([]byte, error) {
 
 // currentFile returns the unique ast.File for a cursor.
 func currentFile(c cursor.Cursor) *ast.File {
-	cf, _ := moreiters.First(c.Enclosing((*ast.File)(nil)))
-	return cf.Node().(*ast.File)
+	for cf := range c.Enclosing((*ast.File)(nil)) {
+		return cf.Node().(*ast.File)
+	}
+	panic("no *ast.File enclosing a cursor: impossible")
 }
 
 // hasFixInline reports the presence of a "//go:fix inline" directive
@@ -640,3 +642,19 @@ func (*goFixInlineAliasFact) AFact()           {}
 func discard(string, ...any) {}
 
 var builtinIota = types.Universe.Lookup("iota")
+
+type list[T any] interface {
+	Len() int
+	At(int) T
+}
+
+// TODO(adonovan): eliminate in favor of go/types@go1.24 iterators.
+func listIter[L list[T], T any](lst L) iter.Seq[T] {
+	return func(yield func(T) bool) {
+		for i := range lst.Len() {
+			if !yield(lst.At(i)) {
+				return
+			}
+		}
+	}
+}
