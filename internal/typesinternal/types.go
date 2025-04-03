@@ -7,12 +7,10 @@
 package typesinternal
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"reflect"
-	"strings"
 	"unsafe"
 
 	"golang.org/x/tools/internal/aliases"
@@ -142,24 +140,5 @@ func NewTypesInfo() *types.Info {
 		Selections:   map[*ast.SelectorExpr]*types.Selection{},
 		Scopes:       map[ast.Node]*types.Scope{},
 		FileVersions: map[*ast.File]string{},
-	}
-}
-
-// RequiresFullInfo panics unless info has non-nil values for all maps.
-func RequiresFullInfo(info *types.Info) {
-	v := reflect.ValueOf(info).Elem()
-	t := v.Type()
-	var missing []string
-	for i := range t.NumField() {
-		f := t.Field(i)
-		if f.Type.Kind() == reflect.Map && v.Field(i).IsNil() {
-			missing = append(missing, f.Name)
-		}
-	}
-	if len(missing) > 0 {
-		msg := fmt.Sprintf(`A fully populated types.Info value is required.
-This one is missing the following fields:
-%s`, strings.Join(missing, ", "))
-		panic(msg)
 	}
 }
