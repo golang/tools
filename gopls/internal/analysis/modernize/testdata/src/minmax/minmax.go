@@ -149,3 +149,10 @@ func nopeFloat(a, b myfloat) (res myfloat) {
 	}
 	return
 }
+
+// Regression test for golang/go#72928.
+func underscoreAssign(a, b int) {
+	if a > b {
+		_ = a
+	}
+}

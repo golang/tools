@@ -178,11 +178,12 @@ func minmax(pass *analysis.Pass) {
 			if compare, ok := ifStmt.Cond.(*ast.BinaryExpr); ok &&
 				ifStmt.Init == nil &&
 				isInequality(compare.Op) != 0 &&
-				isAssignBlock(ifStmt.Body) &&
-				!maybeNaN(info.TypeOf(ifStmt.Body.List[0].(*ast.AssignStmt).Lhs[0])) { // lhs
-
-				// Have: if a < b { lhs = rhs }
-				check(astFile, curIfStmt, compare)
+				isAssignBlock(ifStmt.Body) {
+				// a blank var has no type.
+				if tLHS := info.TypeOf(ifStmt.Body.List[0].(*ast.AssignStmt).Lhs[0]); tLHS != nil && !maybeNaN(tLHS) {
+					// Have: if a < b { lhs = rhs }
+					check(astFile, curIfStmt, compare)
+				}
 			}
 		}
 	}
