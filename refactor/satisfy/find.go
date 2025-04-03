@@ -84,6 +84,9 @@ type Finder struct {
 // info.{Defs,Uses,Selections,Types} must have been populated by the
 // type-checker.
 func (f *Finder) Find(info *types.Info, files []*ast.File) {
+	if info.Defs == nil || info.Uses == nil || info.Selections == nil || info.Types == nil {
+		panic("Finder.Find: one of info.{Defs,Uses,Selections.Types} is not populated")
+	}
 	if f.Result == nil {
 		f.Result = make(map[Constraint]bool)
 	}
