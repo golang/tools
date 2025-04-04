@@ -80,24 +80,9 @@ func run(pass *analysis.Pass) (any, error) {
 		inspect.Preorder(filter, func(n ast.Node) {
 			switch n := n.(type) {
 			case *ast.CallExpr:
-				// Strip off any generic instantiation.
-				fun := n.Fun
-				switch fun_ := fun.(type) {
-				case *ast.IndexExpr:
-					fun = fun_.X // f[T]()  (funcs[i]() is rejected below)
-				case *ast.IndexListExpr:
-					fun = fun_.X // f[K, V]()
-				}
-
+				id := typesinternal.UsedIdent(pass.TypesInfo, n.Fun)
 				// Find object:
 				// record non-exported function, method, or func-typed var.
-				var id *ast.Ident
-				switch fun := fun.(type) {
-				case *ast.Ident:
-					id = fun
-				case *ast.SelectorExpr:
-					id = fun.Sel
-				}
 				if id != nil && !id.IsExported() {
 					switch pass.TypesInfo.Uses[id].(type) {
 					case *types.Func, *types.Var:

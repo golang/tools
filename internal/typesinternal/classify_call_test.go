@@ -104,7 +104,7 @@ func TestClassifyCallAndUsed(t *testing.T) {
 	// Expected Calls are in the order of CallExprs at the end of src, above.
 	wants := []struct {
 		kind    ti.CallKind
-		usedObj types.Object // the object returned from Used
+		usedObj types.Object // the object obtained from the result of UsedIdent
 	}{
 		{ti.CallStatic, lookup("g")},         // g
 		{ti.CallDynamic, lookup("f")},        // f
@@ -147,7 +147,7 @@ func TestClassifyCallAndUsed(t *testing.T) {
 			}
 
 			w := want.usedObj
-			if g := ti.Used(info, call.Fun); g != w {
+			if g := info.Uses[ti.UsedIdent(info, call.Fun)]; g != w {
 				t.Errorf("%s used obj: got %v (%[2]T), want %v", prefix, g, w)
 			}
 			i++

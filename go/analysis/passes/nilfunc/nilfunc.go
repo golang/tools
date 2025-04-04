@@ -56,7 +56,7 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 
 		// Only want functions.
-		obj := typesinternal.Used(pass.TypesInfo, e2)
+		obj := pass.TypesInfo.Uses[typesinternal.UsedIdent(pass.TypesInfo, e2)]
 		if _, ok := obj.(*types.Func); !ok {
 			return
 		}

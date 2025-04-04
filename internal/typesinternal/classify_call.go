@@ -68,7 +68,7 @@ func ClassifyCall(info *types.Info, call *ast.CallExpr) CallKind {
 	if info.Types[call.Fun].IsType() {
 		return CallConversion
 	}
-	obj := Used(info, call.Fun)
+	obj := info.Uses[UsedIdent(info, call.Fun)]
 	// Classify the call by the type of the object, if any.
 	switch obj := obj.(type) {
 	case *types.Builtin:
@@ -83,7 +83,9 @@ func ClassifyCall(info *types.Info, call *ast.CallExpr) CallKind {
 	}
 }
 
-// Used returns the [types.Object] used by e, if any.
+// UsedIdent returns the identifier such that info.Uses[UsedIdent(info, e)]
+// is the [types.Object] used by e, if any.
+//
 // If e is one of various forms of reference:
 //
 //	f, c, v, T           lexical reference
@@ -92,7 +94,8 @@ func ClassifyCall(info *types.Info, call *ast.CallExpr) CallKind {
 //	expr.f               field or method value selector
 //	T.f                  method expression selector
 //
-// Used returns the object to which it refers.
+// UsedIdent returns the identifier whose is associated value in [types.Info.Uses]
+// is the object to which it refers.
 //
 // For the declarations:
 //
@@ -105,28 +108,28 @@ func ClassifyCall(info *types.Info, call *ast.CallExpr) CallKind {
 //	  i I
 //	)
 //
-// Used returns the following:
+// UsedIdent returns the following:
 //
-//	Expr          Used
-//	x             the *types.Var for x
-//	s.f           the *types.Var for f
-//	F[int]        the *types.Func for F[T] (not F[int])
-//	i.M           the *types.Func for i.M
-//	I.M           the *types.Func for I.M
-//	min           the *types.Builtin for min
-//	int           the *types.TypeName for int
+//	Expr          UsedIdent
+//	x             x
+//	s.f           f
+//	F[int]        F
+//	i.M           M
+//	I.M           M
+//	min           min
+//	int           int
 //	1             nil
 //	a[0]          nil
 //	[]byte        nil
 //
-// Note: if e is an instantiated function or method, Used returns
+// Note: if e is an instantiated function or method, UsedIdent returns
 // the corresponding generic function or method on the generic type.
-func Used(info *types.Info, e ast.Expr) types.Object {
-	return used(info, e)
+func UsedIdent(info *types.Info, e ast.Expr) *ast.Ident {
+	return usedIdent(info, e)
 }
 
-//go:linkname used golang.org/x/tools/go/types/typeutil.used
-func used(info *types.Info, e ast.Expr) types.Object
+//go:linkname usedIdent golang.org/x/tools/go/types/typeutil.usedIdent
+func usedIdent(info *types.Info, e ast.Expr) *ast.Ident
 
 //go:linkname interfaceMethod golang.org/x/tools/go/types/typeutil.interfaceMethod
 func interfaceMethod(f *types.Func) bool

@@ -18,7 +18,7 @@ import (
 // Note: for calls of instantiated functions and methods, Callee returns
 // the corresponding generic function or method on the generic type.
 func Callee(info *types.Info, call *ast.CallExpr) types.Object {
-	obj := used(info, call.Fun)
+	obj := info.Uses[usedIdent(info, call.Fun)]
 	if obj == nil {
 		return nil
 	}
@@ -34,7 +34,7 @@ func Callee(info *types.Info, call *ast.CallExpr) types.Object {
 // Note: for calls of instantiated functions and methods, StaticCallee returns
 // the corresponding generic function or method on the generic type.
 func StaticCallee(info *types.Info, call *ast.CallExpr) *types.Func {
-	obj := used(info, call.Fun)
+	obj := info.Uses[usedIdent(info, call.Fun)]
 	fn, _ := obj.(*types.Func)
 	if fn == nil || interfaceMethod(fn) {
 		return nil
@@ -42,14 +42,14 @@ func StaticCallee(info *types.Info, call *ast.CallExpr) *types.Func {
 	return fn
 }
 
-// used is the implementation of [internal/typesinternal.Used].
-// It returns the object associated with e.
-// See typesinternal.Used for a fuller description.
+// usedIdent is the implementation of [internal/typesinternal.UsedIdent].
+// It returns the identifier associated with e.
+// See typesinternal.UsedIdent for a fuller description.
 // This function should live in typesinternal, but cannot because it would
 // create an import cycle.
 //
-//go:linkname used
-func used(info *types.Info, e ast.Expr) types.Object {
+//go:linkname usedIdent
+func usedIdent(info *types.Info, e ast.Expr) *ast.Ident {
 	if info.Types == nil || info.Uses == nil {
 		panic("one of info.Types or info.Uses is nil; both must be populated")
 	}
@@ -63,17 +63,16 @@ func used(info *types.Info, e ast.Expr) types.Object {
 		e = d.X
 	}
 
-	var obj types.Object
 	switch e := ast.Unparen(e).(type) {
 	// info.Uses always has the object we want, even for selector expressions.
 	// We don't need info.Selections.
 	// See go/types/recording.go:recordSelection.
 	case *ast.Ident:
-		obj = info.Uses[e] // type, var, builtin, or declared func
+		return e
 	case *ast.SelectorExpr:
-		obj = info.Uses[e.Sel] // selector e.f or T.f or qualified identifier pkg.X
+		return e.Sel
 	}
-	return obj
+	return nil
 }
 
 // interfaceMethod reports whether its argument is a method of an interface.
