@@ -34,7 +34,7 @@ var doc string
 var Analyzer = &analysis.Analyzer{
 	Name: "gofix",
 	Doc:  analysisinternal.MustExtractDoc(doc, "gofix"),
-	URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix",
+	URL:  "https://pkg.go.dev/golang.org/x/tools/internal/gofix",
 	Run:  func(pass *analysis.Pass) (any, error) { return run(pass, true) },
 	FactTypes: []analysis.Fact{
 		(*goFixInlineFuncFact)(nil),
@@ -47,7 +47,7 @@ var Analyzer = &analysis.Analyzer{
 var DirectiveAnalyzer = &analysis.Analyzer{
 	Name: "gofixdirective",
 	Doc:  analysisinternal.MustExtractDoc(doc, "gofixdirective"),
-	URL:  "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix",
+	URL:  "https://pkg.go.dev/golang.org/x/tools/internal/gofix",
 	Run:  func(pass *analysis.Pass) (any, error) { return run(pass, false) },
 	FactTypes: []analysis.Fact{
 		(*goFixInlineFuncFact)(nil),

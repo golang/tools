@@ -298,7 +298,7 @@ The gofix analyzer inlines functions and constants that are marked for inlining.
 
 Default: on.
 
-Package documentation: [gofix](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix)
+Package documentation: [gofix](https://pkg.go.dev/golang.org/x/tools/internal/gofix)
 
 <a id='hostport'></a>
 ## `hostport`: check format of addresses passed to net.Dial

@@ -1297,7 +1297,7 @@
 		{
 			"Name": "gofix",
 			"Doc": "apply fixes based on go:fix comment directives\n\nThe gofix analyzer inlines functions and constants that are marked for inlining.",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/gofix",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/internal/gofix",
 			"Default": true
 		},
 		{
