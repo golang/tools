@@ -47,6 +47,11 @@
 //
 // Categories of modernize diagnostic:
 //
+//   - forvar: remove x := x variable declarations made unnecessary by the new semantics of loops in go1.22.
+//
+//   - slicescontains: replace 'for i, elem := range s { if elem == needle { ...; break }'
+//     by a call to slices.Contains, added in go1.21.
+//
 //   - minmax: replace an if/else conditional assignment by a call to
 //     the built-in min or max functions added in go1.21.
 //
@@ -80,7 +85,7 @@
 //   - rangeint: replace a 3-clause "for i := 0; i < n; i++" loop by
 //     "for i := range n", added in go1.22.
 //
-//   - stringseq: replace Split in "for range strings.Split(...)" by go1.24's
+//   - stringsseq: replace Split in "for range strings.Split(...)" by go1.24's
 //     more efficient SplitSeq, or Fields with FieldSeq.
 //
 //   - stringscutprefix: replace some uses of HasPrefix followed by TrimPrefix with CutPrefix,
