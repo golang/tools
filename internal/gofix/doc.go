@@ -6,7 +6,6 @@
 Package gofix defines an Analyzer that inlines calls to functions
 and uses of constants
 marked with a "//go:fix inline" directive.
-A second analyzer only checks uses of the directive.
 
 # Analyzer gofix
 

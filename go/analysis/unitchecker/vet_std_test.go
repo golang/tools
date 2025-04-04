@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/directive"
 	"golang.org/x/tools/go/analysis/passes/errorsas"
 	"golang.org/x/tools/go/analysis/passes/framepointer"
+	"golang.org/x/tools/go/analysis/passes/gofix"
 	"golang.org/x/tools/go/analysis/passes/httpresponse"
 	"golang.org/x/tools/go/analysis/passes/ifaceassert"
 	"golang.org/x/tools/go/analysis/passes/loopclosure"
@@ -62,6 +63,7 @@ func vet() {
 		directive.Analyzer,
 		errorsas.Analyzer,
 		framepointer.Analyzer,
+		gofix.Analyzer,
 		httpresponse.Analyzer,
 		ifaceassert.Analyzer,
 		loopclosure.Analyzer,

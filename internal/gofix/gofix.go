@@ -20,10 +20,10 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
-	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/astutil/edge"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/gofix/findgofix"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -35,20 +35,7 @@ var Analyzer = &analysis.Analyzer{
 	Name: "gofix",
 	Doc:  analysisinternal.MustExtractDoc(doc, "gofix"),
 	URL:  "https://pkg.go.dev/golang.org/x/tools/internal/gofix",
-	Run:  func(pass *analysis.Pass) (any, error) { return run(pass, true) },
-	FactTypes: []analysis.Fact{
-		(*goFixInlineFuncFact)(nil),
-		(*goFixInlineConstFact)(nil),
-		(*goFixInlineAliasFact)(nil),
-	},
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
-}
-
-var DirectiveAnalyzer = &analysis.Analyzer{
-	Name: "gofixdirective",
-	Doc:  analysisinternal.MustExtractDoc(doc, "gofixdirective"),
-	URL:  "https://pkg.go.dev/golang.org/x/tools/internal/gofix",
-	Run:  func(pass *analysis.Pass) (any, error) { return run(pass, false) },
+	Run:  run,
 	FactTypes: []analysis.Fact{
 		(*goFixInlineFuncFact)(nil),
 		(*goFixInlineConstFact)(nil),
@@ -60,7 +47,6 @@ var DirectiveAnalyzer = &analysis.Analyzer{
 // analyzer holds the state for this analysis.
 type analyzer struct {
 	pass *analysis.Pass
-	fix  bool // only suggest fixes if true; else, just check directives
 	root cursor.Cursor
 	// memoization of repeated calls for same file.
 	fileContent map[string][]byte
@@ -70,53 +56,22 @@ type analyzer struct {
 	inlinableAliases map[*types.TypeName]*goFixInlineAliasFact
 }
 
-func run(pass *analysis.Pass, fix bool) (any, error) {
+func run(pass *analysis.Pass) (any, error) {
 	a := &analyzer{
 		pass:             pass,
-		fix:              fix,
 		root:             cursor.Root(pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)),
 		fileContent:      make(map[string][]byte),
 		inlinableFuncs:   make(map[*types.Func]*inline.Callee),
 		inlinableConsts:  make(map[*types.Const]*goFixInlineConstFact),
 		inlinableAliases: make(map[*types.TypeName]*goFixInlineAliasFact),
 	}
-	a.find()
+	findgofix.Find(pass, a.root, a)
 	a.inline()
 	return nil, nil
 }
 
-// find finds functions and constants annotated with an appropriate "//go:fix"
-// comment (the syntax proposed by #32816),
-// and exports a fact for each one.
-func (a *analyzer) find() {
-	for cur := range a.root.Preorder((*ast.FuncDecl)(nil), (*ast.GenDecl)(nil)) {
-		switch decl := cur.Node().(type) {
-		case *ast.FuncDecl:
-			a.findFunc(decl)
-
-		case *ast.GenDecl:
-			if decl.Tok != token.CONST && decl.Tok != token.TYPE {
-				continue
-			}
-			declInline := hasFixInline(decl.Doc)
-			// Accept inline directives on the entire decl as well as individual specs.
-			for _, spec := range decl.Specs {
-				switch spec := spec.(type) {
-				case *ast.TypeSpec: // Tok == TYPE
-					a.findAlias(spec, declInline)
-
-				case *ast.ValueSpec: // Tok == CONST
-					a.findConst(spec, declInline)
-				}
-			}
-		}
-	}
-}
-
-func (a *analyzer) findFunc(decl *ast.FuncDecl) {
-	if !hasFixInline(decl.Doc) {
-		return
-	}
+// HandleFunc exports a fact for functions marked with go:fix.
+func (a *analyzer) HandleFunc(decl *ast.FuncDecl) {
 	content, err := a.readFile(decl)
 	if err != nil {
 		a.pass.Reportf(decl.Doc.Pos(), "invalid inlining candidate: cannot read source file: %v", err)
@@ -132,34 +87,8 @@ func (a *analyzer) findFunc(decl *ast.FuncDecl) {
 	a.inlinableFuncs[fn] = callee
 }
 
-func (a *analyzer) findAlias(spec *ast.TypeSpec, declInline bool) {
-	if !declInline && !hasFixInline(spec.Doc) {
-		return
-	}
-	if !spec.Assign.IsValid() {
-		a.pass.Reportf(spec.Pos(), "invalid //go:fix inline directive: not a type alias")
-		return
-	}
-
-	// Disallow inlines of type expressions containing array types.
-	// Given an array type like [N]int where N is a named constant, go/types provides
-	// only the value of the constant as an int64. So inlining A in this code:
-	//
-	//    const N = 5
-	//    type A = [N]int
-	//
-	// would result in [5]int, breaking the connection with N.
-	for n := range ast.Preorder(spec.Type) {
-		if ar, ok := n.(*ast.ArrayType); ok && ar.Len != nil {
-			// Make an exception when the array length is a literal int.
-			if lit, ok := ast.Unparen(ar.Len).(*ast.BasicLit); ok && lit.Kind == token.INT {
-				continue
-			}
-			a.pass.Reportf(spec.Pos(), "invalid //go:fix inline directive: array types not supported")
-			return
-		}
-	}
-
+// HandleAlias exports a fact for aliases marked with go:fix.
+func (a *analyzer) HandleAlias(spec *ast.TypeSpec) {
 	// Remember that this is an inlinable alias.
 	typ := &goFixInlineAliasFact{}
 	lhs := a.pass.TypesInfo.Defs[spec.Name].(*types.TypeName)
@@ -172,49 +101,24 @@ func (a *analyzer) findAlias(spec *ast.TypeSpec, declInline bool) {
 	}
 }
 
-func (a *analyzer) findConst(spec *ast.ValueSpec, declInline bool) {
-	info := a.pass.TypesInfo
-	specInline := hasFixInline(spec.Doc)
-	if declInline || specInline {
-		for i, name := range spec.Names {
-			if i >= len(spec.Values) {
-				// Possible following an iota.
-				break
-			}
-			val := spec.Values[i]
-			var rhsID *ast.Ident
-			switch e := val.(type) {
-			case *ast.Ident:
-				// Constants defined with the predeclared iota cannot be inlined.
-				if info.Uses[e] == builtinIota {
-					a.pass.Reportf(val.Pos(), "invalid //go:fix inline directive: const value is iota")
-					return
-				}
-				rhsID = e
-			case *ast.SelectorExpr:
-				rhsID = e.Sel
-			default:
-				a.pass.Reportf(val.Pos(), "invalid //go:fix inline directive: const value is not the name of another constant")
-				return
-			}
-			lhs := info.Defs[name].(*types.Const)
-			rhs := info.Uses[rhsID].(*types.Const) // must be so in a well-typed program
-			con := &goFixInlineConstFact{
-				RHSName:    rhs.Name(),
-				RHSPkgName: rhs.Pkg().Name(),
-				RHSPkgPath: rhs.Pkg().Path(),
-			}
-			if rhs.Pkg() == a.pass.Pkg {
-				con.rhsObj = rhs
-			}
-			a.inlinableConsts[lhs] = con
-			// Create a fact only if the LHS is exported and defined at top level.
-			// We create a fact even if the RHS is non-exported,
-			// so we can warn about uses in other packages.
-			if lhs.Exported() && typesinternal.IsPackageLevel(lhs) {
-				a.pass.ExportObjectFact(lhs, con)
-			}
-		}
+// HandleConst exports a fact for constants marked with go:fix.
+func (a *analyzer) HandleConst(nameIdent, rhsIdent *ast.Ident) {
+	lhs := a.pass.TypesInfo.Defs[nameIdent].(*types.Const)
+	rhs := a.pass.TypesInfo.Uses[rhsIdent].(*types.Const) // must be so in a well-typed program
+	con := &goFixInlineConstFact{
+		RHSName:    rhs.Name(),
+		RHSPkgName: rhs.Pkg().Name(),
+		RHSPkgPath: rhs.Pkg().Path(),
+	}
+	if rhs.Pkg() == a.pass.Pkg {
+		con.rhsObj = rhs
+	}
+	a.inlinableConsts[lhs] = con
+	// Create a fact only if the LHS is exported and defined at top level.
+	// We create a fact even if the RHS is non-exported,
+	// so we can warn about uses in other packages.
+	if lhs.Exported() && typesinternal.IsPackageLevel(lhs) {
+		a.pass.ExportObjectFact(lhs, con)
 	}
 }
 
@@ -273,9 +177,6 @@ func (a *analyzer) inlineCall(call *ast.CallExpr, cur cursor.Cursor) {
 		res, err := inline.Inline(caller, callee, &inline.Options{Logf: discard})
 		if err != nil {
 			a.pass.Reportf(call.Lparen, "%v", err)
-			return
-		}
-		if !a.fix {
 			return
 		}
 
@@ -556,9 +457,6 @@ func (a *analyzer) inlineConst(con *types.Const, cur cursor.Cursor) {
 
 // reportInline reports a diagnostic for fixing an inlinable name.
 func (a *analyzer) reportInline(kind, capKind string, ident ast.Expr, edits []analysis.TextEdit, newText string) {
-	if !a.fix {
-		return
-	}
 	edits = append(edits, analysis.TextEdit{
 		Pos:     ident.Pos(),
 		End:     ident.End(),
@@ -598,17 +496,6 @@ func currentFile(c cursor.Cursor) *ast.File {
 	panic("no *ast.File enclosing a cursor: impossible")
 }
 
-// hasFixInline reports the presence of a "//go:fix inline" directive
-// in the comments.
-func hasFixInline(cg *ast.CommentGroup) bool {
-	for _, d := range internalastutil.Directives(cg) {
-		if d.Tool == "go" && d.Name == "fix" && d.Args == "inline" {
-			return true
-		}
-	}
-	return false
-}
-
 // A goFixInlineFuncFact is exported for each function marked "//go:fix inline".
 // It holds information about the callee to support inlining.
 type goFixInlineFuncFact struct{ Callee *inline.Callee }
@@ -640,8 +527,6 @@ func (c *goFixInlineAliasFact) String() string { return "goFixInline alias" }
 func (*goFixInlineAliasFact) AFact()           {}
 
 func discard(string, ...any) {}
-
-var builtinIota = types.Universe.Lookup("iota")
 
 type list[T any] interface {
 	Len() int
