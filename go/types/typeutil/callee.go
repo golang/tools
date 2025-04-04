@@ -50,8 +50,8 @@ func StaticCallee(info *types.Info, call *ast.CallExpr) *types.Func {
 //
 //go:linkname used
 func used(info *types.Info, e ast.Expr) types.Object {
-	if info.Types == nil || info.Uses == nil || info.Selections == nil {
-		panic("one of info.Types, info.Uses or info.Selections is nil; all must be populated")
+	if info.Types == nil || info.Uses == nil {
+		panic("one of info.Types or info.Uses is nil; both must be populated")
 	}
 	// Look through type instantiation if necessary.
 	switch d := ast.Unparen(e).(type) {
@@ -65,14 +65,13 @@ func used(info *types.Info, e ast.Expr) types.Object {
 
 	var obj types.Object
 	switch e := ast.Unparen(e).(type) {
+	// info.Uses always has the object we want, even for selector expressions.
+	// We don't need info.Selections.
+	// See go/types/recording.go:recordSelection.
 	case *ast.Ident:
 		obj = info.Uses[e] // type, var, builtin, or declared func
 	case *ast.SelectorExpr:
-		if sel, ok := info.Selections[e]; ok {
-			obj = sel.Obj() // method or field
-		} else {
-			obj = info.Uses[e.Sel] // qualified identifier?
-		}
+		obj = info.Uses[e.Sel] // selector e.f or T.f or qualified identifier pkg.X
 	}
 	return obj
 }
