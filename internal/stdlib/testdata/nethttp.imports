@@ -27,7 +27,6 @@ net
 net/http/httptrace
 net/http/internal
 net/http/internal/ascii
-net/http/internal/httpcommon
 net/textproto
 net/url
 os

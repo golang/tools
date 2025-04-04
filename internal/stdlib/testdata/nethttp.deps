@@ -19,8 +19,8 @@ internal/race
 internal/runtime/math
 internal/runtime/sys
 internal/runtime/maps
+internal/runtime/syscall
 internal/stringslite
-internal/trace/tracev2
 runtime
 internal/reflectlite
 errors
@@ -122,6 +122,7 @@ crypto/internal/fips140/tls13
 vendor/golang.org/x/crypto/internal/alias
 vendor/golang.org/x/crypto/chacha20
 vendor/golang.org/x/crypto/internal/poly1305
+vendor/golang.org/x/sys/cpu
 vendor/golang.org/x/crypto/chacha20poly1305
 crypto/internal/hpke
 crypto/md5
@@ -132,7 +133,6 @@ crypto/sha1
 crypto/sha256
 crypto/tls/internal/fips140tls
 crypto/dsa
-crypto/x509/internal/macos
 encoding/hex
 crypto/x509/pkix
 encoding/base64
@@ -140,13 +140,13 @@ encoding/pem
 maps
 vendor/golang.org/x/net/dns/dnsmessage
 internal/nettrace
+internal/singleflight
 weak
 unique
 net/netip
-internal/routebsd
-internal/singleflight
 net
 net/url
+path/filepath
 crypto/x509
 crypto/tls
 vendor/golang.org/x/text/transform
@@ -162,10 +162,8 @@ vendor/golang.org/x/net/http/httpproxy
 vendor/golang.org/x/net/http2/hpack
 mime
 mime/quotedprintable
-path/filepath
 mime/multipart
 net/http/httptrace
 net/http/internal
 net/http/internal/ascii
-net/http/internal/httpcommon
 net/http

@@ -246,6 +246,7 @@ func deps() {
 	cmd := exec.Command("go", "list", "-deps", "-json", "std")
 	cmd.Stdout = stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
 	if err := cmd.Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -336,6 +337,7 @@ var deps = [...]pkginfo{
 		cmd := exec.Command("go", "list", t.flag, "net/http")
 		cmd.Stdout = stdout
 		cmd.Stderr = os.Stderr
+		cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
 		if err := cmd.Run(); err != nil {
 			log.Fatal(err)
 		}
