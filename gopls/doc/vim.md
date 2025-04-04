@@ -56,7 +56,7 @@ Use [prabirshrestha/vim-lsp], with the following configuration:
 augroup LspGo
   au!
   autocmd User lsp_setup call lsp#register_server({
-      \ 'name': 'go-lang',
+      \ 'name': 'gopls',
       \ 'cmd': {server_info->['gopls']},
       \ 'whitelist': ['go'],
       \ })
