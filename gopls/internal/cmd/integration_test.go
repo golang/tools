@@ -1010,9 +1010,9 @@ type C struct{}
 		res := gopls(t, tree, "codeaction", "-title=Browse.*doc", "a/a.go")
 		res.checkExit(true)
 		got := res.stdout
-		want := `command	"Browse gopls feature documentation" [gopls.doc.features]` +
+		want := `command	"Browse documentation for package a" [source.doc]` +
 			"\n" +
-			`command	"Browse documentation for package a" [source.doc]` +
+			`command	"Browse gopls feature documentation" [gopls.doc.features]` +
 			"\n"
 		if got != want {
 			t.Errorf("codeaction: got <<%s>>, want <<%s>>\nstderr:\n%s", got, want, res.stderr)

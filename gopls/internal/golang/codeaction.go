@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -112,10 +111,7 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 		}
 	}
 
-	sort.Slice(actions, func(i, j int) bool {
-		return actions[i].Kind < actions[j].Kind
-	})
-
+	// Return code actions in the order their providers are listed.
 	return actions, nil
 }
 
@@ -233,6 +229,8 @@ type codeActionProducer struct {
 	needPkg bool // fn needs type information (req.pkg)
 }
 
+// Code Actions are returned in the order their producers are listed below.
+// Depending on the client, this may influence the order they appear in the UI.
 var codeActionProducers = [...]codeActionProducer{
 	{kind: protocol.QuickFix, fn: quickFix, needPkg: true},
 	{kind: protocol.SourceOrganizeImports, fn: sourceOrganizeImports},
@@ -242,7 +240,6 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.GoFreeSymbols, fn: goFreeSymbols},
 	{kind: settings.GoTest, fn: goTest, needPkg: true},
 	{kind: settings.GoToggleCompilerOptDetails, fn: toggleCompilerOptDetails},
-	{kind: settings.GoplsDocFeatures, fn: goplsDocFeatures},
 	{kind: settings.RefactorExtractFunction, fn: refactorExtractFunction},
 	{kind: settings.RefactorExtractMethod, fn: refactorExtractMethod},
 	{kind: settings.RefactorExtractToNewFile, fn: refactorExtractToNewFile},
@@ -261,6 +258,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorRewriteMoveParamRight, fn: refactorRewriteMoveParamRight, needPkg: true},
 	{kind: settings.RefactorRewriteSplitLines, fn: refactorRewriteSplitLines, needPkg: true},
 	{kind: settings.RefactorRewriteEliminateDotImport, fn: refactorRewriteEliminateDotImport, needPkg: true},
+	{kind: settings.GoplsDocFeatures, fn: goplsDocFeatures}, // offer this one last (#72742)
 
 	// Note: don't forget to update the allow-list in Server.CodeAction
 	// when adding new query operations like GoTest and GoDoc that

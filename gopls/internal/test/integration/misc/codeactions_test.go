@@ -35,25 +35,28 @@ package a
 
 func f() { g() }
 func g() {}
+
+-- issue72742/a.go --
+package main
+
+func main(){
+	fmt.Println("helloworld")
+}
 `
 
 	Run(t, src, func(t *testing.T, env *Env) {
-		check := func(filename string, wantKind ...protocol.CodeActionKind) {
+		check := func(filename string, re string, want []protocol.CodeActionKind) {
 			env.OpenFile(filename)
-			loc := env.RegexpSearch(filename, `g\(\)`)
+			loc := env.RegexpSearch(filename, re)
 			actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			type kinds = map[protocol.CodeActionKind]bool
-			got := make(kinds)
+			type kinds = []protocol.CodeActionKind
+			got := make(kinds, 0)
 			for _, act := range actions {
-				got[act.Kind] = true
-			}
-			want := make(kinds)
-			for _, kind := range wantKind {
-				want[kind] = true
+				got = append(got, act.Kind)
 			}
 
 			if diff := cmp.Diff(want, got); diff != "" {
@@ -63,20 +66,33 @@ func g() {}
 			}
 		}
 
-		check("src/a.go",
+		check("src/a.go", `g\(\)`, []protocol.CodeActionKind{
+			settings.AddTest,
+			settings.GoAssembly,
+			settings.GoDoc,
+			settings.GoFreeSymbols,
+			settings.GoToggleCompilerOptDetails,
+			settings.RefactorInlineCall,
+			settings.GoplsDocFeatures,
+		})
+
+		check("gen/a.go", `g\(\)`, []protocol.CodeActionKind{
+			settings.GoAssembly,
+			settings.GoDoc,
+			settings.GoFreeSymbols,
+			settings.GoToggleCompilerOptDetails,
+			settings.GoplsDocFeatures,
+		})
+
+		check("issue72742/a.go", `fmt`, []protocol.CodeActionKind{
+			settings.OrganizeImports,
 			settings.AddTest,
 			settings.GoAssembly,
 			settings.GoDoc,
 			settings.GoFreeSymbols,
 			settings.GoToggleCompilerOptDetails,
 			settings.GoplsDocFeatures,
-			settings.RefactorInlineCall)
-		check("gen/a.go",
-			settings.GoAssembly,
-			settings.GoDoc,
-			settings.GoFreeSymbols,
-			settings.GoToggleCompilerOptDetails,
-			settings.GoplsDocFeatures)
+		})
 	})
 }
 
