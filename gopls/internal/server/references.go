@@ -22,7 +22,7 @@ func (s *server) References(ctx context.Context, params *protocol.ReferenceParam
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.references", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.References", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)

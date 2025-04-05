@@ -22,7 +22,7 @@ import (
 )
 
 func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionParams) ([]protocol.CodeAction, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.codeAction")
+	ctx, done := event.Start(ctx, "server.CodeAction")
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
@@ -225,7 +225,7 @@ func triggerKind(params *protocol.CodeActionParams) protocol.CodeActionTriggerKi
 // This feature allows capable clients to preview and selectively apply the diff
 // instead of applying the whole thing unconditionally through workspace/applyEdit.
 func (s *server) ResolveCodeAction(ctx context.Context, ca *protocol.CodeAction) (*protocol.CodeAction, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.resolveCodeAction")
+	ctx, done := event.Start(ctx, "server.ResolveCodeAction")
 	defer done()
 
 	// Only resolve the code action if there is Data provided.

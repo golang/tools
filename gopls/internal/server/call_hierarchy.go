@@ -14,7 +14,7 @@ import (
 )
 
 func (s *server) PrepareCallHierarchy(ctx context.Context, params *protocol.CallHierarchyPrepareParams) ([]protocol.CallHierarchyItem, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.prepareCallHierarchy")
+	ctx, done := event.Start(ctx, "server.PrepareCallHierarchy")
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
@@ -29,7 +29,7 @@ func (s *server) PrepareCallHierarchy(ctx context.Context, params *protocol.Call
 }
 
 func (s *server) IncomingCalls(ctx context.Context, params *protocol.CallHierarchyIncomingCallsParams) ([]protocol.CallHierarchyIncomingCall, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.incomingCalls")
+	ctx, done := event.Start(ctx, "server.IncomingCalls")
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.Item.URI)
@@ -44,7 +44,7 @@ func (s *server) IncomingCalls(ctx context.Context, params *protocol.CallHierarc
 }
 
 func (s *server) OutgoingCalls(ctx context.Context, params *protocol.CallHierarchyOutgoingCallsParams) ([]protocol.CallHierarchyOutgoingCall, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.outgoingCalls")
+	ctx, done := event.Start(ctx, "server.OutgoingCalls")
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.Item.URI)

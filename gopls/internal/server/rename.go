@@ -17,7 +17,7 @@ import (
 )
 
 func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.rename", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.Rename", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
@@ -68,7 +68,7 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 // TODO(rfindley): why wouldn't we want to show an error to the user, if the
 // user initiated a rename request at the cursor?
 func (s *server) PrepareRename(ctx context.Context, params *protocol.PrepareRenameParams) (*protocol.PrepareRenamePlaceholder, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.prepareRename", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.PrepareRename", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)

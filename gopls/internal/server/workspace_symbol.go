@@ -20,7 +20,7 @@ func (s *server) Symbol(ctx context.Context, params *protocol.WorkspaceSymbolPar
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.symbol")
+	ctx, done := event.Start(ctx, "server.Symbol")
 	defer done()
 
 	views := s.session.Views()

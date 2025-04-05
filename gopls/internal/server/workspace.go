@@ -61,7 +61,7 @@ func (s *server) addView(ctx context.Context, name string, dir protocol.Document
 }
 
 func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChangeConfigurationParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didChangeConfiguration")
+	ctx, done := event.Start(ctx, "server.DidChangeConfiguration")
 	defer done()
 
 	var wg sync.WaitGroup
@@ -143,7 +143,7 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 }
 
 func (s *server) DidCreateFiles(ctx context.Context, params *protocol.CreateFilesParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didCreateFiles")
+	ctx, done := event.Start(ctx, "server.DidCreateFiles")
 	defer done()
 
 	var allChanges []protocol.DocumentChange

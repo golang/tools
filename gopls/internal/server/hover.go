@@ -25,7 +25,7 @@ func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *pr
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.hover", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.Hover", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)

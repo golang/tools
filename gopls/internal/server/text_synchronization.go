@@ -92,7 +92,7 @@ func (m ModificationSource) String() string {
 }
 
 func (s *server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didOpen", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.DidOpen", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	uri := params.TextDocument.URI
@@ -121,7 +121,7 @@ func (s *server) DidOpen(ctx context.Context, params *protocol.DidOpenTextDocume
 }
 
 func (s *server) DidChange(ctx context.Context, params *protocol.DidChangeTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didChange", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.DidChange", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	uri := params.TextDocument.URI
@@ -174,7 +174,7 @@ func (s *server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri proto
 }
 
 func (s *server) DidChangeWatchedFiles(ctx context.Context, params *protocol.DidChangeWatchedFilesParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didChangeWatchedFiles")
+	ctx, done := event.Start(ctx, "server.DidChangeWatchedFiles")
 	defer done()
 
 	var modifications []file.Modification
@@ -190,7 +190,7 @@ func (s *server) DidChangeWatchedFiles(ctx context.Context, params *protocol.Did
 }
 
 func (s *server) DidSave(ctx context.Context, params *protocol.DidSaveTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didSave", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.DidSave", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	c := file.Modification{
@@ -204,7 +204,7 @@ func (s *server) DidSave(ctx context.Context, params *protocol.DidSaveTextDocume
 }
 
 func (s *server) DidClose(ctx context.Context, params *protocol.DidCloseTextDocumentParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.didClose", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.DidClose", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	return s.didModifyFiles(ctx, []file.Modification{

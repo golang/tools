@@ -21,7 +21,7 @@ func (s *server) Implementation(ctx context.Context, params *protocol.Implementa
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.implementation", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.Implementation", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)

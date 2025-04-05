@@ -24,7 +24,7 @@ func (s *server) Definition(ctx context.Context, params *protocol.DefinitionPara
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.definition", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.Definition", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	// TODO(rfindley): definition requests should be multiplexed across all views.
@@ -46,7 +46,7 @@ func (s *server) Definition(ctx context.Context, params *protocol.DefinitionPara
 }
 
 func (s *server) TypeDefinition(ctx context.Context, params *protocol.TypeDefinitionParams) ([]protocol.Location, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.typeDefinition", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.TypeDefinition", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	// TODO(rfindley): type definition requests should be multiplexed across all views.

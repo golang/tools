@@ -181,7 +181,7 @@ type server struct {
 }
 
 func (s *server) WorkDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.workDoneProgressCancel")
+	ctx, done := event.Start(ctx, "server.WorkDoneProgressCancel")
 	defer done()
 
 	return s.progress.Cancel(params.Token)

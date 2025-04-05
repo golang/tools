@@ -47,7 +47,7 @@ import (
 )
 
 func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCommandParams) (any, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.executeCommand")
+	ctx, done := event.Start(ctx, "server.ExecuteCommand")
 	defer done()
 
 	// For test synchronization, always create a progress notification.
@@ -1652,7 +1652,7 @@ func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.Diagnos
 		// Though note that implementing pull diagnostics may cause some servers to
 		// request diagnostics in an ad-hoc manner, and break our intentional pacing.
 
-		ctx, done := event.Start(ctx, "lsp.server.DiagnoseFiles")
+		ctx, done := event.Start(ctx, "commandHandler.DiagnoseFiles")
 		defer done()
 
 		snapshots := make(map[*cache.Snapshot]bool)

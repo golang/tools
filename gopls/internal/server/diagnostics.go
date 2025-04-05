@@ -200,7 +200,7 @@ func (s *server) diagnoseChangedViews(ctx context.Context, modID uint64, lastCha
 // snapshot (or a subsequent snapshot in the same View) is eventually
 // diagnosed.
 func (s *server) diagnoseSnapshot(ctx context.Context, snapshot *cache.Snapshot, changedURIs []protocol.DocumentURI, delay time.Duration) {
-	ctx, done := event.Start(ctx, "Server.diagnoseSnapshot", snapshot.Labels()...)
+	ctx, done := event.Start(ctx, "server.diagnoseSnapshot", snapshot.Labels()...)
 	defer done()
 
 	if delay > 0 {
@@ -241,7 +241,7 @@ func (s *server) diagnoseSnapshot(ctx context.Context, snapshot *cache.Snapshot,
 }
 
 func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snapshot, uris []protocol.DocumentURI) (diagMap, error) {
-	ctx, done := event.Start(ctx, "Server.diagnoseChangedFiles", snapshot.Labels()...)
+	ctx, done := event.Start(ctx, "server.diagnoseChangedFiles", snapshot.Labels()...)
 	defer done()
 
 	toDiagnose := make(map[metadata.PackageID]*metadata.Package)
@@ -311,7 +311,7 @@ func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snaps
 }
 
 func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMap, error) {
-	ctx, done := event.Start(ctx, "Server.diagnose", snapshot.Labels()...)
+	ctx, done := event.Start(ctx, "server.diagnose", snapshot.Labels()...)
 	defer done()
 
 	// Wait for a free diagnostics slot.
@@ -640,7 +640,7 @@ func (s *server) updateCriticalErrorStatus(ctx context.Context, snapshot *cache.
 // updateDiagnostics records the result of diagnosing a snapshot, and publishes
 // any diagnostics that need to be updated on the client.
 func (s *server) updateDiagnostics(ctx context.Context, snapshot *cache.Snapshot, diagnostics diagMap, final bool) {
-	ctx, done := event.Start(ctx, "Server.publishDiagnostics")
+	ctx, done := event.Start(ctx, "server.publishDiagnostics")
 	defer done()
 
 	s.diagnosticsMu.Lock()

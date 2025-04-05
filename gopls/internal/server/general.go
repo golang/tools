@@ -38,7 +38,7 @@ import (
 )
 
 func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitialize) (*protocol.InitializeResult, error) {
-	ctx, done := event.Start(ctx, "lsp.Server.initialize")
+	ctx, done := event.Start(ctx, "server.Initialize")
 	defer done()
 
 	var clientName string
@@ -208,7 +208,7 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 }
 
 func (s *server) Initialized(ctx context.Context, params *protocol.InitializedParams) error {
-	ctx, done := event.Start(ctx, "lsp.Server.initialized")
+	ctx, done := event.Start(ctx, "server.Initialized")
 	defer done()
 
 	s.stateMu.Lock()
@@ -635,7 +635,7 @@ func (s *server) fileOf(ctx context.Context, uri protocol.DocumentURI) (file.Han
 // Shutdown implements the 'shutdown' LSP handler. It releases resources
 // associated with the server and waits for all ongoing work to complete.
 func (s *server) Shutdown(ctx context.Context) error {
-	ctx, done := event.Start(ctx, "lsp.Server.shutdown")
+	ctx, done := event.Start(ctx, "server.Shutdown")
 	defer done()
 
 	s.stateMu.Lock()
@@ -662,7 +662,7 @@ func (s *server) Shutdown(ctx context.Context) error {
 }
 
 func (s *server) Exit(ctx context.Context) error {
-	ctx, done := event.Start(ctx, "lsp.Server.exit")
+	ctx, done := event.Start(ctx, "server.Exit")
 	defer done()
 
 	s.stateMu.Lock()

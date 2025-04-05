@@ -29,7 +29,7 @@ import (
 )
 
 func (s *server) DocumentLink(ctx context.Context, params *protocol.DocumentLinkParams) (links []protocol.DocumentLink, err error) {
-	ctx, done := event.Start(ctx, "lsp.Server.documentLink")
+	ctx, done := event.Start(ctx, "server.DocumentLink")
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)

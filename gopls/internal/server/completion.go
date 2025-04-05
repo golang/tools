@@ -27,7 +27,7 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 		recordLatency(ctx, rerr)
 	}()
 
-	ctx, done := event.Start(ctx, "lsp.Server.completion", label.URI.Of(params.TextDocument.URI))
+	ctx, done := event.Start(ctx, "server.Completion", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
 	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
