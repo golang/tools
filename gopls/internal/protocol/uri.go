@@ -67,6 +67,11 @@ func (uri *DocumentURI) UnmarshalText(data []byte) (err error) {
 	return
 }
 
+// Clean returns the cleaned uri by triggering filepath.Clean underlying.
+func Clean(uri DocumentURI) DocumentURI {
+	return URIFromPath(filepath.Clean(uri.Path()))
+}
+
 // Path returns the file path for the given URI.
 //
 // DocumentURI("").Path() returns the empty string.

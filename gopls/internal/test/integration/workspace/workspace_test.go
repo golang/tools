@@ -1412,6 +1412,66 @@ func TestInitializeWithNonFileWorkspaceFolders(t *testing.T) {
 	}
 }
 
+// TestChangeAddedWorkspaceFolders tests issue71967 which an editor sends the following requests.
+//
+//  1. send an initialization request with rootURI but no workspaceFolders,
+//     which gopls helps to find a workspaceFolders for it.
+//  2. send a DidChangeWorkspaceFolders request with the exact the same folder gopls helps to find.
+//
+// It uses the same approach to simulate the scenario, and ensure we can skip the already added file.
+func TestChangeAddedWorkspaceFolders(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		after         []string
+		wantViewRoots []string
+	}{
+		{
+			name:          "add an already added file",
+			after:         []string{"modb"},
+			wantViewRoots: []string{"./modb"},
+		},
+		{
+			name:          "add an already added file but with an ending slash",
+			after:         []string{"modb/"},
+			wantViewRoots: []string{"./modb"},
+		},
+		{
+			name:          "add an already added file and a new file",
+			after:         []string{"modb", "moda/a"},
+			wantViewRoots: []string{"./modb", "moda/a"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := []RunOption{ProxyFiles(workspaceProxy), RootPath("modb"), NoDefaultWorkspaceFiles()}
+			WithOptions(opts...).Run(t, multiModule, func(t *testing.T, env *Env) {
+				summary := func(typ cache.ViewType, root, folder string) command.View {
+					return command.View{
+						Type:   typ.String(),
+						Root:   env.Sandbox.Workdir.URI(root),
+						Folder: env.Sandbox.Workdir.URI(folder),
+					}
+				}
+				checkViews := func(want ...command.View) {
+					got := env.Views()
+					if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(command.View{}, "ID")); diff != "" {
+						t.Errorf("SummarizeViews() mismatch (-want +got):\n%s", diff)
+					}
+				}
+				var wantViews []command.View
+				for _, root := range tt.wantViewRoots {
+					wantViews = append(wantViews, summary(cache.GoModView, root, root))
+				}
+				env.ChangeWorkspaceFolders(tt.after...)
+				env.Await(
+					LogMatching(protocol.Warning, "skip adding the already added folder", 1, false),
+					NoOutstandingWork(IgnoreTelemetryPromptWork),
+				)
+				checkViews(wantViews...)
+			})
+		})
+	}
+}
+
 // Test that non-file scheme Document URIs in ChangeWorkspaceFolders
 // notification does not produce errors.
 func TestChangeNonFileWorkspaceFolders(t *testing.T) {

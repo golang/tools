@@ -312,8 +312,13 @@ func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 	// but the list can grow over time.
 	var filtered []protocol.WorkspaceFolder
 	for _, f := range folders {
-		if _, err := protocol.ParseDocumentURI(f.URI); err != nil {
+		uri, err := protocol.ParseDocumentURI(f.URI)
+		if err != nil {
 			debuglog.Warning.Logf(ctx, "skip adding virtual folder %q - invalid folder URI: %v", f.Name, err)
+			continue
+		}
+		if s.session.HasView(uri) {
+			debuglog.Warning.Logf(ctx, "skip adding the already added folder %q - its view has been created before", f.Name)
 			continue
 		}
 		filtered = append(filtered, f)

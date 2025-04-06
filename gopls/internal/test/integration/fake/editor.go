@@ -108,6 +108,14 @@ type EditorConfig struct {
 	// To explicitly send no workspace folders, use an empty (non-nil) slice.
 	WorkspaceFolders []string
 
+	// NoDefaultWorkspaceFiles is used to specify whether the fake editor
+	// should give a default workspace folder when WorkspaceFolders is nil.
+	// When it's true, the editor will pass original WorkspaceFolders as is to the LSP server.
+	NoDefaultWorkspaceFiles bool
+
+	// RelRootPath is the root path which will be converted to rootUri to configure on the LSP server.
+	RelRootPath string
+
 	// Whether to edit files with windows line endings.
 	WindowsLineEndings bool
 
@@ -322,8 +330,9 @@ func (e *Editor) initialize(ctx context.Context) error {
 		Version: "v1.0.0",
 	}
 	params.InitializationOptions = makeSettings(e.sandbox, config, nil)
-	params.WorkspaceFolders = makeWorkspaceFolders(e.sandbox, config.WorkspaceFolders)
 
+	params.WorkspaceFolders = makeWorkspaceFolders(e.sandbox, config.WorkspaceFolders, config.NoDefaultWorkspaceFiles)
+	params.RootURI = protocol.DocumentURI(makeRootURI(e.sandbox, config.RelRootPath))
 	capabilities, err := clientCapabilities(config)
 	if err != nil {
 		return fmt.Errorf("unmarshalling EditorConfig.CapabilitiesJSON: %v", err)
@@ -447,7 +456,10 @@ var uriRE = regexp.MustCompile(`^[a-z][a-z0-9+\-.]*://\S+`)
 
 // makeWorkspaceFolders creates a slice of workspace folders to use for
 // this editing session, based on the editor configuration.
-func makeWorkspaceFolders(sandbox *Sandbox, paths []string) (folders []protocol.WorkspaceFolder) {
+func makeWorkspaceFolders(sandbox *Sandbox, paths []string, useEmpty bool) (folders []protocol.WorkspaceFolder) {
+	if len(paths) == 0 && useEmpty {
+		return nil
+	}
 	if len(paths) == 0 {
 		paths = []string{string(sandbox.Workdir.RelativeTo)}
 	}
@@ -464,6 +476,14 @@ func makeWorkspaceFolders(sandbox *Sandbox, paths []string) (folders []protocol.
 	}
 
 	return folders
+}
+
+func makeRootURI(sandbox *Sandbox, path string) string {
+	uri := path
+	if !uriRE.MatchString(path) { // relative file path
+		uri = string(sandbox.Workdir.URI(path))
+	}
+	return uri
 }
 
 // onFileChanges is registered to be called by the Workdir on any writes that
@@ -1645,8 +1665,8 @@ func (e *Editor) ChangeWorkspaceFolders(ctx context.Context, folders []string) e
 	config := e.Config()
 
 	// capture existing folders so that we can compute the change.
-	oldFolders := makeWorkspaceFolders(e.sandbox, config.WorkspaceFolders)
-	newFolders := makeWorkspaceFolders(e.sandbox, folders)
+	oldFolders := makeWorkspaceFolders(e.sandbox, config.WorkspaceFolders, config.NoDefaultWorkspaceFiles)
+	newFolders := makeWorkspaceFolders(e.sandbox, folders, config.NoDefaultWorkspaceFiles)
 	config.WorkspaceFolders = folders
 	e.SetConfig(config)
 

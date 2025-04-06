@@ -139,9 +139,16 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot
 	}
 	view, snapshot, release := s.createView(ctx, def)
 	s.views = append(s.views, view)
-	// we always need to drop the view map
-	s.viewMap = make(map[protocol.DocumentURI]*View)
+	s.viewMap[protocol.Clean(folder.Dir)] = view
 	return view, snapshot, release, nil
+}
+
+// HasView checks whether the uri's view exists.
+func (s *Session) HasView(uri protocol.DocumentURI) bool {
+	s.viewMu.Lock()
+	defer s.viewMu.Unlock()
+	_, ok := s.viewMap[protocol.Clean(uri)]
+	return ok
 }
 
 // createView creates a new view, with an initial snapshot that retains the
@@ -389,7 +396,7 @@ func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Sn
 		// View is shut down. Forget this association.
 		s.viewMu.Lock()
 		if s.viewMap[uri] == v {
-			delete(s.viewMap, uri)
+			delete(s.viewMap, protocol.Clean(uri))
 		}
 		s.viewMu.Unlock()
 	}
@@ -478,7 +485,7 @@ func (s *Session) viewOfLocked(ctx context.Context, uri protocol.DocumentURI) (*
 			// (as in golang/go#60776).
 			v = relevantViews[0]
 		}
-		s.viewMap[uri] = v // may be nil
+		s.viewMap[protocol.Clean(uri)] = v // may be nil
 	}
 	return v, nil
 }

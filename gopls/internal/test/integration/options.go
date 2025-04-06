@@ -135,6 +135,22 @@ func WorkspaceFolders(relFolders ...string) RunOption {
 	})
 }
 
+// NoDefaultWorkspaceFiles is used to specify whether the fake editor
+// should give a default workspace folder to the LSP server.
+// When it's true, the editor will pass original WorkspaceFolders to the LSP server.
+func NoDefaultWorkspaceFiles() RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.editor.NoDefaultWorkspaceFiles = true
+	})
+}
+
+// RootPath configures the roo path which will be converted to rootUri and sent to the LSP server.
+func RootPath(relpath string) RunOption {
+	return optionSetter(func(opts *runConfig) {
+		opts.editor.RelRootPath = relpath
+	})
+}
+
 // FolderSettings defines per-folder workspace settings, keyed by relative path
 // to the folder.
 //
