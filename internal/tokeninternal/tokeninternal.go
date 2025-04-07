@@ -9,6 +9,7 @@ package tokeninternal
 import (
 	"fmt"
 	"go/token"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -18,7 +19,29 @@ import (
 // AddExistingFiles adds the specified files to the FileSet if they
 // are not already present. It panics if any pair of files in the
 // resulting FileSet would overlap.
+//
+// TODO(adonovan): add this a method to FileSet; see
+// https://github.com/golang/go/issues/73205
 func AddExistingFiles(fset *token.FileSet, files []*token.File) {
+
+	// This function cannot be implemented as:
+	//
+	//   for _, file := range files {
+	// 	if prev := fset.File(token.Pos(file.Base())); prev != nil {
+	// 		if prev != file {
+	// 			panic("FileSet contains a different file at the same base")
+	// 		}
+	// 		continue
+	// 	}
+	// 	file2 := fset.AddFile(file.Name(), file.Base(), file.Size())
+	// 	file2.SetLines(file.Lines())
+	//   }
+	//
+	// because all calls to AddFile must be in increasing order.
+	// AddExistingFiles lets us augment an existing FileSet
+	// sequentially, so long as all sets of files have disjoint
+	// ranges.
+
 	// Punch through the FileSet encapsulation.
 	type tokenFileSet struct {
 		// This type remained essentially consistent from go1.16 to go1.21.
@@ -83,10 +106,7 @@ func AddExistingFiles(fset *token.FileSet, files []*token.File) {
 // of their Base.
 func FileSetFor(files ...*token.File) *token.FileSet {
 	fset := token.NewFileSet()
-	for _, f := range files {
-		f2 := fset.AddFile(f.Name(), f.Base(), f.Size())
-		f2.SetLines(f.Lines())
-	}
+	AddExistingFiles(fset, files)
 	return fset
 }
 
@@ -94,12 +114,5 @@ func FileSetFor(files ...*token.File) *token.FileSet {
 // create copies of the token.Files in fset: they are added to the resulting
 // FileSet unmodified.
 func CloneFileSet(fset *token.FileSet) *token.FileSet {
-	var files []*token.File
-	fset.Iterate(func(f *token.File) bool {
-		files = append(files, f)
-		return true
-	})
-	newFileSet := token.NewFileSet()
-	AddExistingFiles(newFileSet, files)
-	return newFileSet
+	return FileSetFor(slices.Collect(fset.Iterate)...)
 }
