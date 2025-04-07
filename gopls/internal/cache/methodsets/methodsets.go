@@ -143,20 +143,6 @@ const (
 func (index *Index) Search(key Key, want TypeRelation, method *types.Func) []Result {
 	var results []Result
 	for _, candidate := range index.pkg.MethodSets {
-		// The historical behavior enshrined by this
-		// function rejects cases where both are
-		// (nontrivial) interface types, but this is
-		// useful information; see #68641 and CL 619719.
-		// TODO(adonovan): rescind this policy choice,
-		// and report I/I relationships,
-		// by deleting this continue statement.
-		// (It is also necessary to remove self-matches.)
-		//
-		// The same question appears in the local algorithm (implementations).
-		if candidate.IsInterface && key.mset.IsInterface {
-			continue
-		}
-
 		// Test the direction of the relation.
 		// The client may request either direction or both
 		// (e.g. when the client is References),

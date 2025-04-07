@@ -100,6 +100,28 @@ Interfaces and concrete types are matched using method sets:
 - When invoked on a **concrete method**,
   it returns the locations of the matching interface methods.
 
+For example:
+- `implementation(io.Reader)` includes subinterfaces such as `io.ReadCloser`,
+  and concrete implementations such as `*os.File`. It also includes
+  other declarations equivalent to `io.Reader`.
+- `implementation(os.File)` includes only interfaces, such as
+  `io.Reader` and `io.ReadCloser`.
+
+The LSP's Implementation feature has a built-in bias towards subtypes,
+possibly because in languages such as Java and C++ the relationship
+between a type and its supertypes is explicit in the syntax, so the
+corresponding "Go to interfaces" operation can be achieved as sequence
+of two or more "Go to definition" steps: the first to visit the type
+declaration, and the rest to sequentially visit ancestors.
+(See https://github.com/microsoft/language-server-protocol/issues/2037.)
+
+In Go, where there is no syntactic relationship between two types, a
+search is required when navigating in either direction between
+subtypes and supertypes. The heuristic above works well in many cases,
+but it is not possible to ask for the superinterfaces of
+`io.ReadCloser`. For more explicit navigation between subtypes and
+supertypes, use the [Type Hierarchy](#Type Hierarchy) feature.
+
 Only non-trivial interfaces are considered; no implementations are
 reported for type `any`.
 
@@ -300,11 +322,9 @@ As with an Implementation query, a type hierarchy query reports
 function-local types only within the same package as the query type.
 Also the result does not include alias types, only defined types.
 
-<!--
-The screenshot below shows ...
-TODO: screenshot, but wait till #68641 is fixed.
-<img title="Subtypes of io.Reader" src="../assets/subtypes.png" width="640">
--->
+<img title="Type Hierarchy: supertypes of net.Conn" src="../assets/supertypes.png" width="400">
+
+<img title="Type Hierarchy: subtypes of io.Writer" src="../assets/subtypes.png" width="400">
 
 Caveats:
 

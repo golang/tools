@@ -480,8 +480,6 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		},
 	}
 
-	errorType := types.Universe.Lookup("error").Type()
-
 	var isContextType = func(t types.Type) bool {
 		named, ok := t.(*types.Named)
 		if !ok {

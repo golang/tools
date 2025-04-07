@@ -3,10 +3,6 @@ Basic test of type hierarchy.
 We pose the same queries across two identical packages to exercise
 the local and global algorithms.
 
-TODO(adonovan): I and J are related by subtyping, but Implementations
-refuses to report it and thus so does Type Hierarchy; see issue #68641
-and CL 619719.
-
 TODO(adonovan): test other properties of the result, such as kind.
 
 -- go.mod --
@@ -26,12 +22,12 @@ func (S) F() {}
 func (S) G() {}
 
 //@subtypes(S)
-//@subtypes(I, S, BS)
-//@subtypes(J, S, BS)
+//@subtypes(I, J, S, BI, BJ, BS)
+//@subtypes(J, S, BJ, BS)
 
 //@supertypes(S, I, J, BI, BJ)
-//@supertypes(I)
-//@supertypes(J)
+//@supertypes(I, BI)
+//@supertypes(J, I, BI, BJ)
 
 -- b/b.go --
 package b
@@ -46,9 +42,9 @@ func (BS) F() {}
 func (BS) G() {}
 
 //@subtypes(BS)
-//@subtypes(BI, BS, S)
-//@subtypes(BJ, BS, S)
+//@subtypes(BI, BJ, BS, I, J, S)
+//@subtypes(BJ, BS, J, S)
 
 //@supertypes(BS, BI, BJ, I, J)
-//@supertypes(BI)
-//@supertypes(BJ)
+//@supertypes(BI, I)
+//@supertypes(BJ, BI, I, J)

@@ -19,8 +19,8 @@ type ImpS struct{} //@loc(ImpS, "ImpS"),implementation("ImpS", Laugher, OtherLau
 func (ImpS) Laugh() { //@loc(LaughS, "Laugh"),implementation("Laugh", Laugh, OtherLaugh)
 }
 
-type Laugher interface { //@loc(Laugher, "Laugher"),implementation("Laugher", ImpP, OtherImpP, ImpS, OtherImpS, embedsImpP)
-	Laugh() //@loc(Laugh, "Laugh"),implementation("Laugh", LaughP, OtherLaughP, LaughS, OtherLaughS)
+type Laugher interface { //@loc(Laugher, "Laugher"),implementation("Laugher", ImpP, OtherImpP, ImpS, OtherLaugher, OtherImpS, embedsImpP)
+	Laugh() //@loc(Laugh, "Laugh"),implementation("Laugh", LaughP, OtherLaughP, LaughS, OtherLaugh, OtherLaughS)
 }
 
 type Foo struct { //@implementation("Foo", Joker)
@@ -37,7 +37,7 @@ func (cryer) Cry(other.CryType) {} //@loc(CryImpl, "Cry"),implementation("Cry", 
 
 type Empty any //@implementation("Empty")
 
-var _ interface{ Joke() } //@implementation("Joke", ImpJoker)
+var _ interface{ Joke() } //@implementation("Joke", Joke, ImpJoker)
 
 type embedsImpP struct { //@loc(embedsImpP, "embedsImpP")
 	ImpP //@implementation("ImpP", Laugher, OtherLaugher)

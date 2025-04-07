@@ -15,7 +15,7 @@ package a
 type C[T any] struct{}
 func (C[T]) F(rune, T) {} //@ loc(aCF, "F"), implementation("F", aIF, bIF)
 
-type I[T any] interface{ F(int32, T) } //@ loc(aIF, "F"), implementation("F", aCF, bCF)
+type I[T any] interface{ F(int32, T) } //@ loc(aIF, "F"), implementation("F", aCF, bCF, bIF)
 
 -- b/b.go --
 package b
@@ -23,4 +23,4 @@ package b
 type C[T any] struct{}
 func (C[T]) F(rune, T) {} //@ loc(bCF, "F"), implementation("F", aIF, bIF)
 
-type I[T any] interface{ F(int32, T) } //@ loc(bIF, "F"), implementation("F", aCF, bCF)
+type I[T any] interface{ F(int32, T) } //@ loc(bIF, "F"), implementation("F", aCF, aIF, bCF)
