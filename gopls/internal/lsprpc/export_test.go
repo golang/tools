@@ -62,7 +62,7 @@ func (b *ForwardBinder) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) 
 	client := protocol.ClientDispatcherV2(conn)
 	clientBinder := NewClientBinder(func(context.Context, protocol.Server) protocol.Client { return client })
 
-	serverConn, err := jsonrpc2_v2.Dial(context.Background(), b.dialer, clientBinder)
+	serverConn, err := jsonrpc2_v2.Dial(context.Background(), b.dialer, clientBinder, nil)
 	if err != nil {
 		return jsonrpc2_v2.ConnectionOptions{
 			Handler: jsonrpc2_v2.HandlerFunc(func(context.Context, *jsonrpc2_v2.Request) (any, error) {

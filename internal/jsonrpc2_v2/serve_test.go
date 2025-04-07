@@ -47,7 +47,7 @@ func TestIdleTimeout(t *testing.T) {
 
 		// Exercise some connection/disconnection patterns, and then assert that when
 		// our timer fires, the server exits.
-		conn1, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{})
+		conn1, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{}, nil)
 		if err != nil {
 			if since := time.Since(idleStart); since < d {
 				t.Fatalf("conn1 failed to connect after %v: %v", since, err)
@@ -71,7 +71,7 @@ func TestIdleTimeout(t *testing.T) {
 		// Since conn1 was successfully accepted and remains open, the server is
 		// definitely non-idle. Dialing another simultaneous connection should
 		// succeed.
-		conn2, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{})
+		conn2, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{}, nil)
 		if err != nil {
 			conn1.Close()
 			t.Fatalf("conn2 failed to connect while non-idle after %v: %v", time.Since(idleStart), err)
@@ -96,7 +96,7 @@ func TestIdleTimeout(t *testing.T) {
 			t.Fatalf("conn2.Close failed with error: %v", err)
 		}
 
-		conn3, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{})
+		conn3, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{}, nil)
 		if err != nil {
 			if since := time.Since(idleStart); since < d {
 				t.Fatalf("conn3 failed to connect after %v: %v", since, err)
@@ -205,7 +205,7 @@ func newFake(t *testing.T, ctx context.Context, l jsonrpc2.Listener) (*jsonrpc2.
 		l.Dialer(),
 		jsonrpc2.ConnectionOptions{
 			Handler: fakeHandler{},
-		})
+		}, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -250,7 +250,7 @@ func TestIdleListenerAcceptCloseRace(t *testing.T) {
 
 		done := make(chan struct{})
 		go func() {
-			conn, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{})
+			conn, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{}, nil)
 			listener.Close()
 			if err == nil {
 				conn.Close()
@@ -313,7 +313,7 @@ func TestCloseCallRace(t *testing.T) {
 			return jsonrpc2.ConnectionOptions{Handler: h}
 		}))
 
-		dialConn, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{})
+		dialConn, err := jsonrpc2.Dial(ctx, listener.Dialer(), jsonrpc2.ConnectionOptions{}, nil)
 		if err != nil {
 			listener.Close()
 			s.Wait()

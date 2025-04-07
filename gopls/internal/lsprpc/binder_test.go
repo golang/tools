@@ -105,7 +105,7 @@ func (e *TestEnv) dial(ctx context.Context, t *testing.T, dialer jsonrpc2_v2.Dia
 		l, _ := e.serve(ctx, t, NewForwardBinder(dialer))
 		dialer = l.Dialer()
 	}
-	conn, err := jsonrpc2_v2.Dial(ctx, dialer, client)
+	conn, err := jsonrpc2_v2.Dial(ctx, dialer, client, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

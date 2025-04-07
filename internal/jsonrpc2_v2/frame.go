@@ -41,9 +41,9 @@ type Writer interface {
 // It is responsible for the framing and encoding of messages into wire form.
 type Framer interface {
 	// Reader wraps a byte reader into a message reader.
-	Reader(rw io.Reader) Reader
+	Reader(io.Reader) Reader
 	// Writer wraps a byte writer into a message writer.
-	Writer(rw io.Writer) Writer
+	Writer(io.Writer) Writer
 }
 
 // RawFramer returns a new Framer.
