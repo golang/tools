@@ -20,8 +20,10 @@ supported in each client editor.
 
 To get started with `gopls`, install an LSP plugin in your editor of choice.
 
+<!--
 TODO: ensure that each editor has a local page (and move these to doc/clients/$EDITOR.md).
 TODO: also, be more consistent about editor (e.g. Emacs) vs. client (e.g. eglot).
+-->
 
 * [VS Code](https://github.com/golang/vscode-go/blob/master/README.md)
 * [Vim / Neovim](doc/vim.md)
