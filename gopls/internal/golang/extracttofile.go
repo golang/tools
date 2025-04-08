@@ -93,6 +93,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		return nil, fmt.Errorf("%s: %w", errorPrefix, err)
 	}
 
+	// Expand the selection, and compute the portion to extract.
 	start, end, firstSymbol, ok := selectedToplevelDecls(pgf, start, end)
 	if !ok {
 		return nil, fmt.Errorf("invalid selection")
@@ -109,7 +110,20 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	spaces := len(rest) - len(bytes.TrimLeft(rest, " \t\n"))
 	end += token.Pos(spaces)
 	pgf.CheckPos(end) // #70553
-	// Inv: end is valid wrt pgf.Tok.
+	if !(start <= end) {
+		bug.Reportf("start: not before end")
+	}
+	// Inv: end is valid wrt pgf.Tok; env >= start.
+	fileStart := pgf.File.FileStart
+	pgf.CheckPos(fileStart) // #70553
+	if !(0 <= start-fileStart) {
+		bug.Reportf("start: out of bounds")
+	}
+	if !(int(end-fileStart) <= len(pgf.Src)) {
+		bug.Reportf("end: out of bounds")
+	}
+	// Inv: 0 <= start-fileStart <= end-fileStart <= len(Src).
+	src := pgf.Src[start-fileStart : end-fileStart]
 
 	replaceRange, err := pgf.PosRange(start, end)
 	if err != nil {
@@ -176,9 +190,7 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		return nil, fmt.Errorf("%s: %w", errorPrefix, err)
 	}
 
-	fileStart := pgf.File.FileStart
-	pgf.CheckPos(fileStart) // #70553
-	buf.Write(pgf.Src[start-fileStart : end-fileStart])
+	buf.Write(src)
 
 	newFileContent, err := format.Source(buf.Bytes())
 	if err != nil {
