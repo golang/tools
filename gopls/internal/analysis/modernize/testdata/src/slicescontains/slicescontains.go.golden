@@ -102,3 +102,26 @@ func nopeNeedleHaystackDifferentTypes2(x error, args []any) {
 		}
 	}
 }
+
+func nopeVariadicNamedContainsFunc(slice []int) bool {
+	for _, elem := range slice {
+		if variadicPredicate(elem) {
+			return true
+		}
+	}
+	return false
+}
+
+func variadicPredicate(int, ...any) bool
+
+func nopeVariadicContainsFunc(slice []int) bool {
+	f := func(int, ...any) bool {
+		return true
+	}
+	for _, elem := range slice {
+		if f(elem) {
+			return true
+		}
+	}
+	return false
+}

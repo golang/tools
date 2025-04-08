@@ -129,6 +129,11 @@ func slicescontains(pass *analysis.Pass) {
 				isSliceElem(cond.Args[0]) &&
 				typeutil.Callee(info, cond) != nil { // not a conversion
 
+				// skip variadic functions
+				if sig, ok := info.TypeOf(cond.Fun).(*types.Signature); ok && sig.Variadic() {
+					return
+				}
+
 				funcName = "ContainsFunc"
 				arg2 = cond.Fun // "if predicate(elem)"
 			}
