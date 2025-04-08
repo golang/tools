@@ -164,3 +164,28 @@ func _() {
 		d //@complete(" //", default)
 	}
 }
+
+-- default_name_var_switch.go --
+package keywords
+
+func _() {
+	var defaultVar int //@item(defaultVar, "defaultVar", "int", "var")
+	switch defaultVar {
+		case 1:
+			println("helloworld")
+		d //@complete(" //", default, defaultVar, defer)
+	}
+	switch defaultVar {
+		default:
+		d //@complete(" //", defaultVar, defer)
+	}
+	var nested int
+	switch defaultVar {
+		case 1:
+			switch nested {
+				default:
+					println("")
+			}
+		d //@complete(" //", default, defaultVar, defer)
+	}
+}

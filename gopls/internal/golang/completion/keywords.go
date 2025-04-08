@@ -121,7 +121,11 @@ func (c *completer) addKeywordCompletions() {
 				c.addKeywordItems(seen, stdScore, BREAK)
 			}
 		case *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.SwitchStmt:
-			c.addKeywordItems(seen, stdScore, CASE, DEFAULT)
+			// if there is no default case yet, it's highly likely to add a default in switch.
+			// we don't offer 'default' anymore if user has used it already in current swtich.
+			if !hasDefaultClause(node) {
+				c.addKeywordItems(seen, highScore, CASE, DEFAULT)
+			}
 		case *ast.ForStmt, *ast.RangeStmt:
 			c.addKeywordItems(seen, stdScore, BREAK, CONTINUE)
 		// This is a bit weak, functions allow for many keywords
@@ -131,6 +135,28 @@ func (c *completer) addKeywordCompletions() {
 			}
 		}
 	}
+}
+
+// hasDefaultClause reports whether the given node contains a direct default case.
+// It does not traverse child nodes to look for nested default clauses,
+// and returns false if the node is not a switch statement.
+func hasDefaultClause(node ast.Node) bool {
+	var cases []ast.Stmt
+	switch node := node.(type) {
+	case *ast.TypeSwitchStmt:
+		cases = node.Body.List
+	case *ast.SelectStmt:
+		cases = node.Body.List
+	case *ast.SwitchStmt:
+		cases = node.Body.List
+	}
+	for _, c := range cases {
+		if clause, ok := c.(*ast.CaseClause); ok &&
+			clause.List == nil { // default case
+			return true
+		}
+	}
+	return false
 }
 
 // addKeywordItems dedupes and adds completion items for the specified
