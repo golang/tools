@@ -472,14 +472,15 @@ func (r *renamer) checkStructField(from *types.Var) {
 			// This struct is also a named type.
 			// We must check for direct (non-promoted) field/field
 			// and method/field conflicts.
-			named := r.pkg.TypesInfo().Defs[spec.Name].Type()
-			prev, indices, _ := types.LookupFieldOrMethod(named, true, r.pkg.Types(), r.to)
-			if len(indices) == 1 {
-				r.errorf(from.Pos(), "renaming this field %q to %q",
-					from.Name(), r.to)
-				r.errorf(prev.Pos(), "\twould conflict with this %s",
-					objectKind(prev))
-				return // skip checkSelections to avoid redundant errors
+			if tname := r.pkg.TypesInfo().Defs[spec.Name]; tname != nil {
+				prev, indices, _ := types.LookupFieldOrMethod(tname.Type(), true, r.pkg.Types(), r.to)
+				if len(indices) == 1 {
+					r.errorf(from.Pos(), "renaming this field %q to %q",
+						from.Name(), r.to)
+					r.errorf(prev.Pos(), "\twould conflict with this %s",
+						objectKind(prev))
+					return // skip checkSelections to avoid redundant errors
+				}
 			}
 		} else {
 			// This struct is not a named type.
