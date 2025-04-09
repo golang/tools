@@ -916,10 +916,12 @@ func (s *Snapshot) watchSubdirs() bool {
 		// requirements that client names do not change. We should update the VS
 		// Code extension to set a default value of "subdirWatchPatterns" to "on",
 		// so that this workaround is only temporary.
-		if s.Options().ClientInfo.Name == "Visual Studio Code" {
+		switch s.Options().ClientInfo.Name {
+		case "Visual Studio Code", "Visual Studio Code - Insiders":
 			return true
+		default:
+			return false
 		}
-		return false
 	default:
 		bug.Reportf("invalid subdirWatchPatterns: %q", p)
 		return false
