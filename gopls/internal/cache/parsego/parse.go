@@ -49,7 +49,7 @@ const (
 // Parse parses a buffer of Go source, repairing the tree if necessary.
 //
 // The provided ctx is used only for logging.
-func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, src []byte, mode parser.Mode, purgeFuncBodies bool) (res *File, fixes []fixType) {
+func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, src []byte, mode parser.Mode, purgeFuncBodies bool) (res *File, fixes []FixType) {
 	if purgeFuncBodies {
 		src = astutil.PurgeFuncBodies(src)
 	}
@@ -147,13 +147,13 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 //
 // If fixAST returns true, the resulting AST is considered "fixed", meaning
 // positions have been mangled, and type checker errors may not make sense.
-func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []fixType) {
+func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []FixType) {
 	var err error
 	walkASTWithParent(n, func(n, parent ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.BadStmt:
 			if fixDeferOrGoStmt(n, parent, tok, src) {
-				fixes = append(fixes, fixedDeferOrGo)
+				fixes = append(fixes, FixedDeferOrGo)
 				// Recursively fix in our fixed node.
 				moreFixes := fixAST(parent, tok, src)
 				fixes = append(fixes, moreFixes...)
@@ -163,7 +163,7 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []fixType) {
 			return false
 		case *ast.BadExpr:
 			if fixArrayType(n, parent, tok, src) {
-				fixes = append(fixes, fixedArrayType)
+				fixes = append(fixes, FixedArrayType)
 				// Recursively fix in our fixed node.
 				moreFixes := fixAST(parent, tok, src)
 				fixes = append(fixes, moreFixes...)
@@ -177,7 +177,7 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []fixType) {
 			//   for i := foo
 			//
 			if fixInitStmt(n, parent, tok, src) {
-				fixes = append(fixes, fixedInit)
+				fixes = append(fixes, FixedInit)
 			}
 			return false
 		case *ast.SelectorExpr:
@@ -186,7 +186,7 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []fixType) {
 			//   foo.var<> // want to complete to "foo.variance"
 			//
 			if fixPhantomSelector(n, tok, src) {
-				fixes = append(fixes, fixedPhantomSelector)
+				fixes = append(fixes, FixedPhantomSelector)
 			}
 			return true
 
@@ -196,7 +196,7 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []fixType) {
 				// Adjust closing curly brace of empty switch/select
 				// statements so we can complete inside them.
 				if fixEmptySwitch(n, tok, src) {
-					fixes = append(fixes, fixedEmptySwitch)
+					fixes = append(fixes, FixedEmptySwitch)
 				}
 			}
 
@@ -235,24 +235,24 @@ func walkASTWithParent(n ast.Node, f func(n ast.Node, parent ast.Node) bool) {
 
 // TODO(rfindley): revert this intrumentation once we're certain the crash in
 // #59097 is fixed.
-type fixType int
+type FixType int
 
 const (
-	noFix fixType = iota
-	fixedCurlies
-	fixedDanglingSelector
-	fixedDeferOrGo
-	fixedArrayType
-	fixedInit
-	fixedPhantomSelector
-	fixedEmptySwitch
+	noFix FixType = iota
+	FixedCurlies
+	FixedDanglingSelector
+	FixedDeferOrGo
+	FixedArrayType
+	FixedInit
+	FixedPhantomSelector
+	FixedEmptySwitch
 )
 
 // fixSrc attempts to modify the file's source code to fix certain
 // syntax errors that leave the rest of the file unparsed.
 //
 // fixSrc returns a non-nil result if and only if a fix was applied.
-func fixSrc(f *ast.File, tf *token.File, src []byte) (newSrc []byte, fix fixType) {
+func fixSrc(f *ast.File, tf *token.File, src []byte) (newSrc []byte, fix FixType) {
 	walkASTWithParent(f, func(n, parent ast.Node) bool {
 		if newSrc != nil {
 			return false
@@ -262,12 +262,12 @@ func fixSrc(f *ast.File, tf *token.File, src []byte) (newSrc []byte, fix fixType
 		case *ast.BlockStmt:
 			newSrc = fixMissingCurlies(f, n, parent, tf, src)
 			if newSrc != nil {
-				fix = fixedCurlies
+				fix = FixedCurlies
 			}
 		case *ast.SelectorExpr:
 			newSrc = fixDanglingSelector(n, tf, src)
 			if newSrc != nil {
-				fix = fixedDanglingSelector
+				fix = FixedDanglingSelector
 			}
 		}
 
