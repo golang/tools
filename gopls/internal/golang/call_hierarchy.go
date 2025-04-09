@@ -14,13 +14,16 @@ import (
 	"path/filepath"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // PrepareCallHierarchy returns an array of CallHierarchyItem for a file and the position within the file.
@@ -99,7 +102,7 @@ func IncomingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 
 	// Flatten the map of pointers into a slice of values.
 	incomingCallItems := make([]protocol.CallHierarchyIncomingCall, 0, len(incomingCalls))
-	for _, callItem := range incomingCalls {
+	for _, callItem := range moremaps.SortedFunc(incomingCalls, protocol.CompareLocation) {
 		incomingCallItems = append(incomingCallItems, *callItem)
 	}
 	return incomingCallItems, nil
@@ -247,30 +250,21 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	type callRange struct {
 		start, end token.Pos
 	}
-	callRanges := []callRange{}
-	ast.Inspect(declNode, func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok {
-			var start, end token.Pos
-			switch n := call.Fun.(type) {
-			case *ast.SelectorExpr:
-				start, end = n.Sel.NamePos, call.Lparen
-			case *ast.Ident:
-				start, end = n.NamePos, call.Lparen
-			case *ast.FuncLit:
-				// while we don't add the function literal as an 'outgoing' call
-				// we still want to traverse into it
-				return true
-			default:
-				// ignore any other kind of call expressions
-				// for ex: direct function literal calls since that's not an 'outgoing' call
-				return false
-			}
-			callRanges = append(callRanges, callRange{start: start, end: end})
-		}
-		return true
-	})
 
-	outgoingCalls := map[token.Pos]*protocol.CallHierarchyOutgoingCall{}
+	// Find calls to known functions/methods, including interface methods.
+	var callRanges []callRange
+	for n := range ast.Preorder(declNode) {
+		if call, ok := n.(*ast.CallExpr); ok &&
+			is[*types.Func](typeutil.Callee(pkg.TypesInfo(), call)) {
+			id := typesinternal.UsedIdent(pkg.TypesInfo(), call.Fun)
+			callRanges = append(callRanges, callRange{
+				start: id.NamePos,
+				end:   call.Lparen,
+			})
+		}
+	}
+
+	outgoingCalls := make(map[protocol.Location]*protocol.CallHierarchyOutgoingCall)
 	for _, callRange := range callRanges {
 		_, obj, _ := referencedObject(declPkg, declPGF, callRange.start)
 		if obj == nil {
@@ -280,12 +274,13 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 			continue // built-ins have no position
 		}
 
-		outgoingCall, ok := outgoingCalls[obj.Pos()]
+		loc, err := mapPosition(ctx, declPkg.FileSet(), snapshot, obj.Pos(), obj.Pos()+token.Pos(len(obj.Name())))
+		if err != nil {
+			return nil, err
+		}
+
+		outgoingCall, ok := outgoingCalls[loc]
 		if !ok {
-			loc, err := mapPosition(ctx, declPkg.FileSet(), snapshot, obj.Pos(), obj.Pos()+token.Pos(len(obj.Name())))
-			if err != nil {
-				return nil, err
-			}
 			outgoingCall = &protocol.CallHierarchyOutgoingCall{
 				To: protocol.CallHierarchyItem{
 					Name:           obj.Name(),
@@ -297,7 +292,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 					SelectionRange: loc.Range,
 				},
 			}
-			outgoingCalls[obj.Pos()] = outgoingCall
+			outgoingCalls[loc] = outgoingCall
 		}
 
 		rng, err := declPGF.PosRange(callRange.start, callRange.end)
@@ -308,7 +303,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	}
 
 	outgoingCallItems := make([]protocol.CallHierarchyOutgoingCall, 0, len(outgoingCalls))
-	for _, callItem := range outgoingCalls {
+	for _, callItem := range moremaps.SortedFunc(outgoingCalls, protocol.CompareLocation) {
 		outgoingCallItems = append(outgoingCallItems, *callItem)
 	}
 	return outgoingCallItems, nil

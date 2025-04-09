@@ -2456,11 +2456,8 @@ func callHierarchy(mark marker, src protocol.Location, getCalls callHierarchyFun
 		return
 	}
 	if calls == nil {
-		calls = []protocol.Location{}
+		calls = []protocol.Location{} // non-nil; cmp.Diff cares
 	}
-	// TODO(rfindley): why aren't call hierarchy results stable?
-	slices.SortFunc(want, protocol.CompareLocation)
-	slices.SortFunc(calls, protocol.CompareLocation)
 	if d := cmp.Diff(want, calls); d != "" {
 		mark.errorf("call hierarchy: unexpected results (-want +got):\n%s", d)
 	}

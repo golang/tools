@@ -22,10 +22,11 @@ func (s *server) PrepareCallHierarchy(ctx context.Context, params *protocol.Call
 		return nil, err
 	}
 	defer release()
-	if snapshot.FileKind(fh) != file.Go {
-		return nil, nil // empty result
+	switch snapshot.FileKind(fh) {
+	case file.Go:
+		return golang.PrepareCallHierarchy(ctx, snapshot, fh, params.Position)
 	}
-	return golang.PrepareCallHierarchy(ctx, snapshot, fh, params.Position)
+	return nil, nil // empty result
 }
 
 func (s *server) IncomingCalls(ctx context.Context, params *protocol.CallHierarchyIncomingCallsParams) ([]protocol.CallHierarchyIncomingCall, error) {
@@ -37,10 +38,11 @@ func (s *server) IncomingCalls(ctx context.Context, params *protocol.CallHierarc
 		return nil, err
 	}
 	defer release()
-	if snapshot.FileKind(fh) != file.Go {
-		return nil, nil // empty result
+	switch snapshot.FileKind(fh) {
+	case file.Go:
+		return golang.IncomingCalls(ctx, snapshot, fh, params.Item.Range.Start)
 	}
-	return golang.IncomingCalls(ctx, snapshot, fh, params.Item.Range.Start)
+	return nil, nil // empty result
 }
 
 func (s *server) OutgoingCalls(ctx context.Context, params *protocol.CallHierarchyOutgoingCallsParams) ([]protocol.CallHierarchyOutgoingCall, error) {
@@ -52,8 +54,9 @@ func (s *server) OutgoingCalls(ctx context.Context, params *protocol.CallHierarc
 		return nil, err
 	}
 	defer release()
-	if snapshot.FileKind(fh) != file.Go {
-		return nil, nil // empty result
+	switch snapshot.FileKind(fh) {
+	case file.Go:
+		return golang.OutgoingCalls(ctx, snapshot, fh, params.Item.Range.Start)
 	}
-	return golang.OutgoingCalls(ctx, snapshot, fh, params.Item.Range.Start)
+	return nil, nil // empty result
 }

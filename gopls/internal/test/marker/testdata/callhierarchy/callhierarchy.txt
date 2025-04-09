@@ -48,12 +48,12 @@ func C() { //@loc(hC, "C")
 var x = func() { D() } //@loc(hX, "x"),loc(hXGlobal, "x")
 
 // D is exported to test incoming/outgoing calls across packages
-func D() { //@loc(hD, "D"),incomingcalls(hD, hA, hB, hC, hXGlobal, incomingA),outgoingcalls(hD, hE, hF, hG, hX, outgoingB, hFoo, hH, hI, hJ, hK)
+func D() { //@ loc(hD, "D"), incomingcalls(hD, hA, hB, hC, hXGlobal, incomingA), outgoingcalls(hD, hE, hF, hG, hH, hI, Generic, outgoingB)
 	e()
 	x()
 	F()
 	outgoing.B()
-	foo := func() {} //@loc(hFoo, "foo"),incomingcalls(hFoo, hD),outgoingcalls(hFoo)
+	foo := func() {} //@ loc(hFoo, "foo"), incomingcalls(hFoo, hD), outgoingcalls(hFoo)
 	foo()
 
 	func() {
@@ -67,6 +67,8 @@ func D() { //@loc(hD, "D"),incomingcalls(hD, hA, hB, hC, hXGlobal, incomingA),ou
 	s := Struct{}
 	s.J()
 	s.K()
+
+	Generic[string]()
 }
 
 func e() {} //@loc(hE, "e")
@@ -90,3 +92,5 @@ type Struct struct {
 	J func() //@loc(hJ, "J")
 	K func() //@loc(hK, "K")
 }
+
+func Generic[T any]() //@loc(Generic, "Generic")

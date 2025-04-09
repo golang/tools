@@ -296,10 +296,6 @@ of `fmt.Stringer` through the guts of `fmt.Sprint:`
 
 <img title="Outgoing calls of f" src="../assets/outgoingcalls.png" width="640">
 
-Caveats:
-- In some cases dynamic function calls are (erroneously) included in
-  the output; see golang/go#68153.
-
 Client support:
 - **VS Code**: `Show Call Hierarchy` menu item (`⌥⇧H`) opens [Call hierarchy view](https://code.visualstudio.com/docs/cpp/cpp-ide#_call-hierarchy) (note: docs refer to C++ but the idea is the same for Go).
 - **Emacs + eglot**: Not standard; install with `(package-vc-install "https://github.com/dolmens/eglot-hierarchy")`. Use `M-x eglot-hierarchy-call-hierarchy` to show the direct incoming calls to the selected function; use a prefix argument (`C-u`) to show the direct outgoing calls. There is no way to expand the tree.
