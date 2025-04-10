@@ -713,33 +713,24 @@ func refactorRewriteEliminateDotImport(ctx context.Context, req *codeActionsRequ
 
 	// Go through each use of the dot imported package, checking its scope for
 	// shadowing and calculating an edit to qualify the identifier.
-	var stack []ast.Node
-	ast.Inspect(req.pgf.File, func(n ast.Node) bool {
-		if n == nil {
-			stack = stack[:len(stack)-1] // pop
-			return false
-		}
-		stack = append(stack, n) // push
+	for curId := range req.pgf.Cursor.Preorder((*ast.Ident)(nil)) {
+		ident := curId.Node().(*ast.Ident)
 
-		ident, ok := n.(*ast.Ident)
-		if !ok {
-			return true
-		}
 		// Only keep identifiers that use a symbol from the
 		// dot imported package.
 		use := req.pkg.TypesInfo().Uses[ident]
 		if use == nil || use.Pkg() == nil {
-			return true
+			continue
 		}
 		if use.Pkg() != imported {
-			return true
+			continue
 		}
 
 		// Only qualify unqualified identifiers (due to dot imports).
 		// All other references to a symbol imported from another package
 		// are nested within a select expression (pkg.Foo, v.Method, v.Field).
-		if is[*ast.SelectorExpr](stack[len(stack)-2]) {
-			return true
+		if is[*ast.SelectorExpr](curId.Parent().Node()) {
+			continue
 		}
 
 		// Make sure that the package name will not be shadowed by something else in scope.
@@ -750,24 +741,22 @@ func refactorRewriteEliminateDotImport(ctx context.Context, req *codeActionsRequ
 		// allowed to go through.
 		sc := fileScope.Innermost(ident.Pos())
 		if sc == nil {
-			return true
+			continue
 		}
 		_, obj := sc.LookupParent(newName, ident.Pos())
 		if obj != nil {
-			return true
+			continue
 		}
 
 		rng, err := req.pgf.PosRange(ident.Pos(), ident.Pos()) // sic, zero-width range before ident
 		if err != nil {
-			return true
+			continue
 		}
 		edits = append(edits, protocol.TextEdit{
 			Range:   rng,
 			NewText: newName + ".",
 		})
-
-		return true
-	})
+	}
 
 	req.addEditAction("Eliminate dot import", nil, protocol.DocumentChangeEdit(
 		req.fh,

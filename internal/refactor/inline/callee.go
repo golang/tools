@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -132,16 +133,11 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 		freeRefs     []freeRef // free refs that may need renaming
 		unexported   []string  // free refs to unexported objects, for later error checks
 	)
-	var f func(n ast.Node) bool
-	visit := func(n ast.Node) { ast.Inspect(n, f) }
+	var f func(n ast.Node, stack []ast.Node) bool
 	var stack []ast.Node
 	stack = append(stack, decl.Type) // for scope of function itself
-	f = func(n ast.Node) bool {
-		if n != nil {
-			stack = append(stack, n) // push
-		} else {
-			stack = stack[:len(stack)-1] // pop
-		}
+	visit := func(n ast.Node, stack []ast.Node) { astutil.PreorderStack(n, stack, f) }
+	f = func(n ast.Node, stack []ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.SelectorExpr:
 			// Check selections of free fields/methods.
@@ -153,7 +149,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 			}
 
 			// Don't recur into SelectorExpr.Sel.
-			visit(n.X)
+			visit(n.X, stack)
 			return false
 
 		case *ast.CompositeLit:
@@ -162,7 +158,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 			litType := typeparams.Deref(info.TypeOf(n))
 			if s, ok := typeparams.CoreType(litType).(*types.Struct); ok {
 				if n.Type != nil {
-					visit(n.Type)
+					visit(n.Type, stack)
 				}
 				for i, elt := range n.Elts {
 					var field *types.Var
@@ -180,7 +176,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 					}
 
 					// Don't recur into KeyValueExpr.Key.
-					visit(value)
+					visit(value, stack)
 				}
 				return false
 			}
@@ -234,7 +230,7 @@ func AnalyzeCallee(logf func(string, ...any), fset *token.FileSet, pkg *types.Pa
 		}
 		return true
 	}
-	visit(decl)
+	visit(decl, stack)
 
 	// Analyze callee body for "return expr" form,
 	// where expr is f() or <-ch. These forms are
@@ -466,13 +462,7 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 	fieldObjs := fieldObjs(sig)
 	var stack []ast.Node
 	stack = append(stack, decl.Type) // for scope of function itself
-	ast.Inspect(decl.Body, func(n ast.Node) bool {
-		if n != nil {
-			stack = append(stack, n) // push
-		} else {
-			stack = stack[:len(stack)-1] // pop
-		}
-
+	astutil.PreorderStack(decl.Body, stack, func(n ast.Node, stack []ast.Node) bool {
 		if id, ok := n.(*ast.Ident); ok {
 			if v, ok := info.Uses[id].(*types.Var); ok {
 				if pinfo, ok := paramInfos[v]; ok {
@@ -487,6 +477,7 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 					// Contrapositively, if param is not an interface type, then the
 					// assignment may lose type information, for example in the case that
 					// the substituted expression is an untyped constant or unnamed type.
+					stack = append(stack, n) // (the two calls below want n)
 					assignable, ifaceAssign, affectsInference := analyzeAssignment(info, stack)
 					ref := refInfo{
 						Offset:             int(n.Pos() - decl.Pos()),

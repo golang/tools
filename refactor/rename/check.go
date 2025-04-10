@@ -13,6 +13,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
@@ -313,19 +314,12 @@ func deeper(x, y *types.Scope) bool {
 // iteration is terminated and findLexicalRefs returns false.
 func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *ast.Ident, block *types.Scope) bool) bool {
 	ok := true
-	var stack []ast.Node
 
-	var visit func(n ast.Node) bool
-	visit = func(n ast.Node) bool {
-		if n == nil {
-			stack = stack[:len(stack)-1] // pop
-			return false
-		}
+	var visit func(n ast.Node, stack []ast.Node) bool
+	visit = func(n ast.Node, stack []ast.Node) bool {
 		if !ok {
 			return false // bail out
 		}
-
-		stack = append(stack, n) // push
 		switch n := n.(type) {
 		case *ast.Ident:
 			if info.Uses[n] == obj {
@@ -334,12 +328,12 @@ func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *a
 					ok = false
 				}
 			}
-			return visit(nil) // pop stack
+			return false
 
 		case *ast.SelectorExpr:
 			// don't visit n.Sel
-			ast.Inspect(n.X, visit)
-			return visit(nil) // pop stack, don't descend
+			astutil.PreorderStack(n.X, stack, visit)
+			return false // don't descend
 
 		case *ast.CompositeLit:
 			// Handle recursion ourselves for struct literals
@@ -347,26 +341,23 @@ func forEachLexicalRef(info *loader.PackageInfo, obj types.Object, fn func(id *a
 			tv := info.Types[n]
 			if is[*types.Struct](typeparams.CoreType(typeparams.Deref(tv.Type))) {
 				if n.Type != nil {
-					ast.Inspect(n.Type, visit)
+					astutil.PreorderStack(n.Type, stack, visit)
 				}
 				for _, elt := range n.Elts {
 					if kv, ok := elt.(*ast.KeyValueExpr); ok {
-						ast.Inspect(kv.Value, visit)
+						astutil.PreorderStack(kv.Value, stack, visit)
 					} else {
-						ast.Inspect(elt, visit)
+						astutil.PreorderStack(elt, stack, visit)
 					}
 				}
-				return visit(nil) // pop stack, don't descend
+				return false // don't descend
 			}
 		}
 		return true
 	}
 
 	for _, f := range info.Files {
-		ast.Inspect(f, visit)
-		if len(stack) != 0 {
-			panic(stack)
-		}
+		astutil.PreorderStack(f, nil, visit)
 		if !ok {
 			break
 		}

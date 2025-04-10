@@ -38,6 +38,7 @@ import (
 	gastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/tokeninternal"
@@ -1502,14 +1503,8 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 	stack := make([]ast.Node, 0, 20)
 
 	// Allocate the closure once, outside the loop.
-	f := func(n ast.Node) bool {
+	f := func(n ast.Node, stack []ast.Node) bool {
 		if found {
-			return false
-		}
-		if n != nil {
-			stack = append(stack, n) // push
-		} else {
-			stack = stack[:len(stack)-1] // pop
 			return false
 		}
 
@@ -1596,7 +1591,7 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 		return true
 	}
 	for _, file := range files {
-		ast.Inspect(file, f)
+		internalastutil.PreorderStack(file, stack, f)
 		if found {
 			return decl, spec, field
 		}
