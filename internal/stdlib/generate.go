@@ -29,7 +29,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 
@@ -37,13 +36,15 @@ import (
 )
 
 func main() {
-	manifest()
+	log.SetFlags(log.Lshortfile) // to identify the source of the log messages
+	dir := apidir()
+	manifest(dir)
 	deps()
 }
 
 // -- generate std manifest --
 
-func manifest() {
+func manifest(apidir string) {
 	pkgs := make(map[string]map[string]symInfo) // package -> symbol -> info
 	symRE := regexp.MustCompile(`^pkg (\S+).*?, (var|func|type|const|method \([^)]*\)) ([\pL\p{Nd}_]+)(.*)`)
 
@@ -111,7 +112,7 @@ func manifest() {
 		if minor > 0 {
 			base = fmt.Sprintf("go1.%d.txt", minor)
 		}
-		filename := filepath.Join(runtime.GOROOT(), "api", base)
+		filename := filepath.Join(apidir, base)
 		data, err := os.ReadFile(filename)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
@@ -119,7 +120,7 @@ func manifest() {
 				// Synthesize one final file from any api/next/*.txt fragments.
 				// (They are consolidated into a go1.%d file some time between
 				// the freeze and the first release candidate.)
-				filenames, err := filepath.Glob(filepath.Join(runtime.GOROOT(), "api/next/*.txt"))
+				filenames, err := filepath.Glob(filepath.Join(apidir, "next", "*.txt"))
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -175,6 +176,28 @@ var PackageSymbols = map[string][]Symbol{
 	if err := os.WriteFile("manifest.go", fmtbuf, 0o666); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// find the api directory, In most situations it is in GOROOT/api, but not always.
+// TODO(pjw): understand where it might be, and if there could be newer and older versions
+func apidir() string {
+	stdout := new(bytes.Buffer)
+	cmd := exec.Command("go", "env", "GOROOT", "GOPATH")
+	cmd.Stdout = stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		log.Fatal(err)
+	}
+	// Prefer GOROOT/api over GOPATH/api.
+	for line := range strings.SplitSeq(stdout.String(), "\n") {
+		apidir := filepath.Join(line, "api")
+		info, err := os.Stat(apidir)
+		if err == nil && info.IsDir() {
+			return apidir
+		}
+	}
+	log.Fatal("could not find api dir")
+	return ""
 }
 
 type symInfo struct {
