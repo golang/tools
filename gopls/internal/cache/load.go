@@ -454,6 +454,7 @@ func buildMetadata(updates map[PackageID]*metadata.Package, loadDir string, stan
 			*dst = append(*dst, protocol.URIFromPath(filename))
 		}
 	}
+	copyURIs(&mp.CompiledAsmFiles, pkg.CompiledAsmFiles)
 	copyURIs(&mp.CompiledGoFiles, pkg.CompiledGoFiles)
 	copyURIs(&mp.GoFiles, pkg.GoFiles)
 	copyURIs(&mp.IgnoredFiles, pkg.IgnoredFiles)

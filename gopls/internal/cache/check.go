@@ -1456,12 +1456,12 @@ type typeCheckInputs struct {
 	id PackageID
 
 	// Used for type checking:
-	pkgPath                  PackagePath
-	name                     PackageName
-	goFiles, compiledGoFiles []file.Handle
-	sizes                    types.Sizes
-	depsByImpPath            map[ImportPath]PackageID
-	goVersion                string // packages.Module.GoVersion, e.g. "1.18"
+	pkgPath                                    PackagePath
+	name                                       PackageName
+	goFiles, compiledGoFiles, compiledAsmFiles []file.Handle
+	sizes                                      types.Sizes
+	depsByImpPath                              map[ImportPath]PackageID
+	goVersion                                  string // packages.Module.GoVersion, e.g. "1.18"
 
 	// Used for type check diagnostics:
 	// TODO(rfindley): consider storing less data in gobDiagnostics, and
@@ -1491,6 +1491,10 @@ func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (*
 	if err != nil {
 		return nil, err
 	}
+	compiledAsmFile, err := readFiles(ctx, s, mp.CompiledAsmFiles)
+	if err != nil {
+		return nil, err
+	}
 
 	goVersion := ""
 	if mp.Module != nil && mp.Module.GoVersion != "" {
@@ -1498,14 +1502,15 @@ func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (*
 	}
 
 	return &typeCheckInputs{
-		id:              mp.ID,
-		pkgPath:         mp.PkgPath,
-		name:            mp.Name,
-		goFiles:         goFiles,
-		compiledGoFiles: compiledGoFiles,
-		sizes:           mp.TypesSizes,
-		depsByImpPath:   mp.DepsByImpPath,
-		goVersion:       goVersion,
+		id:               mp.ID,
+		pkgPath:          mp.PkgPath,
+		name:             mp.Name,
+		goFiles:          goFiles,
+		compiledGoFiles:  compiledGoFiles,
+		compiledAsmFiles: compiledAsmFile,
+		sizes:            mp.TypesSizes,
+		depsByImpPath:    mp.DepsByImpPath,
+		goVersion:        goVersion,
 
 		supportsRelatedInformation: s.Options().RelatedInformationSupported,
 		linkTarget:                 s.Options().LinkTarget,
@@ -1553,6 +1558,10 @@ func localPackageKey(inputs *typeCheckInputs) file.Hash {
 	}
 	fmt.Fprintf(hasher, "goFiles: %d\n", len(inputs.goFiles))
 	for _, fh := range inputs.goFiles {
+		fmt.Fprintln(hasher, fh.Identity())
+	}
+	fmt.Fprintf(hasher, "compiledAsnFiles:%d\n", len(inputs.compiledAsmFiles))
+	for _, fh := range inputs.compiledAsmFiles {
 		fmt.Fprintln(hasher, fh.Identity())
 	}
 
@@ -1610,6 +1619,10 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, fset *token.FileSet, 
 		if pgf.ParseErr != nil {
 			pkg.parseErrors = append(pkg.parseErrors, pgf.ParseErr)
 		}
+	}
+	pkg.compiledAsmFiles, err = b.parseCache.parseFiles(ctx, pkg.fset, parsego.Full, false, inputs.compiledAsmFiles...)
+	if err != nil {
+		return nil, err
 	}
 
 	// Use the default type information for the unsafe package.
