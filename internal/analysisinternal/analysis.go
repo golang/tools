@@ -305,10 +305,10 @@ func FreshName(scope *types.Scope, pos token.Pos, preferred string) string {
 	return newName
 }
 
-// Format returns a string representation of the expression e.
-func Format(fset *token.FileSet, e ast.Expr) string {
+// Format returns a string representation of the node n.
+func Format(fset *token.FileSet, n ast.Node) string {
 	var buf strings.Builder
-	printer.Fprint(&buf, fset, e) // ignore errors
+	printer.Fprint(&buf, fset, n) // ignore errors
 	return buf.String()
 }
 
