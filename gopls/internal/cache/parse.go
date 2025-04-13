@@ -45,7 +45,7 @@ func parseGoImpl(ctx context.Context, fset *token.FileSet, fh file.Handle, mode 
 	return pgf, nil
 }
 
-func parseAsmFile(fhs ...file.Handle) ([]*asm.File, error) {
+func parseAsmFiles(fhs ...file.Handle) ([]*asm.File, error) {
 	pgfs := make([]*asm.File, len(fhs))
 
 	// Temporary fall-back for 32-bit systems, where reservedForParsing is too
