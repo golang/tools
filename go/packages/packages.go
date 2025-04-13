@@ -463,10 +463,6 @@ type Package struct {
 	// This may differ from GoFiles if files are processed before compilation.
 	CompiledGoFiles []string
 
-	// CompiledAsmFiles list the absolute file paths of the package's source
-	// assembly files that are suitable for type checking.
-	CompiledAsmFiles []string
-
 	// OtherFiles lists the absolute file paths of the package's non-Go source files,
 	// including assembly, C, C++, Fortran, Objective-C, SWIG, and so on.
 	OtherFiles []string
@@ -642,18 +638,17 @@ type flatPackage struct {
 // not intended for use by clients of the API and we may change the format.
 func (p *Package) MarshalJSON() ([]byte, error) {
 	flat := &flatPackage{
-		ID:               p.ID,
-		Name:             p.Name,
-		PkgPath:          p.PkgPath,
-		Errors:           p.Errors,
-		GoFiles:          p.GoFiles,
-		CompiledGoFiles:  p.CompiledGoFiles,
-		CompiledAsmFiles: p.CompiledAsmFiles,
-		OtherFiles:       p.OtherFiles,
-		EmbedFiles:       p.EmbedFiles,
-		EmbedPatterns:    p.EmbedPatterns,
-		IgnoredFiles:     p.IgnoredFiles,
-		ExportFile:       p.ExportFile,
+		ID:              p.ID,
+		Name:            p.Name,
+		PkgPath:         p.PkgPath,
+		Errors:          p.Errors,
+		GoFiles:         p.GoFiles,
+		CompiledGoFiles: p.CompiledGoFiles,
+		OtherFiles:      p.OtherFiles,
+		EmbedFiles:      p.EmbedFiles,
+		EmbedPatterns:   p.EmbedPatterns,
+		IgnoredFiles:    p.IgnoredFiles,
+		ExportFile:      p.ExportFile,
 	}
 	if len(p.Imports) > 0 {
 		flat.Imports = make(map[string]string, len(p.Imports))
@@ -672,18 +667,17 @@ func (p *Package) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*p = Package{
-		ID:               flat.ID,
-		Name:             flat.Name,
-		PkgPath:          flat.PkgPath,
-		Errors:           flat.Errors,
-		GoFiles:          flat.GoFiles,
-		CompiledGoFiles:  flat.CompiledGoFiles,
-		CompiledAsmFiles: flat.CompiledAsmFiles,
-		OtherFiles:       flat.OtherFiles,
-		EmbedFiles:       flat.EmbedFiles,
-		EmbedPatterns:    flat.EmbedPatterns,
-		IgnoredFiles:     flat.IgnoredFiles,
-		ExportFile:       flat.ExportFile,
+		ID:              flat.ID,
+		Name:            flat.Name,
+		PkgPath:         flat.PkgPath,
+		Errors:          flat.Errors,
+		GoFiles:         flat.GoFiles,
+		CompiledGoFiles: flat.CompiledGoFiles,
+		OtherFiles:      flat.OtherFiles,
+		EmbedFiles:      flat.EmbedFiles,
+		EmbedPatterns:   flat.EmbedPatterns,
+		IgnoredFiles:    flat.IgnoredFiles,
+		ExportFile:      flat.ExportFile,
 	}
 	if len(flat.Imports) > 0 {
 		p.Imports = make(map[string]*Package, len(flat.Imports))

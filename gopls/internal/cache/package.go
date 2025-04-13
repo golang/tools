@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/testfuncs"
 	"golang.org/x/tools/gopls/internal/cache/xrefs"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
 )
 
 // Convenient aliases for very heavily used types.
@@ -46,17 +47,17 @@ type syntaxPackage struct {
 	id PackageID
 
 	// -- outputs --
-	fset             *token.FileSet // for now, same as the snapshot's FileSet
-	goFiles          []*parsego.File
-	compiledGoFiles  []*parsego.File
-	compiledAsmFiles []*parsego.File
-	diagnostics      []*Diagnostic
-	parseErrors      []scanner.ErrorList
-	typeErrors       []types.Error
-	types            *types.Package
-	typesInfo        *types.Info
-	typesSizes       types.Sizes
-	importMap        map[PackagePath]*types.Package
+	fset            *token.FileSet // for now, same as the snapshot's FileSet
+	goFiles         []*parsego.File
+	compiledGoFiles []*parsego.File
+	asmFiles        []*asm.File
+	diagnostics     []*Diagnostic
+	parseErrors     []scanner.ErrorList
+	typeErrors      []types.Error
+	types           *types.Package
+	typesInfo       *types.Info
+	typesSizes      types.Sizes
+	importMap       map[PackagePath]*types.Package
 
 	xrefsOnce sync.Once
 	_xrefs    []byte // only used by the xrefs method

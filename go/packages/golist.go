@@ -504,20 +504,19 @@ func (state *golistState) createDriverResponse(words ...string) (*DriverResponse
 		seen[p.ImportPath] = p
 
 		pkg := &Package{
-			Name:             p.Name,
-			ID:               p.ImportPath,
-			Dir:              p.Dir,
-			Target:           p.Target,
-			GoFiles:          absJoin(p.Dir, p.GoFiles, p.CgoFiles),
-			CompiledGoFiles:  absJoin(p.Dir, p.CompiledGoFiles),
-			CompiledAsmFiles: absJoin(p.Dir, p.SFiles),
-			OtherFiles:       absJoin(p.Dir, otherFiles(p)...),
-			EmbedFiles:       absJoin(p.Dir, p.EmbedFiles),
-			EmbedPatterns:    absJoin(p.Dir, p.EmbedPatterns),
-			IgnoredFiles:     absJoin(p.Dir, p.IgnoredGoFiles, p.IgnoredOtherFiles),
-			ForTest:          p.ForTest,
-			depsErrors:       p.DepsErrors,
-			Module:           p.Module,
+			Name:            p.Name,
+			ID:              p.ImportPath,
+			Dir:             p.Dir,
+			Target:          p.Target,
+			GoFiles:         absJoin(p.Dir, p.GoFiles, p.CgoFiles),
+			CompiledGoFiles: absJoin(p.Dir, p.CompiledGoFiles),
+			OtherFiles:      absJoin(p.Dir, otherFiles(p)...),
+			EmbedFiles:      absJoin(p.Dir, p.EmbedFiles),
+			EmbedPatterns:   absJoin(p.Dir, p.EmbedPatterns),
+			IgnoredFiles:    absJoin(p.Dir, p.IgnoredGoFiles, p.IgnoredOtherFiles),
+			ForTest:         p.ForTest,
+			depsErrors:      p.DepsErrors,
+			Module:          p.Module,
 		}
 
 		if (state.cfg.Mode&typecheckCgo) != 0 && len(p.CgoFiles) != 0 {
