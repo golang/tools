@@ -1620,7 +1620,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, fset *token.FileSet, 
 			pkg.parseErrors = append(pkg.parseErrors, pgf.ParseErr)
 		}
 	}
-	pkg.asmFiles, err = parseAsmFiles(inputs.asmFiles...)
+	pkg.asmFiles, err = parseAsmFiles(ctx, inputs.asmFiles...)
 	if err != nil {
 		return nil, err
 	}

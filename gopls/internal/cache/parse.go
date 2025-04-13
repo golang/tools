@@ -45,18 +45,19 @@ func parseGoImpl(ctx context.Context, fset *token.FileSet, fh file.Handle, mode 
 	return pgf, nil
 }
 
-func parseAsmFiles(fhs ...file.Handle) ([]*asm.File, error) {
+// parseAsmFiles pases the assembly files whose contents are provided by fhs.
+func parseAsmFiles(ctx context.Context, fhs ...file.Handle) ([]*asm.File, error) {
 	pgfs := make([]*asm.File, len(fhs))
 
-	// Temporary fall-back for 32-bit systems, where reservedForParsing is too
-	// small to be viable. We don't actually support 32-bit systems, so this
-	// workaround is only for tests and can be removed when we stop running
-	// 32-bit TryBots for gopls.
 	for i, fh := range fhs {
 		var err error
 		content, err := fh.Content()
 		if err != nil {
 			return nil, err
+		}
+		// Check for context cancellation before actually doing the parse.
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 		pgfs[i] = asm.Parse(content)
 	}
