@@ -30,7 +30,7 @@ const Y = X
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("b.go")
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			env.RegexpReplace("b.go", `// import "errors"`, `import "errors"`)
 			env.RegexpReplace("b.go", `import "errors"`, `// import "errors"`)
 			env.AfterChange(NoDiagnostics())

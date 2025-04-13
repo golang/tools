@@ -5,6 +5,7 @@
 package metadata
 
 import (
+	"maps"
 	"sort"
 	"strings"
 	"testing"
@@ -40,11 +41,11 @@ func TestBreakImportCycles(t *testing.T) {
 			return n
 		}
 		if s != "" {
-			for _, item := range strings.Split(s, ";") {
+			for item := range strings.SplitSeq(s, ";") {
 				nodeID, succIDs, ok := strings.Cut(item, "->")
 				node := makeNode(nodeID)
 				if ok {
-					for _, succID := range strings.Split(succIDs, ",") {
+					for succID := range strings.SplitSeq(succIDs, ",") {
 						node.DepsByPkgPath[PackagePath(succID)] = PackageID(succID)
 					}
 				}
@@ -119,9 +120,7 @@ func TestBreakImportCycles(t *testing.T) {
 		// Apply updates.
 		// (parse doesn't have a way to express node deletions,
 		// but they aren't very interesting.)
-		for id, mp := range updates {
-			metadata[id] = mp
-		}
+		maps.Copy(metadata, updates)
 
 		t.Log("updated", format(metadata))
 

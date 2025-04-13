@@ -114,7 +114,7 @@ func stringscutprefix(pass *analysis.Pass) {
 									{
 										Pos:     call.Fun.Pos(),
 										End:     call.Fun.Pos(),
-										NewText: []byte(fmt.Sprintf("%s, %s :=", after, okVarName)),
+										NewText: fmt.Appendf(nil, "%s, %s :=", after, okVarName),
 									},
 									{
 										Pos:     call.Fun.Pos(),
@@ -124,7 +124,7 @@ func stringscutprefix(pass *analysis.Pass) {
 									{
 										Pos:     call.End(),
 										End:     call.End(),
-										NewText: []byte(fmt.Sprintf("; %s ", okVarName)),
+										NewText: fmt.Appendf(nil, "; %s ", okVarName),
 									},
 									{
 										Pos:     call1.Pos(),

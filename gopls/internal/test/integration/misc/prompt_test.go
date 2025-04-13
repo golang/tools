@@ -429,7 +429,7 @@ func main() {
 
 	const maxPrompts = 5 // internal prompt limit defined by gopls
 
-	for i := 0; i < maxPrompts+1; i++ {
+	for i := range maxPrompts + 1 {
 		WithOptions(
 			Modes(Default), // no need to run this in all modes
 			EnvVars{

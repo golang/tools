@@ -182,7 +182,7 @@ func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *
 			// Note that the logic below doesn't handle the case where uri ==
 			// v.folder.Dir, because there is no point in excluding the entire
 			// workspace folder!
-			if rel := strings.TrimPrefix(uri, dirPrefix); rel != uri {
+			if rel, ok := strings.CutPrefix(uri, dirPrefix); ok {
 				return !pathIncluded(rel)
 			}
 			return false

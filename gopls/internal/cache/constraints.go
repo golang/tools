@@ -9,6 +9,7 @@ import (
 	"go/build/constraint"
 	"go/parser"
 	"go/token"
+	"slices"
 )
 
 // isStandaloneFile reports whether a file with the given contents should be
@@ -27,11 +28,9 @@ func isStandaloneFile(src []byte, standaloneTags []string) bool {
 	found := false
 	walkConstraints(f, func(c constraint.Expr) bool {
 		if tag, ok := c.(*constraint.TagExpr); ok {
-			for _, t := range standaloneTags {
-				if t == tag.Tag {
-					found = true
-					return false
-				}
+			if slices.Contains(standaloneTags, tag.Tag) {
+				found = true
+				return false
 			}
 		}
 		return true

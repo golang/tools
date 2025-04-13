@@ -29,9 +29,7 @@ func BenchmarkInitialGoimportsScan(b *testing.B) {
 
 	repo := getRepo(b, "tools") // since this a test of module cache scanning, any repo will do
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		func() {
 			// Unfortunately we (intentionally) don't support resetting the module
 			// cache scan state, so in order to have an accurate benchmark we must

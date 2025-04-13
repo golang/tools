@@ -81,7 +81,7 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 			fixes = append(fixes, astFixes...)
 		}
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			// Fix certain syntax errors that render the file unparseable.
 			newSrc, srcFix := fixSrc(file, tok, src)
 			if newSrc == nil {
@@ -903,10 +903,7 @@ func offsetPositions(tok *token.File, n ast.Node, offset token.Pos) {
 				//
 				// TODO(golang/go#64335): this is a hack, because our fixes should not
 				// produce positions that overflow (but they do: golang/go#64488).
-				pos := f.Int() + int64(offset)
-				if pos < fileBase {
-					pos = fileBase
-				}
+				pos := max(f.Int()+int64(offset), fileBase)
 				if pos > fileEnd {
 					pos = fileEnd
 				}

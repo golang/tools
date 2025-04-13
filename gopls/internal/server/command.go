@@ -15,6 +15,7 @@ import (
 	"go/token"
 	"io"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -65,14 +66,7 @@ func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCom
 		defer work.End(ctx, "Done.")
 	}
 
-	var found bool
-	for _, name := range s.Options().SupportedCommands {
-		if name == params.Command {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.Contains(s.Options().SupportedCommands, params.Command) {
 		return nil, fmt.Errorf("%s is not a supported command", params.Command)
 	}
 
@@ -1208,9 +1202,7 @@ func (c *commandHandler) FetchVulncheckResult(ctx context.Context, arg command.U
 			}
 		}
 		// Overwrite if there is any govulncheck-based result.
-		for modfile, result := range deps.snapshot.Vulnerabilities() {
-			ret[modfile] = result
-		}
+		maps.Copy(ret, deps.snapshot.Vulnerabilities())
 		return nil
 	})
 	return ret, err
@@ -1677,7 +1669,6 @@ func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.Diagnos
 
 		var wg sync.WaitGroup
 		for snapshot := range snapshots {
-			snapshot := snapshot
 			wg.Add(1)
 			go func() {
 				defer wg.Done()

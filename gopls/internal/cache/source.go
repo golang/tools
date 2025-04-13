@@ -103,7 +103,7 @@ func (s *goplsSource) ResolveReferences(ctx context.Context, filename string, mi
 		}
 
 		dbgpr := func(hdr string, v []*imports.Result) {
-			for i := 0; i < len(v); i++ {
+			for i := range v {
 				log.Printf("%s%d %+v %+v", hdr, i, v[i].Import, v[i].Package)
 			}
 		}

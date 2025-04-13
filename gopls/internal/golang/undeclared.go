@@ -251,7 +251,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 		// results is used as an argument
 		case *types.Tuple:
 			n := t.Len()
-			for i := 0; i < n; i++ {
+			for i := range n {
 				name := typeToArgName(t.At(i).Type())
 				nameCounts[name]++
 

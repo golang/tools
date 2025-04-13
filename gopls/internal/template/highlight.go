@@ -70,7 +70,7 @@ func markWordInToken(p *Parsed, wordAt string) ([]protocol.DocumentHighlight, er
 	}
 	for _, tok := range p.tokens {
 		got := pat.FindAllIndex(p.buf[tok.Start:tok.End], -1)
-		for i := 0; i < len(got); i++ {
+		for i := range got {
 			ans = append(ans, protocol.DocumentHighlight{
 				Range: p.Range(got[i][0], got[i][1]-got[i][0]),
 				Kind:  protocol.Text,

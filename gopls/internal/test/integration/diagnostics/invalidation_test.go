@@ -82,7 +82,7 @@ func _() {
 		}
 		msg := d.Diagnostics[0].Message
 
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			before := d.Version
 			env.RegexpReplace("main.go", "Irrelevant comment #.", fmt.Sprintf("Irrelevant comment #%d", i))
 			env.AfterChange(

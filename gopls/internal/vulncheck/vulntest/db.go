@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -199,7 +200,7 @@ func AffectedRanges(versions []VersionRange) []osv.Range {
 
 func toOSVPackages(pkgs []*Package) (imps []osv.Package) {
 	for _, p := range pkgs {
-		syms := append([]string{}, p.Symbols...)
+		syms := slices.Clone(p.Symbols)
 		syms = append(syms, p.DerivedSymbols...)
 		sort.Strings(syms)
 		imps = append(imps, osv.Package{

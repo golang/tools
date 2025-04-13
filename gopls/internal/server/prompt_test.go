@@ -27,7 +27,6 @@ func TestAcquireFileLock(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := range releasers {
-		i := i
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

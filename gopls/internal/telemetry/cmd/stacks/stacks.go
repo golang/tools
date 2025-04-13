@@ -741,7 +741,7 @@ func newIssue(pcfg ProgramConfig, stack, id, jsonURL string, counts map[Info]int
 	// lines around the PC in this symbol.
 	var symbol string
 outer:
-	for _, line := range strings.Split(stack, "\n") {
+	for line := range strings.SplitSeq(stack, "\n") {
 		for _, s := range pcfg.IgnoreSymbolContains {
 			if strings.Contains(line, s) {
 				continue outer // not interesting
@@ -814,7 +814,7 @@ func writeStackComment(body *bytes.Buffer, stack, id string, jsonURL string, cou
 	}
 
 	// Parse the stack and get the symbol names out.
-	for _, frame := range strings.Split(stack, "\n") {
+	for frame := range strings.SplitSeq(stack, "\n") {
 		if url := frameURL(pclntab, info, frame); url != "" {
 			fmt.Fprintf(body, "- [`%s`](%s)\n", frame, url)
 		} else {

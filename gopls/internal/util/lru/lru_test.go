@@ -122,7 +122,6 @@ func TestConcurrency(t *testing.T) {
 	// there is no third possibility.
 	var group errgroup.Group
 	for i := range values {
-		i := i
 		v := values[i][:]
 		group.Go(func() error {
 			cache.Set(key, v, len(v))

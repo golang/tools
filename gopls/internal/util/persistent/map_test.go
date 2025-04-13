@@ -6,6 +6,7 @@ package persistent
 
 import (
 	"fmt"
+	"maps"
 	"math/rand"
 	"reflect"
 	"sync/atomic"
@@ -128,7 +129,7 @@ func TestRandomMap(t *testing.T) {
 	}
 
 	keys := make([]int, 0, 1000)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		key := rand.Intn(10000)
 		m.set(t, key, key)
 		keys = append(keys, key)
@@ -282,9 +283,7 @@ func (vm *validatedMap) setAll(t *testing.T, other *validatedMap) {
 
 	// Note: this is buggy because we are not updating vm.clock, vm.deleted, or
 	// vm.seen.
-	for key, value := range other.expected {
-		vm.expected[key] = value
-	}
+	maps.Copy(vm.expected, other.expected)
 	vm.validate(t)
 }
 
@@ -327,9 +326,7 @@ func (vm *validatedMap) remove(t *testing.T, key int) {
 
 func (vm *validatedMap) clone() *validatedMap {
 	expected := make(map[int]int, len(vm.expected))
-	for key, value := range vm.expected {
-		expected[key] = value
-	}
+	maps.Copy(expected, vm.expected)
 
 	return &validatedMap{
 		impl:     vm.impl.Clone(),

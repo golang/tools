@@ -53,7 +53,7 @@ func benchmarkCompletion(options completionBenchOptions, b *testing.B) {
 			defer stopAndRecord()
 		}
 
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			if options.beforeCompletion != nil {
 				options.beforeCompletion(env)
 			}
@@ -314,13 +314,11 @@ func runCompletion(b *testing.B, test completionTest, followingEdit, completeUni
 		}
 	}
 
-	b.ResetTimer()
-
 	if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, "completion")); stopAndRecord != nil {
 		defer stopAndRecord()
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if followingEdit {
 			editPlaceholder()
 		}

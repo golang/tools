@@ -107,7 +107,6 @@ func TestProgressTracker_Reporting(t *testing.T) {
 			wantEnded:    1,
 		},
 	} {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			ctx, tracker, client := setup()
 			ctx, cancel := context.WithCancel(ctx)

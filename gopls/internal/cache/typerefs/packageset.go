@@ -124,7 +124,7 @@ func (s *PackageSet) Contains(id metadata.PackageID) bool {
 // Elems calls f for each element of the set in ascending order.
 func (s *PackageSet) Elems(f func(IndexID)) {
 	for i, v := range moremaps.Sorted(s.sparse) {
-		for b := 0; b < blockSize; b++ {
+		for b := range blockSize {
 			if (v & (1 << b)) != 0 {
 				f(IndexID(i*blockSize + b))
 			}

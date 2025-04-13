@@ -912,7 +912,6 @@ func testVulnDiagnostics(t *testing.T, env *Env, pattern string, want vulnDiagEx
 		// Find the diagnostics at loc.start.
 		var diag *protocol.Diagnostic
 		for _, g := range got.Diagnostics {
-			g := g
 			if g.Range.Start == loc.Range.Start && w.msg == g.Message {
 				modPathDiagnostics = append(modPathDiagnostics, g)
 				diag = &g

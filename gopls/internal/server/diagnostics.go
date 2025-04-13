@@ -128,7 +128,6 @@ func (s *server) diagnoseChangedViews(ctx context.Context, modID uint64, lastCha
 	// Diagnose views concurrently.
 	var wg sync.WaitGroup
 	for _, v := range needsDiagnosis {
-		v := v
 		snapshot, release, err := v.Snapshot()
 		if err != nil {
 			s.modificationMu.Lock()

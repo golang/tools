@@ -41,7 +41,7 @@ func BenchmarkInitialWorkspaceLoad(b *testing.B) {
 			sharedEnv := repo.sharedEnv(b)
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				doIWL(b, sharedEnv.Sandbox.GOPATH(), repo, nil)
 			}
 		})
@@ -61,7 +61,7 @@ func BenchmarkInitialWorkspaceLoadOpenFiles(b *testing.B) {
 			sharedEnv := repo.sharedEnv(b)
 			b.ResetTimer()
 
-			for range b.N {
+			for b.Loop() {
 				doIWL(b, sharedEnv.Sandbox.GOPATH(), repo, []string{t.file})
 			}
 		})

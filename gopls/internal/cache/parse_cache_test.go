@@ -195,9 +195,9 @@ func TestParseCache_Duplicates(t *testing.T) {
 
 func dummyFileHandles(n int) []file.Handle {
 	var fhs []file.Handle
-	for i := 0; i < n; i++ {
+	for i := range n {
 		uri := protocol.DocumentURI(fmt.Sprintf("file:///_%d", i))
-		src := []byte(fmt.Sprintf("package p\nvar _ = %d", i))
+		src := fmt.Appendf(nil, "package p\nvar _ = %d", i)
 		fhs = append(fhs, makeFakeFileHandle(uri, src))
 	}
 	return fhs

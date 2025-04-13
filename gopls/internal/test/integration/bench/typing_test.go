@@ -41,7 +41,7 @@ func BenchmarkTyping(b *testing.B) {
 						defer stopAndRecord()
 					}
 					ticker := time.NewTicker(delay)
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						edits := atomic.AddInt64(&editID, 1)
 						env.EditBuffer(test.file, protocol.TextEdit{
 							Range: protocol.Range{

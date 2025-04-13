@@ -17,6 +17,7 @@ import (
 	"log"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -210,7 +211,7 @@ func (tv *tokenVisitor) comment(c *ast.Comment, importByName map[string]*types.P
 	}
 
 	pos := c.Pos()
-	for _, line := range strings.Split(c.Text, "\n") {
+	for line := range strings.SplitSeq(c.Text, "\n") {
 		last := 0
 
 		for _, idx := range docLinkRegex.FindAllStringSubmatchIndex(line, -1) {
@@ -721,10 +722,8 @@ func (tv *tokenVisitor) unkIdent(id *ast.Ident) (semtok.Type, []semtok.Modifier)
 			return semtok.TokType, nil
 		}
 	case *ast.ValueSpec:
-		for _, p := range parent.Names {
-			if p == id {
-				return semtok.TokVariable, def
-			}
+		if slices.Contains(parent.Names, id) {
+			return semtok.TokVariable, def
 		}
 		for _, p := range parent.Values {
 			if p == id {

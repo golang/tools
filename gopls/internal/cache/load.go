@@ -791,7 +791,7 @@ func computeWorkspacePackagesLocked(ctx context.Context, s *Snapshot, meta *meta
 func allFilesHaveRealPackages(g *metadata.Graph, mp *metadata.Package) bool {
 	n := len(mp.CompiledGoFiles)
 checkURIs:
-	for _, uri := range append(mp.CompiledGoFiles[0:n:n], mp.GoFiles...) {
+	for _, uri := range slices.Concat(mp.CompiledGoFiles[0:n:n], mp.GoFiles) {
 		for _, id := range g.IDs[uri] {
 			if !metadata.IsCommandLineArguments(id) {
 				continue checkURIs

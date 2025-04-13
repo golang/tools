@@ -56,7 +56,7 @@ func BenchmarkDidChange(b *testing.B) {
 			}
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				edit()
 				env.Await(env.StartedChange())
 			}
@@ -142,7 +142,7 @@ func runChangeDiagnosticsBenchmark(b *testing.B, test changeTest, save bool, ope
 			if stopAndRecord := startProfileIfSupported(b, env, qualifiedName(test.repo, operation)); stopAndRecord != nil {
 				defer stopAndRecord()
 			}
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				edits := atomic.AddInt64(&editID, 1)
 				env.EditBuffer(test.file, protocol.TextEdit{
 					Range: protocol.Range{

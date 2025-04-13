@@ -36,7 +36,7 @@ func BenchmarkImplementations(b *testing.B) {
 				defer stopAndRecord()
 			}
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				env.Implementations(loc)
 			}
 		})

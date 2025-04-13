@@ -12,7 +12,7 @@ import (
 	"go/token"
 	"go/types"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -81,9 +81,7 @@ func TestBuildPackageGraph(t *testing.T) {
 	for id := range exports {
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool {
-		return ids[i] < ids[j]
-	})
+	slices.Sort(ids)
 
 	t0 = time.Now()
 	g, err := BuildPackageGraph(ctx, meta, ids, newParser().parse)
@@ -259,9 +257,8 @@ func BenchmarkBuildPackageGraph(b *testing.B) {
 	for id := range exports {
 		ids = append(ids, id)
 	}
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := BuildPackageGraph(ctx, meta, ids, newParser().parse)
 		if err != nil {
 			b.Fatal(err)

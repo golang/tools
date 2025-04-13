@@ -802,7 +802,7 @@ func replaceSection(content []byte, sectionName string, replacement []byte) ([]b
 	if idx == nil {
 		return nil, fmt.Errorf("could not find section %q", sectionName)
 	}
-	result := append([]byte(nil), content[:idx[2]]...)
+	result := slices.Clone(content[:idx[2]])
 	result = append(result, replacement...)
 	result = append(result, content[idx[3]:]...)
 	return result, nil

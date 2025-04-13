@@ -48,7 +48,7 @@ func BenchmarkReload(b *testing.B) {
 			}
 
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				// Mutate the file. This may result in cache hits, but that's OK: the
 				// goal is to ensure that we don't reload more than just the current
 				// package.

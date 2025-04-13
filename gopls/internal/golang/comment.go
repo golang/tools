@@ -96,11 +96,7 @@ func parseDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types.O
 	// position of each doc link from the parsed result.
 	line := safetoken.Line(pgf.Tok, pos)
 	var start, end token.Pos
-	if pgf.Tok.LineStart(line) > comment.Pos() {
-		start = pgf.Tok.LineStart(line)
-	} else {
-		start = comment.Pos()
-	}
+	start = max(pgf.Tok.LineStart(line), comment.Pos())
 	if line < pgf.Tok.LineCount() && pgf.Tok.LineStart(line+1) < comment.End() {
 		end = pgf.Tok.LineStart(line + 1)
 	} else {

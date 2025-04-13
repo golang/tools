@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -25,16 +26,8 @@ import (
 )
 
 func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) (*protocol.Hover, error) {
-	var found bool
-	for _, uri := range snapshot.View().ModFiles() {
-		if fh.URI() == uri {
-			found = true
-			break
-		}
-	}
-
 	// We only provide hover information for the view's go.mod files.
-	if !found {
+	if !slices.Contains(snapshot.View().ModFiles(), fh.URI()) {
 		return nil, nil
 	}
 

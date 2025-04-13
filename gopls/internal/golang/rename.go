@@ -51,6 +51,7 @@ import (
 	"go/printer"
 	"go/token"
 	"go/types"
+	"maps"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -170,8 +171,7 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 
 func prepareRenamePackageName(ctx context.Context, snapshot *cache.Snapshot, pgf *parsego.File) (*PrepareItem, error) {
 	// Does the client support file renaming?
-	fileRenameSupported := slices.Contains(snapshot.Options().SupportedResourceOperations, protocol.Rename)
-	if !fileRenameSupported {
+	if !slices.Contains(snapshot.Options().SupportedResourceOperations, protocol.Rename) {
 		return nil, errors.New("can't rename package: LSP client does not support file renaming")
 	}
 
@@ -715,9 +715,7 @@ func typeCheckReverseDependencies(ctx context.Context, snapshot *cache.Snapshot,
 			return nil, err
 		}
 		allRdeps[variant.ID] = variant // include self
-		for id, meta := range rdeps {
-			allRdeps[id] = meta
-		}
+		maps.Copy(allRdeps, rdeps)
 	}
 	var ids []PackageID
 	for id, meta := range allRdeps {

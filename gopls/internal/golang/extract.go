@@ -488,10 +488,8 @@ func canExtractVariable(info *types.Info, curFile cursor.Cursor, start, end toke
 		path, _ := astutil.PathEnclosingInterval(file, e.Pos(), e.End())
 		for _, n := range path {
 			if assignment, ok := n.(*ast.AssignStmt); ok {
-				for _, lhs := range assignment.Lhs {
-					if lhs == e {
-						return nil, fmt.Errorf("node %T is in LHS of an AssignStmt", expr)
-					}
+				if slices.Contains(assignment.Lhs, e) {
+					return nil, fmt.Errorf("node %T is in LHS of an AssignStmt", expr)
 				}
 				break
 			}

@@ -142,7 +142,7 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 	// Request code actions of the desired kinds.
 	var kinds []protocol.CodeActionKind
 	if cmd.Kind != "" {
-		for _, kind := range strings.Split(cmd.Kind, ",") {
+		for kind := range strings.SplitSeq(cmd.Kind, ",") {
 			kinds = append(kinds, protocol.CodeActionKind(kind))
 		}
 	} else {

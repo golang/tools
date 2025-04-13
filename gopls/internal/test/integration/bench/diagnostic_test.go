@@ -58,9 +58,7 @@ func BenchmarkDiagnosePackageFiles(b *testing.B) {
 		defer stopAndRecord()
 	}
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		edit()
 		var wg sync.WaitGroup
 		for _, file := range files {

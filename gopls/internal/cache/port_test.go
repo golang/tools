@@ -46,7 +46,6 @@ func TestMatchingPortsStdlib(t *testing.T) {
 	var g errgroup.Group
 	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
 		for _, f := range pkg.CompiledGoFiles {
-			f := f
 			g.Go(func() error {
 				content, err := os.ReadFile(f)
 				// We report errors via t.Error, not by returning,
@@ -118,7 +117,7 @@ func getFileID(filename string) (FileID, time.Time, error) {
 }
 `
 	fh := makeFakeFileHandle("file:///path/to/test/file.go", []byte(src))
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = matchingPreferredPorts(b, fh, true)
 	}
 }

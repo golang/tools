@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -354,9 +353,7 @@ func (s *server) getSupportedCodeActions() []protocol.CodeActionKind {
 	for kind := range allCodeActionKinds {
 		result = append(result, kind)
 	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i] < result[j]
-	})
+	slices.Sort(result)
 	return result
 }
 

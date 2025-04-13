@@ -12,6 +12,7 @@ import (
 	"go/format"
 	"go/types"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -134,7 +135,7 @@ outer:
 
 			if match != nil {
 				fixed[i] = match
-				remaining = append(remaining[:idx], remaining[idx+1:]...)
+				remaining = slices.Delete(remaining, idx, idx+1)
 			} else {
 				names, ok := matches[retTyp]
 				if !ok {

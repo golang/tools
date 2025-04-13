@@ -891,7 +891,6 @@ func (act *action) String() string {
 func execActions(ctx context.Context, actions []*action) {
 	var wg sync.WaitGroup
 	for _, act := range actions {
-		act := act
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

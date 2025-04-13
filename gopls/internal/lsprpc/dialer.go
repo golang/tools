@@ -97,7 +97,7 @@ func (d *autoDialer) dialNet(ctx context.Context) (net.Conn, error) {
 	const retries = 5
 	// It can take some time for the newly started server to bind to our address,
 	// so we retry for a bit.
-	for retry := 0; retry < retries; retry++ {
+	for retry := range retries {
 		startDial := time.Now()
 		netConn, err = net.DialTimeout(d.network, d.addr, dialTimeout)
 		if err == nil {

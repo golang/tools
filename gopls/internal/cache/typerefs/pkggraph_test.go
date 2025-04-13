@@ -84,7 +84,6 @@ func BuildPackageGraph(ctx context.Context, meta metadata.Source, ids []metadata
 	var eg errgroup.Group
 	eg.SetLimit(workers)
 	for _, id := range ids {
-		id := id
 		eg.Go(func() error {
 			_, err := g.Package(ctx, id)
 			return err

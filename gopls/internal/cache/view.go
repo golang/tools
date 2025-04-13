@@ -473,7 +473,7 @@ func (v *View) filterFunc() func(protocol.DocumentURI) bool {
 		gomodcache := v.folder.Env.GOMODCACHE
 		var filters []string
 		filters = append(filters, v.folder.Options.DirectoryFilters...)
-		if pref := strings.TrimPrefix(gomodcache, folderDir); pref != gomodcache {
+		if pref, ok := strings.CutPrefix(gomodcache, folderDir); ok {
 			modcacheFilter := "-" + strings.TrimPrefix(filepath.ToSlash(pref), "/")
 			filters = append(filters, modcacheFilter)
 		}
@@ -550,7 +550,7 @@ func newIgnoreFilter(dirs []string) *ignoreFilter {
 
 func (f *ignoreFilter) ignored(filename string) bool {
 	for _, prefix := range f.prefixes {
-		if suffix := strings.TrimPrefix(filename, prefix); suffix != filename {
+		if suffix, ok := strings.CutPrefix(filename, prefix); ok {
 			if checkIgnored(suffix) {
 				return true
 			}
@@ -567,7 +567,7 @@ func (f *ignoreFilter) ignored(filename string) bool {
 func checkIgnored(suffix string) bool {
 	// Note: this could be further optimized by writing a HasSegment helper, a
 	// segment-boundary respecting variant of strings.Contains.
-	for _, component := range strings.Split(suffix, string(filepath.Separator)) {
+	for component := range strings.SplitSeq(suffix, string(filepath.Separator)) {
 		if len(component) == 0 {
 			continue
 		}

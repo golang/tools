@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"go/types"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -89,10 +90,8 @@ func findFileInDeps(s metadata.Source, mp *metadata.Package, uri protocol.Docume
 			return nil
 		}
 		seen[mp.ID] = true
-		for _, cgf := range mp.CompiledGoFiles {
-			if cgf == uri {
-				return mp
-			}
+		if slices.Contains(mp.CompiledGoFiles, uri) {
+			return mp
 		}
 		for _, dep := range mp.DepsByPkgPath {
 			mp := s.Metadata(dep)

@@ -52,8 +52,7 @@ func (s PingServer) DidOpen(ctx context.Context, params *protocol.DidOpenTextDoc
 }
 
 func TestClientLogging(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	server := PingServer{}
 	client := FakeClient{Logs: make(chan string, 10)}
@@ -212,8 +211,7 @@ func TestDebugInfoLifecycle(t *testing.T) {
 		}
 	}()
 
-	baseCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	baseCtx := t.Context()
 	clientCtx := debug.WithInstance(baseCtx)
 	serverCtx := debug.WithInstance(baseCtx)
 

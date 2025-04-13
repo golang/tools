@@ -173,7 +173,7 @@ func Encode(
 	x := make([]uint32, 5*len(tokens))
 	var j int
 	var last Token
-	for i := 0; i < len(tokens); i++ {
+	for i := range tokens {
 		item := tokens[i]
 		typ, ok := typeMap[item.Type]
 		if !ok {

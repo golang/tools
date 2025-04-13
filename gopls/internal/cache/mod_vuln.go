@@ -126,7 +126,6 @@ func modVulnImpl(ctx context.Context, snapshot *Snapshot) (*vulncheck.Result, er
 	var group errgroup.Group
 	group.SetLimit(10) // limit govulncheck api runs
 	for _, mps := range packagesByModule {
-		mps := mps
 		group.Go(func() error {
 			effectiveModule := stdlibModule
 			if m := mps[0].Module; m != nil {

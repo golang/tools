@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"net/http"
 	"runtime/trace"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -271,7 +272,7 @@ func (t *traces) addRecentLocked(span *traceSpan, start bool) {
 		// as Go's GC cannot collect the ever-growing unused prefix.
 		// So, compact it periodically.
 		if t.recentEvictions%maxRecent == 0 {
-			t.recent = append([]spanStartEnd(nil), t.recent...)
+			t.recent = slices.Clone(t.recent)
 		}
 	}
 }

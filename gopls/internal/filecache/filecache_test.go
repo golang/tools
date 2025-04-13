@@ -100,7 +100,6 @@ func TestConcurrency(t *testing.T) {
 	// there is no third possibility.
 	var group errgroup.Group
 	for i := range values {
-		i := i
 		group.Go(func() error { return filecache.Set(kind, key, values[i][:]) })
 		group.Go(func() error { return get(false) })
 	}
@@ -217,12 +216,12 @@ func BenchmarkUncontendedGet(b *testing.B) {
 	if err := filecache.Set(kind, key, value[:]); err != nil {
 		b.Fatal(err)
 	}
-	b.ResetTimer()
+
 	b.SetBytes(int64(len(value)))
 
 	var group errgroup.Group
 	group.SetLimit(50)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		group.Go(func() error {
 			_, err := filecache.Get(kind, key)
 			return err
@@ -246,7 +245,7 @@ func BenchmarkUncontendedSet(b *testing.B) {
 	const P = 1000 // parallelism
 	b.SetBytes(P * int64(len(value)))
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Perform P concurrent calls to Set. All must succeed.
 		var group errgroup.Group
 		for range [P]bool{} {

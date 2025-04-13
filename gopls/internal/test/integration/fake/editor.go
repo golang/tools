@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"os"
 	"path"
@@ -261,12 +262,8 @@ func (e *Editor) Client() *Client {
 // makeSettings builds the settings map for use in LSP settings RPCs.
 func makeSettings(sandbox *Sandbox, config EditorConfig, scopeURI *protocol.URI) map[string]any {
 	env := make(map[string]string)
-	for k, v := range sandbox.GoEnv() {
-		env[k] = v
-	}
-	for k, v := range config.Env {
-		env[k] = v
-	}
+	maps.Copy(env, sandbox.GoEnv())
+	maps.Copy(env, config.Env)
 	for k, v := range env {
 		v = strings.ReplaceAll(v, "$SANDBOX_WORKDIR", sandbox.Workdir.RootURI().Path())
 		env[k] = v
@@ -307,9 +304,7 @@ func makeSettings(sandbox *Sandbox, config EditorConfig, scopeURI *protocol.URI)
 			}
 		}
 		if closestSettings != nil {
-			for k, v := range closestSettings {
-				settings[k] = v
-			}
+			maps.Copy(settings, closestSettings)
 		}
 	}
 
@@ -443,12 +438,7 @@ func marshalUnmarshal[T any](v any) (T, error) {
 
 // HasCommand reports whether the connected server supports the command with the given ID.
 func (e *Editor) HasCommand(cmd command.Command) bool {
-	for _, command := range e.serverCapabilities.ExecuteCommandProvider.Commands {
-		if command == cmd.String() {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(e.serverCapabilities.ExecuteCommandProvider.Commands, cmd.String())
 }
 
 // Examples: https://www.iana.org/assignments/uri-schemes/uri-schemes.xhtml
@@ -1179,11 +1169,8 @@ func (e *Editor) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCom
 	var match bool
 	if e.serverCapabilities.ExecuteCommandProvider != nil {
 		// Ensure that this command was actually listed as a supported command.
-		for _, command := range e.serverCapabilities.ExecuteCommandProvider.Commands {
-			if command == params.Command {
-				match = true
-				break
-			}
+		if slices.Contains(e.serverCapabilities.ExecuteCommandProvider.Commands, params.Command) {
+			match = true
 		}
 	}
 	if !match {

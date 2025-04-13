@@ -6,6 +6,7 @@ package metadata
 
 import (
 	"iter"
+	"maps"
 	"sort"
 	"strings"
 
@@ -63,9 +64,7 @@ func (g *Graph) Update(updates map[PackageID]*Package) *Graph {
 
 	// Copy pkgs map then apply updates.
 	pkgs := make(map[PackageID]*Package, len(g.Packages))
-	for id, mp := range g.Packages {
-		pkgs[id] = mp
-	}
+	maps.Copy(pkgs, g.Packages)
 	for id, mp := range updates {
 		if mp == nil {
 			delete(pkgs, id)

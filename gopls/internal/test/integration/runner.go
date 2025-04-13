@@ -142,7 +142,6 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		config := defaultConfig()
 		for _, opt := range opts {
 			opt.set(&config)

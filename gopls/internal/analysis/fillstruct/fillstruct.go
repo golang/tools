@@ -76,7 +76,7 @@ func Diagnose(f *ast.File, start, end token.Pos, pkg *types.Package, info *types
 
 		// Are any fields in need of filling?
 		var fillableFields []string
-		for i := 0; i < fieldCount; i++ {
+		for i := range fieldCount {
 			field := tStruct.Field(i)
 			// Ignore fields that are not accessible in the current package.
 			if field.Pkg() != nil && field.Pkg() != pkg && !field.Exported() {
@@ -182,7 +182,7 @@ func SuggestedFix(cpkg *cache.Package, pgf *parsego.File, start, end token.Pos) 
 	}
 
 	var fieldTyps []types.Type
-	for i := 0; i < fieldCount; i++ {
+	for i := range fieldCount {
 		field := tStruct.Field(i)
 		// Ignore fields that are not accessible in the current package.
 		if field.Pkg() != nil && field.Pkg() != pkg && !field.Exported() {

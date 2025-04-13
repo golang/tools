@@ -13,6 +13,7 @@ package clonetest
 import (
 	"fmt"
 	"reflect"
+	"slices"
 )
 
 // NonZero returns a T set to some appropriate nonzero value:
@@ -36,11 +37,9 @@ func NonZero[T any]() T {
 
 // nonZeroValue returns a non-zero, addressable value of the given type.
 func nonZeroValue(t reflect.Type, seen []reflect.Type) reflect.Value {
-	for _, t2 := range seen {
-		if t == t2 {
-			// Cycle: return the zero value.
-			return reflect.Zero(t)
-		}
+	if slices.Contains(seen, t) {
+		// Cycle: return the zero value.
+		return reflect.Zero(t)
 	}
 	seen = append(seen, t)
 	v := reflect.New(t).Elem()

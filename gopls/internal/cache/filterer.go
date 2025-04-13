@@ -71,8 +71,8 @@ func convertFilterToRegexp(filter string) *regexp.Regexp {
 	}
 	var ret strings.Builder
 	ret.WriteString("^/")
-	segs := strings.Split(filter, "/")
-	for _, seg := range segs {
+	segs := strings.SplitSeq(filter, "/")
+	for seg := range segs {
 		// Inv: seg != "" since path is clean.
 		if seg == "**" {
 			ret.WriteString(".*")

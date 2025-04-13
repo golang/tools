@@ -183,7 +183,7 @@ func (fr *frob) encode(out *writer, v reflect.Value) {
 	case reflect.Array:
 		len := v.Type().Len()
 		elem := fr.elems[0]
-		for i := 0; i < len; i++ {
+		for i := range len {
 			elem.encode(out, v.Index(i))
 		}
 
@@ -196,7 +196,7 @@ func (fr *frob) encode(out *writer, v reflect.Value) {
 				// []byte fast path
 				out.bytes(v.Bytes())
 			} else {
-				for i := 0; i < len; i++ {
+				for i := range len {
 					elem.encode(out, v.Index(i))
 				}
 			}
@@ -298,7 +298,7 @@ func (fr *frob) decode(in *reader, addr reflect.Value) {
 
 	case reflect.Array:
 		len := fr.t.Len()
-		for i := 0; i < len; i++ {
+		for i := range len {
 			fr.elems[0].decode(in, addr.Index(i))
 		}
 
@@ -312,7 +312,7 @@ func (fr *frob) decode(in *reader, addr reflect.Value) {
 				addr.Set(reflect.AppendSlice(addr, reflect.ValueOf(in.bytes(len))))
 			} else {
 				addr.Set(reflect.MakeSlice(fr.t, len, len))
-				for i := 0; i < len; i++ {
+				for i := range len {
 					elem.decode(in, addr.Index(i))
 				}
 			}
@@ -326,7 +326,7 @@ func (fr *frob) decode(in *reader, addr reflect.Value) {
 			kfrob, vfrob := fr.elems[0], fr.elems[1]
 			k := reflect.New(kfrob.t).Elem()
 			v := reflect.New(vfrob.t).Elem()
-			for i := 0; i < len; i++ {
+			for range len {
 				k.SetZero()
 				v.SetZero()
 				kfrob.decode(in, k)

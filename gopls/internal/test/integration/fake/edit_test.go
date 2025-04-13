@@ -79,7 +79,6 @@ func TestApplyEdits(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.label, func(t *testing.T) {
 			got, err := applyEdits(protocol.NewMapper("", []byte(test.content)), test.edits, false)
 			if (err != nil) != test.wantErr {

@@ -224,10 +224,7 @@ func lspName(methodName string) string {
 func splitCamel(s string) []string {
 	var words []string
 	for len(s) > 0 {
-		last := strings.LastIndexFunc(s, unicode.IsUpper)
-		if last < 0 {
-			last = 0
-		}
+		last := max(strings.LastIndexFunc(s, unicode.IsUpper), 0)
 		if last == len(s)-1 {
 			// Group initialisms as a single word.
 			last = 1 + strings.LastIndexFunc(s[:last], func(r rune) bool { return !unicode.IsUpper(r) })

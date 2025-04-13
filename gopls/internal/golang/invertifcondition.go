@@ -42,10 +42,7 @@ func invertIfCondition(pkg *cache.Package, pgf *parsego.File, start, end token.P
 		// version of the original if body
 		sourcePos := safetoken.StartPosition(fset, ifStatement.Pos())
 
-		indent := sourcePos.Column - 1
-		if indent < 0 {
-			indent = 0
-		}
+		indent := max(sourcePos.Column-1, 0)
 
 		standaloneBodyText := ifBodyToStandaloneCode(fset, ifStatement.Body, src)
 		replaceElse = analysis.TextEdit{
