@@ -238,9 +238,58 @@ func _(io.Reader) {
 			want: `package a
 
 import (
-	"io"
 	"fmt"
+	"io"
 )
+
+func _(io.Reader) {
+	fmt
+}`,
+		},
+		{
+			descr: descr("add import to group which imports std and a 3rd module"),
+			src: `package a
+
+import (
+	"io"
+
+	"vendor/golang.org/x/net/dns/dnsmessage"
+)
+
+func _(io.Reader) {
+	«fmt fmt»
+}`,
+			want: `package a
+
+import (
+	"fmt"
+	"io"
+
+	"vendor/golang.org/x/net/dns/dnsmessage"
+)
+
+func _(io.Reader) {
+	fmt
+}`,
+		},
+		{
+			descr: descr("add import to group which imports std and a 3rd module without parens"),
+			src: `package a
+
+import "io"
+
+import "vendor/golang.org/x/net/dns/dnsmessage"
+
+func _(io.Reader) {
+	«fmt fmt»
+}`,
+			want: `package a
+
+import "fmt"
+
+import "io"
+
+import "vendor/golang.org/x/net/dns/dnsmessage"
 
 func _(io.Reader) {
 	fmt
@@ -311,6 +360,28 @@ func _(io.Reader) {
 			if output != test.want {
 				t.Errorf("\n--got--\n%s\n--want--\n%s\n--diff--\n%s",
 					output, test.want, cmp.Diff(test.want, output))
+			}
+		})
+	}
+}
+
+func TestIsStdPackage(t *testing.T) {
+	testCases := []struct {
+		pkgpath string
+		isStd   bool
+	}{
+		{pkgpath: "os", isStd: true},
+		{pkgpath: "net/http", isStd: true},
+		{pkgpath: "vendor/golang.org/x/net/dns/dnsmessage", isStd: true},
+		{pkgpath: "golang.org/x/net/dns/dnsmessage", isStd: false},
+		{pkgpath: "testdata", isStd: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.pkgpath, func(t *testing.T) {
+			got := analysisinternal.IsStdPackage(tc.pkgpath)
+			if got != tc.isStd {
+				t.Fatalf("got %t want %t", got, tc.isStd)
 			}
 		})
 	}

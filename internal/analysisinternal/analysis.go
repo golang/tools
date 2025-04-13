@@ -280,7 +280,15 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 	// If the first decl is an import group, add this new import at the end.
 	if gd, ok := before.(*ast.GenDecl); ok && gd.Tok == token.IMPORT && gd.Rparen.IsValid() {
 		pos = gd.Rparen
-		newText = "\t" + newText + "\n"
+		// if it's a std lib, we should append it at the beginning of import group.
+		// otherwise we may see the std package is put at the last behind a 3rd module which doesn't follow our convention.
+		// besides, gofmt doesn't help in this case.
+		if IsStdPackage(pkgpath) && len(gd.Specs) != 0 {
+			pos = gd.Specs[0].Pos()
+			newText += "\n\t"
+		} else {
+			newText = "\t" + newText + "\n"
+		}
 	} else {
 		pos = before.Pos()
 		newText = "import " + newText + "\n\n"
@@ -636,4 +644,16 @@ func Comments(file *ast.File, start, end token.Pos) iter.Seq[*ast.Comment] {
 			}
 		}
 	}
+}
+
+// IsStdPackage reports whether the specified package path belongs to a
+// package in the standard library (including internal dependencies).
+func IsStdPackage(path string) bool {
+	// A standard package has no dot in its first segment.
+	// (It may yet have a dot, e.g. "vendor/golang.org/x/foo".)
+	slash := strings.IndexByte(path, '/')
+	if slash < 0 {
+		slash = len(path)
+	}
+	return !strings.Contains(path[:slash], ".") && path != "testdata"
 }

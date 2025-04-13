@@ -170,20 +170,8 @@ func enclosingFile(c cursor.Cursor) *ast.File {
 // specified standard packages or their dependencies.
 func within(pass *analysis.Pass, pkgs ...string) bool {
 	path := pass.Pkg.Path()
-	return standard(path) &&
+	return analysisinternal.IsStdPackage(path) &&
 		moreiters.Contains(stdlib.Dependencies(pkgs...), path)
-}
-
-// standard reports whether the specified package path belongs to a
-// package in the standard library (including internal dependencies).
-func standard(path string) bool {
-	// A standard package has no dot in its first segment.
-	// (It may yet have a dot, e.g. "vendor/golang.org/x/foo".)
-	slash := strings.IndexByte(path, '/')
-	if slash < 0 {
-		slash = len(path)
-	}
-	return !strings.Contains(path[:slash], ".") && path != "testdata"
 }
 
 var (
