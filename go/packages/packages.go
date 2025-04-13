@@ -637,16 +637,17 @@ type flatPackage struct {
 // not intended for use by clients of the API and we may change the format.
 func (p *Package) MarshalJSON() ([]byte, error) {
 	flat := &flatPackage{
-		ID:            p.ID,
-		Name:          p.Name,
-		PkgPath:       p.PkgPath,
-		Errors:        p.Errors,
-		GoFiles:       p.GoFiles,
-		OtherFiles:    p.OtherFiles,
-		EmbedFiles:    p.EmbedFiles,
-		EmbedPatterns: p.EmbedPatterns,
-		IgnoredFiles:  p.IgnoredFiles,
-		ExportFile:    p.ExportFile,
+		ID:              p.ID,
+		Name:            p.Name,
+		PkgPath:         p.PkgPath,
+		Errors:          p.Errors,
+		GoFiles:         p.GoFiles,
+		CompiledGoFiles: p.CompiledGoFiles,
+		OtherFiles:      p.OtherFiles,
+		EmbedFiles:      p.EmbedFiles,
+		EmbedPatterns:   p.EmbedPatterns,
+		IgnoredFiles:    p.IgnoredFiles,
+		ExportFile:      p.ExportFile,
 	}
 	if len(p.Imports) > 0 {
 		flat.Imports = make(map[string]string, len(p.Imports))
