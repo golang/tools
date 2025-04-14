@@ -454,15 +454,13 @@ func buildMetadata(updates map[PackageID]*metadata.Package, loadDir string, stan
 			*dst = append(*dst, protocol.URIFromPath(filename))
 		}
 	}
-	copyAsmURIs := func(dst *[]protocol.DocumentURI, src []string) {
-		for _, filename := range src {
-			if !strings.HasSuffix(filename, ".s") {
-				continue
-			}
-			*dst = append(*dst, protocol.URIFromPath(filename))
+	// Copy SFiles to AsmFiles.
+	for _, filename := range pkg.OtherFiles {
+		if !strings.HasSuffix(filename, ".s") {
+			continue
 		}
+		mp.AsmFiles = append(mp.AsmFiles, protocol.URIFromPath(filename))
 	}
-	copyAsmURIs(&mp.AsmFiles, pkg.OtherFiles)
 	copyURIs(&mp.CompiledGoFiles, pkg.CompiledGoFiles)
 	copyURIs(&mp.GoFiles, pkg.GoFiles)
 	copyURIs(&mp.IgnoredFiles, pkg.IgnoredFiles)
