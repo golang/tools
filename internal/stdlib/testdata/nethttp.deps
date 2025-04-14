@@ -21,6 +21,7 @@ internal/runtime/sys
 internal/runtime/maps
 internal/runtime/syscall
 internal/stringslite
+internal/trace/tracev2
 runtime
 internal/reflectlite
 errors
@@ -166,4 +167,5 @@ mime/multipart
 net/http/httptrace
 net/http/internal
 net/http/internal/ascii
+net/http/internal/httpcommon
 net/http
