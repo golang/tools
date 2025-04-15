@@ -2045,7 +2045,7 @@ nextBranch:
 				(*ast.SelectStmt)(nil),
 			}
 			// Find innermost relevant ancestor for break/continue.
-			for curAncestor := range curBr.Ancestors(filter...) {
+			for curAncestor := range curBr.Parent().Enclosing(filter...) {
 				if l, ok := curAncestor.Parent().Node().(*ast.LabeledStmt); ok &&
 					label != nil &&
 					l.Label.Name == label.Name() {
