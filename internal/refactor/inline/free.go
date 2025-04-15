@@ -35,7 +35,13 @@ import (
 //     panics if it sees one.
 func freeishNames(free map[string]bool, n ast.Node, includeComplitIdents bool) {
 	v := &freeVisitor{free: free, includeComplitIdents: includeComplitIdents}
+	// Begin with a scope, even though n might not be a form that establishes a scope.
+	// For example, n might be:
+	//    x := ...
+	// Then we need to add the first x to some scope.
+	v.openScope()
 	ast.Walk(v, n)
+	v.closeScope()
 	assert(v.scope == nil, "unbalanced scopes")
 }
 

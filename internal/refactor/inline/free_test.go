@@ -229,6 +229,14 @@ func TestFreeishNames(t *testing.T) {
 	}
 }
 
+func TestFreeishNamesScope(t *testing.T) {
+	// Verify that inputs that don't start a scope don't crash.
+	_, f := mustParse(t, "free.go", `package p; func _() { x := 1; _ = x }`)
+	// Select the short var decl, not the entire function body.
+	n := f.Decls[0].(*ast.FuncDecl).Body.List[0]
+	freeishNames(map[string]bool{}, n, false)
+}
+
 func mustParse(t *testing.T, filename string, content any) (*token.FileSet, *ast.File) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, content, parser.ParseComments|parser.SkipObjectResolution)

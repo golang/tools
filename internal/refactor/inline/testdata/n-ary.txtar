@@ -77,3 +77,28 @@ func _() {
 }
 
 func f4() int { return 2 + 2 }
+-- e/e.go --
+package e
+
+func _() {
+	switch {
+	case true:
+		a, b := f5() //@ inline(re"f5", f5)
+		_, _ = a, b
+	}
+}
+
+func f5() (int, int) { return 2, 2}
+
+-- f5 --
+package e
+
+func _() {
+	switch {
+	case true:
+		a, b := 2, 2 //@ inline(re"f5", f5)
+		_, _ = a, b
+	}
+}
+
+func f5() (int, int) { return 2, 2 }
