@@ -492,7 +492,8 @@ following command:
 
 	$ go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -fix -test ./...
 
-(Do not use "go get -tool" to add gopls as a dependency of your module; it will not work.)
+(Do not use "go get -tool" to add gopls as a dependency of your
+module; gopls commands must be built from their release branch.)
 
 If the tool warns of conflicting fixes, you may need to run it more
 than once until it has applied all fixes cleanly. This command is
