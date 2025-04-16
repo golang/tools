@@ -315,11 +315,18 @@ Similar problems may arise with packages that use reflection, such as
 `encoding/json` or `text/template`. There is no substitute for good
 judgment and testing.
 
+Special cases:
+
+- When renaming the receiver of a method, the tool also attempts to
+  rename the receivers of all other methods associated with the same
+  named type. Each other receiver that cannot be fully renamed is
+  quietly skipped.
+
+- Renaming a package declaration additionally causes the package's
+  directory to be renamed.
+
 Some tips for best results:
 
-- There is currently no special support for renaming all receivers of
-  a family of methods at once, so you will need to rename one receiver
-  one at a time (golang/go#41892).
 - The safety checks performed by the Rename algorithm require type
   information. If the program is grossly malformed, there may be
   insufficient information for it to run (golang/go#41870),

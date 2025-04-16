@@ -69,8 +69,10 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typesinternal"
@@ -482,6 +484,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	// computes the union across all variants.)
 	var targets map[types.Object]ast.Node
 	var pkg *cache.Package
+	var cur cursor.Cursor // of selected Ident or ImportSpec
 	{
 		mps, err := snapshot.MetadataForFile(ctx, f.URI())
 		if err != nil {
@@ -504,6 +507,11 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 		pos, err := pgf.PositionPos(pp)
 		if err != nil {
 			return nil, err
+		}
+		var ok bool
+		cur, ok = pgf.Cursor.FindPos(pos, pos)
+		if !ok {
+			return nil, fmt.Errorf("can't find cursor for selection")
 		}
 		objects, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 		if err != nil {
@@ -571,8 +579,34 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 		for obj := range targets {
 			objects = append(objects, obj)
 		}
+
 		editMap, _, err := renameObjects(newName, pkg, objects...)
-		return editMap, err
+		if err != nil {
+			return nil, err
+		}
+
+		// If target is a receiver, also rename receivers of
+		// other methods of the same type that don't already
+		// have the target name. Quietly discard edits from
+		// any that can't be renamed.
+		//
+		// TODO(adonovan): UX question: require that the
+		// selection be the declaration of the receiver before
+		// we broaden the renaming?
+		if curDecl, ok := moreiters.First(cur.Enclosing((*ast.FuncDecl)(nil))); ok {
+			decl := curDecl.Node().(*ast.FuncDecl) // enclosing func
+			if decl.Recv != nil &&
+				len(decl.Recv.List) > 0 &&
+				len(decl.Recv.List[0].Names) > 0 {
+				recv := pkg.TypesInfo().Defs[decl.Recv.List[0].Names[0]]
+				if recv == obj {
+					// TODO(adonovan): simplify the above 7 lines to
+					// to "if obj.(*Var).Kind==Recv" in go1.25.
+					renameReceivers(pkg, recv.(*types.Var), newName, editMap)
+				}
+			}
+		}
+		return editMap, nil
 	}
 
 	// Exported: search globally.
@@ -630,6 +664,39 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	// Apply the renaming to the (initial) object.
 	declPkgPath := PackagePath(obj.Pkg().Path())
 	return renameExported(pkgs, declPkgPath, declObjPath, newName)
+}
+
+// renameReceivers renames all receivers of methods of the same named
+// type as recv. The edits of each successful renaming are added to
+// editMap; the failed ones are quietly discarded.
+func renameReceivers(pkg *cache.Package, recv *types.Var, newName string, editMap map[protocol.DocumentURI][]diff.Edit) {
+	_, named := typesinternal.ReceiverNamed(recv)
+	if named == nil {
+		return
+	}
+
+	// Find receivers of other methods of the same named type.
+	for m := range named.Origin().Methods() {
+		recv2 := m.Signature().Recv()
+		if recv2 == recv {
+			continue // don't re-rename original receiver
+		}
+		if recv2.Name() == newName {
+			continue // no renaming needed
+		}
+		editMap2, _, err := renameObjects(newName, pkg, recv2)
+		if err != nil {
+			continue // ignore secondary failures
+		}
+
+		// Since all methods (and their comments)
+		// are disjoint, and don't affect imports,
+		// we can safely assume that all edits are
+		// nonconflicting and disjoint.
+		for uri, edits := range editMap2 {
+			editMap[uri] = append(editMap[uri], edits...)
+		}
+	}
 }
 
 // typeCheckReverseDependencies returns the type-checked packages for
