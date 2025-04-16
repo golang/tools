@@ -5,6 +5,8 @@
 package settings
 
 import (
+	"slices"
+
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/appends"
 	"golang.org/x/tools/go/analysis/passes/asmdecl"
@@ -63,14 +65,18 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/gofix"
+	"honnef.co/go/tools/analysis/lint"
 )
 
-// Analyzer augments a [analysis.Analyzer] with additional LSP configuration.
+var AllAnalyzers = slices.Concat(DefaultAnalyzers, StaticcheckAnalyzers)
+
+// Analyzer augments an [analysis.Analyzer] with additional LSP configuration.
 //
 // Analyzers are immutable, since they are shared across multiple LSP sessions.
 type Analyzer struct {
 	analyzer    *analysis.Analyzer
-	nonDefault  bool
+	staticcheck *lint.RawDocumentation // only for staticcheck analyzers
+	nonDefault  bool                   // (sense is negated so we can mostly omit it)
 	actionKinds []protocol.CodeActionKind
 	severity    protocol.DiagnosticSeverity
 	tags        []protocol.DiagnosticTag
@@ -79,9 +85,28 @@ type Analyzer struct {
 // Analyzer returns the [analysis.Analyzer] that this Analyzer wraps.
 func (a *Analyzer) Analyzer() *analysis.Analyzer { return a.analyzer }
 
-// EnabledByDefault reports whether the analyzer is enabled by default for all sessions.
+// Enabled reports whether the analyzer is enabled by the options.
 // This value can be configured per-analysis in user settings.
-func (a *Analyzer) EnabledByDefault() bool { return !a.nonDefault }
+func (a *Analyzer) Enabled(o *Options) bool {
+	// An explicit setting by name takes precedence.
+	if v, found := o.Analyses[a.Analyzer().Name]; found {
+		return v
+	}
+	if a.staticcheck != nil {
+		// An explicit staticcheck={true,false} setting
+		// enables/disables all staticcheck analyzers.
+		if o.StaticcheckProvided {
+			return o.Staticcheck
+		}
+		// Respect staticcheck's off-by-default options too.
+		// (This applies to only a handful of analyzers.)
+		if a.staticcheck.NonDefault {
+			return false
+		}
+	}
+	// Respect gopls' default setting.
+	return !a.nonDefault
+}
 
 // ActionKinds is the set of kinds of code action this analyzer produces.
 //
@@ -126,108 +151,105 @@ func (a *Analyzer) Tags() []protocol.DiagnosticTag { return a.tags }
 // String returns the name of this analyzer.
 func (a *Analyzer) String() string { return a.analyzer.String() }
 
-// DefaultAnalyzers holds the set of Analyzers available to all gopls sessions,
-// independent of build version, keyed by analyzer name.
-//
-// It is the source from which gopls/doc/analyzers.md is generated.
-var DefaultAnalyzers = make(map[string]*Analyzer) // initialized below
-
-func init() {
+// DefaultAnalyzers holds the list of Analyzers available to all gopls
+// sessions, independent of build version. It is the source from which
+// gopls/doc/analyzers.md is generated.
+var DefaultAnalyzers = []*Analyzer{
 	// See [Analyzer.Severity] for guidance on setting analyzer severity below.
-	analyzers := []*Analyzer{
-		// The traditional vet suite:
-		{analyzer: appends.Analyzer},
-		{analyzer: asmdecl.Analyzer},
-		{analyzer: assign.Analyzer},
-		{analyzer: atomic.Analyzer},
-		{analyzer: bools.Analyzer},
-		{analyzer: buildtag.Analyzer},
-		{analyzer: cgocall.Analyzer},
-		{analyzer: composite.Analyzer},
-		{analyzer: copylock.Analyzer},
-		{analyzer: defers.Analyzer},
-		{analyzer: deprecated.Analyzer, severity: protocol.SeverityHint, tags: []protocol.DiagnosticTag{protocol.Deprecated}},
-		{analyzer: directive.Analyzer},
-		{analyzer: errorsas.Analyzer},
-		{analyzer: framepointer.Analyzer},
-		{analyzer: httpresponse.Analyzer},
-		{analyzer: ifaceassert.Analyzer},
-		{analyzer: loopclosure.Analyzer},
-		{analyzer: lostcancel.Analyzer},
-		{analyzer: nilfunc.Analyzer},
-		{analyzer: printf.Analyzer},
-		{analyzer: shift.Analyzer},
-		{analyzer: sigchanyzer.Analyzer},
-		{analyzer: slog.Analyzer},
-		{analyzer: stdmethods.Analyzer},
-		{analyzer: stdversion.Analyzer},
-		{analyzer: stringintconv.Analyzer},
-		{analyzer: structtag.Analyzer},
-		{analyzer: testinggoroutine.Analyzer},
-		{analyzer: tests.Analyzer},
-		{analyzer: timeformat.Analyzer},
-		{analyzer: unmarshal.Analyzer},
-		{analyzer: unreachable.Analyzer},
-		{analyzer: unsafeptr.Analyzer},
-		{analyzer: unusedresult.Analyzer},
 
-		// not suitable for vet:
-		// - some (nilness, yield) use go/ssa; see #59714.
-		// - others don't meet the "frequency" criterion;
-		//   see GOROOT/src/cmd/vet/README.
-		{analyzer: atomicalign.Analyzer},
-		{analyzer: deepequalerrors.Analyzer},
-		{analyzer: nilness.Analyzer}, // uses go/ssa
-		{analyzer: yield.Analyzer},   // uses go/ssa
-		{analyzer: sortslice.Analyzer},
-		{analyzer: embeddirective.Analyzer},
-		{analyzer: waitgroup.Analyzer}, // to appear in cmd/vet@go1.25
-		{analyzer: hostport.Analyzer},  // to appear in cmd/vet@go1.25
+	// The traditional vet suite:
+	{analyzer: appends.Analyzer},
+	{analyzer: asmdecl.Analyzer},
+	{analyzer: assign.Analyzer},
+	{analyzer: atomic.Analyzer},
+	{analyzer: bools.Analyzer},
+	{analyzer: buildtag.Analyzer},
+	{analyzer: cgocall.Analyzer},
+	{analyzer: composite.Analyzer},
+	{analyzer: copylock.Analyzer},
+	{analyzer: defers.Analyzer},
+	{
+		analyzer: deprecated.Analyzer,
+		severity: protocol.SeverityHint,
+		tags:     []protocol.DiagnosticTag{protocol.Deprecated},
+	},
+	{analyzer: directive.Analyzer},
+	{analyzer: errorsas.Analyzer},
+	{analyzer: framepointer.Analyzer},
+	{analyzer: httpresponse.Analyzer},
+	{analyzer: ifaceassert.Analyzer},
+	{analyzer: loopclosure.Analyzer},
+	{analyzer: lostcancel.Analyzer},
+	{analyzer: nilfunc.Analyzer},
+	{analyzer: printf.Analyzer},
+	{analyzer: shift.Analyzer},
+	{analyzer: sigchanyzer.Analyzer},
+	{analyzer: slog.Analyzer},
+	{analyzer: stdmethods.Analyzer},
+	{analyzer: stdversion.Analyzer},
+	{analyzer: stringintconv.Analyzer},
+	{analyzer: structtag.Analyzer},
+	{analyzer: testinggoroutine.Analyzer},
+	{analyzer: tests.Analyzer},
+	{analyzer: timeformat.Analyzer},
+	{analyzer: unmarshal.Analyzer},
+	{analyzer: unreachable.Analyzer},
+	{analyzer: unsafeptr.Analyzer},
+	{analyzer: unusedresult.Analyzer},
 
-		// disabled due to high false positives
-		{analyzer: shadow.Analyzer, nonDefault: true}, // very noisy
-		// fieldalignment is not even off-by-default; see #67762.
+	// not suitable for vet:
+	// - some (nilness, yield) use go/ssa; see #59714.
+	// - others don't meet the "frequency" criterion;
+	//   see GOROOT/src/cmd/vet/README.
+	{analyzer: atomicalign.Analyzer},
+	{analyzer: deepequalerrors.Analyzer},
+	{analyzer: nilness.Analyzer}, // uses go/ssa
+	{analyzer: yield.Analyzer},   // uses go/ssa
+	{analyzer: sortslice.Analyzer},
+	{analyzer: embeddirective.Analyzer},
+	{analyzer: waitgroup.Analyzer}, // to appear in cmd/vet@go1.25
+	{analyzer: hostport.Analyzer},  // to appear in cmd/vet@go1.25
 
-		// simplifiers and modernizers
-		//
-		// These analyzers offer mere style fixes on correct code,
-		// thus they will never appear in cmd/vet and
-		// their severity level is "information".
-		//
-		// gofmt -s suite
-		{
-			analyzer:    simplifycompositelit.Analyzer,
-			actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-			severity:    protocol.SeverityInformation,
-		},
-		{
-			analyzer:    simplifyrange.Analyzer,
-			actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-			severity:    protocol.SeverityInformation,
-		},
-		{
-			analyzer:    simplifyslice.Analyzer,
-			actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
-			severity:    protocol.SeverityInformation,
-		},
-		// other simplifiers
-		{analyzer: gofix.Analyzer, severity: protocol.SeverityHint},
-		{analyzer: infertypeargs.Analyzer, severity: protocol.SeverityInformation},
-		{analyzer: unusedparams.Analyzer, severity: protocol.SeverityInformation},
-		{analyzer: unusedfunc.Analyzer, severity: protocol.SeverityInformation},
-		{analyzer: unusedwrite.Analyzer, severity: protocol.SeverityInformation}, // uses go/ssa
-		{analyzer: modernize.Analyzer, severity: protocol.SeverityHint},
+	// disabled due to high false positives
+	{analyzer: shadow.Analyzer, nonDefault: true}, // very noisy
+	// fieldalignment is not even off-by-default; see #67762.
 
-		// type-error analyzers
-		// These analyzers enrich go/types errors with suggested fixes.
-		// Since they exist only to attach their fixes to type errors, their
-		// severity is irrelevant.
-		{analyzer: fillreturns.Analyzer},
-		{analyzer: nonewvars.Analyzer},
-		{analyzer: noresultvalues.Analyzer},
-		{analyzer: unusedvariable.Analyzer},
-	}
-	for _, analyzer := range analyzers {
-		DefaultAnalyzers[analyzer.analyzer.Name] = analyzer
-	}
+	// simplifiers and modernizers
+	//
+	// These analyzers offer mere style fixes on correct code,
+	// thus they will never appear in cmd/vet and
+	// their severity level is "information".
+	//
+	// gofmt -s suite
+	{
+		analyzer:    simplifycompositelit.Analyzer,
+		actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+		severity:    protocol.SeverityInformation,
+	},
+	{
+		analyzer:    simplifyrange.Analyzer,
+		actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+		severity:    protocol.SeverityInformation,
+	},
+	{
+		analyzer:    simplifyslice.Analyzer,
+		actionKinds: []protocol.CodeActionKind{protocol.SourceFixAll, protocol.QuickFix},
+		severity:    protocol.SeverityInformation,
+	},
+	// other simplifiers
+	{analyzer: gofix.Analyzer, severity: protocol.SeverityHint},
+	{analyzer: infertypeargs.Analyzer, severity: protocol.SeverityInformation},
+	{analyzer: unusedparams.Analyzer, severity: protocol.SeverityInformation},
+	{analyzer: unusedfunc.Analyzer, severity: protocol.SeverityInformation},
+	{analyzer: unusedwrite.Analyzer, severity: protocol.SeverityInformation}, // uses go/ssa
+	{analyzer: modernize.Analyzer, severity: protocol.SeverityHint},
+
+	// type-error analyzers
+	// These analyzers enrich go/types errors with suggested fixes.
+	// Since they exist only to attach their fixes to type errors, their
+	// severity is irrelevant.
+	{analyzer: fillreturns.Analyzer},
+	{analyzer: nonewvars.Analyzer},
+	{analyzer: noresultvalues.Analyzer},
+	{analyzer: unusedvariable.Analyzer},
 }

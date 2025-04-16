@@ -314,12 +314,8 @@ dorky details and deletia:
 
   currently: atomicalign deepequalerrors nilness sortslice unusedwrite embeddirective
 
-- **staticcheck**: four suites:
-
-	add(simple.Analyzers, nil)
-	add(staticcheck.Analyzers - SA5009, SA5011
-	add(stylecheck.Analyzers, nil)
-	add(quickfix.Analyzers, nil)
+- **staticcheck**: four suites (S=simple, SA=static analysis, QF=quickfix, ST=stylecheck)
+  Only a hand-picked subset of them are enabled by default.
 
 - **Experimental analyzers**. Gopls has some analyzers that are not
   enabled by default, because they produce too high a rate of false

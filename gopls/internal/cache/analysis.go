@@ -18,7 +18,6 @@ import (
 	"go/token"
 	"go/types"
 	"log"
-	"maps"
 	urlpkg "net/url"
 	"path/filepath"
 	"reflect"
@@ -127,11 +126,12 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 
 	// Filter and sort enabled root analyzers.
 	// A disabled analyzer may still be run if required by another.
-	analyzers := analyzers(s.Options().Staticcheck)
-	toSrc := make(map[*analysis.Analyzer]*settings.Analyzer)
-	var enabledAnalyzers []*analysis.Analyzer // enabled subset + transitive requirements
-	for _, a := range analyzers {
-		if enabled, ok := s.Options().Analyses[a.Analyzer().Name]; enabled || !ok && a.EnabledByDefault() {
+	var (
+		toSrc            = make(map[*analysis.Analyzer]*settings.Analyzer)
+		enabledAnalyzers []*analysis.Analyzer // enabled subset + transitive requirements
+	)
+	for _, a := range settings.AllAnalyzers {
+		if a.Enabled(s.Options()) {
 			toSrc[a.Analyzer()] = a
 			enabledAnalyzers = append(enabledAnalyzers, a.Analyzer())
 		}
@@ -139,7 +139,6 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 	sort.Slice(enabledAnalyzers, func(i, j int) bool {
 		return enabledAnalyzers[i].Name < enabledAnalyzers[j].Name
 	})
-	analyzers = nil // prevent accidental use
 
 	enabledAnalyzers = requiredAnalyzers(enabledAnalyzers)
 
@@ -429,14 +428,6 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 		}
 	}
 	return results, nil
-}
-
-func analyzers(staticcheck bool) []*settings.Analyzer {
-	analyzers := slices.Collect(maps.Values(settings.DefaultAnalyzers))
-	if staticcheck {
-		analyzers = slices.AppendSeq(analyzers, maps.Values(settings.StaticcheckAnalyzers))
-	}
-	return analyzers
 }
 
 func (an *analysisNode) decrefPreds() {

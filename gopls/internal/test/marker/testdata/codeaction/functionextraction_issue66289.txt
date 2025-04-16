@@ -16,7 +16,7 @@ func F() error {
 	if err != nil {
 		return fmt.Errorf("2: %w", err)
 	} //@loc(endF, "}")
-	fmt.Println(a, b)
+	fmt.Printf("%s %s", a, b)
 	return nil
 }
 
@@ -33,7 +33,7 @@ func F() error {
 	if shouldReturn {
 		return err
 	} //@loc(endF, "}")
-	fmt.Println(a, b)
+	fmt.Printf("%s %s", a, b)
 	return nil
 }
 

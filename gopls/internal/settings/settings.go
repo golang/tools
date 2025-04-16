@@ -433,7 +433,8 @@ type FormattingOptions struct {
 	Gofumpt bool
 }
 
-// Note: DiagnosticOptions must be comparable with reflect.DeepEqual.
+// Note: DiagnosticOptions must be comparable with reflect.DeepEqual,
+// and frob-encodable (no interfaces).
 type DiagnosticOptions struct {
 	// Analyses specify analyses that the user would like to enable or disable.
 	// A map of the names of analysis passes that should be enabled/disabled.
@@ -452,10 +453,21 @@ type DiagnosticOptions struct {
 	// ```
 	Analyses map[string]bool
 
-	// Staticcheck enables additional analyses from staticcheck.io.
+	// Staticcheck configures the default set of analyses staticcheck.io.
 	// These analyses are documented on
 	// [Staticcheck's website](https://staticcheck.io/docs/checks/).
-	Staticcheck bool `status:"experimental"`
+	//
+	// The "staticcheck" option has three values:
+	// - false: disable all staticcheck analyzers
+	// - true: enable all staticcheck analyzers
+	// - unset: enable a subset of staticcheck analyzers
+	//   selected by gopls maintainers for runtime efficiency
+	//   and analytic precision.
+	//
+	// Regardless of this setting, individual analyzers can be
+	// selectively enabled or disabled using the `analyses` setting.
+	Staticcheck         bool `status:"experimental"`
+	StaticcheckProvided bool `status:"experimental"` // = "staticcheck" was explicitly provided
 
 	// Annotations specifies the various kinds of compiler
 	// optimization details that should be reported as diagnostics
@@ -1187,6 +1199,7 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 		return counts, nil
 
 	case "staticcheck":
+		o.StaticcheckProvided = true
 		return setBool(&o.Staticcheck, value)
 
 	case "local":

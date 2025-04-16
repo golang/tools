@@ -136,7 +136,7 @@ func loadAPI() (*doc.API, error) {
 	defaults := settings.DefaultOptions()
 	api := &doc.API{
 		Options:   map[string][]*doc.Option{},
-		Analyzers: loadAnalyzers(settings.DefaultAnalyzers), // no staticcheck analyzers
+		Analyzers: loadAnalyzers(settings.AllAnalyzers, defaults),
 	}
 
 	api.Lenses, err = loadLenses(settingsPkg, defaults.Codelenses)
@@ -505,20 +505,17 @@ func loadLenses(settingsPkg *packages.Package, defaults map[settings.CodeLensSou
 	return lenses, nil
 }
 
-func loadAnalyzers(m map[string]*settings.Analyzer) []*doc.Analyzer {
-	var sorted []string
-	for _, a := range m {
-		sorted = append(sorted, a.Analyzer().Name)
-	}
-	sort.Strings(sorted)
+func loadAnalyzers(analyzers []*settings.Analyzer, defaults *settings.Options) []*doc.Analyzer {
+	slices.SortFunc(analyzers, func(x, y *settings.Analyzer) int {
+		return strings.Compare(x.Analyzer().Name, y.Analyzer().Name)
+	})
 	var json []*doc.Analyzer
-	for _, name := range sorted {
-		a := m[name]
+	for _, a := range analyzers {
 		json = append(json, &doc.Analyzer{
 			Name:    a.Analyzer().Name,
 			Doc:     a.Analyzer().Doc,
 			URL:     a.Analyzer().URL,
-			Default: a.EnabledByDefault(),
+			Default: a.Enabled(defaults),
 		})
 	}
 	return json

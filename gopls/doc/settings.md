@@ -349,9 +349,27 @@ Default: `{}`.
 
 **This setting is experimental and may be deleted.**
 
-staticcheck enables additional analyses from staticcheck.io.
+staticcheck configures the default set of analyses staticcheck.io.
 These analyses are documented on
 [Staticcheck's website](https://staticcheck.io/docs/checks/).
+
+The "staticcheck" option has three values:
+- false: disable all staticcheck analyzers
+- true: enable all staticcheck analyzers
+- unset: enable a subset of staticcheck analyzers
+  selected by gopls maintainers for runtime efficiency
+  and analytic precision.
+
+Regardless of this setting, individual analyzers can be
+selectively enabled or disabled using the `analyses` setting.
+
+Default: `false`.
+
+<a id='staticcheckProvided'></a>
+### `staticcheckProvided bool`
+
+**This setting is experimental and may be deleted.**
+
 
 Default: `false`.
 

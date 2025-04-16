@@ -96,3 +96,20 @@ import "C"
 func _(c chan bool) {
 	C.f(unsafe.Pointer(&c)) //@ diag("unsafe", re"passing Go type with embedded pointer to C")
 }
+
+-- staticcheck/staticcheck.go --
+package staticcheck
+
+// staticcheck includes hundreds of other analyzers.
+// Here we test only two: one enabled by default, one disabled.
+
+func S1000(ch chan int) {
+	select { case <-ch: } //@ diag("select", re"use .*receive instead of select")
+}
+
+func S1011(x, y []int) {
+	for _, e := range y {
+		x = append(x, e) // no "replace loop with append" diagnostic
+	}
+}
+

@@ -105,7 +105,7 @@ type Cache struct {
 	// our best knowledge of the current file system state.
 	*memoizedFS
 
-	// modCache holds the
+	// modCache holds the shared goimports state for GOMODCACHE directories
 	modCache *sharedModCache
 }
 

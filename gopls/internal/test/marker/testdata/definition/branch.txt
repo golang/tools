@@ -1,5 +1,13 @@
 This test checks definition operations in branch statements break, goto and continue.
 
+We suppress staticheck since it also gives a diagnostic
+about the break being ineffective.
+
+-- settings.json --
+{
+	"staticcheck": false
+}
+
 -- go.mod --
 module mod.com
 

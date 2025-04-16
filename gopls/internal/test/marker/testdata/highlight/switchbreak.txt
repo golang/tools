@@ -1,6 +1,14 @@
 This is a regression test for issue 65752: a break in a switch should
 highlight the switch, not the enclosing loop.
 
+We suppress staticheck since it also gives a diagnostic
+about the break being ineffective.
+
+-- settings.json --
+{
+	"staticcheck": false
+}
+
 -- a.go --
 package a
 
