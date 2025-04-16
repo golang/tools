@@ -23,7 +23,8 @@ named constant.
 	const (
 		a = 1       // error
 		b = iota    // error
-		c = math.Pi // OK
+		c = a       // OK
+		d = math.Pi // OK
 	)
 
 - A type definition can be marked for inlining only if it is an alias.
