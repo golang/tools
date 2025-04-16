@@ -136,53 +136,49 @@ func g() {
 		}
 
 		nfuncs++
-		stack := curFunc.Stack(nil)
+		stack := slices.Collect(curFunc.Enclosing())
 
 		// Stacks are convenient to print!
-		if got, want := fmt.Sprint(stack), "[*ast.File *ast.FuncDecl]"; got != want {
-			t.Errorf("curFunc.Stack() = %q, want %q", got, want)
+		if got, want := fmt.Sprint(stack), "[*ast.FuncDecl *ast.File]"; got != want {
+			t.Errorf("curFunc.Enclosing() = %q, want %q", got, want)
 		}
 
-		// Parent, iterated, is Stack.
+		// Parent, iterated, is Enclosing stack.
 		i := 0
 		for c := curFunc; c.Node() != nil; c = c.Parent() {
-			if got, want := stack[len(stack)-1-i], c; got != want {
-				t.Errorf("Stack[%d] = %v; Parent()^%d = %v", i, got, i, want)
+			if got, want := stack[i], c; got != want {
+				t.Errorf("Enclosing[%d] = %v; Parent()^%d = %v", i, got, i, want)
 			}
 			i++
 		}
+
+		wantStack := "[*ast.CallExpr *ast.ExprStmt *ast.BlockStmt *ast.FuncDecl *ast.File]"
 
 		// nested Preorder traversal
 		preorderCount := 0
 		for curCall := range curFunc.Preorder(callExprs...) {
 			_ = curCall.Node().(*ast.CallExpr)
 			preorderCount++
-			stack := curCall.Stack(nil)
-			if got, want := fmt.Sprint(stack), "[*ast.File *ast.FuncDecl *ast.BlockStmt *ast.ExprStmt *ast.CallExpr]"; got != want {
-				t.Errorf("curCall.Stack() = %q, want %q", got, want)
-			}
-
-			// Enclosing = Reverse(Stack()).
-			slices.Reverse(stack)
-			if got, want := slices.Collect(curCall.Enclosing()), stack; !reflect.DeepEqual(got, want) {
-				t.Errorf("Enclosing = %v, Reverse(Stack - last element) = %v", got, want)
+			stack := slices.Collect(curCall.Enclosing())
+			if got := fmt.Sprint(stack); got != wantStack {
+				t.Errorf("curCall.Enclosing() = %q, want %q", got, wantStack)
 			}
 		}
 
 		// nested Inspect traversal
-		inspectCount := 0 // pushes and pops
-		curFunc.Inspect(callExprs, func(curCall cursor.Cursor, push bool) (proceed bool) {
+		inspectCount := 0
+		curFunc.Inspect(callExprs, func(curCall cursor.Cursor) (proceed bool) {
 			_ = curCall.Node().(*ast.CallExpr)
 			inspectCount++
-			stack := curCall.Stack(nil)
-			if got, want := fmt.Sprint(stack), "[*ast.File *ast.FuncDecl *ast.BlockStmt *ast.ExprStmt *ast.CallExpr]"; got != want {
-				t.Errorf("curCall.Stack() = %q, want %q", got, want)
+			stack := slices.Collect(curCall.Enclosing())
+			if got := fmt.Sprint(stack); got != wantStack {
+				t.Errorf("curCall.Enclosing() = %q, want %q", got, wantStack)
 			}
 			return true
 		})
 
-		if inspectCount != preorderCount*2 {
-			t.Errorf("Inspect (%d push/pop events) and Preorder (%d push events) are not consistent", inspectCount, preorderCount)
+		if inspectCount != preorderCount {
+			t.Errorf("Inspect (%d) and Preorder (%d) events are not consistent", inspectCount, preorderCount)
 		}
 
 		ncalls += preorderCount
@@ -269,12 +265,10 @@ func TestCursor_Inspect(t *testing.T) {
 
 	// Test Cursor.Inspect implementation.
 	var nodesB []ast.Node
-	cursor.Root(inspect).Inspect(switches, func(c cursor.Cursor, push bool) (proceed bool) {
-		if push {
-			n := c.Node()
-			nodesB = append(nodesB, n)
-			return !is[*ast.SwitchStmt](n) // descend only into TypeSwitchStmt
-		}
+	cursor.Root(inspect).Inspect(switches, func(c cursor.Cursor) (proceed bool) {
+		n := c.Node()
+		nodesB = append(nodesB, n)
+		return !is[*ast.SwitchStmt](n) // descend only into TypeSwitchStmt
 		return false
 	})
 	compare(t, nodesA, nodesB)
@@ -339,7 +333,7 @@ func TestCursor_FindPos_order(t *testing.T) {
 	target := netFiles[7].Decls[0]
 
 	// Find the target decl by its position.
-	cur, ok := cursor.Root(netInspect).FindPos(target.Pos(), target.End())
+	cur, ok := cursor.Root(netInspect).FindByPos(target.Pos(), target.End())
 	if !ok || cur.Node() != target {
 		t.Fatalf("unshuffled: FindPos(%T) = (%v, %t)", target, cur, ok)
 	}
@@ -352,7 +346,7 @@ func TestCursor_FindPos_order(t *testing.T) {
 
 	// Find it again.
 	inspect := inspector.New(files)
-	cur, ok = cursor.Root(inspect).FindPos(target.Pos(), target.End())
+	cur, ok = cursor.Root(inspect).FindByPos(target.Pos(), target.End())
 	if !ok || cur.Node() != target {
 		t.Fatalf("shuffled: FindPos(%T) = (%v, %t)", target, cur, ok)
 	}
@@ -500,37 +494,6 @@ func BenchmarkInspectCalls(b *testing.B) {
 		}
 	})
 
-	// Cursor.Stack(nil) is ~6x slower than WithStack.
-	// Even using Cursor.Stack(stack[:0]) to amortize the
-	// allocation, it's ~4x slower.
-	//
-	// But it depends on the selectivity of the nodeTypes
-	// filter: searching for *ast.InterfaceType, results in
-	// fewer calls to Stack, making it only 2x slower.
-	// And if the calls to Stack are very selective,
-	// or are replaced by 2 calls to Parent, it runs
-	// 27% faster than WithStack.
-	//
-	// But the purpose of inspect.WithStack is not to obtain the
-	// stack on every node, but to perform a traversal in which it
-	// one as the _option_ to access the stack if it should be
-	// needed, but the need is rare and usually only for a small
-	// portion. Arguably, because Cursor traversals always
-	// provide, at no extra cost, the option to access the
-	// complete stack, the right comparison is the plain Cursor
-	// benchmark below.
-	b.Run("CursorStack", func(b *testing.B) {
-		var ncalls int
-		for range b.N {
-			var stack []cursor.Cursor // recycle across calls
-			for cur := range cursor.Root(inspect).Preorder(callExprs...) {
-				_ = cur.Node().(*ast.CallExpr)
-				stack = cur.Stack(stack[:0])
-				ncalls++
-			}
-		}
-	})
-
 	b.Run("Cursor", func(b *testing.B) {
 		var ncalls int
 		for range b.N {
@@ -568,7 +531,7 @@ func BenchmarkCursor_FindNode(b *testing.B) {
 		found := false
 		for c := range root.Preorder(callExprs...) {
 			count++
-			if count >= 1000 && len(c.Stack(nil)) >= 6 {
+			if count >= 1000 && iterlen(c.Enclosing()) >= 6 {
 				needle = c
 				found = true
 				break
@@ -611,10 +574,17 @@ func BenchmarkCursor_FindNode(b *testing.B) {
 	b.Run("Cursor.FindPos", func(b *testing.B) {
 		needleNode := needle.Node()
 		for range b.N {
-			found, ok := root.FindPos(needleNode.Pos(), needleNode.End())
+			found, ok := root.FindByPos(needleNode.Pos(), needleNode.End())
 			if !ok || found != needle {
 				b.Errorf("FindPos search failed: got %v, want %v", found, needle)
 			}
 		}
 	})
+}
+
+func iterlen[T any](seq iter.Seq[T]) (len int) {
+	for range seq {
+		len++
+	}
+	return
 }

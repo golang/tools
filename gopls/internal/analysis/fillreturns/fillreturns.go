@@ -49,7 +49,7 @@ outer:
 		if !ok {
 			continue // no position information
 		}
-		curErr, ok := cursor.Root(inspect).FindPos(start, end)
+		curErr, ok := cursor.Root(inspect).FindByPos(start, end)
 		if !ok {
 			continue // can't find node
 		}

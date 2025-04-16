@@ -48,27 +48,25 @@ func bloop(pass *analysis.Pass) {
 		// Within the same function, delete all calls to
 		// b.{Start,Stop,Timer} that precede the loop.
 		filter := []ast.Node{(*ast.ExprStmt)(nil), (*ast.FuncLit)(nil)}
-		curFn.Inspect(filter, func(cur cursor.Cursor, push bool) (descend bool) {
-			if push {
-				node := cur.Node()
-				if is[*ast.FuncLit](node) {
-					return false // don't descend into FuncLits (e.g. sub-benchmarks)
-				}
-				stmt := node.(*ast.ExprStmt)
-				if stmt.Pos() > start {
-					return false // not preceding: stop
-				}
-				if call, ok := stmt.X.(*ast.CallExpr); ok {
-					obj := typeutil.Callee(info, call)
-					if analysisinternal.IsMethodNamed(obj, "testing", "B", "StopTimer", "StartTimer", "ResetTimer") {
-						// Delete call statement.
-						// TODO(adonovan): delete following newline, or
-						// up to start of next stmt? (May delete a comment.)
-						edits = append(edits, analysis.TextEdit{
-							Pos: stmt.Pos(),
-							End: stmt.End(),
-						})
-					}
+		curFn.Inspect(filter, func(cur cursor.Cursor) (descend bool) {
+			node := cur.Node()
+			if is[*ast.FuncLit](node) {
+				return false // don't descend into FuncLits (e.g. sub-benchmarks)
+			}
+			stmt := node.(*ast.ExprStmt)
+			if stmt.Pos() > start {
+				return false // not preceding: stop
+			}
+			if call, ok := stmt.X.(*ast.CallExpr); ok {
+				obj := typeutil.Callee(info, call)
+				if analysisinternal.IsMethodNamed(obj, "testing", "B", "StopTimer", "StartTimer", "ResetTimer") {
+					// Delete call statement.
+					// TODO(adonovan): delete following newline, or
+					// up to start of next stmt? (May delete a comment.)
+					edits = append(edits, analysis.TextEdit{
+						Pos: stmt.Pos(),
+						End: stmt.End(),
+					})
 				}
 			}
 			return true

@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -167,8 +168,9 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 	// It's usually the same, but may differ in edge
 	// cases (e.g. around FuncType.Func).
 	inspect := inspector.New([]*ast.File{file})
-	if cur, ok := cursor.Root(inspect).FindPos(startPos, endPos); ok {
-		fmt.Fprintf(out, "Cursor.FindPos().Stack() = %v\n", cur.Stack(nil))
+	if cur, ok := cursor.Root(inspect).FindByPos(startPos, endPos); ok {
+		fmt.Fprintf(out, "Cursor.FindPos().Enclosing() = %v\n",
+			slices.Collect(cur.Enclosing()))
 	} else {
 		fmt.Fprintf(out, "Cursor.FindPos() failed\n")
 	}

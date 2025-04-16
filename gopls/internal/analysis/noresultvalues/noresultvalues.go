@@ -43,7 +43,7 @@ func run(pass *analysis.Pass) (any, error) {
 		if !ok {
 			continue // can't get position info
 		}
-		curErr, ok := cursor.Root(inspect).FindPos(start, end)
+		curErr, ok := cursor.Root(inspect).FindByPos(start, end)
 		if !ok {
 			continue // can't find errant node
 		}

@@ -957,7 +957,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// }
 	//
 
-	curSel, _ := pgf.Cursor.FindPos(start, end) // since canExtractFunction succeeded, this will always return a valid cursor
+	curSel, _ := pgf.Cursor.FindByPos(start, end) // since canExtractFunction succeeded, this will always return a valid cursor
 	freeBranches := freeBranches(info, curSel, start, end)
 
 	// Generate an unused identifier for the control value.

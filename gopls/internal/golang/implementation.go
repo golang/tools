@@ -951,7 +951,7 @@ func pathEnclosingObjNode(f *ast.File, pos token.Pos) []ast.Node {
 // implFuncs returns errNotHandled to indicate that we should try the
 // regular method-sets algorithm.
 func implFuncs(pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol.Location, error) {
-	curSel, ok := pgf.Cursor.FindPos(pos, pos)
+	curSel, ok := pgf.Cursor.FindByPos(pos, pos)
 	if !ok {
 		return nil, fmt.Errorf("no code selected")
 	}
@@ -975,7 +975,12 @@ func implFuncs(pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol
 	// are inconsistent. Consequently, the ancestors for a "func"
 	// token of Func{Lit,Decl} do not include FuncType, hence the
 	// explicit cases below.
-	for _, cur := range curSel.Stack(nil) {
+	for cur := range curSel.Enclosing(
+		(*ast.FuncDecl)(nil),
+		(*ast.FuncLit)(nil),
+		(*ast.FuncType)(nil),
+		(*ast.CallExpr)(nil),
+	) {
 		switch n := cur.Node().(type) {
 		case *ast.FuncDecl, *ast.FuncLit:
 			if inToken(n.Pos(), "func", pos) {
