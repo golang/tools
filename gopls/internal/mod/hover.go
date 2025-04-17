@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
@@ -116,7 +117,7 @@ func hoverOnRequireStatement(ctx context.Context, pm *cache.ParsedModule, offset
 	options := snapshot.Options()
 	isPrivate := snapshot.IsGoPrivatePath(req.Mod.Path)
 	header := formatHeader(req.Mod.Path, options)
-	explanation = formatExplanation(explanation, req, options, isPrivate)
+	explanation = formatExplanation(explanation, pm.ReplaceMap, req, options, isPrivate)
 	vulns := formatVulnerabilities(affecting, nonaffecting, osvs, options, fromGovulncheck)
 
 	return &protocol.Hover{
@@ -327,7 +328,7 @@ func vulnerablePkgsInfo(findings []*govulncheck.Finding, useMarkdown bool) strin
 	return b.String()
 }
 
-func formatExplanation(text string, req *modfile.Require, options *settings.Options, isPrivate bool) string {
+func formatExplanation(text string, replaceMap map[module.Version]module.Version, req *modfile.Require, options *settings.Options, isPrivate bool) string {
 	text = strings.TrimSuffix(text, "\n")
 	splt := strings.Split(text, "\n")
 	length := len(splt)
@@ -348,7 +349,17 @@ func formatExplanation(text string, req *modfile.Require, options *settings.Opti
 	if !isPrivate && options.PreferredContentFormat == protocol.Markdown {
 		target := imp
 		if strings.ToLower(options.LinkTarget) == "pkg.go.dev" {
-			target = strings.Replace(target, req.Mod.Path, req.Mod.String(), 1)
+			mod := req.Mod
+			// respect the repalcement when constructing a module link.
+			if m, ok := replaceMap[req.Mod]; ok {
+				// Have: 'replace A v1.2.3 => A vx.x.x' or 'replace A v1.2.3 => B vx.x.x'.
+				mod = m
+			} else if m, ok := replaceMap[module.Version{Path: req.Mod.Path}]; ok &&
+				!modfile.IsDirectoryPath(m.Path) { // exclude local replacement.
+				// Have: 'replace A => A vx.x.x' or 'replace A => B vx.x.x'.
+				mod = m
+			}
+			target = strings.Replace(target, req.Mod.Path, mod.String(), 1)
 		}
 		reference = fmt.Sprintf("[%s](%s)", imp, cache.BuildLink(options.LinkTarget, target, ""))
 	}

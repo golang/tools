@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -25,6 +26,7 @@ import (
 type ParsedModule struct {
 	URI         protocol.DocumentURI
 	File        *modfile.File
+	ReplaceMap  map[module.Version]module.Version
 	Mapper      *protocol.Mapper
 	ParseErrors []*Diagnostic
 }
@@ -98,10 +100,19 @@ func parseModImpl(ctx context.Context, fh file.Handle) (*ParsedModule, error) {
 			})
 		}
 	}
+
+	replaceMap := make(map[module.Version]module.Version)
+	if parseErr == nil {
+		for _, rep := range file.Replace {
+			replaceMap[rep.Old] = rep.New
+		}
+	}
+
 	return &ParsedModule{
 		URI:         fh.URI(),
 		Mapper:      m,
 		File:        file,
+		ReplaceMap:  replaceMap,
 		ParseErrors: parseErrors,
 	}, parseErr
 }
@@ -486,4 +497,32 @@ func findModuleReference(mf *modfile.File, ver module.Version) *modfile.Line {
 		}
 	}
 	return nil
+}
+
+// ResolvedVersion returns the version used for a module, which considers replace directive.
+func ResolvedVersion(module *packages.Module) string {
+	// don't visit replace recursively as src/cmd/go/internal/modinfo/info.go
+	// visits replace field only once.
+	if module.Replace != nil {
+		return module.Replace.Version
+	}
+	return module.Version
+}
+
+// ResolvedPath returns the the module path, which considers replace directive.
+func ResolvedPath(module *packages.Module) string {
+	if module.Replace != nil {
+		return module.Replace.Path
+	}
+	return module.Path
+}
+
+// ResolvedString returns a representation of the Version suitable for logging
+// (Path@Version, or just Path if Version is empty),
+// which considers replace directive.
+func ResolvedString(module *packages.Module) string {
+	if ResolvedVersion(module) == "" {
+		ResolvedPath(module)
+	}
+	return ResolvedPath(module) + "@" + ResolvedVersion(module)
 }

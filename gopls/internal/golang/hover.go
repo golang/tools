@@ -651,7 +651,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		linkPath = ""
 	} else if linkMeta.Module != nil && linkMeta.Module.Version != "" {
 		mod := linkMeta.Module
-		linkPath = strings.Replace(linkPath, mod.Path, mod.Path+"@"+mod.Version, 1)
+		linkPath = strings.Replace(linkPath, mod.Path, cache.ResolvedString(mod), 1)
 	}
 
 	var footer string
