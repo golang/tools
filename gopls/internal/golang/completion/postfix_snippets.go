@@ -334,7 +334,29 @@ if {{$errName | $a.SpecifiedPlaceholder 1}} != nil {
 	{{end}}
 }
 {{end}}`,
-}}
+},
+	{
+		label:   "tostring",
+		details: "[]byte to string",
+		body: `{{if (eq (.TypeName .Type) "[]byte") -}}
+	string({{.X}})
+	{{- end}}`,
+	},
+	{
+		label:   "tostring",
+		details: "int to string",
+		body: `{{if (eq (.TypeName .Type) "int") -}}
+		{{.Import "strconv"}}.Itoa({{.X}})
+		{{- end}}`,
+	},
+	{
+		label:   "tobytes",
+		details: "string to []byte",
+		body: `{{if (eq (.TypeName .Type) "string") -}}
+	[]byte({{.X}})
+	{{- end}}`,
+	},
+}
 
 // Cursor indicates where the client's cursor should end up after the
 // snippet is done.

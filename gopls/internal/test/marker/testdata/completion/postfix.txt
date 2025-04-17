@@ -129,3 +129,21 @@ func _() (string, T, map[string]string, error) {
 	bar().iferr //@snippet(" //", postfixIfErr, "if err := bar(); err != nil {\n\treturn \"\", T{}, nil, ${1:}\n}\n")
 	bar().variferr //@snippet(" //", postfixVarIfErr, "${1:} := bar()\nif ${1:} != nil {\n\treturn \"\", T{}, nil, ${2:}\n}\n")
 }
+
+func _(){
+	/* tostring! */ //@item(postfixToString, "tostring!", "[]byte to string", "snippet")
+	var bs []byte
+	bs. //@complete(" //", postfixAppend, postfixCopy, postfixFor, postfixForr, postfixIfNotNil, postfixLast, postfixLen, postfixPrint, postfixRange, postfixReverse, postfixSort, postfixToString, postfixVar)
+	bs = nil
+
+	/* tobytes! */ //@item(postfixToBytes, "tobytes!", "string to []byte", "snippet")
+	/* split! */ //@item(postfixSplit, "split!", "split string", "snippet")
+	var s string
+	s. //@complete(" //", postfixPrint, postfixSplit, postfixToBytes, postfixVar)
+	s = ""
+
+	/* tostring! */ //@item(postfixIntToString, "tostring!", "int to string", "snippet")
+	var i int
+	i. //@complete(" //", postfixPrint, postfixIntToString, postfixVar)
+	i = 0
+}
