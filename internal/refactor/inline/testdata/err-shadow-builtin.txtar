@@ -3,7 +3,7 @@ is shadowed by caller.
 
 -- go.mod --
 module testdata
-go 1.12
+go 1.18
 
 -- a/nil.go --
 package a
@@ -14,6 +14,13 @@ func _() {
 }
 
 func f() *int { return nil }
+
+-- a/nil-typename.go --
+package a
+
+func _[nil any]() {
+	_ = f() //@ inline(re"f", re"nil.*shadowed.*by.*typename.*line 3")
+}
 
 -- a/append.go --
 package a
