@@ -585,24 +585,26 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 			return nil, err
 		}
 
-		// If target is a receiver, also rename receivers of
-		// other methods of the same type that don't already
-		// have the target name. Quietly discard edits from
-		// any that can't be renamed.
+		// If the selected identifier is a receiver declaration,
+		// also rename receivers of other methods of the same type
+		// that don't already have the desired name.
+		// Quietly discard edits from any that can't be renamed.
 		//
-		// TODO(adonovan): UX question: require that the
-		// selection be the declaration of the receiver before
-		// we broaden the renaming?
-		if curDecl, ok := moreiters.First(cur.Enclosing((*ast.FuncDecl)(nil))); ok {
-			decl := curDecl.Node().(*ast.FuncDecl) // enclosing func
-			if decl.Recv != nil &&
-				len(decl.Recv.List) > 0 &&
-				len(decl.Recv.List[0].Names) > 0 {
-				recv := pkg.TypesInfo().Defs[decl.Recv.List[0].Names[0]]
-				if recv == obj {
-					// TODO(adonovan): simplify the above 7 lines to
-					// to "if obj.(*Var).Kind==Recv" in go1.25.
-					renameReceivers(pkg, recv.(*types.Var), newName, editMap)
+		// We interpret renaming the receiver declaration as
+		// intent for the broader renaming; renaming a use of
+		// the receiver effects only the local renaming.
+		if id, ok := cur.Node().(*ast.Ident); ok && id.Pos() == obj.Pos() {
+			if curDecl, ok := moreiters.First(cur.Enclosing((*ast.FuncDecl)(nil))); ok {
+				decl := curDecl.Node().(*ast.FuncDecl) // enclosing func
+				if decl.Recv != nil &&
+					len(decl.Recv.List) > 0 &&
+					len(decl.Recv.List[0].Names) > 0 {
+					recv := pkg.TypesInfo().Defs[decl.Recv.List[0].Names[0]]
+					if recv == obj {
+						// TODO(adonovan): simplify the above 7 lines to
+						// to "if obj.(*Var).Kind==Recv" in go1.25.
+						renameReceivers(pkg, recv.(*types.Var), newName, editMap)
+					}
 				}
 			}
 		}

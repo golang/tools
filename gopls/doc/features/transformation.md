@@ -317,10 +317,22 @@ judgment and testing.
 
 Special cases:
 
-- When renaming the receiver of a method, the tool also attempts to
-  rename the receivers of all other methods associated with the same
-  named type. Each other receiver that cannot be fully renamed is
-  quietly skipped.
+- When renaming the declaration of a method receiver, the tool also
+  attempts to rename the receivers of all other methods associated
+  with the same named type. Each other receiver that cannot be fully
+  renamed is quietly skipped. Renaming any _use_ of a receiver affects
+  only that variable.
+
+  ```go
+  type Counter struct { x int }
+
+                   Rename here to affect only this method
+                            ↓
+  func (c *Counter) Inc() { c.x++ }
+  func (c *Counter) Dec() { c.x++ }
+        ↑
+    Rename here to affect all methods
+  ```
 
 - Renaming a package declaration additionally causes the package's
   directory to be renamed.

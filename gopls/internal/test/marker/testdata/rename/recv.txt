@@ -5,6 +5,8 @@ Notes:
   that renaming is quietly skipped.
 - various combinations of named, aliases, and pointers are tested.
 - package b exercises generics.
+- renaming a receiver declaration causes the broader renaming;
+  renaming a receiver use (see vrefz) effects only a local renaming.
 
 -- a/a.go --
 package a
@@ -16,7 +18,7 @@ func (T) F()   {}
 func (t T) G() {} //@rename("t", "x", tx)
 func (U T) H() {} //@rename("U", "v", Uv)
 func (_ T) I() {}
-func (v A) J() { print(v) }
+func (v A) J() { print(-v) } //@rename(re"-(v)", "z", vrefz)
 func (w *T) K() {}
 func (x *A) L() {} //@rename("x", "print", xprint)
 
@@ -27,9 +29,9 @@ func (x *A) L() {} //@rename("x", "print", xprint)
 +func (x T) G() {} //@rename("t", "x", tx)
 +func (x T) H() {} //@rename("U", "v", Uv)
 @@ -10,2 +10,2 @@
--func (v A) J() { print(v) }
+-func (v A) J() { print(-v) } //@rename(re"-(v)", "z", vrefz)
 -func (w *T) K() {}
-+func (x A) J() { print(x) }
++func (x A) J() { print(-x) } //@rename(re"-(v)", "z", vrefz)
 +func (x *T) K() {}
 -- @Uv/a/a.go --
 @@ -7,2 +7,2 @@
@@ -53,6 +55,10 @@ func (x *A) L() {} //@rename("x", "print", xprint)
 -func (x *A) L() {} //@rename("x", "print", xprint)
 +func (print *T) K() {}
 +func (print *A) L() {} //@rename("x", "print", xprint)
+-- @vrefz/a/a.go --
+@@ -10 +10 @@
+-func (v A) J() { print(-v) } //@rename(re"-(v)", "z", vrefz)
++func (z A) J() { print(-z) } //@rename(re"-(v)", "z", vrefz)
 -- b/b.go --
 package b
 
