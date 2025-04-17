@@ -11,6 +11,15 @@ import (
 	"slices"
 )
 
+// Arbitrary returns an arbitrary (key, value) entry from the map and ok is true, if
+// the map is not empty. Otherwise, it returns zero values for K and V, and false.
+func Arbitrary[K comparable, V any](m map[K]V) (_ K, _ V, ok bool) {
+	for k, v := range m {
+		return k, v, true
+	}
+	return
+}
+
 // Group returns a new non-nil map containing the elements of s grouped by the
 // keys returned from the key func.
 func Group[K comparable, V any](s []V, key func(V) K) map[K][]V {

@@ -968,7 +968,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	ctx = debug.WithInstance(ctx)
 
 	awaiter := integration.NewAwaiter(sandbox.Workdir)
-	ss := lsprpc.NewStreamServer(cache, false, nil)
+	ss := lsprpc.NewStreamServer(cache, false, nil, nil)
 	server := servertest.NewPipeServer(ss, jsonrpc2.NewRawStream)
 	editor, err := fake.NewEditor(sandbox, config).Connect(ctx, server, awaiter.Hooks())
 	if err != nil {
