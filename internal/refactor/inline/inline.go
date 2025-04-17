@@ -14,6 +14,7 @@ import (
 	"go/printer"
 	"go/token"
 	"go/types"
+	"maps"
 	pathpkg "path"
 	"reflect"
 	"slices"
@@ -26,7 +27,6 @@ import (
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
-	"maps"
 )
 
 // A Caller describes the function call and its enclosing context.
@@ -691,84 +691,9 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	istate := newImportState(logf, caller, callee)
 
 	// Compute the renaming of the callee's free identifiers.
-	objRenames := make([]ast.Expr, len(callee.FreeObjs)) // nil => no change
-	for i, obj := range callee.FreeObjs {
-		// obj is a free object of the callee.
-		//
-		// Possible cases are:
-		// - builtin function, type, or value (e.g. nil, zero)
-		//   => check not shadowed in caller.
-		// - package-level var/func/const/types
-		//   => same package: check not shadowed in caller.
-		//   => otherwise: import other package, form a qualified identifier.
-		//      (Unexported cross-package references were rejected already.)
-		// - type parameter
-		//   => not yet supported
-		// - pkgname
-		//   => import other package and use its local name.
-		//
-		// There can be no free references to labels, fields, or methods.
-
-		// Note that we must consider potential shadowing both
-		// at the caller side (caller.lookup) and, when
-		// choosing new PkgNames, within the callee (obj.shadow).
-
-		var newName ast.Expr
-		if obj.Kind == "pkgname" {
-			// Use locally appropriate import, creating as needed.
-			n := istate.localName(obj.PkgPath, obj.PkgName, obj.Shadow)
-			newName = makeIdent(n) // imported package
-		} else if !obj.ValidPos {
-			// Built-in function, type, or value (e.g. nil, zero):
-			// check not shadowed at caller.
-			found := caller.lookup(obj.Name) // always finds something
-			if found.Pos().IsValid() {
-				return nil, fmt.Errorf("cannot inline, because the callee refers to built-in %q, which in the caller is shadowed by a %s (declared at line %d)",
-					obj.Name, objectKind(found),
-					caller.Fset.PositionFor(found.Pos(), false).Line)
-			}
-
-		} else {
-			// Must be reference to package-level var/func/const/type,
-			// since type parameters are not yet supported.
-			qualify := false
-			if obj.PkgPath == callee.PkgPath {
-				// reference within callee package
-				if samePkg {
-					// Caller and callee are in same package.
-					// Check caller has not shadowed the decl.
-					//
-					// This may fail if the callee is "fake", such as for signature
-					// refactoring where the callee is modified to be a trivial wrapper
-					// around the refactored signature.
-					found := caller.lookup(obj.Name)
-					if found != nil && !isPkgLevel(found) {
-						return nil, fmt.Errorf("cannot inline, because the callee refers to %s %q, which in the caller is shadowed by a %s (declared at line %d)",
-							obj.Kind, obj.Name,
-							objectKind(found),
-							caller.Fset.PositionFor(found.Pos(), false).Line)
-					}
-				} else {
-					// Cross-package reference.
-					qualify = true
-				}
-			} else {
-				// Reference to a package-level declaration
-				// in another package, without a qualified identifier:
-				// it must be a dot import.
-				qualify = true
-			}
-
-			// Form a qualified identifier, pkg.Name.
-			if qualify {
-				pkgName := istate.localName(obj.PkgPath, obj.PkgName, obj.Shadow)
-				newName = &ast.SelectorExpr{
-					X:   makeIdent(pkgName),
-					Sel: makeIdent(obj.Name),
-				}
-			}
-		}
-		objRenames[i] = newName
+	objRenames, err := st.renameFreeObjs(istate)
+	if err != nil {
+		return nil, err
 	}
 
 	res := &inlineCallResult{
@@ -1351,6 +1276,93 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	res.old = caller.Call
 	res.new = newCall
 	return res, nil
+}
+
+// renameFreeObjs computes the renaming of the callee's free identifiers.
+// It returns a slice of names (identifiers or selector expressions) corresponding
+// to the callee's free objects (gobCallee.FreeObjs).
+func (st *state) renameFreeObjs(istate *importState) ([]ast.Expr, error) {
+	caller, callee := st.caller, &st.callee.impl
+	objRenames := make([]ast.Expr, len(callee.FreeObjs)) // nil => no change
+	for i, obj := range callee.FreeObjs {
+		// obj is a free object of the callee.
+		//
+		// Possible cases are:
+		// - builtin function, type, or value (e.g. nil, zero)
+		//   => check not shadowed in caller.
+		// - package-level var/func/const/types
+		//   => same package: check not shadowed in caller.
+		//   => otherwise: import other package, form a qualified identifier.
+		//      (Unexported cross-package references were rejected already.)
+		// - type parameter
+		//   => not yet supported
+		// - pkgname
+		//   => import other package and use its local name.
+		//
+		// There can be no free references to labels, fields, or methods.
+
+		// Note that we must consider potential shadowing both
+		// at the caller side (caller.lookup) and, when
+		// choosing new PkgNames, within the callee (obj.shadow).
+
+		var newName ast.Expr
+		if obj.Kind == "pkgname" {
+			// Use locally appropriate import, creating as needed.
+			n := istate.localName(obj.PkgPath, obj.PkgName, obj.Shadow)
+			newName = makeIdent(n) // imported package
+		} else if !obj.ValidPos {
+			// Built-in function, type, or value (e.g. nil, zero):
+			// check not shadowed at caller.
+			found := caller.lookup(obj.Name) // always finds something
+			if found.Pos().IsValid() {
+				return nil, fmt.Errorf("cannot inline, because the callee refers to built-in %q, which in the caller is shadowed by a %s (declared at line %d)",
+					obj.Name, objectKind(found),
+					caller.Fset.PositionFor(found.Pos(), false).Line)
+			}
+
+		} else {
+			// Must be reference to package-level var/func/const/type,
+			// since type parameters are not yet supported.
+			qualify := false
+			if obj.PkgPath == callee.PkgPath {
+				// reference within callee package
+				if caller.Types.Path() == callee.PkgPath {
+					// Caller and callee are in same package.
+					// Check caller has not shadowed the decl.
+					//
+					// This may fail if the callee is "fake", such as for signature
+					// refactoring where the callee is modified to be a trivial wrapper
+					// around the refactored signature.
+					found := caller.lookup(obj.Name)
+					if found != nil && !isPkgLevel(found) {
+						return nil, fmt.Errorf("cannot inline, because the callee refers to %s %q, which in the caller is shadowed by a %s (declared at line %d)",
+							obj.Kind, obj.Name,
+							objectKind(found),
+							caller.Fset.PositionFor(found.Pos(), false).Line)
+					}
+				} else {
+					// Cross-package reference.
+					qualify = true
+				}
+			} else {
+				// Reference to a package-level declaration
+				// in another package, without a qualified identifier:
+				// it must be a dot import.
+				qualify = true
+			}
+
+			// Form a qualified identifier, pkg.Name.
+			if qualify {
+				pkgName := istate.localName(obj.PkgPath, obj.PkgName, obj.Shadow)
+				newName = &ast.SelectorExpr{
+					X:   makeIdent(pkgName),
+					Sel: makeIdent(obj.Name),
+				}
+			}
+		}
+		objRenames[i] = newName
+	}
+	return objRenames, nil
 }
 
 type argument struct {
@@ -2562,7 +2574,6 @@ func pure(info *types.Info, assign1 func(*types.Var) bool, e ast.Expr) bool {
 
 		case *ast.SelectorExpr:
 			if seln, ok := info.Selections[e]; ok {
-
 				// See types.SelectionKind for background.
 				switch seln.Kind() {
 				case types.MethodExpr:
