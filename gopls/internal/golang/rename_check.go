@@ -346,13 +346,10 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 		(*ast.CompositeLit)(nil),
 	}
 	ok := true
-	var visit func(cur cursor.Cursor, push bool) (descend bool)
-	visit = func(cur cursor.Cursor, push bool) (descend bool) {
+	var visit func(cur cursor.Cursor) (descend bool)
+	visit = func(cur cursor.Cursor) (descend bool) {
 		if !ok {
 			return false // bail out
-		}
-		if !push {
-			return false
 		}
 		switch n := cur.Node().(type) {
 		case *ast.Ident:

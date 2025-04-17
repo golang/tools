@@ -509,7 +509,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 			return nil, err
 		}
 		var ok bool
-		cur, ok = pgf.Cursor.FindPos(pos, pos)
+		cur, ok = pgf.Cursor.FindByPos(pos, pos)
 		if !ok {
 			return nil, fmt.Errorf("can't find cursor for selection")
 		}
