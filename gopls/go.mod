@@ -8,7 +8,7 @@ require (
 	golang.org/x/mod v0.24.0
 	golang.org/x/sync v0.13.0
 	golang.org/x/sys v0.32.0
-	golang.org/x/telemetry v0.0.0-20250220152412-165e2f84edbc
+	golang.org/x/telemetry v0.0.0-20250417124945-06ef541f3fa3
 	golang.org/x/text v0.24.0
 	golang.org/x/tools v0.30.0
 	golang.org/x/vuln v1.1.4
