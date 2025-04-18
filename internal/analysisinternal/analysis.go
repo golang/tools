@@ -439,11 +439,25 @@ func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
 		if file == nil {
 			return fmt.Errorf("no token.File for TextEdit.Pos (%v)", edit.Pos)
 		}
+		fileEnd := token.Pos(file.Base() + file.Size())
 		if end := edit.End; end.IsValid() {
 			if end < start {
 				return fmt.Errorf("TextEdit.Pos (%v) > TextEdit.End (%v)", edit.Pos, edit.End)
 			}
 			endFile := fset.File(end)
+			if endFile != file && end < fileEnd+10 {
+				// Relax the checks below in the special case when the end position
+				// is only slightly beyond EOF, as happens when End is computed
+				// (as in ast.{Struct,Interface}Type) rather than based on
+				// actual token positions. In such cases, truncate end to EOF.
+				//
+				// This is a workaround for #71659; see:
+				// https://github.com/golang/go/issues/71659#issuecomment-2651606031
+				// A better fix would be more faithful recording of token
+				// positions (or their absence) in the AST.
+				edit.End = fileEnd
+				continue
+			}
 			if endFile == nil {
 				return fmt.Errorf("no token.File for TextEdit.End (%v; File(start).FileEnd is %d)", end, file.Base()+file.Size())
 			}
@@ -454,7 +468,7 @@ func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
 		} else {
 			edit.End = start // update the SuggestedFix
 		}
-		if eof := token.Pos(file.Base() + file.Size()); edit.End > eof {
+		if eof := fileEnd; edit.End > eof {
 			return fmt.Errorf("end is (%v) beyond end of file (%v)", edit.End, eof)
 		}
 

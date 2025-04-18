@@ -1122,6 +1122,10 @@ func (act *action) exec(ctx context.Context) (any, *actionSummary, error) {
 		ResultOf:     inputs,
 		Report: func(d analysis.Diagnostic) {
 			// Assert that SuggestedFixes are well formed.
+			//
+			// ValidateFixes allows a fix.End to be slightly beyond
+			// EOF to avoid spurious assertions when reporting
+			// fixes as the end of truncated files; see #71659.
 			if err := analysisinternal.ValidateFixes(apkg.pkg.FileSet(), analyzer, d.SuggestedFixes); err != nil {
 				bug.Reportf("invalid SuggestedFixes: %v", err)
 				d.SuggestedFixes = nil
