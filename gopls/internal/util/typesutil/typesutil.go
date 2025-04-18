@@ -10,6 +10,8 @@ import (
 	"go/token"
 	"go/types"
 	"strings"
+
+	"golang.org/x/tools/gopls/internal/util/astutil"
 )
 
 // FormatTypeParams turns TypeParamList into its Go representation, such as:
@@ -62,26 +64,12 @@ func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.
 
 	switch parent := parent.(type) {
 	case *ast.AssignStmt:
-		// Append all lhs's type
-		if len(parent.Rhs) == 1 {
-			for _, lhs := range parent.Lhs {
-				t := info.TypeOf(lhs)
-				typs = append(typs, validType(t))
-			}
-			break
+		right := pos > parent.TokPos
+		expr, opposites := parent.Lhs, parent.Rhs
+		if right {
+			expr, opposites = opposites, expr
 		}
-		// Lhs and Rhs counts do not match, give up
-		if len(parent.Lhs) != len(parent.Rhs) {
-			break
-		}
-		// Append corresponding index of lhs's type
-		for i, rhs := range parent.Rhs {
-			if rhs.Pos() <= pos && pos <= rhs.End() {
-				t := info.TypeOf(parent.Lhs[i])
-				typs = append(typs, validType(t))
-				break
-			}
-		}
+		typs = append(typs, typeFromExprAssignExpr(expr, opposites, info, pos, validType)...)
 	case *ast.ValueSpec:
 		if len(parent.Values) == 1 {
 			for _, lhs := range parent.Names {
@@ -185,6 +173,14 @@ func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.
 			t := info.TypeOf(parent.X)
 			typs = append(typs, validType(t))
 		}
+	case *ast.SelectorExpr:
+		for _, n := range path {
+			assign, ok := n.(*ast.AssignStmt)
+			if ok {
+				return TypesFromContext(info, path[1:], assign.Pos())
+			}
+		}
+
 	default:
 		// TODO: support other kinds of "holes" as the need arises.
 	}
@@ -231,5 +227,33 @@ func EnclosingSignature(path []ast.Node, info *types.Info) *types.Signature {
 			return nil
 		}
 	}
+	return nil
+}
+
+// typeFromExprAssignExpr extracts a type from a given expression
+// f.x = v
+// where v - a value which type the function extracts
+func typeFromExprAssignExpr(exprs, opposites []ast.Expr, info *types.Info, pos token.Pos, validType func(t types.Type) types.Type) []types.Type {
+	var typs []types.Type
+	// Append all lhs's type
+	if len(exprs) == 1 {
+		for i := range opposites {
+			t := info.TypeOf(opposites[i])
+			typs = append(typs, validType(t))
+		}
+		return typs
+	}
+	// Lhs and Rhs counts do not match, give up
+	if len(opposites) != len(exprs) {
+		return nil
+	}
+	// Append corresponding index of lhs's type
+	for i := range exprs {
+		if astutil.NodeContains(exprs[i], pos) {
+			t := info.TypeOf(opposites[i])
+			return []types.Type{validType(t)}
+		}
+	}
+
 	return nil
 }
