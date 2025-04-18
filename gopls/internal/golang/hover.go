@@ -19,6 +19,7 @@ import (
 	"go/version"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -339,7 +340,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		return protocol.Range{}, nil, fmt.Errorf("re-parsing declaration of %s: %v", obj.Name(), err)
 	}
 	decl, spec, field := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^3
-	comment := chooseDocComment(decl, spec, field)
+	comment := chooseDocComment(pkg.FileSet(), decl, spec, field)
 	docText := comment.Text()
 
 	// By default, types.ObjectString provides a reasonable signature.
@@ -1225,10 +1226,10 @@ func HoverDocForObject(ctx context.Context, snapshot *cache.Snapshot, fset *toke
 	}
 
 	decl, spec, field := findDeclInfo([]*ast.File{pgf.File}, pos)
-	return chooseDocComment(decl, spec, field), nil
+	return chooseDocComment(fset, decl, spec, field), nil
 }
 
-func chooseDocComment(decl ast.Decl, spec ast.Spec, field *ast.Field) *ast.CommentGroup {
+func chooseDocComment(fset *token.FileSet, decl ast.Decl, spec ast.Spec, field *ast.Field) *ast.CommentGroup {
 	if field != nil {
 		if field.Doc != nil {
 			return field.Doc
@@ -1242,26 +1243,85 @@ func chooseDocComment(decl ast.Decl, spec ast.Spec, field *ast.Field) *ast.Comme
 	case *ast.FuncDecl:
 		return decl.Doc
 	case *ast.GenDecl:
-		switch spec := spec.(type) {
-		case *ast.ValueSpec:
-			if spec.Doc != nil {
-				return spec.Doc
-			}
-			if decl.Doc != nil {
-				return decl.Doc
-			}
-			return spec.Comment
-		case *ast.TypeSpec:
-			if spec.Doc != nil {
-				return spec.Doc
-			}
-			if decl.Doc != nil {
-				return decl.Doc
-			}
-			return spec.Comment
+		group := specGroupComment(fset, decl, spec)
+		doc := getDocComment(spec)
+		line := getLineComment(spec)
+
+		cg := &ast.CommentGroup{}
+		if group != nil {
+			cg.List = append(cg.List, group)
 		}
+		if doc != nil {
+			cg.List = append(cg.List, doc.List...)
+		}
+		if line != nil {
+			cg.List = append(cg.List, line.List...)
+		}
+
+		if len(cg.List) != 0 {
+			// Group comment might be part of a Doc comment.
+			cg.List = slices.Compact(cg.List)
+			return cg
+		}
+
+		return decl.Doc
 	}
 	return nil
+}
+
+func specGroupComment(fset *token.FileSet, decl *ast.GenDecl, spec ast.Spec) *ast.Comment {
+	var groupComment *ast.Comment
+	var prevEndPos token.Pos
+	for _, s := range decl.Specs {
+		doc := getDocComment(s)
+
+		startPos := s.Pos()
+		if doc != nil {
+			startPos = doc.Pos()
+		}
+
+		if prevEndPos.IsValid() && fset.PositionFor(startPos, false).Line != fset.PositionFor(prevEndPos, false).Line+1 {
+			groupComment = nil
+		}
+
+		if doc != nil && strings.HasPrefix(doc.List[0].Text, "/*") {
+			groupComment = doc.List[0]
+		}
+
+		if s == spec {
+			return groupComment
+		}
+
+		prevEndPos = s.End()
+		if lc := getLineComment(s); lc != nil {
+			prevEndPos = lc.End()
+		}
+	}
+
+	// The provided spec is not part of the decl.Spec slice.
+	panic("unreachable")
+}
+
+func getLineComment(spec ast.Spec) *ast.CommentGroup {
+	switch spec := spec.(type) {
+	case *ast.ValueSpec:
+		return spec.Comment
+	case *ast.TypeSpec:
+		return spec.Comment
+	default:
+		return nil
+	}
+}
+
+func getDocComment(spec ast.Spec) *ast.CommentGroup {
+	switch spec := spec.(type) {
+	case *ast.ValueSpec:
+		return spec.Doc
+	case *ast.TypeSpec:
+		return spec.Doc
+	default:
+		return nil
+	}
 }
 
 // parseFull fully parses the file corresponding to position pos (for
