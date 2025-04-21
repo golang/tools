@@ -14,7 +14,7 @@ package golang
 // - rewrite using html/template.
 //   Or factor with golang.org/x/pkgsite/internal/godoc/dochtml.
 // - emit breadcrumbs for parent + sibling packages.
-// - list promoted methods---we have type information!
+// - list promoted methods---we have type information! (golang/go#67158)
 // - gather Example tests, following go/doc and pkgsite.
 // - add option for doc.AllDecls: show non-exported symbols too.
 // - style the <li> bullets in the index as invisible.
@@ -328,7 +328,17 @@ func PackageDocHTML(viewID string, pkg *cache.Package, web Web) ([]byte, error) 
 			filterValues(&t.Vars)
 			filterFuncs(&t.Funcs)
 			filterFuncs(&t.Methods)
-			return unexported(t.Name)
+			if unexported(t.Name) {
+				// If an unexported type has an exported constructor function,
+				// treat the constructor as an ordinary standalone function.
+				// We will sort Funcs again below.
+				docpkg.Funcs = append(docpkg.Funcs, t.Funcs...)
+				return true // delete this type
+			}
+			return false // keep this type
+		})
+		slices.SortFunc(docpkg.Funcs, func(x, y *doc.Func) int {
+			return strings.Compare(x.Name, y.Name)
 		})
 	}
 

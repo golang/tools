@@ -410,6 +410,48 @@ type D int
 	})
 }
 
+// TestPkgDocConstructorOfUnexported tests that exported constructor
+// functions (NewT) whose result type (t) is unexported are not
+// discarded but are presented as ordinary top-level functions (#69553).
+func TestPkgDocConstructorOfUnexported(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+go 1.20
+
+-- a/a.go --
+package a
+
+func A() {}
+func Z() {}
+
+type unexported int
+func NewUnexported() unexported // exported constructor of unexported type
+
+type Exported int
+func NewExported() Exported // exported constructor of exported type
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		uri1 := viewPkgDoc(t, env, env.Sandbox.Workdir.EntireFile("a/a.go"))
+		doc := get(t, uri1)
+
+		want := regexp.QuoteMeta(`
+<optgroup label='Functions'>
+  <option label='A()' value='#A'/>
+  <option label='NewUnexported()' value='#NewUnexported'/>
+  <option label='Z()' value='#Z'/>
+</optgroup>
+<optgroup label='Types'>
+  <option label='Exported' value='#Exported'/>
+</optgroup>
+<optgroup label='type Exported'>
+  <option label='NewExported()' value='#NewExported'/>
+</optgroup>`)
+		checkMatch(t, true, doc, want)
+	})
+}
+
 // viewPkgDoc invokes the "Browse package documentation" code action
 // at the specified location. It returns the URI of the document, or
 // fails the test.
