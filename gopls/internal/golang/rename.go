@@ -1152,7 +1152,12 @@ func renameImports(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.P
 					continue // not the import we're looking for
 				}
 
-				pkgname := pkg.TypesInfo().Implicits[imp].(*types.PkgName)
+				pkgname, ok := pkg.TypesInfo().Implicits[imp].(*types.PkgName)
+				if !ok {
+					// "can't happen", but be defensive (#71656)
+					return fmt.Errorf("internal error: missing type information for %s import at %s",
+						imp.Path.Value, safetoken.StartPosition(pkg.FileSet(), imp.Pos()))
+				}
 
 				pkgScope := pkg.Types().Scope()
 				fileScope := pkg.TypesInfo().Scopes[f.File]
