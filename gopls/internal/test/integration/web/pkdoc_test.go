@@ -1,31 +1,26 @@
-// Copyright 2024 The Go Authors. All rights reserved.
+// Copyright 2025 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package misc
+package web_test
 
 import (
 	"fmt"
 	"html"
-	"io"
-	"net/http"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	. "golang.org/x/tools/gopls/internal/test/integration"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // TODO(adonovan): define marker test verbs for checking package docs.
 
-// TestWebServer exercises the web server created on demand
-// for code actions such as "Browse package documentation".
-func TestWebServer(t *testing.T) {
+// TestBrowsePkgDoc provides basic coverage of the "Browse package
+// documentation", which creates a web server on demand.
+func TestBrowsePkgDoc(t *testing.T) {
 	const files = `
 -- go.mod --
 module example.com
@@ -445,240 +440,4 @@ func viewPkgDoc(t *testing.T, env *Env, loc protocol.Location) protocol.URI {
 		t.Log("showDocument(package doc) URL:", doc.URI)
 	}
 	return doc.URI
-}
-
-// TestFreeSymbols is a basic test of interaction with the "free symbols" web report.
-func TestFreeSymbols(t *testing.T) {
-	const files = `
--- go.mod --
-module example.com
-
--- a/a.go --
-package a
-
-import "fmt"
-import "bytes"
-
-func f(buf bytes.Buffer, greeting string) {
-/* « */
-	fmt.Fprintf(&buf, "%s", greeting)
-	buf.WriteString(fmt.Sprint("foo"))
-	buf.WriteByte(0)
-/* » */
-	buf.Write(nil)
-}
-`
-	Run(t, files, func(t *testing.T, env *Env) {
-		env.OpenFile("a/a.go")
-
-		// Invoke the "Browse free symbols" code
-		// action to start the server.
-		loc := env.RegexpSearch("a/a.go", "«((?:.|\n)*)»")
-		actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
-		if err != nil {
-			t.Fatalf("CodeAction: %v", err)
-		}
-		action, err := codeActionByKind(actions, settings.GoFreeSymbols)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Execute the command.
-		// Its side effect should be a single showDocument request.
-		params := &protocol.ExecuteCommandParams{
-			Command:   action.Command.Command,
-			Arguments: action.Command.Arguments,
-		}
-		var result command.DebuggingResult
-		collectDocs := env.Awaiter.ListenToShownDocuments()
-		env.ExecuteCommand(params, &result)
-		doc := shownDocument(t, collectDocs(), "http:")
-		if doc == nil {
-			t.Fatalf("no showDocument call had 'file:' prefix")
-		}
-		t.Log("showDocument(package doc) URL:", doc.URI)
-
-		// Get the report and do some minimal checks for sensible results.
-		report := get(t, doc.URI)
-		checkMatch(t, true, report, `<li>import "<a .*'>fmt</a>" // for Fprintf, Sprint</li>`)
-		checkMatch(t, true, report, `<li>var <a .*>buf</a>  bytes.Buffer</li>`)
-		checkMatch(t, true, report, `<li>func <a .*>WriteByte</a>  func\(c byte\) error</li>`)
-		checkMatch(t, true, report, `<li>func <a .*>WriteString</a>  func\(s string\) \(n int, err error\)</li>`)
-		checkMatch(t, false, report, `<li>func <a .*>Write</a>`) // not in selection
-		checkMatch(t, true, report, `<li>var <a .*>greeting</a>  string</li>`)
-	})
-}
-
-// TestAssembly is a basic test of the web-based assembly listing.
-func TestAssembly(t *testing.T) {
-	testenv.NeedsGoCommand1Point(t, 22) // for up-to-date assembly listing
-
-	const files = `
--- go.mod --
-module example.com
-
--- a/a.go --
-package a
-
-func f(x int) int {
-	println("hello")
-	defer println("world")
-	return x
-}
-
-func g() {
-	println("goodbye")
-}
-
-var v = [...]int{
-	f(123),
-	f(456),
-}
-
-func init() {
-	f(789)
-}
-`
-	Run(t, files, func(t *testing.T, env *Env) {
-		env.OpenFile("a/a.go")
-
-		asmFor := func(pattern string) []byte {
-			// Invoke the "Browse assembly" code action to start the server.
-			loc := env.RegexpSearch("a/a.go", pattern)
-			actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
-			if err != nil {
-				t.Fatalf("CodeAction: %v", err)
-			}
-			action, err := codeActionByKind(actions, settings.GoAssembly)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			// Execute the command.
-			// Its side effect should be a single showDocument request.
-			params := &protocol.ExecuteCommandParams{
-				Command:   action.Command.Command,
-				Arguments: action.Command.Arguments,
-			}
-			var result command.DebuggingResult
-			collectDocs := env.Awaiter.ListenToShownDocuments()
-			env.ExecuteCommand(params, &result)
-			doc := shownDocument(t, collectDocs(), "http:")
-			if doc == nil {
-				t.Fatalf("no showDocument call had 'file:' prefix")
-			}
-			t.Log("showDocument(package doc) URL:", doc.URI)
-
-			return get(t, doc.URI)
-		}
-
-		// Get the report and do some minimal checks for sensible results.
-		//
-		// Use only portable instructions below! Remember that
-		// this is a test of plumbing, not compilation, so
-		// it's better to skip the tests, rather than refine
-		// them, on any architecture that gives us trouble
-		// (e.g. uses JAL for CALL, or BL<cc> for RET).
-		// We conservatively test only on the two most popular
-		// architectures.
-		{
-			report := asmFor("println")
-			checkMatch(t, true, report, `TEXT.*example.com/a.f`)
-			switch runtime.GOARCH {
-			case "amd64", "arm64":
-				checkMatch(t, true, report, `CALL	runtime.printlock`)
-				checkMatch(t, true, report, `CALL	runtime.printstring`)
-				checkMatch(t, true, report, `CALL	runtime.printunlock`)
-				checkMatch(t, true, report, `CALL	example.com/a.f.deferwrap`)
-				checkMatch(t, true, report, `RET`)
-				checkMatch(t, true, report, `CALL	runtime.morestack_noctxt`)
-			}
-
-			// Nested functions are also shown.
-			//
-			// The condition here was relaxed to unblock go.dev/cl/639515.
-			checkMatch(t, true, report, `example.com/a.f.deferwrap`)
-
-			// But other functions are not.
-			checkMatch(t, false, report, `TEXT.*example.com/a.g`)
-		}
-
-		// Check that code in a package-level var initializer is found too.
-		{
-			report := asmFor(`f\(123\)`)
-			switch runtime.GOARCH {
-			case "amd64", "arm64":
-				checkMatch(t, true, report, `TEXT.*example.com/a.init`)
-				checkMatch(t, true, report, `MOV.?	\$123`)
-				checkMatch(t, true, report, `MOV.?	\$456`)
-				checkMatch(t, true, report, `CALL	example.com/a.f`)
-			}
-		}
-
-		// And code in a source-level init function.
-		{
-			report := asmFor(`f\(789\)`)
-			switch runtime.GOARCH {
-			case "amd64", "arm64":
-				checkMatch(t, true, report, `TEXT.*example.com/a.init`)
-				checkMatch(t, true, report, `MOV.?	\$789`)
-				checkMatch(t, true, report, `CALL	example.com/a.f`)
-			}
-		}
-	})
-}
-
-// shownDocument returns the first shown document matching the URI prefix.
-// It may be nil.
-// As a side effect, it clears the list of accumulated shown documents.
-func shownDocument(t *testing.T, shown []*protocol.ShowDocumentParams, prefix string) *protocol.ShowDocumentParams {
-	t.Helper()
-	var first *protocol.ShowDocumentParams
-	for _, sd := range shown {
-		if strings.HasPrefix(sd.URI, prefix) {
-			if first != nil {
-				t.Errorf("got multiple showDocument requests: %#v", shown)
-				break
-			}
-			first = sd
-		}
-	}
-	return first
-}
-
-// get fetches the content of a document over HTTP.
-func get(t *testing.T, url string) []byte {
-	t.Helper()
-	resp, err := http.Get(url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	got, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return got
-}
-
-// checkMatch asserts that got matches (or doesn't match, if !want) the pattern.
-func checkMatch(t *testing.T, want bool, got []byte, pattern string) {
-	t.Helper()
-	if regexp.MustCompile(pattern).Match(got) != want {
-		if want {
-			t.Errorf("input did not match wanted pattern %q; got:\n%s", pattern, got)
-		} else {
-			t.Errorf("input matched unwanted pattern %q; got:\n%s", pattern, got)
-		}
-	}
-}
-
-// codeActionByKind returns the first action of (exactly) the specified kind, or an error.
-func codeActionByKind(actions []protocol.CodeAction, kind protocol.CodeActionKind) (*protocol.CodeAction, error) {
-	for _, act := range actions {
-		if act.Kind == kind {
-			return &act, nil
-		}
-	}
-	return nil, fmt.Errorf("can't find action with kind %s, only %#v", kind, actions)
 }

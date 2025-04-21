@@ -5,6 +5,7 @@
 package misc
 
 import (
+	"fmt"
 	"runtime"
 	"testing"
 
@@ -44,6 +45,7 @@ func main() {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		params := &protocol.ExecuteCommandParams{
 			Command:   docAction.Command.Command,
 			Arguments: docAction.Command.Arguments,
@@ -228,4 +230,14 @@ func cond[T any](cond bool, x, y T) T {
 	} else {
 		return y
 	}
+}
+
+// codeActionByKind returns the first action of (exactly) the specified kind, or an error.
+func codeActionByKind(actions []protocol.CodeAction, kind protocol.CodeActionKind) (*protocol.CodeAction, error) {
+	for _, act := range actions {
+		if act.Kind == kind {
+			return &act, nil
+		}
+	}
+	return nil, fmt.Errorf("can't find action with kind %s, only %#v", kind, actions)
 }
