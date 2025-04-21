@@ -105,9 +105,13 @@ func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, 
 			req.pkg = nil
 		}
 		if err := p.fn(ctx, req); err != nil {
-			// TODO(adonovan): most errors in code action providers should
-			// not block other providers; see https://go.dev/issue/71275.
-			return nil, err
+			// An error in one code action producer
+			// should not affect the others.
+			if ctx.Err() != nil {
+				return nil, err
+			}
+			event.Error(ctx, fmt.Sprintf("CodeAction producer %s failed", p.kind), err)
+			continue
 		}
 	}
 
