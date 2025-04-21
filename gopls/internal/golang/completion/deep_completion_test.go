@@ -20,7 +20,7 @@ func TestDeepCompletionIsHighScore(t *testing.T) {
 	}
 
 	// Fill up with higher scores.
-	for i := 0; i < MaxDeepCompletions; i++ {
+	for range MaxDeepCompletions {
 		if !s.isHighScore(10) {
 			t.Error("10 should be high score")
 		}

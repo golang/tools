@@ -189,29 +189,6 @@ func (u *unifier) set(x *types.TypeParam, t types.Type) {
 	*u.handles[x] = t
 }
 
-// unknowns returns the number of type parameters for which no type has been set yet.
-func (u *unifier) unknowns() int {
-	n := 0
-	for _, h := range u.handles {
-		if *h == nil {
-			n++
-		}
-	}
-	return n
-}
-
-// inferred returns the list of inferred types for the given type parameter list.
-// The result is never nil and has the same length as tparams; result types that
-// could not be inferred are nil. Corresponding type parameters and result types
-// have identical indices.
-func (u *unifier) inferred(tparams []*types.TypeParam) []types.Type {
-	list := make([]types.Type, len(tparams))
-	for i, x := range tparams {
-		list[i] = u.at(x)
-	}
-	return list
-}
-
 // asInterface returns the underlying type of x as an interface if
 // it is a non-type parameter interface. Otherwise it returns nil.
 func asInterface(x types.Type) (i *types.Interface) {
@@ -243,30 +220,6 @@ func isTypeLit(t types.Type) bool {
 func identicalOrigin(x, y *types.Named) bool {
 	// TODO(gri) is this correct?
 	return x.Origin().Obj() == y.Origin().Obj()
-}
-
-func match(x, y types.Type) types.Type {
-	// Common case: we don't have channels.
-	if types.Identical(x, y) {
-		return x
-	}
-
-	// We may have channels that differ in direction only.
-	if x, _ := x.(*types.Chan); x != nil {
-		if y, _ := y.(*types.Chan); y != nil && types.Identical(x.Elem(), y.Elem()) {
-			// We have channels that differ in direction only.
-			// If there's an unrestricted channel, select the restricted one.
-			switch {
-			case x.Dir() == types.SendRecv:
-				return y
-			case y.Dir() == types.SendRecv:
-				return x
-			}
-		}
-	}
-
-	// types are different
-	return nil
 }
 
 func coreType(t types.Type) types.Type {

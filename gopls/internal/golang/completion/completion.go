@@ -489,12 +489,7 @@ type candidate struct {
 }
 
 func (c candidate) hasMod(mod typeModKind) bool {
-	for _, m := range c.mods {
-		if m == mod {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.mods, mod)
 }
 
 // Completion returns a list of possible candidates for completion, given a
@@ -1487,7 +1482,6 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 		}
 
 		for _, uri := range mp.CompiledGoFiles {
-			uri := uri
 			g.Go(func() error {
 				return quickParse(uri, mp, tooNew)
 			})

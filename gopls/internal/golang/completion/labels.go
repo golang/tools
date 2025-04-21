@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/token"
 	"math"
+	"slices"
 )
 
 type labelType int
@@ -96,12 +97,7 @@ func (c *completer) labels(lt labelType) {
 			// Only search into block-like nodes enclosing our "goto".
 			// This prevents us from finding labels in nested blocks.
 			case *ast.BlockStmt, *ast.CommClause, *ast.CaseClause:
-				for _, p := range c.path {
-					if n == p {
-						return true
-					}
-				}
-				return false
+				return slices.Contains(c.path, n)
 			case *ast.LabeledStmt:
 				addLabel(highScore, n)
 			}
