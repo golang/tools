@@ -62,7 +62,7 @@ func Dial(ctx context.Context, dialer Dialer, binder Binder, onDone func()) (*Co
 	if err != nil {
 		return nil, err
 	}
-	return newConnection(ctx, rwc, binder, onDone), nil
+	return bindConnection(ctx, rwc, binder, onDone), nil
 }
 
 // NewServer starts a new server listening for incoming connections and returns
@@ -117,7 +117,7 @@ func (s *Server) run(ctx context.Context) {
 
 		// A new inbound connection.
 		activeConns.Add(1)
-		_ = newConnection(ctx, rwc, s.binder, activeConns.Done) // unregisters itself when done
+		_ = bindConnection(ctx, rwc, s.binder, activeConns.Done) // unregisters itself when done
 	}
 	activeConns.Wait()
 }

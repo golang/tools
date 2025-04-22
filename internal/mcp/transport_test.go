@@ -12,12 +12,14 @@ import (
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
 )
 
-// BatchSize causes a connection to collect n requests or notifications before
+// BatchSize causes a transport to collect n requests or notifications before
 // sending a batch on the wire (responses are always sent in isolation).
 //
 // Exported for testing in the mcp_test package.
-func BatchSize(opts *ConnectionOptions, n int) {
-	opts.batchSize = n
+func BatchSize(t Transport, n int) {
+	if st, ok := t.(*ioStream); ok {
+		st.outgoingBatch = make([]jsonrpc2.Message, 0, n)
+	}
 }
 
 func TestBatchFraming(t *testing.T) {
@@ -29,21 +31,20 @@ func TestBatchFraming(t *testing.T) {
 	ctx := context.Background()
 
 	r, w := io.Pipe()
-	framer := ndjsonFramer{batchSize: 2}
-	reader := framer.Reader(r)
-	writer := framer.Writer(w)
+	tport := newIOStream(rwc{r, w})
+	tport.outgoingBatch = make([]jsonrpc2.Message, 0, 2)
 
 	// Read the two messages into a channel, for easy testing later.
 	read := make(chan jsonrpc2.Message)
 	go func() {
 		for range 2 {
-			msg, _, _ := reader.Read(ctx)
+			msg, _, _ := tport.Read(ctx)
 			read <- msg
 		}
 	}()
 
 	// The first write should not yet be observed by the reader.
-	writer.Write(ctx, &jsonrpc2.Request{ID: jsonrpc2.Int64ID(1), Method: "test"})
+	tport.Write(ctx, &jsonrpc2.Request{ID: jsonrpc2.Int64ID(1), Method: "test"})
 	select {
 	case got := <-read:
 		t.Fatalf("after one write, got message %v", got)
@@ -51,7 +52,7 @@ func TestBatchFraming(t *testing.T) {
 	}
 
 	// ...but the second write causes both messages to be observed.
-	writer.Write(ctx, &jsonrpc2.Request{ID: jsonrpc2.Int64ID(2), Method: "test"})
+	tport.Write(ctx, &jsonrpc2.Request{ID: jsonrpc2.Int64ID(2), Method: "test"})
 	for _, want := range []int64{1, 2} {
 		got := <-read
 		if got := got.(*jsonrpc2.Request).ID.Raw(); got != want {

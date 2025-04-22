@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"sync"
@@ -27,44 +26,52 @@ var ErrConnectionClosed = errors.New("connection closed")
 
 // A Transport is used to create a bidirectional connection between MCP client
 // and server.
-type Transport struct {
-	dialer jsonrpc2.Dialer
+//
+// Transports should be used for at most one call to [Server.Connect] or
+// [Client.Connect].
+type Transport interface {
+	// connect returns the logical stream.
+	//
+	// It is called exactly once by [connect].
+	connect(ctx context.Context) (stream, error)
+}
+
+// A stream is an abstract bidirectional jsonrpc2 stream.
+// It is used by [connect] to establish a [jsonrpc2.Connection].
+type stream interface {
+	jsonrpc2.Reader
+	jsonrpc2.Writer
+	io.Closer
 }
 
 // ConnectionOptions configures the behavior of an individual client<->server
 // connection.
 type ConnectionOptions struct {
-	Logger io.Writer // if set, write RPC logs
+	SessionID string    // if set, the session ID
+	Logger    io.Writer // if set, write RPC logs
+}
 
-	batchSize int // outgoing batch size for requests/notifications, for testing
+// An IOTransport is a [Transport] that communicates using newline-delimited
+// JSON over an io.ReadWriteCloser.
+type IOTransport struct {
+	rwc io.ReadWriteCloser
+}
+
+func (t *IOTransport) connect(context.Context) (stream, error) {
+	return newIOStream(t.rwc), nil
 }
 
 // NewStdIOTransport constructs a transport that communicates over
 // stdin/stdout.
-func NewStdIOTransport() *Transport {
-	dialer := dialerFunc(func(ctx context.Context) (io.ReadWriteCloser, error) {
-		return rwc{os.Stdin, os.Stdout}, nil
-	})
-	return &Transport{
-		dialer: dialer,
-	}
+func NewStdIOTransport() *IOTransport {
+	return &IOTransport{rwc{os.Stdin, os.Stdout}}
 }
 
 // NewLocalTransport returns two in-memory transports that connect to
 // each other, for testing purposes.
-func NewLocalTransport() (*Transport, *Transport) {
+func NewLocalTransport() (*IOTransport, *IOTransport) {
 	c1, c2 := net.Pipe()
-	t1 := &Transport{
-		dialer: dialerFunc(func(ctx context.Context) (io.ReadWriteCloser, error) {
-			return c1, nil
-		}),
-	}
-	t2 := &Transport{
-		dialer: dialerFunc(func(ctx context.Context) (io.ReadWriteCloser, error) {
-			return c2, nil
-		}),
-	}
-	return t1, t2
+	return &IOTransport{c1}, &IOTransport{c2}
 }
 
 // handler is an unexported version of jsonrpc2.Handler, to be implemented by
@@ -79,43 +86,37 @@ type binder[T handler] interface {
 	disconnect(T)
 }
 
-func connect[H handler](ctx context.Context, t *Transport, opts *ConnectionOptions, b binder[H]) (H, error) {
+func connect[H handler](ctx context.Context, t Transport, opts *ConnectionOptions, b binder[H]) (H, error) {
 	if opts == nil {
 		opts = new(ConnectionOptions)
 	}
 
-	// Frame messages using newline delimited JSON.
-	//
-	// If logging is configured, write message logs.
-	var framer jsonrpc2.Framer = &ndjsonFramer{}
-	if opts.Logger != nil {
-		framer = &loggingFramer{opts.Logger, framer}
-	}
-
-	var h H
-
-	// Bind the server connection.
-	binder := jsonrpc2.BinderFunc(func(_ context.Context, conn *jsonrpc2.Connection) jsonrpc2.ConnectionOptions {
-		h = b.bind(conn)
-		return jsonrpc2.ConnectionOptions{
-			Framer:  framer,
-			Handler: jsonrpc2.HandlerFunc(h.handle),
-			OnInternalError: func(err error) {
-				log.Printf("Internal error: %v", err)
-			},
-		}
-	})
-
-	// Clean up the connection when done.
-	onDone := func() {
-		b.disconnect(h)
-	}
-
 	var zero H
-	_, err := jsonrpc2.Dial(ctx, t.dialer, binder, onDone)
+	stream, err := t.connect(ctx)
 	if err != nil {
 		return zero, err
 	}
+	// If logging is configured, write message logs.
+	reader, writer := jsonrpc2.Reader(stream), jsonrpc2.Writer(stream)
+	if opts.Logger != nil {
+		reader = loggingReader(opts.Logger, reader)
+		writer = loggingWriter(opts.Logger, writer)
+	}
+
+	var h H
+	bind := func(conn *jsonrpc2.Connection) jsonrpc2.Handler {
+		h = b.bind(conn)
+		return jsonrpc2.HandlerFunc(h.handle)
+	}
+	_ = jsonrpc2.NewConnection(ctx, jsonrpc2.ConnectionConfig{
+		Reader: reader,
+		Writer: writer,
+		Closer: stream,
+		Bind:   bind,
+		OnDone: func() {
+			b.disconnect(h)
+		},
+	})
 	assert(h != zero, "unbound connection")
 	return h, nil
 }
@@ -135,13 +136,6 @@ func call(ctx context.Context, conn *jsonrpc2.Connection, method string, params,
 
 // The helpers below are used to bind transports to jsonrpc2.
 
-// A dialerFunc implements jsonrpc2.Dialer.Dial.
-type dialerFunc func(context.Context) (io.ReadWriteCloser, error)
-
-func (f dialerFunc) Dial(ctx context.Context) (io.ReadWriteCloser, error) {
-	return f(ctx)
-}
-
 // A readerFunc implements jsonrpc2.Reader.Read.
 type readerFunc func(context.Context) (jsonrpc2.Message, int64, error)
 
@@ -156,41 +150,35 @@ func (f writerFunc) Write(ctx context.Context, msg jsonrpc2.Message) (int64, err
 	return f(ctx, msg)
 }
 
-// A loggingFramer logs jsonrpc2 messages to its enclosed writer.
-type loggingFramer struct {
-	w        io.Writer
-	delegate jsonrpc2.Framer
-}
-
-func (f *loggingFramer) Reader(rw io.Reader) jsonrpc2.Reader {
-	delegate := f.delegate.Reader(rw)
+// loggingReader is a stream middleware that logs incoming messages.
+func loggingReader(w io.Writer, delegate jsonrpc2.Reader) jsonrpc2.Reader {
 	return readerFunc(func(ctx context.Context) (jsonrpc2.Message, int64, error) {
 		msg, n, err := delegate.Read(ctx)
 		if err != nil {
-			fmt.Fprintf(f.w, "read error: %v", err)
+			fmt.Fprintf(w, "read error: %v", err)
 		} else {
 			data, err := jsonrpc2.EncodeMessage(msg)
 			if err != nil {
-				fmt.Fprintf(f.w, "LoggingFramer: failed to marshal: %v", err)
+				fmt.Fprintf(w, "LoggingFramer: failed to marshal: %v", err)
 			}
-			fmt.Fprintf(f.w, "read: %s", string(data))
+			fmt.Fprintf(w, "read: %s", string(data))
 		}
 		return msg, n, err
 	})
 }
 
-func (f *loggingFramer) Writer(w io.Writer) jsonrpc2.Writer {
-	delegate := f.delegate.Writer(w)
+// loggingWriter is a stream middleware that logs outgoing messages.
+func loggingWriter(w io.Writer, delegate jsonrpc2.Writer) jsonrpc2.Writer {
 	return writerFunc(func(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
 		n, err := delegate.Write(ctx, msg)
 		if err != nil {
-			fmt.Fprintf(f.w, "write error: %v", err)
+			fmt.Fprintf(w, "write error: %v", err)
 		} else {
 			data, err := jsonrpc2.EncodeMessage(msg)
 			if err != nil {
-				fmt.Fprintf(f.w, "LoggingFramer: failed to marshal: %v", err)
+				fmt.Fprintf(w, "LoggingFramer: failed to marshal: %v", err)
 			}
-			fmt.Fprintf(f.w, "write: %s", string(data))
+			fmt.Fprintf(w, "write: %s", string(data))
 		}
 		return n, err
 	})
@@ -217,42 +205,60 @@ func (r rwc) Close() error {
 	return errors.Join(r.rc.Close(), r.wc.Close())
 }
 
-// A ndjsonFramer is a jsonrpc2.Framer that delimits messages with newlines.
-// It also supports jsonrpc2 batching.
+// An ioStream is a transport that delimits messages with newlines across
+// a bidirectional stream, and supports JSONRPC2 message batching.
 //
 // See https://github.com/ndjson/ndjson-spec for discussion of newline
 // delimited JSON.
 //
 // See [msgBatch] for more discussion of message batching.
-type ndjsonFramer struct {
-	// batchSize allows customizing batching behavior for testing.
-	//
-	// If set to a positive number, requests and notifications will be buffered
-	// into groups of this size before being sent as a batch.
-	batchSize int
+type ioStream struct {
+	rwc io.ReadWriteCloser // the underlying stream
+	in  *json.Decoder      // a decoder bound to rwc
+
+	// If outgoiBatch has a positive capacity, it will be used to batch requests
+	// and notifications before sending.
+	outgoingBatch []jsonrpc2.Message
+
+	// Unread messages in the last batch. Since reads are serialized, there is no
+	// need to guard here.
+	queue []jsonrpc2.Message
 
 	// batches correlate incoming requests to the batch in which they arrived.
+	// Since writes may be concurrent to reads, we need to guard this with a mutex.
 	batchMu sync.Mutex
 	batches map[jsonrpc2.ID]*msgBatch // lazily allocated
+}
+
+func newIOStream(rwc io.ReadWriteCloser) *ioStream {
+	return &ioStream{
+		rwc: rwc,
+		in:  json.NewDecoder(rwc),
+	}
+}
+
+// connect returns the receiver, as a streamTransport is a logical stream.
+func (t *ioStream) connect(ctx context.Context) (stream, error) {
+	return t, nil
 }
 
 // addBatch records a msgBatch for an incoming batch payload.
 // It returns an error if batch is malformed, containing previously seen IDs.
 //
 // See [msgBatch] for more.
-func (f *ndjsonFramer) addBatch(batch *msgBatch) error {
-	f.batchMu.Lock()
-	defer f.batchMu.Unlock()
+func (t *ioStream) addBatch(batch *msgBatch) error {
+	t.batchMu.Lock()
+	defer t.batchMu.Unlock()
 	for id := range batch.unresolved {
-		if _, ok := f.batches[id]; ok {
+		if _, ok := t.batches[id]; ok {
 			return fmt.Errorf("%w: batch contains previously seen request %v", jsonrpc2.ErrInvalidRequest, id.Raw())
 		}
 	}
 	for id := range batch.unresolved {
-		if f.batches == nil {
-			f.batches = make(map[jsonrpc2.ID]*msgBatch)
+		if t.batches == nil {
+			t.batches = make(map[jsonrpc2.ID]*msgBatch)
 		}
-		f.batches[id] = batch
+		t.batches[id] = batch
 	}
 	return nil
 }
@@ -263,18 +269,18 @@ func (f *ndjsonFramer) addBatch(batch *msgBatch) error {
 // The second result reports whether resp was part of a batch. If this is true,
 // the first result is nil if the batch is still incomplete, or the full set of
 // batch responses if resp completed the batch.
-func (f *ndjsonFramer) updateBatch(resp *jsonrpc2.Response) ([]*jsonrpc2.Response, bool) {
-	f.batchMu.Lock()
-	defer f.batchMu.Unlock()
+func (t *ioStream) updateBatch(resp *jsonrpc2.Response) ([]*jsonrpc2.Response, bool) {
+	t.batchMu.Lock()
+	defer t.batchMu.Unlock()
 
-	if batch, ok := f.batches[resp.ID]; ok {
+	if batch, ok := t.batches[resp.ID]; ok {
 		idx, ok := batch.unresolved[resp.ID]
 		if !ok {
 			panic("internal error: inconsistent batches")
 		}
 		batch.responses[idx] = resp
 		delete(batch.unresolved, resp.ID)
-		delete(f.batches, resp.ID)
+		delete(t.batches, resp.ID)
 		if len(batch.unresolved) == 0 {
 			return batch.responses, true
 		}
@@ -301,55 +307,28 @@ type msgBatch struct {
 	responses  []*jsonrpc2.Response
 }
 
-// An ndjsonReader reads newline-delimited messages or message batches.
-type ndjsonReader struct {
-	queue  []jsonrpc2.Message
-	framer *ndjsonFramer
-	in     *json.Decoder
+func (t *ioStream) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
+	return t.read(ctx, t.in)
 }
 
-// A ndjsonWriter writes newline-delimited messages to the wrapped io.Writer.
-//
-// If batch is set, messages are wrapped in a JSONRPC2 batch.
-type ndjsonWriter struct {
-	// Testing support: if outgoingBatch has capacity, it is used to buffer
-	// outgoing messages before sending a JSONRPC2 message batch.
-	outgoingBatch []jsonrpc2.Message
-
-	framer *ndjsonFramer // to track batch responses
-	out    io.Writer     // to write to the wire
-}
-
-func (f *ndjsonFramer) Reader(r io.Reader) jsonrpc2.Reader {
-	return &ndjsonReader{framer: f, in: json.NewDecoder(r)}
-}
-
-func (f *ndjsonFramer) Writer(w io.Writer) jsonrpc2.Writer {
-	writer := &ndjsonWriter{framer: f, out: w}
-	if f.batchSize > 0 {
-		writer.outgoingBatch = make([]jsonrpc2.Message, 0, f.batchSize)
-	}
-	return writer
-}
-
-func (r *ndjsonReader) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
+func (t *ioStream) read(ctx context.Context, in *json.Decoder) (jsonrpc2.Message, int64, error) {
 	select {
 	case <-ctx.Done():
 		return nil, 0, ctx.Err()
 	default:
 	}
-	if len(r.queue) > 0 {
-		next := r.queue[0]
-		r.queue = r.queue[1:]
+	if len(t.queue) > 0 {
+		next := t.queue[0]
+		t.queue = t.queue[1:]
 		return next, 0, nil
 	}
 	var raw json.RawMessage
-	if err := r.in.Decode(&raw); err != nil {
+	if err := in.Decode(&raw); err != nil {
 		return nil, 0, err
 	}
 	var rawBatch []json.RawMessage
 	if err := json.Unmarshal(raw, &rawBatch); err == nil {
-		msg, err := r.readBatch(rawBatch)
+		msg, err := t.readBatch(rawBatch)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -361,7 +340,7 @@ func (r *ndjsonReader) Read(ctx context.Context) (jsonrpc2.Message, int64, error
 
 // readBatch reads a batch of jsonrpc2 messages, and records the batch
 // in the framer so that responses can be collected and send back together.
-func (r *ndjsonReader) readBatch(rawBatch []json.RawMessage) (jsonrpc2.Message, error) {
+func (t *ioStream) readBatch(rawBatch []json.RawMessage) (jsonrpc2.Message, error) {
 	if len(rawBatch) == 0 {
 		return nil, fmt.Errorf("empty batch")
 	}
@@ -403,16 +382,16 @@ func (r *ndjsonReader) readBatch(rawBatch []json.RawMessage) (jsonrpc2.Message, 
 	}
 	if respBatch != nil {
 		// The batch contains one or more incoming requests to track.
-		if err := r.framer.addBatch(respBatch); err != nil {
+		if err := t.addBatch(respBatch); err != nil {
 			return nil, err
 		}
 	}
 
-	r.queue = append(r.queue, queue...)
+	t.queue = append(t.queue, queue...)
 	return first, nil
 }
 
-func (w *ndjsonWriter) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
+func (t *ioStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
 	select {
 	case <-ctx.Done():
 		return 0, ctx.Err()
@@ -424,28 +403,28 @@ func (w *ndjsonWriter) Write(ctx context.Context, msg jsonrpc2.Message) (int64, 
 	// want to collect it into a batch before sending, if we're configured to use
 	// outgoing batches.
 	if resp, ok := msg.(*jsonrpc2.Response); ok {
-		if batch, ok := w.framer.updateBatch(resp); ok {
+		if batch, ok := t.updateBatch(resp); ok {
 			if len(batch) > 0 {
 				data, err := marshalMessages(batch)
 				if err != nil {
 					return 0, err
 				}
 				data = append(data, '\n')
-				n, err := w.out.Write(data)
+				n, err := t.rwc.Write(data)
 				return int64(n), err
 			}
 			return 0, nil
 		}
-	} else if len(w.outgoingBatch) < cap(w.outgoingBatch) {
-		w.outgoingBatch = append(w.outgoingBatch, msg)
-		if len(w.outgoingBatch) == cap(w.outgoingBatch) {
-			data, err := marshalMessages(w.outgoingBatch)
-			w.outgoingBatch = w.outgoingBatch[:0]
+	} else if len(t.outgoingBatch) < cap(t.outgoingBatch) {
+		t.outgoingBatch = append(t.outgoingBatch, msg)
+		if len(t.outgoingBatch) == cap(t.outgoingBatch) {
+			data, err := marshalMessages(t.outgoingBatch)
+			t.outgoingBatch = t.outgoingBatch[:0]
 			if err != nil {
 				return 0, err
 			}
 			data = append(data, '\n')
-			n, err := w.out.Write(data)
+			n, err := t.rwc.Write(data)
 			return int64(n), err
 		}
 		return 0, nil
@@ -455,8 +434,12 @@ func (w *ndjsonWriter) Write(ctx context.Context, msg jsonrpc2.Message) (int64, 
 		return 0, fmt.Errorf("marshaling message: %v", err)
 	}
 	data = append(data, '\n') // newline delimited
-	n, err := w.out.Write(data)
+	n, err := t.rwc.Write(data)
 	return int64(n), err
+}
+
+func (t *ioStream) Close() error {
+	return t.rwc.Close()
 }
 
 func marshalMessages[T jsonrpc2.Message](msgs []T) ([]byte, error) {

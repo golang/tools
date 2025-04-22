@@ -89,7 +89,7 @@ func (c *Client) disconnect(sc *ServerConnection) {
 // when it is no longer needed. However, if the connection is closed by the
 // server, calls or notifications will return an error wrapping
 // [ErrConnectionClosed].
-func (c *Client) Connect(ctx context.Context, t *Transport, opts *ConnectionOptions) (sc *ServerConnection, err error) {
+func (c *Client) Connect(ctx context.Context, t Transport, opts *ConnectionOptions) (sc *ServerConnection, err error) {
 	defer func() {
 		if sc != nil && err != nil {
 			_ = sc.Close()

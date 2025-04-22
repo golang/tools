@@ -201,14 +201,43 @@ func (o ConnectionOptions) Bind(context.Context, *Connection) ConnectionOptions 
 	return o
 }
 
-// newConnection creates a new connection and runs it.
+// A ConnectionConfig configures a bidirectional jsonrpc2 connection.
+type ConnectionConfig struct {
+	Reader          Reader                    // required
+	Writer          Writer                    // required
+	Closer          io.Closer                 // required
+	Preempter       Preempter                 // optional
+	Bind            func(*Connection) Handler // required
+	OnDone          func()                    // optional
+	OnInternalError func(error)               // optional
+}
+
+// NewConnection creates a new [Connection] object and starts processing
+// incoming messages.
+func NewConnection(ctx context.Context, cfg ConnectionConfig) *Connection {
+	ctx = notDone{ctx}
+
+	c := &Connection{
+		state:           inFlightState{closer: cfg.Closer},
+		done:            make(chan struct{}),
+		writer:          make(chan Writer, 1),
+		onDone:          cfg.OnDone,
+		onInternalError: cfg.OnInternalError,
+	}
+	c.handler = cfg.Bind(c)
+	c.writer <- cfg.Writer
+	c.start(ctx, cfg.Reader, cfg.Preempter)
+	return c
+}
+
+// bindConnection creates a new connection and runs it.
 //
 // This is used by the Dial and Serve functions to build the actual connection.
 //
 // The connection is closed automatically (and its resources cleaned up) when
 // the last request has completed after the underlying ReadWriteCloser breaks,
 // but it may be stopped earlier by calling Close (for a clean shutdown).
-func newConnection(bindCtx context.Context, rwc io.ReadWriteCloser, binder Binder, onDone func()) *Connection {
+func bindConnection(bindCtx context.Context, rwc io.ReadWriteCloser, binder Binder, onDone func()) *Connection {
 	// TODO: Should we create a new event span here?
 	// This will propagate cancellation from ctx; should it?
 	ctx := notDone{bindCtx}
@@ -238,7 +267,11 @@ func newConnection(bindCtx context.Context, rwc io.ReadWriteCloser, binder Binde
 
 	c.writer <- framer.Writer(rwc)
 	reader := framer.Reader(rwc)
+	c.start(ctx, reader, options.Preempter)
+	return c
+}
 
+func (c *Connection) start(ctx context.Context, reader Reader, preempter Preempter) {
 	c.updateInFlight(func(s *inFlightState) {
 		select {
 		case <-c.done:
@@ -252,9 +285,8 @@ func newConnection(bindCtx context.Context, rwc io.ReadWriteCloser, binder Binde
 		// (If the Binder closed the Connection already, this should error out and
 		// return almost immediately.)
 		s.reading = true
-		go c.readIncoming(ctx, reader, options.Preempter)
+		go c.readIncoming(ctx, reader, preempter)
 	})
-	return c
 }
 
 // Notify invokes the target method but does not wait for a response.
