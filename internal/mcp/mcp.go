@@ -19,5 +19,4 @@
 //   - Support multiple versions of the spec.
 //   - Implement proper JSON schema support, with both client-side and
 //     server-side validation..
-//   - Support batched JSON messages.
 package mcp

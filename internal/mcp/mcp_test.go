@@ -142,6 +142,7 @@ func TestServerClosing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -155,7 +156,36 @@ func TestServerClosing(t *testing.T) {
 	}
 	cc.Close()
 	wg.Wait()
-	if _, err = sc.CallTool(ctx, "greet", hiParams{"user"}); !errors.Is(err, mcp.ErrConnectionClosed) {
+	if _, err := sc.CallTool(ctx, "greet", hiParams{"user"}); !errors.Is(err, mcp.ErrConnectionClosed) {
 		t.Errorf("after disconnection, got error %v, want EOF", err)
 	}
+}
+
+func TestBatching(t *testing.T) {
+	ctx := context.Background()
+	ct, st := mcp.NewLocalTransport()
+
+	s := mcp.NewServer("testServer", "v1.0.0", nil)
+	_, err := s.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c := mcp.NewClient("testClient", "v1.0.0", nil)
+	opts := new(mcp.ConnectionOptions)
+	mcp.BatchSize(opts, 2)
+	sc, err := c.Connect(ctx, ct, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sc.Close()
+
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, err := sc.ListTools(ctx)
+			errs <- err
+		}()
+	}
+
 }

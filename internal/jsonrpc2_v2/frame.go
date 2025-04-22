@@ -39,6 +39,15 @@ type Writer interface {
 // Framer wraps low level byte readers and writers into jsonrpc2 message
 // readers and writers.
 // It is responsible for the framing and encoding of messages into wire form.
+//
+// TODO(rfindley): rethink the framer interface, as with JSONRPC2 batching
+// there is a need for Reader and Writer to be correlated, and while the
+// implementation of framing here allows that, it is not made explicit by the
+// interface.
+//
+// Perhaps a better interface would be
+//
+//	Frame(io.ReadWriteCloser) (Reader, Writer).
 type Framer interface {
 	// Reader wraps a byte reader into a message reader.
 	Reader(io.Reader) Reader
