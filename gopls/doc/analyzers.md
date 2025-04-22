@@ -3515,7 +3515,7 @@ A similar diagnostic and fix are produced for a format string of "%s:%s".
 
 Default: on.
 
-Package documentation: [hostport](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/hostport)
+Package documentation: [hostport](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/hostport)
 
 <a id='httpresponse'></a>
 ## `httpresponse`: check for mistakes using HTTP responses

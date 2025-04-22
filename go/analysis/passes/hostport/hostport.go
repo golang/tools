@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/gopls/internal/util/safetoken"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -42,7 +41,7 @@ A similar diagnostic and fix are produced for a format string of "%s:%s".
 var Analyzer = &analysis.Analyzer{
 	Name:     "hostport",
 	Doc:      Doc,
-	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/hostport",
+	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/hostport",
 	Requires: []*analysis.Analyzer{inspect.Analyzer, typeindexanalyzer.Analyzer},
 	Run:      run,
 }
@@ -121,7 +120,7 @@ func run(pass *analysis.Pass) (any, error) {
 				suffix := ""
 				if dialCall != nil {
 					suffix = fmt.Sprintf(" (passed to net.Dial at L%d)",
-						safetoken.StartPosition(pass.Fset, dialCall.Pos()).Line)
+						pass.Fset.Position(dialCall.Pos()).Line)
 				}
 
 				pass.Report(analysis.Diagnostic{

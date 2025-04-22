@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
-	"golang.org/x/tools/gopls/internal/analysis/hostport"
+	"golang.org/x/tools/go/analysis/passes/hostport"
 )
 
 func Test(t *testing.T) {

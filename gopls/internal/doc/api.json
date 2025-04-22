@@ -3177,7 +3177,7 @@
 		{
 			"Name": "hostport",
 			"Doc": "check format of addresses passed to net.Dial\n\nThis analyzer flags code that produce network address strings using\nfmt.Sprintf, as in this example:\n\n    addr := fmt.Sprintf(\"%s:%d\", host, 12345) // \"will not work with IPv6\"\n    ...\n    conn, err := net.Dial(\"tcp\", addr)       // \"when passed to dial here\"\n\nThe analyzer suggests a fix to use the correct approach, a call to\nnet.JoinHostPort:\n\n    addr := net.JoinHostPort(host, \"12345\")\n    ...\n    conn, err := net.Dial(\"tcp\", addr)\n\nA similar diagnostic and fix are produced for a format string of \"%s:%s\".\n",
-			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/hostport",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/hostport",
 			"Default": true
 		},
 		{
