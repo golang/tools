@@ -513,6 +513,8 @@ func (ss *ServerSession) CreateMessage(ctx context.Context, params *CreateMessag
 // LoggingMessage sends a logging message to the client.
 // The message is not sent if the client has not called SetLevel, or if its level
 // is below that of the last SetLevel.
+//
+// TODO(jba): rename to Log or LogMessage. A logging message is the thing that is sent to logging.
 func (ss *ServerSession) LoggingMessage(ctx context.Context, params *LoggingMessageParams) error {
 	ss.mu.Lock()
 	logLevel := ss.logLevel
@@ -610,9 +612,10 @@ func (ss *ServerSession) handle(ctx context.Context, req *jsonrpc2.Request) (any
 			return nil, fmt.Errorf("method %q is invalid during session initialization", req.Method)
 		}
 	}
-	// TODO(rfindley): embed the incoming request ID in the client context (or, more likely,
-	// a wrapper around it), so that we can correlate responses and notifications
-	// to the handler; this is required for the new session-based transport.
+	// For the streamable transport, we need the request ID to correlate
+	// server->client calls and notifications to the incoming request from which
+	// they originated. See [idContext] for details.
+	ctx = context.WithValue(ctx, idContextKey{}, req.ID)
 	return handleReceive(ctx, ss, req)
 }
 

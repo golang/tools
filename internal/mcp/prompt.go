@@ -34,13 +34,13 @@ type ServerPrompt struct {
 //
 // The handler is passed [GetPromptParams] so it can have access to prompt parameters other than name and arguments.
 // At present, there are no such parameters.
-func NewPrompt[TReq any](name, description string, handler func(context.Context, *ServerSession, TReq, *GetPromptParams) (*GetPromptResult, error), opts ...PromptOption) *ServerPrompt {
-	schema, err := jsonschema.For[TReq]()
+func NewPrompt[In any](name, description string, handler func(context.Context, *ServerSession, In, *GetPromptParams) (*GetPromptResult, error), opts ...PromptOption) *ServerPrompt {
+	schema, err := jsonschema.For[In]()
 	if err != nil {
 		panic(err)
 	}
 	if schema.Type != "object" || !reflect.DeepEqual(schema.AdditionalProperties, &jsonschema.Schema{Not: &jsonschema.Schema{}}) {
-		panic(fmt.Sprintf("handler request type must be a struct"))
+		panic(fmt.Sprintf("invalid input type %q: handler input type must be a struct", schema.Type))
 	}
 	resolved, err := schema.Resolve(nil)
 	if err != nil {
@@ -58,7 +58,7 @@ func NewPrompt[TReq any](name, description string, handler func(context.Context,
 	}
 	for name, prop := range util.Sorted(schema.Properties) {
 		if prop.Type != "string" {
-			panic(fmt.Sprintf("handler type must consist only of string fields"))
+			panic(fmt.Sprintf("invalid property type %q: handler type must consist only of string fields", prop.Type))
 		}
 		prompt.Prompt.Arguments = append(prompt.Prompt.Arguments, &PromptArgument{
 			Name:        name,
@@ -73,7 +73,7 @@ func NewPrompt[TReq any](name, description string, handler func(context.Context,
 		if err != nil {
 			return nil, err
 		}
-		var v TReq
+		var v In
 		if err := unmarshalSchema(rawArgs, resolved, &v); err != nil {
 			return nil, err
 		}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,21 +16,23 @@ import (
 	"golang.org/x/tools/internal/mcp"
 )
 
-var httpAddr = flag.String("http", "", "if set, use SSE HTTP at this address, instead of stdin/stdout")
+var httpAddr = flag.String("http", "", "if set, use streamable HTTP at this address, instead of stdin/stdout")
 
 type HiArgs struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[HiArgs]) (*mcp.CallToolResultFor[any], error) {
-	return &mcp.CallToolResultFor[any]{
+func SayHi(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[HiArgs]) (*mcp.CallToolResultFor[struct{}], error) {
+	return &mcp.CallToolResultFor[struct{}]{
 		Content: []*mcp.Content{
 			mcp.NewTextContent("Hi " + params.Name),
 		},
 	}, nil
 }
 
-func PromptHi(ctx context.Context, ss *mcp.ServerSession, args *HiArgs, params *mcp.GetPromptParams) (*mcp.GetPromptResult, error) {
+// TODO(jba): it should be OK for args to be a pointer, but this fails in
+// jsonschema. Needs investigation.
+func PromptHi(ctx context.Context, ss *mcp.ServerSession, args HiArgs, params *mcp.GetPromptParams) (*mcp.GetPromptResult, error) {
 	return &mcp.GetPromptResult{
 		Description: "Code review prompt",
 		Messages: []*mcp.PromptMessage{
@@ -56,14 +59,15 @@ func main() {
 	})
 
 	if *httpAddr != "" {
-		handler := mcp.NewSSEHandler(func(*http.Request) *mcp.Server {
+		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 			return server
-		})
+		}, nil)
+		log.Printf("MCP handler listening at %s", *httpAddr)
 		http.ListenAndServe(*httpAddr, handler)
 	} else {
 		t := mcp.NewLoggingTransport(mcp.NewStdIOTransport(), os.Stderr)
 		if err := server.Run(context.Background(), t); err != nil {
-			fmt.Fprintf(os.Stderr, "Server failed: %v", err)
+			log.Printf("Server failed: %v", err)
 		}
 	}
 }

@@ -30,15 +30,28 @@ var ErrConnectionClosed = errors.New("connection closed")
 type Transport interface {
 	// Connect returns the logical stream.
 	//
-	// It is called exactly once by [Connect].
+	// It is called exactly once by [Server.Connect] or [Client.Connect].
 	Connect(ctx context.Context) (Stream, error)
 }
 
+type (
+	// JSONRPCID is a JSON-RPC request ID.
+	JSONRPCID = jsonrpc2.ID
+	// JSONRPCHandler is a JSON-RPC handler function.
+	JSONRPCHandler = func(ctx context.Context, req *JSONRPCRequest) (result any, err error)
+	// JSONRPCMessage is a JSON-RPC message.
+	JSONRPCMessage = jsonrpc2.Message
+	// JSONRPCRequest is a JSON-RPC request.
+	JSONRPCRequest = jsonrpc2.Request
+	// JSONRPCResponse is a JSON-RPC response.
+	JSONRPCResponse = jsonrpc2.Response
+)
+
 // A Stream is a bidirectional jsonrpc2 Stream.
 type Stream interface {
-	jsonrpc2.Reader
-	jsonrpc2.Writer
-	io.Closer
+	Read(context.Context) (JSONRPCMessage, error)
+	Write(context.Context, JSONRPCMessage) error
+	Close() error // may be called concurrently by both peers
 }
 
 // A StdIOTransport is a [Transport] that communicates over stdin/stdout using
@@ -76,14 +89,13 @@ func NewInMemoryTransports() (*InMemoryTransport, *InMemoryTransport) {
 	return &InMemoryTransport{ioTransport{c1}}, &InMemoryTransport{ioTransport{c2}}
 }
 
-// handler is an unexported version of jsonrpc2.Handler.
-type handler interface {
-	handle(ctx context.Context, req *jsonrpc2.Request) (result any, err error)
-}
-
 type binder[T handler] interface {
 	bind(*jsonrpc2.Connection) T
 	disconnect(T)
+}
+
+type handler interface {
+	handle(ctx context.Context, req *jsonrpc2.Request) (any, error)
 }
 
 func connect[H handler](ctx context.Context, t Transport, b binder[H]) (H, error) {
@@ -360,73 +372,64 @@ func (t *ioStream) read(ctx context.Context, in *json.Decoder) (jsonrpc2.Message
 		t.queue = t.queue[1:]
 		return next, nil
 	}
+
 	var raw json.RawMessage
 	if err := in.Decode(&raw); err != nil {
 		return nil, err
 	}
-	var rawBatch []json.RawMessage
-	if err := json.Unmarshal(raw, &rawBatch); err == nil {
-		msg, err := t.readBatch(rawBatch)
-		if err != nil {
-			return nil, err
-		}
-		return msg, nil
+	msgs, batch, err := readBatch(raw)
+	if err != nil {
+		return nil, err
 	}
-	msg, err := jsonrpc2.DecodeMessage(raw)
-	return msg, err
+	t.queue = msgs[1:]
+
+	if batch {
+		var respBatch *msgBatch // track incoming requests in the batch
+		for _, msg := range msgs {
+			if req, ok := msg.(*jsonrpc2.Request); ok {
+				if respBatch == nil {
+					respBatch = &msgBatch{
+						unresolved: make(map[jsonrpc2.ID]int),
+					}
+				}
+				if _, ok := respBatch.unresolved[req.ID]; ok {
+					return nil, fmt.Errorf("duplicate message ID %q", req.ID)
+				}
+				respBatch.unresolved[req.ID] = len(respBatch.responses)
+				respBatch.responses = append(respBatch.responses, nil)
+			}
+		}
+		if respBatch != nil {
+			// The batch contains one or more incoming requests to track.
+			if err := t.addBatch(respBatch); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return msgs[0], err
 }
 
-// readBatch reads a batch of jsonrpc2 messages, and records the batch
-// in the framer so that responses can be collected and send back together.
-func (t *ioStream) readBatch(rawBatch []json.RawMessage) (jsonrpc2.Message, error) {
-	if len(rawBatch) == 0 {
-		return nil, fmt.Errorf("empty batch")
-	}
-
-	// From the spec:
-	// "If the batch rpc call itself fails to be recognized as an valid JSON or
-	// as an Array with at least one value, the response from the Server MUST be
-	// a single Response object. If there are no Response objects contained
-	// within the Response array as it is to be sent to the client, the server
-	// MUST NOT return an empty Array and should return nothing at all."
-	//
-	// In our case, an error actually breaks the jsonrpc2 connection entirely,
-	// but defensively we collect batch information before recording it, so that
-	// we don't leave the framer in an inconsistent state.
-	var (
-		first     jsonrpc2.Message   // first message, to return
-		queue     []jsonrpc2.Message // remaining messages
-		respBatch *msgBatch          // tracks incoming requests in the batch
-	)
-	for i, raw := range rawBatch {
-		msg, err := jsonrpc2.DecodeMessage(raw)
-		if err != nil {
-			return nil, err
+// readBatch reads batch data, which may be either a single JSON-RPC message,
+// or an array of JSON-RPC messages.
+func readBatch(data []byte) (msgs []jsonrpc2.Message, isBatch bool, _ error) {
+	// Try to read an array of messages first.
+	var rawBatch []json.RawMessage
+	if err := json.Unmarshal(data, &rawBatch); err == nil {
+		if len(rawBatch) == 0 {
+			return nil, true, fmt.Errorf("empty batch")
 		}
-		if i == 0 {
-			first = msg
-		} else {
-			queue = append(queue, msg)
-		}
-		if req, ok := msg.(*jsonrpc2.Request); ok {
-			if respBatch == nil {
-				respBatch = &msgBatch{
-					unresolved: make(map[jsonrpc2.ID]int),
-				}
+		for _, raw := range rawBatch {
+			msg, err := jsonrpc2.DecodeMessage(raw)
+			if err != nil {
+				return nil, true, err
 			}
-			respBatch.unresolved[req.ID] = len(respBatch.responses)
-			respBatch.responses = append(respBatch.responses, nil)
+			msgs = append(msgs, msg)
 		}
+		return msgs, true, nil
 	}
-	if respBatch != nil {
-		// The batch contains one or more incoming requests to track.
-		if err := t.addBatch(respBatch); err != nil {
-			return nil, err
-		}
-	}
-
-	t.queue = append(t.queue, queue...)
-	return first, nil
+	// Try again with a single message.
+	msg, err := jsonrpc2.DecodeMessage(data)
+	return []jsonrpc2.Message{msg}, false, err
 }
 
 func (t *ioStream) Write(ctx context.Context, msg jsonrpc2.Message) error {

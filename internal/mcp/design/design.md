@@ -58,6 +58,13 @@ Furthermore, the spec [states](https://modelcontextprotocol.io/specification/202
 Given the diversity of the transport implementations, they can be challenging to abstract. However, since JSON-RPC requires a bidirectional stream, we can use this to model the MCP transport abstraction:
 
 ```go
+type (
+	JSONRPCID       = jsonrpc2.ID
+	JSONRPCMessage  = jsonrpc2.Message
+	JSONRPCRequest  = jsonrpc2.Request
+	JSONRPCResponse = jsonrpc2.Response
+)
+
 // A Transport is used to create a bidirectional connection between MCP client
 // and server.
 type Transport interface {
@@ -204,7 +211,7 @@ func (*StreamableHTTPHandler) Close() error
 // that created the session. It is the caller's responsibility to delegate
 // requests to this session.
 type StreamableServerTransport struct { /* ... */ }
-func NewStreamableServerTransport(sessionID string, w http.ResponseWriter) *StreamableServerTransport
+func NewStreamableServerTransport(sessionID string) *StreamableServerTransport
 func (*StreamableServerTransport) ServeHTTP(w http.ResponseWriter, req *http.Request)
 func (*StreamableServerTransport) Connect(context.Context) (Stream, error)
 
