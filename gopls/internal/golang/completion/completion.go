@@ -1282,6 +1282,23 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 
 	// -- completion of symbols in unimported packages --
 
+	// use new code for unimported completions, if flag allows it
+	if id, ok := sel.X.(*ast.Ident); ok && c.snapshot.Options().ImportsSource == settings.ImportsSourceGopls {
+		// The user might have typed strings.TLower, so id.Name==strings, sel.Sel.Name == TLower,
+		// but the cursor might be inside TLower, so adjust the prefix
+		prefix := sel.Sel.Name
+		if c.surrounding != nil {
+			if c.surrounding.content != sel.Sel.Name {
+				bug.Reportf("unexpected surrounding: %q != %q", c.surrounding.content, sel.Sel.Name)
+			} else {
+				prefix = sel.Sel.Name[:c.surrounding.cursor-c.surrounding.start]
+			}
+		}
+		c.unimported(ctx, metadata.PackageName(id.Name), prefix)
+		return nil
+
+	}
+
 	// The deep completion algorithm is exceedingly complex and
 	// deeply coupled to the now obsolete notions that all
 	// token.Pos values can be interpreted by as a single FileSet

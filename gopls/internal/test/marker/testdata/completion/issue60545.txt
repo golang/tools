@@ -5,6 +5,11 @@ module mod.test
 
 go 1.18
 
+-- settings.json --
+{
+	"importsSource": "gopls"
+}
+
 -- main.go --
 package main
 

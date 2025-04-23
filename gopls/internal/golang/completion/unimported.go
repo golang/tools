@@ -1,0 +1,371 @@
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package completion
+
+// unimported completion is invoked when the user types something like 'foo.xx',
+// foo is known to be a package name not yet imported in the current file, and
+// xx (or whatever the user has typed) is interpreted as a hint (pattern) for the
+// member of foo that the user is looking for.
+//
+// This code looks for a suitable completion in a number of places. A 'suitable
+// completion' is an exported symbol (so a type, const, var, or func) from package
+// foo, which, after converting everything to lower case, has the pattern as a
+// subsequence.
+//
+// The code looks for a suitable completion in
+// 1. the imports of some other file of the current package,
+// 2. the standard library,
+// 3. the imports of some other file in the current workspace,
+// 4. the module cache.
+// It stops at the first success.
+
+import (
+	"context"
+	"fmt"
+	"go/ast"
+	"go/printer"
+	"go/token"
+	"path"
+	"slices"
+	"strings"
+
+	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/golang/completion/snippet"
+	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/modindex"
+	"golang.org/x/tools/internal/stdlib"
+	"golang.org/x/tools/internal/versions"
+)
+
+func (c *completer) unimported(ctx context.Context, pkgname metadata.PackageName, prefix string) error {
+	wsIDs, ourIDs := c.findPackageIDs(pkgname)
+	stdpkgs := c.stdlibPkgs(pkgname)
+	if len(ourIDs) > 0 {
+		// use the one in the current package, if possible
+		items := c.pkgIDmatches(ctx, ourIDs, pkgname, prefix)
+		if c.scoreList(items) {
+			return nil
+		}
+	}
+	// do the stdlib next.
+	// For now, use the workspace version of stdlib packages
+	// to get function snippets. CL 665335 will fix this.
+	var x []metadata.PackageID
+	for _, mp := range stdpkgs {
+		if slices.Contains(wsIDs, metadata.PackageID(mp)) {
+			x = append(x, metadata.PackageID(mp))
+		}
+	}
+	if len(x) > 0 {
+		items := c.pkgIDmatches(ctx, x, pkgname, prefix)
+		if c.scoreList(items) {
+			return nil
+		}
+	}
+	// just use the stdlib
+	items := c.stdlibMatches(stdpkgs, pkgname, prefix)
+	if c.scoreList(items) {
+		return nil
+	}
+
+	// look in the rest of the workspace
+	items = c.pkgIDmatches(ctx, wsIDs, pkgname, prefix)
+	if c.scoreList(items) {
+		return nil
+	}
+
+	// look in the module cache, for the last chance
+	items, err := c.modcacheMatches(pkgname, prefix)
+	if err == nil {
+		c.scoreList(items)
+	}
+	return nil
+}
+
+// find all the packageIDs for packages in the workspace that have the desired name
+// thisPkgIDs contains the ones known to the current package, wsIDs contains the others
+func (c *completer) findPackageIDs(pkgname metadata.PackageName) (wsIDs, thisPkgIDs []metadata.PackageID) {
+	g := c.snapshot.MetadataGraph()
+	for pid, pkg := range c.snapshot.MetadataGraph().Packages {
+		if pkg.Name != pkgname {
+			continue
+		}
+		imports := g.ImportedBy[pid]
+		if slices.Contains(imports, c.pkg.Metadata().ID) {
+			thisPkgIDs = append(thisPkgIDs, pid)
+		} else {
+			wsIDs = append(wsIDs, pid)
+		}
+	}
+	return
+}
+
+// find all the stdlib packages that have the desired name
+func (c *completer) stdlibPkgs(pkgname metadata.PackageName) []metadata.PackagePath {
+	var pkgs []metadata.PackagePath // stlib packages that match pkg
+	for pkgpath := range stdlib.PackageSymbols {
+		v := metadata.PackageName(path.Base(pkgpath))
+		if v == pkgname {
+			pkgs = append(pkgs, metadata.PackagePath(pkgpath))
+		} else if imports.WithoutVersion(string(pkgpath)) == string(pkgname) {
+			pkgs = append(pkgs, metadata.PackagePath(pkgpath))
+		}
+	}
+	return pkgs
+}
+
+// return CompletionItems for all matching symbols in the packages in ids.
+func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, pkgname metadata.PackageName, prefix string) []CompletionItem {
+	pattern := strings.ToLower(prefix)
+	allpkgsyms, err := c.snapshot.Symbols(ctx, ids...)
+	if err != nil {
+		return nil // would if be worth retrying the ids one by one?
+	}
+	if len(allpkgsyms) != len(ids) {
+		bug.Errorf("Symbols returned %d values for %d pkgIDs", len(allpkgsyms), len(ids))
+		return nil
+	}
+	var got []CompletionItem
+	for i, pkgID := range ids {
+		pkg := c.snapshot.MetadataGraph().Packages[pkgID]
+		if pkg == nil {
+			bug.Errorf("no metadata for %s", pkgID)
+			continue // something changed underfoot, otherwise can't happen
+		}
+		pkgsyms := allpkgsyms[i]
+		pkgfname := pkgsyms.Files[0].Path()
+		if !imports.CanUse(c.filename, pkgfname) {
+			// avoid unusable internal, etc
+			continue
+		}
+		// are any of these any good?
+		for np, asym := range pkgsyms.Symbols {
+			for _, sym := range asym {
+				if !token.IsExported(sym.Name) {
+					continue
+				}
+				if !usefulCompletion(sym.Name, pattern) {
+					// for json.U, the existing code finds InvalidUTF8Error
+					continue
+				}
+				var params []string
+				var kind protocol.CompletionItemKind
+				var detail string
+				switch sym.Kind {
+				case protocol.Function:
+					foundURI := pkgsyms.Files[np]
+					fh := c.snapshot.FindFile(foundURI)
+					pgf, err := c.snapshot.ParseGo(ctx, fh, 0)
+					if err == nil {
+						params = funcParams(pgf.File, sym.Name)
+					}
+					kind = protocol.FunctionCompletion
+					detail = fmt.Sprintf("func (from %q)", pkg.PkgPath)
+				case protocol.Variable:
+					kind = protocol.VariableCompletion
+					detail = fmt.Sprintf("var (from %q)", pkg.PkgPath)
+				case protocol.Constant:
+					kind = protocol.ConstantCompletion
+					detail = fmt.Sprintf("const (from %q)", pkg.PkgPath)
+				default:
+					continue
+				}
+				got = c.appendNewItem(got, sym.Name,
+					detail,
+					pkg.PkgPath,
+					kind,
+					pkgname, params)
+			}
+		}
+	}
+	return got
+}
+
+// return CompletionItems for all the matches in packages in pkgs.
+func (c *completer) stdlibMatches(pkgs []metadata.PackagePath, pkg metadata.PackageName, prefix string) []CompletionItem {
+	// check for deprecated symbols someday
+	got := make([]CompletionItem, 0)
+	pattern := strings.ToLower(prefix)
+	// avoid non-determinacy, especially for marker tests
+	slices.Sort(pkgs)
+	for _, candpkg := range pkgs {
+		if std, ok := stdlib.PackageSymbols[string(candpkg)]; ok {
+			for _, sym := range std {
+				if !usefulCompletion(sym.Name, pattern) {
+					continue
+				}
+				if !versions.AtLeast(c.goversion, sym.Version.String()) {
+					continue
+				}
+				var kind protocol.CompletionItemKind
+				var detail string
+				switch sym.Kind {
+				case stdlib.Func:
+					kind = protocol.FunctionCompletion
+					detail = fmt.Sprintf("func (from %q)", candpkg)
+				case stdlib.Const:
+					kind = protocol.ConstantCompletion
+					detail = fmt.Sprintf("const (from %q)", candpkg)
+				case stdlib.Var:
+					kind = protocol.VariableCompletion
+					detail = fmt.Sprintf("var (from %q)", candpkg)
+				case stdlib.Type:
+					kind = protocol.VariableCompletion
+					detail = fmt.Sprintf("type (from %q)", candpkg)
+				default:
+					continue
+				}
+				got = c.appendNewItem(got, sym.Name,
+					//fmt.Sprintf("(from %q)", candpkg), candpkg,
+					detail,
+					candpkg,
+					//convKind(sym.Kind),
+					kind,
+					pkg, nil)
+			}
+		}
+	}
+	return got
+}
+
+func (c *completer) modcacheMatches(pkg metadata.PackageName, prefix string) ([]CompletionItem, error) {
+	ix, err := c.snapshot.View().ModcacheIndex()
+	if err != nil {
+		return nil, err
+	}
+	if ix == nil || len(ix.Entries) == 0 { // in tests ix might always be nil
+		return nil, fmt.Errorf("no index %w", err)
+	}
+	// retrieve everything and let usefulCompletion() and the matcher sort them out
+	cands := ix.Lookup(string(pkg), "", true)
+	lx := len(cands)
+	got := make([]CompletionItem, 0, lx)
+	pattern := strings.ToLower(prefix)
+	for _, cand := range cands {
+		if !usefulCompletion(cand.Name, pattern) {
+			continue
+		}
+		var params []string
+		var kind protocol.CompletionItemKind
+		var detail string
+		switch cand.Type {
+		case modindex.Func:
+			for _, f := range cand.Sig {
+				params = append(params, fmt.Sprintf("%s %s", f.Arg, f.Type))
+			}
+			kind = protocol.FunctionCompletion
+			detail = fmt.Sprintf("func (from %s)", cand.ImportPath)
+		case modindex.Var:
+			kind = protocol.VariableCompletion
+			detail = fmt.Sprintf("var (from %s)", cand.ImportPath)
+		case modindex.Const:
+			kind = protocol.ConstantCompletion
+			detail = fmt.Sprintf("const (from %s)", cand.ImportPath)
+		default:
+			continue
+		}
+		got = c.appendNewItem(got, cand.Name,
+			detail,
+			metadata.PackagePath(cand.ImportPath),
+			kind,
+			pkg, params)
+	}
+	return got, nil
+}
+
+func (c *completer) appendNewItem(got []CompletionItem, name, detail string, path metadata.PackagePath, kind protocol.CompletionItemKind, pkg metadata.PackageName, params []string) []CompletionItem {
+	item := CompletionItem{
+		Label:      name,
+		Detail:     detail,
+		InsertText: name,
+		Kind:       kind,
+	}
+	imp := importInfo{
+		importPath: string(path),
+		name:       string(pkg),
+	}
+	if imports.ImportPathToAssumedName(string(path)) == string(pkg) {
+		imp.name = ""
+	}
+	item.AdditionalTextEdits, _ = c.importEdits(&imp)
+	if params != nil {
+		var sn snippet.Builder
+		c.functionCallSnippet(name, nil, params, &sn)
+		item.snippet = &sn
+	}
+	got = append(got, item)
+	return got
+}
+
+// score the list. Return true if any item is added to c.items
+func (c *completer) scoreList(items []CompletionItem) bool {
+	ret := false
+	for _, item := range items {
+		item.Score = float64(c.matcher.Score(item.Label))
+		if item.Score > 0 {
+			c.items = append(c.items, item)
+			ret = true
+		}
+	}
+	return ret
+}
+
+// pattern is always the result of strings.ToLower
+func usefulCompletion(name, pattern string) bool {
+	// this travesty comes from foo.(type) somehow. see issue59096.txt
+	if pattern == "_" {
+		return true
+	}
+	// convert both to lower case, and then the runes in the pattern have to occur, in order,
+	// in the name
+	cand := strings.ToLower(name)
+	for _, r := range pattern {
+		ix := strings.IndexRune(cand, r)
+		if ix < 0 {
+			return false
+		}
+		cand = cand[ix+1:]
+	}
+	return true
+}
+
+// return a printed version of the function arguments for snippets
+func funcParams(f *ast.File, fname string) []string {
+	var params []string
+	setParams := func(list *ast.FieldList) {
+		if list == nil {
+			return
+		}
+		var cfg printer.Config // slight overkill
+		param := func(name string, typ ast.Expr) {
+			var buf strings.Builder
+			buf.WriteString(name)
+			buf.WriteByte(' ')
+			cfg.Fprint(&buf, token.NewFileSet(), typ)
+			params = append(params, buf.String())
+		}
+
+		for _, field := range list.List {
+			if field.Names != nil {
+				for _, name := range field.Names {
+					param(name.Name, field.Type)
+				}
+			} else {
+				param("_", field.Type)
+			}
+		}
+	}
+	for _, n := range f.Decls {
+		switch x := n.(type) {
+		case *ast.FuncDecl:
+			if x.Recv == nil && x.Name.Name == fname {
+				setParams(x.Type.Params)
+			}
+		}
+	}
+	return params
+}

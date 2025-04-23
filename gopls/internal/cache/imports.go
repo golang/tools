@@ -168,7 +168,10 @@ func newModcacheState(dir string) *modcacheState {
 	return s
 }
 
-func (s *modcacheState) GetIndex() (*modindex.Index, error) {
+// getIndex reads the module cache index. It might not exist yet
+// inside tests. It might contain no Entries if the cache
+// is empty.
+func (s *modcacheState) getIndex() (*modindex.Index, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ix := s.index

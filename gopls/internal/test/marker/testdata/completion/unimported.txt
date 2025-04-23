@@ -2,6 +2,11 @@
 -- flags --
 -ignore_extra_diags
 
+-- settings.json --
+{
+	"importsSource": "gopls"
+}
+
 -- go.mod --
 module unimported.test
 
@@ -49,7 +54,7 @@ func _() {
 /* httptrace */ //@item(httptrace, "httptrace", "\"net/http/httptrace\"", "package")
 /* httputil */ //@item(httputil, "httputil", "\"net/http/httputil\"", "package")
 
-/* ring.Ring */ //@item(ringring, "Ring", "(from \"container/ring\")", "var")
+/* ring.Ring */ //@item(ringring, "Ring", "type (from \"container/ring\")", "var")
 
 /* signature.Foo */ //@item(signaturefoo, "Foo", "func (from \"unimported.test/signature\")", "func")
 

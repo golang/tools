@@ -36,6 +36,7 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/modindex"
 	"golang.org/x/tools/internal/xcontext"
 )
 
@@ -370,6 +371,11 @@ func (v *View) Env() []string {
 		[]string{"GO111MODULE=" + v.adjustedGO111MODULE()},
 		v.EnvOverlay(),
 	)
+}
+
+// ModcacheIndex returns the module cache index
+func (v *View) ModcacheIndex() (*modindex.Index, error) {
+	return v.modcacheState.getIndex()
 }
 
 // UpdateFolders updates the set of views for the new folders.
@@ -1231,7 +1237,7 @@ func globsMatchPath(globs, target string) bool {
 		n := strings.Count(glob, "/")
 		prefix := target
 		// Walk target, counting slashes, truncating at the N+1'th slash.
-		for i := 0; i < len(target); i++ {
+		for i := range len(target) {
 			if target[i] == '/' {
 				if n == 0 {
 					prefix = target[:i]

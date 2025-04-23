@@ -134,8 +134,7 @@ func (s *goplsSource) ResolveReferences(ctx context.Context, filename string, mi
 }
 
 func (s *goplsSource) resolveCacheReferences(missing imports.References) ([]*result, error) {
-	state := s.S.view.modcacheState
-	ix, err := state.GetIndex()
+	ix, err := s.S.view.ModcacheIndex()
 	if err != nil {
 		event.Error(s.ctx, "resolveCacheReferences", err)
 	}
