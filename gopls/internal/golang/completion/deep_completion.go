@@ -9,6 +9,8 @@ import (
 	"go/types"
 	"strings"
 	"time"
+
+	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
 // MaxDeepCompletions limits deep completion results because in most cases
@@ -312,6 +314,9 @@ func deepCandName(cand *candidate) string {
 
 	for i, obj := range cand.path {
 		buf.WriteString(obj.Name())
+		if fn, ok := obj.(*types.Func); ok {
+			buf.WriteString(typesutil.FormatTypeParams(fn.Signature().TypeParams()))
+		}
 		if cand.pathInvokeMask&(1<<uint16(i)) > 0 {
 			buf.WriteByte('(')
 			buf.WriteByte(')')

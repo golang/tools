@@ -31,3 +31,31 @@ func _() {
 	var i int
 	i = foo //@complete(" //", fvFooFuncCall, fvFooTypeCall, fvFooVarCall)
 }
+
+-- generic/func_value.go --
+package funcvalue
+
+type bar struct{}
+
+func (b bar) Num() int {
+	return 0
+}
+
+func Bar[T any]() bar {
+	return bar{}
+}
+
+func BarWithArg[T any](a int) bar {
+	return bar{}
+}
+
+func (b bar) Bar2() bar {
+	return b
+}
+
+func _() {
+	Bar[T].Num //@item(bar, "Bar[T]().Num", "func() int", "method")
+	Bar[T].Bar2().Num //@item(bar2, "Bar[T]().Bar2().Num", "func() int", "method")
+	var i int
+	i = Num //@complete(" //", bar, bar2)
+}
