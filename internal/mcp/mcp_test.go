@@ -133,14 +133,21 @@ func TestEndToEnd(t *testing.T) {
 	}
 }
 
-func TestServerClosing(t *testing.T) {
+// basicConnection returns a new basic client-server connection configured with
+// the provided tools.
+//
+// The caller should cancel either the client connection or server connection
+// when the connections are no longer needed.
+func basicConnection(t *testing.T, tools ...*Tool) (*ClientConnection, *ServerConnection) {
+	t.Helper()
+
 	ctx := context.Background()
 	ct, st := NewLocalTransport()
 
 	s := NewServer("testServer", "v1.0.0", nil)
 
 	// The 'greet' tool says hi.
-	s.AddTools(MakeTool("greet", "say hi", sayHi))
+	s.AddTools(tools...)
 	cc, err := s.Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +158,14 @@ func TestServerClosing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return cc, sc
+}
 
+func TestServerClosing(t *testing.T) {
+	cc, sc := basicConnection(t, MakeTool("greet", "say hi", sayHi))
+	defer sc.Close()
+
+	ctx := context.Background()
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -208,4 +222,34 @@ func TestBatching(t *testing.T) {
 		}
 	}
 
+}
+
+func TestCancellation(t *testing.T) {
+	var (
+		start     = make(chan struct{})
+		cancelled = make(chan struct{}, 1) // don't block the request
+	)
+
+	slowRequest := func(ctx context.Context, cc *ClientConnection, v struct{}) ([]Content, error) {
+		start <- struct{}{}
+		select {
+		case <-ctx.Done():
+			cancelled <- struct{}{}
+		case <-time.After(5 * time.Second):
+			return nil, nil
+		}
+		return nil, nil
+	}
+	_, sc := basicConnection(t, MakeTool("slow", "a slow request", slowRequest))
+	defer sc.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go sc.CallTool(ctx, "slow", struct{}{})
+	<-start
+	cancel()
+	select {
+	case <-cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for cancellation")
+	}
 }

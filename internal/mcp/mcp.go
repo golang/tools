@@ -12,7 +12,6 @@
 // [Client.Connect] or [Server.Connect].
 //
 // TODO:
-//   - Support cancellation.
 //   - Support pagination.
 //   - Support all client/server operations.
 //   - Support Streamable HTTP transport.

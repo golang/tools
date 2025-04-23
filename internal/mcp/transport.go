@@ -15,6 +15,8 @@ import (
 	"sync"
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
+	"golang.org/x/tools/internal/mcp/internal/protocol"
+	"golang.org/x/tools/internal/xcontext"
 )
 
 // A JSONRPC2 error is an error defined by the JSONRPC2 spec.
@@ -103,31 +105,67 @@ func connect[H handler](ctx context.Context, t Transport, opts *ConnectionOption
 		writer = loggingWriter(opts.Logger, writer)
 	}
 
-	var h H
+	var (
+		h         H
+		preempter canceller
+	)
 	bind := func(conn *jsonrpc2.Connection) jsonrpc2.Handler {
 		h = b.bind(conn)
+		preempter.conn = conn
 		return jsonrpc2.HandlerFunc(h.handle)
 	}
 	_ = jsonrpc2.NewConnection(ctx, jsonrpc2.ConnectionConfig{
-		Reader: reader,
-		Writer: writer,
-		Closer: stream,
-		Bind:   bind,
+		Reader:    reader,
+		Writer:    writer,
+		Closer:    stream,
+		Bind:      bind,
+		Preempter: &preempter,
 		OnDone: func() {
 			b.disconnect(h)
 		},
 	})
+	assert(preempter.conn != nil, "unbound preempter")
 	assert(h != zero, "unbound connection")
 	return h, nil
+}
+
+// A canceller is a jsonrpc2.Preempter that cancels in-flight requests on MCP
+// cancelled notifications.
+type canceller struct {
+	conn *jsonrpc2.Connection
+}
+
+// Preempt implements jsonrpc2.Preempter.
+func (c *canceller) Preempt(ctx context.Context, req *jsonrpc2.Request) (result any, err error) {
+	if req.Method == "notifications/cancelled" {
+		var params protocol.CancelledParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, err
+		}
+		id, err := jsonrpc2.MakeID(params.RequestId)
+		if err != nil {
+			return nil, err
+		}
+		go c.conn.Cancel(id)
+	}
+	return nil, jsonrpc2.ErrNotHandled
 }
 
 // call executes and awaits a jsonrpc2 call on the given connection,
 // translating errors into the mcp domain.
 func call(ctx context.Context, conn *jsonrpc2.Connection, method string, params, result any) error {
-	err := conn.Call(ctx, method, params).Await(ctx, result)
+	call := conn.Call(ctx, method, params)
+	err := call.Await(ctx, result)
 	switch {
 	case errors.Is(err, jsonrpc2.ErrClientClosing), errors.Is(err, jsonrpc2.ErrServerClosing):
 		return fmt.Errorf("calling %q: %w", method, ErrConnectionClosed)
+	case ctx.Err() != nil:
+		// Notify the peer of cancellation.
+		err := conn.Notify(xcontext.Detach(ctx), "notifications/cancelled", &protocol.CancelledParams{
+			Reason:    ctx.Err().Error(),
+			RequestId: call.ID().Raw(),
+		})
+		return errors.Join(ctx.Err(), err)
 	case err != nil:
 		return fmt.Errorf("calling %q: %v", method, err)
 	}

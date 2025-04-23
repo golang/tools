@@ -56,6 +56,9 @@ var declarations = config{
 	"CallToolResult": {
 		Name: "CallToolResult",
 	},
+	"CancelledNotification": {
+		Fields: config{"Params": {Name: "CancelledParams"}},
+	},
 	"ClientCapabilities": {Name: "ClientCapabilities"},
 	"Implementation":     {Name: "Implementation"},
 	"InitializeRequest": {
@@ -73,7 +76,8 @@ var declarations = config{
 	"ListToolsResult": {
 		Name: "ListToolsResult",
 	},
-	"Role": {Name: "Role"},
+	"RequestId": {Substitute: "any"}, // null|number|string
+	"Role":      {Name: "Role"},
 	"ServerCapabilities": {
 		Name: "ServerCapabilities",
 		Fields: config{

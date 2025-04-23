@@ -240,7 +240,7 @@ func (cc *ClientConnection) Wait() error {
 	return cc.conn.Wait()
 }
 
-// dispatch turns a strongly type handler into a jsonrpc2 handler.
+// dispatch turns a strongly type request handler into a jsonrpc2 handler.
 //
 // Importantly, it returns nil if the handler returned an error, which is a
 // requirement of the jsonrpc2 package.
