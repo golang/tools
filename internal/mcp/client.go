@@ -81,9 +81,9 @@ func (c *Client) disconnect(sc *ServerConnection) {
 // Connect connects the MCP client over the given transport and initializes an
 // MCP session.
 //
-// It returns a connection object that may be used to query the MCP server,
-// terminate the connection (with [Connection.Close]), or await server
-// termination (with [Connection.Wait]).
+// It returns an initialized [ServerConnection] object that may be used to
+// query the MCP server, terminate the connection (with [Connection.Close]), or
+// await server termination (with [Connection.Wait]).
 //
 // Typically, it is the responsibility of the client to close the connection
 // when it is no longer needed. However, if the connection is closed by the
@@ -105,7 +105,7 @@ func (c *Client) Connect(ctx context.Context, t Transport, opts *ConnectionOptio
 	if err := call(ctx, sc.conn, "initialize", params, &sc.initializeResult); err != nil {
 		return nil, err
 	}
-	if err := sc.conn.Notify(ctx, "initialized", &protocol.InitializedParams{}); err != nil {
+	if err := sc.conn.Notify(ctx, "notifications/initialized", &protocol.InitializedParams{}); err != nil {
 		return nil, err
 	}
 	return sc, nil
@@ -135,9 +135,19 @@ func (cc *ServerConnection) Wait() error {
 }
 
 func (sc *ServerConnection) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	// No need to check that the connection is initialized, since we initialize
+	// it in Connect.
 	switch req.Method {
+	case "ping":
+		// The spec says that 'ping' expects an empty object result.
+		return struct{}{}, nil
 	}
 	return nil, jsonrpc2.ErrNotHandled
+}
+
+// Ping makes an MCP "ping" request to the server.
+func (sc *ServerConnection) Ping(ctx context.Context) error {
+	return call(ctx, sc.conn, "ping", nil, nil)
 }
 
 // ListTools lists tools that are currently available on the server.

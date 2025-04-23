@@ -13,7 +13,7 @@ import (
 )
 
 // A ToolHandler handles a call to tools/call.
-type ToolHandler func(context.Context, json.RawMessage) (*protocol.CallToolResult, error)
+type ToolHandler func(context.Context, *ClientConnection, json.RawMessage) (*protocol.CallToolResult, error)
 
 // A Tool is a tool definition that is bound to a tool handler.
 type Tool struct {
@@ -29,17 +29,17 @@ type Tool struct {
 // It is the caller's responsibility that the handler request type can produce
 // a valid schema, as documented by [jsonschema.ForType]; otherwise, MakeTool
 // panics.
-func MakeTool[TReq any](name, description string, handler func(context.Context, TReq) ([]Content, error)) *Tool {
+func MakeTool[TReq any](name, description string, handler func(context.Context, *ClientConnection, TReq) ([]Content, error)) *Tool {
 	schema, err := jsonschema.ForType[TReq]()
 	if err != nil {
 		panic(err)
 	}
-	wrapped := func(ctx context.Context, args json.RawMessage) (*protocol.CallToolResult, error) {
+	wrapped := func(ctx context.Context, cc *ClientConnection, args json.RawMessage) (*protocol.CallToolResult, error) {
 		var v TReq
 		if err := unmarshalSchema(args, schema, &v); err != nil {
 			return nil, err
 		}
-		content, err := handler(ctx, v)
+		content, err := handler(ctx, cc, v)
 		if err != nil {
 			return &protocol.CallToolResult{
 				Content: marshalContent([]Content{TextContent{Text: err.Error()}}),

@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -22,7 +23,10 @@ type hiParams struct {
 	Name string
 }
 
-func sayHi(_ context.Context, v hiParams) ([]Content, error) {
+func sayHi(ctx context.Context, cc *ClientConnection, v hiParams) ([]Content, error) {
+	if err := cc.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("ping failed: %v", err)
+	}
 	return []Content{TextContent{Text: "hi " + v.Name}}, nil
 }
 
@@ -37,7 +41,7 @@ func TestEndToEnd(t *testing.T) {
 
 	// The 'fail' tool returns this error.
 	failure := errors.New("mcp failure")
-	s.AddTools(MakeTool("fail", "just fail", func(context.Context, struct{}) ([]Content, error) {
+	s.AddTools(MakeTool("fail", "just fail", func(context.Context, *ClientConnection, struct{}) ([]Content, error) {
 		return nil, failure
 	}))
 
@@ -67,8 +71,13 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if got := slices.Collect(c.Servers()); len(got) != 1 {
 		t.Errorf("after connection, Servers() has length %d, want 1", len(got))
+	}
+
+	if err := sc.Ping(ctx); err != nil {
+		t.Fatalf("ping failed: %v", err)
 	}
 
 	gotTools, err := sc.ListTools(ctx)

@@ -41,6 +41,9 @@ func TestSSEServer(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if err := sc.Ping(ctx); err != nil {
+				t.Fatal(err)
+			}
 			cc := <-clients
 			gotHi, err := sc.CallTool(ctx, "greet", hiParams{"user"})
 			if err != nil {
