@@ -30,7 +30,7 @@ type Tool struct {
 // a valid schema, as documented by [jsonschema.ForType]; otherwise, MakeTool
 // panics.
 func MakeTool[TReq any](name, description string, handler func(context.Context, *ClientConnection, TReq) ([]Content, error)) *Tool {
-	schema, err := jsonschema.ForType[TReq]()
+	schema, err := jsonschema.For[TReq]()
 	if err != nil {
 		panic(err)
 	}

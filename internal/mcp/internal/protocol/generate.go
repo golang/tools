@@ -23,6 +23,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -240,14 +241,16 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 	// For types that explicitly allow additional properties, we can either
 	// unmarshal them into a map[string]any, or delay unmarshalling with
 	// json.RawMessage. For now, use json.RawMessage as it defers the choice.
-	if def.Type == "object" && def.AdditionalProperties != nil && def.AdditionalProperties != false {
+	if def.Type == "object" && canHaveAdditionalProperties(def) {
 		w.Write([]byte("json.RawMessage"))
 		return nil
 	}
 
-	switch typ := def.Type.(type) {
-	case string:
-		switch typ {
+	if def.Type == "" {
+		// E.g. union types.
+		fmt.Fprintf(w, "json.RawMessage")
+	} else {
+		switch def.Type {
 		case "array":
 			fmt.Fprintf(w, "[]")
 			return writeType(w, nil, def.Items, named)
@@ -281,8 +284,7 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 				// TODO: use omitzero when available.
 				needPointer := !required &&
 					(strings.HasPrefix(fieldDef.Ref, "#/definitions/") ||
-						fieldDef.Type == "object" &&
-							(fieldDef.AdditionalProperties == nil || fieldDef.AdditionalProperties == false))
+						fieldDef.Type == "object" && !canHaveAdditionalProperties(fieldDef))
 
 				if config != nil && config.Fields[export] != nil {
 					r := config.Fields[export]
@@ -320,10 +322,6 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 		default:
 			fmt.Fprintf(w, "any")
 		}
-
-	default:
-		// E.g. union types.
-		fmt.Fprintf(w, "json.RawMessage")
 	}
 	return nil
 }
@@ -361,6 +359,16 @@ func toComment(description string) string {
 		buf.WriteString(lineBuf.String())
 	}
 	return strings.TrimRight(buf.String(), "\n")
+}
+
+// The MCP spec improperly uses the absence of the additionalProperties keyword to
+// mean that additional properties are not allowed. In fact, it means just the opposite
+// (https://json-schema.org/draft-07/draft-handrews-json-schema-validation-01#rfc.section.6.5.6).
+// If the MCP spec wants to allow additional properties, it will write "true" or
+// an object explicitly.
+func canHaveAdditionalProperties(s *jsonschema.Schema) bool {
+	ap := s.AdditionalProperties
+	return ap != nil && !reflect.DeepEqual(ap, &jsonschema.Schema{Not: &jsonschema.Schema{}})
 }
 
 // exportName returns an exported name for a Go symbol, based on the given name

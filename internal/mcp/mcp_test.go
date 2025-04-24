@@ -92,14 +92,14 @@ func TestEndToEnd(t *testing.T) {
 			Properties: map[string]*jsonschema.Schema{
 				"Name": {Type: "string"},
 			},
-			AdditionalProperties: false,
+			AdditionalProperties: falseSchema,
 		},
 	}, {
 		Name:        "fail",
 		Description: "just fail",
 		InputSchema: &jsonschema.Schema{
 			Type:                 "object",
-			AdditionalProperties: false,
+			AdditionalProperties: falseSchema,
 		},
 	}}
 	if diff := cmp.Diff(wantTools, gotTools); diff != "" {
@@ -221,7 +221,6 @@ func TestBatching(t *testing.T) {
 			}
 		}
 	}
-
 }
 
 func TestCancellation(t *testing.T) {
@@ -253,3 +252,5 @@ func TestCancellation(t *testing.T) {
 		t.Fatal("timeout waiting for cancellation")
 	}
 }
+
+var falseSchema = &jsonschema.Schema{Not: &jsonschema.Schema{}}
