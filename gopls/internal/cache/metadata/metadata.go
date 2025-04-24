@@ -48,9 +48,11 @@ type Package struct {
 	// These fields are as defined by go/packages.Package
 	GoFiles         []protocol.DocumentURI
 	CompiledGoFiles []protocol.DocumentURI
-	AsmFiles        []protocol.DocumentURI
 	IgnoredFiles    []protocol.DocumentURI
 	OtherFiles      []protocol.DocumentURI
+
+	// These fields ares as defined by asm.File
+	AsmFiles []protocol.DocumentURI
 
 	ForTest       PackagePath // q in a "p [q.test]" package, else ""
 	TypesSizes    types.Sizes
