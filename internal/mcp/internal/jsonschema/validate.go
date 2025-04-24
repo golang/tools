@@ -6,9 +6,13 @@ package jsonschema
 
 import (
 	"fmt"
+	"math"
+	"math/big"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 // The value of the "$schema" keyword for the version that we can validate.
@@ -103,6 +107,65 @@ func (st *state) validate(instance reflect.Value, schema *Schema, path []any) (e
 			return fmt.Errorf("const: %v does not equal %v", instance, *schema.Const)
 		}
 	}
+
+	// numbers: https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01#section-6.2
+	if schema.MultipleOf != nil || schema.Minimum != nil || schema.Maximum != nil || schema.ExclusiveMinimum != nil || schema.ExclusiveMaximum != nil {
+		n, ok := jsonNumber(instance)
+		if ok { // these keywords don't apply to non-numbers
+			if schema.MultipleOf != nil {
+				// TODO: validate MultipleOf as non-zero.
+				// The test suite assumes floats.
+				nf, _ := n.Float64() // don't care if it's exact or not
+				if _, f := math.Modf(nf / *schema.MultipleOf); f != 0 {
+					return fmt.Errorf("multipleOf: %s is not a multiple of %f", n, *schema.MultipleOf)
+				}
+			}
+
+			m := new(big.Rat) // reuse for all of the following
+			cmp := func(f float64) int { return n.Cmp(m.SetFloat64(f)) }
+
+			if schema.Minimum != nil && cmp(*schema.Minimum) < 0 {
+				return fmt.Errorf("minimum: %s is less than %f", n, *schema.Minimum)
+			}
+			if schema.Maximum != nil && cmp(*schema.Maximum) > 0 {
+				return fmt.Errorf("maximum: %s is greater than %f", n, *schema.Maximum)
+			}
+			if schema.ExclusiveMinimum != nil && cmp(*schema.ExclusiveMinimum) <= 0 {
+				return fmt.Errorf("exclusiveMinimum: %s is less than or equal to %f", n, *schema.ExclusiveMinimum)
+			}
+			if schema.ExclusiveMaximum != nil && cmp(*schema.ExclusiveMaximum) >= 0 {
+				return fmt.Errorf("exclusiveMaximum: %s is greater than or equal to %f", n, *schema.ExclusiveMaximum)
+			}
+		}
+	}
+
+	// strings: https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01#section-6.3
+	if instance.Kind() == reflect.String && (schema.MinLength != nil || schema.MaxLength != nil || schema.Pattern != "") {
+		str := instance.String()
+		n := utf8.RuneCountInString(str)
+		if schema.MinLength != nil {
+			if m := int(*schema.MinLength); n < m {
+				return fmt.Errorf("minLength: %q contains %d Unicode code points, fewer than %d", str, n, m)
+			}
+		}
+		if schema.MaxLength != nil {
+			if m := int(*schema.MaxLength); n > m {
+				return fmt.Errorf("maxLength: %q contains %d Unicode code points, more than %d", str, n, m)
+			}
+		}
+
+		if schema.Pattern != "" {
+			// TODO(jba): compile regexps during schema validation.
+			m, err := regexp.MatchString(schema.Pattern, str)
+			if err != nil {
+				return err
+			}
+			if !m {
+				return fmt.Errorf("pattern: %q does not match pattern %q", str, schema.Pattern)
+			}
+		}
+	}
+
 	return nil
 }
 
