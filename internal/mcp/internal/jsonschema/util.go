@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 )
@@ -159,4 +160,42 @@ func jsonNumber(v reflect.Value) (*big.Rat, bool) {
 		}
 	}
 	return r, true
+}
+
+// jsonType returns a string describing the type of the JSON value,
+// as described in the JSON Schema specification:
+// https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01#section-6.1.1.
+// It returns "", false if the value is not valid JSON.
+func jsonType(v reflect.Value) (string, bool) {
+	if !v.IsValid() {
+		// Not v.IsNil(): a nil []any is still a JSON array.
+		return "null", true
+	}
+	if v.CanInt() || v.CanUint() {
+		return "integer", true
+	}
+	if v.CanFloat() {
+		if _, f := math.Modf(v.Float()); f == 0 {
+			return "integer", true
+		}
+		return "number", true
+	}
+	switch v.Kind() {
+	case reflect.Bool:
+		return "boolean", true
+	case reflect.String:
+		return "string", true
+	case reflect.Slice, reflect.Array:
+		return "array", true
+	case reflect.Map:
+		return "object", true
+	default:
+		return "", false
+	}
+}
+
+func assert(cond bool, msg string) {
+	if !cond {
+		panic(msg)
+	}
 }

@@ -4,7 +4,11 @@
 
 package jsonschema
 
-import "testing"
+import (
+	"encoding/json"
+	"reflect"
+	"testing"
+)
 
 func TestEqual(t *testing.T) {
 	for _, tt := range []struct {
@@ -35,5 +39,35 @@ func TestEqual(t *testing.T) {
 		check(tt.x2, tt.x2, true)
 		check(tt.x1, tt.x2, tt.want)
 		check(tt.x2, tt.x1, tt.want)
+	}
+}
+
+func TestJSONType(t *testing.T) {
+	for _, tt := range []struct {
+		val  string
+		want string
+	}{
+		{`null`, "null"},
+		{`0`, "integer"},
+		{`0.0`, "integer"},
+		{`1e2`, "integer"},
+		{`0.1`, "number"},
+		{`""`, "string"},
+		{`true`, "boolean"},
+		{`[]`, "array"},
+		{`{}`, "object"},
+	} {
+		var val any
+		if err := json.Unmarshal([]byte(tt.val), &val); err != nil {
+			t.Fatal(err)
+		}
+		got, ok := jsonType(reflect.ValueOf(val))
+		if !ok {
+			t.Fatalf("jsonType failed on %q", tt.val)
+		}
+		if got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.val, got, tt.want)
+		}
+
 	}
 }
