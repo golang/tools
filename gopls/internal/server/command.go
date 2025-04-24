@@ -10,9 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/format"
-	"go/token"
 	"io"
 	"log"
 	"maps"
@@ -43,8 +40,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/scan"
-	internalastutil "golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gocommand"
@@ -1818,60 +1813,12 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 		if err != nil {
 			return err
 		}
-		pgf, err := deps.snapshot.ParseGo(ctx, fh, parsego.Full)
+		changes, err := golang.ModifyTags(ctx, deps.snapshot, fh, args, m)
 		if err != nil {
-			return fmt.Errorf("error fetching package file: %v", err)
-		}
-		start, end, err := pgf.RangePos(args.Range)
-		if err != nil {
-			return fmt.Errorf("error getting position information: %v", err)
-		}
-		// If the cursor is at a point and not a selection, we should use the entire enclosing struct.
-		if start == end {
-			cur, ok := pgf.Cursor.FindByPos(start, end)
-			if !ok {
-				return fmt.Errorf("error finding start and end positions: %v", err)
-			}
-			start, end, err = findEnclosingStruct(cur)
-			if err != nil {
-				return fmt.Errorf("error finding enclosing struct: %v", err)
-			}
-		}
-
-		// Create a copy of the file node in order to avoid race conditions when we modify the node in Apply.
-		cloned := internalastutil.CloneNode(pgf.File)
-		fset := tokeninternal.FileSetFor(pgf.Tok)
-
-		if err = m.Apply(fset, cloned, start, end); err != nil {
-			return fmt.Errorf("could not modify tags: %v", err)
-		}
-
-		// Construct a list of DocumentChanges based on the diff between the formatted node and the
-		// original file content.
-		var after bytes.Buffer
-		if err := format.Node(&after, fset, cloned); err != nil {
 			return err
 		}
-		edits := diff.Bytes(pgf.Src, after.Bytes())
-		if len(edits) == 0 {
-			return nil
-		}
-		textedits, err := protocol.EditsFromDiffEdits(pgf.Mapper, edits)
-		if err != nil {
-			return fmt.Errorf("error computing edits for %s: %v", args.URI, err)
-		}
-		return applyChanges(ctx, c.s.client, []protocol.DocumentChange{
-			protocol.DocumentChangeEdit(fh, textedits),
-		})
+		return applyChanges(ctx, c.s.client, changes)
 	})
-}
-
-// Finds the start and end positions of the enclosing struct or returns an error if none is found.
-func findEnclosingStruct(c cursor.Cursor) (token.Pos, token.Pos, error) {
-	for cur := range c.Enclosing((*ast.StructType)(nil)) {
-		return cur.Node().Pos(), cur.Node().End(), nil
-	}
-	return token.NoPos, token.NoPos, fmt.Errorf("no struct enclosing the given positions")
 }
 
 func parseTransform(input string) (modifytags.Transform, error) {

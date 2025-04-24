@@ -79,15 +79,17 @@ Gopls supports the following code actions:
 - [`refactor.extract.variable`](#extract)
 - [`refactor.extract.variable-all`](#extract)
 - [`refactor.inline.call`](#refactor.inline.call)
+- [`refactor.rewrite.addTags`](#refactor.rewrite.addTags)
 - [`refactor.rewrite.changeQuote`](#refactor.rewrite.changeQuote)
 - [`refactor.rewrite.fillStruct`](#refactor.rewrite.fillStruct)
 - [`refactor.rewrite.fillSwitch`](#refactor.rewrite.fillSwitch)
 - [`refactor.rewrite.invertIf`](#refactor.rewrite.invertIf)
 - [`refactor.rewrite.joinLines`](#refactor.rewrite.joinLines)
-- [`refactor.rewrite.removeUnusedParam`](#refactor.rewrite.removeUnusedParam)
-- [`refactor.rewrite.splitLines`](#refactor.rewrite.splitLines)
 - [`refactor.rewrite.moveParamLeft`](#refactor.rewrite.moveParamLeft)
 - [`refactor.rewrite.moveParamRight`](#refactor.rewrite.moveParamRight)
+- [`refactor.rewrite.removeTags`](#refactor.rewrite.removeTags)
+- [`refactor.rewrite.removeUnusedParam`](#refactor.rewrite.removeUnusedParam)
+- [`refactor.rewrite.splitLines`](#refactor.rewrite.splitLines)
 
 Gopls reports some code actions twice, with two different kinds, so
 that they appear in multiple UI elements: simplifications,
@@ -842,3 +844,18 @@ When the cursor is on a dot import gopls can offer the "Eliminate dot import"
 code action, which removes the dot from the import and qualifies uses of the
 package throughout the file. This code action is offered only if
 each use of the package can be qualified without collisions with existing names.
+
+<a name='refactor.rewrite.addTags'></a>
+### `refactor.rewrite.addTags`: Add struct tags
+
+When the cursor is within a struct, this code action adds to each field a `json`
+struct tag that specifies its JSON name, using lower case with underscores
+(e.g. LinkTarget becomes link_target). For a highlighted selection, it only
+adds tags on selected fields.
+
+<a name='refactor.rewrite.removeTags'></a>
+### `refactor.rewrite.removeTags`: Remove struct tags
+
+When the cursor is within a struct, this code action clears struct tags on
+all struct fields. For a highlighted selection, it removes tags from only
+the selected fields.
