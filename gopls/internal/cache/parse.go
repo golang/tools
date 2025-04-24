@@ -45,10 +45,9 @@ func parseGoImpl(ctx context.Context, fset *token.FileSet, fh file.Handle, mode 
 	return pgf, nil
 }
 
-// parseAsmFiles pases the assembly files whose contents are provided by fhs.
+// parseAsmFiles parses the assembly files whose contents are provided by fhs.
 func parseAsmFiles(ctx context.Context, fhs ...file.Handle) ([]*asm.File, error) {
-	pgfs := make([]*asm.File, len(fhs))
-
+	pafs := make([]*asm.File, len(fhs))
 	for i, fh := range fhs {
 		var err error
 		content, err := fh.Content()
@@ -59,8 +58,7 @@ func parseAsmFiles(ctx context.Context, fhs ...file.Handle) ([]*asm.File, error)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		pgfs[i] = asm.Parse(content)
+		pafs[i] = asm.Parse(fh.URI(), content)
 	}
-	return pgfs, nil
-
+	return pafs, nil
 }
