@@ -71,7 +71,7 @@ type syntaxPackage struct {
 
 func (p *syntaxPackage) xrefs() []byte {
 	p.xrefsOnce.Do(func() {
-		p._xrefs = xrefs.Index(p.compiledGoFiles, p.types, p.typesInfo)
+		p._xrefs = xrefs.Index(p.compiledGoFiles, p.types, p.typesInfo, p.asmFiles)
 	})
 	return p._xrefs
 }

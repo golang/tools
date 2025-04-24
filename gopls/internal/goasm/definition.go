@@ -45,7 +45,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	//
 	// TODO(adonovan): make this just another
 	// attribute of the type-checked cache.Package.
-	file := asm.Parse(content)
+	file := asm.Parse(fh.URI(), content)
 
 	// Figure out the selected symbol.
 	// For now, just find the identifier around the cursor.
