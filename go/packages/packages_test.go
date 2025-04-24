@@ -3408,8 +3408,51 @@ func writeTree(t *testing.T, archive string) string {
 // finished. It is intended to evaluate the hypothesis (to explain
 // issue #71544) that the go command, on Windows, occasionally fails
 // to release all its handles to the temporary directory even when it
-// should have finished. If this test ever fails, the go command has a bug.
-func TestRmdirAfterGoList(t *testing.T) {
+// should have finished.
+//
+// If this test ever fails, the combination of the gocommand package
+// and the go command itself has a bug.
+func TestRmdirAfterGoList_Runner(t *testing.T) {
+	testRmdirAfterGoList(t, func(ctx context.Context, dir string) {
+		var runner gocommand.Runner
+		stdout, stderr, friendlyErr, err := runner.RunRaw(ctx, gocommand.Invocation{
+			Verb:       "list",
+			Args:       []string{"-json", "example.com/p"},
+			WorkingDir: dir,
+		})
+		if ctx.Err() != nil {
+			return // don't report error if canceled
+		}
+		if err != nil || friendlyErr != nil {
+			t.Fatalf("go list failed: %v, %v (stdout=%s stderr=%s)",
+				err, friendlyErr, stdout, stderr)
+		}
+	})
+}
+
+// TestRmdirAfterGoList_Direct is a variant of
+// TestRmdirAfterGoList_Runner that executes go list directly, to
+// control for the substantial logic of the gocommand package.
+//
+// If this test ever fails, the go command itself has a bug.
+func TestRmdirAfterGoList_Direct(t *testing.T) {
+	testRmdirAfterGoList(t, func(ctx context.Context, dir string) {
+		cmd := exec.Command("go", "list", "-json", "example.com/p")
+		cmd.Dir = dir
+		cmd.Stdout = new(strings.Builder)
+		cmd.Stderr = new(strings.Builder)
+		err := cmd.Run()
+		if ctx.Err() != nil {
+			return // don't report error if canceled
+		}
+		if err != nil {
+			t.Fatalf("go list failed: %v (stdout=%s stderr=%s)",
+				err, cmd.Stdout, cmd.Stderr)
+		}
+	})
+}
+
+func testRmdirAfterGoList(t *testing.T, f func(ctx context.Context, dir string)) {
 	testenv.NeedsExec(t)
 
 	dir := t.TempDir()
@@ -3428,23 +3471,10 @@ func TestRmdirAfterGoList(t *testing.T) {
 		}
 	}
 
-	runner := gocommand.Runner{}
-
 	g, ctx := errgroup.WithContext(context.Background())
 	for range 10 {
 		g.Go(func() error {
-			stdout, stderr, friendlyErr, err := runner.RunRaw(ctx, gocommand.Invocation{
-				Verb:       "list",
-				Args:       []string{"-json", "example.com/p"},
-				WorkingDir: dir,
-			})
-			if ctx.Err() != nil {
-				return nil // don't report error if canceled
-			}
-			if err != nil || friendlyErr != nil {
-				t.Fatalf("go list failed: %v, %v (stdout=%s stderr=%s)",
-					err, friendlyErr, stdout, stderr)
-			}
+			f(ctx, dir)
 			// Return an error so that concurrent invocations are canceled.
 			return fmt.Errorf("oops")
 		})
