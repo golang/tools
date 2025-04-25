@@ -131,7 +131,32 @@ func (c *completer) addKeywordCompletions() {
 		// This is a bit weak, functions allow for many keywords
 		case *ast.FuncDecl:
 			if node.Body != nil && c.pos > node.Body.Lbrace {
-				c.addKeywordItems(seen, stdScore, DEFER, RETURN, FOR, GO, SWITCH, SELECT, IF, ELSE, VAR, CONST, GOTO, TYPE)
+				// requireReturnObj checks whether user must provide some objects after return.
+				requireReturnObj := func(sig *ast.FuncType) bool {
+					results := sig.Results
+					if results == nil || results.List == nil {
+						return false // nothing to return
+					}
+					// If any result is named, allow a bare return.
+					for _, r := range results.List {
+						for _, name := range r.Names {
+							if name.Name != "_" {
+								return false
+							}
+						}
+					}
+					return true
+				}
+				ret := RETURN
+				if requireReturnObj(node.Type) {
+					// as user must return something, we offer a space after return.
+					// function literal inside a function will be affected by outer function,
+					// but 'go fmt' will help to remove the ending space.
+					// the benefit is greater than introducing an unncessary space.
+					ret += " "
+				}
+
+				c.addKeywordItems(seen, stdScore, DEFER, ret, FOR, GO, SWITCH, SELECT, IF, ELSE, VAR, CONST, GOTO, TYPE)
 			}
 		}
 	}

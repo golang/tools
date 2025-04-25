@@ -3,6 +3,7 @@ module golang.org/x/tools/gopls
 go 1.24.2
 
 require (
+	github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c
 	github.com/google/go-cmp v0.6.0
 	github.com/jba/templatecheck v0.7.1
 	golang.org/x/mod v0.24.0
@@ -21,7 +22,6 @@ require (
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
 	github.com/fatih/camelcase v1.0.0 // indirect
-	github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/google/safehtml v0.1.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20250218142911-aa4b98e5adaa // indirect

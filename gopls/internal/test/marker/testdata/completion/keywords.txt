@@ -189,3 +189,72 @@ func _() {
 		d //@complete(" //", default, defaultVar, defer)
 	}
 }
+
+-- return_different_func.go --
+package keywords
+
+/* return  */ //@item(returnWithSpace, "return ", "", "keyword")
+
+
+func _ () int {
+	r //@complete(" //", returnWithSpace)
+}
+
+func _ () (int, int) {
+	r //@complete(" //", returnWithSpace)
+}
+
+func _ () (_ int) {
+	r //@complete(" //", returnWithSpace)
+}
+
+func _ () (_ int) {
+	r //@complete(" //", returnWithSpace)
+}
+
+func _ () (_, _ int) {
+	r //@complete(" //", returnWithSpace)
+}
+
+func _ () (_, a int) {
+	r //@complete(" //", return)
+}
+
+func _ () {
+	r //@complete(" //", return)
+}
+
+func _ () (a int) {
+	r //@complete(" //", return)
+}
+
+func _ () (a, b int) {
+	r //@complete(" //", return)
+}
+
+func _ () (a, b int, c string) {
+	r //@complete(" //", return)
+}
+
+func _ () (a int) {
+	_ = func (){
+		r //@complete(" //", return)
+	}
+	return
+}
+
+func _ () int {
+	_ = func () (a int) {
+		// func lit will be affected by outer function.
+		r //@complete(" //", returnWithSpace)
+	}
+	return
+}
+
+func _ () {
+	_ = func () int {
+		// func lit will be affected by outer function.
+		r //@complete(" //", return)
+	}
+	return
+}
