@@ -20,14 +20,32 @@ import (
 )
 
 // This file implements support for SSE transport server and client.
+// https://modelcontextprotocol.io/specification/2024-11-05/basic/transports
+//
+// The transport is simple, at least relative to the new streamable transport
+// introduced in the 2025-03-26 version of the spec. In short:
+//
+//  1. Sessions are initiated via a hanging GET request, which streams
+//     server->client messages as SSE 'message' events.
+//  2. The first event in the SSE stream must be an 'endpoint' event that
+//     informs the client of the session endpoint.
+//  3. The client POSTs client->server messages to the session endpoint.
+//
+// Therefore, the each new GET request hands off its responsewriter to an
+// [sseSession] type that abstracts the transport as follows:
+//  - Write writes a new event to the responseWriter, or fails if the GET has
+//  exited.
+//  - Read reads off a message queue that is pushed to via POST requests.
+//  - Close causes the hanging GEt to exit.
 //
 // TODO:
-//  - avoid the use of channels as listenable queues.
 //  - support resuming broken streamable sessions
 //  - support GET channels for unrelated notifications in streamable sessions
 //  - add client support (and use it to test)
 //  - properly correlate notifications/requests to an incoming request (using
 //    requestCtx)
+
+// TODO(rfindley): reorganize this file, and split it into sse_server.go and sse_client.go.
 
 // An event is a server-sent event.
 type event struct {
@@ -49,8 +67,9 @@ func writeEvent(w io.Writer, evt event) (int, error) {
 	return n, err
 }
 
-// SSEHandler is an http.Handler that serves streamable MCP sessions as
-// defined by version 2024-11-05 of the MCP spec:
+// SSEHandler is an http.Handler that serves SSE-based MCP sessions as defined by
+// the 2024-11-05 version of the MCP protocol:
+//
 // https://modelcontextprotocol.io/specification/2024-11-05/basic/transports
 type SSEHandler struct {
 	getServer func() *Server
@@ -71,16 +90,23 @@ func NewSSEHandler(getServer func() *Server) *SSEHandler {
 	}
 }
 
-// A sseSession abstracts a session initiated through the sse endpoint.
-//
-// It implements the Transport interface.
+// A sseSession is a logical jsonrpc2 stream implementing the server side of
+// MCP SSE transport, initiated through the hanging GET
+//   - Writes are SSE 'message' events to the GET response body.
+//   - Reads are received from POSTs to the session endpoing, mediated through a
+//     buffered channel.
+//   - Close terminates the hanging GET.
 type sseSession struct {
-	incoming chan jsonrpc2.Message
+	incoming chan jsonrpc2.Message // queue of incoming messages; never closed
 
+	// We must guard both pushes to the incoming queue and writes to the response
+	// writer, because incoming POST requests are abitrarily concurrent and we
+	// need to ensure we don't write push to the queue, or write to the
+	// ResponseWriter, after the session GET request exits.
 	mu     sync.Mutex
-	w      io.Writer     // the hanging response body
-	isDone bool          // set when the stream is closed
-	done   chan struct{} // closed when the stream is closed
+	w      http.ResponseWriter // the hanging response body
+	closed bool                // set when the stream is closed
+	done   chan struct{}       // closed when the stream is closed
 }
 
 // connect returns the receiver, as an sseSession is a logical stream.
@@ -122,8 +148,12 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "failed to parse body", http.StatusBadRequest)
 			return
 		}
-		session.incoming <- msg
-		w.WriteHeader(http.StatusAccepted)
+		select {
+		case session.incoming <- msg:
+			w.WriteHeader(http.StatusAccepted)
+		case <-session.done:
+			http.Error(w, "session closed", http.StatusBadRequest)
+		}
 		return
 	}
 
@@ -142,21 +172,12 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 
 	sessionID = randText()
-	h.mu.Lock()
 	session := &sseSession{
 		w:        w,
-		incoming: make(chan jsonrpc2.Message, 1000),
+		incoming: make(chan jsonrpc2.Message, 100),
 		done:     make(chan struct{}),
 	}
-	h.sessions[sessionID] = session
-	h.mu.Unlock()
-
-	// The session is terminated when the request exits.
-	defer func() {
-		h.mu.Lock()
-		delete(h.sessions, sessionID)
-		h.mu.Unlock()
-	}()
+	defer session.Close()
 
 	server := h.getServer()
 	cc, err := server.Connect(req.Context(), session, nil)
@@ -167,7 +188,17 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if h.onClient != nil {
 		h.onClient(cc)
 	}
-	defer cc.Close()
+	defer cc.Close() // close the transport when the GET exits
+
+	// The session is terminated when the request exits.
+	h.mu.Lock()
+	h.sessions[sessionID] = session
+	h.mu.Unlock()
+	defer func() {
+		h.mu.Lock()
+		delete(h.sessions, sessionID)
+		h.mu.Unlock()
+	}()
 
 	endpoint, err := req.URL.Parse("?sessionid=" + sessionID)
 	if err != nil {
@@ -194,10 +225,9 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // Read implements jsonrpc2.Reader.
 func (s *sseSession) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
 	select {
+	case <-ctx.Done():
+		return nil, 0, ctx.Err()
 	case msg := <-s.incoming:
-		if msg == nil {
-			return nil, 0, io.EOF
-		}
 		return msg, 0, nil
 	case <-s.done:
 		return nil, 0, io.EOF
@@ -206,6 +236,10 @@ func (s *sseSession) Read(ctx context.Context) (jsonrpc2.Message, int64, error) 
 
 // Write implements jsonrpc2.Writer.
 func (s *sseSession) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
+	if ctx.Err() != nil {
+		return 0, ctx.Err()
+	}
+
 	data, err := jsonrpc2.EncodeMessage(msg)
 	if err != nil {
 		return 0, err
@@ -214,7 +248,10 @@ func (s *sseSession) Write(ctx context.Context, msg jsonrpc2.Message) (int64, er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.isDone {
+	// Note that it is invalid to write to a ResponseWriter after ServeHTTP has
+	// exited, and so we must lock around this write and check isDone, which is
+	// set before the hanging GET exits.
+	if s.closed {
 		return 0, io.EOF
 	}
 
@@ -222,12 +259,16 @@ func (s *sseSession) Write(ctx context.Context, msg jsonrpc2.Message) (int64, er
 	return int64(n), err
 }
 
-// Close implements io.Closer.
+// Close implements io.Closer, and closes the session.
+//
+// It must be safe to call Close more than once, as the close may
+// asynchronously be initiated by either the server closing its connection, or
+// by the hanging GET exiting.
 func (s *sseSession) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.isDone {
-		s.isDone = true
+	if !s.closed {
+		s.closed = true
 		close(s.done)
 	}
 	return nil
@@ -236,6 +277,8 @@ func (s *sseSession) Close() error {
 // An SSEClientTransport is a [Transport] that can communicate with an MCP
 // endpoint serving the SSE transport defined by the 2024-11-05 version of the
 // spec.
+//
+// https://modelcontextprotocol.io/specification/2024-11-05/basic/transports
 type SSEClientTransport struct {
 	sseEndpoint *url.URL
 }
@@ -252,7 +295,7 @@ func NewSSEClientTransport(rawURL string) (*SSEClientTransport, error) {
 	}, nil
 }
 
-// connect connects to the client endpoint.
+// connect connects through the client endpoint.
 func (c *SSEClientTransport) connect(ctx context.Context) (stream, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.sseEndpoint.String(), nil)
 	if err != nil {
@@ -337,19 +380,17 @@ func (c *SSEClientTransport) connect(ctx context.Context) (stream, error) {
 	}
 
 	go func() {
+		defer s.Close() // close the transport when the GET exits
+
 		for {
 			evt, err := nextEvent()
 			if err != nil {
-				close(s.incoming)
 				return
 			}
-			if evt.name == "message" {
-				select {
-				case s.incoming <- evt.data:
-				case <-s.done:
-					close(s.incoming)
-					return
-				}
+			select {
+			case s.incoming <- evt.data:
+			case <-s.done:
+				return
 			}
 		}
 	}()
@@ -357,25 +398,38 @@ func (c *SSEClientTransport) connect(ctx context.Context) (stream, error) {
 	return s, nil
 }
 
+// An sseClientStream is a logical jsonrpc2 stream that implements the client
+// half of the SSE protocol:
+//   - Writes are POSTS to the sesion endpoint.
+//   - Reads are SSE 'message' events, and pushes them onto a buffered channel.
+//   - Close terminates the GET request.
 type sseClientStream struct {
-	sseEndpoint *url.URL
-	msgEndpoint *url.URL
+	sseEndpoint *url.URL    // SSE endpoint for the GET
+	msgEndpoint *url.URL    // session endpoint for POSTs
+	incoming    chan []byte // queue of incoming messages
 
-	incoming chan []byte
+	mu     sync.Mutex
+	body   io.ReadCloser // body of the hanging GET
+	closed bool          // set when the stream is closed
+	done   chan struct{} // closed when the stream is closed
+}
 
-	mu       sync.Mutex
-	body     io.ReadCloser
-	isDone   bool
-	done     chan struct{}
-	closeErr error
+func (c *sseClientStream) isDone() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
 }
 
 func (c *sseClientStream) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
 	select {
 	case <-ctx.Done():
 		return nil, 0, ctx.Err()
+
+	case <-c.done:
+		return nil, 0, io.EOF
+
 	case data := <-c.incoming:
-		if data == nil {
+		if c.isDone() {
 			return nil, 0, io.EOF
 		}
 		msg, err := jsonrpc2.DecodeMessage(data)
@@ -383,11 +437,6 @@ func (c *sseClientStream) Read(ctx context.Context) (jsonrpc2.Message, int64, er
 			return nil, 0, err
 		}
 		return msg, int64(len(data)), nil
-	case <-c.done:
-		if c.closeErr != nil {
-			return nil, 0, c.closeErr
-		}
-		return nil, 0, io.EOF
 	}
 }
 
@@ -396,10 +445,7 @@ func (c *sseClientStream) Write(ctx context.Context, msg jsonrpc2.Message) (int6
 	if err != nil {
 		return 0, err
 	}
-	c.mu.Lock()
-	done := c.isDone
-	c.mu.Unlock()
-	if done {
+	if c.isDone() {
 		return 0, io.EOF
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", c.msgEndpoint.String(), bytes.NewReader(data))
@@ -421,10 +467,10 @@ func (c *sseClientStream) Write(ctx context.Context, msg jsonrpc2.Message) (int6
 func (c *sseClientStream) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.isDone {
-		c.isDone = true
-		c.closeErr = c.body.Close()
+	if !c.closed {
+		c.closed = true
+		_ = c.body.Close()
 		close(c.done)
 	}
-	return c.closeErr
+	return nil
 }
