@@ -92,8 +92,8 @@ func typeSchema(t reflect.Type, seen map[reflect.Type]*Schema) (*Schema, error) 
 			return nil, fmt.Errorf("computing element schema: %v", err)
 		}
 		if t.Kind() == reflect.Array {
-			s.MinItems = Ptr(float64(t.Len()))
-			s.MaxItems = Ptr(float64(t.Len()))
+			s.MinItems = Ptr(t.Len())
+			s.MaxItems = Ptr(t.Len())
 		}
 
 	case reflect.String:

@@ -145,12 +145,12 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		str := instance.String()
 		n := utf8.RuneCountInString(str)
 		if schema.MinLength != nil {
-			if m := int(*schema.MinLength); n < m {
+			if m := *schema.MinLength; n < m {
 				return fmt.Errorf("minLength: %q contains %d Unicode code points, fewer than %d", str, n, m)
 			}
 		}
 		if schema.MaxLength != nil {
-			if m := int(*schema.MaxLength); n > m {
+			if m := *schema.MaxLength; n > m {
 				return fmt.Errorf("maxLength: %q contains %d Unicode code points, more than %d", str, n, m)
 			}
 		}
@@ -268,7 +268,7 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 					anns.noteIndex(i)
 				}
 			}
-			if nContains == 0 && (schema.MinContains == nil || int(*schema.MinContains) > 0) {
+			if nContains == 0 && (schema.MinContains == nil || *schema.MinContains > 0) {
 				return fmt.Errorf("contains: %s does not have an item matching %s",
 					instance, schema.Contains)
 			}
@@ -277,23 +277,23 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		// https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01#section-6.4
 		// TODO(jba): check that these next four keywords' values are integers.
 		if schema.MinContains != nil && schema.Contains != nil {
-			if m := int(*schema.MinContains); nContains < m {
+			if m := *schema.MinContains; nContains < m {
 				return fmt.Errorf("minContains: contains validated %d items, less than %d", nContains, m)
 			}
 		}
 		if schema.MaxContains != nil && schema.Contains != nil {
-			if m := int(*schema.MaxContains); nContains > m {
+			if m := *schema.MaxContains; nContains > m {
 				return fmt.Errorf("maxContains: contains validated %d items, greater than %d", nContains, m)
 			}
 		}
 		if schema.MinItems != nil {
-			if m := int(*schema.MinItems); instance.Len() < m {
+			if m := *schema.MinItems; instance.Len() < m {
 				return fmt.Errorf("minItems: array length %d is less than %d", instance.Len(), m)
 			}
 		}
 		if schema.MaxItems != nil {
-			if m := int(*schema.MaxItems); instance.Len() > m {
-				return fmt.Errorf("minItems: array length %d is greater than %d", instance.Len(), m)
+			if m := *schema.MaxItems; instance.Len() > m {
+				return fmt.Errorf("maxItems: array length %d is greater than %d", instance.Len(), m)
 			}
 		}
 		if schema.UniqueItems {
@@ -385,12 +385,12 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 
 		// https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01#section-6.5
 		if schema.MinProperties != nil {
-			if n, m := instance.Len(), int(*schema.MinProperties); n < m {
+			if n, m := instance.Len(), *schema.MinProperties; n < m {
 				return fmt.Errorf("minProperties: object has %d properties, less than %d", n, m)
 			}
 		}
 		if schema.MaxProperties != nil {
-			if n, m := instance.Len(), int(*schema.MaxProperties); n > m {
+			if n, m := instance.Len(), *schema.MaxProperties; n > m {
 				return fmt.Errorf("maxProperties: object has %d properties, greater than %d", n, m)
 			}
 		}

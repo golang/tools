@@ -8,6 +8,7 @@ package jsonschema
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,25 +68,25 @@ type Schema struct {
 	Maximum          *float64 `json:"maximum,omitempty"`
 	ExclusiveMinimum *float64 `json:"exclusiveMinimum,omitempty"`
 	ExclusiveMaximum *float64 `json:"exclusiveMaximum,omitempty"`
-	MinLength        *float64 `json:"minLength,omitempty"`
-	MaxLength        *float64 `json:"maxLength,omitempty"`
+	MinLength        *int     `json:"minLength,omitempty"`
+	MaxLength        *int     `json:"maxLength,omitempty"`
 	Pattern          string   `json:"pattern,omitempty"`
 
 	// arrays
 	PrefixItems      []*Schema `json:"prefixItems,omitempty"`
 	Items            *Schema   `json:"items,omitempty"`
-	MinItems         *float64  `json:"minItems,omitempty"`
-	MaxItems         *float64  `json:"maxItems,omitempty"`
+	MinItems         *int      `json:"minItems,omitempty"`
+	MaxItems         *int      `json:"maxItems,omitempty"`
 	AdditionalItems  *Schema   `json:"additionalItems,omitempty"`
 	UniqueItems      bool      `json:"uniqueItems,omitempty"`
 	Contains         *Schema   `json:"contains,omitempty"`
-	MinContains      *float64  `json:"minContains,omitempty"`
-	MaxContains      *float64  `json:"maxContains,omitempty"`
+	MinContains      *int      `json:"minContains,omitempty"` // *int, not int: default is 1, not 0
+	MaxContains      *int      `json:"maxContains,omitempty"`
 	UnevaluatedItems *Schema   `json:"unevaluatedItems,omitempty"`
 
 	// objects
-	MinProperties         *float64            `json:"minProperties,omitempty"`
-	MaxProperties         *float64            `json:"maxProperties,omitempty"`
+	MinProperties         *int                `json:"minProperties,omitempty"`
+	MaxProperties         *int                `json:"maxProperties,omitempty"`
 	Required              []string            `json:"required,omitempty"`
 	DependentRequired     map[string][]string `json:"dependentRequired,omitempty"`
 	Properties            map[string]*Schema  `json:"properties,omitempty"`
@@ -174,8 +175,17 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	}
 
 	ms := struct {
-		Type  json.RawMessage `json:"type,omitempty"`
-		Const json.RawMessage `json:"const,omitempty"`
+		Type          json.RawMessage `json:"type,omitempty"`
+		Const         json.RawMessage `json:"const,omitempty"`
+		MinLength     *float64        `json:"minLength,omitempty"`
+		MaxLength     *float64        `json:"maxLength,omitempty"`
+		MinItems      *float64        `json:"minItems,omitempty"`
+		MaxItems      *float64        `json:"maxItems,omitempty"`
+		MinProperties *float64        `json:"minProperties,omitempty"`
+		MaxProperties *float64        `json:"maxProperties,omitempty"`
+		MinContains   *float64        `json:"minContains,omitempty"`
+		MaxContains   *float64        `json:"maxContains,omitempty"`
+
 		*schemaWithoutMethods
 	}{
 		schemaWithoutMethods: (*schemaWithoutMethods)(s),
@@ -192,12 +202,13 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 		case '[':
 			err = json.Unmarshal(ms.Type, &s.Types)
 		default:
-			err = fmt.Errorf("invalid type: %q", ms.Type)
+			err = fmt.Errorf(`invalid value for "type": %q`, ms.Type)
 		}
 	}
 	if err != nil {
 		return err
 	}
+
 	// Setting Const to a pointer to null will marshal properly, but won't unmarshal:
 	// the *any is set to nil, not a pointer to nil.
 	if len(ms.Const) > 0 {
@@ -207,6 +218,34 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 			return err
 		}
 	}
+
+	// Store integer properties as ints.
+	setInt := func(name string, dst **int, src *float64) error {
+		if src == nil {
+			return nil
+		}
+		i := int(*src)
+		if float64(i) != *src {
+			return fmt.Errorf("%s: %f is not an int", name, *src)
+		}
+		*dst = &i
+		return nil
+	}
+
+	err = cmp.Or(
+		setInt("minLength", &s.MinLength, ms.MinLength),
+		setInt("maxLength", &s.MaxLength, ms.MaxLength),
+		setInt("minItems", &s.MinItems, ms.MinItems),
+		setInt("maxItems", &s.MaxItems, ms.MaxItems),
+		setInt("minProperties", &s.MinProperties, ms.MinProperties),
+		setInt("maxProperties", &s.MaxProperties, ms.MaxProperties),
+		setInt("minContains", &s.MinContains, ms.MinContains),
+		setInt("maxContains", &s.MaxContains, ms.MaxContains),
+	)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
