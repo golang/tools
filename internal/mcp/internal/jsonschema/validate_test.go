@@ -53,7 +53,7 @@ func TestValidate(t *testing.T) {
 				t.Run(g.Description, func(t *testing.T) {
 					rs := &ResolvedSchema{root: g.Schema}
 					for s := range g.Schema.all() {
-						if s.Properties != nil || s.Required != nil || s.Defs != nil || s.UnevaluatedProperties != nil {
+						if s.Defs != nil || s.Ref != "" {
 							t.Skip("schema or subschema has unimplemented keywords")
 						}
 					}

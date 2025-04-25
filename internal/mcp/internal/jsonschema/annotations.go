@@ -14,6 +14,7 @@ type annotations struct {
 	allItems            bool            // all items were evaluated
 	endIndex            int             // 1+largest index evaluated by prefixItems
 	evaluatedIndexes    map[int]bool    // set of indexes evaluated by contains
+	allProperties       bool            // all properties were evaluated
 	evaluatedProperties map[string]bool // set of properties evaluated by various keywords
 }
 
@@ -58,6 +59,9 @@ func (a *annotations) merge(b *annotations) {
 		a.endIndex = b.endIndex
 	}
 	a.evaluatedIndexes = merge(a.evaluatedIndexes, b.evaluatedIndexes)
+	if b.allProperties {
+		a.allProperties = true
+	}
 	a.evaluatedProperties = merge(a.evaluatedProperties, b.evaluatedProperties)
 }
 
