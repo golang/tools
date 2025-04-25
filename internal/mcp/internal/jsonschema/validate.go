@@ -32,7 +32,8 @@ func (rs *ResolvedSchema) Validate(instance any) error {
 		return fmt.Errorf("cannot validate version %s, only %s", s, draft202012)
 	}
 	st := &state{rs: rs}
-	return st.validate(reflect.ValueOf(instance), st.rs.root, nil)
+	var pathBuffer [4]any
+	return st.validate(reflect.ValueOf(instance), st.rs.root, nil, pathBuffer[:0])
 }
 
 // state is the state of single call to ResolvedSchema.Validate.
@@ -43,7 +44,7 @@ type state struct {
 
 // validate validates the reflected value of the instance.
 // It keeps track of the path within the instance for better error messages.
-func (st *state) validate(instance reflect.Value, schema *Schema, path []any) (err error) {
+func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *annotations, path []any) (err error) {
 	defer func() {
 		if err != nil {
 			if p := formatPath(path); p != "" {
@@ -175,21 +176,23 @@ func (st *state) validate(instance reflect.Value, schema *Schema, path []any) (e
 	// If any of these fail, then validation fails, even if there is an unevaluatedXXX
 	// keyword in the schema. The spec is unclear about this, but that is the intention.
 
-	valid := func(s *Schema) bool { return st.validate(instance, s, path) == nil }
+	var anns annotations // all the annotations for this call and child calls
+
+	valid := func(s *Schema, anns *annotations) bool { return st.validate(instance, s, anns, path) == nil }
 
 	if schema.AllOf != nil {
 		for _, ss := range schema.AllOf {
-			if err := st.validate(instance, ss, path); err != nil {
+			if err := st.validate(instance, ss, &anns, path); err != nil {
 				return err
 			}
 		}
 	}
 	if schema.AnyOf != nil {
+		// We must visit them all, to collect annotations.
 		ok := false
 		for _, ss := range schema.AnyOf {
-			if valid(ss) {
+			if valid(ss, &anns) {
 				ok = true
-				break
 			}
 		}
 		if !ok {
@@ -200,7 +203,7 @@ func (st *state) validate(instance reflect.Value, schema *Schema, path []any) (e
 		// Exactly one.
 		var okSchema *Schema
 		for _, ss := range schema.OneOf {
-			if valid(ss) {
+			if valid(ss, &anns) {
 				if okSchema != nil {
 					return fmt.Errorf("oneOf: validated against both %v and %v", okSchema, ss)
 				}
@@ -212,24 +215,117 @@ func (st *state) validate(instance reflect.Value, schema *Schema, path []any) (e
 		}
 	}
 	if schema.Not != nil {
-		if valid(schema.Not) {
+		// Ignore annotations from "not".
+		if valid(schema.Not, nil) {
 			return fmt.Errorf("not: validated against %v", schema.Not)
 		}
 	}
 	if schema.If != nil {
 		var ss *Schema
-		if valid(schema.If) {
+		if valid(schema.If, &anns) {
 			ss = schema.Then
 		} else {
 			ss = schema.Else
 		}
 		if ss != nil {
-			if err := st.validate(instance, ss, path); err != nil {
+			if err := st.validate(instance, ss, &anns, path); err != nil {
 				return err
 			}
 		}
 	}
 
+	// arrays
+	if instance.Kind() == reflect.Array || instance.Kind() == reflect.Slice {
+		// https://json-schema.org/draft/2020-12/json-schema-core#section-10.3.1
+		// This validate call doesn't collect annotations for the items of the instance; they are separate
+		// instances in their own right.
+		// TODO(jba): if the test suite doesn't cover this case, add a test. For example, nested arrays.
+		for i, ischema := range schema.PrefixItems {
+			if i >= instance.Len() {
+				break // shorter is OK
+			}
+			if err := st.validate(instance.Index(i), ischema, nil, append(path, i)); err != nil {
+				return err
+			}
+		}
+		anns.noteEndIndex(min(len(schema.PrefixItems), instance.Len()))
+
+		if schema.Items != nil {
+			for i := len(schema.PrefixItems); i < instance.Len(); i++ {
+				if err := st.validate(instance.Index(i), schema.Items, nil, append(path, i)); err != nil {
+					return err
+				}
+			}
+			// Note that all the items in this array have been validated.
+			anns.allItems = true
+		}
+
+		nContains := 0
+		if schema.Contains != nil {
+			for i := range instance.Len() {
+				if err := st.validate(instance.Index(i), schema.Contains, nil, append(path, i)); err == nil {
+					nContains++
+					anns.noteIndex(i)
+				}
+			}
+			if nContains == 0 && (schema.MinContains == nil || int(*schema.MinContains) > 0) {
+				return fmt.Errorf("contains: %s does not have an item matching %s",
+					instance, schema.Contains)
+			}
+		}
+
+		// https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01#section-6.4
+		// TODO(jba): check that these next four keywords' values are integers.
+		if schema.MinContains != nil && schema.Contains != nil {
+			if m := int(*schema.MinContains); nContains < m {
+				return fmt.Errorf("minContains: contains validated %d items, less than %d", nContains, m)
+			}
+		}
+		if schema.MaxContains != nil && schema.Contains != nil {
+			if m := int(*schema.MaxContains); nContains > m {
+				return fmt.Errorf("maxContains: contains validated %d items, greater than %d", nContains, m)
+			}
+		}
+		if schema.MinItems != nil {
+			if m := int(*schema.MinItems); instance.Len() < m {
+				return fmt.Errorf("minItems: array length %d is less than %d", instance.Len(), m)
+			}
+		}
+		if schema.MaxItems != nil {
+			if m := int(*schema.MaxItems); instance.Len() > m {
+				return fmt.Errorf("minItems: array length %d is greater than %d", instance.Len(), m)
+			}
+		}
+		if schema.UniqueItems {
+			// Determine uniqueness with O(n²) comparisons.
+			// TODO: optimize via hashing.
+			for i := range instance.Len() {
+				for j := i + 1; j < instance.Len(); j++ {
+					if equalValue(instance.Index(i), instance.Index(j)) {
+						return fmt.Errorf("uniqueItems: array items %d and %d are equal", i, j)
+					}
+				}
+			}
+		}
+		// https://json-schema.org/draft/2020-12/json-schema-core#section-11.2
+		if schema.UnevaluatedItems != nil && !anns.allItems {
+			// Apply this subschema to all items in the array that haven't been successfully validated.
+			// That includes validations by subschemas on the same instance, like allOf.
+			for i := anns.endIndex; i < instance.Len(); i++ {
+				if !anns.evaluatedIndexes[i] {
+					if err := st.validate(instance.Index(i), schema.UnevaluatedItems, nil, append(path, i)); err != nil {
+						return err
+					}
+				}
+			}
+			anns.allItems = true
+		}
+	}
+
+	if callerAnns != nil {
+		// Our caller wants to know what we've validated.
+		callerAnns.merge(&anns)
+	}
 	return nil
 }
 
