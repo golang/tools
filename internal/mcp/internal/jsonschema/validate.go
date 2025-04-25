@@ -166,6 +166,70 @@ func (st *state) validate(instance reflect.Value, schema *Schema, path []any) (e
 		}
 	}
 
+	// logic
+	// https://json-schema.org/draft/2020-12/json-schema-core#section-10.2
+	// These must happen before arrays and objects because if they evaluate an item or property,
+	// then the unevaluatedItems/Properties schemas don't apply to it.
+	// See https://json-schema.org/draft/2020-12/json-schema-core#section-11.2, paragraph 4.
+	//
+	// If any of these fail, then validation fails, even if there is an unevaluatedXXX
+	// keyword in the schema. The spec is unclear about this, but that is the intention.
+
+	valid := func(s *Schema) bool { return st.validate(instance, s, path) == nil }
+
+	if schema.AllOf != nil {
+		for _, ss := range schema.AllOf {
+			if err := st.validate(instance, ss, path); err != nil {
+				return err
+			}
+		}
+	}
+	if schema.AnyOf != nil {
+		ok := false
+		for _, ss := range schema.AnyOf {
+			if valid(ss) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return fmt.Errorf("anyOf: did not validate against any of %v", schema.AnyOf)
+		}
+	}
+	if schema.OneOf != nil {
+		// Exactly one.
+		var okSchema *Schema
+		for _, ss := range schema.OneOf {
+			if valid(ss) {
+				if okSchema != nil {
+					return fmt.Errorf("oneOf: validated against both %v and %v", okSchema, ss)
+				}
+				okSchema = ss
+			}
+		}
+		if okSchema == nil {
+			return fmt.Errorf("oneOf: did not validate against any of %v", schema.OneOf)
+		}
+	}
+	if schema.Not != nil {
+		if valid(schema.Not) {
+			return fmt.Errorf("not: validated against %v", schema.Not)
+		}
+	}
+	if schema.If != nil {
+		var ss *Schema
+		if valid(schema.If) {
+			ss = schema.Then
+		} else {
+			ss = schema.Else
+		}
+		if ss != nil {
+			if err := st.validate(instance, ss, path); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 

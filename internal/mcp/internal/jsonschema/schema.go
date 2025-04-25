@@ -11,11 +11,31 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 )
 
 // A Schema is a JSON schema object.
-// It corresponds to the 2020-12 draft, as described in
-// https://json-schema.org/draft/2020-12.
+// It corresponds to the 2020-12 draft, as described in https://json-schema.org/draft/2020-12,
+// specifically:
+// - https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-01
+// - https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01
+//
+// A Schema value may have non-zero values for more than one field:
+// all relevant non-zero fields are used for validation.
+// There is one exception to provide more Go type-safety: the Type and Types fields
+// are mutually exclusive.
+//
+// Since this struct is a Go representation of a JSON value, it inherits JSON's
+// distinction between nil and empty. Nil slices and maps are considered absent,
+// but empty ones are present and affect validation. For example,
+//
+//	Schema{Enum: nil}
+//
+// is equivalent to an empty schema, so it validates every instance. But
+//
+//	Schema{Enum: []any{}}
+//
+// requires equality to some slice element, so it vacuously rejects every instance.
 type Schema struct {
 	// core
 	ID      string             `json:"$id,omitempty"`
@@ -23,7 +43,7 @@ type Schema struct {
 	Ref     string             `json:"$ref,omitempty"`
 	Comment string             `json:"$comment,omitempty"`
 	Defs    map[string]*Schema `json:"$defs,omitempty"`
-	// definitions is deprecated but still allowed. It is a synonym for defs.
+	// definitions is deprecated but still allowed. It is a synonym for $defs.
 	Definitions map[string]*Schema `json:"definitions,omitempty"`
 
 	Anchor        string          `json:"$anchor,omitempty"`
@@ -192,3 +212,52 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 
 // Ptr returns a pointer to a new variable whose value is x.
 func Ptr[T any](x T) *T { return &x }
+
+// every applies f preorder to every schema under s including s.
+// It stops when f returns false.
+func (s *Schema) every(f func(*Schema) bool) bool {
+	return s == nil ||
+		f(s) && s.everyChild(f)
+}
+
+// everyChild returns an iterator over the immediate child schemas of s.
+//
+// It does not yield nils from fields holding individual schemas, like Contains,
+// because a nil value indicates that the field is absent.
+// It does yield nils when they occur in slices and maps, so those invalid values
+// can be detected when the schema is validated.
+func (s *Schema) everyChild(f func(*Schema) bool) bool {
+	// Fields that contain individual schemas. A nil is valid: it just means the field isn't present.
+	for _, c := range []*Schema{
+		s.Items, s.AdditionalItems, s.Contains, s.PropertyNames, s.AdditionalProperties,
+		s.If, s.Then, s.Else, s.Not, s.UnevaluatedItems, s.UnevaluatedProperties,
+	} {
+		if c != nil && !f(c) {
+			return false
+		}
+	}
+	// Fields that contain slices of schemas. Yield nils so we can check for their presence.
+	for _, sl := range [][]*Schema{s.PrefixItems, s.AllOf, s.AnyOf, s.OneOf} {
+		for _, c := range sl {
+			if !f(c) {
+				return false
+			}
+		}
+	}
+	// Fields that are maps of schemas. Ditto about nils.
+	for _, m := range []map[string]*Schema{
+		s.Defs, s.Definitions, s.Properties, s.PatternProperties, s.DependentSchemas,
+	} {
+		for _, c := range m {
+			if !f(c) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// all wraps every in an iterator.
+func (s *Schema) all() iter.Seq[*Schema] {
+	return func(yield func(*Schema) bool) { s.every(yield) }
+}

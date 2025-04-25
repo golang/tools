@@ -50,8 +50,10 @@ func TestValidate(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, g := range groups {
-				if g.Schema.Properties != nil {
-					t.Skip("schema has properties")
+				for s := range g.Schema.all() {
+					if s.Properties != nil {
+						t.Skip("schema or subschema has properties")
+					}
 				}
 				rs := &ResolvedSchema{root: g.Schema}
 				t.Run(g.Description, func(t *testing.T) {
