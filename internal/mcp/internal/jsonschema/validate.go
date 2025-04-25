@@ -6,6 +6,7 @@ package jsonschema
 
 import (
 	"fmt"
+	"hash/maphash"
 	"math"
 	"math/big"
 	"reflect"
@@ -297,16 +298,32 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 			}
 		}
 		if schema.UniqueItems {
-			// Determine uniqueness with O(n²) comparisons.
-			// TODO: optimize via hashing.
-			for i := range instance.Len() {
-				for j := i + 1; j < instance.Len(); j++ {
-					if equalValue(instance.Index(i), instance.Index(j)) {
-						return fmt.Errorf("uniqueItems: array items %d and %d are equal", i, j)
+			if instance.Len() > 1 {
+				// Hash each item and compare the hashes.
+				// If two hashes differ, the items differ.
+				// If two hashes are the same, compare the collisions for equality.
+				// (The same logic as hash table lookup.)
+				// TODO(jba): Use container/hash.Map when it becomes available (https://go.dev/issue/69559),
+				hashes := map[uint64][]int{} // from hash to indices
+				seed := maphash.MakeSeed()
+				for i := range instance.Len() {
+					item := instance.Index(i)
+					var h maphash.Hash
+					h.SetSeed(seed)
+					hashValue(&h, item)
+					hv := h.Sum64()
+					if sames := hashes[hv]; len(sames) > 0 {
+						for _, j := range sames {
+							if equalValue(item, instance.Index(j)) {
+								return fmt.Errorf("uniqueItems: array items %d and %d are equal", i, j)
+							}
+						}
 					}
+					hashes[hv] = append(hashes[hv], i)
 				}
 			}
 		}
+
 		// https://json-schema.org/draft/2020-12/json-schema-core#section-11.2
 		if schema.UnevaluatedItems != nil && !anns.allItems {
 			// Apply this subschema to all items in the array that haven't been successfully validated.

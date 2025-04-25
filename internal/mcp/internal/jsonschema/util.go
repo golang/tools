@@ -6,11 +6,15 @@ package jsonschema
 
 import (
 	"bytes"
+	"cmp"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"math"
 	"math/big"
 	"reflect"
+	"slices"
 )
 
 // Equal reports whether two Go values representing JSON values are equal according
@@ -126,12 +130,91 @@ func equalValue(x, y reflect.Value) bool {
 		return x.String() == y.String()
 	case reflect.Bool:
 		return x.Bool() == y.Bool()
-	case reflect.Complex64, reflect.Complex128:
-		return x.Complex() == y.Complex()
 	// Ints, uints and floats handled in jsonNumber, at top of function.
 	default:
 		panic(fmt.Sprintf("unsupported kind: %s", x.Kind()))
 	}
+}
+
+// hashValue adds v to the data hashed by h. v must not have cycles.
+// hashValue panics if the value contains functions or channels, or maps whose
+// key type is not string.
+// It ignores unexported fields of structs.
+// Calls to hashValue with the equal values (in the sense
+// of [Equal]) result in the same sequence of values written to the hash.
+func hashValue(h *maphash.Hash, v reflect.Value) {
+	// TODO: replace writes of basic types with WriteComparable in 1.24.
+
+	writeUint := func(u uint64) {
+		var buf [8]byte
+		binary.BigEndian.PutUint64(buf[:], u)
+		h.Write(buf[:])
+	}
+
+	var write func(reflect.Value)
+	write = func(v reflect.Value) {
+		if r, ok := jsonNumber(v); ok {
+			// We want 1.0 and 1 to hash the same.
+			// big.Rats are always normalized, so they will be.
+			// We could do this more efficiently by handling the int and float cases
+			// separately, but that's premature.
+			writeUint(uint64(r.Sign() + 1))
+			h.Write(r.Num().Bytes())
+			h.Write(r.Denom().Bytes())
+			return
+		}
+		switch v.Kind() {
+		case reflect.Invalid:
+			h.WriteByte(0)
+		case reflect.String:
+			h.WriteString(v.String())
+		case reflect.Bool:
+			if v.Bool() {
+				h.WriteByte(1)
+			} else {
+				h.WriteByte(0)
+			}
+		case reflect.Complex64, reflect.Complex128:
+			c := v.Complex()
+			writeUint(math.Float64bits(real(c)))
+			writeUint(math.Float64bits(imag(c)))
+		case reflect.Array, reflect.Slice:
+			// Although we could treat []byte more efficiently,
+			// JSON values are unlikely to contain them.
+			writeUint(uint64(v.Len()))
+			for i := range v.Len() {
+				write(v.Index(i))
+			}
+		case reflect.Interface, reflect.Pointer:
+			write(v.Elem())
+		case reflect.Struct:
+			t := v.Type()
+			for i := range t.NumField() {
+				if sf := t.Field(i); sf.IsExported() {
+					write(v.FieldByIndex(sf.Index))
+				}
+			}
+		case reflect.Map:
+			if v.Type().Key().Kind() != reflect.String {
+				panic("map with non-string key")
+			}
+			// Sort the keys so the hash is deterministic.
+			keys := v.MapKeys()
+			// Write the length. That distinguishes between, say, two consecutive
+			// maps with disjoint keys from one map that has the items of both.
+			writeUint(uint64(len(keys)))
+			slices.SortFunc(keys, func(x, y reflect.Value) int { return cmp.Compare(x.String(), y.String()) })
+			for _, k := range keys {
+				write(k)
+				write(v.MapIndex(k))
+			}
+		// Ints, uints and floats handled in jsonNumber, at top of function.
+		default:
+			panic(fmt.Sprintf("unsupported kind: %s", v.Kind()))
+		}
+	}
+
+	write(v)
 }
 
 // jsonNumber converts a numeric value or a json.Number to a [big.Rat].

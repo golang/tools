@@ -6,6 +6,7 @@ package jsonschema
 
 import (
 	"encoding/json"
+	"hash/maphash"
 	"reflect"
 	"testing"
 )
@@ -70,4 +71,57 @@ func TestJSONType(t *testing.T) {
 		}
 
 	}
+}
+
+func TestHash(t *testing.T) {
+	x := map[string]any{
+		"s": []any{1, "foo", nil, true},
+		"f": 2.5,
+		"m": map[string]any{
+			"n":      json.Number("123.456"),
+			"schema": &Schema{Type: "integer", UniqueItems: true},
+		},
+		"c": 1.2 + 3.4i,
+		"n": nil,
+	}
+
+	seed := maphash.MakeSeed()
+
+	hash := func(x any) uint64 {
+		var h maphash.Hash
+		h.SetSeed(seed)
+		hashValue(&h, reflect.ValueOf(x))
+		return h.Sum64()
+	}
+
+	want := hash(x)
+	// Run several times to verify consistency.
+	for range 10 {
+		if got := hash(x); got != want {
+			t.Errorf("hash values differ: %d vs. %d", got, want)
+		}
+	}
+
+	// Check mathematically equal values.
+	nums := []any{
+		5,
+		uint(5),
+		5.0,
+		json.Number("5"),
+		json.Number("5.00"),
+	}
+	for i, n := range nums {
+		if i == 0 {
+			want = hash(n)
+		} else if got := hash(n); got != want {
+			t.Errorf("hashes differ between %v (%[1]T) and %v (%[2]T)", nums[0], n)
+		}
+	}
+
+	// Check that a bare JSON `null` is OK.
+	var null any
+	if err := json.Unmarshal([]byte(`null`), &null); err != nil {
+		t.Fatal(err)
+	}
+	_ = hash(null)
 }
