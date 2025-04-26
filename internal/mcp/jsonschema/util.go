@@ -279,6 +279,6 @@ func jsonType(v reflect.Value) (string, bool) {
 
 func assert(cond bool, msg string) {
 	if !cond {
-		panic(msg)
+		panic("assertion failed: " + msg)
 	}
 }

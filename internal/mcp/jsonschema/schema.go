@@ -115,8 +115,11 @@ type Schema struct {
 	// The parent base URI at top level is where the schema was loaded from, or
 	// if not loaded, then it should be provided to Schema.Resolve.
 	baseURI *url.URL
+	// The schema to which Ref refers.
+	resolvedRef *Schema
 	// map from anchors to subschemas
-	anchors           map[string]*Schema
+	anchors map[string]*Schema
+	// compiled regexps
 	pattern           *regexp.Regexp
 	patternProperties map[*regexp.Regexp]*Schema
 }

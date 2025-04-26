@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strings"
 )
 
 // A Resolved consists of a [Schema] along with associated information needed to
@@ -25,22 +26,31 @@ type Resolved struct {
 	resolvedURIs map[string]*Schema
 }
 
+// A Loader reads and unmarshals the schema at uri, if any.
+type Loader func(uri *url.URL) (*Schema, error)
+
 // Resolve resolves all references within the schema and performs other tasks that
 // prepare the schema for validation.
+//
 // baseURI can be empty, or an absolute URI (one that starts with a scheme).
 // It is resolved (in the URI sense; see [url.ResolveReference]) with root's $id property.
 // If the resulting URI is not absolute, then the schema cannot not contain relative URI references.
-func (root *Schema) Resolve(baseURI string) (*Resolved, error) {
-	// There are three steps involved in preparing a schema to validate.
-	// 1. Check: validate the schema against a meta-schema, and perform other well-formedness
-	//    checks. Precompute some values along the way.
-	// 2. Resolve URIs: determine the base URI of the root and all its subschemas, and
+//
+// loader loads schemas that are referred to by a $ref but not under root (a remote reference).
+// If nil, remote references will return an error.
+func (root *Schema) Resolve(baseURI string, loader Loader) (*Resolved, error) {
+	// There are four steps involved in preparing a schema to validate.
+	// 1. Load: read the schema from somewhere and unmarshal it.
+	//    This schema (root) may have been loaded or created in memory, but other schemas that
+	//    come into the picture in step 4 will be loaded by the given loader.
+	// 2. Check: validate the schema against a meta-schema, and perform other well-formedness checks.
+	//    Precompute some values along the way.
+	// 3. Resolve URIs: determine the base URI of the root and all its subschemas, and
 	//    resolve (in the URI sense) all identifiers and anchors with their bases. This step results
 	//    in a map from URIs to schemas within root.
-	// 3. Resolve references: TODO.
-	if err := root.check(); err != nil {
-		return nil, err
-	}
+	// These three steps are idempotent. They may occur a several times on a schema, if
+	// it is loaded from several places.
+	// 4. Resolve references: all refs in the schemas are replaced with the schema they refer to.
 	var base *url.URL
 	if baseURI == "" {
 		base = &url.URL{} // so we can call ResolveReference on it
@@ -51,14 +61,104 @@ func (root *Schema) Resolve(baseURI string) (*Resolved, error) {
 			return nil, fmt.Errorf("parsing base URI: %w", err)
 		}
 	}
-	m, err := resolveURIs(root, base)
+
+	if loader == nil {
+		loader = func(uri *url.URL) (*Schema, error) {
+			return nil, errors.New("cannot resolve remote schemas: no loader passed to Schema.Resolve")
+		}
+	}
+	r := &resolver{
+		loader: loader,
+		loaded: map[string]*Resolved{},
+	}
+
+	return r.resolve(root, base)
+	// TODO: before we return, throw away anything we don't need for validation.
+}
+
+// A resolver holds the state for resolution.
+type resolver struct {
+	loader Loader
+	// A cache of loaded and partly resolved schemas. (They may not have had their
+	// refs resolved.) The cache ensures that the loader will never be called more
+	// than once with the same URI, and that reference cycles are handled properly.
+	loaded map[string]*Resolved
+}
+
+func (r *resolver) resolve(s *Schema, baseURI *url.URL) (*Resolved, error) {
+	if baseURI.Fragment != "" {
+		return nil, fmt.Errorf("base URI %s must not have a fragment", baseURI)
+	}
+	if err := s.check(); err != nil {
+		return nil, err
+	}
+
+	m, err := resolveURIs(s, baseURI)
 	if err != nil {
 		return nil, err
 	}
-	return &Resolved{
-		root:         root,
-		resolvedURIs: m,
-	}, nil
+	rs := &Resolved{root: s, resolvedURIs: m}
+	// Remember the schema by both the URI we loaded it from and its canonical name,
+	// which may differ if the schema has an $id.
+	// We must set the map before calling resolveRefs, or ref cycles will cause unbounded recursion.
+	r.loaded[baseURI.String()] = rs
+	r.loaded[s.baseURI.String()] = rs
+
+	if err := r.resolveRefs(rs); err != nil {
+		return nil, err
+	}
+	return rs, nil
+}
+
+// resolveRefs replaces all refs in the schemas with the schema they refer to.
+// A reference that doesn't resolve within the schema may refer to some other schema
+// that needs to be loaded.
+func (r *resolver) resolveRefs(rs *Resolved) error {
+	for s := range rs.root.all() {
+		if s.Ref == "" {
+			continue
+		}
+		refURI, err := url.Parse(s.Ref)
+		if err != nil {
+			return err
+		}
+		// URI-resolve the ref against the current base URI to get a complete URI.
+		refURI = s.baseURI.ResolveReference(refURI)
+		// The non-fragment part of a ref URI refers to the base URI of some schema.
+		u := *refURI
+		u.Fragment = ""
+		fraglessRefURI := &u
+		// Look it up locally.
+		referencedSchema := rs.resolvedURIs[fraglessRefURI.String()]
+		if referencedSchema == nil {
+			// The schema is remote. Maybe we've already loaded it.
+			// We assume that the non-fragment part of refURI refers to a top-level schema
+			// document. That is, we don't support the case exemplified by
+			// http://foo.com/bar.json/baz, where the document is in bar.json and
+			// the reference points to a subschema within it.
+			// TODO: support that case.
+			loadedResolved := r.loaded[fraglessRefURI.String()]
+			if loadedResolved == nil {
+				// Try to load the schema.
+				ls, err := r.loader(fraglessRefURI)
+				if err != nil {
+					return fmt.Errorf("loading %s: %w", fraglessRefURI, err)
+				}
+				loadedResolved, err = r.resolve(ls, fraglessRefURI)
+				if err != nil {
+					return err
+				}
+			}
+			referencedSchema = loadedResolved.root
+			assert(referencedSchema != nil, "nil referenced schema")
+		}
+		// The fragment selects the referenced schema, or a subschema of it.
+		s.resolvedRef, err = lookupFragment(referencedSchema, refURI.Fragment)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Schema) check() error {
@@ -207,4 +307,20 @@ func resolveURIs(root *Schema, baseURI *url.URL) (map[string]*Schema, error) {
 		return nil, err
 	}
 	return resolvedURIs, nil
+}
+
+// lookupFragment returns the schema referenced by frag in s, or an error
+// if there isn't one or something else went wrong.
+func lookupFragment(s *Schema, frag string) (*Schema, error) {
+	// frag is either a JSON Pointer or the name of an anchor.
+	// A JSON Pointer is either the empty string or begins with a '/',
+	// whereas anchors are always non-empty strings that don't contain slashes.
+	if frag != "" && !strings.HasPrefix(frag, "/") {
+		if fs := s.anchors[frag]; fs != nil {
+			return fs, nil
+		}
+		return nil, fmt.Errorf("no anchor %q in %s", frag, s)
+	}
+	// frag is a JSON Pointer. Follow it.
+	return dereferenceJSONPointer(s, frag)
 }

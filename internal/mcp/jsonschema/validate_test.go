@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -51,14 +52,17 @@ func TestValidate(t *testing.T) {
 			}
 			for _, g := range groups {
 				t.Run(g.Description, func(t *testing.T) {
-					rs, err := g.Schema.Resolve("")
-					if err != nil {
-						t.Fatal(err)
+					if strings.Contains(g.Description, "remote ref") {
+						t.Skip("remote refs not yet supported")
 					}
 					for s := range g.Schema.all() {
-						if s.Defs != nil || s.Ref != "" {
+						if s.DynamicAnchor != "" || s.DynamicRef != "" {
 							t.Skip("schema or subschema has unimplemented keywords")
 						}
+					}
+					rs, err := g.Schema.Resolve("", nil)
+					if err != nil {
+						t.Fatal(err)
 					}
 					for _, test := range g.Tests {
 						t.Run(test.Description, func(t *testing.T) {
@@ -71,7 +75,7 @@ func TestValidate(t *testing.T) {
 							}
 							if t.Failed() {
 								t.Errorf("schema: %s", g.Schema.json())
-								t.Fatalf("instance: %v", test.Data)
+								t.Fatalf("instance: %v (%[1]T)", test.Data)
 							}
 						})
 					}
@@ -102,7 +106,7 @@ func TestStructInstance(t *testing.T) {
 		{DependentSchemas: map[string]*Schema{"b": falseSchema()}},
 		{UnevaluatedProperties: falseSchema()},
 	} {
-		res, err := schema.Resolve("")
+		res, err := schema.Resolve("", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -5,6 +5,7 @@
 package jsonschema
 
 import (
+	"errors"
 	"maps"
 	"net/url"
 	"regexp"
@@ -27,7 +28,7 @@ func TestCheckLocal(t *testing.T) {
 			"regexp",
 		},
 	} {
-		_, err := tt.s.Resolve("")
+		_, err := tt.s.Resolve("", nil)
 		if err == nil {
 			t.Errorf("%s: unexpectedly passed", tt.s.json())
 			continue
@@ -103,4 +104,38 @@ func TestResolveURIs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRefCycle(t *testing.T) {
+	// Verify that cycles of refs are OK.
+	// The test suite doesn't check this, suprisingly.
+	schemas := map[string]*Schema{
+		"root": {Ref: "a"},
+		"a":    {Ref: "b"},
+		"b":    {Ref: "a"},
+	}
+
+	loader := func(uri *url.URL) (*Schema, error) {
+		s, ok := schemas[uri.Path[1:]]
+		if !ok {
+			return nil, errors.New("not found")
+		}
+		return s, nil
+	}
+
+	rs, err := schemas["root"].Resolve("", loader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	check := func(s *Schema, key string) {
+		t.Helper()
+		if s.resolvedRef != schemas[key] {
+			t.Errorf("%s resolvedRef != schemas[%q]", s.json(), key)
+		}
+	}
+
+	check(rs.root, "a")
+	check(schemas["a"], "b")
+	check(schemas["b"], "a")
 }

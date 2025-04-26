@@ -153,6 +153,15 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		}
 	}
 
+	var anns annotations // all the annotations for this call and child calls
+
+	// $ref: https://json-schema.org/draft/2020-12/json-schema-core#section-8.2.3.1
+	if schema.Ref != "" {
+		if err := st.validate(instance, schema.resolvedRef, &anns, path); err != nil {
+			return err
+		}
+	}
+
 	// logic
 	// https://json-schema.org/draft/2020-12/json-schema-core#section-10.2
 	// These must happen before arrays and objects because if they evaluate an item or property,
@@ -161,8 +170,6 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 	//
 	// If any of these fail, then validation fails, even if there is an unevaluatedXXX
 	// keyword in the schema. The spec is unclear about this, but that is the intention.
-
-	var anns annotations // all the annotations for this call and child calls
 
 	valid := func(s *Schema, anns *annotations) bool { return st.validate(instance, s, anns, path) == nil }
 
