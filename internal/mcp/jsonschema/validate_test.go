@@ -6,6 +6,8 @@ package jsonschema
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,15 +54,12 @@ func TestValidate(t *testing.T) {
 			}
 			for _, g := range groups {
 				t.Run(g.Description, func(t *testing.T) {
-					if strings.Contains(g.Description, "remote ref") {
-						t.Skip("remote refs not yet supported")
-					}
 					for s := range g.Schema.all() {
 						if s.DynamicAnchor != "" || s.DynamicRef != "" {
 							t.Skip("schema or subschema has unimplemented keywords")
 						}
 					}
-					rs, err := g.Schema.Resolve("", nil)
+					rs, err := g.Schema.Resolve("", loadRemote)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -115,4 +114,30 @@ func TestStructInstance(t *testing.T) {
 			t.Errorf("succeeded but wanted failure; schema = %s", schema.json())
 		}
 	}
+}
+
+// loadRemote loads a remote reference used in the test suite.
+func loadRemote(uri *url.URL) (*Schema, error) {
+	// Anything with localhost:1234 refers to the remotes directory in the test suite repo.
+	if uri.Host == "localhost:1234" {
+		return loadSchemaFromFile(filepath.FromSlash(filepath.Join("testdata/remotes", uri.Path)))
+	}
+	// One test needs the meta-schema files.
+	const metaPrefix = "https://json-schema.org/draft/2020-12/"
+	if after, ok := strings.CutPrefix(uri.String(), metaPrefix); ok {
+		return loadSchemaFromFile(filepath.FromSlash("meta-schemas/draft2020-12/" + after + ".json"))
+	}
+	return nil, fmt.Errorf("don't know how to load %s", uri)
+}
+
+func loadSchemaFromFile(filename string) (*Schema, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	var s Schema
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil, fmt.Errorf("unmarshaling JSON at %s: %w", filename, err)
+	}
+	return &s, nil
 }
