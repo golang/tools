@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"iter"
 	"math"
+	"net/url"
 	"regexp"
 )
 
@@ -109,6 +110,11 @@ type Schema struct {
 	DependentSchemas map[string]*Schema `json:"dependentSchemas,omitempty"`
 
 	// computed fields
+	// If the schema doesn't have an ID, the base URI is that of its parent.
+	// Otherwise, the base URI is the ID resolved against the parent's baseURI.
+	// The parent base URI at top level is where the schema was loaded from, or
+	// if not loaded, then it should be provided to Schema.Resolve.
+	baseURI           *url.URL
 	pattern           *regexp.Regexp
 	patternProperties map[*regexp.Regexp]*Schema
 }
@@ -283,11 +289,11 @@ func (s *Schema) every(f func(*Schema) bool) bool {
 		f(s) && s.everyChild(f)
 }
 
-// everyChild returns an iterator over the immediate child schemas of s.
+// everyChild reports whether f is true for every immediate child schema of s.
 //
-// It does not yield nils from fields holding individual schemas, like Contains,
+// It does not call f on nil-valued fields holding individual schemas, like Contains,
 // because a nil value indicates that the field is absent.
-// It does yield nils when they occur in slices and maps, so those invalid values
+// It does call f on nils when they occur in slices and maps, so those invalid values
 // can be detected when the schema is validated.
 func (s *Schema) everyChild(f func(*Schema) bool) bool {
 	// Fields that contain individual schemas. A nil is valid: it just means the field isn't present.
@@ -323,4 +329,9 @@ func (s *Schema) everyChild(f func(*Schema) bool) bool {
 // all wraps every in an iterator.
 func (s *Schema) all() iter.Seq[*Schema] {
 	return func(yield func(*Schema) bool) { s.every(yield) }
+}
+
+// children wraps everyChild in an iterator.
+func (s *Schema) children() iter.Seq[*Schema] {
+	return func(yield func(*Schema) bool) { s.everyChild(yield) }
 }

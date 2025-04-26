@@ -51,7 +51,7 @@ func TestValidate(t *testing.T) {
 			}
 			for _, g := range groups {
 				t.Run(g.Description, func(t *testing.T) {
-					rs, err := g.Schema.Resolve()
+					rs, err := g.Schema.Resolve("")
 					if err != nil {
 						t.Fatal(err)
 					}
