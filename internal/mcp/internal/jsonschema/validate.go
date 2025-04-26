@@ -10,7 +10,6 @@ import (
 	"math"
 	"math/big"
 	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -19,16 +18,9 @@ import (
 // The value of the "$schema" keyword for the version that we can validate.
 const draft202012 = "https://json-schema.org/draft/2020-12/schema"
 
-// Temporary definition of ResolvedSchema.
-// The full definition deals with references between schemas, specifically the $id, $anchor and $ref keywords.
-// We'll ignore that for now.
-type ResolvedSchema struct {
-	root *Schema
-}
-
 // Validate validates the instance, which must be a JSON value, against the schema.
 // It returns nil if validation is successful or an error if it is not.
-func (rs *ResolvedSchema) Validate(instance any) error {
+func (rs *Resolved) Validate(instance any) error {
 	if s := rs.root.Schema; s != "" && s != draft202012 {
 		return fmt.Errorf("cannot validate version %s, only %s", s, draft202012)
 	}
@@ -39,7 +31,7 @@ func (rs *ResolvedSchema) Validate(instance any) error {
 
 // state is the state of single call to ResolvedSchema.Validate.
 type state struct {
-	rs    *ResolvedSchema
+	rs    *Resolved
 	depth int
 }
 
@@ -60,10 +52,8 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		return fmt.Errorf("max recursion depth of %d reached", st.depth)
 	}
 
-	// Treat the nil schema like the empty schema, as accepting everything.
-	if schema == nil {
-		return nil
-	}
+	// We checked for nil schemas in [Schema.Resolve].
+	assert(schema != nil, "nil schema")
 
 	// Step through interfaces.
 	if instance.IsValid() && instance.Kind() == reflect.Interface {
@@ -156,15 +146,8 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 			}
 		}
 
-		if schema.Pattern != "" {
-			// TODO(jba): compile regexps during schema validation.
-			m, err := regexp.MatchString(schema.Pattern, str)
-			if err != nil {
-				return err
-			}
-			if !m {
-				return fmt.Errorf("pattern: %q does not match pattern %q", str, schema.Pattern)
-			}
+		if schema.Pattern != "" && !schema.pattern.MatchString(str) {
+			return fmt.Errorf("pattern: %q does not match regular expression %q", str, schema.Pattern)
 		}
 	}
 
@@ -364,13 +347,8 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 			for vprop, val := range instance.Seq2() {
 				prop := vprop.String()
 				// Check every matching pattern.
-				for pattern, schema := range schema.PatternProperties {
-					// TODO(jba): pre-compile regexps
-					m, err := regexp.MatchString(pattern, prop)
-					if err != nil {
-						return err
-					}
-					if m {
+				for re, schema := range schema.patternProperties {
+					if re.MatchString(prop) {
 						if err := st.validate(val, schema, nil, append(path, prop)); err != nil {
 							return err
 						}

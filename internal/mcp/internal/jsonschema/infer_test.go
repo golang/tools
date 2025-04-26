@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"golang.org/x/tools/internal/mcp/internal/jsonschema"
 )
 
@@ -63,7 +64,7 @@ func TestForType(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if diff := cmp.Diff(test.want, test.got); diff != "" {
+			if diff := cmp.Diff(test.want, test.got, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
 				t.Errorf("ForType mismatch (-want +got):\n%s", diff)
 			}
 		})

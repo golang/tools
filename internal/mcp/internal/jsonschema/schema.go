@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"iter"
 	"math"
+	"regexp"
 )
 
 // A Schema is a JSON schema object.
@@ -106,6 +107,10 @@ type Schema struct {
 	Then             *Schema            `json:"then,omitempty"`
 	Else             *Schema            `json:"else,omitempty"`
 	DependentSchemas map[string]*Schema `json:"dependentSchemas,omitempty"`
+
+	// computed fields
+	pattern           *regexp.Regexp
+	patternProperties map[*regexp.Regexp]*Schema
 }
 
 // String returns a short description of the schema.

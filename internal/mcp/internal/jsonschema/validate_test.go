@@ -51,7 +51,10 @@ func TestValidate(t *testing.T) {
 			}
 			for _, g := range groups {
 				t.Run(g.Description, func(t *testing.T) {
-					rs := &ResolvedSchema{root: g.Schema}
+					rs, err := g.Schema.Resolve()
+					if err != nil {
+						t.Fatal(err)
+					}
 					for s := range g.Schema.all() {
 						if s.Defs != nil || s.Ref != "" {
 							t.Skip("schema or subschema has unimplemented keywords")
