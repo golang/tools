@@ -70,23 +70,36 @@ func TestResolveURIs(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			want := map[string]*Schema{
+			wantIDs := map[string]*Schema{
 				baseURI:                       root,
 				"http://b.com/foo.json":       root.Items,
 				"http://b.com/bar.json":       root.Contains,
 				"http://b.com/bar.json?items": root.Contains.Items.Items,
 			}
 			if baseURI != root.ID {
-				want[root.ID] = root
+				wantIDs[root.ID] = root
+			}
+			wantAnchors := map[*Schema]map[string]*Schema{
+				root.Contains:             {"a": root.Contains, "b": root.Contains.Items},
+				root.Contains.Items.Items: {"c": root.Contains.Items.Items},
 			}
 
 			gotKeys := slices.Sorted(maps.Keys(got))
-			wantKeys := slices.Sorted(maps.Keys(want))
+			wantKeys := slices.Sorted(maps.Keys(wantIDs))
 			if !slices.Equal(gotKeys, wantKeys) {
 				t.Errorf("ID keys:\ngot  %q\nwant %q", gotKeys, wantKeys)
 			}
-			if !maps.Equal(got, want) {
-				t.Errorf("IDs:\ngot  %+v\n\nwant %+v", got, want)
+			if !maps.Equal(got, wantIDs) {
+				t.Errorf("IDs:\ngot  %+v\n\nwant %+v", got, wantIDs)
+			}
+			for s := range root.all() {
+				if want := wantAnchors[s]; want != nil {
+					if got := s.anchors; !maps.Equal(got, want) {
+						t.Errorf("anchors:\ngot  %+v\n\nwant %+v", got, want)
+					}
+				} else if s.anchors != nil {
+					t.Errorf("non-nil anchors for %s", s)
+				}
 			}
 		})
 	}

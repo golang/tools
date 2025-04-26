@@ -122,8 +122,7 @@ func (s *Schema) checkLocal(report func(error)) {
 // See https://json-schema.org/draft/2020-12/json-schema-core#section-8.2, section
 // 8.2.1.
 
-// TODO(jba): anchors (section 8.2.2)
-// TODO(jba): dynamicAnchors (ditto)
+// TODO(jba): dynamicAnchors (§8.2.2)
 //
 // Every schema has a base URI and a parent base URI.
 //
@@ -178,6 +177,18 @@ func resolveURIs(root *Schema, baseURI *url.URL) (map[string]*Schema, error) {
 			}
 			resolvedURIs[s.baseURI.String()] = s
 			base = s // needed for anchors
+		}
+
+		// Anchors are URI fragments that are scoped to their base.
+		// We treat them as keys in a map stored within the schema.
+		if s.Anchor != "" {
+			if base.anchors[s.Anchor] != nil {
+				return fmt.Errorf("duplicate anchor %q in %s", s.Anchor, base.baseURI)
+			}
+			if base.anchors == nil {
+				base.anchors = map[string]*Schema{}
+			}
+			base.anchors[s.Anchor] = s
 		}
 
 		for c := range s.children() {

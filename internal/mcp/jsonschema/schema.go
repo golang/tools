@@ -114,7 +114,9 @@ type Schema struct {
 	// Otherwise, the base URI is the ID resolved against the parent's baseURI.
 	// The parent base URI at top level is where the schema was loaded from, or
 	// if not loaded, then it should be provided to Schema.Resolve.
-	baseURI           *url.URL
+	baseURI *url.URL
+	// map from anchors to subschemas
+	anchors           map[string]*Schema
 	pattern           *regexp.Regexp
 	patternProperties map[*regexp.Regexp]*Schema
 }
