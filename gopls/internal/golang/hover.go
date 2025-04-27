@@ -396,6 +396,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	}
 
 	// Compute size information for types,
+	// including allocator size class,
 	// and (size, offset) for struct fields.
 	//
 	// Also, if a struct type's field ordering is significantly
@@ -430,13 +431,18 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 
 		path := pathEnclosingObjNode(pgf.File, pos)
 
-		// Build string of form "size=... (X% wasted), offset=...".
+		// Build string of form "size=... (X% wasted), class=..., offset=...".
 		size, wasted, offset := computeSizeOffsetInfo(pkg, path, obj)
 		var buf strings.Builder
 		if size >= 0 {
 			fmt.Fprintf(&buf, "size=%s", format(size))
 			if wasted >= 20 { // >=20% wasted
 				fmt.Fprintf(&buf, " (%d%% wasted)", wasted)
+			}
+
+			// Include allocator size class, if larger.
+			if class := sizeClass(size); class > size {
+				fmt.Fprintf(&buf, ", class=%s", format(class))
 			}
 		}
 		if offset >= 0 {
@@ -1775,4 +1781,15 @@ func computeSizeOffsetInfo(pkg *cache.Package, path []ast.Node, obj types.Object
 	}
 
 	return
+}
+
+// sizeClass reports the size class for a struct of the specified size, or -1 if unknown.f
+// See GOROOT/src/runtime/msize.go for details.
+func sizeClass(size int64) int64 {
+	if size > 1<<16 {
+		return -1 // avoid allocation
+	}
+	// We assume that bytes.Clone doesn't trim,
+	// and reports the underlying size class; see TestSizeClass.
+	return int64(cap(bytes.Clone(make([]byte, size))))
 }

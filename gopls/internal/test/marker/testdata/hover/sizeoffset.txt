@@ -45,6 +45,10 @@ type wasteful struct { //@ hover("wasteful", "wasteful", wasteful)
 	c bool
 }
 
+type sizeclass struct { //@ hover("sizeclass", "sizeclass", sizeclass)
+	a [5]*int
+}
+
 -- @T --
 ```go
 type T struct { // size=48 (0x30)
@@ -63,6 +67,12 @@ type wasteful struct { // size=48 (0x30) (29% wasted)
 	a bool
 	b [2]string
 	c bool
+}
+```
+-- @sizeclass --
+```go
+type sizeclass struct { // size=40 (0x28), class=48 (0x30)
+	a [5]*int
 }
 ```
 -- @a --
