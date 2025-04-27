@@ -8,6 +8,7 @@ package jsonschema
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -110,15 +111,35 @@ type Schema struct {
 	DependentSchemas map[string]*Schema `json:"dependentSchemas,omitempty"`
 
 	// computed fields
-	// If the schema doesn't have an ID, the base URI is that of its parent.
-	// Otherwise, the base URI is the ID resolved against the parent's baseURI.
-	// The parent base URI at top level is where the schema was loaded from, or
-	// if not loaded, then it should be provided to Schema.Resolve.
-	baseURI *url.URL
+
+	// This schema's base schema.
+	// If the schema is the root or has an ID, its base is itself.
+	// Otherwise, its base is the innermost enclosing schema whose base
+	// is itself.
+	// Intuitively, a base schema is one that can be referred to with a
+	// fragmentless URI.
+	base *Schema
+
+	// The URI for the schema, if it is the root or has an ID.
+	// Otherwise nil.
+	// Invariants:
+	//   s.base.uri != nil.
+	//   s.base == s <=> s.uri != nil
+	uri *url.URL
+
 	// The schema to which Ref refers.
 	resolvedRef *Schema
-	// map from anchors to subschemas
-	anchors map[string]*Schema
+
+	// If the schema has a dynamic ref, exactly one of the next two fields
+	// will be non-zero after successful resolution.
+	// The schema to which the dynamic ref refers when it acts lexically.
+	resolvedDynamicRef *Schema
+	// The anchor to look up on the stack when the dynamic ref acts dynamically.
+	dynamicRefAnchor string
+
+	// Map from anchors to subschemas.
+	anchors map[string]anchorInfo
+
 	// compiled regexps
 	pattern           *regexp.Regexp
 	patternProperties map[*regexp.Regexp]*Schema
@@ -129,10 +150,20 @@ func falseSchema() *Schema {
 	return &Schema{Not: &Schema{}}
 }
 
+// anchorInfo records the subschema to which an anchor refers, and whether
+// the anchor keyword is $anchor or $dynamicAnchor.
+type anchorInfo struct {
+	schema  *Schema
+	dynamic bool
+}
+
 // String returns a short description of the schema.
 func (s *Schema) String() string {
-	if s.ID != "" {
-		return s.ID
+	if s.uri != nil {
+		return s.uri.String()
+	}
+	if a := cmp.Or(s.Anchor, s.DynamicAnchor); a != "" {
+		return fmt.Sprintf("%q, anchor %s", s.base.uri.String(), a)
 	}
 	// TODO: return something better, like a JSON Pointer from the base.
 	return "<anonymous schema>"

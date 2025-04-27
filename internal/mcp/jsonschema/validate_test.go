@@ -54,11 +54,6 @@ func TestValidate(t *testing.T) {
 			}
 			for _, g := range groups {
 				t.Run(g.Description, func(t *testing.T) {
-					for s := range g.Schema.all() {
-						if s.DynamicAnchor != "" || s.DynamicRef != "" {
-							t.Skip("schema or subschema has unimplemented keywords")
-						}
-					}
 					rs, err := g.Schema.Resolve("", loadRemote)
 					if err != nil {
 						t.Fatal(err)

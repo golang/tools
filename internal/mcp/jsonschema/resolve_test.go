@@ -66,8 +66,9 @@ func TestResolveURIs(t *testing.T) {
 					ID: "/foo.json",
 				},
 				Contains: &Schema{
-					ID:     "/bar.json",
-					Anchor: "a",
+					ID:            "/bar.json",
+					Anchor:        "a",
+					DynamicAnchor: "da",
 					Items: &Schema{
 						Anchor: "b",
 						Items: &Schema{
@@ -97,9 +98,15 @@ func TestResolveURIs(t *testing.T) {
 			if baseURI != root.ID {
 				wantIDs[root.ID] = root
 			}
-			wantAnchors := map[*Schema]map[string]*Schema{
-				root.Contains:             {"a": root.Contains, "b": root.Contains.Items},
-				root.Contains.Items.Items: {"c": root.Contains.Items.Items},
+			wantAnchors := map[*Schema]map[string]anchorInfo{
+				root.Contains: {
+					"a":  anchorInfo{root.Contains, false},
+					"da": anchorInfo{root.Contains, true},
+					"b":  anchorInfo{root.Contains.Items, false},
+				},
+				root.Contains.Items.Items: {
+					"c": anchorInfo{root.Contains.Items.Items, false},
+				},
 			}
 
 			gotKeys := slices.Sorted(maps.Keys(got))

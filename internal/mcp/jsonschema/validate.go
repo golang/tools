@@ -35,6 +35,10 @@ func (rs *Resolved) Validate(instance any) error {
 type state struct {
 	rs    *Resolved
 	depth int
+	// stack holds the schemas from recursive calls to validate.
+	// These are the "dynamic scopes" used to resolve dynamic references.
+	// https://json-schema.org/draft/2020-12/json-schema-core#scopes
+	stack []*Schema
 }
 
 // validate validates the reflected value of the instance.
@@ -48,10 +52,12 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		}
 	}()
 
-	st.depth++
-	defer func() { st.depth-- }()
-	if st.depth >= 100 {
-		return fmt.Errorf("max recursion depth of %d reached", st.depth)
+	st.stack = append(st.stack, schema) // push
+	defer func() {
+		st.stack = st.stack[:len(st.stack)-1] // pop
+	}()
+	if depth := len(st.stack); depth >= 100 {
+		return fmt.Errorf("max recursion depth of %d reached", depth)
 	}
 
 	// We checked for nil schemas in [Schema.Resolve].
@@ -159,6 +165,43 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 	if schema.Ref != "" {
 		if err := st.validate(instance, schema.resolvedRef, &anns, path); err != nil {
 			return err
+		}
+	}
+
+	// $dynamicRef: https://json-schema.org/draft/2020-12/json-schema-core#section-8.2.3.2
+	if schema.DynamicRef != "" {
+		// The ref behaves lexically or dynamically, but not both.
+		assert((schema.resolvedDynamicRef == nil) != (schema.dynamicRefAnchor == ""),
+			"DynamicRef not resolved properly")
+		if schema.resolvedDynamicRef != nil {
+			// Same as $ref.
+			if err := st.validate(instance, schema.resolvedDynamicRef, &anns, path); err != nil {
+				return err
+			}
+		} else {
+			// Dynamic behavior.
+			// Look for the base of the outermost schema on the stack with this dynamic
+			// anchor. (Yes, outermost: the one farthest from here. This the opposite
+			// of how ordinary dynamic variables behave.)
+			// Why the base of the schema being validated and not the schema itself?
+			// Because the base is the scope for anchors. In fact it's possible to
+			// refer to a schema that is not on the stack, but a child of some base
+			// on the stack.
+			// For an example, search for "detached" in testdata/draft2020-12/dynamicRef.json.
+			var dynamicSchema *Schema
+			for _, s := range st.stack {
+				info, ok := s.base.anchors[schema.dynamicRefAnchor]
+				if ok && info.dynamic {
+					dynamicSchema = info.schema
+					break
+				}
+			}
+			if dynamicSchema == nil {
+				return fmt.Errorf("missing dynamic anchor %q", schema.dynamicRefAnchor)
+			}
+			if err := st.validate(instance, dynamicSchema, &anns, path); err != nil {
+				return err
+			}
 		}
 	}
 

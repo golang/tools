@@ -102,63 +102,12 @@ func (r *resolver) resolve(s *Schema, baseURI *url.URL) (*Resolved, error) {
 	// which may differ if the schema has an $id.
 	// We must set the map before calling resolveRefs, or ref cycles will cause unbounded recursion.
 	r.loaded[baseURI.String()] = rs
-	r.loaded[s.baseURI.String()] = rs
+	r.loaded[s.uri.String()] = rs
 
 	if err := r.resolveRefs(rs); err != nil {
 		return nil, err
 	}
 	return rs, nil
-}
-
-// resolveRefs replaces all refs in the schemas with the schema they refer to.
-// A reference that doesn't resolve within the schema may refer to some other schema
-// that needs to be loaded.
-func (r *resolver) resolveRefs(rs *Resolved) error {
-	for s := range rs.root.all() {
-		if s.Ref == "" {
-			continue
-		}
-		refURI, err := url.Parse(s.Ref)
-		if err != nil {
-			return err
-		}
-		// URI-resolve the ref against the current base URI to get a complete URI.
-		refURI = s.baseURI.ResolveReference(refURI)
-		// The non-fragment part of a ref URI refers to the base URI of some schema.
-		u := *refURI
-		u.Fragment = ""
-		fraglessRefURI := &u
-		// Look it up locally.
-		referencedSchema := rs.resolvedURIs[fraglessRefURI.String()]
-		if referencedSchema == nil {
-			// The schema is remote. Maybe we've already loaded it.
-			// We assume that the non-fragment part of refURI refers to a top-level schema
-			// document. That is, we don't support the case exemplified by
-			// http://foo.com/bar.json/baz, where the document is in bar.json and
-			// the reference points to a subschema within it.
-			// TODO: support that case.
-			loadedResolved := r.loaded[fraglessRefURI.String()]
-			if loadedResolved == nil {
-				// Try to load the schema.
-				ls, err := r.loader(fraglessRefURI)
-				if err != nil {
-					return fmt.Errorf("loading %s: %w", fraglessRefURI, err)
-				}
-				loadedResolved, err = r.resolve(ls, fraglessRefURI)
-				if err != nil {
-					return err
-				}
-			}
-			referencedSchema = loadedResolved.root
-			assert(referencedSchema != nil, "nil referenced schema")
-		}
-		// The fragment selects the referenced schema, or a subschema of it.
-		s.resolvedRef, err = lookupFragment(referencedSchema, refURI.Fragment)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (root *Schema) check() error {
@@ -267,10 +216,7 @@ func resolveURIs(root *Schema, baseURI *url.URL) (map[string]*Schema, error) {
 	var resolve func(s, base *Schema) error
 	resolve = func(s, base *Schema) error {
 		// ids are scoped to the root.
-		if s.ID == "" {
-			// If a schema doesn't have an $id, its base is the parent base.
-			s.baseURI = base.baseURI
-		} else {
+		if s.ID != "" {
 			// A non-empty ID establishes a new base.
 			idURI, err := url.Parse(s.ID)
 			if err != nil {
@@ -280,25 +226,32 @@ func resolveURIs(root *Schema, baseURI *url.URL) (map[string]*Schema, error) {
 				return fmt.Errorf("$id %s must not have a fragment", s.ID)
 			}
 			// The base URI for this schema is its $id resolved against the parent base.
-			s.baseURI = base.baseURI.ResolveReference(idURI)
-			if !s.baseURI.IsAbs() {
-				return fmt.Errorf("$id %s does not resolve to an absolute URI (base is %s)", s.ID, s.baseURI)
+			s.uri = base.uri.ResolveReference(idURI)
+			if !s.uri.IsAbs() {
+				return fmt.Errorf("$id %s does not resolve to an absolute URI (base is %s)", s.ID, s.base.uri)
 			}
-			resolvedURIs[s.baseURI.String()] = s
+			resolvedURIs[s.uri.String()] = s
 			base = s // needed for anchors
 		}
+		s.base = base
 
-		// Anchors are URI fragments that are scoped to their base.
+		// Anchors and dynamic anchors are URI fragments that are scoped to their base.
 		// We treat them as keys in a map stored within the schema.
-		if s.Anchor != "" {
-			if base.anchors[s.Anchor] != nil {
-				return fmt.Errorf("duplicate anchor %q in %s", s.Anchor, base.baseURI)
+		setAnchor := func(anchor string, dynamic bool) error {
+			if anchor != "" {
+				if _, ok := base.anchors[anchor]; ok {
+					return fmt.Errorf("duplicate anchor %q in %s", anchor, base.uri)
+				}
+				if base.anchors == nil {
+					base.anchors = map[string]anchorInfo{}
+				}
+				base.anchors[anchor] = anchorInfo{s, dynamic}
 			}
-			if base.anchors == nil {
-				base.anchors = map[string]*Schema{}
-			}
-			base.anchors[s.Anchor] = s
+			return nil
 		}
+
+		setAnchor(s.Anchor, false)
+		setAnchor(s.DynamicAnchor, true)
 
 		for c := range s.children() {
 			if err := resolve(c, base); err != nil {
@@ -308,8 +261,8 @@ func resolveURIs(root *Schema, baseURI *url.URL) (map[string]*Schema, error) {
 		return nil
 	}
 
-	// Set the root URI to the base for now. If the root has an $id, the base will change.
-	root.baseURI = baseURI
+	// Set the root URI to the base for now. If the root has an $id, this will change.
+	root.uri = baseURI
 	// The original base, even if changed, is still a valid way to refer to the root.
 	resolvedURIs[baseURI.String()] = root
 	if err := resolve(root, root); err != nil {
@@ -318,18 +271,95 @@ func resolveURIs(root *Schema, baseURI *url.URL) (map[string]*Schema, error) {
 	return resolvedURIs, nil
 }
 
-// lookupFragment returns the schema referenced by frag in s, or an error
-// if there isn't one or something else went wrong.
-func lookupFragment(s *Schema, frag string) (*Schema, error) {
+// resolveRefs replaces every ref in the schemas with the schema it refers to.
+// A reference that doesn't resolve within the schema may refer to some other schema
+// that needs to be loaded.
+func (r *resolver) resolveRefs(rs *Resolved) error {
+	for s := range rs.root.all() {
+		if s.Ref != "" {
+			refSchema, _, err := r.resolveRef(rs, s, s.Ref)
+			if err != nil {
+				return err
+			}
+			// Whether or not the anchor referred to by $ref fragment is dynamic,
+			// the ref still treats it lexically.
+			s.resolvedRef = refSchema
+		}
+		if s.DynamicRef != "" {
+			refSchema, frag, err := r.resolveRef(rs, s, s.DynamicRef)
+			if err != nil {
+				return err
+			}
+			if frag != "" {
+				// The dynamic ref's fragment points to a dynamic anchor.
+				// We must resolve the fragment at validation time.
+				s.dynamicRefAnchor = frag
+			} else {
+				// There is no dynamic anchor in the lexically referenced schema,
+				// so the dynamic ref behaves like a lexical ref.
+				s.resolvedDynamicRef = refSchema
+			}
+		}
+	}
+	return nil
+}
+
+// resolveRef resolves the reference ref, which is either s.Ref or s.DynamicRef.
+func (r *resolver) resolveRef(rs *Resolved, s *Schema, ref string) (_ *Schema, dynamicFragment string, err error) {
+	refURI, err := url.Parse(ref)
+	if err != nil {
+		return nil, "", err
+	}
+	// URI-resolve the ref against the current base URI to get a complete URI.
+	refURI = s.base.uri.ResolveReference(refURI)
+	// The non-fragment part of a ref URI refers to the base URI of some schema.
+	// This part is the same for dynamic refs too: their non-fragment part resolves
+	// lexically.
+	u := *refURI
+	u.Fragment = ""
+	fraglessRefURI := &u
+	// Look it up locally.
+	referencedSchema := rs.resolvedURIs[fraglessRefURI.String()]
+	if referencedSchema == nil {
+		// The schema is remote. Maybe we've already loaded it.
+		// We assume that the non-fragment part of refURI refers to a top-level schema
+		// document. That is, we don't support the case exemplified by
+		// http://foo.com/bar.json/baz, where the document is in bar.json and
+		// the reference points to a subschema within it.
+		// TODO: support that case.
+		if lrs := r.loaded[fraglessRefURI.String()]; lrs != nil {
+			referencedSchema = lrs.root
+		} else {
+			// Try to load the schema.
+			ls, err := r.loader(fraglessRefURI)
+			if err != nil {
+				return nil, "", fmt.Errorf("loading %s: %w", fraglessRefURI, err)
+			}
+			lrs, err := r.resolve(ls, fraglessRefURI)
+			if err != nil {
+				return nil, "", err
+			}
+			referencedSchema = lrs.root
+			assert(referencedSchema != nil, "nil referenced schema")
+		}
+	}
+
+	frag := refURI.Fragment
+	// Look up frag in refSchema.
 	// frag is either a JSON Pointer or the name of an anchor.
 	// A JSON Pointer is either the empty string or begins with a '/',
 	// whereas anchors are always non-empty strings that don't contain slashes.
 	if frag != "" && !strings.HasPrefix(frag, "/") {
-		if fs := s.anchors[frag]; fs != nil {
-			return fs, nil
+		info, found := referencedSchema.anchors[frag]
+		if !found {
+			return nil, "", fmt.Errorf("no anchor %q in %s", frag, s)
 		}
-		return nil, fmt.Errorf("no anchor %q in %s", frag, s)
+		if info.dynamic {
+			dynamicFragment = frag
+		}
+		return info.schema, dynamicFragment, nil
 	}
-	// frag is a JSON Pointer. Follow it.
-	return dereferenceJSONPointer(s, frag)
+	// frag is a JSON Pointer.
+	s, err = dereferenceJSONPointer(referencedSchema, frag)
+	return s, "", err
 }
