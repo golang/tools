@@ -2070,12 +2070,14 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 					}
 				}
 			} else {
+				// TODO(adonovan): check File(start)==File(end).
+
 				// debugging golang/go#65960
 				if _, err := safetoken.Offset(pgf.Tok, end); err != nil {
 					if pkg.hasFixedFiles() {
-						bug.Reportf("ReadGo116ErrorData returned invalid end: %v (fixed files)", err)
+						bug.Reportf("ErrorCodeStartEnd returned invalid end: %v (fixed files)", err)
 					} else {
-						bug.Reportf("ReadGo116ErrorData returned invalid end: %v", err)
+						bug.Reportf("ErrorCodeStartEnd returned invalid end: %v", err)
 					}
 				}
 			}

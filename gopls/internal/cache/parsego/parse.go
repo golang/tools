@@ -210,6 +210,7 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []FixType) {
 
 // walkASTWithParent walks the AST rooted at n. The semantics are
 // similar to ast.Inspect except it does not call f(nil).
+// TODO(adonovan): replace with PreorderStack.
 func walkASTWithParent(n ast.Node, f func(n ast.Node, parent ast.Node) bool) {
 	var ancestors []ast.Node
 	ast.Inspect(n, func(n ast.Node) (recurse bool) {
@@ -422,8 +423,10 @@ func fixEmptySwitch(body *ast.BlockStmt, tok *token.File, src []byte) bool {
 	return true
 }
 
-// fixDanglingSelector inserts real "_" selector expressions in place
-// of phantom "_" selectors. For example:
+// fixDanglingSelector inserts a real "_" selector expression in place
+// of a phantom parser-inserted "_" selector so that the parser will
+// not consume the following non-identifier token.
+// For example:
 //
 //	func _() {
 //		x.<>
@@ -453,17 +456,13 @@ func fixDanglingSelector(s *ast.SelectorExpr, tf *token.File, src []byte) []byte
 		return nil
 	}
 
-	var buf bytes.Buffer
-	buf.Grow(len(src) + 1)
-	buf.Write(src[:insertOffset])
-	buf.WriteByte('_')
-	buf.Write(src[insertOffset:])
-	return buf.Bytes()
+	return slices.Concat(src[:insertOffset], []byte("_"), src[insertOffset:])
 }
 
-// fixPhantomSelector tries to fix selector expressions with phantom
-// "_" selectors. In particular, we check if the selector is a
-// keyword, and if so we swap in an *ast.Ident with the keyword text. For example:
+// fixPhantomSelector tries to fix selector expressions whose Sel is a
+// phantom (parser-invented) "_". If the text after the '.' is a
+// keyword, it updates Sel to a fake ast.Ident of that name. For
+// example:
 //
 // foo.var
 //
@@ -498,21 +497,18 @@ func fixPhantomSelector(sel *ast.SelectorExpr, tf *token.File, src []byte) bool 
 	})
 }
 
-// isPhantomUnderscore reports whether the given ident is a phantom
-// underscore. The parser sometimes inserts phantom underscores when
-// it encounters otherwise unparseable situations.
+// isPhantomUnderscore reports whether the given ident from a
+// SelectorExpr.Sel was invented by the parser and is not present in
+// source text. The parser creates a blank "_" identifier when the
+// syntax (e.g. a selector) demands one but none is present. The fixer
+// also inserts them.
 func isPhantomUnderscore(id *ast.Ident, tok *token.File, src []byte) bool {
-	if id == nil || id.Name != "_" {
-		return false
+	switch id.Name {
+	case "_": // go1.24 parser
+		offset, err := safetoken.Offset(tok, id.Pos())
+		return err == nil && offset < len(src) && src[offset] != '_'
 	}
-
-	// Phantom underscore means the underscore is not actually in the
-	// program text.
-	offset, err := safetoken.Offset(tok, id.Pos())
-	if err != nil {
-		return false
-	}
-	return len(src) <= offset || src[offset] != '_'
+	return false // real
 }
 
 // fixInitStmt fixes cases where the parser misinterprets an
@@ -821,11 +817,7 @@ FindTo:
 // positions are valid.
 func parseStmt(tok *token.File, pos token.Pos, src []byte) (ast.Stmt, error) {
 	// Wrap our expression to make it a valid Go file we can pass to ParseFile.
-	fileSrc := bytes.Join([][]byte{
-		[]byte("package fake;func _(){"),
-		src,
-		[]byte("}"),
-	}, nil)
+	fileSrc := slices.Concat([]byte("package fake;func _(){"), src, []byte("}"))
 
 	// Use ParseFile instead of ParseExpr because ParseFile has
 	// best-effort behavior, whereas ParseExpr fails hard on any error.
@@ -873,8 +865,8 @@ var tokenPosType = reflect.TypeOf(token.NoPos)
 
 // offsetPositions applies an offset to the positions in an ast.Node.
 func offsetPositions(tok *token.File, n ast.Node, offset token.Pos) {
-	fileBase := int64(tok.Base())
-	fileEnd := fileBase + int64(tok.Size())
+	fileBase := token.Pos(tok.Base())
+	fileEnd := fileBase + token.Pos(tok.Size())
 	ast.Inspect(n, func(n ast.Node) bool {
 		if n == nil {
 			return false
@@ -894,20 +886,21 @@ func offsetPositions(tok *token.File, n ast.Node, offset token.Pos) {
 					continue
 				}
 
+				pos := token.Pos(f.Int())
+
 				// Don't offset invalid positions: they should stay invalid.
-				if !token.Pos(f.Int()).IsValid() {
+				if !pos.IsValid() {
 					continue
 				}
 
 				// Clamp value to valid range; see #64335.
 				//
 				// TODO(golang/go#64335): this is a hack, because our fixes should not
-				// produce positions that overflow (but they do: golang/go#64488).
-				pos := max(f.Int()+int64(offset), fileBase)
-				if pos > fileEnd {
-					pos = fileEnd
-				}
-				f.SetInt(pos)
+				// produce positions that overflow (but they do; see golang/go#64488,
+				// #73438, #66790, #66683, #67704).
+				pos = min(max(pos+offset, fileBase), fileEnd)
+
+				f.SetInt(int64(pos))
 			}
 		}
 
@@ -950,7 +943,7 @@ func replaceNode(parent, oldChild, newChild ast.Node) bool {
 
 		switch f.Kind() {
 		// Check interface and pointer fields.
-		case reflect.Interface, reflect.Ptr:
+		case reflect.Interface, reflect.Pointer:
 			if tryReplace(f) {
 				return true
 			}

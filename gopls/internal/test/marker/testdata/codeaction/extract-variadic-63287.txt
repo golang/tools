@@ -1,6 +1,6 @@
 This test exercises extract on a variadic function.
 It is a regression test for bug #63287 in which
-the final paramater's "..." would go missing.
+the final parameter's "..." would go missing.
 
 -- go.mod --
 module example.com
@@ -25,4 +25,3 @@ func _() {
 +	println(logf)
 +}
 +
--- end --

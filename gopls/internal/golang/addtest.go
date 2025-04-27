@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
-	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
@@ -395,25 +394,26 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 			NewText: header.String(),
 		})
 	} else { // existing _test.go file.
-		if testPGF.File.Name == nil || testPGF.File.Name.NamePos == token.NoPos {
+		file := testPGF.File
+		if !file.Name.NamePos.IsValid() {
 			return nil, fmt.Errorf("missing package declaration")
 		}
-		switch testPGF.File.Name.Name {
+		switch file.Name.Name {
 		case pgf.File.Name.Name:
 			xtest = false
 		case pgf.File.Name.Name + "_test":
 			xtest = true
 		default:
-			return nil, fmt.Errorf("invalid package declaration %q in test file %q", testPGF.File.Name, testPGF)
+			return nil, fmt.Errorf("invalid package declaration %q in test file %q", file.Name, testPGF)
 		}
 
-		eofRange, err = testPGF.PosRange(testPGF.File.FileEnd, testPGF.File.FileEnd)
+		eofRange, err = testPGF.PosRange(file.FileEnd, file.FileEnd)
 		if err != nil {
 			return nil, err
 		}
 
 		// Collect all the imports from the foo_test.go.
-		if testImports, err = collectImports(testPGF.File); err != nil {
+		if testImports, err = collectImports(file); err != nil {
 			return nil, err
 		}
 	}

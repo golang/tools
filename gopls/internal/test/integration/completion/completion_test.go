@@ -385,6 +385,10 @@ const Name = "mainmod"
 // Test that we can doctor the source code enough so the file is
 // parseable and completion works as expected.
 func TestSourceFixup(t *testing.T) {
+	// This example relies on the fixer to turn "s." into "s._" so
+	// that it parses as a SelectorExpr with only local problems,
+	// instead of snarfing up the following declaration of S
+	// looking for an identifier; thus completion offers s.i.
 	const files = `
 -- go.mod --
 module mod.com

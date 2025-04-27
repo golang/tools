@@ -1463,10 +1463,11 @@ func orphanedFileDiagnosticRange(ctx context.Context, cache *parseCache, fh file
 		return nil, protocol.Range{}, false
 	}
 	pgf := pgfs[0]
-	if !pgf.File.Name.Pos().IsValid() {
+	name := pgf.File.Name
+	if !name.Pos().IsValid() {
 		return nil, protocol.Range{}, false
 	}
-	rng, err := pgf.PosRange(pgf.File.Name.Pos(), pgf.File.Name.End())
+	rng, err := pgf.PosRange(name.Pos(), name.End())
 	if err != nil {
 		return nil, protocol.Range{}, false
 	}

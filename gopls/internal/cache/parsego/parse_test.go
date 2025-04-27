@@ -300,14 +300,14 @@ func TestFixPhantomSelector(t *testing.T) {
 			// ensure the selector has been converted to underscore by parser.
 			ensureSource(t, src, func(sel *ast.SelectorExpr) {
 				if sel.Sel.Name != "_" {
-					t.Errorf("%s: the input doesn't cause a blank selector after parser", tc.source)
+					t.Errorf("%s: selector name is %q, want _", tc.source, sel.Sel.Name)
 				}
 			})
 
 			fset := tokeninternal.FileSetFor(pgf.Tok)
 			inspect(t, pgf, func(sel *ast.SelectorExpr) {
 				// the fix should restore the selector as is.
-				if got, want := fmt.Sprintf("%s", analysisinternal.Format(fset, sel)), tc.source; got != want {
+				if got, want := analysisinternal.Format(fset, sel), tc.source; got != want {
 					t.Fatalf("got %v want %v", got, want)
 				}
 			})

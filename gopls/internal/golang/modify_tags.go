@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
-	"go/token"
 
 	"github.com/fatih/gomodifytags/modifytags"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -20,18 +19,9 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	internalastutil "golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/tokeninternal"
 )
-
-// Finds the start and end positions of the enclosing struct or returns an error if none is found.
-func findEnclosingStruct(c cursor.Cursor) (token.Pos, token.Pos, error) {
-	for cur := range c.Enclosing((*ast.StructType)(nil)) {
-		return cur.Node().Pos(), cur.Node().End(), nil
-	}
-	return token.NoPos, token.NoPos, fmt.Errorf("no struct enclosing the given positions")
-}
 
 // ModifyTags applies the given struct tag modifications to the specified struct.
 func ModifyTags(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, args command.ModifyTagsArgs, m *modifytags.Modification) ([]protocol.DocumentChange, error) {

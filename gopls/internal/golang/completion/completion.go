@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/constant"
 	"go/parser"
 	"go/printer"
@@ -505,7 +504,9 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	startTime := time.Now()
 
 	pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, fh.URI())
-	if err != nil || pgf.File.Package == token.NoPos {
+	if err != nil || !pgf.File.Package.IsValid() {
+		// Invalid package declaration
+		//
 		// If we can't parse this file or find position for the package
 		// keyword, it may be missing a package declaration. Try offering
 		// suggestions for the package declaration.
@@ -586,12 +587,6 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 	scopes = append(scopes, pkg.Types().Scope(), types.Universe)
 
-	var goversion string // "" => no version check
-	// Prior go1.22, the behavior of FileVersion is not useful to us.
-	if slices.Contains(build.Default.ReleaseTags, "go1.22") {
-		goversion = versions.FileVersion(info, pgf.File) // may be ""
-	}
-
 	opts := snapshot.Options()
 	c := &completer{
 		pkg:      pkg,
@@ -605,7 +600,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		fh:                        fh,
 		filename:                  fh.URI().Path(),
 		pgf:                       pgf,
-		goversion:                 goversion,
+		goversion:                 versions.FileVersion(info, pgf.File), // may be "" => no version check
 		path:                      path,
 		pos:                       pos,
 		seen:                      make(map[types.Object]bool),
@@ -746,24 +741,30 @@ func (c *completer) collectCompletions(ctx context.Context) error {
 		if c.pgf.File.Name == n {
 			return c.packageNameCompletions(ctx, c.fh.URI(), n)
 		} else if sel, ok := c.path[1].(*ast.SelectorExpr); ok && sel.Sel == n {
-			// Is this the Sel part of a selector?
+			// We are in the Sel part of a selector (e.g. x.‸sel or x.sel‸).
 			return c.selector(ctx, sel)
 		}
 		return c.lexical(ctx)
-	// The function name hasn't been typed yet, but the parens are there:
-	//   recv.‸(arg)
+
 	case *ast.TypeAssertExpr:
+		// The function name hasn't been typed yet, but the parens are there:
+		//   recv.‸(arg)
 		// Create a fake selector expression.
-		//
+
 		// The name "_" is the convention used by go/parser to represent phantom
 		// selectors.
 		sel := &ast.Ident{NamePos: n.X.End() + token.Pos(len(".")), Name: "_"}
 		return c.selector(ctx, &ast.SelectorExpr{X: n.X, Sel: sel})
+
 	case *ast.SelectorExpr:
+		// We are in the X part of a selector (x‸.sel),
+		// or after the dot with a fixed/phantom Sel (x.‸_).
 		return c.selector(ctx, n)
-	// At the file scope, only keywords are allowed.
+
 	case *ast.BadDecl, *ast.File:
+		// At the file scope, only keywords are allowed.
 		c.addKeywordCompletions()
+
 	default:
 		// fallback to lexical completions
 		return c.lexical(ctx)
@@ -823,6 +824,8 @@ func (c *completer) scanToken(contents []byte) (token.Pos, token.Token, string) 
 	tok := c.pkg.FileSet().File(c.pos)
 
 	var s scanner.Scanner
+	// TODO(adonovan): fix! this mutates the token.File borrowed from c.pkg,
+	// calling AddLine and AddLineColumnInfo. Not sound!
 	s.Init(tok, contents, nil, 0)
 	for {
 		tknPos, tkn, lit := s.Scan()
@@ -1232,6 +1235,9 @@ const (
 )
 
 // selector finds completions for the specified selector expression.
+//
+// The caller should ensure that sel.X has type information,
+// even if sel is synthetic.
 func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	c.inference.objChain = objChain(c.pkg.TypesInfo(), sel.X)
 
@@ -1283,7 +1289,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 	// -- completion of symbols in unimported packages --
 
 	// use new code for unimported completions, if flag allows it
-	if id, ok := sel.X.(*ast.Ident); ok && c.snapshot.Options().ImportsSource == settings.ImportsSourceGopls {
+	if c.snapshot.Options().ImportsSource == settings.ImportsSourceGopls {
 		// The user might have typed strings.TLower, so id.Name==strings, sel.Sel.Name == TLower,
 		// but the cursor might be inside TLower, so adjust the prefix
 		prefix := sel.Sel.Name
@@ -2916,9 +2922,7 @@ func objChain(info *types.Info, e ast.Expr) []types.Object {
 	}
 
 	// Reverse order so the layout matches the syntactic order.
-	for i := range len(objs) / 2 {
-		objs[i], objs[len(objs)-1-i] = objs[len(objs)-1-i], objs[i]
-	}
+	slices.Reverse(objs)
 
 	return objs
 }

@@ -1591,7 +1591,7 @@ func completeMarker(mark marker, src protocol.Location, want ...completionItem) 
 		want = nil // got is nil if empty
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
-		mark.errorf("Completion(...) returned unexpect results (-want +got):\n%s", diff)
+		mark.errorf("Completion(...) returned unexpected results (-want +got):\n%s", diff)
 	}
 }
 

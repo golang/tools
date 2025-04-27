@@ -61,6 +61,8 @@ type Matcher struct {
 	rolesBuf [MaxInputSize]RuneRole
 }
 
+func (m *Matcher) String() string { return m.pattern }
+
 func (m *Matcher) bestK(i, j int) int {
 	if m.scores[i][j][0].val() < m.scores[i][j][1].val() {
 		return 1

@@ -5,6 +5,7 @@
 package golang
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"go/ast"
@@ -51,7 +52,7 @@ loop:
 	for i, node := range path {
 		switch node := node.(type) {
 		case *ast.Ident:
-			// If the selected text is a function/method Ident orSelectorExpr,
+			// If the selected text is a function/method Ident or SelectorExpr,
 			// even one not in function call position,
 			// show help for its signature. Example:
 			//    once.Do(initialize⁁)
@@ -67,7 +68,8 @@ loop:
 				break loop
 			}
 		case *ast.CallExpr:
-			if pos >= node.Lparen && pos <= node.Rparen {
+			// Beware: the ')' may be missing.
+			if pos >= node.Lparen && pos <= cmp.Or(node.Rparen, node.End()) {
 				callExpr = node
 				fnval = callExpr.Fun
 				break loop
@@ -88,7 +90,6 @@ loop:
 				return nil, 0, nil
 			}
 		}
-
 	}
 
 	if fnval == nil {
@@ -194,19 +195,17 @@ func builtinSignature(ctx context.Context, snapshot *cache.Snapshot, callExpr *a
 	}, activeParam, nil
 }
 
-func activeParameter(callExpr *ast.CallExpr, numParams int, variadic bool, pos token.Pos) (activeParam int) {
-	if len(callExpr.Args) == 0 {
+func activeParameter(call *ast.CallExpr, numParams int, variadic bool, pos token.Pos) (activeParam int) {
+	if len(call.Args) == 0 {
 		return 0
 	}
 	// First, check if the position is even in the range of the arguments.
-	start, end := callExpr.Lparen, callExpr.Rparen
+	// Beware: the Rparen may be missing.
+	start, end := call.Lparen, cmp.Or(call.Rparen, call.End())
 	if !(start <= pos && pos <= end) {
 		return 0
 	}
-	for _, expr := range callExpr.Args {
-		if start == token.NoPos {
-			start = expr.Pos()
-		}
+	for _, expr := range call.Args {
 		end = expr.End()
 		if start <= pos && pos <= end {
 			break
