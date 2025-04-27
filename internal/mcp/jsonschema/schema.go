@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package jsonschema is an implementation of the JSON Schema
-// specification: https://json-schema.org.
 package jsonschema
 
 import (
