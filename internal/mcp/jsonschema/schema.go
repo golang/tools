@@ -58,6 +58,11 @@ type Schema struct {
 	// metadata
 	Title       string `json:"title,omitempty"`
 	Description string `json:"description,omitempty"`
+	Default     *any   `json:"default,omitempty"`
+	Deprecated  bool   `json:"deprecated,omitempty"`
+	ReadOnly    bool   `json:"readOnly,omitempty"`
+	WriteOnly   bool   `json:"writeOnly,omitempty"`
+	Examples    []any  `json:"examples,omitempty"`
 
 	// validation
 	// Use Type for a single type, or Types for multiple types; never both.
@@ -109,6 +114,15 @@ type Schema struct {
 	Then             *Schema            `json:"then,omitempty"`
 	Else             *Schema            `json:"else,omitempty"`
 	DependentSchemas map[string]*Schema `json:"dependentSchemas,omitempty"`
+
+	// other
+	// https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-00#rfc.section.8
+	ContentEncoding  string  `json:"contentEncoding,omitempty"`
+	ContentMediaType string  `json:"contentMediaType,omitempty"`
+	ContentSchema    *Schema `json:"contentSchema,omitempty"`
+
+	// https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-00#rfc.section.7
+	Format string `json:"format,omitempty"`
 
 	// computed fields
 
@@ -237,6 +251,7 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	ms := struct {
 		Type          json.RawMessage `json:"type,omitempty"`
 		Const         json.RawMessage `json:"const,omitempty"`
+		Default       json.RawMessage `json:"default,omitempty"`
 		MinLength     *integer        `json:"minLength,omitempty"`
 		MaxLength     *integer        `json:"maxLength,omitempty"`
 		MinItems      *integer        `json:"minItems,omitempty"`
@@ -269,14 +284,24 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	// Setting Const to a pointer to null will marshal properly, but won't unmarshal:
-	// the *any is set to nil, not a pointer to nil.
-	if len(ms.Const) > 0 {
-		if bytes.Equal(ms.Const, []byte("null")) {
-			s.Const = new(any)
-		} else if err := json.Unmarshal(ms.Const, &s.Const); err != nil {
-			return err
+	unmarshalAnyPtr := func(p **any, raw json.RawMessage) error {
+		if len(raw) == 0 {
+			return nil
 		}
+		if bytes.Equal(raw, []byte("null")) {
+			*p = new(any)
+			return nil
+		}
+		return json.Unmarshal(raw, p)
+	}
+
+	// Setting Const or Default to a pointer to null will marshal properly, but won't
+	// unmarshal: the *any is set to nil, not a pointer to nil.
+	if err := unmarshalAnyPtr(&s.Const, ms.Const); err != nil {
+		return err
+	}
+	if err := unmarshalAnyPtr(&s.Default, ms.Default); err != nil {
+		return err
 	}
 
 	set := func(dst **int, src *integer) {

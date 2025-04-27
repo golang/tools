@@ -153,6 +153,14 @@ func (s *Schema) checkLocal(report func(error)) {
 	// TODO: validate the schema's properties,
 	// ideally by jsonschema-validating it against the meta-schema.
 
+	// Some properties are present so that Schemas can round-trip, but we do not
+	// validate them.
+	// Currently, it's just the $vocabulary property.
+	// As a special case, we can validate the 2020-12 meta-schema.
+	if s.Vocabulary != nil && s.Schema != draft202012 {
+		addf("cannot validate a schema with $vocabulary")
+	}
+
 	// Check and compile regexps.
 	if s.Pattern != "" {
 		re, err := regexp.Compile(s.Pattern)

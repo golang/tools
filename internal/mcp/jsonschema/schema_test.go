@@ -24,6 +24,7 @@ func TestGoRoundTrip(t *testing.T) {
 		{Const: Ptr(any(nil))},
 		{Const: Ptr(any([]int{}))},
 		{Const: Ptr(any(map[string]any{}))},
+		{Default: Ptr(any(nil))},
 	} {
 		data, err := json.Marshal(s)
 		if err != nil {
@@ -31,9 +32,7 @@ func TestGoRoundTrip(t *testing.T) {
 		}
 		t.Logf("marshal: %s", data)
 		var got *Schema
-		if err := json.Unmarshal(data, &got); err != nil {
-			t.Fatal(err)
-		}
+		mustUnmarshal(t, data, &got)
 		if !Equal(got, s) {
 			t.Errorf("got %+v, want %+v", got, s)
 			if got.Const != nil && s.Const != nil {
@@ -68,9 +67,7 @@ func TestJSONRoundTrip(t *testing.T) {
 		{`{"unk":0}`, `{}`}, // unknown fields are dropped, unfortunately
 	} {
 		var s Schema
-		if err := json.Unmarshal([]byte(tt.in), &s); err != nil {
-			t.Fatal(err)
-		}
+		mustUnmarshal(t, []byte(tt.in), &s)
 		data, err := json.Marshal(s)
 		if err != nil {
 			t.Fatal(err)
@@ -124,5 +121,12 @@ func TestEvery(t *testing.T) {
 	s.every(func(*Schema) bool { got++; return true })
 	if got != want {
 		t.Errorf("got %d, want %d", got, want)
+	}
+}
+
+func mustUnmarshal(t *testing.T, data []byte, ptr any) {
+	t.Helper()
+	if err := json.Unmarshal(data, ptr); err != nil {
+		t.Fatal(err)
 	}
 }

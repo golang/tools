@@ -42,14 +42,12 @@ func TestValidate(t *testing.T) {
 	for _, file := range files {
 		base := filepath.Base(file)
 		t.Run(base, func(t *testing.T) {
-			f, err := os.Open(file)
+			data, err := os.ReadFile(file)
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer f.Close()
-			dec := json.NewDecoder(f)
 			var groups []testGroup
-			if err := dec.Decode(&groups); err != nil {
+			if err := json.Unmarshal(data, &groups); err != nil {
 				t.Fatal(err)
 			}
 			for _, g := range groups {
