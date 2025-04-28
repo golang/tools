@@ -27,7 +27,6 @@ import (
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -628,31 +627,75 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// A return statement is non-nested if its parent node is equal to the parent node
 	// of the first node in the selection. These cases must be handled separately because
 	// non-nested return statements are guaranteed to execute.
-	var retStmts []*ast.ReturnStmt
 	var hasNonNestedReturn bool
-	startParent := findParent(outer, node)
-	ast.Inspect(outer, func(n ast.Node) bool {
-		if n == nil {
-			return false
+	curStart, ok := pgf.Cursor.FindNode(node)
+	if !ok {
+		return nil, nil, bug.Errorf("cannot find Cursor for start Node")
+	}
+	curOuter, ok := pgf.Cursor.FindNode(outer)
+	if !ok {
+		return nil, nil, bug.Errorf("cannot find Cursor for start Node")
+	}
+	// Determine whether all return statements in the selection are
+	// error-handling return statements. They must be of the form:
+	// if err != nil {
+	// 	return ..., err
+	// }
+	// If all return statements in the extracted block have a non-nil error, we
+	// can replace the "shouldReturn" check with an error check to produce a
+	// more concise output.
+	allReturnsFinalErr := true // all ReturnStmts have final 'err' expression
+	hasReturn := false         // selection contains a ReturnStmt
+	filter := []ast.Node{(*ast.ReturnStmt)(nil), (*ast.FuncLit)(nil)}
+	curOuter.Inspect(filter, func(cur inspector.Cursor) (descend bool) {
+		if funcLit, ok := cur.Node().(*ast.FuncLit); ok {
+			// Exclude return statements in function literals because they don't affect the refactor.
+			// Keep descending into func lits whose declaration is not included in the extracted block.
+			return !(start < funcLit.Pos() && funcLit.End() < end)
 		}
-		if n.Pos() < start || n.End() > end {
-			return n.Pos() <= end
+		ret := cur.Node().(*ast.ReturnStmt)
+		if ret.Pos() < start || ret.End() > end {
+			return false // not part of the extracted block
 		}
-		// exclude return statements in function literals because they don't affect the refactor.
-		if _, ok := n.(*ast.FuncLit); ok {
-			return false
-		}
-		ret, ok := n.(*ast.ReturnStmt)
-		if !ok {
-			return true
-		}
-		if findParent(outer, n) == startParent {
+		hasReturn = true
+
+		if cur.Parent() == curStart.Parent() {
 			hasNonNestedReturn = true
 		}
-		retStmts = append(retStmts, ret)
+
+		if !allReturnsFinalErr {
+			// Stop the traversal if we have already found a non error-handling return statement.
+			return false
+		}
+		// Check if the return statement returns a non-nil error as the last value.
+		if len(ret.Results) > 0 {
+			typ := info.TypeOf(ret.Results[len(ret.Results)-1])
+			if typ != nil && types.Identical(typ, errorType) {
+				// Have: return ..., err
+				// Check for enclosing "if err != nil { return ..., err }".
+				// In that case, we can lift the error return to the caller.
+				if ifstmt, ok := cur.Parent().Parent().Node().(*ast.IfStmt); ok {
+					// Only handle the case where the if statement body contains a single statement.
+					if body, ok := cur.Parent().Node().(*ast.BlockStmt); ok && len(body.List) <= 1 {
+						if cond, ok := ifstmt.Cond.(*ast.BinaryExpr); ok {
+							tx := info.TypeOf(cond.X)
+							ty := info.TypeOf(cond.Y)
+							isErr := tx != nil && types.Identical(tx, errorType)
+							isNil := ty != nil && types.Identical(ty, types.Typ[types.UntypedNil])
+							if cond.Op == token.NEQ && isErr && isNil {
+								// allReturnsErrHandling remains true
+								return false
+							}
+						}
+					}
+				}
+			}
+		}
+		allReturnsFinalErr = false
 		return false
 	})
-	containsReturnStatement := len(retStmts) > 0
+
+	allReturnsFinalErr = hasReturn && allReturnsFinalErr
 
 	// Now that we have determined the correct range for the selection block,
 	// we must determine the signature of the extracted function. We will then replace
@@ -754,6 +797,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 				//
 				// The second condition below handles the case when
 				// v's block is the FuncDecl.Body itself.
+				startParent := curStart.Parent().Node()
 				if vscope.Pos() == startParent.Pos() ||
 					startParent == outer.Body && vscope == info.Scopes[outer.Type] {
 					canRedefineCount++
@@ -894,13 +938,26 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 
 	var retVars []*returnVariable
 	var ifReturn *ast.IfStmt
-	if containsReturnStatement {
+
+	// Determine if the extracted block contains any free branch statements, for
+	// example: "continue label" where "label" is declared outside of the
+	// extracted block, or continue inside a "for" statement where the for
+	// statement is declared outside of the extracted block. These will be
+	// handled below, after adjusting return statements and generating return
+	// info.
+	curSel, _ := pgf.Cursor.FindByPos(start, end) // since canExtractFunction succeeded, this will always return a valid cursor
+	freeBranches := freeBranches(info, curSel, start, end)
+
+	// All return statements in the extracted block are error handling returns, and there are no free control statements.
+	isErrHandlingReturnsCase := allReturnsFinalErr && len(freeBranches) == 0
+
+	if hasReturn {
 		if !hasNonNestedReturn {
 			// The selected block contained return statements, so we have to modify the
 			// signature of the extracted function as described above. Adjust all of
 			// the return statements in the extracted function to reflect this change in
 			// signature.
-			if err := adjustReturnStatements(returnTypes, seenVars, extractedBlock, qual); err != nil {
+			if err := adjustReturnStatements(returnTypes, seenVars, extractedBlock, qual, isErrHandlingReturnsCase); err != nil {
 				return nil, nil, err
 			}
 		}
@@ -908,16 +965,11 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		// statements in the selection. Update the type signature of the extracted
 		// function and construct the if statement that will be inserted in the enclosing
 		// function.
-		retVars, ifReturn, err = generateReturnInfo(enclosing, pkg, path, file, info, start, end, hasNonNestedReturn)
+		retVars, ifReturn, err = generateReturnInfo(enclosing, pkg, path, file, info, start, end, hasNonNestedReturn, isErrHandlingReturnsCase)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
-
-	// Determine if the extracted block contains any free branch statements, for
-	// example: "continue label" where "label" is declared outside of the
-	// extracted block, or continue inside a "for" statement where the for
-	// statement is declared outside of the extracted block.
 
 	// If the extracted block contains free branch statements, we add another
 	// return value "ctrl" to the extracted function that will be used to
@@ -955,9 +1007,6 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	//      return 0
 	// }
 	//
-
-	curSel, _ := pgf.Cursor.FindByPos(start, end) // since canExtractFunction succeeded, this will always return a valid cursor
-	freeBranches := freeBranches(info, curSel, start, end)
 
 	// Generate an unused identifier for the control value.
 	ctrlVar, _ := freshName(info, file, start, "ctrl", 0)
@@ -1079,8 +1128,16 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		return nil, nil, err
 	}
 	if ifReturn != nil {
-		if err := format.Node(&ifBuf, fset, ifReturn); err != nil {
-			return nil, nil, err
+		if isErrHandlingReturnsCase {
+			errName := retVars[len(retVars)-1]
+			fmt.Fprintf(&ifBuf, "if %s != nil ", errName.name.String())
+			if err := format.Node(&ifBuf, fset, ifReturn.Body); err != nil {
+				return nil, nil, err
+			}
+		} else {
+			if err := format.Node(&ifBuf, fset, ifReturn); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 
@@ -1305,20 +1362,6 @@ func adjustRangeForCommentsAndWhiteSpace(tok *token.File, start, end token.Pos, 
 // Go as defined by scanner.GoWhitespace.
 func isGoWhiteSpace(b byte) bool {
 	return uint64(scanner.GoWhitespace)&(1<<uint(b)) != 0
-}
-
-// findParent finds the parent AST node of the given target node, if the target is a
-// descendant of the starting node.
-func findParent(start ast.Node, target ast.Node) ast.Node {
-	var parent ast.Node
-	analysisinternal.WalkASTWithParent(start, func(n, p ast.Node) bool {
-		if n == target {
-			parent = p
-			return false
-		}
-		return true
-	})
-	return parent
 }
 
 // variable describes the status of a variable within a selection.
@@ -1735,19 +1778,9 @@ func parseStmts(fset *token.FileSet, src []byte) (*ast.BlockStmt, []*ast.Comment
 // signature of the extracted function. We prepare names, signatures, and "zero values" that
 // represent the new variables. We also use this information to construct the if statement that
 // is inserted below the call to the extracted function.
-func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.Node, file *ast.File, info *types.Info, start, end token.Pos, hasNonNestedReturns bool) ([]*returnVariable, *ast.IfStmt, error) {
+func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.Node, file *ast.File, info *types.Info, start, end token.Pos, hasNonNestedReturns bool, isErrHandlingReturnsCase bool) ([]*returnVariable, *ast.IfStmt, error) {
 	var retVars []*returnVariable
 	var cond *ast.Ident
-	if !hasNonNestedReturns {
-		// Generate information for the added bool value.
-		name, _ := freshNameOutsideRange(info, file, path[0].Pos(), start, end, "shouldReturn", 0)
-		cond = &ast.Ident{Name: name}
-		retVars = append(retVars, &returnVariable{
-			name:    cond,
-			decl:    &ast.Field{Type: ast.NewIdent("bool")},
-			zeroVal: ast.NewIdent("false"),
-		})
-	}
 	// Generate information for the values in the return signature of the enclosing function.
 	if enclosing.Results != nil {
 		nameIdx := make(map[string]int) // last integral suffixes of generated names
@@ -1788,12 +1821,21 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 	}
 	var ifReturn *ast.IfStmt
 	if !hasNonNestedReturns {
-		// Create the return statement for the enclosing function. We must exclude the variable
-		// for the condition of the if statement (cond) from the return statement.
+		results := getNames(retVars)
+		if !isErrHandlingReturnsCase {
+			// Generate information for the added bool value.
+			name, _ := freshNameOutsideRange(info, file, path[0].Pos(), start, end, "shouldReturn", 0)
+			cond = &ast.Ident{Name: name}
+			retVars = append(retVars, &returnVariable{
+				name:    cond,
+				decl:    &ast.Field{Type: ast.NewIdent("bool")},
+				zeroVal: ast.NewIdent("false"),
+			})
+		}
 		ifReturn = &ast.IfStmt{
 			Cond: cond,
 			Body: &ast.BlockStmt{
-				List: []ast.Stmt{&ast.ReturnStmt{Results: getNames(retVars)[1:]}},
+				List: []ast.Stmt{&ast.ReturnStmt{Results: results}},
 			},
 		}
 	}
@@ -1839,7 +1881,7 @@ func varNameForType(t types.Type) (string, bool) {
 
 // adjustReturnStatements adds "zero values" of the given types to each return
 // statement in the given AST node.
-func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]ast.Expr, extractedBlock *ast.BlockStmt, qual types.Qualifier) error {
+func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]ast.Expr, extractedBlock *ast.BlockStmt, qual types.Qualifier, isErrHandlingReturnsCase bool) error {
 	var zeroVals []ast.Expr
 	// Create "zero values" for each type.
 	for _, returnType := range returnTypes {
@@ -1861,7 +1903,9 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 	// extracted function. We set the bool to 'true' because, if these return statements
 	// execute, the extracted function terminates early, and the enclosing function must
 	// return as well.
-	zeroVals = append(zeroVals, ast.NewIdent("true"))
+	if !isErrHandlingReturnsCase {
+		zeroVals = append(zeroVals, ast.NewIdent("true"))
+	}
 	ast.Inspect(extractedBlock, func(n ast.Node) bool {
 		if n == nil {
 			return false

@@ -53,7 +53,7 @@ package extract
 
 func _() bool {
 	x := 1
-	shouldReturn, b := newFunction(x)
+	b, shouldReturn := newFunction(x)
 	if shouldReturn {
 		return b
 	} //@loc(ifend, "}")
@@ -119,14 +119,14 @@ import "fmt"
 func _() (int, string, error) {
 	x := 1
 	y := "hello"
-	z, shouldReturn, i, s, err := newFunction(y, x)
+	z, i, s, err, shouldReturn := newFunction(y, x)
 	if shouldReturn {
 		return i, s, err
 	} //@loc(rcEnd, "}")
 	return x, z, nil
 }
 
-func newFunction(y string, x int) (string, bool, int, string, error) {
+func newFunction(y string, x int) (string, int, string, error, bool) {
 	z := "bye" //@codeaction("z", "refactor.extract.function", end=rcEnd, result=rc)
 	if y == z {
 		return "", true, x, y, fmt.Errorf("same")
@@ -134,7 +134,7 @@ func newFunction(y string, x int) (string, bool, int, string, error) {
 		z = "hi"
 		return "", true, x, z, nil
 	}
-	return z, false, 0, "", nil
+	return z, 0, "", nil, false
 }
 
 -- return_complex_nonnested.go --
@@ -198,7 +198,7 @@ import "go/ast"
 
 func _() {
 	ast.Inspect(ast.NewIdent("a"), func(n ast.Node) bool {
-		shouldReturn, b := newFunction(n)
+		b, shouldReturn := newFunction(n)
 		if shouldReturn {
 			return b
 		} //@loc(rflEnd, "}")
@@ -263,7 +263,7 @@ package extract
 
 func _() string {
 	x := 1
-	shouldReturn, s := newFunction(x)
+	s, shouldReturn := newFunction(x)
 	if shouldReturn {
 		return s
 	} //@loc(riEnd, "}")
@@ -271,12 +271,12 @@ func _() string {
 	return "b"
 }
 
-func newFunction(x int) (bool, string) {
+func newFunction(x int) (string, bool) {
 	if x == 0 { //@codeaction("if", "refactor.extract.function", end=riEnd, result=ri)
 		x = 3
 		return true, "a"
 	}
-	return false, ""
+	return "", false
 }
 
 -- return_init_nonnested.go --

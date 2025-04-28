@@ -29,24 +29,24 @@ import (
 )
 
 func F() error {
-	a, b, shouldReturn, err := newFunction()
-	if shouldReturn {
+	a, b, err := newFunction()
+	if err != nil {
 		return err
 	} //@loc(endF, "}")
 	fmt.Printf("%s %s", a, b)
 	return nil
 }
 
-func newFunction() ([]byte, []byte, bool, error) {
+func newFunction() ([]byte, []byte, error) {
 	a, err := json.Marshal(0) //@codeaction("a", "refactor.extract.function", end=endF, result=F)
 	if err != nil {
-		return nil, nil, true, fmt.Errorf("1: %w", err)
+		return nil, nil, fmt.Errorf("1: %w", err)
 	}
 	b, err := json.Marshal(0)
 	if err != nil {
-		return nil, nil, true, fmt.Errorf("2: %w", err)
+		return nil, nil, fmt.Errorf("2: %w", err)
 	}
-	return a, b, false, nil
+	return a, b, nil
 }
 
 -- b.go --
@@ -77,7 +77,7 @@ import (
 )
 
 func G() (x, y int) {
-	v, shouldReturn, x1, y1 := newFunction()
+	v, x1, y1, shouldReturn := newFunction()
 	if shouldReturn {
 		return x1, y1
 	} //@loc(endG, "}")
@@ -85,7 +85,7 @@ func G() (x, y int) {
 	return 5, 6
 }
 
-func newFunction() (int, bool, int, int) {
+func newFunction() (int, int, int, bool) {
 	v := rand.Int() //@codeaction("v", "refactor.extract.function", end=endG, result=G)
 	if v < 0 {
 		return 0, true, 1, 2
@@ -93,5 +93,5 @@ func newFunction() (int, bool, int, int) {
 	if v > 0 {
 		return 0, true, 3, 4
 	}
-	return v, false, 0, 0
+	return v, 0, 0, false
 }
