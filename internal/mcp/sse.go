@@ -277,14 +277,16 @@ type SSEClientTransport struct {
 
 // NewSSEClientTransport returns a new client transport that connects to the
 // SSE server at the provided URL.
-func NewSSEClientTransport(rawURL string) (*SSEClientTransport, error) {
-	url, err := url.Parse(rawURL)
+//
+// NewSSEClientTransport panics if the given URL is invalid.
+func NewSSEClientTransport(baseURL string) *SSEClientTransport {
+	url, err := url.Parse(baseURL)
 	if err != nil {
-		return nil, err
+		panic(fmt.Sprintf("invalid base url: %v", err))
 	}
 	return &SSEClientTransport{
 		sseEndpoint: url,
-	}, nil
+	}
 }
 
 // Connect connects through the client endpoint.
