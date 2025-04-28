@@ -72,7 +72,7 @@ func writeEvent(w io.Writer, evt event) (int, error) {
 //
 // https://modelcontextprotocol.io/specification/2024-11-05/basic/transports
 type SSEHandler struct {
-	getServer func() *Server
+	getServer func(request *http.Request) *Server
 	onClient  func(*ClientConnection) // for testing; must not block
 
 	mu       sync.Mutex
@@ -81,9 +81,9 @@ type SSEHandler struct {
 
 // NewSSEHandler returns a new [SSEHandler] that is ready to serve HTTP.
 //
-// The getServer function is used to bind create servers for new sessions. It
+// The getServer function is used to bind created servers for new sessions. It
 // is OK for getServer to return the same server multiple times.
-func NewSSEHandler(getServer func() *Server) *SSEHandler {
+func NewSSEHandler(getServer func(request *http.Request) *Server) *SSEHandler {
 	return &SSEHandler{
 		getServer: getServer,
 		sessions:  make(map[string]*sseSession),
@@ -179,7 +179,8 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	defer session.Close()
 
-	server := h.getServer()
+	// TODO(hxjiang): getServer returns nil will panic.
+	server := h.getServer(req)
 	cc, err := server.Connect(req.Context(), session, nil)
 	if err != nil {
 		http.Error(w, "connection failed", http.StatusInternalServerError)

@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestSSEServer(t *testing.T) {
 			server := NewServer("testServer", "v1.0.0", nil)
 			server.AddTools(MakeTool("greet", "say hi", sayHi))
 
-			sseHandler := NewSSEHandler(func() *Server { return server })
+			sseHandler := NewSSEHandler(func(*http.Request) *Server { return server })
 
 			clients := make(chan *ClientConnection, 1)
 			sseHandler.onClient = func(cc *ClientConnection) {

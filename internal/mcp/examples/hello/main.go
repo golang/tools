@@ -33,7 +33,7 @@ func main() {
 	server.AddTools(mcp.MakeTool("greet", "say hi", SayHi))
 
 	if *httpAddr != "" {
-		handler := mcp.NewSSEHandler(func() *mcp.Server {
+		handler := mcp.NewSSEHandler(func(*http.Request) *mcp.Server {
 			return server
 		})
 		http.ListenAndServe(*httpAddr, handler)
