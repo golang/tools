@@ -37,15 +37,6 @@ import (
 //  exited.
 //  - Read reads off a message queue that is pushed to via POST requests.
 //  - Close causes the hanging GEt to exit.
-//
-// TODO:
-//  - support resuming broken streamable sessions
-//  - support GET channels for unrelated notifications in streamable sessions
-//  - add client support (and use it to test)
-//  - properly correlate notifications/requests to an incoming request (using
-//    requestCtx)
-
-// TODO(rfindley): reorganize this file, and split it into sse_server.go and sse_client.go.
 
 // An event is a server-sent event.
 type event struct {
@@ -109,8 +100,8 @@ type sseSession struct {
 	done   chan struct{}       // closed when the stream is closed
 }
 
-// connect returns the receiver, as an sseSession is a logical stream.
-func (s *sseSession) connect(context.Context) (stream, error) {
+// Connect returns the receiver, as an sseSession is a logical stream.
+func (s *sseSession) Connect(context.Context) (Stream, error) {
 	return s, nil
 }
 
@@ -296,8 +287,8 @@ func NewSSEClientTransport(rawURL string) (*SSEClientTransport, error) {
 	}, nil
 }
 
-// connect connects through the client endpoint.
-func (c *SSEClientTransport) connect(ctx context.Context) (stream, error) {
+// Connect connects through the client endpoint.
+func (c *SSEClientTransport) Connect(ctx context.Context) (Stream, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.sseEndpoint.String(), nil)
 	if err != nil {
 		return nil, err

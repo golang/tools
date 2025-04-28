@@ -19,9 +19,6 @@ import (
 	"golang.org/x/tools/internal/xcontext"
 )
 
-// A JSONRPC2 error is an error defined by the JSONRPC2 spec.
-type JSONRPC2Error = jsonrpc2.WireError
-
 // ErrConnectionClosed is returned when sending a message to a connection that
 // is closed or in the process of closing.
 var ErrConnectionClosed = errors.New("connection closed")
@@ -32,15 +29,15 @@ var ErrConnectionClosed = errors.New("connection closed")
 // Transports should be used for at most one call to [Server.Connect] or
 // [Client.Connect].
 type Transport interface {
-	// connect returns the logical stream.
+	// Connect returns the logical stream.
 	//
-	// It is called exactly once by [connect].
-	connect(ctx context.Context) (stream, error)
+	// It is called exactly once by [Connect].
+	Connect(ctx context.Context) (Stream, error)
 }
 
-// A stream is an abstract bidirectional jsonrpc2 stream.
+// A Stream is an abstract bidirectional jsonrpc2 Stream.
 // It is used by [connect] to establish a [jsonrpc2.Connection].
-type stream interface {
+type Stream interface {
 	jsonrpc2.Reader
 	jsonrpc2.Writer
 	io.Closer
@@ -59,7 +56,7 @@ type IOTransport struct {
 	rwc io.ReadWriteCloser
 }
 
-func (t *IOTransport) connect(context.Context) (stream, error) {
+func (t *IOTransport) Connect(context.Context) (Stream, error) {
 	return newIOStream(t.rwc), nil
 }
 
@@ -94,7 +91,7 @@ func connect[H handler](ctx context.Context, t Transport, opts *ConnectionOption
 	}
 
 	var zero H
-	stream, err := t.connect(ctx)
+	stream, err := t.Connect(ctx)
 	if err != nil {
 		return zero, err
 	}
@@ -275,8 +272,8 @@ func newIOStream(rwc io.ReadWriteCloser) *ioStream {
 	}
 }
 
-// connect returns the receiver, as a streamTransport is a logical stream.
-func (t *ioStream) connect(ctx context.Context) (stream, error) {
+// Connect returns the receiver, as a streamTransport is a logical stream.
+func (t *ioStream) Connect(ctx context.Context) (Stream, error) {
 	return t, nil
 }
 
