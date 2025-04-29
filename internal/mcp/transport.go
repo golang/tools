@@ -227,13 +227,11 @@ type rwc struct {
 }
 
 func (r rwc) Read(p []byte) (n int, err error) {
-	n, err = r.rc.Read(p)
-	return n, err
+	return r.rc.Read(p)
 }
 
 func (r rwc) Write(p []byte) (n int, err error) {
-	n, err = r.wc.Write(p)
-	return n, err
+	return r.wc.Write(p)
 }
 
 func (r rwc) Close() error {
