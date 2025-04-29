@@ -48,6 +48,15 @@ func minmax(pass *analysis.Pass) {
 			rhs     = tassign.Rhs[0]
 			scope   = pass.TypesInfo.Scopes[ifStmt.Body]
 			sign    = isInequality(compare.Op)
+
+			// callArg formats a call argument, preserving comments from [start-end).
+			callArg = func(arg ast.Expr, start, end token.Pos) string {
+				comments := allComments(file, start, end)
+				return cond(arg == b, ", ", "") + // second argument needs a comma
+					cond(comments != "", "\n", "") + // comments need their own line
+					comments +
+					analysisinternal.Format(pass.Fset, arg)
+			}
 		)
 
 		if fblock, ok := ifStmt.Else.(*ast.BlockStmt); ok && isAssignBlock(fblock) {
@@ -91,12 +100,12 @@ func minmax(pass *analysis.Pass) {
 							// Replace IfStmt with lhs = min(a, b).
 							Pos: ifStmt.Pos(),
 							End: ifStmt.End(),
-							NewText: fmt.Appendf(nil, "%s%s = %s(%s, %s)",
-								allComments(file, ifStmt.Pos(), ifStmt.End()),
+							NewText: fmt.Appendf(nil, "%s = %s(%s%s)",
 								analysisinternal.Format(pass.Fset, lhs),
 								sym,
-								analysisinternal.Format(pass.Fset, a),
-								analysisinternal.Format(pass.Fset, b)),
+								callArg(a, ifStmt.Pos(), ifStmt.Else.Pos()),
+								callArg(b, ifStmt.Else.Pos(), ifStmt.End()),
+							),
 						}},
 					}},
 				})
@@ -154,13 +163,13 @@ func minmax(pass *analysis.Pass) {
 							Pos: fassign.Pos(),
 							End: ifStmt.End(),
 							// Replace "x := a; if ... {}" with "x = min(...)", preserving comments.
-							NewText: fmt.Appendf(nil, "%s %s %s %s(%s, %s)",
-								allComments(file, fassign.Pos(), ifStmt.End()),
+							NewText: fmt.Appendf(nil, "%s %s %s(%s%s)",
 								analysisinternal.Format(pass.Fset, lhs),
 								fassign.Tok.String(),
 								sym,
-								analysisinternal.Format(pass.Fset, a),
-								analysisinternal.Format(pass.Fset, b)),
+								callArg(a, fassign.Pos(), ifStmt.Pos()),
+								callArg(b, ifStmt.Pos(), ifStmt.End()),
+							),
 						}},
 					}},
 				})
