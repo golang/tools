@@ -9,6 +9,7 @@ package jsonschema
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -19,6 +20,21 @@ func For[T any]() (*Schema, error) {
 	return ForType(reflect.TypeFor[T]())
 }
 
+// ForType constructs a JSON schema object for the given type.
+// It translates Go types into compatible JSON schema types, as follows:
+//   - strings have schema type "string"
+//   - bools have schema type "boolean"
+//   - signed and unsigned integer types have schema type "integer"
+//   - floating point types have schema type "number"
+//   - slices and arrays have schema type "array", and a corresponding schema
+//     for items
+//   - maps with string key have schema type "object", and corresponding
+//     schema for additionalProperties
+//   - structs have schema type "object", and disallow additionalProperties.
+//     Their properties are derived from exported struct fields, using the
+//     struct field json name. Fields that are marked "omitempty" are
+//     considered optional; all other fields become required properties.
+//
 // It returns an error if t contains (possibly recursively) any of the following Go
 // types, as they are incompatible with the JSON schema spec.
 //   - maps with key other than 'string'
@@ -75,6 +91,10 @@ func typeSchema(t reflect.Type, seen map[reflect.Type]*Schema) (*Schema, error) 
 		if err != nil {
 			return nil, fmt.Errorf("computing element schema: %v", err)
 		}
+		if t.Kind() == reflect.Array {
+			s.MinItems = Ptr(float64(t.Len()))
+			s.MaxItems = Ptr(float64(t.Len()))
+		}
 
 	case reflect.String:
 		s.Type = "string"
@@ -86,8 +106,8 @@ func typeSchema(t reflect.Type, seen map[reflect.Type]*Schema) (*Schema, error) 
 
 		for i := range t.NumField() {
 			field := t.Field(i)
-			name, ok := jsonName(field)
-			if !ok {
+			name, required, include := parseField(field)
+			if !include {
 				continue
 			}
 			if s.Properties == nil {
@@ -97,6 +117,9 @@ func typeSchema(t reflect.Type, seen map[reflect.Type]*Schema) (*Schema, error) 
 			if err != nil {
 				return nil, err
 			}
+			if required {
+				s.Required = append(s.Required, name)
+			}
 		}
 
 	default:
@@ -105,14 +128,21 @@ func typeSchema(t reflect.Type, seen map[reflect.Type]*Schema) (*Schema, error) 
 	return s, nil
 }
 
-func jsonName(f reflect.StructField) (string, bool) {
+func parseField(f reflect.StructField) (name string, required, include bool) {
 	if !f.IsExported() {
-		return "", false
+		return "", false, false
 	}
+	name = f.Name
+	required = true
 	if tag, ok := f.Tag.Lookup("json"); ok {
-		if name, _, _ := strings.Cut(tag, ","); name != "" {
-			return name, name != "-"
+		props := strings.Split(tag, ",")
+		if props[0] != "" {
+			if props[0] == "-" {
+				return "", false, false
+			}
+			name = props[0]
 		}
+		required = !slices.Contains(props[1:], "omitempty")
 	}
-	return f.Name, true
+	return name, required, true
 }

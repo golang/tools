@@ -88,7 +88,8 @@ func TestEndToEnd(t *testing.T) {
 		Name:        "greet",
 		Description: "say hi",
 		InputSchema: &jsonschema.Schema{
-			Type: "object",
+			Type:     "object",
+			Required: []string{"Name"},
 			Properties: map[string]*jsonschema.Schema{
 				"Name": {Type: "string"},
 			},

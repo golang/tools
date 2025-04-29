@@ -67,6 +67,6 @@
 //   - Support all client/server operations.
 //   - Support streamable HTTP transport.
 //   - Support multiple versions of the spec.
-//   - Implement proper JSON schema support, with both client-side and
+//   - Implement full JSON schema support, with both client-side and
 //     server-side validation.
 package mcp

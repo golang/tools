@@ -56,6 +56,7 @@ func TestForType(t *testing.T) {
 				"P":      {Type: "boolean"},
 				"NoSkip": {Type: "string"},
 			},
+			Required:             []string{"f", "G", "P"},
 			AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}},
 		}},
 	}

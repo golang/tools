@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	"golang.org/x/tools/internal/mcp/internal/jsonschema"
 	"golang.org/x/tools/internal/mcp/internal/protocol"
@@ -23,13 +24,16 @@ type Tool struct {
 
 // MakeTool is a helper to make a tool using reflection on the given handler.
 //
+// If provided, variadic [ToolOption] values may be used to customize the tool.
+//
 // The input schema for the tool is extracted from the request type for the
-// handler, and used to unmmarshal and validate requests to the handler.
+// handler, and used to unmmarshal and validate requests to the handler. This
+// schema may be customized using the [Input] option.
 //
 // It is the caller's responsibility that the handler request type can produce
 // a valid schema, as documented by [jsonschema.ForType]; otherwise, MakeTool
 // panics.
-func MakeTool[TReq any](name, description string, handler func(context.Context, *ClientConnection, TReq) ([]Content, error)) *Tool {
+func MakeTool[TReq any](name, description string, handler func(context.Context, *ClientConnection, TReq) ([]Content, error), opts ...ToolOption) *Tool {
 	schema, err := jsonschema.For[TReq]()
 	if err != nil {
 		panic(err)
@@ -51,7 +55,7 @@ func MakeTool[TReq any](name, description string, handler func(context.Context, 
 		}
 		return res, nil
 	}
-	return &Tool{
+	t := &Tool{
 		Definition: protocol.Tool{
 			Name:        name,
 			Description: description,
@@ -59,6 +63,10 @@ func MakeTool[TReq any](name, description string, handler func(context.Context, 
 		},
 		Handler: wrapped,
 	}
+	for _, opt := range opts {
+		opt.set(t)
+	}
+	return t
 }
 
 // unmarshalSchema unmarshals data into v and validates the result according to
@@ -67,4 +75,95 @@ func unmarshalSchema(data json.RawMessage, _ *jsonschema.Schema, v any) error {
 	// TODO: use reflection to create the struct type to unmarshal into.
 	// Separate validation from assignment.
 	return json.Unmarshal(data, v)
+}
+
+// A ToolOption configures the behavior of a Tool.
+type ToolOption interface {
+	set(*Tool)
+}
+
+type toolSetter func(*Tool)
+
+func (s toolSetter) set(t *Tool) { s(t) }
+
+// Input applies the provided [SchemaOption] configuration to the tool's input
+// schema.
+func Input(opts ...SchemaOption) ToolOption {
+	return toolSetter(func(t *Tool) {
+		for _, opt := range opts {
+			opt.set(t.Definition.InputSchema)
+		}
+	})
+}
+
+// A SchemaOption configures a jsonschema.Schema.
+type SchemaOption interface {
+	set(s *jsonschema.Schema)
+}
+
+type schemaSetter func(*jsonschema.Schema)
+
+func (s schemaSetter) set(schema *jsonschema.Schema) { s(schema) }
+
+// Property configures the schema for the property of the given name.
+// If there is no such property in the schema, it is created.
+func Property(name string, opts ...SchemaOption) SchemaOption {
+	return schemaSetter(func(schema *jsonschema.Schema) {
+		propSchema, ok := schema.Properties[name]
+		if !ok {
+			propSchema = new(jsonschema.Schema)
+			schema.Properties[name] = propSchema
+		}
+		// Apply the options, with special handling for Required, as it needs to be
+		// set on the parent schema.
+		for _, opt := range opts {
+			if req, ok := opt.(required); ok {
+				if req {
+					if !slices.Contains(schema.Required, name) {
+						schema.Required = append(schema.Required, name)
+					}
+				} else {
+					schema.Required = slices.DeleteFunc(schema.Required, func(s string) bool {
+						return s == name
+					})
+				}
+			} else {
+				opt.set(propSchema)
+			}
+		}
+	})
+}
+
+// Required sets whether the associated property is required. It is only valid
+// when used in a [Property] option: using Required outside of Property panics.
+func Required(v bool) SchemaOption {
+	return required(v)
+}
+
+type required bool
+
+func (required) set(s *jsonschema.Schema) {
+	panic("use of required outside of Property")
+}
+
+// Enum sets the provided values as the "enum" value of the schema.
+func Enum(values ...any) SchemaOption {
+	return schemaSetter(func(s *jsonschema.Schema) {
+		s.Enum = values
+	})
+}
+
+// Description sets the provided schema description.
+func Description(description string) SchemaOption {
+	return schemaSetter(func(schema *jsonschema.Schema) {
+		schema.Description = description
+	})
+}
+
+// Schema overrides the inferred schema with a shallow copy of the given
+// schema.
+func Schema(schema *jsonschema.Schema) SchemaOption {
+	return schemaSetter(func(s *jsonschema.Schema) {
+		*s = *schema
+	})
 }
