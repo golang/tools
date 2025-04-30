@@ -59,7 +59,8 @@ func stringscutprefix(pass *analysis.Pass) {
 			ifStmt := curIfStmt.Node().(*ast.IfStmt)
 
 			// pattern1
-			if call, ok := ifStmt.Cond.(*ast.CallExpr); ok && len(ifStmt.Body.List) > 0 {
+			if call, ok := ifStmt.Cond.(*ast.CallExpr); ok && ifStmt.Init == nil && len(ifStmt.Body.List) > 0 {
+
 				obj := typeutil.Callee(info, call)
 				if !analysisinternal.IsFunctionNamed(obj, "strings", "HasPrefix") &&
 					!analysisinternal.IsFunctionNamed(obj, "bytes", "HasPrefix") {

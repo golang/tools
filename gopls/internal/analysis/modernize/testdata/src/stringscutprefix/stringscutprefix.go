@@ -59,6 +59,10 @@ func _() {
 		a := strings.TrimPrefix(s, pre) // noop, as the argument isn't the same
 		_ = a
 	}
+	if s1 := s; strings.HasPrefix(s1, pre) {
+		a := strings.TrimPrefix(s1, pre) // noop, as IfStmt.Init is present
+		_ = a
+	}
 }
 
 var value0 string
