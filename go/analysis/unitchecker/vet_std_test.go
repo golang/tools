@@ -5,6 +5,7 @@
 package unitchecker_test
 
 import (
+	"go/version"
 	"os"
 	"os/exec"
 	"runtime"
@@ -95,8 +96,14 @@ func TestVetStdlib(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping in -short mode")
 	}
-	if version := runtime.Version(); !strings.HasPrefix(version, "devel") {
-		t.Skipf("This test is only wanted on development branches where code can be easily fixed. Skipping because runtime.Version=%q.", version)
+	if builder := os.Getenv("GO_BUILDER_NAME"); builder != "" && !strings.HasPrefix(builder, "x_tools-gotip-") {
+		// Run on builders like x_tools-gotip-linux-amd64-longtest,
+		// skip on others like x_tools-go1.24-linux-amd64-longtest.
+		t.Skipf("This test is only wanted on development branches where code can be easily fixed. Skipping on non-gotip builder %q.", builder)
+	} else if v := runtime.Version(); !strings.Contains(v, "devel") || version.Compare(v, version.Lang(v)) != 0 {
+		// Run on versions like "go1.25-devel_9ce47e66e8 Wed Mar 26 03:48:50 2025 -0700",
+		// skip on others like "go1.24.2" or "go1.24.2-devel_[…]".
+		t.Skipf("This test is only wanted on development versions where code can be easily fixed. Skipping on non-gotip version %q.", v)
 	}
 
 	cmd := exec.Command("go", "vet", "-vettool="+os.Args[0], "std")
