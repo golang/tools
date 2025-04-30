@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/internal/mcp/internal/protocol"
 )
 
 func TestSSEServer(t *testing.T) {
@@ -48,7 +49,9 @@ func TestSSEServer(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantHi := []Content{TextContent{Text: "hi user"}}
+			wantHi := &protocol.CallToolResult{
+				Content: []protocol.Content{{Type: "text", Text: "hi user"}},
+			}
 			if diff := cmp.Diff(wantHi, gotHi); diff != "" {
 				t.Errorf("tools/call 'greet' mismatch (-want +got):\n%s", diff)
 			}

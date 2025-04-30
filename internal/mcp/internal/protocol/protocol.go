@@ -47,7 +47,7 @@ type CallToolResult struct {
 	// This result property is reserved by the protocol to allow clients and servers
 	// to attach additional metadata to their responses.
 	Meta    map[string]json.RawMessage `json:"_meta,omitempty"`
-	Content []json.RawMessage          `json:"content"`
+	Content []Content                  `json:"content"`
 	// Whether the tool call ended in an error.
 	//
 	// If not set, this is assumed to be false (the call was successful).
@@ -198,8 +198,8 @@ type PromptCapabilities struct {
 // This is similar to `SamplingMessage`, but also supports the embedding of
 // resources from the MCP server.
 type PromptMessage struct {
-	Content json.RawMessage `json:"content"`
-	Role    Role            `json:"role"`
+	Content Content `json:"content"`
+	Role    Role    `json:"role"`
 }
 
 // Present if the server offers any resources to read.
@@ -229,15 +229,6 @@ type ServerCapabilities struct {
 	Resources *ResourceCapabilities `json:"resources,omitempty"`
 	// Present if the server offers any tools to call.
 	Tools *ToolCapabilities `json:"tools,omitempty"`
-}
-
-// Text provided to or from an LLM.
-type TextContent struct {
-	// Optional annotations for the client.
-	Annotations *Annotations `json:"annotations,omitempty"`
-	// The text content of the message.
-	Text string `json:"text"`
-	Type string `json:"type"`
 }
 
 // Definition for a tool the client can call.

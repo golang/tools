@@ -7,7 +7,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"iter"
 	"slices"
@@ -194,7 +193,7 @@ func (sc *ServerConnection) ListTools(ctx context.Context) ([]protocol.Tool, err
 // TODO(jba): make the following true:
 // If the provided arguments do not conform to the schema for the given tool,
 // the call fails.
-func (sc *ServerConnection) CallTool(ctx context.Context, name string, args map[string]any) (_ []Content, err error) {
+func (sc *ServerConnection) CallTool(ctx context.Context, name string, args map[string]any) (_ *protocol.CallToolResult, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("calling tool %q: %w", name, err)
@@ -218,15 +217,5 @@ func (sc *ServerConnection) CallTool(ctx context.Context, name string, args map[
 	if err := call(ctx, sc.conn, "tools/call", params, &result); err != nil {
 		return nil, err
 	}
-	content, err := unmarshalContent(result.Content)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshaling tool content: %v", err)
-	}
-	if result.IsError {
-		if len(content) != 1 || !is[TextContent](content[0]) {
-			return nil, errors.New("malformed error content")
-		}
-		return nil, errors.New(content[0].(TextContent).Text)
-	}
-	return content, nil
+	return &result, nil
 }

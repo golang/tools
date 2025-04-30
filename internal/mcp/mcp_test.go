@@ -6,7 +6,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -50,19 +49,10 @@ func TestEndToEnd(t *testing.T) {
 
 	s.AddPrompts(
 		MakePrompt("code_review", "do a code review", func(_ context.Context, _ *ClientConnection, params struct{ Code string }) (*protocol.GetPromptResult, error) {
-			// TODO(rfindley): clean up this handling of content.
-			content, err := json.Marshal(protocol.TextContent{
-				Type: "text",
-				Text: "Please review the following code: " + params.Code,
-			})
-			if err != nil {
-				return nil, err
-			}
 			return &protocol.GetPromptResult{
 				Description: "Code review prompt",
 				Messages: []protocol.PromptMessage{
-					// TODO: move 'Content' to the protocol package.
-					{Role: "user", Content: json.RawMessage(content)},
+					{Role: "user", Content: TextContent{Text: "Please review the following code: " + params.Code}.ToWire()},
 				},
 			}, nil
 		}),
@@ -126,10 +116,17 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// TODO: assert on the full review, once content is easier to create.
-	if got, want := gotReview.Description, "Code review prompt"; got != want {
-		t.Errorf("prompts/get 'code_review': got description %q, want %q", got, want)
+	wantReview := &protocol.GetPromptResult{
+		Description: "Code review prompt",
+		Messages: []protocol.PromptMessage{{
+			Content: TextContent{Text: "Please review the following code: 1+1"}.ToWire(),
+			Role:    "user",
+		}},
 	}
+	if diff := cmp.Diff(wantReview, gotReview); diff != "" {
+		t.Errorf("prompts/get 'code_review' mismatch (-want +got):\n%s", diff)
+	}
+
 	if _, err := sc.GetPrompt(ctx, "fail", map[string]string{}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
 		t.Errorf("fail returned unexpected error: got %v, want containing %v", err, failure)
 	}
@@ -165,13 +162,25 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantHi := []Content{TextContent{Text: "hi user"}}
+	wantHi := &protocol.CallToolResult{
+		Content: []protocol.Content{{Type: "text", Text: "hi user"}},
+	}
 	if diff := cmp.Diff(wantHi, gotHi); diff != "" {
 		t.Errorf("tools/call 'greet' mismatch (-want +got):\n%s", diff)
 	}
 
-	if _, err := sc.CallTool(ctx, "fail", map[string]any{}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
-		t.Errorf("fail returned unexpected error: got %v, want containing %v", err, failure)
+	gotFail, err := sc.CallTool(ctx, "fail", map[string]any{})
+	// Counter-intuitively, when a tool fails, we don't expect an RPC error for
+	// call tool: instead, the failure is embedded in the result.
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFail := &protocol.CallToolResult{
+		IsError: true,
+		Content: []protocol.Content{{Type: "text", Text: failure.Error()}},
+	}
+	if diff := cmp.Diff(wantFail, gotFail); diff != "" {
+		t.Errorf("tools/call 'fail' mismatch (-want +got):\n%s", diff)
 	}
 
 	// Disconnect.

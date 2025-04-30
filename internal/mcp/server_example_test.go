@@ -40,11 +40,11 @@ func ExampleServer() {
 		log.Fatal(err)
 	}
 
-	content, err := serverConnection.CallTool(ctx, "greet", map[string]any{"name": "user"})
+	res, err := serverConnection.CallTool(ctx, "greet", map[string]any{"name": "user"})
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(content[0].(mcp.TextContent).Text)
+	fmt.Println(res.Content[0].Text)
 
 	serverConnection.Close()
 	clientConnection.Wait()

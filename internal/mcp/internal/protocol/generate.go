@@ -91,7 +91,6 @@ var declarations = config{
 			"Tools":     {Name: "ToolCapabilities"},
 		},
 	},
-	"TextContent": {Name: "TextContent"},
 	"Tool": {
 		Name:   "Tool",
 		Fields: config{"InputSchema": {Substitute: "*jsonschema.Schema"}},
@@ -249,8 +248,15 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 	}
 
 	if def.Type == "" {
-		// E.g. union types.
-		fmt.Fprintf(w, "json.RawMessage")
+		// special case: recognize Content
+		if slices.ContainsFunc(def.AnyOf, func(s *jsonschema.Schema) bool {
+			return s.Ref == "#/definitions/TextContent"
+		}) {
+			fmt.Fprintf(w, "Content")
+		} else {
+			// E.g. union types.
+			fmt.Fprintf(w, "json.RawMessage")
+		}
 	} else {
 		switch def.Type {
 		case "array":

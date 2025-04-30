@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -29,19 +28,10 @@ func SayHi(ctx context.Context, cc *mcp.ClientConnection, params *HiParams) ([]m
 }
 
 func PromptHi(ctx context.Context, cc *mcp.ClientConnection, params *HiParams) (*protocol.GetPromptResult, error) {
-	// (see related TODOs about cleaning up content construction)
-	content, err := json.Marshal(protocol.TextContent{
-		Type: "text",
-		Text: "Say hi to " + params.Name,
-	})
-	if err != nil {
-		return nil, err
-	}
 	return &protocol.GetPromptResult{
 		Description: "Code review prompt",
 		Messages: []protocol.PromptMessage{
-			// TODO: move 'Content' to the protocol package.
-			{Role: "user", Content: json.RawMessage(content)},
+			{Role: "user", Content: mcp.TextContent{Text: "Say hi to " + params.Name}.ToWire()},
 		},
 	}, nil
 }

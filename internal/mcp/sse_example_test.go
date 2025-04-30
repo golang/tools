@@ -40,11 +40,11 @@ func ExampleSSEHandler() {
 	}
 	defer serverConn.Close()
 
-	content, err := serverConn.CallTool(ctx, "add", map[string]any{"x": 1, "y": 2})
+	res, err := serverConn.CallTool(ctx, "add", map[string]any{"x": 1, "y": 2})
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(content[0].(mcp.TextContent).Text)
+	fmt.Println(res.Content[0].Text)
 
 	// Output: 3
 }

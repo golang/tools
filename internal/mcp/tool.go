@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/tools/internal/mcp/internal/jsonschema"
 	"golang.org/x/tools/internal/mcp/internal/protocol"
+	"golang.org/x/tools/internal/mcp/internal/util"
 )
 
 // A ToolHandler handles a call to tools/call.
@@ -56,12 +57,12 @@ func MakeTool[TReq any](name, description string, handler func(context.Context, 
 		// rather than returned as jsonrpc2 server errors.
 		if err != nil {
 			return &protocol.CallToolResult{
-				Content: marshalContent([]Content{TextContent{Text: err.Error()}}),
+				Content: []protocol.Content{TextContent{Text: err.Error()}.ToWire()},
 				IsError: true,
 			}, nil
 		}
 		res := &protocol.CallToolResult{
-			Content: marshalContent(content),
+			Content: util.Apply(content, Content.ToWire),
 		}
 		return res, nil
 	}
