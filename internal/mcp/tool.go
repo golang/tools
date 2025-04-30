@@ -14,7 +14,7 @@ import (
 )
 
 // A ToolHandler handles a call to tools/call.
-type ToolHandler func(context.Context, *ClientConnection, json.RawMessage) (*protocol.CallToolResult, error)
+type ToolHandler func(context.Context, *ClientConnection, map[string]json.RawMessage) (*protocol.CallToolResult, error)
 
 // A Tool is a tool definition that is bound to a tool handler.
 type Tool struct {
@@ -30,20 +30,30 @@ type Tool struct {
 // handler, and used to unmmarshal and validate requests to the handler. This
 // schema may be customized using the [Input] option.
 //
-// It is the caller's responsibility that the handler request type can produce
-// a valid schema, as documented by [jsonschema.ForType]; otherwise, MakeTool
-// panics.
+// The handler request type must translate to a valid schema, as documented by
+// [jsonschema.ForType]; otherwise, MakeTool panics.
+//
+// TODO: just have the handler return a CallToolResult: returning []Content is
+// going to be inconsistent with other server features.
 func MakeTool[TReq any](name, description string, handler func(context.Context, *ClientConnection, TReq) ([]Content, error), opts ...ToolOption) *Tool {
 	schema, err := jsonschema.For[TReq]()
 	if err != nil {
 		panic(err)
 	}
-	wrapped := func(ctx context.Context, cc *ClientConnection, args json.RawMessage) (*protocol.CallToolResult, error) {
+	wrapped := func(ctx context.Context, cc *ClientConnection, args map[string]json.RawMessage) (*protocol.CallToolResult, error) {
+		// For simplicity, just marshal and unmarshal the arguments.
+		// This could be avoided in the future.
+		rawArgs, err := json.Marshal(args)
+		if err != nil {
+			return nil, err
+		}
 		var v TReq
-		if err := unmarshalSchema(args, schema, &v); err != nil {
+		if err := unmarshalSchema(rawArgs, schema, &v); err != nil {
 			return nil, err
 		}
 		content, err := handler(ctx, cc, v)
+		// TODO: investigate why server errors are embedded in this strange way,
+		// rather than returned as jsonrpc2 server errors.
 		if err != nil {
 			return &protocol.CallToolResult{
 				Content: marshalContent([]Content{TextContent{Text: err.Error()}}),
@@ -140,6 +150,8 @@ func Required(v bool) SchemaOption {
 	return required(v)
 }
 
+// required must be a distinguished type as it needs special handling to mutate
+// the parent schema, and to mutate prompt arguments.
 type required bool
 
 func (required) set(s *jsonschema.Schema) {
@@ -154,10 +166,16 @@ func Enum(values ...any) SchemaOption {
 }
 
 // Description sets the provided schema description.
-func Description(description string) SchemaOption {
-	return schemaSetter(func(schema *jsonschema.Schema) {
-		schema.Description = description
-	})
+func Description(desc string) SchemaOption {
+	return description(desc)
+}
+
+// description must be a distinguished type so that it can be handled by prompt
+// options.
+type description string
+
+func (d description) set(s *jsonschema.Schema) {
+	s.Description = string(d)
 }
 
 // Schema overrides the inferred schema with a shallow copy of the given

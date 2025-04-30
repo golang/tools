@@ -142,6 +142,7 @@ func parseField(f reflect.StructField) (name string, required, include bool) {
 			}
 			name = props[0]
 		}
+		// TODO: support 'omitzero' as well.
 		required = !slices.Contains(props[1:], "omitempty")
 	}
 	return name, required, true

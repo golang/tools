@@ -63,8 +63,12 @@
 //
 // # TODO
 //
+//   - Support all content types.
 //   - Support pagination.
+//   - Support completion.
+//   - Support oauth.
 //   - Support all client/server operations.
+//   - Pass the client connection in the context.
 //   - Support streamable HTTP transport.
 //   - Support multiple versions of the spec.
 //   - Implement full JSON schema support, with both client-side and

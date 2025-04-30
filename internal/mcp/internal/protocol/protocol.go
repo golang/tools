@@ -29,8 +29,8 @@ type Annotations struct {
 }
 
 type CallToolParams struct {
-	Arguments json.RawMessage `json:"arguments,omitempty"`
-	Name      string          `json:"name"`
+	Arguments map[string]json.RawMessage `json:"arguments,omitempty"`
+	Name      string                     `json:"name"`
 }
 
 // The server's response to a tool call.
@@ -46,8 +46,8 @@ type CallToolParams struct {
 type CallToolResult struct {
 	// This result property is reserved by the protocol to allow clients and servers
 	// to attach additional metadata to their responses.
-	Meta    json.RawMessage   `json:"_meta,omitempty"`
-	Content []json.RawMessage `json:"content"`
+	Meta    map[string]json.RawMessage `json:"_meta,omitempty"`
+	Content []json.RawMessage          `json:"content"`
 	// Whether the tool call ended in an error.
 	//
 	// If not set, this is assumed to be false (the call was successful).
@@ -70,14 +70,31 @@ type CancelledParams struct {
 // additional capabilities.
 type ClientCapabilities struct {
 	// Experimental, non-standard capabilities that the client supports.
-	Experimental json.RawMessage `json:"experimental,omitempty"`
+	Experimental map[string]map[string]json.RawMessage `json:"experimental,omitempty"`
 	// Present if the client supports listing roots.
 	Roots *struct {
 		// Whether the client supports notifications for changes to the roots list.
 		ListChanged bool `json:"listChanged,omitempty"`
 	} `json:"roots,omitempty"`
 	// Present if the client supports sampling from an LLM.
-	Sampling json.RawMessage `json:"sampling,omitempty"`
+	Sampling map[string]json.RawMessage `json:"sampling,omitempty"`
+}
+
+type GetPromptParams struct {
+	// Arguments to use for templating the prompt.
+	Arguments map[string]string `json:"arguments,omitempty"`
+	// The name of the prompt or prompt template.
+	Name string `json:"name"`
+}
+
+// The server's response to a prompts/get request from the client.
+type GetPromptResult struct {
+	// This result property is reserved by the protocol to allow clients and servers
+	// to attach additional metadata to their responses.
+	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// An optional description for the prompt.
+	Description string          `json:"description,omitempty"`
+	Messages    []PromptMessage `json:"messages"`
 }
 
 // Describes the name and version of an MCP implementation.
@@ -99,8 +116,8 @@ type InitializeParams struct {
 type InitializeResult struct {
 	// This result property is reserved by the protocol to allow clients and servers
 	// to attach additional metadata to their responses.
-	Meta         json.RawMessage    `json:"_meta,omitempty"`
-	Capabilities ServerCapabilities `json:"capabilities"`
+	Meta         map[string]json.RawMessage `json:"_meta,omitempty"`
+	Capabilities ServerCapabilities         `json:"capabilities"`
 	// Instructions describing how to use the server and its features.
 	//
 	// This can be used by clients to improve the LLM's understanding of available
@@ -114,7 +131,24 @@ type InitializeResult struct {
 	ServerInfo      Implementation `json:"serverInfo"`
 }
 
-type InitializedParams json.RawMessage
+type InitializedParams map[string]json.RawMessage
+
+type ListPromptsParams struct {
+	// An opaque token representing the current pagination position. If provided,
+	// the server should return results starting after this cursor.
+	Cursor string `json:"cursor,omitempty"`
+}
+
+// The server's response to a prompts/list request from the client.
+type ListPromptsResult struct {
+	// This result property is reserved by the protocol to allow clients and servers
+	// to attach additional metadata to their responses.
+	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// An opaque token representing the pagination position after the last returned
+	// result. If present, there may be more results available.
+	NextCursor string   `json:"nextCursor,omitempty"`
+	Prompts    []Prompt `json:"prompts"`
+}
 
 type ListToolsParams struct {
 	// An opaque token representing the current pagination position. If provided,
@@ -126,17 +160,46 @@ type ListToolsParams struct {
 type ListToolsResult struct {
 	// This result property is reserved by the protocol to allow clients and servers
 	// to attach additional metadata to their responses.
-	Meta json.RawMessage `json:"_meta,omitempty"`
+	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
 	// An opaque token representing the pagination position after the last returned
 	// result. If present, there may be more results available.
 	NextCursor string `json:"nextCursor,omitempty"`
 	Tools      []Tool `json:"tools"`
 }
 
+// A prompt or prompt template that the server offers.
+type Prompt struct {
+	// A list of arguments to use for templating the prompt.
+	Arguments []PromptArgument `json:"arguments,omitempty"`
+	// An optional description of what this prompt provides
+	Description string `json:"description,omitempty"`
+	// The name of the prompt or prompt template.
+	Name string `json:"name"`
+}
+
+// Describes an argument that a prompt can accept.
+type PromptArgument struct {
+	// A human-readable description of the argument.
+	Description string `json:"description,omitempty"`
+	// The name of the argument.
+	Name string `json:"name"`
+	// Whether this argument must be provided.
+	Required bool `json:"required,omitempty"`
+}
+
 // Present if the server offers any prompt templates.
 type PromptCapabilities struct {
 	// Whether this server supports notifications for changes to the prompt list.
 	ListChanged bool `json:"listChanged,omitempty"`
+}
+
+// Describes a message returned as part of a prompt.
+//
+// This is similar to `SamplingMessage`, but also supports the embedding of
+// resources from the MCP server.
+type PromptMessage struct {
+	Content json.RawMessage `json:"content"`
+	Role    Role            `json:"role"`
 }
 
 // Present if the server offers any resources to read.
@@ -155,11 +218,11 @@ type Role string
 // additional capabilities.
 type ServerCapabilities struct {
 	// Present if the server supports argument autocompletion suggestions.
-	Completions json.RawMessage `json:"completions,omitempty"`
+	Completions map[string]json.RawMessage `json:"completions,omitempty"`
 	// Experimental, non-standard capabilities that the server supports.
-	Experimental json.RawMessage `json:"experimental,omitempty"`
+	Experimental map[string]map[string]json.RawMessage `json:"experimental,omitempty"`
 	// Present if the server supports sending log messages to the client.
-	Logging json.RawMessage `json:"logging,omitempty"`
+	Logging map[string]json.RawMessage `json:"logging,omitempty"`
 	// Present if the server offers any prompt templates.
 	Prompts *PromptCapabilities `json:"prompts,omitempty"`
 	// Present if the server offers any resources to read.

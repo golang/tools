@@ -13,8 +13,8 @@ import (
 	"golang.org/x/tools/internal/mcp/internal/jsonschema"
 )
 
-// testHandler is used for type inference in TestMakeTool.
-func testHandler[T any](context.Context, *mcp.ClientConnection, T) ([]mcp.Content, error) {
+// testToolHandler is used for type inference in TestMakeTool.
+func testToolHandler[T any](context.Context, *mcp.ClientConnection, T) ([]mcp.Content, error) {
 	panic("not implemented")
 }
 
@@ -24,7 +24,7 @@ func TestMakeTool(t *testing.T) {
 		want *jsonschema.Schema
 	}{
 		{
-			mcp.MakeTool("basic", "", testHandler[struct {
+			mcp.MakeTool("basic", "", testToolHandler[struct {
 				Name string `json:"name"`
 			}]),
 			&jsonschema.Schema{
@@ -37,7 +37,7 @@ func TestMakeTool(t *testing.T) {
 			},
 		},
 		{
-			mcp.MakeTool("enum", "", testHandler[struct{ Name string }], mcp.Input(
+			mcp.MakeTool("enum", "", testToolHandler[struct{ Name string }], mcp.Input(
 				mcp.Property("Name", mcp.Enum("x", "y", "z")),
 			)),
 			&jsonschema.Schema{
@@ -50,7 +50,7 @@ func TestMakeTool(t *testing.T) {
 			},
 		},
 		{
-			mcp.MakeTool("required", "", testHandler[struct {
+			mcp.MakeTool("required", "", testToolHandler[struct {
 				Name     string `json:"name"`
 				Language string `json:"language"`
 				X        int    `json:"x,omitempty"`
@@ -70,7 +70,7 @@ func TestMakeTool(t *testing.T) {
 			},
 		},
 		{
-			mcp.MakeTool("set_schema", "", testHandler[struct {
+			mcp.MakeTool("set_schema", "", testToolHandler[struct {
 				X int `json:"x,omitempty"`
 				Y int `json:"y,omitempty"`
 			}], mcp.Input(

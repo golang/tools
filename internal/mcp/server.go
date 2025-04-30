@@ -26,6 +26,7 @@ type Server struct {
 	opts    ServerOptions
 
 	mu      sync.Mutex
+	prompts []*Prompt
 	tools   []*Tool
 	clients []*ClientConnection
 }
@@ -53,6 +54,15 @@ func NewServer(name, version string, opts *ServerOptions) *Server {
 	}
 }
 
+// AddPrompts adds the given prompts to the server.
+//
+// TODO(rfindley): notify connected clients of any changes.
+func (s *Server) AddPrompts(prompts ...*Prompt) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.prompts = append(s.prompts, prompts...)
+}
+
 // AddTools adds the given tools to the server.
 //
 // TODO(rfindley): notify connected clients of any changes.
@@ -69,6 +79,33 @@ func (s *Server) Clients() iter.Seq[*ClientConnection] {
 	clients := slices.Clone(s.clients)
 	s.mu.Unlock()
 	return slices.Values(clients)
+}
+
+func (s *Server) listPrompts(_ context.Context, _ *ClientConnection, params *protocol.ListPromptsParams) (*protocol.ListPromptsResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	res := new(protocol.ListPromptsResult)
+	for _, p := range s.prompts {
+		res.Prompts = append(res.Prompts, p.Definition)
+	}
+	return res, nil
+}
+
+func (s *Server) getPrompt(ctx context.Context, cc *ClientConnection, params *protocol.GetPromptParams) (*protocol.GetPromptResult, error) {
+	s.mu.Lock()
+	var prompt *Prompt
+	if i := slices.IndexFunc(s.prompts, func(t *Prompt) bool {
+		return t.Definition.Name == params.Name
+	}); i >= 0 {
+		prompt = s.prompts[i]
+	}
+	s.mu.Unlock()
+
+	if prompt == nil {
+		return nil, fmt.Errorf("%s: unknown prompt %q", jsonrpc2.ErrInvalidParams, params.Name)
+	}
+	return prompt.Handler(ctx, cc, params.Arguments)
 }
 
 func (s *Server) listTools(_ context.Context, _ *ClientConnection, params *protocol.ListToolsParams) (*protocol.ListToolsResult, error) {
@@ -185,6 +222,12 @@ func (cc *ClientConnection) handle(ctx context.Context, req *jsonrpc2.Request) (
 		// The spec says that 'ping' expects an empty object result.
 		return struct{}{}, nil
 
+	case "prompts/list":
+		return dispatch(ctx, cc, req, cc.server.listPrompts)
+
+	case "prompts/get":
+		return dispatch(ctx, cc, req, cc.server.getPrompt)
+
 	case "tools/list":
 		return dispatch(ctx, cc, req, cc.server.listTools)
 
@@ -216,8 +259,11 @@ func (cc *ClientConnection) initialize(ctx context.Context, _ *ClientConnection,
 		// TODO(rfindley): support multiple protocol versions.
 		ProtocolVersion: "2024-11-05",
 		Capabilities: protocol.ServerCapabilities{
+			Prompts: &protocol.PromptCapabilities{
+				ListChanged: false, // not yet supported
+			},
 			Tools: &protocol.ToolCapabilities{
-				ListChanged: true,
+				ListChanged: false, // not yet supported
 			},
 		},
 		Instructions: cc.server.opts.Instructions,
@@ -249,5 +295,11 @@ func dispatch[TConn, TParams, TResult any](ctx context.Context, conn TConn, req 
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return nil, err
 	}
-	return f(ctx, conn, params)
+	// Important: avoid returning a typed nil, as it can't be handled by the
+	// jsonrpc2 package.
+	res, err := f(ctx, conn, params)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }

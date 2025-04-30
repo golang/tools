@@ -13,13 +13,11 @@ package main
 
 import (
 	"bytes"
-	"cmp"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"go/format"
 	"io"
-	"iter"
 	"log"
 	"net/http"
 	"os"
@@ -28,6 +26,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/internal/mcp/internal/jsonschema"
+	"golang.org/x/tools/internal/mcp/internal/util"
 )
 
 var schemaFile = flag.String("schema_file", "", "if set, use this file as the persistent schema file")
@@ -54,31 +53,36 @@ var declarations = config{
 	"CallToolRequest": {
 		Fields: config{"Params": {Name: "CallToolParams"}},
 	},
-	"CallToolResult": {
-		Name: "CallToolResult",
-	},
+	"CallToolResult": {Name: "CallToolResult"},
 	"CancelledNotification": {
 		Fields: config{"Params": {Name: "CancelledParams"}},
 	},
 	"ClientCapabilities": {Name: "ClientCapabilities"},
-	"Implementation":     {Name: "Implementation"},
+	"GetPromptRequest": {
+		Fields: config{"Params": {Name: "GetPromptParams"}},
+	},
+	"GetPromptResult": {Name: "GetPromptResult"},
+	"Implementation":  {Name: "Implementation"},
 	"InitializeRequest": {
 		Fields: config{"Params": {Name: "InitializeParams"}},
 	},
-	"InitializeResult": {
-		Name: "InitializeResult",
-	},
+	"InitializeResult": {Name: "InitializeResult"},
 	"InitializedNotification": {
 		Fields: config{"Params": {Name: "InitializedParams"}},
 	},
+	"ListPromptsRequest": {
+		Fields: config{"Params": {Name: "ListPromptsParams"}},
+	},
+	"ListPromptsResult": {Name: "ListPromptsResult"},
 	"ListToolsRequest": {
 		Fields: config{"Params": {Name: "ListToolsParams"}},
 	},
-	"ListToolsResult": {
-		Name: "ListToolsResult",
-	},
-	"RequestId": {Substitute: "any"}, // null|number|string
-	"Role":      {Name: "Role"},
+	"ListToolsResult": {Name: "ListToolsResult"},
+	"Prompt":          {Name: "Prompt"},
+	"PromptMessage":   {Name: "PromptMessage"},
+	"PromptArgument":  {Name: "PromptArgument"},
+	"RequestId":       {Substitute: "any"}, // null|number|string
+	"Role":            {Name: "Role"},
 	"ServerCapabilities": {
 		Name: "ServerCapabilities",
 		Fields: config{
@@ -92,9 +96,7 @@ var declarations = config{
 		Name:   "Tool",
 		Fields: config{"InputSchema": {Substitute: "*jsonschema.Schema"}},
 	},
-	"ToolAnnotations": {
-		Name: "ToolAnnotations",
-	},
+	"ToolAnnotations": {Name: "ToolAnnotations"},
 }
 
 func main() {
@@ -114,7 +116,7 @@ func main() {
 	// writing types, we collect definitions and concatenate them later. This
 	// also allows us to sort.
 	named := make(map[string]*bytes.Buffer)
-	for name, def := range sorted(schema.Definitions) {
+	for name, def := range util.Sorted(schema.Definitions) {
 		config := declarations[name]
 		if config == nil {
 			continue
@@ -142,7 +144,7 @@ import (
 `)
 
 	// Write out types.
-	for _, b := range sorted(named) {
+	for _, b := range util.Sorted(named) {
 		fmt.Fprintln(buf)
 		fmt.Fprint(buf, b.String())
 	}
@@ -242,8 +244,8 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 	// unmarshal them into a map[string]any, or delay unmarshalling with
 	// json.RawMessage. For now, use json.RawMessage as it defers the choice.
 	if def.Type == "object" && canHaveAdditionalProperties(def) {
-		w.Write([]byte("json.RawMessage"))
-		return nil
+		w.Write([]byte("map[string]"))
+		return writeType(w, nil, def.AdditionalProperties, named)
 	}
 
 	if def.Type == "" {
@@ -269,7 +271,7 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 
 		case "object":
 			fmt.Fprintf(w, "struct {\n")
-			for name, fieldDef := range sorted(def.Properties) {
+			for name, fieldDef := range util.Sorted(def.Properties) {
 				if fieldDef.Description != "" {
 					fmt.Fprintf(w, "%s\n", toComment(fieldDef.Description))
 				}
@@ -384,29 +386,4 @@ func assert(cond bool, msg string) {
 	if !cond {
 		panic(msg)
 	}
-}
-
-// Helpers below are copied from gopls' moremaps package.
-
-// sorted returns an iterator over the entries of m in key order.
-func sorted[M ~map[K]V, K cmp.Ordered, V any](m M) iter.Seq2[K, V] {
-	// TODO(adonovan): use maps.Sorted if proposal #68598 is accepted.
-	return func(yield func(K, V) bool) {
-		keys := keySlice(m)
-		slices.Sort(keys)
-		for _, k := range keys {
-			if !yield(k, m[k]) {
-				break
-			}
-		}
-	}
-}
-
-// keySlice returns the keys of the map M, like slices.Collect(maps.Keys(m)).
-func keySlice[M ~map[K]V, K comparable, V any](m M) []K {
-	r := make([]K, 0, len(m))
-	for k := range m {
-		r = append(r, k)
-	}
-	return r
 }

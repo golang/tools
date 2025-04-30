@@ -150,6 +150,33 @@ func (sc *ServerConnection) Ping(ctx context.Context) error {
 	return call(ctx, sc.conn, "ping", nil, nil)
 }
 
+// ListPrompts lists prompts that are currently available on the server.
+func (sc *ServerConnection) ListPrompts(ctx context.Context) ([]protocol.Prompt, error) {
+	var (
+		params = &protocol.ListPromptsParams{}
+		result protocol.ListPromptsResult
+	)
+	if err := call(ctx, sc.conn, "prompts/list", params, &result); err != nil {
+		return nil, err
+	}
+	return result.Prompts, nil
+}
+
+// GetPrompt gets a prompt from the server.
+func (sc *ServerConnection) GetPrompt(ctx context.Context, name string, args map[string]string) (*protocol.GetPromptResult, error) {
+	var (
+		params = &protocol.GetPromptParams{
+			Name:      name,
+			Arguments: args,
+		}
+		result = &protocol.GetPromptResult{}
+	)
+	if err := call(ctx, sc.conn, "prompts/get", params, result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // ListTools lists tools that are currently available on the server.
 func (sc *ServerConnection) ListTools(ctx context.Context) ([]protocol.Tool, error) {
 	var (
@@ -164,23 +191,27 @@ func (sc *ServerConnection) ListTools(ctx context.Context) ([]protocol.Tool, err
 
 // CallTool calls the tool with the given name and arguments.
 //
-// TODO: make the following true:
+// TODO(jba): make the following true:
 // If the provided arguments do not conform to the schema for the given tool,
 // the call fails.
-func (sc *ServerConnection) CallTool(ctx context.Context, name string, args any) (_ []Content, err error) {
+func (sc *ServerConnection) CallTool(ctx context.Context, name string, args map[string]any) (_ []Content, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("calling tool %q: %w", name, err)
 		}
 	}()
-	argJSON, err := json.Marshal(args)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling args: %v", err)
+	argsJSON := make(map[string]json.RawMessage)
+	for name, arg := range args {
+		argJSON, err := json.Marshal(arg)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling argument %s: %v", name, err)
+		}
+		argsJSON[name] = argJSON
 	}
 	var (
 		params = &protocol.CallToolParams{
 			Name:      name,
-			Arguments: argJSON,
+			Arguments: argsJSON,
 		}
 		result protocol.CallToolResult
 	)

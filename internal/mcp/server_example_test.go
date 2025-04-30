@@ -40,7 +40,7 @@ func ExampleServer() {
 		log.Fatal(err)
 	}
 
-	content, err := serverConnection.CallTool(ctx, "greet", SayHiParams{Name: "user"})
+	content, err := serverConnection.CallTool(ctx, "greet", map[string]any{"name": "user"})
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -6,23 +6,43 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
 
 	"golang.org/x/tools/internal/mcp"
+	"golang.org/x/tools/internal/mcp/internal/protocol"
 )
 
 var httpAddr = flag.String("http", "", "if set, use SSE HTTP at this address, instead of stdin/stdout")
 
-type SayHiParams struct {
+type HiParams struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ClientConnection, params *SayHiParams) ([]mcp.Content, error) {
+func SayHi(ctx context.Context, cc *mcp.ClientConnection, params *HiParams) ([]mcp.Content, error) {
 	return []mcp.Content{
 		mcp.TextContent{Text: "Hi " + params.Name},
+	}, nil
+}
+
+func PromptHi(ctx context.Context, cc *mcp.ClientConnection, params *HiParams) (*protocol.GetPromptResult, error) {
+	// (see related TODOs about cleaning up content construction)
+	content, err := json.Marshal(protocol.TextContent{
+		Type: "text",
+		Text: "Say hi to " + params.Name,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &protocol.GetPromptResult{
+		Description: "Code review prompt",
+		Messages: []protocol.PromptMessage{
+			// TODO: move 'Content' to the protocol package.
+			{Role: "user", Content: json.RawMessage(content)},
+		},
 	}, nil
 }
 
@@ -33,6 +53,7 @@ func main() {
 	server.AddTools(mcp.MakeTool("greet", "say hi", SayHi, mcp.Input(
 		mcp.Property("name", mcp.Description("the name to say hi to")),
 	)))
+	server.AddPrompts(mcp.MakePrompt("greet", "", PromptHi))
 
 	if *httpAddr != "" {
 		handler := mcp.NewSSEHandler(func(*http.Request) *mcp.Server {

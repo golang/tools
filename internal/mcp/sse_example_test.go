@@ -40,7 +40,7 @@ func ExampleSSEHandler() {
 	}
 	defer serverConn.Close()
 
-	content, err := serverConn.CallTool(ctx, "add", AddParams{1, 2})
+	content, err := serverConn.CallTool(ctx, "add", map[string]any{"x": 1, "y": 2})
 	if err != nil {
 		log.Fatal(err)
 	}

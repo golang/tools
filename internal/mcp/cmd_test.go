@@ -53,7 +53,7 @@ func TestCmdTransport(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	got, err := serverConn.CallTool(ctx, "greet", SayHiParams{Name: "user"})
+	got, err := serverConn.CallTool(ctx, "greet", map[string]any{"name": "user"})
 	if err != nil {
 		log.Fatal(err)
 	}

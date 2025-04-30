@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -41,9 +42,34 @@ func TestEndToEnd(t *testing.T) {
 
 	// The 'fail' tool returns this error.
 	failure := errors.New("mcp failure")
-	s.AddTools(MakeTool("fail", "just fail", func(context.Context, *ClientConnection, struct{}) ([]Content, error) {
-		return nil, failure
-	}))
+	s.AddTools(
+		MakeTool("fail", "just fail", func(context.Context, *ClientConnection, struct{}) ([]Content, error) {
+			return nil, failure
+		}),
+	)
+
+	s.AddPrompts(
+		MakePrompt("code_review", "do a code review", func(_ context.Context, _ *ClientConnection, params struct{ Code string }) (*protocol.GetPromptResult, error) {
+			// TODO(rfindley): clean up this handling of content.
+			content, err := json.Marshal(protocol.TextContent{
+				Type: "text",
+				Text: "Please review the following code: " + params.Code,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return &protocol.GetPromptResult{
+				Description: "Code review prompt",
+				Messages: []protocol.PromptMessage{
+					// TODO: move 'Content' to the protocol package.
+					{Role: "user", Content: json.RawMessage(content)},
+				},
+			}, nil
+		}),
+		MakePrompt("fail", "", func(_ context.Context, _ *ClientConnection, params struct{}) (*protocol.GetPromptResult, error) {
+			return nil, failure
+		}),
+	)
 
 	// Connect the server.
 	cc, err := s.Connect(ctx, st, nil)
@@ -80,6 +106,34 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("ping failed: %v", err)
 	}
 
+	gotPrompts, err := sc.ListPrompts(ctx)
+	if err != nil {
+		t.Errorf("prompts/list failed: %v", err)
+	}
+	wantPrompts := []protocol.Prompt{
+		{
+			Name:        "code_review",
+			Description: "do a code review",
+			Arguments:   []protocol.PromptArgument{{Name: "Code", Required: true}},
+		},
+		{Name: "fail"},
+	}
+	if diff := cmp.Diff(wantPrompts, gotPrompts); diff != "" {
+		t.Fatalf("prompts/list mismatch (-want +got):\n%s", diff)
+	}
+
+	gotReview, err := sc.GetPrompt(ctx, "code_review", map[string]string{"Code": "1+1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO: assert on the full review, once content is easier to create.
+	if got, want := gotReview.Description, "Code review prompt"; got != want {
+		t.Errorf("prompts/get 'code_review': got description %q, want %q", got, want)
+	}
+	if _, err := sc.GetPrompt(ctx, "fail", map[string]string{}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
+		t.Errorf("fail returned unexpected error: got %v, want containing %v", err, failure)
+	}
+
 	gotTools, err := sc.ListTools(ctx)
 	if err != nil {
 		t.Errorf("tools/list failed: %v", err)
@@ -107,7 +161,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("tools/list mismatch (-want +got):\n%s", diff)
 	}
 
-	gotHi, err := sc.CallTool(ctx, "greet", hiParams{"user"})
+	gotHi, err := sc.CallTool(ctx, "greet", map[string]any{"name": "user"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +170,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("tools/call 'greet' mismatch (-want +got):\n%s", diff)
 	}
 
-	if _, err := sc.CallTool(ctx, "fail", struct{}{}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
+	if _, err := sc.CallTool(ctx, "fail", map[string]any{}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
 		t.Errorf("fail returned unexpected error: got %v, want containing %v", err, failure)
 	}
 
@@ -175,12 +229,12 @@ func TestServerClosing(t *testing.T) {
 		}
 		wg.Done()
 	}()
-	if _, err := sc.CallTool(ctx, "greet", hiParams{"user"}); err != nil {
+	if _, err := sc.CallTool(ctx, "greet", map[string]any{"name": "user"}); err != nil {
 		t.Fatalf("after connecting: %v", err)
 	}
 	cc.Close()
 	wg.Wait()
-	if _, err := sc.CallTool(ctx, "greet", hiParams{"user"}); !errors.Is(err, ErrConnectionClosed) {
+	if _, err := sc.CallTool(ctx, "greet", map[string]any{"name": "user"}); !errors.Is(err, ErrConnectionClosed) {
 		t.Errorf("after disconnection, got error %v, want EOF", err)
 	}
 }
@@ -244,7 +298,7 @@ func TestCancellation(t *testing.T) {
 	defer sc.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go sc.CallTool(ctx, "slow", struct{}{})
+	go sc.CallTool(ctx, "slow", map[string]any{})
 	<-start
 	cancel()
 	select {
