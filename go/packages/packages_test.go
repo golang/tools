@@ -3413,6 +3413,8 @@ func writeTree(t *testing.T, archive string) string {
 // If this test ever fails, the combination of the gocommand package
 // and the go command itself has a bug.
 func TestRmdirAfterGoList_Runner(t *testing.T) {
+	t.Skip("golang/go#73503: this test is frequently flaky")
+
 	testRmdirAfterGoList(t, func(ctx context.Context, dir string) {
 		var runner gocommand.Runner
 		stdout, stderr, friendlyErr, err := runner.RunRaw(ctx, gocommand.Invocation{
