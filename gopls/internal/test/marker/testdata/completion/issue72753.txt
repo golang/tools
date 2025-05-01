@@ -1,0 +1,86 @@
+This test checks that completion gives correct completion for
+incomplete AssignStmt with multiple left-hand vars.
+
+-- flags --
+-ignore_extra_diags
+
+-- settings.json --
+{
+	"usePlaceholders": false
+}
+
+-- go.mod --
+module mod.test
+
+go 1.21
+
+-- string.go --
+package a
+
+func _(left, right string){
+	left, ri //@acceptcompletion(re"ri()", "right", string)
+}
+
+-- @string/string.go --
+package a
+
+func _(left, right string){
+	left, right //@acceptcompletion(re"ri()", "right", string)
+}
+
+-- array.go --
+package a
+func _(right string) {
+	var left [3]int
+	left[0], ri //@acceptcompletion(re"ri()", "right", array)
+}
+
+-- @array/array.go --
+package a
+func _(right string) {
+	var left [3]int
+	left[0], right //@acceptcompletion(re"ri()", "right", array)
+}
+
+-- slice.go --
+package a
+func _(right string) {
+	var left []int
+	left[0], ri //@acceptcompletion(re"ri()", "right", slice)
+}
+
+-- @slice/slice.go --
+package a
+func _(right string) {
+	var left []int
+	left[0], right //@acceptcompletion(re"ri()", "right", slice)
+}
+
+-- map.go --
+package a
+func _(right string) {
+	var left map[int]int
+	left[0], ri //@acceptcompletion(re"ri()", "right", map)
+}
+
+-- @map/map.go --
+package a
+func _(right string) {
+	var left map[int]int
+	left[0], right //@acceptcompletion(re"ri()", "right", map)
+}
+
+-- star.go --
+package a
+func _(right string) {
+	var left *int
+	*left, ri //@acceptcompletion(re"ri()", "right", star)
+}
+
+-- @star/star.go --
+package a
+func _(right string) {
+	var left *int
+	*left, right //@acceptcompletion(re"ri()", "right", star)
+}
+

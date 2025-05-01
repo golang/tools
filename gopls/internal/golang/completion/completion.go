@@ -787,7 +787,6 @@ func (c *completer) containingIdent(src []byte) *ast.Ident {
 	}
 
 	fakeIdent := &ast.Ident{Name: lit, NamePos: pos}
-
 	if _, isBadDecl := c.path[0].(*ast.BadDecl); isBadDecl {
 		// You don't get *ast.Idents at the file level, so look for bad
 		// decls and use the manually extracted token.
@@ -802,6 +801,18 @@ func (c *completer) containingIdent(src []byte) *ast.Ident {
 		// is a keyword. This improves completion after an "accidental
 		// keyword", e.g. completing to "variance" in "someFunc(var<>)".
 		return fakeIdent
+	} else if block, ok := c.path[0].(*ast.BlockStmt); ok && len(block.List) != 0 {
+		last := block.List[len(block.List)-1]
+		// Handle incomplete AssignStmt with multiple left-hand vars:
+		//     var left, right int
+		//     left, ri‸                    -> "right"
+		if expr, ok := last.(*ast.ExprStmt); ok &&
+			(is[*ast.Ident](expr.X) ||
+				is[*ast.SelectorExpr](expr.X) ||
+				is[*ast.IndexExpr](expr.X) ||
+				is[*ast.StarExpr](expr.X)) {
+			return fakeIdent
+		}
 	}
 
 	return nil
