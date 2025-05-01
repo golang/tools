@@ -129,9 +129,27 @@ func slicescontains(pass *analysis.Pass) {
 				isSliceElem(cond.Args[0]) &&
 				typeutil.Callee(info, cond) != nil { // not a conversion
 
-				// skip variadic functions
-				if sig, ok := info.TypeOf(cond.Fun).(*types.Signature); ok && sig.Variadic() {
-					return
+				// Attempt to get signature
+				sig, isSignature := info.TypeOf(cond.Fun).(*types.Signature)
+				if isSignature {
+					// skip variadic functions
+					if sig.Variadic() {
+						return
+					}
+
+					// Check for interface parameter with concrete argument,
+					// if the function has parameters.
+					if sig.Params().Len() > 0 {
+						paramType := sig.Params().At(0).Type()
+						elemType := info.TypeOf(cond.Args[0])
+
+						// If the function's first parameter is an interface
+						// and the argument passed is a concrete (non-interface) type,
+						// then we return and do not suggest this refactoring.
+						if types.IsInterface(paramType) && !types.IsInterface(elemType) {
+							return
+						}
+					}
 				}
 
 				funcName = "ContainsFunc"

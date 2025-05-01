@@ -169,3 +169,18 @@ func nopeVariadicContainsFunc(slice []int) bool {
 	}
 	return false
 }
+
+// Negative test case for implicit C->I conversion
+type I interface{ F() }
+type C int
+
+func (C) F() {}
+
+func nopeImplicitConversionContainsFunc(slice []C, f func(I) bool) bool {
+	for _, elem := range slice {
+		if f(elem) {
+			return true
+		}
+	}
+	return false
+}
