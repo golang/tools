@@ -6,6 +6,8 @@ package jsonschema
 
 import (
 	"encoding/json"
+	"fmt"
+	"math"
 	"regexp"
 	"testing"
 )
@@ -86,14 +88,17 @@ func TestUnmarshalErrors(t *testing.T) {
 	}{
 		{`1`, "cannot unmarshal number"},
 		{`{"type":1}`, `invalid value for "type"`},
-		{`{"minLength":1.5}`, `minLength:.*not an int`},
-		{`{"maxLength":1.5}`, `maxLength:.*not an int`},
-		{`{"minItems":1.5}`, `minItems:.*not an int`},
-		{`{"maxItems":1.5}`, `maxItems:.*not an int`},
-		{`{"minProperties":1.5}`, `minProperties:.*not an int`},
-		{`{"maxProperties":1.5}`, `maxProperties:.*not an int`},
-		{`{"minContains":1.5}`, `minContains:.*not an int`},
-		{`{"maxContains":1.5}`, `maxContains:.*not an int`},
+		{`{"minLength":1.5}`, `not an integer value`},
+		{`{"maxLength":1.5}`, `not an integer value`},
+		{`{"minItems":1.5}`, `not an integer value`},
+		{`{"maxItems":1.5}`, `not an integer value`},
+		{`{"minProperties":1.5}`, `not an integer value`},
+		{`{"maxProperties":1.5}`, `not an integer value`},
+		{`{"minContains":1.5}`, `not an integer value`},
+		{`{"maxContains":1.5}`, `not an integer value`},
+		{fmt.Sprintf(`{"maxContains":%d}`, int64(math.MaxInt32+1)), `out of range`},
+		{`{"minLength":9e99}`, `cannot be unmarshaled`},
+		{`{"minLength":"1.5"}`, `not a number`},
 	} {
 		var s Schema
 		err := json.Unmarshal([]byte(tt.in), &s)

@@ -8,11 +8,11 @@ package jsonschema
 
 import (
 	"bytes"
-	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"iter"
+	"math"
 )
 
 // A Schema is a JSON schema object.
@@ -177,14 +177,14 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	ms := struct {
 		Type          json.RawMessage `json:"type,omitempty"`
 		Const         json.RawMessage `json:"const,omitempty"`
-		MinLength     *float64        `json:"minLength,omitempty"`
-		MaxLength     *float64        `json:"maxLength,omitempty"`
-		MinItems      *float64        `json:"minItems,omitempty"`
-		MaxItems      *float64        `json:"maxItems,omitempty"`
-		MinProperties *float64        `json:"minProperties,omitempty"`
-		MaxProperties *float64        `json:"maxProperties,omitempty"`
-		MinContains   *float64        `json:"minContains,omitempty"`
-		MaxContains   *float64        `json:"maxContains,omitempty"`
+		MinLength     *integer        `json:"minLength,omitempty"`
+		MaxLength     *integer        `json:"maxLength,omitempty"`
+		MinItems      *integer        `json:"minItems,omitempty"`
+		MaxItems      *integer        `json:"maxItems,omitempty"`
+		MinProperties *integer        `json:"minProperties,omitempty"`
+		MaxProperties *integer        `json:"maxProperties,omitempty"`
+		MinContains   *integer        `json:"minContains,omitempty"`
+		MaxContains   *integer        `json:"maxContains,omitempty"`
 
 		*schemaWithoutMethods
 	}{
@@ -219,33 +219,52 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	// Store integer properties as ints.
-	setInt := func(name string, dst **int, src *float64) error {
-		if src == nil {
-			return nil
+	set := func(dst **int, src *integer) {
+		if src != nil {
+			*dst = Ptr(int(*src))
 		}
-		i := int(*src)
-		if float64(i) != *src {
-			return fmt.Errorf("%s: %f is not an int", name, *src)
-		}
-		*dst = &i
+	}
+
+	set(&s.MinLength, ms.MinLength)
+	set(&s.MaxLength, ms.MaxLength)
+	set(&s.MinItems, ms.MinItems)
+	set(&s.MaxItems, ms.MaxItems)
+	set(&s.MinProperties, ms.MinProperties)
+	set(&s.MaxProperties, ms.MaxProperties)
+	set(&s.MinContains, ms.MinContains)
+	set(&s.MaxContains, ms.MaxContains)
+
+	return nil
+}
+
+type integer int32 // for the integer-valued fields of Schema
+
+func (ip *integer) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 {
+		// nothing to do
 		return nil
 	}
-
-	err = cmp.Or(
-		setInt("minLength", &s.MinLength, ms.MinLength),
-		setInt("maxLength", &s.MaxLength, ms.MaxLength),
-		setInt("minItems", &s.MinItems, ms.MinItems),
-		setInt("maxItems", &s.MaxItems, ms.MaxItems),
-		setInt("minProperties", &s.MinProperties, ms.MinProperties),
-		setInt("maxProperties", &s.MaxProperties, ms.MaxProperties),
-		setInt("minContains", &s.MinContains, ms.MinContains),
-		setInt("maxContains", &s.MaxContains, ms.MaxContains),
-	)
-	if err != nil {
-		return err
+	// If there is a decimal point, src is a floating-point number.
+	var i int64
+	if bytes.ContainsRune(data, '.') {
+		var f float64
+		if err := json.Unmarshal(data, &f); err != nil {
+			return errors.New("not a number")
+		}
+		i = int64(f)
+		if float64(i) != f {
+			return errors.New("not an integer value")
+		}
+	} else {
+		if err := json.Unmarshal(data, &i); err != nil {
+			return errors.New("cannot be unmarshaled into an int")
+		}
 	}
-
+	// Ensure behavior is the same on both 32-bit and 64-bit systems.
+	if i < math.MinInt32 || i > math.MaxInt32 {
+		return errors.New("integer is out of range")
+	}
+	*ip = integer(i)
 	return nil
 }
 
