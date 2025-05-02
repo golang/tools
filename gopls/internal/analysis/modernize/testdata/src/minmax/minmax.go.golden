@@ -143,3 +143,16 @@ func underscoreAssign(a, b int) {
 		_ = a
 	}
 }
+
+// Regression test for https://github.com/golang/go/issues/73576.
+func nopeIfElseIf(a int) int {
+	x := 0
+	if a < 0 {
+		x = 0
+	} else if a > 100 {
+		x = 100
+	} else {
+		x = a
+	}
+	return x
+}

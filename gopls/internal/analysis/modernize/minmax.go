@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typeparams"
@@ -174,6 +175,17 @@ func minmax(pass *analysis.Pass) {
 		astFile := curFile.Node().(*ast.File)
 		for curIfStmt := range curFile.Preorder((*ast.IfStmt)(nil)) {
 			ifStmt := curIfStmt.Node().(*ast.IfStmt)
+
+			// Don't bother handling "if a < b { lhs = rhs }" when it appears
+			// as the "else" branch of another if-statement.
+			//    if cond { ... } else if a < b { lhs = rhs }
+			// (This case would require introducing another block
+			//    if cond { ... } else { if a < b { lhs = rhs } }
+			// and checking that there is no following "else".)
+			if ek, _ := curIfStmt.ParentEdge(); ek == edge.IfStmt_Else {
+				continue
+			}
+
 			if compare, ok := ifStmt.Cond.(*ast.BinaryExpr); ok &&
 				ifStmt.Init == nil &&
 				isInequality(compare.Op) != 0 &&
