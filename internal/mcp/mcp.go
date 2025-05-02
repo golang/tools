@@ -9,13 +9,13 @@
 // To get started, create either a [Client] or [Server], and connect it to a
 // peer using a [Transport]. The diagram below illustrates how this works:
 //
-//	Client                                                       Server
-//	  ⇅                             (jsonrpc2)                     ⇅
-//	ServerConnection ⇄ Client Transport ⇄ Server Transport ⇄ ClientConnection
+//	Client                                    Server
+//	  ⇅          (jsonrpc2)                     ⇅
+//	Client Transport ⇄ Server Transport ⇄ ClientConnection
 //
 // A [Client] is an MCP client, which can be configured with various client
-// capabilities. Clients may be connected to one or more [Server] instances
-// using the [Client.Connect] method, which creates a [ServerConnection].
+// capabilities. Clients may be connected to a [Server] instance
+// using the [Client.Connect] method.
 //
 // Similarly, a [Server] is an MCP server, which can be configured with various
 // server capabilities. Servers may be connected to one or more [Client]
@@ -44,12 +44,11 @@
 //	client := mcp.NewClient("mcp-client", "v1.0.0", nil)
 //	// Connect to a server over stdin/stdout
 //	transport := mcp.NewCommandTransport(exec.Command("myserver"))
-//	serverConn, err := client.Connect(ctx, transport, nil)
-//	if err != nil {
+//	if err := client.Connect(ctx, transport, nil); err != nil {
 //		log.Fatal(err)
 //	}
 //	// Call a tool on the server.
-//	content, err := serverConn.CallTool(ctx, "greet", map[string]any{"name": "you"})
+//	content, err := client.CallTool(ctx, "greet", map[string]any{"name": "you"})
 //
 // Here is an example of the corresponding server, connected over stdin/stdout:
 //

@@ -35,18 +35,17 @@ func ExampleServer() {
 	}
 
 	client := mcp.NewClient("client", "v0.0.1", nil)
-	serverConnection, err := client.Connect(ctx, clientTransport, nil)
-	if err != nil {
+	if err := client.Connect(ctx, clientTransport, nil); err != nil {
 		log.Fatal(err)
 	}
 
-	res, err := serverConnection.CallTool(ctx, "greet", map[string]any{"name": "user"})
+	res, err := client.CallTool(ctx, "greet", map[string]any{"name": "user"})
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(res.Content[0].Text)
 
-	serverConnection.Close()
+	client.Close()
 	clientConnection.Wait()
 
 	// Output: Hi user

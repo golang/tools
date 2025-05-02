@@ -50,11 +50,10 @@ func TestCmdTransport(t *testing.T) {
 	cmd.Env = append(os.Environ(), runAsServer+"=true")
 
 	client := mcp.NewClient("client", "v0.0.1", nil)
-	serverConn, err := client.Connect(ctx, mcp.NewCommandTransport(cmd), nil)
-	if err != nil {
+	if err := client.Connect(ctx, mcp.NewCommandTransport(cmd), nil); err != nil {
 		log.Fatal(err)
 	}
-	got, err := serverConn.CallTool(ctx, "greet", map[string]any{"name": "user"})
+	got, err := client.CallTool(ctx, "greet", map[string]any{"name": "user"})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,7 +63,7 @@ func TestCmdTransport(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("greet returned unexpected content (-want +got):\n%s", diff)
 	}
-	if err := serverConn.Close(); err != nil {
+	if err := client.Close(); err != nil {
 		t.Fatalf("closing server: %v", err)
 	}
 }

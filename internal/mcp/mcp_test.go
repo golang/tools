@@ -83,20 +83,15 @@ func TestEndToEnd(t *testing.T) {
 	c := NewClient("testClient", "v1.0.0", nil)
 
 	// Connect the client.
-	sc, err := c.Connect(ctx, ct, nil)
-	if err != nil {
+	if err := c.Connect(ctx, ct, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	if got := slices.Collect(c.Servers()); len(got) != 1 {
-		t.Errorf("after connection, Servers() has length %d, want 1", len(got))
-	}
-
-	if err := sc.Ping(ctx); err != nil {
+	if err := c.Ping(ctx); err != nil {
 		t.Fatalf("ping failed: %v", err)
 	}
 
-	gotPrompts, err := sc.ListPrompts(ctx)
+	gotPrompts, err := c.ListPrompts(ctx)
 	if err != nil {
 		t.Errorf("prompts/list failed: %v", err)
 	}
@@ -112,7 +107,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("prompts/list mismatch (-want +got):\n%s", diff)
 	}
 
-	gotReview, err := sc.GetPrompt(ctx, "code_review", map[string]string{"Code": "1+1"})
+	gotReview, err := c.GetPrompt(ctx, "code_review", map[string]string{"Code": "1+1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,11 +122,11 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("prompts/get 'code_review' mismatch (-want +got):\n%s", diff)
 	}
 
-	if _, err := sc.GetPrompt(ctx, "fail", map[string]string{}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
+	if _, err := c.GetPrompt(ctx, "fail", map[string]string{}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
 		t.Errorf("fail returned unexpected error: got %v, want containing %v", err, failure)
 	}
 
-	gotTools, err := sc.ListTools(ctx)
+	gotTools, err := c.ListTools(ctx)
 	if err != nil {
 		t.Errorf("tools/list failed: %v", err)
 	}
@@ -158,7 +153,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("tools/list mismatch (-want +got):\n%s", diff)
 	}
 
-	gotHi, err := sc.CallTool(ctx, "greet", map[string]any{"name": "user"})
+	gotHi, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +164,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("tools/call 'greet' mismatch (-want +got):\n%s", diff)
 	}
 
-	gotFail, err := sc.CallTool(ctx, "fail", map[string]any{})
+	gotFail, err := c.CallTool(ctx, "fail", map[string]any{})
 	// Counter-intuitively, when a tool fails, we don't expect an RPC error for
 	// call tool: instead, the failure is embedded in the result.
 	if err != nil {
@@ -184,16 +179,13 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	// Disconnect.
-	sc.Close()
+	c.Close()
 	clientWG.Wait()
 
 	// After disconnecting, neither client nor server should have any
 	// connections.
 	for range s.Clients() {
 		t.Errorf("unexpected client after disconnection")
-	}
-	for range c.Servers() {
-		t.Errorf("unexpected server after disconnection")
 	}
 }
 
@@ -202,7 +194,7 @@ func TestEndToEnd(t *testing.T) {
 //
 // The caller should cancel either the client connection or server connection
 // when the connections are no longer needed.
-func basicConnection(t *testing.T, tools ...*Tool) (*ClientConnection, *ServerConnection) {
+func basicConnection(t *testing.T, tools ...*Tool) (*ClientConnection, *Client) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -218,32 +210,31 @@ func basicConnection(t *testing.T, tools ...*Tool) (*ClientConnection, *ServerCo
 	}
 
 	c := NewClient("testClient", "v1.0.0", nil)
-	sc, err := c.Connect(ctx, ct, nil)
-	if err != nil {
+	if err := c.Connect(ctx, ct, nil); err != nil {
 		t.Fatal(err)
 	}
-	return cc, sc
+	return cc, c
 }
 
 func TestServerClosing(t *testing.T) {
-	cc, sc := basicConnection(t, MakeTool("greet", "say hi", sayHi))
-	defer sc.Close()
+	cc, c := basicConnection(t, MakeTool("greet", "say hi", sayHi))
+	defer c.Close()
 
 	ctx := context.Background()
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		if err := sc.Wait(); err != nil {
+		if err := c.Wait(); err != nil {
 			t.Errorf("server connection failed: %v", err)
 		}
 		wg.Done()
 	}()
-	if _, err := sc.CallTool(ctx, "greet", map[string]any{"name": "user"}); err != nil {
+	if _, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}); err != nil {
 		t.Fatalf("after connecting: %v", err)
 	}
 	cc.Close()
 	wg.Wait()
-	if _, err := sc.CallTool(ctx, "greet", map[string]any{"name": "user"}); !errors.Is(err, ErrConnectionClosed) {
+	if _, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}); !errors.Is(err, ErrConnectionClosed) {
 		t.Errorf("after disconnection, got error %v, want EOF", err)
 	}
 }
@@ -264,16 +255,15 @@ func TestBatching(t *testing.T) {
 	// 'initialize' to block. Therefore, we can only test with a size of 1.
 	const batchSize = 1
 	BatchSize(ct, batchSize)
-	sc, err := c.Connect(ctx, ct, opts)
-	if err != nil {
+	if err := c.Connect(ctx, ct, opts); err != nil {
 		t.Fatal(err)
 	}
-	defer sc.Close()
+	defer c.Close()
 
 	errs := make(chan error, batchSize)
 	for i := range batchSize {
 		go func() {
-			_, err := sc.ListTools(ctx)
+			_, err := c.ListTools(ctx)
 			errs <- err
 		}()
 		time.Sleep(2 * time.Millisecond)

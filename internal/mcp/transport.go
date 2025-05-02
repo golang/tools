@@ -77,7 +77,6 @@ func NewLocalTransport() (*IOTransport, *IOTransport) {
 // [ServerConnection] and [ClientConnection].
 type handler interface {
 	handle(ctx context.Context, req *jsonrpc2.Request) (result any, err error)
-	comparable
 }
 
 type binder[T handler] interface {
@@ -122,7 +121,6 @@ func connect[H handler](ctx context.Context, t Transport, opts *ConnectionOption
 		},
 	})
 	assert(preempter.conn != nil, "unbound preempter")
-	assert(h != zero, "unbound connection")
 	return h, nil
 }
 

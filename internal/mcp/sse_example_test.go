@@ -34,13 +34,13 @@ func ExampleSSEHandler() {
 
 	ctx := context.Background()
 	transport := mcp.NewSSEClientTransport(httpServer.URL)
-	serverConn, err := mcp.NewClient("test", "v1.0.0", nil).Connect(ctx, transport, nil)
-	if err != nil {
+	client := mcp.NewClient("test", "v1.0.0", nil)
+	if err := client.Connect(ctx, transport, nil); err != nil {
 		log.Fatal(err)
 	}
-	defer serverConn.Close()
+	defer client.Close()
 
-	res, err := serverConn.CallTool(ctx, "add", map[string]any{"x": 1, "y": 2})
+	res, err := client.CallTool(ctx, "add", map[string]any{"x": 1, "y": 2})
 	if err != nil {
 		log.Fatal(err)
 	}
