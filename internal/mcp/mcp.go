@@ -14,7 +14,7 @@
 //
 // A [Client] is an MCP client, which can be configured with various client
 // capabilities. Clients may be connected to a [Server] instance
-// using the [Client.Connect] method.
+// using the [Client.Start] method.
 //
 // Similarly, a [Server] is an MCP server, which can be configured with various
 // server capabilities. Servers may be connected to one or more [Client]

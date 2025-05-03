@@ -34,8 +34,8 @@ func ExampleSSEHandler() {
 
 	ctx := context.Background()
 	transport := mcp.NewSSEClientTransport(httpServer.URL)
-	client := mcp.NewClient("test", "v1.0.0", nil)
-	if err := client.Connect(ctx, transport, nil); err != nil {
+	client := mcp.NewClient("test", "v1.0.0", transport, nil)
+	if err := client.Start(ctx); err != nil {
 		log.Fatal(err)
 	}
 	defer client.Close()

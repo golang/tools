@@ -34,8 +34,8 @@ func ExampleServer() {
 		log.Fatal(err)
 	}
 
-	client := mcp.NewClient("client", "v0.0.1", nil)
-	if err := client.Connect(ctx, clientTransport, nil); err != nil {
+	client := mcp.NewClient("client", "v0.0.1", clientTransport, nil)
+	if err := client.Start(ctx); err != nil {
 		log.Fatal(err)
 	}
 

@@ -16,10 +16,12 @@ import (
 )
 
 // A Client is an MCP client, which may be connected to an MCP server
-// using the [Client.Connect] method.
+// using the [Client.Start] method.
 type Client struct {
 	name             string
 	version          string
+	transport        Transport
+	opts             ClientOptions
 	mu               sync.Mutex
 	conn             *jsonrpc2.Connection
 	initializeResult *protocol.InitializeResult
@@ -27,18 +29,25 @@ type Client struct {
 
 // NewClient creates a new Client.
 //
-// Use [Client.Connect] to connect it to an MCP server.
+// Use [Client.Start] to connect it to an MCP server.
 //
 // If non-nil, the provided options configure the Client.
-func NewClient(name, version string, opts *ClientOptions) *Client {
-	return &Client{
-		name:    name,
-		version: version,
+func NewClient(name, version string, t Transport, opts *ClientOptions) *Client {
+	c := &Client{
+		name:      name,
+		version:   version,
+		transport: t,
 	}
+	if opts != nil {
+		c.opts = *opts
+	}
+	return c
 }
 
 // ClientOptions configures the behavior of the client.
-type ClientOptions struct{}
+type ClientOptions struct {
+	ConnectionOptions
+}
 
 // bind implements the binder[*ServerConnection] interface, so that Clients can
 // be connected using [connect].
@@ -56,20 +65,19 @@ func (c *Client) disconnect(*Client) {
 	// return an error.
 }
 
-// Connect connects the MCP client over the given transport and initializes an
-// MCP session.
+// Start begins an MCP session by connecting the MCP client over its transport.
 //
 // Typically, it is the responsibility of the client to close the connection
 // when it is no longer needed. However, if the connection is closed by the
 // server, calls or notifications will return an error wrapping
 // [ErrConnectionClosed].
-func (c *Client) Connect(ctx context.Context, t Transport, opts *ConnectionOptions) (err error) {
+func (c *Client) Start(ctx context.Context) (err error) {
 	defer func() {
 		if err != nil {
 			_ = c.Close()
 		}
 	}()
-	_, err = connect(ctx, t, opts, c)
+	_, err = connect(ctx, c.transport, &c.opts.ConnectionOptions, c)
 	if err != nil {
 		return err
 	}
