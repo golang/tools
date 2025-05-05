@@ -9,7 +9,7 @@ package protocol
 import (
 	"encoding/json"
 
-	"golang.org/x/tools/internal/mcp/internal/jsonschema"
+	"golang.org/x/tools/internal/mcp/jsonschema"
 )
 
 // Optional annotations for the client. The client can use annotations to inform

@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"slices"
 
-	"golang.org/x/tools/internal/mcp/internal/jsonschema"
 	"golang.org/x/tools/internal/mcp/internal/protocol"
 	"golang.org/x/tools/internal/mcp/internal/util"
+	"golang.org/x/tools/internal/mcp/jsonschema"
 )
 
 // A ToolHandler handles a call to tools/call.
