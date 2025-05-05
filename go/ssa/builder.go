@@ -2920,6 +2920,9 @@ func (b *builder) buildParamsOnly(fn *Function) {
 	for i, n := 0, params.Len(); i < n; i++ {
 		fn.addParamVar(params.At(i))
 	}
+
+	// clear out other function state (keep consistent with finishBody)
+	fn.subst = nil
 }
 
 // buildFromSyntax builds fn.Body from fn.syntax, which must be non-nil.

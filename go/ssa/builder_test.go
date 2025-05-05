@@ -1045,8 +1045,8 @@ func TestFixedBugs(t *testing.T) {
 	for _, name := range []string{
 		"issue66783a",
 		"issue66783b",
+		"issue73594",
 	} {
-
 		t.Run(name, func(t *testing.T) {
 			base := name + ".go"
 			path := filepath.Join(analysistest.TestData(), "fixedbugs", base)

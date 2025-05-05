@@ -27,9 +27,10 @@ type sanity struct {
 }
 
 // sanityCheck performs integrity checking of the SSA representation
-// of the function fn and returns true if it was valid.  Diagnostics
-// are written to reporter if non-nil, os.Stderr otherwise.  Some
-// diagnostics are only warnings and do not imply a negative result.
+// of the function fn (which must have been "built") and returns true
+// if it was valid. Diagnostics are written to reporter if non-nil,
+// os.Stderr otherwise. Some diagnostics are only warnings and do not
+// imply a negative result.
 //
 // Sanity-checking is intended to facilitate the debugging of code
 // transformation passes.

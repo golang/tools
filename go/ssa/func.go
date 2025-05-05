@@ -386,6 +386,8 @@ func (f *Function) finishBody() {
 	f.results = nil    // (used by lifting)
 	f.deferstack = nil // (used by lifting)
 	f.vars = nil       // (used by lifting)
+
+	// clear out other function state (keep consistent with buildParamsOnly)
 	f.subst = nil
 
 	numberRegisters(f) // uses f.namedRegisters
