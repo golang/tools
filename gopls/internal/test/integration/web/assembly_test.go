@@ -5,6 +5,7 @@
 package web_test
 
 import (
+	"regexp"
 	"runtime"
 	"testing"
 
@@ -48,36 +49,6 @@ func init() {
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
 
-		asmFor := func(pattern string) []byte {
-			// Invoke the "Browse assembly" code action to start the server.
-			loc := env.RegexpSearch("a/a.go", pattern)
-			actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
-			if err != nil {
-				t.Fatalf("CodeAction: %v", err)
-			}
-			action, err := codeActionByKind(actions, settings.GoAssembly)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			// Execute the command.
-			// Its side effect should be a single showDocument request.
-			params := &protocol.ExecuteCommandParams{
-				Command:   action.Command.Command,
-				Arguments: action.Command.Arguments,
-			}
-			var result command.DebuggingResult
-			collectDocs := env.Awaiter.ListenToShownDocuments()
-			env.ExecuteCommand(params, &result)
-			doc := shownDocument(t, collectDocs(), "http:")
-			if doc == nil {
-				t.Fatalf("no showDocument call had 'file:' prefix")
-			}
-			t.Log("showDocument(package doc) URL:", doc.URI)
-
-			return get(t, doc.URI)
-		}
-
 		// Get the report and do some minimal checks for sensible results.
 		//
 		// Use only portable instructions below! Remember that
@@ -88,7 +59,8 @@ func init() {
 		// We conservatively test only on the two most popular
 		// architectures.
 		{
-			report := asmFor("println")
+			loc := env.RegexpSearch("a/a.go", "println")
+			report := asmFor(t, env, loc)
 			checkMatch(t, true, report, `TEXT.*example.com/a.f`)
 			switch runtime.GOARCH {
 			case "amd64", "arm64":
@@ -111,7 +83,8 @@ func init() {
 
 		// Check that code in a package-level var initializer is found too.
 		{
-			report := asmFor(`f\(123\)`)
+			loc := env.RegexpSearch("a/a.go", `f\(123\)`)
+			report := asmFor(t, env, loc)
 			switch runtime.GOARCH {
 			case "amd64", "arm64":
 				checkMatch(t, true, report, `TEXT.*example.com/a.init`)
@@ -123,7 +96,8 @@ func init() {
 
 		// And code in a source-level init function.
 		{
-			report := asmFor(`f\(789\)`)
+			loc := env.RegexpSearch("a/a.go", `f\(789\)`)
+			report := asmFor(t, env, loc)
 			switch runtime.GOARCH {
 			case "amd64", "arm64":
 				checkMatch(t, true, report, `TEXT.*example.com/a.init`)
@@ -132,4 +106,76 @@ func init() {
 			}
 		}
 	})
+}
+
+// TestTestAssembly exercises assembly listing of tests.
+func TestTestAssembly(t *testing.T) {
+	testenv.NeedsGoCommand1Point(t, 22) // for up-to-date assembly listing
+
+	const files = `
+-- go.mod --
+module example.com
+
+-- a/a_test.go --
+package a
+
+import "testing"
+
+func Test1(*testing.T) { println(0) }
+
+-- a/a_x_test.go --
+package a_test
+
+import "testing"
+
+func Test2(*testing.T) { println(0) }
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		for _, test := range []struct {
+			filename, symbol string
+		}{
+			{"a/a_test.go", "example.com/a.Test1"},
+			{"a/a_x_test.go", "example.com/a_test.Test2"},
+		} {
+			env.OpenFile(test.filename)
+			loc := env.RegexpSearch(test.filename, `println`)
+			report := asmFor(t, env, loc)
+			checkMatch(t, true, report, `TEXT.*`+regexp.QuoteMeta(test.symbol))
+			switch runtime.GOARCH {
+			case "amd64", "arm64":
+				checkMatch(t, true, report, `CALL	runtime.printint`)
+			}
+		}
+	})
+}
+
+// asmFor returns the HTML document served by gopls for a "Show
+// assembly" command at the specified location in an open file.
+func asmFor(t *testing.T, env *Env, loc protocol.Location) []byte {
+	// Invoke the "Browse assembly" code action to start the server.
+	actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
+	if err != nil {
+		t.Fatalf("CodeAction: %v", err)
+	}
+	action, err := codeActionByKind(actions, settings.GoAssembly)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Execute the command.
+	// Its side effect should be a single showDocument request.
+	params := &protocol.ExecuteCommandParams{
+		Command:   action.Command.Command,
+		Arguments: action.Command.Arguments,
+	}
+	var result command.DebuggingResult
+	collectDocs := env.Awaiter.ListenToShownDocuments()
+	env.ExecuteCommand(params, &result)
+	doc := shownDocument(t, collectDocs(), "http:")
+	if doc == nil {
+		t.Fatalf("no showDocument call had 'file:' prefix")
+	}
+	t.Log("showDocument(package doc) URL:", doc.URI)
+
+	return get(t, doc.URI)
 }

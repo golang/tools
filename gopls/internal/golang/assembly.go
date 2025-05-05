@@ -21,6 +21,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -36,7 +37,16 @@ import (
 // See gopls/internal/test/integration/misc/webserver_test.go for tests.
 func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, w http.ResponseWriter, pkg *cache.Package, symbol string, web Web) {
 	// Prepare to compile the package with -S, and capture its stderr stream.
-	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NoNetwork, pkg.Metadata().CompiledGoFiles[0].DirPath(), "build", []string{"-gcflags=-S", "."})
+	// We use "go test -c" not "go build" as it covers all three packages
+	// (p, "p [p.test]", "p_test [p.test]") in the directory, if they exist.
+	// (See also compileropt.go.)
+	inv, cleanupInvocation, err := snapshot.GoCommandInvocation(cache.NoNetwork, pkg.Metadata().CompiledGoFiles[0].DirPath(),
+		"test", []string{
+			"-c",
+			"-o", os.DevNull,
+			"-gcflags=-S",
+			".",
+		})
 	if err != nil {
 		// e.g. failed to write overlays (rare)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
