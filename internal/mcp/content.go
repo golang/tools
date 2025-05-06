@@ -7,7 +7,7 @@ package mcp
 import (
 	"fmt"
 
-	"golang.org/x/tools/internal/mcp/internal/protocol"
+	"golang.org/x/tools/internal/mcp/protocol"
 )
 
 // Content is the union of supported content types: [TextContent],

@@ -11,9 +11,9 @@ import (
 	"reflect"
 	"slices"
 
-	"golang.org/x/tools/internal/mcp/internal/protocol"
 	"golang.org/x/tools/internal/mcp/internal/util"
 	"golang.org/x/tools/internal/mcp/jsonschema"
+	"golang.org/x/tools/internal/mcp/protocol"
 )
 
 // A PromptHandler handles a call to prompts/get.

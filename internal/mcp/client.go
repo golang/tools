@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
-	"golang.org/x/tools/internal/mcp/internal/protocol"
+	"golang.org/x/tools/internal/mcp/protocol"
 )
 
 // A Client is an MCP client, which may be connected to an MCP server
