@@ -35,8 +35,7 @@ type Transport interface {
 	Connect(ctx context.Context) (Stream, error)
 }
 
-// A Stream is an abstract bidirectional jsonrpc2 Stream.
-// It is used by [connect] to establish a [jsonrpc2.Connection].
+// A Stream is a bidirectional jsonrpc2 Stream.
 type Stream interface {
 	jsonrpc2.Reader
 	jsonrpc2.Writer
