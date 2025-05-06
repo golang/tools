@@ -121,6 +121,11 @@ type Schema struct {
 	patternProperties map[*regexp.Regexp]*Schema
 }
 
+// falseSchema returns a new Schema tree that fails to validate any value.
+func falseSchema() *Schema {
+	return &Schema{Not: &Schema{}}
+}
+
 // String returns a short description of the schema.
 func (s *Schema) String() string {
 	if s.ID != "" {
@@ -182,7 +187,7 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 			*s = Schema{}
 		} else {
 			// false is the schema that validates nothing.
-			*s = Schema{Not: &Schema{}}
+			*s = *falseSchema()
 		}
 		return nil
 	}

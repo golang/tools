@@ -80,3 +80,35 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestStructInstance(t *testing.T) {
+	instance := struct {
+		I int
+		B bool `json:"b"`
+		u int
+	}{1, true, 0}
+
+	// The instance fails for all of these schemas, demonstrating that it
+	// was processed correctly.
+	for _, schema := range []*Schema{
+		{MinProperties: Ptr(3)},
+		{MaxProperties: Ptr(1)},
+		{Required: []string{"i"}}, // the name is "I"
+		{Required: []string{"B"}}, // the name is "b"
+		{PropertyNames: &Schema{MinLength: Ptr(2)}},
+		{Properties: map[string]*Schema{"b": {Type: "number"}}},
+		{Required: []string{"I"}, AdditionalProperties: falseSchema()},
+		{DependentRequired: map[string][]string{"b": {"u"}}},
+		{DependentSchemas: map[string]*Schema{"b": falseSchema()}},
+		{UnevaluatedProperties: falseSchema()},
+	} {
+		res, err := schema.Resolve("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = res.Validate(instance)
+		if err == nil {
+			t.Errorf("succeeded but wanted failure; schema = %s", schema.json())
+		}
+	}
+}

@@ -102,7 +102,7 @@ func typeSchema(t reflect.Type, seen map[reflect.Type]*Schema) (*Schema, error) 
 	case reflect.Struct:
 		s.Type = "object"
 		// no additional properties are allowed
-		s.AdditionalProperties = &Schema{Not: &Schema{}}
+		s.AdditionalProperties = falseSchema()
 
 		for i := range t.NumField() {
 			field := t.Field(i)

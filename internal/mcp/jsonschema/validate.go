@@ -7,11 +7,13 @@ package jsonschema
 import (
 	"fmt"
 	"hash/maphash"
+	"iter"
 	"math"
 	"math/big"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -55,8 +57,8 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 	// We checked for nil schemas in [Schema.Resolve].
 	assert(schema != nil, "nil schema")
 
-	// Step through interfaces.
-	if instance.IsValid() && instance.Kind() == reflect.Interface {
+	// Step through interfaces and pointers.
+	for instance.Kind() == reflect.Pointer || instance.Kind() == reflect.Interface {
 		instance = instance.Elem()
 	}
 
@@ -324,16 +326,18 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 
 	// objects
 	// https://json-schema.org/draft/2020-12/json-schema-core#section-10.3.2
-	if instance.Kind() == reflect.Map {
-		if kt := instance.Type().Key(); kt.Kind() != reflect.String {
-			return fmt.Errorf("map key type %s is not a string", kt)
+	if instance.Kind() == reflect.Map || instance.Kind() == reflect.Struct {
+		if instance.Kind() == reflect.Map {
+			if kt := instance.Type().Key(); kt.Kind() != reflect.String {
+				return fmt.Errorf("map key type %s is not a string", kt)
+			}
 		}
 		// Track the evaluated properties for just this schema, to support additionalProperties.
 		// If we used anns here, then we'd be including properties evaluated in subschemas
 		// from allOf, etc., which additionalProperties shouldn't observe.
 		evalProps := map[string]bool{}
 		for prop, schema := range schema.Properties {
-			val := instance.MapIndex(reflect.ValueOf(prop))
+			val := property(instance, prop)
 			if !val.IsValid() {
 				// It's OK if the instance doesn't have the property.
 				continue
@@ -344,8 +348,7 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 			evalProps[prop] = true
 		}
 		if len(schema.PatternProperties) > 0 {
-			for vprop, val := range instance.Seq2() {
-				prop := vprop.String()
+			for prop, val := range properties(instance) {
 				// Check every matching pattern.
 				for re, schema := range schema.patternProperties {
 					if re.MatchString(prop) {
@@ -359,8 +362,7 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		}
 		if schema.AdditionalProperties != nil {
 			// Apply to all properties not handled above.
-			for vprop, val := range instance.Seq2() {
-				prop := vprop.String()
+			for prop, val := range properties(instance) {
 				if !evalProps[prop] {
 					if err := st.validate(val, schema.AdditionalProperties, nil, append(path, prop)); err != nil {
 						return err
@@ -371,8 +373,10 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		}
 		anns.noteProperties(evalProps)
 		if schema.PropertyNames != nil {
-			for prop := range instance.Seq() {
-				if err := st.validate(prop, schema.PropertyNames, nil, append(path, prop.String())); err != nil {
+			// Note: properties unnecessarily fetches each value. We could define a propertyNames function
+			// if performance ever matters.
+			for prop := range properties(instance) {
+				if err := st.validate(reflect.ValueOf(prop), schema.PropertyNames, nil, append(path, prop)); err != nil {
 					return err
 				}
 			}
@@ -380,18 +384,18 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 
 		// https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01#section-6.5
 		if schema.MinProperties != nil {
-			if n, m := instance.Len(), *schema.MinProperties; n < m {
+			if n, m := numProperties(instance), *schema.MinProperties; n < m {
 				return fmt.Errorf("minProperties: object has %d properties, less than %d", n, m)
 			}
 		}
 		if schema.MaxProperties != nil {
-			if n, m := instance.Len(), *schema.MaxProperties; n > m {
+			if n, m := numProperties(instance), *schema.MaxProperties; n > m {
 				return fmt.Errorf("maxProperties: object has %d properties, greater than %d", n, m)
 			}
 		}
 
 		hasProperty := func(prop string) bool {
-			return instance.MapIndex(reflect.ValueOf(prop)).IsValid()
+			return property(instance, prop).IsValid()
 		}
 
 		missingProperties := func(props []string) []string {
@@ -438,8 +442,7 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		if schema.UnevaluatedProperties != nil && !anns.allProperties {
 			// This looks a lot like AdditionalProperties, but depends on in-place keywords like allOf
 			// in addition to sibling keywords.
-			for vprop, val := range instance.Seq2() {
-				prop := vprop.String()
+			for prop, val := range properties(instance) {
 				if !anns.evaluatedProperties[prop] {
 					if err := st.validate(val, schema.UnevaluatedProperties, nil, append(path, prop)); err != nil {
 						return err
@@ -458,6 +461,100 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		callerAnns.merge(&anns)
 	}
 	return nil
+}
+
+// property returns the value of the property of v with the given name, or the invalid
+// reflect.Value if there is none.
+// If v is a map, the property is the value of the map whose key is name.
+// If v is a struct, the property is the value of the field with the given name according
+// to the encoding/json package (see [jsonName]).
+// If v is anything else, property panics.
+func property(v reflect.Value, name string) reflect.Value {
+	switch v.Kind() {
+	case reflect.Map:
+		return v.MapIndex(reflect.ValueOf(name))
+	case reflect.Struct:
+		props := structPropertiesOf(v.Type())
+		if index, ok := props[name]; ok {
+			return v.FieldByIndex(index)
+		}
+		return reflect.Value{}
+	default:
+		panic(fmt.Sprintf("property(%q): bad value %s of kind %s", name, v, v.Kind()))
+	}
+}
+
+// properties returns an iterator over the names and values of all properties
+// in v, which must be a map or a struct.
+func properties(v reflect.Value) iter.Seq2[string, reflect.Value] {
+	return func(yield func(string, reflect.Value) bool) {
+		switch v.Kind() {
+		case reflect.Map:
+			for k, e := range v.Seq2() {
+				if !yield(k.String(), e) {
+					return
+				}
+			}
+		case reflect.Struct:
+			for name, index := range structPropertiesOf(v.Type()) {
+				if !yield(name, v.FieldByIndex(index)) {
+					return
+				}
+			}
+		default:
+			panic(fmt.Sprintf("bad value %s of kind %s", v, v.Kind()))
+		}
+	}
+}
+
+// numProperties returns the number of v's properties.
+// v must be a map or a struct.
+func numProperties(v reflect.Value) int {
+	switch v.Kind() {
+	case reflect.Map:
+		return v.Len()
+	case reflect.Struct:
+		return len(structPropertiesOf(v.Type()))
+	default:
+		panic(fmt.Sprintf("properties: bad value: %s of kind %s", v, v.Kind()))
+	}
+}
+
+// A propertyMap is a map from property name to struct field index.
+type propertyMap = map[string][]int
+
+var structProperties sync.Map // from reflect.Type to propertyMap
+
+// structPropertiesOf returns the JSON Schema properties for the struct type t.
+// The caller must not mutate the result.
+func structPropertiesOf(t reflect.Type) propertyMap {
+	// Mutex not necessary: at worst we'll recompute the same value.
+	if props, ok := structProperties.Load(t); ok {
+		return props.(propertyMap)
+	}
+	props := map[string][]int{}
+	for _, sf := range reflect.VisibleFields(t) {
+		if name, ok := jsonName(sf); ok {
+			props[name] = sf.Index
+		}
+	}
+	structProperties.Store(t, props)
+	return props
+}
+
+// jsonName returns the name for f as would be used by [json.Marshal].
+// That is the name in the json struct tag, or the field name if there is no tag.
+// If f is not exported or the tag name is "-", jsonName returns "", false.
+func jsonName(f reflect.StructField) (string, bool) {
+	if !f.IsExported() {
+		return "", false
+	}
+	if tag, ok := f.Tag.Lookup("json"); ok {
+		if name, _, _ := strings.Cut(tag, ","); name != "" {
+			return name, name != "-"
+		}
+	}
+	return f.Name, true
 }
 
 func formatPath(path []any) string {
