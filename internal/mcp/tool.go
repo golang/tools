@@ -5,8 +5,10 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 
 	"golang.org/x/tools/internal/mcp/jsonschema"
@@ -39,10 +41,17 @@ func NewTool[TReq any](name, description string, handler ToolHandler[TReq], opts
 	if err != nil {
 		panic(err)
 	}
+	// We must resolve the schema after the ToolOptions have had a chance to update it.
+	// But the handler needs access to the resolved schema, and the options may change
+	// the handler too.
+	// The best we can do is use the resolved schema in our own wrapped handler,
+	// and hope that no ToolOption replaces it.
+	// TODO(jba): at a minimum, document this.
+	var resolved *jsonschema.Resolved
 	wrapped := func(ctx context.Context, cc *ServerSession, params *CallToolParams[json.RawMessage]) (*CallToolResult, error) {
 		var params2 CallToolParams[TReq]
 		if params.Arguments != nil {
-			if err := unmarshalSchema(params.Arguments, schema, &params2.Arguments); err != nil {
+			if err := unmarshalSchema(params.Arguments, resolved, &params2.Arguments); err != nil {
 				return nil, err
 			}
 		}
@@ -68,15 +77,38 @@ func NewTool[TReq any](name, description string, handler ToolHandler[TReq], opts
 	for _, opt := range opts {
 		opt.set(t)
 	}
+	if schema := t.Tool.InputSchema; schema != nil {
+		// Resolve the schema, with no base URI. We don't expect tool schemas to
+		// refer outside of themselves.
+		resolved, err = schema.Resolve(nil)
+		if err != nil {
+			panic(fmt.Errorf("resolving input schema %s: %w", schemaJSON(schema), err))
+		}
+	}
 	return t
 }
 
 // unmarshalSchema unmarshals data into v and validates the result according to
-// the given schema.
-func unmarshalSchema(data json.RawMessage, _ *jsonschema.Schema, v any) error {
+// the given resolved schema.
+func unmarshalSchema(data json.RawMessage, resolved *jsonschema.Resolved, v any) error {
 	// TODO: use reflection to create the struct type to unmarshal into.
 	// Separate validation from assignment.
-	return json.Unmarshal(data, v)
+
+	// Disallow unknown fields.
+	// Otherwise, if the tool was built with a struct, the client could send extra
+	// fields and json.Unmarshal would ignore them, so the schema would never get
+	// a chance to declare the extra args invalid.
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return fmt.Errorf("unmarshaling: %w", err)
+	}
+	if resolved != nil {
+		if err := resolved.Validate(v); err != nil {
+			return fmt.Errorf("validating\n\t%s\nagainst\n\t %s:\n %w", data, schemaJSON(resolved.Schema()), err)
+		}
+	}
+	return nil
 }
 
 // A ToolOption configures the behavior of a Tool.
@@ -176,4 +208,13 @@ func Schema(schema *jsonschema.Schema) SchemaOption {
 	return schemaSetter(func(s *jsonschema.Schema) {
 		*s = *schema
 	})
+}
+
+// schemaJSON returns the JSON value for s as a string, or a string indicating an error.
+func schemaJSON(s *jsonschema.Schema) string {
+	m, err := json.Marshal(s)
+	if err != nil {
+		return fmt.Sprintf("<!%s>", err)
+	}
+	return string(m)
 }

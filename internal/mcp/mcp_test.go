@@ -709,4 +709,5 @@ func traceCalls[S Session](w io.Writer, prefix string) Middleware[S] {
 	}
 }
 
+// A function, because schemas must form a tree (they have hidden state).
 func falseSchema() *jsonschema.Schema { return &jsonschema.Schema{Not: &jsonschema.Schema{}} }

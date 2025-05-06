@@ -27,6 +27,10 @@ type Resolved struct {
 	resolvedURIs map[string]*Schema
 }
 
+// Schema returns the schema that was resolved.
+// It must not be modified.
+func (r *Resolved) Schema() *Schema { return r.root }
+
 // A Loader reads and unmarshals the schema at uri, if any.
 type Loader func(uri *url.URL) (*Schema, error)
 

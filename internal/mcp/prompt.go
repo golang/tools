@@ -42,6 +42,10 @@ func NewPrompt[TReq any](name, description string, handler func(context.Context,
 	if schema.Type != "object" || !reflect.DeepEqual(schema.AdditionalProperties, &jsonschema.Schema{Not: &jsonschema.Schema{}}) {
 		panic(fmt.Sprintf("handler request type must be a struct"))
 	}
+	resolved, err := schema.Resolve(nil)
+	if err != nil {
+		panic(err)
+	}
 	prompt := &ServerPrompt{
 		Prompt: &Prompt{
 			Name:        name,
@@ -70,7 +74,7 @@ func NewPrompt[TReq any](name, description string, handler func(context.Context,
 			return nil, err
 		}
 		var v TReq
-		if err := unmarshalSchema(rawArgs, schema, &v); err != nil {
+		if err := unmarshalSchema(rawArgs, resolved, &v); err != nil {
 			return nil, err
 		}
 		return handler(ctx, ss, v, params)

@@ -270,7 +270,7 @@ func jsonType(v reflect.Value) (string, bool) {
 		return "string", true
 	case reflect.Slice, reflect.Array:
 		return "array", true
-	case reflect.Map:
+	case reflect.Map, reflect.Struct:
 		return "object", true
 	default:
 		return "", false
