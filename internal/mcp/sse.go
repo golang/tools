@@ -63,8 +63,8 @@ func writeEvent(w io.Writer, evt event) (int, error) {
 //
 // https://modelcontextprotocol.io/specification/2024-11-05/basic/transports
 type SSEHandler struct {
-	getServer func(request *http.Request) *Server
-	onClient  func(*ClientConnection) // for testing; must not block
+	getServer    func(request *http.Request) *Server
+	onConnection func(*ServerConnection) // for testing; must not block
 
 	mu       sync.Mutex
 	sessions map[string]*sseSession
@@ -177,8 +177,8 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "connection failed", http.StatusInternalServerError)
 		return
 	}
-	if h.onClient != nil {
-		h.onClient(cc)
+	if h.onConnection != nil {
+		h.onConnection(cc)
 	}
 	defer cc.Close() // close the transport when the GET exits
 

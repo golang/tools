@@ -17,7 +17,7 @@ import (
 )
 
 // A PromptHandler handles a call to prompts/get.
-type PromptHandler func(context.Context, *ClientConnection, map[string]string) (*protocol.GetPromptResult, error)
+type PromptHandler func(context.Context, *ServerConnection, map[string]string) (*protocol.GetPromptResult, error)
 
 // A Prompt is a prompt definition bound to a prompt handler.
 type Prompt struct {
@@ -33,7 +33,7 @@ type Prompt struct {
 // of type string or *string. The argument names for the resulting prompt
 // definition correspond to the JSON names of the request fields, and any
 // fields that are not marked "omitempty" are considered required.
-func NewPrompt[TReq any](name, description string, handler func(context.Context, *ClientConnection, TReq) (*protocol.GetPromptResult, error), opts ...PromptOption) *Prompt {
+func NewPrompt[TReq any](name, description string, handler func(context.Context, *ServerConnection, TReq) (*protocol.GetPromptResult, error), opts ...PromptOption) *Prompt {
 	schema, err := jsonschema.For[TReq]()
 	if err != nil {
 		panic(err)
@@ -61,7 +61,7 @@ func NewPrompt[TReq any](name, description string, handler func(context.Context,
 			Required:    required[name],
 		})
 	}
-	prompt.Handler = func(ctx context.Context, cc *ClientConnection, args map[string]string) (*protocol.GetPromptResult, error) {
+	prompt.Handler = func(ctx context.Context, cc *ServerConnection, args map[string]string) (*protocol.GetPromptResult, error) {
 		// For simplicity, just marshal and unmarshal the arguments.
 		// This could be avoided in the future.
 		rawArgs, err := json.Marshal(args)

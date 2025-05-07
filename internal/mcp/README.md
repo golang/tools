@@ -59,7 +59,7 @@ type HiParams struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ClientConnection, params *HiParams) ([]mcp.Content, error) {
+func SayHi(ctx context.Context, cc *mcp.ServerConnection, params *HiParams) ([]mcp.Content, error) {
 	return []mcp.Content{
 		mcp.TextContent{Text: "Hi " + params.Name},
 	}, nil
@@ -110,6 +110,7 @@ server.AddPrompts(mcp.MakePrompt("greet", "", PromptHi))
 Resources are a core primitive in the Model Context Protocol (MCP) that allow servers to expose data and content that can be read by clients and used as context for LLM interactions.
 
 <!--TODO(rfindley): Add code example for resources.-->
+
 Resources are not supported yet.
 
 ## Testing

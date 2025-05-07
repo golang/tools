@@ -49,7 +49,7 @@ type ClientOptions struct {
 	ConnectionOptions
 }
 
-// bind implements the binder[*ServerConnection] interface, so that Clients can
+// bind implements the binder[*Client] interface, so that Clients can
 // be connected using [connect].
 func (c *Client) bind(conn *jsonrpc2.Connection) *Client {
 	c.mu.Lock()
@@ -58,7 +58,7 @@ func (c *Client) bind(conn *jsonrpc2.Connection) *Client {
 	return c
 }
 
-// disconnect implements the binder[*ServerConnection] interface, so that
+// disconnect implements the binder[*Client] interface, so that
 // Clients can be connected using [connect].
 func (c *Client) disconnect(*Client) {
 	// Do nothing. In particular, do not set conn to nil: it needs to exist so it can

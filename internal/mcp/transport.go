@@ -73,8 +73,7 @@ func NewLocalTransport() (*IOTransport, *IOTransport) {
 	return &IOTransport{c1}, &IOTransport{c2}
 }
 
-// handler is an unexported version of jsonrpc2.Handler, to be implemented by
-// [ServerConnection] and [ClientConnection].
+// handler is an unexported version of jsonrpc2.Handler.
 type handler interface {
 	handle(ctx context.Context, req *jsonrpc2.Request) (result any, err error)
 }

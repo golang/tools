@@ -24,10 +24,10 @@ func TestSSEServer(t *testing.T) {
 
 			sseHandler := NewSSEHandler(func(*http.Request) *Server { return server })
 
-			clients := make(chan *ClientConnection, 1)
-			sseHandler.onClient = func(cc *ClientConnection) {
+			conns := make(chan *ServerConnection, 1)
+			sseHandler.onConnection = func(cc *ServerConnection) {
 				select {
-				case clients <- cc:
+				case conns <- cc:
 				default:
 				}
 			}
@@ -43,7 +43,7 @@ func TestSSEServer(t *testing.T) {
 			if err := c.Ping(ctx); err != nil {
 				t.Fatal(err)
 			}
-			cc := <-clients
+			cc := <-conns
 			gotHi, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"})
 			if err != nil {
 				t.Fatal(err)

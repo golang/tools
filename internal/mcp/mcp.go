@@ -10,7 +10,7 @@
 //
 //	Client                                    Server
 //	  ⇅          (jsonrpc2)                     ⇅
-//	Client Transport ⇄ Server Transport ⇄ ClientConnection
+//	Client Transport ⇄ Server Transport ⇄ ServerConnection
 //
 // A [Client] is an MCP client, which can be configured with various client
 // capabilities. Clients may be connected to a [Server] instance
@@ -19,7 +19,7 @@
 // Similarly, a [Server] is an MCP server, which can be configured with various
 // server capabilities. Servers may be connected to one or more [Client]
 // instances using the [Server.Connect] method, which creates a
-// [ClientConnection].
+// [ServerConnection].
 //
 // A [Transport] connects a bidirectional [Stream] of jsonrpc2 messages. In
 // practice, transports in the MCP spec are are either client transports or

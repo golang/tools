@@ -15,7 +15,7 @@ import (
 )
 
 // A ToolHandler handles a call to tools/call.
-type ToolHandler func(context.Context, *ClientConnection, map[string]json.RawMessage) (*protocol.CallToolResult, error)
+type ToolHandler func(context.Context, *ServerConnection, map[string]json.RawMessage) (*protocol.CallToolResult, error)
 
 // A Tool is a tool definition that is bound to a tool handler.
 type Tool struct {
@@ -36,12 +36,12 @@ type Tool struct {
 //
 // TODO: just have the handler return a CallToolResult: returning []Content is
 // going to be inconsistent with other server features.
-func NewTool[TReq any](name, description string, handler func(context.Context, *ClientConnection, TReq) ([]Content, error), opts ...ToolOption) *Tool {
+func NewTool[TReq any](name, description string, handler func(context.Context, *ServerConnection, TReq) ([]Content, error), opts ...ToolOption) *Tool {
 	schema, err := jsonschema.For[TReq]()
 	if err != nil {
 		panic(err)
 	}
-	wrapped := func(ctx context.Context, cc *ClientConnection, args map[string]json.RawMessage) (*protocol.CallToolResult, error) {
+	wrapped := func(ctx context.Context, cc *ServerConnection, args map[string]json.RawMessage) (*protocol.CallToolResult, error) {
 		// For simplicity, just marshal and unmarshal the arguments.
 		// This could be avoided in the future.
 		rawArgs, err := json.Marshal(args)
