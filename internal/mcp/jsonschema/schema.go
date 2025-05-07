@@ -293,7 +293,7 @@ func Ptr[T any](x T) *T { return &x }
 // It stops when f returns false.
 func (s *Schema) every(f func(*Schema) bool) bool {
 	return s == nil ||
-		f(s) && s.everyChild(f)
+		f(s) && s.everyChild(func(s *Schema) bool { return s.every(f) })
 }
 
 // everyChild reports whether f is true for every immediate child schema of s.

@@ -111,3 +111,18 @@ func TestUnmarshalErrors(t *testing.T) {
 
 	}
 }
+
+func TestEvery(t *testing.T) {
+	// Schema.every should visit all descendants of a schema, not just the immediate ones.
+	s := &Schema{
+		Items: &Schema{
+			Items: &Schema{},
+		},
+	}
+	want := 3
+	got := 0
+	s.every(func(*Schema) bool { got++; return true })
+	if got != want {
+		t.Errorf("got %d, want %d", got, want)
+	}
+}
