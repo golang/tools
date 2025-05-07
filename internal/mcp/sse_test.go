@@ -20,7 +20,7 @@ func TestSSEServer(t *testing.T) {
 		t.Run(fmt.Sprintf("closeServerFirst=%t", closeServerFirst), func(t *testing.T) {
 			ctx := context.Background()
 			server := NewServer("testServer", "v1.0.0", nil)
-			server.AddTools(MakeTool("greet", "say hi", sayHi))
+			server.AddTools(NewTool("greet", "say hi", sayHi))
 
 			sseHandler := NewSSEHandler(func(*http.Request) *Server { return server })
 

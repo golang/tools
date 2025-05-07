@@ -25,7 +25,7 @@ type Prompt struct {
 	Handler    PromptHandler
 }
 
-// MakePrompt is a helper to use reflection to create a prompt for the given
+// NewPrompt is a helper to use reflection to create a prompt for the given
 // handler.
 //
 // The arguments for the prompt are extracted from the request type for the
@@ -33,7 +33,7 @@ type Prompt struct {
 // of type string or *string. The argument names for the resulting prompt
 // definition correspond to the JSON names of the request fields, and any
 // fields that are not marked "omitempty" are considered required.
-func MakePrompt[TReq any](name, description string, handler func(context.Context, *ClientConnection, TReq) (*protocol.GetPromptResult, error), opts ...PromptOption) *Prompt {
+func NewPrompt[TReq any](name, description string, handler func(context.Context, *ClientConnection, TReq) (*protocol.GetPromptResult, error), opts ...PromptOption) *Prompt {
 	schema, err := jsonschema.For[TReq]()
 	if err != nil {
 		panic(err)

@@ -40,10 +40,10 @@ func main() {
 	flag.Parse()
 
 	server := mcp.NewServer("greeter", "v0.0.1", nil)
-	server.AddTools(mcp.MakeTool("greet", "say hi", SayHi, mcp.Input(
+	server.AddTools(mcp.NewTool("greet", "say hi", SayHi, mcp.Input(
 		mcp.Property("name", mcp.Description("the name to say hi to")),
 	)))
-	server.AddPrompts(mcp.MakePrompt("greet", "", PromptHi))
+	server.AddPrompts(mcp.NewPrompt("greet", "", PromptHi))
 
 	if *httpAddr != "" {
 		handler := mcp.NewSSEHandler(func(*http.Request) *mcp.Server {

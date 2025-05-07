@@ -23,7 +23,7 @@ type Tool struct {
 	Handler    ToolHandler
 }
 
-// MakeTool is a helper to make a tool using reflection on the given handler.
+// NewTool is a helper to make a tool using reflection on the given handler.
 //
 // If provided, variadic [ToolOption] values may be used to customize the tool.
 //
@@ -32,11 +32,11 @@ type Tool struct {
 // schema may be customized using the [Input] option.
 //
 // The handler request type must translate to a valid schema, as documented by
-// [jsonschema.ForType]; otherwise, MakeTool panics.
+// [jsonschema.ForType]; otherwise, NewTool panics.
 //
 // TODO: just have the handler return a CallToolResult: returning []Content is
 // going to be inconsistent with other server features.
-func MakeTool[TReq any](name, description string, handler func(context.Context, *ClientConnection, TReq) ([]Content, error), opts ...ToolOption) *Tool {
+func NewTool[TReq any](name, description string, handler func(context.Context, *ClientConnection, TReq) ([]Content, error), opts ...ToolOption) *Tool {
 	schema, err := jsonschema.For[TReq]()
 	if err != nil {
 		panic(err)
