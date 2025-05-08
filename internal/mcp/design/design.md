@@ -1016,4 +1016,39 @@ type ClientOptions struct {
 
 ### Pagination
 
-<!-- TODO: needs design -->
+Servers initiate pagination for `ListTools`, `ListPrompts`, `ListResources`,
+and `ListResourceTemplates`, dictating the page size and providing a
+`NextCursor` field in the Result if more pages exist. The SDK implements keyset
+pagination, using the `unique ID` as the key for a stable sort order and encoding
+the cursor as an opaque string.
+
+For server implementations, the page size for the list operation may be
+configured via the `ServerOptions.PageSize` field. PageSize must be a
+non-negative integer. If zero, a sensible default is used.
+
+```go
+type ServerOptions {
+  ...
+  PageSize int
+}
+```
+
+Client requests for List methods include an optional Cursor field for
+pagination. Server responses for List methods include a `NextCursor` field if
+more pages exist.
+
+In addition to the `List` methods, the SDK provides an iterator method for each
+list operation. This simplifies pagination for cients by automatically handling
+the underlying pagination logic.
+
+For example, we if we have a List method like this:
+
+```go
+func (*ClientSession) ListTools(context.Context, *ListToolsParams) (*ListToolsResult, error)
+```
+
+We will also provide an iterator method like this:
+
+```go
+func (*ClientSession) Tools(context.Context, *ListToolsParams) iter.Seq2[Tool, error]
+```
