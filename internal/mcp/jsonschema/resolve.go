@@ -161,14 +161,23 @@ func (r *resolver) resolveRefs(rs *Resolved) error {
 	return nil
 }
 
-func (s *Schema) check() error {
-	if s == nil {
+func (root *Schema) check() error {
+	if root == nil {
 		return errors.New("nil schema")
 	}
 	var errs []error
 	report := func(err error) { errs = append(errs, err) }
 
-	for ss := range s.all() {
+	seen := map[*Schema]bool{}
+	for ss := range root.all() {
+		if seen[ss] {
+			// The schema graph rooted at s is not a tree, but it needs to
+			// be because we assume a unique parent when we store a schema's base
+			// in the Schema. A cycle would also put Schema.all into an infinite
+			// recursion.
+			return fmt.Errorf("schemas rooted at %s do not form a tree (saw %s twice)", root, ss)
+		}
+		seen[ss] = true
 		ss.checkLocal(report)
 	}
 	return errors.Join(errs...)

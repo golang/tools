@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -38,6 +39,22 @@ func TestCheckLocal(t *testing.T) {
 				tt.s.json(), err, tt.want)
 		}
 	}
+}
+
+func TestSchemaNonTree(t *testing.T) {
+	run := func(s *Schema, kind string) {
+		err := s.check()
+		if err == nil || !strings.Contains(err.Error(), "tree") {
+			t.Fatalf("did not detect %s", kind)
+		}
+	}
+
+	s := &Schema{Type: "number"}
+	run(&Schema{Items: s, Contains: s}, "DAG")
+
+	root := &Schema{Items: s}
+	s.Items = root
+	run(root, "cycle")
 }
 
 func TestResolveURIs(t *testing.T) {
