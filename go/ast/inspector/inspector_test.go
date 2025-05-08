@@ -19,7 +19,12 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-var netFiles []*ast.File
+// net/http package
+var (
+	netFset    = token.NewFileSet()
+	netFiles   []*ast.File
+	netInspect *inspector.Inspector
+)
 
 func init() {
 	files, err := parseNetFiles()
@@ -27,6 +32,7 @@ func init() {
 		log.Fatal(err)
 	}
 	netFiles = files
+	netInspect = inspector.New(netFiles)
 }
 
 func parseNetFiles() ([]*ast.File, error) {
@@ -34,11 +40,10 @@ func parseNetFiles() ([]*ast.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	fset := token.NewFileSet()
 	var files []*ast.File
 	for _, filename := range pkg.GoFiles {
 		filename = filepath.Join(pkg.Dir, filename)
-		f, err := parser.ParseFile(fset, filename, nil, 0)
+		f, err := parser.ParseFile(netFset, filename, nil, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -288,22 +293,6 @@ func BenchmarkInspectFilter(b *testing.B) {
 			case *ast.FuncLit:
 				nlits++
 			}
-		})
-	}
-}
-
-func BenchmarkInspectCalls(b *testing.B) {
-	b.StopTimer()
-	inspect := inspector.New(netFiles)
-	b.StartTimer()
-
-	// Measure marginal cost of traversal.
-	nodeFilter := []ast.Node{(*ast.CallExpr)(nil)}
-	var ncalls int
-	for i := 0; i < b.N; i++ {
-		inspect.Preorder(nodeFilter, func(n ast.Node) {
-			_ = n.(*ast.CallExpr)
-			ncalls++
 		})
 	}
 }

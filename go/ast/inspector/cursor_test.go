@@ -1,87 +1,24 @@
-// Copyright 2024 The Go Authors. All rights reserved.
+// Copyright 2025 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.23
-
-package cursor_test
+package inspector_test
 
 import (
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/parser"
 	"go/token"
 	"iter"
-	"log"
 	"math/rand"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/astutil/edge"
 )
-
-// net/http package
-var (
-	netFset    = token.NewFileSet()
-	netFiles   []*ast.File
-	netInspect *inspector.Inspector
-)
-
-func init() {
-	files, err := parseNetFiles()
-	if err != nil {
-		log.Fatal(err)
-	}
-	netFiles = files
-	netInspect = inspector.New(netFiles)
-}
-
-func parseNetFiles() ([]*ast.File, error) {
-	pkg, err := build.Default.Import("net", "", 0)
-	if err != nil {
-		return nil, err
-	}
-	var files []*ast.File
-	for _, filename := range pkg.GoFiles {
-		filename = filepath.Join(pkg.Dir, filename)
-		f, err := parser.ParseFile(netFset, filename, nil, 0)
-		if err != nil {
-			return nil, err
-		}
-		files = append(files, f)
-	}
-	return files, nil
-}
-
-// compare calls t.Error if !slices.Equal(nodesA, nodesB).
-func compare[N comparable](t *testing.T, nodesA, nodesB []N) {
-	if len(nodesA) != len(nodesB) {
-		t.Errorf("inconsistent node lists: %d vs %d", len(nodesA), len(nodesB))
-	} else {
-		for i := range nodesA {
-			if a, b := nodesA[i], nodesB[i]; a != b {
-				t.Errorf("node %d is inconsistent: %T, %T", i, a, b)
-			}
-		}
-	}
-}
-
-// firstN(n, seq), returns a slice of up to n elements of seq.
-func firstN[T any](n int, seq iter.Seq[T]) (res []T) {
-	for x := range seq {
-		res = append(res, x)
-		if len(res) == n {
-			break
-		}
-	}
-	return res
-}
 
 func TestCursor_Preorder(t *testing.T) {
 	inspect := netInspect
@@ -90,7 +27,7 @@ func TestCursor_Preorder(t *testing.T) {
 
 	// reference implementation
 	var want []ast.Node
-	for cur := range cursor.Root(inspect).Preorder(nodeFilter...) {
+	for cur := range inspect.Root().Preorder(nodeFilter...) {
 		want = append(want, cur.Node())
 	}
 
@@ -100,7 +37,7 @@ func TestCursor_Preorder(t *testing.T) {
 
 	// Check that break works.
 	got = got[:0]
-	for _, c := range firstN(10, cursor.Root(inspect).Preorder(nodeFilter...)) {
+	for _, c := range firstN(10, inspect.Root().Preorder(nodeFilter...)) {
 		got = append(got, c.Node())
 	}
 	compare(t, got, want[:10])
@@ -127,7 +64,7 @@ func g() {
 		ncalls    = 0
 	)
 
-	for curFunc := range cursor.Root(inspect).Preorder(funcDecls...) {
+	for curFunc := range inspect.Root().Preorder(funcDecls...) {
 		_ = curFunc.Node().(*ast.FuncDecl)
 
 		// Check edge and index.
@@ -167,7 +104,7 @@ func g() {
 
 		// nested Inspect traversal
 		inspectCount := 0
-		curFunc.Inspect(callExprs, func(curCall cursor.Cursor) (proceed bool) {
+		curFunc.Inspect(callExprs, func(curCall inspector.Cursor) (proceed bool) {
 			_ = curCall.Node().(*ast.CallExpr)
 			inspectCount++
 			stack := slices.Collect(curCall.Enclosing())
@@ -198,7 +135,7 @@ func TestCursor_Children(t *testing.T) {
 	// Assert that Cursor.Children agrees with
 	// reference implementation for every node.
 	var want, got []ast.Node
-	for c := range cursor.Root(inspect).Preorder() {
+	for c := range inspect.Root().Preorder() {
 
 		// reference implementation
 		want = want[:0]
@@ -265,7 +202,7 @@ func TestCursor_Inspect(t *testing.T) {
 
 	// Test Cursor.Inspect implementation.
 	var nodesB []ast.Node
-	cursor.Root(inspect).Inspect(switches, func(c cursor.Cursor) (proceed bool) {
+	inspect.Root().Inspect(switches, func(c inspector.Cursor) (proceed bool) {
 		n := c.Node()
 		nodesB = append(nodesB, n)
 		return !is[*ast.SwitchStmt](n) // descend only into TypeSwitchStmt
@@ -293,7 +230,7 @@ func TestCursor_FindNode(t *testing.T) {
 	// starting at the root.
 	//
 	// (We use BasicLit because they are numerous.)
-	root := cursor.Root(inspect)
+	root := inspect.Root()
 	for c := range root.Preorder((*ast.BasicLit)(nil)) {
 		node := c.Node()
 		got, ok := root.FindNode(node)
@@ -333,7 +270,7 @@ func TestCursor_FindPos_order(t *testing.T) {
 	target := netFiles[7].Decls[0]
 
 	// Find the target decl by its position.
-	cur, ok := cursor.Root(netInspect).FindByPos(target.Pos(), target.End())
+	cur, ok := netInspect.Root().FindByPos(target.Pos(), target.End())
 	if !ok || cur.Node() != target {
 		t.Fatalf("unshuffled: FindPos(%T) = (%v, %t)", target, cur, ok)
 	}
@@ -346,14 +283,14 @@ func TestCursor_FindPos_order(t *testing.T) {
 
 	// Find it again.
 	inspect := inspector.New(files)
-	cur, ok = cursor.Root(inspect).FindByPos(target.Pos(), target.End())
+	cur, ok = inspect.Root().FindByPos(target.Pos(), target.End())
 	if !ok || cur.Node() != target {
 		t.Fatalf("shuffled: FindPos(%T) = (%v, %t)", target, cur, ok)
 	}
 }
 
 func TestCursor_Edge(t *testing.T) {
-	root := cursor.Root(netInspect)
+	root := netInspect.Root()
 	for cur := range root.Preorder() {
 		if cur == root {
 			continue // root node
@@ -462,10 +399,8 @@ func sliceTypes[T any](slice []T) string {
 	return buf.String()
 }
 
-// (partially duplicates benchmark in go/ast/inspector)
 func BenchmarkInspectCalls(b *testing.B) {
 	inspect := netInspect
-	b.ResetTimer()
 
 	// Measure marginal cost of traversal.
 
@@ -497,7 +432,7 @@ func BenchmarkInspectCalls(b *testing.B) {
 	b.Run("Cursor", func(b *testing.B) {
 		var ncalls int
 		for range b.N {
-			for cur := range cursor.Root(inspect).Preorder(callExprs...) {
+			for cur := range inspect.Root().Preorder(callExprs...) {
 				_ = cur.Node().(*ast.CallExpr)
 				ncalls++
 			}
@@ -507,7 +442,7 @@ func BenchmarkInspectCalls(b *testing.B) {
 	b.Run("CursorEnclosing", func(b *testing.B) {
 		var ncalls int
 		for range b.N {
-			for cur := range cursor.Root(inspect).Preorder(callExprs...) {
+			for cur := range inspect.Root().Preorder(callExprs...) {
 				_ = cur.Node().(*ast.CallExpr)
 				for range cur.Enclosing() {
 				}
@@ -519,13 +454,13 @@ func BenchmarkInspectCalls(b *testing.B) {
 
 // This benchmark compares methods for finding a known node in a tree.
 func BenchmarkCursor_FindNode(b *testing.B) {
-	root := cursor.Root(netInspect)
+	root := netInspect.Root()
 
 	callExprs := []ast.Node{(*ast.CallExpr)(nil)}
 
 	// Choose a needle in the haystack to use as the search target:
 	// a CallExpr not too near the start nor at too shallow a depth.
-	var needle cursor.Cursor
+	var needle inspector.Cursor
 	{
 		count := 0
 		found := false
@@ -547,7 +482,7 @@ func BenchmarkCursor_FindNode(b *testing.B) {
 	b.Run("Cursor.Preorder", func(b *testing.B) {
 		needleNode := needle.Node()
 		for range b.N {
-			var found cursor.Cursor
+			var found inspector.Cursor
 			for c := range root.Preorder(callExprs...) {
 				if c.Node() == needleNode {
 					found = c
