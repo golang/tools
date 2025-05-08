@@ -9,7 +9,10 @@ import (
 	"fmt"
 )
 
-// Content is the wire format for content, including all fields.
+// Content is the wire format for content.
+//
+// The Type field distinguishes the type of the content.
+// At most one of Text, MIMEType, Data, and Resource is non-zero.
 type Content struct {
 	Type     string    `json:"type"`
 	Text     string    `json:"text,omitempty"`
@@ -18,7 +21,10 @@ type Content struct {
 	Resource *Resource `json:"resource,omitempty"`
 }
 
-// Resource is the wire format for embedded resources, including all fields.
+// Resource is the wire format for embedded resources.
+//
+// The URI field describes the resource location. At most one of Text and Blob
+// is non-zero.
 type Resource struct {
 	URI      string  `json:"uri,"`
 	MIMEType string  `json:"mimeType,omitempty"`

@@ -56,6 +56,23 @@ SDKs, but is consistent with Go packages like `net/http`, `net/rpc`, or
 Functionality that is not directly related to MCP (like jsonschema or jsonrpc2)
 belongs in a separate package.
 
+Therefore, this is the package layout. `module.path` is a placeholder for the
+final module path of the mcp module
+
+- `module.path/mcp`: the bulk of the user facing API
+- `module.path/mcp/protocol`: generated types for the MCP spec.
+- `module.path/jsonschema`: a jsonschema implementation, with validation
+- `module.path/internal/jsonrpc2`: a fork of x/tools/internal/jsonrpc2_v2
+
+For now, this layout assumes we want to separate the 'protocol' types from the
+'mcp' package, since they won't be needed by most users. It is unclear whether
+this is worthwhile.
+
+The JSON-RPC implementation is hidden, to avoid tight coupling. As described in
+the next section, the only aspects of JSON-RPC that need to be exposed in the
+SDK are the message types, for the purposes of defining custom transports. We
+can expose these types from the `mcp` package via aliases or wrappers.
+
 ### jsonrpc2 and Transports
 
 The MCP is defined in terms of client-server communication over bidirectional
@@ -251,7 +268,59 @@ func (*StreamableClientTransport) Connect(context.Context) (Stream, error)
 
 ### Protocol types
 
-<!-- TODO: describe the generation of protocol types from the MCP schema -->
+As described in the section on package layout above, the `protocol` package
+will contain definitions of types referenced by the MCP spec that are needed
+for the SDK. JSON-RPC message types are elided, since they are handled by the
+`jsonrpc2` package and should not be observed by the user. The user interacts
+only with the params/result types relevant to MCP operations.
+
+For user-provided data, use `json.RawMessage`, so that
+marshalling/unmarshalling can be delegated to the business logic of the client
+or server.
+
+For union types, which can't be represented in Go (specifically `Content` and
+`Resource`), we prefer distinguished unions: struct types with fields
+corresponding to the union of all properties for union elements.
+
+These types will be auto-generated from the [JSON schema of the MCP
+spec](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2025-03-26/schema.json).
+For brevity, only a few examples are shown here:
+
+```go
+type CallToolParams struct {
+	Arguments map[string]json.RawMessage `json:"arguments,omitempty"`
+	Name      string                     `json:"name"`
+}
+
+type CallToolResult struct {
+	Meta    map[string]json.RawMessage `json:"_meta,omitempty"`
+	Content []Content                  `json:"content"`
+	IsError bool                       `json:"isError,omitempty"`
+}
+
+// Content is the wire format for content.
+//
+// The Type field distinguishes the type of the content.
+// At most one of Text, MIMEType, Data, and Resource is non-zero.
+type Content struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	MIMEType string    `json:"mimeType,omitempty"`
+	Data     string    `json:"data,omitempty"`
+	Resource *Resource `json:"resource,omitempty"`
+}
+
+// Resource is the wire format for embedded resources.
+//
+// The URI field describes the resource location. At most one of Text and Blob
+// is non-zero.
+type Resource struct {
+	URI      string  `json:"uri,"`
+	MIMEType string  `json:"mimeType,omitempty"`
+	Text     string  `json:"text"`
+	Blob     *string `json:"blob"`
+}
+```
 
 ### Clients and Servers
 
