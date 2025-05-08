@@ -376,12 +376,46 @@ Server.RemoveTools
 
 #### JSON Schema
 
-<!--
-TODO(jba):
-jsonschema library
-schema validation (client-side and server-side)
-SchemaOption
--->
+A tool's input schema, expressed as a [JSON Schema](https://json-schema.org),
+provides a way to validate the tool's input.
+
+We chose a hybrid a approach to specifying the schema, combining reflection
+and variadic options. We found that this makes the common cases easy (sometimes
+free!) to express and keeps the API small.  The most recent JSON Schema
+spec defines over 40 keywords. Providing them all as options would bloat
+the API despite the fact that most would be very rarely used. Our approach
+also guarantees that the input schema is compatible with tool parameters, by
+construction.
+
+`NewTool` determines the input schema for a Tool from the struct used
+in the handler. Each struct field that would be marshaled by `encoding/json.Marshal`
+becomes a property of the schema. The property is required unless
+the field's `json` tag specifies "omitempty" or "omitzero" (new in Go 1.24).
+For example, given this struct:
+```
+struct {
+  Name     string `json:"name"`
+  Count    int    `json:"count,omitempty"`
+  Choices  []string
+  Password []byte `json:"-"`
+}
+```
+"name" and "Choices" are required, while "count" is optional.
+
+The struct provides the names, types and required status of the properties.
+Other JSON Schema keywords can be specified by passing options to `NewTool`:
+```
+NewTool(name, description, handler,
+    Property("count", Description("size of the inventory")))
+```
+
+For less common keywords, use the `Schema` option:
+```
+NewTool(name, description, handler,
+    Property("Choices", Schema(&jsonschema.Schema{UniqueItems: true})))
+```
+
+Schemas are validated on the server before the tool handler is called.
 
 ### Prompts
 
@@ -458,16 +492,8 @@ Our `mcp` package includes all the functionality of mcp-go's `mcp`, `client`,
 
 ### Typed tool inputs
 
-We provide a way to supply a struct as the input type of a Tool.
-For example, a tool input with a required "name" parameter and an optional "size" parameter
-could be be described by:
-```
-type input struct {
-  Name string `json:"name"`
-  Size int `json:"size,omitempty"`
-}
-```
-
+We provide a way to supply a struct as the input type of a Tool, as described
+in [JSON Schema](#JSON_Schema), above.
 The tool handler receives a value of this struct instead of a `map[string]any`,
 so it doesn't need to parse its input parameters. Also, we infer the input schema
 from the struct, avoiding the need to specify the name, type and required status of
