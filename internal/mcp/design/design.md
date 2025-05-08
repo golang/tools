@@ -428,31 +428,136 @@ follows:
 
 <!-- TODO: needs design -->
 
-## Differences with mcp-go
+## Differences with mark3labs/mcp-go
 
-The most popular MCP package for Go is [mcp-go](https://pkg.go.dev/github.com/
-mark3labs/mcp-go). While we admire the thoughfulness of its design and the high
-quality of its implementation, we made different choices. Although the APIs are
-not compatible, translating between them is straightforward. (Later, we will
-provide a detailed translation guide.)
+The most popular MCP module for Go is [mark3labs/mcp-go](https://pkg.go.dev/github.com/
+mark3labs/mcp-go).
+As of this writing, it is imported by over 400 packages that span over 200 modules.
 
-## Packages
+We admire mcp-go, and seriously considered simply adopting it as a starting
+point for this SDK. However, as we looked at doing so, we realized that a
+significant amount of its API would probably need to change. In some cases,
+mcp-go has older APIs that predated newer variations--an obvious opportunity
+for cleanup. In others, it took a batteries-included approach that is probably
+not viable for an official SDK. In yet others, we simply think there is room for
+API refinement, and we should take this opportunity to reconsider. Therefore,
+we wrote this SDK design from the perspective of a new implementation.
+Nevertheless, much of the API discussed here originated from or was inspired
+by mcp-go and other unofficial SDKs, and if the consensus of this discussion is
+close enough to mcp-go or any other unofficial SDK, we can start from a fork.
+
+Although our API is not compatible with mcp-go's, translating between them should be
+straightforward in most cases.
+(Later, we will provide a detailed translation guide.)
+
+### Packages
 
 As we mentioned above, we decided to put most of the API into a single package.
-The exceptions are the JSON-RPC layer, the JSON Schema implementation, and the
-parts of the MCP protocol that users don't need. The resulting `mcp` includes
-all the functionality of mcp-go's `mcp`, `client`, `server` and `transport`
-packages, but is smaller than the `mcp` package alone.
+Our `mcp` package includes all the functionality of mcp-go's `mcp`, `client`,
+`server` and `transport` packages, but is smaller than the `mcp` package alone.
 
-## Hooks
+### Typed tool inputs
+
+We provide a way to supply a struct as the input type of a Tool.
+For example, a tool input with a required "name" parameter and an optional "size" parameter
+could be be described by:
+```
+type input struct {
+  Name string `json:"name"`
+  Size int `json:"size,omitempty"`
+}
+```
+
+The tool handler receives a value of this struct instead of a `map[string]any`,
+so it doesn't need to parse its input parameters. Also, we infer the input schema
+from the struct, avoiding the need to specify the name, type and required status of
+parameters.
+
+### Schema validation
+
+We provide a full JSON Schema implementation for validating tool input schemas against
+incoming arguments. The `jsonschema.Schema` type provides exported features for all
+keywords in the JSON Schema draft2020-12 spec. Tool definers can use it to construct
+any schema they want, so there is no need to provide options for all of them.
+When combined with schema inference from input structs,
+we found that we needed only three options to cover the common cases,
+instead of mcp-go's 23. For example, we provide `Enum`, which occurs 125 times in open source
+code, but not MinItems, MinLength or MinProperties, which each occur only once (and in an SDK
+that wraps mcp-go).
+
+Moreover, our options can be used to build nested schemas, while
+mcp-go's work only at top level. That limitation is visible in
+[this code](https://github.com/DCjanus/dida365-mcp-server/blob/master/cmd/mcp/tools.go#L315),
+which must resort to untyped maps to express a nested schema:
+```
+mcp.WithArray("items",
+  mcp.Description("Checklist items of the task"),
+  mcp.Items(map[string]any{
+   "type": "object",
+   "properties": map[string]any{
+    "id": map[string]any{
+     "type":        "string",
+     "description": "Unique identifier of the checklist item",
+    },
+    "status": map[string]any{
+     "type":        "number",
+     "description": "Status of the checklist item (0: normal, 1: completed)",
+     "enum":        []float64{0, 1},
+     },
+     ...
+```
+
+### JSON-RPC implementation
+
+The Go team has a battle-tested JSON-RPC implementation that we use for gopls, our
+Go LSP server. We are using the new version of this library as part of our MCP SDK.
+It handles all JSON-RPC 2.0 features, including cancellation.
+
+### Hooks
 
 Version 0.26.0 of mcp-go defines 24 server hooks. Each hook consists of a field
 in the `Hooks` struct, a `Hooks.Add` method, and a type for the hook function.
-As described above, these can be replaced by middleware. We
-don't define any middleware types at present, but will do so if there is demand.
-(We're minimalists, not savages.)
+These are rarely used. The most common is `OnError`, which occurs fewer than ten
+times in open-source code.
 
-## Servers
+All of the hooks run before or after the server processes a message,
+so instead we provide a single way to intercept this message handling, using
+two exported names instead of 72:
+```
+// A Handler handles an MCP message call.
+type Handler func(ctx context.Context, c *ServerConnection, method string, params any) (response any, err error)
+
+
+// AddMiddleware calls each middleware function from right to left on the previous result, beginning
+// with the server's current handler, and installs the result as the new handler.
+func (*Server) AddMiddleware(middleware ...func(Handler) Handler))
+```
+
+As an example, this code adds server-side logging:
+```
+
+func withLogging(h mcp.Handler) mcp.Handler {
+    return func(ctx context.Context, c *mcp.ServerConnection, method string, params any) (res any, err error) {
+        log.Printf("request: %s %v", method, params)
+        defer func() { log.Printf("response: %v, %v", res, err) }()
+        return h(ctx, c , method, params)
+    }
+}
+
+server.AddMiddleware(withLogging)
+```
+
+### Options
+
+In Go, the two most common ways to provide options to a function are option structs (for example,
+https://pkg.go.dev/net/http#PushOptions) and
+variadic option functions. mcp-go uses option functions exclusively. For example,
+the `server.NewMCPServer` function has ten associated functions to provide options.
+Our API uses both, depending on the context. We use function options for
+constructing tools, where they are most convenient. In most other places, we
+prefer structs because they have a smaller API footprint and are less verbose.
+
+### Servers
 
 In mcp-go, server authors create an `MCPServer`, populate it with tools,
 resources and so on, and then wrap it in an `SSEServer` or `StdioServer`. These
@@ -461,6 +566,6 @@ with `RegisterSession` and `UnregisterSession`.
 
 We find the similarity in names among the three server types to be confusing,
 and we could not discover any uses of the session methods in the open-source
-ecosystem. In our design is similar, server authors create a `Server`, and then
-connect it to a `Transport` or SSE handler. We manage multiple web clients for a
-single server using session IDs internally, but do not expose them.
+ecosystem. In our design, server authors create a `Server`, and then
+connect it to a `Transport`. An `SSEHandler` manages sessions for
+incoming SSE connections, but does not expose them.
