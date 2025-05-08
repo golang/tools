@@ -128,7 +128,7 @@ type CommandTransport struct { /* unexported fields */ }
 func NewCommandTransport(cmd *exec.Command) *CommandTransport
 
 // Connect starts the command, and connects to it over stdin/stdout.
-func (t *CommandTransport) Connect(ctx context.Context) (Stream, error) {
+func (*CommandTransport) Connect(ctx context.Context) (Stream, error) {
 ```
 
 The `StdIOTransport` is the server side of the stdio transport, and connects by
@@ -139,7 +139,7 @@ binding to `os.Stdin` and `os.Stdout`.
 // JSON over stdin/stdout.
 type StdIOTransport struct { /* unexported fields */ }
 
-func NewStdIOTransport() *StdIOTransport {
+func NewStdIOTransport() *StdIOTransport
 
 func (t *StdIOTransport) Connect(context.Context) (Stream, error)
 ```
@@ -174,13 +174,80 @@ Notably absent are options to hook into the request handling for the purposes
 of authentication or context injection. These concerns are better handled using
 standard HTTP middleware patterns.
 
-<!--
-TODO: consider ways to expose the /mcp handler and /messages handler
-separately, so that users can compose them differently. For example, should we
-expose an SSEServerHandler, similar to the typescript SDK?
--->
+By default, the SSE handler creates messages endpoints with the
+`?sessionId=...` query parameter. Users that want more control over the
+management of sessions and session endpoints may write their own handler, and
+create `SSEServerTransport` instances themselves, for incoming GET requests.
 
-<!-- TODO: add an API for the streamable HTTP handler -->
+```go
+// A SSEServerTransport is a logical SSE session created through a hanging GET
+// request.
+//
+// When connected, it it returns the following [Stream] implementation:
+//   - Writes are SSE 'message' events to the GET response.
+//   - Reads are received from POSTs to the session endpoint, via
+//     [SSEServerTransport.ServeHTTP].
+//   - Close terminates the hanging GET.
+type SSEServerTransport struct { /* ... */ }
+
+// NewSSEServerTransport creates a new SSE transport for the given messages
+// endpoint, and hanging GET response.
+//
+// Use [SSEServerTransport.Connect] to initiate the flow of messages.
+//
+// The transport is itself an [http.Handler]. It is the caller's responsibility
+// to ensure that the resulting transport serves HTTP requests on the given
+// session endpoint.
+func NewSSEServerTransport(endpoint string, w http.ResponseWriter) *SSEServerTransport
+
+// ServeHTTP handles POST requests to the transport endpoint.
+func (*SSEServerTransport) ServeHTTP(w http.ResponseWriter, req *http.Request)
+
+// Connect sends the 'endpoint' event to the client.
+// See [SSEServerTransport] for more details on the [Stream] implementation.
+func (*SSEServerTransport) Connect(context.Context) (Stream, error)
+```
+
+The SSE client transport is simpler, and hopefully self-explanatory.
+
+```go
+type SSEClientTransport struct { /* ... */ }
+
+// NewSSEClientTransport returns a new client transport that connects to the
+// SSE server at the provided URL.
+//
+// NewSSEClientTransport panics if the given URL is invalid.
+func NewSSEClientTransport(url string) *SSEClientTransport {
+
+// Connect connects through the client endpoint.
+func (*SSEClientTransport) Connect(ctx context.Context) (Stream, error)
+```
+
+The Streamable HTTP transports are similar to the SSE transport, albeit with a
+more complicated implementation. For brevity, we summarize only the differences
+from the equivalent SSE types:
+
+```go
+// The StreamableHandler interface is symmetrical to the SSEHandler.
+type StreamableHandler struct { /* unexported fields */ }
+func NewStreamableHandler(getServer func(request *http.Request) *Server) *StreamableHandler
+func (*StreamableHandler) ServeHTTP(w http.ResponseWriter, req *http.Request)
+func (*StreamableHandler) Close() error
+
+// Unlike the SSE transport, the streamable transport constructor accepts a
+// session ID, not an endpoint, along with the http response for the request
+// that created the session. It is the caller's responsibility to delegate
+// requests to this session.
+type StreamableServerTransport struct { /* ... */ }
+func NewStreamableServerTransport(sessionID string, w http.ResponseWriter) *StreamableServerTransport
+func (*StreamableServerTransport) ServeHTTP(w http.ResponseWriter, req *http.Request)
+func (*StreamableServerTransport) Connect(context.Context) (Stream, error)
+
+// The streamable client handles reconnection transparently to the user.
+type StreamableClientTransport struct { /* ... */ }
+func NewStreamableClientTransport(url string) *StreamableClientTransport {
+func (*StreamableClientTransport) Connect(context.Context) (Stream, error)
+```
 
 ### Protocol types
 

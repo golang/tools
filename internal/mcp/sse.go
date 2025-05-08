@@ -67,27 +67,38 @@ type SSEHandler struct {
 	onConnection func(*ServerConnection) // for testing; must not block
 
 	mu       sync.Mutex
-	sessions map[string]*sseSession
+	sessions map[string]*SSEServerTransport
 }
 
-// NewSSEHandler returns a new [SSEHandler] that is ready to serve HTTP.
+// NewSSEHandler returns a new [SSEHandler] that creates and manages MCP
+// sessions created via incoming HTTP requests.
 //
-// The getServer function is used to bind created servers for new sessions. It
-// is OK for getServer to return the same server multiple times.
+// Sessions are created when the client issues a GET request to the server,
+// which must accept text/event-stream responses (server-sent events).
+// For each such request, a new [SSEServerTransport] is created with a distinct
+// messages endpoint, and connected to the server returned by getServer. It is
+// up to the user whether getServer returns a distinct [Server] for each new
+// request, or reuses an existing server.
+//
+// The SSEHandler also handles requests to the message endpoints, by
+// delegating them to the relevant server transport.
 func NewSSEHandler(getServer func(request *http.Request) *Server) *SSEHandler {
 	return &SSEHandler{
 		getServer: getServer,
-		sessions:  make(map[string]*sseSession),
+		sessions:  make(map[string]*SSEServerTransport),
 	}
 }
 
-// A sseSession is a logical jsonrpc2 stream implementing the server side of
-// MCP SSE transport, initiated through the hanging GET
-//   - Writes are SSE 'message' events to the GET response body.
-//   - Reads are received from POSTs to the session endpoing, mediated through a
-//     buffered channel.
+// A SSEServerTransport is a logical SSE session created through a hanging GET
+// request.
+//
+// When connected, it returns the following [Stream] implementation:
+//   - Writes are SSE 'message' events to the GET response.
+//   - Reads are received from POSTs to the session endpoint, via
+//     [SSEServerTransport.ServeHTTP].
 //   - Close terminates the hanging GET.
-type sseSession struct {
+type SSEServerTransport struct {
+	endpoint string
 	incoming chan jsonrpc2.Message // queue of incoming messages; never closed
 
 	// We must guard both pushes to the incoming queue and writes to the response
@@ -100,9 +111,63 @@ type sseSession struct {
 	done   chan struct{}       // closed when the stream is closed
 }
 
-// Connect returns the receiver, as an sseSession is a logical stream.
-func (s *sseSession) Connect(context.Context) (Stream, error) {
-	return s, nil
+// NewSSEServerTransport creates a new SSE transport for the given messages
+// endpoint, and hanging GET response.
+//
+// Use [SSEServerTransport.Connect] to initiate the flow of messages.
+//
+// The transport is itself an [http.Handler]. It is the caller's responsibility
+// to ensure that the resulting transport serves HTTP requests on the given
+// session endpoint.
+//
+// Most callers should instead use an [SSEHandler], which transparently handles
+// the delegation to SSEServerTransports.
+func NewSSEServerTransport(endpoint string, w http.ResponseWriter) *SSEServerTransport {
+	return &SSEServerTransport{
+		endpoint: endpoint,
+		w:        w,
+		incoming: make(chan jsonrpc2.Message, 100),
+		done:     make(chan struct{}),
+	}
+}
+
+// ServeHTTP handles POST requests to the transport endpoint.
+func (t *SSEServerTransport) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Read and parse the message.
+	data, err := io.ReadAll(req.Body)
+	if err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		return
+	}
+	// Optionally, we could just push the data onto a channel, and let the
+	// message fail to parse when it is read. This failure seems a bit more
+	// useful
+	msg, err := jsonrpc2.DecodeMessage(data)
+	if err != nil {
+		http.Error(w, "failed to parse body", http.StatusBadRequest)
+		return
+	}
+	select {
+	case t.incoming <- msg:
+		w.WriteHeader(http.StatusAccepted)
+	case <-t.done:
+		http.Error(w, "session closed", http.StatusBadRequest)
+	}
+}
+
+// Connect sends the 'endpoint' event to the client.
+// See [SSEServerTransport] for more details on the [Stream] implementation.
+func (t *SSEServerTransport) Connect(context.Context) (Stream, error) {
+	t.mu.Lock()
+	_, err := writeEvent(t.w, event{
+		name: "endpoint",
+		data: []byte(t.endpoint),
+	})
+	t.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return sseServerStream{t}, nil
 }
 
 func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -125,26 +190,7 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 
-		// Read and parse the message.
-		data, err := io.ReadAll(req.Body)
-		if err != nil {
-			http.Error(w, "failed to read body", http.StatusBadRequest)
-			return
-		}
-		// Optionally, we could just push the data onto a channel, and let the
-		// message fail to parse when it is read. This failure seems a bit more
-		// useful
-		msg, err := jsonrpc2.DecodeMessage(data)
-		if err != nil {
-			http.Error(w, "failed to parse body", http.StatusBadRequest)
-			return
-		}
-		select {
-		case session.incoming <- msg:
-			w.WriteHeader(http.StatusAccepted)
-		case <-session.done:
-			http.Error(w, "session closed", http.StatusBadRequest)
-		}
+		session.ServeHTTP(w, req)
 		return
 	}
 
@@ -163,16 +209,27 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 
 	sessionID = randText()
-	session := &sseSession{
-		w:        w,
-		incoming: make(chan jsonrpc2.Message, 100),
-		done:     make(chan struct{}),
+	endpoint, err := req.URL.Parse("?sessionid=" + sessionID)
+	if err != nil {
+		http.Error(w, "internal error: failed to create endpoint", http.StatusInternalServerError)
+		return
 	}
-	defer session.Close()
+
+	transport := NewSSEServerTransport(endpoint.RequestURI(), w)
+
+	// The session is terminated when the request exits.
+	h.mu.Lock()
+	h.sessions[sessionID] = transport
+	h.mu.Unlock()
+	defer func() {
+		h.mu.Lock()
+		delete(h.sessions, sessionID)
+		h.mu.Unlock()
+	}()
 
 	// TODO(hxjiang): getServer returns nil will panic.
 	server := h.getServer(req)
-	cc, err := server.Connect(req.Context(), session, nil)
+	cc, err := server.Connect(req.Context(), transport, nil)
 	if err != nil {
 		http.Error(w, "connection failed", http.StatusInternalServerError)
 		return
@@ -182,52 +239,32 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	defer cc.Close() // close the transport when the GET exits
 
-	// The session is terminated when the request exits.
-	h.mu.Lock()
-	h.sessions[sessionID] = session
-	h.mu.Unlock()
-	defer func() {
-		h.mu.Lock()
-		delete(h.sessions, sessionID)
-		h.mu.Unlock()
-	}()
-
-	endpoint, err := req.URL.Parse("?sessionid=" + sessionID)
-	if err != nil {
-		http.Error(w, "internal error: failed to create endpoint", http.StatusInternalServerError)
-		return
-	}
-
-	session.mu.Lock()
-	_, err = writeEvent(w, event{
-		name: "endpoint",
-		data: []byte(endpoint.RequestURI()),
-	})
-	session.mu.Unlock()
-	if err != nil {
-		return // too late to write the status header
-	}
-
 	select {
 	case <-req.Context().Done():
-	case <-session.done:
+	case <-transport.done:
 	}
 }
 
+// sseServerStream implements the Stream interface for a single [SSEServerTransport].
+// It hides the Stream interface from the SSEServerTransport API.
+type sseServerStream struct {
+	t *SSEServerTransport
+}
+
 // Read implements jsonrpc2.Reader.
-func (s *sseSession) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
+func (s sseServerStream) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
 	select {
 	case <-ctx.Done():
 		return nil, 0, ctx.Err()
-	case msg := <-s.incoming:
+	case msg := <-s.t.incoming:
 		return msg, 0, nil
-	case <-s.done:
+	case <-s.t.done:
 		return nil, 0, io.EOF
 	}
 }
 
 // Write implements jsonrpc2.Writer.
-func (s *sseSession) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
+func (s sseServerStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
 	if ctx.Err() != nil {
 		return 0, ctx.Err()
 	}
@@ -237,17 +274,17 @@ func (s *sseSession) Write(ctx context.Context, msg jsonrpc2.Message) (int64, er
 		return 0, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.t.mu.Lock()
+	defer s.t.mu.Unlock()
 
 	// Note that it is invalid to write to a ResponseWriter after ServeHTTP has
 	// exited, and so we must lock around this write and check isDone, which is
 	// set before the hanging GET exits.
-	if s.closed {
+	if s.t.closed {
 		return 0, io.EOF
 	}
 
-	n, err := writeEvent(s.w, event{name: "message", data: data})
+	n, err := writeEvent(s.t.w, event{name: "message", data: data})
 	return int64(n), err
 }
 
@@ -256,12 +293,12 @@ func (s *sseSession) Write(ctx context.Context, msg jsonrpc2.Message) (int64, er
 // It must be safe to call Close more than once, as the close may
 // asynchronously be initiated by either the server closing its connection, or
 // by the hanging GET exiting.
-func (s *sseSession) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.closed {
-		s.closed = true
-		close(s.done)
+func (s sseServerStream) Close() error {
+	s.t.mu.Lock()
+	defer s.t.mu.Unlock()
+	if !s.t.closed {
+		s.t.closed = true
+		close(s.t.done)
 	}
 	return nil
 }
