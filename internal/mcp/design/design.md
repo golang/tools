@@ -79,7 +79,7 @@ The MCP is defined in terms of client-server communication over bidirectional
 JSON-RPC message streams. Specifically, version `2025-03-26` of the spec
 defines two transports:
 
-- ****: communication with a subprocess over stdin/stdout.
+- **stdio**: communication with a subprocess over stdin/stdout.
 - **streamable http**: communication over a relatively complicated series of
   text/event-stream GET and HTTP POST requests.
 
@@ -324,10 +324,95 @@ type Resource struct {
 
 ### Clients and Servers
 
-<!--
-TODO: discuss the construction of new clients and servers, and connecting
-them to a transport. Pay particular attention to the 1:1 nature of binding.
--->
+Generally speaking, the SDK is used by creating a `Client` or `Server`
+instance, adding features to it, and connecting it to a peer.
+
+However, the SDK must make a non-obvious choice in these APIs: are clients 1:1
+with their logical connections? What about servers? Both clients and servers
+are stateful: users may add or remove roots from clients, and tools, prompts,
+and resources from servers. Additionally, handlers for these features may
+themselves be stateful, for example if a tool handler caches state from earlier
+requests in the session.
+
+We believe that in the common case, both clients and servers are stateless, and
+it is therefore more useful to allow multiple connections from a client, and to
+a server. This is similar to the `net/http` packages, in which an `http.Client`
+and `http.Server` each may handle multiple unrelated connections. When users
+add features to a client or server, all connected peers are notified of the
+change in feature-set.
+
+Following the terminology of the
+[spec](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#session-management),
+we call the logical connection between a client and server a "session". There
+must necessarily be a `ClientSession` and a `ServerSession`, corresponding to
+the APIs available from the client and server perspective, respectively.
+
+```
+Client                                                   Server
+  ⇅                          (jsonrpc2)                     ⇅
+ClientSession ⇄ Client Transport ⇄ Server Transport ⇄ ServerSession
+```
+
+Sessions are created from either `Client` or `Server` using the `Connect`
+method.
+
+```go
+type Client struct { /* ... */ }
+func NewClient(name, version string, opts *ClientOptions) *Client
+func (c *Client) Connect(context.Context, Transport) (*ClientSession, error)
+// Methods for adding/removing client features are described below.
+
+type ClientSession struct { /* ... */ }
+func (*ClientSession) Close() error
+func (*ClientSession) Wait() error
+// Methods for calling through the ClientSession are described below.
+
+type Server struct { /* ... */ }
+func NewServer(name, version string, opts *ServerOptions) *Server
+func (s *Server) Connect(context.Context, Transport) (*ServerSession, error)
+// Methods for adding/removing server features are described below.
+
+type ServerSession struct { /* ... */ }
+func (*ServerSession) Close() error
+func (*ServerSession) Wait() error
+// Methods for calling through the ServerSession are described below.
+```
+
+Here's an example of these API from the client side:
+
+```go
+client := mcp.NewClient("mcp-client", "v1.0.0", nil)
+// Connect to a server over stdin/stdout
+transport := mcp.NewCommandTransport(exec.Command("myserver"))
+session, err := client.Connect(ctx, transport)
+if err != nil {
+	log.Fatal(err)
+}
+// Call a tool on the server.
+content, err := session.CallTool(ctx, "greet", map[string]any{"name": "you"})
+...
+return session.Close()
+```
+
+And here's an example from the server side:
+
+```go
+// Create a server with a single tool.
+server := mcp.NewServer("greeter", "v1.0.0", nil)
+server.AddTool(mcp.NewTool("greet", "say hi", SayHi))
+// Run the server over stdin/stdout, until the client disconnects.
+transport := mcp.NewStdIOTransport()
+session, err := server.Connect(ctx, transport)
+...
+return session.Wait()
+```
+
+For convenience, we provide `Server.Run` to handle the common case of running a
+session until the client disconnects:
+
+```go
+func (*Server) Run(context.Context, Transport)
+```
 
 ### Errors
 
@@ -429,7 +514,7 @@ provides a way to validate the tool's input.
 
 We chose a hybrid a approach to specifying the schema, combining reflection
 and variadic options. We found that this makes the common cases easy (sometimes
-free!) to express and keeps the API small.  The most recent JSON Schema
+free!) to express and keeps the API small. The most recent JSON Schema
 spec defines over 40 keywords. Providing them all as options would bloat
 the API despite the fact that most would be very rarely used. Our approach
 also guarantees that the input schema is compatible with tool parameters, by
@@ -440,6 +525,7 @@ in the handler. Each struct field that would be marshaled by `encoding/json.Mars
 becomes a property of the schema. The property is required unless
 the field's `json` tag specifies "omitempty" or "omitzero" (new in Go 1.24).
 For example, given this struct:
+
 ```
 struct {
   Name     string `json:"name"`
@@ -448,16 +534,19 @@ struct {
   Password []byte `json:"-"`
 }
 ```
+
 "name" and "Choices" are required, while "count" is optional.
 
 The struct provides the names, types and required status of the properties.
 Other JSON Schema keywords can be specified by passing options to `NewTool`:
+
 ```
 NewTool(name, description, handler,
     Input(Property("count", Description("size of the inventory"))))
 ```
 
 For less common keywords, use the `Schema` option:
+
 ```
 NewTool(name, description, handler,
     Input(Property("Choices", Schema(&jsonschema.Schema{UniqueItems: true}))))
@@ -566,6 +655,7 @@ Moreover, our options can be used to build nested schemas, while
 mcp-go's work only at top level. That limitation is visible in
 [this code](https://github.com/DCjanus/dida365-mcp-server/blob/master/cmd/mcp/tools.go#L315),
 which must resort to untyped maps to express a nested schema:
+
 ```
 mcp.WithArray("items",
   mcp.Description("Checklist items of the task"),
@@ -600,6 +690,7 @@ times in open-source code.
 All of the hooks run before or after the server processes a message,
 so instead we provide a single way to intercept this message handling, using
 two exported names instead of 72:
+
 ```
 // A Handler handles an MCP message call.
 type Handler func(ctx context.Context, c *ServerConnection, method string, params any) (response any, err error)
@@ -611,6 +702,7 @@ func (*Server) AddMiddleware(middleware ...func(Handler) Handler))
 ```
 
 As an example, this code adds server-side logging:
+
 ```
 
 func withLogging(h mcp.Handler) mcp.Handler {
