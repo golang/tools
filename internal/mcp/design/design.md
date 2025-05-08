@@ -366,15 +366,29 @@ Client.RemoveRoots
 
 ### Tools
 
-<!--
-TODO(rfindley):
-NewTool
-ToolOption
-Server.AddTools
-Server.RemoveTools
--->
+Add tools to a server with `AddTools`:
+```
+server.AddTools(
+  mcp.NewTool("add", "add numbers", addHandler),
+  mcp.NewTools("subtract, subtract numbers", subHandler))
+```
+Remove them with `RemoveTools`:
+```
+  server.RemoveTools("add", "subtract")
+```
 
-#### JSON Schema
+We provide a convenient and type-safe way to construct a Tool:
+
+```
+// NewTool is a creates a Tool using reflection on the given handler.
+func NewTool[TReq any](name, description string, handler func(context.Context, TReq) ([]Content, error), opts …ToolOption) *Tool
+```
+
+The `TReq` type is typically a struct, and we use reflection on the struct to
+determine the names and types of the tool's input. `ToolOption`s allow further
+customization of a Tool's input schema.
+Since all the fields of the Tool struct are exported, a Tool can also be created
+directly with assignment or a struct literal.
 
 A tool's input schema, expressed as a [JSON Schema](https://json-schema.org),
 provides a way to validate the tool's input.
@@ -406,13 +420,13 @@ The struct provides the names, types and required status of the properties.
 Other JSON Schema keywords can be specified by passing options to `NewTool`:
 ```
 NewTool(name, description, handler,
-    Property("count", Description("size of the inventory")))
+    Input(Property("count", Description("size of the inventory"))))
 ```
 
 For less common keywords, use the `Schema` option:
 ```
 NewTool(name, description, handler,
-    Property("Choices", Schema(&jsonschema.Schema{UniqueItems: true})))
+    Input(Property("Choices", Schema(&jsonschema.Schema{UniqueItems: true}))))
 ```
 
 Schemas are validated on the server before the tool handler is called.
