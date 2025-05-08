@@ -62,7 +62,7 @@ The MCP is defined in terms of client-server communication over bidirectional
 JSON-RPC message streams. Specifically, version `2025-03-26` of the spec
 defines two transports:
 
-- **stdio**: communication with a subprocess over stdin/stdout.
+- ****: communication with a subprocess over stdin/stdout.
 - **streamable http**: communication over a relatively complicated series of
   text/event-stream GET and HTTP POST requests.
 
@@ -271,12 +271,60 @@ Server.RemoveResources
 
 ### Logging
 
-<!-- TODO: needs design -->
+Servers have access to a `slog.Logger` that writes to the client. A call to
+a log method like `Info`is translated to a `LoggingMessageNotification` as
+follows:
+
+- An attribute with key "logger" is used to populate the "logger" field of the notification.
+
+- The remaining attributes and the message populate the "data" field with the
+  output of a `slog.JSONHandler`: The result is always a JSON object, with the
+  key "msg" for the message.
+
+- The standard slog levels `Info`, `Debug`, `Warn` and `Error` map to the
+  corresponding levels in the MCP spec. The other spec levels will be mapped
+  to integers between the slog levels. For example, "notice" is level 2 because
+  it is between "warning" (slog value 4) and "info" (slog value 0).
+  The `mcp` package defines consts for these levels. To log at the "notice"
+  level, a server would call `Log(ctx, mcp.LevelNotice, "message")`.
 
 ### Pagination
 
 <!-- TODO: needs design -->
 
-## Compatibility with existing SDKs
+## Differences with mcp-go
 
-<!-- TODO: describe delta with other SDKs such as mcp-go -->
+The most popular MCP package for Go is [mcp-go](https://pkg.go.dev/github.com/
+mark3labs/mcp-go). While we admire the thoughfulness of its design and the high
+quality of its implementation, we made different choices. Although the APIs are
+not compatible, translating between them is straightforward. (Later, we will
+provide a detailed translation guide.)
+
+## Packages
+
+As we mentioned above, we decided to put most of the API into a single package.
+The exceptions are the JSON-RPC layer, the JSON Schema implementation, and the
+parts of the MCP protocol that users don't need. The resulting `mcp` includes
+all the functionality of mcp-go's `mcp`, `client`, `server` and `transport`
+packages, but is smaller than the `mcp` package alone.
+
+## Hooks
+
+Version 0.26.0 of mcp-go defines 24 server hooks. Each hook consists of a field
+in the `Hooks` struct, a `Hooks.Add` method, and a type for the hook function.
+As described above, these can be replaced by middleware. We
+don't define any middleware types at present, but will do so if there is demand.
+(We're minimalists, not savages.)
+
+## Servers
+
+In mcp-go, server authors create an `MCPServer`, populate it with tools,
+resources and so on, and then wrap it in an `SSEServer` or `StdioServer`. These
+also use session IDs, which are exposed. Users can manage their own sessions
+with `RegisterSession` and `UnregisterSession`.
+
+We find the similarity in names among the three server types to be confusing,
+and we could not discover any uses of the session methods in the open-source
+ecosystem. In our design is similar, server authors create a `Server`, and then
+connect it to a `Transport` or SSE handler. We manage multiple web clients for a
+single server using session IDs internally, but do not expose them.
