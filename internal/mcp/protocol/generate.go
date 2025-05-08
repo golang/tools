@@ -22,11 +22,12 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
-	"golang.org/x/tools/internal/mcp/internal/jsonschema"
 	"golang.org/x/tools/internal/mcp/internal/util"
+	"golang.org/x/tools/internal/mcp/jsonschema"
 )
 
 var schemaFile = flag.String("schema_file", "", "if set, use this file as the persistent schema file")
@@ -138,7 +139,7 @@ package protocol
 import (
 	"encoding/json"
 
-	"golang.org/x/tools/internal/mcp/internal/jsonschema"
+	"golang.org/x/tools/internal/mcp/jsonschema"
 )
 `)
 
@@ -381,11 +382,44 @@ func canHaveAdditionalProperties(s *jsonschema.Schema) bool {
 
 // exportName returns an exported name for a Go symbol, based on the given name
 // in the JSON schema, removing leading underscores and capitalizing.
+// It also rewrites initialisms.
 func exportName(s string) string {
 	if strings.HasPrefix(s, "_") {
 		s = s[1:]
 	}
-	return strings.ToUpper(s[:1]) + s[1:]
+	s = strings.ToUpper(s[:1]) + s[1:]
+	// Replace an initialism if it is its own "word": see the init function below for
+	// a definition.
+	// There is probably a clever way to write this whole thing with one regexp and
+	// a Replace method, but it would be quite obscure.
+	// This doesn't have to be fast, because the first match will rarely succeed.
+	for ism, re := range initialisms {
+		replacement := strings.ToUpper(ism)
+		// Find the index of one match at a time, and replace. (We can't find all
+		// at once, because the replacement will change the indices.)
+		for {
+			if loc := re.FindStringIndex(s); loc != nil {
+				s = s[:loc[0]] + replacement + s[loc[1]:]
+			} else {
+				break
+			}
+		}
+	}
+	return s
+}
+
+// Map from initialism to the regexp that matches it.
+var initialisms = map[string]*regexp.Regexp{
+	"Id":  nil,
+	"Url": nil,
+	"Uri": nil,
+}
+
+func init() {
+	for ism := range initialisms {
+		// Match ism if it is at the end, or followed by an uppercase letter or a number.
+		initialisms[ism] = regexp.MustCompile(ism + `($|[A-Z0-9])`)
+	}
 }
 
 func assert(cond bool, msg string) {

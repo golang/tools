@@ -62,7 +62,7 @@ type CancelledParams struct {
 	//
 	// This MUST correspond to the ID of a request previously issued in the same
 	// direction.
-	RequestId any `json:"requestId"`
+	RequestID any `json:"requestId"`
 }
 
 // Capabilities a client may support. Known capabilities are defined here, in
