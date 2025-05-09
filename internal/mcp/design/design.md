@@ -521,7 +521,7 @@ server.AddTools(
   mcp.NewTool("add", "add numbers", addHandler),
   mcp.NewTools("subtract, subtract numbers", subHandler))
 ```
-Remove them with `RemoveTools`:
+Remove them by name with `RemoveTools`:
 ```
   server.RemoveTools("add", "subtract")
 ```
@@ -586,21 +586,70 @@ Schemas are validated on the server before the tool handler is called.
 
 ### Prompts
 
-<!--
-TODO(rfindley):
-NewPrompt
-Server.AddPrompts
-Server.RemovePrompts
--->
+Use `NewPrompt` to create a prompt.
+As with tools, prompt argument schemas can be inferred from a struct, or obtained
+from options.
+```go
+func NewPrompt[TReq any](name, description string,
+  handler func(context.Context, *ServerSession, TReq) (*GetPromptResult, error),
+  opts ...PromptOption) *ServerPrompt
+```
+Use `AddPrompts` to add prompts to the server, and `RemovePrompts`
+to remove them by name.
 
-### Resources
+```go
+type codeReviewArgs struct {
+  Code string `json:"code"`
+}
 
-<!--
-TODO:
-NewResource
-Server.AddResources
-Server.RemoveResources
--->
+func codeReviewHandler(context.Context, *ServerSession, codeReviewArgs) {...}
+
+server.AddPrompts(
+  NewPrompt("code_review", "review code", codeReviewHandler,
+    Argument("code", Description("the code to review"))))
+
+server.RemovePrompts("code_review")
+```
+
+Clients can call ListPrompts to list the available prompts and GetPrompt to get one.
+```go
+func (*ClientSession) ListPrompts(context.Context, *ListPromptParams) (*ListPromptsResult, error)
+func (*ClientSession) GetPrompt(context.Context, *GetPromptParams) (*GetPromptResult, error)
+```
+
+### Resources and resource templates
+
+Servers have Add and Remove methods for resources and resource templates:
+```go
+func (*Server) AddResources(resources ...*Resource)
+func (*Server) RemoveResources(names ...string)
+func (*Server) AddResourceTemplates(templates...*ResourceTemplate)
+func (*Server) RemoveResourceTemplates(names ...string)
+```
+Clients call ListResources to list the available resources, ReadResource to read
+one of them, and ListResourceTemplates to list the templates:
+```go
+func (*ClientSession) ListResources(context.Context, *ListResourcesParams) (*ListResourcesResult, error)
+func (*ClientSession) ReadResource(context.Context, *ReadResourceParams) (*ReadResourceResult, error)
+func (*ClientSession) ListResourceTemplates(context.Context, *ListResourceTemplatesParams) (*ListResourceTemplatesResult, error)
+```
+
+<!-- TODO: subscriptions -->
+
+### ListChanged notifications
+
+When a list of tools, prompts or resources changes as the result of an AddXXX
+or RemoveXXX call, the server informs all its connected clients by sending the
+corresponding type of notification.
+A client will receive these notifications if it was created with the corresponding option:
+```go
+type ClientOptions struct {
+  ...
+  ToolListChangedHandler func(context.Context, *ClientConnection, *ToolListChangedParams)
+  PromptListChangedHandler func(context.Context, *ClientConnection, *PromptListChangedParams)
+  ResourceListChangedHandler func(context.Context, *ClientConnection, *ResourceListChangedParams)
+}
+```
 
 ### Completion
 
