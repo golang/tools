@@ -420,7 +420,20 @@ func (*Server) Run(context.Context, Transport)
 
 ### Cancellation
 
-<!-- TODO: a brief section discussing how cancellation is handled. -->
+Cancellation is implemented transparently using context cancellation. The user
+can cancel an operation by cancelling the associated context:
+
+```go
+ctx, cancel := context.WithCancel(ctx)
+go session.CallTool(ctx, "slow", map[string]any{})
+cancel()
+```
+
+When this client call is cancelled, a `"notifications/cancelled"` notification
+is sent to the server. However, the client call returns immediately with
+`ctx.Err()`: it does not wait for the result from the server.
+
+The server observes a client cancellation as cancelled context.
 
 ### Progress handling
 
