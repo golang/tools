@@ -59,7 +59,7 @@ SDK. An official SDK should aim to be:
 In the sections below, we visit each aspect of the MCP spec, in approximately
 the order they are presented by the [official spec](https://modelcontextprotocol.io/specification/2025-03-26)
 For each, we discuss considerations for the Go implementation. In many cases an
-API is suggested, though in some there many be open questions.
+API is suggested, though in some there may be open questions.
 
 ## Foundations
 
@@ -123,10 +123,11 @@ type Stream interface {
     Close() error
 }
 ```
+Methods accept a Go `Context` and return an `error`,
+as is idiomatic for APIs that do I/O.
 
-Specifically, a `Transport` is something that connects a logical JSON-RPC
-stream, and nothing more (methods accept a Go `Context` and return an `error`,
-as is idiomatic for APIs that do I/O). Streams must be closeable in order to
+A `Transport` is something that connects a logical JSON-RPC
+stream, and nothing more. Streams must be closeable in order to
 implement client and server shutdown, and therefore conform to the `io.Closer`
 interface.
 
@@ -202,9 +203,10 @@ func (*SSEHTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request)
 func (*SSEHTTPHandler) Close() error
 ```
 
-Notably absent are options to hook into the request handling for the purposes
+Notably absent are options to hook into low-level request handling for the purposes
 of authentication or context injection. These concerns are better handled using
-standard HTTP middleware patterns.
+standard HTTP middleware patterns. For middleware at the level of the MCP protocol,
+see [Middleware](#Middleware) below.
 
 By default, the SSE handler creates messages endpoints with the
 `?sessionId=...` query parameter. Users that want more control over the
@@ -247,9 +249,7 @@ type SSEClientTransport struct { /* ... */ }
 
 // NewSSEClientTransport returns a new client transport that connects to the
 // SSE server at the provided URL.
-//
-// NewSSEClientTransport panics if the given URL is invalid.
-func NewSSEClientTransport(url string) *SSEClientTransport {
+func NewSSEClientTransport(url string) (*SSEClientTransport, error) {
 
 // Connect connects through the client endpoint.
 func (*SSEClientTransport) Connect(ctx context.Context) (Stream, error)
@@ -378,12 +378,13 @@ and resources from servers. Additionally, handlers for these features may
 themselves be stateful, for example if a tool handler caches state from earlier
 requests in the session.
 
-We believe that in the common case, both clients and servers are stateless, and
-it is therefore more useful to allow multiple connections from a client, and to
+We believe that in the common case, any change to a client or server,
+such as adding a tool, is intended for all its peers.
+It is therefore more useful to allow multiple connections from a client, and to
 a server. This is similar to the `net/http` packages, in which an `http.Client`
 and `http.Server` each may handle multiple unrelated connections. When users
 add features to a client or server, all connected peers are notified of the
-change in feature-set.
+change.
 
 Following the terminology of the
 [spec](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#session-management),
@@ -435,9 +436,7 @@ client := mcp.NewClient("mcp-client", "v1.0.0", nil)
 // Connect to a server over stdin/stdout
 transport := mcp.NewCommandTransport(exec.Command("myserver"))
 session, err := client.Connect(ctx, transport)
-if err != nil {
-	log.Fatal(err)
-}
+if err != nil { ... }
 // Call a tool on the server.
 content, err := session.CallTool(ctx, "greet", map[string]any{"name": "you"})
 ...
@@ -491,12 +490,14 @@ We provide a mechanism to add MCP-level middleware, which runs after the
 request has been parsed, but before any normal handling.
 
 ```go
-// A Handler handles an MCP message call.
-type Handler func(ctx context.Context, s *ServerSession, method string, params any) (response any, err error)
+// A Dispatcher dispatches an MCP message to the appropriate handler.
+// The params argument will be an XXXParams struct pointer, such as *GetPromptParams.
+// The response if err is non-nil should be an XXXResult struct pointer.
+type Dispatcher func(ctx context.Context, s *ServerSession, method string, params any) (result any, err error)
 
-// AddMiddleware calls each middleware function from right to left on the previous result, beginning
-// with the server's current handler, and installs the result as the new handler.
-func (*Server) AddMiddleware(middleware ...func(Handler) Handler))
+// AddDispatchers calls each function from right to left on the previous result, beginning
+// with the server's current dispatcher, and installs the result as the new handler.
+func (*Server) AddDispatchers(middleware ...func(Handler) Handler))
 ```
 
 As an example, this code adds server-side logging:
@@ -510,7 +511,7 @@ func withLogging(h mcp.Handler) mcp.Handler {
     }
 }
 
-server.AddMiddleware(withLogging)
+server.AddDispatchers(withLogging)
 ```
 
 **Differences from mcp-go**: Version 0.26.0 of mcp-go defines 24 server hooks.
@@ -558,14 +559,14 @@ When this client call is cancelled, a `"notifications/cancelled"` notification
 is sent to the server. However, the client call returns immediately with
 `ctx.Err()`: it does not wait for the result from the server.
 
-The server observes a client cancellation as cancelled context.
+The server observes a client cancellation as a cancelled context.
 
 ### Progress handling
 
 A caller can request progress notifications by setting the `ProgressToken` field on any request.
 
 ```go
-type ProgressToken any
+type ProgressToken any // string or int
 
 type XXXParams struct { // where XXX is each type of call
   ...
@@ -595,7 +596,8 @@ func (c *ServerSession) Ping(ctx context.Context) error
 ```
 
 Additionally, client and server sessions can be configured with automatic
-keepalive behavior. If set to a non-zero value, this duration defines an
+keepalive behavior. If the `KeepAlive` option is set to a non-zero duration,
+it defines an
 interval for regular "ping" requests. If the peer fails to respond to pings
 originating from the keepalive check, the session is automatically closed.
 
@@ -707,9 +709,9 @@ tools is the need to associate them with a Go function, yet support the
 arbitrary complexity of JSON Schema. To achieve this, we have seen two primary
 approaches:
 
-1. Use reflection to generate the tool's input schema from a Go type (ala
+1. Use reflection to generate the tool's input schema from a Go type (à la
    `metoro-io/mcp-golang`)
-2. Explicitly build the input schema (ala `mark3labs/mcp-go`).
+2. Explicitly build the input schema (à la `mark3labs/mcp-go`).
 
 Both of these have their advantages and disadvantages. Reflection is nice,
 because it allows you to bind directly to a Go API, and means that the JSON
@@ -718,10 +720,10 @@ means that concerns like parsing and validation can be handled automatically.
 However, it can become cumbersome to express the full breadth of JSON schema
 using Go types or struct tags, and sometimes you want to express things that
 aren’t naturally modeled by Go types, like unions. Explicit schemas are simple
-and readable, and gives the caller full control over their tool definition, but
+and readable, and give the caller full control over their tool definition, but
 involve significant boilerplate.
 
-We believe that a hybrid model works well, where the _initial_ schema is
+We have found that a hybrid model works well, where the _initial_ schema is
 derived using reflection, but any customization on top of that schema is
 applied using variadic options. We achieve this using a `NewTool` helper, which
 generates the schema from the input type, and wraps the handler to provide
@@ -729,7 +731,7 @@ parsing and validation. The schema (and potentially other features) can be
 customized using ToolOptions.
 
 ```go
-// NewTool is a creates a Tool using reflection on the given handler.
+// NewTool creates a Tool using reflection on the given handler.
 func NewTool[TInput any](name, description string, handler func(context.Context, *ServerSession, TInput) ([]Content, error), opts …ToolOption) *ServerTool
 
 type ToolOption interface { /* ... */ }
@@ -752,7 +754,7 @@ struct {
 
 "name" and "Choices" are required, while "count" is optional.
 
-As of writing, the only `ToolOption` is `Input`, which allows customizing the
+As of this writing, the only `ToolOption` is `Input`, which allows customizing the
 input schema of the tool using schema options. These schema options are
 recursive, in the sense that they may also be applied to properties.
 
@@ -840,7 +842,7 @@ server.AddPrompts(
 server.RemovePrompts("code_review")
 ```
 
-Clients can call ListPrompts to list the available prompts and GetPrompt to get one.
+Clients can call `ListPrompts` to list the available prompts and `GetPrompt` to get one.
 
 ```go
 func (*ClientSession) ListPrompts(context.Context, *ListPromptParams) (*ListPromptsResult, error)
@@ -862,8 +864,8 @@ func (*Server) AddResourceTemplates(templates...*ResourceTemplate)
 func (*Server) RemoveResourceTemplates(names ...string)
 ```
 
-Clients call ListResources to list the available resources, ReadResource to read
-one of them, and ListResourceTemplates to list the templates:
+Clients call `ListResources` to list the available resources, `ReadResource` to read
+one of them, and `ListResourceTemplates` to list the templates:
 
 ```go
 func (*ClientSession) ListResources(context.Context, *ListResourcesParams) (*ListResourcesResult, error)
@@ -909,7 +911,7 @@ defined its server-side behavior.
 
 ### Logging
 
-Servers have access to a `slog.Logger` that writes to the client. A call to
+ServerSessions have access to a `slog.Logger` that writes to the client. A call to
 a log method like `Info`is translated to a `LoggingMessageNotification` as
 follows:
 
@@ -924,7 +926,7 @@ follows:
   to integers between the slog levels. For example, "notice" is level 2 because
   it is between "warning" (slog value 4) and "info" (slog value 0).
   The `mcp` package defines consts for these levels. To log at the "notice"
-  level, a server would call `Log(ctx, mcp.LevelNotice, "message")`.
+  level, a handler would call `session.Log(ctx, mcp.LevelNotice, "message")`.
 
 ### Pagination
 
