@@ -60,13 +60,8 @@ Therefore, this is the package layout. `module.path` is a placeholder for the
 final module path of the mcp module
 
 - `module.path/mcp`: the bulk of the user facing API
-- `module.path/mcp/protocol`: generated types for the MCP spec.
 - `module.path/jsonschema`: a jsonschema implementation, with validation
 - `module.path/internal/jsonrpc2`: a fork of x/tools/internal/jsonrpc2_v2
-
-For now, this layout assumes we want to separate the 'protocol' types from the
-'mcp' package, since they won't be needed by most users. It is unclear whether
-this is worthwhile.
 
 The JSON-RPC implementation is hidden, to avoid tight coupling. As described in
 the next section, the only aspects of JSON-RPC that need to be exposed in the
@@ -118,7 +113,7 @@ interface.
 Other SDKs define higher-level transports, with, for example, methods to send a
 notification or make a call. Those are jsonrpc2 operations on top of the
 logical stream, and the lower-level interface is easier to implement in most
-cases, which means it is easier to implement custom transports or middleware.
+cases, which means it is easier to implement custom transports.
 
 For our prototype, we've used an internal `jsonrpc2` package based on the Go
 language server `gopls`, which we propose to fork for the MCP SDK. It already
@@ -268,13 +263,15 @@ func (*StreamableClientTransport) Connect(context.Context) (Stream, error)
 
 ### Protocol types
 
-As described in the section on package layout above, the `protocol` package
-will contain definitions of types referenced by the MCP spec that are needed
-for the SDK. JSON-RPC message types are elided, since they are handled by the
-`jsonrpc2` package and should not be observed by the user. The user interacts
-only with the params/result types relevant to MCP operations.
+Types needed for the protocol are generated from the
+[JSON schema of the MCP spec](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2025-03-26/schema.json).
 
-For user-provided data, use `json.RawMessage`, so that
+These types will be included in the `mcp` package, but will be unexported
+unless they are needed for the user-facing API. Notably, JSON-RPC message types
+are elided, since they are handled by the `jsonrpc2` package and should not be
+observed by the user.
+
+For user-provided data, we use `json.RawMessage`, so that
 marshalling/unmarshalling can be delegated to the business logic of the client
 or server.
 
@@ -282,8 +279,6 @@ For union types, which can't be represented in Go (specifically `Content` and
 `Resource`), we prefer distinguished unions: struct types with fields
 corresponding to the union of all properties for union elements.
 
-These types will be auto-generated from the [JSON schema of the MCP
-spec](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2025-03-26/schema.json).
 For brevity, only a few examples are shown here:
 
 ```go
@@ -529,9 +524,9 @@ func (*Client) AddRoots(roots ...string)
 func (*Client) RemoveRoots(roots ...string)
 ```
 
-Servers can call `ListRoots` to get the roots.
-If a server installs a `RootsChangedHandler`, it will be called when the client sends a
-roots-changed notification, which happens whenever the list of roots changes after a
+Servers can call `ListRoots` to get the roots. If a server installs a
+`RootsChangedHandler`, it will be called when the client sends a roots-changed
+notification, which happens whenever the list of roots changes after a
 connection has been established.
 
 ```go
@@ -546,9 +541,8 @@ type ServerOptions {
 
 ### Sampling
 
-Clients that support sampling are created with a `CreateMessageHandler` option for handling server
-calls.
-To perform sampling, a server calls `CreateMessage`.
+Clients that support sampling are created with a `CreateMessageHandler` option
+for handling server calls. To perform sampling, a server calls `CreateMessage`.
 
 ```go
 type ClientOptions struct {
@@ -563,6 +557,25 @@ func (*Server) CreateMessage(context.Context, *CreateMessageParams) (*CreateMess
 
 ### Tools
 
+A `Tool` is a logical MCP tool, generated from the MCP spec, and a `ServerTool`
+is a tool bound to a tool handler.
+
+```go
+type Tool struct {
+	Annotations *ToolAnnotations   `json:"annotations,omitempty"`
+	Description string             `json:"description,omitempty"`
+	InputSchema *jsonschema.Schema `json:"inputSchema"`
+	Name string                    `json:"name"`
+}
+
+type ToolHandler func(context.Context, *ServerSession, map[string]json.RawMessage) (*CallToolResult, error)
+
+type ServerTool struct {
+	Tool    Tool
+	Handler ToolHandler
+}
+```
+
 Add tools to a server with `AddTools`:
 
 ```go
@@ -573,33 +586,43 @@ server.AddTools(
 
 Remove them by name with `RemoveTools`:
 
-```
-  server.RemoveTools("add", "subtract")
+```go
+server.RemoveTools("add", "subtract")
 ```
 
-We provide a convenient and type-safe way to construct a Tool:
+A tool's input schema, expressed as a [JSON Schema](https://json-schema.org),
+provides a way to validate the tool's input. One of the challenges in defining
+tools is the need to associate them with a Go function, yet support the
+arbitrary complexity of JSON Schema. To achieve this, we have seen two primary
+approaches:
+
+1. Use reflection to generate the tool's input schema from a Go type (ala
+   `metoro-io/mcp-golang`)
+2. Explicitly build the input schema (ala `mark3labs/mcp-go`).
+
+Both of these have their advantages and disadvantages. Reflection is nice,
+because it allows you to bind directly to a Go API, and means that the JSON
+schema of your API is compatible with your Go types by construction. It also
+means that concerns like parsing and validation can be handled automatically.
+However, it can become cumbersome to express the full breadth of JSON schema
+using Go types or struct tags, and sometimes you want to express things that
+aren’t naturally modeled by Go types, like unions. Explicit schemas are simple
+and readable, and gives the caller full control over their tool definition, but
+involve significant boilerplate.
+
+We believe that a hybrid model works well, where the _initial_ schema is
+derived using reflection, but any customization on top of that schema is
+applied using variadic options. We achieve this using a `NewTool` helper, which
+generates the schema from the input type, and wraps the handler to provide
+parsing and validation. The schema (and potentially other features) can be
+customized using ToolOptions.
 
 ```go
 // NewTool is a creates a Tool using reflection on the given handler.
-func NewTool[TReq any](name, description string, handler func(context.Context, TReq) ([]Content, error), opts …ToolOption) *Tool
+func NewTool[TInput any](name, description string, handler func(context.Context, *ServerSession, TInput) ([]Content, error), opts …ToolOption) *ServerTool
+
+type ToolOption interface { /* ... */ }
 ```
-
-The `TReq` type is typically a struct, and we use reflection on the struct to
-determine the names and types of the tool's input. `ToolOption`s allow further
-customization of a Tool's input schema.
-Since all the fields of the Tool struct are exported, a Tool can also be created
-directly with assignment or a struct literal.
-
-A tool's input schema, expressed as a [JSON Schema](https://json-schema.org),
-provides a way to validate the tool's input.
-
-We chose a hybrid a approach to specifying the schema, combining reflection
-and variadic options. We found that this makes the common cases easy (sometimes
-free!) to express and keeps the API small. The most recent JSON Schema
-spec defines over 40 keywords. Providing them all as options would bloat
-the API despite the fact that most would be very rarely used. Our approach
-also guarantees that the input schema is compatible with tool parameters, by
-construction.
 
 `NewTool` determines the input schema for a Tool from the struct used
 in the handler. Each struct field that would be marshaled by `encoding/json.Marshal`
@@ -618,22 +641,39 @@ struct {
 
 "name" and "Choices" are required, while "count" is optional.
 
-The struct provides the names, types and required status of the properties.
-Other JSON Schema keywords can be specified by passing options to `NewTool`:
+As of writing, the only `ToolOption` is `Input`, which allows customizing the
+input schema of the tool using schema options. These schema options are
+recursive, in the sense that they may also be applied to properties.
+
+```go
+func Input(...SchemaOption) ToolOption
+
+type Property(name string, opts ...SchemaOption) SchemaOption
+type Description(desc string) SchemaOption
+// etc.
+```
+
+For example:
 
 ```go
 NewTool(name, description, handler,
     Input(Property("count", Description("size of the inventory"))))
 ```
 
-For less common keywords, use the `Schema` option:
+The most recent JSON Schema spec defines over 40 keywords. Providing them all
+as options would bloat the API despite the fact that most would be very rarely
+used. For less common keywords, use the `Schema` option to set the schema
+explicitly:
 
-```
+```go
 NewTool(name, description, handler,
     Input(Property("Choices", Schema(&jsonschema.Schema{UniqueItems: true}))))
 ```
 
 Schemas are validated on the server before the tool handler is called.
+
+Since all the fields of the Tool struct are exported, a Tool can also be created
+directly with assignment or a struct literal.
 
 ### Prompts
 
