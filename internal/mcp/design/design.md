@@ -362,7 +362,10 @@ func NewClient(name, version string, opts *ClientOptions) *Client
 func (c *Client) Connect(context.Context, Transport) (*ClientSession, error)
 // Methods for adding/removing client features are described below.
 
+type ClientOptions struct { /* ... */ } // described below
+
 type ClientSession struct { /* ... */ }
+func (*ClientSession) Client() *Client
 func (*ClientSession) Close() error
 func (*ClientSession) Wait() error
 // Methods for calling through the ClientSession are described below.
@@ -372,13 +375,16 @@ func NewServer(name, version string, opts *ServerOptions) *Server
 func (s *Server) Connect(context.Context, Transport) (*ServerSession, error)
 // Methods for adding/removing server features are described below.
 
+type ServerOptions struct { /* ... */ } // described below
+
 type ServerSession struct { /* ... */ }
+func (*ServerSession) Server() *Server
 func (*ServerSession) Close() error
 func (*ServerSession) Wait() error
 // Methods for calling through the ServerSession are described below.
 ```
 
-Here's an example of these API from the client side:
+Here's an example of these APIs from the client side:
 
 ```go
 client := mcp.NewClient("mcp-client", "v1.0.0", nil)
@@ -416,7 +422,24 @@ func (*Server) Run(context.Context, Transport)
 
 ### Errors
 
-<!-- TODO: a brief section discussing how errors are handled. -->
+With the exception of tool handler errors, protocol errors are handled
+transparently as Go errors: errors in server-side feature handlers are
+propagated as errors from calls from the `ClientSession`, and vice-versa.
+
+Protocol errors wrap a `JSONRPC2Error` type which exposes its underlying error
+code.
+
+```go
+type JSONRPC2Error struct {
+	Code int64           `json:"code"`
+	Message string       `json:"message"`
+	Data json.RawMessage `json:"data,omitempty"`
+}
+```
+
+As described by the
+[spec](https://modelcontextprotocol.io/specification/2025-03-26/server/tools#error-handling),
+tool execution errors are reported in tool results.
 
 ### Cancellation
 
@@ -438,6 +461,7 @@ The server observes a client cancellation as cancelled context.
 ### Progress handling
 
 A caller can request progress notifications by setting the `ProgressToken` field on any request.
+
 ```go
 type ProgressToken any
 
@@ -446,22 +470,44 @@ type XXXParams struct { // where XXX is each type of call
   ProgressToken ProgressToken
 }
 ```
+
 Handlers can notify their peer about progress by calling the `NotifyProgress`
 method. The notification is only sent if the peer requested it.
+
 ```go
 func (*ClientSession) NotifyProgress(context.Context, *ProgressNotification)
 func (*ServerSession) NotifyProgress(context.Context, *ProgressNotification)
 ```
+
 We don't support progress notifications for `Client.ListRoots`, because we expect
 that operation to be instantaneous relative to network latency.
 
+### Ping / KeepAlive
 
-### Ping / Keepalive
+Both `ClientSession` and `ServerSession` expose a `Ping` method to call "ping"
+on their peer.
 
-<!--
-TODO: discuss the implementation of 'ping', as well as APIs for
-parameterizing automatic keepalive.
--->
+```go
+func (c *ClientSession) Ping(ctx context.Context) error
+func (c *ServerSession) Ping(ctx context.Context) error
+```
+
+Additionally, client and server sessions can be configured with automatic
+keepalive behavior. If set to a non-zero value, this duration defines an
+interval for regular "ping" requests. If the peer fails to respond to pings
+originating from the keepalive check, the session is automatically closed.
+
+```go
+type ClientOptions struct {
+  ...
+  KeepAlive time.Duration
+}
+
+type ServerOptions struct {
+  ...
+  KeepAlive time.Duration
+}
+```
 
 ## Client Features
 
@@ -470,7 +516,7 @@ parameterizing automatic keepalive.
 Clients support the MCP Roots feature out of the box, including roots-changed notifications.
 Roots can be added and removed from a `Client` with `AddRoots` and `RemoveRoots`:
 
-```
+```go
 // AddRoots adds the roots to the client's list of roots.
 // If the list changes, the client notifies the server.
 // If a root does not begin with a valid URI schema such as "https://" or "file://",
@@ -487,13 +533,14 @@ Servers can call `ListRoots` to get the roots.
 If a server installs a `RootsChangedHandler`, it will be called when the client sends a
 roots-changed notification, which happens whenever the list of roots changes after a
 connection has been established.
-```
+
+```go
 func (*Server) ListRoots(context.Context, *ListRootsParams) (*ListRootsResult, error)
 
 type ServerOptions {
   ...
   // If non-nil, called when a client sends a roots-changed notification.
-  RootsChangedHandler func(context.Context, *ServerConnection, *RootsChangedParams)
+  RootsChangedHandler func(context.Context, *ServerSession, *RootsChangedParams)
 }
 ```
 
@@ -502,7 +549,8 @@ type ServerOptions {
 Clients that support sampling are created with a `CreateMessageHandler` option for handling server
 calls.
 To perform sampling, a server calls `CreateMessage`.
-```
+
+```go
 type ClientOptions struct {
   ...
   CreateMessageHandler func(context.Context, *ClientSession, *CreateMessageParams) (*CreateMessageResult, error)
@@ -516,19 +564,22 @@ func (*Server) CreateMessage(context.Context, *CreateMessageParams) (*CreateMess
 ### Tools
 
 Add tools to a server with `AddTools`:
-```
+
+```go
 server.AddTools(
   mcp.NewTool("add", "add numbers", addHandler),
   mcp.NewTools("subtract, subtract numbers", subHandler))
 ```
+
 Remove them by name with `RemoveTools`:
+
 ```
   server.RemoveTools("add", "subtract")
 ```
 
 We provide a convenient and type-safe way to construct a Tool:
 
-```
+```go
 // NewTool is a creates a Tool using reflection on the given handler.
 func NewTool[TReq any](name, description string, handler func(context.Context, TReq) ([]Content, error), opts …ToolOption) *Tool
 ```
@@ -556,7 +607,7 @@ becomes a property of the schema. The property is required unless
 the field's `json` tag specifies "omitempty" or "omitzero" (new in Go 1.24).
 For example, given this struct:
 
-```
+```go
 struct {
   Name     string `json:"name"`
   Count    int    `json:"count,omitempty"`
@@ -570,7 +621,7 @@ struct {
 The struct provides the names, types and required status of the properties.
 Other JSON Schema keywords can be specified by passing options to `NewTool`:
 
-```
+```go
 NewTool(name, description, handler,
     Input(Property("count", Description("size of the inventory"))))
 ```
@@ -589,11 +640,13 @@ Schemas are validated on the server before the tool handler is called.
 Use `NewPrompt` to create a prompt.
 As with tools, prompt argument schemas can be inferred from a struct, or obtained
 from options.
+
 ```go
 func NewPrompt[TReq any](name, description string,
   handler func(context.Context, *ServerSession, TReq) (*GetPromptResult, error),
   opts ...PromptOption) *ServerPrompt
 ```
+
 Use `AddPrompts` to add prompts to the server, and `RemovePrompts`
 to remove them by name.
 
@@ -612,6 +665,7 @@ server.RemovePrompts("code_review")
 ```
 
 Clients can call ListPrompts to list the available prompts and GetPrompt to get one.
+
 ```go
 func (*ClientSession) ListPrompts(context.Context, *ListPromptParams) (*ListPromptsResult, error)
 func (*ClientSession) GetPrompt(context.Context, *GetPromptParams) (*GetPromptResult, error)
@@ -620,14 +674,17 @@ func (*ClientSession) GetPrompt(context.Context, *GetPromptParams) (*GetPromptRe
 ### Resources and resource templates
 
 Servers have Add and Remove methods for resources and resource templates:
+
 ```go
 func (*Server) AddResources(resources ...*Resource)
 func (*Server) RemoveResources(names ...string)
 func (*Server) AddResourceTemplates(templates...*ResourceTemplate)
 func (*Server) RemoveResourceTemplates(names ...string)
 ```
+
 Clients call ListResources to list the available resources, ReadResource to read
 one of them, and ListResourceTemplates to list the templates:
+
 ```go
 func (*ClientSession) ListResources(context.Context, *ListResourcesParams) (*ListResourcesResult, error)
 func (*ClientSession) ReadResource(context.Context, *ReadResourceParams) (*ReadResourceResult, error)
@@ -642,6 +699,7 @@ When a list of tools, prompts or resources changes as the result of an AddXXX
 or RemoveXXX call, the server informs all its connected clients by sending the
 corresponding type of notification.
 A client will receive these notifications if it was created with the corresponding option:
+
 ```go
 type ClientOptions struct {
   ...
@@ -735,7 +793,7 @@ mcp-go's work only at top level. That limitation is visible in
 [this code](https://github.com/DCjanus/dida365-mcp-server/blob/master/cmd/mcp/tools.go#L315),
 which must resort to untyped maps to express a nested schema:
 
-```
+```go
 mcp.WithArray("items",
   mcp.Description("Checklist items of the task"),
   mcp.Items(map[string]any{
@@ -770,10 +828,9 @@ All of the hooks run before or after the server processes a message,
 so instead we provide a single way to intercept this message handling, using
 two exported names instead of 72:
 
-```
+```go
 // A Handler handles an MCP message call.
-type Handler func(ctx context.Context, c *ServerConnection, method string, params any) (response any, err error)
-
+type Handler func(ctx context.Context, s *ServerSession, method string, params any) (response any, err error)
 
 // AddMiddleware calls each middleware function from right to left on the previous result, beginning
 // with the server's current handler, and installs the result as the new handler.
@@ -782,13 +839,12 @@ func (*Server) AddMiddleware(middleware ...func(Handler) Handler))
 
 As an example, this code adds server-side logging:
 
-```
-
+```go
 func withLogging(h mcp.Handler) mcp.Handler {
-    return func(ctx context.Context, c *mcp.ServerConnection, method string, params any) (res any, err error) {
+    return func(ctx context.Context, s *mcp.ServerSession, method string, params any) (res any, err error) {
         log.Printf("request: %s %v", method, params)
         defer func() { log.Printf("response: %v, %v", res, err) }()
-        return h(ctx, c , method, params)
+        return h(ctx, s , method, params)
     }
 }
 
