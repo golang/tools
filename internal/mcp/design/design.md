@@ -485,7 +485,10 @@ Server.RemoveResources
 
 ### Completion
 
-<!-- TODO: needs design -->
+Clients call `Complete` to request completions.
+
+Servers automatically handle these requests based on their collections of
+prompts and resources.
 
 ### Logging
 
