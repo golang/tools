@@ -437,7 +437,24 @@ The server observes a client cancellation as cancelled context.
 
 ### Progress handling
 
-<!-- TODO: a brief section discussing how progress is handled. -->
+A caller can request progress notifications by setting the `ProgressToken` field on any request.
+```go
+type ProgressToken any
+
+type XXXParams struct { // where XXX is each type of call
+  ...
+  ProgressToken ProgressToken
+}
+```
+Handlers can notify their peer about progress by calling the `NotifyProgress`
+method. The notification is only sent if the peer requested it.
+```go
+func (*ClientSession) NotifyProgress(context.Context, *ProgressNotification)
+func (*ServerSession) NotifyProgress(context.Context, *ProgressNotification)
+```
+We don't support progress notifications for `Client.ListRoots`, because we expect
+that operation to be instantaneous relative to network latency.
+
 
 ### Ping / Keepalive
 
@@ -488,7 +505,7 @@ To perform sampling, a server calls `CreateMessage`.
 ```
 type ClientOptions struct {
   ...
-  CreateMessageHandler func(context.Context, *CreateMessageParams) (*CreateMessageResult, error)
+  CreateMessageHandler func(context.Context, *ClientSession, *CreateMessageParams) (*CreateMessageResult, error)
 }
 
 func (*Server) CreateMessage(context.Context, *CreateMessageParams) (*CreateMessageResult, error)
