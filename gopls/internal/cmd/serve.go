@@ -104,7 +104,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 	// (creation, exit) to the MCP server. The sender must ensure that an exit
 	// event for a given LSP session ID is sent after its corresponding creation
 	// event.
-	var eventChan chan mcp.SessionEvent
+	var eventChan chan lsprpc.SessionEvent
 	// cache shared between MCP and LSP servers.
 	var ca *cache.Cache
 
@@ -116,7 +116,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		}
 	} else {
 		if s.MCPAddress != "" {
-			eventChan = make(chan mcp.SessionEvent)
+			eventChan = make(chan lsprpc.SessionEvent)
 		}
 		ca = cache.New(nil)
 		ss = lsprpc.NewStreamServer(ca, isDaemon, eventChan, s.app.options)

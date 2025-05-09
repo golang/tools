@@ -18,6 +18,7 @@ import (
 	"go/types"
 	"io/fs"
 	"log"
+	"net/http/httptest"
 	"os"
 	"path"
 	"path/filepath"
@@ -34,6 +35,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/lsprpc"
+	internalmcp "golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/compare"
 	"golang.org/x/tools/gopls/internal/test/integration"
@@ -45,6 +47,7 @@ import (
 	"golang.org/x/tools/internal/expect"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
+	"golang.org/x/tools/internal/mcp"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
@@ -176,16 +179,13 @@ func Test(t *testing.T) {
 
 			run := &markerTestRun{
 				test:       test,
-				env:        newEnv(t, cache, test.files, test.proxyFiles, test.writeGoSum, config),
+				env:        newEnv(t, cache, test.files, test.proxyFiles, test.writeGoSum, config, test.mcp),
 				settings:   config.Settings,
 				values:     make(map[expect.Identifier]any),
 				diags:      make(map[protocol.Location][]protocol.Diagnostic),
 				extraNotes: make(map[protocol.DocumentURI]map[string][]*expect.Note),
 			}
-
-			// TODO(rfindley): make it easier to clean up the integration test environment.
-			defer run.env.Editor.Shutdown(context.Background()) // ignore error
-			defer run.env.Sandbox.Close()                       // ignore error
+			defer run.env.Shutdown()
 
 			// Open all files so that we operate consistently with LSP clients, and
 			// (pragmatically) so that we have a Mapper available via the fake
@@ -603,6 +603,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"token":            actionMarkerFunc(tokenMarker),
 	"typedef":          actionMarkerFunc(typedefMarker),
 	"workspacesymbol":  actionMarkerFunc(workspaceSymbolMarker),
+	"mcptool":          actionMarkerFunc(mcpToolMarker, "output"),
 }
 
 // markerTest holds all the test data extracted from a test txtar archive.
@@ -637,6 +638,7 @@ type markerTest struct {
 	filterBuiltins      bool
 	filterKeywords      bool
 	errorsOK            bool
+	mcp                 bool
 }
 
 // flagSet returns the flagset used for parsing the special "flags" file in the
@@ -654,6 +656,7 @@ func (t *markerTest) flagSet() *flag.FlagSet {
 	flags.BoolVar(&t.filterBuiltins, "filter_builtins", true, "if set, filter builtins from completion results")
 	flags.BoolVar(&t.filterKeywords, "filter_keywords", true, "if set, filter keywords from completion results")
 	flags.BoolVar(&t.errorsOK, "errors_ok", false, "if set, Error level log messages are acceptable in this test")
+	flags.BoolVar(&t.mcp, "mcp", false, "if set, enable model context protocol client and server in this test")
 	return flags
 }
 
@@ -946,7 +949,7 @@ func formatTest(test *markerTest) ([]byte, error) {
 //
 // TODO(rfindley): simplify and refactor the construction of testing
 // environments across integration tests, marker tests, and benchmarks.
-func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byte, writeGoSum []string, config fake.EditorConfig) *integration.Env {
+func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byte, writeGoSum []string, config fake.EditorConfig, enableMCP bool) *integration.Env {
 	sandbox, err := fake.NewSandbox(&fake.SandboxConfig{
 		RootDir:    t.TempDir(),
 		Files:      files,
@@ -968,13 +971,23 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	ctx = debug.WithInstance(ctx)
 
 	awaiter := integration.NewAwaiter(sandbox.Workdir)
-	ss := lsprpc.NewStreamServer(cache, false, nil, nil)
+
+	var eventChan chan lsprpc.SessionEvent
+	var mcpServer *httptest.Server
+	if enableMCP {
+		eventChan = make(chan lsprpc.SessionEvent)
+		mcpServer = httptest.NewServer(internalmcp.HTTPHandler(eventChan, cache, false))
+	}
+
+	ss := lsprpc.NewStreamServer(cache, false, eventChan, nil)
+
 	server := servertest.NewPipeServer(ss, jsonrpc2.NewRawStream)
 	editor, err := fake.NewEditor(sandbox, config).Connect(ctx, server, awaiter.Hooks())
 	if err != nil {
 		sandbox.Close() // ignore error
 		t.Fatal(err)
 	}
+
 	if err := awaiter.Await(ctx, integration.OnceMet(
 		integration.InitialWorkspaceLoad,
 		integration.NoShownMessage(""),
@@ -982,12 +995,25 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 		sandbox.Close() // ignore error
 		t.Fatal(err)
 	}
+
+	var mcpSession *mcp.ClientSession
+	if enableMCP {
+		client := mcp.NewClient("test", "v1.0.0", nil)
+		mcpSession, err = client.Connect(ctx, mcp.NewSSEClientTransport(mcpServer.URL))
+		if err != nil {
+			t.Fatalf("fail to connect to mcp server: %v", err)
+		}
+	}
+
 	return &integration.Env{
-		TB:      t,
-		Ctx:     ctx,
-		Editor:  editor,
-		Sandbox: sandbox,
-		Awaiter: awaiter,
+		TB:         t,
+		Ctx:        ctx,
+		Editor:     editor,
+		Sandbox:    sandbox,
+		Awaiter:    awaiter,
+		MCPSession: mcpSession,
+		MCPServer:  mcpServer,
+		EventChan:  eventChan,
 	}
 }
 
@@ -2399,6 +2425,41 @@ func itemLocation(item protocol.CallHierarchyItem) protocol.Location {
 	return protocol.Location{
 		URI:   item.URI,
 		Range: item.Range,
+	}
+}
+
+func mcpToolMarker(mark marker, tool string, args string) {
+	var toolArgs map[string]any
+	if err := json.Unmarshal([]byte(args), &toolArgs); err != nil {
+		mark.errorf("fail to unmarshal arguments to map[string]any: %v", err)
+		return
+	}
+
+	res, err := mark.run.env.MCPSession.CallTool(mark.ctx(), tool, toolArgs, nil)
+	if err != nil {
+		mark.errorf("failed to call mcp tool: %v", err)
+		return
+	}
+
+	var buf bytes.Buffer
+	for i, c := range res.Content {
+		if c.Type != "text" {
+			mark.errorf("unsupported return content[%v] type: %s", i, c.Type)
+		}
+		buf.WriteString(c.Text)
+	}
+	if !bytes.HasSuffix(buf.Bytes(), []byte{'\n'}) {
+		buf.WriteString("\n") // all golden content is newline terminated
+	}
+
+	got := buf.String()
+
+	output := namedArg(mark, "output", expect.Identifier(""))
+	golden := mark.getGolden(output)
+	if want, ok := golden.Get(mark.T(), "", []byte(got)); !ok {
+		mark.errorf("%s: missing golden file @%s", mark.note.Name, golden.id)
+	} else if diff := cmp.Diff(got, string(want)); diff != "" {
+		mark.errorf("unexpected mcp tools call %s return; got:\n%s\n want:\n%s\ndiff:\n%s", tool, got, want, diff)
 	}
 }
 

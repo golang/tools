@@ -22,7 +22,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/label"
-	"golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/server"
@@ -30,6 +29,20 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 )
+
+// SessionEventType differentiates between new and exiting sessions.
+type SessionEventType int
+
+const (
+	SessionStart SessionEventType = iota
+	SessionEnd
+)
+
+// SessionEvent holds information about the session event.
+type SessionEvent struct {
+	Type    SessionEventType
+	Session *cache.Session
+}
 
 // Unique identifiers for client/server.
 var serverIndex int64
@@ -49,13 +62,13 @@ type streamServer struct {
 
 	// eventChan is an optional channel for LSP server session lifecycle events,
 	// including session creation and termination. If nil, no events are sent.
-	eventChan chan mcp.SessionEvent
+	eventChan chan SessionEvent
 }
 
 // NewStreamServer creates a StreamServer using the shared cache. If
 // withTelemetry is true, each session is instrumented with telemetry that
 // records RPC statistics.
-func NewStreamServer(cache *cache.Cache, daemon bool, eventChan chan mcp.SessionEvent, optionsFunc func(*settings.Options)) jsonrpc2.StreamServer {
+func NewStreamServer(cache *cache.Cache, daemon bool, eventChan chan SessionEvent, optionsFunc func(*settings.Options)) jsonrpc2.StreamServer {
 	return &streamServer{cache: cache, daemon: daemon, eventChan: eventChan, optionsOverrides: optionsFunc}
 }
 
@@ -93,14 +106,14 @@ func (s *streamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) erro
 					jsonrpc2.MethodNotFound))))
 
 	if s.eventChan != nil {
-		s.eventChan <- mcp.SessionEvent{
+		s.eventChan <- SessionEvent{
 			Session: session,
-			Type:    mcp.SessionNew,
+			Type:    SessionStart,
 		}
 		defer func() {
-			s.eventChan <- mcp.SessionEvent{
+			s.eventChan <- SessionEvent{
 				Session: session,
-				Type:    mcp.SessionExiting,
+				Type:    SessionEnd,
 			}
 		}()
 	}

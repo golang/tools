@@ -7,19 +7,23 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
+	"golang.org/x/tools/internal/mcp"
 )
 
 // Env holds the building blocks of an editor testing environment, providing
 // wrapper methods that hide the boilerplate of plumbing contexts and checking
 // errors.
+// Call [Env.Shutdown] for cleaning up resources after the test.
 type Env struct {
 	TB  testing.TB
 	Ctx context.Context
@@ -33,6 +37,12 @@ type Env struct {
 	Editor *fake.Editor
 
 	Awaiter *Awaiter
+
+	// MCPServer, MCPSession and EventChan is owned by the Env, and shut down.
+	// Only available if the test enables MCP Server.
+	MCPServer  *httptest.Server
+	MCPSession *mcp.ClientSession
+	EventChan  chan<- lsprpc.SessionEvent
 }
 
 // nextAwaiterRegistration is used to create unique IDs for various Awaiter
@@ -323,6 +333,21 @@ func (e *Env) Await(expectations ...Expectation) {
 func (e *Env) OnceMet(pre Expectation, mustMeets ...Expectation) {
 	e.TB.Helper()
 	e.Await(OnceMet(pre, AllOf(mustMeets...)))
+}
+
+// Shutdown releases the resources of an Env that is no longer needed.
+func (e *Env) Shutdown() {
+	e.Sandbox.Close()                       // ignore error
+	e.Editor.Shutdown(context.Background()) // ignore error
+	if e.MCPSession != nil {
+		e.MCPSession.Close() // ignore error
+	}
+	if e.MCPServer != nil {
+		e.MCPServer.Close()
+	}
+	if e.EventChan != nil {
+		close(e.EventChan)
+	}
 }
 
 // Await waits for all expectations to simultaneously be met. It should only be
