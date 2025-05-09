@@ -51,6 +51,9 @@ type Package struct {
 	IgnoredFiles    []protocol.DocumentURI
 	OtherFiles      []protocol.DocumentURI
 
+	// These fields ares as defined by asm.File
+	AsmFiles []protocol.DocumentURI
+
 	ForTest       PackagePath // q in a "p [q.test]" package, else ""
 	TypesSizes    types.Sizes
 	Errors        []packages.Error          // must be set for packages in import cycles

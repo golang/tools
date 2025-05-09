@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/testfuncs"
 	"golang.org/x/tools/gopls/internal/cache/xrefs"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
 )
 
 // Convenient aliases for very heavily used types.
@@ -49,6 +50,7 @@ type syntaxPackage struct {
 	fset            *token.FileSet // for now, same as the snapshot's FileSet
 	goFiles         []*parsego.File
 	compiledGoFiles []*parsego.File
+	asmFiles        []*asm.File
 	diagnostics     []*Diagnostic
 	parseErrors     []scanner.ErrorList
 	typeErrors      []types.Error
@@ -69,7 +71,7 @@ type syntaxPackage struct {
 
 func (p *syntaxPackage) xrefs() []byte {
 	p.xrefsOnce.Do(func() {
-		p._xrefs = xrefs.Index(p.compiledGoFiles, p.types, p.typesInfo)
+		p._xrefs = xrefs.Index(p.compiledGoFiles, p.types, p.typesInfo, p.asmFiles)
 	})
 	return p._xrefs
 }
