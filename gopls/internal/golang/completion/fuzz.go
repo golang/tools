@@ -50,7 +50,7 @@ Loop:
 		}
 	}
 	if inside {
-		for i := 0; i < mset.Len(); i++ {
+		for i := range mset.Len() {
 			o := mset.At(i).Obj()
 			if o.Name() == "Failed" || o.Name() == "Name" {
 				cb(candidate{
@@ -125,7 +125,7 @@ Loop:
 			isSlice:       false,
 		}
 		c.items = append(c.items, xx)
-		for i := 0; i < mset.Len(); i++ {
+		for i := range mset.Len() {
 			o := mset.At(i).Obj()
 			if o.Name() != "Fuzz" {
 				cb(candidate{

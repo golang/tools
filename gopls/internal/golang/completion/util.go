@@ -48,7 +48,7 @@ func eachField(T types.Type, fn func(*types.Var)) {
 				return
 			}
 
-			for i := 0; i < T.NumFields(); i++ {
+			for i := range T.NumFields() {
 				f := T.Field(i)
 				fn(f)
 				if f.Anonymous() {
@@ -85,7 +85,7 @@ func typeIsValid(typ types.Type) bool {
 	case *types.Signature:
 		return typeIsValid(typ.Params()) && typeIsValid(typ.Results())
 	case *types.Tuple:
-		for i := 0; i < typ.Len(); i++ {
+		for i := range typ.Len() {
 			if !typeIsValid(typ.At(i).Type()) {
 				return false
 			}
@@ -242,7 +242,7 @@ func typeConversion(call *ast.CallExpr, info *types.Info) types.Type {
 
 // fieldsAccessible returns whether s has at least one field accessible by p.
 func fieldsAccessible(s *types.Struct, p *types.Package) bool {
-	for i := 0; i < s.NumFields(); i++ {
+	for i := range s.NumFields() {
 		f := s.Field(i)
 		if f.Exported() || f.Pkg() == p {
 			return true

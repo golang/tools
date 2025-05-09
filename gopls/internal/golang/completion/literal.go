@@ -214,7 +214,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 		paramNameCount = make(map[string]int)
 		hasTypeParams  bool
 	)
-	for i := 0; i < sig.Params().Len(); i++ {
+	for i := range sig.Params().Len() {
 		var (
 			p    = sig.Params().At(i)
 			name = p.Name()
@@ -258,7 +258,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 		}
 	}
 
-	for i := 0; i < sig.Params().Len(); i++ {
+	for i := range sig.Params().Len() {
 		if hasTypeParams && !c.opts.placeholders {
 			// If there are type params in the args then the user must
 			// choose the concrete types. If placeholders are disabled just
@@ -331,7 +331,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 		results.Len() == 1 && results.At(0).Name() != ""
 
 	var resultHasTypeParams bool
-	for i := 0; i < results.Len(); i++ {
+	for i := range results.Len() {
 		if tp, ok := types.Unalias(results.At(i).Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 			resultHasTypeParams = true
 		}
@@ -340,7 +340,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 	if resultsNeedParens {
 		snip.WriteText("(")
 	}
-	for i := 0; i < results.Len(); i++ {
+	for i := range results.Len() {
 		if resultHasTypeParams && !c.opts.placeholders {
 			// Leave an empty tabstop if placeholders are disabled and there
 			// are type args that need specificying.
@@ -535,7 +535,7 @@ func (c *completer) typeNameSnippet(literalType types.Type, qual types.Qualifier
 		snip.WriteText(typeName + "[")
 
 		if c.opts.placeholders {
-			for i := 0; i < tparams.Len(); i++ {
+			for i := range tparams.Len() {
 				if i > 0 {
 					snip.WriteText(", ")
 				}
@@ -567,7 +567,7 @@ func (c *completer) fullyInstantiated(t typesinternal.NamedOrAlias) bool {
 		return false
 	}
 
-	for i := 0; i < targs.Len(); i++ {
+	for i := range targs.Len() {
 		targ := targs.At(i)
 
 		// The expansion of an alias can have free type parameters,

@@ -294,7 +294,7 @@ func (c *completer) addErrCheck() {
 		label = fmt.Sprintf("%[1]s != nil { %[2]s.Fatal(%[1]s) }", errVar, testVar)
 	} else {
 		snip.WriteText("return ")
-		for i := 0; i < result.Len()-1; i++ {
+		for i := range result.Len() - 1 {
 			if zero, isValid := typesinternal.ZeroString(result.At(i).Type(), c.qual); isValid {
 				snip.WriteText(zero)
 			}
@@ -351,7 +351,7 @@ func getTestVar(enclosingFunc *funcInfo, pkg *cache.Package) string {
 	}
 
 	sig := enclosingFunc.sig
-	for i := 0; i < sig.Params().Len(); i++ {
+	for i := range sig.Params().Len() {
 		param := sig.Params().At(i)
 		if param.Name() == "_" {
 			continue
@@ -401,7 +401,7 @@ func (c *completer) addReturnZeroValues() {
 	snip.WriteText("return ")
 	fmt.Fprintf(&label, "return ")
 
-	for i := 0; i < result.Len(); i++ {
+	for i := range result.Len() {
 		if i > 0 {
 			snip.WriteText(", ")
 			fmt.Fprintf(&label, ", ")

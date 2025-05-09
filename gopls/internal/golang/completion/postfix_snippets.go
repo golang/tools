@@ -436,7 +436,7 @@ func (a *postfixTmplArgs) Tuple() []*types.Var {
 	}
 
 	typs := make([]*types.Var, 0, tuple.Len())
-	for i := 0; i < tuple.Len(); i++ {
+	for i := range tuple.Len() {
 		typs = append(typs, tuple.At(i))
 	}
 	return typs
@@ -564,7 +564,7 @@ func (c *completer) addPostfixSnippetCandidates(ctx context.Context, sel *ast.Se
 		results := c.enclosingFunc.sig.Results()
 		if results != nil {
 			funcResults = make([]*types.Var, results.Len())
-			for i := 0; i < results.Len(); i++ {
+			for i := range results.Len() {
 				funcResults[i] = results.At(i)
 			}
 		}

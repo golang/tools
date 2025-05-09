@@ -1117,7 +1117,7 @@ func (c *completer) populateCommentCompletions(comment *ast.CommentGroup) {
 				_, named := typesinternal.ReceiverNamed(recv)
 				if named != nil {
 					if recvStruct, ok := named.Underlying().(*types.Struct); ok {
-						for i := 0; i < recvStruct.NumFields(); i++ {
+						for i := range recvStruct.NumFields() {
 							field := recvStruct.Field(i)
 							c.deepState.enqueue(candidate{obj: field, score: lowScore})
 						}
@@ -1614,7 +1614,7 @@ func (c *completer) methodsAndFields(typ types.Type, addressable bool, imp *impo
 		c.methodSetCache[methodSetKey{typ, addressable}] = mset
 	}
 
-	for i := 0; i < mset.Len(); i++ {
+	for i := range mset.Len() {
 		obj := mset.At(i).Obj()
 		// to the other side of the cb() queue?
 		if c.tooNew(obj) {
@@ -2001,7 +2001,7 @@ func (c *completer) structLiteralFieldName(ctx context.Context) error {
 	// Add struct fields.
 	if t, ok := types.Unalias(clInfo.clType).(*types.Struct); ok {
 		const deltaScore = 0.0001
-		for i := 0; i < t.NumFields(); i++ {
+		for i := range t.NumFields() {
 			field := t.Field(i)
 			if !addedFields[field] {
 				c.deepState.enqueue(candidate{
@@ -2170,7 +2170,7 @@ func expectedCompositeLiteralType(clInfo *compLitInfo, pos token.Pos) types.Type
 		// value side. The expected type of the value will be determined from the key.
 		if clInfo.kv != nil {
 			if key, ok := clInfo.kv.Key.(*ast.Ident); ok {
-				for i := 0; i < t.NumFields(); i++ {
+				for i := range t.NumFields() {
 					if field := t.Field(i); field.Name() == key.Name {
 						return field.Type()
 					}
@@ -2755,7 +2755,7 @@ func reverseInferTypeArgs(sig *types.Signature, typeArgs []types.Type, expectedR
 	}
 
 	substs := make([]types.Type, sig.TypeParams().Len())
-	for i := 0; i < sig.TypeParams().Len(); i++ {
+	for i := range sig.TypeParams().Len() {
 		if sub := u.handles[sig.TypeParams().At(i)]; sub != nil && *sub != nil {
 			// Ensure the inferred subst is assignable to the type parameter's constraint.
 			if !assignableTo(*sub, sig.TypeParams().At(i).Constraint()) {
@@ -2835,7 +2835,7 @@ func (c *completer) expectedCallParamType(inf candidateInference, node *ast.Call
 	// call. Record the assignees so we can favor function
 	// calls that return matching values.
 	if len(node.Args) <= 1 && exprIdx == 0 {
-		for i := 0; i < sig.Params().Len(); i++ {
+		for i := range sig.Params().Len() {
 			inf.assignees = append(inf.assignees, sig.Params().At(i).Type())
 		}
 
@@ -2916,7 +2916,7 @@ func objChain(info *types.Info, e ast.Expr) []types.Object {
 	}
 
 	// Reverse order so the layout matches the syntactic order.
-	for i := 0; i < len(objs)/2; i++ {
+	for i := range len(objs) / 2 {
 		objs[i], objs[len(objs)-1-i] = objs[len(objs)-1-i], objs[i]
 	}
 
@@ -3502,7 +3502,7 @@ func (ci *candidateInference) assigneesMatch(cand *candidate, sig *types.Signatu
 	// assignees match the corresponding sig result value, the signature
 	// is a match.
 	allMatch := false
-	for i := 0; i < sig.Results().Len(); i++ {
+	for i := range sig.Results().Len() {
 		var assignee types.Type
 
 		// If we are completing into variadic parameters, deslice the
