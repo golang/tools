@@ -352,15 +352,49 @@ parameterizing automatic keepalive.
 
 ### Roots
 
-<!--
-TODO:
-Client.AddRoots
-Client.RemoveRoots
--->
+Clients support the MCP Roots feature out of the box, including roots-changed notifications.
+Roots can be added and removed from a `Client` with `AddRoots` and `RemoveRoots`:
+
+```
+// AddRoots adds the roots to the client's list of roots.
+// If the list changes, the client notifies the server.
+// If a root does not begin with a valid URI schema such as "https://" or "file://",
+// it is intepreted as a directory path on the local filesystem.
+func (*Client) AddRoots(roots ...string)
+
+// RemoveRoots removes the given roots from the client's list, and notifies
+// the server if the list has changed.
+// It is not an error to remove a nonexistent root.
+func (*Client) RemoveRoots(roots ...string)
+```
+
+Servers can call `ListRoots` to get the roots.
+If a server installs a `RootsChangedHandler`, it will be called when the client sends a
+roots-changed notification, which happens whenever the list of roots changes after a
+connection has been established.
+```
+func (*Server) ListRoots(context.Context, *ListRootsParams) (*ListRootsResult, error)
+
+type ServerOptions {
+  ...
+  // If non-nil, called when a client sends a roots-changed notification.
+  RootsChangedHandler func(context.Context, *ServerConnection, *RootsChangedParams)
+}
+```
 
 ### Sampling
 
-<!-- TODO: needs design -->
+Clients that support sampling are created with a `CreateMessageHandler` option for handling server
+calls.
+To perform sampling, a server calls `CreateMessage`.
+```
+type ClientOptions struct {
+  ...
+  CreateMessageHandler func(context.Context, *CreateMessageParams) (*CreateMessageResult, error)
+}
+
+func (*Server) CreateMessage(context.Context, *CreateMessageParams) (*CreateMessageResult, error)
+```
 
 ## Server Features
 
