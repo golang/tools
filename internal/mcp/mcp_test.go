@@ -63,7 +63,7 @@ func TestEndToEnd(t *testing.T) {
 	)
 
 	// Connect the server.
-	cc, err := s.Connect(ctx, st, nil)
+	sc, err := s.Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,13 +75,14 @@ func TestEndToEnd(t *testing.T) {
 	var clientWG sync.WaitGroup
 	clientWG.Add(1)
 	go func() {
-		if err := cc.Wait(); err != nil {
+		if err := sc.Wait(); err != nil {
 			t.Errorf("server failed: %v", err)
 		}
 		clientWG.Done()
 	}()
 
 	c := NewClient("testClient", "v1.0.0", ct, nil)
+	c.AddRoots(protocol.Root{URI: "file:///root"})
 
 	// Connect the client.
 	if err := c.Start(ctx); err != nil {
@@ -180,6 +181,13 @@ func TestEndToEnd(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantFail, gotFail); diff != "" {
 		t.Errorf("tools/call 'fail' mismatch (-want +got):\n%s", diff)
+	}
+
+	rootRes, err := sc.ListRoots(ctx, &protocol.ListRootsParams{})
+	gotRoots := rootRes.Roots
+	wantRoots := slices.Collect(c.roots.all())
+	if diff := cmp.Diff(wantRoots, gotRoots); diff != "" {
+		t.Errorf("roots/list mismatch (-want +got):\n%s", diff)
 	}
 
 	// Disconnect.

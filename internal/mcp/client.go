@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sync"
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
@@ -24,6 +25,7 @@ type Client struct {
 	opts             ClientOptions
 	mu               sync.Mutex
 	conn             *jsonrpc2.Connection
+	roots            *featureSet[protocol.Root]
 	initializeResult *protocol.InitializeResult
 }
 
@@ -37,6 +39,7 @@ func NewClient(name, version string, t Transport, opts *ClientOptions) *Client {
 		name:      name,
 		version:   version,
 		transport: t,
+		roots:     newFeatureSet(func(r protocol.Root) string { return r.URI }),
 	}
 	if opts != nil {
 		c.opts = *opts
@@ -106,13 +109,47 @@ func (c *Client) Wait() error {
 	return c.conn.Wait()
 }
 
-func (*Client) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+// AddRoots adds the given roots to the client,
+// replacing any with the same URIs,
+// and notifies any connected servers.
+// TODO: notification
+func (c *Client) AddRoots(roots ...protocol.Root) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.roots.add(roots...)
+}
+
+// RemoveRoots removes the roots with the given URIs,
+// and notifies any connected servers if the list has changed.
+// It is not an error to remove a nonexistent root.
+// TODO: notification
+func (c *Client) RemoveRoots(uris ...string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.roots.remove(uris...)
+}
+
+func (c *Client) listRoots(_ context.Context, _ *protocol.ListRootsParams) (*protocol.ListRootsResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return &protocol.ListRootsResult{
+		Roots: slices.Collect(c.roots.all()),
+	}, nil
+}
+
+func (c *Client) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	// TODO: when we switch to ClientSessions, use a copy of the server's dispatch function, or
+	// maybe just add another type parameter.
+	//
 	// No need to check that the connection is initialized, since we initialize
 	// it in Connect.
 	switch req.Method {
 	case "ping":
 		// The spec says that 'ping' expects an empty object result.
 		return struct{}{}, nil
+	case "roots/list":
+		// ListRootsParams happens to be unused.
+		return c.listRoots(ctx, nil)
 	}
 	return nil, jsonrpc2.ErrNotHandled
 }
@@ -162,10 +199,6 @@ func (c *Client) ListTools(ctx context.Context) ([]protocol.Tool, error) {
 }
 
 // CallTool calls the tool with the given name and arguments.
-//
-// TODO(jba): make the following true:
-// If the provided arguments do not conform to the schema for the given tool,
-// the call fails.
 func (c *Client) CallTool(ctx context.Context, name string, args map[string]any) (_ *protocol.CallToolResult, err error) {
 	defer func() {
 		if err != nil {
@@ -180,14 +213,17 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 		}
 		argsJSON[name] = argJSON
 	}
-	var (
-		params = &protocol.CallToolParams{
-			Name:      name,
-			Arguments: argsJSON,
-		}
-		result protocol.CallToolResult
-	)
-	if err := call(ctx, c.conn, "tools/call", params, &result); err != nil {
+
+	params := &protocol.CallToolParams{
+		Name:      name,
+		Arguments: argsJSON,
+	}
+	return standardCall[protocol.CallToolResult](ctx, c.conn, "tools/call", params)
+}
+
+func standardCall[TRes, TParams any](ctx context.Context, conn *jsonrpc2.Connection, method string, params TParams) (*TRes, error) {
+	var result TRes
+	if err := call(ctx, conn, method, params, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

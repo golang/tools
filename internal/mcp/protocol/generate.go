@@ -75,6 +75,10 @@ var declarations = config{
 		Fields: config{"Params": {Name: "ListPromptsParams"}},
 	},
 	"ListPromptsResult": {Name: "ListPromptsResult"},
+	"ListRootsRequest": {
+		Fields: config{"Params": {Name: "ListRootsParams"}},
+	},
+	"ListRootsResult": {Name: "ListRootsResult"},
 	"ListToolsRequest": {
 		Fields: config{"Params": {Name: "ListToolsParams"}},
 	},
@@ -82,8 +86,11 @@ var declarations = config{
 	"Prompt":          {Name: "Prompt"},
 	"PromptMessage":   {Name: "PromptMessage"},
 	"PromptArgument":  {Name: "PromptArgument"},
+	"ProgressToken":   {Substitute: "any"}, // null|number|string
 	"RequestId":       {Substitute: "any"}, // null|number|string
 	"Role":            {Name: "Role"},
+	"Root":            {Name: "Root"},
+
 	"ServerCapabilities": {
 		Name: "ServerCapabilities",
 		Fields: config{
@@ -243,7 +250,11 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 	// For types that explicitly allow additional properties, we can either
 	// unmarshal them into a map[string]any, or delay unmarshalling with
 	// json.RawMessage. For now, use json.RawMessage as it defers the choice.
-	if def.Type == "object" && canHaveAdditionalProperties(def) {
+	//
+	// TODO(jba): further refine this classification of object schemas.
+	// For example, the typescript "object" type, which should map to a Go "any",
+	// is represented in schema.json by `{type: object, properties: {}, additionalProperties: true}`.
+	if def.Type == "object" && canHaveAdditionalProperties(def) && def.Properties == nil {
 		w.Write([]byte("map[string]"))
 		return writeType(w, nil, def.AdditionalProperties, named)
 	}

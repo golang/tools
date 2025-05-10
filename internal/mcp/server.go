@@ -57,7 +57,8 @@ func NewServer(name, version string, opts *ServerOptions) *Server {
 	}
 }
 
-// AddPrompts adds the given prompts to the server.
+// AddPrompts adds the given prompts to the server,
+// replacing any with the same names.
 func (s *Server) AddPrompts(prompts ...*Prompt) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -67,7 +68,7 @@ func (s *Server) AddPrompts(prompts ...*Prompt) {
 	// TODO(rfindley): notify connected clients
 }
 
-// RemovePrompts removes if the prompts with the given names.
+// RemovePrompts removes the prompts with the given names.
 // It is not an error to remove a nonexistent prompt.
 func (s *Server) RemovePrompts(names ...string) {
 	s.mu.Lock()
@@ -77,9 +78,8 @@ func (s *Server) RemovePrompts(names ...string) {
 	}
 }
 
-// AddTools adds the given tools to the server.
-//
-// TODO(rfindley): notify connected clients of any changes.
+// AddTools adds the given tools to the server,
+// replacing any with the same names.
 func (s *Server) AddTools(tools ...*Tool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -89,7 +89,7 @@ func (s *Server) AddTools(tools ...*Tool) {
 	// TODO(rfindley): notify connected clients
 }
 
-// RemoveTools removes if the tools with the given names.
+// RemoveTools removes the tools with the given names.
 // It is not an error to remove a nonexistent tool.
 func (s *Server) RemoveTools(names ...string) {
 	s.mu.Lock()
@@ -208,6 +208,10 @@ type ServerConnection struct {
 // Ping makes an MCP "ping" request to the client.
 func (cc *ServerConnection) Ping(ctx context.Context) error {
 	return call(ctx, cc.conn, "ping", nil, nil)
+}
+
+func (cc *ServerConnection) ListRoots(ctx context.Context, params *protocol.ListRootsParams) (*protocol.ListRootsResult, error) {
+	return standardCall[protocol.ListRootsResult](ctx, cc.conn, "roots/list", params)
 }
 
 func (cc *ServerConnection) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
