@@ -131,25 +131,28 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Errorf("tools/list failed: %v", err)
 	}
-	wantTools := []protocol.Tool{{
-		Name:        "greet",
-		Description: "say hi",
-		InputSchema: &jsonschema.Schema{
-			Type:     "object",
-			Required: []string{"Name"},
-			Properties: map[string]*jsonschema.Schema{
-				"Name": {Type: "string"},
+	wantTools := []protocol.Tool{
+		{
+			Name:        "fail",
+			Description: "just fail",
+			InputSchema: &jsonschema.Schema{
+				Type:                 "object",
+				AdditionalProperties: falseSchema,
 			},
-			AdditionalProperties: falseSchema,
 		},
-	}, {
-		Name:        "fail",
-		Description: "just fail",
-		InputSchema: &jsonschema.Schema{
-			Type:                 "object",
-			AdditionalProperties: falseSchema,
+		{
+			Name:        "greet",
+			Description: "say hi",
+			InputSchema: &jsonschema.Schema{
+				Type:     "object",
+				Required: []string{"Name"},
+				Properties: map[string]*jsonschema.Schema{
+					"Name": {Type: "string"},
+				},
+				AdditionalProperties: falseSchema,
+			},
 		},
-	}}
+	}
 	if diff := cmp.Diff(wantTools, gotTools, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
 		t.Fatalf("tools/list mismatch (-want +got):\n%s", diff)
 	}

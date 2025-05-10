@@ -21,13 +21,14 @@ import (
 // Servers expose server-side MCP features, which can serve one or more MCP
 // sessions by using [Server.Start] or [Server.Run].
 type Server struct {
+	// fixed at creation
 	name    string
 	version string
 	opts    ServerOptions
 
 	mu      sync.Mutex
-	prompts []*Prompt
-	tools   []*Tool
+	prompts *featureSet[*Prompt]
+	tools   *featureSet[*Tool]
 	conns   []*ServerConnection
 }
 
@@ -51,16 +52,29 @@ func NewServer(name, version string, opts *ServerOptions) *Server {
 		name:    name,
 		version: version,
 		opts:    *opts,
+		prompts: newFeatureSet(func(p *Prompt) string { return p.Definition.Name }),
+		tools:   newFeatureSet(func(t *Tool) string { return t.Definition.Name }),
 	}
 }
 
 // AddPrompts adds the given prompts to the server.
-//
-// TODO(rfindley): notify connected clients of any changes.
 func (s *Server) AddPrompts(prompts ...*Prompt) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.prompts = append(s.prompts, prompts...)
+	s.prompts.add(prompts...)
+	// Assume there was a change, since add replaces existing prompts.
+	// (It's possible a prompt was replaced with an identical one, but not worth checking.)
+	// TODO(rfindley): notify connected clients
+}
+
+// RemovePrompts removes if the prompts with the given names.
+// It is not an error to remove a nonexistent prompt.
+func (s *Server) RemovePrompts(names ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.prompts.remove(names...) {
+		// TODO: notify
+	}
 }
 
 // AddTools adds the given tools to the server.
@@ -69,7 +83,20 @@ func (s *Server) AddPrompts(prompts ...*Prompt) {
 func (s *Server) AddTools(tools ...*Tool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.tools = append(s.tools, tools...)
+	s.tools.add(tools...)
+	// Assume there was a change, since add replaces existing tools.
+	// (It's possible a tool was replaced with an identical one, but not worth checking.)
+	// TODO(rfindley): notify connected clients
+}
+
+// RemoveTools removes if the tools with the given names.
+// It is not an error to remove a nonexistent tool.
+func (s *Server) RemoveTools(names ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.tools.remove(names...) {
+		// TODO: notify
+	}
 }
 
 // Clients returns an iterator that yields the current set of client
@@ -84,9 +111,8 @@ func (s *Server) Clients() iter.Seq[*ServerConnection] {
 func (s *Server) listPrompts(_ context.Context, _ *ServerConnection, params *protocol.ListPromptsParams) (*protocol.ListPromptsResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	res := new(protocol.ListPromptsResult)
-	for _, p := range s.prompts {
+	for p := range s.prompts.all() {
 		res.Prompts = append(res.Prompts, p.Definition)
 	}
 	return res, nil
@@ -94,15 +120,10 @@ func (s *Server) listPrompts(_ context.Context, _ *ServerConnection, params *pro
 
 func (s *Server) getPrompt(ctx context.Context, cc *ServerConnection, params *protocol.GetPromptParams) (*protocol.GetPromptResult, error) {
 	s.mu.Lock()
-	var prompt *Prompt
-	if i := slices.IndexFunc(s.prompts, func(t *Prompt) bool {
-		return t.Definition.Name == params.Name
-	}); i >= 0 {
-		prompt = s.prompts[i]
-	}
+	prompt, ok := s.prompts.get(params.Name)
 	s.mu.Unlock()
-
-	if prompt == nil {
+	if !ok {
+		// TODO: surface the error code over the wire, instead of flattening it into the string.
 		return nil, fmt.Errorf("%s: unknown prompt %q", jsonrpc2.ErrInvalidParams, params.Name)
 	}
 	return prompt.Handler(ctx, cc, params.Arguments)
@@ -111,9 +132,8 @@ func (s *Server) getPrompt(ctx context.Context, cc *ServerConnection, params *pr
 func (s *Server) listTools(_ context.Context, _ *ServerConnection, params *protocol.ListToolsParams) (*protocol.ListToolsResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	res := new(protocol.ListToolsResult)
-	for _, t := range s.tools {
+	for t := range s.tools.all() {
 		res.Tools = append(res.Tools, t.Definition)
 	}
 	return res, nil
@@ -121,15 +141,9 @@ func (s *Server) listTools(_ context.Context, _ *ServerConnection, params *proto
 
 func (s *Server) callTool(ctx context.Context, cc *ServerConnection, params *protocol.CallToolParams) (*protocol.CallToolResult, error) {
 	s.mu.Lock()
-	var tool *Tool
-	if i := slices.IndexFunc(s.tools, func(t *Tool) bool {
-		return t.Definition.Name == params.Name
-	}); i >= 0 {
-		tool = s.tools[i]
-	}
+	tool, ok := s.tools.get(params.Name)
 	s.mu.Unlock()
-
-	if tool == nil {
+	if !ok {
 		return nil, fmt.Errorf("%s: unknown tool %q", jsonrpc2.ErrInvalidParams, params.Name)
 	}
 	return tool.Handler(ctx, cc, params.Arguments)
