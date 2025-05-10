@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
@@ -25,7 +26,14 @@ type ServerResource struct {
 	Handler  ResourceHandler
 }
 
+// A ServerResourceTemplate associates a ResourceTemplate with its handler.
+type ServerResourceTemplate struct {
+	ResourceTemplate *ResourceTemplate
+	Handler          ResourceHandler
+}
+
 // A ResourceHandler is a function that reads a resource.
+// It will be called when the client calls [ClientSession.ReadResource].
 // If it cannot find the resource, it should return the result of calling [ResourceNotFoundError].
 type ResourceHandler func(context.Context, *ServerSession, *ReadResourceParams) (*ReadResourceResult, error)
 
@@ -144,4 +152,70 @@ func fileRoot(root *Root) (_ string, err error) {
 		return "", errors.New("not an absolute path")
 	}
 	return fileRoot, nil
+}
+
+// Matches reports whether the receiver's uri template matches the uri.
+// TODO: use "github.com/yosida95/uritemplate/v3"
+func (sr *ServerResourceTemplate) Matches(uri string) bool {
+	re, err := uriTemplateToRegexp(sr.ResourceTemplate.URITemplate)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(uri)
+}
+
+func uriTemplateToRegexp(uriTemplate string) (*regexp.Regexp, error) {
+	pat := uriTemplate
+	var b strings.Builder
+	b.WriteByte('^')
+	seen := map[string]bool{}
+	for len(pat) > 0 {
+		literal, rest, ok := strings.Cut(pat, "{")
+		b.WriteString(regexp.QuoteMeta(literal))
+		if !ok {
+			break
+		}
+		expr, rest, ok := strings.Cut(rest, "}")
+		if !ok {
+			return nil, errors.New("missing '}'")
+		}
+		pat = rest
+		if strings.ContainsRune(expr, ',') {
+			return nil, errors.New("can't handle commas in expressions")
+		}
+		if strings.ContainsRune(expr, ':') {
+			return nil, errors.New("can't handle prefix modifiers in expressions")
+		}
+		if len(expr) > 0 && expr[len(expr)-1] == '*' {
+			return nil, errors.New("can't handle explode modifiers in expressions")
+		}
+
+		// These sets of valid characters aren't accurate.
+		// See https://datatracker.ietf.org/doc/html/rfc6570.
+		var re, name string
+		first := byte(0)
+		if len(expr) > 0 {
+			first = expr[0]
+		}
+		switch first {
+		default:
+			// {var} doesn't match slashes. (It should also fail to match other characters,
+			// but this simplified implementation doesn't handle that.)
+			re = `[^/]*`
+			name = expr
+		case '+':
+			// {+var} matches anything, even slashes
+			re = `.*`
+			name = expr[1:]
+		case '#', '.', '/', ';', '?', '&':
+			return nil, fmt.Errorf("prefix character %c unsupported", first)
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("can't handle duplicate name %q", name)
+		}
+		seen[name] = true
+		b.WriteString(re)
+	}
+	b.WriteByte('$')
+	return regexp.Compile(b.String())
 }

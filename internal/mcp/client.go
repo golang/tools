@@ -328,6 +328,11 @@ func (cs *ClientSession) ListResources(ctx context.Context, params *ListResource
 	return handleSend[*ListResourcesResult](ctx, cs, methodListResources, params)
 }
 
+// ListResourceTemplates lists the resource templates that are currently available on the server.
+func (cs *ClientSession) ListResourceTemplates(ctx context.Context, params *ListResourceTemplatesParams) (*ListResourceTemplatesResult, error) {
+	return handleSend[*ListResourceTemplatesResult](ctx, cs, methodListResourceTemplates, params)
+}
+
 // ReadResource ask the server to read a resource and return its contents.
 func (cs *ClientSession) ReadResource(ctx context.Context, params *ReadResourceParams) (*ReadResourceResult, error) {
 	return handleSend[*ReadResourceResult](ctx, cs, methodReadResource, params)

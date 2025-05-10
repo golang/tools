@@ -104,6 +104,11 @@ var declarations = config{
 		Fields: config{"Params": {Name: "ListResourcesParams"}},
 	},
 	"ListResourcesResult": {},
+	"ListResourceTemplatesRequest": {
+		Name:   "-",
+		Fields: config{"Params": {Name: "ListResourceTemplatesParams"}},
+	},
+	"ListResourceTemplatesResult": {},
 	"ListRootsRequest": {
 		Name:   "-",
 		Fields: config{"Params": {Name: "ListRootsParams"}},
@@ -151,6 +156,11 @@ var declarations = config{
 	"ResourceListChangedNotification": {
 		Name:   "-",
 		Fields: config{"Params": {Name: "ResourceListChangedParams"}},
+	},
+	"ResourceTemplate": {},
+	"ResourceTemplateListChangedNotification": {
+		Name:   "-",
+		Fields: config{"Params": {Name: "ResourceTemplateListChangedParams"}},
 	},
 	"Role": {},
 	"Root": {},

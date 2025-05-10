@@ -229,6 +229,32 @@ type ListPromptsResult struct {
 func (x *ListPromptsResult) GetMeta() *Meta         { return &x.Meta }
 func (x *ListPromptsResult) nextCursorPtr() *string { return &x.NextCursor }
 
+type ListResourceTemplatesParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
+	// An opaque token representing the current pagination position. If provided,
+	// the server should return results starting after this cursor.
+	Cursor string `json:"cursor,omitempty"`
+}
+
+func (x *ListResourceTemplatesParams) GetMeta() *Meta     { return &x.Meta }
+func (x *ListResourceTemplatesParams) cursorPtr() *string { return &x.Cursor }
+
+// The server's response to a resources/templates/list request from the client.
+type ListResourceTemplatesResult struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
+	// An opaque token representing the pagination position after the last returned
+	// result. If present, there may be more results available.
+	NextCursor        string              `json:"nextCursor,omitempty"`
+	ResourceTemplates []*ResourceTemplate `json:"resourceTemplates"`
+}
+
+func (x *ListResourceTemplatesResult) GetMeta() *Meta         { return &x.Meta }
+func (x *ListResourceTemplatesResult) nextCursorPtr() *string { return &x.NextCursor }
+
 type ListResourcesParams struct {
 	// This property is reserved by the protocol to allow clients and servers to
 	// attach additional metadata to their responses.
@@ -472,6 +498,27 @@ type ResourceListChangedParams struct {
 }
 
 func (x *ResourceListChangedParams) GetMeta() *Meta { return &x.Meta }
+
+// A template description for resources available on the server.
+type ResourceTemplate struct {
+	// Optional annotations for the client.
+	Annotations *Annotations `json:"annotations,omitempty"`
+	// A description of what this template is for.
+	//
+	// This can be used by clients to improve the LLM's understanding of available
+	// resources. It can be thought of like a "hint" to the model.
+	Description string `json:"description,omitempty"`
+	// The MIME type for all resources that match this template. This should only be
+	// included if all resources matching this template have the same type.
+	MIMEType string `json:"mimeType,omitempty"`
+	// A human-readable name for the type of resource this template refers to.
+	//
+	// This can be used by clients to populate UI elements.
+	Name string `json:"name"`
+	// A URI template (according to RFC 6570) that can be used to construct resource
+	// URIs.
+	URITemplate string `json:"uriTemplate"`
+}
 
 // The sender or recipient of messages and data in a conversation.
 type Role string

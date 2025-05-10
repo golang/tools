@@ -37,6 +37,7 @@ type Server struct {
 	prompts                 *featureSet[*ServerPrompt]
 	tools                   *featureSet[*ServerTool]
 	resources               *featureSet[*ServerResource]
+	resourceTemplates       *featureSet[*ServerResourceTemplate]
 	sessions                []*ServerSession
 	sendingMethodHandler_   MethodHandler[*ServerSession]
 	receivingMethodHandler_ MethodHandler[*ServerSession]
@@ -79,6 +80,7 @@ func NewServer(name, version string, opts *ServerOptions) *Server {
 		prompts:                 newFeatureSet(func(p *ServerPrompt) string { return p.Prompt.Name }),
 		tools:                   newFeatureSet(func(t *ServerTool) string { return t.Tool.Name }),
 		resources:               newFeatureSet(func(r *ServerResource) string { return r.Resource.URI }),
+		resourceTemplates:       newFeatureSet(func(t *ServerResourceTemplate) string { return t.ResourceTemplate.URITemplate }),
 		sendingMethodHandler_:   defaultSendingMethodHandler[*ServerSession],
 		receivingMethodHandler_: defaultReceivingMethodHandler[*ServerSession],
 	}
@@ -126,10 +128,9 @@ func (s *Server) RemoveTools(names ...string) {
 		func() bool { return s.tools.remove(names...) })
 }
 
-// AddResources adds the given resource to the server and associates it with
-// a [ResourceHandler], which will be called when the client calls [ClientSession.ReadResource].
-// If a resource with the same URI already exists, this one replaces it.
-// AddResource panics if a resource URI is invalid or not absolute (has an empty scheme).
+// AddResources adds the given resources to the server.
+// If a resource with the same URI already exists, it is replaced.
+// AddResources panics if a resource URI is invalid or not absolute (has an empty scheme).
 func (s *Server) AddResources(resources ...*ServerResource) {
 	// Only notify if something could change.
 	if len(resources) == 0 {
@@ -156,6 +157,31 @@ func (s *Server) AddResources(resources ...*ServerResource) {
 func (s *Server) RemoveResources(uris ...string) {
 	s.changeAndNotify(notificationResourceListChanged, &ResourceListChangedParams{},
 		func() bool { return s.resources.remove(uris...) })
+}
+
+// AddResourceTemplates adds the given resource templates to the server.
+// If a resource template with the same URI template already exists, it will be replaced.
+// AddResourceTemplates panics if a URI template is invalid or not absolute (has an empty scheme).
+func (s *Server) AddResourceTemplates(templates ...*ServerResourceTemplate) {
+	// Only notify if something could change.
+	if len(templates) == 0 {
+		return
+	}
+	s.changeAndNotify(notificationResourceListChanged, &ResourceListChangedParams{},
+		func() bool {
+			for _, t := range templates {
+				// TODO: check template validity.
+				s.resourceTemplates.add(t)
+			}
+			return true
+		})
+}
+
+// RemoveResourceTemplates removes the resource templates with the given URI templates.
+// It is not an error to remove a nonexistent resource.
+func (s *Server) RemoveResourceTemplates(uriTemplates ...string) {
+	s.changeAndNotify(notificationResourceListChanged, &ResourceListChangedParams{},
+		func() bool { return s.resourceTemplates.remove(uriTemplates...) })
 }
 
 // changeAndNotify is called when a feature is added or removed.
@@ -243,19 +269,32 @@ func (s *Server) listResources(_ context.Context, _ *ServerSession, params *List
 	})
 }
 
+func (s *Server) listResourceTemplates(_ context.Context, _ *ServerSession, params *ListResourceTemplatesParams) (*ListResourceTemplatesResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if params == nil {
+		params = &ListResourceTemplatesParams{}
+	}
+	return paginateList(s.resourceTemplates, s.opts.PageSize, params, &ListResourceTemplatesResult{},
+		func(res *ListResourceTemplatesResult, rts []*ServerResourceTemplate) {
+			res.ResourceTemplates = []*ResourceTemplate{} // avoid JSON null
+			for _, rt := range rts {
+				res.ResourceTemplates = append(res.ResourceTemplates, rt.ResourceTemplate)
+			}
+		})
+}
+
 func (s *Server) readResource(ctx context.Context, ss *ServerSession, params *ReadResourceParams) (*ReadResourceResult, error) {
 	uri := params.URI
-	// Look up the resource URI in the list we have.
+	// Look up the resource URI in the lists of resources and resource templates.
 	// This is a security check as well as an information lookup.
-	s.mu.Lock()
-	resource, ok := s.resources.get(uri)
-	s.mu.Unlock()
+	handler, mimeType, ok := s.lookupResourceHandler(uri)
 	if !ok {
 		// Don't expose the server configuration to the client.
 		// Treat an unregistered resource the same as a registered one that couldn't be found.
 		return nil, ResourceNotFoundError(uri)
 	}
-	res, err := resource.Handler(ctx, ss, params)
+	res, err := handler(ctx, ss, params)
 	if err != nil {
 		return nil, err
 	}
@@ -268,10 +307,28 @@ func (s *Server) readResource(ctx context.Context, ss *ServerSession, params *Re
 			c.URI = uri
 		}
 		if c.MIMEType == "" {
-			c.MIMEType = resource.Resource.MIMEType
+			c.MIMEType = mimeType
 		}
 	}
 	return res, nil
+}
+
+// lookupResourceHandler returns the resource handler and MIME type for the resource or
+// resource template matching uri. If none, the last return value is false.
+func (s *Server) lookupResourceHandler(uri string) (ResourceHandler, string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Try resources first.
+	if r, ok := s.resources.get(uri); ok {
+		return r.Handler, r.Resource.MIMEType, true
+	}
+	// Look for matching template.
+	for rt := range s.resourceTemplates.all() {
+		if rt.Matches(uri) {
+			return rt.Handler, rt.ResourceTemplate.MIMEType, true
+		}
+	}
+	return nil, "", false
 }
 
 // fileResourceHandler returns a ReadResourceHandler that reads paths using dir as
@@ -312,8 +369,8 @@ func fileResourceHandler(dir string) ResourceHandler {
 		if err != nil {
 			return nil, err
 		}
-		// TODO(jba): figure out mime type.
-		return &ReadResourceResult{Contents: []*ResourceContents{NewBlobResourceContents(params.URI, "text/plain", data)}}, nil
+		// TODO(jba): figure out mime type. Omit for now: Server.readResource will fill it in.
+		return &ReadResourceResult{Contents: []*ResourceContents{NewBlobResourceContents(params.URI, "", data)}}, nil
 	}
 }
 
@@ -455,6 +512,7 @@ var serverMethodInfos = map[string]methodInfo{
 	methodListTools:              newMethodInfo(serverMethod((*Server).listTools)),
 	methodCallTool:               newMethodInfo(serverMethod((*Server).callTool)),
 	methodListResources:          newMethodInfo(serverMethod((*Server).listResources)),
+	methodListResourceTemplates:  newMethodInfo(serverMethod((*Server).listResourceTemplates)),
 	methodReadResource:           newMethodInfo(serverMethod((*Server).readResource)),
 	methodSetLevel:               newMethodInfo(sessionMethod((*ServerSession).setLevel)),
 	notificationInitialized:      newMethodInfo(serverMethod((*Server).callInitializedHandler)),

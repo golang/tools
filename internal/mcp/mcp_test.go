@@ -237,13 +237,30 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("resources/list mismatch (-want, +got):\n%s", diff)
 		}
 
+		template := &ResourceTemplate{
+			Name:        "rt",
+			MIMEType:    "text/template",
+			URITemplate: "file:///{+filename}", // the '+' means that filename can contain '/'
+		}
+		st := &ServerResourceTemplate{ResourceTemplate: template, Handler: readHandler}
+		s.AddResourceTemplates(st)
+		tres, err := cs.ListResourceTemplates(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff([]*ResourceTemplate{template}, tres.ResourceTemplates); diff != "" {
+			t.Errorf("resources/list mismatch (-want, +got):\n%s", diff)
+		}
+
 		for _, tt := range []struct {
 			uri      string
 			mimeType string // "": not found; "text/plain": resource; "text/template": template
+			fail     bool   // non-nil error returned
 		}{
-			{"file:///info.txt", "text/plain"},
-			{"file:///fail.txt", ""},
-			// TODO(jba): add resource template cases when we implement them
+			{"file:///info.txt", "text/plain", false},
+			{"file:///fail.txt", "", false},
+			{"file:///template.txt", "text/template", false},
+			{"file:///../private.txt", "", true}, // not found: escaping disallowed
 		} {
 			rres, err := cs.ReadResource(ctx, &ReadResourceParams{URI: tt.uri})
 			if err != nil {
@@ -251,18 +268,22 @@ func TestEndToEnd(t *testing.T) {
 					if tt.mimeType != "" {
 						t.Errorf("%s: not found but expected it to be", tt.uri)
 					}
-				} else {
-					t.Errorf("reading %s: %v", tt.uri, err)
+				} else if !tt.fail {
+					t.Errorf("%s: unexpected error %v", tt.uri, err)
 				}
-			} else if g, w := len(rres.Contents), 1; g != w {
-				t.Errorf("got %d contents, wanted %d", g, w)
 			} else {
-				c := rres.Contents[0]
-				if got := c.URI; got != tt.uri {
-					t.Errorf("got uri %q, want %q", got, tt.uri)
-				}
-				if got := c.MIMEType; got != tt.mimeType {
-					t.Errorf("%s: got MIME type %q, want %q", tt.uri, got, tt.mimeType)
+				if tt.fail {
+					t.Errorf("%s: unexpected success", tt.uri)
+				} else if g, w := len(rres.Contents), 1; g != w {
+					t.Errorf("got %d contents, wanted %d", g, w)
+				} else {
+					c := rres.Contents[0]
+					if got := c.URI; got != tt.uri {
+						t.Errorf("got uri %q, want %q", got, tt.uri)
+					}
+					if got := c.MIMEType; got != tt.mimeType {
+						t.Errorf("%s: got MIME type %q, want %q", tt.uri, got, tt.mimeType)
+					}
 				}
 			}
 		}
