@@ -575,15 +575,13 @@ type XXXParams struct { // where XXX is each type of call
 ```
 
 Handlers can notify their peer about progress by calling the `NotifyProgress`
-method. The notification is only sent if the peer requested it.
+method. The notification is only sent if the peer requested it by providing
+a progress token.
 
 ```go
 func (*ClientSession) NotifyProgress(context.Context, *ProgressNotification)
 func (*ServerSession) NotifyProgress(context.Context, *ProgressNotification)
 ```
-
-We don't support progress notifications for `Client.ListRoots`, because we expect
-that operation to be instantaneous relative to network latency.
 
 ### Ping / KeepAlive
 
@@ -625,16 +623,15 @@ Clients support the MCP Roots feature out of the box, including roots-changed no
 Roots can be added and removed from a `Client` with `AddRoots` and `RemoveRoots`:
 
 ```go
-// AddRoots adds the roots to the client's list of roots.
-// If the list changes, the client notifies the server.
-// If a root does not begin with a valid URI schema such as "https://" or "file://",
-// it is intepreted as a directory path on the local filesystem.
-func (*Client) AddRoots(roots ...string)
+// AddRoots adds the given roots to the client,
+// replacing any with the same URIs,
+// and notifies any connected servers.
+func (*Client) AddRoots(roots ...Root)
 
-// RemoveRoots removes the given roots from the client's list, and notifies
-// the server if the list has changed.
+// RemoveRoots removes the roots with the given URIs.
+// and notifies any connected servers if the list has changed.
 // It is not an error to remove a nonexistent root.
-func (*Client) RemoveRoots(roots ...string)
+func (*Client) RemoveRoots(uris ...string)
 ```
 
 Servers can call `ListRoots` to get the roots. If a server installs a
