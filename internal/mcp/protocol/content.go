@@ -9,27 +9,35 @@ import (
 	"fmt"
 )
 
+// The []byte fields below are marked omitzero, not omitempty:
+// we want to marshal an empty byte slice.
+
 // Content is the wire format for content.
-//
-// The Type field distinguishes the type of the content.
-// At most one of Text, MIMEType, Data, and Resource is non-zero.
+// It represents the protocol types TextContent, ImageContent, AudioContent
+// and EmbeddedResource.
+// The Type field distinguishes them. In the protocol, each type has a constant
+// value for the field.
+// At most one of Text, Data, and Resource is non-zero.
 type Content struct {
-	Type     string    `json:"type"`
-	Text     string    `json:"text,omitempty"`
-	MIMEType string    `json:"mimeType,omitempty"`
-	Data     string    `json:"data,omitempty"`
-	Resource *Resource `json:"resource,omitempty"`
+	Type        string            `json:"type"`
+	Text        string            `json:"text,omitempty"`
+	MIMEType    string            `json:"mimeType,omitempty"`
+	Data        []byte            `json:"data,omitzero"`
+	Resource    *ResourceContents `json:"resource,omitempty"`
+	Annotations *Annotations      `json:"annotations,omitempty"`
 }
 
-// Resource is the wire format for embedded resources.
+// A ResourceContents is either a TextResourceContents or a BlobResourceContents.
+// See https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2025-03-26/schema.ts#L524-L551
+// for the inheritance structure.
+// If Blob is nil, this is a TextResourceContents; otherwise it's a BlobResourceContents.
 //
-// The URI field describes the resource location. At most one of Text and Blob
-// is non-zero.
-type Resource struct {
-	URI      string  `json:"uri,"`
-	MIMEType string  `json:"mimeType,omitempty"`
-	Text     string  `json:"text"`
-	Blob     *string `json:"blob"` // blob is a pointer to distinguish empty from missing data
+// The URI field describes the resource location.
+type ResourceContents struct {
+	URI      string `json:"uri,"`
+	MIMEType string `json:"mimeType,omitempty"`
+	Text     string `json:"text"`
+	Blob     []byte `json:"blob,omitzero"`
 }
 
 func (c *Content) UnmarshalJSON(data []byte) error {

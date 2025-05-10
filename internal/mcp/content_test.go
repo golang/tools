@@ -19,24 +19,24 @@ func TestContent(t *testing.T) {
 	}{
 		{mcp.TextContent{Text: "hello"}, protocol.Content{Type: "text", Text: "hello"}},
 		{
-			mcp.ImageContent{Data: "a1b2c3", MimeType: "image/png"},
-			protocol.Content{Type: "image", Data: "a1b2c3", MIMEType: "image/png"},
+			mcp.ImageContent{Data: []byte("a1b2c3"), MIMEType: "image/png"},
+			protocol.Content{Type: "image", Data: []byte("a1b2c3"), MIMEType: "image/png"},
 		},
 		{
-			mcp.AudioContent{Data: "a1b2c3", MimeType: "audio/wav"},
-			protocol.Content{Type: "audio", Data: "a1b2c3", MIMEType: "audio/wav"},
+			mcp.AudioContent{Data: []byte("a1b2c3"), MIMEType: "audio/wav"},
+			protocol.Content{Type: "audio", Data: []byte("a1b2c3"), MIMEType: "audio/wav"},
 		},
 		{
 			mcp.ResourceContent{
-				Resource: mcp.TextResource{
+				Resource: mcp.TextResourceContents{
 					URI:      "file://foo",
-					MimeType: "text",
+					MIMEType: "text",
 					Text:     "abc",
 				},
 			},
 			protocol.Content{
 				Type: "resource",
-				Resource: &protocol.Resource{
+				Resource: &protocol.ResourceContents{
 					URI:      "file://foo",
 					MIMEType: "text",
 					Text:     "abc",
@@ -45,18 +45,18 @@ func TestContent(t *testing.T) {
 		},
 		{
 			mcp.ResourceContent{
-				Resource: mcp.BlobResource{
+				Resource: mcp.BlobResourceContents{
 					URI:      "file://foo",
-					MimeType: "text",
-					Blob:     "a1b2c3",
+					MIMEType: "text",
+					Blob:     []byte("a1b2c3"),
 				},
 			},
 			protocol.Content{
 				Type: "resource",
-				Resource: &protocol.Resource{
+				Resource: &protocol.ResourceContents{
 					URI:      "file://foo",
 					MIMEType: "text",
-					Blob:     ptr("a1b2c3"),
+					Blob:     []byte("a1b2c3"),
 				},
 			},
 		},
@@ -68,8 +68,4 @@ func TestContent(t *testing.T) {
 			t.Errorf("ToWire mismatch (-want +got):\n%s", diff)
 		}
 	}
-}
-
-func ptr[T any](t T) *T {
-	return &t
 }

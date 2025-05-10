@@ -15,6 +15,7 @@ import (
 //
 // ToWire converts content to its jsonrpc2 wire format.
 type Content interface {
+	// TODO: unexport this, and move the tests that use it to this package.
 	ToWire() protocol.Content
 }
 
@@ -29,64 +30,69 @@ func (c TextContent) ToWire() protocol.Content {
 
 // ImageContent contains base64-encoded image data.
 type ImageContent struct {
-	Data     string
-	MimeType string
+	Data     []byte // base64-encoded
+	MIMEType string
 }
 
 func (c ImageContent) ToWire() protocol.Content {
-	return protocol.Content{Type: "image", MIMEType: c.MimeType, Data: c.Data}
+	return protocol.Content{Type: "image", MIMEType: c.MIMEType, Data: c.Data}
 }
 
 // AudioContent contains base64-encoded audio data.
 type AudioContent struct {
-	Data     string
-	MimeType string
+	Data     []byte
+	MIMEType string
 }
 
 func (c AudioContent) ToWire() protocol.Content {
-	return protocol.Content{Type: "audio", MIMEType: c.MimeType, Data: c.Data}
+	return protocol.Content{Type: "audio", MIMEType: c.MIMEType, Data: c.Data}
 }
 
 // ResourceContent contains embedded resources.
 type ResourceContent struct {
-	Resource Resource
+	Resource EmbeddedResource
 }
 
 func (r ResourceContent) ToWire() protocol.Content {
-	res := r.Resource.ToWire()
+	res := r.Resource.toWire()
 	return protocol.Content{Type: "resource", Resource: &res}
 }
 
-type Resource interface {
-	ToWire() protocol.Resource
+type EmbeddedResource interface {
+	toWire() protocol.ResourceContents
 }
 
-type TextResource struct {
+// The {Text,Blob}ResourceContents types match the protocol definitions,
+// but we represent both as a single type on the wire.
+
+// A TextResourceContents is the contents of a text resource.
+type TextResourceContents struct {
 	URI      string
-	MimeType string
+	MIMEType string
 	Text     string
 }
 
-func (r TextResource) ToWire() protocol.Resource {
-	return protocol.Resource{
+func (r TextResourceContents) toWire() protocol.ResourceContents {
+	return protocol.ResourceContents{
 		URI:      r.URI,
-		MIMEType: r.MimeType,
+		MIMEType: r.MIMEType,
 		Text:     r.Text,
+		// Blob is nil, indicating this is a TextResourceContents.
 	}
 }
 
-type BlobResource struct {
+// A BlobResourceContents is the contents of a blob resource.
+type BlobResourceContents struct {
 	URI      string
-	MimeType string
-	Blob     string
+	MIMEType string
+	Blob     []byte
 }
 
-func (r BlobResource) ToWire() protocol.Resource {
-	blob := r.Blob
-	return protocol.Resource{
+func (r BlobResourceContents) toWire() protocol.ResourceContents {
+	return protocol.ResourceContents{
 		URI:      r.URI,
-		MIMEType: r.MimeType,
-		Blob:     &blob,
+		MIMEType: r.MIMEType,
+		Blob:     r.Blob,
 	}
 }
 
@@ -97,22 +103,22 @@ func ContentFromWireContent(c protocol.Content) Content {
 	case "text":
 		return TextContent{Text: c.Text}
 	case "image":
-		return ImageContent{Data: c.Data, MimeType: c.MIMEType}
+		return ImageContent{Data: c.Data, MIMEType: c.MIMEType}
 	case "audio":
-		return AudioContent{Data: c.Data, MimeType: c.MIMEType}
+		return AudioContent{Data: c.Data, MIMEType: c.MIMEType}
 	case "resource":
 		r := ResourceContent{}
 		if c.Resource != nil {
 			if c.Resource.Blob != nil {
-				r.Resource = BlobResource{
+				r.Resource = BlobResourceContents{
 					URI:      c.Resource.URI,
-					MimeType: c.Resource.MIMEType,
-					Blob:     *c.Resource.Blob,
+					MIMEType: c.Resource.MIMEType,
+					Blob:     c.Resource.Blob,
 				}
 			} else {
-				r.Resource = TextResource{
+				r.Resource = TextResourceContents{
 					URI:      c.Resource.URI,
-					MimeType: c.Resource.MIMEType,
+					MIMEType: c.Resource.MIMEType,
 					Text:     c.Resource.Text,
 				}
 			}
