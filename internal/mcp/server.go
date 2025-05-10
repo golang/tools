@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"log"
+	"net/url"
 	"slices"
 	"sync"
 
@@ -26,10 +28,11 @@ type Server struct {
 	version string
 	opts    ServerOptions
 
-	mu      sync.Mutex
-	prompts *featureSet[*Prompt]
-	tools   *featureSet[*Tool]
-	conns   []*ServerConnection
+	mu        sync.Mutex
+	prompts   *featureSet[*Prompt]
+	tools     *featureSet[*Tool]
+	resources *featureSet[*ServerResource]
+	conns     []*ServerConnection
 }
 
 // ServerOptions is used to configure behavior of the server.
@@ -49,11 +52,12 @@ func NewServer(name, version string, opts *ServerOptions) *Server {
 		opts = new(ServerOptions)
 	}
 	return &Server{
-		name:    name,
-		version: version,
-		opts:    *opts,
-		prompts: newFeatureSet(func(p *Prompt) string { return p.Definition.Name }),
-		tools:   newFeatureSet(func(t *Tool) string { return t.Definition.Name }),
+		name:      name,
+		version:   version,
+		opts:      *opts,
+		prompts:   newFeatureSet(func(p *Prompt) string { return p.Definition.Name }),
+		tools:     newFeatureSet(func(t *Tool) string { return t.Definition.Name }),
+		resources: newFeatureSet(func(r *ServerResource) string { return r.Resource.URI }),
 	}
 }
 
@@ -97,6 +101,62 @@ func (s *Server) RemoveTools(names ...string) {
 	if s.tools.remove(names...) {
 		// TODO: notify
 	}
+}
+
+// ResourceNotFoundError returns an error indicating that a resource being read could
+// not be found.
+func ResourceNotFoundError(uri string) error {
+	return &jsonrpc2.WireError{
+		Code:    codeResourceNotFound,
+		Message: "Resource not found",
+		Data:    json.RawMessage(fmt.Sprintf(`{"uri":%q}`, uri)),
+	}
+}
+
+// The error code to return when a resource isn't found.
+// See https://modelcontextprotocol.io/specification/2025-03-26/server/resources#error-handling
+// However, the code they chose in in the wrong space
+// (see https://github.com/modelcontextprotocol/modelcontextprotocol/issues/509).
+// so we pick a different one, arbirarily for now (until they fix it).
+// The immediate problem is that jsonprc2 defines -32002 as "server closing".
+const codeResourceNotFound = -31002
+
+// A ReadResourceHandler is a function that reads a resource.
+// If it cannot find the resource, it should return the result of calling [ResourceNotFoundError].
+type ReadResourceHandler func(context.Context, protocol.Resource, *protocol.ReadResourceParams) (*protocol.ReadResourceResult, error)
+
+// A ServerResource associates a Resource with its handler.
+type ServerResource struct {
+	Resource protocol.Resource
+	Handler  ReadResourceHandler
+}
+
+// AddResource adds the given resource to the server and associates it with
+// a [ReadResourceHandler], which will be called when the client calls [ClientSession.ReadResource].
+// If a resource with the same URI already exists, this one replaces it.
+// AddResource panics if a resource URI is invalid or not absolute (has an empty scheme).
+func (s *Server) AddResources(resources ...*ServerResource) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range resources {
+		u, err := url.Parse(r.Resource.URI)
+		if err != nil {
+			panic(err) // url.Parse includes the URI in the error
+		}
+		if !u.IsAbs() {
+			panic(fmt.Errorf("URI %s needs a scheme", r.Resource.URI))
+		}
+		s.resources.add(r)
+	}
+	// TODO: notify
+}
+
+// RemoveResources removes the resources with the given URIs.
+// It is not an error to remove a nonexistent resource.
+func (s *Server) RemoveResources(uris ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resources.remove(uris...)
 }
 
 // Clients returns an iterator that yields the current set of client
@@ -147,6 +207,47 @@ func (s *Server) callTool(ctx context.Context, cc *ServerConnection, params *pro
 		return nil, fmt.Errorf("%s: unknown tool %q", jsonrpc2.ErrInvalidParams, params.Name)
 	}
 	return tool.Handler(ctx, cc, params.Arguments)
+}
+
+func (s *Server) listResources(_ context.Context, _ *ServerConnection, params *protocol.ListResourcesParams) (*protocol.ListResourcesResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res := new(protocol.ListResourcesResult)
+	for r := range s.resources.all() {
+		res.Resources = append(res.Resources, r.Resource)
+	}
+	return res, nil
+}
+
+func (s *Server) readResource(ctx context.Context, _ *ServerConnection, params *protocol.ReadResourceParams) (*protocol.ReadResourceResult, error) {
+	log.Printf("readResource")
+	defer log.Printf("done")
+	uri := params.URI
+	// Look up the resource URI in the list we have.
+	// This is a security check as well as an information lookup.
+	s.mu.Lock()
+	resource, ok := s.resources.get(uri)
+	s.mu.Unlock()
+	if !ok {
+		// Don't expose the server configuration to the client.
+		// Treat an unregistered resource the same as a registered one that couldn't be found.
+		return nil, ResourceNotFoundError(uri)
+	}
+	res, err := resource.Handler(ctx, resource.Resource, params)
+	if err != nil {
+		return nil, err
+	}
+	if res == nil || res.Contents == nil {
+		return nil, fmt.Errorf("reading resource %s: read handler returned nil information", uri)
+	}
+	// As a convenience, populate some fields.
+	if res.Contents.URI == "" {
+		res.Contents.URI = uri
+	}
+	if res.Contents.MIMEType == "" {
+		res.Contents.MIMEType = resource.Resource.MIMEType
+	}
+	return res, nil
 }
 
 // Run runs the server over the given transport, which must be persistent.
@@ -226,7 +327,7 @@ func (cc *ServerConnection) handle(ctx context.Context, req *jsonrpc2.Request) (
 	case "initialize", "ping":
 	default:
 		if !initialized {
-			return nil, fmt.Errorf("method %q is invalid during session ininitialization", req.Method)
+			return nil, fmt.Errorf("method %q is invalid during session initialization", req.Method)
 		}
 	}
 
@@ -253,6 +354,12 @@ func (cc *ServerConnection) handle(ctx context.Context, req *jsonrpc2.Request) (
 
 	case "tools/call":
 		return dispatch(ctx, cc, req, cc.server.callTool)
+
+	case "resources/list":
+		return dispatch(ctx, cc, req, cc.server.listResources)
+
+	case "resources/read":
+		return dispatch(ctx, cc, req, cc.server.readResource)
 
 	case "notifications/initialized":
 	}

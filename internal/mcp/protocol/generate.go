@@ -82,6 +82,11 @@ var declarations = config{
 		Fields: config{"Params": {Name: "ListPromptsParams"}},
 	},
 	"ListPromptsResult": {},
+	"ListResourcesRequest": {
+		Name:   "-",
+		Fields: config{"Params": {Name: "ListResourcesParams"}},
+	},
+	"ListResourcesResult": {},
 	"ListRootsRequest": {
 		Name:   "-",
 		Fields: config{"Params": {Name: "ListRootsParams"}},
@@ -97,8 +102,16 @@ var declarations = config{
 	"PromptArgument":  {},
 	"ProgressToken":   {Name: "-", Substitute: "any"}, // null|number|string
 	"RequestId":       {Name: "-", Substitute: "any"}, // null|number|string
-	"Role":            {},
-	"Root":            {},
+	"ReadResourceRequest": {
+		Name:   "-",
+		Fields: config{"Params": {Name: "ReadResourceParams"}},
+	},
+	"ReadResourceResult": {
+		Fields: config{"Contents": {Substitute: "*ResourceContents"}},
+	},
+	"Resource": {},
+	"Role":     {},
+	"Root":     {},
 
 	"ServerCapabilities": {
 		Fields: config{

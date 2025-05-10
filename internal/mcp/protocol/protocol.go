@@ -156,6 +156,23 @@ type ListPromptsResult struct {
 	Prompts    []Prompt `json:"prompts"`
 }
 
+type ListResourcesParams struct {
+	// An opaque token representing the current pagination position. If provided,
+	// the server should return results starting after this cursor.
+	Cursor string `json:"cursor,omitempty"`
+}
+
+// The server's response to a resources/list request from the client.
+type ListResourcesResult struct {
+	// This result property is reserved by the protocol to allow clients and servers
+	// to attach additional metadata to their responses.
+	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// An opaque token representing the pagination position after the last returned
+	// result. If present, there may be more results available.
+	NextCursor string     `json:"nextCursor,omitempty"`
+	Resources  []Resource `json:"resources"`
+}
+
 type ListRootsParams struct {
 	Meta *struct {
 		// If specified, the caller is requesting out-of-band progress notifications for
@@ -226,6 +243,45 @@ type PromptCapabilities struct {
 type PromptMessage struct {
 	Content Content `json:"content"`
 	Role    Role    `json:"role"`
+}
+
+type ReadResourceParams struct {
+	// The URI of the resource to read. The URI can use any protocol; it is up to
+	// the server how to interpret it.
+	URI string `json:"uri"`
+}
+
+// The server's response to a resources/read request from the client.
+type ReadResourceResult struct {
+	// This result property is reserved by the protocol to allow clients and servers
+	// to attach additional metadata to their responses.
+	Meta     map[string]json.RawMessage `json:"_meta,omitempty"`
+	Contents *ResourceContents          `json:"contents"`
+}
+
+// A known resource that the server is capable of reading.
+type Resource struct {
+	// Optional annotations for the client.
+	Annotations *Annotations `json:"annotations,omitempty"`
+	// A description of what this resource represents.
+	//
+	// This can be used by clients to improve the LLM's understanding of available
+	// resources. It can be thought of like a "hint" to the model.
+	Description string `json:"description,omitempty"`
+	// The MIME type of this resource, if known.
+	MIMEType string `json:"mimeType,omitempty"`
+	// A human-readable name for this resource.
+	//
+	// This can be used by clients to populate UI elements.
+	Name string `json:"name"`
+	// The size of the raw resource content, in bytes (i.e., before base64 encoding
+	// or any tokenization), if known.
+	//
+	// This can be used by Hosts to display file sizes and estimate context window
+	// usage.
+	Size int64 `json:"size,omitempty"`
+	// The URI of this resource.
+	URI string `json:"uri"`
 }
 
 // Present if the server offers any resources to read.

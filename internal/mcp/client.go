@@ -221,6 +221,16 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	return standardCall[protocol.CallToolResult](ctx, c.conn, "tools/call", params)
 }
 
+// ListResources lists the resources that are currently available on the server.
+func (c *Client) ListResources(ctx context.Context, params *protocol.ListResourcesParams) (*protocol.ListResourcesResult, error) {
+	return standardCall[protocol.ListResourcesResult](ctx, c.conn, "resources/list", params)
+}
+
+// ReadResource ask the server to read a resource and return its contents.
+func (c *Client) ReadResource(ctx context.Context, params *protocol.ReadResourceParams) (*protocol.ReadResourceResult, error) {
+	return standardCall[protocol.ReadResourceResult](ctx, c.conn, "resources/read", params)
+}
+
 func standardCall[TRes, TParams any](ctx context.Context, conn *jsonrpc2.Connection, method string, params TParams) (*TRes, error) {
 	var result TRes
 	if err := call(ctx, conn, method, params, &result); err != nil {
