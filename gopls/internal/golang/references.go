@@ -33,7 +33,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
+	"golang.org/x/tools/gopls/internal/util/morestrings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
@@ -605,6 +607,29 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 			id := curId.Node().(*ast.Ident)
 			if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {
 				report(mustLocation(pgf, id), false)
+			}
+		}
+	}
+
+	for _, pgf := range pkg.AsmFiles() {
+		for _, id := range pgf.Idents {
+			_, name, ok := morestrings.CutLast(id.Name, ".")
+			if !ok {
+				continue
+			}
+			if id.Kind != asm.Text {
+				continue
+			}
+			obj := pkg.Types().Scope().Lookup(name)
+			if obj == nil {
+				continue
+			}
+			if rng, err := pgf.NodeRange(id); err == nil && matches(obj) {
+				asmLocation := protocol.Location{
+					URI:   pgf.URI,
+					Range: rng,
+				}
+				report(asmLocation, false)
 			}
 		}
 	}

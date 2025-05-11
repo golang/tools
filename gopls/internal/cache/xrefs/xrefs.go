@@ -117,6 +117,9 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 	for fileIndex, af := range asmFiles {
 		for _, id := range af.Idents {
 			_, name, ok := morestrings.CutLast(id.Name, ".")
+			if !ok {
+				continue
+			}
 			if id.Kind != asm.Text {
 				continue
 			}
