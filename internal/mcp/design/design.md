@@ -347,7 +347,7 @@ type Content struct {
 	Type     string    `json:"type"`
 	Text     string    `json:"text,omitempty"`
 	MIMEType string    `json:"mimeType,omitempty"`
-	Data     string    `json:"data,omitempty"`
+	Data     []byte    `json:"data,omitempty"`
 	Resource *Resource `json:"resource,omitempty"`
 }
 
@@ -359,7 +359,7 @@ type Resource struct {
 	URI      string  `json:"uri,"`
 	MIMEType string  `json:"mimeType,omitempty"`
 	Text     string  `json:"text"`
-	Blob     *string `json:"blob"`
+	Blob     []byte `json:"blob"`
 }
 ```
 
@@ -438,12 +438,14 @@ transport := mcp.NewCommandTransport(exec.Command("myserver"))
 session, err := client.Connect(ctx, transport)
 if err != nil { ... }
 // Call a tool on the server.
-content, err := session.CallTool(ctx, "greet", map[string]any{"name": "you"})
+content, err := session.CallTool(ctx, &CallToolParams{
+  Name: "greet",
+  Arguments: map[string]any{"name": "you"} ,
+})
 ...
 return session.Close()
 ```
-
-And here's an example from the server side:
+A server that can handle that client call would look like this:
 
 ```go
 // Create a server with a single tool.
@@ -462,6 +464,8 @@ session until the client disconnects:
 ```go
 func (*Server) Run(context.Context, Transport)
 ```
+
+
 
 **Differences from mcp-go**: the Server APIs are very similar to mcp-go,
 though the association between servers and transports is different. In
@@ -483,6 +487,24 @@ For both clients and servers, mcp-go uses variadic options to customize
 behavior, whereas an options struct is used here. We felt that in this case, an
 options struct would be more readable, and result in cleaner package
 documentation.
+
+### Spec Methods
+
+As we saw above, the `ClientSession` method for the specification's
+`CallTool` RPC takes a context and a params pointer as arguments, and returns a
+result pointer and error:
+```go
+func (*ClientSession) CallTool(context.Context, *CallToolParams) (*CallToolResult, error)
+```
+Our SDK has a method for every RPC in the spec, and their signatures all share
+this form. To avoid boilerplate, we don't repeat this signature for RPCs
+defined in the spec; readers may assume it when we mention a "spec method."
+
+Why do we use params instead of the full request? JSON-RPC requests consist of a method
+name and a set of parameters, and the method is already encoded in the Go method name.
+Technically, the MCP spec could add a field to a request while preserving backward
+compatibility, which would break the Go SDK's compatibility. But in the unlikely event
+that were to happen, we would add that field to the Params struct.
 
 ### Middleware
 
@@ -589,8 +611,8 @@ Both `ClientSession` and `ServerSession` expose a `Ping` method to call "ping"
 on their peer.
 
 ```go
-func (c *ClientSession) Ping(ctx context.Context) error
-func (c *ServerSession) Ping(ctx context.Context) error
+func (c *ClientSession) Ping(ctx context.Context, *PingParams) error
+func (c *ServerSession) Ping(ctx context.Context, *PingParams) error
 ```
 
 Additionally, client and server sessions can be configured with automatic
@@ -634,14 +656,12 @@ func (*Client) AddRoots(roots ...Root)
 func (*Client) RemoveRoots(uris ...string)
 ```
 
-Servers can call `ListRoots` to get the roots. If a server installs a
+Servers can call the spec method `ListRoots` to get the roots. If a server installs a
 `RootsChangedHandler`, it will be called when the client sends a roots-changed
 notification, which happens whenever the list of roots changes after a
 connection has been established.
 
 ```go
-func (*Server) ListRoots(context.Context, *ListRootsParams) (*ListRootsResult, error)
-
 type ServerOptions {
   ...
   // If non-nil, called when a client sends a roots-changed notification.
@@ -652,15 +672,13 @@ type ServerOptions {
 ### Sampling
 
 Clients that support sampling are created with a `CreateMessageHandler` option
-for handling server calls. To perform sampling, a server calls `CreateMessage`.
+for handling server calls. To perform sampling, a server calls the spec method `CreateMessage`.
 
 ```go
 type ClientOptions struct {
   ...
   CreateMessageHandler func(context.Context, *ClientSession, *CreateMessageParams) (*CreateMessageResult, error)
 }
-
-func (*ServerSession) CreateMessage(context.Context, *CreateMessageParams) (*CreateMessageResult, error)
 ```
 
 ## Server Features
@@ -839,12 +857,7 @@ server.AddPrompts(
 server.RemovePrompts("code_review")
 ```
 
-Clients can call `ListPrompts` to list the available prompts and `GetPrompt` to get one.
-
-```go
-func (*ClientSession) ListPrompts(context.Context, *ListPromptParams) (*ListPromptsResult, error)
-func (*ClientSession) GetPrompt(context.Context, *GetPromptParams) (*GetPromptResult, error)
-```
+Clients can call the spec method `ListPrompts` to list the available prompts and the spec method `GetPrompt` to get one.
 
 **Differences from mcp-go**: We provide a `NewPrompt` helper to bind a prompt
 handler to a Go function using reflection to derive its arguments. We provide
@@ -942,9 +955,9 @@ A client will receive these notifications if it was created with the correspondi
 ```go
 type ClientOptions struct {
   ...
-  ToolListChangedHandler func(context.Context, *ClientConnection, *ToolListChangedParams)
-  PromptListChangedHandler func(context.Context, *ClientConnection, *PromptListChangedParams)
-  ResourceListChangedHandler func(context.Context, *ClientConnection, *ResourceListChangedParams)
+  ToolListChangedHandler func(context.Context, *ClientSession, *ToolListChangedParams)
+  PromptListChangedHandler func(context.Context, *ClientSession, *PromptListChangedParams)
+  ResourceListChangedHandler func(context.Context, *ClientSession, *ResourceListChangedParams)
 }
 ```
 
@@ -954,12 +967,7 @@ feature-specific handlers here.
 
 ### Completion
 
-Clients call `Complete` to request completions.
-
-```go
-func (*ClientSession) Complete(context.Context, *CompleteParams) (*CompleteResult, error)
-```
-
+Clients call the spec method `Complete` to request completions.
 Servers automatically handle these requests based on their collections of
 prompts and resources.
 
@@ -968,15 +976,28 @@ defined its server-side behavior.
 
 ### Logging
 
+Server-to-client logging is configured with `ServerOptions`:
+
+```go
+type ServerOptions {
+  ...
+  // The value for the "logger" field of the notification.
+  LoggerName string
+  // Log notifications to a single ClientSession will not be
+  // send more frequently than this duration.
+  LogInterval time.Duration
+}
+```
+
 ServerSessions have access to a `slog.Logger` that writes to the client. A call to
 a log method like `Info`is translated to a `LoggingMessageNotification` as
 follows:
 
-- An attribute with key "logger" is used to populate the "logger" field of the notification.
-
-- The remaining attributes and the message populate the "data" field with the
+- The attributes and the message populate the "data" property with the
   output of a `slog.JSONHandler`: The result is always a JSON object, with the
   key "msg" for the message.
+
+- If the `LoggerName` server option is set, it populates the "logger" property.
 
 - The standard slog levels `Info`, `Debug`, `Warn` and `Error` map to the
   corresponding levels in the MCP spec. The other spec levels will be mapped
@@ -984,6 +1005,14 @@ follows:
   it is between "warning" (slog value 4) and "info" (slog value 0).
   The `mcp` package defines consts for these levels. To log at the "notice"
   level, a handler would call `session.Log(ctx, mcp.LevelNotice, "message")`.
+
+A client that wishes to receive log messages must provide a handler:
+```go
+type ClientOptions struct {
+  ...
+  LogMessageHandler func(context.Context, *ClientSession, *LoggingMessageParams)
+}
+```
 
 ### Pagination
 
