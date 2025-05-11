@@ -852,23 +852,57 @@ handler to a Go function using reflection to derive its arguments. We provide
 
 ### Resources and resource templates
 
-Servers have Add and Remove methods for resources and resource templates:
-
+To add a resource or resource template to a server, users call the `AddResource` and
+`AddResourceTemplate` methods, passing the resource or template and a function for reading it:
 ```go
-func (*Server) AddResources(resources ...*Resource)
-func (*Server) RemoveResources(names ...string)
-func (*Server) AddResourceTemplates(templates...*ResourceTemplate)
+type ReadResourceHandler func(context.Context, *ServerSession, *Resource, *ReadResourceParams) (*ReadResourceResult, error)
+
+func (*Server) AddResource(*Resource, ReadResourceHandler)
+func (*Server) AddResourceTemplate(*ResourceTemplate, ReadResourceHandler)
+```
+The `Resource` is passed to the reader function even though it is redundant (the function could have closed over it)
+so a single handler can support multiple resources.
+If the incoming resource matches a template, a `Resource` argument is constructed
+from the fields in the `ResourceTemplate`.
+The `ServerSession` argument is there so the reader can observe the client's roots.
+
+To read files from the local filesystem, we recommend using `FileReadResourceHandler` to construct a handler:
+```go
+// FileReadResourceHandler returns a ReadResourceHandler that reads paths using dir as a root directory.
+// It protects against path traversal attacks.
+// It will not read any file that is not in the root set of the client requesting the resource.
+func (*Server) FileReadResourceHandler(dir string) ReadResourceHandler
+```
+It guards against [path traversal attacks](https://go.dev/blog/osroot)
+and observes the client's roots.
+Here is an example:
+```go
+// Safely read "/public/puppies.txt".
+s.AddResource(
+  &mcp.Resource{URI: "file:///puppies.txt"},
+  s.FileReadResourceHandler("/public"))
+```
+
+There are also server methods to remove resources and resource templates.
+```go
+func (*Server) RemoveResources(uris ...string)
 func (*Server) RemoveResourceTemplates(names ...string)
 ```
+Resource templates don't have unique identifiers, so removing a name will remove all
+resource templates with that name.
 
 Clients call `ListResources` to list the available resources, `ReadResource` to read
 one of them, and `ListResourceTemplates` to list the templates:
 
 ```go
 func (*ClientSession) ListResources(context.Context, *ListResourcesParams) (*ListResourcesResult, error)
-func (*ClientSession) ReadResource(context.Context, *ReadResourceParams) (*ReadResourceResult, error)
 func (*ClientSession) ListResourceTemplates(context.Context, *ListResourceTemplatesParams) (*ListResourceTemplatesResult, error)
+func (*ClientSession) ReadResource(context.Context, *ReadResourceParams) (*ReadResourceResult, error)
 ```
+
+`ReadResource` checks the incoming URI against the server's list of
+resources and resource templates to make sure it matches one of them,
+then returns the result of calling the associated reader function.
 
 <!-- TODO: subscriptions -->
 
