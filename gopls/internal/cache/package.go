@@ -214,3 +214,7 @@ func (p *Package) ParseErrors() []scanner.ErrorList {
 func (p *Package) TypeErrors() []types.Error {
 	return p.pkg.typeErrors
 }
+
+func (p *Package) AsmFiles() []*asm.File {
+	return p.pkg.asmFiles
+}
