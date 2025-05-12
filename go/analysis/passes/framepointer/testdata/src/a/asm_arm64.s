@@ -17,6 +17,17 @@ TEXT ·bad4(SB), 0, $0
 TEXT ·bad5(SB), 0, $0
 	AND	$0x1, R3, R29 // want `frame pointer is clobbered before saving`
 	RET
+TEXT ·bad6(SB), 0, $0
+	CMP	R1, R2
+	BEQ	skip
+	// Assume that the above conditional branch is not taken
+	MOVD	$0, R29 // want `frame pointer is clobbered before saving`
+skip:
+	RET
+TEXT ·bad7(SB), 0, $0
+	BL	·good4(SB)
+	AND	$0x1, R3, R29 // want `frame pointer is clobbered before saving`
+	RET
 TEXT ·good1(SB), 0, $0
 	STPW 	(R29, R30), -32(RSP)
 	MOVD	$0, R29 // this is ok
@@ -29,7 +40,7 @@ TEXT ·good2(SB), 0, $0
 	RET
 TEXT ·good3(SB), 0, $0
 	CMP	R1, R2
-	BEQ	skip
+	B	skip
 	MOVD	$0, R29 // this is ok
 skip:
 	RET
