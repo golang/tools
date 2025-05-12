@@ -62,6 +62,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -74,7 +75,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	internalastutil "golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typesinternal"
@@ -176,7 +176,7 @@ func prepareRenamePackageName(ctx context.Context, snapshot *cache.Snapshot, pgf
 	}
 
 	// Check validity of the metadata for the file's containing package.
-	meta, err := NarrowestMetadataForFile(ctx, snapshot, pgf.URI)
+	meta, err := snapshot.NarrowestMetadataForFile(ctx, pgf.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -473,7 +473,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	// computes the union across all variants.)
 	var targets map[types.Object]ast.Node
 	var pkg *cache.Package
-	var cur cursor.Cursor // of selected Ident or ImportSpec
+	var cur inspector.Cursor // of selected Ident or ImportSpec
 	{
 		mps, err := snapshot.MetadataForFile(ctx, f.URI())
 		if err != nil {
@@ -946,7 +946,7 @@ func renamePackage(ctx context.Context, s *cache.Snapshot, f file.Handle, newNam
 
 	// We need metadata for the relevant package and module paths.
 	// These should be the same for all packages containing the file.
-	meta, err := NarrowestMetadataForFile(ctx, s, f.URI())
+	meta, err := s.NarrowestMetadataForFile(ctx, f.URI())
 	if err != nil {
 		return nil, err
 	}

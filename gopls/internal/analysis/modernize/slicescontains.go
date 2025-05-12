@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -66,7 +65,7 @@ func slicescontains(pass *analysis.Pass) {
 
 	// check is called for each RangeStmt of this form:
 	//   for i, elem := range s { if cond { ... } }
-	check := func(file *ast.File, curRange cursor.Cursor) {
+	check := func(file *ast.File, curRange inspector.Cursor) {
 		rng := curRange.Node().(*ast.RangeStmt)
 		ifStmt := rng.Body.List[0].(*ast.IfStmt)
 

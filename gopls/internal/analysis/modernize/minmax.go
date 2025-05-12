@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -38,7 +37,7 @@ func minmax(pass *analysis.Pass) {
 
 	// check is called for all statements of this form:
 	//   if a < b { lhs = rhs }
-	check := func(file *ast.File, curIfStmt cursor.Cursor, compare *ast.BinaryExpr) {
+	check := func(file *ast.File, curIfStmt inspector.Cursor, compare *ast.BinaryExpr) {
 		var (
 			ifStmt  = curIfStmt.Node().(*ast.IfStmt)
 			tassign = ifStmt.Body.List[0].(*ast.AssignStmt)

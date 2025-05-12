@@ -22,7 +22,6 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -526,7 +525,7 @@ func CanImport(from, to string) bool {
 func DeleteStmt(fset *token.FileSet, astFile *ast.File, stmt ast.Stmt, report func(string, ...any)) []analysis.TextEdit {
 	// TODO: pass in the cursor to a ast.Stmt. callers should provide the Cursor
 	insp := inspector.New([]*ast.File{astFile})
-	root := cursor.Root(insp)
+	root := insp.Root()
 	cstmt, ok := root.FindNode(stmt)
 	if !ok {
 		report("%s not found in file", stmt.Pos())

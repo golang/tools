@@ -21,13 +21,13 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -391,7 +391,7 @@ func stmtToInsertVarBefore(path []ast.Node, variables []*variable) (ast.Stmt, er
 // canExtractVariable reports whether the code in the given range can be
 // extracted to a variable (or constant). It returns the selected expression or, if 'all',
 // all structurally equivalent expressions within the same function body, in lexical order.
-func canExtractVariable(info *types.Info, curFile cursor.Cursor, start, end token.Pos, all bool) ([]ast.Expr, error) {
+func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end token.Pos, all bool) ([]ast.Expr, error) {
 	if start == end {
 		return nil, fmt.Errorf("empty selection")
 	}
@@ -1238,7 +1238,7 @@ func moveParamToFrontIfFound(params []ast.Expr, paramTypes []*ast.Field, x, sel 
 // their cursors for whitespace. To support this use case, we must manually adjust the
 // ranges to match the correct AST node. In this particular example, we would adjust
 // rng.Start forward to the start of 'if' and rng.End backward to after '}'.
-func adjustRangeForCommentsAndWhiteSpace(tok *token.File, start, end token.Pos, content []byte, curFile cursor.Cursor) (token.Pos, token.Pos, error) {
+func adjustRangeForCommentsAndWhiteSpace(tok *token.File, start, end token.Pos, content []byte, curFile inspector.Cursor) (token.Pos, token.Pos, error) {
 	file := curFile.Node().(*ast.File)
 	// TODO(adonovan): simplify, using Cursor.
 
@@ -1568,7 +1568,7 @@ type fnExtractParams struct {
 
 // canExtractFunction reports whether the code in the given range can be
 // extracted to a function.
-func canExtractFunction(tok *token.File, start, end token.Pos, src []byte, curFile cursor.Cursor) (*fnExtractParams, bool, bool, error) {
+func canExtractFunction(tok *token.File, start, end token.Pos, src []byte, curFile inspector.Cursor) (*fnExtractParams, bool, bool, error) {
 	if start == end {
 		return nil, false, false, fmt.Errorf("start and end are equal")
 	}
@@ -2022,7 +2022,7 @@ func replaceBranchStmtWithReturnStmt(block ast.Node, br *ast.BranchStmt, ret *as
 
 // freeBranches returns all branch statements beneath cur whose continuation
 // lies outside the (start, end) range.
-func freeBranches(info *types.Info, cur cursor.Cursor, start, end token.Pos) (free []*ast.BranchStmt) {
+func freeBranches(info *types.Info, cur inspector.Cursor, start, end token.Pos) (free []*ast.BranchStmt) {
 nextBranch:
 	for curBr := range cur.Preorder((*ast.BranchStmt)(nil)) {
 		br := curBr.Node().(*ast.BranchStmt)

@@ -34,7 +34,6 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -168,7 +167,7 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 	// It's usually the same, but may differ in edge
 	// cases (e.g. around FuncType.Func).
 	inspect := inspector.New([]*ast.File{file})
-	if cur, ok := cursor.Root(inspect).FindByPos(startPos, endPos); ok {
+	if cur, ok := inspect.Root().FindByPos(startPos, endPos); ok {
 		fmt.Fprintf(out, "Cursor.FindPos().Enclosing() = %v\n",
 			slices.Collect(cur.Enclosing()))
 	} else {

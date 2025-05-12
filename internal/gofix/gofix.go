@@ -17,11 +17,10 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/astutil/cursor"
-	"golang.org/x/tools/internal/astutil/edge"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/gofix/findgofix"
 	"golang.org/x/tools/internal/refactor/inline"
@@ -47,7 +46,7 @@ var Analyzer = &analysis.Analyzer{
 // analyzer holds the state for this analysis.
 type analyzer struct {
 	pass *analysis.Pass
-	root cursor.Cursor
+	root inspector.Cursor
 	// memoization of repeated calls for same file.
 	fileContent map[string][]byte
 	// memoization of fact imports (nil => no fact)
@@ -59,7 +58,7 @@ type analyzer struct {
 func run(pass *analysis.Pass) (any, error) {
 	a := &analyzer{
 		pass:             pass,
-		root:             cursor.Root(pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)),
+		root:             pass.ResultOf[inspect.Analyzer].(*inspector.Inspector).Root(),
 		fileContent:      make(map[string][]byte),
 		inlinableFuncs:   make(map[*types.Func]*inline.Callee),
 		inlinableConsts:  make(map[*types.Const]*goFixInlineConstFact),
@@ -144,7 +143,7 @@ func (a *analyzer) inline() {
 }
 
 // If call is a call to an inlinable func, suggest inlining its use at cur.
-func (a *analyzer) inlineCall(call *ast.CallExpr, cur cursor.Cursor) {
+func (a *analyzer) inlineCall(call *ast.CallExpr, cur inspector.Cursor) {
 	if fn := typeutil.StaticCallee(a.pass.TypesInfo, call); fn != nil {
 		// Inlinable?
 		callee, ok := a.inlinableFuncs[fn]
@@ -214,7 +213,7 @@ func (a *analyzer) inlineCall(call *ast.CallExpr, cur cursor.Cursor) {
 }
 
 // If tn is the TypeName of an inlinable alias, suggest inlining its use at cur.
-func (a *analyzer) inlineAlias(tn *types.TypeName, curId cursor.Cursor) {
+func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 	inalias, ok := a.inlinableAliases[tn]
 	if !ok {
 		var fact goFixInlineAliasFact
@@ -396,7 +395,7 @@ func typenames(t types.Type) []*types.TypeName {
 }
 
 // If con is an inlinable constant, suggest inlining its use at cur.
-func (a *analyzer) inlineConst(con *types.Const, cur cursor.Cursor) {
+func (a *analyzer) inlineConst(con *types.Const, cur inspector.Cursor) {
 	incon, ok := a.inlinableConsts[con]
 	if !ok {
 		var fact goFixInlineConstFact
@@ -489,7 +488,7 @@ func (a *analyzer) readFile(node ast.Node) ([]byte, error) {
 }
 
 // currentFile returns the unique ast.File for a cursor.
-func currentFile(c cursor.Cursor) *ast.File {
+func currentFile(c inspector.Cursor) *ast.File {
 	for cf := range c.Enclosing((*ast.File)(nil)) {
 		return cf.Node().(*ast.File)
 	}

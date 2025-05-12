@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -43,7 +42,7 @@ func run(pass *analysis.Pass) (any, error) {
 		if !ok {
 			continue // can't get position info
 		}
-		curErr, ok := cursor.Root(inspect).FindByPos(start, end)
+		curErr, ok := inspect.Root().FindByPos(start, end)
 		if !ok {
 			continue // can't find errant node
 		}

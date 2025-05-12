@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -50,7 +49,7 @@ outer:
 		if !ok {
 			continue // no position information
 		}
-		curErr, ok := cursor.Root(inspect).FindByPos(start, end)
+		curErr, ok := inspect.Root().FindByPos(start, end)
 		if !ok {
 			continue // can't find node
 		}
@@ -227,6 +226,6 @@ func fixesError(err types.Error) bool {
 
 // enclosingFunc returns the cursor for the innermost Func{Decl,Lit}
 // that encloses c, if any.
-func enclosingFunc(c cursor.Cursor) (cursor.Cursor, bool) {
+func enclosingFunc(c inspector.Cursor) (inspector.Cursor, bool) {
 	return moreiters.First(c.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)))
 }

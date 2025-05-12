@@ -28,7 +28,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 )
@@ -125,7 +124,7 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 
 	// Provide a cursor for fast and convenient navigation.
 	inspect := inspector.New([]*ast.File{file})
-	curFile, _ := cursor.Root(inspect).FirstChild()
+	curFile, _ := inspect.Root().FirstChild()
 	_ = curFile.Node().(*ast.File)
 
 	return &File{

@@ -272,7 +272,7 @@ func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snaps
 		}
 
 		// Find all packages that include this file and diagnose them in parallel.
-		meta, err := golang.NarrowestMetadataForFile(ctx, snapshot, uri)
+		meta, err := snapshot.NarrowestMetadataForFile(ctx, uri)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()

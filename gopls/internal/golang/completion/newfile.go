@@ -21,7 +21,7 @@ func NewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (*pr
 	if bs, err := fh.Content(); err != nil || len(bs) != 0 {
 		return nil, err
 	}
-	meta, err := golang.NarrowestMetadataForFile(ctx, snapshot, fh.URI())
+	meta, err := snapshot.NarrowestMetadataForFile(ctx, fh.URI())
 	if err != nil {
 		return nil, err
 	}

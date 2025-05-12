@@ -16,7 +16,7 @@ import (
 
 // DiagnoseFile returns pull-based diagnostics for the given file.
 func DiagnoseFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) ([]*cache.Diagnostic, error) {
-	mp, err := NarrowestMetadataForFile(ctx, snapshot, uri)
+	mp, err := snapshot.NarrowestMetadataForFile(ctx, uri)
 	if err != nil {
 		return nil, err
 	}

@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -43,12 +42,12 @@ func bloop(pass *analysis.Pass) {
 	// edits computes the text edits for a matched for/range loop
 	// at the specified cursor. b is the *testing.B value, and
 	// (start, end) is the portion using b.N to delete.
-	edits := func(curLoop cursor.Cursor, b ast.Expr, start, end token.Pos) (edits []analysis.TextEdit) {
+	edits := func(curLoop inspector.Cursor, b ast.Expr, start, end token.Pos) (edits []analysis.TextEdit) {
 		curFn, _ := enclosingFunc(curLoop)
 		// Within the same function, delete all calls to
 		// b.{Start,Stop,Timer} that precede the loop.
 		filter := []ast.Node{(*ast.ExprStmt)(nil), (*ast.FuncLit)(nil)}
-		curFn.Inspect(filter, func(cur cursor.Cursor) (descend bool) {
+		curFn.Inspect(filter, func(cur inspector.Cursor) (descend bool) {
 			node := cur.Node()
 			if is[*ast.FuncLit](node) {
 				return false // don't descend into FuncLits (e.g. sub-benchmarks)
@@ -156,7 +155,7 @@ func bloop(pass *analysis.Pass) {
 }
 
 // uses reports whether the subtree cur contains a use of obj.
-func uses(index *typeindex.Index, cur cursor.Cursor, obj types.Object) bool {
+func uses(index *typeindex.Index, cur inspector.Cursor, obj types.Object) bool {
 	for use := range index.Uses(obj) {
 		if cur.Contains(use) {
 			return true
@@ -167,6 +166,6 @@ func uses(index *typeindex.Index, cur cursor.Cursor, obj types.Object) bool {
 
 // enclosingFunc returns the cursor for the innermost Func{Decl,Lit}
 // that encloses c, if any.
-func enclosingFunc(c cursor.Cursor) (cursor.Cursor, bool) {
+func enclosingFunc(c inspector.Cursor) (inspector.Cursor, bool) {
 	return moreiters.First(c.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)))
 }

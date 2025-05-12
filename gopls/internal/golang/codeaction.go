@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/analysis/fillswitch"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -27,7 +28,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -831,7 +831,7 @@ func selectionContainsStructField(node *ast.StructType, start, end token.Pos, ne
 // fields within start and end positions. If removeTags is true, it means the
 // current command is for remove tags rather than add tags, so we only return
 // true if the struct field found contains a struct tag to remove.
-func selectionContainsStruct(cursor cursor.Cursor, start, end token.Pos, removeTags bool) bool {
+func selectionContainsStruct(cursor inspector.Cursor, start, end token.Pos, removeTags bool) bool {
 	cur, ok := cursor.FindByPos(start, end)
 	if !ok {
 		return false
@@ -1084,7 +1084,7 @@ func goAssembly(ctx context.Context, req *codeActionsRequest) error {
 func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): errors from code action providers should probably be
 	// logged, even if they aren't visible to the client; see https://go.dev/issue/71275.
-	if meta, err := NarrowestMetadataForFile(ctx, req.snapshot, req.fh.URI()); err == nil {
+	if meta, err := req.snapshot.NarrowestMetadataForFile(ctx, req.fh.URI()); err == nil {
 		if len(meta.CompiledGoFiles) == 0 {
 			return fmt.Errorf("package %q does not compile file %q", meta.ID, req.fh.URI())
 		}

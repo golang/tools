@@ -12,11 +12,10 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/astutil/cursor"
-	"golang.org/x/tools/internal/astutil/edge"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -126,7 +125,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 	// Check each non-address-taken function's parameters are all used.
 funcloop:
-	for c := range cursor.Root(inspect).Preorder((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
+	for c := range inspect.Root().Preorder((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
 		var (
 			fn    types.Object // function symbol (*Func, possibly *Var for a FuncLit)
 			ftype *ast.FuncType

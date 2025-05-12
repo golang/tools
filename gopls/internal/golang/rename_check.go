@@ -43,10 +43,10 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/astutil/cursor"
-	"golang.org/x/tools/internal/astutil/edge"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
@@ -346,8 +346,8 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 		(*ast.CompositeLit)(nil),
 	}
 	ok := true
-	var visit func(cur cursor.Cursor) (descend bool)
-	visit = func(cur cursor.Cursor) (descend bool) {
+	var visit func(cur inspector.Cursor) (descend bool)
+	visit = func(cur inspector.Cursor) (descend bool) {
 		if !ok {
 			return false // bail out
 		}
@@ -401,7 +401,7 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 
 // enclosingBlock returns the innermost block logically enclosing the
 // AST node (an ast.Ident), specified as a Cursor.
-func enclosingBlock(info *types.Info, curId cursor.Cursor) *types.Scope {
+func enclosingBlock(info *types.Info, curId inspector.Cursor) *types.Scope {
 	for cur := range curId.Enclosing() {
 		n := cur.Node()
 		// For some reason, go/types always associates a

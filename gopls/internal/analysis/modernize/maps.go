@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -51,7 +50,7 @@ func mapsloop(pass *analysis.Pass) {
 
 	// check is called for each statement of this form:
 	//   for k, v := range x { m[k] = v }
-	check := func(file *ast.File, curRange cursor.Cursor, assign *ast.AssignStmt, m, x ast.Expr) {
+	check := func(file *ast.File, curRange inspector.Cursor, assign *ast.AssignStmt, m, x ast.Expr) {
 
 		// Is x a map or iter.Seq2?
 		tx := types.Unalias(info.TypeOf(x))

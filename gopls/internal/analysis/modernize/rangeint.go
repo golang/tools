@@ -12,12 +12,11 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
-	"golang.org/x/tools/internal/astutil/cursor"
-	"golang.org/x/tools/internal/astutil/edge"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -246,7 +245,7 @@ func rangeint(pass *analysis.Pass) {
 //
 // This function is valid only for scalars (x = ...),
 // not for aggregates (x.a[i] = ...)
-func isScalarLvalue(info *types.Info, curId cursor.Cursor) bool {
+func isScalarLvalue(info *types.Info, curId inspector.Cursor) bool {
 	// Unfortunately we can't simply use info.Types[e].Assignable()
 	// as it is always true for a variable even when that variable is
 	// used only as an r-value. So we must inspect enclosing syntax.

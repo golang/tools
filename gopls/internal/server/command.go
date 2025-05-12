@@ -736,7 +736,7 @@ func (c *commandHandler) RunTests(ctx context.Context, args command.RunTestsArgs
 
 func (c *commandHandler) runTests(ctx context.Context, snapshot *cache.Snapshot, work *progress.WorkDone, uri protocol.DocumentURI, tests, benchmarks []string) error {
 	// TODO: fix the error reporting when this runs async.
-	meta, err := golang.NarrowestMetadataForFile(ctx, snapshot, uri)
+	meta, err := snapshot.NarrowestMetadataForFile(ctx, uri)
 	if err != nil {
 		return err
 	}
@@ -1021,7 +1021,7 @@ func (c *commandHandler) GCDetails(ctx context.Context, uri protocol.DocumentURI
 	}, func(ctx context.Context, deps commandDeps) error {
 		return c.modifyState(ctx, FromToggleCompilerOptDetails, func() (*cache.Snapshot, func(), error) {
 			// Don't blindly use "dir := deps.fh.URI().Dir()"; validate.
-			meta, err := golang.NarrowestMetadataForFile(ctx, deps.snapshot, deps.fh.URI())
+			meta, err := deps.snapshot.NarrowestMetadataForFile(ctx, deps.fh.URI())
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1082,7 +1082,7 @@ func (c *commandHandler) ListImports(ctx context.Context, args command.URIArg) (
 				})
 			}
 		}
-		meta, err := golang.NarrowestMetadataForFile(ctx, deps.snapshot, args.URI)
+		meta, err := deps.snapshot.NarrowestMetadataForFile(ctx, args.URI)
 		if err != nil {
 			return err // e.g. cancelled
 		}

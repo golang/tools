@@ -18,6 +18,8 @@ import (
 	"sync"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -28,8 +30,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/astutil/cursor"
-	"golang.org/x/tools/internal/astutil/edge"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -1103,7 +1103,7 @@ func funcDefs(pkg *cache.Package, t types.Type) ([]protocol.Location, error) {
 
 // beneathFuncDef reports whether the specified FuncType cursor is a
 // child of Func{Decl,Lit}.
-func beneathFuncDef(cur cursor.Cursor) bool {
+func beneathFuncDef(cur inspector.Cursor) bool {
 	switch ek, _ := cur.ParentEdge(); ek {
 	case edge.FuncDecl_Type, edge.FuncLit_Type:
 		return true

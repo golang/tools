@@ -79,7 +79,7 @@ func Format(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]pr
 		// Can this, for example, result in inconsistent formatting across saves,
 		// due to pending calls to packages.Load?
 		var opts gofumptFormat.Options
-		meta, err := NarrowestMetadataForFile(ctx, snapshot, fh.URI())
+		meta, err := snapshot.NarrowestMetadataForFile(ctx, fh.URI())
 		if err == nil {
 			if mi := meta.Module; mi != nil {
 				if v := mi.GoVersion; v != "" {

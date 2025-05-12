@@ -23,7 +23,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/versions"
 )
@@ -136,9 +135,9 @@ func isIntLiteral(info *types.Info, e ast.Expr, n int64) bool {
 // TODO(adonovan): opt: eliminate this function, instead following the
 // approach of [fmtappendf], which uses typeindex and [fileUses].
 // See "Tip" at [fileUses] for motivation.
-func filesUsing(inspect *inspector.Inspector, info *types.Info, version string) iter.Seq[cursor.Cursor] {
-	return func(yield func(cursor.Cursor) bool) {
-		for curFile := range cursor.Root(inspect).Children() {
+func filesUsing(inspect *inspector.Inspector, info *types.Info, version string) iter.Seq[inspector.Cursor] {
+	return func(yield func(inspector.Cursor) bool) {
+		for curFile := range inspect.Root().Children() {
 			file := curFile.Node().(*ast.File)
 			if !versions.Before(info.FileVersions[file], version) && !yield(curFile) {
 				break
@@ -161,7 +160,7 @@ func fileUses(info *types.Info, file *ast.File, version string) bool {
 }
 
 // enclosingFile returns the syntax tree for the file enclosing c.
-func enclosingFile(c cursor.Cursor) *ast.File {
+func enclosingFile(c inspector.Cursor) *ast.File {
 	c, _ = moreiters.First(c.Enclosing((*ast.File)(nil)))
 	return c.Node().(*ast.File)
 }

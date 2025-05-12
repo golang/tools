@@ -94,7 +94,7 @@ func PackageSymbols(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 	// golang/vscode-go#3681: do our best if the file is not in a package.
 	// TODO(rfindley): revisit this in the future once there is more graceful
 	// handling in VS Code.
-	if mp, err := NarrowestMetadataForFile(ctx, snapshot, uri); err == nil {
+	if mp, err := snapshot.NarrowestMetadataForFile(ctx, uri); err == nil {
 		pkgFiles = mp.CompiledGoFiles
 	}
 

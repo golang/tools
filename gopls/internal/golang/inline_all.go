@@ -72,7 +72,7 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 	{
 		needPkgs := make(map[PackageID]struct{})
 		for _, ref := range refs {
-			md, err := NarrowestMetadataForFile(ctx, snapshot, ref.URI)
+			md, err := snapshot.NarrowestMetadataForFile(ctx, ref.URI)
 			if err != nil {
 				return nil, fmt.Errorf("finding ref metadata: %v", err)
 			}

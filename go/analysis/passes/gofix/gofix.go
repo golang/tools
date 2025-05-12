@@ -12,7 +12,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/astutil/cursor"
 	"golang.org/x/tools/internal/gofix/findgofix"
 )
 
@@ -28,7 +27,7 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	root := cursor.Root(pass.ResultOf[inspect.Analyzer].(*inspector.Inspector))
+	root := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector).Root()
 	findgofix.Find(pass, root, nil)
 	return nil, nil
 }

@@ -13,7 +13,7 @@ type Kind = edge.Kind
 
 //go:fix inline
 const (
-	Invalid Kind = edge.Invalid
+	Invalid edge.Kind = edge.Invalid
 
 	// Kinds are sorted alphabetically.
 	// Numbering is not stable.

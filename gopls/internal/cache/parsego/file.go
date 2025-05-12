@@ -11,10 +11,10 @@ import (
 	"go/token"
 	"sync"
 
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/astutil/cursor"
 )
 
 // A File contains the results of parsing a Go file.
@@ -33,7 +33,7 @@ type File struct {
 	// actual content of the file if we have fixed the AST.
 	Src []byte
 
-	Cursor cursor.Cursor // cursor of *ast.File, sans sibling files
+	Cursor inspector.Cursor // cursor of *ast.File, sans sibling files
 
 	// fixedSrc and fixedAST report on "fixing" that occurred during parsing of
 	// this file.

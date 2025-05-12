@@ -19,8 +19,8 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/ast/inspector"
 	internalastutil "golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/astutil/cursor"
 )
 
 // A Handler handles language entities with go:fix directives.
@@ -33,7 +33,7 @@ type Handler interface {
 // Find finds functions and constants annotated with an appropriate "//go:fix"
 // comment (the syntax proposed by #32816), and calls handler methods for each one.
 // h may be nil.
-func Find(pass *analysis.Pass, root cursor.Cursor, h Handler) {
+func Find(pass *analysis.Pass, root inspector.Cursor, h Handler) {
 	for cur := range root.Preorder((*ast.FuncDecl)(nil), (*ast.GenDecl)(nil)) {
 		switch decl := cur.Node().(type) {
 		case *ast.FuncDecl:

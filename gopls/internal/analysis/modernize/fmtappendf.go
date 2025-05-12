@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/ast/edge"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
-	"golang.org/x/tools/internal/astutil/edge"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 

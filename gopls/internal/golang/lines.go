@@ -18,15 +18,15 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/astutil/cursor"
 )
 
 // canSplitLines checks whether we can split lists of elements inside
 // an enclosing curly bracket/parens into separate lines.
-func canSplitLines(curFile cursor.Cursor, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
+func canSplitLines(curFile inspector.Cursor, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
 	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, curFile, nil, start, end)
 	if itemType == "" {
 		return "", false, nil
@@ -49,7 +49,7 @@ func canSplitLines(curFile cursor.Cursor, fset *token.FileSet, start, end token.
 
 // canJoinLines checks whether we can join lists of elements inside an
 // enclosing curly bracket/parens into a single line.
-func canJoinLines(curFile cursor.Cursor, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
+func canJoinLines(curFile inspector.Cursor, fset *token.FileSet, start, end token.Pos) (string, bool, error) {
 	itemType, items, comments, _, _, _ := findSplitJoinTarget(fset, curFile, nil, start, end)
 	if itemType == "" {
 		return "", false, nil
@@ -170,7 +170,7 @@ func processLines(fset *token.FileSet, items []ast.Node, comments []*ast.Comment
 }
 
 // findSplitJoinTarget returns the first curly bracket/parens that encloses the current cursor.
-func findSplitJoinTarget(fset *token.FileSet, curFile cursor.Cursor, src []byte, start, end token.Pos) (itemType string, items []ast.Node, comments []*ast.CommentGroup, indent string, open, close token.Pos) {
+func findSplitJoinTarget(fset *token.FileSet, curFile inspector.Cursor, src []byte, start, end token.Pos) (itemType string, items []ast.Node, comments []*ast.CommentGroup, indent string, open, close token.Pos) {
 	isCursorInside := func(nodePos, nodeEnd token.Pos) bool {
 		return nodePos < start && end < nodeEnd
 	}
