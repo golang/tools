@@ -241,6 +241,22 @@ type ListToolsResult struct {
 	Tools      []*Tool `json:"tools"`
 }
 
+// The severity of a log message.
+//
+// These map to syslog message severities, as specified in RFC-5424:
+// https://datatracker.ietf.org/doc/html/rfc5424#section-6.2.1
+type LoggingLevel string
+
+type LoggingMessageParams struct {
+	// The data to be logged, such as a string message or an object. Any JSON
+	// serializable type is allowed here.
+	Data any `json:"data"`
+	// The severity of this log message.
+	Level LoggingLevel `json:"level"`
+	// An optional name of the logger issuing this message.
+	Logger string `json:"logger,omitempty"`
+}
+
 // Hints to use for model selection.
 //
 // Keys not declared here are currently left unspecified by the spec and are up
@@ -326,8 +342,7 @@ type PromptArgument struct {
 type PromptListChangedParams struct {
 	// This parameter name is reserved by MCP to allow clients and servers to attach
 	// additional metadata to their notifications.
-	Meta struct {
-	} `json:"_meta,omitempty"`
+	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
 }
 
 // Describes a message returned as part of a prompt.
@@ -381,8 +396,7 @@ type Resource struct {
 type ResourceListChangedParams struct {
 	// This parameter name is reserved by MCP to allow clients and servers to attach
 	// additional metadata to their notifications.
-	Meta struct {
-	} `json:"_meta,omitempty"`
+	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
 }
 
 // The sender or recipient of messages and data in a conversation.
@@ -403,8 +417,7 @@ type Root struct {
 type RootsListChangedParams struct {
 	// This parameter name is reserved by MCP to allow clients and servers to attach
 	// additional metadata to their notifications.
-	Meta struct {
-	} `json:"_meta,omitempty"`
+	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
 }
 
 // Present if the client supports sampling from an LLM.
@@ -415,6 +428,13 @@ type SamplingCapabilities struct {
 type SamplingMessage struct {
 	Content *Content `json:"content"`
 	Role    Role     `json:"role"`
+}
+
+type SetLevelParams struct {
+	// The level of logging that the client wants to receive from the server. The
+	// server should send all logs at this level and higher (i.e., more severe) to
+	// the client as notifications/message.
+	Level LoggingLevel `json:"level"`
 }
 
 // Definition for a tool the client can call.
@@ -472,14 +492,17 @@ type ToolAnnotations struct {
 type ToolListChangedParams struct {
 	// This parameter name is reserved by MCP to allow clients and servers to attach
 	// additional metadata to their notifications.
-	Meta struct {
-	} `json:"_meta,omitempty"`
+	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
 }
 
 // Describes the name and version of an MCP implementation.
 type implementation struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+}
+
+// Present if the server supports sending log messages to the client.
+type loggingCapabilities struct {
 }
 
 // Present if the server offers any prompt templates.
@@ -507,8 +530,7 @@ type serverCapabilities struct {
 	Experimental map[string]struct {
 	} `json:"experimental,omitempty"`
 	// Present if the server supports sending log messages to the client.
-	Logging struct {
-	} `json:"logging,omitempty"`
+	Logging *loggingCapabilities `json:"logging,omitempty"`
 	// Present if the server offers any prompt templates.
 	Prompts *promptCapabilities `json:"prompts,omitempty"`
 	// Present if the server offers any resources to read.
@@ -524,28 +546,28 @@ type toolCapabilities struct {
 }
 
 const (
-	methodCreateMessage             = "sampling/createMessage"
-	notificationToolListChanged     = "notifications/tools/list_changed"
-	notificationResourceListChanged = "notifications/resources/list_changed"
-	methodListPrompts               = "prompts/list"
-	notificationPromptListChanged   = "notifications/prompts/list_changed"
-	notificationResourceUpdated     = "notifications/resources/updated"
-	notificationCancelled           = "notifications/cancelled"
-	methodSetLevel                  = "logging/setLevel"
-	methodInitialize                = "initialize"
-	methodListRoots                 = "roots/list"
-	notificationProgress            = "notifications/progress"
-	methodGetPrompt                 = "prompts/get"
-	methodListResourceTemplates     = "resources/templates/list"
-	methodPing                      = "ping"
-	methodComplete                  = "completion/complete"
-	methodListResources             = "resources/list"
-	notificationInitialized         = "notifications/initialized"
 	methodCallTool                  = "tools/call"
-	notificationLoggingMessage      = "notifications/message"
-	methodReadResource              = "resources/read"
+	notificationCancelled           = "notifications/cancelled"
+	methodComplete                  = "completion/complete"
+	methodCreateMessage             = "sampling/createMessage"
+	methodGetPrompt                 = "prompts/get"
+	methodInitialize                = "initialize"
+	notificationInitialized         = "notifications/initialized"
+	methodListPrompts               = "prompts/list"
+	methodListResourceTemplates     = "resources/templates/list"
+	methodListResources             = "resources/list"
+	methodListRoots                 = "roots/list"
 	methodListTools                 = "tools/list"
+	notificationLoggingMessage      = "notifications/message"
+	methodPing                      = "ping"
+	notificationProgress            = "notifications/progress"
+	notificationPromptListChanged   = "notifications/prompts/list_changed"
+	methodReadResource              = "resources/read"
+	notificationResourceListChanged = "notifications/resources/list_changed"
+	notificationResourceUpdated     = "notifications/resources/updated"
 	notificationRootsListChanged    = "notifications/roots/list_changed"
+	methodSetLevel                  = "logging/setLevel"
 	methodSubscribe                 = "resources/subscribe"
+	notificationToolListChanged     = "notifications/tools/list_changed"
 	methodUnsubscribe               = "resources/unsubscribe"
 )

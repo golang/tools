@@ -19,6 +19,7 @@ import (
 	"go/format"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"reflect"
@@ -110,7 +111,18 @@ var declarations = config{
 		Name:   "-",
 		Fields: config{"Params": {Name: "ListToolsParams"}},
 	},
-	"ListToolsResult":  {},
+	"ListToolsResult":     {},
+	"loggingCapabilities": {Substitute: "struct{}"},
+	"LoggingLevel":        {},
+	"LoggingMessageNotification": {
+		Name: "-",
+		Fields: config{
+			"Params": {
+				Name:   "LoggingMessageParams",
+				Fields: config{"Data": {Substitute: "any"}},
+			},
+		},
+	},
 	"ModelHint":        {},
 	"ModelPreferences": {},
 	"PingRequest": {
@@ -153,7 +165,12 @@ var declarations = config{
 			"Prompts":   {Name: "promptCapabilities"},
 			"Resources": {Name: "resourceCapabilities"},
 			"Tools":     {Name: "toolCapabilities"},
+			"Logging":   {Name: "loggingCapabilities"},
 		},
+	},
+	"SetLevelRequest": {
+		Name:   "-",
+		Fields: config{"Params": {Name: "SetLevelParams"}},
 	},
 	"Tool": {
 		Fields: config{"InputSchema": {Substitute: "*jsonschema.Schema"}},
@@ -220,7 +237,7 @@ import (
 	}
 	// Write out method names.
 	fmt.Fprintln(buf, `const (`)
-	for name, s := range schema.Definitions {
+	for _, name := range slices.Sorted(maps.Keys(schema.Definitions)) {
 		prefix := "method"
 		method, found := strings.CutSuffix(name, "Request")
 		if !found {
@@ -228,7 +245,7 @@ import (
 			method, found = strings.CutSuffix(name, "Notification")
 		}
 		if found {
-			if ms, ok := s.Properties["method"]; ok {
+			if ms, ok := schema.Definitions[name].Properties["method"]; ok {
 				if c := ms.Const; c != nil {
 					fmt.Fprintf(buf, "%s%s = %q\n", prefix, method, *c)
 				}
@@ -395,9 +412,9 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 					fieldTypeSchema = rs
 				}
 				needPointer := isStruct(fieldTypeSchema)
-				// Special case: there are no sampling capabilities defined, but
-				// we want it to be a struct for future expansion.
-				if !needPointer && name == "sampling" {
+				// Special case: there are no sampling or logging capabilities defined,
+				// but we want them to be structs for future expansion.
+				if !needPointer && (name == "sampling" || name == "logging") {
 					needPointer = true
 				}
 				if config != nil && config.Fields[export] != nil {

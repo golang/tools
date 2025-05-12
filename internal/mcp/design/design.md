@@ -823,6 +823,27 @@ Clients call the spec method `Complete` to request completions. Servers automati
 
 ### Logging
 
+MCP specifies a notification for servers to log to clients. Server sessions implement this with the `LoggingMessage` method. It honors the minimum log level established by the client session's `SetLevel` call.
+
+As a convenience, we also provide a `slog.Handler` that allows server authors to write logs with the `log/slog` package::
+```go
+// A LoggingHandler is a [slog.Handler] for MCP.
+type LoggingHandler struct {...}
+
+// LoggingHandlerOptions are options for a LoggingHandler.
+type LoggingHandlerOptions struct {
+	// The value for the "logger" field of logging notifications.
+	LoggerName string
+	// Limits the rate at which log messages are sent.
+	// If zero, there is no rate limiting.
+	MinInterval time.Duration
+}
+
+// NewLoggingHandler creates a [LoggingHandler] that logs to the given [ServerSession] using a
+// [slog.JSONHandler].
+func NewLoggingHandler(ss *ServerSession, opts *LoggingHandlerOptions) *LoggingHandler
+```
+
 Server-to-client logging is configured with `ServerOptions`:
 
 ```go
@@ -832,24 +853,24 @@ type ServerOptions {
   LoggerName string
   // Log notifications to a single ClientSession will not be
   // sent more frequently than this duration.
-  LogInterval time.Duration
+  LoggingInterval time.Duration
 }
 ```
 
-Server sessions have a field `Logger` holding a `slog.Logger` that writes to the client session. A call to a log method like `Info` is translated to a `LoggingMessageNotification` as follows:
+A call to a log method like `Info` is translated to a `LoggingMessageNotification` as follows:
 
 - The attributes and the message populate the "data" property with the output of a `slog.JSONHandler`: The result is always a JSON object, with the key "msg" for the message.
 
 - If the `LoggerName` server option is set, it populates the "logger" property.
 
-- The standard slog levels `Info`, `Debug`, `Warn` and `Error` map to the corresponding levels in the MCP spec. The other spec levels map to integers between the slog levels. For example, "notice" is level 2 because it is between "warning" (slog value 4) and "info" (slog value 0). The `mcp` package defines consts for these levels. To log at the "notice" level, a handler would call `session.Logger.Log(ctx, mcp.LevelNotice, "message")`.
+- The standard slog levels `Info`, `Debug`, `Warn` and `Error` map to the corresponding levels in the MCP spec. The other spec levels map to integers between the slog levels. For example, "notice" is level 2 because it is between "warning" (slog value 4) and "info" (slog value 0). The `mcp` package defines consts for these levels. To log at the "notice" level, a handler would call `Log(ctx, mcp.LevelNotice, "message")`.
 
 A client that wishes to receive log messages must provide a handler:
 
 ```go
 type ClientOptions struct {
   ...
-  LogMessageHandler func(context.Context, *ClientSession, *LoggingMessageParams)
+  LoggingMessageHandler func(context.Context, *ClientSession, *LoggingMessageParams)
 }
 ```
 

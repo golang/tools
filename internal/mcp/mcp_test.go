@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -104,6 +105,7 @@ func TestEndToEnd(t *testing.T) {
 		clientWG.Done()
 	}()
 
+	loggingMessages := make(chan *LoggingMessageParams, 100) // big enough for all logging
 	opts := &ClientOptions{
 		CreateMessageHandler: func(context.Context, *ClientSession, *CreateMessageParams) (*CreateMessageResult, error) {
 			return &CreateMessageResult{Model: "aModel"}, nil
@@ -111,6 +113,9 @@ func TestEndToEnd(t *testing.T) {
 		ToolListChangedHandler:     func(context.Context, *ClientSession, *ToolListChangedParams) { notificationChans["tools"] <- 0 },
 		PromptListChangedHandler:   func(context.Context, *ClientSession, *PromptListChangedParams) { notificationChans["prompts"] <- 0 },
 		ResourceListChangedHandler: func(context.Context, *ClientSession, *ResourceListChangedParams) { notificationChans["resources"] <- 0 },
+		LoggingMessageHandler: func(_ context.Context, _ *ClientSession, lm *LoggingMessageParams) {
+			loggingMessages <- lm
+		},
 	}
 	c := NewClient("testClient", "v1.0.0", opts)
 	rootAbs, err := filepath.Abs(filepath.FromSlash("testdata/files"))
@@ -318,6 +323,85 @@ func TestEndToEnd(t *testing.T) {
 		if g, w := res.Model, "aModel"; g != w {
 			t.Errorf("got %q, want %q", g, w)
 		}
+	})
+	t.Run("logging", func(t *testing.T) {
+		want := []*LoggingMessageParams{
+			{
+				Logger: "test",
+				Level:  "warning",
+				Data: map[string]any{
+					"msg":     "first",
+					"name":    "Pat",
+					"logtest": true,
+				},
+			},
+			{
+				Logger: "test",
+				Level:  "alert",
+				Data: map[string]any{
+					"msg":     "second",
+					"count":   2.0,
+					"logtest": true,
+				},
+			},
+		}
+
+		check := func(t *testing.T) {
+			t.Helper()
+			var got []*LoggingMessageParams
+			// Read messages from this test until we've seen all we expect.
+			for len(got) < len(want) {
+				select {
+				case p := <-loggingMessages:
+					// Ignore logging from other tests.
+					if m, ok := p.Data.(map[string]any); ok && m["logtest"] != nil {
+						delete(m, "time") // remove time because it changes
+						got = append(got, p)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("timed out waiting for log messages")
+				}
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("mismatch (-want, +got):\n%s", diff)
+			}
+		}
+
+		t.Run("direct", func(t *testing.T) { // Use the LoggingMessage method directly.
+
+			mustLog := func(level LoggingLevel, data any) {
+				t.Helper()
+				if err := ss.LoggingMessage(ctx, &LoggingMessageParams{
+					Logger: "test",
+					Level:  level,
+					Data:   data,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			// Nothing should be logged until the client sets a level.
+			mustLog("info", "before")
+			if err := cs.SetLevel(ctx, &SetLevelParams{Level: "warning"}); err != nil {
+				t.Fatal(err)
+			}
+			mustLog("warning", want[0].Data)
+			mustLog("debug", "nope")    // below the level
+			mustLog("info", "negative") // below the level
+			mustLog("alert", want[1].Data)
+			check(t)
+		})
+
+		t.Run("handler", func(t *testing.T) { // Use the slog handler.
+			// We can't check the "before SetLevel" behavior because it's already been set.
+			// Not a big deal: that check is in LoggingMessage anyway.
+			logger := slog.New(NewLoggingHandler(ss, &LoggingHandlerOptions{LoggerName: "test"}))
+			logger.Warn("first", "name", "Pat", "logtest", true)
+			logger.Debug("nope")    // below the level
+			logger.Info("negative") // below the level
+			logger.Log(ctx, LevelAlert, "second", "count", 2, "logtest", true)
+			check(t)
+		})
 	})
 
 	// Disconnect.

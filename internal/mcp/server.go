@@ -299,11 +299,11 @@ func (s *Server) Run(ctx context.Context, t Transport) error {
 // bind implements the binder[*ServerSession] interface, so that Servers can
 // be connected using [connect].
 func (s *Server) bind(conn *jsonrpc2.Connection) *ServerSession {
-	cc := &ServerSession{conn: conn, server: s}
+	ss := &ServerSession{conn: conn, server: s}
 	s.mu.Lock()
-	s.sessions = append(s.sessions, cc)
+	s.sessions = append(s.sessions, ss)
 	s.mu.Unlock()
-	return cc
+	return ss
 }
 
 // disconnect implements the binder[*ServerSession] interface, so that
@@ -341,17 +341,17 @@ func (s *Server) callRootsListChangedHandler(ctx context.Context, ss *ServerSess
 // Call [ServerSession.Close] to close the connection, or await client
 // termination with [ServerSession.Wait].
 type ServerSession struct {
-	server *Server
-	conn   *jsonrpc2.Connection
-
+	server           *Server
+	conn             *jsonrpc2.Connection
 	mu               sync.Mutex
+	logLevel         LoggingLevel
 	initializeParams *InitializeParams
 	initialized      bool
 }
 
 // Ping pings the client.
 func (ss *ServerSession) Ping(ctx context.Context, _ *PingParams) error {
-	return call(ctx, ss.conn, "ping", (*PingParams)(nil), nil)
+	return call(ctx, ss.conn, methodPing, (*PingParams)(nil), nil)
 }
 
 // ListRoots lists the client roots.
@@ -362,6 +362,25 @@ func (ss *ServerSession) ListRoots(ctx context.Context, params *ListRootsParams)
 // CreateMessage sends a sampling request to the client.
 func (ss *ServerSession) CreateMessage(ctx context.Context, params *CreateMessageParams) (*CreateMessageResult, error) {
 	return standardCall[CreateMessageResult](ctx, ss.conn, methodCreateMessage, params)
+}
+
+// LoggingMessage sends a logging message to the client.
+// The message is not sent if the client has not called SetLevel, or if its level
+// is below that of the last SetLevel.
+func (ss *ServerSession) LoggingMessage(ctx context.Context, params *LoggingMessageParams) error {
+	ss.mu.Lock()
+	logLevel := ss.logLevel
+	ss.mu.Unlock()
+	if logLevel == "" {
+		// The spec is unclear, but seems to imply that no log messages are sent until the client
+		// sets the level.
+		// TODO(jba): read other SDKs, possibly file an issue.
+		return nil
+	}
+	if compareLevels(params.Level, logLevel) < 0 {
+		return nil
+	}
+	return ss.conn.Notify(ctx, notificationLoggingMessage, params)
 }
 
 // AddMiddleware wraps the server's current method handler using the provided
@@ -386,6 +405,7 @@ var serverMethodInfos = map[string]methodInfo[ServerSession]{
 	methodCallTool:               newMethodInfo(serverMethod((*Server).callTool)),
 	methodListResources:          newMethodInfo(serverMethod((*Server).listResources)),
 	methodReadResource:           newMethodInfo(serverMethod((*Server).readResource)),
+	methodSetLevel:               newMethodInfo(sessionMethod((*ServerSession).setLevel)),
 	notificationInitialized:      newMethodInfo(serverMethod((*Server).callInitializedHandler)),
 	notificationRootsListChanged: newMethodInfo(serverMethod((*Server).callRootsListChangedHandler)),
 }
@@ -457,6 +477,7 @@ func (ss *ServerSession) initialize(ctx context.Context, params *InitializeParam
 			Resources: &resourceCapabilities{
 				ListChanged: true,
 			},
+			Logging: &loggingCapabilities{},
 		},
 		Instructions: ss.server.opts.Instructions,
 		ServerInfo: &implementation{
@@ -467,6 +488,13 @@ func (ss *ServerSession) initialize(ctx context.Context, params *InitializeParam
 }
 
 func (ss *ServerSession) ping(context.Context, *PingParams) (struct{}, error) {
+	return struct{}{}, nil
+}
+
+func (ss *ServerSession) setLevel(_ context.Context, params *SetLevelParams) (struct{}, error) {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.logLevel = params.Level
 	return struct{}{}, nil
 }
 

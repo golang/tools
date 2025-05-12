@@ -53,6 +53,7 @@ type ClientOptions struct {
 	ToolListChangedHandler     func(context.Context, *ClientSession, *ToolListChangedParams)
 	PromptListChangedHandler   func(context.Context, *ClientSession, *PromptListChangedParams)
 	ResourceListChangedHandler func(context.Context, *ClientSession, *ResourceListChangedParams)
+	LoggingMessageHandler      func(context.Context, *ClientSession, *LoggingMessageParams)
 }
 
 // bind implements the binder[*ClientSession] interface, so that Clients can
@@ -208,6 +209,7 @@ var clientMethodInfos = map[string]methodInfo[ClientSession]{
 	notificationToolListChanged:     newMethodInfo(clientMethod((*Client).callToolChangedHandler)),
 	notificationPromptListChanged:   newMethodInfo(clientMethod((*Client).callPromptChangedHandler)),
 	notificationResourceListChanged: newMethodInfo(clientMethod((*Client).callResourceChangedHandler)),
+	notificationLoggingMessage:      newMethodInfo(clientMethod((*Client).callLoggingHandler)),
 }
 
 var _ session[ClientSession] = (*ClientSession)(nil)
@@ -273,6 +275,10 @@ func (c *ClientSession) CallTool(ctx context.Context, name string, args map[stri
 	return standardCall[CallToolResult](ctx, c.conn, methodCallTool, params)
 }
 
+func (c *ClientSession) SetLevel(ctx context.Context, params *SetLevelParams) error {
+	return call(ctx, c.conn, methodSetLevel, params, nil)
+}
+
 // NOTE: the following struct should consist of all fields of callToolParams except name and arguments.
 
 // CallToolOptions contains options to [ClientSession.CallTool].
@@ -300,6 +306,13 @@ func (c *Client) callPromptChangedHandler(ctx context.Context, s *ClientSession,
 
 func (c *Client) callResourceChangedHandler(ctx context.Context, s *ClientSession, params *ResourceListChangedParams) (any, error) {
 	return callNotificationHandler(ctx, c.opts.ResourceListChangedHandler, s, params)
+}
+
+func (c *Client) callLoggingHandler(ctx context.Context, cs *ClientSession, params *LoggingMessageParams) (any, error) {
+	if h := c.opts.LoggingMessageHandler; h != nil {
+		h(ctx, cs, params)
+	}
+	return nil, nil
 }
 
 func standardCall[TRes, TParams any](ctx context.Context, conn *jsonrpc2.Connection, method string, params TParams) (*TRes, error) {
