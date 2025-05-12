@@ -891,20 +891,46 @@ func (*Server) RemoveResourceTemplates(names ...string)
 Resource templates don't have unique identifiers, so removing a name will remove all
 resource templates with that name.
 
-Clients call `ListResources` to list the available resources, `ReadResource` to read
-one of them, and `ListResourceTemplates` to list the templates:
-
-```go
-func (*ClientSession) ListResources(context.Context, *ListResourcesParams) (*ListResourcesResult, error)
-func (*ClientSession) ListResourceTemplates(context.Context, *ListResourceTemplatesParams) (*ListResourceTemplatesResult, error)
-func (*ClientSession) ReadResource(context.Context, *ReadResourceParams) (*ReadResourceResult, error)
-```
+Servers support all of the resource-related spec methods:
+- `ListResources` and `ListResourceTemplates` for listings.
+- `ReadResource` to get the contents of a resource.
+- `Subscribe` and `Unsubscribe` to manage subscriptions on resources.
 
 `ReadResource` checks the incoming URI against the server's list of
 resources and resource templates to make sure it matches one of them,
 then returns the result of calling the associated reader function.
 
-<!-- TODO: subscriptions -->
+#### Subscriptions
+
+ClientSessions can manage change notifications on particular resources:
+```go
+func (*ClientSession) Subscribe(context.Context, *SubscribeParams) error
+func (*ClientSession) Unsubscribe(context.Context, *UnsubscribeParams) error
+```
+
+The server does not implement resource subscriptions. It passes along
+subscription requests to the user, and supplies a method to notify clients of
+changes. It tracks which sessions have subscribed to which resources so the
+user doesn't have to.
+
+If a server author wants to support resource subscriptions, they must provide handlers
+to be called when clients subscribe and unsubscribe. It is an error to provide only
+one of these handlers.
+```go
+type ServerOptions struct {
+  ...
+  // Function called when a client session subscribes to a resource.
+  SubscribeHandler func(context.Context, *SubscribeParams) error
+  // Function called when a client session unsubscribes from a resource.
+  UnsubscribeHandler func(context.Context, *UnsubscribeParams) error
+}
+```
+
+User code should call `ResourceUpdated` when a subscribed resource changes.
+```go
+func (*Server) ResourceUpdated(context.Context, *ResourceUpdatedNotification) error
+```
+The server routes these notifications to the server sessions that subscribed to the resource.
 
 ### ListChanged notifications
 
