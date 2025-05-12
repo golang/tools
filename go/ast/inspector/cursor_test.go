@@ -16,8 +16,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/astutil/edge"
 )
 
 func TestCursor_Preorder(t *testing.T) {

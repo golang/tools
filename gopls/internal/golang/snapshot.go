@@ -14,11 +14,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
-//go:fix inline
-func NarrowestMetadataForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*metadata.Package, error) {
-	return snapshot.NarrowestMetadataForFile(ctx, uri)
-}
-
 // NarrowestPackageForFile is a convenience function that selects the narrowest
 // non-ITV package to which this file belongs, type-checks it in the requested
 // mode (full or workspace), and returns it, along with the parse tree of that

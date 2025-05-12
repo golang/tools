@@ -46,9 +46,8 @@ package inspector
 
 import (
 	"go/ast"
-	_ "unsafe"
 
-	"golang.org/x/tools/internal/astutil/edge"
+	"golang.org/x/tools/go/ast/edge"
 )
 
 // An Inspector provides methods for inspecting

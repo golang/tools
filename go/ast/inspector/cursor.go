@@ -4,9 +4,6 @@
 
 package inspector
 
-// TODO(adonovan):
-// - apply-all //go:fix inline
-
 import (
 	"fmt"
 	"go/ast"
