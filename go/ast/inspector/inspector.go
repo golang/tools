@@ -13,10 +13,19 @@
 // This representation is sometimes called a "balanced parenthesis tree."
 //
 // Experiments suggest the inspector's traversals are about 2.5x faster
-// than ast.Inspect, but it may take around 5 traversals for this
+// than [ast.Inspect], but it may take around 5 traversals for this
 // benefit to amortize the inspector's construction cost.
 // If efficiency is the primary concern, do not use Inspector for
 // one-off traversals.
+//
+// The [Cursor] type provides a more flexible API for efficient
+// navigation of syntax trees in all four "cardinal directions". For
+// example, traversals may be nested, so you can find each node of
+// type A and then search within it for nodes of type B. Or you can
+// traverse from a node to its immediate neighbors: its parent, its
+// previous and next sibling, or its first and last child. We
+// recommend using methods of Cursor in preference to Inspector where
+// possible.
 package inspector
 
 // There are four orthogonal features in a traversal:
@@ -82,7 +91,7 @@ type event struct {
 // depth-first order. It calls f(n) for each node n before it visits
 // n's children.
 //
-// The complete traversal sequence is determined by ast.Inspect.
+// The complete traversal sequence is determined by [ast.Inspect].
 // The types argument, if non-empty, enables type-based filtering of
 // events. The function f is called only for nodes whose type
 // matches an element of the types slice.
@@ -130,7 +139,7 @@ func (in *Inspector) Preorder(types []ast.Node, f func(ast.Node)) {
 // of the non-nil children of the node, followed by a call of
 // f(n, false).
 //
-// The complete traversal sequence is determined by ast.Inspect.
+// The complete traversal sequence is determined by [ast.Inspect].
 // The types argument, if non-empty, enables type-based filtering of
 // events. The function f if is called only for nodes whose type
 // matches an element of the types slice.
@@ -249,7 +258,7 @@ type visitor struct {
 type item struct {
 	index            int32  // index of current node's push event
 	parentIndex      int32  // index of parent node's push event
-	typAccum         uint64 // accumulated type bits of current node's descendents
+	typAccum         uint64 // accumulated type bits of current node's descendants
 	edgeKindAndIndex int32  // edge.Kind and index, bit packed
 }
 

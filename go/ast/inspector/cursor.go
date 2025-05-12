@@ -5,7 +5,6 @@
 package inspector
 
 // TODO(adonovan):
-// - review package documentation
 // - apply-all //go:fix inline
 
 import (
@@ -22,7 +21,20 @@ import (
 //
 // Two Cursors compare equal if they represent the same node.
 //
-// Call [Inspector.Root] to obtain a valid cursor.
+// Call [Inspector.Root] to obtain a valid cursor for the virtual root
+// node of the traversal.
+//
+// Use the following methods to navigate efficiently around the tree:
+//   - for ancestors, use [Cursor.Parent] and [Cursor.Enclosing];
+//   - for children, use [Cursor.Child], [Cursor.Children],
+//     [Cursor.FirstChild], and [Cursor.LastChild];
+//   - for siblings, use [Cursor.PrevSibling] and [Cursor.NextSibling];
+//   - for descendants, use [Cursor.FindByPos], [Cursor.FindNode],
+//     [Cursor.Inspect], and [Cursor.Preorder].
+//
+// Use the [Cursor.ChildAt] and [Cursor.ParentEdge] methods for
+// information about the edges in a tree: which field (and slice
+// element) of the parent node holds the child.
 type Cursor struct {
 	in    *Inspector
 	index int32 // index of push node; -1 for virtual root node
@@ -369,11 +381,11 @@ func (c Cursor) LastChild() (Cursor, bool) {
 // of expressions and statements. Other nodes that have "uncontained"
 // list fields include:
 //
-// - [ast.ValueSpec] (Names, Values)
-// - [ast.CompositeLit] (Type, Elts)
-// - [ast.IndexListExpr] (X, Indices)
-// - [ast.CallExpr] (Fun, Args)
-// - [ast.AssignStmt] (Lhs, Rhs)
+//   - [ast.ValueSpec] (Names, Values)
+//   - [ast.CompositeLit] (Type, Elts)
+//   - [ast.IndexListExpr] (X, Indices)
+//   - [ast.CallExpr] (Fun, Args)
+//   - [ast.AssignStmt] (Lhs, Rhs)
 //
 // So, do not assume that the previous sibling of an ast.Stmt is also
 // an ast.Stmt, or if it is, that they are executed sequentially,
