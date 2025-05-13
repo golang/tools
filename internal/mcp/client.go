@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
-	"golang.org/x/tools/internal/mcp/protocol"
 )
 
 // A Client is an MCP client, which may be connected to an MCP server
@@ -25,8 +24,8 @@ type Client struct {
 	opts             ClientOptions
 	mu               sync.Mutex
 	conn             *jsonrpc2.Connection
-	roots            *featureSet[protocol.Root]
-	initializeResult *protocol.InitializeResult
+	roots            *featureSet[Root]
+	initializeResult *initializeResult
 }
 
 // NewClient creates a new Client.
@@ -39,7 +38,7 @@ func NewClient(name, version string, t Transport, opts *ClientOptions) *Client {
 		name:      name,
 		version:   version,
 		transport: t,
-		roots:     newFeatureSet(func(r protocol.Root) string { return r.URI }),
+		roots:     newFeatureSet(func(r Root) string { return r.URI }),
 	}
 	if opts != nil {
 		c.opts = *opts
@@ -84,13 +83,13 @@ func (c *Client) Start(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	params := &protocol.InitializeParams{
-		ClientInfo: protocol.Implementation{Name: c.name, Version: c.version},
+	params := &initializeParams{
+		ClientInfo: implementation{Name: c.name, Version: c.version},
 	}
 	if err := call(ctx, c.conn, "initialize", params, &c.initializeResult); err != nil {
 		return err
 	}
-	if err := c.conn.Notify(ctx, "notifications/initialized", &protocol.InitializedParams{}); err != nil {
+	if err := c.conn.Notify(ctx, "notifications/initialized", &initializedParams{}); err != nil {
 		return err
 	}
 	return nil
@@ -113,7 +112,7 @@ func (c *Client) Wait() error {
 // replacing any with the same URIs,
 // and notifies any connected servers.
 // TODO: notification
-func (c *Client) AddRoots(roots ...protocol.Root) {
+func (c *Client) AddRoots(roots ...Root) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.roots.add(roots...)
@@ -129,10 +128,10 @@ func (c *Client) RemoveRoots(uris ...string) {
 	c.roots.remove(uris...)
 }
 
-func (c *Client) listRoots(_ context.Context, _ *protocol.ListRootsParams) (*protocol.ListRootsResult, error) {
+func (c *Client) listRoots(_ context.Context, _ *ListRootsParams) (*ListRootsResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return &protocol.ListRootsResult{
+	return &ListRootsResult{
 		Roots: slices.Collect(c.roots.all()),
 	}, nil
 }
@@ -160,10 +159,10 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 // ListPrompts lists prompts that are currently available on the server.
-func (c *Client) ListPrompts(ctx context.Context) ([]protocol.Prompt, error) {
+func (c *Client) ListPrompts(ctx context.Context) ([]Prompt, error) {
 	var (
-		params = &protocol.ListPromptsParams{}
-		result protocol.ListPromptsResult
+		params = &ListPromptsParams{}
+		result ListPromptsResult
 	)
 	if err := call(ctx, c.conn, "prompts/list", params, &result); err != nil {
 		return nil, err
@@ -172,13 +171,13 @@ func (c *Client) ListPrompts(ctx context.Context) ([]protocol.Prompt, error) {
 }
 
 // GetPrompt gets a prompt from the server.
-func (c *Client) GetPrompt(ctx context.Context, name string, args map[string]string) (*protocol.GetPromptResult, error) {
+func (c *Client) GetPrompt(ctx context.Context, name string, args map[string]string) (*GetPromptResult, error) {
 	var (
-		params = &protocol.GetPromptParams{
+		params = &GetPromptParams{
 			Name:      name,
 			Arguments: args,
 		}
-		result = &protocol.GetPromptResult{}
+		result = &GetPromptResult{}
 	)
 	if err := call(ctx, c.conn, "prompts/get", params, result); err != nil {
 		return nil, err
@@ -187,10 +186,10 @@ func (c *Client) GetPrompt(ctx context.Context, name string, args map[string]str
 }
 
 // ListTools lists tools that are currently available on the server.
-func (c *Client) ListTools(ctx context.Context) ([]protocol.Tool, error) {
+func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
 	var (
-		params = &protocol.ListToolsParams{}
-		result protocol.ListToolsResult
+		params = &ListToolsParams{}
+		result ListToolsResult
 	)
 	if err := call(ctx, c.conn, "tools/list", params, &result); err != nil {
 		return nil, err
@@ -199,7 +198,7 @@ func (c *Client) ListTools(ctx context.Context) ([]protocol.Tool, error) {
 }
 
 // CallTool calls the tool with the given name and arguments.
-func (c *Client) CallTool(ctx context.Context, name string, args map[string]any) (_ *protocol.CallToolResult, err error) {
+func (c *Client) CallTool(ctx context.Context, name string, args map[string]any) (_ *CallToolResult, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("calling tool %q: %w", name, err)
@@ -214,21 +213,21 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 		argsJSON[name] = argJSON
 	}
 
-	params := &protocol.CallToolParams{
+	params := &CallToolParams{
 		Name:      name,
 		Arguments: argsJSON,
 	}
-	return standardCall[protocol.CallToolResult](ctx, c.conn, "tools/call", params)
+	return standardCall[CallToolResult](ctx, c.conn, "tools/call", params)
 }
 
 // ListResources lists the resources that are currently available on the server.
-func (c *Client) ListResources(ctx context.Context, params *protocol.ListResourcesParams) (*protocol.ListResourcesResult, error) {
-	return standardCall[protocol.ListResourcesResult](ctx, c.conn, "resources/list", params)
+func (c *Client) ListResources(ctx context.Context, params *ListResourcesParams) (*ListResourcesResult, error) {
+	return standardCall[ListResourcesResult](ctx, c.conn, "resources/list", params)
 }
 
 // ReadResource ask the server to read a resource and return its contents.
-func (c *Client) ReadResource(ctx context.Context, params *protocol.ReadResourceParams) (*protocol.ReadResourceResult, error) {
-	return standardCall[protocol.ReadResourceResult](ctx, c.conn, "resources/read", params)
+func (c *Client) ReadResource(ctx context.Context, params *ReadResourceParams) (*ReadResourceResult, error) {
+	return standardCall[ReadResourceResult](ctx, c.conn, "resources/read", params)
 }
 
 func standardCall[TRes, TParams any](ctx context.Context, conn *jsonrpc2.Connection, method string, params TParams) (*TRes, error) {

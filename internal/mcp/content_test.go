@@ -9,22 +9,21 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/internal/mcp"
-	"golang.org/x/tools/internal/mcp/protocol"
 )
 
 func TestContent(t *testing.T) {
 	tests := []struct {
 		in   mcp.Content
-		want protocol.Content
+		want mcp.WireContent
 	}{
-		{mcp.TextContent{Text: "hello"}, protocol.Content{Type: "text", Text: "hello"}},
+		{mcp.TextContent{Text: "hello"}, mcp.WireContent{Type: "text", Text: "hello"}},
 		{
 			mcp.ImageContent{Data: []byte("a1b2c3"), MIMEType: "image/png"},
-			protocol.Content{Type: "image", Data: []byte("a1b2c3"), MIMEType: "image/png"},
+			mcp.WireContent{Type: "image", Data: []byte("a1b2c3"), MIMEType: "image/png"},
 		},
 		{
 			mcp.AudioContent{Data: []byte("a1b2c3"), MIMEType: "audio/wav"},
-			protocol.Content{Type: "audio", Data: []byte("a1b2c3"), MIMEType: "audio/wav"},
+			mcp.WireContent{Type: "audio", Data: []byte("a1b2c3"), MIMEType: "audio/wav"},
 		},
 		{
 			mcp.ResourceContent{
@@ -34,9 +33,9 @@ func TestContent(t *testing.T) {
 					Text:     "abc",
 				},
 			},
-			protocol.Content{
+			mcp.WireContent{
 				Type: "resource",
-				Resource: &protocol.ResourceContents{
+				Resource: &mcp.WireResource{
 					URI:      "file://foo",
 					MIMEType: "text",
 					Text:     "abc",
@@ -51,9 +50,9 @@ func TestContent(t *testing.T) {
 					Blob:     []byte("a1b2c3"),
 				},
 			},
-			protocol.Content{
+			mcp.WireContent{
 				Type: "resource",
-				Resource: &protocol.ResourceContents{
+				Resource: &mcp.WireResource{
 					URI:      "file://foo",
 					MIMEType: "text",
 					Blob:     []byte("a1b2c3"),

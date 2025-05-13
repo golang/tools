@@ -11,15 +11,14 @@ import (
 
 	"golang.org/x/tools/internal/mcp/internal/util"
 	"golang.org/x/tools/internal/mcp/jsonschema"
-	"golang.org/x/tools/internal/mcp/protocol"
 )
 
 // A ToolHandler handles a call to tools/call.
-type ToolHandler func(context.Context, *ServerConnection, map[string]json.RawMessage) (*protocol.CallToolResult, error)
+type ToolHandler func(context.Context, *ServerConnection, map[string]json.RawMessage) (*CallToolResult, error)
 
 // A Tool is a tool definition that is bound to a tool handler.
-type Tool struct {
-	Definition protocol.Tool
+type ServerTool struct {
+	Definition Tool
 	Handler    ToolHandler
 }
 
@@ -36,12 +35,12 @@ type Tool struct {
 //
 // TODO: just have the handler return a CallToolResult: returning []Content is
 // going to be inconsistent with other server features.
-func NewTool[TReq any](name, description string, handler func(context.Context, *ServerConnection, TReq) ([]Content, error), opts ...ToolOption) *Tool {
+func NewTool[TReq any](name, description string, handler func(context.Context, *ServerConnection, TReq) ([]Content, error), opts ...ToolOption) *ServerTool {
 	schema, err := jsonschema.For[TReq]()
 	if err != nil {
 		panic(err)
 	}
-	wrapped := func(ctx context.Context, cc *ServerConnection, args map[string]json.RawMessage) (*protocol.CallToolResult, error) {
+	wrapped := func(ctx context.Context, cc *ServerConnection, args map[string]json.RawMessage) (*CallToolResult, error) {
 		// For simplicity, just marshal and unmarshal the arguments.
 		// This could be avoided in the future.
 		rawArgs, err := json.Marshal(args)
@@ -56,18 +55,18 @@ func NewTool[TReq any](name, description string, handler func(context.Context, *
 		// TODO: investigate why server errors are embedded in this strange way,
 		// rather than returned as jsonrpc2 server errors.
 		if err != nil {
-			return &protocol.CallToolResult{
-				Content: []protocol.Content{TextContent{Text: err.Error()}.ToWire()},
+			return &CallToolResult{
+				Content: []WireContent{TextContent{Text: err.Error()}.ToWire()},
 				IsError: true,
 			}, nil
 		}
-		res := &protocol.CallToolResult{
+		res := &CallToolResult{
 			Content: util.Apply(content, Content.ToWire),
 		}
 		return res, nil
 	}
-	t := &Tool{
-		Definition: protocol.Tool{
+	t := &ServerTool{
+		Definition: Tool{
 			Name:        name,
 			Description: description,
 			InputSchema: schema,
@@ -90,17 +89,17 @@ func unmarshalSchema(data json.RawMessage, _ *jsonschema.Schema, v any) error {
 
 // A ToolOption configures the behavior of a Tool.
 type ToolOption interface {
-	set(*Tool)
+	set(*ServerTool)
 }
 
-type toolSetter func(*Tool)
+type toolSetter func(*ServerTool)
 
-func (s toolSetter) set(t *Tool) { s(t) }
+func (s toolSetter) set(t *ServerTool) { s(t) }
 
 // Input applies the provided [SchemaOption] configuration to the tool's input
 // schema.
 func Input(opts ...SchemaOption) ToolOption {
-	return toolSetter(func(t *Tool) {
+	return toolSetter(func(t *ServerTool) {
 		for _, opt := range opts {
 			opt.set(t.Definition.InputSchema)
 		}

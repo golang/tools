@@ -10,18 +10,17 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/internal/mcp"
-	"golang.org/x/tools/internal/mcp/protocol"
 )
 
 // testPromptHandler is used for type inference in TestNewPrompt.
-func testPromptHandler[T any](context.Context, *mcp.ServerConnection, T) (*protocol.GetPromptResult, error) {
+func testPromptHandler[T any](context.Context, *mcp.ServerConnection, T) (*mcp.GetPromptResult, error) {
 	panic("not implemented")
 }
 
 func TestNewPrompt(t *testing.T) {
 	tests := []struct {
-		prompt *mcp.Prompt
-		want   []protocol.PromptArgument
+		prompt *mcp.ServerPrompt
+		want   []mcp.PromptArgument
 	}{
 		{
 			mcp.NewPrompt("empty", "", testPromptHandler[struct{}]),
@@ -29,7 +28,7 @@ func TestNewPrompt(t *testing.T) {
 		},
 		{
 			mcp.NewPrompt("add_arg", "", testPromptHandler[struct{}], mcp.Argument("x")),
-			[]protocol.PromptArgument{{Name: "x"}},
+			[]mcp.PromptArgument{{Name: "x"}},
 		},
 		{
 			mcp.NewPrompt("combo", "", testPromptHandler[struct {
@@ -39,7 +38,7 @@ func TestNewPrompt(t *testing.T) {
 			}],
 				mcp.Argument("name", mcp.Description("the person's name")),
 				mcp.Argument("State", mcp.Required(false))),
-			[]protocol.PromptArgument{
+			[]mcp.PromptArgument{
 				{Name: "State"},
 				{Name: "country"},
 				{Name: "name", Required: true, Description: "the person's name"},

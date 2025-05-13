@@ -21,7 +21,7 @@ func testToolHandler[T any](context.Context, *mcp.ServerConnection, T) ([]mcp.Co
 
 func TestNewTool(t *testing.T) {
 	tests := []struct {
-		tool *mcp.Tool
+		tool *mcp.ServerTool
 		want *jsonschema.Schema
 	}{
 		{

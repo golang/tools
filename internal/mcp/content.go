@@ -5,10 +5,55 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
-
-	"golang.org/x/tools/internal/mcp/protocol"
 )
+
+// The []byte fields below are marked omitzero, not omitempty:
+// we want to marshal an empty byte slice.
+
+// WireContent is the wire format for content.
+// It represents the protocol types TextContent, ImageContent, AudioContent
+// and EmbeddedResource.
+// The Type field distinguishes them. In the protocol, each type has a constant
+// value for the field.
+// At most one of Text, Data, and Resource is non-zero.
+type WireContent struct {
+	Type        string        `json:"type"`
+	Text        string        `json:"text,omitempty"`
+	MIMEType    string        `json:"mimeType,omitempty"`
+	Data        []byte        `json:"data,omitzero"`
+	Resource    *WireResource `json:"resource,omitempty"`
+	Annotations *Annotations  `json:"annotations,omitempty"`
+}
+
+// A WireResource is either a TextResourceContents or a BlobResourceContents.
+// See https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2025-03-26/schema.ts#L524-L551
+// for the inheritance structure.
+// If Blob is nil, this is a TextResourceContents; otherwise it's a BlobResourceContents.
+//
+// The URI field describes the resource location.
+type WireResource struct {
+	URI      string `json:"uri,"`
+	MIMEType string `json:"mimeType,omitempty"`
+	Text     string `json:"text"`
+	Blob     []byte `json:"blob,omitzero"`
+}
+
+func (c *WireContent) UnmarshalJSON(data []byte) error {
+	type wireContent WireContent // for naive unmarshaling
+	var c2 wireContent
+	if err := json.Unmarshal(data, &c2); err != nil {
+		return err
+	}
+	switch c2.Type {
+	case "text", "image", "audio", "resource":
+	default:
+		return fmt.Errorf("unrecognized content type %s", c.Type)
+	}
+	*c = WireContent(c2)
+	return nil
+}
 
 // Content is the union of supported content types: [TextContent],
 // [ImageContent], [AudioContent], and [ResourceContent].
@@ -16,7 +61,7 @@ import (
 // ToWire converts content to its jsonrpc2 wire format.
 type Content interface {
 	// TODO: unexport this, and move the tests that use it to this package.
-	ToWire() protocol.Content
+	ToWire() WireContent
 }
 
 // TextContent is a textual content.
@@ -24,8 +69,8 @@ type TextContent struct {
 	Text string
 }
 
-func (c TextContent) ToWire() protocol.Content {
-	return protocol.Content{Type: "text", Text: c.Text}
+func (c TextContent) ToWire() WireContent {
+	return WireContent{Type: "text", Text: c.Text}
 }
 
 // ImageContent contains base64-encoded image data.
@@ -34,8 +79,8 @@ type ImageContent struct {
 	MIMEType string
 }
 
-func (c ImageContent) ToWire() protocol.Content {
-	return protocol.Content{Type: "image", MIMEType: c.MIMEType, Data: c.Data}
+func (c ImageContent) ToWire() WireContent {
+	return WireContent{Type: "image", MIMEType: c.MIMEType, Data: c.Data}
 }
 
 // AudioContent contains base64-encoded audio data.
@@ -44,8 +89,8 @@ type AudioContent struct {
 	MIMEType string
 }
 
-func (c AudioContent) ToWire() protocol.Content {
-	return protocol.Content{Type: "audio", MIMEType: c.MIMEType, Data: c.Data}
+func (c AudioContent) ToWire() WireContent {
+	return WireContent{Type: "audio", MIMEType: c.MIMEType, Data: c.Data}
 }
 
 // ResourceContent contains embedded resources.
@@ -53,13 +98,13 @@ type ResourceContent struct {
 	Resource EmbeddedResource
 }
 
-func (r ResourceContent) ToWire() protocol.Content {
+func (r ResourceContent) ToWire() WireContent {
 	res := r.Resource.toWire()
-	return protocol.Content{Type: "resource", Resource: &res}
+	return WireContent{Type: "resource", Resource: &res}
 }
 
 type EmbeddedResource interface {
-	toWire() protocol.ResourceContents
+	toWire() WireResource
 }
 
 // The {Text,Blob}ResourceContents types match the protocol definitions,
@@ -72,8 +117,8 @@ type TextResourceContents struct {
 	Text     string
 }
 
-func (r TextResourceContents) toWire() protocol.ResourceContents {
-	return protocol.ResourceContents{
+func (r TextResourceContents) toWire() WireResource {
+	return WireResource{
 		URI:      r.URI,
 		MIMEType: r.MIMEType,
 		Text:     r.Text,
@@ -88,8 +133,8 @@ type BlobResourceContents struct {
 	Blob     []byte
 }
 
-func (r BlobResourceContents) toWire() protocol.ResourceContents {
-	return protocol.ResourceContents{
+func (r BlobResourceContents) toWire() WireResource {
+	return WireResource{
 		URI:      r.URI,
 		MIMEType: r.MIMEType,
 		Blob:     r.Blob,
@@ -98,7 +143,7 @@ func (r BlobResourceContents) toWire() protocol.ResourceContents {
 
 // ContentFromWireContent converts content from the jsonrpc2 wire format to a
 // typed Content value.
-func ContentFromWireContent(c protocol.Content) Content {
+func ContentFromWireContent(c WireContent) Content {
 	switch c.Type {
 	case "text":
 		return TextContent{Text: c.Text}

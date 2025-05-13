@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:generate go run generate.go
+
 // The mcp package provides an SDK for writing model context protocol clients
 // and servers.
 //

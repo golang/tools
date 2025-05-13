@@ -18,7 +18,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
 	"golang.org/x/tools/internal/mcp/jsonschema"
-	"golang.org/x/tools/internal/mcp/protocol"
 )
 
 type hiParams struct {
@@ -50,15 +49,15 @@ func TestEndToEnd(t *testing.T) {
 	)
 
 	s.AddPrompts(
-		NewPrompt("code_review", "do a code review", func(_ context.Context, _ *ServerConnection, params struct{ Code string }) (*protocol.GetPromptResult, error) {
-			return &protocol.GetPromptResult{
+		NewPrompt("code_review", "do a code review", func(_ context.Context, _ *ServerConnection, params struct{ Code string }) (*GetPromptResult, error) {
+			return &GetPromptResult{
 				Description: "Code review prompt",
-				Messages: []protocol.PromptMessage{
+				Messages: []PromptMessage{
 					{Role: "user", Content: TextContent{Text: "Please review the following code: " + params.Code}.ToWire()},
 				},
 			}, nil
 		}),
-		NewPrompt("fail", "", func(_ context.Context, _ *ServerConnection, params struct{}) (*protocol.GetPromptResult, error) {
+		NewPrompt("fail", "", func(_ context.Context, _ *ServerConnection, params struct{}) (*GetPromptResult, error) {
 			return nil, failure
 		}),
 	)
@@ -83,7 +82,7 @@ func TestEndToEnd(t *testing.T) {
 	}()
 
 	c := NewClient("testClient", "v1.0.0", ct, nil)
-	c.AddRoots(protocol.Root{URI: "file:///root"})
+	c.AddRoots(Root{URI: "file:///root"})
 
 	// Connect the client.
 	if err := c.Start(ctx); err != nil {
@@ -98,11 +97,11 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Errorf("prompts/list failed: %v", err)
 		}
-		wantPrompts := []protocol.Prompt{
+		wantPrompts := []Prompt{
 			{
 				Name:        "code_review",
 				Description: "do a code review",
-				Arguments:   []protocol.PromptArgument{{Name: "Code", Required: true}},
+				Arguments:   []PromptArgument{{Name: "Code", Required: true}},
 			},
 			{Name: "fail"},
 		}
@@ -114,9 +113,9 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantReview := &protocol.GetPromptResult{
+		wantReview := &GetPromptResult{
 			Description: "Code review prompt",
-			Messages: []protocol.PromptMessage{{
+			Messages: []PromptMessage{{
 				Content: TextContent{Text: "Please review the following code: 1+1"}.ToWire(),
 				Role:    "user",
 			}},
@@ -135,7 +134,7 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Errorf("tools/list failed: %v", err)
 		}
-		wantTools := []protocol.Tool{
+		wantTools := []Tool{
 			{
 				Name:        "fail",
 				Description: "just fail",
@@ -165,8 +164,8 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantHi := &protocol.CallToolResult{
-			Content: []protocol.Content{{Type: "text", Text: "hi user"}},
+		wantHi := &CallToolResult{
+			Content: []WireContent{{Type: "text", Text: "hi user"}},
 		}
 		if diff := cmp.Diff(wantHi, gotHi); diff != "" {
 			t.Errorf("tools/call 'greet' mismatch (-want +got):\n%s", diff)
@@ -178,9 +177,9 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantFail := &protocol.CallToolResult{
+		wantFail := &CallToolResult{
 			IsError: true,
-			Content: []protocol.Content{{Type: "text", Text: failure.Error()}},
+			Content: []WireContent{{Type: "text", Text: failure.Error()}},
 		}
 		if diff := cmp.Diff(wantFail, gotFail); diff != "" {
 			t.Errorf("tools/call 'fail' mismatch (-want +got):\n%s", diff)
@@ -188,21 +187,21 @@ func TestEndToEnd(t *testing.T) {
 	})
 
 	t.Run("resources", func(t *testing.T) {
-		resource1 := protocol.Resource{
+		resource1 := Resource{
 			Name:     "public",
 			MIMEType: "text/plain",
 			URI:      "file:///file1.txt",
 		}
-		resource2 := protocol.Resource{
+		resource2 := Resource{
 			Name:     "public", // names are not unique IDs
 			MIMEType: "text/plain",
 			URI:      "file:///nonexistent.txt",
 		}
 
-		readHandler := func(_ context.Context, r protocol.Resource, _ *protocol.ReadResourceParams) (*protocol.ReadResourceResult, error) {
+		readHandler := func(_ context.Context, r Resource, _ *ReadResourceParams) (*ReadResourceResult, error) {
 			if r.URI == "file:///file1.txt" {
-				return &protocol.ReadResourceResult{
-					Contents: &protocol.ResourceContents{
+				return &ReadResourceResult{
+					Contents: &WireResource{
 						Text: "file contents",
 					},
 				}, nil
@@ -217,7 +216,7 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if diff := cmp.Diff([]protocol.Resource{resource1, resource2}, lrres.Resources); diff != "" {
+		if diff := cmp.Diff([]Resource{resource1, resource2}, lrres.Resources); diff != "" {
 			t.Errorf("resources/list mismatch (-want, +got):\n%s", diff)
 		}
 
@@ -229,7 +228,7 @@ func TestEndToEnd(t *testing.T) {
 			{"file:///nonexistent.txt", ""},
 			// TODO(jba): add resource template cases when we implement them
 		} {
-			rres, err := c.ReadResource(ctx, &protocol.ReadResourceParams{URI: tt.uri})
+			rres, err := c.ReadResource(ctx, &ReadResourceParams{URI: tt.uri})
 			if err != nil {
 				var werr *jsonrpc2.WireError
 				if errors.As(err, &werr) && werr.Code == codeResourceNotFound {
@@ -256,7 +255,7 @@ func TestEndToEnd(t *testing.T) {
 			break
 		}
 
-		rootRes, err := sc.ListRoots(ctx, &protocol.ListRootsParams{})
+		rootRes, err := sc.ListRoots(ctx, &ListRootsParams{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -283,7 +282,7 @@ func TestEndToEnd(t *testing.T) {
 //
 // The caller should cancel either the client connection or server connection
 // when the connections are no longer needed.
-func basicConnection(t *testing.T, tools ...*Tool) (*ServerConnection, *Client) {
+func basicConnection(t *testing.T, tools ...*ServerTool) (*ServerConnection, *Client) {
 	t.Helper()
 
 	ctx := context.Background()
