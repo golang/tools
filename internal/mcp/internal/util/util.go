@@ -10,15 +10,6 @@ import (
 	"slices"
 )
 
-// Apply returns a new slice resulting from applying f to each element of x.
-func Apply[S ~[]E, E, F any](x S, f func(E) F) []F {
-	y := make([]F, len(x))
-	for i, e := range x {
-		y[i] = f(e)
-	}
-	return y
-}
-
 // Helpers below are copied from gopls' moremaps package.
 
 // sorted returns an iterator over the entries of m in key order.

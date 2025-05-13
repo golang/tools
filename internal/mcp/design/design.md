@@ -123,6 +123,7 @@ type Stream interface {
     Close() error
 }
 ```
+
 Methods accept a Go `Context` and return an `error`,
 as is idiomatic for APIs that do I/O.
 
@@ -350,17 +351,6 @@ type Content struct {
 	Data     []byte    `json:"data,omitempty"`
 	Resource *Resource `json:"resource,omitempty"`
 }
-
-// Resource is the wire format for embedded resources.
-//
-// The URI field describes the resource location. At most one of Text and Blob
-// is non-zero.
-type Resource struct {
-	URI      string  `json:"uri,"`
-	MIMEType string  `json:"mimeType,omitempty"`
-	Text     string  `json:"text"`
-	Blob     []byte `json:"blob"`
-}
 ```
 
 **Differences from mcp-go**: these types are largely similar, but our type
@@ -445,6 +435,7 @@ content, err := session.CallTool(ctx, &CallToolParams{
 ...
 return session.Close()
 ```
+
 A server that can handle that client call would look like this:
 
 ```go
@@ -464,8 +455,6 @@ session until the client disconnects:
 ```go
 func (*Server) Run(context.Context, Transport)
 ```
-
-
 
 **Differences from mcp-go**: the Server APIs are very similar to mcp-go,
 though the association between servers and transports is different. In
@@ -493,9 +482,11 @@ documentation.
 As we saw above, the `ClientSession` method for the specification's
 `CallTool` RPC takes a context and a params pointer as arguments, and returns a
 result pointer and error:
+
 ```go
 func (*ClientSession) CallTool(context.Context, *CallToolParams) (*CallToolResult, error)
 ```
+
 Our SDK has a method for every RPC in the spec, and their signatures all share
 this form. To avoid boilerplate, we don't repeat this signature for RPCs
 defined in the spec; readers may assume it when we mention a "spec method."
@@ -867,12 +858,14 @@ handler to a Go function using reflection to derive its arguments. We provide
 
 To add a resource or resource template to a server, users call the `AddResource` and
 `AddResourceTemplate` methods, passing the resource or template and a function for reading it:
+
 ```go
 type ReadResourceHandler func(context.Context, *ServerSession, *Resource, *ReadResourceParams) (*ReadResourceResult, error)
 
 func (*Server) AddResource(*Resource, ReadResourceHandler)
 func (*Server) AddResourceTemplate(*ResourceTemplate, ReadResourceHandler)
 ```
+
 The `Resource` is passed to the reader function even though it is redundant (the function could have closed over it)
 so a single handler can support multiple resources.
 If the incoming resource matches a template, a `Resource` argument is constructed
@@ -880,15 +873,18 @@ from the fields in the `ResourceTemplate`.
 The `ServerSession` argument is there so the reader can observe the client's roots.
 
 To read files from the local filesystem, we recommend using `FileReadResourceHandler` to construct a handler:
+
 ```go
 // FileReadResourceHandler returns a ReadResourceHandler that reads paths using dir as a root directory.
 // It protects against path traversal attacks.
 // It will not read any file that is not in the root set of the client requesting the resource.
 func (*Server) FileReadResourceHandler(dir string) ReadResourceHandler
 ```
+
 It guards against [path traversal attacks](https://go.dev/blog/osroot)
 and observes the client's roots.
 Here is an example:
+
 ```go
 // Safely read "/public/puppies.txt".
 s.AddResource(
@@ -897,14 +893,17 @@ s.AddResource(
 ```
 
 There are also server methods to remove resources and resource templates.
+
 ```go
 func (*Server) RemoveResources(uris ...string)
 func (*Server) RemoveResourceTemplates(names ...string)
 ```
+
 Resource templates don't have unique identifiers, so removing a name will remove all
 resource templates with that name.
 
 Servers support all of the resource-related spec methods:
+
 - `ListResources` and `ListResourceTemplates` for listings.
 - `ReadResource` to get the contents of a resource.
 - `Subscribe` and `Unsubscribe` to manage subscriptions on resources.
@@ -916,6 +915,7 @@ then returns the result of calling the associated reader function.
 #### Subscriptions
 
 ClientSessions can manage change notifications on particular resources:
+
 ```go
 func (*ClientSession) Subscribe(context.Context, *SubscribeParams) error
 func (*ClientSession) Unsubscribe(context.Context, *UnsubscribeParams) error
@@ -929,6 +929,7 @@ user doesn't have to.
 If a server author wants to support resource subscriptions, they must provide handlers
 to be called when clients subscribe and unsubscribe. It is an error to provide only
 one of these handlers.
+
 ```go
 type ServerOptions struct {
   ...
@@ -940,9 +941,11 @@ type ServerOptions struct {
 ```
 
 User code should call `ResourceUpdated` when a subscribed resource changes.
+
 ```go
 func (*Server) ResourceUpdated(context.Context, *ResourceUpdatedNotification) error
 ```
+
 The server routes these notifications to the server sessions that subscribed to the resource.
 
 ### ListChanged notifications
@@ -1007,6 +1010,7 @@ follows:
   level, a handler would call `session.Log(ctx, mcp.LevelNotice, "message")`.
 
 A client that wishes to receive log messages must provide a handler:
+
 ```go
 type ClientOptions struct {
   ...

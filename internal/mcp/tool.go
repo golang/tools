@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"slices"
 
-	"golang.org/x/tools/internal/mcp/internal/util"
 	"golang.org/x/tools/internal/mcp/jsonschema"
 )
 
@@ -56,12 +55,12 @@ func NewTool[TReq any](name, description string, handler func(context.Context, *
 		// rather than returned as jsonrpc2 server errors.
 		if err != nil {
 			return &CallToolResult{
-				Content: []WireContent{TextContent{Text: err.Error()}.ToWire()},
+				Content: []Content{NewTextContent(err.Error())},
 				IsError: true,
 			}, nil
 		}
 		res := &CallToolResult{
-			Content: util.Apply(content, Content.ToWire),
+			Content: content,
 		}
 		return res, nil
 	}

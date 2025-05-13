@@ -47,7 +47,7 @@ type CallToolResult struct {
 	// This result property is reserved by the protocol to allow clients and servers
 	// to attach additional metadata to their responses.
 	Meta    map[string]json.RawMessage `json:"_meta,omitempty"`
-	Content []WireContent              `json:"content"`
+	Content []Content                  `json:"content"`
 	// Whether the tool call ended in an error.
 	//
 	// If not set, this is assumed to be false (the call was successful).
@@ -195,8 +195,8 @@ type PromptArgument struct {
 // This is similar to `SamplingMessage`, but also supports the embedding of
 // resources from the MCP server.
 type PromptMessage struct {
-	Content WireContent `json:"content"`
-	Role    Role        `json:"role"`
+	Content Content `json:"content"`
+	Role    Role    `json:"role"`
 }
 
 type ReadResourceParams struct {
@@ -210,7 +210,7 @@ type ReadResourceResult struct {
 	// This result property is reserved by the protocol to allow clients and servers
 	// to attach additional metadata to their responses.
 	Meta     map[string]json.RawMessage `json:"_meta,omitempty"`
-	Contents *WireResource              `json:"contents"`
+	Contents *ResourceContents          `json:"contents"`
 }
 
 // A known resource that the server is capable of reading.

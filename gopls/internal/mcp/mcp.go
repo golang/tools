@@ -143,7 +143,7 @@ type HelloParams struct {
 func helloHandler(session *cache.Session) func(ctx context.Context, cc *mcp.ServerConnection, request *HelloParams) ([]mcp.Content, error) {
 	return func(ctx context.Context, cc *mcp.ServerConnection, request *HelloParams) ([]mcp.Content, error) {
 		return []mcp.Content{
-			mcp.TextContent{Text: "Hi " + request.Name + ", this is lsp session " + session.ID()},
+			mcp.NewTextContent("Hi " + request.Name + ", this is lsp session " + session.ID()),
 		}, nil
 	}
 }

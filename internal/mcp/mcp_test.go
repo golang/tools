@@ -28,7 +28,7 @@ func sayHi(ctx context.Context, cc *ServerConnection, v hiParams) ([]Content, er
 	if err := cc.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("ping failed: %v", err)
 	}
-	return []Content{TextContent{Text: "hi " + v.Name}}, nil
+	return []Content{NewTextContent("hi " + v.Name)}, nil
 }
 
 func TestEndToEnd(t *testing.T) {
@@ -53,7 +53,7 @@ func TestEndToEnd(t *testing.T) {
 			return &GetPromptResult{
 				Description: "Code review prompt",
 				Messages: []PromptMessage{
-					{Role: "user", Content: TextContent{Text: "Please review the following code: " + params.Code}.ToWire()},
+					{Role: "user", Content: NewTextContent("Please review the following code: " + params.Code)},
 				},
 			}, nil
 		}),
@@ -116,7 +116,7 @@ func TestEndToEnd(t *testing.T) {
 		wantReview := &GetPromptResult{
 			Description: "Code review prompt",
 			Messages: []PromptMessage{{
-				Content: TextContent{Text: "Please review the following code: 1+1"}.ToWire(),
+				Content: NewTextContent("Please review the following code: 1+1"),
 				Role:    "user",
 			}},
 		}
@@ -165,7 +165,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantHi := &CallToolResult{
-			Content: []WireContent{{Type: "text", Text: "hi user"}},
+			Content: []Content{{Type: "text", Text: "hi user"}},
 		}
 		if diff := cmp.Diff(wantHi, gotHi); diff != "" {
 			t.Errorf("tools/call 'greet' mismatch (-want +got):\n%s", diff)
@@ -179,7 +179,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 		wantFail := &CallToolResult{
 			IsError: true,
-			Content: []WireContent{{Type: "text", Text: failure.Error()}},
+			Content: []Content{{Type: "text", Text: failure.Error()}},
 		}
 		if diff := cmp.Diff(wantFail, gotFail); diff != "" {
 			t.Errorf("tools/call 'fail' mismatch (-want +got):\n%s", diff)
@@ -201,7 +201,7 @@ func TestEndToEnd(t *testing.T) {
 		readHandler := func(_ context.Context, r Resource, _ *ReadResourceParams) (*ReadResourceResult, error) {
 			if r.URI == "file:///file1.txt" {
 				return &ReadResourceResult{
-					Contents: &WireResource{
+					Contents: &ResourceContents{
 						Text: "file contents",
 					},
 				}, nil

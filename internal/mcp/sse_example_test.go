@@ -20,7 +20,7 @@ type AddParams struct {
 
 func Add(ctx context.Context, cc *mcp.ServerConnection, params *AddParams) ([]mcp.Content, error) {
 	return []mcp.Content{
-		mcp.TextContent{Text: fmt.Sprintf("%d", params.X+params.Y)},
+		mcp.NewTextContent(fmt.Sprintf("%d", params.X+params.Y)),
 	}, nil
 }
 

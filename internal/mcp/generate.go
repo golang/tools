@@ -107,7 +107,7 @@ var declarations = config{
 		Fields: config{"Params": {Name: "ReadResourceParams"}},
 	},
 	"ReadResourceResult": {
-		Fields: config{"Contents": {Substitute: "*WireResource"}},
+		Fields: config{"Contents": {Substitute: "*ResourceContents"}},
 	},
 	"Resource": {},
 	"Role":     {},
@@ -288,7 +288,7 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 		if slices.ContainsFunc(def.AnyOf, func(s *jsonschema.Schema) bool {
 			return s.Ref == "#/definitions/TextContent"
 		}) {
-			fmt.Fprintf(w, "WireContent")
+			fmt.Fprintf(w, "Content")
 		} else {
 			// E.g. union types.
 			fmt.Fprintf(w, "json.RawMessage")

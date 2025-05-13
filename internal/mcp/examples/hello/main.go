@@ -22,7 +22,7 @@ type HiParams struct {
 
 func SayHi(ctx context.Context, cc *mcp.ServerConnection, params *HiParams) ([]mcp.Content, error) {
 	return []mcp.Content{
-		mcp.TextContent{Text: "Hi " + params.Name},
+		mcp.NewTextContent("Hi " + params.Name),
 	}, nil
 }
 
@@ -30,7 +30,7 @@ func PromptHi(ctx context.Context, cc *mcp.ServerConnection, params *HiParams) (
 	return &mcp.GetPromptResult{
 		Description: "Code review prompt",
 		Messages: []mcp.PromptMessage{
-			{Role: "user", Content: mcp.TextContent{Text: "Say hi to " + params.Name}.ToWire()},
+			{Role: "user", Content: mcp.NewTextContent("Say hi to " + params.Name)},
 		},
 	}, nil
 }

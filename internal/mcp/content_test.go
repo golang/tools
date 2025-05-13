@@ -5,6 +5,7 @@
 package mcp_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -14,57 +15,45 @@ import (
 func TestContent(t *testing.T) {
 	tests := []struct {
 		in   mcp.Content
-		want mcp.WireContent
+		want string // json serialization
 	}{
-		{mcp.TextContent{Text: "hello"}, mcp.WireContent{Type: "text", Text: "hello"}},
+		{mcp.NewTextContent("hello"), `{"type":"text","text":"hello"}`},
 		{
-			mcp.ImageContent{Data: []byte("a1b2c3"), MIMEType: "image/png"},
-			mcp.WireContent{Type: "image", Data: []byte("a1b2c3"), MIMEType: "image/png"},
+			mcp.NewImageContent([]byte("a1b2c3"), "image/png"),
+			`{"type":"image","mimeType":"image/png","data":"YTFiMmMz"}`,
 		},
 		{
-			mcp.AudioContent{Data: []byte("a1b2c3"), MIMEType: "audio/wav"},
-			mcp.WireContent{Type: "audio", Data: []byte("a1b2c3"), MIMEType: "audio/wav"},
+			mcp.NewAudioContent([]byte("a1b2c3"), "audio/wav"),
+			`{"type":"audio","mimeType":"audio/wav","data":"YTFiMmMz"}`,
 		},
 		{
-			mcp.ResourceContent{
-				Resource: mcp.TextResourceContents{
-					URI:      "file://foo",
-					MIMEType: "text",
-					Text:     "abc",
-				},
-			},
-			mcp.WireContent{
-				Type: "resource",
-				Resource: &mcp.WireResource{
-					URI:      "file://foo",
-					MIMEType: "text",
-					Text:     "abc",
-				},
-			},
+			mcp.NewResourceContent(
+				mcp.NewTextResourceContents("file://foo", "text", "abc"),
+			),
+			`{"type":"resource","resource":{"uri":"file://foo","mimeType":"text","text":"abc"}}`,
 		},
 		{
-			mcp.ResourceContent{
-				Resource: mcp.BlobResourceContents{
-					URI:      "file://foo",
-					MIMEType: "text",
-					Blob:     []byte("a1b2c3"),
-				},
-			},
-			mcp.WireContent{
-				Type: "resource",
-				Resource: &mcp.WireResource{
-					URI:      "file://foo",
-					MIMEType: "text",
-					Blob:     []byte("a1b2c3"),
-				},
-			},
+			mcp.NewResourceContent(
+				mcp.NewBlobResourceContents("file://foo", "image/png", []byte("a1b2c3")),
+			),
+			`{"type":"resource","resource":{"uri":"file://foo","mimeType":"image/png","blob":"YTFiMmMz"}}`,
 		},
 	}
 
 	for _, test := range tests {
-		got := test.in.ToWire()
-		if diff := cmp.Diff(test.want, got); diff != "" {
-			t.Errorf("ToWire mismatch (-want +got):\n%s", diff)
+		got, err := json.Marshal(test.in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff(test.want, string(got)); diff != "" {
+			t.Errorf("json.Marshal(%v) mismatch (-want +got):\n%s", test.in, diff)
+		}
+		var out mcp.Content
+		if err := json.Unmarshal(got, &out); err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff(test.in, out); diff != "" {
+			t.Errorf("json.Unmarshal(%q) mismatch (-want +got):\n%s", string(got), diff)
 		}
 	}
 }

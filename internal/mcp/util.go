@@ -14,11 +14,6 @@ func assert(cond bool, msg string) {
 	}
 }
 
-func is[T any](v any) bool {
-	_, ok := v.(T)
-	return ok
-}
-
 // Copied from crypto/rand.
 // TODO: once 1.24 is assured, just use crypto/rand.
 const base32alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
