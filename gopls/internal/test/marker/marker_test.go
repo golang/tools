@@ -1691,8 +1691,9 @@ func foldingRangeMarker(mark marker, g *Golden) {
 		})
 	}
 	for i, rng := range ranges {
-		insert(rng.StartLine, rng.StartCharacter, fmt.Sprintf("<%d kind=%q>", i, rng.Kind))
-		insert(rng.EndLine, rng.EndCharacter, fmt.Sprintf("</%d>", i))
+		// We assume the server populates these optional fields.
+		insert(*rng.StartLine, *rng.StartCharacter, fmt.Sprintf("<%d kind=%q>", i, rng.Kind))
+		insert(*rng.EndLine, *rng.EndCharacter, fmt.Sprintf("</%d>", i))
 	}
 	filename := mark.path()
 	mapper, err := env.Editor.Mapper(filename)

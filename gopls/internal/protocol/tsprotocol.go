@@ -2375,14 +2375,14 @@ type FileSystemWatcher struct {
 type FoldingRange struct {
 	// The zero-based start line of the range to fold. The folded area starts after the line's last character.
 	// To be valid, the end must be zero or larger and smaller than the number of lines in the document.
-	StartLine uint32 `json:"startLine"`
+	StartLine *uint32 `json:"startLine,omitempty"`
 	// The zero-based character offset from where the folded range starts. If not defined, defaults to the length of the start line.
-	StartCharacter uint32 `json:"startCharacter"`
+	StartCharacter *uint32 `json:"startCharacter,omitempty"`
 	// The zero-based end line of the range to fold. The folded area ends with the line's last character.
 	// To be valid, the end must be zero or larger and smaller than the number of lines in the document.
-	EndLine uint32 `json:"endLine"`
+	EndLine *uint32 `json:"endLine,omitempty"`
 	// The zero-based character offset before the folded range ends. If not defined, defaults to the length of the end line.
-	EndCharacter uint32 `json:"endCharacter"`
+	EndCharacter *uint32 `json:"endCharacter,omitempty"`
 	// Describes the kind of the folding range such as 'comment' or 'region'. The kind
 	// is used to categorize folding ranges and used by commands like 'Fold all comments'.
 	// See {@link FoldingRangeKind} for an enumeration of standardized kinds.

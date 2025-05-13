@@ -127,10 +127,10 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 
 	// Sort by start position.
 	slices.SortFunc(ranges, func(x, y protocol.FoldingRange) int {
-		if d := cmp.Compare(x.StartLine, y.StartLine); d != 0 {
+		if d := cmp.Compare(*x.StartLine, *y.StartLine); d != 0 {
 			return d
 		}
-		return cmp.Compare(x.StartCharacter, y.StartCharacter)
+		return cmp.Compare(*x.StartCharacter, *y.StartCharacter)
 	})
 
 	return ranges, nil
@@ -232,11 +232,15 @@ func commentsFoldingRange(pgf *parsego.File) (comments []protocol.FoldingRange) 
 
 func foldingRange(kind protocol.FoldingRangeKind, rng protocol.Range) protocol.FoldingRange {
 	return protocol.FoldingRange{
-		// I have no idea why LSP doesn't use a protocol.Range here.
-		StartLine:      rng.Start.Line,
-		StartCharacter: rng.Start.Character,
-		EndLine:        rng.End.Line,
-		EndCharacter:   rng.End.Character,
+		// (I guess LSP doesn't use a protocol.Range here
+		// because missing means something different from zero.)
+		StartLine:      varOf(rng.Start.Line),
+		StartCharacter: varOf(rng.Start.Character),
+		EndLine:        varOf(rng.End.Line),
+		EndCharacter:   varOf(rng.End.Character),
 		Kind:           string(kind),
 	}
 }
+
+// varOf returns a new variable whose value is x.
+func varOf[T any](x T) *T { return &x }

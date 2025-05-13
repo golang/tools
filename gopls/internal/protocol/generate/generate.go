@@ -78,8 +78,6 @@ func propStar(name string, t NameType, gotype string) (omitempty, indirect bool)
 		switch newStar {
 		case nothing:
 			indirect, omitempty = false, false
-		case wantStar:
-			indirect, omitempty = false, false
 		case wantOpt:
 			indirect, omitempty = false, true
 		case wantOptStar:

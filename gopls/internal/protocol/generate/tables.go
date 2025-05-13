@@ -6,14 +6,14 @@ package main
 
 import "log"
 
-// prop combines the name of a property with the name of the structure it is in.
+// prop combines the name of a property (class.field) with the name of
+// the structure it is in, using LSP field capitalization.
 type prop [2]string
 
 const (
-	nothing = iota
-	wantStar
-	wantOpt
-	wantOptStar
+	nothing     = iota
+	wantOpt     // omitempty
+	wantOptStar // omitempty, indirect
 )
 
 // goplsStar records the optionality of each field in the protocol.
@@ -37,13 +37,19 @@ var goplsStar = map[prop]int{
 	{"Diagnostic", "severity"}:            wantOpt,     // nil checks or more careful thought
 	{"DidSaveTextDocumentParams", "text"}: wantOptStar, // capabilities_test.go:112 logic
 	{"DocumentHighlight", "kind"}:         wantOpt,     // need temporary variables
-	{"Hover", "range"}:                    wantOpt,     // complex expressions
-	{"InlayHint", "kind"}:                 wantOpt,     // temporary variables
+
+	{"FoldingRange", "startLine"}:      wantOptStar, // unset != zero (#71489)
+	{"FoldingRange", "startCharacter"}: wantOptStar, // unset != zero (#71489)
+	{"FoldingRange", "endLine"}:        wantOptStar, // unset != zero (#71489)
+	{"FoldingRange", "endCharacter"}:   wantOptStar, // unset != zero (#71489)
+
+	{"Hover", "range"}:    wantOpt, // complex expressions
+	{"InlayHint", "kind"}: wantOpt, // temporary variables
 
 	{"TextDocumentClientCapabilities", "codeAction"}:          wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "completion"}:          wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "documentSymbol"}:      wantOpt,     // A.B.C.D
-	{"TextDocumentClientCapabilities", "publishDiagnostics"}:  wantOpt,     //A.B.C.D
+	{"TextDocumentClientCapabilities", "publishDiagnostics"}:  wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "semanticTokens"}:      wantOpt,     // A.B.C.D
 	{"TextDocumentContentChangePartial", "range"}:             wantOptStar, // == nil test
 	{"TextDocumentSyncOptions", "change"}:                     wantOpt,     // &constant

@@ -59,11 +59,12 @@ func (r *foldingRanges) Run(ctx context.Context, args ...string) error {
 	}
 
 	for _, r := range ranges {
+		// We assume our server always supplies these fields.
 		fmt.Printf("%v:%v-%v:%v\n",
-			r.StartLine+1,
-			r.StartCharacter+1,
-			r.EndLine+1,
-			r.EndCharacter+1,
+			*r.StartLine+1,
+			*r.StartCharacter+1,
+			*r.EndLine+1,
+			*r.EndCharacter+1,
 		)
 	}
 
