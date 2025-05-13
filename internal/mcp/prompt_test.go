@@ -20,7 +20,7 @@ func testPromptHandler[T any](context.Context, *mcp.ServerConnection, T) (*mcp.G
 func TestNewPrompt(t *testing.T) {
 	tests := []struct {
 		prompt *mcp.ServerPrompt
-		want   []mcp.PromptArgument
+		want   []*mcp.PromptArgument
 	}{
 		{
 			mcp.NewPrompt("empty", "", testPromptHandler[struct{}]),
@@ -28,7 +28,7 @@ func TestNewPrompt(t *testing.T) {
 		},
 		{
 			mcp.NewPrompt("add_arg", "", testPromptHandler[struct{}], mcp.Argument("x")),
-			[]mcp.PromptArgument{{Name: "x"}},
+			[]*mcp.PromptArgument{{Name: "x"}},
 		},
 		{
 			mcp.NewPrompt("combo", "", testPromptHandler[struct {
@@ -38,7 +38,7 @@ func TestNewPrompt(t *testing.T) {
 			}],
 				mcp.Argument("name", mcp.Description("the person's name")),
 				mcp.Argument("State", mcp.Required(false))),
-			[]mcp.PromptArgument{
+			[]*mcp.PromptArgument{
 				{Name: "State"},
 				{Name: "country"},
 				{Name: "name", Required: true, Description: "the person's name"},

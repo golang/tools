@@ -57,7 +57,7 @@ func TestCmdTransport(t *testing.T) {
 		log.Fatal(err)
 	}
 	want := &mcp.CallToolResult{
-		Content: []mcp.Content{{Type: "text", Text: "Hi user"}},
+		Content: []*mcp.Content{{Type: "text", Text: "Hi user"}},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("greet returned unexpected content (-want +got):\n%s", diff)

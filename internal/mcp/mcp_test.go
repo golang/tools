@@ -24,11 +24,11 @@ type hiParams struct {
 	Name string
 }
 
-func sayHi(ctx context.Context, cc *ServerConnection, v hiParams) ([]Content, error) {
+func sayHi(ctx context.Context, cc *ServerConnection, v hiParams) ([]*Content, error) {
 	if err := cc.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("ping failed: %v", err)
 	}
-	return []Content{NewTextContent("hi " + v.Name)}, nil
+	return []*Content{NewTextContent("hi " + v.Name)}, nil
 }
 
 func TestEndToEnd(t *testing.T) {
@@ -43,7 +43,7 @@ func TestEndToEnd(t *testing.T) {
 	// The 'fail' tool returns this error.
 	failure := errors.New("mcp failure")
 	s.AddTools(
-		NewTool("fail", "just fail", func(context.Context, *ServerConnection, struct{}) ([]Content, error) {
+		NewTool("fail", "just fail", func(context.Context, *ServerConnection, struct{}) ([]*Content, error) {
 			return nil, failure
 		}),
 	)
@@ -52,7 +52,7 @@ func TestEndToEnd(t *testing.T) {
 		NewPrompt("code_review", "do a code review", func(_ context.Context, _ *ServerConnection, params struct{ Code string }) (*GetPromptResult, error) {
 			return &GetPromptResult{
 				Description: "Code review prompt",
-				Messages: []PromptMessage{
+				Messages: []*PromptMessage{
 					{Role: "user", Content: NewTextContent("Please review the following code: " + params.Code)},
 				},
 			}, nil
@@ -82,7 +82,7 @@ func TestEndToEnd(t *testing.T) {
 	}()
 
 	c := NewClient("testClient", "v1.0.0", ct, nil)
-	c.AddRoots(Root{URI: "file:///root"})
+	c.AddRoots(&Root{URI: "file:///root"})
 
 	// Connect the client.
 	if err := c.Start(ctx); err != nil {
@@ -97,11 +97,11 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Errorf("prompts/list failed: %v", err)
 		}
-		wantPrompts := []Prompt{
+		wantPrompts := []*Prompt{
 			{
 				Name:        "code_review",
 				Description: "do a code review",
-				Arguments:   []PromptArgument{{Name: "Code", Required: true}},
+				Arguments:   []*PromptArgument{{Name: "Code", Required: true}},
 			},
 			{Name: "fail"},
 		}
@@ -115,7 +115,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 		wantReview := &GetPromptResult{
 			Description: "Code review prompt",
-			Messages: []PromptMessage{{
+			Messages: []*PromptMessage{{
 				Content: NewTextContent("Please review the following code: 1+1"),
 				Role:    "user",
 			}},
@@ -134,7 +134,7 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Errorf("tools/list failed: %v", err)
 		}
-		wantTools := []Tool{
+		wantTools := []*Tool{
 			{
 				Name:        "fail",
 				Description: "just fail",
@@ -165,7 +165,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantHi := &CallToolResult{
-			Content: []Content{{Type: "text", Text: "hi user"}},
+			Content: []*Content{{Type: "text", Text: "hi user"}},
 		}
 		if diff := cmp.Diff(wantHi, gotHi); diff != "" {
 			t.Errorf("tools/call 'greet' mismatch (-want +got):\n%s", diff)
@@ -179,7 +179,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 		wantFail := &CallToolResult{
 			IsError: true,
-			Content: []Content{{Type: "text", Text: failure.Error()}},
+			Content: []*Content{{Type: "text", Text: failure.Error()}},
 		}
 		if diff := cmp.Diff(wantFail, gotFail); diff != "" {
 			t.Errorf("tools/call 'fail' mismatch (-want +got):\n%s", diff)
@@ -187,18 +187,18 @@ func TestEndToEnd(t *testing.T) {
 	})
 
 	t.Run("resources", func(t *testing.T) {
-		resource1 := Resource{
+		resource1 := &Resource{
 			Name:     "public",
 			MIMEType: "text/plain",
 			URI:      "file:///file1.txt",
 		}
-		resource2 := Resource{
+		resource2 := &Resource{
 			Name:     "public", // names are not unique IDs
 			MIMEType: "text/plain",
 			URI:      "file:///nonexistent.txt",
 		}
 
-		readHandler := func(_ context.Context, r Resource, _ *ReadResourceParams) (*ReadResourceResult, error) {
+		readHandler := func(_ context.Context, r *Resource, _ *ReadResourceParams) (*ReadResourceResult, error) {
 			if r.URI == "file:///file1.txt" {
 				return &ReadResourceResult{
 					Contents: &ResourceContents{
@@ -216,7 +216,7 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if diff := cmp.Diff([]Resource{resource1, resource2}, lrres.Resources); diff != "" {
+		if diff := cmp.Diff([]*Resource{resource1, resource2}, lrres.Resources); diff != "" {
 			t.Errorf("resources/list mismatch (-want, +got):\n%s", diff)
 		}
 
@@ -370,7 +370,7 @@ func TestCancellation(t *testing.T) {
 		cancelled = make(chan struct{}, 1) // don't block the request
 	)
 
-	slowRequest := func(ctx context.Context, cc *ServerConnection, v struct{}) ([]Content, error) {
+	slowRequest := func(ctx context.Context, cc *ServerConnection, v struct{}) ([]*Content, error) {
 		start <- struct{}{}
 		select {
 		case <-ctx.Done():

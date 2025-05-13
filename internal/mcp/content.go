@@ -45,23 +45,23 @@ func (c *Content) UnmarshalJSON(data []byte) error {
 }
 
 // NewTextContent creates a [Content] with text.
-func NewTextContent(text string) Content {
-	return Content{Type: "text", Text: text}
+func NewTextContent(text string) *Content {
+	return &Content{Type: "text", Text: text}
 }
 
 // NewImageContent creates a [Content] with image data.
-func NewImageContent(data []byte, mimeType string) Content {
-	return Content{Type: "image", Data: data, MIMEType: mimeType}
+func NewImageContent(data []byte, mimeType string) *Content {
+	return &Content{Type: "image", Data: data, MIMEType: mimeType}
 }
 
 // NewAudioContent creates a [Content] with audio data.
-func NewAudioContent(data []byte, mimeType string) Content {
-	return Content{Type: "audio", Data: data, MIMEType: mimeType}
+func NewAudioContent(data []byte, mimeType string) *Content {
+	return &Content{Type: "audio", Data: data, MIMEType: mimeType}
 }
 
 // NewResourceContent creates a [Content] with an embedded resource.
-func NewResourceContent(resource *ResourceContents) Content {
-	return Content{Type: "resource", Resource: resource}
+func NewResourceContent(resource *ResourceContents) *Content {
+	return &Content{Type: "resource", Resource: resource}
 }
 
 // ResourceContents represents the union of the spec's {Text,Blob}ResourceContents types.

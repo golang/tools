@@ -24,7 +24,7 @@ type Client struct {
 	opts             ClientOptions
 	mu               sync.Mutex
 	conn             *jsonrpc2.Connection
-	roots            *featureSet[Root]
+	roots            *featureSet[*Root]
 	initializeResult *initializeResult
 }
 
@@ -38,7 +38,7 @@ func NewClient(name, version string, t Transport, opts *ClientOptions) *Client {
 		name:      name,
 		version:   version,
 		transport: t,
-		roots:     newFeatureSet(func(r Root) string { return r.URI }),
+		roots:     newFeatureSet(func(r *Root) string { return r.URI }),
 	}
 	if opts != nil {
 		c.opts = *opts
@@ -84,7 +84,7 @@ func (c *Client) Start(ctx context.Context) (err error) {
 		return err
 	}
 	params := &initializeParams{
-		ClientInfo: implementation{Name: c.name, Version: c.version},
+		ClientInfo: &implementation{Name: c.name, Version: c.version},
 	}
 	if err := call(ctx, c.conn, "initialize", params, &c.initializeResult); err != nil {
 		return err
@@ -112,7 +112,7 @@ func (c *Client) Wait() error {
 // replacing any with the same URIs,
 // and notifies any connected servers.
 // TODO: notification
-func (c *Client) AddRoots(roots ...Root) {
+func (c *Client) AddRoots(roots ...*Root) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.roots.add(roots...)
@@ -159,7 +159,7 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 // ListPrompts lists prompts that are currently available on the server.
-func (c *Client) ListPrompts(ctx context.Context) ([]Prompt, error) {
+func (c *Client) ListPrompts(ctx context.Context) ([]*Prompt, error) {
 	var (
 		params = &ListPromptsParams{}
 		result ListPromptsResult
@@ -186,7 +186,7 @@ func (c *Client) GetPrompt(ctx context.Context, name string, args map[string]str
 }
 
 // ListTools lists tools that are currently available on the server.
-func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
+func (c *Client) ListTools(ctx context.Context) ([]*Tool, error) {
 	var (
 		params = &ListToolsParams{}
 		result ListToolsResult

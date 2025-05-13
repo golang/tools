@@ -20,7 +20,7 @@ type PromptHandler func(context.Context, *ServerConnection, map[string]string) (
 
 // A Prompt is a prompt definition bound to a prompt handler.
 type ServerPrompt struct {
-	Definition Prompt
+	Definition *Prompt
 	Handler    PromptHandler
 }
 
@@ -41,7 +41,7 @@ func NewPrompt[TReq any](name, description string, handler func(context.Context,
 		panic(fmt.Sprintf("handler request type must be a struct"))
 	}
 	prompt := &ServerPrompt{
-		Definition: Prompt{
+		Definition: &Prompt{
 			Name:        name,
 			Description: description,
 		},
@@ -54,7 +54,7 @@ func NewPrompt[TReq any](name, description string, handler func(context.Context,
 		if prop.Type != "string" {
 			panic(fmt.Sprintf("handler type must consist only of string fields"))
 		}
-		prompt.Definition.Arguments = append(prompt.Definition.Arguments, PromptArgument{
+		prompt.Definition.Arguments = append(prompt.Definition.Arguments, &PromptArgument{
 			Name:        name,
 			Description: prop.Description,
 			Required:    required[name],
@@ -95,13 +95,13 @@ func (s promptSetter) set(p *ServerPrompt) { s(p) }
 // Required and Description, and panics when encountering any other option.
 func Argument(name string, opts ...SchemaOption) PromptOption {
 	return promptSetter(func(p *ServerPrompt) {
-		i := slices.IndexFunc(p.Definition.Arguments, func(arg PromptArgument) bool {
+		i := slices.IndexFunc(p.Definition.Arguments, func(arg *PromptArgument) bool {
 			return arg.Name == name
 		})
-		var arg PromptArgument
+		var arg *PromptArgument
 		if i < 0 {
 			i = len(p.Definition.Arguments)
-			arg = PromptArgument{Name: name}
+			arg = &PromptArgument{Name: name}
 			p.Definition.Arguments = append(p.Definition.Arguments, arg)
 		} else {
 			arg = p.Definition.Arguments[i]

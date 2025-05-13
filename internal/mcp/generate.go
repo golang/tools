@@ -139,6 +139,10 @@ func main() {
 	if err := json.Unmarshal(data, &schema); err != nil {
 		log.Fatal(err)
 	}
+	// Resolve the schema so we have the referents of all the Refs.
+	if _, err := schema.Resolve("", nil); err != nil {
+		log.Fatal(err)
+	}
 
 	// Collect named types. Since we may create new type definitions while
 	// writing types, we collect definitions and concatenate them later. This
@@ -253,7 +257,8 @@ func writeDecl(configName string, config typeConfig, def *jsonschema.Schema, nam
 // be added during writeType, if they are extracted from inner fields.
 func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named map[string]*bytes.Buffer) error {
 	// Use type names for Named types.
-	if name := strings.TrimPrefix(def.Ref, "#/definitions/"); name != "" {
+	name, resolved := deref(def)
+	if name != "" {
 		// TODO: this check is not quite right: we should really panic if the
 		// definition is missing, *but only if w is not io.Discard*. That's not a
 		// great API: see if we can do something more explicit than io.Discard.
@@ -265,6 +270,9 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 				name = cfg.Substitute
 			} else if cfg.Name != "" {
 				name = cfg.Name
+			}
+			if isStruct(resolved) {
+				w.Write([]byte{'*'})
 			}
 		}
 		w.Write([]byte(name))
@@ -288,7 +296,7 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 		if slices.ContainsFunc(def.AnyOf, func(s *jsonschema.Schema) bool {
 			return s.Ref == "#/definitions/TextContent"
 		}) {
-			fmt.Fprintf(w, "Content")
+			fmt.Fprintf(w, "*Content")
 		} else {
 			// E.g. union types.
 			fmt.Fprintf(w, "json.RawMessage")
@@ -322,14 +330,15 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 
 				required := slices.Contains(def.Required, name)
 
-				// If the field is not required, and is a struct type, indirect with a
+				// If the field is a struct type, indirect with a
 				// pointer so that it can be empty as defined by encoding/json.
-				//
-				// TODO: use omitzero when available.
-				needPointer := !required &&
-					(strings.HasPrefix(fieldDef.Ref, "#/definitions/") ||
-						fieldDef.Type == "object" && !canHaveAdditionalProperties(fieldDef))
-
+				// This also future-proofs against the struct getting large.
+				fieldTypeSchema := fieldDef
+				// If the schema is a reference, dereference it.
+				if _, rs := deref(fieldDef); rs != nil {
+					fieldTypeSchema = rs
+				}
+				needPointer := isStruct(fieldTypeSchema)
 				if config != nil && config.Fields[export] != nil {
 					r := config.Fields[export]
 					if r.Substitute != "" {
@@ -348,13 +357,8 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 						}
 						fmt.Fprintf(w, typename)
 					}
-				} else {
-					if needPointer {
-						fmt.Fprintf(w, "*")
-					}
-					if err := writeType(w, nil, fieldDef, named); err != nil {
-						return fmt.Errorf("failed to write type for field %s: %v", export, err)
-					}
+				} else if err := writeType(w, nil, fieldDef, named); err != nil {
+					return fmt.Errorf("failed to write type for field %s: %v", export, err)
 				}
 				fmt.Fprintf(w, " `json:\"%s", name)
 				if !required {
@@ -450,6 +454,33 @@ func exportName(s string) string {
 		}
 	}
 	return s
+}
+
+// deref dereferences s.Ref.
+// If s.Ref refers to a schema in the Definitions section, deref
+// returns the definition name and the associated schema.
+// Otherwise, deref returns "", nil.
+func deref(s *jsonschema.Schema) (name string, _ *jsonschema.Schema) {
+	name, ok := strings.CutPrefix(s.Ref, "#/definitions/")
+	if !ok {
+		return "", nil
+	}
+	return name, s.ResolvedRef()
+}
+
+// isStruct reports whether s should be translated to a struct.
+func isStruct(s *jsonschema.Schema) bool {
+	return s.Type == "object" && s.Properties != nil && !canHaveAdditionalProperties(s)
+}
+
+// schemaJSON returns the JSON for s.
+// For debugging.
+func schemaJSON(s *jsonschema.Schema) string {
+	data, err := json.Marshal(s)
+	if err != nil {
+		return fmt.Sprintf("<jsonschema.Schema:%v>", err)
+	}
+	return string(data)
 }
 
 // Map from initialism to the regexp that matches it.

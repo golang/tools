@@ -138,6 +138,14 @@ func (s *Schema) String() string {
 	return "<anonymous schema>"
 }
 
+// ResolvedRef returns the Schema to which this schema's $ref keyword
+// refers, or nil if it doesn't have a $ref.
+// It returns nil if this schema has not been resolved, meaning that
+// [Schema.Resolve] was called on it or one of its ancestors.
+func (s *Schema) ResolvedRef() *Schema {
+	return s.resolvedRef
+}
+
 // json returns the schema in json format.
 func (s *Schema) json() string {
 	data, err := json.MarshalIndent(s, "", "  ")

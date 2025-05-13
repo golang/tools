@@ -20,8 +20,8 @@ type HiParams struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ServerConnection, params *HiParams) ([]mcp.Content, error) {
-	return []mcp.Content{
+func SayHi(ctx context.Context, cc *mcp.ServerConnection, params *HiParams) ([]*mcp.Content, error) {
+	return []*mcp.Content{
 		mcp.NewTextContent("Hi " + params.Name),
 	}, nil
 }
@@ -29,7 +29,7 @@ func SayHi(ctx context.Context, cc *mcp.ServerConnection, params *HiParams) ([]m
 func PromptHi(ctx context.Context, cc *mcp.ServerConnection, params *HiParams) (*mcp.GetPromptResult, error) {
 	return &mcp.GetPromptResult{
 		Description: "Code review prompt",
-		Messages: []mcp.PromptMessage{
+		Messages: []*mcp.PromptMessage{
 			{Role: "user", Content: mcp.NewTextContent("Say hi to " + params.Name)},
 		},
 	}, nil

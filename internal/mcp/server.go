@@ -121,11 +121,11 @@ const codeResourceNotFound = -31002
 
 // A ReadResourceHandler is a function that reads a resource.
 // If it cannot find the resource, it should return the result of calling [ResourceNotFoundError].
-type ReadResourceHandler func(context.Context, Resource, *ReadResourceParams) (*ReadResourceResult, error)
+type ReadResourceHandler func(context.Context, *Resource, *ReadResourceParams) (*ReadResourceResult, error)
 
 // A ServerResource associates a Resource with its handler.
 type ServerResource struct {
-	Resource Resource
+	Resource *Resource
 	Handler  ReadResourceHandler
 }
 
@@ -381,7 +381,7 @@ func (cc *ServerConnection) initialize(ctx context.Context, _ *ServerConnection,
 	return &initializeResult{
 		// TODO(rfindley): support multiple protocol versions.
 		ProtocolVersion: "2024-11-05",
-		Capabilities: serverCapabilities{
+		Capabilities: &serverCapabilities{
 			Prompts: &promptCapabilities{
 				ListChanged: false, // not yet supported
 			},
@@ -390,7 +390,7 @@ func (cc *ServerConnection) initialize(ctx context.Context, _ *ServerConnection,
 			},
 		},
 		Instructions: cc.server.opts.Instructions,
-		ServerInfo: implementation{
+		ServerInfo: &implementation{
 			Name:    cc.server.name,
 			Version: cc.server.version,
 		},

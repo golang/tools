@@ -47,7 +47,7 @@ type CallToolResult struct {
 	// This result property is reserved by the protocol to allow clients and servers
 	// to attach additional metadata to their responses.
 	Meta    map[string]json.RawMessage `json:"_meta,omitempty"`
-	Content []Content                  `json:"content"`
+	Content []*Content                 `json:"content"`
 	// Whether the tool call ended in an error.
 	//
 	// If not set, this is assumed to be false (the call was successful).
@@ -73,7 +73,7 @@ type ClientCapabilities struct {
 	Experimental map[string]struct {
 	} `json:"experimental,omitempty"`
 	// Present if the client supports listing roots.
-	Roots *struct {
+	Roots struct {
 		// Whether the client supports notifications for changes to the roots list.
 		ListChanged bool `json:"listChanged,omitempty"`
 	} `json:"roots,omitempty"`
@@ -95,8 +95,8 @@ type GetPromptResult struct {
 	// to attach additional metadata to their responses.
 	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
 	// An optional description for the prompt.
-	Description string          `json:"description,omitempty"`
-	Messages    []PromptMessage `json:"messages"`
+	Description string           `json:"description,omitempty"`
+	Messages    []*PromptMessage `json:"messages"`
 }
 
 type ListPromptsParams struct {
@@ -112,8 +112,8 @@ type ListPromptsResult struct {
 	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
 	// An opaque token representing the pagination position after the last returned
 	// result. If present, there may be more results available.
-	NextCursor string   `json:"nextCursor,omitempty"`
-	Prompts    []Prompt `json:"prompts"`
+	NextCursor string    `json:"nextCursor,omitempty"`
+	Prompts    []*Prompt `json:"prompts"`
 }
 
 type ListResourcesParams struct {
@@ -129,17 +129,17 @@ type ListResourcesResult struct {
 	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
 	// An opaque token representing the pagination position after the last returned
 	// result. If present, there may be more results available.
-	NextCursor string     `json:"nextCursor,omitempty"`
-	Resources  []Resource `json:"resources"`
+	NextCursor string      `json:"nextCursor,omitempty"`
+	Resources  []*Resource `json:"resources"`
 }
 
 type ListRootsParams struct {
-	Meta *struct {
+	Meta struct {
 		// If specified, the caller is requesting out-of-band progress notifications for
 		// this request (as represented by notifications/progress). The value of this
 		// parameter is an opaque token that will be attached to any subsequent
 		// notifications. The receiver is not obligated to provide these notifications.
-		ProgressToken *any `json:"progressToken,omitempty"`
+		ProgressToken any `json:"progressToken,omitempty"`
 	} `json:"_meta,omitempty"`
 }
 
@@ -150,7 +150,7 @@ type ListRootsResult struct {
 	// This result property is reserved by the protocol to allow clients and servers
 	// to attach additional metadata to their responses.
 	Meta  map[string]json.RawMessage `json:"_meta,omitempty"`
-	Roots []Root                     `json:"roots"`
+	Roots []*Root                    `json:"roots"`
 }
 
 type ListToolsParams struct {
@@ -166,14 +166,14 @@ type ListToolsResult struct {
 	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
 	// An opaque token representing the pagination position after the last returned
 	// result. If present, there may be more results available.
-	NextCursor string `json:"nextCursor,omitempty"`
-	Tools      []Tool `json:"tools"`
+	NextCursor string  `json:"nextCursor,omitempty"`
+	Tools      []*Tool `json:"tools"`
 }
 
 // A prompt or prompt template that the server offers.
 type Prompt struct {
 	// A list of arguments to use for templating the prompt.
-	Arguments []PromptArgument `json:"arguments,omitempty"`
+	Arguments []*PromptArgument `json:"arguments,omitempty"`
 	// An optional description of what this prompt provides
 	Description string `json:"description,omitempty"`
 	// The name of the prompt or prompt template.
@@ -195,8 +195,8 @@ type PromptArgument struct {
 // This is similar to `SamplingMessage`, but also supports the embedding of
 // resources from the MCP server.
 type PromptMessage struct {
-	Content Content `json:"content"`
-	Role    Role    `json:"role"`
+	Content *Content `json:"content"`
+	Role    Role     `json:"role"`
 }
 
 type ReadResourceParams struct {
@@ -312,8 +312,8 @@ type implementation struct {
 }
 
 type initializeParams struct {
-	Capabilities ClientCapabilities `json:"capabilities"`
-	ClientInfo   implementation     `json:"clientInfo"`
+	Capabilities *ClientCapabilities `json:"capabilities"`
+	ClientInfo   *implementation     `json:"clientInfo"`
 	// The latest version of the Model Context Protocol that the client supports.
 	// The client MAY decide to support older versions as well.
 	ProtocolVersion string `json:"protocolVersion"`
@@ -325,7 +325,7 @@ type initializeResult struct {
 	// This result property is reserved by the protocol to allow clients and servers
 	// to attach additional metadata to their responses.
 	Meta         map[string]json.RawMessage `json:"_meta,omitempty"`
-	Capabilities serverCapabilities         `json:"capabilities"`
+	Capabilities *serverCapabilities        `json:"capabilities"`
 	// Instructions describing how to use the server and its features.
 	//
 	// This can be used by clients to improve the LLM's understanding of available
@@ -335,8 +335,8 @@ type initializeResult struct {
 	// The version of the Model Context Protocol that the server wants to use. This
 	// may not match the version that the client requested. If the client cannot
 	// support this version, it MUST disconnect.
-	ProtocolVersion string         `json:"protocolVersion"`
-	ServerInfo      implementation `json:"serverInfo"`
+	ProtocolVersion string          `json:"protocolVersion"`
+	ServerInfo      *implementation `json:"serverInfo"`
 }
 
 type initializedParams struct {

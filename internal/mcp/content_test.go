@@ -14,7 +14,7 @@ import (
 
 func TestContent(t *testing.T) {
 	tests := []struct {
-		in   mcp.Content
+		in   *mcp.Content
 		want string // json serialization
 	}{
 		{mcp.NewTextContent("hello"), `{"type":"text","text":"hello"}`},
@@ -48,7 +48,7 @@ func TestContent(t *testing.T) {
 		if diff := cmp.Diff(test.want, string(got)); diff != "" {
 			t.Errorf("json.Marshal(%v) mismatch (-want +got):\n%s", test.in, diff)
 		}
-		var out mcp.Content
+		var out *mcp.Content
 		if err := json.Unmarshal(got, &out); err != nil {
 			t.Fatal(err)
 		}

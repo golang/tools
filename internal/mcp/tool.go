@@ -17,7 +17,7 @@ type ToolHandler func(context.Context, *ServerConnection, map[string]json.RawMes
 
 // A Tool is a tool definition that is bound to a tool handler.
 type ServerTool struct {
-	Definition Tool
+	Definition *Tool
 	Handler    ToolHandler
 }
 
@@ -34,7 +34,7 @@ type ServerTool struct {
 //
 // TODO: just have the handler return a CallToolResult: returning []Content is
 // going to be inconsistent with other server features.
-func NewTool[TReq any](name, description string, handler func(context.Context, *ServerConnection, TReq) ([]Content, error), opts ...ToolOption) *ServerTool {
+func NewTool[TReq any](name, description string, handler func(context.Context, *ServerConnection, TReq) ([]*Content, error), opts ...ToolOption) *ServerTool {
 	schema, err := jsonschema.For[TReq]()
 	if err != nil {
 		panic(err)
@@ -55,7 +55,7 @@ func NewTool[TReq any](name, description string, handler func(context.Context, *
 		// rather than returned as jsonrpc2 server errors.
 		if err != nil {
 			return &CallToolResult{
-				Content: []Content{NewTextContent(err.Error())},
+				Content: []*Content{NewTextContent(err.Error())},
 				IsError: true,
 			}, nil
 		}
@@ -65,7 +65,7 @@ func NewTool[TReq any](name, description string, handler func(context.Context, *
 		return res, nil
 	}
 	t := &ServerTool{
-		Definition: Tool{
+		Definition: &Tool{
 			Name:        name,
 			Description: description,
 			InputSchema: schema,
