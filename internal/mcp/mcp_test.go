@@ -198,15 +198,15 @@ func TestEndToEnd(t *testing.T) {
 			URI:      "file:///nonexistent.txt",
 		}
 
-		readHandler := func(_ context.Context, r *Resource, _ *ReadResourceParams) (*ReadResourceResult, error) {
-			if r.URI == "file:///file1.txt" {
+		readHandler := func(_ context.Context, _ *ServerConnection, p *ReadResourceParams) (*ReadResourceResult, error) {
+			if p.URI == "file:///file1.txt" {
 				return &ReadResourceResult{
 					Contents: &ResourceContents{
 						Text: "file contents",
 					},
 				}, nil
 			}
-			return nil, ResourceNotFoundError(r.URI)
+			return nil, ResourceNotFoundError(p.URI)
 		}
 		s.AddResources(
 			&ServerResource{resource1, readHandler},

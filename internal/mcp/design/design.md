@@ -875,51 +875,60 @@ handler to a Go function using reflection to derive its arguments. We provide
 
 ### Resources and resource templates
 
-To add a resource or resource template to a server, users call the `AddResource` and
-`AddResourceTemplate` methods, passing the resource or template and a function for reading it:
-
+In our design, each resource and resource template is associated with a function that reads it,
+with this signature:
 ```go
-type ReadResourceHandler func(context.Context, *ServerSession, *Resource, *ReadResourceParams) (*ReadResourceResult, error)
+type ResourceHandler func(context.Context, *ServerSession, *ReadResourceParams) (*ReadResourceResult, error)
+```
+The arguments include the `ServerSession` so the handler can observe the client's roots.
+The handler should return the resource contents in a `ReadResourceResult`, calling either `NewTextResourceContents`
+or `NewBlobResourceContents`. If the handler omits the URI or MIME type, the server will populate them from the
+resource.
 
-func (*Server) AddResource(*Resource, ReadResourceHandler)
-func (*Server) AddResourceTemplate(*ResourceTemplate, ReadResourceHandler)
+The `ServerResource` and `ServerResourceTemplate` types hold the association between the resource and its handler:
+```go
+type ServerResource struct {
+  Resource Resource
+  Handler  ResourceHandler
+}
+
+type ServerResourceTemplate struct {
+  Template ResourceTemplate
+  Handler  ResourceHandler
+}
 ```
 
-The `Resource` is passed to the reader function even though it is redundant (the function could have closed over it)
-so a single handler can support multiple resources.
-If the incoming resource matches a template, a `Resource` argument is constructed
-from the fields in the `ResourceTemplate`.
-The `ServerSession` argument is there so the reader can observe the client's roots.
-
-To read files from the local filesystem, we recommend using `FileReadResourceHandler` to construct a handler:
+To add a resource or resource template to a server, users call the `AddResources` and
+`AddResourceTemplates` methods with one or more `ServerResource`s or `ServerResourceTemplate`s:
 
 ```go
-// FileReadResourceHandler returns a ReadResourceHandler that reads paths using dir as a root directory.
+func (*Server) AddResources(...*ServerResource)
+func (*Server) AddResourceTemplates(...*ServerResourceTemplate)
+
+func (s *Server) RemoveResources(uris ...string)
+func (s *Server) RemoveResourceTemplates(uriTemplates ...string)
+```
+
+The `ReadResource` method finds a resource or resource template matching the argument URI and calls
+its assocated handler.
+If the argument URI matches a template, the `Resource` argument to the handler is constructed
+from the fields in the `ResourceTemplate`.
+
+To read files from the local filesystem, we recommend using `FileResourceHandler` to construct a handler:
+```go
+// FileResourceHandler returns a ResourceHandler that reads paths using dir as a root directory.
 // It protects against path traversal attacks.
 // It will not read any file that is not in the root set of the client requesting the resource.
-func (*Server) FileReadResourceHandler(dir string) ReadResourceHandler
+func (*Server) FileResourceHandler(dir string) ResourceHandler
 ```
-
-It guards against [path traversal attacks](https://go.dev/blog/osroot)
-and observes the client's roots.
 Here is an example:
 
 ```go
 // Safely read "/public/puppies.txt".
-s.AddResource(
-  &mcp.Resource{URI: "file:///puppies.txt"},
-  s.FileReadResourceHandler("/public"))
+s.AddResources(&mcp.ServerResource{
+  Resource: mcp.Resource{URI: "file:///puppies.txt"},
+  Handler: s.FileReadResourceHandler("/public")})
 ```
-
-There are also server methods to remove resources and resource templates.
-
-```go
-func (*Server) RemoveResources(uris ...string)
-func (*Server) RemoveResourceTemplates(names ...string)
-```
-
-Resource templates don't have unique identifiers, so removing a name will remove all
-resource templates with that name.
 
 Servers support all of the resource-related spec methods:
 

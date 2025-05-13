@@ -119,18 +119,18 @@ func ResourceNotFoundError(uri string) error {
 // The immediate problem is that jsonprc2 defines -32002 as "server closing".
 const codeResourceNotFound = -31002
 
-// A ReadResourceHandler is a function that reads a resource.
+// A ResourceHandler is a function that reads a resource.
 // If it cannot find the resource, it should return the result of calling [ResourceNotFoundError].
-type ReadResourceHandler func(context.Context, *Resource, *ReadResourceParams) (*ReadResourceResult, error)
+type ResourceHandler func(context.Context, *ServerConnection, *ReadResourceParams) (*ReadResourceResult, error)
 
 // A ServerResource associates a Resource with its handler.
 type ServerResource struct {
 	Resource *Resource
-	Handler  ReadResourceHandler
+	Handler  ResourceHandler
 }
 
 // AddResource adds the given resource to the server and associates it with
-// a [ReadResourceHandler], which will be called when the client calls [ClientSession.ReadResource].
+// a [ResourceHandler], which will be called when the client calls [ClientSession.ReadResource].
 // If a resource with the same URI already exists, this one replaces it.
 // AddResource panics if a resource URI is invalid or not absolute (has an empty scheme).
 func (s *Server) AddResources(resources ...*ServerResource) {
@@ -217,7 +217,7 @@ func (s *Server) listResources(_ context.Context, _ *ServerConnection, params *L
 	return res, nil
 }
 
-func (s *Server) readResource(ctx context.Context, _ *ServerConnection, params *ReadResourceParams) (*ReadResourceResult, error) {
+func (s *Server) readResource(ctx context.Context, ss *ServerConnection, params *ReadResourceParams) (*ReadResourceResult, error) {
 	uri := params.URI
 	// Look up the resource URI in the list we have.
 	// This is a security check as well as an information lookup.
@@ -229,7 +229,7 @@ func (s *Server) readResource(ctx context.Context, _ *ServerConnection, params *
 		// Treat an unregistered resource the same as a registered one that couldn't be found.
 		return nil, ResourceNotFoundError(uri)
 	}
-	res, err := resource.Handler(ctx, resource.Resource, params)
+	res, err := resource.Handler(ctx, ss, params)
 	if err != nil {
 		return nil, err
 	}
