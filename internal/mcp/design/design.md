@@ -34,6 +34,7 @@ compatible with mcp-go, translating between them should be straightforward in
 most cases.
 (Later, we will provide a detailed translation guide.)
 
+
 # Requirements
 
 These may be obvious, but it's worthwhile to define goals for an official MCP
@@ -483,18 +484,33 @@ func (*ClientSession) ListTools(context.Context, *ListToolsParams) (*ListToolsRe
 ```
 
 Our SDK has a method for every RPC in the spec, and except for `CallTool`,
-their signatures all share this form. To avoid boilerplate, we don't repeat this
+their signatures all share this form.
+We do this, rather than providing more convenient shortcut signatures,
+to maintain backward compatibility if the spec makes backward-compatible changes
+such as adding a new property to the request parameters.
+To avoid boilerplate, we don't repeat this
 signature for RPCs defined in the spec; readers may assume it when we mention a
 "spec method."
 
 `CallTool` is the only exception: for convenience, it takes the tool name and
 arguments, with an options truct for additional request fields.
+Our SDK has a method for every RPC in the spec, and their signatures all share
+this form. To avoid boilerplate, we don't repeat this signature for RPCs
+defined in the spec; readers may assume it when we mention a "spec method."
 
 Why do we use params instead of the full request? JSON-RPC requests consist of a method
 name and a set of parameters, and the method is already encoded in the Go method name.
 Technically, the MCP spec could add a field to a request while preserving backward
 compatibility, which would break the Go SDK's compatibility. But in the unlikely event
 that were to happen, we would add that field to the Params struct.
+
+We believe that any change to the spec that would require callers to pass a new a
+parameter is not backward compatible. Therefore, it will always work to pass
+`nil` for any `XXXParams` argument that isn't currently necessary. For example, it is okay to call `Ping` like so:
+
+```go
+err := session.Ping(ctx, nil)`
+```
 
 #### Iterator Methods
 
@@ -511,6 +527,7 @@ func (*ClientSession) Resources(context.Context, *ListResourceParams) iter.Seq2[
 
 func (*ClientSession) ResourceTemplates(context.Context, *ListResourceTemplatesParams) iter.Seq2[ResourceTemplate, error]
 ```
+
 
 ### Middleware
 
