@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -23,7 +24,7 @@ type Content struct {
 	Type        string            `json:"type"`
 	Text        string            `json:"text,omitempty"`
 	MIMEType    string            `json:"mimeType,omitempty"`
-	Data        []byte            `json:"data,omitzero"`
+	Data        []byte            `json:"data,omitempty"`
 	Resource    *ResourceContents `json:"resource,omitempty"`
 	Annotations *Annotations      `json:"annotations,omitempty"`
 }
@@ -68,8 +69,34 @@ func NewResourceContent(resource ResourceContents) Content {
 type ResourceContents struct {
 	URI      string `json:"uri,"`
 	MIMEType string `json:"mimeType,omitempty"`
-	Text     string `json:"text,omitempty"`
-	Blob     []byte `json:"blob,omitzero"`
+	Text     string `json:"text"`
+	Blob     []byte `json:"blob,omitempty"`
+}
+
+func (r ResourceContents) MarshalJSON() ([]byte, error) {
+	if r.URI == "" {
+		return nil, errors.New("ResourceContents missing URI")
+	}
+	if r.Blob == nil {
+		// Text. Marshal normally.
+		type wireResourceContents ResourceContents
+		return json.Marshal((wireResourceContents)(r))
+	}
+	// Blob.
+	if r.Text != "" {
+		return nil, errors.New("ResourceContents has non-zero Text and Blob fields")
+	}
+	// r.Blob may be the empty slice, so marshal with an alternative definition.
+	br := struct {
+		URI      string `json:"uri,omitempty"`
+		MIMEType string `json:"mimeType,omitempty"`
+		Blob     []byte `json:"blob"`
+	}{
+		URI:      r.URI,
+		MIMEType: r.MIMEType,
+		Blob:     r.Blob,
+	}
+	return json.Marshal(br)
 }
 
 func NewTextResourceContents(uri, mimeType, text string) ResourceContents {
