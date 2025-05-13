@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"iter"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"sync"
 
@@ -101,34 +102,6 @@ func (s *Server) RemoveTools(names ...string) {
 	if s.tools.remove(names...) {
 		// TODO: notify
 	}
-}
-
-// ResourceNotFoundError returns an error indicating that a resource being read could
-// not be found.
-func ResourceNotFoundError(uri string) error {
-	return &jsonrpc2.WireError{
-		Code:    codeResourceNotFound,
-		Message: "Resource not found",
-		Data:    json.RawMessage(fmt.Sprintf(`{"uri":%q}`, uri)),
-	}
-}
-
-// The error code to return when a resource isn't found.
-// See https://modelcontextprotocol.io/specification/2025-03-26/server/resources#error-handling
-// However, the code they chose in in the wrong space
-// (see https://github.com/modelcontextprotocol/modelcontextprotocol/issues/509).
-// so we pick a different one, arbirarily for now (until they fix it).
-// The immediate problem is that jsonprc2 defines -32002 as "server closing".
-const codeResourceNotFound = -31002
-
-// A ResourceHandler is a function that reads a resource.
-// If it cannot find the resource, it should return the result of calling [ResourceNotFoundError].
-type ResourceHandler func(context.Context, *ServerSession, *ReadResourceParams) (*ReadResourceResult, error)
-
-// A ServerResource associates a Resource with its handler.
-type ServerResource struct {
-	Resource *Resource
-	Handler  ResourceHandler
 }
 
 // AddResource adds the given resource to the server and associates it with
@@ -245,6 +218,49 @@ func (s *Server) readResource(ctx context.Context, ss *ServerSession, params *Re
 		res.Contents.MIMEType = resource.Resource.MIMEType
 	}
 	return res, nil
+}
+
+// FileResourceHandler returns a ReadResourceHandler that reads paths using dir as
+// a base directory.
+// It honors client roots and protects against path traversal attacks.
+//
+// The dir argument should be a filesystem path. It need not be absolute, but
+// that is recommended to avoid a dependency on the current working directory (the
+// check against client roots is done with an absolute path). If dir is not absolute
+// and the current working directory is unavailable, FileResourceHandler panics.
+//
+// Lexical path traversal attacks, where the path has ".." elements that escape dir,
+// are always caught. Go 1.24 and above also protects against symlink-based attacks,
+// where symlinks under dir lead out of the tree.
+func (s *Server) FileResourceHandler(dir string) ResourceHandler {
+	// Convert dir to an absolute path.
+	dirFilepath, err := filepath.Abs(dir)
+	if err != nil {
+		panic(err)
+	}
+	return func(ctx context.Context, ss *ServerSession, params *ReadResourceParams) (_ *ReadResourceResult, err error) {
+		defer func() {
+			if err != nil {
+				err = fmt.Errorf("reading resource %s: %w", params.URI, err)
+			}
+		}()
+
+		// TODO: use a memoizing API here.
+		rootRes, err := ss.ListRoots(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("listing roots: %w", err)
+		}
+		roots, err := fileRoots(rootRes.Roots)
+		if err != nil {
+			return nil, err
+		}
+		data, err := readFileResource(params.URI, dirFilepath, roots)
+		if err != nil {
+			return nil, err
+		}
+		// TODO(jba): figure out mime type.
+		return &ReadResourceResult{Contents: NewBlobResourceContents(params.URI, "text/plain", data)}, nil
+	}
 }
 
 // Run runs the server over the given transport, which must be persistent.

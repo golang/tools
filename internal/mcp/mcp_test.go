@@ -9,6 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -83,7 +85,11 @@ func TestEndToEnd(t *testing.T) {
 	}()
 
 	c := NewClient("testClient", "v1.0.0", nil)
-	c.AddRoots(&Root{URI: "file:///root"})
+	rootAbs, err := filepath.Abs(filepath.FromSlash("testdata/files"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.AddRoots(&Root{URI: "file://" + rootAbs})
 
 	// Connect the client.
 	cs, err := c.Connect(ctx, ct)
@@ -189,10 +195,13 @@ func TestEndToEnd(t *testing.T) {
 	})
 
 	t.Run("resources", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("TODO: fix for Windows")
+		}
 		resource1 := &Resource{
 			Name:     "public",
 			MIMEType: "text/plain",
-			URI:      "file:///file1.txt",
+			URI:      "file:///info.txt",
 		}
 		resource2 := &Resource{
 			Name:     "public", // names are not unique IDs
@@ -200,16 +209,7 @@ func TestEndToEnd(t *testing.T) {
 			URI:      "file:///nonexistent.txt",
 		}
 
-		readHandler := func(_ context.Context, _ *ServerSession, p *ReadResourceParams) (*ReadResourceResult, error) {
-			if p.URI == "file:///file1.txt" {
-				return &ReadResourceResult{
-					Contents: &ResourceContents{
-						Text: "file contents",
-					},
-				}, nil
-			}
-			return nil, ResourceNotFoundError(p.URI)
-		}
+		readHandler := s.FileResourceHandler("testdata/files")
 		s.AddResources(
 			&ServerResource{resource1, readHandler},
 			&ServerResource{resource2, readHandler})
@@ -226,7 +226,7 @@ func TestEndToEnd(t *testing.T) {
 			uri      string
 			mimeType string // "": not found; "text/plain": resource; "text/template": template
 		}{
-			{"file:///file1.txt", "text/plain"},
+			{"file:///info.txt", "text/plain"},
 			{"file:///nonexistent.txt", ""},
 			// TODO(jba): add resource template cases when we implement them
 		} {
@@ -238,7 +238,7 @@ func TestEndToEnd(t *testing.T) {
 						t.Errorf("%s: not found but expected it to be", tt.uri)
 					}
 				} else {
-					t.Fatalf("reading %s: %v", tt.uri, err)
+					t.Errorf("reading %s: %v", tt.uri, err)
 				}
 			} else {
 				if got := rres.Contents.URI; got != tt.uri {

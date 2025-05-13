@@ -742,7 +742,7 @@ To read files from the local filesystem, we recommend using `FileResourceHandler
 ```go
 // FileResourceHandler returns a ResourceHandler that reads paths using dir as a root directory.
 // It protects against path traversal attacks.
-// It will not read any file that is not in the root set of the client session requesting the resource.
+// It will not read any file that is not in the root set of the client requesting the resource.
 func (*Server) FileResourceHandler(dir string) ResourceHandler
 ```
 
