@@ -517,21 +517,24 @@ func (c *completer) typeNameSnippet(literalType types.Type, qual types.Qualifier
 	var (
 		snip     snippet.Builder
 		typeName string
-		pnt, _   = literalType.(typesinternal.NamedOrAlias) // = *Named | *Alias
+		tparams  *types.TypeParamList
 	)
 
-	tparams := typesinternal.TypeParams(pnt)
-	if tparams.Len() > 0 && !c.fullyInstantiated(pnt) {
-		// tparams.Len() > 0 implies pnt != nil.
-		// Inv: pnt is not "error" or "unsafe.Pointer", so pnt.Obj() != nil and has a Pkg().
+	t, ok := literalType.(typesinternal.NamedOrAlias) // = *Named | *Alias
+	if ok {
+		tparams = t.TypeParams()
+	}
+	if tparams.Len() > 0 && !c.fullyInstantiated(t) {
+		// tparams.Len() > 0 implies t != nil.
+		// Inv: t is not "error" or "unsafe.Pointer", so t.Obj() != nil and has a Pkg().
 
 		// We are not "fully instantiated" meaning we have type params that must be specified.
-		if pkg := qual(pnt.Obj().Pkg()); pkg != "" {
+		if pkg := qual(t.Obj().Pkg()); pkg != "" {
 			typeName = pkg + "."
 		}
 
 		// We do this to get "someType" instead of "someType[T]".
-		typeName += pnt.Obj().Name()
+		typeName += t.Obj().Name()
 		snip.WriteText(typeName + "[")
 
 		if c.opts.placeholders {
@@ -560,8 +563,8 @@ func (c *completer) typeNameSnippet(literalType types.Type, qual types.Qualifier
 // fullyInstantiated reports whether all of t's type params have
 // specified type args.
 func (c *completer) fullyInstantiated(t typesinternal.NamedOrAlias) bool {
-	targs := typesinternal.TypeArgs(t)
-	tparams := typesinternal.TypeParams(t)
+	targs := t.TypeArgs()
+	tparams := t.TypeParams()
 
 	if tparams.Len() != targs.Len() {
 		return false

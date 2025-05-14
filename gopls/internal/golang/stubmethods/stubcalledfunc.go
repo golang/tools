@@ -121,7 +121,7 @@ func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 		recvName,
 		star,
 		recv.Name(),
-		typesutil.FormatTypeParams(typesinternal.TypeParams(si.Receiver)),
+		typesutil.FormatTypeParams(si.Receiver.TypeParams()),
 		si.MethodName)
 
 	// Emit parameters, avoiding name conflicts.

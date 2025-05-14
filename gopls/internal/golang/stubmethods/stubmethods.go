@@ -200,7 +200,7 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 			mrn,
 			star,
 			si.Concrete.Obj().Name(),
-			typesutil.FormatTypeParams(typesinternal.TypeParams(si.Concrete)),
+			typesutil.FormatTypeParams(si.Concrete.TypeParams()),
 			missing[index].fn.Name(),
 			strings.TrimPrefix(types.TypeString(missing[index].fn.Type(), qual), "func"))
 	}
