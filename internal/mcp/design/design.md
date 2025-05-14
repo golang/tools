@@ -496,6 +496,22 @@ Technically, the MCP spec could add a field to a request while preserving backwa
 compatibility, which would break the Go SDK's compatibility. But in the unlikely event
 that were to happen, we would add that field to the Params struct.
 
+#### Iterator Methods
+
+For convenience, iterator methods handle pagination for the `List` spec methods
+automatically, traversing all pages. If Params are supplied, iteration begins
+from the provided cursor (if present).
+
+```go
+func (*ClientSession) Tools(context.Context, *ListToolsParams) iter.Seq2[Tool, error]
+
+func (*ClientSession) Prompts(context.Context, *ListPromptsParams) iter.Seq2[Prompt, error]
+
+func (*ClientSession) Resources(context.Context, *ListResourceParams) iter.Seq2[Resource, error]
+
+func (*ClientSession) ResourceTemplates(context.Context, *ListResourceTemplatesParams) iter.Seq2[ResourceTemplate, error]
+```
+
 ### Middleware
 
 We provide a mechanism to add MCP-level middleware, which runs after the
@@ -793,6 +809,9 @@ Schemas are validated on the server before the tool handler is called.
 Since all the fields of the Tool struct are exported, a Tool can also be created
 directly with assignment or a struct literal.
 
+Clients can call the spec method `ListTools` or an iterator method `Tools`
+to list the available tools.
+
 **Differences from mcp-go**: using variadic options to configure tools was
 signficantly inspired by mcp-go. However, the distinction between `ToolOption`
 and `SchemaOption` allows for recursive application of schema options.
@@ -847,7 +866,8 @@ server.AddPrompts(
 server.RemovePrompts("code_review")
 ```
 
-Clients can call the spec method `ListPrompts` to list the available prompts and the spec method `GetPrompt` to get one.
+Clients can call the spec method `ListPrompts` or an iterator method `Prompts`
+to list the available prompts and the spec method `GetPrompt` to get one.
 
 **Differences from mcp-go**: We provide a `NewPrompt` helper to bind a prompt
 handler to a Go function using reflection to derive its arguments. We provide
@@ -906,6 +926,8 @@ Servers support all of the resource-related spec methods:
 - `ListResources` and `ListResourceTemplates` for listings.
 - `ReadResource` to get the contents of a resource.
 - `Subscribe` and `Unsubscribe` to manage subscriptions on resources.
+
+We also provide iterator methods `Resources` and `ResourceTemplates`.
 
 `ReadResource` checks the incoming URI against the server's list of
 resources and resource templates to make sure it matches one of them,
@@ -1042,16 +1064,4 @@ more pages exist.
 
 In addition to the `List` methods, the SDK provides an iterator method for each
 list operation. This simplifies pagination for cients by automatically handling
-the underlying pagination logic.
-
-For example, we if we have a List method like this:
-
-```go
-func (*ClientSession) ListTools(context.Context, *ListToolsParams) (*ListToolsResult, error)
-```
-
-We will also provide an iterator method like this:
-
-```go
-func (*ClientSession) Tools(context.Context, *ListToolsParams) iter.Seq2[Tool, error]
-```
+the underlying pagination logic. See [Iterator Methods](#iterator-methods) above.
