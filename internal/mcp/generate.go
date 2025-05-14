@@ -66,7 +66,7 @@ var declarations = config{
 	"CallToolResult": {},
 	"CancelledNotification": {
 		Name:   "-",
-		Fields: config{"Params": {Name: "CancelledParams"}},
+		Fields: config{"Params": {Name: "cancelledParams"}},
 	},
 	"ClientCapabilities": {},
 	"GetPromptRequest": {

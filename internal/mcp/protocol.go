@@ -54,17 +54,6 @@ type CallToolResult struct {
 	IsError bool `json:"isError,omitempty"`
 }
 
-type CancelledParams struct {
-	// An optional string describing the reason for the cancellation. This MAY be
-	// logged or presented to the user.
-	Reason string `json:"reason,omitempty"`
-	// The ID of the request to cancel.
-	//
-	// This MUST correspond to the ID of a request previously issued in the same
-	// direction.
-	RequestID any `json:"requestId"`
-}
-
 // Capabilities a client may support. Known capabilities are defined here, in
 // this schema, but this is not a closed set: any client can define its own,
 // additional capabilities.
@@ -313,6 +302,17 @@ type ToolAnnotations struct {
 	ReadOnlyHint bool `json:"readOnlyHint,omitempty"`
 	// A human-readable title for the tool.
 	Title string `json:"title,omitempty"`
+}
+
+type cancelledParams struct {
+	// An optional string describing the reason for the cancellation. This MAY be
+	// logged or presented to the user.
+	Reason string `json:"reason,omitempty"`
+	// The ID of the request to cancel.
+	//
+	// This MUST correspond to the ID of a request previously issued in the same
+	// direction.
+	RequestID any `json:"requestId"`
 }
 
 // Describes the name and version of an MCP implementation.

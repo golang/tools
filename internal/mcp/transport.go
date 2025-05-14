@@ -126,7 +126,7 @@ type canceller struct {
 // Preempt implements jsonrpc2.Preempter.
 func (c *canceller) Preempt(ctx context.Context, req *jsonrpc2.Request) (result any, err error) {
 	if req.Method == "notifications/cancelled" {
-		var params CancelledParams
+		var params cancelledParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			return nil, err
 		}
@@ -151,7 +151,7 @@ func call(ctx context.Context, conn *jsonrpc2.Connection, method string, params,
 		return fmt.Errorf("calling %q: %w", method, ErrConnectionClosed)
 	case ctx.Err() != nil:
 		// Notify the peer of cancellation.
-		err := conn.Notify(xcontext.Detach(ctx), "notifications/cancelled", &CancelledParams{
+		err := conn.Notify(xcontext.Detach(ctx), "notifications/cancelled", &cancelledParams{
 			Reason:    ctx.Err().Error(),
 			RequestID: call.ID().Raw(),
 		})
