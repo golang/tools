@@ -1,10 +1,12 @@
-# MCP package
+# MCP SDK prototype
 
 [![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools)](https://pkg.go.dev/golang.org/x/tools/internal/mcp)
 
-The mcp package provides an SDK for writing [model context protocol](https://modelcontextprotocol.io/introduction)
-clients and servers. It is a work-in-progress. As of writing, it is a prototype
-to explore the design space of client/server transport and binding.
+The mcp package provides a software development kit (SDK) for writing clients
+and servers of the [model context
+protocol](https://modelcontextprotocol.io/introduction). It is unstable, and
+will change in breaking ways in the future. As of writing, it is a prototype to
+explore the design space of client/server transport and binding.
 
 ## Installation
 
@@ -32,12 +34,14 @@ func main() {
 	client := mcp.NewClient("mcp-client", "v1.0.0", nil)
 	// Connect to a server over stdin/stdout
 	transport := mcp.NewCommandTransport(exec.Command("myserver"))
-	if err := client.Connect(ctx, transport, nil); err != nil {
+	session, err := client.Connect(ctx, transport)
+    if err != nil {
 		log.Fatal(err)
 	}
+    defer session.Close()
 	// Call a tool on the server.
-	if content, err := client.CallTool(ctx, "greet", map[string]any{"name": "you"}); err != nil {
-		log.Printf("CallTool returns error: %v", err)
+	if content, err := session.CallTool(ctx, "greet", map[string]any{"name": "you"}, nil); err != nil {
+		log.Printf("CallTool failed: %v", err)
 	} else {
 		log.Printf("CallTool returns: %v", content)
 	}
@@ -59,64 +63,31 @@ type HiParams struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ServerSession, params *HiParams) ([]mcp.Content, error) {
-	return []mcp.Content{
-		mcp.TextContent{Text: "Hi " + params.Name},
+func SayHi(ctx context.Context, cc *mcp.ServerSession, params *HiParams) ([]*mcp.Content, error) {
+	return []*mcp.Content{
+		mcp.NewTextContent("Hi " + params.Name),
 	}, nil
 }
 
 func main() {
 	// Create a server with a single tool.
 	server := mcp.NewServer("greeter", "v1.0.0", nil)
-	server.AddTools(mcp.MakeTool("greet", "say hi", SayHi))
+	server.AddTools(mcp.NewTool("greet", "say hi", SayHi))
 	// Run the server over stdin/stdout, until the client diconnects
-	_ = server.Run(context.Background(), mcp.NewStdIOTransport(), nil)
+	_ = server.Run(context.Background(), mcp.NewStdIOTransport())
 }
 ```
 
-## Core Concepts
+## Design
 
-The mcp package leverages Go's [reflect](https://pkg.go.dev/reflect) package to
-automatically generate the JSON schema for your tools / prompts' input
-parameters. As an mcp server developer, ensure your input parameter structs
-include the standard `"json"` tags (as demonstrated in the `HiParams` example).
-Refer to the [jsonschema](https://www.google.com/search?q=internal/jsonschema/infer.go)
-package for detailed information on schema inference.
-
-### Tools
-
-Tools in MCP allow servers to expose executable functions that can be invoked by clients and used by LLMs to perform actions. The server can add tools using
-
-```go
-...
-server := mcp.NewServer("greeter", "v1.0.0", nil)
-server.AddTools(mcp.MakeTool("greet", "say hi", SayHi))
-...
-```
-
-### Prompts
-
-Prompts enable servers to define reusable prompt templates and workflows that clients can easily surface to users and LLMs. The server can add prompts by using
-
-```go
-...
-server := mcp.NewServer("greeter", "v0.0.1", nil)
-server.AddPrompts(mcp.MakePrompt("greet", "", PromptHi))
-...
-```
-
-### Resources
-
-Resources are a core primitive in the Model Context Protocol (MCP) that allow servers to expose data and content that can be read by clients and used as context for LLM interactions.
-
-<!--TODO(rfindley): Add code example for resources.-->
-
-Resources are not supported yet.
+See [design.md](./design/design.md) for the SDK design. That document is
+canonical: given any divergence between the design doc and this prototype, the
+doc reflects the latest design.
 
 ## Testing
 
-To test your client or server using stdio transport, you can use local
-transport instead of creating real stdio transportation. See [example](server_example_test.go).
+To test your client or server using stdio transport, you can use an in-memory
+transport. See [example](server_example_test.go).
 
 To test your client or server using sse transport, you can use the [httptest](https://pkg.go.dev/net/http/httptest)
 package. See [example](sse_example_test.go).
@@ -128,6 +99,10 @@ If you encounter a conduct-related issue, please mail conduct@golang.org.
 
 ## License
 
-Unless otherwise noted, the Go source files are distributed under the BSD-style license found in the [LICENSE](../../LICENSE) file.
+Unless otherwise noted, the Go source files are distributed under the BSD-style
+license found in the [LICENSE](../../LICENSE) file.
 
-Upon a potential move to [modelcontextprotocol](https://github.com/modelcontextprotocol), the license will be updated to the MIT License, and the license header will reflect the Go MCP SDK Authors.
+Upon a potential move to the
+[modelcontextprotocol](https://github.com/modelcontextprotocol) organization,
+the license will be updated to the MIT License, and the license header will
+reflect the Go MCP SDK Authors.
