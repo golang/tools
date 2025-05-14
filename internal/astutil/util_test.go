@@ -63,5 +63,4 @@ func g() {
 	if got := fmt.Sprint(gotStack); got != wantStack {
 		t.Errorf("PreorderStack stack:\ngot:  %s\nwant: %s", got, wantStack)
 	}
-
 }
