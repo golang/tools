@@ -495,7 +495,9 @@ Our SDK has a method for every RPC in the spec, and except for `CallTool`,
 their signatures all share this form.
 We do this, rather than providing more convenient shortcut signatures,
 to maintain backward compatibility if the spec makes backward-compatible changes
-such as adding a new property to the request parameters.
+such as adding a new property to the request parameters
+(as in [this commit](https://github.com/modelcontextprotocol/modelcontextprotocol/commit/2fce8a077688bf8011e80af06348b8fe1dae08ac),
+for example).
 To avoid boilerplate, we don't repeat this
 signature for RPCs defined in the spec; readers may assume it when we mention a
 "spec method."
