@@ -57,6 +57,7 @@ type Options struct {
 type Result struct {
 	Content     []byte // formatted, transformed content of caller file
 	Literalized bool   // chosen strategy replaced callee() with func(){...}()
+	BindingDecl bool   // transformation added "var params = args" declaration
 
 	// TODO(adonovan): provide an API for clients that want structured
 	// output: a list of import additions and deletions plus one or more
@@ -379,6 +380,7 @@ func (st *state) inline() (*Result, error) {
 	return &Result{
 		Content:     newSrc,
 		Literalized: literalized,
+		BindingDecl: res.bindingDecl,
 	}, nil
 }
 
@@ -587,6 +589,7 @@ type inlineCallResult struct {
 	// unfortunately in order to preserve comments, it is important that inlining
 	// replace as little syntax as possible.
 	elideBraces bool
+	bindingDecl bool     // transformation inserted "var params = args" declaration
 	old, new    ast.Node // e.g. replace call expr by callee function body expression
 }
 
@@ -1008,6 +1011,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 					res.new = results[0]
 				} else {
 					// Reduces to: { var (bindings); expr }
+					res.bindingDecl = true
 					res.old = stmt
 					res.new = &ast.BlockStmt{
 						List: []ast.Stmt{
@@ -1033,6 +1037,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 					res.new = discard
 				} else {
 					// Reduces to: { var (bindings); _, _ = exprs }
+					res.bindingDecl = true
 					res.new = &ast.BlockStmt{
 						List: []ast.Stmt{
 							bindingDecl.stmt,
@@ -1062,6 +1067,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 					List: newStmts,
 				}
 				if needBindingDecl {
+					res.bindingDecl = true
 					block.List = prepend(bindingDecl.stmt, block.List...)
 				}
 
@@ -1178,6 +1184,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 		body := calleeDecl.Body
 		clearPositions(body)
 		if needBindingDecl {
+			res.bindingDecl = true
 			body.List = prepend(bindingDecl.stmt, body.List...)
 		}
 		res.old = ret
@@ -1271,6 +1278,7 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	if bindingDecl != nil && allResultsUnreferenced {
 		funcLit.Type.Params.List = nil
 		remainingArgs = nil
+		res.bindingDecl = true
 		funcLit.Body.List = prepend(bindingDecl.stmt, funcLit.Body.List...)
 	}
 
