@@ -69,6 +69,34 @@ func NameRelativeTo(pkg *types.Package) types.Qualifier {
 	}
 }
 
+// TypeNameFor returns the type name symbol for the specified type, if
+// it is a [*types.Alias], [*types.Named], [*types.TypeParam], or a
+// [*types.Basic] representing a type.
+//
+// For all other types, and for Basic types representing a builtin,
+// constant, or nil, it returns nil. Be careful not to convert the
+// resulting nil pointer to a [types.Object]!
+//
+// If t is the type of a constant, it may be an "untyped" type, which
+// has no TypeName. To access the name of such types (e.g. "untyped
+// int"), use [types.Basic.Name].
+func TypeNameFor(t types.Type) *types.TypeName {
+	switch t := t.(type) {
+	case *types.Alias:
+		return t.Obj()
+	case *types.Named:
+		return t.Obj()
+	case *types.TypeParam:
+		return t.Obj()
+	case *types.Basic:
+		// See issues #71886 and #66890 for some history.
+		if tname, ok := types.Universe.Lookup(t.Name()).(*types.TypeName); ok {
+			return tname
+		}
+	}
+	return nil
+}
+
 // A NamedOrAlias is a [types.Type] that is named (as
 // defined by the spec) and capable of bearing type parameters: it
 // abstracts aliases ([types.Alias]) and defined types

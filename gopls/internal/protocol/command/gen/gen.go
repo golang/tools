@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/protocol/command/commandmeta"
 	"golang.org/x/tools/internal/imports"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const src = `// Copyright 2024 The Go Authors. All rights reserved.
@@ -192,11 +193,8 @@ func Generate() ([]byte, error) {
 }
 
 func pkgPath(t types.Type) string {
-	type hasTypeName interface { // *Named or *Alias (or *TypeParam)
-		Obj() *types.TypeName
-	}
-	if t, ok := t.(hasTypeName); ok {
-		if pkg := t.Obj().Pkg(); pkg != nil {
+	if tname := typesinternal.TypeNameFor(t); tname != nil {
+		if pkg := tname.Pkg(); pkg != nil {
 			return pkg.Path()
 		}
 	}

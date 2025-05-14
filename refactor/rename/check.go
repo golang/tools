@@ -772,7 +772,7 @@ func (r *renamer) checkMethod(from *types.Func) {
 				var iface string
 
 				I := recv(imeth).Type()
-				if named, ok := I.(hasTypeName); ok {
+				if named, ok := I.(hasTypeName); ok { // *Named or *Alias
 					pos = named.Obj().Pos()
 					iface = "interface " + named.Obj().Name()
 				} else {

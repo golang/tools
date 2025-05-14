@@ -463,7 +463,8 @@ func findObjects(info *loader.PackageInfo, spec *spec) ([]types.Object, error) {
 		}
 
 		if spec.searchFor == "" {
-			// If it is an embedded field, return the type of the field.
+			// If it is an embedded field (*Named or *Alias),
+			// return the type of the field.
 			if v, ok := obj.(*types.Var); ok && v.Anonymous() {
 				if t, ok := typesinternal.Unpointer(v.Type()).(hasTypeName); ok {
 					return []types.Object{t.Obj()}, nil

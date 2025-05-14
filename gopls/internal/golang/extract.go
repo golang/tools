@@ -1819,26 +1819,21 @@ var conventionalVarNames = map[objKey]string{
 //
 // For special types, it uses known conventional names.
 func varNameForType(t types.Type) (string, bool) {
-	var typeName string
-	if tn, ok := t.(interface{ Obj() *types.TypeName }); ok {
-		obj := tn.Obj()
-		k := objKey{name: obj.Name()}
-		if obj.Pkg() != nil {
-			k.pkg = obj.Pkg().Name()
-		}
-		if name, ok := conventionalVarNames[k]; ok {
-			return name, true
-		}
-		typeName = obj.Name()
-	} else if b, ok := t.(*types.Basic); ok {
-		typeName = b.Name()
-	}
-
-	if typeName == "" {
+	tname := typesinternal.TypeNameFor(t)
+	if tname == nil {
 		return "", false
 	}
 
-	return AbbreviateVarName(typeName), true
+	// Have Alias, Basic, Named, or TypeParam.
+	k := objKey{name: tname.Name()}
+	if tname.Pkg() != nil {
+		k.pkg = tname.Pkg().Name()
+	}
+	if name, ok := conventionalVarNames[k]; ok {
+		return name, true
+	}
+
+	return AbbreviateVarName(tname.Name()), true
 }
 
 // adjustReturnStatements adds "zero values" of the given types to each return

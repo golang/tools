@@ -3516,12 +3516,9 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 			typeName string
 			obj      *types.TypeName // nil for basic types
 		)
-		switch typ := typ.(type) {
-		case *types.Basic:
-			typeName = typ.Name()
-		case interface{ Obj() *types.TypeName }: // Named, Alias, TypeParam
-			obj = typ.Obj()
-			typeName = typ.Obj().Name()
+		if tname := typesinternal.TypeNameFor(typ); tname != nil {
+			obj = tname
+			typeName = tname.Name()
 		}
 
 		// Special case: check for universe "any".
