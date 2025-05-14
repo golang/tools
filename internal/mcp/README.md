@@ -59,7 +59,7 @@ type HiParams struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ServerConnection, params *HiParams) ([]mcp.Content, error) {
+func SayHi(ctx context.Context, cc *mcp.ServerSession, params *HiParams) ([]mcp.Content, error) {
 	return []mcp.Content{
 		mcp.TextContent{Text: "Hi " + params.Name},
 	}, nil

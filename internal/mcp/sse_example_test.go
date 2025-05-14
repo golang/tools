@@ -18,7 +18,7 @@ type AddParams struct {
 	X, Y int
 }
 
-func Add(ctx context.Context, cc *mcp.ServerConnection, params *AddParams) ([]*mcp.Content, error) {
+func Add(ctx context.Context, cc *mcp.ServerSession, params *AddParams) ([]*mcp.Content, error) {
 	return []*mcp.Content{
 		mcp.NewTextContent(fmt.Sprintf("%d", params.X+params.Y)),
 	}, nil

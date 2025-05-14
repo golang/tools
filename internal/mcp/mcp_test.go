@@ -24,7 +24,7 @@ type hiParams struct {
 	Name string
 }
 
-func sayHi(ctx context.Context, cc *ServerConnection, v hiParams) ([]*Content, error) {
+func sayHi(ctx context.Context, cc *ServerSession, v hiParams) ([]*Content, error) {
 	if err := cc.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("ping failed: %v", err)
 	}
@@ -43,13 +43,13 @@ func TestEndToEnd(t *testing.T) {
 	// The 'fail' tool returns this error.
 	failure := errors.New("mcp failure")
 	s.AddTools(
-		NewTool("fail", "just fail", func(context.Context, *ServerConnection, struct{}) ([]*Content, error) {
+		NewTool("fail", "just fail", func(context.Context, *ServerSession, struct{}) ([]*Content, error) {
 			return nil, failure
 		}),
 	)
 
 	s.AddPrompts(
-		NewPrompt("code_review", "do a code review", func(_ context.Context, _ *ServerConnection, params struct{ Code string }) (*GetPromptResult, error) {
+		NewPrompt("code_review", "do a code review", func(_ context.Context, _ *ServerSession, params struct{ Code string }) (*GetPromptResult, error) {
 			return &GetPromptResult{
 				Description: "Code review prompt",
 				Messages: []*PromptMessage{
@@ -57,17 +57,17 @@ func TestEndToEnd(t *testing.T) {
 				},
 			}, nil
 		}),
-		NewPrompt("fail", "", func(_ context.Context, _ *ServerConnection, params struct{}) (*GetPromptResult, error) {
+		NewPrompt("fail", "", func(_ context.Context, _ *ServerSession, params struct{}) (*GetPromptResult, error) {
 			return nil, failure
 		}),
 	)
 
 	// Connect the server.
-	sc, err := s.Connect(ctx, st, nil)
+	ss, err := s.Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := slices.Collect(s.Clients()); len(got) != 1 {
+	if got := slices.Collect(s.Sessions()); len(got) != 1 {
 		t.Errorf("after connection, Clients() has length %d, want 1", len(got))
 	}
 
@@ -75,7 +75,7 @@ func TestEndToEnd(t *testing.T) {
 	var clientWG sync.WaitGroup
 	clientWG.Add(1)
 	go func() {
-		if err := sc.Wait(); err != nil {
+		if err := ss.Wait(); err != nil {
 			t.Errorf("server failed: %v", err)
 		}
 		clientWG.Done()
@@ -198,7 +198,7 @@ func TestEndToEnd(t *testing.T) {
 			URI:      "file:///nonexistent.txt",
 		}
 
-		readHandler := func(_ context.Context, _ *ServerConnection, p *ReadResourceParams) (*ReadResourceResult, error) {
+		readHandler := func(_ context.Context, _ *ServerSession, p *ReadResourceParams) (*ReadResourceResult, error) {
 			if p.URI == "file:///file1.txt" {
 				return &ReadResourceResult{
 					Contents: &ResourceContents{
@@ -249,9 +249,9 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 	t.Run("roots", func(t *testing.T) {
-		// Take the server's first ServerConnection.
-		var sc *ServerConnection
-		for sc = range s.Clients() {
+		// Take the server's first ServerSession.
+		var sc *ServerSession
+		for sc = range s.Sessions() {
 			break
 		}
 
@@ -272,7 +272,7 @@ func TestEndToEnd(t *testing.T) {
 
 	// After disconnecting, neither client nor server should have any
 	// connections.
-	for range s.Clients() {
+	for range s.Sessions() {
 		t.Errorf("unexpected client after disconnection")
 	}
 }
@@ -282,7 +282,7 @@ func TestEndToEnd(t *testing.T) {
 //
 // The caller should cancel either the client connection or server connection
 // when the connections are no longer needed.
-func basicConnection(t *testing.T, tools ...*ServerTool) (*ServerConnection, *Client) {
+func basicConnection(t *testing.T, tools ...*ServerTool) (*ServerSession, *Client) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -292,7 +292,7 @@ func basicConnection(t *testing.T, tools ...*ServerTool) (*ServerConnection, *Cl
 
 	// The 'greet' tool says hi.
 	s.AddTools(tools...)
-	cc, err := s.Connect(ctx, st, nil)
+	ss, err := s.Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func basicConnection(t *testing.T, tools ...*ServerTool) (*ServerConnection, *Cl
 	if err := c.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	return cc, c
+	return ss, c
 }
 
 func TestServerClosing(t *testing.T) {
@@ -370,7 +370,7 @@ func TestCancellation(t *testing.T) {
 		cancelled = make(chan struct{}, 1) // don't block the request
 	)
 
-	slowRequest := func(ctx context.Context, cc *ServerConnection, v struct{}) ([]*Content, error) {
+	slowRequest := func(ctx context.Context, cc *ServerSession, v struct{}) ([]*Content, error) {
 		start <- struct{}{}
 		select {
 		case <-ctx.Done():

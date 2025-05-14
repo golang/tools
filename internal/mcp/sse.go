@@ -64,7 +64,7 @@ func writeEvent(w io.Writer, evt event) (int, error) {
 // https://modelcontextprotocol.io/specification/2024-11-05/basic/transports
 type SSEHandler struct {
 	getServer    func(request *http.Request) *Server
-	onConnection func(*ServerConnection) // for testing; must not block
+	onConnection func(*ServerSession) // for testing; must not block
 
 	mu       sync.Mutex
 	sessions map[string]*SSEServerTransport
@@ -229,15 +229,15 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// TODO(hxjiang): getServer returns nil will panic.
 	server := h.getServer(req)
-	cc, err := server.Connect(req.Context(), transport, nil)
+	ss, err := server.Connect(req.Context(), transport, nil)
 	if err != nil {
 		http.Error(w, "connection failed", http.StatusInternalServerError)
 		return
 	}
 	if h.onConnection != nil {
-		h.onConnection(cc)
+		h.onConnection(ss)
 	}
-	defer cc.Close() // close the transport when the GET exits
+	defer ss.Close() // close the transport when the GET exits
 
 	select {
 	case <-req.Context().Done():

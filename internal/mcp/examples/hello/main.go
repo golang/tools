@@ -20,13 +20,13 @@ type HiParams struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ServerConnection, params *HiParams) ([]*mcp.Content, error) {
+func SayHi(ctx context.Context, cc *mcp.ServerSession, params *HiParams) ([]*mcp.Content, error) {
 	return []*mcp.Content{
 		mcp.NewTextContent("Hi " + params.Name),
 	}, nil
 }
 
-func PromptHi(ctx context.Context, cc *mcp.ServerConnection, params *HiParams) (*mcp.GetPromptResult, error) {
+func PromptHi(ctx context.Context, cc *mcp.ServerSession, params *HiParams) (*mcp.GetPromptResult, error) {
 	return &mcp.GetPromptResult{
 		Description: "Code review prompt",
 		Messages: []*mcp.PromptMessage{

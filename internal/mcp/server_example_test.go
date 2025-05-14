@@ -16,7 +16,7 @@ type SayHiParams struct {
 	Name string `json:"name" mcp:"the name to say hi to"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ServerConnection, params *SayHiParams) ([]*mcp.Content, error) {
+func SayHi(ctx context.Context, cc *mcp.ServerSession, params *SayHiParams) ([]*mcp.Content, error) {
 	return []*mcp.Content{
 		mcp.NewTextContent("Hi " + params.Name),
 	}, nil
@@ -29,7 +29,7 @@ func ExampleServer() {
 	server := mcp.NewServer("greeter", "v0.0.1", nil)
 	server.AddTools(mcp.NewTool("greet", "say hi", SayHi))
 
-	clientConnection, err := server.Connect(ctx, serverTransport, nil)
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func ExampleServer() {
 	fmt.Println(res.Content[0].Text)
 
 	client.Close()
-	clientConnection.Wait()
+	serverSession.Wait()
 
 	// Output: Hi user
 }

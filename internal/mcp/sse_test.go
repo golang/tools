@@ -23,8 +23,8 @@ func TestSSEServer(t *testing.T) {
 
 			sseHandler := NewSSEHandler(func(*http.Request) *Server { return server })
 
-			conns := make(chan *ServerConnection, 1)
-			sseHandler.onConnection = func(cc *ServerConnection) {
+			conns := make(chan *ServerSession, 1)
+			sseHandler.onConnection = func(cc *ServerSession) {
 				select {
 				case conns <- cc:
 				default:

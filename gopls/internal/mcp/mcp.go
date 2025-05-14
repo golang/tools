@@ -140,8 +140,8 @@ type HelloParams struct {
 	Name string `json:"name" mcp:"the name to say hi to"`
 }
 
-func helloHandler(session *cache.Session) func(ctx context.Context, cc *mcp.ServerConnection, request *HelloParams) ([]*mcp.Content, error) {
-	return func(ctx context.Context, cc *mcp.ServerConnection, request *HelloParams) ([]*mcp.Content, error) {
+func helloHandler(session *cache.Session) func(ctx context.Context, cc *mcp.ServerSession, request *HelloParams) ([]*mcp.Content, error) {
+	return func(ctx context.Context, cc *mcp.ServerSession, request *HelloParams) ([]*mcp.Content, error) {
 		return []*mcp.Content{
 			mcp.NewTextContent("Hi " + request.Name + ", this is lsp session " + session.ID()),
 		}, nil
