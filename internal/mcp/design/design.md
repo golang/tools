@@ -219,7 +219,7 @@ create `SSEServerTransport` instances themselves, for incoming GET requests.
 // A SSEServerTransport is a logical SSE session created through a hanging GET
 // request.
 //
-// When connected, it it returns the following [Stream] implementation:
+// When connected, it returns the following [Stream] implementation:
 //   - Writes are SSE 'message' events to the GET response.
 //   - Reads are received from POSTs to the session endpoint, via
 //     [SSEServerTransport.ServeHTTP].
@@ -503,7 +503,7 @@ signature for RPCs defined in the spec; readers may assume it when we mention a
 "spec method."
 
 `CallTool` is the only exception: for convenience, it takes the tool name and
-arguments, with an options truct for additional request fields.
+arguments, with an options struct for additional request fields.
 Our SDK has a method for every RPC in the spec, and their signatures all share
 this form. To avoid boilerplate, we don't repeat this signature for RPCs
 defined in the spec; readers may assume it when we mention a "spec method."
@@ -840,7 +840,7 @@ Clients can call the spec method `ListTools` or an iterator method `Tools`
 to list the available tools.
 
 **Differences from mcp-go**: using variadic options to configure tools was
-signficantly inspired by mcp-go. However, the distinction between `ToolOption`
+significantly inspired by mcp-go. However, the distinction between `ToolOption`
 and `SchemaOption` allows for recursive application of schema options.
 For example, that limitation is visible in [this
 code](https://github.com/DCjanus/dida365-mcp-server/blob/master/cmd/mcp/tools.go#L315),
@@ -1044,13 +1044,13 @@ type ServerOptions {
   // The value for the "logger" field of the notification.
   LoggerName string
   // Log notifications to a single ClientSession will not be
-  // send more frequently than this duration.
+  // sent more frequently than this duration.
   LogInterval time.Duration
 }
 ```
 
 ServerSessions have access to a `slog.Logger` that writes to the client. A call to
-a log method like `Info`is translated to a `LoggingMessageNotification` as
+a log method like `Info` is translated to a `LoggingMessageNotification` as
 follows:
 
 - The attributes and the message populate the "data" property with the
@@ -1099,5 +1099,5 @@ pagination. Server responses for List methods include a `NextCursor` field if
 more pages exist.
 
 In addition to the `List` methods, the SDK provides an iterator method for each
-list operation. This simplifies pagination for cients by automatically handling
+list operation. This simplifies pagination for clients by automatically handling
 the underlying pagination logic. See [Iterator Methods](#iterator-methods) above.
