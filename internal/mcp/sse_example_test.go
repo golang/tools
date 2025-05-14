@@ -40,7 +40,7 @@ func ExampleSSEHandler() {
 	}
 	defer client.Close()
 
-	res, err := client.CallTool(ctx, "add", map[string]any{"x": 1, "y": 2})
+	res, err := client.CallTool(ctx, "add", map[string]any{"x": 1, "y": 2}, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -204,7 +204,7 @@ func (s *Server) callTool(ctx context.Context, cc *ServerConnection, params *Cal
 	if !ok {
 		return nil, fmt.Errorf("%s: unknown tool %q", jsonrpc2.ErrInvalidParams, params.Name)
 	}
-	return tool.Handler(ctx, cc, params.Arguments)
+	return tool.Handler(ctx, cc, params)
 }
 
 func (s *Server) listResources(_ context.Context, _ *ServerConnection, params *ListResourcesParams) (*ListResourcesResult, error) {

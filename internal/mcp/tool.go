@@ -13,7 +13,7 @@ import (
 )
 
 // A ToolHandler handles a call to tools/call.
-type ToolHandler func(context.Context, *ServerConnection, map[string]json.RawMessage) (*CallToolResult, error)
+type ToolHandler func(context.Context, *ServerConnection, *CallToolParams) (*CallToolResult, error)
 
 // A Tool is a tool definition that is bound to a tool handler.
 type ServerTool struct {
@@ -39,10 +39,10 @@ func NewTool[TReq any](name, description string, handler func(context.Context, *
 	if err != nil {
 		panic(err)
 	}
-	wrapped := func(ctx context.Context, cc *ServerConnection, args map[string]json.RawMessage) (*CallToolResult, error) {
+	wrapped := func(ctx context.Context, cc *ServerConnection, params *CallToolParams) (*CallToolResult, error) {
 		// For simplicity, just marshal and unmarshal the arguments.
 		// This could be avoided in the future.
-		rawArgs, err := json.Marshal(args)
+		rawArgs, err := json.Marshal(params.Arguments)
 		if err != nil {
 			return nil, err
 		}

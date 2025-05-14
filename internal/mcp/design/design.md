@@ -329,9 +329,8 @@ corresponding to the union of all properties for union elements.
 For brevity, only a few examples are shown here:
 
 ```go
-type CallToolParams struct {
-	Arguments map[string]json.RawMessage `json:"arguments,omitempty"`
-	Name      string                     `json:"name"`
+type ReadResourceParams struct {
+	URI string `json:"uri"`
 }
 
 type CallToolResult struct {
@@ -428,10 +427,7 @@ transport := mcp.NewCommandTransport(exec.Command("myserver"))
 session, err := client.Connect(ctx, transport)
 if err != nil { ... }
 // Call a tool on the server.
-content, err := session.CallTool(ctx, &CallToolParams{
-  Name: "greet",
-  Arguments: map[string]any{"name": "you"} ,
-})
+content, err := session.CallTool(ctx, "greet", map[string]any{"name": "you"}, nil})
 ...
 return session.Close()
 ```
@@ -479,17 +475,20 @@ documentation.
 
 ### Spec Methods
 
-As we saw above, the `ClientSession` method for the specification's
-`CallTool` RPC takes a context and a params pointer as arguments, and returns a
-result pointer and error:
+In our SDK, RPC methods that are defined in the specification take a context and
+a params pointer as arguments, and return a result pointer and error:
 
 ```go
-func (*ClientSession) CallTool(context.Context, *CallToolParams) (*CallToolResult, error)
+func (*ClientSession) ListTools(context.Context, *ListToolsParams) (*ListToolsResult, error)
 ```
 
-Our SDK has a method for every RPC in the spec, and their signatures all share
-this form. To avoid boilerplate, we don't repeat this signature for RPCs
-defined in the spec; readers may assume it when we mention a "spec method."
+Our SDK has a method for every RPC in the spec, and except for `CallTool`,
+their signatures all share this form. To avoid boilerplate, we don't repeat this
+signature for RPCs defined in the spec; readers may assume it when we mention a
+"spec method."
+
+`CallTool` is the only exception: for convenience, it takes the tool name and
+arguments, with an options truct for additional request fields.
 
 Why do we use params instead of the full request? JSON-RPC requests consist of a method
 name and a set of parameters, and the method is already encoded in the Go method name.
@@ -564,7 +563,7 @@ can cancel an operation by cancelling the associated context:
 
 ```go
 ctx, cancel := context.WithCancel(ctx)
-go session.CallTool(ctx, "slow", map[string]any{})
+go session.CallTool(ctx, "slow", map[string]any{}, nil)
 cancel()
 ```
 
@@ -687,7 +686,7 @@ type Tool struct {
 	Name string                    `json:"name"`
 }
 
-type ToolHandler func(context.Context, *ServerSession, map[string]json.RawMessage) (*CallToolResult, error)
+type ToolHandler func(context.Context, *ServerSession, *CallToolParams) (*CallToolResult, error)
 
 type ServerTool struct {
 	Tool    Tool

@@ -43,7 +43,7 @@ func TestSSEServer(t *testing.T) {
 				t.Fatal(err)
 			}
 			cc := <-conns
-			gotHi, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"})
+			gotHi, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -52,7 +52,7 @@ func TestCmdTransport(t *testing.T) {
 	if err := client.Start(ctx); err != nil {
 		log.Fatal(err)
 	}
-	got, err := client.CallTool(ctx, "greet", map[string]any{"name": "user"})
+	got, err := client.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

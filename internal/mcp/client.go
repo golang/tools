@@ -174,7 +174,8 @@ func (c *Client) ListTools(ctx context.Context, params *ListToolsParams) (*ListT
 }
 
 // CallTool calls the tool with the given name and arguments.
-func (c *Client) CallTool(ctx context.Context, name string, args map[string]any) (_ *CallToolResult, err error) {
+// Pass a [CallToolOptions] to provide additional request fields.
+func (c *Client) CallTool(ctx context.Context, name string, args map[string]any, opts *CallToolOptions) (_ *CallToolResult, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("calling tool %q: %w", name, err)
@@ -194,6 +195,13 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 		Arguments: argsJSON,
 	}
 	return standardCall[CallToolResult](ctx, c.conn, "tools/call", params)
+}
+
+// NOTE: the following struct should consist of all fields of callToolParams except name and arguments.
+
+// CallToolOptions contains options to [Client.CallTools].
+type CallToolOptions struct {
+	ProgressToken any // string or int
 }
 
 // ListResources lists the resources that are currently available on the server.

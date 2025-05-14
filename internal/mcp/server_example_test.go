@@ -39,7 +39,7 @@ func ExampleServer() {
 		log.Fatal(err)
 	}
 
-	res, err := client.CallTool(ctx, "greet", map[string]any{"name": "user"})
+	res, err := client.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

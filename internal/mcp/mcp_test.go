@@ -160,7 +160,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("tools/list mismatch (-want +got):\n%s", diff)
 		}
 
-		gotHi, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"})
+		gotHi, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,7 +171,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("tools/call 'greet' mismatch (-want +got):\n%s", diff)
 		}
 
-		gotFail, err := c.CallTool(ctx, "fail", map[string]any{})
+		gotFail, err := c.CallTool(ctx, "fail", map[string]any{}, nil)
 		// Counter-intuitively, when a tool fails, we don't expect an RPC error for
 		// call tool: instead, the failure is embedded in the result.
 		if err != nil {
@@ -317,12 +317,12 @@ func TestServerClosing(t *testing.T) {
 		}
 		wg.Done()
 	}()
-	if _, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}); err != nil {
+	if _, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil); err != nil {
 		t.Fatalf("after connecting: %v", err)
 	}
 	cc.Close()
 	wg.Wait()
-	if _, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}); !errors.Is(err, ErrConnectionClosed) {
+	if _, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil); !errors.Is(err, ErrConnectionClosed) {
 		t.Errorf("after disconnection, got error %v, want EOF", err)
 	}
 }
@@ -384,7 +384,7 @@ func TestCancellation(t *testing.T) {
 	defer sc.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go sc.CallTool(ctx, "slow", map[string]any{})
+	go sc.CallTool(ctx, "slow", map[string]any{}, nil)
 	<-start
 	cancel()
 	select {
