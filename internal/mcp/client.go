@@ -154,47 +154,23 @@ func (c *Client) handle(ctx context.Context, req *jsonrpc2.Request) (any, error)
 }
 
 // Ping makes an MCP "ping" request to the server.
-func (c *Client) Ping(ctx context.Context) error {
-	return call(ctx, c.conn, "ping", nil, nil)
+func (c *Client) Ping(ctx context.Context, params *PingParams) error {
+	return call(ctx, c.conn, "ping", params, nil)
 }
 
 // ListPrompts lists prompts that are currently available on the server.
-func (c *Client) ListPrompts(ctx context.Context) ([]*Prompt, error) {
-	var (
-		params = &ListPromptsParams{}
-		result ListPromptsResult
-	)
-	if err := call(ctx, c.conn, "prompts/list", params, &result); err != nil {
-		return nil, err
-	}
-	return result.Prompts, nil
+func (c *Client) ListPrompts(ctx context.Context, params *ListPromptsParams) (*ListPromptsResult, error) {
+	return standardCall[ListPromptsResult](ctx, c.conn, "prompts/list", params)
 }
 
 // GetPrompt gets a prompt from the server.
-func (c *Client) GetPrompt(ctx context.Context, name string, args map[string]string) (*GetPromptResult, error) {
-	var (
-		params = &GetPromptParams{
-			Name:      name,
-			Arguments: args,
-		}
-		result = &GetPromptResult{}
-	)
-	if err := call(ctx, c.conn, "prompts/get", params, result); err != nil {
-		return nil, err
-	}
-	return result, nil
+func (c *Client) GetPrompt(ctx context.Context, params *GetPromptParams) (*GetPromptResult, error) {
+	return standardCall[GetPromptResult](ctx, c.conn, "prompts/get", params)
 }
 
 // ListTools lists tools that are currently available on the server.
-func (c *Client) ListTools(ctx context.Context) ([]*Tool, error) {
-	var (
-		params = &ListToolsParams{}
-		result ListToolsResult
-	)
-	if err := call(ctx, c.conn, "tools/list", params, &result); err != nil {
-		return nil, err
-	}
-	return result.Tools, nil
+func (c *Client) ListTools(ctx context.Context, params *ListToolsParams) (*ListToolsResult, error) {
+	return standardCall[ListToolsResult](ctx, c.conn, "tools/list", params)
 }
 
 // CallTool calls the tool with the given name and arguments.

@@ -25,7 +25,7 @@ type hiParams struct {
 }
 
 func sayHi(ctx context.Context, cc *ServerConnection, v hiParams) ([]*Content, error) {
-	if err := cc.Ping(ctx); err != nil {
+	if err := cc.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("ping failed: %v", err)
 	}
 	return []*Content{NewTextContent("hi " + v.Name)}, nil
@@ -89,11 +89,11 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := c.Ping(ctx); err != nil {
+	if err := c.Ping(ctx, nil); err != nil {
 		t.Fatalf("ping failed: %v", err)
 	}
 	t.Run("prompts", func(t *testing.T) {
-		gotPrompts, err := c.ListPrompts(ctx)
+		res, err := c.ListPrompts(ctx, nil)
 		if err != nil {
 			t.Errorf("prompts/list failed: %v", err)
 		}
@@ -105,11 +105,11 @@ func TestEndToEnd(t *testing.T) {
 			},
 			{Name: "fail"},
 		}
-		if diff := cmp.Diff(wantPrompts, gotPrompts); diff != "" {
+		if diff := cmp.Diff(wantPrompts, res.Prompts); diff != "" {
 			t.Fatalf("prompts/list mismatch (-want +got):\n%s", diff)
 		}
 
-		gotReview, err := c.GetPrompt(ctx, "code_review", map[string]string{"Code": "1+1"})
+		gotReview, err := c.GetPrompt(ctx, &GetPromptParams{Name: "code_review", Arguments: map[string]string{"Code": "1+1"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -124,13 +124,13 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("prompts/get 'code_review' mismatch (-want +got):\n%s", diff)
 		}
 
-		if _, err := c.GetPrompt(ctx, "fail", map[string]string{}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
+		if _, err := c.GetPrompt(ctx, &GetPromptParams{Name: "fail"}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
 			t.Errorf("fail returned unexpected error: got %v, want containing %v", err, failure)
 		}
 	})
 
 	t.Run("tools", func(t *testing.T) {
-		gotTools, err := c.ListTools(ctx)
+		res, err := c.ListTools(ctx, nil)
 		if err != nil {
 			t.Errorf("tools/list failed: %v", err)
 		}
@@ -156,7 +156,7 @@ func TestEndToEnd(t *testing.T) {
 				},
 			},
 		}
-		if diff := cmp.Diff(wantTools, gotTools, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
+		if diff := cmp.Diff(wantTools, res.Tools, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
 			t.Fatalf("tools/list mismatch (-want +got):\n%s", diff)
 		}
 
@@ -350,7 +350,7 @@ func TestBatching(t *testing.T) {
 	errs := make(chan error, batchSize)
 	for i := range batchSize {
 		go func() {
-			_, err := c.ListTools(ctx)
+			_, err := c.ListTools(ctx, nil)
 			errs <- err
 		}()
 		time.Sleep(2 * time.Millisecond)

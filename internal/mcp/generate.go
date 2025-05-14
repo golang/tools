@@ -97,11 +97,15 @@ var declarations = config{
 		Fields: config{"Params": {Name: "ListToolsParams"}},
 	},
 	"ListToolsResult": {},
-	"Prompt":          {},
-	"PromptMessage":   {},
-	"PromptArgument":  {},
-	"ProgressToken":   {Name: "-", Substitute: "any"}, // null|number|string
-	"RequestId":       {Name: "-", Substitute: "any"}, // null|number|string
+	"PingRequest": {
+		Name:   "-",
+		Fields: config{"Params": {Name: "PingParams"}},
+	},
+	"Prompt":         {},
+	"PromptMessage":  {},
+	"PromptArgument": {},
+	"ProgressToken":  {Name: "-", Substitute: "any"}, // null|number|string
+	"RequestId":      {Name: "-", Substitute: "any"}, // null|number|string
 	"ReadResourceRequest": {
 		Name:   "-",
 		Fields: config{"Params": {Name: "ReadResourceParams"}},

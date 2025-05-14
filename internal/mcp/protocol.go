@@ -170,6 +170,16 @@ type ListToolsResult struct {
 	Tools      []*Tool `json:"tools"`
 }
 
+type PingParams struct {
+	Meta struct {
+		// If specified, the caller is requesting out-of-band progress notifications for
+		// this request (as represented by notifications/progress). The value of this
+		// parameter is an opaque token that will be attached to any subsequent
+		// notifications. The receiver is not obligated to provide these notifications.
+		ProgressToken any `json:"progressToken,omitempty"`
+	} `json:"_meta,omitempty"`
+}
+
 // A prompt or prompt template that the server offers.
 type Prompt struct {
 	// A list of arguments to use for templating the prompt.

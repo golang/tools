@@ -39,7 +39,7 @@ func TestSSEServer(t *testing.T) {
 			if err := c.Start(ctx); err != nil {
 				t.Fatal(err)
 			}
-			if err := c.Ping(ctx); err != nil {
+			if err := c.Ping(ctx, nil); err != nil {
 				t.Fatal(err)
 			}
 			cc := <-conns

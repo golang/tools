@@ -303,7 +303,7 @@ type ServerConnection struct {
 }
 
 // Ping makes an MCP "ping" request to the client.
-func (cc *ServerConnection) Ping(ctx context.Context) error {
+func (cc *ServerConnection) Ping(ctx context.Context, _ *PingParams) error {
 	return call(ctx, cc.conn, "ping", nil, nil)
 }
 
