@@ -1,6 +1,6 @@
 # Go MCP SDK design
 
-This file discusses the design of a Go SDK for the [model context
+This document discusses the design of a Go SDK for the [model context
 protocol](https://modelcontextprotocol.io/specification/2025-03-26). It is
 intended to seed a GitHub discussion about the official Go MCP SDK.
 
@@ -18,7 +18,7 @@ writing, it is imported by over 400 packages that span over 200 modules.
 We admire mcp-go, and seriously considered simply adopting it as a starting
 point for this SDK. However, as we looked at doing so, we realized that a
 significant amount of its API would probably need to change. In some cases,
-mcp-go has older APIs that predated newer variations--an obvious opportunity
+mcp-go has older APIs that predated newer variations—an obvious opportunity
 for cleanup. In others, it took a batteries-included approach that is probably
 not viable for an official SDK. In yet others, we simply think there is room for
 API refinement, and we should take this opportunity to consider our options.
@@ -332,7 +332,7 @@ marshalling/unmarshalling can be delegated to the business logic of the client
 or server.
 
 For union types, which can't be represented in Go (specifically `Content` and
-`Resource`), we prefer distinguished unions: struct types with fields
+`ResourceContents`), we prefer distinguished unions: struct types with fields
 corresponding to the union of all properties for union elements.
 
 For brevity, only a few examples are shown here:
@@ -353,11 +353,11 @@ type CallToolResult struct {
 // The Type field distinguishes the type of the content.
 // At most one of Text, MIMEType, Data, and Resource is non-zero.
 type Content struct {
-	Type     string    `json:"type"`
-	Text     string    `json:"text,omitempty"`
-	MIMEType string    `json:"mimeType,omitempty"`
-	Data     []byte    `json:"data,omitempty"`
-	Resource *Resource `json:"resource,omitempty"`
+	Type     string            `json:"type"`
+	Text     string            `json:"text,omitempty"`
+	MIMEType string            `json:"mimeType,omitempty"`
+	Data     []byte            `json:"data,omitempty"`
+	Resource *ResourceContents `json:"resource,omitempty"`
 }
 ```
 
@@ -386,7 +386,7 @@ change.
 
 Following the terminology of the
 [spec](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#session-management),
-we call the logical connection between a client and server a "session". There
+we call the logical connection between a client and server a "session." There
 must necessarily be a `ClientSession` and a `ServerSession`, corresponding to
 the APIs available from the client and server perspective, respectively.
 
@@ -436,7 +436,7 @@ transport := mcp.NewCommandTransport(exec.Command("myserver"))
 session, err := client.Connect(ctx, transport)
 if err != nil { ... }
 // Call a tool on the server.
-content, err := session.CallTool(ctx, "greet", map[string]any{"name": "you"}, nil})
+content, err := session.CallTool(ctx, "greet", map[string]any{"name": "you"}, nil)
 ...
 return session.Close()
 ```
@@ -446,7 +446,7 @@ A server that can handle that client call would look like this:
 ```go
 // Create a server with a single tool.
 server := mcp.NewServer("greeter", "v1.0.0", nil)
-server.AddTool(mcp.NewTool("greet", "say hi", SayHi))
+server.AddTools(mcp.NewTool("greet", "say hi", SayHi))
 // Run the server over stdin/stdout, until the client disconnects.
 transport := mcp.NewStdIOTransport()
 session, err := server.Connect(ctx, transport)
@@ -541,8 +541,8 @@ func (*ClientSession) ResourceTemplates(context.Context, *ListResourceTemplatesP
 
 ### Middleware
 
-We provide a mechanism to add MCP-level middleware, which runs after the
-request has been parsed, but before any normal handling.
+We provide a mechanism to add MCP-level middleware on the server side, which runs after the
+request has been parsed but before any normal handling.
 
 ```go
 // A Dispatcher dispatches an MCP message to the appropriate handler.
@@ -551,14 +551,14 @@ request has been parsed, but before any normal handling.
 type Dispatcher func(ctx context.Context, s *ServerSession, method string, params any) (result any, err error)
 
 // AddDispatchers calls each function from right to left on the previous result, beginning
-// with the server's current dispatcher, and installs the result as the new handler.
-func (*Server) AddDispatchers(middleware ...func(Handler) Handler))
+// with the server's current dispatcher, and installs the result as the new dispatcher.
+func (*Server) AddDispatchers(middleware ...func(Dispatcher) Dispatcher))
 ```
 
 As an example, this code adds server-side logging:
 
 ```go
-func withLogging(h mcp.Handler) mcp.Handler {
+func withLogging(h mcp.Dispatcher) mcp.Dispatcher {
     return func(ctx context.Context, s *mcp.ServerSession, method string, params any) (res any, err error) {
         log.Printf("request: %s %v", method, params)
         defer func() { log.Printf("response: %v, %v", res, err) }()
@@ -621,11 +621,9 @@ The server observes a client cancellation as a cancelled context.
 A caller can request progress notifications by setting the `ProgressToken` field on any request.
 
 ```go
-type ProgressToken any // string or int
-
 type XXXParams struct { // where XXX is each type of call
   ...
-  ProgressToken ProgressToken
+  ProgressToken any // string or int
 }
 ```
 
@@ -681,7 +679,7 @@ Roots can be added and removed from a `Client` with `AddRoots` and `RemoveRoots`
 // AddRoots adds the given roots to the client,
 // replacing any with the same URIs,
 // and notifies any connected servers.
-func (*Client) AddRoots(roots ...Root)
+func (*Client) AddRoots(roots ...*Root)
 
 // RemoveRoots removes the roots with the given URIs.
 // and notifies any connected servers if the list has changed.
@@ -689,7 +687,7 @@ func (*Client) AddRoots(roots ...Root)
 func (*Client) RemoveRoots(uris ...string)
 ```
 
-Servers can call the spec method `ListRoots` to get the roots. If a server installs a
+Server sessions can call the spec method `ListRoots` to get the roots. If a server installs a
 `RootsChangedHandler`, it will be called when the client sends a roots-changed
 notification, which happens whenever the list of roots changes after a
 connection has been established.
@@ -705,7 +703,7 @@ type ServerOptions {
 ### Sampling
 
 Clients that support sampling are created with a `CreateMessageHandler` option
-for handling server calls. To perform sampling, a server calls the spec method `CreateMessage`.
+for handling server calls. To perform sampling, a server session calls the spec method `CreateMessage`.
 
 ```go
 type ClientOptions struct {
@@ -742,7 +740,7 @@ Add tools to a server with `AddTools`:
 ```go
 server.AddTools(
   mcp.NewTool("add", "add numbers", addHandler),
-  mcp.NewTools("subtract, subtract numbers", subHandler))
+  mcp.NewTool("subtract, subtract numbers", subHandler))
 ```
 
 Remove them by name with `RemoveTools`:
@@ -836,7 +834,7 @@ Schemas are validated on the server before the tool handler is called.
 Since all the fields of the Tool struct are exported, a Tool can also be created
 directly with assignment or a struct literal.
 
-Clients can call the spec method `ListTools` or an iterator method `Tools`
+Client sessions can call the spec method `ListTools` or an iterator method `Tools`
 to list the available tools.
 
 **Differences from mcp-go**: using variadic options to configure tools was
@@ -862,7 +860,7 @@ each occur only once (and in an SDK that wraps mcp-go).
 
 For registering tools, we provide only `AddTools`; mcp-go's `SetTools`,
 `AddTool`, `AddSessionTool`, and `AddSessionTools` are deemed unnecessary.
-(similarly for Delete/Remove).
+(Similarly for Delete/Remove).
 
 ### Prompts
 
@@ -893,8 +891,8 @@ server.AddPrompts(
 server.RemovePrompts("code_review")
 ```
 
-Clients can call the spec method `ListPrompts` or an iterator method `Prompts`
-to list the available prompts and the spec method `GetPrompt` to get one.
+Client sessions can call the spec method `ListPrompts` or the iterator method `Prompts`
+to list the available prompts, and the spec method `GetPrompt` to get one.
 
 **Differences from mcp-go**: We provide a `NewPrompt` helper to bind a prompt
 handler to a Go function using reflection to derive its arguments. We provide
@@ -926,7 +924,8 @@ type ServerResourceTemplate struct {
 ```
 
 To add a resource or resource template to a server, users call the `AddResources` and
-`AddResourceTemplates` methods with one or more `ServerResource`s or `ServerResourceTemplate`s:
+`AddResourceTemplates` methods with one or more `ServerResource`s or `ServerResourceTemplate`s.
+We also provide methods to remove them.
 
 ```go
 func (*Server) AddResources(...*ServerResource)
@@ -938,14 +937,12 @@ func (s *Server) RemoveResourceTemplates(uriTemplates ...string)
 
 The `ReadResource` method finds a resource or resource template matching the argument URI and calls
 its assocated handler.
-If the argument URI matches a template, the `Resource` argument to the handler is constructed
-from the fields in the `ResourceTemplate`.
 
 To read files from the local filesystem, we recommend using `FileResourceHandler` to construct a handler:
 ```go
 // FileResourceHandler returns a ResourceHandler that reads paths using dir as a root directory.
 // It protects against path traversal attacks.
-// It will not read any file that is not in the root set of the client requesting the resource.
+// It will not read any file that is not in the root set of the client session requesting the resource.
 func (*Server) FileResourceHandler(dir string) ResourceHandler
 ```
 Here is an example:
@@ -957,17 +954,8 @@ s.AddResources(&mcp.ServerResource{
   Handler: s.FileReadResourceHandler("/public")})
 ```
 
-Servers support all of the resource-related spec methods:
-
-- `ListResources` and `ListResourceTemplates` for listings.
-- `ReadResource` to get the contents of a resource.
-- `Subscribe` and `Unsubscribe` to manage subscriptions on resources.
-
-We also provide iterator methods `Resources` and `ResourceTemplates`.
-
-`ReadResource` checks the incoming URI against the server's list of
-resources and resource templates to make sure it matches one of them,
-then returns the result of calling the associated reader function.
+Server sessions also support the spec methods `ListResources` and `ListResourceTemplates`,
+and the corresponding iterator methods `Resources` and `ResourceTemplates`.
 
 #### Subscriptions
 
@@ -1017,6 +1005,7 @@ type ClientOptions struct {
   ...
   ToolListChangedHandler func(context.Context, *ClientSession, *ToolListChangedParams)
   PromptListChangedHandler func(context.Context, *ClientSession, *PromptListChangedParams)
+  // For both resources and resource templates.
   ResourceListChangedHandler func(context.Context, *ClientSession, *ResourceListChangedParams)
 }
 ```
@@ -1049,8 +1038,8 @@ type ServerOptions {
 }
 ```
 
-ServerSessions have access to a `slog.Logger` that writes to the client. A call to
-a log method like `Info` is translated to a `LoggingMessageNotification` as
+Server sessions have a field `Logger` holding a `slog.Logger` that writes to the client session.
+A call to a log method like `Info` is translated to a `LoggingMessageNotification` as
 follows:
 
 - The attributes and the message populate the "data" property with the
@@ -1060,11 +1049,11 @@ follows:
 - If the `LoggerName` server option is set, it populates the "logger" property.
 
 - The standard slog levels `Info`, `Debug`, `Warn` and `Error` map to the
-  corresponding levels in the MCP spec. The other spec levels will be mapped
+  corresponding levels in the MCP spec. The other spec levels map
   to integers between the slog levels. For example, "notice" is level 2 because
   it is between "warning" (slog value 4) and "info" (slog value 0).
   The `mcp` package defines consts for these levels. To log at the "notice"
-  level, a handler would call `session.Log(ctx, mcp.LevelNotice, "message")`.
+  level, a handler would call `session.Logger.Log(ctx, mcp.LevelNotice, "message")`.
 
 A client that wishes to receive log messages must provide a handler:
 
@@ -1080,7 +1069,7 @@ type ClientOptions struct {
 Servers initiate pagination for `ListTools`, `ListPrompts`, `ListResources`,
 and `ListResourceTemplates`, dictating the page size and providing a
 `NextCursor` field in the Result if more pages exist. The SDK implements keyset
-pagination, using the `unique ID` as the key for a stable sort order and encoding
+pagination, using the unique ID of the feature as the key for a stable sort order and encoding
 the cursor as an opaque string.
 
 For server implementations, the page size for the list operation may be
