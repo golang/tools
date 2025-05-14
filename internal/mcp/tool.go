@@ -40,14 +40,8 @@ func NewTool[TReq any](name, description string, handler func(context.Context, *
 		panic(err)
 	}
 	wrapped := func(ctx context.Context, cc *ServerConnection, params *CallToolParams) (*CallToolResult, error) {
-		// For simplicity, just marshal and unmarshal the arguments.
-		// This could be avoided in the future.
-		rawArgs, err := json.Marshal(params.Arguments)
-		if err != nil {
-			return nil, err
-		}
 		var v TReq
-		if err := unmarshalSchema(rawArgs, schema, &v); err != nil {
+		if err := unmarshalSchema(params.Arguments, schema, &v); err != nil {
 			return nil, err
 		}
 		content, err := handler(ctx, cc, v)

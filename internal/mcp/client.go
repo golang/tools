@@ -181,18 +181,14 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any,
 			err = fmt.Errorf("calling tool %q: %w", name, err)
 		}
 	}()
-	argsJSON := make(map[string]json.RawMessage)
-	for name, arg := range args {
-		argJSON, err := json.Marshal(arg)
-		if err != nil {
-			return nil, fmt.Errorf("marshaling argument %s: %v", name, err)
-		}
-		argsJSON[name] = argJSON
-	}
 
+	data, err := json.Marshal(args)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling arguments: %w", err)
+	}
 	params := &CallToolParams{
 		Name:      name,
-		Arguments: argsJSON,
+		Arguments: json.RawMessage(data),
 	}
 	return standardCall[CallToolResult](ctx, c.conn, "tools/call", params)
 }

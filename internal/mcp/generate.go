@@ -53,8 +53,15 @@ type config map[string]*typeConfig
 var declarations = config{
 	"Annotations": {},
 	"CallToolRequest": {
-		Name:   "-",
-		Fields: config{"Params": {Name: "CallToolParams"}},
+		Name: "-",
+		Fields: config{
+			"Params": {
+				Name: "CallToolParams",
+				Fields: config{
+					"Arguments": {Substitute: "json.RawMessage"},
+				},
+			},
+		},
 	},
 	"CallToolResult": {},
 	"CancelledNotification": {

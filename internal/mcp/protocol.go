@@ -29,8 +29,8 @@ type Annotations struct {
 }
 
 type CallToolParams struct {
-	Arguments map[string]json.RawMessage `json:"arguments,omitempty"`
-	Name      string                     `json:"name"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
+	Name      string          `json:"name"`
 }
 
 // The server's response to a tool call.
