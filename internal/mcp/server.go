@@ -53,8 +53,8 @@ func NewServer(name, version string, opts *ServerOptions) *Server {
 		name:      name,
 		version:   version,
 		opts:      *opts,
-		prompts:   newFeatureSet(func(p *ServerPrompt) string { return p.Definition.Name }),
-		tools:     newFeatureSet(func(t *ServerTool) string { return t.Definition.Name }),
+		prompts:   newFeatureSet(func(p *ServerPrompt) string { return p.Prompt.Name }),
+		tools:     newFeatureSet(func(t *ServerTool) string { return t.Tool.Name }),
 		resources: newFeatureSet(func(r *ServerResource) string { return r.Resource.URI }),
 	}
 }
@@ -170,7 +170,7 @@ func (s *Server) listPrompts(_ context.Context, _ *ServerSession, params *ListPr
 	defer s.mu.Unlock()
 	res := new(ListPromptsResult)
 	for p := range s.prompts.all() {
-		res.Prompts = append(res.Prompts, p.Definition)
+		res.Prompts = append(res.Prompts, p.Prompt)
 	}
 	return res, nil
 }
@@ -191,7 +191,7 @@ func (s *Server) listTools(_ context.Context, _ *ServerSession, params *ListTool
 	defer s.mu.Unlock()
 	res := new(ListToolsResult)
 	for t := range s.tools.all() {
-		res.Tools = append(res.Tools, t.Definition)
+		res.Tools = append(res.Tools, t.Tool)
 	}
 	return res, nil
 }

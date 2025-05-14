@@ -4,10 +4,12 @@ This document discusses the design of a Go SDK for the [model context
 protocol](https://modelcontextprotocol.io/specification/2025-03-26). It is
 intended to seed a GitHub discussion about the official Go MCP SDK.
 
-The golang.org/x/tools/internal/mcp package contains a prototype that we built
-to explore the MCP design space. Many of the ideas there are present in this
-document. However, we have diverged and expanded on the APIs of that prototype,
-and this document should be considered canonical.
+The
+[golang.org/x/tools/internal/mcp](https://pkg.go.dev/golang.org/x/tools/internal/mcp@master)
+package contains a prototype that we built to explore the MCP design space.
+Many of the ideas there are present in this document. However, we have diverged
+from and expanded on the APIs of that prototype, and this document should be
+considered canonical.
 
 ## Similarities and differences with mark3labs/mcp-go
 
@@ -24,9 +26,7 @@ not viable for an official SDK. In yet others, we simply think there is room for
 API refinement, and we should take this opportunity to consider our options.
 Therefore, we wrote this document as though it were proposing a new
 implementation. Nevertheless, much of the API discussed here originated from or
-was inspired by mcp-go and other unofficial SDKs, and if the consensus of this
-discussion is close enough to mcp-go or any other unofficial SDK, we can start
-from a fork.
+was inspired by mcp-go and other unofficial SDKs.
 
 Since mcp-go is so influential and popular, we have noted significant
 differences from its API in the sections below. Although the API here is not
@@ -58,8 +58,7 @@ SDK. An official SDK should aim to be:
 
 In the sections below, we visit each aspect of the MCP spec, in approximately
 the order they are presented by the [official spec](https://modelcontextprotocol.io/specification/2025-03-26)
-For each, we discuss considerations for the Go implementation. In many cases an
-API is suggested, though in some there may be open questions.
+For each, we discuss considerations for the Go implementation, and propose a Go API.
 
 ## Foundations
 
@@ -68,22 +67,26 @@ API is suggested, though in some there may be open questions.
 In the sections that follow, it is assumed that most of the MCP API lives in a
 single shared package, the `mcp` package. This is inconsistent with other MCP
 SDKs, but is consistent with Go packages like `net/http`, `net/rpc`, or
-`google.golang.org/grpc`.
+`google.golang.org/grpc`. We believe that having a single package aids
+discoverability in package documentation and in the IDE. Furthermore, it avoids
+somwhat arbitrary decisions about package structure that may be rendered
+inaccurate by future evolution of the spec.
 
 Functionality that is not directly related to MCP (like jsonschema or jsonrpc2)
 belongs in a separate package.
 
-Therefore, this is the package layout. `module.path` is a placeholder for the
-final module path of the mcp module
+Therefore, this is the package layout, assuming
+github.com/modelcontextprotocol/go-sdk as the module path.
 
-- `module.path/mcp`: the bulk of the user facing API
-- `module.path/jsonschema`: a jsonschema implementation, with validation
-- `module.path/internal/jsonrpc2`: a fork of x/tools/internal/jsonrpc2_v2
+- `github.com/modelcontextprotocol/go-sdk/mcp`: the bulk of the user facing API
+- `github.com/modelcontextprotocol/go-sdk/jsonschema`: a jsonschema implementation, with validation
+- `github.com/modelcontextprotocol/go-sdk/internal/jsonrpc2`: a fork of x/tools/internal/jsonrpc2_v2
 
 The JSON-RPC implementation is hidden, to avoid tight coupling. As described in
 the next section, the only aspects of JSON-RPC that need to be exposed in the
 SDK are the message types, for the purposes of defining custom transports. We
-can expose these types from the `mcp` package via aliases or wrappers.
+can expose these types by promoting them from the `mcp` package using aliases
+or wrappers.
 
 **Difference from mcp-go**: Our `mcp` package includes all the functionality of
 mcp-go's `mcp`, `client`, `server` and `transport` packages.
@@ -98,12 +101,15 @@ defines two transports:
 - **streamable http**: communication over a relatively complicated series of
   text/event-stream GET and HTTP POST requests.
 
-Additionally, version `2024-11-05` of the spec defined a simpler HTTP transport:
+Additionally, version `2024-11-05` of the spec defined a simpler (yet stateful)
+HTTP transport:
 
 - **sse**: client issues a hanging GET request and receives messages via
   `text/event-stream`, and sends messages via POST to a session endpoint.
 
-Furthermore, the spec [states](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#custom-transports) that it must be possible for users to define their own custom transports.
+Furthermore, the spec
+[states](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#custom-transports)
+that it must be possible for users to define their own custom transports.
 
 Given the diversity of the transport implementations, they can be challenging
 to abstract. However, since JSON-RPC requires a bidirectional stream, we can
@@ -124,13 +130,12 @@ type Stream interface {
 }
 ```
 
-Methods accept a Go `Context` and return an `error`,
-as is idiomatic for APIs that do I/O.
+Methods accept a Go `Context` and return an `error`, as is idiomatic for APIs
+that do I/O.
 
-A `Transport` is something that connects a logical JSON-RPC
-stream, and nothing more. Streams must be closeable in order to
-implement client and server shutdown, and therefore conform to the `io.Closer`
-interface.
+A `Transport` is something that connects a logical JSON-RPC stream, and nothing
+more. Streams must be closeable in order to implement client and server
+shutdown, and therefore conform to the `io.Closer` interface.
 
 Other SDKs define higher-level transports, with, for example, methods to send a
 notification or make a call. Those are jsonrpc2 operations on top of the
@@ -141,6 +146,16 @@ For our prototype, we've used an internal `jsonrpc2` package based on the Go
 language server `gopls`, which we propose to fork for the MCP SDK. It already
 handles concerns like client/server connection, request lifecycle,
 cancellation, and shutdown.
+
+**Differences from mcp-go**: The Go team has a battle-tested JSON-RPC
+implementation that we use for gopls, our Go LSP server. We are using the new
+version of this library as part of our MCP SDK. It handles all JSON-RPC 2.0
+features, including cancellation.
+
+The `Transport` interface here is lower-level than that of mcp-go, but serves a
+similar purpose. We believe the lower-level interface is easier to implement.
+
+#### stdio transports
 
 In the MCP Spec, the **stdio** transport uses newline-delimited JSON to
 communicate over stdin/stdout. It's possible to model both client side and
@@ -178,13 +193,20 @@ func NewStdIOTransport() *StdIOTransport
 func (t *StdIOTransport) Connect(context.Context) (Stream, error)
 ```
 
+#### HTTP transports
+
 The HTTP transport APIs are even more asymmetrical. Since connections are initiated
 via HTTP requests, the client developer will create a transport, but
 the server developer will typically install an HTTP handler. Internally, the
-HTTP handler will create a transport for each new client connection.
+HTTP handler will create a logical transport for each new client connection.
 
 Importantly, since they serve many connections, the HTTP handlers must accept a
-callback to get an MCP server for each new session.
+callback to get an MCP server for each new session. As described below, MCP
+servers can optionally connect to multiple clients. This allows customization
+of per-session servers: if the MCP server is stateless, the user can return the
+same MCP server for each connection. On the other hand, if any per-session
+customization is required, it is possible by returning a different `Server`
+instance for each connection.
 
 ```go
 // SSEHTTPHandler is an http.Handler that serves SSE-based MCP sessions as defined by
@@ -212,7 +234,7 @@ see [Middleware](#Middleware) below.
 By default, the SSE handler creates messages endpoints with the
 `?sessionId=...` query parameter. Users that want more control over the
 management of sessions and session endpoints may write their own handler, and
-create `SSEServerTransport` instances themselves, for incoming GET requests.
+create `SSEServerTransport` instances themselves for incoming GET requests.
 
 ```go
 // A SSEServerTransport is a logical SSE session created through a hanging GET
@@ -233,6 +255,9 @@ type SSEServerTransport struct { /* ... */ }
 // The transport is itself an [http.Handler]. It is the caller's responsibility
 // to ensure that the resulting transport serves HTTP requests on the given
 // session endpoint.
+//
+// Most callers should instead use an [SSEHandler], which transparently handles
+// the delegation to SSEServerTransports.
 func NewSSEServerTransport(endpoint string, w http.ResponseWriter) *SSEServerTransport
 
 // ServeHTTP handles POST requests to the transport endpoint.
@@ -282,7 +307,27 @@ func NewStreamableClientTransport(url string) *StreamableClientTransport {
 func (*StreamableClientTransport) Connect(context.Context) (Stream, error)
 ```
 
-Finally, we also provide a couple of transport implementations for special scenarios.
+**Differences from mcp-go**: In mcp-go, server authors create an `MCPServer`,
+populate it with tools, resources and so on, and then wrap it in an `SSEServer`
+or `StdioServer`. Users can manage their own sessions with `RegisterSession`
+and `UnregisterSession`. Rather than use a server constructor to get a distinct
+server for each connection, there is a concept of a "session tool" that
+overlays tools for a specific session.
+
+We find the similarity in names among the three server types to be confusing,
+and we could not discover any uses of the session methods in the open-source
+ecosystem. Furthermore, we believe that a server factor (`getServer`) provides
+equivalent functionality as the per-session logic of mcp-go, with a smaller API
+surface and fewer overlapping concepts.
+
+Additionally, individual handlers and transports here have a minimal API, and
+do not expose internal details. Customization of things like handlers or
+session management is intended to be implemented with middleware and/or
+compositional patterns.
+
+#### Other transports
+
+We also provide a couple of transport implementations for special scenarios.
 An InMemoryTransport can be used when the client and server reside in the same
 process. A LoggingTransport is a middleware layer that logs RPC logs to a desired
 location, specified as an io.Writer.
@@ -301,32 +346,6 @@ func NewInMemoryTransports() (*InMemoryTransport, *InMemoryTransport)
 type LoggingTransport struct { /* ... */ }
 func NewLoggingTransport(delegate Transport, w io.Writer) *LoggingTransport
 ```
-
-**Differences from mcp-go**: The Go team has a battle-tested JSON-RPC
-implementation that we use for gopls, our Go LSP server. We are using the new
-version of this library as part of our MCP SDK. It handles all JSON-RPC 2.0
-features, including cancellation.
-
-The `Transport` interface here is lower-level than that of mcp-go, but serves a
-similar purpose. We believe the lower-level interface is easier to implement.
-
-In mcp-go, server authors create an `MCPServer`, populate it with tools,
-resources and so on, and then wrap it in an `SSEServer` or `StdioServer`. These
-also use session IDs, which are exposed. Users can manage their own sessions
-with `RegisterSession` and `UnregisterSession`.
-
-We find the similarity in names among the three server types to be confusing,
-and we could not discover any uses of the session methods in the open-source
-ecosystem. In our design, server authors create a `Server`, and then
-connect it to a `Transport`. An `SSEHTTPHandler` manages sessions for
-incoming SSE connections, but does not expose them. HTTP handlers accept a
-server constructor, rather than Server, to allow for stateful or "per-session"
-servers.
-
-Individual handlers and transports here have a minimal smaller API, and do not
-expose internal details. Customization of things like handlers or session
-management is intended to be implemented with middleware and/or compositional
-patterns.
 
 ### Protocol types
 
@@ -373,7 +392,7 @@ type Content struct {
 ```
 
 **Differences from mcp-go**: these types are largely similar, but our type
-generation flattens types rather than using struct embedding.
+generator flattens types rather than using struct embedding.
 
 ### Clients and Servers
 
@@ -387,13 +406,18 @@ and resources from servers. Additionally, handlers for these features may
 themselves be stateful, for example if a tool handler caches state from earlier
 requests in the session.
 
-We believe that in the common case, any change to a client or server,
-such as adding a tool, is intended for all its peers.
-It is therefore more useful to allow multiple connections from a client, and to
-a server. This is similar to the `net/http` packages, in which an `http.Client`
-and `http.Server` each may handle multiple unrelated connections. When users
-add features to a client or server, all connected peers are notified of the
-change.
+We believe that in the common case, any change to a client or server, such as
+adding a tool, is intended for all its peers. It is therefore more useful to
+allow multiple connections from a client, and to a server. This is similar to
+the `net/http` packages, in which an `http.Client` and `http.Server` each may
+handle multiple unrelated connections. When users add features to a client or
+server, all connected peers are notified of the change.
+
+Supporting multiple connections to servers (and from clients) still allows for
+stateful components, as it is up to the user to decide whether or not to create
+distinct servers/clients for each connection. For example, if the user wants to
+create a distinct server for each new connection, they can do so in the
+`getServer` factory passed to transport handlers.
 
 Following the terminology of the
 [spec](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#session-management),
@@ -423,6 +447,7 @@ func (*ClientSession) Client() *Client
 func (*ClientSession) Close() error
 func (*ClientSession) Wait() error
 // Methods for calling through the ClientSession are described below.
+// For example: ClientSession.ListTools.
 
 type Server struct { /* ... */ }
 func NewServer(name, version string, opts *ServerOptions) *Server
@@ -436,6 +461,7 @@ func (*ServerSession) Server() *Server
 func (*ServerSession) Close() error
 func (*ServerSession) Wait() error
 // Methods for calling through the ServerSession are described below.
+// For example: ServerSession.ListRoots.
 ```
 
 Here's an example of these APIs from the client side:
@@ -472,17 +498,18 @@ session until the client disconnects:
 func (*Server) Run(context.Context, Transport)
 ```
 
-**Differences from mcp-go**: the Server APIs are very similar to mcp-go,
-though the association between servers and transports is different. In
-mcp-go, a single server is bound to what we would call an `SSEHTTPHandler`,
-and reused for all client sessions. As discussed above, the transport
-abstraction here is differentiated from HTTP serving, and the `Server.Connect`
-method provides a consistent API for binding to an arbitrary transport. Servers
-here do not have methods for sending notifications or calls, because they are
-logically distinct from the `ServerSession`. In mcp-go, servers are `n:1`,
-but there is no abstraction of a server session: sessions are addressed in
-Server APIs through their `sessionID`: `SendNotificationToAllClients`,
-`SendNotificationToClient`, `SendNotificationToSpecificClient`.
+**Differences from mcp-go**: the Server APIs are similar to mcp-go, though the
+association between servers and transports is different. In mcp-go, a single
+server is bound to what we would call an `SSEHTTPHandler`, and reused for all
+sessions. Per-session behavior is implemented though a 'session tool' overlay.
+As discussed above, the transport abstraction here is differentiated from HTTP
+serving, and the `Server.Connect` method provides a consistent API for binding
+to an arbitrary transport. Servers here do not have methods for sending
+notifications or calls, because they are logically distinct from the
+`ServerSession`. In mcp-go, servers are `n:1`, but there is no abstraction of a
+server session: sessions are addressed in Server APIs through their
+`sessionID`: `SendNotificationToAllClients`, `SendNotificationToClient`,
+`SendNotificationToSpecificClient`.
 
 The client API here is different, since clients and client sessions are
 conceptually distinct. The `ClientSession` is closer to mcp-go's notion of
@@ -503,27 +530,25 @@ func (*ClientSession) ListTools(context.Context, *ListToolsParams) (*ListToolsRe
 ```
 
 Our SDK has a method for every RPC in the spec, and except for `CallTool`,
-their signatures all share this form.
-We do this, rather than providing more convenient shortcut signatures,
-to maintain backward compatibility if the spec makes backward-compatible changes
-such as adding a new property to the request parameters
+their signatures all share this form. We do this, rather than providing more
+convenient shortcut signatures, to maintain backward compatibility if the spec
+makes backward-compatible changes such as adding a new property to the request
+parameters
 (as in [this commit](https://github.com/modelcontextprotocol/modelcontextprotocol/commit/2fce8a077688bf8011e80af06348b8fe1dae08ac),
 for example).
-To avoid boilerplate, we don't repeat this
-signature for RPCs defined in the spec; readers may assume it when we mention a
-"spec method."
+To avoid boilerplate, we don't repeat this signature for RPCs defined in the
+spec; readers may assume it when we mention a "spec method."
 
 `CallTool` is the only exception: for convenience, it takes the tool name and
-arguments, with an options struct for additional request fields.
-Our SDK has a method for every RPC in the spec, and their signatures all share
-this form. To avoid boilerplate, we don't repeat this signature for RPCs
-defined in the spec; readers may assume it when we mention a "spec method."
+arguments, with an options struct for additional request fields. See the
+section on Tools below for details.
 
-Why do we use params instead of the full request? JSON-RPC requests consist of a method
-name and a set of parameters, and the method is already encoded in the Go method name.
-Technically, the MCP spec could add a field to a request while preserving backward
-compatibility, which would break the Go SDK's compatibility. But in the unlikely event
-that were to happen, we would add that field to the Params struct.
+Why do we use params instead of the full JSON-RPC request? As much as possible,
+we endeavor to hide JSON-RPC details when they are not relevant to the business
+logic of your client or server. In this case, the additional information in the
+JSON-RPC request is just the request ID and method name; the request ID is
+irrelevant, and the method name is implied by the name of the Go method
+providing the API.
 
 We believe that any change to the spec that would require callers to pass a new a
 parameter is not backward compatible. Therefore, it will always work to pass
@@ -595,9 +620,9 @@ code.
 
 ```go
 type JSONRPCError struct {
-	Code int64           `json:"code"`
-	Message string       `json:"message"`
-	Data json.RawMessage `json:"data,omitempty"`
+	Code    int64           `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 ```
 
@@ -658,9 +683,9 @@ func (c *ServerSession) Ping(ctx context.Context, *PingParams) error
 
 Additionally, client and server sessions can be configured with automatic
 keepalive behavior. If the `KeepAlive` option is set to a non-zero duration,
-it defines an
-interval for regular "ping" requests. If the peer fails to respond to pings
-originating from the keepalive check, the session is automatically closed.
+it defines an interval for regular "ping" requests. If the peer fails to
+respond to pings originating from the keepalive check, the session is
+automatically closed.
 
 ```go
 type ClientOptions struct {
@@ -847,6 +872,19 @@ directly with assignment or a struct literal.
 Client sessions can call the spec method `ListTools` or an iterator method `Tools`
 to list the available tools.
 
+As mentioned above, the client session method `CallTool` has a non-standard
+signature, so that `CallTool` can handle the marshalling of tool arguments: the
+type of `CallToolParams.Arguments` is `json.RawMessage`, to delegate
+unmarshalling to the tool handler.
+
+```go
+func (c *ClientSession) CallTool(ctx context.Context, name string, args map[string]any, opts *CallToolOptions) (_ *CallToolResult, err error)
+
+type CallToolOptions struct {
+	ProgressToken any // string or int
+}
+```
+
 **Differences from mcp-go**: using variadic options to configure tools was
 significantly inspired by mcp-go. However, the distinction between `ToolOption`
 and `SchemaOption` allows for recursive application of schema options.
@@ -971,6 +1009,11 @@ s.AddResources(&mcp.ServerResource{
 
 Server sessions also support the spec methods `ListResources` and `ListResourceTemplates`,
 and the corresponding iterator methods `Resources` and `ResourceTemplates`.
+
+**Differences from mcp-go**: for symmetry with tools and prompts, we use
+`AddResources` rather than `AddResource`. Additionally, the `ResourceHandler`
+returns a `ReadResourceResult`, rather than just its content, for compatibility
+with future evolution of the spec.
 
 #### Subscriptions
 
@@ -1105,3 +1148,7 @@ more pages exist.
 In addition to the `List` methods, the SDK provides an iterator method for each
 list operation. This simplifies pagination for clients by automatically handling
 the underlying pagination logic. See [Iterator Methods](#iterator-methods) above.
+
+**Differences with mcp-go**: the PageSize configuration is set with a
+configuration field rather than a variadic option. Additionally, this design
+proposes pagination by default, as this is likely desirable for most servers.

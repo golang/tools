@@ -208,7 +208,7 @@ func (c *ClientSession) CallTool(ctx context.Context, name string, args map[stri
 
 // NOTE: the following struct should consist of all fields of callToolParams except name and arguments.
 
-// CallToolOptions contains options to [Client.CallTools].
+// CallToolOptions contains options to [ClientSession.CallTool].
 type CallToolOptions struct {
 	ProgressToken any // string or int
 }

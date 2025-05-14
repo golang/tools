@@ -20,8 +20,8 @@ type PromptHandler func(context.Context, *ServerSession, map[string]string) (*Ge
 
 // A Prompt is a prompt definition bound to a prompt handler.
 type ServerPrompt struct {
-	Definition *Prompt
-	Handler    PromptHandler
+	Prompt  *Prompt
+	Handler PromptHandler
 }
 
 // NewPrompt is a helper to use reflection to create a prompt for the given
@@ -41,7 +41,7 @@ func NewPrompt[TReq any](name, description string, handler func(context.Context,
 		panic(fmt.Sprintf("handler request type must be a struct"))
 	}
 	prompt := &ServerPrompt{
-		Definition: &Prompt{
+		Prompt: &Prompt{
 			Name:        name,
 			Description: description,
 		},
@@ -54,7 +54,7 @@ func NewPrompt[TReq any](name, description string, handler func(context.Context,
 		if prop.Type != "string" {
 			panic(fmt.Sprintf("handler type must consist only of string fields"))
 		}
-		prompt.Definition.Arguments = append(prompt.Definition.Arguments, &PromptArgument{
+		prompt.Prompt.Arguments = append(prompt.Prompt.Arguments, &PromptArgument{
 			Name:        name,
 			Description: prop.Description,
 			Required:    required[name],
@@ -95,16 +95,16 @@ func (s promptSetter) set(p *ServerPrompt) { s(p) }
 // Required and Description, and panics when encountering any other option.
 func Argument(name string, opts ...SchemaOption) PromptOption {
 	return promptSetter(func(p *ServerPrompt) {
-		i := slices.IndexFunc(p.Definition.Arguments, func(arg *PromptArgument) bool {
+		i := slices.IndexFunc(p.Prompt.Arguments, func(arg *PromptArgument) bool {
 			return arg.Name == name
 		})
 		var arg *PromptArgument
 		if i < 0 {
-			i = len(p.Definition.Arguments)
+			i = len(p.Prompt.Arguments)
 			arg = &PromptArgument{Name: name}
-			p.Definition.Arguments = append(p.Definition.Arguments, arg)
+			p.Prompt.Arguments = append(p.Prompt.Arguments, arg)
 		} else {
-			arg = p.Definition.Arguments[i]
+			arg = p.Prompt.Arguments[i]
 		}
 		for _, opt := range opts {
 			switch v := opt.(type) {
@@ -116,6 +116,6 @@ func Argument(name string, opts ...SchemaOption) PromptOption {
 				panic(fmt.Sprintf("unsupported prompt argument schema option %T", opt))
 			}
 		}
-		p.Definition.Arguments[i] = arg
+		p.Prompt.Arguments[i] = arg
 	})
 }

@@ -83,8 +83,8 @@ func TestNewTool(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		if diff := cmp.Diff(test.want, test.tool.Definition.InputSchema, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
-			t.Errorf("NewTool(%v) mismatch (-want +got):\n%s", test.tool.Definition.Name, diff)
+		if diff := cmp.Diff(test.want, test.tool.Tool.InputSchema, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
+			t.Errorf("NewTool(%v) mismatch (-want +got):\n%s", test.tool.Tool.Name, diff)
 		}
 	}
 }

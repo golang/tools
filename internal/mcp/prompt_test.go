@@ -46,8 +46,8 @@ func TestNewPrompt(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		if diff := cmp.Diff(test.want, test.prompt.Definition.Arguments); diff != "" {
-			t.Errorf("NewPrompt(%v) mismatch (-want +got):\n%s", test.prompt.Definition.Name, diff)
+		if diff := cmp.Diff(test.want, test.prompt.Prompt.Arguments); diff != "" {
+			t.Errorf("NewPrompt(%v) mismatch (-want +got):\n%s", test.prompt.Prompt.Name, diff)
 		}
 	}
 }

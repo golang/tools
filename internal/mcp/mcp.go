@@ -10,13 +10,13 @@
 // To get started, create either a [Client] or [Server], and connect it to a
 // peer using a [Transport]. The diagram below illustrates how this works:
 //
-//	Client                                   Server
-//	  ⇅          (jsonrpc2)                    ⇅
-//	Client Transport ⇄ Server Transport ⇄ ServerSession
+//	Client                                                   Server
+//	 ⇅                          (jsonrpc2)                     ⇅
+//	ClientSession ⇄ Client Transport ⇄ Server Transport ⇄ ServerSession
 //
 // A [Client] is an MCP client, which can be configured with various client
 // capabilities. Clients may be connected to a [Server] instance
-// using the [Client.Start] method.
+// using the [Client.Connect] method.
 //
 // Similarly, a [Server] is an MCP server, which can be configured with various
 // server capabilities. Servers may be connected to one or more [Client]

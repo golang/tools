@@ -17,8 +17,8 @@ type ToolHandler func(context.Context, *ServerSession, *CallToolParams) (*CallTo
 
 // A Tool is a tool definition that is bound to a tool handler.
 type ServerTool struct {
-	Definition *Tool
-	Handler    ToolHandler
+	Tool    *Tool
+	Handler ToolHandler
 }
 
 // NewTool is a helper to make a tool using reflection on the given handler.
@@ -59,7 +59,7 @@ func NewTool[TReq any](name, description string, handler func(context.Context, *
 		return res, nil
 	}
 	t := &ServerTool{
-		Definition: &Tool{
+		Tool: &Tool{
 			Name:        name,
 			Description: description,
 			InputSchema: schema,
@@ -94,7 +94,7 @@ func (s toolSetter) set(t *ServerTool) { s(t) }
 func Input(opts ...SchemaOption) ToolOption {
 	return toolSetter(func(t *ServerTool) {
 		for _, opt := range opts {
-			opt.set(t.Definition.InputSchema)
+			opt.set(t.Tool.InputSchema)
 		}
 	})
 }
