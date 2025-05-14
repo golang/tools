@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 )
@@ -148,7 +149,12 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 // positions have been mangled, and type checker errors may not make sense.
 func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []FixType) {
 	var err error
-	walkASTWithParent(n, func(n, parent ast.Node) bool {
+	internalastutil.PreorderStack(n, nil, func(n ast.Node, stack []ast.Node) bool {
+		var parent ast.Node
+		if len(stack) > 0 {
+			parent = stack[len(stack)-1]
+		}
+
 		switch n := n.(type) {
 		case *ast.BadStmt:
 			if fixDeferOrGoStmt(n, parent, tok, src) {
@@ -207,32 +213,6 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []FixType) {
 	return fixes
 }
 
-// walkASTWithParent walks the AST rooted at n. The semantics are
-// similar to ast.Inspect except it does not call f(nil).
-// TODO(adonovan): replace with PreorderStack.
-func walkASTWithParent(n ast.Node, f func(n ast.Node, parent ast.Node) bool) {
-	var ancestors []ast.Node
-	ast.Inspect(n, func(n ast.Node) (recurse bool) {
-		defer func() {
-			if recurse {
-				ancestors = append(ancestors, n)
-			}
-		}()
-
-		if n == nil {
-			ancestors = ancestors[:len(ancestors)-1]
-			return false
-		}
-
-		var parent ast.Node
-		if len(ancestors) > 0 {
-			parent = ancestors[len(ancestors)-1]
-		}
-
-		return f(n, parent)
-	})
-}
-
 // TODO(rfindley): revert this intrumentation once we're certain the crash in
 // #59097 is fixed.
 type FixType int
@@ -253,13 +233,14 @@ const (
 //
 // fixSrc returns a non-nil result if and only if a fix was applied.
 func fixSrc(f *ast.File, tf *token.File, src []byte) (newSrc []byte, fix FixType) {
-	walkASTWithParent(f, func(n, parent ast.Node) bool {
+	internalastutil.PreorderStack(f, nil, func(n ast.Node, stack []ast.Node) bool {
 		if newSrc != nil {
 			return false
 		}
 
 		switch n := n.(type) {
 		case *ast.BlockStmt:
+			parent := stack[len(stack)-1]
 			newSrc = fixMissingCurlies(f, n, parent, tf, src)
 			if newSrc != nil {
 				fix = FixedCurlies
