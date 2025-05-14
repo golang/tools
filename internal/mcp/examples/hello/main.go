@@ -50,8 +50,8 @@ func main() {
 		})
 		http.ListenAndServe(*httpAddr, handler)
 	} else {
-		opts := &mcp.ConnectionOptions{Logger: os.Stderr}
-		if err := server.Run(context.Background(), mcp.NewStdIOTransport(), opts); err != nil {
+		t := mcp.NewLoggingTransport(mcp.NewStdIOTransport(), os.Stderr)
+		if err := server.Run(context.Background(), t); err != nil {
 			fmt.Fprintf(os.Stderr, "Server failed: %v", err)
 		}
 	}

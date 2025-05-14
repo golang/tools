@@ -33,7 +33,7 @@ func sayHi(ctx context.Context, cc *ServerSession, v hiParams) ([]*Content, erro
 
 func TestEndToEnd(t *testing.T) {
 	ctx := context.Background()
-	ct, st := NewInMemoryTransport()
+	ct, st := NewInMemoryTransports()
 
 	s := NewServer("testServer", "v1.0.0", nil)
 
@@ -63,7 +63,7 @@ func TestEndToEnd(t *testing.T) {
 	)
 
 	// Connect the server.
-	ss, err := s.Connect(ctx, st, nil)
+	ss, err := s.Connect(ctx, st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,19 +81,20 @@ func TestEndToEnd(t *testing.T) {
 		clientWG.Done()
 	}()
 
-	c := NewClient("testClient", "v1.0.0", ct, nil)
+	c := NewClient("testClient", "v1.0.0", nil)
 	c.AddRoots(&Root{URI: "file:///root"})
 
 	// Connect the client.
-	if err := c.Start(ctx); err != nil {
+	cs, err := c.Connect(ctx, ct)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := c.Ping(ctx, nil); err != nil {
+	if err := cs.Ping(ctx, nil); err != nil {
 		t.Fatalf("ping failed: %v", err)
 	}
 	t.Run("prompts", func(t *testing.T) {
-		res, err := c.ListPrompts(ctx, nil)
+		res, err := cs.ListPrompts(ctx, nil)
 		if err != nil {
 			t.Errorf("prompts/list failed: %v", err)
 		}
@@ -109,7 +110,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("prompts/list mismatch (-want +got):\n%s", diff)
 		}
 
-		gotReview, err := c.GetPrompt(ctx, &GetPromptParams{Name: "code_review", Arguments: map[string]string{"Code": "1+1"}})
+		gotReview, err := cs.GetPrompt(ctx, &GetPromptParams{Name: "code_review", Arguments: map[string]string{"Code": "1+1"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -124,13 +125,13 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("prompts/get 'code_review' mismatch (-want +got):\n%s", diff)
 		}
 
-		if _, err := c.GetPrompt(ctx, &GetPromptParams{Name: "fail"}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
+		if _, err := cs.GetPrompt(ctx, &GetPromptParams{Name: "fail"}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
 			t.Errorf("fail returned unexpected error: got %v, want containing %v", err, failure)
 		}
 	})
 
 	t.Run("tools", func(t *testing.T) {
-		res, err := c.ListTools(ctx, nil)
+		res, err := cs.ListTools(ctx, nil)
 		if err != nil {
 			t.Errorf("tools/list failed: %v", err)
 		}
@@ -160,7 +161,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("tools/list mismatch (-want +got):\n%s", diff)
 		}
 
-		gotHi, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
+		gotHi, err := cs.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,7 +172,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("tools/call 'greet' mismatch (-want +got):\n%s", diff)
 		}
 
-		gotFail, err := c.CallTool(ctx, "fail", map[string]any{}, nil)
+		gotFail, err := cs.CallTool(ctx, "fail", map[string]any{}, nil)
 		// Counter-intuitively, when a tool fails, we don't expect an RPC error for
 		// call tool: instead, the failure is embedded in the result.
 		if err != nil {
@@ -212,7 +213,7 @@ func TestEndToEnd(t *testing.T) {
 			&ServerResource{resource1, readHandler},
 			&ServerResource{resource2, readHandler})
 
-		lrres, err := c.ListResources(ctx, nil)
+		lrres, err := cs.ListResources(ctx, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -228,7 +229,7 @@ func TestEndToEnd(t *testing.T) {
 			{"file:///nonexistent.txt", ""},
 			// TODO(jba): add resource template cases when we implement them
 		} {
-			rres, err := c.ReadResource(ctx, &ReadResourceParams{URI: tt.uri})
+			rres, err := cs.ReadResource(ctx, &ReadResourceParams{URI: tt.uri})
 			if err != nil {
 				var werr *jsonrpc2.WireError
 				if errors.As(err, &werr) && werr.Code == codeResourceNotFound {
@@ -267,7 +268,7 @@ func TestEndToEnd(t *testing.T) {
 	})
 
 	// Disconnect.
-	c.Close()
+	cs.Close()
 	clientWG.Wait()
 
 	// After disconnecting, neither client nor server should have any
@@ -282,26 +283,27 @@ func TestEndToEnd(t *testing.T) {
 //
 // The caller should cancel either the client connection or server connection
 // when the connections are no longer needed.
-func basicConnection(t *testing.T, tools ...*ServerTool) (*ServerSession, *Client) {
+func basicConnection(t *testing.T, tools ...*ServerTool) (*ServerSession, *ClientSession) {
 	t.Helper()
 
 	ctx := context.Background()
-	ct, st := NewInMemoryTransport()
+	ct, st := NewInMemoryTransports()
 
 	s := NewServer("testServer", "v1.0.0", nil)
 
 	// The 'greet' tool says hi.
 	s.AddTools(tools...)
-	ss, err := s.Connect(ctx, st, nil)
+	ss, err := s.Connect(ctx, st)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	c := NewClient("testClient", "v1.0.0", ct, nil)
-	if err := c.Start(ctx); err != nil {
+	c := NewClient("testClient", "v1.0.0", nil)
+	cs, err := c.Connect(ctx, ct)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return ss, c
+	return ss, cs
 }
 
 func TestServerClosing(t *testing.T) {
@@ -329,28 +331,29 @@ func TestServerClosing(t *testing.T) {
 
 func TestBatching(t *testing.T) {
 	ctx := context.Background()
-	ct, st := NewInMemoryTransport()
+	ct, st := NewInMemoryTransports()
 
 	s := NewServer("testServer", "v1.0.0", nil)
-	_, err := s.Connect(ctx, st, nil)
+	_, err := s.Connect(ctx, st)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	c := NewClient("testClient", "v1.0.0", ct, nil)
+	c := NewClient("testClient", "v1.0.0", nil)
 	// TODO: this test is broken, because increasing the batch size here causes
 	// 'initialize' to block. Therefore, we can only test with a size of 1.
 	const batchSize = 1
 	BatchSize(ct, batchSize)
-	if err := c.Start(ctx); err != nil {
+	cs, err := c.Connect(ctx, ct)
+	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer cs.Close()
 
 	errs := make(chan error, batchSize)
 	for i := range batchSize {
 		go func() {
-			_, err := c.ListTools(ctx, nil)
+			_, err := cs.ListTools(ctx, nil)
 			errs <- err
 		}()
 		time.Sleep(2 * time.Millisecond)

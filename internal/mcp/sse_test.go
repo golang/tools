@@ -35,15 +35,16 @@ func TestSSEServer(t *testing.T) {
 
 			clientTransport := NewSSEClientTransport(httpServer.URL)
 
-			c := NewClient("testClient", "v1.0.0", clientTransport, nil)
-			if err := c.Start(ctx); err != nil {
+			c := NewClient("testClient", "v1.0.0", nil)
+			cs, err := c.Connect(ctx, clientTransport)
+			if err != nil {
 				t.Fatal(err)
 			}
-			if err := c.Ping(ctx, nil); err != nil {
+			if err := cs.Ping(ctx, nil); err != nil {
 				t.Fatal(err)
 			}
-			cc := <-conns
-			gotHi, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
+			ss := <-conns
+			gotHi, err := cs.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -57,11 +58,11 @@ func TestSSEServer(t *testing.T) {
 			// Test that closing either end of the connection terminates the other
 			// end.
 			if closeServerFirst {
-				c.Close()
-				cc.Wait()
+				cs.Close()
+				ss.Wait()
 			} else {
-				cc.Close()
-				c.Wait()
+				ss.Close()
+				cs.Wait()
 			}
 		})
 	}

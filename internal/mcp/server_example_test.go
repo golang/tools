@@ -24,28 +24,29 @@ func SayHi(ctx context.Context, cc *mcp.ServerSession, params *SayHiParams) ([]*
 
 func ExampleServer() {
 	ctx := context.Background()
-	clientTransport, serverTransport := mcp.NewInMemoryTransport()
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 
 	server := mcp.NewServer("greeter", "v0.0.1", nil)
 	server.AddTools(mcp.NewTool("greet", "say hi", SayHi))
 
-	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	serverSession, err := server.Connect(ctx, serverTransport)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	client := mcp.NewClient("client", "v0.0.1", clientTransport, nil)
-	if err := client.Start(ctx); err != nil {
+	client := mcp.NewClient("client", "v0.0.1", nil)
+	clientSession, err := client.Connect(ctx, clientTransport)
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	res, err := client.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
+	res, err := clientSession.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(res.Content[0].Text)
 
-	client.Close()
+	clientSession.Close()
 	serverSession.Wait()
 
 	// Output: Hi user

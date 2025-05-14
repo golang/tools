@@ -32,7 +32,7 @@ func runServer() {
 	server := mcp.NewServer("greeter", "v0.0.1", nil)
 	server.AddTools(mcp.NewTool("greet", "say hi", SayHi))
 
-	if err := server.Run(ctx, mcp.NewStdIOTransport(), nil); err != nil {
+	if err := server.Run(ctx, mcp.NewStdIOTransport()); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -48,11 +48,12 @@ func TestCmdTransport(t *testing.T) {
 	cmd := exec.Command(exe)
 	cmd.Env = append(os.Environ(), runAsServer+"=true")
 
-	client := mcp.NewClient("client", "v0.0.1", mcp.NewCommandTransport(cmd), nil)
-	if err := client.Start(ctx); err != nil {
+	client := mcp.NewClient("client", "v0.0.1", nil)
+	session, err := client.Connect(ctx, mcp.NewCommandTransport(cmd))
+	if err != nil {
 		log.Fatal(err)
 	}
-	got, err := client.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
+	got, err := session.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestCmdTransport(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("greet returned unexpected content (-want +got):\n%s", diff)
 	}
-	if err := client.Close(); err != nil {
+	if err := session.Close(); err != nil {
 		t.Fatalf("closing server: %v", err)
 	}
 }

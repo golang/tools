@@ -41,13 +41,6 @@ type Stream interface {
 	io.Closer
 }
 
-// ConnectionOptions configures the behavior of an individual client<->server
-// connection.
-type ConnectionOptions struct {
-	SessionID string    // if set, the session ID
-	Logger    io.Writer // if set, write RPC logs
-}
-
 // A StdIOTransport is a [Transport] that communicates over stdin/stdout using
 // newline-delimited JSON.
 type StdIOTransport struct {
@@ -76,9 +69,9 @@ type InMemoryTransport struct {
 	ioTransport
 }
 
-// NewInMemoryTransport returns two InMemoryTransports that connect to each
+// NewInMemoryTransports returns two InMemoryTransports that connect to each
 // other.
-func NewInMemoryTransport() (*InMemoryTransport, *InMemoryTransport) {
+func NewInMemoryTransports() (*InMemoryTransport, *InMemoryTransport) {
 	c1, c2 := net.Pipe()
 	return &InMemoryTransport{ioTransport{c1}}, &InMemoryTransport{ioTransport{c2}}
 }
@@ -93,11 +86,7 @@ type binder[T handler] interface {
 	disconnect(T)
 }
 
-func connect[H handler](ctx context.Context, t Transport, opts *ConnectionOptions, b binder[H]) (H, error) {
-	if opts == nil {
-		opts = new(ConnectionOptions)
-	}
-
+func connect[H handler](ctx context.Context, t Transport, b binder[H]) (H, error) {
 	var zero H
 	stream, err := t.Connect(ctx)
 	if err != nil {
@@ -105,11 +94,6 @@ func connect[H handler](ctx context.Context, t Transport, opts *ConnectionOption
 	}
 	// If logging is configured, write message logs.
 	reader, writer := jsonrpc2.Reader(stream), jsonrpc2.Writer(stream)
-	if opts.Logger != nil {
-		reader = loggingReader(opts.Logger, reader)
-		writer = loggingWriter(opts.Logger, writer)
-	}
-
 	var (
 		h         H
 		preempter canceller
@@ -178,54 +162,66 @@ func call(ctx context.Context, conn *jsonrpc2.Connection, method string, params,
 	return nil
 }
 
-// The helpers below are used to bind transports to jsonrpc2.
-
-// A readerFunc implements jsonrpc2.Reader.Read.
-type readerFunc func(context.Context) (jsonrpc2.Message, int64, error)
-
-func (f readerFunc) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
-	return f(ctx)
+// A LoggingTransport is a [Transport] that delegates to another transport,
+// writing RPC logs to an io.Writer.
+type LoggingTransport struct {
+	delegate Transport
+	w        io.Writer
 }
 
-// A writerFunc implements jsonrpc2.Writer.Write.
-type writerFunc func(context.Context, jsonrpc2.Message) (int64, error)
+// NewLoggingTransport creates a new LoggingTransport that delegates to the
+// provided transport, writing RPC logs to the provided io.Writer.
+func NewLoggingTransport(delegate Transport, w io.Writer) *LoggingTransport {
+	return &LoggingTransport{delegate, w}
+}
 
-func (f writerFunc) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
-	return f(ctx, msg)
+// Connect connects the underlying transport, returning a [Stream] that writes
+// logs to the configured destination.
+func (t *LoggingTransport) Connect(ctx context.Context) (Stream, error) {
+	delegate, err := t.delegate.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &loggingStream{delegate, t.w}, nil
+}
+
+type loggingStream struct {
+	delegate Stream
+	w        io.Writer
 }
 
 // loggingReader is a stream middleware that logs incoming messages.
-func loggingReader(w io.Writer, delegate jsonrpc2.Reader) jsonrpc2.Reader {
-	return readerFunc(func(ctx context.Context) (jsonrpc2.Message, int64, error) {
-		msg, n, err := delegate.Read(ctx)
+func (s *loggingStream) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
+	msg, n, err := s.delegate.Read(ctx)
+	if err != nil {
+		fmt.Fprintf(s.w, "read error: %v", err)
+	} else {
+		data, err := jsonrpc2.EncodeMessage(msg)
 		if err != nil {
-			fmt.Fprintf(w, "read error: %v", err)
-		} else {
-			data, err := jsonrpc2.EncodeMessage(msg)
-			if err != nil {
-				fmt.Fprintf(w, "LoggingFramer: failed to marshal: %v", err)
-			}
-			fmt.Fprintf(w, "read: %s", string(data))
+			fmt.Fprintf(s.w, "LoggingTransport: failed to marshal: %v", err)
 		}
-		return msg, n, err
-	})
+		fmt.Fprintf(s.w, "read: %s", string(data))
+	}
+	return msg, n, err
 }
 
 // loggingWriter is a stream middleware that logs outgoing messages.
-func loggingWriter(w io.Writer, delegate jsonrpc2.Writer) jsonrpc2.Writer {
-	return writerFunc(func(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
-		n, err := delegate.Write(ctx, msg)
+func (s *loggingStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
+	n, err := s.delegate.Write(ctx, msg)
+	if err != nil {
+		fmt.Fprintf(s.w, "write error: %v", err)
+	} else {
+		data, err := jsonrpc2.EncodeMessage(msg)
 		if err != nil {
-			fmt.Fprintf(w, "write error: %v", err)
-		} else {
-			data, err := jsonrpc2.EncodeMessage(msg)
-			if err != nil {
-				fmt.Fprintf(w, "LoggingFramer: failed to marshal: %v", err)
-			}
-			fmt.Fprintf(w, "write: %s", string(data))
+			fmt.Fprintf(s.w, "LoggingTransport: failed to marshal: %v", err)
 		}
-		return n, err
-	})
+		fmt.Fprintf(s.w, "write: %s", string(data))
+	}
+	return n, err
+}
+
+func (s *loggingStream) Close() error {
+	return s.delegate.Close()
 }
 
 // A rwc binds an io.ReadCloser and io.WriteCloser together to create an

@@ -16,29 +16,26 @@ import (
 )
 
 // A Client is an MCP client, which may be connected to an MCP server
-// using the [Client.Start] method.
+// using the [Client.Connect] method.
 type Client struct {
-	name             string
-	version          string
-	transport        Transport
-	opts             ClientOptions
-	mu               sync.Mutex
-	conn             *jsonrpc2.Connection
-	roots            *featureSet[*Root]
-	initializeResult *initializeResult
+	name     string
+	version  string
+	opts     ClientOptions
+	mu       sync.Mutex
+	roots    *featureSet[*Root]
+	sessions []*ClientSession
 }
 
 // NewClient creates a new Client.
 //
-// Use [Client.Start] to connect it to an MCP server.
+// Use [Client.Connect] to connect it to an MCP server.
 //
 // If non-nil, the provided options configure the Client.
-func NewClient(name, version string, t Transport, opts *ClientOptions) *Client {
+func NewClient(name, version string, opts *ClientOptions) *Client {
 	c := &Client{
-		name:      name,
-		version:   version,
-		transport: t,
-		roots:     newFeatureSet(func(r *Root) string { return r.URI }),
+		name:    name,
+		version: version,
+		roots:   newFeatureSet(func(r *Root) string { return r.URI }),
 	}
 	if opts != nil {
 		c.opts = *opts
@@ -48,63 +45,79 @@ func NewClient(name, version string, t Transport, opts *ClientOptions) *Client {
 
 // ClientOptions configures the behavior of the client.
 type ClientOptions struct {
-	ConnectionOptions
 }
 
-// bind implements the binder[*Client] interface, so that Clients can
+// bind implements the binder[*ClientSession] interface, so that Clients can
 // be connected using [connect].
-func (c *Client) bind(conn *jsonrpc2.Connection) *Client {
+func (c *Client) bind(conn *jsonrpc2.Connection) *ClientSession {
+	cs := &ClientSession{
+		conn:   conn,
+		client: c,
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.conn = conn
-	return c
+	c.sessions = append(c.sessions, cs)
+	return cs
 }
 
 // disconnect implements the binder[*Client] interface, so that
 // Clients can be connected using [connect].
-func (c *Client) disconnect(*Client) {
-	// Do nothing. In particular, do not set conn to nil: it needs to exist so it can
-	// return an error.
+func (c *Client) disconnect(cs *ClientSession) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sessions = slices.DeleteFunc(c.sessions, func(cs2 *ClientSession) bool {
+		return cs2 == cs
+	})
 }
 
-// Start begins an MCP session by connecting the MCP client over its transport.
+// Connect begins an MCP session by connecting to a server over the given
+// transport, and initializing the session.
 //
 // Typically, it is the responsibility of the client to close the connection
 // when it is no longer needed. However, if the connection is closed by the
 // server, calls or notifications will return an error wrapping
 // [ErrConnectionClosed].
-func (c *Client) Start(ctx context.Context) (err error) {
-	defer func() {
-		if err != nil {
-			_ = c.Close()
-		}
-	}()
-	_, err = connect(ctx, c.transport, &c.opts.ConnectionOptions, c)
+func (c *Client) Connect(ctx context.Context, t Transport) (cs *ClientSession, err error) {
+	cs, err = connect(ctx, t, c)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	params := &initializeParams{
 		ClientInfo: &implementation{Name: c.name, Version: c.version},
 	}
-	if err := call(ctx, c.conn, "initialize", params, &c.initializeResult); err != nil {
-		return err
+	if err := call(ctx, cs.conn, "initialize", params, &cs.initializeResult); err != nil {
+		_ = cs.Close()
+		return nil, err
 	}
-	if err := c.conn.Notify(ctx, "notifications/initialized", &initializedParams{}); err != nil {
-		return err
+	if err := cs.conn.Notify(ctx, "notifications/initialized", &initializedParams{}); err != nil {
+		_ = cs.Close()
+		return nil, err
 	}
-	return nil
+	return cs, nil
+}
+
+// A ClientSession is a logical connection with an MCP server. Its
+// methods can be used to send requests or notifications to the server. Create
+// a session by calling [Client.Connect].
+//
+// Call [ClientSession.Close] to close the connection, or await client
+// termination with [ServerSession.Wait].
+type ClientSession struct {
+	conn             *jsonrpc2.Connection
+	client           *Client
+	initializeResult *initializeResult
 }
 
 // Close performs a graceful close of the connection, preventing new requests
 // from being handled, and waiting for ongoing requests to return. Close then
 // terminates the connection.
-func (c *Client) Close() error {
+func (c *ClientSession) Close() error {
 	return c.conn.Close()
 }
 
 // Wait waits for the connection to be closed by the server.
 // Generally, clients should be responsible for closing the connection.
-func (c *Client) Wait() error {
+func (c *ClientSession) Wait() error {
 	return c.conn.Wait()
 }
 
@@ -136,7 +149,7 @@ func (c *Client) listRoots(_ context.Context, _ *ListRootsParams) (*ListRootsRes
 	}, nil
 }
 
-func (c *Client) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (c *ClientSession) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	// TODO: when we switch to ClientSessions, use a copy of the server's dispatch function, or
 	// maybe just add another type parameter.
 	//
@@ -148,34 +161,34 @@ func (c *Client) handle(ctx context.Context, req *jsonrpc2.Request) (any, error)
 		return struct{}{}, nil
 	case "roots/list":
 		// ListRootsParams happens to be unused.
-		return c.listRoots(ctx, nil)
+		return c.client.listRoots(ctx, nil)
 	}
 	return nil, jsonrpc2.ErrNotHandled
 }
 
 // Ping makes an MCP "ping" request to the server.
-func (c *Client) Ping(ctx context.Context, params *PingParams) error {
+func (c *ClientSession) Ping(ctx context.Context, params *PingParams) error {
 	return call(ctx, c.conn, "ping", params, nil)
 }
 
 // ListPrompts lists prompts that are currently available on the server.
-func (c *Client) ListPrompts(ctx context.Context, params *ListPromptsParams) (*ListPromptsResult, error) {
+func (c *ClientSession) ListPrompts(ctx context.Context, params *ListPromptsParams) (*ListPromptsResult, error) {
 	return standardCall[ListPromptsResult](ctx, c.conn, "prompts/list", params)
 }
 
 // GetPrompt gets a prompt from the server.
-func (c *Client) GetPrompt(ctx context.Context, params *GetPromptParams) (*GetPromptResult, error) {
+func (c *ClientSession) GetPrompt(ctx context.Context, params *GetPromptParams) (*GetPromptResult, error) {
 	return standardCall[GetPromptResult](ctx, c.conn, "prompts/get", params)
 }
 
 // ListTools lists tools that are currently available on the server.
-func (c *Client) ListTools(ctx context.Context, params *ListToolsParams) (*ListToolsResult, error) {
+func (c *ClientSession) ListTools(ctx context.Context, params *ListToolsParams) (*ListToolsResult, error) {
 	return standardCall[ListToolsResult](ctx, c.conn, "tools/list", params)
 }
 
 // CallTool calls the tool with the given name and arguments.
 // Pass a [CallToolOptions] to provide additional request fields.
-func (c *Client) CallTool(ctx context.Context, name string, args map[string]any, opts *CallToolOptions) (_ *CallToolResult, err error) {
+func (c *ClientSession) CallTool(ctx context.Context, name string, args map[string]any, opts *CallToolOptions) (_ *CallToolResult, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("calling tool %q: %w", name, err)
@@ -201,12 +214,12 @@ type CallToolOptions struct {
 }
 
 // ListResources lists the resources that are currently available on the server.
-func (c *Client) ListResources(ctx context.Context, params *ListResourcesParams) (*ListResourcesResult, error) {
+func (c *ClientSession) ListResources(ctx context.Context, params *ListResourcesParams) (*ListResourcesResult, error) {
 	return standardCall[ListResourcesResult](ctx, c.conn, "resources/list", params)
 }
 
 // ReadResource ask the server to read a resource and return its contents.
-func (c *Client) ReadResource(ctx context.Context, params *ReadResourceParams) (*ReadResourceResult, error) {
+func (c *ClientSession) ReadResource(ctx context.Context, params *ReadResourceParams) (*ReadResourceResult, error) {
 	return standardCall[ReadResourceResult](ctx, c.conn, "resources/read", params)
 }
 

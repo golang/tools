@@ -34,7 +34,6 @@ compatible with mcp-go, translating between them should be straightforward in
 most cases.
 (Later, we will provide a detailed translation guide.)
 
-
 # Requirements
 
 These may be obvious, but it's worthwhile to define goals for an official MCP
@@ -283,12 +282,24 @@ func NewStreamableClientTransport(url string) *StreamableClientTransport {
 func (*StreamableClientTransport) Connect(context.Context) (Stream, error)
 ```
 
-Finally, we also provide an in-memory transport, for scenarios such as testing,
-where the MCP client and server are in the same process.
+Finally, we also provide a couple of transport implementations for special scenarios.
+An InMemoryTransport can be used when the client and server reside in the same
+process. A LoggingTransport is a middleware layer that logs RPC logs to a desired
+location, specified as an io.Writer.
 
 ```go
+// An InMemoryTransport is a [Transport] that communicates over an in-memory
+// network connection, using newline-delimited JSON.
 type InMemoryTransport struct { /* ... */ }
-func NewInMemoryTransport() (*InMemoryTransport, *InMemoryTransport)
+
+// NewInMemoryTransports returns two InMemoryTransports that connect to each
+// other.
+func NewInMemoryTransports() (*InMemoryTransport, *InMemoryTransport)
+
+// A LoggingTransport is a [Transport] that delegates to another transport,
+// writing RPC logs to an io.Writer.
+type LoggingTransport struct { /* ... */ }
+func NewLoggingTransport(delegate Transport, w io.Writer) *LoggingTransport
 ```
 
 **Differences from mcp-go**: The Go team has a battle-tested JSON-RPC
@@ -537,7 +548,6 @@ func (*ClientSession) Resources(context.Context, *ListResourceParams) iter.Seq2[
 
 func (*ClientSession) ResourceTemplates(context.Context, *ListResourceTemplatesParams) iter.Seq2[ResourceTemplate, error]
 ```
-
 
 ### Middleware
 
@@ -902,15 +912,18 @@ handler to a Go function using reflection to derive its arguments. We provide
 
 In our design, each resource and resource template is associated with a function that reads it,
 with this signature:
+
 ```go
 type ResourceHandler func(context.Context, *ServerSession, *ReadResourceParams) (*ReadResourceResult, error)
 ```
+
 The arguments include the `ServerSession` so the handler can observe the client's roots.
 The handler should return the resource contents in a `ReadResourceResult`, calling either `NewTextResourceContents`
 or `NewBlobResourceContents`. If the handler omits the URI or MIME type, the server will populate them from the
 resource.
 
 The `ServerResource` and `ServerResourceTemplate` types hold the association between the resource and its handler:
+
 ```go
 type ServerResource struct {
   Resource Resource
@@ -939,12 +952,14 @@ The `ReadResource` method finds a resource or resource template matching the arg
 its assocated handler.
 
 To read files from the local filesystem, we recommend using `FileResourceHandler` to construct a handler:
+
 ```go
 // FileResourceHandler returns a ResourceHandler that reads paths using dir as a root directory.
 // It protects against path traversal attacks.
 // It will not read any file that is not in the root set of the client session requesting the resource.
 func (*Server) FileResourceHandler(dir string) ResourceHandler
 ```
+
 Here is an example:
 
 ```go

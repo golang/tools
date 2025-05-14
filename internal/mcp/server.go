@@ -30,7 +30,7 @@ type Server struct {
 	prompts   *featureSet[*ServerPrompt]
 	tools     *featureSet[*ServerTool]
 	resources *featureSet[*ServerResource]
-	conns     []*ServerSession
+	sessions  []*ServerSession
 }
 
 // ServerOptions is used to configure behavior of the server.
@@ -160,7 +160,7 @@ func (s *Server) RemoveResources(uris ...string) {
 // Sessions returns an iterator that yields the current set of server sessions.
 func (s *Server) Sessions() iter.Seq[*ServerSession] {
 	s.mu.Lock()
-	clients := slices.Clone(s.conns)
+	clients := slices.Clone(s.sessions)
 	s.mu.Unlock()
 	return slices.Values(clients)
 }
@@ -248,8 +248,8 @@ func (s *Server) readResource(ctx context.Context, ss *ServerSession, params *Re
 // Run runs the server over the given transport, which must be persistent.
 //
 // Run blocks until the client terminates the connection.
-func (s *Server) Run(ctx context.Context, t Transport, opts *ConnectionOptions) error {
-	ss, err := s.Connect(ctx, t, opts)
+func (s *Server) Run(ctx context.Context, t Transport) error {
+	ss, err := s.Connect(ctx, t)
 	if err != nil {
 		return err
 	}
@@ -261,7 +261,7 @@ func (s *Server) Run(ctx context.Context, t Transport, opts *ConnectionOptions) 
 func (s *Server) bind(conn *jsonrpc2.Connection) *ServerSession {
 	cc := &ServerSession{conn: conn, server: s}
 	s.mu.Lock()
-	s.conns = append(s.conns, cc)
+	s.sessions = append(s.sessions, cc)
 	s.mu.Unlock()
 	return cc
 }
@@ -271,7 +271,7 @@ func (s *Server) bind(conn *jsonrpc2.Connection) *ServerSession {
 func (s *Server) disconnect(cc *ServerSession) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.conns = slices.DeleteFunc(s.conns, func(cc2 *ServerSession) bool {
+	s.sessions = slices.DeleteFunc(s.sessions, func(cc2 *ServerSession) bool {
 		return cc2 == cc
 	})
 }
@@ -282,8 +282,8 @@ func (s *Server) disconnect(cc *ServerSession) {
 // It returns a connection object that may be used to terminate the connection
 // (with [Connection.Close]), or await client termination (with
 // [Connection.Wait]).
-func (s *Server) Connect(ctx context.Context, t Transport, opts *ConnectionOptions) (*ServerSession, error) {
-	return connect(ctx, t, opts, s)
+func (s *Server) Connect(ctx context.Context, t Transport) (*ServerSession, error) {
+	return connect(ctx, t, s)
 }
 
 // A ServerSession is a logical connection from a single MCP client. Its
@@ -302,18 +302,18 @@ type ServerSession struct {
 }
 
 // Ping makes an MCP "ping" request to the client.
-func (cc *ServerSession) Ping(ctx context.Context, _ *PingParams) error {
-	return call(ctx, cc.conn, "ping", nil, nil)
+func (ss *ServerSession) Ping(ctx context.Context, _ *PingParams) error {
+	return call(ctx, ss.conn, "ping", nil, nil)
 }
 
-func (cc *ServerSession) ListRoots(ctx context.Context, params *ListRootsParams) (*ListRootsResult, error) {
-	return standardCall[ListRootsResult](ctx, cc.conn, "roots/list", params)
+func (ss *ServerSession) ListRoots(ctx context.Context, params *ListRootsParams) (*ListRootsResult, error) {
+	return standardCall[ListRootsResult](ctx, ss.conn, "roots/list", params)
 }
 
-func (cc *ServerSession) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	cc.mu.Lock()
-	initialized := cc.initialized
-	cc.mu.Unlock()
+func (ss *ServerSession) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	ss.mu.Lock()
+	initialized := ss.initialized
+	ss.mu.Unlock()
 
 	// From the spec:
 	// "The client SHOULD NOT send requests other than pings before the server
@@ -332,39 +332,39 @@ func (cc *ServerSession) handle(ctx context.Context, req *jsonrpc2.Request) (any
 
 	switch req.Method {
 	case "initialize":
-		return dispatch(ctx, cc, req, cc.initialize)
+		return dispatch(ctx, ss, req, ss.initialize)
 
 	case "ping":
 		// The spec says that 'ping' expects an empty object result.
 		return struct{}{}, nil
 
 	case "prompts/list":
-		return dispatch(ctx, cc, req, cc.server.listPrompts)
+		return dispatch(ctx, ss, req, ss.server.listPrompts)
 
 	case "prompts/get":
-		return dispatch(ctx, cc, req, cc.server.getPrompt)
+		return dispatch(ctx, ss, req, ss.server.getPrompt)
 
 	case "tools/list":
-		return dispatch(ctx, cc, req, cc.server.listTools)
+		return dispatch(ctx, ss, req, ss.server.listTools)
 
 	case "tools/call":
-		return dispatch(ctx, cc, req, cc.server.callTool)
+		return dispatch(ctx, ss, req, ss.server.callTool)
 
 	case "resources/list":
-		return dispatch(ctx, cc, req, cc.server.listResources)
+		return dispatch(ctx, ss, req, ss.server.listResources)
 
 	case "resources/read":
-		return dispatch(ctx, cc, req, cc.server.readResource)
+		return dispatch(ctx, ss, req, ss.server.readResource)
 
 	case "notifications/initialized":
 	}
 	return nil, jsonrpc2.ErrNotHandled
 }
 
-func (cc *ServerSession) initialize(ctx context.Context, _ *ServerSession, params *initializeParams) (*initializeResult, error) {
-	cc.mu.Lock()
-	cc.initializeParams = params
-	cc.mu.Unlock()
+func (ss *ServerSession) initialize(ctx context.Context, _ *ServerSession, params *initializeParams) (*initializeResult, error) {
+	ss.mu.Lock()
+	ss.initializeParams = params
+	ss.mu.Unlock()
 
 	// Mark the connection as initialized when this method exits. TODO:
 	// Technically, the server should not be considered initialized until it has
@@ -372,9 +372,9 @@ func (cc *ServerSession) initialize(ctx context.Context, _ *ServerSession, param
 	// connection to implement that easily. In any case, once we've initialized
 	// here, we can handle requests.
 	defer func() {
-		cc.mu.Lock()
-		cc.initialized = true
-		cc.mu.Unlock()
+		ss.mu.Lock()
+		ss.initialized = true
+		ss.mu.Unlock()
 	}()
 
 	return &initializeResult{
@@ -388,10 +388,10 @@ func (cc *ServerSession) initialize(ctx context.Context, _ *ServerSession, param
 				ListChanged: false, // not yet supported
 			},
 		},
-		Instructions: cc.server.opts.Instructions,
+		Instructions: ss.server.opts.Instructions,
 		ServerInfo: &implementation{
-			Name:    cc.server.name,
-			Version: cc.server.version,
+			Name:    ss.server.name,
+			Version: ss.server.version,
 		},
 	}, nil
 }
@@ -399,13 +399,13 @@ func (cc *ServerSession) initialize(ctx context.Context, _ *ServerSession, param
 // Close performs a graceful shutdown of the connection, preventing new
 // requests from being handled, and waiting for ongoing requests to return.
 // Close then terminates the connection.
-func (cc *ServerSession) Close() error {
-	return cc.conn.Close()
+func (ss *ServerSession) Close() error {
+	return ss.conn.Close()
 }
 
 // Wait waits for the connection to be closed by the client.
-func (cc *ServerSession) Wait() error {
-	return cc.conn.Wait()
+func (ss *ServerSession) Wait() error {
+	return ss.conn.Wait()
 }
 
 // dispatch turns a strongly type request handler into a jsonrpc2 handler.

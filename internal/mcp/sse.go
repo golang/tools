@@ -229,7 +229,7 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// TODO(hxjiang): getServer returns nil will panic.
 	server := h.getServer(req)
-	ss, err := server.Connect(req.Context(), transport, nil)
+	ss, err := server.Connect(req.Context(), transport)
 	if err != nil {
 		http.Error(w, "connection failed", http.StatusInternalServerError)
 		return
