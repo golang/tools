@@ -283,6 +283,14 @@ func NewStreamableClientTransport(url string) *StreamableClientTransport {
 func (*StreamableClientTransport) Connect(context.Context) (Stream, error)
 ```
 
+Finally, we also provide an in-memory transport, for scenarios such as testing,
+where the MCP client and server are in the same process.
+
+```go
+type InMemoryTransport struct { /* ... */ }
+func NewInMemoryTransport() (*InMemoryTransport, *InMemoryTransport)
+```
+
 **Differences from mcp-go**: The Go team has a battle-tested JSON-RPC
 implementation that we use for gopls, our Go LSP server. We are using the new
 version of this library as part of our MCP SDK. It handles all JSON-RPC 2.0

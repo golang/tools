@@ -33,7 +33,7 @@ func sayHi(ctx context.Context, cc *ServerSession, v hiParams) ([]*Content, erro
 
 func TestEndToEnd(t *testing.T) {
 	ctx := context.Background()
-	ct, st := NewLocalTransport()
+	ct, st := NewInMemoryTransport()
 
 	s := NewServer("testServer", "v1.0.0", nil)
 
@@ -286,7 +286,7 @@ func basicConnection(t *testing.T, tools ...*ServerTool) (*ServerSession, *Clien
 	t.Helper()
 
 	ctx := context.Background()
-	ct, st := NewLocalTransport()
+	ct, st := NewInMemoryTransport()
 
 	s := NewServer("testServer", "v1.0.0", nil)
 
@@ -329,7 +329,7 @@ func TestServerClosing(t *testing.T) {
 
 func TestBatching(t *testing.T) {
 	ctx := context.Background()
-	ct, st := NewLocalTransport()
+	ct, st := NewInMemoryTransport()
 
 	s := NewServer("testServer", "v1.0.0", nil)
 	_, err := s.Connect(ctx, st, nil)

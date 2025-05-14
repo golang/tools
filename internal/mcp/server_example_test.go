@@ -24,7 +24,7 @@ func SayHi(ctx context.Context, cc *mcp.ServerSession, params *SayHiParams) ([]*
 
 func ExampleServer() {
 	ctx := context.Background()
-	clientTransport, serverTransport := mcp.NewLocalTransport()
+	clientTransport, serverTransport := mcp.NewInMemoryTransport()
 
 	server := mcp.NewServer("greeter", "v0.0.1", nil)
 	server.AddTools(mcp.NewTool("greet", "say hi", SayHi))

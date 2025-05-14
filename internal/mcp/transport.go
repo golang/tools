@@ -48,27 +48,39 @@ type ConnectionOptions struct {
 	Logger    io.Writer // if set, write RPC logs
 }
 
-// An IOTransport is a [Transport] that communicates using newline-delimited
+// A StdIOTransport is a [Transport] that communicates over stdin/stdout using
+// newline-delimited JSON.
+type StdIOTransport struct {
+	ioTransport
+}
+
+// An ioTransport is a [Transport] that communicates using newline-delimited
 // JSON over an io.ReadWriteCloser.
-type IOTransport struct {
+type ioTransport struct {
 	rwc io.ReadWriteCloser
 }
 
-func (t *IOTransport) Connect(context.Context) (Stream, error) {
+func (t *ioTransport) Connect(context.Context) (Stream, error) {
 	return newIOStream(t.rwc), nil
 }
 
 // NewStdIOTransport constructs a transport that communicates over
 // stdin/stdout.
-func NewStdIOTransport() *IOTransport {
-	return &IOTransport{rwc{os.Stdin, os.Stdout}}
+func NewStdIOTransport() *StdIOTransport {
+	return &StdIOTransport{ioTransport{rwc{os.Stdin, os.Stdout}}}
 }
 
-// NewLocalTransport returns two in-memory transports that connect to
-// each other, for testing purposes.
-func NewLocalTransport() (*IOTransport, *IOTransport) {
+// An InMemoryTransport is a [Transport] that communicates over an in-memory
+// network connection, using newline-delimited JSON.
+type InMemoryTransport struct {
+	ioTransport
+}
+
+// NewInMemoryTransport returns two InMemoryTransports that connect to each
+// other.
+func NewInMemoryTransport() (*InMemoryTransport, *InMemoryTransport) {
 	c1, c2 := net.Pipe()
-	return &IOTransport{c1}, &IOTransport{c2}
+	return &InMemoryTransport{ioTransport{c1}}, &InMemoryTransport{ioTransport{c2}}
 }
 
 // handler is an unexported version of jsonrpc2.Handler.
