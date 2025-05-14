@@ -7,7 +7,7 @@ package lcs
 import (
 	"fmt"
 	"log"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"testing"
@@ -106,12 +106,21 @@ func TestRegressionOld003(t *testing.T) {
 }
 
 func TestRandOld(t *testing.T) {
-	rand.Seed(1)
+	// This test has been observed to fail on 0.5% of runs,
+	// for example, using these seed pairs:
+	// - 14495503613572398601, 14235960032715252551
+	// - 4604737379815557952, 3544687276571693387
+	// - 5419883078200329767, 11421218423438832472
+	// - 16595049989808072974, 2139246309634979125
+	// - 7079260183459082455, 16563974573191788291
+	// TODO(adonovan): fix.
+	rng := rng(t)
+
 	for i := range 1000 {
 		// TODO(adonovan): use ASCII and bytesSeqs here? The use of
 		// non-ASCII isn't relevant to the property exercised by the test.
-		a := []rune(randstr("abω", 16))
-		b := []rune(randstr("abωc", 16))
+		a := []rune(randstr(rng, "abω", 16))
+		b := []rune(randstr(rng, "abωc", 16))
 		seq := runesSeqs{a, b}
 
 		const lim = 24 // large enough to get true lcs
@@ -158,7 +167,7 @@ func TestDiffAPI(t *testing.T) {
 }
 
 func BenchmarkTwoOld(b *testing.B) {
-	tests := genBench("abc", 96)
+	tests := genBench(rng(b), "abc", 96)
 	for i := 0; i < b.N; i++ {
 		for _, tt := range tests {
 			_, two := compute(stringSeqs{tt.before, tt.after}, twosided, 100)
@@ -170,7 +179,7 @@ func BenchmarkTwoOld(b *testing.B) {
 }
 
 func BenchmarkForwOld(b *testing.B) {
-	tests := genBench("abc", 96)
+	tests := genBench(rng(b), "abc", 96)
 	for i := 0; i < b.N; i++ {
 		for _, tt := range tests {
 			_, two := compute(stringSeqs{tt.before, tt.after}, forward, 100)
@@ -181,14 +190,21 @@ func BenchmarkForwOld(b *testing.B) {
 	}
 }
 
-func genBench(set string, n int) []struct{ before, after string } {
+// rng returns a randomly initialized PRNG whose seeds are logged so
+// that occasional test failures can be deterministically replayed.
+func rng(tb testing.TB) *rand.Rand {
+	seed1, seed2 := rand.Uint64(), rand.Uint64()
+	tb.Logf("PRNG seeds: %d, %d", seed1, seed2)
+	return rand.New(rand.NewPCG(seed1, seed2))
+}
+
+func genBench(rng *rand.Rand, set string, n int) []struct{ before, after string } {
 	// before and after for benchmarks. 24 strings of length n with
 	// before and after differing at least once, and about 5%
-	rand.Seed(3)
 	var ans []struct{ before, after string }
 	for range 24 {
 		// maybe b should have an approximately known number of diffs
-		a := randstr(set, n)
+		a := randstr(rng, set, n)
 		cnt := 0
 		bb := make([]rune, 0, n)
 		for _, r := range a {

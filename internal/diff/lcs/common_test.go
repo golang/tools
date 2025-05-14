@@ -6,7 +6,7 @@ package lcs
 
 import (
 	"log"
-	"math/rand"
+	"math/rand/v2"
 	"slices"
 	"strings"
 	"testing"
@@ -105,11 +105,11 @@ func lcslen(l lcs) int {
 }
 
 // return a random string of length n made of characters from s
-func randstr(s string, n int) string {
+func randstr(rng *rand.Rand, s string, n int) string {
 	src := []rune(s)
 	x := make([]rune, n)
 	for i := range n {
-		x[i] = src[rand.Intn(len(src))]
+		x[i] = src[rng.Int64N(int64(len(src)))]
 	}
 	return string(x)
 }
