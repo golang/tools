@@ -26,11 +26,12 @@ type Server struct {
 	version string
 	opts    ServerOptions
 
-	mu        sync.Mutex
-	prompts   *featureSet[*ServerPrompt]
-	tools     *featureSet[*ServerTool]
-	resources *featureSet[*ServerResource]
-	sessions  []*ServerSession
+	mu            sync.Mutex
+	prompts       *featureSet[*ServerPrompt]
+	tools         *featureSet[*ServerTool]
+	resources     *featureSet[*ServerResource]
+	sessions      []*ServerSession
+	methodHandler ServerMethodHandler
 }
 
 // ServerOptions is used to configure behavior of the server.
@@ -50,12 +51,13 @@ func NewServer(name, version string, opts *ServerOptions) *Server {
 		opts = new(ServerOptions)
 	}
 	return &Server{
-		name:      name,
-		version:   version,
-		opts:      *opts,
-		prompts:   newFeatureSet(func(p *ServerPrompt) string { return p.Prompt.Name }),
-		tools:     newFeatureSet(func(t *ServerTool) string { return t.Tool.Name }),
-		resources: newFeatureSet(func(r *ServerResource) string { return r.Resource.URI }),
+		name:          name,
+		version:       version,
+		opts:          *opts,
+		prompts:       newFeatureSet(func(p *ServerPrompt) string { return p.Prompt.Name }),
+		tools:         newFeatureSet(func(t *ServerTool) string { return t.Tool.Name }),
+		resources:     newFeatureSet(func(r *ServerResource) string { return r.Resource.URI }),
+		methodHandler: defaulMethodHandler,
 	}
 }
 
@@ -297,24 +299,111 @@ type ServerSession struct {
 	conn   *jsonrpc2.Connection
 
 	mu               sync.Mutex
-	initializeParams *initializeParams
+	initializeParams *InitializeParams
 	initialized      bool
 }
 
-// Ping makes an MCP "ping" request to the client.
+// Ping pings the client.
 func (ss *ServerSession) Ping(ctx context.Context, _ *PingParams) error {
 	return call(ctx, ss.conn, "ping", nil, nil)
 }
 
+// ListRoots lists the client roots.
 func (ss *ServerSession) ListRoots(ctx context.Context, params *ListRootsParams) (*ListRootsResult, error) {
 	return standardCall[ListRootsResult](ctx, ss.conn, "roots/list", params)
 }
 
+// A ServerMethodHandler handles MCP messages from client to server.
+// The params argument is an XXXParams struct pointer, such as *GetPromptParams.
+// For methods, a MethodHandler must return either
+// an XXResult struct pointer and a nil error, or
+// nil with a non-nil error.
+// For notifications, a MethodHandler must return nil, nil.
+type ServerMethodHandler func(ctx context.Context, _ *ServerSession, method string, params any) (result any, err error)
+
+// AddMiddleware wraps the server's current method handler using the provided
+// middleware. Middleware is applied from right to left, so that the first one
+// is executed first.
+//
+// For example, AddMiddleware(m1, m2, m3) augments the server handler as
+// m1(m2(m3(handler))).
+func (s *Server) AddMiddleware(middleware ...func(ServerMethodHandler) ServerMethodHandler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, m := range slices.Backward(middleware) {
+		s.methodHandler = m(s.methodHandler)
+	}
+}
+
+// defaulMethodHandler is the initial method handler installed on the server.
+func defaulMethodHandler(ctx context.Context, ss *ServerSession, method string, params any) (any, error) {
+	info, ok := methodInfos[method]
+	assert(ok, "called with unknown method")
+	return info.handleMethod(ctx, ss, method, params)
+}
+
+// methodInfo is information about invoking a method.
+type methodInfo struct {
+	// unmarshal params from the wire into an XXXParams struct
+	unmarshalParams func(json.RawMessage) (any, error)
+	// run the code for the method
+	handleMethod ServerMethodHandler
+}
+
+// The following definitions support converting from typed to untyped method handlers.
+// Throughout, P is the type parameter for params, and R is the one for result.
+
+// A typedMethodHandler is like a MethodHandler, but with type information.
+type typedMethodHandler[P, R any] func(context.Context, *ServerSession, P) (R, error)
+
+// newMethodInfo creates a methodInfo from a typedMethodHandler.
+func newMethodInfo[P, R any](d typedMethodHandler[P, R]) methodInfo {
+	return methodInfo{
+		unmarshalParams: func(m json.RawMessage) (any, error) {
+			var p P
+			if err := json.Unmarshal(m, &p); err != nil {
+				return nil, err
+			}
+			return p, nil
+		},
+		handleMethod: func(ctx context.Context, ss *ServerSession, _ string, params any) (any, error) {
+			return d(ctx, ss, params.(P))
+		},
+	}
+}
+
+// methodInfos maps from the RPC method name to methodInfos.
+var methodInfos = map[string]methodInfo{
+	"initialize":     newMethodInfo(sessionMethod((*ServerSession).initialize)),
+	"ping":           newMethodInfo(sessionMethod((*ServerSession).ping)),
+	"prompts/list":   newMethodInfo(serverMethod((*Server).listPrompts)),
+	"prompts/get":    newMethodInfo(serverMethod((*Server).getPrompt)),
+	"tools/list":     newMethodInfo(serverMethod((*Server).listTools)),
+	"tools/call":     newMethodInfo(serverMethod((*Server).callTool)),
+	"resources/list": newMethodInfo(serverMethod((*Server).listResources)),
+	"resources/read": newMethodInfo(serverMethod((*Server).readResource)),
+	// TODO: notifications
+}
+
+// serverMethod is glue for creating a typedMethodHandler from a method on Server.
+func serverMethod[P, R any](f func(*Server, context.Context, *ServerSession, P) (R, error)) typedMethodHandler[P, R] {
+	return func(ctx context.Context, ss *ServerSession, p P) (R, error) {
+		return f(ss.server, ctx, ss, p)
+	}
+}
+
+// sessionMethod is glue for creating a typedMethodHandler from a method on ServerSession.
+func sessionMethod[P, R any](f func(*ServerSession, context.Context, P) (R, error)) typedMethodHandler[P, R] {
+	return func(ctx context.Context, ss *ServerSession, p P) (R, error) {
+		return f(ss, ctx, p)
+	}
+}
+
+// handle invokes the method described by the given JSON RPC request.
 func (ss *ServerSession) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	ss.mu.Lock()
 	initialized := ss.initialized
 	ss.mu.Unlock()
-
 	// From the spec:
 	// "The client SHOULD NOT send requests other than pings before the server
 	// has responded to the initialize request."
@@ -329,39 +418,26 @@ func (ss *ServerSession) handle(ctx context.Context, req *jsonrpc2.Request) (any
 	// TODO: embed the incoming request ID in the client context (or, more likely,
 	// a wrapper around it), so that we can correlate responses and notifications
 	// to the handler; this is required for the new session-based transport.
-
-	switch req.Method {
-	case "initialize":
-		return dispatch(ctx, ss, req, ss.initialize)
-
-	case "ping":
-		// The spec says that 'ping' expects an empty object result.
-		return struct{}{}, nil
-
-	case "prompts/list":
-		return dispatch(ctx, ss, req, ss.server.listPrompts)
-
-	case "prompts/get":
-		return dispatch(ctx, ss, req, ss.server.getPrompt)
-
-	case "tools/list":
-		return dispatch(ctx, ss, req, ss.server.listTools)
-
-	case "tools/call":
-		return dispatch(ctx, ss, req, ss.server.callTool)
-
-	case "resources/list":
-		return dispatch(ctx, ss, req, ss.server.listResources)
-
-	case "resources/read":
-		return dispatch(ctx, ss, req, ss.server.readResource)
-
-	case "notifications/initialized":
+	info, ok := methodInfos[req.Method]
+	if !ok {
+		return nil, jsonrpc2.ErrNotHandled
 	}
-	return nil, jsonrpc2.ErrNotHandled
+	params, err := info.unmarshalParams(req.Params)
+	if err != nil {
+		return nil, fmt.Errorf("ServerSession:handle %q: %w", req.Method, err)
+	}
+	ss.server.mu.Lock()
+	d := ss.server.methodHandler
+	ss.server.mu.Unlock()
+	// d might be user code, so ensure that it returns the right values for the jsonrpc2 protocol.
+	res, err := d(ctx, ss, req.Method, params)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
-func (ss *ServerSession) initialize(ctx context.Context, _ *ServerSession, params *initializeParams) (*initializeResult, error) {
+func (ss *ServerSession) initialize(ctx context.Context, params *InitializeParams) (*InitializeResult, error) {
 	ss.mu.Lock()
 	ss.initializeParams = params
 	ss.mu.Unlock()
@@ -377,7 +453,7 @@ func (ss *ServerSession) initialize(ctx context.Context, _ *ServerSession, param
 		ss.mu.Unlock()
 	}()
 
-	return &initializeResult{
+	return &InitializeResult{
 		// TODO(rfindley): support multiple protocol versions.
 		ProtocolVersion: "2024-11-05",
 		Capabilities: &serverCapabilities{
@@ -396,6 +472,10 @@ func (ss *ServerSession) initialize(ctx context.Context, _ *ServerSession, param
 	}, nil
 }
 
+func (ss *ServerSession) ping(context.Context, struct{}) (struct{}, error) {
+	return struct{}{}, nil
+}
+
 // Close performs a graceful shutdown of the connection, preventing new
 // requests from being handled, and waiting for ongoing requests to return.
 // Close then terminates the connection.
@@ -406,22 +486,4 @@ func (ss *ServerSession) Close() error {
 // Wait waits for the connection to be closed by the client.
 func (ss *ServerSession) Wait() error {
 	return ss.conn.Wait()
-}
-
-// dispatch turns a strongly type request handler into a jsonrpc2 handler.
-//
-// Importantly, it returns nil if the handler returned an error, which is a
-// requirement of the jsonrpc2 package.
-func dispatch[TParams, TResult any](ctx context.Context, conn *ServerSession, req *jsonrpc2.Request, f func(context.Context, *ServerSession, TParams) (TResult, error)) (any, error) {
-	var params TParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		return nil, err
-	}
-	// Important: avoid returning a typed nil, as it can't be handled by the
-	// jsonrpc2 package.
-	res, err := f(ctx, conn, params)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
 }

@@ -44,8 +44,7 @@ func NewClient(name, version string, opts *ClientOptions) *Client {
 }
 
 // ClientOptions configures the behavior of the client.
-type ClientOptions struct {
-}
+type ClientOptions struct{}
 
 // bind implements the binder[*ClientSession] interface, so that Clients can
 // be connected using [connect].
@@ -82,14 +81,14 @@ func (c *Client) Connect(ctx context.Context, t Transport) (cs *ClientSession, e
 	if err != nil {
 		return nil, err
 	}
-	params := &initializeParams{
+	params := &InitializeParams{
 		ClientInfo: &implementation{Name: c.name, Version: c.version},
 	}
 	if err := call(ctx, cs.conn, "initialize", params, &cs.initializeResult); err != nil {
 		_ = cs.Close()
 		return nil, err
 	}
-	if err := cs.conn.Notify(ctx, "notifications/initialized", &initializedParams{}); err != nil {
+	if err := cs.conn.Notify(ctx, "notifications/initialized", &InitializedParams{}); err != nil {
 		_ = cs.Close()
 		return nil, err
 	}
@@ -105,7 +104,7 @@ func (c *Client) Connect(ctx context.Context, t Transport) (cs *ClientSession, e
 type ClientSession struct {
 	conn             *jsonrpc2.Connection
 	client           *Client
-	initializeResult *initializeResult
+	initializeResult *InitializeResult
 }
 
 // Close performs a graceful close of the connection, preventing new requests

@@ -66,7 +66,7 @@ var declarations = config{
 	"CallToolResult": {},
 	"CancelledNotification": {
 		Name:   "-",
-		Fields: config{"Params": {Name: "cancelledParams"}},
+		Fields: config{"Params": {Name: "CancelledParams"}},
 	},
 	"ClientCapabilities": {},
 	"GetPromptRequest": {
@@ -77,12 +77,12 @@ var declarations = config{
 	"Implementation":  {Name: "implementation"},
 	"InitializeRequest": {
 		Name:   "-",
-		Fields: config{"Params": {Name: "initializeParams"}},
+		Fields: config{"Params": {Name: "InitializeParams"}},
 	},
-	"InitializeResult": {Name: "initializeResult"},
+	"InitializeResult": {Name: "InitializeResult"},
 	"InitializedNotification": {
 		Name:   "-",
-		Fields: config{"Params": {Name: "initializedParams"}},
+		Fields: config{"Params": {Name: "InitializedParams"}},
 	},
 	"ListPromptsRequest": {
 		Name:   "-",

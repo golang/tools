@@ -5,6 +5,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -394,6 +395,66 @@ func TestCancellation(t *testing.T) {
 	case <-cancelled:
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for cancellation")
+	}
+}
+
+func TestAddMiddleware(t *testing.T) {
+	ctx := context.Background()
+	ct, st := NewInMemoryTransports()
+	s := NewServer("testServer", "v1.0.0", nil)
+	ss, err := s.Connect(ctx, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wait for the server to exit after the client closes its connection.
+	var clientWG sync.WaitGroup
+	clientWG.Add(1)
+	go func() {
+		if err := ss.Wait(); err != nil {
+			t.Errorf("server failed: %v", err)
+		}
+		clientWG.Done()
+	}()
+
+	var buf bytes.Buffer
+	buf.WriteByte('\n')
+
+	// traceCalls creates a middleware function that prints the method before and after each call
+	// with the given prefix.
+	traceCalls := func(prefix string) func(ServerMethodHandler) ServerMethodHandler {
+		return func(d ServerMethodHandler) ServerMethodHandler {
+			return func(ctx context.Context, ss *ServerSession, method string, params any) (any, error) {
+				fmt.Fprintf(&buf, "%s >%s\n", prefix, method)
+				defer fmt.Fprintf(&buf, "%s <%s\n", prefix, method)
+				return d(ctx, ss, method, params)
+			}
+		}
+	}
+
+	// "1" is the outer middleware layer, called first; then "2" is called, and finally
+	// the default dispatcher.
+	s.AddMiddleware(traceCalls("1"), traceCalls("2"))
+
+	c := NewClient("testClient", "v1.0.0", nil)
+	cs, err := c.Connect(ctx, ct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cs.ListTools(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := `
+1 >initialize
+2 >initialize
+2 <initialize
+1 <initialize
+1 >tools/list
+2 >tools/list
+2 <tools/list
+1 <tools/list
+`
+	if diff := cmp.Diff(want, buf.String()); diff != "" {
+		t.Errorf("mismatch (-want, +got):\n%s", diff)
 	}
 }
 

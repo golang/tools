@@ -409,20 +409,20 @@ func (*ClientSession) ResourceTemplates(context.Context, *ListResourceTemplatesP
 We provide a mechanism to add MCP-level middleware on the server side, which runs after the request has been parsed but before any normal handling.
 
 ```go
-// A Dispatcher dispatches an MCP message to the appropriate handler.
+// A ServerMethodHandler dispatches an MCP message to the appropriate handler.
 // The params argument will be an XXXParams struct pointer, such as *GetPromptParams.
 // The response if err is non-nil should be an XXXResult struct pointer.
-type Dispatcher func(ctx context.Context, s *ServerSession, method string, params any) (result any, err error)
+type ServerMethodHandler func(ctx context.Context, s *ServerSession, method string, params any) (result any, err error)
 
-// AddDispatchers calls each function from right to left on the previous result, beginning
+// AddMiddlewarecalls each function from right to left on the previous result, beginning
 // with the server's current dispatcher, and installs the result as the new dispatcher.
-func (*Server) AddDispatchers(middleware ...func(Dispatcher) Dispatcher))
+func (*Server) AddMiddleware(middleware ...func(ServerMethodHandler) ServerMethodHandler)
 ```
 
 As an example, this code adds server-side logging:
 
 ```go
-func withLogging(h mcp.Dispatcher) mcp.Dispatcher {
+func withLogging(h mcp.ServerMethodHandler) mcp.ServerMethodHandler{
     return func(ctx context.Context, s *mcp.ServerSession, method string, params any) (res any, err error) {
         log.Printf("request: %s %v", method, params)
         defer func() { log.Printf("response: %v, %v", res, err) }()
@@ -430,8 +430,10 @@ func withLogging(h mcp.Dispatcher) mcp.Dispatcher {
     }
 }
 
-server.AddDispatchers(withLogging)
+server.AddMiddleware(withLogging)
 ```
+
+We will provide the same functionality on the client side as well.
 
 **Differences from mcp-go**: Version 0.26.0 of mcp-go defines 24 server hooks. Each hook consists of a field in the `Hooks` struct, a `Hooks.Add` method, and a type for the hook function. These are rarely used. The most common is `OnError`, which occurs fewer than ten times in open-source code.
 

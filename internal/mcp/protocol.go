@@ -54,6 +54,17 @@ type CallToolResult struct {
 	IsError bool `json:"isError,omitempty"`
 }
 
+type CancelledParams struct {
+	// An optional string describing the reason for the cancellation. This MAY be
+	// logged or presented to the user.
+	Reason string `json:"reason,omitempty"`
+	// The ID of the request to cancel.
+	//
+	// This MUST correspond to the ID of a request previously issued in the same
+	// direction.
+	RequestID any `json:"requestId"`
+}
+
 // Capabilities a client may support. Known capabilities are defined here, in
 // this schema, but this is not a closed set: any client can define its own,
 // additional capabilities.
@@ -86,6 +97,40 @@ type GetPromptResult struct {
 	// An optional description for the prompt.
 	Description string           `json:"description,omitempty"`
 	Messages    []*PromptMessage `json:"messages"`
+}
+
+type InitializeParams struct {
+	Capabilities *ClientCapabilities `json:"capabilities"`
+	ClientInfo   *implementation     `json:"clientInfo"`
+	// The latest version of the Model Context Protocol that the client supports.
+	// The client MAY decide to support older versions as well.
+	ProtocolVersion string `json:"protocolVersion"`
+}
+
+// After receiving an initialize request from the client, the server sends this
+// response.
+type InitializeResult struct {
+	// This result property is reserved by the protocol to allow clients and servers
+	// to attach additional metadata to their responses.
+	Meta         map[string]json.RawMessage `json:"_meta,omitempty"`
+	Capabilities *serverCapabilities        `json:"capabilities"`
+	// Instructions describing how to use the server and its features.
+	//
+	// This can be used by clients to improve the LLM's understanding of available
+	// tools, resources, etc. It can be thought of like a "hint" to the model. For
+	// example, this information MAY be added to the system prompt.
+	Instructions string `json:"instructions,omitempty"`
+	// The version of the Model Context Protocol that the server wants to use. This
+	// may not match the version that the client requested. If the client cannot
+	// support this version, it MUST disconnect.
+	ProtocolVersion string          `json:"protocolVersion"`
+	ServerInfo      *implementation `json:"serverInfo"`
+}
+
+type InitializedParams struct {
+	// This parameter name is reserved by MCP to allow clients and servers to attach
+	// additional metadata to their notifications.
+	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
 }
 
 type ListPromptsParams struct {
@@ -304,55 +349,10 @@ type ToolAnnotations struct {
 	Title string `json:"title,omitempty"`
 }
 
-type cancelledParams struct {
-	// An optional string describing the reason for the cancellation. This MAY be
-	// logged or presented to the user.
-	Reason string `json:"reason,omitempty"`
-	// The ID of the request to cancel.
-	//
-	// This MUST correspond to the ID of a request previously issued in the same
-	// direction.
-	RequestID any `json:"requestId"`
-}
-
 // Describes the name and version of an MCP implementation.
 type implementation struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
-}
-
-type initializeParams struct {
-	Capabilities *ClientCapabilities `json:"capabilities"`
-	ClientInfo   *implementation     `json:"clientInfo"`
-	// The latest version of the Model Context Protocol that the client supports.
-	// The client MAY decide to support older versions as well.
-	ProtocolVersion string `json:"protocolVersion"`
-}
-
-// After receiving an initialize request from the client, the server sends this
-// response.
-type initializeResult struct {
-	// This result property is reserved by the protocol to allow clients and servers
-	// to attach additional metadata to their responses.
-	Meta         map[string]json.RawMessage `json:"_meta,omitempty"`
-	Capabilities *serverCapabilities        `json:"capabilities"`
-	// Instructions describing how to use the server and its features.
-	//
-	// This can be used by clients to improve the LLM's understanding of available
-	// tools, resources, etc. It can be thought of like a "hint" to the model. For
-	// example, this information MAY be added to the system prompt.
-	Instructions string `json:"instructions,omitempty"`
-	// The version of the Model Context Protocol that the server wants to use. This
-	// may not match the version that the client requested. If the client cannot
-	// support this version, it MUST disconnect.
-	ProtocolVersion string          `json:"protocolVersion"`
-	ServerInfo      *implementation `json:"serverInfo"`
-}
-
-type initializedParams struct {
-	// This parameter name is reserved by MCP to allow clients and servers to attach
-	// additional metadata to their notifications.
-	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
 }
 
 // Present if the server offers any prompt templates.
