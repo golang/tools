@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -480,12 +481,8 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		},
 	}
 
-	var isContextType = func(t types.Type) bool {
-		named, ok := t.(*types.Named)
-		if !ok {
-			return false
-		}
-		return named.Obj().Pkg().Path() == "context" && named.Obj().Name() == "Context"
+	isContextType := func(t types.Type) bool {
+		return analysisinternal.IsTypeNamed(t, "context", "Context")
 	}
 
 	for i := range sig.Params().Len() {
