@@ -1339,6 +1339,7 @@ func _() {
 }
 
 // Fix for golang/go#60062: unimported completion included "golang.org/toolchain" results.
+// and check that functions (from the standard library) have snippets
 func TestToolchainCompletions(t *testing.T) {
 	const files = `
 -- go.mod --
@@ -1384,6 +1385,16 @@ func Join() {}
 			for _, item := range res.Items {
 				if strings.Contains(item.Detail, "golang.org/toolchain") {
 					t.Errorf("Completion(...) returned toolchain item %#v", item)
+				}
+				if strings.HasPrefix(item.Detail, "func") {
+					// check that there are snippets
+					x, ok := item.TextEdit.Value.(protocol.InsertReplaceEdit)
+					if !ok {
+						t.Errorf("item.TextEdit.Value unexpected type %T", item.TextEdit.Value)
+					}
+					if !strings.Contains(x.NewText, "${1") {
+						t.Errorf("expected snippet in %q", x.NewText)
+					}
 				}
 			}
 		}
