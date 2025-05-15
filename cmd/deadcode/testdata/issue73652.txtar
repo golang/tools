@@ -1,0 +1,39 @@
+# Test deadcode usage under go.work.
+
+ deadcode ./svc/... ./lib/...
+ want "unreachable func: A"
+
+# different order of path under the same go.work should behave the same.
+
+ deadcode ./svc/... ./lib/...
+ want "unreachable func: A"
+
+
+-- go.work --
+go 1.18
+
+use (
+	./lib
+	./svc
+)
+
+-- lib/go.mod --
+module lib.com
+
+go 1.18
+
+-- lib/a/a.go --
+package a
+
+func A() {}
+
+-- svc/go.mod --
+module svc.com
+
+go 1.18
+
+-- svc/s/main.go --
+package main
+
+func main() { println("main") }
+

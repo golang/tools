@@ -5,7 +5,7 @@
 /*
 The deadcode command reports unreachable functions in Go programs.
 
-Usage: deadcode [flags] package...
+	Usage: deadcode [flags] package...
 
 The deadcode command loads a Go program from source then uses Rapid
 Type Analysis (RTA) to build a call graph of all the functions
@@ -25,8 +25,8 @@ function without an "Output:" comment is merely documentation:
 it is dead code, and does not contribute coverage.
 
 The -filter flag restricts results to packages that match the provided
-regular expression; its default value is the module name of the first
-package. Use -filter= to display all results.
+regular expression; its default value matches the listed packages and any other
+packages belonging to the same modules. Use -filter= to display all results.
 
 Example: show all dead code within the gopls module:
 

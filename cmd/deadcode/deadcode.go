@@ -132,8 +132,17 @@ func main() {
 
 	// If -filter is unset, use first module (if available).
 	if *filterFlag == "<module>" {
-		if mod := initial[0].Module; mod != nil && mod.Path != "" {
-			*filterFlag = "^" + regexp.QuoteMeta(mod.Path) + "\\b"
+		seen := make(map[string]bool)
+		var patterns []string
+		for _, pkg := range initial {
+			if pkg.Module != nil && pkg.Module.Path != "" && !seen[pkg.Module.Path] {
+				seen[pkg.Module.Path] = true
+				patterns = append(patterns, regexp.QuoteMeta(pkg.Module.Path))
+			}
+		}
+
+		if patterns != nil {
+			*filterFlag = "^(" + strings.Join(patterns, "|") + ")\\b"
 		} else {
 			*filterFlag = "" // match any
 		}
