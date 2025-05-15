@@ -82,6 +82,12 @@
 //     benchmark with "for b.Loop()", and remove any preceding calls
 //     to b.StopTimer, b.StartTimer, and b.ResetTimer.
 //
+//     B.Loop intentionally defeats compiler optimizations such as
+//     inlining so that the benchmark is not entirely optimized away.
+//     Currently, however, it may cause benchmarks to become slower
+//     in some cases due to increased allocation; see
+//     https://go.dev/issue/73137.
+//
 //   - rangeint: replace a 3-clause "for i := 0; i < n; i++" loop by
 //     "for i := range n", added in go1.22.
 //
