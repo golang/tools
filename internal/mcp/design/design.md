@@ -69,13 +69,13 @@ single shared package, the `mcp` package. This is inconsistent with other MCP
 SDKs, but is consistent with Go packages like `net/http`, `net/rpc`, or
 `google.golang.org/grpc`. We believe that having a single package aids
 discoverability in package documentation and in the IDE. Furthermore, it avoids
-somwhat arbitrary decisions about package structure that may be rendered
-inaccurate by future evolution of the spec.
+arbitrary decisions about package structure that may be rendered inaccurate by
+future evolution of the spec.
 
 Functionality that is not directly related to MCP (like jsonschema or jsonrpc2)
 belongs in a separate package.
 
-Therefore, this is the package layout, assuming
+Therefore, this is the core package layout, assuming
 github.com/modelcontextprotocol/go-sdk as the module path.
 
 - `github.com/modelcontextprotocol/go-sdk/mcp`: the bulk of the user facing API
@@ -91,7 +91,7 @@ or wrappers.
 **Difference from mcp-go**: Our `mcp` package includes all the functionality of
 mcp-go's `mcp`, `client`, `server` and `transport` packages.
 
-### jsonrpc2 and Transports
+### JSON-RPC and Transports
 
 The MCP is defined in terms of client-server communication over bidirectional
 JSON-RPC message streams. Specifically, version `2025-03-26` of the spec
@@ -124,8 +124,8 @@ type Transport interface {
 
 // A Stream is a bidirectional jsonrpc2 Stream.
 type Stream interface {
-    Read(ctx context.Context) (jsonrpc2.Message, error)
-    Write(ctx context.Context, jsonrpc2.Message) error
+    Read(ctx context.Context) (JSONRPCMessage, error)
+    Write(ctx context.Context, JSONRPCMessage) error
     Close() error
 }
 ```
@@ -161,7 +161,7 @@ In the MCP Spec, the **stdio** transport uses newline-delimited JSON to
 communicate over stdin/stdout. It's possible to model both client side and
 server side of this communication with a shared type that communicates over an
 `io.ReadWriteCloser`. However, for the purposes of future-proofing, we should
-use a distinct types for both client and server stdio transport.
+use a different types for client and server stdio transport.
 
 The `CommandTransport` is the client side of the stdio transport, and
 connects by starting a command and binding its jsonrpc2 stream to its
@@ -293,7 +293,7 @@ func (*StreamableHTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request
 func (*StreamableHTTPHandler) Close() error
 
 // Unlike the SSE transport, the streamable transport constructor accepts a
-// session ID, not an endpoint, along with the http response for the request
+// session ID, not an endpoint, along with the HTTP response for the request
 // that created the session. It is the caller's responsibility to delegate
 // requests to this session.
 type StreamableServerTransport struct { /* ... */ }
@@ -316,7 +316,7 @@ overlays tools for a specific session.
 
 We find the similarity in names among the three server types to be confusing,
 and we could not discover any uses of the session methods in the open-source
-ecosystem. Furthermore, we believe that a server factor (`getServer`) provides
+ecosystem. Furthermore, we believe that a server factory (`getServer`) provides
 equivalent functionality as the per-session logic of mcp-go, with a smaller API
 surface and fewer overlapping concepts.
 
@@ -353,7 +353,7 @@ Types needed for the protocol are generated from the
 [JSON schema of the MCP spec](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2025-03-26/schema.json).
 
 These types will be included in the `mcp` package, but will be unexported
-unless they are needed for the user-facing API. Notably, JSON-RPC message types
+unless they are needed for the user-facing API. Notably, JSON-RPC request types
 are elided, since they are handled by the `jsonrpc2` package and should not be
 observed by the user.
 
@@ -389,6 +389,10 @@ type Content struct {
 	Data     []byte            `json:"data,omitempty"`
 	Resource *ResourceContents `json:"resource,omitempty"`
 }
+
+// NewTextContent creates a [Content] with text.
+func NewTextContent(text string) *Content
+// etc.
 ```
 
 **Differences from mcp-go**: these types are largely similar, but our type
@@ -437,7 +441,8 @@ method.
 ```go
 type Client struct { /* ... */ }
 func NewClient(name, version string, opts *ClientOptions) *Client
-func (c *Client) Connect(context.Context, Transport) (*ClientSession, error)
+func (*Client) Connect(context.Context, Transport) (*ClientSession, error)
+func (*Client) Sessions() iter.Seq[*ClientSession]
 // Methods for adding/removing client features are described below.
 
 type ClientOptions struct { /* ... */ } // described below
@@ -451,7 +456,8 @@ func (*ClientSession) Wait() error
 
 type Server struct { /* ... */ }
 func NewServer(name, version string, opts *ServerOptions) *Server
-func (s *Server) Connect(context.Context, Transport) (*ServerSession, error)
+func (*Server) Connect(context.Context, Transport) (*ServerSession, error)
+func (*Server) Sessions() iter.Seq[*ServerSession]
 // Methods for adding/removing server features are described below.
 
 type ServerOptions struct { /* ... */ } // described below
@@ -517,7 +523,7 @@ Client.
 
 For both clients and servers, mcp-go uses variadic options to customize
 behavior, whereas an options struct is used here. We felt that in this case, an
-options struct would be more readable, and result in cleaner package
+options struct would be more readable, and result in simpler package
 documentation.
 
 ### Spec Methods
@@ -555,7 +561,7 @@ parameter is not backward compatible. Therefore, it will always work to pass
 `nil` for any `XXXParams` argument that isn't currently necessary. For example, it is okay to call `Ping` like so:
 
 ```go
-err := session.Ping(ctx, nil)`
+err := session.Ping(ctx, nil)
 ```
 
 #### Iterator Methods
@@ -630,9 +636,9 @@ As described by the
 [spec](https://modelcontextprotocol.io/specification/2025-03-26/server/tools#error-handling),
 tool execution errors are reported in tool results.
 
-**Differences from mcp-go**: the `JSONRPCError` type here does not expose
-details that are irrelevant or can be inferred from the caller (ID and Method).
-Otherwise, this behavior is similar.
+**Differences from mcp-go**: the `JSONRPCError` type here does not include ID
+and Method, which can be inferred from the caller. Otherwise, this behavior is
+similar.
 
 ### Cancellation
 
@@ -707,8 +713,9 @@ client, not server, and the keepalive option is only provided for SSE servers
 
 ### Roots
 
-Clients support the MCP Roots feature out of the box, including roots-changed notifications.
-Roots can be added and removed from a `Client` with `AddRoots` and `RemoveRoots`:
+Clients support the MCP Roots feature, including roots-changed notifications.
+Roots can be added and removed from a `Client` with `AddRoots` and
+`RemoveRoots`:
 
 ```go
 // AddRoots adds the given roots to the client,
@@ -722,10 +729,10 @@ func (*Client) AddRoots(roots ...*Root)
 func (*Client) RemoveRoots(uris ...string)
 ```
 
-Server sessions can call the spec method `ListRoots` to get the roots. If a server installs a
-`RootsChangedHandler`, it will be called when the client sends a roots-changed
-notification, which happens whenever the list of roots changes after a
-connection has been established.
+Server sessions can call the spec method `ListRoots` to get the roots. If a
+server installs a `RootsChangedHandler`, it will be called when the client
+sends a roots-changed notification, which happens whenever the list of roots
+changes after a connection has been established.
 
 ```go
 type ServerOptions {
@@ -733,6 +740,14 @@ type ServerOptions {
   // If non-nil, called when a client sends a roots-changed notification.
   RootsChangedHandler func(context.Context, *ServerSession, *RootsChangedParams)
 }
+```
+
+The `Roots` method provides a
+[cached](https://modelcontextprotocol.io/specification/2025-03-26/client/roots#implementation-guidelines)
+iterator of the root set, invalidated when roots change.
+
+```go
+func (*ServerSession) Roots(context.Context) (iter.Seq[*Root, error])
 ```
 
 ### Sampling
