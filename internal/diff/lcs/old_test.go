@@ -106,14 +106,6 @@ func TestRegressionOld003(t *testing.T) {
 }
 
 func TestRandOld(t *testing.T) {
-	// This test has been observed to fail on 0.5% of runs,
-	// for example, using these seed pairs:
-	// - 14495503613572398601, 14235960032715252551
-	// - 4604737379815557952, 3544687276571693387
-	// - 5419883078200329767, 11421218423438832472
-	// - 16595049989808072974, 2139246309634979125
-	// - 7079260183459082455, 16563974573191788291
-	// TODO(adonovan): fix.
 	rng := rng(t)
 
 	for i := range 1000 {
@@ -123,7 +115,7 @@ func TestRandOld(t *testing.T) {
 		b := []rune(randstr(rng, "abωc", 16))
 		seq := runesSeqs{a, b}
 
-		const lim = 24 // large enough to get true lcs
+		const lim = 0 // make sure we get the lcs (24 was too small)
 		_, forw := compute(seq, forward, lim)
 		_, back := compute(seq, backward, lim)
 		_, two := compute(seq, twosided, lim)
