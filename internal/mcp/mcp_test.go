@@ -85,7 +85,12 @@ func TestEndToEnd(t *testing.T) {
 		clientWG.Done()
 	}()
 
-	c := NewClient("testClient", "v1.0.0", nil)
+	opts := &ClientOptions{
+		CreateMessageHandler: func(context.Context, *ClientSession, *CreateMessageParams) (*CreateMessageResult, error) {
+			return &CreateMessageResult{Model: "aModel"}, nil
+		},
+	}
+	c := NewClient("testClient", "v1.0.0", opts)
 	rootAbs, err := filepath.Abs(filepath.FromSlash("testdata/files"))
 	if err != nil {
 		t.Fatal(err)
@@ -233,8 +238,7 @@ func TestEndToEnd(t *testing.T) {
 		} {
 			rres, err := cs.ReadResource(ctx, &ReadResourceParams{URI: tt.uri})
 			if err != nil {
-				var werr *jsonrpc2.WireError
-				if errors.As(err, &werr) && werr.Code == codeResourceNotFound {
+				if code := errorCode(err); code == CodeResourceNotFound {
 					if tt.mimeType != "" {
 						t.Errorf("%s: not found but expected it to be", tt.uri)
 					}
@@ -252,13 +256,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 	t.Run("roots", func(t *testing.T) {
-		// Take the server's first ServerSession.
-		var sc *ServerSession
-		for sc = range s.Sessions() {
-			break
-		}
-
-		rootRes, err := sc.ListRoots(ctx, &ListRootsParams{})
+		rootRes, err := ss.ListRoots(ctx, &ListRootsParams{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -266,6 +264,16 @@ func TestEndToEnd(t *testing.T) {
 		wantRoots := slices.Collect(c.roots.all())
 		if diff := cmp.Diff(wantRoots, gotRoots); diff != "" {
 			t.Errorf("roots/list mismatch (-want +got):\n%s", diff)
+		}
+	})
+	t.Run("sampling", func(t *testing.T) {
+		// TODO: test that a client that doesn't have the handler returns CodeUnsupportedMethod.
+		res, err := ss.CreateMessage(ctx, &CreateMessageParams{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g, w := res.Model, "aModel"; g != w {
+			t.Errorf("got %q, want %q", g, w)
 		}
 	})
 
@@ -278,6 +286,20 @@ func TestEndToEnd(t *testing.T) {
 	for range s.Sessions() {
 		t.Errorf("unexpected client after disconnection")
 	}
+}
+
+// errorCode returns the code associated with err.
+// If err is nil, it returns 0.
+// If there is no code, it returns -1.
+func errorCode(err error) int64 {
+	if err == nil {
+		return 0
+	}
+	var werr *jsonrpc2.WireError
+	if errors.As(err, &werr) {
+		return werr.Code
+	}
+	return -1
 }
 
 // basicConnection returns a new basic client-server connection configured with

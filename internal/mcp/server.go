@@ -328,6 +328,11 @@ func (ss *ServerSession) ListRoots(ctx context.Context, params *ListRootsParams)
 	return standardCall[ListRootsResult](ctx, ss.conn, "roots/list", params)
 }
 
+// CreateMessage sends a sampling request to the client.
+func (ss *ServerSession) CreateMessage(ctx context.Context, params *CreateMessageParams) (*CreateMessageResult, error) {
+	return standardCall[CreateMessageResult](ctx, ss.conn, "sampling/createMessage", params)
+}
+
 // AddMiddleware wraps the server's current method handler using the provided
 // middleware. Middleware is applied from right to left, so that the first one
 // is executed first.

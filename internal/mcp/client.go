@@ -46,7 +46,11 @@ func NewClient(name, version string, opts *ClientOptions) *Client {
 }
 
 // ClientOptions configures the behavior of the client.
-type ClientOptions struct{}
+type ClientOptions struct {
+	// Handler for sampling.
+	// Called when a server calls CreateMessage.
+	CreateMessageHandler func(context.Context, *ClientSession, *CreateMessageParams) (*CreateMessageResult, error)
+}
 
 // bind implements the binder[*ClientSession] interface, so that Clients can
 // be connected using [connect].
@@ -83,8 +87,13 @@ func (c *Client) Connect(ctx context.Context, t Transport) (cs *ClientSession, e
 	if err != nil {
 		return nil, err
 	}
+	caps := &ClientCapabilities{}
+	if c.opts.CreateMessageHandler != nil {
+		caps.Sampling = &SamplingCapabilities{}
+	}
 	params := &InitializeParams{
-		ClientInfo: &implementation{Name: c.name, Version: c.version},
+		ClientInfo:   &implementation{Name: c.name, Version: c.version},
+		Capabilities: caps,
 	}
 	if err := call(ctx, cs.conn, "initialize", params, &cs.initializeResult); err != nil {
 		_ = cs.Close()
@@ -150,6 +159,14 @@ func (c *Client) listRoots(_ context.Context, _ *ClientSession, _ *ListRootsPara
 	}, nil
 }
 
+func (c *Client) createMessage(ctx context.Context, cs *ClientSession, params *CreateMessageParams) (*CreateMessageResult, error) {
+	if c.opts.CreateMessageHandler == nil {
+		// TODO: wrap or annotate this error? Pick a standard code?
+		return nil, &jsonrpc2.WireError{Code: CodeUnsupportedMethod, Message: "client does not support CreateMessage"}
+	}
+	return c.opts.CreateMessageHandler(ctx, cs, params)
+}
+
 // AddMiddleware wraps the client's current method handler using the provided
 // middleware. Middleware is applied from right to left, so that the first one
 // is executed first.
@@ -164,8 +181,9 @@ func (c *Client) AddMiddleware(middleware ...Middleware[ClientSession]) {
 
 // clientMethodInfos maps from the RPC method name to serverMethodInfos.
 var clientMethodInfos = map[string]methodInfo[ClientSession]{
-	"ping":       newMethodInfo(sessionMethod((*ClientSession).ping)),
-	"roots/list": newMethodInfo(clientMethod((*Client).listRoots)),
+	"ping":                   newMethodInfo(sessionMethod((*ClientSession).ping)),
+	"roots/list":             newMethodInfo(clientMethod((*Client).listRoots)),
+	"sampling/createMessage": newMethodInfo(clientMethod((*Client).createMessage)),
 	// TODO: notifications
 }
 

@@ -32,19 +32,11 @@ type ResourceHandler func(context.Context, *ServerSession, *ReadResourceParams) 
 // not be found.
 func ResourceNotFoundError(uri string) error {
 	return &jsonrpc2.WireError{
-		Code:    codeResourceNotFound,
+		Code:    CodeResourceNotFound,
 		Message: "Resource not found",
 		Data:    json.RawMessage(fmt.Sprintf(`{"uri":%q}`, uri)),
 	}
 }
-
-// The error code to return when a resource isn't found.
-// See https://modelcontextprotocol.io/specification/2025-03-26/server/resources#error-handling
-// However, the code they chose in in the wrong space
-// (see https://github.com/modelcontextprotocol/modelcontextprotocol/issues/509).
-// so we pick a different one, arbirarily for now (until they fix it).
-// The immediate problem is that jsonprc2 defines -32002 as "server closing".
-const codeResourceNotFound = -31002
 
 // readFileResource reads from the filesystem at a URI relative to dirFilepath, respecting
 // the roots.
