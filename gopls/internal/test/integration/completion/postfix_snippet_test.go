@@ -234,10 +234,26 @@ package foo
 
 func _() {
 	var foo map[string]int
-	for k := range foo {
-	delete(foo, k)
+	clear(foo)
 }
+`,
+		},
+		{
+			name: "slice_clear",
+			before: `
+package foo
 
+func _() {
+	var foo []int
+	foo.clear
+}
+`,
+			after: `
+package foo
+
+func _() {
+	var foo []int
+	clear(foo)
 }
 `,
 		},
