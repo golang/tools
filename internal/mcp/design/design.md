@@ -406,23 +406,34 @@ func (*ClientSession) ResourceTemplates(context.Context, *ListResourceTemplatesP
 
 ### Middleware
 
-We provide a mechanism to add MCP-level middleware on the server side, which runs after the request has been parsed but before any normal handling.
+We provide a mechanism to add MCP-level middleware on the both the client and server side, which runs after the request has been parsed but before any normal handling.
 
 ```go
-// A ServerMethodHandler dispatches an MCP message to the appropriate handler.
-// The params argument will be an XXXParams struct pointer, such as *GetPromptParams.
-// The response if err is non-nil should be an XXXResult struct pointer.
-type ServerMethodHandler func(ctx context.Context, s *ServerSession, method string, params any) (result any, err error)
+// A MethodHandler handles MCP messages.
+// The params argument is an XXXParams struct pointer, such as *GetPromptParams.
+// For methods, a MethodHandler must return either an XXResult struct pointer and a nil error, or
+// nil with a non-nil error.
+// For notifications, a MethodHandler must return nil, nil.
+type MethodHandler[S ClientSession | ServerSession] func(
+	ctx context.Context, _ *S, method string, params any) (result any, err error)
 
-// AddMiddlewarecalls each function from right to left on the previous result, beginning
-// with the server's current dispatcher, and installs the result as the new dispatcher.
-func (*Server) AddMiddleware(middleware ...func(ServerMethodHandler) ServerMethodHandler)
+// Middleware is a function from MethodHandlers to MethodHandlers.
+type Middleware[S ClientSession | ServerSession] func(MethodHandler[S]) MethodHandler[S]
+
+// AddMiddleware wraps the client/server's current method handler using the provided
+// middleware. Middleware is applied from right to left, so that the first one
+// is executed first.
+//
+// For example, AddMiddleware(m1, m2, m3) augments the server method handler as
+// m1(m2(m3(handler))).
+func (c *Client) AddMiddleware(middleware ...Middleware[ClientSession])
+func (s *Server) AddMiddleware(middleware ...Middleware[ServerSession])
 ```
 
 As an example, this code adds server-side logging:
 
 ```go
-func withLogging(h mcp.ServerMethodHandler) mcp.ServerMethodHandler{
+func withLogging(h mcp.MethodHandler[ServerSession]) mcp.MethodHandler[ServerSession]{
     return func(ctx context.Context, s *mcp.ServerSession, method string, params any) (res any, err error) {
         log.Printf("request: %s %v", method, params)
         defer func() { log.Printf("response: %v, %v", res, err) }()
@@ -432,8 +443,6 @@ func withLogging(h mcp.ServerMethodHandler) mcp.ServerMethodHandler{
 
 server.AddMiddleware(withLogging)
 ```
-
-We will provide the same functionality on the client side as well.
 
 **Differences from mcp-go**: Version 0.26.0 of mcp-go defines 24 server hooks. Each hook consists of a field in the `Hooks` struct, a `Hooks.Add` method, and a type for the hook function. These are rarely used. The most common is `OnError`, which occurs fewer than ten times in open-source code.
 

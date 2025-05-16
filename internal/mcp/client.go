@@ -18,12 +18,13 @@ import (
 // A Client is an MCP client, which may be connected to an MCP server
 // using the [Client.Connect] method.
 type Client struct {
-	name     string
-	version  string
-	opts     ClientOptions
-	mu       sync.Mutex
-	roots    *featureSet[*Root]
-	sessions []*ClientSession
+	name           string
+	version        string
+	opts           ClientOptions
+	mu             sync.Mutex
+	roots          *featureSet[*Root]
+	sessions       []*ClientSession
+	methodHandler_ MethodHandler[ClientSession]
 }
 
 // NewClient creates a new Client.
@@ -33,9 +34,10 @@ type Client struct {
 // If non-nil, the provided options configure the Client.
 func NewClient(name, version string, opts *ClientOptions) *Client {
 	c := &Client{
-		name:    name,
-		version: version,
-		roots:   newFeatureSet(func(r *Root) string { return r.URI }),
+		name:           name,
+		version:        version,
+		roots:          newFeatureSet(func(r *Root) string { return r.URI }),
+		methodHandler_: defaultMethodHandler[ClientSession],
 	}
 	if opts != nil {
 		c.opts = *opts
@@ -140,7 +142,7 @@ func (c *Client) RemoveRoots(uris ...string) {
 	c.roots.remove(uris...)
 }
 
-func (c *Client) listRoots(_ context.Context, _ *ListRootsParams) (*ListRootsResult, error) {
+func (c *Client) listRoots(_ context.Context, _ *ClientSession, _ *ListRootsParams) (*ListRootsResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return &ListRootsResult{
@@ -148,21 +150,43 @@ func (c *Client) listRoots(_ context.Context, _ *ListRootsParams) (*ListRootsRes
 	}, nil
 }
 
-func (c *ClientSession) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	// TODO: when we switch to ClientSessions, use a copy of the server's dispatch function, or
-	// maybe just add another type parameter.
-	//
-	// No need to check that the connection is initialized, since we initialize
-	// it in Connect.
-	switch req.Method {
-	case "ping":
-		// The spec says that 'ping' expects an empty object result.
-		return struct{}{}, nil
-	case "roots/list":
-		// ListRootsParams happens to be unused.
-		return c.client.listRoots(ctx, nil)
-	}
-	return nil, jsonrpc2.ErrNotHandled
+// AddMiddleware wraps the client's current method handler using the provided
+// middleware. Middleware is applied from right to left, so that the first one
+// is executed first.
+//
+// For example, AddMiddleware(m1, m2, m3) augments the client method handler as
+// m1(m2(m3(handler))).
+func (c *Client) AddMiddleware(middleware ...Middleware[ClientSession]) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	addMiddleware(&c.methodHandler_, middleware)
+}
+
+// clientMethodInfos maps from the RPC method name to serverMethodInfos.
+var clientMethodInfos = map[string]methodInfo[ClientSession]{
+	"ping":       newMethodInfo(sessionMethod((*ClientSession).ping)),
+	"roots/list": newMethodInfo(clientMethod((*Client).listRoots)),
+	// TODO: notifications
+}
+
+var _ session[ClientSession] = (*ClientSession)(nil)
+
+func (cs *ClientSession) methodInfos() map[string]methodInfo[ClientSession] {
+	return clientMethodInfos
+}
+
+func (cs *ClientSession) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	return handleRequest(ctx, req, cs)
+}
+
+func (cs *ClientSession) methodHandler() MethodHandler[ClientSession] {
+	cs.client.mu.Lock()
+	defer cs.client.mu.Unlock()
+	return cs.client.methodHandler_
+}
+
+func (c *ClientSession) ping(ct context.Context, params *PingParams) (struct{}, error) {
+	return struct{}{}, nil
 }
 
 // Ping makes an MCP "ping" request to the server.

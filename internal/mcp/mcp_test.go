@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -27,8 +28,8 @@ type hiParams struct {
 	Name string
 }
 
-func sayHi(ctx context.Context, cc *ServerSession, v hiParams) ([]*Content, error) {
-	if err := cc.Ping(ctx, nil); err != nil {
+func sayHi(ctx context.Context, ss *ServerSession, v hiParams) ([]*Content, error) {
+	if err := ss.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("ping failed: %v", err)
 	}
 	return []*Content{NewTextContent("hi " + v.Name)}, nil
@@ -398,7 +399,7 @@ func TestCancellation(t *testing.T) {
 	}
 }
 
-func TestAddMiddleware(t *testing.T) {
+func TestMiddleware(t *testing.T) {
 	ctx := context.Background()
 	ct, st := NewInMemoryTransports()
 	s := NewServer("testServer", "v1.0.0", nil)
@@ -416,26 +417,17 @@ func TestAddMiddleware(t *testing.T) {
 		clientWG.Done()
 	}()
 
-	var buf bytes.Buffer
-	buf.WriteByte('\n')
-
-	// traceCalls creates a middleware function that prints the method before and after each call
-	// with the given prefix.
-	traceCalls := func(prefix string) func(ServerMethodHandler) ServerMethodHandler {
-		return func(d ServerMethodHandler) ServerMethodHandler {
-			return func(ctx context.Context, ss *ServerSession, method string, params any) (any, error) {
-				fmt.Fprintf(&buf, "%s >%s\n", prefix, method)
-				defer fmt.Fprintf(&buf, "%s <%s\n", prefix, method)
-				return d(ctx, ss, method, params)
-			}
-		}
-	}
+	var sbuf, cbuf bytes.Buffer
+	sbuf.WriteByte('\n')
+	cbuf.WriteByte('\n')
 
 	// "1" is the outer middleware layer, called first; then "2" is called, and finally
 	// the default dispatcher.
-	s.AddMiddleware(traceCalls("1"), traceCalls("2"))
+	s.AddMiddleware(traceCalls[ServerSession](&sbuf, "1"), traceCalls[ServerSession](&sbuf, "2"))
 
 	c := NewClient("testClient", "v1.0.0", nil)
+	c.AddMiddleware(traceCalls[ClientSession](&cbuf, "1"), traceCalls[ClientSession](&cbuf, "2"))
+
 	cs, err := c.Connect(ctx, ct)
 	if err != nil {
 		t.Fatal(err)
@@ -453,8 +445,32 @@ func TestAddMiddleware(t *testing.T) {
 2 <tools/list
 1 <tools/list
 `
-	if diff := cmp.Diff(want, buf.String()); diff != "" {
+	if diff := cmp.Diff(want, sbuf.String()); diff != "" {
 		t.Errorf("mismatch (-want, +got):\n%s", diff)
+	}
+
+	_, _ = ss.ListRoots(ctx, nil)
+
+	want = `
+1 >roots/list
+2 >roots/list
+2 <roots/list
+1 <roots/list
+`
+	if diff := cmp.Diff(want, cbuf.String()); diff != "" {
+		t.Errorf("mismatch (-want, +got):\n%s", diff)
+	}
+}
+
+// traceCalls creates a middleware function that prints the method before and after each call
+// with the given prefix.
+func traceCalls[S ClientSession | ServerSession](w io.Writer, prefix string) Middleware[S] {
+	return func(h MethodHandler[S]) MethodHandler[S] {
+		return func(ctx context.Context, sess *S, method string, params any) (any, error) {
+			fmt.Fprintf(w, "%s >%s\n", prefix, method)
+			defer fmt.Fprintf(w, "%s <%s\n", prefix, method)
+			return h(ctx, sess, method, params)
+		}
 	}
 }
 
