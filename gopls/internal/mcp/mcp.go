@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -114,18 +115,45 @@ func newServer(_ *cache.Cache, session *cache.Session) *mcp.Server {
 	s := mcp.NewServer("golang", "v0.1", nil)
 
 	// TODO(hxjiang): replace dummy tool with tools which use cache and session.
-	s.AddTools(mcp.NewTool("hello_world", "Say hello to someone", helloHandler(session)))
+	s.AddTools(
+		mcp.NewTool(
+			"hello_world",
+			"Say hello to someone",
+			func(ctx context.Context, _ *mcp.ServerSession, request HelloParams) ([]*mcp.Content, error) {
+				return helloHandler(ctx, session, request)
+			},
+		),
+	)
 	return s
 }
 
 type HelloParams struct {
-	Name string `json:"name" mcp:"the name to say hi to"`
+	Name     string   `json:"name" mcp:"the name to say hi to"`
+	Location Location `json:"loc" mcp:"location inside of a text file"`
 }
 
-func helloHandler(_ *cache.Session) func(ctx context.Context, cc *mcp.ServerSession, request *HelloParams) ([]*mcp.Content, error) {
-	return func(ctx context.Context, cc *mcp.ServerSession, request *HelloParams) ([]*mcp.Content, error) {
-		return []*mcp.Content{
-			mcp.NewTextContent("Hi " + request.Name),
-		}, nil
-	}
+func helloHandler(_ context.Context, _ *cache.Session, request HelloParams) ([]*mcp.Content, error) {
+	return []*mcp.Content{
+		mcp.NewTextContent(fmt.Sprintf("Hi %s, current file %s.", request.Name, path.Base(request.Location.URI))),
+	}, nil
+}
+
+// Location describes a range within a text document.
+//
+// It is structurally equal to protocol.Location, but has mcp tags instead of json.
+// TODO(hxjiang): experiment if the LLM can correctly provide the right location
+// information.
+type Location struct {
+	URI   string `json:"uri" mcp:"URI to the text file"`
+	Range Range  `json:"range" mcp:"range within text document"`
+}
+
+type Range struct {
+	Start Position `json:"start" mcp:"the range's start position"`
+	End   Position `json:"end" mcp:"the range's end position"`
+}
+
+type Position struct {
+	Line      uint32 `json:"line" mcp:"line number (zero-based)"`
+	Character uint32 `json:"character" mcp:"column number (zero-based, UTF-16 encoding)"`
 }

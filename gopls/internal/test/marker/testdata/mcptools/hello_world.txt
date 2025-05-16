@@ -9,7 +9,9 @@ module golang.org/mcptests/mcptools
 -- mcp/tools/helloworld.go --
 package helloworld
 
-func A() {} //@mcptool("hello_world", `{"name": "jerry"}`, output=hello)
+func A() {} //@loc(loc, "A")
+
+//@mcptool("hello_world", `{"name": "jerry"}`, loc, output=hello)
 
 -- @hello --
-Hi jerry
+Hi jerry, current file helloworld.go.

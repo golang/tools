@@ -307,12 +307,13 @@ Here is the list of supported action markers:
 
     location name kind
 
-  - mcptool(name string, args string, output=golden): Executes an MCP tool
-    call using the provided tool name and args (a JSON-encoded value). It then
-    asserts that the MCP server's response matches the content of the golden
-    file identified by output. Unlike golden references for file edits or file
-    results, which may contain multiple files (each with a path), the output
-    golden content here is a single entity, effectively having an empty path("").
+  - mcptool(name string, arg string, src location, output=golden): Executes an
+    MCP tool call using the provided tool name and args (a JSON-encoded value)
+    with the source location. It then asserts that the MCP server's response
+    matches the content of the golden file identified by output. Unlike golden
+    references for file edits or file results, which may contain multiple files
+    (each with a path), the output golden content here is a single entity,
+    effectively having an empty path("").
 
 # Argument conversion
 
