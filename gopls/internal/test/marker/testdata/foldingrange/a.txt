@@ -131,6 +131,11 @@ func _(
 	c int,
 ) {
 }
+
+func _() { // comment
+
+}
+
 -- @raw --
 package folding //@foldingrange(raw)
 
@@ -262,3 +267,8 @@ func _(<52 kind="">
 	c int,
 </52>) {<53 kind="">
 </53>}
+
+func _() {<54 kind=""> // comment
+
+</54>}
+
