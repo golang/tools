@@ -31,23 +31,24 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 )
 
-// extractVariable implements the refactor.extract.{variable,constant} CodeAction command.
-func extractVariable(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-	return extractExprs(pkg, pgf, start, end, false)
+// extractVariableOne implements the refactor.extract.{variable,constant} CodeAction command.
+func extractVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	return extractVariable(pkg, pgf, start, end, false)
 }
 
 // extractVariableAll implements the refactor.extract.{variable,constant}-all CodeAction command.
 func extractVariableAll(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-	return extractExprs(pkg, pgf, start, end, true)
+	return extractVariable(pkg, pgf, start, end, true)
 }
 
-// extractExprs replaces occurrence(s) of a specified expression within the same function
-// with newVar. If 'all' is true, it replaces all occurrences of the same expression;
-// otherwise, it only replaces the selected expression.
+// extractVariable replaces one or all occurrences of a specified
+// expression within the same function with newVar. If 'all' is true,
+// it replaces all occurrences of the same expression; otherwise, it
+// only replaces the selected expression.
 //
 // The new variable/constant is declared as close as possible to the first found expression
 // within the deepest common scope accessible to all candidate occurrences.
-func extractExprs(pkg *cache.Package, pgf *parsego.File, start, end token.Pos, all bool) (*token.FileSet, *analysis.SuggestedFix, error) {
+func extractVariable(pkg *cache.Package, pgf *parsego.File, start, end token.Pos, all bool) (*token.FileSet, *analysis.SuggestedFix, error) {
 	var (
 		fset = pkg.FileSet()
 		info = pkg.TypesInfo()

@@ -79,6 +79,7 @@ Gopls supports the following code actions:
 - [`refactor.extract.variable`](#extract)
 - [`refactor.extract.variable-all`](#extract)
 - [`refactor.inline.call`](#refactor.inline.call)
+- [`refactor.inline.variable`](#refactor.inline.variable)
 - [`refactor.rewrite.addTags`](#refactor.rewrite.addTags)
 - [`refactor.rewrite.changeQuote`](#refactor.rewrite.changeQuote)
 - [`refactor.rewrite.fillStruct`](#refactor.rewrite.fillStruct)
@@ -606,6 +607,55 @@ documentation for [golang.org/x/tools/internal/refactor/inline](https://pkg.go.d
 more detail. All of this is to say, it's a complex problem, and we aim
 for correctness first of all. We've already implemented a number of
 important "tidiness optimizations" and we expect more to follow.
+
+<a name='refactor.inline.variable'></a>
+
+## `refactor.inline.variable`: Inline local variable
+
+For a `codeActions` request where the selection is (or is within) an
+identifier that is a use of a local variable whose declaration has an
+initializer expression, gopls will return a code action of kind
+`refactor.inline.variable`, whose effect is to inline the variable:
+that is, to replace the reference by the variable's initializer
+expression.
+
+For example, if invoked on the identifier `s` in the call `println(s)`:
+```go
+func f(x int) {
+	s := fmt.Sprintf("+%d", x)
+	println(s)
+}
+```
+the code action transforms the code to:
+
+```go
+func f(x int) {
+	s := fmt.Sprintf("+%d", x)
+	println(fmt.Sprintf("+%d", x))
+}
+```
+
+(In this instance, `s` becomes an unreferenced variable which you will
+need to remove.)
+
+The code action always replaces the reference by the initializer
+expression, even if there are later assignments to the variable (such
+as `s = ""`).
+
+The code action reports an error if it is not possible to make the
+transformation because one of the identifiers within the initializer
+expression (e.g. `x` in the example above) is shadowed by an
+intervening declaration, as in this example:
+
+```go
+func f(x int) {
+	s := fmt.Sprintf("+%d", x)
+	{
+		x := 123
+		println(s, x) // error: cannot replace s with fmt.Sprintf(...) since x is shadowed
+	}
+}
+```
 
 <a name='refactor.rewrite'></a>
 ## `refactor.rewrite`: Miscellaneous rewrites

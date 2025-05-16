@@ -15,6 +15,8 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -23,6 +25,7 @@ import (
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/refactor/inline"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // enclosingStaticCall returns the innermost function call enclosing
@@ -133,4 +136,80 @@ func logger(ctx context.Context, name string, verbose bool) func(format string, 
 	} else {
 		return func(string, ...any) {}
 	}
+}
+
+// canInlineVariable reports whether the selection is within an
+// identifier that is a use of a variable that has an initializer
+// expression. If so, it returns cursors for the identifier and the
+// initializer expression.
+func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end token.Pos) (_, _ inspector.Cursor, ok bool) {
+	if curUse, ok := curFile.FindByPos(start, end); ok {
+		if id, ok := curUse.Node().(*ast.Ident); ok {
+			if v, ok := info.Uses[id].(*types.Var); ok &&
+				// Check that the variable is local.
+				// TODO(adonovan): simplify using go1.25 Var.Kind = Local.
+				!typesinternal.IsPackageLevel(v) && !v.IsField() {
+
+				if curIdent, ok := curFile.FindByPos(v.Pos(), v.Pos()); ok {
+					curParent := curIdent.Parent()
+					switch kind, index := curIdent.ParentEdge(); kind {
+					case edge.ValueSpec_Names:
+						// var v = expr
+						spec := curParent.Node().(*ast.ValueSpec)
+						if len(spec.Names) == len(spec.Values) {
+							return curUse, curParent.ChildAt(edge.ValueSpec_Values, index), true
+						}
+					case edge.AssignStmt_Lhs:
+						// v := expr
+						stmt := curParent.Node().(*ast.AssignStmt)
+						if len(stmt.Lhs) == len(stmt.Rhs) {
+							return curUse, curParent.ChildAt(edge.AssignStmt_Rhs, index), true
+						}
+					}
+				}
+			}
+		}
+	}
+	return
+}
+
+// inlineVariableOne computes a fix to replace the selected variable by
+// its initialization expression.
+func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	info := pkg.TypesInfo()
+	curUse, curRHS, ok := canInlineVariable(info, pgf.Cursor, start, end)
+	if !ok {
+		return nil, nil, fmt.Errorf("cannot inline variable here")
+	}
+	use := curUse.Node().(*ast.Ident)
+
+	// Check that free symbols of rhs are unshadowed at curUse.
+	var (
+		pos   = use.Pos()
+		scope = info.Scopes[pgf.File].Innermost(pos)
+	)
+	for curIdent := range curRHS.Preorder((*ast.Ident)(nil)) {
+		if ek, _ := curIdent.ParentEdge(); ek == edge.SelectorExpr_Sel {
+			continue // ignore f in x.f
+		}
+		id := curIdent.Node().(*ast.Ident)
+		obj1 := info.Uses[id]
+		_, obj2 := scope.LookupParent(id.Name, pos)
+		if obj1 != obj2 {
+			return nil, nil, fmt.Errorf("cannot inline variable: its initializer expression refers to %q, which is shadowed by the declaration at line %d", id.Name, safetoken.Position(pgf.Tok, obj2.Pos()).Line)
+		}
+	}
+
+	// TODO(adonovan): also reject variables that are updated by assignments?
+
+	return pkg.FileSet(), &analysis.SuggestedFix{
+		Message: fmt.Sprintf("Replace variable %q by its initializer expression", use.Name),
+		TextEdits: []analysis.TextEdit{
+			{
+				Pos:     use.Pos(),
+				End:     use.End(),
+				NewText: []byte(FormatNode(pkg.FileSet(), curRHS.Node())),
+			},
+		},
+	}, nil
 }

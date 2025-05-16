@@ -253,6 +253,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorExtractConstantAll, fn: refactorExtractVariableAll, needPkg: true},
 	{kind: settings.RefactorExtractVariableAll, fn: refactorExtractVariableAll, needPkg: true},
 	{kind: settings.RefactorInlineCall, fn: refactorInlineCall, needPkg: true},
+	{kind: settings.RefactorInlineVariable, fn: refactorInlineVariable, needPkg: true},
 	{kind: settings.RefactorRewriteChangeQuote, fn: refactorRewriteChangeQuote},
 	{kind: settings.RefactorRewriteFillStruct, fn: refactorRewriteFillStruct, needPkg: true},
 	{kind: settings.RefactorRewriteFillSwitch, fn: refactorRewriteFillSwitch, needPkg: true},
@@ -506,7 +507,7 @@ func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error
 }
 
 // refactorExtractVariableAll produces "Extract N occurrences of EXPR" code action.
-// See [extractAllOccursOfExpr] for command implementation.
+// See [extractVariable] for implementation.
 func refactorExtractVariableAll(ctx context.Context, req *codeActionsRequest) error {
 	info := req.pkg.TypesInfo()
 	// Don't suggest if only one expr is found,
@@ -953,6 +954,17 @@ func refactorInlineCall(ctx context.Context, req *codeActionsRequest) error {
 	// If range is within call expression, offer to inline the call.
 	if _, fn, err := enclosingStaticCall(req.pkg, req.pgf, req.start, req.end); err == nil {
 		req.addApplyFixAction("Inline call to "+fn.Name(), fixInlineCall, req.loc)
+	}
+	return nil
+}
+
+// refactorInlineVariable produces the "Inline variable 'v'" code action.
+// See [inlineVariableOne] for command implementation.
+func refactorInlineVariable(ctx context.Context, req *codeActionsRequest) error {
+	// TODO(adonovan): offer "inline all" variant that eliminates the var (see #70085).
+	if curUse, _, ok := canInlineVariable(req.pkg.TypesInfo(), req.pgf.Cursor, req.start, req.end); ok {
+		title := fmt.Sprintf("Inline variable %q", curUse.Node().(*ast.Ident).Name)
+		req.addApplyFixAction(title, fixInlineVariable, req.loc)
 	}
 	return nil
 }

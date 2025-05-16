@@ -57,6 +57,7 @@ const (
 	fixExtractFunction         = "extract_function"
 	fixExtractMethod           = "extract_method"
 	fixInlineCall              = "inline_call"
+	fixInlineVariable          = "inline_variable"
 	fixInvertIfCondition       = "invert_if_condition"
 	fixSplitLines              = "split_lines"
 	fixJoinLines               = "join_lines"
@@ -100,9 +101,10 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 		// constructed directly by logic in server/code_action.
 		fixExtractFunction:         singleFile(extractFunction),
 		fixExtractMethod:           singleFile(extractMethod),
-		fixExtractVariable:         singleFile(extractVariable),
+		fixExtractVariable:         singleFile(extractVariableOne),
 		fixExtractVariableAll:      singleFile(extractVariableAll),
 		fixInlineCall:              inlineCall,
+		fixInlineVariable:          singleFile(inlineVariableOne),
 		fixInvertIfCondition:       singleFile(invertIfCondition),
 		fixSplitLines:              singleFile(splitLines),
 		fixJoinLines:               singleFile(joinLines),

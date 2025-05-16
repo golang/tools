@@ -101,7 +101,8 @@ const (
 	RefactorRewriteRemoveTags         protocol.CodeActionKind = "refactor.rewrite.removeTags"
 
 	// refactor.inline
-	RefactorInlineCall protocol.CodeActionKind = "refactor.inline.call"
+	RefactorInlineCall     protocol.CodeActionKind = "refactor.inline.call"
+	RefactorInlineVariable protocol.CodeActionKind = "refactor.inline.variable"
 
 	// refactor.extract
 	RefactorExtractConstant    protocol.CodeActionKind = "refactor.extract.constant"
