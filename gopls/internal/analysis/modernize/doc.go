@@ -82,9 +82,6 @@
 //     benchmark with "for b.Loop()", and remove any preceding calls
 //     to b.StopTimer, b.StartTimer, and b.ResetTimer.
 //
-//   - slicesdelete: replace append(s[:i], s[i+1]...) by
-//     slices.Delete(s, i, i+1), added in go1.21.
-//
 //   - rangeint: replace a 3-clause "for i := 0; i < n; i++" loop by
 //     "for i := range n", added in go1.22.
 //
