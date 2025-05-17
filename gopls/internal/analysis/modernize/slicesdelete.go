@@ -45,7 +45,39 @@ func slicesdelete(pass *analysis.Pass) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	info := pass.TypesInfo
 	report := func(file *ast.File, call *ast.CallExpr, slice1, slice2 *ast.SliceExpr) {
+		insert := func(pos token.Pos, text string) analysis.TextEdit {
+			return analysis.TextEdit{Pos: pos, End: pos, NewText: []byte(text)}
+		}
+		isIntExpr := func(e ast.Expr) bool {
+			return types.Identical(types.Default(info.TypeOf(e)), builtinInt.Type())
+		}
+		isIntShadowed := func() bool {
+			scope := pass.TypesInfo.Scopes[file].Innermost(call.Lparen)
+			if _, obj := scope.LookupParent("int", call.Lparen); obj != builtinInt {
+				return true // int type is shadowed
+			}
+			return false
+		}
+
 		_, prefix, edits := analysisinternal.AddImport(info, file, "slices", "slices", "Delete", call.Pos())
+		// append's indices may be any integer type; slices.Delete requires int.
+		// Insert int conversions as needed (and if possible).
+		if isIntShadowed() && (!isIntExpr(slice1.High) || !isIntExpr(slice2.Low)) {
+			return
+		}
+		if !isIntExpr(slice1.High) {
+			edits = append(edits,
+				insert(slice1.High.Pos(), "int("),
+				insert(slice1.High.End(), ")"),
+			)
+		}
+		if !isIntExpr(slice2.Low) {
+			edits = append(edits,
+				insert(slice2.Low.Pos(), "int("),
+				insert(slice2.Low.End(), ")"),
+			)
+		}
+
 		pass.Report(analysis.Diagnostic{
 			Pos:      call.Pos(),
 			End:      call.End(),
@@ -123,7 +155,6 @@ func slicesdelete(pass *analysis.Pass) {
 // Given two slice indices a and b, returns true if we can verify that a < b.
 // It recognizes certain forms such as i+k1 < i+k2 where k1 < k2.
 func increasingSliceIndices(info *types.Info, a, b ast.Expr) bool {
-
 	// Given an expression of the form i±k, returns (i, k)
 	// where k is a signed constant. Otherwise it returns (e, 0).
 	split := func(e ast.Expr) (ast.Expr, constant.Value) {

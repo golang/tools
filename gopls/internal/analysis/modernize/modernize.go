@@ -177,6 +177,7 @@ var (
 	builtinAny     = types.Universe.Lookup("any")
 	builtinAppend  = types.Universe.Lookup("append")
 	builtinBool    = types.Universe.Lookup("bool")
+	builtinInt     = types.Universe.Lookup("int")
 	builtinFalse   = types.Universe.Lookup("false")
 	builtinLen     = types.Universe.Lookup("len")
 	builtinMake    = types.Universe.Lookup("make")
