@@ -99,7 +99,7 @@ func (c *Client) Connect(ctx context.Context, t Transport) (cs *ClientSession, e
 		_ = cs.Close()
 		return nil, err
 	}
-	if err := cs.conn.Notify(ctx, "notifications/initialized", &InitializedParams{}); err != nil {
+	if err := cs.conn.Notify(ctx, notificationInitialized, &InitializedParams{}); err != nil {
 		_ = cs.Close()
 		return nil, err
 	}
@@ -181,9 +181,9 @@ func (c *Client) AddMiddleware(middleware ...Middleware[ClientSession]) {
 
 // clientMethodInfos maps from the RPC method name to serverMethodInfos.
 var clientMethodInfos = map[string]methodInfo[ClientSession]{
-	"ping":                   newMethodInfo(sessionMethod((*ClientSession).ping)),
-	"roots/list":             newMethodInfo(clientMethod((*Client).listRoots)),
-	"sampling/createMessage": newMethodInfo(clientMethod((*Client).createMessage)),
+	methodPing:          newMethodInfo(sessionMethod((*ClientSession).ping)),
+	methodListRoots:     newMethodInfo(clientMethod((*Client).listRoots)),
+	methodCreateMessage: newMethodInfo(clientMethod((*Client).createMessage)),
 	// TODO: notifications
 }
 
@@ -209,22 +209,22 @@ func (c *ClientSession) ping(ct context.Context, params *PingParams) (struct{}, 
 
 // Ping makes an MCP "ping" request to the server.
 func (c *ClientSession) Ping(ctx context.Context, params *PingParams) error {
-	return call(ctx, c.conn, "ping", params, nil)
+	return call(ctx, c.conn, methodPing, params, nil)
 }
 
 // ListPrompts lists prompts that are currently available on the server.
 func (c *ClientSession) ListPrompts(ctx context.Context, params *ListPromptsParams) (*ListPromptsResult, error) {
-	return standardCall[ListPromptsResult](ctx, c.conn, "prompts/list", params)
+	return standardCall[ListPromptsResult](ctx, c.conn, methodListPrompts, params)
 }
 
 // GetPrompt gets a prompt from the server.
 func (c *ClientSession) GetPrompt(ctx context.Context, params *GetPromptParams) (*GetPromptResult, error) {
-	return standardCall[GetPromptResult](ctx, c.conn, "prompts/get", params)
+	return standardCall[GetPromptResult](ctx, c.conn, methodGetPrompt, params)
 }
 
 // ListTools lists tools that are currently available on the server.
 func (c *ClientSession) ListTools(ctx context.Context, params *ListToolsParams) (*ListToolsResult, error) {
-	return standardCall[ListToolsResult](ctx, c.conn, "tools/list", params)
+	return standardCall[ListToolsResult](ctx, c.conn, methodListTools, params)
 }
 
 // CallTool calls the tool with the given name and arguments.
@@ -244,7 +244,7 @@ func (c *ClientSession) CallTool(ctx context.Context, name string, args map[stri
 		Name:      name,
 		Arguments: json.RawMessage(data),
 	}
-	return standardCall[CallToolResult](ctx, c.conn, "tools/call", params)
+	return standardCall[CallToolResult](ctx, c.conn, methodCallTool, params)
 }
 
 // NOTE: the following struct should consist of all fields of callToolParams except name and arguments.
@@ -256,12 +256,12 @@ type CallToolOptions struct {
 
 // ListResources lists the resources that are currently available on the server.
 func (c *ClientSession) ListResources(ctx context.Context, params *ListResourcesParams) (*ListResourcesResult, error) {
-	return standardCall[ListResourcesResult](ctx, c.conn, "resources/list", params)
+	return standardCall[ListResourcesResult](ctx, c.conn, methodListResources, params)
 }
 
 // ReadResource ask the server to read a resource and return its contents.
 func (c *ClientSession) ReadResource(ctx context.Context, params *ReadResourceParams) (*ReadResourceResult, error) {
-	return standardCall[ReadResourceResult](ctx, c.conn, "resources/read", params)
+	return standardCall[ReadResourceResult](ctx, c.conn, methodReadResource, params)
 }
 
 func standardCall[TRes, TParams any](ctx context.Context, conn *jsonrpc2.Connection, method string, params TParams) (*TRes, error) {

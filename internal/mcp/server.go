@@ -325,12 +325,12 @@ func (ss *ServerSession) Ping(ctx context.Context, _ *PingParams) error {
 
 // ListRoots lists the client roots.
 func (ss *ServerSession) ListRoots(ctx context.Context, params *ListRootsParams) (*ListRootsResult, error) {
-	return standardCall[ListRootsResult](ctx, ss.conn, "roots/list", params)
+	return standardCall[ListRootsResult](ctx, ss.conn, methodListRoots, params)
 }
 
 // CreateMessage sends a sampling request to the client.
 func (ss *ServerSession) CreateMessage(ctx context.Context, params *CreateMessageParams) (*CreateMessageResult, error) {
-	return standardCall[CreateMessageResult](ctx, ss.conn, "sampling/createMessage", params)
+	return standardCall[CreateMessageResult](ctx, ss.conn, methodCreateMessage, params)
 }
 
 // AddMiddleware wraps the server's current method handler using the provided
@@ -347,14 +347,14 @@ func (s *Server) AddMiddleware(middleware ...Middleware[ServerSession]) {
 
 // serverMethodInfos maps from the RPC method name to serverMethodInfos.
 var serverMethodInfos = map[string]methodInfo[ServerSession]{
-	"initialize":     newMethodInfo(sessionMethod((*ServerSession).initialize)),
-	"ping":           newMethodInfo(sessionMethod((*ServerSession).ping)),
-	"prompts/list":   newMethodInfo(serverMethod((*Server).listPrompts)),
-	"prompts/get":    newMethodInfo(serverMethod((*Server).getPrompt)),
-	"tools/list":     newMethodInfo(serverMethod((*Server).listTools)),
-	"tools/call":     newMethodInfo(serverMethod((*Server).callTool)),
-	"resources/list": newMethodInfo(serverMethod((*Server).listResources)),
-	"resources/read": newMethodInfo(serverMethod((*Server).readResource)),
+	methodInitialize:    newMethodInfo(sessionMethod((*ServerSession).initialize)),
+	methodPing:          newMethodInfo(sessionMethod((*ServerSession).ping)),
+	methodListPrompts:   newMethodInfo(serverMethod((*Server).listPrompts)),
+	methodGetPrompt:     newMethodInfo(serverMethod((*Server).getPrompt)),
+	methodListTools:     newMethodInfo(serverMethod((*Server).listTools)),
+	methodCallTool:      newMethodInfo(serverMethod((*Server).callTool)),
+	methodListResources: newMethodInfo(serverMethod((*Server).listResources)),
+	methodReadResource:  newMethodInfo(serverMethod((*Server).readResource)),
 	// TODO: notifications
 }
 

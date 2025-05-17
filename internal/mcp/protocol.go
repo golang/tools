@@ -494,3 +494,30 @@ type toolCapabilities struct {
 	// Whether this server supports notifications for changes to the tool list.
 	ListChanged bool `json:"listChanged,omitempty"`
 }
+
+const (
+	notificationCancelled           = "notifications/cancelled"
+	methodInitialize                = "initialize"
+	notificationProgress            = "notifications/progress"
+	methodSetLevel                  = "logging/setLevel"
+	methodCreateMessage             = "sampling/createMessage"
+	notificationResourceListChanged = "notifications/resources/list_changed"
+	notificationInitialized         = "notifications/initialized"
+	methodUnsubscribe               = "resources/unsubscribe"
+	notificationLoggingMessage      = "notifications/message"
+	methodSubscribe                 = "resources/subscribe"
+	methodComplete                  = "completion/complete"
+	methodCallTool                  = "tools/call"
+	notificationPromptListChanged   = "notifications/prompts/list_changed"
+	methodReadResource              = "resources/read"
+	methodListResourceTemplates     = "resources/templates/list"
+	methodListRoots                 = "roots/list"
+	notificationToolListChanged     = "notifications/tools/list_changed"
+	methodGetPrompt                 = "prompts/get"
+	methodListPrompts               = "prompts/list"
+	methodPing                      = "ping"
+	notificationRootsListChanged    = "notifications/roots/list_changed"
+	methodListTools                 = "tools/list"
+	methodListResources             = "resources/list"
+	notificationResourceUpdated     = "notifications/resources/updated"
+)

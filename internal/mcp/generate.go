@@ -202,6 +202,24 @@ import (
 		fmt.Fprintln(buf)
 		fmt.Fprint(buf, b.String())
 	}
+	// Write out method names.
+	fmt.Fprintln(buf, `const (`)
+	for name, s := range schema.Definitions {
+		prefix := "method"
+		method, found := strings.CutSuffix(name, "Request")
+		if !found {
+			prefix = "notification"
+			method, found = strings.CutSuffix(name, "Notification")
+		}
+		if found {
+			if ms, ok := s.Properties["method"]; ok {
+				if c := ms.Const; c != nil {
+					fmt.Fprintf(buf, "%s%s = %q\n", prefix, method, *c)
+				}
+			}
+		}
+	}
+	fmt.Fprintln(buf, `)`)
 
 	formatted, err := format.Source(buf.Bytes())
 	if err != nil {
