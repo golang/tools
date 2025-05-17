@@ -49,6 +49,10 @@ type ClientOptions struct {
 	// Handler for sampling.
 	// Called when a server calls CreateMessage.
 	CreateMessageHandler func(context.Context, *ClientSession, *CreateMessageParams) (*CreateMessageResult, error)
+	// Handlers for notifications from the server.
+	ToolListChangedHandler     func(context.Context, *ClientSession, *ToolListChangedParams)
+	PromptListChangedHandler   func(context.Context, *ClientSession, *PromptListChangedParams)
+	ResourceListChangedHandler func(context.Context, *ClientSession, *ResourceListChangedParams)
 }
 
 // bind implements the binder[*ClientSession] interface, so that Clients can
@@ -86,10 +90,13 @@ func (c *Client) Connect(ctx context.Context, t Transport) (cs *ClientSession, e
 	if err != nil {
 		return nil, err
 	}
+
 	caps := &ClientCapabilities{}
+	caps.Roots.ListChanged = true
 	if c.opts.CreateMessageHandler != nil {
 		caps.Sampling = &SamplingCapabilities{}
 	}
+
 	params := &InitializeParams{
 		ClientInfo:   &implementation{Name: c.name, Version: c.version},
 		Capabilities: caps,
@@ -133,11 +140,13 @@ func (c *ClientSession) Wait() error {
 // AddRoots adds the given roots to the client,
 // replacing any with the same URIs,
 // and notifies any connected servers.
-// TODO: notification
 func (c *Client) AddRoots(roots ...*Root) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.roots.add(roots...)
+	// Only notify if something could change.
+	if len(roots) == 0 {
+		return
+	}
+	c.changeAndNotify(notificationRootsListChanged, &RootsListChangedParams{},
+		func() bool { c.roots.add(roots...); return true })
 }
 
 // RemoveRoots removes the roots with the given URIs,
@@ -145,9 +154,22 @@ func (c *Client) AddRoots(roots ...*Root) {
 // It is not an error to remove a nonexistent root.
 // TODO: notification
 func (c *Client) RemoveRoots(uris ...string) {
+	c.changeAndNotify(notificationRootsListChanged, &RootsListChangedParams{},
+		func() bool { return c.roots.remove(uris...) })
+}
+
+// changeAndNotify is called when a feature is added or removed.
+// It calls change, which should do the work and report whether a change actually occurred.
+// If there was a change, it notifies a snapshot of the sessions.
+func (c *Client) changeAndNotify(notification string, params any, change func() bool) {
+	var sessions []*ClientSession
+	// Lock for the change, but not for the notification.
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.roots.remove(uris...)
+	if change() {
+		sessions = slices.Clone(c.sessions)
+	}
+	c.mu.Unlock()
+	notifySessions(sessions, notification, params)
 }
 
 func (c *Client) listRoots(_ context.Context, _ *ClientSession, _ *ListRootsParams) (*ListRootsResult, error) {
@@ -180,10 +202,12 @@ func (c *Client) AddMiddleware(middleware ...Middleware[ClientSession]) {
 
 // clientMethodInfos maps from the RPC method name to serverMethodInfos.
 var clientMethodInfos = map[string]methodInfo[ClientSession]{
-	methodPing:          newMethodInfo(sessionMethod((*ClientSession).ping)),
-	methodListRoots:     newMethodInfo(clientMethod((*Client).listRoots)),
-	methodCreateMessage: newMethodInfo(clientMethod((*Client).createMessage)),
-	// TODO: notifications
+	methodPing:                      newMethodInfo(sessionMethod((*ClientSession).ping)),
+	methodListRoots:                 newMethodInfo(clientMethod((*Client).listRoots)),
+	methodCreateMessage:             newMethodInfo(clientMethod((*Client).createMessage)),
+	notificationToolListChanged:     newMethodInfo(clientMethod((*Client).callToolChangedHandler)),
+	notificationPromptListChanged:   newMethodInfo(clientMethod((*Client).callPromptChangedHandler)),
+	notificationResourceListChanged: newMethodInfo(clientMethod((*Client).callResourceChangedHandler)),
 }
 
 var _ session[ClientSession] = (*ClientSession)(nil)
@@ -201,6 +225,9 @@ func (cs *ClientSession) methodHandler() MethodHandler[ClientSession] {
 	defer cs.client.mu.Unlock()
 	return cs.client.methodHandler_
 }
+
+// getConn implements [session.getConn].
+func (cs *ClientSession) getConn() *jsonrpc2.Connection { return cs.conn }
 
 func (c *ClientSession) ping(ct context.Context, params *PingParams) (struct{}, error) {
 	return struct{}{}, nil
@@ -261,6 +288,18 @@ func (c *ClientSession) ListResources(ctx context.Context, params *ListResources
 // ReadResource ask the server to read a resource and return its contents.
 func (c *ClientSession) ReadResource(ctx context.Context, params *ReadResourceParams) (*ReadResourceResult, error) {
 	return standardCall[ReadResourceResult](ctx, c.conn, methodReadResource, params)
+}
+
+func (c *Client) callToolChangedHandler(ctx context.Context, s *ClientSession, params *ToolListChangedParams) (any, error) {
+	return callNotificationHandler(ctx, c.opts.ToolListChangedHandler, s, params)
+}
+
+func (c *Client) callPromptChangedHandler(ctx context.Context, s *ClientSession, params *PromptListChangedParams) (any, error) {
+	return callNotificationHandler(ctx, c.opts.PromptListChangedHandler, s, params)
+}
+
+func (c *Client) callResourceChangedHandler(ctx context.Context, s *ClientSession, params *ResourceListChangedParams) (any, error) {
+	return callNotificationHandler(ctx, c.opts.ResourceListChangedHandler, s, params)
 }
 
 func standardCall[TRes, TParams any](ctx context.Context, conn *jsonrpc2.Connection, method string, params TParams) (*TRes, error) {

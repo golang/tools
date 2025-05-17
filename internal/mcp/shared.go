@@ -13,7 +13,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"slices"
+	"time"
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
 )
@@ -40,6 +42,7 @@ func addMiddleware[S ClientSession | ServerSession](handlerp *MethodHandler[S], 
 type session[S ClientSession | ServerSession] interface {
 	methodHandler() MethodHandler[S]
 	methodInfos() map[string]methodInfo[S]
+	getConn() *jsonrpc2.Connection
 }
 
 // toSession[S] converts its argument to a session[S].
@@ -147,3 +150,27 @@ const (
 	// The error code if the method exists and was called properly, but the peer does not support it.
 	CodeUnsupportedMethod = -31001
 )
+
+func callNotificationHandler[S ClientSession | ServerSession, P any](ctx context.Context, h func(context.Context, *S, *P), sess *S, params *P) (any, error) {
+	if h != nil {
+		h(ctx, sess, params)
+	}
+	return nil, nil
+}
+
+// notifySessions calls Notify on all the sessions.
+// Should be called on a copy of the peer sessions.
+func notifySessions[S ClientSession | ServerSession](sessions []*S, method string, params any) {
+	if sessions == nil {
+		return
+	}
+	// TODO: make this timeout configurable, or call Notify asynchronously.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, ss := range sessions {
+		if err := toSession(ss).getConn().Notify(ctx, method, params); err != nil {
+			// TODO(jba): surface this error better
+			log.Printf("calling %s: %v", method, err)
+		}
+	}
+}

@@ -36,11 +36,16 @@ type Server struct {
 
 // ServerOptions is used to configure behavior of the server.
 type ServerOptions struct {
+	// Optional instructions for connected clients.
 	Instructions string
+	// If non-nil, called when "notifications/intialized" is received.
+	InitializedHandler func(context.Context, *ServerSession, *InitializedParams)
+	// If non-nil, called when "notifications/roots/list_changed" is received.
+	RootsListChangedHandler func(context.Context, *ServerSession, *RootsListChangedParams)
 }
 
 // NewServer creates a new MCP server. The resulting server has no features:
-// add features using [Server.AddTools]. (TODO: support more features).
+// add features using [Server.AddTools], [Server.AddPrompts] and [Server.AddResources].
 //
 // The server can be connected to one or more MCP clients using [Server.Start]
 // or [Server.Run].
@@ -64,43 +69,43 @@ func NewServer(name, version string, opts *ServerOptions) *Server {
 // AddPrompts adds the given prompts to the server,
 // replacing any with the same names.
 func (s *Server) AddPrompts(prompts ...*ServerPrompt) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.prompts.add(prompts...)
-	// Assume there was a change, since add replaces existing prompts.
-	// (It's possible a prompt was replaced with an identical one, but not worth checking.)
-	// TODO(rfindley): notify connected clients
+	// Only notify if something could change.
+	if len(prompts) == 0 {
+		return
+	}
+	// Assume there was a change, since add replaces existing roots.
+	// (It's possible a root was replaced with an identical one, but not worth checking.)
+	s.changeAndNotify(
+		notificationPromptListChanged,
+		&PromptListChangedParams{},
+		func() bool { s.prompts.add(prompts...); return true })
 }
 
 // RemovePrompts removes the prompts with the given names.
 // It is not an error to remove a nonexistent prompt.
 func (s *Server) RemovePrompts(names ...string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.prompts.remove(names...) {
-		// TODO: notify
-	}
+	s.changeAndNotify(notificationPromptListChanged, &PromptListChangedParams{},
+		func() bool { return s.prompts.remove(names...) })
 }
 
 // AddTools adds the given tools to the server,
 // replacing any with the same names.
 func (s *Server) AddTools(tools ...*ServerTool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.tools.add(tools...)
+	// Only notify if something could change.
+	if len(tools) == 0 {
+		return
+	}
 	// Assume there was a change, since add replaces existing tools.
 	// (It's possible a tool was replaced with an identical one, but not worth checking.)
-	// TODO(rfindley): notify connected clients
+	s.changeAndNotify(notificationToolListChanged, &ToolListChangedParams{},
+		func() bool { s.tools.add(tools...); return true })
 }
 
 // RemoveTools removes the tools with the given names.
 // It is not an error to remove a nonexistent tool.
 func (s *Server) RemoveTools(names ...string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.tools.remove(names...) {
-		// TODO: notify
-	}
+	s.changeAndNotify(notificationToolListChanged, &ToolListChangedParams{},
+		func() bool { return s.tools.remove(names...) })
 }
 
 // AddResource adds the given resource to the server and associates it with
@@ -108,27 +113,45 @@ func (s *Server) RemoveTools(names ...string) {
 // If a resource with the same URI already exists, this one replaces it.
 // AddResource panics if a resource URI is invalid or not absolute (has an empty scheme).
 func (s *Server) AddResources(resources ...*ServerResource) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, r := range resources {
-		u, err := url.Parse(r.Resource.URI)
-		if err != nil {
-			panic(err) // url.Parse includes the URI in the error
-		}
-		if !u.IsAbs() {
-			panic(fmt.Errorf("URI %s needs a scheme", r.Resource.URI))
-		}
-		s.resources.add(r)
+	// Only notify if something could change.
+	if len(resources) == 0 {
+		return
 	}
-	// TODO: notify
+	s.changeAndNotify(notificationResourceListChanged, &ResourceListChangedParams{},
+		func() bool {
+			for _, r := range resources {
+				u, err := url.Parse(r.Resource.URI)
+				if err != nil {
+					panic(err) // url.Parse includes the URI in the error
+				}
+				if !u.IsAbs() {
+					panic(fmt.Errorf("URI %s needs a scheme", r.Resource.URI))
+				}
+				s.resources.add(r)
+			}
+			return true
+		})
 }
 
 // RemoveResources removes the resources with the given URIs.
 // It is not an error to remove a nonexistent resource.
 func (s *Server) RemoveResources(uris ...string) {
+	s.changeAndNotify(notificationResourceListChanged, &ResourceListChangedParams{},
+		func() bool { return s.resources.remove(uris...) })
+}
+
+// changeAndNotify is called when a feature is added or removed.
+// It calls change, which should do the work and report whether a change actually occurred.
+// If there was a change, it notifies a snapshot of the sessions.
+func (s *Server) changeAndNotify(notification string, params any, change func() bool) {
+	var sessions []*ServerSession
+	// Lock for the change, but not for the notification.
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.resources.remove(uris...)
+	if change() {
+		sessions = slices.Clone(s.sessions)
+	}
+	s.mu.Unlock()
+	notifySessions(sessions, notification, params)
 }
 
 // Sessions returns an iterator that yields the current set of server sessions.
@@ -303,6 +326,14 @@ func (s *Server) Connect(ctx context.Context, t Transport) (*ServerSession, erro
 	return connect(ctx, t, s)
 }
 
+func (s *Server) callInitializedHandler(ctx context.Context, ss *ServerSession, params *InitializedParams) (any, error) {
+	return callNotificationHandler(ctx, s.opts.InitializedHandler, ss, params)
+}
+
+func (s *Server) callRootsListChangedHandler(ctx context.Context, ss *ServerSession, params *RootsListChangedParams) (any, error) {
+	return callNotificationHandler(ctx, s.opts.RootsListChangedHandler, ss, params)
+}
+
 // A ServerSession is a logical connection from a single MCP client. Its
 // methods can be used to send requests or notifications to the client. Create
 // a session by calling [Server.Connect].
@@ -347,15 +378,16 @@ func (s *Server) AddMiddleware(middleware ...Middleware[ServerSession]) {
 
 // serverMethodInfos maps from the RPC method name to serverMethodInfos.
 var serverMethodInfos = map[string]methodInfo[ServerSession]{
-	methodInitialize:    newMethodInfo(sessionMethod((*ServerSession).initialize)),
-	methodPing:          newMethodInfo(sessionMethod((*ServerSession).ping)),
-	methodListPrompts:   newMethodInfo(serverMethod((*Server).listPrompts)),
-	methodGetPrompt:     newMethodInfo(serverMethod((*Server).getPrompt)),
-	methodListTools:     newMethodInfo(serverMethod((*Server).listTools)),
-	methodCallTool:      newMethodInfo(serverMethod((*Server).callTool)),
-	methodListResources: newMethodInfo(serverMethod((*Server).listResources)),
-	methodReadResource:  newMethodInfo(serverMethod((*Server).readResource)),
-	// TODO: notifications
+	methodInitialize:             newMethodInfo(sessionMethod((*ServerSession).initialize)),
+	methodPing:                   newMethodInfo(sessionMethod((*ServerSession).ping)),
+	methodListPrompts:            newMethodInfo(serverMethod((*Server).listPrompts)),
+	methodGetPrompt:              newMethodInfo(serverMethod((*Server).getPrompt)),
+	methodListTools:              newMethodInfo(serverMethod((*Server).listTools)),
+	methodCallTool:               newMethodInfo(serverMethod((*Server).callTool)),
+	methodListResources:          newMethodInfo(serverMethod((*Server).listResources)),
+	methodReadResource:           newMethodInfo(serverMethod((*Server).readResource)),
+	notificationInitialized:      newMethodInfo(serverMethod((*Server).callInitializedHandler)),
+	notificationRootsListChanged: newMethodInfo(serverMethod((*Server).callRootsListChangedHandler)),
 }
 
 // *ServerSession implements the session interface.
@@ -371,6 +403,9 @@ func (ss *ServerSession) methodHandler() MethodHandler[ServerSession] {
 	defer ss.server.mu.Unlock()
 	return ss.server.methodHandler_
 }
+
+// getConn implements [session.getConn].
+func (ss *ServerSession) getConn() *jsonrpc2.Connection { return ss.conn }
 
 // handle invokes the method described by the given JSON RPC request.
 func (ss *ServerSession) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -414,10 +449,13 @@ func (ss *ServerSession) initialize(ctx context.Context, params *InitializeParam
 		ProtocolVersion: "2024-11-05",
 		Capabilities: &serverCapabilities{
 			Prompts: &promptCapabilities{
-				ListChanged: false, // not yet supported
+				ListChanged: true,
 			},
 			Tools: &toolCapabilities{
-				ListChanged: false, // not yet supported
+				ListChanged: true,
+			},
+			Resources: &resourceCapabilities{
+				ListChanged: true,
 			},
 		},
 		Instructions: ss.server.opts.Instructions,

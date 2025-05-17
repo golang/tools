@@ -120,8 +120,12 @@ var declarations = config{
 	"Prompt":         {},
 	"PromptMessage":  {},
 	"PromptArgument": {},
-	"ProgressToken":  {Name: "-", Substitute: "any"}, // null|number|string
-	"RequestId":      {Name: "-", Substitute: "any"}, // null|number|string
+	"PromptListChangedNotification": {
+		Name:   "-",
+		Fields: config{"Params": {Name: "PromptListChangedParams"}},
+	},
+	"ProgressToken": {Name: "-", Substitute: "any"}, // null|number|string
+	"RequestId":     {Name: "-", Substitute: "any"}, // null|number|string
 	"ReadResourceRequest": {
 		Name:   "-",
 		Fields: config{"Params": {Name: "ReadResourceParams"}},
@@ -130,8 +134,16 @@ var declarations = config{
 		Fields: config{"Contents": {Substitute: "*ResourceContents"}},
 	},
 	"Resource": {},
-	"Role":     {},
-	"Root":     {},
+	"ResourceListChangedNotification": {
+		Name:   "-",
+		Fields: config{"Params": {Name: "ResourceListChangedParams"}},
+	},
+	"Role": {},
+	"Root": {},
+	"RootsListChangedNotification": {
+		Name:   "-",
+		Fields: config{"Params": {Name: "RootsListChangedParams"}},
+	},
 
 	"SamplingCapabilities": {Substitute: "struct{}"},
 	"SamplingMessage":      {},
@@ -147,6 +159,10 @@ var declarations = config{
 		Fields: config{"InputSchema": {Substitute: "*jsonschema.Schema"}},
 	},
 	"ToolAnnotations": {},
+	"ToolListChangedNotification": {
+		Name:   "-",
+		Fields: config{"Params": {Name: "ToolListChangedParams"}},
+	},
 }
 
 func main() {

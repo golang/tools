@@ -323,6 +323,13 @@ type PromptArgument struct {
 	Required bool `json:"required,omitempty"`
 }
 
+type PromptListChangedParams struct {
+	// This parameter name is reserved by MCP to allow clients and servers to attach
+	// additional metadata to their notifications.
+	Meta struct {
+	} `json:"_meta,omitempty"`
+}
+
 // Describes a message returned as part of a prompt.
 //
 // This is similar to `SamplingMessage`, but also supports the embedding of
@@ -371,6 +378,13 @@ type Resource struct {
 	URI string `json:"uri"`
 }
 
+type ResourceListChangedParams struct {
+	// This parameter name is reserved by MCP to allow clients and servers to attach
+	// additional metadata to their notifications.
+	Meta struct {
+	} `json:"_meta,omitempty"`
+}
+
 // The sender or recipient of messages and data in a conversation.
 type Role string
 
@@ -384,6 +398,13 @@ type Root struct {
 	// restriction may be relaxed in future versions of the protocol to allow other
 	// URI schemes.
 	URI string `json:"uri"`
+}
+
+type RootsListChangedParams struct {
+	// This parameter name is reserved by MCP to allow clients and servers to attach
+	// additional metadata to their notifications.
+	Meta struct {
+	} `json:"_meta,omitempty"`
 }
 
 // Present if the client supports sampling from an LLM.
@@ -448,6 +469,13 @@ type ToolAnnotations struct {
 	Title string `json:"title,omitempty"`
 }
 
+type ToolListChangedParams struct {
+	// This parameter name is reserved by MCP to allow clients and servers to attach
+	// additional metadata to their notifications.
+	Meta struct {
+	} `json:"_meta,omitempty"`
+}
+
 // Describes the name and version of an MCP implementation.
 type implementation struct {
 	Name    string `json:"name"`
@@ -496,28 +524,28 @@ type toolCapabilities struct {
 }
 
 const (
-	notificationCancelled           = "notifications/cancelled"
-	methodInitialize                = "initialize"
-	notificationProgress            = "notifications/progress"
-	methodSetLevel                  = "logging/setLevel"
 	methodCreateMessage             = "sampling/createMessage"
-	notificationResourceListChanged = "notifications/resources/list_changed"
-	notificationInitialized         = "notifications/initialized"
-	methodUnsubscribe               = "resources/unsubscribe"
-	notificationLoggingMessage      = "notifications/message"
-	methodSubscribe                 = "resources/subscribe"
-	methodComplete                  = "completion/complete"
-	methodCallTool                  = "tools/call"
-	notificationPromptListChanged   = "notifications/prompts/list_changed"
-	methodReadResource              = "resources/read"
-	methodListResourceTemplates     = "resources/templates/list"
-	methodListRoots                 = "roots/list"
 	notificationToolListChanged     = "notifications/tools/list_changed"
-	methodGetPrompt                 = "prompts/get"
+	notificationResourceListChanged = "notifications/resources/list_changed"
 	methodListPrompts               = "prompts/list"
-	methodPing                      = "ping"
-	notificationRootsListChanged    = "notifications/roots/list_changed"
-	methodListTools                 = "tools/list"
-	methodListResources             = "resources/list"
+	notificationPromptListChanged   = "notifications/prompts/list_changed"
 	notificationResourceUpdated     = "notifications/resources/updated"
+	notificationCancelled           = "notifications/cancelled"
+	methodSetLevel                  = "logging/setLevel"
+	methodInitialize                = "initialize"
+	methodListRoots                 = "roots/list"
+	notificationProgress            = "notifications/progress"
+	methodGetPrompt                 = "prompts/get"
+	methodListResourceTemplates     = "resources/templates/list"
+	methodPing                      = "ping"
+	methodComplete                  = "completion/complete"
+	methodListResources             = "resources/list"
+	notificationInitialized         = "notifications/initialized"
+	methodCallTool                  = "tools/call"
+	notificationLoggingMessage      = "notifications/message"
+	methodReadResource              = "resources/read"
+	methodListTools                 = "tools/list"
+	notificationRootsListChanged    = "notifications/roots/list_changed"
+	methodSubscribe                 = "resources/subscribe"
+	methodUnsubscribe               = "resources/unsubscribe"
 )
