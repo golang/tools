@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 //go:generate go run generate.go
+//go:generate ./internal/readme/build.sh
 
 // The mcp package provides an SDK for writing model context protocol clients
 // and servers.
