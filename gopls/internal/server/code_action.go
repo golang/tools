@@ -24,7 +24,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 	ctx, done := event.Start(ctx, "server.CodeAction")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}

@@ -169,7 +169,6 @@ func PackageSymbols(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 		Files:       pkgFiles,
 		Symbols:     symbols,
 	}, nil
-
 }
 
 func toPackageSymbol(fileIndex int, s protocol.DocumentSymbol) command.PackageSymbol {

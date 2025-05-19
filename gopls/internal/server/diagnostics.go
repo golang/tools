@@ -47,7 +47,7 @@ func (s *server) Diagnostic(ctx context.Context, params *protocol.DocumentDiagno
 	ctx, done := event.Start(ctx, "server.Diagnostic")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}

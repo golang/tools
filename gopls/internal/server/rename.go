@@ -20,7 +20,7 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 	ctx, done := event.Start(ctx, "server.Rename", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (s *server) PrepareRename(ctx context.Context, params *protocol.PrepareRena
 	ctx, done := event.Start(ctx, "server.PrepareRename", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}

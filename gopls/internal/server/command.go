@@ -355,7 +355,7 @@ func (c *commandHandler) run(ctx context.Context, cfg commandConfig, run command
 		return bug.Errorf("internal error: forURI=%q, forView=%q", cfg.forURI, cfg.forView)
 	}
 	if cfg.forURI != "" {
-		deps.fh, deps.snapshot, release, err = c.s.fileOf(ctx, cfg.forURI)
+		deps.fh, deps.snapshot, release, err = c.s.session.FileOf(ctx, cfg.forURI)
 		if err != nil {
 			return err
 		}
@@ -546,7 +546,7 @@ func (c *commandHandler) UpdateGoSum(ctx context.Context, args command.URIArgs) 
 		progress: "Updating go.sum",
 	}, func(ctx context.Context, _ commandDeps) error {
 		for _, uri := range args.URIs {
-			fh, snapshot, release, err := c.s.fileOf(ctx, uri)
+			fh, snapshot, release, err := c.s.session.FileOf(ctx, uri)
 			if err != nil {
 				return err
 			}
@@ -567,7 +567,7 @@ func (c *commandHandler) Tidy(ctx context.Context, args command.URIArgs) error {
 		progress: "Running go mod tidy",
 	}, func(ctx context.Context, _ commandDeps) error {
 		for _, uri := range args.URIs {
-			fh, snapshot, release, err := c.s.fileOf(ctx, uri)
+			fh, snapshot, release, err := c.s.session.FileOf(ctx, uri)
 			if err != nil {
 				return err
 			}
@@ -616,7 +616,7 @@ func (c *commandHandler) EditGoDirective(ctx context.Context, args command.EditG
 		requireSave: true, // if go.mod isn't saved it could cause a problem
 		forURI:      args.URI,
 	}, func(ctx context.Context, _ commandDeps) error {
-		fh, snapshot, release, err := c.s.fileOf(ctx, args.URI)
+		fh, snapshot, release, err := c.s.session.FileOf(ctx, args.URI)
 		if err != nil {
 			return err
 		}
@@ -1650,7 +1650,7 @@ func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.Diagnos
 
 		snapshots := make(map[*cache.Snapshot]bool)
 		for _, uri := range args.Files {
-			fh, snapshot, release, err := c.s.fileOf(ctx, uri)
+			fh, snapshot, release, err := c.s.session.FileOf(ctx, uri)
 			if err != nil {
 				return err
 			}

@@ -28,7 +28,7 @@ func (s *server) Definition(ctx context.Context, params *protocol.DefinitionPara
 	defer done()
 
 	// TODO(rfindley): definition requests should be multiplexed across all views.
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (s *server) TypeDefinition(ctx context.Context, params *protocol.TypeDefini
 	defer done()
 
 	// TODO(rfindley): type definition requests should be multiplexed across all views.
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}

@@ -27,7 +27,7 @@ func (s *server) semanticTokens(ctx context.Context, td protocol.TextDocumentIde
 	ctx, done := event.Start(ctx, "server.semanticTokens", label.URI.Of(td.URI))
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, td.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, td.URI)
 	if err != nil {
 		return nil, err
 	}

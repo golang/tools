@@ -19,7 +19,7 @@ func (s *server) InlayHint(ctx context.Context, params *protocol.InlayHintParams
 	ctx, done := event.Start(ctx, "server.InlayHint", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}

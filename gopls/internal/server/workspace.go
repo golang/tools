@@ -149,7 +149,7 @@ func (s *server) DidCreateFiles(ctx context.Context, params *protocol.CreateFile
 	var allChanges []protocol.DocumentChange
 	for _, createdFile := range params.Files {
 		uri := protocol.DocumentURI(createdFile.URI)
-		fh, snapshot, release, err := s.fileOf(ctx, uri)
+		fh, snapshot, release, err := s.session.FileOf(ctx, uri)
 		if err != nil {
 			event.Error(ctx, "fail to call fileOf", err)
 			continue

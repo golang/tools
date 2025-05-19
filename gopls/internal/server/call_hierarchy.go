@@ -17,7 +17,7 @@ func (s *server) PrepareCallHierarchy(ctx context.Context, params *protocol.Call
 	ctx, done := event.Start(ctx, "server.PrepareCallHierarchy")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func (s *server) IncomingCalls(ctx context.Context, params *protocol.CallHierarc
 	ctx, done := event.Start(ctx, "server.IncomingCalls")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.Item.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.Item.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func (s *server) OutgoingCalls(ctx context.Context, params *protocol.CallHierarc
 	ctx, done := event.Start(ctx, "server.OutgoingCalls")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.Item.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.Item.URI)
 	if err != nil {
 		return nil, err
 	}

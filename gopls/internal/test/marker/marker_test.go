@@ -2449,10 +2449,8 @@ func mcpToolMarker(mark marker, tool string, rawArgs string, loc protocol.Locati
 		return
 	}
 
-	// Inserts the location value into the MCP tool arguments map under the
-	// "loc" key.
-	// TODO(hxjiang): Make the "loc" key configurable.
-	args["loc"] = loc
+	// TODO(hxjiang): Make the "location" key configurable.
+	args["location"] = loc
 
 	res, err := mcp.CallTool(mark.ctx(), mark.run.env.MCPSession, &mcp.CallToolParams[map[string]any]{
 		Name:      tool,

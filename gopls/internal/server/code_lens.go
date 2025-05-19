@@ -25,7 +25,7 @@ func (s *server) CodeLens(ctx context.Context, params *protocol.CodeLensParams) 
 	ctx, done := event.Start(ctx, "server.CodeLens", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}

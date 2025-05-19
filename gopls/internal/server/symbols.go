@@ -19,7 +19,7 @@ func (s *server) DocumentSymbol(ctx context.Context, params *protocol.DocumentSy
 	ctx, done := event.Start(ctx, "server.DocumentSymbol", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}

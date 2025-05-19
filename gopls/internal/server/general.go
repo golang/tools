@@ -24,7 +24,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug"
 	debuglog "golang.org/x/tools/gopls/internal/debug/log"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -621,21 +620,6 @@ func (s *server) handleOptionResult(ctx context.Context, applied []telemetry.Cou
 		}
 		s.eventuallyShowMessage(ctx, params)
 	}
-}
-
-// fileOf returns the file for a given URI and its snapshot.
-// On success, the returned function must be called to release the snapshot.
-func (s *server) fileOf(ctx context.Context, uri protocol.DocumentURI) (file.Handle, *cache.Snapshot, func(), error) {
-	snapshot, release, err := s.session.SnapshotOf(ctx, uri)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	fh, err := snapshot.ReadFile(ctx, uri)
-	if err != nil {
-		release()
-		return nil, nil, nil, err
-	}
-	return fh, snapshot, release, nil
 }
 
 // Shutdown implements the 'shutdown' LSP handler. It releases resources

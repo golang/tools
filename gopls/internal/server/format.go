@@ -20,7 +20,7 @@ func (s *server) Formatting(ctx context.Context, params *protocol.DocumentFormat
 	ctx, done := event.Start(ctx, "server.Formatting", label.URI.Of(params.TextDocument.URI))
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}

@@ -18,7 +18,7 @@ func (s *server) PrepareTypeHierarchy(ctx context.Context, params *protocol.Type
 	ctx, done := event.Start(ctx, "server.PrepareTypeHierarchy")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.TextDocument.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.TextDocument.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func (s *server) Subtypes(ctx context.Context, params *protocol.TypeHierarchySub
 	ctx, done := event.Start(ctx, "server.Subtypes")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.Item.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.Item.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (s *server) Supertypes(ctx context.Context, params *protocol.TypeHierarchyS
 	ctx, done := event.Start(ctx, "server.Supertypes")
 	defer done()
 
-	fh, snapshot, release, err := s.fileOf(ctx, params.Item.URI)
+	fh, snapshot, release, err := s.session.FileOf(ctx, params.Item.URI)
 	if err != nil {
 		return nil, err
 	}

@@ -10,7 +10,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"path"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -114,48 +113,37 @@ func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, cache *cache.Cache, isDae
 func newServer(_ *cache.Cache, session *cache.Session) *mcp.Server {
 	s := mcp.NewServer("golang", "v0.1", nil)
 
-	// TODO(hxjiang): replace dummy tool with tools which use cache and session.
 	s.AddTools(
 		mcp.NewTool(
-			"hello_world",
-			"Say hello to someone",
-			func(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParams[HelloParams]) (*mcp.CallToolResult, error) {
-				return helloHandler(ctx, session, params)
+			"context",
+			"Provide context for a region within a Go file",
+			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParams[ContextParams]) (*mcp.CallToolResult, error) {
+				return contextHandler(ctx, session, request)
 			},
+			mcp.Input(
+				mcp.Property(
+					"location",
+					mcp.Description("location inside of a text file"),
+					mcp.Property("uri", mcp.Description("URI of the text document")),
+					mcp.Property("range",
+						mcp.Description("range within text document"),
+						mcp.Property(
+							"start",
+							mcp.Description("start position of range"),
+							mcp.Property("line", mcp.Description("line number (zero-based)")),
+							mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
+						),
+						mcp.Property(
+							"end",
+							mcp.Description("end position of range"),
+							mcp.Property("line", mcp.Description("line number (zero-based)")),
+							mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
+						),
+					),
+				),
+			),
 		),
 	)
+
 	return s
-}
-
-type HelloParams struct {
-	Name     string   `json:"name" mcp:"the name to say hi to"`
-	Location Location `json:"loc" mcp:"location inside of a text file"`
-}
-
-func helloHandler(_ context.Context, _ *cache.Session, params *mcp.CallToolParams[HelloParams]) (*mcp.CallToolResult, error) {
-	return &mcp.CallToolResult{
-		Content: []*mcp.Content{
-			mcp.NewTextContent(fmt.Sprintf("Hi %s, current file %s.", params.Arguments.Name, path.Base(params.Arguments.Location.URI))),
-		},
-	}, nil
-}
-
-// Location describes a range within a text document.
-//
-// It is structurally equal to protocol.Location, but has mcp tags instead of json.
-// TODO(hxjiang): experiment if the LLM can correctly provide the right location
-// information.
-type Location struct {
-	URI   string `json:"uri" mcp:"URI to the text file"`
-	Range Range  `json:"range" mcp:"range within text document"`
-}
-
-type Range struct {
-	Start Position `json:"start" mcp:"the range's start position"`
-	End   Position `json:"end" mcp:"the range's end position"`
-}
-
-type Position struct {
-	Line      uint32 `json:"line" mcp:"line number (zero-based)"`
-	Character uint32 `json:"character" mcp:"column number (zero-based, UTF-16 encoding)"`
 }

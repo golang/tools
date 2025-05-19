@@ -451,6 +451,21 @@ func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Sn
 	return nil, nil, errNoViews
 }
 
+// FileOf returns the file for a given URI and its snapshot.
+// On success, the returned function must be called to release the snapshot.
+func (s *Session) FileOf(ctx context.Context, uri protocol.DocumentURI) (file.Handle, *Snapshot, func(), error) {
+	snapshot, release, err := s.SnapshotOf(ctx, uri)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	fh, err := snapshot.ReadFile(ctx, uri)
+	if err != nil {
+		release()
+		return nil, nil, nil, err
+	}
+	return fh, snapshot, release, nil
+}
+
 // errNoViews is sought by orphaned file diagnostics, to detect the case where
 // we have no view containing a file.
 var errNoViews = errors.New("no views")

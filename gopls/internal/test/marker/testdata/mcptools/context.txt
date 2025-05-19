@@ -1,0 +1,144 @@
+This test exercises mcp tool context.
+
+-- flags --
+-mcp
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+-- comment/doc.go --
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+/*
+Package doc for package comment.
+*/
+package comment
+
+-- comment/foo.go --
+// File doc for foo.go part 1.
+package comment
+
+// File doc for foo.go part 2.
+import (
+    // comment for package renaming.
+    myfmt "fmt"
+)
+
+// File doc for foo.go part 3.
+
+// Func doc for comment.Foo
+func Foo(foo string, _ int) {
+    myfmt.Printf("%s", foo)
+}
+
+// Random comment floating around.
+
+-- comment.go --
+package main
+
+import(
+    "example.com/comment"
+)
+
+func testComment() { //@loc(comment, "test")
+    comment.Foo("", 0)
+    function.Foo(0, "")
+}
+
+//@mcptool("context", `{}`, comment, output=withComment)
+
+-- @withComment --
+Code blocks are delimited by --->...<--- markers.
+
+Current file "comment.go" contains this import declaration:
+--->
+import(
+    "example.com/comment"
+)
+<---
+
+The imported packages declare the following symbols:
+
+example.com/comment (package comment)
+doc.go:
+--->
+/*
+Package doc for package comment.
+*/
+package comment
+<---
+
+foo.go:
+--->
+// File doc for foo.go part 1.
+package comment
+
+// File doc for foo.go part 2.
+import (
+    // comment for package renaming.
+    myfmt "fmt"
+)
+
+// File doc for foo.go part 3.
+
+// Func doc for comment.Foo
+func Foo(foo string, _ int)
+<---
+
+-- function/foo.go --
+package function
+
+func Foo(int, string) {}
+
+func foo(string, int) {}
+
+type unexported struct {}
+
+func (*unexported) unexported(int) {}
+
+func (*unexported) Exported(int) {}
+
+type Exported struct{}
+
+func (*Exported) unexported(int) {}
+
+func (*Exported) Exported(int) {}
+
+-- function.go --
+package main
+
+import(
+    "example.com/function"
+)
+
+func testFunction() { //@loc(function, "test")
+    function.Foo(0, "")
+}
+
+//@mcptool("context", `{}`, function, output=withFunction)
+
+-- @withFunction --
+Code blocks are delimited by --->...<--- markers.
+
+Current file "function.go" contains this import declaration:
+--->
+import(
+    "example.com/function"
+)
+<---
+
+The imported packages declare the following symbols:
+
+example.com/function (package function)
+foo.go:
+--->
+package function
+
+func Foo(int, string)
+
+func (*Exported) Exported(int)
+<---
+
