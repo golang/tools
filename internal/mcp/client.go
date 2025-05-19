@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// TODO: consider passing Transport to NewClient and merging {Connection,Client}Options
 package mcp
 
 import (
