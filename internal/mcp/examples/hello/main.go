@@ -16,17 +16,17 @@ import (
 
 var httpAddr = flag.String("http", "", "if set, use SSE HTTP at this address, instead of stdin/stdout")
 
-type HiParams struct {
+type HiArgs struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ServerSession, params *HiParams) ([]*mcp.Content, error) {
+func SayHi(ctx context.Context, cc *mcp.ServerSession, params *HiArgs) ([]*mcp.Content, error) {
 	return []*mcp.Content{
 		mcp.NewTextContent("Hi " + params.Name),
 	}, nil
 }
 
-func PromptHi(ctx context.Context, cc *mcp.ServerSession, params *HiParams) (*mcp.GetPromptResult, error) {
+func PromptHi(ctx context.Context, cc *mcp.ServerSession, args *HiArgs, params *mcp.GetPromptParams) (*mcp.GetPromptResult, error) {
 	return &mcp.GetPromptResult{
 		Description: "Code review prompt",
 		Messages: []*mcp.PromptMessage{

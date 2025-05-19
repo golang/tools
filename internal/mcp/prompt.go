@@ -16,7 +16,7 @@ import (
 )
 
 // A PromptHandler handles a call to prompts/get.
-type PromptHandler func(context.Context, *ServerSession, map[string]string) (*GetPromptResult, error)
+type PromptHandler func(context.Context, *ServerSession, *GetPromptParams) (*GetPromptResult, error)
 
 // A Prompt is a prompt definition bound to a prompt handler.
 type ServerPrompt struct {
@@ -24,15 +24,17 @@ type ServerPrompt struct {
 	Handler PromptHandler
 }
 
-// NewPrompt is a helper to use reflection to create a prompt for the given
-// handler.
+// NewPrompt is a helper that uses reflection to create a prompt for the given handler.
 //
 // The arguments for the prompt are extracted from the request type for the
 // handler. The handler request type must be a struct consisting only of fields
 // of type string or *string. The argument names for the resulting prompt
 // definition correspond to the JSON names of the request fields, and any
 // fields that are not marked "omitempty" are considered required.
-func NewPrompt[TReq any](name, description string, handler func(context.Context, *ServerSession, TReq) (*GetPromptResult, error), opts ...PromptOption) *ServerPrompt {
+//
+// The handler is passed [GetPromptParams] so it can have access to prompt parameters other than name and arguments.
+// At present, there are no such parameters.
+func NewPrompt[TReq any](name, description string, handler func(context.Context, *ServerSession, TReq, *GetPromptParams) (*GetPromptResult, error), opts ...PromptOption) *ServerPrompt {
 	schema, err := jsonschema.For[TReq]()
 	if err != nil {
 		panic(err)
@@ -60,10 +62,10 @@ func NewPrompt[TReq any](name, description string, handler func(context.Context,
 			Required:    required[name],
 		})
 	}
-	prompt.Handler = func(ctx context.Context, cc *ServerSession, args map[string]string) (*GetPromptResult, error) {
+	prompt.Handler = func(ctx context.Context, ss *ServerSession, params *GetPromptParams) (*GetPromptResult, error) {
 		// For simplicity, just marshal and unmarshal the arguments.
 		// This could be avoided in the future.
-		rawArgs, err := json.Marshal(args)
+		rawArgs, err := json.Marshal(params.Arguments)
 		if err != nil {
 			return nil, err
 		}
@@ -71,7 +73,7 @@ func NewPrompt[TReq any](name, description string, handler func(context.Context,
 		if err := unmarshalSchema(rawArgs, schema, &v); err != nil {
 			return nil, err
 		}
-		return handler(ctx, cc, v)
+		return handler(ctx, ss, v, params)
 	}
 	for _, opt := range opts {
 		opt.set(prompt)

@@ -73,15 +73,16 @@ func TestEndToEnd(t *testing.T) {
 	)
 
 	s.AddPrompts(
-		NewPrompt("code_review", "do a code review", func(_ context.Context, _ *ServerSession, params struct{ Code string }) (*GetPromptResult, error) {
-			return &GetPromptResult{
-				Description: "Code review prompt",
-				Messages: []*PromptMessage{
-					{Role: "user", Content: NewTextContent("Please review the following code: " + params.Code)},
-				},
-			}, nil
-		}),
-		NewPrompt("fail", "", func(_ context.Context, _ *ServerSession, params struct{}) (*GetPromptResult, error) {
+		NewPrompt("code_review", "do a code review",
+			func(_ context.Context, _ *ServerSession, params struct{ Code string }, _ *GetPromptParams) (*GetPromptResult, error) {
+				return &GetPromptResult{
+					Description: "Code review prompt",
+					Messages: []*PromptMessage{
+						{Role: "user", Content: NewTextContent("Please review the following code: " + params.Code)},
+					},
+				}, nil
+			}),
+		NewPrompt("fail", "", func(_ context.Context, _ *ServerSession, args struct{}, _ *GetPromptParams) (*GetPromptResult, error) {
 			return nil, failure
 		}),
 	)

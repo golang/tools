@@ -13,7 +13,7 @@ import (
 )
 
 // testPromptHandler is used for type inference in TestNewPrompt.
-func testPromptHandler[T any](context.Context, *mcp.ServerSession, T) (*mcp.GetPromptResult, error) {
+func testPromptHandler[T any](context.Context, *mcp.ServerSession, T, *mcp.GetPromptParams) (*mcp.GetPromptResult, error) {
 	panic("not implemented")
 }
 

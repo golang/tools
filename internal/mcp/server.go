@@ -180,7 +180,7 @@ func (s *Server) getPrompt(ctx context.Context, cc *ServerSession, params *GetPr
 		// TODO: surface the error code over the wire, instead of flattening it into the string.
 		return nil, fmt.Errorf("%s: unknown prompt %q", jsonrpc2.ErrInvalidParams, params.Name)
 	}
-	return prompt.Handler(ctx, cc, params.Arguments)
+	return prompt.Handler(ctx, cc, params)
 }
 
 func (s *Server) listTools(_ context.Context, _ *ServerSession, params *ListToolsParams) (*ListToolsResult, error) {
