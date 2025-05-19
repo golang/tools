@@ -16,7 +16,7 @@ import (
 var httpAddr = flag.String("http", "", "use SSE HTTP at this address")
 
 type SayHiParams struct {
-	Name string `json:"name" mcp:"the name to say hi to"`
+	Name string `json:"name"`
 }
 
 func SayHi(ctx context.Context, cc *mcp.ServerSession, params *SayHiParams) ([]*mcp.Content, error) {

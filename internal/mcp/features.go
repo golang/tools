@@ -6,8 +6,8 @@ package mcp
 
 import (
 	"iter"
-
-	"golang.org/x/tools/internal/mcp/internal/util"
+	"maps"
+	"slices"
 )
 
 // This file contains implementations that are common to all features.
@@ -17,9 +17,11 @@ import (
 // A featureSet is a collection of features of type T.
 // Every feature has a unique ID, and the spec never mentions
 // an ordering for the List calls, so what it calls a "list" is actually a set.
+// TODO: switch to an ordered map
 type featureSet[T any] struct {
-	uniqueID func(T) string
-	features map[string]T
+	uniqueID   func(T) string
+	features   map[string]T
+	sortedKeys []string // lazily computed; nil after add or remove
 }
 
 // newFeatureSet creates a new featureSet for features of type T.
@@ -37,6 +39,7 @@ func (s *featureSet[T]) add(fs ...T) {
 	for _, f := range fs {
 		s.features[s.uniqueID(f)] = f
 	}
+	s.sortedKeys = nil
 }
 
 // remove removes all features with the given uids from the set if present,
@@ -49,6 +52,9 @@ func (s *featureSet[T]) remove(uids ...string) bool {
 			changed = true
 			delete(s.features, uid)
 		}
+	}
+	if changed {
+		s.sortedKeys = nil
 	}
 	return changed
 }
@@ -63,11 +69,41 @@ func (s *featureSet[T]) get(uid string) (T, bool) {
 // all returns an iterator over of all the features in the set
 // sorted by unique ID.
 func (s *featureSet[T]) all() iter.Seq[T] {
+	s.sortKeys()
 	return func(yield func(T) bool) {
-		for _, f := range util.Sorted(s.features) {
-			if !yield(f) {
-				return
-			}
+		s.yieldFrom(0, yield)
+	}
+}
+
+// above returns an iterator over features in the set whose unique IDs are
+// greater than `uid`, in ascending ID order.
+func (s *featureSet[T]) above(uid string) iter.Seq[T] {
+	s.sortKeys()
+	index, found := slices.BinarySearch(s.sortedKeys, uid)
+	if found {
+		index++
+	}
+	return func(yield func(T) bool) {
+		s.yieldFrom(index, yield)
+	}
+}
+
+// sortKeys is a helper that maintains a sorted list of feature IDs. It
+// computes this list lazily upon its first call after a modification, or
+// if it's nil.
+func (s *featureSet[T]) sortKeys() {
+	if s.sortedKeys != nil {
+		return
+	}
+	s.sortedKeys = slices.Sorted(maps.Keys(s.features))
+}
+
+// yieldFrom is a helper that iterates over the features in the set,
+// starting at the given index, and calls the yield function for each one.
+func (s *featureSet[T]) yieldFrom(index int, yield func(T) bool) {
+	for i := index; i < len(s.sortedKeys); i++ {
+		if !yield(s.features[s.sortedKeys[i]]) {
+			return
 		}
 	}
 }
