@@ -800,6 +800,7 @@ var SessionTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "title"}}Session {{.ID}}{{end}}
 {{define "body"}}
 From: <b>{{template "cachelink" .Cache.ID}}</b><br>
+
 <h2>Views</h2>
 <ul>{{range .Views}}
 {{- $envOverlay := .EnvOverlay -}}
@@ -810,7 +811,13 @@ Root: <b>{{.Root}}</b><br>
 Env overlay: <b>{{$envOverlay}})</b><br>
 {{end -}}
 Folder: <b>{{.Folder.Name}}:{{.Folder.Dir}}</b></li>
+Settings:<br/>
+<ul>
+{{range .Folder.Options.Debug}}<li>{{.}}</li>
+{{end}}
+</ul>
 {{end}}</ul>
+
 <h2>Overlays</h2>
 {{$session := .}}
 <ul>{{range .Overlays}}

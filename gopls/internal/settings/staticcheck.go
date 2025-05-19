@@ -425,7 +425,7 @@ func initStaticcheckAnalyzers() (res []*Analyzer) {
 		sa5005.SCAnalyzer: false, // requires buildir
 		sa5007.SCAnalyzer: false, // requires buildir
 		sa5008.SCAnalyzer: true,
-		sa5009.SCAnalyzer: nil,   // requires buildir; redundant wrt 'printf' (#34494,
+		sa5009.SCAnalyzer: nil,   // requires buildir; redundant wrt 'printf' (#34494)
 		sa5010.SCAnalyzer: false, // requires buildir
 		sa5011.SCAnalyzer: false, // requires buildir
 		sa5012.SCAnalyzer: false, // requires buildir
@@ -435,7 +435,7 @@ func initStaticcheckAnalyzers() (res []*Analyzer) {
 		sa6003.SCAnalyzer: false, // requires buildir
 		sa6005.SCAnalyzer: true,
 		sa6006.SCAnalyzer: true,
-		sa9001.SCAnalyzer: false, // reports a "maybe" bug (low signal/noise,
+		sa9001.SCAnalyzer: false, // reports a "maybe" bug (low signal/noise)
 		sa9002.SCAnalyzer: true,
 		sa9003.SCAnalyzer: false, // requires buildir; NonDefault
 		sa9004.SCAnalyzer: true,

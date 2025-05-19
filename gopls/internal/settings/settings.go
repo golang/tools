@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -54,6 +55,30 @@ type Options struct {
 	ServerOptions
 	UserOptions
 	InternalOptions
+}
+
+// Debug returns a list of "name = value" strings for each Options field.
+func (o *Options) Debug() []string {
+	var res []string
+
+	var visitStruct func(v reflect.Value, path []string)
+	visitStruct = func(v reflect.Value, path []string) {
+		for i := range v.NumField() {
+			f := v.Field(i)
+			ftyp := v.Type().Field(i)
+			path := append(path, ftyp.Name)
+			if ftyp.Type.Kind() == reflect.Struct {
+				visitStruct(f, path)
+			} else {
+				res = append(res, fmt.Sprintf("%s = %#v",
+					strings.Join(path, "."),
+					f.Interface()))
+			}
+		}
+	}
+	visitStruct(reflect.ValueOf(o).Elem(), nil)
+
+	return res
 }
 
 // ClientOptions holds LSP-specific configuration that is provided by the
