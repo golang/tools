@@ -4,6 +4,8 @@
 
 // The modernize command suggests (or, with -fix, applies) fixes that
 // clarify Go code by using more modern features.
+//
+// See [golang.org/x/tools/gopls/internal/analysis/modernize] for details.
 package main
 
 import (
