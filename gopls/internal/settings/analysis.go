@@ -56,6 +56,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/modernize"
 	"golang.org/x/tools/gopls/internal/analysis/nonewvars"
 	"golang.org/x/tools/gopls/internal/analysis/noresultvalues"
+	"golang.org/x/tools/gopls/internal/analysis/recursiveiter"
 	"golang.org/x/tools/gopls/internal/analysis/simplifycompositelit"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyrange"
 	"golang.org/x/tools/gopls/internal/analysis/simplifyslice"
@@ -207,8 +208,9 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: yield.Analyzer},   // uses go/ssa
 	{analyzer: sortslice.Analyzer},
 	{analyzer: embeddirective.Analyzer},
-	{analyzer: waitgroup.Analyzer}, // to appear in cmd/vet@go1.25
-	{analyzer: hostport.Analyzer},  // to appear in cmd/vet@go1.25
+	{analyzer: waitgroup.Analyzer},     // to appear in cmd/vet@go1.25
+	{analyzer: hostport.Analyzer},      // to appear in cmd/vet@go1.25
+	{analyzer: recursiveiter.Analyzer}, // under evaluation
 
 	// disabled due to high false positives
 	{analyzer: shadow.Analyzer, nonDefault: true}, // very noisy

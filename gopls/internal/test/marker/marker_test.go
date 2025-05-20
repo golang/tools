@@ -784,7 +784,12 @@ func loadMarkerTest(name string, content []byte) (*markerTest, error) {
 		files:   make(map[string][]byte),
 		golden:  make(map[expect.Identifier]*Golden),
 	}
+	seen := make(map[string]bool)
 	for _, file := range archive.Files {
+		if seen[file.Name] {
+			return nil, fmt.Errorf("duplicate archive section %q", file.Name)
+		}
+		seen[file.Name] = true
 		switch {
 		case file.Name == "skip":
 			reason := strings.ReplaceAll(string(file.Data), "\n", " ")
