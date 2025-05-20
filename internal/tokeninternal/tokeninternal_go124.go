@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !go1.25
+// TODO(rfindley): once the new AddExistingFiles API has had some time to soak
+// in std, use it in x/tools and change the condition below to !go1.25.
+
+//go:build !addexistingfiles
 
 package tokeninternal
 
