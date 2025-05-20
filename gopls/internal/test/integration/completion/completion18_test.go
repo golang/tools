@@ -90,13 +90,18 @@ func FuzzHex(f *testing.F) {
 -- c_test.go --
 ` + part0 + part1 + part2
 
+	ad := []string{"Add"}
+	if _, ok := any(t).(interface{ Attr(k, v string) }); ok { // go1.25 added TBF.Attr
+		ad = append(ad, "Attr")
+	}
+
 	tests := []struct {
 		file   string
 		pat    string
 		offset uint32 // UTF16 length from the beginning of pat to what the user just typed
 		want   []string
 	}{
-		{"a_test.go", "f.Ad", 3, []string{"Add"}},
+		{"a_test.go", "f.Ad", 3, ad},
 		{"c_test.go", " f.F", 4, []string{"Failed"}},
 		{"c_test.go", "f.N", 3, []string{"Name"}},
 		{"b_test.go", "f.F", 3, []string{"Fuzz(func(t *testing.T, a []byte)", "Fail", "FailNow",
@@ -111,7 +116,7 @@ func FuzzHex(f *testing.F) {
 			completions := env.Completion(loc)
 			result := compareCompletionLabels(test.want, completions.Items)
 			if result != "" {
-				t.Errorf("pat %q %q", test.pat, result)
+				t.Errorf("pat=%q <<%s>>", test.pat, result)
 				for i, it := range completions.Items {
 					t.Errorf("%d got %q %q", i, it.Label, it.Detail)
 				}
