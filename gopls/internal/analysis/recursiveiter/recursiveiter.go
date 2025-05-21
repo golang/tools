@@ -6,6 +6,7 @@ package recursiveiter
 
 import (
 	_ "embed"
+	"fmt"
 	"go/ast"
 	"go/types"
 
@@ -79,7 +80,11 @@ func run(pass *analysis.Pass) (any, error) {
 					continue
 				}
 				if typeutil.StaticCallee(info, call) == fn {
-					pass.Reportf(rng.Range, "inefficient recursion in iterator %s", fn.Name())
+					pass.Report(analysis.Diagnostic{
+						Pos:     rng.Range,
+						End:     rng.X.End(),
+						Message: fmt.Sprintf("inefficient recursion in iterator %s", fn.Name()),
+					})
 				}
 			}
 		}
