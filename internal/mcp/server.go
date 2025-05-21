@@ -157,7 +157,7 @@ func (s *Server) RemoveResources(uris ...string) {
 // changeAndNotify is called when a feature is added or removed.
 // It calls change, which should do the work and report whether a change actually occurred.
 // If there was a change, it notifies a snapshot of the sessions.
-func (s *Server) changeAndNotify(notification string, params any, change func() bool) {
+func (s *Server) changeAndNotify(notification string, params Params, change func() bool) {
 	var sessions []*ServerSession
 	// Lock for the change, but not for the notification.
 	s.mu.Lock()
@@ -358,11 +358,11 @@ func (s *Server) Connect(ctx context.Context, t Transport) (*ServerSession, erro
 	return connect(ctx, t, s)
 }
 
-func (s *Server) callInitializedHandler(ctx context.Context, ss *ServerSession, params *InitializedParams) (any, error) {
+func (s *Server) callInitializedHandler(ctx context.Context, ss *ServerSession, params *InitializedParams) (Result, error) {
 	return callNotificationHandler(ctx, s.opts.InitializedHandler, ss, params)
 }
 
-func (s *Server) callRootsListChangedHandler(ctx context.Context, ss *ServerSession, params *RootsListChangedParams) (any, error) {
+func (s *Server) callRootsListChangedHandler(ctx context.Context, ss *ServerSession, params *RootsListChangedParams) (Result, error) {
 	return callNotificationHandler(ctx, s.opts.RootsListChangedHandler, ss, params)
 }
 
@@ -519,15 +519,15 @@ func (ss *ServerSession) initialize(ctx context.Context, params *InitializeParam
 	}, nil
 }
 
-func (ss *ServerSession) ping(context.Context, *PingParams) (struct{}, error) {
-	return struct{}{}, nil
+func (ss *ServerSession) ping(context.Context, *PingParams) (Result, error) {
+	return emptyResult{}, nil
 }
 
-func (ss *ServerSession) setLevel(_ context.Context, params *SetLevelParams) (struct{}, error) {
+func (ss *ServerSession) setLevel(_ context.Context, params *SetLevelParams) (Result, error) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	ss.logLevel = params.Level
-	return struct{}{}, nil
+	return emptyResult{}, nil
 }
 
 // Close performs a graceful shutdown of the connection, preventing new

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -167,6 +168,26 @@ func TestStructInstance(t *testing.T) {
 			t.Errorf("succeeded unexpectedly\nschema = %s", tt.s.json())
 		} else if err != nil && tt.want {
 			t.Errorf("Validate: %v\nschema = %s", err, tt.s.json())
+		}
+	}
+}
+
+func TestJSONName(t *testing.T) {
+	type S struct {
+		A int
+		B int `json:","`
+		C int `json:"-"`
+		D int `json:"-,"`
+		E int `json:"echo"`
+		F int `json:"foxtrot,omitempty"`
+		g int `json:"golf"`
+	}
+	want := []string{"A", "B", "", "-", "echo", "foxtrot", ""}
+	tt := reflect.TypeFor[S]()
+	for i := range tt.NumField() {
+		got, _ := jsonName(tt.Field(i))
+		if got != want[i] {
+			t.Errorf("got %q, want %q", got, want[i])
 		}
 	}
 }

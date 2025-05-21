@@ -616,14 +616,19 @@ func structPropertiesOf(t reflect.Type) propertyMap {
 
 // jsonName returns the name for f as would be used by [json.Marshal].
 // That is the name in the json struct tag, or the field name if there is no tag.
-// If f is not exported or the tag name is "-", jsonName returns "", false.
+// If f is not exported or the tag is "-", jsonName returns "", false.
 func jsonName(f reflect.StructField) (string, bool) {
 	if !f.IsExported() {
 		return "", false
 	}
 	if tag, ok := f.Tag.Lookup("json"); ok {
-		if name, _, _ := strings.Cut(tag, ","); name != "" {
-			return name, name != "-"
+		name, _, found := strings.Cut(tag, ",")
+		// "-" means omit, but "-," means the name is "-"
+		if name == "-" && !found {
+			return "", false
+		}
+		if name != "" {
+			return name, true
 		}
 	}
 	return f.Name, true
