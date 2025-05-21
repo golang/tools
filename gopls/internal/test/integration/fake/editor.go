@@ -932,54 +932,30 @@ func (e *Editor) setBufferContentLocked(ctx context.Context, path string, dirty 
 	return nil
 }
 
-// GoToDefinition jumps to the definition of the symbol at the given position
-// in an open buffer. It returns the location of the resulting jump.
-func (e *Editor) Definition(ctx context.Context, loc protocol.Location) (protocol.Location, error) {
+// Definitions returns the definitions of the symbol at the given
+// location in an open buffer.
+func (e *Editor) Definitions(ctx context.Context, loc protocol.Location) ([]protocol.Location, error) {
 	if err := e.checkBufferLocation(loc); err != nil {
-		return protocol.Location{}, err
+		return nil, err
 	}
 	params := &protocol.DefinitionParams{}
 	params.TextDocument.URI = loc.URI
 	params.Position = loc.Range.Start
 
-	resp, err := e.Server.Definition(ctx, params)
-	if err != nil {
-		return protocol.Location{}, fmt.Errorf("definition: %w", err)
-	}
-	return e.extractFirstLocation(ctx, resp)
+	return e.Server.Definition(ctx, params)
 }
 
-// TypeDefinition jumps to the type definition of the symbol at the given
-// location in an open buffer.
-func (e *Editor) TypeDefinition(ctx context.Context, loc protocol.Location) (protocol.Location, error) {
+// TypeDefinitions returns the type definitions of the symbol at the
+// given location in an open buffer.
+func (e *Editor) TypeDefinitions(ctx context.Context, loc protocol.Location) ([]protocol.Location, error) {
 	if err := e.checkBufferLocation(loc); err != nil {
-		return protocol.Location{}, err
+		return nil, err
 	}
 	params := &protocol.TypeDefinitionParams{}
 	params.TextDocument.URI = loc.URI
 	params.Position = loc.Range.Start
 
-	resp, err := e.Server.TypeDefinition(ctx, params)
-	if err != nil {
-		return protocol.Location{}, fmt.Errorf("type definition: %w", err)
-	}
-	return e.extractFirstLocation(ctx, resp)
-}
-
-// extractFirstLocation returns the first location.
-// It opens the file if needed.
-func (e *Editor) extractFirstLocation(ctx context.Context, locs []protocol.Location) (protocol.Location, error) {
-	if len(locs) == 0 {
-		return protocol.Location{}, nil
-	}
-
-	newPath := e.sandbox.Workdir.URIToPath(locs[0].URI)
-	if !e.HasBuffer(newPath) {
-		if err := e.OpenFile(ctx, newPath); err != nil {
-			return protocol.Location{}, fmt.Errorf("OpenFile: %w", err)
-		}
-	}
-	return locs[0], nil
+	return e.Server.TypeDefinition(ctx, params)
 }
 
 // Symbol performs a workspace symbol search using query

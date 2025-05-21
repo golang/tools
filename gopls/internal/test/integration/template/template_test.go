@@ -191,7 +191,8 @@ go 1.12
 	).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("a.tmpl")
 		x := env.RegexpSearch("a.tmpl", `A`)
-		loc := env.GoToDefinition(x)
+		loc := env.FirstDefinition(x)
+		env.OpenFile(env.Sandbox.Workdir.URIToPath(loc.URI))
 		refs := env.References(loc)
 		if len(refs) != 2 {
 			t.Fatalf("got %v reference(s), want 2", len(refs))

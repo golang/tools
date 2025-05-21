@@ -241,7 +241,7 @@ var _, _ = x.X, y.Y
 		env.AfterChange(Diagnostics(env.AtRegexp("main.go", `y.Y`)))
 		env.SaveBuffer("main.go")
 		env.AfterChange(NoDiagnostics(ForFile("main.go")))
-		loc := env.GoToDefinition(env.RegexpSearch("main.go", `y.(Y)`))
+		loc := env.FirstDefinition(env.RegexpSearch("main.go", `y.(Y)`))
 		path := env.Sandbox.Workdir.URIToPath(loc.URI)
 		if !strings.HasPrefix(path, filepath.ToSlash(modcache)) {
 			t.Errorf("found module dependency outside of GOMODCACHE: got %v, wanted subdir of %v", path, filepath.ToSlash(modcache))

@@ -189,26 +189,32 @@ func (e *Env) SaveBufferWithoutActions(name string) {
 	}
 }
 
-// GoToDefinition goes to definition in the editor, calling t.Fatal on any
-// error. It returns the path and position of the resulting jump.
-//
-// TODO(rfindley): rename this to just 'Definition'.
-func (e *Env) GoToDefinition(loc protocol.Location) protocol.Location {
+// FirstDefinition returns the first definition of the symbol at the
+// selected location, calling t.Fatal on error.
+func (e *Env) FirstDefinition(loc protocol.Location) protocol.Location {
 	e.TB.Helper()
-	loc, err := e.Editor.Definition(e.Ctx, loc)
+	locs, err := e.Editor.Definitions(e.Ctx, loc)
 	if err != nil {
 		e.TB.Fatal(err)
 	}
-	return loc
+	if len(locs) == 0 {
+		e.TB.Fatalf("no definitions")
+	}
+	return locs[0]
 }
 
-func (e *Env) TypeDefinition(loc protocol.Location) protocol.Location {
+// FirstTypeDefinition returns the first type definition of the symbol
+// at the selected location, calling t.Fatal on error.
+func (e *Env) FirstTypeDefinition(loc protocol.Location) protocol.Location {
 	e.TB.Helper()
-	loc, err := e.Editor.TypeDefinition(e.Ctx, loc)
+	locs, err := e.Editor.TypeDefinitions(e.Ctx, loc)
 	if err != nil {
 		e.TB.Fatal(err)
 	}
-	return loc
+	if len(locs) == 0 {
+		e.TB.Fatalf("no type definitions")
+	}
+	return locs[0]
 }
 
 // FormatBuffer formats the editor buffer, calling t.Fatal on any error.

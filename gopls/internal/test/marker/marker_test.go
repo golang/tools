@@ -1686,7 +1686,7 @@ func acceptCompletionMarker(mark marker, src protocol.Location, label string, go
 //
 // TODO(rfindley): support a variadic destination set.
 func defMarker(mark marker, src, dst protocol.Location) {
-	got := mark.run.env.GoToDefinition(src)
+	got := mark.run.env.FirstDefinition(src)
 	if got != dst {
 		mark.errorf("definition location does not match:\n\tgot: %s\n\twant %s",
 			mark.run.fmtLoc(got), mark.run.fmtLoc(dst))
@@ -1694,7 +1694,7 @@ func defMarker(mark marker, src, dst protocol.Location) {
 }
 
 func typedefMarker(mark marker, src, dst protocol.Location) {
-	got := mark.run.env.TypeDefinition(src)
+	got := mark.run.env.FirstTypeDefinition(src)
 	if got != dst {
 		mark.errorf("type definition location does not match:\n\tgot: %s\n\twant %s",
 			mark.run.fmtLoc(got), mark.run.fmtLoc(dst))
@@ -1850,7 +1850,7 @@ func locMarker(mark marker, loc protocol.Location) protocol.Location { return lo
 // defLocMarker implements the @defloc marker, which binds a location to the
 // (first) result of a jump-to-definition request.
 func defLocMarker(mark marker, loc protocol.Location) protocol.Location {
-	return mark.run.env.GoToDefinition(loc)
+	return mark.run.env.FirstDefinition(loc)
 }
 
 // diagMarker implements the @diag marker. It eliminates diagnostics from

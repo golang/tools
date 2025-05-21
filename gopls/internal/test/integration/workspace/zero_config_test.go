@@ -312,10 +312,11 @@ func _() {
 	).Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
 		env.AfterChange(NoDiagnostics())
-		loc := env.GoToDefinition(env.RegexpSearch("a.go", `b\.(B)`))
+		loc := env.FirstDefinition(env.RegexpSearch("a.go", `b\.(B)`))
 		if !strings.Contains(string(loc.URI), "/vendor/") {
 			t.Fatalf("Definition(b.B) = %v, want vendored location", loc.URI)
 		}
+		env.OpenFile(env.Sandbox.Workdir.URIToPath(loc.URI))
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("vendor/other.com/b/b.go", "V"), WithMessage("not used")),
 		)

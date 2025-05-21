@@ -107,7 +107,7 @@ const CompleteMe = 222
 		env.AfterChange(NoOutstandingWork(IgnoreTelemetryPromptWork))
 
 		// Check that definitions in package1 go to the copy vendored in package2.
-		location := string(env.GoToDefinition(env.RegexpSearch("package1/main.go", "CompleteMe")).URI)
+		location := string(env.FirstDefinition(env.RegexpSearch("package1/main.go", "CompleteMe")).URI)
 		const wantLocation = "package2/vendor/example.com/foo/foo.go"
 		if !strings.HasSuffix(location, wantLocation) {
 			t.Errorf("got definition of CompleteMe at %q, want %q", location, wantLocation)

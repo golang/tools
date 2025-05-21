@@ -869,13 +869,13 @@ func hello() {}
 		env.RegexpReplace("go.mod", "module", "modul")
 		// Confirm that we still have metadata with only on-disk edits.
 		env.OpenFile("main.go")
-		loc := env.GoToDefinition(env.RegexpSearch("main.go", "hello"))
+		loc := env.FirstDefinition(env.RegexpSearch("main.go", "hello"))
 		if filepath.Base(string(loc.URI)) != "hello.go" {
 			t.Fatalf("expected definition in hello.go, got %s", loc.URI)
 		}
 		// Confirm that we no longer have metadata when the file is saved.
 		env.SaveBufferWithoutActions("go.mod")
-		_, err := env.Editor.Definition(env.Ctx, env.RegexpSearch("main.go", "hello"))
+		_, err := env.Editor.Definitions(env.Ctx, env.RegexpSearch("main.go", "hello"))
 		if err == nil {
 			t.Fatalf("expected error, got none")
 		}

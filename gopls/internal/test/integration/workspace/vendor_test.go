@@ -56,7 +56,8 @@ var _ b.B
 		env.AfterChange(
 			NoDiagnostics(), // as b is not a workspace package
 		)
-		env.GoToDefinition(env.RegexpSearch("a.go", `b\.(B)`))
+		loc := env.FirstDefinition(env.RegexpSearch("a.go", `b\.(B)`))
+		env.OpenFile(env.Sandbox.Workdir.URIToPath(loc.URI))
 		env.AfterChange(
 			Diagnostics(env.AtRegexp("vendor/other.com/b/b.go", "V"), WithMessage("not used")),
 		)

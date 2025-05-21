@@ -1790,7 +1790,7 @@ func helloHelper() {}
 		env.AfterChange(
 			NoDiagnostics(ForFile("nested/hello/hello.go")),
 		)
-		loc := env.GoToDefinition(env.RegexpSearch("nested/hello/hello.go", "helloHelper"))
+		loc := env.FirstDefinition(env.RegexpSearch("nested/hello/hello.go", "helloHelper"))
 		want := "nested/hello/hello_helper.go"
 		if got := env.Sandbox.Workdir.URIToPath(loc.URI); got != want {
 			t.Errorf("Definition() returned %q, want %q", got, want)

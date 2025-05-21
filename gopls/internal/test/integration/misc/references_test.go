@@ -37,7 +37,8 @@ func main() {
 
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
-		loc := env.GoToDefinition(env.RegexpSearch("main.go", `fmt.(Print)`))
+		loc := env.FirstDefinition(env.RegexpSearch("main.go", `fmt.(Print)`))
+		env.OpenFile(env.Sandbox.Workdir.URIToPath(loc.URI))
 		refs, err := env.Editor.References(env.Ctx, loc)
 		if err != nil {
 			t.Fatal(err)
@@ -82,7 +83,7 @@ func _() {
 `
 	Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
-		loc := env.GoToDefinition(env.RegexpSearch("main.go", `Error`))
+		loc := env.FirstDefinition(env.RegexpSearch("main.go", `Error`))
 		refs, err := env.Editor.References(env.Ctx, loc)
 		if err != nil {
 			t.Fatalf("references on (*s).Error failed: %v", err)
@@ -131,7 +132,7 @@ var _ = unsafe.Slice(nil, 0)
 			loc := env.RegexpSearch("a.go", `\b`+name+`\b`)
 
 			// definition -> {builtin,unsafe}.go
-			def := env.GoToDefinition(loc)
+			def := env.FirstDefinition(loc)
 			if (!strings.HasSuffix(string(def.URI), "builtin.go") &&
 				!strings.HasSuffix(string(def.URI), "unsafe.go")) ||
 				def.Range.Start.Line == 0 {

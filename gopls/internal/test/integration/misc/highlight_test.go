@@ -30,7 +30,7 @@ func main() {
 	Run(t, mod, func(t *testing.T, env *Env) {
 		const file = "main.go"
 		env.OpenFile(file)
-		loc := env.GoToDefinition(env.RegexpSearch(file, `var (A) string`))
+		loc := env.FirstDefinition(env.RegexpSearch(file, `var (A) string`))
 
 		checkHighlights(env, loc, 3)
 	})
@@ -53,8 +53,9 @@ func main() {
 
 	Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
-		defLoc := env.GoToDefinition(env.RegexpSearch("main.go", `fmt\.(Printf)`))
+		defLoc := env.FirstDefinition(env.RegexpSearch("main.go", `fmt\.(Printf)`))
 		file := env.Sandbox.Workdir.URIToPath(defLoc.URI)
+		env.OpenFile(file)
 		loc := env.RegexpSearch(file, `func Printf\((format) string`)
 
 		checkHighlights(env, loc, 2)
@@ -111,13 +112,15 @@ func main() {}`
 	).Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 
-		defLoc := env.GoToDefinition(env.RegexpSearch("main.go", `"example.com/global"`))
+		defLoc := env.FirstDefinition(env.RegexpSearch("main.go", `"example.com/global"`))
 		file := env.Sandbox.Workdir.URIToPath(defLoc.URI)
+		env.OpenFile(file)
 		loc := env.RegexpSearch(file, `const (A)`)
 		checkHighlights(env, loc, 4)
 
-		defLoc = env.GoToDefinition(env.RegexpSearch("main.go", `"example.com/local"`))
+		defLoc = env.FirstDefinition(env.RegexpSearch("main.go", `"example.com/local"`))
 		file = env.Sandbox.Workdir.URIToPath(defLoc.URI)
+		env.OpenFile(file)
 		loc = env.RegexpSearch(file, `const (b)`)
 		checkHighlights(env, loc, 5)
 	})
