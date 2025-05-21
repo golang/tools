@@ -125,14 +125,14 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 	group, ctx := errgroup.WithContext(ctx)
 	// Indicate success by a special error so that successful termination
 	// of one server causes cancellation of the other.
-	sucess := errors.New("success")
+	success := errors.New("success")
 
 	// Start MCP server.
 	if eventChan != nil {
 		group.Go(func() (err error) {
 			defer func() {
 				if err == nil {
-					err = sucess
+					err = success
 				}
 			}()
 
@@ -149,7 +149,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 				close(eventChan)
 			}
 			if err == nil {
-				err = sucess
+				err = success
 			}
 		}()
 
@@ -200,7 +200,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 	// Wait for all servers to terminate, returning only the first error
 	// encountered. Subsequent errors are typically due to context cancellation
 	// and are disregarded.
-	if err := group.Wait(); err != nil && !errors.Is(err, sucess) {
+	if err := group.Wait(); err != nil && !errors.Is(err, success) {
 		return err
 	}
 	return nil

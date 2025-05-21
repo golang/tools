@@ -744,7 +744,7 @@ func (s *Server) RemoveResources(uris ...string)
 func (s *Server) RemoveResourceTemplates(uriTemplates ...string)
 ```
 
-The `ReadResource` method finds a resource or resource template matching the argument URI and calls its assocated handler.
+The `ReadResource` method finds a resource or resource template matching the argument URI and calls its associated handler.
 
 To read files from the local filesystem, we recommend using `FileResourceHandler` to construct a handler:
 
