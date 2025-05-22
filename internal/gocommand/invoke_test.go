@@ -41,6 +41,8 @@ func TestGoVersion(t *testing.T) {
 // If this test ever fails, the combination of the gocommand package
 // and the go command itself has a bug; this has been observed (#73503).
 func TestRmdirAfterGoList_Runner(t *testing.T) {
+	t.Skip("flaky; see https://github.com/golang/go/issues/73736#issuecomment-2885407104")
+
 	testRmdirAfterGoList(t, func(ctx context.Context, dir string) {
 		var runner gocommand.Runner
 		stdout, stderr, friendlyErr, err := runner.RunRaw(ctx, gocommand.Invocation{
