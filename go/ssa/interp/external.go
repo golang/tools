@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -119,15 +120,7 @@ func ext۰bytes۰Equal(fr *frame, args []value) value {
 	// func Equal(a, b []byte) bool
 	a := args[0].([]value)
 	b := args[1].([]value)
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(a, b)
 }
 
 func ext۰bytes۰IndexByte(fr *frame, args []value) value {
