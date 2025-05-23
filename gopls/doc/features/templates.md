@@ -14,7 +14,7 @@ value, since Go templates don't have a canonical file extension.)
 
 Additional configuration may be necessary to ensure that your client
 chooses the correct language kind when opening template files.
-Gopls recogizes both `"tmpl"` and `"gotmpl"` for template files.
+Gopls recognizes both `"tmpl"` and `"gotmpl"` for template files.
 For example, in `VS Code` you will also need to add an
 entry to the
 [`files.associations`](https://code.visualstudio.com/docs/languages/identifiers)

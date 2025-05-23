@@ -543,7 +543,7 @@ func (subst *subster) signature(t *types.Signature) types.Type {
 	// We are choosing not to support tparams.Len() > 0 until a need has been observed in practice.
 	//
 	// There are some known usages for types.Types coming from types.{Eval,CheckExpr}.
-	// To support tparams.Len() > 0, we just need to do the following [psuedocode]:
+	// To support tparams.Len() > 0, we just need to do the following [pseudocode]:
 	//   targs := {subst.replacements[tparams[i]]]}; Instantiate(ctxt, t, targs, false)
 
 	assert(tparams.Len() == 0, "Substituting types.Signatures with generic functions are currently unsupported.")

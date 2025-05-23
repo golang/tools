@@ -122,7 +122,7 @@ func (c *completer) addKeywordCompletions() {
 			}
 		case *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.SwitchStmt:
 			// if there is no default case yet, it's highly likely to add a default in switch.
-			// we don't offer 'default' anymore if user has used it already in current swtich.
+			// we don't offer 'default' anymore if user has used it already in current switch.
 			if !hasDefaultClause(node) {
 				c.addKeywordItems(seen, highScore, CASE, DEFAULT)
 			}
@@ -152,7 +152,7 @@ func (c *completer) addKeywordCompletions() {
 					// as user must return something, we offer a space after return.
 					// function literal inside a function will be affected by outer function,
 					// but 'go fmt' will help to remove the ending space.
-					// the benefit is greater than introducing an unncessary space.
+					// the benefit is greater than introducing an unnecessary space.
 					ret += " "
 				}
 

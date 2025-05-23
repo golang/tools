@@ -286,7 +286,7 @@ func TestTestFiles(t *testing.T) {
 	}
 }
 
-// The -output flag cannot be used in combiation with matching types across multiple packages.
+// The -output flag cannot be used in combination with matching types across multiple packages.
 func TestCollidingOutput(t *testing.T) {
 	testenv.NeedsTool(t, "go")
 	stringer := stringerPath(t)

@@ -69,7 +69,7 @@ func Example() {
 	// min=bufio max=unsafe
 }
 
-// minmaxpkg is a trival example analyzer that uses package facts to
+// minmaxpkg is a trivial example analyzer that uses package facts to
 // compute information from the entire dependency graph.
 var minmaxpkg = &analysis.Analyzer{
 	Name:      "minmaxpkg",

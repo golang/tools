@@ -236,7 +236,7 @@ func (s *SidecarServer) Connect(ctx context.Context) jsonrpc2.Conn {
 	// Note: don't use CommandContext here, as we want gopls to exit gracefully
 	// in order to write out profile data.
 	//
-	// We close the connection on context cancelation below.
+	// We close the connection on context cancellation below.
 	cmd := exec.Command(s.goplsPath, s.args...)
 
 	stdin, err := cmd.StdinPipe()

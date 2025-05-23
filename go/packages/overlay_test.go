@@ -81,7 +81,7 @@ func testOverlayChangesBothPackageNames(t *testing.T, exporter packagestest.Expo
 		t.Fatalf("failed to load: %v", err)
 	}
 	if len(initial) != 3 {
-		t.Errorf("got %d packges, expected 3", len(initial))
+		t.Errorf("got %d packages, expected 3", len(initial))
 	}
 	want := []struct {
 		id, name string
@@ -127,7 +127,7 @@ func testOverlayChangesTestPackageName(t *testing.T, exporter packagestest.Expor
 		t.Fatalf("failed to load: %v", err)
 	}
 	if len(initial) != 3 {
-		t.Errorf("got %d packges, expected 3", len(initial))
+		t.Errorf("got %d packages, expected 3", len(initial))
 	}
 	want := []struct {
 		id, name string

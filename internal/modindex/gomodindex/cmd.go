@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// A command for building and maintaing the module cache
+// A command for building and maintaining the module cache
 // a.out <flags> <command> <args>
 // The commands are 'create' which builds a new index,
 // 'update', which attempts to update an existing index,
@@ -35,7 +35,7 @@ type cmd struct {
 
 var cmds = []cmd{
 	{"create", index, "create a clean index of GOMODCACHE"},
-	{"update", update, "if there is an existing index of GOMODCACHE, update it. Otherise create one."},
+	{"update", update, "if there is an existing index of GOMODCACHE, update it. Otherwise create one."},
 	{"clean", clean, "removed unreferenced indexes more than an hour old"},
 	{"query", query, "not yet implemented"},
 }

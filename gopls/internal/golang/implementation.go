@@ -280,7 +280,7 @@ func implementationsMsets(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 // It returns a nil type to indicate that the query should not proceed.
 //
 // (It is factored out to allow it to be used both in the query package
-// then (in [localImplementations]) again in the declarating package.)
+// then (in [localImplementations]) again in the declaring package.)
 func typeOrMethod(obj types.Object) (types.Type, *types.Func) {
 	switch obj := obj.(type) {
 	case *types.TypeName:

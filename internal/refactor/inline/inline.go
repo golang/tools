@@ -1741,7 +1741,7 @@ next:
 			}
 		}
 
-		// Arg is a potential substition candidate: analyze its shadowing.
+		// Arg is a potential substitution candidate: analyze its shadowing.
 		//
 		// Consider inlining a call f(z, 1) to
 		//

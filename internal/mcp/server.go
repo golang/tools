@@ -43,7 +43,7 @@ type Server struct {
 type ServerOptions struct {
 	// Optional instructions for connected clients.
 	Instructions string
-	// If non-nil, called when "notifications/intialized" is received.
+	// If non-nil, called when "notifications/initialized" is received.
 	InitializedHandler func(context.Context, *ServerSession, *InitializedParams)
 	// PageSize is the maximum number of items to return in a single page for
 	// list methods (e.g. ListTools).
@@ -122,7 +122,7 @@ func (s *Server) RemoveTools(names ...string) {
 		func() bool { return s.tools.remove(names...) })
 }
 
-// AddResource adds the given resource to the server and associates it with
+// AddResources adds the given resource to the server and associates it with
 // a [ResourceHandler], which will be called when the client calls [ClientSession.ReadResource].
 // If a resource with the same URI already exists, this one replaces it.
 // AddResource panics if a resource URI is invalid or not absolute (has an empty scheme).

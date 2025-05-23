@@ -46,7 +46,7 @@ structures, or when reading assembly files or stack traces that refer
 to each field by its cryptic byte offset.
 
 In addition, Hover reports:
-- the struct's size class, which is the number of of bytes actually
+- the struct's size class, which is the number of bytes actually
   allocated by the Go runtime for a single object of this type; and
 - the percentage of wasted space due to suboptimal ordering of struct
   fields, if this figure is 20% or higher:

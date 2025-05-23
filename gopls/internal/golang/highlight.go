@@ -358,7 +358,7 @@ findEnclosingFunc:
 	} else if returnStmt == nil && !inResults {
 		return // nothing to highlight
 	} else {
-		// If we're not highighting the entire return statement, we need to collect
+		// If we're not highlighting the entire return statement, we need to collect
 		// specific result indexes to highlight. This may be more than one index if
 		// the cursor is on a multi-name result field, but not in any specific name.
 		if !highlightAll {

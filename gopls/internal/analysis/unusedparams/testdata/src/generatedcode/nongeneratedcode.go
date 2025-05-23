@@ -12,7 +12,7 @@ type implementsGeneratedInterface struct{}
 // in the generated code.
 func (implementsGeneratedInterface) n(f bool) {
 	// The body must not be empty, otherwise unusedparams will
-	// not report the unused parameter regardles of the
+	// not report the unused parameter regardless of the
 	// interface.
 	println()
 }

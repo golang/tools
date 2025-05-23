@@ -603,7 +603,7 @@ func analyzeAssignment(info *types.Info, stack []ast.Node) (assignable, ifaceAss
 		}
 	}
 
-	// Types do not need to match for index expresions.
+	// Types do not need to match for index expressions.
 	if ix, ok := parent.(*ast.IndexExpr); ok {
 		if ix.Index == expr {
 			typ := info.TypeOf(ix.X)

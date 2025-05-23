@@ -32,7 +32,7 @@ The codelens command lists or executes code lenses for the specified
 file, or line within a file. A code lens is a command associated with
 a position in the code.
 
-With an optional title argment, only code lenses matching that
+With an optional title argument, only code lenses matching that
 title are considered.
 
 By default, the codelens command lists the available lenses for the

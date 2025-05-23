@@ -331,7 +331,7 @@ func deeper(x, y *types.Scope) bool {
 //     scope that begins at the end of its ValueSpec, or after the
 //     AssignStmt for a var declared by ":=".
 //
-//   - Each type {t,u} in the body has a scope that that begins at
+//   - Each type {t,u} in the body has a scope that begins at
 //     the start of the TypeSpec, so they can be self-recursive
 //     but--unlike package-level types--not mutually recursive.
 

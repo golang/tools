@@ -139,7 +139,7 @@ func fix72727(a, b int) {
 
 type myfloat float64
 
-// The built-in min/max differ in their treatement of NaN,
+// The built-in min/max differ in their treatment of NaN,
 // so reject floating-point numbers (#72829).
 func nopeFloat(a, b myfloat) (res myfloat) {
 	if a < b {

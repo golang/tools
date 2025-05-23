@@ -245,7 +245,7 @@ func (b *Builder) create(leaves []*leaf) node {
 	} else if n == 1 {
 		return leaves[0]
 	}
-	// Note: we can do a more sophisicated algorithm by:
+	// Note: we can do a more sophisticated algorithm by:
 	// - sorting the leaves ahead of time,
 	// - taking the prefix and branching bit of the min and max key,
 	// - binary searching for the branching bit,

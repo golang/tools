@@ -132,7 +132,7 @@ func TestResolveURIs(t *testing.T) {
 
 func TestRefCycle(t *testing.T) {
 	// Verify that cycles of refs are OK.
-	// The test suite doesn't check this, suprisingly.
+	// The test suite doesn't check this, surprisingly.
 	schemas := map[string]*Schema{
 		"root": {Ref: "a"},
 		"a":    {Ref: "b"},

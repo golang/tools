@@ -170,7 +170,7 @@ func _() {
 		// TODO(golang/go#65729): this is unsound: any extra
 		// logging by the child process (e.g. due to GODEBUG
 		// options) will add noise to stderr, causing the
-		// CombinedOutput to be unparseable as JSON. But we
+		// CombinedOutput to be unparsable as JSON. But we
 		// can't simply use Output here as some of the tests
 		// look for substrings of stderr. Rework the test to
 		// be specific about which output stream to match.

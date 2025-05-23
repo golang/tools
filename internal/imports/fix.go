@@ -291,7 +291,7 @@ func (p *pass) loadPackageNames(ctx context.Context, imports []*ImportInfo) erro
 	return nil
 }
 
-// WithouVersion removes a trailing major version, if there is one.
+// WithoutVersion removes a trailing major version, if there is one.
 func WithoutVersion(nm string) string {
 	if v := path.Base(nm); len(v) > 0 && v[0] == 'v' {
 		if _, err := strconv.Atoi(v[1:]); err == nil {

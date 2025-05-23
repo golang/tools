@@ -766,7 +766,7 @@ func TestInstructionString(t *testing.T) {
 
 	// Expectation is a {function, type string} -> {want, matches}
 	// where matches is all Instructions.String() that match the key.
-	// Each expecation is that some permutation of matches is wants.
+	// Each expectation is that some permutation of matches is wants.
 	type expKey struct {
 		function string
 		kind     string
