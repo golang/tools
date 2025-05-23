@@ -155,6 +155,9 @@ type Schema struct {
 	// compiled regexps
 	pattern           *regexp.Regexp
 	patternProperties map[*regexp.Regexp]*Schema
+
+	// the set of required properties
+	isRequired map[string]bool
 }
 
 // falseSchema returns a new Schema tree that fails to validate any value.

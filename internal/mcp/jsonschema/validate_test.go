@@ -81,30 +81,92 @@ func TestStructInstance(t *testing.T) {
 	instance := struct {
 		I int
 		B bool `json:"b"`
-		u int
-	}{1, true, 0}
+		P *int // either missing or nil
+		u int  // unexported: not a property
+	}{1, true, nil, 0}
 
-	// The instance fails for all of these schemas, demonstrating that it
-	// was processed correctly.
-	for _, schema := range []*Schema{
-		{MinProperties: Ptr(3)},
-		{MaxProperties: Ptr(1)},
-		{Required: []string{"i"}}, // the name is "I"
-		{Required: []string{"B"}}, // the name is "b"
-		{PropertyNames: &Schema{MinLength: Ptr(2)}},
-		{Properties: map[string]*Schema{"b": {Type: "number"}}},
-		{Required: []string{"I"}, AdditionalProperties: falseSchema()},
-		{DependentRequired: map[string][]string{"b": {"u"}}},
-		{DependentSchemas: map[string]*Schema{"b": falseSchema()}},
-		{UnevaluatedProperties: falseSchema()},
+	for _, tt := range []struct {
+		s    Schema
+		want bool
+	}{
+		{
+			Schema{MinProperties: Ptr(4)},
+			false,
+		},
+		{
+			Schema{MinProperties: Ptr(3)},
+			true, // P interpreted as present
+		},
+		{
+			Schema{MaxProperties: Ptr(1)},
+			false,
+		},
+		{
+			Schema{MaxProperties: Ptr(2)},
+			true, // P interpreted as absent
+		},
+		{
+			Schema{Required: []string{"i"}}, // the name is "I"
+			false,
+		},
+		{
+			Schema{Required: []string{"B"}}, // the name is "b"
+			false,
+		},
+		{
+			Schema{PropertyNames: &Schema{MinLength: Ptr(2)}},
+			false,
+		},
+		{
+			Schema{Properties: map[string]*Schema{"b": {Type: "boolean"}}},
+			true,
+		},
+		{
+			Schema{Properties: map[string]*Schema{"b": {Type: "number"}}},
+			false,
+		},
+		{
+			Schema{Required: []string{"I"}},
+			true,
+		},
+		{
+			Schema{Required: []string{"I", "P"}},
+			true, // P interpreted as present
+		},
+		{
+			Schema{Required: []string{"I", "P"}, Properties: map[string]*Schema{"P": {Type: "number"}}},
+			false, // P interpreted as present, but not a number
+		},
+		{
+			Schema{Required: []string{"I"}, Properties: map[string]*Schema{"P": {Type: "number"}}},
+			true, // P not required, so interpreted as absent
+		},
+		{
+			Schema{Required: []string{"I"}, AdditionalProperties: falseSchema()},
+			false,
+		},
+		{
+			Schema{DependentRequired: map[string][]string{"b": {"u"}}},
+			false,
+		},
+		{
+			Schema{DependentSchemas: map[string]*Schema{"b": falseSchema()}},
+			false,
+		},
+		{
+			Schema{UnevaluatedProperties: falseSchema()},
+			false,
+		},
 	} {
-		res, err := schema.Resolve("", nil)
+		res, err := tt.s.Resolve("", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		err = res.Validate(instance)
-		if err == nil {
-			t.Errorf("succeeded but wanted failure; schema = %s", schema.json())
+		if err == nil && !tt.want {
+			t.Errorf("succeeded unexpectedly\nschema = %s", tt.s.json())
+		} else if err != nil && tt.want {
+			t.Errorf("Validate: %v\nschema = %s", err, tt.s.json())
 		}
 	}
 }

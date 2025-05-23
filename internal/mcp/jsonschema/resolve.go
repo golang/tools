@@ -181,6 +181,15 @@ func (s *Schema) checkLocal(report func(error)) {
 			s.patternProperties[re] = subschema
 		}
 	}
+
+	// Build a set of required properties, to avoid quadratic behavior when validating
+	// a struct.
+	if len(s.Required) > 0 {
+		s.isRequired = map[string]bool{}
+		for _, r := range s.Required {
+			s.isRequired[r] = true
+		}
+	}
 }
 
 // resolveURIs resolves the ids and anchors in all the schemas of root, relative
