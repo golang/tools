@@ -166,6 +166,7 @@ slow:
 
 // ParseDocumentURI interprets a string as a DocumentURI, applying VS
 // Code workarounds; see [DocumentURI.UnmarshalText] for details.
+// If "s" is a file name, use [URIFromPath] instead.
 func ParseDocumentURI(s string) (DocumentURI, error) {
 	if s == "" {
 		return "", nil

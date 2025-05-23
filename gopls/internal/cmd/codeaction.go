@@ -108,7 +108,7 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("codeaction expects at least 1 argument")
 	}
 	cmd.app.editFlags = &cmd.EditFlags
-	conn, err := cmd.app.connect(ctx)
+	conn, _, err := cmd.app.connect(ctx)
 	if err != nil {
 		return err
 	}

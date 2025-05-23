@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -18,11 +19,12 @@ import (
 	"golang.org/x/tools/internal/mcp"
 )
 
-// Serve start an MCP server serving at the input address.
+// Serve starts an MCP server serving at the input address.
 // The server receives LSP session events on the specified channel, which the
 // caller is responsible for closing. The server runs until the context is
 // canceled.
 func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionEvent, isDaemon bool) error {
+	log.Printf("Gopls MCP server: starting up on http")
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
@@ -48,6 +50,13 @@ func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionE
 		svr.Close() // ignore error
 	}()
 	return svr.Serve(listener)
+}
+
+// StartStdIO starts an MCP server over stdio.
+func StartStdIO(ctx context.Context, session *cache.Session) error {
+	t := mcp.NewLoggingTransport(mcp.NewStdIOTransport(), os.Stderr)
+	s := newServer(session)
+	return s.Run(ctx, t)
 }
 
 // HTTPHandler returns an HTTP handler for handling requests from MCP client.

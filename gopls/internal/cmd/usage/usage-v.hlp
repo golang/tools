@@ -32,6 +32,7 @@ Features
   fix               apply suggested fixes (obsolete)
   folding_ranges    display selected file's folding ranges
   format            format the code according to the go standard
+  mcp               start the gopls MCP server in headless mode
   highlight         display selected identifier's highlights
   implementation    display selected identifier's implementation
   imports           updates import statements

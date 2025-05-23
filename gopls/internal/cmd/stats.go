@@ -98,7 +98,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 
 	var conn *connection
 	iwlDuration, err := do("Initializing workspace", func() (err error) {
-		conn, err = s.app.connect(ctx)
+		conn, _, err = s.app.connect(ctx)
 		if err != nil {
 			return err
 		}

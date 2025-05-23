@@ -287,6 +287,7 @@ func (app *Application) featureCommands() []tool.Application {
 		&fix{app: app}, // (non-functional)
 		&foldingRanges{app: app},
 		&format{app: app},
+		&headlessMCP{app: app},
 		&highlight{app: app},
 		&implementation{app: app},
 		&imports{app: app},
@@ -305,20 +306,24 @@ func (app *Application) featureCommands() []tool.Application {
 	}
 }
 
-// connect creates and initializes a new in-process gopls session.
-func (app *Application) connect(ctx context.Context) (*connection, error) {
+// connect creates and initializes a new in-process gopls LSP session.
+func (app *Application) connect(ctx context.Context) (*connection, *cache.Session, error) {
 	client := newClient(app)
-	var svr protocol.Server
+	var (
+		svr  protocol.Server
+		sess *cache.Session
+	)
 	if app.Remote == "" {
 		// local
 		options := settings.DefaultOptions(app.options)
-		svr = server.New(cache.NewSession(ctx, cache.New(nil)), client, options)
+		sess = cache.NewSession(ctx, cache.New(nil))
+		svr = server.New(sess, client, options)
 		ctx = protocol.WithClient(ctx, client)
 	} else {
 		// remote
 		netConn, err := lsprpc.ConnectToRemote(ctx, app.Remote)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		stream := jsonrpc2.NewHeaderStream(netConn)
 		jsonConn := jsonrpc2.NewConn(stream)
@@ -329,7 +334,7 @@ func (app *Application) connect(ctx context.Context) (*connection, error) {
 				protocol.ClientHandler(client, jsonrpc2.MethodNotFound)))
 	}
 	conn := newConnection(svr, client)
-	return conn, conn.initialize(ctx, app.options)
+	return conn, sess, conn.initialize(ctx, app.options)
 }
 
 func (c *connection) initialize(ctx context.Context, options func(*settings.Options)) error {

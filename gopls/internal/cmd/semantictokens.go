@@ -72,7 +72,7 @@ func (c *semanticToken) Run(ctx context.Context, args ...string) error {
 		}
 		opts.SemanticTokens = true
 	}
-	conn, err := c.app.connect(ctx)
+	conn, _, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}

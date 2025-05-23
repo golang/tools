@@ -83,7 +83,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 		opts.Codelenses[settings.CodeLensTest] = true
 	}
 
-	conn, err := r.app.connect(ctx)
+	conn, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}

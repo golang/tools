@@ -71,7 +71,7 @@ func (e *execute) Run(ctx context.Context, args ...string) error {
 
 	e.app.editFlags = &e.EditFlags // in case command performs an edit
 
-	conn, err := e.app.connect(ctx)
+	conn, _, err := e.app.connect(ctx)
 	if err != nil {
 		return err
 	}
