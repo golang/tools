@@ -21,7 +21,7 @@ import (
 var editID int64 = time.Now().UnixNano()
 
 type changeTest struct {
-	repo    string
+	repo    string // repo identifier + optional disambiguating ".foo" suffix
 	file    string
 	canSave bool
 }
@@ -30,6 +30,7 @@ var didChangeTests = []changeTest{
 	{"google-cloud-go", "internal/annotate.go", true},
 	{"istio", "pkg/fuzz/util.go", true},
 	{"kubernetes", "pkg/controller/lookup_cache.go", true},
+	{"kubernetes.types", "staging/src/k8s.io/api/core/v1/types.go", true}, // results in 25K file batch!
 	{"kuma", "api/generic/insights.go", true},
 	{"oracle", "dataintegration/data_type.go", false}, // diagnoseSave fails because this package is generated
 	{"pkgsite", "internal/frontend/server.go", true},
