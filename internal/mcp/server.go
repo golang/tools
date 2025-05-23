@@ -229,8 +229,17 @@ func (s *Server) callTool(ctx context.Context, cc *ServerSession, params *CallTo
 func (s *Server) listResources(_ context.Context, _ *ServerSession, params *ListResourcesParams) (*ListResourcesResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var cursor string
+	if params != nil {
+		cursor = params.Cursor
+	}
+	resources, nextCursor, err := paginateList(s.resources, cursor, s.opts.PageSize)
+	if err != nil {
+		return nil, err
+	}
 	res := new(ListResourcesResult)
-	for r := range s.resources.all() {
+	res.NextCursor = nextCursor
+	for _, r := range resources {
 		res.Resources = append(res.Resources, r.Resource)
 	}
 	return res, nil
@@ -539,35 +548,38 @@ type pageToken struct {
 	LastUID string // The unique ID of the last resource seen.
 }
 
+// encodeCursor encodes a unique identifier (UID) into a opaque pagination cursor
+// by serializing a pageToken struct.
+func encodeCursor(uid string) (string, error) {
+	var buf bytes.Buffer
+	token := pageToken{LastUID: uid}
+	encoder := gob.NewEncoder(&buf)
+	if err := encoder.Encode(token); err != nil {
+		return "", fmt.Errorf("failed to encode page token: %w", err)
+	}
+	return base64.URLEncoding.EncodeToString(buf.Bytes()), nil
+}
+
+// decodeCursor decodes an opaque pagination cursor into the original pageToken struct.
+func decodeCursor(cursor string) (*pageToken, error) {
+	decodedBytes, err := base64.URLEncoding.DecodeString(cursor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode cursor: %w", err)
+	}
+
+	var token pageToken
+	buf := bytes.NewBuffer(decodedBytes)
+	decoder := gob.NewDecoder(buf)
+	if err := decoder.Decode(&token); err != nil {
+		return nil, fmt.Errorf("failed to decode page token: %w, cursor: %v", err, cursor)
+	}
+	return &token, nil
+}
+
 // paginateList returns a slice of features from the given featureSet, based on
 // the provided cursor and page size. It also returns a new cursor for the next
 // page, or an empty string if there are no more pages.
 func paginateList[T any](fs *featureSet[T], cursor string, pageSize int) (features []T, nextCursor string, err error) {
-	encodeCursor := func(uid string) (string, error) {
-		var buf bytes.Buffer
-		token := pageToken{LastUID: uid}
-		encoder := gob.NewEncoder(&buf)
-		if err := encoder.Encode(token); err != nil {
-			return "", fmt.Errorf("failed to encode page token: %w", err)
-		}
-		return base64.URLEncoding.EncodeToString(buf.Bytes()), nil
-	}
-
-	decodeCursor := func(cursor string) (*pageToken, error) {
-		decodedBytes, err := base64.URLEncoding.DecodeString(cursor)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode cursor: %w", err)
-		}
-
-		var token pageToken
-		buf := bytes.NewBuffer(decodedBytes)
-		decoder := gob.NewDecoder(buf)
-		if err := decoder.Decode(&token); err != nil {
-			return nil, fmt.Errorf("failed to decode page token: %w, cursor: %v", err, cursor)
-		}
-		return &token, nil
-	}
-
 	var seq iter.Seq[T]
 	if cursor == "" {
 		seq = fs.all()
@@ -593,7 +605,6 @@ func paginateList[T any](fs *featureSet[T], cursor string, pageSize int) (featur
 	if count < pageSize+1 {
 		return features, "", nil
 	}
-	// Trim the extra element from the result.
 	nextCursor, err = encodeCursor(fs.uniqueID(features[len(features)-1]))
 	if err != nil {
 		return nil, "", err
