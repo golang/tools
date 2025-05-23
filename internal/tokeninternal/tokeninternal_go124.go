@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// TODO(rfindley): once the new AddExistingFiles API has had some time to soak
-// in std, use it in x/tools and change the condition below to !go1.25.
-
-//go:build !addexistingfiles
+//go:build !go1.25
 
 package tokeninternal
 
@@ -22,9 +19,6 @@ import (
 // AddExistingFiles adds the specified files to the FileSet if they
 // are not already present. It panics if any pair of files in the
 // resulting FileSet would overlap.
-//
-// TODO(adonovan): replace with FileSet.AddExistingFiles in go1.25,
-// which is much more efficient.
 func AddExistingFiles(fset *token.FileSet, files []*token.File) {
 
 	// This function cannot be implemented as:
