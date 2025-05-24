@@ -177,7 +177,7 @@ func TestUpdateIssues(t *testing.T) {
 			ProgramVersion: "v0.16.1",
 		}
 		stacks := map[string]map[Info]int64{stack1: map[Info]int64{info: 3}}
-		updateIssues(c, issues, stacks, stacksToURL)
+		updateIssues(c, "golang/go", issues, stacks, stacksToURL)
 		changes := c.takeChanges()
 
 		if g, w := len(changes), 2; g != w {
@@ -218,7 +218,7 @@ func TestUpdateIssues(t *testing.T) {
 			ProgramVersion: "v0.17.0",
 		}
 		stacks := map[string]map[Info]int64{stack1: map[Info]int64{info: 3}}
-		updateIssues(c, issues, stacks, stacksToURL)
+		updateIssues(c, "golang/go", issues, stacks, stacksToURL)
 
 		changes := c.takeChanges()
 		if g, w := len(changes), 2; g != w {

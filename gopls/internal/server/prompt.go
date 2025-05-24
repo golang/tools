@@ -51,7 +51,7 @@ const (
 // The following environment variables may be set by the client.
 // Exported for testing telemetry integration.
 const (
-	GoTelemetryGoplsClientStartTimeEnvvar = "GOTELEMETRY_GOPLS_CLIENT_START_TIME" // telemetry start time recored in client
+	GoTelemetryGoplsClientStartTimeEnvvar = "GOTELEMETRY_GOPLS_CLIENT_START_TIME" // telemetry start time recorded in client
 	GoTelemetryGoplsClientTokenEnvvar     = "GOTELEMETRY_GOPLS_CLIENT_TOKEN"      // sampling token
 )
 

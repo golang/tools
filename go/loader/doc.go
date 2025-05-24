@@ -164,7 +164,7 @@ package loader
 // entry is created in this cache by startLoad the first time the
 // package is imported.  The first goroutine to request an entry becomes
 // responsible for completing the task and broadcasting completion to
-// subsequent requestors, which block until then.
+// subsequent requesters, which block until then.
 //
 // Type checking occurs in (parallel) postorder: we cannot type-check a
 // set of files until we have loaded and type-checked all of their

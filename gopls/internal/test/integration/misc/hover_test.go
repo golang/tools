@@ -332,7 +332,7 @@ func Hello() string {
 			t.Errorf("item:%q not sig:%q", itemContent, sigContent)
 		}
 		if !strings.Contains(hoverContent, itemContent) {
-			t.Errorf("hover:%q does not containt sig;%q", hoverContent, sigContent)
+			t.Errorf("hover:%q does not contain sig;%q", hoverContent, sigContent)
 		}
 	})
 }

@@ -1551,7 +1551,7 @@ func openClientBrowser(ctx context.Context, cli protocol.Client, title string, u
 			Message: fmt.Sprintf("%s: open your browser to %s", title, url),
 		}
 		if err := cli.ShowMessage(ctx, params); err != nil {
-			event.Error(ctx, "failed to show brower url", err)
+			event.Error(ctx, "failed to show browser url", err)
 		}
 	}
 }

@@ -5,7 +5,10 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/gob"
 	"fmt"
 	"iter"
 	"net/url"
@@ -15,6 +18,8 @@ import (
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
 )
+
+const DefaultPageSize = 1000
 
 // A Server is an instance of an MCP server.
 //
@@ -38,8 +43,11 @@ type Server struct {
 type ServerOptions struct {
 	// Optional instructions for connected clients.
 	Instructions string
-	// If non-nil, called when "notifications/intialized" is received.
+	// If non-nil, called when "notifications/initialized" is received.
 	InitializedHandler func(context.Context, *ServerSession, *InitializedParams)
+	// PageSize is the maximum number of items to return in a single page for
+	// list methods (e.g. ListTools).
+	PageSize int
 	// If non-nil, called when "notifications/roots/list_changed" is received.
 	RootsListChangedHandler func(context.Context, *ServerSession, *RootsListChangedParams)
 }
@@ -54,6 +62,12 @@ type ServerOptions struct {
 func NewServer(name, version string, opts *ServerOptions) *Server {
 	if opts == nil {
 		opts = new(ServerOptions)
+	}
+	if opts.PageSize < 0 {
+		panic(fmt.Errorf("invalid page size %d", opts.PageSize))
+	}
+	if opts.PageSize == 0 {
+		opts.PageSize = DefaultPageSize
 	}
 	return &Server{
 		name:           name,
@@ -108,7 +122,7 @@ func (s *Server) RemoveTools(names ...string) {
 		func() bool { return s.tools.remove(names...) })
 }
 
-// AddResource adds the given resource to the server and associates it with
+// AddResources adds the given resource to the server and associates it with
 // a [ResourceHandler], which will be called when the client calls [ClientSession.ReadResource].
 // If a resource with the same URI already exists, this one replaces it.
 // AddResource panics if a resource URI is invalid or not absolute (has an empty scheme).
@@ -186,8 +200,17 @@ func (s *Server) getPrompt(ctx context.Context, cc *ServerSession, params *GetPr
 func (s *Server) listTools(_ context.Context, _ *ServerSession, params *ListToolsParams) (*ListToolsResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var cursor string
+	if params != nil {
+		cursor = params.Cursor
+	}
+	tools, nextCursor, err := paginateList(s.tools, cursor, s.opts.PageSize)
+	if err != nil {
+		return nil, err
+	}
 	res := new(ListToolsResult)
-	for t := range s.tools.all() {
+	res.NextCursor = nextCursor
+	for _, t := range tools {
 		res.Tools = append(res.Tools, t.Tool)
 	}
 	return res, nil
@@ -508,4 +531,72 @@ func (ss *ServerSession) Close() error {
 // Wait waits for the connection to be closed by the client.
 func (ss *ServerSession) Wait() error {
 	return ss.conn.Wait()
+}
+
+// pageToken is the internal structure for the opaque pagination cursor.
+// It will be Gob-encoded and then Base64-encoded for use as a string token.
+type pageToken struct {
+	LastUID string // The unique ID of the last resource seen.
+}
+
+// paginateList returns a slice of features from the given featureSet, based on
+// the provided cursor and page size. It also returns a new cursor for the next
+// page, or an empty string if there are no more pages.
+func paginateList[T any](fs *featureSet[T], cursor string, pageSize int) (features []T, nextCursor string, err error) {
+	encodeCursor := func(uid string) (string, error) {
+		var buf bytes.Buffer
+		token := pageToken{LastUID: uid}
+		encoder := gob.NewEncoder(&buf)
+		if err := encoder.Encode(token); err != nil {
+			return "", fmt.Errorf("failed to encode page token: %w", err)
+		}
+		return base64.URLEncoding.EncodeToString(buf.Bytes()), nil
+	}
+
+	decodeCursor := func(cursor string) (*pageToken, error) {
+		decodedBytes, err := base64.URLEncoding.DecodeString(cursor)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode cursor: %w", err)
+		}
+
+		var token pageToken
+		buf := bytes.NewBuffer(decodedBytes)
+		decoder := gob.NewDecoder(buf)
+		if err := decoder.Decode(&token); err != nil {
+			return nil, fmt.Errorf("failed to decode page token: %w, cursor: %v", err, cursor)
+		}
+		return &token, nil
+	}
+
+	var seq iter.Seq[T]
+	if cursor == "" {
+		seq = fs.all()
+	} else {
+		pageToken, err := decodeCursor(cursor)
+		// According to the spec, invalid cursors should return Invalid params.
+		if err != nil {
+			return nil, "", jsonrpc2.ErrInvalidParams
+		}
+		seq = fs.above(pageToken.LastUID)
+	}
+	var count int
+	for f := range seq {
+		count++
+		// If we've seen pageSize + 1 elements, we've gathered enough info to determine
+		// if there's a next page. Stop processing the sequence.
+		if count == pageSize+1 {
+			break
+		}
+		features = append(features, f)
+	}
+	// No remaining pages.
+	if count < pageSize+1 {
+		return features, "", nil
+	}
+	// Trim the extra element from the result.
+	nextCursor, err = encodeCursor(fs.uniqueID(features[len(features)-1]))
+	if err != nil {
+		return nil, "", err
+	}
+	return features, nextCursor, nil
 }

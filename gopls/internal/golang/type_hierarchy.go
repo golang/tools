@@ -91,7 +91,7 @@ func Subtypes(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, ite
 	return relatedTypes(ctx, snapshot, fh, item, methodsets.Subtype)
 }
 
-// Subtypes reports information about supertypes of the selected type.
+// Supertypes reports information about supertypes of the selected type.
 func Supertypes(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, item protocol.TypeHierarchyItem) ([]protocol.TypeHierarchyItem, error) {
 	return relatedTypes(ctx, snapshot, fh, item, methodsets.Supertype)
 }

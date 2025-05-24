@@ -271,6 +271,7 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 	}
 
 	// arrays
+	// TODO(jba): consider arrays of structs.
 	if instance.Kind() == reflect.Array || instance.Kind() == reflect.Slice {
 		// https://json-schema.org/draft/2020-12/json-schema-core#section-10.3.1
 		// This validate call doesn't collect annotations for the items of the instance; they are separate
@@ -386,13 +387,19 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		// If we used anns here, then we'd be including properties evaluated in subschemas
 		// from allOf, etc., which additionalProperties shouldn't observe.
 		evalProps := map[string]bool{}
-		for prop, schema := range schema.Properties {
+		for prop, subschema := range schema.Properties {
 			val := property(instance, prop)
 			if !val.IsValid() {
 				// It's OK if the instance doesn't have the property.
 				continue
 			}
-			if err := st.validate(val, schema, nil, append(path, prop)); err != nil {
+			// If the instance is a struct and an optional property has the zero
+			// value, then we could interpret it as present or missing. Be generous:
+			// assume it's missing, and thus always validates successfully.
+			if instance.Kind() == reflect.Struct && val.IsZero() && !schema.isRequired[prop] {
+				continue
+			}
+			if err := st.validate(val, subschema, nil, append(path, prop)); err != nil {
 				return err
 			}
 			evalProps[prop] = true
@@ -433,13 +440,17 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		}
 
 		// https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01#section-6.5
+		var min, max int
+		if schema.MinProperties != nil || schema.MaxProperties != nil {
+			min, max = numPropertiesBounds(instance, schema.isRequired)
+		}
 		if schema.MinProperties != nil {
-			if n, m := numProperties(instance), *schema.MinProperties; n < m {
+			if n, m := max, *schema.MinProperties; n < m {
 				return fmt.Errorf("minProperties: object has %d properties, less than %d", n, m)
 			}
 		}
 		if schema.MaxProperties != nil {
-			if n, m := numProperties(instance), *schema.MaxProperties; n > m {
+			if n, m := min, *schema.MaxProperties; n > m {
 				return fmt.Errorf("maxProperties: object has %d properties, greater than %d", n, m)
 			}
 		}
@@ -557,14 +568,25 @@ func properties(v reflect.Value) iter.Seq2[string, reflect.Value] {
 	}
 }
 
-// numProperties returns the number of v's properties.
+// numPropertiesBounds returns bounds on the number of v's properties.
 // v must be a map or a struct.
-func numProperties(v reflect.Value) int {
+// If v is a map, both bounds are the map's size.
+// If v is a struct, the max is the number of struct properties.
+// But since we don't know whether a zero value indicates a missing optional property
+// or not, be generous and use the number of non-zero properties as the min.
+func numPropertiesBounds(v reflect.Value, isRequired map[string]bool) (int, int) {
 	switch v.Kind() {
 	case reflect.Map:
-		return v.Len()
+		return v.Len(), v.Len()
 	case reflect.Struct:
-		return len(structPropertiesOf(v.Type()))
+		sp := structPropertiesOf(v.Type())
+		min := 0
+		for prop, index := range sp {
+			if !v.FieldByIndex(index).IsZero() || isRequired[prop] {
+				min++
+			}
+		}
+		return min, len(sp)
 	default:
 		panic(fmt.Sprintf("properties: bad value: %s of kind %s", v, v.Kind()))
 	}

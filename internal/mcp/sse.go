@@ -102,7 +102,7 @@ type SSEServerTransport struct {
 	incoming chan jsonrpc2.Message // queue of incoming messages; never closed
 
 	// We must guard both pushes to the incoming queue and writes to the response
-	// writer, because incoming POST requests are abitrarily concurrent and we
+	// writer, because incoming POST requests are arbitrarily concurrent and we
 	// need to ensure we don't write push to the queue, or write to the
 	// ResponseWriter, after the session GET request exits.
 	mu     sync.Mutex
@@ -431,7 +431,7 @@ func (c *SSEClientTransport) Connect(ctx context.Context) (Stream, error) {
 
 // An sseClientStream is a logical jsonrpc2 stream that implements the client
 // half of the SSE protocol:
-//   - Writes are POSTS to the sesion endpoint.
+//   - Writes are POSTS to the session endpoint.
 //   - Reads are SSE 'message' events, and pushes them onto a buffered channel.
 //   - Close terminates the GET request.
 type sseClientStream struct {

@@ -95,7 +95,7 @@ func packageCompletionSurrounding(pgf *parsego.File, offset int) (*Selection, er
 	fset := token.NewFileSet()
 	expr, _ := parser.ParseExprFrom(fset, m.URI.Path(), pgf.Src, parser.Mode(0))
 	if expr == nil {
-		return nil, fmt.Errorf("unparseable file (%s)", m.URI)
+		return nil, fmt.Errorf("unparsable file (%s)", m.URI)
 	}
 	tok := fset.File(expr.Pos())
 	cursor := tok.Pos(offset)

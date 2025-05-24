@@ -2676,7 +2676,7 @@ func testIssue48226(t *testing.T, exporter packagestest.Exporter) {
 		t.Fatal(err)
 	}
 	if len(initial) != 1 {
-		t.Fatalf("exepected 1 package, got %d", len(initial))
+		t.Fatalf("expected 1 package, got %d", len(initial))
 	}
 	pkg := initial[0]
 
@@ -2721,7 +2721,7 @@ func testModule(t *testing.T, exporter packagestest.Exporter) {
 			t.Fatal("package.Module: want non-nil, got nil")
 		}
 		if a.Module.Path != "golang.org/fake" {
-			t.Fatalf("package.Modile.Path: want \"golang.org/fake\", got %q", a.Module.Path)
+			t.Fatalf("package.Module.Path: want \"golang.org/fake\", got %q", a.Module.Path)
 		}
 		if a.Module.GoMod != filepath.Join(rootDir, "go.mod") {
 			t.Fatalf("package.Module.GoMod: want %q, got %q", filepath.Join(rootDir, "go.mod"), a.Module.GoMod)

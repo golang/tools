@@ -391,7 +391,7 @@ func (c *parseCache) parseFiles(ctx context.Context, fset *token.FileSet, mode p
 
 // -- priority queue boilerplate --
 
-// queue is a min-atime prority queue of cache entries.
+// queue is a min-atime priority queue of cache entries.
 type queue []*parseCacheEntry
 
 func (q queue) Len() int { return len(q) }

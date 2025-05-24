@@ -46,7 +46,7 @@ func BenchmarkInitialGoimportsScan(b *testing.B) {
 			defer env.Close()
 			env.Await(InitialWorkspaceLoad)
 
-			// Create a buffer with a dangling selctor where the receiver is a single
+			// Create a buffer with a dangling selector where the receiver is a single
 			// character ('a') that matches a large fraction of the module cache.
 			env.CreateBuffer("internal/lsp/cache/temp.go", `
 // This is a temp file to exercise goimports scan of the module cache.

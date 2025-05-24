@@ -182,7 +182,7 @@ type testInfo struct {
 	// TestingPackageName is the package name should be used when referencing
 	// package "testing"
 	TestingPackageName string
-	// PackageName is the package name the target function/method is delcared from.
+	// PackageName is the package name the target function/method is declared from.
 	PackageName  string
 	TestFuncName string
 	// Func holds information about the function or method being tested.

@@ -114,7 +114,7 @@ func NewTextResourceContents(uri, mimeType, text string) *ResourceContents {
 	}
 }
 
-// NewTextResourceContents returns a [ResourceContents] containing a byte slice.
+// NewBlobResourceContents returns a [ResourceContents] containing a byte slice.
 func NewBlobResourceContents(uri, mimeType string, blob []byte) *ResourceContents {
 	// The only way to distinguish text from blob is a non-nil Blob field.
 	if blob == nil {

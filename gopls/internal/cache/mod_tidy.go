@@ -45,7 +45,7 @@ func (s *Snapshot) ModTidy(ctx context.Context, pm *ParsedModule) (*TidiedModule
 
 	uri := pm.URI
 	if pm.File == nil {
-		return nil, fmt.Errorf("cannot tidy unparseable go.mod file: %v", uri)
+		return nil, fmt.Errorf("cannot tidy unparsable go.mod file: %v", uri)
 	}
 
 	s.mu.Lock()

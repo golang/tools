@@ -82,7 +82,7 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 		}
 
 		for i := range 10 {
-			// Fix certain syntax errors that render the file unparseable.
+			// Fix certain syntax errors that render the file unparsable.
 			newSrc, srcFix := fixSrc(file, tok, src)
 			if newSrc == nil {
 				break
@@ -213,7 +213,7 @@ func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []FixType) {
 	return fixes
 }
 
-// TODO(rfindley): revert this intrumentation once we're certain the crash in
+// TODO(rfindley): revert this instrumentation once we're certain the crash in
 // #59097 is fixed.
 type FixType int
 

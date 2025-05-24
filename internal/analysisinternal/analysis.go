@@ -619,8 +619,8 @@ Outer:
 	// otherwise remove the line
 	edit := analysis.TextEdit{Pos: stmt.Pos(), End: stmt.End()}
 	if from.IsValid() || to.IsValid() {
-		// remove just the statment.
-		// we can't tell if there is a ; or whitespace right after the statment
+		// remove just the statement.
+		// we can't tell if there is a ; or whitespace right after the statement
 		// ideally we'd like to remove the former and leave the latter
 		// (if gofmt has run, there likely won't be a ;)
 		// In type switches we know there's a semicolon somewhere after the statement,

@@ -25,7 +25,7 @@ type unit struct{}
 
 //// Sanity checking utilities
 
-// assert panics with the mesage msg if p is false.
+// assert panics with the message msg if p is false.
 // Avoid combining with expensive string formatting.
 func assert(p bool, msg string) {
 	if !p {

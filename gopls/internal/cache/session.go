@@ -152,7 +152,7 @@ func (s *Session) HasView(uri protocol.DocumentURI) bool {
 }
 
 // createView creates a new view, with an initial snapshot that retains the
-// supplied context, detached from events and cancelation.
+// supplied context, detached from events and cancellation.
 //
 // The caller is responsible for calling the release function once.
 func (s *Session) createView(ctx context.Context, def *viewDefinition) (*View, *Snapshot, func()) {
@@ -418,7 +418,7 @@ func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Sn
 			continue // view was shut down
 		}
 		// We don't check the error from awaitLoaded, because a load failure (that
-		// doesn't result from context cancelation) should not prevent us from
+		// doesn't result from context cancellation) should not prevent us from
 		// continuing to search for the best view.
 		_ = snapshot.awaitLoaded(ctx)
 		g := snapshot.MetadataGraph()

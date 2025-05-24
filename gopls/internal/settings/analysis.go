@@ -133,7 +133,7 @@ func (a *Analyzer) ActionKinds() []protocol.CodeActionKind { return a.actionKind
 // less intrusive than Info diagnostics. The rule of thumb is this: use Info if
 // the diagnostic is not a bug, but the author probably didn't mean to write
 // the code that way. Use Hint if the diagnostic is not a bug and the author
-// indended to write the code that way, but there is a simpler or more modern
+// intended to write the code that way, but there is a simpler or more modern
 // way to express the same logic. An 'unused' diagnostic is Info level, since
 // the author probably didn't mean to check in unreachable code. A 'modernize'
 // or 'deprecated' diagnostic is Hint level, since the author intended to write

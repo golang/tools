@@ -343,7 +343,7 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 	for i := range results.Len() {
 		if resultHasTypeParams && !c.opts.placeholders {
 			// Leave an empty tabstop if placeholders are disabled and there
-			// are type args that need specificying.
+			// are type args that need specifying.
 			snip.WritePlaceholder(nil)
 			break
 		}

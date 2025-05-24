@@ -25,7 +25,7 @@ func TestZeroValue(t *testing.T) {
 		testenv.NeedsGoExperiment(t, "aliastypeparams")
 	}
 
-	// This test only refernece types/functions defined within the same package.
+	// This test only reference types/functions defined within the same package.
 	// We can safely drop the package name when encountered.
 	qual := types.Qualifier(func(p *types.Package) string {
 		return ""

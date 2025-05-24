@@ -102,7 +102,7 @@ type Snapshot struct {
 	// initialErr holds the last error resulting from initialization. If
 	// initialization fails, we only retry when the workspace modules change,
 	// to avoid too many go/packages calls.
-	// If initialized is false, initialErr stil holds the error resulting from
+	// If initialized is false, initialErr still holds the error resulting from
 	// the previous initialization.
 	// TODO(rfindley): can we unify the lifecycle of initialized and initialErr.
 	initialErr *InitializationError
@@ -1762,7 +1762,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 	//
 	// We could also do better by looking at which imports were deleted and
 	// trying to find cycles they are involved in. This fails when the file goes
-	// from an unparseable state to a parseable state, as we don't have a
+	// from an unparsable state to a parseable state, as we don't have a
 	// starting point to compare with.
 	if anyImportDeleted {
 		for id, mp := range s.meta.Packages {
@@ -2090,7 +2090,7 @@ func metadataChanges(ctx context.Context, lockedSnapshot *Snapshot, oldFH, newFH
 		} else {
 			// At this point, we shouldn't ever fail to produce a parsego.File, as
 			// we're already past header parsing.
-			bug.Reportf("metadataChanges: unparseable file %v (old error: %v, new error: %v)", oldFH.URI(), oldErr, newErr)
+			bug.Reportf("metadataChanges: unparsable file %v (old error: %v, new error: %v)", oldFH.URI(), oldErr, newErr)
 		}
 	}
 

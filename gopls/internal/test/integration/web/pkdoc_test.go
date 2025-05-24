@@ -71,7 +71,7 @@ func (G[T]) F(int, int, int, int, int, int, int, ...int) {}
 		collectDocs := env.Awaiter.ListenToShownDocuments()
 		get(t, srcURL)
 
-		// Check that that shown location is that of NewFunc.
+		// Check that shown location is that of NewFunc.
 		shownSource := shownDocument(t, collectDocs(), "file:")
 		gotLoc := protocol.Location{
 			URI:   protocol.DocumentURI(shownSource.URI), // fishy conversion

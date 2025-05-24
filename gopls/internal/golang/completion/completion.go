@@ -2428,8 +2428,8 @@ Nodes:
 						if inst != nil {
 							// TODO(jacobz): If partial signature instantiation becomes possible,
 							// make needsExactType only true if necessary.
-							// Currently, ambigious cases always resolve to a conversion expression
-							// wrapping the completion, which is occassionally superfluous.
+							// Currently, ambiguous cases always resolve to a conversion expression
+							// wrapping the completion, which is occasionally superfluous.
 							inf.needsExactType = true
 							sig = inst
 						}

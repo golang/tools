@@ -14,7 +14,7 @@ package yield
 //
 // 	seq(yield)
 //
-// to avoid unnecesary range desugaring and chains of dynamic calls.
+// to avoid unnecessary range desugaring and chains of dynamic calls.
 
 import (
 	_ "embed"

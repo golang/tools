@@ -1688,7 +1688,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, fset *token.FileSet, 
 
 	// Track URIs with parse errors so that we can suppress type errors for these
 	// files.
-	unparseable := map[protocol.DocumentURI]bool{}
+	unparsable := map[protocol.DocumentURI]bool{}
 	for _, e := range pkg.parseErrors {
 		diags, err := parseErrorDiagnostics(pkg, e)
 		if err != nil {
@@ -1696,7 +1696,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, fset *token.FileSet, 
 			continue
 		}
 		for _, diag := range diags {
-			unparseable[diag.URI] = true
+			unparsable[diag.URI] = true
 			pkg.diagnostics = append(pkg.diagnostics, diag)
 		}
 	}
@@ -1706,7 +1706,7 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, fset *token.FileSet, 
 		// If the file didn't parse cleanly, it is highly likely that type
 		// checking errors will be confusing or redundant. But otherwise, type
 		// checking usually provides a good enough signal to include.
-		if !unparseable[diag.URI] {
+		if !unparsable[diag.URI] {
 			pkg.diagnostics = append(pkg.diagnostics, diag)
 		}
 	}
