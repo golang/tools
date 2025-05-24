@@ -758,7 +758,9 @@ func okPrintfArg(pass *analysis.Pass, call *ast.CallExpr, maxArgIndex *int, firs
 		pass.ReportRangef(call, "%s format %s has arg %s of wrong type %s%s", name, operation.Text, analysisinternal.Format(pass.Fset, arg), typeString, details)
 		return false
 	}
-	if v.typ&argString != 0 && v.verb != 'T' && !strings.Contains(operation.Flags, "#") {
+	// Detect recursive formatting via value's String/Error methods.
+	// The '#' flag suppresses the methods, except with %x, %X, and %q.
+	if v.typ&argString != 0 && v.verb != 'T' && (!strings.Contains(operation.Flags, "#") || strings.ContainsRune("qxX", v.verb)) {
 		if methodName, ok := recursiveStringer(pass, arg); ok {
 			pass.ReportRangef(call, "%s format %s with arg %s causes recursive %s method call", name, operation.Text, analysisinternal.Format(pass.Fset, arg), methodName)
 			return false
