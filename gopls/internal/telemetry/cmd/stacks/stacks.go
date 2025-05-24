@@ -133,6 +133,9 @@ type ProgramConfig struct {
 	// IgnoreSymbolContains are "uninteresting" symbol substrings. e.g.,
 	// logging packages.
 	IgnoreSymbolContains []string
+
+	// Repository is the repository where the issues should be created, for example: "golang/go"
+	Repository string
 }
 
 var programs = map[string]ProgramConfig{
@@ -152,6 +155,7 @@ var programs = map[string]ProgramConfig{
 			"internal/util/bug.",
 			"internal/bug.", // former name in gopls/0.14.2
 		},
+		Repository: "golang/go",
 	},
 	"cmd/compile": {
 		Program:        "cmd/compile",
@@ -173,6 +177,23 @@ var programs = map[string]ProgramConfig{
 			"cmd/compile/internal/types2.(*Checker).handleBailout",
 			"cmd/compile/internal/gc.handlePanic",
 		},
+		Repository: "golang/go",
+	},
+	"github.com/go-delve/delve/cmd/dlv": {
+		Program:        "github.com/go-delve/delve/cmd/dlv",
+		IncludeClient:  false,
+		SearchLabel:    "delve/telemetry-wins",
+		NewIssuePrefix: "telemetry report",
+		NewIssueLabels: []string{
+			"delve/telemetry-wins",
+		},
+		MatchSymbolPrefix: "github.com/go-delve/delve",
+		IgnoreSymbolContains: []string{
+			"service/dap.(*Session).recoverPanic",
+			"rpccommon.newInternalError",
+			"rpccommon.(*ServerImpl).serveJSONCodec",
+		},
+		Repository: "go-delve/delve",
 	},
 }
 
@@ -227,7 +248,7 @@ func main() {
 	claimedBy := claimStacks(issues, stacks)
 
 	// Update existing issues that claimed new stacks.
-	updateIssues(ghclient, issues, stacks, stackToURL)
+	updateIssues(ghclient, pcfg.Repository, issues, stacks, stackToURL)
 
 	// For each stack, show existing issue or create a new one.
 	// Aggregate stack IDs by issue summary.
@@ -402,7 +423,7 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 // predicates.
 func readIssues(cli *githubClient, pcfg ProgramConfig) ([]*Issue, error) {
 	// Query GitHub for all existing GitHub issues with the report label.
-	issues, err := cli.searchIssues(pcfg.SearchLabel)
+	issues, err := cli.searchIssues(pcfg.Repository, pcfg.SearchLabel)
 	if err != nil {
 		// TODO(jba): return error instead of dying, or doc.
 		log.Fatalf("GitHub issues label %q search failed: %v", pcfg.SearchLabel, err)
@@ -581,7 +602,7 @@ func claimStacks(issues []*Issue, stacks map[string]map[Info]int64) map[string]*
 }
 
 // updateIssues updates existing issues that claimed new stacks by predicate.
-func updateIssues(cli *githubClient, issues []*Issue, stacks map[string]map[Info]int64, stackToURL map[string]string) {
+func updateIssues(cli *githubClient, repo string, issues []*Issue, stacks map[string]map[Info]int64, stackToURL map[string]string) {
 	for _, issue := range issues {
 		if len(issue.newStacks) == 0 {
 			continue
@@ -597,7 +618,7 @@ func updateIssues(cli *githubClient, issues []*Issue, stacks map[string]map[Info
 			writeStackComment(comment, stack, id, stackToURL[stack], stacks[stack])
 		}
 
-		if err := cli.addIssueComment(issue.Number, comment.String()); err != nil {
+		if err := cli.addIssueComment(repo, issue.Number, comment.String()); err != nil {
 			log.Println(err)
 			continue
 		}
@@ -616,7 +637,7 @@ func updateIssues(cli *githubClient, issues []*Issue, stacks map[string]map[Info
 			update.State = "open"
 			update.StateReason = "reopened"
 		}
-		if err := cli.updateIssue(update); err != nil {
+		if err := cli.updateIssue(repo, update); err != nil {
 			log.Printf("added comment to issue #%d but failed to update: %v",
 				issue.Number, err)
 			continue
@@ -783,7 +804,7 @@ outer:
 	// Report it. The user will interactively finish the task,
 	// since they will typically de-dup it without even creating a new issue
 	// by expanding the #!stacks predicate of an existing issue.
-	if !browser.Open("https://github.com/golang/go/issues/new?labels=" + labels + "&title=" + url.QueryEscape(title) + "&body=" + url.QueryEscape(body.String())) {
+	if !browser.Open("https://github.com/" + pcfg.Repository + "/issues/new?labels=" + labels + "&title=" + url.QueryEscape(title) + "&body=" + url.QueryEscape(body.String())) {
 		log.Print("Please file a new issue at golang.org/issue/new using this template:\n\n")
 		log.Printf("Title: %s\n", title)
 		log.Printf("Labels: %s\n", labels)
@@ -910,6 +931,14 @@ func frameURL(pclntab map[string]FileLine, info Info, frame string) string {
 		}
 	}
 
+	// Delve
+	const delveRepo = "github.com/go-delve/delve/"
+	if strings.HasPrefix(fileline.file, delveRepo) {
+		filename := fileline.file[len(delveRepo):]
+		return fmt.Sprintf("https://%sblob/%s/%s#L%d", delveRepo, info.ProgramVersion, filename, linenum)
+
+	}
+
 	log.Printf("no CodeSearch URL for %q (%s:%d)",
 		symbol, fileline.file, linenum)
 	return ""
@@ -952,7 +981,7 @@ type updateIssue struct {
 // -- GitHub search --
 
 // searchIssues queries the GitHub issue tracker.
-func (cli *githubClient) searchIssues(label string) ([]*Issue, error) {
+func (cli *githubClient) searchIssues(repo, label string) ([]*Issue, error) {
 	label = url.QueryEscape(label)
 
 	// Slurp all issues with the telemetry label.
@@ -966,7 +995,7 @@ func (cli *githubClient) searchIssues(label string) ([]*Issue, error) {
 	// issues across pages.
 
 	getPage := func(page int) ([]*Issue, error) {
-		url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues?state=all&labels=%s&per_page=100&page=%d", label, page)
+		url := fmt.Sprintf("https://api.github.com/repos/%s/issues?state=all&labels=%s&per_page=100&page=%d", repo, label, page)
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return nil, err
@@ -1007,7 +1036,7 @@ func (cli *githubClient) searchIssues(label string) ([]*Issue, error) {
 }
 
 // updateIssue updates the numbered issue.
-func (cli *githubClient) updateIssue(update updateIssue) error {
+func (cli *githubClient) updateIssue(repo string, update updateIssue) error {
 	if cli.divertChanges {
 		cli.changes = append(cli.changes, update)
 		return nil
@@ -1018,7 +1047,7 @@ func (cli *githubClient) updateIssue(update updateIssue) error {
 		return err
 	}
 
-	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d", update.number)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d", repo, update.number)
 	if err := cli.requestChange("PATCH", url, data, http.StatusOK); err != nil {
 		return fmt.Errorf("updating issue: %v", err)
 	}
@@ -1026,7 +1055,7 @@ func (cli *githubClient) updateIssue(update updateIssue) error {
 }
 
 // addIssueComment adds a markdown comment to the numbered issue.
-func (cli *githubClient) addIssueComment(number int, comment string) error {
+func (cli *githubClient) addIssueComment(repo string, number int, comment string) error {
 	if cli.divertChanges {
 		cli.changes = append(cli.changes, addIssueComment{number, comment})
 		return nil
@@ -1042,7 +1071,7 @@ func (cli *githubClient) addIssueComment(number int, comment string) error {
 		return err
 	}
 
-	url := fmt.Sprintf("https://api.github.com/repos/golang/go/issues/%d/comments", number)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d/comments", repo, number)
 	if err := cli.requestChange("POST", url, data, http.StatusCreated); err != nil {
 		return fmt.Errorf("creating issue comment: %v", err)
 	}
@@ -1167,6 +1196,17 @@ func readPCLineTable(info Info, stacksDir string) (map[string]FileLine, error) {
 		// directory its go.mod doesn't restrict the toolchain versions
 		// we're allowed to use.
 		buildDir = "/"
+	case "github.com/go-delve/delve/cmd/dlv":
+		revDir := filepath.Join(stacksDir, "delve@"+info.ProgramVersion)
+		if !fileExists(filepath.Join(revDir, "go.mod")) {
+			_ = os.RemoveAll(revDir)
+			log.Printf("cloning github.com/go-delve/delve@%s", info.ProgramVersion)
+			if err := shallowClone(revDir, "https://github.com/go-delve/delve", info.ProgramVersion); err != nil {
+				_ = os.RemoveAll(revDir)
+				return nil, fmt.Errorf("clone: %v", err)
+			}
+		}
+		buildDir = revDir
 	default:
 		return nil, fmt.Errorf("don't know how to build unknown program %s", info.Program)
 	}
