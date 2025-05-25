@@ -1,0 +1,117 @@
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package goasm provides language-server features for files in Go
+// assembly language (https://go.dev/doc/asm).
+package goasm
+
+import (
+	"context"
+	"fmt"
+	"go/ast"
+
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
+	"golang.org/x/tools/gopls/internal/util/morestrings"
+	"golang.org/x/tools/internal/event"
+)
+
+func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.Location, error) {
+	ctx, done := event.Start(ctx, "goasm.References")
+	defer done()
+
+	pkg, asmFile, err := GetPackageID(ctx, snapshot, fh.URI())
+	if err != nil {
+		return nil, err
+	}
+
+	// Read the file.
+	content, err := fh.Content()
+	if err != nil {
+		return nil, err
+	}
+	mapper := protocol.NewMapper(fh.URI(), content)
+	offset, err := mapper.PositionOffset(position)
+	if err != nil {
+		return nil, err
+	}
+
+	// // Parse the assembly.
+	// file := asm.Parse(fh.URI(), content)
+
+	// Figure out the selected symbol.
+	// For now, just find the identifier around the cursor.
+	var found *asm.Ident
+	for _, id := range asmFile.Idents {
+		if id.Offset <= offset && offset <= id.End() {
+			found = &id
+			break
+		}
+	}
+	if found == nil {
+		return nil, fmt.Errorf("not an identifier")
+	}
+
+	sym := found.Name
+	var locations []protocol.Location
+	_, name, ok := morestrings.CutLast(sym, ".")
+	if !ok {
+		return nil, fmt.Errorf("not found")
+	}
+	// return localReferences(pkg, targets, true, report)
+	for _, pgf := range pkg.CompiledGoFiles() {
+		for curId := range pgf.Cursor.Preorder((*ast.Ident)(nil)) {
+			id := curId.Node().(*ast.Ident)
+			if id.Name == name {
+				loc, err := pgf.NodeLocation(id)
+				if err != nil {
+					return nil, err
+				}
+				locations = append(locations, loc)
+			}
+		}
+	}
+
+	for _, asmFile := range pkg.AsmFiles() {
+		for _, id := range asmFile.Idents {
+			if id.Name != sym {
+				continue
+			}
+			if rng, err := asmFile.NodeRange(id); err == nil {
+				asmLocation := protocol.Location{
+					URI:   asmFile.URI,
+					Range: rng,
+				}
+				locations = append(locations, asmLocation)
+			}
+		}
+	}
+
+	return locations, nil
+}
+
+func GetPackageID(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*cache.Package, *asm.File, error) {
+	mps, err := snapshot.MetadataForFile(ctx, uri)
+	if err != nil {
+		return nil, nil, err
+	}
+	metadata.RemoveIntermediateTestVariants(&mps)
+	if len(mps) == 0 {
+		return nil, nil, fmt.Errorf("no package metadata for file %s", uri)
+	}
+	mp := mps[0]
+	pkgs, err := snapshot.TypeCheck(ctx, mp.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	pkg := pkgs[0]
+	asmFile, err := pkg.AsmFile(uri)
+	if err != nil {
+		return nil, nil, err // "can't happen"
+	}
+	return pkg, asmFile, nil
+}

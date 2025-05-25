@@ -629,7 +629,7 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 					URI:   pgf.URI,
 					Range: rng,
 				}
-				report(asmLocation, false)
+				report(asmLocation, true)
 			}
 		}
 	}

@@ -218,3 +218,17 @@ func (p *Package) TypeErrors() []types.Error {
 func (p *Package) AsmFiles() []*asm.File {
 	return p.pkg.asmFiles
 }
+
+func (p *Package) AsmFile(uri protocol.DocumentURI) (*asm.File, error) {
+	return p.pkg.AsmFile(uri)
+}
+
+func (pkg *syntaxPackage) AsmFile(uri protocol.DocumentURI) (*asm.File, error) {
+	for _, af := range pkg.asmFiles {
+		if af.URI == uri {
+			return af, nil
+		}	
+	}
+
+	return nil, fmt.Errorf("no parsed file for %s in %v", uri, pkg.id)
+}
