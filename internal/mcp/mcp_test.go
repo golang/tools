@@ -634,10 +634,10 @@ func TestMiddleware(t *testing.T) {
 
 	// "1" is the outer middleware layer, called first; then "2" is called, and finally
 	// the default dispatcher.
-	s.AddMiddleware(traceCalls[ServerSession](&sbuf, "1"), traceCalls[ServerSession](&sbuf, "2"))
+	s.AddMiddleware(traceCalls[*ServerSession](&sbuf, "1"), traceCalls[*ServerSession](&sbuf, "2"))
 
 	c := NewClient("testClient", "v1.0.0", nil)
-	c.AddMiddleware(traceCalls[ClientSession](&cbuf, "1"), traceCalls[ClientSession](&cbuf, "2"))
+	c.AddMiddleware(traceCalls[*ClientSession](&cbuf, "1"), traceCalls[*ClientSession](&cbuf, "2"))
 
 	cs, err := c.Connect(ctx, ct)
 	if err != nil {
@@ -679,9 +679,9 @@ func TestMiddleware(t *testing.T) {
 
 // traceCalls creates a middleware function that prints the method before and after each call
 // with the given prefix.
-func traceCalls[S ClientSession | ServerSession](w io.Writer, prefix string) Middleware[S] {
+func traceCalls[S Session](w io.Writer, prefix string) Middleware[S] {
 	return func(h MethodHandler[S]) MethodHandler[S] {
-		return func(ctx context.Context, sess *S, method string, params Params) (Result, error) {
+		return func(ctx context.Context, sess S, method string, params Params) (Result, error) {
 			fmt.Fprintf(w, "%s >%s\n", prefix, method)
 			defer fmt.Fprintf(w, "%s <%s\n", prefix, method)
 			return h(ctx, sess, method, params)

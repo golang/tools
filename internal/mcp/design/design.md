@@ -416,11 +416,11 @@ We provide a mechanism to add MCP-level middleware on the both the client and se
 // For methods, a MethodHandler must return either an XXResult struct pointer and a nil error, or
 // nil with a non-nil error.
 // For notifications, a MethodHandler must return nil, nil.
-type MethodHandler[S ClientSession | ServerSession] func(
-	ctx context.Context, _ *S, method string, params any) (result any, err error)
+type MethodHandler[S Session] func(
+	ctx context.Context, _ *S, method string, params Params) (result Result, err error)
 
 // Middleware is a function from MethodHandlers to MethodHandlers.
-type Middleware[S ClientSession | ServerSession] func(MethodHandler[S]) MethodHandler[S]
+type Middleware[S Session] func(MethodHandler[S]) MethodHandler[S]
 
 // AddMiddleware wraps the client/server's current method handler using the provided
 // middleware. Middleware is applied from right to left, so that the first one
@@ -428,14 +428,14 @@ type Middleware[S ClientSession | ServerSession] func(MethodHandler[S]) MethodHa
 //
 // For example, AddMiddleware(m1, m2, m3) augments the server method handler as
 // m1(m2(m3(handler))).
-func (c *Client) AddMiddleware(middleware ...Middleware[ClientSession])
-func (s *Server) AddMiddleware(middleware ...Middleware[ServerSession])
+func (c *Client) AddMiddleware(middleware ...Middleware[*ClientSession])
+func (s *Server) AddMiddleware(middleware ...Middleware[*ServerSession])
 ```
 
 As an example, this code adds server-side logging:
 
 ```go
-func withLogging(h mcp.MethodHandler[ServerSession]) mcp.MethodHandler[ServerSession]{
+func withLogging(h mcp.MethodHandler[*ServerSession]) mcp.MethodHandler[*ServerSession]{
     return func(ctx context.Context, s *mcp.ServerSession, method string, params any) (res any, err error) {
         log.Printf("request: %s %v", method, params)
         defer func() { log.Printf("response: %v, %v", res, err) }()

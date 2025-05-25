@@ -37,7 +37,7 @@ type Server struct {
 	tools          *featureSet[*ServerTool]
 	resources      *featureSet[*ServerResource]
 	sessions       []*ServerSession
-	methodHandler_ MethodHandler[ServerSession]
+	methodHandler_ MethodHandler[*ServerSession]
 }
 
 // ServerOptions is used to configure behavior of the server.
@@ -77,7 +77,7 @@ func NewServer(name, version string, opts *ServerOptions) *Server {
 		prompts:        newFeatureSet(func(p *ServerPrompt) string { return p.Prompt.Name }),
 		tools:          newFeatureSet(func(t *ServerTool) string { return t.Tool.Name }),
 		resources:      newFeatureSet(func(r *ServerResource) string { return r.Resource.URI }),
-		methodHandler_: defaultMethodHandler[ServerSession],
+		methodHandler_: defaultMethodHandler[*ServerSession],
 	}
 }
 
@@ -440,14 +440,14 @@ func (ss *ServerSession) LoggingMessage(ctx context.Context, params *LoggingMess
 //
 // For example, AddMiddleware(m1, m2, m3) augments the server method handler as
 // m1(m2(m3(handler))).
-func (s *Server) AddMiddleware(middleware ...Middleware[ServerSession]) {
+func (s *Server) AddMiddleware(middleware ...Middleware[*ServerSession]) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	addMiddleware(&s.methodHandler_, middleware)
 }
 
 // serverMethodInfos maps from the RPC method name to serverMethodInfos.
-var serverMethodInfos = map[string]methodInfo[ServerSession]{
+var serverMethodInfos = map[string]methodInfo{
 	methodInitialize:             newMethodInfo(sessionMethod((*ServerSession).initialize)),
 	methodPing:                   newMethodInfo(sessionMethod((*ServerSession).ping)),
 	methodListPrompts:            newMethodInfo(serverMethod((*Server).listPrompts)),
@@ -461,15 +461,11 @@ var serverMethodInfos = map[string]methodInfo[ServerSession]{
 	notificationRootsListChanged: newMethodInfo(serverMethod((*Server).callRootsListChangedHandler)),
 }
 
-// *ServerSession implements the session interface.
-// See toSession for why this interface seems to be necessary.
-var _ session[ServerSession] = (*ServerSession)(nil)
-
-func (ss *ServerSession) methodInfos() map[string]methodInfo[ServerSession] {
+func (ss *ServerSession) methodInfos() map[string]methodInfo {
 	return serverMethodInfos
 }
 
-func (ss *ServerSession) methodHandler() MethodHandler[ServerSession] {
+func (ss *ServerSession) methodHandler() methodHandler {
 	ss.server.mu.Lock()
 	defer ss.server.mu.Unlock()
 	return ss.server.methodHandler_

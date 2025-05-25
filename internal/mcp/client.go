@@ -24,7 +24,7 @@ type Client struct {
 	mu             sync.Mutex
 	roots          *featureSet[*Root]
 	sessions       []*ClientSession
-	methodHandler_ MethodHandler[ClientSession]
+	methodHandler_ MethodHandler[*ClientSession]
 }
 
 // NewClient creates a new Client.
@@ -37,7 +37,7 @@ func NewClient(name, version string, opts *ClientOptions) *Client {
 		name:           name,
 		version:        version,
 		roots:          newFeatureSet(func(r *Root) string { return r.URI }),
-		methodHandler_: defaultMethodHandler[ClientSession],
+		methodHandler_: defaultMethodHandler[*ClientSession],
 	}
 	if opts != nil {
 		c.opts = *opts
@@ -196,14 +196,14 @@ func (c *Client) createMessage(ctx context.Context, cs *ClientSession, params *C
 //
 // For example, AddMiddleware(m1, m2, m3) augments the client method handler as
 // m1(m2(m3(handler))).
-func (c *Client) AddMiddleware(middleware ...Middleware[ClientSession]) {
+func (c *Client) AddMiddleware(middleware ...Middleware[*ClientSession]) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	addMiddleware(&c.methodHandler_, middleware)
 }
 
 // clientMethodInfos maps from the RPC method name to serverMethodInfos.
-var clientMethodInfos = map[string]methodInfo[ClientSession]{
+var clientMethodInfos = map[string]methodInfo{
 	methodPing:                      newMethodInfo(sessionMethod((*ClientSession).ping)),
 	methodListRoots:                 newMethodInfo(clientMethod((*Client).listRoots)),
 	methodCreateMessage:             newMethodInfo(clientMethod((*Client).createMessage)),
@@ -213,9 +213,7 @@ var clientMethodInfos = map[string]methodInfo[ClientSession]{
 	notificationLoggingMessage:      newMethodInfo(clientMethod((*Client).callLoggingHandler)),
 }
 
-var _ session[ClientSession] = (*ClientSession)(nil)
-
-func (cs *ClientSession) methodInfos() map[string]methodInfo[ClientSession] {
+func (cs *ClientSession) methodInfos() map[string]methodInfo {
 	return clientMethodInfos
 }
 
@@ -223,7 +221,7 @@ func (cs *ClientSession) handle(ctx context.Context, req *jsonrpc2.Request) (any
 	return handleRequest(ctx, req, cs)
 }
 
-func (cs *ClientSession) methodHandler() MethodHandler[ClientSession] {
+func (cs *ClientSession) methodHandler() methodHandler {
 	cs.client.mu.Lock()
 	defer cs.client.mu.Unlock()
 	return cs.client.methodHandler_
