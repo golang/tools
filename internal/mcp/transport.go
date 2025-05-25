@@ -141,7 +141,7 @@ func (c *canceller) Preempt(ctx context.Context, req *jsonrpc2.Request) (result 
 
 // call executes and awaits a jsonrpc2 call on the given connection,
 // translating errors into the mcp domain.
-func call(ctx context.Context, conn *jsonrpc2.Connection, method string, params, result any) error {
+func call(ctx context.Context, conn *jsonrpc2.Connection, method string, params Params, result Result) error {
 	// TODO: the "%w"s in this function effectively make jsonrpc2.WireError part of the API.
 	// Consider alternatives.
 	call := conn.Call(ctx, method, params)
@@ -151,7 +151,7 @@ func call(ctx context.Context, conn *jsonrpc2.Connection, method string, params,
 		return fmt.Errorf("calling %q: %w", method, ErrConnectionClosed)
 	case ctx.Err() != nil:
 		// Notify the peer of cancellation.
-		err := conn.Notify(xcontext.Detach(ctx), "notifications/cancelled", &CancelledParams{
+		err := conn.Notify(xcontext.Detach(ctx), notificationCancelled, &CancelledParams{
 			Reason:    ctx.Err().Error(),
 			RequestID: call.ID().Raw(),
 		})

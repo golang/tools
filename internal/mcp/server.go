@@ -32,12 +32,13 @@ type Server struct {
 	version string
 	opts    ServerOptions
 
-	mu             sync.Mutex
-	prompts        *featureSet[*ServerPrompt]
-	tools          *featureSet[*ServerTool]
-	resources      *featureSet[*ServerResource]
-	sessions       []*ServerSession
-	methodHandler_ MethodHandler[*ServerSession]
+	mu                      sync.Mutex
+	prompts                 *featureSet[*ServerPrompt]
+	tools                   *featureSet[*ServerTool]
+	resources               *featureSet[*ServerResource]
+	sessions                []*ServerSession
+	sendingMethodHandler_   MethodHandler[*ServerSession]
+	receivingMethodHandler_ MethodHandler[*ServerSession]
 }
 
 // ServerOptions is used to configure behavior of the server.
@@ -71,13 +72,14 @@ func NewServer(name, version string, opts *ServerOptions) *Server {
 		opts.PageSize = DefaultPageSize
 	}
 	return &Server{
-		name:           name,
-		version:        version,
-		opts:           *opts,
-		prompts:        newFeatureSet(func(p *ServerPrompt) string { return p.Prompt.Name }),
-		tools:          newFeatureSet(func(t *ServerTool) string { return t.Tool.Name }),
-		resources:      newFeatureSet(func(r *ServerResource) string { return r.Resource.URI }),
-		methodHandler_: defaultMethodHandler[*ServerSession],
+		name:                    name,
+		version:                 version,
+		opts:                    *opts,
+		prompts:                 newFeatureSet(func(p *ServerPrompt) string { return p.Prompt.Name }),
+		tools:                   newFeatureSet(func(t *ServerTool) string { return t.Tool.Name }),
+		resources:               newFeatureSet(func(r *ServerResource) string { return r.Resource.URI }),
+		sendingMethodHandler_:   defaultSendingMethodHandler[*ServerSession],
+		receivingMethodHandler_: defaultReceivingMethodHandler[*ServerSession],
 	}
 }
 
@@ -401,18 +403,19 @@ type ServerSession struct {
 }
 
 // Ping pings the client.
-func (ss *ServerSession) Ping(ctx context.Context, _ *PingParams) error {
-	return call(ctx, ss.conn, methodPing, (*PingParams)(nil), nil)
+func (ss *ServerSession) Ping(ctx context.Context, params *PingParams) error {
+	_, err := handleSend[*emptyResult](ctx, ss, methodPing, params)
+	return err
 }
 
 // ListRoots lists the client roots.
 func (ss *ServerSession) ListRoots(ctx context.Context, params *ListRootsParams) (*ListRootsResult, error) {
-	return standardCall[ListRootsResult](ctx, ss.conn, methodListRoots, params)
+	return handleSend[*ListRootsResult](ctx, ss, methodListRoots, params)
 }
 
 // CreateMessage sends a sampling request to the client.
 func (ss *ServerSession) CreateMessage(ctx context.Context, params *CreateMessageParams) (*CreateMessageResult, error) {
-	return standardCall[CreateMessageResult](ctx, ss.conn, methodCreateMessage, params)
+	return handleSend[*CreateMessageResult](ctx, ss, methodCreateMessage, params)
 }
 
 // LoggingMessage sends a logging message to the client.
@@ -431,19 +434,37 @@ func (ss *ServerSession) LoggingMessage(ctx context.Context, params *LoggingMess
 	if compareLevels(params.Level, logLevel) < 0 {
 		return nil
 	}
-	return ss.conn.Notify(ctx, notificationLoggingMessage, params)
+	return handleNotify(ctx, ss, notificationLoggingMessage, params)
 }
 
-// AddMiddleware wraps the server's current method handler using the provided
-// middleware. Middleware is applied from right to left, so that the first one
-// is executed first.
+// AddSendingMiddleware wraps the current sending method handler using the provided
+// middleware. Middleware is applied from right to left, so that the first one is
+// executed first.
 //
-// For example, AddMiddleware(m1, m2, m3) augments the server method handler as
+// For example, AddSendingMiddleware(m1, m2, m3) augments the method handler as
 // m1(m2(m3(handler))).
-func (s *Server) AddMiddleware(middleware ...Middleware[*ServerSession]) {
+//
+// Sending middleware is called when a request is sent. It is useful for tasks
+// such as tracing, metrics, and adding progress tokens.
+func (s *Server) AddSendingMiddleware(middleware ...Middleware[*ServerSession]) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	addMiddleware(&s.methodHandler_, middleware)
+	addMiddleware(&s.sendingMethodHandler_, middleware)
+}
+
+// AddReceivingMiddleware wraps the current receiving method handler using
+// the provided middleware. Middleware is applied from right to left, so that the
+// first one is executed first.
+//
+// For example, AddReceivingMiddleware(m1, m2, m3) augments the method handler as
+// m1(m2(m3(handler))).
+//
+// Receiving middleware is called when a request is received. It is useful for tasks
+// such as authentication, request logging and metrics.
+func (s *Server) AddReceivingMiddleware(middleware ...Middleware[*ServerSession]) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	addMiddleware(&s.receivingMethodHandler_, middleware)
 }
 
 // serverMethodInfos maps from the RPC method name to serverMethodInfos.
@@ -461,14 +482,20 @@ var serverMethodInfos = map[string]methodInfo{
 	notificationRootsListChanged: newMethodInfo(serverMethod((*Server).callRootsListChangedHandler)),
 }
 
-func (ss *ServerSession) methodInfos() map[string]methodInfo {
-	return serverMethodInfos
-}
+func (ss *ServerSession) sendingMethodInfos() map[string]methodInfo { return clientMethodInfos }
 
-func (ss *ServerSession) methodHandler() methodHandler {
+func (ss *ServerSession) receivingMethodInfos() map[string]methodInfo { return serverMethodInfos }
+
+func (ss *ServerSession) sendingMethodHandler() methodHandler {
 	ss.server.mu.Lock()
 	defer ss.server.mu.Unlock()
-	return ss.server.methodHandler_
+	return ss.server.sendingMethodHandler_
+}
+
+func (ss *ServerSession) receivingMethodHandler() methodHandler {
+	ss.server.mu.Lock()
+	defer ss.server.mu.Unlock()
+	return ss.server.receivingMethodHandler_
 }
 
 // getConn implements [session.getConn].
@@ -492,7 +519,7 @@ func (ss *ServerSession) handle(ctx context.Context, req *jsonrpc2.Request) (any
 	// TODO(rfindley): embed the incoming request ID in the client context (or, more likely,
 	// a wrapper around it), so that we can correlate responses and notifications
 	// to the handler; this is required for the new session-based transport.
-	return handleRequest(ctx, req, ss)
+	return handleReceive(ctx, ss, req)
 }
 
 func (ss *ServerSession) initialize(ctx context.Context, params *InitializeParams) (*InitializeResult, error) {
@@ -534,15 +561,15 @@ func (ss *ServerSession) initialize(ctx context.Context, params *InitializeParam
 	}, nil
 }
 
-func (ss *ServerSession) ping(context.Context, *PingParams) (Result, error) {
-	return emptyResult{}, nil
+func (ss *ServerSession) ping(context.Context, *PingParams) (*emptyResult, error) {
+	return &emptyResult{}, nil
 }
 
-func (ss *ServerSession) setLevel(_ context.Context, params *SetLevelParams) (Result, error) {
+func (ss *ServerSession) setLevel(_ context.Context, params *SetLevelParams) (*emptyResult, error) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	ss.logLevel = params.Level
-	return emptyResult{}, nil
+	return &emptyResult{}, nil
 }
 
 // Close performs a graceful shutdown of the connection, preventing new

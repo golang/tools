@@ -117,7 +117,7 @@ func TestEndToEnd(t *testing.T) {
 	t.Run("prompts", func(t *testing.T) {
 		res, err := cs.ListPrompts(ctx, nil)
 		if err != nil {
-			t.Errorf("prompts/list failed: %v", err)
+			t.Fatalf("prompts/list failed: %v", err)
 		}
 		wantPrompts := []*Prompt{
 			{
@@ -634,10 +634,12 @@ func TestMiddleware(t *testing.T) {
 
 	// "1" is the outer middleware layer, called first; then "2" is called, and finally
 	// the default dispatcher.
-	s.AddMiddleware(traceCalls[*ServerSession](&sbuf, "1"), traceCalls[*ServerSession](&sbuf, "2"))
+	s.AddSendingMiddleware(traceCalls[*ServerSession](&sbuf, "S1"), traceCalls[*ServerSession](&sbuf, "S2"))
+	s.AddReceivingMiddleware(traceCalls[*ServerSession](&sbuf, "R1"), traceCalls[*ServerSession](&sbuf, "R2"))
 
 	c := NewClient("testClient", "v1.0.0", nil)
-	c.AddMiddleware(traceCalls[*ClientSession](&cbuf, "1"), traceCalls[*ClientSession](&cbuf, "2"))
+	c.AddSendingMiddleware(traceCalls[*ClientSession](&cbuf, "S1"), traceCalls[*ClientSession](&cbuf, "S2"))
+	c.AddReceivingMiddleware(traceCalls[*ClientSession](&cbuf, "R1"), traceCalls[*ClientSession](&cbuf, "R2"))
 
 	cs, err := c.Connect(ctx, ct)
 	if err != nil {
@@ -646,34 +648,52 @@ func TestMiddleware(t *testing.T) {
 	if _, err := cs.ListTools(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
-	want := `
-1 >initialize
-2 >initialize
-2 <initialize
-1 <initialize
-1 >notifications/initialized
-2 >notifications/initialized
-2 <notifications/initialized
-1 <notifications/initialized
-1 >tools/list
-2 >tools/list
-2 <tools/list
-1 <tools/list
-`
-	if diff := cmp.Diff(want, sbuf.String()); diff != "" {
-		t.Errorf("mismatch (-want, +got):\n%s", diff)
+	if _, err := ss.ListRoots(ctx, nil); err != nil {
+		t.Fatal(err)
 	}
 
-	_, _ = ss.ListRoots(ctx, nil)
-
-	want = `
-1 >roots/list
-2 >roots/list
-2 <roots/list
-1 <roots/list
+	wantServer := `
+R1 >initialize
+R2 >initialize
+R2 <initialize
+R1 <initialize
+R1 >notifications/initialized
+R2 >notifications/initialized
+R2 <notifications/initialized
+R1 <notifications/initialized
+R1 >tools/list
+R2 >tools/list
+R2 <tools/list
+R1 <tools/list
+S1 >roots/list
+S2 >roots/list
+S2 <roots/list
+S1 <roots/list
 `
-	if diff := cmp.Diff(want, cbuf.String()); diff != "" {
-		t.Errorf("mismatch (-want, +got):\n%s", diff)
+	if diff := cmp.Diff(wantServer, sbuf.String()); diff != "" {
+		t.Errorf("server mismatch (-want, +got):\n%s", diff)
+	}
+
+	wantClient := `
+S1 >initialize
+S2 >initialize
+S2 <initialize
+S1 <initialize
+S1 >notifications/initialized
+S2 >notifications/initialized
+S2 <notifications/initialized
+S1 <notifications/initialized
+S1 >tools/list
+S2 >tools/list
+S2 <tools/list
+S1 <tools/list
+R1 >roots/list
+R2 >roots/list
+R2 <roots/list
+R1 <roots/list
+`
+	if diff := cmp.Diff(wantClient, cbuf.String()); diff != "" {
+		t.Errorf("client mismatch (-want, +got):\n%s", diff)
 	}
 }
 

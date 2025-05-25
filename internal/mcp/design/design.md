@@ -408,7 +408,7 @@ func (*ClientSession) ResourceTemplates(context.Context, *ListResourceTemplatesP
 
 ### Middleware
 
-We provide a mechanism to add MCP-level middleware on the both the client and server side, which runs after the request has been parsed but before any normal handling.
+We provide a mechanism to add MCP-level middleware on the both the client and server side. Receiving middleware runs after the request has been parsed but before any normal handling. It is analogous to traditional HTTP server middleware. Sending middleware runs after a call to a method but before the request is sent. It is an alternative to transport middleware that exposes MCP types instead of raw JSON-RPC 2.0 messages. It is useful for tracing and setting progress tokens, for example.
 
 ```go
 // A MethodHandler handles MCP messages.
@@ -428,8 +428,10 @@ type Middleware[S Session] func(MethodHandler[S]) MethodHandler[S]
 //
 // For example, AddMiddleware(m1, m2, m3) augments the server method handler as
 // m1(m2(m3(handler))).
-func (c *Client) AddMiddleware(middleware ...Middleware[*ClientSession])
-func (s *Server) AddMiddleware(middleware ...Middleware[*ServerSession])
+func (c *Client) AddSendingMiddleware(middleware ...Middleware[*ClientSession])
+func (c *Client) AddReceivingMiddleware(middleware ...Middleware[*ClientSession])
+func (s *Server) AddSendingMiddleware(middleware ...Middleware[*ServerSession])
+func (s *Server) AddReceivingMiddleware(middleware ...Middleware[*ServerSession])
 ```
 
 As an example, this code adds server-side logging:
@@ -443,7 +445,7 @@ func withLogging(h mcp.MethodHandler[*ServerSession]) mcp.MethodHandler[*ServerS
     }
 }
 
-server.AddMiddleware(withLogging)
+server.AddReceivingMiddleware(withLogging)
 ```
 
 **Differences from mcp-go**: Version 0.26.0 of mcp-go defines 24 server hooks. Each hook consists of a field in the `Hooks` struct, a `Hooks.Add` method, and a type for the hook function. These are rarely used. The most common is `OnError`, which occurs fewer than ten times in open-source code.
