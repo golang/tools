@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 )
@@ -111,30 +112,81 @@ func (r *resolver) resolve(s *Schema, baseURI *url.URL) (*Resolved, error) {
 }
 
 func (root *Schema) check() error {
-	if root == nil {
-		return errors.New("nil schema")
+	// Check for structural validity. Do this first and fail fast:
+	// bad structure will cause other code to panic.
+	if err := root.checkStructure(); err != nil {
+		return err
 	}
+
 	var errs []error
 	report := func(err error) { errs = append(errs, err) }
 
-	seen := map[*Schema]bool{}
-	for ss, path := range root.all() {
-		if seen[ss] {
-			// The schema graph rooted at s is not a tree, but it needs to
-			// be because we assume a unique parent when we store a schema's base
-			// in the Schema. A cycle would also put Schema.all into an infinite
-			// recursion.
-			return fmt.Errorf("schemas rooted at %s do not form a tree (saw %s twice)", root, ss)
-		}
-		seen[ss] = true
-		if len(path) == 0 {
-			ss.path = "root"
-		} else {
-			ss.path = "/" + strings.Join(path, "/")
-		}
+	for ss := range root.all() {
 		ss.checkLocal(report)
 	}
 	return errors.Join(errs...)
+}
+
+// checkStructure verifies that root and its subschemas form a tree.
+// It also assigns each schema a unique path, to improve error messages.
+func (root *Schema) checkStructure() error {
+	var check func(reflect.Value, []byte) error
+	check = func(v reflect.Value, path []byte) error {
+		// For the purpose of error messages, the root schema has path "root"
+		// and other schemas' paths are their JSON Pointer from the root.
+		p := "root"
+		if len(path) > 0 {
+			p = string(path)
+		}
+		s := v.Interface().(*Schema)
+		if s == nil {
+			return fmt.Errorf("jsonschema: schema at %s is nil", p)
+		}
+		if s.path != "" {
+			// We've seen s before.
+			// The schema graph at root is not a tree, but it needs to
+			// be because we assume a unique parent when we store a schema's base
+			// in the Schema. A cycle would also put Schema.all into an infinite
+			// recursion.
+			return fmt.Errorf("jsonschema: schemas at %s do not form a tree; %s appears more than once (also at %s)",
+				root, s.path, p)
+		}
+		s.path = p
+
+		for _, info := range schemaFieldInfos {
+			fv := v.Elem().FieldByIndex(info.sf.Index)
+			switch info.sf.Type {
+			case schemaType:
+				// A field that contains an individual schema.
+				// A nil is valid: it just means the field isn't present.
+				if !fv.IsNil() {
+					if err := check(fv, fmt.Appendf(path, "/%s", info.jsonName)); err != nil {
+						return err
+					}
+				}
+
+			case schemaSliceType:
+				for i := range fv.Len() {
+					if err := check(fv.Index(i), fmt.Appendf(path, "/%s/%d", info.jsonName, i)); err != nil {
+						return err
+					}
+				}
+
+			case schemaMapType:
+				iter := fv.MapRange()
+				for iter.Next() {
+					key := escapeJSONPointerSegment(iter.Key().String())
+					if err := check(iter.Value(), fmt.Appendf(path, "/%s/%s", info.jsonName, key)); err != nil {
+						return err
+					}
+				}
+			}
+
+		}
+		return nil
+	}
+
+	return check(reflect.ValueOf(root), make([]byte, 0, 256))
 }
 
 // checkLocal checks s for validity, independently of other schemas it may refer to.

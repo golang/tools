@@ -14,18 +14,41 @@ import (
 	"testing"
 )
 
+func TestSchemaStructure(t *testing.T) {
+	check := func(s *Schema, want string) {
+		t.Helper()
+		err := s.checkStructure()
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("checkStructure returned error %q, want %q", err, want)
+		}
+	}
+
+	dag := &Schema{Type: "number"}
+	dag = &Schema{Items: dag, Contains: dag}
+	check(dag, "do not form a tree")
+
+	tree := &Schema{Type: "number"}
+	tree.Items = tree
+	check(tree, "do not form a tree")
+
+	sliceNil := &Schema{PrefixItems: []*Schema{nil}}
+	check(sliceNil, "is nil")
+
+	sliceMap := &Schema{Properties: map[string]*Schema{"a": nil}}
+	check(sliceMap, "is nil")
+}
+
 func TestCheckLocal(t *testing.T) {
 	for _, tt := range []struct {
 		s    *Schema
 		want string // error must be non-nil and match this regexp
 	}{
-		{nil, "nil"},
 		{
 			&Schema{Pattern: "]["},
 			"regexp",
 		},
 		{
-			&Schema{PatternProperties: map[string]*Schema{"*": nil}},
+			&Schema{PatternProperties: map[string]*Schema{"*": {}}},
 			"regexp",
 		},
 	} {
@@ -35,26 +58,48 @@ func TestCheckLocal(t *testing.T) {
 			continue
 		}
 		if !regexp.MustCompile(tt.want).MatchString(err.Error()) {
-			t.Errorf("%s: did not match\nerror: %s\nregexp: %s",
+			t.Errorf("checkLocal returned error\n%q\nwanted it to match\n%s\nregexp: %s",
 				tt.s.json(), err, tt.want)
 		}
 	}
 }
 
-func TestSchemaNonTree(t *testing.T) {
-	run := func(s *Schema, kind string) {
-		err := s.check()
-		if err == nil || !strings.Contains(err.Error(), "tree") {
-			t.Fatalf("did not detect %s", kind)
-		}
+func TestPaths(t *testing.T) {
+	// CheckStructure should assign paths to schemas.
+	// This test also verifies that Schema.all visits maps in sorted order.
+	root := &Schema{
+		Type:        "string",
+		PrefixItems: []*Schema{{Type: "int"}, {Items: &Schema{Type: "null"}}},
+		Contains: &Schema{Properties: map[string]*Schema{
+			"~1": {Type: "boolean"},
+			"p":  {},
+		}},
 	}
 
-	s := &Schema{Type: "number"}
-	run(&Schema{Items: s, Contains: s}, "DAG")
+	type item struct {
+		s *Schema
+		p string
+	}
+	want := []item{
+		{root, "root"},
+		{root.Contains, "/contains"},
+		{root.Contains.Properties["p"], "/contains/properties/p"},
+		{root.Contains.Properties["~1"], "/contains/properties/~01"},
+		{root.PrefixItems[0], "/prefixItems/0"},
+		{root.PrefixItems[1], "/prefixItems/1"},
+		{root.PrefixItems[1].Items, "/prefixItems/1/items"},
+	}
+	if err := root.checkStructure(); err != nil {
+		t.Fatal(err)
+	}
 
-	root := &Schema{Items: s}
-	s.Items = root
-	run(root, "cycle")
+	var got []item
+	for s := range root.all() {
+		got = append(got, item{s, s.path})
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("\ngot  %v\nwant %v", got, want)
+	}
 }
 
 func TestResolveURIs(t *testing.T) {

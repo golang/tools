@@ -32,8 +32,7 @@ func (rs *Resolved) Validate(instance any) error {
 
 // state is the state of single call to ResolvedSchema.Validate.
 type state struct {
-	rs    *Resolved
-	depth int
+	rs *Resolved
 	// stack holds the schemas from recursive calls to validate.
 	// These are the "dynamic scopes" used to resolve dynamic references.
 	// https://json-schema.org/draft/2020-12/json-schema-core#scopes
@@ -48,9 +47,6 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 	defer func() {
 		st.stack = st.stack[:len(st.stack)-1] // pop
 	}()
-	if depth := len(st.stack); depth >= 100 {
-		return fmt.Errorf("max recursion depth of %d reached", depth)
-	}
 
 	// We checked for nil schemas in [Schema.Resolve].
 	assert(schema != nil, "nil schema")
