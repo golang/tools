@@ -30,6 +30,31 @@ func (rs *Resolved) Validate(instance any) error {
 	return st.validate(reflect.ValueOf(instance), st.rs.root, nil)
 }
 
+// validateDefaults walks the schema tree. If it finds a default, it validates it
+// against the schema containing it.
+//
+// TODO(jba): account for dynamic refs. This algorithm simple-mindedly
+// treats each schema with a default as its own root.
+func (rs *Resolved) validateDefaults() error {
+	if s := rs.root.Schema; s != "" && s != draft202012 {
+		return fmt.Errorf("cannot validate version %s, only %s", s, draft202012)
+	}
+	st := &state{rs: rs}
+	for s := range rs.root.all() {
+		// We checked for nil schemas in [Schema.Resolve].
+		assert(s != nil, "nil schema")
+		if s.DynamicRef != "" {
+			return fmt.Errorf("jsonschema: %s: validateDefaults does not support dynamic refs", s)
+		}
+		if s.Default != nil {
+			if err := st.validate(reflect.ValueOf(*s.Default), s, nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // state is the state of single call to ResolvedSchema.Validate.
 type state struct {
 	rs *Resolved

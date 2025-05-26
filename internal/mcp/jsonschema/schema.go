@@ -182,7 +182,9 @@ type anchorInfo struct {
 // String returns a short description of the schema.
 func (s *Schema) String() string {
 	if s.uri != nil {
-		return s.uri.String()
+		if u := s.uri.String(); u != "" {
+			return u
+		}
 	}
 	if a := cmp.Or(s.Anchor, s.DynamicAnchor); a != "" {
 		return fmt.Sprintf("%q, anchor %s", s.base.uri.String(), a)

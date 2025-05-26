@@ -52,7 +52,7 @@ func TestCheckLocal(t *testing.T) {
 			"regexp",
 		},
 	} {
-		_, err := tt.s.Resolve("", nil)
+		_, err := tt.s.Resolve(nil)
 		if err == nil {
 			t.Errorf("%s: unexpectedly passed", tt.s.json())
 			continue
@@ -192,7 +192,7 @@ func TestRefCycle(t *testing.T) {
 		return s, nil
 	}
 
-	rs, err := schemas["root"].Resolve("", loader)
+	rs, err := schemas["root"].Resolve(&ResolveOptions{Loader: loader})
 	if err != nil {
 		t.Fatal(err)
 	}

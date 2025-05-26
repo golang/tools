@@ -53,7 +53,7 @@ func TestValidate(t *testing.T) {
 			}
 			for _, g := range groups {
 				t.Run(g.Description, func(t *testing.T) {
-					rs, err := g.Schema.Resolve("", loadRemote)
+					rs, err := g.Schema.Resolve(&ResolveOptions{Loader: loadRemote})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -82,7 +82,7 @@ func TestValidateErrors(t *testing.T) {
 	schema := &Schema{
 		PrefixItems: []*Schema{{Contains: &Schema{Type: "integer"}}},
 	}
-	rs, err := schema.Resolve("", nil)
+	rs, err := schema.Resolve(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,6 +90,34 @@ func TestValidateErrors(t *testing.T) {
 	want := "prefixItems/0"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("error:\n%s\ndoes not contain %q", err, want)
+	}
+}
+
+func TestValidateDefaults(t *testing.T) {
+	anyptr := func(x any) *any { return &x }
+
+	s := &Schema{
+		Properties: map[string]*Schema{
+			"a": {Type: "integer", Default: anyptr(3)},
+			"b": {Type: "string", Default: anyptr("s")},
+		},
+		Default: anyptr(map[string]any{"a": 1, "b": "two"}),
+	}
+	if _, err := s.Resolve(&ResolveOptions{ValidateDefaults: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	s = &Schema{
+		Properties: map[string]*Schema{
+			"a": {Type: "integer", Default: anyptr(3)},
+			"b": {Type: "string", Default: anyptr("s")},
+		},
+		Default: anyptr(map[string]any{"a": 1, "b": 2}),
+	}
+	_, err := s.Resolve(&ResolveOptions{ValidateDefaults: true})
+	want := `has type "integer", want "string"`
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("Resolve returned error %q, want %q", err, want)
 	}
 }
 
@@ -174,7 +202,7 @@ func TestStructInstance(t *testing.T) {
 			false,
 		},
 	} {
-		res, err := tt.s.Resolve("", nil)
+		res, err := tt.s.Resolve(nil)
 		if err != nil {
 			t.Fatal(err)
 		}

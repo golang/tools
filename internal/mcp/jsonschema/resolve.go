@@ -30,17 +30,33 @@ type Resolved struct {
 // A Loader reads and unmarshals the schema at uri, if any.
 type Loader func(uri *url.URL) (*Schema, error)
 
+// ResolveOptions are options for [Schema.Resolve].
+type ResolveOptions struct {
+	// BaseURI is the URI relative to which the root schema should be resolved.
+	// If non-empty, must be an absolute URI (one that starts with a scheme).
+	// It is resolved (in the URI sense; see [url.ResolveReference]) with root's
+	// $id property.
+	// If the resulting URI is not absolute, then the schema cannot contain
+	// relative URI references.
+	BaseURI string
+	// Loader loads schemas that are referred to by a $ref but are not under the
+	// root schema (remote references).
+	// If nil, resolving a remote reference will return an error.
+	Loader Loader
+	// ValidateDefaults determines whether to validate values of "default" keywords
+	// against their schemas.
+	// The [JSON Schema specification] does not require this, but it is
+	// recommended if defaults will be used.
+	//
+	// [JSON Schema specification]: https://json-schema.org/understanding-json-schema/reference/annotations
+	ValidateDefaults bool
+}
+
 // Resolve resolves all references within the schema and performs other tasks that
 // prepare the schema for validation.
-//
-// baseURI can be empty, or an absolute URI (one that starts with a scheme).
-// It is resolved (in the URI sense; see [url.ResolveReference]) with root's $id property.
-// If the resulting URI is not absolute, then the schema cannot not contain relative URI references.
-//
-// loader loads schemas that are referred to by a $ref but not under root (a remote reference).
-// If nil, remote references will return an error.
-func (root *Schema) Resolve(baseURI string, loader Loader) (*Resolved, error) {
-	// There are four steps involved in preparing a schema to validate.
+// If opts is nil, the default values are used.
+func (root *Schema) Resolve(opts *ResolveOptions) (*Resolved, error) {
+	// There are up to five steps required to prepare a schema to validate.
 	// 1. Load: read the schema from somewhere and unmarshal it.
 	//    This schema (root) may have been loaded or created in memory, but other schemas that
 	//    come into the picture in step 4 will be loaded by the given loader.
@@ -49,37 +65,48 @@ func (root *Schema) Resolve(baseURI string, loader Loader) (*Resolved, error) {
 	// 3. Resolve URIs: determine the base URI of the root and all its subschemas, and
 	//    resolve (in the URI sense) all identifiers and anchors with their bases. This step results
 	//    in a map from URIs to schemas within root.
-	// These three steps are idempotent. They may occur a several times on a schema, if
-	// it is loaded from several places.
 	// 4. Resolve references: all refs in the schemas are replaced with the schema they refer to.
+	// 5. (Optional.) If opts.ValidateDefaults is true, validate the defaults.
+	if root.path != "" {
+		return nil, fmt.Errorf("jsonschema: Resolve: %s already resolved", root)
+	}
+	r := &resolver{loaded: map[string]*Resolved{}}
+	if opts != nil {
+		r.opts = *opts
+	}
 	var base *url.URL
-	if baseURI == "" {
+	if r.opts.BaseURI == "" {
 		base = &url.URL{} // so we can call ResolveReference on it
 	} else {
 		var err error
-		base, err = url.Parse(baseURI)
+		base, err = url.Parse(r.opts.BaseURI)
 		if err != nil {
 			return nil, fmt.Errorf("parsing base URI: %w", err)
 		}
 	}
 
-	if loader == nil {
-		loader = func(uri *url.URL) (*Schema, error) {
+	if r.opts.Loader == nil {
+		r.opts.Loader = func(uri *url.URL) (*Schema, error) {
 			return nil, errors.New("cannot resolve remote schemas: no loader passed to Schema.Resolve")
 		}
 	}
-	r := &resolver{
-		loader: loader,
-		loaded: map[string]*Resolved{},
-	}
 
-	return r.resolve(root, base)
+	resolved, err := r.resolve(root, base)
+	if err != nil {
+		return nil, err
+	}
+	if r.opts.ValidateDefaults {
+		if err := resolved.validateDefaults(); err != nil {
+			return nil, err
+		}
+	}
 	// TODO: before we return, throw away anything we don't need for validation.
+	return resolved, nil
 }
 
 // A resolver holds the state for resolution.
 type resolver struct {
-	loader Loader
+	opts ResolveOptions
 	// A cache of loaded and partly resolved schemas. (They may not have had their
 	// refs resolved.) The cache ensures that the loader will never be called more
 	// than once with the same URI, and that reference cycles are handled properly.
@@ -406,7 +433,7 @@ func (r *resolver) resolveRef(rs *Resolved, s *Schema, ref string) (_ *Schema, d
 			referencedSchema = lrs.root
 		} else {
 			// Try to load the schema.
-			ls, err := r.loader(fraglessRefURI)
+			ls, err := r.opts.Loader(fraglessRefURI)
 			if err != nil {
 				return nil, "", fmt.Errorf("loading %s: %w", fraglessRefURI, err)
 			}
