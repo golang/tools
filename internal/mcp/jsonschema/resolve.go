@@ -118,7 +118,7 @@ func (root *Schema) check() error {
 	report := func(err error) { errs = append(errs, err) }
 
 	seen := map[*Schema]bool{}
-	for ss := range root.all() {
+	for ss, path := range root.all() {
 		if seen[ss] {
 			// The schema graph rooted at s is not a tree, but it needs to
 			// be because we assume a unique parent when we store a schema's base
@@ -127,6 +127,11 @@ func (root *Schema) check() error {
 			return fmt.Errorf("schemas rooted at %s do not form a tree (saw %s twice)", root, ss)
 		}
 		seen[ss] = true
+		if len(path) == 0 {
+			ss.path = "root"
+		} else {
+			ss.path = "/" + strings.Join(path, "/")
+		}
 		ss.checkLocal(report)
 	}
 	return errors.Join(errs...)
@@ -138,7 +143,8 @@ func (root *Schema) check() error {
 // It appends the errors it finds to errs.
 func (s *Schema) checkLocal(report func(error)) {
 	addf := func(format string, args ...any) {
-		report(fmt.Errorf("jsonschema.Schema: "+format, args...))
+		msg := fmt.Sprintf(format, args...)
+		report(fmt.Errorf("jsonschema.Schema: %s: %s", s.path, msg))
 	}
 
 	if s == nil {
@@ -165,7 +171,7 @@ func (s *Schema) checkLocal(report func(error)) {
 	if s.Pattern != "" {
 		re, err := regexp.Compile(s.Pattern)
 		if err != nil {
-			addf("pattern: %w", err)
+			addf("pattern: %v", err)
 		} else {
 			s.pattern = re
 		}
@@ -175,7 +181,7 @@ func (s *Schema) checkLocal(report func(error)) {
 		for reString, subschema := range s.PatternProperties {
 			re, err := regexp.Compile(reString)
 			if err != nil {
-				addf("patternProperties[%q]: %w", reString, err)
+				addf("patternProperties[%q]: %v", reString, err)
 				continue
 			}
 			s.patternProperties[re] = subschema

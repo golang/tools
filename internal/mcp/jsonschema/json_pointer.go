@@ -28,7 +28,18 @@ import (
 	"strings"
 )
 
-var jsonPointerReplacer = strings.NewReplacer("~0", "~", "~1", "/")
+var (
+	jsonPointerEscaper   = strings.NewReplacer("~", "~0", "/", "~1")
+	jsonPointerUnescaper = strings.NewReplacer("~0", "~", "~1", "/")
+)
+
+func escapeJSONPointerSegment(s string) string {
+	return jsonPointerEscaper.Replace(s)
+}
+
+func unescapeJSONPointerSegment(s string) string {
+	return jsonPointerUnescaper.Replace(s)
+}
 
 // parseJSONPointer splits a JSON Pointer into a sequence of segments. It doesn't
 // convert strings to numbers, because that depends on the traversal: a segment
@@ -47,7 +58,7 @@ func parseJSONPointer(ptr string) (segments []string, err error) {
 	if strings.Contains(ptr, "~") {
 		// Undo the simple escaping rules that allow one to include a slash in a segment.
 		for i := range segments {
-			segments[i] = jsonPointerReplacer.Replace(segments[i])
+			segments[i] = unescapeJSONPointerSegment(segments[i])
 		}
 	}
 	return segments, nil
@@ -121,17 +132,6 @@ func dereferenceJSONPointer(s *Schema, sptr string) (_ *Schema, err error) {
 	return nil, fmt.Errorf("does not refer to a schema, but to a %s", v.Type())
 }
 
-// map from JSON names for fields in a Schema to their indexes in the struct.
-var schemaFields = map[string][]int{}
-
-func init() {
-	for _, f := range reflect.VisibleFields(reflect.TypeFor[Schema]()) {
-		if name, ok := jsonName(f); ok {
-			schemaFields[name] = f.Index
-		}
-	}
-}
-
 // lookupSchemaField returns the value of the field with the given name in v,
 // or the zero value if there is no such field or it is not of type Schema or *Schema.
 func lookupSchemaField(v reflect.Value, name string) reflect.Value {
@@ -143,8 +143,8 @@ func lookupSchemaField(v reflect.Value, name string) reflect.Value {
 		}
 		return v.FieldByName("Types")
 	}
-	if index := schemaFields[name]; index != nil {
-		return v.FieldByIndex(index)
+	if sf, ok := schemaFieldMap[name]; ok {
+		return v.FieldByIndex(sf.Index)
 	}
 	return reflect.Value{}
 }
