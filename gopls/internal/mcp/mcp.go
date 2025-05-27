@@ -119,8 +119,8 @@ func newServer(_ *cache.Cache, session *cache.Session) *mcp.Server {
 		mcp.NewTool(
 			"hello_world",
 			"Say hello to someone",
-			func(ctx context.Context, _ *mcp.ServerSession, request HelloParams) ([]*mcp.Content, error) {
-				return helloHandler(ctx, session, request)
+			func(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParams[HelloParams]) (*mcp.CallToolResult, error) {
+				return helloHandler(ctx, session, params)
 			},
 		),
 	)
@@ -132,9 +132,11 @@ type HelloParams struct {
 	Location Location `json:"loc" mcp:"location inside of a text file"`
 }
 
-func helloHandler(_ context.Context, _ *cache.Session, request HelloParams) ([]*mcp.Content, error) {
-	return []*mcp.Content{
-		mcp.NewTextContent(fmt.Sprintf("Hi %s, current file %s.", request.Name, path.Base(request.Location.URI))),
+func helloHandler(_ context.Context, _ *cache.Session, params *mcp.CallToolParams[HelloParams]) (*mcp.CallToolResult, error) {
+	return &mcp.CallToolResult{
+		Content: []*mcp.Content{
+			mcp.NewTextContent(fmt.Sprintf("Hi %s, current file %s.", params.Arguments.Name, path.Base(params.Arguments.Location.URI))),
+		},
 	}, nil
 }
 

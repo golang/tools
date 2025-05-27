@@ -7,8 +7,6 @@
 package mcp
 
 import (
-	"encoding/json"
-
 	"golang.org/x/tools/internal/mcp/jsonschema"
 )
 
@@ -28,15 +26,15 @@ type Annotations struct {
 	Priority float64 `json:"priority,omitempty"`
 }
 
-type CallToolParams struct {
+type CallToolParams[TArgs any] struct {
 	// This property is reserved by the protocol to allow clients and servers to
 	// attach additional metadata to their responses.
-	Meta      Meta            `json:"_meta,omitempty"`
-	Arguments json.RawMessage `json:"arguments,omitempty"`
-	Name      string          `json:"name"`
+	Meta      Meta   `json:"_meta,omitempty"`
+	Arguments TArgs  `json:"arguments,omitempty"`
+	Name      string `json:"name"`
 }
 
-func (x *CallToolParams) GetMeta() *Meta { return &x.Meta }
+func (x *CallToolParams[TArgs]) GetMeta() *Meta { return &x.Meta }
 
 // The server's response to a tool call.
 //

@@ -200,7 +200,7 @@ func (s *loggingStream) Read(ctx context.Context) (jsonrpc2.Message, int64, erro
 		if err != nil {
 			fmt.Fprintf(s.w, "LoggingTransport: failed to marshal: %v", err)
 		}
-		fmt.Fprintf(s.w, "read: %s", string(data))
+		fmt.Fprintf(s.w, "read: %s\n", string(data))
 	}
 	return msg, n, err
 }
@@ -215,7 +215,7 @@ func (s *loggingStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64,
 		if err != nil {
 			fmt.Fprintf(s.w, "LoggingTransport: failed to marshal: %v", err)
 		}
-		fmt.Fprintf(s.w, "write: %s", string(data))
+		fmt.Fprintf(s.w, "write: %s\n", string(data))
 	}
 	return n, err
 }

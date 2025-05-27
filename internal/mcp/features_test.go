@@ -18,9 +18,11 @@ type SayHiParams struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *ServerSession, params *SayHiParams) ([]*Content, error) {
-	return []*Content{
-		NewTextContent("Hi " + params.Name),
+func SayHi(ctx context.Context, cc *ServerSession, params *CallToolParams[SayHiParams]) (*CallToolResult, error) {
+	return &CallToolResult{
+		Content: []*Content{
+			NewTextContent("Hi " + params.Name),
+		},
 	}, nil
 }
 

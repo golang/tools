@@ -258,33 +258,28 @@ func (cs *ClientSession) ListTools(ctx context.Context, params *ListToolsParams)
 
 // CallTool calls the tool with the given name and arguments.
 // Pass a [CallToolOptions] to provide additional request fields.
-func (cs *ClientSession) CallTool(ctx context.Context, name string, args map[string]any, opts *CallToolOptions) (_ *CallToolResult, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("calling tool %q: %w", name, err)
-		}
-	}()
-
-	data, err := json.Marshal(args)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling arguments: %w", err)
-	}
-	params := &CallToolParams{
-		Name:      name,
-		Arguments: json.RawMessage(data),
-	}
+func (cs *ClientSession) CallTool(ctx context.Context, params *CallToolParams[json.RawMessage]) (*CallToolResult, error) {
 	return standardCall[CallToolResult](ctx, cs.conn, methodCallTool, params)
+}
+
+// CallTool is a helper to call a tool with any argument type. It returns an
+// error if params.Arguments fails to marshal to JSON.
+func CallTool[TArgs any](ctx context.Context, cs *ClientSession, params *CallToolParams[TArgs]) (*CallToolResult, error) {
+	data, err := json.Marshal(params.Arguments)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal arguments: %v", err)
+	}
+	// TODO(rfindley): write a test that guarantees this copying is total.
+	wireParams := &CallToolParams[json.RawMessage]{
+		Meta:      params.Meta,
+		Name:      params.Name,
+		Arguments: data,
+	}
+	return cs.CallTool(ctx, wireParams)
 }
 
 func (cs *ClientSession) SetLevel(ctx context.Context, params *SetLevelParams) error {
 	return call(ctx, cs.conn, methodSetLevel, params, nil)
-}
-
-// NOTE: the following struct should consist of all fields of callToolParams except name and arguments.
-
-// CallToolOptions contains options to [ClientSession.CallTool].
-type CallToolOptions struct {
-	ProgressToken any // string or int
 }
 
 // ListResources lists the resources that are currently available on the server.

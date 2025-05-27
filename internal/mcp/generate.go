@@ -38,9 +38,10 @@ var schemaFile = flag.String("schema_file", "", "if set, use this file as the pe
 // struct field. In others, we may want to extract the type definition to a
 // name.
 type typeConfig struct {
-	Name       string // declaration name for the type
-	Substitute string // type definition to substitute
-	Fields     config // individual field configuration, or nil
+	Name       string      // declaration name for the type
+	TypeParams [][2]string // formatted type parameter list ({name, constraint}), if any
+	Substitute string      // type definition to substitute
+	Fields     config      // individual field configuration, or nil
 }
 
 type config map[string]*typeConfig
@@ -57,9 +58,10 @@ var declarations = config{
 		Name: "-",
 		Fields: config{
 			"Params": {
-				Name: "CallToolParams",
+				Name:       "CallToolParams",
+				TypeParams: [][2]string{{"TArgs", "any"}},
 				Fields: config{
-					"Arguments": {Substitute: "json.RawMessage"},
+					"Arguments": {Substitute: "TArgs"},
 				},
 			},
 		},
@@ -224,8 +226,6 @@ func main() {
 package mcp
 
 import (
-	"encoding/json"
-
 	"golang.org/x/tools/internal/mcp/jsonschema"
 )
 `)
@@ -320,7 +320,18 @@ func writeDecl(configName string, config typeConfig, def *jsonschema.Schema, nam
 		if def.Description != "" {
 			fmt.Fprintf(buf, "%s\n", toComment(def.Description))
 		}
-		fmt.Fprintf(buf, "type %s ", typeName)
+		typeParams := new(strings.Builder)
+		if len(config.TypeParams) > 0 {
+			typeParams.WriteByte('[')
+			for i, p := range config.TypeParams {
+				if i > 0 {
+					typeParams.WriteString(", ")
+				}
+				fmt.Fprintf(typeParams, "%s %s", p[0], p[1])
+			}
+			typeParams.WriteByte(']')
+		}
+		fmt.Fprintf(buf, "type %s%s ", typeName, typeParams)
 	}
 	if err := writeType(w, &config, def, named); err != nil {
 		return err // Better error here?
@@ -329,7 +340,18 @@ func writeDecl(configName string, config typeConfig, def *jsonschema.Schema, nam
 
 	// Any decl with a _meta field gets a GetMeta method.
 	if _, ok := def.Properties["_meta"]; ok {
-		fmt.Fprintf(w, "\nfunc (x *%s) GetMeta() *Meta { return &x.Meta }", typeName)
+		targs := new(strings.Builder)
+		if len(config.TypeParams) > 0 {
+			targs.WriteByte('[')
+			for i, p := range config.TypeParams {
+				if i > 0 {
+					targs.WriteString(", ")
+				}
+				fmt.Fprintf(targs, "%s", p[0])
+			}
+			targs.WriteByte(']')
+		}
+		fmt.Fprintf(w, "\nfunc (x *%s%s) GetMeta() *Meta { return &x.Meta }", typeName, targs)
 	}
 
 	if _, ok := def.Properties["cursor"]; ok {

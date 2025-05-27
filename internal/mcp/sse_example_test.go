@@ -18,9 +18,9 @@ type AddParams struct {
 	X, Y int
 }
 
-func Add(ctx context.Context, cc *mcp.ServerSession, params *AddParams) ([]*mcp.Content, error) {
-	return []*mcp.Content{
-		mcp.NewTextContent(fmt.Sprintf("%d", params.X+params.Y)),
+func Add(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParams[AddParams]) (*mcp.CallToolResult, error) {
+	return &mcp.CallToolResult{
+		Content: []*mcp.Content{mcp.NewTextContent(fmt.Sprintf("%d", params.Arguments.X+params.Arguments.Y))},
 	}, nil
 }
 
@@ -41,7 +41,10 @@ func ExampleSSEHandler() {
 	}
 	defer cs.Close()
 
-	res, err := cs.CallTool(ctx, "add", map[string]any{"x": 1, "y": 2}, nil)
+	res, err := mcp.CallTool(ctx, cs, &mcp.CallToolParams[map[string]any]{
+		Name:      "add",
+		Arguments: map[string]any{"x": 1, "y": 2},
+	})
 	if err != nil {
 		log.Fatal(err)
 	}

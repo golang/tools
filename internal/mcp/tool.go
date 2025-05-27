@@ -13,12 +13,12 @@ import (
 )
 
 // A ToolHandler handles a call to tools/call.
-type ToolHandler func(context.Context, *ServerSession, *CallToolParams) (*CallToolResult, error)
+type ToolHandler[TArgs any] func(context.Context, *ServerSession, *CallToolParams[TArgs]) (*CallToolResult, error)
 
 // A Tool is a tool definition that is bound to a tool handler.
 type ServerTool struct {
 	Tool    *Tool
-	Handler ToolHandler
+	Handler ToolHandler[json.RawMessage]
 }
 
 // NewTool is a helper to make a tool using reflection on the given handler.
@@ -34,17 +34,19 @@ type ServerTool struct {
 //
 // TODO: just have the handler return a CallToolResult: returning []Content is
 // going to be inconsistent with other server features.
-func NewTool[TReq any](name, description string, handler func(context.Context, *ServerSession, TReq) ([]*Content, error), opts ...ToolOption) *ServerTool {
+func NewTool[TReq any](name, description string, handler ToolHandler[TReq], opts ...ToolOption) *ServerTool {
 	schema, err := jsonschema.For[TReq]()
 	if err != nil {
 		panic(err)
 	}
-	wrapped := func(ctx context.Context, cc *ServerSession, params *CallToolParams) (*CallToolResult, error) {
-		var v TReq
-		if err := unmarshalSchema(params.Arguments, schema, &v); err != nil {
-			return nil, err
+	wrapped := func(ctx context.Context, cc *ServerSession, params *CallToolParams[json.RawMessage]) (*CallToolResult, error) {
+		var params2 CallToolParams[TReq]
+		if params.Arguments != nil {
+			if err := unmarshalSchema(params.Arguments, schema, &params2.Arguments); err != nil {
+				return nil, err
+			}
 		}
-		content, err := handler(ctx, cc, v)
+		res, err := handler(ctx, cc, &params2)
 		// TODO: investigate why server errors are embedded in this strange way,
 		// rather than returned as jsonrpc2 server errors.
 		if err != nil {
@@ -52,9 +54,6 @@ func NewTool[TReq any](name, description string, handler func(context.Context, *
 				Content: []*Content{NewTextContent(err.Error())},
 				IsError: true,
 			}, nil
-		}
-		res := &CallToolResult{
-			Content: content,
 		}
 		return res, nil
 	}

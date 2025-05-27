@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"iter"
 	"net/url"
@@ -227,7 +228,7 @@ func (s *Server) listTools(_ context.Context, _ *ServerSession, params *ListTool
 	return res, nil
 }
 
-func (s *Server) callTool(ctx context.Context, cc *ServerSession, params *CallToolParams) (*CallToolResult, error) {
+func (s *Server) callTool(ctx context.Context, cc *ServerSession, params *CallToolParams[json.RawMessage]) (*CallToolResult, error) {
 	s.mu.Lock()
 	tool, ok := s.tools.get(params.Name)
 	s.mu.Unlock()

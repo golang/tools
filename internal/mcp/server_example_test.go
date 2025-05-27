@@ -17,12 +17,14 @@ import (
 )
 
 type SayHiParams struct {
-	Name string `json:"name" mcp:"the name to say hi to"`
+	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ServerSession, params *SayHiParams) ([]*mcp.Content, error) {
-	return []*mcp.Content{
-		mcp.NewTextContent("Hi " + params.Name),
+func SayHi(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParams[SayHiParams]) (*mcp.CallToolResult, error) {
+	return &mcp.CallToolResult{
+		Content: []*mcp.Content{
+			mcp.NewTextContent("Hi " + params.Arguments.Name),
+		},
 	}, nil
 }
 
@@ -44,7 +46,10 @@ func ExampleServer() {
 		log.Fatal(err)
 	}
 
-	res, err := clientSession.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
+	res, err := mcp.CallTool(ctx, clientSession, &mcp.CallToolParams[map[string]any]{
+		Name:      "greet",
+		Arguments: map[string]any{"name": "user"},
+	})
 	if err != nil {
 		log.Fatal(err)
 	}

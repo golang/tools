@@ -276,6 +276,7 @@ type Content struct {
 func NewTextContent(text string) *Content
 // etc.
 ```
+
 The `Meta` type includes a `map[string]any` for arbitrary data, and a `ProgressToken` field.
 
 **Differences from mcp-go**: these types are largely similar, but our type generator flattens types rather than using struct embedding.
@@ -379,9 +380,9 @@ In our SDK, RPC methods that are defined in the specification take a context and
 func (*ClientSession) ListTools(context.Context, *ListToolsParams) (*ListToolsResult, error)
 ```
 
-Our SDK has a method for every RPC in the spec, and except for `CallTool`, their signatures all share this form. We do this, rather than providing more convenient shortcut signatures, to maintain backward compatibility if the spec makes backward-compatible changes such as adding a new property to the request parameters (as in [this commit](https://github.com/modelcontextprotocol/modelcontextprotocol/commit/2fce8a077688bf8011e80af06348b8fe1dae08ac), for example). To avoid boilerplate, we don't repeat this signature for RPCs defined in the spec; readers may assume it when we mention a "spec method."
+Our SDK has a method for every RPC in the spec, their signatures all share this form. We do this, rather than providing more convenient shortcut signatures, to maintain backward compatibility if the spec makes backward-compatible changes such as adding a new property to the request parameters (as in [this commit](https://github.com/modelcontextprotocol/modelcontextprotocol/commit/2fce8a077688bf8011e80af06348b8fe1dae08ac), for example). To avoid boilerplate, we don't repeat this signature for RPCs defined in the spec; readers may assume it when we mention a "spec method."
 
-`CallTool` is the only exception: for convenience, it takes the tool name and arguments, with an options struct for additional request fields. See the section on Tools below for details.
+`CallTool` is the only exception: for convenience when binding to Go argument types, `*CallToolParams[TArgs]` is generic, with a type parameter providing the Go type of the tool arguments. The spec method accepts a `*CallToolParams[json.RawMessage]`, but we provide a generic helper function. See the section on Tools below for details.
 
 Why do we use params instead of the full JSON-RPC request? As much as possible, we endeavor to hide JSON-RPC details when they are not relevant to the business logic of your client or server. In this case, the additional information in the JSON-RPC request is just the request ID and method name; the request ID is irrelevant, and the method name is implied by the name of the Go method providing the API.
 
@@ -495,7 +496,6 @@ type Meta struct {
 }
 ```
 
-
 Handlers can notify their peer about progress by calling the `NotifyProgress` method. The notification is only sent if the peer requested it by providing a progress token.
 
 ```go
@@ -579,7 +579,15 @@ type ClientOptions struct {
 
 A `Tool` is a logical MCP tool, generated from the MCP spec, and a `ServerTool` is a tool bound to a tool handler.
 
+A tool handler accepts `CallToolParams` and returns a `CallToolResult`. However, since we want to bind tools to Go input types, it is convenient in associated APIs to make `CallToolParams` generic, with a type parameter `TArgs` for the tool argument type. This allows tool APIs to manage the marshalling and unmarshalling of tool inputs for their caller. The bound `ServerTool` type expects a `json.RawMessage` for its tool arguments, but the `NewTool` constructor described below provides a mechanism to bind a typed handler.
+
 ```go
+type CallToolParams[TArgs any] struct {
+	Meta      Meta   `json:"_meta,omitempty"`
+	Arguments TArgs  `json:"arguments,omitempty"`
+	Name      string `json:"name"`
+}
+
 type Tool struct {
 	Annotations *ToolAnnotations   `json:"annotations,omitempty"`
 	Description string             `json:"description,omitempty"`
@@ -587,11 +595,11 @@ type Tool struct {
 	Name string                    `json:"name"`
 }
 
-type ToolHandler func(context.Context, *ServerSession, *CallToolParams) (*CallToolResult, error)
+type ToolHandler[TArgs] func(context.Context, *ServerSession, *CallToolParams[TArgs]) (*CallToolResult, error)
 
 type ServerTool struct {
 	Tool    Tool
-	Handler ToolHandler
+	Handler ToolHandler[json.RawMessage]
 }
 ```
 
@@ -620,12 +628,12 @@ We have found that a hybrid model works well, where the _initial_ schema is deri
 
 ```go
 // NewTool creates a Tool using reflection on the given handler.
-func NewTool[TInput any](name, description string, handler func(context.Context, *ServerSession, TInput) ([]Content, error), opts …ToolOption) *ServerTool
+func NewTool[TArgs any](name, description string, handler ToolHandler[TArgs], opts …ToolOption) *ServerTool
 
 type ToolOption interface { /* ... */ }
 ```
 
-`NewTool` determines the input schema for a Tool from the struct used in the handler. Each struct field that would be marshaled by `encoding/json.Marshal` becomes a property of the schema. The property is required unless the field's `json` tag specifies "omitempty" or "omitzero" (new in Go 1.24). For example, given this struct:
+`NewTool` determines the input schema for a Tool from the `TArgs` type. Each struct field that would be marshaled by `encoding/json.Marshal` becomes a property of the schema. The property is required unless the field's `json` tag specifies "omitempty" or "omitzero" (new in Go 1.24). For example, given this struct:
 
 ```go
 struct {
@@ -666,16 +674,12 @@ Schemas are validated on the server before the tool handler is called.
 
 Since all the fields of the Tool struct are exported, a Tool can also be created directly with assignment or a struct literal.
 
-Client sessions can call the spec method `ListTools` or an iterator method `Tools` to list the available tools.
-
-As mentioned above, the client session method `CallTool` has a non-standard signature, so that `CallTool` can handle the marshalling of tool arguments: the type of `CallToolParams.Arguments` is `json.RawMessage`, to delegate unmarshalling to the tool handler.
+Client sessions can call the spec method `ListTools` or an iterator method `Tools` to list the available tools, and use spec method `CallTool` to call tools. Similar to `ServerTool.Handler`, `CallTool` expects `*CallToolParams[json.RawMessage]`, but we provide a generic `CallTool` helper to operate on typed arguments.
 
 ```go
-func (c *ClientSession) CallTool(ctx context.Context, name string, args map[string]any, opts *CallToolOptions) (_ *CallToolResult, err error)
+func (cs *ClientSession) CallTool(context.Context, *CallToolParams[json.RawMessage]) (*CallToolResult, error)
 
-type CallToolOptions struct {
-	ProgressToken any // string or int
-}
+func CallTool[TArgs any](context.Context, *ClientSession, *CallToolParams[TArgs]) (*CallToolResult, error)
 ```
 
 **Differences from mcp-go**: using variadic options to configure tools was significantly inspired by mcp-go. However, the distinction between `ToolOption` and `SchemaOption` allows for recursive application of schema options. For example, that limitation is visible in [this code](https://github.com/DCjanus/dida365-mcp-server/blob/master/cmd/mcp/tools.go#L315), which must resort to untyped maps to express a nested schema.
@@ -833,6 +837,7 @@ Clients call the spec method `Complete` to request completions. Servers automati
 MCP specifies a notification for servers to log to clients. Server sessions implement this with the `LoggingMessage` method. It honors the minimum log level established by the client session's `SetLevel` call.
 
 As a convenience, we also provide a `slog.Handler` that allows server authors to write logs with the `log/slog` package::
+
 ```go
 // A LoggingHandler is a [slog.Handler] for MCP.
 type LoggingHandler struct {...}

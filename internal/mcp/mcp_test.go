@@ -30,16 +30,18 @@ type hiParams struct {
 	Name string
 }
 
-func sayHi(ctx context.Context, ss *ServerSession, v hiParams) ([]*Content, error) {
+func sayHi(ctx context.Context, ss *ServerSession, params *CallToolParams[hiParams]) (*CallToolResult, error) {
 	if err := ss.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("ping failed: %v", err)
 	}
-	return []*Content{NewTextContent("hi " + v.Name)}, nil
+	return &CallToolResult{Content: []*Content{NewTextContent("hi " + params.Arguments.Name)}}, nil
 }
 
 func TestEndToEnd(t *testing.T) {
 	ctx := context.Background()
-	ct, st := NewInMemoryTransports()
+	var ct, st Transport = NewInMemoryTransports()
+	// ct = NewLoggingTransport(ct, os.Stderr)
+	// st = NewLoggingTransport(st, os.Stderr)
 
 	// Channels to check if notification callbacks happened.
 	notificationChans := map[string]chan int{}
@@ -185,7 +187,10 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("tools/list mismatch (-want +got):\n%s", diff)
 		}
 
-		gotHi, err := cs.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil)
+		gotHi, err := CallTool(ctx, cs, &CallToolParams[map[string]any]{
+			Name:      "greet",
+			Arguments: map[string]any{"name": "user"},
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -196,7 +201,10 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("tools/call 'greet' mismatch (-want +got):\n%s", diff)
 		}
 
-		gotFail, err := cs.CallTool(ctx, "fail", map[string]any{}, nil)
+		gotFail, err := CallTool(ctx, cs, &CallToolParams[map[string]any]{
+			Name:      "fail",
+			Arguments: map[string]any{},
+		})
 		// Counter-intuitively, when a tool fails, we don't expect an RPC error for
 		// call tool: instead, the failure is embedded in the result.
 		if err != nil {
@@ -387,7 +395,7 @@ var (
 
 	tools = map[string]*ServerTool{
 		"greet": NewTool("greet", "say hi", sayHi),
-		"fail": NewTool("fail", "just fail", func(context.Context, *ServerSession, struct{}) ([]*Content, error) {
+		"fail": NewTool("fail", "just fail", func(context.Context, *ServerSession, *CallToolParams[struct{}]) (*CallToolResult, error) {
 			return nil, errTestFailure
 		}),
 	}
@@ -506,24 +514,30 @@ func basicConnection(t *testing.T, tools ...*ServerTool) (*ServerSession, *Clien
 }
 
 func TestServerClosing(t *testing.T) {
-	cc, c := basicConnection(t, NewTool("greet", "say hi", sayHi))
-	defer c.Close()
+	cc, cs := basicConnection(t, NewTool("greet", "say hi", sayHi))
+	defer cs.Close()
 
 	ctx := context.Background()
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		if err := c.Wait(); err != nil {
+		if err := cs.Wait(); err != nil {
 			t.Errorf("server connection failed: %v", err)
 		}
 		wg.Done()
 	}()
-	if _, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil); err != nil {
+	if _, err := CallTool(ctx, cs, &CallToolParams[map[string]any]{
+		Name:      "greet",
+		Arguments: map[string]any{"name": "user"},
+	}); err != nil {
 		t.Fatalf("after connecting: %v", err)
 	}
 	cc.Close()
 	wg.Wait()
-	if _, err := c.CallTool(ctx, "greet", map[string]any{"name": "user"}, nil); !errors.Is(err, ErrConnectionClosed) {
+	if _, err := CallTool(ctx, cs, &CallToolParams[map[string]any]{
+		Name:      "greet",
+		Arguments: map[string]any{"name": "user"},
+	}); !errors.Is(err, ErrConnectionClosed) {
 		t.Errorf("after disconnection, got error %v, want EOF", err)
 	}
 }
@@ -572,7 +586,7 @@ func TestCancellation(t *testing.T) {
 		cancelled = make(chan struct{}, 1) // don't block the request
 	)
 
-	slowRequest := func(ctx context.Context, cc *ServerSession, v struct{}) ([]*Content, error) {
+	slowRequest := func(ctx context.Context, cc *ServerSession, params *CallToolParams[struct{}]) (*CallToolResult, error) {
 		start <- struct{}{}
 		select {
 		case <-ctx.Done():
@@ -582,11 +596,11 @@ func TestCancellation(t *testing.T) {
 		}
 		return nil, nil
 	}
-	_, sc := basicConnection(t, NewTool("slow", "a slow request", slowRequest))
-	defer sc.Close()
+	_, cs := basicConnection(t, NewTool("slow", "a slow request", slowRequest))
+	defer cs.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go sc.CallTool(ctx, "slow", map[string]any{}, nil)
+	go CallTool(ctx, cs, &CallToolParams[struct{}]{Name: "slow"})
 	<-start
 	cancel()
 	select {

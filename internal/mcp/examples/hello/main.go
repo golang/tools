@@ -21,13 +21,15 @@ type HiArgs struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ServerSession, params *HiArgs) ([]*mcp.Content, error) {
-	return []*mcp.Content{
-		mcp.NewTextContent("Hi " + params.Name),
+func SayHi(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParams[HiArgs]) (*mcp.CallToolResult, error) {
+	return &mcp.CallToolResult{
+		Content: []*mcp.Content{
+			mcp.NewTextContent("Hi " + params.Name),
+		},
 	}, nil
 }
 
-func PromptHi(ctx context.Context, cc *mcp.ServerSession, args *HiArgs, params *mcp.GetPromptParams) (*mcp.GetPromptResult, error) {
+func PromptHi(ctx context.Context, ss *mcp.ServerSession, args *HiArgs, params *mcp.GetPromptParams) (*mcp.GetPromptResult, error) {
 	return &mcp.GetPromptResult{
 		Description: "Code review prompt",
 		Messages: []*mcp.PromptMessage{
