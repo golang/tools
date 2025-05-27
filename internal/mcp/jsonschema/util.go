@@ -282,3 +282,10 @@ func assert(cond bool, msg string) {
 		panic("assertion failed: " + msg)
 	}
 }
+
+// wrapf wraps *errp with the given formatted message if *errp is not nil.
+func wrapf(errp *error, format string, args ...any) {
+	if *errp != nil {
+		*errp = fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), *errp)
+	}
+}

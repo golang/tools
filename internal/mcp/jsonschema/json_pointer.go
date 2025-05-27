@@ -69,11 +69,7 @@ func parseJSONPointer(ptr string) (segments []string, err error) {
 // This implementation suffices for JSON Schema: pointers are applied only to Schemas,
 // and refer only to Schemas.
 func dereferenceJSONPointer(s *Schema, sptr string) (_ *Schema, err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("JSON Pointer %q: %w", sptr, err)
-		}
-	}()
+	defer wrapf(&err, "JSON Pointer %q", sptr)
 
 	segments, err := parseJSONPointer(sptr)
 	if err != nil {

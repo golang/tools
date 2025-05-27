@@ -42,11 +42,7 @@ type state struct {
 
 // validate validates the reflected value of the instance.
 func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *annotations) (err error) {
-	defer func() {
-		if err != nil {
-			err = fmt.Errorf("%s: %w", schema, err)
-		}
-	}()
+	defer wrapf(&err, "validating %s", schema)
 
 	st.stack = append(st.stack, schema) // push
 	defer func() {
