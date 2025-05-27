@@ -94,14 +94,12 @@ func TestValidateErrors(t *testing.T) {
 }
 
 func TestValidateDefaults(t *testing.T) {
-	anyptr := func(x any) *any { return &x }
-
 	s := &Schema{
 		Properties: map[string]*Schema{
-			"a": {Type: "integer", Default: anyptr(3)},
-			"b": {Type: "string", Default: anyptr("s")},
+			"a": {Type: "integer", Default: mustMarshal(1)},
+			"b": {Type: "string", Default: mustMarshal("s")},
 		},
-		Default: anyptr(map[string]any{"a": 1, "b": "two"}),
+		Default: mustMarshal(map[string]any{"a": 1, "b": "two"}),
 	}
 	if _, err := s.Resolve(&ResolveOptions{ValidateDefaults: true}); err != nil {
 		t.Fatal(err)
@@ -109,15 +107,61 @@ func TestValidateDefaults(t *testing.T) {
 
 	s = &Schema{
 		Properties: map[string]*Schema{
-			"a": {Type: "integer", Default: anyptr(3)},
-			"b": {Type: "string", Default: anyptr("s")},
+			"a": {Type: "integer", Default: mustMarshal(3)},
+			"b": {Type: "string", Default: mustMarshal("s")},
 		},
-		Default: anyptr(map[string]any{"a": 1, "b": 2}),
+		Default: mustMarshal(map[string]any{"a": 1, "b": 2}),
 	}
 	_, err := s.Resolve(&ResolveOptions{ValidateDefaults: true})
 	want := `has type "integer", want "string"`
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("Resolve returned error %q, want %q", err, want)
+	}
+}
+
+func TestApplyDefaults(t *testing.T) {
+	schema := &Schema{
+		Properties: map[string]*Schema{
+			"A": {Default: mustMarshal(1)},
+			"B": {Default: mustMarshal(2)},
+			"C": {Default: mustMarshal(3)},
+		},
+		Required: []string{"C"},
+	}
+	rs, err := schema.Resolve(&ResolveOptions{ValidateDefaults: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type S struct{ A, B, C int }
+	for _, tt := range []struct {
+		instancep any // pointer to instance value
+		want      any // desired value (not a pointer)
+	}{
+		{
+			&map[string]any{"B": 0},
+			map[string]any{
+				"A": float64(1), // filled from default
+				"B": 0,          // untouched: it was already there
+				// "C" not added: it is required (Validate will catch that)
+			},
+		},
+		{
+			&S{B: 1},
+			S{
+				A: 1, // filled from default
+				B: 1, // untouched: non-zero
+				C: 0, // untouched: required
+			},
+		},
+	} {
+		if err := rs.ApplyDefaults(tt.instancep); err != nil {
+			t.Fatal(err)
+		}
+		got := reflect.ValueOf(tt.instancep).Elem().Interface() // dereference the pointer
+		if !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("\ngot  %#v\nwant %#v", got, tt.want)
+		}
 	}
 }
 
@@ -233,6 +277,14 @@ func TestJSONName(t *testing.T) {
 			t.Errorf("got %q, want %q", got, want[i])
 		}
 	}
+}
+
+func mustMarshal(x any) json.RawMessage {
+	data, err := json.Marshal(x)
+	if err != nil {
+		panic(err)
+	}
+	return json.RawMessage(data)
 }
 
 // loadRemote loads a remote reference used in the test suite.

@@ -57,13 +57,13 @@ type Schema struct {
 	Vocabulary    map[string]bool `json:"$vocabulary,omitempty"`
 
 	// metadata
-	Title       string `json:"title,omitempty"`
-	Description string `json:"description,omitempty"`
-	Default     *any   `json:"default,omitempty"`
-	Deprecated  bool   `json:"deprecated,omitempty"`
-	ReadOnly    bool   `json:"readOnly,omitempty"`
-	WriteOnly   bool   `json:"writeOnly,omitempty"`
-	Examples    []any  `json:"examples,omitempty"`
+	Title       string          `json:"title,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Default     json.RawMessage `json:"default,omitempty"`
+	Deprecated  bool            `json:"deprecated,omitempty"`
+	ReadOnly    bool            `json:"readOnly,omitempty"`
+	WriteOnly   bool            `json:"writeOnly,omitempty"`
+	Examples    []any           `json:"examples,omitempty"`
 
 	// validation
 	// Use Type for a single type, or Types for multiple types; never both.
@@ -254,7 +254,6 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	ms := struct {
 		Type          json.RawMessage `json:"type,omitempty"`
 		Const         json.RawMessage `json:"const,omitempty"`
-		Default       json.RawMessage `json:"default,omitempty"`
 		MinLength     *integer        `json:"minLength,omitempty"`
 		MaxLength     *integer        `json:"maxLength,omitempty"`
 		MinItems      *integer        `json:"minItems,omitempty"`
@@ -298,12 +297,9 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 		return json.Unmarshal(raw, p)
 	}
 
-	// Setting Const or Default to a pointer to null will marshal properly, but won't
+	// Setting Const to a pointer to null will marshal properly, but won't
 	// unmarshal: the *any is set to nil, not a pointer to nil.
 	if err := unmarshalAnyPtr(&s.Const, ms.Const); err != nil {
-		return err
-	}
-	if err := unmarshalAnyPtr(&s.Default, ms.Default); err != nil {
 		return err
 	}
 

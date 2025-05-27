@@ -24,17 +24,17 @@ func TestGoRoundTrip(t *testing.T) {
 		{Const: Ptr(any(nil))},
 		{Const: Ptr(any([]int{}))},
 		{Const: Ptr(any(map[string]any{}))},
-		{Default: Ptr(any(nil))},
+		{Default: mustMarshal(1)},
+		{Default: mustMarshal(nil)},
 	} {
 		data, err := json.Marshal(s)
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("marshal: %s", data)
 		var got *Schema
 		mustUnmarshal(t, data, &got)
 		if !Equal(got, s) {
-			t.Errorf("got %+v, want %+v", got, s)
+			t.Errorf("got %s, want %s", got.json(), s.json())
 			if got.Const != nil && s.Const != nil {
 				t.Logf("Consts: got %#v (%[1]T), want %#v (%[2]T)", *got.Const, *s.Const)
 			}

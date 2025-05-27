@@ -223,7 +223,7 @@ func (root *Schema) checkStructure() error {
 func (s *Schema) checkLocal(report func(error)) {
 	addf := func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
-		report(fmt.Errorf("jsonschema.Schema: %s: %s", s.path, msg))
+		report(fmt.Errorf("jsonschema.Schema: %s: %s", s, msg))
 	}
 
 	if s == nil {
