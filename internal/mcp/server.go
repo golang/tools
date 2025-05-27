@@ -179,8 +179,17 @@ func (s *Server) Sessions() iter.Seq[*ServerSession] {
 func (s *Server) listPrompts(_ context.Context, _ *ServerSession, params *ListPromptsParams) (*ListPromptsResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var cursor string
+	if params != nil {
+		cursor = params.Cursor
+	}
+	prompts, nextCursor, err := paginateList(s.prompts, cursor, s.opts.PageSize)
+	if err != nil {
+		return nil, err
+	}
 	res := new(ListPromptsResult)
-	for p := range s.prompts.all() {
+	res.NextCursor = nextCursor
+	for _, p := range prompts {
 		res.Prompts = append(res.Prompts, p.Prompt)
 	}
 	return res, nil
