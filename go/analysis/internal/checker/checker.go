@@ -65,18 +65,23 @@ var (
 
 // RegisterFlags registers command-line flags used by the analysis driver.
 func RegisterFlags() {
+	RegisterFlagsWithFlagSet(flag.CommandLine)
+}
+
+// RegisterFlagsWithFlagSet registers command-line flags used by the analysis driver.
+func RegisterFlagsWithFlagSet(fs *flag.FlagSet) {
 	// When adding flags here, remember to update
 	// the list of suppressed flags in analysisflags.
 
-	flag.StringVar(&Debug, "debug", Debug, `debug flags, any subset of "fpstv"`)
+	fs.StringVar(&Debug, "debug", Debug, `debug flags, any subset of "fpstv"`)
 
-	flag.StringVar(&CPUProfile, "cpuprofile", "", "write CPU profile to this file")
-	flag.StringVar(&MemProfile, "memprofile", "", "write memory profile to this file")
-	flag.StringVar(&Trace, "trace", "", "write trace log to this file")
-	flag.BoolVar(&IncludeTests, "test", IncludeTests, "indicates whether test files should be analyzed, too")
+	fs.StringVar(&CPUProfile, "cpuprofile", "", "write CPU profile to this file")
+	fs.StringVar(&MemProfile, "memprofile", "", "write memory profile to this file")
+	fs.StringVar(&Trace, "trace", "", "write trace log to this file")
+	fs.BoolVar(&IncludeTests, "test", IncludeTests, "indicates whether test files should be analyzed, too")
 
-	flag.BoolVar(&Fix, "fix", false, "apply all suggested fixes")
-	flag.BoolVar(&Diff, "diff", false, "with -fix, don't update the files, but print a unified diff")
+	fs.BoolVar(&Fix, "fix", false, "apply all suggested fixes")
+	fs.BoolVar(&Diff, "diff", false, "with -fix, don't update the files, but print a unified diff")
 }
 
 // Run loads the packages specified by args using go/packages,

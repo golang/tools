@@ -46,9 +46,14 @@ func Main(a *analysis.Analyzer) {
 		log.Fatal(err)
 	}
 
-	checker.RegisterFlags()
+	flagSet := flag.CommandLine
+	if a.Flags.Parsed() {
+		flagSet = &a.Flags
+	}
 
-	flag.Usage = func() {
+	checker.RegisterFlagsWithFlagSet(flagSet)
+
+	flagSet.Usage = func() {
 		paras := strings.Split(a.Doc, "\n\n")
 		fmt.Fprintf(os.Stderr, "%s: %s\n\n", a.Name, paras[0])
 		fmt.Fprintf(os.Stderr, "Usage: %s [-flag] [package]\n\n", a.Name)
@@ -61,9 +66,9 @@ func Main(a *analysis.Analyzer) {
 
 	analyzers = analysisflags.Parse(analyzers, false)
 
-	args := flag.Args()
+	args := flagSet.Args()
 	if len(args) == 0 {
-		flag.Usage()
+		flagSet.Usage()
 		os.Exit(1)
 	}
 
