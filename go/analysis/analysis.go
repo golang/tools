@@ -252,5 +252,6 @@ type Fact interface {
 type Module struct {
 	Path      string // module path
 	Version   string // module version ("" if unknown, such as for workspace modules)
+	GoMod     string // path to go.mod file used when loading this module, if any
 	GoVersion string // go version used in module (e.g. "go1.22.0")
 }
