@@ -11,6 +11,7 @@ package xrefs
 import (
 	"go/ast"
 	"go/types"
+	"slices"
 	"sort"
 
 	"golang.org/x/tools/go/types/objectpath"
@@ -72,7 +73,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 								// (e.g. local const/var/type).
 								continue
 							}
-							gobObj = &gobObject{Path: path, isAsm: false}
+							gobObj = &gobObject{Path: path}
 							objects[obj] = gobObj
 						}
 
@@ -114,13 +115,11 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 		}
 	}
 
+	// For each asm file, record references to identifiers.
 	for fileIndex, af := range asmFiles {
 		for _, id := range af.Idents {
 			_, name, ok := morestrings.CutLast(id.Name, ".")
 			if !ok {
-				continue
-			}
-			if id.Kind != asm.Text {
 				continue
 			}
 			obj := pkg.Scope().Lookup(name)
@@ -130,13 +129,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 			objects := getObjects(pkg)
 			gobObj, ok := objects[obj]
 			if !ok {
-				path, err := objectpathFor(obj)
-				if err != nil {
-					// Capitalized but not exported
-					// (e.g. local const/var/type).
-					continue
-				}
-				gobObj = &gobObject{Path: path, isAsm: true}
+				gobObj = &gobObject{Path: objectpath.Path(obj.Name())}
 				objects[obj] = gobObj
 			}
 			if rng, err := af.NodeRange(id); err == nil {
@@ -183,10 +176,7 @@ func Lookup(mp *metadata.Package, data []byte, targets map[metadata.PackagePath]
 			for _, gobObj := range gp.Objects {
 				if _, ok := objectSet[gobObj.Path]; ok {
 					for _, ref := range gobObj.Refs {
-						uri := mp.CompiledGoFiles[ref.FileIndex]
-						if gobObj.isAsm {
-							uri = mp.AsmFiles[ref.FileIndex]
-						}
+						uri := slices.Concat(mp.CompiledGoFiles, mp.AsmFiles)[ref.FileIndex]
 						locs = append(locs, protocol.Location{
 							URI:   uri,
 							Range: ref.Range,
@@ -223,9 +213,8 @@ type gobPackage struct {
 
 // A gobObject records all references to a particular symbol.
 type gobObject struct {
-	Path  objectpath.Path // symbol name within package; "" => import of package itself
-	Refs  []gobRef        // locations of references within P, in lexical order
-	isAsm bool            // true if this is an assembly object
+	Path objectpath.Path // symbol name within package; "" => import of package itself
+	Refs []gobRef        // locations of references within P, in lexical order
 }
 
 type gobRef struct {
