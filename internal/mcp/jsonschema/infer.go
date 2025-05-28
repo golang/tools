@@ -44,21 +44,17 @@ func For[T any]() (*Schema, error) {
 //
 // TODO(rfindley): we could perhaps just skip these incompatible fields.
 func ForType(t reflect.Type) (*Schema, error) {
-	return typeSchema(t, make(map[reflect.Type]*Schema))
+	return typeSchema(t)
 }
 
-func typeSchema(t reflect.Type, seen map[reflect.Type]*Schema) (*Schema, error) {
+func typeSchema(t reflect.Type) (*Schema, error) {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
-	}
-	if s := seen[t]; s != nil {
-		return s, nil
 	}
 	var (
 		s   = new(Schema)
 		err error
 	)
-	seen[t] = s
 
 	switch t.Kind() {
 	case reflect.Bool:
@@ -80,14 +76,14 @@ func typeSchema(t reflect.Type, seen map[reflect.Type]*Schema) (*Schema, error) 
 			return nil, fmt.Errorf("unsupported map key type %v", t.Key().Kind())
 		}
 		s.Type = "object"
-		s.AdditionalProperties, err = typeSchema(t.Elem(), seen)
+		s.AdditionalProperties, err = typeSchema(t.Elem())
 		if err != nil {
 			return nil, fmt.Errorf("computing map value schema: %v", err)
 		}
 
 	case reflect.Slice, reflect.Array:
 		s.Type = "array"
-		s.Items, err = typeSchema(t.Elem(), seen)
+		s.Items, err = typeSchema(t.Elem())
 		if err != nil {
 			return nil, fmt.Errorf("computing element schema: %v", err)
 		}
@@ -113,7 +109,7 @@ func typeSchema(t reflect.Type, seen map[reflect.Type]*Schema) (*Schema, error) 
 			if s.Properties == nil {
 				s.Properties = make(map[string]*Schema)
 			}
-			s.Properties[name], err = typeSchema(field.Type, seen)
+			s.Properties[name], err = typeSchema(field.Type)
 			if err != nil {
 				return nil, err
 			}
