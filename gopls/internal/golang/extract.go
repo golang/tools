@@ -54,7 +54,6 @@ func extractVariable(pkg *cache.Package, pgf *parsego.File, start, end token.Pos
 		file = pgf.File
 	)
 	// TODO(adonovan): simplify, using Cursor.
-	tokFile := fset.File(file.FileStart)
 	exprs, err := canExtractVariable(info, pgf.Cursor, start, end, all)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot extract: %v", err)
@@ -164,7 +163,7 @@ Outer:
 			return nil, nil, fmt.Errorf("cannot find location to insert extraction: %v", err)
 		}
 		// Within function: compute appropriate statement indentation.
-		indent, err := calculateIndentation(pgf.Src, tokFile, before)
+		indent, err := pgf.Indentation(before.Pos())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -504,19 +503,6 @@ func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end t
 		}
 	}
 	return exprs, nil
-}
-
-// Calculate indentation for insertion.
-// When inserting lines of code, we must ensure that the lines have consistent
-// formatting (i.e. the proper indentation). To do so, we observe the indentation on the
-// line of code on which the insertion occurs.
-func calculateIndentation(content []byte, tok *token.File, insertBeforeStmt ast.Node) (string, error) {
-	line := safetoken.Line(tok, insertBeforeStmt.Pos())
-	lineOffset, stmtOffset, err := safetoken.Offsets(tok, tok.LineStart(line), insertBeforeStmt.Pos())
-	if err != nil {
-		return "", err
-	}
-	return string(content[lineOffset:stmtOffset]), nil
 }
 
 // freshName returns an identifier based on prefix (perhaps with a
@@ -1193,7 +1179,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	}
 	before := src[outerStart:startOffset]
 	after := src[endOffset:outerEnd]
-	indent, err := calculateIndentation(src, tok, node)
+	indent, err := pgf.Indentation(node.Pos())
 	if err != nil {
 		return nil, nil, err
 	}

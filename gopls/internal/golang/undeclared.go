@@ -137,7 +137,7 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not locate insertion point: %v", err)
 	}
-	indent, err := calculateIndentation(pgf.Src, fset.File(file.FileStart), insertBeforeStmt)
+	indent, err := pgf.Indentation(insertBeforeStmt.Pos())
 	if err != nil {
 		return nil, nil, err
 	}

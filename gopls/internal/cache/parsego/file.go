@@ -10,6 +10,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"sync"
+	"unicode"
 
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -162,4 +163,24 @@ func (pgf *File) Resolve() {
 		declErr := func(token.Pos, string) {}
 		resolveFile(pgf.File, pgf.Tok, declErr)
 	})
+}
+
+// Indentation returns the string of spaces representing the indentation
+// of the line containing the specified position.
+// This can be used to ensure that inserted code maintains consistent indentation
+// and column alignment.
+func (pgf *File) Indentation(pos token.Pos) (string, error) {
+	line := safetoken.Line(pgf.Tok, pos)
+	start, end, err := safetoken.Offsets(pgf.Tok, pgf.Tok.LineStart(line), pos)
+	if err != nil {
+		return "", err
+	}
+
+	s := string(pgf.Src[start:end])
+	for i, r := range s {
+		if !unicode.IsSpace(r) {
+			return s[:i], nil // prefix of spaces
+		}
+	}
+	return s, nil
 }

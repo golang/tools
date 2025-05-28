@@ -69,6 +69,7 @@ doc.go:
 Package doc for package comment.
 */
 package comment
+
 <---
 
 foo.go:
@@ -86,6 +87,7 @@ import (
 
 // Func doc for comment.Foo
 func Foo(foo string, _ int)
+
 <---
 
 -- function/foo.go --
@@ -139,6 +141,187 @@ package function
 
 func Foo(int, string)
 
+type Exported struct{}
+
 func (*Exported) Exported(int)
+
+<---
+
+-- type.go --
+package main
+
+import(
+    "example.com/types"
+)
+
+var x types.Exported //@loc(types, "x")
+
+//@mcptool("context", `{}`, types, output=withType)
+
+-- types/types.go --
+package types
+
+// Doc for exported.
+type Exported struct {
+    // Doc for exported.
+    Exported string
+    // Doc for unexported.
+    unexported string
+}
+
+// Doc for types.
+type (
+    // Doc for Foo first line.
+    // Doc for Foo second line.
+    Foo struct {
+        foo string
+    }
+
+    // Doc for foo.
+    foo struct {}
+
+    // Doc for Bar.
+    Bar struct {
+        bar string
+    }
+
+    // Doc for bar.
+    bar struct {}
+)
+
+-- @withType --
+Code blocks are delimited by --->...<--- markers.
+
+Current file "type.go" contains this import declaration:
+--->
+import(
+    "example.com/types"
+)
+<---
+
+The imported packages declare the following symbols:
+
+example.com/types (package types)
+types.go:
+--->
+package types
+
+// Doc for exported.
+type Exported struct {
+    // Doc for exported.
+    Exported string
+    // Doc for unexported.
+    unexported string
+}
+
+// Doc for types.
+type (
+    // Doc for Foo first line.
+    // Doc for Foo second line.
+    Foo struct {
+        foo string
+    }
+    // Doc for Bar.
+    Bar struct {
+        bar string
+    }
+)
+
+<---
+
+-- value.go --
+package main
+
+import(
+    "example.com/values"
+)
+
+var y values.ConstFoo //@loc(values, "y")
+
+//@mcptool("context", `{}`, values, output=withValue)
+
+-- values/consts.go --
+package values
+
+const (
+    // doc for ConstFoo
+    ConstFoo = "Foo" // comment for ConstFoo
+    // doc for constFoo
+    constFoo = "foo" // comment for constFoo
+    // doc for ConstBar
+    ConstBar = "Bar" // comment for ConstBar
+    // doc for constBar
+    constBar = "bar" // comment for constBar
+)
+
+// doc for ConstExported
+const ConstExported = "Exported" // comment for ConstExported
+
+// doc for constUnexported
+var constUnexported = "unexported" // comment for constUnexported
+
+-- values/vars.go --
+package values
+
+var (
+    // doc for VarFoo
+    VarFoo = "Foo" // comment for VarFoo
+    // doc for varFoo
+    varFoo = "foo" // comment for varFoo
+    // doc for VarBar
+    VarBar = "Bar" // comment for VarBar
+    // doc for varBar
+    varBar = "bar" // comment for varBar
+)
+
+// doc for VarExported
+var VarExported = "Exported" // comment for VarExported
+
+// doc for varUnexported
+var varUnexported = "unexported" // comment for varUnexported
+
+-- @withValue --
+Code blocks are delimited by --->...<--- markers.
+
+Current file "value.go" contains this import declaration:
+--->
+import(
+    "example.com/values"
+)
+<---
+
+The imported packages declare the following symbols:
+
+example.com/values (package values)
+consts.go:
+--->
+package values
+
+const (
+    // doc for ConstFoo
+    ConstFoo = "Foo" // comment for ConstFoo
+    // doc for ConstBar
+    ConstBar = "Bar" // comment for ConstBar
+)
+
+// doc for ConstExported
+const ConstExported = "Exported" // comment for ConstExported
+
+<---
+
+vars.go:
+--->
+package values
+
+var (
+    // doc for VarFoo
+    VarFoo = "Foo" // comment for VarFoo
+    // doc for VarBar
+    VarBar = "Bar" // comment for VarBar
+)
+
+// doc for VarExported
+var VarExported = "Exported" // comment for VarExported
+
 <---
 

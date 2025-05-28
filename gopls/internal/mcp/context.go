@@ -4,8 +4,8 @@
 
 package mcp
 
-// This file defines the "context" operation, which
-// returns a summary of the specified package.
+// This file defines the "context" operation, which returns a summary of the
+// specified package.
 
 import (
 	"bytes"
@@ -14,6 +14,7 @@ import (
 	"go/ast"
 	"go/token"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -165,11 +166,10 @@ func writePackageSummary(ctx context.Context, snapshot *cache.Snapshot, pkg *cac
 				}
 
 				out.Write(bytes.TrimSpace(text))
-				out.WriteString("\n")
+				out.WriteString("\n\n")
 			}
 
 			// Write exported func decl and gen decl.
-			// TODO(hxjiang): write exported gen decl.
 			for _, decl := range pgf.File.Decls {
 				switch decl := decl.(type) {
 				case *ast.FuncDecl:
@@ -184,7 +184,6 @@ func writePackageSummary(ctx context.Context, snapshot *cache.Snapshot, pkg *cac
 						}
 					}
 
-					out.WriteString("\n")
 					// Write doc comment and func signature.
 					startPos := decl.Pos()
 					if decl.Doc != nil {
@@ -197,7 +196,112 @@ func writePackageSummary(ctx context.Context, snapshot *cache.Snapshot, pkg *cac
 					}
 
 					out.Write(text)
-					out.WriteString("\n")
+					out.WriteString("\n\n")
+
+				case *ast.GenDecl:
+					if decl.Tok == token.IMPORT {
+						continue
+					}
+
+					var buf bytes.Buffer
+					if decl.Doc != nil {
+						text, err := pgf.NodeText(decl.Doc)
+						if err != nil {
+							return err
+						}
+						buf.Write(text)
+						buf.WriteString("\n")
+					}
+
+					buf.WriteString(decl.Tok.String() + " ")
+					if decl.Lparen.IsValid() {
+						buf.WriteString("(\n")
+					}
+
+					var anyExported bool
+					for _, spec := range decl.Specs {
+						// Captures the full byte range of the spec, including
+						// its associated doc comments and line comments.
+						// This range also covers any floating comments as these
+						// can be valuable for context. Like
+						// ```
+						// type foo struct { // floating comment.
+						// 		// floating comment.
+						//
+						// 		x int
+						// }
+						// ```
+						var startPos, endPos token.Pos
+
+						switch spec := spec.(type) {
+						case *ast.TypeSpec:
+							// TODO(hxjiang): only keep the exported field of
+							// struct spec and exported method of interface spec.
+							if !spec.Name.IsExported() {
+								continue
+							}
+							anyExported = true
+
+							// Include preceding doc comment, if any.
+							if spec.Doc == nil {
+								startPos = spec.Pos()
+							} else {
+								startPos = spec.Doc.Pos()
+							}
+
+							// Include trailing line comment, if any.
+							if spec.Comment == nil {
+								endPos = spec.End()
+							} else {
+								endPos = spec.Comment.End()
+							}
+
+						case *ast.ValueSpec:
+							// TODO(hxjiang): only keep the exported identifier.
+							if !slices.ContainsFunc(spec.Names, (*ast.Ident).IsExported) {
+								continue
+							}
+							anyExported = true
+
+							if spec.Doc == nil {
+								startPos = spec.Pos()
+							} else {
+								startPos = spec.Doc.Pos()
+							}
+
+							if spec.Comment == nil {
+								endPos = spec.End()
+							} else {
+								endPos = spec.Comment.End()
+							}
+						}
+
+						indent, err := pgf.Indentation(startPos)
+						if err != nil {
+							return err
+						}
+
+						buf.WriteString(indent)
+
+						text, err := pgf.PosText(startPos, endPos)
+						if err != nil {
+							return err
+						}
+
+						buf.Write(text)
+						buf.WriteString("\n")
+					}
+
+					if decl.Lparen.IsValid() {
+						buf.WriteString(")\n")
+					}
+
+					// Only write the summary of the genDecl if there is
+					// any exported spec.
+					if anyExported {
+						out.Write(buf.Bytes())
+						out.WriteString("\n")
+					}
 				}
 			}
 
