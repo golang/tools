@@ -20,28 +20,35 @@ import (
 	"golang.org/x/tools/internal/event"
 )
 
-func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) ([]protocol.Location, error) {
+// References returns a list of locations (file and position) where the symbol under the cursor in an assembly file is referenced,
+// including both Go source files and assembly files within the same package.
+func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position, includeDeclaration bool) ([]protocol.Location, error) {
 	ctx, done := event.Start(ctx, "goasm.References")
 	defer done()
 
-	pkg, asmFile, err := GetPackageID(ctx, snapshot, fh.URI())
+	mps, err := snapshot.MetadataForFile(ctx, fh.URI())
 	if err != nil {
 		return nil, err
+	}
+	metadata.RemoveIntermediateTestVariants(&mps)
+	if len(mps) == 0 {
+		return nil, fmt.Errorf("no package metadata for file %s", fh.URI())
+	}
+	mp := mps[0]
+	pkgs, err := snapshot.TypeCheck(ctx, mp.ID)
+	if err != nil {
+		return nil, err
+	}
+	pkg := pkgs[0]
+	asmFile, err := pkg.AsmFile(fh.URI())
+	if err != nil {
+		return nil, err // "can't happen"
 	}
 
-	// Read the file.
-	content, err := fh.Content()
+	offset, err := asmFile.Mapper.PositionOffset(position)
 	if err != nil {
 		return nil, err
 	}
-	mapper := protocol.NewMapper(fh.URI(), content)
-	offset, err := mapper.PositionOffset(position)
-	if err != nil {
-		return nil, err
-	}
-
-	// // Parse the assembly.
-	// file := asm.Parse(fh.URI(), content)
 
 	// Figure out the selected symbol.
 	// For now, just find the identifier around the cursor.
@@ -62,7 +69,10 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	if !ok {
 		return nil, fmt.Errorf("not found")
 	}
-	// return localReferences(pkg, targets, true, report)
+
+	// TODO(grootguo): Currently, only references to the symbol within the package are found (i.e., only Idents in this package's Go files are searched).
+	// It is still necessary to implement cross-package reference lookup: that is, to find all references to this symbol in other packages that import the current package.
+	// Refer to the global search logic in golang.References, and add corresponding test cases for verification.
 	for _, pgf := range pkg.CompiledGoFiles() {
 		for curId := range pgf.Cursor.Preorder((*ast.Ident)(nil)) {
 			id := curId.Node().(*ast.Ident)
@@ -74,6 +84,11 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 				locations = append(locations, loc)
 			}
 		}
+	}
+
+	// If includeDeclaration is false, return only reference locations (exclude declarations).
+	if !includeDeclaration {
+		return locations, nil
 	}
 
 	for _, asmFile := range pkg.AsmFiles() {
@@ -92,26 +107,4 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	return locations, nil
-}
-
-func GetPackageID(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*cache.Package, *asm.File, error) {
-	mps, err := snapshot.MetadataForFile(ctx, uri)
-	if err != nil {
-		return nil, nil, err
-	}
-	metadata.RemoveIntermediateTestVariants(&mps)
-	if len(mps) == 0 {
-		return nil, nil, fmt.Errorf("no package metadata for file %s", uri)
-	}
-	mp := mps[0]
-	pkgs, err := snapshot.TypeCheck(ctx, mp.ID)
-	if err != nil {
-		return nil, nil, err
-	}
-	pkg := pkgs[0]
-	asmFile, err := pkg.AsmFile(uri)
-	if err != nil {
-		return nil, nil, err // "can't happen"
-	}
-	return pkg, asmFile, nil
 }
