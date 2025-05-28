@@ -13,7 +13,7 @@ gofix: apply fixes based on go:fix comment directives
 
 The gofix analyzer inlines functions and constants that are marked for inlining.
 
-# Functions
+## Functions
 
 Given a function that is marked for inlining, like this one:
 
@@ -44,7 +44,25 @@ so this mechanism provides a low-risk way to update large numbers of calls.
 We recommend, where possible, expressing the old API in terms of the new one
 to enable automatic migration.
 
-# Constants
+The inliner takes care to avoid behavior changes, even subtle ones,
+such as changes to the order in which argument expressions are
+evaluated. When it cannot safely eliminate all parameter variables,
+it may introduce a "binding declaration" of the form
+
+	var params = args
+
+to evaluate argument expressions in the correct order and bind them to
+parameter variables. Since the resulting code transformation may be
+stylistically suboptimal, such inlinings may be disabled by specifying
+the -gofix.allow_binding_decl=false flag to the analyzer driver.
+
+(In cases where it is not safe to "reduce" a call—that is, to replace
+a call f(x) by the body of function f, suitably substituted—the
+inliner machinery is capable of replacing f by a function literal,
+func(){...}(). However, the gofix analyzer discards all such
+"literalizations" unconditionally, again on grounds of style.)
+
+## Constants
 
 Given a constant that is marked for inlining, like this one:
 

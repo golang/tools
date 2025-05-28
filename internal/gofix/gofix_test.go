@@ -5,6 +5,7 @@
 package gofix
 
 import (
+	"fmt"
 	"go/ast"
 	"go/importer"
 	"go/parser"
@@ -23,6 +24,21 @@ func TestAnalyzer(t *testing.T) {
 		testenv.NeedsGoExperiment(t, "aliastypeparams")
 	}
 	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), Analyzer, "a", "b")
+}
+
+func TestAllowBindingDeclFlag(t *testing.T) {
+	saved := allowBindingDecl
+	defer func() { allowBindingDecl = saved }()
+
+	run := func(allow bool) {
+		name := fmt.Sprintf("binding_%v", allow)
+		t.Run(name, func(t *testing.T) {
+			allowBindingDecl = allow
+			analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), Analyzer, name)
+		})
+	}
+	run(true)  // testdata/src/binding_true
+	run(false) // testdata/src/binding_false
 }
 
 func TestTypesWithNames(t *testing.T) {

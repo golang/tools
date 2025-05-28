@@ -43,6 +43,13 @@ var Analyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 }
 
+var allowBindingDecl bool
+
+func init() {
+	Analyzer.Flags.BoolVar(&allowBindingDecl, "allow_binding_decl", false,
+		"permit inlinings that require a 'var params = args' declaration")
+}
+
 // analyzer holds the state for this analysis.
 type analyzer struct {
 	pass *analysis.Pass
@@ -187,6 +194,14 @@ func (a *analyzer) inlineCall(call *ast.CallExpr, cur inspector.Cursor) {
 			// and often literalizes when it cannot prove that
 			// reducing the call is safe; the user of this tool
 			// has no indication of what the problem is.)
+			return
+		}
+		if res.BindingDecl && !allowBindingDecl {
+			// When applying fix en masse, users are similarly
+			// unenthusiastic about inlinings that cannot
+			// entirely eliminate the parameters and
+			// insert a 'var params = args' declaration.
+			// The flag allows them to decline such fixes.
 			return
 		}
 		got := res.Content
