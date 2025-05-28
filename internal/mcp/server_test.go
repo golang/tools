@@ -41,7 +41,7 @@ func getCursor(input string) string {
 	return cursor
 }
 
-func TestPaginateBasic(t *testing.T) {
+func TestServerPaginateBasic(t *testing.T) {
 	testCases := []struct {
 		name           string
 		initialItems   []*TestItem
@@ -170,7 +170,7 @@ func TestPaginateBasic(t *testing.T) {
 	}
 }
 
-func TestPaginateVariousPageSizes(t *testing.T) {
+func TestServerPaginateVariousPageSizes(t *testing.T) {
 	fs := newFeatureSet(func(t *TestItem) string { return t.Name })
 	fs.add(allTestItems...)
 	// Try all possible page sizes, ensuring we get the correct list of items.

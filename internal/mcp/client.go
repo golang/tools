@@ -319,27 +319,72 @@ func (c *Client) callLoggingHandler(ctx context.Context, cs *ClientSession, para
 // Tools provides an iterator for all tools available on the server,
 // automatically fetching pages and managing cursors.
 // The `params` argument can set the initial cursor.
+// Iteration stops at the first encountered error, which will be yielded.
 func (cs *ClientSession) Tools(ctx context.Context, params *ListToolsParams) iter.Seq2[Tool, error] {
-	currentParams := &ListToolsParams{}
-	if params != nil {
-		*currentParams = *params
+	if params == nil {
+		params = &ListToolsParams{}
 	}
-	return func(yield func(Tool, error) bool) {
+	return paginate(ctx, params, cs.ListTools, func(res *ListToolsResult) []*Tool {
+		return res.Tools
+	})
+}
+
+// Resources provides an iterator for all resources available on the server,
+// automatically fetching pages and managing cursors.
+// The `params` argument can set the initial cursor.
+// Iteration stops at the first encountered error, which will be yielded.
+func (cs *ClientSession) Resources(ctx context.Context, params *ListResourcesParams) iter.Seq2[Resource, error] {
+	if params == nil {
+		params = &ListResourcesParams{}
+	}
+	return paginate(ctx, params, cs.ListResources, func(res *ListResourcesResult) []*Resource {
+		return res.Resources
+	})
+}
+
+// Prompts provides an iterator for all prompts available on the server,
+// automatically fetching pages and managing cursors.
+// The `params` argument can set the initial cursor.
+// Iteration stops at the first encountered error, which will be yielded.
+func (cs *ClientSession) Prompts(ctx context.Context, params *ListPromptsParams) iter.Seq2[Prompt, error] {
+	if params == nil {
+		params = &ListPromptsParams{}
+	}
+	return paginate(ctx, params, cs.ListPrompts, func(res *ListPromptsResult) []*Prompt {
+		return res.Prompts
+	})
+}
+
+type ListParams interface {
+	// Returns a pointer to the param's Cursor field.
+	cursorPtr() *string
+}
+
+type ListResult[T any] interface {
+	// Returns a pointer to the param's NextCursor field.
+	nextCursorPtr() *string
+}
+
+// paginate is a generic helper function to provide a paginated iterator.
+func paginate[P ListParams, R ListResult[E], E any](ctx context.Context, params P, listFunc func(context.Context, P) (R, error), items func(R) []*E) iter.Seq2[E, error] {
+	return func(yield func(E, error) bool) {
 		for {
-			res, err := cs.ListTools(ctx, currentParams)
+			res, err := listFunc(ctx, params)
 			if err != nil {
-				yield(Tool{}, err)
+				var zero E
+				yield(zero, err)
 				return
 			}
-			for _, t := range res.Tools {
-				if !yield(*t, nil) {
+			for _, r := range items(res) {
+				if !yield(*r, nil) {
 					return
 				}
 			}
-			if res.NextCursor == "" {
+			nextCursorVal := res.nextCursorPtr()
+			if nextCursorVal == nil || *nextCursorVal == "" {
 				return
 			}
-			currentParams.Cursor = res.NextCursor
+			*params.cursorPtr() = *nextCursorVal
 		}
 	}
 }

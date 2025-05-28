@@ -332,6 +332,13 @@ func writeDecl(configName string, config typeConfig, def *jsonschema.Schema, nam
 		fmt.Fprintf(w, "\nfunc (x *%s) GetMeta() *Meta { return &x.Meta }", typeName)
 	}
 
+	if _, ok := def.Properties["cursor"]; ok {
+		fmt.Fprintf(w, "\nfunc (x *%s) cursorPtr() *string { return &x.Cursor }", typeName)
+	}
+	if _, ok := def.Properties["nextCursor"]; ok {
+		fmt.Fprintf(w, "\nfunc (x *%s) nextCursorPtr() *string { return &x.NextCursor }", typeName)
+	}
+
 	return nil
 }
 
