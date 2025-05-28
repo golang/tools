@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -57,158 +56,58 @@ func ExampleServer() {
 	// Output: Hi user
 }
 
-func TestListTool(t *testing.T) {
-	toolA := mcp.NewTool("apple", "apple tool", SayHi)
-	toolB := mcp.NewTool("banana", "banana tool", SayHi)
-	toolC := mcp.NewTool("cherry", "cherry tool", SayHi)
-	testCases := []struct {
-		tools    []*mcp.ServerTool
-		want     []*mcp.Tool
-		pageSize int
-	}{
-		{
-			// Simple test.
-			[]*mcp.ServerTool{toolA, toolB, toolC},
-			[]*mcp.Tool{toolA.Tool, toolB.Tool, toolC.Tool},
-			mcp.DefaultPageSize,
-		},
-		{
-			// Tools should be ordered by tool name.
-			[]*mcp.ServerTool{toolC, toolA, toolB},
-			[]*mcp.Tool{toolA.Tool, toolB.Tool, toolC.Tool},
-			mcp.DefaultPageSize,
-		},
-		{
-			// Page size of 1 should yield the first tool only.
-			[]*mcp.ServerTool{toolC, toolA, toolB},
-			[]*mcp.Tool{toolA.Tool},
-			1,
-		},
-		{
-			// Page size of 2 should yield the first 2 tools only.
-			[]*mcp.ServerTool{toolC, toolA, toolB},
-			[]*mcp.Tool{toolA.Tool, toolB.Tool},
-			2,
-		},
-		{
-			// Page size of 3 should yield all tools.
-			[]*mcp.ServerTool{toolC, toolA, toolB},
-			[]*mcp.Tool{toolA.Tool, toolB.Tool, toolC.Tool},
-			3,
-		},
-		{
-			[]*mcp.ServerTool{},
-			nil,
-			1,
-		},
-	}
-	ctx := context.Background()
-	for _, tc := range testCases {
-		server := mcp.NewServer("server", "v0.0.1", &mcp.ServerOptions{PageSize: tc.pageSize})
-		server.AddTools(tc.tools...)
-		clientTransport, serverTransport := mcp.NewInMemoryTransports()
-		serverSession, err := server.Connect(ctx, serverTransport)
-		if err != nil {
-			log.Fatal(err)
-		}
-		client := mcp.NewClient("client", "v0.0.1", nil)
-		clientSession, err := client.Connect(ctx, clientTransport)
-		if err != nil {
-			log.Fatal(err)
-		}
-		res, err := clientSession.ListTools(ctx, nil)
-		serverSession.Close()
-		clientSession.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-		if len(res.Tools) != len(tc.want) {
-			t.Fatalf("expected %d tools, got %d", len(tc.want), len(res.Tools))
-		}
-		if diff := cmp.Diff(res.Tools, tc.want, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
-			t.Fatalf("expected tools %+v, got %+v", tc.want, res.Tools)
-		}
-		if tc.pageSize < len(tc.tools) && res.NextCursor == "" {
-			t.Fatalf("expected next cursor, got none")
-		}
-	}
-}
-
-func TestListToolPaginateInvalidCursor(t *testing.T) {
-	toolA := mcp.NewTool("apple", "apple tool", SayHi)
-	ctx := context.Background()
+// createSessions creates and connects an in-memory client and server session for testing purposes.
+func createSessions(ctx context.Context) (*mcp.ClientSession, *mcp.ServerSession, *mcp.Server) {
 	server := mcp.NewServer("server", "v0.0.1", nil)
-	server.AddTools(toolA)
-	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	client := mcp.NewClient("client", "v0.0.1", nil)
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	serverSession, err := server.Connect(ctx, serverTransport)
 	if err != nil {
 		log.Fatal(err)
 	}
-	client := mcp.NewClient("client", "v0.0.1", nil)
 	clientSession, err := client.Connect(ctx, clientTransport)
 	if err != nil {
 		log.Fatal(err)
 	}
-	_, err = clientSession.ListTools(ctx, &mcp.ListToolsParams{Cursor: "invalid"})
-	if err == nil {
-		t.Fatalf("expected error, got none")
-	}
-	serverSession.Close()
-	clientSession.Close()
+	return clientSession, serverSession, server
 }
 
-func TestListToolPaginate(t *testing.T) {
-	serverTools := []*mcp.ServerTool{
-		mcp.NewTool("apple", "apple tool", SayHi),
-		mcp.NewTool("banana", "banana tool", SayHi),
-		mcp.NewTool("cherry", "cherry tool", SayHi),
-		mcp.NewTool("durian", "durian tool", SayHi),
-		mcp.NewTool("elderberry", "elderberry tool", SayHi),
-	}
-	var wantTools []*mcp.Tool
-	for _, tool := range serverTools {
-		wantTools = append(wantTools, tool.Tool)
-	}
+func TestListTool(t *testing.T) {
+	toolA := mcp.NewTool("apple", "apple tool", SayHi)
+	toolB := mcp.NewTool("banana", "banana tool", SayHi)
+	toolC := mcp.NewTool("cherry", "cherry tool", SayHi)
+	tools := []*mcp.ServerTool{toolA, toolB, toolC}
+	wantTools := []*mcp.Tool{toolA.Tool, toolB.Tool, toolC.Tool}
 	ctx := context.Background()
-	// Try all possible page sizes, ensuring we get the correct list of tools.
-	for pageSize := 1; pageSize < len(serverTools)+1; pageSize++ {
-		server := mcp.NewServer("server", "v0.0.1", &mcp.ServerOptions{PageSize: pageSize})
-		server.AddTools(serverTools...)
-		clientTransport, serverTransport := mcp.NewInMemoryTransports()
-		serverSession, err := server.Connect(ctx, serverTransport)
-		if err != nil {
-			log.Fatal(err)
-		}
-		client := mcp.NewClient("client", "v0.0.1", nil)
-		clientSession, err := client.Connect(ctx, clientTransport)
-		if err != nil {
-			log.Fatal(err)
-		}
-		var gotTools []*mcp.Tool
-		var nextCursor string
-		wantChunks := slices.Collect(slices.Chunk(wantTools, pageSize))
-		index := 0
-		// Iterate through all pages, comparing sub-slices to the paginated list.
-		for {
-			res, err := clientSession.ListTools(ctx, &mcp.ListToolsParams{Cursor: nextCursor})
-			if err != nil {
-				log.Fatal(err)
-			}
-			gotTools = append(gotTools, res.Tools...)
-			nextCursor = res.NextCursor
-			if diff := cmp.Diff(res.Tools, wantChunks[index], cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
-				t.Errorf("expected %v, got %v, (-want +got):\n%s", wantChunks[index], res.Tools, diff)
-			}
-			if res.NextCursor == "" {
-				break
-			}
-			index++
-		}
-		serverSession.Close()
-		clientSession.Close()
+	clientSession, serverSession, server := createSessions(ctx)
+	defer clientSession.Close()
+	defer serverSession.Close()
+	server.AddTools(tools...)
+	res, err := clientSession.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal("ListTools() failed:", err)
+	}
+	if diff := cmp.Diff(wantTools, res.Tools, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
+		t.Fatalf("ListTools() mismatch (-want +got):\n%s", diff)
+	}
+}
 
-		if len(gotTools) != len(wantTools) {
-			t.Fatalf("expected %d tools, got %d", len(wantTools), len(gotTools))
-		}
+func TestListResources(t *testing.T) {
+	resourceA := &mcp.ServerResource{Resource: &mcp.Resource{URI: "http://apple"}}
+	resourceB := &mcp.ServerResource{Resource: &mcp.Resource{URI: "http://banana"}}
+	resourceC := &mcp.ServerResource{Resource: &mcp.Resource{URI: "http://cherry"}}
+	resources := []*mcp.ServerResource{resourceA, resourceB, resourceC}
+	wantResource := []*mcp.Resource{resourceA.Resource, resourceB.Resource, resourceC.Resource}
+	ctx := context.Background()
+	clientSession, serverSession, server := createSessions(ctx)
+	defer clientSession.Close()
+	defer serverSession.Close()
+	server.AddResources(resources...)
+	res, err := clientSession.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatal("ListResources() failed:", err)
+	}
+	if diff := cmp.Diff(wantResource, res.Resources, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
+		t.Fatalf("ListResources() mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -567,10 +567,16 @@ type recursiveStringer int
 func (s recursiveStringer) String() string {
 	_ = fmt.Sprintf("%d", s)
 	_ = fmt.Sprintf("%#v", s)
-	_ = fmt.Sprintf("%v", s)  // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringer\).String method call`
-	_ = fmt.Sprintf("%v", &s) // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringer\).String method call`
-	_ = fmt.Sprintf("%T", s)  // ok; does not recursively call String
-	return fmt.Sprintln(s)    // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringer\).String method`
+	_ = fmt.Sprintf("%v", s)   // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%v", &s)  // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#x", s)  // want `fmt.Sprintf format %#x with arg s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#x", &s) // want `fmt.Sprintf format %#x with arg &s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#X", s)  // want `fmt.Sprintf format %#X with arg s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#X", &s) // want `fmt.Sprintf format %#X with arg &s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#q", s)  // want `fmt.Sprintf format %#q with arg s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%#q", &s) // want `fmt.Sprintf format %#q with arg &s causes recursive \(a.recursiveStringer\).String method call`
+	_ = fmt.Sprintf("%T", s)   // ok; does not recursively call String
+	return fmt.Sprintln(s)     // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringer\).String method`
 }
 
 type recursivePtrStringer int
@@ -586,10 +592,16 @@ type recursiveError int
 func (s recursiveError) Error() string {
 	_ = fmt.Sprintf("%d", s)
 	_ = fmt.Sprintf("%#v", s)
-	_ = fmt.Sprintf("%v", s)  // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveError\).Error method call`
-	_ = fmt.Sprintf("%v", &s) // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveError\).Error method call`
-	_ = fmt.Sprintf("%T", s)  // ok; does not recursively call Error
-	return fmt.Sprintln(s)    // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveError\).Error method`
+	_ = fmt.Sprintf("%v", s)   // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%v", &s)  // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#x", s)  // want `fmt.Sprintf format %#x with arg s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#x", &s) // want `fmt.Sprintf format %#x with arg &s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#X", s)  // want `fmt.Sprintf format %#X with arg s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#X", &s) // want `fmt.Sprintf format %#X with arg &s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#q", s)  // want `fmt.Sprintf format %#q with arg s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%#q", &s) // want `fmt.Sprintf format %#q with arg &s causes recursive \(a.recursiveError\).Error method call`
+	_ = fmt.Sprintf("%T", s)   // ok; does not recursively call Error
+	return fmt.Sprintln(s)     // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveError\).Error method`
 }
 
 type recursivePtrError int
@@ -605,19 +617,31 @@ type recursiveStringerAndError int
 func (s recursiveStringerAndError) String() string {
 	_ = fmt.Sprintf("%d", s)
 	_ = fmt.Sprintf("%#v", s)
-	_ = fmt.Sprintf("%v", s)  // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringerAndError\).String method call`
-	_ = fmt.Sprintf("%v", &s) // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringerAndError\).String method call`
-	_ = fmt.Sprintf("%T", s)  // ok; does not recursively call String
-	return fmt.Sprintln(s)    // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringerAndError\).String method`
+	_ = fmt.Sprintf("%v", s)   // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%v", &s)  // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#x", s)  // want `fmt.Sprintf format %#x with arg s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#x", &s) // want `fmt.Sprintf format %#x with arg &s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#X", s)  // want `fmt.Sprintf format %#X with arg s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#X", &s) // want `fmt.Sprintf format %#X with arg &s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#q", s)  // want `fmt.Sprintf format %#q with arg s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%#q", &s) // want `fmt.Sprintf format %#q with arg &s causes recursive \(a.recursiveStringerAndError\).String method call`
+	_ = fmt.Sprintf("%T", s)   // ok; does not recursively call String
+	return fmt.Sprintln(s)     // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringerAndError\).String method`
 }
 
 func (s recursiveStringerAndError) Error() string {
 	_ = fmt.Sprintf("%d", s)
 	_ = fmt.Sprintf("%#v", s)
-	_ = fmt.Sprintf("%v", s)  // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringerAndError\).Error method call`
-	_ = fmt.Sprintf("%v", &s) // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringerAndError\).Error method call`
-	_ = fmt.Sprintf("%T", s)  // ok; does not recursively call Error
-	return fmt.Sprintln(s)    // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringerAndError\).Error method`
+	_ = fmt.Sprintf("%v", s)   // want `fmt.Sprintf format %v with arg s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%v", &s)  // want `fmt.Sprintf format %v with arg &s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#x", s)  // want `fmt.Sprintf format %#x with arg s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#x", &s) // want `fmt.Sprintf format %#x with arg &s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#X", s)  // want `fmt.Sprintf format %#X with arg s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#X", &s) // want `fmt.Sprintf format %#X with arg &s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#q", s)  // want `fmt.Sprintf format %#q with arg s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%#q", &s) // want `fmt.Sprintf format %#q with arg &s causes recursive \(a.recursiveStringerAndError\).Error method call`
+	_ = fmt.Sprintf("%T", s)   // ok; does not recursively call Error
+	return fmt.Sprintln(s)     // want `fmt.Sprintln arg s causes recursive call to \(a.recursiveStringerAndError\).Error method`
 }
 
 type recursivePtrStringerAndError int

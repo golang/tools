@@ -29,9 +29,14 @@ type Annotations struct {
 }
 
 type CallToolParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta      Meta            `json:"_meta,omitempty"`
 	Arguments json.RawMessage `json:"arguments,omitempty"`
 	Name      string          `json:"name"`
 }
+
+func (x *CallToolParams) GetMeta() *Meta { return &x.Meta }
 
 // The server's response to a tool call.
 //
@@ -44,17 +49,22 @@ type CallToolParams struct {
 // server does not support tool calls, or any other exceptional conditions,
 // should be reported as an MCP error response.
 type CallToolResult struct {
-	// This result property is reserved by the protocol to allow clients and servers
-	// to attach additional metadata to their responses.
-	Meta    map[string]json.RawMessage `json:"_meta,omitempty"`
-	Content []*Content                 `json:"content"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta    Meta       `json:"_meta,omitempty"`
+	Content []*Content `json:"content"`
 	// Whether the tool call ended in an error.
 	//
 	// If not set, this is assumed to be false (the call was successful).
 	IsError bool `json:"isError,omitempty"`
 }
 
+func (x *CallToolResult) GetMeta() *Meta { return &x.Meta }
+
 type CancelledParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// An optional string describing the reason for the cancellation. This MAY be
 	// logged or presented to the user.
 	Reason string `json:"reason,omitempty"`
@@ -64,6 +74,8 @@ type CancelledParams struct {
 	// direction.
 	RequestID any `json:"requestId"`
 }
+
+func (x *CancelledParams) GetMeta() *Meta { return &x.Meta }
 
 // Capabilities a client may support. Known capabilities are defined here, in
 // this schema, but this is not a closed set: any client can define its own,
@@ -82,6 +94,9 @@ type ClientCapabilities struct {
 }
 
 type CreateMessageParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// A request to include context from one or more MCP servers (including the
 	// caller), to be attached to the prompt. The client MAY ignore this request.
 	IncludeContext string `json:"includeContext,omitempty"`
@@ -103,15 +118,17 @@ type CreateMessageParams struct {
 	Temperature  float64 `json:"temperature,omitempty"`
 }
 
+func (x *CreateMessageParams) GetMeta() *Meta { return &x.Meta }
+
 // The client's response to a sampling/create_message request from the server.
 // The client should inform the user before returning the sampled message, to
 // allow them to inspect the response (human in the loop) and decide whether to
 // allow the server to see it.
 type CreateMessageResult struct {
-	// This result property is reserved by the protocol to allow clients and servers
-	// to attach additional metadata to their responses.
-	Meta    map[string]json.RawMessage `json:"_meta,omitempty"`
-	Content *Content                   `json:"content"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta    Meta     `json:"_meta,omitempty"`
+	Content *Content `json:"content"`
 	// The name of the model that generated the message.
 	Model string `json:"model"`
 	Role  Role   `json:"role"`
@@ -119,24 +136,36 @@ type CreateMessageResult struct {
 	StopReason string `json:"stopReason,omitempty"`
 }
 
+func (x *CreateMessageResult) GetMeta() *Meta { return &x.Meta }
+
 type GetPromptParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// Arguments to use for templating the prompt.
 	Arguments map[string]string `json:"arguments,omitempty"`
 	// The name of the prompt or prompt template.
 	Name string `json:"name"`
 }
 
+func (x *GetPromptParams) GetMeta() *Meta { return &x.Meta }
+
 // The server's response to a prompts/get request from the client.
 type GetPromptResult struct {
-	// This result property is reserved by the protocol to allow clients and servers
-	// to attach additional metadata to their responses.
-	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// An optional description for the prompt.
 	Description string           `json:"description,omitempty"`
 	Messages    []*PromptMessage `json:"messages"`
 }
 
+func (x *GetPromptResult) GetMeta() *Meta { return &x.Meta }
+
 type InitializeParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta         Meta                `json:"_meta,omitempty"`
 	Capabilities *ClientCapabilities `json:"capabilities"`
 	ClientInfo   *implementation     `json:"clientInfo"`
 	// The latest version of the Model Context Protocol that the client supports.
@@ -144,13 +173,15 @@ type InitializeParams struct {
 	ProtocolVersion string `json:"protocolVersion"`
 }
 
+func (x *InitializeParams) GetMeta() *Meta { return &x.Meta }
+
 // After receiving an initialize request from the client, the server sends this
 // response.
 type InitializeResult struct {
-	// This result property is reserved by the protocol to allow clients and servers
-	// to attach additional metadata to their responses.
-	Meta         map[string]json.RawMessage `json:"_meta,omitempty"`
-	Capabilities *serverCapabilities        `json:"capabilities"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta         Meta                `json:"_meta,omitempty"`
+	Capabilities *serverCapabilities `json:"capabilities"`
 	// Instructions describing how to use the server and its features.
 	//
 	// This can be used by clients to improve the LLM's understanding of available
@@ -164,82 +195,107 @@ type InitializeResult struct {
 	ServerInfo      *implementation `json:"serverInfo"`
 }
 
+func (x *InitializeResult) GetMeta() *Meta { return &x.Meta }
+
 type InitializedParams struct {
-	// This parameter name is reserved by MCP to allow clients and servers to attach
-	// additional metadata to their notifications.
-	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 }
 
+func (x *InitializedParams) GetMeta() *Meta { return &x.Meta }
+
 type ListPromptsParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// An opaque token representing the current pagination position. If provided,
 	// the server should return results starting after this cursor.
 	Cursor string `json:"cursor,omitempty"`
 }
 
+func (x *ListPromptsParams) GetMeta() *Meta { return &x.Meta }
+
 // The server's response to a prompts/list request from the client.
 type ListPromptsResult struct {
-	// This result property is reserved by the protocol to allow clients and servers
-	// to attach additional metadata to their responses.
-	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// An opaque token representing the pagination position after the last returned
 	// result. If present, there may be more results available.
 	NextCursor string    `json:"nextCursor,omitempty"`
 	Prompts    []*Prompt `json:"prompts"`
 }
 
+func (x *ListPromptsResult) GetMeta() *Meta { return &x.Meta }
+
 type ListResourcesParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// An opaque token representing the current pagination position. If provided,
 	// the server should return results starting after this cursor.
 	Cursor string `json:"cursor,omitempty"`
 }
 
+func (x *ListResourcesParams) GetMeta() *Meta { return &x.Meta }
+
 // The server's response to a resources/list request from the client.
 type ListResourcesResult struct {
-	// This result property is reserved by the protocol to allow clients and servers
-	// to attach additional metadata to their responses.
-	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// An opaque token representing the pagination position after the last returned
 	// result. If present, there may be more results available.
 	NextCursor string      `json:"nextCursor,omitempty"`
 	Resources  []*Resource `json:"resources"`
 }
 
+func (x *ListResourcesResult) GetMeta() *Meta { return &x.Meta }
+
 type ListRootsParams struct {
-	Meta struct {
-		// If specified, the caller is requesting out-of-band progress notifications for
-		// this request (as represented by notifications/progress). The value of this
-		// parameter is an opaque token that will be attached to any subsequent
-		// notifications. The receiver is not obligated to provide these notifications.
-		ProgressToken any `json:"progressToken,omitempty"`
-	} `json:"_meta,omitempty"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 }
+
+func (x *ListRootsParams) GetMeta() *Meta { return &x.Meta }
 
 // The client's response to a roots/list request from the server. This result
 // contains an array of Root objects, each representing a root directory or file
 // that the server can operate on.
 type ListRootsResult struct {
-	// This result property is reserved by the protocol to allow clients and servers
-	// to attach additional metadata to their responses.
-	Meta  map[string]json.RawMessage `json:"_meta,omitempty"`
-	Roots []*Root                    `json:"roots"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta  Meta    `json:"_meta,omitempty"`
+	Roots []*Root `json:"roots"`
 }
 
+func (x *ListRootsResult) GetMeta() *Meta { return &x.Meta }
+
 type ListToolsParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// An opaque token representing the current pagination position. If provided,
 	// the server should return results starting after this cursor.
 	Cursor string `json:"cursor,omitempty"`
 }
 
+func (x *ListToolsParams) GetMeta() *Meta { return &x.Meta }
+
 // The server's response to a tools/list request from the client.
 type ListToolsResult struct {
-	// This result property is reserved by the protocol to allow clients and servers
-	// to attach additional metadata to their responses.
-	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// An opaque token representing the pagination position after the last returned
 	// result. If present, there may be more results available.
 	NextCursor string  `json:"nextCursor,omitempty"`
 	Tools      []*Tool `json:"tools"`
 }
+
+func (x *ListToolsResult) GetMeta() *Meta { return &x.Meta }
 
 // The severity of a log message.
 //
@@ -248,6 +304,9 @@ type ListToolsResult struct {
 type LoggingLevel string
 
 type LoggingMessageParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// The data to be logged, such as a string message or an object. Any JSON
 	// serializable type is allowed here.
 	Data any `json:"data"`
@@ -256,6 +315,8 @@ type LoggingMessageParams struct {
 	// An optional name of the logger issuing this message.
 	Logger string `json:"logger,omitempty"`
 }
+
+func (x *LoggingMessageParams) GetMeta() *Meta { return &x.Meta }
 
 // Hints to use for model selection.
 //
@@ -310,14 +371,12 @@ type ModelPreferences struct {
 }
 
 type PingParams struct {
-	Meta struct {
-		// If specified, the caller is requesting out-of-band progress notifications for
-		// this request (as represented by notifications/progress). The value of this
-		// parameter is an opaque token that will be attached to any subsequent
-		// notifications. The receiver is not obligated to provide these notifications.
-		ProgressToken any `json:"progressToken,omitempty"`
-	} `json:"_meta,omitempty"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 }
+
+func (x *PingParams) GetMeta() *Meta { return &x.Meta }
 
 // A prompt or prompt template that the server offers.
 type Prompt struct {
@@ -340,10 +399,12 @@ type PromptArgument struct {
 }
 
 type PromptListChangedParams struct {
-	// This parameter name is reserved by MCP to allow clients and servers to attach
-	// additional metadata to their notifications.
-	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 }
+
+func (x *PromptListChangedParams) GetMeta() *Meta { return &x.Meta }
 
 // Describes a message returned as part of a prompt.
 //
@@ -355,18 +416,25 @@ type PromptMessage struct {
 }
 
 type ReadResourceParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// The URI of the resource to read. The URI can use any protocol; it is up to
 	// the server how to interpret it.
 	URI string `json:"uri"`
 }
 
+func (x *ReadResourceParams) GetMeta() *Meta { return &x.Meta }
+
 // The server's response to a resources/read request from the client.
 type ReadResourceResult struct {
-	// This result property is reserved by the protocol to allow clients and servers
-	// to attach additional metadata to their responses.
-	Meta     map[string]json.RawMessage `json:"_meta,omitempty"`
-	Contents *ResourceContents          `json:"contents"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta     Meta              `json:"_meta,omitempty"`
+	Contents *ResourceContents `json:"contents"`
 }
+
+func (x *ReadResourceResult) GetMeta() *Meta { return &x.Meta }
 
 // A known resource that the server is capable of reading.
 type Resource struct {
@@ -394,10 +462,12 @@ type Resource struct {
 }
 
 type ResourceListChangedParams struct {
-	// This parameter name is reserved by MCP to allow clients and servers to attach
-	// additional metadata to their notifications.
-	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 }
+
+func (x *ResourceListChangedParams) GetMeta() *Meta { return &x.Meta }
 
 // The sender or recipient of messages and data in a conversation.
 type Role string
@@ -415,10 +485,12 @@ type Root struct {
 }
 
 type RootsListChangedParams struct {
-	// This parameter name is reserved by MCP to allow clients and servers to attach
-	// additional metadata to their notifications.
-	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 }
+
+func (x *RootsListChangedParams) GetMeta() *Meta { return &x.Meta }
 
 // Present if the client supports sampling from an LLM.
 type SamplingCapabilities struct {
@@ -431,11 +503,16 @@ type SamplingMessage struct {
 }
 
 type SetLevelParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 	// The level of logging that the client wants to receive from the server. The
 	// server should send all logs at this level and higher (i.e., more severe) to
 	// the client as notifications/message.
 	Level LoggingLevel `json:"level"`
 }
+
+func (x *SetLevelParams) GetMeta() *Meta { return &x.Meta }
 
 // Definition for a tool the client can call.
 type Tool struct {
@@ -490,10 +567,12 @@ type ToolAnnotations struct {
 }
 
 type ToolListChangedParams struct {
-	// This parameter name is reserved by MCP to allow clients and servers to attach
-	// additional metadata to their notifications.
-	Meta map[string]json.RawMessage `json:"_meta,omitempty"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
 }
+
+func (x *ToolListChangedParams) GetMeta() *Meta { return &x.Meta }
 
 // Describes the name and version of an MCP implementation.
 type implementation struct {

@@ -147,11 +147,11 @@ func TestLookupAll(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer fd.Close()
-		if _, err := fd.WriteString(fmt.Sprintf("package foo\n")); err != nil {
+		if _, err := fmt.Fprintf(fd, "package foo\n"); err != nil {
 			t.Fatal(err)
 		}
 		for _, nm := range nms {
-			fd.WriteString(fmt.Sprintf("func %s() {}\n", nm))
+			fmt.Fprintf(fd, "func %s() {}\n", nm)
 		}
 	}
 	wrtModule("a.com/go/x4@v1.1.1", "A", "B", "C", "D")

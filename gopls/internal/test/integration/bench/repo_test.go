@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -109,8 +110,13 @@ var repos = map[string]*repo{
 
 // getRepo gets the requested repo, and skips the test if -short is set and
 // repo is not configured as a short repo.
+//
+// The name may include an optional ".foo" suffix after the repo
+// identifier. This allows several tests to use the same repo but have
+// distinct test names and associated file names.
 func getRepo(tb testing.TB, name string) *repo {
 	tb.Helper()
+	name, _, _ = strings.Cut(name, ".") // remove ".foo" suffix
 	repo := repos[name]
 	if repo == nil {
 		tb.Fatalf("repo %s does not exist", name)

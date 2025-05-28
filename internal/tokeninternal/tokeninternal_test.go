@@ -7,6 +7,7 @@ package tokeninternal_test
 import (
 	"fmt"
 	"go/token"
+	"math/rand/v2"
 	"strings"
 	"testing"
 
@@ -52,4 +53,43 @@ func fsetString(fset *token.FileSet) string {
 	})
 	buf.WriteRune('}')
 	return buf.String()
+}
+
+// This is a copy of the go/token benchmark from CL 675875.
+func BenchmarkFileSet_AddExistingFiles(b *testing.B) {
+	// Create the "universe" of files.
+	fset := token.NewFileSet()
+	var files []*token.File
+	for range 25000 {
+		files = append(files, fset.AddFile("", -1, 10000))
+	}
+	rand.Shuffle(len(files), func(i, j int) {
+		files[i], files[j] = files[j], files[i]
+	})
+
+	// choose returns n random files.
+	choose := func(n int) []*token.File {
+		res := make([]*token.File, n)
+		for i := range res {
+			res[i] = files[rand.IntN(n)]
+		}
+		return files[:n]
+	}
+
+	// Measure the cost of	creating a FileSet with a large number
+	// of files added in small handfuls, with some overlap.
+	// This case is critical to gopls.
+	b.Run("sequence", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			b.StopTimer()
+			fset2 := token.NewFileSet()
+			// 40% of files are already in the FileSet.
+			tokeninternal.AddExistingFiles(fset2, files[:10000])
+			b.StartTimer()
+
+			for range 1000 {
+				tokeninternal.AddExistingFiles(fset2, choose(10)) // about one package
+			}
+		}
+	})
 }

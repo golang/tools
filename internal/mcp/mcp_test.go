@@ -620,7 +620,7 @@ func TestMiddleware(t *testing.T) {
 // with the given prefix.
 func traceCalls[S ClientSession | ServerSession](w io.Writer, prefix string) Middleware[S] {
 	return func(h MethodHandler[S]) MethodHandler[S] {
-		return func(ctx context.Context, sess *S, method string, params any) (any, error) {
+		return func(ctx context.Context, sess *S, method string, params Params) (Result, error) {
 			fmt.Fprintf(w, "%s >%s\n", prefix, method)
 			defer fmt.Fprintf(w, "%s <%s\n", prefix, method)
 			return h(ctx, sess, method, params)

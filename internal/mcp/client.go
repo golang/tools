@@ -162,7 +162,7 @@ func (c *Client) RemoveRoots(uris ...string) {
 // changeAndNotify is called when a feature is added or removed.
 // It calls change, which should do the work and report whether a change actually occurred.
 // If there was a change, it notifies a snapshot of the sessions.
-func (c *Client) changeAndNotify(notification string, params any, change func() bool) {
+func (c *Client) changeAndNotify(notification string, params Params, change func() bool) {
 	var sessions []*ClientSession
 	// Lock for the change, but not for the notification.
 	c.mu.Lock()
@@ -231,8 +231,8 @@ func (cs *ClientSession) methodHandler() MethodHandler[ClientSession] {
 // getConn implements [session.getConn].
 func (cs *ClientSession) getConn() *jsonrpc2.Connection { return cs.conn }
 
-func (c *ClientSession) ping(ct context.Context, params *PingParams) (struct{}, error) {
-	return struct{}{}, nil
+func (c *ClientSession) ping(ct context.Context, params *PingParams) (Result, error) {
+	return emptyResult{}, nil
 }
 
 // Ping makes an MCP "ping" request to the server.
@@ -296,29 +296,21 @@ func (c *ClientSession) ReadResource(ctx context.Context, params *ReadResourcePa
 	return standardCall[ReadResourceResult](ctx, c.conn, methodReadResource, params)
 }
 
-func (c *Client) callToolChangedHandler(ctx context.Context, s *ClientSession, params *ToolListChangedParams) (any, error) {
+func (c *Client) callToolChangedHandler(ctx context.Context, s *ClientSession, params *ToolListChangedParams) (Result, error) {
 	return callNotificationHandler(ctx, c.opts.ToolListChangedHandler, s, params)
 }
 
-func (c *Client) callPromptChangedHandler(ctx context.Context, s *ClientSession, params *PromptListChangedParams) (any, error) {
+func (c *Client) callPromptChangedHandler(ctx context.Context, s *ClientSession, params *PromptListChangedParams) (Result, error) {
 	return callNotificationHandler(ctx, c.opts.PromptListChangedHandler, s, params)
 }
 
-func (c *Client) callResourceChangedHandler(ctx context.Context, s *ClientSession, params *ResourceListChangedParams) (any, error) {
+func (c *Client) callResourceChangedHandler(ctx context.Context, s *ClientSession, params *ResourceListChangedParams) (Result, error) {
 	return callNotificationHandler(ctx, c.opts.ResourceListChangedHandler, s, params)
 }
 
-func (c *Client) callLoggingHandler(ctx context.Context, cs *ClientSession, params *LoggingMessageParams) (any, error) {
+func (c *Client) callLoggingHandler(ctx context.Context, cs *ClientSession, params *LoggingMessageParams) (Result, error) {
 	if h := c.opts.LoggingMessageHandler; h != nil {
 		h(ctx, cs, params)
 	}
 	return nil, nil
-}
-
-func standardCall[TRes, TParams any](ctx context.Context, conn *jsonrpc2.Connection, method string, params TParams) (*TRes, error) {
-	var result TRes
-	if err := call(ctx, conn, method, params, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
 }

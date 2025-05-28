@@ -243,7 +243,7 @@ Types needed for the protocol are generated from the [JSON schema of the MCP spe
 
 These types will be included in the `mcp` package, but will be unexported unless they are needed for the user-facing API. Notably, JSON-RPC request types are elided, since they are handled by the `jsonrpc2` package and should not be observed by the user.
 
-For user-provided data, we use `json.RawMessage`, so that marshalling/unmarshalling can be delegated to the business logic of the client or server.
+For user-provided data, we use `json.RawMessage` or `map[string]any`, depending on the use case.
 
 For union types, which can't be represented in Go (specifically `Content` and `ResourceContents`), we prefer distinguished unions: struct types with fields corresponding to the union of all properties for union elements.
 
@@ -255,9 +255,9 @@ type ReadResourceParams struct {
 }
 
 type CallToolResult struct {
-	Meta    map[string]json.RawMessage `json:"_meta,omitempty"`
-	Content []Content                  `json:"content"`
-	IsError bool                       `json:"isError,omitempty"`
+	Meta    Meta      `json:"_meta,omitempty"`
+	Content []Content `json:"content"`
+	IsError bool      `json:"isError,omitempty"`
 }
 
 // Content is the wire format for content.
@@ -276,6 +276,7 @@ type Content struct {
 func NewTextContent(text string) *Content
 // etc.
 ```
+The `Meta` type includes a `map[string]any` for arbitrary data, and a `ProgressToken` field.
 
 **Differences from mcp-go**: these types are largely similar, but our type generator flattens types rather than using struct embedding.
 
@@ -480,14 +481,20 @@ The server observes a client cancellation as a cancelled context.
 
 ### Progress handling
 
-A caller can request progress notifications by setting the `ProgressToken` field on any request.
+A caller can request progress notifications by setting the `Meta.ProgressToken` field on any request.
 
 ```go
 type XXXParams struct { // where XXX is each type of call
+  Meta Meta
   ...
+}
+
+type Meta struct {
+  Data          map[string]any
   ProgressToken any // string or int
 }
 ```
+
 
 Handlers can notify their peer about progress by calling the `NotifyProgress` method. The notification is only sent if the peer requested it by providing a progress token.
 

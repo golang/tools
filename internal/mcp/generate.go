@@ -299,12 +299,20 @@ func loadSchema(schemaFile string) (data []byte, err error) {
 
 func writeDecl(configName string, config typeConfig, def *jsonschema.Schema, named map[string]*bytes.Buffer) error {
 	var w io.Writer = io.Discard
-	if typeName := config.Name; typeName != "-" {
+	var typeName string
+	if typeName = config.Name; typeName != "-" {
 		if typeName == "" {
 			typeName = configName
 		}
 		if _, ok := named[typeName]; ok {
 			return nil
+		}
+		// The JSON schema does not accurately represent the source of truth, which is typescript.
+		// Every Params and Result type should have a _meta property.
+		// Also, those with a progress token will turn into a struct; we want the progress token to
+		// be a map item. So replace all metas.
+		if strings.HasSuffix(typeName, "Params") || strings.HasSuffix(typeName, "Result") {
+			def.Properties["_meta"] = metaSchema
 		}
 		buf := new(bytes.Buffer)
 		w = buf
@@ -318,6 +326,12 @@ func writeDecl(configName string, config typeConfig, def *jsonschema.Schema, nam
 		return err // Better error here?
 	}
 	fmt.Fprintf(w, "\n")
+
+	// Any decl with a _meta field gets a GetMeta method.
+	if _, ok := def.Properties["_meta"]; ok {
+		fmt.Fprintf(w, "\nfunc (x *%s) GetMeta() *Meta { return &x.Meta }", typeName)
+	}
+
 	return nil
 }
 
@@ -354,11 +368,7 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 
 	// For types that explicitly allow additional properties, we can either
 	// unmarshal them into a map[string]any, or delay unmarshalling with
-	// json.RawMessage. For now, use json.RawMessage as it defers the choice.
-	//
-	// TODO(jba): further refine this classification of object schemas.
-	// For example, the typescript "object" type, which should map to a Go "any",
-	// is represented in schema.json by `{type: object, properties: {}, additionalProperties: true}`.
+	// json.RawMessage. We use any.
 	if def.Type == "object" && canHaveAdditionalProperties(def) && def.Properties == nil {
 		w.Write([]byte("map[string]"))
 		return writeType(w, nil, def.AdditionalProperties, named)
@@ -372,7 +382,7 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 			fmt.Fprintf(w, "*Content")
 		} else {
 			// E.g. union types.
-			fmt.Fprintf(w, "json.RawMessage")
+			fmt.Fprintf(w, "any")
 		}
 	} else {
 		switch def.Type {
@@ -398,6 +408,11 @@ func writeType(w io.Writer, config *typeConfig, def *jsonschema.Schema, named ma
 				if fieldDef.Description != "" {
 					fmt.Fprintf(w, "%s\n", toComment(fieldDef.Description))
 				}
+				if name == "_meta" {
+					fmt.Fprintln(w, "\tMeta Meta `json:\"_meta,omitempty\"`")
+					continue
+				}
+
 				export := exportName(name)
 				fmt.Fprintf(w, "\t%s ", export)
 
@@ -549,6 +564,12 @@ func deref(s *jsonschema.Schema) (name string, _ *jsonschema.Schema) {
 // isStruct reports whether s should be translated to a struct.
 func isStruct(s *jsonschema.Schema) bool {
 	return s.Type == "object" && s.Properties != nil && !canHaveAdditionalProperties(s)
+}
+
+// The schema for "_meta".
+// We only need the description: the rest is a special case.
+var metaSchema = &jsonschema.Schema{
+	Description: "This property is reserved by the protocol to allow clients and servers to attach additional metadata to their responses.",
 }
 
 // schemaJSON returns the JSON for s.
