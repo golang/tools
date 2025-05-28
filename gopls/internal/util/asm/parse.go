@@ -48,14 +48,14 @@ type File struct {
 	URI    protocol.DocumentURI
 	Idents []Ident
 
-	Mapper *protocol.Mapper // may map fixed Src, not file content
+	Mapper *protocol.Mapper
 
 	// TODO(adonovan): use token.File? This may be important in a
 	// future in which analyzers can report diagnostics in .s files.
 }
 
 func (f *File) NodeRange(ident Ident) (protocol.Range, error) {
-	return f.Mapper.OffsetRange(ident.Offset, ident.End())
+	return f.Mapper.OffsetRange(ident.Offset+2, ident.End()+1)
 }
 
 // Ident represents an identifier in an assembly file.

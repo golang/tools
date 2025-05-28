@@ -37,7 +37,7 @@ func (s *server) References(ctx context.Context, params *protocol.ReferenceParam
 	case file.Go:
 		return golang.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
 	case file.Asm:
-		return goasm.References(ctx, snapshot, fh, params.Position)
+		return goasm.References(ctx, snapshot, fh, params.Position, params.Context.IncludeDeclaration)
 	}
 	return nil, nil // empty result
 }
