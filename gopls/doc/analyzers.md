@@ -1875,7 +1875,7 @@ In a type switch like the following
     type T struct{}
     func (T) Read(b []byte) (int, error) { return 0, nil }
 
-    var v interface{} = T{}
+    var v any = T{}
 
     switch v.(type) {
     case io.Reader:
@@ -1893,7 +1893,7 @@ Another example:
     func (T) Read(b []byte) (int, error) { return 0, nil }
     func (T) Close() error { return nil }
 
-    var v interface{} = T{}
+    var v any = T{}
 
     switch v.(type) {
     case io.Reader:
