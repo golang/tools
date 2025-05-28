@@ -1,0 +1,93 @@
+Check behavior of a server with just tools.
+
+Fixed bugs:
+- "tools/list" can have missing params
+- "_meta" should not be nil
+- empty resource or prompts should not be returned as 'null'
+
+-- tools --
+greet
+
+-- client --
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": { "name": "ExampleClient", "version": "1.0.0" }
+  }
+}
+{ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }
+{ "jsonrpc": "2.0", "id": 3, "method": "resources/list" }
+{ "jsonrpc": "2.0", "id": 4, "method": "prompts/list" }
+-- server --
+{
+	"jsonrpc": "2.0",
+	"id": 1,
+	"result": {
+		"_meta": {},
+		"capabilities": {
+			"completions": {},
+			"logging": {},
+			"prompts": {
+				"listChanged": true
+			},
+			"resources": {
+				"listChanged": true
+			},
+			"tools": {
+				"listChanged": true
+			}
+		},
+		"protocolVersion": "2024-11-05",
+		"serverInfo": {
+			"name": "testServer",
+			"version": "v1.0.0"
+		}
+	}
+}
+{
+	"jsonrpc": "2.0",
+	"id": 2,
+	"result": {
+		"_meta": {},
+		"tools": [
+			{
+				"description": "say hi",
+				"inputSchema": {
+					"type": "object",
+					"required": [
+						"Name"
+					],
+					"properties": {
+						"Name": {
+							"type": "string"
+						}
+					},
+					"additionalProperties": {
+						"not": {}
+					}
+				},
+				"name": "greet"
+			}
+		]
+	}
+}
+{
+	"jsonrpc": "2.0",
+	"id": 3,
+	"result": {
+		"_meta": {},
+		"resources": []
+	}
+}
+{
+	"jsonrpc": "2.0",
+	"id": 4,
+	"result": {
+		"_meta": {},
+		"prompts": []
+	}
+}

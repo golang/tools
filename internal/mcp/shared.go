@@ -105,8 +105,10 @@ func newMethodInfo[S ClientSession | ServerSession, P Params, R Result](d typedM
 	return methodInfo[S]{
 		unmarshalParams: func(m json.RawMessage) (Params, error) {
 			var p P
-			if err := json.Unmarshal(m, &p); err != nil {
-				return nil, fmt.Errorf("unmarshaling %q into a %T: %w", m, p, err)
+			if m != nil {
+				if err := json.Unmarshal(m, &p); err != nil {
+					return nil, fmt.Errorf("unmarshaling %q into a %T: %w", m, p, err)
+				}
 			}
 			return p, nil
 		},
@@ -200,7 +202,7 @@ func (m Meta) MarshalJSON() ([]byte, error) {
 	// If ProgressToken is nil, accept Data["progressToken"]. We can't call marshalStructWithMap
 	// in that case because it will complain about duplicate fields. (We'd have to
 	// make it much smarter to avoid that; not worth it.)
-	if m.ProgressToken == nil {
+	if m.ProgressToken == nil && len(m.Data) > 0 {
 		return json.Marshal(m.Data)
 	}
 	return marshalStructWithMap((*metaSansMethods)(&m), "Data")

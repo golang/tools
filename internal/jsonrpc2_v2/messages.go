@@ -146,6 +146,19 @@ func EncodeMessage(msg Message) ([]byte, error) {
 	return data, nil
 }
 
+// EncodeIndent is like EncodeMessage, but honors indents.
+// TODO(rfindley): refactor so that this concern is handled independently.
+// Perhaps we should pass in a json.Encoder?
+func EncodeIndent(msg Message, prefix, indent string) ([]byte, error) {
+	wire := wireCombined{VersionTag: wireVersion}
+	msg.marshal(&wire)
+	data, err := json.MarshalIndent(&wire, prefix, indent)
+	if err != nil {
+		return data, fmt.Errorf("marshaling jsonrpc message: %w", err)
+	}
+	return data, nil
+}
+
 func DecodeMessage(data []byte) (Message, error) {
 	msg := wireCombined{}
 	if err := json.Unmarshal(data, &msg); err != nil {

@@ -1,0 +1,74 @@
+Check behavior of a server with just prompts.
+
+Fixed bugs:
+- empty tools lists should not be returned as 'null'
+
+-- prompts --
+code_review
+
+-- client --
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": { "name": "ExampleClient", "version": "1.0.0" }
+  }
+}
+{ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }
+{ "jsonrpc": "2.0", "id": 4, "method": "prompts/list" }
+-- server --
+{
+	"jsonrpc": "2.0",
+	"id": 1,
+	"result": {
+		"_meta": {},
+		"capabilities": {
+			"completions": {},
+			"logging": {},
+			"prompts": {
+				"listChanged": true
+			},
+			"resources": {
+				"listChanged": true
+			},
+			"tools": {
+				"listChanged": true
+			}
+		},
+		"protocolVersion": "2024-11-05",
+		"serverInfo": {
+			"name": "testServer",
+			"version": "v1.0.0"
+		}
+	}
+}
+{
+	"jsonrpc": "2.0",
+	"id": 2,
+	"result": {
+		"_meta": {},
+		"tools": []
+	}
+}
+{
+	"jsonrpc": "2.0",
+	"id": 4,
+	"result": {
+		"_meta": {},
+		"prompts": [
+			{
+				"arguments": [
+					{
+						"name": "Code",
+						"required": true
+					}
+				],
+				"description": "do a code review",
+				"name": "code_review"
+			}
+		]
+	}
+}
