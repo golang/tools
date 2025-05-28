@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.25
+//go:build go1.24 && goexperiment.synctest
 
 package mcp
 
@@ -24,6 +24,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
 
@@ -58,6 +59,7 @@ type conformanceTest struct {
 // TODO(rfindley): add client conformance tests.
 
 func TestServerConformance(t *testing.T) {
+	testenv.NeedsGoExperiment(t, "synctest")
 	var tests []*conformanceTest
 	dir := filepath.Join("testdata", "conformance", "server")
 	if err := filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
@@ -86,9 +88,12 @@ func TestServerConformance(t *testing.T) {
 			// By comparison, gopls has a complicated framework based on progress
 			// reporting and careful accounting to detect when all 'expected' work
 			// on the server is complete.
-			synctest.Test(t, func(t *testing.T) {
-				runServerTest(t, test)
-			})
+			synctest.Run(func() { runServerTest(t, test) })
+
+			// TODO: in 1.25, use the following instead:
+			// synctest.Test(t, func(t *testing.T) {
+			// 	runServerTest(t, test)
+			// })
 		})
 	}
 }
@@ -186,7 +191,7 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 		if !seenServer {
 			arch.Files = append(arch.Files, serverFile)
 		}
-		if err := os.WriteFile(test.path, txtar.Format(arch), 0666); err != nil {
+		if err := os.WriteFile(test.path, txtar.Format(arch), 0o666); err != nil {
 			t.Fatalf("os.WriteFile(%q) failed: %v", test.path, err)
 		}
 	} else {
