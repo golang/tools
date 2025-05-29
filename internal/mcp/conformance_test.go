@@ -24,7 +24,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
-	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
 
@@ -56,10 +55,10 @@ type conformanceTest struct {
 	server                    []jsonrpc2.Message // server messages
 }
 
+// TODO(jba): support synthetic responses.
 // TODO(rfindley): add client conformance tests.
 
 func TestServerConformance(t *testing.T) {
-	testenv.NeedsGoExperiment(t, "synctest")
 	var tests []*conformanceTest
 	dir := filepath.Join("testdata", "conformance", "server")
 	if err := filepath.WalkDir(dir, func(path string, _ fs.DirEntry, err error) error {
@@ -245,7 +244,7 @@ func loadConformanceTest(dir, path string) (*conformanceTest, error) {
 	// loadFeatures loads lists of named features from the archive file.
 	loadFeatures := func(data []byte) []string {
 		var feats []string
-		for line := range strings.SplitSeq(string(data), "\n") {
+		for line := range strings.Lines(string(data)) {
 			if f := strings.TrimSpace(line); f != "" {
 				feats = append(feats, f)
 			}
@@ -264,7 +263,7 @@ func loadConformanceTest(dir, path string) (*conformanceTest, error) {
 			test.tools = loadFeatures(f.Data)
 		case "prompts":
 			test.prompts = loadFeatures(f.Data)
-		case "resource":
+		case "resources":
 			test.resources = loadFeatures(f.Data)
 		case "client":
 			test.client, err = decodeMessages(f.Data)

@@ -277,11 +277,13 @@ func (s *Server) readResource(ctx context.Context, ss *ServerSession, params *Re
 		return nil, fmt.Errorf("reading resource %s: read handler returned nil information", uri)
 	}
 	// As a convenience, populate some fields.
-	if res.Contents.URI == "" {
-		res.Contents.URI = uri
-	}
-	if res.Contents.MIMEType == "" {
-		res.Contents.MIMEType = resource.Resource.MIMEType
+	for _, c := range res.Contents {
+		if c.URI == "" {
+			c.URI = uri
+		}
+		if c.MIMEType == "" {
+			c.MIMEType = resource.Resource.MIMEType
+		}
 	}
 	return res, nil
 }
@@ -329,7 +331,7 @@ func fileResourceHandler(dir string) ResourceHandler {
 			return nil, err
 		}
 		// TODO(jba): figure out mime type.
-		return &ReadResourceResult{Contents: NewBlobResourceContents(params.URI, "text/plain", data)}, nil
+		return &ReadResourceResult{Contents: []*ResourceContents{NewBlobResourceContents(params.URI, "text/plain", data)}}, nil
 	}
 }
 

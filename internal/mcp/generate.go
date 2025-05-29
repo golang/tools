@@ -143,7 +143,7 @@ var declarations = config{
 		Fields: config{"Params": {Name: "ReadResourceParams"}},
 	},
 	"ReadResourceResult": {
-		Fields: config{"Contents": {Substitute: "*ResourceContents"}},
+		Fields: config{"Contents": {Substitute: "[]*ResourceContents"}},
 	},
 	"Resource": {},
 	"ResourceListChangedNotification": {
@@ -195,7 +195,7 @@ func main() {
 		log.Fatal(err)
 	}
 	// Resolve the schema so we have the referents of all the Refs.
-	if _, err := schema.Resolve("", nil); err != nil {
+	if _, err := schema.Resolve(nil); err != nil {
 		log.Fatal(err)
 	}
 

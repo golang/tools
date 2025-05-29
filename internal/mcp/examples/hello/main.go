@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 
 	"golang.org/x/tools/internal/mcp"
@@ -43,6 +44,14 @@ func main() {
 		mcp.Property("name", mcp.Description("the name to say hi to")),
 	)))
 	server.AddPrompts(mcp.NewPrompt("greet", "", PromptHi))
+	server.AddResources(&mcp.ServerResource{
+		Resource: &mcp.Resource{
+			Name:     "info",
+			MIMEType: "text/plain",
+			URI:      "embedded:info",
+		},
+		Handler: handleEmbeddedResource,
+	})
 
 	if *httpAddr != "" {
 		handler := mcp.NewSSEHandler(func(*http.Request) *mcp.Server {
@@ -55,4 +64,26 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Server failed: %v", err)
 		}
 	}
+}
+
+var embeddedResources = map[string]string{
+	"info": "This is the hello example server.",
+}
+
+func handleEmbeddedResource(_ context.Context, _ *mcp.ServerSession, params *mcp.ReadResourceParams) (*mcp.ReadResourceResult, error) {
+	u, err := url.Parse(params.URI)
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme != "embedded" {
+		return nil, fmt.Errorf("wrong scheme: %q", u.Scheme)
+	}
+	key := u.Opaque
+	text, ok := embeddedResources[key]
+	if !ok {
+		return nil, fmt.Errorf("no embedded resource named %q", key)
+	}
+	return &mcp.ReadResourceResult{
+		Contents: []*mcp.ResourceContents{mcp.NewTextResourceContents(params.URI, "text/plain", text)},
+	}, nil
 }

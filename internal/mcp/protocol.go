@@ -430,8 +430,8 @@ func (x *ReadResourceParams) GetMeta() *Meta { return &x.Meta }
 type ReadResourceResult struct {
 	// This property is reserved by the protocol to allow clients and servers to
 	// attach additional metadata to their responses.
-	Meta     Meta              `json:"_meta,omitempty"`
-	Contents *ResourceContents `json:"contents"`
+	Meta     Meta                `json:"_meta,omitempty"`
+	Contents []*ResourceContents `json:"contents"`
 }
 
 func (x *ReadResourceResult) GetMeta() *Meta { return &x.Meta }

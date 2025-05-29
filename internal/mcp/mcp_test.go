@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -164,7 +165,7 @@ func TestEndToEnd(t *testing.T) {
 				Description: "just fail",
 				InputSchema: &jsonschema.Schema{
 					Type:                 "object",
-					AdditionalProperties: falseSchema,
+					AdditionalProperties: falseSchema(),
 				},
 			},
 			{
@@ -176,7 +177,7 @@ func TestEndToEnd(t *testing.T) {
 					Properties: map[string]*jsonschema.Schema{
 						"Name": {Type: "string"},
 					},
-					AdditionalProperties: falseSchema,
+					AdditionalProperties: falseSchema(),
 				},
 			},
 		}
@@ -245,11 +246,14 @@ func TestEndToEnd(t *testing.T) {
 				} else {
 					t.Errorf("reading %s: %v", tt.uri, err)
 				}
+			} else if g, w := len(rres.Contents), 1; g != w {
+				t.Errorf("got %d contents, wanted %d", g, w)
 			} else {
-				if got := rres.Contents.URI; got != tt.uri {
+				c := rres.Contents[0]
+				if got := c.URI; got != tt.uri {
 					t.Errorf("got uri %q, want %q", got, tt.uri)
 				}
-				if got := rres.Contents.MIMEType; got != tt.mimeType {
+				if got := c.MIMEType; got != tt.mimeType {
 					t.Errorf("%s: got MIME type %q, want %q", tt.uri, got, tt.mimeType)
 				}
 			}
@@ -413,12 +417,40 @@ var (
 		MIMEType: "text/plain",
 		URI:      "file:///fail.txt",
 	}
+	resource3 = &Resource{
+		Name:     "info",
+		MIMEType: "text/plain",
+		URI:      "embedded:info",
+	}
 	readHandler = fileResourceHandler("testdata/files")
 	resources   = map[string]*ServerResource{
 		"info.txt": {resource1, readHandler},
 		"fail.txt": {resource2, readHandler},
+		"info":     {resource3, handleEmbeddedResource},
 	}
 )
+
+var embeddedResources = map[string]string{
+	"info": "This is the MCP test server.",
+}
+
+func handleEmbeddedResource(_ context.Context, _ *ServerSession, params *ReadResourceParams) (*ReadResourceResult, error) {
+	u, err := url.Parse(params.URI)
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme != "embedded" {
+		return nil, fmt.Errorf("wrong scheme: %q", u.Scheme)
+	}
+	key := u.Opaque
+	text, ok := embeddedResources[key]
+	if !ok {
+		return nil, fmt.Errorf("no embedded resource named %q", key)
+	}
+	return &ReadResourceResult{
+		Contents: []*ResourceContents{NewTextResourceContents(params.URI, "text/plain", text)},
+	}, nil
+}
 
 // Add calls the given function to add the named features.
 func add[T any](m map[string]T, add func(...T), names ...string) {
@@ -643,4 +675,4 @@ func traceCalls[S ClientSession | ServerSession](w io.Writer, prefix string) Mid
 	}
 }
 
-var falseSchema = &jsonschema.Schema{Not: &jsonschema.Schema{}}
+func falseSchema() *jsonschema.Schema { return &jsonschema.Schema{Not: &jsonschema.Schema{}} }
