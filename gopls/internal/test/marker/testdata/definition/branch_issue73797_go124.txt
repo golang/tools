@@ -4,7 +4,7 @@ so this test case should only be run for go1.24 or earlier.
 See the related change in go/types: https://go-review.git.corp.google.com/c/go/+/638257
 
 -- flags --
--min_go=go1.25
+-max_go=go1.24
 -ignore_extra_diags
 
 -- go.mod --
@@ -19,7 +19,7 @@ func InvalidLabel() {
     label:
 	for i := 0; i < 10; i++ {
 	}
-	for i := 0; i < 10; i++ { //@loc(for, "for")
-		continue label //@def("continue", for)
+	for i := 0; i < 10; i++ {
+		continue label //@def("continue")
 	}
 }

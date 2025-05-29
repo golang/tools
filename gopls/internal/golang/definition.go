@@ -87,11 +87,12 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 
 	// Handle definition requests for various special kinds of syntax node.
 	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
+	ancestors := path[1:]
 	switch node := path[0].(type) {
 	// Handle the case where the cursor is on a return statement by jumping to the result variables.
 	case *ast.ReturnStmt:
 		var funcType *ast.FuncType
-		for _, n := range path[1:] {
+		for _, n := range ancestors {
 			switch n := n.(type) {
 			case *ast.FuncLit:
 				funcType = n.Type
@@ -132,9 +133,9 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 			}
 		case token.BREAK, token.CONTINUE:
 			// Find innermost relevant ancestor for break/continue.
-			for i, n := range path[1:] {
-				if isLabeled {
-					l, ok := path[1:][i+1].(*ast.LabeledStmt)
+			for i, n := range ancestors {
+				if isLabeled && i+1 < len(ancestors) {
+					l, ok := ancestors[i+1].(*ast.LabeledStmt)
 					if !(ok && l.Label.Name == label.Name()) {
 						continue
 					}

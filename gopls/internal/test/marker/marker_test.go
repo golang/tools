@@ -138,6 +138,15 @@ func Test(t *testing.T) {
 				}
 				testenv.NeedsGo1Point(t, go1point)
 			}
+			if test.maxGoVersion != "" {
+				// A max Go version may be useful when (e.g.) a recent go/types
+				// fix makes it impossible to reproduce a certain older crash.
+				var go1point int
+				if _, err := fmt.Sscanf(test.maxGoVersion, "go1.%d", &go1point); err != nil {
+					t.Fatalf("parsing -max_go version: %v", err)
+				}
+				testenv.SkipAfterGo1Point(t, go1point)
+			}
 			if test.minGoCommandVersion != "" {
 				var go1point int
 				if _, err := fmt.Sscanf(test.minGoCommandVersion, "go1.%d", &go1point); err != nil {
@@ -627,18 +636,18 @@ type markerTest struct {
 	flags      []string // flags extracted from the special "flags" archive file.
 
 	// Parsed flags values. See the flag definitions below for documentation.
-	minGoVersion        string // minimum Go runtime version; max should never be needed
-	minGoCommandVersion string
-	maxGoCommandVersion string
-	cgo                 bool
-	writeGoSum          []string
-	skipGOOS            []string
-	skipGOARCH          []string
-	ignoreExtraDiags    bool
-	filterBuiltins      bool
-	filterKeywords      bool
-	errorsOK            bool
-	mcp                 bool
+	minGoVersion, maxGoVersion               string // min/max version of Go runtime
+	minGoCommandVersion, maxGoCommandVersion string // min/max version of ambient go command
+
+	cgo              bool
+	writeGoSum       []string
+	skipGOOS         []string
+	skipGOARCH       []string
+	ignoreExtraDiags bool
+	filterBuiltins   bool
+	filterKeywords   bool
+	errorsOK         bool
+	mcp              bool
 }
 
 // flagSet returns the flagset used for parsing the special "flags" file in the
@@ -646,6 +655,7 @@ type markerTest struct {
 func (t *markerTest) flagSet() *flag.FlagSet {
 	flags := flag.NewFlagSet(t.name, flag.ContinueOnError)
 	flags.StringVar(&t.minGoVersion, "min_go", "", "if set, the minimum go1.X version required for this test")
+	flags.StringVar(&t.maxGoVersion, "max_go", "", "if set, the maximum go1.X version required for this test")
 	flags.StringVar(&t.minGoCommandVersion, "min_go_command", "", "if set, the minimum go1.X go command version required for this test")
 	flags.StringVar(&t.maxGoCommandVersion, "max_go_command", "", "if set, the maximum go1.X go command version required for this test")
 	flags.BoolVar(&t.cgo, "cgo", false, "if set, requires cgo (both the cgo tool and CGO_ENABLED=1)")
@@ -1681,15 +1691,17 @@ func acceptCompletionMarker(mark marker, src protocol.Location, label string, go
 }
 
 // defMarker implements the @def marker, running textDocument/definition at
-// the given src location and asserting that there is exactly one resulting
-// location, matching dst.
-//
-// TODO(rfindley): support a variadic destination set.
-func defMarker(mark marker, src, dst protocol.Location) {
-	got := mark.run.env.FirstDefinition(src)
-	if got != dst {
-		mark.errorf("definition location does not match:\n\tgot: %s\n\twant %s",
-			mark.run.fmtLoc(got), mark.run.fmtLoc(dst))
+// the given location and asserting that there the results match want.
+func defMarker(mark marker, loc protocol.Location, want ...protocol.Location) {
+	env := mark.run.env
+	got, err := env.Editor.Definitions(env.Ctx, loc)
+	if err != nil {
+		mark.errorf("definition request failed: %v", err)
+		return
+	}
+
+	if err := compareLocations(mark, got, want); err != nil {
+		mark.errorf("def failed: %v", err)
 	}
 }
 

@@ -176,8 +176,8 @@ Here is the list of supported action markers:
     additional fields (source="compiler", kind="error"). Restore them using
     optional named arguments.
 
-  - def(src, dst location): performs a textDocument/definition request at
-    the src location, and check the result points to the dst location.
+  - def(src, want ...location): performs a textDocument/definition request at
+    the src location, and checks that the results equals want.
 
   - documentLink(golden): asserts that textDocument/documentLink returns
     links as described by the golden file.
