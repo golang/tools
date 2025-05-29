@@ -346,7 +346,7 @@ func readReports(pcfg ProgramConfig, days int) (stacks map[string]map[Info]int64
 	for i := range days {
 		date := t.Add(-time.Duration(i+1) * 24 * time.Hour).Format(time.DateOnly)
 
-		url := fmt.Sprintf("https://storage.googleapis.com/prod-telemetry-merged/%s.json", date)
+		url := fmt.Sprintf("https://telemetry.go.dev/data/%s", date)
 		resp, err := http.Get(url)
 		if err != nil {
 			return nil, 0, nil, fmt.Errorf("error on GET %s: %v", url, err)
