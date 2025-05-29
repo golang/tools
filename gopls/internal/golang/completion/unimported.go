@@ -203,8 +203,10 @@ func (c *completer) stdlibMatches(pkgs []metadata.PackagePath, pkg metadata.Pack
 				}
 				var kind protocol.CompletionItemKind
 				var detail string
+				var params []string
 				switch sym.Kind {
 				case stdlib.Func:
+					params = parseSignature(sym.Signature)
 					kind = protocol.FunctionCompletion
 					detail = fmt.Sprintf("func (from %q)", candpkg)
 				case stdlib.Const:
@@ -220,12 +222,10 @@ func (c *completer) stdlibMatches(pkgs []metadata.PackagePath, pkg metadata.Pack
 					continue
 				}
 				got = c.appendNewItem(got, sym.Name,
-					//fmt.Sprintf("(from %q)", candpkg), candpkg,
 					detail,
 					candpkg,
-					//convKind(sym.Kind),
 					kind,
-					pkg, nil)
+					pkg, params)
 			}
 		}
 	}
@@ -368,4 +368,44 @@ func funcParams(f *ast.File, fname string) []string {
 		}
 	}
 	return params
+}
+
+// extract the formal parameters from the signature.
+// func[M1 ~map[K]V, M2 ~map[K]V, K comparable, V any](dst M1, src M2) -> []{"dst M1", "src M2"}
+// func[K comparable, V any](seq iter.Seq2[K, V]) map[K]V -> []{"seq iter.Seq2[K, V]"}
+// func(args ...any) *Logger -> []{"args ...any"}
+// func[M ~map[K]V, K comparable, V any](m M, del func(K, V) bool) -> []{"m M", "del func(K, V) bool"}
+func parseSignature(sig string) []string {
+	var level int       // nesting level of delimiters
+	var processing bool // are we doing the params
+	var last int        // start of current parameter
+	var params []string
+	for i := range len(sig) {
+		switch sig[i] {
+		case '[', '{':
+			level++
+		case ']', '}':
+			level--
+		case '(':
+			level++
+			if level == 1 {
+				processing = true
+				last = i + 1
+			}
+		case ')':
+			level--
+			if level == 0 && processing { // done
+				if i > last {
+					params = append(params, strings.TrimSpace(sig[last:i]))
+				}
+				return params
+			}
+		case ',':
+			if level == 1 && processing {
+				params = append(params, strings.TrimSpace(sig[last:i]))
+				last = i + 1
+			}
+		}
+	}
+	return nil
 }

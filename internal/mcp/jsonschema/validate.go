@@ -5,6 +5,7 @@
 package jsonschema
 
 import (
+	"encoding/json"
 	"fmt"
 	"hash/maphash"
 	"iter"
@@ -30,10 +31,38 @@ func (rs *Resolved) Validate(instance any) error {
 	return st.validate(reflect.ValueOf(instance), st.rs.root, nil)
 }
 
+// validateDefaults walks the schema tree. If it finds a default, it validates it
+// against the schema containing it.
+//
+// TODO(jba): account for dynamic refs. This algorithm simple-mindedly
+// treats each schema with a default as its own root.
+func (rs *Resolved) validateDefaults() error {
+	if s := rs.root.Schema; s != "" && s != draft202012 {
+		return fmt.Errorf("cannot validate version %s, only %s", s, draft202012)
+	}
+	st := &state{rs: rs}
+	for s := range rs.root.all() {
+		// We checked for nil schemas in [Schema.Resolve].
+		assert(s != nil, "nil schema")
+		if s.DynamicRef != "" {
+			return fmt.Errorf("jsonschema: %s: validateDefaults does not support dynamic refs", s)
+		}
+		if s.Default != nil {
+			var d any
+			if err := json.Unmarshal(s.Default, &d); err != nil {
+				fmt.Errorf("unmarshaling default value of schema %s: %w", s, err)
+			}
+			if err := st.validate(reflect.ValueOf(d), s, nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // state is the state of single call to ResolvedSchema.Validate.
 type state struct {
-	rs    *Resolved
-	depth int
+	rs *Resolved
 	// stack holds the schemas from recursive calls to validate.
 	// These are the "dynamic scopes" used to resolve dynamic references.
 	// https://json-schema.org/draft/2020-12/json-schema-core#scopes
@@ -44,13 +73,11 @@ type state struct {
 func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *annotations) (err error) {
 	defer wrapf(&err, "validating %s", schema)
 
+	// Maintain a stack for dynamic schema resolution.
 	st.stack = append(st.stack, schema) // push
 	defer func() {
 		st.stack = st.stack[:len(st.stack)-1] // pop
 	}()
-	if depth := len(st.stack); depth >= 100 {
-		return fmt.Errorf("max recursion depth of %d reached", depth)
-	}
 
 	// We checked for nil schemas in [Schema.Resolve].
 	assert(schema != nil, "nil schema")
@@ -515,6 +542,113 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 	return nil
 }
 
+// resolveDynamicRef returns the schema referred to by the argument schema's
+// $dynamicRef value.
+// It returns an error if the dynamic reference has no referent.
+// If there is no $dynamicRef, resolveDynamicRef returns nil, nil.
+// See https://json-schema.org/draft/2020-12/json-schema-core#section-8.2.3.2.
+func (st *state) resolveDynamicRef(schema *Schema) (*Schema, error) {
+	if schema.DynamicRef == "" {
+		return nil, nil
+	}
+	// The ref behaves lexically or dynamically, but not both.
+	assert((schema.resolvedDynamicRef == nil) != (schema.dynamicRefAnchor == ""),
+		"DynamicRef not statically resolved properly")
+	if r := schema.resolvedDynamicRef; r != nil {
+		// Same as $ref.
+		return r, nil
+	}
+	// Dynamic behavior.
+	// Look for the base of the outermost schema on the stack with this dynamic
+	// anchor. (Yes, outermost: the one farthest from here. This the opposite
+	// of how ordinary dynamic variables behave.)
+	// Why the base of the schema being validated and not the schema itself?
+	// Because the base is the scope for anchors. In fact it's possible to
+	// refer to a schema that is not on the stack, but a child of some base
+	// on the stack.
+	// For an example, search for "detached" in testdata/draft2020-12/dynamicRef.json.
+	for _, s := range st.stack {
+		info, ok := s.base.anchors[schema.dynamicRefAnchor]
+		if ok && info.dynamic {
+			return info.schema, nil
+		}
+	}
+	return nil, fmt.Errorf("missing dynamic anchor %q", schema.dynamicRefAnchor)
+}
+
+// ApplyDefaults modifies an instance by applying the schema's defaults to it. If
+// a schema or sub-schema has a default, then a corresponding zero instance value
+// is set to the default.
+//
+// The JSON Schema specification does not describe how defaults should be interpreted.
+// This method honors defaults only on properties, and only those that are not required.
+// If the instance is a map and the property is missing, the property is added to
+// the map with the default.
+// If the instance is a struct, the field corresponding to the property exists, and
+// its value is zero, the field is set to the default.
+// ApplyDefaults can panic if a default cannot be assigned to a field.
+//
+// The argument must be a pointer to the instance.
+// (In case we decide that top-level defaults are meaningful.)
+//
+// It is recommended to first call Resolve with a ValidateDefaults option of true,
+// then call this method, and lastly call Validate.
+//
+// TODO(jba): consider what defaults on top-level or array instances might mean.
+// TODO(jba): follow $ref and $dynamicRef
+// TODO(jba): apply defaults on sub-schemas to corresponding sub-instances.
+func (rs *Resolved) ApplyDefaults(instancep any) error {
+	st := &state{rs: rs}
+	return st.applyDefaults(reflect.ValueOf(instancep), rs.root)
+}
+
+// Leave this as a potentially recursive helper function, because we'll surely want
+// to apply defaults on sub-schemas someday.
+func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err error) {
+	defer wrapf(&err, "applyDefaults: schema %s, instance %v", schema, instancep)
+
+	instance := instancep.Elem()
+	if instance.Kind() == reflect.Map || instance.Kind() == reflect.Struct {
+		if instance.Kind() == reflect.Map {
+			if kt := instance.Type().Key(); kt.Kind() != reflect.String {
+				return fmt.Errorf("map key type %s is not a string", kt)
+			}
+		}
+		for prop, subschema := range schema.Properties {
+			// Ignore defaults on required properties. (A required property shouldn't have a default.)
+			if schema.isRequired[prop] {
+				continue
+			}
+			val := property(instance, prop)
+			switch instance.Kind() {
+			case reflect.Map:
+				// If there is a default for this property, and the map key is missing,
+				// set the map value to the default.
+				if subschema.Default != nil && !val.IsValid() {
+					// Create an lvalue, since map values aren't addressable.
+					lvalue := reflect.New(instance.Type().Elem())
+					if err := json.Unmarshal(subschema.Default, lvalue.Interface()); err != nil {
+						return err
+					}
+					instance.SetMapIndex(reflect.ValueOf(prop), lvalue.Elem())
+				}
+			case reflect.Struct:
+				// If there is a default for this property, and the field exists but is zero,
+				// set the field to the default.
+				if subschema.Default != nil && val.IsValid() && val.IsZero() {
+					if err := json.Unmarshal(subschema.Default, val.Addr().Interface()); err != nil {
+						return err
+					}
+				}
+			default:
+				panic(fmt.Sprintf("applyDefaults: property %s: bad value %s of kind %s",
+					prop, instance, instance.Kind()))
+			}
+		}
+	}
+	return nil
+}
+
 // property returns the value of the property of v with the given name, or the invalid
 // reflect.Value if there is none.
 // If v is a map, the property is the value of the map whose key is name.
@@ -527,6 +661,7 @@ func property(v reflect.Value, name string) reflect.Value {
 		return v.MapIndex(reflect.ValueOf(name))
 	case reflect.Struct:
 		props := structPropertiesOf(v.Type())
+		// Ignore nonexistent properties.
 		if index, ok := props[name]; ok {
 			return v.FieldByIndex(index)
 		}

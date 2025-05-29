@@ -17,7 +17,6 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
-	"strconv"
 )
 
 // A Schema is a JSON schema object.
@@ -58,13 +57,13 @@ type Schema struct {
 	Vocabulary    map[string]bool `json:"$vocabulary,omitempty"`
 
 	// metadata
-	Title       string `json:"title,omitempty"`
-	Description string `json:"description,omitempty"`
-	Default     *any   `json:"default,omitempty"`
-	Deprecated  bool   `json:"deprecated,omitempty"`
-	ReadOnly    bool   `json:"readOnly,omitempty"`
-	WriteOnly   bool   `json:"writeOnly,omitempty"`
-	Examples    []any  `json:"examples,omitempty"`
+	Title       string          `json:"title,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Default     json.RawMessage `json:"default,omitempty"`
+	Deprecated  bool            `json:"deprecated,omitempty"`
+	ReadOnly    bool            `json:"readOnly,omitempty"`
+	WriteOnly   bool            `json:"writeOnly,omitempty"`
+	Examples    []any           `json:"examples,omitempty"`
 
 	// validation
 	// Use Type for a single type, or Types for multiple types; never both.
@@ -183,7 +182,9 @@ type anchorInfo struct {
 // String returns a short description of the schema.
 func (s *Schema) String() string {
 	if s.uri != nil {
-		return s.uri.String()
+		if u := s.uri.String(); u != "" {
+			return u
+		}
 	}
 	if a := cmp.Or(s.Anchor, s.DynamicAnchor); a != "" {
 		return fmt.Sprintf("%q, anchor %s", s.base.uri.String(), a)
@@ -253,7 +254,6 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	ms := struct {
 		Type          json.RawMessage `json:"type,omitempty"`
 		Const         json.RawMessage `json:"const,omitempty"`
-		Default       json.RawMessage `json:"default,omitempty"`
 		MinLength     *integer        `json:"minLength,omitempty"`
 		MaxLength     *integer        `json:"maxLength,omitempty"`
 		MinItems      *integer        `json:"minItems,omitempty"`
@@ -297,12 +297,9 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 		return json.Unmarshal(raw, p)
 	}
 
-	// Setting Const or Default to a pointer to null will marshal properly, but won't
+	// Setting Const to a pointer to null will marshal properly, but won't
 	// unmarshal: the *any is set to nil, not a pointer to nil.
 	if err := unmarshalAnyPtr(&s.Const, ms.Const); err != nil {
-		return err
-	}
-	if err := unmarshalAnyPtr(&s.Default, ms.Default); err != nil {
 		return err
 	}
 
@@ -361,27 +358,12 @@ func Ptr[T any](x T) *T { return &x }
 // every applies f preorder to every schema under s including s.
 // The second argument to f is the path to the schema appended to the argument path.
 // It stops when f returns false.
-func (s *Schema) every(f func(*Schema, []string) bool, path []string) bool {
-	return s == nil ||
-		f(s, path) && s.everyChild(func(s *Schema, p []string) bool { return s.every(f, p) }, path)
+func (s *Schema) every(f func(*Schema) bool) bool {
+	return f(s) && s.everyChild(func(s *Schema) bool { return s.every(f) })
 }
 
 // everyChild reports whether f is true for every immediate child schema of s.
-// The second argument to f is the path to the schema appended to the argument path.
-//
-// It does not call f on nil-valued fields holding individual schemas, like Contains,
-// because a nil value indicates that the field is absent.
-// It does call f on nils when they occur in slices and maps, so those invalid values
-// can be detected when the schema is validated.
-func (s *Schema) everyChild(f func(*Schema, []string) bool, path []string) bool {
-	if s == nil {
-		return false
-	}
-	var (
-		schemaType      = reflect.TypeFor[*Schema]()
-		schemaSliceType = reflect.TypeFor[[]*Schema]()
-		schemaMapType   = reflect.TypeFor[map[string]*Schema]()
-	)
+func (s *Schema) everyChild(f func(*Schema) bool) bool {
 	v := reflect.ValueOf(s)
 	for _, info := range schemaFieldInfos {
 		fv := v.Elem().FieldByIndex(info.sf.Index)
@@ -389,25 +371,23 @@ func (s *Schema) everyChild(f func(*Schema, []string) bool, path []string) bool 
 		case schemaType:
 			// A field that contains an individual schema. A nil is valid: it just means the field isn't present.
 			c := fv.Interface().(*Schema)
-			if c != nil && !f(c, append(path, info.jsonName)) {
+			if c != nil && !f(c) {
 				return false
 			}
 
 		case schemaSliceType:
 			slice := fv.Interface().([]*Schema)
-			// A field that contains a slice of schemas. Yield nils so we can check for their presence.
-			for i, c := range slice {
-				if !f(c, append(path, info.jsonName, strconv.Itoa(i))) {
+			for _, c := range slice {
+				if !f(c) {
 					return false
 				}
 			}
 
 		case schemaMapType:
-			// A field that is a map of schemas. Ditto about nils.
 			// Sort keys for determinism.
 			m := fv.Interface().(map[string]*Schema)
 			for _, k := range slices.Sorted(maps.Keys(m)) {
-				if !f(m[k], append(path, info.jsonName, escapeJSONPointerSegment(k))) {
+				if !f(m[k]) {
 					return false
 				}
 			}
@@ -417,15 +397,20 @@ func (s *Schema) everyChild(f func(*Schema, []string) bool, path []string) bool 
 }
 
 // all wraps every in an iterator.
-func (s *Schema) all() iter.Seq2[*Schema, []string] {
-	return func(yield func(*Schema, []string) bool) { s.every(yield, nil) }
+func (s *Schema) all() iter.Seq[*Schema] {
+	return func(yield func(*Schema) bool) { s.every(yield) }
 }
 
 // children wraps everyChild in an iterator.
-func (s *Schema) children() iter.Seq2[*Schema, []string] {
-	var pathBuffer [4]string
-	return func(yield func(*Schema, []string) bool) { s.everyChild(yield, pathBuffer[:0]) }
+func (s *Schema) children() iter.Seq[*Schema] {
+	return func(yield func(*Schema) bool) { s.everyChild(yield) }
 }
+
+var (
+	schemaType      = reflect.TypeFor[*Schema]()
+	schemaSliceType = reflect.TypeFor[[]*Schema]()
+	schemaMapType   = reflect.TypeFor[map[string]*Schema]()
+)
 
 type structFieldInfo struct {
 	sf       reflect.StructField

@@ -58,34 +58,10 @@ func TestEndToEnd(t *testing.T) {
 		InitializedHandler:      func(context.Context, *ServerSession, *InitializedParams) { notificationChans["initialized"] <- 0 },
 		RootsListChangedHandler: func(context.Context, *ServerSession, *RootsListChangedParams) { notificationChans["roots"] <- 0 },
 	}
-
 	s := NewServer("testServer", "v1.0.0", sopts)
-
-	// The 'greet' tool says hi.
-	s.AddTools(NewTool("greet", "say hi", sayHi))
-
-	// The 'fail' tool returns this error.
-	failure := errors.New("mcp failure")
-	s.AddTools(
-		NewTool("fail", "just fail", func(context.Context, *ServerSession, struct{}) ([]*Content, error) {
-			return nil, failure
-		}),
-	)
-
-	s.AddPrompts(
-		NewPrompt("code_review", "do a code review",
-			func(_ context.Context, _ *ServerSession, params struct{ Code string }, _ *GetPromptParams) (*GetPromptResult, error) {
-				return &GetPromptResult{
-					Description: "Code review prompt",
-					Messages: []*PromptMessage{
-						{Role: "user", Content: NewTextContent("Please review the following code: " + params.Code)},
-					},
-				}, nil
-			}),
-		NewPrompt("fail", "", func(_ context.Context, _ *ServerSession, args struct{}, _ *GetPromptParams) (*GetPromptResult, error) {
-			return nil, failure
-		}),
-	)
+	add(tools, s.AddTools, "greet", "fail")
+	add(prompts, s.AddPrompts, "code_review", "fail")
+	add(resources, s.AddResources, "info.txt", "fail.txt")
 
 	// Connect the server.
 	ss, err := s.Connect(ctx, st)
@@ -167,8 +143,8 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("prompts/get 'code_review' mismatch (-want +got):\n%s", diff)
 		}
 
-		if _, err := cs.GetPrompt(ctx, &GetPromptParams{Name: "fail"}); err == nil || !strings.Contains(err.Error(), failure.Error()) {
-			t.Errorf("fail returned unexpected error: got %v, want containing %v", err, failure)
+		if _, err := cs.GetPrompt(ctx, &GetPromptParams{Name: "fail"}); err == nil || !strings.Contains(err.Error(), errTestFailure.Error()) {
+			t.Errorf("fail returned unexpected error: got %v, want containing %v", err, errTestFailure)
 		}
 
 		s.AddPrompts(&ServerPrompt{Prompt: &Prompt{Name: "T"}})
@@ -227,7 +203,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 		wantFail := &CallToolResult{
 			IsError: true,
-			Content: []*Content{{Type: "text", Text: failure.Error()}},
+			Content: []*Content{{Type: "text", Text: errTestFailure.Error()}},
 		}
 		if diff := cmp.Diff(wantFail, gotFail); diff != "" {
 			t.Errorf("tools/call 'fail' mismatch (-want +got):\n%s", diff)
@@ -243,27 +219,12 @@ func TestEndToEnd(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("TODO: fix for Windows")
 		}
-		resource1 := &Resource{
-			Name:     "public",
-			MIMEType: "text/plain",
-			URI:      "file:///info.txt",
-		}
-		resource2 := &Resource{
-			Name:     "public", // names are not unique IDs
-			MIMEType: "text/plain",
-			URI:      "file:///nonexistent.txt",
-		}
-
-		readHandler := s.FileResourceHandler("testdata/files")
-		s.AddResources(
-			&ServerResource{resource1, readHandler},
-			&ServerResource{resource2, readHandler})
-
+		wantResources := []*Resource{resource2, resource1}
 		lrres, err := cs.ListResources(ctx, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if diff := cmp.Diff([]*Resource{resource1, resource2}, lrres.Resources); diff != "" {
+		if diff := cmp.Diff(wantResources, lrres.Resources); diff != "" {
 			t.Errorf("resources/list mismatch (-want, +got):\n%s", diff)
 		}
 
@@ -272,7 +233,7 @@ func TestEndToEnd(t *testing.T) {
 			mimeType string // "": not found; "text/plain": resource; "text/template": template
 		}{
 			{"file:///info.txt", "text/plain"},
-			{"file:///nonexistent.txt", ""},
+			{"file:///fail.txt", ""},
 			// TODO(jba): add resource template cases when we implement them
 		} {
 			rres, err := cs.ReadResource(ctx, &ReadResourceParams{URI: tt.uri})
@@ -413,6 +374,60 @@ func TestEndToEnd(t *testing.T) {
 	// connections.
 	for range s.Sessions() {
 		t.Errorf("unexpected client after disconnection")
+	}
+}
+
+// Registry of values to be referenced in tests.
+var (
+	errTestFailure = errors.New("mcp failure")
+
+	tools = map[string]*ServerTool{
+		"greet": NewTool("greet", "say hi", sayHi),
+		"fail": NewTool("fail", "just fail", func(context.Context, *ServerSession, struct{}) ([]*Content, error) {
+			return nil, errTestFailure
+		}),
+	}
+
+	prompts = map[string]*ServerPrompt{
+		"code_review": NewPrompt("code_review", "do a code review",
+			func(_ context.Context, _ *ServerSession, params struct{ Code string }, _ *GetPromptParams) (*GetPromptResult, error) {
+				return &GetPromptResult{
+					Description: "Code review prompt",
+					Messages: []*PromptMessage{
+						{Role: "user", Content: NewTextContent("Please review the following code: " + params.Code)},
+					},
+				}, nil
+			}),
+		"fail": NewPrompt("fail", "", func(_ context.Context, _ *ServerSession, args struct{}, _ *GetPromptParams) (*GetPromptResult, error) {
+			return nil, errTestFailure
+		}),
+	}
+
+	resource1 = &Resource{
+		Name:     "public",
+		MIMEType: "text/plain",
+		URI:      "file:///info.txt",
+	}
+	resource2 = &Resource{
+		Name:     "public", // names are not unique IDs
+		MIMEType: "text/plain",
+		URI:      "file:///fail.txt",
+	}
+	readHandler = fileResourceHandler("testdata/files")
+	resources   = map[string]*ServerResource{
+		"info.txt": {resource1, readHandler},
+		"fail.txt": {resource2, readHandler},
+	}
+)
+
+// Add calls the given function to add the named features.
+func add[T any](m map[string]T, add func(...T), names ...string) {
+	for _, name := range names {
+		feat, ok := m[name]
+		if !ok {
+			panic("missing feature " + name)
+		}
+		add(feat)
 	}
 }
 

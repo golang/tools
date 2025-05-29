@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"math"
 	"regexp"
-	"slices"
-	"strings"
 	"testing"
 )
 
@@ -26,17 +24,17 @@ func TestGoRoundTrip(t *testing.T) {
 		{Const: Ptr(any(nil))},
 		{Const: Ptr(any([]int{}))},
 		{Const: Ptr(any(map[string]any{}))},
-		{Default: Ptr(any(nil))},
+		{Default: mustMarshal(1)},
+		{Default: mustMarshal(nil)},
 	} {
 		data, err := json.Marshal(s)
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("marshal: %s", data)
 		var got *Schema
 		mustUnmarshal(t, data, &got)
 		if !Equal(got, s) {
-			t.Errorf("got %+v, want %+v", got, s)
+			t.Errorf("got %s, want %s", got.json(), s.json())
 			if got.Const != nil && s.Const != nil {
 				t.Logf("Consts: got %#v (%[1]T), want %#v (%[2]T)", *got.Const, *s.Const)
 			}
@@ -108,37 +106,6 @@ func TestUnmarshalErrors(t *testing.T) {
 			t.Errorf("%s: error %q does not match %q", tt.in, err, tt.want)
 		}
 
-	}
-}
-
-func TestEvery(t *testing.T) {
-	// Schema.every should visit all descendants of a schema, not just the immediate ones.
-	s := &Schema{
-		Type:        "string",
-		PrefixItems: []*Schema{{Type: "int"}, {Items: &Schema{Type: "null"}}},
-		Contains: &Schema{Properties: map[string]*Schema{
-			"~1": {Type: "boolean"},
-			"p":  {},
-		}},
-	}
-
-	type item struct {
-		s *Schema
-		p string
-	}
-	want := []item{
-		{s, ""},
-		{s.Contains, "contains"},
-		{s.Contains.Properties["p"], "contains/properties/p"},
-		{s.Contains.Properties["~1"], "contains/properties/~01"},
-		{s.PrefixItems[0], "prefixItems/0"},
-		{s.PrefixItems[1], "prefixItems/1"},
-		{s.PrefixItems[1].Items, "prefixItems/1/items"},
-	}
-	var got []item
-	s.every(func(s *Schema, p []string) bool { got = append(got, item{s, strings.Join(p, "/")}); return true }, nil)
-	if !slices.Equal(got, want) {
-		t.Errorf("\n got  %v\nwant %v", got, want)
 	}
 }
 

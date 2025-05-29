@@ -456,7 +456,7 @@ func TestResolveDiagnosticWithDownload(t *testing.T) {
 		// diagnostic for the wrong formatting type.
 		env.AfterChange(
 			Diagnostics(
-				env.AtRegexp("print.go", "fmt.Printf"),
+				env.AtRegexp("print.go", "%s"),
 				WithMessage("wrong type int"),
 			),
 		)
@@ -2071,7 +2071,7 @@ func MyPrintf(format string, args ...interface{}) {
 		env.OpenFile("a/a.go")
 		env.AfterChange(
 			Diagnostics(
-				env.AtRegexp("a/a.go", "new.*Printf"),
+				env.AtRegexp("a/a.go", "%d"),
 				WithMessage("format %d has arg \"s\" of wrong type string"),
 			),
 		)

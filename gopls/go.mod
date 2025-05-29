@@ -11,10 +11,10 @@ require (
 	golang.org/x/sys v0.33.0
 	golang.org/x/telemetry v0.0.0-20250417124945-06ef541f3fa3
 	golang.org/x/text v0.25.0
-	golang.org/x/tools v0.30.0
+	golang.org/x/tools v0.33.1-0.20250521210010-423c5afcceff
 	golang.org/x/vuln v1.1.4
 	gopkg.in/yaml.v3 v3.0.1
-	honnef.co/go/tools v0.6.1
+	honnef.co/go/tools v0.7.0-0.dev.0.20250523013057-bbc2f4dd71ea
 	mvdan.cc/gofumpt v0.7.0
 	mvdan.cc/xurls/v2 v2.6.0
 )

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"slices"
 	"sync"
 
@@ -313,4 +314,32 @@ func (c *Client) callLoggingHandler(ctx context.Context, cs *ClientSession, para
 		h(ctx, cs, params)
 	}
 	return nil, nil
+}
+
+// Tools provides an iterator for all tools available on the server,
+// automatically fetching pages and managing cursors.
+// The `params` argument can set the initial cursor.
+func (c *ClientSession) Tools(ctx context.Context, params *ListToolsParams) iter.Seq2[Tool, error] {
+	currentParams := &ListToolsParams{}
+	if params != nil {
+		*currentParams = *params
+	}
+	return func(yield func(Tool, error) bool) {
+		for {
+			res, err := c.ListTools(ctx, currentParams)
+			if err != nil {
+				yield(Tool{}, err)
+				return
+			}
+			for _, t := range res.Tools {
+				if !yield(*t, nil) {
+					return
+				}
+			}
+			if res.NextCursor == "" {
+				return
+			}
+			currentParams.Cursor = res.NextCursor
+		}
+	}
 }

@@ -1,0 +1,15 @@
+package a
+
+//go:fix inline
+func f(x, y int) int { // want f:`goFixInline a.f`
+	return y + x
+}
+
+func g() {
+	_ = 2 + 1 // want `Call of a.f should be inlined`
+
+	var x int = h(1)
+	_ = h(2) + x // want `Call of a.f should be inlined`
+}
+
+func h(int) int

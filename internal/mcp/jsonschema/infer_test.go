@@ -41,31 +41,52 @@ func TestForType(t *testing.T) {
 			Type:                 "object",
 			AdditionalProperties: &schema{},
 		}},
-		{"struct", forType[struct {
-			F           int `json:"f"`
-			G           []float64
-			P           *bool
-			Skip        string `json:"-"`
-			NoSkip      string `json:",omitempty"`
-			unexported  float64
-			unexported2 int `json:"No"`
-		}](), &schema{
-			Type: "object",
-			Properties: map[string]*schema{
-				"f":      {Type: "integer"},
-				"G":      {Type: "array", Items: &schema{Type: "number"}},
-				"P":      {Type: "boolean"},
-				"NoSkip": {Type: "string"},
+		{
+			"struct",
+			forType[struct {
+				F           int `json:"f"`
+				G           []float64
+				P           *bool
+				Skip        string `json:"-"`
+				NoSkip      string `json:",omitempty"`
+				unexported  float64
+				unexported2 int `json:"No"`
+			}](),
+			&schema{
+				Type: "object",
+				Properties: map[string]*schema{
+					"f":      {Type: "integer"},
+					"G":      {Type: "array", Items: &schema{Type: "number"}},
+					"P":      {Type: "boolean"},
+					"NoSkip": {Type: "string"},
+				},
+				Required:             []string{"f", "G", "P"},
+				AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}},
 			},
-			Required:             []string{"f", "G", "P"},
-			AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}},
-		}},
+		},
+		{
+			"no sharing",
+			forType[struct{ X, Y int }](),
+			&schema{
+				Type: "object",
+				Properties: map[string]*schema{
+					"X": {Type: "integer"},
+					"Y": {Type: "integer"},
+				},
+				Required:             []string{"X", "Y"},
+				AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}},
+			},
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			if diff := cmp.Diff(test.want, test.got, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
-				t.Errorf("ForType mismatch (-want +got):\n%s", diff)
+				t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
+			}
+			// These schemas should all resolve.
+			if _, err := test.got.Resolve(nil); err != nil {
+				t.Fatalf("Resolving: %v", err)
 			}
 		})
 	}

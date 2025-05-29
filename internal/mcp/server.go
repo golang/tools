@@ -179,8 +179,18 @@ func (s *Server) Sessions() iter.Seq[*ServerSession] {
 func (s *Server) listPrompts(_ context.Context, _ *ServerSession, params *ListPromptsParams) (*ListPromptsResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var cursor string
+	if params != nil {
+		cursor = params.Cursor
+	}
+	prompts, nextCursor, err := paginateList(s.prompts, cursor, s.opts.PageSize)
+	if err != nil {
+		return nil, err
+	}
 	res := new(ListPromptsResult)
-	for p := range s.prompts.all() {
+	res.NextCursor = nextCursor
+	res.Prompts = []*Prompt{} // avoid JSON null
+	for _, p := range prompts {
 		res.Prompts = append(res.Prompts, p.Prompt)
 	}
 	return res, nil
@@ -210,6 +220,7 @@ func (s *Server) listTools(_ context.Context, _ *ServerSession, params *ListTool
 	}
 	res := new(ListToolsResult)
 	res.NextCursor = nextCursor
+	res.Tools = []*Tool{} // avoid JSON null
 	for _, t := range tools {
 		res.Tools = append(res.Tools, t.Tool)
 	}
@@ -239,6 +250,7 @@ func (s *Server) listResources(_ context.Context, _ *ServerSession, params *List
 	}
 	res := new(ListResourcesResult)
 	res.NextCursor = nextCursor
+	res.Resources = []*Resource{} // avoid JSON null
 	for _, r := range resources {
 		res.Resources = append(res.Resources, r.Resource)
 	}
@@ -287,6 +299,10 @@ func (s *Server) readResource(ctx context.Context, ss *ServerSession, params *Re
 // are always caught. Go 1.24 and above also protects against symlink-based attacks,
 // where symlinks under dir lead out of the tree.
 func (s *Server) FileResourceHandler(dir string) ResourceHandler {
+	return fileResourceHandler(dir)
+}
+
+func fileResourceHandler(dir string) ResourceHandler {
 	// Convert dir to an absolute path.
 	dirFilepath, err := filepath.Abs(dir)
 	if err != nil {

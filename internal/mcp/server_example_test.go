@@ -57,8 +57,8 @@ func ExampleServer() {
 }
 
 // createSessions creates and connects an in-memory client and server session for testing purposes.
-func createSessions(ctx context.Context) (*mcp.ClientSession, *mcp.ServerSession, *mcp.Server) {
-	server := mcp.NewServer("server", "v0.0.1", nil)
+func createSessions(ctx context.Context, opts *mcp.ServerOptions) (*mcp.ClientSession, *mcp.ServerSession, *mcp.Server) {
+	server := mcp.NewServer("server", "v0.0.1", opts)
 	client := mcp.NewClient("client", "v0.0.1", nil)
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	serverSession, err := server.Connect(ctx, serverTransport)
@@ -72,24 +72,49 @@ func createSessions(ctx context.Context) (*mcp.ClientSession, *mcp.ServerSession
 	return clientSession, serverSession, server
 }
 
-func TestListTool(t *testing.T) {
+func TestListTools(t *testing.T) {
 	toolA := mcp.NewTool("apple", "apple tool", SayHi)
 	toolB := mcp.NewTool("banana", "banana tool", SayHi)
 	toolC := mcp.NewTool("cherry", "cherry tool", SayHi)
 	tools := []*mcp.ServerTool{toolA, toolB, toolC}
-	wantTools := []*mcp.Tool{toolA.Tool, toolB.Tool, toolC.Tool}
+	wantListTools := []*mcp.Tool{toolA.Tool, toolB.Tool, toolC.Tool}
+	wantIteratorTools := []mcp.Tool{*toolA.Tool, *toolB.Tool, *toolC.Tool}
 	ctx := context.Background()
-	clientSession, serverSession, server := createSessions(ctx)
-	defer clientSession.Close()
-	defer serverSession.Close()
-	server.AddTools(tools...)
-	res, err := clientSession.ListTools(ctx, nil)
-	if err != nil {
-		t.Fatal("ListTools() failed:", err)
-	}
-	if diff := cmp.Diff(wantTools, res.Tools, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
-		t.Fatalf("ListTools() mismatch (-want +got):\n%s", diff)
-	}
+	t.Run("ListTools", func(t *testing.T) {
+		clientSession, serverSession, server := createSessions(ctx, nil)
+		defer clientSession.Close()
+		defer serverSession.Close()
+		server.AddTools(tools...)
+		res, err := clientSession.ListTools(ctx, nil)
+		if err != nil {
+			t.Fatal("ListTools() failed:", err)
+		}
+		if diff := cmp.Diff(wantListTools, res.Tools, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
+			t.Fatalf("ListTools() mismatch (-want +got):\n%s", diff)
+		}
+	})
+	t.Run("ToolsIterator", func(t *testing.T) {
+		for pageSize := range len(tools) + 1 {
+			testName := fmt.Sprintf("PageSize=%v", pageSize)
+			t.Run(testName, func(t *testing.T) {
+				clientSession, serverSession, server := createSessions(ctx, &mcp.ServerOptions{PageSize: pageSize})
+				defer clientSession.Close()
+				defer serverSession.Close()
+				server.AddTools(tools...)
+				var gotTools []mcp.Tool
+				seq := clientSession.Tools(ctx, nil)
+				for tool, err := range seq {
+					if err != nil {
+						t.Fatalf("Tools(%s) failed: %v", testName, err)
+					}
+					gotTools = append(gotTools, tool)
+				}
+				if diff := cmp.Diff(wantIteratorTools, gotTools, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
+					t.Fatalf("Tools(%s) mismatch (-want +got):\n%s", testName, diff)
+				}
+			})
+		}
+	})
 }
 
 func TestListResources(t *testing.T) {
@@ -99,7 +124,7 @@ func TestListResources(t *testing.T) {
 	resources := []*mcp.ServerResource{resourceA, resourceB, resourceC}
 	wantResource := []*mcp.Resource{resourceA.Resource, resourceB.Resource, resourceC.Resource}
 	ctx := context.Background()
-	clientSession, serverSession, server := createSessions(ctx)
+	clientSession, serverSession, server := createSessions(ctx, nil)
 	defer clientSession.Close()
 	defer serverSession.Close()
 	server.AddResources(resources...)
@@ -109,5 +134,25 @@ func TestListResources(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantResource, res.Resources, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
 		t.Fatalf("ListResources() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestListPrompts(t *testing.T) {
+	promptA := mcp.NewPrompt("apple", "apple prompt", testPromptHandler[struct{}])
+	promptB := mcp.NewPrompt("banana", "banana prompt", testPromptHandler[struct{}])
+	promptC := mcp.NewPrompt("cherry", "cherry prompt", testPromptHandler[struct{}])
+	prompts := []*mcp.ServerPrompt{promptA, promptB, promptC}
+	wantPrompts := []*mcp.Prompt{promptA.Prompt, promptB.Prompt, promptC.Prompt}
+	ctx := context.Background()
+	clientSession, serverSession, server := createSessions(ctx, nil)
+	defer clientSession.Close()
+	defer serverSession.Close()
+	server.AddPrompts(prompts...)
+	res, err := clientSession.ListPrompts(ctx, nil)
+	if err != nil {
+		t.Fatal("ListPrompts() failed:", err)
+	}
+	if diff := cmp.Diff(wantPrompts, res.Prompts, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
+		t.Fatalf("ListPrompts() mismatch (-want +got):\n%s", diff)
 	}
 }

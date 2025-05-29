@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 )
@@ -29,17 +30,33 @@ type Resolved struct {
 // A Loader reads and unmarshals the schema at uri, if any.
 type Loader func(uri *url.URL) (*Schema, error)
 
+// ResolveOptions are options for [Schema.Resolve].
+type ResolveOptions struct {
+	// BaseURI is the URI relative to which the root schema should be resolved.
+	// If non-empty, must be an absolute URI (one that starts with a scheme).
+	// It is resolved (in the URI sense; see [url.ResolveReference]) with root's
+	// $id property.
+	// If the resulting URI is not absolute, then the schema cannot contain
+	// relative URI references.
+	BaseURI string
+	// Loader loads schemas that are referred to by a $ref but are not under the
+	// root schema (remote references).
+	// If nil, resolving a remote reference will return an error.
+	Loader Loader
+	// ValidateDefaults determines whether to validate values of "default" keywords
+	// against their schemas.
+	// The [JSON Schema specification] does not require this, but it is
+	// recommended if defaults will be used.
+	//
+	// [JSON Schema specification]: https://json-schema.org/understanding-json-schema/reference/annotations
+	ValidateDefaults bool
+}
+
 // Resolve resolves all references within the schema and performs other tasks that
 // prepare the schema for validation.
-//
-// baseURI can be empty, or an absolute URI (one that starts with a scheme).
-// It is resolved (in the URI sense; see [url.ResolveReference]) with root's $id property.
-// If the resulting URI is not absolute, then the schema cannot not contain relative URI references.
-//
-// loader loads schemas that are referred to by a $ref but not under root (a remote reference).
-// If nil, remote references will return an error.
-func (root *Schema) Resolve(baseURI string, loader Loader) (*Resolved, error) {
-	// There are four steps involved in preparing a schema to validate.
+// If opts is nil, the default values are used.
+func (root *Schema) Resolve(opts *ResolveOptions) (*Resolved, error) {
+	// There are up to five steps required to prepare a schema to validate.
 	// 1. Load: read the schema from somewhere and unmarshal it.
 	//    This schema (root) may have been loaded or created in memory, but other schemas that
 	//    come into the picture in step 4 will be loaded by the given loader.
@@ -48,37 +65,48 @@ func (root *Schema) Resolve(baseURI string, loader Loader) (*Resolved, error) {
 	// 3. Resolve URIs: determine the base URI of the root and all its subschemas, and
 	//    resolve (in the URI sense) all identifiers and anchors with their bases. This step results
 	//    in a map from URIs to schemas within root.
-	// These three steps are idempotent. They may occur a several times on a schema, if
-	// it is loaded from several places.
 	// 4. Resolve references: all refs in the schemas are replaced with the schema they refer to.
+	// 5. (Optional.) If opts.ValidateDefaults is true, validate the defaults.
+	if root.path != "" {
+		return nil, fmt.Errorf("jsonschema: Resolve: %s already resolved", root)
+	}
+	r := &resolver{loaded: map[string]*Resolved{}}
+	if opts != nil {
+		r.opts = *opts
+	}
 	var base *url.URL
-	if baseURI == "" {
+	if r.opts.BaseURI == "" {
 		base = &url.URL{} // so we can call ResolveReference on it
 	} else {
 		var err error
-		base, err = url.Parse(baseURI)
+		base, err = url.Parse(r.opts.BaseURI)
 		if err != nil {
 			return nil, fmt.Errorf("parsing base URI: %w", err)
 		}
 	}
 
-	if loader == nil {
-		loader = func(uri *url.URL) (*Schema, error) {
+	if r.opts.Loader == nil {
+		r.opts.Loader = func(uri *url.URL) (*Schema, error) {
 			return nil, errors.New("cannot resolve remote schemas: no loader passed to Schema.Resolve")
 		}
 	}
-	r := &resolver{
-		loader: loader,
-		loaded: map[string]*Resolved{},
-	}
 
-	return r.resolve(root, base)
+	resolved, err := r.resolve(root, base)
+	if err != nil {
+		return nil, err
+	}
+	if r.opts.ValidateDefaults {
+		if err := resolved.validateDefaults(); err != nil {
+			return nil, err
+		}
+	}
 	// TODO: before we return, throw away anything we don't need for validation.
+	return resolved, nil
 }
 
 // A resolver holds the state for resolution.
 type resolver struct {
-	loader Loader
+	opts ResolveOptions
 	// A cache of loaded and partly resolved schemas. (They may not have had their
 	// refs resolved.) The cache ensures that the loader will never be called more
 	// than once with the same URI, and that reference cycles are handled properly.
@@ -111,30 +139,81 @@ func (r *resolver) resolve(s *Schema, baseURI *url.URL) (*Resolved, error) {
 }
 
 func (root *Schema) check() error {
-	if root == nil {
-		return errors.New("nil schema")
+	// Check for structural validity. Do this first and fail fast:
+	// bad structure will cause other code to panic.
+	if err := root.checkStructure(); err != nil {
+		return err
 	}
+
 	var errs []error
 	report := func(err error) { errs = append(errs, err) }
 
-	seen := map[*Schema]bool{}
-	for ss, path := range root.all() {
-		if seen[ss] {
-			// The schema graph rooted at s is not a tree, but it needs to
-			// be because we assume a unique parent when we store a schema's base
-			// in the Schema. A cycle would also put Schema.all into an infinite
-			// recursion.
-			return fmt.Errorf("schemas rooted at %s do not form a tree (saw %s twice)", root, ss)
-		}
-		seen[ss] = true
-		if len(path) == 0 {
-			ss.path = "root"
-		} else {
-			ss.path = "/" + strings.Join(path, "/")
-		}
+	for ss := range root.all() {
 		ss.checkLocal(report)
 	}
 	return errors.Join(errs...)
+}
+
+// checkStructure verifies that root and its subschemas form a tree.
+// It also assigns each schema a unique path, to improve error messages.
+func (root *Schema) checkStructure() error {
+	var check func(reflect.Value, []byte) error
+	check = func(v reflect.Value, path []byte) error {
+		// For the purpose of error messages, the root schema has path "root"
+		// and other schemas' paths are their JSON Pointer from the root.
+		p := "root"
+		if len(path) > 0 {
+			p = string(path)
+		}
+		s := v.Interface().(*Schema)
+		if s == nil {
+			return fmt.Errorf("jsonschema: schema at %s is nil", p)
+		}
+		if s.path != "" {
+			// We've seen s before.
+			// The schema graph at root is not a tree, but it needs to
+			// be because we assume a unique parent when we store a schema's base
+			// in the Schema. A cycle would also put Schema.all into an infinite
+			// recursion.
+			return fmt.Errorf("jsonschema: schemas at %s do not form a tree; %s appears more than once (also at %s)",
+				root, s.path, p)
+		}
+		s.path = p
+
+		for _, info := range schemaFieldInfos {
+			fv := v.Elem().FieldByIndex(info.sf.Index)
+			switch info.sf.Type {
+			case schemaType:
+				// A field that contains an individual schema.
+				// A nil is valid: it just means the field isn't present.
+				if !fv.IsNil() {
+					if err := check(fv, fmt.Appendf(path, "/%s", info.jsonName)); err != nil {
+						return err
+					}
+				}
+
+			case schemaSliceType:
+				for i := range fv.Len() {
+					if err := check(fv.Index(i), fmt.Appendf(path, "/%s/%d", info.jsonName, i)); err != nil {
+						return err
+					}
+				}
+
+			case schemaMapType:
+				iter := fv.MapRange()
+				for iter.Next() {
+					key := escapeJSONPointerSegment(iter.Key().String())
+					if err := check(iter.Value(), fmt.Appendf(path, "/%s/%s", info.jsonName, key)); err != nil {
+						return err
+					}
+				}
+			}
+
+		}
+		return nil
+	}
+
+	return check(reflect.ValueOf(root), make([]byte, 0, 256))
 }
 
 // checkLocal checks s for validity, independently of other schemas it may refer to.
@@ -144,7 +223,7 @@ func (root *Schema) check() error {
 func (s *Schema) checkLocal(report func(error)) {
 	addf := func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
-		report(fmt.Errorf("jsonschema.Schema: %s: %s", s.path, msg))
+		report(fmt.Errorf("jsonschema.Schema: %s: %s", s, msg))
 	}
 
 	if s == nil {
@@ -354,7 +433,7 @@ func (r *resolver) resolveRef(rs *Resolved, s *Schema, ref string) (_ *Schema, d
 			referencedSchema = lrs.root
 		} else {
 			// Try to load the schema.
-			ls, err := r.loader(fraglessRefURI)
+			ls, err := r.opts.Loader(fraglessRefURI)
 			if err != nil {
 				return nil, "", fmt.Errorf("loading %s: %w", fraglessRefURI, err)
 			}
