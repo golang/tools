@@ -17,7 +17,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"testing/synctest"
 
@@ -55,7 +54,6 @@ type conformanceTest struct {
 	server                    []jsonrpc2.Message // server messages
 }
 
-// TODO(jba): support synthetic responses.
 // TODO(rfindley): add client conformance tests.
 
 func TestServerConformance(t *testing.T) {
@@ -119,48 +117,96 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 		t.Fatal(err)
 	}
 
-	// Collect server messages asynchronously.
-	var wg sync.WaitGroup
+	writeMsg := func(msg jsonrpc2.Message) {
+		if _, err := cStream.Write(ctx, msg); err != nil {
+			t.Fatalf("Write failed: %v", err)
+		}
+	}
+
 	var (
 		serverMessages []jsonrpc2.Message
-		serverErr      error // abnormal failure of the server stream
+		outRequests    []*jsonrpc2.Request
+		outResponses   []*jsonrpc2.Response
 	)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+
+	// Separate client requests and responses; we use them differently.
+	for _, msg := range test.client {
+		switch msg := msg.(type) {
+		case *jsonrpc2.Request:
+			outRequests = append(outRequests, msg)
+		case *jsonrpc2.Response:
+			outResponses = append(outResponses, msg)
+		default:
+			t.Fatalf("bad message type %T", msg)
+		}
+	}
+
+	// nextResponse handles incoming requests and notifications, and returns the
+	// next incoming response.
+	nextResponse := func() (*jsonrpc2.Response, error, bool) {
 		for {
 			msg, _, err := cStream.Read(ctx)
 			if err != nil {
 				// TODO(rfindley): we don't document (or want to document) that the in
 				// memory transports use a net.Pipe. How can users detect this failure?
 				// Should we promote it to EOF?
-				if !errors.Is(err, io.ErrClosedPipe) {
-					serverErr = err
+				if errors.Is(err, io.ErrClosedPipe) {
+					err = nil
 				}
-				break
+				return nil, err, false
 			}
 			serverMessages = append(serverMessages, msg)
-		}
-	}()
-
-	// Write client messages to the stream.
-	for _, msg := range test.client {
-		if _, err := cStream.Write(ctx, msg); err != nil {
-			t.Fatalf("Write failed: %v", err)
+			if req, ok := msg.(*jsonrpc2.Request); ok && req.ID.IsValid() {
+				// Pair up the next outgoing response with this request.
+				// We assume requests arrive in the same order every time.
+				if len(outResponses) == 0 {
+					t.Fatalf("no outgoing response for request %v", req)
+				}
+				outResponses[0].ID = req.ID
+				writeMsg(outResponses[0])
+				outResponses = outResponses[1:]
+				continue
+			}
+			return msg.(*jsonrpc2.Response), nil, true
 		}
 	}
 
+	// Synthetic peer interacts with real peer.
+	for _, req := range outRequests {
+		writeMsg(req)
+		if req.ID.IsValid() {
+			// A request (as opposed to a notification). Wait for the response.
+			res, err, ok := nextResponse()
+			if err != nil {
+				t.Fatalf("reading server messages failed: %v", err)
+			}
+			if !ok {
+				t.Fatalf("missing response for request %v", req)
+			}
+			if res.ID != req.ID {
+				t.Fatalf("out-of-order response %v to request %v", req, res)
+			}
+		}
+	}
+	// There might be more notifications or requests, but there shouldn't be more
+	// responses.
+	// Run this in a goroutine so the current thread can wait for it.
+	var extra *jsonrpc2.Response
+	go func() {
+		extra, err, _ = nextResponse()
+	}()
 	// Before closing the stream, wait for all messages to be processed.
 	synctest.Wait()
+	if err != nil {
+		t.Fatalf("reading server messages failedd: %v", err)
+	}
+	if extra != nil {
+		t.Fatalf("got extra response: %v", extra)
+	}
 	if err := cStream.Close(); err != nil {
 		t.Fatalf("Stream.Close failed: %v", err)
 	}
-
 	ss.Wait()
-	wg.Wait()
-	if serverErr != nil {
-		t.Fatalf("reading server messages failed: %v", serverErr)
-	}
 
 	// Handle server output. If -update is set, write the 'server' file.
 	// Otherwise, compare with expected.

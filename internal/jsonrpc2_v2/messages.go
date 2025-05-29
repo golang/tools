@@ -165,7 +165,7 @@ func DecodeMessage(data []byte) (Message, error) {
 		return nil, fmt.Errorf("unmarshaling jsonrpc message: %w", err)
 	}
 	if msg.VersionTag != wireVersion {
-		return nil, fmt.Errorf("invalid message version tag %s expected %s", msg.VersionTag, wireVersion)
+		return nil, fmt.Errorf("invalid message version tag %q; expected %q", msg.VersionTag, wireVersion)
 	}
 	id, err := MakeID(msg.ID)
 	if err != nil {
