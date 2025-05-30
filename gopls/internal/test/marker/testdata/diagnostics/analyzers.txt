@@ -115,6 +115,15 @@ func _(m map[int]int) {
 	for range maps.Keys(m) {} //@ diag("maps.Keys", re"unnecessary and inefficient call of maps.Keys")
 }
 
+-- unusedresult/unusedresult.go --
+package unusedresult
+
+import "fmt"
+
+func _() {
+	fmt.Appendf(nil, "%d", 1) //@ diag("fmt.Appendf", re"result.*not used")
+}
+
 -- staticcheck/staticcheck.go --
 package staticcheck
 
