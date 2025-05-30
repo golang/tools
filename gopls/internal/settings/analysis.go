@@ -53,6 +53,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
 	"golang.org/x/tools/gopls/internal/analysis/infertypeargs"
+	"golang.org/x/tools/gopls/internal/analysis/maprange"
 	"golang.org/x/tools/gopls/internal/analysis/modernize"
 	"golang.org/x/tools/gopls/internal/analysis/nonewvars"
 	"golang.org/x/tools/gopls/internal/analysis/noresultvalues"
@@ -245,6 +246,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: unusedfunc.Analyzer, severity: protocol.SeverityInformation},
 	{analyzer: unusedwrite.Analyzer, severity: protocol.SeverityInformation}, // uses go/ssa
 	{analyzer: modernize.Analyzer, severity: protocol.SeverityHint},
+	{analyzer: maprange.Analyzer, severity: protocol.SeverityHint},
 
 	// type-error analyzers
 	// These analyzers enrich go/types errors with suggested fixes.
