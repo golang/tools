@@ -50,7 +50,7 @@ func (rs *Resolved) validateDefaults() error {
 		if s.Default != nil {
 			var d any
 			if err := json.Unmarshal(s.Default, &d); err != nil {
-				fmt.Errorf("unmarshaling default value of schema %s: %w", s, err)
+				return fmt.Errorf("unmarshaling default value of schema %s: %w", s, err)
 			}
 			if err := st.validate(reflect.ValueOf(d), s, nil); err != nil {
 				return err

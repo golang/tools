@@ -129,14 +129,14 @@ type ClientSession struct {
 // Close performs a graceful close of the connection, preventing new requests
 // from being handled, and waiting for ongoing requests to return. Close then
 // terminates the connection.
-func (c *ClientSession) Close() error {
-	return c.conn.Close()
+func (cs *ClientSession) Close() error {
+	return cs.conn.Close()
 }
 
 // Wait waits for the connection to be closed by the server.
 // Generally, clients should be responsible for closing the connection.
-func (c *ClientSession) Wait() error {
-	return c.conn.Wait()
+func (cs *ClientSession) Wait() error {
+	return cs.conn.Wait()
 }
 
 // AddRoots adds the given roots to the client,
@@ -232,33 +232,33 @@ func (cs *ClientSession) methodHandler() MethodHandler[ClientSession] {
 // getConn implements [session.getConn].
 func (cs *ClientSession) getConn() *jsonrpc2.Connection { return cs.conn }
 
-func (c *ClientSession) ping(ct context.Context, params *PingParams) (Result, error) {
+func (cs *ClientSession) ping(ct context.Context, params *PingParams) (Result, error) {
 	return emptyResult{}, nil
 }
 
 // Ping makes an MCP "ping" request to the server.
-func (c *ClientSession) Ping(ctx context.Context, params *PingParams) error {
-	return call(ctx, c.conn, methodPing, params, nil)
+func (cs *ClientSession) Ping(ctx context.Context, params *PingParams) error {
+	return call(ctx, cs.conn, methodPing, params, nil)
 }
 
 // ListPrompts lists prompts that are currently available on the server.
-func (c *ClientSession) ListPrompts(ctx context.Context, params *ListPromptsParams) (*ListPromptsResult, error) {
-	return standardCall[ListPromptsResult](ctx, c.conn, methodListPrompts, params)
+func (cs *ClientSession) ListPrompts(ctx context.Context, params *ListPromptsParams) (*ListPromptsResult, error) {
+	return standardCall[ListPromptsResult](ctx, cs.conn, methodListPrompts, params)
 }
 
 // GetPrompt gets a prompt from the server.
-func (c *ClientSession) GetPrompt(ctx context.Context, params *GetPromptParams) (*GetPromptResult, error) {
-	return standardCall[GetPromptResult](ctx, c.conn, methodGetPrompt, params)
+func (cs *ClientSession) GetPrompt(ctx context.Context, params *GetPromptParams) (*GetPromptResult, error) {
+	return standardCall[GetPromptResult](ctx, cs.conn, methodGetPrompt, params)
 }
 
 // ListTools lists tools that are currently available on the server.
-func (c *ClientSession) ListTools(ctx context.Context, params *ListToolsParams) (*ListToolsResult, error) {
-	return standardCall[ListToolsResult](ctx, c.conn, methodListTools, params)
+func (cs *ClientSession) ListTools(ctx context.Context, params *ListToolsParams) (*ListToolsResult, error) {
+	return standardCall[ListToolsResult](ctx, cs.conn, methodListTools, params)
 }
 
 // CallTool calls the tool with the given name and arguments.
 // Pass a [CallToolOptions] to provide additional request fields.
-func (c *ClientSession) CallTool(ctx context.Context, name string, args map[string]any, opts *CallToolOptions) (_ *CallToolResult, err error) {
+func (cs *ClientSession) CallTool(ctx context.Context, name string, args map[string]any, opts *CallToolOptions) (_ *CallToolResult, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("calling tool %q: %w", name, err)
@@ -273,11 +273,11 @@ func (c *ClientSession) CallTool(ctx context.Context, name string, args map[stri
 		Name:      name,
 		Arguments: json.RawMessage(data),
 	}
-	return standardCall[CallToolResult](ctx, c.conn, methodCallTool, params)
+	return standardCall[CallToolResult](ctx, cs.conn, methodCallTool, params)
 }
 
-func (c *ClientSession) SetLevel(ctx context.Context, params *SetLevelParams) error {
-	return call(ctx, c.conn, methodSetLevel, params, nil)
+func (cs *ClientSession) SetLevel(ctx context.Context, params *SetLevelParams) error {
+	return call(ctx, cs.conn, methodSetLevel, params, nil)
 }
 
 // NOTE: the following struct should consist of all fields of callToolParams except name and arguments.
@@ -288,13 +288,13 @@ type CallToolOptions struct {
 }
 
 // ListResources lists the resources that are currently available on the server.
-func (c *ClientSession) ListResources(ctx context.Context, params *ListResourcesParams) (*ListResourcesResult, error) {
-	return standardCall[ListResourcesResult](ctx, c.conn, methodListResources, params)
+func (cs *ClientSession) ListResources(ctx context.Context, params *ListResourcesParams) (*ListResourcesResult, error) {
+	return standardCall[ListResourcesResult](ctx, cs.conn, methodListResources, params)
 }
 
 // ReadResource ask the server to read a resource and return its contents.
-func (c *ClientSession) ReadResource(ctx context.Context, params *ReadResourceParams) (*ReadResourceResult, error) {
-	return standardCall[ReadResourceResult](ctx, c.conn, methodReadResource, params)
+func (cs *ClientSession) ReadResource(ctx context.Context, params *ReadResourceParams) (*ReadResourceResult, error) {
+	return standardCall[ReadResourceResult](ctx, cs.conn, methodReadResource, params)
 }
 
 func (c *Client) callToolChangedHandler(ctx context.Context, s *ClientSession, params *ToolListChangedParams) (Result, error) {
@@ -319,14 +319,14 @@ func (c *Client) callLoggingHandler(ctx context.Context, cs *ClientSession, para
 // Tools provides an iterator for all tools available on the server,
 // automatically fetching pages and managing cursors.
 // The `params` argument can set the initial cursor.
-func (c *ClientSession) Tools(ctx context.Context, params *ListToolsParams) iter.Seq2[Tool, error] {
+func (cs *ClientSession) Tools(ctx context.Context, params *ListToolsParams) iter.Seq2[Tool, error] {
 	currentParams := &ListToolsParams{}
 	if params != nil {
 		*currentParams = *params
 	}
 	return func(yield func(Tool, error) bool) {
 		for {
-			res, err := c.ListTools(ctx, currentParams)
+			res, err := cs.ListTools(ctx, currentParams)
 			if err != nil {
 				yield(Tool{}, err)
 				return
