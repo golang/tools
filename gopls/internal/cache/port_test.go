@@ -65,7 +65,7 @@ func TestMatchingPortsStdlib(t *testing.T) {
 			})
 		}
 	})
-	g.Wait()
+	_ = g.Wait() // can't fail
 }
 
 func matchingPreferredPorts(tb testing.TB, fh file.Handle, trimContent bool) map[port]unit {

@@ -598,12 +598,12 @@ func main() {
 				Diagnostics(env.AtRegexp("a/main.go", "x = ")),
 			)
 			env.RegexpReplace("a/go.mod", "v1.2.3", "v1.2.2")
-			env.Editor.SaveBuffer(env.Ctx, "a/go.mod") // go.mod changes must be on disk
+			env.SaveBuffer("a/go.mod") // go.mod changes must be on disk
 			env.AfterChange(
 				Diagnostics(env.AtRegexp("a/go.mod", "example.com v1.2.2")),
 			)
 			env.RegexpReplace("a/go.mod", "v1.2.2", "v1.2.3")
-			env.Editor.SaveBuffer(env.Ctx, "a/go.mod") // go.mod changes must be on disk
+			env.SaveBuffer("a/go.mod") // go.mod changes must be on disk
 			env.AfterChange(
 				Diagnostics(env.AtRegexp("a/main.go", "x = ")),
 			)

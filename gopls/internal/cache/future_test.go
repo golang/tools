@@ -145,7 +145,7 @@ func TestFutureCache_Retrying(t *testing.T) {
 			defer cancels[9]()
 
 			dones[9] <- struct{}{}
-			g.Wait()
+			_ = g.Wait() // can't fail
 
 			t.Logf("started %d computations", started.Load())
 			if got := lastValue.Load(); got != 9 {

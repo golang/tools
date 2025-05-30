@@ -501,7 +501,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 					types.TypeString(f.field.Type(), qual),
 					f.path)
 			}
-			w.Flush()
+			w.Flush() // ignore error
 			b.WriteByte('\n')
 			fields = b.String()
 		}
@@ -1046,7 +1046,7 @@ func hoverReturnStatement(pgf *parsego.File, path []ast.Node, ret *ast.ReturnStm
 		if i > 0 {
 			buf.WriteString(", ")
 		}
-		cfg.Fprint(&buf, fset, field.Type)
+		cfg.Fprint(&buf, fset, field.Type) // ignore error
 	}
 	buf.WriteByte(')')
 	return rng, &hoverResult{

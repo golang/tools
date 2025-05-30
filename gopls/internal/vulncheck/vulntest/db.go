@@ -43,7 +43,7 @@ func NewDatabase(ctx context.Context, txtarReports []byte) (*DB, error) {
 		return nil, err
 	}
 	if err := generateDB(ctx, txtarReports, disk, false); err != nil {
-		os.RemoveAll(disk)
+		os.RemoveAll(disk) // ignore error
 		return nil, err
 	}
 

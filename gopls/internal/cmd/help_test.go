@@ -39,7 +39,7 @@ func TestHelpFiles(t *testing.T) {
 			var buf bytes.Buffer
 			s := flag.NewFlagSet(page.Name(), flag.ContinueOnError)
 			s.SetOutput(&buf)
-			tool.Run(ctx, s, page, []string{"-h"})
+			tool.Run(ctx, s, page, []string{"-h"}) // ignore error
 			name := page.Name()
 			if name == appName {
 				name = "usage"
@@ -70,7 +70,7 @@ func TestVerboseHelp(t *testing.T) {
 	var buf bytes.Buffer
 	s := flag.NewFlagSet(appName, flag.ContinueOnError)
 	s.SetOutput(&buf)
-	tool.Run(ctx, s, app, []string{"-v", "-h"})
+	tool.Run(ctx, s, app, []string{"-v", "-h"}) // ignore error
 	got := buf.Bytes()
 
 	helpFile := filepath.Join("usage", "usage-v.hlp")

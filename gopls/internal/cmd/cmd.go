@@ -822,7 +822,7 @@ func (c *connection) diagnoseFiles(ctx context.Context, files []protocol.Documen
 
 func (c *connection) terminate(ctx context.Context) {
 	// TODO: do we need to handle errors on these calls?
-	c.Shutdown(ctx)
+	c.Shutdown(ctx) // ignore error
 	// TODO: right now calling exit terminates the process, we should rethink that
 	// server.Exit(ctx)
 }

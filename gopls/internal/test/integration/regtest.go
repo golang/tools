@@ -157,7 +157,7 @@ func Main(m *testing.M) (code int) {
 	flag.Parse()
 
 	// Disable GOPACKAGESDRIVER, as it can cause spurious test failures.
-	os.Setenv("GOPACKAGESDRIVER", "off")
+	os.Setenv("GOPACKAGESDRIVER", "off") // ignore error
 
 	if skipReason := checkBuilder(); skipReason != "" {
 		fmt.Printf("Skipping all tests: %s\n", skipReason)
@@ -213,8 +213,8 @@ func FilterToolchainPathAndGOROOT() {
 	if localGo, first := findLocalGo(); localGo != "" && !first {
 		dir := filepath.Dir(localGo)
 		path := os.Getenv("PATH")
-		os.Setenv("PATH", dir+string(os.PathListSeparator)+path)
-		os.Unsetenv("GOROOT") // Remove the GOROOT value that was added by toolchain switch.
+		os.Setenv("PATH", dir+string(os.PathListSeparator)+path) // ignore error
+		os.Unsetenv("GOROOT")                                    // Remove the GOROOT value that was added by toolchain switch.
 	}
 }
 

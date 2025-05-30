@@ -1579,8 +1579,7 @@ func (e *Editor) applyTextDocumentEdit(ctx context.Context, change protocol.Text
 			// TODO: it's unclear if this is correct. Here we create the buffer (with
 			// version 1), then apply edits. Perhaps we should apply the edits before
 			// sending the didOpen notification.
-			e.CreateBuffer(ctx, path, "")
-			err = nil
+			err = e.CreateBuffer(ctx, path, "")
 		}
 		if err != nil {
 			return err

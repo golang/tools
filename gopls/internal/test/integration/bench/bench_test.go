@@ -270,8 +270,8 @@ func (s *SidecarServer) Connect(ctx context.Context) jsonrpc2.Conn {
 	go func() {
 		select {
 		case <-ctx.Done():
-			clientConn.Close()
-			clientStream.Close()
+			clientConn.Close()   // ignore error
+			clientStream.Close() // ignore error
 		case <-clientConn.Done():
 		}
 	}()

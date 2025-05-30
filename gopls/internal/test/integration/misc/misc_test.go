@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 	}
 	countertest.Open(tmp)
 	code := Main(m)
-	os.RemoveAll(tmp) // golang/go#68243: ignore error; cleanup fails on Windows
+	os.RemoveAll(tmp) // ignore error (cleanup fails on Windows; golang/go#68243)
 	os.Exit(code)
 }
 

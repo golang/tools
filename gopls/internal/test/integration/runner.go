@@ -194,7 +194,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			defer func() {
 				if !r.SkipCleanup {
 					if err := sandbox.Close(); err != nil {
-						pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+						pprof.Lookup("goroutine").WriteTo(os.Stderr, 1) // ignore error
 						t.Errorf("closing the sandbox: %v", err)
 					}
 				}
@@ -217,7 +217,7 @@ func (r *Runner) Run(t *testing.T, files string, test TestFunc, opts ...RunOptio
 			env := ConnectGoplsEnv(t, ctx, sandbox, config.editor, ts)
 			defer func() {
 				if t.Failed() && r.PrintGoroutinesOnFailure {
-					pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+					pprof.Lookup("goroutine").WriteTo(os.Stderr, 1) // ignore error
 				}
 				if (t.Failed() && !config.noLogsOnError) || *printLogs {
 					ls.printBuffers(t.Name(), os.Stderr)

@@ -248,9 +248,9 @@ func (f *forwarder) ServeStream(ctx context.Context, clientConn jsonrpc2.Conn) e
 
 	select {
 	case <-serverConn.Done():
-		clientConn.Close()
+		clientConn.Close() // ignore error
 	case <-clientConn.Done():
-		serverConn.Close()
+		serverConn.Close() // ignore error
 	}
 
 	err = nil

@@ -266,7 +266,7 @@ func TestDeleteTestVariant_DiskOnly(t *testing.T) {
 	Run(t, test38878, func(t *testing.T, env *Env) {
 		env.OpenFile("a_test.go")
 		env.AfterChange(Diagnostics(AtPosition("a_test.go", 5, 3)))
-		env.Sandbox.Workdir.RemoveFile(context.Background(), "a_test.go")
+		env.Sandbox.Workdir.RemoveFile(context.Background(), "a_test.go") // ignore error
 		env.AfterChange(Diagnostics(AtPosition("a_test.go", 5, 3)))
 	})
 }
@@ -1136,7 +1136,7 @@ package main
 func main() {}
 `
 	Run(t, basic, func(t *testing.T, env *Env) {
-		env.Editor.CreateBuffer(env.Ctx, "foo.go", `package main`)
+		env.CreateBuffer("foo.go", `package main`)
 		env.AfterChange()
 		env.CloseBuffer("foo.go")
 		env.AfterChange(NoLogMatching(protocol.Info, "packages=0"))

@@ -41,14 +41,14 @@ import (
 	"golang.org/x/tools/internal/versions"
 )
 
-func (c *completer) unimported(ctx context.Context, pkgname metadata.PackageName, prefix string) error {
+func (c *completer) unimported(ctx context.Context, pkgname metadata.PackageName, prefix string) {
 	wsIDs, ourIDs := c.findPackageIDs(pkgname)
 	stdpkgs := c.stdlibPkgs(pkgname)
 	if len(ourIDs) > 0 {
 		// use the one in the current package, if possible
 		items := c.pkgIDmatches(ctx, ourIDs, pkgname, prefix)
 		if c.scoreList(items) {
-			return nil
+			return
 		}
 	}
 	// do the stdlib next.
@@ -63,19 +63,19 @@ func (c *completer) unimported(ctx context.Context, pkgname metadata.PackageName
 	if len(x) > 0 {
 		items := c.pkgIDmatches(ctx, x, pkgname, prefix)
 		if c.scoreList(items) {
-			return nil
+			return
 		}
 	}
 	// just use the stdlib
 	items := c.stdlibMatches(stdpkgs, pkgname, prefix)
 	if c.scoreList(items) {
-		return nil
+		return
 	}
 
 	// look in the rest of the workspace
 	items = c.pkgIDmatches(ctx, wsIDs, pkgname, prefix)
 	if c.scoreList(items) {
-		return nil
+		return
 	}
 
 	// look in the module cache, for the last chance
@@ -83,7 +83,6 @@ func (c *completer) unimported(ctx context.Context, pkgname metadata.PackageName
 	if err == nil {
 		c.scoreList(items)
 	}
-	return nil
 }
 
 // find all the packageIDs for packages in the workspace that have the desired name
@@ -126,14 +125,14 @@ func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, 
 		return nil // would if be worth retrying the ids one by one?
 	}
 	if len(allpkgsyms) != len(ids) {
-		bug.Errorf("Symbols returned %d values for %d pkgIDs", len(allpkgsyms), len(ids))
+		bug.Reportf("Symbols returned %d values for %d pkgIDs", len(allpkgsyms), len(ids))
 		return nil
 	}
 	var got []CompletionItem
 	for i, pkgID := range ids {
 		pkg := c.snapshot.MetadataGraph().Packages[pkgID]
 		if pkg == nil {
-			bug.Errorf("no metadata for %s", pkgID)
+			bug.Reportf("no metadata for %s", pkgID)
 			continue // something changed underfoot, otherwise can't happen
 		}
 		pkgsyms := allpkgsyms[i]
@@ -345,7 +344,7 @@ func funcParams(f *ast.File, fname string) []string {
 			var buf strings.Builder
 			buf.WriteString(name)
 			buf.WriteByte(' ')
-			cfg.Fprint(&buf, token.NewFileSet(), typ)
+			cfg.Fprint(&buf, token.NewFileSet(), typ) // ignore error
 			params = append(params, buf.String())
 		}
 

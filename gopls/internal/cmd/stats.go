@@ -224,7 +224,7 @@ type dirStats struct {
 // subdirectories.
 func findDirStats() (dirStats, error) {
 	var ds dirStats
-	filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -244,5 +244,5 @@ func findDirStats() (dirStats, error) {
 		}
 		return nil
 	})
-	return ds, nil
+	return ds, err
 }

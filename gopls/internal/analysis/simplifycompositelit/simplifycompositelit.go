@@ -89,7 +89,7 @@ func simplifyLiteral(pass *analysis.Pass, typ reflect.Value, astType, x ast.Expr
 	// literal type may be omitted
 	if inner, ok := x.(*ast.CompositeLit); ok && match(typ, reflect.ValueOf(inner.Type)) {
 		var b bytes.Buffer
-		printer.Fprint(&b, pass.Fset, inner.Type)
+		printer.Fprint(&b, pass.Fset, inner.Type) // ignore error
 		createDiagnostic(pass, inner.Type.Pos(), inner.Type.End(), b.String())
 	}
 	// if the outer literal's element type is a pointer type *T
@@ -100,7 +100,7 @@ func simplifyLiteral(pass *analysis.Pass, typ reflect.Value, astType, x ast.Expr
 			if inner, ok := addr.X.(*ast.CompositeLit); ok {
 				if match(reflect.ValueOf(ptr.X), reflect.ValueOf(inner.Type)) {
 					var b bytes.Buffer
-					printer.Fprint(&b, pass.Fset, inner.Type)
+					printer.Fprint(&b, pass.Fset, inner.Type) // ignore error
 					// Account for the & by subtracting 1 from typ.Pos().
 					createDiagnostic(pass, inner.Type.Pos()-1, inner.Type.End(), "&"+b.String())
 				}

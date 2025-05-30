@@ -323,7 +323,7 @@ func (i *Instance) getFile(r *http.Request) any {
 
 func (i *Instance) getInfo(r *http.Request) any {
 	buf := &bytes.Buffer{}
-	i.PrintServerInfo(r.Context(), buf)
+	i.writeServerInfo(buf)
 	return template.HTML(buf.String())
 }
 

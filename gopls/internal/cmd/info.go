@@ -11,6 +11,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"sort"
@@ -95,8 +96,10 @@ func (v *version) Run(ctx context.Context, args ...string) error {
 	if v.JSON {
 		mode = debug.JSON
 	}
-
-	return debug.PrintVersionInfo(ctx, os.Stdout, v.app.verbose(), mode)
+	var buf bytes.Buffer
+	debug.WriteVersionInfo(&buf, v.app.verbose(), mode)
+	_, err := io.Copy(os.Stdout, &buf)
+	return err
 }
 
 // bug implements the bug command.
@@ -175,7 +178,7 @@ func (b *bug) Run(ctx context.Context, args ...string) error {
 		}
 		fmt.Fprintf(public, "\nPlease copy the full information printed by `gopls bug` here, if you are comfortable sharing it.\n\n")
 	}
-	debug.PrintVersionInfo(ctx, public, true, debug.Markdown)
+	debug.WriteVersionInfo(public, true, debug.Markdown)
 	body := public.String()
 	title := strings.Join(args, " ")
 	if !strings.HasPrefix(title, goplsBugPrefix) {

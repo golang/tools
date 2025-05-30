@@ -58,7 +58,7 @@ func TestMain(m *testing.M) {
 	bug.PanicOnBugs = true
 	testenv.ExitIfSmallMachine()
 	// Disable GOPACKAGESDRIVER, as it can cause spurious test failures.
-	os.Setenv("GOPACKAGESDRIVER", "off")
+	os.Setenv("GOPACKAGESDRIVER", "off") // ignore error
 	integration.FilterToolchainPathAndGOROOT()
 	os.Exit(m.Run())
 }

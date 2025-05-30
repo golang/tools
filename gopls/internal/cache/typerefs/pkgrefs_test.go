@@ -223,12 +223,12 @@ func importFromExportData(pkgPath, exportFile string) (*types.Package, error) {
 	}
 	r, err := gcexportdata.NewReader(file)
 	if err != nil {
-		file.Close()
+		file.Close() // ignore error
 		return nil, err
 	}
 	fset := token.NewFileSet()
 	tpkg, err := gcexportdata.Read(r, fset, make(map[string]*types.Package), pkgPath)
-	file.Close()
+	file.Close() // ignore error
 	if err != nil {
 		return nil, err
 	}

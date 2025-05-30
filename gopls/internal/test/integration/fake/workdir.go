@@ -295,7 +295,7 @@ func (w *Workdir) RenameFile(ctx context.Context, oldPath, newPath string) error
 		if err := robustio.RemoveAll(oldAbs); err != nil {
 			// If we failed to remove the old file, that may explain the Rename error too.
 			// Make a best effort to back out the write to the new path.
-			robustio.RemoveAll(newAbs)
+			robustio.RemoveAll(newAbs) // ignore error
 			return renameErr
 		}
 	}

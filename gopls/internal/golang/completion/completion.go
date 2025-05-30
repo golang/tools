@@ -137,13 +137,14 @@ func (i *CompletionItem) Snippet() string {
 // addConversion wraps the existing completionItem in a conversion expression.
 // Only affects the receiver's InsertText and snippet fields, not the Label.
 // An empty conv argument has no effect.
-func (i *CompletionItem) addConversion(c *completer, conv conversionEdits) error {
+func (i *CompletionItem) addConversion(c *completer, conv conversionEdits) {
 	if conv.prefix != "" {
 		// If we are in a selector, add an edit to place prefix before selector.
 		if sel := enclosingSelector(c.path, c.pos); sel != nil {
 			edits, err := c.editText(sel.Pos(), sel.Pos(), conv.prefix)
 			if err != nil {
-				return err
+				// safetoken failed: invalid token.Pos information in AST.
+				return
 			}
 			i.AdditionalTextEdits = append(i.AdditionalTextEdits, edits...)
 		} else {
@@ -157,8 +158,6 @@ func (i *CompletionItem) addConversion(c *completer, conv conversionEdits) error
 		i.InsertText += conv.suffix
 		i.snippet.WriteText(conv.suffix)
 	}
-
-	return nil
 }
 
 // Scoring constants are used for weighting the relevance of different candidates.
@@ -1457,7 +1456,7 @@ func (c *completer) selector(ctx context.Context, sel *ast.SelectorExpr) error {
 							var buf strings.Builder
 							buf.WriteString(name)
 							buf.WriteByte(' ')
-							cfg.Fprint(&buf, token.NewFileSet(), typ)
+							cfg.Fprint(&buf, token.NewFileSet(), typ) // ignore error
 							params = append(params, buf.String())
 						}
 

@@ -19,7 +19,7 @@ import (
 
 func TestRunTestsAndBenchmarks(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "out")
-	os.Setenv("TESTFILE", file)
+	os.Setenv("TESTFILE", file) // ignore error
 
 	const src = `
 -- go.mod --

@@ -20,7 +20,7 @@ func TestLicenses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tmp.Close()
+	tmp.Close() // ignore error
 
 	if out, err := exec.Command("./gen-licenses.sh", tmp.Name()).CombinedOutput(); err != nil {
 		t.Fatalf("generating licenses failed: %q, %v", out, err)

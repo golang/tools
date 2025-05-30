@@ -46,7 +46,7 @@ func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionE
 	// Run the server until cancellation.
 	go func() {
 		<-ctx.Done()
-		svr.Close()
+		svr.Close() // ignore error
 	}()
 	return svr.Serve(listener)
 }

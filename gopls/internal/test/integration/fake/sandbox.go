@@ -85,7 +85,7 @@ func NewSandbox(config *SandboxConfig) (_ *Sandbox, err error) {
 	defer func() {
 		// Clean up if we fail at any point in this constructor.
 		if err != nil {
-			sb.Close()
+			sb.Close() // ignore error
 		}
 	}()
 

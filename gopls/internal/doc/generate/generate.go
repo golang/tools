@@ -17,6 +17,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -500,9 +501,10 @@ func loadLenses(settingsPkg *packages.Package, defaults map[settings.CodeLensSou
 		}
 		return nil
 	}
-	addAll(golang.CodeLensSources(), "Go")
-	addAll(mod.CodeLensSources(), "go.mod")
-	return lenses, nil
+	err := errors.Join(
+		addAll(golang.CodeLensSources(), "Go"),
+		addAll(mod.CodeLensSources(), "go.mod"))
+	return lenses, err
 }
 
 func loadAnalyzers(analyzers []*settings.Analyzer, defaults *settings.Options) []*doc.Analyzer {

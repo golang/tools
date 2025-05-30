@@ -213,7 +213,9 @@ func formatTo(basename string, src []byte) {
 	formatted, err := format.Source(src)
 	if err != nil {
 		failed := filepath.Join("/tmp", basename+".fail")
-		os.WriteFile(failed, src, 0644)
+		if err := os.WriteFile(failed, src, 0644); err != nil {
+			log.Fatal(err)
+		}
 		log.Fatalf("formatting %s: %v (see %s)", basename, err, failed)
 	}
 	if err := os.WriteFile(filepath.Join(*outputdir, basename), formatted, 0644); err != nil {

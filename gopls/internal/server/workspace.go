@@ -121,7 +121,7 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 		}
 		newFolders = append(newFolders, newFolder)
 	}
-	s.session.UpdateFolders(ctx, newFolders)
+	s.session.UpdateFolders(ctx, newFolders) // ignore error
 
 	// The view set may have been updated above.
 	viewsToDiagnose := make(map[*cache.View][]protocol.DocumentURI)

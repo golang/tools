@@ -283,7 +283,7 @@ return nil
 	for k, v := range mx {
 		fname := filepath.Join(modcache, k)
 		dir := filepath.Dir(fname)
-		os.MkdirAll(dir, 0777)
+		os.MkdirAll(dir, 0777) // ignore error
 		if err := os.WriteFile(fname, v, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -333,7 +333,7 @@ return nil
 	for k, v := range mx {
 		fname := filepath.Join(modcache, k)
 		dir := filepath.Dir(fname)
-		os.MkdirAll(dir, 0777)
+		os.MkdirAll(dir, 0777) // ignore error
 		if err := os.WriteFile(fname, v, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -384,7 +384,7 @@ return nil
 	for k, v := range mx {
 		fname := filepath.Join(modcache, k)
 		dir := filepath.Dir(fname)
-		os.MkdirAll(dir, 0777)
+		os.MkdirAll(dir, 0777) // ignore error
 		if err := os.WriteFile(fname, v, 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -636,7 +636,7 @@ var A int
 	for k, v := range mx {
 		fname := filepath.Join(modcache, k)
 		dir := filepath.Dir(fname)
-		os.MkdirAll(dir, 0777)
+		os.MkdirAll(dir, 0777) // ignore error
 		if err := os.WriteFile(fname, v, 0644); err != nil {
 			t.Fatal(err)
 		}

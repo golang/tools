@@ -75,7 +75,7 @@ func (b *ForwardBinder) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) 
 	}
 	detached := xcontext.Detach(ctx)
 	go func() {
-		conn.Wait()
+		conn.Wait() // ignore error
 		if err := serverConn.Close(); err != nil {
 			event.Log(detached, fmt.Sprintf("closing remote connection: %v", err))
 		}

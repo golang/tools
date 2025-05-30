@@ -82,7 +82,7 @@ func run(pass *analysis.Pass) (any, error) {
 			return
 		}
 		var b bytes.Buffer
-		printer.Fprint(&b, pass.Fset, expr.High)
+		printer.Fprint(&b, pass.Fset, expr.High) // ignore error
 		pass.Report(analysis.Diagnostic{
 			Pos:     expr.High.Pos(),
 			End:     expr.High.End(),

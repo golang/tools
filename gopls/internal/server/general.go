@@ -221,7 +221,7 @@ func (s *server) Initialized(ctx context.Context, params *protocol.InitializedPa
 	s.stateMu.Unlock()
 
 	for _, not := range s.notifications {
-		s.client.ShowMessage(ctx, not)
+		s.client.ShowMessage(ctx, not) // ignore error
 	}
 	s.notifications = nil
 
@@ -652,7 +652,7 @@ func (s *server) Shutdown(ctx context.Context) error {
 	if s.state != serverShutDown {
 		// Wait for the webserver (if any) to finish.
 		if s.web != nil {
-			s.web.server.Shutdown(ctx)
+			s.web.server.Shutdown(ctx) // ignore error
 		}
 
 		// drop all the active views
@@ -674,7 +674,7 @@ func (s *server) Exit(ctx context.Context) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 
-	s.client.Close()
+	s.client.Close() // ignore error
 
 	if s.state != serverShutDown {
 		// TODO: We should be able to do better than this.
