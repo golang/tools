@@ -225,7 +225,7 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *as
 		return nil
 	}
 
-	concType, pointer := concreteType(arg, info)
+	concType, pointer := concreteType(info, arg)
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil
 	}
@@ -279,7 +279,7 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 		return nil, fmt.Errorf("pos %d not within return statement bounds: [%d-%d]", pos, ret.Pos(), ret.End())
 	}
 
-	concType, pointer := concreteType(ret.Results[returnIdx], info)
+	concType, pointer := concreteType(info, ret.Results[returnIdx])
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil, nil // result is not a named or *named or alias thereof
 	}
@@ -337,7 +337,7 @@ func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, p
 		ifaceNode = call.Fun
 		rhs = call.Args[0]
 	}
-	concType, pointer := concreteType(rhs, info)
+	concType, pointer := concreteType(info, rhs)
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil
 	}
@@ -392,7 +392,7 @@ func fromAssignStmt(fset *token.FileSet, info *types.Info, assign *ast.AssignStm
 	if ifaceObj == nil {
 		return nil
 	}
-	concType, pointer := concreteType(rhs, info)
+	concType, pointer := concreteType(info, rhs)
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil
 	}
@@ -441,7 +441,7 @@ func ifaceObjFromType(t types.Type) *types.TypeName {
 // method will return a nil *types.Named. The second return parameter
 // is a boolean that indicates whether the concreteType was defined as a
 // pointer or value.
-func concreteType(e ast.Expr, info *types.Info) (*types.Named, bool) {
+func concreteType(info *types.Info, e ast.Expr) (*types.Named, bool) {
 	tv, ok := info.Types[e]
 	if !ok {
 		return nil, false
@@ -456,4 +456,79 @@ func concreteType(e ast.Expr, info *types.Info) (*types.Named, bool) {
 		return nil, false
 	}
 	return named, isPtr
+}
+
+// GetFieldStubInfo finds innermost enclosing selector x.f where x is a named struct type or a pointer to a struct type.
+func GetFieldStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, start, end token.Pos) *StructFieldInfo {
+	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	for _, node := range path {
+		s, ok := node.(*ast.SelectorExpr)
+		if ok {
+			// If recvExpr is a package name, compiler error would be
+			// e.g., "undefined: http.bar", thus will not hit this code path.
+			recvExpr := s.X
+			recvNamed, _ := concreteType(info, recvExpr)
+
+			if recvNamed == nil || recvNamed.Obj().Pkg() == nil {
+				return nil
+			}
+
+			structType, ok := recvNamed.Underlying().(*types.Struct)
+			if !ok {
+				break
+			}
+
+			// Have: x.f where x has a named struct type.
+			return &StructFieldInfo{
+				Fset:       fset,
+				Expr:       s,
+				Named:      recvNamed,
+				info:       info,
+				path:       path,
+				structType: structType,
+			}
+		}
+	}
+
+	return nil
+}
+
+// StructFieldInfo describes f field in x.f where x has a named struct type
+type StructFieldInfo struct {
+	// Fset is a file set to provide a file where the struct field is accessed
+	Fset *token.FileSet
+	// Expr is a selector expression
+	Expr *ast.SelectorExpr
+	// Named is a selected struct type
+	Named *types.Named
+
+	info *types.Info
+	// path is a node path to SelectorExpr
+	path []ast.Node
+	// structType is an underlying struct type, makes sure the receiver is a struct
+	structType *types.Struct
+}
+
+// Emit writes to out the missing field based on type info.
+func (si *StructFieldInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
+	if si.Expr == nil || si.Expr.Sel == nil {
+		return fmt.Errorf("invalid selector expression")
+	}
+
+	// Get types from context at the selector expression position
+	typesFromContext := typesutil.TypesFromContext(si.info, si.path, si.Expr.Pos())
+
+	// Default to any if we couldn't determine the type from context
+	var fieldType types.Type
+	if len(typesFromContext) > 0 {
+		fieldType = typesFromContext[0]
+	} else {
+		fieldType = types.Universe.Lookup("any").Type()
+	}
+
+	fmt.Fprintf(out, "\n\t%s %s", si.Expr.Sel.Name, types.TypeString(fieldType, qual))
+	if si.structType.NumFields() == 0 {
+		out.WriteByte('\n')
+	}
+	return nil
 }
