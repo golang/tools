@@ -40,11 +40,11 @@ func NewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (*pr
 			continue
 		}
 		if group := golang.CopyrightComment(pgf.File); group != nil {
-			start, end, err := pgf.NodeOffsets(group)
+			text, err := pgf.NodeText(group)
 			if err != nil {
 				continue
 			}
-			buf.Write(pgf.Src[start:end])
+			buf.Write(text)
 			buf.WriteString("\n\n")
 			break
 		}

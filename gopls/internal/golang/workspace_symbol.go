@@ -499,12 +499,9 @@ func matchFile(store *symbolStore, symbolizer symbolizer, matcher matcherFunc, f
 		si := &scoredSymbol{
 			score: score,
 			info: protocol.SymbolInformation{
-				Name: strings.Join(symbolParts, ""),
-				Kind: sym.Kind,
-				Location: protocol.Location{
-					URI:   f.uri,
-					Range: sym.Range,
-				},
+				Name:          strings.Join(symbolParts, ""),
+				Kind:          sym.Kind,
+				Location:      f.uri.Location(sym.Range),
 				ContainerName: string(f.mp.PkgPath),
 			},
 		}

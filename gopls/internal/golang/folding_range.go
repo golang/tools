@@ -174,12 +174,12 @@ func getLineFoldingRange(pgf *parsego.File, open, close token.Pos, lineFoldingOn
 
 	// isOnlySpaceBetween returns true if there are only space characters between "from" and "to".
 	isOnlySpaceBetween := func(from token.Pos, to token.Pos) bool {
-		start, end, err := safetoken.Offsets(pgf.Tok, from, to)
+		text, err := pgf.PosText(from, to)
 		if err != nil {
 			bug.Reportf("failed to get offsets: %s", err) // can't happen
 			return false
 		}
-		return len(bytes.TrimSpace(pgf.Src[start:end])) == 0
+		return len(bytes.TrimSpace(text)) == 0
 	}
 
 	nextLine := safetoken.Line(pgf.Tok, open) + 1

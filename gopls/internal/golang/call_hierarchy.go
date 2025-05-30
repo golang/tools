@@ -88,10 +88,7 @@ func IncomingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 			event.Error(ctx, fmt.Sprintf("error getting enclosing node for %q", ref.pkgPath), err)
 			continue
 		}
-		loc := protocol.Location{
-			URI:   callItem.URI,
-			Range: callItem.Range,
-		}
+		loc := callItem.URI.Location(callItem.Range)
 		call, ok := incomingCalls[loc]
 		if !ok {
 			call = &protocol.CallHierarchyIncomingCall{From: callItem}

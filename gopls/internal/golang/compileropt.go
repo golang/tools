@@ -149,11 +149,8 @@ func parseDetailsFile(filename string, options *settings.Options) (protocol.Docu
 		var related []protocol.DiagnosticRelatedInformation
 		for _, ri := range d.RelatedInformation {
 			related = append(related, protocol.DiagnosticRelatedInformation{
-				Location: protocol.Location{
-					URI:   ri.Location.URI,
-					Range: zeroIndexedRange(ri.Location.Range),
-				},
-				Message: ri.Message,
+				Location: ri.Location.URI.Location(zeroIndexedRange(ri.Location.Range)),
+				Message:  ri.Message,
 			})
 		}
 		diagnostic := &cache.Diagnostic{

@@ -1724,7 +1724,7 @@ func (e *Editor) Hover(ctx context.Context, loc protocol.Location) (*protocol.Ma
 	if resp == nil {
 		return nil, protocol.Location{}, nil // e.g. no selected symbol
 	}
-	return &resp.Contents, protocol.Location{URI: loc.URI, Range: resp.Range}, nil
+	return &resp.Contents, loc.URI.Location(resp.Range), nil
 }
 
 func (e *Editor) DocumentLink(ctx context.Context, path string) ([]protocol.DocumentLink, error) {

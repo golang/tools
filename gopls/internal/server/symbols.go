@@ -52,10 +52,7 @@ func (s *server) DocumentSymbol(ctx context.Context, params *protocol.DocumentSy
 			Name:       s.Name,
 			Kind:       s.Kind,
 			Deprecated: s.Deprecated,
-			Location: protocol.Location{
-				URI:   params.TextDocument.URI,
-				Range: s.Range,
-			},
+			Location:   params.TextDocument.URI.Location(s.Range),
 		}
 	}
 	return symbols, nil

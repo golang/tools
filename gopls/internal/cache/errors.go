@@ -168,11 +168,8 @@ func encodeDiagnostics(srcDiags []*Diagnostic) []byte {
 			for uri, srcEdits := range srcFix.Edits {
 				for _, srcEdit := range srcEdits {
 					gobFix.TextEdits = append(gobFix.TextEdits, gobTextEdit{
-						Location: protocol.Location{
-							URI:   uri,
-							Range: srcEdit.Range,
-						},
-						NewText: []byte(srcEdit.NewText),
+						Location: uri.Location(srcEdit.Range),
+						NewText:  []byte(srcEdit.NewText),
 					})
 				}
 			}
@@ -191,10 +188,7 @@ func encodeDiagnostics(srcDiags []*Diagnostic) []byte {
 			gobRelated = append(gobRelated, gobRel)
 		}
 		gobDiag := gobDiagnostic{
-			Location: protocol.Location{
-				URI:   srcDiag.URI,
-				Range: srcDiag.Range,
-			},
+			Location:       srcDiag.URI.Location(srcDiag.Range),
 			Severity:       srcDiag.Severity,
 			Code:           srcDiag.Code,
 			CodeHref:       srcDiag.CodeHref,

@@ -320,11 +320,11 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		// Search for something that looks like a copyright header, to replicate
 		// in the new file.
 		if c := CopyrightComment(pgf.File); c != nil {
-			start, end, err := pgf.NodeOffsets(c)
+			text, err := pgf.NodeText(c)
 			if err != nil {
 				return nil, err
 			}
-			header.Write(pgf.Src[start:end])
+			header.Write(text)
 			// One empty line between copyright header and following.
 			header.WriteString("\n\n")
 		}
@@ -332,11 +332,11 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		// If this test file was created by gopls, add build constraints
 		// matching the non-test file.
 		if c := buildConstraintComment(pgf.File); c != nil {
-			start, end, err := pgf.NodeOffsets(c)
+			text, err := pgf.NodeText(c)
 			if err != nil {
 				return nil, err
 			}
-			header.Write(pgf.Src[start:end])
+			header.Write(text)
 			// One empty line between build constraint and following.
 			header.WriteString("\n\n")
 		}

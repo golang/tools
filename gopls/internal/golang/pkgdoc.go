@@ -49,7 +49,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -577,15 +576,12 @@ window.addEventListener('load', function() {
 					if !to.IsValid() {
 						bug.Reportf("invalid Pos")
 					}
-					start, err := safetoken.Offset(file.Tok, pos)
+					text, err := file.PosText(pos, to)
 					if err != nil {
-						bug.Reportf("invalid start Pos: %v", err)
+						bug.Reportf("invalid pos range: %v", err)
+						return
 					}
-					end, err := safetoken.Offset(file.Tok, to)
-					if err != nil {
-						bug.Reportf("invalid end Pos: %v", err)
-					}
-					buf.WriteString(escape(string(file.Src[start:end])))
+					buf.WriteString(escape(string(text)))
 					pos = to
 				}
 				ast.Inspect(n, func(n ast.Node) bool {

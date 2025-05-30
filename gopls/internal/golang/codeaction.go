@@ -41,8 +41,7 @@ import (
 //
 // See ../protocol/codeactionkind.go for some code action theory.
 func CodeActions(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, diagnostics []protocol.Diagnostic, enabled func(protocol.CodeActionKind) bool, trigger protocol.CodeActionTriggerKind) (actions []protocol.CodeAction, _ error) {
-
-	loc := protocol.Location{URI: fh.URI(), Range: rng}
+	loc := fh.URI().Location(rng)
 
 	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
 	if err != nil {
@@ -513,11 +512,11 @@ func refactorExtractVariableAll(ctx context.Context, req *codeActionsRequest) er
 	// Don't suggest if only one expr is found,
 	// otherwise it will duplicate with [refactorExtractVariable]
 	if exprs, err := canExtractVariable(info, req.pgf.Cursor, req.start, req.end, true); err == nil && len(exprs) > 1 {
-		start, end, err := req.pgf.NodeOffsets(exprs[0])
+		text, err := req.pgf.NodeText(exprs[0])
 		if err != nil {
 			return err
 		}
-		desc := string(req.pgf.Src[start:end])
+		desc := string(text)
 		if len(desc) >= 40 || strings.Contains(desc, "\n") {
 			desc = astutil.NodeDescription(exprs[0])
 		}

@@ -89,6 +89,11 @@ func (pgf *File) PosLocation(start, end token.Pos) (protocol.Location, error) {
 	return pgf.Mapper.PosLocation(pgf.Tok, start, end)
 }
 
+// PosText returns the source text for the token.Pos interval in this file.
+func (pgf *File) PosText(start, end token.Pos) ([]byte, error) {
+	return pgf.Mapper.PosText(pgf.Tok, start, end)
+}
+
 // NodeRange returns a protocol Range for the ast.Node interval in this file.
 func (pgf *File) NodeRange(node ast.Node) (protocol.Range, error) {
 	return pgf.Mapper.NodeRange(pgf.Tok, node)
@@ -102,6 +107,11 @@ func (pgf *File) NodeOffsets(node ast.Node) (start int, end int, _ error) {
 // NodeLocation returns a protocol Location for the ast.Node interval in this file.
 func (pgf *File) NodeLocation(node ast.Node) (protocol.Location, error) {
 	return pgf.Mapper.PosLocation(pgf.Tok, node.Pos(), node.End())
+}
+
+// NodeText returns the source text for the ast.Node interval in this file.
+func (pgf *File) NodeText(node ast.Node) ([]byte, error) {
+	return pgf.Mapper.NodeText(pgf.Tok, node)
 }
 
 // RangePos parses a protocol Range back into the go/token domain.

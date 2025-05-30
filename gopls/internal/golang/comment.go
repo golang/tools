@@ -103,12 +103,12 @@ func parseDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types.O
 		end = comment.End()
 	}
 
-	offsetStart, offsetEnd, err := safetoken.Offsets(pgf.Tok, start, end)
+	textBytes, err := pgf.PosText(start, end)
 	if err != nil {
 		return nil, protocol.Range{}, err
 	}
 
-	text := string(pgf.Src[offsetStart:offsetEnd])
+	text := string(textBytes)
 	lineOffset := int(pos - start)
 
 	for _, idx := range docLinkRegex.FindAllStringSubmatchIndex(text, -1) {

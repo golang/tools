@@ -2129,11 +2129,11 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 			if i > 0 && len(diags) > 0 {
 				primary := diags[0]
 				primary.Related = append(primary.Related, protocol.DiagnosticRelatedInformation{
-					Location: protocol.Location{URI: diag.URI, Range: diag.Range},
+					Location: diag.URI.Location(diag.Range),
 					Message:  related[i].Msg, // use the unmodified secondary error for related errors.
 				})
 				diag.Related = []protocol.DiagnosticRelatedInformation{{
-					Location: protocol.Location{URI: primary.URI, Range: primary.Range},
+					Location: primary.URI.Location(primary.Range),
 				}}
 			}
 			diags = append(diags, diag)

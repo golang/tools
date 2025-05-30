@@ -153,21 +153,21 @@ func ExtractToNewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 
 	var buf bytes.Buffer
 	if c := CopyrightComment(pgf.File); c != nil {
-		start, end, err := pgf.NodeOffsets(c)
+		text, err := pgf.NodeText(c)
 		if err != nil {
 			return nil, err
 		}
-		buf.Write(pgf.Src[start:end])
+		buf.Write(text)
 		// One empty line between copyright header and following.
 		buf.WriteString("\n\n")
 	}
 
 	if c := buildConstraintComment(pgf.File); c != nil {
-		start, end, err := pgf.NodeOffsets(c)
+		text, err := pgf.NodeText(c)
 		if err != nil {
 			return nil, err
 		}
-		buf.Write(pgf.Src[start:end])
+		buf.Write(text)
 		// One empty line between build constraint and following.
 		buf.WriteString("\n\n")
 	}

@@ -163,7 +163,7 @@ func (m *Mapper) OffsetLocation(start, end int) (Location, error) {
 	if err != nil {
 		return Location{}, err
 	}
-	return m.RangeLocation(rng), nil
+	return m.URI.Location(rng), nil
 }
 
 // OffsetRange converts a byte-offset interval to a protocol (UTF-16) range.
@@ -324,7 +324,7 @@ func (m *Mapper) PosLocation(tf *token.File, start, end token.Pos) (Location, er
 	if err != nil {
 		return Location{}, err
 	}
-	return m.RangeLocation(rng), nil
+	return m.URI.Location(rng), nil
 }
 
 // PosRange converts a token range to a protocol (UTF-16) range.
@@ -336,14 +336,23 @@ func (m *Mapper) PosRange(tf *token.File, start, end token.Pos) (Range, error) {
 	return m.OffsetRange(startOffset, endOffset)
 }
 
+// PosText returns the source text for the token range.
+func (m *Mapper) PosText(tf *token.File, start, end token.Pos) ([]byte, error) {
+	startOffset, endOffset, err := safetoken.Offsets(tf, start, end)
+	if err != nil {
+		return nil, err
+	}
+	return m.Content[startOffset:endOffset], nil
+}
+
 // NodeRange converts a syntax node range to a protocol (UTF-16) range.
 func (m *Mapper) NodeRange(tf *token.File, node ast.Node) (Range, error) {
 	return m.PosRange(tf, node.Pos(), node.End())
 }
 
-// RangeLocation pairs a protocol Range with its URI, in a Location.
-func (m *Mapper) RangeLocation(rng Range) Location {
-	return Location{URI: m.URI, Range: rng}
+// NodeText returns the source text for syntax node range.
+func (m *Mapper) NodeText(tf *token.File, node ast.Node) ([]byte, error) {
+	return m.PosText(tf, node.Pos(), node.End())
 }
 
 // LocationTextDocumentPositionParams converts its argument to its result.

@@ -1817,7 +1817,7 @@ func sortDocumentHighlights(s []protocol.DocumentHighlight) {
 func highlightAllMarker(mark marker, all ...protocol.DocumentHighlight) {
 	sortDocumentHighlights(all)
 	for _, src := range all {
-		loc := protocol.Location{URI: mark.uri(), Range: src.Range}
+		loc := mark.uri().Location(src.Range)
 		got := mark.run.env.DocumentHighlight(loc)
 		sortDocumentHighlights(got)
 
@@ -1828,7 +1828,7 @@ func highlightAllMarker(mark marker, all ...protocol.DocumentHighlight) {
 }
 
 func highlightMarker(mark marker, src protocol.DocumentHighlight, dsts ...protocol.DocumentHighlight) {
-	loc := protocol.Location{URI: mark.uri(), Range: src.Range}
+	loc := mark.uri().Location(src.Range)
 	got := mark.run.env.DocumentHighlight(loc)
 
 	sortDocumentHighlights(got)
@@ -2198,7 +2198,7 @@ func documentLinkMarker(mark marker, g *Golden) {
 			mark.errorf("%s: nil link target", l.Range)
 			continue
 		}
-		loc := protocol.Location{URI: mark.uri(), Range: l.Range}
+		loc := mark.uri().Location(l.Range)
 		fmt.Fprintln(&b, mark.run.fmtLocForGolden(loc), *l.Target)
 	}
 
@@ -2438,13 +2438,6 @@ func implementationMarker(mark marker, src protocol.Location, want ...protocol.L
 	}
 }
 
-func itemLocation(item protocol.CallHierarchyItem) protocol.Location {
-	return protocol.Location{
-		URI:   item.URI,
-		Range: item.Range,
-	}
-}
-
 func mcpToolMarker(mark marker, tool string, args string, loc protocol.Location) {
 	var toolArgs map[string]any
 	if err := json.Unmarshal([]byte(args), &toolArgs); err != nil {
@@ -2494,7 +2487,7 @@ func incomingCallsMarker(mark marker, src protocol.Location, want ...protocol.Lo
 		}
 		var locs []protocol.Location
 		for _, call := range calls {
-			locs = append(locs, itemLocation(call.From))
+			locs = append(locs, call.From.URI.Location(call.From.Range))
 		}
 		return locs, nil
 	}
@@ -2509,7 +2502,7 @@ func outgoingCallsMarker(mark marker, src protocol.Location, want ...protocol.Lo
 		}
 		var locs []protocol.Location
 		for _, call := range calls {
-			locs = append(locs, itemLocation(call.To))
+			locs = append(locs, call.To.URI.Location(call.To.Range))
 		}
 		return locs, nil
 	}
@@ -2530,7 +2523,8 @@ func callHierarchy(mark marker, src protocol.Location, getCalls callHierarchyFun
 		mark.errorf("PrepareCallHierarchy returned %d items, want exactly 1", nitems)
 		return
 	}
-	if loc := itemLocation(items[0]); loc != src {
+	item := items[0]
+	if loc := item.URI.Location(item.Range); loc != src {
 		mark.errorf("PrepareCallHierarchy found call %v, want %v", loc, src)
 		return
 	}
@@ -2641,7 +2635,7 @@ func typeHierarchy(mark marker, src protocol.Location, want []protocol.Location,
 	}
 	got := []protocol.Location{} // non-nil; cmp.Diff cares
 	for _, item := range items {
-		got = append(got, protocol.Location{URI: item.URI, Range: item.Range})
+		got = append(got, item.URI.Location(item.Range))
 	}
 	if d := cmp.Diff(want, got); d != "" {
 		mark.errorf("type hierarchy: unexpected results (-want +got):\n%s", d)

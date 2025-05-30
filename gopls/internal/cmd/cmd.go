@@ -887,7 +887,7 @@ func (f *cmdFile) spanLocation(s span) (protocol.Location, error) {
 	if err != nil {
 		return protocol.Location{}, err
 	}
-	return f.mapper.RangeLocation(rng), nil
+	return f.mapper.URI.Location(rng), nil
 }
 
 // spanRange converts a (UTF-8) span to a protocol (UTF-16) range.

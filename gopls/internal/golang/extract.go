@@ -1223,11 +1223,11 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		for i, br := range freeBranches {
 			// Preserve spacing at the beginning of the line containing the branch statement.
 			startPos := tok.LineStart(safetoken.Line(tok, br.Pos()))
-			start, end, err := safetoken.Offsets(tok, startPos, br.End())
+			text, err := pgf.PosText(startPos, br.End())
 			if err != nil {
 				return nil, nil, err
 			}
-			fmt.Fprintf(&fullReplacement, "case %d:\n%s%s", i+1, pgf.Src[start:end], newLineIndent)
+			fmt.Fprintf(&fullReplacement, "case %d:\n%s%s", i+1, text, newLineIndent)
 		}
 		fullReplacement.WriteString("}")
 	}

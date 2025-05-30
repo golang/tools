@@ -96,7 +96,7 @@ func Definition(snapshot *cache.Snapshot, fh file.Handle, loc protocol.Position)
 			if !s.vardef || s.name != sym {
 				continue
 			}
-			ans = append(ans, protocol.Location{URI: k, Range: p.Range(s.start, s.length)})
+			ans = append(ans, k.Location(p.Range(s.start, s.length)))
 		}
 	}
 	return ans, nil
@@ -149,7 +149,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 			if s.vardef && !params.Context.IncludeDeclaration {
 				continue
 			}
-			ans = append(ans, protocol.Location{URI: k, Range: p.Range(s.start, s.length)})
+			ans = append(ans, k.Location(p.Range(s.start, s.length)))
 		}
 	}
 	// do these need to be sorted? (a.files is a map)
