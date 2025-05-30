@@ -330,20 +330,35 @@ func (st *state) inline() (*Result, error) {
 			}
 		}
 		// Add new imports.
+		// Set their position to after the last position of the old imports, to keep
+		// comments on the old imports from moving.
+		lastPos := token.NoPos
+		if lastSpec := last(importDecl.Specs); lastSpec != nil {
+			lastPos = lastSpec.Pos()
+			if c := lastSpec.(*ast.ImportSpec).Comment; c != nil {
+				lastPos = c.Pos()
+			}
+		}
 		for _, imp := range newImports {
 			// Check that the new imports are accessible.
 			path, _ := strconv.Unquote(imp.spec.Path.Value)
 			if !analysisinternal.CanImport(caller.Types.Path(), path) {
 				return nil, fmt.Errorf("can't inline function %v as its body refers to inaccessible package %q", callee, path)
 			}
+			if lastPos.IsValid() {
+				lastPos++
+				imp.spec.Path.ValuePos = lastPos
+			}
 			importDecl.Specs = append(importDecl.Specs, imp.spec)
 		}
+
 		var out bytes.Buffer
 		out.Write(before)
 		commented := &printer.CommentedNode{
 			Node:     importDecl,
 			Comments: comments,
 		}
+
 		if err := format.Node(&out, fset, commented); err != nil {
 			logf("failed to format new importDecl: %v", err) // debugging
 			return nil, err
@@ -354,7 +369,6 @@ func (st *state) inline() (*Result, error) {
 			return nil, err
 		}
 	}
-
 	// Delete imports referenced only by caller.Call.Fun.
 	for _, oldImport := range res.oldImports {
 		specToDelete := oldImport.spec

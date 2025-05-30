@@ -28,7 +28,7 @@ import (
 	"io"
 
 	// This is an import of c.
-	"testdata/c"
+	"testdata/c" // yes, of c
 )
 
 var (
@@ -52,7 +52,7 @@ import (
 
 	// This is an import of c.
 	"testdata/b"
-	"testdata/c"
+	"testdata/c" // yes, of c
 )
 
 var (
