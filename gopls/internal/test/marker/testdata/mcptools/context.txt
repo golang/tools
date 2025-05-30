@@ -7,21 +7,39 @@ This test exercises mcp tool context.
 -- go.mod --
 module example.com
 
--- commenttest/main.go --
+-- a/main.go --
+// File doc for main.go part 1.
 package main
 
+// File doc for main.go part 2.
 import(
-    "example.com/commenttest/comment"
+    "example.com/a/comment"
 )
 
-func testComment() { //@loc(comment, "test")
+// File doc for main.go part 3.
+
+// doc comment for func foo.
+func foo() {//@mcptool("context", `{}`, "foo", output=withComment)
     comment.Foo("", 0)
-    function.Foo(0, "")
 }
 
-//@mcptool("context", `{}`, comment, output=withComment)
+-- a/a.go --
+// File doc for a.go.
+package main
 
--- commenttest/comment/doc.go --
+// doc comment for func a.
+func a () {}
+
+// doc comment for type b.
+type b struct {}
+
+// doc comment for const c.
+const c = ""
+
+// doc comment for var d.
+var d int
+
+-- a/comment/doc.go --
 // Copyright 2025 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -31,7 +49,7 @@ Package doc for package comment.
 */
 package comment
 
--- commenttest/comment/comment.go --
+-- a/comment/comment.go --
 // File doc for comment.go part 1.
 package comment
 
@@ -43,7 +61,7 @@ import (
 
 // File doc for comment.go part 3.
 
-// Func doc for comment.Foo
+// doc comment for comment.Foo
 func Foo(foo string, _ int) {
     myfmt.Printf("%s", foo)
 }
@@ -53,16 +71,51 @@ func Foo(foo string, _ int) {
 -- @withComment --
 Code blocks are delimited by --->...<--- markers.
 
+Current package "example.com/a" (package main) declares the following symbols:
+
+main.go (current file):
+--->
+// File doc for main.go part 1.
+package main
+
+// File doc for main.go part 2.
+import(
+    "example.com/a/comment"
+)
+
+// File doc for main.go part 3.
+
+// doc comment for func foo.
+func foo()
+
+<---
+
+a.go:
+--->
+// File doc for a.go.
+package main
+
+// doc comment for func a.
+func a ()
+
+// doc comment for type b.
+type b struct {}
+// doc comment for const c.
+const c = ""
+// doc comment for var d.
+var d int
+<---
+
 Current file "main.go" contains this import declaration:
 --->
 import(
-    "example.com/commenttest/comment"
+    "example.com/a/comment"
 )
 <---
 
 The imported packages declare the following symbols:
 
-example.com/commenttest/comment (package comment)
+"example.com/a/comment" (package comment)
 comment.go:
 --->
 // File doc for comment.go part 1.
@@ -76,7 +129,7 @@ import (
 
 // File doc for comment.go part 3.
 
-// Func doc for comment.Foo
+// doc comment for comment.Foo
 func Foo(foo string, _ int)
 
 <---
@@ -90,20 +143,18 @@ package comment
 
 <---
 
--- functiontest/main.go --
+-- b/main.go --
 package main
 
 import(
-    "example.com/functiontest/function"
+    "example.com/b/function"
 )
 
-func testFunction() { //@loc(function, "test")
+func testFunction() {//@mcptool("context", `{}`, "test", output=withFunction)
     function.Foo(0, "")
 }
 
-//@mcptool("context", `{}`, function, output=withFunction)
-
--- functiontest/function/function.go --
+-- b/function/function.go --
 package function
 
 func Foo(int, string) {}
@@ -125,16 +176,30 @@ func (*Exported) Exported(int) {}
 -- @withFunction --
 Code blocks are delimited by --->...<--- markers.
 
+Current package "example.com/b" (package main) declares the following symbols:
+
+main.go (current file):
+--->
+package main
+
+import(
+    "example.com/b/function"
+)
+
+func testFunction()
+
+<---
+
 Current file "main.go" contains this import declaration:
 --->
 import(
-    "example.com/functiontest/function"
+    "example.com/b/function"
 )
 <---
 
 The imported packages declare the following symbols:
 
-example.com/functiontest/function (package function)
+"example.com/b/function" (package function)
 function.go:
 --->
 package function
@@ -147,18 +212,16 @@ func (*Exported) Exported(int)
 
 <---
 
--- typetest/main.go --
+-- c/main.go --
 package main
 
 import(
-    "example.com/typetest/types"
+    "example.com/c/types"
 )
 
-var x types.Exported //@loc(types, "x")
+var x types.Exported //@mcptool("context", `{}`, "x", output=withType)
 
-//@mcptool("context", `{}`, types, output=withType)
-
--- typetest/types/types.go --
+-- c/types/types.go --
 package types
 
 // Doc for exported.
@@ -192,16 +255,29 @@ type (
 -- @withType --
 Code blocks are delimited by --->...<--- markers.
 
+Current package "example.com/c" (package main) declares the following symbols:
+
+main.go (current file):
+--->
+package main
+
+import(
+    "example.com/c/types"
+)
+
+var x types.Exported
+<---
+
 Current file "main.go" contains this import declaration:
 --->
 import(
-    "example.com/typetest/types"
+    "example.com/c/types"
 )
 <---
 
 The imported packages declare the following symbols:
 
-example.com/typetest/types (package types)
+"example.com/c/types" (package types)
 types.go:
 --->
 package types
@@ -229,18 +305,16 @@ type (
 
 <---
 
--- valuetest/main.go --
+-- d/main.go --
 package main
 
 import(
-    "example.com/valuetest/values"
+    "example.com/d/values"
 )
 
-var y values.ConstFoo //@loc(values, "y")
+var y values.ConstFoo //@mcptool("context", `{}`, "y", output=withValue)
 
-//@mcptool("context", `{}`, values, output=withValue)
-
--- valuetest/values/consts.go --
+-- d/values/consts.go --
 package values
 
 const (
@@ -260,7 +334,7 @@ const ConstExported = "Exported" // comment for ConstExported
 // doc for constUnexported
 var constUnexported = "unexported" // comment for constUnexported
 
--- valuetest/values/vars.go --
+-- d/values/vars.go --
 package values
 
 var (
@@ -283,16 +357,29 @@ var varUnexported = "unexported" // comment for varUnexported
 -- @withValue --
 Code blocks are delimited by --->...<--- markers.
 
+Current package "example.com/d" (package main) declares the following symbols:
+
+main.go (current file):
+--->
+package main
+
+import(
+    "example.com/d/values"
+)
+
+var y values.ConstFoo
+<---
+
 Current file "main.go" contains this import declaration:
 --->
 import(
-    "example.com/valuetest/values"
+    "example.com/d/values"
 )
 <---
 
 The imported packages declare the following symbols:
 
-example.com/valuetest/values (package values)
+"example.com/d/values" (package values)
 consts.go:
 --->
 package values
@@ -323,5 +410,80 @@ var (
 // doc for VarExported
 var VarExported = "Exported" // comment for VarExported
 
+<---
+
+-- e/main.go --
+package main
+
+func main() {} //@mcptool("context", `{}`, "main", output=samePackage)
+
+-- e/foo.go --
+package main
+
+var (
+    foo string
+    Foo string
+)
+
+-- e/bar.go --
+package main
+
+const (
+    bar = ""
+    Bar = ""
+)
+
+-- e/baz.go --
+package main
+
+func baz(int) string {
+    return ""
+}
+
+func Baz(string) int {
+    return 0
+}
+
+-- @samePackage --
+Code blocks are delimited by --->...<--- markers.
+
+Current package "example.com/e" (package main) declares the following symbols:
+
+main.go (current file):
+--->
+package main
+
+func main()
+
+<---
+
+bar.go:
+--->
+package main
+
+const (
+    bar = ""
+    Bar = ""
+)
+<---
+
+baz.go:
+--->
+package main
+
+func baz(int) string
+
+func Baz(string) int
+
+<---
+
+foo.go:
+--->
+package main
+
+var (
+    foo string
+    Foo string
+)
 <---
 

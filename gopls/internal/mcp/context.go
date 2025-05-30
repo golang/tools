@@ -24,7 +24,6 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/mcp"
 )
 
@@ -53,10 +52,90 @@ func contextHandler(ctx context.Context, session *cache.Session, params *mcp.Cal
 
 	var result strings.Builder
 	result.WriteString("Code blocks are delimited by --->...<--- markers.\n\n")
-	// TODO(hxjiang): consider making the context tool best effort. Ignore
-	// non-critical errors.
-	if err := writePackageSummary(ctx, snapshot, pkg, pgf, &result); err != nil {
-		return nil, err
+
+	// TODO(hxjiang): add context based on location's range.
+
+	fmt.Fprintf(&result, "Current package %q (package %s) declares the following symbols:\n\n", pkg.Metadata().PkgPath, pkg.Metadata().Name)
+	// Write context of the current file.
+	{
+		fmt.Fprintf(&result, "%s (current file):\n", filepath.Base(pgf.URI.Path()))
+		result.WriteString("--->\n")
+		if err := writeFileSummary(ctx, snapshot, pgf.URI, &result, false); err != nil {
+			return nil, err
+		}
+		result.WriteString("<---\n\n")
+	}
+
+	// Write context of the rest of the files in the current package.
+	{
+		for _, file := range pkg.CompiledGoFiles() {
+			if file.URI == pgf.URI {
+				continue
+			}
+
+			fmt.Fprintf(&result, "%s:\n", filepath.Base(file.URI.Path()))
+			result.WriteString("--->\n")
+			if err := writeFileSummary(ctx, snapshot, file.URI, &result, false); err != nil {
+				return nil, err
+			}
+			result.WriteString("<---\n\n")
+		}
+	}
+
+	// Write dependencies context of current file.
+	if len(pgf.File.Imports) > 0 {
+		// Write import decls of the current file.
+		{
+			fmt.Fprintf(&result, "Current file %q contains this import declaration:\n", filepath.Base(pgf.URI.Path()))
+			result.WriteString("--->\n")
+			// Add all import decl to output including all floating comment by
+			// using GenDecl's start and end position.
+			for _, decl := range pgf.File.Decls {
+				genDecl, ok := decl.(*ast.GenDecl)
+				if !ok || genDecl.Tok != token.IMPORT {
+					continue
+				}
+
+				text, err := pgf.NodeText(genDecl)
+				if err != nil {
+					return nil, err
+				}
+
+				result.Write(text)
+				result.WriteString("\n")
+			}
+			result.WriteString("<---\n\n")
+		}
+
+		// Write summaries from imported packages.
+		{
+			result.WriteString("The imported packages declare the following symbols:\n\n")
+			for _, imp := range pgf.File.Imports {
+				importPath := metadata.UnquoteImportPath(imp)
+				if importPath == "" {
+					continue
+				}
+
+				impID := pkg.Metadata().DepsByImpPath[importPath]
+				if impID == "" {
+					continue // ignore error
+				}
+				impMetadata := snapshot.Metadata(impID)
+				if impMetadata == nil {
+					continue // ignore error
+				}
+
+				fmt.Fprintf(&result, "%q (package %s)\n", importPath, impMetadata.Name)
+				for _, f := range impMetadata.CompiledGoFiles {
+					fmt.Fprintf(&result, "%s:\n", filepath.Base(f.Path()))
+					result.WriteString("--->\n")
+					if err := writeFileSummary(ctx, snapshot, f, &result, true); err != nil {
+						return nil, err
+					}
+					result.WriteString("<---\n\n")
+				}
+			}
+		}
 	}
 
 	return &mcp.CallToolResult{
@@ -66,246 +145,213 @@ func contextHandler(ctx context.Context, session *cache.Session, params *mcp.Cal
 	}, nil
 }
 
-// writePackageSummary writes the package summaries to the bytes buffer based on
-// the input import specs.
-func writePackageSummary(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, out *strings.Builder) error {
-	if len(pgf.File.Imports) == 0 {
-		return nil
+// writeFileSummary writes the file summary to the string builder based on
+// the input file URI.
+func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.DocumentURI, out *strings.Builder, onlyExported bool) error {
+	fh, err := snapshot.ReadFile(ctx, f)
+	if err != nil {
+		return err
+	}
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
+	if err != nil {
+		return err
 	}
 
-	fmt.Fprintf(out, "Current file %q contains this import declaration:\n", filepath.Base(pgf.URI.Path()))
-	out.WriteString("--->\n")
-	// Add all import decl to output including all floating comment by using
-	// GenDecl's start and end position.
-	for _, decl := range pgf.File.Decls {
-		genDecl, ok := decl.(*ast.GenDecl)
-		if !ok {
-			continue
+	// Copy everything before the first non-import declaration:
+	// package decl, imports decl(s), and all comments (excluding copyright).
+	{
+		endPos := pgf.File.FileEnd
+
+	outerloop:
+		for _, decl := range pgf.File.Decls {
+			switch decl := decl.(type) {
+			case *ast.FuncDecl:
+				if decl.Doc != nil {
+					endPos = decl.Doc.Pos()
+				} else {
+					endPos = decl.Pos()
+				}
+				break outerloop
+			case *ast.GenDecl:
+				if decl.Tok == token.IMPORT {
+					continue
+				}
+				if decl.Doc != nil {
+					endPos = decl.Doc.Pos()
+				} else {
+					endPos = decl.Pos()
+				}
+				break outerloop
+			}
 		}
 
-		if genDecl.Tok != token.IMPORT {
-			continue
+		startPos := pgf.File.FileStart
+		if copyright := golang.CopyrightComment(pgf.File); copyright != nil {
+			startPos = copyright.End()
 		}
 
-		text, err := pgf.NodeText(genDecl)
+		text, err := pgf.PosText(startPos, endPos)
 		if err != nil {
 			return err
 		}
 
-		out.Write(text)
-		out.WriteString("\n")
+		out.Write(bytes.TrimSpace(text))
+		out.WriteString("\n\n")
 	}
-	out.WriteString("<---\n\n")
 
-	out.WriteString("The imported packages declare the following symbols:\n\n")
+	// Write func decl and gen decl.
+	for _, decl := range pgf.File.Decls {
+		switch decl := decl.(type) {
+		case *ast.FuncDecl:
+			if onlyExported {
+				if !decl.Name.IsExported() {
+					continue
+				}
 
-	for _, imp := range pgf.File.Imports {
-		importPath := metadata.UnquoteImportPath(imp)
-		if importPath == "" {
-			continue
-		}
+				if decl.Recv != nil && len(decl.Recv.List) > 0 {
+					_, rname, _ := astutil.UnpackRecv(decl.Recv.List[0].Type)
+					if !rname.IsExported() {
+						continue
+					}
+				}
+			}
 
-		impID := pkg.Metadata().DepsByImpPath[importPath]
-		if impID == "" {
-			return fmt.Errorf("no package data for import %q", importPath)
-		}
-		impMetadata := snapshot.Metadata(impID)
-		if impMetadata == nil {
-			return bug.Errorf("failed to resolve import ID %q", impID)
-		}
+			// Write doc comment and func signature.
+			startPos := decl.Pos()
+			if decl.Doc != nil {
+				startPos = decl.Doc.Pos()
+			}
 
-		fmt.Fprintf(out, "%s (package %s)\n", importPath, impMetadata.Name)
-		for _, f := range impMetadata.CompiledGoFiles {
-			fmt.Fprintf(out, "%s:\n", filepath.Base(f.Path()))
-			out.WriteString("--->\n")
-			fh, err := snapshot.ReadFile(ctx, f)
+			text, err := pgf.PosText(startPos, decl.Type.End())
 			if err != nil {
 				return err
 			}
-			pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
-			if err != nil {
-				return err
+
+			out.Write(text)
+			out.WriteString("\n\n")
+
+		case *ast.GenDecl:
+			if decl.Tok == token.IMPORT {
+				continue
 			}
 
-			// Copy everything before the first non-import declaration:
-			// package decl, imports decl(s), and all comments (excluding copyright).
-			{
-				endPos := pgf.File.FileEnd
+			// Dump the entire GenDecl (exported or unexported)
+			// including doc comment without any filtering to the output.
+			if !onlyExported {
+				startPos := decl.Pos()
+				if decl.Doc != nil {
+					startPos = decl.Doc.Pos()
+				}
+				text, err := pgf.PosText(startPos, decl.End())
+				if err != nil {
+					return err
+				}
 
-			outerloop:
-				for _, decl := range pgf.File.Decls {
-					switch decl := decl.(type) {
-					case *ast.FuncDecl:
-						if decl.Doc != nil {
-							endPos = decl.Doc.Pos()
-						} else {
-							endPos = decl.Pos()
-						}
-						break outerloop
-					case *ast.GenDecl:
-						if decl.Tok == token.IMPORT {
-							continue
-						}
-						if decl.Doc != nil {
-							endPos = decl.Doc.Pos()
-						} else {
-							endPos = decl.Pos()
-						}
-						break outerloop
+				out.Write(text)
+				out.WriteString("\n")
+				continue
+			}
+
+			// Write only the GenDecl with exported identifier to the output.
+			var buf bytes.Buffer
+			if decl.Doc != nil {
+				text, err := pgf.NodeText(decl.Doc)
+				if err != nil {
+					return err
+				}
+				buf.Write(text)
+				buf.WriteString("\n")
+			}
+
+			buf.WriteString(decl.Tok.String() + " ")
+			if decl.Lparen.IsValid() {
+				buf.WriteString("(\n")
+			}
+
+			var anyExported bool
+			for _, spec := range decl.Specs {
+				// Captures the full byte range of the spec, including
+				// its associated doc comments and line comments.
+				// This range also covers any floating comments as these
+				// can be valuable for context. Like
+				// ```
+				// type foo struct { // floating comment.
+				// 		// floating comment.
+				//
+				// 		x int
+				// }
+				// ```
+				var startPos, endPos token.Pos
+
+				switch spec := spec.(type) {
+				case *ast.TypeSpec:
+					// TODO(hxjiang): only keep the exported field of
+					// struct spec and exported method of interface spec.
+					if !spec.Name.IsExported() {
+						continue
+					}
+					anyExported = true
+
+					// Include preceding doc comment, if any.
+					if spec.Doc == nil {
+						startPos = spec.Pos()
+					} else {
+						startPos = spec.Doc.Pos()
+					}
+
+					// Include trailing line comment, if any.
+					if spec.Comment == nil {
+						endPos = spec.End()
+					} else {
+						endPos = spec.Comment.End()
+					}
+
+				case *ast.ValueSpec:
+					// TODO(hxjiang): only keep the exported identifier.
+					if !slices.ContainsFunc(spec.Names, (*ast.Ident).IsExported) {
+						continue
+					}
+					anyExported = true
+
+					if spec.Doc == nil {
+						startPos = spec.Pos()
+					} else {
+						startPos = spec.Doc.Pos()
+					}
+
+					if spec.Comment == nil {
+						endPos = spec.End()
+					} else {
+						endPos = spec.Comment.End()
 					}
 				}
 
-				startPos := pgf.File.FileStart
-				if copyright := golang.CopyrightComment(pgf.File); copyright != nil {
-					startPos = copyright.End()
+				indent, err := pgf.Indentation(startPos)
+				if err != nil {
+					return err
 				}
+
+				buf.WriteString(indent)
 
 				text, err := pgf.PosText(startPos, endPos)
 				if err != nil {
 					return err
 				}
 
-				out.Write(bytes.TrimSpace(text))
-				out.WriteString("\n\n")
+				buf.Write(text)
+				buf.WriteString("\n")
 			}
 
-			// Write exported func decl and gen decl.
-			for _, decl := range pgf.File.Decls {
-				switch decl := decl.(type) {
-				case *ast.FuncDecl:
-					if !decl.Name.IsExported() {
-						continue
-					}
-
-					if decl.Recv != nil && len(decl.Recv.List) > 0 {
-						_, rname, _ := astutil.UnpackRecv(decl.Recv.List[0].Type)
-						if !rname.IsExported() {
-							continue
-						}
-					}
-
-					// Write doc comment and func signature.
-					startPos := decl.Pos()
-					if decl.Doc != nil {
-						startPos = decl.Doc.Pos()
-					}
-
-					text, err := pgf.PosText(startPos, decl.Type.End())
-					if err != nil {
-						return err
-					}
-
-					out.Write(text)
-					out.WriteString("\n\n")
-
-				case *ast.GenDecl:
-					if decl.Tok == token.IMPORT {
-						continue
-					}
-
-					var buf bytes.Buffer
-					if decl.Doc != nil {
-						text, err := pgf.NodeText(decl.Doc)
-						if err != nil {
-							return err
-						}
-						buf.Write(text)
-						buf.WriteString("\n")
-					}
-
-					buf.WriteString(decl.Tok.String() + " ")
-					if decl.Lparen.IsValid() {
-						buf.WriteString("(\n")
-					}
-
-					var anyExported bool
-					for _, spec := range decl.Specs {
-						// Captures the full byte range of the spec, including
-						// its associated doc comments and line comments.
-						// This range also covers any floating comments as these
-						// can be valuable for context. Like
-						// ```
-						// type foo struct { // floating comment.
-						// 		// floating comment.
-						//
-						// 		x int
-						// }
-						// ```
-						var startPos, endPos token.Pos
-
-						switch spec := spec.(type) {
-						case *ast.TypeSpec:
-							// TODO(hxjiang): only keep the exported field of
-							// struct spec and exported method of interface spec.
-							if !spec.Name.IsExported() {
-								continue
-							}
-							anyExported = true
-
-							// Include preceding doc comment, if any.
-							if spec.Doc == nil {
-								startPos = spec.Pos()
-							} else {
-								startPos = spec.Doc.Pos()
-							}
-
-							// Include trailing line comment, if any.
-							if spec.Comment == nil {
-								endPos = spec.End()
-							} else {
-								endPos = spec.Comment.End()
-							}
-
-						case *ast.ValueSpec:
-							// TODO(hxjiang): only keep the exported identifier.
-							if !slices.ContainsFunc(spec.Names, (*ast.Ident).IsExported) {
-								continue
-							}
-							anyExported = true
-
-							if spec.Doc == nil {
-								startPos = spec.Pos()
-							} else {
-								startPos = spec.Doc.Pos()
-							}
-
-							if spec.Comment == nil {
-								endPos = spec.End()
-							} else {
-								endPos = spec.Comment.End()
-							}
-						}
-
-						indent, err := pgf.Indentation(startPos)
-						if err != nil {
-							return err
-						}
-
-						buf.WriteString(indent)
-
-						text, err := pgf.PosText(startPos, endPos)
-						if err != nil {
-							return err
-						}
-
-						buf.Write(text)
-						buf.WriteString("\n")
-					}
-
-					if decl.Lparen.IsValid() {
-						buf.WriteString(")\n")
-					}
-
-					// Only write the summary of the genDecl if there is
-					// any exported spec.
-					if anyExported {
-						out.Write(buf.Bytes())
-						out.WriteString("\n")
-					}
-				}
+			if decl.Lparen.IsValid() {
+				buf.WriteString(")\n")
 			}
 
-			out.WriteString("<---\n\n")
+			// Only write the summary of the genDecl if there is
+			// any exported spec.
+			if anyExported {
+				out.Write(buf.Bytes())
+				out.WriteString("\n")
+			}
 		}
 	}
 	return nil
