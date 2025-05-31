@@ -11,19 +11,22 @@ package xrefs
 import (
 	"go/ast"
 	"go/types"
+	"slices"
 	"sort"
 
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/frob"
+	"golang.org/x/tools/gopls/internal/util/morestrings"
 )
 
 // Index constructs a serializable index of outbound cross-references
 // for the specified type-checked package.
-func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
+func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles []*asm.File) []byte {
 	// pkgObjects maps each referenced package Q to a mapping:
 	// from each referenced symbol in Q to the ordered list
 	// of references to that symbol from this package.
@@ -112,6 +115,32 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 		}
 	}
 
+	// For each asm file, record references to identifiers.
+	for fileIndex, af := range asmFiles {
+		for _, id := range af.Idents {
+			_, name, ok := morestrings.CutLast(id.Name, ".")
+			if !ok {
+				continue
+			}
+			obj := pkg.Scope().Lookup(name)
+			if obj == nil {
+				continue
+			}
+			objects := getObjects(pkg)
+			gobObj, ok := objects[obj]
+			if !ok {
+				gobObj = &gobObject{Path: objectpath.Path(obj.Name())}
+				objects[obj] = gobObj
+			}
+			if rng, err := af.NodeRange(id); err == nil {
+				gobObj.Refs = append(gobObj.Refs, gobRef{
+					FileIndex: fileIndex,
+					Range:     rng,
+				})
+			}
+		}
+	}
+
 	// Flatten the maps into slices, and sort for determinism.
 	var packages []*gobPackage
 	for p := range pkgObjects {
@@ -147,7 +176,7 @@ func Lookup(mp *metadata.Package, data []byte, targets map[metadata.PackagePath]
 			for _, gobObj := range gp.Objects {
 				if _, ok := objectSet[gobObj.Path]; ok {
 					for _, ref := range gobObj.Refs {
-						uri := mp.CompiledGoFiles[ref.FileIndex]
+						uri := slices.Concat(mp.CompiledGoFiles, mp.AsmFiles)[ref.FileIndex]
 						locs = append(locs, protocol.Location{
 							URI:   uri,
 							Range: ref.Range,
