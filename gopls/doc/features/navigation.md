@@ -252,7 +252,7 @@ Client support:
 - **VS Code**: Use ⌘T to open [Go to Symbol](https://code.visualstudio.com/docs/editor/editingevolved#_go-to-symbol) with workspace scope.  (Alternatively, use Ctrl-Shift-O, and add a `@` prefix to search within the file or a `#` prefix to search throughout the workspace.)
 - **Emacs + eglot**: Use [`M-x xref-find-apropos`](https://www.gnu.org/software/emacs/manual/html_node/emacs/Looking-Up-Identifiers.html) to show symbols that match a search term.
 - **Vim + coc.nvim**: ??
-- **CLI**: `gopls links file.go`
+- **CLI**: `gopls symbols file.go`
 
 
 ## Selection Range
