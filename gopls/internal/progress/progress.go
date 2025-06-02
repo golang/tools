@@ -187,7 +187,7 @@ func (wd *WorkDone) doCancel() {
 }
 
 // Report reports an update on WorkDone report back to the client.
-func (wd *WorkDone) Report(ctx context.Context, message string, percentage float64) {
+func (wd *WorkDone) Report(ctx context.Context, message string, fraction float64) {
 	ctx = xcontext.Detach(ctx) // progress messages should not be cancelled
 	if wd == nil {
 		return
@@ -204,6 +204,7 @@ func (wd *WorkDone) Report(ctx context.Context, message string, percentage float
 		return
 	}
 	message = strings.TrimSuffix(message, "\n")
+	percentage := uint32(100 * fraction)
 	err := wd.client.Progress(ctx, &protocol.ProgressParams{
 		Token: wd.token,
 		Value: &protocol.WorkDoneProgressReport{
@@ -213,7 +214,7 @@ func (wd *WorkDone) Report(ctx context.Context, message string, percentage float
 			// yet use this feature, the value is kept constant here.
 			Cancellable: wd.cancel != nil,
 			Message:     message,
-			Percentage:  uint32(percentage),
+			Percentage:  &percentage,
 		},
 	})
 	if err != nil {

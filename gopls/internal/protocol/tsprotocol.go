@@ -4924,7 +4924,7 @@ type SignatureHelp struct {
 	// In future version of the protocol this property might become
 	// mandatory (but still nullable) to better express the active parameter if
 	// the active signature does have any.
-	ActiveParameter uint32 `json:"activeParameter"`
+	ActiveParameter *uint32 `json:"activeParameter,omitempty"`
 }
 
 // Client Capabilities for a {@link SignatureHelpRequest}.
@@ -5261,7 +5261,7 @@ type TextDocumentContentChangePartial struct {
 	// The optional length of the range that got replaced.
 	//
 	// @deprecated use range instead.
-	RangeLength uint32 `json:"rangeLength"`
+	RangeLength *uint32 `json:"rangeLength,omitempty"`
 	// The new text for the provided range.
 	Text string `json:"text"`
 }
@@ -5764,7 +5764,7 @@ type WorkDoneProgressBegin struct {
 	//
 	// The value should be steadily rising. Clients are free to ignore values
 	// that are not following this rule. The value range is [0, 100].
-	Percentage uint32 `json:"percentage"`
+	Percentage *uint32 `json:"percentage,omitempty"`
 }
 
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#workDoneProgressCancelParams
@@ -5824,7 +5824,7 @@ type WorkDoneProgressReport struct {
 	//
 	// The value should be steadily rising. Clients are free to ignore values
 	// that are not following this rule. The value range is [0, 100]
-	Percentage uint32 `json:"percentage"`
+	Percentage *uint32 `json:"percentage,omitempty"`
 }
 
 // Workspace specific client capabilities.

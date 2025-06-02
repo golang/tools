@@ -123,7 +123,7 @@ func TestProgressTracker_Reporting(t *testing.T) {
 				t.Errorf("got %d work begun, want %d", gotBegun, test.wantBegun)
 			}
 			// Ignore errors: this is just testing the reporting behavior.
-			work.Report(ctx, "report", 50)
+			work.Report(ctx, "report", 0.5)
 			client.mu.Lock()
 			gotReported := client.reported
 			client.mu.Unlock()

@@ -43,6 +43,9 @@ func (s *server) SignatureHelp(ctx context.Context, params *protocol.SignatureHe
 	}
 	return &protocol.SignatureHelp{
 		Signatures:      []protocol.SignatureInformation{*info},
-		ActiveParameter: uint32(activeParameter),
+		ActiveParameter: varOf(uint32(activeParameter)),
 	}, nil
 }
+
+// varOf returns a new variable whose value is x.
+func varOf[T any](x T) *T { return &x }

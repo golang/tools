@@ -291,8 +291,7 @@ func (s *Snapshot) Analyze(ctx context.Context, pkgs map[PackageID]*metadata.Pac
 				// Trailing space is intentional: some LSP clients strip newlines.
 				msg := fmt.Sprintf(`Indexed %d/%d packages. (Set "analysisProgressReporting" to false to disable notifications.)`,
 					completed, len(nodes))
-				pct := 100 * float64(completed) / float64(len(nodes))
-				wd.Report(ctx, msg, pct)
+				wd.Report(ctx, msg, float64(completed)/float64(len(nodes)))
 			}
 		}
 	}

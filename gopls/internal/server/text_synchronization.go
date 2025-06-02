@@ -313,7 +313,7 @@ func (s *server) changedText(ctx context.Context, uri protocol.DocumentURI, chan
 
 	// Check if the client sent the full content of the file.
 	// We accept a full content change even if the server expected incremental changes.
-	if len(changes) == 1 && changes[0].Range == nil && changes[0].RangeLength == 0 {
+	if len(changes) == 1 && changes[0].Range == nil && changes[0].RangeLength == nil {
 		changeFull.Inc()
 		return []byte(changes[0].Text), nil
 	}
@@ -388,7 +388,7 @@ func (s *server) checkEfficacy(uri protocol.DocumentURI, version int32, change p
 		}
 		if edit.Range.Start == change.Range.Start {
 			// the change and the proposed completion start at the same
-			if change.RangeLength == 0 && len(change.Text) == 1 {
+			if (change.RangeLength == nil || *change.RangeLength == 0) && len(change.Text) == 1 {
 				// a single character added it does not count as a completion
 				continue
 			}

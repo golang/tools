@@ -47,14 +47,18 @@ var goplsStar = map[prop]int{
 	{"InlayHint", "kind"}: wantOpt, // temporary variables
 
 	{"PublishDiagnosticsParams", "version"}:                   wantOpt,     // zero => missing (#73501)
+	{"SignatureHelp", "activeParameter"}:                      wantOptStar, // unset != zero
 	{"TextDocumentClientCapabilities", "codeAction"}:          wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "completion"}:          wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "documentSymbol"}:      wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "publishDiagnostics"}:  wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "semanticTokens"}:      wantOpt,     // A.B.C.D
 	{"TextDocumentContentChangePartial", "range"}:             wantOptStar, // == nil test
+	{"TextDocumentContentChangePartial", "rangeLength"}:       wantOptStar, // unset != zero
 	{"TextDocumentSyncOptions", "change"}:                     wantOpt,     // &constant
+	{"WorkDoneProgressBegin", "percentage"}:                   wantOptStar, // unset != zero
 	{"WorkDoneProgressParams", "workDoneToken"}:               wantOpt,     // test failures
+	{"WorkDoneProgressReport", "percentage"}:                  wantOptStar, // unset != zero
 	{"WorkspaceClientCapabilities", "didChangeConfiguration"}: wantOpt,     // A.B.C.D
 	{"WorkspaceClientCapabilities", "didChangeWatchedFiles"}:  wantOpt,     // A.B.C.D
 }

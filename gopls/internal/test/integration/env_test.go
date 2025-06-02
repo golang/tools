@@ -38,7 +38,7 @@ func TestProgressUpdating(t *testing.T) {
 		{"foo", protocol.WorkDoneProgressBegin{Kind: "begin", Title: "foo work"}},
 		{"bar", protocol.WorkDoneProgressBegin{Kind: "begin", Title: "bar work"}},
 		{"foo", protocol.WorkDoneProgressEnd{Kind: "end"}},
-		{"bar", protocol.WorkDoneProgressReport{Kind: "report", Percentage: 42}},
+		{"bar", protocol.WorkDoneProgressReport{Kind: "report", Percentage: varOf[uint32](42)}},
 	}
 	for _, update := range updates {
 		params := &protocol.ProgressParams{
@@ -66,3 +66,6 @@ func TestProgressUpdating(t *testing.T) {
 		t.Errorf("work progress for \"bar\": %v, want %v", got, want)
 	}
 }
+
+// varOf returns a new variable whose value is x.
+func varOf[T any](x T) *T { return &x }
