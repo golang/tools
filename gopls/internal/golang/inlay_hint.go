@@ -165,13 +165,33 @@ func funcTypeParams(info *types.Info, pgf *parsego.File, qual types.Qualifier, c
 }
 
 func assignVariableTypes(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur inspector.Cursor, add func(protocol.InlayHint)) {
-	for curAssign := range cur.Preorder((*ast.AssignStmt)(nil)) {
-		stmt := curAssign.Node().(*ast.AssignStmt)
-		if stmt.Tok != token.DEFINE {
-			continue
-		}
-		for _, v := range stmt.Lhs {
-			variableType(info, pgf, qual, v, add)
+	for node := range cur.Preorder((*ast.AssignStmt)(nil), (*ast.ValueSpec)(nil)) {
+		switch n := node.Node().(type) {
+		case *ast.AssignStmt:
+			if n.Tok != token.DEFINE {
+				continue
+			}
+			for _, v := range n.Lhs {
+				variableType(info, pgf, qual, v, add)
+			}
+		case *ast.GenDecl:
+			if n.Tok != token.VAR {
+				continue
+			}
+			for _, v := range n.Specs {
+				spec := v.(*ast.ValueSpec)
+				// The type of the variable is written, skip showing type of this var.
+				// ```go
+				// var foo string
+				// ```
+				if spec.Type != nil {
+					continue
+				}
+
+				for _, v := range spec.Names {
+					variableType(info, pgf, qual, v, add)
+				}
+			}
 		}
 	}
 }

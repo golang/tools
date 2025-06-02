@@ -363,6 +363,8 @@ func SumNumbers[K comparable, V Number](m map[K]V) V {
 package inlayHint //@inlayhints(vartypes)
 
 func assignTypes() {
+	var x string
+	var y = ""
 	i, j := 0, len([]string{})-1
 	println(i, j)
 }
@@ -385,6 +387,8 @@ func compositeLitType() {
 package inlayHint //@inlayhints(vartypes)
 
 func assignTypes() {
+	var x string
+	var y = ""
 	i< int>, j< int> := 0, len([]string{})-1
 	println(i, j)
 }

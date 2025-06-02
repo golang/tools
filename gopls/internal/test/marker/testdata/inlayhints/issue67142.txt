@@ -25,11 +25,11 @@ go 1.21.9
 //@inlayhints(out)
 package p
 
-var _ = rand.Float64() 
+var _ = rand.Float64()
 
 -- @out --
 //@inlayhints(out)
 package p
 
-var _ = rand.Float64() 
+var _ = rand.Float64()
 
