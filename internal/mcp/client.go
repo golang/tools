@@ -265,17 +265,26 @@ func (cs *ClientSession) CallTool(ctx context.Context, params *CallToolParams[js
 // CallTool is a helper to call a tool with any argument type. It returns an
 // error if params.Arguments fails to marshal to JSON.
 func CallTool[TArgs any](ctx context.Context, cs *ClientSession, params *CallToolParams[TArgs]) (*CallToolResult, error) {
+	wireParams, err := toWireParams(params)
+	if err != nil {
+		return nil, err
+	}
+	return cs.CallTool(ctx, wireParams)
+}
+
+func toWireParams[TArgs any](params *CallToolParams[TArgs]) (*CallToolParams[json.RawMessage], error) {
 	data, err := json.Marshal(params.Arguments)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal arguments: %v", err)
 	}
-	// TODO(rfindley): write a test that guarantees this copying is total.
-	wireParams := &CallToolParams[json.RawMessage]{
+	// The field mapping here must be kept up to date with the CallToolParams.
+	// This is partially enforced by TestToWireParams, which verifies that all
+	// comparable fields are mapped.
+	return &CallToolParams[json.RawMessage]{
 		Meta:      params.Meta,
 		Name:      params.Name,
 		Arguments: data,
-	}
-	return cs.CallTool(ctx, wireParams)
+	}, nil
 }
 
 func (cs *ClientSession) SetLevel(ctx context.Context, params *SetLevelParams) error {
