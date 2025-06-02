@@ -44,7 +44,7 @@ import (
 //	append([]string(nil), os.Environ()...)            -> os.Environ()
 //
 // The fix does not always preserve nilness the of base slice when the
-// addends (a, b, c) are all empty.
+// addends (a, b, c) are all empty (see #73557).
 func appendclipped(pass *analysis.Pass) {
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
@@ -67,6 +67,10 @@ func appendclipped(pass *analysis.Pass) {
 		// If the (clipped) base is empty, it may be safely ignored.
 		// Otherwise treat it (or its unclipped subexpression, if possible)
 		// as just another arg (the first) to Concat.
+		//
+		// TODO(adonovan): not so fast! If all the operands
+		// are empty, then the nilness of base matters, because
+		// append preserves nilness whereas Concat does not (#73557).
 		if !empty {
 			sliceArgs = append(sliceArgs, clipped)
 		}
@@ -118,6 +122,9 @@ func appendclipped(pass *analysis.Pass) {
 				"slices")
 
 			// append(zerocap, s...) -> slices.Clone(s) or bytes.Clone(s)
+			//
+			// This is unsound if s is empty and its nilness
+			// differs from zerocap (#73557).
 			_, prefix, importEdits := analysisinternal.AddImport(info, file, clonepkg, clonepkg, "Clone", call.Pos())
 			message := fmt.Sprintf("Replace append with %s.Clone", clonepkg)
 			pass.Report(analysis.Diagnostic{
@@ -138,6 +145,8 @@ func appendclipped(pass *analysis.Pass) {
 		}
 
 		// append(append(append(base, a...), b..., c...) -> slices.Concat(base, a, b, c)
+		//
+		// This is unsound if all slices are empty and base is non-nil (#73557).
 		_, prefix, importEdits := analysisinternal.AddImport(info, file, "slices", "slices", "Concat", call.Pos())
 		pass.Report(analysis.Diagnostic{
 			Pos:      call.Pos(),
@@ -200,7 +209,7 @@ func appendclipped(pass *analysis.Pass) {
 // The value of res is either the same as e or is a subexpression of e
 // that denotes the same slice but without the clipping operation.
 //
-// In addition, it reports whether the slice is definitely empty,
+// In addition, it reports whether the slice is definitely empty.
 //
 // Examples of clipped slices:
 //
