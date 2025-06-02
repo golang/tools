@@ -110,7 +110,7 @@ func (uri DocumentURI) Encloses(file DocumentURI) bool {
 	return pathutil.InDir(uri.Path(), file.Path())
 }
 
-// Locationr returns the Location for the specified range of this URI's file.
+// Location returns the Location for the specified range of this URI's file.
 func (uri DocumentURI) Location(rng Range) Location {
 	return Location{URI: uri, Range: rng}
 }

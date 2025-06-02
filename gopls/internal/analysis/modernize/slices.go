@@ -64,6 +64,31 @@ func appendclipped(pass *analysis.Pass) {
 			return
 		}
 
+		// If any slice arg has a different type from the base
+		// (and thus the result) don't offer a fix, to avoid
+		// changing the return type, e.g:
+		//
+		//     type S []int
+		//   - x := append([]int(nil), S{}...) // x : []int
+		//   + x := slices.Clone(S{})          // x : S
+		//
+		// We could do better by inserting an explicit generic
+		// instantiation:
+		//
+		//   x := slices.Clone[[]int](S{})
+		//
+		// but this is often unnecessary and unwanted, such as
+		// when the value is used an in assignment context that
+		// provides an explicit type:
+		//
+		//   var x []int = slices.Clone(S{})
+		baseType := info.TypeOf(base)
+		for _, arg := range sliceArgs {
+			if !types.Identical(info.TypeOf(arg), baseType) {
+				return
+			}
+		}
+
 		// If the (clipped) base is empty, it may be safely ignored.
 		// Otherwise treat it (or its unclipped subexpression, if possible)
 		// as just another arg (the first) to Concat.

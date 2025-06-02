@@ -5,7 +5,10 @@ import (
 	"slices"
 )
 
-type Bytes []byte
+type (
+	Bytes  []byte
+	Bytes2 []byte
+)
 
 func _(s, other []string) {
 	print(append([]string{}, s...))              // want "Replace append with slices.Clone"
@@ -24,3 +27,9 @@ func _(s, other []string) {
 	print(append(append(slices.Clip(other), s...), other...))                       // want "Replace append with slices.Concat"
 	print(append(append(append(other[:0], s...), other...), other...))              // nope: intent may be to mutate other
 }
+
+var (
+	_ Bytes  = append(Bytes(nil), []byte(nil)...) // nope: correct fix requires Clone[Bytes] (#73661)
+	_ Bytes  = append([]byte(nil), Bytes(nil)...) // nope: correct fix requires Clone[Bytes] (#73661)
+	_ Bytes2 = append([]byte(nil), Bytes(nil)...) // nope: correct fix requires Clone[Bytes2] (#73661)
+)
