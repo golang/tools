@@ -75,7 +75,6 @@ func init() {
 		"maps.All":                true,
 		"maps.Clone":              true,
 		"maps.Collect":            true,
-		"maps.Copy":               true,
 		"maps.Equal":              true,
 		"maps.EqualFunc":          true,
 		"maps.Keys":               true,
