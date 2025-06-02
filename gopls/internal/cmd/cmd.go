@@ -641,6 +641,10 @@ func updateFile(filename string, old, new []byte, edits []diff.Edit, flags *Edit
 
 func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishDiagnosticsParams) error {
 	// Don't worry about diagnostics without versions.
+	//
+	// (Note: the representation of PublishDiagnosticsParams
+	// cannot distinguish a missing Version from v0, but the
+	// server never sends back an explicit zero.)
 	if p.Version == 0 {
 		return nil
 	}

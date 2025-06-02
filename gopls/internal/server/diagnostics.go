@@ -904,7 +904,7 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 		if err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
 			Diagnostics: toProtocolDiagnostics(unique),
 			URI:         uri,
-			Version:     version,
+			Version:     version, // 0 ("on disk") => omitted from JSON encoding
 		}); err != nil {
 			return err
 		}

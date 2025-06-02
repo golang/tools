@@ -34,7 +34,7 @@ var goplsStar = map[prop]int{
 	{"CompletionItem", "kind"}:                         wantOpt, // need temporary variables
 	{"CompletionParams", "context"}:                    wantOpt, // needs nil checks
 
-	{"Diagnostic", "severity"}:            wantOpt,     // nil checks or more careful thought
+	{"Diagnostic", "severity"}:            wantOpt,     // needs nil checks or more careful thought
 	{"DidSaveTextDocumentParams", "text"}: wantOptStar, // capabilities_test.go:112 logic
 	{"DocumentHighlight", "kind"}:         wantOpt,     // need temporary variables
 
@@ -46,6 +46,7 @@ var goplsStar = map[prop]int{
 	{"Hover", "range"}:    wantOpt, // complex expressions
 	{"InlayHint", "kind"}: wantOpt, // temporary variables
 
+	{"PublishDiagnosticsParams", "version"}:                   wantOpt,     // zero => missing (#73501)
 	{"TextDocumentClientCapabilities", "codeAction"}:          wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "completion"}:          wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "documentSymbol"}:      wantOpt,     // A.B.C.D
