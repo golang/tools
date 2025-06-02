@@ -7,40 +7,11 @@ This test exercises mcp tool context.
 -- go.mod --
 module example.com
 
--- comment/doc.go --
-// Copyright 2025 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-/*
-Package doc for package comment.
-*/
-package comment
-
--- comment/foo.go --
-// File doc for foo.go part 1.
-package comment
-
-// File doc for foo.go part 2.
-import (
-    // comment for package renaming.
-    myfmt "fmt"
-)
-
-// File doc for foo.go part 3.
-
-// Func doc for comment.Foo
-func Foo(foo string, _ int) {
-    myfmt.Printf("%s", foo)
-}
-
-// Random comment floating around.
-
--- comment.go --
+-- commenttest/main.go --
 package main
 
 import(
-    "example.com/comment"
+    "example.com/commenttest/comment"
 )
 
 func testComment() { //@loc(comment, "test")
@@ -50,19 +21,66 @@ func testComment() { //@loc(comment, "test")
 
 //@mcptool("context", `{}`, comment, output=withComment)
 
+-- commenttest/comment/doc.go --
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+/*
+Package doc for package comment.
+*/
+package comment
+
+-- commenttest/comment/comment.go --
+// File doc for comment.go part 1.
+package comment
+
+// File doc for comment.go part 2.
+import (
+    // comment for package renaming.
+    myfmt "fmt"
+)
+
+// File doc for comment.go part 3.
+
+// Func doc for comment.Foo
+func Foo(foo string, _ int) {
+    myfmt.Printf("%s", foo)
+}
+
+// Random comment floating around.
+
 -- @withComment --
 Code blocks are delimited by --->...<--- markers.
 
-Current file "comment.go" contains this import declaration:
+Current file "main.go" contains this import declaration:
 --->
 import(
-    "example.com/comment"
+    "example.com/commenttest/comment"
 )
 <---
 
 The imported packages declare the following symbols:
 
-example.com/comment (package comment)
+example.com/commenttest/comment (package comment)
+comment.go:
+--->
+// File doc for comment.go part 1.
+package comment
+
+// File doc for comment.go part 2.
+import (
+    // comment for package renaming.
+    myfmt "fmt"
+)
+
+// File doc for comment.go part 3.
+
+// Func doc for comment.Foo
+func Foo(foo string, _ int)
+
+<---
+
 doc.go:
 --->
 /*
@@ -72,25 +90,20 @@ package comment
 
 <---
 
-foo.go:
---->
-// File doc for foo.go part 1.
-package comment
+-- functiontest/main.go --
+package main
 
-// File doc for foo.go part 2.
-import (
-    // comment for package renaming.
-    myfmt "fmt"
+import(
+    "example.com/functiontest/function"
 )
 
-// File doc for foo.go part 3.
+func testFunction() { //@loc(function, "test")
+    function.Foo(0, "")
+}
 
-// Func doc for comment.Foo
-func Foo(foo string, _ int)
+//@mcptool("context", `{}`, function, output=withFunction)
 
-<---
-
--- function/foo.go --
+-- functiontest/function/function.go --
 package function
 
 func Foo(int, string) {}
@@ -109,33 +122,20 @@ func (*Exported) unexported(int) {}
 
 func (*Exported) Exported(int) {}
 
--- function.go --
-package main
-
-import(
-    "example.com/function"
-)
-
-func testFunction() { //@loc(function, "test")
-    function.Foo(0, "")
-}
-
-//@mcptool("context", `{}`, function, output=withFunction)
-
 -- @withFunction --
 Code blocks are delimited by --->...<--- markers.
 
-Current file "function.go" contains this import declaration:
+Current file "main.go" contains this import declaration:
 --->
 import(
-    "example.com/function"
+    "example.com/functiontest/function"
 )
 <---
 
 The imported packages declare the following symbols:
 
-example.com/function (package function)
-foo.go:
+example.com/functiontest/function (package function)
+function.go:
 --->
 package function
 
@@ -147,18 +147,18 @@ func (*Exported) Exported(int)
 
 <---
 
--- type.go --
+-- typetest/main.go --
 package main
 
 import(
-    "example.com/types"
+    "example.com/typetest/types"
 )
 
 var x types.Exported //@loc(types, "x")
 
 //@mcptool("context", `{}`, types, output=withType)
 
--- types/types.go --
+-- typetest/types/types.go --
 package types
 
 // Doc for exported.
@@ -192,16 +192,16 @@ type (
 -- @withType --
 Code blocks are delimited by --->...<--- markers.
 
-Current file "type.go" contains this import declaration:
+Current file "main.go" contains this import declaration:
 --->
 import(
-    "example.com/types"
+    "example.com/typetest/types"
 )
 <---
 
 The imported packages declare the following symbols:
 
-example.com/types (package types)
+example.com/typetest/types (package types)
 types.go:
 --->
 package types
@@ -229,18 +229,18 @@ type (
 
 <---
 
--- value.go --
+-- valuetest/main.go --
 package main
 
 import(
-    "example.com/values"
+    "example.com/valuetest/values"
 )
 
 var y values.ConstFoo //@loc(values, "y")
 
 //@mcptool("context", `{}`, values, output=withValue)
 
--- values/consts.go --
+-- valuetest/values/consts.go --
 package values
 
 const (
@@ -260,7 +260,7 @@ const ConstExported = "Exported" // comment for ConstExported
 // doc for constUnexported
 var constUnexported = "unexported" // comment for constUnexported
 
--- values/vars.go --
+-- valuetest/values/vars.go --
 package values
 
 var (
@@ -283,16 +283,16 @@ var varUnexported = "unexported" // comment for varUnexported
 -- @withValue --
 Code blocks are delimited by --->...<--- markers.
 
-Current file "value.go" contains this import declaration:
+Current file "main.go" contains this import declaration:
 --->
 import(
-    "example.com/values"
+    "example.com/valuetest/values"
 )
 <---
 
 The imported packages declare the following symbols:
 
-example.com/values (package values)
+example.com/valuetest/values (package values)
 consts.go:
 --->
 package values
