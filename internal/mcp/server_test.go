@@ -12,12 +12,29 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-type TestItem struct {
+type testItem struct {
 	Name  string
 	Value string
 }
 
-var allTestItems = []*TestItem{
+type testListParams struct {
+	Cursor string
+}
+
+func (p *testListParams) cursorPtr() *string {
+	return &p.Cursor
+}
+
+type testListResult struct {
+	Items      []*testItem
+	NextCursor string
+}
+
+func (r *testListResult) nextCursorPtr() *string {
+	return &r.NextCursor
+}
+
+var allTestItems = []*testItem{
 	{"alpha", "val-A"},
 	{"bravo", "val-B"},
 	{"charlie", "val-C"},
@@ -44,10 +61,10 @@ func getCursor(input string) string {
 func TestServerPaginateBasic(t *testing.T) {
 	testCases := []struct {
 		name           string
-		initialItems   []*TestItem
+		initialItems   []*testItem
 		inputCursor    string
 		inputPageSize  int
-		wantFeatures   []*TestItem
+		wantFeatures   []*testItem
 		wantNextCursor string
 		wantErr        bool
 	}{
@@ -154,41 +171,51 @@ func TestServerPaginateBasic(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			fs := newFeatureSet(func(t *TestItem) string { return t.Name })
+			fs := newFeatureSet(func(t *testItem) string { return t.Name })
 			fs.add(tc.initialItems...)
-			gotFeatures, gotNextCursor, err := paginateList(fs, tc.inputCursor, tc.inputPageSize)
+			params := &testListParams{Cursor: tc.inputCursor}
+			gotResult, err := paginateList(fs, tc.inputPageSize, params, &testListResult{}, func(res *testListResult, items []*testItem) {
+				res.Items = items
+			})
 			if (err != nil) != tc.wantErr {
 				t.Errorf("paginateList(%s) error, got %v, wantErr %v", tc.name, err, tc.wantErr)
 			}
-			if diff := cmp.Diff(tc.wantFeatures, gotFeatures); diff != "" {
+			if tc.wantErr {
+				return
+			}
+			if diff := cmp.Diff(tc.wantFeatures, gotResult.Items); diff != "" {
 				t.Errorf("paginateList(%s) mismatch (-want +got):\n%s", tc.name, diff)
 			}
-			if tc.wantNextCursor != gotNextCursor {
-				t.Errorf("paginateList(%s) nextCursor, got %v, want %v", tc.name, gotNextCursor, tc.wantNextCursor)
+			if tc.wantNextCursor != gotResult.NextCursor {
+				t.Errorf("paginateList(%s) nextCursor, got %v, want %v", tc.name, gotResult.NextCursor, tc.wantNextCursor)
 			}
 		})
 	}
 }
 
 func TestServerPaginateVariousPageSizes(t *testing.T) {
-	fs := newFeatureSet(func(t *TestItem) string { return t.Name })
+	fs := newFeatureSet(func(t *testItem) string { return t.Name })
 	fs.add(allTestItems...)
 	// Try all possible page sizes, ensuring we get the correct list of items.
 	for pageSize := 1; pageSize < len(allTestItems)+1; pageSize++ {
-		var gotItems []*TestItem
+		var gotItems []*testItem
 		var nextCursor string
 		wantChunks := slices.Collect(slices.Chunk(allTestItems, pageSize))
 		index := 0
 		// Iterate through all pages, comparing sub-slices to the paginated list.
 		for {
-			gotFeatures, gotNextCursor, err := paginateList(fs, nextCursor, pageSize)
+			params := &testListParams{Cursor: nextCursor}
+			gotResult, err := paginateList(fs, pageSize, params, &testListResult{}, func(res *testListResult, items []*testItem) {
+				res.Items = items
+			})
 			if err != nil {
+				t.Fatalf("paginateList() unexpected error for pageSize %d, cursor %q: %v", pageSize, nextCursor, err)
 			}
-			if diff := cmp.Diff(wantChunks[index], gotFeatures); diff != "" {
+			if diff := cmp.Diff(wantChunks[index], gotResult.Items); diff != "" {
 				t.Errorf("paginateList mismatch (-want +got):\n%s", diff)
 			}
-			gotItems = append(gotItems, gotFeatures...)
-			nextCursor = gotNextCursor
+			gotItems = append(gotItems, gotResult.Items...)
+			nextCursor = gotResult.NextCursor
 			if nextCursor == "" {
 				break
 			}

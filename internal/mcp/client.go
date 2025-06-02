@@ -391,23 +391,13 @@ func (cs *ClientSession) Prompts(ctx context.Context, params *ListPromptsParams)
 	})
 }
 
-type ListParams interface {
-	// Returns a pointer to the param's Cursor field.
-	cursorPtr() *string
-}
-
-type ListResult[T any] interface {
-	// Returns a pointer to the param's NextCursor field.
-	nextCursorPtr() *string
-}
-
 // paginate is a generic helper function to provide a paginated iterator.
-func paginate[P ListParams, R ListResult[E], E any](ctx context.Context, params P, listFunc func(context.Context, P) (R, error), items func(R) []*E) iter.Seq2[E, error] {
-	return func(yield func(E, error) bool) {
+func paginate[P listParams, R listResult[T], T any](ctx context.Context, params P, listFunc func(context.Context, P) (R, error), items func(R) []*T) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
 		for {
 			res, err := listFunc(ctx, params)
 			if err != nil {
-				var zero E
+				var zero T
 				yield(zero, err)
 				return
 			}

@@ -182,21 +182,15 @@ func (s *Server) Sessions() iter.Seq[*ServerSession] {
 func (s *Server) listPrompts(_ context.Context, _ *ServerSession, params *ListPromptsParams) (*ListPromptsResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var cursor string
-	if params != nil {
-		cursor = params.Cursor
+	if params == nil {
+		params = &ListPromptsParams{}
 	}
-	prompts, nextCursor, err := paginateList(s.prompts, cursor, s.opts.PageSize)
-	if err != nil {
-		return nil, err
-	}
-	res := new(ListPromptsResult)
-	res.NextCursor = nextCursor
-	res.Prompts = []*Prompt{} // avoid JSON null
-	for _, p := range prompts {
-		res.Prompts = append(res.Prompts, p.Prompt)
-	}
-	return res, nil
+	return paginateList(s.prompts, s.opts.PageSize, params, &ListPromptsResult{}, func(res *ListPromptsResult, prompts []*ServerPrompt) {
+		res.Prompts = []*Prompt{} // avoid JSON null
+		for _, p := range prompts {
+			res.Prompts = append(res.Prompts, p.Prompt)
+		}
+	})
 }
 
 func (s *Server) getPrompt(ctx context.Context, cc *ServerSession, params *GetPromptParams) (*GetPromptResult, error) {
@@ -213,21 +207,15 @@ func (s *Server) getPrompt(ctx context.Context, cc *ServerSession, params *GetPr
 func (s *Server) listTools(_ context.Context, _ *ServerSession, params *ListToolsParams) (*ListToolsResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var cursor string
-	if params != nil {
-		cursor = params.Cursor
+	if params == nil {
+		params = &ListToolsParams{}
 	}
-	tools, nextCursor, err := paginateList(s.tools, cursor, s.opts.PageSize)
-	if err != nil {
-		return nil, err
-	}
-	res := new(ListToolsResult)
-	res.NextCursor = nextCursor
-	res.Tools = []*Tool{} // avoid JSON null
-	for _, t := range tools {
-		res.Tools = append(res.Tools, t.Tool)
-	}
-	return res, nil
+	return paginateList(s.tools, s.opts.PageSize, params, &ListToolsResult{}, func(res *ListToolsResult, tools []*ServerTool) {
+		res.Tools = []*Tool{} // avoid JSON null
+		for _, t := range tools {
+			res.Tools = append(res.Tools, t.Tool)
+		}
+	})
 }
 
 func (s *Server) callTool(ctx context.Context, cc *ServerSession, params *CallToolParams[json.RawMessage]) (*CallToolResult, error) {
@@ -243,21 +231,15 @@ func (s *Server) callTool(ctx context.Context, cc *ServerSession, params *CallTo
 func (s *Server) listResources(_ context.Context, _ *ServerSession, params *ListResourcesParams) (*ListResourcesResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var cursor string
-	if params != nil {
-		cursor = params.Cursor
+	if params == nil {
+		params = &ListResourcesParams{}
 	}
-	resources, nextCursor, err := paginateList(s.resources, cursor, s.opts.PageSize)
-	if err != nil {
-		return nil, err
-	}
-	res := new(ListResourcesResult)
-	res.NextCursor = nextCursor
-	res.Resources = []*Resource{} // avoid JSON null
-	for _, r := range resources {
-		res.Resources = append(res.Resources, r.Resource)
-	}
-	return res, nil
+	return paginateList(s.resources, s.opts.PageSize, params, &ListResourcesResult{}, func(res *ListResourcesResult, resources []*ServerResource) {
+		res.Resources = []*Resource{} // avoid JSON null
+		for _, r := range resources {
+			res.Resources = append(res.Resources, r.Resource)
+		}
+	})
 }
 
 func (s *Server) readResource(ctx context.Context, ss *ServerSession, params *ReadResourceParams) (*ReadResourceResult, error) {
@@ -618,22 +600,25 @@ func decodeCursor(cursor string) (*pageToken, error) {
 	return &token, nil
 }
 
-// paginateList returns a slice of features from the given featureSet, based on
-// the provided cursor and page size. It also returns a new cursor for the next
-// page, or an empty string if there are no more pages.
-func paginateList[T any](fs *featureSet[T], cursor string, pageSize int) (features []T, nextCursor string, err error) {
+// paginateList is a generic helper that returns a paginated slice of items
+// from a featureSet. It populates the provided result res with the items
+// and sets its next cursor for subsequent pages.
+// If there are no more pages, the next cursor within the result will be an empty string.
+func paginateList[P listParams, R listResult[T], T any](fs *featureSet[T], pageSize int, params P, res R, setFunc func(R, []T)) (R, error) {
 	var seq iter.Seq[T]
-	if cursor == "" {
+	if params.cursorPtr() == nil || *params.cursorPtr() == "" {
 		seq = fs.all()
 	} else {
-		pageToken, err := decodeCursor(cursor)
+		pageToken, err := decodeCursor(*params.cursorPtr())
 		// According to the spec, invalid cursors should return Invalid params.
 		if err != nil {
-			return nil, "", jsonrpc2.ErrInvalidParams
+			var zero R
+			return zero, jsonrpc2.ErrInvalidParams
 		}
 		seq = fs.above(pageToken.LastUID)
 	}
 	var count int
+	var features []T
 	for f := range seq {
 		count++
 		// If we've seen pageSize + 1 elements, we've gathered enough info to determine
@@ -643,13 +628,16 @@ func paginateList[T any](fs *featureSet[T], cursor string, pageSize int) (featur
 		}
 		features = append(features, f)
 	}
+	setFunc(res, features)
 	// No remaining pages.
 	if count < pageSize+1 {
-		return features, "", nil
+		return res, nil
 	}
-	nextCursor, err = encodeCursor(fs.uniqueID(features[len(features)-1]))
+	nextCursor, err := encodeCursor(fs.uniqueID(features[len(features)-1]))
 	if err != nil {
-		return nil, "", err
+		var zero R
+		return zero, err
 	}
-	return features, nextCursor, nil
+	*res.nextCursorPtr() = nextCursor
+	return res, nil
 }
