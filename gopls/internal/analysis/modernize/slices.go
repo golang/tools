@@ -4,9 +4,6 @@
 
 package modernize
 
-// This file defines modernizers that use the "slices" package.
-// TODO(adonovan): actually let's split them up and rename this file.
-
 import (
 	"fmt"
 	"go/ast"
@@ -20,6 +17,17 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 )
+
+// append(clipped, ...) cannot be replaced by slices.Concat (etc)
+// without more attention to preservation of nilness; see #73557.
+// Until we either fix it or revise our safety goals, we disable this
+// analyzer for now.
+//
+// Its former documentation in doc.go was:
+//
+//   - appendclipped: replace append([]T(nil), s...) by
+//     slices.Clone(s) or slices.Concat(s), added in go1.21.
+var EnableAppendClipped = false
 
 // The appendclipped pass offers to simplify a tower of append calls:
 //
@@ -46,6 +54,10 @@ import (
 // The fix does not always preserve nilness the of base slice when the
 // addends (a, b, c) are all empty (see #73557).
 func appendclipped(pass *analysis.Pass) {
+	if !EnableAppendClipped {
+		return
+	}
+
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
 	if within(pass, "slices", "bytes", "runtime") {
@@ -115,7 +127,7 @@ func appendclipped(pass *analysis.Pass) {
 					pass.Report(analysis.Diagnostic{
 						Pos:      call.Pos(),
 						End:      call.End(),
-						Category: "slicesclone",
+						Category: "appendclipped",
 						Message:  "Redundant clone of os.Environ()",
 						SuggestedFixes: []analysis.SuggestedFix{{
 							Message: "Eliminate redundant clone",
@@ -155,7 +167,7 @@ func appendclipped(pass *analysis.Pass) {
 			pass.Report(analysis.Diagnostic{
 				Pos:      call.Pos(),
 				End:      call.End(),
-				Category: "slicesclone",
+				Category: "appendclipped",
 				Message:  message,
 				SuggestedFixes: []analysis.SuggestedFix{{
 					Message: message,
@@ -176,7 +188,7 @@ func appendclipped(pass *analysis.Pass) {
 		pass.Report(analysis.Diagnostic{
 			Pos:      call.Pos(),
 			End:      call.End(),
-			Category: "slicesclone",
+			Category: "appendclipped",
 			Message:  "Replace append with slices.Concat",
 			SuggestedFixes: []analysis.SuggestedFix{{
 				Message: "Replace append with slices.Concat",

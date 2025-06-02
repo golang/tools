@@ -3845,9 +3845,6 @@ Categories of modernize diagnostic:
 
   - efaceany: replace interface{} by the 'any' type added in go1.18.
 
-  - slicesclone: replace append([]T(nil), s...) by slices.Clone(s) or
-    slices.Concat(s), added in go1.21.
-
   - mapsloop: replace a loop around an m[k]=v map update by a call
     to one of the Collect, Copy, Clone, or Insert functions from
     the maps package, added in go1.21.

@@ -13,6 +13,7 @@ import (
 
 func Test(t *testing.T) {
 	modernize.EnableSlicesDelete = true
+	modernize.EnableAppendClipped = true
 
 	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), modernize.Analyzer,
 		"appendclipped",
