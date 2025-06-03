@@ -52,21 +52,6 @@ func (c *completer) unimported(ctx context.Context, pkgname metadata.PackageName
 		}
 	}
 	// do the stdlib next.
-	// For now, use the workspace version of stdlib packages
-	// to get function snippets. CL 665335 will fix this.
-	var x []metadata.PackageID
-	for _, mp := range stdpkgs {
-		if slices.Contains(wsIDs, metadata.PackageID(mp)) {
-			x = append(x, metadata.PackageID(mp))
-		}
-	}
-	if len(x) > 0 {
-		items := c.pkgIDmatches(ctx, x, pkgname, prefix)
-		if c.scoreList(items) {
-			return
-		}
-	}
-	// just use the stdlib
 	items := c.stdlibMatches(stdpkgs, pkgname, prefix)
 	if c.scoreList(items) {
 		return
@@ -164,7 +149,7 @@ func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, 
 					}
 					kind = protocol.FunctionCompletion
 					detail = fmt.Sprintf("func (from %q)", pkg.PkgPath)
-				case protocol.Variable:
+				case protocol.Variable, protocol.Struct:
 					kind = protocol.VariableCompletion
 					detail = fmt.Sprintf("var (from %q)", pkg.PkgPath)
 				case protocol.Constant:
@@ -264,6 +249,9 @@ func (c *completer) modcacheMatches(pkg metadata.PackageName, prefix string) ([]
 		case modindex.Const:
 			kind = protocol.ConstantCompletion
 			detail = fmt.Sprintf("const (from %s)", cand.ImportPath)
+		case modindex.Type: // might be a type alias
+			kind = protocol.VariableCompletion
+			detail = fmt.Sprintf("type (from %s)", cand.ImportPath)
 		default:
 			continue
 		}
