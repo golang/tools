@@ -124,6 +124,8 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 			}
 			obj := pkg.Scope().Lookup(name)
 			if obj == nil {
+				// TODO(grootguo): If the object is not found in the current package,
+				// consider handling cross-package references.
 				continue
 			}
 			objects := getObjects(pkg)
