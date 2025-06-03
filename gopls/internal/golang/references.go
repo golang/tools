@@ -621,7 +621,10 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 			if obj == nil {
 				continue
 			}
-			if rng, err := pgf.NodeRange(id); err == nil && matches(obj) {
+			if !matches(obj) {
+				continue
+			}
+			if rng, err := pgf.NodeRange(id); err == nil {
 				asmLocation := protocol.Location{
 					URI:   pgf.URI,
 					Range: rng,
