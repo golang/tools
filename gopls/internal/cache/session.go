@@ -64,7 +64,7 @@ type Session struct {
 
 	viewMu  sync.Mutex
 	views   []*View
-	viewMap map[protocol.DocumentURI]*View // file->best view or nil; nil after shutdown
+	viewMap map[protocol.DocumentURI]*View // file->best view or nil; nil after shutdown; the key must be a clean uri.
 
 	// snapshots is a counting semaphore that records the number
 	// of unreleased snapshots associated with this session.
@@ -139,15 +139,16 @@ func (s *Session) NewView(ctx context.Context, folder *Folder) (*View, *Snapshot
 	}
 	view, snapshot, release := s.createView(ctx, def)
 	s.views = append(s.views, view)
-	s.viewMap[protocol.Clean(folder.Dir)] = view
+	s.viewMap[folder.Dir.Clean()] = view
 	return view, snapshot, release, nil
 }
 
 // HasView checks whether the uri's view exists.
 func (s *Session) HasView(uri protocol.DocumentURI) bool {
+	uri = uri.Clean()
 	s.viewMu.Lock()
 	defer s.viewMu.Unlock()
-	_, ok := s.viewMap[protocol.Clean(uri)]
+	_, ok := s.viewMap[uri]
 	return ok
 }
 
@@ -379,6 +380,7 @@ func (s *Session) View(id string) (*View, error) {
 //
 // On success, the caller must call the returned function to release the snapshot.
 func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Snapshot, func(), error) {
+	uri = uri.Clean()
 	// Fast path: if the uri has a static association with a view, return it.
 	s.viewMu.Lock()
 	v, err := s.viewOfLocked(ctx, uri)
@@ -396,7 +398,7 @@ func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Sn
 		// View is shut down. Forget this association.
 		s.viewMu.Lock()
 		if s.viewMap[uri] == v {
-			delete(s.viewMap, protocol.Clean(uri))
+			delete(s.viewMap, uri)
 		}
 		s.viewMu.Unlock()
 	}
@@ -473,7 +475,7 @@ var errNoViews = errors.New("no views")
 // viewOfLocked evaluates the best view for uri, memoizing its result in
 // s.viewMap.
 //
-// Precondition: caller holds s.viewMu lock.
+// Precondition: caller holds s.viewMu lock; uri must be clean.
 //
 // May return (nil, nil) if no best view can be determined.
 func (s *Session) viewOfLocked(ctx context.Context, uri protocol.DocumentURI) (*View, error) {
@@ -500,7 +502,7 @@ func (s *Session) viewOfLocked(ctx context.Context, uri protocol.DocumentURI) (*
 			// (as in golang/go#60776).
 			v = relevantViews[0]
 		}
-		s.viewMap[protocol.Clean(uri)] = v // may be nil
+		s.viewMap[uri] = v // may be nil
 	}
 	return v, nil
 }
@@ -748,7 +750,7 @@ func (s *Session) ResetView(ctx context.Context, uri protocol.DocumentURI) (*Vie
 		return nil, fmt.Errorf("session is shut down")
 	}
 
-	view, err := s.viewOfLocked(ctx, uri)
+	view, err := s.viewOfLocked(ctx, uri.Clean())
 	if err != nil {
 		return nil, err
 	}
