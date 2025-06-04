@@ -903,7 +903,7 @@ func (f *cmdFile) spanRange(s span) (protocol.Range, error) {
 	// case-sensitive directories. The authoritative answer
 	// requires querying the file system, and we don't want
 	// to do that.
-	if !strings.EqualFold(filepath.Base(string(f.mapper.URI)), filepath.Base(string(s.URI()))) {
+	if !strings.EqualFold(f.mapper.URI.Base(), s.URI().Base()) {
 		return protocol.Range{}, bugpkg.Errorf("mapper is for file %q instead of %q", f.mapper.URI, s.URI())
 	}
 	start, err := pointPosition(f.mapper, s.Start())

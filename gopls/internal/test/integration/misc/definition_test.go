@@ -637,7 +637,7 @@ var _ = foo(123) // call
 		env.OpenFile("a.go")
 
 		locString := func(loc protocol.Location) string {
-			return fmt.Sprintf("%s:%s", filepath.Base(loc.URI.Path()), loc.Range)
+			return fmt.Sprintf("%s:%s", loc.URI.Base(), loc.Range)
 		}
 
 		// Definition at the call"foo(123)" takes us to the Go declaration.

@@ -57,7 +57,7 @@ func TestForType(t *testing.T) {
 				Properties: map[string]*schema{
 					"f":      {Type: "integer"},
 					"G":      {Type: "array", Items: &schema{Type: "number"}},
-					"P":      {Type: "boolean"},
+					"P":      {Types: []string{"null", "boolean"}},
 					"NoSkip": {Type: "string"},
 				},
 				Required:             []string{"f", "G", "P"},

@@ -91,7 +91,7 @@ func (h *commandHandler) Modules(ctx context.Context, args command.ModulesArgs) 
 			return false // "can't happen" (see prior Encloses check)
 		}
 
-		assert(filepath.Base(goMod.Path()) == "go.mod", fmt.Sprintf("invalid go.mod path: want go.mod, got %q", goMod.Path()))
+		assert(goMod.Base() == "go.mod", fmt.Sprintf("invalid go.mod path: want go.mod, got %q", goMod.Path()))
 
 		// Invariant: rel is a relative path without "../" segments and the last
 		// segment is "go.mod"

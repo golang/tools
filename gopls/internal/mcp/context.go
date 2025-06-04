@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -58,7 +57,7 @@ func contextHandler(ctx context.Context, session *cache.Session, params *mcp.Cal
 	fmt.Fprintf(&result, "Current package %q (package %s) declares the following symbols:\n\n", pkg.Metadata().PkgPath, pkg.Metadata().Name)
 	// Write context of the current file.
 	{
-		fmt.Fprintf(&result, "%s (current file):\n", filepath.Base(pgf.URI.Path()))
+		fmt.Fprintf(&result, "%s (current file):\n", pgf.URI.Base())
 		result.WriteString("--->\n")
 		if err := writeFileSummary(ctx, snapshot, pgf.URI, &result, false); err != nil {
 			return nil, err
@@ -73,7 +72,7 @@ func contextHandler(ctx context.Context, session *cache.Session, params *mcp.Cal
 				continue
 			}
 
-			fmt.Fprintf(&result, "%s:\n", filepath.Base(file.URI.Path()))
+			fmt.Fprintf(&result, "%s:\n", file.URI.Base())
 			result.WriteString("--->\n")
 			if err := writeFileSummary(ctx, snapshot, file.URI, &result, false); err != nil {
 				return nil, err
@@ -86,7 +85,7 @@ func contextHandler(ctx context.Context, session *cache.Session, params *mcp.Cal
 	if len(pgf.File.Imports) > 0 {
 		// Write import decls of the current file.
 		{
-			fmt.Fprintf(&result, "Current file %q contains this import declaration:\n", filepath.Base(pgf.URI.Path()))
+			fmt.Fprintf(&result, "Current file %q contains this import declaration:\n", pgf.URI.Base())
 			result.WriteString("--->\n")
 			// Add all import decl to output including all floating comment by
 			// using GenDecl's start and end position.
@@ -127,7 +126,7 @@ func contextHandler(ctx context.Context, session *cache.Session, params *mcp.Cal
 
 				fmt.Fprintf(&result, "%q (package %s)\n", importPath, impMetadata.Name)
 				for _, f := range impMetadata.CompiledGoFiles {
-					fmt.Fprintf(&result, "%s:\n", filepath.Base(f.Path()))
+					fmt.Fprintf(&result, "%s:\n", f.Base())
 					result.WriteString("--->\n")
 					if err := writeFileSummary(ctx, snapshot, f, &result, true); err != nil {
 						return nil, err

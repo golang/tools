@@ -180,10 +180,16 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 		}
 		actions = append(actions, moreActions...)
 
-		// Don't suggest fixes for generated files, since they are generally
+		// Don't suggest most fixes for generated files, since they are generally
 		// not useful and some editors may apply them automatically on save.
 		// (Unfortunately there's no reliable way to distinguish fixes from
 		// queries, so we must list all kinds of queries here.)
+		//
+		// We make an exception for OrganizeImports, because
+		// (a) it is needed when making temporary experimental
+		//     changes (e.g. adding logging) in generated files, and
+		// (b) it doesn't report diagnostics on well-formed code, and
+		//     unedited generated files must be well formed.
 		if golang.IsGenerated(ctx, snapshot, uri) {
 			actions = slices.DeleteFunc(actions, func(a protocol.CodeAction) bool {
 				switch a.Kind {
@@ -194,6 +200,8 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 					settings.GoplsDocFeatures,
 					settings.GoToggleCompilerOptDetails:
 					return false // read-only query
+				case settings.OrganizeImports:
+					return false // fix allowed in generated files (see #73959)
 				}
 				return true // potential write operation
 			})

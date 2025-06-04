@@ -11,12 +11,12 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/analysis/fillswitch"
@@ -733,11 +733,15 @@ func refactorRewriteEliminateDotImport(ctx context.Context, req *codeActionsRequ
 			continue
 		}
 
-		// Only qualify unqualified identifiers (due to dot imports).
+		// Only qualify unqualified identifiers (due to dot imports)
+		// that reference package-level symbols.
 		// All other references to a symbol imported from another package
 		// are nested within a select expression (pkg.Foo, v.Method, v.Field).
-		if is[*ast.SelectorExpr](curId.Parent().Node()) {
-			continue
+		if ek, _ := curId.ParentEdge(); ek == edge.SelectorExpr_Sel {
+			continue // qualified identifier (pkg.X) or selector (T.X or e.X)
+		}
+		if !typesinternal.IsPackageLevel(use) {
+			continue // unqualified field reference T{X: ...}
 		}
 
 		// Make sure that the package name will not be shadowed by something else in scope.
@@ -1103,7 +1107,7 @@ func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) erro
 
 		title := fmt.Sprintf("%s compiler optimization details for %q",
 			cond(req.snapshot.WantCompilerOptDetails(dir), "Hide", "Show"),
-			filepath.Base(dir.Path()))
+			dir.Base())
 		cmd := command.NewGCDetailsCommand(title, req.fh.URI())
 		req.addCommandAction(cmd, false)
 	}

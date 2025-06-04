@@ -1421,7 +1421,7 @@ https://github.com/golang/tools/blob/master/gopls/doc/workspace.md.`, modDir, fi
 					fix = `This file may be excluded due to its build tags; try adding "-tags=<build tag>" to your gopls "buildFlags" configuration
 See the documentation for more information on working with build tags:
 https://github.com/golang/tools/blob/master/gopls/doc/settings.md#buildflags.`
-				} else if strings.Contains(filepath.Base(fh.URI().Path()), "_") {
+				} else if strings.Contains(fh.URI().Base(), "_") {
 					fix = `This file may be excluded due to its GOOS/GOARCH, or other build constraints.`
 				} else {
 					fix = `This file is ignored by your gopls build.` // we don't know why

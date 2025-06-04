@@ -662,8 +662,8 @@ func property(v reflect.Value, name string) reflect.Value {
 	case reflect.Struct:
 		props := structPropertiesOf(v.Type())
 		// Ignore nonexistent properties.
-		if index, ok := props[name]; ok {
-			return v.FieldByIndex(index)
+		if sf, ok := props[name]; ok {
+			return v.FieldByIndex(sf.Index)
 		}
 		return reflect.Value{}
 	default:
@@ -673,6 +673,8 @@ func property(v reflect.Value, name string) reflect.Value {
 
 // properties returns an iterator over the names and values of all properties
 // in v, which must be a map or a struct.
+// If a struct, zero-valued properties that are marked omitempty or omitzero
+// are excluded.
 func properties(v reflect.Value) iter.Seq2[string, reflect.Value] {
 	return func(yield func(string, reflect.Value) bool) {
 		switch v.Kind() {
@@ -683,8 +685,14 @@ func properties(v reflect.Value) iter.Seq2[string, reflect.Value] {
 				}
 			}
 		case reflect.Struct:
-			for name, index := range structPropertiesOf(v.Type()) {
-				if !yield(name, v.FieldByIndex(index)) {
+			for name, sf := range structPropertiesOf(v.Type()) {
+				val := v.FieldByIndex(sf.Index)
+				if val.IsZero() {
+					if tag, ok := sf.Tag.Lookup("json"); ok && (strings.Contains(tag, "omitempty") || strings.Contains(tag, "omitzero")) {
+						continue
+					}
+				}
+				if !yield(name, val) {
 					return
 				}
 			}
@@ -707,8 +715,8 @@ func numPropertiesBounds(v reflect.Value, isRequired map[string]bool) (int, int)
 	case reflect.Struct:
 		sp := structPropertiesOf(v.Type())
 		min := 0
-		for prop, index := range sp {
-			if !v.FieldByIndex(index).IsZero() || isRequired[prop] {
+		for prop, sf := range sp {
+			if !v.FieldByIndex(sf.Index).IsZero() || isRequired[prop] {
 				min++
 			}
 		}
@@ -719,7 +727,7 @@ func numPropertiesBounds(v reflect.Value, isRequired map[string]bool) (int, int)
 }
 
 // A propertyMap is a map from property name to struct field index.
-type propertyMap = map[string][]int
+type propertyMap = map[string]reflect.StructField
 
 var structProperties sync.Map // from reflect.Type to propertyMap
 
@@ -730,10 +738,10 @@ func structPropertiesOf(t reflect.Type) propertyMap {
 	if props, ok := structProperties.Load(t); ok {
 		return props.(propertyMap)
 	}
-	props := map[string][]int{}
+	props := map[string]reflect.StructField{}
 	for _, sf := range reflect.VisibleFields(t) {
 		if name, ok := jsonName(sf); ok {
-			props[name] = sf.Index
+			props[name] = sf
 		}
 	}
 	structProperties.Store(t, props)

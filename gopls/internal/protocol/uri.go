@@ -91,6 +91,11 @@ func (uri DocumentURI) Path() string {
 	return filepath.FromSlash(filename)
 }
 
+// Base returns the base name of the file path of the given URI.
+func (uri DocumentURI) Base() string {
+	return filepath.Base(uri.Path())
+}
+
 // Dir returns the URI for the directory containing the receiver.
 func (uri DocumentURI) Dir() DocumentURI {
 	// This function could be more efficiently implemented by avoiding any call

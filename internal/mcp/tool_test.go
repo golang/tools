@@ -6,6 +6,8 @@ package mcp_test
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -86,5 +88,78 @@ func TestNewTool(t *testing.T) {
 		if diff := cmp.Diff(test.want, test.tool.Tool.InputSchema, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
 			t.Errorf("NewTool(%v) mismatch (-want +got):\n%s", test.tool.Tool.Name, diff)
 		}
+	}
+}
+
+func TestNewToolValidate(t *testing.T) {
+	// Check that the tool returned from NewTool properly validates its input schema.
+
+	type req struct {
+		I int
+		B bool
+		S string `json:",omitempty"`
+		P *int   `json:",omitempty"`
+	}
+
+	dummyHandler := func(context.Context, *mcp.ServerSession, *mcp.CallToolParams[req]) (*mcp.CallToolResult, error) {
+		return nil, nil
+	}
+
+	tool := mcp.NewTool("test", "test", dummyHandler)
+	for _, tt := range []struct {
+		desc string
+		args map[string]any
+		want string // error should contain this string; empty for success
+	}{
+		{
+			"both required",
+			map[string]any{"I": 1, "B": true},
+			"",
+		},
+		{
+			"optional",
+			map[string]any{"I": 1, "B": true, "S": "foo"},
+			"",
+		},
+		{
+			"wrong type",
+			map[string]any{"I": 1.5, "B": true},
+			"cannot unmarshal",
+		},
+		{
+			"extra property",
+			map[string]any{"I": 1, "B": true, "C": 2},
+			"unknown field",
+		},
+		{
+			"value for pointer",
+			map[string]any{"I": 1, "B": true, "P": 3},
+			"",
+		},
+		{
+			"null for pointer",
+			map[string]any{"I": 1, "B": true, "P": nil},
+			"",
+		},
+	} {
+		t.Run(tt.desc, func(t *testing.T) {
+			raw, err := json.Marshal(tt.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = tool.Handler(context.Background(), nil,
+				&mcp.CallToolParams[json.RawMessage]{Arguments: json.RawMessage(raw)})
+			if err == nil && tt.want != "" {
+				t.Error("got success, wanted failure")
+			}
+			if err != nil {
+				if tt.want == "" {
+					t.Fatalf("failed with:\n%s\nwanted success", err)
+				}
+				if !strings.Contains(err.Error(), tt.want) {
+					t.Fatalf("got:\n%s\nwanted to contain %q", err, tt.want)
+				}
+			}
+		})
 	}
 }

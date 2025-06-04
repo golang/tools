@@ -42,15 +42,21 @@ func For[T any]() (*Schema, error) {
 //   - complex numbers
 //   - unsafe pointers
 //
+// The cannot be any cycles in the types.
 // TODO(rfindley): we could perhaps just skip these incompatible fields.
 func ForType(t reflect.Type) (*Schema, error) {
 	return typeSchema(t)
 }
 
 func typeSchema(t reflect.Type) (*Schema, error) {
-	if t.Kind() == reflect.Pointer {
+	// Follow pointers: the schema for *T is almost the same as for T, except that
+	// an explicit JSON "null" is allowed for the pointer.
+	allowNull := false
+	for t.Kind() == reflect.Pointer {
+		allowNull = true
 		t = t.Elem()
 	}
+
 	var (
 		s   = new(Schema)
 		err error
@@ -120,6 +126,10 @@ func typeSchema(t reflect.Type) (*Schema, error) {
 
 	default:
 		return nil, fmt.Errorf("type %v is unsupported by jsonschema", t)
+	}
+	if allowNull && s.Type != "" {
+		s.Types = []string{"null", s.Type}
+		s.Type = ""
 	}
 	return s, nil
 }

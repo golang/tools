@@ -6,7 +6,6 @@ package modfile
 
 import (
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -870,7 +869,7 @@ func hello() {}
 		// Confirm that we still have metadata with only on-disk edits.
 		env.OpenFile("main.go")
 		loc := env.FirstDefinition(env.RegexpSearch("main.go", "hello"))
-		if filepath.Base(string(loc.URI)) != "hello.go" {
+		if loc.URI.Base() != "hello.go" {
 			t.Fatalf("expected definition in hello.go, got %s", loc.URI)
 		}
 		// Confirm that we no longer have metadata when the file is saved.
