@@ -9,8 +9,8 @@ package jsonschema
 import (
 	"fmt"
 	"reflect"
-	"slices"
-	"strings"
+
+	"golang.org/x/tools/internal/mcp/internal/util"
 )
 
 // For constructs a JSON schema object for the given type argument.
@@ -108,19 +108,19 @@ func typeSchema(t reflect.Type) (*Schema, error) {
 
 		for i := range t.NumField() {
 			field := t.Field(i)
-			name, required, include := parseField(field)
-			if !include {
+			info := util.FieldJSONInfo(field)
+			if info.Omit {
 				continue
 			}
 			if s.Properties == nil {
 				s.Properties = make(map[string]*Schema)
 			}
-			s.Properties[name], err = typeSchema(field.Type)
+			s.Properties[info.Name], err = typeSchema(field.Type)
 			if err != nil {
 				return nil, err
 			}
-			if required {
-				s.Required = append(s.Required, name)
+			if !info.Settings["omitempty"] && !info.Settings["omitzero"] {
+				s.Required = append(s.Required, info.Name)
 			}
 		}
 
@@ -132,24 +132,4 @@ func typeSchema(t reflect.Type) (*Schema, error) {
 		s.Type = ""
 	}
 	return s, nil
-}
-
-func parseField(f reflect.StructField) (name string, required, include bool) {
-	if !f.IsExported() {
-		return "", false, false
-	}
-	name = f.Name
-	required = true
-	if tag, ok := f.Tag.Lookup("json"); ok {
-		props := strings.Split(tag, ",")
-		if props[0] != "" {
-			if props[0] == "-" {
-				return "", false, false
-			}
-			name = props[0]
-		}
-		// TODO: support 'omitzero' as well.
-		required = !slices.Contains(props[1:], "omitempty")
-	}
-	return name, required, true
 }

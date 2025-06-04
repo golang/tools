@@ -17,6 +17,8 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+
+	"golang.org/x/tools/internal/mcp/internal/util"
 )
 
 // A Schema is a JSON schema object.
@@ -426,8 +428,9 @@ var (
 
 func init() {
 	for _, sf := range reflect.VisibleFields(reflect.TypeFor[Schema]()) {
-		if name, ok := jsonName(sf); ok {
-			schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, name})
+		info := util.FieldJSONInfo(sf)
+		if !info.Omit {
+			schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, info.Name})
 		}
 	}
 	slices.SortFunc(schemaFieldInfos, func(i1, i2 structFieldInfo) int {
