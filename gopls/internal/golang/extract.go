@@ -1896,6 +1896,10 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 		if n == nil {
 			return false
 		}
+		// Don't modify return statements inside anonymous functions.
+		if _, ok := n.(*ast.FuncLit); ok {
+			return false
+		}
 		if n, ok := n.(*ast.ReturnStmt); ok {
 			n.Results = slices.Concat(zeroVals, n.Results)
 			return false
