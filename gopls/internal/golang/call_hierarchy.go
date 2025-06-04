@@ -11,7 +11,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"path/filepath"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
@@ -59,7 +58,7 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 		Name:           obj.Name(),
 		Kind:           protocol.Function,
 		Tags:           []protocol.SymbolTag{},
-		Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), filepath.Base(declLoc.URI.Path())),
+		Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), declLoc.URI.Base()),
 		URI:            declLoc.URI,
 		Range:          rng,
 		SelectionRange: rng,
@@ -182,7 +181,7 @@ func enclosingNodeCallItem(ctx context.Context, snapshot *cache.Snapshot, pkgPat
 		Name:           name,
 		Kind:           kind,
 		Tags:           []protocol.SymbolTag{},
-		Detail:         fmt.Sprintf("%s • %s", pkgPath, filepath.Base(fh.URI().Path())),
+		Detail:         fmt.Sprintf("%s • %s", pkgPath, fh.URI().Base()),
 		URI:            loc.URI,
 		Range:          rng,
 		SelectionRange: rng,
@@ -283,7 +282,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 					Name:           obj.Name(),
 					Kind:           protocol.Function,
 					Tags:           []protocol.SymbolTag{},
-					Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), filepath.Base(loc.URI.Path())),
+					Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), loc.URI.Base()),
 					URI:            loc.URI,
 					Range:          loc.Range,
 					SelectionRange: loc.Range,

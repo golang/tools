@@ -168,8 +168,7 @@ func (s *server) warnAboutModifyingGeneratedFiles(ctx context.Context, uri proto
 	isGenerated := golang.IsGenerated(ctx, snapshot, uri)
 	release()
 	if isGenerated {
-		msg := fmt.Sprintf("Warning: editing %s, a generated file.",
-			filepath.Base(uri.Path()))
+		msg := fmt.Sprintf("Warning: editing %s, a generated file.", uri.Base())
 		showMessage(ctx, s.client, protocol.Warning, msg)
 	}
 	return nil

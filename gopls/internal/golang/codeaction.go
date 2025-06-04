@@ -11,7 +11,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -1108,7 +1107,7 @@ func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) erro
 
 		title := fmt.Sprintf("%s compiler optimization details for %q",
 			cond(req.snapshot.WantCompilerOptDetails(dir), "Hide", "Show"),
-			filepath.Base(dir.Path()))
+			dir.Base())
 		cmd := command.NewGCDetailsCommand(title, req.fh.URI())
 		req.addCommandAction(cmd, false)
 	}
