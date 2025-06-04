@@ -191,8 +191,8 @@ type loggingStream struct {
 }
 
 // loggingReader is a stream middleware that logs incoming messages.
-func (s *loggingStream) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
-	msg, n, err := s.delegate.Read(ctx)
+func (s *loggingStream) Read(ctx context.Context) (jsonrpc2.Message, error) {
+	msg, err := s.delegate.Read(ctx)
 	if err != nil {
 		fmt.Fprintf(s.w, "read error: %v", err)
 	} else {
@@ -202,12 +202,12 @@ func (s *loggingStream) Read(ctx context.Context) (jsonrpc2.Message, int64, erro
 		}
 		fmt.Fprintf(s.w, "read: %s\n", string(data))
 	}
-	return msg, n, err
+	return msg, err
 }
 
 // loggingWriter is a stream middleware that logs outgoing messages.
-func (s *loggingStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
-	n, err := s.delegate.Write(ctx, msg)
+func (s *loggingStream) Write(ctx context.Context, msg jsonrpc2.Message) error {
+	err := s.delegate.Write(ctx, msg)
 	if err != nil {
 		fmt.Fprintf(s.w, "write error: %v", err)
 	} else {
@@ -217,7 +217,7 @@ func (s *loggingStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64,
 		}
 		fmt.Fprintf(s.w, "write: %s\n", string(data))
 	}
-	return n, err
+	return err
 }
 
 func (s *loggingStream) Close() error {
@@ -345,35 +345,35 @@ type msgBatch struct {
 	responses  []*jsonrpc2.Response
 }
 
-func (t *ioStream) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
+func (t *ioStream) Read(ctx context.Context) (jsonrpc2.Message, error) {
 	return t.read(ctx, t.in)
 }
 
-func (t *ioStream) read(ctx context.Context, in *json.Decoder) (jsonrpc2.Message, int64, error) {
+func (t *ioStream) read(ctx context.Context, in *json.Decoder) (jsonrpc2.Message, error) {
 	select {
 	case <-ctx.Done():
-		return nil, 0, ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
 	if len(t.queue) > 0 {
 		next := t.queue[0]
 		t.queue = t.queue[1:]
-		return next, 0, nil
+		return next, nil
 	}
 	var raw json.RawMessage
 	if err := in.Decode(&raw); err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	var rawBatch []json.RawMessage
 	if err := json.Unmarshal(raw, &rawBatch); err == nil {
 		msg, err := t.readBatch(rawBatch)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
-		return msg, int64(len(raw)), nil
+		return msg, nil
 	}
 	msg, err := jsonrpc2.DecodeMessage(raw)
-	return msg, int64(len(raw)), err
+	return msg, err
 }
 
 // readBatch reads a batch of jsonrpc2 messages, and records the batch
@@ -429,10 +429,10 @@ func (t *ioStream) readBatch(rawBatch []json.RawMessage) (jsonrpc2.Message, erro
 	return first, nil
 }
 
-func (t *ioStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
+func (t *ioStream) Write(ctx context.Context, msg jsonrpc2.Message) error {
 	select {
 	case <-ctx.Done():
-		return 0, ctx.Err()
+		return ctx.Err()
 	default:
 	}
 
@@ -445,13 +445,13 @@ func (t *ioStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64, erro
 			if len(batch) > 0 {
 				data, err := marshalMessages(batch)
 				if err != nil {
-					return 0, err
+					return err
 				}
 				data = append(data, '\n')
-				n, err := t.rwc.Write(data)
-				return int64(n), err
+				_, err = t.rwc.Write(data)
+				return err
 			}
-			return 0, nil
+			return nil
 		}
 	} else if len(t.outgoingBatch) < cap(t.outgoingBatch) {
 		t.outgoingBatch = append(t.outgoingBatch, msg)
@@ -459,21 +459,21 @@ func (t *ioStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64, erro
 			data, err := marshalMessages(t.outgoingBatch)
 			t.outgoingBatch = t.outgoingBatch[:0]
 			if err != nil {
-				return 0, err
+				return err
 			}
 			data = append(data, '\n')
-			n, err := t.rwc.Write(data)
-			return int64(n), err
+			_, err = t.rwc.Write(data)
+			return err
 		}
-		return 0, nil
+		return nil
 	}
 	data, err := jsonrpc2.EncodeMessage(msg)
 	if err != nil {
-		return 0, fmt.Errorf("marshaling message: %v", err)
+		return fmt.Errorf("marshaling message: %v", err)
 	}
 	data = append(data, '\n') // newline delimited
-	n, err := t.rwc.Write(data)
-	return int64(n), err
+	_, err = t.rwc.Write(data)
+	return err
 }
 
 func (t *ioStream) Close() error {

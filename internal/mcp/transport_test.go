@@ -38,7 +38,7 @@ func TestBatchFraming(t *testing.T) {
 	read := make(chan jsonrpc2.Message)
 	go func() {
 		for range 2 {
-			msg, _, _ := tport.Read(ctx)
+			msg, _ := tport.Read(ctx)
 			read <- msg
 		}
 	}()
