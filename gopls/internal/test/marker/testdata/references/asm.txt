@@ -1,0 +1,36 @@
+This test validates the References request functionality in Go assembly files.
+
+It ensures that references to both exported (`Add`) and unexported (`sub`) functions are correctly identified across Go and assembly files. The test covers:
+- Locating the definition of functions in both Go and assembly files.
+- Identifying all references to the functions (`Add` and `sub`) within the Go and assembly files.
+
+The test includes:
+- `Add`: An exported function with references in both Go and assembly files.
+- `sub`: An unexported function with references in both Go and assembly files, including a usage in Go code (`var _ = sub`).
+
+The assembly file demonstrates portable assembly syntax and verifies cross-file reference handling.
+
+-- go.mod --
+module example.com
+go 1.24
+
+-- foo/foo.go --
+package foo
+
+func Add(a, b int) int //@ loc(use, "Add"), refs("Add", use, def)
+func sub(a, b int) int //@ loc(useSub, "sub"), refs("sub", useSub, defSub, refSub)
+var _ = sub //@loc(refSub, "sub"), refs("sub", useSub, defSub, refSub)
+
+-- foo/foo.s --
+// portable assembly
+#include "textflag.h"
+
+TEXT ·Add(SB), NOSPLIT, $0-24 //@ loc(def, "Add"), refs("Add", def, use)
+    MOVQ a+0(FP), AX
+    ADDQ b+8(FP), AX
+    RET
+
+TEXT ·sub(SB), NOSPLIT, $0-24 //@ loc(defSub, "sub"), refs("sub", defSub, useSub, refSub)
+    MOVQ a+0(FP), AX
+    SUBQ b+8(FP), AX
+    RET

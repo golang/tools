@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/types"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -73,16 +74,34 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	// TODO(grootguo): Currently, only references to the symbol within the package are found (i.e., only Idents in this package's Go files are searched).
 	// It is still necessary to implement cross-package reference lookup: that is, to find all references to this symbol in other packages that import the current package.
 	// Refer to the global search logic in golang.References, and add corresponding test cases for verification.
+	obj := pkg.Types().Scope().Lookup(name)
+	matches := func(curObj types.Object) bool {
+		if curObj == nil {
+			return false
+		}
+		if curObj.Name() != obj.Name() {
+			return false
+		}
+		return true
+	}
 	for _, pgf := range pkg.CompiledGoFiles() {
 		for curId := range pgf.Cursor.Preorder((*ast.Ident)(nil)) {
 			id := curId.Node().(*ast.Ident)
-			if id.Name == name {
-				loc, err := pgf.NodeLocation(id)
-				if err != nil {
-					return nil, err
+			curObj, ok := pkg.TypesInfo().Defs[id]
+			if !ok {
+				curObj, ok = pkg.TypesInfo().Uses[id]
+				if !ok {
+					continue
 				}
-				locations = append(locations, loc)
 			}
+			if !matches(curObj) {
+				continue
+			}
+			loc, err := pgf.NodeLocation(id)
+			if err != nil {
+				return nil, err
+			}
+			locations = append(locations, loc)
 		}
 	}
 
@@ -96,12 +115,8 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 			if id.Name != sym {
 				continue
 			}
-			if rng, err := asmFile.NodeRange(id); err == nil {
-				asmLocation := protocol.Location{
-					URI:   asmFile.URI,
-					Range: rng,
-				}
-				locations = append(locations, asmLocation)
+			if loc, err := asmFile.NodeLocation(id); err == nil {
+				locations = append(locations, loc)
 			}
 		}
 	}
