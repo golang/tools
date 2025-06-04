@@ -291,7 +291,7 @@ func (s *Server) readResource(ctx context.Context, ss *ServerSession, params *Re
 	return res, nil
 }
 
-// FileResourceHandler returns a ReadResourceHandler that reads paths using dir as
+// fileResourceHandler returns a ReadResourceHandler that reads paths using dir as
 // a base directory.
 // It honors client roots and protects against path traversal attacks.
 //
@@ -303,7 +303,7 @@ func (s *Server) readResource(ctx context.Context, ss *ServerSession, params *Re
 // Lexical path traversal attacks, where the path has ".." elements that escape dir,
 // are always caught. Go 1.24 and above also protects against symlink-based attacks,
 // where symlinks under dir lead out of the tree.
-func (s *Server) FileResourceHandler(dir string) ResourceHandler {
+func (s *Server) fileResourceHandler(dir string) ResourceHandler {
 	return fileResourceHandler(dir)
 }
 
