@@ -58,6 +58,11 @@ func (f *File) NodeRange(ident Ident) (protocol.Range, error) {
 	return f.Mapper.OffsetRange(ident.Offset+2, ident.End()+1)
 }
 
+// NodeLocation returns a protocol Location for the ast.Node interval in this file.
+func (f *File) NodeLocation(ident Ident) (protocol.Location, error) {
+	return f.Mapper.OffsetLocation(ident.Offset+2, ident.End()+1)
+}
+
 // Ident represents an identifier in an assembly file.
 type Ident struct {
 	Name   string // symbol name (after correcting [·∕]); Name[0]='.' => current package
