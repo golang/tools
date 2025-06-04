@@ -40,11 +40,6 @@ func Format(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]pr
 		return nil, err
 	}
 
-	// Generated files shouldn't be edited. So, don't format them.
-	if ast.IsGenerated(pgf.File) {
-		return nil, fmt.Errorf("can't format %q: file is generated", fh.URI().Path())
-	}
-
 	// Even if this file has parse errors, it might still be possible to format it.
 	// Using format.Node on an AST with errors may result in code being modified.
 	// Attempt to format the source of this file instead.
