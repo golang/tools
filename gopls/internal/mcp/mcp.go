@@ -22,7 +22,7 @@ import (
 // The server receives LSP session events on the specified channel, which the
 // caller is responsible for closing. The server runs until the context is
 // canceled.
-func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionEvent, cache *cache.Cache, isDaemon bool) error {
+func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionEvent, isDaemon bool) error {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
@@ -36,7 +36,7 @@ func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionE
 	defer log.Printf("Gopls MCP server: exiting")
 
 	svr := http.Server{
-		Handler: HTTPHandler(eventChan, cache, isDaemon),
+		Handler: HTTPHandler(eventChan, isDaemon),
 		BaseContext: func(net.Listener) context.Context {
 			return ctx
 		},
@@ -51,7 +51,7 @@ func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionE
 }
 
 // HTTPHandler returns an HTTP handler for handling requests from MCP client.
-func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, cache *cache.Cache, isDaemon bool) http.Handler {
+func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, isDaemon bool) http.Handler {
 	var (
 		mu          sync.Mutex                         // lock for mcpHandlers.
 		mcpHandlers = make(map[string]*mcp.SSEHandler) // map from lsp session ids to MCP sse handlers.
@@ -64,7 +64,7 @@ func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, cache *cache.Cache, isDae
 			switch event.Type {
 			case lsprpc.SessionStart:
 				mcpHandlers[event.Session.ID()] = mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
-					return newServer(cache, event.Session)
+					return newServer(event.Session)
 				})
 			case lsprpc.SessionEnd:
 				delete(mcpHandlers, event.Session.ID())
@@ -110,7 +110,7 @@ func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, cache *cache.Cache, isDae
 	return mux
 }
 
-func newServer(_ *cache.Cache, session *cache.Session) *mcp.Server {
+func newServer(session *cache.Session) *mcp.Server {
 	s := mcp.NewServer("golang", "v0.1", nil)
 
 	s.AddTools(

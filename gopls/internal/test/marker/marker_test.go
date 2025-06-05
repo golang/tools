@@ -991,7 +991,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	var mcpServer *httptest.Server
 	if enableMCP {
 		eventChan = make(chan lsprpc.SessionEvent)
-		mcpServer = httptest.NewServer(internalmcp.HTTPHandler(eventChan, cache, false))
+		mcpServer = httptest.NewServer(internalmcp.HTTPHandler(eventChan, false))
 	}
 
 	ss := lsprpc.NewStreamServer(cache, false, eventChan, nil)

@@ -19,7 +19,7 @@ func TestContextCancellation(t *testing.T) {
 
 	res := make(chan error)
 	go func() {
-		res <- mcp.Serve(ctx, "localhost:0", nil, nil, true)
+		res <- mcp.Serve(ctx, "localhost:0", nil, true)
 	}()
 
 	time.Sleep(1 * time.Second)
