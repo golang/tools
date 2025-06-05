@@ -6,11 +6,10 @@ require (
 	github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c
 	github.com/google/go-cmp v0.6.0
 	github.com/jba/templatecheck v0.7.1
-	golang.org/x/mod v0.24.0
-	golang.org/x/sync v0.14.0
-	golang.org/x/sys v0.33.0
+	golang.org/x/mod v0.25.0
+	golang.org/x/sync v0.15.0
 	golang.org/x/telemetry v0.0.0-20250417124945-06ef541f3fa3
-	golang.org/x/text v0.25.0
+	golang.org/x/text v0.26.0
 	golang.org/x/tools v0.33.1-0.20250521210010-423c5afcceff
 	golang.org/x/vuln v1.1.4
 	gopkg.in/yaml.v3 v3.0.1
@@ -25,6 +24,7 @@ require (
 	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/google/safehtml v0.1.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20250218142911-aa4b98e5adaa // indirect
+	golang.org/x/sys v0.33.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 )
 
