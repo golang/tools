@@ -20,8 +20,8 @@ type SayHiParams struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParams[SayHiParams]) (*mcp.CallToolResult, error) {
-	return &mcp.CallToolResult{
+func SayHi(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[SayHiParams]) (*mcp.CallToolResultFor[any], error) {
+	return &mcp.CallToolResultFor[any]{
 		Content: []*mcp.Content{
 			mcp.NewTextContent("Hi " + params.Arguments.Name),
 		},
@@ -46,7 +46,7 @@ func ExampleServer() {
 		log.Fatal(err)
 	}
 
-	res, err := mcp.CallTool(ctx, clientSession, &mcp.CallToolParams[map[string]any]{
+	res, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "greet",
 		Arguments: map[string]any{"name": "user"},
 	})
@@ -147,7 +147,6 @@ func TestListResources(t *testing.T) {
 			t.Fatalf("Resources() mismatch (-want +got):\n%s", diff)
 		}
 	})
-
 }
 
 func TestListPrompts(t *testing.T) {

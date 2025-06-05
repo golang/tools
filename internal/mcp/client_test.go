@@ -7,7 +7,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -198,30 +197,5 @@ func TestClientPaginateVariousPageSizes(t *testing.T) {
 				t.Fatalf("paginate() mismatch (-want +got):\n%s", diff)
 			}
 		})
-	}
-}
-
-func TestToWireParams(t *testing.T) {
-	// This test verifies that toWireParams maps all fields.
-	// The Meta and Arguments fields are not comparable, so can't be checked by
-	// this simple test. However, this test will fail if new fields are added,
-	// and not handled by toWireParams.
-	params := &CallToolParams[struct{}]{
-		Name: "tool",
-	}
-	wireParams, err := toWireParams(params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	v := reflect.ValueOf(wireParams).Elem()
-	for i := range v.Type().NumField() {
-		f := v.Type().Field(i)
-		if f.Name == "Meta" || f.Name == "Arguments" {
-			continue // not comparable
-		}
-		fv := v.Field(i)
-		if fv.Interface() == reflect.Zero(f.Type).Interface() {
-			t.Fatalf("toWireParams: unmapped field %q", f.Name)
-		}
 	}
 }

@@ -6,8 +6,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"iter"
 	"slices"
 	"sync"
@@ -288,34 +286,13 @@ func (cs *ClientSession) ListTools(ctx context.Context, params *ListToolsParams)
 }
 
 // CallTool calls the tool with the given name and arguments.
-// Pass a [CallToolOptions] to provide additional request fields.
-func (cs *ClientSession) CallTool(ctx context.Context, params *CallToolParams[json.RawMessage]) (*CallToolResult, error) {
+// The arguments can be any value that marshals into a JSON object.
+func (cs *ClientSession) CallTool(ctx context.Context, params *CallToolParams) (*CallToolResult, error) {
+	if params.Arguments == nil {
+		// Avoid sending nil over the wire.
+		params.Arguments = map[string]any{}
+	}
 	return handleSend[*CallToolResult](ctx, cs, methodCallTool, params)
-}
-
-// CallTool is a helper to call a tool with any argument type. It returns an
-// error if params.Arguments fails to marshal to JSON.
-func CallTool[TArgs any](ctx context.Context, cs *ClientSession, params *CallToolParams[TArgs]) (*CallToolResult, error) {
-	wireParams, err := toWireParams(params)
-	if err != nil {
-		return nil, err
-	}
-	return cs.CallTool(ctx, wireParams)
-}
-
-func toWireParams[TArgs any](params *CallToolParams[TArgs]) (*CallToolParams[json.RawMessage], error) {
-	data, err := json.Marshal(params.Arguments)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal arguments: %v", err)
-	}
-	// The field mapping here must be kept up to date with the CallToolParams.
-	// This is partially enforced by TestToWireParams, which verifies that all
-	// comparable fields are mapped.
-	return &CallToolParams[json.RawMessage]{
-		Meta:      params.Meta,
-		Name:      params.Name,
-		Arguments: data,
-	}, nil
 }
 
 func (cs *ClientSession) SetLevel(ctx context.Context, params *SetLevelParams) error {

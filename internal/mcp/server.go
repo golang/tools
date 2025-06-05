@@ -110,15 +110,56 @@ func (s *Server) RemovePrompts(names ...string) {
 
 // AddTools adds the given tools to the server,
 // replacing any with the same names.
+// The arguments must not be modified after this call.
+//
+// AddTools panics if errors are detected.
+// Call [AddToolsErr] to obtain an error instead.
 func (s *Server) AddTools(tools ...*ServerTool) {
+	if err := s.addToolsErr(tools...); err != nil {
+		panic(err)
+	}
+}
+
+// addToolsErr is like [AddTools], but returns an error instead of panicking.
+func (s *Server) addToolsErr(tools ...*ServerTool) error {
 	// Only notify if something could change.
 	if len(tools) == 0 {
-		return
+		return nil
 	}
+	// Wrap the user's Handlers with rawHandlers that take a json.RawMessage.
+	for _, st := range tools {
+		if st.rawHandler == nil {
+			// This ServerTool was not created with NewTool.
+			if st.Handler == nil {
+				return fmt.Errorf("AddTools: tool %q has no handler", st.Tool.Name)
+			}
+			st.rawHandler = newRawHandler(st)
+			// Resolve the schemas, with no base URI. We don't expect tool schemas to
+			// refer outside of themselves.
+			if st.Tool.InputSchema != nil {
+				r, err := st.Tool.InputSchema.Resolve(nil)
+				if err != nil {
+					return err
+				}
+				st.inputResolved = r
+			}
+
+			// TODO: uncomment when output schemas drop.
+			// if st.Tool.OutputSchema != nil {
+			// 	st.outputResolved, err := st.Tool.OutputSchema.Resolve(nil)
+			// 	if err != nil {
+			// 		return err
+			// 	}
+			// }
+		}
+	}
+
 	// Assume there was a change, since add replaces existing tools.
 	// (It's possible a tool was replaced with an identical one, but not worth checking.)
+	// TODO: surface notify error here?
 	s.changeAndNotify(notificationToolListChanged, &ToolListChangedParams{},
 		func() bool { s.tools.add(tools...); return true })
+	return nil
 }
 
 // RemoveTools removes the tools with the given names.
@@ -245,14 +286,14 @@ func (s *Server) listTools(_ context.Context, _ *ServerSession, params *ListTool
 	})
 }
 
-func (s *Server) callTool(ctx context.Context, cc *ServerSession, params *CallToolParams[json.RawMessage]) (*CallToolResult, error) {
+func (s *Server) callTool(ctx context.Context, cc *ServerSession, params *CallToolParamsFor[json.RawMessage]) (*CallToolResult, error) {
 	s.mu.Lock()
 	tool, ok := s.tools.get(params.Name)
 	s.mu.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("%s: unknown tool %q", jsonrpc2.ErrInvalidParams, params.Name)
 	}
-	return tool.Handler(ctx, cc, params)
+	return tool.rawHandler(ctx, cc, params)
 }
 
 func (s *Server) listResources(_ context.Context, _ *ServerSession, params *ListResourcesParams) (*ListResourcesResult, error) {

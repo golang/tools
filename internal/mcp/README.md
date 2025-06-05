@@ -50,11 +50,11 @@ func main() {
 	}
 	defer session.Close()
 	// Call a tool on the server.
-	params := &mcp.CallToolParams[map[string]any]{
+	params := &mcp.CallToolParams{
 		Name:      "greet",
 		Arguments: map[string]any{"name": "you"},
 	}
-	if res, err := mcp.CallTool(ctx, session, params); err != nil {
+	if res, err := session.CallTool(ctx, params); err != nil {
 		log.Printf("CallTool failed: %v", err)
 	} else {
 		if res.IsError {
@@ -82,8 +82,8 @@ type HiParams struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParams[HiParams]) (*mcp.CallToolResult, error) {
-	return &mcp.CallToolResult{
+func SayHi(ctx context.Context, cc *mcp.ServerSession, params *mcp.CallToolParamsFor[HiParams]) (*mcp.CallToolResultFor[string], error) {
+	return &mcp.CallToolResultFor[string]{
 		Content: []*mcp.Content{mcp.NewTextContent("Hi " + params.Name)},
 	}, nil
 }

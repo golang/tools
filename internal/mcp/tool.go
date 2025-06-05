@@ -15,48 +15,116 @@ import (
 )
 
 // A ToolHandler handles a call to tools/call.
-type ToolHandler[TArgs any] func(context.Context, *ServerSession, *CallToolParams[TArgs]) (*CallToolResult, error)
+// [CallToolParams.Arguments] will contain a map[string]any that has been validated
+// against the input schema.
+// Perhaps this should be an alias for ToolHandlerFor[map[string]any, map[string]any].
+type ToolHandler func(context.Context, *ServerSession, *CallToolParamsFor[map[string]any]) (*CallToolResult, error)
+
+// A ToolHandlerFor[Treq, Tres] handles a call to tools/call with typed arguments and results.
+type ToolHandlerFor[Treq, Tres any] func(context.Context, *ServerSession, *CallToolParamsFor[Treq]) (*CallToolResultFor[Tres], error)
+
+// A rawToolHandler is like a ToolHandler, but takes the arguments as as json.RawMessage.
+type rawToolHandler = func(context.Context, *ServerSession, *CallToolParamsFor[json.RawMessage]) (*CallToolResult, error)
 
 // A Tool is a tool definition that is bound to a tool handler.
 type ServerTool struct {
 	Tool    *Tool
-	Handler ToolHandler[json.RawMessage]
+	Handler ToolHandler
+	// Set in NewTool or Server.AddToolsErr.
+	rawHandler rawToolHandler
+	// Resolved tool schemas. Set in Server.AddToolsErr.
+	inputResolved, outputResolved *jsonschema.Resolved
 }
 
-// NewTool is a helper to make a tool using reflection on the given handler.
+// NewTool is a helper to make a tool using reflection on the given type parameters.
+// When the tool is called, CallToolParams.Arguments will be of type TReq.
 //
 // If provided, variadic [ToolOption] values may be used to customize the tool.
 //
 // The input schema for the tool is extracted from the request type for the
 // handler, and used to unmmarshal and validate requests to the handler. This
 // schema may be customized using the [Input] option.
-//
-// The handler request type must translate to a valid schema, as documented by
-// [jsonschema.ForType]; otherwise, NewTool panics.
-//
-// TODO: just have the handler return a CallToolResult: returning []Content is
-// going to be inconsistent with other server features.
-func NewTool[TReq any](name, description string, handler ToolHandler[TReq], opts ...ToolOption) *ServerTool {
-	schema, err := jsonschema.For[TReq]()
+func NewTool[TReq, TRes any](name, description string, handler ToolHandlerFor[TReq, TRes], opts ...ToolOption) *ServerTool {
+	st, err := newToolErr[TReq, TRes](name, description, handler, opts...)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("NewTool(%q): %w", name, err))
 	}
-	// We must resolve the schema after the ToolOptions have had a chance to update it.
-	// But the handler needs access to the resolved schema, and the options may change
-	// the handler too.
-	// The best we can do is use the resolved schema in our own wrapped handler,
-	// and hope that no ToolOption replaces it.
-	// TODO(jba): at a minimum, document this.
-	var resolved *jsonschema.Resolved
-	wrapped := func(ctx context.Context, cc *ServerSession, params *CallToolParams[json.RawMessage]) (*CallToolResult, error) {
-		var params2 CallToolParams[TReq]
-		if params.Arguments != nil {
-			if err := unmarshalSchema(params.Arguments, resolved, &params2.Arguments); err != nil {
-				return nil, err
-			}
+	return st
+}
+
+func newToolErr[TReq, TRes any](name, description string, handler ToolHandlerFor[TReq, TRes], opts ...ToolOption) (*ServerTool, error) {
+	// TODO: check that TReq is a struct.
+	ischema, err := jsonschema.For[TReq]()
+	if err != nil {
+		return nil, err
+	}
+	// TODO: uncomment when output schemas drop.
+	// oschema, err := jsonschema.For[TRes]()
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	t := &ServerTool{
+		Tool: &Tool{
+			Name:        name,
+			Description: description,
+			InputSchema: ischema,
+			// OutputSchema: oschema,
+		},
+	}
+	for _, opt := range opts {
+		opt.set(t)
+	}
+
+	t.rawHandler = func(ctx context.Context, ss *ServerSession, rparams *CallToolParamsFor[json.RawMessage]) (*CallToolResult, error) {
+		var args TReq
+		if err := unmarshalSchema(rparams.Arguments, t.inputResolved, &args); err != nil {
+			return nil, err
 		}
-		res, err := handler(ctx, cc, &params2)
-		// TODO: investigate why server errors are embedded in this strange way,
+		// TODO(jba): future-proof this copy.
+		params := &CallToolParamsFor[TReq]{
+			Meta:      rparams.Meta,
+			Name:      rparams.Name,
+			Arguments: args,
+		}
+		res, err := handler(ctx, ss, params)
+		if err != nil {
+			return nil, err
+		}
+
+		var ctr CallToolResult
+		if res != nil {
+			// TODO(jba): future-proof this copy.
+			ctr.Meta = res.Meta
+			ctr.Content = res.Content
+			ctr.IsError = res.IsError
+		}
+		return &ctr, nil
+	}
+	return t, nil
+}
+
+// newRawHandler creates a rawToolHandler for tools not created through NewTool.
+// It unmarshals the arguments into a map[string]any and validates them against the
+// schema, then calls the ServerTool's handler.
+func newRawHandler(st *ServerTool) rawToolHandler {
+	if st.Handler == nil {
+		panic("st.Handler is nil")
+	}
+	return func(ctx context.Context, ss *ServerSession, rparams *CallToolParamsFor[json.RawMessage]) (*CallToolResult, error) {
+		// Unmarshal the args into what should be a map.
+		var args map[string]any
+		if err := unmarshalSchema(rparams.Arguments, st.inputResolved, &args); err != nil {
+			return nil, err
+		}
+		// TODO: generate copy
+		params := &CallToolParamsFor[map[string]any]{
+			Meta:      rparams.Meta,
+			Name:      rparams.Name,
+			Arguments: args,
+		}
+		res, err := st.Handler(ctx, ss, params)
+		// TODO(rfindley): investigate why server errors are embedded in this strange way,
 		// rather than returned as jsonrpc2 server errors.
 		if err != nil {
 			return &CallToolResult{
@@ -66,26 +134,6 @@ func NewTool[TReq any](name, description string, handler ToolHandler[TReq], opts
 		}
 		return res, nil
 	}
-	t := &ServerTool{
-		Tool: &Tool{
-			Name:        name,
-			Description: description,
-			InputSchema: schema,
-		},
-		Handler: wrapped,
-	}
-	for _, opt := range opts {
-		opt.set(t)
-	}
-	if schema := t.Tool.InputSchema; schema != nil {
-		// Resolve the schema, with no base URI. We don't expect tool schemas to
-		// refer outside of themselves.
-		resolved, err = schema.Resolve(nil)
-		if err != nil {
-			panic(fmt.Errorf("resolving input schema %s: %w", schemaJSON(schema), err))
-		}
-	}
-	return t
 }
 
 // unmarshalSchema unmarshals data into v and validates the result according to
@@ -103,6 +151,8 @@ func unmarshalSchema(data json.RawMessage, resolved *jsonschema.Resolved, v any)
 	if err := dec.Decode(v); err != nil {
 		return fmt.Errorf("unmarshaling: %w", err)
 	}
+	// TODO(jba): apply defaults.
+	// TODO: test with nil args.
 	if resolved != nil {
 		if err := resolved.Validate(v); err != nil {
 			return fmt.Errorf("validating\n\t%s\nagainst\n\t %s:\n %w", data, schemaJSON(resolved.Schema()), err)

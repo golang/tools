@@ -18,8 +18,8 @@ type SayHiParams struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, cc *ServerSession, params *CallToolParams[SayHiParams]) (*CallToolResult, error) {
-	return &CallToolResult{
+func SayHi(ctx context.Context, cc *ServerSession, params *CallToolParamsFor[SayHiParams]) (*CallToolResultFor[any], error) {
+	return &CallToolResultFor[any]{
 		Content: []*Content{
 			NewTextContent("Hi " + params.Name),
 		},
@@ -71,7 +71,6 @@ func TestFeatureSetAbove(t *testing.T) {
 		got := slices.Collect(fs.above(tc.above))
 		if diff := cmp.Diff(got, tc.want, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
 			t.Errorf("expected %v, got %v, (-want +got):\n%s", tc.want, got, diff)
-
 		}
 	}
 }

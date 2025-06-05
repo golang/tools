@@ -44,7 +44,7 @@ func TestSSEServer(t *testing.T) {
 				t.Fatal(err)
 			}
 			ss := <-conns
-			gotHi, err := CallTool(ctx, cs, &CallToolParams[map[string]any]{
+			gotHi, err := cs.CallTool(ctx, &CallToolParams{
 				Name:      "greet",
 				Arguments: map[string]any{"name": "user"},
 			})

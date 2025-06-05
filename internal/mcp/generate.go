@@ -58,10 +58,9 @@ var declarations = config{
 		Name: "-",
 		Fields: config{
 			"Params": {
-				Name:       "CallToolParams",
-				TypeParams: [][2]string{{"TArgs", "any"}},
+				Name: "CallToolParams",
 				Fields: config{
-					"Arguments": {Substitute: "TArgs"},
+					"Arguments": {Substitute: "any"},
 				},
 			},
 		},
@@ -307,6 +306,9 @@ func loadSchema(schemaFile string) (data []byte, err error) {
 	return data, nil
 }
 
+// Suffixes of type names with a meta field.
+var metaSuffixes = []string{"Params", "ParamsFor", "Result", "ResultFor"}
+
 func writeDecl(configName string, config typeConfig, def *jsonschema.Schema, named map[string]*bytes.Buffer) error {
 	var w io.Writer = io.Discard
 	var typeName string
@@ -321,8 +323,11 @@ func writeDecl(configName string, config typeConfig, def *jsonschema.Schema, nam
 		// Every Params and Result type should have a _meta property.
 		// Also, those with a progress token will turn into a struct; we want the progress token to
 		// be a map item. So replace all metas.
-		if strings.HasSuffix(typeName, "Params") || strings.HasSuffix(typeName, "Result") {
-			def.Properties["_meta"] = metaSchema
+		for _, s := range metaSuffixes {
+			if strings.HasSuffix(typeName, s) {
+				def.Properties["_meta"] = metaSchema
+				break
+			}
 		}
 		buf := new(bytes.Buffer)
 		w = buf
@@ -371,6 +376,28 @@ func writeDecl(configName string, config typeConfig, def *jsonschema.Schema, nam
 		fmt.Fprintf(w, "\nfunc (x *%s) nextCursorPtr() *string { return &x.NextCursor }", typeName)
 	}
 
+	// Some types have generic counterparts.
+	var typeArg, substField string
+	switch typeName {
+	case "CallToolParams":
+		typeName = "CallToolParamsFor"
+		typeArg = "In"
+		substField = "Arguments"
+	case "CallToolResult":
+		typeName = "CallToolResultFor"
+		typeArg = "Out"
+		substField = "StructuredContent"
+	}
+	if typeArg != "" {
+		fmt.Fprintf(w, "\n\ntype %s[%s any]", typeName, typeArg)
+		if config.Fields != nil {
+			config.Fields[substField].Substitute = typeArg
+		}
+		if err := writeType(w, &config, def, named); err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "\nfunc (x *%s[%s]) GetMeta() *Meta {return &x.Meta}", typeName, typeArg)
+	}
 	return nil
 }
 

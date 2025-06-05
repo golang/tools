@@ -26,15 +26,25 @@ type Annotations struct {
 	Priority float64 `json:"priority,omitempty"`
 }
 
-type CallToolParams[TArgs any] struct {
+type CallToolParams struct {
 	// This property is reserved by the protocol to allow clients and servers to
 	// attach additional metadata to their responses.
 	Meta      Meta   `json:"_meta,omitempty"`
-	Arguments TArgs  `json:"arguments,omitempty"`
+	Arguments any    `json:"arguments,omitempty"`
 	Name      string `json:"name"`
 }
 
-func (x *CallToolParams[TArgs]) GetMeta() *Meta { return &x.Meta }
+func (x *CallToolParams) GetMeta() *Meta { return &x.Meta }
+
+type CallToolParamsFor[In any] struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta      Meta   `json:"_meta,omitempty"`
+	Arguments In     `json:"arguments,omitempty"`
+	Name      string `json:"name"`
+}
+
+func (x *CallToolParamsFor[In]) GetMeta() *Meta { return &x.Meta }
 
 // The server's response to a tool call.
 //
@@ -58,6 +68,19 @@ type CallToolResult struct {
 }
 
 func (x *CallToolResult) GetMeta() *Meta { return &x.Meta }
+
+type CallToolResultFor[Out any] struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta    Meta       `json:"_meta,omitempty"`
+	Content []*Content `json:"content"`
+	// Whether the tool call ended in an error.
+	//
+	// If not set, this is assumed to be false (the call was successful).
+	IsError bool `json:"isError,omitempty"`
+}
+
+func (x *CallToolResultFor[Out]) GetMeta() *Meta { return &x.Meta }
 
 type CancelledParams struct {
 	// This property is reserved by the protocol to allow clients and servers to

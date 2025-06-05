@@ -117,7 +117,7 @@ func newServer(session *cache.Session) *mcp.Server {
 		mcp.NewTool(
 			"context",
 			"Provide context for a region within a Go file",
-			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParams[ContextParams]) (*mcp.CallToolResult, error) {
+			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParamsFor[ContextParams]) (*mcp.CallToolResultFor[struct{}], error) {
 				return contextHandler(ctx, session, request)
 			},
 			mcp.Input(

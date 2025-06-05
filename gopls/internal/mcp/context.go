@@ -32,7 +32,7 @@ type ContextParams struct {
 	Location protocol.Location `json:"location"`
 }
 
-func contextHandler(ctx context.Context, session *cache.Session, params *mcp.CallToolParams[ContextParams]) (*mcp.CallToolResult, error) {
+func contextHandler(ctx context.Context, session *cache.Session, params *mcp.CallToolParamsFor[ContextParams]) (*mcp.CallToolResultFor[struct{}], error) {
 	fh, snapshot, release, err := session.FileOf(ctx, params.Arguments.Location.URI)
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func contextHandler(ctx context.Context, session *cache.Session, params *mcp.Cal
 		}
 	}
 
-	return &mcp.CallToolResult{
+	return &mcp.CallToolResultFor[struct{}]{
 		Content: []*mcp.Content{
 			mcp.NewTextContent(result.String()),
 		},

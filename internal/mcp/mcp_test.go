@@ -30,11 +30,11 @@ type hiParams struct {
 	Name string
 }
 
-func sayHi(ctx context.Context, ss *ServerSession, params *CallToolParams[hiParams]) (*CallToolResult, error) {
+func sayHi(ctx context.Context, ss *ServerSession, params *CallToolParamsFor[hiParams]) (*CallToolResultFor[any], error) {
 	if err := ss.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("ping failed: %v", err)
 	}
-	return &CallToolResult{Content: []*Content{NewTextContent("hi " + params.Arguments.Name)}}, nil
+	return &CallToolResultFor[any]{Content: []*Content{NewTextContent("hi " + params.Arguments.Name)}}, nil
 }
 
 func TestEndToEnd(t *testing.T) {
@@ -164,11 +164,7 @@ func TestEndToEnd(t *testing.T) {
 		wantTools := []*Tool{
 			{
 				Name:        "fail",
-				Description: "just fail",
-				InputSchema: &jsonschema.Schema{
-					Type:                 "object",
-					AdditionalProperties: falseSchema(),
-				},
+				InputSchema: nil,
 			},
 			{
 				Name:        "greet",
@@ -187,7 +183,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("tools/list mismatch (-want +got):\n%s", diff)
 		}
 
-		gotHi, err := CallTool(ctx, cs, &CallToolParams[map[string]any]{
+		gotHi, err := cs.CallTool(ctx, &CallToolParams{
 			Name:      "greet",
 			Arguments: map[string]any{"name": "user"},
 		})
@@ -201,7 +197,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("tools/call 'greet' mismatch (-want +got):\n%s", diff)
 		}
 
-		gotFail, err := CallTool(ctx, cs, &CallToolParams[map[string]any]{
+		gotFail, err := cs.CallTool(ctx, &CallToolParams{
 			Name:      "fail",
 			Arguments: map[string]any{},
 		})
@@ -218,7 +214,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("tools/call 'fail' mismatch (-want +got):\n%s", diff)
 		}
 
-		s.AddTools(&ServerTool{Tool: &Tool{Name: "T"}})
+		s.AddTools(&ServerTool{Tool: &Tool{Name: "T"}, Handler: nopHandler})
 		waitForNotification(t, "tools")
 		s.RemoveTools("T")
 		waitForNotification(t, "tools")
@@ -416,9 +412,12 @@ var (
 
 	tools = map[string]*ServerTool{
 		"greet": NewTool("greet", "say hi", sayHi),
-		"fail": NewTool("fail", "just fail", func(context.Context, *ServerSession, *CallToolParams[struct{}]) (*CallToolResult, error) {
-			return nil, errTestFailure
-		}),
+		"fail": {
+			Tool: &Tool{Name: "fail"},
+			Handler: func(context.Context, *ServerSession, *CallToolParamsFor[map[string]any]) (*CallToolResult, error) {
+				return nil, errTestFailure
+			},
+		},
 	}
 
 	prompts = map[string]*ServerPrompt{
@@ -547,7 +546,7 @@ func TestServerClosing(t *testing.T) {
 		}
 		wg.Done()
 	}()
-	if _, err := CallTool(ctx, cs, &CallToolParams[map[string]any]{
+	if _, err := cs.CallTool(ctx, &CallToolParams{
 		Name:      "greet",
 		Arguments: map[string]any{"name": "user"},
 	}); err != nil {
@@ -555,7 +554,7 @@ func TestServerClosing(t *testing.T) {
 	}
 	cc.Close()
 	wg.Wait()
-	if _, err := CallTool(ctx, cs, &CallToolParams[map[string]any]{
+	if _, err := cs.CallTool(ctx, &CallToolParams{
 		Name:      "greet",
 		Arguments: map[string]any{"name": "user"},
 	}); !errors.Is(err, ErrConnectionClosed) {
@@ -607,7 +606,7 @@ func TestCancellation(t *testing.T) {
 		cancelled = make(chan struct{}, 1) // don't block the request
 	)
 
-	slowRequest := func(ctx context.Context, cc *ServerSession, params *CallToolParams[struct{}]) (*CallToolResult, error) {
+	slowRequest := func(ctx context.Context, cc *ServerSession, params *CallToolParamsFor[map[string]any]) (*CallToolResult, error) {
 		start <- struct{}{}
 		select {
 		case <-ctx.Done():
@@ -617,11 +616,15 @@ func TestCancellation(t *testing.T) {
 		}
 		return nil, nil
 	}
-	_, cs := basicConnection(t, NewTool("slow", "a slow request", slowRequest))
+	st := &ServerTool{
+		Tool:    &Tool{Name: "slow"},
+		Handler: slowRequest,
+	}
+	_, cs := basicConnection(t, st)
 	defer cs.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go CallTool(ctx, cs, &CallToolParams[struct{}]{Name: "slow"})
+	go cs.CallTool(ctx, &CallToolParams{Name: "slow"})
 	<-start
 	cancel()
 	select {
@@ -732,3 +735,7 @@ func traceCalls[S Session](w io.Writer, prefix string) Middleware[S] {
 
 // A function, because schemas must form a tree (they have hidden state).
 func falseSchema() *jsonschema.Schema { return &jsonschema.Schema{Not: &jsonschema.Schema{}} }
+
+func nopHandler(context.Context, *ServerSession, *CallToolParamsFor[map[string]any]) (*CallToolResult, error) {
+	return nil, nil
+}

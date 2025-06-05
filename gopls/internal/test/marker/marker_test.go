@@ -297,7 +297,7 @@ func Test(t *testing.T) {
 				t.Errorf("formatTest: %v", err)
 			} else if *update {
 				filename := filepath.Join(dir, test.name)
-				if err := os.WriteFile(filename, formatted, 0644); err != nil {
+				if err := os.WriteFile(filename, formatted, 0o644); err != nil {
 					t.Error(err)
 				}
 			} else if !t.Failed() {
@@ -1414,7 +1414,6 @@ func (sm stringMatcher) check(mark marker, got string) {
 		if !sm.pattern.MatchString(got) {
 			mark.errorf("got %q, does not match pattern %#q", got, sm.pattern)
 		}
-
 	} else if !strings.Contains(got, sm.substr) {
 		// Content must contain the expected substring.
 		mark.errorf("got %q, want substring %q", got, sm.substr)
@@ -1428,7 +1427,6 @@ func checkChangedFiles(mark marker, changed map[string][]byte, golden *Golden) {
 		if want, ok := golden.Get(mark.T(), filename, got); !ok {
 			mark.errorf("%s: unexpected change to file %s; got:\n%s",
 				mark.note.Name, filename, got)
-
 		} else if string(got) != string(want) {
 			mark.errorf("%s: wrong file content for %s: got:\n%s\nwant:\n%s\ndiff:\n%s",
 				mark.note.Name, filename, got, want,
@@ -1481,7 +1479,6 @@ func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 		if want, ok := golden.Get(mark.T(), filename, []byte(got)); !ok {
 			mark.errorf("%s: unexpected change to file %s; got diff:\n%s",
 				mark.note.Name, filename, got)
-
 		} else if got != string(want) {
 			mark.errorf("%s: wrong diff for %s:\n\ngot:\n%s\n\nwant:\n%s\n",
 				mark.note.Name, filename, got, want)
@@ -1680,7 +1677,6 @@ func acceptCompletionMarker(mark marker, src protocol.Location, label string, go
 	filename := mark.path()
 	mapper := mark.mapper()
 	patched, _, err := protocol.ApplyEdits(mapper, append([]protocol.TextEdit{edit}, selected.AdditionalTextEdits...))
-
 	if err != nil {
 		mark.errorf("ApplyProtocolEdits failed: %v", err)
 		return
@@ -1799,6 +1795,7 @@ func highlightLocationMarker(mark marker, loc protocol.Location, kindName expect
 		Kind:  kind,
 	}
 }
+
 func sortDocumentHighlights(s []protocol.DocumentHighlight) {
 	sort.Slice(s, func(i, j int) bool {
 		return protocol.CompareRange(s[i].Range, s[j].Range) < 0
@@ -2452,7 +2449,7 @@ func mcpToolMarker(mark marker, tool string, rawArgs string, loc protocol.Locati
 	// TODO(hxjiang): Make the "location" key configurable.
 	args["location"] = loc
 
-	res, err := mcp.CallTool(mark.ctx(), mark.run.env.MCPSession, &mcp.CallToolParams[map[string]any]{
+	res, err := mark.run.env.MCPSession.CallTool(mark.ctx(), &mcp.CallToolParams{
 		Name:      tool,
 		Arguments: args,
 	})

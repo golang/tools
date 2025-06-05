@@ -21,8 +21,8 @@ type HiArgs struct {
 	Name string `json:"name"`
 }
 
-func SayHi(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParams[HiArgs]) (*mcp.CallToolResult, error) {
-	return &mcp.CallToolResult{
+func SayHi(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[HiArgs]) (*mcp.CallToolResultFor[any], error) {
+	return &mcp.CallToolResultFor[any]{
 		Content: []*mcp.Content{
 			mcp.NewTextContent("Hi " + params.Name),
 		},
