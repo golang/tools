@@ -12,6 +12,8 @@ import (
 	"embed"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -25,6 +27,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/golang/splitpkg"
 	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
@@ -201,10 +204,13 @@ func (s *server) WorkDoneProgressCancel(ctx context.Context, params *protocol.Wo
 //
 // Valid endpoints:
 //
-//	open?file=%s&line=%d&col=%d       - open a file
-//	pkg/PKGPATH?view=%s               - show doc for package in a given view
-//	assembly?pkg=%s&view=%s&symbol=%s - show assembly of specified func symbol
+//	open?file=%s&line=%d&col=%d        - open a file
+//	pkg/PKGPATH?view=%s                - show doc for package in a given view
+//	assembly?pkg=%s&view=%s&symbol=%s  - show assembly of specified func symbol
 //	freesymbols?file=%s&range=%d:%d:%d:%d:&view=%s - show report of free symbols
+//	splitpkg?pkg=%s&view=%s            - show "split package" HTML for given package/view
+//	splitpkg-json?pkg=%s&view=%s       - query component dependency graph for given package/view
+//	splitpkg-components?pkg=%s&view=%s - update component definitions for given package/view
 type web struct {
 	server *http.Server
 	addr   url.URL // "http://127.0.0.1:PORT/gopls/SECRET"
@@ -260,7 +266,12 @@ func (s *server) initWeb() (*web, error) {
 		// It is used by JS to detect server disconnect.
 		<-req.Context().Done()
 	})
-	rootMux.Handle("/assets/", http.FileServer(http.FS(assets)))
+
+	// Serve assets (JS, PNG, etc) from embedded data,
+	// except during local development.
+	fs := fs.FS(assets)
+	// fs = os.DirFS("/Users/adonovan/w/xtools/gopls/internal/server") // uncomment during development
+	rootMux.Handle("/assets/", http.FileServer(http.FS(fs)))
 
 	secret := "/gopls/" + base64.RawURLEncoding.EncodeToString(token)
 	webMux := http.NewServeMux()
@@ -304,23 +315,37 @@ func (s *server) initWeb() (*web, error) {
 		}, s.Options())
 	})
 
-	// The /pkg/PATH&view=... handler shows package documentation for PATH.
-	webMux.Handle("/pkg/", http.StripPrefix("/pkg/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ctx := req.Context()
+	// getSnapshot returns the snapshot for the view=... request parameter.
+	// On success, the caller must call the snapshot's release function;
+	//  callers may assume that req.ParseForm succeeded.
+	// On failure, it reports an HTTP error.
+	getSnapshot := func(w http.ResponseWriter, req *http.Request) (*cache.Snapshot, func(), bool) {
 		if err := req.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+			return nil, nil, false
 		}
-
-		// Get snapshot of specified view.
-		view, err := s.session.View(req.Form.Get("view"))
+		viewID := req.Form.Get("view")
+		if viewID == "" {
+			http.Error(w, "no view=... parameter", http.StatusBadRequest)
+			return nil, nil, false
+		}
+		view, err := s.session.View(viewID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
-			return
+			return nil, nil, false
 		}
 		snapshot, release, err := view.Snapshot()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return nil, nil, false
+		}
+		return snapshot, release, true
+	}
+
+	// The /pkg/PATH&view=... handler shows package documentation for PATH.
+	webMux.Handle("/pkg/", http.StripPrefix("/pkg/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		snapshot, release, ok := getSnapshot(w, req)
+		if !ok {
 			return
 		}
 		defer release()
@@ -340,12 +365,12 @@ func (s *server) initWeb() (*web, error) {
 		}
 
 		// Type-check the package and render its documentation.
-		pkgs, err := snapshot.TypeCheck(ctx, found.ID)
+		pkgs, err := snapshot.TypeCheck(req.Context(), found.ID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		content, err := golang.PackageDocHTML(view.ID(), pkgs[0], web)
+		content, err := golang.PackageDocHTML(snapshot.View().ID(), pkgs[0], web)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -356,21 +381,8 @@ func (s *server) initWeb() (*web, error) {
 	// The /freesymbols?file=...&range=...&view=... handler shows
 	// free symbols referenced by the selection.
 	webMux.HandleFunc("/freesymbols", func(w http.ResponseWriter, req *http.Request) {
-		ctx := req.Context()
-		if err := req.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// Get snapshot of specified view.
-		view, err := s.session.View(req.Form.Get("view"))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		snapshot, release, err := view.Snapshot()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		snapshot, release, ok := getSnapshot(w, req)
+		if !ok {
 			return
 		}
 		defer release()
@@ -388,7 +400,7 @@ func (s *server) initWeb() (*web, error) {
 			http.Error(w, "invalid range", http.StatusInternalServerError)
 			return
 		}
-		pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, loc.URI)
+		pkg, pgf, err := golang.NarrowestPackageForFile(req.Context(), snapshot, loc.URI)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -400,43 +412,30 @@ func (s *server) initWeb() (*web, error) {
 		}
 
 		// Produce report.
-		html := golang.FreeSymbolsHTML(view.ID(), pkg, pgf, start, end, web)
+		html := golang.FreeSymbolsHTML(snapshot.View().ID(), pkg, pgf, start, end, web)
 		w.Write(html)
 	})
 
 	// The /assembly?pkg=...&view=...&symbol=... handler shows
 	// the assembly of the current function.
 	webMux.HandleFunc("/assembly", func(w http.ResponseWriter, req *http.Request) {
-		ctx := req.Context()
-		if err := req.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// Get parameters.
-		var (
-			viewID = req.Form.Get("view")
-			pkgID  = metadata.PackageID(req.Form.Get("pkg"))
-			symbol = req.Form.Get("symbol")
-		)
-		if viewID == "" || pkgID == "" || symbol == "" {
-			http.Error(w, "/assembly requires view, pkg, symbol", http.StatusBadRequest)
-			return
-		}
-
-		// Get snapshot of specified view.
-		view, err := s.session.View(viewID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-		snapshot, release, err := view.Snapshot()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		snapshot, release, ok := getSnapshot(w, req)
+		if !ok {
 			return
 		}
 		defer release()
 
+		// Get other parameters.
+		var (
+			pkgID  = metadata.PackageID(req.Form.Get("pkg"))
+			symbol = req.Form.Get("symbol")
+		)
+		if pkgID == "" || symbol == "" {
+			http.Error(w, "/assembly requires pkg, symbol", http.StatusBadRequest)
+			return
+		}
+
+		ctx := req.Context()
 		pkgs, err := snapshot.TypeCheck(ctx, pkgID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -446,6 +445,94 @@ func (s *server) initWeb() (*web, error) {
 
 		// Produce report.
 		golang.AssemblyHTML(ctx, snapshot, w, pkg, symbol, web)
+	})
+
+	// The /splitpkg?pkg=...&view=... handler shows
+	// the "split package" tool (HTML) for the specified package/view.
+	webMux.HandleFunc("/splitpkg", func(w http.ResponseWriter, req *http.Request) {
+		snapshot, release, ok := getSnapshot(w, req)
+		if !ok {
+			return
+		}
+		defer release()
+
+		// Get metadata for pkg.
+		pkgID := metadata.PackageID(req.Form.Get("pkg"))
+		if pkgID == "" {
+			http.Error(w, "/splitpkg requires pkg", http.StatusBadRequest)
+			return
+		}
+		mp := snapshot.Metadata(pkgID)
+		if mp == nil {
+			http.Error(w, "no such package: "+string(pkgID), http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(splitpkg.HTML(mp.PkgPath))
+	})
+
+	// The /splitpkg-json?pkg=...&view=... handler returns the symbol reference graph.
+	webMux.HandleFunc("/splitpkg-json", func(w http.ResponseWriter, req *http.Request) {
+		snapshot, release, ok := getSnapshot(w, req)
+		if !ok {
+			return
+		}
+		defer release()
+
+		// Get type information for pkg.
+		pkgID := metadata.PackageID(req.Form.Get("pkg"))
+		if pkgID == "" {
+			http.Error(w, "/splitpkg-json requires pkg", http.StatusBadRequest)
+			return
+		}
+		pkgs, err := snapshot.TypeCheck(req.Context(), pkgID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pkg := pkgs[0]
+
+		data, err := splitpkg.JSON(pkg, web)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write(data)
+	})
+
+	// The /splitpkg-components?pkg=...&view=... handler updates the components mapping.
+	// for the specified package, causing it to be saved persistently, and
+	// returned by future /splitpkg-json queries.
+	webMux.HandleFunc("/splitpkg-components", func(w http.ResponseWriter, req *http.Request) {
+		snapshot, release, ok := getSnapshot(w, req)
+		if !ok {
+			return
+		}
+		defer release()
+
+		// Get metadata for pkg.
+		pkgID := metadata.PackageID(req.Form.Get("pkg"))
+		if pkgID == "" {
+			http.Error(w, "/splitpkg-components requires pkg", http.StatusBadRequest)
+			return
+		}
+		mp := snapshot.Metadata(pkgID)
+		if mp == nil {
+			http.Error(w, "no such package: "+string(pkgID), http.StatusInternalServerError)
+			return
+		}
+
+		data, err := io.ReadAll(req.Body)
+		if err != nil {
+			msg := fmt.Sprintf("reading request body: %v", err)
+			http.Error(w, msg, http.StatusBadRequest)
+			return
+		}
+
+		if err := splitpkg.UpdateComponentsJSON(pkgID, data); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 	})
 
 	return web, nil
@@ -464,45 +551,48 @@ var assets embed.FS
 // packages, so don't convert to LSP coordinates yet: wait until the
 // URL is opened.)
 func (w *web) SrcURL(filename string, line, col8 int) protocol.URI {
-	return w.url(
-		"src",
-		fmt.Sprintf("file=%s&line=%d&col=%d", url.QueryEscape(filename), line, col8),
-		"")
+	query := fmt.Sprintf("file=%s&line=%d&col=%d",
+		url.QueryEscape(filename),
+		line,
+		col8)
+	return w.url("src", query, "")
 }
 
 // PkgURL returns a /pkg URL for the documentation of the specified package.
 // The optional fragment must be of the form "Println" or "Buffer.WriteString".
 func (w *web) PkgURL(viewID string, path golang.PackagePath, fragment string) protocol.URI {
-	return w.url(
-		"pkg/"+string(path),
-		"view="+url.QueryEscape(viewID),
-		fragment)
+	query := "view=" + url.QueryEscape(viewID)
+	return w.url("pkg/"+string(path), query, fragment)
 }
 
 // freesymbolsURL returns a /freesymbols URL for a report
 // on the free symbols referenced within the selection span (loc).
 func (w *web) freesymbolsURL(viewID string, loc protocol.Location) protocol.URI {
-	return w.url(
-		"freesymbols",
-		fmt.Sprintf("file=%s&range=%d:%d:%d:%d&view=%s",
-			url.QueryEscape(string(loc.URI)),
-			loc.Range.Start.Line,
-			loc.Range.Start.Character,
-			loc.Range.End.Line,
-			loc.Range.End.Character,
-			url.QueryEscape(viewID)),
-		"")
+	query := fmt.Sprintf("file=%s&range=%d:%d:%d:%d&view=%s",
+		url.QueryEscape(string(loc.URI)),
+		loc.Range.Start.Line,
+		loc.Range.Start.Character,
+		loc.Range.End.Line,
+		loc.Range.End.Character,
+		url.QueryEscape(viewID))
+	return w.url("freesymbols", query, "")
 }
 
 // assemblyURL returns the URL of an assembly listing of the specified function symbol.
 func (w *web) assemblyURL(viewID, packageID, symbol string) protocol.URI {
-	return w.url(
-		"assembly",
-		fmt.Sprintf("view=%s&pkg=%s&symbol=%s",
-			url.QueryEscape(viewID),
-			url.QueryEscape(packageID),
-			url.QueryEscape(symbol)),
-		"")
+	query := fmt.Sprintf("view=%s&pkg=%s&symbol=%s",
+		url.QueryEscape(viewID),
+		url.QueryEscape(packageID),
+		url.QueryEscape(symbol))
+	return w.url("assembly", query, "")
+}
+
+// splitpkgURL returns the URL of the "split package" HTML page for the specified package.
+func (w *web) splitpkgURL(viewID, packageID string) protocol.URI {
+	query := fmt.Sprintf("view=%s&pkg=%s",
+		url.QueryEscape(viewID),
+		url.QueryEscape(packageID))
+	return w.url("splitpkg", query, "")
 }
 
 // url returns a URL by joining a relative path, an (encoded) query,

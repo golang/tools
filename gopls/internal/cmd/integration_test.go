@@ -1025,6 +1025,8 @@ type C struct{}
 		got := res.stdout
 		want := `command	"Browse documentation for package a" [source.doc]` +
 			"\n" +
+			`command	"Split package \"a\"" [source.splitPackage]` +
+			"\n" +
 			`command	"Show compiler optimization details for \"a\"" [source.toggleCompilerOptDetails]` +
 			"\n"
 		if got != want {

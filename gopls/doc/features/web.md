@@ -149,3 +149,35 @@ Client support:
 - **VS Code**: Use the "Source Action... > Browse GOARCH assembly for f" menu.
 - **Emacs + eglot**: Use `M-x go-browse-assembly` in [go-mode](https://github.com/dominikh/go-mode.el).
 - **Vim + coc.nvim**: ??
+
+
+<a name='splitpkg'></a>
+## `source.splitPackage`: Split package into components
+
+The web-based "Split package" tool can help you split a complex
+package into two or more components, ensuring that the dependencies
+among those components are acyclic.
+
+Follow the instructions on the page to choose a set of named components,
+assign each declaration to the most appropriate component, and then
+visualize the dependencies between those components created by references
+from one symbol to another.
+
+The figure below shows the tool operating on the `fmt` package, which
+could (in principle) be split into three subpackages, one for
+formatting (`Printf` and friends), one for scanning (`Scanf`), and one
+for their common dependencies.
+
+<img title="Split package 'fmt'" src="../assets/splitpkg.png">
+
+(Try playing with the tool on this package: it's an instructive
+exercise. The figure below shows the solution.)
+
+<img title="Split package 'fmt'" src="../assets/splitpkg-deps.png">
+
+The tool does not currently perform the code transformation (moving
+declarations to new packages, renaming symbols to export them as
+needed), but we hope to add that in a future release.
+
+Client support:
+- **VS Code**: Use the "Source Action... > Split package P" menu.

@@ -242,6 +242,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.GoAssembly, fn: goAssembly, needPkg: true},
 	{kind: settings.GoDoc, fn: goDoc, needPkg: true},
 	{kind: settings.GoFreeSymbols, fn: goFreeSymbols},
+	{kind: settings.GoSplitPackage, fn: goSplitPackage, needPkg: true},
 	{kind: settings.GoTest, fn: goTest, needPkg: true},
 	{kind: settings.GoToggleCompilerOptDetails, fn: toggleCompilerOptDetails},
 	{kind: settings.RefactorExtractFunction, fn: refactorExtractFunction},
@@ -437,6 +438,23 @@ func goFreeSymbols(ctx context.Context, req *codeActionsRequest) error {
 		cmd := command.NewFreeSymbolsCommand("Browse free symbols", req.snapshot.View().ID(), req.loc)
 		req.addCommandAction(cmd, false)
 	}
+	return nil
+}
+
+// goSplitPackage produces "Split package p" code actions.
+// See [server.commandHandler.SplitPackage] for command implementation.
+func goSplitPackage(ctx context.Context, req *codeActionsRequest) error {
+	// TODO(adonovan): ideally we would key by the package path,
+	// or the ID of the widest package for the current file,
+	// so that we don't see different results when toggling
+	// between p.go and p_test.go.
+	//
+	// TODO(adonovan): opt: req should always provide metadata so
+	// that we don't have to request type checking (needPkg=true).
+	meta := req.pkg.Metadata()
+	title := fmt.Sprintf("Split package %q", meta.Name)
+	cmd := command.NewSplitPackageCommand(title, req.snapshot.View().ID(), string(meta.ID))
+	req.addCommandAction(cmd, false)
 	return nil
 }
 

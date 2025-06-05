@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/util/bug"
 )
@@ -78,4 +79,33 @@ func codeActionByKind(actions []protocol.CodeAction, kind protocol.CodeActionKin
 		}
 	}
 	return nil, fmt.Errorf("can't find action with kind %s, only %#v", kind, actions)
+}
+
+// codeActionWebPage returns the URL and content of the page opened by the specified code action.
+func codeActionWebPage(t *testing.T, env *integration.Env, kind protocol.CodeActionKind, loc protocol.Location) (string, []byte) {
+	actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
+	if err != nil {
+		t.Fatalf("CodeAction: %v", err)
+	}
+	action, err := codeActionByKind(actions, kind)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Execute the command.
+	// Its side effect should be a single showDocument request.
+	params := &protocol.ExecuteCommandParams{
+		Command:   action.Command.Command,
+		Arguments: action.Command.Arguments,
+	}
+	var result command.DebuggingResult
+	collectDocs := env.Awaiter.ListenToShownDocuments()
+	env.ExecuteCommand(params, &result)
+	doc := shownDocument(t, collectDocs(), "http:")
+	if doc == nil {
+		t.Fatalf("no showDocument call had 'file:' prefix")
+	}
+	t.Log("showDocument(package doc) URL:", doc.URI)
+
+	return doc.URI, get(t, doc.URI)
 }

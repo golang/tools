@@ -56,10 +56,11 @@ when making significant changes to existing features or when adding new ones.
   - [Package documentation](web.md#doc): browse documentation for current Go package
   - [Free symbols](web.md#freesymbols): show symbols used by a selected block of code
   - [Assembly](web.md#assembly): show listing of assembly code for selected function
+  - [Split package](web.md#splitpkg): split a package into two or more components
 - Support for non-Go files:
   - [Template files](templates.md): files parsed by `text/template` and `html/template`
   - [go.mod and go.work files](modfiles.md): Go module and workspace manifests
-  - [Go *.s assembly files](assembly.ms): Go assembly files
+  - [Go *.s assembly files](assembly.md): Go assembly files
 - [Command-line interface](../command-line.md): CLI for debugging and scripting (unstable)
 
 You can find this page from within your editor by executing the

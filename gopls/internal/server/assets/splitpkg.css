@@ -1,0 +1,30 @@
+/* Copyright 2025 The Go Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style
+ * license that can be found in the LICENSE file.
+ */
+
+li {
+			list-style: none;
+}
+span.component {
+    display:		inline-block;
+    min-width:		8em;
+}
+span.delete {
+    color:		grey;
+    opacity:		0.3;
+}
+span.delete:hover {
+			opacity: 1;
+}
+hr {
+    border-top:		thin solid #EEE;
+}
+p.help {
+    width:		6in;
+    line-height:	120%; /* tighter than default */
+    font-size:		80%;
+    text-align:		justify;
+    text-justify:	inter-word;
+    color:		#AAA;
+}

@@ -53,6 +53,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						GoAssembly:                       true,
 						GoDoc:                            true,
 						GoFreeSymbols:                    true,
+						GoSplitPackage:                   true,
 						GoplsDocFeatures:                 true,
 						RefactorRewriteChangeQuote:       true,
 						RefactorRewriteFillStruct:        true,

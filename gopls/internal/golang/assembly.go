@@ -57,19 +57,19 @@ func AssemblyHTML(ctx context.Context, snapshot *cache.Snapshot, w http.Response
 	escape := html.EscapeString
 
 	// Emit the start of the report.
-	title := fmt.Sprintf("%s assembly for %s",
+	titleHTML := fmt.Sprintf("%s assembly for %s",
 		escape(snapshot.View().GOARCH()),
 		escape(symbol))
 	io.WriteString(w, `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>`+escape(title)+`</title>
+  <title>`+titleHTML+`</title>
   <link rel="stylesheet" href="/assets/common.css">
   <script src="/assets/common.js"></script>
 </head>
 <body>
-<h1>`+title+`</h1>
+<h1>`+titleHTML+`</h1>
 <p>
   <a href='https://go.dev/doc/asm'>A Quick Guide to Go's Assembler</a>
 </p>

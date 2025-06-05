@@ -65,6 +65,11 @@ type Interface interface {
 	// package in a browser.
 	Doc(context.Context, DocArgs) (protocol.URI, error)
 
+	// SplitPackage: organize a package into two or more components
+	//
+	// Opens the "split package" tool in a web browser.
+	SplitPackage(ctx context.Context, viewID, packageID string) error
+
 	// RegenerateCgo: Regenerate cgo
 	//
 	// Regenerates cgo definitions.

@@ -57,6 +57,7 @@ const (
 	RunGovulncheck          Command = "gopls.run_govulncheck"
 	RunTests                Command = "gopls.run_tests"
 	ScanImports             Command = "gopls.scan_imports"
+	SplitPackage            Command = "gopls.split_package"
 	StartDebugging          Command = "gopls.start_debugging"
 	StartProfile            Command = "gopls.start_profile"
 	StopProfile             Command = "gopls.stop_profile"
@@ -103,6 +104,7 @@ var Commands = []Command{
 	RunGovulncheck,
 	RunTests,
 	ScanImports,
+	SplitPackage,
 	StartDebugging,
 	StartProfile,
 	StopProfile,
@@ -306,6 +308,13 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 		return nil, s.RunTests(ctx, a0)
 	case ScanImports:
 		return nil, s.ScanImports(ctx)
+	case SplitPackage:
+		var a0 string
+		var a1 string
+		if err := UnmarshalArgs(params.Arguments, &a0, &a1); err != nil {
+			return nil, err
+		}
+		return nil, s.SplitPackage(ctx, a0, a1)
 	case StartDebugging:
 		var a0 DebuggingArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -623,6 +632,14 @@ func NewScanImportsCommand(title string) *protocol.Command {
 		Title:     title,
 		Command:   ScanImports.String(),
 		Arguments: MustMarshalArgs(),
+	}
+}
+
+func NewSplitPackageCommand(title string, a0 string, a1 string) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   SplitPackage.String(),
+		Arguments: MustMarshalArgs(a0, a1),
 	}
 }
 

@@ -1705,6 +1705,16 @@ func (c *commandHandler) FreeSymbols(ctx context.Context, viewID string, loc pro
 	return nil
 }
 
+func (c *commandHandler) SplitPackage(ctx context.Context, viewID, packageID string) error {
+	web, err := c.s.getWeb()
+	if err != nil {
+		return err
+	}
+	url := web.splitpkgURL(viewID, packageID)
+	openClientBrowser(ctx, c.s.client, "SplitPackage", url, c.s.Options())
+	return nil
+}
+
 func (c *commandHandler) Assembly(ctx context.Context, viewID, packageID, symbol string) error {
 	web, err := c.s.getWeb()
 	if err != nil {

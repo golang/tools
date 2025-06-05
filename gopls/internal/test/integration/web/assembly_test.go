@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/internal/testenv"
@@ -149,33 +148,9 @@ func Test2(*testing.T) { println(0) }
 	})
 }
 
-// asmFor returns the HTML document served by gopls for a "Show
-// assembly" command at the specified location in an open file.
+// asmFor returns the HTML document served by gopls for a "Browse assembly"
+// command at the specified location in an open file.
 func asmFor(t *testing.T, env *Env, loc protocol.Location) []byte {
-	// Invoke the "Browse assembly" code action to start the server.
-	actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
-	if err != nil {
-		t.Fatalf("CodeAction: %v", err)
-	}
-	action, err := codeActionByKind(actions, settings.GoAssembly)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Execute the command.
-	// Its side effect should be a single showDocument request.
-	params := &protocol.ExecuteCommandParams{
-		Command:   action.Command.Command,
-		Arguments: action.Command.Arguments,
-	}
-	var result command.DebuggingResult
-	collectDocs := env.Awaiter.ListenToShownDocuments()
-	env.ExecuteCommand(params, &result)
-	doc := shownDocument(t, collectDocs(), "http:")
-	if doc == nil {
-		t.Fatalf("no showDocument call had 'file:' prefix")
-	}
-	t.Log("showDocument(package doc) URL:", doc.URI)
-
-	return get(t, doc.URI)
+	_, content := codeActionWebPage(t, env, settings.GoAssembly, loc)
+	return content
 }

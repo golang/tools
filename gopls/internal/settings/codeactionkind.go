@@ -78,6 +78,7 @@ const (
 	GoAssembly                 protocol.CodeActionKind = "source.assembly"
 	GoDoc                      protocol.CodeActionKind = "source.doc"
 	GoFreeSymbols              protocol.CodeActionKind = "source.freesymbols"
+	GoSplitPackage             protocol.CodeActionKind = "source.splitPackage"
 	GoTest                     protocol.CodeActionKind = "source.test"
 	GoToggleCompilerOptDetails protocol.CodeActionKind = "source.toggleCompilerOptDetails"
 	AddTest                    protocol.CodeActionKind = "source.addTest"

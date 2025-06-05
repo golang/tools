@@ -72,6 +72,7 @@ func main(){
 			settings.GoAssembly,
 			settings.GoDoc,
 			settings.GoFreeSymbols,
+			settings.GoSplitPackage,
 			settings.GoToggleCompilerOptDetails,
 			settings.RefactorInlineCall,
 			settings.GoplsDocFeatures,
@@ -81,6 +82,7 @@ func main(){
 			settings.GoAssembly,
 			settings.GoDoc,
 			settings.GoFreeSymbols,
+			settings.GoSplitPackage,
 			settings.GoToggleCompilerOptDetails,
 			settings.GoplsDocFeatures,
 		})
@@ -91,6 +93,7 @@ func main(){
 			settings.GoAssembly,
 			settings.GoDoc,
 			settings.GoFreeSymbols,
+			settings.GoSplitPackage,
 			settings.GoToggleCompilerOptDetails,
 			settings.GoplsDocFeatures,
 		})

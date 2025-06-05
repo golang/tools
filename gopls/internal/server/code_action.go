@@ -196,6 +196,7 @@ func (s *server) CodeAction(ctx context.Context, params *protocol.CodeActionPara
 				case settings.GoTest,
 					settings.GoDoc,
 					settings.GoFreeSymbols,
+					settings.GoSplitPackage,
 					settings.GoAssembly,
 					settings.GoplsDocFeatures,
 					settings.GoToggleCompilerOptDetails:
