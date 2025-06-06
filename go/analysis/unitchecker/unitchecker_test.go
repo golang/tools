@@ -97,7 +97,7 @@ func _() {
 ([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?b/b.go:7:11: call of MyFunc123\(...\)
 `
 	const wantC = `# golang.org/fake/c
-([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?c/c.go:5:5: self-assignment of i to i
+([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?c/c.go:5:5: self-assignment of i
 `
 	const wantAJSON = `# golang.org/fake/a
 \{
@@ -130,7 +130,7 @@ func _() {
 		"assign": \[
 			\{
 				"posn": "([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?c/c.go:5:5",
-				"message": "self-assignment of i to i",
+				"message": "self-assignment of i",
 				"suggested_fixes": \[
 					\{
 						"message": "Remove self-assignment",
