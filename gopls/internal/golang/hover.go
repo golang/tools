@@ -356,8 +356,8 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	}
 	if obj, ok := obj.(*types.Var); ok && obj.IsField() {
 		if selExpr, ok := cur.Parent().Node().(*ast.SelectorExpr); ok {
-			sel := pkg.TypesInfo().Selections[selExpr]
-			if len(sel.Index()) > 1 {
+			sel, ok := pkg.TypesInfo().Selections[selExpr]
+			if ok && len(sel.Index()) > 1 {
 				var buf bytes.Buffer
 				buf.WriteString(" // through ")
 				t := typesinternal.Unpointer(sel.Recv())
