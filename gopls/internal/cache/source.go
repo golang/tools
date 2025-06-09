@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/symbols"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/imports"
 )
 
@@ -136,27 +136,27 @@ func (s *goplsSource) ResolveReferences(ctx context.Context, filename string, mi
 func (s *goplsSource) resolveCacheReferences(missing imports.References) ([]*result, error) {
 	ix, err := s.S.view.ModcacheIndex()
 	if err != nil {
-		event.Error(s.ctx, "resolveCacheReferences", err)
+		return nil, err
 	}
 
 	found := make(map[string]*result)
-	for pkg, nms := range missing {
-		var ks []string
-		for k := range nms {
-			ks = append(ks, k)
-		}
-		cs := ix.LookupAll(pkg, ks...) // map[importPath][]Candidate
-		for k, cands := range cs {
-			res := found[k]
+	for pkgName, nameSet := range missing {
+		names := moremaps.KeySlice(nameSet)
+		for importPath, cands := range ix.LookupAll(pkgName, names...) {
+			res := found[importPath]
 			if res == nil {
 				res = &result{
-					&imports.Result{
-						Import:  &imports.ImportInfo{ImportPath: k},
-						Package: &imports.PackageInfo{Name: pkg, Exports: make(map[string]bool)},
+					res: &imports.Result{
+						Import: &imports.ImportInfo{
+							ImportPath: importPath,
+						},
+						Package: &imports.PackageInfo{
+							Name:    pkgName,
+							Exports: make(map[string]bool)},
 					},
-					false,
+					deprecated: false,
 				}
-				found[k] = res
+				found[importPath] = res
 			}
 			for _, c := range cands {
 				res.res.Package.Exports[c.Name] = true
@@ -166,11 +166,7 @@ func (s *goplsSource) resolveCacheReferences(missing imports.References) ([]*res
 		}
 
 	}
-	var ans []*result
-	for _, x := range found {
-		ans = append(ans, x)
-	}
-	return ans, nil
+	return moremaps.ValueSlice(found), nil
 }
 
 type found struct {
