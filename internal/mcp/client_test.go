@@ -50,14 +50,6 @@ var allItems = []*Item{
 	{"kilo", "val-K"},
 }
 
-func toItemValueSlice(ptrSlice []*Item) []Item {
-	var valSlice []Item
-	for _, ptr := range ptrSlice {
-		valSlice = append(valSlice, *ptr)
-	}
-	return valSlice
-}
-
 // generatePaginatedResults is a helper to create a sequence of mock responses for pagination.
 // It simulates a server returning items in pages based on a given page size.
 func generatePaginatedResults(all []*Item, pageSize int) []*ListTestResult {
@@ -88,18 +80,18 @@ func TestClientPaginateBasic(t *testing.T) {
 		results       []*ListTestResult
 		mockError     error
 		initialParams *ListTestParams
-		expected      []Item
+		expected      []*Item
 		expectError   bool
 	}{
 		{
 			name:     "SinglePageAllItems",
 			results:  generatePaginatedResults(allItems, len(allItems)),
-			expected: toItemValueSlice(allItems),
+			expected: allItems,
 		},
 		{
 			name:     "MultiplePages",
 			results:  generatePaginatedResults(allItems, 3),
-			expected: toItemValueSlice(allItems),
+			expected: allItems,
 		},
 		{
 			name:     "EmptyResults",
@@ -117,7 +109,7 @@ func TestClientPaginateBasic(t *testing.T) {
 			name:          "InitialCursorProvided",
 			initialParams: &ListTestParams{Cursor: "cursor_2"},
 			results:       generatePaginatedResults(allItems[2:], 3),
-			expected:      toItemValueSlice(allItems[2:]),
+			expected:      allItems[2:],
 		},
 		{
 			name:          "CursorBeyondAllItems",
@@ -148,7 +140,7 @@ func TestClientPaginateBasic(t *testing.T) {
 				params = &ListTestParams{}
 			}
 
-			var gotItems []Item
+			var gotItems []*Item
 			var iterationErr error
 			seq := paginate(ctx, params, listFunc, func(r *ListTestResult) []*Item { return r.Items })
 			for item, err := range seq {
@@ -185,7 +177,7 @@ func TestClientPaginateVariousPageSizes(t *testing.T) {
 				results = results[1:]
 				return res, nil
 			}
-			var gotItems []Item
+			var gotItems []*Item
 			seq := paginate(ctx, &ListTestParams{}, listFunc, func(r *ListTestResult) []*Item { return r.Items })
 			for item, err := range seq {
 				if err != nil {
@@ -193,7 +185,7 @@ func TestClientPaginateVariousPageSizes(t *testing.T) {
 				}
 				gotItems = append(gotItems, item)
 			}
-			if diff := cmp.Diff(toItemValueSlice(allItems), gotItems, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
+			if diff := cmp.Diff(allItems, gotItems, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
 				t.Fatalf("paginate() mismatch (-want +got):\n%s", diff)
 			}
 		})
