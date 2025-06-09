@@ -6,6 +6,7 @@ package util
 
 import (
 	"cmp"
+	"fmt"
 	"iter"
 	"reflect"
 	"slices"
@@ -72,4 +73,11 @@ func FieldJSONInfo(f reflect.StructField) JSONInfo {
 		}
 	}
 	return info
+}
+
+// Wrapf wraps *errp with the given formatted message if *errp is not nil.
+func Wrapf(errp *error, format string, args ...any) {
+	if *errp != nil {
+		*errp = fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), *errp)
+	}
 }

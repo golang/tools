@@ -73,7 +73,7 @@ type state struct {
 
 // validate validates the reflected value of the instance.
 func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *annotations) (err error) {
-	defer wrapf(&err, "validating %s", schema)
+	defer util.Wrapf(&err, "validating %s", schema)
 
 	// Maintain a stack for dynamic schema resolution.
 	st.stack = append(st.stack, schema) // push
@@ -607,7 +607,7 @@ func (rs *Resolved) ApplyDefaults(instancep any) error {
 // Leave this as a potentially recursive helper function, because we'll surely want
 // to apply defaults on sub-schemas someday.
 func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err error) {
-	defer wrapf(&err, "applyDefaults: schema %s, instance %v", schema, instancep)
+	defer util.Wrapf(&err, "applyDefaults: schema %s, instance %v", schema, instancep)
 
 	instance := instancep.Elem()
 	if instance.Kind() == reflect.Map || instance.Kind() == reflect.Struct {

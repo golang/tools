@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
+	"golang.org/x/tools/internal/mcp/internal/util"
 )
 
 const DefaultPageSize = 1000
@@ -296,11 +297,7 @@ func fileResourceHandler(dir string) ResourceHandler {
 		panic(err)
 	}
 	return func(ctx context.Context, ss *ServerSession, params *ReadResourceParams) (_ *ReadResourceResult, err error) {
-		defer func() {
-			if err != nil {
-				err = fmt.Errorf("reading resource %s: %w", params.URI, err)
-			}
-		}()
+		defer util.Wrapf(&err, "reading resource %s", params.URI)
 
 		// TODO: use a memoizing API here.
 		rootRes, err := ss.ListRoots(ctx, nil)
