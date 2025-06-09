@@ -383,6 +383,19 @@ func (cs *ClientSession) Resources(ctx context.Context, params *ListResourcesPar
 	})
 }
 
+// ResourceTemplates provides an iterator for all resource templates available on the server,
+// automatically fetching pages and managing cursors.
+// The `params` argument can set the initial cursor.
+// Iteration stops at the first encountered error, which will be yielded.
+func (cs *ClientSession) ResourceTemplates(ctx context.Context, params *ListResourceTemplatesParams) iter.Seq2[ResourceTemplate, error] {
+	if params == nil {
+		params = &ListResourceTemplatesParams{}
+	}
+	return paginate(ctx, params, cs.ListResourceTemplates, func(res *ListResourceTemplatesResult) []*ResourceTemplate {
+		return res.ResourceTemplates
+	})
+}
+
 // Prompts provides an iterator for all prompts available on the server,
 // automatically fetching pages and managing cursors.
 // The `params` argument can set the initial cursor.
