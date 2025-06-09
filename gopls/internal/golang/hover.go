@@ -153,7 +153,10 @@ func findRhsTypeDecl(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 		switch o := t.(type) {
 		case *types.Named:
 			obj = o.Obj()
-			declPGF1, declPos1, _ := parseFull(ctx, snapshot, pkg.FileSet(), obj.Pos())
+			declPGF1, declPos1, err := parseFull(ctx, snapshot, pkg.FileSet(), obj.Pos())
+			if err != nil {
+				return "", err
+			}
 			realTypeDecl, _, err := typeDeclContent(declPGF1, declPos1, obj)
 			return realTypeDecl, err
 		}
