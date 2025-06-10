@@ -26,7 +26,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -2116,7 +2115,8 @@ func isFreeBranchStmt(stack []ast.Node) bool {
 			}
 		case token.BREAK, token.CONTINUE:
 			// Find innermost relevant ancestor for break/continue.
-			for _, n := range moreslices.Reversed(stack) {
+			for i := len(stack) - 2; i >= 0; i-- {
+				n := stack[i]
 				if isLabeled {
 					l, ok := n.(*ast.LabeledStmt)
 					if !(ok && l.Label.Name == node.Label.Name) {

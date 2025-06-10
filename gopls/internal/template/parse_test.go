@@ -7,8 +7,6 @@ package template
 import (
 	"strings"
 	"testing"
-
-	"golang.org/x/tools/gopls/internal/util/moreslices"
 )
 
 type datum struct {
@@ -137,7 +135,8 @@ func TestLineCol(t *testing.T) {
 			t.Errorf("expected %d, %d, got %d, %d for case %d", len(lines)-1, mxlen, lastl, lastc, n)
 		}
 		// backwards
-		for j, s := range moreslices.Reversed(saved) {
+		for j := len(saved) - 1; j >= 0; j-- {
+			s := saved[j]
 			xl, xc := p.LineCol(s.offset)
 			if xl != s.l || xc != s.c {
 				t.Errorf("at offset %d(%d), got (%d,%d), expected (%d,%d)", s.offset, j, xl, xc, s.l, s.c)

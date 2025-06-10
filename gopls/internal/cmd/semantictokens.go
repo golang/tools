@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/moreslices"
 )
 
 // generate semantic tokens and interpolate them in the file
@@ -148,7 +147,8 @@ func decorate(legend protocol.SemanticTokensLegend, file *cmdFile, data []uint32
 		return nil
 	}
 	lines := bytes.Split(file.mapper.Content, []byte{'\n'})
-	for _, mx := range moreslices.Reversed(marks) {
+	for i := len(marks) - 1; i >= 0; i-- {
+		mx := marks[i]
 		markLine(mx, lines)
 	}
 	os.Stdout.Write(bytes.Join(lines, []byte{'\n'}))

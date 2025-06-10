@@ -29,7 +29,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/semtok"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
@@ -278,7 +277,8 @@ func (tv *tokenVisitor) token(start token.Pos, length int, typ semtok.Type, modi
 // strStack converts the stack to a string, for debugging and error messages.
 func (tv *tokenVisitor) strStack() string {
 	msg := []string{"["}
-	for _, n := range moreslices.Reversed(tv.stack) {
+	for i := len(tv.stack) - 1; i >= 0; i-- {
+		n := tv.stack[i]
 		msg = append(msg, strings.TrimPrefix(fmt.Sprintf("%T", n), "*ast."))
 	}
 	if len(tv.stack) > 0 {
@@ -649,8 +649,8 @@ func (tv *tokenVisitor) ident(id *ast.Ident) {
 // isParam reports whether the position is that of a parameter name of
 // an enclosing function.
 func (tv *tokenVisitor) isParam(pos token.Pos) bool {
-	for _, n := range moreslices.Reversed(tv.stack) {
-		switch n := n.(type) {
+	for i := len(tv.stack) - 1; i >= 0; i-- {
+		switch n := tv.stack[i].(type) {
 		case *ast.FuncDecl:
 			for _, f := range n.Type.Params.List {
 				for _, id := range f.Names {

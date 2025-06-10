@@ -12,7 +12,6 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/typeparams"
@@ -272,9 +271,9 @@ func prevStmt(pos token.Pos, path []ast.Node) ast.Stmt {
 		}
 	}
 
-	for _, line := range moreslices.Reversed(blockLines) {
-		if line.End() < pos {
-			return line
+	for i := len(blockLines) - 1; i >= 0; i-- {
+		if blockLines[i].End() < pos {
+			return blockLines[i]
 		}
 	}
 

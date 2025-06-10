@@ -12,7 +12,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -75,7 +74,7 @@ func diagnose(fset *token.FileSet, inspect *inspector.Inspector, start, end toke
 		// Start removing argument expressions from the right, and check if we can
 		// still infer the call expression.
 		required := len(indices) // number of type expressions that are required
-		for i, _ := range moreslices.Reversed(indices) {
+		for i := len(indices) - 1; i >= 0; i-- {
 			var fun ast.Expr
 			if i == 0 {
 				// No longer an index expression: just use the parameterized operand.

@@ -34,7 +34,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
-	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
@@ -1871,7 +1870,8 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 	// we reach the workspace.
 	var errors []*Diagnostic
 	for _, depErr := range relevantErrors {
-		for _, item := range moreslices.Reversed(depErr.ImportStack) {
+		for i := len(depErr.ImportStack) - 1; i >= 0; i-- {
+			item := depErr.ImportStack[i]
 			if snapshot.IsWorkspacePackage(PackageID(item)) {
 				break
 			}
@@ -1909,7 +1909,8 @@ func depsErrors(ctx context.Context, snapshot *Snapshot, mp *metadata.Package) (
 	// Add a diagnostic to the module that contained the lowest-level import of
 	// the missing package.
 	for _, depErr := range relevantErrors {
-		for _, item := range moreslices.Reversed(depErr.ImportStack) {
+		for i := len(depErr.ImportStack) - 1; i >= 0; i-- {
+			item := depErr.ImportStack[i]
 			mp := snapshot.Metadata(PackageID(item))
 			if mp == nil || mp.Module == nil {
 				continue
