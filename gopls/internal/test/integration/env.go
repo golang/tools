@@ -202,6 +202,10 @@ func (a *Awaiter) onShowMessage(_ context.Context, params *protocol.ShowMessageP
 // notifications. Call the resulting func to deregister the listener and
 // receive all notifications that have occurred since the listener was
 // registered.
+//
+// ListenToShownMessages should be called before the operation that
+// generates the showMessage event to ensure that the event is
+// reliably collected.
 func (a *Awaiter) ListenToShownMessages() func() []*protocol.ShowMessageParams {
 	id := nextAwaiterRegistration.Add(1)
 

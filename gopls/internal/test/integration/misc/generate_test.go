@@ -119,8 +119,8 @@ var x = 1
 `
 	Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("a/a.go")
-		env.RegexpReplace("a/a.go", "var", "const")
 		collectMessages := env.Awaiter.ListenToShownMessages()
+		env.RegexpReplace("a/a.go", "var", "const")
 		env.Await(env.DoneWithChange())
 		messages := collectMessages()
 
