@@ -160,6 +160,7 @@ func (s *server) DidCreateFiles(ctx context.Context, params *protocol.CreateFile
 		case file.Go:
 			change, err := completion.NewFile(ctx, snapshot, fh)
 			if err != nil {
+				// any error, including "it's not a new file"
 				continue
 			}
 			allChanges = append(allChanges, *change)

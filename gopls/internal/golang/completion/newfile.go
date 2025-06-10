@@ -16,10 +16,14 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
-// NewFile returns a document change to complete an empty go file.
+// NewFile returns a document change to complete an empty Go source file.
 func NewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (*protocol.DocumentChange, error) {
-	if bs, err := fh.Content(); err != nil || len(bs) != 0 {
+	content, err := fh.Content()
+	if err != nil {
 		return nil, err
+	}
+	if len(content) != 0 {
+		return nil, fmt.Errorf("file is not empty")
 	}
 	meta, err := snapshot.NarrowestMetadataForFile(ctx, fh.URI())
 	if err != nil {

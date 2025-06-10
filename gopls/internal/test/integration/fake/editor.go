@@ -327,7 +327,11 @@ func (e *Editor) initialize(ctx context.Context) error {
 	params.InitializationOptions = makeSettings(e.sandbox, config, nil)
 
 	params.WorkspaceFolders = makeWorkspaceFolders(e.sandbox, config.WorkspaceFolders, config.NoDefaultWorkspaceFiles)
-	params.RootURI = protocol.DocumentURI(makeRootURI(e.sandbox, config.RelRootPath))
+	params.RootURI = protocol.URIFromPath(config.RelRootPath)
+	if !uriRE.MatchString(config.RelRootPath) { // relative file path
+		params.RootURI = e.sandbox.Workdir.URI(config.RelRootPath)
+	}
+
 	capabilities, err := clientCapabilities(config)
 	if err != nil {
 		return fmt.Errorf("unmarshalling EditorConfig.CapabilitiesJSON: %v", err)
@@ -447,10 +451,10 @@ var uriRE = regexp.MustCompile(`^[a-z][a-z0-9+\-.]*://\S+`)
 // makeWorkspaceFolders creates a slice of workspace folders to use for
 // this editing session, based on the editor configuration.
 func makeWorkspaceFolders(sandbox *Sandbox, paths []string, useEmpty bool) (folders []protocol.WorkspaceFolder) {
-	if len(paths) == 0 && useEmpty {
-		return nil
-	}
 	if len(paths) == 0 {
+		if useEmpty {
+			return nil
+		}
 		paths = []string{string(sandbox.Workdir.RelativeTo)}
 	}
 
@@ -466,14 +470,6 @@ func makeWorkspaceFolders(sandbox *Sandbox, paths []string, useEmpty bool) (fold
 	}
 
 	return folders
-}
-
-func makeRootURI(sandbox *Sandbox, path string) string {
-	uri := path
-	if !uriRE.MatchString(path) { // relative file path
-		uri = string(sandbox.Workdir.URI(path))
-	}
-	return uri
 }
 
 // onFileChanges is registered to be called by the Workdir on any writes that

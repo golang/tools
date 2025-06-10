@@ -271,3 +271,13 @@ type Result interface {
 type emptyResult struct{}
 
 func (*emptyResult) GetMeta() *Meta { panic("should never be called") }
+
+type listParams interface {
+	// Returns a pointer to the param's Cursor field.
+	cursorPtr() *string
+}
+
+type listResult[T any] interface {
+	// Returns a pointer to the param's NextCursor field.
+	nextCursorPtr() *string
+}

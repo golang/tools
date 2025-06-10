@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"golang.org/x/tools/internal/mcp/internal/util"
 )
 
 // The value of the "$schema" keyword for the version that we can validate.
@@ -71,7 +73,7 @@ type state struct {
 
 // validate validates the reflected value of the instance.
 func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *annotations) (err error) {
-	defer wrapf(&err, "validating %s", schema)
+	defer util.Wrapf(&err, "validating %s", schema)
 
 	// Maintain a stack for dynamic schema resolution.
 	st.stack = append(st.stack, schema) // push
@@ -605,7 +607,7 @@ func (rs *Resolved) ApplyDefaults(instancep any) error {
 // Leave this as a potentially recursive helper function, because we'll surely want
 // to apply defaults on sub-schemas someday.
 func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err error) {
-	defer wrapf(&err, "applyDefaults: schema %s, instance %v", schema, instancep)
+	defer util.Wrapf(&err, "applyDefaults: schema %s, instance %v", schema, instancep)
 
 	instance := instancep.Elem()
 	if instance.Kind() == reflect.Map || instance.Kind() == reflect.Struct {
@@ -688,7 +690,8 @@ func properties(v reflect.Value) iter.Seq2[string, reflect.Value] {
 			for name, sf := range structPropertiesOf(v.Type()) {
 				val := v.FieldByIndex(sf.Index)
 				if val.IsZero() {
-					if tag, ok := sf.Tag.Lookup("json"); ok && (strings.Contains(tag, "omitempty") || strings.Contains(tag, "omitzero")) {
+					info := util.FieldJSONInfo(sf)
+					if info.Settings["omitempty"] || info.Settings["omitzero"] {
 						continue
 					}
 				}
@@ -740,30 +743,11 @@ func structPropertiesOf(t reflect.Type) propertyMap {
 	}
 	props := map[string]reflect.StructField{}
 	for _, sf := range reflect.VisibleFields(t) {
-		if name, ok := jsonName(sf); ok {
-			props[name] = sf
+		info := util.FieldJSONInfo(sf)
+		if !info.Omit {
+			props[info.Name] = sf
 		}
 	}
 	structProperties.Store(t, props)
 	return props
-}
-
-// jsonName returns the name for f as would be used by [json.Marshal].
-// That is the name in the json struct tag, or the field name if there is no tag.
-// If f is not exported or the tag is "-", jsonName returns "", false.
-func jsonName(f reflect.StructField) (string, bool) {
-	if !f.IsExported() {
-		return "", false
-	}
-	if tag, ok := f.Tag.Lookup("json"); ok {
-		name, _, found := strings.Cut(tag, ",")
-		// "-" means omit, but "-," means the name is "-"
-		if name == "-" && !found {
-			return "", false
-		}
-		if name != "" {
-			return name, true
-		}
-	}
-	return f.Name, true
 }

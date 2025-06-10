@@ -113,6 +113,13 @@ func startFlightRecorder() (http.HandlerFunc, error) {
 			return
 		}
 
+		// Some of the CI builders can be quite heavily loaded.
+		// Give them an extra grace period.
+		timeout := 10 * time.Second
+		if os.Getenv("GO_BUILDER_NAME") != "" {
+			timeout = 1 * time.Minute
+		}
+
 		select {
 		case addr := <-urlC:
 			// Success! Send a redirect to the new location.
@@ -122,8 +129,8 @@ func startFlightRecorder() (http.HandlerFunc, error) {
 		case <-r.Context().Done():
 			errorf("canceled")
 
-		case <-time.After(10 * time.Second):
-			errorf("trace viewer failed to start", err)
+		case <-time.After(timeout):
+			errorf("trace viewer failed to start within %v", timeout)
 		}
 	}, nil
 }

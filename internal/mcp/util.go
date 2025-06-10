@@ -9,8 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 	"sync"
+
+	"golang.org/x/tools/internal/mcp/internal/util"
 )
 
 func assert(cond bool, msg string) {
@@ -135,32 +136,11 @@ func jsonNames(t reflect.Type) map[string]bool {
 	}
 	m := map[string]bool{}
 	for i := range t.NumField() {
-		if n, ok := jsonName(t.Field(i)); ok {
-			m[n] = true
+		info := util.FieldJSONInfo(t.Field(i))
+		if !info.Omit {
+			m[info.Name] = true
 		}
 	}
 	jsonNamesMap.Store(t, m)
 	return m
-}
-
-// jsonName returns the name for f as would be used by [json.Marshal].
-// That is the name in the json struct tag, or the field name if there is no tag.
-// If f is not exported or the tag is "-", jsonName returns "", false.
-//
-// Copied from jsonschema/validate.go.
-func jsonName(f reflect.StructField) (string, bool) {
-	if !f.IsExported() {
-		return "", false
-	}
-	if tag, ok := f.Tag.Lookup("json"); ok {
-		name, _, found := strings.Cut(tag, ",")
-		// "-" means omit, but "-," means the name is "-"
-		if name == "-" && !found {
-			return "", false
-		}
-		if name != "" {
-			return name, true
-		}
-	}
-	return f.Name, true
 }

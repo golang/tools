@@ -42,6 +42,7 @@ when making significant changes to existing features or when adding new ones.
   - [Symbol](navigation.md#symbol): fuzzy search for symbol by name
   - [Selection Range](navigation.md#selection-range): select enclosing unit of syntax
   - [Call Hierarchy](navigation.md#call-hierarchy): show outgoing/incoming calls to the current function
+  - [Type Hierarchy](navigation.md#type-hierarchy): show interfaces/implementations of the current type
 - [Completion](completion.md): context-aware completion of identifiers, statements
 - [Code transformation](transformation.md): fixes and refactorings
   - [Formatting](transformation.md#formatting): format the source code
@@ -58,6 +59,7 @@ when making significant changes to existing features or when adding new ones.
 - Support for non-Go files:
   - [Template files](templates.md): files parsed by `text/template` and `html/template`
   - [go.mod and go.work files](modfiles.md): Go module and workspace manifests
+  - [Go *.s assembly files](assembly.ms): Go assembly files
 - [Command-line interface](../command-line.md): CLI for debugging and scripting (unstable)
 
 You can find this page from within your editor by executing the

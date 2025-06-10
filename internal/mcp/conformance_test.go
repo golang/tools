@@ -118,7 +118,7 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 	}
 
 	writeMsg := func(msg jsonrpc2.Message) {
-		if _, err := cStream.Write(ctx, msg); err != nil {
+		if err := cStream.Write(ctx, msg); err != nil {
 			t.Fatalf("Write failed: %v", err)
 		}
 	}
@@ -145,7 +145,7 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 	// next incoming response.
 	nextResponse := func() (*jsonrpc2.Response, error, bool) {
 		for {
-			msg, _, err := cStream.Read(ctx)
+			msg, err := cStream.Read(ctx)
 			if err != nil {
 				// TODO(rfindley): we don't document (or want to document) that the in
 				// memory transports use a net.Pipe. How can users detect this failure?

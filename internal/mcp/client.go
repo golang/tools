@@ -6,8 +6,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"iter"
 	"slices"
 	"sync"
@@ -288,34 +286,13 @@ func (cs *ClientSession) ListTools(ctx context.Context, params *ListToolsParams)
 }
 
 // CallTool calls the tool with the given name and arguments.
-// Pass a [CallToolOptions] to provide additional request fields.
-func (cs *ClientSession) CallTool(ctx context.Context, params *CallToolParams[json.RawMessage]) (*CallToolResult, error) {
+// The arguments can be any value that marshals into a JSON object.
+func (cs *ClientSession) CallTool(ctx context.Context, params *CallToolParams) (*CallToolResult, error) {
+	if params.Arguments == nil {
+		// Avoid sending nil over the wire.
+		params.Arguments = map[string]any{}
+	}
 	return handleSend[*CallToolResult](ctx, cs, methodCallTool, params)
-}
-
-// CallTool is a helper to call a tool with any argument type. It returns an
-// error if params.Arguments fails to marshal to JSON.
-func CallTool[TArgs any](ctx context.Context, cs *ClientSession, params *CallToolParams[TArgs]) (*CallToolResult, error) {
-	wireParams, err := toWireParams(params)
-	if err != nil {
-		return nil, err
-	}
-	return cs.CallTool(ctx, wireParams)
-}
-
-func toWireParams[TArgs any](params *CallToolParams[TArgs]) (*CallToolParams[json.RawMessage], error) {
-	data, err := json.Marshal(params.Arguments)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal arguments: %v", err)
-	}
-	// The field mapping here must be kept up to date with the CallToolParams.
-	// This is partially enforced by TestToWireParams, which verifies that all
-	// comparable fields are mapped.
-	return &CallToolParams[json.RawMessage]{
-		Meta:      params.Meta,
-		Name:      params.Name,
-		Arguments: data,
-	}, nil
 }
 
 func (cs *ClientSession) SetLevel(ctx context.Context, params *SetLevelParams) error {
@@ -326,6 +303,11 @@ func (cs *ClientSession) SetLevel(ctx context.Context, params *SetLevelParams) e
 // ListResources lists the resources that are currently available on the server.
 func (cs *ClientSession) ListResources(ctx context.Context, params *ListResourcesParams) (*ListResourcesResult, error) {
 	return handleSend[*ListResourcesResult](ctx, cs, methodListResources, params)
+}
+
+// ListResourceTemplates lists the resource templates that are currently available on the server.
+func (cs *ClientSession) ListResourceTemplates(ctx context.Context, params *ListResourceTemplatesParams) (*ListResourceTemplatesResult, error) {
+	return handleSend[*ListResourceTemplatesResult](ctx, cs, methodListResourceTemplates, params)
 }
 
 // ReadResource ask the server to read a resource and return its contents.
@@ -354,9 +336,9 @@ func (c *Client) callLoggingHandler(ctx context.Context, cs *ClientSession, para
 
 // Tools provides an iterator for all tools available on the server,
 // automatically fetching pages and managing cursors.
-// The `params` argument can set the initial cursor.
+// The params argument can set the initial cursor.
 // Iteration stops at the first encountered error, which will be yielded.
-func (cs *ClientSession) Tools(ctx context.Context, params *ListToolsParams) iter.Seq2[Tool, error] {
+func (cs *ClientSession) Tools(ctx context.Context, params *ListToolsParams) iter.Seq2[*Tool, error] {
 	if params == nil {
 		params = &ListToolsParams{}
 	}
@@ -367,9 +349,9 @@ func (cs *ClientSession) Tools(ctx context.Context, params *ListToolsParams) ite
 
 // Resources provides an iterator for all resources available on the server,
 // automatically fetching pages and managing cursors.
-// The `params` argument can set the initial cursor.
+// The params argument can set the initial cursor.
 // Iteration stops at the first encountered error, which will be yielded.
-func (cs *ClientSession) Resources(ctx context.Context, params *ListResourcesParams) iter.Seq2[Resource, error] {
+func (cs *ClientSession) Resources(ctx context.Context, params *ListResourcesParams) iter.Seq2[*Resource, error] {
 	if params == nil {
 		params = &ListResourcesParams{}
 	}
@@ -378,11 +360,24 @@ func (cs *ClientSession) Resources(ctx context.Context, params *ListResourcesPar
 	})
 }
 
-// Prompts provides an iterator for all prompts available on the server,
+// ResourceTemplates provides an iterator for all resource templates available on the server,
 // automatically fetching pages and managing cursors.
 // The `params` argument can set the initial cursor.
 // Iteration stops at the first encountered error, which will be yielded.
-func (cs *ClientSession) Prompts(ctx context.Context, params *ListPromptsParams) iter.Seq2[Prompt, error] {
+func (cs *ClientSession) ResourceTemplates(ctx context.Context, params *ListResourceTemplatesParams) iter.Seq2[*ResourceTemplate, error] {
+	if params == nil {
+		params = &ListResourceTemplatesParams{}
+	}
+	return paginate(ctx, params, cs.ListResourceTemplates, func(res *ListResourceTemplatesResult) []*ResourceTemplate {
+		return res.ResourceTemplates
+	})
+}
+
+// Prompts provides an iterator for all prompts available on the server,
+// automatically fetching pages and managing cursors.
+// The params argument can set the initial cursor.
+// Iteration stops at the first encountered error, which will be yielded.
+func (cs *ClientSession) Prompts(ctx context.Context, params *ListPromptsParams) iter.Seq2[*Prompt, error] {
 	if params == nil {
 		params = &ListPromptsParams{}
 	}
@@ -391,28 +386,17 @@ func (cs *ClientSession) Prompts(ctx context.Context, params *ListPromptsParams)
 	})
 }
 
-type ListParams interface {
-	// Returns a pointer to the param's Cursor field.
-	cursorPtr() *string
-}
-
-type ListResult[T any] interface {
-	// Returns a pointer to the param's NextCursor field.
-	nextCursorPtr() *string
-}
-
 // paginate is a generic helper function to provide a paginated iterator.
-func paginate[P ListParams, R ListResult[E], E any](ctx context.Context, params P, listFunc func(context.Context, P) (R, error), items func(R) []*E) iter.Seq2[E, error] {
-	return func(yield func(E, error) bool) {
+func paginate[P listParams, R listResult[T], T any](ctx context.Context, params P, listFunc func(context.Context, P) (R, error), items func(R) []*T) iter.Seq2[*T, error] {
+	return func(yield func(*T, error) bool) {
 		for {
 			res, err := listFunc(ctx, params)
 			if err != nil {
-				var zero E
-				yield(zero, err)
+				yield(nil, err)
 				return
 			}
 			for _, r := range items(res) {
-				if !yield(*r, nil) {
+				if !yield(r, nil) {
 					return
 				}
 			}

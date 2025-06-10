@@ -112,3 +112,25 @@ func TestReadFileResource(t *testing.T) {
 		t.Errorf("got %q, want %q", g, want)
 	}
 }
+
+func TestTemplateMatch(t *testing.T) {
+	uri := "file:///path/to/file"
+	for _, tt := range []struct {
+		template string
+		want     bool
+	}{
+		{"file:///{}/{a}/{b}", true},
+		{"file:///{a}/{b}", false},
+		{"file:///{+path}", true},
+		{"file:///{a}/{+path}", true},
+	} {
+		re, err := uriTemplateToRegexp(tt.template)
+		if err != nil {
+			t.Fatalf("%s: %v", tt.template, err)
+		}
+		got := re.MatchString(uri)
+		if got != tt.want {
+			t.Errorf("%s: got %t, want %t", tt.template, got, tt.want)
+		}
+	}
+}

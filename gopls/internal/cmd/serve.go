@@ -105,8 +105,6 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 	// event for a given LSP session ID is sent after its corresponding creation
 	// event.
 	var eventChan chan lsprpc.SessionEvent
-	// cache shared between MCP and LSP servers.
-	var ca *cache.Cache
 
 	if s.app.Remote != "" {
 		var err error
@@ -118,8 +116,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		if s.MCPAddress != "" {
 			eventChan = make(chan lsprpc.SessionEvent)
 		}
-		ca = cache.New(nil)
-		ss = lsprpc.NewStreamServer(ca, isDaemon, eventChan, s.app.options)
+		ss = lsprpc.NewStreamServer(cache.New(nil), isDaemon, eventChan, s.app.options)
 	}
 
 	group, ctx := errgroup.WithContext(ctx)
@@ -136,7 +133,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 				}
 			}()
 
-			return mcp.Serve(ctx, s.MCPAddress, eventChan, ca, isDaemon)
+			return mcp.Serve(ctx, s.MCPAddress, eventChan, isDaemon)
 		})
 	}
 

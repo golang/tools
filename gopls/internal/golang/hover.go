@@ -153,7 +153,10 @@ func findRhsTypeDecl(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 		switch o := t.(type) {
 		case *types.Named:
 			obj = o.Obj()
-			declPGF1, declPos1, _ := parseFull(ctx, snapshot, pkg.FileSet(), obj.Pos())
+			declPGF1, declPos1, err := parseFull(ctx, snapshot, pkg.FileSet(), obj.Pos())
+			if err != nil {
+				return "", err
+			}
 			realTypeDecl, _, err := typeDeclContent(declPGF1, declPos1, obj)
 			return realTypeDecl, err
 		}
@@ -353,8 +356,8 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	}
 	if obj, ok := obj.(*types.Var); ok && obj.IsField() {
 		if selExpr, ok := cur.Parent().Node().(*ast.SelectorExpr); ok {
-			sel := pkg.TypesInfo().Selections[selExpr]
-			if len(sel.Index()) > 1 {
+			sel, ok := pkg.TypesInfo().Selections[selExpr]
+			if ok && len(sel.Index()) > 1 {
 				var buf bytes.Buffer
 				buf.WriteString(" // through ")
 				t := typesinternal.Unpointer(sel.Recv())

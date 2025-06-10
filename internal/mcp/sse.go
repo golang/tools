@@ -252,26 +252,26 @@ type sseServerStream struct {
 }
 
 // Read implements jsonrpc2.Reader.
-func (s sseServerStream) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
+func (s sseServerStream) Read(ctx context.Context) (jsonrpc2.Message, error) {
 	select {
 	case <-ctx.Done():
-		return nil, 0, ctx.Err()
+		return nil, ctx.Err()
 	case msg := <-s.t.incoming:
-		return msg, 0, nil
+		return msg, nil
 	case <-s.t.done:
-		return nil, 0, io.EOF
+		return nil, io.EOF
 	}
 }
 
 // Write implements jsonrpc2.Writer.
-func (s sseServerStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
+func (s sseServerStream) Write(ctx context.Context, msg jsonrpc2.Message) error {
 	if ctx.Err() != nil {
-		return 0, ctx.Err()
+		return ctx.Err()
 	}
 
 	data, err := jsonrpc2.EncodeMessage(msg)
 	if err != nil {
-		return 0, err
+		return err
 	}
 
 	s.t.mu.Lock()
@@ -281,11 +281,11 @@ func (s sseServerStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64
 	// exited, and so we must lock around this write and check isDone, which is
 	// set before the hanging GET exits.
 	if s.t.closed {
-		return 0, io.EOF
+		return io.EOF
 	}
 
-	n, err := writeEvent(s.t.w, event{name: "message", data: data})
-	return int64(n), err
+	_, err = writeEvent(s.t.w, event{name: "message", data: data})
+	return err
 }
 
 // Close implements io.Closer, and closes the session.
@@ -451,48 +451,48 @@ func (c *sseClientStream) isDone() bool {
 	return c.closed
 }
 
-func (c *sseClientStream) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
+func (c *sseClientStream) Read(ctx context.Context) (jsonrpc2.Message, error) {
 	select {
 	case <-ctx.Done():
-		return nil, 0, ctx.Err()
+		return nil, ctx.Err()
 
 	case <-c.done:
-		return nil, 0, io.EOF
+		return nil, io.EOF
 
 	case data := <-c.incoming:
 		if c.isDone() {
-			return nil, 0, io.EOF
+			return nil, io.EOF
 		}
 		msg, err := jsonrpc2.DecodeMessage(data)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
-		return msg, int64(len(data)), nil
+		return msg, nil
 	}
 }
 
-func (c *sseClientStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
+func (c *sseClientStream) Write(ctx context.Context, msg jsonrpc2.Message) error {
 	data, err := jsonrpc2.EncodeMessage(msg)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	if c.isDone() {
-		return 0, io.EOF
+		return io.EOF
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", c.msgEndpoint.String(), bytes.NewReader(data))
 	if err != nil {
-		return 0, err
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return 0, fmt.Errorf("failed to write: %s", resp.Status)
+		return fmt.Errorf("failed to write: %s", resp.Status)
 	}
-	return int64(len(data)), nil
+	return nil
 }
 
 func (c *sseClientStream) Close() error {

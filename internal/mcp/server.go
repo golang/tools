@@ -18,6 +18,8 @@ import (
 	"sync"
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
+	"golang.org/x/tools/internal/mcp/internal/util"
+	"golang.org/x/tools/internal/mcp/jsonschema"
 )
 
 const DefaultPageSize = 1000
@@ -36,6 +38,7 @@ type Server struct {
 	prompts                 *featureSet[*ServerPrompt]
 	tools                   *featureSet[*ServerTool]
 	resources               *featureSet[*ServerResource]
+	resourceTemplates       *featureSet[*ServerResourceTemplate]
 	sessions                []*ServerSession
 	sendingMethodHandler_   MethodHandler[*ServerSession]
 	receivingMethodHandler_ MethodHandler[*ServerSession]
@@ -78,6 +81,7 @@ func NewServer(name, version string, opts *ServerOptions) *Server {
 		prompts:                 newFeatureSet(func(p *ServerPrompt) string { return p.Prompt.Name }),
 		tools:                   newFeatureSet(func(t *ServerTool) string { return t.Tool.Name }),
 		resources:               newFeatureSet(func(r *ServerResource) string { return r.Resource.URI }),
+		resourceTemplates:       newFeatureSet(func(t *ServerResourceTemplate) string { return t.ResourceTemplate.URITemplate }),
 		sendingMethodHandler_:   defaultSendingMethodHandler[*ServerSession],
 		receivingMethodHandler_: defaultReceivingMethodHandler[*ServerSession],
 	}
@@ -107,15 +111,56 @@ func (s *Server) RemovePrompts(names ...string) {
 
 // AddTools adds the given tools to the server,
 // replacing any with the same names.
+// The arguments must not be modified after this call.
+//
+// AddTools panics if errors are detected.
+// Call [AddToolsErr] to obtain an error instead.
 func (s *Server) AddTools(tools ...*ServerTool) {
+	if err := s.addToolsErr(tools...); err != nil {
+		panic(err)
+	}
+}
+
+// addToolsErr is like [AddTools], but returns an error instead of panicking.
+func (s *Server) addToolsErr(tools ...*ServerTool) error {
 	// Only notify if something could change.
 	if len(tools) == 0 {
-		return
+		return nil
 	}
+	// Wrap the user's Handlers with rawHandlers that take a json.RawMessage.
+	for _, st := range tools {
+		if st.rawHandler == nil {
+			// This ServerTool was not created with NewTool.
+			if st.Handler == nil {
+				return fmt.Errorf("AddTools: tool %q has no handler", st.Tool.Name)
+			}
+			st.rawHandler = newRawHandler(st)
+			// Resolve the schemas, with no base URI. We don't expect tool schemas to
+			// refer outside of themselves.
+			if st.Tool.InputSchema != nil {
+				r, err := st.Tool.InputSchema.Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
+				if err != nil {
+					return err
+				}
+				st.inputResolved = r
+			}
+
+			// TODO: uncomment when output schemas drop.
+			// if st.Tool.OutputSchema != nil {
+			// 	st.outputResolved, err := st.Tool.OutputSchema.Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
+			// 	if err != nil {
+			// 		return err
+			// 	}
+			// }
+		}
+	}
+
 	// Assume there was a change, since add replaces existing tools.
 	// (It's possible a tool was replaced with an identical one, but not worth checking.)
+	// TODO: surface notify error here?
 	s.changeAndNotify(notificationToolListChanged, &ToolListChangedParams{},
 		func() bool { s.tools.add(tools...); return true })
+	return nil
 }
 
 // RemoveTools removes the tools with the given names.
@@ -125,10 +170,9 @@ func (s *Server) RemoveTools(names ...string) {
 		func() bool { return s.tools.remove(names...) })
 }
 
-// AddResources adds the given resource to the server and associates it with
-// a [ResourceHandler], which will be called when the client calls [ClientSession.ReadResource].
-// If a resource with the same URI already exists, this one replaces it.
-// AddResource panics if a resource URI is invalid or not absolute (has an empty scheme).
+// AddResources adds the given resources to the server.
+// If a resource with the same URI already exists, it is replaced.
+// AddResources panics if a resource URI is invalid or not absolute (has an empty scheme).
 func (s *Server) AddResources(resources ...*ServerResource) {
 	// Only notify if something could change.
 	if len(resources) == 0 {
@@ -157,6 +201,31 @@ func (s *Server) RemoveResources(uris ...string) {
 		func() bool { return s.resources.remove(uris...) })
 }
 
+// AddResourceTemplates adds the given resource templates to the server.
+// If a resource template with the same URI template already exists, it will be replaced.
+// AddResourceTemplates panics if a URI template is invalid or not absolute (has an empty scheme).
+func (s *Server) AddResourceTemplates(templates ...*ServerResourceTemplate) {
+	// Only notify if something could change.
+	if len(templates) == 0 {
+		return
+	}
+	s.changeAndNotify(notificationResourceListChanged, &ResourceListChangedParams{},
+		func() bool {
+			for _, t := range templates {
+				// TODO: check template validity.
+				s.resourceTemplates.add(t)
+			}
+			return true
+		})
+}
+
+// RemoveResourceTemplates removes the resource templates with the given URI templates.
+// It is not an error to remove a nonexistent resource.
+func (s *Server) RemoveResourceTemplates(uriTemplates ...string) {
+	s.changeAndNotify(notificationResourceListChanged, &ResourceListChangedParams{},
+		func() bool { return s.resourceTemplates.remove(uriTemplates...) })
+}
+
 // changeAndNotify is called when a feature is added or removed.
 // It calls change, which should do the work and report whether a change actually occurred.
 // If there was a change, it notifies a snapshot of the sessions.
@@ -182,21 +251,15 @@ func (s *Server) Sessions() iter.Seq[*ServerSession] {
 func (s *Server) listPrompts(_ context.Context, _ *ServerSession, params *ListPromptsParams) (*ListPromptsResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var cursor string
-	if params != nil {
-		cursor = params.Cursor
+	if params == nil {
+		params = &ListPromptsParams{}
 	}
-	prompts, nextCursor, err := paginateList(s.prompts, cursor, s.opts.PageSize)
-	if err != nil {
-		return nil, err
-	}
-	res := new(ListPromptsResult)
-	res.NextCursor = nextCursor
-	res.Prompts = []*Prompt{} // avoid JSON null
-	for _, p := range prompts {
-		res.Prompts = append(res.Prompts, p.Prompt)
-	}
-	return res, nil
+	return paginateList(s.prompts, s.opts.PageSize, params, &ListPromptsResult{}, func(res *ListPromptsResult, prompts []*ServerPrompt) {
+		res.Prompts = []*Prompt{} // avoid JSON null
+		for _, p := range prompts {
+			res.Prompts = append(res.Prompts, p.Prompt)
+		}
+	})
 }
 
 func (s *Server) getPrompt(ctx context.Context, cc *ServerSession, params *GetPromptParams) (*GetPromptResult, error) {
@@ -213,66 +276,67 @@ func (s *Server) getPrompt(ctx context.Context, cc *ServerSession, params *GetPr
 func (s *Server) listTools(_ context.Context, _ *ServerSession, params *ListToolsParams) (*ListToolsResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var cursor string
-	if params != nil {
-		cursor = params.Cursor
+	if params == nil {
+		params = &ListToolsParams{}
 	}
-	tools, nextCursor, err := paginateList(s.tools, cursor, s.opts.PageSize)
-	if err != nil {
-		return nil, err
-	}
-	res := new(ListToolsResult)
-	res.NextCursor = nextCursor
-	res.Tools = []*Tool{} // avoid JSON null
-	for _, t := range tools {
-		res.Tools = append(res.Tools, t.Tool)
-	}
-	return res, nil
+	return paginateList(s.tools, s.opts.PageSize, params, &ListToolsResult{}, func(res *ListToolsResult, tools []*ServerTool) {
+		res.Tools = []*Tool{} // avoid JSON null
+		for _, t := range tools {
+			res.Tools = append(res.Tools, t.Tool)
+		}
+	})
 }
 
-func (s *Server) callTool(ctx context.Context, cc *ServerSession, params *CallToolParams[json.RawMessage]) (*CallToolResult, error) {
+func (s *Server) callTool(ctx context.Context, cc *ServerSession, params *CallToolParamsFor[json.RawMessage]) (*CallToolResult, error) {
 	s.mu.Lock()
 	tool, ok := s.tools.get(params.Name)
 	s.mu.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("%s: unknown tool %q", jsonrpc2.ErrInvalidParams, params.Name)
 	}
-	return tool.Handler(ctx, cc, params)
+	return tool.rawHandler(ctx, cc, params)
 }
 
 func (s *Server) listResources(_ context.Context, _ *ServerSession, params *ListResourcesParams) (*ListResourcesResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var cursor string
-	if params != nil {
-		cursor = params.Cursor
+	if params == nil {
+		params = &ListResourcesParams{}
 	}
-	resources, nextCursor, err := paginateList(s.resources, cursor, s.opts.PageSize)
-	if err != nil {
-		return nil, err
+	return paginateList(s.resources, s.opts.PageSize, params, &ListResourcesResult{}, func(res *ListResourcesResult, resources []*ServerResource) {
+		res.Resources = []*Resource{} // avoid JSON null
+		for _, r := range resources {
+			res.Resources = append(res.Resources, r.Resource)
+		}
+	})
+}
+
+func (s *Server) listResourceTemplates(_ context.Context, _ *ServerSession, params *ListResourceTemplatesParams) (*ListResourceTemplatesResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if params == nil {
+		params = &ListResourceTemplatesParams{}
 	}
-	res := new(ListResourcesResult)
-	res.NextCursor = nextCursor
-	res.Resources = []*Resource{} // avoid JSON null
-	for _, r := range resources {
-		res.Resources = append(res.Resources, r.Resource)
-	}
-	return res, nil
+	return paginateList(s.resourceTemplates, s.opts.PageSize, params, &ListResourceTemplatesResult{},
+		func(res *ListResourceTemplatesResult, rts []*ServerResourceTemplate) {
+			res.ResourceTemplates = []*ResourceTemplate{} // avoid JSON null
+			for _, rt := range rts {
+				res.ResourceTemplates = append(res.ResourceTemplates, rt.ResourceTemplate)
+			}
+		})
 }
 
 func (s *Server) readResource(ctx context.Context, ss *ServerSession, params *ReadResourceParams) (*ReadResourceResult, error) {
 	uri := params.URI
-	// Look up the resource URI in the list we have.
+	// Look up the resource URI in the lists of resources and resource templates.
 	// This is a security check as well as an information lookup.
-	s.mu.Lock()
-	resource, ok := s.resources.get(uri)
-	s.mu.Unlock()
+	handler, mimeType, ok := s.lookupResourceHandler(uri)
 	if !ok {
 		// Don't expose the server configuration to the client.
 		// Treat an unregistered resource the same as a registered one that couldn't be found.
 		return nil, ResourceNotFoundError(uri)
 	}
-	res, err := resource.Handler(ctx, ss, params)
+	res, err := handler(ctx, ss, params)
 	if err != nil {
 		return nil, err
 	}
@@ -285,10 +349,28 @@ func (s *Server) readResource(ctx context.Context, ss *ServerSession, params *Re
 			c.URI = uri
 		}
 		if c.MIMEType == "" {
-			c.MIMEType = resource.Resource.MIMEType
+			c.MIMEType = mimeType
 		}
 	}
 	return res, nil
+}
+
+// lookupResourceHandler returns the resource handler and MIME type for the resource or
+// resource template matching uri. If none, the last return value is false.
+func (s *Server) lookupResourceHandler(uri string) (ResourceHandler, string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Try resources first.
+	if r, ok := s.resources.get(uri); ok {
+		return r.Handler, r.Resource.MIMEType, true
+	}
+	// Look for matching template.
+	for rt := range s.resourceTemplates.all() {
+		if rt.Matches(uri) {
+			return rt.Handler, rt.ResourceTemplate.MIMEType, true
+		}
+	}
+	return nil, "", false
 }
 
 // fileResourceHandler returns a ReadResourceHandler that reads paths using dir as
@@ -314,11 +396,7 @@ func fileResourceHandler(dir string) ResourceHandler {
 		panic(err)
 	}
 	return func(ctx context.Context, ss *ServerSession, params *ReadResourceParams) (_ *ReadResourceResult, err error) {
-		defer func() {
-			if err != nil {
-				err = fmt.Errorf("reading resource %s: %w", params.URI, err)
-			}
-		}()
+		defer util.Wrapf(&err, "reading resource %s", params.URI)
 
 		// TODO: use a memoizing API here.
 		rootRes, err := ss.ListRoots(ctx, nil)
@@ -333,8 +411,8 @@ func fileResourceHandler(dir string) ResourceHandler {
 		if err != nil {
 			return nil, err
 		}
-		// TODO(jba): figure out mime type.
-		return &ReadResourceResult{Contents: []*ResourceContents{NewBlobResourceContents(params.URI, "text/plain", data)}}, nil
+		// TODO(jba): figure out mime type. Omit for now: Server.readResource will fill it in.
+		return &ReadResourceResult{Contents: []*ResourceContents{NewBlobResourceContents(params.URI, "", data)}}, nil
 	}
 }
 
@@ -476,6 +554,7 @@ var serverMethodInfos = map[string]methodInfo{
 	methodListTools:              newMethodInfo(serverMethod((*Server).listTools)),
 	methodCallTool:               newMethodInfo(serverMethod((*Server).callTool)),
 	methodListResources:          newMethodInfo(serverMethod((*Server).listResources)),
+	methodListResourceTemplates:  newMethodInfo(serverMethod((*Server).listResourceTemplates)),
 	methodReadResource:           newMethodInfo(serverMethod((*Server).readResource)),
 	methodSetLevel:               newMethodInfo(sessionMethod((*ServerSession).setLevel)),
 	notificationInitialized:      newMethodInfo(serverMethod((*Server).callInitializedHandler)),
@@ -618,22 +697,25 @@ func decodeCursor(cursor string) (*pageToken, error) {
 	return &token, nil
 }
 
-// paginateList returns a slice of features from the given featureSet, based on
-// the provided cursor and page size. It also returns a new cursor for the next
-// page, or an empty string if there are no more pages.
-func paginateList[T any](fs *featureSet[T], cursor string, pageSize int) (features []T, nextCursor string, err error) {
+// paginateList is a generic helper that returns a paginated slice of items
+// from a featureSet. It populates the provided result res with the items
+// and sets its next cursor for subsequent pages.
+// If there are no more pages, the next cursor within the result will be an empty string.
+func paginateList[P listParams, R listResult[T], T any](fs *featureSet[T], pageSize int, params P, res R, setFunc func(R, []T)) (R, error) {
 	var seq iter.Seq[T]
-	if cursor == "" {
+	if params.cursorPtr() == nil || *params.cursorPtr() == "" {
 		seq = fs.all()
 	} else {
-		pageToken, err := decodeCursor(cursor)
+		pageToken, err := decodeCursor(*params.cursorPtr())
 		// According to the spec, invalid cursors should return Invalid params.
 		if err != nil {
-			return nil, "", jsonrpc2.ErrInvalidParams
+			var zero R
+			return zero, jsonrpc2.ErrInvalidParams
 		}
 		seq = fs.above(pageToken.LastUID)
 	}
 	var count int
+	var features []T
 	for f := range seq {
 		count++
 		// If we've seen pageSize + 1 elements, we've gathered enough info to determine
@@ -643,13 +725,16 @@ func paginateList[T any](fs *featureSet[T], cursor string, pageSize int) (featur
 		}
 		features = append(features, f)
 	}
+	setFunc(res, features)
 	// No remaining pages.
 	if count < pageSize+1 {
-		return features, "", nil
+		return res, nil
 	}
-	nextCursor, err = encodeCursor(fs.uniqueID(features[len(features)-1]))
+	nextCursor, err := encodeCursor(fs.uniqueID(features[len(features)-1]))
 	if err != nil {
-		return nil, "", err
+		var zero R
+		return zero, err
 	}
-	return features, nextCursor, nil
+	*res.nextCursorPtr() = nextCursor
+	return res, nil
 }
