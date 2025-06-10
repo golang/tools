@@ -62,7 +62,6 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -152,7 +151,7 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 	for obj = range targets {
 		break // pick one arbitrarily
 	}
-	if err := checkRenamable(obj); err != nil {
+	if err := checkRenamable(obj, node); err != nil {
 		return nil, nil, err
 	}
 	rng, err := pgf.NodeRange(node)
@@ -367,11 +366,15 @@ func funcKeywordDecl(pgf *parsego.File, pos token.Pos) *ast.FuncDecl {
 	return fdecl
 }
 
-func checkRenamable(obj types.Object) error {
+// checkRenamable returns an error if the object cannot be renamed.
+// node is the name-like syntax node from which the renaming originated.
+func checkRenamable(obj types.Object, node ast.Node) error {
 	switch obj := obj.(type) {
 	case *types.Var:
-		if obj.Embedded() {
-			return fmt.Errorf("can't rename embedded fields: rename the type directly or name the field")
+		// Allow renaming an embedded field only at its declaration.
+		if obj.Embedded() && node.Pos() != obj.Pos() {
+			return errors.New("an embedded field must be renamed at its declaration (since it renames the type too)")
+
 		}
 	case *types.Builtin, *types.Nil:
 		return fmt.Errorf("%s is built in and cannot be renamed", obj.Name())
@@ -413,7 +416,7 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 	if inPackageName {
 		editMap, err = renamePackageName(ctx, snapshot, f, PackageName(newName))
 	} else {
-		editMap, err = renameOrdinary(ctx, snapshot, f, pp, newName)
+		editMap, err = renameOrdinary(ctx, snapshot, f.URI(), pp, newName)
 	}
 	if err != nil {
 		return nil, false, err
@@ -463,7 +466,7 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 }
 
 // renameOrdinary renames an ordinary (non-package) name throughout the workspace.
-func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position, newName string) (map[protocol.DocumentURI][]diff.Edit, error) {
+func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, pp protocol.Position, newName string) (map[protocol.DocumentURI][]diff.Edit, error) {
 	// Type-check the referring package and locate the object(s).
 	//
 	// Unlike NarrowestPackageForFile, this operation prefers the
@@ -471,42 +474,36 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	// only package we need. (In case you're wondering why
 	// 'references' doesn't also want the widest variant: it
 	// computes the union across all variants.)
-	var targets map[types.Object]ast.Node
-	var pkg *cache.Package
-	var cur inspector.Cursor // of selected Ident or ImportSpec
-	{
-		mps, err := snapshot.MetadataForFile(ctx, f.URI())
-		if err != nil {
-			return nil, err
-		}
-		metadata.RemoveIntermediateTestVariants(&mps)
-		if len(mps) == 0 {
-			return nil, fmt.Errorf("no package metadata for file %s", f.URI())
-		}
-		widest := mps[len(mps)-1] // widest variant may include _test.go files
-		pkgs, err := snapshot.TypeCheck(ctx, widest.ID)
-		if err != nil {
-			return nil, err
-		}
-		pkg = pkgs[0]
-		pgf, err := pkg.File(f.URI())
-		if err != nil {
-			return nil, err // "can't happen"
-		}
-		pos, err := pgf.PositionPos(pp)
-		if err != nil {
-			return nil, err
-		}
-		var ok bool
-		cur, ok = pgf.Cursor.FindByPos(pos, pos)
-		if !ok {
-			return nil, fmt.Errorf("can't find cursor for selection")
-		}
-		objects, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
-		if err != nil {
-			return nil, err
-		}
-		targets = objects
+	mps, err := snapshot.MetadataForFile(ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+	metadata.RemoveIntermediateTestVariants(&mps)
+	if len(mps) == 0 {
+		return nil, fmt.Errorf("no package metadata for file %s", uri)
+	}
+	widest := mps[len(mps)-1] // widest variant may include _test.go files
+	pkgs, err := snapshot.TypeCheck(ctx, widest.ID)
+	if err != nil {
+		return nil, err
+	}
+	pkg := pkgs[0]
+	pgf, err := pkg.File(uri)
+	if err != nil {
+		return nil, err // "can't happen"
+	}
+	pos, err := pgf.PositionPos(pp)
+	if err != nil {
+		return nil, err
+	}
+	var ok bool
+	cur, ok := pgf.Cursor.FindByPos(pos, pos) // of selected Ident or ImportSpec
+	if !ok {
+		return nil, fmt.Errorf("can't find cursor for selection")
+	}
+	targets, node, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
+	if err != nil {
+		return nil, err
 	}
 
 	// Pick a representative object arbitrarily.
@@ -518,8 +515,23 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 	if obj.Name() == newName {
 		return nil, fmt.Errorf("old and new names are the same: %s", newName)
 	}
-	if err := checkRenamable(obj); err != nil {
+	if err := checkRenamable(obj, node); err != nil {
 		return nil, err
+	}
+
+	// This covers the case where we are renaming an embedded field at its
+	// declaration (see golang/go#45199). Perform the rename on the field's type declaration.
+	if is[*types.Var](obj) && obj.(*types.Var).Embedded() {
+		if id, ok := node.(*ast.Ident); ok {
+			// TypesInfo.Uses contains the embedded field's *types.TypeName.
+			if typeName := pkg.TypesInfo().Uses[id]; typeName != nil {
+				loc, err := ObjectLocation(ctx, pkg.FileSet(), snapshot, typeName)
+				if err != nil {
+					return nil, err
+				}
+				return renameOrdinary(ctx, snapshot, loc.URI, loc.Range.Start, newName)
+			}
+		}
 	}
 
 	// Find objectpath, if object is exported ("" otherwise).
@@ -647,7 +659,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, f file.Handle
 
 	// Type-check all the packages to inspect.
 	declURI := protocol.URIFromPath(pkg.FileSet().File(obj.Pos()).Name())
-	pkgs, err := typeCheckReverseDependencies(ctx, snapshot, declURI, transitive)
+	pkgs, err = typeCheckReverseDependencies(ctx, snapshot, declURI, transitive)
 	if err != nil {
 		return nil, err
 	}
