@@ -26,3 +26,12 @@ var (
 		complUsed,
 	}
 )
+
+// Proposed counters for evaluating gopls change signature and rename. These
+// counters increment when the user attempts to perform one of these operations,
+// regardless of whether it succeeds.
+var (
+	countChangeSignature = counter.New("gopls/changesig")
+
+	countRename = counter.New("gopls/rename")
+)

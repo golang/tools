@@ -32,11 +32,13 @@ import (
 
 // extractVariableOne implements the refactor.extract.{variable,constant} CodeAction command.
 func extractVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	countExtractVariable.Inc()
 	return extractVariable(pkg, pgf, start, end, false)
 }
 
 // extractVariableAll implements the refactor.extract.{variable,constant}-all CodeAction command.
 func extractVariableAll(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	countExtractVariableAll.Inc()
 	return extractVariable(pkg, pgf, start, end, true)
 }
 
@@ -568,11 +570,13 @@ type returnVariable struct {
 
 // extractMethod refactors the selected block of code into a new method.
 func extractMethod(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	countExtractMethod.Inc()
 	return extractFunctionMethod(pkg, pgf, start, end, true)
 }
 
 // extractFunction refactors the selected block of code into a new function.
 func extractFunction(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
+	countExtractFunction.Inc()
 	return extractFunctionMethod(pkg, pgf, start, end, false)
 }
 

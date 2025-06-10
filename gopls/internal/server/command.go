@@ -1604,6 +1604,7 @@ func showDocumentImpl(ctx context.Context, cli protocol.Client, url protocol.URI
 }
 
 func (c *commandHandler) ChangeSignature(ctx context.Context, args command.ChangeSignatureArgs) (*protocol.WorkspaceEdit, error) {
+	countChangeSignature.Inc()
 	var result *protocol.WorkspaceEdit
 	err := c.run(ctx, commandConfig{
 		forURI: args.Location.URI,
