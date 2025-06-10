@@ -2,30 +2,31 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package mcp_test
+package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"golang.org/x/tools/internal/mcp"
 	"golang.org/x/tools/internal/mcp/jsonschema"
 )
 
 // testToolHandler is used for type inference in TestNewTool.
-func testToolHandler[T any](context.Context, *mcp.ServerSession, *mcp.CallToolParamsFor[T]) (*mcp.CallToolResultFor[any], error) {
+func testToolHandler[T any](context.Context, *ServerSession, *CallToolParamsFor[T]) (*CallToolResultFor[any], error) {
 	panic("not implemented")
 }
 
 func TestNewTool(t *testing.T) {
 	tests := []struct {
-		tool *mcp.ServerTool
+		tool *ServerTool
 		want *jsonschema.Schema
 	}{
 		{
-			mcp.NewTool("basic", "", testToolHandler[struct {
+			NewTool("basic", "", testToolHandler[struct {
 				Name string `json:"name"`
 			}]),
 			&jsonschema.Schema{
@@ -38,8 +39,8 @@ func TestNewTool(t *testing.T) {
 			},
 		},
 		{
-			mcp.NewTool("enum", "", testToolHandler[struct{ Name string }], mcp.Input(
-				mcp.Property("Name", mcp.Enum("x", "y", "z")),
+			NewTool("enum", "", testToolHandler[struct{ Name string }], Input(
+				Property("Name", Enum("x", "y", "z")),
 			)),
 			&jsonschema.Schema{
 				Type:     "object",
@@ -51,13 +52,13 @@ func TestNewTool(t *testing.T) {
 			},
 		},
 		{
-			mcp.NewTool("required", "", testToolHandler[struct {
+			NewTool("required", "", testToolHandler[struct {
 				Name     string `json:"name"`
 				Language string `json:"language"`
 				X        int    `json:"x,omitempty"`
 				Y        int    `json:"y,omitempty"`
-			}], mcp.Input(
-				mcp.Property("x", mcp.Required(true)))),
+			}], Input(
+				Property("x", Required(true)))),
 			&jsonschema.Schema{
 				Type:     "object",
 				Required: []string{"name", "language", "x"},
@@ -71,11 +72,11 @@ func TestNewTool(t *testing.T) {
 			},
 		},
 		{
-			mcp.NewTool("set_schema", "", testToolHandler[struct {
+			NewTool("set_schema", "", testToolHandler[struct {
 				X int `json:"x,omitempty"`
 				Y int `json:"y,omitempty"`
-			}], mcp.Input(
-				mcp.Schema(&jsonschema.Schema{Type: "object"})),
+			}], Input(
+				Schema(&jsonschema.Schema{Type: "object"})),
 			),
 			&jsonschema.Schema{
 				Type: "object",
@@ -86,5 +87,44 @@ func TestNewTool(t *testing.T) {
 		if diff := cmp.Diff(test.want, test.tool.Tool.InputSchema, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
 			t.Errorf("NewTool(%v) mismatch (-want +got):\n%s", test.tool.Tool.Name, diff)
 		}
+	}
+}
+
+func TestUnmarshalSchema(t *testing.T) {
+	schema := &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"x": {Type: "integer", Default: json.RawMessage("3")},
+		},
+	}
+	resolved, err := schema.Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type S struct {
+		X int `json:"x"`
+	}
+
+	for _, tt := range []struct {
+		data string
+		v    any
+		want any
+	}{
+		{`{"x": 1}`, new(S), &S{X: 1}},
+		{`{}`, new(S), &S{X: 3}},       // default applied
+		{`{"x": 0}`, new(S), &S{X: 3}}, // FAIL: should be 0. (requires double unmarshal)
+		{`{"x": 1}`, new(map[string]any), &map[string]any{"x": 1.0}},
+		{`{}`, new(map[string]any), &map[string]any{"x": 3.0}}, // default applied
+		{`{"x": 0}`, new(map[string]any), &map[string]any{"x": 0.0}},
+	} {
+		raw := json.RawMessage(tt.data)
+		if err := unmarshalSchema(raw, resolved, tt.v); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(tt.v, tt.want) {
+			t.Errorf("got %#v, want %#v", tt.v, tt.want)
+		}
+
 	}
 }

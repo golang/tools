@@ -19,6 +19,7 @@ import (
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
 	"golang.org/x/tools/internal/mcp/internal/util"
+	"golang.org/x/tools/internal/mcp/jsonschema"
 )
 
 const DefaultPageSize = 1000
@@ -137,7 +138,7 @@ func (s *Server) addToolsErr(tools ...*ServerTool) error {
 			// Resolve the schemas, with no base URI. We don't expect tool schemas to
 			// refer outside of themselves.
 			if st.Tool.InputSchema != nil {
-				r, err := st.Tool.InputSchema.Resolve(nil)
+				r, err := st.Tool.InputSchema.Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
 				if err != nil {
 					return err
 				}
@@ -146,7 +147,7 @@ func (s *Server) addToolsErr(tools ...*ServerTool) error {
 
 			// TODO: uncomment when output schemas drop.
 			// if st.Tool.OutputSchema != nil {
-			// 	st.outputResolved, err := st.Tool.OutputSchema.Resolve(nil)
+			// 	st.outputResolved, err := st.Tool.OutputSchema.Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
 			// 	if err != nil {
 			// 		return err
 			// 	}

@@ -151,9 +151,11 @@ func unmarshalSchema(data json.RawMessage, resolved *jsonschema.Resolved, v any)
 	if err := dec.Decode(v); err != nil {
 		return fmt.Errorf("unmarshaling: %w", err)
 	}
-	// TODO(jba): apply defaults.
 	// TODO: test with nil args.
 	if resolved != nil {
+		if err := resolved.ApplyDefaults(v); err != nil {
+			return fmt.Errorf("applying defaults from \n\t%s\nto\n\t%s:\n%w", schemaJSON(resolved.Schema()), data, err)
+		}
 		if err := resolved.Validate(v); err != nil {
 			return fmt.Errorf("validating\n\t%s\nagainst\n\t %s:\n %w", data, schemaJSON(resolved.Schema()), err)
 		}
