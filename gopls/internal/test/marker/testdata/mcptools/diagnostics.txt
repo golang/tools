@@ -1,0 +1,39 @@
+This test exercises the "diagnostics" MCP tool.
+
+-- flags --
+-mcp
+
+-- go.mod --
+module example.com
+
+-- a/main.go --
+package main
+
+func foo() {} //@loc(foo, "foo")
+
+//@mcptool("diagnostics", `{}`, foo, output=unused)
+//@diag(foo, re"unused")
+
+-- @unused --
+2:5-2:8: [Information] function "foo" is unused
+-- b/main.go --
+package main
+
+func _() {
+	_ = deprecated([]string{"a"}, "a") //@loc(inline, "deprecated")
+}
+
+//go:fix inline
+func deprecated(slice []string, s string) bool {
+	return proposed(slice, s, true)
+}
+
+func proposed(_ []string, _ string, _ bool) bool {
+	return false // fake
+}
+
+//@mcptool("diagnostics", `{}`, inline, output=bloop)
+//@diag(inline, re"inline")
+
+-- @bloop --
+3:5-3:35: [Hint] Call of main.deprecated should be inlined

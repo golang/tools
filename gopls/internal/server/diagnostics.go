@@ -212,7 +212,7 @@ func (s *server) diagnoseSnapshot(ctx context.Context, snapshot *cache.Snapshot,
 		// The second phase runs after the delay, and does everything.
 
 		if len(changedURIs) > 0 {
-			diagnostics, err := s.diagnoseChangedFiles(ctx, snapshot, changedURIs)
+			diagnostics, err := diagnoseChangedFiles(ctx, snapshot, changedURIs)
 			if err != nil {
 				if ctx.Err() == nil {
 					event.Error(ctx, "warning: while diagnosing changed files", err, snapshot.Labels()...)
@@ -239,7 +239,7 @@ func (s *server) diagnoseSnapshot(ctx context.Context, snapshot *cache.Snapshot,
 	s.updateDiagnostics(ctx, snapshot, diagnostics, true)
 }
 
-func (s *server) diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snapshot, uris []protocol.DocumentURI) (diagMap, error) {
+func diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snapshot, uris []protocol.DocumentURI) (diagMap, error) {
 	ctx, done := event.Start(ctx, "server.diagnoseChangedFiles", snapshot.Labels()...)
 	defer done()
 

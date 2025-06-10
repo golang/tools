@@ -1,4 +1,4 @@
-This test exercises mcp tool context.
+This test exercises the "context" MCP tool.
 
 -- flags --
 -mcp

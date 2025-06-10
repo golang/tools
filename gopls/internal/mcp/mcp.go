@@ -136,6 +136,37 @@ func newServer(session *cache.Session) *mcp.Server {
 					mcp.Property("uri", mcp.Description("URI of the text document")),
 					mcp.Property("range",
 						mcp.Description("range within text document"),
+						mcp.Required(false),
+						mcp.Property(
+							"start",
+							mcp.Description("start position of range"),
+							mcp.Property("line", mcp.Description("line number (zero-based)")),
+							mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
+						),
+						mcp.Property(
+							"end",
+							mcp.Description("end position of range"),
+							mcp.Property("line", mcp.Description("line number (zero-based)")),
+							mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
+						),
+					),
+				),
+			),
+		),
+		mcp.NewTool(
+			"diagnostics",
+			"Provide diagnostics for a region within a Go file",
+			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParamsFor[DiagnosticsParams]) (*mcp.CallToolResultFor[struct{}], error) {
+				return diagnosticsHandler(ctx, session, request)
+			},
+			mcp.Input(
+				mcp.Property(
+					"location",
+					mcp.Description("location inside of a text file"),
+					mcp.Property("uri", mcp.Description("URI of the text document")),
+					mcp.Property("range",
+						mcp.Description("range within text document"),
+						mcp.Required(false),
 						mcp.Property(
 							"start",
 							mcp.Description("start position of range"),
@@ -153,6 +184,5 @@ func newServer(session *cache.Session) *mcp.Server {
 			),
 		),
 	)
-
 	return s
 }

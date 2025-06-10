@@ -27,8 +27,6 @@ import (
 )
 
 type ContextParams struct {
-	// TODO(hxjiang): experiment if the LLM can correctly provide the right
-	// location information.
 	Location protocol.Location `json:"location"`
 }
 
