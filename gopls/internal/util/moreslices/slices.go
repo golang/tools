@@ -4,6 +4,8 @@
 
 package moreslices
 
+import "iter"
+
 // Remove removes all values equal to elem from slice.
 //
 // The closest equivalent in the standard slices package is:
@@ -27,4 +29,12 @@ func ConvertStrings[B, A ~string](input []A) []B {
 		result[i] = B(string(v))
 	}
 	return result
+}
+
+// Reversed returns an iterator over the slice's (index, element) pairs in reverse order.
+func Reversed[T any](slice []T) iter.Seq2[int, T] {
+	return func(yield func(int, T) bool) {
+		for i := len(slice) - 1; i >= 0 && yield(i, slice[i]); i-- {
+		}
+	}
 }

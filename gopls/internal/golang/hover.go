@@ -37,6 +37,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	gastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
@@ -1561,8 +1562,8 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 		switch n := n.(type) {
 		case *ast.Field:
 			findEnclosingDeclAndSpec := func() {
-				for i := len(stack) - 1; i >= 0; i-- {
-					switch n := stack[i].(type) {
+				for _, n := range moreslices.Reversed(stack) {
+					switch n := n.(type) {
 					case ast.Spec:
 						spec = n
 					case ast.Decl:

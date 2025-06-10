@@ -284,13 +284,11 @@ func (s *server) checkViewGoVersions() {
 // version, it returns -1.
 //
 // Copied from the testenv package.
-func go1Point() int {
-	for i := len(build.Default.ReleaseTags) - 1; i >= 0; i-- {
-		var version int
-		if _, err := fmt.Sscanf(build.Default.ReleaseTags[i], "go1.%d", &version); err != nil {
-			continue
+func go1Point() (version int) {
+	for _, tag := range moreslices.Reversed(build.Default.ReleaseTags) {
+		if _, err := fmt.Sscanf(tag, "go1.%d", &version); err == nil {
+			return
 		}
-		return version
 	}
 	return -1
 }
