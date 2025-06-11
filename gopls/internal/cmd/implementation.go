@@ -59,7 +59,7 @@ func (i *implementation) Run(ctx context.Context, args ...string) error {
 	p := protocol.ImplementationParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	implementations, err := conn.Implementation(ctx, &p)
+	implementations, err := conn.server.Implementation(ctx, &p)
 	if err != nil {
 		return err
 	}

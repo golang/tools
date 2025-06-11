@@ -1527,7 +1527,7 @@ func (e *Editor) renameBuffers(oldPath, newPath string) (closed []protocol.TextD
 // See also:
 //   - changedFiles in ../../marker/marker_test.go for the
 //     handler used by the marker test to intercept edits.
-//   - cmdClient.applyWorkspaceEdit in ../../../cmd/cmd.go for the
+//   - client.applyWorkspaceEdit in ../../../cmd/cmd.go for the
 //     CLI variant.
 func (e *Editor) applyWorkspaceEdit(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
 	uriToPath := e.sandbox.Workdir.URIToPath

@@ -102,7 +102,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 	p := protocol.CodeLensParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
 	}
-	lenses, err := conn.CodeLens(ctx, &p)
+	lenses, err := conn.server.CodeLens(ctx, &p)
 	if err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 
 		// -exec: run the first matching code lens.
 		if r.Exec {
-			_, err := conn.executeCommand(ctx, lens.Command)
+			_, err := executeCommand(ctx, conn.server, lens.Command)
 			return err
 		}
 

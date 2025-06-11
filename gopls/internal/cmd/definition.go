@@ -90,7 +90,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	p := protocol.DefinitionParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	locs, err := conn.Definition(ctx, &p)
+	locs, err := conn.server.Definition(ctx, &p)
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}
@@ -110,7 +110,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	q := protocol.HoverParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	hover, err := conn.Hover(ctx, &q)
+	hover, err := conn.server.Hover(ctx, &q)
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}

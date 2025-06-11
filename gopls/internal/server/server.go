@@ -78,7 +78,11 @@ func (s serverState) String() string {
 	return fmt.Sprintf("(unknown state: %d)", int(s))
 }
 
-// server implements the protocol.server interface.
+// server implements the [protocol.Server] interface.
+//
+// A server holds the server-side state of a single client/server
+// session or connection; it conceptually corresponds to a single call
+// to accept(2), not to listen(2) as the name "server" might suggest.
 type server struct {
 	client protocol.ClientCloser
 

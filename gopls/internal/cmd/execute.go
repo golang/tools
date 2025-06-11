@@ -77,7 +77,7 @@ func (e *execute) Run(ctx context.Context, args ...string) error {
 	}
 	defer conn.terminate(ctx)
 
-	res, err := conn.executeCommand(ctx, &protocol.Command{
+	res, err := executeCommand(ctx, conn.server, &protocol.Command{
 		Command:   cmd,
 		Arguments: jsonArgs,
 	})
@@ -96,10 +96,8 @@ func (e *execute) Run(ctx context.Context, args ...string) error {
 
 // executeCommand executes a protocol.Command, displaying progress
 // messages and awaiting completion of asynchronous commands.
-//
-// TODO(rfindley): inline away all calls, ensuring they inline idiomatically.
-func (conn *connection) executeCommand(ctx context.Context, cmd *protocol.Command) (any, error) {
-	return conn.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
+func executeCommand(ctx context.Context, server protocol.Server, cmd *protocol.Command) (any, error) {
+	return server.ExecuteCommand(ctx, &protocol.ExecuteCommandParams{
 		Command:   cmd.Command,
 		Arguments: cmd.Arguments,
 	})

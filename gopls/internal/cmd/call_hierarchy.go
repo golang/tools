@@ -60,7 +60,7 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
 
-	callItems, err := conn.PrepareCallHierarchy(ctx, &p)
+	callItems, err := conn.server.PrepareCallHierarchy(ctx, &p)
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 	}
 
 	for _, item := range callItems {
-		incomingCalls, err := conn.IncomingCalls(ctx, &protocol.CallHierarchyIncomingCallsParams{Item: item})
+		incomingCalls, err := conn.server.IncomingCalls(ctx, &protocol.CallHierarchyIncomingCallsParams{Item: item})
 		if err != nil {
 			return err
 		}
@@ -89,7 +89,7 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 		}
 		fmt.Printf("identifier: %s\n", printString)
 
-		outgoingCalls, err := conn.OutgoingCalls(ctx, &protocol.CallHierarchyOutgoingCallsParams{Item: item})
+		outgoingCalls, err := conn.server.OutgoingCalls(ctx, &protocol.CallHierarchyOutgoingCallsParams{Item: item})
 		if err != nil {
 			return err
 		}
@@ -109,7 +109,7 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 
 // callItemPrintString returns a protocol.CallHierarchyItem object represented as a string.
 // item and call ranges (protocol.Range) are converted to user friendly spans (1-indexed).
-func callItemPrintString(ctx context.Context, conn *connection, item protocol.CallHierarchyItem, callsURI protocol.DocumentURI, calls []protocol.Range) (string, error) {
+func callItemPrintString(ctx context.Context, conn *client, item protocol.CallHierarchyItem, callsURI protocol.DocumentURI, calls []protocol.Range) (string, error) {
 	itemFile, err := conn.openFile(ctx, item.URI)
 	if err != nil {
 		return "", err

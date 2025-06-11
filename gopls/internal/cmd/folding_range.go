@@ -53,7 +53,7 @@ func (r *foldingRanges) Run(ctx context.Context, args ...string) error {
 		},
 	}
 
-	ranges, err := conn.FoldingRange(ctx, &p)
+	ranges, err := conn.server.FoldingRange(ctx, &p)
 	if err != nil {
 		return err
 	}

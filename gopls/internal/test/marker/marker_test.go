@@ -2022,7 +2022,7 @@ func rename(env *integration.Env, loc protocol.Location, newName string) (map[st
 // See also:
 //   - Editor.applyWorkspaceEdit ../integration/fake/editor.go for the
 //     implementation of this operation used in normal testing.
-//   - cmdClient.applyWorkspaceEdit in ../../../cmd/cmd.go for the
+//   - client.applyWorkspaceEdit in ../../../cmd/cmd.go for the
 //     CLI variant.
 func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[string][]byte, error) {
 	uriToPath := env.Sandbox.Workdir.URIToPath

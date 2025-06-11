@@ -59,7 +59,7 @@ func (r *signature) Run(ctx context.Context, args ...string) error {
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
 
-	s, err := conn.SignatureHelp(ctx, &p)
+	s, err := conn.server.SignatureHelp(ctx, &p)
 	if err != nil {
 		return err
 	}

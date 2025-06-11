@@ -61,7 +61,7 @@ func (r *prepareRename) Run(ctx context.Context, args ...string) error {
 	p := protocol.PrepareRenameParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	result, err := conn.PrepareRename(ctx, &p)
+	result, err := conn.server.PrepareRename(ctx, &p)
 	if err != nil {
 		return fmt.Errorf("prepare_rename failed: %w", err)
 	}

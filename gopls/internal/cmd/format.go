@@ -63,7 +63,7 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 		p := protocol.DocumentFormattingParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
 		}
-		edits, err := conn.Formatting(ctx, &p)
+		edits, err := conn.server.Formatting(ctx, &p)
 		if err != nil {
 			return fmt.Errorf("%v: %v", spn, err)
 		}

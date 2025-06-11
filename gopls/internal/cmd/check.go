@@ -86,7 +86,7 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 		}
 		checking[uri] = file
 	}
-	if err := conn.diagnoseFiles(ctx, uris); err != nil {
+	if err := diagnoseFiles(ctx, conn.server, uris); err != nil {
 		return err
 	}
 

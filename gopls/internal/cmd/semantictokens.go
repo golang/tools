@@ -84,7 +84,7 @@ func (c *semanticToken) Run(ctx context.Context, args ...string) error {
 	}
 
 	lines := bytes.Split(file.mapper.Content, []byte{'\n'})
-	p := &protocol.SemanticTokensRangeParams{
+	params := &protocol.SemanticTokensRangeParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: uri,
 		},
@@ -94,11 +94,12 @@ func (c *semanticToken) Run(ctx context.Context, args ...string) error {
 				Character: uint32(len(lines[len(lines)-1]))},
 		},
 	}
-	resp, err := conn.semanticTokens(ctx, p)
+	resp, err := conn.server.SemanticTokensRange(ctx, params) // use Range to avoid limits on Full
 	if err != nil {
 		return err
 	}
-	return decorate(conn.initializeResult.Capabilities.SemanticTokensProvider.(protocol.SemanticTokensOptions).Legend, file, resp.Data)
+	legend := conn.initializeResult.Capabilities.SemanticTokensProvider.(protocol.SemanticTokensOptions).Legend
+	return decorate(legend, file, resp.Data)
 }
 
 // mark provides a human-readable representation of protocol.SemanticTokens.

@@ -65,9 +65,9 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 		Position:     loc.Range.Start,
 		NewName:      args[1],
 	}
-	edit, err := conn.Rename(ctx, &p)
+	edit, err := conn.server.Rename(ctx, &p)
 	if err != nil {
 		return err
 	}
-	return conn.client.applyWorkspaceEdit(edit)
+	return conn.applyWorkspaceEdit(edit)
 }

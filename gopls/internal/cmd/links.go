@@ -56,7 +56,7 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 	if _, err := conn.openFile(ctx, uri); err != nil {
 		return err
 	}
-	results, err := conn.DocumentLink(ctx, &protocol.DocumentLinkParams{
+	results, err := conn.server.DocumentLink(ctx, &protocol.DocumentLinkParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: uri,
 		},

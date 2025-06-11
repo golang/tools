@@ -48,7 +48,7 @@ func (r *symbols) Run(ctx context.Context, args ...string) error {
 			URI: from.URI(),
 		},
 	}
-	symbols, err := conn.DocumentSymbol(ctx, &p)
+	symbols, err := conn.server.DocumentSymbol(ctx, &p)
 	if err != nil {
 		return err
 	}

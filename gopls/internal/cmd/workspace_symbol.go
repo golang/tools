@@ -69,7 +69,7 @@ func (r *workspaceSymbol) Run(ctx context.Context, args ...string) error {
 		Query: args[0],
 	}
 
-	symbols, err := conn.Symbol(ctx, &p)
+	symbols, err := conn.server.Symbol(ctx, &p)
 	if err != nil {
 		return err
 	}

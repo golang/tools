@@ -307,7 +307,12 @@ func (app *Application) featureCommands() []tool.Application {
 }
 
 // connect creates and initializes a new in-process gopls LSP session.
-func (app *Application) connect(ctx context.Context) (*connection, *cache.Session, error) {
+func (app *Application) connect(ctx context.Context) (*client, *cache.Session, error) {
+	root, err := os.Getwd()
+	if err != nil {
+		return nil, nil, fmt.Errorf("finding workdir: %v", err)
+	}
+	options := settings.DefaultOptions(app.options)
 	client := newClient(app)
 	var (
 		svr  protocol.Server
@@ -315,7 +320,6 @@ func (app *Application) connect(ctx context.Context) (*connection, *cache.Sessio
 	)
 	if app.Remote == "" {
 		// local
-		options := settings.DefaultOptions(app.options)
 		sess = cache.NewSession(ctx, cache.New(nil))
 		svr = server.New(sess, client, options)
 		ctx = protocol.WithClient(ctx, client)
@@ -333,21 +337,17 @@ func (app *Application) connect(ctx context.Context) (*connection, *cache.Sessio
 			protocol.Handlers(
 				protocol.ClientHandler(client, jsonrpc2.MethodNotFound)))
 	}
-	conn := newConnection(svr, client)
-	return conn, sess, conn.initialize(ctx, app.options)
+	if err := client.initialize(ctx, svr, initParams(root, options)); err != nil {
+		return nil, nil, err
+	}
+	return client, sess, nil
 }
 
-func (c *connection) initialize(ctx context.Context, options func(*settings.Options)) error {
-	wd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("finding workdir: %v", err)
-	}
+func initParams(rootDir string, opts *settings.Options) *protocol.ParamInitialize {
 	params := &protocol.ParamInitialize{}
-	params.RootURI = protocol.URIFromPath(wd)
+	params.RootURI = protocol.URIFromPath(rootDir)
 	params.Capabilities.Workspace.Configuration = true
 
-	// Make sure to respect configured options when sending initialize request.
-	opts := settings.DefaultOptions(options)
 	// If you add an additional option here,
 	// you must update the map key of settings.DefaultOptions called in (*Application).connect.
 	params.Capabilities.TextDocument.Hover = &protocol.HoverClientCapabilities{
@@ -372,30 +372,37 @@ func (c *connection) initialize(ctx context.Context, options func(*settings.Opti
 	params.Capabilities.Workspace.FileOperations = &protocol.FileOperationClientCapabilities{
 		DidCreate: true,
 	}
-
 	params.InitializationOptions = map[string]any{
 		"symbolMatcher": string(opts.SymbolMatcher),
 	}
-	if c.initializeResult, err = c.Initialize(ctx, params); err != nil {
+	return params
+}
+
+// initialize performs LSP's two-call client/server handshake.
+func (cli *client) initialize(ctx context.Context, server protocol.Server, params *protocol.ParamInitialize) error {
+	result, err := server.Initialize(ctx, params)
+	if err != nil {
 		return err
 	}
-	if err := c.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
+	if err := server.Initialized(ctx, &protocol.InitializedParams{}); err != nil {
 		return err
 	}
+	cli.server = server
+	cli.initializeResult = result
 	return nil
 }
 
-type connection struct {
-	protocol.Server
-	client *cmdClient
-	// initializeResult keep the initialize protocol response from server
-	// including server capabilities.
-	initializeResult *protocol.InitializeResult
-}
-
-// cmdClient defines the protocol.Client interface behavior of the gopls CLI tool.
-type cmdClient struct {
+// client implements [protocol.Client] and defines the LSP client
+// operations of the gopls command.
+//
+// It holds the client-side state of a single client/server
+// connection; it conceptually corresponds to a single call to
+// connect(2).
+type client struct {
 	app *Application
+
+	server           protocol.Server
+	initializeResult *protocol.InitializeResult // includes server capabilities
 
 	progressMu sync.Mutex
 	iwlToken   protocol.ProgressToken
@@ -405,6 +412,7 @@ type cmdClient struct {
 	files   map[protocol.DocumentURI]*cmdFile
 }
 
+// cmdFile represents an open file in the gopls command LSP client.
 type cmdFile struct {
 	uri           protocol.DocumentURI
 	mapper        *protocol.Mapper
@@ -413,41 +421,34 @@ type cmdFile struct {
 	diagnostics   []protocol.Diagnostic
 }
 
-func newClient(app *Application) *cmdClient {
-	return &cmdClient{
+func newClient(app *Application) *client {
+	return &client{
 		app:     app,
 		files:   make(map[protocol.DocumentURI]*cmdFile),
 		iwlDone: make(chan struct{}),
 	}
 }
 
-func newConnection(server protocol.Server, client *cmdClient) *connection {
-	return &connection{
-		Server: server,
-		client: client,
-	}
-}
-
-func (c *cmdClient) TextDocumentContentRefresh(context.Context, *protocol.TextDocumentContentRefreshParams) error {
+func (cli *client) TextDocumentContentRefresh(context.Context, *protocol.TextDocumentContentRefreshParams) error {
 	return nil
 }
 
-func (c *cmdClient) CodeLensRefresh(context.Context) error { return nil }
+func (cli *client) CodeLensRefresh(context.Context) error { return nil }
 
-func (c *cmdClient) FoldingRangeRefresh(context.Context) error { return nil }
+func (cli *client) FoldingRangeRefresh(context.Context) error { return nil }
 
-func (c *cmdClient) LogTrace(context.Context, *protocol.LogTraceParams) error { return nil }
+func (cli *client) LogTrace(context.Context, *protocol.LogTraceParams) error { return nil }
 
-func (c *cmdClient) ShowMessage(ctx context.Context, p *protocol.ShowMessageParams) error {
+func (cli *client) ShowMessage(ctx context.Context, p *protocol.ShowMessageParams) error {
 	fmt.Fprintf(os.Stderr, "%s: %s\n", p.Type, p.Message)
 	return nil
 }
 
-func (c *cmdClient) ShowMessageRequest(ctx context.Context, p *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error) {
+func (cli *client) ShowMessageRequest(ctx context.Context, p *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error) {
 	return nil, nil
 }
 
-func (c *cmdClient) LogMessage(ctx context.Context, p *protocol.LogMessageParams) error {
+func (cli *client) LogMessage(ctx context.Context, p *protocol.LogMessageParams) error {
 	// This logic causes server logging to be double-prefixed with a timestamp.
 	//     2023/11/08 10:50:21 Error:2023/11/08 10:50:21 <actual message>
 	// TODO(adonovan): print just p.Message, plus a newline if needed?
@@ -457,36 +458,36 @@ func (c *cmdClient) LogMessage(ctx context.Context, p *protocol.LogMessageParams
 	case protocol.Warning:
 		log.Print("Warning:", p.Message)
 	case protocol.Info:
-		if c.app.verbose() {
+		if cli.app.verbose() {
 			log.Print("Info:", p.Message)
 		}
 	case protocol.Log:
-		if c.app.verbose() {
+		if cli.app.verbose() {
 			log.Print("Log:", p.Message)
 		}
 	default:
-		if c.app.verbose() {
+		if cli.app.verbose() {
 			log.Print(p.Message)
 		}
 	}
 	return nil
 }
 
-func (c *cmdClient) Event(ctx context.Context, t *any) error { return nil }
+func (cli *client) Event(ctx context.Context, t *any) error { return nil }
 
-func (c *cmdClient) RegisterCapability(ctx context.Context, p *protocol.RegistrationParams) error {
+func (cli *client) RegisterCapability(ctx context.Context, p *protocol.RegistrationParams) error {
 	return nil
 }
 
-func (c *cmdClient) UnregisterCapability(ctx context.Context, p *protocol.UnregistrationParams) error {
+func (cli *client) UnregisterCapability(ctx context.Context, p *protocol.UnregistrationParams) error {
 	return nil
 }
 
-func (c *cmdClient) WorkspaceFolders(ctx context.Context) ([]protocol.WorkspaceFolder, error) {
+func (cli *client) WorkspaceFolders(ctx context.Context) ([]protocol.WorkspaceFolder, error) {
 	return nil, nil
 }
 
-func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfiguration) ([]any, error) {
+func (cli *client) Configuration(ctx context.Context, p *protocol.ParamConfiguration) ([]any, error) {
 	results := make([]any, len(p.Items))
 	for i, item := range p.Items {
 		if item.Section != "gopls" {
@@ -500,7 +501,7 @@ func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfigur
 				"undeclaredname": true,
 			},
 		}
-		if c.app.VeryVerbose {
+		if cli.app.VeryVerbose {
 			m["verboseOutput"] = true
 		}
 		results[i] = m
@@ -508,8 +509,8 @@ func (c *cmdClient) Configuration(ctx context.Context, p *protocol.ParamConfigur
 	return results, nil
 }
 
-func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResult, error) {
-	if err := c.applyWorkspaceEdit(&p.Edit); err != nil {
+func (cli *client) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEditParams) (*protocol.ApplyWorkspaceEditResult, error) {
+	if err := cli.applyWorkspaceEdit(&p.Edit); err != nil {
 		return &protocol.ApplyWorkspaceEditResult{FailureReason: err.Error()}, nil
 	}
 	return &protocol.ApplyWorkspaceEditResult{Applied: true}, nil
@@ -522,7 +523,7 @@ func (c *cmdClient) ApplyEdit(ctx context.Context, p *protocol.ApplyWorkspaceEdi
 // See also:
 //   - changedFiles in ../test/marker/marker_test.go for the golden-file capturing variant
 //   - applyWorkspaceEdit in ../test/integration/fake/editor.go for the Editor variant
-func (cli *cmdClient) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
+func (cli *client) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
 
 	create := func(uri protocol.DocumentURI, content []byte) error {
 		edits := []diff.Edit{{Start: 0, End: 0, New: string(content)}}
@@ -537,7 +538,7 @@ func (cli *cmdClient) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
 	for _, c := range wsedit.DocumentChanges {
 		switch {
 		case c.TextDocumentEdit != nil:
-			f := cli.openFile(c.TextDocumentEdit.TextDocument.URI)
+			f := cli.getFile(c.TextDocumentEdit.TextDocument.URI)
 			if f.err != nil {
 				return f.err
 			}
@@ -554,7 +555,7 @@ func (cli *cmdClient) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
 
 		case c.RenameFile != nil:
 			// Analyze as creation + deletion. (NB: loses file mode.)
-			f := cli.openFile(c.RenameFile.OldURI)
+			f := cli.getFile(c.RenameFile.OldURI)
 			if f.err != nil {
 				return f.err
 			}
@@ -566,7 +567,7 @@ func (cli *cmdClient) applyWorkspaceEdit(wsedit *protocol.WorkspaceEdit) error {
 			}
 
 		case c.DeleteFile != nil:
-			f := cli.openFile(c.DeleteFile.URI)
+			f := cli.getFile(c.DeleteFile.URI)
 			if f.err != nil {
 				return f.err
 			}
@@ -644,7 +645,7 @@ func updateFile(filename string, old, new []byte, edits []diff.Edit, flags *Edit
 	return nil
 }
 
-func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishDiagnosticsParams) error {
+func (cli *client) PublishDiagnostics(ctx context.Context, p *protocol.PublishDiagnosticsParams) error {
 	// Don't worry about diagnostics without versions.
 	//
 	// (Note: the representation of PublishDiagnosticsParams
@@ -654,12 +655,11 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 		return nil
 	}
 
-	c.filesMu.Lock()
-	file := c.getFile(p.URI)
-	c.filesMu.Unlock()
+	file := cli.getFile(p.URI)
 
 	file.diagnosticsMu.Lock()
 	defer file.diagnosticsMu.Unlock()
+
 	file.diagnostics = append(file.diagnostics, p.Diagnostics...)
 
 	// Perform a crude in-place deduplication.
@@ -685,7 +685,7 @@ func (c *cmdClient) PublishDiagnostics(ctx context.Context, p *protocol.PublishD
 	return nil
 }
 
-func (c *cmdClient) Progress(_ context.Context, params *protocol.ProgressParams) error {
+func (cli *client) Progress(_ context.Context, params *protocol.ProgressParams) error {
 	if _, ok := params.Token.(string); !ok {
 		return fmt.Errorf("unexpected progress token: %[1]T %[1]v", params.Token)
 	}
@@ -693,36 +693,36 @@ func (c *cmdClient) Progress(_ context.Context, params *protocol.ProgressParams)
 	switch v := params.Value.(type) {
 	case *protocol.WorkDoneProgressBegin:
 		if v.Title == server.DiagnosticWorkTitle(server.FromInitialWorkspaceLoad) {
-			c.progressMu.Lock()
-			c.iwlToken = params.Token
-			c.progressMu.Unlock()
+			cli.progressMu.Lock()
+			cli.iwlToken = params.Token
+			cli.progressMu.Unlock()
 		}
 
 	case *protocol.WorkDoneProgressReport:
-		if c.app.Verbose {
+		if cli.app.Verbose {
 			fmt.Fprintln(os.Stderr, v.Message)
 		}
 
 	case *protocol.WorkDoneProgressEnd:
-		c.progressMu.Lock()
-		iwlToken := c.iwlToken
-		c.progressMu.Unlock()
+		cli.progressMu.Lock()
+		iwlToken := cli.iwlToken
+		cli.progressMu.Unlock()
 
 		if params.Token == iwlToken {
-			close(c.iwlDone)
+			close(cli.iwlDone)
 		}
 	}
 	return nil
 }
 
-func (c *cmdClient) ShowDocument(ctx context.Context, params *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
+func (cli *client) ShowDocument(ctx context.Context, params *protocol.ShowDocumentParams) (*protocol.ShowDocumentResult, error) {
 	var success bool
 	if params.External {
 		// Open URI in external browser.
 		success = browser.Open(params.URI)
 	} else {
 		// Open file in editor, optionally taking focus and selecting a range.
-		// (cmdClient has no editor. Should it fork+exec $EDITOR?)
+		// (client has no editor. Should it fork+exec $EDITOR?)
 		log.Printf("Server requested that client editor open %q (takeFocus=%t, selection=%+v)",
 			params.URI, params.TakeFocus, params.Selection)
 		success = true
@@ -730,33 +730,37 @@ func (c *cmdClient) ShowDocument(ctx context.Context, params *protocol.ShowDocum
 	return &protocol.ShowDocumentResult{Success: success}, nil
 }
 
-func (c *cmdClient) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
+func (cli *client) WorkDoneProgressCreate(context.Context, *protocol.WorkDoneProgressCreateParams) error {
 	return nil
 }
 
-func (c *cmdClient) DiagnosticRefresh(context.Context) error {
+func (cli *client) DiagnosticRefresh(context.Context) error {
 	return nil
 }
 
-func (c *cmdClient) InlayHintRefresh(context.Context) error {
+func (cli *client) InlayHintRefresh(context.Context) error {
 	return nil
 }
 
-func (c *cmdClient) SemanticTokensRefresh(context.Context) error {
+func (cli *client) SemanticTokensRefresh(context.Context) error {
 	return nil
 }
 
-func (c *cmdClient) InlineValueRefresh(context.Context) error {
+func (cli *client) InlineValueRefresh(context.Context) error {
 	return nil
 }
 
-func (c *cmdClient) getFile(uri protocol.DocumentURI) *cmdFile {
-	file, found := c.files[uri]
+// getFile returns the specified file, adding it to the client state if needed.
+func (cli *client) getFile(uri protocol.DocumentURI) *cmdFile {
+	cli.filesMu.Lock()
+	defer cli.filesMu.Unlock()
+
+	file, found := cli.files[uri]
 	if !found || file.err != nil {
 		file = &cmdFile{
 			uri: uri,
 		}
-		c.files[uri] = file
+		cli.files[uri] = file
 	}
 	if file.mapper == nil {
 		content, err := os.ReadFile(uri.Path())
@@ -769,14 +773,10 @@ func (c *cmdClient) getFile(uri protocol.DocumentURI) *cmdFile {
 	return file
 }
 
-func (c *cmdClient) openFile(uri protocol.DocumentURI) *cmdFile {
-	c.filesMu.Lock()
-	defer c.filesMu.Unlock()
-	return c.getFile(uri)
-}
-
-func (c *connection) openFile(ctx context.Context, uri protocol.DocumentURI) (*cmdFile, error) {
-	file := c.client.openFile(uri)
+// openFile returns the specified file, adding it to the client state
+// if needed, and notifying the server that it was opened.
+func (cli *client) openFile(ctx context.Context, uri protocol.DocumentURI) (*cmdFile, error) {
+	file := cli.getFile(uri)
 	if file.err != nil {
 		return nil, file.err
 	}
@@ -804,7 +804,7 @@ func (c *connection) openFile(ctx context.Context, uri protocol.DocumentURI) (*c
 			Text:       string(file.mapper.Content),
 		},
 	}
-	if err := c.Server.DidOpen(ctx, p); err != nil {
+	if err := cli.server.DidOpen(ctx, p); err != nil {
 		// TODO(adonovan): is this assignment concurrency safe?
 		file.err = fmt.Errorf("%v: %v", uri, err)
 		return nil, file.err
@@ -812,32 +812,26 @@ func (c *connection) openFile(ctx context.Context, uri protocol.DocumentURI) (*c
 	return file, nil
 }
 
-func (c *connection) semanticTokens(ctx context.Context, p *protocol.SemanticTokensRangeParams) (*protocol.SemanticTokens, error) {
-	// use range to avoid limits on full
-	resp, err := c.Server.SemanticTokensRange(ctx, p)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
-}
-
-func (c *connection) diagnoseFiles(ctx context.Context, files []protocol.DocumentURI) error {
+func diagnoseFiles(ctx context.Context, server protocol.Server, files []protocol.DocumentURI) error {
 	cmd := command.NewDiagnoseFilesCommand("Diagnose files", command.DiagnoseFilesArgs{
 		Files: files,
 	})
-	_, err := c.executeCommand(ctx, cmd)
+	_, err := executeCommand(ctx, server, cmd)
 	return err
 }
 
-func (c *connection) terminate(ctx context.Context) {
-	// TODO: do we need to handle errors on these calls?
-	c.Shutdown(ctx) // ignore error
-	// TODO: right now calling exit terminates the process, we should rethink that
-	// server.Exit(ctx)
+func (cli *client) terminate(ctx context.Context) {
+	if err := cli.server.Shutdown(ctx); err != nil {
+		log.Printf("server shutdown failed: %v", err)
+	}
+
+	// Don't call Exit as it terminates the server process,
+	// which is the same as this client process.
+	// c.server.Exit(ctx)
 }
 
 // Implement io.Closer.
-func (c *cmdClient) Close() error {
+func (cli *client) Close() error {
 	return nil
 }
 

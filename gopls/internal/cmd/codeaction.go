@@ -131,13 +131,12 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 	}
 
 	// Get diagnostics, as they may encode various lazy code actions.
-	if err := conn.diagnoseFiles(ctx, []protocol.DocumentURI{uri}); err != nil {
+	if err := diagnoseFiles(ctx, conn.server, []protocol.DocumentURI{uri}); err != nil {
 		return err
 	}
-	diagnostics := []protocol.Diagnostic{} // LSP wants non-nil slice
-	conn.client.filesMu.Lock()
-	diagnostics = append(diagnostics, file.diagnostics...)
-	conn.client.filesMu.Unlock()
+	file.diagnosticsMu.Lock()
+	diagnostics := slices.Clone(file.diagnostics)
+	file.diagnosticsMu.Unlock()
 
 	// Request code actions of the desired kinds.
 	var kinds []protocol.CodeActionKind
@@ -148,7 +147,7 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 	} else {
 		kinds = append(kinds, protocol.Empty) // => all
 	}
-	actions, err := conn.CodeAction(ctx, &protocol.CodeActionParams{
+	actions, err := conn.server.CodeAction(ctx, &protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
 		Range:        rng,
 		Context: protocol.CodeActionContext{
@@ -185,7 +184,7 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 			if act.Command != nil {
 				// This may cause the server to make
 				// an ApplyEdit downcall to the client.
-				if _, err := conn.executeCommand(ctx, act.Command); err != nil {
+				if _, err := executeCommand(ctx, conn.server, act.Command); err != nil {
 					return err
 				}
 				// The specification says that commands should
