@@ -51,10 +51,11 @@ type ClientOptions struct {
 	// Called when a server calls CreateMessage.
 	CreateMessageHandler func(context.Context, *ClientSession, *CreateMessageParams) (*CreateMessageResult, error)
 	// Handlers for notifications from the server.
-	ToolListChangedHandler     func(context.Context, *ClientSession, *ToolListChangedParams)
-	PromptListChangedHandler   func(context.Context, *ClientSession, *PromptListChangedParams)
-	ResourceListChangedHandler func(context.Context, *ClientSession, *ResourceListChangedParams)
-	LoggingMessageHandler      func(context.Context, *ClientSession, *LoggingMessageParams)
+	ToolListChangedHandler      func(context.Context, *ClientSession, *ToolListChangedParams)
+	PromptListChangedHandler    func(context.Context, *ClientSession, *PromptListChangedParams)
+	ResourceListChangedHandler  func(context.Context, *ClientSession, *ResourceListChangedParams)
+	LoggingMessageHandler       func(context.Context, *ClientSession, *LoggingMessageParams)
+	ProgressNotificationHandler func(context.Context, *ClientSession, *ProgressNotificationParams)
 }
 
 // bind implements the binder[*ClientSession] interface, so that Clients can
@@ -231,6 +232,7 @@ var clientMethodInfos = map[string]methodInfo{
 	notificationPromptListChanged:   newMethodInfo(clientMethod((*Client).callPromptChangedHandler)),
 	notificationResourceListChanged: newMethodInfo(clientMethod((*Client).callResourceChangedHandler)),
 	notificationLoggingMessage:      newMethodInfo(clientMethod((*Client).callLoggingHandler)),
+	notificationProgress:            newMethodInfo(sessionMethod((*ClientSession).callProgressNotificationHandler)),
 }
 
 func (cs *ClientSession) sendingMethodInfos() map[string]methodInfo {
@@ -332,6 +334,18 @@ func (c *Client) callLoggingHandler(ctx context.Context, cs *ClientSession, para
 		h(ctx, cs, params)
 	}
 	return nil, nil
+}
+
+func (cs *ClientSession) callProgressNotificationHandler(ctx context.Context, params *ProgressNotificationParams) (Result, error) {
+	return callNotificationHandler(ctx, cs.client.opts.ProgressNotificationHandler, cs, params)
+}
+
+// NotifyProgress sends a progress notification from the client to the server
+// associated with this session.
+// This can be used if the client is performing a long-running task that was
+// initiated by the server
+func (cs *ClientSession) NotifyProgress(ctx context.Context, params *ProgressNotificationParams) error {
+	return handleNotify(ctx, cs, notificationProgress, params)
 }
 
 // Tools provides an iterator for all tools available on the server,

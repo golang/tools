@@ -45,7 +45,7 @@ func TestEndToEnd(t *testing.T) {
 
 	// Channels to check if notification callbacks happened.
 	notificationChans := map[string]chan int{}
-	for _, name := range []string{"initialized", "roots", "tools", "prompts", "resources"} {
+	for _, name := range []string{"initialized", "roots", "tools", "prompts", "resources", "progress_server", "progress_client"} {
 		notificationChans[name] = make(chan int, 1)
 	}
 	waitForNotification := func(t *testing.T, name string) {
@@ -60,6 +60,9 @@ func TestEndToEnd(t *testing.T) {
 	sopts := &ServerOptions{
 		InitializedHandler:      func(context.Context, *ServerSession, *InitializedParams) { notificationChans["initialized"] <- 0 },
 		RootsListChangedHandler: func(context.Context, *ServerSession, *RootsListChangedParams) { notificationChans["roots"] <- 0 },
+		ProgressNotificationHandler: func(context.Context, *ServerSession, *ProgressNotificationParams) {
+			notificationChans["progress_server"] <- 0
+		},
 	}
 	s := NewServer("testServer", "v1.0.0", sopts)
 	add(tools, s.AddTools, "greet", "fail")
@@ -95,6 +98,9 @@ func TestEndToEnd(t *testing.T) {
 		ResourceListChangedHandler: func(context.Context, *ClientSession, *ResourceListChangedParams) { notificationChans["resources"] <- 0 },
 		LoggingMessageHandler: func(_ context.Context, _ *ClientSession, lm *LoggingMessageParams) {
 			loggingMessages <- lm
+		},
+		ProgressNotificationHandler: func(context.Context, *ClientSession, *ProgressNotificationParams) {
+			notificationChans["progress_client"] <- 0
 		},
 	}
 	c := NewClient("testClient", "v1.0.0", opts)
@@ -393,6 +399,22 @@ func TestEndToEnd(t *testing.T) {
 			logger.Log(ctx, LevelAlert, "second", "count", 2, "logtest", true)
 			check(t)
 		})
+	})
+	t.Run("progress", func(t *testing.T) {
+		ss.NotifyProgress(ctx, &ProgressNotificationParams{
+			ProgressToken: "token-xyz",
+			Message:       "progress update",
+			Progress:      0.5,
+			Total:         2,
+		})
+		waitForNotification(t, "progress_client")
+		cs.NotifyProgress(ctx, &ProgressNotificationParams{
+			ProgressToken: "token-abc",
+			Message:       "progress update",
+			Progress:      1,
+			Total:         2,
+		})
+		waitForNotification(t, "progress_server")
 	})
 
 	// Disconnect.

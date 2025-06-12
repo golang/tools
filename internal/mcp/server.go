@@ -55,6 +55,8 @@ type ServerOptions struct {
 	PageSize int
 	// If non-nil, called when "notifications/roots/list_changed" is received.
 	RootsListChangedHandler func(context.Context, *ServerSession, *RootsListChangedParams)
+	// If non-nil, called when "notifications/progress" is received.
+	ProgressNotificationHandler func(context.Context, *ServerSession, *ProgressNotificationParams)
 }
 
 // NewServer creates a new MCP server. The resulting server has no features:
@@ -465,6 +467,18 @@ func (s *Server) callRootsListChangedHandler(ctx context.Context, ss *ServerSess
 	return callNotificationHandler(ctx, s.opts.RootsListChangedHandler, ss, params)
 }
 
+func (ss *ServerSession) callProgressNotificationHandler(ctx context.Context, params *ProgressNotificationParams) (Result, error) {
+	return callNotificationHandler(ctx, ss.server.opts.ProgressNotificationHandler, ss, params)
+}
+
+// NotifyProgress sends a progress notification from the server to the client
+// associated with this session.
+// This is typically used to report on the status of a long-running request
+// that was initiated by the client.
+func (ss *ServerSession) NotifyProgress(ctx context.Context, params *ProgressNotificationParams) error {
+	return handleNotify(ctx, ss, notificationProgress, params)
+}
+
 // A ServerSession is a logical connection from a single MCP client. Its
 // methods can be used to send requests or notifications to the client. Create
 // a session by calling [Server.Connect].
@@ -559,6 +573,7 @@ var serverMethodInfos = map[string]methodInfo{
 	methodSetLevel:               newMethodInfo(sessionMethod((*ServerSession).setLevel)),
 	notificationInitialized:      newMethodInfo(serverMethod((*Server).callInitializedHandler)),
 	notificationRootsListChanged: newMethodInfo(serverMethod((*Server).callRootsListChangedHandler)),
+	notificationProgress:         newMethodInfo(sessionMethod((*ServerSession).callProgressNotificationHandler)),
 }
 
 func (ss *ServerSession) sendingMethodInfos() map[string]methodInfo { return clientMethodInfos }

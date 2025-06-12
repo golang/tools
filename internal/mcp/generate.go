@@ -142,6 +142,10 @@ var declarations = config{
 		Name:   "-",
 		Fields: config{"Params": {Name: "PromptListChangedParams"}},
 	},
+	"ProgressNotification": {
+		Name:   "-",
+		Fields: config{"Params": {Name: "ProgressNotificationParams"}},
+	},
 	"ProgressToken": {Name: "-", Substitute: "any"}, // null|number|string
 	"RequestId":     {Name: "-", Substitute: "any"}, // null|number|string
 	"ReadResourceRequest": {

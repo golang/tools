@@ -431,6 +431,24 @@ type PingParams struct {
 
 func (x *PingParams) GetMeta() *Meta { return &x.Meta }
 
+type ProgressNotificationParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta Meta `json:"_meta,omitempty"`
+	// An optional message describing the current progress.
+	Message string `json:"message,omitempty"`
+	// The progress thus far. This should increase every time progress is made, even
+	// if the total is unknown.
+	Progress float64 `json:"progress"`
+	// The progress token which was given in the initial request, used to associate
+	// this notification with the request that is proceeding.
+	ProgressToken any `json:"progressToken"`
+	// Total number of items to process (or total progress required), if known.
+	Total float64 `json:"total,omitempty"`
+}
+
+func (x *ProgressNotificationParams) GetMeta() *Meta { return &x.Meta }
+
 // A prompt or prompt template that the server offers.
 type Prompt struct {
 	// A list of arguments to use for templating the prompt.
