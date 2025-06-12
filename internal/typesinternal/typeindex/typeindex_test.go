@@ -8,6 +8,9 @@ package typeindex_test
 
 import (
 	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"slices"
 	"testing"
 
@@ -154,5 +157,103 @@ func BenchmarkIndex(b *testing.B) {
 
 	if countA != countB || countA != countC {
 		b.Fatalf("inconsistent results (inspect=%d, cursor=%d, index=%d)", countA, countB, countC)
+	}
+}
+
+// TestOrigin checks that index.Uses on field or method of a generic
+// type reports references to its instantiations.
+// Lexical references (to functions, types, and aliases) always
+// resolve to the generic; there is no Origin distinction.
+func TestOrigin(t *testing.T) {
+	// Each nonblank declared name must have at least one use.
+	for _, src := range []string{
+		`
+package alias
+type A[T any] = T
+var _ A[int]`,
+		`
+package localalias
+func _[T any]() {
+	type A[U any] = U
+	var _ A[T]
+}`,
+		`
+package named
+type Named[_ any] int
+var _ Named[int]`,
+		`
+package localnamed
+func _[T any]() {
+	type N[U any] struct { f U }
+	_ = N[T]{}.f
+}`,
+		`
+package field
+type Named[T any] struct { field T }
+var _ = Named[int]{}.field`,
+		`
+package function
+func F[T any](T) {}
+var _ = F[int]`,
+		`
+package method
+type Named[_ any] int
+func (Named[T]) method(T) {}
+var _ = Named[int].method`,
+		`
+package uninstantiatedmethod
+type Named[_ any] int
+func (Named[_]) f() {}
+func (Named[T]) g() { Named[T](0).f() }
+func (n Named[_]) _() { n.g() }`,
+	} {
+		// parse
+		fset := token.NewFileSet()
+		f, _ := parser.ParseFile(fset, "", src, parser.PackageClauseOnly)
+		t.Run(f.Name.Name, func(t *testing.T) {
+			f, _ := parser.ParseFile(fset, "", src, 0)
+			files := []*ast.File{f}
+
+			// typecheck
+			info := &types.Info{
+				Defs: make(map[*ast.Ident]types.Object),
+				Uses: make(map[*ast.Ident]types.Object),
+			}
+			pkg, err := new(types.Config).Check(f.Name.Name, fset, files, info)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// index
+			var (
+				inspect = inspector.New(files)
+				index   = typeindex.New(inspect, pkg, info)
+			)
+
+			// check Def/Uses of all objects
+			for id := range inspect.PreorderSeq((*ast.Ident)(nil)) {
+				id := id.(*ast.Ident)
+				if obj := info.Defs[id]; obj != nil && id.Name != "_" {
+					t.Logf("%T %s @ %s", obj, id.Name, fset.Position(id.Pos()))
+
+					// check Def
+					if curDef, ok := index.Def(obj); !ok {
+						t.Errorf("- index.Def missing")
+					} else if curDef.Node() != id {
+						t.Errorf("- index.Def wrong: @%s", fset.Position(curDef.Node().Pos()))
+					}
+
+					// check Uses is nonempty
+					ok := false
+					for use := range index.Uses(obj) {
+						t.Logf("- index.Use at %s", fset.Position(use.Node().Pos()))
+						ok = true
+					}
+					if !ok {
+						t.Errorf("- no index.Uses")
+					}
+				}
+			}
+		})
 	}
 }
