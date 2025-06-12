@@ -88,7 +88,7 @@ package rm
 
 type Missing struct{}
 
-var r2 int
+var R2 int
 
 func (Missing) M(a, b, c, r0 int) (r1 int) { //@codeaction("b", "refactor.rewrite.removeUnusedParam", result=missingrecv)
 	return a + c
@@ -116,7 +116,7 @@ package rm
 
 type Missing struct{}
 
-var r2 int
+var R2 int
 
 func (Missing) M(a, c, r0 int) (r1 int) { //@codeaction("b", "refactor.rewrite.removeUnusedParam", result=missingrecv)
 	return a + c

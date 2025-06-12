@@ -23,4 +23,4 @@ type s struct {
 }
 var _ a.A //@loc(aref2, re" (a)"), loc(Aref2, "A")
 var _ = s{}.A //@loc(Aref3, "A")
-const c = a.C //@loc(aref3, "a")
+const _ = a.C //@loc(aref3, "a")

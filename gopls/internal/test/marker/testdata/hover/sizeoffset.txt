@@ -9,6 +9,9 @@ Notes:
 - the test's size expectations assumes a 64-bit machine.
 - requires go1.22 because size information was inaccurate before.
 
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
 -- flags --
 -skip_goarch=386,arm
 

@@ -536,7 +536,7 @@ package baz
 type Baz struct {}
 -- foo/foo.go --
 package foo
-type foo struct {
+type Foo struct {
 	bar notbar.NotBar
 	baz baz.Baz
 }`

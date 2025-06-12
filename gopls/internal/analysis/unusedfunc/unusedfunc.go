@@ -8,14 +8,17 @@ import (
 	_ "embed"
 	"fmt"
 	"go/ast"
+	"go/token"
 	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 // Assumptions
@@ -46,6 +49,11 @@ import (
 // (Unexported methods cannot be called through interfaces declared
 // in other packages because each package has a private namespace
 // for unexported identifiers.)
+//
+// Types (sans methods), constants, and vars are more straightforward.
+// For now we ignore enums (const decls using iota) since it is
+// commmon for at least some values to be unused when they are added
+// for symmetry, future use, or to conform to some external pattern.
 
 //go:embed doc.go
 var doc string
@@ -53,13 +61,16 @@ var doc string
 var Analyzer = &analysis.Analyzer{
 	Name:     "unusedfunc",
 	Doc:      analysisinternal.MustExtractDoc(doc, "unusedfunc"),
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Requires: []*analysis.Analyzer{inspect.Analyzer, typeindexanalyzer.Analyzer},
 	Run:      run,
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedfunc",
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	var (
+		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+	)
 
 	// Gather names of unexported interface methods declared in this package.
 	localIfaceMethods := make(map[string]bool)
@@ -77,26 +88,94 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	})
 
-	// Map each function/method symbol to its declaration.
-	decls := make(map[*types.Func]*ast.FuncDecl)
-	for _, file := range pass.Files {
+	// checkUnused reports a diagnostic if the object declared at id
+	// is unexported and unused. References within curSelf are ignored.
+	checkUnused := func(noun string, id *ast.Ident, node ast.Node, curSelf inspector.Cursor) {
+		// Exported functions may be called from other packages.
+		if id.IsExported() {
+			return
+		}
+
+		// Blank functions are exempt from diagnostics.
+		if id.Name == "_" {
+			return
+		}
+
+		// Check for uses (including selections).
+		obj := pass.TypesInfo.Defs[id]
+		for curId := range index.Uses(obj) {
+			// Ignore self references.
+			if !curSelf.Contains(curId) {
+				return // symbol is referenced
+			}
+		}
+
+		// Expand to include leading doc comment.
+		pos := node.Pos()
+		if doc := docComment(node); doc != nil {
+			pos = doc.Pos()
+		}
+
+		// Expand to include trailing line  comment.
+		end := node.End()
+		if doc := eolComment(node); doc != nil {
+			end = doc.End()
+		}
+
+		pass.Report(analysis.Diagnostic{
+			Pos:     id.Pos(),
+			End:     id.End(),
+			Message: fmt.Sprintf("%s %q is unused", noun, id.Name),
+			SuggestedFixes: []analysis.SuggestedFix{{
+				Message: fmt.Sprintf("Delete %s %q", noun, id.Name),
+				TextEdits: []analysis.TextEdit{{
+					Pos: pos,
+					End: end,
+				}},
+			}},
+		})
+	}
+
+	// Gather the set of enums (const GenDecls that use iota).
+	enums := make(map[inspector.Cursor]bool)
+	for curId := range index.Uses(types.Universe.Lookup("iota")) {
+		for curDecl := range curId.Enclosing((*ast.GenDecl)(nil)) {
+			enums[curDecl] = true
+			break
+		}
+	}
+
+	// Check each package-level declaration (and method) for uses.
+	for curFile := range inspect.Root().Preorder((*ast.File)(nil)) {
+		file := curFile.Node().(*ast.File)
 		if ast.IsGenerated(file) {
 			continue // skip generated files
 		}
 
-		for _, decl := range file.Decls {
-			if decl, ok := decl.(*ast.FuncDecl); ok {
+	nextDecl:
+		for i := range file.Decls {
+			curDecl := curFile.ChildAt(edge.File_Decls, i)
+			decl := curDecl.Node().(ast.Decl)
+
+			// Skip if there's a preceding //go:linkname directive.
+			// (This is relevant only to func and var decls.)
+			//
+			// (A program can link fine without such a directive,
+			// but it is bad style; and the directive may
+			// appear anywhere, not just on the preceding line,
+			// but again that is poor form.)
+			if doc := docComment(decl); doc != nil {
+				for _, comment := range doc.List {
+					// TODO(adonovan): use ast.ParseDirective when #68021 lands.
+					if strings.HasPrefix(comment.Text, "//go:linkname ") {
+						continue nextDecl
+					}
+				}
+			}
+
+			switch decl := decl.(type) {
+			case *ast.FuncDecl:
 				id := decl.Name
-				// Exported functions may be called from other packages.
-				if id.IsExported() {
-					continue
-				}
-
-				// Blank functions are exempt from diagnostics.
-				if id.Name == "_" {
-					continue
-				}
-
 				// An (unexported) method whose name matches an
 				// interface method declared in the same package
 				// may be dynamically called via that interface.
@@ -109,75 +188,84 @@ func run(pass *analysis.Pass) (any, error) {
 					continue
 				}
 
-				fn := pass.TypesInfo.Defs[id].(*types.Func)
-				decls[fn] = decl
-			}
-		}
-	}
+				noun := cond(decl.Recv == nil, "function", "method")
+				checkUnused(noun, decl.Name, decl, curDecl)
 
-	// Scan for uses of each function symbol.
-	// (Ignore uses within the function's body.)
-	use := func(ref ast.Node, obj types.Object) {
-		if fn, ok := obj.(*types.Func); ok {
-			if fn := fn.Origin(); fn.Pkg() == pass.Pkg {
-				if decl, ok := decls[fn]; ok {
-					// Ignore uses within the function's body.
-					if decl.Body != nil && astutil.NodeContains(decl.Body, ref.Pos()) {
-						return
+			case *ast.GenDecl:
+				// Instead of deleting a spec in a singleton decl,
+				// delete the whole decl.
+				singleton := len(decl.Specs) == 1
+
+				switch decl.Tok {
+				case token.TYPE:
+					for i, spec := range decl.Specs {
+						var (
+							spec    = spec.(*ast.TypeSpec)
+							id      = spec.Name
+							curSelf = curDecl.ChildAt(edge.GenDecl_Specs, i)
+						)
+						checkUnused("type", id, cond[ast.Node](singleton, decl, spec), curSelf)
 					}
-					delete(decls, fn) // symbol is referenced
+
+				case token.CONST, token.VAR:
+					// Skip enums: values are often unused.
+					if enums[curDecl] {
+						continue
+					}
+					for i, spec := range decl.Specs {
+						spec := spec.(*ast.ValueSpec)
+						curSpec := curDecl.ChildAt(edge.GenDecl_Specs, i)
+
+						// Ignore n:n and n:1 assignments for now.
+						// TODO(adonovan): support these cases.
+						if len(spec.Names) != 1 {
+							continue
+						}
+						id := spec.Names[0]
+						checkUnused(decl.Tok.String(), id, cond[ast.Node](singleton, decl, spec), curSpec)
+					}
 				}
 			}
 		}
-	}
-	for id, obj := range pass.TypesInfo.Uses {
-		use(id, obj)
-	}
-	for sel, seln := range pass.TypesInfo.Selections {
-		use(sel, seln.Obj())
-	}
-
-	// Report the remaining unreferenced symbols.
-nextDecl:
-	for fn, decl := range decls {
-		noun := "function"
-		if decl.Recv != nil {
-			noun = "method"
-		}
-
-		pos := decl.Pos() // start of func decl or associated comment
-		if decl.Doc != nil {
-			pos = decl.Doc.Pos()
-
-			// Skip if there's a preceding //go:linkname directive.
-			//
-			// (A program can link fine without such a directive,
-			// but it is bad style; and the directive may
-			// appear anywhere, not just on the preceding line,
-			// but again that is poor form.)
-			//
-			// TODO(adonovan): use ast.ParseDirective when #68021 lands.
-			for _, comment := range decl.Doc.List {
-				if strings.HasPrefix(comment.Text, "//go:linkname ") {
-					continue nextDecl
-				}
-			}
-		}
-
-		pass.Report(analysis.Diagnostic{
-			Pos:     decl.Name.Pos(),
-			End:     decl.Name.End(),
-			Message: fmt.Sprintf("%s %q is unused", noun, fn.Name()),
-			SuggestedFixes: []analysis.SuggestedFix{{
-				Message: fmt.Sprintf("Delete %s %q", noun, fn.Name()),
-				TextEdits: []analysis.TextEdit{{
-					// delete declaration
-					Pos: pos,
-					End: decl.End(),
-				}},
-			}},
-		})
 	}
 
 	return nil, nil
+}
+
+func docComment(n ast.Node) *ast.CommentGroup {
+	switch n := n.(type) {
+	case *ast.FuncDecl:
+		return n.Doc
+	case *ast.GenDecl:
+		return n.Doc
+	case *ast.ValueSpec:
+		return n.Doc
+	case *ast.TypeSpec:
+		return n.Doc
+	}
+	return nil // includes File, ImportSpec, Field
+}
+
+func eolComment(n ast.Node) *ast.CommentGroup {
+	// TODO(adonovan): support:
+	//    func f() {...} // comment
+	switch n := n.(type) {
+	case *ast.GenDecl:
+		if !n.TokPos.IsValid() && len(n.Specs) == 1 {
+			return eolComment(n.Specs[0])
+		}
+	case *ast.ValueSpec:
+		return n.Comment
+	case *ast.TypeSpec:
+		return n.Comment
+	}
+	return nil
+}
+
+func cond[T any](cond bool, t, f T) T {
+	if cond {
+		return t
+	} else {
+		return f
+	}
 }

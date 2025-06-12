@@ -4,7 +4,8 @@ For historical reasons, it also verifies general behavior of the symbol search.
 
 -- settings.json --
 {
-	"symbolMatcher": "casesensitive"
+	"symbolMatcher": "casesensitive",
+	"analyses": {"unusedfunc": false}
 }
 
 -- go.mod --

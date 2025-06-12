@@ -40,8 +40,8 @@ import (
 )
 
 const (
-	// This is a variable
-	someConst = 5
+	// This is a constant
+	SomeConst = 5
 )
 
 func _() {
@@ -60,8 +60,8 @@ import (
 )
 
 const (
-	// This is a variable
-	someConst = 5
+	// This is a constant
+	SomeConst = 5
 )
 
 func _() {

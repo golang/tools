@@ -1052,7 +1052,7 @@ package main_test
 
 type Server struct{}
 
-const mainConst = otherConst
+const MainConst = otherConst
 -- other_test.go --
 package main_test
 

@@ -7,7 +7,7 @@
 //
 // # Analyzer unusedfunc
 //
-// unusedfunc: check for unused functions and methods
+// unusedfunc: check for unused functions, methods, etc
 //
 // The unusedfunc analyzer reports functions and methods that are
 // never referenced outside of their own declaration.
@@ -48,4 +48,9 @@
 // golang.org/x/tools/cmd/deadcode tool, but it has the advantage that
 // it runs within the modular analysis framework, enabling near
 // real-time feedback within gopls.
+//
+// The unusedfunc analyzer also reports unused types, vars, and
+// constants. Enums--constants defined with iota--are ignored since
+// even the unused values must remain present to preserve the logical
+// ordering.
 package unusedfunc

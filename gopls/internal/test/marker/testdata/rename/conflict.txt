@@ -1,6 +1,9 @@
 This test exercises some renaming conflict scenarios
 and ensures that the errors are informative.
 
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
 -- go.mod --
 module example.com
 go 1.12

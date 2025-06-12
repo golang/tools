@@ -11,7 +11,7 @@ import (
 )
 
 //go:embed embed.txt //@quickfix("//go:embed", re`must import "embed"`, fix_import)
-var t string
+var T string
 
 func _() {
 	_ = os.Stdin

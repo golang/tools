@@ -47,7 +47,7 @@ func main() {
 // This test demonstrates a case where gopls is not at all confused by
 // line directives, because it completely ignores them.
 func TestFailingDiagnosticClearingOnEdit(t *testing.T) {
-	// badPackageDup contains a duplicate definition of the 'a' const.
+	// badPackageDup contains a duplicate definition of the 'A' const.
 	// This is a minor variant of TestDiagnosticClearingOnEdit from
 	// diagnostics_test.go, with a line directive, which makes no difference.
 	const badPackageDup = `
@@ -58,22 +58,22 @@ go 1.12
 -- a.go --
 package consts
 
-const a = 1
+const A = 1
 -- b.go --
 package consts
 //line gen.go:5
-const a = 2
+const A = 2
 `
 
 	Run(t, badPackageDup, func(t *testing.T, env *Env) {
 		env.OpenFile("b.go")
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("b.go", `a = 2`), WithMessage("a redeclared")),
-			Diagnostics(env.AtRegexp("a.go", `a = 1`), WithMessage("other declaration")),
+			Diagnostics(env.AtRegexp("b.go", `A = 2`), WithMessage("A redeclared")),
+			Diagnostics(env.AtRegexp("a.go", `A = 1`), WithMessage("other declaration")),
 		)
 
-		// Fix the error by editing the const name in b.go to `b`.
-		env.RegexpReplace("b.go", "(a) = 2", "b")
+		// Fix the error by editing the const name A in b.go to `B`.
+		env.RegexpReplace("b.go", "(A) = 2", "B")
 		env.AfterChange(
 			NoDiagnostics(ForFile("a.go")),
 			NoDiagnostics(ForFile("b.go")),

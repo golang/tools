@@ -19,7 +19,7 @@ type ImpS struct{} //@loc(ImpS, "ImpS"),implementation("ImpS", Laugher, OtherLau
 func (ImpS) Laugh() { //@loc(LaughS, "Laugh"),implementation("Laugh", Laugh, OtherLaugh)
 }
 
-type Laugher interface { //@loc(Laugher, "Laugher"),implementation("Laugher", ImpP, OtherImpP, ImpS, OtherLaugher, OtherImpS, embedsImpP)
+type Laugher interface { //@loc(Laugher, "Laugher"),implementation("Laugher", ImpP, OtherImpP, ImpS, OtherLaugher, OtherImpS, EmbedsImpP)
 	Laugh() //@loc(Laugh, "Laugh"),implementation("Laugh", LaughP, OtherLaughP, LaughS, OtherLaugh, OtherLaughS)
 }
 
@@ -39,7 +39,7 @@ type Empty any //@implementation("Empty")
 
 var _ interface{ Joke() } //@implementation("Joke", Joke, ImpJoker)
 
-type embedsImpP struct { //@loc(embedsImpP, "embedsImpP")
+type EmbedsImpP struct { //@loc(EmbedsImpP, "EmbedsImpP")
 	ImpP //@implementation("ImpP", Laugher, OtherLaugher)
 }
 

@@ -5,6 +5,9 @@ that affected the formatting of constraint interfaces.
 
 Its size expectations assume a 64-bit machine.
 
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
 -- flags --
 -skip_goarch=386,arm
 

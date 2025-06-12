@@ -1,5 +1,8 @@
 Basic tests of textDocument/documentSymbols.
 
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
 -- symbol.go --
 package main
 

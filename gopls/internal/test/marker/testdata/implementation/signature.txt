@@ -37,6 +37,7 @@ func _(
 	h func(*R)) { //@ loc(hParamType, "func"), implementation("func", aFunc, bFunc, cFunc)
 
 	_ = aFunc    // pacify unusedfunc
+	_ = bFunc    // pacify unusedfunc
 	_ = nullary  // pacify unusedfunc
 	_ = h
 

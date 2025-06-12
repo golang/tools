@@ -2,6 +2,9 @@ This test demonstrates some basic features of hover.
 
 Needs go1.22 for the gotypesalias godebug value.
 
+-- settings.json --
+{"analyses": {"unusedfunc": false}}
+
 -- flags --
 -min_go_command=go1.22
 

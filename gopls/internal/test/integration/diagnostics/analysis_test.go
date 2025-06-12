@@ -139,12 +139,12 @@ go 1.20
 -- a.go --
 package p
 
-var x interface{}
+var X interface{}
 
 -- b.go --
 package p
 
-var y interface{}
+var Y interface{}
 `
 	Run(t, src, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")

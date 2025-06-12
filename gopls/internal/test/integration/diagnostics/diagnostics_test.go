@@ -111,7 +111,7 @@ const Foo = "abc
 	})
 }
 
-// badPackage contains a duplicate definition of the 'a' const.
+// badPackage contains a duplicate definition of the 'A' const.
 const badPackage = `
 -- go.mod --
 module mod.com
@@ -120,11 +120,11 @@ go 1.12
 -- a.go --
 package consts
 
-const a = 1
+const A = 1
 -- b.go --
 package consts
 
-const a = 2
+const A = 2
 `
 
 func TestDiagnosticClearingOnEdit(t *testing.T) {
@@ -141,12 +141,12 @@ func TestDiagnosticClearingOnEdit(t *testing.T) {
 			}
 		}
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("a.go", "a = 1")),
-			Diagnostics(env.AtRegexp("b.go", "a = 2")),
+			Diagnostics(env.AtRegexp("a.go", "A = 1")),
+			Diagnostics(env.AtRegexp("b.go", "A = 2")),
 		)
 
-		// Fix the error by editing the const name in b.go to `b`.
-		env.RegexpReplace("b.go", "(a) = 2", "b")
+		// Fix the error by editing the const name A in b.go to `B`.
+		env.RegexpReplace("b.go", "(A) = 2", "B")
 		for _, f := range []string{"a.go", "b.go"} {
 			if got := env.Diagnostics(f); len(got) != 0 {
 				t.Errorf("textDocument/diagnostic(%s) returned %d diagnostics, want 0. Got %v", f, len(got), got)
@@ -163,8 +163,8 @@ func TestDiagnosticClearingOnDelete_Issue37049(t *testing.T) {
 	Run(t, badPackage, func(t *testing.T, env *Env) {
 		env.OpenFile("a.go")
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("a.go", "a = 1")),
-			Diagnostics(env.AtRegexp("b.go", "a = 2")),
+			Diagnostics(env.AtRegexp("a.go", "A = 1")),
+			Diagnostics(env.AtRegexp("b.go", "A = 2")),
 		)
 		env.RemoveWorkspaceFile("b.go")
 
@@ -179,16 +179,16 @@ func TestDiagnosticClearingOnClose(t *testing.T) {
 	Run(t, badPackage, func(t *testing.T, env *Env) {
 		env.CreateBuffer("c.go", `package consts
 
-const a = 3`)
+const A = 3`)
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("a.go", "a = 1")),
-			Diagnostics(env.AtRegexp("b.go", "a = 2")),
-			Diagnostics(env.AtRegexp("c.go", "a = 3")),
+			Diagnostics(env.AtRegexp("a.go", "A = 1")),
+			Diagnostics(env.AtRegexp("b.go", "A = 2")),
+			Diagnostics(env.AtRegexp("c.go", "A = 3")),
 		)
 		env.CloseBuffer("c.go")
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("a.go", "a = 1")),
-			Diagnostics(env.AtRegexp("b.go", "a = 2")),
+			Diagnostics(env.AtRegexp("a.go", "A = 1")),
+			Diagnostics(env.AtRegexp("b.go", "A = 2")),
 			NoDiagnostics(ForFile("c.go")),
 		)
 	})
@@ -204,7 +204,7 @@ func TestIssue37978(t *testing.T) {
 		env.EditBuffer("c/c.go", protocol.TextEdit{
 			NewText: `package c
 
-const a = http.MethodGet
+const A = http.MethodGet
 `,
 		})
 		env.AfterChange(

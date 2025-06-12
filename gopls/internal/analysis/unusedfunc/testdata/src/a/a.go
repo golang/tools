@@ -39,3 +39,34 @@ func (u unexportedType) dead() { // want `method "dead" is unused`
 func (x ExportedType) dynamic() {} // matches name of interface method => live
 
 type _ interface{ dynamic() }
+
+// -- types without methods --
+
+type ExportedType2 int
+
+// self-references don't count
+type unusedUnexportedType2 struct{ *unusedUnexportedType2 } // want `type "unusedUnexportedType2" is unused`
+
+type (
+	one int
+	two one // want `type "two" is unused`
+)
+
+// -- generic methods --
+
+type g[T any] int
+
+func (g[T]) method() {} // want `method "method" is unused`
+
+// -- constants --
+
+const unusedConst = 1 // want `const "unusedConst" is unused`
+
+const (
+	unusedEnum = iota
+)
+
+const (
+	constOne       = 1
+	unusedConstTwo = constOne // want `const "unusedConstTwo" is unused`
+)

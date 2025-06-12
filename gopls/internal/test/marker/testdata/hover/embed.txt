@@ -34,8 +34,7 @@ func (P) m() {}
 
 var p P //@hover("P", "P", P)
 
-var _ = P.m
-
+var _, _ = P.m, p // pacify unusedfunc
 
 type A struct {
 	*B
