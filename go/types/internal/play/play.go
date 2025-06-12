@@ -236,6 +236,7 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 	// Object type information.
 	switch n := path[0].(type) {
 	case *ast.Ident:
+		// An embedded field is both a def and a use.
 		if obj, ok := pkg.TypesInfo.Defs[n]; ok {
 			if obj == nil {
 				fmt.Fprintf(out, "nil def") // e.g. package name, "_", type switch
@@ -261,6 +262,20 @@ func handleSelectJSON(w http.ResponseWriter, req *http.Request) {
 	// Syntax debug output.
 	fmt.Fprintf(out, "Syntax:\n")
 	ast.Fprint(out, fset, path[0], nil) // ignore errors
+	fmt.Fprintf(out, "\n\n")
+
+	// Show inventory of all objects, including addresses to disambiguate.
+	fmt.Fprintf(out, "Objects:\n")
+	for curId := range inspect.Root().Preorder((*ast.Ident)(nil)) {
+		id := curId.Node().(*ast.Ident)
+		if obj := pkg.TypesInfo.Defs[id]; obj != nil {
+			fmt.Fprintf(out, "%s: def %v (%p)\n", fset.Position(id.Pos()), obj, obj)
+		}
+		if obj, ok := pkg.TypesInfo.Uses[id]; ok {
+			fmt.Fprintf(out, "%s: use %v (%p)\n", fset.Position(id.Pos()), obj, obj)
+		}
+	}
+	fmt.Fprintf(out, "\n\n")
 
 	// Clean up the messy temp file name.
 	outStr := strings.ReplaceAll(out.String(), f.Name(), "play.go")
@@ -303,8 +318,12 @@ func formatObj(out *strings.Builder, fset *token.FileSet, ref string, obj types.
 		}
 	}
 
-	fmt.Fprintf(out, "%s of %s %s of type %v declared at %v",
-		ref, kind, obj.Name(), obj.Type(), fset.Position(obj.Pos()))
+	// Include the pointer value to help distinguish fn and fn.Origin().
+	// (Beware that every invocation creates new pointers so they are
+	// only comparable within a single result page. Hence the need
+	// for the inventory of objects below.)
+	fmt.Fprintf(out, "%s of %s %s of type %v declared at %v (%p)",
+		ref, kind, obj.Name(), obj.Type(), fset.Position(obj.Pos()), obj)
 	if origin != nil && origin != obj {
 		fmt.Fprintf(out, " (instantiation of %v)", origin.Type())
 	}
