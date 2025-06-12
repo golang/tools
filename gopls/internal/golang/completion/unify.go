@@ -130,8 +130,6 @@ func (u *unifier) unify(x, y types.Type, mode unifyMode) bool {
 	return u.nify(x, y, mode)
 }
 
-type typeParamsById []*types.TypeParam
-
 // join unifies the given type parameters x and y.
 // If both type parameters already have a type associated with them
 // and they are not joined, join fails and returns false.

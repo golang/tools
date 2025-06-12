@@ -37,8 +37,6 @@ var (
 	repodir   = flag.String("d", "", "directory containing clone of "+vscodeRepo)
 	outputdir = flag.String("o", ".", "output directory")
 	// PJW: not for real code
-	cmpdir      = flag.String("c", "", "directory of earlier code")
-	doboth      = flag.String("b", "", "generate and compare")
 	lineNumbers = flag.Bool("l", false, "add line numbers to generated output")
 )
 
