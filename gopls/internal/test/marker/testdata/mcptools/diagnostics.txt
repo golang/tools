@@ -13,14 +13,29 @@ func foo() {} //@loc(foo, "foo")
 
 //@mcptool("diagnostics", `{}`, foo, output=unused)
 //@diag(foo, re"unused")
-
 -- @unused --
 2:5-2:8: [Information] function "foo" is unused
+Fix:
+--- $SANDBOX_WORKDIR/a/main.go
++++ $SANDBOX_WORKDIR/a/main.go
+@@ -1,6 +1,6 @@
+ package main
+ 
+-func foo() {} //@loc(foo, "foo")
++ //@loc(foo, "foo")
+ 
+ //@mcptool("diagnostics", `{}`, foo, output=unused)
+ //@diag(foo, re"unused")
+
+
+
 -- b/main.go --
 package main
 
 func _() {
 	_ = deprecated([]string{"a"}, "a") //@loc(inline, "deprecated")
+
+	_ = deprecated([]string{"a"}, "a") //@loc(inline2, "deprecated")
 }
 
 //go:fix inline
@@ -32,8 +47,39 @@ func proposed(_ []string, _ string, _ bool) bool {
 	return false // fake
 }
 
-//@mcptool("diagnostics", `{}`, inline, output=bloop)
+//@mcptool("diagnostics", `{}`, inline, output=diagnoseInline)
 //@diag(inline, re"inline")
-
--- @bloop --
+//@diag(inline2, re"inline")
+-- @diagnoseInline --
 3:5-3:35: [Hint] Call of main.deprecated should be inlined
+Fix:
+--- $SANDBOX_WORKDIR/b/main.go
++++ $SANDBOX_WORKDIR/b/main.go
+@@ -1,7 +1,7 @@
+ package main
+ 
+ func _() {
+-	_ = deprecated([]string{"a"}, "a") //@loc(inline, "deprecated")
++	_ = proposed([]string{"a"}, "a", true) //@loc(inline, "deprecated")
+ 
+ 	_ = deprecated([]string{"a"}, "a") //@loc(inline2, "deprecated")
+ }
+
+
+
+5:5-5:35: [Hint] Call of main.deprecated should be inlined
+Fix:
+--- $SANDBOX_WORKDIR/b/main.go
++++ $SANDBOX_WORKDIR/b/main.go
+@@ -3,7 +3,7 @@
+ func _() {
+ 	_ = deprecated([]string{"a"}, "a") //@loc(inline, "deprecated")
+ 
+-	_ = deprecated([]string{"a"}, "a") //@loc(inline2, "deprecated")
++	_ = proposed([]string{"a"}, "a", true) //@loc(inline2, "deprecated")
+ }
+ 
+ //go:fix inline
+
+
+

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -93,6 +94,33 @@ func (d *Diagnostic) Hash() file.Hash {
 	var hash [sha256.Size]byte
 	h.Sum(hash[:0])
 	return hash
+}
+
+func ToProtocolDiagnostics(diagnostics ...*Diagnostic) []protocol.Diagnostic {
+	// TODO(rfindley): support bundling edits, and bundle all suggested fixes here.
+	// (see cache.bundleLazyFixes).
+
+	reports := []protocol.Diagnostic{}
+	for _, diag := range diagnostics {
+		pdiag := protocol.Diagnostic{
+			// diag.Message might start with \n or \t
+			Message:            strings.TrimSpace(diag.Message),
+			Range:              diag.Range,
+			Severity:           diag.Severity,
+			Source:             string(diag.Source),
+			Tags:               protocol.NonNilSlice(diag.Tags),
+			RelatedInformation: diag.Related,
+			Data:               diag.BundledFixes,
+		}
+		if diag.Code != "" {
+			pdiag.Code = diag.Code
+		}
+		if diag.CodeHref != "" {
+			pdiag.CodeDescription = &protocol.CodeDescription{Href: diag.CodeHref}
+		}
+		reports = append(reports, pdiag)
+	}
+	return reports
 }
 
 // A DiagnosticSource identifies the source of a diagnostic.

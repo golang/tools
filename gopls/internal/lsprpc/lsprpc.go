@@ -42,6 +42,7 @@ const (
 type SessionEvent struct {
 	Type    SessionEventType
 	Session *cache.Session
+	Server  protocol.Server
 }
 
 // Unique identifiers for client/server.
@@ -109,11 +110,13 @@ func (s *streamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) erro
 		s.eventChan <- SessionEvent{
 			Session: session,
 			Type:    SessionStart,
+			Server:  svr,
 		}
 		defer func() {
 			s.eventChan <- SessionEvent{
 				Session: session,
 				Type:    SessionEnd,
+				Server:  svr,
 			}
 		}()
 	}

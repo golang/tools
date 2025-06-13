@@ -70,7 +70,7 @@ func (s *server) Diagnostic(ctx context.Context, params *protocol.DocumentDiagno
 	return &protocol.DocumentDiagnosticReport{
 		Value: protocol.RelatedFullDocumentDiagnosticReport{
 			FullDocumentDiagnosticReport: protocol.FullDocumentDiagnosticReport{
-				Items: toProtocolDiagnostics(diagnostics),
+				Items: cache.ToProtocolDiagnostics(diagnostics...),
 			},
 		},
 	}, nil
@@ -902,7 +902,7 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 	// Publish, if necessary.
 	if hash != f.publishedHash || f.mustPublish {
 		if err := s.client.PublishDiagnostics(ctx, &protocol.PublishDiagnosticsParams{
-			Diagnostics: toProtocolDiagnostics(unique),
+			Diagnostics: cache.ToProtocolDiagnostics(unique...),
 			URI:         uri,
 			Version:     version, // 0 ("on disk") => omitted from JSON encoding
 		}); err != nil {
@@ -912,33 +912,6 @@ func (s *server) publishFileDiagnosticsLocked(ctx context.Context, views viewSet
 		f.mustPublish = false
 	}
 	return nil
-}
-
-func toProtocolDiagnostics(diagnostics []*cache.Diagnostic) []protocol.Diagnostic {
-	// TODO(rfindley): support bundling edits, and bundle all suggested fixes here.
-	// (see cache.bundleLazyFixes).
-
-	reports := []protocol.Diagnostic{}
-	for _, diag := range diagnostics {
-		pdiag := protocol.Diagnostic{
-			// diag.Message might start with \n or \t
-			Message:            strings.TrimSpace(diag.Message),
-			Range:              diag.Range,
-			Severity:           diag.Severity,
-			Source:             string(diag.Source),
-			Tags:               protocol.NonNilSlice(diag.Tags),
-			RelatedInformation: diag.Related,
-			Data:               diag.BundledFixes,
-		}
-		if diag.Code != "" {
-			pdiag.Code = diag.Code
-		}
-		if diag.CodeHref != "" {
-			pdiag.CodeDescription = &protocol.CodeDescription{Href: diag.CodeHref}
-		}
-		reports = append(reports, pdiag)
-	}
-	return reports
 }
 
 func (s *server) shouldIgnoreError(snapshot *cache.Snapshot, err error) bool {

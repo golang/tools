@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/lsprpc"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/mcp"
 )
@@ -53,9 +54,9 @@ func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionE
 }
 
 // StartStdIO starts an MCP server over stdio.
-func StartStdIO(ctx context.Context, session *cache.Session) error {
+func StartStdIO(ctx context.Context, session *cache.Session, server protocol.Server) error {
 	t := mcp.NewLoggingTransport(mcp.NewStdioTransport(), os.Stderr)
-	s := newServer(session)
+	s := newServer(session, server)
 	return s.Run(ctx, t)
 }
 
@@ -73,7 +74,7 @@ func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, isDaemon bool) http.Handl
 			switch event.Type {
 			case lsprpc.SessionStart:
 				mcpHandlers[event.Session.ID()] = mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
-					return newServer(event.Session)
+					return newServer(event.Session, event.Server)
 				})
 			case lsprpc.SessionEnd:
 				delete(mcpHandlers, event.Session.ID())
@@ -119,7 +120,7 @@ func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, isDaemon bool) http.Handl
 	return mux
 }
 
-func newServer(session *cache.Session) *mcp.Server {
+func newServer(session *cache.Session, server protocol.Server) *mcp.Server {
 	s := mcp.NewServer("golang", "v0.1", nil)
 
 	s.AddTools(
@@ -157,7 +158,7 @@ func newServer(session *cache.Session) *mcp.Server {
 			"diagnostics",
 			"Provide diagnostics for a region within a Go file",
 			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParamsFor[DiagnosticsParams]) (*mcp.CallToolResultFor[struct{}], error) {
-				return diagnosticsHandler(ctx, session, request)
+				return diagnosticsHandler(ctx, session, server, request)
 			},
 			mcp.Input(
 				mcp.Property(

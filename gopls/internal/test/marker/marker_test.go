@@ -2470,7 +2470,10 @@ func mcpToolMarker(mark marker, tool string, rawArgs string, loc protocol.Locati
 		buf.WriteString("\n") // all golden content is newline terminated
 	}
 
-	got := buf.String()
+	// To ensure consistent unified diff output, the working directory path
+	// is replaced with "$SANDBOX_WORKDIR". This addresses cases where MCP tools
+	// include absolute file paths in generated diffs.
+	got := strings.ReplaceAll(buf.String(), filepath.ToSlash(mark.run.env.Sandbox.Workdir.RootURI().Path()), "$SANDBOX_WORKDIR")
 
 	output := namedArg(mark, "output", expect.Identifier(""))
 	golden := mark.getGolden(output)

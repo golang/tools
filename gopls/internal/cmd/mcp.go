@@ -55,18 +55,20 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 			eventChan <- lsprpc.SessionEvent{
 				Session: sess,
 				Type:    lsprpc.SessionStart,
+				Server:  conn.Server,
 			}
 		}()
 		defer func() {
 			eventChan <- lsprpc.SessionEvent{
 				Session: sess,
 				Type:    lsprpc.SessionEnd,
+				Server:  conn.Server,
 			}
 		}()
 
 		return mcp.Serve(ctx, m.Address, eventChan, false)
 	} else {
 		countHeadlessMCPStdIO.Inc()
-		return mcp.StartStdIO(ctx, sess)
+		return mcp.StartStdIO(ctx, sess, conn.Server)
 	}
 }
