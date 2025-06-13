@@ -122,7 +122,29 @@ func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, isDaemon bool) http.Handl
 
 func newServer(session *cache.Session, server protocol.Server) *mcp.Server {
 	s := mcp.NewServer("golang", "v0.1", nil)
-
+	locationInput := mcp.Input(
+		mcp.Property(
+			"location",
+			mcp.Description("location inside of a text file"),
+			mcp.Property("uri", mcp.Description("URI of the text document")),
+			mcp.Property("range",
+				mcp.Description("range within text document"),
+				mcp.Required(false),
+				mcp.Property(
+					"start",
+					mcp.Description("start position of range"),
+					mcp.Property("line", mcp.Description("line number (zero-based)")),
+					mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
+				),
+				mcp.Property(
+					"end",
+					mcp.Description("end position of range"),
+					mcp.Property("line", mcp.Description("line number (zero-based)")),
+					mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
+				),
+			),
+		),
+	)
 	s.AddTools(
 		mcp.NewServerTool(
 			"context",
@@ -130,29 +152,7 @@ func newServer(session *cache.Session, server protocol.Server) *mcp.Server {
 			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParamsFor[ContextParams]) (*mcp.CallToolResultFor[struct{}], error) {
 				return contextHandler(ctx, session, request)
 			},
-			mcp.Input(
-				mcp.Property(
-					"location",
-					mcp.Description("location inside of a text file"),
-					mcp.Property("uri", mcp.Description("URI of the text document")),
-					mcp.Property("range",
-						mcp.Description("range within text document"),
-						mcp.Required(false),
-						mcp.Property(
-							"start",
-							mcp.Description("start position of range"),
-							mcp.Property("line", mcp.Description("line number (zero-based)")),
-							mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
-						),
-						mcp.Property(
-							"end",
-							mcp.Description("end position of range"),
-							mcp.Property("line", mcp.Description("line number (zero-based)")),
-							mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
-						),
-					),
-				),
-			),
+			locationInput,
 		),
 		mcp.NewServerTool(
 			"diagnostics",
@@ -160,29 +160,15 @@ func newServer(session *cache.Session, server protocol.Server) *mcp.Server {
 			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParamsFor[DiagnosticsParams]) (*mcp.CallToolResultFor[struct{}], error) {
 				return diagnosticsHandler(ctx, session, server, request)
 			},
-			mcp.Input(
-				mcp.Property(
-					"location",
-					mcp.Description("location inside of a text file"),
-					mcp.Property("uri", mcp.Description("URI of the text document")),
-					mcp.Property("range",
-						mcp.Description("range within text document"),
-						mcp.Required(false),
-						mcp.Property(
-							"start",
-							mcp.Description("start position of range"),
-							mcp.Property("line", mcp.Description("line number (zero-based)")),
-							mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
-						),
-						mcp.Property(
-							"end",
-							mcp.Description("end position of range"),
-							mcp.Property("line", mcp.Description("line number (zero-based)")),
-							mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
-						),
-					),
-				),
-			),
+			locationInput,
+		),
+		mcp.NewServerTool(
+			"references",
+			"Provide the locations of references to a given object",
+			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParamsFor[FindReferencesParams]) (*mcp.CallToolResultFor[struct{}], error) {
+				return referenceHandler(ctx, session, request)
+			},
+			locationInput,
 		),
 	)
 	return s

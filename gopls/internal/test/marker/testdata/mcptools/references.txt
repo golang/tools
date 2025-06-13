@@ -1,0 +1,43 @@
+This test exercises the "references" MCP tool.
+
+-- flags --
+-mcp
+-ignore_extra_diags
+
+-- go.mod --
+module example.com
+
+-- a/a.go --
+package a
+
+func Foo() {} //@loc(Foo, "Foo")
+
+func callFoo() {
+    Foo()
+}
+
+-- b/b.go --
+package b
+
+import "example.com/a"
+
+func callFoo() {
+    a.Foo()
+}
+
+//@mcptool("references", `{}`, Foo, output=threeref)
+
+-- @threeref --
+The object has 3 references. Their locations are listed below
+Reference 1
+Located in the file: $SANDBOX_WORKDIR/a/a.go
+The reference is located on line 2, which has content "func Foo() {} //@loc(Foo, \"Foo\")"
+
+Reference 2
+Located in the file: $SANDBOX_WORKDIR/a/a.go
+The reference is located on line 5, which has content "Foo()"
+
+Reference 3
+Located in the file: $SANDBOX_WORKDIR/b/b.go
+The reference is located on line 5, which has content "a.Foo()"
+
