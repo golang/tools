@@ -18,6 +18,7 @@ Client support:
 - **VS Code**: Code Lenses appear as small text links above a line of source code.
 - **Emacs + eglot**: Not supported, but prototype exists at https://github.com/joaotavora/eglot/pull/71.
 - **Vim + coc.nvim**: ??
+- **Neovim**: Run `vim.lsp.codelens.refresh({ bufnr = 0 })` to refresh code lenses for current buffer. Run `vim.lsp.codelens.run()` to pick a lens. See `:h vim.lsp.codelens` for more details.
 - **CLI**: `gopls codelens`. For example, `gopls codelens -exec file.go:123 "run test"` runs the test at the specified line.
 
 
