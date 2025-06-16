@@ -3400,3 +3400,27 @@ func writeTree(t *testing.T, archive string) string {
 	}
 	return root
 }
+
+func TestLoadFileRelativePath(t *testing.T) {
+	exported := packagestest.Export(t, packagestest.Modules, []packagestest.Module{
+		{
+			Name: "fake/pkg",
+			Files: map[string]any{
+				"pkg.go": "package pkg; type A int",
+			},
+		},
+	})
+	t.Cleanup(exported.Cleanup)
+
+	exported.Config.Mode = packages.LoadSyntax
+	pkgs, err := packages.Load(exported.Config, "file=pkg.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) != 1 {
+		t.Fatalf("len(pkgs) = %v; want = 1", len(pkgs))
+	}
+	if pkgs[0].ID != "fake/pkg" {
+		t.Fatalf(`pkgs[0].Id = %q; want "fake/pkg"`, pkgs[0].ID)
+	}
+}
