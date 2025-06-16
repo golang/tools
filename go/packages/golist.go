@@ -712,9 +712,8 @@ func (state *golistState) getGoVersion() (int, error) {
 // getPkgPath finds the package path of a directory if it's relative to a root
 // directory.
 func (state *golistState) getPkgPath(dir string) (string, bool, error) {
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return "", false, err
+	if !filepath.IsAbs(dir) {
+		panic("non-absolute dir passed to getPkgPath")
 	}
 	roots, err := state.determineRootDirs()
 	if err != nil {
@@ -724,7 +723,7 @@ func (state *golistState) getPkgPath(dir string) (string, bool, error) {
 	for rdir, rpath := range roots {
 		// Make sure that the directory is in the module,
 		// to avoid creating a path relative to another module.
-		if !strings.HasPrefix(absDir, rdir) {
+		if !strings.HasPrefix(dir, rdir) {
 			continue
 		}
 		// TODO(matloob): This doesn't properly handle symlinks.
