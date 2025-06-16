@@ -1,0 +1,41 @@
+# This list is used to help generate the GitHub handles in the
+# contributor shout-out of each gopls release note.
+#
+# Use a command such as this to convert a range of git commits:
+#
+# $ join -o 2.2 <(git log --format="format: %aE" gopls/v0.18.1..gopls/v0.19.0-pre.3 | sort -u) \
+#               <(grep '^[^#]' ~/w/xtools/gopls/contributors.txt | sort)
+#
+# Use -v 1 instead of -o 2.2 to detect any missing entries.
+
+acehinnnqru@gmail.com		acehinnnqru
+adonovan@google.com 		adonovan
+albertofanjul@gmail.com		albfan
+alessandro.arzilli@gmail.com 	aarzilli
+ashurbekovz23@gmail.com 	ashurbekovz
+cuong.manhle.vn@gmail.com       cuonglm
+dmitshur@golang.org 		dmitshur
+dneil@google.com 		neild
+egonelbre@gmail.com 		egonelbre
+email@ssnk.in			shashank-priyadarshi
+ethan.reesor@gmail.com		firelizzard18
+gobot@golang.org		gopherbot
+hxjiang@golang.org		h9jiang
+imcusg@gmail.com		cuishuang
+jacob.b.bailey@gmail.com	jakebailey
+jba@google.com                  jba
+mkalil@google.com               madelinekalil
+mrnk3078@gmail.com		karamaru-alpha
+nguyenbao1917@gmail.com		danztran
+nick.ripley@datadoghq.com 	nsrip-dd
+pjw@google.com 			pjweinb
+rfindley@google.com 		findleyr
+samthanawalla@google.com 	samthanawalla
+sean@liao.dev 			seankhliao
+tklauser@distanz.ch 		tklauser
+veblomqvist@gmail.com		vikblom
+weingartner@google.com		kwjw
+xieyuschen@gmail.com		xieyuschen
+
+# GitHub ID unknown:
+# - shibinxf@gmail.com
