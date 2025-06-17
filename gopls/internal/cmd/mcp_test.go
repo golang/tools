@@ -91,6 +91,7 @@ func MyFun() {}
 }
 
 func TestMCPCommandHTTP(t *testing.T) {
+	testenv.NeedsExec(t)
 	tree := writeTree(t, `
 -- go.mod --
 module example.com
