@@ -17,9 +17,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/mcp"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestMCPCommandStdio(t *testing.T) {
+	testenv.NeedsExec(t) // stdio transport uses execve(2)
 	tree := writeTree(t, `
 -- go.mod --
 module example.com
