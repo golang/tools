@@ -150,20 +150,20 @@ func (h *StreamableHTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Reque
 // policy.
 func NewStreamableServerTransport(sessionID string) *StreamableServerTransport {
 	return &StreamableServerTransport{
-		id:                  sessionID,
-		incoming:            make(chan jsonrpc2.Message, 10),
-		done:                make(chan struct{}),
-		outgoingMessages:    make(map[connID][]*streamableMsg),
-		signals:             make(map[connID]chan struct{}),
-		requestConns:        make(map[JSONRPCID]connID),
-		outstandingRequests: make(map[connID]map[JSONRPCID]struct{}),
+		id:               sessionID,
+		incoming:         make(chan jsonrpc2.Message, 10),
+		done:             make(chan struct{}),
+		outgoingMessages: make(map[streamID][]*streamableMsg),
+		signals:          make(map[streamID]chan struct{}),
+		requestStreams:   make(map[JSONRPCID]streamID),
+		streamRequests:   make(map[streamID]map[JSONRPCID]struct{}),
 	}
 }
 
 // A StreamableServerTransport implements the [Transport] interface for a
 // single session.
 type StreamableServerTransport struct {
-	nextConnID atomic.Int64 // incrementing next connection ID
+	nextStreamID atomic.Int64 // incrementing next stream ID
 
 	id       string
 	incoming chan jsonrpc2.Message // messages from the client to the server
@@ -189,48 +189,48 @@ type StreamableServerTransport struct {
 	// TODO(rfindley): simplify.
 
 	// outgoingMessages is the collection of outgoingMessages messages, keyed by the logical
-	// connection ID where they should be delivered.
+	// stream ID where they should be delivered.
 	//
-	// connID 0 is used for messages that don't correlate with an incoming
+	// streamID 0 is used for messages that don't correlate with an incoming
 	// request.
 	//
 	// Lifecycle: outgoingMessages persists for the duration of the session.
 	//
 	// TODO(rfindley): garbage collect this data. For now, we save all outgoingMessages
 	// messages for the lifespan of the transport.
-	outgoingMessages map[connID][]*streamableMsg
+	outgoingMessages map[streamID][]*streamableMsg
 
-	// signals maps a logical connection ID to a 1-buffered channel, owned by an
+	// signals maps a logical stream ID to a 1-buffered channel, owned by an
 	// incoming HTTP request, that signals that there are messages available to
 	// write into the HTTP response. Signals guarantees that at most one HTTP
-	// connection can receive messages for a logical connection. After claiming
-	// the connection, incoming requests should read from outgoing, to ensure
+	// response can receive messages for a logical stream. After claiming
+	// the stream, incoming requests should read from outgoing, to ensure
 	// that no new messages are missed.
 	//
 	// Lifecycle: signals persists for the duration of an HTTP POST or GET
-	// request for the given connID.
-	signals map[connID]chan struct{}
+	// request for the given streamID.
+	signals map[streamID]chan struct{}
 
-	// requestConns maps incoming requests to their logical connection ID.
+	// requestStreams maps incoming requests to their logical stream ID.
 	//
-	// Lifecycle: requestConns persists for the duration of the session.
+	// Lifecycle: requestStreams persists for the duration of the session.
 	//
 	// TODO(rfindley): clean up once requests are handled.
-	requestConns map[JSONRPCID]connID
+	requestStreams map[JSONRPCID]streamID
 
 	// outstandingRequests tracks the set of unanswered incoming RPCs for each logical
-	// connection.
+	// stream.
 	//
-	// When the server has responded to each request, the connection should be
+	// When the server has responded to each request, the stream should be
 	// closed.
 	//
 	// Lifecycle: outstandingRequests values persist as until the requests have been
 	// replied to by the server. Notably, NOT until they are sent to an HTTP
 	// response, as delivery is not guaranteed.
-	outstandingRequests map[connID]map[JSONRPCID]struct{}
+	streamRequests map[streamID]map[JSONRPCID]struct{}
 }
 
-type connID int64
+type streamID int64
 
 // a streamableMsg is an SSE event with an index into its logical stream.
 type streamableMsg struct {
@@ -241,7 +241,7 @@ type streamableMsg struct {
 // Connect implements the [Transport] interface.
 //
 // TODO(rfindley): Connect should return a new object.
-func (s *StreamableServerTransport) Connect(context.Context) (Stream, error) {
+func (s *StreamableServerTransport) Connect(context.Context) (Connection, error) {
 	return s, nil
 }
 
@@ -284,7 +284,7 @@ func (t *StreamableServerTransport) ServeHTTP(w http.ResponseWriter, req *http.R
 
 func (t *StreamableServerTransport) serveGET(w http.ResponseWriter, req *http.Request) {
 	// connID 0 corresponds to the default GET request.
-	id, nextIdx := connID(0), 0
+	id, nextIdx := streamID(0), 0
 	if len(req.Header.Values("Last-Event-ID")) > 0 {
 		eid := req.Header.Get("Last-Event-ID")
 		var ok bool
@@ -338,15 +338,15 @@ func (t *StreamableServerTransport) servePOST(w http.ResponseWriter, req *http.R
 	}
 
 	// Update accounting for this request.
-	id := connID(t.nextConnID.Add(1))
+	id := streamID(t.nextStreamID.Add(1))
 	signal := make(chan struct{}, 1)
 	t.mu.Lock()
 	if len(requests) > 0 {
-		t.outstandingRequests[id] = make(map[JSONRPCID]struct{})
+		t.streamRequests[id] = make(map[JSONRPCID]struct{})
 	}
 	for reqID := range requests {
-		t.requestConns[reqID] = id
-		t.outstandingRequests[id][reqID] = struct{}{}
+		t.requestStreams[reqID] = id
+		t.streamRequests[id][reqID] = struct{}{}
 	}
 	t.signals[id] = signal
 	t.mu.Unlock()
@@ -362,7 +362,7 @@ func (t *StreamableServerTransport) servePOST(w http.ResponseWriter, req *http.R
 	t.streamResponse(w, req, id, 0, signal)
 }
 
-func (t *StreamableServerTransport) streamResponse(w http.ResponseWriter, req *http.Request, id connID, nextIndex int, signal chan struct{}) {
+func (t *StreamableServerTransport) streamResponse(w http.ResponseWriter, req *http.Request, id streamID, nextIndex int, signal chan struct{}) {
 	defer func() {
 		t.mu.Lock()
 		delete(t.signals, id)
@@ -404,7 +404,7 @@ stream:
 		}
 
 		t.mu.Lock()
-		nOutstanding := len(t.outstandingRequests[id])
+		nOutstanding := len(t.streamRequests[id])
 		nOutgoing := len(t.outgoingMessages[id])
 		t.mu.Unlock()
 		// If all requests have been handled and replied to, we can terminate this
@@ -443,21 +443,21 @@ stream:
 }
 
 // Event IDs: encode both the logical connection ID and the index, as
-// <connID>_<idx>, to be consistent with the typescript implementation.
+// <streamID>_<idx>, to be consistent with the typescript implementation.
 
 // formatEventID returns the event ID to use for the logical connection ID
-// connID and message index idx.
+// streamID and message index idx.
 //
 // See also [parseEventID].
-func formatEventID(id connID, idx int) string {
+func formatEventID(id streamID, idx int) string {
 	return fmt.Sprintf("%d_%d", id, idx)
 }
 
-// parseEventID parses a Last-Event-ID value into a logical connection id and
+// parseEventID parses a Last-Event-ID value into a logical stream id and
 // index.
 //
 // See also [formatEventID].
-func parseEventID(eventID string) (conn connID, idx int, ok bool) {
+func parseEventID(eventID string) (conn streamID, idx int, ok bool) {
 	_, err := fmt.Sscanf(eventID, "%d_%d", &conn, &idx)
 	if err != nil || conn < 0 || idx < 0 {
 		return 0, 0, false
@@ -465,7 +465,7 @@ func parseEventID(eventID string) (conn connID, idx int, ok bool) {
 	return conn, idx, true
 }
 
-// Read implements the [Stream] interface.
+// Read implements the [Connection] interface.
 func (t *StreamableServerTransport) Read(ctx context.Context) (jsonrpc2.Message, error) {
 	select {
 	case <-ctx.Done():
@@ -480,7 +480,7 @@ func (t *StreamableServerTransport) Read(ctx context.Context) (jsonrpc2.Message,
 	}
 }
 
-// Write implements the [Stream] interface.
+// Write implements the [Connection] interface.
 func (t *StreamableServerTransport) Write(ctx context.Context, msg JSONRPCMessage) error {
 	// Find the incoming request that this write relates to, if any.
 	var forRequest, replyTo JSONRPCID
@@ -501,10 +501,10 @@ func (t *StreamableServerTransport) Write(ctx context.Context, msg JSONRPCMessag
 	//
 	// For messages sent outside of a request context, this is the default
 	// connection 0.
-	var forConn connID
+	var forConn streamID
 	if forRequest.IsValid() {
 		t.mu.Lock()
-		forConn = t.requestConns[forRequest]
+		forConn = t.requestStreams[forRequest]
 		t.mu.Unlock()
 	}
 
@@ -519,7 +519,7 @@ func (t *StreamableServerTransport) Write(ctx context.Context, msg JSONRPCMessag
 		return fmt.Errorf("session is closed") // TODO: should this be EOF?
 	}
 
-	if _, ok := t.outstandingRequests[forConn]; !ok && forConn != 0 {
+	if _, ok := t.streamRequests[forConn]; !ok && forConn != 0 {
 		// No outstanding requests for this connection, which means it is logically
 		// done. This is a sequencing violation from the server, so we should report
 		// a side-channel error here. Put the message on the general queue to avoid
@@ -538,9 +538,9 @@ func (t *StreamableServerTransport) Write(ctx context.Context, msg JSONRPCMessag
 	})
 	if replyTo.IsValid() {
 		// Once we've put the reply on the queue, it's no longer outstanding.
-		delete(t.outstandingRequests[forConn], replyTo)
-		if len(t.outstandingRequests[forConn]) == 0 {
-			delete(t.outstandingRequests, forConn)
+		delete(t.streamRequests[forConn], replyTo)
+		if len(t.streamRequests[forConn]) == 0 {
+			delete(t.streamRequests, forConn)
 		}
 	}
 
@@ -554,7 +554,7 @@ func (t *StreamableServerTransport) Write(ctx context.Context, msg JSONRPCMessag
 	return nil
 }
 
-// Close implements the [Stream] interface.
+// Close implements the [Connection] interface.
 func (t *StreamableServerTransport) Close() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -582,14 +582,14 @@ func NewStreamableClientTransport(url string) *StreamableClientTransport {
 
 // Connect implements the [Transport] interface.
 //
-// The resulting Stream writes messages via POST requests to the transport URL
-// with the Mcp-Session-Id header set, and reads messages from hanging
-// requests.
+// The resulting [Connection] writes messages via POST requests to the
+// transport URL with the Mcp-Session-Id header set, and reads messages from
+// hanging requests.
 //
-// When closed, the stream issues a DELETE request to terminate the logical
+// When closed, the connection issues a DELETE request to terminate the logical
 // session.
-func (t *StreamableClientTransport) Connect(ctx context.Context) (Stream, error) {
-	return &streamableClientStream{
+func (t *StreamableClientTransport) Connect(ctx context.Context) (Connection, error) {
+	return &streamableClientConn{
 		url:      t.url,
 		client:   http.DefaultClient,
 		incoming: make(chan []byte, 100),
@@ -597,7 +597,7 @@ func (t *StreamableClientTransport) Connect(ctx context.Context) (Stream, error)
 	}, nil
 }
 
-type streamableClientStream struct {
+type streamableClientConn struct {
 	url       string
 	sessionID string
 	client    *http.Client
@@ -612,8 +612,8 @@ type streamableClientStream struct {
 	err error
 }
 
-// Read implements the [Stream] interface.
-func (s *streamableClientStream) Read(ctx context.Context) (jsonrpc2.Message, error) {
+// Read implements the [Connection] interface.
+func (s *streamableClientConn) Read(ctx context.Context) (jsonrpc2.Message, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -624,8 +624,8 @@ func (s *streamableClientStream) Read(ctx context.Context) (jsonrpc2.Message, er
 	}
 }
 
-// Write implements the [Stream] interface.
-func (s *streamableClientStream) Write(ctx context.Context, msg jsonrpc2.Message) error {
+// Write implements the [Connection] interface.
+func (s *streamableClientConn) Write(ctx context.Context, msg jsonrpc2.Message) error {
 	s.mu.Lock()
 	if s.err != nil {
 		s.mu.Unlock()
@@ -661,7 +661,7 @@ func (s *streamableClientStream) Write(ctx context.Context, msg jsonrpc2.Message
 	return nil
 }
 
-func (s *streamableClientStream) postMessage(ctx context.Context, sessionID string, msg JSONRPCMessage) (string, error) {
+func (s *streamableClientConn) postMessage(ctx context.Context, sessionID string, msg JSONRPCMessage) (string, error) {
 	data, err := jsonrpc2.EncodeMessage(msg)
 	if err != nil {
 		return "", err
@@ -697,7 +697,7 @@ func (s *streamableClientStream) postMessage(ctx context.Context, sessionID stri
 	return sessionID, nil
 }
 
-func (s *streamableClientStream) handleSSE(resp *http.Response) {
+func (s *streamableClientConn) handleSSE(resp *http.Response) {
 	defer resp.Body.Close()
 
 	done := make(chan struct{})
@@ -718,8 +718,8 @@ func (s *streamableClientStream) handleSSE(resp *http.Response) {
 	}
 }
 
-// Close implements the [Stream] interface.
-func (s *streamableClientStream) Close() error {
+// Close implements the [Connection] interface.
+func (s *streamableClientConn) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.done)
 

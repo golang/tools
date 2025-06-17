@@ -597,8 +597,8 @@ func TestBatching(t *testing.T) {
 	c := NewClient("testClient", "v1.0.0", nil)
 	// TODO: this test is broken, because increasing the batch size here causes
 	// 'initialize' to block. Therefore, we can only test with a size of 1.
+	// Since batching is being removed, we can probably just delete this.
 	const batchSize = 1
-	BatchSize(ct, batchSize)
 	cs, err := c.Connect(ctx, ct)
 	if err != nil {
 		t.Fatal(err)

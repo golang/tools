@@ -12,16 +12,6 @@ import (
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
 )
 
-// BatchSize causes a transport to collect n requests or notifications before
-// sending a batch on the wire (responses are always sent in isolation).
-//
-// Exported for testing in the mcp_test package.
-func BatchSize(t Transport, n int) {
-	if st, ok := t.(*ioStream); ok {
-		st.outgoingBatch = make([]jsonrpc2.Message, 0, n)
-	}
-}
-
 func TestBatchFraming(t *testing.T) {
 	// This test checks that the ndjsonFramer can read and write JSON batches.
 	//
@@ -31,7 +21,7 @@ func TestBatchFraming(t *testing.T) {
 	ctx := context.Background()
 
 	r, w := io.Pipe()
-	tport := newIOStream(rwc{r, w})
+	tport := newIOConn(rwc{r, w})
 	tport.outgoingBatch = make([]jsonrpc2.Message, 0, 2)
 
 	// Read the two messages into a channel, for easy testing later.

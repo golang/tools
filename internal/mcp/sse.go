@@ -104,7 +104,7 @@ func NewSSEHandler(getServer func(request *http.Request) *Server) *SSEHandler {
 // A SSEServerTransport is a logical SSE session created through a hanging GET
 // request.
 //
-// When connected, it returns the following [Stream] implementation:
+// When connected, it returns the following [Connection] implementation:
 //   - Writes are SSE 'message' events to the GET response.
 //   - Reads are received from POSTs to the session endpoint, via
 //     [SSEServerTransport.ServeHTTP].
@@ -120,7 +120,7 @@ type SSEServerTransport struct {
 	mu     sync.Mutex
 	w      http.ResponseWriter // the hanging response body
 	closed bool                // set when the stream is closed
-	done   chan struct{}       // closed when the stream is closed
+	done   chan struct{}       // closed when the connection is closed
 }
 
 // NewSSEServerTransport creates a new SSE transport for the given messages
@@ -168,8 +168,8 @@ func (t *SSEServerTransport) ServeHTTP(w http.ResponseWriter, req *http.Request)
 }
 
 // Connect sends the 'endpoint' event to the client.
-// See [SSEServerTransport] for more details on the [Stream] implementation.
-func (t *SSEServerTransport) Connect(context.Context) (Stream, error) {
+// See [SSEServerTransport] for more details on the [Connection] implementation.
+func (t *SSEServerTransport) Connect(context.Context) (Connection, error) {
 	t.mu.Lock()
 	_, err := writeEvent(t.w, event{
 		name: "endpoint",
@@ -179,7 +179,7 @@ func (t *SSEServerTransport) Connect(context.Context) (Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sseServerStream{t}, nil
+	return sseServerConn{t}, nil
 }
 
 func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -257,14 +257,14 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// sseServerStream implements the Stream interface for a single [SSEServerTransport].
-// It hides the Stream interface from the SSEServerTransport API.
-type sseServerStream struct {
+// sseServerConn implements the [Connection] interface for a single [SSEServerTransport].
+// It hides the Connection interface from the SSEServerTransport API.
+type sseServerConn struct {
 	t *SSEServerTransport
 }
 
 // Read implements jsonrpc2.Reader.
-func (s sseServerStream) Read(ctx context.Context) (jsonrpc2.Message, error) {
+func (s sseServerConn) Read(ctx context.Context) (jsonrpc2.Message, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -276,7 +276,7 @@ func (s sseServerStream) Read(ctx context.Context) (jsonrpc2.Message, error) {
 }
 
 // Write implements jsonrpc2.Writer.
-func (s sseServerStream) Write(ctx context.Context, msg jsonrpc2.Message) error {
+func (s sseServerConn) Write(ctx context.Context, msg jsonrpc2.Message) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -305,7 +305,7 @@ func (s sseServerStream) Write(ctx context.Context, msg jsonrpc2.Message) error 
 // It must be safe to call Close more than once, as the close may
 // asynchronously be initiated by either the server closing its connection, or
 // by the hanging GET exiting.
-func (s sseServerStream) Close() error {
+func (s sseServerConn) Close() error {
 	s.t.mu.Lock()
 	defer s.t.mu.Unlock()
 	if !s.t.closed {
@@ -339,7 +339,7 @@ func NewSSEClientTransport(baseURL string) *SSEClientTransport {
 }
 
 // Connect connects through the client endpoint.
-func (c *SSEClientTransport) Connect(ctx context.Context) (Stream, error) {
+func (c *SSEClientTransport) Connect(ctx context.Context) (Connection, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.sseEndpoint.String(), nil)
 	if err != nil {
 		return nil, err
@@ -370,7 +370,7 @@ func (c *SSEClientTransport) Connect(ctx context.Context) (Stream, error) {
 	}
 
 	// From here on, the stream takes ownership of resp.Body.
-	s := &sseClientStream{
+	s := &sseClientConn{
 		sseEndpoint: c.sseEndpoint,
 		msgEndpoint: msgEndpoint,
 		incoming:    make(chan []byte, 100),
@@ -485,12 +485,12 @@ func scanEvents(r io.Reader) iter.Seq2[event, error] {
 	}
 }
 
-// An sseClientStream is a logical jsonrpc2 stream that implements the client
+// An sseClientConn is a logical jsonrpc2 connection that implements the client
 // half of the SSE protocol:
 //   - Writes are POSTS to the session endpoint.
 //   - Reads are SSE 'message' events, and pushes them onto a buffered channel.
 //   - Close terminates the GET request.
-type sseClientStream struct {
+type sseClientConn struct {
 	sseEndpoint *url.URL    // SSE endpoint for the GET
 	msgEndpoint *url.URL    // session endpoint for POSTs
 	incoming    chan []byte // queue of incoming messages
@@ -501,13 +501,13 @@ type sseClientStream struct {
 	done   chan struct{} // closed when the stream is closed
 }
 
-func (c *sseClientStream) isDone() bool {
+func (c *sseClientConn) isDone() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closed
 }
 
-func (c *sseClientStream) Read(ctx context.Context) (jsonrpc2.Message, error) {
+func (c *sseClientConn) Read(ctx context.Context) (jsonrpc2.Message, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -528,7 +528,7 @@ func (c *sseClientStream) Read(ctx context.Context) (jsonrpc2.Message, error) {
 	}
 }
 
-func (c *sseClientStream) Write(ctx context.Context, msg jsonrpc2.Message) error {
+func (c *sseClientConn) Write(ctx context.Context, msg jsonrpc2.Message) error {
 	data, err := jsonrpc2.EncodeMessage(msg)
 	if err != nil {
 		return err
@@ -552,7 +552,7 @@ func (c *sseClientStream) Write(ctx context.Context, msg jsonrpc2.Message) error
 	return nil
 }
 
-func (c *sseClientStream) Close() error {
+func (c *sseClientConn) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.closed {

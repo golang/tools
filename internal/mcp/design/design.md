@@ -44,7 +44,7 @@ The JSON-RPC implementation is hidden, to avoid tight coupling. As described in 
 
 ### JSON-RPC and Transports
 
-The MCP is defined in terms of client-server communication over bidirectional JSON-RPC message streams. Specifically, version `2025-03-26` of the spec defines two transports:
+The MCP is defined in terms of client-server communication over bidirectional JSON-RPC message connections. Specifically, version `2025-03-26` of the spec defines two transports:
 
 - **stdio**: communication with a subprocess over stdin/stdout.
 - **streamable http**: communication over a relatively complicated series of text/event-stream GET and HTTP POST requests.
@@ -55,7 +55,7 @@ Additionally, version `2024-11-05` of the spec defined a simpler (yet stateful) 
 
 Furthermore, the spec [states](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#custom-transports) that it must be possible for users to define their own custom transports.
 
-Given the diversity of the transport implementations, they can be challenging to abstract. However, since JSON-RPC requires a bidirectional stream, we can use this to model the MCP transport abstraction:
+Given the diversity of the transport implementations, they can be challenging to abstract. However, since JSON-RPC requires a bidirectional connection, we can use this to model the MCP transport abstraction:
 
 ```go
 type (
@@ -68,11 +68,11 @@ type (
 // A Transport is used to create a bidirectional connection between MCP client
 // and server.
 type Transport interface {
-    Connect(ctx context.Context) (Stream, error)
+    Connect(ctx context.Context) (Connection, error)
 }
 
-// A Stream is a bidirectional jsonrpc2 Stream.
-type Stream interface {
+// A Connection is a bidirectional jsonrpc2 connection.
+type Connection interface {
     Read(ctx context.Context) (JSONRPCMessage, error)
     Write(ctx context.Context, JSONRPCMessage) error
     Close() error
@@ -81,9 +81,9 @@ type Stream interface {
 
 Methods accept a Go `Context` and return an `error`, as is idiomatic for APIs that do I/O.
 
-A `Transport` is something that connects a logical JSON-RPC stream, and nothing more. Streams must be closeable in order to implement client and server shutdown, and therefore conform to the `io.Closer` interface.
+A `Transport` is something that connects a logical JSON-RPC connection, and nothing more. Connections must be closeable in order to implement client and server shutdown, and therefore conform to the `io.Closer` interface.
 
-Other SDKs define higher-level transports, with, for example, methods to send a notification or make a call. Those are jsonrpc2 operations on top of the logical stream, and the lower-level interface is easier to implement in most cases, which means it is easier to implement custom transports.
+Other SDKs define higher-level transports, with, for example, methods to send a notification or make a call. Those are jsonrpc2 operations on top of the logical connection, and the lower-level interface is easier to implement in most cases, which means it is easier to implement custom transports.
 
 For our prototype, we've used an internal `jsonrpc2` package based on the Go language server `gopls`, which we propose to fork for the MCP SDK. It already handles concerns like client/server connection, request lifecycle, cancellation, and shutdown.
 
@@ -95,7 +95,7 @@ The `Transport` interface here is lower-level than that of mcp-go, but serves a 
 
 In the MCP Spec, the **stdio** transport uses newline-delimited JSON to communicate over stdin/stdout. It's possible to model both client side and server side of this communication with a shared type that communicates over an `io.ReadWriteCloser`. However, for the purposes of future-proofing, we should use a different types for client and server stdio transport.
 
-The `CommandTransport` is the client side of the stdio transport, and connects by starting a command and binding its jsonrpc2 stream to its stdin/stdout.
+The `CommandTransport` is the client side of the stdio transport, and connects by starting a command and streaming JSON-RPC messages over stdin/stdout.
 
 ```go
 // A CommandTransport is a [Transport] that runs a command and communicates
@@ -107,7 +107,7 @@ type CommandTransport struct { /* unexported fields */ }
 func NewCommandTransport(cmd *exec.Command) *CommandTransport
 
 // Connect starts the command, and connects to it over stdin/stdout.
-func (*CommandTransport) Connect(ctx context.Context) (Stream, error) {
+func (*CommandTransport) Connect(ctx context.Context) (Connection, error) {
 ```
 
 The `StdIOTransport` is the server side of the stdio transport, and connects by binding to `os.Stdin` and `os.Stdout`.
@@ -119,7 +119,7 @@ type StdIOTransport struct { /* unexported fields */ }
 
 func NewStdIOTransport() *StdIOTransport
 
-func (t *StdIOTransport) Connect(context.Context) (Stream, error)
+func (t *StdIOTransport) Connect(context.Context) (Connection, error)
 ```
 
 #### HTTP transports
@@ -154,7 +154,7 @@ By default, the SSE handler creates messages endpoints with the `?sessionId=...`
 // A SSEServerTransport is a logical SSE session created through a hanging GET
 // request.
 //
-// When connected, it returns the following [Stream] implementation:
+// When connected, it returns the following [Connection] implementation:
 //   - Writes are SSE 'message' events to the GET response.
 //   - Reads are received from POSTs to the session endpoint, via
 //     [SSEServerTransport.ServeHTTP].
@@ -178,8 +178,8 @@ func NewSSEServerTransport(endpoint string, w http.ResponseWriter) *SSEServerTra
 func (*SSEServerTransport) ServeHTTP(w http.ResponseWriter, req *http.Request)
 
 // Connect sends the 'endpoint' event to the client.
-// See [SSEServerTransport] for more details on the [Stream] implementation.
-func (*SSEServerTransport) Connect(context.Context) (Stream, error)
+// See [SSEServerTransport] for more details on the [Connection] implementation.
+func (*SSEServerTransport) Connect(context.Context) (Connection, error)
 ```
 
 The SSE client transport is simpler, and hopefully self-explanatory.
@@ -192,7 +192,7 @@ type SSEClientTransport struct { /* ... */ }
 func NewSSEClientTransport(url string) (*SSEClientTransport, error) {
 
 // Connect connects through the client endpoint.
-func (*SSEClientTransport) Connect(ctx context.Context) (Stream, error)
+func (*SSEClientTransport) Connect(ctx context.Context) (Connection, error)
 ```
 
 The Streamable HTTP transports are similar to the SSE transport, albeit with a
@@ -213,12 +213,12 @@ func (*StreamableHTTPHandler) Close() error
 type StreamableServerTransport struct { /* ... */ }
 func NewStreamableServerTransport(sessionID string) *StreamableServerTransport
 func (*StreamableServerTransport) ServeHTTP(w http.ResponseWriter, req *http.Request)
-func (*StreamableServerTransport) Connect(context.Context) (Stream, error)
+func (*StreamableServerTransport) Connect(context.Context) (Connection, error)
 
 // The streamable client handles reconnection transparently to the user.
 type StreamableClientTransport struct { /* ... */ }
 func NewStreamableClientTransport(url string) *StreamableClientTransport {
-func (*StreamableClientTransport) Connect(context.Context) (Stream, error)
+func (*StreamableClientTransport) Connect(context.Context) (Connection, error)
 ```
 
 **Differences from mcp-go**: In mcp-go, server authors create an `MCPServer`, populate it with tools, resources and so on, and then wrap it in an `SSEServer` or `StdioServer`. Users can manage their own sessions with `RegisterSession` and `UnregisterSession`. Rather than use a server constructor to get a distinct server for each connection, there is a concept of a "session tool" that overlays tools for a specific session.

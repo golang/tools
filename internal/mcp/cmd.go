@@ -29,7 +29,7 @@ func NewCommandTransport(cmd *exec.Cmd) *CommandTransport {
 }
 
 // Connect starts the command, and connects to it over stdin/stdout.
-func (t *CommandTransport) Connect(ctx context.Context) (Stream, error) {
+func (t *CommandTransport) Connect(ctx context.Context) (Connection, error) {
 	stdout, err := t.cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func (t *CommandTransport) Connect(ctx context.Context) (Stream, error) {
 	if err := t.cmd.Start(); err != nil {
 		return nil, err
 	}
-	return newIOStream(&pipeRWC{t.cmd, stdout, stdin}), nil
+	return newIOConn(&pipeRWC{t.cmd, stdout, stdin}), nil
 }
 
 // A pipeRWC is an io.ReadWriteCloser that communicates with a subprocess over
