@@ -359,7 +359,7 @@ A server that can handle that client call would look like this:
 ```go
 // Create a server with a single tool.
 server := mcp.NewServer("greeter", "v1.0.0", nil)
-server.AddTools(mcp.NewTool("greet", "say hi", SayHi))
+server.AddTools(mcp.NewServerTool("greet", "say hi", SayHi))
 // Run the server over stdin/stdout, until the client disconnects.
 transport := mcp.NewStdIOTransport()
 session, err := server.Connect(ctx, transport)
@@ -588,7 +588,7 @@ type ClientOptions struct {
 
 A `Tool` is a logical MCP tool, generated from the MCP spec, and a `ServerTool` is a tool bound to a tool handler.
 
-A tool handler accepts `CallToolParams` and returns a `CallToolResult`. However, since we want to bind tools to Go input types, it is convenient in associated APIs to make `CallToolParams` generic, with a type parameter `TArgs` for the tool argument type. This allows tool APIs to manage the marshalling and unmarshalling of tool inputs for their caller. The bound `ServerTool` type expects a `json.RawMessage` for its tool arguments, but the `NewTool` constructor described below provides a mechanism to bind a typed handler.
+A tool handler accepts `CallToolParams` and returns a `CallToolResult`. However, since we want to bind tools to Go input types, it is convenient in associated APIs to make `CallToolParams` generic, with a type parameter `TArgs` for the tool argument type. This allows tool APIs to manage the marshalling and unmarshalling of tool inputs for their caller. The bound `ServerTool` type expects a `json.RawMessage` for its tool arguments, but the `NewServerTool` constructor described below provides a mechanism to bind a typed handler.
 
 ```go
 type CallToolParams[TArgs any] struct {
@@ -616,8 +616,8 @@ Add tools to a server with `AddTools`:
 
 ```go
 server.AddTools(
-  mcp.NewTool("add", "add numbers", addHandler),
-  mcp.NewTool("subtract, subtract numbers", subHandler))
+  mcp.NewServerTool("add", "add numbers", addHandler),
+  mcp.NewServerTool("subtract, subtract numbers", subHandler))
 ```
 
 Remove them by name with `RemoveTools`:
@@ -633,16 +633,16 @@ A tool's input schema, expressed as a [JSON Schema](https://json-schema.org), pr
 
 Both of these have their advantages and disadvantages. Reflection is nice, because it allows you to bind directly to a Go API, and means that the JSON schema of your API is compatible with your Go types by construction. It also means that concerns like parsing and validation can be handled automatically. However, it can become cumbersome to express the full breadth of JSON schema using Go types or struct tags, and sometimes you want to express things that aren’t naturally modeled by Go types, like unions. Explicit schemas are simple and readable, and give the caller full control over their tool definition, but involve significant boilerplate.
 
-We have found that a hybrid model works well, where the _initial_ schema is derived using reflection, but any customization on top of that schema is applied using variadic options. We achieve this using a `NewTool` helper, which generates the schema from the input type, and wraps the handler to provide parsing and validation. The schema (and potentially other features) can be customized using ToolOptions.
+We have found that a hybrid model works well, where the _initial_ schema is derived using reflection, but any customization on top of that schema is applied using variadic options. We achieve this using a `NewServerTool` helper, which generates the schema from the input type, and wraps the handler to provide parsing and validation. The schema (and potentially other features) can be customized using ToolOptions.
 
 ```go
-// NewTool creates a Tool using reflection on the given handler.
-func NewTool[TArgs any](name, description string, handler ToolHandler[TArgs], opts …ToolOption) *ServerTool
+// NewServerTool creates a Tool using reflection on the given handler.
+func NewServerTool[TArgs any](name, description string, handler ToolHandler[TArgs], opts …ToolOption) *ServerTool
 
 type ToolOption interface { /* ... */ }
 ```
 
-`NewTool` determines the input schema for a Tool from the `TArgs` type. Each struct field that would be marshaled by `encoding/json.Marshal` becomes a property of the schema. The property is required unless the field's `json` tag specifies "omitempty" or "omitzero" (new in Go 1.24). For example, given this struct:
+`NewServerTool` determines the input schema for a Tool from the `TArgs` type. Each struct field that would be marshaled by `encoding/json.Marshal` becomes a property of the schema. The property is required unless the field's `json` tag specifies "omitempty" or "omitzero" (new in Go 1.24). For example, given this struct:
 
 ```go
 struct {
@@ -668,14 +668,14 @@ type Description(desc string) SchemaOption
 For example:
 
 ```go
-NewTool(name, description, handler,
+NewServerTool(name, description, handler,
     Input(Property("count", Description("size of the inventory"))))
 ```
 
 The most recent JSON Schema spec defines over 40 keywords. Providing them all as options would bloat the API despite the fact that most would be very rarely used. For less common keywords, use the `Schema` option to set the schema explicitly:
 
 ```go
-NewTool(name, description, handler,
+NewServerTool(name, description, handler,
     Input(Property("Choices", Schema(&jsonschema.Schema{UniqueItems: true}))))
 ```
 
@@ -693,7 +693,7 @@ func CallTool[TArgs any](context.Context, *ClientSession, *CallToolParams[TArgs]
 
 **Differences from mcp-go**: using variadic options to configure tools was significantly inspired by mcp-go. However, the distinction between `ToolOption` and `SchemaOption` allows for recursive application of schema options. For example, that limitation is visible in [this code](https://github.com/DCjanus/dida365-mcp-server/blob/master/cmd/mcp/tools.go#L315), which must resort to untyped maps to express a nested schema.
 
-Additionally, the `NewTool` helper provides a means for building a tool from a Go function using reflection, that automatically handles parsing and validation of inputs.
+Additionally, the `NewServerTool` helper provides a means for building a tool from a Go function using reflection, that automatically handles parsing and validation of inputs.
 
 We provide a full JSON Schema implementation for validating tool input schemas against incoming arguments. The `jsonschema.Schema` type provides exported features for all keywords in the JSON Schema draft2020-12 spec. Tool definers can use it to construct any schema they want, so there is no need to provide options for all of them. When combined with schema inference from input structs, we found that we needed only three options to cover the common cases, instead of mcp-go's 23. For example, we will provide `Enum`, which occurs 125 times in open source code, but not MinItems, MinLength or MinProperties, which each occur only once (and in an SDK that wraps mcp-go).
 
@@ -701,10 +701,10 @@ For registering tools, we provide only `AddTools`; mcp-go's `SetTools`, `AddTool
 
 ### Prompts
 
-Use `NewPrompt` to create a prompt. As with tools, prompt argument schemas can be inferred from a struct, or obtained from options.
+Use `NewServerPrompt` to create a prompt. As with tools, prompt argument schemas can be inferred from a struct, or obtained from options.
 
 ```go
-func NewPrompt[TReq any](name, description string,
+func NewServerPrompt[TReq any](name, description string,
   handler func(context.Context, *ServerSession, TReq) (*GetPromptResult, error),
   opts ...PromptOption) *ServerPrompt
 ```
@@ -720,7 +720,7 @@ type codeReviewArgs struct {
 func codeReviewHandler(context.Context, *ServerSession, codeReviewArgs) {...}
 
 server.AddPrompts(
-  NewPrompt("code_review", "review code", codeReviewHandler,
+  NewServerPrompt("code_review", "review code", codeReviewHandler,
     Argument("code", Description("the code to review"))))
 
 server.RemovePrompts("code_review")
@@ -728,7 +728,7 @@ server.RemovePrompts("code_review")
 
 Client sessions can call the spec method `ListPrompts` or the iterator method `Prompts` to list the available prompts, and the spec method `GetPrompt` to get one.
 
-**Differences from mcp-go**: We provide a `NewPrompt` helper to bind a prompt handler to a Go function using reflection to derive its arguments. We provide `RemovePrompts` to remove prompts from the server.
+**Differences from mcp-go**: We provide a `NewServerPrompt` helper to bind a prompt handler to a Go function using reflection to derive its arguments. We provide `RemovePrompts` to remove prompts from the server.
 
 ### Resources and resource templates
 

@@ -29,7 +29,7 @@ func ExampleServer() {
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 
 	server := mcp.NewServer("greeter", "v0.0.1", nil)
-	server.AddTools(mcp.NewTool("greet", "say hi", SayHi))
+	server.AddTools(mcp.NewServerTool("greet", "say hi", SayHi))
 
 	serverSession, err := server.Connect(ctx, serverTransport)
 	if err != nil {

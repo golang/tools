@@ -12,26 +12,26 @@ import (
 	"golang.org/x/tools/internal/mcp"
 )
 
-// testPromptHandler is used for type inference in TestNewPrompt.
+// testPromptHandler is used for type inference in TestNewServerPrompt.
 func testPromptHandler[T any](context.Context, *mcp.ServerSession, T, *mcp.GetPromptParams) (*mcp.GetPromptResult, error) {
 	panic("not implemented")
 }
 
-func TestNewPrompt(t *testing.T) {
+func TestNewServerPrompt(t *testing.T) {
 	tests := []struct {
 		prompt *mcp.ServerPrompt
 		want   []*mcp.PromptArgument
 	}{
 		{
-			mcp.NewPrompt("empty", "", testPromptHandler[struct{}]),
+			mcp.NewServerPrompt("empty", "", testPromptHandler[struct{}]),
 			nil,
 		},
 		{
-			mcp.NewPrompt("add_arg", "", testPromptHandler[struct{}], mcp.Argument("x")),
+			mcp.NewServerPrompt("add_arg", "", testPromptHandler[struct{}], mcp.Argument("x")),
 			[]*mcp.PromptArgument{{Name: "x"}},
 		},
 		{
-			mcp.NewPrompt("combo", "", testPromptHandler[struct {
+			mcp.NewServerPrompt("combo", "", testPromptHandler[struct {
 				Name    string `json:"name"`
 				Country string `json:"country,omitempty"`
 				State   string
@@ -47,7 +47,7 @@ func TestNewPrompt(t *testing.T) {
 	}
 	for _, test := range tests {
 		if diff := cmp.Diff(test.want, test.prompt.Prompt.Arguments); diff != "" {
-			t.Errorf("NewPrompt(%v) mismatch (-want +got):\n%s", test.prompt.Prompt.Name, diff)
+			t.Errorf("NewServerPrompt(%v) mismatch (-want +got):\n%s", test.prompt.Prompt.Name, diff)
 		}
 	}
 }

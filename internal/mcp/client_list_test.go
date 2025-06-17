@@ -22,9 +22,9 @@ func TestList(t *testing.T) {
 	defer serverSession.Close()
 
 	t.Run("tools", func(t *testing.T) {
-		toolA := mcp.NewTool("apple", "apple tool", SayHi)
-		toolB := mcp.NewTool("banana", "banana tool", SayHi)
-		toolC := mcp.NewTool("cherry", "cherry tool", SayHi)
+		toolA := mcp.NewServerTool("apple", "apple tool", SayHi)
+		toolB := mcp.NewServerTool("banana", "banana tool", SayHi)
+		toolC := mcp.NewServerTool("cherry", "cherry tool", SayHi)
 		tools := []*mcp.ServerTool{toolA, toolB, toolC}
 		wantTools := []*mcp.Tool{toolA.Tool, toolB.Tool, toolC.Tool}
 		server.AddTools(tools...)
@@ -88,9 +88,9 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("prompts", func(t *testing.T) {
-		promptA := mcp.NewPrompt("apple", "apple prompt", testPromptHandler[struct{}])
-		promptB := mcp.NewPrompt("banana", "banana prompt", testPromptHandler[struct{}])
-		promptC := mcp.NewPrompt("cherry", "cherry prompt", testPromptHandler[struct{}])
+		promptA := mcp.NewServerPrompt("apple", "apple prompt", testPromptHandler[struct{}])
+		promptB := mcp.NewServerPrompt("banana", "banana prompt", testPromptHandler[struct{}])
+		promptC := mcp.NewServerPrompt("cherry", "cherry prompt", testPromptHandler[struct{}])
 		wantPrompts := []*mcp.Prompt{promptA.Prompt, promptB.Prompt, promptC.Prompt}
 		prompts := []*mcp.ServerPrompt{promptA, promptB, promptC}
 		server.AddPrompts(prompts...)

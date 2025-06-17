@@ -30,30 +30,30 @@ type rawToolHandler = func(context.Context, *ServerSession, *CallToolParamsFor[j
 type ServerTool struct {
 	Tool    *Tool
 	Handler ToolHandler
-	// Set in NewTool or Server.AddToolsErr.
+	// Set in NewServerTool or Server.AddToolsErr.
 	rawHandler rawToolHandler
 	// Resolved tool schemas. Set in Server.AddToolsErr.
 	inputResolved, outputResolved *jsonschema.Resolved
 }
 
-// NewTool is a helper to make a tool using reflection on the given type parameters.
-// When the tool is called, CallToolParams.Arguments will be of type TReq.
+// NewServerTool is a helper to make a tool using reflection on the given type parameters.
+// When the tool is called, CallToolParams.Arguments will be of type In.
 //
 // If provided, variadic [ToolOption] values may be used to customize the tool.
 //
 // The input schema for the tool is extracted from the request type for the
 // handler, and used to unmmarshal and validate requests to the handler. This
 // schema may be customized using the [Input] option.
-func NewTool[In, Out any](name, description string, handler ToolHandlerFor[In, Out], opts ...ToolOption) *ServerTool {
-	st, err := newToolErr[In, Out](name, description, handler, opts...)
+func NewServerTool[In, Out any](name, description string, handler ToolHandlerFor[In, Out], opts ...ToolOption) *ServerTool {
+	st, err := newServerToolErr[In, Out](name, description, handler, opts...)
 	if err != nil {
-		panic(fmt.Errorf("NewTool(%q): %w", name, err))
+		panic(fmt.Errorf("NewServerTool(%q): %w", name, err))
 	}
 	return st
 }
 
-func newToolErr[In, Out any](name, description string, handler ToolHandlerFor[In, Out], opts ...ToolOption) (*ServerTool, error) {
-	// TODO: check that TReq is a struct.
+func newServerToolErr[In, Out any](name, description string, handler ToolHandlerFor[In, Out], opts ...ToolOption) (*ServerTool, error) {
+	// TODO: check that In is a struct.
 	ischema, err := jsonschema.For[In]()
 	if err != nil {
 		return nil, err
@@ -106,7 +106,7 @@ func newToolErr[In, Out any](name, description string, handler ToolHandlerFor[In
 	return t, nil
 }
 
-// newRawHandler creates a rawToolHandler for tools not created through NewTool.
+// newRawHandler creates a rawToolHandler for tools not created through NewServerTool.
 // It unmarshals the arguments into a map[string]any and validates them against the
 // schema, then calls the ServerTool's handler.
 func newRawHandler(st *ServerTool) rawToolHandler {

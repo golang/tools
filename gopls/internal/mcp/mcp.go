@@ -123,7 +123,7 @@ func newServer(session *cache.Session) *mcp.Server {
 	s := mcp.NewServer("golang", "v0.1", nil)
 
 	s.AddTools(
-		mcp.NewTool(
+		mcp.NewServerTool(
 			"context",
 			"Provide context for a region within a Go file",
 			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParamsFor[ContextParams]) (*mcp.CallToolResultFor[struct{}], error) {

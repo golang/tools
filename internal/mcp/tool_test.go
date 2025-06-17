@@ -15,18 +15,18 @@ import (
 	"golang.org/x/tools/internal/mcp/jsonschema"
 )
 
-// testToolHandler is used for type inference in TestNewTool.
+// testToolHandler is used for type inference in TestNewServerTool.
 func testToolHandler[T any](context.Context, *ServerSession, *CallToolParamsFor[T]) (*CallToolResultFor[any], error) {
 	panic("not implemented")
 }
 
-func TestNewTool(t *testing.T) {
+func TestNewServerTool(t *testing.T) {
 	tests := []struct {
 		tool *ServerTool
 		want *jsonschema.Schema
 	}{
 		{
-			NewTool("basic", "", testToolHandler[struct {
+			NewServerTool("basic", "", testToolHandler[struct {
 				Name string `json:"name"`
 			}]),
 			&jsonschema.Schema{
@@ -39,7 +39,7 @@ func TestNewTool(t *testing.T) {
 			},
 		},
 		{
-			NewTool("enum", "", testToolHandler[struct{ Name string }], Input(
+			NewServerTool("enum", "", testToolHandler[struct{ Name string }], Input(
 				Property("Name", Enum("x", "y", "z")),
 			)),
 			&jsonschema.Schema{
@@ -52,7 +52,7 @@ func TestNewTool(t *testing.T) {
 			},
 		},
 		{
-			NewTool("required", "", testToolHandler[struct {
+			NewServerTool("required", "", testToolHandler[struct {
 				Name     string `json:"name"`
 				Language string `json:"language"`
 				X        int    `json:"x,omitempty"`
@@ -72,7 +72,7 @@ func TestNewTool(t *testing.T) {
 			},
 		},
 		{
-			NewTool("set_schema", "", testToolHandler[struct {
+			NewServerTool("set_schema", "", testToolHandler[struct {
 				X int `json:"x,omitempty"`
 				Y int `json:"y,omitempty"`
 			}], Input(
@@ -85,7 +85,7 @@ func TestNewTool(t *testing.T) {
 	}
 	for _, test := range tests {
 		if diff := cmp.Diff(test.want, test.tool.Tool.InputSchema, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
-			t.Errorf("NewTool(%v) mismatch (-want +got):\n%s", test.tool.Tool.Name, diff)
+			t.Errorf("NewServerTool(%v) mismatch (-want +got):\n%s", test.tool.Tool.Name, diff)
 		}
 	}
 }

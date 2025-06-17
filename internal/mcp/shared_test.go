@@ -71,8 +71,8 @@ func roundTrip[T any](t *testing.T, v T) T {
 }
 
 // TODO(jba): this shouldn't be in this file, but tool_test.go doesn't have access to unexported symbols.
-func TestNewToolValidate(t *testing.T) {
-	// Check that the tool returned from NewTool properly validates its input schema.
+func TestNewServerToolValidate(t *testing.T) {
+	// Check that the tool returned from NewServerTool properly validates its input schema.
 
 	type req struct {
 		I int
@@ -85,7 +85,7 @@ func TestNewToolValidate(t *testing.T) {
 		return nil, nil
 	}
 
-	tool := NewTool("test", "test", dummyHandler)
+	tool := NewServerTool("test", "test", dummyHandler)
 	// Need to add the tool to a server to get resolved schemas.
 	// s := NewServer("", "", nil)
 

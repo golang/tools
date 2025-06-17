@@ -35,10 +35,10 @@ func main() {
 	}
 
 	server1 := mcp.NewServer("greeter1", "v0.0.1", nil)
-	server1.AddTools(mcp.NewTool("greet1", "say hi", SayHi))
+	server1.AddTools(mcp.NewServerTool("greet1", "say hi", SayHi))
 
 	server2 := mcp.NewServer("greeter2", "v0.0.1", nil)
-	server2.AddTools(mcp.NewTool("greet2", "say hello", SayHi))
+	server2.AddTools(mcp.NewServerTool("greet2", "say hello", SayHi))
 
 	log.Printf("MCP servers serving at %s\n", *httpAddr)
 	handler := mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {

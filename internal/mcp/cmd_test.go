@@ -31,7 +31,7 @@ func runServer() {
 	ctx := context.Background()
 
 	server := mcp.NewServer("greeter", "v0.0.1", nil)
-	server.AddTools(mcp.NewTool("greet", "say hi", SayHi))
+	server.AddTools(mcp.NewServerTool("greet", "say hi", SayHi))
 
 	if err := server.Run(ctx, mcp.NewStdIOTransport()); err != nil {
 		log.Fatal(err)

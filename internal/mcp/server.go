@@ -116,7 +116,6 @@ func (s *Server) RemovePrompts(names ...string) {
 // The arguments must not be modified after this call.
 //
 // AddTools panics if errors are detected.
-// Call [AddToolsErr] to obtain an error instead.
 func (s *Server) AddTools(tools ...*ServerTool) {
 	if err := s.addToolsErr(tools...); err != nil {
 		panic(err)
@@ -132,7 +131,7 @@ func (s *Server) addToolsErr(tools ...*ServerTool) error {
 	// Wrap the user's Handlers with rawHandlers that take a json.RawMessage.
 	for _, st := range tools {
 		if st.rawHandler == nil {
-			// This ServerTool was not created with NewTool.
+			// This ServerTool was not created with NewServerTool.
 			if st.Handler == nil {
 				return fmt.Errorf("AddTools: tool %q has no handler", st.Tool.Name)
 			}

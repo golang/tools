@@ -24,7 +24,8 @@ type ServerPrompt struct {
 	Handler PromptHandler
 }
 
-// NewPrompt is a helper that uses reflection to create a prompt for the given handler.
+// NewServerPrompt is a helper that uses reflection to create a prompt for the
+// given handler.
 //
 // The arguments for the prompt are extracted from the request type for the
 // handler. The handler request type must be a struct consisting only of fields
@@ -32,9 +33,10 @@ type ServerPrompt struct {
 // definition correspond to the JSON names of the request fields, and any
 // fields that are not marked "omitempty" are considered required.
 //
-// The handler is passed [GetPromptParams] so it can have access to prompt parameters other than name and arguments.
-// At present, there are no such parameters.
-func NewPrompt[In any](name, description string, handler func(context.Context, *ServerSession, In, *GetPromptParams) (*GetPromptResult, error), opts ...PromptOption) *ServerPrompt {
+// The handler is passed [GetPromptParams] so it can have access to prompt
+// parameters other than name and arguments. At present, there are no such
+// parameters.
+func NewServerPrompt[In any](name, description string, handler func(context.Context, *ServerSession, In, *GetPromptParams) (*GetPromptResult, error), opts ...PromptOption) *ServerPrompt {
 	schema, err := jsonschema.For[In]()
 	if err != nil {
 		panic(err)
