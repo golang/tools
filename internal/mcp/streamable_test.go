@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,13 +34,35 @@ func TestStreamableTransports(t *testing.T) {
 	server := NewServer("testServer", "v1.0.0", nil)
 	server.AddTools(NewServerTool("greet", "say hi", sayHi))
 
-	// 2. Start an httptest.Server with the StreamableHTTPHandler.
+	// 2. Start an httptest.Server with the StreamableHTTPHandler, wrapped in a
+	// cookie-checking middleware.
 	handler := NewStreamableHTTPHandler(func(req *http.Request) *Server { return server }, nil)
-	httpServer := httptest.NewServer(handler)
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("test-cookie")
+		if err != nil {
+			t.Errorf("missing cookie: %v", err)
+		} else if cookie.Value != "test-value" {
+			t.Errorf("got cookie %q, want %q", cookie.Value, "test-value")
+		}
+		handler.ServeHTTP(w, r)
+	}))
 	defer httpServer.Close()
 
 	// 3. Create a client and connect it to the server using our StreamableClientTransport.
-	transport := NewStreamableClientTransport(httpServer.URL)
+	// Check that all requests honor a custom client.
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(httpServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jar.SetCookies(u, []*http.Cookie{{Name: "test-cookie", Value: "test-value"}})
+	httpClient := &http.Client{Jar: jar}
+	transport := NewStreamableClientTransport(httpServer.URL, &StreamableClientTransportOptions{
+		HTTPClient: httpClient,
+	})
 	client := NewClient("testClient", "v1.0.0", nil)
 	session, err := client.Connect(ctx, transport)
 	if err != nil {

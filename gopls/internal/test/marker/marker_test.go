@@ -1014,7 +1014,7 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 	var mcpSession *mcp.ClientSession
 	if enableMCP {
 		client := mcp.NewClient("test", "v1.0.0", nil)
-		mcpSession, err = client.Connect(ctx, mcp.NewSSEClientTransport(mcpServer.URL))
+		mcpSession, err = client.Connect(ctx, mcp.NewSSEClientTransport(mcpServer.URL, nil))
 		if err != nil {
 			t.Fatalf("fail to connect to mcp server: %v", err)
 		}

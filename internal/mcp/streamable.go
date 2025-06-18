@@ -571,13 +571,26 @@ func (t *StreamableServerTransport) Close() error {
 //
 // TODO(rfindley): support retries and resumption tokens.
 type StreamableClientTransport struct {
-	url string
+	url  string
+	opts StreamableClientTransportOptions
+}
+
+// StreamableClientTransportOptions provides options for the
+// [NewStreamableClientTransport] constructor.
+type StreamableClientTransportOptions struct {
+	// HTTPClient is the client to use for making HTTP requests. If nil,
+	// http.DefaultClient is used.
+	HTTPClient *http.Client
 }
 
 // NewStreamableClientTransport returns a new client transport that connects to
 // the streamable HTTP server at the provided URL.
-func NewStreamableClientTransport(url string) *StreamableClientTransport {
-	return &StreamableClientTransport{url: url}
+func NewStreamableClientTransport(url string, opts *StreamableClientTransportOptions) *StreamableClientTransport {
+	t := &StreamableClientTransport{url: url}
+	if opts != nil {
+		t.opts = *opts
+	}
+	return t
 }
 
 // Connect implements the [Transport] interface.
@@ -589,9 +602,13 @@ func NewStreamableClientTransport(url string) *StreamableClientTransport {
 // When closed, the connection issues a DELETE request to terminate the logical
 // session.
 func (t *StreamableClientTransport) Connect(ctx context.Context) (Connection, error) {
+	client := t.opts.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
 	return &streamableClientConn{
 		url:      t.url,
-		client:   http.DefaultClient,
+		client:   client,
 		incoming: make(chan []byte, 100),
 		done:     make(chan struct{}),
 	}, nil

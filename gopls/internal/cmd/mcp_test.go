@@ -132,7 +132,7 @@ func MyFun() {}
 		t.Logf("failed %d, trying again", i)
 		time.Sleep(50 * time.Millisecond << i) // retry with exponential backoff
 	}
-	serverConn, err := client.Connect(ctx, mcp.NewSSEClientTransport("http://"+addr))
+	serverConn, err := client.Connect(ctx, mcp.NewSSEClientTransport("http://"+addr, nil))
 	if err != nil {
 		// This shouldn't happen because we already waited for the http server to start listening.
 		t.Fatalf("connecting to server: %v", err)

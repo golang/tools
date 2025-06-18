@@ -187,9 +187,17 @@ The SSE client transport is simpler, and hopefully self-explanatory.
 ```go
 type SSEClientTransport struct { /* ... */ }
 
+// SSEClientTransportOptions provides options for the [NewSSEClientTransport]
+// constructor.
+type SSEClientTransportOptions struct {
+	// HTTPClient is the client to use for making HTTP requests. If nil,
+	// http.DefaultClient is used.
+	HTTPClient *http.Client
+}
+
 // NewSSEClientTransport returns a new client transport that connects to the
 // SSE server at the provided URL.
-func NewSSEClientTransport(url string) (*SSEClientTransport, error) {
+func NewSSEClientTransport(url string, opts *SSEClientTransportOptions) (*SSEClientTransport, error)
 
 // Connect connects through the client endpoint.
 func (*SSEClientTransport) Connect(ctx context.Context) (Connection, error)
@@ -217,7 +225,16 @@ func (*StreamableServerTransport) Connect(context.Context) (Connection, error)
 
 // The streamable client handles reconnection transparently to the user.
 type StreamableClientTransport struct { /* ... */ }
-func NewStreamableClientTransport(url string) *StreamableClientTransport {
+
+// StreamableClientTransportOptions provides options for the
+// [NewStreamableClientTransport] constructor.
+type StreamableClientTransportOptions struct {
+	// HTTPClient is the client to use for making HTTP requests. If nil,
+	// http.DefaultClient is used.
+	HTTPClient *http.Client
+}
+
+func NewStreamableClientTransport(url string, opts *StreamableClientTransportOptions) *StreamableClientTransport
 func (*StreamableClientTransport) Connect(context.Context) (Connection, error)
 ```
 

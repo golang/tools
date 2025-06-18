@@ -34,7 +34,7 @@ func TestSSEServer(t *testing.T) {
 			httpServer := httptest.NewServer(sseHandler)
 			defer httpServer.Close()
 
-			clientTransport := NewSSEClientTransport(httpServer.URL)
+			clientTransport := NewSSEClientTransport(httpServer.URL, nil)
 
 			c := NewClient("testClient", "v1.0.0", nil)
 			cs, err := c.Connect(ctx, clientTransport)

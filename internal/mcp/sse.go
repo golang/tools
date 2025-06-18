@@ -322,20 +322,33 @@ func (s sseServerConn) Close() error {
 // https://modelcontextprotocol.io/specification/2024-11-05/basic/transports
 type SSEClientTransport struct {
 	sseEndpoint *url.URL
+	opts        SSEClientTransportOptions
+}
+
+// SSEClientTransportOptions provides options for the [NewSSEClientTransport]
+// constructor.
+type SSEClientTransportOptions struct {
+	// HTTPClient is the client to use for making HTTP requests. If nil,
+	// http.DefaultClient is used.
+	HTTPClient *http.Client
 }
 
 // NewSSEClientTransport returns a new client transport that connects to the
 // SSE server at the provided URL.
 //
 // NewSSEClientTransport panics if the given URL is invalid.
-func NewSSEClientTransport(baseURL string) *SSEClientTransport {
+func NewSSEClientTransport(baseURL string, opts *SSEClientTransportOptions) *SSEClientTransport {
 	url, err := url.Parse(baseURL)
 	if err != nil {
 		panic(fmt.Sprintf("invalid base url: %v", err))
 	}
-	return &SSEClientTransport{
+	t := &SSEClientTransport{
 		sseEndpoint: url,
 	}
+	if opts != nil {
+		t.opts = *opts
+	}
+	return t
 }
 
 // Connect connects through the client endpoint.
@@ -344,8 +357,12 @@ func (c *SSEClientTransport) Connect(ctx context.Context) (Connection, error) {
 	if err != nil {
 		return nil, err
 	}
+	httpClient := c.opts.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
 	req.Header.Set("Accept", "text/event-stream")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
