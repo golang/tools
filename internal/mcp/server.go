@@ -634,9 +634,16 @@ func (ss *ServerSession) initialize(ctx context.Context, params *InitializeParam
 		ss.mu.Unlock()
 	}()
 
+	version := "2025-03-26" // preferred version
+	switch v := params.ProtocolVersion; v {
+	case "2024-11-05", "2025-03-26":
+		version = v
+	}
+
 	return &InitializeResult{
-		// TODO(rfindley): support multiple protocol versions.
-		ProtocolVersion: "2024-11-05",
+		// TODO(rfindley): alter behavior when falling back to an older version:
+		// reject unsupported features.
+		ProtocolVersion: version,
 		Capabilities: &serverCapabilities{
 			Prompts: &promptCapabilities{
 				ListChanged: true,

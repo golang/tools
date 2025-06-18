@@ -122,7 +122,7 @@ func TestStreamableServerTransport(t *testing.T) {
 			Resources: &resourceCapabilities{ListChanged: true},
 			Tools:     &toolCapabilities{ListChanged: true},
 		},
-		ProtocolVersion: "2024-11-05",
+		ProtocolVersion: "2025-03-26",
 		ServerInfo:      &implementation{Name: "testServer", Version: "v1.0.0"},
 	}, nil)
 	initializedMsg := req(0, "initialized", &InitializedParams{})

@@ -101,9 +101,13 @@ func (c *Client) Connect(ctx context.Context, t Transport) (cs *ClientSession, e
 	}
 
 	params := &InitializeParams{
-		ClientInfo:   &implementation{Name: c.name, Version: c.version},
-		Capabilities: caps,
+		ClientInfo:      &implementation{Name: c.name, Version: c.version},
+		Capabilities:    caps,
+		ProtocolVersion: "2025-03-26",
 	}
+	// TODO(rfindley): handle protocol negotiation gracefully. If the server
+	// responds with 2024-11-05, surface that failure to the caller of connect,
+	// so that they can choose a different transport.
 	res, err := handleSend[*InitializeResult](ctx, cs, methodInitialize, params)
 	if err != nil {
 		_ = cs.Close()
