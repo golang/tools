@@ -153,7 +153,7 @@ func newServer(session *cache.Session) *mcp.Server {
 				),
 			),
 		),
-		mcp.NewTool(
+		mcp.NewServerTool(
 			"diagnostics",
 			"Provide diagnostics for a region within a Go file",
 			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParamsFor[DiagnosticsParams]) (*mcp.CallToolResultFor[struct{}], error) {
