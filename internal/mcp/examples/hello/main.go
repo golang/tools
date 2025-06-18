@@ -32,11 +32,11 @@ func SayHi(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParam
 
 // TODO(jba): it should be OK for args to be a pointer, but this fails in
 // jsonschema. Needs investigation.
-func PromptHi(ctx context.Context, ss *mcp.ServerSession, args HiArgs, params *mcp.GetPromptParams) (*mcp.GetPromptResult, error) {
+func PromptHi(ctx context.Context, ss *mcp.ServerSession, args HiArgs, _ *mcp.GetPromptParams) (*mcp.GetPromptResult, error) {
 	return &mcp.GetPromptResult{
 		Description: "Code review prompt",
 		Messages: []*mcp.PromptMessage{
-			{Role: "user", Content: mcp.NewTextContent("Say hi to " + params.Name)},
+			{Role: "user", Content: mcp.NewTextContent("Say hi to " + args.Name)},
 		},
 	}, nil
 }

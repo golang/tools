@@ -75,11 +75,11 @@ func NewServerPrompt[In any](name, description string, handler func(context.Cont
 		if err != nil {
 			return nil, err
 		}
-		var v In
-		if err := unmarshalSchema(rawArgs, resolved, &v); err != nil {
+		var args In
+		if err := unmarshalSchema(rawArgs, resolved, &args); err != nil {
 			return nil, err
 		}
-		return handler(ctx, ss, v, params)
+		return handler(ctx, ss, args, params)
 	}
 	for _, opt := range opts {
 		opt.set(prompt)
