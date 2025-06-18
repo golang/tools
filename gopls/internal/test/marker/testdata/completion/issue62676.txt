@@ -53,7 +53,7 @@ import "os"
 
 func _() {
 	// This uses goimports-based completion; TODO: this should insert snippets.
-	os.Open(${1:}) //@acceptcompletion(re"Open()", "Open", open)
+	os.Open //@acceptcompletion(re"Open()", "Open", open)
 }
 
 func _() {
