@@ -120,7 +120,6 @@ func TestClientPaginateBasic(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			listFunc := func(ctx context.Context, params *ListTestParams) (*ListTestResult, error) {
 				if len(tc.results) == 0 {

@@ -101,8 +101,7 @@ info.txt
 {
 	"jsonrpc": "2.0",
 	"id": 1,
-	"method": "roots/list",
-	"params": null
+	"method": "roots/list"
 }
 {
 	"jsonrpc": "2.0",

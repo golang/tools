@@ -167,7 +167,7 @@ func (c *Client) RemoveRoots(uris ...string) {
 		func() bool { return c.roots.remove(uris...) })
 }
 
-// changeAndNotify is called when a feature is added or removed.
+// changeAndNotifyClient is called when a feature is added or removed.
 // It calls change, which should do the work and report whether a change actually occurred.
 // If there was a change, it notifies a snapshot of the sessions.
 func (c *Client) changeAndNotify(notification string, params Params, change func() bool) {
@@ -184,8 +184,12 @@ func (c *Client) changeAndNotify(notification string, params Params, change func
 func (c *Client) listRoots(_ context.Context, _ *ClientSession, _ *ListRootsParams) (*ListRootsResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	roots := slices.Collect(c.roots.all())
+	if roots == nil {
+		roots = []*Root{} // avoid JSON null
+	}
 	return &ListRootsResult{
-		Roots: slices.Collect(c.roots.all()),
+		Roots: roots,
 	}, nil
 }
 
@@ -272,28 +276,31 @@ func (*ClientSession) ping(context.Context, *PingParams) (*emptyResult, error) {
 
 // Ping makes an MCP "ping" request to the server.
 func (cs *ClientSession) Ping(ctx context.Context, params *PingParams) error {
-	_, err := handleSend[*emptyResult](ctx, cs, methodPing, params)
+	_, err := handleSend[*emptyResult](ctx, cs, methodPing, orZero[Params](params))
 	return err
 }
 
 // ListPrompts lists prompts that are currently available on the server.
 func (cs *ClientSession) ListPrompts(ctx context.Context, params *ListPromptsParams) (*ListPromptsResult, error) {
-	return handleSend[*ListPromptsResult](ctx, cs, methodListPrompts, params)
+	return handleSend[*ListPromptsResult](ctx, cs, methodListPrompts, orZero[Params](params))
 }
 
 // GetPrompt gets a prompt from the server.
 func (cs *ClientSession) GetPrompt(ctx context.Context, params *GetPromptParams) (*GetPromptResult, error) {
-	return handleSend[*GetPromptResult](ctx, cs, methodGetPrompt, params)
+	return handleSend[*GetPromptResult](ctx, cs, methodGetPrompt, orZero[Params](params))
 }
 
 // ListTools lists tools that are currently available on the server.
 func (cs *ClientSession) ListTools(ctx context.Context, params *ListToolsParams) (*ListToolsResult, error) {
-	return handleSend[*ListToolsResult](ctx, cs, methodListTools, params)
+	return handleSend[*ListToolsResult](ctx, cs, methodListTools, orZero[Params](params))
 }
 
 // CallTool calls the tool with the given name and arguments.
 // The arguments can be any value that marshals into a JSON object.
 func (cs *ClientSession) CallTool(ctx context.Context, params *CallToolParams) (*CallToolResult, error) {
+	if params == nil {
+		params = new(CallToolParams)
+	}
 	if params.Arguments == nil {
 		// Avoid sending nil over the wire.
 		params.Arguments = map[string]any{}
@@ -302,23 +309,23 @@ func (cs *ClientSession) CallTool(ctx context.Context, params *CallToolParams) (
 }
 
 func (cs *ClientSession) SetLevel(ctx context.Context, params *SetLevelParams) error {
-	_, err := handleSend[*emptyResult](ctx, cs, methodSetLevel, params)
+	_, err := handleSend[*emptyResult](ctx, cs, methodSetLevel, orZero[Params](params))
 	return err
 }
 
 // ListResources lists the resources that are currently available on the server.
 func (cs *ClientSession) ListResources(ctx context.Context, params *ListResourcesParams) (*ListResourcesResult, error) {
-	return handleSend[*ListResourcesResult](ctx, cs, methodListResources, params)
+	return handleSend[*ListResourcesResult](ctx, cs, methodListResources, orZero[Params](params))
 }
 
 // ListResourceTemplates lists the resource templates that are currently available on the server.
 func (cs *ClientSession) ListResourceTemplates(ctx context.Context, params *ListResourceTemplatesParams) (*ListResourceTemplatesResult, error) {
-	return handleSend[*ListResourceTemplatesResult](ctx, cs, methodListResourceTemplates, params)
+	return handleSend[*ListResourceTemplatesResult](ctx, cs, methodListResourceTemplates, orZero[Params](params))
 }
 
 // ReadResource ask the server to read a resource and return its contents.
 func (cs *ClientSession) ReadResource(ctx context.Context, params *ReadResourceParams) (*ReadResourceResult, error) {
-	return handleSend[*ReadResourceResult](ctx, cs, methodReadResource, params)
+	return handleSend[*ReadResourceResult](ctx, cs, methodReadResource, orZero[Params](params))
 }
 
 func (c *Client) callToolChangedHandler(ctx context.Context, s *ClientSession, params *ToolListChangedParams) (Result, error) {

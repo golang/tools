@@ -25,8 +25,7 @@ import (
 // A MethodHandler handles MCP messages.
 // For methods, exactly one of the return values must be nil.
 // For notifications, both must be nil.
-type MethodHandler[S Session] func(
-	ctx context.Context, _ S, method string, params Params) (result Result, err error)
+type MethodHandler[S Session] func(ctx context.Context, _ S, method string, params Params) (result Result, err error)
 
 // A methodHandler is a MethodHandler[Session] for some session.
 // We need to give up type safety here, or we will end up with a type cycle somewhere
@@ -71,6 +70,15 @@ func defaultSendingMethodHandler[S Session](ctx context.Context, session S, meth
 		return nil, err
 	}
 	return res, nil
+}
+
+// Helper methods to avoid typed nil.
+func orZero[T any, P *U, U any](p P) T {
+	if p == nil {
+		var zero T
+		return zero
+	}
+	return any(p).(T)
 }
 
 func handleNotify[S Session](ctx context.Context, session S, method string, params Params) error {
@@ -141,8 +149,13 @@ type methodInfo struct {
 // A typedMethodHandler is like a MethodHandler, but with type information.
 type typedMethodHandler[S Session, P Params, R Result] func(context.Context, S, P) (R, error)
 
+type paramsPtr[T any] interface {
+	*T
+	Params
+}
+
 // newMethodInfo creates a methodInfo from a typedMethodHandler.
-func newMethodInfo[S Session, P Params, R Result](d typedMethodHandler[S, P, R]) methodInfo {
+func newMethodInfo[S Session, P paramsPtr[T], R Result, T any](d typedMethodHandler[S, P, R]) methodInfo {
 	return methodInfo{
 		unmarshalParams: func(m json.RawMessage) (Params, error) {
 			var p P
@@ -151,9 +164,12 @@ func newMethodInfo[S Session, P Params, R Result](d typedMethodHandler[S, P, R])
 					return nil, fmt.Errorf("unmarshaling %q into a %T: %w", m, p, err)
 				}
 			}
-			return p, nil
+			return orZero[Params](p), nil
 		},
 		handleMethod: MethodHandler[S](func(ctx context.Context, session S, _ string, params Params) (Result, error) {
+			if params == nil {
+				return d(ctx, session, nil)
+			}
 			return d(ctx, session, params.(P))
 		}),
 		// newResult is used on the send side, to construct the value to unmarshal the result into.

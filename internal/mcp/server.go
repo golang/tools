@@ -501,12 +501,12 @@ func (ss *ServerSession) Ping(ctx context.Context, params *PingParams) error {
 
 // ListRoots lists the client roots.
 func (ss *ServerSession) ListRoots(ctx context.Context, params *ListRootsParams) (*ListRootsResult, error) {
-	return handleSend[*ListRootsResult](ctx, ss, methodListRoots, params)
+	return handleSend[*ListRootsResult](ctx, ss, methodListRoots, orZero[Params](params))
 }
 
 // CreateMessage sends a sampling request to the client.
 func (ss *ServerSession) CreateMessage(ctx context.Context, params *CreateMessageParams) (*CreateMessageResult, error) {
-	return handleSend[*CreateMessageResult](ctx, ss, methodCreateMessage, params)
+	return handleSend[*CreateMessageResult](ctx, ss, methodCreateMessage, orZero[Params](params))
 }
 
 // LoggingMessage sends a logging message to the client.
