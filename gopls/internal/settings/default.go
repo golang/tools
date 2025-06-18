@@ -39,7 +39,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 				DynamicWatchedFilesSupported:               true,
 				LineFoldingOnly:                            false,
 				HierarchicalDocumentSymbolSupport:          true,
-				ImportsSource:                              ImportsSourceGopls,
+				ImportsSource:                              ImportsSourceGoimports,
 			},
 			ServerOptions: ServerOptions{
 				SupportedCodeActions: map[file.Kind]map[protocol.CodeActionKind]bool{
