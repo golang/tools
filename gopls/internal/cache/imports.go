@@ -7,8 +7,8 @@ package cache
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
-	"testing"
 	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
@@ -150,66 +150,55 @@ func newImportsState(backgroundCtx context.Context, modCache *sharedModCache, en
 
 // modcacheState holds a modindex.Index and controls its updates
 type modcacheState struct {
-	dir          string // GOMODCACHE
+	gomodcache   string
 	refreshTimer *refreshTimer
-	mu           sync.Mutex
-	index        *modindex.Index
+
+	// (index, indexErr) is zero in the initial state.
+	// Thereafter they hold the memoized result pair for getIndex.
+	mu       sync.Mutex
+	index    *modindex.Index
+	indexErr error
 }
 
 // newModcacheState constructs a new modcacheState for goimports.
 // The returned state is automatically updated until [modcacheState.stopTimer] is called.
-func newModcacheState(dir string) *modcacheState {
+func newModcacheState(gomodcache string) *modcacheState {
 	s := &modcacheState{
-		dir: dir,
+		gomodcache: gomodcache,
 	}
-	s.index, _ = modindex.ReadIndex(dir)
 	s.refreshTimer = newRefreshTimer(s.refreshIndex)
 	go s.refreshIndex()
 	return s
 }
 
-// getIndex reads the module cache index. It might not exist yet
-// inside tests. It might contain no Entries if the cache
-// is empty.
+// getIndex reads the module cache index.
 func (s *modcacheState) getIndex() (*modindex.Index, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ix := s.index
-	if ix == nil || len(ix.Entries) == 0 {
-		var err error
-		// this should only happen near the beginning of a session
-		// (or in tests)
-		ix, err = modindex.ReadIndex(s.dir)
-		if err != nil {
-			return nil, fmt.Errorf("ReadIndex %w", err)
-		}
-		if !testing.Testing() {
-			return ix, nil
-		}
-		if ix == nil || len(ix.Entries) == 0 {
-			err = modindex.Create(s.dir)
-			if err != nil {
-				return nil, fmt.Errorf("creating index %w", err)
-			}
-			ix, err = modindex.ReadIndex(s.dir)
-			if err != nil {
-				return nil, fmt.Errorf("read index after create %w", err)
-			}
-			s.index = ix
-		}
+
+	if s.index == nil && s.indexErr == nil {
+		// getIndex was called before refreshIndex finished.
+		// Read, but don't update, whatever index is present.
+		s.index, s.indexErr = modindex.Read(s.gomodcache)
 	}
-	return s.index, nil
+
+	return s.index, s.indexErr
 }
 
 func (s *modcacheState) refreshIndex() {
-	ok, err := modindex.Update(s.dir)
-	if err != nil || !ok {
-		return
-	}
-	// read the new index
+	index, err := modindex.Update(s.gomodcache)
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.index, _ = modindex.ReadIndex(s.dir)
+	if err != nil {
+		if s.indexErr != nil {
+			s.indexErr = err // prefer most recent error
+		} else {
+			// Keep using stale s.index (if any).
+			log.Printf("modcacheState.refreshIndex: %v", err)
+		}
+	} else {
+		s.index, s.indexErr = index, nil // success
+	}
+	s.mu.Unlock()
 }
 
 func (s *modcacheState) stopTimer() {

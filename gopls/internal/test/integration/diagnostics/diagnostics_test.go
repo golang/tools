@@ -681,7 +681,7 @@ var ErrHelpWanted error
 `
 
 // Test for golang/go#38211.
-func Test_Issue38211(t *testing.T) {
+func Test_issue38211(t *testing.T) {
 	const ardanLabs = `
 -- go.mod --
 module mod.com
@@ -696,46 +696,89 @@ func main() {
 	_ = conf.ErrHelpWanted
 }
 `
-	WithOptions(
+
+	modcache := t.TempDir()
+	defer CleanModCache(t, modcache)
+
+	opts := []RunOption{
+		EnvVars{"GOMODCACHE": modcache},
 		ProxyFiles(ardanLabsProxy),
-	).Run(t, ardanLabs, func(t *testing.T, env *Env) {
-		// Expect a diagnostic with a suggested fix to add
-		// "github.com/ardanlabs/conf" to the go.mod file.
+		//WriteGoSum("."), // TODO(golang/go#74594): uncommenting this causes mysterious failure; investigate and make the error clearer (go list?)
+	}
+
+	t.Run("setup", func(t *testing.T) {
+		// Forcibly populate GOMODCACHE
+		// so OrganizeImports can later rely on it.
+		WithOptions(opts...).Run(t, ardanLabs, func(t *testing.T, env *Env) {
+			// TODO(adonovan): why doesn't RunGoCommand respect EnvVars??
+			// (That was the motivation to use Sandbox.RunGoCommand
+			// rather than execute go mod download directly!)
+			// See comment at CleanModCache and golang/go#74595.
+			environ := []string{"GOMODCACHE=" + modcache}
+			_, err := env.Sandbox.RunGoCommand(env.Ctx, "", "get", []string{"github.com/ardanlabs/conf@v1.2.3"}, environ, false)
+			if err != nil {
+				t.Error(err)
+			}
+		})
+	})
+
+	WithOptions(opts...).Run(t, ardanLabs, func(t *testing.T, env *Env) {
+		// Expect a "no module provides package" diagnostic.
 		env.OpenFile("go.mod")
 		env.OpenFile("main.go")
 		var d protocol.PublishDiagnosticsParams
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`)),
+			Diagnostics(
+				env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+				WithMessage("no required module provides package")),
 			ReadDiagnostics("main.go", &d),
 		)
+
+		// Apply the suggested fix to make the go.mod file
+		// require "github.com/ardanlabs/conf".
 		env.ApplyQuickFixes("main.go", d.Diagnostics)
 		env.SaveBuffer("go.mod")
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
 		)
-		// Comment out the line that depends on conf and expect a
-		// diagnostic and a fix to remove the import.
+
+		// Comment out the sole use of conf,
+		// causing an "unused import" diagnostic.
 		env.RegexpReplace("main.go", "_ = conf.ErrHelpWanted", "//_ = conf.ErrHelpWanted")
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`)),
+			Diagnostics(
+				env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+				WithMessage("imported and not used")),
 		)
-		env.SaveBuffer("main.go")
-		// Expect a diagnostic and fix to remove the dependency in the go.mod.
+
+		// Remove the import using OrganizeImports, leading
+		// to an "unused require" diagnostic in the go.mod.
+		env.SaveBuffer("main.go") // => OrganizeImports
 		env.AfterChange(
 			NoDiagnostics(ForFile("main.go")),
-			Diagnostics(env.AtRegexp("go.mod", "require github.com/ardanlabs/conf"), WithMessage("not used in this module")),
+			Diagnostics(
+				env.AtRegexp("go.mod", "require github.com/ardanlabs/conf"),
+				WithMessage("not used in this module")),
 			ReadDiagnostics("go.mod", &d),
 		)
+
+		// Apply the suggested fix to remove the "require" directive.
 		env.ApplyQuickFixes("go.mod", d.Diagnostics)
 		env.SaveBuffer("go.mod")
 		env.AfterChange(
 			NoDiagnostics(ForFile("go.mod")),
 		)
-		// Uncomment the lines and expect a new diagnostic for the import.
+
+		// Uncomment the use of the import.
+		// OrganizeImports should add the import.
+		// Expect another "no required module provides package"
+		// diagnostic, bringing us full circle.
 		env.RegexpReplace("main.go", "//_ = conf.ErrHelpWanted", "_ = conf.ErrHelpWanted")
-		env.SaveBuffer("main.go")
+		env.SaveBuffer("main.go") // => OrganizeImports
 		env.AfterChange(
-			Diagnostics(env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`)),
+			Diagnostics(
+				env.AtRegexp("main.go", `"github.com/ardanlabs/conf"`),
+				WithMessage("no required module provides package")),
 		)
 	})
 }

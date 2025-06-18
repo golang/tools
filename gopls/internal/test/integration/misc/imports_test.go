@@ -6,7 +6,6 @@ package misc
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"golang.org/x/tools/gopls/internal/test/compare"
 	. "golang.org/x/tools/gopls/internal/test/integration"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
+	"golang.org/x/tools/internal/modindex"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 )
@@ -230,17 +230,34 @@ import "example.com/x"
 var _, _ = x.X, y.Y
 `
 	modcache := t.TempDir()
-	defer cleanModCache(t, modcache) // see doc comment of cleanModCache
+	defer CleanModCache(t, modcache)
 
-	WithOptions(
+	opts := []RunOption{
 		EnvVars{"GOMODCACHE": modcache},
 		ProxyFiles(exampleProxy),
 		WriteGoSum("."),
-	).Run(t, files, func(t *testing.T, env *Env) {
+	}
+
+	// Force go list to populate GOMODCACHE
+	// so OrganizeImports can later rely on it.
+	t.Run("setup", func(t *testing.T) {
+		WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {})
+	})
+
+	WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {
+		// Expect y is undefined.
 		env.OpenFile("main.go")
-		env.AfterChange(Diagnostics(env.AtRegexp("main.go", `y.Y`)))
-		env.SaveBuffer("main.go")
+		env.AfterChange(
+			Diagnostics(
+				env.AtRegexp("main.go", `y.Y`),
+				WithMessage("undefined")),
+		)
+
+		// Apply suggested fix via OrganizeImports.
+		env.SaveBuffer("main.go") // => OrganizeImports
 		env.AfterChange(NoDiagnostics(ForFile("main.go")))
+
+		// Verify that y.Y is defined within the module cache.
 		loc := env.FirstDefinition(env.RegexpSearch("main.go", `y.(Y)`))
 		path := env.Sandbox.Workdir.URIToPath(loc.URI)
 		if !strings.HasPrefix(path, filepath.ToSlash(modcache)) {
@@ -278,7 +295,7 @@ return nil
 }
 `
 	modcache := t.TempDir()
-	defer cleanModCache(t, modcache)
+	defer CleanModCache(t, modcache)
 	mx := fake.UnpackTxt(cache)
 	for k, v := range mx {
 		fname := filepath.Join(modcache, k)
@@ -328,7 +345,7 @@ return nil
 }
 `
 	modcache := t.TempDir()
-	defer cleanModCache(t, modcache)
+	defer CleanModCache(t, modcache)
 	mx := fake.UnpackTxt(cache)
 	for k, v := range mx {
 		fname := filepath.Join(modcache, k)
@@ -379,7 +396,7 @@ return nil
 }
 `
 	modcache := t.TempDir()
-	defer cleanModCache(t, modcache)
+	defer CleanModCache(t, modcache)
 	mx := fake.UnpackTxt(cache)
 	for k, v := range mx {
 		fname := filepath.Join(modcache, k)
@@ -426,18 +443,16 @@ var _ = strs.Builder
 		}
 	})
 }
-func TestRelativeReplace(t *testing.T) {
+
+func TestIssue67156(t *testing.T) {
 	const files = `
 -- go.mod --
 module mod.com/a
 
 go 1.20
 
-require (
-	example.com   v1.2.3
-)
+require example.com v1.2.3
 
-replace example.com/b => ../b
 -- main.go --
 package main
 
@@ -447,35 +462,37 @@ var _, _ = x.X, y.Y
 `
 	modcache := t.TempDir()
 	base := filepath.Base(modcache)
-	defer cleanModCache(t, modcache) // see doc comment of cleanModCache
+	defer CleanModCache(t, modcache)
 
 	// Construct a very unclean module cache whose length exceeds the length of
 	// the clean directory path, to reproduce the crash in golang/go#67156
 	const sep = string(filepath.Separator)
 	modcache += strings.Repeat(sep+".."+sep+base, 10)
 
-	WithOptions(
+	opts := []RunOption{
 		EnvVars{"GOMODCACHE": modcache},
 		ProxyFiles(exampleProxy),
 		WriteGoSum("."),
-	).Run(t, files, func(t *testing.T, env *Env) {
+	}
+
+	t.Run("setup", func(t *testing.T) {
+		// Force go list to populate GOMODCACHE.
+		WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {})
+
+		// Update module index.
+		if ix, err := modindex.Update(modcache); err != nil {
+			t.Fatalf("failed to obtain updated module index: %v", err)
+		} else if len(ix.Entries) != 2 {
+			t.Fatalf("got %v, want 2 entries", ix)
+		}
+	})
+
+	WithOptions(opts...).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 		env.AfterChange(Diagnostics(env.AtRegexp("main.go", `y.Y`)))
-		env.SaveBuffer("main.go")
+		env.SaveBuffer("main.go") // => OrganizeImports
 		env.AfterChange(NoDiagnostics(ForFile("main.go")))
 	})
-}
-
-// TODO(rfindley): this is only necessary as the module cache cleaning of the
-// sandbox does not respect GOMODCACHE set via EnvVars. We should fix this, but
-// that is probably part of a larger refactoring of the sandbox that I'm not
-// inclined to undertake.
-func cleanModCache(t *testing.T, modcache string) {
-	cmd := exec.Command("go", "clean", "-modcache")
-	cmd.Env = append(os.Environ(), "GOMODCACHE="+modcache, "GOTOOLCHAIN=local")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Errorf("cleaning modcache: %v\noutput:\n%s", err, string(output))
-	}
 }
 
 // Tests golang/go#40685.
@@ -631,7 +648,7 @@ return nil
 var A int
 `
 	modcache := t.TempDir()
-	defer cleanModCache(t, modcache)
+	defer CleanModCache(t, modcache)
 	mx := fake.UnpackTxt(cache)
 	for k, v := range mx {
 		fname := filepath.Join(modcache, k)

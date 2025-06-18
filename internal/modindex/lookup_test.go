@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package modindex
+package modindex_test
 
 import (
 	"fmt"
@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	. "golang.org/x/tools/internal/modindex"
 )
 
 type tdata struct {
@@ -70,10 +72,10 @@ func okresult(r result, p Candidate) bool {
 func TestLookup(t *testing.T) {
 	dir := testModCache(t)
 	wrtData(t, dir, thedata)
-	if _, err := indexModCache(dir, true); err != nil {
+	if _, err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
-	ix, err := ReadIndex(dir)
+	ix, err := Read(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +129,7 @@ func wrtData(t *testing.T, dir string, data tdata) {
 		t.Fatal(err)
 	}
 	defer fd.Close()
-	fd.WriteString(fmt.Sprintf("package %s\n", data.pkg))
+	fmt.Fprintf(fd, "package %s\n", data.pkg)
 	for _, item := range data.items {
 		fd.WriteString(item.code + "\n")
 	}
@@ -158,10 +160,10 @@ func TestLookupAll(t *testing.T) {
 	wrtModule("b.com/go/x3@v1.2.1", "A", "B", "C")
 	wrtModule("c.com/go/x5@v1.3.1", "A", "B", "C", "D", "E")
 
-	if _, err := indexModCache(dir, true); err != nil {
+	if _, err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
-	ix, err := ReadIndex(dir)
+	ix, err := Read(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,14 +185,14 @@ func TestUniquify(t *testing.T) {
 	var v []string
 	for i := 1; i < 4; i++ {
 		v = append(v, "A")
-		w := uniquify(v)
+		w := Uniquify(v)
 		if len(w) != 1 {
 			t.Errorf("got %d, expected 1", len(w))
 		}
 	}
 	for i := 1; i < 3; i++ {
 		v = append(v, "B", "C")
-		w := uniquify(v)
+		w := Uniquify(v)
 		if len(w) != 3 {
 			t.Errorf("got %d, expected 3", len(w))
 		}

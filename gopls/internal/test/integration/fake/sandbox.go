@@ -14,7 +14,6 @@ import (
 
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/robustio"
-	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
 )
 
@@ -202,18 +201,17 @@ func (sb *Sandbox) GOPATH() string {
 // GoEnv returns the default environment variables that can be used for
 // invoking Go commands in the sandbox.
 func (sb *Sandbox) GoEnv() map[string]string {
-	vars := map[string]string{
+	return map[string]string{
 		"GOPATH":           sb.GOPATH(),
 		"GOPROXY":          sb.goproxy,
 		"GO111MODULE":      "",
 		"GOSUMDB":          "off",
 		"GOPACKAGESDRIVER": "off",
 		"GOTOOLCHAIN":      "local", // tests should not download toolchains
+		// TODO(golang/go#74595): Why don't we respect GOMODCACHE in the
+		// settings.env? See comment at env.CleanModCache.
+		"GOMODCACHE": "",
 	}
-	if testenv.Go1Point() >= 5 {
-		vars["GOMODCACHE"] = ""
-	}
-	return vars
 }
 
 // goCommandInvocation returns a new gocommand.Invocation initialized with the
@@ -273,7 +271,8 @@ func (sb *Sandbox) GoVersion(ctx context.Context) (int, error) {
 // Close removes all state associated with the sandbox.
 func (sb *Sandbox) Close() error {
 	var goCleanErr error
-	if sb.gopath != "" {
+	// Careful: sb may not be fully initialized.
+	if sb.gopath != "" && sb.Workdir != nil {
 		// Important: run this command in RootDir so that it doesn't interact with
 		// any toolchain downloads that may occur
 		_, goCleanErr = sb.RunGoCommand(context.Background(), sb.RootDir(), "clean", []string{"-modcache"}, nil, false)

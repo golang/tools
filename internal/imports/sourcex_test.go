@@ -57,13 +57,14 @@ func newpkgs(cachedir string, pks ...*tpkg) error {
 		for _, s := range p.syms {
 			fmt.Fprintf(fd, "func %s() {}\n", s)
 		}
-		fd.Close()
+		if err := fd.Close(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func TestSource(t *testing.T) {
-
 	dirs := testDirs(t)
 	if err := newpkgs(dirs.cachedir, &foo, &foobar); err != nil {
 		t.Fatal(err)
@@ -102,6 +103,8 @@ func testDirs(t *testing.T) dirs {
 	if err := os.MkdirAll(x.cachedir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(x.rootdir, 0755)
+	if err := os.MkdirAll(x.rootdir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	return x
 }

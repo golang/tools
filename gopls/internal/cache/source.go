@@ -21,7 +21,7 @@ import (
 // goplsSource is an imports.Source that provides import information using
 // gopls and the module cache index.
 type goplsSource struct {
-	S         *Snapshot
+	snapshot  *Snapshot
 	envSource *imports.ProcessEnvSource
 
 	// set by each invocation of ResolveReferences
@@ -30,7 +30,7 @@ type goplsSource struct {
 
 func (s *Snapshot) NewGoplsSource(is *imports.ProcessEnvSource) *goplsSource {
 	return &goplsSource{
-		S:         s,
+		snapshot:  s,
 		envSource: is,
 	}
 }
@@ -110,7 +110,7 @@ func (s *goplsSource) ResolveReferences(ctx context.Context, filename string, mi
 
 		dbgpr("fromWS", fromWS)
 		dbgpr("old", old)
-		for k, v := range s.S.workspacePackages.All() {
+		for k, v := range s.snapshot.workspacePackages.All() {
 			log.Printf("workspacePackages[%s]=%s", k, v)
 		}
 		// anything in ans with >1 matches?
@@ -134,7 +134,7 @@ func (s *goplsSource) ResolveReferences(ctx context.Context, filename string, mi
 }
 
 func (s *goplsSource) resolveCacheReferences(missing imports.References) ([]*result, error) {
-	ix, err := s.S.view.ModcacheIndex()
+	ix, err := s.snapshot.view.ModcacheIndex()
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +176,7 @@ type found struct {
 
 func (s *goplsSource) resolveWorkspaceReferences(filename string, missing imports.References) ([]*imports.Result, error) {
 	uri := protocol.URIFromPath(filename)
-	mypkgs, err := s.S.MetadataForFile(s.ctx, uri)
+	mypkgs, err := s.snapshot.MetadataForFile(s.ctx, uri)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func (s *goplsSource) resolveWorkspaceReferences(filename string, missing import
 	}
 	mypkg := mypkgs[0] // narrowest package
 	// search the metadata graph for package ids correstponding to missing
-	g := s.S.MetadataGraph()
+	g := s.snapshot.MetadataGraph()
 	var ids []metadata.PackageID
 	var pkgs []*metadata.Package
 	for pid, pkg := range g.Packages {
@@ -200,7 +200,7 @@ func (s *goplsSource) resolveWorkspaceReferences(filename string, missing import
 	}
 	// find the symbols in those packages
 	// the syms occur in the same order as the ids and the pkgs
-	syms, err := s.S.Symbols(s.ctx, ids...)
+	syms, err := s.snapshot.Symbols(s.ctx, ids...)
 	if err != nil {
 		return nil, err
 	}
@@ -331,12 +331,12 @@ func (s *goplsSource) bestCache(nm string, got []*result) *imports.Result {
 func (s *goplsSource) fromGoMod(got []*result) *imports.Result {
 	// should we use s.S.view.worsspaceModFiles, and the union of their requires?
 	// (note that there are no tests where it contains more than one)
-	modURI := s.S.view.gomod
-	modfh, ok := s.S.files.get(modURI)
+	modURI := s.snapshot.view.gomod
+	modfh, ok := s.snapshot.files.get(modURI)
 	if !ok {
 		return nil
 	}
-	parsed, err := s.S.ParseMod(s.ctx, modfh)
+	parsed, err := s.snapshot.ParseMod(s.ctx, modfh)
 	if err != nil {
 		return nil
 	}

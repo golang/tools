@@ -123,15 +123,12 @@ func findSym(t testing.TB) (pkg, name, gomodcache string) {
 		t.Fatal(err)
 	}
 	modcache := strings.TrimSpace(string(out))
-	ix, err := modindex.ReadIndex(modcache)
+	ix, err := modindex.Read(modcache)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ix == nil {
-		t.Fatal("no index")
-	}
-	if len(ix.Entries) == 0 {
-		t.Fatal("no entries")
+		t.Fatal("nil index")
 	}
 	nth := 100 // or something
 	for _, e := range ix.Entries {

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package modindex
+package modindex_test
 
 import (
 	"os"
@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	. "golang.org/x/tools/internal/modindex"
 )
 
 type id struct {
@@ -52,11 +54,11 @@ func testModCache(t *testing.T) string {
 }
 
 // add a trivial package to the test module cache
-func addPkg(cachedir, dir string) error {
-	if err := os.MkdirAll(filepath.Join(cachedir, dir), 0755); err != nil {
+func addPkg(gomodcache, dir string) error {
+	if err := os.MkdirAll(filepath.Join(gomodcache, dir), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(cachedir, dir, "foo.go"),
+	return os.WriteFile(filepath.Join(gomodcache, dir, "foo.go"),
 		[]byte("package foo\nfunc Foo() {}"), 0644)
 }
 
@@ -74,7 +76,8 @@ func TestIncremental(t *testing.T) {
 			}
 		}
 	}
-	if err := Create(dir); err != nil {
+	index0, err := Create(dir)
+	if err != nil {
 		t.Fatal(err)
 	}
 	// add new stuff to the module cache
@@ -88,25 +91,25 @@ func TestIncremental(t *testing.T) {
 			}
 		}
 	}
-	if ok, err := Update(dir); err != nil {
-		t.Fatal(err)
-	} else if !ok {
-		t.Error("failed to write updated index")
+	if index1, err := Update(dir); err != nil {
+		t.Fatalf("failed to update index: %v", err)
+	} else if len(index1.Entries) <= len(index0.Entries) {
+		t.Fatalf("updated index is not larger: %v", err)
 	}
-	index2, err := ReadIndex(dir)
+	index2, err := Read(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// build a fresh index
-	if err := Create(dir); err != nil {
+	if _, err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
-	index1, err := ReadIndex(dir)
+	index1, err := Read(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// they should be the same except maybe for the time
-	index1.Changed = index2.Changed
+	index1.ValidAt = index2.ValidAt
 	if diff := cmp.Diff(index1, index2); diff != "" {
 		t.Errorf("mismatching indexes (-updated +cleared):\n%s", diff)
 	}
@@ -126,7 +129,7 @@ func TestIncrementalNope(t *testing.T) {
 			}
 		}
 	}
-	if err := Create(dir); err != nil {
+	if _, err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
 	// add new stuff to the module cache
@@ -140,25 +143,20 @@ func TestIncrementalNope(t *testing.T) {
 			}
 		}
 	}
-	if ok, err := Update(dir); err != nil {
-		t.Fatal(err)
-	} else if !ok {
-		t.Error("failed to write updated index")
-	}
-	index2, err := ReadIndex(dir)
+	index2, err := Update(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// build a fresh index
-	if err := Create(dir); err != nil {
+	if _, err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
-	index1, err := ReadIndex(dir)
+	index1, err := Read(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// they should be the same except maybe for the time
-	index1.Changed = index2.Changed
+	index1.ValidAt = index2.ValidAt
 	if diff := cmp.Diff(index1, index2); diff != "" {
 		t.Errorf("mismatching indexes (-updated +cleared):\n%s", diff)
 	}
@@ -176,10 +174,10 @@ func TestDirsSinglePath(t *testing.T) {
 				}
 			}
 			// build and check the index
-			if err := Create(dir); err != nil {
+			if _, err := Create(dir); err != nil {
 				t.Fatal(err)
 			}
-			ix, err := ReadIndex(dir)
+			ix, err := Read(dir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -189,8 +187,9 @@ func TestDirsSinglePath(t *testing.T) {
 			if ix.Entries[0].ImportPath != itest.importPath {
 				t.Fatalf("got %s import path, wanted %s", ix.Entries[0].ImportPath, itest.importPath)
 			}
-			if ix.Entries[0].Dir != Relpath(itest.dirs[itest.best]) {
-				t.Fatalf("got dir %s, wanted %s", ix.Entries[0].Dir, itest.dirs[itest.best])
+			gotDir := filepath.ToSlash(ix.Entries[0].Dir)
+			if gotDir != itest.dirs[itest.best] {
+				t.Fatalf("got dir %s, wanted %s", gotDir, itest.dirs[itest.best])
 			}
 			nms := ix.Entries[0].Names
 			if len(nms) != 1 {
@@ -203,10 +202,10 @@ func TestDirsSinglePath(t *testing.T) {
 	}
 }
 
-func TestMissingCachedir(t *testing.T) {
+func TestMissingGOMODCACHE(t *testing.T) {
 	// behave properly if the cached dir is empty
 	dir := testModCache(t)
-	if err := Create(dir); err != nil {
+	if _, err := Create(dir); err != nil {
 		t.Fatal(err)
 	}
 	des, err := os.ReadDir(IndexDir)
@@ -214,23 +213,21 @@ func TestMissingCachedir(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(des) != 2 {
-		t.Errorf("got %d, butexpected two entries in index dir", len(des))
+		t.Errorf("got %d, but expected two entries in index dir", len(des))
 	}
 }
 
 func TestMissingIndex(t *testing.T) {
 	// behave properly if there is no existing index
 	dir := testModCache(t)
-	if ok, err := Update(dir); err != nil {
+	if _, err := Update(dir); err != nil {
 		t.Fatal(err)
-	} else if !ok {
-		t.Error("Update returned !ok")
 	}
 	des, err := os.ReadDir(IndexDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(des) != 2 {
-		t.Errorf("got %d, butexpected two entries in index dir", len(des))
+		t.Errorf("got %d, but expected two entries in index dir", len(des))
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -377,4 +379,21 @@ func (a *Awaiter) Await(ctx context.Context, expectation Expectation) error {
 func indent(msg string) string {
 	const prefix = "  "
 	return prefix + strings.ReplaceAll(msg, "\n", "\n"+prefix)
+}
+
+// CleanModCache cleans the specified GOMODCACHE.
+//
+// TODO(golang/go#74595): this is only necessary as the module cache cleaning of the
+// sandbox does not respect GOMODCACHE set via EnvVars. We should fix this, but
+// that is probably part of a larger refactoring of the sandbox that I'm not
+// inclined to undertake. --rfindley.
+//
+// (For similar problems caused by the same bug, see Test_issue38211; see also
+// comment in Sandbox.Env.)
+func CleanModCache(t *testing.T, modcache string) {
+	cmd := exec.Command("go", "clean", "-modcache")
+	cmd.Env = append(os.Environ(), "GOMODCACHE="+modcache, "GOTOOLCHAIN=local")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Errorf("cleaning modcache: %v\noutput:\n%s", err, string(output))
+	}
 }

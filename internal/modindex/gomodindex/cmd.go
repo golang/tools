@@ -4,11 +4,11 @@
 
 // A command for building and maintaining the module cache
 // a.out <flags> <command> <args>
-// The commands are 'create' which builds a new index,
+// The commands are:
 // 'update', which attempts to update an existing index,
 // 'query', which looks up things in the index.
 // 'clean', which remove obsolete index files.
-// If the command is invoked with no arguments, it defaults to 'create'.
+// If the command is invoked with no arguments, it defaults to 'update'.
 package main
 
 import (
@@ -34,7 +34,6 @@ type cmd struct {
 }
 
 var cmds = []cmd{
-	{"create", index, "create a clean index of GOMODCACHE"},
 	{"update", update, "if there is an existing index of GOMODCACHE, update it. Otherwise create one."},
 	{"clean", clean, "removed unreferenced indexes more than an hour old"},
 	{"query", query, "not yet implemented"},
@@ -52,17 +51,17 @@ func goEnv(s string) string {
 func main() {
 	flag.Parse()
 	log.SetFlags(log.Lshortfile)
-	cachedir := goEnv("GOMODCACHE")
-	if cachedir == "" {
+	gomodcache := goEnv("GOMODCACHE")
+	if gomodcache == "" {
 		log.Fatal("can't find GOMODCACHE")
 	}
 	if flag.NArg() == 0 {
-		index(cachedir)
+		update(gomodcache)
 		return
 	}
 	for _, c := range cmds {
 		if flag.Arg(0) == c.name {
-			c.f(cachedir)
+			c.f(gomodcache)
 			return
 		}
 	}
@@ -81,17 +80,16 @@ func init() {
 	}
 }
 
-func index(dir string) {
-	modindex.Create(dir)
-}
-
 func update(dir string) {
-	modindex.Update(dir)
+	if _, err := modindex.Update(dir); err != nil {
+		log.Print(err)
+	}
 }
 
 func query(dir string) {
 	panic("implement")
 }
+
 func clean(_ string) {
 	des := modindex.IndexDir
 	// look at the files starting with 'index'

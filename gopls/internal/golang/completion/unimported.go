@@ -224,9 +224,6 @@ func (c *completer) modcacheMatches(pkg metadata.PackageName, prefix string) ([]
 	if err != nil {
 		return nil, err
 	}
-	if ix == nil || len(ix.Entries) == 0 { // in tests ix might always be nil
-		return nil, fmt.Errorf("no index %w", err)
-	}
 	// retrieve everything and let usefulCompletion() and the matcher sort them out
 	cands := ix.Lookup(string(pkg), "", true)
 	lx := len(cands)
