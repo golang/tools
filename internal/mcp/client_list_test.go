@@ -88,9 +88,9 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("prompts", func(t *testing.T) {
-		promptA := mcp.NewServerPrompt("apple", "apple prompt", testPromptHandler[struct{}])
-		promptB := mcp.NewServerPrompt("banana", "banana prompt", testPromptHandler[struct{}])
-		promptC := mcp.NewServerPrompt("cherry", "cherry prompt", testPromptHandler[struct{}])
+		promptA := newServerPrompt("apple", "apple prompt")
+		promptB := newServerPrompt("banana", "banana prompt")
+		promptC := newServerPrompt("cherry", "cherry prompt")
 		wantPrompts := []*mcp.Prompt{promptA.Prompt, promptB.Prompt, promptC.Prompt}
 		prompts := []*mcp.ServerPrompt{promptA, promptB, promptC}
 		server.AddPrompts(prompts...)
@@ -120,5 +120,17 @@ func testIterator[T any](ctx context.Context, t *testing.T, seq iter.Seq2[*T, er
 	}
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// testPromptHandler is used for type inference newServerPrompt.
+func testPromptHandler(context.Context, *mcp.ServerSession, *mcp.GetPromptParams) (*mcp.GetPromptResult, error) {
+	panic("not implemented")
+}
+
+func newServerPrompt(name, desc string) *mcp.ServerPrompt {
+	return &mcp.ServerPrompt{
+		Prompt:  &mcp.Prompt{Name: name, Description: desc},
+		Handler: testPromptHandler,
 	}
 }

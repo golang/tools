@@ -441,18 +441,27 @@ var (
 	}
 
 	prompts = map[string]*ServerPrompt{
-		"code_review": NewServerPrompt("code_review", "do a code review",
-			func(_ context.Context, _ *ServerSession, params struct{ Code string }, _ *GetPromptParams) (*GetPromptResult, error) {
+		"code_review": {
+			Prompt: &Prompt{
+				Name:        "code_review",
+				Description: "do a code review",
+				Arguments:   []*PromptArgument{{Name: "Code", Required: true}},
+			},
+			Handler: func(_ context.Context, _ *ServerSession, params *GetPromptParams) (*GetPromptResult, error) {
 				return &GetPromptResult{
 					Description: "Code review prompt",
 					Messages: []*PromptMessage{
-						{Role: "user", Content: NewTextContent("Please review the following code: " + params.Code)},
+						{Role: "user", Content: NewTextContent("Please review the following code: " + params.Arguments["Code"])},
 					},
 				}, nil
-			}),
-		"fail": NewServerPrompt("fail", "", func(_ context.Context, _ *ServerSession, args struct{}, _ *GetPromptParams) (*GetPromptResult, error) {
-			return nil, errTestFailure
-		}),
+			},
+		},
+		"fail": {
+			Prompt: &Prompt{Name: "fail"},
+			Handler: func(_ context.Context, _ *ServerSession, _ *GetPromptParams) (*GetPromptResult, error) {
+				return nil, errTestFailure
+			},
+		},
 	}
 
 	resource1 = &Resource{
