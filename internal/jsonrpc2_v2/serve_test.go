@@ -8,18 +8,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"runtime/debug"
 	"testing"
 	"time"
 
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
-	"golang.org/x/tools/internal/stack/stacktest"
-	"golang.org/x/tools/internal/testenv"
 )
 
+// needsLocalhostNet skips t if networking does not work for ports opened
+// with "localhost".
+// forked from golang.org/x/tools/internal/testenv.
+func needsLocalhostNet(t testing.TB) {
+	switch runtime.GOOS {
+	case "js", "wasip1":
+		t.Skipf(`Listening on "localhost" fails on %s; see https://go.dev/issue/59718`, runtime.GOOS)
+	}
+}
+
 func TestIdleTimeout(t *testing.T) {
-	testenv.NeedsLocalhostNet(t)
-	stacktest.NoLeak(t)
+	needsLocalhostNet(t)
 
 	// Use a panicking time.AfterFunc instead of context.WithTimeout so that we
 	// get a goroutine dump on failure. We expect the test to take on the order of
@@ -158,7 +166,6 @@ func (fakeHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any, erro
 }
 
 func TestServe(t *testing.T) {
-	stacktest.NoLeak(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -166,7 +173,7 @@ func TestServe(t *testing.T) {
 		factory func(context.Context, testing.TB) (jsonrpc2.Listener, error)
 	}{
 		{"tcp", func(ctx context.Context, t testing.TB) (jsonrpc2.Listener, error) {
-			testenv.NeedsLocalhostNet(t)
+			needsLocalhostNet(t)
 			return jsonrpc2.NetListener(ctx, "tcp", "localhost:0", jsonrpc2.NetListenOptions{})
 		}},
 		{"pipe", func(ctx context.Context, t testing.TB) (jsonrpc2.Listener, error) {

@@ -9,11 +9,11 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"runtime"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/internal/mcp"
-	"golang.org/x/tools/internal/testenv"
 )
 
 const runAsServer = "_MCP_RUN_AS_SERVER"
@@ -39,7 +39,13 @@ func runServer() {
 }
 
 func TestCmdTransport(t *testing.T) {
-	testenv.NeedsExec(t)
+	// Conservatively, limit to major OS where we know that os.Exec is
+	// supported.
+	switch runtime.GOOS {
+	case "darwin", "linux", "windows":
+	default:
+		t.Skip("unsupported OS")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

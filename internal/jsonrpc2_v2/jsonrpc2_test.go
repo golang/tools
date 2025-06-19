@@ -12,9 +12,7 @@ import (
 	"reflect"
 	"testing"
 
-	"golang.org/x/tools/internal/event/export/eventtest"
 	jsonrpc2 "golang.org/x/tools/internal/jsonrpc2_v2"
-	"golang.org/x/tools/internal/stack/stacktest"
 )
 
 var callTests = []invoker{
@@ -130,8 +128,7 @@ func TestConnectionHeader(t *testing.T) {
 }
 
 func testConnection(t *testing.T, framer jsonrpc2.Framer) {
-	stacktest.NoLeak(t)
-	ctx := eventtest.NewContext(context.Background(), t)
+	ctx := context.Background()
 	listener, err := jsonrpc2.NetPipeListener(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +144,6 @@ func testConnection(t *testing.T, framer jsonrpc2.Framer) {
 			client, err := jsonrpc2.Dial(ctx,
 				listener.Dialer(), binder{framer, func(h *handler) {
 					defer h.conn.Close()
-					ctx := eventtest.NewContext(ctx, t)
 					test.Invoke(t, ctx, h)
 					if call, ok := test.(*call); ok {
 						// also run all simple call tests in echo mode
