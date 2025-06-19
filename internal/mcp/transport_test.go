@@ -22,10 +22,10 @@ func TestBatchFraming(t *testing.T) {
 
 	r, w := io.Pipe()
 	tport := newIOConn(rwc{r, w})
-	tport.outgoingBatch = make([]jsonrpc2.Message, 0, 2)
+	tport.outgoingBatch = make([]JSONRPCMessage, 0, 2)
 
 	// Read the two messages into a channel, for easy testing later.
-	read := make(chan jsonrpc2.Message)
+	read := make(chan JSONRPCMessage)
 	go func() {
 		for range 2 {
 			msg, _ := tport.Read(ctx)
@@ -34,7 +34,7 @@ func TestBatchFraming(t *testing.T) {
 	}()
 
 	// The first write should not yet be observed by the reader.
-	tport.Write(ctx, &jsonrpc2.Request{ID: jsonrpc2.Int64ID(1), Method: "test"})
+	tport.Write(ctx, &JSONRPCRequest{ID: jsonrpc2.Int64ID(1), Method: "test"})
 	select {
 	case got := <-read:
 		t.Fatalf("after one write, got message %v", got)
@@ -42,10 +42,10 @@ func TestBatchFraming(t *testing.T) {
 	}
 
 	// ...but the second write causes both messages to be observed.
-	tport.Write(ctx, &jsonrpc2.Request{ID: jsonrpc2.Int64ID(2), Method: "test"})
+	tport.Write(ctx, &JSONRPCRequest{ID: jsonrpc2.Int64ID(2), Method: "test"})
 	for _, want := range []int64{1, 2} {
 		got := <-read
-		if got := got.(*jsonrpc2.Request).ID.Raw(); got != want {
+		if got := got.(*JSONRPCRequest).ID.Raw(); got != want {
 			t.Errorf("got message #%d, want #%d", got, want)
 		}
 	}

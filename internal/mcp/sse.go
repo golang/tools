@@ -111,7 +111,7 @@ func NewSSEHandler(getServer func(request *http.Request) *Server) *SSEHandler {
 //   - Close terminates the hanging GET.
 type SSEServerTransport struct {
 	endpoint string
-	incoming chan jsonrpc2.Message // queue of incoming messages; never closed
+	incoming chan JSONRPCMessage // queue of incoming messages; never closed
 
 	// We must guard both pushes to the incoming queue and writes to the response
 	// writer, because incoming POST requests are arbitrarily concurrent and we
@@ -138,7 +138,7 @@ func NewSSEServerTransport(endpoint string, w http.ResponseWriter) *SSEServerTra
 	return &SSEServerTransport{
 		endpoint: endpoint,
 		w:        w,
-		incoming: make(chan jsonrpc2.Message, 100),
+		incoming: make(chan JSONRPCMessage, 100),
 		done:     make(chan struct{}),
 	}
 }
@@ -264,7 +264,7 @@ type sseServerConn struct {
 }
 
 // Read implements jsonrpc2.Reader.
-func (s sseServerConn) Read(ctx context.Context) (jsonrpc2.Message, error) {
+func (s sseServerConn) Read(ctx context.Context) (JSONRPCMessage, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -276,7 +276,7 @@ func (s sseServerConn) Read(ctx context.Context) (jsonrpc2.Message, error) {
 }
 
 // Write implements jsonrpc2.Writer.
-func (s sseServerConn) Write(ctx context.Context, msg jsonrpc2.Message) error {
+func (s sseServerConn) Write(ctx context.Context, msg JSONRPCMessage) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -507,7 +507,7 @@ func (c *sseClientConn) isDone() bool {
 	return c.closed
 }
 
-func (c *sseClientConn) Read(ctx context.Context) (jsonrpc2.Message, error) {
+func (c *sseClientConn) Read(ctx context.Context) (JSONRPCMessage, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -528,7 +528,7 @@ func (c *sseClientConn) Read(ctx context.Context) (jsonrpc2.Message, error) {
 	}
 }
 
-func (c *sseClientConn) Write(ctx context.Context, msg jsonrpc2.Message) error {
+func (c *sseClientConn) Write(ctx context.Context, msg JSONRPCMessage) error {
 	data, err := jsonrpc2.EncodeMessage(msg)
 	if err != nil {
 		return err

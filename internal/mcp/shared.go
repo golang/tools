@@ -108,7 +108,7 @@ func defaultReceivingMethodHandler[S Session](ctx context.Context, session S, me
 	return info.handleMethod.(MethodHandler[S])(ctx, session, method, params)
 }
 
-func handleReceive[S Session](ctx context.Context, session S, req *jsonrpc2.Request) (Result, error) {
+func handleReceive[S Session](ctx context.Context, session S, req *JSONRPCRequest) (Result, error) {
 	info, ok := session.receivingMethodInfos()[req.Method]
 	if !ok {
 		return nil, jsonrpc2.ErrNotHandled

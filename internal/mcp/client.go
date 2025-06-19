@@ -251,7 +251,7 @@ func (cs *ClientSession) receivingMethodInfos() map[string]methodInfo {
 	return clientMethodInfos
 }
 
-func (cs *ClientSession) handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (cs *ClientSession) handle(ctx context.Context, req *JSONRPCRequest) (any, error) {
 	return handleReceive(ctx, cs, req)
 }
 

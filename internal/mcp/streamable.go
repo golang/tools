@@ -151,7 +151,7 @@ func (h *StreamableHTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Reque
 func NewStreamableServerTransport(sessionID string) *StreamableServerTransport {
 	return &StreamableServerTransport{
 		id:               sessionID,
-		incoming:         make(chan jsonrpc2.Message, 10),
+		incoming:         make(chan JSONRPCMessage, 10),
 		done:             make(chan struct{}),
 		outgoingMessages: make(map[streamID][]*streamableMsg),
 		signals:          make(map[streamID]chan struct{}),
@@ -166,7 +166,7 @@ type StreamableServerTransport struct {
 	nextStreamID atomic.Int64 // incrementing next stream ID
 
 	id       string
-	incoming chan jsonrpc2.Message // messages from the client to the server
+	incoming chan JSONRPCMessage // messages from the client to the server
 
 	mu sync.Mutex
 
@@ -466,7 +466,7 @@ func parseEventID(eventID string) (conn streamID, idx int, ok bool) {
 }
 
 // Read implements the [Connection] interface.
-func (t *StreamableServerTransport) Read(ctx context.Context) (jsonrpc2.Message, error) {
+func (t *StreamableServerTransport) Read(ctx context.Context) (JSONRPCMessage, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -613,7 +613,7 @@ type streamableClientConn struct {
 }
 
 // Read implements the [Connection] interface.
-func (s *streamableClientConn) Read(ctx context.Context) (jsonrpc2.Message, error) {
+func (s *streamableClientConn) Read(ctx context.Context) (JSONRPCMessage, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -625,7 +625,7 @@ func (s *streamableClientConn) Read(ctx context.Context) (jsonrpc2.Message, erro
 }
 
 // Write implements the [Connection] interface.
-func (s *streamableClientConn) Write(ctx context.Context, msg jsonrpc2.Message) error {
+func (s *streamableClientConn) Write(ctx context.Context, msg JSONRPCMessage) error {
 	s.mu.Lock()
 	if s.err != nil {
 		s.mu.Unlock()

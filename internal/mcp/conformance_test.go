@@ -46,12 +46,12 @@ var update = flag.Bool("update", false, "if set, update conformance test data")
 // with -update to have the test runner update the expected output, which may
 // be client or server depending on the perspective of the test.
 type conformanceTest struct {
-	name                      string             // test name
-	path                      string             // path to test file
-	archive                   *txtar.Archive     // raw archive, for updating
-	tools, prompts, resources []string           // named features to include
-	client                    []jsonrpc2.Message // client messages
-	server                    []jsonrpc2.Message // server messages
+	name                      string           // test name
+	path                      string           // path to test file
+	archive                   *txtar.Archive   // raw archive, for updating
+	tools, prompts, resources []string         // named features to include
+	client                    []JSONRPCMessage // client messages
+	server                    []JSONRPCMessage // server messages
 }
 
 // TODO(rfindley): add client conformance tests.
@@ -117,24 +117,24 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 		t.Fatal(err)
 	}
 
-	writeMsg := func(msg jsonrpc2.Message) {
+	writeMsg := func(msg JSONRPCMessage) {
 		if err := cStream.Write(ctx, msg); err != nil {
 			t.Fatalf("Write failed: %v", err)
 		}
 	}
 
 	var (
-		serverMessages []jsonrpc2.Message
-		outRequests    []*jsonrpc2.Request
-		outResponses   []*jsonrpc2.Response
+		serverMessages []JSONRPCMessage
+		outRequests    []*JSONRPCRequest
+		outResponses   []*JSONRPCResponse
 	)
 
 	// Separate client requests and responses; we use them differently.
 	for _, msg := range test.client {
 		switch msg := msg.(type) {
-		case *jsonrpc2.Request:
+		case *JSONRPCRequest:
 			outRequests = append(outRequests, msg)
-		case *jsonrpc2.Response:
+		case *JSONRPCResponse:
 			outResponses = append(outResponses, msg)
 		default:
 			t.Fatalf("bad message type %T", msg)
@@ -143,7 +143,7 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 
 	// nextResponse handles incoming requests and notifications, and returns the
 	// next incoming response.
-	nextResponse := func() (*jsonrpc2.Response, error, bool) {
+	nextResponse := func() (*JSONRPCResponse, error, bool) {
 		for {
 			msg, err := cStream.Read(ctx)
 			if err != nil {
@@ -156,7 +156,7 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 				return nil, err, false
 			}
 			serverMessages = append(serverMessages, msg)
-			if req, ok := msg.(*jsonrpc2.Request); ok && req.ID.IsValid() {
+			if req, ok := msg.(*JSONRPCRequest); ok && req.ID.IsValid() {
 				// Pair up the next outgoing response with this request.
 				// We assume requests arrive in the same order every time.
 				if len(outResponses) == 0 {
@@ -167,7 +167,7 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 				outResponses = outResponses[1:]
 				continue
 			}
-			return msg.(*jsonrpc2.Response), nil, true
+			return msg.(*JSONRPCResponse), nil, true
 		}
 	}
 
@@ -191,7 +191,7 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 	// There might be more notifications or requests, but there shouldn't be more
 	// responses.
 	// Run this in a goroutine so the current thread can wait for it.
-	var extra *jsonrpc2.Response
+	var extra *JSONRPCResponse
 	go func() {
 		extra, err, _ = nextResponse()
 	}()
@@ -240,8 +240,8 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 			t.Fatalf("os.WriteFile(%q) failed: %v", test.path, err)
 		}
 	} else {
-		// jsonrpc2.Messages are not comparable, so we instead compare lines of JSON.
-		transform := cmpopts.AcyclicTransformer("toJSON", func(msg jsonrpc2.Message) []string {
+		// JSONRPCMessages are not comparable, so we instead compare lines of JSON.
+		transform := cmpopts.AcyclicTransformer("toJSON", func(msg JSONRPCMessage) []string {
 			encoded, err := jsonrpc2.EncodeIndent(msg, "", "\t")
 			if err != nil {
 				t.Fatal(err)
@@ -271,9 +271,9 @@ func loadConformanceTest(dir, path string) (*conformanceTest, error) {
 	}
 
 	// decodeMessages loads JSON-RPC messages from the archive file.
-	decodeMessages := func(data []byte) ([]jsonrpc2.Message, error) {
+	decodeMessages := func(data []byte) ([]JSONRPCMessage, error) {
 		dec := json.NewDecoder(bytes.NewReader(data))
-		var res []jsonrpc2.Message
+		var res []JSONRPCMessage
 		for dec.More() {
 			var raw json.RawMessage
 			if err := dec.Decode(&raw); err != nil {
