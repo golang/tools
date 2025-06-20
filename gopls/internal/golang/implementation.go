@@ -1117,7 +1117,9 @@ func beneathFuncDef(cur inspector.Cursor) bool {
 // Tested via ../test/marker/testdata/implementation/signature.txt.
 func dynamicFuncCallType(info *types.Info, call *ast.CallExpr) types.Type {
 	if typesinternal.ClassifyCall(info, call) == typesinternal.CallDynamic {
-		return info.Types[call.Fun].Type.Underlying()
+		if tv, ok := info.Types[call.Fun]; ok {
+			return tv.Type.Underlying()
+		}
 	}
 	return nil
 }
