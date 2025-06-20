@@ -1,57 +1,79 @@
-# MCP SDK prototype
+# MCP Go SDK
 
-[![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools)](https://pkg.go.dev/golang.org/x/tools/internal/mcp)
+<!-- TODO: update pkgsite links here to point to the modelcontextprotocol
+module, once it exists. -->
 
-# Contents
+[![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools)](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk)
+
+This repository contains an implementation of the official Go software
+development kit (SDK) for the Model Context Protocol (MCP).
+
+**WARNING**: The SDK is currently unstable and subject to breaking changes.
+Please test it out and file bug reports or API proposals. The [TODO](#todo)
+section below outlines outstanding release blockers. We aim to release a stable
+version of the SDK in mid July, 2025.
 
 %toc
 
-The mcp package provides a software development kit (SDK) for writing clients
-and servers of the [model context
-protocol](https://modelcontextprotocol.io/introduction). It is unstable, and
-will change in breaking ways in the future. As of writing, it is a prototype to
-explore the design space of client/server transport and binding.
+## Package documentation
 
-# Installation
+The SDK consists of two importable packages:
 
-The mcp package is currently internal and cannot be imported using `go get`.
+- The
+  [`github.com/modelcontextprotocol/go-sdk/mcp`](https://pkg.go.dev/golang.org/x/tools/internal/mcp)
+  package defines the primary APIs for constructing and using MCP clients and
+  servers.
+- The
+  [`github.com/modelcontextprotocol/go-sdk/jsonschema`](https://pkg.go.dev/golang.org/x/tools/internal/mcp/jsonschema)
+  package provides an implementation of [JSON
+  Schema](https://json-schema.org/), used for MCP tool input and output schema.
 
-# Quickstart
+## Example
 
-Here's an example that creates a client that talks to an MCP server running
-as a sidecar process:
+In this example, an MCP client communicates with an MCP server running in a
+sidecar process:
 
 %include client/client.go -
 
-Here is an example of the corresponding server, connected over stdin/stdout:
+Here's an example of the corresponding server component, which communicates
+with its client over stdin/stdout:
 
 %include server/server.go -
 
-# Design
+The `examples/` directory contains more example clients and servers.
 
-See [design.md](./design/design.md) for the SDK design. That document is
-canonical: given any divergence between the design doc and this prototype, the
-doc reflects the latest design.
+## TODO
 
-# Testing
+The following TODOs block the release of this SDK:
 
-To test your client or server using stdio transport, you can use an in-memory
-transport. See [example](server_example_test.go).
+- Better support for resumability in the Streamable HTTP transport: a
+  server-side event store and client-side retry configuration.
+- OAuth support (or examples of implementing OAuth using middleware).
+- Support for the changes in the
+  [2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18/changelog)
+  version of the MCP spec.
+- More examples and documentation.
 
-To test your client or server using sse transport, you can use the [httptest](https://pkg.go.dev/net/http/httptest)
-package. See [example](sse_example_test.go).
+## Design
 
-# Code of Conduct
+The design doc for this SDK is at [design.md](./design/design.md), which was
+initially reviewed at
+[modelcontextprotocol/discussions/364](https://github.com/orgs/modelcontextprotocol/discussions/364).
 
-This project follows the [Go Community Code of Conduct](https://go.dev/conduct).
-If you encounter a conduct-related issue, please mail conduct@golang.org.
+Further design discussion should occur in GitHub issues. See CONTRIBUTING.md
+for details.
 
-# License
+## Acknowledgements
 
-Unless otherwise noted, the Go source files are distributed under the BSD-style
-license found in the [LICENSE](../../LICENSE) file.
+Several existing Go MCP SDKs inspired the development and design of this
+official SDK, notably [mcp-go](https://github.com/mark3labs/mcp-go), authored
+by Ed Zynda. We are grateful to Ed as well as the other contributors to mcp-go,
+and to authors and contributors of other SDKs such as
+[mcp-golang](https://github.com/metoro-io/mcp-golang) and
+[go-mcp](https://github.com/ThinkInAIXYZ/go-mcp). Thanks to their work, there
+is a thriving ecosystem of Go MCP clients and servers.
 
-Upon a potential move to the
-[modelcontextprotocol](https://github.com/modelcontextprotocol) organization,
-the license will be updated to the MIT License, and the license header will
-reflect the Go MCP SDK Authors.
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE)
+file for details.
