@@ -110,16 +110,16 @@ func NewCommandTransport(cmd *exec.Command) *CommandTransport
 func (*CommandTransport) Connect(ctx context.Context) (Connection, error) {
 ```
 
-The `StdIOTransport` is the server side of the stdio transport, and connects by binding to `os.Stdin` and `os.Stdout`.
+The `StdioTransport` is the server side of the stdio transport, and connects by binding to `os.Stdin` and `os.Stdout`.
 
 ```go
-// A StdIOTransport is a [Transport] that communicates using newline-delimited
+// A StdioTransport is a [Transport] that communicates using newline-delimited
 // JSON over stdin/stdout.
-type StdIOTransport struct { /* unexported fields */ }
+type StdioTransport struct { /* unexported fields */ }
 
-func NewStdIOTransport() *StdIOTransport
+func NewStdioTransport() *StdioTransport
 
-func (t *StdIOTransport) Connect(context.Context) (Connection, error)
+func (t *StdioTransport) Connect(context.Context) (Connection, error)
 ```
 
 #### HTTP transports
@@ -378,7 +378,7 @@ A server that can handle that client call would look like this:
 server := mcp.NewServer("greeter", "v1.0.0", nil)
 server.AddTools(mcp.NewServerTool("greet", "say hi", SayHi))
 // Run the server over stdin/stdout, until the client disconnects.
-transport := mcp.NewStdIOTransport()
+transport := mcp.NewStdioTransport()
 session, err := server.Connect(ctx, transport)
 ...
 return session.Wait()

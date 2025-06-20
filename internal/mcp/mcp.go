@@ -26,7 +26,7 @@
 //
 // A [Transport] connects a bidirectional [Connection] of jsonrpc2 messages. In
 // practice, transports in the MCP spec are are either client transports or
-// server transports. For example, the [StdIOTransport] is a server transport
+// server transports. For example, the [StdioTransport] is a server transport
 // that communicates over stdin/stdout, and its counterpart is a
 // [CommandTransport] that communicates with a subprocess over its
 // stdin/stdout.

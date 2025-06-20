@@ -54,7 +54,7 @@ func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionE
 
 // StartStdIO starts an MCP server over stdio.
 func StartStdIO(ctx context.Context, session *cache.Session) error {
-	t := mcp.NewLoggingTransport(mcp.NewStdIOTransport(), os.Stderr)
+	t := mcp.NewLoggingTransport(mcp.NewStdioTransport(), os.Stderr)
 	s := newServer(session)
 	return s.Run(ctx, t)
 }

@@ -110,7 +110,7 @@ func main() {
 	server := mcp.NewServer("greeter", "v1.0.0", nil)
 	server.AddTools(mcp.NewServerTool("greet", "say hi", SayHi))
 	// Run the server over stdin/stdout, until the client disconnects
-	if err := server.Run(context.Background(), mcp.NewStdIOTransport()); err != nil {
+	if err := server.Run(context.Background(), mcp.NewStdioTransport()); err != nil {
 		log.Fatal(err)
 	}
 }

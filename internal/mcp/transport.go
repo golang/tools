@@ -52,9 +52,9 @@ type Connection interface {
 	Close() error // may be called concurrently by both peers
 }
 
-// A StdIOTransport is a [Transport] that communicates over stdin/stdout using
+// A StdioTransport is a [Transport] that communicates over stdin/stdout using
 // newline-delimited JSON.
-type StdIOTransport struct {
+type StdioTransport struct {
 	ioTransport
 }
 
@@ -68,10 +68,10 @@ func (t *ioTransport) Connect(context.Context) (Connection, error) {
 	return newIOConn(t.rwc), nil
 }
 
-// NewStdIOTransport constructs a transport that communicates over
+// NewStdioTransport constructs a transport that communicates over
 // stdin/stdout.
-func NewStdIOTransport() *StdIOTransport {
-	return &StdIOTransport{ioTransport{rwc{os.Stdin, os.Stdout}}}
+func NewStdioTransport() *StdioTransport {
+	return &StdioTransport{ioTransport{rwc{os.Stdin, os.Stdout}}}
 }
 
 // An InMemoryTransport is a [Transport] that communicates over an in-memory
