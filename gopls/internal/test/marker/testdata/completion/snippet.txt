@@ -36,8 +36,7 @@ func _() {
 
 	bar //@snippet(" //", snipBar, "bar(${1:})")
 
-	baz //@snippet(" //", snipBaz, "baz(${1:})")
-	baz() //@signature("(", "baz(at AliasType, b bool)", 0)
+	baz() //@snippet("(", snipBaz, "baz")
 
 	bar(nil) //@snippet("(", snipBar, "bar")
 	bar(ba) //@snippet(")", snipBar, "bar(${1:})")

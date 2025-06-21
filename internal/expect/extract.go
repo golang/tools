@@ -409,6 +409,29 @@ again:
 		}
 		value = v
 
+	case '-':
+		t.Consume()
+		switch t.Token() {
+		case scanner.Int:
+			s := "-" + t.Consume()
+			v, err := strconv.ParseInt(s, 0, 0)
+			if err != nil {
+				t.Errorf("cannot convert %v to int: %v", s, err)
+			}
+			value = v
+
+		case scanner.Float:
+			s := "-" + t.Consume()
+			v, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				t.Errorf("cannot convert %v to float: %v", s, err)
+			}
+			value = v
+
+		default:
+			t.Errorf("unexpected '-' not followed by number, got %s", t.TokenString())
+		}
+
 	case scanner.Char:
 		t.Errorf("unexpected char literal %s", t.Consume())
 

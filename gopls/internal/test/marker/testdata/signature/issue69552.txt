@@ -9,6 +9,6 @@ go 1.18
 package a
 
 func _() {
-	_ = len([]int{}) //@signature("en", "len(v Type) int", 0)
+	_ = len([]int{}) //@signature("en", "len(v Type) int", -1)
 }
 

@@ -28,7 +28,7 @@ func (s *server) SignatureHelp(ctx context.Context, params *protocol.SignatureHe
 		return nil, nil // empty result
 	}
 
-	info, activeParameter, err := golang.SignatureHelp(ctx, snapshot, fh, params.Position)
+	info, err := golang.SignatureHelp(ctx, snapshot, fh, params.Position)
 	if err != nil {
 		// TODO(rfindley): is this correct? Apparently, returning an error from
 		// signatureHelp is distracting in some editors, though I haven't confirmed
@@ -43,9 +43,7 @@ func (s *server) SignatureHelp(ctx context.Context, params *protocol.SignatureHe
 	}
 	return &protocol.SignatureHelp{
 		Signatures:      []protocol.SignatureInformation{*info},
-		ActiveParameter: varOf(uint32(activeParameter)),
+		ActiveSignature: 0,
+		ActiveParameter: info.ActiveParameter,
 	}, nil
 }
-
-// varOf returns a new variable whose value is x.
-func varOf[T any](x T) *T { return &x }

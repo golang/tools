@@ -57,5 +57,5 @@ func _() {
 }
 
 func issue63578(err error) {
-	err.Error() //@signature(")", "Error()", 0)
+	err.Error() //@signature(")", "Error()", -1)
 }

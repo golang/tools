@@ -30,6 +30,9 @@ func FooArr(a []int) {
 
 }
 
+func NoArgs() {
+}
+
 type myStruct struct{}
 
 type Bar struct {
@@ -53,18 +56,22 @@ func AliasMap(a map[*Alias]StringAlias) (b, c map[*Alias]StringAlias) { return n
 func OtherAliasMap(a, b map[Alias]OtherAlias) map[Alias]OtherAlias    { return nil }
 
 func Qux() {
-	Foo("foo", 123) //@signature("(", "Foo(a string, b int) (c bool)", 0)
+	Foo("foo", 123) //@signature("(", "Foo(a string, b int) (c bool)", -1)
 	Foo("foo", 123) //@signature("123", "Foo(a string, b int) (c bool)", 1)
 	Foo("foo", 123) //@signature(",", "Foo(a string, b int) (c bool)", 0)
 	Foo("foo", 123) //@signature(" 1", "Foo(a string, b int) (c bool)", 1)
 	Foo("foo", 123) //@signature(")", "Foo(a string, b int) (c bool)", 1)
-	Foo("foo", 123) //@signature("o", "Foo(a string, b int) (c bool)", 0)
-	_ = Foo //@signature("o", "Foo(a string, b int) (c bool)", 0)
-	Foo //@signature("o", "Foo(a string, b int) (c bool)", 0)
+	Foo("foo", 123) //@signature("o", "Foo(a string, b int) (c bool)", -1)
+	_ = Foo //@signature("o", "Foo(a string, b int) (c bool)", -1)
+	Foo //@signature("o", "Foo(a string, b int) (c bool)", -1)
+	Foo() //@signature("(", "Foo(a string, b int) (c bool)", -1)
 
 	Bar(13.37, 0x13)       //@signature("13.37", "Bar(float64, ...byte)", 0)
 	Bar(13.37, 0x37)       //@signature("0x37", "Bar(float64, ...byte)", 1)
 	Bar(13.37, 1, 2, 3, 4) //@signature("4", "Bar(float64, ...byte)", 1)
+
+	NoArgs() //@signature("(", "NoArgs()", -1)
+	NoArgs //@signature("s", "NoArgs()", -1)
 
 	fn := func(hi, there string) func(i int) rune {
 		return func(int) rune { return 0 }
@@ -90,25 +97,25 @@ func Qux() {
 
 	_ = make([]int, 1, 2) //@signature("2", "make(t Type, size ...int) Type", 1)
 
-	Foo(myFunc(123), 456) //@signature("o(", "Foo(a string, b int) (c bool)", 0)
-	Foo(myFunc(123), 456) //@signature("(m", "Foo(a string, b int) (c bool)", 0)
+	Foo(myFunc(123), 456) //@signature("o(", "Foo(a string, b int) (c bool)", -1)
+	Foo(myFunc(123), 456) //@signature("(m", "Foo(a string, b int) (c bool)", -1)
 	Foo( myFunc(123), 456) //@signature(" m", "Foo(a string, b int) (c bool)", 0)
 	Foo(myFunc(123), 456) //@signature(", ", "Foo(a string, b int) (c bool)", 0)
 	Foo(myFunc(123), 456) //@signature("456", "Foo(a string, b int) (c bool)", 1)
 	Foo(myFunc) //@signature(")", "Foo(a string, b int) (c bool)", 0)
-	Foo(myFunc(123), 456) //@signature("(1", "myFunc(foo int) string", 0)
+	Foo(myFunc(123), 456) //@signature("(1", "myFunc(foo int) string", -1)
 	Foo(myFunc(123), 456) //@signature("123", "myFunc(foo int) string", 0)
 
-	fmt.Println //@signature("ln", "Println(a ...any) (n int, err error)", 0)
-	fmt.Println(myFunc) //@signature("ln", "Println(a ...any) (n int, err error)", 0)
-	fmt.Println(myFunc) //@signature("Func", "myFunc(foo int) string", 0)
+	fmt.Println //@signature("ln", "Println(a ...any) (n int, err error)", -1)
+	fmt.Println(myFunc) //@signature("ln", "Println(a ...any) (n int, err error)", -1)
+	fmt.Println(myFunc) //@signature("Func", "myFunc(foo int) string", -1)
 
 	var hi string = "hello"
 	var wl string = " world: %s"
-	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature("Func", "myFunc(foo int) string", 0)
+	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature("Func", "myFunc(foo int) string", -1)
 	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature("wl", "Sprintf(format string, a ...any) string", 0)
 	fmt.Println(fmt.Sprintf(wl, myFunc)) //@signature(" m", "Sprintf(format string, a ...any) string", 1)
-	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature("Sprint", "Sprintf(format string, a ...any) string", 0)
+	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature("Sprint", "Sprintf(format string, a ...any) string", -1)
 	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature(" fmt", "Println(a ...any) (n int, err error)", 0)
 	fmt.Println(hi, fmt.Sprintf(wl, myFunc)) //@signature("hi", "Println(a ...any) (n int, err error)", 0)
 

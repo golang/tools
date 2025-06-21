@@ -5036,7 +5036,7 @@ type SignatureInformation struct {
 	// `SignatureHelp.activeParameter`.
 	//
 	// @since 3.16.0
-	ActiveParameter uint32 `json:"activeParameter"`
+	ActiveParameter *uint32 `json:"activeParameter,omitempty"`
 }
 
 // An interactive text edit.

@@ -48,6 +48,7 @@ var goplsStar = map[prop]int{
 
 	{"PublishDiagnosticsParams", "version"}:                   wantOpt,     // zero => missing (#73501)
 	{"SignatureHelp", "activeParameter"}:                      wantOptStar, // unset != zero
+	{"SignatureInformation", "activeParameter"}:               wantOptStar, // unset != zero
 	{"TextDocumentClientCapabilities", "codeAction"}:          wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "completion"}:          wantOpt,     // A.B.C.D
 	{"TextDocumentClientCapabilities", "documentSymbol"}:      wantOpt,     // A.B.C.D

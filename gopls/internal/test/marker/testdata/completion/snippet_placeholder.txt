@@ -43,7 +43,6 @@ func _() {
 	bar //@snippet(" //", snipBar, "bar(${1:fn func()})")
 
 	baz //@snippet(" //", snipBaz, "baz(${1:at AliasType}, ${2:b bool})")
-	baz() //@signature("(", "baz(at AliasType, b bool)", 0)
 
 	bar(nil) //@snippet("(", snipBar, "bar")
 	bar(ba) //@snippet(")", snipBar, "bar(${1:fn func()})")
