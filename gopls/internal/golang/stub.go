@@ -66,7 +66,7 @@ func insertDeclsAfter(ctx context.Context, snapshot *cache.Snapshot, mp *metadat
 	// Parse the file declaring the sym.
 	//
 	// Beware: declPGF is not necessarily covered by pkg.FileSet() or si.Fset.
-	declPGF, _, err := parseFull(ctx, snapshot, fset, sym.Pos())
+	declPGF, _, err := parseFull(ctx, snapshot, fset, sym)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse file %q declaring implementation symbol: %w", declPGF.URI, err)
 	}

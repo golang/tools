@@ -1,0 +1,36 @@
+Regression test for crash in hover on an alias to a built-in named type.
+
+-- flags --
+-skip_goarch=386,arm
+
+-- go.mod --
+module example.com
+
+go 1.18
+
+-- a/a.go --
+package a
+
+type A = error //@hover("A", "A", out)
+
+-- @out --
+```go
+type A = error // size=16 (0x10)
+
+type error interface {
+	Error() string
+}
+```
+
+---
+
+@hover("A", "A", out)
+
+
+```go
+func (error) Error() string
+```
+
+---
+
+[`a.A` on pkg.go.dev](https://pkg.go.dev/example.com/a#A)

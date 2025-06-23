@@ -147,20 +147,19 @@ func findRhsTypeDecl(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 		// we choose Rhs instead of types.Unalias to make the connection between original alias
 		// and the corresponding aliased type clearer.
 		// types.Unalias brings confusion because it breaks the connection from A to C given
-		// the alias chain like 'type ( A = B; B =C ; )' except we show all transitive alias
+		// the alias chain like 'type ( A = B; B = C; )' except we show all transitive alias
 		// from start to the end. As it's rare, we don't do so.
-		t := alias.Rhs()
-		switch o := t.(type) {
-		case *types.Named:
-			obj = o.Obj()
-			declPGF1, declPos1, err := parseFull(ctx, snapshot, pkg.FileSet(), obj.Pos())
+		if named, ok := alias.Rhs().(*types.Named); ok {
+			obj = named.Obj()
+			declPGF1, declPos1, err := parseFull(ctx, snapshot, pkg.FileSet(), obj)
 			if err != nil {
 				return "", err
 			}
-			realTypeDecl, _, err := typeDeclContent(declPGF1, declPos1, obj)
+			realTypeDecl, _, err := typeDeclContent(declPGF1, declPos1, obj.Name())
 			return realTypeDecl, err
 		}
 	}
+
 	return "", nil
 }
 
@@ -337,7 +336,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// order to correctly compute their documentation, signature, and link.
 	//
 	// Beware: decl{PGF,Pos} are not necessarily associated with pkg.FileSet().
-	declPGF, declPos, err := parseFull(ctx, snapshot, pkg.FileSet(), obj.Pos())
+	declPGF, declPos, err := parseFull(ctx, snapshot, pkg.FileSet(), obj)
 	if err != nil {
 		return protocol.Range{}, nil, fmt.Errorf("re-parsing declaration of %s: %v", obj.Name(), err)
 	}
@@ -468,7 +467,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	_, isTypeParam := types.Unalias(obj.Type()).(*types.TypeParam)
 	if isTypeName && !isTypeParam {
 		var spec1 *ast.TypeSpec
-		typeDecl, spec1, err = typeDeclContent(declPGF, declPos, obj)
+		typeDecl, spec1, err = typeDeclContent(declPGF, declPos, obj.Name())
 		if err != nil {
 			return protocol.Range{}, nil, err
 		}
@@ -684,7 +683,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 }
 
 // typeDeclContent returns a well formatted type definition.
-func typeDeclContent(declPGF *parsego.File, declPos token.Pos, obj types.Object) (string, *ast.TypeSpec, error) {
+func typeDeclContent(declPGF *parsego.File, declPos token.Pos, name string) (string, *ast.TypeSpec, error) {
 	_, spec, _ := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^3
 	// Don't duplicate comments.
 	spec1, ok := spec.(*ast.TypeSpec)
@@ -698,7 +697,7 @@ func typeDeclContent(declPGF *parsego.File, declPos token.Pos, obj types.Object)
 		if !declPGF.Fixed() {
 			errorf = bug.Errorf
 		}
-		return "", nil, errorf("type name %q without type spec", obj.Name())
+		return "", nil, errorf("type name %q without type spec", name)
 	}
 	spec2 := *spec1
 	spec2.Doc = nil
@@ -1228,7 +1227,7 @@ func HoverDocForObject(ctx context.Context, snapshot *cache.Snapshot, fset *toke
 		return nil, nil
 	}
 
-	pgf, pos, err := parseFull(ctx, snapshot, fset, obj.Pos())
+	pgf, pos, err := parseFull(ctx, snapshot, fset, obj)
 	if err != nil {
 		return nil, fmt.Errorf("re-parsing: %v", err)
 	}
@@ -1273,21 +1272,23 @@ func chooseDocComment(decl ast.Decl, spec ast.Spec, field *ast.Field) *ast.Comme
 	return nil
 }
 
-// parseFull fully parses the file corresponding to position pos (for
-// which fset provides file/line information).
-//
-// It returns the resulting parsego.File as well as new pos contained
-// in the parsed file.
+// parseFull fully parses the file containing the declaration of obj
+// (for which fset provides file/line information). It returns the
+// parsego.File and the position of the declaration within it.
 //
 // BEWARE: the provided FileSet is used only to interpret the provided
 // pos; the resulting File and Pos may belong to the same or a
 // different FileSet, such as one synthesized by the parser cache, if
 // parse-caching is enabled.
-//
-// TODO(adonovan): change this function to accept a filename and a
-// byte offset, and eliminate the confusing (fset, pos) parameters.
-// Then simplify stubmethods.StubInfo, which doesn't need a Fset.
-func parseFull(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, pos token.Pos) (*parsego.File, token.Pos, error) {
+func parseFull(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSet, obj types.Object) (*parsego.File, token.Pos, error) {
+	if isBuiltin(obj) {
+		pgf, id, err := builtinDecl(ctx, snapshot, obj)
+		if err != nil {
+			return nil, 0, err
+		}
+		return pgf, id.Pos(), err
+	}
+	pos := obj.Pos()
 	f := fset.File(pos)
 	if f == nil {
 		return nil, 0, bug.Errorf("internal error: no file for position %d", pos)
@@ -1304,11 +1305,11 @@ func parseFull(ctx context.Context, snapshot *cache.Snapshot, fset *token.FileSe
 		return nil, 0, err
 	}
 
+	// Translate pos from original file to new file.
 	offset, err := safetoken.Offset(f, pos)
 	if err != nil {
 		return nil, 0, bug.Errorf("offset out of bounds in %q", uri)
 	}
-
 	fullPos, err := safetoken.Pos(pgf.Tok, offset)
 	if err != nil {
 		return nil, 0, err

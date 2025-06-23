@@ -324,6 +324,7 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 			return nil, nil, bug.Errorf("unknown built-in %v", obj)
 		}
 	}
+	_ = ident.Name // ident != nil
 
 	return pgf, ident, nil
 }

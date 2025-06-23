@@ -294,7 +294,7 @@ func FormatVarType(ctx context.Context, snapshot *cache.Snapshot, srcpkg *cache.
 
 	// TODO(rfindley): parsing to produce candidates can be costly; consider
 	// using faster methods.
-	targetpgf, pos, err := parseFull(ctx, snapshot, srcpkg.FileSet(), obj.Pos())
+	targetpgf, pos, err := parseFull(ctx, snapshot, srcpkg.FileSet(), obj)
 	if err != nil {
 		return "", err // e.g. ctx cancelled
 	}
