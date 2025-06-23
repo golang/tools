@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
+	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
@@ -196,6 +197,12 @@ func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.P
 		}
 		id := curIdent.Node().(*ast.Ident)
 		obj1 := info.Uses[id]
+		if obj1 == nil {
+			continue // undefined; or a def, not a use
+		}
+		if goplsastutil.NodeContains(curRHS.Node(), obj1.Pos()) {
+			continue // not free (id is defined within RHS)
+		}
 		_, obj2 := scope.LookupParent(id.Name, pos)
 		if obj1 != obj2 {
 			return nil, nil, fmt.Errorf("cannot inline variable: its initializer expression refers to %q, which is shadowed by the declaration at line %d", id.Name, safetoken.Position(pgf.Tok, obj2.Pos()).Line)
