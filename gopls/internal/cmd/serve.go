@@ -126,6 +126,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 
 	// Start MCP server.
 	if eventChan != nil {
+		countAttachedMCP.Inc()
 		group.Go(func() (err error) {
 			defer func() {
 				if err == nil {

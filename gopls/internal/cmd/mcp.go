@@ -47,6 +47,7 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 
 	// Send a SessionStart event to trigger creation of an http handler.
 	if m.Address != "" {
+		countHeadlessMCPSSE.Inc()
 		// Specify a channel size of two so that the send operations are
 		// non-blocking.
 		eventChan := make(chan lsprpc.SessionEvent, 2)
@@ -65,6 +66,7 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 
 		return mcp.Serve(ctx, m.Address, eventChan, false)
 	} else {
+		countHeadlessMCPStdIO.Inc()
 		return mcp.StartStdIO(ctx, sess)
 	}
 }
