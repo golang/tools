@@ -538,3 +538,49 @@ func mustMarshal(t *testing.T, v any) json.RawMessage {
 	}
 	return data
 }
+
+func TestEventID(t *testing.T) {
+	tests := []struct {
+		sid streamID
+		idx int
+	}{
+		{0, 0},
+		{0, 1},
+		{1, 0},
+		{1, 1},
+		{1234, 5678},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("%d_%d", test.sid, test.idx), func(t *testing.T) {
+			eventID := formatEventID(test.sid, test.idx)
+			gotSID, gotIdx, ok := parseEventID(eventID)
+			if !ok {
+				t.Fatalf("parseEventID(%q) failed, want ok", eventID)
+			}
+			if gotSID != test.sid || gotIdx != test.idx {
+				t.Errorf("parseEventID(%q) = %d, %d, want %d, %d", eventID, gotSID, gotIdx, test.sid, test.idx)
+			}
+		})
+	}
+
+	invalid := []string{
+		"",
+		"_",
+		"1_",
+		"_1",
+		"a_1",
+		"1_a",
+		"-1_1",
+		"1_-1",
+	}
+
+	for _, eventID := range invalid {
+		t.Run(fmt.Sprintf("invalid_%q", eventID), func(t *testing.T) {
+			if _, _, ok := parseEventID(eventID); ok {
+				t.Errorf("parseEventID(%q) succeeded, want failure", eventID)
+			}
+		})
+	}
+}
+

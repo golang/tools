@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -449,20 +450,28 @@ stream:
 // streamID and message index idx.
 //
 // See also [parseEventID].
-func formatEventID(id streamID, idx int) string {
-	return fmt.Sprintf("%d_%d", id, idx)
+func formatEventID(sid streamID, idx int) string {
+	return fmt.Sprintf("%d_%d", sid, idx)
 }
 
 // parseEventID parses a Last-Event-ID value into a logical stream id and
 // index.
 //
 // See also [formatEventID].
-func parseEventID(eventID string) (conn streamID, idx int, ok bool) {
-	_, err := fmt.Sscanf(eventID, "%d_%d", &conn, &idx)
-	if err != nil || conn < 0 || idx < 0 {
+func parseEventID(eventID string) (sid streamID, idx int, ok bool) {
+	parts := strings.Split(eventID, "_")
+	if len(parts) != 2 {
 		return 0, 0, false
 	}
-	return conn, idx, true
+	stream, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || stream < 0 {
+		return 0, 0, false
+	}
+	idx, err = strconv.Atoi(parts[1])
+	if err != nil || idx < 0 {
+		return 0, 0, false
+	}
+	return streamID(stream), idx, true
 }
 
 // Read implements the [Connection] interface.
