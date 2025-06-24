@@ -598,6 +598,21 @@ const (
 	// 	myFoo/*[int, string]*/(1, "hello")
 	// ```
 	FunctionTypeParameters InlayHint = "functionTypeParameters"
+
+	// IgnoredError inlay hints for implicitly discarded errors:
+	// ```go
+	// 	f.Close() // ignore error
+	// ```
+	// This check inserts an `// ignore error` hint following any
+	// statement that is a function call whose error result is
+	// implicitly ignored.
+	//
+	// To suppress the hint, write an actual comment containing
+	// "ignore error" following the call statement, or explictly
+	// assign the result to a blank variable. A handful of common
+	// functions such as `fmt.Println` are excluded from the
+	// check.
+	IgnoredError InlayHint = "ignoredError"
 )
 
 type NavigationOptions struct {

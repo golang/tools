@@ -1,0 +1,61 @@
+Test of "ignore error" inlay hint (#73930).
+
+- f.Close() generates a hint, except when followed by
+  an "// ignore error" comment, or in a "_ = f.Close()" stmt.
+- fmt.Println() is exempted.
+
+-- settings.json --
+{"hints": {"ignoredError": true}}
+
+-- p/p.go --
+package p //@inlayhints(out)
+
+import ( "os"; "fmt" )
+
+func _(f *os.File) {
+	f.WriteString("hello")
+	f.Close()
+}
+
+func _(f *os.File) {
+	f.Close() // irrelevant comment
+}
+
+func _(f *os.File) {
+	f.Close() // ignore error
+}
+
+func _(f *os.File) {
+	_ = f.Close()
+}
+
+func _() {
+	fmt.Println()
+}
+
+-- @out --
+package p //@inlayhints(out)
+
+import ( "os"; "fmt" )
+
+func _(f *os.File) {
+	f.WriteString("hello")< // ignore error>
+	f.Close()< // ignore error>
+}
+
+func _(f *os.File) {
+	f.Close()< // ignore error> // irrelevant comment
+}
+
+func _(f *os.File) {
+	f.Close() // ignore error
+}
+
+func _(f *os.File) {
+	_ = f.Close()
+}
+
+func _() {
+	fmt.Println()
+}
+

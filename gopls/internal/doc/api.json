@@ -1879,6 +1879,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"ignoredError\"",
+							"Doc": "`\"ignoredError\"` inlay hints for implicitly discarded errors:\n```go\n\tf.Close() // ignore error\n```\nThis check inserts an `// ignore error` hint following any\nstatement that is a function call whose error result is\nimplicitly ignored.\n\nTo suppress the hint, write an actual comment containing\n\"ignore error\" following the call statement, or explictly\nassign the result to a blank variable. A handful of common\nfunctions such as `fmt.Println` are excluded from the\ncheck.\n",
+							"Default": "false",
+							"Status": ""
+						},
+						{
 							"Name": "\"parameterNames\"",
 							"Doc": "`\"parameterNames\"` controls inlay hints for parameter names:\n```go\n\tparseInt(/* str: */ \"123\", /* radix: */ 8)\n```\n",
 							"Default": "false",
@@ -3449,6 +3455,12 @@
 		{
 			"Name": "functionTypeParameters",
 			"Doc": "`\"functionTypeParameters\"` inlay hints for implicit type parameters on generic functions:\n```go\n\tmyFoo/*[int, string]*/(1, \"hello\")\n```\n",
+			"Default": false,
+			"Status": ""
+		},
+		{
+			"Name": "ignoredError",
+			"Doc": "`\"ignoredError\"` inlay hints for implicitly discarded errors:\n```go\n\tf.Close() // ignore error\n```\nThis check inserts an `// ignore error` hint following any\nstatement that is a function call whose error result is\nimplicitly ignored.\n\nTo suppress the hint, write an actual comment containing\n\"ignore error\" following the call statement, or explictly\nassign the result to a blank variable. A handful of common\nfunctions such as `fmt.Println` are excluded from the\ncheck.\n",
 			"Default": false,
 			"Status": ""
 		},

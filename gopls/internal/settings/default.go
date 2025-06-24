@@ -103,7 +103,9 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						DiagnosticsTrigger:        DiagnosticsOnEdit,
 						AnalysisProgressReporting: true,
 					},
-					InlayHintOptions: InlayHintOptions{},
+					InlayHintOptions: InlayHintOptions{
+						Hints: map[InlayHint]bool{},
+					},
 					DocumentationOptions: DocumentationOptions{
 						HoverKind:    FullDocumentation,
 						LinkTarget:   "pkg.go.dev",
@@ -150,5 +152,6 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 			override(options)
 		}
 	}
+
 	return options
 }

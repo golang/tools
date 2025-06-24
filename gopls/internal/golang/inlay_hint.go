@@ -5,20 +5,24 @@
 package golang
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"go/ast"
 	"go/constant"
 	"go/token"
 	"go/types"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
@@ -84,6 +88,7 @@ var allInlayHints = map[settings.InlayHint]inlayHintFunc{
 	settings.CompositeLiteralTypes:      compositeLiteralTypes,
 	settings.CompositeLiteralFieldNames: compositeLiteralFields,
 	settings.FunctionTypeParameters:     funcTypeParams,
+	settings.IgnoredError:               ignoredError,
 }
 
 func parameterNames(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur inspector.Cursor, add func(protocol.InlayHint)) {
@@ -126,11 +131,66 @@ func parameterNames(info *types.Info, pgf *parsego.File, qual types.Qualifier, c
 			}
 			add(protocol.InlayHint{
 				Position:     start,
-				Label:        buildLabel(label + ":"),
+				Label:        labelPart(label + ":"),
 				Kind:         protocol.Parameter,
 				PaddingRight: true,
 			})
 		}
+	}
+}
+
+func ignoredError(info *types.Info, pgf *parsego.File, qual types.Qualifier, cur inspector.Cursor, add func(protocol.InlayHint)) {
+outer:
+	for curCall := range cur.Preorder((*ast.ExprStmt)(nil)) {
+		stmt := curCall.Node().(*ast.ExprStmt)
+		call, ok := stmt.X.(*ast.CallExpr)
+		if !ok {
+			continue // not a call stmt
+		}
+
+		// Check that type of result (or last component) is error.
+		tv, ok := info.Types[call]
+		if !ok {
+			continue // no type info
+		}
+		t := tv.Type
+		if res, ok := t.(*types.Tuple); ok && res.Len() > 1 {
+			t = res.At(res.Len() - 1).Type()
+		}
+		if !types.Identical(t, errorType) {
+			continue
+		}
+
+		// Suppress some common false positives.
+		obj := typeutil.Callee(info, call)
+		if analysisinternal.IsFunctionNamed(obj, "fmt", "Print", "Printf", "Println", "Fprint", "Fprintf", "Fprintln") ||
+			analysisinternal.IsMethodNamed(obj, "bytes", "Buffer", "Write", "WriteByte", "WriteRune", "WriteString") ||
+			analysisinternal.IsMethodNamed(obj, "strings", "Builder", "Write", "WriteByte", "WriteRune", "WriteString") {
+			continue
+		}
+
+		// Suppress if closely following comment contains "// ignore error".
+		comments := pgf.File.Comments
+		compare := func(cg *ast.CommentGroup, pos token.Pos) int {
+			return cmp.Compare(cg.Pos(), pos)
+		}
+		i, _ := slices.BinarySearchFunc(comments, stmt.End(), compare)
+		if i >= 0 && i < len(comments) {
+			cg := comments[i]
+			if cg.Pos() < stmt.End()+3 && strings.Contains(cg.Text(), "ignore error") {
+				continue outer // suppress
+			}
+		}
+
+		// Provide a hint.
+		pos, err := pgf.PosPosition(stmt.End())
+		if err != nil {
+			continue
+		}
+		add(protocol.InlayHint{
+			Position: pos,
+			Label:    labelPart(" // ignore error"),
+		})
 	}
 }
 
@@ -158,7 +218,7 @@ func funcTypeParams(info *types.Info, pgf *parsego.File, qual types.Qualifier, c
 		}
 		add(protocol.InlayHint{
 			Position: start,
-			Label:    buildLabel("[" + strings.Join(args, ", ") + "]"),
+			Label:    labelPart("[" + strings.Join(args, ", ") + "]"),
 			Kind:     protocol.Type,
 		})
 	}
@@ -215,7 +275,7 @@ func variableType(info *types.Info, pgf *parsego.File, qual types.Qualifier, e a
 	}
 	add(protocol.InlayHint{
 		Position:    end,
-		Label:       buildLabel(types.TypeString(typ, qual)),
+		Label:       labelPart(types.TypeString(typ, qual)),
 		Kind:        protocol.Type,
 		PaddingLeft: true,
 	})
@@ -265,7 +325,7 @@ func constantValues(info *types.Info, pgf *parsego.File, qual types.Qualifier, c
 			}
 			add(protocol.InlayHint{
 				Position:    end,
-				Label:       buildLabel("= " + strings.Join(values, ", ")),
+				Label:       labelPart("= " + strings.Join(values, ", ")),
 				PaddingLeft: true,
 			})
 		}
@@ -301,7 +361,7 @@ func compositeLiteralFields(info *types.Info, pgf *parsego.File, qual types.Qual
 				}
 				hints = append(hints, protocol.InlayHint{
 					Position:     start,
-					Label:        buildLabel(strct.Field(i).Name() + ":"),
+					Label:        labelPart(strct.Field(i).Name() + ":"),
 					Kind:         protocol.Parameter,
 					PaddingRight: true,
 				})
@@ -342,19 +402,16 @@ func compositeLiteralTypes(info *types.Info, pgf *parsego.File, qual types.Quali
 		}
 		add(protocol.InlayHint{
 			Position: start,
-			Label:    buildLabel(fmt.Sprintf("%s%s", prefix, types.TypeString(typ, qual))),
+			Label:    labelPart(fmt.Sprintf("%s%s", prefix, types.TypeString(typ, qual))),
 			Kind:     protocol.Type,
 		})
 	}
 }
 
-func buildLabel(s string) []protocol.InlayHintLabelPart {
+func labelPart(s string) []protocol.InlayHintLabelPart {
 	const maxLabelLength = 28
-	label := protocol.InlayHintLabelPart{
-		Value: s,
-	}
 	if len(s) > maxLabelLength+len("...") {
-		label.Value = s[:maxLabelLength] + "..."
+		s = s[:maxLabelLength] + "..."
 	}
-	return []protocol.InlayHintLabelPart{label}
+	return []protocol.InlayHintLabelPart{{Value: s}}
 }
