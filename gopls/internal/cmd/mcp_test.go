@@ -182,6 +182,10 @@ func MyFun() {}
 			t.Fatalf("killing gopls: %v", err)
 		}
 	}
+	// Wait for the gopls process to exit before we return and the test framework
+	// attempts to clean up the temporary directory.
+	// We expect an error because we killed the process.
+	goplsCmd.Wait()
 }
 
 // getRandomPort returns the number of a random available port. Inherently racy:
