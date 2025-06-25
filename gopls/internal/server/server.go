@@ -86,8 +86,6 @@ type server struct {
 
 	session *cache.Session
 
-	tempDir string
-
 	// changedFiles tracks files for which there has been a textDocument/didChange.
 	changedFilesMu sync.Mutex
 	changedFiles   map[protocol.DocumentURI]unit

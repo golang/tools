@@ -54,20 +54,6 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 	s.state = serverInitializing
 	s.stateMu.Unlock()
 
-	// For uniqueness, use the gopls PID rather than params.ProcessID (the client
-	// pid). Some clients might start multiple gopls servers, though they
-	// probably shouldn't.
-	pid := os.Getpid()
-	s.tempDir = filepath.Join(os.TempDir(), fmt.Sprintf("gopls-%d.%s", pid, s.session.ID()))
-	err := os.Mkdir(s.tempDir, 0700)
-	if err != nil {
-		// MkdirTemp could fail due to permissions issues. This is a problem with
-		// the user's environment, but should not block gopls otherwise behaving.
-		// All usage of s.tempDir should be predicated on having a non-empty
-		// s.tempDir.
-		event.Error(ctx, "creating temp dir", err)
-		s.tempDir = ""
-	}
 	s.progress.SetSupportsWorkDoneProgress(params.Capabilities.Window.WorkDoneProgress)
 
 	options := s.Options().Clone()
@@ -642,11 +628,6 @@ func (s *server) Shutdown(ctx context.Context) error {
 		// drop all the active views
 		s.session.Shutdown(ctx)
 		s.state = serverShutDown
-		if s.tempDir != "" {
-			if err := os.RemoveAll(s.tempDir); err != nil {
-				event.Error(ctx, "removing temp dir", err)
-			}
-		}
 	}
 	return nil
 }
