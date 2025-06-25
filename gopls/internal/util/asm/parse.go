@@ -55,19 +55,20 @@ type File struct {
 }
 
 func (f *File) NodeRange(ident Ident) (protocol.Range, error) {
-	return f.Mapper.OffsetRange(ident.Offset+2, ident.End()+1)
+	return f.Mapper.OffsetRange(ident.Offset, ident.Offset+ident.OrigLen)
 }
 
 // NodeLocation returns a protocol Location for the ast.Node interval in this file.
 func (f *File) NodeLocation(ident Ident) (protocol.Location, error) {
-	return f.Mapper.OffsetLocation(ident.Offset+2, ident.End()+1)
+	return f.Mapper.OffsetLocation(ident.Offset, ident.Offset+ident.OrigLen)
 }
 
 // Ident represents an identifier in an assembly file.
 type Ident struct {
-	Name   string // symbol name (after correcting [·∕]); Name[0]='.' => current package
-	Offset int    // zero-based byte offset
-	Kind   Kind
+	Name    string // symbol name (after correcting [·∕]); Name[0]='.' => current package
+	Offset  int    // zero-based byte offset
+	OrigLen int    // original length of the symbol name (before cleanup)
+	Kind    Kind
 }
 
 // End returns the identifier's end offset.
@@ -136,9 +137,10 @@ func Parse(uri protocol.DocumentURI, content []byte) *File {
 				if isIdent(sym) {
 					// (The Index call assumes sym is not itself "TEXT" etc.)
 					idents = append(idents, Ident{
-						Name:   cleanup(sym),
-						Kind:   kind,
-						Offset: offset + strings.Index(line, sym),
+						Name:    cleanup(sym),
+						Kind:    kind,
+						Offset:  offset + strings.Index(line, sym),
+						OrigLen: len(sym),
 					})
 				}
 				continue
@@ -196,9 +198,10 @@ func Parse(uri protocol.DocumentURI, content []byte) *File {
 			sym = cutBefore(sym, "<")   // "sym<ABIInternal>" =>> "sym"
 			if isIdent(sym) {
 				idents = append(idents, Ident{
-					Name:   cleanup(sym),
-					Kind:   Ref,
-					Offset: offset + tokenPos,
+					Name:    cleanup(sym),
+					Kind:    Ref,
+					Offset:  offset + tokenPos,
+					OrigLen: len(sym),
 				})
 			}
 		}
