@@ -33,6 +33,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/morestrings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
@@ -613,6 +614,9 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 	// Iterate over all assembly files and find all references to the target object.
 	for _, pgf := range pkg.AsmFiles() {
 		for _, id := range pgf.Idents {
+			if id.Kind != asm.Data && id.Kind != asm.Text {
+				continue
+			}
 			_, name, ok := morestrings.CutLast(id.Name, ".")
 			if !ok {
 				continue

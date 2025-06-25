@@ -64,9 +64,8 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return nil, fmt.Errorf("not an identifier")
 	}
 
-	sym := found.Name
 	var locations []protocol.Location
-	_, name, ok := morestrings.CutLast(sym, ".")
+	_, name, ok := morestrings.CutLast(found.Name, ".")
 	if !ok {
 		return nil, fmt.Errorf("not found")
 	}
@@ -76,25 +75,12 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	// Refer to the global search logic in golang.References, and add corresponding test cases for verification.
 	obj := pkg.Types().Scope().Lookup(name)
 	matches := func(curObj types.Object) bool {
-		if curObj == nil {
-			return false
-		}
-		if curObj.Name() != obj.Name() {
-			return false
-		}
-		return true
+		return curObj != nil && curObj.Name() == obj.Name()
 	}
 	for _, pgf := range pkg.CompiledGoFiles() {
 		for curId := range pgf.Cursor.Preorder((*ast.Ident)(nil)) {
 			id := curId.Node().(*ast.Ident)
-			curObj, ok := pkg.TypesInfo().Defs[id]
-			if !ok {
-				curObj, ok = pkg.TypesInfo().Uses[id]
-				if !ok {
-					continue
-				}
-			}
-			if !matches(curObj) {
+			if !matches(pkg.TypesInfo().ObjectOf(id)) {
 				continue
 			}
 			loc, err := pgf.NodeLocation(id)
@@ -105,21 +91,17 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		}
 	}
 
-	// If includeDeclaration is false, return only reference locations (exclude declarations).
-	if !includeDeclaration {
-		return locations, nil
-	}
-
-	for _, asmFile := range pkg.AsmFiles() {
-		for _, id := range asmFile.Idents {
-			if id.Name != sym {
-				continue
-			}
-			if loc, err := asmFile.NodeLocation(id); err == nil {
-				locations = append(locations, loc)
+	if includeDeclaration {
+		for _, asmFile := range pkg.AsmFiles() {
+			for _, id := range asmFile.Idents {
+				if id.Name == found.Name &&
+					(id.Kind == asm.Text || id.Kind == asm.Global || id.Kind == asm.Label) {
+					if loc, err := asmFile.NodeLocation(id); err == nil {
+						locations = append(locations, loc)
+					}
+				}
 			}
 		}
 	}
-
 	return locations, nil
 }

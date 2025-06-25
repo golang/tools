@@ -11,7 +11,6 @@ package xrefs
 import (
 	"go/ast"
 	"go/types"
-	"slices"
 	"sort"
 
 	"golang.org/x/tools/go/types/objectpath"
@@ -118,6 +117,9 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 	// For each asm file, record references to identifiers.
 	for fileIndex, af := range asmFiles {
 		for _, id := range af.Idents {
+			if id.Kind != asm.Data && id.Kind != asm.Text {
+				continue
+			}
 			_, name, ok := morestrings.CutLast(id.Name, ".")
 			if !ok {
 				continue
@@ -131,6 +133,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 			objects := getObjects(pkg)
 			gobObj, ok := objects[obj]
 			if !ok {
+				// obj is a package-level symbol, so its objectpath is just its name.
 				gobObj = &gobObject{Path: objectpath.Path(obj.Name())}
 				objects[obj] = gobObj
 			}
@@ -171,14 +174,25 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 // to any object in the target set. Each object is denoted by a pair
 // of (package path, object path).
 func Lookup(mp *metadata.Package, data []byte, targets map[metadata.PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location) {
-	var packages []*gobPackage
+	var (
+		packages      []*gobPackage
+		goFilesLen    = len(mp.CompiledGoFiles)
+		goAsmFilesLen = len(mp.AsmFiles)
+	)
 	packageCodec.Decode(data, &packages)
 	for _, gp := range packages {
 		if objectSet, ok := targets[gp.PkgPath]; ok {
 			for _, gobObj := range gp.Objects {
 				if _, ok := objectSet[gobObj.Path]; ok {
 					for _, ref := range gobObj.Refs {
-						uri := slices.Concat(mp.CompiledGoFiles, mp.AsmFiles)[ref.FileIndex]
+						var uri protocol.DocumentURI
+						if ref.FileIndex < goFilesLen {
+							uri = mp.CompiledGoFiles[ref.FileIndex]
+						} else if ref.FileIndex < goFilesLen+goAsmFilesLen {
+							uri = mp.AsmFiles[ref.FileIndex]
+						} else {
+							continue // out of bounds
+						}
 						locs = append(locs, protocol.Location{
 							URI:   uri,
 							Range: ref.Range,
