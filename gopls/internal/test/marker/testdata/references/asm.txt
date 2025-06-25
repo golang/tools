@@ -25,12 +25,12 @@ var _ = sub //@loc(refSub, "sub"), refs("sub", useSub, defSub, refSub)
 // portable assembly
 #include "textflag.h"
 
-TEXT ·Add(SB), NOSPLIT, $0-24 //@ loc(def, "Add"), refs("Add", def, use)
+TEXT ·Add(SB), NOSPLIT, $0-24 //@ loc(def, "·Add"), refs("Add", def, use)
     MOVQ a+0(FP), AX
     ADDQ b+8(FP), AX
     RET
 
-TEXT ·sub(SB), NOSPLIT, $0-24 //@ loc(defSub, "sub"), refs("sub", defSub, useSub, refSub)
+TEXT ·sub(SB), NOSPLIT, $0-24 //@ loc(defSub, "·sub"), refs("sub", defSub, useSub, refSub)
     MOVQ a+0(FP), AX
     SUBQ b+8(FP), AX
     RET
