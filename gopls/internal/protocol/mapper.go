@@ -256,6 +256,9 @@ func (m *Mapper) RangeOffsets(r Range) (int, int, error) {
 	if err != nil {
 		return 0, 0, err
 	}
+	if start > end {
+		return 0, 0, fmt.Errorf("start (offset %d) > end (offset %d)", start, end)
+	}
 	return start, end, nil
 }
 

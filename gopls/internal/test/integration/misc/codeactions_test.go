@@ -7,6 +7,7 @@ package misc
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -143,6 +144,31 @@ func Func() int { return 0 }
 					})
 				}
 			})
+		}
+	})
+}
+
+// TestDescendingRange isn't really a test of CodeAction at all: it
+// merely tests the response of the server to any (start, end) range
+// that is descending. See #74394.
+func TestDescendingRange(t *testing.T) {
+	const src = `
+-- go.mod --
+module example.com
+go 1.19
+
+-- a/a.go --
+package a
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		loc := env.RegexpSearch("a/a.go", "package")
+		rng := &loc.Range
+		rng.Start, rng.End = rng.End, rng.Start
+		_, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
+		got, wantSubstr := fmt.Sprint(err), "start (offset 7) > end (offset 0)"
+		if !strings.Contains(got, wantSubstr) {
+			t.Fatalf("CodeAction error: got %q, want substring %q", got, wantSubstr)
 		}
 	})
 }
