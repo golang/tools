@@ -423,12 +423,13 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 			_ = st.expr(e.Type)
 		}
 		t := types.Unalias(typeparams.Deref(tv.Type))
-		var uniques []ast.Expr
+		ct := typeparams.CoreType(t)
+		var mapKeys []ast.Expr // map key expressions; must be distinct if constant
 		for _, elt := range e.Elts {
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {
-				if !is[*types.Struct](t) {
+				if is[*types.Map](ct) {
 					if k := st.expr(kv.Key); k != nil {
-						uniques = append(uniques, st.toExpr(k))
+						mapKeys = append(mapKeys, st.toExpr(k))
 					}
 				}
 				_ = st.expr(kv.Value)
@@ -436,38 +437,24 @@ func (st *falconState) expr(e ast.Expr) (res any) { // = types.TypeAndValue | as
 				_ = st.expr(elt)
 			}
 		}
-		if uniques != nil {
-			// Inv: not a struct.
-
-			// The type T in constraint T{...} depends on the CompLit:
-			// - for a basic-keyed map, use map[K]int;
-			// - for an interface-keyed map, use map[any]int;
-			// - for a slice, use []int;
-			// - for an array or *array, use [n]int.
-			// The last two entail progressively stronger index checks.
-			var ct ast.Expr // type syntax for constraint
-			switch t := typeparams.CoreType(t).(type) {
-			case *types.Map:
-				if types.IsInterface(t.Key()) {
-					ct = &ast.MapType{
-						Key:   makeIdent(st.any),
-						Value: makeIdent(st.int),
-					}
-				} else {
-					ct = &ast.MapType{
-						Key:   makeIdent(st.typename(t.Key())),
-						Value: makeIdent(st.int),
-					}
+		if len(mapKeys) > 0 {
+			// Inlining a map literal may replace variable key expressions by constants.
+			// All such constants must have distinct values.
+			// (Array and slice literals do not permit non-constant keys.)
+			t := ct.(*types.Map)
+			var typ ast.Expr
+			if types.IsInterface(t.Key()) {
+				typ = &ast.MapType{
+					Key:   makeIdent(st.any),
+					Value: makeIdent(st.int),
 				}
-			case *types.Array: // or *array
-				ct = &ast.ArrayType{
-					Len: makeIntLit(t.Len()),
-					Elt: makeIdent(st.int),
+			} else {
+				typ = &ast.MapType{
+					Key:   makeIdent(st.typename(t.Key())),
+					Value: makeIdent(st.int),
 				}
-			default:
-				panic(fmt.Sprintf("%T: %v", t, t))
 			}
-			st.emitUnique(ct, uniques)
+			st.emitUnique(typ, mapKeys)
 		}
 		// definitely non-constant
 

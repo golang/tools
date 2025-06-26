@@ -109,6 +109,30 @@ func TestFalconMapKeys(t *testing.T) {
 }`,
 		},
 		{
+			"Generic map keys",
+			// We have to use a named map type here, because the substituter tries to
+			// wrap the type expr in parens, which are not allowed around the type in
+			// composite literal expressions.
+			`type Map map[int]bool; func f[M Map](x int) { _ = M{1: true, x: true} }`,
+			`func _() { f[Map](1) }`,
+			`func _() {
+	var x int = 1
+	_ = Map{1: true, x: true}
+}`,
+		},
+		{
+			"Array keys", // not a map; shouldn't crash (golang/go$74393)
+			`func f(x int) { _ = [2]int{1: 0} }`,
+			`func _() { f(0) }`,
+			`func _() { _ = [2]int{1: 0} }`,
+		},
+		{
+			"Slice keys", // not a map; shouldn't crash (golang/go$74393)
+			`func f(x int) { _ = []int{1: 0} }`,
+			`func _() { f(0) }`,
+			`func _() { _ = []int{1: 0} }`,
+		},
+		{
 			"Unique map keys (varied built-in types)",
 			`func f(x int16) { _ = map[any]bool{1: true, x: true} }`,
 			`func _() { f(2) }`,

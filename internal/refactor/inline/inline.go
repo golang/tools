@@ -1429,6 +1429,8 @@ func (st *state) typeArguments(call *ast.CallExpr) []*argument {
 		// ident or qualified ident to prevent "if x == struct{}"
 		// parsing ambiguity, or "T(x)" where T = "*int" or "func()"
 		// from misparsing.
+		// TODO(adonovan): this fails in cases where parens are disallowed, such as
+		// in the composite literal expression T{k: v}.
 		if _, ok := arg.expr.(*ast.Ident); !ok {
 			arg.expr = &ast.ParenExpr{X: arg.expr}
 		}
