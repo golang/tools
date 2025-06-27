@@ -645,7 +645,7 @@ use (
 		//
 		// TODO: should editing the go.work above cause modb diagnostics to be
 		// suppressed?
-		env.Await(env.DoneWithChange())
+		env.AfterChange()
 		if err := checkHelloLocation("modb/b/b.go"); err != nil {
 			t.Fatal(err)
 		}
@@ -656,12 +656,9 @@ use (
 			t.Fatal(err)
 		}
 
-		// This fails if guarded with a OnceMet(DoneWithSave(), ...), because it is
-		// delayed (and therefore not synchronous with the change).
-		//
-		// Note: this check used to assert on NoDiagnostics, but with zero-config
-		// gopls we still have diagnostics.
-		env.Await(Diagnostics(ForFile("modb/go.mod"), WithMessage("example.com is not used")))
+		// Since no file in modb is open, there should be no view containing
+		// modb/go.mod, and we should clear its diagnostics.
+		env.AfterChange(NoDiagnostics(ForFile("modb/go.mod")))
 
 		// Test Formatting.
 		env.SetBufferContent("go.work", `go 1.18
@@ -673,7 +670,7 @@ use (
 )
 `) // TODO(matloob): For some reason there's a "start position 7:0 is out of bounds" error when the ")" is on the last character/line in the file. Rob probably knows what's going on.
 		env.SaveBuffer("go.work")
-		env.Await(env.DoneWithSave())
+		env.AfterChange()
 		gotWorkContents := env.ReadWorkspaceFile("go.work")
 		wantWorkContents := `go 1.18
 
