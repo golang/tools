@@ -34,3 +34,8 @@ TEXT ·sub(SB), NOSPLIT, $0-24 //@ loc(defSub, "·sub"), refs("sub", defSub, use
     MOVQ a+0(FP), AX
     SUBQ b+8(FP), AX
     RET
+
+TEXT ·AddAndSub(SB), NOSPLIT, $0-24
+    CALL ·Add(SB)
+    CALL ·sub(SB)
+    RET
