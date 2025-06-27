@@ -44,7 +44,7 @@ import (
 //
 // The code below notes where are assumptions are made that only hold true in
 // the case of parameter removal (annotated with 'Assumption:')
-func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte, opts *inline.Options) (map[protocol.DocumentURI][]byte, error) {
+func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, origDecl *ast.FuncDecl, callee *inline.Callee, post func([]byte) []byte, opts *inline.Options) (_ map[protocol.DocumentURI][]byte, inlineErr error) {
 	// Collect references.
 	var refs []protocol.Location
 	{
@@ -68,6 +68,11 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 	var (
 		pkgForRef = make(map[protocol.Location]PackageID)
 		pkgs      = make(map[PackageID]*cache.Package)
+		// The inliner assumes that input is well-typed, but that is frequently not
+		// the case within gopls.
+		// Until we're able to harden the inliner, report panics as errors to avoid
+		// crashing the server.
+		badPkg = false
 	)
 	{
 		needPkgs := make(map[PackageID]struct{})
@@ -91,7 +96,18 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 
 		for _, p := range refPkgs {
 			pkgs[p.Metadata().ID] = p
+			if len(p.ParseErrors())+len(p.TypeErrors()) > 0 {
+				badPkg = true
+			}
 		}
+	}
+
+	if badPkg {
+		defer func() {
+			if x := recover(); x != nil {
+				inlineErr = fmt.Errorf("inlining failed (%q), likely because inputs were ill-typed", x)
+			}
+		}()
 	}
 
 	// Organize calls by top file declaration. Calls within a single file may
