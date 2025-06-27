@@ -175,9 +175,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 // of (package path, object path).
 func Lookup(mp *metadata.Package, data []byte, targets map[metadata.PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location) {
 	var (
-		packages      []*gobPackage
-		goFilesLen    = len(mp.CompiledGoFiles)
-		goAsmFilesLen = len(mp.AsmFiles)
+		packages []*gobPackage
 	)
 	packageCodec.Decode(data, &packages)
 	for _, gp := range packages {
@@ -186,12 +184,10 @@ func Lookup(mp *metadata.Package, data []byte, targets map[metadata.PackagePath]
 				if _, ok := objectSet[gobObj.Path]; ok {
 					for _, ref := range gobObj.Refs {
 						var uri protocol.DocumentURI
-						if ref.FileIndex < goFilesLen {
+						if asmIndex := ref.FileIndex - len(mp.CompiledGoFiles); asmIndex < 0 {
 							uri = mp.CompiledGoFiles[ref.FileIndex]
-						} else if ref.FileIndex < goFilesLen+goAsmFilesLen {
-							uri = mp.AsmFiles[ref.FileIndex]
 						} else {
-							continue // out of bounds
+							uri = mp.AsmFiles[asmIndex]
 						}
 						locs = append(locs, protocol.Location{
 							URI:   uri,
@@ -234,6 +230,6 @@ type gobObject struct {
 }
 
 type gobRef struct {
-	FileIndex int            // index of enclosing file within P's CompiledGoFiles
+	FileIndex int            // index of enclosing file within P's CompiledGoFiles + AsmFiles
 	Range     protocol.Range // source range of reference
 }
