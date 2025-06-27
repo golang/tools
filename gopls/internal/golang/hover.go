@@ -246,7 +246,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	}
 
 	// Handle hovering over a doc link
-	if obj, rng, _ := parseDocLink(pkg, pgf, pos); obj != nil {
+	if obj, rng, _ := resolveDocLink(pkg, pgf, pos); obj != nil {
 		// Built-ins have no position.
 		if isBuiltin(obj) {
 			h, err := hoverBuiltin(ctx, snapshot, obj)

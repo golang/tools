@@ -13,7 +13,6 @@ import (
 	"go/token"
 	"go/types"
 	pathpkg "path"
-	"slices"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -21,7 +20,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/astutil"
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
@@ -61,7 +59,7 @@ func DocCommentToMarkdown(text string, options *settings.Options) string {
 // docLinkDefinition finds the definition of the doc link in comments at pos.
 // If there is no reference at pos, returns errNoCommentReference.
 func docLinkDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol.Location, error) {
-	obj, _, err := parseDocLink(pkg, pgf, pos)
+	obj, _, err := resolveDocLink(pkg, pgf, pos)
 	if err != nil {
 		return nil, err
 	}
@@ -72,9 +70,9 @@ func docLinkDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache
 	return []protocol.Location{loc}, nil
 }
 
-// parseDocLink parses a doc link in a comment such as [fmt.Println]
+// resolveDocLink parses a doc link in a comment such as [fmt.Println]
 // and returns the symbol at pos, along with the link's start position.
-func parseDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types.Object, protocol.Range, error) {
+func resolveDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types.Object, protocol.Range, error) {
 	var comment *ast.Comment
 	for _, cg := range pgf.File.Comments {
 		for _, c := range cg.List {
@@ -154,15 +152,10 @@ func lookupDocLinkSymbol(pkg *cache.Package, pgf *parsego.File, name string) typ
 	// allowing for non-renaming and renaming imports.
 	fileScope := pkg.TypesInfo().Scopes[pgf.File]
 	if fileScope == nil {
-		// This is theoretically possible if pgf is a GoFile but not a
-		// CompiledGoFile. However, we do not know how to produce such a package
-		// without using an external GoPackagesDriver.
-		// See if this is the source of golang/go#70635
-		if slices.Contains(pkg.CompiledGoFiles(), pgf) {
-			bug.Reportf("missing file scope for compiled file")
-		} else {
-			bug.Reportf("missing file scope for non-compiled file")
-		}
+		// As we learned in golang/go#69616, any file may not be Scopes!
+		//  - A non-compiled Go file (such as unsafe.go) won't be in Scopes.
+		//  - A (technically) compiled go file with the wrong package name won't be
+		//    in Scopes, as it will be skipped by go/types.
 		return nil
 	}
 	pkgname, ok := fileScope.Lookup(prefix).(*types.PkgName) // ok => prefix is imported name

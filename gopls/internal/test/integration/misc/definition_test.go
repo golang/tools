@@ -699,3 +699,51 @@ func Foo() {
 		}
 	})
 }
+
+func TestCommentDefinition_Issue69616(t *testing.T) {
+	// This test exercises a few edge cases discovered by telemetry in
+	// golang/go#69616, namely situations where a parsed Go file might
+	// not have an associated scope in the package types.Info.
+	//
+	// The files below set up two types of edge cases:
+	//  - a 'compiled' Go file that isn't actually type-checked, because it has
+	//    the wrong package name
+	//  - a non-compiled Go file (unsafe.go).
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.21
+-- cmd/main.go --
+package main
+
+import "unsafe"
+
+var _  = unsafe.Offsetof
+
+func Foo() {}
+-- cmd/x.go --
+package x
+
+// Bar is like [Foo]
+func Bar() {}
+`
+
+	Run(t, src, func(t *testing.T, env *Env) {
+		// First, check that we don't produce a crash or bug when
+		// finding definitions in a 'compiled' go file that isn't actually type
+		// checked.
+		env.OpenFile("cmd/x.go")
+		_, _ = env.Editor.Definitions(env.Ctx, env.RegexpSearch("cmd/x.go", "()Foo"))
+
+		// Next, go to the unsafe package, and find the doc link to [Sizeof].
+		// It will also fail to resolve, because unsafe.go isn't compiled, but
+		// again should not panic or result in a bug.
+		env.OpenFile("cmd/main.go")
+		loc := env.FirstDefinition(env.RegexpSearch("cmd/main.go", `unsafe\.(Offsetof)`))
+		unsafePath := loc.URI.Path()
+		env.OpenFile(unsafePath)
+		_, _ = env.Editor.Definitions(env.Ctx,
+			env.RegexpSearch(unsafePath, `\[()Sizeof\]`))
+	})
+}
