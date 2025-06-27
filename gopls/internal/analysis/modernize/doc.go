@@ -58,7 +58,7 @@
 //   - minmax: replace an if/else conditional assignment by a call to
 //     the built-in min or max functions added in go1.21.
 //
-//   - sortslice: replace sort.Slice(x, func(i, j int) bool) { return s[i] < s[j] }
+//   - sortslice: replace sort.Slice(s, func(i, j int) bool) { return s[i] < s[j] }
 //     by a call to slices.Sort(s), added in go1.21.
 //
 //   - efaceany: replace interface{} by the 'any' type added in go1.18.
