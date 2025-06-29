@@ -110,9 +110,9 @@ func (s *goplsSource) ResolveReferences(ctx context.Context, filename string, mi
 
 		dbgpr("fromWS", fromWS)
 		dbgpr("old", old)
-		s.S.workspacePackages.Range(func(k PackageID, v PackagePath) {
+		for k, v := range s.S.workspacePackages.All() {
 			log.Printf("workspacePackages[%s]=%s", k, v)
-		})
+		}
 		// anything in ans with >1 matches?
 		seen := make(map[string]int)
 		for _, a := range fromWS {

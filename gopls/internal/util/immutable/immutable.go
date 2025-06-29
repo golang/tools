@@ -8,6 +8,11 @@
 // See the "persistent" package for copy-on-write data structures.
 package immutable
 
+import (
+	"iter"
+	"maps"
+)
+
 // Map is an immutable wrapper around an ordinary Go map.
 type Map[K comparable, V any] struct {
 	m map[K]V
@@ -33,11 +38,7 @@ func (m Map[K, V]) Len() int {
 	return len(m.m)
 }
 
-// Range calls f for each mapped (key, value) pair.
-// There is no way to break out of the loop.
-// TODO: generalize when Go iterators (#61405) land.
-func (m Map[K, V]) Range(f func(k K, v V)) {
-	for k, v := range m.m {
-		f(k, v)
-	}
+// All returns an iterator over each mapped (key, value) pair.
+func (m Map[K, V]) All() iter.Seq2[K, V] {
+	return maps.All(m.m)
 }

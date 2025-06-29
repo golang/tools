@@ -967,9 +967,9 @@ func (s *Snapshot) WorkspaceMetadata(ctx context.Context) ([]*metadata.Package, 
 	defer s.mu.Unlock()
 
 	meta := make([]*metadata.Package, 0, s.workspacePackages.Len())
-	s.workspacePackages.Range(func(id PackageID, _ PackagePath) {
+	for id, _ := range s.workspacePackages.All() {
 		meta = append(meta, s.meta.Packages[id])
-	})
+	}
 	return meta, nil
 }
 
