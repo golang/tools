@@ -33,7 +33,8 @@ type ServerTool struct {
 	// Set in NewServerTool or Server.AddToolsErr.
 	rawHandler rawToolHandler
 	// Resolved tool schemas. Set in Server.AddToolsErr.
-	inputResolved, outputResolved *jsonschema.Resolved
+	// TODO(rfindley): re-enable schema validation. For now, it is causing breakage in Google.
+	// inputResolved, outputResolved *jsonschema.Resolved
 }
 
 // NewServerTool is a helper to make a tool using reflection on the given type parameters.
@@ -79,7 +80,8 @@ func newServerToolErr[In, Out any](name, description string, handler ToolHandler
 	t.rawHandler = func(ctx context.Context, ss *ServerSession, rparams *CallToolParamsFor[json.RawMessage]) (*CallToolResult, error) {
 		var args In
 		if rparams.Arguments != nil {
-			if err := unmarshalSchema(rparams.Arguments, t.inputResolved, &args); err != nil {
+			// TODO(rfindley): re-enable schema validation. See note in [ServerTool].
+			if err := unmarshalSchema(rparams.Arguments, nil, &args); err != nil {
 				return nil, err
 			}
 		}
@@ -117,7 +119,8 @@ func newRawHandler(st *ServerTool) rawToolHandler {
 		// Unmarshal the args into what should be a map.
 		var args map[string]any
 		if rparams.Arguments != nil {
-			if err := unmarshalSchema(rparams.Arguments, st.inputResolved, &args); err != nil {
+			// TODO(rfindley): re-enable schema validation. See note in [ServerTool].
+			if err := unmarshalSchema(rparams.Arguments, nil, &args); err != nil {
 				return nil, err
 			}
 		}
