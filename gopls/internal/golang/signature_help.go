@@ -23,7 +23,7 @@ import (
 
 // SignatureHelp returns information about the signature of the innermost
 // function call enclosing the position, or nil if there is none.
-func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position) (*protocol.SignatureInformation, error) {
+func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, params *protocol.SignatureHelpParams) (*protocol.SignatureInformation, error) {
 	ctx, done := event.Start(ctx, "golang.SignatureHelp")
 	defer done()
 
@@ -33,7 +33,7 @@ func SignatureHelp(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if err != nil {
 		return nil, fmt.Errorf("getting file for SignatureHelp: %w", err)
 	}
-	pos, err := pgf.PositionPos(position)
+	pos, err := pgf.PositionPos(params.Position)
 	if err != nil {
 		return nil, err
 	}
@@ -78,12 +78,10 @@ loop:
 			// Don't show signature help in this case.
 			return nil, nil
 		case *ast.BasicLit:
-			if node.Kind == token.STRING {
-				// golang/go#43397: don't offer signature help when the user is typing
-				// in a string literal. Most LSP clients use ( or , as trigger
-				// characters, but within a string literal these should not trigger
-				// signature help (and it can be annoying when this happens after
-				// you've already dismissed the help!).
+			// golang/go#43397: don't offer signature help when the user is typing
+			// in a string literal unless it was manually invoked or help is already active.
+			if node.Kind == token.STRING &&
+				(params.Context == nil || (params.Context.TriggerKind != protocol.SigInvoked && !params.Context.IsRetrigger)) {
 				return nil, nil
 			}
 		}
@@ -119,7 +117,7 @@ loop:
 		// Special handling for error.Error, which is the only builtin method.
 		if obj.Name() == "Error" {
 			return &protocol.SignatureInformation{
-				Label: "Error()",
+				Label: "Error() string",
 				// TODO(skewb1k): move the docstring for error.Error to builtin.go and reuse it across all relevant LSP methods.
 				Documentation:   stringToSigInfoDocumentation("Error returns the error message.", snapshot.Options()),
 				Parameters:      nil,

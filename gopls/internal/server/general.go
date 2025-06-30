@@ -161,6 +161,9 @@ func (s *server) Initialize(ctx context.Context, params *protocol.ParamInitializ
 			},
 			SignatureHelpProvider: &protocol.SignatureHelpOptions{
 				TriggerCharacters: []string{"(", ","},
+				// Used to update or dismiss signature help when it's already active,
+				// typically after a call expression is closed.
+				RetriggerCharacters: []string{")"},
 			},
 			TextDocumentSync: &protocol.TextDocumentSyncOptions{
 				Change:    protocol.Incremental,
