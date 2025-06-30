@@ -7,7 +7,6 @@ package golang
 import (
 	"context"
 	"fmt"
-	"go/token"
 	"go/types"
 	"slices"
 	"strings"
@@ -54,21 +53,9 @@ func PrepareTypeHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 	}
 
 	// Find declaration.
-	var declLoc protocol.Location
-	if isBuiltin(obj) {
-		pgf, id, err := builtinDecl(ctx, snapshot, obj)
-		if err != nil {
-			return nil, err
-		}
-		declLoc, err = pgf.NodeLocation(id)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		declLoc, err = mapPosition(ctx, pkg.FileSet(), snapshot, tname.Pos(), tname.Pos()+token.Pos(len(tname.Name())))
-		if err != nil {
-			return nil, err
-		}
+	declLoc, err := objectLocation(ctx, pkg.FileSet(), snapshot, tname)
+	if err != nil {
+		return nil, err
 	}
 
 	pkgpath := "builtin"

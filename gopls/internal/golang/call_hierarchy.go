@@ -48,7 +48,7 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 		return nil, nil
 	}
 
-	declLoc, err := mapPosition(ctx, pkg.FileSet(), snapshot, obj.Pos(), adjustedObjEnd(obj))
+	declLoc, err := objectLocation(ctx, pkg.FileSet(), snapshot, obj)
 	if err != nil {
 		return nil, err
 	}
@@ -266,11 +266,8 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		if obj == nil {
 			continue
 		}
-		if isBuiltin(obj) {
-			continue // built-ins have no position
-		}
 
-		loc, err := mapPosition(ctx, declPkg.FileSet(), snapshot, obj.Pos(), obj.Pos()+token.Pos(len(obj.Name())))
+		loc, err := objectLocation(ctx, declPkg.FileSet(), snapshot, obj)
 		if err != nil {
 			return nil, err
 		}

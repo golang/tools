@@ -37,31 +37,6 @@ func IsGenerated(ctx context.Context, snapshot *cache.Snapshot, uri protocol.Doc
 	return ast.IsGenerated(pgf.File)
 }
 
-// adjustedObjEnd returns the end position of obj, possibly modified for
-// package names.
-//
-// TODO(rfindley): eliminate this function, by inlining it at callsites where
-// it makes sense.
-func adjustedObjEnd(obj types.Object) token.Pos {
-	nameLen := len(obj.Name())
-	if pkgName, ok := obj.(*types.PkgName); ok {
-		// An imported Go package has a package-local, unqualified name.
-		// When the name matches the imported package name, there is no
-		// identifier in the import spec with the local package name.
-		//
-		// For example:
-		// 		import "go/ast" 	// name "ast" matches package name
-		// 		import a "go/ast"  	// name "a" does not match package name
-		//
-		// When the identifier does not appear in the source, have the range
-		// of the object be the import path, including quotes.
-		if pkgName.Imported().Name() == pkgName.Name() {
-			nameLen = len(pkgName.Imported().Path()) + len(`""`)
-		}
-	}
-	return obj.Pos() + token.Pos(nameLen)
-}
-
 // FormatNode returns the "pretty-print" output for an ast node.
 func FormatNode(fset *token.FileSet, n ast.Node) string {
 	var buf strings.Builder

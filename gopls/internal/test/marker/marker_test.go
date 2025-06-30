@@ -196,6 +196,22 @@ func Test(t *testing.T) {
 			}
 			defer run.env.Shutdown()
 
+			// Support built-in pseudo-locations here.
+			// fmtLoc coerces "got" Locations to these forms
+			// so they can be compared without depending
+			// on line numbers in external files.
+			//
+			// (We could actually define "builtin:int" etc
+			// with the correct file/line/col for each
+			// builtin symbol, but that doesn't seem to be
+			// where the bugs are.)
+			run.values["BUILTIN"] = protocol.Location{
+				URI: "file:///pseudo/builtin/builtin.go",
+			}
+			run.values["UNSAFE"] = protocol.Location{
+				URI: "file:///pseudo/unsafe/unsafe.go",
+			}
+
 			// Open all files so that we operate consistently with LSP clients, and
 			// (pragmatically) so that we have a Mapper available via the fake
 			// editor.
@@ -1100,6 +1116,16 @@ func (run *markerTestRun) fmtLoc(loc protocol.Location) string {
 		run.env.TB.Errorf("unable to find %s in test archive", loc)
 		return "<invalid location>"
 	}
+
+	// Format builtin locations as "file:///pseudo/builtin/builtin.go:0:0",
+	// which is the predefined BUILTIN marker; ditto UNSAFE.
+	if strings.HasSuffix(string(loc.URI), "src/unsafe/unsafe.go") ||
+		strings.HasSuffix(string(loc.URI), "src/builtin/builtin.go") {
+		name := filepath.Base(filepath.Dir(loc.URI.Path())) // "unsafe" or "builtin"
+		loc.URI = protocol.DocumentURI("file:///pseudo/" + name + "/" + name + ".go")
+		loc.Range = protocol.Range{}
+	}
+
 	lines := bytes.Count(run.test.archive.Comment, []byte("\n"))
 	var name string
 	for _, f := range run.test.archive.Files {
@@ -1253,9 +1279,8 @@ func convertNamedArgLocation(mark marker, arg any) (protocol.Location, error) {
 		if v, ok := mark.run.values[id]; ok {
 			if loc, ok := v.(protocol.Location); ok {
 				return loc, nil
-			} else {
-				return protocol.Location{}, fmt.Errorf("invalid location value %v", v)
 			}
+			return protocol.Location{}, fmt.Errorf("invalid location value %v", v)
 		}
 	}
 	return convertLocation(mark, arg)

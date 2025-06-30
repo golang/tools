@@ -63,7 +63,7 @@ func docLinkDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache
 	if err != nil {
 		return nil, err
 	}
-	loc, err := mapPosition(ctx, pkg.FileSet(), snapshot, obj.Pos(), adjustedObjEnd(obj))
+	loc, err := objectLocation(ctx, pkg.FileSet(), snapshot, obj)
 	if err != nil {
 		return nil, err
 	}
@@ -184,25 +184,25 @@ func lookupDocLinkSymbol(pkg *cache.Package, pgf *parsego.File, name string) typ
 	// Type.Method?
 	recv, method, ok := strings.Cut(name, ".")
 	if ok {
-		obj, ok := scope.Lookup(recv).(*types.TypeName)
+		obj := scope.Lookup(recv) // package scope
+		if obj == nil {
+			obj = types.Universe.Lookup(recv)
+		}
+		obj, ok := obj.(*types.TypeName)
 		if !ok {
 			return nil
 		}
-		t, ok := obj.Type().(*types.Named)
-		if !ok {
-			return nil
-		}
-		for i := 0; i < t.NumMethods(); i++ {
-			m := t.Method(i)
-			if m.Name() == method {
-				return m
-			}
+		m, _, _ := types.LookupFieldOrMethod(obj.Type(), true, obj.Pkg(), method)
+		if is[*types.Func](m) {
+			return m
 		}
 		return nil
 	}
 
-	// package-level symbol
-	return scope.Lookup(name)
+	if obj := scope.Lookup(name); obj != nil {
+		return obj // package-level symbol
+	}
+	return types.Universe.Lookup(name) // built-in symbol
 }
 
 // newDocCommentParser returns a function that parses [doc comments],

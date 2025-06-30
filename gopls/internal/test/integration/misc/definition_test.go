@@ -394,15 +394,18 @@ func F[T comparable]() {}
 	Run(t, mod, func(t *testing.T, env *Env) {
 		env.OpenFile("main.go")
 
-		// TypeDefinition of comparable should
-		// returns an empty result, not panic.
+		// TypeDefinition of comparable should not panic.
 		loc := env.RegexpSearch("main.go", "comparable")
-		locs, err := env.Editor.TypeDefinitions(env.Ctx, loc)
+		locs, err := env.Editor.TypeDefinitions(env.Ctx, loc) // doesn't panic
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(locs) > 0 {
-			t.Fatalf("unexpected result: %v", locs)
+
+		// For extra credit, check the actual location.
+		got := fmt.Sprint(locs)
+		wantSubstr := "builtin.go"
+		if !strings.Contains(got, wantSubstr) {
+			t.Errorf("TypeDefinitions('comparable') = %v, want substring %q", got, wantSubstr)
 		}
 	})
 }
@@ -454,7 +457,7 @@ func TestGoToCrashingDefinition_Issue49223(t *testing.T) {
 		params.TextDocument.URI = protocol.DocumentURI("fugitive%3A///Users/user/src/mm/ems/.git//0/pkg/domain/treasury/provider.go")
 		params.Position.Character = 18
 		params.Position.Line = 0
-		env.Editor.Server.Definition(env.Ctx, params)
+		env.Editor.Server.Definition(env.Ctx, params) // ignore error
 	})
 }
 

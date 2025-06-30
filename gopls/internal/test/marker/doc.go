@@ -119,6 +119,8 @@ Here is the list of supported value markers:
     locations may be referenced by other markers. Naturally, the location
     argument may be specified only as a string or regular expression in the
     first pass.
+    The predeclared locations BUILTIN and UNSAFE match any location in the
+    GOROOT/src/{builtin/builtin,unsafe/unsafe}.go file, regardless of GOROOT.
 
   - defloc(name, location): performs a textDocument/definition request at the
     src location, and binds the result to the given name. This may be used to

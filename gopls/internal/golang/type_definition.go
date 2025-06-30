@@ -7,7 +7,6 @@ package golang
 import (
 	"context"
 	"fmt"
-	"go/token"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
@@ -41,11 +40,7 @@ func TypeDefinition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 	if tname == nil {
 		return nil, fmt.Errorf("no type definition for %s", obj.Name())
 	}
-	if isBuiltin(tname) {
-		return nil, nil // built-ins (error, comparable) have no position
-	}
-
-	loc, err := mapPosition(ctx, pkg.FileSet(), snapshot, tname.Pos(), tname.Pos()+token.Pos(len(tname.Name())))
+	loc, err := objectLocation(ctx, pkg.FileSet(), snapshot, tname)
 	if err != nil {
 		return nil, err
 	}

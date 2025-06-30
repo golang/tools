@@ -175,11 +175,6 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return nil, nil
 	}
 
-	// Built-ins have no position.
-	if isBuiltin(obj) {
-		return builtinDefinition(ctx, snapshot, obj)
-	}
-
 	// Non-go (e.g. assembly) symbols
 	//
 	// When already at the definition of a Go function without
@@ -193,22 +188,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	// Finally, map the object position.
-	loc, err := mapPosition(ctx, pkg.FileSet(), snapshot, obj.Pos(), adjustedObjEnd(obj))
-	if err != nil {
-		return nil, err
-	}
-	return []protocol.Location{loc}, nil
-}
-
-// builtinDefinition returns the location of the fake source
-// declaration of a built-in in {builtin,unsafe}.go.
-func builtinDefinition(ctx context.Context, snapshot *cache.Snapshot, obj types.Object) ([]protocol.Location, error) {
-	pgf, ident, err := builtinDecl(ctx, snapshot, obj)
-	if err != nil {
-		return nil, err
-	}
-
-	loc, err := pgf.NodeLocation(ident)
+	loc, err := objectLocation(ctx, pkg.FileSet(), snapshot, obj)
 	if err != nil {
 		return nil, err
 	}
@@ -438,16 +418,48 @@ func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package
 	return locs, nil
 }
 
-// mapPosition returns the location of (start, end) in the file
-// that encloses that range according to fset.
-// It may need to read the file content, hence (ctx, s).
-//
-// TODO(rfindley): avoid the duplicate column mapping here, by associating a
-// column mapper with each file handle.
-func mapPosition(ctx context.Context, fset *token.FileSet, s file.Source, start, end token.Pos) (protocol.Location, error) {
+// objectLocation returns the location of the declaring identifier of obj.
+// If valid, obj.Pos() must be mapped by fset.
+// It may need to read the declaring file content, hence (ctx, s).
+// It supports the builtin and unsafe pseudo-packages.
+func objectLocation(ctx context.Context, fset *token.FileSet, snapshot *cache.Snapshot, obj types.Object) (protocol.Location, error) {
+	if isBuiltin(obj) {
+		// Returns fake source declaration in {builtin,unsafe}.go.
+		pgf, ident, err := builtinDecl(ctx, snapshot, obj)
+		if err != nil {
+			return protocol.Location{}, err
+		}
+		return pgf.NodeLocation(ident)
+	}
+
+	// An imported Go package has a package-local, unqualified name.
+	// When the name matches the imported package name, there is usually
+	// no identifier in the import spec with the local package name.
+	//
+	// For example:
+	// 	import "go/‸ast" 	// name "ast" matches package name
+	// 	import ‸a "go/ast"  	// name "a" does not match package name
+	//
+	// When the identifier does not appear in the source, have the range
+	// of the object be the import path, including quotes.
+	//
+	// But this is just a heuristic, and it's wrong in this case:
+	// 	import ‸ast "go/ast"  	// name matches (spurious result is `ast "go/`)
+	nameLen := len(obj.Name())
+	if pkgName, ok := obj.(*types.PkgName); ok && pkgName.Imported().Name() == pkgName.Name() {
+		nameLen = len(pkgName.Imported().Path()) + len(`""`)
+	}
+
+	var (
+		start = obj.Pos()
+		end   = start + token.Pos(nameLen)
+	)
 	file := fset.File(start)
+	if file == nil {
+		return protocol.Location{}, bug.Errorf("FileSet does not map Pos %d", start)
+	}
 	uri := protocol.URIFromPath(file.Name())
-	fh, err := s.ReadFile(ctx, uri)
+	fh, err := snapshot.ReadFile(ctx, uri)
 	if err != nil {
 		return protocol.Location{}, err
 	}
@@ -455,6 +467,8 @@ func mapPosition(ctx context.Context, fset *token.FileSet, s file.Source, start,
 	if err != nil {
 		return protocol.Location{}, err
 	}
+	// TODO(rfindley): avoid the duplicate column mapping here, by associating a
+	// column mapper with each file handle.
 	m := protocol.NewMapper(fh.URI(), content)
 	return m.PosLocation(file, start, end)
 }
