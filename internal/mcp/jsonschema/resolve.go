@@ -334,7 +334,7 @@ func resolveURIs(root *Schema, baseURI *url.URL) (map[string]*Schema, error) {
 			// The base URI for this schema is its $id resolved against the parent base.
 			s.uri = base.uri.ResolveReference(idURI)
 			if !s.uri.IsAbs() {
-				return fmt.Errorf("$id %s does not resolve to an absolute URI (base is %s)", s.ID, s.base.uri)
+				return fmt.Errorf("$id %s does not resolve to an absolute URI (base is %s)", s.ID, base.uri)
 			}
 			resolvedURIs[s.uri.String()] = s
 			base = s // needed for anchors
