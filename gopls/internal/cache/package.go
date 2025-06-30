@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/testfuncs"
 	"golang.org/x/tools/gopls/internal/cache/xrefs"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
 // Convenient aliases for very heavily used types.
@@ -132,15 +133,26 @@ func (p *Package) File(uri protocol.DocumentURI) (*parsego.File, error) {
 	return p.pkg.File(uri)
 }
 
-func (pkg *syntaxPackage) File(uri protocol.DocumentURI) (*parsego.File, error) {
-	for _, cgf := range pkg.compiledGoFiles {
-		if cgf.URI == uri {
-			return cgf, nil
+// FileEnclosing returns the file of pkg that encloses the specified position,
+// which must be mapped by p.FileSet().
+func (p *Package) FileEnclosing(pos token.Pos) (*parsego.File, error) {
+	for _, files := range [...][]*parsego.File{p.pkg.compiledGoFiles, p.pkg.goFiles} {
+		for _, pgf := range files {
+			if pgf.File.FileStart <= pos && pos <= pgf.File.FileEnd {
+				return pgf, nil
+			}
 		}
 	}
-	for _, gf := range pkg.goFiles {
-		if gf.URI == uri {
-			return gf, nil
+	return nil, fmt.Errorf("no parsed file for position %d (%s) in %v",
+		pos, safetoken.StartPosition(p.FileSet(), pos), p.pkg.id)
+}
+
+func (pkg *syntaxPackage) File(uri protocol.DocumentURI) (*parsego.File, error) {
+	for _, files := range [...][]*parsego.File{pkg.compiledGoFiles, pkg.goFiles} {
+		for _, pgf := range files {
+			if pgf.URI == uri {
+				return pgf, nil
+			}
 		}
 	}
 	return nil, fmt.Errorf("no parsed file for %s in %v", uri, pkg.id)

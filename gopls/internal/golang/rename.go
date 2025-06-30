@@ -1294,9 +1294,9 @@ func (r *renamer) update() (map[protocol.DocumentURI][]diff.Edit, error) {
 
 	// Update each identifier, and its doc comment if it is a declaration.
 	for _, item := range items {
-		pgf, ok := enclosingFile(r.pkg, item.node.Pos())
-		if !ok {
-			bug.Reportf("edit does not belong to syntax of package %q", r.pkg)
+		pgf, err := r.pkg.FileEnclosing(item.node.Pos())
+		if err != nil {
+			bug.Reportf("edit does not belong to syntax of package %q: %v", r.pkg, err)
 			continue
 		}
 
@@ -1659,16 +1659,6 @@ func parsePackageNameDecl(ctx context.Context, snapshot *cache.Snapshot, fh file
 	// pgf.Pos(ppos) may be beyond EOF => (0, err).
 	pos, _ := pgf.PositionPos(ppos)
 	return pgf, goplsastutil.NodeContains(pgf.File.Name, pos), nil
-}
-
-// enclosingFile returns the CompiledGoFile of pkg that contains the specified position.
-func enclosingFile(pkg *cache.Package, pos token.Pos) (*parsego.File, bool) {
-	for _, pgf := range pkg.CompiledGoFiles() {
-		if pgf.File.FileStart <= pos && pos <= pgf.File.FileEnd {
-			return pgf, true
-		}
-	}
-	return nil, false
 }
 
 // posEdit returns an edit to replace the (start, end) range of tf with 'new'.

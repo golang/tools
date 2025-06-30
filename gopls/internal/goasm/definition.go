@@ -85,6 +85,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 			return nil, fmt.Errorf("package %q is not a dependency", pkgpath)
 		}
 
+		// Find declared symbol in syntax package.
 		pkgs, err := snapshot.TypeCheck(ctx, declaring.ID)
 		if err != nil {
 			return nil, err
@@ -94,10 +95,18 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		if def == nil {
 			return nil, fmt.Errorf("no symbol %q in package %q", name, pkgpath)
 		}
-		loc, err := mapPosition(ctx, pkg.FileSet(), snapshot, def.Pos(), def.Pos())
-		if err == nil {
-			return []protocol.Location{loc}, nil
+
+		// Map position.
+		pos := def.Pos()
+		pgf, err := pkg.FileEnclosing(pos)
+		if err != nil {
+			return nil, err
 		}
+		loc, err := pgf.PosLocation(pos, pos+token.Pos(len(name)))
+		if err != nil {
+			return nil, err
+		}
+		return []protocol.Location{loc}, nil
 
 	} else {
 		// local symbols (funcs, vars, labels)
@@ -115,22 +124,4 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	return nil, nil
-}
-
-// TODO(rfindley): avoid the duplicate column mapping here, by associating a
-// column mapper with each file handle.
-// TODO(adonovan): plundered from ../golang; factor.
-func mapPosition(ctx context.Context, fset *token.FileSet, s file.Source, start, end token.Pos) (protocol.Location, error) {
-	file := fset.File(start)
-	uri := protocol.URIFromPath(file.Name())
-	fh, err := s.ReadFile(ctx, uri)
-	if err != nil {
-		return protocol.Location{}, err
-	}
-	content, err := fh.Content()
-	if err != nil {
-		return protocol.Location{}, err
-	}
-	m := protocol.NewMapper(fh.URI(), content)
-	return m.PosLocation(file, start, end)
 }

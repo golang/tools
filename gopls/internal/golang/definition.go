@@ -438,6 +438,10 @@ func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package
 	return locs, nil
 }
 
+// mapPosition returns the location of (start, end) in the file
+// that encloses that range according to fset.
+// It may need to read the file content, hence (ctx, s).
+//
 // TODO(rfindley): avoid the duplicate column mapping here, by associating a
 // column mapper with each file handle.
 func mapPosition(ctx context.Context, fset *token.FileSet, s file.Source, start, end token.Pos) (protocol.Location, error) {

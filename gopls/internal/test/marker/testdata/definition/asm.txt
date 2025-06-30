@@ -16,7 +16,7 @@ package a
 import _ "fmt"
 import _ "example.com/b"
 
-func ff() //@ loc(ffgo, re"()ff"), def("ff", ffasm)
+func ff() //@ loc(ffgo, "ff"), def("ff", ffasm)
 
 var _ = ff // pacify unusedfunc analyzer
 
@@ -33,4 +33,4 @@ label:					//@ loc(label,"label")
 -- b/b.go --
 package b
 
-func B() {} //@ loc(bB, re"()B")
+func B() {} //@ loc(bB, "B")

@@ -71,18 +71,16 @@ func docLinkDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache
 }
 
 // resolveDocLink parses a doc link in a comment such as [fmt.Println]
-// and returns the symbol at pos, along with the link's start position.
+// and returns the symbol at pos, along with the link's range.
 func resolveDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types.Object, protocol.Range, error) {
 	var comment *ast.Comment
+outer:
 	for _, cg := range pgf.File.Comments {
 		for _, c := range cg.List {
 			if c.Pos() <= pos && pos <= c.End() {
 				comment = c
-				break
+				break outer
 			}
-		}
-		if comment != nil {
-			break
 		}
 	}
 	if comment == nil {
@@ -110,32 +108,32 @@ func resolveDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types
 	lineOffset := int(pos - start)
 
 	for _, idx := range docLinkRegex.FindAllStringSubmatchIndex(text, -1) {
-		// The [idx[2], idx[3]) identifies the first submatch,
+		mstart, mend := idx[2], idx[3]
+		// [mstart, mend) identifies the first submatch,
 		// which is the reference name in the doc link (sans '*').
 		// e.g. The "[fmt.Println]" reference name is "fmt.Println".
-		if !(idx[2] <= lineOffset && lineOffset < idx[3]) {
-			continue
-		}
-		p := lineOffset - idx[2]
-		name := text[idx[2]:idx[3]]
-		i := strings.LastIndexByte(name, '.')
-		for i != -1 {
-			if p > i {
-				break
+		if mstart <= lineOffset && lineOffset < mend {
+			p := lineOffset - mstart
+			name := text[mstart:mend]
+			i := strings.LastIndexByte(name, '.')
+			for i != -1 {
+				if p > i {
+					break
+				}
+				name = name[:i]
+				i = strings.LastIndexByte(name, '.')
 			}
-			name = name[:i]
-			i = strings.LastIndexByte(name, '.')
+			obj := lookupDocLinkSymbol(pkg, pgf, name)
+			if obj == nil {
+				return nil, protocol.Range{}, errNoCommentReference
+			}
+			namePos := start + token.Pos(mstart+i+1)
+			rng, err := pgf.PosRange(namePos, namePos+token.Pos(len(obj.Name())))
+			if err != nil {
+				return nil, protocol.Range{}, err
+			}
+			return obj, rng, nil // success
 		}
-		obj := lookupDocLinkSymbol(pkg, pgf, name)
-		if obj == nil {
-			return nil, protocol.Range{}, errNoCommentReference
-		}
-		namePos := start + token.Pos(idx[2]+i+1)
-		rng, err := pgf.PosRange(namePos, namePos+token.Pos(len(obj.Name())))
-		if err != nil {
-			return nil, protocol.Range{}, err
-		}
-		return obj, rng, nil
 	}
 
 	return nil, protocol.Range{}, errNoCommentReference

@@ -439,7 +439,7 @@ func (r *renamer) checkStructField(from *types.Var) {
 	// go/types offers no easy way to get from a field (or interface
 	// method) to its declaring struct (or interface), so we must
 	// ascend the AST.
-	if pgf, ok := enclosingFile(r.pkg, from.Pos()); ok {
+	if pgf, err := r.pkg.FileEnclosing(from.Pos()); err == nil {
 		path, _ := astutil.PathEnclosingInterval(pgf.File, from.Pos(), from.Pos())
 		// path matches this pattern:
 		// [Ident SelectorExpr? StarExpr? Field FieldList StructType ParenExpr* ... File]

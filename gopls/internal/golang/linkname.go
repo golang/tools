@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
 // ErrNoLinkname is returned by LinknameDefinition when no linkname
@@ -135,11 +134,7 @@ func findLinkname(ctx context.Context, snapshot *cache.Snapshot, pkgPath Package
 		return nil, nil, token.NoPos, fmt.Errorf("package %q does not define %s", pkgPath, name)
 	}
 
-	objURI := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
-	pgf, err := pkg.File(protocol.URIFromPath(objURI.Filename))
-	if err != nil {
-		return nil, nil, token.NoPos, err
-	}
-
-	return pkg, pgf, obj.Pos(), nil
+	pos := obj.Pos()
+	pgf, err := pkg.FileEnclosing(pos)
+	return pkg, pgf, pos, err
 }
