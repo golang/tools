@@ -43,19 +43,19 @@ func (t *imports) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("imports expects 1 argument")
 	}
 	t.app.editFlags = &t.EditFlags
-	conn, _, err := t.app.connect(ctx)
+	cli, _, err := t.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
 	uri := from.URI()
-	file, err := conn.openFile(ctx, uri)
+	file, err := cli.openFile(ctx, uri)
 	if err != nil {
 		return err
 	}
-	actions, err := conn.server.CodeAction(ctx, &protocol.CodeActionParams{
+	actions, err := cli.server.CodeAction(ctx, &protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: uri,
 		},

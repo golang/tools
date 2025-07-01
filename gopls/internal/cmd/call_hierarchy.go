@@ -39,14 +39,14 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("call_hierarchy expects 1 argument (position)")
 	}
 
-	conn, _, err := c.app.connect(ctx)
+	cli, _, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
 
-	callItems, err := conn.server.PrepareCallHierarchy(ctx, &p)
+	callItems, err := cli.server.PrepareCallHierarchy(ctx, &p)
 	if err != nil {
 		return err
 	}
@@ -69,34 +69,34 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 	}
 
 	for _, item := range callItems {
-		incomingCalls, err := conn.server.IncomingCalls(ctx, &protocol.CallHierarchyIncomingCallsParams{Item: item})
+		incomingCalls, err := cli.server.IncomingCalls(ctx, &protocol.CallHierarchyIncomingCallsParams{Item: item})
 		if err != nil {
 			return err
 		}
 		for i, call := range incomingCalls {
 			// From the spec: CallHierarchyIncomingCall.FromRanges is relative to
 			// the caller denoted by CallHierarchyIncomingCall.from.
-			printString, err := callItemPrintString(ctx, conn, call.From, call.From.URI, call.FromRanges)
+			printString, err := callItemPrintString(ctx, cli, call.From, call.From.URI, call.FromRanges)
 			if err != nil {
 				return err
 			}
 			fmt.Printf("caller[%d]: %s\n", i, printString)
 		}
 
-		printString, err := callItemPrintString(ctx, conn, item, "", nil)
+		printString, err := callItemPrintString(ctx, cli, item, "", nil)
 		if err != nil {
 			return err
 		}
 		fmt.Printf("identifier: %s\n", printString)
 
-		outgoingCalls, err := conn.server.OutgoingCalls(ctx, &protocol.CallHierarchyOutgoingCallsParams{Item: item})
+		outgoingCalls, err := cli.server.OutgoingCalls(ctx, &protocol.CallHierarchyOutgoingCallsParams{Item: item})
 		if err != nil {
 			return err
 		}
 		for i, call := range outgoingCalls {
 			// From the spec: CallHierarchyOutgoingCall.FromRanges is the range
 			// relative to the caller, e.g the item passed to
-			printString, err := callItemPrintString(ctx, conn, call.To, item.URI, call.FromRanges)
+			printString, err := callItemPrintString(ctx, cli, call.To, item.URI, call.FromRanges)
 			if err != nil {
 				return err
 			}
@@ -109,8 +109,8 @@ func (c *callHierarchy) Run(ctx context.Context, args ...string) error {
 
 // callItemPrintString returns a protocol.CallHierarchyItem object represented as a string.
 // item and call ranges (protocol.Range) are converted to user friendly spans (1-indexed).
-func callItemPrintString(ctx context.Context, conn *client, item protocol.CallHierarchyItem, callsURI protocol.DocumentURI, calls []protocol.Range) (string, error) {
-	itemFile, err := conn.openFile(ctx, item.URI)
+func callItemPrintString(ctx context.Context, cli *client, item protocol.CallHierarchyItem, callsURI protocol.DocumentURI, calls []protocol.Range) (string, error) {
+	itemFile, err := cli.openFile(ctx, item.URI)
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +121,7 @@ func callItemPrintString(ctx context.Context, conn *client, item protocol.CallHi
 
 	var callRanges []string
 	if callsURI != "" {
-		callsFile, err := conn.openFile(ctx, callsURI)
+		callsFile, err := cli.openFile(ctx, callsURI)
 		if err != nil {
 			return "", err
 		}

@@ -39,11 +39,11 @@ Examples:
 func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 	// Start a new in-process gopls session and create a fake client
 	// to connect to it.
-	conn, sess, err := m.app.connect(ctx)
+	cli, sess, err := m.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	// Send a SessionStart event to trigger creation of an http handler.
 	if m.Address != "" {
@@ -55,20 +55,20 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 			eventChan <- lsprpc.SessionEvent{
 				Session: sess,
 				Type:    lsprpc.SessionStart,
-				Server:  conn.server,
+				Server:  cli.server,
 			}
 		}()
 		defer func() {
 			eventChan <- lsprpc.SessionEvent{
 				Session: sess,
 				Type:    lsprpc.SessionEnd,
-				Server:  conn.server,
+				Server:  cli.server,
 			}
 		}()
 
 		return mcp.Serve(ctx, m.Address, eventChan, false)
 	} else {
 		countHeadlessMCPStdIO.Inc()
-		return mcp.StartStdIO(ctx, sess, conn.server)
+		return mcp.StartStdIO(ctx, sess, cli.server)
 	}
 }

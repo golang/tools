@@ -44,19 +44,19 @@ func (l *links) Run(ctx context.Context, args ...string) error {
 	if len(args) != 1 {
 		return tool.CommandLineErrorf("links expects 1 argument")
 	}
-	conn, _, err := l.app.connect(ctx)
+	cli, _, err := l.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
 	uri := from.URI()
 
-	if _, err := conn.openFile(ctx, uri); err != nil {
+	if _, err := cli.openFile(ctx, uri); err != nil {
 		return err
 	}
-	results, err := conn.server.DocumentLink(ctx, &protocol.DocumentLinkParams{
+	results, err := cli.server.DocumentLink(ctx, &protocol.DocumentLinkParams{
 		TextDocument: protocol.TextDocumentIdentifier{
 			URI: uri,
 		},

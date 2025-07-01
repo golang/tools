@@ -42,14 +42,14 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 		return nil
 	}
 	c.app.editFlags = &c.EditFlags
-	conn, _, err := c.app.connect(ctx)
+	cli, _, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 	for _, arg := range args {
 		spn := parseSpan(arg)
-		file, err := conn.openFile(ctx, spn.URI())
+		file, err := cli.openFile(ctx, spn.URI())
 		if err != nil {
 			return err
 		}
@@ -63,7 +63,7 @@ func (c *format) Run(ctx context.Context, args ...string) error {
 		p := protocol.DocumentFormattingParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
 		}
-		edits, err := conn.server.Formatting(ctx, &p)
+		edits, err := cli.server.Formatting(ctx, &p)
 		if err != nil {
 			return fmt.Errorf("%v: %v", spn, err)
 		}

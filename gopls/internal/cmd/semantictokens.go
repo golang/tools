@@ -72,13 +72,13 @@ func (c *semanticToken) Run(ctx context.Context, args ...string) error {
 		}
 		opts.SemanticTokens = true
 	}
-	conn, _, err := c.app.connect(ctx)
+	cli, _, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 	uri := protocol.URIFromPath(args[0])
-	file, err := conn.openFile(ctx, uri)
+	file, err := cli.openFile(ctx, uri)
 	if err != nil {
 		return err
 	}
@@ -94,11 +94,11 @@ func (c *semanticToken) Run(ctx context.Context, args ...string) error {
 				Character: uint32(len(lines[len(lines)-1]))},
 		},
 	}
-	resp, err := conn.server.SemanticTokensRange(ctx, params) // use Range to avoid limits on Full
+	resp, err := cli.server.SemanticTokensRange(ctx, params) // use Range to avoid limits on Full
 	if err != nil {
 		return err
 	}
-	legend := conn.initializeResult.Capabilities.SemanticTokensProvider.(protocol.SemanticTokensOptions).Legend
+	legend := cli.initializeResult.Capabilities.SemanticTokensProvider.(protocol.SemanticTokensOptions).Legend
 	return decorate(legend, file, resp.Data)
 }
 

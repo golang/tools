@@ -83,14 +83,14 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 		opts.Codelenses[settings.CodeLensTest] = true
 	}
 
-	conn, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	filespan := parseSpan(filename)
-	file, err := conn.openFile(ctx, filespan.URI())
+	file, err := cli.openFile(ctx, filespan.URI())
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 	p := protocol.CodeLensParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
 	}
-	lenses, err := conn.server.CodeLens(ctx, &p)
+	lenses, err := cli.server.CodeLens(ctx, &p)
 	if err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func (r *codelens) Run(ctx context.Context, args ...string) error {
 
 		// -exec: run the first matching code lens.
 		if r.Exec {
-			_, err := executeCommand(ctx, conn.server, lens.Command)
+			_, err := executeCommand(ctx, cli.server, lens.Command)
 			return err
 		}
 

@@ -71,13 +71,13 @@ func (e *execute) Run(ctx context.Context, args ...string) error {
 
 	e.app.editFlags = &e.EditFlags // in case command performs an edit
 
-	conn, _, err := e.app.connect(ctx)
+	cli, _, err := e.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
-	res, err := executeCommand(ctx, conn.server, &protocol.Command{
+	res, err := executeCommand(ctx, cli.server, &protocol.Command{
 		Command:   cmd,
 		Arguments: jsonArgs,
 	})

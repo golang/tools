@@ -36,11 +36,11 @@ func (r *symbols) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("symbols expects 1 argument (position)")
 	}
 
-	conn, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
 	p := protocol.DocumentSymbolParams{
@@ -48,7 +48,7 @@ func (r *symbols) Run(ctx context.Context, args ...string) error {
 			URI: from.URI(),
 		},
 	}
-	symbols, err := conn.server.DocumentSymbol(ctx, &p)
+	symbols, err := cli.server.DocumentSymbol(ctx, &p)
 	if err != nil {
 		return err
 	}

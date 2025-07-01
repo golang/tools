@@ -124,8 +124,8 @@ func MyFun() {}
 	maxRetries := 8
 	for i := range maxRetries {
 		t.Log("dialing..")
-		if conn, err := net.Dial("tcp", addr); err == nil {
-			conn.Close()
+		if cli, err := net.Dial("tcp", addr); err == nil {
+			cli.Close()
 			t.Log("succeeded")
 			break // success
 		}

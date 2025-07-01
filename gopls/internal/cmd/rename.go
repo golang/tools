@@ -45,14 +45,14 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("rename expects 2 arguments (position, new name)")
 	}
 	r.app.editFlags = &r.EditFlags
-	conn, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -65,9 +65,9 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 		Position:     loc.Range.Start,
 		NewName:      args[1],
 	}
-	edit, err := conn.server.Rename(ctx, &p)
+	edit, err := cli.server.Rename(ctx, &p)
 	if err != nil {
 		return err
 	}
-	return conn.applyWorkspaceEdit(edit)
+	return cli.applyWorkspaceEdit(edit)
 }

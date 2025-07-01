@@ -38,14 +38,14 @@ func (r *signature) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("signature expects 1 argument (position)")
 	}
 
-	conn, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (r *signature) Run(ctx context.Context, args ...string) error {
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
 
-	s, err := conn.server.SignatureHelp(ctx, &p)
+	s, err := cli.server.SignatureHelp(ctx, &p)
 	if err != nil {
 		return err
 	}

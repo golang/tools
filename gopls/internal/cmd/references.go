@@ -43,14 +43,14 @@ func (r *references) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("references expects 1 argument (position)")
 	}
 
-	conn, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -64,13 +64,13 @@ func (r *references) Run(ctx context.Context, args ...string) error {
 		},
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	locations, err := conn.server.References(ctx, &p)
+	locations, err := cli.server.References(ctx, &p)
 	if err != nil {
 		return err
 	}
 	var spans []string
 	for _, l := range locations {
-		f, err := conn.openFile(ctx, l.URI)
+		f, err := cli.openFile(ctx, l.URI)
 		if err != nil {
 			return err
 		}

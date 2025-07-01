@@ -66,11 +66,11 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 		opts.RelatedInformationSupported = true
 	}
 
-	conn, _, err := c.app.connect(ctx)
+	cli, _, err := c.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	// Open and diagnose the requested files.
 	var (
@@ -80,19 +80,19 @@ func (c *check) Run(ctx context.Context, args ...string) error {
 	for _, arg := range args {
 		uri := protocol.URIFromPath(arg)
 		uris = append(uris, uri)
-		file, err := conn.openFile(ctx, uri)
+		file, err := cli.openFile(ctx, uri)
 		if err != nil {
 			return err
 		}
 		checking[uri] = file
 	}
-	if err := diagnoseFiles(ctx, conn.server, uris); err != nil {
+	if err := diagnoseFiles(ctx, cli.server, uris); err != nil {
 		return err
 	}
 
 	// print prints a single element of a diagnostic.
 	print := func(uri protocol.DocumentURI, rng protocol.Range, message string) error {
-		file, err := conn.openFile(ctx, uri)
+		file, err := cli.openFile(ctx, uri)
 		if err != nil {
 			return err
 		}

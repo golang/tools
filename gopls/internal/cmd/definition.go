@@ -73,13 +73,13 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 			o.PreferredContentFormat = protocol.Markdown
 		}
 	}
-	conn, _, err := d.app.connect(ctx)
+	cli, _, err := d.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	p := protocol.DefinitionParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	locs, err := conn.server.Definition(ctx, &p)
+	locs, err := cli.server.Definition(ctx, &p)
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}
@@ -98,7 +98,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	if len(locs) == 0 {
 		return fmt.Errorf("%v: no definition location (not an identifier?)", from)
 	}
-	file, err = conn.openFile(ctx, locs[0].URI)
+	file, err = cli.openFile(ctx, locs[0].URI)
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}
@@ -110,7 +110,7 @@ func (d *definition) Run(ctx context.Context, args ...string) error {
 	q := protocol.HoverParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	hover, err := conn.server.Hover(ctx, &q)
+	hover, err := cli.server.Hover(ctx, &q)
 	if err != nil {
 		return fmt.Errorf("%v: %v", from, err)
 	}

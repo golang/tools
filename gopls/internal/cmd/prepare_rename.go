@@ -43,14 +43,14 @@ func (r *prepareRename) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("prepare_rename expects 1 argument (file)")
 	}
 
-	conn, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func (r *prepareRename) Run(ctx context.Context, args ...string) error {
 	p := protocol.PrepareRenameParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	result, err := conn.server.PrepareRename(ctx, &p)
+	result, err := cli.server.PrepareRename(ctx, &p)
 	if err != nil {
 		return fmt.Errorf("prepare_rename failed: %w", err)
 	}

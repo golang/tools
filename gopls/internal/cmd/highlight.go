@@ -38,14 +38,14 @@ func (r *highlight) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("highlight expects 1 argument (position)")
 	}
 
-	conn, _, err := r.app.connect(ctx)
+	cli, _, err := r.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func (r *highlight) Run(ctx context.Context, args ...string) error {
 	p := protocol.DocumentHighlightParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	highlights, err := conn.server.DocumentHighlight(ctx, &p)
+	highlights, err := cli.server.DocumentHighlight(ctx, &p)
 	if err != nil {
 		return err
 	}

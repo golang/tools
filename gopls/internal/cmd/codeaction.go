@@ -108,15 +108,15 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("codeaction expects at least 1 argument")
 	}
 	cmd.app.editFlags = &cmd.EditFlags
-	conn, _, err := cmd.app.connect(ctx)
+	cli, _, err := cmd.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
 	uri := from.URI()
-	file, err := conn.openFile(ctx, uri)
+	file, err := cli.openFile(ctx, uri)
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 	}
 
 	// Get diagnostics, as they may encode various lazy code actions.
-	if err := diagnoseFiles(ctx, conn.server, []protocol.DocumentURI{uri}); err != nil {
+	if err := diagnoseFiles(ctx, cli.server, []protocol.DocumentURI{uri}); err != nil {
 		return err
 	}
 	file.diagnosticsMu.Lock()
@@ -147,7 +147,7 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 	} else {
 		kinds = append(kinds, protocol.Empty) // => all
 	}
-	actions, err := conn.server.CodeAction(ctx, &protocol.CodeActionParams{
+	actions, err := cli.server.CodeAction(ctx, &protocol.CodeActionParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
 		Range:        rng,
 		Context: protocol.CodeActionContext{
@@ -184,7 +184,7 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 			if act.Command != nil {
 				// This may cause the server to make
 				// an ApplyEdit downcall to the client.
-				if _, err := executeCommand(ctx, conn.server, act.Command); err != nil {
+				if _, err := executeCommand(ctx, cli.server, act.Command); err != nil {
 					return err
 				}
 				// The specification says that commands should
@@ -193,7 +193,7 @@ func (cmd *codeaction) Run(ctx context.Context, args ...string) error {
 				// duplicate edits.
 			} else {
 				// Partially apply CodeAction.Edit, a WorkspaceEdit.
-				// (See also conn.Client.applyWorkspaceEdit(a.Edit)).
+				// (See also cli.applyWorkspaceEdit(a.Edit)).
 				for _, c := range act.Edit.DocumentChanges {
 					tde := c.TextDocumentEdit
 					if tde != nil && tde.TextDocument.URI == uri {

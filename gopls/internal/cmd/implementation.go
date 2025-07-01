@@ -39,14 +39,14 @@ func (i *implementation) Run(ctx context.Context, args ...string) error {
 		return tool.CommandLineErrorf("implementation expects 1 argument (position)")
 	}
 
-	conn, _, err := i.app.connect(ctx)
+	cli, _, err := i.app.connect(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	from := parseSpan(args[0])
-	file, err := conn.openFile(ctx, from.URI())
+	file, err := cli.openFile(ctx, from.URI())
 	if err != nil {
 		return err
 	}
@@ -59,14 +59,14 @@ func (i *implementation) Run(ctx context.Context, args ...string) error {
 	p := protocol.ImplementationParams{
 		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
 	}
-	implementations, err := conn.server.Implementation(ctx, &p)
+	implementations, err := cli.server.Implementation(ctx, &p)
 	if err != nil {
 		return err
 	}
 
 	var spans []string
 	for _, impl := range implementations {
-		f, err := conn.openFile(ctx, impl.URI)
+		f, err := cli.openFile(ctx, impl.URI)
 		if err != nil {
 			return err
 		}

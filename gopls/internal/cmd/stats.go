@@ -96,14 +96,14 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 		return d, nil
 	}
 
-	var conn *client
+	var cli *client
 	iwlDuration, err := do("Initializing workspace", func() (err error) {
-		conn, _, err = s.app.connect(ctx)
+		cli, _, err = s.app.connect(ctx)
 		if err != nil {
 			return err
 		}
 		select {
-		case <-conn.iwlDone:
+		case <-cli.iwlDone:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -112,7 +112,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.terminate(ctx)
+	defer cli.terminate(ctx)
 
 	stats.InitialWorkspaceLoadDuration = fmt.Sprint(iwlDuration)
 
@@ -127,7 +127,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	})
 
 	if _, err := do("Querying memstats", func() error {
-		memStats, err := executeCommand(ctx, conn.server, &protocol.Command{
+		memStats, err := executeCommand(ctx, cli.server, &protocol.Command{
 			Command: command.MemStats.String(),
 		})
 		if err != nil {
@@ -140,7 +140,7 @@ func (s *stats) Run(ctx context.Context, args ...string) error {
 	}
 
 	if _, err := do("Querying workspace stats", func() error {
-		wsStats, err := executeCommand(ctx, conn.server, &protocol.Command{
+		wsStats, err := executeCommand(ctx, cli.server, &protocol.Command{
 			Command: command.WorkspaceStats.String(),
 		})
 		if err != nil {
