@@ -473,8 +473,8 @@ func sum(values ...int) int {
 }
 -->
 
-![Before: select Refactor... Inline call to sum](../inline-before.png)
-![After: the call has been replaced by the sum logic](../inline-after.png)
+![Before: select Refactor... Inline call to sum](../assets/inline-before.png)
+![After: the call has been replaced by the sum logic](../assets/inline-after.png)
 
 Inlining replaces the call expression by a copy of the function body,
 with parameters replaced by arguments.

@@ -167,7 +167,7 @@ Gopls tests are a mix of two kinds.
   within several minutes. We recommend that you set
   `GOPLS_INTEGRATION_TEST_TIMEOUT=10s` to reduce the timeout for
   integration tests when debugging.
-  
+
   When they fail, the integration tests print the log of the LSP
   session between client and server. Though verbose, they are very
   helpful for debugging once you know how to read them.
@@ -187,7 +187,7 @@ Furthermore, an additional "gopls-CI" pass will be run by _Kokoro_, which is a
 Jenkins-like Google infrastructure for running Dockerized tests. This allows us
 to run gopls tests in various environments that would be difficult to add to
 the TryBots. Notably, Kokoro runs tests on
-[older Go versions](../README.md#supported-go-versions) that are no longer supported
+[older Go versions](index.md#supported-go-versions) that are no longer supported
 by the TryBots. Per that policy, support for these older Go versions is
 best-effort, and test failures may be skipped rather than fixed.
 
@@ -215,10 +215,14 @@ Each CL that adds or changes a feature should include, in addition to
 a test that exercises the new behavior:
 
 - a **release note** that briefly explains the change, and
-- **comprehensive documentation** in the [index of features](features/README.md).
+- **comprehensive documentation** in the [index of features](features/).
 
 The release note should go in the file named for the forthcoming
 release, for example [release/v0.16.0.md](release/v0.16.0.md). (Create
 the file if your feature is the first to be added after a release.)
 
+## Design documentation
 
+* [Integrating `gopls` with an editor](design/integrating.md)
+* [Design requirements and decisions](design/design.md)
+* [Implementation overview](design/implementation.md)

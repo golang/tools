@@ -465,7 +465,7 @@ func goplsDocFeatures(ctx context.Context, req *codeActionsRequest) error {
 	// use the gopls release tag instead of master.
 	cmd := command.NewClientOpenURLCommand(
 		"Browse gopls feature documentation",
-		"https://github.com/golang/tools/blob/master/gopls/doc/features/README.md")
+		"https://github.com/golang/tools/blob/master/gopls/doc/features/index.md")
 	req.addCommandAction(cmd, false)
 	return nil
 }

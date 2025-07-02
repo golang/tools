@@ -1,7 +1,3 @@
-# Gopls: Semantic Tokens
-
-TODO(adonovan): this doc is internal, not for end users.
-Move it closer to the code in golang or protocol/semtok.
 
 The [LSP](https://microsoft.github.io/language-server-protocol/specifications/specification-3-17/#textDocument_semanticTokens)
 specifies semantic tokens as a way of telling clients about language-specific
