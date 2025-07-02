@@ -1,4 +1,4 @@
-This test exercises the "context" MCP tool.
+This test exercises the "go_context" MCP tool.
 
 -- flags --
 -mcp
@@ -19,7 +19,7 @@ import(
 // File doc for main.go part 3.
 
 // doc comment for func foo.
-func foo() {//@mcptool("context", `{}`, "foo", output=withComment)
+func foo() {//@mcptool("go_context", `{"file": "$WORKDIR/a/main.go"}`, output=withComment)
     comment.Foo("", 0)
 }
 
@@ -150,7 +150,7 @@ import(
     "example.com/b/function"
 )
 
-func testFunction() {//@mcptool("context", `{}`, "test", output=withFunction)
+func testFunction() {//@mcptool("go_context", `{"file":"$WORKDIR/b/main.go"}`, output=withFunction)
     function.Foo(0, "")
 }
 
@@ -219,7 +219,7 @@ import(
     "example.com/c/types"
 )
 
-var x types.Exported //@mcptool("context", `{}`, "x", output=withType)
+var x types.Exported //@mcptool("go_context", `{"file":"$WORKDIR/c/main.go"}`, output=withType)
 
 -- c/types/types.go --
 package types
@@ -312,7 +312,7 @@ import(
     "example.com/d/values"
 )
 
-var y values.ConstFoo //@mcptool("context", `{}`, "y", output=withValue)
+var y values.ConstFoo //@mcptool("go_context", `{"file":"$WORKDIR/d/main.go"}`, output=withValue)
 
 -- d/values/consts.go --
 package values
@@ -415,7 +415,7 @@ var VarExported = "Exported" // comment for VarExported
 -- e/main.go --
 package main
 
-func main() {} //@mcptool("context", `{}`, "main", output=samePackage)
+func main() {} //@mcptool("go_context", `{"file":"$WORKDIR/e/main.go"}`, output=samePackage)
 
 -- e/foo.go --
 package main

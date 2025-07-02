@@ -5,6 +5,8 @@
 package cmd_test
 
 import (
+	"bytes"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -14,13 +16,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/mcp"
 	"golang.org/x/tools/internal/testenv"
 )
 
 func TestMCPCommandStdio(t *testing.T) {
+	// Test that the headless MCP subcommand works, and recognizes file changes.
+
 	testenv.NeedsExec(t) // stdio transport uses execve(2)
 	tree := writeTree(t, `
 -- go.mod --
@@ -28,65 +30,66 @@ module example.com
 go 1.18
 
 -- a.go --
-package a
+package p
 
-import "example.com/b"
+const A = 1
 
--- b/b.go --
-package b
+-- b.go --
+package p
 
-func MyFun() {}
+const B = 2
 `)
 
 	goplsCmd := exec.Command(os.Args[0], "mcp")
 	goplsCmd.Env = append(os.Environ(), "ENTRYPOINT=goplsMain")
 	goplsCmd.Dir = tree
-	uri := protocol.URIFromPath(filepath.Join(tree, "a.go"))
 
 	ctx := t.Context()
 	client := mcp.NewClient("client", "v0.0.1", nil)
-	serverConn, err := client.Connect(ctx, mcp.NewCommandTransport(goplsCmd))
+	mcpSession, err := client.Connect(ctx, mcp.NewCommandTransport(goplsCmd))
 	if err != nil {
 		t.Fatal(err)
 	}
-	args := map[string]any{"location": protocol.Location{
-		Range: protocol.Range{
-			Start: protocol.Position{
-				Line:      0,
-				Character: 0,
-			},
-			End: protocol.Position{
-				Line:      10,
-				Character: 0,
-			}},
-		URI: uri,
-	}}
-	got, err := serverConn.CallTool(ctx,
-		&mcp.CallToolParams{
-			Name:      "context",
-			Arguments: args,
-		})
-	if err != nil {
+	defer func() {
+		if err := mcpSession.Close(); err != nil {
+			t.Errorf("closing MCP connection: %v", err)
+		}
+	}()
+	var (
+		tool = "go_diagnostics"
+		args = map[string]any{"file": filepath.Join(tree, "a.go")}
+	)
+	// On the first diagnostics call, there should be no diagnostics.
+	{
+		// Match on a substring of the expected output from the context tool.
+		res, err := mcpSession.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := resultText(t, res)
+		want := "No diagnostics"
+		if !strings.Contains(got, want) {
+			t.Errorf("CallTool(%s, %v) = %v, want containing %q", tool, args, got, want)
+		}
+	}
+	// Now, create a duplicate diagnostic in "b.go", and expect that the headless
+	// MCP server detects the file change. In order to guarantee that the change
+	// is detected, sleep long to ensure a different mtime.
+	time.Sleep(100 * time.Millisecond)
+	newContent := "package p\n\nconst A = 2\n"
+	if err := os.WriteFile(filepath.Join(tree, "b.go"), []byte(newContent), 0666); err != nil {
 		t.Fatal(err)
 	}
-	expectedText := "The imported packages declare the following symbols"
-	// Match on a substring of the expected output from the context tool.
-	opts := cmp.Options{
-		cmp.Transformer("ContainsSubstring", func(m []*mcp.Content) bool {
-			for _, c := range m {
-				if strings.Contains(c.Text, expectedText) {
-					return true
-				}
-			}
-			return false
-		}),
-	}
-	want := &mcp.CallToolResult{Content: []*mcp.Content{mcp.NewTextContent(expectedText)}, IsError: false}
-	if diff := cmp.Diff(want, got, opts); diff != "" {
-		t.Errorf("context returned unexpected content (-want +got):\n%s", diff)
-	}
-	if err := serverConn.Close(); err != nil {
-		t.Fatalf("closing server: %v", err)
+	{
+		res, err := mcpSession.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := resultText(t, res)
+		want := "redeclared"
+		if !strings.Contains(got, want) {
+			t.Errorf("CallTool(%s, %v) = %v, want containing %q", tool, args, got, want)
+		}
 	}
 }
 
@@ -114,10 +117,19 @@ func MyFun() {}
 	goplsCmd.Dir = tree
 	goplsCmd.Stdout = os.Stderr
 	goplsCmd.Stderr = os.Stderr
-	uri := protocol.URIFromPath(filepath.Join(tree, "a.go"))
 	if err := goplsCmd.Start(); err != nil {
 		t.Fatalf("starting gopls: %v", err)
 	}
+	defer func() {
+		if err := goplsCmd.Process.Kill(); err != nil {
+			t.Fatalf("killing gopls: %v", err)
+		}
+		// Wait for the gopls process to exit before we return and the test framework
+		// attempts to clean up the temporary directory.
+		// We expect an error because we killed the process.
+		goplsCmd.Wait()
+	}()
+
 	client := mcp.NewClient("client", "v0.0.1", nil)
 	ctx := t.Context()
 	// Wait for http server to start listening.
@@ -132,60 +144,45 @@ func MyFun() {}
 		t.Logf("failed %d, trying again", i)
 		time.Sleep(50 * time.Millisecond << i) // retry with exponential backoff
 	}
-	serverConn, err := client.Connect(ctx, mcp.NewSSEClientTransport("http://"+addr, nil))
+	mcpSession, err := client.Connect(ctx, mcp.NewSSEClientTransport("http://"+addr, nil))
 	if err != nil {
 		// This shouldn't happen because we already waited for the http server to start listening.
 		t.Fatalf("connecting to server: %v", err)
 	}
+	defer func() {
+		if err := mcpSession.Close(); err != nil {
+			t.Errorf("closing MCP connection: %v", err)
+		}
+	}()
 
-	args := map[string]any{"location": protocol.Location{
-		Range: protocol.Range{
-			Start: protocol.Position{
-				Line:      0,
-				Character: 0,
-			},
-			End: protocol.Position{
-				Line:      10,
-				Character: 0,
-			}},
-		URI: uri,
-	}}
-	got, err := serverConn.CallTool(ctx,
-		&mcp.CallToolParams{
-			Name:      "context",
-			Arguments: args,
-		})
+	var (
+		tool = "go_context"
+		args = map[string]any{"file": filepath.Join(tree, "a.go")}
+	)
+	res, err := mcpSession.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectedText := "The imported packages declare the following symbols"
-	// Match on a substring of the expected output from the context tool.
-	opts := cmp.Options{
-		cmp.Transformer("ContainsSubstring", func(m []*mcp.Content) bool {
-			for _, c := range m {
-				if strings.Contains(c.Text, expectedText) {
-					return true
-				}
-			}
-			return false
-		}),
+	got := resultText(t, res)
+	want := "The imported packages declare the following symbols"
+	if !strings.Contains(got, want) {
+		t.Errorf("CallTool(%s, %v) = %+v, want containing %q", tool, args, got, want)
 	}
-	want := &mcp.CallToolResult{Content: []*mcp.Content{mcp.NewTextContent(expectedText)}, IsError: false}
-	if diff := cmp.Diff(want, got, opts); diff != "" {
-		t.Errorf("context returned unexpected content (-want +got):\n%s", diff)
-	}
-	if err := serverConn.Close(); err != nil {
-		t.Fatalf("closing server: %v", err)
-	}
-	if goplsCmd.Process != nil {
-		if err := goplsCmd.Process.Kill(); err != nil {
-			t.Fatalf("killing gopls: %v", err)
+}
+
+// resultText concatenates the textual content of the given result, reporting
+// an error if any content values are non-textual.
+func resultText(t *testing.T, res *mcp.CallToolResult) string {
+	t.Helper()
+
+	var buf bytes.Buffer
+	for _, content := range res.Content {
+		if content.Type != "text" {
+			t.Errorf("Not text content: %q", content.Type)
 		}
+		fmt.Fprintf(&buf, "%s\n", content.Text)
 	}
-	// Wait for the gopls process to exit before we return and the test framework
-	// attempts to clean up the temporary directory.
-	// We expect an error because we killed the process.
-	goplsCmd.Wait()
+	return buf.String()
 }
 
 // getRandomPort returns the number of a random available port. Inherently racy:

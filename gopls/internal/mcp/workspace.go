@@ -1,0 +1,102 @@
+// Copyright 2025 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package mcp
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"strings"
+
+	"slices"
+
+	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/util/immutable"
+	"golang.org/x/tools/internal/mcp"
+)
+
+// The workspaceTool provides a summary of the current Go builds for the
+// workspace.
+func (h *handler) workspaceTool() *mcp.ServerTool {
+	return mcp.NewServerTool(
+		"go_workspace",
+		"summarize the Go programming language workspace",
+		h.workspaceHandler,
+	)
+}
+
+func (h *handler) workspaceHandler(ctx context.Context, _ *mcp.ServerSession, _ *mcp.CallToolParamsFor[struct{}]) (*mcp.CallToolResultFor[any], error) {
+	var summary bytes.Buffer
+	views := h.session.Views()
+	for _, v := range views {
+		snapshot, release, err := v.Snapshot()
+		if err != nil {
+			continue // view is shut down
+		}
+		defer release()
+
+		pkgs := snapshot.WorkspacePackages()
+
+		// Special case: check if it's likely that this isn't actually a Go workspace.
+		if len(views) == 1 && // only view
+			(v.Type() == cache.AdHocView || v.Type() == cache.GoPackagesDriverView) && // not necessarily Go code
+			pkgs.Len() == 0 { // no packages
+
+			return &mcp.CallToolResultFor[any]{
+				Content: []*mcp.Content{mcp.NewTextContent("This is not a Go workspace. To work on Go code, open a directory inside a Go module.")},
+			}, nil
+		}
+
+		dir := v.Root().Path()
+		switch v.Type() {
+		case cache.GoPackagesDriverView:
+			fmt.Fprintf(&summary, "The `%s` directory is loaded using a custom golang.org/x/tools/go/packages driver.\n", dir)
+			fmt.Fprintf(&summary, "This indicates a non-standard build system.\n")
+
+		case cache.GOPATHView:
+			fmt.Fprintf(&summary, "The `%s` directory is loaded using a the legacy GOPATH build system.\n", dir)
+
+		case cache.GoModView:
+			fmt.Fprintf(&summary, "The `%s` directory uses Go modules, with the following main modules:\n", dir)
+			for _, m := range v.ModFiles() {
+				fmt.Fprintf(&summary, "\t%s\n", m.Path())
+			}
+
+		case cache.GoWorkView:
+			fmt.Fprintf(&summary, "The `%s` directory is in the go workspace defined by `%s`, with the following main modules:\n", dir, v.GoWork().Path())
+			for _, m := range v.ModFiles() {
+				fmt.Fprintf(&summary, "\t%s\n", m.Path())
+			}
+
+		case cache.AdHocView:
+			fmt.Fprintf(&summary, "The `%s` directory is an ad-hoc Go package, not in a Go module.\n", dir)
+		}
+		fmt.Fprintln(&summary)
+		const summarizePackages = false
+		if summarizePackages {
+			summaries := packageSummaries(snapshot, pkgs)
+			fmt.Fprintf(&summary, "It contains the following Go packages:\n")
+			fmt.Fprintf(&summary, "\t%s\n", strings.Join(summaries, "\n\t"))
+			fmt.Fprintln(&summary)
+		}
+	}
+	return &mcp.CallToolResultFor[any]{
+		Content: []*mcp.Content{mcp.NewTextContent(summary.String())},
+	}, nil
+}
+
+func packageSummaries(snapshot *cache.Snapshot, pkgs immutable.Map[cache.PackageID, cache.PackagePath]) []string {
+	var summaries []string
+	for id := range pkgs.All() {
+		mp := snapshot.Metadata(id)
+		if len(mp.CompiledGoFiles) == 0 {
+			continue // For convenience, just skip uncompiled packages; we could do more if it matters.
+		}
+		dir := mp.CompiledGoFiles[0].DirPath()
+		summaries = append(summaries, fmt.Sprintf("The `%s` directory contains the %q package with path %q", dir, mp.Name, mp.PkgPath))
+	}
+	slices.Sort(summaries) // for stability
+	return summaries
+}

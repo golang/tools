@@ -628,7 +628,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"token":            actionMarkerFunc(tokenMarker),
 	"typedef":          actionMarkerFunc(typedefMarker),
 	"workspacesymbol":  actionMarkerFunc(workspaceSymbolMarker),
-	"mcptool":          actionMarkerFunc(mcpToolMarker, "output"),
+	"mcptool":          actionMarkerFunc(mcpToolMarker, "location", "output"),
 }
 
 // markerTest holds all the test data extracted from a test txtar archive.
@@ -781,7 +781,7 @@ func loadMarkerTests(dir string) ([]*markerTest, error) {
 				return err
 			}
 
-			name := strings.TrimPrefix(path, dir+string(filepath.Separator))
+			name := filepath.ToSlash(strings.TrimPrefix(path, dir+string(filepath.Separator)))
 			test, err := loadMarkerTest(name, content)
 			if err != nil {
 				return fmt.Errorf("%s: %v", path, err)
@@ -2464,15 +2464,30 @@ func implementationMarker(mark marker, src protocol.Location, want ...protocol.L
 	}
 }
 
-func mcpToolMarker(mark marker, tool string, rawArgs string, loc protocol.Location) {
+func mcpToolMarker(mark marker, tool string, rawArgs string) {
+	if !mark.run.test.mcp {
+		mark.errorf("mcp not enabled: add -mcp")
+		return
+	}
 	args := make(map[string]any)
 	if err := json.Unmarshal([]byte(rawArgs), &args); err != nil {
 		mark.errorf("fail to unmarshal arguments to map[string]any: %v", err)
 		return
 	}
 
-	// TODO(hxjiang): Make the "location" key configurable.
-	args["location"] = loc
+	// Hack: replace '$WORKDIR' in string arguments with the actual sandbox
+	// working directory.
+	for k, v := range args {
+		if s, ok := v.(string); ok {
+			if s2 := strings.ReplaceAll(s, "$WORKDIR", mark.run.env.Sandbox.Workdir.RootURI().Path()); s2 != s {
+				args[k] = s2
+			}
+		}
+	}
+
+	if loc := namedArg(mark, "location", protocol.Location{}); loc != (protocol.Location{}) {
+		args["location"] = loc
+	}
 
 	res, err := mark.run.env.MCPSession.CallTool(mark.ctx(), &mcp.CallToolParams{
 		Name:      tool,
@@ -2495,17 +2510,19 @@ func mcpToolMarker(mark marker, tool string, rawArgs string, loc protocol.Locati
 		buf.WriteString("\n") // all golden content is newline terminated
 	}
 
+	got := buf.String()
+	// For portability, replace all (potential) filepath separators with "/".
+	got = strings.ReplaceAll(got, string(filepath.Separator), "/")
 	// To ensure consistent unified diff output, the working directory path
-	// is replaced with "$SANDBOX_WORKDIR". This addresses cases where MCP tools
+	// is replaced with "$WORKDIR". This addresses cases where MCP tools
 	// include absolute file paths in generated diffs.
-	got := strings.ReplaceAll(buf.String(), filepath.ToSlash(mark.run.env.Sandbox.Workdir.RootURI().Path()), "$SANDBOX_WORKDIR")
+	got = strings.ReplaceAll(got, filepath.ToSlash(mark.run.env.Sandbox.Workdir.RootURI().Path()), "$WORKDIR")
 
 	output := namedArg(mark, "output", expect.Identifier(""))
 	golden := mark.getGolden(output)
-	if want, ok := golden.Get(mark.T(), "", []byte(got)); !ok {
-		mark.errorf("%s: missing golden file @%s", mark.note.Name, golden.id)
-	} else if diff := cmp.Diff(got, string(want)); diff != "" {
-		mark.errorf("unexpected mcp tools call %s return; got:\n%s\n want:\n%s\ndiff:\n%s", tool, got, want, diff)
+	want, _ := golden.Get(mark.T(), "", []byte(got))
+	if diff := compare.Text(string(want), got); diff != "" {
+		mark.errorf("unexpected mcp tools call %s return: diff:\n%s", tool, diff)
 	}
 }
 

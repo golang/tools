@@ -1,4 +1,4 @@
-This test exercises the "diagnostics" MCP tool.
+This test exercises the "go_diagnostics" MCP tool.
 
 -- flags --
 -mcp
@@ -11,20 +11,20 @@ package main
 
 func foo() {} //@loc(foo, "foo")
 
-//@mcptool("diagnostics", `{}`, foo, output=unused)
+//@mcptool("go_diagnostics", `{"file":"$WORKDIR/a/main.go"}`, output=unused)
 //@diag(foo, re"unused")
 -- @unused --
 2:5-2:8: [Information] function "foo" is unused
 Fix:
---- $SANDBOX_WORKDIR/a/main.go
-+++ $SANDBOX_WORKDIR/a/main.go
+--- $WORKDIR/a/main.go
++++ $WORKDIR/a/main.go
 @@ -1,6 +1,6 @@
  package main
  
 -func foo() {} //@loc(foo, "foo")
 + //@loc(foo, "foo")
  
- //@mcptool("diagnostics", `{}`, foo, output=unused)
+ //@mcptool("go_diagnostics", `{"file":"$WORKDIR/a/main.go"}`, output=unused)
  //@diag(foo, re"unused")
 
 
@@ -47,14 +47,14 @@ func proposed(_ []string, _ string, _ bool) bool {
 	return false // fake
 }
 
-//@mcptool("diagnostics", `{}`, inline, output=diagnoseInline)
+//@mcptool("go_diagnostics", `{"file":"$WORKDIR/b/main.go"}`, output=diagnoseInline)
 //@diag(inline, re"inline")
 //@diag(inline2, re"inline")
 -- @diagnoseInline --
 3:5-3:35: [Hint] Call of main.deprecated should be inlined
 Fix:
---- $SANDBOX_WORKDIR/b/main.go
-+++ $SANDBOX_WORKDIR/b/main.go
+--- $WORKDIR/b/main.go
++++ $WORKDIR/b/main.go
 @@ -1,7 +1,7 @@
  package main
  
@@ -69,8 +69,8 @@ Fix:
 
 5:5-5:35: [Hint] Call of main.deprecated should be inlined
 Fix:
---- $SANDBOX_WORKDIR/b/main.go
-+++ $SANDBOX_WORKDIR/b/main.go
+--- $WORKDIR/b/main.go
++++ $WORKDIR/b/main.go
 @@ -3,7 +3,7 @@
  func _() {
  	_ = deprecated([]string{"a"}, "a") //@loc(inline, "deprecated")

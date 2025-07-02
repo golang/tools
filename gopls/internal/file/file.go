@@ -8,6 +8,7 @@ package file
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 )
@@ -49,6 +50,9 @@ type Handle interface {
 	// Content returns the contents of a file.
 	// If the file is not available, returns a nil slice and an error.
 	Content() ([]byte, error)
+	// ModTime reports the modification time of a file.
+	// If the file is not available, returns the zero time and an error.
+	ModTime() (time.Time, error)
 	// String returns the file's path.
 	String() string
 }

@@ -246,14 +246,10 @@ func (d viewDefinition) adjustedGO111MODULE() string {
 	return "auto"
 }
 
-// ModFiles are the go.mod files enclosed in the snapshot's view and known
-// to the snapshot.
+// ModFiles returns a new, sorted slice of go.mod files for main modules
+// enclosed in the snapshot's view and known to the snapshot.
 func (d viewDefinition) ModFiles() []protocol.DocumentURI {
-	var uris []protocol.DocumentURI
-	for modURI := range d.workspaceModFiles {
-		uris = append(uris, modURI)
-	}
-	return uris
+	return slices.Sorted(maps.Keys(d.workspaceModFiles))
 }
 
 // viewDefinitionsEqual reports whether x and y are equivalent.

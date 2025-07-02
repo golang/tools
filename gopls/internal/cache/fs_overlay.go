@@ -7,6 +7,7 @@ package cache
 import (
 	"context"
 	"sync"
+	"time"
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
@@ -55,6 +56,7 @@ func (fs *overlayFS) ReadFile(ctx context.Context, uri protocol.DocumentURI) (fi
 type overlay struct {
 	uri     protocol.DocumentURI
 	content []byte
+	modTime time.Time
 	hash    file.Hash
 	version int32
 	kind    file.Kind
@@ -75,7 +77,8 @@ func (o *overlay) Identity() file.Identity {
 	}
 }
 
-func (o *overlay) Content() ([]byte, error) { return o.content, nil }
-func (o *overlay) Version() int32           { return o.version }
-func (o *overlay) SameContentsOnDisk() bool { return o.saved }
-func (o *overlay) Kind() file.Kind          { return o.kind }
+func (o *overlay) Content() ([]byte, error)    { return o.content, nil }
+func (o *overlay) ModTime() (time.Time, error) { return o.modTime, nil }
+func (o *overlay) Version() int32              { return o.version }
+func (o *overlay) SameContentsOnDisk() bool    { return o.saved }
+func (o *overlay) Kind() file.Kind             { return o.kind }

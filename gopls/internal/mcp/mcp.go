@@ -14,11 +14,19 @@ import (
 	"sync"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
+	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/mcp"
 )
+
+// A handler implements various MCP tools for an LSP session.
+type handler struct {
+	session   *cache.Session
+	lspServer protocol.Server
+}
 
 // Serve starts an MCP server serving at the input address.
 // The server receives LSP session events on the specified channel, which the
@@ -120,56 +128,107 @@ func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, isDaemon bool) http.Handl
 	return mux
 }
 
-func newServer(session *cache.Session, server protocol.Server) *mcp.Server {
-	s := mcp.NewServer("golang", "v0.1", nil)
-	locationInput := mcp.Input(
-		mcp.Property(
-			"location",
-			mcp.Description("location inside of a text file"),
-			mcp.Property("uri", mcp.Description("URI of the text document")),
-			mcp.Property("range",
-				mcp.Description("range within text document"),
-				mcp.Required(false),
-				mcp.Property(
-					"start",
-					mcp.Description("start position of range"),
-					mcp.Property("line", mcp.Description("line number (zero-based)")),
-					mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
-				),
-				mcp.Property(
-					"end",
-					mcp.Description("end position of range"),
-					mcp.Property("line", mcp.Description("line number (zero-based)")),
-					mcp.Property("character", mcp.Description("column number (zero-based, UTF-16 encoding)")),
-				),
-			),
-		),
+func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
+	h := handler{
+		session:   session,
+		lspServer: lspServer,
+	}
+	mcpServer := mcp.NewServer("gopls", "v0.1", nil)
+
+	mcpServer.AddTools(
+		h.workspaceTool(),
+		h.fileMetadataTool(),
+		h.outlineTool(),
+		h.contextTool(),
+		h.diagnosticsTool(),
+		h.referencesTool(),
 	)
-	s.AddTools(
-		mcp.NewServerTool(
-			"context",
-			"Provide context for a region within a Go file",
-			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParamsFor[ContextParams]) (*mcp.CallToolResultFor[struct{}], error) {
-				return contextHandler(ctx, session, request)
-			},
-			locationInput,
-		),
-		mcp.NewServerTool(
-			"diagnostics",
-			"Provide diagnostics for a region within a Go file",
-			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParamsFor[DiagnosticsParams]) (*mcp.CallToolResultFor[struct{}], error) {
-				return diagnosticsHandler(ctx, session, server, request)
-			},
-			locationInput,
-		),
-		mcp.NewServerTool(
-			"references",
-			"Provide the locations of references to a given object",
-			func(ctx context.Context, _ *mcp.ServerSession, request *mcp.CallToolParamsFor[FindReferencesParams]) (*mcp.CallToolResultFor[struct{}], error) {
-				return referenceHandler(ctx, session, request)
-			},
-			locationInput,
-		),
-	)
-	return s
+	return mcpServer
+}
+
+// fileOf is like [cache.Session.FileOf], but does a sanity check for file
+// changes. Currently, it checks for modified files in the transitive closure
+// of the file's narrowest package.
+//
+// This helps avoid stale packages, but is not a substitute for real file
+// watching, as it misses things like files being added to a package.
+func (h *handler) fileOf(ctx context.Context, file string) (file.Handle, *cache.Snapshot, func(), error) {
+	uri := protocol.URIFromPath(file)
+	fh, snapshot, release, err := h.session.FileOf(ctx, uri)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	md, err := snapshot.NarrowestMetadataForFile(ctx, uri)
+	if err != nil {
+		release()
+		return nil, nil, nil, err
+	}
+	fileEvents, err := checkForFileChanges(ctx, snapshot, md.ID)
+	if err != nil {
+		release()
+		return nil, nil, nil, err
+	}
+	if len(fileEvents) == 0 {
+		return fh, snapshot, release, nil
+	}
+	release() // snapshot is not latest
+
+	// We detect changed files: process them before getting the snapshot.
+	if err := h.lspServer.DidChangeWatchedFiles(ctx, &protocol.DidChangeWatchedFilesParams{
+		Changes: fileEvents,
+	}); err != nil {
+		return nil, nil, nil, err
+	}
+	return h.session.FileOf(ctx, uri)
+}
+
+// checkForFileChanges checks for file changes in the transitive closure of
+// the given package, by checking file modification time. Since it does not
+// actually read file contents, it may miss changes that occur within the mtime
+// resolution of the current file system (on some operating systems, this may
+// be as much as a second).
+//
+// It also doesn't catch package changes that occur due to added files or
+// changes to the go.mod file.
+func checkForFileChanges(ctx context.Context, snapshot *cache.Snapshot, id metadata.PackageID) ([]protocol.FileEvent, error) {
+	var events []protocol.FileEvent
+
+	seen := make(map[metadata.PackageID]struct{})
+	var checkPkg func(id metadata.PackageID) error
+	checkPkg = func(id metadata.PackageID) error {
+		if _, ok := seen[id]; ok {
+			return nil
+		}
+		seen[id] = struct{}{}
+
+		mp := snapshot.Metadata(id)
+		for _, uri := range mp.CompiledGoFiles {
+			fh, err := snapshot.ReadFile(ctx, uri)
+			if err != nil {
+				return err // context cancelled
+			}
+
+			mtime, mtimeErr := fh.ModTime()
+			fi, err := os.Stat(uri.Path())
+			switch {
+			case err != nil:
+				if mtimeErr == nil {
+					// file existed, and doesn't anymore, so the file was deleted
+					events = append(events, protocol.FileEvent{URI: uri, Type: protocol.Deleted})
+				}
+			case mtimeErr != nil:
+				// err == nil (from above), so the file was created
+				events = append(events, protocol.FileEvent{URI: uri, Type: protocol.Created})
+			case !mtime.IsZero() && fi.ModTime().After(mtime):
+				events = append(events, protocol.FileEvent{URI: uri, Type: protocol.Changed})
+			}
+		}
+		for _, depID := range mp.DepsByPkgPath {
+			if err := checkPkg(depID); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return events, checkPkg(id)
 }

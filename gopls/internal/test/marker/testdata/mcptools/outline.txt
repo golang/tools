@@ -1,0 +1,41 @@
+This test exercises the "go_package_outline" MCP tool.
+
+-- flags --
+-mcp
+
+-- go.mod --
+module example.com/mod
+
+//@mcptool("go_package_outline", `{"file":"$WORKDIR/main.go","imports":["example.com/mod/lib"]}`, output=outline)
+
+go 1.21
+
+-- main.go --
+package main
+
+import "example.com/mod/lib"
+
+func main() {
+	println(lib.Foo(0))
+}
+-- lib/lib.go --
+package lib
+
+type T int
+
+func Foo(int) string {
+	return ""
+}
+
+-- @outline --
+"example.com/mod/lib" (package lib)
+lib.go:
+--->
+package lib
+
+type T int
+
+func Foo(int) string
+
+<---
+

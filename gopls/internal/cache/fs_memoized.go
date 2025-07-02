@@ -52,9 +52,10 @@ func (h *diskFile) Identity() file.Identity {
 	}
 }
 
-func (h *diskFile) SameContentsOnDisk() bool { return true }
-func (h *diskFile) Version() int32           { return 0 }
-func (h *diskFile) Content() ([]byte, error) { return h.content, h.err }
+func (h *diskFile) SameContentsOnDisk() bool    { return true }
+func (h *diskFile) Version() int32              { return 0 }
+func (h *diskFile) Content() ([]byte, error)    { return h.content, h.err }
+func (h *diskFile) ModTime() (time.Time, error) { return h.modTime, h.err }
 
 // ReadFile stats and (maybe) reads the file, updates the cache, and returns it.
 func (fs *memoizedFS) ReadFile(ctx context.Context, uri protocol.DocumentURI) (file.Handle, error) {

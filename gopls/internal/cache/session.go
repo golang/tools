@@ -1077,6 +1077,7 @@ func (fs *overlayFS) updateOverlays(ctx context.Context, changes []file.Modifica
 			uri:     c.URI,
 			version: version,
 			content: text,
+			modTime: time.Now(),
 			kind:    kind,
 			hash:    hash,
 			saved:   sameContentOnDisk,
@@ -1108,12 +1109,13 @@ type brokenFile struct {
 	err error
 }
 
-func (b brokenFile) String() string            { return b.uri.Path() }
-func (b brokenFile) URI() protocol.DocumentURI { return b.uri }
-func (b brokenFile) Identity() file.Identity   { return file.Identity{URI: b.uri} }
-func (b brokenFile) SameContentsOnDisk() bool  { return false }
-func (b brokenFile) Version() int32            { return 0 }
-func (b brokenFile) Content() ([]byte, error)  { return nil, b.err }
+func (b brokenFile) String() string              { return b.uri.Path() }
+func (b brokenFile) URI() protocol.DocumentURI   { return b.uri }
+func (b brokenFile) Identity() file.Identity     { return file.Identity{URI: b.uri} }
+func (b brokenFile) SameContentsOnDisk() bool    { return false }
+func (b brokenFile) Version() int32              { return 0 }
+func (b brokenFile) Content() ([]byte, error)    { return nil, b.err }
+func (b brokenFile) ModTime() (time.Time, error) { return time.Time{}, b.err }
 
 // FileWatchingGlobPatterns returns a set of glob patterns that the client is
 // required to watch for changes, and notify the server of them, in order to

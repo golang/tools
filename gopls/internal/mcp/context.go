@@ -27,11 +27,22 @@ import (
 )
 
 type ContextParams struct {
-	Location protocol.Location `json:"location"`
+	File string `json:"file"`
 }
 
-func contextHandler(ctx context.Context, session *cache.Session, params *mcp.CallToolParamsFor[ContextParams]) (*mcp.CallToolResultFor[struct{}], error) {
-	fh, snapshot, release, err := session.FileOf(ctx, params.Arguments.Location.URI)
+func (h *handler) contextTool() *mcp.ServerTool {
+	return mcp.NewServerTool(
+		"go_context",
+		"Provide context for a region within a Go file",
+		h.contextHandler,
+		mcp.Input(
+			mcp.Property("file", mcp.Description("the absolute path to the file")),
+		),
+	)
+}
+
+func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[ContextParams]) (*mcp.CallToolResultFor[struct{}], error) {
+	fh, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +53,7 @@ func contextHandler(ctx context.Context, session *cache.Session, params *mcp.Cal
 		return nil, fmt.Errorf("can't provide context for non-Go file")
 	}
 
-	pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, params.Arguments.Location.URI)
+	pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
 	}
@@ -107,29 +118,18 @@ func contextHandler(ctx context.Context, session *cache.Session, params *mcp.Cal
 		// Write summaries from imported packages.
 		{
 			result.WriteString("The imported packages declare the following symbols:\n\n")
-			for _, imp := range pgf.File.Imports {
-				importPath := metadata.UnquoteImportPath(imp)
-				if importPath == "" {
-					continue
-				}
-
-				impID := pkg.Metadata().DepsByImpPath[importPath]
-				if impID == "" {
+			for _, spec := range pgf.File.Imports {
+				path := metadata.UnquoteImportPath(spec)
+				id := pkg.Metadata().DepsByImpPath[path]
+				if id == "" {
 					continue // ignore error
 				}
-				impMetadata := snapshot.Metadata(impID)
-				if impMetadata == nil {
+				md := snapshot.Metadata(id)
+				if md == nil {
 					continue // ignore error
 				}
-
-				fmt.Fprintf(&result, "%q (package %s)\n", importPath, impMetadata.Name)
-				for _, f := range impMetadata.CompiledGoFiles {
-					fmt.Fprintf(&result, "%s:\n", f.Base())
-					result.WriteString("--->\n")
-					if err := writeFileSummary(ctx, snapshot, f, &result, true); err != nil {
-						return nil, err
-					}
-					result.WriteString("<---\n\n")
+				if summary := summarizePackage(ctx, snapshot, path, md); summary != "" {
+					result.WriteString(summary)
 				}
 			}
 		}
@@ -140,6 +140,20 @@ func contextHandler(ctx context.Context, session *cache.Session, params *mcp.Cal
 			mcp.NewTextContent(result.String()),
 		},
 	}, nil
+}
+
+func summarizePackage(ctx context.Context, snapshot *cache.Snapshot, path metadata.ImportPath, md *metadata.Package) string {
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "%q (package %s)\n", path, md.Name)
+	for _, f := range md.CompiledGoFiles {
+		fmt.Fprintf(&buf, "%s:\n", f.Base())
+		buf.WriteString("--->\n")
+		if err := writeFileSummary(ctx, snapshot, f, &buf, true); err != nil {
+			return "" // ignore error
+		}
+		buf.WriteString("<---\n\n")
+	}
+	return buf.String()
 }
 
 // writeFileSummary writes the file summary to the string builder based on

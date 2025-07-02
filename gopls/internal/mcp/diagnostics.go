@@ -22,12 +22,23 @@ import (
 	"golang.org/x/tools/internal/mcp"
 )
 
-type DiagnosticsParams struct {
-	Location protocol.Location `json:"location"`
+type diagnosticsParams struct {
+	File string `json:"file"`
 }
 
-func diagnosticsHandler(ctx context.Context, session *cache.Session, server protocol.Server, params *mcp.CallToolParamsFor[DiagnosticsParams]) (*mcp.CallToolResultFor[struct{}], error) {
-	fh, snapshot, release, err := session.FileOf(ctx, params.Arguments.Location.URI)
+func (h *handler) diagnosticsTool() *mcp.ServerTool {
+	return mcp.NewServerTool(
+		"go_diagnostics",
+		"Provides diagnostics for a Go file",
+		h.diagnoseFileHandler,
+		mcp.Input(
+			mcp.Property("file", mcp.Description("the absolute path to the file to diagnose")),
+		),
+	)
+}
+
+func (h *handler) diagnoseFileHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[diagnosticsParams]) (*mcp.CallToolResultFor[struct{}], error) {
+	fh, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +59,7 @@ func diagnosticsHandler(ctx context.Context, session *cache.Session, server prot
 		// Ignore errors. It is still valuable to provide only the diagnostic
 		// without any text edits.
 		// TODO(hxjiang): support code actions that returns call back command.
-		actions, _ := server.CodeAction(ctx, &protocol.CodeActionParams{
+		actions, _ := h.lspServer.CodeAction(ctx, &protocol.CodeActionParams{
 			TextDocument: protocol.TextDocumentIdentifier{
 				URI: fh.URI(),
 			},
