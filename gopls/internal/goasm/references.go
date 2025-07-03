@@ -80,6 +80,9 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	for _, pgf := range pkg.CompiledGoFiles() {
 		for curId := range pgf.Cursor.Preorder((*ast.Ident)(nil)) {
 			id := curId.Node().(*ast.Ident)
+			if !includeDeclaration && pkg.TypesInfo().Defs[id] != nil {
+				continue
+			}
 			if !matches(pkg.TypesInfo().ObjectOf(id)) {
 				continue
 			}
@@ -91,17 +94,19 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		}
 	}
 
-	if includeDeclaration {
-		for _, asmFile := range pkg.AsmFiles() {
-			for _, id := range asmFile.Idents {
-				if id.Name == found.Name &&
-					(id.Kind == asm.Text || id.Kind == asm.Global || id.Kind == asm.Label) {
-					if loc, err := asmFile.NodeLocation(id); err == nil {
-						locations = append(locations, loc)
-					}
+	for _, asmFile := range pkg.AsmFiles() {
+		for _, id := range asmFile.Idents {
+			if id.Name == found.Name &&
+				(id.Kind == asm.Data || id.Kind == asm.Ref) {
+				if id.Kind == asm.Data && !includeDeclaration {
+					continue
+				}
+				if loc, err := asmFile.NodeLocation(id); err == nil {
+					locations = append(locations, loc)
 				}
 			}
 		}
 	}
+
 	return locations, nil
 }
