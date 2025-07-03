@@ -1,0 +1,20 @@
+
+
+-- go.mod --
+module example.com
+go 1.24
+
+-- foo/foo.go --
+package foo
+
+func Add(a, b int) int //@loc(defAdd, "Add")
+
+func UseAdd() int {
+    return Add(1, 2) //@loc(callAddGo, "Add")
+}
+
+-- foo/foo.s --
+TEXT ·Add(SB), $0-24 //@loc(defAddAsm, "·Add"), refs("Add", defAdd, callAddGo)
+    MOVQ a+0(FP), AX
+    ADDQ b+8(FP), AX
+    RET

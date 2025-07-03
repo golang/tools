@@ -1,0 +1,12 @@
+
+-- go.mod --
+module example.com
+go 1.24
+
+-- foo/foo.s --
+TEXT ·Foo(SB), $0-8 //@loc(defFooAsm, "·Foo")
+    RET
+
+TEXT ·Bar(SB), $0-8
+    CALL ·Foo(SB) //@loc(callFooAsm, "·Foo")
+    RET

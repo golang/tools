@@ -1,0 +1,17 @@
+
+-- go.mod --
+module example.com
+go 1.24
+
+-- foo/foo.go --
+package foo
+
+var myGlobal int64 //@loc(defMyGlobalGo, "myGlobal")
+
+-- foo/foo.s --
+DATA ·myGlobal+0(SB)/8, $42
+GLOBL ·myGlobal(SB), NOPTR, 8
+
+TEXT ·UseGlobal(SB), $0-0
+    MOVQ ·myGlobal(SB), AX //@loc(refMyGlobal, "·myGlobal")
+    RET

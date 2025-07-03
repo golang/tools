@@ -1,0 +1,10 @@
+
+
+-- go.mod --
+module example.com
+go 1.24
+
+-- foo/foo.s --
+TEXT ·JumpDemo(SB), $0-0
+label1: //@loc(defLabel, "label1")
+    JMP label1 //@loc(refLabel, "label1")

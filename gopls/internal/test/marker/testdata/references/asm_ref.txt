@@ -1,0 +1,26 @@
+
+
+-- go.mod --
+module example.com
+go 1.24
+
+-- foo/foo.go --
+package foo
+
+func Add(a, b int) int //@loc(defAddGo, "Add"), refs("Add", defAddGo, callAddGo)
+func UseAdd() int {
+    return Add(1, 2) //@loc(callAddGo, "Add")
+}
+var myGlobal int64 //@loc(defMyGlobalGo, "myGlobal")
+
+-- foo/foo.s --
+TEXT ·Add(SB), $0-24 //@loc(defAddAsm, "·Add"), refs("Add", defAddGo, callAddGo)
+    MOVQ a+0(FP), AX
+    ADDQ b+8(FP), AX
+    RET
+
+DATA ·myGlobal+0(SB)/8, $42
+GLOBL ·myGlobal(SB), NOPTR, 8
+TEXT ·UseGlobal(SB), $0-0
+    MOVQ ·myGlobal(SB), AX //@loc(refMyGlobal, "·myGlobal")
+    RET

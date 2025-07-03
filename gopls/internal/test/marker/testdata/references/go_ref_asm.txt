@@ -1,0 +1,19 @@
+
+
+-- go.mod --
+module example.com
+go 1.24
+
+-- foo/foo.go --
+package foo
+
+func Sub(a, b int) int { return a - b } //@loc(defSubGo, "Sub")
+
+-- foo/foo.s --
+TEXT ·CallSub(SB), $0-16
+    MOVQ $10, AX
+    MOVQ $3, BX
+    MOVQ AX, a+0(FP)
+    MOVQ BX, b+8(FP)
+    CALL ·Sub(SB) //@loc(callSubAsm, "·Sub")
+    RET
