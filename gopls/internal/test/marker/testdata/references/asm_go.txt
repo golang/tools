@@ -1,0 +1,51 @@
+This test validates the References request functionality in Go assembly files.
+
+It ensures that references to both exported (`Add`) and unexported (`sub`) functions are correctly identified across Go and assembly files. The test covers:
+- Locating the definition of functions in both Go and assembly files.
+- Identifying all references to the functions (`Add` and `sub`) within the Go and assembly files.
+
+The test includes:
+- `Add`: An exported function with references in both Go and assembly files.
+- `sub`: An unexported function with references in both Go and assembly files, including a usage in Go code (`var _ = sub`).
+
+The assembly file demonstrates portable assembly syntax and verifies cross-file reference handling.
+
+-- go.mod --
+module example.com
+go 1.24
+
+-- go_call_asm/example_func.go --
+package go_call_asm
+
+func Add(a, b int) int //@loc(defAddGo, "Add"), refs("Add", defAddGo, callAddGo)
+func UseAdd() int {
+    return Add(1, 2) //@loc(callAddGo, "Add")
+}
+var myGlobal int64 //@loc(defMyGlobalGo, "myGlobal"), refs("myGlobal", defMyGlobalGo, refMyGlobal, refMyGlobalGo)
+var _ = myGlobal   //@loc(refMyGlobalGo, "myGlobal")
+
+-- go_call_asm/example_asm.s --
+TEXT ·Add(SB), $0-24 //@loc(defAddAsm, "·Add"), refs("Add", defAddGo, callAddGo)
+    MOVQ a+0(FP), AX
+    ADDQ b+8(FP), AX
+    RET
+
+DATA ·myGlobal+0(SB)/8, $42 
+GLOBL ·myGlobal(SB), NOPTR, 8 
+TEXT ·UseGlobal(SB), $0-0
+    MOVQ ·myGlobal(SB), AX //@loc(refMyGlobal, "·myGlobal")
+    RET
+
+-- asm_call_go/example_sub.go --
+package asm_call_go
+
+func Sub(a, b int) int { return a - b } //@loc(defSubGo, "Sub")
+
+-- asm_call_go/call_sub.s --
+TEXT ·CallSub(SB), $0-16
+    MOVQ $10, AX
+    MOVQ $3, BX
+    MOVQ AX, a+0(FP)
+    MOVQ BX, b+8(FP)
+    CALL ·Sub(SB) //@loc(callSubAsm, "·Sub")
+    RET

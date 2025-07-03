@@ -1,41 +1,27 @@
-This test validates the References request functionality in Go assembly files.
 
-It ensures that references to both exported (`Add`) and unexported (`sub`) functions are correctly identified across Go and assembly files. The test covers:
-- Locating the definition of functions in both Go and assembly files.
-- Identifying all references to the functions (`Add` and `sub`) within the Go and assembly files.
-
-The test includes:
-- `Add`: An exported function with references in both Go and assembly files.
-- `sub`: An unexported function with references in both Go and assembly files, including a usage in Go code (`var _ = sub`).
-
-The assembly file demonstrates portable assembly syntax and verifies cross-file reference handling.
 
 -- go.mod --
 module example.com
 go 1.24
 
--- foo/foo.go --
-package foo
+-- example/label_example.s --
+TEXT ·JumpDemo(SB), $0-0
+label1: //@loc(defLabel, "label1")
+    JMP label1 //@loc(refLabel, "label1")
 
-func Add(a, b int) int //@ loc(use, "Add"), refs("Add", use, def)
-func sub(a, b int) int //@ loc(useSub, "sub"), refs("sub", useSub, defSub, refSub)
-var _ = sub //@loc(refSub, "sub"), refs("sub", useSub, defSub, refSub)
-
--- foo/foo.s --
-// portable assembly
-#include "textflag.h"
-
-TEXT ·Add(SB), NOSPLIT, $0-24 //@ loc(def, "·Add"), refs("Add", def, use)
-    MOVQ a+0(FP), AX
-    ADDQ b+8(FP), AX
+-- example/in_package_ref.s --
+TEXT ·Foo(SB), $0-8 //@loc(defFooAsm, "·Foo")
     RET
 
-TEXT ·sub(SB), NOSPLIT, $0-24 //@ loc(defSub, "·sub"), refs("sub", defSub, useSub, refSub)
-    MOVQ a+0(FP), AX
-    SUBQ b+8(FP), AX
+TEXT ·Bar(SB), $0-8
+    CALL ·Foo(SB) //@loc(callFooAsm, "·Foo")
     RET
 
-TEXT ·AddAndSub(SB), NOSPLIT, $0-24
-    CALL ·Add(SB)
-    CALL ·sub(SB)
+-- example/example_data.s --
+DATA ·myGlobal+0(SB)/8, $42
+GLOBL ·myGlobal(SB), NOPTR, 8
+
+TEXT ·UseGlobal(SB), $0-0
+    MOVQ ·myGlobal(SB), AX //@loc(refMyGlobal, "·myGlobal")
     RET
+

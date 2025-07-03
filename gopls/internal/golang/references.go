@@ -614,7 +614,7 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 	// Iterate over all assembly files and find all references to the target object.
 	for _, pgf := range pkg.AsmFiles() {
 		for _, id := range pgf.Idents {
-			if id.Kind != asm.Data && id.Kind != asm.Text {
+			if id.Kind != asm.Data && id.Kind != asm.Ref {
 				continue
 			}
 			_, name, ok := morestrings.CutLast(id.Name, ".")

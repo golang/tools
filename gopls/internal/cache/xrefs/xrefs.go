@@ -117,7 +117,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 	// For each asm file, record references to identifiers.
 	for fileIndex, af := range asmFiles {
 		for _, id := range af.Idents {
-			if id.Kind != asm.Data && id.Kind != asm.Text {
+			if id.Kind != asm.Data && id.Kind != asm.Ref {
 				continue
 			}
 			_, name, ok := morestrings.CutLast(id.Name, ".")
