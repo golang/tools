@@ -6,6 +6,8 @@ This test checks gopls behavior when hovering over alias type.
 -- go.mod --
 module mod.com
 
+go 1.18
+
 -- main.go --
 package main
 
@@ -33,6 +35,17 @@ package b
 type RealType struct {
 	Name string
 	Age int
+}
+
+-- generic/a.go --
+package generic
+func generic[T any]() {}
+
+type Named string
+type Alias = Named
+
+func _(){
+	generic[Alias]() //@hover("Alias", "Alias", Alias)
 }
 
 -- @ToTypeDecl --
@@ -79,3 +92,13 @@ type ToAliasWithComment = a.AliasWithComment // size=24 (0x18)
 ---
 
 [`main.ToAliasWithComment` on pkg.go.dev](https://pkg.go.dev/mod.com#ToAliasWithComment)
+-- @Alias --
+```go
+type Alias = Named
+
+type Named string
+```
+
+---
+
+[`generic.Alias` on pkg.go.dev](https://pkg.go.dev/mod.com/generic#Alias)
