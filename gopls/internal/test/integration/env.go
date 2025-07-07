@@ -339,21 +339,6 @@ func (e *Env) OnceMet(pre Expectation, mustMeets ...Expectation) {
 	e.Await(OnceMet(pre, AllOf(mustMeets...)))
 }
 
-// Shutdown releases the resources of an Env that is no longer needed.
-func (e *Env) Shutdown() {
-	e.Sandbox.Close()                       // ignore error
-	e.Editor.Shutdown(context.Background()) // ignore error
-	if e.MCPSession != nil {
-		e.MCPSession.Close() // ignore error
-	}
-	if e.MCPServer != nil {
-		e.MCPServer.Close()
-	}
-	if e.EventChan != nil {
-		close(e.EventChan)
-	}
-}
-
 // Await waits for all expectations to simultaneously be met. It should only be
 // called from the main test goroutine.
 func (a *Awaiter) Await(ctx context.Context, expectation Expectation) error {

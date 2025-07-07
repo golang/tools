@@ -615,14 +615,32 @@ func (e *Env) SemanticTokensRange(loc protocol.Location) []fake.SemanticToken {
 	return toks
 }
 
-// Close shuts down the editor session and cleans up the sandbox directory,
-// calling t.Error on any error.
+// Close shuts down resources associated with the environment, calling t.Error
+// on any error.
 func (e *Env) Close() {
 	ctx := xcontext.Detach(e.Ctx)
+	if e.MCPSession != nil {
+		if err := e.MCPSession.Close(); err != nil {
+			e.TB.Errorf("closing MCP session: %v", err)
+		}
+	}
+	if e.MCPServer != nil {
+		e.MCPServer.Close()
+	}
 	if err := e.Editor.Close(ctx); err != nil {
 		e.TB.Errorf("closing editor: %v", err)
 	}
 	if err := e.Sandbox.Close(); err != nil {
 		e.TB.Errorf("cleaning up sandbox: %v", err)
+	}
+	// TODO(rfindley): this is very liable to be racy: a send to EventChan
+	// occurs from the lsprpc package on session shutdown, and while it appears that
+	// this reliably happens before we close EventChan here, it's hard to verify
+	// and may still technically race.
+	//
+	// This should be cleaned up as part of simplifying the complicated
+	// relationship between the lsprpc and cache packages.
+	if e.EventChan != nil {
+		close(e.EventChan)
 	}
 }
