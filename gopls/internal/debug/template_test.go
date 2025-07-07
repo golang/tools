@@ -21,8 +21,8 @@ import (
 	"github.com/jba/templatecheck"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/debug"
-	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -31,18 +31,16 @@ var templates = map[string]struct {
 	tmpl *template.Template
 	data any // a value of the needed type
 }{
-	"MainTmpl":    {debug.MainTmpl, &debug.Instance{}},
-	"DebugTmpl":   {debug.DebugTmpl, nil},
-	"RPCTmpl":     {debug.RPCTmpl, &debug.Rpcs{}},
-	"TraceTmpl":   {debug.TraceTmpl, debug.TraceResults{}},
-	"CacheTmpl":   {debug.CacheTmpl, &cache.Cache{}},
-	"SessionTmpl": {debug.SessionTmpl, &cache.Session{}},
-	"ClientTmpl":  {debug.ClientTmpl, &debug.Client{}},
-	"ServerTmpl":  {debug.ServerTmpl, &debug.Server{}},
-	"FileTmpl": {debug.FileTmpl, *new(interface {
-		file.Handle
-		Kind() file.Kind // (overlay files only)
-	})},
+	"MainTmpl":     {debug.MainTmpl, &debug.Instance{}},
+	"DebugTmpl":    {debug.DebugTmpl, nil},
+	"RPCTmpl":      {debug.RPCTmpl, &debug.Rpcs{}},
+	"TraceTmpl":    {debug.TraceTmpl, debug.TraceResults{}},
+	"CacheTmpl":    {debug.CacheTmpl, &cache.Cache{}},
+	"SessionTmpl":  {debug.SessionTmpl, &cache.Session{}},
+	"ClientTmpl":   {debug.ClientTmpl, &debug.Client{}},
+	"ServerTmpl":   {debug.ServerTmpl, &debug.Server{}},
+	"FileTmpl":     {debug.FileTmpl, *new(debug.FileWithKind)},
+	"MetadataTmpl": {debug.MetadataTmpl, &metadata.Graph{}},
 	"InfoTmpl":     {debug.InfoTmpl, "something"},
 	"MemoryTmpl":   {debug.MemoryTmpl, runtime.MemStats{}},
 	"AnalysisTmpl": {debug.AnalysisTmpl, new(debug.State).Analysis()},

@@ -26,6 +26,7 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/debug/log"
+	"golang.org/x/tools/gopls/internal/file"
 	label1 "golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -138,12 +139,12 @@ func (st *State) Views() []*cache.View {
 
 // View returns the View that matches the supplied id.
 func (st *State) View(id string) *cache.View {
-	for _, v := range st.Views() {
-		if v.ID() == id {
+	for _, s := range st.Sessions() {
+		if v, err := s.View(id); err == nil {
 			return v
 		}
 	}
-	return nil
+	return nil // not found
 }
 
 // Clients returns the set of Clients currently being served.
@@ -305,13 +306,18 @@ func (i *Instance) getServer(r *http.Request) any {
 	return nil
 }
 
+type FileWithKind interface {
+	file.Handle
+	Kind() file.Kind // (overlay files only)
+}
+
+// /file/{session}/{identifier}. Returns a [FileWithKind].
 func (i *Instance) getFile(r *http.Request) any {
-	identifier := path.Base(r.URL.Path)
-	sid := path.Base(path.Dir(r.URL.Path))
-	s := i.State.Session(sid)
+	s := i.State.Session(r.PathValue("session"))
 	if s == nil {
 		return nil
 	}
+	identifier := r.PathValue("identifier")
 	for _, o := range s.Overlays() {
 		// TODO(adonovan): understand and document this comparison.
 		if o.Identity().Hash.String() == identifier {
@@ -319,6 +325,28 @@ func (i *Instance) getFile(r *http.Request) any {
 		}
 	}
 	return nil
+}
+
+// /metadata/{session}/{view}. Returns a [*metadata.Graph].
+func (i *Instance) getMetadata(r *http.Request) any {
+	session := i.State.Session(r.PathValue("session"))
+	if session == nil {
+		return nil
+	}
+
+	v, err := session.View(r.PathValue("view"))
+	if err != nil {
+		stdlog.Printf("/metadata: %v", err)
+		return nil // no found
+	}
+
+	snapshot, release, err := v.Snapshot()
+	if err != nil {
+		stdlog.Printf("/metadata: failed to get latest snapshot: %v", err)
+		return nil
+	}
+	defer release()
+	return snapshot.MetadataGraph()
 }
 
 func (i *Instance) getInfo(r *http.Request) any {
@@ -459,7 +487,8 @@ func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 		mux.HandleFunc("/session/", render(SessionTmpl, i.getSession))
 		mux.HandleFunc("/client/", render(ClientTmpl, i.getClient))
 		mux.HandleFunc("/server/", render(ServerTmpl, i.getServer))
-		mux.HandleFunc("/file/", render(FileTmpl, i.getFile))
+		mux.HandleFunc("/file/{session}/{identifier}", render(FileTmpl, i.getFile))
+		mux.HandleFunc("/metadata/{session}/{view}/", render(MetadataTmpl, i.getMetadata))
 		mux.HandleFunc("/info", render(InfoTmpl, i.getInfo))
 		mux.HandleFunc("/memory", render(MemoryTmpl, getMemory))
 
@@ -805,6 +834,7 @@ var SessionTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "title"}}Session {{.ID}}{{end}}
 {{define "body"}}
 From: <b>{{template "cachelink" .Cache.ID}}</b><br>
+{{- $session := . -}}
 
 <h2>Views</h2>
 <ul>{{range .Views}}
@@ -815,7 +845,10 @@ Root: <b>{{.Root}}</b><br>
 {{- if $envOverlay}}
 Env overlay: <b>{{$envOverlay}})</b><br>
 {{end -}}
-Folder: <b>{{.Folder.Name}}:{{.Folder.Dir}}</b></li>
+Folder.Name: <b>{{.Folder.Name}}</b><br>
+Folder.Dir: <b>{{.Folder.Dir}}</b><br/>
+<a href="/metadata/{{$session.ID}}/{{.ID}}">Latest metadata</a><br/>
+
 Settings:<br/>
 <ul>
 {{range .Folder.Options.Debug}}<li>{{.}}</li>
@@ -832,6 +865,7 @@ Settings:<br/>
 {{end}}
 `))
 
+// For /file endpoint; operand is [FileWithKind].
 var FileTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "title"}}Overlay {{.Identity.Hash}}{{end}}
 {{define "body"}}
@@ -843,5 +877,52 @@ var FileTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{end}}
 <h3>Contents</h3>
 <pre>{{fcontent .Content}}</pre>
+{{end}}
+`))
+
+// For /metadata endpoint; operand is [*metadata.Graph].
+var MetadataTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+{{define "title"}}Metadata graph{{end}}
+{{define "body"}}
+
+<p><a href='#hdr-Files'>↓ Index by file</a></p>
+
+<h3>Packages ({{len .Packages}})</h3>
+<ul>
+{{range $id, $pkg := .Packages}}
+<li id='{{$id}}'><b>{{$id}}</b>
+{{with $pkg}}
+<ul>
+ <li>Name: {{.Name}}</li>
+ <li>PkgPath: {{printf "%q" .PkgPath}}</li>
+ {{if .Module}}<li>Module: {{printf "%#v" .Module}}</li>{{end}}
+ {{if .ForTest}}<li>ForTest: {{.ForTest}}</li>{{end}}
+ {{if .Standalone}}<li>Standalone</li>{{end}}
+ {{if .Errors}}<li>Errors: {{.Errors}}</li>{{end}}
+ {{if .DepsErrors}}<li>DepsErrors: {{.DepsErrors}}</li>{{end}}
+ <li>LoadDir: {{.LoadDir}}</li>
+ <li>DepsByImpPath
+  <ul>
+   {{range $path, $id := .DepsByImpPath}}
+    <li>{{if $id}}<a href='#{{$id}}'>{{printf "%q" $path}}</a>{{else}}⚠️ {{printf "%q" $path}} missing{{end}}</li>
+   {{end}}
+  </ul>
+ </li>
+ {{if .GoFiles}}<li>GoFiles: <ul>{{range .GoFiles}}<li>{{.}}</li>{{end}}</ul></li>{{end}}
+ {{if .CompiledGoFiles}}<li>CompiledGoFiles: <ul>{{range .CompiledGoFiles}}<li>{{.}}</li>{{end}}</ul></li>{{end}}
+ {{if .IgnoredFiles}}<li>IgnoredFiles: <ul>{{range .IgnoredFiles}}<li>{{.}}</li>{{end}}</ul></li>{{end}}
+ {{if .OtherFiles}}<li>OtherFiles: <ul>{{range .OtherFiles}}<li>{{.}}</li>{{end}}</ul></li>{{end}}
+ <!-- skip DepsByPkgPath, ImportedBy (redundant indexes) -->
+</ul>
+{{end}}
+</li>
+{{end}}
+</ul>
+
+<h3 id='hdr-Files'>Files</h3>
+<ul>
+{{range $uri, $ids := .IDs}}<li>{{$uri}} →{{range $ids}} <a href='#{{.}}'>{{.}}</a>{{end}}</li>{{end}}
+</ul>
+
 {{end}}
 `))
