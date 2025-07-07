@@ -48,7 +48,7 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 		return nil, nil
 	}
 
-	declLoc, err := objectLocation(ctx, pkg.FileSet(), snapshot, obj)
+	declLoc, err := ObjectLocation(ctx, pkg.FileSet(), snapshot, obj)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +267,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 			continue
 		}
 
-		loc, err := objectLocation(ctx, declPkg.FileSet(), snapshot, obj)
+		loc, err := ObjectLocation(ctx, declPkg.FileSet(), snapshot, obj)
 		if err != nil {
 			return nil, err
 		}

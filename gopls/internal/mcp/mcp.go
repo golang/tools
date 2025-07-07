@@ -142,6 +142,7 @@ func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
 		h.contextTool(),
 		h.diagnosticsTool(),
 		h.referencesTool(),
+		h.symbolReferencesTool(),
 	)
 	return mcpServer
 }

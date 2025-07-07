@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode"
 
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/mcp"
@@ -41,7 +42,7 @@ func locationProperty(name string) mcp.SchemaOption {
 	)
 }
 
-type FindReferencesParams struct {
+type findReferencesParams struct {
 	Location protocol.Location `json:"location"`
 }
 
@@ -54,7 +55,7 @@ func (h *handler) referencesTool() *mcp.ServerTool {
 	)
 }
 
-func (h *handler) referencesHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[FindReferencesParams]) (*mcp.CallToolResultFor[struct{}], error) {
+func (h *handler) referencesHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[findReferencesParams]) (*mcp.CallToolResultFor[any], error) {
 	fh, snapshot, release, err := h.session.FileOf(ctx, params.Arguments.Location.URI)
 	if err != nil {
 		return nil, err
@@ -65,6 +66,10 @@ func (h *handler) referencesHandler(ctx context.Context, _ *mcp.ServerSession, p
 	if err != nil {
 		return nil, err
 	}
+	return formatReferences(ctx, snapshot, refs)
+}
+
+func formatReferences(ctx context.Context, snapshot *cache.Snapshot, refs []protocol.Location) (*mcp.CallToolResultFor[any], error) {
 	if len(refs) == 0 {
 		return nil, fmt.Errorf("no references found")
 	}
@@ -93,7 +98,7 @@ func (h *handler) referencesHandler(ctx context.Context, _ *mcp.ServerSession, p
 		fmt.Fprintf(&builder, "The reference is located on line %v, which has content `%s`\n", r.Range.Start.Line, lineContent)
 		builder.WriteString("\n")
 	}
-	return &mcp.CallToolResultFor[struct{}]{
+	return &mcp.CallToolResultFor[any]{
 		Content: []*mcp.Content{
 			mcp.NewTextContent(builder.String()),
 		},

@@ -53,7 +53,7 @@ func PrepareTypeHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 	}
 
 	// Find declaration.
-	declLoc, err := objectLocation(ctx, pkg.FileSet(), snapshot, tname)
+	declLoc, err := ObjectLocation(ctx, pkg.FileSet(), snapshot, tname)
 	if err != nil {
 		return nil, err
 	}

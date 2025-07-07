@@ -40,7 +40,7 @@ func TypeDefinition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 	if tname == nil {
 		return nil, fmt.Errorf("no type definition for %s", obj.Name())
 	}
-	loc, err := objectLocation(ctx, pkg.FileSet(), snapshot, tname)
+	loc, err := ObjectLocation(ctx, pkg.FileSet(), snapshot, tname)
 	if err != nil {
 		return nil, err
 	}

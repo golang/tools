@@ -188,7 +188,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	// Finally, map the object position.
-	loc, err := objectLocation(ctx, pkg.FileSet(), snapshot, obj)
+	loc, err := ObjectLocation(ctx, pkg.FileSet(), snapshot, obj)
 	if err != nil {
 		return nil, err
 	}
@@ -418,11 +418,11 @@ func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package
 	return locs, nil
 }
 
-// objectLocation returns the location of the declaring identifier of obj.
+// ObjectLocation returns the location of the declaring identifier of obj.
 // If valid, obj.Pos() must be mapped by fset.
 // It may need to read the declaring file content, hence (ctx, s).
 // It supports the builtin and unsafe pseudo-packages.
-func objectLocation(ctx context.Context, fset *token.FileSet, snapshot *cache.Snapshot, obj types.Object) (protocol.Location, error) {
+func ObjectLocation(ctx context.Context, fset *token.FileSet, snapshot *cache.Snapshot, obj types.Object) (protocol.Location, error) {
 	if isBuiltin(obj) {
 		// Returns fake source declaration in {builtin,unsafe}.go.
 		pgf, ident, err := builtinDecl(ctx, snapshot, obj)

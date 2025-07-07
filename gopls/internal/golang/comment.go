@@ -63,7 +63,7 @@ func docLinkDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache
 	if err != nil {
 		return nil, err
 	}
-	loc, err := objectLocation(ctx, pkg.FileSet(), snapshot, obj)
+	loc, err := ObjectLocation(ctx, pkg.FileSet(), snapshot, obj)
 	if err != nil {
 		return nil, err
 	}
