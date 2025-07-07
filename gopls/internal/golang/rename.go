@@ -62,6 +62,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -135,9 +136,14 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 		return nil, nil, err
 	}
 
+	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+	if !ok {
+		return nil, nil, fmt.Errorf("can't find cursor for selection")
+	}
+
 	// Check if we're in a 'func' keyword. If so, we hijack the renaming to
 	// change the function signature.
-	if item, err := prepareRenameFuncSignature(pgf, pos); err != nil {
+	if item, err := prepareRenameFuncSignature(pgf, pos, cur); err != nil {
 		return nil, nil, err
 	} else if item != nil {
 		return item, nil, nil
@@ -145,7 +151,19 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 
 	targets, node, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 	if err != nil {
-		return nil, nil, err
+		// Check if we are renaming an ident inside its doc comment. The call to
+		// objectsAt will have returned an error in this case.
+		id := docCommentPosToIdent(pgf, pos, cur)
+		if id == nil {
+			return nil, nil, err
+		}
+		obj := pkg.TypesInfo().Defs[id]
+		if obj == nil {
+			return nil, nil, fmt.Errorf("error fetching Object for ident %q", id.Name)
+		}
+		// Change rename target to the ident.
+		targets = map[types.Object]ast.Node{obj: id}
+		node = id
 	}
 	var obj types.Object
 	for obj = range targets {
@@ -209,8 +227,8 @@ func prepareRenamePackageName(ctx context.Context, snapshot *cache.Snapshot, pgf
 //
 // The resulting text is the signature of the function, which may be edited to
 // the new signature.
-func prepareRenameFuncSignature(pgf *parsego.File, pos token.Pos) (*PrepareItem, error) {
-	fdecl := funcKeywordDecl(pgf, pos)
+func prepareRenameFuncSignature(pgf *parsego.File, pos token.Pos, cursor inspector.Cursor) (*PrepareItem, error) {
+	fdecl := funcKeywordDecl(pos, cursor)
 	if fdecl == nil {
 		return nil, nil
 	}
@@ -264,17 +282,8 @@ func nameBlankParams(ftype *ast.FuncType) *ast.FuncType {
 
 // renameFuncSignature computes and applies the effective change signature
 // operation resulting from a 'renamed' (=rewritten) signature.
-func renameFuncSignature(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position, newName string) (map[protocol.DocumentURI][]protocol.TextEdit, error) {
-	// Find the renamed signature.
-	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, f.URI())
-	if err != nil {
-		return nil, err
-	}
-	pos, err := pgf.PositionPos(pp)
-	if err != nil {
-		return nil, err
-	}
-	fdecl := funcKeywordDecl(pgf, pos)
+func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.File, pos token.Pos, snapshot *cache.Snapshot, cursor inspector.Cursor, f file.Handle, pp protocol.Position, newName string) (map[protocol.DocumentURI][]protocol.TextEdit, error) {
+	fdecl := funcKeywordDecl(pos, cursor)
 	if fdecl == nil {
 		return nil, nil
 	}
@@ -350,15 +359,12 @@ func renameFuncSignature(ctx context.Context, snapshot *cache.Snapshot, f file.H
 
 // funcKeywordDecl returns the FuncDecl for which pos is in the 'func' keyword,
 // if any.
-func funcKeywordDecl(pgf *parsego.File, pos token.Pos) *ast.FuncDecl {
-	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
-	if len(path) < 1 {
+func funcKeywordDecl(pos token.Pos, cursor inspector.Cursor) *ast.FuncDecl {
+	curDecl, ok := moreiters.First(cursor.Enclosing((*ast.FuncDecl)(nil)))
+	if !ok {
 		return nil
 	}
-	fdecl, _ := path[0].(*ast.FuncDecl)
-	if fdecl == nil {
-		return nil
-	}
+	fdecl := curDecl.Node().(*ast.FuncDecl)
 	ftyp := fdecl.Type
 	if pos < ftyp.Func || pos > ftyp.Func+token.Pos(len("func")) { // tolerate renaming immediately after 'func'
 		return nil
@@ -396,7 +402,21 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 	ctx, done := event.Start(ctx, "golang.Rename")
 	defer done()
 
-	if edits, err := renameFuncSignature(ctx, snapshot, f, pp, newName); err != nil {
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, f.URI())
+	if err != nil {
+		return nil, false, err
+	}
+	pos, err := pgf.PositionPos(pp)
+	if err != nil {
+		return nil, false, err
+	}
+
+	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+	if !ok {
+		return nil, false, fmt.Errorf("can't find cursor for selection")
+	}
+
+	if edits, err := renameFuncSignature(ctx, pkg, pgf, pos, snapshot, cur, f, pp, newName); err != nil {
 		return nil, false, err
 	} else if edits != nil {
 		return edits, false, nil
@@ -503,7 +523,18 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 	}
 	targets, node, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
 	if err != nil {
-		return nil, err
+		// Check if we are renaming an ident inside its doc comment. The call to
+		// objectsAt will have returned an error in this case.
+		id := docCommentPosToIdent(pgf, pos, cur)
+		if id == nil {
+			return nil, err
+		}
+		obj := pkg.TypesInfo().Defs[id]
+		if obj == nil {
+			return nil, fmt.Errorf("error fetching types.Object for ident %q", id.Name)
+		}
+		// Change rename target to the ident.
+		targets = map[types.Object]ast.Node{obj: id}
 	}
 
 	// Pick a representative object arbitrarily.
@@ -1628,6 +1659,41 @@ func docComment(pgf *parsego.File, id *ast.Ident) *ast.CommentGroup {
 			}
 		default:
 			return nil
+		}
+	}
+	return nil
+}
+
+// docCommentPosToIdent returns the node whose doc comment contains pos, if any.
+// The pos must be within an occurrence of the identifier's name, otherwise it returns nil.
+func docCommentPosToIdent(pgf *parsego.File, pos token.Pos, cur inspector.Cursor) *ast.Ident {
+	for curId := range cur.Preorder((*ast.Ident)(nil)) {
+		id := curId.Node().(*ast.Ident)
+		if pos > id.Pos() {
+			continue // Doc comments are not located after an ident.
+		}
+		doc := docComment(pgf, id)
+		if doc == nil || !(doc.Pos() <= pos && pos < doc.End()) {
+			continue
+		}
+
+		docRegexp := regexp.MustCompile(`\b` + id.Name + `\b`)
+		for _, comment := range doc.List {
+			if isDirective(comment.Text) || !(comment.Pos() <= pos && pos < comment.End()) {
+				continue
+			}
+			start := comment.Pos()
+			text, err := pgf.NodeText(comment)
+			if err != nil {
+				return nil
+			}
+			for _, locs := range docRegexp.FindAllIndex(text, -1) {
+				matchStart := start + token.Pos(locs[0])
+				matchEnd := start + token.Pos(locs[1])
+				if matchStart <= pos && pos <= matchEnd {
+					return id
+				}
+			}
 		}
 	}
 	return nil
