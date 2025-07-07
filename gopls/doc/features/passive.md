@@ -261,20 +261,17 @@ Settings:
   semantic tokens even when their client provides no client-side control over the
   feature. Because gopls' semantic-tokens algorithm depends on type checking,
   which adds a tangible latency, this feature is currently disabled by default
-  to avoid any delay in syntax highlighting; see golang/go#45313, golang/go#47465.
+  to avoid any delay in syntax highlighting; see https://go.dev/issue/#45313, https://go.dev/issue/#47465.
 - The experimental [`noSemanticString`](../settings.md#noSemanticString) and
   [`noSemanticNumber`](../settings.md#noSemanticNumber) settings cause the server
   to exclude the `string` and `number` kinds from the response, as some clients
-  may do a more colorful job highlighting these tokens; see golang/go#45753.
+  may do a more colorful job highlighting these tokens; see https://go.dev/issue/45753.
 
 Client Support:
 - **VS Code**: See [Semantic Highlighting Guide](https://code.visualstudio.com/api/language-extensions/semantic-highlight-guide).
 - **Emacs + eglot**: Not supported; see joaotavora/eglot#615.
 - **Vim + coc.nvim**: ??
 - **CLI**: `gopls semtok file.go`
-
-For internal details of gopls' implementation of semantic tokens,
-see [semantic tokens](../semantictokens.md).
 
 ## Folding Range
 

@@ -57,7 +57,7 @@ Mode, this behavior can be configured using the `lsp-auto-guess-root` setting.
 
 ### Configuring `gopls` via LSP Mode
 
-See [settings] for information about available gopls settings.
+See [settings](../settings) for information about available gopls settings.
 
 Stable gopls settings have corresponding configuration variables in `lsp-mode`.
 For example, `(setq lsp-gopls-use-placeholders nil)` will disable placeholders
@@ -121,7 +121,7 @@ Eglot.
 
 ### Configuring `gopls` via Eglot
 
-See [settings] for information about available gopls settings.
+See [settings](../settings) for information about available gopls settings.
 
 LSP server settings are controlled by the `eglot-workspace-configuration`
 variable, which can be set either globally in `.emacs` or in a `.dir-locals.el` file in the project root.

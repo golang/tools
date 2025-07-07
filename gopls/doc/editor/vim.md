@@ -109,7 +109,7 @@ a `go.mod` file. See the
 [coc.nvim documentation](https://github.com/neoclide/coc.nvim/wiki/Using-workspaceFolders)
 for more details.
 
-Other [settings](settings.md) can be added in `initializationOptions` too.
+Other [settings](../settings) can be added in `initializationOptions` too.
 
 The `editor.action.organizeImport` code action will auto-format code and add missing imports. To run this automatically on save, add the following line to your `init.vim`:
 

@@ -132,7 +132,7 @@ Caveats:
   representation, which currently records comments not in the tree
   but in a side table; consequently, transformations such as Extract
   and Inline are prone to losing comments. This is issue
-  golang/go#20744, and it is a priority for us to fix in 2024.
+  https://go.dev/issue/20744, and it is a priority for us to fix in 2024.
 
 - Generated files, as identified by the conventional
   [DO NOT EDIT](https://go.dev/s/generatedcode) comment,
@@ -198,7 +198,7 @@ saving any edited file.
 
 Some users dislike the automatic removal of imports that are
 unreferenced because, for example, the sole line that refers to the
-import is temporarily commented out for debugging; see golang/go#54362.
+import is temporarily commented out for debugging; see https://go.dev/issue/54362.
 
 Settings:
 
@@ -344,18 +344,18 @@ Some tips for best results:
 
 - The safety checks performed by the Rename algorithm require type
   information. If the program is grossly malformed, there may be
-  insufficient information for it to run (golang/go#41870),
-  and renaming cannot generally be used to fix a type error (golang/go#41851).
+  insufficient information for it to run (https://go.dev/issue/41870),
+  and renaming cannot generally be used to fix a type error (https://go.dev/issue/41851).
   When refactoring, we recommend working in small steps, repairing any
   problems as you go, so that as much as possible of the program
   compiles at each step.
 - Sometimes it may be desirable for a renaming operation to change the
   reference structure of the program, for example to intentionally
   combine two variables x and y by renaming y to x.
-  The renaming tool is too strict to help in this case (golang/go#41852).
+  The renaming tool is too strict to help in this case (https://go.dev/issue/41852).
 
 <!-- known issue: when renaming an interface method, gopls doesn't properly
-     traverse W-shaped import graphs looking for matching types; see golang/go#58461. -->
+     traverse W-shaped import graphs looking for matching types; see https://go.dev/issue/58461. -->
 
 For the gory details of gopls' rename algorithm, you may be interested
 in the latter half of this 2015 GothamGo talk:
@@ -425,12 +425,12 @@ number of cases where it falls short, including:
 The following Extract features are planned for 2024 but not yet supported:
 
 - **Extract parameter struct** will replace two or more parameters of a
-  function by a struct type with one field per parameter; see golang/go#65552.
+  function by a struct type with one field per parameter; see https://go.dev/issue/65552.
   <!-- TODO(adonovan): review and land https://go.dev/cl/620995. -->
   <!-- Should this operation update all callers? That's more of a Change Signature. -->
 - **Extract interface for type** will create a declaration of an
   interface type with all the methods of the selected concrete type;
-  see golang/go#65721 and golang/go#46665.
+  see https://go.dev/issue/65721 and https://go.dev/issue/46665.
 
 <a name='refactor.extract.toNewFile'></a>
 ## `refactor.extract.toNewFile`: Extract declarations to new file
@@ -496,7 +496,7 @@ and refers to non-exported parts of that package, or to [internal
 packages](https://go.dev/doc/go1.4#internalpackages) that are
 inaccessible to the caller.
 Calls to generic functions are not yet supported
-(golang/go#63352), though we plan to fix that.
+(https://go.dev/issue/63352), though we plan to fix that.
 
 When inlining is possible, it's critical that the tool preserve
 the original behavior of the program.
@@ -855,7 +855,7 @@ Caveats:
 - Candidate declarations are sought only in the current file, and only
   above the current point. Symbols declared beneath the current point,
   or in other files in the package, are not considered; see
-  golang/go#68224.
+  https://go.dev/issue/68224.
 
 <a name='refactor.rewrite.fillSwitch'></a>
 ### `refactor.rewrite.fillSwitch`: Fill switch

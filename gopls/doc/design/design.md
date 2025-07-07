@@ -389,7 +389,7 @@ Previous        | N/A
 |               | This is a brand new feature powered by the new go/analysis engine, and it should allow a huge amount of automated refactoring.
 
 [LSP specification]: https://microsoft.github.io/language-server-protocol/specifications/specification-3-14/
-[talk]: TODO
+[talk]: https://www.youtube.com/watch?v=EFJfdWzBHwE
 [slides]: https://github.com/gophercon/2019-talks/blob/master/RebeccaStambler-GoPleaseStopBreakingMyEditor/slides.pdf "Go, please stop breaking my editor!"
 [JSON rpc 2]: https://www.jsonrpc.org/specification
 

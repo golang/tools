@@ -8,7 +8,9 @@ If you are implementing a plugin yourself and have questions this page does not 
 
 ## Supported features
 
-For the most part you should look at the [list](status.md#supported-features) in the current status document to know if gopls supports a feature.
+For the most part you should look at the [Index of features](../features/)
+to know whether gopls supports a feature.
+
 For a truly authoritative answer you should check the [result][InitializeResult] of the [initialize] request, where gopls enumerates its support in the [ServerCapabilities].
 
 

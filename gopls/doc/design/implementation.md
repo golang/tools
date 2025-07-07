@@ -116,8 +116,7 @@ handler method per LSP request type. Each handler switches on the type
 of the file and dispatches to one of the four language-specific
 packages.
 
-The [lsprpc] package connects the service interface to our [JSON RPC](jsonrpc2)
-server.
+The [lsprpc] package connects the service interface to our [jsonrpc2](https://www.jsonrpc.org/specification) server.
 
 Bear in mind that the diagram is a dependency graph, a "static"
 viewpoint of the program's structure. A more dynamic viewpoint would
@@ -142,8 +141,7 @@ listen indefinitely.
 It also provides a number of subcommands that start a server, make a
 single request to it, and exit, providing traditional batch-command
 access to server functionality. These subcommands are primarily
-provided as a debugging aid (but see
-[#63693](https://github.com/golang/go/issues/63693)).
+provided as a debugging aid; but see https://go.dev/issue/63693.
 
 [cache]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cache
 [cmd]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/cmd
@@ -154,6 +152,7 @@ provided as a debugging aid (but see
 [go/analysis]: https://pkg.go.dev/golang.org/x/tools@master/go/analysis
 [go/packages]: https://pkg.go.dev/golang.org/x/tools@master/go/packages
 [gopls]: https://pkg.go.dev/golang.org/x/tools/gopls@master
+[jsonrpc]: https://pkg.go.dev/golang.org/x/tools@master/internal/jsonrpc
 [jsonrpc2]: https://pkg.go.dev/golang.org/x/tools@master/internal/jsonrpc2
 [lsprpc]: https://pkg.go.dev/golang.org/x/tools/gopls@master/internal/lsprpc
 [memoize]: https://github.com/golang/tools/tree/master/internal/memoize

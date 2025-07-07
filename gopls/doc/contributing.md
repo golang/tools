@@ -1,8 +1,5 @@
 # Gopls: Documentation for contributors
 
-This documentation augments the general documentation for contributing to the
-x/tools repository, described at the [repository root](../../CONTRIBUTING.md).
-
 Contributions are welcome! However, development is fast moving,
 and we are limited in our capacity to review contributions.
 So, before sending a CL, please please please:
@@ -148,13 +145,13 @@ run the complete set, on a wide range of platforms.)
 
 Gopls tests are a mix of two kinds.
 
-- [Marker tests](../internal/test/marker) express each test scenario
+- [Marker tests](https://golang.org/x/tools/gopls/internal/test/marker) express each test scenario
   in a standalone text file that contains the target .go, go.mod, and
   go.work files, in which special annotations embedded in comments
   drive the test. These tests are generally easy to write and fast
   to iterate, but have limitations on what they can express.
 
-- [Integration tests](../internal/test/integration) are regular Go
+- [Integration tests](https://golang.org/x/tools/gopls/internal/test/integration) are regular Go
   `func Test(*testing.T)` functions that make a series of calls to an
   API for a fake LSP-enabled client editor. The API allows you to open
   and edit a file, navigate to a definition, invoke other LSP

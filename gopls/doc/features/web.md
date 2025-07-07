@@ -37,7 +37,7 @@ Restarting the gopls process causes this secret to change, rendering
 all existing previous URLs invalid; existing pages will display a banner
 indicating that they have become disconnected.
 
-TODO: combine the web server and the debug server; see golang/go#68229.
+TODO: combine the web server and the debug server; see https://go.dev/issue/68229.
 
 Gopls supports two-way communication between the web browser and the
 client editor. All of the web-based reports contain links to

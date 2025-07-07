@@ -62,14 +62,14 @@ The references algorithm handles various parts of syntax as follows:
 - An **embedded field** `T` in a struct type such as `struct{T}` is
   unique in Go in that it is both a reference (to a type) and a
   definition (of a field).
-  The `references` operation reports only the references to it [as a field](golang/go#63521).
+  The `references` operation reports only the references to it [as a field](https://go.dev/issue/63521).
   To find references to the type, jump to the type declararation first.
 
 Be aware that a references query returns information only about the
 build configuration used to analyze the selected file, so if you ask
 for the references to a symbol defined in `foo_windows.go`, the result
 will never include the file `bar_linux.go`, even if that file refers
-to a symbol of the same name; see golang/go#65755.
+to a symbol of the same name; see https://go.dev/issue/65755.
 
 Clients can request that the the declaration be included among the
 references; most do.
@@ -188,7 +188,7 @@ Similarly, if the symbol's type is a function with one "interesting"
 (named, non-`error`) result type, the function's result type is used.
 
 Gopls currently requires that a `typeDefinition` query be applied to a
-symbol, not to an arbitrary expression; see golang/go#67890 for
+symbol, not to an arbitrary expression; see https://go.dev/issue/67890 for
 potential extensions of this functionality.
 <!-- e.g. selecting a struct field, package name, or other piece of syntax. -->
 
