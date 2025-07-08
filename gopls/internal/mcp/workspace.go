@@ -22,7 +22,7 @@ import (
 func (h *handler) workspaceTool() *mcp.ServerTool {
 	return mcp.NewServerTool(
 		"go_workspace",
-		"summarize the Go programming language workspace",
+		"Summarize the Go programming language workspace",
 		h.workspaceHandler,
 	)
 }

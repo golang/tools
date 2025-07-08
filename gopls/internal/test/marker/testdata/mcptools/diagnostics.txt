@@ -28,7 +28,6 @@ Fix:
  //@diag(foo, re"unused")
 
 
-
 -- b/main.go --
 package main
 
@@ -66,7 +65,6 @@ Fix:
  }
 
 
-
 5:5-5:35: [Hint] Call of main.deprecated should be inlined
 Fix:
 --- $WORKDIR/b/main.go
@@ -80,6 +78,5 @@ Fix:
  }
  
  //go:fix inline
-
 
 

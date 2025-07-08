@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -75,7 +76,6 @@ func (h *handler) diagnoseFileHandler(ctx context.Context, _ *mcp.ServerSession,
 		}
 
 		fixes := make(map[key]*protocol.CodeAction)
-
 		for _, action := range actions {
 			for _, d := range action.Diagnostics {
 				k := key{d.Message, d.Range}
@@ -85,19 +85,14 @@ func (h *handler) diagnoseFileHandler(ctx context.Context, _ *mcp.ServerSession,
 			}
 		}
 
+		fixesByDiagnostic := make(map[*cache.Diagnostic]*protocol.CodeAction)
 		for _, d := range diagnostics {
-			fmt.Fprintf(&builder, "%d:%d-%d:%d: [%s] %s\n", d.Range.Start.Line, d.Range.Start.Character, d.Range.End.Line, d.Range.End.Character, d.Severity, d.Message)
-
-			fix, ok := fixes[key{d.Message, d.Range}]
-			if ok {
-				diff, err := toUnifiedDiff(ctx, snapshot, fix.Edit.DocumentChanges)
-				if err != nil {
-					return nil, err
-				}
-
-				fmt.Fprintf(&builder, "Fix:\n%s\n", diff)
+			if fix, ok := fixes[key{d.Message, d.Range}]; ok {
+				fixesByDiagnostic[d] = fix
 			}
-			builder.WriteString("\n")
+		}
+		if err := summarizeDiagnostics(ctx, snapshot, &builder, diagnostics, fixesByDiagnostic); err != nil {
+			return nil, err
 		}
 	}
 
@@ -106,6 +101,23 @@ func (h *handler) diagnoseFileHandler(ctx context.Context, _ *mcp.ServerSession,
 			mcp.NewTextContent(builder.String()),
 		},
 	}, nil
+}
+
+func summarizeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, w io.Writer, diagnostics []*cache.Diagnostic, fixes map[*cache.Diagnostic]*protocol.CodeAction) error {
+	for _, d := range diagnostics {
+		fmt.Fprintf(w, "%d:%d-%d:%d: [%s] %s\n", d.Range.Start.Line, d.Range.Start.Character, d.Range.End.Line, d.Range.End.Character, d.Severity, d.Message)
+
+		fix, ok := fixes[d]
+		if ok {
+			diff, err := toUnifiedDiff(ctx, snapshot, fix.Edit.DocumentChanges)
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintf(w, "Fix:\n%s\n", diff)
+		}
+	}
+	return nil
 }
 
 // toUnifiedDiff converts each [protocol.DocumentChange] into a separate
