@@ -63,9 +63,5 @@ func (h *handler) workspaceDiagnosticsHandler(ctx context.Context, _ *mcp.Server
 		fmt.Fprintln(&b)
 	}
 
-	return &mcp.CallToolResultFor[any]{
-		Content: []*mcp.Content{
-			mcp.NewTextContent(b.String()),
-		},
-	}, nil
+	return textResult(b.String()), nil
 }

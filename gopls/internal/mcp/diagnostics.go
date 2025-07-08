@@ -38,7 +38,7 @@ func (h *handler) diagnosticsTool() *mcp.ServerTool {
 	)
 }
 
-func (h *handler) diagnoseFileHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[diagnosticsParams]) (*mcp.CallToolResultFor[struct{}], error) {
+func (h *handler) diagnoseFileHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[diagnosticsParams]) (*mcp.CallToolResultFor[any], error) {
 	fh, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
 	if err != nil {
 		return nil, err
@@ -96,11 +96,7 @@ func (h *handler) diagnoseFileHandler(ctx context.Context, _ *mcp.ServerSession,
 		}
 	}
 
-	return &mcp.CallToolResultFor[struct{}]{
-		Content: []*mcp.Content{
-			mcp.NewTextContent(builder.String()),
-		},
-	}, nil
+	return textResult(builder.String()), nil
 }
 
 func summarizeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, w io.Writer, diagnostics []*cache.Diagnostic, fixes map[*cache.Diagnostic]*protocol.CodeAction) error {

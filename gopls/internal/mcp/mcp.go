@@ -144,6 +144,7 @@ func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
 		h.workspaceDiagnosticsTool(),
 		h.referencesTool(),
 		h.symbolReferencesTool(),
+		h.searchTool(),
 	)
 	return mcpServer
 }
@@ -233,4 +234,12 @@ func checkForFileChanges(ctx context.Context, snapshot *cache.Snapshot, id metad
 		return nil
 	}
 	return events, checkPkg(id)
+}
+
+func textResult(text string) *mcp.CallToolResultFor[any] {
+	return &mcp.CallToolResultFor[any]{
+		Content: []*mcp.Content{
+			mcp.NewTextContent(text),
+		},
+	}
 }

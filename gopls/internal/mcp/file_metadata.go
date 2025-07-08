@@ -47,7 +47,5 @@ func (h *handler) fileMetadataHandler(ctx context.Context, _ *mcp.ServerSession,
 	for _, f := range md.CompiledGoFiles {
 		addf("\t%s\n", f.Path())
 	}
-	return &mcp.CallToolResultFor[any]{
-		Content: []*mcp.Content{mcp.NewTextContent(b.String())},
-	}, nil
+	return textResult(b.String()), nil
 }

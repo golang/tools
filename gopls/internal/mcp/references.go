@@ -98,9 +98,5 @@ func formatReferences(ctx context.Context, snapshot *cache.Snapshot, refs []prot
 		fmt.Fprintf(&builder, "The reference is located on line %v, which has content `%s`\n", r.Range.Start.Line, lineContent)
 		builder.WriteString("\n")
 	}
-	return &mcp.CallToolResultFor[any]{
-		Content: []*mcp.Content{
-			mcp.NewTextContent(builder.String()),
-		},
-	}, nil
+	return textResult(builder.String()), nil
 }

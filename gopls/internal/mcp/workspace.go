@@ -82,9 +82,7 @@ func (h *handler) workspaceHandler(ctx context.Context, _ *mcp.ServerSession, _ 
 			fmt.Fprintln(&summary)
 		}
 	}
-	return &mcp.CallToolResultFor[any]{
-		Content: []*mcp.Content{mcp.NewTextContent(summary.String())},
-	}, nil
+	return textResult(summary.String()), nil
 }
 
 func packageSummaries(snapshot *cache.Snapshot, pkgs immutable.Map[cache.PackageID, cache.PackagePath]) []string {

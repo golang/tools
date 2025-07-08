@@ -64,7 +64,7 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 				if !ok {
 					return
 				}
-				if err := conn.Server.DidChangeWatchedFiles(ctx, &protocol.DidChangeWatchedFilesParams{
+				if err := cli.server.DidChangeWatchedFiles(ctx, &protocol.DidChangeWatchedFilesParams{
 					Changes: events,
 				}); err != nil {
 					log.Printf("failed to notify changed files: %v", err)

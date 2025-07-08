@@ -42,7 +42,7 @@ func (h *handler) contextTool() *mcp.ServerTool {
 	)
 }
 
-func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[ContextParams]) (*mcp.CallToolResultFor[struct{}], error) {
+func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[ContextParams]) (*mcp.CallToolResultFor[any], error) {
 	fh, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
 	if err != nil {
 		return nil, err
@@ -144,11 +144,7 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 		}
 	}
 
-	return &mcp.CallToolResultFor[struct{}]{
-		Content: []*mcp.Content{
-			mcp.NewTextContent(result.String()),
-		},
-	}, nil
+	return textResult(result.String()), nil
 }
 
 func summarizePackage(ctx context.Context, snapshot *cache.Snapshot, path metadata.ImportPath, md *metadata.Package) string {
