@@ -5,6 +5,8 @@
 package filewatcher_test
 
 import (
+	"cmp"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/gopls/internal/filewatcher"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/txtar"
 )
 
@@ -275,5 +279,123 @@ package foo
 				t.Errorf("failed to close the file watcher: %v", err)
 			}
 		})
+	}
+}
+
+func TestStress(t *testing.T) {
+	switch runtime.GOOS {
+	case "darwin", "linux", "windows":
+	default:
+		t.Skip("unsupported OS")
+	}
+
+	const (
+		delay         = 50 * time.Millisecond
+		numGoroutines = 100
+	)
+
+	root := t.TempDir()
+
+	mkdir := func(base string) func() error {
+		return func() error {
+			return os.Mkdir(filepath.Join(root, base), 0755)
+		}
+	}
+	write := func(base string) func() error {
+		return func() error {
+			return os.WriteFile(filepath.Join(root, base), []byte("package main"), 0644)
+		}
+	}
+	remove := func(base string) func() error {
+		return func() error {
+			return os.Remove(filepath.Join(root, base))
+		}
+	}
+	rename := func(old, new string) func() error {
+		return func() error {
+			return os.Rename(filepath.Join(root, old), filepath.Join(root, new))
+		}
+	}
+
+	wants := make(map[protocol.FileEvent]bool)
+	want := func(base string, t protocol.FileChangeType) {
+		wants[protocol.FileEvent{URI: protocol.URIFromPath(filepath.Join(root, base)), Type: t}] = true
+	}
+
+	for i := range numGoroutines {
+		// Create files and dirs that will be deleted or renamed later.
+		if err := cmp.Or(
+			mkdir(fmt.Sprintf("delete-dir-%d", i))(),
+			mkdir(fmt.Sprintf("old-dir-%d", i))(),
+			write(fmt.Sprintf("delete-file-%d.go", i))(),
+			write(fmt.Sprintf("old-file-%d.go", i))(),
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		// Add expected notification events to the "wants" set.
+		want(fmt.Sprintf("file-%d.go", i), protocol.Created)
+		want(fmt.Sprintf("delete-file-%d.go", i), protocol.Deleted)
+		want(fmt.Sprintf("old-file-%d.go", i), protocol.Deleted)
+		want(fmt.Sprintf("new-file-%d.go", i), protocol.Created)
+		want(fmt.Sprintf("dir-%d", i), protocol.Created)
+		want(fmt.Sprintf("delete-dir-%d", i), protocol.Deleted)
+		want(fmt.Sprintf("old-dir-%d", i), protocol.Deleted)
+		want(fmt.Sprintf("new-dir-%d", i), protocol.Created)
+	}
+
+	foundAll := make(chan struct{})
+	w, err := filewatcher.New(delay, nil, func(events []protocol.FileEvent, err error) {
+		if err != nil {
+			t.Errorf("error from watcher: %v", err)
+			return
+		}
+		for _, e := range events {
+			delete(wants, e)
+		}
+		if len(wants) == 0 {
+			close(foundAll)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := w.WatchDir(root); err != nil {
+		t.Fatal(err)
+	}
+
+	// Spin up multiple goroutines, each performing 6 file system operations
+	// i.e. create, delete, rename of file or directory. For deletion and rename,
+	// the goroutine deletes / renames files or directories created before the
+	// watcher starts.
+	var g errgroup.Group
+	for id := range numGoroutines {
+		ops := []func() error{
+			write(fmt.Sprintf("file-%d.go", id)),
+			remove(fmt.Sprintf("delete-file-%d.go", id)),
+			rename(fmt.Sprintf("old-file-%d.go", id), fmt.Sprintf("new-file-%d.go", id)),
+			mkdir(fmt.Sprintf("dir-%d", id)),
+			remove(fmt.Sprintf("delete-dir-%d", id)),
+			rename(fmt.Sprintf("old-dir-%d", id), fmt.Sprintf("new-dir-%d", id)),
+		}
+		for _, f := range ops {
+			g.Go(f)
+		}
+	}
+	if err := g.Wait(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-foundAll:
+	case <-time.After(30 * time.Second):
+		if len(wants) > 0 {
+			t.Errorf("missing expected events: %#v", moremaps.KeySlice(wants))
+		}
+	}
+
+	if err := w.Close(); err != nil {
+		t.Errorf("failed to close the file watcher: %v", err)
 	}
 }

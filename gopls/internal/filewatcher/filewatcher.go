@@ -248,8 +248,14 @@ func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 // because of the issue fsnotify/fsnotify#502.
 func (w *Watcher) watchDir(path string) error {
 	// Dir with broken symbolic link can not be watched.
-	// TODO(hxjiang): is it possible the files/dirs are
-	// created before the watch is successfully registered.
+	// TODO(hxjiang): Address a race condition where file or directory creations
+	// under current directory might be missed between the current directory
+	// creation and the establishment of the file watch.
+	//
+	// To fix this, we should:
+	// 1. Retrospectively check for and trigger creation events for any new
+	// files/directories.
+	// 2. Recursively add watches for any newly created subdirectories.
 	return w.watcher.Add(path)
 }
 
