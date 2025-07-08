@@ -1,4 +1,6 @@
-# Gopls: Using Vim or Neovim
+---
+title: "Gopls: Using Vim or Neovim"
+---
 
 * [vim-go](#vimgo)
 * [LanguageClient-neovim](#lcneovim)

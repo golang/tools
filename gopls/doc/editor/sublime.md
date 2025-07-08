@@ -1,4 +1,6 @@
-# Gopls: Using Sublime Text
+---
+title: "Gopls: Using Sublime Text"
+---
 
 Use the [LSP] package. After installing it using Package Control, do the following:
 

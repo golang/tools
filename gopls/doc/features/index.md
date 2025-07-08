@@ -1,4 +1,6 @@
-# Gopls: Index of features
+---
+title: "Gopls: Index of features"
+---
 
 This page provides an index of all supported features of gopls that
 are accessible through the [language server protocol](https://microsoft.github.io/language-server-protocol/) (LSP).

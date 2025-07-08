@@ -1,4 +1,6 @@
-# Gopls: Documentation for contributors
+---
+title: "Gopls: Contributing"
+---
 
 Contributions are welcome! However, development is fast moving,
 and we are limited in our capacity to review contributions.

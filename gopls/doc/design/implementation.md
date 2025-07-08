@@ -1,5 +1,6 @@
-
-# Gopls architecture
+---
+title: "Gopls: Implementation"
+---
 
 Last major update: Jan 16 2024
 

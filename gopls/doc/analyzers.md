@@ -1,4 +1,6 @@
-# Gopls: Analyzers
+---
+title: "Gopls: Analyzers"
+---
 
 <!-- No Table of Contents: GitHub's Markdown renderer synthesizes it. -->
 

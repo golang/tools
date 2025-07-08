@@ -1,4 +1,6 @@
-# Gopls: Settings
+---
+title: "Gopls: Settings"
+---
 
 This document describes gopls' configuration settings.
 

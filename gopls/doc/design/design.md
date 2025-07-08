@@ -1,4 +1,6 @@
-# `gopls` design documentation
+---
+title: "Gopls: Design"
+---
 
 ## _A note from the future_
 

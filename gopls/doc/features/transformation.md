@@ -1,4 +1,6 @@
-# Gopls: Code transformation features
+---
+title: "Gopls: Code transformation features"
+---
 
 This document describes gopls' features for code transformation, which
 include a range of behavior-preserving changes (refactorings,

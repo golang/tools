@@ -1,4 +1,6 @@
-# Gopls: Passive features
+---
+title: "Gopls: Passive features"
+---
 
 This page documents the fundamental LSP features of gopls that may be
 described as "passive", since many editors use them to continuously

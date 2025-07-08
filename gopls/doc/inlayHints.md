@@ -1,4 +1,6 @@
-# Gopls: Inlay hints
+---
+title: "Gopls: Inlay hints"
+---
 
 Inlay hints are helpful annotations that the editor can optionally
 display in-line in the source code, such as the names of parameters in

@@ -1,4 +1,6 @@
-# Gopls: Using Helix
+---
+title: "Gopls: Using Helix"
+---
 
 Configuring `gopls` to work with Helix is rather straightforward. Install `gopls`, and then add it to the `PATH` variable. If it is in the `PATH` variable, Helix will be able to detect it automatically.
 

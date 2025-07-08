@@ -1,4 +1,6 @@
-# Gopls: Diagnostics
+---
+title: "Gopls: Diagnostics"
+---
 
 Gopls continuously annotates all your open files of source code with a
 variety of diagnostics. Every time you edit a file or make a

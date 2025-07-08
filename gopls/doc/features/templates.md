@@ -1,4 +1,6 @@
-# Gopls: Support for template files
+---
+title: "Gopls: Support for template files"
+---
 
 Gopls provides some support for Go template files, that is, files that
 are parsed by [`text/template`](https://pkg.go.dev/text/template) or

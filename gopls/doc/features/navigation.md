@@ -1,4 +1,6 @@
-# Gopls: Navigation features
+---
+title: "Gopls: Navigation features"
+---
 
 This page documents gopls features for navigating your source code.
 

@@ -1,4 +1,6 @@
-# Gopls: Support for Go *.s assembly files
+---
+title: "Gopls: Support for Go *.s assembly files"
+---
 
 Gopls has rudimentary support for LSP operations in Go assembly files.
 

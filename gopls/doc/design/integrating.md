@@ -1,4 +1,6 @@
-# Documentation for plugin authors
+---
+title: "Documentation for plugin authors"
+---
 
 If you are integrating `gopls` into an editor by writing an editor plugin, there are quite a few semantics of the communication between the editor and `gopls` that are not specified by the [LSP specification].
 

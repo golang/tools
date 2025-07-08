@@ -1,4 +1,6 @@
-# Gopls: Code lenses
+---
+title: "Gopls: Code lenses"
+---
 
 A "code lens" is a command associated with a range of a source file.
 The VS Code manual describes code lenses as

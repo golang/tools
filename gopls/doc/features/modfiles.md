@@ -1,4 +1,6 @@
-# Gopls: Support for go.mod and go.work files
+---
+title: "Gopls: Support for go.mod and go.work files"
+---
 
 TODO: document these features for go.{mod,work} files:
 - hover

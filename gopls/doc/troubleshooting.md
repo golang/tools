@@ -1,4 +1,6 @@
-# Gopls: Troubleshooting
+---
+title: "Gopls: Troubleshooting"
+---
 
 If you suspect that `gopls` is crashing or not working correctly, please follow the troubleshooting steps below.
 

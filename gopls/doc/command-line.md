@@ -1,4 +1,6 @@
-# Gopls: Command-line interface
+---
+title: "Gopls: Command-line interface"
+---
 
 The `gopls` command provides a number of subcommands that expose much
 of the server's functionality. However, the interface is currently

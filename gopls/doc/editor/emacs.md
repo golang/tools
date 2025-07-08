@@ -1,4 +1,6 @@
-# Gopls: Using Emacs
+---
+title: "Gopls: Using Emacs"
+---
 
 ## Installing `gopls`
 

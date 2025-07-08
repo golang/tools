@@ -1,4 +1,6 @@
-# Gopls: Advanced topics
+---
+title: "Gopls: Advanced topics"
+---
 
 This documentation is for advanced `gopls` users, who may want to test
 unreleased versions or try out special features.

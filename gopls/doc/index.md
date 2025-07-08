@@ -1,7 +1,7 @@
-
+---
+title: "Gopls: The language server for Go"
+---
 <!-- This is the main landing page for gopls users. -->
-
-# `gopls`, the language server for Go
 
 [![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools/gopls)](https://pkg.go.dev/golang.org/x/tools/gopls)
 
@@ -67,7 +67,7 @@ Learn more in the
 
 ## Release policy
 
-Gopls releases follow [semantic versioning](http://semver.org), with
+Gopls [releases](release/) follow [semantic versioning](http://semver.org), with
 major changes and new features introduced only in new minor versions
 (i.e. versions of the form `v*.N.0` for some N). Subsequent patch
 releases contain only cherry-picked fixes or superficial updates.
@@ -169,8 +169,8 @@ gopls.
 `gopls` currently only supports the `go` command, so if you are using
 a different build system, `gopls` will not work well. Bazel is not officially
 supported, but may be made to work with an appropriately configured
-`go/packages` driver. See
-[bazelbuild/rules_go#512](https://github.com/bazelbuild/rules_go/issues/512)
+[go/packages driver](https://pkg.go.dev/golang.org/x/tools/go/packages#hdr-The_driver_protocol).
+See [bazelbuild/rules_go#512](https://github.com/bazelbuild/rules_go/issues/512)
 for more information.
 You can follow [these instructions](https://github.com/bazelbuild/rules_go/wiki/Editor-setup)
 to configure your `gopls` to work with Bazel.
