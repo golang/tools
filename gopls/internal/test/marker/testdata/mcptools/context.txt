@@ -477,3 +477,30 @@ var (
 )
 ```
 
+-- f/main.go --
+package main
+
+import "fmt"
+
+func Foo() { //@mcptool("go_context", `{"file":"$WORKDIR/f/main.go"}`, output=withoutStdLib)
+    fmt.Println("foo")
+}
+
+-- @withoutStdLib --
+Current package "example.com/f" (package main):
+
+main.go (current file):
+```go
+package main
+
+import "fmt"
+
+func Foo()
+
+```
+
+Current file "main.go" contains this import declaration:
+--->
+import "fmt"
+<---
+

@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/mcp"
 )
 
@@ -112,10 +113,21 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 			result.WriteString("<---\n\n")
 		}
 
+		var toSummarize []*ast.ImportSpec
+		for _, spec := range pgf.File.Imports {
+			// Skip the standard library to reduce token usage, operating on
+			// the assumption that the LLM is already familiar with its
+			// symbols and documentation.
+			if analysisinternal.IsStdPackage(spec.Path.Value) {
+				continue
+			}
+			toSummarize = append(toSummarize, spec)
+		}
+
 		// Write summaries from imported packages.
-		{
+		if len(toSummarize) > 0 {
 			result.WriteString("The imported packages declare the following symbols:\n\n")
-			for _, spec := range pgf.File.Imports {
+			for _, spec := range toSummarize {
 				path := metadata.UnquoteImportPath(spec)
 				id := pkg.Metadata().DepsByImpPath[path]
 				if id == "" {
