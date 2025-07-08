@@ -59,19 +59,16 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 	}
 
 	var result strings.Builder
-	result.WriteString("Code blocks are delimited by --->...<--- markers.\n\n")
 
-	// TODO(hxjiang): add context based on location's range.
-
-	fmt.Fprintf(&result, "Current package %q (package %s) declares the following symbols:\n\n", pkg.Metadata().PkgPath, pkg.Metadata().Name)
+	fmt.Fprintf(&result, "Current package %q (package %s):\n\n", pkg.Metadata().PkgPath, pkg.Metadata().Name)
 	// Write context of the current file.
 	{
 		fmt.Fprintf(&result, "%s (current file):\n", pgf.URI.Base())
-		result.WriteString("--->\n")
+		result.WriteString("```go\n")
 		if err := writeFileSummary(ctx, snapshot, pgf.URI, &result, false); err != nil {
 			return nil, err
 		}
-		result.WriteString("<---\n\n")
+		result.WriteString("```\n\n")
 	}
 
 	// Write context of the rest of the files in the current package.
@@ -82,11 +79,11 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 			}
 
 			fmt.Fprintf(&result, "%s:\n", file.URI.Base())
-			result.WriteString("--->\n")
+			result.WriteString("```go\n")
 			if err := writeFileSummary(ctx, snapshot, file.URI, &result, false); err != nil {
 				return nil, err
 			}
-			result.WriteString("<---\n\n")
+			result.WriteString("```\n\n")
 		}
 	}
 

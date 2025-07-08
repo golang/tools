@@ -69,12 +69,10 @@ func Foo(foo string, _ int) {
 // Random comment floating around.
 
 -- @withComment --
-Code blocks are delimited by --->...<--- markers.
-
-Current package "example.com/a" (package main) declares the following symbols:
+Current package "example.com/a" (package main):
 
 main.go (current file):
---->
+```go
 // File doc for main.go part 1.
 package main
 
@@ -88,10 +86,10 @@ import(
 // doc comment for func foo.
 func foo()
 
-<---
+```
 
 a.go:
---->
+```go
 // File doc for a.go.
 package main
 
@@ -104,7 +102,7 @@ type b struct {}
 const c = ""
 // doc comment for var d.
 var d int
-<---
+```
 
 Current file "main.go" contains this import declaration:
 --->
@@ -174,12 +172,10 @@ func (*Exported) unexported(int) {}
 func (*Exported) Exported(int) {}
 
 -- @withFunction --
-Code blocks are delimited by --->...<--- markers.
-
-Current package "example.com/b" (package main) declares the following symbols:
+Current package "example.com/b" (package main):
 
 main.go (current file):
---->
+```go
 package main
 
 import(
@@ -188,7 +184,7 @@ import(
 
 func testFunction()
 
-<---
+```
 
 Current file "main.go" contains this import declaration:
 --->
@@ -253,12 +249,10 @@ type (
 )
 
 -- @withType --
-Code blocks are delimited by --->...<--- markers.
-
-Current package "example.com/c" (package main) declares the following symbols:
+Current package "example.com/c" (package main):
 
 main.go (current file):
---->
+```go
 package main
 
 import(
@@ -266,7 +260,7 @@ import(
 )
 
 var x types.Exported
-<---
+```
 
 Current file "main.go" contains this import declaration:
 --->
@@ -355,12 +349,10 @@ var VarExported = "Exported" // comment for VarExported
 var varUnexported = "unexported" // comment for varUnexported
 
 -- @withValue --
-Code blocks are delimited by --->...<--- markers.
-
-Current package "example.com/d" (package main) declares the following symbols:
+Current package "example.com/d" (package main):
 
 main.go (current file):
---->
+```go
 package main
 
 import(
@@ -368,7 +360,7 @@ import(
 )
 
 var y values.ConstFoo
-<---
+```
 
 Current file "main.go" contains this import declaration:
 --->
@@ -445,45 +437,43 @@ func Baz(string) int {
 }
 
 -- @samePackage --
-Code blocks are delimited by --->...<--- markers.
-
-Current package "example.com/e" (package main) declares the following symbols:
+Current package "example.com/e" (package main):
 
 main.go (current file):
---->
+```go
 package main
 
 func main()
 
-<---
+```
 
 bar.go:
---->
+```go
 package main
 
 const (
     bar = ""
     Bar = ""
 )
-<---
+```
 
 baz.go:
---->
+```go
 package main
 
 func baz(int) string
 
 func Baz(string) int
 
-<---
+```
 
 foo.go:
---->
+```go
 package main
 
 var (
     foo string
     Foo string
 )
-<---
+```
 
