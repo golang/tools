@@ -133,20 +133,21 @@ func MyFun() {}
 	client := mcp.NewClient("client", "v0.0.1", nil)
 	ctx := t.Context()
 	// Wait for http server to start listening.
+	var (
+		mcpSession *mcp.ClientSession
+		err        error
+	)
 	maxRetries := 8
 	for i := range maxRetries {
-		t.Log("dialing..")
-		if cli, err := net.Dial("tcp", addr); err == nil {
-			cli.Close()
+		mcpSession, err = client.Connect(ctx, mcp.NewSSEClientTransport("http://"+addr, nil))
+		if err == nil {
 			t.Log("succeeded")
 			break // success
 		}
-		t.Logf("failed %d, trying again", i)
+		t.Logf("failed to connect on attempt %d: %v, trying again", i, err)
 		time.Sleep(50 * time.Millisecond << i) // retry with exponential backoff
 	}
-	mcpSession, err := client.Connect(ctx, mcp.NewSSEClientTransport("http://"+addr, nil))
 	if err != nil {
-		// This shouldn't happen because we already waited for the http server to start listening.
 		t.Fatalf("connecting to server: %v", err)
 	}
 	defer func() {
