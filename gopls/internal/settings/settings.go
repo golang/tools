@@ -689,6 +689,9 @@ const WorkDoneProgressStyleLog WorkDoneProgressStyle = "log"
 // TODO(rfindley): even though these settings are not intended for
 // modification, some of them should be surfaced in our documentation.
 type InternalOptions struct {
+	// MCPTools configures enabled tools (by tool name), overriding the defaults.
+	MCPTools map[string]bool
+
 	// VerboseWorkDoneProgress controls whether the LSP server should send
 	// progress reports for all work done outside the scope of an RPC.
 	// Used by the regression tests.
@@ -1341,6 +1344,9 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 
 	case "pullDiagnostics":
 		return setBool(&o.PullDiagnostics, value)
+
+	case "mcpTools":
+		return setBoolMap(&o.MCPTools, value)
 
 	// deprecated and renamed settings
 	//

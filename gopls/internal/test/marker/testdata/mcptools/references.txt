@@ -7,6 +7,13 @@ This test exercises the "go_references" MCP tool.
 -- go.mod --
 module example.com
 
+-- settings.json --
+{
+    "mcpTools": {
+        "go_references": true
+    }
+}
+
 -- a/a.go --
 package a
 

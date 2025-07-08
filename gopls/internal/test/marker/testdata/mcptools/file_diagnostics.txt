@@ -1,7 +1,14 @@
-This test exercises the "go_diagnostics" MCP tool.
+This test exercises the "go_file_diagnostics" MCP tool.
 
 -- flags --
 -mcp
+
+-- settings.json --
+{
+    "mcpTools": {
+        "go_file_diagnostics": true
+    }
+}
 
 -- go.mod --
 module example.com
@@ -11,7 +18,7 @@ package main
 
 func foo() {} //@loc(foo, "foo")
 
-//@mcptool("go_diagnostics", `{"file":"$WORKDIR/a/main.go"}`, output=unused)
+//@mcptool("go_file_diagnostics", `{"file":"$WORKDIR/a/main.go"}`, output=unused)
 //@diag(foo, re"unused")
 -- @unused --
 2:5-2:8: [Information] function "foo" is unused
@@ -24,7 +31,7 @@ Fix:
 -func foo() {} //@loc(foo, "foo")
 + //@loc(foo, "foo")
  
- //@mcptool("go_diagnostics", `{"file":"$WORKDIR/a/main.go"}`, output=unused)
+ //@mcptool("go_file_diagnostics", `{"file":"$WORKDIR/a/main.go"}`, output=unused)
  //@diag(foo, re"unused")
 
 
@@ -46,7 +53,7 @@ func proposed(_ []string, _ string, _ bool) bool {
 	return false // fake
 }
 
-//@mcptool("go_diagnostics", `{"file":"$WORKDIR/b/main.go"}`, output=diagnoseInline)
+//@mcptool("go_file_diagnostics", `{"file":"$WORKDIR/b/main.go"}`, output=diagnoseInline)
 //@diag(inline, re"inline")
 //@diag(inline2, re"inline")
 -- @diagnoseInline --

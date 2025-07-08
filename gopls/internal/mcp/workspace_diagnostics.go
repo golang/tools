@@ -11,30 +11,55 @@ import (
 	"slices"
 	"strings"
 
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
-	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/mcp"
 )
 
 type workspaceDiagnosticsParams struct {
-	File string `json:"file"`
+	Files []string `json:"files,omitempty"`
 }
 
 func (h *handler) workspaceDiagnosticsTool() *mcp.ServerTool {
+	const desc = `Provides Go workspace diagnostics.
+
+Checks for parse and build errors across the entire Go workspace. If provided,
+"files" holds absolute paths for active files, on which additional linting is
+performed.
+`
 	return mcp.NewServerTool(
-		"go_workspace_diagnostics",
-		"Checks for parse and build errors across the go workspace",
+		"go_diagnostics",
+		"Checks for parse and build errors across the go workspace.",
 		h.workspaceDiagnosticsHandler,
 		mcp.Input(
-			mcp.Property("file", mcp.Description("the absolute path of any file in the workspace")),
+			mcp.Property("files", mcp.Description("absolute paths to active files, if any")),
 		),
 	)
 }
 
 func (h *handler) workspaceDiagnosticsHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[workspaceDiagnosticsParams]) (*mcp.CallToolResultFor[any], error) {
-	_, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
-	if err != nil {
-		return nil, err
+	var (
+		fh       file.Handle
+		snapshot *cache.Snapshot
+		release  func()
+		err      error
+	)
+	if len(params.Arguments.Files) > 0 {
+		fh, snapshot, release, err = h.fileOf(ctx, params.Arguments.Files[0])
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		views := h.session.Views()
+		if len(views) == 0 {
+			return nil, fmt.Errorf("No active builds.")
+		}
+		snapshot, release, err = views[0].Snapshot()
+		if err != nil {
+			return nil, err
+		}
 	}
 	defer release()
 
@@ -47,7 +72,19 @@ func (h *handler) workspaceDiagnosticsHandler(ctx context.Context, _ *mcp.Server
 
 	diagnostics, err := snapshot.PackageDiagnostics(ctx, ids...)
 	if err != nil {
-		event.Error(ctx, "warning: diagnostics failed", err, snapshot.Labels()...)
+		return nil, fmt.Errorf("diagnostics failed: %v", err)
+	}
+
+	fixes := make(map[*cache.Diagnostic]*protocol.CodeAction)
+	for _, file := range params.Arguments.Files {
+		uri := protocol.URIFromPath(file)
+		// Get more specific diagnostics for the file in question.
+		fileDiagnostics, fileFixes, err := h.diagnoseFile(ctx, snapshot, uri)
+		if err != nil {
+			return nil, fmt.Errorf("diagnostics failed: %v", err)
+		}
+		diagnostics[fh.URI()] = fileDiagnostics
+		maps.Insert(fixes, maps.All(fileFixes))
 	}
 
 	keys := slices.Sorted(maps.Keys(diagnostics))
@@ -56,11 +93,15 @@ func (h *handler) workspaceDiagnosticsHandler(ctx context.Context, _ *mcp.Server
 		diags := diagnostics[uri]
 		if len(diags) > 0 {
 			fmt.Fprintf(&b, "File `%s` has the following diagnostics:\n", uri.Path())
+			if err := summarizeDiagnostics(ctx, snapshot, &b, diags, fixes); err != nil {
+				return nil, err
+			}
+			fmt.Fprintln(&b)
 		}
-		if err := summarizeDiagnostics(ctx, snapshot, &b, diags, nil); err != nil {
-			return nil, err
-		}
-		fmt.Fprintln(&b)
+	}
+
+	if b.Len() == 0 {
+		return textResult("No diagnostics."), nil
 	}
 
 	return textResult(b.String()), nil

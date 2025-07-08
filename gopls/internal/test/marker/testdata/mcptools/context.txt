@@ -4,6 +4,13 @@ This test exercises the "go_context" MCP tool.
 -mcp
 -ignore_extra_diags
 
+-- settings.json --
+{
+    "mcpTools": {
+        "go_context": true
+    }
+}
+
 -- go.mod --
 module example.com
 
@@ -105,17 +112,17 @@ var d int
 ```
 
 Current file "main.go" contains this import declaration:
---->
+```go
 import(
     "example.com/a/comment"
 )
-<---
+```
 
 The imported packages declare the following symbols:
 
 "example.com/a/comment" (package comment)
 comment.go:
---->
+```go
 // File doc for comment.go part 1.
 package comment
 
@@ -130,16 +137,16 @@ import (
 // doc comment for comment.Foo
 func Foo(foo string, _ int)
 
-<---
+```
 
 doc.go:
---->
+```go
 /*
 Package doc for package comment.
 */
 package comment
 
-<---
+```
 
 -- b/main.go --
 package main
@@ -187,17 +194,17 @@ func testFunction()
 ```
 
 Current file "main.go" contains this import declaration:
---->
+```go
 import(
     "example.com/b/function"
 )
-<---
+```
 
 The imported packages declare the following symbols:
 
 "example.com/b/function" (package function)
 function.go:
---->
+```go
 package function
 
 func Foo(int, string)
@@ -206,7 +213,7 @@ type Exported struct{}
 
 func (*Exported) Exported(int)
 
-<---
+```
 
 -- c/main.go --
 package main
@@ -263,17 +270,17 @@ var x types.Exported
 ```
 
 Current file "main.go" contains this import declaration:
---->
+```go
 import(
     "example.com/c/types"
 )
-<---
+```
 
 The imported packages declare the following symbols:
 
 "example.com/c/types" (package types)
 types.go:
---->
+```go
 package types
 
 // Doc for exported.
@@ -297,7 +304,7 @@ type (
     }
 )
 
-<---
+```
 
 -- d/main.go --
 package main
@@ -363,17 +370,17 @@ var y values.ConstFoo
 ```
 
 Current file "main.go" contains this import declaration:
---->
+```go
 import(
     "example.com/d/values"
 )
-<---
+```
 
 The imported packages declare the following symbols:
 
 "example.com/d/values" (package values)
 consts.go:
---->
+```go
 package values
 
 const (
@@ -386,10 +393,10 @@ const (
 // doc for ConstExported
 const ConstExported = "Exported" // comment for ConstExported
 
-<---
+```
 
 vars.go:
---->
+```go
 package values
 
 var (
@@ -402,7 +409,7 @@ var (
 // doc for VarExported
 var VarExported = "Exported" // comment for VarExported
 
-<---
+```
 
 -- e/main.go --
 package main
@@ -500,7 +507,7 @@ func Foo()
 ```
 
 Current file "main.go" contains this import declaration:
---->
+```go
 import "fmt"
-<---
+```
 

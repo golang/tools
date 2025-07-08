@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"log"
 	"net"
@@ -18,9 +19,13 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/mcp"
 )
+
+//go:embed instructions.md
+var instructions string
 
 // A handler implements various MCP tools for an LSP session.
 type handler struct {
@@ -133,20 +138,63 @@ func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
 		session:   session,
 		lspServer: lspServer,
 	}
-	mcpServer := mcp.NewServer("gopls", "v0.1", nil)
+	mcpServer := mcp.NewServer("gopls", "v0.1.0", &mcp.ServerOptions{
+		Instructions: instructions,
+	})
 
-	mcpServer.AddTools(
+	defaultTools := []*mcp.ServerTool{
 		h.workspaceTool(),
 		h.fileMetadataTool(),
 		h.outlineTool(),
-		h.contextTool(),
-		h.diagnosticsTool(),
 		h.workspaceDiagnosticsTool(),
-		h.referencesTool(),
 		h.symbolReferencesTool(),
 		h.searchTool(),
+	}
+	disabledTools := append(defaultTools,
+		// The context tool returns context for all imports, which can consume a
+		// lot of tokens. Conservatively, rely on the model selecting the imports
+		// to summarize using the outline tool.
+		h.contextTool(),
+		// The fileDiagnosticsTool only returns diagnostics for the current file,
+		// but often changes will cause breakages in other tools. The
+		// workspaceDiagnosticsTool always returns breakages, and supports running
+		// deeper diagnostics in selected files.
+		h.fileDiagnosticsTool(),
+		// The references tool requires a location, which models tend to get wrong.
+		// The symbolic variant seems to be easier to get right, albeit less
+		// powerful.
+		h.referencesTool(),
 	)
+	var toolConfig map[string]bool // non-default settings
+	// For testing, poke through to the gopls server to access its options,
+	// and enable some of the disabled tools.
+	if hasOpts, ok := lspServer.(interface{ Options() *settings.Options }); ok {
+		toolConfig = hasOpts.Options().MCPTools
+	}
+	var tools []*mcp.ServerTool
+	for _, tool := range defaultTools {
+		if enabled, ok := toolConfig[tool.Tool.Name]; !ok || enabled {
+			tools = append(tools, tool)
+		}
+	}
+	// Disabled tools must be explicitly enabled.
+	for _, tool := range disabledTools {
+		if toolConfig[tool.Tool.Name] {
+			tools = append(tools, tool)
+		}
+	}
+	mcpServer.AddTools(tools...)
+
 	return mcpServer
+}
+
+// snapshot returns the best default snapshot to use for workspace queries.
+func (h *handler) snapshot() (*cache.Snapshot, func(), error) {
+	views := h.session.Views()
+	if len(views) == 0 {
+		return nil, nil, fmt.Errorf("No active builds.")
+	}
+	return views[0].Snapshot()
 }
 
 // fileOf is like [cache.Session.FileOf], but does a sanity check for file

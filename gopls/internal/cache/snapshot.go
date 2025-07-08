@@ -38,6 +38,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/constraints"
 	"golang.org/x/tools/gopls/internal/util/immutable"
+	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/gopls/internal/vulncheck"
@@ -1001,19 +1002,13 @@ func (s *Snapshot) IsWorkspacePackage(id PackageID) bool {
 // It may also contain ad-hoc packages for standalone files.
 // It includes all test variants.
 //
-// TODO(rfindley): Replace this with s.MetadataGraph().
+// TODO(rfindley): Replace usage of function this with s.LoadMetadataGraph().
 func (s *Snapshot) AllMetadata(ctx context.Context) ([]*metadata.Package, error) {
-	if err := s.awaitLoaded(ctx); err != nil {
+	g, err := s.LoadMetadataGraph(ctx)
+	if err != nil {
 		return nil, err
 	}
-
-	g := s.MetadataGraph()
-
-	meta := make([]*metadata.Package, 0, len(g.Packages))
-	for _, mp := range g.Packages {
-		meta = append(meta, mp)
-	}
-	return meta, nil
+	return moremaps.ValueSlice(g.Packages), nil
 }
 
 // GoModForFile returns the URI of the go.mod file for the given URI.
@@ -1169,6 +1164,14 @@ func (s *Snapshot) MetadataGraph() *metadata.Graph {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.meta
+}
+
+// LoadMetadataGraph is like [Snapshot.MetadataGraph], but awaits snapshot reloading.
+func (s *Snapshot) LoadMetadataGraph(ctx context.Context) (*metadata.Graph, error) {
+	if err := s.awaitLoaded(ctx); err != nil {
+		return nil, err
+	}
+	return s.MetadataGraph(), nil
 }
 
 // InitializationError returns the last error from initialization.

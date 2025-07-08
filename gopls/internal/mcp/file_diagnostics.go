@@ -27,76 +27,89 @@ type diagnosticsParams struct {
 	File string `json:"file"`
 }
 
-func (h *handler) diagnosticsTool() *mcp.ServerTool {
+func (h *handler) fileDiagnosticsTool() *mcp.ServerTool {
 	return mcp.NewServerTool(
-		"go_diagnostics",
+		"go_file_diagnostics",
 		"Provides diagnostics for a Go file",
-		h.diagnoseFileHandler,
+		h.fileDiagnosticsHandler,
 		mcp.Input(
 			mcp.Property("file", mcp.Description("the absolute path to the file to diagnose")),
 		),
 	)
 }
 
-func (h *handler) diagnoseFileHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[diagnosticsParams]) (*mcp.CallToolResultFor[any], error) {
+func (h *handler) fileDiagnosticsHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[diagnosticsParams]) (*mcp.CallToolResultFor[any], error) {
 	fh, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
 
-	diagnostics, err := golang.DiagnoseFile(ctx, snapshot, fh.URI())
+	diagnostics, fixes, err := h.diagnoseFile(ctx, snapshot, fh.URI())
 	if err != nil {
 		return nil, err
 	}
 
 	var builder strings.Builder
 	if len(diagnostics) == 0 {
-		builder.WriteString("No diagnostics")
-	} else {
-		// LSP [protocol.Diagnostic]s do not carry code edits directly.
-		// Instead, gopls provides associated [protocol.CodeAction]s with their
-		// diagnostics field populated.
-		// Ignore errors. It is still valuable to provide only the diagnostic
-		// without any text edits.
-		// TODO(hxjiang): support code actions that returns call back command.
-		actions, _ := h.lspServer.CodeAction(ctx, &protocol.CodeActionParams{
-			TextDocument: protocol.TextDocumentIdentifier{
-				URI: fh.URI(),
-			},
-			Context: protocol.CodeActionContext{
-				Only:        []protocol.CodeActionKind{protocol.QuickFix},
-				Diagnostics: cache.ToProtocolDiagnostics(diagnostics...),
-			},
-		})
+		return textResult("No diagnostics"), nil
+	}
 
-		type key struct {
-			Message string
-			Range   protocol.Range
-		}
-
-		fixes := make(map[key]*protocol.CodeAction)
-		for _, action := range actions {
-			for _, d := range action.Diagnostics {
-				k := key{d.Message, d.Range}
-				if alt, ok := fixes[k]; !ok || !alt.IsPreferred && action.IsPreferred {
-					fixes[k] = &action
-				}
-			}
-		}
-
-		fixesByDiagnostic := make(map[*cache.Diagnostic]*protocol.CodeAction)
-		for _, d := range diagnostics {
-			if fix, ok := fixes[key{d.Message, d.Range}]; ok {
-				fixesByDiagnostic[d] = fix
-			}
-		}
-		if err := summarizeDiagnostics(ctx, snapshot, &builder, diagnostics, fixesByDiagnostic); err != nil {
-			return nil, err
-		}
+	if err := summarizeDiagnostics(ctx, snapshot, &builder, diagnostics, fixes); err != nil {
+		return nil, err
 	}
 
 	return textResult(builder.String()), nil
+}
+
+// diagnoseFile diagnoses a single file, including go/analysis and quick fixes.
+func (h *handler) diagnoseFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) ([]*cache.Diagnostic, map[*cache.Diagnostic]*protocol.CodeAction, error) {
+	diagnostics, err := golang.DiagnoseFile(ctx, snapshot, uri)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(diagnostics) == 0 {
+		return nil, nil, nil
+	}
+
+	// LSP [protocol.Diagnostic]s do not carry code edits directly.
+	// Instead, gopls provides associated [protocol.CodeAction]s with their
+	// diagnostics field populated.
+	// Ignore errors. It is still valuable to provide only the diagnostic
+	// without any text edits.
+	// TODO(hxjiang): support code actions that returns call back command.
+	actions, _ := h.lspServer.CodeAction(ctx, &protocol.CodeActionParams{
+		TextDocument: protocol.TextDocumentIdentifier{
+			URI: uri,
+		},
+		Context: protocol.CodeActionContext{
+			Only:        []protocol.CodeActionKind{protocol.QuickFix},
+			Diagnostics: cache.ToProtocolDiagnostics(diagnostics...),
+		},
+	})
+
+	type key struct {
+		Message string
+		Range   protocol.Range
+	}
+
+	actionMap := make(map[key]*protocol.CodeAction)
+	for _, action := range actions {
+		for _, d := range action.Diagnostics {
+			k := key{d.Message, d.Range}
+			if alt, ok := actionMap[k]; !ok || !alt.IsPreferred && action.IsPreferred {
+				actionMap[k] = &action
+			}
+		}
+	}
+
+	fixes := make(map[*cache.Diagnostic]*protocol.CodeAction)
+	for _, d := range diagnostics {
+		if fix, ok := actionMap[key{d.Message, d.Range}]; ok {
+			fixes[d] = fix
+		}
+	}
+	return diagnostics, fixes, nil
 }
 
 func summarizeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, w io.Writer, diagnostics []*cache.Diagnostic, fixes map[*cache.Diagnostic]*protocol.CodeAction) error {

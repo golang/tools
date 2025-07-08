@@ -9,9 +9,9 @@ module example.com
 
 go 1.21
 
-//@mcptool("go_workspace_diagnostics", `{"file":"$WORKDIR/a/a.go"}`, output=diagnostics)
-//@mcptool("go_workspace_diagnostics", `{"file":"$WORKDIR/b/b.go"}`, output=diagnostics)
-//@mcptool("go_workspace_diagnostics", `{"file":"$WORKDIR/main.go"}`, output=diagnostics)
+//@mcptool("go_diagnostics", `{"files":["$WORKDIR/a/a.go"]}`, output=diagnostics)
+//@mcptool("go_diagnostics", `{"files":["$WORKDIR/b/b.go"]}`, output=diagnostics)
+//@mcptool("go_diagnostics", `{"files":["$WORKDIR/main.go"]}`, output=diagnostics)
 
 -- main.go --
 package main

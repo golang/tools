@@ -57,7 +57,7 @@ const B = 2
 	}()
 	var (
 		tool = "go_diagnostics"
-		args = map[string]any{"file": filepath.Join(tree, "a.go")}
+		args = map[string]any{"files": []string{filepath.Join(tree, "a.go")}}
 	)
 	// On the first diagnostics call, there should be no diagnostics.
 	{
@@ -157,7 +157,7 @@ func MyFun() {}
 	}()
 
 	var (
-		tool = "go_context"
+		tool = "go_file_metadata"
 		args = map[string]any{"file": filepath.Join(tree, "a.go")}
 	)
 	res, err := mcpSession.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
@@ -165,7 +165,7 @@ func MyFun() {}
 		t.Fatal(err)
 	}
 	got := resultText(t, res)
-	want := "The imported packages declare the following symbols"
+	want := "example.com"
 	if !strings.Contains(got, want) {
 		t.Errorf("CallTool(%s, %v) = %+v, want containing %q", tool, args, got, want)
 	}

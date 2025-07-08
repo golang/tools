@@ -5,8 +5,10 @@
 package metadata
 
 import (
+	"cmp"
 	"iter"
 	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -22,6 +24,14 @@ type Graph struct {
 
 	// ImportedBy maps package IDs to the list of packages that import them.
 	ImportedBy map[PackageID][]PackageID
+
+	// ByPackagePath maps package by their package path to their package ID.
+	// Non-test packages appear before test packages, and within each of those
+	// categories, packages with fewer CompiledGoFiles appear first.
+	//
+	// TODO(rfindley): there's no reason for ImportedBy and IDs to not also hold
+	// pointers, rather than IDs, and pointers are more convenient.
+	ByPackagePath map[PackagePath][]*Package
 
 	// IDs maps file URIs to package IDs, sorted by (!valid, cli, packageID).
 	// A single file may belong to multiple packages due to tests packages.
@@ -84,10 +94,12 @@ func (g *Graph) Update(updates map[PackageID]*Package) *Graph {
 func newGraph(pkgs map[PackageID]*Package) *Graph {
 	// Build the import graph.
 	importedBy := make(map[PackageID][]PackageID)
+	byPackagePath := make(map[PackagePath][]*Package)
 	for id, mp := range pkgs {
 		for _, depID := range mp.DepsByPkgPath {
 			importedBy[depID] = append(importedBy[depID], id)
 		}
+		byPackagePath[mp.PkgPath] = append(byPackagePath[mp.PkgPath], mp)
 	}
 
 	// Collect file associations.
@@ -139,10 +151,26 @@ func newGraph(pkgs map[PackageID]*Package) *Graph {
 		}
 	}
 
+	for _, mps := range byPackagePath {
+		slices.SortFunc(mps, func(a, b *Package) int {
+			if (a.ForTest == "") != (b.ForTest == "") {
+				if a.ForTest == "" {
+					return -1
+				}
+				return 1
+			}
+			if c := cmp.Compare(len(a.CompiledGoFiles), len(b.CompiledGoFiles)); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.ID, b.ID)
+		})
+	}
+
 	return &Graph{
-		Packages:   pkgs,
-		ImportedBy: importedBy,
-		IDs:        uriIDs,
+		Packages:      pkgs,
+		ImportedBy:    importedBy,
+		ByPackagePath: byPackagePath,
+		IDs:           uriIDs,
 	}
 }
 

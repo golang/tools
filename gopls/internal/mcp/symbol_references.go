@@ -37,6 +37,10 @@ in the current package.
 Similarly, given arguments {"file": "/path/to/foo.go", "name": "lib.Bar"},
 go_symbol_references returns references to the symbol "Bar" in the imported lib
 package.
+
+Finally, symbol references supporting querying fields and methods: symbol
+"T.M" selects the "M" field or method of the "T" type (or value), and "lib.T.M"
+does the same for a symbol in the imported package "lib".
 `
 	return mcp.NewServerTool(
 		"go_symbol_references",

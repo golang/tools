@@ -311,8 +311,8 @@ Here is the list of supported action markers:
 
   - mcptool(name string, arg string, location=location, output=golden):
     Executes an MCP tool call using the provided tool name and args (a
-    JSON-encoded value). Any string values in the JSON input object are
-    modified to replace the substring '$WORKDIR' with the actual working
+    JSON-encoded value). Any string or []string values in the JSON input object
+    are modified to replace the substring '$WORKDIR' with the actual working
     directory of the test. Furthermore, if 'location' is provided, it is used
     to populate the 'location' property of the JSON input with the given LSP
     source location. The test then asserts that the MCP server's response

@@ -355,18 +355,14 @@ func (s *server) initWeb() (*web, error) {
 		defer release()
 
 		// Find package by path.
-		var found *metadata.Package
-		for _, mp := range snapshot.MetadataGraph().Packages {
-			if string(mp.PkgPath) == req.URL.Path && mp.ForTest == "" {
-				found = mp
-				break
-			}
-		}
-		if found == nil {
+		pkgPath := metadata.PackagePath(req.URL.Path)
+		mps := snapshot.MetadataGraph().ByPackagePath[pkgPath]
+		if len(mps) == 0 {
 			// TODO(adonovan): what should we do for external test packages?
 			http.Error(w, "package not found", http.StatusNotFound)
 			return
 		}
+		found := mps[0]
 
 		// Type-check the package and render its documentation.
 		pkgs, err := snapshot.TypeCheck(req.Context(), found.ID)

@@ -93,7 +93,7 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 		// Write import decls of the current file.
 		{
 			fmt.Fprintf(&result, "Current file %q contains this import declaration:\n", pgf.URI.Base())
-			result.WriteString("--->\n")
+			result.WriteString("```go\n")
 			// Add all import decl to output including all floating comment by
 			// using GenDecl's start and end position.
 			for _, decl := range pgf.File.Decls {
@@ -110,7 +110,7 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 				result.Write(text)
 				result.WriteString("\n")
 			}
-			result.WriteString("<---\n\n")
+			result.WriteString("```\n\n")
 		}
 
 		var toSummarize []*ast.ImportSpec
@@ -137,7 +137,7 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 				if md == nil {
 					continue // ignore error
 				}
-				if summary := summarizePackage(ctx, snapshot, path, md); summary != "" {
+				if summary := summarizePackage(ctx, snapshot, md); summary != "" {
 					result.WriteString(summary)
 				}
 			}
@@ -147,16 +147,16 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 	return textResult(result.String()), nil
 }
 
-func summarizePackage(ctx context.Context, snapshot *cache.Snapshot, path metadata.ImportPath, md *metadata.Package) string {
+func summarizePackage(ctx context.Context, snapshot *cache.Snapshot, md *metadata.Package) string {
 	var buf strings.Builder
-	fmt.Fprintf(&buf, "%q (package %s)\n", path, md.Name)
+	fmt.Fprintf(&buf, "%q (package %s)\n", md.PkgPath, md.Name)
 	for _, f := range md.CompiledGoFiles {
 		fmt.Fprintf(&buf, "%s:\n", f.Base())
-		buf.WriteString("--->\n")
+		buf.WriteString("```go\n")
 		if err := writeFileSummary(ctx, snapshot, f, &buf, true); err != nil {
 			return "" // ignore error
 		}
-		buf.WriteString("<---\n\n")
+		buf.WriteString("```\n\n")
 	}
 	return buf.String()
 }

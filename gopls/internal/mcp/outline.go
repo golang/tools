@@ -10,14 +10,11 @@ import (
 	"strconv"
 
 	"golang.org/x/tools/gopls/internal/cache/metadata"
-	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/internal/mcp"
 )
 
 type outlineParams struct {
-	File    string   `json:"file"`
-	Imports []string `json:"imports"`
+	PackagePaths []string `json:"packagePaths"`
 }
 
 func (h *handler) outlineTool() *mcp.ServerTool {
@@ -26,61 +23,46 @@ func (h *handler) outlineTool() *mcp.ServerTool {
 		"Provides a summary of a Go package API",
 		h.outlineHandler,
 		mcp.Input(
-			mcp.Property("file", mcp.Description("the absolute path to the file containing the imports to investigate")),
-			mcp.Property("imports", mcp.Description("the import paths from the file to describe")),
+			mcp.Property("packagePaths", mcp.Description("the go package paths to describe")),
 		),
 	)
 }
 
 func (h *handler) outlineHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[outlineParams]) (*mcp.CallToolResultFor[any], error) {
-	fh, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
+	snapshot, release, err := h.snapshot()
 	if err != nil {
 		return nil, err
 	}
 	defer release()
 
-	if snapshot.FileKind(fh) != file.Go {
-		return nil, fmt.Errorf("can't provide outlines for non-Go files")
-	}
-
-	pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, fh.URI())
+	// Await initialization to ensure we've at least got an initial package graph
+	md, err := snapshot.LoadMetadataGraph(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	fileImports := make(map[string]metadata.ImportPath)
-	for _, spec := range pgf.File.Imports {
-		path := metadata.UnquoteImportPath(spec)
-		fileImports[string(path)] = path
-	}
-
-	var toSummarize []metadata.ImportPath
-	for _, imp := range params.Arguments.Imports {
+	var toSummarize []metadata.PackageID
+	for _, imp := range params.Arguments.PackagePaths {
+		pkgPath := metadata.PackagePath(imp)
 		if len(imp) > 0 && imp[0] == '"' {
 			unquoted, err := strconv.Unquote(imp)
 			if err != nil {
 				return nil, fmt.Errorf("failed to unquote %s: %v", imp, err)
 			}
-			imp = unquoted
+			pkgPath = metadata.PackagePath(unquoted)
 		}
-		impPath, ok := fileImports[imp]
-		if !ok {
-			return nil, fmt.Errorf("import path %s is not found in the file", imp)
+		if mps := md.ByPackagePath[pkgPath]; len(mps) > 0 {
+			toSummarize = append(toSummarize, mps[0].ID) // first is best
 		}
-		toSummarize = append(toSummarize, impPath)
 	}
 
 	var content []*mcp.Content
-	for _, path := range toSummarize {
-		id := pkg.Metadata().DepsByImpPath[path]
-		if id == "" {
-			continue // ignore error
-		}
+	for _, id := range toSummarize {
 		md := snapshot.Metadata(id)
 		if md == nil {
 			continue // ignore error
 		}
-		if summary := summarizePackage(ctx, snapshot, path, md); summary != "" {
+		if summary := summarizePackage(ctx, snapshot, md); summary != "" {
 			content = append(content, mcp.NewTextContent(summary))
 		}
 	}
