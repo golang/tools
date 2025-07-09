@@ -70,6 +70,7 @@ func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool
 		<-ctx.Done()
 		svr.Close() // ignore error
 	}()
+	log.Printf("mcp http server listening")
 	return svr.Serve(listener)
 }
 

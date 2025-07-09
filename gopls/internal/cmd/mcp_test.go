@@ -5,6 +5,7 @@
 package cmd_test
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"net"
@@ -159,7 +160,6 @@ func TestMCPCommandHTTP(t *testing.T) {
 -- go.mod --
 module example.com
 go 1.18
-
 -- a.go --
 package a
 
@@ -176,7 +176,14 @@ func MyFun() {}
 	goplsCmd.Env = append(os.Environ(), "ENTRYPOINT=goplsMain")
 	goplsCmd.Dir = tree
 	goplsCmd.Stdout = os.Stderr
-	goplsCmd.Stderr = os.Stderr
+
+	// Pipe stderr to a scanner, so that we can wait for the log message that
+	// tells us the server has started.
+	stderr, err := goplsCmd.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// forward stdout to test output
 	if err := goplsCmd.Start(); err != nil {
 		t.Fatalf("starting gopls: %v", err)
 	}
@@ -190,23 +197,30 @@ func MyFun() {}
 		goplsCmd.Wait()
 	}()
 
+	// Wait for the MCP server to start listening. The referenced log occurs
+	// after the connection is opened via net.Listen and the HTTP handlers are
+	// set up.
+	ready := make(chan bool)
+	go func() {
+		// Copy from the pipe to stderr, keeping an eye out for the "mcp http
+		// server listening" string.
+		scan := bufio.NewScanner(stderr)
+		for scan.Scan() {
+			line := scan.Text()
+			if strings.Contains(line, "mcp http server listening") {
+				ready <- true
+			}
+			fmt.Fprintln(os.Stderr, line)
+		}
+		if err := scan.Err(); err != nil {
+			t.Logf("reading from pipe: %v", err)
+		}
+	}()
+
+	<-ready
 	client := mcp.NewClient("client", "v0.0.1", nil)
 	ctx := t.Context()
-	// Wait for http server to start listening.
-	var (
-		mcpSession *mcp.ClientSession
-		err        error
-	)
-	maxRetries := 8
-	for i := range maxRetries {
-		mcpSession, err = client.Connect(ctx, mcp.NewSSEClientTransport("http://"+addr, nil))
-		if err == nil {
-			t.Log("succeeded")
-			break // success
-		}
-		t.Logf("failed to connect on attempt %d: %v, trying again", i, err)
-		time.Sleep(50 * time.Millisecond << i) // retry with exponential backoff
-	}
+	mcpSession, err := client.Connect(ctx, mcp.NewSSEClientTransport("http://"+addr, nil))
 	if err != nil {
 		t.Fatalf("connecting to server: %v", err)
 	}
