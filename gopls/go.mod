@@ -8,7 +8,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/jba/templatecheck v0.7.1
 	golang.org/x/mod v0.25.0
-	golang.org/x/sync v0.15.0
+	golang.org/x/sync v0.15.1-0.20250620182935-7fad2c9213e0
 	golang.org/x/telemetry v0.0.0-20250613181904-e50bbf1d8fa3
 	golang.org/x/text v0.26.0
 	golang.org/x/tools v0.34.1-0.20250613162507-3f93fece84c7
