@@ -25,9 +25,9 @@ import (
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
-	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/xcontext"
 )

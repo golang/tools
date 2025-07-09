@@ -18,11 +18,11 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/govulncheck"
 	"golang.org/x/tools/gopls/internal/vulncheck/osv"
 	isem "golang.org/x/tools/gopls/internal/vulncheck/semver"
-	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/vuln/scan"
 )
 

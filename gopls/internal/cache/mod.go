@@ -18,8 +18,8 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/memoize"
 )
 
 // A ParsedModule contains the results of parsing a go.mod file.

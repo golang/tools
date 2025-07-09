@@ -21,9 +21,9 @@ import (
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/memoize"
 )
 
 // This error is sought by mod diagnostics.

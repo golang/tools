@@ -18,9 +18,9 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cmd"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/internal/drivertest"
 	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/tool"
 )

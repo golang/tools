@@ -25,13 +25,13 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/memoize"
 	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/gopls/internal/vulncheck"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/event/keys"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
-	"golang.org/x/tools/internal/memoize"
 	"golang.org/x/tools/internal/xcontext"
 )
 
