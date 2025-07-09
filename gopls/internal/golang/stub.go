@@ -23,8 +23,8 @@ import (
 	"golang.org/x/tools/gopls/internal/golang/stubmethods"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/tokeninternal"
 )
 
 // stubMissingInterfaceMethodsFixer returns a suggested fix to declare the missing

@@ -18,9 +18,9 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/util/moreiters"
+	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/tokeninternal"
 )
 
 // ModifyTags applies the given struct tag modifications to the specified struct.

@@ -20,7 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/internal/tokeninternal"
+	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 )
 
 // IsGenerated reads and parses the header of the file denoted by uri

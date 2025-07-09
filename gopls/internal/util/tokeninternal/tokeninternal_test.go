@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/tools/internal/tokeninternal"
+	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 )
 
 func TestAddExistingFiles(t *testing.T) {
