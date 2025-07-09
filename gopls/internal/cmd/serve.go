@@ -20,7 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/fakenet"
+	"golang.org/x/tools/gopls/internal/util/fakenet"
 	"golang.org/x/tools/internal/jsonrpc2"
 	"golang.org/x/tools/internal/tool"
 )
