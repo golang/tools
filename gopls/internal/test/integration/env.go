@@ -13,7 +13,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/test/integration/fake"
 	"golang.org/x/tools/internal/jsonrpc2/servertest"
@@ -42,7 +41,6 @@ type Env struct {
 	// Only available if the test enables MCP Server.
 	MCPServer  *httptest.Server
 	MCPSession *mcp.ClientSession
-	EventChan  chan<- lsprpc.SessionEvent
 }
 
 // nextAwaiterRegistration is used to create unique IDs for various Awaiter

@@ -194,7 +194,7 @@ func Test(t *testing.T) {
 				diags:      make(map[protocol.Location][]protocol.Diagnostic),
 				extraNotes: make(map[protocol.DocumentURI]map[string][]*expect.Note),
 			}
-			defer run.env.ClosePartially_Issue74166()
+			defer run.env.Close()
 
 			// Support built-in pseudo-locations here.
 			// fmtLoc coerces "got" Locations to these forms
@@ -1003,14 +1003,12 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 
 	awaiter := integration.NewAwaiter(sandbox.Workdir)
 
-	var eventChan chan lsprpc.SessionEvent
+	ss := lsprpc.NewStreamServer(cache, false, nil)
+
 	var mcpServer *httptest.Server
 	if enableMCP {
-		eventChan = make(chan lsprpc.SessionEvent)
-		mcpServer = httptest.NewServer(internalmcp.HTTPHandler(eventChan, false))
+		mcpServer = httptest.NewServer(internalmcp.HTTPHandler(ss, false))
 	}
-
-	ss := lsprpc.NewStreamServer(cache, false, eventChan, nil)
 
 	server := servertest.NewPipeServer(ss, jsonrpc2.NewRawStream)
 	editor, err := fake.NewEditor(sandbox, config).Connect(ctx, server, awaiter.Hooks())
@@ -1044,7 +1042,6 @@ func newEnv(t *testing.T, cache *cache.Cache, files, proxyFiles map[string][]byt
 		Awaiter:    awaiter,
 		MCPSession: mcpSession,
 		MCPServer:  mcpServer,
-		EventChan:  eventChan,
 	}
 }
 

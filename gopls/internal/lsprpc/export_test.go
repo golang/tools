@@ -133,5 +133,3 @@ func (f BinderFunc) Bind(ctx context.Context, conn *jsonrpc2_v2.Connection) json
 type Middleware func(jsonrpc2_v2.Binder) jsonrpc2_v2.Binder
 
 var GetGoEnv = getGoEnv
-
-type StreamServer = streamServer

@@ -5,7 +5,6 @@
 package integration
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path"
@@ -633,34 +632,5 @@ func (e *Env) Close() {
 	}
 	if err := e.Sandbox.Close(); err != nil {
 		e.TB.Errorf("cleaning up sandbox: %v", err)
-	}
-	// TODO(rfindley): this is very liable to be racy: a send to EventChan
-	// occurs from the lsprpc package on session shutdown, and while it appears that
-	// this reliably happens before we close EventChan here, it's hard to verify
-	// and may still technically race.
-	//
-	// This should be cleaned up as part of simplifying the complicated
-	// relationship between the lsprpc and cache packages.
-	if e.EventChan != nil {
-		close(e.EventChan)
-	}
-}
-
-// ClosePartially_Issue74166 closes the sandbox and shuts down the editor, but
-// does not 'close' the editor (and therefore does not terminate the jsonrpc2
-// connection), because there is a race to MCP server shutdown.
-//
-// This is a temporary fix while golang/go#74166 is addressed.
-func (e *Env) ClosePartially_Issue74166() {
-	e.Sandbox.Close()                       // ignore error
-	e.Editor.Shutdown(context.Background()) // ignore error
-	if e.MCPSession != nil {
-		e.MCPSession.Close() // ignore error
-	}
-	if e.MCPServer != nil {
-		e.MCPServer.Close()
-	}
-	if e.EventChan != nil {
-		close(e.EventChan)
 	}
 }

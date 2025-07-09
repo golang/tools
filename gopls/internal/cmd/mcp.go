@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/filewatcher"
-	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/mcp"
 	"golang.org/x/tools/gopls/internal/protocol"
 )
@@ -137,28 +137,9 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 
-	// Send a SessionStart event to trigger creation of an http handler.
 	if m.Address != "" {
 		countHeadlessMCPSSE.Inc()
-		// Specify a channel size of two so that the send operations are
-		// non-blocking.
-		eventChan := make(chan lsprpc.SessionEvent, 2)
-		go func() {
-			eventChan <- lsprpc.SessionEvent{
-				Session: sess,
-				Type:    lsprpc.SessionStart,
-				Server:  cli.server,
-			}
-		}()
-		defer func() {
-			eventChan <- lsprpc.SessionEvent{
-				Session: sess,
-				Type:    lsprpc.SessionEnd,
-				Server:  cli.server,
-			}
-		}()
-
-		return mcp.Serve(ctx, m.Address, eventChan, false)
+		return mcp.Serve(ctx, m.Address, &staticSessions{sess, cli.server}, false)
 	} else {
 		countHeadlessMCPStdIO.Inc()
 		var rpcLog io.Writer
@@ -168,4 +149,24 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 		log.Printf("Listening for MCP messages on stdin...")
 		return mcp.StartStdIO(ctx, sess, cli.server, rpcLog)
 	}
+}
+
+// staticSessions implements the [mcp.Sessions] interface for a single gopls
+// session.
+type staticSessions struct {
+	session *cache.Session
+	server  protocol.Server
+}
+
+func (s *staticSessions) SetSessionExitFunc(func(string)) {}
+
+func (s *staticSessions) FirstSession() (*cache.Session, protocol.Server) {
+	return s.session, s.server
+}
+
+func (s *staticSessions) Session(id string) (*cache.Session, protocol.Server) {
+	if s.session.ID() == id {
+		return s.session, s.server
+	}
+	return nil, nil
 }

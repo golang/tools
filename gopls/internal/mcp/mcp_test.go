@@ -11,15 +11,34 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/mcp"
+	"golang.org/x/tools/gopls/internal/protocol"
 )
+
+type emptySessions struct {
+}
+
+// FirstSession implements mcp.Sessions.
+func (e emptySessions) FirstSession() (*cache.Session, protocol.Server) {
+	return nil, nil
+}
+
+// Session implements mcp.Sessions.
+func (e emptySessions) Session(string) (*cache.Session, protocol.Server) {
+	return nil, nil
+}
+
+// SetSessionExitFunc implements mcp.Sessions.
+func (e emptySessions) SetSessionExitFunc(func(string)) {
+}
 
 func TestContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	res := make(chan error)
 	go func() {
-		res <- mcp.Serve(ctx, "localhost:0", nil, true)
+		res <- mcp.Serve(ctx, "localhost:0", emptySessions{}, true)
 	}()
 
 	time.Sleep(1 * time.Second)

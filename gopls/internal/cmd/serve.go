@@ -98,14 +98,10 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 		di.Serve(ctx, s.Debug)
 	}
 
-	var ss jsonrpc2.StreamServer
-
-	// eventChan is used by the LSP server to send session lifecycle events
-	// (creation, exit) to the MCP server. The sender must ensure that an exit
-	// event for a given LSP session ID is sent after its corresponding creation
-	// event.
-	var eventChan chan lsprpc.SessionEvent
-
+	var (
+		ss       jsonrpc2.StreamServer
+		sessions mcp.Sessions // if non-nil, handle MCP sessions
+	)
 	if s.app.Remote != "" {
 		var err error
 		ss, err = lsprpc.NewForwarder(s.app.Remote, s.remoteArgs)
@@ -113,10 +109,11 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 			return fmt.Errorf("creating forwarder: %w", err)
 		}
 	} else {
+		lsprpcServer := lsprpc.NewStreamServer(cache.New(nil), isDaemon, s.app.options)
+		ss = lsprpcServer
 		if s.MCPAddress != "" {
-			eventChan = make(chan lsprpc.SessionEvent)
+			sessions = lsprpcServer
 		}
-		ss = lsprpc.NewStreamServer(cache.New(nil), isDaemon, eventChan, s.app.options)
 	}
 
 	group, ctx := errgroup.WithContext(ctx)
@@ -125,7 +122,7 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 	success := errors.New("success")
 
 	// Start MCP server.
-	if eventChan != nil {
+	if sessions != nil {
 		countAttachedMCP.Inc()
 		group.Go(func() (err error) {
 			defer func() {
@@ -134,18 +131,13 @@ func (s *Serve) Run(ctx context.Context, args ...string) error {
 				}
 			}()
 
-			return mcp.Serve(ctx, s.MCPAddress, eventChan, isDaemon)
+			return mcp.Serve(ctx, s.MCPAddress, sessions, isDaemon)
 		})
 	}
 
 	// Start LSP server.
 	group.Go(func() (err error) {
 		defer func() {
-			// Once we have finished serving LSP over jsonrpc or stdio,
-			// there can be no more session events. Notify the MCP server.
-			if eventChan != nil {
-				close(eventChan)
-			}
 			if err == nil {
 				err = success
 			}

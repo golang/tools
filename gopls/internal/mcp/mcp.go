@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
-	"golang.org/x/tools/gopls/internal/lsprpc"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
@@ -34,11 +33,18 @@ type handler struct {
 	lspServer protocol.Server
 }
 
+// Sessions is the interface used to access gopls sessions.
+type Sessions interface {
+	Session(id string) (*cache.Session, protocol.Server)
+	FirstSession() (*cache.Session, protocol.Server)
+	SetSessionExitFunc(func(string))
+}
+
 // Serve starts an MCP server serving at the input address.
 // The server receives LSP session events on the specified channel, which the
 // caller is responsible for closing. The server runs until the context is
 // canceled.
-func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionEvent, isDaemon bool) error {
+func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool) error {
 	log.Printf("Gopls MCP server: starting up on http")
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -53,7 +59,7 @@ func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionE
 	defer log.Printf("Gopls MCP server: exiting")
 
 	svr := http.Server{
-		Handler: HTTPHandler(eventChan, isDaemon),
+		Handler: HTTPHandler(sessions, isDaemon),
 		BaseContext: func(net.Listener) context.Context {
 			return ctx
 		},
@@ -78,38 +84,29 @@ func StartStdIO(ctx context.Context, session *cache.Session, server protocol.Ser
 	return s.Run(ctx, t)
 }
 
-// HTTPHandler returns an HTTP handler for handling requests from MCP client.
-func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, isDaemon bool) http.Handler {
+func HTTPHandler(sessions Sessions, isDaemon bool) http.Handler {
 	var (
 		mu          sync.Mutex                         // lock for mcpHandlers.
 		mcpHandlers = make(map[string]*mcp.SSEHandler) // map from lsp session ids to MCP sse handlers.
 	)
-
-	// Spin up go routine listen to the session event channel until channel close.
-	go func() {
-		for event := range eventChan {
-			mu.Lock()
-			switch event.Type {
-			case lsprpc.SessionStart:
-				mcpHandlers[event.Session.ID()] = mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
-					return newServer(event.Session, event.Server)
-				})
-			case lsprpc.SessionEnd:
-				delete(mcpHandlers, event.Session.ID())
-			}
-			mu.Unlock()
-		}
-	}()
+	mux := http.NewServeMux()
 
 	// In daemon mode, gopls serves mcp server at ADDRESS/sessions/$SESSIONID.
 	// Otherwise, gopls serves mcp server at ADDRESS.
-	mux := http.NewServeMux()
 	if isDaemon {
 		mux.HandleFunc("/sessions/{id}", func(w http.ResponseWriter, r *http.Request) {
 			sessionID := r.PathValue("id")
 
 			mu.Lock()
-			handler := mcpHandlers[sessionID]
+			handler, ok := mcpHandlers[sessionID]
+			if !ok {
+				if s, svr := sessions.Session(sessionID); s != nil {
+					handler = mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
+						return newServer(s, svr)
+					})
+					mcpHandlers[sessionID] = handler
+				}
+			}
 			mu.Unlock()
 
 			if handler == nil {
@@ -125,9 +122,16 @@ func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, isDaemon bool) http.Handl
 			mu.Lock()
 			// When not in daemon mode, gopls has at most one LSP session.
 			_, handler, ok := moremaps.Arbitrary(mcpHandlers)
+			if !ok {
+				s, svr := sessions.FirstSession()
+				handler = mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
+					return newServer(s, svr)
+				})
+				mcpHandlers[s.ID()] = handler
+			}
 			mu.Unlock()
 
-			if !ok {
+			if handler == nil {
 				http.Error(w, "session not established", http.StatusNotFound)
 				return
 			}
@@ -135,6 +139,13 @@ func HTTPHandler(eventChan <-chan lsprpc.SessionEvent, isDaemon bool) http.Handl
 			handler.ServeHTTP(w, r)
 		})
 	}
+	sessions.SetSessionExitFunc(func(sessionID string) {
+		mu.Lock()
+		defer mu.Unlock()
+		// TODO(rfindley): add a way to close SSE handlers (and therefore
+		// close their transports). Otherwise, we leak JSON-RPC goroutines.
+		delete(mcpHandlers, sessionID)
+	})
 	return mux
 }
 

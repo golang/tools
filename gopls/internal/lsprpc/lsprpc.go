@@ -11,8 +11,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,27 +32,12 @@ import (
 	"golang.org/x/tools/internal/jsonrpc2"
 )
 
-// SessionEventType differentiates between new and exiting sessions.
-type SessionEventType int
-
-const (
-	SessionStart SessionEventType = iota
-	SessionEnd
-)
-
-// SessionEvent holds information about the session event.
-type SessionEvent struct {
-	Type    SessionEventType
-	Session *cache.Session
-	Server  protocol.Server
-}
-
 // Unique identifiers for client/server.
 var serverIndex int64
 
 // The streamServer type is a jsonrpc2.streamServer that handles incoming
 // streams as a new LSP session, using a shared cache.
-type streamServer struct {
+type StreamServer struct {
 	cache *cache.Cache
 	// daemon controls whether or not to log new connections.
 	daemon bool
@@ -58,24 +45,47 @@ type streamServer struct {
 	// optionsOverrides is passed to newly created sessions.
 	optionsOverrides func(*settings.Options)
 
+	// onSessionExit is called whenever a session exits, with the session ID.
+	onSessionExit func(id string)
+
 	// serverForTest may be set to a test fake for testing.
 	serverForTest protocol.Server
 
-	// eventChan is an optional channel for LSP server session lifecycle events,
-	// including session creation and termination. If nil, no events are sent.
-	eventChan chan SessionEvent
+	// Keep track of active sessions, for interrogation.
+	sessionMu sync.Mutex
+	sessions  map[string]sessionServer
+}
+
+type sessionServer struct {
+	session *cache.Session
+	server  protocol.Server
 }
 
 // NewStreamServer creates a StreamServer using the shared cache. If
 // withTelemetry is true, each session is instrumented with telemetry that
 // records RPC statistics.
-func NewStreamServer(cache *cache.Cache, daemon bool, eventChan chan SessionEvent, optionsFunc func(*settings.Options)) jsonrpc2.StreamServer {
-	return &streamServer{cache: cache, daemon: daemon, eventChan: eventChan, optionsOverrides: optionsFunc}
+func NewStreamServer(cache *cache.Cache, daemon bool, optionsFunc func(*settings.Options)) *StreamServer {
+	return &StreamServer{
+		cache:            cache,
+		daemon:           daemon,
+		optionsOverrides: optionsFunc,
+		sessions:         make(map[string]sessionServer),
+	}
+}
+
+// SetSessionExitFunc sets the function to call when sessions exit.
+// It is not concurrency safe, and must only be called at most once, before the
+// receiver is passed to jsonrpc2.Serve.
+func (s *StreamServer) SetSessionExitFunc(f func(id string)) {
+	if s.onSessionExit != nil {
+		panic("duplicate call to SetSessionExitFunc")
+	}
+	s.onSessionExit = f
 }
 
 // ServeStream implements the jsonrpc2.StreamServer interface, by handling
 // incoming streams using a new lsp server.
-func (s *streamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) error {
+func (s *StreamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) error {
 	client := protocol.ClientDispatcher(conn)
 	session := cache.NewSession(ctx, s.cache)
 	svr := s.serverForTest
@@ -86,6 +96,18 @@ func (s *streamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) erro
 			instance.AddService(svr, session)
 		}
 	}
+	s.sessionMu.Lock()
+	s.sessions[session.ID()] = sessionServer{session, svr}
+	s.sessionMu.Unlock()
+	defer func() {
+		s.sessionMu.Lock()
+		delete(s.sessions, session.ID())
+		s.sessionMu.Unlock()
+		if s.onSessionExit != nil {
+			s.onSessionExit(session.ID())
+		}
+	}()
+
 	// Clients may or may not send a shutdown message. Make sure the server is
 	// shut down.
 	// TODO(rFindley): this shutdown should perhaps be on a disconnected context.
@@ -106,21 +128,6 @@ func (s *streamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) erro
 				protocol.ServerHandler(svr,
 					jsonrpc2.MethodNotFound))))
 
-	if s.eventChan != nil {
-		s.eventChan <- SessionEvent{
-			Session: session,
-			Type:    SessionStart,
-			Server:  svr,
-		}
-		defer func() {
-			s.eventChan <- SessionEvent{
-				Session: session,
-				Type:    SessionEnd,
-				Server:  svr,
-			}
-		}()
-	}
-
 	if s.daemon {
 		log.Printf("Session %s: connected", session.ID())
 		defer log.Printf("Session %s: exited", session.ID())
@@ -128,6 +135,29 @@ func (s *streamServer) ServeStream(ctx context.Context, conn jsonrpc2.Conn) erro
 
 	<-conn.Done()
 	return conn.Err()
+}
+
+// Session returns the current active session for the given id, or (nil, nil)
+// if none exists.
+func (s *StreamServer) Session(id string) (*cache.Session, protocol.Server) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	ss := s.sessions[id]
+	return ss.session, ss.server // possibly nil for zero value
+}
+
+// FirstSession returns the first session by lexically sorted session ID, or
+// (nil, nil).
+func (s *StreamServer) FirstSession() (*cache.Session, protocol.Server) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	keys := slices.Collect(maps.Keys(s.sessions))
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	id := slices.Min(keys)
+	ss := s.sessions[id]
+	return ss.session, ss.server
 }
 
 // A forwarder is a jsonrpc2.StreamServer that handles an LSP stream by
