@@ -792,8 +792,8 @@ func allFilesHaveRealPackages(g *metadata.Graph, mp *metadata.Package) bool {
 	n := len(mp.CompiledGoFiles)
 checkURIs:
 	for _, uri := range slices.Concat(mp.CompiledGoFiles[0:n:n], mp.GoFiles) {
-		for _, id := range g.IDs[uri] {
-			if !metadata.IsCommandLineArguments(id) {
+		for _, pkg := range g.ForFile[uri] {
+			if !metadata.IsCommandLineArguments(pkg.ID) {
 				continue checkURIs
 			}
 		}

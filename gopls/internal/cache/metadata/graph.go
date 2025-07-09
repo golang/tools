@@ -22,22 +22,20 @@ type Graph struct {
 	// Packages maps package IDs to their associated Packages.
 	Packages map[PackageID]*Package
 
-	// ImportedBy maps package IDs to the list of packages that import them.
-	ImportedBy map[PackageID][]PackageID
+	// Each of the three maps below is an index of the pointer values held
+	// by the Packages map. However, Package pointers are not generally canonical.
 
-	// ByPackagePath maps package by their package path to their package ID.
+	// ImportedBy maps package IDs to the list of packages that import them.
+	ImportedBy map[PackageID][]*Package
+
+	// ForPackagePath maps package by their package path to their package ID.
 	// Non-test packages appear before test packages, and within each of those
 	// categories, packages with fewer CompiledGoFiles appear first.
-	//
-	// TODO(rfindley): there's no reason for ImportedBy and IDs to not also hold
-	// pointers, rather than IDs, and pointers are more convenient.
-	ByPackagePath map[PackagePath][]*Package
+	ForPackagePath map[PackagePath][]*Package
 
-	// IDs maps file URIs to package IDs, sorted by (!valid, cli, packageID).
+	// ForFile maps file URIs to packages, sorted by (!valid, cli, packageID).
 	// A single file may belong to multiple packages due to tests packages.
-	//
-	// Invariant: all IDs present in the IDs map exist in the metadata map.
-	IDs map[protocol.DocumentURI][]PackageID
+	ForFile map[protocol.DocumentURI][]*Package
 }
 
 // Metadata implements the [Source] interface
@@ -93,18 +91,18 @@ func (g *Graph) Update(updates map[PackageID]*Package) *Graph {
 // deriving relations from the specified metadata.
 func newGraph(pkgs map[PackageID]*Package) *Graph {
 	// Build the import graph.
-	importedBy := make(map[PackageID][]PackageID)
+	importedBy := make(map[PackageID][]*Package)
 	byPackagePath := make(map[PackagePath][]*Package)
-	for id, mp := range pkgs {
+	for _, mp := range pkgs {
 		for _, depID := range mp.DepsByPkgPath {
-			importedBy[depID] = append(importedBy[depID], id)
+			importedBy[depID] = append(importedBy[depID], mp)
 		}
 		byPackagePath[mp.PkgPath] = append(byPackagePath[mp.PkgPath], mp)
 	}
 
 	// Collect file associations.
-	uriIDs := make(map[protocol.DocumentURI][]PackageID)
-	for id, mp := range pkgs {
+	uriPkgs := make(map[protocol.DocumentURI][]*Package)
+	for _, mp := range pkgs {
 		uris := map[protocol.DocumentURI]struct{}{}
 		for _, uri := range mp.CompiledGoFiles {
 			uris[uri] = struct{}{}
@@ -118,34 +116,34 @@ func newGraph(pkgs map[PackageID]*Package) *Graph {
 			}
 		}
 		for uri := range uris {
-			uriIDs[uri] = append(uriIDs[uri], id)
+			uriPkgs[uri] = append(uriPkgs[uri], mp)
 		}
 	}
 
 	// Sort and filter file associations.
-	for uri, ids := range uriIDs {
-		sort.Slice(ids, func(i, j int) bool {
-			cli := IsCommandLineArguments(ids[i])
-			clj := IsCommandLineArguments(ids[j])
+	for uri, pkgs := range uriPkgs {
+		sort.Slice(pkgs, func(i, j int) bool {
+			cli := IsCommandLineArguments(pkgs[i].ID)
+			clj := IsCommandLineArguments(pkgs[j].ID)
 			if cli != clj {
 				return clj
 			}
 
 			// 2. packages appear in name order.
-			return ids[i] < ids[j]
+			return pkgs[i].ID < pkgs[j].ID
 		})
 
-		// Choose the best IDs for each URI, according to the following rules:
+		// Choose the best packages for each URI, according to the following rules:
 		//  - If there are any valid real packages, choose them.
 		//  - Else, choose the first valid command-line-argument package, if it exists.
 		//
-		// TODO(rfindley): it might be better to track all IDs here, and exclude
+		// TODO(rfindley): it might be better to track all packages here, and exclude
 		// them later when type checking, but this is the existing behavior.
-		for i, id := range ids {
+		for i, pkg := range pkgs {
 			// If we've seen *anything* prior to command-line arguments package, take
-			// it. Note that ids[0] may itself be command-line-arguments.
-			if i > 0 && IsCommandLineArguments(id) {
-				uriIDs[uri] = ids[:i]
+			// it. Note that pkgs[0] may itself be command-line-arguments.
+			if i > 0 && IsCommandLineArguments(pkg.ID) {
+				uriPkgs[uri] = pkgs[:i]
 				break
 			}
 		}
@@ -167,10 +165,10 @@ func newGraph(pkgs map[PackageID]*Package) *Graph {
 	}
 
 	return &Graph{
-		Packages:      pkgs,
-		ImportedBy:    importedBy,
-		ByPackagePath: byPackagePath,
-		IDs:           uriIDs,
+		Packages:       pkgs,
+		ImportedBy:     importedBy,
+		ForPackagePath: byPackagePath,
+		ForFile:        uriPkgs,
 	}
 }
 
@@ -179,18 +177,22 @@ func newGraph(pkgs map[PackageID]*Package) *Graph {
 // transitively imports one of them, keyed by ID, including all the initial packages.
 func (g *Graph) ReverseReflexiveTransitiveClosure(ids ...PackageID) map[PackageID]*Package {
 	seen := make(map[PackageID]*Package)
-	var visitAll func([]PackageID)
-	visitAll = func(ids []PackageID) {
-		for _, id := range ids {
-			if seen[id] == nil {
-				if mp := g.Packages[id]; mp != nil {
-					seen[id] = mp
-					visitAll(g.ImportedBy[id])
-				}
+	var visitAll func([]*Package)
+	visitAll = func(pkgs []*Package) {
+		for _, pkg := range pkgs {
+			if seen[pkg.ID] == nil {
+				seen[pkg.ID] = pkg
+				visitAll(g.ImportedBy[pkg.ID])
 			}
 		}
 	}
-	visitAll(ids)
+	var initial []*Package
+	for _, id := range ids {
+		if pkg := g.Packages[id]; pkg != nil {
+			initial = append(initial, pkg)
+		}
+	}
+	visitAll(initial)
 	return seen
 }
 

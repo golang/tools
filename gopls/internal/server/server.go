@@ -356,7 +356,7 @@ func (s *server) initWeb() (*web, error) {
 
 		// Find package by path.
 		pkgPath := metadata.PackagePath(req.URL.Path)
-		mps := snapshot.MetadataGraph().ByPackagePath[pkgPath]
+		mps := snapshot.MetadataGraph().ForPackagePath[pkgPath]
 		if len(mps) == 0 {
 			// TODO(adonovan): what should we do for external test packages?
 			http.Error(w, "package not found", http.StatusNotFound)

@@ -436,8 +436,8 @@ func (s *Session) SnapshotOf(ctx context.Context, uri protocol.DocumentURI) (*Sn
 		//
 		// Any view can load a command-line-arguments package; aggregate those into
 		// views[0] below.
-		for _, id := range g.IDs[uri] {
-			if !metadata.IsCommandLineArguments(id) || g.Packages[id].Standalone {
+		for _, pkg := range g.ForFile[uri] {
+			if !metadata.IsCommandLineArguments(pkg.ID) || pkg.Standalone {
 				return snapshot, release, nil
 			}
 		}

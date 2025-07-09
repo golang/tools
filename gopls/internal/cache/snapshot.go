@@ -690,11 +690,11 @@ func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI
 	s.mu.Lock()
 
 	// Start with the set of package associations derived from the last load.
-	ids := s.meta.IDs[uri]
+	pkgs := s.meta.ForFile[uri]
 
 	shouldLoad := false // whether any packages containing uri are marked 'shouldLoad'
-	for _, id := range ids {
-		if pkgs, _ := s.shouldLoad.Get(id); len(pkgs) > 0 {
+	for _, pkg := range pkgs {
+		if p, _ := s.shouldLoad.Get(pkg.ID); len(p) > 0 {
 			shouldLoad = true
 		}
 	}
@@ -708,7 +708,7 @@ func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI
 	//  - uri is not contained in any valid packages
 	//  - ...or one of the packages containing uri is marked 'shouldLoad'
 	//  - ...but uri is not unloadable
-	if (shouldLoad || len(ids) == 0) && !unloadable {
+	if (shouldLoad || len(pkgs) == 0) && !unloadable {
 		scope := fileLoadScope(uri)
 		err := s.load(ctx, NoNetwork, scope)
 
@@ -741,18 +741,14 @@ func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI
 	// Retrieve the metadata.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ids = s.meta.IDs[uri]
-	metas := make([]*metadata.Package, len(ids))
-	for i, id := range ids {
-		metas[i] = s.meta.Packages[id]
-		if metas[i] == nil {
-			panic("nil metadata")
-		}
-	}
+	// TODO(rfindley): is there any reason not to make the sorting below the
+	// canonical sorting, so that we don't need to mutate this slice?
+	metas := slices.Clone(s.meta.ForFile[uri])
+
 	// Metadata is only ever added by loading,
 	// so if we get here and still have
-	// no IDs, uri is unloadable.
-	if !unloadable && len(ids) == 0 {
+	// no packages, uri is unloadable.
+	if !unloadable && len(metas) == 0 {
 		s.unloadableFiles.Add(uri)
 	}
 
@@ -796,10 +792,8 @@ func (s *Snapshot) ReverseDependencies(ctx context.Context, id PackageID, transi
 	} else {
 		// direct reverse dependencies
 		rdeps = make(map[PackageID]*metadata.Package)
-		for _, rdepID := range meta.ImportedBy[id] {
-			if rdep := meta.Packages[rdepID]; rdep != nil {
-				rdeps[rdepID] = rdep
-			}
+		for _, rdep := range meta.ImportedBy[id] {
+			rdeps[rdep.ID] = rdep
 		}
 	}
 
@@ -1061,9 +1055,8 @@ func (s *Snapshot) clearShouldLoad(scopes ...loadScope) {
 			}
 		case fileLoadScope:
 			uri := protocol.DocumentURI(scope)
-			ids := s.meta.IDs[uri]
-			for _, id := range ids {
-				s.shouldLoad.Delete(id)
+			for _, pkg := range s.meta.ForFile[uri] {
+				s.shouldLoad.Delete(pkg.ID)
 			}
 		}
 	}
@@ -1706,7 +1699,7 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 		anyPkgFileChanged = anyPkgFileChanged || pkgFileChanged
 
 		// Mark all of the package IDs containing the given file.
-		filePackageIDs := invalidatedPackageIDs(uri, s.meta.IDs, pkgFileChanged)
+		filePackageIDs := invalidatedPackageIDs(uri, s.meta.ForFile, pkgFileChanged)
 		for id := range filePackageIDs {
 			directIDs[id] = directIDs[id] || invalidateMetadata // may insert 'false'
 		}
@@ -1807,8 +1800,8 @@ func (s *Snapshot) clone(ctx, bgCtx context.Context, changed StateChange, done f
 			return
 		}
 		idsToInvalidate[id] = newInvalidateMetadata
-		for _, rid := range s.meta.ImportedBy[id] {
-			addRevDeps(rid, invalidateMetadata)
+		for _, rdep := range s.meta.ImportedBy[id] {
+			addRevDeps(rdep.ID, invalidateMetadata)
 		}
 	}
 	for id, invalidateMetadata := range directIDs {
@@ -1942,12 +1935,12 @@ func deleteMostRelevantModFile(m *persistent.Map[protocol.DocumentURI, *memoize.
 // If packageFileChanged is set, the file is either a new file, or has a new
 // package name. In this case, all known packages in the directory will be
 // invalidated.
-func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.DocumentURI][]PackageID, packageFileChanged bool) map[PackageID]struct{} {
+func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.DocumentURI][]*metadata.Package, packageFileChanged bool) map[PackageID]struct{} {
 	invalidated := make(map[PackageID]struct{})
 
 	// At a minimum, we invalidate packages known to contain uri.
-	for _, id := range known[uri] {
-		invalidated[id] = struct{}{}
+	for _, pkg := range known[uri] {
+		invalidated[pkg.ID] = struct{}{}
 	}
 
 	// If the file didn't move to a new package, we should only invalidate the
@@ -1980,15 +1973,15 @@ func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.Document
 	fi, err := getInfo(dir)
 	if err == nil {
 		// Aggregate all possibly relevant package IDs.
-		for knownURI, ids := range known {
+		for knownURI, pkgs := range known {
 			knownDir := knownURI.DirPath()
 			knownFI, err := getInfo(knownDir)
 			if err != nil {
 				continue
 			}
 			if os.SameFile(fi, knownFI) {
-				for _, id := range ids {
-					invalidated[id] = struct{}{}
+				for _, pkg := range pkgs {
+					invalidated[pkg.ID] = struct{}{}
 				}
 			}
 		}

@@ -921,7 +921,7 @@ var MetadataTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 
 <h3 id='hdr-Files'>Files</h3>
 <ul>
-{{range $uri, $ids := .IDs}}<li>{{$uri}} →{{range $ids}} <a href='#{{.}}'>{{.}}</a>{{end}}</li>{{end}}
+{{range $uri, $pkgs := .ForFile}}<li>{{$uri}} →{{range $pkgs}} <a href='#{{.ID}}'>{{.ID}}</a>{{end}}</li>{{end}}
 </ul>
 
 {{end}}

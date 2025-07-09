@@ -41,7 +41,7 @@ func (h *handler) outlineHandler(ctx context.Context, _ *mcp.ServerSession, para
 		return nil, err
 	}
 
-	var toSummarize []metadata.PackageID
+	var toSummarize []*metadata.Package
 	for _, imp := range params.Arguments.PackagePaths {
 		pkgPath := metadata.PackagePath(imp)
 		if len(imp) > 0 && imp[0] == '"' {
@@ -51,18 +51,17 @@ func (h *handler) outlineHandler(ctx context.Context, _ *mcp.ServerSession, para
 			}
 			pkgPath = metadata.PackagePath(unquoted)
 		}
-		if mps := md.ByPackagePath[pkgPath]; len(mps) > 0 {
-			toSummarize = append(toSummarize, mps[0].ID) // first is best
+		if mps := md.ForPackagePath[pkgPath]; len(mps) > 0 {
+			toSummarize = append(toSummarize, mps[0]) // first is best
 		}
 	}
 
 	var content []*mcp.Content
-	for _, id := range toSummarize {
-		md := snapshot.Metadata(id)
+	for _, mp := range toSummarize {
 		if md == nil {
 			continue // ignore error
 		}
-		if summary := summarizePackage(ctx, snapshot, md); summary != "" {
+		if summary := summarizePackage(ctx, snapshot, mp); summary != "" {
 			content = append(content, mcp.NewTextContent(summary))
 		}
 	}

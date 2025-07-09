@@ -79,7 +79,10 @@ func (c *completer) findPackageIDs(pkgname metadata.PackageName) (wsIDs, thisPkg
 			continue
 		}
 		imports := g.ImportedBy[pid]
-		if slices.Contains(imports, c.pkg.Metadata().ID) {
+		// Metadata is not canonical: it may be held onto by a package. Therefore,
+		// we must compare by ID.
+		thisPkg := func(mp *metadata.Package) bool { return mp.ID == c.pkg.Metadata().ID }
+		if slices.ContainsFunc(imports, thisPkg) {
 			thisPkgIDs = append(thisPkgIDs, pid)
 		} else {
 			wsIDs = append(wsIDs, pid)
