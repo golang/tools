@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sync"
 	"testing"
 	"time"
 
@@ -218,7 +217,34 @@ package foo
 				}
 			}
 
-			w, eventChan, errorChan, err := filewatcher.New(50*time.Millisecond, nil)
+			matched := 0
+			foundAll := make(chan struct{})
+			var gots []protocol.FileEvent
+			handler := func(events []protocol.FileEvent, err error) {
+				if err != nil {
+					t.Errorf("error from watcher: %v", err)
+				}
+				gots = append(gots, events...)
+				// This verifies that the list of wanted events is a subsequence of
+				// the received events. It confirms not only that all wanted events
+				// are present, but also that their relative order is preserved.
+				for _, got := range events {
+					if matched == len(tt.expectedEvents) {
+						break
+					}
+					want := protocol.FileEvent{
+						URI:  protocol.URIFromPath(filepath.Join(root, string(tt.expectedEvents[matched].URI))),
+						Type: tt.expectedEvents[matched].Type,
+					}
+					if want == got {
+						matched++
+					}
+				}
+				if matched == len(tt.expectedEvents) {
+					close(foundAll)
+				}
+			}
+			w, err := filewatcher.New(50*time.Millisecond, nil, handler)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -231,47 +257,6 @@ package foo
 				tt.changes(t, root)
 			}
 
-			matched := 0
-			foundAll := make(chan struct{})
-			var gots []protocol.FileEvent
-			var closeWG sync.WaitGroup
-			closeWG.Add(2)
-			go func() {
-				defer closeWG.Done()
-				for err := range errorChan {
-					t.Errorf("error from watcher: %v", err)
-				}
-			}()
-			go func() {
-				defer closeWG.Done()
-
-				found := false
-				// This verifies that the list of wanted events is a subsequence of
-				// the received events. It confirms not only that all wanted events
-				// are present, but also that their relative order is preserved.
-				for events := range eventChan {
-					gots = append(gots, events...)
-					for _, got := range events {
-						if matched == len(tt.expectedEvents) {
-							break
-						}
-						want := protocol.FileEvent{
-							URI:  protocol.URIFromPath(filepath.Join(root, string(tt.expectedEvents[matched].URI))),
-							Type: tt.expectedEvents[matched].Type,
-						}
-						if want == got {
-							matched++
-						}
-					}
-					if matched == len(tt.expectedEvents) {
-						if !found {
-							found = true
-							close(foundAll)
-						}
-					}
-				}
-			}()
-
 			select {
 			case <-foundAll:
 			case <-time.After(30 * time.Second):
@@ -283,10 +268,6 @@ package foo
 			if err := w.Close(); err != nil {
 				t.Errorf("failed to close the file watcher: %v", err)
 			}
-
-			// Verify that calling [filewatcher.FileWatcher.Close] also closes
-			// the events and errors channels.
-			closeWG.Wait()
 		})
 	}
 }

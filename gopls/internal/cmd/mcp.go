@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"golang.org/x/tools/gopls/internal/filewatcher"
@@ -68,34 +69,64 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 	}
 	defer cli.terminate(ctx)
 
-	w, eventsChan, errorChan, err := filewatcher.New(1*time.Second, nil)
+	var (
+		queueMu  sync.Mutex
+		queue    []protocol.FileEvent
+		nonempty = make(chan struct{}) // receivable when len(queue) > 0
+		stop     = make(chan struct{}) // closed when Run returns
+	)
+	defer close(stop)
+
+	// This goroutine forwards file change events to the LSP server.
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-nonempty:
+				queueMu.Lock()
+				q := queue
+				queue = nil
+				queueMu.Unlock()
+
+				if len(q) > 0 {
+					if err := cli.server.DidChangeWatchedFiles(ctx, &protocol.DidChangeWatchedFilesParams{
+						Changes: q,
+					}); err != nil {
+						log.Printf("failed to notify changed files: %v", err)
+					}
+				}
+
+			}
+		}
+	}()
+
+	w, err := filewatcher.New(500*time.Millisecond, nil, func(events []protocol.FileEvent, err error) {
+		if err != nil {
+			log.Printf("watch error: %v", err)
+			return
+		}
+
+		if len(events) == 0 {
+			return
+		}
+
+		// Since there is no promise [protocol.Server.DidChangeWatchedFiles]
+		// will return immediately, we should buffer the captured events and
+		// sent them whenever available in a separate go routine.
+		queueMu.Lock()
+		queue = append(queue, events...)
+		queueMu.Unlock()
+
+		select {
+		case nonempty <- struct{}{}:
+		default:
+		}
+	})
 	if err != nil {
 		return err
 	}
 	defer w.Close()
-
-	// Start listening for events.
-	go func() {
-		for {
-			select {
-			case events, ok := <-eventsChan:
-				if !ok {
-					return
-				}
-				if err := cli.server.DidChangeWatchedFiles(ctx, &protocol.DidChangeWatchedFilesParams{
-					Changes: events,
-				}); err != nil {
-					log.Printf("failed to notify changed files: %v", err)
-				}
-			case err, ok := <-errorChan:
-				if !ok {
-					return
-				}
-				log.Printf("error found: %v", err)
-				return
-			}
-		}
-	}()
 
 	// TODO(hxjiang): replace this with LSP initial param workspace root.
 	dir, err := os.Getwd()

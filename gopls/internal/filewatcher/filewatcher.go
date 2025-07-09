@@ -17,54 +17,55 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
-// FileWatcher collects events from a [fsnotify.Watcher] and converts them into
-// batched LSP [protocol.FileEvent]s. Events are debounced and sent to the
-// event channel after a configurable period of no new relevant activity.
-type FileWatcher struct {
+// Watcher collects events from a [fsnotify.Watcher] and converts them into
+// batched LSP [protocol.FileEvent]s.
+type Watcher struct {
 	logger *slog.Logger
 
-	closed chan struct{}
+	stop chan struct{} // closed by Close to terminate run loop
 
-	wg sync.WaitGroup
+	wg sync.WaitGroup // counts number of active run goroutines (max 1)
 
-	mu sync.Mutex
+	watcher *fsnotify.Watcher
+
+	mu sync.Mutex // guards all fields below
 
 	// watchedDirs keeps track of which directories are being watched by the
 	// watcher, explicitly added via [fsnotify.Watcher.Add].
 	watchedDirs map[string]bool
-	watcher     *fsnotify.Watcher
 
-	// events is the current batch of unsent [protocol.FileEvent]s, which will
-	// be sent when the timer expires.
+	// events is the current batch of unsent file events, which will be sent
+	// when the timer expires.
 	events []protocol.FileEvent
 }
 
-// New creates a new FileWatcher and starts its event-handling loop. The
-// [FileWatcher.Close] should be called to cleanup.
-func New(delay time.Duration, logger *slog.Logger) (*FileWatcher, <-chan []protocol.FileEvent, <-chan error, error) {
+// New creates a new file watcher and starts its event-handling loop. The
+// [Watcher.Close] method must be called to clean up resources.
+//
+// The provided handler is called sequentially with either a batch of file
+// events or an error. Events and errors may be interleaved. The watcher blocks
+// until the handler returns, so the handler should be fast and non-blocking.
+func New(delay time.Duration, logger *slog.Logger, handler func([]protocol.FileEvent, error)) (*Watcher, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
-	w := &FileWatcher{
+	w := &Watcher{
 		logger:      logger,
 		watcher:     watcher,
 		watchedDirs: make(map[string]bool),
-		closed:      make(chan struct{}),
+		stop:        make(chan struct{}),
 	}
 
-	eventsChan := make(chan []protocol.FileEvent)
-	errorChan := make(chan error)
-
 	w.wg.Add(1)
-	go w.run(eventsChan, errorChan, delay)
+	go w.run(delay, handler)
 
-	return w, eventsChan, errorChan, nil
+	return w, nil
 }
 
 // run is the main event-handling loop for the watcher. It should be run in a
 // separate goroutine.
-func (w *FileWatcher) run(events chan<- []protocol.FileEvent, errs chan<- error, delay time.Duration) {
+func (w *Watcher) run(delay time.Duration, handler func([]protocol.FileEvent, error)) {
 	defer w.wg.Done()
 
 	// timer is used to debounce events.
@@ -73,20 +74,11 @@ func (w *FileWatcher) run(events chan<- []protocol.FileEvent, errs chan<- error,
 
 	for {
 		select {
-		case <-w.closed:
-			// File watcher should not send the remaining events to the receiver
-			// because the client may not listening to the channel, could
-			// result in blocking forever.
-			//
-			// Once close signal received, ErrorChan and EventsChan will be
-			// closed. Exit the go routine to ensure no more value will be sent
-			// through those channels.
-			close(errs)
-			close(events)
+		case <-w.stop:
 			return
 
 		case <-timer.C:
-			w.sendEvents(events)
+			w.sendEvents(handler)
 			timer.Reset(delay)
 
 		case err, ok := <-w.watcher.Errors:
@@ -96,18 +88,20 @@ func (w *FileWatcher) run(events chan<- []protocol.FileEvent, errs chan<- error,
 			if !ok {
 				continue
 			}
-			errs <- err
+			if err != nil {
+				handler(nil, err)
+			}
 
 		case event, ok := <-w.watcher.Events:
 			if !ok {
 				continue
 			}
-			// FileWatcher should not handle the fsnotify.Event concurrently,
+			// file watcher should not handle the fsnotify.Event concurrently,
 			// the original order should be preserved. E.g. if a file get
 			// deleted and recreated, running concurrently may result it in
 			// reverse order.
 			//
-			// Only reset the timer if an relevant event happened.
+			// Only reset the timer if a relevant event happened.
 			// https://github.com/fsnotify/fsnotify?tab=readme-ov-file#why-do-i-get-many-chmod-events
 			if e := w.handleEvent(event); e != nil {
 				w.addEvent(*e)
@@ -134,7 +128,7 @@ func skipDir(dirName string) bool {
 
 // WatchDir walks through the directory and all its subdirectories, adding
 // them to the watcher.
-func (w *FileWatcher) WatchDir(path string) error {
+func (w *Watcher) WatchDir(path string) error {
 	return filepath.WalkDir(filepath.Clean(path), func(path string, d fs.DirEntry, err error) error {
 		if d.IsDir() {
 			if skipDir(d.Name()) {
@@ -150,29 +144,27 @@ func (w *FileWatcher) WatchDir(path string) error {
 }
 
 // handleEvent converts a single [fsnotify.Event] to the corresponding
-// [protocol.FileEvent].
+// [protocol.FileEvent] and updates the watcher state.
 // Returns nil if the input event is not relevant.
-func (w *FileWatcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
+func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 	// fsnotify does not guarantee clean filepaths.
 	path := filepath.Clean(event.Name)
 
 	var isDir bool
 	if info, err := os.Stat(path); err == nil {
 		isDir = info.IsDir()
+	} else if os.IsNotExist(err) {
+		// Upon deletion, the file/dir has been removed. fsnotify
+		// does not provide information regarding the deleted item.
+		// Use the watchedDirs to determine whether it's a dir.
+		isDir = w.isDir(path)
 	} else {
-		if os.IsNotExist(err) {
-			// Upon deletion, the file/dir has been removed. fsnotify
-			// does not provide information regarding the deleted item.
-			// Use the watchedDirs to determine whether it's a dir.
-			isDir = w.isDir(path)
-		} else {
-			// If statting failed, something is wrong with the file system.
-			// Log and move on.
-			if w.logger != nil {
-				w.logger.Error("failed to stat path, skipping event as its type (file/dir) is unknown", "path", path, "err", err)
-			}
-			return nil
+		// If statting failed, something is wrong with the file system.
+		// Log and move on.
+		if w.logger != nil {
+			w.logger.Error("failed to stat path, skipping event as its type (file/dir) is unknown", "path", path, "err", err)
 		}
+		return nil
 	}
 
 	if isDir {
@@ -210,9 +202,9 @@ func (w *FileWatcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 			return nil
 		}
 	} else {
-		// Only watch *.{go,mod,sum,work}
+		// Only watch files of interest.
 		switch strings.TrimPrefix(filepath.Ext(path), ".") {
-		case "go", "mod", "sum", "work":
+		case "go", "mod", "sum", "work", "s":
 		default:
 			return nil
 		}
@@ -241,7 +233,7 @@ func (w *FileWatcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 	}
 }
 
-func (w *FileWatcher) watchDir(path string) error {
+func (w *Watcher) watchDir(path string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -255,18 +247,17 @@ func (w *FileWatcher) watchDir(path string) error {
 	return nil
 }
 
-func (w *FileWatcher) unwatchDir(path string) {
+func (w *Watcher) unwatchDir(path string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// Upon removal, we only need to remove the entries from the map
-	// [fileWatcher.watchedDirPath].
+	// Upon removal, we only need to remove the entries from the map.
 	// The [fsnotify.Watcher] remove the watch for us.
 	// fsnotify/fsnotify#268
 	delete(w.watchedDirs, path)
 }
 
-func (w *FileWatcher) isDir(path string) bool {
+func (w *Watcher) isDir(path string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -274,11 +265,11 @@ func (w *FileWatcher) isDir(path string) bool {
 	return isDir
 }
 
-func (w *FileWatcher) addEvent(event protocol.FileEvent) {
+func (w *Watcher) addEvent(event protocol.FileEvent) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// Some architectures emit duplicate change events in close
+	// Some systems emit duplicate change events in close
 	// succession upon file modification. While the current
 	// deduplication is naive and only handles immediate duplicates,
 	// a more robust solution is needed.
@@ -292,27 +283,24 @@ func (w *FileWatcher) addEvent(event protocol.FileEvent) {
 	}
 }
 
-func (w *FileWatcher) sendEvents(eventsChan chan<- []protocol.FileEvent) {
-	w.mu.Lock() // Guard the w.events read and write. Not w.EventChan.
-	defer w.mu.Unlock()
+func (w *Watcher) sendEvents(handler func([]protocol.FileEvent, error)) {
+	w.mu.Lock()
+	events := w.events
+	w.events = nil
+	w.mu.Unlock()
 
-	if len(w.events) != 0 {
-		eventsChan <- w.events
-		w.events = make([]protocol.FileEvent, 0)
+	if len(events) != 0 {
+		handler(events, nil)
 	}
 }
 
 // Close shuts down the watcher, waits for the internal goroutine to terminate,
 // and returns any final error.
-func (w *FileWatcher) Close() error {
-	w.mu.Lock()
-
+func (w *Watcher) Close() error {
 	err := w.watcher.Close()
 	// Wait for the go routine to finish. So all the channels will be closed and
 	// all go routine will be terminated.
-	close(w.closed)
-
-	w.mu.Unlock()
+	close(w.stop)
 
 	w.wg.Wait()
 
