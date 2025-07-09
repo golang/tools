@@ -152,7 +152,14 @@ package foo
 				}
 			},
 			expectedEvents: []protocol.FileEvent{
-				{URI: "foo/bar.go", Type: protocol.Deleted},
+				// We only assert that the directory deletion event exists,
+				// because file system event behavior is inconsistent across
+				// platforms when deleting a non-empty directory.
+				// e.g. windows-amd64 may only emit a single dir removal event,
+				// freebsd-amd64 report dir removal before file removal,
+				// linux-amd64 report the reverse order.
+				// Therefore, the most reliable and cross-platform compatible
+				// signal is the deletion event for the directory itself.
 				{URI: "foo", Type: protocol.Deleted},
 			},
 		},
@@ -226,6 +233,7 @@ package foo
 
 			matched := 0
 			foundAll := make(chan struct{})
+			var gots []protocol.FileEvent
 			var closeWG sync.WaitGroup
 			closeWG.Add(2)
 			go func() {
@@ -242,6 +250,7 @@ package foo
 				// the received events. It confirms not only that all wanted events
 				// are present, but also that their relative order is preserved.
 				for events := range eventChan {
+					gots = append(gots, events...)
 					for _, got := range events {
 						if matched == len(tt.expectedEvents) {
 							break
@@ -267,7 +276,7 @@ package foo
 			case <-foundAll:
 			case <-time.After(30 * time.Second):
 				if matched < len(tt.expectedEvents) {
-					t.Errorf("missing expected events: %#v\nall expected: %#v", tt.expectedEvents[matched], tt.expectedEvents)
+					t.Errorf("found %v matching events\nall want: %#v\nall got: %#v", matched, tt.expectedEvents, gots)
 				}
 			}
 
