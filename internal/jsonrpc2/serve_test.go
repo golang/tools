@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/tools/internal/stack/stacktest"
+	"golang.org/x/tools/internal/jsonrpc2/stack/stacktest"
 	"golang.org/x/tools/internal/testenv"
 )
 
