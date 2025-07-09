@@ -73,7 +73,7 @@ for the references to a symbol defined in `foo_windows.go`, the result
 will never include the file `bar_linux.go`, even if that file refers
 to a symbol of the same name; see https://go.dev/issue/65755.
 
-Clients can request that the the declaration be included among the
+Clients can request that the declaration be included among the
 references; most do.
 
 Client support:

@@ -1,7 +1,13 @@
 ---
 title: "Gopls: The language server for Go"
 ---
-<!-- This is the main landing page for gopls users. -->
+<!--
+  This is the main landing page for gopls users.
+
+  To preview locally edited markdown files, use:
+    $ GOLANGORG_LOCAL_X_TOOLS=$(pwd) go run golang.org/x/website/cmd/golangorg@master &
+    $ open http://localhost:6060/go.dev/gopls
+-->
 
 [![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools/gopls)](https://pkg.go.dev/golang.org/x/tools/gopls)
 

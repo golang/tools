@@ -170,12 +170,12 @@ could (in principle) be split into three subpackages, one for
 formatting (`Printf` and friends), one for scanning (`Scanf`), and one
 for their common dependencies.
 
-<img title="Split package 'fmt'" src="../assets/splitpkg.png">
+<img title="Split package 'fmt'" src="../assets/splitpkg.png" width="55%">
 
 (Try playing with the tool on this package: it's an instructive
 exercise. The figure below shows the solution.)
 
-<img title="Split package 'fmt'" src="../assets/splitpkg-deps.png">
+<img title="Split package 'fmt'" src="../assets/splitpkg-deps.png" width="55%">
 
 The tool does not currently perform the code transformation (moving
 declarations to new packages, renaming symbols to export them as

@@ -68,4 +68,4 @@ when making significant changes to existing features or when adding new ones.
 You can find this page from within your editor by executing the
 `gopls.doc.features` [code action](transformation.md#code-actions),
 which opens it in a web browser.
-In VS Code, you can find it on the Quick fix menu.
+In VS Code, you can find it on the "Quick fix" menu.
