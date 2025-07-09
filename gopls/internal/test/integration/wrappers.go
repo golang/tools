@@ -5,6 +5,7 @@
 package integration
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path"
@@ -640,6 +641,25 @@ func (e *Env) Close() {
 	//
 	// This should be cleaned up as part of simplifying the complicated
 	// relationship between the lsprpc and cache packages.
+	if e.EventChan != nil {
+		close(e.EventChan)
+	}
+}
+
+// ClosePartially_Issue74166 closes the sandbox and shuts down the editor, but
+// does not 'close' the editor (and therefore does not terminate the jsonrpc2
+// connection), because there is a race to MCP server shutdown.
+//
+// This is a temporary fix while golang/go#74166 is addressed.
+func (e *Env) ClosePartially_Issue74166() {
+	e.Sandbox.Close()                       // ignore error
+	e.Editor.Shutdown(context.Background()) // ignore error
+	if e.MCPSession != nil {
+		e.MCPSession.Close() // ignore error
+	}
+	if e.MCPServer != nil {
+		e.MCPServer.Close()
+	}
 	if e.EventChan != nil {
 		close(e.EventChan)
 	}

@@ -194,7 +194,7 @@ func Test(t *testing.T) {
 				diags:      make(map[protocol.Location][]protocol.Diagnostic),
 				extraNotes: make(map[protocol.DocumentURI]map[string][]*expect.Note),
 			}
-			defer run.env.Close()
+			defer run.env.ClosePartially_Issue74166()
 
 			// Support built-in pseudo-locations here.
 			// fmtLoc coerces "got" Locations to these forms
