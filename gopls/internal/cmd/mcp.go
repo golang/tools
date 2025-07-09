@@ -8,6 +8,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"time"
@@ -21,7 +22,9 @@ import (
 type headlessMCP struct {
 	app *Application
 
-	Address string `flag:"listen" help:"the address on which to run the mcp server"`
+	Address  string `flag:"listen" help:"the address on which to run the mcp server"`
+	Logfile  string `flag:"logfile" help:"filename to log to; if unset, logs to stderr"`
+	RPCTrace bool   `flag:"rpc.trace" help:"print MCP rpc traces; cannot be used with -listen"`
 }
 
 func (m *headlessMCP) Name() string      { return "mcp" }
@@ -42,6 +45,21 @@ Examples:
 }
 
 func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
+	if m.Address != "" && m.RPCTrace {
+		// There's currently no way to plumb logging instrumentation into the SSE
+		// transport that is created on connections to the HTTP handler, so we must
+		// disallow the -rpc.trace flag when using -listen.
+		return fmt.Errorf("-listen is incompatible with -rpc.trace")
+	}
+	if m.Logfile != "" {
+		f, err := os.Create(m.Logfile)
+		if err != nil {
+			return fmt.Errorf("opening logfile: %v", err)
+		}
+		log.SetOutput(f)
+		defer f.Close()
+	}
+
 	// Start a new in-process gopls session and create a fake client
 	// to connect to it.
 	cli, sess, err := m.app.connect(ctx)
@@ -112,6 +130,11 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 		return mcp.Serve(ctx, m.Address, eventChan, false)
 	} else {
 		countHeadlessMCPStdIO.Inc()
-		return mcp.StartStdIO(ctx, sess, cli.server)
+		var rpcLog io.Writer
+		if m.RPCTrace {
+			rpcLog = log.Writer() // possibly redirected by -logfile above
+		}
+		log.Printf("Listening for MCP messages on stdin...")
+		return mcp.StartStdIO(ctx, sess, cli.server, rpcLog)
 	}
 }

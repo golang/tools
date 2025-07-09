@@ -8,6 +8,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -67,8 +68,12 @@ func Serve(ctx context.Context, address string, eventChan <-chan lsprpc.SessionE
 }
 
 // StartStdIO starts an MCP server over stdio.
-func StartStdIO(ctx context.Context, session *cache.Session, server protocol.Server) error {
-	t := mcp.NewLoggingTransport(mcp.NewStdioTransport(), os.Stderr)
+func StartStdIO(ctx context.Context, session *cache.Session, server protocol.Server, rpcLog io.Writer) error {
+	transport := mcp.NewStdioTransport()
+	var t mcp.Transport = transport
+	if rpcLog != nil {
+		t = mcp.NewLoggingTransport(transport, rpcLog)
+	}
 	s := newServer(session, server)
 	return s.Run(ctx, t)
 }

@@ -22,7 +22,6 @@ import (
 
 func TestMCPCommandStdio(t *testing.T) {
 	// Test that the headless MCP subcommand works, and recognizes file changes.
-
 	testenv.NeedsExec(t) // stdio transport uses execve(2)
 	tree := writeTree(t, `
 -- go.mod --
@@ -90,6 +89,67 @@ const B = 2
 		if !strings.Contains(got, want) {
 			t.Errorf("CallTool(%s, %v) = %v, want containing %q", tool, args, got, want)
 		}
+	}
+}
+
+func TestMCPCommandLogging(t *testing.T) {
+	// Test that logging flags for headless MCP subcommand work as intended.
+	testenv.NeedsExec(t) // stdio transport uses execve(2)
+
+	tests := []struct {
+		logFile  string // also the subtest name
+		trace    bool
+		want     string
+		dontWant string
+	}{
+		{"notrace.log", false, "stdin", "initialized"},
+		{"trace.log", true, "initialized", ""},
+	}
+
+	dir := t.TempDir()
+	for _, test := range tests {
+		t.Run(test.logFile, func(t *testing.T) {
+			tree := writeTree(t, `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a.go --
+package p
+`)
+
+			logFile := filepath.Join(dir, test.logFile)
+			args := []string{"mcp", "-logfile", logFile}
+			if test.trace {
+				args = append(args, "-rpc.trace")
+			}
+			goplsCmd := exec.Command(os.Args[0], args...)
+			goplsCmd.Env = append(os.Environ(), "ENTRYPOINT=goplsMain")
+			goplsCmd.Dir = tree
+
+			ctx := t.Context()
+			client := mcp.NewClient("client", "v0.0.1", nil)
+			mcpSession, err := client.Connect(ctx, mcp.NewCommandTransport(goplsCmd))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := mcpSession.Close(); err != nil {
+				t.Errorf("closing MCP connection: %v", err)
+			}
+			logs, err := os.ReadFile(logFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.want != "" && !bytes.Contains(logs, []byte(test.want)) {
+				t.Errorf("logs do not contain expected %q", test.want)
+			}
+			if test.dontWant != "" && bytes.Contains(logs, []byte(test.dontWant)) {
+				t.Errorf("logs contain unexpected %q", test.dontWant)
+			}
+			if t.Failed() {
+				t.Logf("Logs:\n%s", string(logs))
+			}
+		})
 	}
 }
 

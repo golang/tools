@@ -11,3 +11,7 @@ Examples:
   $ gopls mcp  //start over stdio
   -listen=string
     	the address on which to run the mcp server
+  -logfile=string
+    	filename to log to; if unset, logs to stderr
+  -rpc.trace
+    	print MCP rpc traces; cannot be used with -listen
