@@ -32,6 +32,6 @@ package b
 
 -- @workspace --
 The `$WORKDIR` directory is in the go workspace defined by `$WORKDIR/go.work`, with the following main modules:
-	$WORKDIR/a/go.mod
-	$WORKDIR/b/go.mod
+	$WORKDIR/a/go.mod (module example.com/a)
+	$WORKDIR/b/go.mod (module example.com/b)
 

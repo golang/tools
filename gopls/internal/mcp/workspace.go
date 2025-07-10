@@ -8,11 +8,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"slices"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/immutable"
 	"golang.org/x/tools/internal/mcp"
 )
@@ -60,15 +62,11 @@ func (h *handler) workspaceHandler(ctx context.Context, _ *mcp.ServerSession, _ 
 
 		case cache.GoModView:
 			fmt.Fprintf(&summary, "The `%s` directory uses Go modules, with the following main modules:\n", dir)
-			for _, m := range v.ModFiles() {
-				fmt.Fprintf(&summary, "\t%s\n", m.Path())
-			}
+			summarizeModFiles(ctx, &summary, snapshot)
 
 		case cache.GoWorkView:
 			fmt.Fprintf(&summary, "The `%s` directory is in the go workspace defined by `%s`, with the following main modules:\n", dir, v.GoWork().Path())
-			for _, m := range v.ModFiles() {
-				fmt.Fprintf(&summary, "\t%s\n", m.Path())
-			}
+			summarizeModFiles(ctx, &summary, snapshot)
 
 		case cache.AdHocView:
 			fmt.Fprintf(&summary, "The `%s` directory is an ad-hoc Go package, not in a Go module.\n", dir)
@@ -83,6 +81,33 @@ func (h *handler) workspaceHandler(ctx context.Context, _ *mcp.ServerSession, _ 
 		}
 	}
 	return textResult(summary.String()), nil
+}
+
+func summarizeModFiles(ctx context.Context, w io.Writer, snapshot *cache.Snapshot) {
+	v := snapshot.View()
+	for _, m := range v.ModFiles() {
+		if modPath, err := modulePath(ctx, snapshot, m); err != nil {
+			// Fall back on just the go.mod file.
+			fmt.Fprintf(w, "\t%s\n", m.Path())
+		} else {
+			fmt.Fprintf(w, "\t%s (module %s)\n", m.Path(), modPath)
+		}
+	}
+}
+
+func modulePath(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (string, error) {
+	fh, err := snapshot.ReadFile(ctx, uri)
+	if err != nil {
+		return "", fmt.Errorf("Reading %s: %v", uri, err)
+	}
+	pmf, err := snapshot.ParseMod(ctx, fh)
+	if err != nil {
+		return "", fmt.Errorf("parsing modfile: %v", err)
+	}
+	if pmf.File == nil || pmf.File.Module == nil {
+		return "", fmt.Errorf("malformed modfile")
+	}
+	return pmf.File.Module.Mod.Path, nil
 }
 
 func packageSummaries(snapshot *cache.Snapshot, pkgs immutable.Map[cache.PackageID, cache.PackagePath]) []string {
