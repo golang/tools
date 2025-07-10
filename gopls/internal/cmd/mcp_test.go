@@ -231,7 +231,7 @@ func MyFun() {}
 	}()
 
 	var (
-		tool = "go_file_metadata"
+		tool = "go_file_context"
 		args = map[string]any{"file": filepath.Join(tree, "a.go")}
 	)
 	res, err := mcpSession.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})

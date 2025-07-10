@@ -1,4 +1,4 @@
-This test exercises the "go_package_outline" MCP tool.
+This test exercises the "go_package_api" MCP tool.
 
 -- flags --
 -mcp
@@ -6,7 +6,7 @@ This test exercises the "go_package_outline" MCP tool.
 -- go.mod --
 module example.com/mod
 
-//@mcptool("go_package_outline", `{"PackagePaths":["example.com/mod/lib"]}`, output=outline)
+//@mcptool("go_package_api", `{"PackagePaths":["example.com/mod/lib"]}`, output=outline)
 
 go 1.21
 

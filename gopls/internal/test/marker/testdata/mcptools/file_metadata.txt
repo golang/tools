@@ -3,6 +3,12 @@ This test exercises the "go_file_metadata" MCP tool.
 -- flags --
 -mcp
 
+-- settings.json --
+{
+    "mcpTools": {
+        "go_file_metadata": true
+    }
+}
 -- go.mod --
 module example.com/cmd
 

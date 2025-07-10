@@ -66,7 +66,7 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 	{
 		fmt.Fprintf(&result, "%s (current file):\n", pgf.URI.Base())
 		result.WriteString("```go\n")
-		if err := writeFileSummary(ctx, snapshot, pgf.URI, &result, false); err != nil {
+		if err := writeFileSummary(ctx, snapshot, pgf.URI, &result, false, nil); err != nil {
 			return nil, err
 		}
 		result.WriteString("```\n\n")
@@ -81,7 +81,7 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 
 			fmt.Fprintf(&result, "%s:\n", file.URI.Base())
 			result.WriteString("```go\n")
-			if err := writeFileSummary(ctx, snapshot, file.URI, &result, false); err != nil {
+			if err := writeFileSummary(ctx, snapshot, file.URI, &result, false, nil); err != nil {
 				return nil, err
 			}
 			result.WriteString("```\n\n")
@@ -153,7 +153,7 @@ func summarizePackage(ctx context.Context, snapshot *cache.Snapshot, md *metadat
 	for _, f := range md.CompiledGoFiles {
 		fmt.Fprintf(&buf, "%s:\n", f.Base())
 		buf.WriteString("```go\n")
-		if err := writeFileSummary(ctx, snapshot, f, &buf, true); err != nil {
+		if err := writeFileSummary(ctx, snapshot, f, &buf, true, nil); err != nil {
 			return "" // ignore error
 		}
 		buf.WriteString("```\n\n")
@@ -163,7 +163,7 @@ func summarizePackage(ctx context.Context, snapshot *cache.Snapshot, md *metadat
 
 // writeFileSummary writes the file summary to the string builder based on
 // the input file URI.
-func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.DocumentURI, out *strings.Builder, onlyExported bool) error {
+func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.DocumentURI, out *strings.Builder, onlyExported bool, declsToSummarize map[string]bool) error {
 	fh, err := snapshot.ReadFile(ctx, f)
 	if err != nil {
 		return err
@@ -173,52 +173,60 @@ func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.
 		return err
 	}
 
-	// Copy everything before the first non-import declaration:
-	// package decl, imports decl(s), and all comments (excluding copyright).
-	{
-		endPos := pgf.File.FileEnd
+	// If we're summarizing specific declarations, we don't need to copy the header.
+	if declsToSummarize == nil {
+		// Copy everything before the first non-import declaration:
+		// package decl, imports decl(s), and all comments (excluding copyright).
+		{
+			endPos := pgf.File.FileEnd
 
-	outerloop:
-		for _, decl := range pgf.File.Decls {
-			switch decl := decl.(type) {
-			case *ast.FuncDecl:
-				if decl.Doc != nil {
-					endPos = decl.Doc.Pos()
-				} else {
-					endPos = decl.Pos()
+		outerloop:
+			for _, decl := range pgf.File.Decls {
+				switch decl := decl.(type) {
+				case *ast.FuncDecl:
+					if decl.Doc != nil {
+						endPos = decl.Doc.Pos()
+					} else {
+						endPos = decl.Pos()
+					}
+					break outerloop
+				case *ast.GenDecl:
+					if decl.Tok == token.IMPORT {
+						continue
+					}
+					if decl.Doc != nil {
+						endPos = decl.Doc.Pos()
+					} else {
+						endPos = decl.Pos()
+					}
+					break outerloop
 				}
-				break outerloop
-			case *ast.GenDecl:
-				if decl.Tok == token.IMPORT {
-					continue
-				}
-				if decl.Doc != nil {
-					endPos = decl.Doc.Pos()
-				} else {
-					endPos = decl.Pos()
-				}
-				break outerloop
 			}
-		}
 
-		startPos := pgf.File.FileStart
-		if copyright := golang.CopyrightComment(pgf.File); copyright != nil {
-			startPos = copyright.End()
-		}
+			startPos := pgf.File.FileStart
+			if copyright := golang.CopyrightComment(pgf.File); copyright != nil {
+				startPos = copyright.End()
+			}
 
-		text, err := pgf.PosText(startPos, endPos)
-		if err != nil {
-			return err
-		}
+			text, err := pgf.PosText(startPos, endPos)
+			if err != nil {
+				return err
+			}
 
-		out.Write(bytes.TrimSpace(text))
-		out.WriteString("\n\n")
+			out.Write(bytes.TrimSpace(text))
+			out.WriteString("\n\n")
+		}
 	}
 
 	// Write func decl and gen decl.
 	for _, decl := range pgf.File.Decls {
 		switch decl := decl.(type) {
 		case *ast.FuncDecl:
+			if declsToSummarize != nil {
+				if _, ok := declsToSummarize[decl.Name.Name]; !ok {
+					continue
+				}
+			}
 			if onlyExported {
 				if !decl.Name.IsExported() {
 					continue
@@ -249,6 +257,28 @@ func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.
 		case *ast.GenDecl:
 			if decl.Tok == token.IMPORT {
 				continue
+			}
+
+			// If we are summarizing specific decls, check if any of them are in this GenDecl.
+			if declsToSummarize != nil {
+				found := false
+				for _, spec := range decl.Specs {
+					switch spec := spec.(type) {
+					case *ast.TypeSpec:
+						if _, ok := declsToSummarize[spec.Name.Name]; ok {
+							found = true
+						}
+					case *ast.ValueSpec:
+						for _, name := range spec.Names {
+							if _, ok := declsToSummarize[name.Name]; ok {
+								found = true
+							}
+						}
+					}
+				}
+				if !found {
+					continue
+				}
 			}
 
 			// Dump the entire GenDecl (exported or unexported)
@@ -301,6 +331,11 @@ func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.
 
 				switch spec := spec.(type) {
 				case *ast.TypeSpec:
+					if declsToSummarize != nil {
+						if _, ok := declsToSummarize[spec.Name.Name]; !ok {
+							continue
+						}
+					}
 					// TODO(hxjiang): only keep the exported field of
 					// struct spec and exported method of interface spec.
 					if !spec.Name.IsExported() {
@@ -323,6 +358,17 @@ func writeFileSummary(ctx context.Context, snapshot *cache.Snapshot, f protocol.
 					}
 
 				case *ast.ValueSpec:
+					if declsToSummarize != nil {
+						found := false
+						for _, name := range spec.Names {
+							if _, ok := declsToSummarize[name.Name]; ok {
+								found = true
+							}
+						}
+						if !found {
+							continue
+						}
+					}
 					// TODO(hxjiang): only keep the exported identifier.
 					if !slices.ContainsFunc(spec.Names, (*ast.Ident).IsExported) {
 						continue

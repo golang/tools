@@ -161,13 +161,15 @@ func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
 
 	defaultTools := []*mcp.ServerTool{
 		h.workspaceTool(),
-		h.fileMetadataTool(),
 		h.outlineTool(),
 		h.workspaceDiagnosticsTool(),
 		h.symbolReferencesTool(),
 		h.searchTool(),
+		h.fileContextTool(),
 	}
 	disabledTools := append(defaultTools,
+		// The fileMetadata tool is redundant with fileContext.
+		h.fileMetadataTool(),
 		// The context tool returns context for all imports, which can consume a
 		// lot of tokens. Conservatively, rely on the model selecting the imports
 		// to summarize using the outline tool.

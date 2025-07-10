@@ -19,7 +19,7 @@ type outlineParams struct {
 
 func (h *handler) outlineTool() *mcp.ServerTool {
 	return mcp.NewServerTool(
-		"go_package_outline",
+		"go_package_api",
 		"Provides a summary of a Go package API",
 		h.outlineHandler,
 		mcp.Input(
