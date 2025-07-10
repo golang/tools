@@ -18,6 +18,12 @@ import (
 )
 
 func TestFileWatcher(t *testing.T) {
+	switch runtime.GOOS {
+	case "darwin", "linux", "windows":
+	default:
+		t.Skip("unsupported OS")
+	}
+
 	testCases := []struct {
 		name           string
 		goos           []string // if not empty, only run in these OS.
