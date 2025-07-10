@@ -49,6 +49,7 @@ To get started with `gopls`, install an LSP plugin in your editor of choice.
 * [Sublime Text](editor/sublime.md)
 * [VS Code](https://github.com/golang/vscode-go/blob/master/README.md)
 * [Vim or Neovim](editor/vim.md)
+* [Zed](editor/zed.md)
 
 If you use `gopls` with an editor that is not on this list, please send us a CL
 [updating this documentation](contributing.md).
