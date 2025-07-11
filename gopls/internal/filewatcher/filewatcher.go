@@ -30,9 +30,9 @@ type Watcher struct {
 
 	mu sync.Mutex // guards all fields below
 
-	// watchedDirs keeps track of which directories are being watched by the
-	// watcher, explicitly added via [fsnotify.Watcher.Add].
-	watchedDirs map[string]bool
+	// knownDirs tracks all known directories to help distinguish between file
+	// and directory deletion events.
+	knownDirs map[string]bool
 
 	// events is the current batch of unsent file events, which will be sent
 	// when the timer expires.
@@ -51,10 +51,10 @@ func New(delay time.Duration, logger *slog.Logger, handler func([]protocol.FileE
 		return nil, err
 	}
 	w := &Watcher{
-		logger:      logger,
-		watcher:     watcher,
-		watchedDirs: make(map[string]bool),
-		stop:        make(chan struct{}),
+		logger:    logger,
+		watcher:   watcher,
+		knownDirs: make(map[string]bool),
+		stop:      make(chan struct{}),
 	}
 
 	w.wg.Add(1)
@@ -134,6 +134,7 @@ func (w *Watcher) WatchDir(path string) error {
 			if skipDir(d.Name()) {
 				return filepath.SkipDir
 			}
+			w.addKnownDir(path)
 			if err := w.watchDir(path); err != nil {
 				// TODO(hxjiang): retry on watch failures.
 				return filepath.SkipDir
@@ -143,9 +144,11 @@ func (w *Watcher) WatchDir(path string) error {
 	})
 }
 
-// handleEvent converts a single [fsnotify.Event] to the corresponding
-// [protocol.FileEvent] and updates the watcher state.
-// Returns nil if the input event is not relevant.
+// handleEvent converts an [fsnotify.Event] to the corresponding [protocol.FileEvent]
+// and updates the watcher state, returning nil if the event is not relevant.
+//
+// To avoid blocking, any required watches for new subdirectories are registered
+// asynchronously in a separate goroutine.
 func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 	// fsnotify does not guarantee clean filepaths.
 	path := filepath.Clean(event.Name)
@@ -157,7 +160,7 @@ func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 		// Upon deletion, the file/dir has been removed. fsnotify
 		// does not provide information regarding the deleted item.
 		// Use the watchedDirs to determine whether it's a dir.
-		isDir = w.isDir(path)
+		isDir = w.isKnownDir(path)
 	} else {
 		// If statting failed, something is wrong with the file system.
 		// Log and move on.
@@ -180,7 +183,10 @@ func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 			// directory is watched.
 			fallthrough
 		case event.Op.Has(fsnotify.Remove):
-			w.unwatchDir(path)
+			// Upon removal, we only need to remove the entries from the map.
+			// The [fsnotify.Watcher] remove the watch for us.
+			// fsnotify/fsnotify#268
+			w.removeKnownDir(path)
 
 			// TODO(hxjiang): Directory removal events from some LSP clients may
 			// not include corresponding removal events for child files and
@@ -191,8 +197,13 @@ func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 				Type: protocol.Deleted,
 			}
 		case event.Op.Has(fsnotify.Create):
+			w.addKnownDir(path)
+
+			// This watch is added asynchronously to prevent a potential deadlock
+			// on Windows. The fsnotify library can block when registering a watch
+			// if its event channel is full (see fsnotify/fsnotify#502).
 			// TODO(hxjiang): retry on watch failure.
-			_ = w.watchDir(path)
+			go w.watchDir(path)
 
 			return &protocol.FileEvent{
 				URI:  protocol.URIFromPath(path),
@@ -233,35 +244,32 @@ func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 	}
 }
 
+// watchDir register the watch for the input dir. This function may be blocking
+// because of the issue fsnotify/fsnotify#502.
 func (w *Watcher) watchDir(path string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	// Dir with broken symbolic link can not be watched.
 	// TODO(hxjiang): is it possible the files/dirs are
 	// created before the watch is successfully registered.
-	if err := w.watcher.Add(path); err != nil {
-		return err
-	}
-	w.watchedDirs[path] = true
-	return nil
+	return w.watcher.Add(path)
 }
 
-func (w *Watcher) unwatchDir(path string) {
+func (w *Watcher) addKnownDir(path string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.knownDirs[path] = true
+}
+
+func (w *Watcher) removeKnownDir(path string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.knownDirs, path)
+}
+
+func (w *Watcher) isKnownDir(path string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// Upon removal, we only need to remove the entries from the map.
-	// The [fsnotify.Watcher] remove the watch for us.
-	// fsnotify/fsnotify#268
-	delete(w.watchedDirs, path)
-}
-
-func (w *Watcher) isDir(path string) bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	_, isDir := w.watchedDirs[path]
+	_, isDir := w.knownDirs[path]
 	return isDir
 }
 
@@ -298,6 +306,7 @@ func (w *Watcher) sendEvents(handler func([]protocol.FileEvent, error)) {
 // and returns any final error.
 func (w *Watcher) Close() error {
 	err := w.watcher.Close()
+
 	// Wait for the go routine to finish. So all the channels will be closed and
 	// all go routine will be terminated.
 	close(w.stop)
