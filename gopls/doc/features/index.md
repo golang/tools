@@ -64,6 +64,7 @@ when making significant changes to existing features or when adding new ones.
   - [go.mod and go.work files](modfiles.md): Go module and workspace manifests
   - [Go *.s assembly files](assembly.md): Go assembly files
 - [Command-line interface](../command-line.md): CLI for debugging and scripting (unstable)
+- [Model Context Protocol](mcp.md): use some features in AI-assisted environments
 
 You can find this page from within your editor by executing the
 `gopls.doc.features` [code action](transformation.md#code-actions),

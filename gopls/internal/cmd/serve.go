@@ -41,7 +41,7 @@ type Serve struct {
 	RemoteLogfile       string        `flag:"remote.logfile" help:"when used with -remote=auto, the -logfile value used to start the daemon"`
 
 	// MCP Server related configurations.
-	MCPAddress string `flag:"mcp-listen" help:"experimental: address on which to listen for model context protocol connections. If port is localhost:0, pick a random port in localhost instead."`
+	MCPAddress string `flag:"mcp.listen" help:"experimental: address on which to listen for model context protocol connections. If port is localhost:0, pick a random port in localhost instead."`
 
 	app *Application
 }

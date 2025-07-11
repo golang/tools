@@ -25,7 +25,7 @@ import (
 )
 
 //go:embed instructions.md
-var instructions string
+var Instructions string
 
 // A handler implements various MCP tools for an LSP session.
 type handler struct {
@@ -156,7 +156,7 @@ func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
 		lspServer: lspServer,
 	}
 	mcpServer := mcp.NewServer("gopls", "v0.1.0", &mcp.ServerOptions{
-		Instructions: instructions,
+		Instructions: Instructions,
 	})
 
 	defaultTools := []*mcp.ServerTool{

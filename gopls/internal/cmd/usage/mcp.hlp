@@ -9,6 +9,8 @@ Starts the server over stdio or sse with http, depending on whether the listen f
 Examples:
   $ gopls mcp -listen=localhost:3000
   $ gopls mcp  //start over stdio
+  -instructions
+    	if set, print gopls' MCP instructions and exit
   -listen=string
     	the address on which to run the mcp server
   -logfile=string

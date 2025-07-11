@@ -23,9 +23,10 @@ import (
 type headlessMCP struct {
 	app *Application
 
-	Address  string `flag:"listen" help:"the address on which to run the mcp server"`
-	Logfile  string `flag:"logfile" help:"filename to log to; if unset, logs to stderr"`
-	RPCTrace bool   `flag:"rpc.trace" help:"print MCP rpc traces; cannot be used with -listen"`
+	Address      string `flag:"listen" help:"the address on which to run the mcp server"`
+	Logfile      string `flag:"logfile" help:"filename to log to; if unset, logs to stderr"`
+	RPCTrace     bool   `flag:"rpc.trace" help:"print MCP rpc traces; cannot be used with -listen"`
+	Instructions bool   `flag:"instructions" help:"if set, print gopls' MCP instructions and exit"`
 }
 
 func (m *headlessMCP) Name() string      { return "mcp" }
@@ -46,6 +47,10 @@ Examples:
 }
 
 func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
+	if m.Instructions {
+		fmt.Println(mcp.Instructions)
+		return nil
+	}
 	if m.Address != "" && m.RPCTrace {
 		// There's currently no way to plumb logging instrumentation into the SSE
 		// transport that is created on connections to the HTTP handler, so we must

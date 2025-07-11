@@ -16,7 +16,7 @@ server-flags:
     	when used with -listen, shut down the server when there are no connected clients for this duration
   -logfile=string
     	filename to log to. if value is "auto", then logging to a default output file is enabled
-  -mcp-listen=string
+  -mcp.listen=string
     	experimental: address on which to listen for model context protocol connections. If port is localhost:0, pick a random port in localhost instead.
   -mode=string
     	no effect
