@@ -36,7 +36,7 @@ The editing workflow is iterative. You should cycle through these steps until th
 2. **Find references**: Before modifying the definition of any symbol, use the `go_symbol_references` tool to find all references to that identifier. This is critical for understanding the impact of your change. Read the files containing references to evaluate if any further edits are required.
    EXAMPLE: `go_symbol_references({"file":"/path/to/server.go","symbol":"Server.Run"})`
 
-3. **Make edits**: Make the primary edit, as well as any edits to references you identified in the previous step.
+3. **Make edits**: Make the required edits, including edits to references you identified in the previous step. Don't proceed to the next step until all planned edits are complete.
 
 4. **Check for errors**: After every code modification, you MUST call the `go_diagnostics` tool. Pass the paths of the files you have edited. This tool will report any build or analysis errors.
    EXAMPLE: `go_diagnostics({"files":["/path/to/server.go"]})`
