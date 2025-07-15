@@ -5,6 +5,7 @@
 package filewatcher
 
 import (
+	"errors"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -17,6 +18,9 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
+// ErrClosed is used when trying to operate on a closed Watcher.
+var ErrClosed = errors.New("file watcher: watcher already closed")
+
 // Watcher collects events from a [fsnotify.Watcher] and converts them into
 // batched LSP [protocol.FileEvent]s.
 type Watcher struct {
@@ -24,15 +28,23 @@ type Watcher struct {
 
 	stop chan struct{} // closed by Close to terminate run loop
 
-	wg sync.WaitGroup // counts number of active run goroutines (max 1)
+	// errs is an internal channel for surfacing errors from the file watcher,
+	// distinct from the fsnotify watcher's error channel.
+	errs chan error
+
+	// watchers counts the number of active watch registration goroutines,
+	// including their error handling.
+	watchers sync.WaitGroup
+	runners  sync.WaitGroup // counts the number of active run goroutines (max 1)
 
 	watcher *fsnotify.Watcher
 
 	mu sync.Mutex // guards all fields below
 
-	// knownDirs tracks all known directories to help distinguish between file
-	// and directory deletion events.
-	knownDirs map[string]bool
+	// dirCancel maps a directory path to its cancellation channel.
+	// A nil map indicates the watcher is closing and prevents new directory
+	// watch registrations.
+	dirCancel map[string]chan struct{}
 
 	// events is the current batch of unsent file events, which will be sent
 	// when the timer expires.
@@ -53,11 +65,12 @@ func New(delay time.Duration, logger *slog.Logger, handler func([]protocol.FileE
 	w := &Watcher{
 		logger:    logger,
 		watcher:   watcher,
-		knownDirs: make(map[string]bool),
+		dirCancel: make(map[string]chan struct{}),
+		errs:      make(chan error),
 		stop:      make(chan struct{}),
 	}
 
-	w.wg.Add(1)
+	w.runners.Add(1)
 	go w.run(delay, handler)
 
 	return w, nil
@@ -66,7 +79,7 @@ func New(delay time.Duration, logger *slog.Logger, handler func([]protocol.FileE
 // run is the main event-handling loop for the watcher. It should be run in a
 // separate goroutine.
 func (w *Watcher) run(delay time.Duration, handler func([]protocol.FileEvent, error)) {
-	defer w.wg.Done()
+	defer w.runners.Done()
 
 	// timer is used to debounce events.
 	timer := time.NewTimer(delay)
@@ -78,13 +91,23 @@ func (w *Watcher) run(delay time.Duration, handler func([]protocol.FileEvent, er
 			return
 
 		case <-timer.C:
-			w.sendEvents(handler)
+			if events := w.drainEvents(); len(events) > 0 {
+				handler(events, nil)
+			}
 			timer.Reset(delay)
 
 		case err, ok := <-w.watcher.Errors:
 			// When the watcher is closed, its Errors channel is closed, which
 			// unblocks this case. We continue to the next loop iteration,
-			// allowing the <-w.closed case to handle the shutdown.
+			// allowing the <-w.stop case to handle the shutdown.
+			if !ok {
+				continue
+			}
+			if err != nil {
+				handler(nil, err)
+			}
+
+		case err, ok := <-w.errs:
 			if !ok {
 				continue
 			}
@@ -96,10 +119,9 @@ func (w *Watcher) run(delay time.Duration, handler func([]protocol.FileEvent, er
 			if !ok {
 				continue
 			}
-			// file watcher should not handle the fsnotify.Event concurrently,
-			// the original order should be preserved. E.g. if a file get
-			// deleted and recreated, running concurrently may result it in
-			// reverse order.
+			// fsnotify.Event should not be handled concurrently, to preserve their
+			// original order. For example, if a file is deleted and recreated,
+			// concurrent handling could process the events in reverse order.
 			//
 			// Only reset the timer if a relevant event happened.
 			// https://github.com/fsnotify/fsnotify?tab=readme-ov-file#why-do-i-get-many-chmod-events
@@ -134,10 +156,17 @@ func (w *Watcher) WatchDir(path string) error {
 			if skipDir(d.Name()) {
 				return filepath.SkipDir
 			}
-			w.addKnownDir(path)
-			if err := w.watchDir(path); err != nil {
-				// TODO(hxjiang): retry on watch failures.
-				return filepath.SkipDir
+
+			done := w.addWatchHandle(path)
+			if done == nil { // file watcher closing
+				return filepath.SkipAll
+			}
+
+			errChan := make(chan error, 1)
+			w.watchDir(path, done, errChan)
+
+			if err := <-errChan; err != nil {
+				return err
 			}
 		}
 		return nil
@@ -159,8 +188,8 @@ func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 	} else if os.IsNotExist(err) {
 		// Upon deletion, the file/dir has been removed. fsnotify
 		// does not provide information regarding the deleted item.
-		// Use the watchedDirs to determine whether it's a dir.
-		isDir = w.isKnownDir(path)
+		// Use watchHandles to determine if the deleted item was a directory.
+		isDir = w.isWatchedDir(path)
 	} else {
 		// If statting failed, something is wrong with the file system.
 		// Log and move on.
@@ -184,26 +213,25 @@ func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 			fallthrough
 		case event.Op.Has(fsnotify.Remove):
 			// Upon removal, we only need to remove the entries from the map.
-			// The [fsnotify.Watcher] remove the watch for us.
+			// The [fsnotify.Watcher] removes the watch for us.
 			// fsnotify/fsnotify#268
-			w.removeKnownDir(path)
+			w.removeWatchHandle(path)
 
 			// TODO(hxjiang): Directory removal events from some LSP clients may
 			// not include corresponding removal events for child files and
-			// subdirectories. Should we do some filtering when add the dir
+			// subdirectories. Should we do some filtering when adding the dir
 			// deletion event to the events slice.
 			return &protocol.FileEvent{
 				URI:  protocol.URIFromPath(path),
 				Type: protocol.Deleted,
 			}
 		case event.Op.Has(fsnotify.Create):
-			w.addKnownDir(path)
-
-			// This watch is added asynchronously to prevent a potential deadlock
-			// on Windows. The fsnotify library can block when registering a watch
-			// if its event channel is full (see fsnotify/fsnotify#502).
-			// TODO(hxjiang): retry on watch failure.
-			go w.watchDir(path)
+			// This watch is added asynchronously to prevent a potential
+			// deadlock on Windows. See fsnotify/fsnotify#502.
+			// Error encountered will be sent to internal error channel.
+			if done := w.addWatchHandle(path); done != nil {
+				go w.watchDir(path, done, w.errs)
+			}
 
 			return &protocol.FileEvent{
 				URI:  protocol.URIFromPath(path),
@@ -244,10 +272,19 @@ func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 	}
 }
 
-// watchDir register the watch for the input dir. This function may be blocking
-// because of the issue fsnotify/fsnotify#502.
-func (w *Watcher) watchDir(path string) error {
-	// Dir with broken symbolic link can not be watched.
+// watchDir registers a watch for a directory, retrying with backoff if it fails.
+// It can be canceled by calling removeWatchHandle. On success or cancellation,
+// nil is sent to 'errChan'; otherwise, the last error after all retries is sent.
+func (w *Watcher) watchDir(path string, done chan struct{}, errChan chan error) {
+	if errChan == nil {
+		panic("input error chan is nil")
+	}
+
+	// On darwin, watching a directory will fail if it contains broken symbolic
+	// links. This state can occur temporarily during operations like a git
+	// branch switch. To handle this, we retry multiple times with exponential
+	// backoff, allowing time for the symbolic link's target to be created.
+
 	// TODO(hxjiang): Address a race condition where file or directory creations
 	// under current directory might be missed between the current directory
 	// creation and the establishment of the file watch.
@@ -256,26 +293,89 @@ func (w *Watcher) watchDir(path string) error {
 	// 1. Retrospectively check for and trigger creation events for any new
 	// files/directories.
 	// 2. Recursively add watches for any newly created subdirectories.
-	return w.watcher.Add(path)
+	var (
+		delay = 500 * time.Millisecond
+		err   error
+	)
+
+	// Watchers wait group becomes done only after errChan send.
+	w.watchers.Add(1)
+	defer func() {
+		errChan <- err
+		w.watchers.Done()
+	}()
+
+	for i := range 5 {
+		if i > 0 {
+			select {
+			case <-time.After(delay):
+				delay *= 2
+			case <-done:
+				return // cancelled
+			}
+		}
+		// This function may block due to fsnotify/fsnotify#502.
+		err := w.watcher.Add(path)
+		if afterAddHook != nil {
+			afterAddHook(path, err)
+		}
+		if err == nil {
+			return
+		}
+	}
 }
 
-func (w *Watcher) addKnownDir(path string) {
+var afterAddHook func(path string, err error)
+
+// addWatchHandle registers a new directory watch.
+// The returned 'done' channel channel should be used to signal cancellation of
+// a pending watch.
+// It returns nil if the watcher is already closing.
+func (w *Watcher) addWatchHandle(path string) chan struct{} {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.knownDirs[path] = true
+
+	if w.dirCancel == nil { // file watcher is closing.
+		return nil
+	}
+
+	done := make(chan struct{})
+	w.dirCancel[path] = done
+	return done
 }
 
-func (w *Watcher) removeKnownDir(path string) {
+// removeWatchHandle removes the handle for a directory watch and cancels any
+// pending watch attempt for that path.
+func (w *Watcher) removeWatchHandle(path string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	delete(w.knownDirs, path)
+
+	if done, ok := w.dirCancel[path]; ok {
+		delete(w.dirCancel, path)
+		close(done)
+	}
 }
 
-func (w *Watcher) isKnownDir(path string) bool {
+// close removes all handles and cancels all pending watch attempt for that path
+// and set dirCancel to nil which prevent any future watch attempts.
+func (w *Watcher) close() {
+	w.mu.Lock()
+	dirCancel := w.dirCancel
+	w.dirCancel = nil
+	w.mu.Unlock()
+
+	for _, ch := range dirCancel {
+		close(ch)
+	}
+}
+
+// isWatchedDir reports whether the given path has a watch handle, meaning it is
+// a directory the watcher is managing.
+func (w *Watcher) isWatchedDir(path string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	_, isDir := w.knownDirs[path]
+	_, isDir := w.dirCancel[path]
 	return isDir
 }
 
@@ -297,27 +397,35 @@ func (w *Watcher) addEvent(event protocol.FileEvent) {
 	}
 }
 
-func (w *Watcher) sendEvents(handler func([]protocol.FileEvent, error)) {
+func (w *Watcher) drainEvents() []protocol.FileEvent {
 	w.mu.Lock()
 	events := w.events
 	w.events = nil
 	w.mu.Unlock()
 
-	if len(events) != 0 {
-		handler(events, nil)
-	}
+	return events
 }
 
 // Close shuts down the watcher, waits for the internal goroutine to terminate,
 // and returns any final error.
 func (w *Watcher) Close() error {
+	// Cancel any ongoing watch registration.
+	w.close()
+
+	// Wait for all watch registration goroutines to finish, including their
+	// error handling. This ensures that:
+	// - All [Watcher.watchDir] goroutines have exited and sent their errors, so
+	//   it is safe to close the internal error channel.
+	// - There are no ongoing [fsnotify.Watcher.Add] calls, so it is safe to
+	//   close the fsnotify watcher (see fsnotify/fsnotify#704).
+	w.watchers.Wait()
+	close(w.errs)
+
 	err := w.watcher.Close()
 
-	// Wait for the go routine to finish. So all the channels will be closed and
-	// all go routine will be terminated.
+	// Wait for the main run loop to terminate.
 	close(w.stop)
-
-	w.wg.Wait()
+	w.runners.Wait()
 
 	return err
 }
