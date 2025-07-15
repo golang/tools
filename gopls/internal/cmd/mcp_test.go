@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -23,6 +24,10 @@ import (
 
 func TestMCPCommandStdio(t *testing.T) {
 	// Test that the headless MCP subcommand works, and recognizes file changes.
+	if !(supportsFsnotify(runtime.GOOS)) {
+		// See golang/go#74580
+		t.Skipf(`skipping on %s; fsnotify is not supported`, runtime.GOOS)
+	}
 	testenv.NeedsExec(t) // stdio transport uses execve(2)
 	tree := writeTree(t, `
 -- go.mod --
@@ -95,6 +100,10 @@ const B = 2
 
 func TestMCPCommandLogging(t *testing.T) {
 	// Test that logging flags for headless MCP subcommand work as intended.
+	if !(supportsFsnotify(runtime.GOOS)) {
+		// See golang/go#74580
+		t.Skipf(`skipping on %s; fsnotify is not supported`, runtime.GOOS)
+	}
 	testenv.NeedsExec(t) // stdio transport uses execve(2)
 
 	tests := []struct {
@@ -155,6 +164,10 @@ package p
 }
 
 func TestMCPCommandHTTP(t *testing.T) {
+	if !(supportsFsnotify(runtime.GOOS)) {
+		// See golang/go#74580
+		t.Skipf(`skipping on %s; fsnotify is not supported`, runtime.GOOS)
+	}
 	testenv.NeedsExec(t)
 	tree := writeTree(t, `
 -- go.mod --
@@ -270,4 +283,9 @@ func getRandomPort() int {
 	}
 	defer listener.Close()
 	return listener.Addr().(*net.TCPAddr).Port
+}
+
+// supportsFsnotify returns true if fsnotify supports the os.
+func supportsFsnotify(os string) bool {
+	return os == "darwin" || os == "linux" || os == "windows"
 }
