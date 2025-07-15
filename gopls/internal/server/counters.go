@@ -35,3 +35,11 @@ var (
 
 	countRename = counter.New("gopls/rename")
 )
+
+// Proposed counters for evaluating gopls refactoring codeactions add struct
+// tags and remove struct tags.
+var (
+	countAddStructTags = counter.New("gopls/structtags:add")
+
+	countRemoveStructTags = counter.New("gopls/structtags:remove")
+)

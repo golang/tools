@@ -1806,8 +1806,13 @@ func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTags
 		}
 		m.Transform = transform
 
+		// Each command involves either adding or removing tags, depending on
+		// whether Add or Clear is set.
 		if args.Add != "" {
+			countAddStructTags.Inc()
 			m.Add = strings.Split(args.Add, ",")
+		} else if args.Clear {
+			countRemoveStructTags.Inc()
 		}
 		if args.AddOptions != "" {
 			if options, err := optionsStringToMap(args.AddOptions); err != nil {
