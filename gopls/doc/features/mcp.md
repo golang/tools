@@ -20,7 +20,7 @@ To use the 'attached' mode, run gopls with the `-mcp.listen` flag. For
 example:
 
 ```
-gopls serve -mcp.listen=localhost:8092`
+gopls serve -mcp.listen=localhost:8092
 ```
 
 This exposes an HTTP based MCP server using the server-sent event transport
@@ -47,7 +47,7 @@ session, to emphasize their importance. The `-instructions` flag causes them to
 be printed, so that you can do, for example:
 
 ```
-gopls mcp -instructions` > /path/to/contextFile.md
+gopls mcp -instructions > /path/to/contextFile.md
 ```
 
 ## Security considerations
