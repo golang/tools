@@ -138,7 +138,7 @@ type builder struct {
 	finished int // finished is the length of the prefix of fns containing built functions.
 
 	// The task of building shared functions within the builder.
-	// Shared functions are ones the the builder may either create or lookup.
+	// Shared functions are ones the builder may either create or lookup.
 	// These may be built by other builders in parallel.
 	// The task is done when the builder has finished iterating, and it
 	// waits for all shared functions to finish building.

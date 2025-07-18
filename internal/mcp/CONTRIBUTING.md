@@ -1,7 +1,7 @@
 # Contributing to the Go MCP SDK
 
 Thank you for your interest in contributing! The Go SDK needs active
-contributions to keep up with changes in the MCP spec, fix bugs, and accomodate
+contributions to keep up with changes in the MCP spec, fix bugs, and accommodate
 new and emerging use-cases. We welcome all forms of contribution, from filing
 and reviewing issues, to contributing fixes, to proposing and implementing new
 features.

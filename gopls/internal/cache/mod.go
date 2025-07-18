@@ -509,7 +509,7 @@ func ResolvedVersion(module *packages.Module) string {
 	return module.Version
 }
 
-// ResolvedPath returns the the module path, which considers replace directive.
+// ResolvedPath returns the module path, which considers replace directive.
 func ResolvedPath(module *packages.Module) string {
 	if module.Replace != nil {
 		return module.Replace.Path

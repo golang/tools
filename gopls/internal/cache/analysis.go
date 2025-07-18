@@ -1064,7 +1064,7 @@ func (act *action) exec(ctx context.Context) (any, *actionSummary, error) {
 		// Read file from snapshot, to ensure reads are consistent.
 		//
 		// TODO(adonovan): make the dependency analysis sound by
-		// incorporating these additional files into the the analysis
+		// incorporating these additional files into the analysis
 		// hash. This requires either (a) preemptively reading and
 		// hashing a potentially large number of mostly irrelevant
 		// files; or (b) some kind of dynamic dependency discovery

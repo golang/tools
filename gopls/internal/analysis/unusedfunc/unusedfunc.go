@@ -52,7 +52,7 @@ import (
 //
 // Types (sans methods), constants, and vars are more straightforward.
 // For now we ignore enums (const decls using iota) since it is
-// commmon for at least some values to be unused when they are added
+// common for at least some values to be unused when they are added
 // for symmetry, future use, or to conform to some external pattern.
 
 //go:embed doc.go

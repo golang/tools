@@ -299,7 +299,7 @@ type fetchVulncheckResult struct {
 // testFetchVulncheckResult checks that calling gopls.fetch_vulncheck_result
 // returns the expected summarized results contained in the want argument.
 //
-// If fromRun is non-nil, is is the result of running running vulncheck for
+// If fromRun is non-nil, it is the result of running running vulncheck for
 // runPath, and testFetchVulncheckResult also checks that the fetched result
 // for runPath matches fromRun.
 //

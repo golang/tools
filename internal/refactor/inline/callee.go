@@ -539,7 +539,7 @@ func signature(fset *token.FileSet, info *types.Info, decl *ast.FuncDecl) *types
 
 // -- callee helpers --
 
-// analyzeAssignment looks at the the given stack, and analyzes certain
+// analyzeAssignment looks at the given stack, and analyzes certain
 // attributes of the innermost expression.
 //
 // In all cases we 'fail closed' when we cannot detect (or for simplicity

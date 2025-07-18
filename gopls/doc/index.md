@@ -67,7 +67,7 @@ ensure that Gopls is updated when a new stable version is released.
 
 After updating, you may need to restart running Gopls processes to
 observe the effect. Each client has its own way to restart the server.
-(On a UNIX machine, you can use the commmand `killall gopls`.)
+(On a UNIX machine, you can use the command `killall gopls`.)
 
 Learn more in the
 [advanced installation instructions](advanced.md#installing-unreleased-versions).

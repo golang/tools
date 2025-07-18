@@ -709,7 +709,7 @@ func (c *commandHandler) Doc(ctx context.Context, args command.DocArgs) (protoco
 		}
 
 		// Compute package path and optional symbol fragment
-		// (e.g. "#Buffer.Len") from the the selection.
+		// (e.g. "#Buffer.Len") from the selection.
 		pkgpath, fragment, _ := golang.DocFragment(pkg, pgf, start, end)
 
 		// Direct the client to open the /pkg page.

@@ -92,7 +92,7 @@ use (
 `
 				got := env.ReadWorkspaceFile("go.work")
 				if diff := compare.Text(want, got); diff != "" {
-					t.Errorf("unexpeced go.work content:\n%s", diff)
+					t.Errorf("unexpected go.work content:\n%s", diff)
 				}
 			})
 		})

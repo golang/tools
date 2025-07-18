@@ -101,7 +101,7 @@ func modLinks(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]
 		}
 
 		mod := req.Mod
-		// respect the repalcement when constructing a module link.
+		// respect the replacement when constructing a module link.
 		if m, ok := pm.ReplaceMap[req.Mod]; ok {
 			// Have: 'replace A v1.2.3 => A vx.x.x' or 'replace A v1.2.3 => B vx.x.x'.
 			mod = m

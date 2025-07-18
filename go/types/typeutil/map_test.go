@@ -214,7 +214,7 @@ func Fb1[P any](x *P) {
 func Fb2[Q any](x *Q) {
 }
 
-// G1 and G2 are mutally recursive, and have identical methods.
+// G1 and G2 are mutually recursive, and have identical methods.
 type G1[P any] struct{
 	Field *G2[P]
 }

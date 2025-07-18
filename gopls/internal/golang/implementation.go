@@ -372,7 +372,7 @@ func implementsObj(info *types.Info, file *ast.File, pos token.Pos) (types.Objec
 // a function body. The global search index excludes such types
 // because reliably naming such types is hard.)
 //
-// Results are reported via the the yield function.
+// Results are reported via the yield function.
 func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, id *ast.Ident, rel methodsets.TypeRelation, yield implYieldFunc) error {
 	queryType, queryMethod := typeOrMethod(pkg.TypesInfo().Defs[id])
 	if queryType == nil {

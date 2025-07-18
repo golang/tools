@@ -2589,7 +2589,7 @@ func inferExpectedResultTypes(c *completer, callNodeIdx int) []types.Type {
 	var expectedResults []types.Type
 
 	// Check the parents of the call node to extract the expected result types of the call signature.
-	// Currently reverse inferences are only supported with the the following parent expressions,
+	// Currently reverse inferences are only supported with the following parent expressions,
 	// however this list isn't exhaustive.
 	switch node := c.path[callNodeIdx+1].(type) {
 	case *ast.KeyValueExpr:
@@ -2671,7 +2671,7 @@ func expectedValueSpecType(pkg *cache.Package, node *ast.ValueSpec, pos token.Po
 }
 
 // expectedAssignStmtTypes analyzes the provided assignStmt, and checks
-// to see if the provided pos is within a RHS expresison. If so, it report
+// to see if the provided pos is within a RHS expression. If so, it report
 // the expected type of that expression, and the LHS type(s) to which it
 // is being assigned.
 func expectedAssignStmtTypes(pkg *cache.Package, node *ast.AssignStmt, pos token.Pos) (objType types.Type, assignees []types.Type) {
