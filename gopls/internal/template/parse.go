@@ -10,20 +10,16 @@ package template
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"log"
 	"regexp"
-	"runtime"
 	"sort"
 	"text/template"
 	"text/template/parse"
-	"unicode/utf8"
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/event"
 )
 
 var (
@@ -32,11 +28,11 @@ var (
 )
 
 type parsed struct {
-	buf    []byte   //contents
-	lines  [][]byte // needed?, other than for debugging?
-	elided []int    // offsets where Left was replaced by blanks
+	buf    []byte // contents
+	mapper *protocol.Mapper
+	elided []int // offsets where lbraces was replaced by blanks
 
-	// tokens are matched Left-Right pairs, computed before trying to parse
+	// tokens are matched lbraces-rbraces pairs, computed before trying to parse
 	tokens []token
 
 	// result of parsing
@@ -44,19 +40,11 @@ type parsed struct {
 	parseErr error
 	symbols  []symbol
 	stack    []parse.Node // used while computing symbols
-
-	// for mapping from offsets in buf to LSP coordinates
-	// See FromPosition() and LineCol()
-	nls      []int // offset of newlines before each line (nls[0]==-1)
-	lastnl   int   // last line seen
-	check    int   // used to decide whether to use lastnl or search through nls
-	nonASCII bool  // are there any non-ascii runes in buf?
 }
 
-// token is a single {{...}}. More precisely, Left...Right
+// A token is a single {{...}}.
 type token struct {
-	start, end int // offset from start of template
-	multiline  bool
+	start, end int // 0-based byte offset from start of template
 }
 
 // set contains the Parse of all the template files
@@ -70,43 +58,27 @@ type set struct {
 // TODO(adonovan): why doesn't parseSet return an error?
 func parseSet(tmpls map[protocol.DocumentURI]file.Handle) *set {
 	all := make(map[protocol.DocumentURI]*parsed)
-	for k, v := range tmpls {
-		buf, err := v.Content()
-		if err != nil { // PJW: decide what to do with these errors
-			log.Printf("failed to read %s (%v)", v.URI().Path(), err)
+	for uri, fh := range tmpls {
+		buf, err := fh.Content()
+		if err != nil {
+			// TODO(pjw): decide what to do with these errors
+			log.Printf("failed to read %s (%v)", fh.URI().Path(), err)
 			continue
 		}
-		all[k] = parseBuffer(buf)
+		all[uri] = parseBuffer(uri, buf)
 	}
 	return &set{files: all}
 }
 
-func parseBuffer(buf []byte) *parsed {
+func parseBuffer(uri protocol.DocumentURI, buf []byte) *parsed {
 	ans := &parsed{
-		buf:   buf,
-		check: -1,
-		nls:   []int{-1},
+		buf:    buf,
+		mapper: protocol.NewMapper(uri, buf),
 	}
 	if len(buf) == 0 {
 		return ans
 	}
-	// how to compute allAscii...
-	for _, b := range buf {
-		if b >= utf8.RuneSelf {
-			ans.nonASCII = true
-			break
-		}
-	}
-	if buf[len(buf)-1] != '\n' {
-		ans.buf = append(buf, '\n')
-	}
-	for i, p := range ans.buf {
-		if p == '\n' {
-			ans.nls = append(ans.nls, i)
-		}
-	}
 	ans.setTokens() // ans.buf may be a new []byte
-	ans.lines = bytes.Split(ans.buf, []byte{'\n'})
 	t, err := template.New("").Parse(string(ans.buf))
 	if err != nil {
 		funcs := make(template.FuncMap)
@@ -132,7 +104,7 @@ func parseBuffer(buf []byte) *parsed {
 		if t.Name() != "" {
 			// defining a template. The pos is just after {{define...}} (or {{block...}}?)
 			at, sz := ans.findLiteralBefore(int(t.Root.Pos))
-			s := symbol{start: at, length: sz, name: t.Name(), kind: protocol.Namespace, vardef: true}
+			s := symbol{start: at, len: sz, name: t.Name(), kind: protocol.Namespace, vardef: true}
 			ans.symbols = append(ans.symbols, s)
 		}
 	}
@@ -151,8 +123,7 @@ func parseBuffer(buf []byte) *parsed {
 }
 
 // findLiteralBefore locates the first preceding string literal
-// returning its position and length in buf
-// or returns -1 if there is none.
+// returning its offset and length in buf or (-1, 0) if there is none.
 // Assume double-quoted string rather than backquoted string for now.
 func (p *parsed) findLiteralBefore(pos int) (int, int) {
 	left, right := -1, -1
@@ -211,15 +182,11 @@ func (p *parsed) setTokens() {
 			}
 			if bytes.HasPrefix(p.buf[n:], rbraces) {
 				right := n + len(rbraces)
-				tok := token{
-					start:     left,
-					end:       right,
-					multiline: bytes.Contains(p.buf[left:right], []byte{'\n'}),
-				}
+				tok := token{start: left, end: right}
 				p.tokens = append(p.tokens, tok)
 				state = Start
 			}
-			// If we see (unquoted) Left then the original left is probably the user
+			// If we see (unquoted) lbraces then the original left is probably the user
 			// typing. Suppress the original left
 			if bytes.HasPrefix(p.buf[n:], lbraces) {
 				p.elideAt(left)
@@ -236,7 +203,7 @@ func (p *parsed) setTokens() {
 	}
 	// this error occurs after typing {{ at the end of the file
 	if state != Start {
-		// Unclosed Left. remove the Left at left
+		// Unclosed lbraces. remove the lbraces at left
 		p.elideAt(left)
 	}
 }
@@ -245,11 +212,9 @@ func (p *parsed) elideAt(left int) {
 	if p.elided == nil {
 		// p.buf is the same buffer that v.Read() returns, so copy it.
 		// (otherwise the next time it's parsed, elided information is lost)
-		b := make([]byte, len(p.buf))
-		copy(b, p.buf)
-		p.buf = b
+		p.buf = bytes.Clone(p.buf)
 	}
-	for i := 0; i < len(lbraces); i++ {
+	for i := range lbraces {
 		p.buf[left+i] = ' '
 	}
 	p.elided = append(p.elided, left)
@@ -264,140 +229,24 @@ func isEscaped(buf []byte) bool {
 	return backSlashes%2 == 1
 }
 
-// TODO(adonovan): the next 100 lines could perhaps replaced by use of protocol.Mapper.
+// lineRange returns the range for the entire specified (1-based) line.
+func lineRange(m *protocol.Mapper, line int) (protocol.Range, error) {
+	posn := protocol.Position{Line: uint32(line - 1)}
 
-func (p *parsed) utf16len(buf []byte) int {
-	cnt := 0
-	if !p.nonASCII {
-		return len(buf)
-	}
-	// we need a utf16len(rune), but we don't have it
-	for _, r := range string(buf) {
-		cnt++
-		if r >= 1<<16 {
-			cnt++
-		}
-	}
-	return cnt
-}
-
-func (p *parsed) tokenSize(t token) (int, error) {
-	if t.multiline {
-		return -1, fmt.Errorf("TokenSize called with Multiline token %#v", t)
-	}
-	ans := p.utf16len(p.buf[t.start:t.end])
-	return ans, nil
-}
-
-// runeCount counts runes in line l, from col s to e
-// (e==0 for end of line. called only for multiline tokens)
-func (p *parsed) runeCount(l, s, e uint32) uint32 {
-	start := p.nls[l] + 1 + int(s)
-	end := p.nls[l] + 1 + int(e)
-	if e == 0 || end > p.nls[l+1] {
-		end = p.nls[l+1]
-	}
-	return uint32(utf8.RuneCount(p.buf[start:end]))
-}
-
-// lineCol converts from a 0-based byte offset to 0-based line, col. col in runes
-func (p *parsed) lineCol(x int) (uint32, uint32) {
-	if x < p.check {
-		p.lastnl = 0
-	}
-	p.check = x
-	for i := p.lastnl; i < len(p.nls); i++ {
-		if p.nls[i] <= x {
-			continue
-		}
-		p.lastnl = i
-		var count int
-		if i > 0 && x == p.nls[i-1] { // \n
-			count = 0
-		} else {
-			count = p.utf16len(p.buf[p.nls[i-1]+1 : x])
-		}
-		return uint32(i - 1), uint32(count)
-	}
-	if x == len(p.buf)-1 { // trailing \n
-		return uint32(len(p.nls) - 1), 0
-	}
-	// shouldn't happen
-	for i := 1; i < 4; i++ {
-		_, f, l, ok := runtime.Caller(i)
-		if !ok {
-			break
-		}
-		log.Printf("%d: %s:%d", i, f, l)
-	}
-
-	msg := fmt.Errorf("LineCol off the end, %d of %d, nls=%v, %q", x, len(p.buf), p.nls, p.buf[x:])
-	event.Error(context.Background(), "internal error", msg)
-	return 0, 0
-}
-
-// position produces a protocol.position from an offset in the template
-func (p *parsed) position(pos int) protocol.Position {
-	line, col := p.lineCol(pos)
-	return protocol.Position{Line: line, Character: col}
-}
-
-func (p *parsed) _range(x, length int) protocol.Range {
-	line, col := p.lineCol(x)
-	ans := protocol.Range{
-		Start: protocol.Position{Line: line, Character: col},
-		End:   protocol.Position{Line: line, Character: col + uint32(length)},
-	}
-	return ans
-}
-
-// fromPosition translates a protocol.Position into an offset into the template
-func (p *parsed) fromPosition(x protocol.Position) int {
-	l, c := int(x.Line), int(x.Character)
-	if l >= len(p.nls) || p.nls[l]+1 >= len(p.buf) {
-		// paranoia to avoid panic. return the largest offset
-		return len(p.buf)
-	}
-	line := p.buf[p.nls[l]+1:]
-	cnt := 0
-	for w := range string(line) {
-		if cnt >= c {
-			return w + p.nls[l] + 1
-		}
-		cnt++
-	}
-	// do we get here? NO
-	pos := int(x.Character) + p.nls[int(x.Line)] + 1
-	event.Error(context.Background(), "internal error", fmt.Errorf("surprise %#v", x))
-	return pos
-}
-
-func symAtPosition(fh file.Handle, loc protocol.Position) (*symbol, *parsed, error) {
-	buf, err := fh.Content()
+	// start of line
+	start, err := m.PositionOffset(posn)
 	if err != nil {
-		return nil, nil, err
+		return protocol.Range{}, err
 	}
-	p := parseBuffer(buf)
-	pos := p.fromPosition(loc)
-	syms := p.symsAtPos(pos)
-	if len(syms) == 0 {
-		return nil, p, fmt.Errorf("no symbol found")
-	}
-	if len(syms) > 1 {
-		log.Printf("Hover: %d syms, not 1 %v", len(syms), syms)
-	}
-	sym := syms[0]
-	return &sym, p, nil
-}
 
-func (p *parsed) symsAtPos(pos int) []symbol {
-	ans := []symbol{}
-	for _, s := range p.symbols {
-		if s.start <= pos && pos < s.start+s.length {
-			ans = append(ans, s)
-		}
+	// end of line (or file)
+	posn.Line++
+	end := len(m.Content) // EOF
+	if offset, err := m.PositionOffset(posn); err != nil {
+		end = offset - len("\n")
 	}
-	return ans
+
+	return m.OffsetRange(start, end)
 }
 
 // -- debugging --
@@ -417,8 +266,12 @@ func (wr wrNode) writeNode(n parse.Node, indent string) {
 		return
 	}
 	at := func(pos parse.Pos) string {
-		line, col := wr.p.lineCol(int(pos))
-		return fmt.Sprintf("(%d)%v:%v", pos, line, col)
+		offset := int(pos)
+		posn, err := wr.p.mapper.OffsetPosition(offset)
+		if err != nil {
+			return fmt.Sprintf("<bad pos %d: %v>", pos, err)
+		}
+		return fmt.Sprintf("(%d)%v:%v", pos, posn.Line, posn.Character)
 	}
 	switch x := n.(type) {
 	case *parse.ActionNode:

@@ -9,8 +9,8 @@ import "sort"
 
 // A Token provides the extent and semantics of a token.
 type Token struct {
-	Line, Start uint32
-	Len         uint32
+	Line, Start uint32 // 0-based UTF-16 index
+	Len         uint32 // in UTF-16 codes
 	Type        Type
 	Modifiers   []Modifier
 }

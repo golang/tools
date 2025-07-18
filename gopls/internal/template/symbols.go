@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"text/template/parse"
-	"unicode/utf8"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
@@ -19,8 +18,8 @@ import (
 
 // in local coordinates, to be translated to protocol.DocumentSymbol
 type symbol struct {
-	start  int // for sorting
-	length int // in runes (unicode code points)
+	start  int // 0-based byte offset, for sorting
+	len    int // of source, in bytes
 	name   string
 	kind   protocol.SymbolKind
 	vardef bool // is this a variable definition?
@@ -28,8 +27,12 @@ type symbol struct {
 	// no children yet, and selection range is the same as range
 }
 
+func (s symbol) offsets() (start, end int) {
+	return s.start, s.start + s.len
+}
+
 func (s symbol) String() string {
-	return fmt.Sprintf("{%d,%d,%s,%s,%v}", s.start, s.length, s.name, s.kind, s.vardef)
+	return fmt.Sprintf("{%d,%d,%s,%s,%v}", s.start, s.len, s.name, s.kind, s.vardef)
 }
 
 // for FieldNode or VariableNode (or ChainNode?)
@@ -80,7 +83,7 @@ func (p *parsed) fields(flds []string, x parse.Node) []symbol {
 		if f[0] == '$' {
 			kind = protocol.Variable
 		}
-		sym := symbol{name: f, kind: kind, start: at, length: utf8.RuneCountInString(f)}
+		sym := symbol{name: f, kind: kind, start: at, len: len(f)}
 		if kind == protocol.Variable && len(p.stack) > 1 {
 			if pipe, ok := p.stack[len(p.stack)-2].(*parse.PipeNode); ok {
 				for _, y := range pipe.Decl {
@@ -118,7 +121,7 @@ func (p *parsed) findSymbols() {
 	case *parse.BoolNode:
 		// need to compute the length from the value
 		msg := fmt.Sprintf("%v", x.True)
-		p.symbols = append(p.symbols, symbol{start: int(x.Pos), length: len(msg), kind: protocol.Boolean})
+		p.symbols = append(p.symbols, symbol{start: int(x.Pos), len: len(msg), kind: protocol.Boolean})
 	case *parse.BranchNode:
 		nxt(x.Pipe)
 		nxt(x.List)
@@ -133,13 +136,12 @@ func (p *parsed) findSymbols() {
 	//case *parse.CommentNode: // go 1.16
 	//	log.Printf("implement %d", x.Type())
 	case *parse.DotNode:
-		sym := symbol{name: "dot", kind: protocol.Variable, start: int(x.Pos), length: 1}
+		sym := symbol{name: "dot", kind: protocol.Variable, start: int(x.Pos), len: 1}
 		p.symbols = append(p.symbols, sym)
 	case *parse.FieldNode:
 		p.symbols = append(p.symbols, p.fields(x.Ident, x)...)
 	case *parse.IdentifierNode:
-		sym := symbol{name: x.Ident, kind: protocol.Function, start: int(x.Pos),
-			length: utf8.RuneCountInString(x.Ident)}
+		sym := symbol{name: x.Ident, kind: protocol.Function, start: int(x.Pos), len: len(x.Ident)}
 		p.symbols = append(p.symbols, sym)
 	case *parse.IfNode:
 		nxt(&x.BranchNode)
@@ -150,11 +152,11 @@ func (p *parsed) findSymbols() {
 			}
 		}
 	case *parse.NilNode:
-		sym := symbol{name: "nil", kind: protocol.Constant, start: int(x.Pos), length: 3}
+		sym := symbol{name: "nil", kind: protocol.Constant, start: int(x.Pos), len: 3}
 		p.symbols = append(p.symbols, sym)
 	case *parse.NumberNode:
 		// no name; ascii
-		p.symbols = append(p.symbols, symbol{start: int(x.Pos), length: len(x.Text), kind: protocol.Number})
+		p.symbols = append(p.symbols, symbol{start: int(x.Pos), len: len(x.Text), kind: protocol.Number})
 	case *parse.PipeNode:
 		if x == nil { // {{template "foo"}}
 			return
@@ -169,25 +171,23 @@ func (p *parsed) findSymbols() {
 		nxt(&x.BranchNode)
 	case *parse.StringNode:
 		// no name
-		sz := utf8.RuneCountInString(x.Text)
-		p.symbols = append(p.symbols, symbol{start: int(x.Pos), length: sz, kind: protocol.String})
-	case *parse.TemplateNode: // invoking a template
-		// x.Pos points to the quote before the name
-		p.symbols = append(p.symbols, symbol{name: x.Name, kind: protocol.Package, start: int(x.Pos) + 1,
-			length: utf8.RuneCountInString(x.Name)})
+		p.symbols = append(p.symbols, symbol{start: int(x.Pos), len: len(x.Quoted), kind: protocol.String})
+	case *parse.TemplateNode:
+		// invoking a template, e.g. {{define "foo"}}
+		// x.Pos is the index of "foo".
+		// The logic below assumes that the literal is trivial.
+		p.symbols = append(p.symbols, symbol{name: x.Name, kind: protocol.Package, start: int(x.Pos) + len(`"`), len: len(x.Name)})
 		nxt(x.Pipe)
 	case *parse.TextNode:
 		if len(x.Text) == 1 && x.Text[0] == '\n' {
 			break
 		}
 		// nothing to report, but build one for hover
-		sz := utf8.RuneCount(x.Text)
-		p.symbols = append(p.symbols, symbol{start: int(x.Pos), length: sz, kind: protocol.Constant})
+		p.symbols = append(p.symbols, symbol{start: int(x.Pos), len: len(x.Text), kind: protocol.Constant})
 	case *parse.VariableNode:
 		p.symbols = append(p.symbols, p.fields(x.Ident, x)...)
 	case *parse.WithNode:
 		nxt(&x.BranchNode)
-
 	}
 	pop()
 }
@@ -199,33 +199,35 @@ func DocumentSymbols(snapshot *cache.Snapshot, fh file.Handle) ([]protocol.Docum
 	if err != nil {
 		return nil, err
 	}
-	p := parseBuffer(buf)
+	p := parseBuffer(fh.URI(), buf)
 	if p.parseErr != nil {
 		return nil, p.parseErr
 	}
 	var ans []protocol.DocumentSymbol
-	for _, s := range p.symbols {
-		if s.kind == protocol.Constant {
+	for _, sym := range p.symbols {
+		if sym.kind == protocol.Constant {
 			continue
 		}
-		d := kindStr(s.kind)
-		if d == "Namespace" {
-			d = "Template"
+		detail := kindStr(sym.kind)
+		if detail == "Namespace" {
+			detail = "Template"
 		}
-		if s.vardef {
-			d += "(def)"
+		if sym.vardef {
+			detail += "(def)"
 		} else {
-			d += "(use)"
+			detail += "(use)"
 		}
-		r := p._range(s.start, s.length)
-		y := protocol.DocumentSymbol{
-			Name:           s.name,
-			Detail:         d,
-			Kind:           s.kind,
-			Range:          r,
-			SelectionRange: r, // or should this be the entire {{...}}?
+		rng, err := p.mapper.OffsetRange(sym.offsets())
+		if err != nil {
+			return nil, err
 		}
-		ans = append(ans, y)
+		ans = append(ans, protocol.DocumentSymbol{
+			Name:           sym.name,
+			Detail:         detail,
+			Kind:           sym.kind,
+			Range:          rng,
+			SelectionRange: rng, // or should this be the entire {{...}}?
+		})
 	}
 	return ans, nil
 }

@@ -53,8 +53,7 @@ go 1.17
 }
 
 func TestMultilineTokensAgain(t *testing.T) {
-	t.Skip("skipping due to go.dev/issue/74635")
-
+	// Regression tests for a crash; see go.dev/issue/74635.
 	const files = `
 -- go.mod --
 module mod.com

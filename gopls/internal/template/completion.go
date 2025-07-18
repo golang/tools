@@ -31,15 +31,17 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	var start int // the beginning of the Token (completed or not)
 	syms := make(map[string]symbol)
 	var p *parsed
-	for fn, fc := range all.files {
+	for uri, fc := range all.files {
 		// collect symbols from all template files
 		filterSyms(syms, fc.symbols)
-		if fn.Path() != fh.URI().Path() {
+		if uri.Path() != fh.URI().Path() {
 			continue
 		}
-		if start = inTemplate(fc, pos); start == -1 {
-			return nil, nil
+		offset, err := enclosingTokenStart(fc, pos)
+		if err != nil {
+			return nil, err
 		}
+		start = offset
 		p = fc
 	}
 	if p == nil {
@@ -74,20 +76,26 @@ func filterSyms(syms map[string]symbol, ns []symbol) {
 	}
 }
 
-// return the starting position of the enclosing token, or -1 if none
-func inTemplate(fc *parsed, pos protocol.Position) int {
+// enclosingTokenStart returns the start offset of the enclosing token.
+// A (-1, non-nil) result indicates "no enclosing token".
+func enclosingTokenStart(fc *parsed, pos protocol.Position) (int, error) {
 	// pos is the pos-th character. if the cursor is at the beginning
 	// of the file, pos is 0. That is, we've only seen characters before pos
 	// 1. pos might be in a Token, return tk.Start
 	// 2. pos might be after an elided but before a Token, return elided
 	// 3. return -1 for false
-	offset := fc.fromPosition(pos)
-	// this could be a binary search, as the tokens are ordered
+	offset, err := fc.mapper.PositionOffset(pos)
+	if err != nil {
+		return 0, err
+	}
+
+	// TODO: opt: this could be a binary search, as the tokens are ordered
 	for _, tk := range fc.tokens {
 		if tk.start+len(lbraces) <= offset && offset+len(rbraces) <= tk.end {
-			return tk.start
+			return tk.start, nil
 		}
 	}
+
 	for _, x := range fc.elided {
 		if x+len(lbraces) > offset {
 			// fc.elided is sorted, and x is the position where a '{{' was replaced
@@ -98,10 +106,10 @@ func inTemplate(fc *parsed, pos protocol.Position) int {
 		// If the interval [x,offset] does not contain Left or Right
 		// then provide completions. (do we need the test for Right?)
 		if !bytes.Contains(fc.buf[x:offset], lbraces) && !bytes.Contains(fc.buf[x:offset], rbraces) {
-			return x
+			return x, nil
 		}
 	}
-	return -1
+	return -1, fmt.Errorf("no token enclosing %d", pos)
 }
 
 var (
@@ -115,7 +123,10 @@ var (
 // The error return is always nil.
 func (c *completer) complete() (*protocol.CompletionList, error) {
 	ans := &protocol.CompletionList{IsIncomplete: true, Items: []protocol.CompletionItem{}}
-	start := c.p.fromPosition(c.pos)
+	start, err := c.p.mapper.PositionOffset(c.pos)
+	if err != nil {
+		return ans, err
+	}
 	sofar := c.p.buf[c.offset:start]
 	if len(sofar) == 0 || sofar[len(sofar)-1] == ' ' || sofar[len(sofar)-1] == '\t' {
 		return ans, nil

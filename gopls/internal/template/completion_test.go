@@ -19,13 +19,13 @@ func init() {
 
 type tparse struct {
 	marked string   // ^ shows where to ask for completions. (The user just typed the following character.)
-	wanted []string // expected completions
+	wanted []string // expected completions; nil => no enclosing token
 }
 
 // Test completions in templates that parse enough (if completion needs symbols)
 // Seen characters up to the ^
 func TestParsed(t *testing.T) {
-	var tests = []tparse{
+	for _, test := range []tparse{
 		{"{{x}}{{12. xx^", nil}, // https://github.com/golang/go/issues/50430
 		{`<table class="chroma" data-new-comment-url="{{if $.PageIsPullFiles}}{{$.Issue.HTMLURL}}/files/reviews/new_comment{{else}}{{$.CommitHTML}}/new_comment^{{end}}">`, nil},
 		{"{{i^f}}", []string{"index", "if"}},
@@ -50,53 +50,56 @@ func TestParsed(t *testing.T) {
 		{"{{`e^", []string{}},
 		{"{{`No i^", []string{}}, // example of why go/scanner is used
 		{"{{xavier}}{{12. x^", []string{"xavier"}},
-	}
-	for _, tx := range tests {
-		c := testCompleter(t, tx)
-		var v []string
-		if c != nil {
-			ans, _ := c.complete()
-			for _, a := range ans.Items {
-				v = append(v, a.Label)
+	} {
+		t.Run("", func(t *testing.T) {
+			var got []string
+			if c := testCompleter(t, test); c != nil {
+				ans, _ := c.complete()
+				for _, a := range ans.Items {
+					got = append(got, a.Label)
+				}
 			}
-		}
-		if len(v) != len(tx.wanted) {
-			t.Errorf("%q: got %q, wanted %q %d,%d", tx.marked, v, tx.wanted, len(v), len(tx.wanted))
-			continue
-		}
-		sort.Strings(tx.wanted)
-		sort.Strings(v)
-		for i := 0; i < len(v); i++ {
-			if tx.wanted[i] != v[i] {
-				t.Errorf("%q at %d: got %v, wanted %v", tx.marked, i, v, tx.wanted)
-				break
+			if len(got) != len(test.wanted) {
+				t.Fatalf("%q: got %q, wanted %q %d,%d", test.marked, got, test.wanted, len(got), len(test.wanted))
 			}
-		}
+			sort.Strings(test.wanted)
+			sort.Strings(got)
+			for i := 0; i < len(got); i++ {
+				if test.wanted[i] != got[i] {
+					t.Fatalf("%q at %d: got %v, wanted %v", test.marked, i, got, test.wanted)
+				}
+			}
+		})
 	}
 }
 
 func testCompleter(t *testing.T, tx tparse) *completer {
-	t.Helper()
 	// seen chars up to ^
-	col := strings.Index(tx.marked, "^")
+	offset := strings.Index(tx.marked, "^")
 	buf := strings.Replace(tx.marked, "^", "", 1)
-	p := parseBuffer([]byte(buf))
-	pos := protocol.Position{Line: 0, Character: uint32(col)}
+	p := parseBuffer("", []byte(buf))
 	if p.parseErr != nil {
-		log.Printf("%q: %v", tx.marked, p.parseErr)
+		t.Logf("%q: %v", tx.marked, p.parseErr)
 	}
-	offset := inTemplate(p, pos)
-	if offset == -1 {
-		return nil
+	pos, err := p.mapper.OffsetPosition(offset)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start, err := enclosingTokenStart(p, pos)
+	if err != nil {
+		if start == -1 {
+			return nil // no enclosing token
+		}
+		t.Fatal(err)
 	}
 	syms := make(map[string]symbol)
 	filterSyms(syms, p.symbols)
-	c := &completer{
+	return &completer{
 		p:      p,
-		pos:    protocol.Position{Line: 0, Character: uint32(col)},
-		offset: offset + len(lbraces),
+		pos:    pos,
+		offset: start + len(lbraces),
 		ctx:    protocol.CompletionContext{TriggerKind: protocol.Invoked},
 		syms:   syms,
 	}
-	return c
 }
