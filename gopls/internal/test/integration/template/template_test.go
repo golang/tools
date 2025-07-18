@@ -52,6 +52,36 @@ go 1.17
 	})
 }
 
+func TestMultilineTokensAgain(t *testing.T) {
+	t.Skip("skipping due to go.dev/issue/74635")
+
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.17
+-- hi.tmpl --
+{{/* this is
+a comment */}}
+`
+	WithOptions(
+		Settings{
+			"templateExtensions": []string{"tmpl"},
+			"semanticTokens":     true,
+		},
+	).Run(t, files, func(t *testing.T, env *Env) {
+		var p protocol.SemanticTokensParams
+		p.TextDocument.URI = env.Sandbox.Workdir.URI("hi.tmpl")
+		toks, err := env.Editor.Server.SemanticTokensFull(env.Ctx, &p)
+		if err != nil {
+			t.Errorf("semantic token failed: %v", err)
+		}
+		if toks == nil || len(toks.Data) == 0 {
+			t.Errorf("got no semantic tokens")
+		}
+	})
+}
+
 func TestTemplatesFromExtensions(t *testing.T) {
 	const files = `
 -- go.mod --
