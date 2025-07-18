@@ -9,7 +9,7 @@ import (
 	"context"
 	"fmt"
 	"go/scanner"
-	"go/token"
+	gotoken "go/token"
 	"strings"
 
 	"golang.org/x/tools/gopls/internal/cache"
@@ -19,7 +19,7 @@ import (
 
 // information needed for completion
 type completer struct {
-	p      *Parsed
+	p      *parsed
 	pos    protocol.Position
 	offset int // offset of the start of the Token
 	ctx    protocol.CompletionContext
@@ -27,10 +27,10 @@ type completer struct {
 }
 
 func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pos protocol.Position, context protocol.CompletionContext) (*protocol.CompletionList, error) {
-	all := New(snapshot.Templates())
+	all := parseSet(snapshot.Templates())
 	var start int // the beginning of the Token (completed or not)
 	syms := make(map[string]symbol)
-	var p *Parsed
+	var p *parsed
 	for fn, fc := range all.files {
 		// collect symbols from all template files
 		filterSyms(syms, fc.symbols)
@@ -49,7 +49,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	c := completer{
 		p:      p,
 		pos:    pos,
-		offset: start + len(Left),
+		offset: start + len(lbraces),
 		ctx:    context,
 		syms:   syms,
 	}
@@ -75,21 +75,21 @@ func filterSyms(syms map[string]symbol, ns []symbol) {
 }
 
 // return the starting position of the enclosing token, or -1 if none
-func inTemplate(fc *Parsed, pos protocol.Position) int {
+func inTemplate(fc *parsed, pos protocol.Position) int {
 	// pos is the pos-th character. if the cursor is at the beginning
 	// of the file, pos is 0. That is, we've only seen characters before pos
 	// 1. pos might be in a Token, return tk.Start
 	// 2. pos might be after an elided but before a Token, return elided
 	// 3. return -1 for false
-	offset := fc.FromPosition(pos)
+	offset := fc.fromPosition(pos)
 	// this could be a binary search, as the tokens are ordered
 	for _, tk := range fc.tokens {
-		if tk.Start+len(Left) <= offset && offset+len(Right) <= tk.End {
-			return tk.Start
+		if tk.start+len(lbraces) <= offset && offset+len(rbraces) <= tk.end {
+			return tk.start
 		}
 	}
 	for _, x := range fc.elided {
-		if x+len(Left) > offset {
+		if x+len(lbraces) > offset {
 			// fc.elided is sorted, and x is the position where a '{{' was replaced
 			// by '  '. We consider only cases where the replaced {{ is to the left
 			// of the cursor.
@@ -97,7 +97,7 @@ func inTemplate(fc *Parsed, pos protocol.Position) int {
 		}
 		// If the interval [x,offset] does not contain Left or Right
 		// then provide completions. (do we need the test for Right?)
-		if !bytes.Contains(fc.buf[x:offset], Left) && !bytes.Contains(fc.buf[x:offset], Right) {
+		if !bytes.Contains(fc.buf[x:offset], lbraces) && !bytes.Contains(fc.buf[x:offset], rbraces) {
 			return x
 		}
 	}
@@ -115,7 +115,7 @@ var (
 // The error return is always nil.
 func (c *completer) complete() (*protocol.CompletionList, error) {
 	ans := &protocol.CompletionList{IsIncomplete: true, Items: []protocol.CompletionItem{}}
-	start := c.p.FromPosition(c.pos)
+	start := c.p.fromPosition(c.pos)
 	sofar := c.p.buf[c.offset:start]
 	if len(sofar) == 0 || sofar[len(sofar)-1] == ' ' || sofar[len(sofar)-1] == '\t' {
 		return ans, nil
@@ -194,22 +194,22 @@ func (c *completer) complete() (*protocol.CompletionList, error) {
 
 // version of c.analyze that uses go/scanner.
 func scan(buf []byte) []string {
-	fset := token.NewFileSet()
+	fset := gotoken.NewFileSet()
 	fp := fset.AddFile("", -1, len(buf))
 	var sc scanner.Scanner
-	sc.Init(fp, buf, func(pos token.Position, msg string) {}, scanner.ScanComments)
+	sc.Init(fp, buf, func(pos gotoken.Position, msg string) {}, scanner.ScanComments)
 	ans := make([]string, 0, 10) // preallocating gives a measurable savings
 	for {
 		_, tok, lit := sc.Scan() // tok is an int
-		if tok == token.EOF {
+		if tok == gotoken.EOF {
 			break // done
-		} else if tok == token.SEMICOLON && lit == "\n" {
+		} else if tok == gotoken.SEMICOLON && lit == "\n" {
 			continue // don't care, but probably can't happen
-		} else if tok == token.PERIOD {
+		} else if tok == gotoken.PERIOD {
 			ans = append(ans, ".") // lit is empty
-		} else if tok == token.IDENT && len(ans) > 0 && ans[len(ans)-1] == "." {
+		} else if tok == gotoken.IDENT && len(ans) > 0 && ans[len(ans)-1] == "." {
 			ans[len(ans)-1] = "." + lit
-		} else if tok == token.IDENT && len(ans) > 0 && ans[len(ans)-1] == "$" {
+		} else if tok == gotoken.IDENT && len(ans) > 0 && ans[len(ans)-1] == "$" {
 			ans[len(ans)-1] = "$" + lit
 		} else if lit != "" {
 			ans = append(ans, lit)

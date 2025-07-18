@@ -27,21 +27,21 @@ import (
 )
 
 var (
-	Left  = []byte("{{")
-	Right = []byte("}}")
+	lbraces = []byte("{{")
+	rbraces = []byte("}}")
 )
 
-type Parsed struct {
+type parsed struct {
 	buf    []byte   //contents
 	lines  [][]byte // needed?, other than for debugging?
 	elided []int    // offsets where Left was replaced by blanks
 
 	// tokens are matched Left-Right pairs, computed before trying to parse
-	tokens []Token
+	tokens []token
 
 	// result of parsing
 	named    []*template.Template // the template and embedded templates
-	ParseErr error
+	parseErr error
 	symbols  []symbol
 	stack    []parse.Node // used while computing symbols
 
@@ -53,21 +53,23 @@ type Parsed struct {
 	nonASCII bool  // are there any non-ascii runes in buf?
 }
 
-// Token is a single {{...}}. More precisely, Left...Right
-type Token struct {
-	Start, End int // offset from start of template
-	Multiline  bool
+// token is a single {{...}}. More precisely, Left...Right
+type token struct {
+	start, end int // offset from start of template
+	multiline  bool
 }
 
-// All contains the Parse of all the template files
-type All struct {
-	files map[protocol.DocumentURI]*Parsed
+// set contains the Parse of all the template files
+type set struct {
+	files map[protocol.DocumentURI]*parsed
 }
 
-// New returns the Parses of the snapshot's tmpl files
+// parseSet returns the set of the snapshot's tmpl files
 // (maybe cache these, but then avoiding import cycles needs code rearrangements)
-func New(tmpls map[protocol.DocumentURI]file.Handle) *All {
-	all := make(map[protocol.DocumentURI]*Parsed)
+//
+// TODO(adonovan): why doesn't parseSet return an error?
+func parseSet(tmpls map[protocol.DocumentURI]file.Handle) *set {
+	all := make(map[protocol.DocumentURI]*parsed)
 	for k, v := range tmpls {
 		buf, err := v.Content()
 		if err != nil { // PJW: decide what to do with these errors
@@ -76,11 +78,11 @@ func New(tmpls map[protocol.DocumentURI]file.Handle) *All {
 		}
 		all[k] = parseBuffer(buf)
 	}
-	return &All{files: all}
+	return &set{files: all}
 }
 
-func parseBuffer(buf []byte) *Parsed {
-	ans := &Parsed{
+func parseBuffer(buf []byte) *parsed {
+	ans := &parsed{
 		buf:   buf,
 		check: -1,
 		nls:   []int{-1},
@@ -108,7 +110,7 @@ func parseBuffer(buf []byte) *Parsed {
 	t, err := template.New("").Parse(string(ans.buf))
 	if err != nil {
 		funcs := make(template.FuncMap)
-		for t == nil && ans.ParseErr == nil {
+		for t == nil && ans.parseErr == nil {
 			// in 1.17 it may be possible to avoid getting this error
 			//  template: :2: function "foo" not defined
 			matches := parseErrR.FindStringSubmatch(err.Error())
@@ -118,7 +120,7 @@ func parseBuffer(buf []byte) *Parsed {
 				t, err = template.New("").Funcs(funcs).Parse(string(ans.buf))
 				continue
 			}
-			ans.ParseErr = err // unfixed error
+			ans.parseErr = err // unfixed error
 			return ans
 		}
 	}
@@ -129,7 +131,7 @@ func parseBuffer(buf []byte) *Parsed {
 		ans.findSymbols()
 		if t.Name() != "" {
 			// defining a template. The pos is just after {{define...}} (or {{block...}}?)
-			at, sz := ans.FindLiteralBefore(int(t.Root.Pos))
+			at, sz := ans.findLiteralBefore(int(t.Root.Pos))
 			s := symbol{start: at, length: sz, name: t.Name(), kind: protocol.Namespace, vardef: true}
 			ans.symbols = append(ans.symbols, s)
 		}
@@ -148,11 +150,11 @@ func parseBuffer(buf []byte) *Parsed {
 	return ans
 }
 
-// FindLiteralBefore locates the first preceding string literal
+// findLiteralBefore locates the first preceding string literal
 // returning its position and length in buf
 // or returns -1 if there is none.
 // Assume double-quoted string rather than backquoted string for now.
-func (p *Parsed) FindLiteralBefore(pos int) (int, int) {
+func (p *parsed) findLiteralBefore(pos int) (int, int) {
 	left, right := -1, -1
 	for i := pos - 1; i >= 0; i-- {
 		if p.buf[i] != '"' {
@@ -175,7 +177,7 @@ var (
 	parseErrR = regexp.MustCompile(`template:.*function "([^"]+)" not defined`)
 )
 
-func (p *Parsed) setTokens() {
+func (p *parsed) setTokens() {
 	const (
 		// InRaw and InString only occur inside an action (SeenLeft)
 		Start = iota
@@ -207,27 +209,28 @@ func (p *Parsed) setTokens() {
 				state = InString
 				continue
 			}
-			if bytes.HasPrefix(p.buf[n:], Right) {
-				right := n + len(Right)
-				tok := Token{Start: left,
-					End:       right,
-					Multiline: bytes.Contains(p.buf[left:right], []byte{'\n'}),
+			if bytes.HasPrefix(p.buf[n:], rbraces) {
+				right := n + len(rbraces)
+				tok := token{
+					start:     left,
+					end:       right,
+					multiline: bytes.Contains(p.buf[left:right], []byte{'\n'}),
 				}
 				p.tokens = append(p.tokens, tok)
 				state = Start
 			}
 			// If we see (unquoted) Left then the original left is probably the user
 			// typing. Suppress the original left
-			if bytes.HasPrefix(p.buf[n:], Left) {
+			if bytes.HasPrefix(p.buf[n:], lbraces) {
 				p.elideAt(left)
 				left = n
-				n += len(Left) - 1 // skip the rest
+				n += len(lbraces) - 1 // skip the rest
 			}
 		case Start:
-			if bytes.HasPrefix(p.buf[n:], Left) {
+			if bytes.HasPrefix(p.buf[n:], lbraces) {
 				left = n
 				state = SeenLeft
-				n += len(Left) - 1 // skip the rest (avoids {{{ bug)
+				n += len(lbraces) - 1 // skip the rest (avoids {{{ bug)
 			}
 		}
 	}
@@ -238,7 +241,7 @@ func (p *Parsed) setTokens() {
 	}
 }
 
-func (p *Parsed) elideAt(left int) {
+func (p *parsed) elideAt(left int) {
 	if p.elided == nil {
 		// p.buf is the same buffer that v.Read() returns, so copy it.
 		// (otherwise the next time it's parsed, elided information is lost)
@@ -246,7 +249,7 @@ func (p *Parsed) elideAt(left int) {
 		copy(b, p.buf)
 		p.buf = b
 	}
-	for i := 0; i < len(Left); i++ {
+	for i := 0; i < len(lbraces); i++ {
 		p.buf[left+i] = ' '
 	}
 	p.elided = append(p.elided, left)
@@ -261,13 +264,9 @@ func isEscaped(buf []byte) bool {
 	return backSlashes%2 == 1
 }
 
-func (p *Parsed) Tokens() []Token {
-	return p.tokens
-}
-
 // TODO(adonovan): the next 100 lines could perhaps replaced by use of protocol.Mapper.
 
-func (p *Parsed) utf16len(buf []byte) int {
+func (p *parsed) utf16len(buf []byte) int {
 	cnt := 0
 	if !p.nonASCII {
 		return len(buf)
@@ -282,17 +281,17 @@ func (p *Parsed) utf16len(buf []byte) int {
 	return cnt
 }
 
-func (p *Parsed) TokenSize(t Token) (int, error) {
-	if t.Multiline {
+func (p *parsed) tokenSize(t token) (int, error) {
+	if t.multiline {
 		return -1, fmt.Errorf("TokenSize called with Multiline token %#v", t)
 	}
-	ans := p.utf16len(p.buf[t.Start:t.End])
+	ans := p.utf16len(p.buf[t.start:t.end])
 	return ans, nil
 }
 
-// RuneCount counts runes in line l, from col s to e
+// runeCount counts runes in line l, from col s to e
 // (e==0 for end of line. called only for multiline tokens)
-func (p *Parsed) RuneCount(l, s, e uint32) uint32 {
+func (p *parsed) runeCount(l, s, e uint32) uint32 {
 	start := p.nls[l] + 1 + int(s)
 	end := p.nls[l] + 1 + int(e)
 	if e == 0 || end > p.nls[l+1] {
@@ -301,8 +300,8 @@ func (p *Parsed) RuneCount(l, s, e uint32) uint32 {
 	return uint32(utf8.RuneCount(p.buf[start:end]))
 }
 
-// LineCol converts from a 0-based byte offset to 0-based line, col. col in runes
-func (p *Parsed) LineCol(x int) (uint32, uint32) {
+// lineCol converts from a 0-based byte offset to 0-based line, col. col in runes
+func (p *parsed) lineCol(x int) (uint32, uint32) {
 	if x < p.check {
 		p.lastnl = 0
 	}
@@ -337,14 +336,14 @@ func (p *Parsed) LineCol(x int) (uint32, uint32) {
 	return 0, 0
 }
 
-// Position produces a protocol.Position from an offset in the template
-func (p *Parsed) Position(pos int) protocol.Position {
-	line, col := p.LineCol(pos)
+// position produces a protocol.position from an offset in the template
+func (p *parsed) position(pos int) protocol.Position {
+	line, col := p.lineCol(pos)
 	return protocol.Position{Line: line, Character: col}
 }
 
-func (p *Parsed) Range(x, length int) protocol.Range {
-	line, col := p.LineCol(x)
+func (p *parsed) _range(x, length int) protocol.Range {
+	line, col := p.lineCol(x)
 	ans := protocol.Range{
 		Start: protocol.Position{Line: line, Character: col},
 		End:   protocol.Position{Line: line, Character: col + uint32(length)},
@@ -352,8 +351,8 @@ func (p *Parsed) Range(x, length int) protocol.Range {
 	return ans
 }
 
-// FromPosition translates a protocol.Position into an offset into the template
-func (p *Parsed) FromPosition(x protocol.Position) int {
+// fromPosition translates a protocol.Position into an offset into the template
+func (p *parsed) fromPosition(x protocol.Position) int {
 	l, c := int(x.Line), int(x.Character)
 	if l >= len(p.nls) || p.nls[l]+1 >= len(p.buf) {
 		// paranoia to avoid panic. return the largest offset
@@ -373,14 +372,14 @@ func (p *Parsed) FromPosition(x protocol.Position) int {
 	return pos
 }
 
-func symAtPosition(fh file.Handle, loc protocol.Position) (*symbol, *Parsed, error) {
+func symAtPosition(fh file.Handle, loc protocol.Position) (*symbol, *parsed, error) {
 	buf, err := fh.Content()
 	if err != nil {
 		return nil, nil, err
 	}
 	p := parseBuffer(buf)
-	pos := p.FromPosition(loc)
-	syms := p.SymsAtPos(pos)
+	pos := p.fromPosition(loc)
+	syms := p.symsAtPos(pos)
 	if len(syms) == 0 {
 		return nil, p, fmt.Errorf("no symbol found")
 	}
@@ -391,7 +390,7 @@ func symAtPosition(fh file.Handle, loc protocol.Position) (*symbol, *Parsed, err
 	return &sym, p, nil
 }
 
-func (p *Parsed) SymsAtPos(pos int) []symbol {
+func (p *parsed) symsAtPos(pos int) []symbol {
 	ans := []symbol{}
 	for _, s := range p.symbols {
 		if s.start <= pos && pos < s.start+s.length {
@@ -401,15 +400,16 @@ func (p *Parsed) SymsAtPos(pos int) []symbol {
 	return ans
 }
 
-type wrNode struct {
-	p *Parsed
-	w io.Writer
-}
+// -- debugging --
 
-// WriteNode is for debugging
-func (p *Parsed) WriteNode(w io.Writer, n parse.Node) {
+func (p *parsed) writeNode(w io.Writer, n parse.Node) {
 	wr := wrNode{p: p, w: w}
 	wr.writeNode(n, "")
+}
+
+type wrNode struct {
+	p *parsed
+	w io.Writer
 }
 
 func (wr wrNode) writeNode(n parse.Node, indent string) {
@@ -417,7 +417,7 @@ func (wr wrNode) writeNode(n parse.Node, indent string) {
 		return
 	}
 	at := func(pos parse.Pos) string {
-		line, col := wr.p.LineCol(int(pos))
+		line, col := wr.p.lineCol(int(pos))
 		return fmt.Sprintf("(%d)%v:%v", pos, line, col)
 	}
 	switch x := n.(type) {
@@ -488,17 +488,4 @@ func (wr wrNode) writeNode(n parse.Node, indent string) {
 		fmt.Fprintf(wr.w, "%sWithNode at %s\n", indent, at(x.Pos))
 		wr.writeNode(&x.BranchNode, indent+". ")
 	}
-}
-
-var kindNames = []string{"", "File", "Module", "Namespace", "Package", "Class", "Method", "Property",
-	"Field", "Constructor", "Enum", "Interface", "Function", "Variable", "Constant", "String",
-	"Number", "Boolean", "Array", "Object", "Key", "Null", "EnumMember", "Struct", "Event",
-	"Operator", "TypeParameter"}
-
-func kindStr(k protocol.SymbolKind) string {
-	n := int(k)
-	if n < 1 || n >= len(kindNames) {
-		return fmt.Sprintf("?SymbolKind %d?", n)
-	}
-	return kindNames[n]
 }

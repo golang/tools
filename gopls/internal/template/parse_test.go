@@ -39,8 +39,8 @@ var tmpl = []datum{{`
 func TestSymbols(t *testing.T) {
 	for i, x := range tmpl {
 		got := parseBuffer([]byte(x.buf))
-		if got.ParseErr != nil {
-			t.Errorf("error:%v", got.ParseErr)
+		if got.parseErr != nil {
+			t.Errorf("error:%v", got.parseErr)
 			continue
 		}
 		if len(got.named) != x.cnt {
@@ -74,8 +74,8 @@ func TestNLS(t *testing.T) {
 	{{end}}
 	`
 	p := parseBuffer([]byte(buf))
-	if p.ParseErr != nil {
-		t.Fatal(p.ParseErr)
+	if p.parseErr != nil {
+		t.Fatal(p.parseErr)
 	}
 	// line 0 doesn't have a \n in front of it
 	for i := 1; i < len(p.nls)-1; i++ {
@@ -100,8 +100,8 @@ func TestLineCol(t *testing.T) {
 	for n, cx := range tmpl {
 		buf := cx.buf
 		p := parseBuffer([]byte(buf))
-		if p.ParseErr != nil {
-			t.Fatal(p.ParseErr)
+		if p.parseErr != nil {
+			t.Fatal(p.parseErr)
 		}
 		type loc struct {
 			offset int
@@ -111,7 +111,7 @@ func TestLineCol(t *testing.T) {
 		// forwards
 		var lastl, lastc uint32
 		for offset := range buf {
-			l, c := p.LineCol(offset)
+			l, c := p.lineCol(offset)
 			saved = append(saved, loc{offset, l, c})
 			if l > lastl {
 				lastl = l
@@ -137,7 +137,7 @@ func TestLineCol(t *testing.T) {
 		// backwards
 		for j := len(saved) - 1; j >= 0; j-- {
 			s := saved[j]
-			xl, xc := p.LineCol(s.offset)
+			xl, xc := p.lineCol(s.offset)
 			if xl != s.l || xc != s.c {
 				t.Errorf("at offset %d(%d), got (%d,%d), expected (%d,%d)", s.offset, j, xl, xc, s.l, s.c)
 			}
@@ -148,11 +148,11 @@ func TestLineCol(t *testing.T) {
 func TestLineColNL(t *testing.T) {
 	buf := "\n\n\n\n\n"
 	p := parseBuffer([]byte(buf))
-	if p.ParseErr != nil {
-		t.Fatal(p.ParseErr)
+	if p.parseErr != nil {
+		t.Fatal(p.parseErr)
 	}
 	for i := 0; i < len(buf); i++ {
-		l, c := p.LineCol(i)
+		l, c := p.lineCol(i)
 		if c != 0 || int(l) != i+1 {
 			t.Errorf("got (%d,%d), expected (%d,0)", l, c, i)
 		}
@@ -166,15 +166,15 @@ func TestPos(t *testing.T) {
 	{{foo (.X.Y) 23 ($A.Z)}}
 	{{end}}`
 	p := parseBuffer([]byte(buf))
-	if p.ParseErr != nil {
-		t.Fatal(p.ParseErr)
+	if p.parseErr != nil {
+		t.Fatal(p.parseErr)
 	}
 	for pos, r := range buf {
 		if r == '\n' {
 			continue
 		}
-		x := p.Position(pos)
-		n := p.FromPosition(x)
+		x := p.position(pos)
+		n := p.fromPosition(x)
 		if n != pos {
 			// once it's wrong, it will be wrong forever
 			t.Fatalf("at pos %d (rune %c) got %d {%#v]", pos, r, n, x)
@@ -182,12 +182,13 @@ func TestPos(t *testing.T) {
 
 	}
 }
+
 func TestLen(t *testing.T) {
 	data := []struct {
 		cnt int
 		v   string
 	}{{1, "a"}, {1, "膈"}, {4, "😆🥸"}, {7, "3😀4567"}}
-	p := &Parsed{nonASCII: true}
+	p := &parsed{nonASCII: true}
 	for _, d := range data {
 		got := p.utf16len([]byte(d.v))
 		if got != d.cnt {
@@ -228,8 +229,8 @@ func TestQuotes(t *testing.T) {
 		if len(p.tokens) != s.tokCnt {
 			t.Errorf("%q: got %d tokens, expected %d", s, len(p.tokens), s.tokCnt)
 		}
-		if p.ParseErr != nil {
-			t.Errorf("%q: %v", string(p.buf), p.ParseErr)
+		if p.parseErr != nil {
+			t.Errorf("%q: %v", string(p.buf), p.parseErr)
 		}
 		if len(p.elided) != int(s.elidedCnt) {
 			t.Errorf("%q: elided %d, expected %d", s, len(p.elided), s.elidedCnt)

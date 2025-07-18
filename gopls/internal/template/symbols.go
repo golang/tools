@@ -33,7 +33,7 @@ func (s symbol) String() string {
 }
 
 // for FieldNode or VariableNode (or ChainNode?)
-func (p *Parsed) fields(flds []string, x parse.Node) []symbol {
+func (p *parsed) fields(flds []string, x parse.Node) []symbol {
 	ans := []symbol{}
 	// guessing that there are no embedded blanks allowed. The doc is unclear
 	lookfor := ""
@@ -80,7 +80,7 @@ func (p *Parsed) fields(flds []string, x parse.Node) []symbol {
 		if f[0] == '$' {
 			kind = protocol.Variable
 		}
-		sym := symbol{name: f, kind: kind, start: at, length: utf8.RuneCount([]byte(f))}
+		sym := symbol{name: f, kind: kind, start: at, length: utf8.RuneCountInString(f)}
 		if kind == protocol.Variable && len(p.stack) > 1 {
 			if pipe, ok := p.stack[len(p.stack)-2].(*parse.PipeNode); ok {
 				for _, y := range pipe.Decl {
@@ -96,7 +96,7 @@ func (p *Parsed) fields(flds []string, x parse.Node) []symbol {
 	return ans
 }
 
-func (p *Parsed) findSymbols() {
+func (p *parsed) findSymbols() {
 	if len(p.stack) == 0 {
 		return
 	}
@@ -139,7 +139,7 @@ func (p *Parsed) findSymbols() {
 		p.symbols = append(p.symbols, p.fields(x.Ident, x)...)
 	case *parse.IdentifierNode:
 		sym := symbol{name: x.Ident, kind: protocol.Function, start: int(x.Pos),
-			length: utf8.RuneCount([]byte(x.Ident))}
+			length: utf8.RuneCountInString(x.Ident)}
 		p.symbols = append(p.symbols, sym)
 	case *parse.IfNode:
 		nxt(&x.BranchNode)
@@ -169,12 +169,12 @@ func (p *Parsed) findSymbols() {
 		nxt(&x.BranchNode)
 	case *parse.StringNode:
 		// no name
-		sz := utf8.RuneCount([]byte(x.Text))
+		sz := utf8.RuneCountInString(x.Text)
 		p.symbols = append(p.symbols, symbol{start: int(x.Pos), length: sz, kind: protocol.String})
 	case *parse.TemplateNode: // invoking a template
 		// x.Pos points to the quote before the name
 		p.symbols = append(p.symbols, symbol{name: x.Name, kind: protocol.Package, start: int(x.Pos) + 1,
-			length: utf8.RuneCount([]byte(x.Name))})
+			length: utf8.RuneCountInString(x.Name)})
 		nxt(x.Pipe)
 	case *parse.TextNode:
 		if len(x.Text) == 1 && x.Text[0] == '\n' {
@@ -200,8 +200,8 @@ func DocumentSymbols(snapshot *cache.Snapshot, fh file.Handle) ([]protocol.Docum
 		return nil, err
 	}
 	p := parseBuffer(buf)
-	if p.ParseErr != nil {
-		return nil, p.ParseErr
+	if p.parseErr != nil {
+		return nil, p.parseErr
 	}
 	var ans []protocol.DocumentSymbol
 	for _, s := range p.symbols {
@@ -217,7 +217,7 @@ func DocumentSymbols(snapshot *cache.Snapshot, fh file.Handle) ([]protocol.Docum
 		} else {
 			d += "(use)"
 		}
-		r := p.Range(s.start, s.length)
+		r := p._range(s.start, s.length)
 		y := protocol.DocumentSymbol{
 			Name:           s.name,
 			Detail:         d,
@@ -228,4 +228,42 @@ func DocumentSymbols(snapshot *cache.Snapshot, fh file.Handle) ([]protocol.Docum
 		ans = append(ans, y)
 	}
 	return ans, nil
+}
+
+func kindStr(k protocol.SymbolKind) string {
+	n := int(k)
+	if n < 1 || n >= len(kindNames) {
+		return fmt.Sprintf("?SymbolKind %d?", n)
+	}
+	return kindNames[n]
+}
+
+var kindNames = []string{
+	"",
+	"File",
+	"Module",
+	"Namespace",
+	"Package",
+	"Class",
+	"Method",
+	"Property",
+	"Field",
+	"Constructor",
+	"Enum",
+	"Interface",
+	"Function",
+	"Variable",
+	"Constant",
+	"String",
+	"Number",
+	"Boolean",
+	"Array",
+	"Object",
+	"Key",
+	"Null",
+	"EnumMember",
+	"Struct",
+	"Event",
+	"Operator",
+	"TypeParameter",
 }

@@ -82,8 +82,8 @@ func testCompleter(t *testing.T, tx tparse) *completer {
 	buf := strings.Replace(tx.marked, "^", "", 1)
 	p := parseBuffer([]byte(buf))
 	pos := protocol.Position{Line: 0, Character: uint32(col)}
-	if p.ParseErr != nil {
-		log.Printf("%q: %v", tx.marked, p.ParseErr)
+	if p.parseErr != nil {
+		log.Printf("%q: %v", tx.marked, p.parseErr)
 	}
 	offset := inTemplate(p, pos)
 	if offset == -1 {
@@ -94,7 +94,7 @@ func testCompleter(t *testing.T, tx tparse) *completer {
 	c := &completer{
 		p:      p,
 		pos:    protocol.Position{Line: 0, Character: uint32(col)},
-		offset: offset + len(Left),
+		offset: offset + len(lbraces),
 		ctx:    protocol.CompletionContext{TriggerKind: protocol.Invoked},
 		syms:   syms,
 	}

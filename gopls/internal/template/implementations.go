@@ -43,19 +43,19 @@ func diagnoseOne(fh file.Handle) []*cache.Diagnostic {
 		return []*cache.Diagnostic{&d}
 	}
 	p := parseBuffer(buf)
-	if p.ParseErr == nil {
+	if p.parseErr == nil {
 		return nil
 	}
 	unknownError := func(msg string) []*cache.Diagnostic {
-		s := fmt.Sprintf("malformed template error %q: %s", p.ParseErr.Error(), msg)
+		s := fmt.Sprintf("malformed template error %q: %s", p.parseErr.Error(), msg)
 		d := cache.Diagnostic{
-			Message: s, Severity: protocol.SeverityError, Range: p.Range(p.nls[0], 1),
+			Message: s, Severity: protocol.SeverityError, Range: p._range(p.nls[0], 1),
 			URI: fh.URI(), Source: cache.TemplateError}
 		return []*cache.Diagnostic{&d}
 	}
 	// errors look like `template: :40: unexpected "}" in operand`
 	// so the string needs to be parsed
-	matches := errRe.FindStringSubmatch(p.ParseErr.Error())
+	matches := errRe.FindStringSubmatch(p.parseErr.Error())
 	if len(matches) != 3 {
 		msg := fmt.Sprintf("expected 3 matches, got %d (%v)", len(matches), matches)
 		return unknownError(msg)
@@ -71,9 +71,9 @@ func diagnoseOne(fh file.Handle) []*cache.Diagnostic {
 	start := p.nls[lineno-1]
 	if lineno < len(p.nls) {
 		size := p.nls[lineno] - start
-		d.Range = p.Range(start, size)
+		d.Range = p._range(start, size)
 	} else {
-		d.Range = p.Range(start, 1)
+		d.Range = p._range(start, 1)
 	}
 	return []*cache.Diagnostic{&d}
 }
@@ -90,13 +90,13 @@ func Definition(snapshot *cache.Snapshot, fh file.Handle, loc protocol.Position)
 	sym := x.name
 	ans := []protocol.Location{}
 	// PJW: this is probably a pattern to abstract
-	a := New(snapshot.Templates())
+	a := parseSet(snapshot.Templates())
 	for k, p := range a.files {
 		for _, s := range p.symbols {
 			if !s.vardef || s.name != sym {
 				continue
 			}
-			ans = append(ans, k.Location(p.Range(s.start, s.length)))
+			ans = append(ans, k.Location(p._range(s.start, s.length)))
 		}
 	}
 	return ans, nil
@@ -107,7 +107,7 @@ func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, positi
 	if sym == nil || err != nil {
 		return nil, err
 	}
-	ans := protocol.Hover{Range: p.Range(sym.start, sym.length), Contents: protocol.MarkupContent{Kind: protocol.Markdown}}
+	ans := protocol.Hover{Range: p._range(sym.start, sym.length), Contents: protocol.MarkupContent{Kind: protocol.Markdown}}
 	switch sym.kind {
 	case protocol.Function:
 		ans.Contents.Value = fmt.Sprintf("function: %s", sym.name)
@@ -140,7 +140,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 	ans := []protocol.Location{}
 
-	a := New(snapshot.Templates())
+	a := parseSet(snapshot.Templates())
 	for k, p := range a.files {
 		for _, s := range p.symbols {
 			if s.name != sym.name {
@@ -149,7 +149,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 			if s.vardef && !params.Context.IncludeDeclaration {
 				continue
 			}
-			ans = append(ans, k.Location(p.Range(s.start, s.length)))
+			ans = append(ans, k.Location(p._range(s.start, s.length)))
 		}
 	}
 	// do these need to be sorted? (a.files is a map)
@@ -181,22 +181,22 @@ func SemanticTokens(ctx context.Context, snapshot *cache.Snapshot, spn protocol.
 		})
 	}
 
-	for _, t := range p.Tokens() {
-		if t.Multiline {
-			la, ca := p.LineCol(t.Start)
-			lb, cb := p.LineCol(t.End)
-			add(la, ca, p.RuneCount(la, ca, 0))
+	for _, t := range p.tokens {
+		if t.multiline {
+			la, ca := p.lineCol(t.start)
+			lb, cb := p.lineCol(t.end)
+			add(la, ca, p.runeCount(la, ca, 0))
 			for l := la + 1; l < lb; l++ {
-				add(l, 0, p.RuneCount(l, 0, 0))
+				add(l, 0, p.runeCount(l, 0, 0))
 			}
-			add(lb, 0, p.RuneCount(lb, 0, cb))
+			add(lb, 0, p.runeCount(lb, 0, cb))
 			continue
 		}
-		sz, err := p.TokenSize(t)
+		sz, err := p.tokenSize(t)
 		if err != nil {
 			return nil, err
 		}
-		line, col := p.LineCol(t.Start)
+		line, col := p.lineCol(t.start)
 		add(line, col, uint32(sz))
 	}
 	ans := &protocol.SemanticTokens{
