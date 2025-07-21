@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"testing"
 
+	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	. "golang.org/x/tools/gopls/internal/test/integration"
@@ -27,6 +28,10 @@ func TestFlightRecorder(t *testing.T) {
 		t.Skip("not reliable on windows")
 	}
 	testenv.NeedsGo1Point(t, 25)
+
+	// This is a global hammer; it won't play nicely with
+	// multiple concurrent tests of Flight Recorder.
+	t.Cleanup(debug.KillTraceViewers)
 
 	const files = `
 -- go.mod --

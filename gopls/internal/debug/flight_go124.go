@@ -14,3 +14,5 @@ import (
 func startFlightRecorder() (http.HandlerFunc, error) {
 	return nil, errors.ErrUnsupported
 }
+
+func KillTraceViewers() {}

@@ -20,6 +20,22 @@ import (
 	"time"
 )
 
+var (
+	traceviewersMu sync.Mutex
+	traceviewers   []*os.Process
+)
+
+// KillTraceViewers kills all "go tool trace" processes started by
+// /flightrecorder requests, for use in tests (see #74668).
+func KillTraceViewers() {
+	traceviewersMu.Lock()
+	for _, p := range traceviewers {
+		p.Kill() // ignore error
+	}
+	traceviewers = nil
+	traceviewersMu.Unlock()
+}
+
 // The FlightRecorder is a global resource, so create at most one per process.
 var getRecorder = sync.OnceValues(func() (*trace.FlightRecorder, error) {
 	fr := trace.NewFlightRecorder(trace.FlightRecorderConfig{
@@ -53,7 +69,7 @@ func startFlightRecorder() (http.HandlerFunc, error) {
 			return
 		}
 		if _, err := fr.WriteTo(f); err != nil {
-			f.Close()
+			f.Close() // ignore error
 			errorf("failed to write flight record: %s", err)
 			return
 		}
@@ -112,6 +128,11 @@ func startFlightRecorder() (http.HandlerFunc, error) {
 			errorf("failed to start trace server: %s", err)
 			return
 		}
+
+		// Save the process so we can kill it when tests finish.
+		traceviewersMu.Lock()
+		traceviewers = append(traceviewers, cmd.Process)
+		traceviewersMu.Unlock()
 
 		// Some of the CI builders can be quite heavily loaded.
 		// Give them an extra grace period.
