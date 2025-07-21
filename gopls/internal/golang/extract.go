@@ -772,7 +772,9 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		// cannot be its own reassignment or redefinition (objOverriden).
 		vscope := v.obj.Parent()
 		if vscope == nil {
-			return nil, nil, fmt.Errorf("parent nil")
+			// v.obj could be a field on an anonymous struct. We'll examine the
+			// struct in a different iteration so don't return an error here.
+			continue
 		}
 		isUsed, firstUseAfter := objUsed(info, end, vscope.End(), v.obj)
 		if v.assigned && isUsed && !varOverridden(info, firstUseAfter, v.obj, v.free, outer) {
@@ -1565,6 +1567,12 @@ func collectFreeVars(info *types.Info, file *ast.File, start, end token.Pos, nod
 		v, ok := seen[obj]
 		if !ok {
 			return nil, fmt.Errorf("no seen types.Object for %v", obj)
+		}
+		if named, ok := v.obj.Type().(typesinternal.NamedOrAlias); ok {
+			namedPos := named.Obj().Pos()
+			if isLocal(named.Obj()) && !(start <= namedPos && namedPos <= end) {
+				return nil, fmt.Errorf("Cannot extract selection: the code refers to a local type whose definition lies outside the extracted block")
+			}
 		}
 		variables = append(variables, v)
 	}
