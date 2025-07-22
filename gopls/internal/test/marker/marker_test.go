@@ -2142,7 +2142,8 @@ func codeActionMarker(mark marker, loc protocol.Location, kind string) {
 
 	if end := namedArgFunc(mark, "end", convertNamedArgLocation, protocol.Location{}); end.URI != "" {
 		if end.URI != loc.URI {
-			panic("unreachable")
+			mark.errorf("end marker is in a different file (%s)", filepath.Base(loc.URI.Path()))
+			return
 		}
 		loc.Range.End = end.Range.End
 	}
