@@ -17,12 +17,16 @@ import (
 	"runtime/trace"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
 var (
 	traceviewersMu sync.Mutex
 	traceviewers   []*os.Process
+
+	kill        = (*os.Process).Kill // windows, plan9; UNIX impl kills whole process group
+	sysProcAttr syscall.SysProcAttr  // UNIX configuration to create process group
 )
 
 // KillTraceViewers kills all "go tool trace" processes started by
@@ -30,7 +34,7 @@ var (
 func KillTraceViewers() {
 	traceviewersMu.Lock()
 	for _, p := range traceviewers {
-		p.Kill() // ignore error
+		kill(p) // ignore error
 	}
 	traceviewers = nil
 	traceviewersMu.Unlock()
@@ -87,6 +91,7 @@ func startFlightRecorder() (http.HandlerFunc, error) {
 		// web server process. It will run until gopls terminates.
 		// (It would be nicer if we could just link it in; see #66843.)
 		cmd := exec.Command("go", "tool", "trace", tracefile)
+		cmd.SysProcAttr = &sysProcAttr
 
 		// Don't connect trace's std{out,err} to our os.Stderr directly,
 		// otherwise the child may outlive the parent in tests,
