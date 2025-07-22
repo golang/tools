@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/internal/gocommand"
@@ -64,23 +65,34 @@ func TestRmdirAfterGoList_Runner(t *testing.T) {
 // TestRmdirAfterGoList_Runner that executes go list directly, to
 // control for the substantial logic of the gocommand package.
 //
-// If this test ever fails, the go command itself has a bug; as of May
-// 2025 this has never been observed.
+// It has two variants: the first does not set WaitDelay; the second
+// sets it to 30s. If the first variant ever fails, the go command
+// itself has a bug; as of May 2025 this has never been observed.
+//
+// If the second variant fails, it indicates that the WaitDelay
+// mechanism is responsible for causing Wait to return before the
+// child process has naturally finished. This is to confirm the
+// hypothesis at https://github.com/golang/go/issues/73736#issuecomment-2885407104.
 func TestRmdirAfterGoList_Direct(t *testing.T) {
-	testRmdirAfterGoList(t, func(ctx context.Context, dir string) {
-		cmd := exec.Command("go", "list", "-json", "example.com/p")
-		cmd.Dir = dir
-		cmd.Stdout = new(strings.Builder)
-		cmd.Stderr = new(strings.Builder)
-		err := cmd.Run()
-		if ctx.Err() != nil {
-			return // don't report error if canceled
-		}
-		if err != nil {
-			t.Fatalf("go list failed: %v (stdout=%s stderr=%s)",
-				err, cmd.Stdout, cmd.Stderr)
-		}
-	})
+	for _, delay := range []time.Duration{0, 30 * time.Second} {
+		t.Run(delay.String(), func(t *testing.T) {
+			testRmdirAfterGoList(t, func(ctx context.Context, dir string) {
+				cmd := exec.Command("go", "list", "-json", "example.com/p")
+				cmd.Dir = dir
+				cmd.Stdout = new(strings.Builder)
+				cmd.Stderr = new(strings.Builder)
+				cmd.WaitDelay = delay
+				err := cmd.Run()
+				if ctx.Err() != nil {
+					return // don't report error if canceled
+				}
+				if err != nil {
+					t.Fatalf("go list failed: %v (stdout=%s stderr=%s)",
+						err, cmd.Stdout, cmd.Stderr)
+				}
+			})
+		})
+	}
 }
 
 func testRmdirAfterGoList(t *testing.T, f func(ctx context.Context, dir string)) {
@@ -102,6 +114,7 @@ func testRmdirAfterGoList(t *testing.T, f func(ctx context.Context, dir string))
 		}
 	}
 
+	t0 := time.Now()
 	g, ctx := errgroup.WithContext(context.Background())
 	for range 10 {
 		g.Go(func() error {
@@ -110,7 +123,9 @@ func testRmdirAfterGoList(t *testing.T, f func(ctx context.Context, dir string))
 			return fmt.Errorf("oops")
 		})
 	}
-	g.Wait() // ignore expected error
+	g.Wait() // ignore error (expected)
+
+	t.Logf("10 concurrent executions (9 canceled) took %v", time.Since(t0))
 
 	// This is the critical operation.
 	if err := os.RemoveAll(dir); err != nil {
@@ -119,6 +134,6 @@ func testRmdirAfterGoList(t *testing.T, f func(ctx context.Context, dir string))
 		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			t.Log(path, d, err)
 			return nil
-		})
+		}) // ignore error
 	}
 }
