@@ -461,11 +461,9 @@ func goSplitPackage(ctx context.Context, req *codeActionsRequest) error {
 // goplsDocFeatures produces "Browse gopls feature documentation" code actions.
 // See [server.commandHandler.ClientOpenURL] for command implementation.
 func goplsDocFeatures(ctx context.Context, req *codeActionsRequest) error {
-	// TODO(adonovan): after the docs are published in gopls/v0.17.0,
-	// use the gopls release tag instead of master.
 	cmd := command.NewClientOpenURLCommand(
 		"Browse gopls feature documentation",
-		"https://github.com/golang/tools/blob/master/gopls/doc/features/index.md")
+		"https://go.dev/gopls/features")
 	req.addCommandAction(cmd, false)
 	return nil
 }
