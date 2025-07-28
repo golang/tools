@@ -9,9 +9,9 @@ require (
 	github.com/jba/templatecheck v0.7.1
 	golang.org/x/mod v0.26.0
 	golang.org/x/sync v0.16.0
-	golang.org/x/telemetry v0.0.0-20250710130107-8d8967aff50b
+	golang.org/x/telemetry v0.0.0-20250728150502-1581f0a59201
 	golang.org/x/text v0.27.0
-	golang.org/x/tools v0.34.1-0.20250613162507-3f93fece84c7
+	golang.org/x/tools v0.35.0
 	golang.org/x/vuln v1.1.4
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.7.0-0.dev.0.20250523013057-bbc2f4dd71ea
@@ -24,7 +24,7 @@ require (
 	github.com/fatih/camelcase v1.0.0 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/google/safehtml v0.1.0 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20250620022241-b7579e27df2b // indirect
+	golang.org/x/exp/typeparams v0.0.0-20250718183923-645b1fa84792 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
 	golang.org/x/tools/go/packages/packagestest v0.1.1-deprecated // indirect
