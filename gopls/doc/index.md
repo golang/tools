@@ -26,6 +26,9 @@ by editor, so we recommend that you proceed to the
 Also, the gopls documentation for each feature describes whether it is
 supported in each client editor.
 
+This documentation (https://go.dev/gopls) describes the most recent release of gopls.
+To preview documentation for the release under development, visit https://tip.golang.org/gopls.
+
 ## Features
 
 Gopls supports a wide range of standard LSP features for navigation,
