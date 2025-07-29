@@ -67,6 +67,12 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (any, error) {
+	// The standard library makes heavy use of intrinsics, linknames, etc,
+	// that confuse this algorithm; so skip it (#74130).
+	if analysisinternal.IsStdPackage(pass.Pkg.Path()) {
+		return nil, nil
+	}
+
 	var (
 		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
