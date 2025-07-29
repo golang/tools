@@ -105,7 +105,6 @@ func writeclient() {
 	}
 	out.WriteString("}\n\n")
 	out.WriteString(`func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
-	defer recoverHandlerPanic(r.Method())
 	switch r.Method() {
 `)
 	for _, k := range ccases.keys() {
@@ -136,7 +135,6 @@ func writeserver() {
 }
 
 func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
-	defer recoverHandlerPanic(r.Method())
 	switch r.Method() {
 `)
 	for _, k := range scases.keys() {

@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/jsonrpc2"
 	jsonrpc2_v2 "golang.org/x/tools/internal/jsonrpc2_v2"
@@ -295,18 +294,4 @@ func NonNilSlice[T comparable](x []T) []T {
 		return []T{}
 	}
 	return x
-}
-
-func recoverHandlerPanic(method string) {
-	// Report panics in the handler goroutine,
-	// unless we have enabled the monitor,
-	// which reports all crashes.
-	if !true {
-		defer func() {
-			if x := recover(); x != nil {
-				bug.Reportf("panic in %s request", method)
-				panic(x)
-			}
-		}()
-	}
 }

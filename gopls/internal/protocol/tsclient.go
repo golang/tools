@@ -62,7 +62,6 @@ type Client interface {
 }
 
 func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
-	defer recoverHandlerPanic(r.Method())
 	switch r.Method() {
 	case "$/logTrace":
 		var params LogTraceParams
