@@ -194,21 +194,34 @@ package foo
 			goos:           []string{"darwin"},
 			watchErrorPath: "foo",
 			changes: func(root string, errs chan error) error {
-				// ├── foo                       <- 1st
-				// │   ├── from.go -> ../to.go   <- 2nd
-				// │   └── foo.go                <- 4th
-				// └── to.go                     <- 3rd
-				dir := filepath.Join(root, "foo")
-				if err := os.Mkdir(dir, 0755); err != nil {
+				// Prepare a dir with with broken symbolic link.
+				// foo                        <- 1st
+				// └── from.go -> root/to.go  <- 1st
+				tmp := filepath.Join(t.TempDir(), "foo")
+				if err := os.Mkdir(tmp, 0755); err != nil {
 					return err
 				}
+				from := filepath.Join(tmp, "from.go")
+
 				to := filepath.Join(root, "to.go")
-				from := filepath.Join(dir, "from.go")
 				// Create the symbolic link to a non-existing file. This would
 				// cause the watch registration to fail.
 				if err := os.Symlink(to, from); err != nil {
 					return err
 				}
+
+				// Move the directory containing the broken symlink into place
+				// to avoids a flaky test where the directory could be watched
+				// before the symlink is created. See golang/go#74782.
+				if err := os.Rename(tmp, filepath.Join(root, "foo")); err != nil {
+					return err
+				}
+
+				// root
+				// ├── foo                       <- 2nd (Move)
+				// │   ├── from.go -> ../to.go   <- 2nd (Move)
+				// │   └── foo.go                <- 4th (Create)
+				// └── to.go                     <- 3rd (Create)
 
 				// Should be able to capture an error from [fsnotify.Watcher.Add].
 				err := <-errs
@@ -244,7 +257,7 @@ package foo
 
 				// Once the watch registration is done, file events under the
 				// dir should be captured.
-				return os.WriteFile(filepath.Join(dir, "foo.go"), []byte("package main"), 0644)
+				return os.WriteFile(filepath.Join(root, "foo", "foo.go"), []byte("package main"), 0644)
 			},
 			expectedEvents: []protocol.FileEvent{
 				{URI: "foo", Type: protocol.Created},
