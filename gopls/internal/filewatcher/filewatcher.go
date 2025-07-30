@@ -32,14 +32,16 @@ type Watcher struct {
 	// distinct from the fsnotify watcher's error channel.
 	errs chan error
 
-	// watchers counts the number of active watch registration goroutines,
-	// including their error handling.
-	watchers sync.WaitGroup
-	runners  sync.WaitGroup // counts the number of active run goroutines (max 1)
+	runners sync.WaitGroup // counts the number of active run goroutines (max 1)
 
 	watcher *fsnotify.Watcher
 
 	mu sync.Mutex // guards all fields below
+
+	// watchers counts the number of active watch registration goroutines,
+	// including their error handling.
+	// After [Watcher.Close] called, watchers's counter will no longer increase.
+	watchers sync.WaitGroup
 
 	// dirCancel maps a directory path to its cancellation channel.
 	// A nil map indicates the watcher is closing and prevents new directory
@@ -157,17 +159,13 @@ func (w *Watcher) WatchDir(path string) error {
 				return filepath.SkipDir
 			}
 
-			done := w.addWatchHandle(path)
+			done, release := w.addWatchHandle(path)
 			if done == nil { // file watcher closing
 				return filepath.SkipAll
 			}
+			defer release()
 
-			errChan := make(chan error, 1)
-			w.watchDir(path, done, errChan)
-
-			if err := <-errChan; err != nil {
-				return err
-			}
+			return w.watchDir(path, done)
 		}
 		return nil
 	})
@@ -229,8 +227,13 @@ func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 			// This watch is added asynchronously to prevent a potential
 			// deadlock on Windows. See fsnotify/fsnotify#502.
 			// Error encountered will be sent to internal error channel.
-			if done := w.addWatchHandle(path); done != nil {
-				go w.watchDir(path, done, w.errs)
+			if done, release := w.addWatchHandle(path); done != nil {
+				go func() {
+					w.errs <- w.watchDir(path, done)
+
+					// Only release after the error is sent.
+					release()
+				}()
 			}
 
 			return &protocol.FileEvent{
@@ -273,13 +276,10 @@ func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
 }
 
 // watchDir registers a watch for a directory, retrying with backoff if it fails.
-// It can be canceled by calling removeWatchHandle. On success or cancellation,
-// nil is sent to 'errChan'; otherwise, the last error after all retries is sent.
-func (w *Watcher) watchDir(path string, done chan struct{}, errChan chan error) {
-	if errChan == nil {
-		panic("input error chan is nil")
-	}
-
+// It can be canceled by calling removeWatchHandle.
+// Returns nil on success or cancellation; otherwise, the last error after all
+// retries.
+func (w *Watcher) watchDir(path string, done chan struct{}) error {
 	// On darwin, watching a directory will fail if it contains broken symbolic
 	// links. This state can occur temporarily during operations like a git
 	// branch switch. To handle this, we retry multiple times with exponential
@@ -298,50 +298,49 @@ func (w *Watcher) watchDir(path string, done chan struct{}, errChan chan error) 
 		err   error
 	)
 
-	// Watchers wait group becomes done only after errChan send.
-	w.watchers.Add(1)
-	defer func() {
-		errChan <- err
-		w.watchers.Done()
-	}()
-
 	for i := range 5 {
 		if i > 0 {
 			select {
 			case <-time.After(delay):
 				delay *= 2
 			case <-done:
-				return // cancelled
+				return nil // cancelled
 			}
 		}
 		// This function may block due to fsnotify/fsnotify#502.
-		err := w.watcher.Add(path)
+		err = w.watcher.Add(path)
 		if afterAddHook != nil {
 			afterAddHook(path, err)
 		}
 		if err == nil {
-			return
+			break
 		}
 	}
+
+	return err
 }
 
 var afterAddHook func(path string, err error)
 
 // addWatchHandle registers a new directory watch.
-// The returned 'done' channel channel should be used to signal cancellation of
-// a pending watch.
+// The returned 'done' channel should be used to signal cancellation of a
+// pending watch, the release function should be called once watch registration
+// is done.
 // It returns nil if the watcher is already closing.
-func (w *Watcher) addWatchHandle(path string) chan struct{} {
+func (w *Watcher) addWatchHandle(path string) (done chan struct{}, release func()) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if w.dirCancel == nil { // file watcher is closing.
-		return nil
+		return nil, nil
 	}
 
-	done := make(chan struct{})
+	done = make(chan struct{})
 	w.dirCancel[path] = done
-	return done
+
+	w.watchers.Add(1)
+
+	return done, w.watchers.Done
 }
 
 // removeWatchHandle removes the handle for a directory watch and cancels any
@@ -353,19 +352,6 @@ func (w *Watcher) removeWatchHandle(path string) {
 	if done, ok := w.dirCancel[path]; ok {
 		delete(w.dirCancel, path)
 		close(done)
-	}
-}
-
-// close removes all handles and cancels all pending watch attempt for that path
-// and set dirCancel to nil which prevent any future watch attempts.
-func (w *Watcher) close() {
-	w.mu.Lock()
-	dirCancel := w.dirCancel
-	w.dirCancel = nil
-	w.mu.Unlock()
-
-	for _, ch := range dirCancel {
-		close(ch)
 	}
 }
 
@@ -409,13 +395,22 @@ func (w *Watcher) drainEvents() []protocol.FileEvent {
 // Close shuts down the watcher, waits for the internal goroutine to terminate,
 // and returns any final error.
 func (w *Watcher) Close() error {
+	// Set dirCancel to nil which prevent any future watch attempts.
+	w.mu.Lock()
+	dirCancel := w.dirCancel
+	w.dirCancel = nil
+	w.mu.Unlock()
+
 	// Cancel any ongoing watch registration.
-	w.close()
+	for _, ch := range dirCancel {
+		close(ch)
+	}
 
 	// Wait for all watch registration goroutines to finish, including their
 	// error handling. This ensures that:
-	// - All [Watcher.watchDir] goroutines have exited and sent their errors, so
-	//   it is safe to close the internal error channel.
+	// - All [Watcher.watchDir] goroutines have exited and it's error is sent
+	//   to the internal error channel. So it is safe to close the internal
+	//   error channel.
 	// - There are no ongoing [fsnotify.Watcher.Add] calls, so it is safe to
 	//   close the fsnotify watcher (see fsnotify/fsnotify#704).
 	w.watchers.Wait()
