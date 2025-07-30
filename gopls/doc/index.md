@@ -9,8 +9,6 @@ title: "Gopls: The language server for Go"
     $ open http://localhost:6060/go.dev/gopls
 -->
 
-[![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools/gopls)](https://pkg.go.dev/golang.org/x/tools/gopls)
-
 `gopls` (pronounced "Go please") is the official [language
 server](https://langserver.org) for Go, developed by the Go team. It
 provides a wide variety of [IDE features](features/) to any
@@ -32,7 +30,7 @@ To preview documentation for the release under development, visit https://tip.go
 ## Features
 
 Gopls supports a wide range of standard LSP features for navigation,
-completion, diagnostics, analysis, and refactoring, and number of
+completion, diagnostics, analysis, and refactoring, and a number of
 additional features not found in other language servers.
 
 See the [Index of features](features/) for complete

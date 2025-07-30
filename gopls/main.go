@@ -7,9 +7,8 @@
 // to be extended with IDE-like features;
 // see https://langserver.org/ for details.
 //
-// See https://github.com/golang/tools/blob/master/gopls/doc/index.md
-// for the most up-to-date documentation.
-package main // import "golang.org/x/tools/gopls"
+// See https://go.dev/gopls for comprehensive documentation on Gopls.
+package main
 
 import (
 	"context"

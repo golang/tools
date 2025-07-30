@@ -10,11 +10,9 @@ So, before sending a CL, please please please:
   exist already. This allows us to identify redundant requests, or to
   merge a specific problem into a more general one, and to assess the
   importance of the problem.
-
 - **claim it for yourself** by commenting on the issue or, if you are
   able, by assigning the issue to yourself. This helps us avoid two
   people working on the same problem.
-
 - **propose an implementation plan** in the issue tracker for CLs of
   any complexity. It is much more efficient to discuss the plan at a
   high level before we start getting bogged down in the details of
@@ -41,7 +39,7 @@ for example by making the code self-explanatory.
 It's fine to disagree with a comment,
 point out a reviewer's mistake,
 or offer to address a comment in a follow-up change,
-leaving a TODO comment in the current CL.
+leaving a `TODO` comment in the current CL.
 But please don't dismiss or quietly ignore a comment without action,
 as it may lead reviewers to repeat themselves,
 or to serious problems being neglected.
@@ -60,8 +58,10 @@ claiming it.
 
 ## Getting started
 
-Most of the `gopls` logic is in the `golang.org/x/tools/gopls/internal`
-directory. See [design/implementation.md](./design/implementation.md) for an overview of the code organization.
+[![PkgGoDev](https://pkg.go.dev/badge/golang.org/x/tools/gopls/internal)](https://pkg.go.dev/golang.org/x/tools/gopls/internal)
+
+Most of the `gopls` logic is in the `golang.org/x/tools/gopls/internal` directory.
+See [design/implementation.md](./design/implementation.md) for an overview of the code organization.
 
 ## Build
 
