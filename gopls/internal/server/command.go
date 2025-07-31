@@ -292,13 +292,19 @@ func (c *commandHandler) AddTest(ctx context.Context, loc protocol.Location) (*p
 		if deps.snapshot.FileKind(deps.fh) != file.Go {
 			return fmt.Errorf("can't add test for non-Go file")
 		}
-		docedits, err := golang.AddTestForFunc(ctx, deps.snapshot, loc)
+		docedits, show, err := golang.AddTestForFunc(ctx, deps.snapshot, loc)
 		if err != nil {
 			return err
 		}
-		return applyChanges(ctx, c.s.client, docedits)
+		if err := applyChanges(ctx, c.s.client, docedits); err != nil {
+			return err
+		}
+
+		if show != nil {
+			showDocumentImpl(ctx, c.s.client, protocol.URI(show.URI), &show.Range, c.s.options)
+		}
+		return nil
 	})
-	// TODO(hxjiang): move the cursor to the new test once edits applied.
 	return result, err
 }
 

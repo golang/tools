@@ -212,21 +212,23 @@ var testTmpl = template.Must(template.New("test").Funcs(template.FuncMap{
 
 // AddTestForFunc adds a test for the function enclosing the given input range.
 // It creates a _test.go file if one does not already exist.
-func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.Location) (changes []protocol.DocumentChange, _ error) {
+// It returns the required text edits and the predicted location of the new test
+// function, which is only valid after the edits have been successfully applied.
+func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.Location) (changes []protocol.DocumentChange, show *protocol.Location, _ error) {
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, loc.URI)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if metadata.IsCommandLineArguments(pkg.Metadata().ID) {
-		return nil, fmt.Errorf("current file in command-line-arguments package")
+		return nil, nil, fmt.Errorf("current file in command-line-arguments package")
 	}
 
 	if errors := pkg.ParseErrors(); len(errors) > 0 {
-		return nil, fmt.Errorf("package has parse errors: %v", errors[0])
+		return nil, nil, fmt.Errorf("package has parse errors: %v", errors[0])
 	}
 	if errors := pkg.TypeErrors(); len(errors) > 0 {
-		return nil, fmt.Errorf("package has type errors: %v", errors[0])
+		return nil, nil, fmt.Errorf("package has type errors: %v", errors[0])
 	}
 
 	// All three maps map the path of an imported package to
@@ -262,7 +264,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 
 	// Collect all the imports from the x.go, keep track of the local package name.
 	if fileImports, err = collectImports(pgf.File); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	testBase := strings.TrimSuffix(loc.URI.Base(), ".go") + "_test.go"
@@ -270,7 +272,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 
 	testFH, err := snapshot.ReadFile(ctx, goTestFileURI)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// TODO(hxjiang): use a fresh name if the same test function name already
@@ -289,17 +291,17 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 
 	start, end, err := pgf.RangePos(loc.Range)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
 	if len(path) < 2 {
-		return nil, fmt.Errorf("no enclosing function")
+		return nil, nil, fmt.Errorf("no enclosing function")
 	}
 
 	decl, ok := path[len(path)-2].(*ast.FuncDecl)
 	if !ok {
-		return nil, fmt.Errorf("no enclosing function")
+		return nil, nil, fmt.Errorf("no enclosing function")
 	}
 
 	fn := pkg.TypesInfo().Defs[decl.Name].(*types.Func)
@@ -308,7 +310,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 	testPGF, err := snapshot.ParseGo(ctx, testFH, parsego.Header)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			return nil, err
+			return nil, nil, err
 		}
 		changes = append(changes, protocol.DocumentChangeCreate(goTestFileURI))
 
@@ -322,7 +324,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		if c := CopyrightComment(pgf.File); c != nil {
 			text, err := pgf.NodeText(c)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			header.Write(text)
 			// One empty line between copyright header and following.
@@ -334,7 +336,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		if c := buildConstraintComment(pgf.File); c != nil {
 			text, err := pgf.NodeText(c)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			header.Write(text)
 			// One empty line between build constraint and following.
@@ -397,7 +399,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 	} else { // existing _test.go file.
 		file := testPGF.File
 		if !file.Name.NamePos.IsValid() {
-			return nil, fmt.Errorf("missing package declaration")
+			return nil, nil, fmt.Errorf("missing package declaration")
 		}
 		switch file.Name.Name {
 		case pgf.File.Name.Name:
@@ -405,17 +407,17 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		case pgf.File.Name.Name + "_test":
 			xtest = true
 		default:
-			return nil, fmt.Errorf("invalid package declaration %q in test file %q", file.Name, testPGF)
+			return nil, nil, fmt.Errorf("invalid package declaration %q in test file %q", file.Name, testPGF)
 		}
 
 		eofRange, err = testPGF.PosRange(file.FileEnd, file.FileEnd)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		// Collect all the imports from the foo_test.go.
 		if testImports, err = collectImports(file); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -453,13 +455,13 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 	if xtest {
 		// Reject if function/method is unexported.
 		if !fn.Exported() {
-			return nil, fmt.Errorf("cannot add test of unexported function %s to external test package %s_test", decl.Name, pgf.File.Name)
+			return nil, nil, fmt.Errorf("cannot add test of unexported function %s to external test package %s_test", decl.Name, pgf.File.Name)
 		}
 
 		// Reject if receiver is unexported.
 		if sig.Recv() != nil {
 			if _, ident, _ := goplsastutil.UnpackRecv(decl.Recv.List[0].Type); ident == nil || !ident.IsExported() {
-				return nil, fmt.Errorf("cannot add external test for method %s.%s as receiver type is not exported", ident.Name, decl.Name)
+				return nil, nil, fmt.Errorf("cannot add external test for method %s.%s as receiver type is not exported", ident.Name, decl.Name)
 			}
 		}
 		// TODO(hxjiang): reject if the any input parameter type is unexported.
@@ -469,7 +471,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 
 	testName, err := testName(fn)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	data := testInfo{
@@ -525,7 +527,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 
 		t, ok := recvType.(typesinternal.NamedOrAlias)
 		if !ok {
-			return nil, fmt.Errorf("the receiver type is neither named type nor alias type")
+			return nil, nil, fmt.Errorf("the receiver type is neither named type nor alias type")
 		}
 
 		var varName string
@@ -707,7 +709,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		}
 		importEdits, err := ComputeImportFixEdits(snapshot.Options().Local, testPGF.Src, importFixes...)
 		if err != nil {
-			return nil, fmt.Errorf("could not compute the import fix edits: %w", err)
+			return nil, nil, fmt.Errorf("could not compute the import fix edits: %w", err)
 		}
 		edits = append(edits, importEdits...)
 	} else {
@@ -740,21 +742,41 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 
 	var test bytes.Buffer
 	if err := testTmpl.Execute(&test, data); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	formatted, err := format.Source(test.Bytes())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	edits = append(edits,
 		protocol.TextEdit{
 			Range:   eofRange,
 			NewText: string(formatted),
-		})
+		},
+	)
 
-	return append(changes, protocol.DocumentChangeEdit(testFH, edits)), nil
+	// Show the line of generated test function.
+	{
+		line := eofRange.Start.Line
+		for i := range len(edits) - 1 { // last edits is the func decl
+			e := edits[i]
+			oldLines := e.Range.End.Line - e.Range.Start.Line
+			newLines := uint32(strings.Count(e.NewText, "\n"))
+			line += (newLines - oldLines)
+		}
+		show = &protocol.Location{
+			URI: testFH.URI(),
+			Range: protocol.Range{
+				// Test function template have a new line at beginning.
+				Start: protocol.Position{Line: line + 1},
+				End:   protocol.Position{Line: line + 1},
+			},
+		}
+	}
+
+	return append(changes, protocol.DocumentChangeEdit(testFH, edits)), show, nil
 }
 
 // testName returns the name of the function to use for the new function that
