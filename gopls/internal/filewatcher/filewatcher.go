@@ -121,16 +121,48 @@ func (w *Watcher) run(delay time.Duration, handler func([]protocol.FileEvent, er
 			if !ok {
 				continue
 			}
+
+			// fsnotify does not guarantee clean filepaths.
+			event.Name = filepath.Clean(event.Name)
+
 			// fsnotify.Event should not be handled concurrently, to preserve their
 			// original order. For example, if a file is deleted and recreated,
 			// concurrent handling could process the events in reverse order.
 			//
 			// Only reset the timer if a relevant event happened.
 			// https://github.com/fsnotify/fsnotify?tab=readme-ov-file#why-do-i-get-many-chmod-events
-			if e := w.handleEvent(event); e != nil {
-				w.addEvent(*e)
-				timer.Reset(delay)
+			e, isDir := w.convertEvent(event)
+			if e == (protocol.FileEvent{}) {
+				continue
 			}
+
+			if isDir {
+				switch e.Type {
+				case protocol.Created:
+					// Newly created directories are watched asynchronously to prevent
+					// a potential deadlock on Windows(see fsnotify/fsnotify#502).
+					// Errors are reported internally.
+					if done, release := w.addWatchHandle(event.Name); done != nil {
+						go func() {
+							w.errs <- w.watchDir(event.Name, done)
+
+							// Only release after the error is sent.
+							release()
+						}()
+					}
+				case protocol.Deleted:
+					// Upon removal, we only need to remove the entries from
+					// the map. The [fsnotify.Watcher] removes the watch for
+					// us. fsnotify/fsnotify#268
+					w.removeWatchHandle(event.Name)
+				default:
+					// convertEvent enforces that dirs are only Created or Deleted.
+					panic("impossible")
+				}
+			}
+
+			w.addEvent(e)
+			timer.Reset(delay)
 		}
 	}
 }
@@ -171,108 +203,70 @@ func (w *Watcher) WatchDir(path string) error {
 	})
 }
 
-// handleEvent converts an [fsnotify.Event] to the corresponding [protocol.FileEvent]
-// and updates the watcher state, returning nil if the event is not relevant.
-//
-// To avoid blocking, any required watches for new subdirectories are registered
-// asynchronously in a separate goroutine.
-func (w *Watcher) handleEvent(event fsnotify.Event) *protocol.FileEvent {
-	// fsnotify does not guarantee clean filepaths.
-	path := filepath.Clean(event.Name)
-
-	var isDir bool
-	if info, err := os.Stat(path); err == nil {
+// convertEvent translates an [fsnotify.Event] into a [protocol.FileEvent].
+// It returns the translated event and a boolean indicating if the path was a
+// directory. For directories, the event Type is either Created or Deleted.
+// It returns empty event for events that should be ignored.
+func (w *Watcher) convertEvent(event fsnotify.Event) (_ protocol.FileEvent, isDir bool) {
+	// Determine if the event is for a directory.
+	if info, err := os.Stat(event.Name); err == nil {
 		isDir = info.IsDir()
 	} else if os.IsNotExist(err) {
-		// Upon deletion, the file/dir has been removed. fsnotify
-		// does not provide information regarding the deleted item.
+		// Upon deletion, the file/dir has been removed. fsnotify does not
+		// provide information regarding the deleted item.
 		// Use watchHandles to determine if the deleted item was a directory.
-		isDir = w.isWatchedDir(path)
+		isDir = w.isWatchedDir(event.Name)
 	} else {
 		// If statting failed, something is wrong with the file system.
 		// Log and move on.
 		if w.logger != nil {
-			w.logger.Error("failed to stat path, skipping event as its type (file/dir) is unknown", "path", path, "err", err)
+			w.logger.Error("failed to stat path, skipping event as its type (file/dir) is unknown", "path", event.Name, "err", err)
 		}
-		return nil
+		return protocol.FileEvent{}, false
 	}
 
+	// Filter out events for directories and files that are not of interest.
 	if isDir {
-		if skipDir(filepath.Base(path)) {
-			return nil
-		}
-
-		switch {
-		case event.Op.Has(fsnotify.Rename):
-			// A rename is treated as a deletion of the old path because the
-			// fsnotify RENAME event doesn't include the new path. A separate
-			// CREATE event will be sent for the new path if the destination
-			// directory is watched.
-			fallthrough
-		case event.Op.Has(fsnotify.Remove):
-			// Upon removal, we only need to remove the entries from the map.
-			// The [fsnotify.Watcher] removes the watch for us.
-			// fsnotify/fsnotify#268
-			w.removeWatchHandle(path)
-
-			// TODO(hxjiang): Directory removal events from some LSP clients may
-			// not include corresponding removal events for child files and
-			// subdirectories. Should we do some filtering when adding the dir
-			// deletion event to the events slice.
-			return &protocol.FileEvent{
-				URI:  protocol.URIFromPath(path),
-				Type: protocol.Deleted,
-			}
-		case event.Op.Has(fsnotify.Create):
-			// This watch is added asynchronously to prevent a potential
-			// deadlock on Windows. See fsnotify/fsnotify#502.
-			// Error encountered will be sent to internal error channel.
-			if done, release := w.addWatchHandle(path); done != nil {
-				go func() {
-					w.errs <- w.watchDir(path, done)
-
-					// Only release after the error is sent.
-					release()
-				}()
-			}
-
-			return &protocol.FileEvent{
-				URI:  protocol.URIFromPath(path),
-				Type: protocol.Created,
-			}
-		default:
-			return nil
+		if skipDir(filepath.Base(event.Name)) {
+			return protocol.FileEvent{}, true
 		}
 	} else {
-		// Only watch files of interest.
-		switch strings.TrimPrefix(filepath.Ext(path), ".") {
+		switch strings.TrimPrefix(filepath.Ext(event.Name), ".") {
 		case "go", "mod", "sum", "work", "s":
 		default:
-			return nil
-		}
-
-		var t protocol.FileChangeType
-		switch {
-		case event.Op.Has(fsnotify.Rename):
-			// A rename is treated as a deletion of the old path because the
-			// fsnotify RENAME event doesn't include the new path. A separate
-			// CREATE event will be sent for the new path if the destination
-			// directory is watched.
-			fallthrough
-		case event.Op.Has(fsnotify.Remove):
-			t = protocol.Deleted
-		case event.Op.Has(fsnotify.Create):
-			t = protocol.Created
-		case event.Op.Has(fsnotify.Write):
-			t = protocol.Changed
-		default:
-			return nil // ignore the rest of the events
-		}
-		return &protocol.FileEvent{
-			URI:  protocol.URIFromPath(path),
-			Type: t,
+			return protocol.FileEvent{}, false
 		}
 	}
+
+	var t protocol.FileChangeType
+	switch {
+	case event.Op.Has(fsnotify.Rename):
+		// A rename is treated as a deletion of the old path because the
+		// fsnotify RENAME event doesn't include the new path. A separate
+		// CREATE event will be sent for the new path if the destination
+		// directory is watched.
+		fallthrough
+	case event.Op.Has(fsnotify.Remove):
+		// TODO(hxjiang): Directory removal events from some LSP clients may
+		// not include corresponding removal events for child files and
+		// subdirectories. Should we do some filtering when adding the dir
+		// deletion event to the events slice.
+		t = protocol.Deleted
+	case event.Op.Has(fsnotify.Create):
+		t = protocol.Created
+	case event.Op.Has(fsnotify.Write):
+		if isDir {
+			return protocol.FileEvent{}, isDir // ignore dir write events
+		}
+		t = protocol.Changed
+	default:
+		return protocol.FileEvent{}, isDir // ignore the rest of the events
+	}
+
+	return protocol.FileEvent{
+		URI:  protocol.URIFromPath(event.Name),
+		Type: t,
+	}, isDir
 }
 
 // watchDir registers a watch for a directory, retrying with backoff if it fails.
