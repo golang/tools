@@ -8,7 +8,8 @@
 //
 // Example: show gopls' total source line count, and its breakdown
 // between gopls, x/tools, and the std go/* packages. (The balance
-// comes from other std packages.)
+// comes from other std packages, other x/ repos, and external
+// dependencies.)
 //
 //	$ linecount -mode=total ./gopls
 //	752124
@@ -41,6 +42,8 @@ import (
 	"cmp"
 	"flag"
 	"fmt"
+	"go/scanner"
+	"go/token"
 	"log"
 	"os"
 	"path"
@@ -53,7 +56,6 @@ import (
 )
 
 // TODO(adonovan): filters:
-// - exclude comment and blank lines (-nonblank)
 // - exclude generated files (-generated=false)
 // - exclude non-CompiledGoFiles
 // - include OtherFiles (asm, etc)
@@ -75,8 +77,9 @@ func main() {
 	log.SetFlags(0)
 	var (
 		mode       = flag.String("mode", "file", "group lines by 'module', 'package', or 'file', or show only 'total'")
-		prefix     = flag.String("prefix", "", "only count files in packages whose path has the specified prefix")
-		onlyModule = flag.String("module", "", "only count files in the specified module")
+		prefix     = flag.String("prefix", "", "count files only in packages whose path has the specified prefix")
+		onlyModule = flag.String("module", "", "count files only in the specified module")
+		nonblank   = flag.Bool("nonblank", false, "count only non-comment, non-blank lines")
 	)
 	flag.Usage = usage
 	flag.Parse()
@@ -128,7 +131,8 @@ func main() {
 				if err != nil {
 					return err
 				}
-				n := bytes.Count(data, []byte("\n"))
+
+				n := count(*nonblank, data)
 
 				mu.Lock()
 				byFile[f] = n
@@ -186,4 +190,36 @@ func main() {
 func within(file, dir string) bool {
 	return file == dir ||
 		strings.HasPrefix(file, dir) && file[len(dir)] == os.PathSeparator
+}
+
+// count counts lines, or non-comment non-blank lines.
+func count(nonblank bool, src []byte) int {
+	if nonblank {
+		// Count distinct lines containing tokens.
+		var (
+			fset     = token.NewFileSet()
+			f        = fset.AddFile("", fset.Base(), len(src))
+			prevLine = 0
+			count    = 0
+			scan     scanner.Scanner
+		)
+		scan.Init(f, src, nil, 0)
+		for {
+			pos, tok, _ := scan.Scan()
+			if tok == token.EOF {
+				break
+			}
+			// This may be slow because it binary
+			// searches the newline offset table.
+			line := f.PositionFor(pos, false).Line // ignore //line directives
+			if line > prevLine {
+				prevLine = line
+				count++
+			}
+		}
+		return count
+	}
+
+	// Count all lines.
+	return bytes.Count(src, []byte("\n"))
 }
