@@ -1115,8 +1115,10 @@ func TestGenericAliases(t *testing.T) {
 	cmd.Env = append(os.Environ(),
 		"GENERICALIASTEST_CHILD=1",
 		"GODEBUG=gotypesalias=1",
-		"GOEXPERIMENT=aliastypeparams",
 	)
+	if testenv.Go1Point() == 23 {
+		cmd.Env = append(cmd.Env, "GOEXPERIMENT=aliastypeparams")
+	}
 	out, err := cmd.CombinedOutput()
 	if len(out) > 0 {
 		t.Logf("out=<<%s>>", out)
