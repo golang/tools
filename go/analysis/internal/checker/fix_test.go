@@ -42,6 +42,7 @@ func TestMain(m *testing.M) {
 			markerAnalyzer,
 			noendAnalyzer,
 			renameAnalyzer,
+			relatedAnalyzer,
 		)
 		panic("unreachable")
 	}
@@ -581,6 +582,25 @@ var noendAnalyzer = &analysis.Analyzer{
 					End:     token.NoPos,
 					NewText: []byte("/*hello*/"),
 				}},
+			}},
+		})
+		return nil, nil
+	},
+}
+
+var relatedAnalyzer = &analysis.Analyzer{
+	Name: "related",
+	Doc:  "reports a Diagnostic with RelatedInformaiton",
+	Run: func(pass *analysis.Pass) (any, error) {
+		decl := pass.Files[0].Decls[0]
+		pass.Report(analysis.Diagnostic{
+			Pos:     decl.Pos(),
+			End:     decl.Pos() + 1,
+			Message: "decl starts here",
+			Related: []analysis.RelatedInformation{{
+				Message: "decl ends here",
+				Pos:     decl.End() - 1,
+				End:     decl.End(),
 			}},
 		})
 		return nil, nil

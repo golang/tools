@@ -1,0 +1,25 @@
+# Test plain output.
+#
+# File slashes assume non-Windows.
+skip GOOS=windows
+
+checker -related example.com/p
+stderr p/p.go:3:1: decl starts here
+stderr p/p.go:4:1: 	decl ends here
+
+checker -related -c=0 example.com/p
+stderr p/p.go:3:1: decl starts here
+stderr 3	func f\(bar int\) {
+stderr p/p.go:4:1: 	decl ends here
+stderr 4	}
+exit 3
+
+-- go.mod --
+module example.com
+go 1.22
+
+-- p/p.go --
+package p
+
+func f(bar int) {
+}
