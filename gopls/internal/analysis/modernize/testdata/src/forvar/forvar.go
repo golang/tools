@@ -12,12 +12,24 @@ func _(m map[int]int, s []int) {
 	}
 	for k, v := range m {
 		k := k // want "copying variable is unneeded"
-		v := v // nope: report only the first redeclaration
+		v := v // want "copying variable is unneeded"
 		go f(k)
 		go f(v)
 	}
-	for _, v := range m {
+	for k, v := range m {
 		v := v // want "copying variable is unneeded"
+		k := k // want "copying variable is unneeded"
+		go f(k)
+		go f(v)
+	}
+	for k, v := range m {
+		k, v := k, v // want "copying variable is unneeded"
+		go f(k)
+		go f(v)
+	}
+	for k, v := range m {
+		v, k := v, k // want "copying variable is unneeded"
+		go f(k)
 		go f(v)
 	}
 	for i := range s {
@@ -53,8 +65,23 @@ func _(m map[int]int, s []int) {
 		v := i
 		go f(v)
 	}
-	for i := range s {
+	for k, v := range m { // nope, LHS and RHS differ
+		v, k := k, v
+		go f(k)
+		go f(v)
+	}
+	for k, v := range m { // nope, not a simple redecl
+		k, v, x := k, v, 1
+		go f(k)
+		go f(v)
+		go f(x)
+	}
+	for i := range s { // nope, not a simple redecl
 		i := (i)
+		go f(i)
+	}
+	for i := range s { // nope, not a simple redecl
+		i := i + 1
 		go f(i)
 	}
 }

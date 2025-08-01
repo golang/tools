@@ -30,66 +30,50 @@ import (
 // is declared implicitly before executing the post statement and initialized to the
 // value of the previous iteration's variable at that moment.")
 func forvar(pass *analysis.Pass) {
-	info := pass.TypesInfo
-
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	for curFile := range filesUsing(inspect, info, "go1.22") {
+	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.22") {
+		astFile := curFile.Node().(*ast.File)
 		for curLoop := range curFile.Preorder((*ast.RangeStmt)(nil)) {
-			// in a range loop. Is the first statement var := var?
-			// if so, is var one of the range vars, and is it defined
-			// in the for statement?
-			// If so, decide how much to delete.
 			loop := curLoop.Node().(*ast.RangeStmt)
 			if loop.Tok != token.DEFINE {
 				continue
 			}
-			v, stmt := loopVarRedecl(loop.Body)
-			if v == nil {
-				continue // index is not redeclared
+			isLoopVarRedecl := func(assign *ast.AssignStmt) bool {
+				for i, lhs := range assign.Lhs {
+					if !(equalSyntax(lhs, assign.Rhs[i]) &&
+						(equalSyntax(lhs, loop.Key) || equalSyntax(lhs, loop.Value))) {
+						return false
+					}
+				}
+				return true
 			}
-			if (loop.Key == nil || !equalSyntax(loop.Key, v)) &&
-				(loop.Value == nil || !equalSyntax(loop.Value, v)) {
-				continue
+			// Have: for k, v := range x { stmts }
+			//
+			// Delete the prefix of stmts that are
+			// of the form k := k; v := v; k, v := k, v; v, k := v, k.
+			for _, stmt := range loop.Body.List {
+				if assign, ok := stmt.(*ast.AssignStmt); ok &&
+					assign.Tok == token.DEFINE &&
+					len(assign.Lhs) == len(assign.Rhs) &&
+					isLoopVarRedecl(assign) {
+
+					edits := analysisinternal.DeleteStmt(pass.Fset, astFile, stmt, bug.Reportf)
+					if len(edits) > 0 {
+						pass.Report(analysis.Diagnostic{
+							Pos:      stmt.Pos(),
+							End:      stmt.End(),
+							Category: "forvar",
+							Message:  "copying variable is unneeded",
+							SuggestedFixes: []analysis.SuggestedFix{{
+								Message:   "Remove unneeded redeclaration",
+								TextEdits: edits,
+							}},
+						})
+					}
+				} else {
+					break // stop at first other statement
+				}
 			}
-			astFile := curFile.Node().(*ast.File)
-			edits := analysisinternal.DeleteStmt(pass.Fset, astFile, stmt, bug.Reportf)
-			if len(edits) == 0 {
-				bug.Reportf("forvar failed to delete statement")
-				continue
-			}
-			remove := edits[0]
-			diag := analysis.Diagnostic{
-				Pos:      remove.Pos,
-				End:      remove.End,
-				Category: "forvar",
-				Message:  "copying variable is unneeded",
-				SuggestedFixes: []analysis.SuggestedFix{{
-					Message:   "Remove unneeded redeclaration",
-					TextEdits: []analysis.TextEdit{remove},
-				}},
-			}
-			pass.Report(diag)
 		}
 	}
-}
-
-// if the first statement is var := var, return var and the stmt
-func loopVarRedecl(body *ast.BlockStmt) (*ast.Ident, *ast.AssignStmt) {
-	if len(body.List) < 1 {
-		return nil, nil
-	}
-	stmt, ok := body.List[0].(*ast.AssignStmt)
-	if !ok || !isSimpleAssign(stmt) || stmt.Tok != token.DEFINE {
-		return nil, nil
-	}
-	if _, ok := stmt.Lhs[0].(*ast.Ident); !ok {
-		return nil, nil
-	}
-	if _, ok := stmt.Rhs[0].(*ast.Ident); !ok {
-		return nil, nil
-	}
-	if stmt.Lhs[0].(*ast.Ident).Name == stmt.Rhs[0].(*ast.Ident).Name {
-		return stmt.Lhs[0].(*ast.Ident), stmt
-	}
-	return nil, nil
 }
