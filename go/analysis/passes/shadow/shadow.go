@@ -6,9 +6,11 @@ package shadow
 
 import (
 	_ "embed"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
+	"path/filepath"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -262,7 +264,24 @@ func checkShadowing(pass *analysis.Pass, spans map[types.Object]span, ident *ast
 	}
 	// Don't complain if the types differ: that implies the programmer really wants two different things.
 	if types.Identical(obj.Type(), shadowed.Type()) {
-		line := pass.Fset.Position(shadowed.Pos()).Line
-		pass.ReportRangef(ident, "declaration of %q shadows declaration at line %d", obj.Name(), line)
+		shadowedPos := pass.Fset.Position(shadowed.Pos())
+
+		// Build the message, adding filename only if in a different file
+		message := fmt.Sprintf("declaration of %q shadows declaration at line %d", obj.Name(), shadowedPos.Line)
+		currentFile := pass.Fset.Position(ident.Pos()).Filename
+		if shadowedPos.Filename != currentFile {
+			message += fmt.Sprintf(" in %s", filepath.Base(shadowedPos.Filename))
+		}
+
+		pass.Report(analysis.Diagnostic{
+			Pos:     ident.Pos(),
+			End:     ident.End(),
+			Message: message,
+			Related: []analysis.RelatedInformation{{
+				Pos:     shadowed.Pos(),
+				End:     shadowed.Pos() + token.Pos(len(shadowed.Name())),
+				Message: fmt.Sprintf("shadowed symbol %q declared here", obj.Name()),
+			}},
+		})
 	}
 }
