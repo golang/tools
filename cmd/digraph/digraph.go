@@ -67,6 +67,8 @@ func (l nodelist) println(sep string) {
 
 type nodeset map[string]bool
 
+func singleton(x string) nodeset { return nodeset{x: true} }
+
 func (s nodeset) sort() nodelist {
 	nodes := make(nodelist, len(s))
 	var i int
@@ -191,26 +193,17 @@ func (g graph) sccs() []nodeset {
 }
 
 func (g graph) allpaths(from, to string) error {
-	// Mark all nodes to "to".
-	seen := make(nodeset) // value of seen[x] indicates whether x is on some path to "to"
-	var visit func(node string) bool
-	visit = func(node string) bool {
-		reachesTo, ok := seen[node]
-		if !ok {
-			reachesTo = node == to
-			seen[node] = reachesTo
-			for e := range g[node] {
-				if visit(e) {
-					reachesTo = true
-				}
-			}
-			if reachesTo && node != to {
-				seen[node] = true
-			}
+	// We intersect the forward closure of 'from' with
+	// the reverse closure of 'to'. This is not the most
+	// efficient implementation, but it's the clearest,
+	// and the previous one had bugs.
+	seen := g.reachableFrom(singleton(from))
+	rev := g.transpose().reachableFrom(singleton(to))
+	for n := range seen {
+		if !rev[n] {
+			delete(seen, n)
 		}
-		return reachesTo
 	}
-	visit(from)
 
 	// For each marked node, collect its marked successors.
 	var edges []string
@@ -241,7 +234,7 @@ func (g graph) somepath(from, to string) error {
 		tail *path
 	}
 
-	seen := nodeset{from: true}
+	seen := singleton(from)
 
 	var queue []*path
 	queue = append(queue, &path{node: from, tail: nil})
@@ -469,14 +462,14 @@ func digraph(cmd string, args []string) error {
 		}
 
 		edges := make(map[string]struct{})
-		for from := range g.reachableFrom(nodeset{node: true}) {
+		for from := range g.reachableFrom(singleton(node)) {
 			for to := range g[from] {
 				edges[fmt.Sprintf("%s %s", from, to)] = struct{}{}
 			}
 		}
 
 		gtrans := g.transpose()
-		for from := range gtrans.reachableFrom(nodeset{node: true}) {
+		for from := range gtrans.reachableFrom(singleton(node)) {
 			for to := range gtrans[from] {
 				edges[fmt.Sprintf("%s %s", to, from)] = struct{}{}
 			}

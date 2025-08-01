@@ -156,6 +156,33 @@ func TestAllpaths(t *testing.T) {
 			to:   "H",
 			want: "A B\nA C\nB D\nC D\nD E\nE F\nE G\nF H\nG H\n",
 		},
+		{
+			// C <--> B --> A --> D <--> E
+			//        ⋃
+			name: "non-regression test for #74842",
+			in:   "A D\nB A\nB B\nB C\nC B\nD E\nE D",
+			to:   "D",
+			want: "A D\nD E\nE D\n",
+		},
+		{
+			// A --> B --> D
+			//       ^
+			//       v
+			//       C[123]
+			name: "regression test for #74842",
+			in:   "A B\nB C1\nB C2\nB C3\nB D\nC1 B\nC2 B\nC3 B\n",
+			to:   "D",
+			want: "A B\nB C1\nB C2\nB C3\nB D\nC1 B\nC2 B\nC3 B\n",
+		},
+		{
+			// A -------> B --> D
+			//  \--> C ---^     |
+			//       ^----------+
+			name: "another regression test for #74842",
+			in:   "A B\nA C\nB D\nC B\nD C\n",
+			to:   "D",
+			want: "A B\nA C\nB D\nC B\nD C\n",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			stdin = strings.NewReader(test.in)
