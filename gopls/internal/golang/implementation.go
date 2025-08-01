@@ -143,11 +143,10 @@ func implementationsMsets(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 		// enumerate all types within the package that satisfy the
 		// query type, even those defined local to a function.
 		declURI = protocol.URIFromPath(declPosn.Filename)
-		declMPs, err := snapshot.MetadataForFile(ctx, declURI)
+		declMPs, err := snapshot.MetadataForFile(ctx, declURI, true)
 		if err != nil {
 			return err
 		}
-		metadata.RemoveIntermediateTestVariants(&declMPs)
 		if len(declMPs) == 0 {
 			return fmt.Errorf("no packages for file %s", declURI)
 		}

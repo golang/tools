@@ -52,11 +52,10 @@ func WidestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri pro
 }
 
 func selectPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, selector func([]*metadata.Package) *metadata.Package) (*cache.Package, *parsego.File, error) {
-	mps, err := snapshot.MetadataForFile(ctx, uri)
+	mps, err := snapshot.MetadataForFile(ctx, uri, true)
 	if err != nil {
 		return nil, nil, err
 	}
-	metadata.RemoveIntermediateTestVariants(&mps)
 	if len(mps) == 0 {
 		return nil, nil, fmt.Errorf("no package metadata for file %s", uri)
 	}

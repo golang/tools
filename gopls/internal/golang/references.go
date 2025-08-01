@@ -110,7 +110,7 @@ func references(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp
 // import declarations of all packages that directly import the target
 // package.
 func packageReferences(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) ([]reference, error) {
-	metas, err := snapshot.MetadataForFile(ctx, uri)
+	metas, err := snapshot.MetadataForFile(ctx, uri, false)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +260,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	// This may include the query pkg, and possibly other variants.
 	declPosn := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
 	declURI := protocol.URIFromPath(declPosn.Filename)
-	variants, err := snapshot.MetadataForFile(ctx, declURI)
+	variants, err := snapshot.MetadataForFile(ctx, declURI, false)
 	if err != nil {
 		return nil, err
 	}

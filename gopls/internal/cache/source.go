@@ -176,7 +176,7 @@ type found struct {
 
 func (s *goplsSource) resolveWorkspaceReferences(filename string, missing imports.References) ([]*imports.Result, error) {
 	uri := protocol.URIFromPath(filename)
-	mypkgs, err := s.snapshot.MetadataForFile(s.ctx, uri)
+	mypkgs, err := s.snapshot.MetadataForFile(s.ctx, uri, false)
 	if err != nil {
 		return nil, err
 	}

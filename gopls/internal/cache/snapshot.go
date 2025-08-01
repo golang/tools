@@ -6,6 +6,7 @@ package cache
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -18,7 +19,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -652,11 +652,10 @@ func (s *Snapshot) Tests(ctx context.Context, ids ...PackageID) ([]*testfuncs.In
 // (the one with the fewest files) that encloses the specified file.
 // The result may be a test variant, but never an intermediate test variant.
 func (snapshot *Snapshot) NarrowestMetadataForFile(ctx context.Context, uri protocol.DocumentURI) (*metadata.Package, error) {
-	mps, err := snapshot.MetadataForFile(ctx, uri)
+	mps, err := snapshot.MetadataForFile(ctx, uri, true)
 	if err != nil {
 		return nil, err
 	}
-	metadata.RemoveIntermediateTestVariants(&mps)
 	if len(mps) == 0 {
 		return nil, fmt.Errorf("no package metadata for file %s", uri)
 	}
@@ -668,13 +667,10 @@ func (snapshot *Snapshot) NarrowestMetadataForFile(ctx context.Context, uri prot
 // number of CompiledGoFiles (i.e. "narrowest" to "widest" package),
 // and secondarily by IsIntermediateTestVariant (false < true).
 // The result may include tests and intermediate test variants of
-// importable packages.
+// importable packages. If removeIntermediateTestVariants is provided,
+// intermediate test variants will be excluded.
 // It returns an error if the context was cancelled.
-//
-// TODO(adonovan): in nearly all cases the caller must use
-// [metadata.RemoveIntermediateTestVariants]. Make this a parameter to
-// force the caller to consider it (and reduce code).
-func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI) ([]*metadata.Package, error) {
+func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI, removeIntermediateTestVariants bool) ([]*metadata.Package, error) {
 	if s.view.typ == AdHocView {
 		// As described in golang/go#57209, in ad-hoc workspaces (where we load ./
 		// rather than ./...), preempting the directory load with file loads can
@@ -712,7 +708,6 @@ func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI
 		scope := fileLoadScope(uri)
 		err := s.load(ctx, NoNetwork, scope)
 
-		//
 		// Return the context error here as the current operation is no longer
 		// valid.
 		if err != nil {
@@ -752,23 +747,42 @@ func (s *Snapshot) MetadataForFile(ctx context.Context, uri protocol.DocumentURI
 		s.unloadableFiles.Add(uri)
 	}
 
+	if removeIntermediateTestVariants {
+		metadata.RemoveIntermediateTestVariants(&metas)
+	}
+
 	// Sort packages "narrowest" to "widest" (in practice:
 	// non-tests before tests), and regular packages before
 	// their intermediate test variants (which have the same
 	// files but different imports).
-	sort.Slice(metas, func(i, j int) bool {
-		x, y := metas[i], metas[j]
-		xfiles, yfiles := len(x.CompiledGoFiles), len(y.CompiledGoFiles)
-		if xfiles != yfiles {
-			return xfiles < yfiles
+	slices.SortFunc(metas, func(x, y *metadata.Package) int {
+		if sign := cmp.Compare(len(x.CompiledGoFiles), len(y.CompiledGoFiles)); sign != 0 {
+			return sign
 		}
-		return boolLess(x.IsIntermediateTestVariant(), y.IsIntermediateTestVariant())
+		// Skip ITV-specific ordering if they were removed.
+		if removeIntermediateTestVariants {
+			return 0
+		}
+		return boolCompare(x.IsIntermediateTestVariant(), y.IsIntermediateTestVariant())
 	})
 
 	return metas, nil
 }
 
-func boolLess(x, y bool) bool { return !x && y } // false < true
+// btoi returns int(b) as proposed in #64825.
+func btoi(b bool) int {
+	if b {
+		return 1
+	} else {
+		return 0
+	}
+}
+
+// boolCompare is a comparison function for booleans, returning -1 if x < y, 0
+// if x == y, and 1 if x > y, where false < true.
+func boolCompare(x, y bool) int {
+	return btoi(x) - btoi(y)
+}
 
 // ReverseDependencies returns a new mapping whose entries are
 // the ID and Metadata of each package in the workspace that
@@ -1252,7 +1266,7 @@ searchOverlays:
 		if s.IsBuiltin(uri) || s.FileKind(o) != file.Go {
 			continue
 		}
-		mps, err := s.MetadataForFile(ctx, uri)
+		mps, err := s.MetadataForFile(ctx, uri, true)
 		if err != nil {
 			return nil, err
 		}
@@ -1261,7 +1275,6 @@ searchOverlays:
 				continue searchOverlays
 			}
 		}
-		metadata.RemoveIntermediateTestVariants(&mps)
 
 		// With zero-config gopls (golang/go#57979), orphaned file diagnostics
 		// include diagnostics for orphaned files -- not just diagnostics relating
@@ -1341,6 +1354,7 @@ searchOverlays:
 				if s.view.folder.Env.GoVersion >= 18 {
 					if s.view.gowork != "" {
 						fix = fmt.Sprintf("To fix this problem, you can add this module to your go.work file (%s)", s.view.gowork)
+
 						cmd := command.NewRunGoWorkCommandCommand("Run `go work use`", command.RunGoWorkArgs{
 							ViewID: s.view.ID(),
 							Args:   []string{"use", modDir},

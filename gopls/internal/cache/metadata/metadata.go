@@ -151,7 +151,7 @@ func (mp *Package) String() string { return string(mp.ID) }
 // intermediate test variant of p, of which there could be many.
 // Good code doesn't rely on such trickery.
 //
-// Most callers of MetadataForFile call RemoveIntermediateTestVariants
+// Most callers of MetadataForFile set removeIntermediateTestVariants parameter
 // to discard them before requesting type checking, or the products of
 // type-checking such as the cross-reference index or method set index.
 //

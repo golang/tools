@@ -215,12 +215,13 @@ func packageSuggestions(ctx context.Context, snapshot *cache.Snapshot, fileURI p
 		return candidate{obj: obj, name: name, detail: name, score: score}
 	}
 
-	matcher := fuzzy.NewMatcher(prefix)
 	var currentPackageName string
-	if variants, err := snapshot.MetadataForFile(ctx, fileURI); err == nil &&
-		len(variants) != 0 {
-		currentPackageName = string(variants[0].Name)
+	// TODO: consider propagating error.
+	if md, err := snapshot.NarrowestMetadataForFile(ctx, fileURI); err == nil {
+		currentPackageName = string(md.Name)
 	}
+
+	matcher := fuzzy.NewMatcher(prefix)
 
 	// Always try to suggest a main package
 	defer func() {
