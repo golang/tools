@@ -288,6 +288,18 @@ func (c *completer) formatConversion(convertTo types.Type) conversionEdits {
 		return conversionEdits{}
 	}
 
+	var iface *types.Interface
+	switch t := convertTo.(type) {
+	case *types.Named:
+		iface, _ = t.Underlying().(*types.Interface)
+	case *types.Interface:
+		iface = t
+	}
+	if iface != nil && (!iface.IsMethodSet() || iface.IsComparable()) {
+		// Casting to a constraint interface or "comparable" will result in a compile error.
+		return conversionEdits{}
+	}
+
 	typeName := types.TypeString(convertTo, c.qual)
 	switch t := convertTo.(type) {
 	// We need extra parens when casting to these types. For example,
