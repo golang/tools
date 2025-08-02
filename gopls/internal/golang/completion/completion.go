@@ -2419,7 +2419,9 @@ Nodes:
 						return inf
 					}
 
-					if sig.TypeParams().Len() > 0 {
+					// Inference is necessary only when function results are generic.
+					var free typeparams.Free
+					if free.Has(sig.Results()) {
 						targs := c.getTypeArgs(node)
 						res := inferExpectedResultTypes(c, i)
 						substs := reverseInferTypeArgs(sig, targs, res)
