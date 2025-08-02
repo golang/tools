@@ -593,7 +593,7 @@ func unify(x, y types.Type, unifier map[*types.TypeParam]types.Type) bool {
 
 	// bind sets b to t if b does not occur in t.
 	bind := func(b *types.Type, t types.Type) bool {
-		for tp := range typeParams(t) {
+		for tp := range TypeParams(t) {
 			if b == bindings[tp] {
 				return false // failed "occurs" check
 			}
@@ -771,9 +771,8 @@ func unify(x, y types.Type, unifier map[*types.TypeParam]types.Type) bool {
 	return true
 }
 
-// typeParams yields all the free type parameters within t that are relevant for
-// unification.
-func typeParams(t types.Type) iter.Seq[*types.TypeParam] {
+// TypeParams yields all the free type parameters within t.
+func TypeParams(t types.Type) iter.Seq[*types.TypeParam] {
 
 	return func(yield func(*types.TypeParam) bool) {
 		seen := map[*types.TypeParam]bool{} // yield each type param only once

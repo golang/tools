@@ -39,6 +39,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
@@ -2419,7 +2420,7 @@ Nodes:
 						return inf
 					}
 
-					if sig.TypeParams().Len() > 0 {
+					if sig.TypeParams().Len() > 0 && hasTypeParamsInResults(sig) {
 						targs := c.getTypeArgs(node)
 						res := inferExpectedResultTypes(c, i)
 						substs := reverseInferTypeArgs(sig, targs, res)
@@ -2560,6 +2561,19 @@ Nodes:
 	}
 
 	return inf
+}
+
+// hasTypeParamsInResults reports whether there are type params in signature results.
+func hasTypeParamsInResults(sig *types.Signature) (has bool) {
+	for i := range sig.Results().Len() {
+		t := sig.Results().At(i).Type()
+
+		_, ok := moreiters.First(golang.TypeParams(t))
+		if ok {
+			return true
+		}
+	}
+	return false
 }
 
 // inferExpectedResultTypes takes the index of a call expression within the completion

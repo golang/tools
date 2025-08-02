@@ -1255,6 +1255,99 @@ func TestDoubleParamReturnCompletion(t *testing.T) {
 	})
 }
 
+func TestReverseInferCompletionWithoutTypeParamsInFuncResults(t *testing.T) {
+	const files = `
+-- go.mod --
+module foo
+go 1.21
+-- main.go --
+package main
+
+import (
+	"cmp"
+	"io"
+	"os"
+)
+
+func main() {
+	var (
+		file *os.File
+		i    int
+	)
+
+	i = A(file.Nam)
+	i = B(file.Nam)
+	i = C(file.Nam)
+	i = D(fil)
+	_ = i
+}
+
+func A[T cmp.Ordered](T) int { return 0 }
+
+func B[T comparable](T) int { return 0 }
+
+func C[T int | string](T) int { return 0 }
+
+func D[T io.Reader](T) int { return 0 }
+`
+
+	const want = `package main
+
+import (
+	"cmp"
+	"io"
+	"os"
+)
+
+func main() {
+	var (
+		file *os.File
+		i    int
+	)
+
+	i = A(file.Name())
+	i = B(file.Name())
+	i = C(file.Name())
+	i = D(file)
+	_ = i
+}
+
+func A[T cmp.Ordered](T) int { return 0 }
+
+func B[T comparable](T) int { return 0 }
+
+func C[T int | string](T) int { return 0 }
+
+func D[T io.Reader](T) int { return 0 }
+`
+	WithOptions(
+		Modes(Default),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+
+		for _, re := range []string{
+			`A\(file\.Nam()\)`,
+			`B\(file\.Nam()\)`,
+			`C\(file\.Nam()\)`,
+			`D\(fil()\)`,
+		} {
+			loc := env.RegexpSearch("main.go", re)
+			completions := env.Completion(loc)
+			if len(completions.Items) == 0 {
+				t.Fatalf("no completion items")
+			}
+
+			env.AcceptCompletion(loc, completions.Items[0])
+			env.Await(env.DoneWithChange())
+		}
+
+		got := env.BufferText("main.go")
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("Completion: unexpected mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
 func TestBuiltinCompletion(t *testing.T) {
 	const files = `
 -- go.mod --
