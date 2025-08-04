@@ -165,7 +165,8 @@ outer:
 		obj := typeutil.Callee(info, call)
 		if analysisinternal.IsFunctionNamed(obj, "fmt", "Print", "Printf", "Println", "Fprint", "Fprintf", "Fprintln") ||
 			analysisinternal.IsMethodNamed(obj, "bytes", "Buffer", "Write", "WriteByte", "WriteRune", "WriteString") ||
-			analysisinternal.IsMethodNamed(obj, "strings", "Builder", "Write", "WriteByte", "WriteRune", "WriteString") {
+			analysisinternal.IsMethodNamed(obj, "strings", "Builder", "Write", "WriteByte", "WriteRune", "WriteString") ||
+			analysisinternal.IsFunctionNamed(obj, "io", "WriteString") {
 			continue
 		}
 
