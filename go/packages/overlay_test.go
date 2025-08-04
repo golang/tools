@@ -304,9 +304,9 @@ func testOverlay(t *testing.T, exporter packagestest.Exporter) {
 
 		// Check errors.
 		var errors []packages.Error
-		packages.Visit(initial, nil, func(pkg *packages.Package) {
+		for pkg := range packages.Postorder(initial) {
 			errors = append(errors, pkg.Errors...)
-		})
+		}
 		if errs := errorMessages(errors); !reflect.DeepEqual(errs, test.wantErrs) {
 			t.Errorf("%d. got errors %s, want %s", i, errs, test.wantErrs)
 		}
