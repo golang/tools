@@ -681,6 +681,10 @@ func recordClientInfo(clientName string) {
 	case "Sublime Text LSP":
 		// https://github.com/sublimelsp/LSP/blob/e608f878e7e9dd34aabe4ff0462540fadcd88fcc/plugin/core/sessions.py#L493
 		key = "gopls/client:sublimetext"
+	case "Windsurf":
+		key = "gopls/client:windsurf"
+	case "Cursor":
+		key = "gopls/client:cursor"
 	default:
 		// Accumulate at least a local counter for an unknown
 		// client name, but also fall through to count it as
