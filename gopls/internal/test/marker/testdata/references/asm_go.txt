@@ -25,13 +25,13 @@ var myGlobal int64 //@loc(defMyGlobalGo, "myGlobal"), refs("myGlobal", defMyGlob
 var _ = myGlobal   //@loc(refMyGlobalGo, "myGlobal")
 
 -- go_call_asm/example_asm.s --
-TEXT ·Add(SB), $0-24 //@loc(defAddAsm, "·Add"), refs("Add", defAddGo, callAddGo)
+TEXT ·Add(SB), $0-24 //@refs("Add", defAddGo, callAddGo)
     MOVQ a+0(FP), AX
     ADDQ b+8(FP), AX
     RET
 
-DATA ·myGlobal+0(SB)/8, $42 
-GLOBL ·myGlobal(SB), NOPTR, 8 
+DATA ·myGlobal+0(SB)/8, $42
+GLOBL ·myGlobal(SB), NOPTR, 8
 TEXT ·UseGlobal(SB), $0-0
     MOVQ ·myGlobal(SB), AX //@loc(refMyGlobal, "·myGlobal")
     RET
@@ -49,3 +49,15 @@ TEXT ·CallSub(SB), $0-16
     MOVQ BX, b+8(FP)
     CALL ·Sub(SB) //@loc(callSubAsm, "·Sub")
     RET
+
+// When defined in another package, it will not be processed.
+-- example/func.go --
+package example
+
+func Add(a, b int) int 
+func UseAdd() int {
+    return Add(1, 2) 
+}
+var myGlobal int64 
+var _ = myGlobal   
+

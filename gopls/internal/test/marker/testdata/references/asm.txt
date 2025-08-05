@@ -1,8 +1,5 @@
 
 
--- go.mod --
-module example.com
-go 1.24
 
 -- example/label_example.s --
 TEXT ·JumpDemo(SB), $0-0

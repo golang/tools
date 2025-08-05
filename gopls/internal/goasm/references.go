@@ -27,7 +27,7 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	ctx, done := event.Start(ctx, "goasm.References")
 	defer done()
 
-	mps, err := snapshot.MetadataForFile(ctx, fh.URI())
+	mps, err := snapshot.MetadataForFile(ctx, fh.URI(), false)
 	if err != nil {
 		return nil, err
 	}
@@ -94,14 +94,14 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		}
 	}
 
+	if !includeDeclaration {
+		return locations, nil
+	}
 	for _, asmFile := range pkg.AsmFiles() {
 		for _, id := range asmFile.Idents {
 			if id.Name == found.Name &&
 				(id.Kind == asm.Data || id.Kind == asm.Ref) {
-				if id.Kind == asm.Data && !includeDeclaration {
-					continue
-				}
-				if loc, err := asmFile.NodeLocation(id); err == nil {
+				if loc, err := asmFile.IdentLocation(id); err == nil {
 					locations = append(locations, loc)
 				}
 			}
