@@ -120,14 +120,20 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 			if id.Kind != asm.Data && id.Kind != asm.Ref {
 				continue
 			}
-			_, name, ok := morestrings.CutLast(id.Name, ".")
+			pkgpath, name, ok := morestrings.CutLast(id.Name, ".")
 			if !ok {
+				continue
+			}
+			if pkgpath != pkg.Path() {
+				// Reference to symbol in another package.
+				// TODO(grootguo): implement this case. See similar logic in
+				// golang.lookupDocLinkSymbol, which also does not yet handle this case.
+				// See also goasm.Definitions, which loads a package by path from the
+				// forward transitive closure.
 				continue
 			}
 			obj := pkg.Scope().Lookup(name)
 			if obj == nil {
-				// TODO(grootguo): If the object is not found in the current package,
-				// consider handling cross-package references.
 				continue
 			}
 			objects := getObjects(pkg)
@@ -137,7 +143,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 				gobObj = &gobObject{Path: objectpath.Path(obj.Name())}
 				objects[obj] = gobObj
 			}
-			if rng, err := af.NodeRange(id); err == nil {
+			if rng, err := af.IdentRange(id); err == nil {
 				gobObj.Refs = append(gobObj.Refs, gobRef{
 					FileIndex: fileIndex,
 					Range:     rng,
@@ -174,9 +180,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info, asmFiles
 // to any object in the target set. Each object is denoted by a pair
 // of (package path, object path).
 func Lookup(mp *metadata.Package, data []byte, targets map[metadata.PackagePath]map[objectpath.Path]struct{}) (locs []protocol.Location) {
-	var (
-		packages []*gobPackage
-	)
+	var packages []*gobPackage
 	packageCodec.Decode(data, &packages)
 	for _, gp := range packages {
 		if objectSet, ok := targets[gp.PkgPath]; ok {

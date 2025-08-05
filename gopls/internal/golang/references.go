@@ -39,6 +39,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // References returns a list of all references (sorted with
@@ -625,10 +626,13 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 			if obj == nil {
 				continue
 			}
+			if !typesinternal.IsPackageLevel(obj) {
+				continue
+			}
 			if !matches(obj) {
 				continue
 			}
-			if rng, err := pgf.NodeRange(id); err == nil {
+			if rng, err := pgf.IdentRange(id); err == nil {
 				asmLocation := protocol.Location{
 					URI:   pgf.URI,
 					Range: rng,

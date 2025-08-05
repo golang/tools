@@ -54,12 +54,13 @@ type File struct {
 	// future in which analyzers can report diagnostics in .s files.
 }
 
-func (f *File) NodeRange(ident Ident) (protocol.Range, error) {
+// IdentRange returns the protocol.Range for the identifier in this file.
+func (f *File) IdentRange(ident Ident) (protocol.Range, error) {
 	return f.Mapper.OffsetRange(ident.Offset, ident.Offset+ident.OrigLen)
 }
 
-// NodeLocation returns a protocol Location for the ast.Node interval in this file.
-func (f *File) NodeLocation(ident Ident) (protocol.Location, error) {
+// IdentLocation returns a protocol Location for the identifier in this file.
+func (f *File) IdentLocation(ident Ident) (protocol.Location, error) {
 	return f.Mapper.OffsetLocation(ident.Offset, ident.Offset+ident.OrigLen)
 }
 
