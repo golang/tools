@@ -1,5 +1,4 @@
-
-
+Test of asm references.
 
 -- example/label_example.s --
 TEXT ·JumpDemo(SB), $0-0
@@ -21,4 +20,3 @@ GLOBL ·myGlobal(SB), NOPTR, 8
 TEXT ·UseGlobal(SB), $0-0
     MOVQ ·myGlobal(SB), AX //@loc(refMyGlobal, "·myGlobal")
     RET
-
