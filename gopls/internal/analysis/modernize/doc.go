@@ -52,13 +52,13 @@
 //
 //   - forvar: remove x := x variable declarations made unnecessary by the new semantics of loops in go1.22.
 //
-//   - slicescontains: replace 'for i, elem := range s { if elem == needle { ...; break }'
+//   - slicescontains: replace 'for i, elem := range s { if elem == needle { ...; break }}'
 //     by a call to slices.Contains, added in go1.21.
 //
 //   - minmax: replace an if/else conditional assignment by a call to
 //     the built-in min or max functions added in go1.21.
 //
-//   - sortslice: replace sort.Slice(s, func(i, j int) bool) { return s[i] < s[j] }
+//   - sortslice: replace sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 //     by a call to slices.Sort(s), added in go1.21.
 //
 //   - efaceany: replace interface{} by the 'any' type added in go1.18.
