@@ -6,10 +6,24 @@
 
 package crossfile
 
+import "fmt"
+
 func ShadowGlobal() {
-	{
-		global := 1 // want "declaration of .global. shadows declaration at line 7 in other.go"
-		_ = global
-	}
+	global := 1 // want "declaration of .global. shadows declaration at line 8 in other.go"
 	_ = global
+}
+
+func ShadowGlobalWithDifferentType() {
+	global := "text" // OK: different type.
+	_ = global
+}
+
+func ShadowPackageName() {
+	fmt := "text" // want "declaration of .fmt. shadows declaration at line 9"
+	_ = fmt
+}
+
+// To import fmt package
+func PrintHelper() {
+	fmt.Println()
 }

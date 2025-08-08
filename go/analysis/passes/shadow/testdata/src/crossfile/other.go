@@ -4,4 +4,11 @@
 
 package crossfile
 
-var global int
+var (
+	global int
+)
+
+func ShadowUnimportedPackageName() {
+	fmt := "text" // OK: fmt package is not imported in this file
+	_ = fmt
+}
