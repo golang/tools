@@ -4,4 +4,7 @@
 
 package crossfile
 
-var global int
+var (
+	global       int
+	unusedGlobal int
+)

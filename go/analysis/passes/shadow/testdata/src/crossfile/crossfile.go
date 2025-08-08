@@ -8,8 +8,10 @@ package crossfile
 
 func ShadowGlobal() {
 	{
-		global := 1 // want "declaration of .global. shadows declaration at line 7 in other.go"
+		global := 1 // want "declaration of .global. shadows declaration at line 8 in other.go"
 		_ = global
+		unusedGlobal := 2 // OK - shadowed package variable is never used
+		_ = unusedGlobal
 	}
 	_ = global
 }
