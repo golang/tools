@@ -132,6 +132,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						CodeLensVendor:            true,
 						CodeLensRunGovulncheck:    false, // TODO(hyangah): enable
 					},
+					NewGoFileHeader: true,
 				},
 			},
 			InternalOptions: InternalOptions{

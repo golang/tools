@@ -246,6 +246,10 @@ type UIOptions struct {
 	// disabling modifiers by setting each value to false.
 	// By default, all modifiers are enabled.
 	SemanticTokenModifiers map[string]bool `status:"experimental"`
+
+	// NewGoFileHeader enables automatic insertion of the copyright comment
+	// and package declaration in a newly created Go file.
+	NewGoFileHeader bool
 }
 
 // A CodeLensSource identifies an (algorithmic) source of code lenses.
@@ -1286,6 +1290,9 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 
 	case "semanticTokenModifiers":
 		return setBoolMap(&o.SemanticTokenModifiers, value)
+
+	case "newGoFileHeader":
+		return setBool(&o.NewGoFileHeader, value)
 
 	case "expandWorkspaceToModule":
 		// See golang/go#63536: we can consider deprecating

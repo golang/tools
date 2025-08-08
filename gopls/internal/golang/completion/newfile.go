@@ -16,8 +16,11 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 )
 
-// NewFile returns a document change to complete an empty Go source file.
+// NewFile returns a document change to complete an empty Go source file. Document change may be nil.
 func NewFile(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (*protocol.DocumentChange, error) {
+	if !snapshot.Options().NewGoFileHeader {
+		return nil, nil
+	}
 	content, err := fh.Content()
 	if err != nil {
 		return nil, err

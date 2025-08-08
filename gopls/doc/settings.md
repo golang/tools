@@ -261,6 +261,14 @@ By default, all modifiers are enabled.
 
 Default: `{}`.
 
+<a id='newGoFileHeader'></a>
+### `newGoFileHeader bool`
+
+newGoFileHeader enables automatic insertion of the copyright comment
+and package declaration in a newly created Go file.
+
+Default: `true`.
+
 <a id='completion'></a>
 ## Completion
 

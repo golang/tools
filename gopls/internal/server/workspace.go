@@ -163,7 +163,9 @@ func (s *server) DidCreateFiles(ctx context.Context, params *protocol.CreateFile
 				// any error, including "it's not a new file"
 				continue
 			}
-			allChanges = append(allChanges, *change)
+			if change != nil {
+				allChanges = append(allChanges, *change)
+			}
 		default:
 		}
 	}
