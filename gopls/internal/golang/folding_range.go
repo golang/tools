@@ -5,7 +5,6 @@
 package golang
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"go/ast"
@@ -65,7 +64,7 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 		switch n := cur.Node().(type) {
 		case *ast.BlockStmt:
 			// Fold between positions of or lines between "{" and "}".
-			start, end = getLineFoldingRange(pgf, n.Lbrace, n.Rbrace, lineFoldingOnly)
+			start, end = bracketedFoldingRange(n.Lbrace, n.Rbrace)
 
 		case *ast.CaseClause:
 			// Fold from position of ":" to end.
@@ -77,11 +76,11 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 
 		case *ast.CallExpr:
 			// Fold between positions of or lines between "(" and ")".
-			start, end = getLineFoldingRange(pgf, n.Lparen, n.Rparen, lineFoldingOnly)
+			start, end = bracketedFoldingRange(n.Lparen, n.Rparen)
 
 		case *ast.FieldList:
 			// Fold between positions of or lines between opening parenthesis/brace and closing parenthesis/brace.
-			start, end = getLineFoldingRange(pgf, n.Opening, n.Closing, lineFoldingOnly)
+			start, end = bracketedFoldingRange(n.Opening, n.Closing)
 
 		case *ast.GenDecl:
 			// If this is an import declaration, set the kind to be protocol.Imports.
@@ -89,7 +88,7 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 				kind = protocol.Imports
 			}
 			// Fold between positions of or lines between "(" and ")".
-			start, end = getLineFoldingRange(pgf, n.Lparen, n.Rparen, lineFoldingOnly)
+			start, end = bracketedFoldingRange(n.Lparen, n.Rparen)
 
 		case *ast.BasicLit:
 			// Fold raw string literals from position of "`" to position of "`".
@@ -99,7 +98,7 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 
 		case *ast.CompositeLit:
 			// Fold between positions of or lines between "{" and "}".
-			start, end = getLineFoldingRange(pgf, n.Lbrace, n.Rbrace, lineFoldingOnly)
+			start, end = bracketedFoldingRange(n.Lbrace, n.Rbrace)
 
 		default:
 			panic(n)
@@ -136,9 +135,9 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 	return ranges, nil
 }
 
-// getLineFoldingRange returns the folding range for nodes with parentheses/braces/brackets
+// bracketedFoldingRange returns the folding range for nodes with parentheses/braces/brackets
 // that potentially can take up multiple lines.
-func getLineFoldingRange(pgf *parsego.File, open, close token.Pos, lineFoldingOnly bool) (token.Pos, token.Pos) {
+func bracketedFoldingRange(open, close token.Pos) (token.Pos, token.Pos) {
 	if !open.IsValid() || !close.IsValid() {
 		return token.NoPos, token.NoPos
 	}
@@ -147,56 +146,38 @@ func getLineFoldingRange(pgf *parsego.File, open, close token.Pos, lineFoldingOn
 		return token.NoPos, token.NoPos
 	}
 
-	if !lineFoldingOnly {
-		// Can fold between opening and closing parenthesis/brace
-		// even if they are on the same line.
-		return open + 1, close
-	}
-
 	// Clients with "LineFoldingOnly" set to true can fold only full lines.
-	// So, we return a folding range only when the closing parenthesis/brace
-	// and the end of the last argument/statement/element are on different lines.
+	// This is checked in the caller.
 	//
-	// We could skip the check for the opening parenthesis/brace and start of
-	// the first argument/statement/element. For example, the following code
+	// Clients that support folding ranges can display them in various ways
+	// (e.g., how are folding ranges marked? is the final line displayed?).
+	// The most common client
+	// is vscode, which displays the first line followed by ..., and then does not
+	// display any other lines in the range, but other clients might also display
+	// final line of the range. For example, the following code
 	//
 	//	var x = []string{"a",
 	//	"b",
 	//	"c" }
 	//
-	// can be folded to
+	// can be folded (in vscode) to
+	//
+	// var x = []string{"a", ...
+	//
+	// or in some other client
 	//
 	//	var x = []string{"a", ...
 	//	"c" }
 	//
-	// However, this might look confusing. So, check the lines of "open" and
-	// "start" positions as well.
+	// This is a change in behavior. The old code would not fold this example,
+	// nor would it have folded
+	//
+	// func foo() { // a non-godoc comment
+	//  ...
+	// }
+	// which seems wrong.
 
-	// isOnlySpaceBetween returns true if there are only space characters between "from" and "to".
-	isOnlySpaceBetween := func(from token.Pos, to token.Pos) bool {
-		text, err := pgf.PosText(from, to)
-		if err != nil {
-			bug.Reportf("failed to get offsets: %s", err) // can't happen
-			return false
-		}
-		return len(bytes.TrimSpace(text)) == 0
-	}
-
-	nextLine := safetoken.Line(pgf.Tok, open) + 1
-	if nextLine > pgf.Tok.LineCount() {
-		return token.NoPos, token.NoPos
-	}
-	nextLineStart := pgf.Tok.LineStart(nextLine)
-	if !isOnlySpaceBetween(open+1, nextLineStart) {
-		return token.NoPos, token.NoPos
-	}
-
-	prevLineEnd := pgf.Tok.LineStart(safetoken.Line(pgf.Tok, close)) - 1 // there must be a previous line
-	if !isOnlySpaceBetween(prevLineEnd, close) {
-		return token.NoPos, token.NoPos
-	}
-
-	return open + 1, prevLineEnd
+	return open + 1, close
 }
 
 // commentsFoldingRange returns the folding ranges for all comment blocks in file.

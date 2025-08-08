@@ -1004,6 +1004,7 @@ func (o *Options) ForClientCapabilities(clientInfo *protocol.ClientInfo, caps pr
 	// Check if the client supports only line folding.
 
 	if fr := caps.TextDocument.FoldingRange; fr != nil {
+		// TODO(pjw): add telemetry
 		o.LineFoldingOnly = fr.LineFoldingOnly
 	}
 	// Check if the client supports hierarchical document symbols.
