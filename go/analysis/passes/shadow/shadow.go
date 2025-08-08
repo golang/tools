@@ -6,14 +6,17 @@ package shadow
 
 import (
 	_ "embed"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
+	"path/filepath"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // NOTE: Experimental. Not part of the vet suite.
@@ -40,6 +43,10 @@ func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	spans := make(map[types.Object]span)
+	// usedPkgVars contains all package-level objects of the current package
+	// that are actually referenced.
+	usedPkgVars := make(map[types.Object]struct{})
+
 	for id, obj := range pass.TypesInfo.Defs {
 		// Ignore identifiers that don't denote objects
 		// (package names, symbolic variables such as t
@@ -50,6 +57,10 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 	for id, obj := range pass.TypesInfo.Uses {
 		growSpan(spans, obj, id.Pos(), id.End())
+		// Track usage for package-level variables in the current package.
+		if typesinternal.IsPackageLevel(obj) && obj.Pkg() == pass.Pkg {
+			usedPkgVars[obj] = struct{}{}
+		}
 	}
 	for node, obj := range pass.TypesInfo.Implicits {
 		// A type switch with a short variable declaration
@@ -72,9 +83,9 @@ func run(pass *analysis.Pass) (any, error) {
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		switch n := n.(type) {
 		case *ast.AssignStmt:
-			checkShadowAssignment(pass, spans, n)
+			checkShadowAssignment(pass, spans, usedPkgVars, n)
 		case *ast.GenDecl:
-			checkShadowDecl(pass, spans, n)
+			checkShadowDecl(pass, spans, usedPkgVars, n)
 		}
 	})
 	return nil, nil
@@ -129,7 +140,7 @@ func growSpan(spans map[types.Object]span, obj types.Object, pos, end token.Pos)
 }
 
 // checkShadowAssignment checks for shadowing in a short variable declaration.
-func checkShadowAssignment(pass *analysis.Pass, spans map[types.Object]span, a *ast.AssignStmt) {
+func checkShadowAssignment(pass *analysis.Pass, spans map[types.Object]span, usedPkgVars map[types.Object]struct{}, a *ast.AssignStmt) {
 	if a.Tok != token.DEFINE {
 		return
 	}
@@ -142,7 +153,7 @@ func checkShadowAssignment(pass *analysis.Pass, spans map[types.Object]span, a *
 			pass.ReportRangef(expr, "invalid AST: short variable declaration of non-identifier")
 			return
 		}
-		checkShadowing(pass, spans, ident)
+		checkShadowing(pass, spans, usedPkgVars, ident)
 	}
 }
 
@@ -202,7 +213,7 @@ func idiomaticRedecl(d *ast.ValueSpec) bool {
 }
 
 // checkShadowDecl checks for shadowing in a general variable declaration.
-func checkShadowDecl(pass *analysis.Pass, spans map[types.Object]span, d *ast.GenDecl) {
+func checkShadowDecl(pass *analysis.Pass, spans map[types.Object]span, usedPkgVars map[types.Object]struct{}, d *ast.GenDecl) {
 	if d.Tok != token.VAR {
 		return
 	}
@@ -218,13 +229,13 @@ func checkShadowDecl(pass *analysis.Pass, spans map[types.Object]span, d *ast.Ge
 			return
 		}
 		for _, ident := range valueSpec.Names {
-			checkShadowing(pass, spans, ident)
+			checkShadowing(pass, spans, usedPkgVars, ident)
 		}
 	}
 }
 
 // checkShadowing checks whether the identifier shadows an identifier in an outer scope.
-func checkShadowing(pass *analysis.Pass, spans map[types.Object]span, ident *ast.Ident) {
+func checkShadowing(pass *analysis.Pass, spans map[types.Object]span, usedPkgVars map[types.Object]struct{}, ident *ast.Ident) {
 	if ident.Name == "_" {
 		// Can't shadow the blank identifier.
 		return
@@ -239,30 +250,52 @@ func checkShadowing(pass *analysis.Pass, spans map[types.Object]span, ident *ast
 	if shadowed == nil {
 		return
 	}
+	// Don't complain if the types differ: that implies the programmer really wants two different things.
+	if !types.Identical(obj.Type(), shadowed.Type()) {
+		return
+	}
 	// Don't complain if it's shadowing a universe-declared identifier; that's fine.
 	if shadowed.Parent() == types.Universe {
 		return
 	}
-	if strict {
-		// The shadowed identifier must appear before this one to be an instance of shadowing.
-		if shadowed.Pos() > ident.Pos() {
-			return
+	if typesinternal.IsPackageLevel(shadowed) {
+		if !strict {
+			// Don't complain if the shadowed package variable is unused.
+			// Since package-level variables are always in scope, we skip
+			// reporting only when they're not used at all.
+			if _, ok := usedPkgVars[shadowed]; !ok {
+				return
+			}
 		}
 	} else {
-		// Don't complain if the span of validity of the shadowed identifier doesn't include
-		// the shadowing identifier.
-		span, ok := spans[shadowed]
-		if !ok {
-			pass.ReportRangef(ident, "internal error: no range for %q", ident.Name)
-			return
-		}
-		if !span.contains(ident.Pos()) {
-			return
+		if strict {
+			// The shadowed identifier must appear before this one to be an instance of shadowing.
+			if shadowed.Pos() > ident.Pos() {
+				return
+			}
+		} else {
+			// Don't complain if the span of validity of the shadowed identifier doesn't include
+			// the shadowing identifier.
+			span, ok := spans[shadowed]
+			if !ok || !span.contains(ident.Pos()) {
+				return
+			}
 		}
 	}
-	// Don't complain if the types differ: that implies the programmer really wants two different things.
-	if types.Identical(obj.Type(), shadowed.Type()) {
-		line := pass.Fset.Position(shadowed.Pos()).Line
-		pass.ReportRangef(ident, "declaration of %q shadows declaration at line %d", obj.Name(), line)
+	shadowedPos := pass.Fset.Position(shadowed.Pos())
+	message := fmt.Sprintf("declaration of %q shadows declaration at line %d", obj.Name(), shadowedPos.Line)
+	currentFile := pass.Fset.Position(ident.Pos()).Filename
+	if shadowedPos.Filename != currentFile {
+		message += fmt.Sprintf(" in %s", filepath.Base(shadowedPos.Filename))
 	}
+	pass.Report(analysis.Diagnostic{
+		Pos:     ident.Pos(),
+		End:     ident.End(),
+		Message: message,
+		Related: []analysis.RelatedInformation{{
+			Pos:     shadowed.Pos(),
+			End:     shadowed.Pos() + token.Pos(len(shadowed.Name())),
+			Message: fmt.Sprintf("shadowed symbol %q declared here", obj.Name()),
+		}},
+	})
 }
