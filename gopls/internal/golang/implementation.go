@@ -773,6 +773,9 @@ func unify(x, y types.Type, unifier map[*types.TypeParam]types.Type) bool {
 
 // typeParams yields all the free type parameters within t that are relevant for
 // unification.
+//
+// Note: this function is tailored for the specific needs of the unification algorithm.
+// Don't try to use it for other purposes, see [typeparams.Free] instead.
 func typeParams(t types.Type) iter.Seq[*types.TypeParam] {
 
 	return func(yield func(*types.TypeParam) bool) {
