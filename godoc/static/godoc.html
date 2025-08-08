@@ -33,11 +33,12 @@
 </div><!-- #lowframe -->
 
 <div id="topbar"{{if .Title}} class="wide"{{end}}><div class="container">
-<div class="top-heading" id="heading-wide"><a href="/pkg/">Go Documentation Server</a></div>
-<div class="top-heading" id="heading-narrow"><a href="/pkg/">GoDoc</a></div>
+<div class="top-heading" id="heading-wide"><a href="/">Go Documentation Server</a></div>
+<div class="top-heading" id="heading-narrow"><a href="/">GoDoc</a></div>
 <a href="#" id="menu-button"><span id="menu-button-arrow">&#9661;</span></a>
 <form method="GET" action="/search">
 <div id="menu">
+{{template "navmenu"}}
 {{if (and .Playground .Title)}}
 <a id="playgroundButton" href="https://play.golang.org/" title="Show Go Playground">Play</a>
 {{end}}
