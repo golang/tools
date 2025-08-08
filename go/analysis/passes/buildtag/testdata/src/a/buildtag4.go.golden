@@ -4,10 +4,9 @@
 
 //go:build go1.18 && !(bad || worse)
 //want +1 `.build line is no longer needed`
-// +build go1.18
+
 //want +1 `.build line is no longer needed`
-// +build !bad
+
 //want +1 `.build line is no longer needed`
-// +build !worse
 
 package a

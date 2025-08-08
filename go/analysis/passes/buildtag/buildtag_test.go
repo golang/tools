@@ -16,5 +16,5 @@ func Test(t *testing.T) {
 	// Because it cares about IgnoredFiles, which most analyzers
 	// ignore, the test framework will consider expectations in
 	// ignore files too, but only for this analyzer.
-	analysistest.Run(t, analysistest.TestData(), buildtag.Analyzer, "a", "b")
+	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), buildtag.Analyzer, "a", "b")
 }
