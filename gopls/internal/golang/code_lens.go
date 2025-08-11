@@ -5,19 +5,25 @@
 package golang
 
 import (
+	"cmp"
 	"context"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"regexp"
+	"slices"
 	"strings"
+	"unicode"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/internal/astutil"
 )
 
 // CodeLensSources returns the supported sources of code lenses for Go files.
@@ -26,6 +32,7 @@ func CodeLensSources() map[settings.CodeLensSource]cache.CodeLensSourceFunc {
 		settings.CodeLensGenerate:      goGenerateCodeLens, // commands: Generate
 		settings.CodeLensTest:          runTestCodeLens,    // commands: Test
 		settings.CodeLensRegenerateCgo: regenerateCgoLens,  // commands: RegenerateCgo
+		settings.CodeLensGoToTest:      goToTestCodeLens,   // commands: GoToTest
 	}
 }
 
@@ -203,4 +210,144 @@ func regenerateCgoLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 	puri := fh.URI()
 	cmd := command.NewRegenerateCgoCommand("regenerate cgo definitions", command.URIArg{URI: puri})
 	return []protocol.CodeLens{{Range: rng, Command: cmd}}, nil
+}
+
+func goToTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+	if strings.HasSuffix(fh.URI().Path(), "_test.go") {
+		// Ignore test files.
+		return nil, nil
+	}
+
+	// Inspect all packages to cover both "p [p.test]" and "p_test [p.test]".
+	allPackages, err := snapshot.WorkspaceMetadata(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't request workspace metadata: %w", err)
+	}
+	dir := fh.URI().Dir()
+	testPackages := slices.DeleteFunc(allPackages, func(meta *metadata.Package) bool {
+		if meta.IsIntermediateTestVariant() || len(meta.CompiledGoFiles) == 0 || meta.ForTest == "" {
+			return true
+		}
+		return meta.CompiledGoFiles[0].Dir() != dir
+	})
+	if len(testPackages) == 0 {
+		return nil, nil
+	}
+
+	pgf, err := snapshot.ParseGo(ctx, fh, parsego.Full)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't parse file: %w", err)
+	}
+	funcPos := make(map[string]protocol.Position)
+	for _, d := range pgf.File.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		rng, err := pgf.NodeRange(fn)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't get node range: %w", err)
+		}
+
+		name := fn.Name.Name
+		if fn.Recv != nil && len(fn.Recv.List) > 0 {
+			_, rname, _ := astutil.UnpackRecv(fn.Recv.List[0].Type)
+			name = rname.Name + "_" + fn.Name.Name
+		}
+		funcPos[name] = rng.Start
+	}
+
+	type TestType int
+
+	// Types are sorted by priority from high to low.
+	const (
+		T TestType = iota + 1
+		E
+		B
+		F
+	)
+	testTypes := map[string]TestType{
+		"Test":      T,
+		"Example":   E,
+		"Benchmark": B,
+		"Fuzz":      F,
+	}
+
+	type Test struct {
+		FuncPos protocol.Position
+		Name    string
+		Loc     protocol.Location
+		Type    TestType
+	}
+	var matchedTests []Test
+
+	pkgIDs := make([]PackageID, 0, len(testPackages))
+	for _, pkg := range testPackages {
+		pkgIDs = append(pkgIDs, pkg.ID)
+	}
+	allTests, err := snapshot.Tests(ctx, pkgIDs...)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't request all tests for packages %v: %w", pkgIDs, err)
+	}
+	for _, tests := range allTests {
+		for _, test := range tests.All() {
+			var (
+				name     string
+				testType TestType
+			)
+			for prefix, t := range testTypes {
+				if strings.HasPrefix(test.Name, prefix) {
+					testType = t
+					name = test.Name[len(prefix):]
+					break
+				}
+			}
+			if testType == 0 {
+				continue // unknown type
+			}
+			name = strings.TrimPrefix(name, "_")
+
+			// Try to find 'Foo' for 'TestFoo' and 'foo' for 'Test_foo'.
+			pos, ok := funcPos[name]
+			if !ok && token.IsExported(name) {
+				// Try to find 'foo' for 'TestFoo'.
+				runes := []rune(name)
+				runes[0] = unicode.ToLower(runes[0])
+				pos, ok = funcPos[string(runes)]
+			}
+			if ok {
+				loc := test.Location
+				loc.Range.End = loc.Range.Start // move cursor to the test's beginning
+
+				matchedTests = append(matchedTests, Test{
+					FuncPos: pos,
+					Name:    test.Name,
+					Loc:     loc,
+					Type:    testType,
+				})
+			}
+		}
+	}
+	if len(matchedTests) == 0 {
+		return nil, nil
+	}
+
+	slices.SortFunc(matchedTests, func(a, b Test) int {
+		if v := protocol.ComparePosition(a.FuncPos, b.FuncPos); v != 0 {
+			return v
+		}
+		if v := cmp.Compare(a.Type, b.Type); v != 0 {
+			return v
+		}
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	lenses := make([]protocol.CodeLens, 0, len(matchedTests))
+	for _, t := range matchedTests {
+		lenses = append(lenses, protocol.CodeLens{
+			Range:   protocol.Range{Start: t.FuncPos, End: t.FuncPos},
+			Command: command.NewGoToTestCommand("Go to "+t.Name, t.Loc),
+		})
+	}
+	return lenses, nil
 }

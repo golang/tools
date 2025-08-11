@@ -1817,6 +1817,15 @@ func optionsStringToMap(options string) (map[string][]string, error) {
 	return optionsMap, nil
 }
 
+func (c *commandHandler) GoToTest(ctx context.Context, loc protocol.Location) error {
+	return c.run(ctx, commandConfig{
+		forURI: loc.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		showDocumentImpl(ctx, c.s.client, protocol.URI(loc.URI), &loc.Range, c.s.options)
+		return nil
+	})
+}
+
 func (c *commandHandler) ModifyTags(ctx context.Context, args command.ModifyTagsArgs) error {
 	return c.run(ctx, commandConfig{
 		progress: "Modifying tags",
