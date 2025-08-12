@@ -12,14 +12,17 @@ internal/goexperiment
 internal/goos
 internal/profilerecord
 internal/runtime/atomic
+internal/runtime/math
+internal/runtime/strconv
+internal/runtime/syscall
+internal/runtime/cgroup
 internal/runtime/exithook
+internal/runtime/gc
 internal/asan
 internal/msan
 internal/race
-internal/runtime/math
 internal/runtime/sys
 internal/runtime/maps
-internal/runtime/syscall
 internal/stringslite
 internal/trace/tracev2
 runtime
@@ -27,6 +30,7 @@ internal/reflectlite
 errors
 sync/atomic
 internal/sync
+internal/synctest
 sync
 io
 iter
@@ -104,6 +108,8 @@ crypto/elliptic
 crypto/internal/boring/bbig
 crypto/internal/fips140/bigmod
 crypto/internal/fips140/ecdsa
+weak
+crypto/internal/fips140cache
 crypto/sha3
 crypto/internal/fips140hash
 crypto/sha512
@@ -115,8 +121,9 @@ crypto/ecdsa
 crypto/internal/fips140/edwards25519
 crypto/internal/fips140/ed25519
 crypto/ed25519
-crypto/hmac
 crypto/internal/fips140/hkdf
+crypto/hkdf
+crypto/hmac
 crypto/internal/fips140/mlkem
 crypto/internal/fips140/tls12
 crypto/internal/fips140/tls13
@@ -132,6 +139,7 @@ crypto/internal/fips140/rsa
 crypto/rsa
 crypto/sha1
 crypto/sha256
+crypto/fips140
 crypto/tls/internal/fips140tls
 crypto/dsa
 encoding/hex
@@ -142,7 +150,6 @@ maps
 vendor/golang.org/x/net/dns/dnsmessage
 internal/nettrace
 internal/singleflight
-weak
 unique
 net/netip
 net
