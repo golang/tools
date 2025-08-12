@@ -19,6 +19,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -36,7 +37,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/morestrings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/typesinternal"
 )
 
 // References returns a list of all references (sorted with
@@ -619,15 +619,17 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 			if id.Kind != asm.Data && id.Kind != asm.Ref {
 				continue
 			}
-			_, name, ok := morestrings.CutLast(id.Name, ".")
+			pkgpath, name, ok := morestrings.CutLast(id.Name, ".")
 			if !ok {
+				continue
+			}
+			log.Printf("ignoring asm identifier %q in package %q: not in package %q", id.Name, pkgpath, pkg.Types().Path())
+			if pkgpath != pkg.Types().Path() {
+				log.Printf("ignoring asm identifier %q in package %q: not in package %q", id.Name, pkgpath, pkg.Types().Path())
 				continue
 			}
 			obj := pkg.Types().Scope().Lookup(name)
 			if obj == nil {
-				continue
-			}
-			if !typesinternal.IsPackageLevel(obj) {
 				continue
 			}
 			if !matches(obj) {

@@ -94,13 +94,15 @@ func References(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		}
 	}
 
-	if !includeDeclaration {
-		return locations, nil
-	}
 	for _, asmFile := range pkg.AsmFiles() {
 		for _, id := range asmFile.Idents {
-			if id.Name == found.Name &&
-				(id.Kind == asm.Data || id.Kind == asm.Ref) {
+			if id.Name == found.Name {
+				if !includeDeclaration && id.Kind == asm.Ref {
+					continue
+				}
+				if id.Kind != asm.Data {
+					continue
+				}
 				if loc, err := asmFile.IdentLocation(id); err == nil {
 					locations = append(locations, loc)
 				}
