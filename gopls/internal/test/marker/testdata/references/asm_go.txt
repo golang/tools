@@ -39,15 +39,3 @@ TEXT ·CallSub(SB), $0-16
     MOVQ BX, b+8(FP)
     CALL ·Sub(SB) //@loc(callSubAsm, "·Sub")
     RET
-
-// When defined in another package, it will not be processed.
--- example/func.go --
-package example
-
-func Add(a, b int) int 
-func UseAdd() int {
-    return Add(1, 2) 
-}
-var myGlobal int64 
-var _ = myGlobal   
-
