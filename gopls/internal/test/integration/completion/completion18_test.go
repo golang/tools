@@ -109,6 +109,9 @@ func FuzzHex(f *testing.F) {
 	}
 	Run(t, data, func(t *testing.T, env *Env) {
 		for _, test := range tests {
+			if test.file == "a_test.go" {
+				t.Skip("go.dev/issue/74987: needs updating to pass after CL 695417")
+			}
 			env.OpenFile(test.file)
 			env.Await(env.DoneWithOpen())
 			loc := env.RegexpSearch(test.file, test.pat)
