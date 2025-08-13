@@ -130,7 +130,7 @@ and
 ### Supported Go versions
 
 `gopls` follows the
-[Go Release Policy](https://golang.org/devel/release.html#policy), meaning
+[Go Release Policy](https://go.dev/doc/devel/release#policy), meaning
 that it officially supports only the two most recent major Go releases.
 
 When using gopls, there are three versions to be aware of:
