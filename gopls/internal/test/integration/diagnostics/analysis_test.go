@@ -11,6 +11,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	. "golang.org/x/tools/gopls/internal/test/integration"
+	"golang.org/x/tools/internal/testenv"
 )
 
 // Test for the timeformat analyzer, following golang/vscode-go#2406.
@@ -152,5 +153,47 @@ var Y interface{}
 			Diagnostics(ForFile("a.go"), WithMessage("replaced by any")),
 			NoDiagnostics(ForFile("b.go")),
 		)
+	})
+}
+
+func TestModernizationConsistency_Issue75000(t *testing.T) {
+	testenv.SkipAfterGoCommand1Point(t, 24)
+	testenv.NeedsGoCommand1Point(t, 22) // uses range-over-int
+
+	// This test checks that we don't offer modernization suggestions when the
+	// ambient Go version is older than the modernized APIs.
+	//
+	// The code is from golang/go#75000, where gopls suggested to use
+	// `waitgroup.Go` even though the user was on 1.24.
+
+	const src = `
+-- main.go --
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func doit(i int) {
+	fmt.Println("i = ", i)
+}
+
+func main() {
+	var wg sync.WaitGroup
+	for i := range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			doit(i)
+		}()
+	}
+
+	wg.Wait()
+}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.AfterChange(NoDiagnostics())
 	})
 }

@@ -1494,6 +1494,9 @@ func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (*
 	goVersion := ""
 	if mp.Module != nil && mp.Module.GoVersion != "" {
 		goVersion = mp.Module.GoVersion
+	} else {
+		// Fall back on the go version implied by the ambient Go command.
+		goVersion = fmt.Sprintf("1.%d", s.View().GoVersion())
 	}
 
 	return &typeCheckInputs{
