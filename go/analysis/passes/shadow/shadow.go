@@ -6,14 +6,17 @@ package shadow
 
 import (
 	_ "embed"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
+	"path/filepath"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // NOTE: Experimental. Not part of the vet suite.
@@ -111,7 +114,7 @@ func (s span) contains(pos token.Pos) bool {
 
 // growSpan expands the span for the object to contain the source range [pos, end).
 func growSpan(spans map[types.Object]span, obj types.Object, pos, end token.Pos) {
-	if strict {
+	if strict || typesinternal.IsPackageLevel(obj) || isPkgName(obj) {
 		return // No need
 	}
 	s, ok := spans[obj]
@@ -243,26 +246,43 @@ func checkShadowing(pass *analysis.Pass, spans map[types.Object]span, ident *ast
 	if shadowed.Parent() == types.Universe {
 		return
 	}
-	if strict {
-		// The shadowed identifier must appear before this one to be an instance of shadowing.
-		if shadowed.Pos() > ident.Pos() {
+	// Package names (imports) don't have a type and are always in scope in the file,
+	// so they are always reported when shadowed.
+	if !isPkgName(shadowed) {
+		// Don't complain if the types differ: that implies the programmer really wants two different things.
+		if !types.Identical(obj.Type(), shadowed.Type()) {
 			return
 		}
-	} else {
-		// Don't complain if the span of validity of the shadowed identifier doesn't include
-		// the shadowing identifier.
-		span, ok := spans[shadowed]
-		if !ok {
-			pass.ReportRangef(ident, "internal error: no range for %q", ident.Name)
-			return
-		}
-		if !span.contains(ident.Pos()) {
-			return
+		// Package-level variables are always in scope, so they're always reported when shadowed.
+		if !strict && !typesinternal.IsPackageLevel(shadowed) {
+			// Don't complain if the span of validity of the shadowed identifier doesn't include
+			// the shadowing identifier.
+			span, ok := spans[shadowed]
+			if !ok || !span.contains(ident.Pos()) {
+				return
+			}
 		}
 	}
-	// Don't complain if the types differ: that implies the programmer really wants two different things.
-	if types.Identical(obj.Type(), shadowed.Type()) {
-		line := pass.Fset.Position(shadowed.Pos()).Line
-		pass.ReportRangef(ident, "declaration of %q shadows declaration at line %d", obj.Name(), line)
+	shadowedPos := pass.Fset.Position(shadowed.Pos())
+	message := fmt.Sprintf("declaration of %q shadows declaration at line %d", obj.Name(), shadowedPos.Line)
+	currentFile := pass.Fset.Position(ident.Pos()).Filename
+	if shadowedPos.Filename != currentFile {
+		message += fmt.Sprintf(" in %s", filepath.Base(shadowedPos.Filename))
 	}
+	pass.Report(analysis.Diagnostic{
+		Pos:     ident.Pos(),
+		End:     ident.End(),
+		Message: message,
+		Related: []analysis.RelatedInformation{{
+			Pos:     shadowed.Pos(),
+			End:     shadowed.Pos() + token.Pos(len(shadowed.Name())),
+			Message: fmt.Sprintf("shadowed symbol %q declared here", obj.Name()),
+		}},
+	})
+}
+
+// isPkgName reports whether obj is a package name (import).
+func isPkgName(obj types.Object) bool {
+	_, ok := obj.(*types.PkgName)
+	return ok
 }
