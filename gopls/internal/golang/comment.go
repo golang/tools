@@ -181,8 +181,8 @@ func lookupDocLinkSymbol(pkg *cache.Package, pgf *parsego.File, name string) typ
 	// that define the symbol but are not directly imported;
 	// see https://github.com/golang/go/issues/61677
 
-	// Type.Method?
-	recv, method, ok := strings.Cut(name, ".")
+	// Field or sel?
+	recv, sel, ok := strings.Cut(name, ".")
 	if ok {
 		obj := scope.Lookup(recv) // package scope
 		if obj == nil {
@@ -192,11 +192,8 @@ func lookupDocLinkSymbol(pkg *cache.Package, pgf *parsego.File, name string) typ
 		if !ok {
 			return nil
 		}
-		m, _, _ := types.LookupFieldOrMethod(obj.Type(), true, obj.Pkg(), method)
-		if is[*types.Func](m) {
-			return m
-		}
-		return nil
+		m, _, _ := types.LookupFieldOrMethod(obj.Type(), true, obj.Pkg(), sel)
+		return m
 	}
 
 	if obj := scope.Lookup(name); obj != nil {

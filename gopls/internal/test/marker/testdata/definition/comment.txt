@@ -27,9 +27,18 @@ func Conv(s string) int { //@loc(Conv, "Conv")
 	return int(i)
 }
 
+type T struct {
+	Field int //@ loc(Field, "Field")
+}
+
+func (T) Method() {} //@ loc(Method, "Method")
+
 // The declared and imported names of the package both work:
 // [path.Join]    //@ def("Join", Join)
 // [pathpkg.Join] //@ def("Join", Join)
+//
+// Also, both [T.Field] and //@ def("Field", Field)
+// [T.Method] are supported. //@ def("Method", Method)
 func _() {
 	pathpkg.Join()
 }
