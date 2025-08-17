@@ -49,7 +49,19 @@ func (index *Index) All() []Result {
 type Result struct {
 	Location protocol.Location // location of the test
 	Name     string            // name of the test
+	Type     TestType          // type of the test
+	Subtest  bool
 }
+
+type TestType int
+
+const (
+	TypeInvalid TestType = iota
+	TypeTest
+	TypeBenchmark
+	TypeFuzz
+	TypeExample
+)
 
 // NewIndex returns a new index of method-set information for all
 // package-level types in the specified package.
@@ -84,8 +96,8 @@ func (b *indexBuilder) build(files []*parsego.File, info *types.Info) *Index {
 				continue
 			}
 
-			isTest, isExample := isTestOrExample(obj)
-			if !isTest && !isExample {
+			testType := getTestType(obj)
+			if testType == TypeInvalid {
 				continue
 			}
 
@@ -93,6 +105,7 @@ func (b *indexBuilder) build(files []*parsego.File, info *types.Info) *Index {
 			t.Name = decl.Name.Name
 			t.Location.URI = file.URI
 			t.Location.Range, _ = file.NodeRange(decl)
+			t.Type = testType
 
 			i, ok := b.fileIndex[t.Location.URI]
 			if !ok {
@@ -105,7 +118,8 @@ func (b *indexBuilder) build(files []*parsego.File, info *types.Info) *Index {
 			b.visited[obj] = true
 
 			// Check for subtests
-			if isTest {
+			switch testType {
+			case TypeTest, TypeBenchmark, TypeFuzz:
 				b.Files[i].Tests = append(b.Files[i].Tests, b.findSubtests(t, decl.Type, decl.Body, file, files, info)...)
 			}
 		}
@@ -168,6 +182,8 @@ func (b *indexBuilder) findSubtests(parent gobTest, typ *ast.FuncType, body *ast
 		t.Name = b.uniqueName(parent.Name, rewrite(constant.StringVal(val)))
 		t.Location.URI = file.URI
 		t.Location.Range, _ = file.NodeRange(call)
+		t.Type = parent.Type
+		t.Subtest = true
 		tests = append(tests, t)
 
 		fn, typ, body := findFunc(files, info, body, call.Args[1])
@@ -182,7 +198,8 @@ func (b *indexBuilder) findSubtests(parent gobTest, typ *ast.FuncType, body *ast
 		}
 
 		// Never recurse if the second argument is a top-level test function
-		if isTest, _ := isTestOrExample(fn); isTest {
+		switch getTestType(fn) {
+		case TypeTest, TypeBenchmark, TypeFuzz:
 			continue
 		}
 
@@ -258,30 +275,35 @@ func findFunc(files []*parsego.File, info *types.Info, body *ast.BlockStmt, expr
 	return nil, nil, nil
 }
 
-// isTestOrExample reports whether the given func is a testing func or an
-// example func (or neither). isTestOrExample returns (true, false) for testing
-// funcs, (false, true) for example funcs, and (false, false) otherwise.
-func isTestOrExample(fn *types.Func) (isTest, isExample bool) {
+// getTestType reports the test type of the given function.
+func getTestType(fn *types.Func) TestType {
 	sig := fn.Type().(*types.Signature)
-	if sig.Params().Len() == 0 &&
-		sig.Results().Len() == 0 {
-		return false, isTestName(fn.Name(), "Example")
+	if sig.Params().Len() == 0 && sig.Results().Len() == 0 {
+		if isTestName(fn.Name(), "Example") {
+			return TypeExample
+		}
+		return TypeInvalid
 	}
 
 	kind, ok := testKind(sig)
 	if !ok {
-		return false, false
+		return TypeInvalid
 	}
 	switch kind.Name() {
 	case "T":
-		return isTestName(fn.Name(), "Test"), false
+		if isTestName(fn.Name(), "Test") {
+			return TypeTest
+		}
 	case "B":
-		return isTestName(fn.Name(), "Benchmark"), false
+		if isTestName(fn.Name(), "Benchmark") {
+			return TypeBenchmark
+		}
 	case "F":
-		return isTestName(fn.Name(), "Fuzz"), false
-	default:
-		return false, false // "can't happen" (see testKind)
+		if isTestName(fn.Name(), "Fuzz") {
+			return TypeFuzz
+		}
 	}
+	return TypeInvalid
 }
 
 // isTestName reports whether name is a valid test name for the test kind
@@ -352,6 +374,8 @@ type gobFile struct {
 type gobTest struct {
 	Location protocol.Location // location of the test
 	Name     string            // name of the test
+	Type     TestType          // type of the test
+	Subtest  bool
 }
 
 func (t *gobTest) result() Result {

@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/cache/testfuncs"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
@@ -213,6 +214,29 @@ func regenerateCgoLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 }
 
 func goToTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+	matches, err := matchFunctionsWithTests(ctx, snapshot, fh)
+	if err != nil {
+		return nil, err
+	}
+
+	lenses := make([]protocol.CodeLens, 0, len(matches))
+	for _, t := range matches {
+		lenses = append(lenses, protocol.CodeLens{
+			Range:   protocol.Range{Start: t.FuncPos, End: t.FuncPos},
+			Command: command.NewGoToTestCommand("Go to "+t.Name, t.Loc),
+		})
+	}
+	return lenses, nil
+}
+
+type TestMatch struct {
+	FuncPos protocol.Position  // function position
+	Name    string             // test name
+	Loc     protocol.Location  // test location
+	Type    testfuncs.TestType // test type
+}
+
+func matchFunctionsWithTests(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) (matches []TestMatch, err error) {
 	if strings.HasSuffix(fh.URI().Path(), "_test.go") {
 		// Ignore test files.
 		return nil, nil
@@ -238,7 +262,12 @@ func goToTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	if err != nil {
 		return nil, fmt.Errorf("couldn't parse file: %w", err)
 	}
-	funcPos := make(map[string]protocol.Position)
+
+	type Func struct {
+		Name string
+		Pos  protocol.Position
+	}
+	var fileFuncs []Func
 	for _, d := range pgf.File.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok {
@@ -254,32 +283,11 @@ func goToTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 			_, rname, _ := astutil.UnpackRecv(fn.Recv.List[0].Type)
 			name = rname.Name + "_" + fn.Name.Name
 		}
-		funcPos[name] = rng.Start
+		fileFuncs = append(fileFuncs, Func{
+			Name: name,
+			Pos:  rng.Start,
+		})
 	}
-
-	type TestType int
-
-	// Types are sorted by priority from high to low.
-	const (
-		T TestType = iota + 1
-		E
-		B
-		F
-	)
-	testTypes := map[string]TestType{
-		"Test":      T,
-		"Example":   E,
-		"Benchmark": B,
-		"Fuzz":      F,
-	}
-
-	type Test struct {
-		FuncPos protocol.Position
-		Name    string
-		Loc     protocol.Location
-		Type    TestType
-	}
-	var matchedTests []Test
 
 	pkgIDs := make([]PackageID, 0, len(testPackages))
 	for _, pkg := range testPackages {
@@ -291,48 +299,54 @@ func goToTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 	}
 	for _, tests := range allTests {
 		for _, test := range tests.All() {
-			var (
-				name     string
-				testType TestType
-			)
-			for prefix, t := range testTypes {
-				if strings.HasPrefix(test.Name, prefix) {
-					testType = t
-					name = test.Name[len(prefix):]
-					break
+			if test.Subtest {
+				continue
+			}
+			potentialFuncNames := getPotentialFuncNames(test)
+			if len(potentialFuncNames) == 0 {
+				continue
+			}
+
+			var matchedFunc Func
+			for _, fn := range fileFuncs {
+				var matched bool
+				for _, n := range potentialFuncNames {
+					// Check the prefix to be able to match 'TestDeletePanics' with 'Delete'.
+					if strings.HasPrefix(n, fn.Name) {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					continue
+				}
+
+				// Use the most specific function:
+				//
+				//   - match 'TestDelete', 'TestDeletePanics' with 'Delete'
+				//   - match 'TestDeleteFunc', 'TestDeleteFuncClearTail' with 'DeleteFunc', not 'Delete'
+				if len(matchedFunc.Name) < len(fn.Name) {
+					matchedFunc = fn
 				}
 			}
-			if testType == 0 {
-				continue // unknown type
-			}
-			name = strings.TrimPrefix(name, "_")
-
-			// Try to find 'Foo' for 'TestFoo' and 'foo' for 'Test_foo'.
-			pos, ok := funcPos[name]
-			if !ok && token.IsExported(name) {
-				// Try to find 'foo' for 'TestFoo'.
-				runes := []rune(name)
-				runes[0] = unicode.ToLower(runes[0])
-				pos, ok = funcPos[string(runes)]
-			}
-			if ok {
+			if matchedFunc.Name != "" {
 				loc := test.Location
 				loc.Range.End = loc.Range.Start // move cursor to the test's beginning
 
-				matchedTests = append(matchedTests, Test{
-					FuncPos: pos,
+				matches = append(matches, TestMatch{
+					FuncPos: matchedFunc.Pos,
 					Name:    test.Name,
 					Loc:     loc,
-					Type:    testType,
+					Type:    test.Type,
 				})
 			}
 		}
 	}
-	if len(matchedTests) == 0 {
+	if len(matches) == 0 {
 		return nil, nil
 	}
 
-	slices.SortFunc(matchedTests, func(a, b Test) int {
+	slices.SortFunc(matches, func(a, b TestMatch) int {
 		if v := protocol.ComparePosition(a.FuncPos, b.FuncPos); v != 0 {
 			return v
 		}
@@ -341,13 +355,31 @@ func goToTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Han
 		}
 		return cmp.Compare(a.Name, b.Name)
 	})
+	return matches, nil
+}
 
-	lenses := make([]protocol.CodeLens, 0, len(matchedTests))
-	for _, t := range matchedTests {
-		lenses = append(lenses, protocol.CodeLens{
-			Range:   protocol.Range{Start: t.FuncPos, End: t.FuncPos},
-			Command: command.NewGoToTestCommand("Go to "+t.Name, t.Loc),
-		})
+func getPotentialFuncNames(test testfuncs.Result) []string {
+	var name string
+	switch test.Type {
+	case testfuncs.TypeTest:
+		name = strings.TrimPrefix(test.Name, "Test")
+	case testfuncs.TypeBenchmark:
+		name = strings.TrimPrefix(test.Name, "Benchmark")
+	case testfuncs.TypeFuzz:
+		name = strings.TrimPrefix(test.Name, "Fuzz")
+	case testfuncs.TypeExample:
+		name = strings.TrimPrefix(test.Name, "Example")
 	}
-	return lenses, nil
+	if name == "" {
+		return nil
+	}
+	name = strings.TrimPrefix(name, "_")
+
+	lowerCasedName := []rune(name)
+	lowerCasedName[0] = unicode.ToLower(lowerCasedName[0])
+
+	return []string{
+		name,                   // 'Foo' for 'TestFoo', 'foo' for 'Test_foo'
+		string(lowerCasedName), // 'foo' for 'TestFoo'
+	}
 }

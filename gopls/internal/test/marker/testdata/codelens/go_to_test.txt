@@ -60,3 +60,27 @@ import "testing"
 func TestWriter_Write(*testing.T) {}
 
 func TestWriter_Flush(*testing.T) {}
+
+-- slices.go --
+//@codelenses()
+
+package codelenses
+
+func Delete() {} //@codelens(re"()func", "Go to TestDelete"),codelens(re"()func", "Go to TestDeleteClearTail"),codelens(re"()func", "Go to TestDeletePanics")
+
+func DeleteFunc() {} //@codelens(re"()func", "Go to TestDeleteFunc"),codelens(re"()func", "Go to TestDeleteFuncClearTail")
+
+-- slices_test.go --
+package codelenses
+
+import "testing"
+
+func TestDelete(*testing.T) {}
+
+func TestDeleteClearTail(*testing.T) {}
+
+func TestDeletePanics(*testing.T) {}
+
+func TestDeleteFunc(*testing.T) {}
+
+func TestDeleteFuncClearTail(*testing.T) {}
