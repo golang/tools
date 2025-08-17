@@ -266,6 +266,7 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorRewriteEliminateDotImport, fn: refactorRewriteEliminateDotImport, needPkg: true},
 	{kind: settings.RefactorRewriteAddTags, fn: refactorRewriteAddStructTags, needPkg: true},
 	{kind: settings.RefactorRewriteRemoveTags, fn: refactorRewriteRemoveStructTags, needPkg: true},
+	{kind: settings.GoToTest, fn: goToTest, needPkg: true},
 	{kind: settings.GoplsDocFeatures, fn: goplsDocFeatures}, // offer this one last (#72742)
 
 	// Note: don't forget to update the allow-list in Server.CodeAction
@@ -1126,6 +1127,37 @@ func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) erro
 			dir.Base())
 		cmd := command.NewGCDetailsCommand(title, req.fh.URI())
 		req.addCommandAction(cmd, false)
+	}
+	return nil
+}
+
+// goToTest produces "Go to TestXxx" code action.
+// See [server.commandHandler.GoToTest] for command implementation.
+func goToTest(ctx context.Context, req *codeActionsRequest) error {
+	// TODO: add tests.
+
+	path, _ := astutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
+	if len(path) < 2 {
+		return nil
+	}
+	fn, ok := path[len(path)-2].(*ast.FuncDecl)
+	if !ok {
+		return nil
+	}
+	fnRng, err := req.pgf.NodeRange(fn)
+	if err != nil {
+		return fmt.Errorf("couldn't get node range: %w", err)
+	}
+
+	matches, err := matchFunctionsWithTests(ctx, req.snapshot, req.fh)
+	if err != nil {
+		return err
+	}
+	for _, m := range matches {
+		if m.FuncPos == fnRng.Start {
+			cmd := command.NewGoToTestCommand("Go to "+m.Name, m.Loc)
+			req.addCommandAction(cmd, false)
+		}
 	}
 	return nil
 }
