@@ -45,34 +45,49 @@ func fmtappendf(pass *analysis.Pass) {
 					}
 
 					old, new := fn.Name(), strings.Replace(fn.Name(), "Sprint", "Append", 1)
+					edits := []analysis.TextEdit{
+						{
+							// delete "[]byte("
+							Pos: conv.Pos(),
+							End: conv.Lparen + 1,
+						},
+						{
+							// remove ")"
+							Pos: conv.Rparen,
+							End: conv.Rparen + 1,
+						},
+						{
+							Pos:     id.Pos(),
+							End:     id.End(),
+							NewText: []byte(new),
+						},
+						{
+							Pos:     call.Lparen + 1,
+							NewText: []byte("nil, "),
+						},
+					}
+					if len(conv.Args) == 1 {
+						arg := conv.Args[0]
+						// Determine if we have T(fmt.SprintX(...)<non-args,
+						// like a space or a comma>). If so, delete the non-args
+						// that come before the right parenthesis. Leaving an
+						// extra comma here produces invalid code. (See
+						// golang/go#74709)
+						if arg.End() < conv.Rparen {
+							edits = append(edits, analysis.TextEdit{
+								Pos: arg.End(),
+								End: conv.Rparen,
+							})
+						}
+					}
 					pass.Report(analysis.Diagnostic{
 						Pos:      conv.Pos(),
 						End:      conv.End(),
 						Category: "fmtappendf",
 						Message:  fmt.Sprintf("Replace []byte(fmt.%s...) with fmt.%s", old, new),
 						SuggestedFixes: []analysis.SuggestedFix{{
-							Message: fmt.Sprintf("Replace []byte(fmt.%s...) with fmt.%s", old, new),
-							TextEdits: []analysis.TextEdit{
-								{
-									// delete "[]byte("
-									Pos: conv.Pos(),
-									End: conv.Lparen + 1,
-								},
-								{
-									// remove ")"
-									Pos: conv.Rparen,
-									End: conv.Rparen + 1,
-								},
-								{
-									Pos:     id.Pos(),
-									End:     id.End(),
-									NewText: []byte(new),
-								},
-								{
-									Pos:     call.Lparen + 1,
-									NewText: []byte("nil, "),
-								},
-							},
+							Message:   fmt.Sprintf("Replace []byte(fmt.%s...) with fmt.%s", old, new),
+							TextEdits: edits,
 						}},
 					})
 				}
