@@ -17,10 +17,10 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/tokeninternal"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/tokeninternal"
 )
 
 // IsGenerated gets and reads the file denoted by uri and reports

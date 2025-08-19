@@ -30,6 +30,7 @@ import (
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/label"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/tokeninternal"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/slices"
@@ -37,7 +38,6 @@ import (
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/packagesinternal"
-	"golang.org/x/tools/internal/tokeninternal"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
 )
