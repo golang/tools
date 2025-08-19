@@ -140,15 +140,25 @@ func resolveSymbol(path []string, pkg *cache.Package, pgf *parsego.File) (types.
 	switch len(path) {
 	case 1:
 		_, target := fileScope.LookupParent(path[0], token.NoPos)
+		if target == nil {
+			return nil, fmt.Errorf("failed to resolve name %q", path[0])
+		}
 		return target, nil
 	case 2:
 		switch _, obj := fileScope.LookupParent(path[0], token.NoPos); obj := obj.(type) {
 		case *types.PkgName:
-			return obj.Imported().Scope().Lookup(path[1]), nil
+			target := obj.Imported().Scope().Lookup(path[1])
+			if target == nil {
+				return nil, fmt.Errorf("failed to resolve member %q of %q", path[1], path[0])
+			}
+			return target, nil
 		case nil:
 			return nil, fmt.Errorf("failed to resolve name %q", path[0])
 		default:
 			target, _, _ := types.LookupFieldOrMethod(obj.Type(), true, pkg.Types(), path[1])
+			if target == nil {
+				return nil, fmt.Errorf("failed to resolve member %q of %q", path[1], path[0])
+			}
 			return target, nil
 		}
 	case 3:
@@ -163,6 +173,9 @@ func resolveSymbol(path []string, pkg *cache.Package, pgf *parsego.File) (types.
 			return nil, fmt.Errorf("invalid qualified symbol: could not find %q in package %q", path[1], path[0])
 		}
 		target, _, _ := types.LookupFieldOrMethod(recv.Type(), true, pkg.Types(), path[2])
+		if target == nil {
+			return nil, fmt.Errorf("failed to resolve member %q of %q", path[2], path[1])
+		}
 		return target, nil
 	}
 	panic("unreachable")
