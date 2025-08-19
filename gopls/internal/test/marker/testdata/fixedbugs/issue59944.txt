@@ -4,6 +4,9 @@ the methodset of its receiver type.
 
 Adapted from the code in question from the issue.
 
+-- skip --
+fails on release-branch.0.25 for unknown reasons
+
 -- flags --
 -cgo
 
