@@ -62,6 +62,7 @@ func skipIfShort(t *testing.T, reason string) {
 // testAllOrModulesParallel tests f, in parallel, against all packagestest
 // exporters in long mode, but only against the Modules exporter in short mode.
 func testAllOrModulesParallel(t *testing.T, f func(*testing.T, packagestest.Exporter)) {
+	testenv.NeedsGoPackages(t)
 	t.Parallel()
 	packagestest.TestAll(t, func(t *testing.T, exporter packagestest.Exporter) {
 		t.Helper()

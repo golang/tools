@@ -66,6 +66,7 @@ func testLoad(t *testing.T, minPkgs int, patterns ...string) {
 	if testing.Short() {
 		t.Skip("skipping in short mode; too slow (https://golang.org/issue/14113)") // ~5s
 	}
+	testenv.NeedsGoPackages(t)
 	testenv.NeedsTool(t, "go")
 
 	// Load, parse and type-check the program.

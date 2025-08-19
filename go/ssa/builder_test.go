@@ -173,6 +173,7 @@ func main() {
 // Tests that methods from indirect dependencies not subject to
 // CreatePackage are created as needed.
 func TestNoIndirectCreatePackage(t *testing.T) {
+	testenv.NeedsGoPackages(t)
 	testenv.NeedsGoBuild(t) // for go/packages
 
 	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "indirect.txtar"))

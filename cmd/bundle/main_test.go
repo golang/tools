@@ -12,10 +12,12 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages/packagestest"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestBundle(t *testing.T) { packagestest.TestAll(t, testBundle) }
 func testBundle(t *testing.T, x packagestest.Exporter) {
+	testenv.NeedsGoPackages(t)
 	load := func(name string) string {
 		data, err := os.ReadFile(name)
 		if err != nil {

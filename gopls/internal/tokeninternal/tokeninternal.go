@@ -20,6 +20,12 @@ import (
 // are not already present. It panics if any pair of files in the
 // resulting FileSet would overlap.
 func AddExistingFiles(fset *token.FileSet, files []*token.File) {
+	// Intercept AddExistingFiles at go1.25, to avoid the panic below.
+	if fset, ok := (any)(fset).(interface{ AddExistingFiles(...*token.File) }); ok {
+		fset.AddExistingFiles(files...)
+		return
+	}
+
 	// Punch through the FileSet encapsulation.
 	type tokenFileSet struct {
 		// This type remained essentially consistent from go1.16 to go1.21.
@@ -29,9 +35,10 @@ func AddExistingFiles(fset *token.FileSet, files []*token.File) {
 		_     *token.File // changed to atomic.Pointer[token.File] in go1.19
 	}
 
-	// If the size of token.FileSet changes, this will fail to compile.
-	const delta = int64(unsafe.Sizeof(tokenFileSet{})) - int64(unsafe.Sizeof(token.FileSet{}))
-	var _ [-delta * delta]int
+	// If the size of token.FileSet changes, this will panic.
+	if unsafe.Sizeof(*fset) != unsafe.Sizeof(tokenFileSet{}) {
+		panic("unexpected token.File size")
+	}
 
 	type uP = unsafe.Pointer
 	var ptr *tokenFileSet

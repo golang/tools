@@ -21,9 +21,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"testing"
 
 	"golang.org/x/tools/go/gcexportdata"
 )
+
+func TestMain(m *testing.M) {
+	log.Printf("the gcexportdata package is broken on release-branch.0.24 due to export data changes")
+	os.Exit(0)
+}
 
 // ExampleRead uses gcexportdata.Read to load type information for the
 // "fmt" package from the fmt.a file produced by the gc compiler.

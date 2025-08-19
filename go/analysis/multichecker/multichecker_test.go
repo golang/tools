@@ -37,6 +37,7 @@ func main() {
 // TestExitCode ensures that analysis failures are reported correctly.
 // This test fork/execs the main function above.
 func TestExitCode(t *testing.T) {
+	testenv.NeedsGoPackages(t)
 	if runtime.GOOS != "linux" {
 		t.Skipf("skipping fork/exec test on this platform")
 	}

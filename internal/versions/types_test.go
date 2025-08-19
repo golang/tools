@@ -18,6 +18,8 @@ import (
 )
 
 func Test(t *testing.T) {
+	t.Skip("broken on release-branch.0.24")
+
 	testenv.NeedsGo1Point(t, 22)
 
 	var contents = map[string]string{

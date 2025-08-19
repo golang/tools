@@ -62,6 +62,7 @@ const (
 // directory, applying the comma-separated list of named analyzers to
 // the packages matching the patterns. It returns the CombinedOutput.
 func fix(t *testing.T, dir, analyzers string, wantExit int, patterns ...string) string {
+	testenv.NeedsGoPackages(t)
 	testenv.NeedsExec(t)
 	testenv.NeedsTool(t, "go")
 

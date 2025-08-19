@@ -49,6 +49,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestEndToEnd(t *testing.T) {
+	testenv.NeedsGoPackages(t)
 	testenv.NeedsTool(t, "go")
 
 	stringer := stringerPath(t)
@@ -156,6 +157,7 @@ func TestTags(t *testing.T) {
 // TestConstValueChange verifies that if a constant value changes and
 // the stringer code is not regenerated, we'll get a compiler error.
 func TestConstValueChange(t *testing.T) {
+	testenv.NeedsGoPackages(t)
 	testenv.NeedsTool(t, "go")
 
 	stringer := stringerPath(t)
