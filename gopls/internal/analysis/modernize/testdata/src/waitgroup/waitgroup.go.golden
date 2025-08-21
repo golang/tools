@@ -141,3 +141,32 @@ func _() {
 		wg1.Done()
 	}()
 }
+
+type Server struct {
+	wg sync.WaitGroup
+}
+
+type ServerContainer struct {
+	serv Server
+}
+
+func _() {
+	var s Server
+	// want "Goroutine creation can be simplified using WaitGroup.Go"
+	s.wg.Go(func() {
+		print()
+	})
+
+	var sc ServerContainer
+	// want "Goroutine creation can be simplified using WaitGroup.Go"
+	sc.serv.wg.Go(func() {
+		print()
+	})
+
+	var wg sync.WaitGroup
+	arr := [1]*sync.WaitGroup{&wg}
+	// want "Goroutine creation can be simplified using WaitGroup.Go"
+	arr[0].Go(func() {
+		print()
+	})
+}

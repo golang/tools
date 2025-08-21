@@ -5,8 +5,10 @@
 package modernize
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
+	"go/printer"
 	"slices"
 
 	"golang.org/x/tools/go/analysis"
@@ -108,6 +110,12 @@ func waitgroup(pass *analysis.Pass) {
 			continue
 		}
 
+		var addCallRecvText bytes.Buffer
+		err := printer.Fprint(&addCallRecvText, pass.Fset, addCallRecv)
+		if err != nil {
+			continue // error getting text for the edit
+		}
+
 		pass.Report(analysis.Diagnostic{
 			Pos:      addCall.Pos(),
 			End:      goStmt.End(),
@@ -127,7 +135,7 @@ func waitgroup(pass *analysis.Pass) {
 						{
 							Pos:     goStmt.Pos(),
 							End:     goStmt.Call.Pos(),
-							NewText: fmt.Appendf(nil, "%s.Go(", addCallRecv),
+							NewText: fmt.Appendf(nil, "%s.Go(", addCallRecvText.String()),
 						},
 						// ... }()
 						//      -
