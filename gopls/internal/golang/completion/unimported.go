@@ -18,7 +18,8 @@ package completion
 // 1. the imports of some other file of the current package,
 // 2. the standard library,
 // 3. the imports of some other file in the current workspace,
-// 4. the module cache.
+// 4. imports in the current module with 'foo' as the explicit package name,
+// 5. the module cache,
 // It stops at the first success.
 
 import (
@@ -63,11 +64,47 @@ func (c *completer) unimported(ctx context.Context, pkgname metadata.PackageName
 		return
 	}
 
-	// look in the module cache, for the last chance
-	items, err := c.modcacheMatches(pkgname, prefix)
-	if err == nil {
-		c.scoreList(items)
+	// before looking in the module cache, maybe it is an explicit
+	// package name used in this module
+	if c.explicitPkgName(ctx, pkgname, prefix) {
+		return
 	}
+
+	// look in the module cache
+	items, err := c.modcacheMatches(pkgname, prefix)
+	if err == nil && c.scoreList(items) {
+		return
+	}
+
+	// out of things to do
+}
+
+// see if some file in the current package satisfied a foo. import
+// because foo is an explicit package name (import foo "a.b.c")
+func (c *completer) explicitPkgName(ctx context.Context, pkgname metadata.PackageName, prefix string) bool {
+	for _, pgf := range c.pkg.CompiledGoFiles() {
+		imports := pgf.File.Imports
+		for _, imp := range imports {
+			if imp.Name != nil && imp.Name.Name == string(pkgname) {
+				path := strings.Trim(imp.Path.Value, `"`)
+				if c.tryPath(ctx, metadata.PackagePath(path), string(pkgname), prefix) {
+					return true // one is enough
+				}
+			}
+		}
+	}
+	return false
+}
+
+// see if this path contains a usable import with explict package name
+func (c *completer) tryPath(ctx context.Context, path metadata.PackagePath, pkgname, prefix string) bool {
+	packages := c.snapshot.MetadataGraph().ForPackagePath
+	ids := []metadata.PackageID{}
+	for _, pkg := range packages[path] { // could there ever be more than one?
+		ids = append(ids, pkg.ID) // pkg.ID. ID: "math/rand" but Name: "rand"
+	}
+	items := c.pkgIDmatches(ctx, ids, metadata.PackageName(pkgname), prefix)
+	return c.scoreList(items)
 }
 
 // find all the packageIDs for packages in the workspace that have the desired name

@@ -21,7 +21,7 @@ module example.com
 
 go 1.18
 -- playdos/play.go --
-package  
+package   // comment (to preserve spaces)
 `
 
 	Run(t, files, func(t *testing.T, env *Env) {

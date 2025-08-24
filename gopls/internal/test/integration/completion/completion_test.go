@@ -1461,3 +1461,37 @@ func main() {
 		}
 	})
 }
+
+// find import foo "bar" for foo.xxx
+func TestImportAlias(t *testing.T) {
+	testenv.NeedsGoCommand1Point(t, 22) // we will find math/rand/v2
+	const files = `
+-- a.go --
+package x
+var _ = xrand.
+-- b.go --
+package x
+
+import xrand "math/rand"
+
+var _ = xrand.Int()
+
+-- go.mod --
+module foo.com
+
+go 1.24.2
+`
+	Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("a.go", "xrand.()")
+		compls := env.Completion(loc)
+		if len(compls.Items) == 0 {
+			t.Fatal("no completions")
+		}
+		one := compls.Items[0].AdditionalTextEdits[0].NewText
+		if one != "\nimport xrand \"math/rand\"\n" {
+			t.Errorf("wrong import %q", one)
+		}
+	})
+}
