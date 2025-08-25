@@ -285,6 +285,146 @@ func getRandomPort() int {
 	return listener.Addr().(*net.TCPAddr).Port
 }
 
+func TestMCPRename(t *testing.T) {
+	// Test the go_rename tool via MCP.
+	if !(supportsFsnotify(runtime.GOOS)) {
+		// See golang/go#74580
+		t.Skipf(`skipping on %s; fsnotify is not supported`, runtime.GOOS)
+	}
+	testenv.NeedsExec(t) // stdio transport uses execve(2)
+
+	tests := []struct {
+		name        string
+		dryRunValue interface{} // nil, true, or false
+		wantStrings []string
+	}{
+		{
+			name:        "default_dry_run",
+			dryRunValue: nil, // omit dryRun parameter
+			wantStrings: []string{"a.go", "b.go", "c.go", "NewName", "OldName", "Rename would make", "6 changes", "3 files"},
+		},
+		{
+			name:        "explicit_dry_run",
+			dryRunValue: true,
+			wantStrings: []string{"a.go", "b.go", "c.go", "NewName", "OldName", "Rename would make", "6 changes", "3 files"},
+		},
+		{
+			name:        "apply_changes",
+			dryRunValue: false,
+			wantStrings: []string{"Successfully applied", "6 changes", "3 files"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test cross-file rename with: function definition (a.go), function calls (b.go, c.go),
+			// and variable assignments (all files) = 6 total references across 3 files
+			tree := writeTree(t, `
+-- go.mod --
+module example.com
+go 1.18
+
+-- a.go --
+package main
+
+func OldName() {
+}
+
+var globalVar = OldName
+
+-- b.go --
+package main
+
+func TestFunc() {
+	OldName()
+	x := OldName
+	_ = x
+}
+
+-- c.go --
+package main
+
+func AnotherFunc() {
+	OldName()
+	result := OldName
+	_ = result
+}
+`)
+
+			goplsCmd := exec.Command(os.Args[0], "mcp")
+			goplsCmd.Env = append(os.Environ(), "ENTRYPOINT=goplsMain")
+			goplsCmd.Dir = tree
+
+			ctx := t.Context()
+			client := mcp.NewClient("client", "v0.0.1", nil)
+			mcpSession, err := client.Connect(ctx, mcp.NewCommandTransport(goplsCmd))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := mcpSession.Close(); err != nil {
+					t.Errorf("closing MCP connection: %v", err)
+				}
+			}()
+
+			tool := "go_rename"
+			args := map[string]any{
+				"file":    filepath.Join(tree, "a.go"),
+				"line":    2,
+				"column":  5,
+				"newName": "NewName",
+			}
+
+			// Add dryRun parameter if specified
+			if tt.dryRunValue != nil {
+				args["dryRun"] = tt.dryRunValue
+			}
+
+			res, err := mcpSession.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := resultText(t, res)
+
+			// Check expected strings in output
+			for _, want := range tt.wantStrings {
+				if !strings.Contains(got, want) {
+					t.Errorf("CallTool(%s, %v) = %v, want containing %q", tool, args, got, want)
+				}
+			}
+
+			// Check file modification based on dryRun value across all files
+			isDryRun := tt.dryRunValue == nil || tt.dryRunValue == true
+
+			for _, filename := range []string{"a.go", "b.go", "c.go"} {
+				content, err := os.ReadFile(filepath.Join(tree, filename))
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				if isDryRun {
+					// Files should NOT be modified in dry run
+					if strings.Contains(string(content), "NewName") {
+						t.Errorf("Expected %s to NOT contain 'NewName' in dry run, but it was modified: %s", filename, string(content))
+					}
+					if !strings.Contains(string(content), "OldName") {
+						t.Errorf("Expected %s to still contain 'OldName' in dry run, got: %s", filename, string(content))
+					}
+					continue
+				}
+
+				// Files should be modified when applying changes - verify cross-file rename
+				if !strings.Contains(string(content), "NewName") {
+					t.Errorf("Expected %s to contain 'NewName' after cross-file rename, got: %s", filename, string(content))
+				}
+				if strings.Contains(string(content), "OldName") {
+					t.Errorf("Expected %s to no longer contain 'OldName' after rename, but found: %s", filename, string(content))
+				}
+			}
+		})
+	}
+}
+
 // supportsFsnotify returns true if fsnotify supports the os.
 func supportsFsnotify(os string) bool {
 	return os == "darwin" || os == "linux" || os == "windows"
