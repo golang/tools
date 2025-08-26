@@ -4,11 +4,15 @@
 
 package completion
 
+// This file is misnamed; it has no version constraints.
+// TODO(adonovan):  fold into completion_test.go
+
 import (
 	"testing"
 
 	"golang.org/x/tools/gopls/internal/protocol"
 	. "golang.org/x/tools/gopls/internal/test/integration"
+	"golang.org/x/tools/internal/testenv"
 )
 
 // test generic receivers
@@ -52,13 +56,16 @@ func (s SyncMap[XX,string]) g(v UU) {}
 		}
 	})
 }
+
 func TestFuzzFunc(t *testing.T) {
+	testenv.NeedsGoCommand1Point(t, 25) // go1.25 added TBF.Attr
+
 	// use the example from the package documentation
 	modfile := `
 -- go.mod --
 module mod.com
 
-go 1.18
+go 1.25
 `
 	part0 := `package foo
 import "testing"
@@ -90,18 +97,13 @@ func FuzzHex(f *testing.F) {
 -- c_test.go --
 ` + part0 + part1 + part2
 
-	ad := []string{"Add"}
-	if _, ok := any(t).(interface{ Attr(k, v string) }); ok { // go1.25 added TBF.Attr
-		ad = append(ad, "Attr")
-	}
-
 	tests := []struct {
 		file   string
 		pat    string
 		offset uint32 // UTF16 length from the beginning of pat to what the user just typed
 		want   []string
 	}{
-		{"a_test.go", "f.Ad", 3, ad},
+		{"a_test.go", "f.Ad", 3, []string{"Add", "Attr"}},
 		{"c_test.go", " f.F", 4, []string{"Failed"}},
 		{"c_test.go", "f.N", 3, []string{"Name"}},
 		{"b_test.go", "f.F", 3, []string{"Fuzz(func(t *testing.T, a []byte)", "Fail", "FailNow",
@@ -109,9 +111,6 @@ func FuzzHex(f *testing.F) {
 	}
 	Run(t, data, func(t *testing.T, env *Env) {
 		for _, test := range tests {
-			if test.file == "a_test.go" {
-				t.Skip("go.dev/issue/74987: needs updating to pass after CL 695417")
-			}
 			env.OpenFile(test.file)
 			env.Await(env.DoneWithOpen())
 			loc := env.RegexpSearch(test.file, test.pat)
