@@ -247,7 +247,7 @@ func (h *commandHandler) Packages(ctx context.Context, args command.PackagesArgs
 			for i, tests := range allTests {
 				pkg := &result.Packages[start+i]
 				fileByPath := map[protocol.DocumentURI]*command.TestFile{}
-				for _, test := range tests.All() {
+				for test := range tests.All() {
 					test := command.TestCase{
 						Name: test.Name,
 						Loc:  test.Location,

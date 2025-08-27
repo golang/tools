@@ -214,6 +214,12 @@ func regenerateCgoLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Ha
 }
 
 func goToTestCodeLens(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+	if !snapshot.Options().ClientOptions.ShowDocumentSupported {
+		// GoToTest command uses 'window/showDocument' request. Don't generate
+		// code lenses for clients that won't be able to use them.
+		return nil, nil
+	}
+
 	matches, err := matchFunctionsWithTests(ctx, snapshot, fh)
 	if err != nil {
 		return nil, err
@@ -298,7 +304,7 @@ func matchFunctionsWithTests(ctx context.Context, snapshot *cache.Snapshot, fh f
 		return nil, fmt.Errorf("couldn't request all tests for packages %v: %w", pkgIDs, err)
 	}
 	for _, tests := range allTests {
-		for _, test := range tests.All() {
+		for test := range tests.All() {
 			if test.Subtest {
 				continue
 			}
@@ -310,9 +316,9 @@ func matchFunctionsWithTests(ctx context.Context, snapshot *cache.Snapshot, fh f
 			var matchedFunc Func
 			for _, fn := range fileFuncs {
 				var matched bool
-				for _, n := range potentialFuncNames {
-					// Check the prefix to be able to match 'TestDeletePanics' with 'Delete'.
-					if strings.HasPrefix(n, fn.Name) {
+				for _, potentialName := range potentialFuncNames {
+					// Check the prefix to match 'TestDeletePanics' with 'Delete'.
+					if strings.HasPrefix(potentialName, fn.Name) {
 						matched = true
 						break
 					}
@@ -373,13 +379,13 @@ func getPotentialFuncNames(test testfuncs.Result) []string {
 	if name == "" {
 		return nil
 	}
-	name = strings.TrimPrefix(name, "_")
+	name = strings.TrimPrefix(name, "_") // 'Foo' for 'TestFoo', 'foo' for 'Test_foo'
 
-	lowerCasedName := []rune(name)
-	lowerCasedName[0] = unicode.ToLower(lowerCasedName[0])
-
-	return []string{
-		name,                   // 'Foo' for 'TestFoo', 'foo' for 'Test_foo'
-		string(lowerCasedName), // 'foo' for 'TestFoo'
+	names := []string{name}
+	if token.IsExported(name) {
+		unexportedName := []rune(name)
+		unexportedName[0] = unicode.ToLower(unexportedName[0])
+		names = append(names, string(unexportedName)) // 'foo' for 'TestFoo'
 	}
+	return names
 }

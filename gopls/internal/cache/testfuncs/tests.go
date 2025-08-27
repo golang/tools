@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/types"
+	"iter"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -35,14 +36,16 @@ func (index *Index) Encode() []byte {
 	return packageCodec.Encode(index.pkg)
 }
 
-func (index *Index) All() []Result {
-	var results []Result
-	for _, file := range index.pkg.Files {
-		for _, test := range file.Tests {
-			results = append(results, test.result())
+func (index *Index) All() iter.Seq[Result] {
+	return func(yield func(Result) bool) {
+		for _, file := range index.pkg.Files {
+			for _, test := range file.Tests {
+				if !yield(test.result()) {
+					return
+				}
+			}
 		}
 	}
-	return results
 }
 
 // A Result reports a test function

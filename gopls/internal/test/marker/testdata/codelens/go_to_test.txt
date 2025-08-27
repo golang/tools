@@ -16,12 +16,22 @@ func bar() {} //@codelens(re"()func bar", "Go to Test_bar"),codelens(re"()func b
 
 func xyz() {} //@codelens(re"()func xyz", "Go to TestXyz")
 
+func Translate() { //@codelens(re"()func Translate", "Go to TestTranslate")
+	translate()
+}
+
+func translate() {}
+
 -- a1_test.go --
 package codelenses
 
 import "testing"
 
 func TestFoo(*testing.T) {}
+
+func TestTranslate(*testing.T) {
+	translate()
+}
 
 -- a2_test.go --
 package codelenses
@@ -84,3 +94,17 @@ func TestDeletePanics(*testing.T) {}
 func TestDeleteFunc(*testing.T) {}
 
 func TestDeleteFuncClearTail(*testing.T) {}
+
+-- example.go --
+//@codelenses()
+
+package codelenses
+
+func Sort() {} //@codelens(re"()func", "Go to ExampleSort_long"),codelens(re"()func", "Go to ExampleSort_short")
+
+-- example_test.go --
+package codelenses
+
+func ExampleSort_short() {}
+
+func ExampleSort_long() {}

@@ -239,6 +239,7 @@ type codeActionProducer struct {
 var codeActionProducers = [...]codeActionProducer{
 	{kind: protocol.QuickFix, fn: quickFix, needPkg: true},
 	{kind: protocol.SourceOrganizeImports, fn: sourceOrganizeImports},
+	{kind: settings.GoToTest, fn: goToTestCodeAction, needPkg: true},
 	{kind: settings.AddTest, fn: addTest, needPkg: true},
 	{kind: settings.GoAssembly, fn: goAssembly, needPkg: true},
 	{kind: settings.GoDoc, fn: goDoc, needPkg: true},
@@ -268,7 +269,6 @@ var codeActionProducers = [...]codeActionProducer{
 	{kind: settings.RefactorRewriteEliminateDotImport, fn: refactorRewriteEliminateDotImport, needPkg: true},
 	{kind: settings.RefactorRewriteAddTags, fn: refactorRewriteAddStructTags, needPkg: true},
 	{kind: settings.RefactorRewriteRemoveTags, fn: refactorRewriteRemoveStructTags, needPkg: true},
-	{kind: settings.GoToTest, fn: goToTest, needPkg: true},
 	{kind: settings.GoplsDocFeatures, fn: goplsDocFeatures}, // offer this one last (#72742)
 
 	// Note: don't forget to update the allow-list in Server.CodeAction
@@ -1144,10 +1144,14 @@ func refactorMoveType(ctx context.Context, req *codeActionsRequest) error {
 	return nil
 }
 
-// goToTest produces "Go to TestXxx" code action.
+// goToTestCodeAction produces "Go to TestXxx" code action.
 // See [server.commandHandler.GoToTest] for command implementation.
-func goToTest(ctx context.Context, req *codeActionsRequest) error {
-	// TODO: add tests.
+func goToTestCodeAction(ctx context.Context, req *codeActionsRequest) error {
+	if !req.snapshot.Options().ClientOptions.ShowDocumentSupported {
+		// GoToTest command uses 'window/showDocument' request. Don't generate
+		// code actions for clients that won't be able to use them.
+		return nil
+	}
 
 	path, _ := astutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
 	if len(path) < 2 {
