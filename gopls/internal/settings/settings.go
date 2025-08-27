@@ -361,7 +361,7 @@ const (
 
 	// Go to the functions's Test, Example, Benchmark, or Fuzz declarations
 	//
-	// This codelens source annotates the function and method declarations
+	// This codelens source annotates function and method declarations
 	// with their corresponding Test, Example, Benchmark, and Fuzz functions.
 	CodeLensGoToTest CodeLensSource = "go_to_test"
 )
