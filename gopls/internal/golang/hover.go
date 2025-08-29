@@ -879,19 +879,19 @@ func hoverPackageName(pkg *cache.Package, pgf *parsego.File) (protocol.Range, *h
 	// TODO(rfindley): consider exec'ing go here to compute DefaultGODEBUG, or
 	// propose adding GODEBUG info to go/packages.
 
-	var footer string
+	var footer strings.Builder
 	for i, attr := range attrs {
 		if i > 0 {
-			footer += "\n"
+			footer.WriteString("\n")
 		}
-		footer += fmt.Sprintf(" - %s: %s", attr.title, attr.value)
+		fmt.Fprintf(&footer, " - %s: %s", attr.title, attr.value)
 	}
 
 	return rng, &hoverResult{
 		Signature:         "package " + string(pkg.Metadata().Name),
 		Synopsis:          doc.Synopsis(docText),
 		FullDocumentation: docText,
-		footer:            footer,
+		footer:            footer.String(),
 	}, nil
 }
 

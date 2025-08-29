@@ -373,11 +373,12 @@ func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 
 	// Report any errors using the protocol.
 	if len(viewErrors) > 0 {
-		errMsg := fmt.Sprintf("Error loading workspace folders (expected %v, got %v)\n", len(folders), len(s.session.Views())-originalViews)
+		var errMsg strings.Builder
+		fmt.Fprintf(&errMsg, "Error loading workspace folders (expected %v, got %v)\n", len(folders), len(s.session.Views())-originalViews)
 		for uri, err := range viewErrors {
-			errMsg += fmt.Sprintf("failed to load view for %s: %v\n", uri, err)
+			fmt.Fprintf(&errMsg, "failed to load view for %s: %v\n", uri, err)
 		}
-		showMessage(ctx, s.client, protocol.Error, errMsg)
+		showMessage(ctx, s.client, protocol.Error, errMsg.String())
 	}
 }
 

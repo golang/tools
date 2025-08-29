@@ -833,11 +833,13 @@ func (s *Snapshot) fileWatchingGlobPatterns() map[protocol.RelativePattern]unit 
 		patterns[protocol.RelativePattern{Pattern: glob}] = unit{}
 	}
 
-	extensions := "go,mod,sum,work"
+	var extensions strings.Builder
+	extensions.WriteString("go,mod,sum,work")
 	for _, ext := range s.Options().TemplateExtensions {
-		extensions += "," + ext
+		extensions.WriteString(",")
+		extensions.WriteString(ext)
 	}
-	watchGoFiles := fmt.Sprintf("**/*.{%s}", extensions)
+	watchGoFiles := fmt.Sprintf("**/*.{%s}", extensions.String())
 
 	var dirs []string
 	if s.view.typ.usesModules() {

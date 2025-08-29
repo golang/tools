@@ -374,10 +374,10 @@ func formatExplanation(text string, replaceMap map[module.Version]module.Version
 	// rsc.io/sampler
 	// golang.org/x/text/language
 	b.WriteString(":\n```text")
-	dash := ""
+	var dash strings.Builder
 	for _, imp := range splt[1 : length-1] {
-		dash += "-"
-		b.WriteString("\n" + dash + " " + imp)
+		dash.WriteString("-")
+		b.WriteString("\n" + dash.String() + " " + imp)
 	}
 	b.WriteString("\n```")
 	return b.String()
