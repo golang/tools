@@ -1671,6 +1671,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"stringsbuilder\"",
+							"Doc": "replace += with strings.Builder\n\nThis analyzer replaces repeated string += string concatenation\noperations with calls to Go 1.10's strings.Builder.\n\nFor example:\n\n\tvar s = \"[\"\n\tfor x := range seq {\n\t\ts += x\n\t\ts += \".\"\n\t}\n\ts += \"]\"\n\tuse(s)\n\nis replaced by:\n\n\tvar s strings.Builder\n\ts.WriteString(\"[\")\n\tfor x := range seq {\n\t\ts.WriteString(x)\n\t\ts.WriteString(\".\")\n\t}\n\ts.WriteString(\"]\")\n\tuse(s.String())\n\nThis avoids quadratic memory allocation and improves performance.\n\nThe analyzer requires that all references to s except the final one\nare += operations. To avoid warning about trivial cases, at least one\nmust appear within a loop. The variable s must be a local\nvariable, not a global or parameter.\n\nThe sole use of the finished string must be the last reference to the\nvariable s. (It may appear within an intervening loop or function literal,\nsince even s.String() is called repeatedly, it does not allocate memory.)",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"stringscutprefix\"",
 							"Doc": "replace HasPrefix/TrimPrefix with CutPrefix\n\nThe stringscutprefix analyzer simplifies a common pattern where code first\nchecks for a prefix with `strings.HasPrefix` and then removes it with\n`strings.TrimPrefix`. It replaces this two-step process with a single call\nto `strings.CutPrefix`, introduced in Go 1.20. The analyzer also handles\nthe equivalent functions in the `bytes` package.",
 							"Default": "true",
@@ -1678,7 +1684,7 @@
 						},
 						{
 							"Name": "\"stringsseq\"",
-							"Doc": "replace ranging over Split/Fields with SplitSeq/FieldsSeq\n\nThe stringsseq analyzer improves the efficiency of iterating over substrings.\nIt replaces\n\n\tfor range strings.Split(...)\n\nwith the more efficient\n\n\tfor range strings.SplitSeq(...)\n\nwhich was added in Go 1.24 and avoids allocating a slice for the\nsubstrings. The analyzer also handles `strings.Fields` and the\nequivalent functions in the `bytes` package.",
+							"Doc": "replace ranging over Split/Fields with SplitSeq/FieldsSeq\n\nThe stringsseq analyzer improves the efficiency of iterating over substrings.\nIt replaces\n\n\tfor range strings.Split(...)\n\nwith the more efficient\n\n\tfor range strings.SplitSeq(...)\n\nwhich was added in Go 1.24 and avoids allocating a slice for the\nsubstrings. The analyzer also handles strings.Fields and the\nequivalent functions in the bytes package.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -1690,7 +1696,7 @@
 						},
 						{
 							"Name": "\"testingcontext\"",
-							"Doc": "replace context.WithCancel with t.Context in tests\n\nThe testingcontext analyzer simplifies context management in tests. It\nreplaces the manual creation of a cancellable context,\n\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\nwith a single call to `t.Context()`, which was added in Go 1.24.\n\nThis change is only suggested if the `cancel` function is not used\nfor any other purpose.",
+							"Doc": "replace context.WithCancel with t.Context in tests\n\nThe testingcontext analyzer simplifies context management in tests. It\nreplaces the manual creation of a cancellable context,\n\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\nwith a single call to t.Context(), which was added in Go 1.24.\n\nThis change is only suggested if the `cancel` function is not used\nfor any other purpose.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3513,6 +3519,12 @@
 			"Default": true
 		},
 		{
+			"Name": "stringsbuilder",
+			"Doc": "replace += with strings.Builder\n\nThis analyzer replaces repeated string += string concatenation\noperations with calls to Go 1.10's strings.Builder.\n\nFor example:\n\n\tvar s = \"[\"\n\tfor x := range seq {\n\t\ts += x\n\t\ts += \".\"\n\t}\n\ts += \"]\"\n\tuse(s)\n\nis replaced by:\n\n\tvar s strings.Builder\n\ts.WriteString(\"[\")\n\tfor x := range seq {\n\t\ts.WriteString(x)\n\t\ts.WriteString(\".\")\n\t}\n\ts.WriteString(\"]\")\n\tuse(s.String())\n\nThis avoids quadratic memory allocation and improves performance.\n\nThe analyzer requires that all references to s except the final one\nare += operations. To avoid warning about trivial cases, at least one\nmust appear within a loop. The variable s must be a local\nvariable, not a global or parameter.\n\nThe sole use of the finished string must be the last reference to the\nvariable s. (It may appear within an intervening loop or function literal,\nsince even s.String() is called repeatedly, it does not allocate memory.)",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringbuilder",
+			"Default": true
+		},
+		{
 			"Name": "stringscutprefix",
 			"Doc": "replace HasPrefix/TrimPrefix with CutPrefix\n\nThe stringscutprefix analyzer simplifies a common pattern where code first\nchecks for a prefix with `strings.HasPrefix` and then removes it with\n`strings.TrimPrefix`. It replaces this two-step process with a single call\nto `strings.CutPrefix`, introduced in Go 1.20. The analyzer also handles\nthe equivalent functions in the `bytes` package.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringscutprefix",
@@ -3520,7 +3532,7 @@
 		},
 		{
 			"Name": "stringsseq",
-			"Doc": "replace ranging over Split/Fields with SplitSeq/FieldsSeq\n\nThe stringsseq analyzer improves the efficiency of iterating over substrings.\nIt replaces\n\n\tfor range strings.Split(...)\n\nwith the more efficient\n\n\tfor range strings.SplitSeq(...)\n\nwhich was added in Go 1.24 and avoids allocating a slice for the\nsubstrings. The analyzer also handles `strings.Fields` and the\nequivalent functions in the `bytes` package.",
+			"Doc": "replace ranging over Split/Fields with SplitSeq/FieldsSeq\n\nThe stringsseq analyzer improves the efficiency of iterating over substrings.\nIt replaces\n\n\tfor range strings.Split(...)\n\nwith the more efficient\n\n\tfor range strings.SplitSeq(...)\n\nwhich was added in Go 1.24 and avoids allocating a slice for the\nsubstrings. The analyzer also handles strings.Fields and the\nequivalent functions in the bytes package.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringsseq",
 			"Default": true
 		},
@@ -3532,7 +3544,7 @@
 		},
 		{
 			"Name": "testingcontext",
-			"Doc": "replace context.WithCancel with t.Context in tests\n\nThe testingcontext analyzer simplifies context management in tests. It\nreplaces the manual creation of a cancellable context,\n\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\nwith a single call to `t.Context()`, which was added in Go 1.24.\n\nThis change is only suggested if the `cancel` function is not used\nfor any other purpose.",
+			"Doc": "replace context.WithCancel with t.Context in tests\n\nThe testingcontext analyzer simplifies context management in tests. It\nreplaces the manual creation of a cancellable context,\n\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\nwith a single call to t.Context(), which was added in Go 1.24.\n\nThis change is only suggested if the `cancel` function is not used\nfor any other purpose.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#testingcontext",
 			"Default": true
 		},

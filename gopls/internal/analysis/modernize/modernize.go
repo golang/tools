@@ -44,6 +44,7 @@ var Suite = []*analysis.Analyzer{
 	SlicesSortAnalyzer,
 	StringsCutPrefixAnalyzer,
 	StringsSeqAnalyzer,
+	StringsBuilderAnalyzer,
 	TestingContextAnalyzer,
 	WaitGroupAnalyzer,
 }
@@ -143,6 +144,7 @@ var (
 	builtinLen     = types.Universe.Lookup("len")
 	builtinMake    = types.Universe.Lookup("make")
 	builtinNil     = types.Universe.Lookup("nil")
+	builtinString  = types.Universe.Lookup("string")
 	builtinTrue    = types.Universe.Lookup("true")
 	byteSliceType  = types.NewSlice(types.Typ[types.Byte])
 	omitemptyRegex = regexp.MustCompile(`(?:^json| json):"[^"]*(,omitempty)(?:"|,[^"]*")\s?`)

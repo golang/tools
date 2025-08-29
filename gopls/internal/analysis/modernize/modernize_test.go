@@ -59,6 +59,10 @@ func TestSlicesSort(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.SlicesSortAnalyzer, "slicessort")
 }
 
+func TestStringsBuilder(t *testing.T) {
+	RunWithSuggestedFixes(t, TestData(), modernize.StringsBuilderAnalyzer, "stringsbuilder")
+}
+
 func TestStringsCutPrefix(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.StringsCutPrefixAnalyzer,
 		"stringscutprefix",

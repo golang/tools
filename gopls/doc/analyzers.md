@@ -4450,6 +4450,49 @@ Default: on.
 
 Package documentation: [stringintconv](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/stringintconv)
 
+<a id='stringsbuilder'></a>
+## `stringsbuilder`: replace += with strings.Builder
+
+
+This analyzer replaces repeated string += string concatenation
+operations with calls to Go 1.10's strings.Builder.
+
+For example:
+
+	var s = "["
+	for x := range seq {
+		s += x
+		s += "."
+	}
+	s += "]"
+	use(s)
+
+is replaced by:
+
+	var s strings.Builder
+	s.WriteString("[")
+	for x := range seq {
+		s.WriteString(x)
+		s.WriteString(".")
+	}
+	s.WriteString("]")
+	use(s.String())
+
+This avoids quadratic memory allocation and improves performance.
+
+The analyzer requires that all references to s except the final one
+are += operations. To avoid warning about trivial cases, at least one
+must appear within a loop. The variable s must be a local
+variable, not a global or parameter.
+
+The sole use of the finished string must be the last reference to the
+variable s. (It may appear within an intervening loop or function literal,
+since even s.String() is called repeatedly, it does not allocate memory.)
+
+Default: on.
+
+Package documentation: [stringsbuilder](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringbuilder)
+
 <a id='stringscutprefix'></a>
 ## `stringscutprefix`: replace HasPrefix/TrimPrefix with CutPrefix
 
@@ -4478,8 +4521,8 @@ with the more efficient
 	for range strings.SplitSeq(...)
 
 which was added in Go 1.24 and avoids allocating a slice for the
-substrings. The analyzer also handles `strings.Fields` and the
-equivalent functions in the `bytes` package.
+substrings. The analyzer also handles strings.Fields and the
+equivalent functions in the bytes package.
 
 Default: on.
 
@@ -4505,7 +4548,7 @@ replaces the manual creation of a cancellable context,
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-with a single call to `t.Context()`, which was added in Go 1.24.
+with a single call to t.Context(), which was added in Go 1.24.
 
 This change is only suggested if the `cancel` function is not used
 for any other purpose.
