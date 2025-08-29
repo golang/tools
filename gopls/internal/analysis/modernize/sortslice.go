@@ -35,6 +35,8 @@ import (
 //   - sort.Sort(x) where x has a named slice type whose Less method is the natural order.
 //     -> sort.Slice(x)
 func sortslice(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
 	if within(pass, "slices", "sort", "runtime") {

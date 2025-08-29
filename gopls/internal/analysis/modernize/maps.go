@@ -40,6 +40,8 @@ import (
 //	m = make(M)
 //	m = M{}
 func mapsloop(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
 	if within(pass, "maps", "bytes", "runtime") {

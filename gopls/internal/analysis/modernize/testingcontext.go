@@ -40,6 +40,8 @@ import (
 //   - the call is within a test or subtest function
 //   - the relevant testing.{T,B,F} is named and not shadowed at the call
 func testingContext(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	var (
 		index = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info  = pass.TypesInfo

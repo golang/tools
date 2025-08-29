@@ -45,6 +45,8 @@ import (
 // other effects, or blocked, or if WaitGroup.Go propagated panics
 // from child to parent goroutine, the argument would be different.)
 func waitgroup(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	var (
 		index             = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info              = pass.TypesInfo

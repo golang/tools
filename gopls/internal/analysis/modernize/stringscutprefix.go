@@ -37,6 +37,8 @@ import (
 // Variants:
 // - bytes.HasPrefix usage as pattern 1.
 func stringscutprefix(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	var (
 		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)

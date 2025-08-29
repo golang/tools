@@ -92,6 +92,8 @@ func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Fi
 // it suggests either deleting "omitempty" or replacing it with "omitzero", which
 // correctly excludes structs from a json encoding.
 func omitzero(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	info := pass.TypesInfo
 	for curFile := range filesUsing(inspect, info, "go1.24") {

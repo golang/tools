@@ -32,6 +32,8 @@ var EnableSlicesDelete = false
 // Other variations that will also have suggested replacements include:
 // append(s[:i-1], s[i:]...) and append(s[:i+k1], s[i+k2:]) where k2 > k1.
 func slicesdelete(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	if !EnableSlicesDelete {
 		return
 	}

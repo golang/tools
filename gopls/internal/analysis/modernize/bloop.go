@@ -29,6 +29,8 @@ import (
 //	for i := 0; i < b.N; i++ {}  =>   for b.Loop() {}
 //	for range b.N {}
 func bloop(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	if !analysisinternal.Imports(pass.Pkg, "testing") {
 		return
 	}

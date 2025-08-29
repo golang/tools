@@ -51,6 +51,8 @@ import (
 // TODO(adonovan): Add a check that needle/predicate expression from
 // if-statement has no effects. Now the program behavior may change.
 func slicescontains(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
 	if within(pass, "slices", "runtime") {

@@ -54,6 +54,8 @@ var EnableAppendClipped = false
 // The fix does not always preserve nilness the of base slice when the
 // addends (a, b, c) are all empty (see #73557).
 func appendclipped(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	if !EnableAppendClipped {
 		return
 	}

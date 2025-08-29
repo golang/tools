@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
@@ -31,11 +32,15 @@ import (
 var doc string
 
 var Analyzer = &analysis.Analyzer{
-	Name:     "modernize",
-	Doc:      analysisinternal.MustExtractDoc(doc, "modernize"),
-	Requires: []*analysis.Analyzer{inspect.Analyzer, typeindexanalyzer.Analyzer},
-	Run:      run,
-	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize",
+	Name: "modernize",
+	Doc:  analysisinternal.MustExtractDoc(doc, "modernize"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
+	},
+	Run: run,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize",
 }
 
 // Stopgap until general solution in CL 655555 lands. A change to the
@@ -48,19 +53,9 @@ func init() {
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	// Decorate pass.Report to suppress diagnostics in generated files.
-	//
-	// TODO(adonovan): opt: do this more efficiently by interleaving
-	// the micro-passes (as described below) and preemptively skipping
-	// the entire subtree for each generated *ast.File.
+	// Decorate pass.Report to honor the category field.
+	// (The need for categories will disappear when we split modernize up.)
 	{
-		// Gather information whether file is generated or not.
-		generated := make(map[*token.File]bool)
-		for _, file := range pass.Files {
-			if ast.IsGenerated(file) {
-				generated[pass.Fset.File(file.FileStart)] = true
-			}
-		}
 		report := pass.Report
 		pass.Report = func(diag analysis.Diagnostic) {
 			if diag.Category == "" {
@@ -69,9 +64,6 @@ func run(pass *analysis.Pass) (any, error) {
 			// TODO(adonovan): stopgap until CL 655555 lands.
 			if !enabledCategory(category, diag.Category) {
 				return
-			}
-			if _, ok := generated[pass.Fset.File(diag.Pos)]; ok {
-				return // skip checking if it's generated code
 			}
 			report(diag)
 		}
@@ -94,12 +86,22 @@ func run(pass *analysis.Pass) (any, error) {
 	testingContext(pass)
 	waitgroup(pass)
 
-	// TODO(adonovan): opt: interleave these micro-passes within a single inspection.
-
 	return nil, nil
 }
 
 // -- helpers --
+
+// skipGenerated decorates pass.Report to suppress diagnostics in generated files.
+func skipGenerated(pass *analysis.Pass) {
+	report := pass.Report
+	pass.Report = func(diag analysis.Diagnostic) {
+		generated := pass.ResultOf[generated.Analyzer].(*generated.Result)
+		if generated.IsGenerated(diag.Pos) {
+			return // skip
+		}
+		report(diag)
+	}
+}
 
 // equalSyntax reports whether x and y are syntactically equal (ignoring comments).
 func equalSyntax(x, y ast.Expr) bool {

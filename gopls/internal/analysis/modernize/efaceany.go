@@ -14,6 +14,8 @@ import (
 
 // The efaceany pass replaces interface{} with go1.18's 'any'.
 func efaceany(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.18") {

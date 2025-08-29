@@ -19,6 +19,8 @@ import (
 // The fmtappend function replaces []byte(fmt.Sprintf(...)) by
 // fmt.Appendf(nil, ...), and similarly for Sprint, Sprintln.
 func fmtappendf(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	index := pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 	for _, fn := range []types.Object{
 		index.Object("fmt", "Sprintf"),

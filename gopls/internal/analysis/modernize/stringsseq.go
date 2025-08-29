@@ -34,6 +34,8 @@ import (
 // - bytes.SplitSeq
 // - bytes.FieldsSeq
 func stringsseq(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	var (
 		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)

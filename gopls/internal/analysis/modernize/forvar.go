@@ -30,6 +30,8 @@ import (
 // is declared implicitly before executing the post statement and initialized to the
 // value of the previous iteration's variable at that moment.")
 func forvar(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.22") {
 		astFile := curFile.Node().(*ast.File)

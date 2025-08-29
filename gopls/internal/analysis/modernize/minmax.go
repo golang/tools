@@ -35,6 +35,7 @@ import (
 // - "x := a" or "x = a" or "var x = a" in pattern 2
 // - "x < b" or "a < b" in pattern 2
 func minmax(pass *analysis.Pass) {
+	skipGenerated(pass)
 
 	// check is called for all statements of this form:
 	//   if a < b { lhs = rhs }

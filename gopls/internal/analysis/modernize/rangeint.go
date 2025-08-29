@@ -52,6 +52,8 @@ import (
 //   - a constant; or
 //   - len(s), where s has the above properties.
 func rangeint(pass *analysis.Pass) {
+	skipGenerated(pass)
+
 	info := pass.TypesInfo
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
