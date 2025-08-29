@@ -1,7 +1,9 @@
-package sortslice
+package slicessort
 
-import . "slices"
-import "sort"
+import (
+	. "slices"
+	"sort"
+)
 
 func _(s []myint) {
 	Sort(s) // want "sort.Slice can be modernized using slices.Sort"

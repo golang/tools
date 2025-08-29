@@ -1,4 +1,4 @@
-package efaceany
+package any
 
 func _(x interface{}) {} // want "interface{} can be replaced by any"
 

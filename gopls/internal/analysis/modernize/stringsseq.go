@@ -15,9 +15,23 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
+	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
+
+var StringsSeqAnalyzer = &analysis.Analyzer{
+	Name: "stringsseq",
+	Doc:  analysisinternal.MustExtractDoc(doc, "stringsseq"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
+	},
+	Run: stringsseq,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringsseq",
+}
 
 // stringsseq offers a fix to replace a call to strings.Split with
 // SplitSeq or strings.Fields with FieldsSeq
@@ -33,7 +47,7 @@ import (
 // Variants:
 // - bytes.SplitSeq
 // - bytes.FieldsSeq
-func stringsseq(pass *analysis.Pass) {
+func stringsseq(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	var (
@@ -47,7 +61,7 @@ func stringsseq(pass *analysis.Pass) {
 		bytesFields   = index.Object("bytes", "Fields")
 	)
 	if !index.Used(stringsSplit, stringsFields, bytesSplit, bytesFields) {
-		return
+		return nil, nil
 	}
 
 	for curFile := range filesUsing(inspect, info, "go1.24") {
@@ -112,10 +126,9 @@ func stringsseq(pass *analysis.Pass) {
 					oldFnName := obj.Name()
 					seqFnName := fmt.Sprintf("%sSeq", oldFnName)
 					pass.Report(analysis.Diagnostic{
-						Pos:      sel.Pos(),
-						End:      sel.End(),
-						Category: "stringsseq",
-						Message:  fmt.Sprintf("Ranging over %s is more efficient", seqFnName),
+						Pos:     sel.Pos(),
+						End:     sel.End(),
+						Message: fmt.Sprintf("Ranging over %s is more efficient", seqFnName),
 						SuggestedFixes: []analysis.SuggestedFix{{
 							Message: fmt.Sprintf("Replace %s with %s", oldFnName, seqFnName),
 							TextEdits: append(edits, analysis.TextEdit{
@@ -128,4 +141,5 @@ func stringsseq(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }

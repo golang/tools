@@ -10,12 +10,27 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
-// The sortslice pass replaces sort.Slice(slice, less) with
+// (Not to be confused with go/analysis/passes/sortslice.)
+var SlicesSortAnalyzer = &analysis.Analyzer{
+	Name: "slicessort",
+	Doc:  analysisinternal.MustExtractDoc(doc, "slicessort"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
+	},
+	Run: slicessort,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#slicessort",
+}
+
+// The slicessort pass replaces sort.Slice(slice, less) with
 // slices.Sort(slice) when slice is a []T and less is a FuncLit
 // equivalent to cmp.Ordered[T].
 //
@@ -34,13 +49,13 @@ import (
 //
 //   - sort.Sort(x) where x has a named slice type whose Less method is the natural order.
 //     -> sort.Slice(x)
-func sortslice(pass *analysis.Pass) {
+func slicessort(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
 	if within(pass, "slices", "sort", "runtime") {
-		return
+		return nil, nil
 	}
 
 	var (
@@ -78,10 +93,9 @@ func sortslice(pass *analysis.Pass) {
 
 						pass.Report(analysis.Diagnostic{
 							// Highlight "sort.Slice".
-							Pos:      call.Fun.Pos(),
-							End:      call.Fun.End(),
-							Category: "sortslice",
-							Message:  "sort.Slice can be modernized using slices.Sort",
+							Pos:     call.Fun.Pos(),
+							End:     call.Fun.End(),
+							Message: "sort.Slice can be modernized using slices.Sort",
 							SuggestedFixes: []analysis.SuggestedFix{{
 								Message: "Replace sort.Slice call by slices.Sort",
 								TextEdits: append(importEdits, []analysis.TextEdit{
@@ -104,4 +118,5 @@ func sortslice(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }

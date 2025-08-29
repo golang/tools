@@ -13,35 +13,33 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
-// slices.Delete is not equivalent to append(s[:i], [j:]...):
-// it clears the vacated array slots; see #73686.
-// Until we either fix it or revise our safety goals,
-// we disable this analyzer for now.
-//
-// Its former documentation in doc.go was:
-//
-//   - slicesdelete: replace append(s[:i], s[i+1]...) by
-//     slices.Delete(s, i, i+1), added in go1.21.
-var EnableSlicesDelete = false
+// Warning: this analyzer is not safe to enable by default (not nil-preserving).
+var SlicesDeleteAnalyzer = &analysis.Analyzer{
+	Name: "slicesdelete",
+	Doc:  analysisinternal.MustExtractDoc(doc, "slicesdelete"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+	},
+	Run: slicesdelete,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#slicesdelete",
+}
 
 // The slicesdelete pass attempts to replace instances of append(s[:i], s[i+k:]...)
 // with slices.Delete(s, i, i+k) where k is some positive constant.
 // Other variations that will also have suggested replacements include:
 // append(s[:i-1], s[i:]...) and append(s[:i+k1], s[i+k2:]) where k2 > k1.
-func slicesdelete(pass *analysis.Pass) {
+func slicesdelete(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
-
-	if !EnableSlicesDelete {
-		return
-	}
 
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
 	if within(pass, "slices", "runtime") {
-		return
+		return nil, nil
 	}
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -81,10 +79,9 @@ func slicesdelete(pass *analysis.Pass) {
 		}
 
 		pass.Report(analysis.Diagnostic{
-			Pos:      call.Pos(),
-			End:      call.End(),
-			Category: "slicesdelete",
-			Message:  "Replace append with slices.Delete",
+			Pos:     call.Pos(),
+			End:     call.End(),
+			Message: "Replace append with slices.Delete",
 			SuggestedFixes: []analysis.SuggestedFix{{
 				Message: "Replace append with slices.Delete",
 				TextEdits: append(edits, []analysis.TextEdit{
@@ -152,6 +149,7 @@ func slicesdelete(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }
 
 // Given two slice indices a and b, returns true if we can verify that a < b.

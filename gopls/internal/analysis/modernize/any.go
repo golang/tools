@@ -10,10 +10,23 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
-// The efaceany pass replaces interface{} with go1.18's 'any'.
-func efaceany(pass *analysis.Pass) {
+var AnyAnalyzer = &analysis.Analyzer{
+	Name: "any",
+	Doc:  analysisinternal.MustExtractDoc(doc, "any"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+	},
+	Run: runAny,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#any",
+}
+
+// The any pass replaces interface{} with go1.18's 'any'.
+func runAny(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -30,10 +43,9 @@ func efaceany(pass *analysis.Pass) {
 				scope := pass.TypesInfo.Scopes[file].Innermost(iface.Pos())
 				if _, obj := scope.LookupParent("any", iface.Pos()); obj == builtinAny {
 					pass.Report(analysis.Diagnostic{
-						Pos:      iface.Pos(),
-						End:      iface.End(),
-						Category: "efaceany",
-						Message:  "interface{} can be replaced by any",
+						Pos:     iface.Pos(),
+						End:     iface.End(),
+						Message: "interface{} can be replaced by any",
 						SuggestedFixes: []analysis.SuggestedFix{{
 							Message: "Replace interface{} by any",
 							TextEdits: []analysis.TextEdit{
@@ -49,4 +61,5 @@ func efaceany(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }
