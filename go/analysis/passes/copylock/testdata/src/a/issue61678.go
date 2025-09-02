@@ -1,3 +1,6 @@
+// This test relies on a compiler bug patched in Go 1.26.
+//go:build !go1.26
+
 package a
 
 import "sync"
