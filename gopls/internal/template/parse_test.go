@@ -72,7 +72,7 @@ func TestWordAt(t *testing.T) {
 		"", "", "", "if", "if", "", "$A", "$A", "", "",
 		"B", "", "", "end", "end", "end", "", "", ""}
 	buf := []byte("{{$A := .}}{{if $A}}B{{end}}")
-	for i := 0; i < len(buf); i++ {
+	for i := range buf {
 		got := wordAt(buf, i)
 		if got != want[i] {
 			t.Errorf("for %d, got %q, wanted %q", i, got, want[i])

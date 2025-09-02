@@ -62,16 +62,14 @@ func BenchmarkDiagnosePackageFiles(b *testing.B) {
 		edit()
 		var wg sync.WaitGroup
 		for _, file := range files {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				fileDiags := env.Diagnostics(file)
 				for _, d := range fileDiags {
 					if d.Severity == protocol.SeverityError {
 						b.Errorf("unexpected error diagnostic: %s", d.Message)
 					}
 				}
-			}()
+			})
 		}
 		wg.Wait()
 	}

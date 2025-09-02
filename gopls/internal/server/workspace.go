@@ -130,11 +130,9 @@ func (s *server) DidChangeConfiguration(ctx context.Context, _ *protocol.DidChan
 	}
 
 	modCtx, modID := s.needsDiagnosis(ctx, viewsToDiagnose)
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		s.diagnoseChangedViews(modCtx, modID, viewsToDiagnose, FromDidChangeConfiguration)
-		wg.Done()
-	}()
+	})
 
 	// An options change may have affected the detected Go version.
 	s.checkViewGoVersions()

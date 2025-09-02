@@ -266,11 +266,9 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 
 	modCtx, modID := s.needsDiagnosis(ctx, viewsToDiagnose)
 
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		s.diagnoseChangedViews(modCtx, modID, viewsToDiagnose, cause)
-		wg.Done()
-	}()
+	})
 
 	// After any file modifications, we need to update our watched files,
 	// in case something changed. Compute the new set of directories to watch,

@@ -421,12 +421,10 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 	// Maybe run go mod tidy (if it has been invalidated).
 	//
 	// Since go mod tidy can be slow, we run it concurrently to diagnostics.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		modTidyReports, err := mod.TidyDiagnostics(ctx, snapshot)
 		store("running go mod tidy", modTidyReports, err)
-	}()
+	})
 
 	// Run type checking and go/analysis diagnosis of packages in parallel.
 	//
@@ -481,32 +479,26 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 		}
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		compilerOptDetailsDiags, err := s.compilerOptDetailsDiagnostics(ctx, snapshot, toDiagnose)
 		store("collecting compiler optimization details", compilerOptDetailsDiags, err)
-	}()
+	})
 
 	// Package diagnostics and analysis diagnostics must both be computed and
 	// merged before they can be reported.
 	var pkgDiags, analysisDiags diagMap
 	// Collect package diagnostics.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		var err error
 		pkgDiags, err = snapshot.PackageDiagnostics(ctx, moremaps.KeySlice(toDiagnose)...)
 		if err != nil {
 			event.Error(ctx, "warning: diagnostics failed", err, snapshot.Labels()...)
 		}
-	}()
+	})
 
 	// Get diagnostics from analysis framework.
 	// This includes type-error analyzers, which suggest fixes to compiler errors.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		var err error
 		// TODO(rfindley): here and above, we should avoid using the first result
 		// if err is non-nil (though as of today it's OK).
@@ -533,7 +525,7 @@ func (s *server) diagnose(ctx context.Context, snapshot *cache.Snapshot) (diagMa
 			event.Error(ctx, "warning: analyzing package", err, append(snapshot.Labels(), label.Package.Of(keys.Join(moremaps.KeySlice(toDiagnose))))...)
 			return
 		}
-	}()
+	})
 
 	wg.Wait()
 
