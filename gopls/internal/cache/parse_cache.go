@@ -21,7 +21,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/memoize"
-	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 )
 
 // This file contains an implementation of an LRU parse cache, that offsets the
@@ -368,7 +367,7 @@ func (c *parseCache) parseFiles(ctx context.Context, fset *token.FileSet, mode p
 		}
 		tokenFiles = append(tokenFiles, pgf.Tok)
 	}
-	tokeninternal.AddExistingFiles(fset, tokenFiles)
+	fset.AddExistingFiles(tokenFiles...)
 
 	const debugIssue59080 = true
 	if debugIssue59080 {

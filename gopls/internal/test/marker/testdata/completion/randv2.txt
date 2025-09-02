@@ -1,6 +1,5 @@
 Unimported completions has to find math/rand/v2
 -- flags --
--min_go=go1.22
 -min_go_command=go1.22
 
 -- settings.json --

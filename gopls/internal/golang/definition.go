@@ -120,17 +120,12 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		label, isLabeled := pkg.TypesInfo().Uses[node.Label].(*types.Label)
 		switch node.Tok {
 		case token.GOTO:
-			if isLabeled {
-				loc, err := pgf.PosLocation(label.Pos(), label.Pos()+token.Pos(len(label.Name())))
-				if err != nil {
-					return nil, err
-				}
-				return []protocol.Location{loc}, nil
-			} else {
-				// Workaround for #70957.
-				// TODO(madelinekalil): delete when go1.25 fixes it.
-				return nil, nil
+			loc, err := pgf.PosLocation(label.Pos(), label.Pos()+token.Pos(len(label.Name())))
+			if err != nil {
+				return nil, err
 			}
+			return []protocol.Location{loc}, nil
+
 		case token.BREAK, token.CONTINUE:
 			// Find innermost relevant ancestor for break/continue.
 			for i, n := range ancestors {

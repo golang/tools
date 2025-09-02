@@ -12,10 +12,6 @@ import (
 
 func TestGenerated(t *testing.T) {
 	testenv.NeedsGoPackages(t)
-	// This test fails on Kokoro, for unknown reasons, so must be run only on TryBots.
-	// In any case, it suffices to run this test on any builder.
-	testenv.NeedsGo1Point(t, 21)
-
 	testenv.NeedsLocalXTools(t)
 
 	ok, err := doMain(false)

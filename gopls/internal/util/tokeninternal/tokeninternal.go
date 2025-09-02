@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// package tokeninternal provides access to some internal features of the token
-// package.
+// package tokeninternal provides convenient helpers for the go/token package.
 package tokeninternal
 
 import (
@@ -19,7 +18,7 @@ import (
 // of their Base.
 func FileSetFor(files ...*token.File) *token.FileSet {
 	fset := token.NewFileSet()
-	AddExistingFiles(fset, files)
+	fset.AddExistingFiles(files...)
 	return fset
 }
 

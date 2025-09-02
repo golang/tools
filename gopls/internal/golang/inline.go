@@ -26,7 +26,6 @@ import (
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/refactor/inline"
-	"golang.org/x/tools/internal/typesinternal"
 )
 
 // enclosingStaticCall returns the innermost function call enclosing
@@ -147,11 +146,7 @@ func logger(ctx context.Context, name string, verbose bool) func(format string, 
 func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end token.Pos) (_, _ inspector.Cursor, ok bool) {
 	if curUse, ok := curFile.FindByPos(start, end); ok {
 		if id, ok := curUse.Node().(*ast.Ident); ok {
-			if v, ok := info.Uses[id].(*types.Var); ok &&
-				// Check that the variable is local.
-				// TODO(adonovan): simplify using go1.25 Var.Kind = Local.
-				!typesinternal.IsPackageLevel(v) && !v.IsField() {
-
+			if v, ok := info.Uses[id].(*types.Var); ok && v.Kind() == types.LocalVar {
 				if curIdent, ok := curFile.FindByPos(v.Pos(), v.Pos()); ok {
 					curParent := curIdent.Parent()
 					switch kind, index := curIdent.ParentEdge(); kind {
