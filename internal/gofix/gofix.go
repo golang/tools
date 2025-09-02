@@ -9,7 +9,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"iter"
 	"slices"
 	"strings"
 
@@ -245,7 +244,7 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 	// Remember the names of the alias's type params. When we check for shadowing
 	// later, we'll ignore these because they won't appear in the replacement text.
 	typeParamNames := map[*types.TypeName]bool{}
-	for tp := range listIter(alias.TypeParams()) {
+	for tp := range alias.TypeParams().TypeParams() {
 		typeParamNames[tp.Obj()] = true
 	}
 	rhs := alias.Rhs()
@@ -320,7 +319,7 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 		// A[int, Foo] as M[int, Foo].
 		// Don't validate instantiation: it can't panic unless we have a bug,
 		// in which case seeing the stack trace via telemetry would be helpful.
-		instAlias, _ := types.Instantiate(nil, alias, slices.Collect(listIter(targs)), false)
+		instAlias, _ := types.Instantiate(nil, alias, slices.Collect(targs.Types()), false)
 		rhs = instAlias.(*types.Alias).Rhs()
 	}
 	// To get the replacement text, render the alias RHS using the package prefixes
@@ -352,11 +351,11 @@ func typenames(t types.Type) []*types.TypeName {
 		case *types.Basic:
 			tns = append(tns, types.Universe.Lookup(t.Name()).(*types.TypeName))
 		case *types.Named:
-			for t := range listIter(t.TypeArgs()) {
+			for t := range t.TypeArgs().Types() {
 				visit(t)
 			}
 		case *types.Alias:
-			for t := range listIter(t.TypeArgs()) {
+			for t := range t.TypeArgs().Types() {
 				visit(t)
 			}
 		case *types.TypeParam:
@@ -394,7 +393,7 @@ func typenames(t types.Type) []*types.TypeName {
 				visit(t.ExplicitMethod(i).Type())
 			}
 		case *types.Tuple:
-			for v := range listIter(t) {
+			for v := range t.Variables() {
 				visit(v.Type())
 			}
 		case *types.Union:
@@ -541,19 +540,3 @@ func (c *goFixInlineAliasFact) String() string { return "goFixInline alias" }
 func (*goFixInlineAliasFact) AFact()           {}
 
 func discard(string, ...any) {}
-
-type list[T any] interface {
-	Len() int
-	At(int) T
-}
-
-// TODO(adonovan): eliminate in favor of go/types@go1.24 iterators.
-func listIter[L list[T], T any](lst L) iter.Seq[T] {
-	return func(yield func(T) bool) {
-		for i := range lst.Len() {
-			if !yield(lst.At(i)) {
-				return
-			}
-		}
-	}
-}

@@ -78,7 +78,7 @@ type ResourceContents struct {
 }
 
 func (r ResourceContents) MarshalJSON() ([]byte, error) {
-	// If we could assume Go 1.24, we could use omitzero for Blob and avoid this method.
+	// TODO(adonovan): now we can assume Go 1.24, use omitzero for Blob and avoid this method.
 	if r.URI == "" {
 		return nil, errors.New("ResourceContents missing URI")
 	}

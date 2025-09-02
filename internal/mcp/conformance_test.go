@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build (go1.24 && goexperiment.synctest) || go1.25
+//go:build goexperiment.synctest || go1.25
 
 package mcp
 

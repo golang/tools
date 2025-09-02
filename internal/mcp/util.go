@@ -5,7 +5,6 @@
 package mcp
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -18,20 +17,6 @@ func assert(cond bool, msg string) {
 	if !cond {
 		panic(msg)
 	}
-}
-
-// Copied from crypto/rand.
-// TODO: once 1.24 is assured, just use crypto/rand.
-const base32alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-
-func randText() string {
-	// ⌈log₃₂ 2¹²⁸⌉ = 26 chars
-	src := make([]byte, 26)
-	rand.Read(src)
-	for i := range src {
-		src[i] = base32alphabet[src[i]%32]
-	}
-	return string(src)
 }
 
 // marshalStructWithMap marshals its first argument to JSON, treating the field named

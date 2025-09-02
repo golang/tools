@@ -340,11 +340,6 @@ func (conf *Config) addImport(path string, tests bool) {
 func (prog *Program) PathEnclosingInterval(start, end token.Pos) (pkg *PackageInfo, path []ast.Node, exact bool) {
 	for _, info := range prog.AllPackages {
 		for _, f := range info.Files {
-			if f.FileStart == token.NoPos {
-				// Workaround for #70162 (undefined FileStart).
-				// TODO(adonovan): delete once go1.24 is assured.
-				continue
-			}
 			if !tokenFileContainsPos(prog.Fset.File(f.FileStart), start) {
 				continue
 			}
