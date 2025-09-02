@@ -207,14 +207,11 @@ func rangeint(pass *analysis.Pass) (any, error) {
 						var beforeLimit, afterLimit string
 						if v := info.Types[limit].Value; v != nil {
 							tVar := info.TypeOf(init.Rhs[0])
-
-							// TODO(adonovan): use a types.Qualifier that respects the existing
-							// imports of this file that are visible (not shadowed) at the current position,
-							// and adds new imports as needed, similar to analysisinternal.AddImport.
-							// (Unfortunately types.Qualifier doesn't provide the name of the package
-							// member to be qualified, a qualifier cannot perform the necessary shadowing
-							// check for dot-imported names.)
-							beforeLimit, afterLimit = fmt.Sprintf("%s(", types.TypeString(tVar, types.RelativeTo(pass.Pkg))), ")"
+							file := curFile.Node().(*ast.File)
+							// TODO(mkalil): use a types.Qualifier that respects the existing
+							// imports of this file that are visible (not shadowed) at the current position.
+							qual := typesinternal.FileQualifier(file, pass.Pkg)
+							beforeLimit, afterLimit = fmt.Sprintf("%s(", types.TypeString(tVar, qual)), ")"
 							info2 := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue)}
 							if types.CheckExpr(pass.Fset, pass.Pkg, limit.Pos(), limit, info2) == nil {
 								tLimit := types.Default(info2.TypeOf(limit))

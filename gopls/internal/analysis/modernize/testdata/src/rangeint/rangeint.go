@@ -3,6 +3,7 @@ package rangeint
 import (
 	"os"
 	os1 "os"
+	"rangeint/a"
 )
 
 func _(i int, s struct{ i int }, slice []int) {
@@ -259,4 +260,14 @@ func issue75289() {
 		for i = 0; i < 10; i++ { // want "for loop can be modernized using range over int"
 		}
 	}()
+}
+
+func issue74687() {
+	for i := a.ID(0); i < 10; i++ { // want "for loop can be modernized using range over int"
+		println(i)
+	}
+
+	for i := a.ID(0); i < a.ID(13); i++ { // want "for loop can be modernized using range over int"
+		println(i)
+	}
 }
