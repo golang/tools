@@ -58,7 +58,7 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 		Name:           obj.Name(),
 		Kind:           protocol.Function,
 		Tags:           []protocol.SymbolTag{},
-		Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), declLoc.URI.Base()),
+		Detail:         callHierarchyItemDetail(obj, declLoc),
 		URI:            declLoc.URI,
 		Range:          rng,
 		SelectionRange: rng,
@@ -240,23 +240,32 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if declNode == nil {
 		// TODO(rfindley): why don't we return an error here, or even bug.Errorf?
 		return nil, nil
-		// return nil, bug.Errorf("failed to find declaration for object %s.%s", obj.Pkg().Path(), obj.Name())
+		// return nil, bug.Errorf("failed to find declaration for %v", obj)
 	}
 
 	type callRange struct {
 		start, end token.Pos
 	}
 
-	// Find calls to known functions/methods, including interface methods.
+	// Find calls to known functions/methods,
+	// including interface methods, and built-ins.
 	var callRanges []callRange
 	for n := range ast.Preorder(declNode) {
-		if call, ok := n.(*ast.CallExpr); ok &&
-			is[*types.Func](typeutil.Callee(pkg.TypesInfo(), call)) {
-			id := typesinternal.UsedIdent(pkg.TypesInfo(), call.Fun)
-			callRanges = append(callRanges, callRange{
-				start: id.NamePos,
-				end:   call.Lparen,
-			})
+		if call, ok := n.(*ast.CallExpr); ok {
+			callee := typeutil.Callee(pkg.TypesInfo(), call)
+			switch callee.(type) {
+			case *types.Func, *types.Builtin:
+				// Skip trivial builtins (e.g. len)
+				// but allow unsafe.Slice, etc.
+				if callee.Pkg() == nil {
+					continue
+				}
+				id := typesinternal.UsedIdent(pkg.TypesInfo(), call.Fun)
+				callRanges = append(callRanges, callRange{
+					start: id.NamePos,
+					end:   call.Lparen,
+				})
+			}
 		}
 	}
 
@@ -279,7 +288,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 					Name:           obj.Name(),
 					Kind:           protocol.Function,
 					Tags:           []protocol.SymbolTag{},
-					Detail:         fmt.Sprintf("%s • %s", obj.Pkg().Path(), loc.URI.Base()),
+					Detail:         callHierarchyItemDetail(obj, loc),
 					URI:            loc.URI,
 					Range:          loc.Range,
 					SelectionRange: loc.Range,
@@ -300,4 +309,12 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		outgoingCallItems = append(outgoingCallItems, *callItem)
 	}
 	return outgoingCallItems, nil
+}
+
+func callHierarchyItemDetail(obj types.Object, loc protocol.Location) string {
+	detail := loc.URI.Base()
+	if obj.Pkg() != nil {
+		detail = fmt.Sprintf("%s • %s", obj.Pkg().Path(), detail)
+	}
+	return detail
 }

@@ -1,0 +1,16 @@
+Regression test for a crash (golang/go#75230) in outgoing calls
+to a built-in method (error.Error).
+
+We (arbitrarily) don't show calls to built-ins without a package,
+such as error.Error, hence the empty result asserted below.
+
+-- go.mod --
+module example.com
+go 1.17
+
+-- a/a.go --
+package a
+
+func A(err error) string { //@ loc(A, "A"), outgoingcalls(A)
+	return err.Error()
+}

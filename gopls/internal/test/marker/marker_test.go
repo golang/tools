@@ -2591,11 +2591,8 @@ func callHierarchy(mark marker, src protocol.Location, getCalls callHierarchyFun
 		mark.errorf("call hierarchy failed: %v", err)
 		return
 	}
-	if calls == nil {
-		calls = []protocol.Location{} // non-nil; cmp.Diff cares
-	}
-	if d := cmp.Diff(want, calls); d != "" {
-		mark.errorf("call hierarchy: unexpected results (-want +got):\n%s", d)
+	if err := compareLocations(mark, calls, want); err != nil {
+		mark.errorf("%s failed: %v", mark.note.Name, err)
 	}
 }
 
