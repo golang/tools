@@ -34,7 +34,7 @@ type falconResult struct {
 // information but preserve type equivalence classes.
 //
 // Fresh names are deliberately obscure to avoid shadowing even if a
-// callee parameter has a nanme like "int" or "any".
+// callee parameter has a name like "int" or "any".
 type falconType struct {
 	Name string
 	Kind types.BasicKind // string/number/bool
