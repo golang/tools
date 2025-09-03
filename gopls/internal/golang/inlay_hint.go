@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
+	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typeparams"
@@ -170,7 +171,8 @@ outer:
 			continue
 		}
 
-		// Suppress if closely following comment contains "// ignore error".
+		// Suppress if comment on same line contains "// ignore error".
+		line := func(pos token.Pos) int { return safetoken.Line(pgf.Tok, pos) }
 		comments := pgf.File.Comments
 		compare := func(cg *ast.CommentGroup, pos token.Pos) int {
 			return cmp.Compare(cg.Pos(), pos)
@@ -178,7 +180,7 @@ outer:
 		i, _ := slices.BinarySearchFunc(comments, stmt.End(), compare)
 		if i >= 0 && i < len(comments) {
 			cg := comments[i]
-			if cg.Pos() < stmt.End()+3 && strings.Contains(cg.Text(), "ignore error") {
+			if line(cg.Pos()) == line(stmt.End()) && strings.Contains(cg.Text(), "ignore error") {
 				continue outer // suppress
 			}
 		}

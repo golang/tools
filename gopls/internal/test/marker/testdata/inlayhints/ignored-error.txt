@@ -33,6 +33,12 @@ func _() {
 	fmt.Println()
 }
 
+func _(f *os.File) {
+	// Allow horizontal space before comment.
+	new(os.File).Close() // ignore error
+	f.Close()            // ignore error
+}
+
 -- @out --
 package p //@inlayhints(out)
 
@@ -57,5 +63,11 @@ func _(f *os.File) {
 
 func _() {
 	fmt.Println()
+}
+
+func _(f *os.File) {
+	// Allow horizontal space before comment.
+	new(os.File).Close() // ignore error
+	f.Close()            // ignore error
 }
 
