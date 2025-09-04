@@ -7,12 +7,13 @@ package vfs
 import (
 	"fmt"
 	"go/build"
-	"io/ioutil"
 	"os"
 	pathpkg "path"
 	"path/filepath"
 	"runtime"
 	"slices"
+
+	"golang.org/x/tools/go/buildutil"
 )
 
 // We expose a new variable because otherwise we need to copy the findGOROOT logic again
@@ -100,5 +101,5 @@ func (root osFS) Stat(path string) (os.FileInfo, error) {
 }
 
 func (root osFS) ReadDir(path string) ([]os.FileInfo, error) {
-	return ioutil.ReadDir(root.resolve(path)) // is sorted
+	return buildutil.GetFileInfos(root.resolve(path)) // is sorted
 }
