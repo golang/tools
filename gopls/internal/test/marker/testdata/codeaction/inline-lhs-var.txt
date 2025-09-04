@@ -1,5 +1,7 @@
 Attempting to inline `v` on the left‑hand side of an assignment must fail.
 
+Regression test for issue #75200.
+
 -- go.mod --
 module example.com/a
 go 1.18
