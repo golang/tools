@@ -144,35 +144,54 @@ func logger(ctx context.Context, name string, verbose bool) func(format string, 
 // identifier that is a use of a variable that has an initializer
 // expression. If so, it returns cursors for the identifier and the
 // initializer expression.
-func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end token.Pos) (_, _ inspector.Cursor, ok bool) {
-	if curUse, ok := curFile.FindByPos(start, end); ok {
-		if id, ok := curUse.Node().(*ast.Ident); ok {
-			if v, ok := info.Uses[id].(*types.Var); ok &&
-				// Check that the variable is local.
-				// TODO(adonovan): simplify using go1.25 Var.Kind = Local.
-				!typesinternal.IsPackageLevel(v) && !v.IsField() {
+func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end token.Pos) (inspector.Cursor, inspector.Cursor, bool) {
+	curUse, ok := curFile.FindByPos(start, end)
+	if !ok {
+		return inspector.Cursor{}, inspector.Cursor{}, false
+	}
 
-				if curIdent, ok := curFile.FindByPos(v.Pos(), v.Pos()); ok {
-					curParent := curIdent.Parent()
-					switch kind, index := curIdent.ParentEdge(); kind {
-					case edge.ValueSpec_Names:
-						// var v = expr
-						spec := curParent.Node().(*ast.ValueSpec)
-						if len(spec.Names) == len(spec.Values) {
-							return curUse, curParent.ChildAt(edge.ValueSpec_Values, index), true
-						}
-					case edge.AssignStmt_Lhs:
-						// v := expr
-						stmt := curParent.Node().(*ast.AssignStmt)
-						if len(stmt.Lhs) == len(stmt.Rhs) {
-							return curUse, curParent.ChildAt(edge.AssignStmt_Rhs, index), true
-						}
-					}
-				}
-			}
+	// if kind, _ := curUse.ParentEdge(); kind == edge.AssignStmt_Lhs {
+	// 	// This identifier is the left‑hand side of an assignment,
+	// 	// it cannot be inlined.
+	// 	return inspector.Cursor{}, inspector.Cursor{}, false
+	// }
+
+	id, ok := curUse.Node().(*ast.Ident)
+	if !ok {
+		return inspector.Cursor{}, inspector.Cursor{}, false
+	}
+
+	v, ok := info.Uses[id].(*types.Var)
+	if !ok ||
+		// Check that the variable is not local.
+		// TODO(adonovan): simplify using go1.25 Var.Kind != Local.
+		typesinternal.IsPackageLevel(v) ||
+		v.IsField() {
+		return inspector.Cursor{}, inspector.Cursor{}, false
+	}
+
+	curIdent, ok := curFile.FindByPos(v.Pos(), v.Pos())
+	if !ok {
+		return inspector.Cursor{}, inspector.Cursor{}, false
+	}
+
+	curParent := curIdent.Parent()
+	switch kind, index := curIdent.ParentEdge(); kind {
+	case edge.ValueSpec_Names:
+		// var v = expr
+		spec := curParent.Node().(*ast.ValueSpec)
+		if len(spec.Names) == len(spec.Values) {
+			return curUse, curParent.ChildAt(edge.ValueSpec_Values, index), true
+		}
+	case edge.AssignStmt_Lhs:
+		// v := expr
+		stmt := curParent.Node().(*ast.AssignStmt)
+		if len(stmt.Lhs) == len(stmt.Rhs) {
+			return curUse, curParent.ChildAt(edge.AssignStmt_Rhs, index), true
 		}
 	}
-	return
+
+	return inspector.Cursor{}, inspector.Cursor{}, false
 }
 
 // inlineVariableOne computes a fix to replace the selected variable by
