@@ -150,11 +150,11 @@ func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end to
 		return inspector.Cursor{}, inspector.Cursor{}, false
 	}
 
-	// if kind, _ := curUse.ParentEdge(); kind == edge.AssignStmt_Lhs {
-	// 	// This identifier is the left‑hand side of an assignment,
-	// 	// it cannot be inlined.
-	// 	return inspector.Cursor{}, inspector.Cursor{}, false
-	// }
+	if kind, _ := curUse.ParentEdge(); kind == edge.AssignStmt_Lhs {
+		// This identifier is the left‑hand side of an assignment,
+		// it cannot be inlined.
+		return inspector.Cursor{}, inspector.Cursor{}, false
+	}
 
 	id, ok := curUse.Node().(*ast.Ident)
 	if !ok {
