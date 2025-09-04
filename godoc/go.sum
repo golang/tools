@@ -1,8 +1,0 @@
-github.com/yuin/goldmark v1.7.13 h1:GPddIs617DnBLFFVJFgpo1aBfe/4xcvMc3SB5t/D0pA=
-github.com/yuin/goldmark v1.7.13/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
-golang.org/x/mod v0.27.0 h1:kb+q2PyFnEADO2IEF935ehFUXlWiNjJWtRNgBLSfbxQ=
-golang.org/x/mod v0.27.0/go.mod h1:rWI627Fq0DEoudcK+MBkNkCe0EetEaDSwJJkCcjpazc=
-golang.org/x/sync v0.16.0 h1:ycBJEhp9p4vXvUZNszeOq0kGTPghopOL8q0fq3vstxw=
-golang.org/x/sync v0.16.0/go.mod h1:1dzgHSNfp02xaA81J2MS99Qcpr2w7fw1gpm99rleRqA=
-golang.org/x/tools v0.36.1-0.20250903222949-a5c0eb837c9f h1:jDEaVlf+r7N8Re8Es5pGylGkfnqcx9dfUCsd1T+biTs=
-golang.org/x/tools v0.36.1-0.20250903222949-a5c0eb837c9f/go.mod h1:n+8pplxVZfXnmHBxWsfPnQRJ5vWroQDk+U2MFpjwtFY=
