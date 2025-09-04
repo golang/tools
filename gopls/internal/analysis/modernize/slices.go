@@ -15,19 +15,21 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
-// append(clipped, ...) cannot be replaced by slices.Concat (etc)
-// without more attention to preservation of nilness; see #73557.
-// Until we either fix it or revise our safety goals, we disable this
-// analyzer for now.
-//
-// Its former documentation in doc.go was:
-//
-//   - appendclipped: replace append([]T(nil), s...) by
-//     slices.Clone(s) or slices.Concat(s), added in go1.21.
-var EnableAppendClipped = false
+// Warning: this analyzer is not safe to enable by default.
+var AppendClippedAnalyzer = &analysis.Analyzer{
+	Name: "appendclipped",
+	Doc:  analysisinternal.MustExtractDoc(doc, "appendclipped"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+	},
+	Run: appendclipped,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#appendclipped",
+}
 
 // The appendclipped pass offers to simplify a tower of append calls:
 //
@@ -53,17 +55,13 @@ var EnableAppendClipped = false
 //
 // The fix does not always preserve nilness the of base slice when the
 // addends (a, b, c) are all empty (see #73557).
-func appendclipped(pass *analysis.Pass) {
+func appendclipped(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
-
-	if !EnableAppendClipped {
-		return
-	}
 
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
 	if within(pass, "slices", "bytes", "runtime") {
-		return
+		return nil, nil
 	}
 
 	info := pass.TypesInfo
@@ -127,10 +125,9 @@ func appendclipped(pass *analysis.Pass) {
 				obj := typeutil.Callee(info, scall)
 				if analysisinternal.IsFunctionNamed(obj, "os", "Environ") {
 					pass.Report(analysis.Diagnostic{
-						Pos:      call.Pos(),
-						End:      call.End(),
-						Category: "appendclipped",
-						Message:  "Redundant clone of os.Environ()",
+						Pos:     call.Pos(),
+						End:     call.End(),
+						Message: "Redundant clone of os.Environ()",
 						SuggestedFixes: []analysis.SuggestedFix{{
 							Message: "Eliminate redundant clone",
 							TextEdits: []analysis.TextEdit{{
@@ -167,10 +164,9 @@ func appendclipped(pass *analysis.Pass) {
 			_, prefix, importEdits := analysisinternal.AddImport(info, file, clonepkg, clonepkg, "Clone", call.Pos())
 			message := fmt.Sprintf("Replace append with %s.Clone", clonepkg)
 			pass.Report(analysis.Diagnostic{
-				Pos:      call.Pos(),
-				End:      call.End(),
-				Category: "appendclipped",
-				Message:  message,
+				Pos:     call.Pos(),
+				End:     call.End(),
+				Message: message,
 				SuggestedFixes: []analysis.SuggestedFix{{
 					Message: message,
 					TextEdits: append(importEdits, []analysis.TextEdit{{
@@ -188,10 +184,9 @@ func appendclipped(pass *analysis.Pass) {
 		// This is unsound if all slices are empty and base is non-nil (#73557).
 		_, prefix, importEdits := analysisinternal.AddImport(info, file, "slices", "slices", "Concat", call.Pos())
 		pass.Report(analysis.Diagnostic{
-			Pos:      call.Pos(),
-			End:      call.End(),
-			Category: "appendclipped",
-			Message:  "Replace append with slices.Concat",
+			Pos:     call.Pos(),
+			End:     call.End(),
+			Message: "Replace append with slices.Concat",
 			SuggestedFixes: []analysis.SuggestedFix{{
 				Message: "Replace append with slices.Concat",
 				TextEdits: append(importEdits, []analysis.TextEdit{{
@@ -240,6 +235,7 @@ func appendclipped(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }
 
 // clippedSlice returns res != nil if e denotes a slice that is

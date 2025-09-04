@@ -13,7 +13,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	. "golang.org/x/tools/gopls/internal/test/integration"
-	"golang.org/x/tools/internal/testenv"
 )
 
 // TestFlightRecorder checks that the flight recorder is minimally functional.
@@ -27,7 +26,6 @@ func TestFlightRecorder(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("not reliable on windows")
 	}
-	testenv.NeedsGo1Point(t, 25)
 
 	// This is a global hammer; it won't play nicely with
 	// multiple concurrent tests of Flight Recorder.

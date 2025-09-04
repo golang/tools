@@ -482,14 +482,12 @@ func (c *commandHandler) modifyState(ctx context.Context, source ModificationSou
 	if err != nil {
 		return err
 	}
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		// Diagnosing with the background context ensures new snapshots are fully
 		// diagnosed.
 		c.s.diagnoseSnapshot(snapshot.BackgroundContext(), snapshot, nil, 0)
 		release()
-		wg.Done()
-	}()
+	})
 	return nil
 }
 
@@ -1671,15 +1669,13 @@ func (c *commandHandler) DiagnoseFiles(ctx context.Context, args command.Diagnos
 
 		var wg sync.WaitGroup
 		for snapshot := range snapshots {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 
 				// Use the operation context for diagnosis, rather than
 				// snapshot.BackgroundContext, because this operation does not create
 				// new snapshots (so they should also be diagnosed by other means).
 				c.s.diagnoseSnapshot(ctx, snapshot, nil, 0)
-			}()
+			})
 		}
 		wg.Wait()
 

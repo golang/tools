@@ -13,17 +13,14 @@ import (
 	"go/types"
 	"iter"
 	"regexp"
-	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
-	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/versions"
 )
@@ -31,62 +28,24 @@ import (
 //go:embed doc.go
 var doc string
 
-var Analyzer = &analysis.Analyzer{
-	Name: "modernize",
-	Doc:  analysisinternal.MustExtractDoc(doc, "modernize"),
-	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
-		inspect.Analyzer,
-		typeindexanalyzer.Analyzer,
-	},
-	Run: run,
-	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize",
-}
-
-// Stopgap until general solution in CL 655555 lands. A change to the
-// cmd/vet CLI requires a proposal whereas a change to an analyzer's
-// flag set does not.
-var category string
-
-func init() {
-	Analyzer.Flags.StringVar(&category, "category", "", "comma-separated list of categories to apply; with a leading '-', a list of categories to ignore")
-}
-
-func run(pass *analysis.Pass) (any, error) {
-	// Decorate pass.Report to honor the category field.
-	// (The need for categories will disappear when we split modernize up.)
-	{
-		report := pass.Report
-		pass.Report = func(diag analysis.Diagnostic) {
-			if diag.Category == "" {
-				panic("Diagnostic.Category is unset")
-			}
-			// TODO(adonovan): stopgap until CL 655555 lands.
-			if !enabledCategory(category, diag.Category) {
-				return
-			}
-			report(diag)
-		}
-	}
-
-	appendclipped(pass)
-	bloop(pass)
-	efaceany(pass)
-	fmtappendf(pass)
-	forvar(pass)
-	mapsloop(pass)
-	minmax(pass)
-	omitzero(pass)
-	rangeint(pass)
-	slicescontains(pass)
-	slicesdelete(pass)
-	stringscutprefix(pass)
-	stringsseq(pass)
-	sortslice(pass)
-	testingContext(pass)
-	waitgroup(pass)
-
-	return nil, nil
+// Suite lists all modernize analyzers.
+var Suite = []*analysis.Analyzer{
+	AnyAnalyzer,
+	// AppendClippedAnalyzer, // not nil-preserving!
+	BLoopAnalyzer,
+	FmtAppendfAnalyzer,
+	ForVarAnalyzer,
+	MapsLoopAnalyzer,
+	MinMaxAnalyzer,
+	OmitZeroAnalyzer,
+	RangeIntAnalyzer,
+	SlicesContainsAnalyzer,
+	// SlicesDeleteAnalyzer, // not nil-preserving!
+	SlicesSortAnalyzer,
+	StringsCutPrefixAnalyzer,
+	StringsSeqAnalyzer,
+	TestingContextAnalyzer,
+	WaitGroupAnalyzer,
 }
 
 // -- helpers --
@@ -188,25 +147,6 @@ var (
 	byteSliceType  = types.NewSlice(types.Typ[types.Byte])
 	omitemptyRegex = regexp.MustCompile(`(?:^json| json):"[^"]*(,omitempty)(?:"|,[^"]*")\s?`)
 )
-
-// enabledCategory reports whether a given category is enabled by the specified
-// filter. filter is a comma-separated list of categories, optionally prefixed
-// with `-` to disable all provided categories. All categories are enabled with
-// an empty filter.
-//
-// (Will be superseded by https://go.dev/cl/655555.)
-func enabledCategory(filter, category string) bool {
-	if filter == "" {
-		return true
-	}
-	// negation must be specified at the start
-	filter, exclude := strings.CutPrefix(filter, "-")
-	filters := strings.Split(filter, ",")
-	if slices.Contains(filters, category) {
-		return !exclude
-	}
-	return exclude
-}
 
 // noEffects reports whether the expression has no side effects, i.e., it
 // does not modify the memory state. This function is conservative: it may

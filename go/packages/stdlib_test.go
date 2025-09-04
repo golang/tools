@@ -70,11 +70,11 @@ func BenchmarkNetHTTP(b *testing.B) {
 		}
 
 		if i == 0 {
-			packages.Visit(pkgs, nil, func(pkg *packages.Package) {
+			for pkg := range packages.Postorder(pkgs) {
 				for _, f := range pkg.Syntax {
 					bytes += int64(f.FileEnd - f.FileStart)
 				}
-			})
+			}
 		}
 	}
 

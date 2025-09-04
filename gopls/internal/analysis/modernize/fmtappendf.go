@@ -11,14 +11,29 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
+	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
+var FmtAppendfAnalyzer = &analysis.Analyzer{
+	Name: "fmtappendf",
+	Doc:  analysisinternal.MustExtractDoc(doc, "fmtappendf"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
+	},
+	Run: fmtappendf,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#fmtappendf",
+}
+
 // The fmtappend function replaces []byte(fmt.Sprintf(...)) by
 // fmt.Appendf(nil, ...), and similarly for Sprint, Sprintln.
-func fmtappendf(pass *analysis.Pass) {
+func fmtappendf(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	index := pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
@@ -83,10 +98,9 @@ func fmtappendf(pass *analysis.Pass) {
 						}
 					}
 					pass.Report(analysis.Diagnostic{
-						Pos:      conv.Pos(),
-						End:      conv.End(),
-						Category: "fmtappendf",
-						Message:  fmt.Sprintf("Replace []byte(fmt.%s...) with fmt.%s", old, new),
+						Pos:     conv.Pos(),
+						End:     conv.End(),
+						Message: fmt.Sprintf("Replace []byte(fmt.%s...) with fmt.%s", old, new),
 						SuggestedFixes: []analysis.SuggestedFix{{
 							Message:   fmt.Sprintf("Replace []byte(fmt.%s...) with fmt.%s", old, new),
 							TextEdits: edits,
@@ -96,4 +110,5 @@ func fmtappendf(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }

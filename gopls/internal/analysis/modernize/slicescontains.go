@@ -14,11 +14,24 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
+
+var SlicesContainsAnalyzer = &analysis.Analyzer{
+	Name: "slicescontains",
+	Doc:  analysisinternal.MustExtractDoc(doc, "slicescontains"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
+	},
+	Run: slicescontains,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#slicescontains",
+}
 
 // The slicescontains pass identifies loops that can be replaced by a
 // call to slices.Contains{,Func}. For example:
@@ -50,13 +63,13 @@ import (
 //
 // TODO(adonovan): Add a check that needle/predicate expression from
 // if-statement has no effects. Now the program behavior may change.
-func slicescontains(pass *analysis.Pass) {
+func slicescontains(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
 	if within(pass, "slices", "runtime") {
-		return
+		return nil, nil
 	}
 
 	var (
@@ -201,10 +214,9 @@ func slicescontains(pass *analysis.Pass) {
 
 		report := func(edits []analysis.TextEdit) {
 			pass.Report(analysis.Diagnostic{
-				Pos:      rng.Pos(),
-				End:      rng.End(),
-				Category: "slicescontains",
-				Message:  fmt.Sprintf("Loop can be simplified using slices.%s", funcName),
+				Pos:     rng.Pos(),
+				End:     rng.End(),
+				Message: fmt.Sprintf("Loop can be simplified using slices.%s", funcName),
 				SuggestedFixes: []analysis.SuggestedFix{{
 					Message:   "Replace loop by call to slices." + funcName,
 					TextEdits: append(edits, importEdits...),
@@ -403,6 +415,7 @@ func slicescontains(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }
 
 // -- helpers --

@@ -2,7 +2,6 @@ This test checks completion related to aliases.
 
 -- flags --
 -ignore_extra_diags
--min_go=go1.24
 
 -- aliases.go --
 package aliases

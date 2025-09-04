@@ -15,9 +15,21 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typeparams"
 )
+
+var MinMaxAnalyzer = &analysis.Analyzer{
+	Name: "minmax",
+	Doc:  analysisinternal.MustExtractDoc(doc, "minmax"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+	},
+	Run: minmax,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#minmax",
+}
 
 // The minmax pass replaces if/else statements with calls to min or max.
 //
@@ -34,7 +46,7 @@ import (
 // - all four ordered comparisons
 // - "x := a" or "x = a" or "var x = a" in pattern 2
 // - "x < b" or "a < b" in pattern 2
-func minmax(pass *analysis.Pass) {
+func minmax(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	// check is called for all statements of this form:
@@ -91,10 +103,9 @@ func minmax(pass *analysis.Pass) {
 				// simplify the whole thing to "lhs := min(a, b)".
 				pass.Report(analysis.Diagnostic{
 					// Highlight the condition a < b.
-					Pos:      compare.Pos(),
-					End:      compare.End(),
-					Category: "minmax",
-					Message:  fmt.Sprintf("if/else statement can be modernized using %s", sym),
+					Pos:     compare.Pos(),
+					End:     compare.End(),
+					Message: fmt.Sprintf("if/else statement can be modernized using %s", sym),
 					SuggestedFixes: []analysis.SuggestedFix{{
 						Message: fmt.Sprintf("Replace if statement with %s", sym),
 						TextEdits: []analysis.TextEdit{{
@@ -154,10 +165,9 @@ func minmax(pass *analysis.Pass) {
 				// pattern 2
 				pass.Report(analysis.Diagnostic{
 					// Highlight the condition a < b.
-					Pos:      compare.Pos(),
-					End:      compare.End(),
-					Category: "minmax",
-					Message:  fmt.Sprintf("if statement can be modernized using %s", sym),
+					Pos:     compare.Pos(),
+					End:     compare.End(),
+					Message: fmt.Sprintf("if statement can be modernized using %s", sym),
 					SuggestedFixes: []analysis.SuggestedFix{{
 						Message: fmt.Sprintf("Replace if/else with %s", sym),
 						TextEdits: []analysis.TextEdit{{
@@ -208,6 +218,7 @@ func minmax(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }
 
 // allComments collects all the comments from start to end.

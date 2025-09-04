@@ -600,7 +600,6 @@ func (b *typeCheckBatch) checkPackageForImport(ctx context.Context, ph *packageH
 		// careful to avoid starvation.
 		group.SetLimit(4)
 		for i, fh := range ph.localInputs.compiledGoFiles {
-			i, fh := i, fh
 			group.Go(func() error {
 				pgf, err := parseGoImpl(ctx, b.fset, fh, parser.SkipObjectResolution, false)
 				pgfs[i] = pgf

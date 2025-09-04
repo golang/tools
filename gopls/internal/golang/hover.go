@@ -39,7 +39,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
-	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typeparams"
@@ -1642,7 +1641,7 @@ func findDeclInfo(files []*ast.File, pos token.Pos) (decl ast.Decl, spec ast.Spe
 		return true
 	}
 	for _, file := range files {
-		internalastutil.PreorderStack(file, stack, f)
+		ast.PreorderStack(file, stack, f)
 		if found {
 			return decl, spec, field
 		}

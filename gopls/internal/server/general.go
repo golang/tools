@@ -355,13 +355,11 @@ func (s *server) addFolders(ctx context.Context, folders []protocol.WorkspaceFol
 		}()
 
 		// Diagnose the newly created view asynchronously.
-		ndiagnose.Add(1)
-		go func() {
+		ndiagnose.Go(func() {
 			s.diagnoseSnapshot(snapshot.BackgroundContext(), snapshot, nil, 0)
 			<-initialized
 			release()
-			ndiagnose.Done()
-		}()
+		})
 	}
 
 	// Wait for snapshots to be initialized so that all files are known.

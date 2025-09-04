@@ -14,11 +14,24 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/gopls/internal/util/moreiters"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
+
+var BLoopAnalyzer = &analysis.Analyzer{
+	Name: "bloop",
+	Doc:  analysisinternal.MustExtractDoc(doc, "bloop"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
+	},
+	Run: bloop,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#bloop",
+}
 
 // bloop updates benchmarks that use "for range b.N", replacing it
 // with go1.24's b.Loop() and eliminating any preceding
@@ -28,11 +41,11 @@ import (
 //
 //	for i := 0; i < b.N; i++ {}  =>   for b.Loop() {}
 //	for range b.N {}
-func bloop(pass *analysis.Pass) {
+func bloop(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	if !analysisinternal.Imports(pass.Pkg, "testing") {
-		return
+		return nil, nil
 	}
 
 	var (
@@ -117,10 +130,9 @@ func bloop(pass *analysis.Pass) {
 
 						pass.Report(analysis.Diagnostic{
 							// Highlight "i < b.N".
-							Pos:      n.Cond.Pos(),
-							End:      n.Cond.End(),
-							Category: "bloop",
-							Message:  "b.N can be modernized using b.Loop()",
+							Pos:     n.Cond.Pos(),
+							End:     n.Cond.End(),
+							Message: "b.N can be modernized using b.Loop()",
 							SuggestedFixes: []analysis.SuggestedFix{{
 								Message:   "Replace b.N with b.Loop()",
 								TextEdits: edits(curLoop, sel.X, delStart, delEnd),
@@ -141,10 +153,9 @@ func bloop(pass *analysis.Pass) {
 
 					pass.Report(analysis.Diagnostic{
 						// Highlight "range b.N".
-						Pos:      n.Range,
-						End:      n.X.End(),
-						Category: "bloop",
-						Message:  "b.N can be modernized using b.Loop()",
+						Pos:     n.Range,
+						End:     n.X.End(),
+						Message: "b.N can be modernized using b.Loop()",
 						SuggestedFixes: []analysis.SuggestedFix{{
 							Message:   "Replace b.N with b.Loop()",
 							TextEdits: edits(curLoop, sel.X, n.Range, n.X.End()),
@@ -154,6 +165,7 @@ func bloop(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }
 
 // uses reports whether the subtree cur contains a use of obj.

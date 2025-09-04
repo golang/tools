@@ -821,11 +821,11 @@ func testLoadDiamondTypes(t *testing.T, exporter packagestest.Exporter) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	packages.Visit(initial, nil, func(pkg *packages.Package) {
+	for pkg := range packages.Postorder(initial) {
 		for _, err := range pkg.Errors {
 			t.Errorf("package %s: %v", pkg.ID, err)
 		}
-	})
+	}
 
 	graph, _ := importGraph(initial)
 	wantGraph := `
@@ -868,9 +868,9 @@ func testLoadSyntaxError(t *testing.T, exporter packagestest.Exporter) {
 	}
 
 	all := make(map[string]*packages.Package)
-	packages.Visit(initial, nil, func(p *packages.Package) {
+	for p := range packages.Postorder(initial) {
 		all[p.ID] = p
-	})
+	}
 
 	for _, test := range []struct {
 		id           string
@@ -1355,7 +1355,7 @@ func testJSON(t *testing.T, exporter packagestest.Exporter) {
 	buf := &bytes.Buffer{}
 	enc := json.NewEncoder(buf)
 	enc.SetIndent("", "\t")
-	packages.Visit(initial, nil, func(pkg *packages.Package) {
+	for pkg := range packages.Postorder(initial) {
 		// trim the source lists for stable results
 		pkg.GoFiles = cleanPaths(pkg.GoFiles)
 		pkg.CompiledGoFiles = cleanPaths(pkg.CompiledGoFiles)
@@ -1364,7 +1364,7 @@ func testJSON(t *testing.T, exporter packagestest.Exporter) {
 		if err := enc.Encode(pkg); err != nil {
 			t.Fatal(err)
 		}
-	})
+	}
 
 	wantJSON := `
 {
@@ -2225,15 +2225,14 @@ func testIssue35331(t *testing.T, exporter packagestest.Exporter) {
 	if len(pkgs) != 1 {
 		t.Fatalf("Expected 1 package, got %v", pkgs)
 	}
-	packages.Visit(pkgs, func(pkg *packages.Package) bool {
+	for pkg := range packages.Postorder(pkgs) {
 		if len(pkg.Errors) > 0 {
 			t.Errorf("Expected no errors in package %q, got %v", pkg.ID, pkg.Errors)
 		}
 		if len(pkg.Syntax) == 0 && pkg.ID != "unsafe" {
 			t.Errorf("Expected syntax on package %q, got none.", pkg.ID)
 		}
-		return true
-	}, nil)
+	}
 }
 
 func TestMultiplePackageVersionsIssue36188(t *testing.T) {
@@ -2926,7 +2925,7 @@ func importGraph(initial []*packages.Package) (string, map[string]*packages.Pack
 		initialSet[p] = true
 	}
 
-	// We can't use Visit because we need to prune
+	// We can't use Visit or Postorder because we need to prune
 	// the traversal of specific edges, not just nodes.
 	var nodes, edges []string
 	res := make(map[string]*packages.Package)
@@ -3287,19 +3286,19 @@ func Foo() int { return a.Foo() }
 	}
 	type result struct{ Dir, ForTest string }
 	got := make(map[string]result)
-	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
+	for pkg := range packages.Postorder(pkgs) {
 		if strings.Contains(pkg.PkgPath, ".") { // ignore std
 			rel, err := filepath.Rel(dir, pkg.Dir)
 			if err != nil {
 				t.Errorf("Rel(%q, %q) failed: %v", dir, pkg.Dir, err)
-				return
+				continue
 			}
 			got[pkg.ID] = result{
 				Dir:     rel,
 				ForTest: pkg.ForTest,
 			}
 		}
-	})
+	}
 	want := map[string]result{
 		"example.com/a":                           {"a", ""},
 		"example.com/a.test":                      {"a", ""},
@@ -3352,9 +3351,9 @@ func main() {
 		"b": filepath.Join(gopath, "bin", "b"+goexe),
 	}
 	got := make(map[string]string)
-	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
+	for pkg := range packages.Postorder(pkgs) {
 		got[pkg.PkgPath] = pkg.Target
-	})
+	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Load returned mismatching Target fields (pkgpath->target -want +got):\n%s", diff)
 	}

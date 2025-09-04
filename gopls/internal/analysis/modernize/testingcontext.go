@@ -14,12 +14,26 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
+
+var TestingContextAnalyzer = &analysis.Analyzer{
+	Name: "testingcontext",
+	Doc:  analysisinternal.MustExtractDoc(doc, "testingcontext"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
+	},
+	Run: testingContext,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#testingcontext",
+}
 
 // The testingContext pass replaces calls to context.WithCancel from within
 // tests to a use of testing.{T,B,F}.Context(), added in Go 1.24.
@@ -39,7 +53,7 @@ import (
 //   - the deferred call is the only use of cancel
 //   - the call is within a test or subtest function
 //   - the relevant testing.{T,B,F} is named and not shadowed at the call
-func testingContext(pass *analysis.Pass) {
+func testingContext(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	var (
@@ -126,10 +140,9 @@ calls:
 			// testing.{T,B,F} at the current position.
 			if _, obj := lhs[0].Parent().LookupParent(testObj.Name(), lhs[0].Pos()); obj == testObj {
 				pass.Report(analysis.Diagnostic{
-					Pos:      call.Fun.Pos(),
-					End:      call.Fun.End(),
-					Category: "testingcontext",
-					Message:  fmt.Sprintf("context.WithCancel can be modernized using %s.Context", testObj.Name()),
+					Pos:     call.Fun.Pos(),
+					End:     call.Fun.End(),
+					Message: fmt.Sprintf("context.WithCancel can be modernized using %s.Context", testObj.Name()),
 					SuggestedFixes: []analysis.SuggestedFix{{
 						Message: fmt.Sprintf("Replace context.WithCancel with %s.Context", testObj.Name()),
 						TextEdits: []analysis.TextEdit{{
@@ -142,6 +155,7 @@ calls:
 			}
 		}
 	}
+	return nil, nil
 }
 
 // soleUseIs reports whether id is the sole Ident that uses obj.

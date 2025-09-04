@@ -12,11 +12,25 @@ import (
 	"slices"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
+
+var WaitGroupAnalyzer = &analysis.Analyzer{
+	Name: "waitgroup",
+	Doc:  analysisinternal.MustExtractDoc(doc, "waitgroup"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
+	},
+	Run: waitgroup,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#waitgroup",
+}
 
 // The waitgroup pass replaces old more complex code with
 // go1.25 added API WaitGroup.Go.
@@ -44,7 +58,7 @@ import (
 // before the crash doesn't materially change anything. (If Done had
 // other effects, or blocked, or if WaitGroup.Go propagated panics
 // from child to parent goroutine, the argument would be different.)
-func waitgroup(pass *analysis.Pass) {
+func waitgroup(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	var (
@@ -54,7 +68,7 @@ func waitgroup(pass *analysis.Pass) {
 		syncWaitGroupDone = index.Selection("sync", "WaitGroup", "Done")
 	)
 	if !index.Used(syncWaitGroupDone) {
-		return
+		return nil, nil
 	}
 
 	for curAddCall := range index.Calls(syncWaitGroupAdd) {
@@ -119,10 +133,9 @@ func waitgroup(pass *analysis.Pass) {
 		}
 
 		pass.Report(analysis.Diagnostic{
-			Pos:      addCall.Pos(),
-			End:      goStmt.End(),
-			Category: "waitgroup",
-			Message:  "Goroutine creation can be simplified using WaitGroup.Go",
+			Pos:     addCall.Pos(),
+			End:     goStmt.End(),
+			Message: "Goroutine creation can be simplified using WaitGroup.Go",
 			SuggestedFixes: []analysis.SuggestedFix{{
 				Message: "Simplify by using WaitGroup.Go",
 				TextEdits: slices.Concat(
@@ -151,4 +164,5 @@ func waitgroup(pass *analysis.Pass) {
 			}},
 		})
 	}
+	return nil, nil
 }

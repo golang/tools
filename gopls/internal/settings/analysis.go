@@ -242,11 +242,27 @@ var DefaultAnalyzers = []*Analyzer{
 	// other simplifiers
 	{analyzer: gofix.Analyzer, severity: protocol.SeverityHint},
 	{analyzer: infertypeargs.Analyzer, severity: protocol.SeverityInformation},
+	{analyzer: maprange.Analyzer, severity: protocol.SeverityHint},
 	{analyzer: unusedparams.Analyzer, severity: protocol.SeverityInformation},
 	{analyzer: unusedfunc.Analyzer, severity: protocol.SeverityInformation},
 	{analyzer: unusedwrite.Analyzer, severity: protocol.SeverityInformation}, // uses go/ssa
-	{analyzer: modernize.Analyzer, severity: protocol.SeverityHint},
-	{analyzer: maprange.Analyzer, severity: protocol.SeverityHint},
+	// the modernize suite
+	{analyzer: modernize.AnyAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.AppendClippedAnalyzer, severity: protocol.SeverityHint, nonDefault: true}, // not nil-preserving
+	{analyzer: modernize.BLoopAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.FmtAppendfAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.ForVarAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.MapsLoopAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.MinMaxAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.OmitZeroAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.RangeIntAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.SlicesContainsAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.SlicesDeleteAnalyzer, severity: protocol.SeverityHint, nonDefault: true}, // not nil-preserving
+	{analyzer: modernize.SlicesSortAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.StringsCutPrefixAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.StringsSeqAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.TestingContextAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.WaitGroupAnalyzer, severity: protocol.SeverityHint},
 
 	// type-error analyzers
 	// These analyzers enrich go/types errors with suggested fixes.

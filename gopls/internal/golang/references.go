@@ -520,7 +520,6 @@ func expandMethodSearch(ctx context.Context, snapshot *cache.Snapshot, workspace
 	var mu sync.Mutex // guards addRdeps, targets, expansions
 	var group errgroup.Group
 	for i, index := range indexes {
-		index := index
 		group.Go(func() error {
 			// Consult index for matching (super/sub) methods.
 			const want = methodsets.Supertype | methodsets.Subtype

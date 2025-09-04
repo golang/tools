@@ -890,9 +890,7 @@ func (act *action) String() string {
 func execActions(ctx context.Context, actions []*action) {
 	var wg sync.WaitGroup
 	for _, act := range actions {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			act.once.Do(func() {
 				execActions(ctx, act.hdeps) // analyze "horizontal" dependencies
 				act.result, act.summary, act.err = act.exec(ctx)
@@ -909,7 +907,7 @@ func execActions(ctx context.Context, actions []*action) {
 			if act.summary == nil {
 				panic("nil action.summary (#60551)")
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

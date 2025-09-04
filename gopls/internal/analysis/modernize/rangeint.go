@@ -15,11 +15,24 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
+
+var RangeIntAnalyzer = &analysis.Analyzer{
+	Name: "rangeint",
+	Doc:  analysisinternal.MustExtractDoc(doc, "rangeint"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
+	},
+	Run: rangeint,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#rangeint",
+}
 
 // rangeint offers a fix to replace a 3-clause 'for' loop:
 //
@@ -51,7 +64,7 @@ import (
 //   - a local variable that is assigned only once and not address-taken;
 //   - a constant; or
 //   - len(s), where s has the above properties.
-func rangeint(pass *analysis.Pass) {
+func rangeint(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	info := pass.TypesInfo
@@ -196,10 +209,9 @@ func rangeint(pass *analysis.Pass) {
 						}
 
 						pass.Report(analysis.Diagnostic{
-							Pos:      init.Pos(),
-							End:      inc.End(),
-							Category: "rangeint",
-							Message:  "for loop can be modernized using range over int",
+							Pos:     init.Pos(),
+							End:     inc.End(),
+							Message: "for loop can be modernized using range over int",
 							SuggestedFixes: []analysis.SuggestedFix{{
 								Message: fmt.Sprintf("Replace for loop with range %s",
 									analysisinternal.Format(pass.Fset, limit)),
@@ -240,6 +252,7 @@ func rangeint(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }
 
 // isScalarLvalue reports whether the specified identifier is

@@ -28,7 +28,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 )
@@ -149,7 +148,7 @@ func Parse(ctx context.Context, fset *token.FileSet, uri protocol.DocumentURI, s
 // positions have been mangled, and type checker errors may not make sense.
 func fixAST(n ast.Node, tok *token.File, src []byte) (fixes []FixType) {
 	var err error
-	internalastutil.PreorderStack(n, nil, func(n ast.Node, stack []ast.Node) bool {
+	ast.PreorderStack(n, nil, func(n ast.Node, stack []ast.Node) bool {
 		var parent ast.Node
 		if len(stack) > 0 {
 			parent = stack[len(stack)-1]
@@ -233,7 +232,7 @@ const (
 //
 // fixSrc returns a non-nil result if and only if a fix was applied.
 func fixSrc(f *ast.File, tf *token.File, src []byte) (newSrc []byte, fix FixType) {
-	internalastutil.PreorderStack(f, nil, func(n ast.Node, stack []ast.Node) bool {
+	ast.PreorderStack(f, nil, func(n ast.Node, stack []ast.Node) bool {
 		if newSrc != nil {
 			return false
 		}

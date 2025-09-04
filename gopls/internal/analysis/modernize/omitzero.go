@@ -13,8 +13,21 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil"
 )
+
+var OmitZeroAnalyzer = &analysis.Analyzer{
+	Name: "omitzero",
+	Doc:  analysisinternal.MustExtractDoc(doc, "omitzero"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+	},
+	Run: omitzero,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#omitzero",
+}
 
 func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Field) {
 	typ := info.TypeOf(curField.Type)
@@ -91,7 +104,7 @@ func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Fi
 // struct. Since "omitempty" does not have any effect when applied to a struct field,
 // it suggests either deleting "omitempty" or replacing it with "omitzero", which
 // correctly excludes structs from a json encoding.
-func omitzero(pass *analysis.Pass) {
+func omitzero(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -103,4 +116,5 @@ func omitzero(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }

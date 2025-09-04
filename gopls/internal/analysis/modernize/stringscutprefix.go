@@ -13,10 +13,23 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
+
+var StringsCutPrefixAnalyzer = &analysis.Analyzer{
+	Name: "stringscutprefix",
+	Doc:  analysisinternal.MustExtractDoc(doc, "stringscutprefix"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
+	},
+	Run: stringscutprefix,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringscutprefix",
+}
 
 // stringscutprefix offers a fix to replace an if statement which
 // calls to the 2 patterns below with strings.CutPrefix.
@@ -36,7 +49,7 @@ import (
 //
 // Variants:
 // - bytes.HasPrefix usage as pattern 1.
-func stringscutprefix(pass *analysis.Pass) {
+func stringscutprefix(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	var (
@@ -48,13 +61,10 @@ func stringscutprefix(pass *analysis.Pass) {
 		bytesTrimPrefix   = index.Object("bytes", "TrimPrefix")
 	)
 	if !index.Used(stringsTrimPrefix, bytesTrimPrefix) {
-		return
+		return nil, nil
 	}
 
-	const (
-		category     = "stringscutprefix"
-		fixedMessage = "Replace HasPrefix/TrimPrefix with CutPrefix"
-	)
+	const fixedMessage = "Replace HasPrefix/TrimPrefix with CutPrefix"
 
 	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.20") {
 		for curIfStmt := range curFile.Preorder((*ast.IfStmt)(nil)) {
@@ -104,10 +114,9 @@ func stringscutprefix(pass *analysis.Pass) {
 						okVarName := analysisinternal.FreshName(info.Scopes[ifStmt], ifStmt.Pos(), "ok")
 						pass.Report(analysis.Diagnostic{
 							// highlight at HasPrefix call.
-							Pos:      call.Pos(),
-							End:      call.End(),
-							Category: category,
-							Message:  "HasPrefix + TrimPrefix can be simplified to CutPrefix",
+							Pos:     call.Pos(),
+							End:     call.End(),
+							Message: "HasPrefix + TrimPrefix can be simplified to CutPrefix",
 							SuggestedFixes: []analysis.SuggestedFix{{
 								Message: fixedMessage,
 								// if              strings.HasPrefix(s, pre)     { use(strings.TrimPrefix(s, pre)) }
@@ -172,10 +181,9 @@ func stringscutprefix(pass *analysis.Pass) {
 
 						pass.Report(analysis.Diagnostic{
 							// highlight from the init and the condition end.
-							Pos:      ifStmt.Init.Pos(),
-							End:      ifStmt.Cond.End(),
-							Category: category,
-							Message:  "TrimPrefix can be simplified to CutPrefix",
+							Pos:     ifStmt.Init.Pos(),
+							End:     ifStmt.Cond.End(),
+							Message: "TrimPrefix can be simplified to CutPrefix",
 							SuggestedFixes: []analysis.SuggestedFix{{
 								Message: fixedMessage,
 								// if x     := strings.TrimPrefix(s, pre); x != s ...
@@ -205,4 +213,5 @@ func stringscutprefix(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }

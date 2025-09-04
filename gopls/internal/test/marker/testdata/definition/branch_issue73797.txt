@@ -4,7 +4,6 @@ so this test case should only be run for go1.24 or earlier.
 See the related change in go/types: https://go-review.git.corp.google.com/c/go/+/638257
 
 -- flags --
--min_go=go1.25
 -ignore_extra_diags
 
 -- go.mod --

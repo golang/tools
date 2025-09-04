@@ -7,8 +7,8 @@
 package main
 
 import (
-	"golang.org/x/tools/go/analysis/singlechecker"
+	"golang.org/x/tools/go/analysis/multichecker"
 	"golang.org/x/tools/gopls/internal/analysis/modernize"
 )
 
-func main() { singlechecker.Main(modernize.Analyzer) }
+func main() { multichecker.Main(modernize.Suite...) }

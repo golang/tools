@@ -11,9 +11,21 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/analysisinternal"
 )
+
+var ForVarAnalyzer = &analysis.Analyzer{
+	Name: "forvar",
+	Doc:  analysisinternal.MustExtractDoc(doc, "forvar"),
+	Requires: []*analysis.Analyzer{
+		generated.Analyzer,
+		inspect.Analyzer,
+	},
+	Run: forvar,
+	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#forvar",
+}
 
 // forvar offers to fix unnecessary copying of a for variable
 //
@@ -29,7 +41,7 @@ import (
 // because the Go specification says "The variable used by each subsequent iteration
 // is declared implicitly before executing the post statement and initialized to the
 // value of the previous iteration's variable at that moment.")
-func forvar(pass *analysis.Pass) {
+func forvar(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -62,10 +74,9 @@ func forvar(pass *analysis.Pass) {
 					edits := analysisinternal.DeleteStmt(pass.Fset, astFile, stmt, bug.Reportf)
 					if len(edits) > 0 {
 						pass.Report(analysis.Diagnostic{
-							Pos:      stmt.Pos(),
-							End:      stmt.End(),
-							Category: "forvar",
-							Message:  "copying variable is unneeded",
+							Pos:     stmt.Pos(),
+							End:     stmt.End(),
+							Message: "copying variable is unneeded",
 							SuggestedFixes: []analysis.SuggestedFix{{
 								Message:   "Remove unneeded redeclaration",
 								TextEdits: edits,
@@ -78,4 +89,5 @@ func forvar(pass *analysis.Pass) {
 			}
 		}
 	}
+	return nil, nil
 }
