@@ -108,7 +108,7 @@ func (g *Graph) All() actionSeq {
 				return io.EOF // any error will do
 			}
 			return nil
-		})
+		}) // ignore error
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
+	"golang.org/x/tools/go/analysis/internal/analysisflags"
 	"golang.org/x/tools/go/analysis/internal/checker"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/internal/testenv"
@@ -50,9 +51,9 @@ func Foo() {
 	}
 	path := filepath.Join(testdata, "src/rename/test.go")
 
-	checker.Fix = true
+	analysisflags.Fix = true
 	checker.Run([]string{"file=" + path}, []*analysis.Analyzer{renameAnalyzer})
-	checker.Fix = false
+	analysisflags.Fix = false
 
 	contents, err := os.ReadFile(path)
 	if err != nil {
