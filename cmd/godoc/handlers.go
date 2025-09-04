@@ -29,7 +29,7 @@ func registerHandlers(pres *godoc.Presentation) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-		if req.URL.Path == "/" {
+		if req.URL.Path == "/" && !pres.CustomNav {
 			http.Redirect(w, req, "/pkg/", http.StatusFound)
 			return
 		}
@@ -62,12 +62,29 @@ func readTemplate(name string) *template.Template {
 	return t
 }
 
+func readCustomNav() string {
+	path := "lib/godoc/navmenu.html"
+
+	// use underlying file system fs to read the template file
+	// (cannot use template ParseFile functions directly)
+	data, err := vfs.ReadFile(fs, path)
+	if err == nil {
+		pres.CustomNav = true
+		return string(data)
+	} else {
+		return ""
+	}
+}
+
 func readTemplates(p *godoc.Presentation) {
 	p.CallGraphHTML = readTemplate("callgraph.html")
 	p.DirlistHTML = readTemplate("dirlist.html")
 	p.ErrorHTML = readTemplate("error.html")
 	p.ExampleHTML = readTemplate("example.html")
 	p.GodocHTML = readTemplate("godoc.html")
+	// append a navmenu named template to GodocHTML
+	// to enable {{template "navmenu"}} in godoc.html
+	p.GodocHTML.New("navmenu").Parse(readCustomNav())
 	p.ImplementsHTML = readTemplate("implements.html")
 	p.MethodSetHTML = readTemplate("methodset.html")
 	p.PackageHTML = readTemplate("package.html")
