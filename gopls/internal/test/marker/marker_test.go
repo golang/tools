@@ -597,6 +597,7 @@ var valueMarkerFuncs = map[string]func(marker){
 var actionMarkerFuncs = map[string]func(marker){
 	"acceptcompletion": actionMarkerFunc(acceptCompletionMarker),
 	"codeaction":       actionMarkerFunc(codeActionMarker, "end", "result", "edit", "err"),
+	"nocodeaction":     actionMarkerFunc(noCodeActionMarker),
 	"codelenses":       actionMarkerFunc(codeLensesMarker),
 	"complete":         actionMarkerFunc(completeMarker),
 	"def":              actionMarkerFunc(defMarker),
@@ -1160,12 +1161,12 @@ func (run *markerTestRun) mapLocation(loc protocol.Location) (name string, start
 	m, err := run.env.Editor.Mapper(name)
 	if err != nil {
 		run.env.TB.Errorf("internal error: %v", err)
-		return
+		return name, startLine, startCol, endLine, endCol
 	}
 	start, end, err := m.RangeOffsets(loc.Range)
 	if err != nil {
 		run.env.TB.Errorf("error formatting location %s: %v", loc, err)
-		return
+		return name, startLine, startCol, endLine, endCol
 	}
 	startLine, startCol = m.OffsetLineCol8(start)
 	endLine, endCol = m.OffsetLineCol8(end)
@@ -2135,6 +2136,20 @@ func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[
 	return result, nil
 }
 
+func noCodeActionMarker(mark marker, loc protocol.Location, kind string) {
+	_, candidates, err := getActionsWithCandidates(loc.URI, loc.Range, nil, mark.run.env, protocol.CodeActionKind(kind))
+	if err != nil {
+		mark.errorf("codeAction failed: %v", err)
+	}
+	if len(candidates) > 0 {
+		var names []string
+		for _, c := range candidates {
+			names = append(names, c.Title)
+		}
+		mark.errorf("there are code actions available: %v", names)
+	}
+}
+
 func codeActionMarker(mark marker, loc protocol.Location, kind string) {
 	if !exactlyOneNamedArg(mark, "edit", "result", "err") {
 		return
@@ -2310,32 +2325,9 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 	})
 	defer restore()
 
-	// Request all code actions that apply to the diagnostic.
-	// A production client would set Only=[kind],
-	// but we can give a better error if we don't filter.
-	params := &protocol.CodeActionParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-		Range:        rng,
-		Context: protocol.CodeActionContext{
-			Only: []protocol.CodeActionKind{protocol.Empty}, // => all
-		},
-	}
-	if diag != nil {
-		params.Context.Diagnostics = []protocol.Diagnostic{*diag}
-	}
-
-	actions, err := env.Editor.Server.CodeAction(env.Ctx, params)
+	actions, candidates, err := getActionsWithCandidates(uri, rng, diag, env, kind)
 	if err != nil {
-		return nil, err
-	}
-
-	// Find the sole candidate CodeAction of exactly the specified kind
-	// (e.g. refactor.inline.call).
-	var candidates []protocol.CodeAction
-	for _, act := range actions {
-		if act.Kind == kind {
-			candidates = append(candidates, act)
-		}
+		return changes, err
 	}
 	if len(candidates) != 1 {
 		var msg bytes.Buffer
@@ -2409,6 +2401,43 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 	}
 
 	return nil, nil
+}
+
+func getActionsWithCandidates(
+	uri protocol.DocumentURI,
+	rng protocol.Range,
+	diag *protocol.Diagnostic,
+	env *integration.Env,
+	kind protocol.CodeActionKind,
+) ([]protocol.CodeAction, []protocol.CodeAction, error) {
+	// Request all code actions that apply to the diagnostic.
+	// A production client would set Only=[kind],
+	// but we can give a better error if we don't filter.
+	params := &protocol.CodeActionParams{
+		TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+		Range:        rng,
+		Context: protocol.CodeActionContext{
+			Only: []protocol.CodeActionKind{protocol.Empty}, // => all
+		},
+	}
+	if diag != nil {
+		params.Context.Diagnostics = []protocol.Diagnostic{*diag}
+	}
+
+	actions, err := env.Editor.Server.CodeAction(env.Ctx, params)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Find the sole candidate CodeAction of exactly the specified kind
+	// (e.g. refactor.inline.call).
+	var candidates []protocol.CodeAction
+	for _, act := range actions {
+		if act.Kind == kind {
+			candidates = append(candidates, act)
+		}
+	}
+	return actions, candidates, nil
 }
 
 // refsMarker implements the @refs marker.
