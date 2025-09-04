@@ -145,12 +145,7 @@ func logger(ctx context.Context, name string, verbose bool) func(format string, 
 // initializer expression.
 func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end token.Pos) (_, _ inspector.Cursor, ok bool) {
 	if curUse, ok := curFile.FindByPos(start, end); ok {
-		if kind, _ := curUse.ParentEdge(); kind == edge.AssignStmt_Lhs {
-			// This identifier is the left‑hand side of an assignment,
-			// it cannot be inlined.
-			return inspector.Cursor{}, inspector.Cursor{}, false
-		}
-		if id, ok := curUse.Node().(*ast.Ident); ok {
+		if id, ok := curUse.Node().(*ast.Ident); ok && isSafelyInlinable(curUse, info) {
 			if v, ok := info.Uses[id].(*types.Var); ok && v.Kind() == types.LocalVar {
 				if curIdent, ok := curFile.FindByPos(v.Pos(), v.Pos()); ok {
 					curParent := curIdent.Parent()
@@ -173,6 +168,60 @@ func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end to
 		}
 	}
 	return
+}
+
+// isSafelyInlinable reports whether the identifier represented by cur can be
+// safely replaced by its initializer expression. The identifier must not be:
+//   - the left‑hand side of an assignment (including short variable declarations),
+//   - the operand of an IncDec statement (i←, i++),
+//   - the target of an address‑of expression (&x), and
+//   - the receiver of a call to a pointer‑receiver method.
+//
+// If none of these conditions hold, the identifier is considered safe to inline.
+func isSafelyInlinable(cur inspector.Cursor, info *types.Info) bool {
+	kind, _ := cur.ParentEdge()
+	if kind == edge.AssignStmt_Lhs {
+		return false
+	}
+	if kind == edge.IncDecStmt_X {
+		return false
+	}
+	if isTakingTheAddress(cur) {
+		return false
+	}
+	if isCallingPtrRecvMethod(cur, info) {
+		return false
+	}
+	return true
+}
+
+func isCallingPtrRecvMethod(cur inspector.Cursor, info *types.Info) bool {
+	if kind, _ := cur.ParentEdge(); kind == edge.SelectorExpr_X {
+		parent := cur.Parent()
+		if sel, ok := parent.Node().(*ast.SelectorExpr); ok {
+			selIdent := sel.Sel
+			if obj, ok := info.Uses[selIdent]; ok {
+				if fu, isFunc := obj.(*types.Func); isFunc {
+					sig := fu.Signature()
+					if sig.Recv() != nil {
+						_, isPtr := sig.Recv().Type().Underlying().(*types.Pointer)
+						return isPtr
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+func isTakingTheAddress(cur inspector.Cursor) bool {
+	pe, _ := cur.ParentEdge()
+	for pe == edge.ParenExpr_X {
+		cur = cur.Parent()
+		pe, _ = cur.ParentEdge()
+	}
+	ue, ok := cur.Parent().Node().(*ast.UnaryExpr)
+	return ok && ue.Op == token.AND
 }
 
 // inlineVariableOne computes a fix to replace the selected variable by

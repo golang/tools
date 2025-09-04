@@ -1,0 +1,19 @@
+Attempting to inline `v` when it's an increment/decrement operation.
+
+Regression test for issue #75200.
+
+-- go.mod --
+module example.com/a
+go 1.18
+
+-- c/c.go --
+package c
+
+import "fmt"
+
+func _() {
+    v := 13
+    v++ //@nocodeaction("v", "refactor.inline.variable")
+    v-- //@nocodeaction("v", "refactor.inline.variable")
+    fmt.Println(v)
+}

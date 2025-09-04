@@ -1,0 +1,20 @@
+Attempting to inline `v` on the left‑hand side of an compound assignment.
+
+Regression test for issue #75200.
+
+-- go.mod --
+module example.com/a
+go 1.18
+
+-- c/c.go --
+package c
+
+import "fmt"
+
+func _() {
+    v := 13
+    v += 78 //@nocodeaction("v", "refactor.inline.variable")
+    v -= 78 //@nocodeaction("v", "refactor.inline.variable")
+    v *= 78 //@nocodeaction("v", "refactor.inline.variable")
+    fmt.Println(v)
+}
