@@ -65,16 +65,23 @@
 //
 // A better implementation strategy for recursive iterators is to
 // first define the "every" operator for your recursive data type,
-// where every(f) reports whether f(x) is true for every element x in
-// the data type. For our tree, the every function would be:
+// where every(f) reports whether an arbitrary predicate f(x) is true
+// for every element x in the data type. For our tree, the every
+// function would be:
 //
 //	func (t *tree) every(f func(int) bool) bool {
 //		return t == nil ||
 //			t.left.every(f) && f(t.value) && t.right.every(f)
 //	}
 //
+// For example, this use of the every operator prints whether every
+// element in the tree is an even number:
+//
+//	even := func(x int) bool { return x&1 == 0 }
+//	println(t.every(even))
+//
 // Then the iterator can be simply expressed as a trivial wrapper
-// around this function:
+// around the every operator:
 //
 //	func (t *tree) All() iter.Seq[int] {
 //		return func(yield func(int) bool) {
@@ -83,7 +90,7 @@
 //	}
 //
 // In effect, tree.All computes whether yield returns true for each
-// element, short-circuiting if it every returns false, then discards
+// element, short-circuiting if it ever returns false, then discards
 // the final boolean result.
 //
 // This has much better performance characteristics: it makes one
