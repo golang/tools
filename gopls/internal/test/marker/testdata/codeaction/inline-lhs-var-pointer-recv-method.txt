@@ -1,0 +1,23 @@
+Attempting to inline `v` on with pointer receiver method calling.
+
+Regression test for issue #75200.
+
+-- go.mod --
+module example.com/a
+go 1.18
+
+-- c/c.go --
+package c
+
+import "fmt"
+
+type V int
+
+func (*V) PointerMethod() { }
+
+func _() {
+    var v V
+    v = V(13)
+    v.PointerMethod() //@nocodeaction("v", "refactor.inline.variable")
+    fmt.Println(v)
+}
