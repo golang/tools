@@ -149,7 +149,8 @@ func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end to
 			if v, ok := info.Uses[id].(*types.Var); ok && v.Kind() == types.LocalVar {
 				if curIdent, ok := curFile.FindByPos(v.Pos(), v.Pos()); ok {
 					curParent := curIdent.Parent()
-					switch kind, index := curIdent.ParentEdge(); kind {
+					kind, index := curIdent.ParentEdge()
+					switch kind {
 					case edge.ValueSpec_Names:
 						// var v = expr
 						spec := curParent.Node().(*ast.ValueSpec)
@@ -171,15 +172,26 @@ func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end to
 }
 
 // isSafelyInlinable reports whether the identifier represented by cur can be
-// safely replaced by its initializer expression. The identifier must not be:
-//   - the left‑hand side of an assignment (including short variable declarations),
-//   - the operand of an IncDec statement (i←, i++),
-//   - the target of an address‑of expression (&x), and
-//   - the receiver of a call to a pointer‑receiver method.
+// safely replaced by its initializer expression. The identifier is considered
+// unsafe to inline if any of the following are true:
 //
-// If none of these conditions hold, the identifier is considered safe to inline.
+//   - It appears on the left‑hand side of an assignment (including short
+//     variable declarations) – edge.AssignStmt_Lhs.
+//   - It is the operand of an IncDec statement (i++, i--) – edge.IncDecStmt_X.
+//   - Its address is taken (e.g., &x) – isTakingTheAddress.
+//   - It is used as the receiver of a pointer‑receiver method call –
+//     isCallingPtrRecvMethod.
+//
+// The identifier *is* safe to inline when it is used as the receiver of a
+// value‑receiver method call – or when none of the above conditions apply.
 func isSafelyInlinable(cur inspector.Cursor, info *types.Info) bool {
 	kind, _ := cur.ParentEdge()
+	if isCallingRecvMethod(cur, info, false) {
+		return true
+	}
+	if isCallingRecvMethod(cur, info, true) {
+		return false
+	}
 	if kind == edge.AssignStmt_Lhs {
 		return false
 	}
@@ -189,13 +201,10 @@ func isSafelyInlinable(cur inspector.Cursor, info *types.Info) bool {
 	if isTakingTheAddress(cur) {
 		return false
 	}
-	if isCallingPtrRecvMethod(cur, info) {
-		return false
-	}
 	return true
 }
 
-func isCallingPtrRecvMethod(cur inspector.Cursor, info *types.Info) bool {
+func isCallingRecvMethod(cur inspector.Cursor, info *types.Info, wantPtr bool) bool {
 	if kind, _ := cur.ParentEdge(); kind == edge.SelectorExpr_X {
 		parent := cur.Parent()
 		if sel, ok := parent.Node().(*ast.SelectorExpr); ok {
@@ -205,7 +214,7 @@ func isCallingPtrRecvMethod(cur inspector.Cursor, info *types.Info) bool {
 					sig := fu.Signature()
 					if sig.Recv() != nil {
 						_, isPtr := sig.Recv().Type().Underlying().(*types.Pointer)
-						return isPtr
+						return isPtr == wantPtr
 					}
 				}
 			}
