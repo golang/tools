@@ -78,3 +78,13 @@ func _() {
 		print(s)
 	}
 }
+
+// nope: don't handle direct assignments to the string  (only +=).
+func _(x string) string {
+	var s string
+	s = x
+	for range 3 {
+		s += "" + x
+	}
+	return s
+}

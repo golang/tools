@@ -244,37 +244,38 @@ nextcand:
 
 			if ek == edge.AssignStmt_Lhs {
 				assign := curUse.Parent().Node().(*ast.AssignStmt)
-				if assign.Tok == token.ADD_ASSIGN {
-					// Have: s += expr
-
-					// At least one of the += operations
-					// must appear within a loop.
-					// relative to the declaration of s.
-					if intervening((*ast.ForStmt)(nil), (*ast.RangeStmt)(nil)) {
-						numLoopAssigns++
-						if loopAssign == nil {
-							loopAssign = assign
-						}
-					}
-
-					// s +=          expr
-					//  -------------    -
-					// s.WriteString(expr)
-					edits = append(edits, []analysis.TextEdit{
-						// replace += with .WriteString()
-						{
-							Pos:     assign.TokPos,
-							End:     assign.Rhs[0].Pos(),
-							NewText: []byte(".WriteString("),
-						},
-						// insert ")"
-						{
-							Pos:     assign.End(),
-							End:     assign.End(),
-							NewText: []byte(")"),
-						},
-					}...)
+				if assign.Tok != token.ADD_ASSIGN {
+					continue nextcand
 				}
+				// Have: s += expr
+
+				// At least one of the += operations
+				// must appear within a loop.
+				// relative to the declaration of s.
+				if intervening((*ast.ForStmt)(nil), (*ast.RangeStmt)(nil)) {
+					numLoopAssigns++
+					if loopAssign == nil {
+						loopAssign = assign
+					}
+				}
+
+				// s +=          expr
+				//  -------------    -
+				// s.WriteString(expr)
+				edits = append(edits, []analysis.TextEdit{
+					// replace += with .WriteString()
+					{
+						Pos:     assign.TokPos,
+						End:     assign.Rhs[0].Pos(),
+						NewText: []byte(".WriteString("),
+					},
+					// insert ")"
+					{
+						Pos:     assign.End(),
+						End:     assign.End(),
+						NewText: []byte(")"),
+					},
+				}...)
 
 			} else if ek == edge.UnaryExpr_X &&
 				curUse.Parent().Node().(*ast.UnaryExpr).Op == token.AND {
