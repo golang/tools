@@ -9,43 +9,32 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/tools/internal/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type fileMetadataParams struct {
-	File string `json:"file"`
+	File string `json:"file" jsonschema:"the absolute path to the file to describe"`
 }
 
-func (h *handler) fileMetadataTool() *mcp.ServerTool {
-	return mcp.NewServerTool(
-		"go_file_metadata",
-		"Provides metadata about the Go package containing the file",
-		h.fileMetadataHandler,
-		mcp.Input(
-			mcp.Property("file", mcp.Description("the absolute path to the file to describe")),
-		),
-	)
-}
-
-func (h *handler) fileMetadataHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[fileMetadataParams]) (*mcp.CallToolResultFor[any], error) {
-	fh, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
+func (h *handler) fileMetadataHandler(ctx context.Context, req *mcp.CallToolRequest, params fileMetadataParams) (*mcp.CallToolResult, any, error) {
+	fh, snapshot, release, err := h.fileOf(ctx, params.File)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer release()
 
 	md, err := snapshot.NarrowestMetadataForFile(ctx, fh.URI())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var b strings.Builder
 	addf := func(format string, args ...any) {
 		fmt.Fprintf(&b, format, args...)
 	}
-	addf("File `%s` is in package %q, which has the following files:\n", params.Arguments.File, md.PkgPath)
+	addf("File `%s` is in package %q, which has the following files:\n", params.File, md.PkgPath)
 	for _, f := range md.CompiledGoFiles {
 		addf("\t%s\n", f.Path())
 	}
-	return textResult(b.String()), nil
+	return textResult(b.String()), nil, nil
 }

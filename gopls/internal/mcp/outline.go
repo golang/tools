@@ -9,45 +9,33 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
-	"golang.org/x/tools/internal/mcp"
 )
 
 type outlineParams struct {
-	PackagePaths []string `json:"packagePaths"`
+	PackagePaths []string `json:"packagePaths" jsonschema:"the go package paths to describe"`
 }
 
-func (h *handler) outlineTool() *mcp.ServerTool {
-	return mcp.NewServerTool(
-		"go_package_api",
-		"Provides a summary of a Go package API",
-		h.outlineHandler,
-		mcp.Input(
-			mcp.Property("packagePaths", mcp.Description("the go package paths to describe")),
-		),
-	)
-}
-
-func (h *handler) outlineHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[outlineParams]) (*mcp.CallToolResultFor[any], error) {
+func (h *handler) outlineHandler(ctx context.Context, req *mcp.CallToolRequest, params outlineParams) (*mcp.CallToolResult, any, error) {
 	snapshot, release, err := h.snapshot()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer release()
 
 	// Await initialization to ensure we've at least got an initial package graph
 	md, err := snapshot.LoadMetadataGraph(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
 	var toSummarize []*metadata.Package
-	for _, imp := range params.Arguments.PackagePaths {
+	for _, imp := range params.PackagePaths {
 		pkgPath := metadata.PackagePath(imp)
 		if len(imp) > 0 && imp[0] == '"' {
 			unquoted, err := strconv.Unquote(imp)
 			if err != nil {
-				return nil, fmt.Errorf("failed to unquote %s: %v", imp, err)
+				return nil, nil, fmt.Errorf("failed to unquote %s: %v", imp, err)
 			}
 			pkgPath = metadata.PackagePath(unquoted)
 		}
@@ -56,16 +44,16 @@ func (h *handler) outlineHandler(ctx context.Context, _ *mcp.ServerSession, para
 		}
 	}
 
-	var content []*mcp.Content
+	var content []mcp.Content
 	for _, mp := range toSummarize {
 		if md == nil {
 			continue // ignore error
 		}
 		if summary := summarizePackage(ctx, snapshot, mp); summary != "" {
-			content = append(content, mcp.NewTextContent(summary))
+			content = append(content, &mcp.TextContent{Text: summary})
 		}
 	}
-	return &mcp.CallToolResultFor[any]{
+	return &mcp.CallToolResult{
 		Content: content,
-	}, nil
+	}, nil, nil
 }

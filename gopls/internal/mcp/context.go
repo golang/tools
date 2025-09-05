@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -24,39 +25,27 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/mcp"
 )
 
 type ContextParams struct {
-	File string `json:"file"`
+	File string `json:"file" jsonschema:"the absolute path to the file"`
 }
 
-func (h *handler) contextTool() *mcp.ServerTool {
-	return mcp.NewServerTool(
-		"go_context",
-		"Provide context for a region within a Go file",
-		h.contextHandler,
-		mcp.Input(
-			mcp.Property("file", mcp.Description("the absolute path to the file")),
-		),
-	)
-}
-
-func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[ContextParams]) (*mcp.CallToolResultFor[any], error) {
-	fh, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
+func (h *handler) contextHandler(ctx context.Context, req *mcp.CallToolRequest, params ContextParams) (*mcp.CallToolResult, any, error) {
+	fh, snapshot, release, err := h.fileOf(ctx, params.File)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer release()
 
 	// TODO(hxjiang): support context for GoMod.
 	if snapshot.FileKind(fh) != file.Go {
-		return nil, fmt.Errorf("can't provide context for non-Go file")
+		return nil, nil, fmt.Errorf("can't provide context for non-Go file")
 	}
 
 	pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var result strings.Builder
@@ -67,7 +56,7 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 		fmt.Fprintf(&result, "%s (current file):\n", pgf.URI.Base())
 		result.WriteString("```go\n")
 		if err := writeFileSummary(ctx, snapshot, pgf.URI, &result, false, nil); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		result.WriteString("```\n\n")
 	}
@@ -82,7 +71,7 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 			fmt.Fprintf(&result, "%s:\n", file.URI.Base())
 			result.WriteString("```go\n")
 			if err := writeFileSummary(ctx, snapshot, file.URI, &result, false, nil); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			result.WriteString("```\n\n")
 		}
@@ -104,7 +93,7 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 
 				text, err := pgf.NodeText(genDecl)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 
 				result.Write(text)
@@ -144,7 +133,7 @@ func (h *handler) contextHandler(ctx context.Context, _ *mcp.ServerSession, para
 		}
 	}
 
-	return textResult(result.String()), nil
+	return textResult(result.String()), nil, nil
 }
 
 func summarizePackage(ctx context.Context, snapshot *cache.Snapshot, md *metadata.Package) string {

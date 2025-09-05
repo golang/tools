@@ -20,46 +20,36 @@ import (
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/mcp"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type diagnosticsParams struct {
-	File string `json:"file"`
+	File string `json:"file" jsonschema:"the absolute path to the file to diagnose"`
 }
 
-func (h *handler) fileDiagnosticsTool() *mcp.ServerTool {
-	return mcp.NewServerTool(
-		"go_file_diagnostics",
-		"Provides diagnostics for a Go file",
-		h.fileDiagnosticsHandler,
-		mcp.Input(
-			mcp.Property("file", mcp.Description("the absolute path to the file to diagnose")),
-		),
-	)
-}
-
-func (h *handler) fileDiagnosticsHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[diagnosticsParams]) (*mcp.CallToolResultFor[any], error) {
-	fh, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
+func (h *handler) fileDiagnosticsHandler(ctx context.Context, req *mcp.CallToolRequest, params diagnosticsParams) (*mcp.CallToolResult, any, error) {
+	fh, snapshot, release, err := h.fileOf(ctx, params.File)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer release()
 
 	diagnostics, fixes, err := h.diagnoseFile(ctx, snapshot, fh.URI())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var builder strings.Builder
 	if len(diagnostics) == 0 {
-		return textResult("No diagnostics"), nil
+		return textResult("No diagnostics"), nil, nil
 	}
 
 	if err := summarizeDiagnostics(ctx, snapshot, &builder, diagnostics, fixes); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return textResult(builder.String()), nil
+	return textResult(builder.String()), nil, nil
 }
 
 // diagnoseFile diagnoses a single file, including go/analysis and quick fixes.

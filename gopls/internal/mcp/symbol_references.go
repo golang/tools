@@ -11,96 +11,69 @@ import (
 	"go/token"
 	"go/types"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
-	"golang.org/x/tools/internal/mcp"
 )
 
 // symbolReferencesParams defines the parameters for the "go_symbol_references"
 // tool.
 type symbolReferencesParams struct {
-	File   string `json:"file"`
-	Symbol string `json:"symbol"`
-}
-
-// symbolReferencesTool returns a new server tool for finding references to a Go symbol.
-func (h *handler) symbolReferencesTool() *mcp.ServerTool {
-	desc := `Provides the locations of references to a (possibly qualified)
-package-level Go symbol referenced from the current file.
-
-For example, given arguments {"file": "/path/to/foo.go", "name": "Foo"},
-go_symbol_references returns references to the symbol "Foo" declared
-in the current package.
-
-Similarly, given arguments {"file": "/path/to/foo.go", "name": "lib.Bar"},
-go_symbol_references returns references to the symbol "Bar" in the imported lib
-package.
-
-Finally, symbol references supporting querying fields and methods: symbol
-"T.M" selects the "M" field or method of the "T" type (or value), and "lib.T.M"
-does the same for a symbol in the imported package "lib".
-`
-	return mcp.NewServerTool(
-		"go_symbol_references",
-		desc,
-		h.symbolReferencesHandler,
-		mcp.Input(
-			mcp.Property("file", mcp.Description("the absolute path to the file containing the symbol")),
-			mcp.Property("symbol", mcp.Description("the symbol or qualified symbol (for example \"foo\" or \"pkg.Foo\")")),
-		),
-	)
+	File   string `json:"file" jsonschema:"the absolute path to the file containing the symbol"`
+	Symbol string `json:"symbol" jsonschema:"the symbol or qualified symbol"`
 }
 
 // symbolReferencesHandler is the handler for the "go_symbol_references" tool.
 // It finds all references to the requested symbol and describes their
 // locations.
-func (h *handler) symbolReferencesHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[symbolReferencesParams]) (*mcp.CallToolResultFor[any], error) {
-	fh, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
+func (h *handler) symbolReferencesHandler(ctx context.Context, req *mcp.CallToolRequest, params symbolReferencesParams) (*mcp.CallToolResult, any, error) {
+	fh, snapshot, release, err := h.fileOf(ctx, params.File)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer release()
 
 	if snapshot.FileKind(fh) != file.Go {
-		return nil, fmt.Errorf("can't provide references for non-Go files")
+		return nil, nil, fmt.Errorf("can't provide references for non-Go files")
 	}
 
 	// Parse and extract names before type checking, to fail fast in the case of
 	// invalid inputs.
-	e, err := parser.ParseExpr(params.Arguments.Symbol)
+	e, err := parser.ParseExpr(params.Symbol)
 	if err != nil {
-		return nil, fmt.Errorf("\"symbol\" failed to parse: %v", err)
+		return nil, nil, fmt.Errorf("\"symbol\" failed to parse: %v", err)
 	}
 	path, err := extractPath(e)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	target, err := resolveSymbol(path, pkg, pgf)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	loc, err := golang.ObjectLocation(ctx, pkg.FileSet(), snapshot, target)
 	if err != nil {
-		return nil, fmt.Errorf("finding symbol location: %v", err)
+		return nil, nil, fmt.Errorf("finding symbol location: %v", err)
 	}
 	declFH, err := snapshot.ReadFile(ctx, loc.URI)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	refs, err := golang.References(ctx, snapshot, declFH, loc.Range.Start, true)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return formatReferences(ctx, snapshot, refs)
+	formatted, err := formatReferences(ctx, snapshot, refs)
+	return formatted, nil, err
 }
 
 // extractPath extracts the 'path' of names from e, which must be of the form

@@ -11,41 +11,30 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/mcp"
 )
 
 type fileContextParams struct {
-	File string `json:"file"`
+	File string `json:"file" jsonschema:"the absolute path to the file"`
 }
 
-func (h *handler) fileContextTool() *mcp.ServerTool {
-	return mcp.NewServerTool(
-		"go_file_context",
-		"Summarizes a file's cross-file dependencies",
-		h.fileContextHandler,
-		mcp.Input(
-			mcp.Property("file", mcp.Description("the absolute path to the file")),
-		),
-	)
-}
-
-func (h *handler) fileContextHandler(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[fileContextParams]) (*mcp.CallToolResultFor[any], error) {
-	fh, snapshot, release, err := h.fileOf(ctx, params.Arguments.File)
+func (h *handler) fileContextHandler(ctx context.Context, req *mcp.CallToolRequest, params fileContextParams) (*mcp.CallToolResult, any, error) {
+	fh, snapshot, release, err := h.fileOf(ctx, params.File)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer release()
 
 	pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, fh.URI())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	info := pkg.TypesInfo()
 	if info == nil {
-		return nil, fmt.Errorf("no types info for package %q", pkg.Metadata().PkgPath)
+		return nil, nil, fmt.Errorf("no types info for package %q", pkg.Metadata().PkgPath)
 	}
 
 	// Group objects defined in other files by file URI.
@@ -79,7 +68,7 @@ func (h *handler) fileContextHandler(ctx context.Context, _ *mcp.ServerSession, 
 	}
 
 	var result strings.Builder
-	fmt.Fprintf(&result, "File `%s` is in package %q.\n", params.Arguments.File, pkg.Metadata().PkgPath)
+	fmt.Fprintf(&result, "File `%s` is in package %q.\n", params.File, pkg.Metadata().PkgPath)
 	fmt.Fprintf(&result, "Below is a summary of the APIs it uses from other files.\n")
 	fmt.Fprintf(&result, "To read the full API of any package, use go_package_api.\n")
 	for uri, decls := range otherFiles {
@@ -87,7 +76,7 @@ func (h *handler) fileContextHandler(ctx context.Context, _ *mcp.ServerSession, 
 		md, err := snapshot.NarrowestMetadataForFile(ctx, uri)
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, ctx.Err()
+				return nil, nil, ctx.Err()
 			}
 		} else {
 			pkgPath = string(md.PkgPath)
@@ -95,10 +84,10 @@ func (h *handler) fileContextHandler(ctx context.Context, _ *mcp.ServerSession, 
 		fmt.Fprintf(&result, "Referenced declarations from %s (package %q):\n", uri.Path(), pkgPath)
 		result.WriteString("```go\n")
 		if err := writeFileSummary(ctx, snapshot, uri, &result, false, decls); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		result.WriteString("```\n\n")
 	}
 
-	return textResult(result.String()), nil
+	return textResult(result.String()), nil, nil
 }

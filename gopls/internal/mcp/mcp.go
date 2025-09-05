@@ -15,13 +15,13 @@ import (
 	"os"
 	"sync"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
-	"golang.org/x/tools/internal/mcp"
 )
 
 //go:embed instructions.md
@@ -76,13 +76,16 @@ func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool
 
 // StartStdIO starts an MCP server over stdio.
 func StartStdIO(ctx context.Context, session *cache.Session, server protocol.Server, rpcLog io.Writer) error {
-	transport := mcp.NewStdioTransport()
-	var t mcp.Transport = transport
-	if rpcLog != nil {
-		t = mcp.NewLoggingTransport(transport, rpcLog)
-	}
 	s := newServer(session, server)
-	return s.Run(ctx, t)
+	if rpcLog != nil {
+		return s.Run(ctx, &mcp.LoggingTransport{
+			Transport: &mcp.StdioTransport{},
+			Writer:    rpcLog,
+		})
+	} else {
+		return s.Run(ctx, &mcp.StdioTransport{})
+	}
+
 }
 
 func HTTPHandler(sessions Sessions, isDaemon bool) http.Handler {
@@ -155,56 +158,138 @@ func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
 		session:   session,
 		lspServer: lspServer,
 	}
-	mcpServer := mcp.NewServer("gopls", "v0.1.0", &mcp.ServerOptions{
+	opts := &mcp.ServerOptions{
 		Instructions: Instructions,
-	})
-
-	defaultTools := []*mcp.ServerTool{
-		h.workspaceTool(),
-		h.outlineTool(),
-		h.workspaceDiagnosticsTool(),
-		h.symbolReferencesTool(),
-		h.searchTool(),
-		h.fileContextTool(),
 	}
+	mcpServer := mcp.NewServer(&mcp.Implementation{Name: "gopls", Version: "v1.0.0"}, opts)
+
+	defaultTools := []string{
+		"go_workspace",
+		"go_package_api",
+		"go_diagnostics",
+		"go_symbol_references",
+		"go_search",
+		"go_file_context"}
 	disabledTools := append(defaultTools,
 		// The fileMetadata tool is redundant with fileContext.
-		h.fileMetadataTool(),
-		// The context tool returns context for all imports, which can consume a
-		// lot of tokens. Conservatively, rely on the model selecting the imports
-		// to summarize using the outline tool.
-		h.contextTool(),
-		// The fileDiagnosticsTool only returns diagnostics for the current file,
-		// but often changes will cause breakages in other tools. The
-		// workspaceDiagnosticsTool always returns breakages, and supports running
-		// deeper diagnostics in selected files.
-		h.fileDiagnosticsTool(),
-		// The references tool requires a location, which models tend to get wrong.
-		// The symbolic variant seems to be easier to get right, albeit less
-		// powerful.
-		h.referencesTool(),
-	)
+		[]string{"go_file_metadata",
+			// The context tool returns context for all imports, which can consume a
+			// lot of tokens. Conservatively, rely on the model selecting the imports
+			// to summarize using the outline tool.
+			"go_context",
+			// The fileDiagnosticsTool only returns diagnostics for the current file,
+			// but often changes will cause breakages in other tools. The
+			// workspaceDiagnosticsTool always returns breakages, and supports running
+			// deeper diagnostics in selected files.
+			"go_file_diagnostics",
+			// The references tool requires a location, which models tend to get wrong.
+			// The symbolic variant seems to be easier to get right, albeit less
+			// powerful.
+			"go_references",
+		}...)
 	var toolConfig map[string]bool // non-default settings
 	// For testing, poke through to the gopls server to access its options,
 	// and enable some of the disabled tools.
 	if hasOpts, ok := lspServer.(interface{ Options() *settings.Options }); ok {
 		toolConfig = hasOpts.Options().MCPTools
 	}
-	var tools []*mcp.ServerTool
+	var tools []string
 	for _, tool := range defaultTools {
-		if enabled, ok := toolConfig[tool.Tool.Name]; !ok || enabled {
+		if enabled, ok := toolConfig[tool]; !ok || enabled {
 			tools = append(tools, tool)
 		}
 	}
 	// Disabled tools must be explicitly enabled.
 	for _, tool := range disabledTools {
-		if toolConfig[tool.Tool.Name] {
+		if toolConfig[tool] {
 			tools = append(tools, tool)
 		}
 	}
-	mcpServer.AddTools(tools...)
-
+	for _, tool := range tools {
+		addToolByName(mcpServer, h, tool)
+	}
 	return mcpServer
+}
+
+func addToolByName(mcpServer *mcp.Server, h handler, name string) {
+	switch name {
+	case "go_context":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name:        "go_context",
+			Description: "Provide context for a region within a Go file",
+		}, h.contextHandler)
+	case "go_diagnostics":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name: "go_diagnostics",
+			Description: `Provides Go workspace diagnostics.
+
+Checks for parse and build errors across the entire Go workspace. If provided,
+"files" holds absolute paths for active files, on which additional linting is
+performed.
+`,
+		}, h.workspaceDiagnosticsHandler)
+	case "go_file_context":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name:        "go_file_context",
+			Description: "Summarizes a file's cross-file dependencies",
+		}, h.fileContextHandler)
+	case "go_file_diagnostics":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name:        "go_file_diagnostics",
+			Description: "Provides diagnostics for a Go file",
+		}, h.fileDiagnosticsHandler)
+	case "go_file_metadata":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name:        "go_file_metadata",
+			Description: "Provides metadata about the Go package containing the file",
+		}, h.fileMetadataHandler)
+	case "go_package_api":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name:        "go_package_api",
+			Description: "Provides a summary of a Go package API",
+		}, h.outlineHandler)
+	case "go_references":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name:        "go_references",
+			Description: "Provide the locations of references to a given object",
+		}, h.referencesHandler)
+	case "go_search":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name: "go_search",
+			Description: `Search for symbols in the Go workspace.
+
+Search for symbols using case-insensitive fuzzy search, which may match all or
+part of the fully qualified symbol name. For example, the query 'foo' matches
+Go symbols 'Foo', 'fooBar', 'futils.Oboe', 'github.com/foo/bar.Baz'.
+
+Results are limited to 100 symbols.
+`,
+		}, h.searchHandler)
+	case "go_symbol_references":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name: "go_symbol_references",
+			Description: `Provides the locations of references to a (possibly qualified)
+package-level Go symbol referenced from the current file.
+
+For example, given arguments {"file": "/path/to/foo.go", "name": "Foo"},
+go_symbol_references returns references to the symbol "Foo" declared
+in the current package.
+
+Similarly, given arguments {"file": "/path/to/foo.go", "name": "lib.Bar"},
+go_symbol_references returns references to the symbol "Bar" in the imported lib
+package.
+
+Finally, symbol references supporting querying fields and methods: symbol
+"T.M" selects the "M" field or method of the "T" type (or value), and "lib.T.M"
+does the same for a symbol in the imported package "lib".
+`,
+		}, h.symbolReferencesHandler)
+	case "go_workspace":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name:        "go_workspace",
+			Description: "Summarize the Go programming language workspace",
+		}, h.workspaceHandler)
+	}
 }
 
 // snapshot returns the best default snapshot to use for workspace queries.
@@ -303,10 +388,8 @@ func checkForFileChanges(ctx context.Context, snapshot *cache.Snapshot, id metad
 	return events, checkPkg(id)
 }
 
-func textResult(text string) *mcp.CallToolResultFor[any] {
-	return &mcp.CallToolResultFor[any]{
-		Content: []*mcp.Content{
-			mcp.NewTextContent(text),
-		},
+func textResult(text string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: text}},
 	}
 }

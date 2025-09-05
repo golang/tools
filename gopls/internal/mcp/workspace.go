@@ -13,23 +13,13 @@ import (
 
 	"slices"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/immutable"
-	"golang.org/x/tools/internal/mcp"
 )
 
-// The workspaceTool provides a summary of the current Go builds for the
-// workspace.
-func (h *handler) workspaceTool() *mcp.ServerTool {
-	return mcp.NewServerTool(
-		"go_workspace",
-		"Summarize the Go programming language workspace",
-		h.workspaceHandler,
-	)
-}
-
-func (h *handler) workspaceHandler(ctx context.Context, _ *mcp.ServerSession, _ *mcp.CallToolParamsFor[struct{}]) (*mcp.CallToolResultFor[any], error) {
+func (h *handler) workspaceHandler(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 	var summary bytes.Buffer
 	views := h.session.Views()
 	for _, v := range views {
@@ -46,9 +36,9 @@ func (h *handler) workspaceHandler(ctx context.Context, _ *mcp.ServerSession, _ 
 			(v.Type() == cache.AdHocView || v.Type() == cache.GoPackagesDriverView) && // not necessarily Go code
 			pkgs.Len() == 0 { // no packages
 
-			return &mcp.CallToolResultFor[any]{
-				Content: []*mcp.Content{mcp.NewTextContent("This is not a Go workspace. To work on Go code, open a directory inside a Go module.")},
-			}, nil
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: "This is not a Go workspace. To work on Go code, open a directory inside a Go module."}},
+			}, nil, nil
 		}
 
 		dir := v.Root().Path()
@@ -80,7 +70,7 @@ func (h *handler) workspaceHandler(ctx context.Context, _ *mcp.ServerSession, _ 
 			fmt.Fprintln(&summary)
 		}
 	}
-	return textResult(summary.String()), nil
+	return textResult(summary.String()), nil, nil
 }
 
 func summarizeModFiles(ctx context.Context, w io.Writer, snapshot *cache.Snapshot) {
