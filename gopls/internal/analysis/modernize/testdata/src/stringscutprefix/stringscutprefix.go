@@ -5,10 +5,10 @@ import (
 )
 
 var (
-	s, pre string
+	s, pre, suf string
 )
 
-// test supported cases of pattern 1
+// test supported cases of pattern 1 - CutPrefix
 func _() {
 	if strings.HasPrefix(s, pre) { // want "HasPrefix \\+ TrimPrefix can be simplified to CutPrefix"
 		a := strings.TrimPrefix(s, pre)
@@ -39,7 +39,18 @@ func _() {
 	}
 }
 
-// test cases that are not supported by pattern1
+// test basic cases for CutSuffix - only covering the key differences
+func _() {
+	if strings.HasSuffix(s, suf) { // want "HasSuffix \\+ TrimSuffix can be simplified to CutSuffix"
+		a := strings.TrimSuffix(s, suf)
+		_ = a
+	}
+	if strings.HasSuffix(s, "") { // want "HasSuffix \\+ TrimSuffix can be simplified to CutSuffix"
+		println([]byte(strings.TrimSuffix(s, "")))
+	}
+}
+
+// test cases that are not supported by pattern1 - CutPrefix
 func _() {
 	ok := strings.HasPrefix("", "")
 	if ok { // noop, currently it doesn't track the result usage of HasPrefix
@@ -65,9 +76,17 @@ func _() {
 	}
 }
 
+// test basic unsupported case for CutSuffix
+func _() {
+	if strings.HasSuffix(s, suf) {
+		a := strings.TrimSuffix("", "") // noop, as the argument isn't the same
+		_ = a
+	}
+}
+
 var value0 string
 
-// test supported cases of pattern2
+// test supported cases of pattern2 - CutPrefix
 func _() {
 	if after := strings.TrimPrefix(s, pre); after != s { // want "TrimPrefix can be simplified to CutPrefix"
 		println(after)
@@ -114,7 +133,17 @@ func _() {
 	}
 }
 
-// test cases that not supported by pattern2
+// test basic cases for pattern2 - CutSuffix
+func _() {
+	if before := strings.TrimSuffix(s, suf); before != s { // want "TrimSuffix can be simplified to CutSuffix"
+		println(before)
+	}
+	if before := strings.TrimSuffix(s, suf); s != before { // want "TrimSuffix can be simplified to CutSuffix"
+		println(before)
+	}
+}
+
+// test cases that not supported by pattern2 - CutPrefix
 func _() {
 	if after := strings.TrimPrefix(s, pre); s != pre { // noop
 		println(after)
@@ -124,5 +153,12 @@ func _() {
 	}
 	if strings.TrimPrefix(s, pre) != s {
 		println(strings.TrimPrefix(s, pre))
+	}
+}
+
+// test basic unsupported case for pattern2 - CutSuffix
+func _() {
+	if before := strings.TrimSuffix(s, suf); s != suf { // noop
+		println(before)
 	}
 }

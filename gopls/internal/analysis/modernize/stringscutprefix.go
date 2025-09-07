@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -32,7 +33,7 @@ var StringsCutPrefixAnalyzer = &analysis.Analyzer{
 }
 
 // stringscutprefix offers a fix to replace an if statement which
-// calls to the 2 patterns below with strings.CutPrefix.
+// calls to the 2 patterns below with strings.CutPrefix or strings.CutSuffix.
 //
 // Patterns:
 //
@@ -44,11 +45,13 @@ var StringsCutPrefixAnalyzer = &analysis.Analyzer{
 //     =>
 //     if after, ok := strings.CutPrefix(s, pre); ok { use(after) }
 //
+// Similar patterns apply for CutSuffix.
+//
 // The use must occur within the first statement of the block, and the offered fix
-// only replaces the first occurrence of strings.TrimPrefix.
+// only replaces the first occurrence of strings.TrimPrefix/TrimSuffix.
 //
 // Variants:
-// - bytes.HasPrefix usage as pattern 1.
+// - bytes.HasPrefix/HasSuffix usage as pattern 1.
 func stringscutprefix(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
@@ -59,12 +62,12 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 
 		stringsTrimPrefix = index.Object("strings", "TrimPrefix")
 		bytesTrimPrefix   = index.Object("bytes", "TrimPrefix")
+		stringsTrimSuffix = index.Object("strings", "TrimSuffix")
+		bytesTrimSuffix   = index.Object("bytes", "TrimSuffix")
 	)
-	if !index.Used(stringsTrimPrefix, bytesTrimPrefix) {
+	if !index.Used(stringsTrimPrefix, bytesTrimPrefix, stringsTrimSuffix, bytesTrimSuffix) {
 		return nil, nil
 	}
-
-	const fixedMessage = "Replace HasPrefix/TrimPrefix with CutPrefix"
 
 	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.20") {
 		for curIfStmt := range curFile.Preorder((*ast.IfStmt)(nil)) {
@@ -74,24 +77,43 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 			if call, ok := ifStmt.Cond.(*ast.CallExpr); ok && ifStmt.Init == nil && len(ifStmt.Body.List) > 0 {
 
 				obj := typeutil.Callee(info, call)
-				if !analysisinternal.IsFunctionNamed(obj, "strings", "HasPrefix") &&
-					!analysisinternal.IsFunctionNamed(obj, "bytes", "HasPrefix") {
+				if !analysisinternal.IsFunctionNamed(obj, "strings", "HasPrefix", "HasSuffix") &&
+					!analysisinternal.IsFunctionNamed(obj, "bytes", "HasPrefix", "HasSuffix") {
 					continue
 				}
+				isPrefix := strings.HasSuffix(obj.Name(), "Prefix")
 
 				// Replace the first occurrence of strings.TrimPrefix(s, pre) in the first statement only,
-				// but not later statements in case s or pre are modified by intervening logic.
+				// but not later statements in case s or pre are modified by intervening logic (ditto Suffix).
 				firstStmt := curIfStmt.Child(ifStmt.Body).Child(ifStmt.Body.List[0])
 				for curCall := range firstStmt.Preorder((*ast.CallExpr)(nil)) {
 					call1 := curCall.Node().(*ast.CallExpr)
 					obj1 := typeutil.Callee(info, call1)
 					// bytesTrimPrefix or stringsTrimPrefix might be nil if the file doesn't import it,
-					// so we need to ensure the obj1 is not nil otherwise the call1 is not TrimPrefix and cause a panic.
+					// so we need to ensure the obj1 is not nil otherwise the call1 is not TrimPrefix and cause a panic (ditto Suffix).
 					if obj1 == nil ||
-						obj1 != stringsTrimPrefix && obj1 != bytesTrimPrefix {
+						obj1 != stringsTrimPrefix && obj1 != bytesTrimPrefix &&
+							obj1 != stringsTrimSuffix && obj1 != bytesTrimSuffix {
 						continue
 					}
-					// Have: if strings.HasPrefix(s0, pre0) { ...strings.TrimPrefix(s, pre)... }
+
+					isPrefix1 := strings.HasSuffix(obj1.Name(), "Prefix")
+					var cutFuncName, varName, message, fixMessage string
+					if isPrefix && isPrefix1 {
+						cutFuncName = "CutPrefix"
+						varName = "after"
+						message = "HasPrefix + TrimPrefix can be simplified to CutPrefix"
+						fixMessage = "Replace HasPrefix/TrimPrefix with CutPrefix"
+					} else if !isPrefix && !isPrefix1 {
+						cutFuncName = "CutSuffix"
+						varName = "before"
+						message = "HasSuffix + TrimSuffix can be simplified to CutSuffix"
+						fixMessage = "Replace HasSuffix/TrimSuffix with CutSuffix"
+					} else {
+						continue
+					}
+
+					// Have: if strings.HasPrefix(s0, pre0) { ...strings.TrimPrefix(s, pre)... } (ditto Suffix)
 					var (
 						s0   = call.Args[0]
 						pre0 = call.Args[1]
@@ -100,28 +122,29 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 					)
 
 					// check whether the obj1 uses the exact the same argument with strings.HasPrefix
-					// shadow variables won't be valid because we only access the first statement.
+					// shadow variables won't be valid because we only access the first statement (ditto Suffix).
 					if equalSyntax(s0, s) && equalSyntax(pre0, pre) {
-						after := analysisinternal.FreshName(info.Scopes[ifStmt], ifStmt.Pos(), "after")
+						after := analysisinternal.FreshName(info.Scopes[ifStmt], ifStmt.Pos(), varName)
 						_, prefix, importEdits := analysisinternal.AddImport(
 							info,
 							curFile.Node().(*ast.File),
 							obj1.Pkg().Name(),
 							obj1.Pkg().Path(),
-							"CutPrefix",
+							cutFuncName,
 							call.Pos(),
 						)
 						okVarName := analysisinternal.FreshName(info.Scopes[ifStmt], ifStmt.Pos(), "ok")
 						pass.Report(analysis.Diagnostic{
-							// highlight at HasPrefix call.
+							// highlight at HasPrefix call (ditto Suffix).
 							Pos:     call.Pos(),
 							End:     call.End(),
-							Message: "HasPrefix + TrimPrefix can be simplified to CutPrefix",
+							Message: message,
 							SuggestedFixes: []analysis.SuggestedFix{{
-								Message: fixedMessage,
+								Message: fixMessage,
 								// if              strings.HasPrefix(s, pre)     { use(strings.TrimPrefix(s, pre)) }
 								//    ------------ -----------------        -----      --------------------------
 								// if after, ok := strings.CutPrefix(s, pre); ok { use(after)                      }
+								// (ditto Suffix)
 								TextEdits: append(importEdits, []analysis.TextEdit{
 									{
 										Pos:     call.Fun.Pos(),
@@ -131,7 +154,7 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 									{
 										Pos:     call.Fun.Pos(),
 										End:     call.Fun.End(),
-										NewText: fmt.Appendf(nil, "%sCutPrefix", prefix),
+										NewText: fmt.Appendf(nil, "%s%s", prefix, cutFuncName),
 									},
 									{
 										Pos:     call.End(),
@@ -160,13 +183,29 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 				if call, ok := assign.Rhs[0].(*ast.CallExpr); ok && assign.Tok == token.DEFINE {
 					lhs := assign.Lhs[0]
 					obj := typeutil.Callee(info, call)
-					if obj == stringsTrimPrefix &&
-						(equalSyntax(lhs, bin.X) && equalSyntax(call.Args[0], bin.Y) ||
-							(equalSyntax(lhs, bin.Y) && equalSyntax(call.Args[0], bin.X))) {
+
+					if obj != stringsTrimPrefix && obj != bytesTrimPrefix && obj != stringsTrimSuffix && obj != bytesTrimSuffix {
+						continue
+					}
+
+					isPrefix1 := strings.HasSuffix(obj.Name(), "Prefix")
+					var cutFuncName, message, fixMessage string
+					if isPrefix1 {
+						cutFuncName = "CutPrefix"
+						message = "TrimPrefix can be simplified to CutPrefix"
+						fixMessage = "Replace TrimPrefix with CutPrefix"
+					} else {
+						cutFuncName = "CutSuffix"
+						message = "TrimSuffix can be simplified to CutSuffix"
+						fixMessage = "Replace TrimSuffix with CutSuffix"
+					}
+
+					if equalSyntax(lhs, bin.X) && equalSyntax(call.Args[0], bin.Y) ||
+						(equalSyntax(lhs, bin.Y) && equalSyntax(call.Args[0], bin.X)) {
 						okVarName := analysisinternal.FreshName(info.Scopes[ifStmt], ifStmt.Pos(), "ok")
 						// Have one of:
-						//   if rest := TrimPrefix(s, prefix); rest != s {
-						//   if rest := TrimPrefix(s, prefix); s != rest {
+						//   if rest := TrimPrefix(s, prefix); rest != s { (ditto Suffix)
+						//   if rest := TrimPrefix(s, prefix); s != rest { (ditto Suffix)
 
 						// We use AddImport not to add an import (since it exists already)
 						// but to compute the correct prefix in the dot-import case.
@@ -175,7 +214,7 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 							curFile.Node().(*ast.File),
 							obj.Pkg().Name(),
 							obj.Pkg().Path(),
-							"CutPrefix",
+							cutFuncName,
 							call.Pos(),
 						)
 
@@ -183,12 +222,13 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 							// highlight from the init and the condition end.
 							Pos:     ifStmt.Init.Pos(),
 							End:     ifStmt.Cond.End(),
-							Message: "TrimPrefix can be simplified to CutPrefix",
+							Message: message,
 							SuggestedFixes: []analysis.SuggestedFix{{
-								Message: fixedMessage,
+								Message: fixMessage,
 								// if x     := strings.TrimPrefix(s, pre); x != s ...
 								//     ----            ----------          ------
 								// if x, ok := strings.CutPrefix (s, pre); ok     ...
+								// (ditto Suffix)
 								TextEdits: append(importEdits, []analysis.TextEdit{
 									{
 										Pos:     assign.Lhs[0].End(),
@@ -198,7 +238,7 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 									{
 										Pos:     call.Fun.Pos(),
 										End:     call.Fun.End(),
-										NewText: fmt.Appendf(nil, "%sCutPrefix", prefix),
+										NewText: fmt.Appendf(nil, "%s%s", prefix, cutFuncName),
 									},
 									{
 										Pos:     ifStmt.Cond.Pos(),

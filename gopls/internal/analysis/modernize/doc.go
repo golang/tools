@@ -227,6 +227,31 @@ checks for a prefix with `strings.HasPrefix` and then removes it with
 to `strings.CutPrefix`, introduced in Go 1.20. The analyzer also handles
 the equivalent functions in the `bytes` package.
 
+For example, this input:
+
+	if strings.HasPrefix(s, prefix) {
+	    use(strings.TrimPrefix(s, prefix))
+	}
+
+is fixed to:
+
+	if after, ok := strings.CutPrefix(s, prefix); ok {
+	    use(after)
+	}
+
+The analyzer also offers fixes to use CutSuffix in a similar way.
+This input:
+
+	if strings.HasSuffix(s, suffix) {
+	    use(strings.TrimSuffix(s, suffix))
+	}
+
+is fixed to:
+
+	if before, ok := strings.CutSuffix(s, suffix); ok {
+	    use(before)
+	}
+
 # Analyzer stringsseq
 
 stringsseq: replace ranging over Split/Fields with SplitSeq/FieldsSeq

@@ -1678,7 +1678,7 @@
 						},
 						{
 							"Name": "\"stringscutprefix\"",
-							"Doc": "replace HasPrefix/TrimPrefix with CutPrefix\n\nThe stringscutprefix analyzer simplifies a common pattern where code first\nchecks for a prefix with `strings.HasPrefix` and then removes it with\n`strings.TrimPrefix`. It replaces this two-step process with a single call\nto `strings.CutPrefix`, introduced in Go 1.20. The analyzer also handles\nthe equivalent functions in the `bytes` package.",
+							"Doc": "replace HasPrefix/TrimPrefix with CutPrefix\n\nThe stringscutprefix analyzer simplifies a common pattern where code first\nchecks for a prefix with `strings.HasPrefix` and then removes it with\n`strings.TrimPrefix`. It replaces this two-step process with a single call\nto `strings.CutPrefix`, introduced in Go 1.20. The analyzer also handles\nthe equivalent functions in the `bytes` package.\n\nFor example, this input:\n\n\tif strings.HasPrefix(s, prefix) {\n\t    use(strings.TrimPrefix(s, prefix))\n\t}\n\nis fixed to:\n\n\tif after, ok := strings.CutPrefix(s, prefix); ok {\n\t    use(after)\n\t}\n\nThe analyzer also offers fixes to use CutSuffix in a similar way.\nThis input:\n\n\tif strings.HasSuffix(s, suffix) {\n\t    use(strings.TrimSuffix(s, suffix))\n\t}\n\nis fixed to:\n\n\tif before, ok := strings.CutSuffix(s, suffix); ok {\n\t    use(before)\n\t}",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3526,7 +3526,7 @@
 		},
 		{
 			"Name": "stringscutprefix",
-			"Doc": "replace HasPrefix/TrimPrefix with CutPrefix\n\nThe stringscutprefix analyzer simplifies a common pattern where code first\nchecks for a prefix with `strings.HasPrefix` and then removes it with\n`strings.TrimPrefix`. It replaces this two-step process with a single call\nto `strings.CutPrefix`, introduced in Go 1.20. The analyzer also handles\nthe equivalent functions in the `bytes` package.",
+			"Doc": "replace HasPrefix/TrimPrefix with CutPrefix\n\nThe stringscutprefix analyzer simplifies a common pattern where code first\nchecks for a prefix with `strings.HasPrefix` and then removes it with\n`strings.TrimPrefix`. It replaces this two-step process with a single call\nto `strings.CutPrefix`, introduced in Go 1.20. The analyzer also handles\nthe equivalent functions in the `bytes` package.\n\nFor example, this input:\n\n\tif strings.HasPrefix(s, prefix) {\n\t    use(strings.TrimPrefix(s, prefix))\n\t}\n\nis fixed to:\n\n\tif after, ok := strings.CutPrefix(s, prefix); ok {\n\t    use(after)\n\t}\n\nThe analyzer also offers fixes to use CutSuffix in a similar way.\nThis input:\n\n\tif strings.HasSuffix(s, suffix) {\n\t    use(strings.TrimSuffix(s, suffix))\n\t}\n\nis fixed to:\n\n\tif before, ok := strings.CutSuffix(s, suffix); ok {\n\t    use(before)\n\t}",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringscutprefix",
 			"Default": true
 		},
