@@ -38,10 +38,16 @@ The editing workflow is iterative. You should cycle through these steps until th
 
 3. **Make edits**: Make the required edits, including edits to references you identified in the previous step. Don't proceed to the next step until all planned edits are complete.
 
-4. **Check for errors**: After every code modification, you MUST call the `go_diagnostics` tool. Pass the paths of the files you have edited. This tool will report any build or analysis errors.
+4. **Rename symbols**: For renaming symbols across the workspace, use the `go_rename` tool which will automatically find and rename all references. ALWAYS follow this workflow:
+   - First, run with `dryRun: true` (default) to preview changes: `go_rename({"file":"/path/to/server.go","line":10,"column":5,"newName":"NewServerName"})`
+   - Show the user what changes would be made and ask for confirmation
+   - Only if the user approves, apply the changes: `go_rename({"file":"/path/to/server.go","line":10,"column":5,"newName":"NewServerName","dryRun":false})`
+   - Exception: Only skip the preview step if the user explicitly requests to apply changes immediately
+
+5. **Check for errors**: After every code modification, you MUST call the `go_diagnostics` tool. Pass the paths of the files you have edited. This tool will report any build or analysis errors.
    EXAMPLE: `go_diagnostics({"files":["/path/to/server.go"]})`
 
-5. **Fix errors**: If `go_diagnostics` reports any errors, fix them. The tool may provide suggested quick fixes in the form of diffs. You should review these diffs and apply them if they are correct. Once you've applied a fix, re-run `go_diagnostics` to confirm that the issue is resolved. It is OK to ignore 'hint' or 'info' diagnostics if they are not relevant to the current task. Note that Go diagnostic messages may contain a summary of the source code, which may not match its exact text.
+6. **Fix errors**: If `go_diagnostics` reports any errors, fix them. The tool may provide suggested quick fixes in the form of diffs. You should review these diffs and apply them if they are correct. Once you've applied a fix, re-run `go_diagnostics` to confirm that the issue is resolved. It is OK to ignore 'hint' or 'info' diagnostics if they are not relevant to the current task. Note that Go diagnostic messages may contain a summary of the source code, which may not match its exact text.
 
-6. **Run tests**: Once `go_diagnostics` reports no errors (and ONLY once there are no errors), run the tests for the packages you have changed. You can do this with `go test [packagePath...]`. Don't run `go test ./...` unless the user explicitly requests it, as doing so may slow down the iteration loop.
+7. **Run tests**: Once `go_diagnostics` reports no errors (and ONLY once there are no errors), run the tests for the packages you have changed. You can do this with `go test [packagePath...]`. Don't run `go test ./...` unless the user explicitly requests it, as doing so may slow down the iteration loop.
 

@@ -75,7 +75,9 @@ func Serve(ctx context.Context, address string, sessions Sessions, isDaemon bool
 }
 
 // StartStdIO starts an MCP server over stdio.
-func StartStdIO(ctx context.Context, session *cache.Session, server protocol.Server, rpcLog io.Writer) error {
+func StartStdIO(
+	ctx context.Context, session *cache.Session, server protocol.Server, rpcLog io.Writer,
+) error {
 	transport := mcp.NewStdioTransport()
 	var t mcp.Transport = transport
 	if rpcLog != nil {
@@ -166,6 +168,7 @@ func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
 		h.symbolReferencesTool(),
 		h.searchTool(),
 		h.fileContextTool(),
+		h.renameTool(),
 	}
 	disabledTools := append(defaultTools,
 		// The fileMetadata tool is redundant with fileContext.
@@ -222,7 +225,9 @@ func (h *handler) snapshot() (*cache.Snapshot, func(), error) {
 //
 // This helps avoid stale packages, but is not a substitute for real file
 // watching, as it misses things like files being added to a package.
-func (h *handler) fileOf(ctx context.Context, file string) (file.Handle, *cache.Snapshot, func(), error) {
+func (h *handler) fileOf(
+	ctx context.Context, file string,
+) (file.Handle, *cache.Snapshot, func(), error) {
 	uri := protocol.URIFromPath(file)
 	fh, snapshot, release, err := h.session.FileOf(ctx, uri)
 	if err != nil {
@@ -260,7 +265,9 @@ func (h *handler) fileOf(ctx context.Context, file string) (file.Handle, *cache.
 //
 // It also doesn't catch package changes that occur due to added files or
 // changes to the go.mod file.
-func checkForFileChanges(ctx context.Context, snapshot *cache.Snapshot, id metadata.PackageID) ([]protocol.FileEvent, error) {
+func checkForFileChanges(
+	ctx context.Context, snapshot *cache.Snapshot, id metadata.PackageID,
+) ([]protocol.FileEvent, error) {
 	var events []protocol.FileEvent
 
 	seen := make(map[metadata.PackageID]struct{})
