@@ -12,7 +12,7 @@ import (
 	"go/types"
 	"testing"
 
-	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/internal/astutil"
 )
 
 func TestFlatFields(t *testing.T) {

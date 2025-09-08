@@ -8,7 +8,7 @@ import (
 	"go/ast"
 
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/internal/astutil"
 )
 
 const (

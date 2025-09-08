@@ -24,9 +24,9 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
-	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -159,7 +159,7 @@ Outer:
 		indentation string
 		stmtOK      bool // ok to use ":=" instead of var/const decl?
 	)
-	if funcDecl, ok := visiblePath[len(visiblePath)-2].(*ast.FuncDecl); ok && goplsastutil.NodeContains(funcDecl.Body, start) {
+	if funcDecl, ok := visiblePath[len(visiblePath)-2].(*ast.FuncDecl); ok && internalastutil.NodeContains(funcDecl.Body, start) {
 		before, err := stmtToInsertVarBefore(visiblePath, variables)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot find location to insert extraction: %v", err)
@@ -313,7 +313,7 @@ func stmtToInsertVarBefore(path []ast.Node, variables []*variable) (ast.Stmt, er
 			return false
 		}
 		for _, v := range variables {
-			if goplsastutil.NodeContains(stmt, v.obj.Pos()) {
+			if internalastutil.NodeContains(stmt, v.obj.Pos()) {
 				return true
 			}
 		}
@@ -427,14 +427,14 @@ func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end t
 		// are equal to the selected expression.
 		ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
 			if e, ok := n.(ast.Expr); ok {
-				if goplsastutil.Equal(e, expr, func(x, y *ast.Ident) bool {
+				if internalastutil.Equal(e, expr, func(x, y *ast.Ident) bool {
 					xobj, yobj := info.ObjectOf(x), info.ObjectOf(y)
 					// The two identifiers must resolve to the same object,
 					// or to a declaration within the candidate expression.
 					// (This allows two copies of "func (x int) { print(x) }"
 					// to match.)
-					if xobj != nil && goplsastutil.NodeContains(e, xobj.Pos()) &&
-						yobj != nil && goplsastutil.NodeContains(expr, yobj.Pos()) {
+					if xobj != nil && internalastutil.NodeContains(e, xobj.Pos()) &&
+						yobj != nil && internalastutil.NodeContains(expr, yobj.Pos()) {
 						return x.Name == y.Name
 					}
 					// Use info.Uses to avoid including declaration, for example,

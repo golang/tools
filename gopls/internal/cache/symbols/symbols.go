@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/frob"
+	"golang.org/x/tools/internal/astutil"
 )
 
 // Symbol holds a precomputed symbol value. This is a subset of the information

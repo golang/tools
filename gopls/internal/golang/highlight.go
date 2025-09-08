@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/fmtstr"
@@ -225,7 +224,7 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.
 		// cursorPos can't equal to end position, otherwise the two
 		// neighborhood such as (%[2]*d) are both highlighted if cursor in "d" (ending of [2]*).
 		if rangeStart <= cursorPos && cursorPos < rangeEnd ||
-			arg != nil && goplsastutil.NodeContains(arg, cursorPos) {
+			arg != nil && internalastutil.NodeContains(arg, cursorPos) {
 			highlightRange(result, rangeStart, rangeEnd, protocol.Write)
 			if arg != nil {
 				succeededArg = argIndex

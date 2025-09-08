@@ -9,8 +9,6 @@ import (
 	"bytes"
 	"go/scanner"
 	"go/token"
-
-	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
 // PurgeFuncBodies returns a copy of src in which the contents of each
@@ -60,8 +58,8 @@ func PurgeFuncBodies(src []byte) []byte {
 					// struct/interface type: leave alone
 				} else if len(braces) == 0 { // toplevel only
 					// Delete {...} body.
-					start, _ := safetoken.Offset(file, top)
-					end, _ := safetoken.Offset(file, pos)
+					start := file.Offset(top)
+					end := file.Offset(pos)
 					out.Write(src[cursor : start+len("{")])
 					cursor = end
 				}

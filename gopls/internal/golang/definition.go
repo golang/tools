@@ -21,8 +21,8 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -177,7 +177,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	for _, decl := range pgf.File.Decls {
 		if decl, ok := decl.(*ast.FuncDecl); ok &&
 			decl.Body == nil &&
-			goplsastutil.NodeContains(decl.Name, pos) {
+			internalastutil.NodeContains(decl.Name, pos) {
 			return nonGoDefinition(ctx, snapshot, pkg, decl.Name.Name)
 		}
 	}

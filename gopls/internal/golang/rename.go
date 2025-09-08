@@ -70,7 +70,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	internalastutil "golang.org/x/tools/internal/astutil"
@@ -255,13 +254,13 @@ func nameBlankParams(ftype *ast.FuncType) *ast.FuncType {
 
 	// First, collect existing names.
 	scope := make(map[string]bool)
-	for name := range goplsastutil.FlatFields(ftype.Params) {
+	for name := range internalastutil.FlatFields(ftype.Params) {
 		if name != nil {
 			scope[name.Name] = true
 		}
 	}
 	blanks := 0
-	for name, field := range goplsastutil.FlatFields(ftype.Params) {
+	for name, field := range internalastutil.FlatFields(ftype.Params) {
 		if name == nil {
 			name = ast.NewIdent("_")
 			field.Names = append(field.Names, name) // ok to append
@@ -304,11 +303,11 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 		return nil, fmt.Errorf("changing results not yet supported (got %d results, want %d)", got, want)
 	}
 	var resultTypes []string
-	for _, field := range goplsastutil.FlatFields(ftyp.Results) {
+	for _, field := range internalastutil.FlatFields(ftyp.Results) {
 		resultTypes = append(resultTypes, FormatNode(token.NewFileSet(), field.Type))
 	}
 	resultIndex := 0
-	for _, field := range goplsastutil.FlatFields(newType.Results) {
+	for _, field := range internalastutil.FlatFields(newType.Results) {
 		if FormatNode(token.NewFileSet(), field.Type) != resultTypes[resultIndex] {
 			return nil, fmt.Errorf("changing results not yet supported")
 		}
@@ -320,7 +319,7 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 		typ string
 	}
 	oldParams := make(map[string]paramInfo)
-	for name, field := range goplsastutil.FlatFields(ftyp.Params) {
+	for name, field := range internalastutil.FlatFields(ftyp.Params) {
 		oldParams[name.Name] = paramInfo{
 			idx: len(oldParams),
 			typ: types.ExprString(field.Type),
@@ -328,7 +327,7 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 	}
 
 	var newParams []int
-	for name, field := range goplsastutil.FlatFields(newType.Params) {
+	for name, field := range internalastutil.FlatFields(newType.Params) {
 		if name == nil {
 			return nil, fmt.Errorf("need named fields")
 		}
@@ -1735,7 +1734,7 @@ func parsePackageNameDecl(ctx context.Context, snapshot *cache.Snapshot, fh file
 	// Careful: because we used parsego.Header,
 	// pgf.Pos(ppos) may be beyond EOF => (0, err).
 	pos, _ := pgf.PositionPos(ppos)
-	return pgf, goplsastutil.NodeContains(pgf.File.Name, pos), nil
+	return pgf, internalastutil.NodeContains(pgf.File.Name, pos), nil
 }
 
 // posEdit returns an edit to replace the (start, end) range of tf with 'new'.

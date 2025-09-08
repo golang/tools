@@ -21,8 +21,8 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
-	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/refactor/inline"
@@ -195,7 +195,7 @@ func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.P
 		if obj1 == nil {
 			continue // undefined; or a def, not a use
 		}
-		if goplsastutil.NodeContains(curRHS.Node(), obj1.Pos()) {
+		if internalastutil.NodeContains(curRHS.Node(), obj1.Pos()) {
 			continue // not free (id is defined within RHS)
 		}
 		_, obj2 := scope.LookupParent(id.Name, pos)

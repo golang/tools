@@ -26,9 +26,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
-	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/analysisinternal"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -352,7 +352,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 				return false
 			}
 			if fn.Signature().Recv() != nil {
-				if _, ident, _ := goplsastutil.UnpackRecv(decl.Recv.List[0].Type); ident == nil || !ident.IsExported() {
+				if _, ident, _ := internalastutil.UnpackRecv(decl.Recv.List[0].Type); ident == nil || !ident.IsExported() {
 					return false
 				}
 			}
@@ -460,7 +460,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 
 		// Reject if receiver is unexported.
 		if sig.Recv() != nil {
-			if _, ident, _ := goplsastutil.UnpackRecv(decl.Recv.List[0].Type); ident == nil || !ident.IsExported() {
+			if _, ident, _ := internalastutil.UnpackRecv(decl.Recv.List[0].Type); ident == nil || !ident.IsExported() {
 				return nil, nil, fmt.Errorf("cannot add external test for method %s.%s as receiver type is not exported", ident.Name, decl.Name)
 			}
 		}

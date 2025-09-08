@@ -47,8 +47,8 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
-	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -566,7 +566,7 @@ window.addEventListener('load', function() {
 		// appear as separate decls. We should too.
 		var buf bytes.Buffer
 		for _, file := range pkg.CompiledGoFiles() {
-			if goplsastutil.NodeContains(file.File, n.Pos()) {
+			if internalastutil.NodeContains(file.File, n.Pos()) {
 				pos := n.Pos()
 
 				// emit emits source in the interval [pos:to] and updates pos.

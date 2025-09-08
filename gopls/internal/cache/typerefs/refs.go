@@ -13,8 +13,8 @@ import (
 
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
-	"golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/frob"
+	"golang.org/x/tools/internal/astutil"
 )
 
 // Encode analyzes the Go syntax trees of a package, constructs a

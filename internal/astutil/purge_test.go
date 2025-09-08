@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/gopls/internal/util/astutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/testenv"
 )
 

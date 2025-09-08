@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	goplsastutil "golang.org/x/tools/gopls/internal/util/astutil"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
@@ -176,7 +175,7 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 	}
 
 	var newParamFields []flatField
-	for id, field := range goplsastutil.FlatFields(info.decl.Type.Params) {
+	for id, field := range internalastutil.FlatFields(info.decl.Type.Params) {
 		typ := pkg.TypesInfo().TypeOf(field.Type)
 		if typ == nil {
 			return nil, fmt.Errorf("missing field type for field #%d", len(newParamFields))
@@ -257,7 +256,7 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 		}
 		blanks := 0
 		paramIndex := 0 // global param index.
-		for id, field := range goplsastutil.FlatFields(params) {
+		for id, field := range internalastutil.FlatFields(params) {
 			argIndex, ok := oldParams[paramIndex]
 			paramIndex++
 			if !ok {
