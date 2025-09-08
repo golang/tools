@@ -13,9 +13,11 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"unsafe"
 
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -58,11 +60,6 @@ func newLocal(name string, t types.Type) local {
 	return local{val: val{name: name, typ: t}}
 }
 
-// newNamedType creates a bogus type named `name`.
-func newNamedType(name string) *types.Named {
-	return types.NewNamed(types.NewTypeName(token.NoPos, nil, name, nil), types.Universe.Lookup("int").Type(), nil)
-}
-
 // sccString is a utility for stringifying `nodeToScc`. Every
 // scc is represented as a string where string representation
 // of scc nodes are sorted and concatenated using `;`.
@@ -99,7 +96,9 @@ func nodeToTypeString(pMap propTypeMap) map[string]string {
 	for node := range pMap {
 		var propStrings []string
 		for prop := range pMap.propTypes(node) {
-			propStrings = append(propStrings, propTypeString(prop))
+			s := propTypeString(prop)
+			s = strings.ReplaceAll(s, "example.com.", "")
+			propStrings = append(propStrings, s)
 		}
 		sort.Strings(propStrings)
 		nodeToTypeStr[node.String()] = strings.Join(propStrings, ";")
@@ -149,15 +148,6 @@ func sccMapsConsistent(sccs [][]idx, idxToSccID []int) bool {
 	return true
 }
 
-// setName sets name of the function `f` to `name`
-// using reflection since setting the name otherwise
-// is only possible within the ssa package.
-func setName(f *ssa.Function, name string) {
-	fi := reflect.ValueOf(f).Elem().FieldByName("name")
-	fi = reflect.NewAt(fi.Type(), unsafe.Pointer(fi.UnsafeAddr())).Elem()
-	fi.SetString(name)
-}
-
 // testSuite produces a named set of graphs as follows, where
 // parentheses contain node types and F nodes stand for function
 // nodes whose content is function named F:
@@ -195,20 +185,35 @@ func setName(f *ssa.Function, name string) {
 //	     t1 (A) -> t2 (B) -> F1 -> F2 -> F3 -> F4
 //	      |        |          |           |
 //	       <-------           <------------
-func testSuite() map[string]*vtaGraph {
-	a := newNamedType("A")
-	b := newNamedType("B")
-	c := newNamedType("C")
-	sig := types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(), false)
+func testSuite(t *testing.T) map[string]*vtaGraph {
+	ar := txtar.Parse([]byte(`-- go.mod --
+module example.com
+go 1.24
 
-	f1 := &ssa.Function{Signature: sig}
-	setName(f1, "F1")
-	f2 := &ssa.Function{Signature: sig}
-	setName(f2, "F2")
-	f3 := &ssa.Function{Signature: sig}
-	setName(f3, "F3")
-	f4 := &ssa.Function{Signature: sig}
-	setName(f4, "F4")
+-- p.go --
+package p
+type A struct{}
+type B struct{}
+type C struct{}
+func F1()
+func F2()
+func F3()
+func F4()
+`))
+	ppkgs := testfiles.LoadPackages(t, ar, ".")
+	if len(ppkgs) != 1 {
+		t.Fatalf("LoadPackages returned %d packages, want 1", len(ppkgs))
+	}
+	_, ssapkgs := ssautil.Packages(ppkgs, ssa.BuilderMode(0))
+	pkg := ssapkgs[0]
+
+	a := pkg.Type("A").Type().(*types.Named)
+	b := pkg.Type("B").Type().(*types.Named)
+	c := pkg.Type("C").Type().(*types.Named)
+	f1 := pkg.Func("F1")
+	f2 := pkg.Func("F2")
+	f3 := pkg.Func("F3")
+	f4 := pkg.Func("F4")
 
 	graphs := make(map[string]*vtaGraph)
 	v := &vtaGraph{}
@@ -260,7 +265,7 @@ func testSuite() map[string]*vtaGraph {
 }
 
 func TestSCC(t *testing.T) {
-	suite := testSuite()
+	suite := testSuite(t)
 	for _, test := range []struct {
 		name  string
 		graph *vtaGraph
@@ -294,7 +299,7 @@ func TestSCC(t *testing.T) {
 }
 
 func TestPropagation(t *testing.T) {
-	suite := testSuite()
+	suite := testSuite(t)
 	var canon typeutil.Map
 	for _, test := range []struct {
 		name  string
