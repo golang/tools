@@ -88,3 +88,14 @@ func _(x string) string {
 	}
 	return s
 }
+
+// Regression test for bug in a GenDecl with parens.
+func issue75318(slice []string) string {
+	var (
+		msg string
+	)
+	for _, s := range slice {
+		msg += s // want "using string \\+= string in a loop is inefficient"
+	}
+	return msg
+}

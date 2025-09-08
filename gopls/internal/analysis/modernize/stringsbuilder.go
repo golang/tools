@@ -179,7 +179,7 @@ nextcand:
 				// delete "= expr"
 				edits = append(edits, analysis.TextEdit{
 					Pos: init,
-					End: decl.End(),
+					End: spec.End(),
 				})
 			}
 
