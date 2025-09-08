@@ -20,6 +20,7 @@ import (
 	"runtime/pprof"
 	"strings"
 
+	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/internal/gocommand"
 	"golang.org/x/tools/internal/imports"
 )
@@ -51,7 +52,7 @@ var (
 
 func init() {
 	flag.BoolVar(&options.AllErrors, "e", false, "report all errors (not just the first 10 on different lines)")
-	flag.StringVar(&options.LocalPrefix, "local", "", "put imports beginning with this string after 3rd-party packages; comma-separated list")
+	flag.StringVar(&options.LocalPrefix, "local", "", "put imports beginning with this string after 3rd-party packages; comma-separated list; if set to auto, use module path from go.mod as prefix")
 	flag.BoolVar(&options.FormatOnly, "format-only", false, "if true, don't fix imports and only format. In this mode, goimports is effectively gofmt, with the addition that imports are grouped into sections.")
 }
 
@@ -266,6 +267,23 @@ func gofmtMain() {
 		fmt.Fprintf(os.Stderr, "negative tabwidth %d\n", options.TabWidth)
 		exitCode = 2
 		return
+	}
+
+	if options.LocalPrefix == "auto" {
+		wd, err := os.Getwd()
+		if err != nil {
+			log.Fatal(err)
+		}
+		filename := filepath.Join(wd, "go.mod")
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		gomodModulePath := modfile.ModulePath(data)
+		if err != nil {
+			log.Fatal(err)
+		}
+		options.LocalPrefix = gomodModulePath
 	}
 
 	if len(paths) == 0 {
