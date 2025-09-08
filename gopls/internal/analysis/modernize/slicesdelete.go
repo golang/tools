@@ -13,8 +13,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/generated"
 )
 
 // Warning: this analyzer is not safe to enable by default (not nil-preserving).

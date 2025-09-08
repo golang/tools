@@ -15,8 +15,8 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/analysis/generated"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/typeparams"
 )
 
