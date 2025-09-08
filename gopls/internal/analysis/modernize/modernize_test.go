@@ -5,10 +5,13 @@
 package modernize_test
 
 import (
+	"os/exec"
+	"strings"
 	"testing"
 
 	. "golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/gopls/internal/analysis/modernize"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestAppendClipped(t *testing.T) {
@@ -79,4 +82,21 @@ func TestTestingContext(t *testing.T) {
 
 func TestWaitGroup(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.WaitGroupAnalyzer, "waitgroup")
+}
+
+// TestNoGoplsImports ensures modernize acquires no gopls dependencies,
+// in preparation for moving it to x/tools/go/analysis (#75266).
+func TestNoGoplsImports(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+
+	cmd := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for imp := range strings.SplitSeq(string(out), "\n") {
+		if strings.HasPrefix(imp, "golang.org/x/tools/gopls/") {
+			t.Errorf("modernize imports %q", imp)
+		}
+	}
 }
