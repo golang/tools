@@ -130,7 +130,10 @@ func rangeint(pass *analysis.Pass) (any, error) {
 						// Have: for i = 0; i < limit; i++ {}
 
 						// Find references to i within the loop body.
-						v := info.ObjectOf(index)
+						v := info.ObjectOf(index).(*types.Var)
+						if v.Kind() == types.PackageVar {
+							continue nextLoop
+						}
 						used := false
 						for curId := range curLoop.Child(loop.Body).Preorder((*ast.Ident)(nil)) {
 							id := curId.Node().(*ast.Ident)
@@ -161,8 +164,21 @@ func rangeint(pass *analysis.Pass) (any, error) {
 						if init.Tok == token.ASSIGN {
 							for curId := range curLoop.Parent().Preorder((*ast.Ident)(nil)) {
 								id := curId.Node().(*ast.Ident)
-								if id.Pos() > loop.End() && info.Uses[id] == v {
-									continue nextLoop
+								if info.Uses[id] == v {
+									// Is i used after loop?
+									if id.Pos() > loop.End() {
+										continue nextLoop
+									}
+									// Is i used within a defer statement
+									// that is within the scope of i?
+									//     var i int
+									//     defer func() { print(i)}
+									//     for i = ... { ... }
+									for curDefer := range curId.Enclosing((*ast.DeferStmt)(nil)) {
+										if curDefer.Node().Pos() > v.Pos() {
+											continue nextLoop
+										}
+									}
 								}
 							}
 						}

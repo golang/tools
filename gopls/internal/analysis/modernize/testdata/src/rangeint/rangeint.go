@@ -135,6 +135,8 @@ func _(i int, s struct{ i int }, slice []int) {
 	for i := 0; i < len(slice); i++ { // nope: i is incremented within loop
 		i += 1
 	}
+	for Global = 0; Global < 10; Global++ { // nope: loop index is a global variable.
+	}
 }
 
 var Global int
@@ -230,4 +232,31 @@ func issue73037() {
 			println(a, b)
 		}
 	}
+}
+
+func issue75289() {
+	// A use of i within a defer may be textually before the loop but runs
+	// after, so it should cause the loop to be rejected as a candidate
+	// to avoid it observing a different final value of i.
+	{
+		var i int
+		defer func() { println(i) }()
+		for i = 0; i < 10; i++ { // nope: i is accessed after the loop (via defer)
+		}
+	}
+
+	// A use of i within a defer within the loop is also a dealbreaker.
+	{
+		var i int
+		for i = 0; i < 10; i++ { // nope: i is accessed after the loop (via defer)
+			defer func() { println(i) }()
+		}
+	}
+
+	// This (outer) defer is irrelevant.
+	defer func() {
+		var i int
+		for i = 0; i < 10; i++ { // want "for loop can be modernized using range over int"
+		}
+	}()
 }
