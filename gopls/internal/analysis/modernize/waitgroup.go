@@ -82,8 +82,8 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 		addCallRecv := ast.Unparen(addCall.Fun).(*ast.SelectorExpr).X
 
 		// Following statement must be go func() { ... } ().
-		addStmt, ok := curAddCall.Parent().Node().(*ast.ExprStmt)
-		if !ok {
+		curAddStmt := curAddCall.Parent()
+		if !is[*ast.ExprStmt](curAddStmt.Node()) {
 			continue // unnecessary parens?
 		}
 		curNext, ok := curAddCall.Parent().NextSibling()
@@ -120,6 +120,10 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 		if doneStmt == nil {
 			continue
 		}
+		curDoneStmt, ok := curNext.FindNode(doneStmt)
+		if !ok {
+			panic("can't find Cursor for 'done' statement")
+		}
 
 		file := enclosingFile(curAddCall)
 		if !fileUses(info, file, "go1.25") {
@@ -140,9 +144,9 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 				Message: "Simplify by using WaitGroup.Go",
 				TextEdits: slices.Concat(
 					// delete "wg.Add(1)"
-					analysisinternal.DeleteStmt(pass.Fset, file, addStmt, nil),
+					analysisinternal.DeleteStmt(pass.Fset, curAddStmt),
 					// delete "wg.Done()" or "defer wg.Done()"
-					analysisinternal.DeleteStmt(pass.Fset, file, doneStmt, nil),
+					analysisinternal.DeleteStmt(pass.Fset, curDoneStmt),
 					[]analysis.TextEdit{
 						// go    func()
 						// ------

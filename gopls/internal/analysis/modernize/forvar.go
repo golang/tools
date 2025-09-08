@@ -11,7 +11,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 )
@@ -46,7 +45,6 @@ func forvar(pass *analysis.Pass) (any, error) {
 
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.22") {
-		astFile := curFile.Node().(*ast.File)
 		for curLoop := range curFile.Preorder((*ast.RangeStmt)(nil)) {
 			loop := curLoop.Node().(*ast.RangeStmt)
 			if loop.Tok != token.DEFINE {
@@ -71,7 +69,8 @@ func forvar(pass *analysis.Pass) (any, error) {
 					len(assign.Lhs) == len(assign.Rhs) &&
 					isLoopVarRedecl(assign) {
 
-					edits := analysisinternal.DeleteStmt(pass.Fset, astFile, stmt, bug.Reportf)
+					curStmt, _ := curLoop.FindNode(stmt)
+					edits := analysisinternal.DeleteStmt(pass.Fset, curStmt)
 					if len(edits) > 0 {
 						pass.Report(analysis.Diagnostic{
 							Pos:     stmt.Pos(),
