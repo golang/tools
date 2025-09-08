@@ -22,6 +22,8 @@ func TestCanImport(t *testing.T) {
 	}{
 		{"fmt", "internal", true},
 		{"fmt", "internal/foo", true},
+		{"fmt", "fmt/internal/foo", true},
+		{"fmt", "cmd/internal/archive", false},
 		{"a.com/b", "internal", false},
 		{"a.com/b", "xinternal", true},
 		{"a.com/b", "internal/foo", false},

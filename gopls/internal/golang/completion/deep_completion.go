@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/analysisinternal"
 )
 
 // MaxDeepCompletions limits deep completion results because in most cases
@@ -159,6 +160,10 @@ func (c *completer) deepSearch(ctx context.Context, minDepth int, deadline *time
 			if !c.completionContext.packageCompletion &&
 				obj.Pkg() != nil && obj.Pkg() != c.pkg.Types() && !obj.Exported() {
 				continue
+			}
+
+			if cand.imp != nil && !analysisinternal.CanImport(string(c.pkg.Metadata().PkgPath), cand.imp.importPath) {
+				continue // inaccessible internal package
 			}
 
 			// If we want a type name, don't offer non-type name candidates.

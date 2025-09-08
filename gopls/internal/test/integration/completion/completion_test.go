@@ -300,6 +300,49 @@ func compareCompletionLabels(want []string, gotItems []protocol.CompletionItem) 
 	return ""
 }
 
+func TestIssue74611(t *testing.T) {
+	// Completions should not offer symbols from unimported packages
+	// that cannot be imported because they are "internal".
+	//
+	// Ideally, we should test std case as well but because mocking
+	// a fake stdlib is hard, we just test the 3rd user case.
+	// std test is done interactively.
+	const files = `-- go.mod --
+module mod.com/cmd
+
+go 1.21
+
+-- a.go --
+package pkg
+import "fmt"
+
+func main() {
+	fmt.Println("call Println to use fmt")
+	_ = maps
+} // (completion requested at start of line)
+`
+
+	WithOptions().Run(t, files, func(t *testing.T, env *Env) {
+		filename := "a.go"
+		// Trigger unimported completions for the maps package.
+		env.OpenFile(filename)
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch(filename, "\n}")
+		completions := env.Completion(loc)
+		if len(completions.Items) == 0 {
+			t.Fatalf("no completion items")
+		}
+		runtimeMaps := `"internal/runtime/maps"`
+		found := slices.ContainsFunc(completions.Items, func(item protocol.CompletionItem) bool {
+			return item.Detail == runtimeMaps
+		})
+
+		if found {
+			t.Fatalf("unwanted completion: %s", runtimeMaps)
+		}
+	})
+}
+
 func TestUnimportedCompletion(t *testing.T) {
 	const mod = `
 -- go.mod --
