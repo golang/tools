@@ -7,6 +7,7 @@ package completion
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -258,6 +259,12 @@ package ma
 	})
 }
 
+// compareCompletionLabels returns a non-empty string reporting the
+// difference (if any) between the labels of the actual completion
+// items (gotItems) and the expected list (want).
+//
+// A want item with a "?" suffix is optional.
+//
 // TODO(rfindley): audit/clean up call sites for this helper, to ensure
 // consistent test errors.
 func compareCompletionLabels(want []string, gotItems []protocol.CompletionItem) string {
@@ -273,6 +280,19 @@ func compareCompletionLabels(want []string, gotItems []protocol.CompletionItem) 
 	if len(got) == 0 && len(want) == 0 {
 		return "" // treat nil and the empty slice as equivalent
 	}
+
+	// A 'want' item with a '?' suffix is optional, to ease
+	// migration across versions. Remove any that are not present
+	// in the 'got' set.
+	out := want[:0] // in-place compaction
+	for _, item := range want {
+		item, optional := strings.CutSuffix(item, "?")
+		if optional && !slices.Contains(got, item) {
+			continue // optional item is missing
+		}
+		out = append(out, item)
+	}
+	want = out
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		return fmt.Sprintf("completion item mismatch (-want +got):\n%s", diff)

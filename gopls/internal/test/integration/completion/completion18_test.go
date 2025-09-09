@@ -58,6 +58,8 @@ func (s SyncMap[XX,string]) g(v UU) {}
 }
 
 func TestFuzzFunc(t *testing.T) {
+	// The behavior under test is derived from the std module,
+	// not the x/tools/internal/stdlib linked into gopls.
 	testenv.NeedsGoCommand1Point(t, 25) // go1.25 added TBF.Attr
 
 	// use the example from the package documentation
@@ -103,7 +105,9 @@ func FuzzHex(f *testing.F) {
 		offset uint32 // UTF16 length from the beginning of pat to what the user just typed
 		want   []string
 	}{
-		{"a_test.go", "f.Ad", 3, []string{"Add", "Attr"}},
+		// To avoid breaking these assertions as the "testing" package evolves,
+		// use an optional (?) suffix for newer symbols.
+		{"a_test.go", "f.Ad", 3, []string{"Add", "Attr", "Artifact?"}}, // Attr is 1.25, Artifact is 1.26
 		{"c_test.go", " f.F", 4, []string{"Failed"}},
 		{"c_test.go", "f.N", 3, []string{"Name"}},
 		{"b_test.go", "f.F", 3, []string{"Fuzz(func(t *testing.T, a []byte)", "Fail", "FailNow",
