@@ -10,6 +10,9 @@ import (
 	"go/token"
 	"go/types"
 	"strings"
+
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 )
 
 // FormatTypeParams turns TypeParamList into its Go representation, such as:
@@ -42,14 +45,18 @@ func FormatTypeParams(tparams *types.TypeParamList) string {
 // the hole that must be filled by EXPR has type (string, int).
 //
 // It returns nil on failure.
-//
-// TODO(adonovan): simplify using Cursor.
-func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.Type {
+
+func TypesFromContext(info *types.Info, cur inspector.Cursor) []types.Type {
 	anyType := types.Universe.Lookup("any").Type()
 	var typs []types.Type
-	parent := parentNode(path)
-	if parent == nil {
-		return nil
+
+	// TODO: do cur = unparenEnclosing(cur), once CL 701035 lands.
+	for {
+		ek, _ := cur.ParentEdge()
+		if ek != edge.ParenExpr_X {
+			break
+		}
+		cur = cur.Parent()
 	}
 
 	validType := func(t types.Type) types.Type {
@@ -60,94 +67,80 @@ func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.
 		}
 	}
 
-	switch parent := parent.(type) {
-	case *ast.AssignStmt:
+	ek, idx := cur.ParentEdge()
+	switch ek {
+	case edge.AssignStmt_Lhs, edge.AssignStmt_Rhs:
+		assign := cur.Parent().Node().(*ast.AssignStmt)
 		// Append all lhs's type
-		if len(parent.Rhs) == 1 {
-			for _, lhs := range parent.Lhs {
+		if len(assign.Rhs) == 1 {
+			for _, lhs := range assign.Lhs {
 				t := info.TypeOf(lhs)
 				typs = append(typs, validType(t))
 			}
 			break
 		}
 		// Lhs and Rhs counts do not match, give up
-		if len(parent.Lhs) != len(parent.Rhs) {
+		if len(assign.Lhs) != len(assign.Rhs) {
 			break
 		}
 		// Append corresponding index of lhs's type
-		for i, rhs := range parent.Rhs {
-			if rhs.Pos() <= pos && pos <= rhs.End() {
-				t := info.TypeOf(parent.Lhs[i])
-				typs = append(typs, validType(t))
-				break
-			}
+		if ek == edge.AssignStmt_Rhs {
+			t := info.TypeOf(assign.Lhs[idx])
+			typs = append(typs, validType(t))
 		}
-	case *ast.ValueSpec:
-		if len(parent.Values) == 1 {
-			for _, lhs := range parent.Names {
+	case edge.ValueSpec_Names, edge.ValueSpec_Type, edge.ValueSpec_Values:
+		spec := cur.Parent().Node().(*ast.ValueSpec)
+		if len(spec.Values) == 1 {
+			for _, lhs := range spec.Names {
 				t := info.TypeOf(lhs)
 				typs = append(typs, validType(t))
 			}
 			break
 		}
-		if len(parent.Values) != len(parent.Names) {
+		if len(spec.Values) != len(spec.Names) {
 			break
 		}
-		t := info.TypeOf(parent.Type)
+		t := info.TypeOf(spec.Type)
 		typs = append(typs, validType(t))
-	case *ast.ReturnStmt:
-		sig := EnclosingSignature(path, info)
+	case edge.ReturnStmt_Results:
+		returnstmt := cur.Parent().Node().(*ast.ReturnStmt)
+		sig := EnclosingSignature(cur, info)
 		if sig == nil || sig.Results() == nil {
 			break
 		}
-		rets := sig.Results()
+		retsig := sig.Results()
 		// Append all return declarations' type
-		if len(parent.Results) == 1 {
-			for i := 0; i < rets.Len(); i++ {
-				t := rets.At(i).Type()
+		if len(returnstmt.Results) == 1 {
+			for i := 0; i < retsig.Len(); i++ {
+				t := retsig.At(i).Type()
 				typs = append(typs, validType(t))
 			}
 			break
 		}
 		// Return declaration and actual return counts do not match, give up
-		if rets.Len() != len(parent.Results) {
+		if retsig.Len() != len(returnstmt.Results) {
 			break
 		}
 		// Append corresponding index of return declaration's type
-		for i, ret := range parent.Results {
-			if ret.Pos() <= pos && pos <= ret.End() {
-				t := rets.At(i).Type()
-				typs = append(typs, validType(t))
-				break
-			}
-		}
-	case *ast.CallExpr:
-		// Find argument containing pos.
-		argIdx := -1
-		for i, callArg := range parent.Args {
-			if callArg.Pos() <= pos && pos <= callArg.End() {
-				argIdx = i
-				break
-			}
-		}
-		if argIdx == -1 {
-			break
-		}
+		t := retsig.At(idx).Type()
+		typs = append(typs, validType(t))
 
-		t := info.TypeOf(parent.Fun)
+	case edge.CallExpr_Args:
+		call := cur.Parent().Node().(*ast.CallExpr)
+		t := info.TypeOf(call.Fun)
 		if t == nil {
 			break
 		}
 
 		if sig, ok := t.Underlying().(*types.Signature); ok {
 			var paramType types.Type
-			if sig.Variadic() && argIdx >= sig.Params().Len()-1 {
+			if sig.Variadic() && idx >= sig.Params().Len()-1 {
 				v := sig.Params().At(sig.Params().Len() - 1)
 				if s, _ := v.Type().(*types.Slice); s != nil {
 					paramType = s.Elem()
 				}
-			} else if argIdx < sig.Params().Len() {
-				paramType = sig.Params().At(argIdx).Type()
+			} else if idx < sig.Params().Len() {
+				paramType = sig.Params().At(idx).Type()
 			} else {
 				break
 			}
@@ -156,53 +149,36 @@ func TypesFromContext(info *types.Info, path []ast.Node, pos token.Pos) []types.
 			}
 			typs = append(typs, paramType)
 		}
-	case *ast.IfStmt:
-		if parent.Cond == path[0] {
-			typs = append(typs, types.Typ[types.Bool])
+	case edge.IfStmt_Cond:
+		typs = append(typs, types.Typ[types.Bool])
+	case edge.ForStmt_Cond:
+		typs = append(typs, types.Typ[types.Bool])
+	case edge.UnaryExpr_X:
+		unexpr := cur.Parent().Node().(*ast.UnaryExpr)
+		var t types.Type
+		switch unexpr.Op {
+		case token.NOT:
+			t = types.Typ[types.Bool]
+		case token.ADD, token.SUB, token.XOR:
+			t = types.Typ[types.Int]
+		default:
+			t = anyType
 		}
-	case *ast.ForStmt:
-		if parent.Cond == path[0] {
-			typs = append(typs, types.Typ[types.Bool])
-		}
-	case *ast.UnaryExpr:
-		if parent.X == path[0] {
-			var t types.Type
-			switch parent.Op {
-			case token.NOT:
-				t = types.Typ[types.Bool]
-			case token.ADD, token.SUB, token.XOR:
-				t = types.Typ[types.Int]
-			default:
-				t = anyType
-			}
-			typs = append(typs, t)
-		}
-	case *ast.BinaryExpr:
-		if parent.X == path[0] {
-			t := info.TypeOf(parent.Y)
+		typs = append(typs, t)
+	case edge.BinaryExpr_X, edge.BinaryExpr_Y:
+		binexpr := cur.Parent().Node().(*ast.BinaryExpr)
+		switch ek {
+		case edge.BinaryExpr_X:
+			t := info.TypeOf(binexpr.Y)
 			typs = append(typs, validType(t))
-		} else if parent.Y == path[0] {
-			t := info.TypeOf(parent.X)
+		case edge.BinaryExpr_Y:
+			t := info.TypeOf(binexpr.X)
 			typs = append(typs, validType(t))
 		}
 	default:
 		// TODO: support other kinds of "holes" as the need arises.
 	}
 	return typs
-}
-
-// parentNode returns the nodes immediately enclosing path[0],
-// ignoring parens.
-func parentNode(path []ast.Node) ast.Node {
-	if len(path) <= 1 {
-		return nil
-	}
-	for _, n := range path[1:] {
-		if _, ok := n.(*ast.ParenExpr); !ok {
-			return n
-		}
-	}
-	return nil
 }
 
 // containsInvalid checks if the type name contains "invalid type",
@@ -213,12 +189,11 @@ func containsInvalid(t types.Type) bool {
 }
 
 // EnclosingSignature returns the signature of the innermost
-// function enclosing the syntax node denoted by path
-// (see [astutil.PathEnclosingInterval]), or nil if the node
-// is not within a function.
-func EnclosingSignature(path []ast.Node, info *types.Info) *types.Signature {
-	for _, n := range path {
-		switch n := n.(type) {
+// function enclosing the syntax node denoted by cur
+// or nil if the node is not within a function.
+func EnclosingSignature(cur inspector.Cursor, info *types.Info) *types.Signature {
+	for c := range cur.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
+		switch n := c.Node().(type) {
 		case *ast.FuncDecl:
 			if f, ok := info.Defs[n.Name]; ok {
 				return f.Type().(*types.Signature)

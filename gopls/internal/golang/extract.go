@@ -293,6 +293,8 @@ Outer:
 //
 // `x` is a free variable defined in the IfStmt, we should not insert
 // the extracted expression outside the IfStmt scope, instead, return an error.
+//
+// TODO(dmo): make this function take a Cursor and simplify
 func stmtToInsertVarBefore(path []ast.Node, variables []*variable) (ast.Stmt, error) {
 	enclosingIndex := -1 // index in path of enclosing stmt
 	for i, p := range path {

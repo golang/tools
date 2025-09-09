@@ -355,8 +355,8 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 		// See [createUndeclared] for command implementation.
 		case strings.HasPrefix(msg, "undeclared name: "),
 			strings.HasPrefix(msg, "undefined: "):
-			path, _ := astutil.PathEnclosingInterval(req.pgf.File, start, end)
-			title := undeclaredFixTitle(path, msg)
+			cur, _ := req.pgf.Cursor.FindByPos(start, end)
+			title := undeclaredFixTitle(cur, msg)
 			if title != "" {
 				req.addApplyFixAction(title, fixCreateUndeclared, req.loc)
 			}

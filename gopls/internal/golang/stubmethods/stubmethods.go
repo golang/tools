@@ -15,7 +15,8 @@ import (
 	"go/types"
 	"strings"
 
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/typesinternal"
 
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -52,30 +53,28 @@ type IfaceStubInfo struct {
 // more generally. Refactor to share logic, after auditing 'satisfy'
 // for safety on ill-typed code.
 func GetIfaceStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, pos, end token.Pos) *IfaceStubInfo {
-	// TODO(adonovan): simplify, using Cursor:
-	//   curErr, _ := pgf.Cursor.FindPos(pos, end)
-	//   for cur := range curErr.Enclosing() {
-	// 	  switch n := cur.Node().(type) {...
-	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, end)
-	for _, n := range path {
-		switch n := n.(type) {
-		case *ast.ValueSpec:
-			return fromValueSpec(fset, info, n, pos)
-		case *ast.ReturnStmt:
+	cur, _ := pgf.Cursor.FindByPos(pos, end)
+	for cur := range cur.Enclosing() {
+		// TODO: do cur = unparenEnclosing(cur) first, once CL 701035 lands.
+		ek, _ := cur.ParentEdge()
+		switch ek {
+		case edge.ValueSpec_Values:
+			return fromValueSpec(fset, info, cur)
+		case edge.ReturnStmt_Results:
 			// An error here may not indicate a real error the user should know about, but it may.
 			// Therefore, it would be best to log it out for debugging/reporting purposes instead of ignoring
 			// it. However, event.Log takes a context which is not passed via the analysis package.
 			// TODO(marwan-at-work): properly log this error.
-			si, _ := fromReturnStmt(fset, info, pos, path, n)
+			si, _ := fromReturnStmt(fset, info, cur)
 			return si
-		case *ast.AssignStmt:
-			return fromAssignStmt(fset, info, n, pos)
-		case *ast.CallExpr:
+		case edge.AssignStmt_Rhs:
+			return fromAssignStmt(fset, info, cur)
+		case edge.CallExpr_Args:
 			// Note that some call expressions don't carry the interface type
 			// because they don't point to a function or method declaration elsewhere.
 			// For eaxmple, "var Interface = (*Concrete)(nil)". In that case, continue
 			// this loop to encounter other possibilities such as *ast.ValueSpec or others.
-			si := fromCallExpr(fset, info, pos, n)
+			si := fromCallExpr(fset, info, cur)
 			if si != nil {
 				return si
 			}
@@ -208,22 +207,12 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 }
 
 // fromCallExpr tries to find an *ast.CallExpr's function declaration and
-// analyzes a function call's signature against the passed in parameter to deduce
+// analyzes a function call's signature against the passed in call argument to deduce
 // the concrete and interface types.
-func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *ast.CallExpr) *IfaceStubInfo {
-	// Find argument containing pos.
-	argIdx := -1
-	var arg ast.Expr
-	for i, callArg := range call.Args {
-		if callArg.Pos() <= pos && pos <= callArg.End() {
-			argIdx = i
-			arg = callArg
-			break
-		}
-	}
-	if arg == nil {
-		return nil
-	}
+func fromCallExpr(fset *token.FileSet, info *types.Info, curCallArg inspector.Cursor) *IfaceStubInfo {
+
+	call := curCallArg.Parent().Node().(*ast.CallExpr)
+	arg := curCallArg.Node().(ast.Expr)
 
 	concType, pointer := concreteType(arg, info)
 	if concType == nil || concType.Obj().Pkg() == nil {
@@ -237,6 +226,8 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *as
 	if !ok {
 		return nil
 	}
+
+	_, argIdx := curCallArg.ParentEdge()
 	var paramType types.Type
 	if sig.Variadic() && argIdx >= sig.Params().Len()-1 {
 		v := sig.Params().At(sig.Params().Len() - 1)
@@ -266,20 +257,8 @@ func fromCallExpr(fset *token.FileSet, info *types.Info, pos token.Pos, call *as
 //
 // For example, func() io.Writer { return myType{} }
 // would return StubIfaceInfo with the interface being io.Writer and the concrete type being myType{}.
-func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path []ast.Node, ret *ast.ReturnStmt) (*IfaceStubInfo, error) {
-	// Find return operand containing pos.
-	returnIdx := -1
-	for i, r := range ret.Results {
-		if r.Pos() <= pos && pos <= r.End() {
-			returnIdx = i
-			break
-		}
-	}
-	if returnIdx == -1 {
-		return nil, fmt.Errorf("pos %d not within return statement bounds: [%d-%d]", pos, ret.Pos(), ret.End())
-	}
-
-	concType, pointer := concreteType(ret.Results[returnIdx], info)
+func fromReturnStmt(fset *token.FileSet, info *types.Info, curResult inspector.Cursor) (*IfaceStubInfo, error) {
+	concType, pointer := concreteType(curResult.Node().(ast.Expr), info)
 	if concType == nil || concType.Obj().Pkg() == nil {
 		return nil, nil // result is not a named or *named or alias thereof
 	}
@@ -290,7 +269,7 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 		return nil, fmt.Errorf("local type %q cannot be stubbed", conc.Name())
 	}
 
-	sig := typesutil.EnclosingSignature(path, info)
+	sig := typesutil.EnclosingSignature(curResult, info)
 	if sig == nil {
 		// golang/go#70666: this bug may be reached in practice.
 		return nil, bug.Errorf("could not find the enclosing function of the return statement")
@@ -298,12 +277,14 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 	rets := sig.Results()
 	// The return operands and function results must match.
 	// (Spread returns were rejected earlier.)
+	ret := curResult.Parent().Node().(*ast.ReturnStmt)
 	if rets.Len() != len(ret.Results) {
 		return nil, fmt.Errorf("%d-operand return statement in %d-result function",
 			len(ret.Results),
 			rets.Len())
 	}
-	iface := ifaceObjFromType(rets.At(returnIdx).Type())
+	_, resultIdx := curResult.ParentEdge()
+	iface := ifaceObjFromType(rets.At(resultIdx).Type())
 	if iface == nil {
 		return nil, nil
 	}
@@ -317,18 +298,10 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, pos token.Pos, path [
 
 // fromValueSpec returns *StubIfaceInfo from a variable declaration such as
 // var x io.Writer = &T{}
-func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, pos token.Pos) *IfaceStubInfo {
-	// Find RHS element containing pos.
-	var rhs ast.Expr
-	for _, r := range spec.Values {
-		if r.Pos() <= pos && pos <= r.End() {
-			rhs = r
-			break
-		}
-	}
-	if rhs == nil {
-		return nil // e.g. pos was on the LHS (#64545)
-	}
+func fromValueSpec(fset *token.FileSet, info *types.Info, curValue inspector.Cursor) *IfaceStubInfo {
+
+	rhs := curValue.Node().(ast.Expr)
+	spec := curValue.Parent().Node().(*ast.ValueSpec)
 
 	// Possible implicit/explicit conversion to interface type?
 	ifaceNode := spec.Type // var _ myInterface = ...
@@ -361,32 +334,16 @@ func fromValueSpec(fset *token.FileSet, info *types.Info, spec *ast.ValueSpec, p
 // fromAssignStmt returns *StubIfaceInfo from a variable assignment such as
 // var x io.Writer
 // x = &T{}
-func fromAssignStmt(fset *token.FileSet, info *types.Info, assign *ast.AssignStmt, pos token.Pos) *IfaceStubInfo {
+func fromAssignStmt(fset *token.FileSet, info *types.Info, curRhs inspector.Cursor) *IfaceStubInfo {
 	// The interface conversion error in an assignment is against the RHS:
 	//
 	//      var x io.Writer
 	//      x = &T{} // error: missing method
 	//          ^^^^
-	//
-	// Find RHS element containing pos.
-	var lhs, rhs ast.Expr
-	for i, r := range assign.Rhs {
-		if r.Pos() <= pos && pos <= r.End() {
-			if i >= len(assign.Lhs) {
-				// This should never happen as we would get a
-				// "cannot assign N values to M variables"
-				// before we get an interface conversion error.
-				// But be defensive.
-				return nil
-			}
-			lhs = assign.Lhs[i]
-			rhs = r
-			break
-		}
-	}
-	if lhs == nil || rhs == nil {
-		return nil
-	}
+
+	assign := curRhs.Parent().Node().(*ast.AssignStmt)
+	_, idx := curRhs.ParentEdge()
+	lhs, rhs := assign.Lhs[idx], curRhs.Node().(ast.Expr)
 
 	ifaceObj := ifaceType(lhs, info)
 	if ifaceObj == nil {

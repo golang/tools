@@ -24,12 +24,12 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -133,24 +133,18 @@ const FixCategory = "fillstruct" // recognized by gopls ApplyFix
 // diagnostics produced by the Analyzer above.
 func SuggestedFix(cpkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	var (
+		file = pgf.File
 		fset = cpkg.FileSet()
 		pkg  = cpkg.Types()
 		info = cpkg.TypesInfo()
 		pos  = start // don't use end
 	)
-	// TODO(adonovan): simplify, using Cursor.
-	file := pgf.Cursor.Node().(*ast.File)
-	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
-	if len(path) == 0 {
+	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+	if !ok {
 		return nil, nil, fmt.Errorf("no enclosing ast.Node")
 	}
-	var expr *ast.CompositeLit
-	for _, n := range path {
-		if node, ok := n.(*ast.CompositeLit); ok {
-			expr = node
-			break
-		}
-	}
+	curCompLit, _ := moreiters.First(cur.Enclosing((*ast.CompositeLit)(nil)))
+	expr := curCompLit.Node().(*ast.CompositeLit)
 
 	typ := info.TypeOf(expr)
 	if typ == nil {

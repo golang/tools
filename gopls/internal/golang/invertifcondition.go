@@ -11,11 +11,11 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/moreiters"
 )
 
 // invertIfCondition is a singleFileFixFunc that inverts an if/else statement
@@ -246,28 +246,22 @@ func invertAndOr(fset *token.FileSet, expr *ast.BinaryExpr, src []byte) ([]byte,
 // canInvertIfCondition reports whether we can do invert-if-condition on the
 // code in the given range.
 func canInvertIfCondition(curFile inspector.Cursor, start, end token.Pos) (*ast.IfStmt, bool, error) {
-	file := curFile.Node().(*ast.File)
-	// TODO(adonovan): simplify, using Cursor.
-	path, _ := astutil.PathEnclosingInterval(file, start, end)
-	for _, node := range path {
-		stmt, isIfStatement := node.(*ast.IfStmt)
-		if !isIfStatement {
-			continue
-		}
-
-		if stmt.Else == nil {
-			// Can't invert conditions without else clauses
-			return nil, false, fmt.Errorf("else clause required")
-		}
-
-		if _, hasElseIf := stmt.Else.(*ast.IfStmt); hasElseIf {
-			// Can't invert conditions with else-if clauses, unclear what that
-			// would look like
-			return nil, false, fmt.Errorf("else-if not supported")
-		}
-
-		return stmt, true, nil
+	curIf, _ := curFile.FindByPos(start, end)
+	curIf, ok := moreiters.First(curIf.Enclosing((*ast.IfStmt)(nil)))
+	if !ok {
+		return nil, false, fmt.Errorf("not an if statement")
+	}
+	stmt := curIf.Node().(*ast.IfStmt)
+	if stmt.Else == nil {
+		// Can't invert conditions without else clauses
+		return nil, false, fmt.Errorf("else clause required")
 	}
 
-	return nil, false, fmt.Errorf("not an if statement")
+	if _, hasElseIf := stmt.Else.(*ast.IfStmt); hasElseIf {
+		// Can't invert conditions with else-if clauses, unclear what that
+		// would look like
+		return nil, false, fmt.Errorf("else-if not supported")
+	}
+
+	return stmt, true, nil
 }

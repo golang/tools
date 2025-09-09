@@ -13,9 +13,10 @@ import (
 	"strings"
 	"unicode"
 
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -31,71 +32,73 @@ type CallStubInfo struct {
 	After      types.Object // decl after which to insert the new decl
 	pointer    bool
 	info       *types.Info
-	path       []ast.Node // path enclosing the CallExpr
+	curCall    inspector.Cursor // cursor to the CallExpr
 }
 
 // GetCallStubInfo extracts necessary information to generate a method definition from
 // a CallExpr.
 func GetCallStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, start, end token.Pos) *CallStubInfo {
-	// TODO(adonovan): simplify, using pgf.Cursor.
-	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
-	for i, n := range path {
-		switch n := n.(type) {
-		case *ast.CallExpr:
-			s, ok := n.Fun.(*ast.SelectorExpr)
-			// TODO: support generating stub functions in the same way.
-			if !ok {
-				return nil
-			}
+	callCur, _ := pgf.Cursor.FindByPos(start, end)
+	callCur, ok := moreiters.First(callCur.Enclosing((*ast.CallExpr)(nil)))
+	if !ok {
+		return nil
+	}
+	call := callCur.Node().(*ast.CallExpr)
+	s, ok := call.Fun.(*ast.SelectorExpr)
+	// TODO: support generating stub functions in the same way.
+	if !ok {
+		return nil
+	}
 
-			// If recvExpr is a package name, compiler error would be
-			// e.g., "undefined: http.bar", thus will not hit this code path.
-			recvExpr := s.X
-			recvType, pointer := concreteType(recvExpr, info)
+	// If recvExpr is a package name, compiler error would be
+	// e.g., "undefined: http.bar", thus will not hit this code path.
+	recvExpr := s.X
+	recvType, pointer := concreteType(recvExpr, info)
 
-			if recvType == nil || recvType.Obj().Pkg() == nil {
-				return nil
-			}
+	if recvType == nil || recvType.Obj().Pkg() == nil {
+		return nil
+	}
 
-			// A method of a function-local type cannot be stubbed
-			// since there's nowhere to put the methods.
-			recv := recvType.Obj()
-			if recv.Parent() != recv.Pkg().Scope() {
-				return nil
-			}
+	// A method of a function-local type cannot be stubbed
+	// since there's nowhere to put the methods.
+	recv := recvType.Obj()
+	if recv.Parent() != recv.Pkg().Scope() {
+		return nil
+	}
 
-			after := types.Object(recv)
-			// If the enclosing function declaration is a method declaration,
-			// and matches the receiver type of the diagnostic,
-			// insert after the enclosing method.
-			decl, ok := path[len(path)-2].(*ast.FuncDecl)
-			if ok && decl.Recv != nil {
-				if len(decl.Recv.List) != 1 {
-					return nil
-				}
-				mrt := info.TypeOf(decl.Recv.List[0].Type)
-				if mrt != nil && types.Identical(types.Unalias(typesinternal.Unpointer(mrt)), recv.Type()) {
-					after = info.ObjectOf(decl.Name)
-				}
-			}
-			return &CallStubInfo{
-				Fset:       fset,
-				Receiver:   recvType,
-				MethodName: s.Sel.Name,
-				After:      after,
-				pointer:    pointer,
-				path:       path[i:],
-				info:       info,
-			}
+	after := types.Object(recv)
+	// If the enclosing function declaration is a method declaration,
+	// and matches the receiver type of the diagnostic,
+	// insert after the enclosing method.
+	var decl *ast.FuncDecl
+	declCur, ok := moreiters.First(callCur.Enclosing((*ast.FuncDecl)(nil)))
+	if ok {
+		decl = declCur.Node().(*ast.FuncDecl)
+	}
+	if decl != nil && decl.Recv != nil {
+		if len(decl.Recv.List) != 1 {
+			return nil
+		}
+		mrt := info.TypeOf(decl.Recv.List[0].Type)
+		if mrt != nil && types.Identical(types.Unalias(typesinternal.Unpointer(mrt)), recv.Type()) {
+			after = info.ObjectOf(decl.Name)
 		}
 	}
-	return nil
+	return &CallStubInfo{
+		Fset:       fset,
+		Receiver:   recvType,
+		MethodName: s.Sel.Name,
+		After:      after,
+		pointer:    pointer,
+		curCall:    callCur,
+		info:       info,
+	}
 }
 
 // Emit writes to out the missing method based on type info of si.Receiver and CallExpr.
 func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	params := si.collectParams()
-	rets := typesutil.TypesFromContext(si.info, si.path, si.path[0].Pos())
+	rets := typesutil.TypesFromContext(si.info, si.curCall)
 	recv := si.Receiver.Obj()
 	// Pointer receiver?
 	var star string
@@ -180,7 +183,7 @@ func (si *CallStubInfo) collectParams() []param {
 		params = append(params, p)
 	}
 
-	args := si.path[0].(*ast.CallExpr).Args
+	args := si.curCall.Node().(*ast.CallExpr).Args
 	for _, arg := range args {
 		t := si.info.TypeOf(arg)
 		switch t := t.(type) {

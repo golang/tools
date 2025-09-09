@@ -16,9 +16,12 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -27,7 +30,7 @@ var undeclaredNamePrefixes = []string{"undeclared name: ", "undefined: "}
 
 // undeclaredFixTitle generates a code action title for "undeclared name" errors,
 // suggesting the creation of the missing variable or function if applicable.
-func undeclaredFixTitle(path []ast.Node, errMsg string) string {
+func undeclaredFixTitle(curId inspector.Cursor, errMsg string) string {
 	// Extract symbol name from error.
 	var name string
 	for _, prefix := range undeclaredNamePrefixes {
@@ -36,35 +39,25 @@ func undeclaredFixTitle(path []ast.Node, errMsg string) string {
 		}
 		name = strings.TrimPrefix(errMsg, prefix)
 	}
-	ident, ok := path[0].(*ast.Ident)
+	ident, ok := curId.Node().(*ast.Ident)
 	if !ok || ident.Name != name {
 		return ""
 	}
 	// TODO: support create undeclared field
-	if _, ok := path[1].(*ast.SelectorExpr); ok {
+	if _, ok := curId.Parent().Node().(*ast.SelectorExpr); ok {
 		return ""
 	}
 
 	// Undeclared quick fixes only work in function bodies.
-	inFunc := false
-	for i := range path {
-		if _, inFunc = path[i].(*ast.FuncDecl); inFunc {
-			if i == 0 {
-				return ""
-			}
-			if _, isBody := path[i-1].(*ast.BlockStmt); !isBody {
-				return ""
-			}
-			break
-		}
-	}
+	_, inFunc := moreiters.First(curId.Enclosing((*ast.BlockStmt)(nil)))
 	if !inFunc {
 		return ""
 	}
 
 	// Offer a fix.
 	noun := "variable"
-	if isCallPosition(path) {
+	ek, _ := curId.ParentEdge()
+	if ek == edge.CallExpr_Fun {
 		noun = "function"
 	}
 	return fmt.Sprintf("Create %s %s", noun, name)
@@ -78,45 +71,45 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 		file = pgf.File
 		pos  = start // don't use end
 	)
-	// TODO(adonovan): simplify, using Cursor.
-	path, _ := astutil.PathEnclosingInterval(file, pos, pos)
-	if len(path) < 2 {
-		return nil, nil, fmt.Errorf("no expression found")
-	}
-	ident, ok := path[0].(*ast.Ident)
+	curId, _ := pgf.Cursor.FindByPos(pos, pos)
+	ident, ok := curId.Node().(*ast.Ident)
 	if !ok {
 		return nil, nil, fmt.Errorf("no identifier found")
 	}
 
 	// Check for a possible call expression, in which case we should add a
 	// new function declaration.
-	if isCallPosition(path) {
-		return newFunctionDeclaration(path, file, pkg.Types(), info, fset)
+	ek, _ := curId.ParentEdge()
+	if ek == edge.CallExpr_Fun {
+		return newFunctionDeclaration(curId, file, pkg.Types(), info, fset)
 	}
 	var (
 		firstRef     *ast.Ident // We should insert the new declaration before the first occurrence of the undefined ident.
 		assignTokPos token.Pos
-		funcDecl     = path[len(path)-2].(*ast.FuncDecl) // This is already ensured by [undeclaredFixTitle].
-		parent       = ast.Node(funcDecl)
 	)
-	// Search from enclosing FuncDecl to path[0], since we can not use := syntax outside function.
-	// Adds the missing colon after the first undefined symbol
-	// when it sits in lhs of an AssignStmt.
-	ast.Inspect(funcDecl, func(n ast.Node) bool {
-		if n == nil || firstRef != nil {
-			return false
-		}
-		if n, ok := n.(*ast.Ident); ok && n.Name == ident.Name && info.ObjectOf(n) == nil {
+	curFuncDecl, _ := moreiters.First(curId.Enclosing((*ast.FuncDecl)(nil)))
+	// Search from enclosing FuncDecl to first use, since we can not use := syntax outside function.
+	// Adds the missing colon under the following conditions:
+	// 1) parent node must be an *ast.AssignStmt with Tok set to token.ASSIGN.
+	// 2) ident must not be self assignment.
+	//
+	// For example, we should not add a colon when
+	// a = a + 1
+	// ^   ^ cursor here
+	for curRef := range curFuncDecl.Preorder((*ast.Ident)(nil)) {
+		n := curRef.Node().(*ast.Ident)
+		if n.Name == ident.Name && info.ObjectOf(n) == nil {
 			firstRef = n
-			// Only consider adding colon at the first occurrence.
-			if pos, ok := replaceableAssign(info, n, parent); ok {
-				assignTokPos = pos
-				return false
+			ek, _ := curRef.ParentEdge()
+			if ek == edge.AssignStmt_Lhs {
+				assign := curRef.Parent().Node().(*ast.AssignStmt)
+				if assign.Tok == token.ASSIGN && !referencesIdent(info, assign, ident) {
+					assignTokPos = assign.TokPos
+				}
 			}
+			break
 		}
-		parent = n
-		return true
-	})
+	}
 	if assignTokPos.IsValid() {
 		return fset, &analysis.SuggestedFix{
 			TextEdits: []analysis.TextEdit{{
@@ -141,7 +134,7 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	if err != nil {
 		return nil, nil, err
 	}
-	typs := typesutil.TypesFromContext(info, path, start)
+	typs := typesutil.TypesFromContext(info, curId)
 	if typs == nil {
 		// Default to 0.
 		typs = []types.Type{types.Typ[types.Int]}
@@ -170,71 +163,37 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	}, nil
 }
 
-// replaceableAssign returns position of token.ASSIGN if ident meets the following conditions:
-// 1) parent node must be an *ast.AssignStmt with Tok set to token.ASSIGN.
-// 2) ident must not be self assignment.
-//
-// For example, we should not add a colon when
-// a = a + 1
-// ^   ^ cursor here
-func replaceableAssign(info *types.Info, ident *ast.Ident, parent ast.Node) (token.Pos, bool) {
-	var pos token.Pos
-	if assign, ok := parent.(*ast.AssignStmt); ok && assign.Tok == token.ASSIGN {
-		for _, rhs := range assign.Rhs {
-			if referencesIdent(info, rhs, ident) {
-				return pos, false
+// referencesIdent checks whether the given undefined ident appears in the right-hand side
+// of an assign statement
+func referencesIdent(info *types.Info, assign *ast.AssignStmt, ident *ast.Ident) bool {
+	for _, rhs := range assign.Rhs {
+		for n := range ast.Preorder(rhs) {
+			if id, ok := n.(*ast.Ident); ok &&
+				id.Name == ident.Name && info.Uses[id] == nil {
+				return true
 			}
 		}
-		return assign.TokPos, true
 	}
-	return pos, false
+	return false
 }
 
-// referencesIdent checks whether the given undefined ident appears in the given expression.
-func referencesIdent(info *types.Info, expr ast.Expr, ident *ast.Ident) bool {
-	var hasIdent bool
-	ast.Inspect(expr, func(n ast.Node) bool {
-		if n == nil {
-			return false
-		}
-		if i, ok := n.(*ast.Ident); ok && i.Name == ident.Name && info.ObjectOf(i) == nil {
-			hasIdent = true
-			return false
-		}
-		return true
-	})
-	return hasIdent
-}
+// newFunctionDeclaration returns a suggested declaration for the ident identified by curId
+// curId always points at an ast.Ident at the CallExpr_Fun edge.
+func newFunctionDeclaration(curId inspector.Cursor, file *ast.File, pkg *types.Package, info *types.Info, fset *token.FileSet) (*token.FileSet, *analysis.SuggestedFix, error) {
 
-func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package, info *types.Info, fset *token.FileSet) (*token.FileSet, *analysis.SuggestedFix, error) {
-	if len(path) < 3 {
-		return nil, nil, fmt.Errorf("unexpected set of enclosing nodes: %v", path)
-	}
-	ident, ok := path[0].(*ast.Ident)
-	if !ok {
-		return nil, nil, fmt.Errorf("no name for function declaration %v (%T)", path[0], path[0])
-	}
-	call, ok := path[1].(*ast.CallExpr)
-	if !ok {
-		return nil, nil, fmt.Errorf("no call expression found %v (%T)", path[1], path[1])
-	}
+	id := curId.Node().(*ast.Ident)
+	call := curId.Parent().Node().(*ast.CallExpr)
 
 	// Find the enclosing function, so that we can add the new declaration
 	// below.
-	var enclosing *ast.FuncDecl
-	for _, n := range path {
-		if n, ok := n.(*ast.FuncDecl); ok {
-			enclosing = n
-			break
-		}
-	}
-	// TODO(rstambler): Support the situation when there is no enclosing
-	// function.
-	if enclosing == nil {
-		return nil, nil, fmt.Errorf("no enclosing function found: %v", path)
+	curFuncDecl, ok := moreiters.First(curId.Enclosing(((*ast.FuncDecl)(nil))))
+	if !ok {
+		// TODO(rstambler): Support the situation when there is no enclosing
+		// function.
+		return nil, nil, fmt.Errorf("no enclosing function found: %v", curId)
 	}
 
-	pos := enclosing.End()
+	pos := curFuncDecl.Node().End()
 
 	var paramNames []string
 	var paramTypes []types.Type
@@ -319,7 +278,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 	}
 
 	rets := &ast.FieldList{}
-	retTypes := typesutil.TypesFromContext(info, path[1:], path[1].Pos())
+	retTypes := typesutil.TypesFromContext(info, curId.Parent())
 	for _, rt := range retTypes {
 		rets.List = append(rets.List, &ast.Field{
 			Type: typesinternal.TypeExpr(rt, qual),
@@ -327,7 +286,7 @@ func newFunctionDeclaration(path []ast.Node, file *ast.File, pkg *types.Package,
 	}
 
 	decl := &ast.FuncDecl{
-		Name: ast.NewIdent(ident.Name),
+		Name: ast.NewIdent(id.Name),
 		Type: &ast.FuncType{
 			Params:  params,
 			Results: rets,
@@ -391,11 +350,4 @@ func typeToArgName(ty types.Type) string {
 	a := []rune(s[strings.LastIndexByte(s, '.')+1:])
 	a[0] = unicode.ToLower(a[0])
 	return string(a)
-}
-
-// isCallPosition reports whether the path denotes the subtree in call position, f().
-func isCallPosition(path []ast.Node) bool {
-	return len(path) > 1 &&
-		is[*ast.CallExpr](path[1]) &&
-		path[1].(*ast.CallExpr).Fun == path[0]
 }

@@ -17,7 +17,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -171,39 +171,34 @@ func processLines(fset *token.FileSet, items []ast.Node, comments []*ast.Comment
 
 // findSplitJoinTarget returns the first curly bracket/parens that encloses the current cursor.
 func findSplitJoinTarget(fset *token.FileSet, curFile inspector.Cursor, src []byte, start, end token.Pos) (itemType string, items []ast.Node, comments []*ast.CommentGroup, indent string, open, close token.Pos) {
-	isCursorInside := func(nodePos, nodeEnd token.Pos) bool {
-		return nodePos < start && end < nodeEnd
-	}
-
-	file := curFile.Node().(*ast.File)
-	// TODO(adonovan): simplify, using Cursor.
 
 	findTarget := func() (targetType string, target ast.Node, open, close token.Pos) {
-		path, _ := astutil.PathEnclosingInterval(file, start, end)
-		for _, node := range path {
-			switch node := node.(type) {
-			case *ast.FuncType:
-				// params or results of func signature
-				// Note:
-				// - each ast.Field (e.g. "x, y, z int") is considered a single item.
-				// - splitting Params and Results lists is not usually good style.
-				if p := node.Params; isCursorInside(p.Opening, p.Closing) {
-					return "parameters", p, p.Opening, p.Closing
+		cur, _ := curFile.FindByPos(start, end)
+		for cur := range cur.Enclosing() {
+			// TODO: do cur = enclosingUnparen(cur) first, once CL 701035 lands.
+			ek, _ := cur.ParentEdge()
+			switch ek {
+			// params or results of func signature
+			// Note:
+			// - each ast.Field (e.g. "x, y, z int") is considered a single item.
+			// - splitting Params and Results lists is not usually good style.
+			case edge.FuncType_Params:
+				p := cur.Node().(*ast.FieldList)
+				return "parameters", p, p.Opening, p.Closing
+			case edge.FuncType_Results:
+				r := cur.Node().(*ast.FieldList)
+				if !r.Opening.IsValid() {
+					continue
 				}
-				if r := node.Results; r != nil && isCursorInside(r.Opening, r.Closing) {
-					return "results", r, r.Opening, r.Closing
-				}
-			case *ast.CallExpr: // f(a, b, c)
-				if isCursorInside(node.Lparen, node.Rparen) {
-					return "arguments", node, node.Lparen, node.Rparen
-				}
-			case *ast.CompositeLit: // T{a, b, c}
-				if isCursorInside(node.Lbrace, node.Rbrace) {
-					return "elements", node, node.Lbrace, node.Rbrace
-				}
+				return "results", r, r.Opening, r.Closing
+			case edge.CallExpr_Args: // f(a, b, c)
+				node := cur.Parent().Node().(*ast.CallExpr)
+				return "arguments", node, node.Lparen, node.Rparen
+			case edge.CompositeLit_Elts: // T{a, b, c}
+				node := cur.Parent().Node().(*ast.CompositeLit)
+				return "elements", node, node.Lbrace, node.Rbrace
 			}
 		}
-
 		return "", nil, 0, 0
 	}
 
@@ -240,6 +235,7 @@ func findSplitJoinTarget(fset *token.FileSet, curFile inspector.Cursor, src []by
 	}
 
 	// preserve comments separately as it's not part of the targetNode AST.
+	file := curFile.Node().(*ast.File)
 	for _, cg := range file.Comments {
 		if open <= cg.Pos() && cg.Pos() < close {
 			comments = append(comments, cg)
