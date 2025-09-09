@@ -671,6 +671,9 @@ func recordClientInfo(clientName string) {
 	case "govim":
 		// https://github.com/govim/govim/pull/1189
 		key = "gopls/client:govim"
+	case "helix":
+		// https://github.com/helix-editor/helix/blob/d0218f7e78bc0c3af4b0995ab8bda66b9c542cf3/helix-lsp/src/client.rs#L714
+		key = "gopls/client:helix"
 	case "Neovim":
 		// https://github.com/neovim/neovim/blob/42333ea98dfcd2994ee128a3467dfe68205154cd/runtime/lua/vim/lsp.lua#L1361
 		key = "gopls/client:neovim"
@@ -684,6 +687,9 @@ func recordClientInfo(clientName string) {
 		key = "gopls/client:windsurf"
 	case "Cursor":
 		key = "gopls/client:cursor"
+	case "Zed", "Zed Dev", "Zed Nightly", "Zed Preview":
+		// https: //github.com/zed-industries/zed/blob/0ac17526687bf11007f0fbb5c3b2ff463ce47293/crates/release_channel/src/lib.rs#L147
+		key = "gopls/client:zed"
 	default:
 		// Accumulate at least a local counter for an unknown
 		// client name, but also fall through to count it as
