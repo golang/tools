@@ -6,7 +6,6 @@ package stack
 
 import (
 	"bufio"
-	"errors"
 	"io"
 	"regexp"
 	"strconv"
@@ -23,8 +22,6 @@ var (
 		`(\(.*\))?` + // args
 		`\s*$`)
 	rePos = regexp.MustCompile(`^\s*(.*):(\d+)( .*)?$`)
-
-	errBreakParse = errors.New("break parse")
 )
 
 // Scanner splits an input stream into lines in a way that is consumable by
