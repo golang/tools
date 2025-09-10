@@ -145,11 +145,12 @@ func logger(ctx context.Context, name string, verbose bool) func(format string, 
 // initializer expression.
 func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end token.Pos) (_, _ inspector.Cursor, ok bool) {
 	if curUse, ok := curFile.FindByPos(start, end); ok {
-		if id, ok := curUse.Node().(*ast.Ident); ok {
+		if id, ok := curUse.Node().(*ast.Ident); ok && !isLvalueUse(curUse, info) {
 			if v, ok := info.Uses[id].(*types.Var); ok && v.Kind() == types.LocalVar {
 				if curIdent, ok := curFile.FindByPos(v.Pos(), v.Pos()); ok {
 					curParent := curIdent.Parent()
-					switch kind, index := curIdent.ParentEdge(); kind {
+					kind, index := curIdent.ParentEdge()
+					switch kind {
 					case edge.ValueSpec_Names:
 						// var v = expr
 						spec := curParent.Node().(*ast.ValueSpec)
@@ -168,6 +169,51 @@ func canInlineVariable(info *types.Info, curFile inspector.Cursor, start, end to
 		}
 	}
 	return
+}
+
+// isLvalueUse reports whether the "use" identifier represented by cur
+// appears in an l-value context such as:
+//
+//   - v=...
+//   - v++
+//   - &v
+//   - v.f(), when this implicitly takes the address of v.
+func isLvalueUse(cur inspector.Cursor, info *types.Info) bool {
+	cur = unparenEnclosing(cur)
+
+	kind, _ := cur.ParentEdge()
+	switch kind {
+	case edge.AssignStmt_Lhs, edge.IncDecStmt_X:
+		return true // v=..., v++
+
+	case edge.UnaryExpr_X:
+		return cur.Parent().Node().(*ast.UnaryExpr).Op == token.AND // &v
+
+	case edge.SelectorExpr_X:
+		sel := cur.Parent().Node().(*ast.SelectorExpr)
+		isPointer := func(t types.Type) bool {
+			return is[*types.Pointer](t)
+		}
+		if seln, ok := info.Selections[sel]; ok && seln.Kind() == types.MethodVal {
+			// Have: recv.f() method call
+			methodRecv := seln.Obj().(*types.Func).Signature().Recv().Type()
+			return !seln.Indirect() && isPointer(methodRecv) && !isPointer(info.TypeOf(sel.X))
+		}
+	}
+
+	return false
+}
+
+// unparenEnclosing removes enclosing parens from cur in
+// preparation for a call to [Cursor.ParentEdge].
+func unparenEnclosing(cur inspector.Cursor) inspector.Cursor {
+	for {
+		ek, _ := cur.ParentEdge()
+		if ek != edge.ParenExpr_X {
+			return cur
+		}
+		cur = cur.Parent()
+	}
 }
 
 // inlineVariableOne computes a fix to replace the selected variable by
