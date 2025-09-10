@@ -99,22 +99,6 @@ func checkInfoFields(info *types.Info) {
 	assert(info.Uses != nil, "types.Info.Uses is nil")
 }
 
-func funcHasTypeParams(decl *ast.FuncDecl) bool {
-	// generic function?
-	if decl.Type.TypeParams != nil {
-		return true
-	}
-	// method on generic type?
-	if decl.Recv != nil {
-		t := decl.Recv.List[0].Type
-		if u, ok := t.(*ast.StarExpr); ok {
-			t = u.X
-		}
-		return is[*ast.IndexExpr](t) || is[*ast.IndexListExpr](t)
-	}
-	return false
-}
-
 // intersects reports whether the maps' key sets intersect.
 func intersects[K comparable, T1, T2 any](x map[K]T1, y map[K]T2) bool {
 	if len(x) > len(y) {
