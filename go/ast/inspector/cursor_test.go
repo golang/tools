@@ -206,7 +206,6 @@ func TestCursor_Inspect(t *testing.T) {
 		n := c.Node()
 		nodesB = append(nodesB, n)
 		return !is[*ast.SwitchStmt](n) // descend only into TypeSwitchStmt
-		return false
 	})
 	compare(t, nodesA, nodesB)
 

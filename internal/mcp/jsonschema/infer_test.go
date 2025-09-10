@@ -50,7 +50,7 @@ func TestForType(t *testing.T) {
 				Skip        string `json:"-"`
 				NoSkip      string `json:",omitempty"`
 				unexported  float64
-				unexported2 int `json:"No"`
+				unexported2 int `json:"No"` // vet reports "struct field unexported2 has json tag but is not exported"
 			}](),
 			&schema{
 				Type: "object",

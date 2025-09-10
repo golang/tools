@@ -196,7 +196,7 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 		extra, err, _ = nextResponse()
 	}()
 	// Before closing the stream, wait for all messages to be processed.
-	synctest.Wait()
+	synctest.Wait() // => stdversion "requires go1.25" false positive (#75367)
 	if err != nil {
 		t.Fatalf("reading server messages failedd: %v", err)
 	}
@@ -206,7 +206,7 @@ func runServerTest(t *testing.T, test *conformanceTest) {
 	if err := cStream.Close(); err != nil {
 		t.Fatalf("Stream.Close failed: %v", err)
 	}
-	ss.Wait()
+	ss.Wait() // ignore error
 
 	// Handle server output. If -update is set, write the 'server' file.
 	// Otherwise, compare with expected.

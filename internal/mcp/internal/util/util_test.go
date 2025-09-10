@@ -17,7 +17,7 @@ func TestJSONInfo(t *testing.T) {
 		D int `json:"-,"`
 		E int `json:"echo"`
 		F int `json:"foxtrot,omitempty"`
-		g int `json:"golf"`
+		g int `json:"golf"` // vet reports "struct field g has json tag but is not exported"
 	}
 	want := []JSONInfo{
 		{Name: "A"},
