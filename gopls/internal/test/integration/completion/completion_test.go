@@ -1484,7 +1484,7 @@ func main() {
 
 // find import foo "bar" for foo.xxx
 func TestImportAlias(t *testing.T) {
-	testenv.NeedsGoCommand1Point(t, 22) // we will find math/rand/v2
+	testenv.NeedsGoCommand1Point(t, 24) // we will find math/rand/v2
 	const files = `
 -- a.go --
 package x
