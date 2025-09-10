@@ -214,7 +214,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: recursiveiter.Analyzer}, // under evaluation
 
 	// disabled due to high false positives
-	{analyzer: shadow.Analyzer, nonDefault: true}, // very noisy
+	{analyzer: shadow.Analyzer, severity: protocol.SeverityHint, nonDefault: true}, // very noisy
 	// fieldalignment is not even off-by-default; see #67762.
 
 	// simplifiers and modernizers
