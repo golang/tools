@@ -16,6 +16,7 @@ import (
 	"go/types"
 	"io/fs"
 	"io/ioutil"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -26,8 +27,6 @@ import (
 	"sync"
 	"unicode"
 	"unicode/utf8"
-
-	"maps"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/event"
@@ -1251,7 +1250,6 @@ func ImportPathToAssumedName(importPath string) string {
 // gopathResolver implements resolver for GOPATH workspaces.
 type gopathResolver struct {
 	env      *ProcessEnv
-	walked   bool
 	cache    *DirInfoCache
 	scanSema chan struct{} // scanSema prevents concurrent scans.
 }
