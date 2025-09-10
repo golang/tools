@@ -53,7 +53,6 @@ import (
 //
 // The entry point is Blocks[0]; there may be multiple return blocks.
 type CFG struct {
-	fset   *token.FileSet
 	Blocks []*Block // block[0] is entry; order otherwise undefined
 }
 
