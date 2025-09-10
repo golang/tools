@@ -193,11 +193,13 @@ func Run(args []string, analyzers []*analysis.Analyzer) (exitcode int) {
 	if analysisflags.Fix {
 		fixActions := make([]analysisflags.FixAction, len(graph.Roots))
 		for i, act := range graph.Roots {
-			fixActions[i] = analysisflags.FixAction{
-				Name:         act.String(),
-				FileSet:      act.Package.Fset,
-				ReadFileFunc: internal.Pass(act).ReadFile,
-				Diagnostics:  act.Diagnostics,
+			if pass := internal.ActionPass(act); pass != nil {
+				fixActions[i] = analysisflags.FixAction{
+					Name:         act.String(),
+					FileSet:      act.Package.Fset,
+					ReadFileFunc: pass.ReadFile,
+					Diagnostics:  act.Diagnostics,
+				}
 			}
 		}
 		if err := analysisflags.ApplyFixes(fixActions, dbg('v')); err != nil {
