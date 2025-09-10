@@ -179,10 +179,6 @@ func TestTooNew(t *testing.T) {
 	//go:build go1.99
 	package p
 	`
-	type fileTest struct {
-		fname string
-		want  string
-	}
 
 	for _, goversion := range []string{
 		"",
