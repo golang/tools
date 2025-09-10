@@ -169,7 +169,8 @@ func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
 		"go_diagnostics",
 		"go_symbol_references",
 		"go_search",
-		"go_file_context"}
+		"go_file_context",
+		"go_vulncheck"}
 	disabledTools := append(defaultTools,
 		// The fileMetadata tool is redundant with fileContext.
 		[]string{"go_file_metadata",
@@ -289,6 +290,15 @@ does the same for a symbol in the imported package "lib".
 			Name:        "go_workspace",
 			Description: "Summarize the Go programming language workspace",
 		}, h.workspaceHandler)
+	case "go_vulncheck":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name: "go_vulncheck",
+			Description: `Runs a vulnerability check on the Go workspace.
+
+	The check is performed on a given package pattern within a specified directory.
+	If no directory is provided, it defaults to the workspace root.
+	If no pattern is provided, it defaults to "./...".`,
+		}, h.vulncheckHandler)
 	}
 }
 
