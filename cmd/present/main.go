@@ -109,32 +109,6 @@ func main() {
 	log.Fatal(http.Serve(ln, nil))
 }
 
-func environ(vars ...string) []string {
-	env := os.Environ()
-	for _, r := range vars {
-		k := strings.SplitAfter(r, "=")[0]
-		var found bool
-		for i, v := range env {
-			if strings.HasPrefix(v, k) {
-				env[i] = r
-				found = true
-			}
-		}
-		if !found {
-			env = append(env, r)
-		}
-	}
-	return env
-}
-
-const basePathMessage = `
-By default, gopresent locates the slide template files and associated
-static content by looking for a %q package
-in your Go workspaces (GOPATH).
-
-You may use the -base flag to specify an alternate location.
-`
-
 const localhostWarning = `
 WARNING!  WARNING!  WARNING!
 
