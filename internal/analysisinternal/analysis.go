@@ -277,19 +277,27 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 			before = decl0.Doc
 		}
 	}
-	// If the first decl is an import group, add this new import at the end.
 	if gd, ok := before.(*ast.GenDecl); ok && gd.Tok == token.IMPORT && gd.Rparen.IsValid() {
-		pos = gd.Rparen
-		// if it's a std lib, we should append it at the beginning of import group.
-		// otherwise we may see the std package is put at the last behind a 3rd module which doesn't follow our convention.
-		// besides, gofmt doesn't help in this case.
-		if IsStdPackage(pkgpath) && len(gd.Specs) != 0 {
-			pos = gd.Specs[0].Pos()
+		// Have existing grouped import ( ... ) decl.
+		if IsStdPackage(pkgpath) && len(gd.Specs) > 0 {
+			// Add spec for a std package before
+			// first existing spec, followed by
+			// a blank line if the next one is non-std.
+			first := gd.Specs[0].(*ast.ImportSpec)
+			pos = first.Pos()
+			if !IsStdPackage(first.Path.Value) {
+				newText += "\n"
+			}
 			newText += "\n\t"
 		} else {
+			// Add spec at end of group.
+			pos = gd.Rparen
 			newText = "\t" + newText + "\n"
 		}
 	} else {
+		// No import decl, or non-grouped import.
+		// Add a new import decl before first decl.
+		// (gofmt will merge multiple import decls.)
 		pos = before.Pos()
 		newText = "import " + newText + "\n\n"
 	}

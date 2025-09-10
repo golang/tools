@@ -295,6 +295,31 @@ func _(io.Reader) {
 	fmt
 }`,
 		},
+		{
+			descr: descr("add import to group without std import"),
+			src: `package a
+
+import (
+	"golang.org/x/tools/go/packages"
+	gossa "golang.org/x/tools/go/ssa"
+)
+
+func _(io.Reader) {
+	«fmt fmt»
+}`,
+			want: `package a
+
+import (
+	"fmt"
+
+	"golang.org/x/tools/go/packages"
+	gossa "golang.org/x/tools/go/ssa"
+)
+
+func _(io.Reader) {
+	fmt
+}`,
+		},
 	} {
 		t.Run(test.descr, func(t *testing.T) {
 			// splice marker
