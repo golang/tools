@@ -41,7 +41,6 @@ import (
 	"io"
 	"reflect"
 	"strings"
-	"sync"
 	"unsafe"
 
 	"golang.org/x/tools/go/ssa"
@@ -91,10 +90,7 @@ func hashString(s string) int {
 	return int(h)
 }
 
-var (
-	mu     sync.Mutex
-	hasher = typeutil.MakeHasher()
-)
+var hasher = typeutil.MakeHasher()
 
 // hashType returns a hash for t such that
 // types.Identical(x, y) => hashType(x) == hashType(y).
