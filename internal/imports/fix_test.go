@@ -3075,7 +3075,7 @@ func BenchmarkMatchesPath(b *testing.B) {
 
 	for name, tests := range tests {
 		b.Run(name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				for _, test := range tests {
 					if got := matchesPath(test.ident, test.path); got != test.want {
 						b.Errorf("matchesPath(%q, %q) = %v, want %v", test.ident, test.path, got, test.want)

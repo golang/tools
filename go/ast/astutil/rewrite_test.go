@@ -270,7 +270,7 @@ var sink ast.Node
 func BenchmarkRewrite(b *testing.B) {
 	for _, test := range rewriteTests {
 		b.Run(test.name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				b.StopTimer()
 				fset := token.NewFileSet()
 				f, err := parser.ParseFile(fset, test.name, test.orig, parser.ParseComments)

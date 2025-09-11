@@ -646,9 +646,8 @@ func benchmarkInsertProbeSparse(b *testing.B, size, spread int) {
 		probe[i] = prng.Int() % spread
 	}
 
-	b.ResetTimer()
 	var x intsets.Sparse
-	for tries := 0; tries < b.N; tries++ {
+	for b.Loop() {
 		x.Clear()
 		for _, n := range insert {
 			x.Insert(n)
@@ -688,7 +687,7 @@ func BenchmarkInsertProbeSparse_100_10000(b *testing.B) {
 
 func BenchmarkUnionDifferenceSparse(b *testing.B) {
 	prng := rand.New(rand.NewSource(0))
-	for tries := 0; tries < b.N; tries++ {
+	for b.Loop() {
 		var x, y, z intsets.Sparse
 		for i := range 1000 {
 			n := int(prng.Int()) % 100000
@@ -705,7 +704,7 @@ func BenchmarkUnionDifferenceSparse(b *testing.B) {
 
 func BenchmarkUnionDifferenceHashTable(b *testing.B) {
 	prng := rand.New(rand.NewSource(0))
-	for tries := 0; tries < b.N; tries++ {
+	for b.Loop() {
 		x, y, z := make(map[int]bool), make(map[int]bool), make(map[int]bool)
 		for i := range 1000 {
 			n := int(prng.Int()) % 100000
@@ -739,7 +738,7 @@ func BenchmarkAppendTo(b *testing.B) {
 		x.Insert(int(prng.Int()) % 10000)
 	}
 	var space [1000]int
-	for tries := 0; tries < b.N; tries++ {
+	for b.Loop() {
 		x.AppendTo(space[:0])
 	}
 }

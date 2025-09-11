@@ -1295,15 +1295,15 @@ func BenchmarkModuleResolver_RescanModCache(b *testing.B) {
 	start := time.Now()
 	scanToSlice(resolver, exclude)
 	b.Logf("warming the mod cache took %v", time.Since(start))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		scanToSlice(resolver, exclude)
 		resolver = resolver.ClearForNewScan()
 	}
 }
 
 func BenchmarkModuleResolver_InitialScan(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		env := &ProcessEnv{
 			GocmdRunner: &gocommand.Runner{},
 		}

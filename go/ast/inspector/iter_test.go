@@ -69,11 +69,10 @@ func firstN[T any](n int, seq iter.Seq[T]) (res []T) {
 // (The iterator adds about 5-15%.)
 func BenchmarkAllCalls(b *testing.B) {
 	inspect := inspector.New(netFiles)
-	b.ResetTimer()
 
 	// Measure marginal cost of traversal.
 	var ncalls int
-	for range b.N {
+	for b.Loop() {
 		for range inspector.All[*ast.CallExpr](inspect) {
 			ncalls++
 		}

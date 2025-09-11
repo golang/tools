@@ -448,9 +448,8 @@ func BenchmarkMap(b *testing.B) {
 			allTypes[tv.Type] = true
 		}
 	})
-	b.ResetTimer()
 
-	for range b.N {
+	for b.Loop() {
 		// De-duplicate the logically identical types.
 		var tmap typeutil.Map
 		for t := range allTypes {

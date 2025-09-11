@@ -98,33 +98,30 @@ func logStats(b *testing.B, cnd bool, name string, cg *callgraph.Graph, main *ss
 }
 
 func BenchmarkStatic(b *testing.B) {
-	b.StopTimer()
-	prog, main := example(b)
-	b.StartTimer()
 
-	for i := 0; i < b.N; i++ {
+	prog, main := example(b)
+
+	for i := 0; b.Loop(); i++ {
 		cg := static.CallGraph(prog)
 		logStats(b, i == 0, "static", cg, main)
 	}
 }
 
 func BenchmarkCHA(b *testing.B) {
-	b.StopTimer()
-	prog, main := example(b)
-	b.StartTimer()
 
-	for i := 0; i < b.N; i++ {
+	prog, main := example(b)
+
+	for i := 0; b.Loop(); i++ {
 		cg := cha.CallGraph(prog)
 		logStats(b, i == 0, "cha", cg, main)
 	}
 }
 
 func BenchmarkRTA(b *testing.B) {
-	b.StopTimer()
-	_, main := example(b)
-	b.StartTimer()
 
-	for i := 0; i < b.N; i++ {
+	_, main := example(b)
+
+	for i := 0; b.Loop(); i++ {
 		res := rta.Analyze([]*ssa.Function{main}, true)
 		cg := res.CallGraph
 		logStats(b, i == 0, "rta", cg, main)
@@ -132,22 +129,20 @@ func BenchmarkRTA(b *testing.B) {
 }
 
 func BenchmarkVTA(b *testing.B) {
-	b.StopTimer()
-	prog, main := example(b)
-	b.StartTimer()
 
-	for i := 0; i < b.N; i++ {
+	prog, main := example(b)
+
+	for i := 0; b.Loop(); i++ {
 		cg := vta.CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
 		logStats(b, i == 0, "vta", cg, main)
 	}
 }
 
 func BenchmarkVTA2(b *testing.B) {
-	b.StopTimer()
-	prog, main := example(b)
-	b.StartTimer()
 
-	for i := 0; i < b.N; i++ {
+	prog, main := example(b)
+
+	for i := 0; b.Loop(); i++ {
 		vta1 := vta.CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
 		cg := vta.CallGraph(reaches(main, vta1, true), vta1)
 		logStats(b, i == 0, "vta2", cg, main)
@@ -155,11 +150,10 @@ func BenchmarkVTA2(b *testing.B) {
 }
 
 func BenchmarkVTA3(b *testing.B) {
-	b.StopTimer()
-	prog, main := example(b)
-	b.StartTimer()
 
-	for i := 0; i < b.N; i++ {
+	prog, main := example(b)
+
+	for i := 0; b.Loop(); i++ {
 		vta1 := vta.CallGraph(ssautil.AllFunctions(prog), cha.CallGraph(prog))
 		vta2 := vta.CallGraph(reaches(main, vta1, true), vta1)
 		cg := vta.CallGraph(reaches(main, vta2, true), vta2)
@@ -168,11 +162,10 @@ func BenchmarkVTA3(b *testing.B) {
 }
 
 func BenchmarkVTAAlt(b *testing.B) {
-	b.StopTimer()
-	prog, main := example(b)
-	b.StartTimer()
 
-	for i := 0; i < b.N; i++ {
+	prog, main := example(b)
+
+	for i := 0; b.Loop(); i++ {
 		cha := cha.CallGraph(prog)
 		cg := vta.CallGraph(reaches(main, cha, true), cha) // start from only functions reachable by CHA.
 		logStats(b, i == 0, "vta-alt", cg, main)
@@ -180,11 +173,10 @@ func BenchmarkVTAAlt(b *testing.B) {
 }
 
 func BenchmarkVTAAlt2(b *testing.B) {
-	b.StopTimer()
-	prog, main := example(b)
-	b.StartTimer()
 
-	for i := 0; i < b.N; i++ {
+	prog, main := example(b)
+
+	for i := 0; b.Loop(); i++ {
 		cha := cha.CallGraph(prog)
 		vta1 := vta.CallGraph(reaches(main, cha, true), cha)
 		cg := vta.CallGraph(reaches(main, vta1, true), vta1)

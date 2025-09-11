@@ -140,9 +140,9 @@ func B(ctx context.Context, hooks Hooks, a int, b string) int {
 func (hooks Hooks) runBenchmark(b *testing.B) {
 	ctx := context.Background()
 	b.ReportAllocs()
-	b.ResetTimer()
+
 	var acc int
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, value := range initialList {
 			acc += A(ctx, hooks, value)
 		}

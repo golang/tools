@@ -407,7 +407,7 @@ func BenchmarkInspectCalls(b *testing.B) {
 
 	b.Run("Preorder", func(b *testing.B) {
 		var ncalls int
-		for range b.N {
+		for b.Loop() {
 			inspect.Preorder(callExprs, func(n ast.Node) {
 				_ = n.(*ast.CallExpr)
 				ncalls++
@@ -417,7 +417,7 @@ func BenchmarkInspectCalls(b *testing.B) {
 
 	b.Run("WithStack", func(b *testing.B) {
 		var ncalls int
-		for range b.N {
+		for b.Loop() {
 			inspect.WithStack(callExprs, func(n ast.Node, push bool, stack []ast.Node) (proceed bool) {
 				_ = n.(*ast.CallExpr)
 				if push {
@@ -430,7 +430,7 @@ func BenchmarkInspectCalls(b *testing.B) {
 
 	b.Run("Cursor", func(b *testing.B) {
 		var ncalls int
-		for range b.N {
+		for b.Loop() {
 			for cur := range inspect.Root().Preorder(callExprs...) {
 				_ = cur.Node().(*ast.CallExpr)
 				ncalls++
@@ -440,7 +440,7 @@ func BenchmarkInspectCalls(b *testing.B) {
 
 	b.Run("CursorEnclosing", func(b *testing.B) {
 		var ncalls int
-		for range b.N {
+		for b.Loop() {
 			for cur := range inspect.Root().Preorder(callExprs...) {
 				_ = cur.Node().(*ast.CallExpr)
 				for range cur.Enclosing() {
@@ -480,7 +480,7 @@ func BenchmarkCursor_FindNode(b *testing.B) {
 
 	b.Run("Cursor.Preorder", func(b *testing.B) {
 		needleNode := needle.Node()
-		for range b.N {
+		for b.Loop() {
 			var found inspector.Cursor
 			for c := range root.Preorder(callExprs...) {
 				if c.Node() == needleNode {
@@ -496,7 +496,7 @@ func BenchmarkCursor_FindNode(b *testing.B) {
 
 	// This method is about 10-15% faster than Cursor.Preorder.
 	b.Run("Cursor.FindNode", func(b *testing.B) {
-		for range b.N {
+		for b.Loop() {
 			found, ok := root.FindNode(needle.Node())
 			if !ok || found != needle {
 				b.Errorf("FindNode search failed: got %v, want %v", found, needle)
@@ -507,7 +507,7 @@ func BenchmarkCursor_FindNode(b *testing.B) {
 	// This method is about 100x (!) faster than Cursor.Preorder.
 	b.Run("Cursor.FindPos", func(b *testing.B) {
 		needleNode := needle.Node()
-		for range b.N {
+		for b.Loop() {
 			found, ok := root.FindByPos(needleNode.Pos(), needleNode.End())
 			if !ok || found != needle {
 				b.Errorf("FindPos search failed: got %v, want %v", found, needle)
