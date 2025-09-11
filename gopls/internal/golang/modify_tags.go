@@ -17,10 +17,10 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/moreiters"
 )
 
 // ModifyTags applies the given struct tag modifications to the specified struct.
@@ -39,11 +39,11 @@ func ModifyTags(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, a
 		if !ok {
 			return nil, fmt.Errorf("error finding start and end positions: %v", err)
 		}
-		curStruct, ok := moreiters.First(cur.Enclosing((*ast.StructType)(nil)))
-		if !ok {
+		structnode, _ := cursorutil.FirstEnclosing[*ast.StructType](cur)
+		if structnode == nil {
 			return nil, fmt.Errorf("no enclosing struct type")
 		}
-		start, end = curStruct.Node().Pos(), curStruct.Node().End()
+		start, end = structnode.Pos(), structnode.End()
 	}
 
 	// Create a copy of the file node in order to avoid race conditions when we modify the node in Apply.

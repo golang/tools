@@ -71,11 +71,11 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
-	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
 )
@@ -359,11 +359,10 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 // funcKeywordDecl returns the FuncDecl for which pos is in the 'func' keyword,
 // if any.
 func funcKeywordDecl(pos token.Pos, cursor inspector.Cursor) *ast.FuncDecl {
-	curDecl, ok := moreiters.First(cursor.Enclosing((*ast.FuncDecl)(nil)))
-	if !ok {
+	fdecl, _ := cursorutil.FirstEnclosing[*ast.FuncDecl](cursor)
+	if fdecl == nil {
 		return nil
 	}
-	fdecl := curDecl.Node().(*ast.FuncDecl)
 	ftyp := fdecl.Type
 	if pos < ftyp.Func || pos > ftyp.Func+token.Pos(len("func")) { // tolerate renaming immediately after 'func'
 		return nil
@@ -624,8 +623,8 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 		// intent for the broader renaming; renaming a use of
 		// the receiver effects only the local renaming.
 		if id, ok := cur.Node().(*ast.Ident); ok && id.Pos() == obj.Pos() {
-			if curDecl, ok := moreiters.First(cur.Enclosing((*ast.FuncDecl)(nil))); ok {
-				decl := curDecl.Node().(*ast.FuncDecl) // enclosing func
+			// enclosing func
+			if decl, _ := cursorutil.FirstEnclosing[*ast.FuncDecl](cur); decl != nil {
 				if decl.Recv != nil &&
 					len(decl.Recv.List) > 0 &&
 					len(decl.Recv.List[0].Names) > 0 {

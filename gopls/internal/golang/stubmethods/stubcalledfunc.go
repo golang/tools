@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
-	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -39,11 +39,10 @@ type CallStubInfo struct {
 // a CallExpr.
 func GetCallStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, start, end token.Pos) *CallStubInfo {
 	callCur, _ := pgf.Cursor.FindByPos(start, end)
-	callCur, ok := moreiters.First(callCur.Enclosing((*ast.CallExpr)(nil)))
-	if !ok {
+	call, callCur := cursorutil.FirstEnclosing[*ast.CallExpr](callCur)
+	if call == nil {
 		return nil
 	}
-	call := callCur.Node().(*ast.CallExpr)
 	s, ok := call.Fun.(*ast.SelectorExpr)
 	// TODO: support generating stub functions in the same way.
 	if !ok {
@@ -70,11 +69,7 @@ func GetCallStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, s
 	// If the enclosing function declaration is a method declaration,
 	// and matches the receiver type of the diagnostic,
 	// insert after the enclosing method.
-	var decl *ast.FuncDecl
-	declCur, ok := moreiters.First(callCur.Enclosing((*ast.FuncDecl)(nil)))
-	if ok {
-		decl = declCur.Node().(*ast.FuncDecl)
-	}
+	decl, _ := cursorutil.FirstEnclosing[*ast.FuncDecl](callCur)
 	if decl != nil && decl.Recv != nil {
 		if len(decl.Recv.List) != 1 {
 			return nil

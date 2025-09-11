@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/fuzzy"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
@@ -55,11 +56,10 @@ outer:
 		}
 
 		// Find cursor for enclosing return statement (which may be curErr itself).
-		curRet, ok := moreiters.First(curErr.Enclosing((*ast.ReturnStmt)(nil)))
-		if !ok {
+		ret, curRet := cursorutil.FirstEnclosing[*ast.ReturnStmt](curErr)
+		if ret == nil {
 			continue // no enclosing return
 		}
-		ret := curRet.Node().(*ast.ReturnStmt)
 
 		// Skip if any return argument is a tuple-valued function call.
 		for _, expr := range ret.Results {
@@ -111,8 +111,7 @@ outer:
 			retTyps = append(retTyps, retTyp)
 		}
 
-		curFile, _ := moreiters.First(curRet.Enclosing((*ast.File)(nil)))
-		file := curFile.Node().(*ast.File)
+		file, _ := cursorutil.FirstEnclosing[*ast.File](curRet)
 		matches := analysisinternal.MatchingIdents(retTyps, file, ret.Pos(), info, pass.Pkg)
 		qual := typesinternal.FileQualifier(file, pass.Pkg)
 		for i, retTyp := range retTyps {

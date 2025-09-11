@@ -14,8 +14,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -47,8 +47,8 @@ func run(pass *analysis.Pass) (any, error) {
 			continue // can't find errant node
 		}
 		// Find first enclosing return statement, if any.
-		if curRet, ok := moreiters.First(curErr.Enclosing((*ast.ReturnStmt)(nil))); ok {
-			ret := curRet.Node()
+		ret, _ := cursorutil.FirstEnclosing[*ast.ReturnStmt](curErr)
+		if ret != nil {
 			pass.Report(analysis.Diagnostic{
 				Pos:     start,
 				End:     end,

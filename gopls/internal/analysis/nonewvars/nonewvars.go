@@ -14,8 +14,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -48,11 +48,10 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 
 		// Find enclosing assignment (which may be curErr itself).
-		curAssign, ok := moreiters.First(curErr.Enclosing((*ast.AssignStmt)(nil)))
-		if !ok {
+		assign, _ := cursorutil.FirstEnclosing[*ast.AssignStmt](curErr)
+		if assign == nil {
 			continue // no enclosing assignment
 		}
-		assign := curAssign.Node().(*ast.AssignStmt)
 		if assign.Tok != token.DEFINE {
 			continue // not a := statement
 		}

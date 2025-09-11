@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
@@ -186,14 +187,14 @@ func newFunctionDeclaration(curId inspector.Cursor, file *ast.File, pkg *types.P
 
 	// Find the enclosing function, so that we can add the new declaration
 	// below.
-	curFuncDecl, ok := moreiters.First(curId.Enclosing(((*ast.FuncDecl)(nil))))
-	if !ok {
+	funcdecl, _ := cursorutil.FirstEnclosing[*ast.FuncDecl](curId)
+	if funcdecl == nil {
 		// TODO(rstambler): Support the situation when there is no enclosing
 		// function.
 		return nil, nil, fmt.Errorf("no enclosing function found: %v", curId)
 	}
 
-	pos := curFuncDecl.Node().End()
+	pos := funcdecl.End()
 
 	var paramNames []string
 	var paramTypes []types.Type

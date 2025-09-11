@@ -27,9 +27,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/fuzzy"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -143,9 +143,7 @@ func SuggestedFix(cpkg *cache.Package, pgf *parsego.File, start, end token.Pos) 
 	if !ok {
 		return nil, nil, fmt.Errorf("no enclosing ast.Node")
 	}
-	curCompLit, _ := moreiters.First(cur.Enclosing((*ast.CompositeLit)(nil)))
-	expr := curCompLit.Node().(*ast.CompositeLit)
-
+	expr, _ := cursorutil.FirstEnclosing[*ast.CompositeLit](cur)
 	typ := info.TypeOf(expr)
 	if typ == nil {
 		return nil, nil, fmt.Errorf("no composite literal")

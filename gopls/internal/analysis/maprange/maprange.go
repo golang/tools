@@ -13,9 +13,9 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
-	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
 )
@@ -153,7 +153,6 @@ func isSet(expr ast.Expr) bool {
 // fileUses reports whether the file containing the specified cursor
 // uses at least the specified version of Go (e.g. "go1.24").
 func fileUses(info *types.Info, c inspector.Cursor, version string) bool {
-	c, _ = moreiters.First(c.Enclosing((*ast.File)(nil)))
-	file := c.Node().(*ast.File)
+	file, _ := cursorutil.FirstEnclosing[*ast.File](c)
 	return !versions.Before(info.FileVersions[file], version)
 }
