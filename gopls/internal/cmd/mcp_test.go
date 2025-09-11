@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/tools/internal/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -50,8 +50,8 @@ const B = 2
 	goplsCmd.Dir = tree
 
 	ctx := t.Context()
-	client := mcp.NewClient("client", "v0.0.1", nil)
-	mcpSession, err := client.Connect(ctx, mcp.NewCommandTransport(goplsCmd))
+	client := mcp.NewClient(&mcp.Implementation{Name: "client", Version: "v0.0.1"}, nil)
+	mcpSession, err := client.Connect(ctx, &mcp.CommandTransport{Command: goplsCmd}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +138,8 @@ package p
 			goplsCmd.Dir = tree
 
 			ctx := t.Context()
-			client := mcp.NewClient("client", "v0.0.1", nil)
-			mcpSession, err := client.Connect(ctx, mcp.NewCommandTransport(goplsCmd))
+			client := mcp.NewClient(&mcp.Implementation{Name: "client", Version: "v0.0.1"}, nil)
+			mcpSession, err := client.Connect(ctx, &mcp.CommandTransport{Command: goplsCmd}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -231,9 +231,9 @@ func MyFun() {}
 	}()
 
 	<-ready
-	client := mcp.NewClient("client", "v0.0.1", nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "client", Version: "v0.0.1"}, nil)
 	ctx := t.Context()
-	mcpSession, err := client.Connect(ctx, mcp.NewSSEClientTransport("http://"+addr, nil))
+	mcpSession, err := client.Connect(ctx, &mcp.SSEClientTransport{Endpoint: "http://" + addr}, nil)
 	if err != nil {
 		t.Fatalf("connecting to server: %v", err)
 	}
@@ -265,10 +265,11 @@ func resultText(t *testing.T, res *mcp.CallToolResult) string {
 
 	var buf bytes.Buffer
 	for _, content := range res.Content {
-		if content.Type != "text" {
-			t.Errorf("Not text content: %q", content.Type)
+		if c, ok := content.(*mcp.TextContent); ok {
+			fmt.Fprintf(&buf, "%s\n", c.Text)
+		} else {
+			t.Errorf("Not text content: %T", content)
 		}
-		fmt.Fprintf(&buf, "%s\n", content.Text)
 	}
 	return buf.String()
 }
