@@ -43,7 +43,7 @@ func (v *TagsFlag) Set(s string) error {
 
 	// Starting in Go 1.13, the -tags flag is a comma-separated list of build tags.
 	*v = []string{}
-	for _, s := range strings.Split(s, ",") {
+	for s := range strings.SplitSeq(s, ",") {
 		if s != "" {
 			*v = append(*v, s)
 		}

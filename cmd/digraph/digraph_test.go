@@ -252,7 +252,7 @@ func TestSomepath(t *testing.T) {
 			got = strings.Join(lines[1:], "\n")
 
 			var oneMatch bool
-			for _, want := range strings.Split(test.wantAnyOf, "|") {
+			for want := range strings.SplitSeq(test.wantAnyOf, "|") {
 				if got == want {
 					oneMatch = true
 				}

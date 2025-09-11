@@ -108,7 +108,7 @@ func TestRangeFunc(t *testing.T) {
 		},
 	}
 	got := make(map[string][]string)
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		if ind := strings.Index(ln, " \t "); ind >= 0 {
 			n, m := ln[:ind], ln[ind+3:]
 			got[n] = append(got[n], m)

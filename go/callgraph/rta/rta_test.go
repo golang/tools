@@ -120,7 +120,7 @@ func check(t *testing.T, f *ast.File, pkg *ssa.Package, res *rta.Result) {
 		wantReachable = make(map[string]bool)
 		wantRtype     = make(map[string]bool)
 	)
-	for _, line := range strings.Split(want, "\n") {
+	for line := range strings.SplitSeq(want, "\n") {
 		linenum++
 		orig := line
 		bad := func() {

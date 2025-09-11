@@ -338,7 +338,7 @@ func TestScript(t *testing.T) {
 
 				case "skip":
 					config := fmt.Sprintf("GOOS=%s GOARCH=%s", runtime.GOOS, runtime.GOARCH)
-					for _, word := range strings.Fields(rest) {
+					for word := range strings.FieldsSeq(rest) {
 						if strings.Contains(config, word) {
 							t.Skip(word)
 						}

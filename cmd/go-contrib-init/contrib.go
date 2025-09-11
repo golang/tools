@@ -191,7 +191,7 @@ func checkGitOrigin() {
 		log.Fatalf("Error running git remote -v: %v", msg)
 	}
 	matches := 0
-	for _, line := range strings.Split(string(remotes), "\n") {
+	for line := range strings.SplitSeq(string(remotes), "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "origin") {
 			continue

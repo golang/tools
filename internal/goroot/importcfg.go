@@ -51,7 +51,7 @@ func PkgfileMap() (map[string]string, error) {
 		if err != nil {
 			stdlibPkgfileErr = err
 		}
-		for _, line := range strings.Split(string(output), "\n") {
+		for line := range strings.SplitSeq(string(output), "\n") {
 			if line == "" {
 				continue
 			}

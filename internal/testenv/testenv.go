@@ -530,7 +530,7 @@ func NeedsGoExperiment(t testing.TB, flag string) {
 
 	goexp := os.Getenv("GOEXPERIMENT")
 	set := false
-	for _, f := range strings.Split(goexp, ",") {
+	for f := range strings.SplitSeq(goexp, ",") {
 		if f == "" {
 			continue
 		}

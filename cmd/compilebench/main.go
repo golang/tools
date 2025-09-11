@@ -511,7 +511,7 @@ func runBuildCmd(name string, count int, dir, tool string, args []string) error 
 		if err != nil {
 			log.Print("cannot find memory profile after compilation")
 		}
-		for _, line := range strings.Split(string(out), "\n") {
+		for line := range strings.SplitSeq(string(out), "\n") {
 			f := strings.Fields(line)
 			if len(f) < 4 || f[0] != "#" || f[2] != "=" {
 				continue

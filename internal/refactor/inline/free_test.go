@@ -215,7 +215,7 @@ func TestFreeishNames(t *testing.T) {
 				n := f.Decls[0].(*ast.FuncDecl).Body
 				got := map[string]bool{}
 				want := map[string]bool{}
-				for _, n := range strings.Fields(test.want) {
+				for n := range strings.FieldsSeq(test.want) {
 					want[n] = true
 				}
 

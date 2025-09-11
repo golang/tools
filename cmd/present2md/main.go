@@ -200,7 +200,7 @@ func printSectionBody(file string, depth int, w *bytes.Buffer, elems []present.E
 				lines = lines[1:]
 			}
 			if elem.Pre {
-				for _, line := range strings.Split(strings.TrimRight(elem.Raw, "\n"), "\n") {
+				for line := range strings.SplitSeq(strings.TrimRight(elem.Raw, "\n"), "\n") {
 					if line == "" {
 						fmt.Fprintf(w, "\n")
 					} else {

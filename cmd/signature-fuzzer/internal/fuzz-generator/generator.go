@@ -409,8 +409,7 @@ func ParseMaskString(arg string, tag string) (map[int]int, error) {
 	}
 	verb(1, "%s mask is %s", tag, arg)
 	m := make(map[int]int)
-	ss := strings.Split(arg, ":")
-	for _, s := range ss {
+	for s := range strings.SplitSeq(arg, ":") {
 		if strings.Contains(s, "-") {
 			rng := strings.Split(s, "-")
 			if len(rng) != 2 {

@@ -241,7 +241,7 @@ func bundle(src, dst, dstpkg, prefix, buildTags string) ([]byte, error) {
 	// Concatenate package comments from all files...
 	for _, f := range pkg.Syntax {
 		if doc := f.Doc.Text(); strings.TrimSpace(doc) != "" {
-			for _, line := range strings.Split(doc, "\n") {
+			for line := range strings.SplitSeq(doc, "\n") {
 				fmt.Fprintf(&out, "// %s\n", line)
 			}
 		}

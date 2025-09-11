@@ -67,7 +67,7 @@ func FieldJSONInfo(f reflect.StructField) JSONInfo {
 		}
 		if len(rest) > 0 {
 			info.Settings = map[string]bool{}
-			for _, s := range strings.Split(rest, ",") {
+			for s := range strings.SplitSeq(rest, ",") {
 				info.Settings[s] = true
 			}
 		}

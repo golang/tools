@@ -175,7 +175,7 @@ func fiximports(packages ...string) bool {
 		matchPrefix bool
 	}
 	var replace []replaceItem
-	for _, pair := range strings.Split(*replaceFlag, ",") {
+	for pair := range strings.SplitSeq(*replaceFlag, ",") {
 		if pair == "" {
 			continue
 		}
