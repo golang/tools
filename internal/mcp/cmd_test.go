@@ -47,8 +47,7 @@ func TestCmdTransport(t *testing.T) {
 		t.Skip("unsupported OS")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	exe, err := os.Executable()
 	if err != nil {
