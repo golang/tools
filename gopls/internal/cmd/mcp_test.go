@@ -266,6 +266,7 @@ func MyFun() {}
 }
 
 func TestMCPVulncheckCommand(t *testing.T) {
+	testenv.NeedsTool(t, "go")
 	const proxyData = `
 -- example.com/vulnmod@v1.0.0/go.mod --
 module example.com/vulnmod
