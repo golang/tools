@@ -17,8 +17,8 @@ import (
 )
 
 type vulncheckParams struct {
-	Dir     string `json:"dir" jsonschema:"directory to run the vulnerability check within"`
-	Pattern string `json:"pattern" jsonschema:"package pattern to check"`
+	Dir     string `json:"dir,omitempty" jsonschema:"directory to run the vulnerability check within"`
+	Pattern string `json:"pattern,omitempty" jsonschema:"package pattern to check"`
 }
 
 type GroupedVulnFinding struct {
