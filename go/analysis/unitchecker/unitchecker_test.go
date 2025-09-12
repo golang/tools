@@ -6,6 +6,7 @@ package unitchecker_test
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
@@ -89,29 +90,29 @@ func _() {
 		}}})
 	defer exported.Cleanup()
 
-	const wantA = `# golang.org/fake/a
-([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?a/a.go:4:11: call of MyFunc123\(...\)
+	const wantA = `
+.*a/a.go:4:11: call of MyFunc123\(...\)
 `
-	const wantB = `# golang.org/fake/b
-([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?b/b.go:6:13: call of MyFunc123\(...\)
-([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?b/b.go:7:11: call of MyFunc123\(...\)
+	const wantB = `
+.*b/b.go:6:13: call of MyFunc123\(...\)
+.*b/b.go:7:11: call of MyFunc123\(...\)
 `
-	const wantC = `# golang.org/fake/c
-([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?c/c.go:5:5: self-assignment of i
+	const wantC = `
+.*c/c.go:5:5: self-assignment of i
 `
-	const wantAJSON = `# golang.org/fake/a
+	const wantAJSON = `
 \{
 	"golang.org/fake/a": \{
 		"findcall": \[
 			\{
-				"posn": "([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?a/a.go:4:11",
+				"posn": ".*a/a.go:4:11",
 				"message": "call of MyFunc123\(...\)",
 				"suggested_fixes": \[
 					\{
 						"message": "Add '_TEST_'",
 						"edits": \[
 							\{
-								"filename": "([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?a/a.go",
+								"filename": ".*a/a.go",
 								"start": 32,
 								"end": 32,
 								"new": "_TEST_"
@@ -124,19 +125,19 @@ func _() {
 	\}
 \}
 `
-	const wantCJSON = `# golang.org/fake/c
+	const wantCJSON = `
 \{
 	"golang.org/fake/c": \{
 		"assign": \[
 			\{
-				"posn": "([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?c/c.go:5:5",
+				"posn": ".*c/c.go:5:5",
 				"message": "self-assignment of i",
 				"suggested_fixes": \[
 					\{
 						"message": "Remove self-assignment",
 						"edits": \[
 							\{
-								"filename": "([/._\-a-zA-Z0-9]+[\\/]fake[\\/])?c/c.go",
+								"filename": ".*c/c.go",
 								"start": 37,
 								"end": 42,
 								"new": ""
@@ -151,30 +152,27 @@ func _() {
 `
 	for _, test := range []struct {
 		args          string
-		wantOut       string
+		wantOut       string // multiline regular expression
 		wantExitError bool
 	}{
 		{args: "golang.org/fake/a", wantOut: wantA, wantExitError: true},
 		{args: "golang.org/fake/b", wantOut: wantB, wantExitError: true},
 		{args: "golang.org/fake/c", wantOut: wantC, wantExitError: true},
-		{args: "golang.org/fake/a golang.org/fake/b", wantOut: wantA + wantB, wantExitError: true},
+		{args: "golang.org/fake/a golang.org/fake/b", wantOut: wantA + ".*" + wantB, wantExitError: true},
 		{args: "-json golang.org/fake/a", wantOut: wantAJSON, wantExitError: false},
 		{args: "-json golang.org/fake/c", wantOut: wantCJSON, wantExitError: false},
 		{args: "-c=0 golang.org/fake/a", wantOut: wantA + "4		MyFunc123\\(\\)\n", wantExitError: true},
 	} {
 		cmd := exec.Command("go", "vet", "-vettool="+os.Args[0], "-findcall.name=MyFunc123")
+		cmd.Stdout = new(strings.Builder)
+		cmd.Stderr = new(strings.Builder)
 		cmd.Args = append(cmd.Args, strings.Fields(test.args)...)
 		cmd.Env = append(exported.Config.Env, "ENTRYPOINT=minivet")
 		cmd.Dir = exported.Config.Dir
 
-		// TODO(golang/go#65729): this is unsound: any extra
-		// logging by the child process (e.g. due to GODEBUG
-		// options) will add noise to stderr, causing the
-		// CombinedOutput to be unparsable as JSON. But we
-		// can't simply use Output here as some of the tests
-		// look for substrings of stderr. Rework the test to
+		// TODO(golang/go#65729): Rework the test to
 		// be specific about which output stream to match.
-		out, err := cmd.CombinedOutput()
+		err := cmd.Run()
 		exitcode := 0
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitcode = exitErr.ExitCode()
@@ -187,7 +185,8 @@ func _() {
 			t.Errorf("%s: got exit code %d, want %s", test.args, exitcode, want)
 		}
 
-		matched, err := regexp.Match(test.wantOut, out)
+		out := fmt.Sprintf("stdout:\n%s\nstderr:\n%s\n", cmd.Stdout, cmd.Stderr)
+		matched, err := regexp.MatchString("(?s)"+test.wantOut, out)
 		if err != nil {
 			t.Fatalf("regexp.Match(<<%s>>): %v", test.wantOut, err)
 		}
