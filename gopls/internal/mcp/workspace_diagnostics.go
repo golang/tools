@@ -23,6 +23,7 @@ type workspaceDiagnosticsParams struct {
 }
 
 func (h *handler) workspaceDiagnosticsHandler(ctx context.Context, req *mcp.CallToolRequest, params workspaceDiagnosticsParams) (*mcp.CallToolResult, any, error) {
+	countGoDiagnosticsMCP.Inc()
 	var (
 		fh       file.Handle
 		snapshot *cache.Snapshot

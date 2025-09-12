@@ -33,6 +33,7 @@ type VulncheckResultOutput struct {
 }
 
 func (h *handler) vulncheckHandler(ctx context.Context, req *mcp.CallToolRequest, params *vulncheckParams) (*mcp.CallToolResult, *VulncheckResultOutput, error) {
+	countGoVulncheckMCP.Inc()
 	snapshot, release, err := h.snapshot()
 	if err != nil {
 		return nil, nil, err

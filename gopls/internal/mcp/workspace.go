@@ -20,6 +20,7 @@ import (
 )
 
 func (h *handler) workspaceHandler(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+	countGoWorkspaceMCP.Inc()
 	var summary bytes.Buffer
 	views := h.session.Views()
 	for _, v := range views {

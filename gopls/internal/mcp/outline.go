@@ -18,6 +18,7 @@ type outlineParams struct {
 }
 
 func (h *handler) outlineHandler(ctx context.Context, req *mcp.CallToolRequest, params outlineParams) (*mcp.CallToolResult, any, error) {
+	countGoPackageAPIMCP.Inc()
 	snapshot, release, err := h.snapshot()
 	if err != nil {
 		return nil, nil, err

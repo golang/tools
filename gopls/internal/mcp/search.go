@@ -18,6 +18,7 @@ type searchParams struct {
 }
 
 func (h *handler) searchHandler(ctx context.Context, req *mcp.CallToolRequest, params searchParams) (*mcp.CallToolResult, any, error) {
+	countGoSearchMCP.Inc()
 	query := params.Query
 	if len(query) == 0 {
 		return nil, nil, fmt.Errorf("empty query")

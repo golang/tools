@@ -21,6 +21,7 @@ type fileContextParams struct {
 }
 
 func (h *handler) fileContextHandler(ctx context.Context, req *mcp.CallToolRequest, params fileContextParams) (*mcp.CallToolResult, any, error) {
+	countGoFileContextMCP.Inc()
 	fh, snapshot, release, err := h.fileOf(ctx, params.File)
 	if err != nil {
 		return nil, nil, err

@@ -21,6 +21,7 @@ type findReferencesParams struct {
 }
 
 func (h *handler) referencesHandler(ctx context.Context, req *mcp.CallToolRequest, params findReferencesParams) (*mcp.CallToolResult, any, error) {
+	countGoReferencesMCP.Inc()
 	fh, snapshot, release, err := h.session.FileOf(ctx, params.Location.URI)
 	if err != nil {
 		return nil, nil, err

@@ -29,6 +29,7 @@ type diagnosticsParams struct {
 }
 
 func (h *handler) fileDiagnosticsHandler(ctx context.Context, req *mcp.CallToolRequest, params diagnosticsParams) (*mcp.CallToolResult, any, error) {
+	countGoFileDiagnosticsMCP.Inc()
 	fh, snapshot, release, err := h.fileOf(ctx, params.File)
 	if err != nil {
 		return nil, nil, err
