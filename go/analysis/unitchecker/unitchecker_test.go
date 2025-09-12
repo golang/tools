@@ -5,11 +5,11 @@
 package unitchecker_test
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -18,7 +18,9 @@ import (
 	"golang.org/x/tools/go/analysis/passes/findcall"
 	"golang.org/x/tools/go/analysis/passes/printf"
 	"golang.org/x/tools/go/analysis/unitchecker"
-	"golang.org/x/tools/internal/packagestest"
+	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
+	"golang.org/x/tools/txtar"
 )
 
 func TestMain(m *testing.M) {
@@ -52,24 +54,27 @@ func minivet() {
 // This is a very basic integration test of modular
 // analysis with facts using unitchecker under "go vet".
 // It fork/execs the main function above.
-func TestIntegration(t *testing.T) { packagestest.TestAll(t, testIntegration) }
-func testIntegration(t *testing.T, exporter packagestest.Exporter) {
+func TestIntegration(t *testing.T) {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skipf("skipping fork/exec test on this platform")
 	}
 
-	exported := packagestest.Export(t, exporter, []packagestest.Module{{
-		Name: "golang.org/fake",
-		Files: map[string]any{
-			"a/a.go": `package a
+	const src = `
+-- go.mod --
+module golang.org/fake
+go 1.18
+
+-- a/a.go --
+package a
 
 func _() {
 	MyFunc123()
 }
 
 func MyFunc123() {}
-`,
-			"b/b.go": `package b
+
+-- b/b.go --
+package b
 
 import "golang.org/fake/a"
 
@@ -79,119 +84,140 @@ func _() {
 }
 
 func MyFunc123() {}
-`,
-			"c/c.go": `package c
+
+-- c/c.go --
+package c
 
 func _() {
     i := 5
     i = i
 }
-`,
-		}}})
-	defer exported.Cleanup()
+`
+	// Expand archive into tmp tree.
+	fs, err := txtar.FS(txtar.Parse([]byte(src)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpdir := testfiles.CopyToTmp(t, fs)
 
-	const wantA = `
-.*a/a.go:4:11: call of MyFunc123\(...\)
-`
-	const wantB = `
-.*b/b.go:6:13: call of MyFunc123\(...\)
-.*b/b.go:7:11: call of MyFunc123\(...\)
-`
-	const wantC = `
-.*c/c.go:5:5: self-assignment of i
-`
-	const wantAJSON = `
-\{
-	"golang.org/fake/a": \{
-		"findcall": \[
-			\{
-				"posn": ".*a/a.go:4:11",
-				"message": "call of MyFunc123\(...\)",
-				"suggested_fixes": \[
-					\{
-						"message": "Add '_TEST_'",
-						"edits": \[
-							\{
-								"filename": ".*a/a.go",
-								"start": 32,
-								"end": 32,
-								"new": "_TEST_"
-							\}
-						\]
-					\}
-				\]
-			\}
-		\]
-	\}
-\}
-`
-	const wantCJSON = `
-\{
-	"golang.org/fake/c": \{
-		"assign": \[
-			\{
-				"posn": ".*c/c.go:5:5",
-				"message": "self-assignment of i",
-				"suggested_fixes": \[
-					\{
-						"message": "Remove self-assignment",
-						"edits": \[
-							\{
-								"filename": ".*c/c.go",
-								"start": 37,
-								"end": 42,
-								"new": ""
-							\}
-						\]
-					\}
-				\]
-			\}
-		\]
-	\}
-\}
-`
-	for _, test := range []struct {
-		args          string
-		wantOut       string // multiline regular expression
-		wantExitError bool
-	}{
-		{args: "golang.org/fake/a", wantOut: wantA, wantExitError: true},
-		{args: "golang.org/fake/b", wantOut: wantB, wantExitError: true},
-		{args: "golang.org/fake/c", wantOut: wantC, wantExitError: true},
-		{args: "golang.org/fake/a golang.org/fake/b", wantOut: wantA + ".*" + wantB, wantExitError: true},
-		{args: "-json golang.org/fake/a", wantOut: wantAJSON, wantExitError: false},
-		{args: "-json golang.org/fake/c", wantOut: wantCJSON, wantExitError: false},
-		{args: "-c=0 golang.org/fake/a", wantOut: wantA + "4		MyFunc123\\(\\)\n", wantExitError: true},
-	} {
+	// -- operators --
+
+	// vet runs "go vet" with the specified arguments (plus -findcall.name=MyFunc123).
+	vet := func(t *testing.T, args ...string) (exitcode int, stdout, stderr string) {
 		cmd := exec.Command("go", "vet", "-vettool="+os.Args[0], "-findcall.name=MyFunc123")
 		cmd.Stdout = new(strings.Builder)
 		cmd.Stderr = new(strings.Builder)
-		cmd.Args = append(cmd.Args, strings.Fields(test.args)...)
-		cmd.Env = append(exported.Config.Env, "ENTRYPOINT=minivet")
-		cmd.Dir = exported.Config.Dir
-
-		// TODO(golang/go#65729): Rework the test to
-		// be specific about which output stream to match.
-		err := cmd.Run()
-		exitcode := 0
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		cmd.Args = append(cmd.Args, args...)
+		cmd.Env = append(os.Environ(), "ENTRYPOINT=minivet")
+		cmd.Dir = tmpdir
+		if err := cmd.Run(); err != nil {
+			exitErr, ok := err.(*exec.ExitError)
+			if !ok {
+				t.Fatalf("couldn't exec %v: %v", cmd, err)
+			}
 			exitcode = exitErr.ExitCode()
 		}
-		if (exitcode != 0) != test.wantExitError {
-			want := "zero"
-			if test.wantExitError {
-				want = "nonzero"
-			}
-			t.Errorf("%s: got exit code %d, want %s", test.args, exitcode, want)
-		}
 
-		out := fmt.Sprintf("stdout:\n%s\nstderr:\n%s\n", cmd.Stdout, cmd.Stderr)
-		matched, err := regexp.MatchString("(?s)"+test.wantOut, out)
-		if err != nil {
-			t.Fatalf("regexp.Match(<<%s>>): %v", test.wantOut, err)
-		}
-		if !matched {
-			t.Errorf("%s: got <<%s>>, want match of regexp <<%s>>", test.args, out, test.wantOut)
+		// Sanitize filenames; this is imperfect due to
+		// (e.g.) /private/tmp -> /tmp symlink on macOS.
+		stdout = strings.ReplaceAll(fmt.Sprint(cmd.Stdout), tmpdir, "TMPDIR")
+		stderr = strings.ReplaceAll(fmt.Sprint(cmd.Stderr), tmpdir, "TMPDIR")
+
+		// Show vet information on failure.
+		t.Cleanup(func() {
+			if t.Failed() {
+				t.Logf("command: %v", cmd)
+				t.Logf("exit code: %d", exitcode)
+				t.Logf("stdout: %s", stdout)
+				t.Logf("stderr: %s", stderr)
+			}
+		})
+		return
+	}
+
+	// exitcode asserts that the exit code was "want".
+	exitcode := func(t *testing.T, got, want int) {
+		if got != want {
+			t.Fatalf("vet tool exit code was %d", got)
 		}
 	}
+
+	// parseJSON parses the JSON diagnostics into a simple line-oriented form.
+	parseJSON := func(t *testing.T, stdout string) string {
+		var v map[string]map[string][]map[string]any
+		if err := json.Unmarshal([]byte(stdout), &v); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		var res strings.Builder
+		for pkgpath, v := range v {
+			for analyzer, v := range v {
+				for _, v := range v {
+					fmt.Fprintf(&res, "%s: [%s@%s] %v\n",
+						v["posn"],
+						analyzer, pkgpath,
+						v["message"])
+				}
+			}
+		}
+		// Show parsed JSON information on failure.
+		t.Cleanup(func() {
+			if t.Failed() {
+				t.Logf("json: %s", &res)
+			}
+		})
+		return res.String()
+	}
+
+	// substring asserts that the labeled output contained the substring.
+	substring := func(t *testing.T, label, output, substr string) {
+		if !strings.Contains(output, substr) {
+			t.Fatalf("%s: expected substring %q", label, substr)
+		}
+	}
+
+	// -- scenarios --
+
+	t.Run("a", func(t *testing.T) {
+		code, _, stderr := vet(t, "golang.org/fake/a")
+		exitcode(t, code, 1)
+		substring(t, "stderr", stderr, "a/a.go:4:11: call of MyFunc123")
+	})
+	t.Run("b", func(t *testing.T) {
+		code, _, stderr := vet(t, "golang.org/fake/b")
+		exitcode(t, code, 1)
+		substring(t, "stderr", stderr, "b/b.go:6:13: call of MyFunc123")
+		substring(t, "stderr", stderr, "b/b.go:7:11: call of MyFunc123")
+	})
+	t.Run("c", func(t *testing.T) {
+		code, _, stderr := vet(t, "golang.org/fake/c")
+		exitcode(t, code, 1)
+		substring(t, "stderr", stderr, "c/c.go:5:5: self-assignment of i")
+	})
+	t.Run("ab", func(t *testing.T) {
+		code, _, stderr := vet(t, "golang.org/fake/a", "golang.org/fake/b")
+		exitcode(t, code, 1)
+		substring(t, "stderr", stderr, "a/a.go:4:11: call of MyFunc123")
+		substring(t, "stderr", stderr, "b/b.go:6:13: call of MyFunc123")
+		substring(t, "stderr", stderr, "b/b.go:7:11: call of MyFunc123")
+	})
+	t.Run("a-json", func(t *testing.T) {
+		code, stdout, _ := vet(t, "-json", "golang.org/fake/a")
+		exitcode(t, code, 0)
+		testenv.NeedsGo1Point(t, 26) // depends on CL 702815 (go vet -json => stdout)
+		json := parseJSON(t, stdout)
+		substring(t, "json", json, "a/a.go:4:11: [findcall@golang.org/fake/a] call of MyFunc123")
+	})
+	t.Run("c-json", func(t *testing.T) {
+		code, stdout, _ := vet(t, "-json", "golang.org/fake/c")
+		exitcode(t, code, 0)
+		testenv.NeedsGo1Point(t, 26) // depends on CL 702815 (go vet -json => stdout)
+		json := parseJSON(t, stdout)
+		substring(t, "json", json, "c/c.go:5:5: [assign@golang.org/fake/c] self-assignment of i")
+	})
+	t.Run("a-context", func(t *testing.T) {
+		code, _, stderr := vet(t, "-c=0", "golang.org/fake/a")
+		exitcode(t, code, 1)
+		substring(t, "stderr", stderr, "a/a.go:4:11: call of MyFunc123")
+		substring(t, "stderr", stderr, "4		MyFunc123")
+	})
 }
