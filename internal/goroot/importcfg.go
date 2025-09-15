@@ -4,36 +4,17 @@
 
 // Package goroot is a copy of package internal/goroot
 // in the main GO repot. It provides a utility to produce
-// an importcfg and import path to package file map mapping
+// an import path to package file map mapping
 // standard library packages to the locations of their export
 // data files.
 package goroot
 
 import (
-	"bytes"
 	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
 )
-
-// Importcfg returns an importcfg file to be passed to the
-// Go compiler that contains the cached paths for the .a files for the
-// standard library.
-func Importcfg() (string, error) {
-	var icfg bytes.Buffer
-
-	m, err := PkgfileMap()
-	if err != nil {
-		return "", err
-	}
-	fmt.Fprintf(&icfg, "# import config")
-	for importPath, export := range m {
-		fmt.Fprintf(&icfg, "\npackagefile %s=%s", importPath, export)
-	}
-	s := icfg.String()
-	return s, nil
-}
 
 var (
 	stdlibPkgfileMap map[string]string

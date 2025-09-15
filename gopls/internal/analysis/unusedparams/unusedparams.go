@@ -179,7 +179,7 @@ funcloop:
 							// Edge case: _ = func() {...}
 							// has no local var. Fake one.
 							v := types.NewVar(id.Pos(), pass.Pkg, id.Name, pass.TypesInfo.TypeOf(n))
-							typesinternal.SetVarKind(v, typesinternal.LocalVar)
+							v.SetKind(types.LocalVar)
 							fn = v
 						}
 					}

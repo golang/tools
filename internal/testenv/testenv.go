@@ -25,7 +25,6 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/internal/gocommand"
-	"golang.org/x/tools/internal/goroot"
 )
 
 // packageMainIsDevel reports whether the module containing package main
@@ -421,23 +420,6 @@ func Deadline(t testing.TB) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return td.Deadline()
-}
-
-// WriteImportcfg writes an importcfg file used by the compiler or linker to
-// dstPath containing entries for the packages in std and cmd in addition
-// to the package to package file mappings in additionalPackageFiles.
-func WriteImportcfg(t testing.TB, dstPath string, additionalPackageFiles map[string]string) {
-	importcfg, err := goroot.Importcfg()
-	for k, v := range additionalPackageFiles {
-		importcfg += fmt.Sprintf("\npackagefile %s=%s", k, v)
-	}
-	if err != nil {
-		t.Fatalf("preparing the importcfg failed: %s", err)
-	}
-	os.WriteFile(dstPath, []byte(importcfg), 0655)
-	if err != nil {
-		t.Fatalf("writing the importcfg failed: %s", err)
-	}
 }
 
 var (

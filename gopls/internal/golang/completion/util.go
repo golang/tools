@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/typeparams"
-	"golang.org/x/tools/internal/typesinternal"
 )
 
 // exprAtPos returns the index of the expression containing pos.
@@ -128,7 +127,7 @@ func resolveInvalid(fset *token.FileSet, obj types.Object, node ast.Node, info *
 	typename := golang.FormatNode(fset, resultExpr)
 	typ := types.NewNamed(types.NewTypeName(token.NoPos, obj.Pkg(), typename, nil), types.Typ[types.Invalid], nil)
 	v := types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), typ)
-	typesinternal.SetVarKind(v, typesinternal.PackageVar)
+	v.SetKind(types.PackageVar)
 	return v
 }
 
