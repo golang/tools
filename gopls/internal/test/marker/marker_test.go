@@ -588,7 +588,7 @@ var valueMarkerFuncs = map[string]func(marker){
 // See doc.go for marker documentation.
 var actionMarkerFuncs = map[string]func(marker){
 	"acceptcompletion": actionMarkerFunc(acceptCompletionMarker),
-	"codeaction":       actionMarkerFunc(codeActionMarker, "end", "result", "edit", "err"),
+	"codeaction":       actionMarkerFunc(codeActionMarker, "end", "diag", "action", "result", "edit", "err"),
 	"codelenses":       actionMarkerFunc(codeLensesMarker),
 	"complete":         actionMarkerFunc(completeMarker),
 	"def":              actionMarkerFunc(defMarker),
@@ -2168,7 +2168,7 @@ func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[
 }
 
 func codeActionMarker(mark marker, loc protocol.Location, kind string) {
-	if !exactlyOneNamedArg(mark, "edit", "result", "err") {
+	if !exactlyOneNamedArg(mark, "action", "edit", "result", "err") {
 		return
 	}
 
@@ -2181,14 +2181,61 @@ func codeActionMarker(mark marker, loc protocol.Location, kind string) {
 	}
 
 	var (
-		edit    = namedArg(mark, "edit", expect.Identifier(""))
-		result  = namedArg(mark, "result", expect.Identifier(""))
-		wantErr = namedArgFunc(mark, "err", convertStringMatcher, stringMatcher{})
+		edit       = namedArg(mark, "edit", expect.Identifier(""))
+		result     = namedArg(mark, "result", expect.Identifier(""))
+		wantAction = namedArg(mark, "action", expect.Identifier(""))
+		wantErr    = namedArgFunc(mark, "err", convertStringMatcher, stringMatcher{})
 	)
 
-	changed, err := codeAction(mark.run.env, loc.URI, loc.Range, protocol.CodeActionKind(kind), nil)
-	if err != nil && wantErr.empty() {
-		mark.errorf("codeAction failed: %v", err)
+	var diag *protocol.Diagnostic
+	if re := namedArg(mark, "diag", (*regexp.Regexp)(nil)); re != nil {
+		d, ok := removeDiagnostic(mark, loc, false, re)
+		if !ok {
+			mark.errorf("no diagnostic at %v matches %q", loc, re)
+			return
+		}
+		diag = &d
+	}
+
+	action, err := resolveCodeAction(mark.run.env, loc.URI, loc.Range, protocol.CodeActionKind(kind), diag)
+	if err != nil {
+		if !wantErr.empty() {
+			wantErr.checkErr(mark, err)
+		} else {
+			mark.errorf("resolveCodeAction failed: %v", err)
+		}
+		return
+	}
+
+	// If when 'action' is set, we simply compare the action, and don't apply it.
+	if wantAction != "" {
+		g := mark.getGolden(wantAction)
+		if action == nil {
+			mark.errorf("no matching codeAction")
+			return
+		}
+		data, err := json.MarshalIndent(action, "", "\t")
+		if err != nil {
+			mark.errorf("failed to marshal codeaction: %v", err)
+			return
+		}
+		data = bytes.ReplaceAll(data, []byte(mark.run.env.Sandbox.Workdir.RootURI()), []byte("$WORKDIR"))
+		compareGolden(mark, data, g)
+		return
+	}
+
+	changes, err := applyCodeAction(mark.run.env, action)
+	if err != nil {
+		if !wantErr.empty() {
+			wantErr.checkErr(mark, err)
+		} else {
+			mark.errorf("codeAction failed: %v", err)
+		}
+		return
+	}
+	changed, err := changedFiles(mark.run.env, changes)
+	if err != nil {
+		mark.errorf("changedFiles failed: %v", err)
 		return
 	}
 
@@ -2319,29 +2366,20 @@ func quickfixErrMarker(mark marker, loc protocol.Location, re *regexp.Regexp, wa
 // applied. Currently, this function does not support code actions that return
 // edits directly; it only supports code action commands.
 func codeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, kind protocol.CodeActionKind, diag *protocol.Diagnostic) (map[string][]byte, error) {
-	changes, err := codeActionChanges(env, uri, rng, kind, diag)
+	action, err := resolveCodeAction(env, uri, rng, kind, diag)
+	if err != nil {
+		return nil, err
+	}
+	changes, err := applyCodeAction(env, action)
 	if err != nil {
 		return nil, err
 	}
 	return changedFiles(env, changes)
 }
 
-// codeActionChanges executes a textDocument/codeAction request for the
-// specified location and kind, and captures the resulting document changes.
-// If diag is non-nil, it is used as the code action context.
-func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, kind protocol.CodeActionKind, diag *protocol.Diagnostic) ([]protocol.DocumentChange, error) {
-	// Collect any server-initiated changes created by workspace/applyEdit.
-	//
-	// We set up this handler immediately, not right before executing the code
-	// action command, so we can assert that neither the codeAction request nor
-	// codeAction resolve request cause edits as a side effect (golang/go#71405).
-	var changes []protocol.DocumentChange
-	restore := env.Editor.Client().SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
-		changes = append(changes, wsedit.DocumentChanges...)
-		return nil
-	})
-	defer restore()
-
+// resolveCodeAction resolves the code action specified by the given location,
+// kind, and diagnostic.
+func resolveCodeAction(env *integration.Env, uri protocol.DocumentURI, rng protocol.Range, kind protocol.CodeActionKind, diag *protocol.Diagnostic) (*protocol.CodeAction, error) {
 	// Request all code actions that apply to the diagnostic.
 	// A production client would set Only=[kind],
 	// but we can give a better error if we don't filter.
@@ -2379,16 +2417,6 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 	}
 	action := candidates[0]
 
-	// Apply the codeAction.
-	//
-	// Spec:
-	//  "If a code action provides an edit and a command, first the edit is
-	//  executed and then the command."
-	// An action may specify an edit and/or a command, to be
-	// applied in that order. But since applyDocumentChanges(env,
-	// action.Edit.DocumentChanges) doesn't compose, for now we
-	// assert that actions return one or the other.
-
 	// Resolve code action edits first if the client has resolve support
 	// and the code action has no edits.
 	if action.Edit == nil {
@@ -2401,10 +2429,41 @@ func codeActionChanges(env *integration.Env, uri protocol.DocumentURI, rng proto
 			if err != nil {
 				return nil, err
 			}
-			action.Edit = resolved.Edit
+			action = *resolved
 		}
 	}
 
+	return &action, nil
+}
+
+// applyCodeAction applies the given code action, and captures the resulting
+// document changes.
+func applyCodeAction(env *integration.Env, action *protocol.CodeAction) ([]protocol.DocumentChange, error) {
+	// Collect any server-initiated changes created by workspace/applyEdit.
+	//
+	// We set up this handler immediately, not right before executing the code
+	// action command, so we can assert that neither the codeAction request nor
+	// codeAction resolve request cause edits as a side effect (golang/go#71405).
+	var changes []protocol.DocumentChange
+	restore := env.Editor.Client().SetApplyEditHandler(func(ctx context.Context, wsedit *protocol.WorkspaceEdit) error {
+		changes = append(changes, wsedit.DocumentChanges...)
+		return nil
+	})
+	defer restore()
+
+	if action.Edit == nil && action.Command == nil {
+		panic("bad action")
+	}
+
+	// Apply the codeAction.
+	//
+	// Spec:
+	//  "If a code action provides an edit and a command, first the edit is
+	//  executed and then the command."
+	// An action may specify an edit and/or a command, to be
+	// applied in that order. But since applyDocumentChanges(env,
+	// action.Edit.DocumentChanges) doesn't compose, for now we
+	// assert that actions return one or the other.
 	if action.Edit != nil {
 		if len(action.Edit.Changes) > 0 {
 			env.TB.Errorf("internal error: discarding unexpected CodeAction{Kind=%s, Title=%q}.Edit.Changes", action.Kind, action.Title)

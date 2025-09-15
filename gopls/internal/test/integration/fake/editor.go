@@ -1001,7 +1001,7 @@ func (e *Editor) ApplyCodeAction(ctx context.Context, action protocol.CodeAction
 			if err != nil {
 				return err
 			}
-			action.Edit = ca.Edit
+			action = *ca
 		}
 	}
 

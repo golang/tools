@@ -243,19 +243,32 @@ func (s *server) ResolveCodeAction(ctx context.Context, ca *protocol.CodeAction)
 			return nil, err
 		}
 	}
+	ca.Data = nil
 	if cmd.Command != "" {
+		// Try to resolve codeaction edits by running the command.
+		//
+		// Unfortunately, we can't simply report failure to execute the command, as
+		// some clients (namely, VS Code with the Live Share extension) eagerly
+		// resolve *all* code actions, and returning an error leads to spammy
+		// popups. Instead, we simply set the command on the code action, and let
+		// it fail if/when invoked (golang/go#75442).
+		//
+		// This is arguably a client-side bug, but we work around it as it causes
+		// significant problems for our users.
+		// https://github.com/microsoft/live-share/issues/5293
 		params := &protocol.ExecuteCommandParams{
 			Command:   cmd.Command,
 			Arguments: cmd.Arguments,
 		}
-
 		handler := &commandHandler{
 			s:      s,
 			params: params,
 		}
 		edit, err := command.Dispatch(ctx, params, handler)
 		if err != nil {
-			return nil, err
+			// Resolving edits failed, so just resolve the command.
+			ca.Command = &cmd
+			return ca, nil
 		}
 		var ok bool
 		if ca.Edit, ok = edit.(*protocol.WorkspaceEdit); !ok {

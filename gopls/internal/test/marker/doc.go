@@ -144,16 +144,23 @@ Here is the list of supported action markers:
     completion candidate produced at the given location with provided label
     results in the given golden state.
 
-  - codeaction(start location, kind string, end=location, edit=golden, result=golden, err=stringMatcher)
+  - codeaction(start location, kind string, diag=regexp, end=location, action=golden, edit=golden, result=golden, err=stringMatcher)
 
     Specifies a code action to request at the location, with given kind.
+    If diag is set, the code action must be associated with the given
+    diagnostic.
+    If end is set, the location is defined to be between start.Start and
+    end.End.
 
-    If end is set, the location is defined to be between start.Start and end.End.
-
-    Exactly one of edit, result, or err must be set. If edit is set, it is a
-    golden reference to the edits resulting from the code action. If result is
-    set, it is a golden reference to the full set of changed files resulting
-    from the code action. If err is set, it is the code action error.
+    Exactly one of action, edit, result, or err must be set:
+    If action is set, it is a golden reference to a JSON blob representing the
+    resolved code action, which is not applied.
+    If edit is set, it is a golden reference to the edits resulting from the
+    code action.
+    If result is set, it is a golden reference to the full set of changed files
+    resulting from the code action.
+    If err is set, it is expected to match the error resulting from applying
+    the code action.
 
   - codelens(location, title): specifies that a codelens is expected at the
     given location, with given title. Must be used in conjunction with
