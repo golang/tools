@@ -9,5 +9,5 @@ It provides a wide variety of [IDE features](doc/features/)
 to any [LSP](https://microsoft.github.io/language-server-protocol/)-compatible
 editor.
 
-- Documentation for [users](doc/index.md). <!-- TODO: link to go.dev/gopls in due course -->
-- Documentation for [contributors](doc/contributing.md).
+- Documentation for [users](https://go.dev/gopls)
+- Documentation for [contributors](doc/contributing.md)
