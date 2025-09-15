@@ -12,6 +12,7 @@ import (
 	"go/doc/comment"
 	"go/token"
 	"go/types"
+	"iter"
 	pathpkg "path"
 	"strings"
 
@@ -19,7 +20,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
 )
 
@@ -73,70 +73,109 @@ func docLinkDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache
 // resolveDocLink parses a doc link in a comment such as [fmt.Println]
 // and returns the symbol at pos, along with the link's range.
 func resolveDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types.Object, protocol.Range, error) {
-	var comment *ast.Comment
-outer:
-	for _, cg := range pgf.File.Comments {
-		for _, c := range cg.List {
-			if c.Pos() <= pos && pos <= c.End() {
-				comment = c
-				break outer
-			}
+	var comment *ast.CommentGroup
+	for _, c := range pgf.File.Comments {
+		if astutil.NodeContains(c, pos) {
+			comment = c
+			break
 		}
 	}
+
 	if comment == nil {
 		return nil, protocol.Range{}, errNoCommentReference
 	}
 
-	// The canonical parsing algorithm is defined by go/doc/comment, but
-	// unfortunately its API provides no way to reliably reconstruct the
-	// position of each doc link from the parsed result.
-	line := safetoken.Line(pgf.Tok, pos)
-	var start, end token.Pos
-	start = max(pgf.Tok.LineStart(line), comment.Pos())
-	if line < pgf.Tok.LineCount() && pgf.Tok.LineStart(line+1) < comment.End() {
-		end = pgf.Tok.LineStart(line + 1)
-	} else {
-		end = comment.End()
-	}
-
-	textBytes, err := pgf.PosText(start, end)
-	if err != nil {
-		return nil, protocol.Range{}, err
-	}
-
-	text := string(textBytes)
-	lineOffset := int(pos - start)
-
-	for _, idx := range docLinkRegex.FindAllStringSubmatchIndex(text, -1) {
-		mstart, mend := idx[2], idx[3]
-		// [mstart, mend) identifies the first submatch,
-		// which is the reference name in the doc link (sans '*').
-		// e.g. The "[fmt.Println]" reference name is "fmt.Println".
-		if mstart <= lineOffset && lineOffset < mend {
-			p := lineOffset - mstart
-			name := text[mstart:mend]
-			i := strings.LastIndexByte(name, '.')
-			for i != -1 {
-				if p > i {
-					break
+	for docLink := range commentDocLinks(comment) {
+		if docLink.partRange.Contains(pos) {
+			if obj := lookupDocLinkSymbol(pkg, pgf, docLink.nameText); obj != nil {
+				rng, err := pgf.NodeRange(docLink.partRange)
+				if err != nil {
+					return nil, protocol.Range{}, err
 				}
-				name = name[:i]
-				i = strings.LastIndexByte(name, '.')
+				return obj, rng, nil
 			}
-			obj := lookupDocLinkSymbol(pkg, pgf, name)
-			if obj == nil {
-				return nil, protocol.Range{}, errNoCommentReference
-			}
-			namePos := start + token.Pos(mstart+i+1)
-			rng, err := pgf.PosRange(namePos, namePos+token.Pos(len(obj.Name())))
-			if err != nil {
-				return nil, protocol.Range{}, err
-			}
-			return obj, rng, nil // success
+			break
 		}
 	}
 
 	return nil, protocol.Range{}, errNoCommentReference
+}
+
+// A docLink holds the parsed information for a single resolution step of a
+// documentation link. For a link like "[fmt.Scanner.Scan]", the parser will
+// yield three docLink values, one for each progressively resolved part:
+// "fmt", "fmt.Scanner", and "fmt.Scanner.Scan".
+type docLink struct {
+	// The text of the right-most component of the name for this step.
+	// For the name "fmt.Scanner", this is "Scanner".
+	partText  string
+	partRange astutil.Range
+
+	// The text of the fully-qualified symbol path resolved in this step.
+	// For example, "fmt.Scanner". Used for symbol lookups.
+	nameText string
+
+	// The text of the entire, original doc link expression, including brackets.
+	// For example, "[fmt.Scanner.Scan]".
+	bracketText string
+}
+
+// commentDocLinks returns the sequence of Go doc links in the comment group.
+// TODO(hxjiang): move to [parsego] package.
+func commentDocLinks(cg *ast.CommentGroup) iter.Seq[docLink] {
+	return func(yield func(docLink) bool) {
+		for _, comment := range cg.List {
+			// The canonical parsing algorithm is defined by go/doc/comment, but
+			// unfortunately its API provides no way to reliably reconstruct the
+			// position of each doc link from the parsed result.
+
+			for _, idx := range docLinkRegex.FindAllStringSubmatchIndex(comment.Text, -1) {
+				mstart, mend := idx[2], idx[3]
+
+				// [bracketPos.Start, bracketPos.End) identifies the start and end
+				// of the brackets. e.g. "[fmt.Scanner.Scan]".
+				bracketText := comment.Text[mstart-1 : mend+1]
+
+				// [mstart, mend) identifies the first submatch, which is the
+				// reference name in the doc link (sans '*').
+				// e.g. The "[fmt.Println]" reference name is "fmt.Println".
+				match := comment.Text[mstart:mend]
+
+				if strings.Contains(match, "\n") {
+					continue
+				}
+
+				// [namePos.Start, namePos.End) identifies the start and end
+				// position of a name. e.g. "fmt", "fmt.Scanner", "fmt.Scanner.Scan".
+				var name string
+
+				namePos := astutil.RangeOf(comment.Pos()+token.Pos(mstart), comment.Pos()+token.Pos(mstart-1))
+				// [partPos.Start, partPos.End) identifies the start and end
+				// position of a part. e.g. "fmt", "Scanner", "Scan".
+				partPos := namePos
+				for part := range strings.SplitSeq(match, ".") {
+					if name != "" {
+						name += "."
+					}
+					name += part
+
+					partPos.Start = partPos.EndPos + token.Pos(len("."))  // Move start to the first char of next part
+					partPos.EndPos = partPos.Start + token.Pos(len(part)) // Move end to next char of current part
+
+					namePos.EndPos = partPos.EndPos
+
+					if !yield(docLink{
+						partRange:   partPos,
+						partText:    part,
+						nameText:    name,
+						bracketText: bracketText,
+					}) {
+						return
+					}
+				}
+			}
+		}
+	}
 }
 
 // lookupDocLinkSymbol returns the symbol denoted by a doc link such

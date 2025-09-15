@@ -51,7 +51,7 @@ func Conv(s string) int
 
 ---
 
-\[Conv] converts s to an int. //@hover("Conv", "Conv", Conv)
+[Conv](file://$WORKDIR/a.go#13,6) converts s to an int. //@hover("Conv", "Conv", Conv)
 
 
 ---
@@ -64,7 +64,7 @@ const NumberBase untyped int = 10
 
 ---
 
-\[NumberBase] is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase)
+[NumberBase](file://$WORKDIR/a.go#10,7) is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase)
 
 
 ---

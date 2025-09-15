@@ -1871,6 +1871,15 @@ func hoverMarker(mark marker, src, dst protocol.Location, sc stringMatcher) {
 	gotMD := ""
 	if content != nil {
 		gotMD = content.Value
+
+		// Normalize the absolute path for cross-platform consistency before
+		// replacement. This ensures Windows paths (e.g., "C:/...") become
+		// "/C:/..." to match Unix-like paths.
+		abs := mark.run.env.Sandbox.Workdir.RootURI().Path()
+		if protocol.IsWindowsDrivePath(abs) {
+			abs = "/" + abs
+		}
+		gotMD = strings.ReplaceAll(gotMD, filepath.ToSlash(abs), "$WORKDIR")
 	}
 	sc.check(mark, gotMD)
 }

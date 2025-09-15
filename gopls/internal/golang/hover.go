@@ -244,6 +244,11 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		}
 	}
 
+	// TODO(hxjiang): Hovering over a doc link like "[foo.Foo]" and a direct
+	// call to "foo.Foo" can produce different signatures. The doc link hover is
+	// qualified relative to the function's definition file, whereas the direct
+	// call hover is qualified relative to the current file where the call occurs.
+
 	// Handle hovering over a doc link
 	if obj, rng, _ := resolveDocLink(pkg, pgf, pos); obj != nil {
 		// Built-ins have no position.
@@ -336,17 +341,68 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		return *hoverRange, h, err
 	}
 
-	// For all other objects, consider the full syntax of their declaration in
-	// order to correctly compute their documentation, signature, and link.
+	// For all other objects, load type information for their declaring package
+	// in order to correctly compute their documentation, signature,  and link.
 	//
-	// Beware: decl{PGF,Pos} are not necessarily associated with pkg.FileSet().
-	declPGF, declPos, err := parseFull(ctx, snapshot, pkg.FileSet(), obj)
+	// Beware: positions derived from decl{Obj,Pkg,PGF,Pos} should be resolve
+	// using declPkg.FileSet; other positions should use pkg.FileSet().
+	objURI := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
+
+	// TODO(hxjiang): create a helper function NarrowestDeclaringPackage
+	// which type-checks a second package that declares a symbol of interest
+	// found in current package.
+	declPkg, declPGF, err := NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(objURI.Filename))
 	if err != nil {
-		return protocol.Range{}, nil, fmt.Errorf("re-parsing declaration of %s: %v", obj.Name(), err)
+		return protocol.Range{}, nil, err
 	}
+
+	declPos := declPGF.Tok.Pos(objURI.Offset)
 	decl, spec, field := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^3
-	comment := chooseDocComment(decl, spec, field)
-	docText := comment.Text()
+
+	var docText string
+	if docComment := chooseDocComment(decl, spec, field); docComment != nil {
+		docBuf := new(strings.Builder)
+		docBuf.WriteString(docComment.Text())
+
+		// docLinks maps the literal text of a doc link to its definition URI.
+		// Since the link parser yields progressively for each part of a symbol
+		// path (e.g., "fmt", then "fmt.Scanner"), we intentionally overwrite the
+		// map entry to ensure the final value is the URI for the complete symbol.
+		docLinks := make(map[string]string)
+		for docLink := range commentDocLinks(docComment) {
+			obj := lookupDocLinkSymbol(declPkg, declPGF, docLink.nameText)
+			if obj == nil {
+				continue
+			}
+
+			// The URI is set to the location of the right-most element in a doc link
+			// (e.g., 'Scan' in [fmt.Scanner.Scan]). The sequential yielding of path
+			// segments intentionally overwrites the location for previous segments,
+			// ensuring only the most specific definition's location is retained.
+			loc, err := ObjectLocation(ctx, declPkg.FileSet(), snapshot, obj)
+			if err != nil {
+				return protocol.Range{}, nil, err
+			}
+
+			// The #line,col URL fragment is a non-standard format for file
+			// URIs that is supported by VS Code for navigating from hover
+			// text. The line and column are 1-based, and the column is a
+			// UTF-16 code unit offset, matching the LSP's definition of
+			// character position.
+			docLinks[docLink.bracketText] = fmt.Sprintf("%s#%d,%d", loc.URI, loc.Range.Start.Line+1, loc.Range.Start.Character+1)
+		}
+
+		// Attaching doc links to the bottom of the comment. The non-deterministic
+		// order is acceptable as these will be removed later by the [formatHover].
+		if len(docLinks) > 0 {
+			docBuf.WriteString("\n")
+			for doc, link := range docLinks {
+				fmt.Fprintf(docBuf, "%s: %s\n", doc, link)
+			}
+		}
+
+		docText = docBuf.String()
+	}
 
 	// By default, types.ObjectString provides a reasonable signature.
 	signature := objectString(obj, qual, declPos, declPGF.Tok, spec)

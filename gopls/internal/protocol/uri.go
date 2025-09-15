@@ -206,13 +206,13 @@ func URIFromPath(path string) DocumentURI {
 	if path == "" {
 		return ""
 	}
-	if !isWindowsDrivePath(path) {
+	if !IsWindowsDrivePath(path) {
 		if abs, err := filepath.Abs(path); err == nil {
 			path = abs
 		}
 	}
 	// Check the file path again, in case it became absolute.
-	if isWindowsDrivePath(path) {
+	if IsWindowsDrivePath(path) {
 		path = "/" + strings.ToUpper(string(path[0])) + path[1:]
 	}
 	path = filepath.ToSlash(path)
@@ -225,10 +225,10 @@ func URIFromPath(path string) DocumentURI {
 
 const fileScheme = "file"
 
-// isWindowsDrivePath returns true if the file path is of the form used by
+// IsWindowsDrivePath returns true if the file path is of the form used by
 // Windows. We check if the path begins with a drive letter, followed by a ":".
 // For example: C:/x/y/z.
-func isWindowsDrivePath(path string) bool {
+func IsWindowsDrivePath(path string) bool {
 	if len(path) < 3 {
 		return false
 	}
