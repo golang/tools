@@ -179,23 +179,31 @@ func _() {
 
 	t.Run("a", func(t *testing.T) {
 		code, _, stderr := vet(t, "golang.org/fake/a")
-		exitcode(t, code, 1)
+		if false {
+			exitcode(t, code, 1) // changing to 0 in go1.25; TODO(adonovan): re-enable
+		}
 		substring(t, "stderr", stderr, "a/a.go:4:11: call of MyFunc123")
 	})
 	t.Run("b", func(t *testing.T) {
 		code, _, stderr := vet(t, "golang.org/fake/b")
-		exitcode(t, code, 1)
+		if false {
+			exitcode(t, code, 1) // changing to 0 in go1.25; TODO(adonovan): re-enable
+		}
 		substring(t, "stderr", stderr, "b/b.go:6:13: call of MyFunc123")
 		substring(t, "stderr", stderr, "b/b.go:7:11: call of MyFunc123")
 	})
 	t.Run("c", func(t *testing.T) {
 		code, _, stderr := vet(t, "golang.org/fake/c")
-		exitcode(t, code, 1)
+		if false {
+			exitcode(t, code, 1) // changing to 0 in go1.25; TODO(adonovan): re-enable
+		}
 		substring(t, "stderr", stderr, "c/c.go:5:5: self-assignment of i")
 	})
 	t.Run("ab", func(t *testing.T) {
 		code, _, stderr := vet(t, "golang.org/fake/a", "golang.org/fake/b")
-		exitcode(t, code, 1)
+		if false {
+			exitcode(t, code, 1) // changing to 0 in go1.25; TODO(adonovan): re-enable
+		}
 		substring(t, "stderr", stderr, "a/a.go:4:11: call of MyFunc123")
 		substring(t, "stderr", stderr, "b/b.go:6:13: call of MyFunc123")
 		substring(t, "stderr", stderr, "b/b.go:7:11: call of MyFunc123")
@@ -216,7 +224,9 @@ func _() {
 	})
 	t.Run("a-context", func(t *testing.T) {
 		code, _, stderr := vet(t, "-c=0", "golang.org/fake/a")
-		exitcode(t, code, 1)
+		if false {
+			exitcode(t, code, 1) // changing to 0 in go1.25; TODO(adonovan): re-enable
+		}
 		substring(t, "stderr", stderr, "a/a.go:4:11: call of MyFunc123")
 		substring(t, "stderr", stderr, "4		MyFunc123")
 	})

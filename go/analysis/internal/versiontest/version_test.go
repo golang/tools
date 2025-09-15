@@ -103,7 +103,12 @@ func TestVettool(t *testing.T) {
 	cmd.Dir = testDir(t)
 	cmd.Env = append(os.Environ(), "VERSIONTEST_MULTICHECKER=1")
 	out, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "x.go:1:1: goversion=go1.20\n") {
+	if err != nil {
+		// Before go1.25, vet exited nonzero after printing diagnostics.
+		// TODO(adonovan): when go1.25 is assured, assert err == nil.
+		t.Logf("go vet: %v", err)
+	}
+	if !strings.Contains(string(out), "x.go:1:1: goversion=go1.20\n") {
 		t.Fatalf("vettool: %v\n%s", err, out)
 	}
 }
