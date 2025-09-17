@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
@@ -39,6 +40,7 @@ var Suite = []*analysis.Analyzer{
 	MinMaxAnalyzer,
 	OmitZeroAnalyzer,
 	RangeIntAnalyzer,
+	ReflectTypeForAnalyzer,
 	SlicesContainsAnalyzer,
 	// SlicesDeleteAnalyzer, // not nil-preserving!
 	SlicesSortAnalyzer,
@@ -135,6 +137,24 @@ func within(pass *analysis.Pass, pkgs ...string) bool {
 		moreiters.Contains(stdlib.Dependencies(pkgs...), path)
 }
 
+// childOf reports whether cur.ParentEdge is ek.
+func childOf(cur inspector.Cursor, ek edge.Kind) bool {
+	got, _ := cur.ParentEdge()
+	return got == ek
+}
+
+// unparenEnclosing removes enclosing parens from cur in
+// preparation for a call to [Cursor.ParentEdge].
+func unparenEnclosing(cur inspector.Cursor) inspector.Cursor {
+	for {
+		ek, _ := cur.ParentEdge()
+		if ek != edge.ParenExpr_X {
+			return cur
+		}
+		cur = cur.Parent()
+	}
+}
+
 var (
 	builtinAny     = types.Universe.Lookup("any")
 	builtinAppend  = types.Universe.Lookup("append")
@@ -169,7 +189,7 @@ func noEffects(info *types.Info, expr ast.Expr) bool {
 			}
 		case *ast.CallExpr:
 			// Type conversion has no effects
-			if !info.Types[v].IsType() {
+			if !info.Types[v.Fun].IsType() {
 				// TODO(adonovan): Add a case for built-in functions without side
 				// effects (by using callsPureBuiltin from tools/internal/refactor/inline)
 

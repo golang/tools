@@ -175,6 +175,33 @@ modified within the loop body and (b) the loop's limit expression
 is not modified within the loop, as `for range` evaluates its
 operand only once.
 
+# Analyzer reflecttypefor
+
+reflecttypefor: replace reflect.TypeOf(x) with TypeFor[T]()
+
+This analyzer suggests fixes to replace uses of reflect.TypeOf(x) with
+reflect.TypeFor, introduced in go1.22, when the desired runtime type
+is known at compile time, for example:
+
+	reflect.TypeOf(uint32(0))        -> reflect.TypeFor[uint32]()
+	reflect.TypeOf((*ast.File)(nil)) -> reflect.TypeFor[*ast.File]()
+
+It also offers a fix to simplify the construction below, which uses
+reflect.TypeOf to return the runtime type for an interface type,
+
+	reflect.TypeOf((*io.Reader)(nil)).Elem()
+
+to:
+
+	reflect.TypeFor[io.Reader]()
+
+No fix is offered in cases when the runtime type is dynamic, such as:
+
+	var r io.Reader = ...
+	reflect.TypeOf(r)
+
+or when the operand has potential side effects.
+
 # Analyzer slicescontains
 
 slicescontains: replace loops with slices.Contains or slices.ContainsFunc

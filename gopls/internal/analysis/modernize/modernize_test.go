@@ -50,6 +50,10 @@ func TestRangeInt(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.RangeIntAnalyzer, "rangeint")
 }
 
+func TestReflectTypeFor(t *testing.T) {
+	RunWithSuggestedFixes(t, TestData(), modernize.ReflectTypeForAnalyzer, "reflecttypefor")
+}
+
 func TestSlicesContains(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.SlicesContainsAnalyzer, "slicescontains")
 }

@@ -204,10 +204,9 @@ func mapsloop(pass *analysis.Pass) (any, error) {
 				analysisinternal.Format(pass.Fset, x))
 		}
 		pass.Report(analysis.Diagnostic{
-			Pos:      assign.Lhs[0].Pos(),
-			End:      assign.Lhs[0].End(),
-			Category: "mapsloop",
-			Message:  "Replace m[k]=v loop with maps." + funcName,
+			Pos:     assign.Lhs[0].Pos(),
+			End:     assign.Lhs[0].End(),
+			Message: "Replace m[k]=v loop with maps." + funcName,
 			SuggestedFixes: []analysis.SuggestedFix{{
 				Message: "Replace m[k]=v loop with maps." + funcName,
 				TextEdits: append(importEdits, []analysis.TextEdit{{

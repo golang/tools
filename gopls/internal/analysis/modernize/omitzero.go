@@ -73,10 +73,9 @@ func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Fi
 		}
 	}
 	pass.Report(analysis.Diagnostic{
-		Pos:      curField.Tag.Pos(),
-		End:      curField.Tag.End(),
-		Category: "omitzero",
-		Message:  "Omitempty has no effect on nested struct fields",
+		Pos:     curField.Tag.Pos(),
+		End:     curField.Tag.End(),
+		Message: "Omitempty has no effect on nested struct fields",
 		SuggestedFixes: []analysis.SuggestedFix{
 			{
 				Message: "Remove redundant omitempty tag",

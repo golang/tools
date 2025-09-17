@@ -256,6 +256,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: modernize.MinMaxAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.OmitZeroAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.RangeIntAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.ReflectTypeForAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.SlicesContainsAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.SlicesDeleteAnalyzer, severity: protocol.SeverityHint, nonDefault: true}, // not nil-preserving
 	{analyzer: modernize.SlicesSortAnalyzer, severity: protocol.SeverityHint},
