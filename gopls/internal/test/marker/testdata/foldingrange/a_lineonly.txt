@@ -145,8 +145,8 @@ import (<0 kind="imports">
 	"fmt"
 	_ "log"
 	"sort"
-	"time"
-</0>)
+	"time"</0>
+)
 
 import _ "os"
 
@@ -157,15 +157,15 @@ func Bar() string {<2 kind="">
 	switch {<3 kind="">
 	case true:<4 kind="">
 		if true {<5 kind="">
-			fmt.Println("true")
-		</5>} else {<6 kind="">
-			fmt.Println("false")
-		</6>}</4>
+			fmt.Println("true")</5>
+		} else {<6 kind="">
+			fmt.Println("false")</6>
+		}</4>
 	case false:<7 kind="">
 		fmt.Println("false")</7>
 	default:<8 kind="">
-		fmt.Println("default")</8>
-	</3>}
+		fmt.Println("default")</3></8>
+	}
 	/* This is a multiline<9 kind="comment">
 	block
 	comment */</9>
@@ -177,77 +177,77 @@ func Bar() string {<2 kind="">
 	_ = []int{<11 kind="">
 		1,
 		2,
-		3,
-	</11>}
+		3,</11>
+	}
 	_ = [2]string{<12 kind="">"d",
-		"e",
-	</12>}
+		"e",</12>
+	}
 	_ = map[string]int{<13 kind="">
 		"a": 1,
 		"b": 2,
-		"c": 3,
-	</13>}
+		"c": 3,</13>
+	}
 	type T struct {<14 kind="">
 		f string
 		g int
-		h string
-	</14>}
+		h string</14>
+	}
 	_ = T{<15 kind="">
 		f: "j",
 		g: 4,
-		h: "i",
-	</15>}
+		h: "i",</15>
+	}
 	x, y := make(chan bool), make(chan bool)
 	select {<16 kind="">
 	case val := <-x:<17 kind="">
 		if val {<18 kind="">
-			fmt.Println("true from x")
-		</18>} else {<19 kind="">
-			fmt.Println("false from x")
-		</19>}</17>
+			fmt.Println("true from x")</18>
+		} else {<19 kind="">
+			fmt.Println("false from x")</19>
+		}</17>
 	case <-y:<20 kind="">
 		fmt.Println("y")</20>
 	default:<21 kind="">
-		fmt.Println("default")</21>
-	</16>}
+		fmt.Println("default")</16></21>
+	}
 	// This is a multiline comment<22 kind="comment">
 	// that is not a doc comment.</22>
 	return <23 kind="">`
 this string
-is not indented`</23>
-</2>}
+is not indented`</2></23>
+}
 
 func _() {<24 kind="">
 	slice := []int{1, 2, 3}
 	sort.Slice(<25 kind="">slice, func(i, j int) bool {<26 kind="">
 		a, b := slice[i], slice[j]
-		return a > b
-	</26>}</25>)
+		return a > b</25></26>
+	})
 
 	sort.Slice(slice, func(i, j int) bool { return slice[i] > slice[j] })
 
 	sort.Slice(<27 kind="">
 		slice,
 		func(i, j int) bool {<28 kind="">
-			return slice[i] > slice[j]
-		</28>},
-	</27>)
+			return slice[i] > slice[j]</28>
+		},</27>
+	)
 
 	fmt.Println(<29 kind="">
 		1, 2, 3,
-		4,
-	</29>)
+		4,</29>
+	)
 
 	fmt.Println(<30 kind="">1, 2, 3,
 		4, 5, 6,
-		7, 8, 9,
-		10</30>)
+		7, 8, 9,</30>
+		10)
 
 	// Call with ellipsis.
 	_ = fmt.Errorf(<31 kind="">
 		"test %d %d",
-		[]any{1, 2, 3}...,
-	</31>)
+		[]any{1, 2, 3}...,</31>
+	)
 
 	// Check multiline string.
 	fmt.Println(<32 kind="">
@@ -255,15 +255,15 @@ func _() {<24 kind="">
 		line
 		string
 		`</33>,
-		1, 2, 3,
-	</32>)
+		1, 2, 3,</32>
+	)
 
 	// Call without arguments.
-	_ = time.Now()
-</24>}
+	_ = time.Now()</24>
+}
 
 func _(<34 kind="">
 	a int, b int,
-	c int,
-</34>) {<35 kind="">
-</35>}
+	c int,</34>
+) {
+}
