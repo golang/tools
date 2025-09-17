@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/doc/comment"
 	"go/token"
 	"go/types"
 	"maps"
@@ -760,7 +761,23 @@ func rewriteAnalyzers(prevContent []byte, api *doc.API) ([]byte, error) {
 		title, doc, _ := strings.Cut(analyzer.Doc, "\n")
 		title = strings.TrimPrefix(title, analyzer.Name+": ")
 		fmt.Fprintf(&buf, "## `%s`: %s\n\n", analyzer.Name, title)
-		fmt.Fprintf(&buf, "%s\n\n", doc)
+
+		// Convert Analyzer.Doc from go/doc/comment form to Markdown.
+		// Headings in doc comments are converted to ### (HeadingLevel=3).
+		//
+		// Some Analyzers (e.g. internal/gofix) use ## to indicate subheadings
+		// Although this is valid Markdown, it is not valid go/doc/comment,
+		// nor is it rendered as a subheading by pkg.go.dev or gopls's doc viewer.
+		// Perhaps it will be supported in future; see
+		// https://github.com/golang/go/issues/51082#issuecomment-1033116430 et seq.
+		//
+		// In the meantime, the go/doc/comment processing will escape them so
+		// that the ## appears literally in analyzers.md just as it does in
+		// the two viewers mentioned above. The meaning is clear enough.
+		doctree := new(comment.Parser).Parse(doc)
+		buf.Write((&comment.Printer{HeadingLevel: 3}).Markdown(doctree))
+		buf.WriteString("\n\n")
+
 		fmt.Fprintf(&buf, "Default: %s.", onOff(analyzer.Default))
 		if !analyzer.Default {
 			fmt.Fprintf(&buf, " Enable by setting `\"analyses\": {\"%s\": true}`.", analyzer.Name)

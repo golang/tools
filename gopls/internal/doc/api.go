@@ -67,7 +67,7 @@ type Lens struct {
 
 type Analyzer struct {
 	Name    string
-	Doc     string // from analysis.Analyzer.Doc ("title: summary\ndescription"; not Markdown)
+	Doc     string // from analysis.Analyzer.Doc ("title: summary\ndescription"; go/doc/comment, not Markdown)
 	URL     string
 	Default bool
 }
