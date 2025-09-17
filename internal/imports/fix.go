@@ -21,6 +21,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,9 +43,13 @@ var importToGroup = []func(localPrefix, importPath string) (num int, ok bool){
 		if localPrefix == "" {
 			return
 		}
-		for p := range strings.SplitSeq(localPrefix, ",") {
-			if strings.HasPrefix(importPath, p) || strings.TrimSuffix(p, "/") == importPath {
-				return 3, true
+		prefixGroups := strings.Split(localPrefix, ":")
+		for i := len(prefixGroups) - 1; i >= 0; i-- {
+			pg := prefixGroups[i]
+			for _, p := range strings.Split(pg, ",") {
+				if strings.HasPrefix(importPath, p) || strings.TrimSuffix(p, "/") == importPath {
+					return i + 3, true
+				}
 			}
 		}
 		return

@@ -10,7 +10,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
 	"go/scanner"
+	"go/token"
 	"io"
 	"log"
 	"os"
@@ -89,6 +92,14 @@ const (
 	multipleArg
 )
 
+func isFileAutoGenerate(filename string) bool {
+	af, err := parser.ParseFile(token.NewFileSet(), filename, nil, parser.PackageClauseOnly|parser.ParseComments)
+	if err != nil {
+		return false
+	}
+	return ast.IsGenerated(af)
+}
+
 func processFile(filename string, in io.Reader, out io.Writer, argType argumentType) error {
 	opt := options
 	if argType == fromStdin {
@@ -137,6 +148,10 @@ func processFile(filename string, in io.Reader, out io.Writer, argType argumentT
 			// visible imports correctly.
 			target = filepath.Join(*srcdir, filepath.Base(filename))
 		}
+	}
+
+	if isFileAutoGenerate(target) {
+		return nil
 	}
 
 	res, err := imports.Process(target, src, opt)
