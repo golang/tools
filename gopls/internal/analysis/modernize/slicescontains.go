@@ -151,18 +151,13 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 						return
 					}
 
-					// Check for interface parameter with concrete argument,
-					// if the function has parameters.
-					if sig.Params().Len() > 0 {
-						paramType := sig.Params().At(0).Type()
-						elemType := info.TypeOf(cond.Args[0])
-
-						// If the function's first parameter is an interface
-						// and the argument passed is a concrete (non-interface) type,
-						// then we return and do not suggest this refactoring.
-						if types.IsInterface(paramType) && !types.IsInterface(elemType) {
-							return
-						}
+					// Slice element type must match function parameter type.
+					var (
+						tElem  = typeparams.CoreType(info.TypeOf(rng.X)).(*types.Slice).Elem()
+						tParam = sig.Params().At(0).Type()
+					)
+					if !types.Identical(tElem, tParam) {
+						return
 					}
 				}
 

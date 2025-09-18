@@ -126,6 +126,15 @@ func nopeLoopBodyHasFreeContinuation(slice []int, needle int) bool {
 	return false
 }
 
+func generic[T any](slice []T, f func(T) bool) bool {
+	for _, elem := range slice { // want "Loop can be simplified using slices.ContainsFunc"
+		if f(elem) {
+			return true
+		}
+	}
+	return false
+}
+
 func predicate(int) bool
 
 // Regression tests for bad fixes when needle
@@ -178,7 +187,16 @@ func (C) F() {}
 
 func nopeImplicitConversionContainsFunc(slice []C, f func(I) bool) bool {
 	for _, elem := range slice {
-		if f(elem) {
+		if f(elem) { // implicit conversion from C to I
+			return true
+		}
+	}
+	return false
+}
+
+func nopeTypeParamWidening[T any](slice []T, f func(any) bool) bool {
+	for _, elem := range slice {
+		if f(elem) { // implicit conversion from T to any
 			return true
 		}
 	}
