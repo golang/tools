@@ -221,14 +221,14 @@ func FuncTwoReturns(x int) int {
 +
 +func newFunction(x int) (int, bool, int) {
 +	if x < 10 { //@ loc(twoReturns, re`(?s)if.x.*return.1....`)
-+		return true, 0, 0
++		return 0, true, 0
 +	}
 +	test := x - 4
 +	if test > 2 {
 +		return 0, false, 1
 +	}
 +	if test == 10 {
-+		return true, 1, 0
++		return 1, true, 0
 +	}
 +	return 0, false, 0
 +}

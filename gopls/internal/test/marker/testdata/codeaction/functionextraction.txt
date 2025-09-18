@@ -129,10 +129,10 @@ func _() (int, string, error) {
 func newFunction(y string, x int) (string, int, string, error, bool) {
 	z := "bye" //@codeaction("z", "refactor.extract.function", end=rcEnd, result=rc)
 	if y == z {
-		return "", true, x, y, fmt.Errorf("same")
+		return "", x, y, fmt.Errorf("same"), true
 	} else if false {
 		z = "hi"
-		return "", true, x, z, nil
+		return "", x, z, nil, true
 	}
 	return z, 0, "", nil, false
 }
@@ -274,7 +274,7 @@ func _() string {
 func newFunction(x int) (string, bool) {
 	if x == 0 { //@codeaction("if", "refactor.extract.function", end=riEnd, result=ri)
 		x = 3
-		return true, "a"
+		return "a", true
 	}
 	return "", false
 }
