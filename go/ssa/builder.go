@@ -380,7 +380,13 @@ func (b *builder) builtin(fn *Function, obj *types.Builtin, args []ast.Expr, typ
 		}
 
 	case "new":
-		return emitNew(fn, typeparams.MustDeref(typ), pos, "new")
+		alloc := emitNew(fn, typeparams.MustDeref(typ), pos, "new")
+		if !fn.info.Types[args[0]].IsType() {
+			// new(expr), requires go1.26
+			v := b.expr(fn, args[0])
+			emitStore(fn, alloc, v, pos)
+		}
+		return alloc
 
 	case "len", "cap":
 		// Special case: len or cap of an array or *array is

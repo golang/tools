@@ -108,7 +108,7 @@ var gorootTestTests = []string{
 	"crlf.go", // doesn't actually assert anything (runoutput)
 }
 
-// These are files in go.tools/go/ssa/interp/testdata/.
+// These are files in testdata/.
 var testdataTests = []string{
 	"boundmeth.go",
 	"complit.go",
@@ -117,32 +117,33 @@ var testdataTests = []string{
 	"deepequal.go",
 	"defer.go",
 	"fieldprom.go",
+	"fixedbugs/issue52342.go",
+	"fixedbugs/issue52835.go",
+	"fixedbugs/issue55086.go",
+	"fixedbugs/issue55115.go",
+	"fixedbugs/issue66783.go",
+	"fixedbugs/issue69929.go",
+	"forvarlifetime_go122.go",
 	"forvarlifetime_old.go",
 	"ifaceconv.go",
 	"ifaceprom.go",
 	"initorder.go",
 	"methprom.go",
+	"minmax.go",
 	"mrvchain.go",
+	"newexpr_go126.go",
 	"range.go",
 	"rangeoverint.go",
+	"rangevarlifetime_go122.go",
+	"rangevarlifetime_old.go",
 	"recover.go",
 	"reflect.go",
+	"slice2array.go",
 	"slice2arrayptr.go",
 	"static.go",
-	"width32.go",
-	"rangevarlifetime_old.go",
-	"fixedbugs/issue52342.go",
-	"fixedbugs/issue55115.go",
-	"fixedbugs/issue52835.go",
-	"fixedbugs/issue55086.go",
-	"fixedbugs/issue66783.go",
-	"fixedbugs/issue69929.go",
 	"typeassert.go",
+	"width32.go",
 	"zeros.go",
-	"slice2array.go",
-	"minmax.go",
-	"rangevarlifetime_go122.go",
-	"forvarlifetime_go122.go",
 }
 
 func init() {
@@ -171,6 +172,14 @@ func run(t *testing.T, input string, goroot string) string {
 	gover := ""
 	if p := testenv.Go1Point(); p > 0 {
 		gover = fmt.Sprintf("go1.%d", p)
+	}
+
+	// Check build tags, since FromArgs doesn't do this part.
+	// TODO(adonovan): use go/packages.
+	if match, err := ctx.MatchFile(filepath.Dir(input), filepath.Base(input)); err != nil {
+		t.Fatalf("MatchFile %v: %v", input, err)
+	} else if !match {
+		t.Skipf("file %s doesn't match this build configuration", input)
 	}
 
 	conf := loader.Config{Build: &ctx, TypeChecker: types.Config{GoVersion: gover}}
