@@ -88,10 +88,10 @@ func G() (x, y int) {
 func newFunction() (int, int, int, bool) {
 	v := rand.Int() //@codeaction("v", "refactor.extract.function", end=endG, result=G)
 	if v < 0 {
-		return 0, true, 1, 2
+		return 0, 1, 2, true
 	}
 	if v > 0 {
-		return 0, true, 3, 4
+		return 0, 3, 4, true
 	}
 	return v, 0, 0, false
 }

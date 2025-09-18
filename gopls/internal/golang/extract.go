@@ -1903,9 +1903,11 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 	// extracted function. We set the bool to 'true' because, if these return statements
 	// execute, the extracted function terminates early, and the enclosing function must
 	// return as well.
+	var shouldReturnCond []ast.Expr
 	if !isErrHandlingReturnsCase {
-		zeroVals = append(zeroVals, ast.NewIdent("true"))
+		shouldReturnCond = append(shouldReturnCond, ast.NewIdent("true"))
 	}
+
 	ast.Inspect(extractedBlock, func(n ast.Node) bool {
 		if n == nil {
 			return false
@@ -1915,7 +1917,7 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 			return false
 		}
 		if n, ok := n.(*ast.ReturnStmt); ok {
-			n.Results = slices.Concat(zeroVals, n.Results)
+			n.Results = slices.Concat(zeroVals, n.Results, shouldReturnCond)
 			return false
 		}
 		return true
