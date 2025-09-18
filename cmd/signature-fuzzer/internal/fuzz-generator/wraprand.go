@@ -35,7 +35,8 @@ type wraprand struct {
 }
 
 func (w *wraprand) captureCall(tag string, val string) {
-	call := tag + ": " + val + "\n"
+	var call strings.Builder
+	fmt.Fprintf(&call, "%s: %s\n", tag, val)
 	pc := make([]uintptr, 10)
 	n := runtime.Callers(1, pc)
 	if n == 0 {
@@ -48,13 +49,13 @@ func (w *wraprand) captureCall(tag string, val string) {
 		if strings.Contains(frame.File, "testing.") {
 			break
 		}
-		call += fmt.Sprintf("%s %s:%d\n", frame.Function, frame.File, frame.Line)
+		fmt.Fprintf(&call, "%s %s:%d\n", frame.Function, frame.File, frame.Line)
 		if !more {
 			break
 		}
 
 	}
-	w.calls = append(w.calls, call)
+	w.calls = append(w.calls, call.String())
 }
 
 func (w *wraprand) Intn(n int64) int64 {

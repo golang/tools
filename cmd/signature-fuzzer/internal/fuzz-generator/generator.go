@@ -858,13 +858,13 @@ func (s *genstate) GenFunc(fidx int, pidx int) *funcdef {
 
 func genDeref(p parm) (parm, string) {
 	curp := p
-	star := ""
+	var star strings.Builder
 	for {
 		if pp, ok := curp.(*pointerparm); ok {
-			star += "*"
+			star.WriteString("*")
 			curp = pp.totype
 		} else {
-			return curp, star
+			return curp, star.String()
 		}
 	}
 }

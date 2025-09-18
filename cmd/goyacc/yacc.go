@@ -2011,7 +2011,9 @@ func writem(pp Pitem) string {
 	var i int
 
 	p := pp.prod
-	q := chcopy(nontrst[prdptr[pp.prodno][0]-NTBASE].name) + ": "
+	var q strings.Builder
+	q.WriteString(chcopy(nontrst[prdptr[pp.prodno][0]-NTBASE].name))
+	q.WriteString(": ")
 	npi := pp.off
 
 	pi := aryeq(p, prdptr[pp.prodno])
@@ -2021,23 +2023,23 @@ func writem(pp Pitem) string {
 		if pi == npi {
 			c = '.'
 		}
-		q += string(c)
+		q.WriteByte(byte(c))
 
 		i = p[pi]
 		pi++
 		if i <= 0 {
 			break
 		}
-		q += chcopy(symnam(i))
+		q.WriteString(chcopy(symnam(i)))
 	}
 
 	// an item calling for a reduction
 	i = p[npi]
 	if i < 0 {
-		q += fmt.Sprintf("    (%v)", -i)
+		fmt.Fprintf(&q, "    (%v)", -i)
 	}
 
-	return q
+	return q.String()
 }
 
 // pack state i from temp1 into amem
@@ -3049,16 +3051,18 @@ func osummary() {
 
 // copies and protects "'s in q
 func chcopy(q string) string {
-	s := ""
+	var s strings.Builder
 	i := 0
 	j := 0
 	for i = 0; i < len(q); i++ {
 		if q[i] == '"' {
-			s += q[j:i] + "\\"
+			s.WriteString(q[j:i])
+			s.WriteByte('\\')
 			j = i
 		}
 	}
-	return s + q[j:i]
+	s.WriteString(q[j:i])
+	return s.String()
 }
 
 func usage() {

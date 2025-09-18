@@ -503,19 +503,20 @@ func (s *Section) PutUncompressedData(b []byte) {
 }
 
 func (b LoadBytes) String() string {
-	s := "["
+	var s strings.Builder
+	s.WriteString("[")
 	for i, a := range b {
 		if i > 0 {
-			s += " "
+			s.WriteString(" ")
 			if len(b) > 48 && i >= 16 {
-				s += fmt.Sprintf("... (%d bytes)", len(b))
+				fmt.Fprintf(&s, "... (%d bytes)", len(b))
 				break
 			}
 		}
-		s += fmt.Sprintf("%x", a)
+		fmt.Fprintf(&s, "%x", a)
 	}
-	s += "]"
-	return s
+	s.WriteString("]")
+	return s.String()
 }
 
 func (b LoadBytes) Raw() []byte                { return b }
