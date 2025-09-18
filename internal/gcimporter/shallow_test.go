@@ -82,7 +82,6 @@ func typecheck(t *testing.T, ppkg *packages.Package) {
 	syntax := make([]*ast.File, len(ppkg.CompiledGoFiles))
 	var group errgroup.Group
 	for i, filename := range ppkg.CompiledGoFiles {
-		i, filename := i, filename
 		group.Go(func() error {
 			f, err := parser.ParseFile(fset, filename, nil, parser.SkipObjectResolution)
 			if err != nil {
