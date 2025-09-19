@@ -254,6 +254,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: modernize.ForVarAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.MapsLoopAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.MinMaxAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: modernize.NewExprAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.OmitZeroAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.RangeIntAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.ReflectTypeForAnalyzer, severity: protocol.SeverityHint},

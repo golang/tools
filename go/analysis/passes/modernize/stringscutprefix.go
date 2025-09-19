@@ -184,7 +184,8 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 					lhs := assign.Lhs[0]
 					obj := typeutil.Callee(info, call)
 
-					if obj != stringsTrimPrefix && obj != bytesTrimPrefix && obj != stringsTrimSuffix && obj != bytesTrimSuffix {
+					if obj == nil ||
+						obj != stringsTrimPrefix && obj != bytesTrimPrefix && obj != stringsTrimSuffix && obj != bytesTrimSuffix {
 						continue
 					}
 

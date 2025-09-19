@@ -39,6 +39,10 @@ func TestMinMax(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.MinMaxAnalyzer, "minmax", "minmax/userdefined", "minmax/wrongoperators", "minmax/nonstrict", "minmax/wrongreturn")
 }
 
+func TestNewExpr(t *testing.T) {
+	RunWithSuggestedFixes(t, TestData(), modernize.NewExprAnalyzer, "newexpr")
+}
+
 func TestOmitZero(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.OmitZeroAnalyzer, "omitzero")
 }

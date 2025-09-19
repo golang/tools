@@ -678,3 +678,21 @@ func enclosingFile(c inspector.Cursor) *ast.File {
 	c, _ = moreiters.First(c.Enclosing((*ast.File)(nil)))
 	return c.Node().(*ast.File)
 }
+
+// EnclosingScope returns the innermost block logically enclosing the cursor.
+func EnclosingScope(info *types.Info, cur inspector.Cursor) *types.Scope {
+	for cur := range cur.Enclosing() {
+		n := cur.Node()
+		// A function's Scope is associated with its FuncType.
+		switch f := n.(type) {
+		case *ast.FuncDecl:
+			n = f.Type
+		case *ast.FuncLit:
+			n = f.Type
+		}
+		if b := info.Scopes[n]; b != nil {
+			return b
+		}
+	}
+	panic("no Scope for *ast.File")
+}

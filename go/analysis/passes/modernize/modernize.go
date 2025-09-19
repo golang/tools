@@ -38,6 +38,7 @@ var Suite = []*analysis.Analyzer{
 	ForVarAnalyzer,
 	MapsLoopAnalyzer,
 	MinMaxAnalyzer,
+	NewExprAnalyzer,
 	OmitZeroAnalyzer,
 	RangeIntAnalyzer,
 	ReflectTypeForAnalyzer,
@@ -163,6 +164,7 @@ var (
 	builtinFalse   = types.Universe.Lookup("false")
 	builtinLen     = types.Universe.Lookup("len")
 	builtinMake    = types.Universe.Lookup("make")
+	builtinNew     = types.Universe.Lookup("new")
 	builtinNil     = types.Universe.Lookup("nil")
 	builtinString  = types.Universe.Lookup("string")
 	builtinTrue    = types.Universe.Lookup("true")
@@ -206,4 +208,11 @@ func noEffects(info *types.Info, expr ast.Expr) bool {
 		return noEffects
 	})
 	return noEffects
+}
+
+// lookup returns the symbol denoted by name at the position of the cursor.
+func lookup(info *types.Info, cur inspector.Cursor, name string) types.Object {
+	scope := analysisinternal.EnclosingScope(info, cur)
+	_, obj := scope.LookupParent(name, cur.Node().Pos())
+	return obj
 }

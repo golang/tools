@@ -3437,6 +3437,32 @@ Default: on.
 
 Package documentation: [minmax](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#minmax)
 
+<a id='newexpr'></a>
+## `newexpr`: simplify code by using go1.26's new(expr)
+
+This analyzer finds declarations of functions of this form:
+
+	func varOf(x int) *int { return &x }
+
+and suggests a fix to turn them into inlinable wrappers around go1.26's built-in new(expr) function:
+
+	func varOf(x int) *int { return new(x) }
+
+In addition, this analyzer suggests a fix for each call to one of the functions before it is transformed, so that
+
+	use(varOf(123))
+
+is replaced by:
+
+	use(new(123))
+
+(Wrapper functions such as varOf are common when working with Go serialization packages such as for JSON or protobuf, where pointers are often used to express optionality.)
+
+
+Default: on.
+
+Package documentation: [newexpr](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#newexpr)
+
 <a id='nilfunc'></a>
 ## `nilfunc`: check for useless comparisons between functions and nil
 

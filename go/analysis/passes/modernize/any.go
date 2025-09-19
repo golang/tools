@@ -32,16 +32,12 @@ func runAny(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.18") {
-		file := curFile.Node().(*ast.File)
-
 		for curIface := range curFile.Preorder((*ast.InterfaceType)(nil)) {
 			iface := curIface.Node().(*ast.InterfaceType)
 
 			if iface.Methods.NumFields() == 0 {
 				// Check that 'any' is not shadowed.
-				// TODO(adonovan): find scope using only local Cursor operations.
-				scope := pass.TypesInfo.Scopes[file].Innermost(iface.Pos())
-				if _, obj := scope.LookupParent("any", iface.Pos()); obj == builtinAny {
+				if lookup(pass.TypesInfo, curIface, "any") == builtinAny {
 					pass.Report(analysis.Diagnostic{
 						Pos:     iface.Pos(),
 						End:     iface.End(),

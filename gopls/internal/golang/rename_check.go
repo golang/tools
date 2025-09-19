@@ -47,6 +47,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
@@ -354,7 +355,7 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 		switch n := cur.Node().(type) {
 		case *ast.Ident:
 			if pkg.TypesInfo().Uses[n] == obj {
-				block := enclosingBlock(pkg.TypesInfo(), cur)
+				block := analysisinternal.EnclosingScope(pkg.TypesInfo(), cur)
 				if !fn(n, block) {
 					ok = false
 				}
@@ -397,27 +398,6 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 		}
 	}
 	return ok
-}
-
-// enclosingBlock returns the innermost block logically enclosing the
-// AST node (an ast.Ident), specified as a Cursor.
-func enclosingBlock(info *types.Info, curId inspector.Cursor) *types.Scope {
-	for cur := range curId.Enclosing() {
-		n := cur.Node()
-		// For some reason, go/types always associates a
-		// function's scope with its FuncType.
-		// See comments about scope above.
-		switch f := n.(type) {
-		case *ast.FuncDecl:
-			n = f.Type
-		case *ast.FuncLit:
-			n = f.Type
-		}
-		if b := info.Scopes[n]; b != nil {
-			return b
-		}
-	}
-	panic("no Scope for *ast.File")
 }
 
 func (r *renamer) checkLabel(label *types.Label) {

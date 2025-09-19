@@ -70,7 +70,6 @@ func minmax(pass *analysis.Pass) (any, error) {
 			b       = compare.Y
 			lhs     = tassign.Lhs[0]
 			rhs     = tassign.Rhs[0]
-			scope   = pass.TypesInfo.Scopes[ifStmt.Body]
 			sign    = isInequality(compare.Op)
 
 			// callArg formats a call argument, preserving comments from [start-end).
@@ -104,7 +103,7 @@ func minmax(pass *analysis.Pass) (any, error) {
 
 				sym := cond(sign < 0, "min", "max")
 
-				if _, obj := scope.LookupParent(sym, ifStmt.Pos()); !is[*types.Builtin](obj) {
+				if !is[*types.Builtin](lookup(pass.TypesInfo, curIfStmt, sym)) {
 					return // min/max function is shadowed
 				}
 
@@ -160,7 +159,7 @@ func minmax(pass *analysis.Pass) (any, error) {
 				}
 				sym := cond(sign < 0, "min", "max")
 
-				if _, obj := scope.LookupParent(sym, ifStmt.Pos()); !is[*types.Builtin](obj) {
+				if !is[*types.Builtin](lookup(pass.TypesInfo, curIfStmt, sym)) {
 					return // min/max function is shadowed
 				}
 

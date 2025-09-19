@@ -1539,6 +1539,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"newexpr\"",
+							"Doc": "simplify code by using go1.26's new(expr)\n\nThis analyzer finds declarations of functions of this form:\n\n\tfunc varOf(x int) *int { return \u0026x }\n\nand suggests a fix to turn them into inlinable wrappers around\ngo1.26's built-in new(expr) function:\n\n\tfunc varOf(x int) *int { return new(x) }\n\nIn addition, this analyzer suggests a fix for each call\nto one of the functions before it is transformed, so that\n\n\tuse(varOf(123))\n\nis replaced by:\n\n\tuse(new(123))\n\n(Wrapper functions such as varOf are common when working with Go\nserialization packages such as for JSON or protobuf, where pointers\nare often used to express optionality.)",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"nilfunc\"",
 							"Doc": "check for useless comparisons between functions and nil\n\nA useless comparison is one like f == nil as opposed to f() == nil.",
 							"Default": "true",
@@ -3390,6 +3396,12 @@
 			"Name": "minmax",
 			"Doc": "replace if/else statements with calls to min or max\n\nThe minmax analyzer simplifies conditional assignments by suggesting the use\nof the built-in `min` and `max` functions, introduced in Go 1.21. For example,\n\n\tif a \u003c b { x = a } else { x = b }\n\nis replaced by\n\n\tx = min(a, b).\n\nThis analyzer avoids making suggestions for floating-point types,\nas the behavior of `min` and `max` with NaN values can differ from\nthe original if/else statement.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#minmax",
+			"Default": true
+		},
+		{
+			"Name": "newexpr",
+			"Doc": "simplify code by using go1.26's new(expr)\n\nThis analyzer finds declarations of functions of this form:\n\n\tfunc varOf(x int) *int { return \u0026x }\n\nand suggests a fix to turn them into inlinable wrappers around\ngo1.26's built-in new(expr) function:\n\n\tfunc varOf(x int) *int { return new(x) }\n\nIn addition, this analyzer suggests a fix for each call\nto one of the functions before it is transformed, so that\n\n\tuse(varOf(123))\n\nis replaced by:\n\n\tuse(new(123))\n\n(Wrapper functions such as varOf are common when working with Go\nserialization packages such as for JSON or protobuf, where pointers\nare often used to express optionality.)",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#newexpr",
 			"Default": true
 		},
 		{
