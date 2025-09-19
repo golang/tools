@@ -149,7 +149,7 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 									{
 										Pos:     call.Fun.Pos(),
 										End:     call.Fun.Pos(),
-										NewText: fmt.Appendf(nil, "%s, %s :=", after, okVarName),
+										NewText: fmt.Appendf(nil, "%s, %s := ", after, okVarName),
 									},
 									{
 										Pos:     call.Fun.Pos(),
