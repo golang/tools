@@ -10,7 +10,6 @@ import (
 	"go/token"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/gopls/internal/analysis/embeddirective"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
 	"golang.org/x/tools/gopls/internal/analysis/unusedparams"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -18,7 +17,6 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	"golang.org/x/tools/internal/imports"
 )
 
 // A fixer is a function that suggests a fix for a diagnostic produced
@@ -94,8 +92,7 @@ func ApplyFix(ctx context.Context, fix string, snapshot *cache.Snapshot, fh file
 	fixers := map[string]fixer{
 		// Fixes for analyzer-provided diagnostics.
 		// These match the Diagnostic.Category.
-		embeddirective.FixCategory: addEmbedImport,
-		fillstruct.FixCategory:     singleFile(fillstruct.SuggestedFix),
+		fillstruct.FixCategory: singleFile(fillstruct.SuggestedFix),
 
 		// Ad-hoc fixers: these are used when the command is
 		// constructed directly by logic in server/code_action.
@@ -182,37 +179,4 @@ func suggestedFixToDocumentChange(ctx context.Context, snapshot *cache.Snapshot,
 		changes = append(changes, change)
 	}
 	return changes, nil
-}
-
-// addEmbedImport adds a missing embed "embed" import with blank name.
-func addEmbedImport(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, _, _ token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
-	// Like golang.AddImport, but with _ as Name and using our pgf.
-	protoEdits, err := ComputeImportFixEdits(snapshot.Options().Local, pgf.Src, &imports.ImportFix{
-		StmtInfo: imports.ImportInfo{
-			ImportPath: "embed",
-			Name:       "_",
-		},
-		FixType: imports.AddImport,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("compute edits: %w", err)
-	}
-
-	var edits []analysis.TextEdit
-	for _, e := range protoEdits {
-		start, end, err := pgf.RangePos(e.Range)
-		if err != nil {
-			return nil, nil, err // e.g. invalid range
-		}
-		edits = append(edits, analysis.TextEdit{
-			Pos:     start,
-			End:     end,
-			NewText: []byte(e.NewText),
-		})
-	}
-
-	return pkg.FileSet(), &analysis.SuggestedFix{
-		Message:   "Add embed import",
-		TextEdits: edits,
-	}, nil
 }

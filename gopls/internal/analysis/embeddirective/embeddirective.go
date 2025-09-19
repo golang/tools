@@ -26,8 +26,6 @@ var Analyzer = &analysis.Analyzer{
 	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/embeddirective",
 }
 
-const FixCategory = "addembedimport" // recognized by gopls ApplyFix
-
 func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
 		comments := embedDirectiveComments(f)
@@ -47,16 +45,19 @@ func run(pass *analysis.Pass) (any, error) {
 			pos, end := c.Pos(), c.Pos()+token.Pos(len("//go:embed"))
 
 			if !hasEmbedImport {
-				pass.Report(analysis.Diagnostic{
-					Pos:      pos,
-					End:      end,
-					Message:  `must import "embed" when using go:embed directives`,
-					Category: FixCategory,
-					SuggestedFixes: []analysis.SuggestedFix{{
-						Message: `Add missing "embed" import`,
-						// No TextEdits => computed by a gopls command.
-					}},
-				})
+				// Add blank import of "embed".
+				_, _, edits := analysisinternal.AddImport(pass.TypesInfo, f, "_", "embed", "", c.Pos())
+				if len(edits) > 0 {
+					pass.Report(analysis.Diagnostic{
+						Pos:     pos,
+						End:     end,
+						Message: `must import "embed" when using go:embed directives`,
+						SuggestedFixes: []analysis.SuggestedFix{{
+							Message:   `Add missing "embed" import`,
+							TextEdits: edits,
+						}},
+					})
+				}
 			}
 
 			var msg string
