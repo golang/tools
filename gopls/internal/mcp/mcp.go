@@ -107,7 +107,7 @@ func HTTPHandler(sessions Sessions, isDaemon bool) http.Handler {
 				if s, svr := sessions.Session(sessionID); s != nil {
 					handler = mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
 						return newServer(s, svr)
-					})
+					}, nil)
 					mcpHandlers[sessionID] = handler
 				}
 			}
@@ -130,7 +130,7 @@ func HTTPHandler(sessions Sessions, isDaemon bool) http.Handler {
 				s, svr := sessions.FirstSession()
 				handler = mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
 					return newServer(s, svr)
-				})
+				}, nil)
 				mcpHandlers[s.ID()] = handler
 			}
 			mu.Unlock()
