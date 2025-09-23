@@ -15,6 +15,7 @@ import (
 	"sort"
 	"testing"
 
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/refactor/satisfy"
 )
 
@@ -198,6 +199,25 @@ func _[P ~struct{F I}]() {
 		"p.I <- p.V",
 		"p.I <- p.W",
 		"p.I <- p.X",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("found unexpected constraints: got %s, want %s", got, want)
+	}
+}
+
+func TestNewExpr(t *testing.T) {
+	testenv.NeedsGo1Point(t, 26)
+	const src = `package p
+
+type I interface{ f() }
+type C int
+func (C) f() {}
+
+var _ I = new(C(123))
+`
+	got := constraints(t, src)
+	want := []string{
+		"p.I <- *p.C",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("found unexpected constraints: got %s, want %s", got, want)

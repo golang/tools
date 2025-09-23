@@ -10,7 +10,6 @@ import (
 
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/copylock"
-	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
 )
 
@@ -20,8 +19,6 @@ func Test(t *testing.T) {
 }
 
 func TestVersions22(t *testing.T) {
-	testenv.NeedsGo1Point(t, 22)
-
 	dir := testfiles.ExtractTxtarFileToTmp(t, filepath.Join(analysistest.TestData(), "src", "forstmt", "go22.txtar"))
 	analysistest.Run(t, dir, copylock.Analyzer, "golang.org/fake/forstmt")
 }

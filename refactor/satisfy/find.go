@@ -204,8 +204,10 @@ func (f *Finder) call(sig *types.Signature, args []ast.Expr) {
 func (f *Finder) builtin(obj *types.Builtin, sig *types.Signature, args []ast.Expr) {
 	switch obj.Name() {
 	case "make", "new":
-		// skip the type operand
-		for _, arg := range args[1:] {
+		for i, arg := range args {
+			if i == 0 && f.info.Types[arg].IsType() {
+				continue // skip the type operand
+			}
 			f.expr(arg)
 		}
 
