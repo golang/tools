@@ -135,6 +135,23 @@ type Interface interface {
 	// client-side logic in VS Code.)
 	GCDetails(context.Context, protocol.DocumentURI) error
 
+	// LSP is a command that functions as a generic dispatcher, allowing clients
+	// to execute any LSP RPC through the "workspace/executeCommand" request.
+	//
+	// This serves two primary purposes:
+	//
+	// 1. It provides a unified endpoint for clients that are restricted from
+	//    making arbitrary LSP calls directly, giving them full access to the
+	//    server's capabilities.
+	//
+	// 2. It allows the client and server to extend the standard protocol. A
+	//    client can send custom parameters that are not part of the official
+	//    LSP, enabling richer functionality.
+	//
+	// The command takes the target LSP method name and its parameters as a
+	// [json.RawMessage], routing the call to the appropriate internal handler.
+	LSP(context.Context, LSPArgs) (any, error)
+
 	// ListKnownPackages: List known packages
 	//
 	// Retrieve a list of packages that are importable from the given URI.
@@ -853,4 +870,9 @@ type ModifyTagsArgs struct {
 	SkipUnexportedFields bool                 // if set, do not modify tags on unexported struct fields
 	Transform            string               // transform rule for adding tags; i.e. "snakecase"
 	ValueFormat          string               // format for the tag's value, after transformation; for example "column:{field}"
+}
+
+type LSPArgs struct {
+	Method string          `json:"method"`
+	Param  json.RawMessage `json:"param"`
 }

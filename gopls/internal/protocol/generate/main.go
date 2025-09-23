@@ -95,6 +95,8 @@ func writeclient() {
 	out.WriteString(
 		`import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"golang.org/x/tools/internal/jsonrpc2"
 )
@@ -104,13 +106,27 @@ func writeclient() {
 		out.WriteString(cdecls[k])
 	}
 	out.WriteString("}\n\n")
-	out.WriteString(`func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
-	switch r.Method() {
+	out.WriteString(`
+func clientDispatch(ctx context.Context, client Client, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
+	resp, valid, err := ClientDispatchCall(ctx, client, r.Method(), r.Params())
+	if !valid {
+		return false, nil
+	}
+
+	if err != nil {
+		return valid, reply(ctx, nil, err)
+	} else {
+	 	return valid, reply(ctx, resp, nil)
+	}
+}
+
+func ClientDispatchCall(ctx context.Context, client Client, method string, raw json.RawMessage) (resp any, _ bool, err error) {
+	switch method {
 `)
 	for _, k := range ccases.keys() {
 		out.WriteString(ccases[k])
 	}
-	out.WriteString(("\tdefault:\n\t\treturn false, nil\n\t}\n}\n\n"))
+	out.WriteString(("\tdefault:\n\t\treturn nil, false, nil\n\t}\n}\n\n"))
 	for _, k := range cfuncs.keys() {
 		out.WriteString(cfuncs[k])
 	}
@@ -123,6 +139,8 @@ func writeserver() {
 	out.WriteString(
 		`import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"golang.org/x/tools/internal/jsonrpc2"
 )
@@ -133,14 +151,26 @@ func writeserver() {
 	}
 	out.WriteString(`
 }
-
 func serverDispatch(ctx context.Context, server Server, reply jsonrpc2.Replier, r jsonrpc2.Request) (bool, error) {
-	switch r.Method() {
+	resp, valid, err := ServerDispatchCall(ctx, server, r.Method(), r.Params())
+	if !valid {
+		return false, nil
+	}
+
+	if err != nil {
+		return valid, reply(ctx, nil, err)
+	} else {
+	 	return valid, reply(ctx, resp, nil)
+	}
+}
+
+func ServerDispatchCall(ctx context.Context, server Server, method string, raw json.RawMessage) (resp any, _ bool, err error) {
+	switch method {
 `)
 	for _, k := range scases.keys() {
 		out.WriteString(scases[k])
 	}
-	out.WriteString(("\tdefault:\n\t\treturn false, nil\n\t}\n}\n\n"))
+	out.WriteString(("\tdefault:\n\t\treturn nil, false, nil\n\t}\n}\n\n"))
 	for _, k := range sfuncs.keys() {
 		out.WriteString(sfuncs[k])
 	}

@@ -100,19 +100,19 @@ func genCase(_ *Model, method string, param, result *Type, dir string) {
 			nm = "ParamConfiguration" // gopls compatibility
 		}
 		fmt.Fprintf(out, "\t\tvar params %s\n", nm)
-		fmt.Fprintf(out, "\t\tif err := UnmarshalJSON(r.Params(), &params); err != nil {\n")
-		fmt.Fprintf(out, "\t\t\treturn true, sendParseError(ctx, reply, err)\n\t\t}\n")
+		out.WriteString("\t\tif err := UnmarshalJSON(raw, &params); err != nil {\n")
+		out.WriteString("\t\t\treturn nil, true, fmt.Errorf(\"%%w: %%s\", jsonrpc2.ErrParse, err)\n\t\t}\n")
 		p = ", &params"
 	}
 	if notNil(result) {
 		fmt.Fprintf(out, "\t\tresp, err := %%s.%s(ctx%s)\n", fname, p)
 		out.WriteString("\t\tif err != nil {\n")
-		out.WriteString("\t\t\treturn true, reply(ctx, nil, err)\n")
+		out.WriteString("\t\t\treturn nil, true, err\n")
 		out.WriteString("\t\t}\n")
-		out.WriteString("\t\treturn true, reply(ctx, resp, nil)\n")
+		out.WriteString("\t\treturn resp, true, nil\n")
 	} else {
 		fmt.Fprintf(out, "\t\terr := %%s.%s(ctx%s)\n", fname, p)
-		out.WriteString("\t\treturn true, reply(ctx, nil, err)\n")
+		out.WriteString("\t\treturn nil, true, err\n")
 	}
 	out.WriteString("\n")
 	msg := out.String()
@@ -236,6 +236,15 @@ func genStructs(model *Model) {
 		}
 		for _, ex := range s.Mixins {
 			fmt.Fprintf(out, "\t%s\n", goName(ex.Name))
+		}
+		// TODO(hxjiang): clean this up after microsoft/language-server-protocol#377
+		// is fixed and released.
+		if nm == "TextDocumentPositionParams" {
+			out.WriteString("\t// Range is an optional field representing the user's text selection in the document.\n")
+			out.WriteString("\t// If provided, the Position must be contained within this range.\n")
+			out.WriteString("\t//\n")
+			out.WriteString("\t// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#377.\n")
+			out.WriteString("\tRange Range `json:\"range\"`")
 		}
 		out.WriteString("}\n")
 		types[nm] = out.String()

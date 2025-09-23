@@ -308,6 +308,15 @@ func (c *commandHandler) AddTest(ctx context.Context, loc protocol.Location) (*p
 	return result, err
 }
 
+func (c *commandHandler) LSP(ctx context.Context, param command.LSPArgs) (any, error) {
+	response, valid, err := protocol.ServerDispatchCall(ctx, c.s, param.Method, param.Param)
+	if !valid {
+		return nil, fmt.Errorf("method %s does not exist", param.Method)
+	}
+
+	return response, err
+}
+
 // commandConfig configures common command set-up and execution.
 type commandConfig struct {
 	requireSave   bool                           // whether all files must be saved for the command to work

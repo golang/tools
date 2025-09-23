@@ -42,6 +42,7 @@ const (
 	GCDetails               Command = "gopls.gc_details"
 	Generate                Command = "gopls.generate"
 	GoGetPackage            Command = "gopls.go_get_package"
+	LSP                     Command = "gopls.lsp"
 	ListImports             Command = "gopls.list_imports"
 	ListKnownPackages       Command = "gopls.list_known_packages"
 	MaybePromptForTelemetry Command = "gopls.maybe_prompt_for_telemetry"
@@ -89,6 +90,7 @@ var Commands = []Command{
 	GCDetails,
 	Generate,
 	GoGetPackage,
+	LSP,
 	ListImports,
 	ListKnownPackages,
 	MaybePromptForTelemetry,
@@ -230,6 +232,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return nil, s.GoGetPackage(ctx, a0)
+	case LSP:
+		var a0 LSPArgs
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return s.LSP(ctx, a0)
 	case ListImports:
 		var a0 URIArg
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -511,6 +519,14 @@ func NewGoGetPackageCommand(title string, a0 GoGetPackageArgs) *protocol.Command
 	return &protocol.Command{
 		Title:     title,
 		Command:   GoGetPackage.String(),
+		Arguments: MustMarshalArgs(a0),
+	}
+}
+
+func NewLSPCommand(title string, a0 LSPArgs) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   LSP.String(),
 		Arguments: MustMarshalArgs(a0),
 	}
 }

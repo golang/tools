@@ -5449,6 +5449,11 @@ type TextDocumentPositionParams struct {
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
 	// The position inside the text document.
 	Position Position `json:"position"`
+	// Range is an optional field representing the user's text selection in the document.
+	// If provided, the Position must be contained within this range.
+	//
+	// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#377.
+	Range Range `json:"range"`
 }
 
 // General text document registration options.
