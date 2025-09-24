@@ -1907,9 +1907,14 @@
 						"Value": "\"Off\"",
 						"Doc": "`\"Off\"`: Disable vulnerability analysis.\n",
 						"Status": ""
+					},
+					{
+						"Value": "\"Prompt\"",
+						"Doc": "`\"Prompt\"`: Vulncheck can be triggered via prompt.\n",
+						"Status": ""
 					}
 				],
-				"Default": "\"Off\"",
+				"Default": "\"Prompt\"",
 				"Status": "experimental",
 				"Hierarchy": "ui.diagnostic",
 				"DeprecationMessage": ""

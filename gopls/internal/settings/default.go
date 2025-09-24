@@ -99,7 +99,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 							Inline: true,
 							Nil:    true,
 						},
-						Vulncheck:                 ModeVulncheckOff,
+						Vulncheck:                 ModeVulncheckPrompt,
 						DiagnosticsDelay:          1 * time.Second,
 						DiagnosticsTrigger:        DiagnosticsOnEdit,
 						AnalysisProgressReporting: true,

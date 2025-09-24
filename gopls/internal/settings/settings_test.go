@@ -213,6 +213,13 @@ func TestOptions_Set(t *testing.T) {
 				return o.Vulncheck == ModeVulncheckImports
 			},
 		},
+		{
+			name:  "vulncheck",
+			value: "Prompt",
+			check: func(o Options) bool {
+				return o.Vulncheck == ModeVulncheckPrompt
+			},
+		},
 	}
 
 	for _, test := range tests {

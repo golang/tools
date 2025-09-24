@@ -429,8 +429,9 @@ Must be one of:
 * `"Imports"`: In Imports mode, `gopls` will report vulnerabilities that affect packages
 directly and indirectly used by the analyzed main module.
 * `"Off"`: Disable vulnerability analysis.
+* `"Prompt"`: Vulncheck can be triggered via prompt.
 
-Default: `"Off"`.
+Default: `"Prompt"`.
 
 <a id='diagnosticsDelay'></a>
 ### `diagnosticsDelay time.Duration`

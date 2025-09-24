@@ -903,6 +903,8 @@ const (
 type VulncheckMode string
 
 const (
+	// Vulncheck can be triggered via prompt.
+	ModeVulncheckPrompt VulncheckMode = "Prompt"
 	// Disable vulnerability analysis.
 	ModeVulncheckOff VulncheckMode = "Off"
 	// In Imports mode, `gopls` will report vulnerabilities that affect packages
@@ -1225,7 +1227,8 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 	case "vulncheck":
 		return setEnum(&o.Vulncheck, value,
 			ModeVulncheckOff,
-			ModeVulncheckImports)
+			ModeVulncheckImports,
+			ModeVulncheckPrompt)
 
 	case "codelenses", "codelens":
 		lensOverrides, err := asBoolMap[CodeLensSource](value)
