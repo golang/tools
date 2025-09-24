@@ -188,7 +188,7 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 			mrn = ""
 		}
 
-		fmt.Fprintf(out, `// %s implements %s.
+		fmt.Fprintf(out, `// %s implements [%s].
 %sfunc (%s%s%s%s) %s%s {
 	panic("unimplemented")
 }

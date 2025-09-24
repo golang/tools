@@ -19,17 +19,17 @@ type I interface {
 var _ I = &A{} //@quickfix(re"&A..", re"missing method M", stub)
 -- @stub/p.go --
 @@ -5 +5,15 @@
-+// M2 implements I.
++// M2 implements [I].
 +func (*A) M2(aa string) {
 +	panic("unimplemented")
 +}
 +
-+// M3 implements I.
++// M3 implements [I].
 +func (aa *A) M3(bb string) {
 +	panic("unimplemented")
 +}
 +
-+// M4 implements I.
++// M4 implements [I].
 +func (*A) M4() (aa string) {
 +	panic("unimplemented")
 +}

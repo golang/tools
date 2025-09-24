@@ -28,7 +28,7 @@ var _ a.I = &B{} //@ quickfix("&B{}", re"does not implement", out)
 
 -- @out/a/v2/b/b.go --
 @@ -7 +7,5 @@
-+// F implements a.I.
++// F implements [a.I].
 +func (b *B) F() a.T {
 +	panic("unimplemented")
 +}
@@ -69,7 +69,7 @@ type I = a.I
 +import a "example.com/a-a/v2"
 +
 @@ -7 +9,5 @@
-+// F implements a.I.
++// F implements [a.I].
 +func (b *B) F() a.T {
 +	panic("unimplemented")
 +}

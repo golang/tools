@@ -1055,7 +1055,7 @@ var _ io.Reader = C{}
 
 type C struct{}
 
-// Read implements io.Reader.
+// Read implements [io.Reader].
 func (c C) Read(p []byte) (n int, err error) {
 	panic("unimplemented")
 }

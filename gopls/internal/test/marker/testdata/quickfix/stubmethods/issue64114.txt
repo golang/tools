@@ -9,7 +9,7 @@ var _ WriteTest = (*WriteStruct)(nil) //@quickfix("(", re"does not implement", i
 
 type WriterTwoStruct struct{}
 
-// Write implements io.ReadWriter.
+// Write implements [io.ReadWriter].
 func (t *WriterTwoStruct) RRRR(str string) error {
 	panic("unimplemented")
 }
@@ -25,13 +25,13 @@ type WriteStruct struct {
 -- @issue64114/issue64114.go --
 @@ -22 +22,11 @@
 +
-+// RRRR implements WriteTest.
++// RRRR implements [WriteTest].
 +// Subtle: this method shadows the method (WriterTwoStruct).RRRR of WriteStruct.WriterTwoStruct.
 +func (w *WriteStruct) RRRR() {
 +	panic("unimplemented")
 +}
 +
-+// WWWW implements WriteTest.
++// WWWW implements [WriteTest].
 +func (w *WriteStruct) WWWW() {
 +	panic("unimplemented")
 +}

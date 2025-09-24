@@ -182,7 +182,7 @@ Gopls will offer a quick fix to declare this method:
 
 ```go
 
-// Error implements error.Error.
+// Error implements [error.Error].
 func (NegativeErr) Error() string {
 	panic("unimplemented")
 }
