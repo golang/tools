@@ -53,7 +53,7 @@ func diagnoseOne(fh file.Handle) []*cache.Diagnostic {
 	errorf := func(format string, args ...any) []*cache.Diagnostic {
 		msg := fmt.Sprintf("malformed template error %q: %s",
 			p.parseErr.Error(),
-			fmt.Sprintf(format, args))
+			fmt.Sprintf(format, args...))
 		rng, err := p.mapper.OffsetRange(0, 1) // first UTF-16 code
 		if err != nil {
 			rng = protocol.Range{} // start of file

@@ -52,7 +52,7 @@ func runFunc(pass *analysis.Pass, fn *ssa.Function) {
 	// notNil reports an error if v is provably nil.
 	notNil := func(stack []fact, instr ssa.Instruction, v ssa.Value, descr string) {
 		if nilnessOf(stack, v) == isnil {
-			reportf("nilderef", instr.Pos(), descr)
+			reportf("nilderef", instr.Pos(), "%s", descr)
 		}
 	}
 

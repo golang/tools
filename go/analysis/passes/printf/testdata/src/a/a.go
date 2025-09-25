@@ -942,3 +942,92 @@ func PointerVerbs() {
 	fmt.Printf("%x", map_) // want `fmt.Printf format %x has arg map_ of wrong type map\[bool\]bool`
 	fmt.Printf("%X", map_) // want `fmt.Printf format %X has arg map_ of wrong type map\[bool\]bool`
 }
+
+// Tests of calls to anonymous print{,f}-wrapper
+// functions assigned to variables (local/package/field).
+
+// Test a local assigned an anonymous function using :=.
+func _() {
+	printf := func(format string, args ...any) { // want printf:"printfWrapper"
+		println(fmt.Sprintf(format, args...))
+	}
+	printf("%s", 123)                            // want `printf format %s has arg 123 of wrong type int`
+	printf = nil                                 // this doesn't undo the variable's printf-wrapper status
+	printf = func(format string, args ...any) {} // nor does this
+	printf("%s", 123)                            // want `printf format %s has arg 123 of wrong type int`
+}
+
+// Test a global variable.
+func _() {
+	globalPrintf("%s", 123) // want `globalPrintf format %s has arg 123 of wrong type int`
+
+	// This assignment causes calls to GlobalWrapf2 to
+	// be checked as a wrapper in this package only.
+	b.GlobalWrapf2 = func(format string, args ...any) {
+		println(fmt.Sprintf(format, args...))
+	}
+	b.GlobalWrapf("%s", 123)    // want `GlobalWrapf format %s has arg 123 of wrong type int`
+	b.GlobalWrapf2("%s", 123)   // want `GlobalWrapf2 format %s has arg 123 of wrong type int`
+	b.GlobalNonWrapf("%s", 123) // nope
+}
+
+var globalPrintf = func(format string, args ...any) { // want globalPrintf:"printfWrapper"
+	println(fmt.Sprintf(format, args...))
+}
+
+// Test a non-wrapper anonymous function with a plausible signature.
+func _() {
+	notprintf := func(format string, args ...any) {}
+	notprintf("%s", 123)
+}
+
+// Test '=' assignment.
+// Even calls through the var before it is
+// assigned a printf-like value are checked.
+func _() {
+	var printf func(bogus int, format string, args ...any) // want printf:"printfWrapper"
+	printf(0, "%s", 123)                                   // want `printf format %s has arg 123 of wrong type int`
+	printf = func(bogus int, format string, args ...any) {
+		println(fmt.Sprintf(format, args...))
+	}
+	printf(0, "%s", 123) // want `printf format %s has arg 123 of wrong type int`
+}
+
+// Test of literal wrapper function assigned to local variable.
+func _() {
+	var printf = func(format string, args ...any) { // want printf:"printfWrapper"
+		println(fmt.Sprintf(format, args...))
+	}
+	printf("%s", 123) // want `printf format %s has arg 123 of wrong type int`
+}
+
+// Test of literal wrapper function assigned to struct field.
+func _() {
+	var local struct {
+		printf func(format string, args ...any) // want printf:"printfWrapper"
+	}
+	local.printf = func(format string, args ...any) {
+		println(fmt.Sprintf(format, args...))
+	}
+	local.printf("%s", 123) // want `printf format %s has arg 123 of wrong type int`
+
+	// This assignment causes calls to Struct.Wrapf to
+	// be checked as a wrapper in this package only.
+	b.Struct.Wrapf2 = func(format string, args ...any) {
+		println(fmt.Sprintf(format, args...))
+	}
+	b.Struct.Wrapf("%s", 123)    // want `Wrapf format %s has arg 123 of wrong type int`
+	b.Struct.Wrapf2("%s", 123)   // want `Wrapf2 format %s has arg 123 of wrong type int`
+	b.Struct.NonWrapf("%s", 123) // nope
+
+	// variant using generic struct type.
+	{
+		type S[T any] struct {
+			printf func(x T, format string, args ...any) // want printf:"printfWrapper"
+		}
+		new(S[bool]).printf = func(_ bool, format string, args ...any) {
+			println(fmt.Sprintf(format, args...))
+		}
+		new(S[int]).printf(0, "%s", 123) // want `printf format %s has arg 123 of wrong type int`
+	}
+}
