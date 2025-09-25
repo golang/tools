@@ -193,6 +193,7 @@ func main() {
 
 	for _, legacy := range []bool{false, true} {
 		t.Run(fmt.Sprintf("legacy=%v", legacy), func(t *testing.T) {
+			lenses := map[string]bool{"vulncheck": !legacy, "run_govulncheck": legacy}
 			WithOptions(
 				EnvVars{
 					// Let the analyzer read vulnerabilities data from the testdata/vulndb.
@@ -204,10 +205,7 @@ func main() {
 					"_GOPLS_TEST_BINARY_RUN_AS_GOPLS": "true", // needed to run `gopls vulncheck`.
 				},
 				Settings{
-					"codelenses": map[string]bool{
-						"run_govulncheck": true,
-						"vulncheck":       true,
-					},
+					"codelenses": lenses,
 				},
 			).Run(t, files, func(t *testing.T, env *Env) {
 				env.OpenFile("go.mod")

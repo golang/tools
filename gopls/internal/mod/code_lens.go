@@ -173,6 +173,11 @@ func vulncheckLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 }
 
 func runGovulncheckLenses(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle) ([]protocol.CodeLens, error) {
+	// If CodeLensVulncheck is enabled, do not use the legacy CodeLensRunGovulncheck.
+	if snapshot.Options().UserOptions.UIOptions.Codelenses[settings.CodeLensVulncheck] {
+		return nil, nil
+	}
+
 	pm, err := snapshot.ParseMod(ctx, fh)
 	if err != nil || pm.File == nil {
 		return nil, err

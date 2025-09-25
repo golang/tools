@@ -1239,8 +1239,15 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 			counts = append(counts, CounterPath{string(k), fmt.Sprint(v)})
 		}
 
+		var errs []string
 		if name == "codelens" {
-			return counts, deprecatedError("codelenses")
+			errs = append(errs, deprecatedError("codelenses").Error())
+		}
+		if lensOverrides[CodeLensRunGovulncheck] && lensOverrides[CodeLensVulncheck] {
+			errs = append(errs, "The 'run_govulncheck' codelens is superseded by the 'vulncheck' codelens. Only 'vulncheck' should be set.")
+		}
+		if len(errs) > 0 {
+			return counts, &SoftError{msg: strings.Join(errs, "\n")}
 		}
 		return counts, nil
 
