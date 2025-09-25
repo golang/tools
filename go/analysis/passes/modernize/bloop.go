@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -107,7 +108,7 @@ func bloop(pass *analysis.Pass) (any, error) {
 				if cmp, ok := n.Cond.(*ast.BinaryExpr); ok && cmp.Op == token.LSS {
 					if sel, ok := cmp.Y.(*ast.SelectorExpr); ok &&
 						sel.Sel.Name == "N" &&
-						analysisinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") {
+						analysisinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") && usesBenchmarkNOnce(curLoop, info) {
 
 						delStart, delEnd := n.Cond.Pos(), n.Cond.End()
 
@@ -149,7 +150,7 @@ func bloop(pass *analysis.Pass) (any, error) {
 					n.Key == nil &&
 					n.Value == nil &&
 					sel.Sel.Name == "N" &&
-					analysisinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") {
+					analysisinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") && usesBenchmarkNOnce(curLoop, info) {
 
 					pass.Report(analysis.Diagnostic{
 						// Highlight "range b.N".
@@ -182,4 +183,58 @@ func uses(index *typeindex.Index, cur inspector.Cursor, obj types.Object) bool {
 // that encloses c, if any.
 func enclosingFunc(c inspector.Cursor) (inspector.Cursor, bool) {
 	return moreiters.First(c.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)))
+}
+
+// usesBenchmarkNOnce reports whether a b.N loop should be modernized to b.Loop().
+// Only modernize loops that are:
+// 1. Directly in a benchmark function (not in nested functions)
+//   - b.Loop() must be called in the same goroutine as the benchmark function
+//   - Function literals are often used with goroutines (go func(){...})
+//
+// 2. The only b.N loop in that benchmark function
+//   - b.Loop() can only be called once per benchmark execution
+//   - Multiple calls result in "B.Loop called with timer stopped" error
+func usesBenchmarkNOnce(c inspector.Cursor, info *types.Info) bool {
+	// Find the enclosing benchmark function
+	curFunc, ok := enclosingFunc(c)
+	if !ok {
+		return false
+	}
+
+	// Check if this is actually a benchmark function
+	fdecl, ok := curFunc.Node().(*ast.FuncDecl)
+	if !ok {
+		return false // not in a function; or, inside a FuncLit
+	}
+	if !isBenchmarkFunc(fdecl) {
+		return false
+	}
+
+	// Count b.N references in this benchmark function
+	bnRefCount := 0
+	filter := []ast.Node{(*ast.SelectorExpr)(nil), (*ast.FuncLit)(nil)}
+	curFunc.Inspect(filter, func(cur inspector.Cursor) bool {
+		switch n := cur.Node().(type) {
+		case *ast.FuncLit:
+			return false // don't descend into nested function literals
+		case *ast.SelectorExpr:
+			if n.Sel.Name == "N" && analysisinternal.IsPointerToNamed(info.TypeOf(n.X), "testing", "B") {
+				bnRefCount++
+			}
+		}
+		return true
+	})
+
+	// Only modernize if there's exactly one b.N reference
+	return bnRefCount == 1
+}
+
+// isBenchmarkFunc reports whether f is a benchmark function.
+func isBenchmarkFunc(f *ast.FuncDecl) bool {
+	return f.Recv == nil &&
+		f.Name != nil &&
+		f.Name.IsExported() &&
+		strings.HasPrefix(f.Name.Name, "Benchmark") &&
+		f.Type.Params != nil &&
+		len(f.Type.Params.List) == 1
 }
