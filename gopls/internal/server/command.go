@@ -1290,6 +1290,17 @@ func (c *commandHandler) Vulncheck(ctx context.Context, args command.VulncheckAr
 // TODO(golang/vscode-go#3572)
 // TODO(hxjiang): deprecate gopls.run_govulncheck.
 func (c *commandHandler) RunGovulncheck(ctx context.Context, args command.VulncheckArgs) (command.RunVulncheckResult, error) {
+	// Debounce the RunGovulncheck command so only one is running at a time.
+	if !c.s.runGovulncheckInProgress.CompareAndSwap(false, true) {
+		c.s.client.ShowMessage(ctx, &protocol.ShowMessageParams{
+			Type:    protocol.Info,
+			Message: "A govulncheck scan is already in progress.",
+		})
+		return command.RunVulncheckResult{}, nil
+	}
+
+	defer c.s.runGovulncheckInProgress.Store(false)
+
 	if args.URI == "" {
 		return command.RunVulncheckResult{}, errors.New("VulncheckArgs is missing URI field")
 	}

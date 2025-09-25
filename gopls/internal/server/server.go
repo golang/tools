@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -183,6 +184,8 @@ type server struct {
 	cancelPrevDiagnostics func()
 	viewsToDiagnose       map[*cache.View]uint64 // View -> modification at which it last required diagnosis
 	lastModificationID    uint64                 // incrementing clock
+
+	runGovulncheckInProgress atomic.Bool
 }
 
 func (s *server) WorkDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
