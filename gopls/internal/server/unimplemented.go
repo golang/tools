@@ -134,7 +134,7 @@ func (s *server) WillSaveWaitUntil(context.Context, *protocol.WillSaveTextDocume
 	return nil, notImplemented("WillSaveWaitUntil")
 }
 
-func (s *server) TextDocumentContent(context.Context, *protocol.TextDocumentContentParams) (*string, error) {
+func (s *server) TextDocumentContent(context.Context, *protocol.TextDocumentContentParams) (*protocol.TextDocumentContentResult, error) {
 	return nil, notImplemented("TextDocumentContent")
 }
 
