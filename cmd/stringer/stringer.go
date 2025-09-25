@@ -70,6 +70,10 @@
 //	PillAspirin // Aspirin
 //
 // to suppress it in the output.
+//
+// The -trimprefix flag specifies a prefix to remove from the constant names
+// when generating the string representations. For instance, -trimprefix=Pill
+// would be an alternative way to ensure that PillAspirin.String() == "Aspirin".
 package main // import "golang.org/x/tools/cmd/stringer"
 
 import (
@@ -209,7 +213,7 @@ func main() {
 			// and the separate package of tests (package foo_test).
 			outputName = filepath.Join(dir, baseName(pkg, foundTypes[0]))
 		}
-		err := os.WriteFile(outputName, src, 0644)
+		err := os.WriteFile(outputName, src, 0o644)
 		if err != nil {
 			log.Fatalf("writing output: %s", err)
 		}
