@@ -31,9 +31,9 @@ import (
 
 func TestMCPCommandStdio(t *testing.T) {
 	// Test that the headless MCP subcommand works, and recognizes file changes.
-	if !(supportsFsnotify(runtime.GOOS)) {
+	if !supportsFsnotify(runtime.GOOS) {
 		// See golang/go#74580
-		t.Skipf(`skipping on %s; fsnotify is not supported`, runtime.GOOS)
+		t.Skipf("skipping on %s; fsnotify is not supported", runtime.GOOS)
 	}
 	testenv.NeedsExec(t) // stdio transport uses execve(2)
 	tree := writeTree(t, `
@@ -107,9 +107,9 @@ const B = 2
 
 func TestMCPCommandLogging(t *testing.T) {
 	// Test that logging flags for headless MCP subcommand work as intended.
-	if !(supportsFsnotify(runtime.GOOS)) {
+	if !supportsFsnotify(runtime.GOOS) {
 		// See golang/go#74580
-		t.Skipf(`skipping on %s; fsnotify is not supported`, runtime.GOOS)
+		t.Skipf("skipping on %s; fsnotify is not supported", runtime.GOOS)
 	}
 	testenv.NeedsExec(t) // stdio transport uses execve(2)
 
@@ -171,9 +171,9 @@ package p
 }
 
 func TestMCPCommandHTTP(t *testing.T) {
-	if !(supportsFsnotify(runtime.GOOS)) {
+	if !supportsFsnotify(runtime.GOOS) {
 		// See golang/go#74580
-		t.Skipf(`skipping on %s; fsnotify is not supported`, runtime.GOOS)
+		t.Skipf("skipping on %s; fsnotify is not supported", runtime.GOOS)
 	}
 	testenv.NeedsExec(t)
 	tree := writeTree(t, `
@@ -266,6 +266,10 @@ func MyFun() {}
 }
 
 func TestMCPVulncheckCommand(t *testing.T) {
+	if !supportsFsnotify(runtime.GOOS) {
+		// See golang/go#74580
+		t.Skipf("skipping on %s; fsnotify is not supported", runtime.GOOS)
+	}
 	testenv.NeedsTool(t, "go")
 	const proxyData = `
 -- example.com/vulnmod@v1.0.0/go.mod --
