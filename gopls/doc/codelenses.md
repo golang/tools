@@ -77,8 +77,6 @@ File type: Go
 
 ## `run_govulncheck`: Run govulncheck (legacy)
 
-**This setting is experimental and may be deleted.**
-
 
 This codelens source annotates the `module` directive in a go.mod file
 with a command to run Govulncheck asynchronously.
@@ -89,7 +87,7 @@ dependencies; queries a database of known security vulnerabilities; and
 reports any potential problems it finds.
 
 
-Default: off
+Default: on
 
 File type: go.mod
 

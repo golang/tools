@@ -130,7 +130,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						CodeLensTidy:              true,
 						CodeLensUpgradeDependency: true,
 						CodeLensVendor:            true,
-						CodeLensRunGovulncheck:    false, // TODO(hyangah): enable
+						CodeLensRunGovulncheck:    true,
 					},
 					NewGoFileHeader: true,
 				},

@@ -2028,8 +2028,8 @@
 						{
 							"Name": "\"run_govulncheck\"",
 							"Doc": "`\"run_govulncheck\"`: Run govulncheck (legacy)\n\nThis codelens source annotates the `module` directive in a go.mod file\nwith a command to run Govulncheck asynchronously.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that\ncomputes the set of functions reachable within your application, including\ndependencies; queries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
-							"Default": "false",
-							"Status": "experimental"
+							"Default": "true",
+							"Status": ""
 						},
 						{
 							"Name": "\"test\"",
@@ -2064,7 +2064,7 @@
 					]
 				},
 				"EnumValues": null,
-				"Default": "{\"generate\":true,\"regenerate_cgo\":true,\"run_govulncheck\":false,\"tidy\":true,\"upgrade_dependency\":true,\"vendor\":true}",
+				"Default": "{\"generate\":true,\"regenerate_cgo\":true,\"run_govulncheck\":true,\"tidy\":true,\"upgrade_dependency\":true,\"vendor\":true}",
 				"Status": "",
 				"Hierarchy": "ui",
 				"DeprecationMessage": ""
@@ -2227,8 +2227,8 @@
 			"Lens": "run_govulncheck",
 			"Title": "Run govulncheck (legacy)",
 			"Doc": "\nThis codelens source annotates the `module` directive in a go.mod file\nwith a command to run Govulncheck asynchronously.\n\n[Govulncheck](https://go.dev/blog/vuln) is a static analysis tool that\ncomputes the set of functions reachable within your application, including\ndependencies; queries a database of known security vulnerabilities; and\nreports any potential problems it finds.\n",
-			"Default": false,
-			"Status": "experimental"
+			"Default": true,
+			"Status": ""
 		},
 		{
 			"FileType": "go.mod",

@@ -203,7 +203,7 @@ Example Usage:
 }
 ```
 
-Default: `{"generate":true,"regenerate_cgo":true,"run_govulncheck":false,"tidy":true,"upgrade_dependency":true,"vendor":true}`.
+Default: `{"generate":true,"regenerate_cgo":true,"run_govulncheck":true,"tidy":true,"upgrade_dependency":true,"vendor":true}`.
 
 <a id='semanticTokens'></a>
 ### `semanticTokens bool`

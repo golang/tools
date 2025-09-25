@@ -311,8 +311,6 @@ const (
 	// computes the set of functions reachable within your application, including
 	// dependencies; queries a database of known security vulnerabilities; and
 	// reports any potential problems it finds.
-	//
-	//gopls:status experimental
 	CodeLensRunGovulncheck CodeLensSource = "run_govulncheck"
 
 	// Run tests and benchmarks
