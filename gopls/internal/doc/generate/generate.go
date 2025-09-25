@@ -765,7 +765,7 @@ func rewriteAnalyzers(prevContent []byte, api *doc.API) ([]byte, error) {
 		// Convert Analyzer.Doc from go/doc/comment form to Markdown.
 		// Headings in doc comments are converted to ### (HeadingLevel=3).
 		//
-		// Some Analyzers (e.g. internal/gofix) use ## to indicate subheadings
+		// Some Analyzers (e.g. go/analysis/passes/inline) use ## to indicate subheadings
 		// Although this is valid Markdown, it is not valid go/doc/comment,
 		// nor is it rendered as a subheading by pkg.go.dev or gopls's doc viewer.
 		// Perhaps it will be supported in future; see

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gofix
+package inline
 
 import (
 	"fmt"
@@ -16,12 +16,12 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/analysis/passes/internal/gofixdirective"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/diff"
-	"golang.org/x/tools/internal/gofix/findgofix"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -30,9 +30,9 @@ import (
 var doc string
 
 var Analyzer = &analysis.Analyzer{
-	Name: "gofix",
-	Doc:  analysisinternal.MustExtractDoc(doc, "gofix"),
-	URL:  "https://pkg.go.dev/golang.org/x/tools/internal/gofix",
+	Name: "inline",
+	Doc:  analysisinternal.MustExtractDoc(doc, "inline"),
+	URL:  "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/inline",
 	Run:  run,
 	FactTypes: []analysis.Fact{
 		(*goFixInlineFuncFact)(nil),
@@ -70,7 +70,7 @@ func run(pass *analysis.Pass) (any, error) {
 		inlinableConsts:  make(map[*types.Const]*goFixInlineConstFact),
 		inlinableAliases: make(map[*types.TypeName]*goFixInlineAliasFact),
 	}
-	findgofix.Find(pass, a.root, a)
+	gofixdirective.Find(pass, a.root, a)
 	a.inline()
 	return nil, nil
 }

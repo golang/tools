@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/hostport"
 	"golang.org/x/tools/go/analysis/passes/httpresponse"
 	"golang.org/x/tools/go/analysis/passes/ifaceassert"
+	"golang.org/x/tools/go/analysis/passes/inline"
 	"golang.org/x/tools/go/analysis/passes/loopclosure"
 	"golang.org/x/tools/go/analysis/passes/lostcancel"
 	"golang.org/x/tools/go/analysis/passes/modernize"
@@ -66,7 +67,6 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
 	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/gofix"
 	"honnef.co/go/tools/analysis/lint"
 )
 
@@ -240,7 +240,7 @@ var DefaultAnalyzers = []*Analyzer{
 		severity:    protocol.SeverityInformation,
 	},
 	// other simplifiers
-	{analyzer: gofix.Analyzer, severity: protocol.SeverityHint},
+	{analyzer: inline.Analyzer, severity: protocol.SeverityHint},
 	{analyzer: infertypeargs.Analyzer, severity: protocol.SeverityInformation},
 	{analyzer: maprange.Analyzer, severity: protocol.SeverityHint},
 	{analyzer: unusedparams.Analyzer, severity: protocol.SeverityInformation},

@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// The gofix command applies the inliner to the specified packages of
+// The inline command applies the inliner to the specified packages of
 // Go source code. Run this command to report all fixes:
 //
-//	$ go run ./internal/gofix/cmd/gofix packages...
+//	$ go run ./go/analysis/passes/inline/cmd/inline packages...
 //
 // Run this command to preview the changes:
 //
-//	$ go run ./internal/gofix/cmd/gofix -fix -diff packages...
+//	$ go run ./go/analysis/passes/inline/cmd/inline -fix -diff packages...
 //
 // And run this command to apply them, including ones in test files:
 //
-//	$ go run ./internal/gofix/cmd/gofix -fix -test packages...
+//	$ go run ./go/analysis/passes/inline/cmd/inline -fix -test packages...
 //
 // This internal command is not officially supported. In the long
 // term, we plan to migrate this functionality into "go fix"; see Go
@@ -21,8 +21,8 @@
 package main
 
 import (
+	"golang.org/x/tools/go/analysis/passes/inline"
 	"golang.org/x/tools/go/analysis/singlechecker"
-	"golang.org/x/tools/internal/gofix"
 )
 
-func main() { singlechecker.Main(gofix.Analyzer) }
+func main() { singlechecker.Main(inline.Analyzer) }

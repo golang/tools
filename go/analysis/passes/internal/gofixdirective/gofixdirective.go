@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package findgofix searches for and validates go:fix directives. The
-// internal/gofix package uses findgofix to perform inlining.
+// Package gofixdirective searches for and validates go:fix directives. The
+// go/analysis/passes/inline package uses findgofix to perform inlining.
 // The go/analysis/passes/gofix package uses findgofix to check for problems
 // with go:fix directives.
 //
-// findgofix is separate from gofix to avoid depending on refactor/inline,
+// gofixdirective is separate from gofix to avoid depending on refactor/inline,
 // which is large.
-package findgofix
+package gofixdirective
 
-// This package is tested by internal/gofix.
+// This package is tested by go/analysis/passes/inline.
 
 import (
 	"go/ast"

@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/analysis/passes/internal/gofixdirective"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/gofix/findgofix"
 )
 
 //go:embed doc.go
@@ -28,6 +28,6 @@ var Analyzer = &analysis.Analyzer{
 
 func run(pass *analysis.Pass) (any, error) {
 	root := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector).Root()
-	findgofix.Find(pass, root, nil)
+	gofixdirective.Find(pass, root, nil)
 	return nil, nil
 }

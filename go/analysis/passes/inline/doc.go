@@ -3,15 +3,14 @@
 // license that can be found in the LICENSE file.
 
 /*
-Package gofix defines an Analyzer that inlines calls to functions
-and uses of constants
-marked with a "//go:fix inline" directive.
+Package inline defines an analyzer that inlines calls to functions
+and uses of constants marked with a "//go:fix inline" directive.
 
-# Analyzer gofix
+# Analyzer inline
 
-gofix: apply fixes based on go:fix comment directives
+inline: apply fixes based on 'go:fix inline' comment directives
 
-The gofix analyzer inlines functions and constants that are marked for inlining.
+The inline analyzer inlines functions and constants that are marked for inlining.
 
 ## Functions
 
@@ -54,12 +53,12 @@ it may introduce a "binding declaration" of the form
 to evaluate argument expressions in the correct order and bind them to
 parameter variables. Since the resulting code transformation may be
 stylistically suboptimal, such inlinings may be disabled by specifying
-the -gofix.allow_binding_decl=false flag to the analyzer driver.
+the -inline.allow_binding_decl=false flag to the analyzer driver.
 
 (In cases where it is not safe to "reduce" a call—that is, to replace
 a call f(x) by the body of function f, suitably substituted—the
 inliner machinery is capable of replacing f by a function literal,
-func(){...}(). However, the gofix analyzer discards all such
+func(){...}(). However, the inline analyzer discards all such
 "literalizations" unconditionally, again on grounds of style.)
 
 ## Constants
@@ -94,20 +93,17 @@ or before a group, applying to every constant in the group:
 	    Val = Value
 	)
 
-The proposal https://go.dev/issue/32816 introduces the "//go:fix" directives.
+The proposal https://go.dev/issue/32816 introduces the "//go:fix inline" directives.
 
-You can use this (officially unsupported) command to apply gofix fixes en masse:
+You can use this command to apply inline fixes en masse:
 
-	$ go run golang.org/x/tools/internal/gofix/cmd/gofix@latest -test ./...
-
-(Do not use "go get -tool" to add gopls as a dependency of your
-module; gopls commands must be built from their release branch.)
+	$ go run golang.org/x/tools/go/analysis/passes/inline/cmd/inline@latest -test ./...
 
 # Analyzer gofixdirective
 
-gofixdirective: validate uses of gofix comment directives
+gofixdirective: validate uses of //go:fix comment directives
 
 The gofixdirective analyzer checks "//go:fix inline" directives for correctness.
 See the documentation for the gofix analyzer for more about "/go:fix inline".
 */
-package gofix
+package inline
