@@ -90,6 +90,10 @@ func TestStringsBuilder(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.StringsBuilderAnalyzer, "stringsbuilder")
 }
 
+func TestStringsCut(t *testing.T) {
+	RunWithSuggestedFixes(t, TestData(), goplsexport.StringsCutModernizer, "stringscut")
+}
+
 func TestStringsCutPrefix(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.StringsCutPrefixAnalyzer,
 		"stringscutprefix",

@@ -238,7 +238,7 @@ func isIncrementLoop(info *types.Info, loop *ast.ForStmt) *types.Var {
 	if assign, ok := loop.Init.(*ast.AssignStmt); ok &&
 		assign.Tok == token.DEFINE &&
 		len(assign.Rhs) == 1 &&
-		isZeroIntLiteral(info, assign.Rhs[0]) &&
+		isZeroIntConst(info, assign.Rhs[0]) &&
 		is[*ast.IncDecStmt](loop.Post) &&
 		loop.Post.(*ast.IncDecStmt).Tok == token.INC &&
 		astutil.EqualSyntax(loop.Post.(*ast.IncDecStmt).X, assign.Lhs[0]) {

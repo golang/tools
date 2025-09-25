@@ -266,6 +266,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: modernize.SlicesDeleteAnalyzer, severity: protocol.SeverityHint, nonDefault: true}, // not nil-preserving
 	{analyzer: modernize.SlicesSortAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.StringsBuilderAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: goplsexport.StringsCutModernizer, severity: protocol.SeverityHint},
 	{analyzer: modernize.StringsCutPrefixAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.StringsSeqAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.TestingContextAnalyzer, severity: protocol.SeverityHint},

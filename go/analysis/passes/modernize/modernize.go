@@ -48,6 +48,7 @@ var Suite = []*analysis.Analyzer{
 	// SlicesDeleteAnalyzer, // not nil-preserving!
 	SlicesSortAnalyzer,
 	stditeratorsAnalyzer,
+	stringscutAnalyzer,
 	StringsCutPrefixAnalyzer,
 	StringsSeqAnalyzer,
 	StringsBuilderAnalyzer,
@@ -81,8 +82,8 @@ func formatExprs(fset *token.FileSet, exprs []ast.Expr) string {
 	return buf.String()
 }
 
-// isZeroIntLiteral reports whether e is an integer whose value is 0.
-func isZeroIntLiteral(info *types.Info, e ast.Expr) bool {
+// isZeroIntConst reports whether e is an integer whose value is 0.
+func isZeroIntConst(info *types.Info, e ast.Expr) bool {
 	return isIntLiteral(info, e, 0)
 }
 

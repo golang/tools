@@ -4041,6 +4041,34 @@ Default: on.
 
 Package documentation: [stringsbuilder](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringbuilder)
 
+<a id='stringscut'></a>
+## `stringscut`: replace strings.Index etc. with strings.Cut
+
+This analyzer replaces certain patterns of use of [strings.Index](/strings#Index) and string slicing by [strings.Cut](/strings#Cut), added in go1.18.
+
+For example:
+
+	idx := strings.Index(s, substr)
+	if idx >= 0 {
+	    return s[:idx]
+	}
+
+is replaced by:
+
+	before, _, ok := strings.Cut(s, substr)
+	if ok {
+	    return before
+	}
+
+It also handles variants using [strings.IndexByte](/strings#IndexByte) instead of Index, or the bytes package instead of strings.
+
+Fixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.
+
+
+Default: on.
+
+Package documentation: [stringscut](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringscut)
+
 <a id='stringscutprefix'></a>
 ## `stringscutprefix`: replace HasPrefix/TrimPrefix with CutPrefix
 

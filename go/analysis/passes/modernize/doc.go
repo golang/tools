@@ -327,6 +327,30 @@ iterator offered by the same data type:
 
 where x is one of various well-known types in the standard library.
 
+# Analyzer stringscut
+
+stringscut: replace strings.Index etc. with strings.Cut
+
+This analyzer replaces certain patterns of use of [strings.Index] and string slicing by [strings.Cut], added in go1.18.
+
+For example:
+
+	idx := strings.Index(s, substr)
+	if idx >= 0 {
+	    return s[:idx]
+	}
+
+is replaced by:
+
+	before, _, ok := strings.Cut(s, substr)
+	if ok {
+	    return before
+	}
+
+It also handles variants using [strings.IndexByte] instead of Index, or the bytes package instead of strings.
+
+Fixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.
+
 # Analyzer stringscutprefix
 
 stringscutprefix: replace HasPrefix/TrimPrefix with CutPrefix

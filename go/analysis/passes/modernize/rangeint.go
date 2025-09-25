@@ -80,7 +80,7 @@ func rangeint(pass *analysis.Pass) (any, error) {
 			if init, ok := loop.Init.(*ast.AssignStmt); ok &&
 				isSimpleAssign(init) &&
 				is[*ast.Ident](init.Lhs[0]) &&
-				isZeroIntLiteral(info, init.Rhs[0]) {
+				isZeroIntConst(info, init.Rhs[0]) {
 				// Have: for i = 0; ... (or i := 0)
 				index := init.Lhs[0].(*ast.Ident)
 

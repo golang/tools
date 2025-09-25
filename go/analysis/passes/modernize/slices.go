@@ -266,7 +266,7 @@ func clippedSlice(info *types.Info, e ast.Expr) (res ast.Expr, empty bool) {
 		// x[:0:0], x[:len(x):len(x)], x[:k:k]
 		if e.Slice3 && e.High != nil && e.Max != nil && astutil.EqualSyntax(e.High, e.Max) { // x[:k:k]
 			res = e
-			empty = isZeroIntLiteral(info, e.High) // x[:0:0]
+			empty = isZeroIntConst(info, e.High) // x[:0:0]
 			if call, ok := e.High.(*ast.CallExpr); ok &&
 				typeutil.Callee(info, call) == builtinLen &&
 				astutil.EqualSyntax(call.Args[0], e.X) {
