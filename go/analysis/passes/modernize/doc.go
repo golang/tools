@@ -18,7 +18,7 @@ behavior to have a serious bug and will endeavor to fix it.
 To apply all modernization fixes en masse, you can use the
 following command:
 
-	$ go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -fix -test ./...
+	$ go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix -test ./...
 
 (Do not use "go get -tool" to add gopls as a dependency of your
 module; gopls commands must be built from their release branch.)

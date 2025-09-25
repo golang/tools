@@ -29,7 +29,7 @@ var WaitGroupAnalyzer = &analysis.Analyzer{
 		typeindexanalyzer.Analyzer,
 	},
 	Run: waitgroup,
-	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#waitgroup",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#waitgroup",
 }
 
 // The waitgroup pass replaces old more complex code with

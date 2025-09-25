@@ -2870,7 +2870,7 @@ The any analyzer suggests replacing uses of the empty interface type, \`interfac
 
 Default: on.
 
-Package documentation: [any](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#any)
+Package documentation: [any](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#any)
 
 <a id='appendclipped'></a>
 ## `appendclipped`: simplify append chains using slices.Concat
@@ -2886,7 +2886,7 @@ This analyzer is currently disabled by default as the transformation does not pr
 
 Default: off. Enable by setting `"analyses": {"appendclipped": true}`.
 
-Package documentation: [appendclipped](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#appendclipped)
+Package documentation: [appendclipped](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#appendclipped)
 
 <a id='appends'></a>
 ## `appends`: check for missing values after append
@@ -2957,7 +2957,7 @@ Caveats: The b.Loop() method is designed to prevent the compiler from optimizing
 
 Default: on.
 
-Package documentation: [bloop](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#bloop)
+Package documentation: [bloop](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#bloop)
 
 <a id='bools'></a>
 ## `bools`: check for common mistakes involving boolean operators
@@ -3129,7 +3129,7 @@ The fmtappendf analyzer suggests replacing \`\[]byte(fmt.Sprintf(...))\` with \`
 
 Default: on.
 
-Package documentation: [fmtappendf](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#fmtappendf)
+Package documentation: [fmtappendf](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#fmtappendf)
 
 <a id='forvar'></a>
 ## `forvar`: remove redundant re-declaration of loop variables
@@ -3141,7 +3141,7 @@ This fix only applies to \`range\` loops.
 
 Default: on.
 
-Package documentation: [forvar](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#forvar)
+Package documentation: [forvar](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#forvar)
 
 <a id='framepointer'></a>
 ## `framepointer`: report assembly that clobbers the frame pointer before saving it
@@ -3419,7 +3419,7 @@ The transformation to \`maps.Clone\` is applied conservatively, as it preserves 
 
 Default: on.
 
-Package documentation: [mapsloop](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#mapsloop)
+Package documentation: [mapsloop](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#mapsloop)
 
 <a id='minmax'></a>
 ## `minmax`: replace if/else statements with calls to min or max
@@ -3437,7 +3437,7 @@ This analyzer avoids making suggestions for floating-point types, as the behavio
 
 Default: on.
 
-Package documentation: [minmax](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#minmax)
+Package documentation: [minmax](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#minmax)
 
 <a id='nilfunc'></a>
 ## `nilfunc`: check for useless comparisons between functions and nil
@@ -3553,7 +3553,7 @@ Replacing \`omitempty\` with \`omitzero\` is a change in behavior. The original 
 
 Default: on.
 
-Package documentation: [omitzero](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#omitzero)
+Package documentation: [omitzero](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#omitzero)
 
 <a id='printf'></a>
 ## `printf`: check consistency of Printf format strings and arguments
@@ -3583,7 +3583,7 @@ This transformation is applied only if (a) the loop variable is not modified wit
 
 Default: on.
 
-Package documentation: [rangeint](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#rangeint)
+Package documentation: [rangeint](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#rangeint)
 
 <a id='recursiveiter'></a>
 ## `recursiveiter`: check for inefficient recursive iterators
@@ -3680,7 +3680,7 @@ or when the operand has potential side effects.
 
 Default: on.
 
-Package documentation: [reflecttypefor](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#reflecttypefor)
+Package documentation: [reflecttypefor](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#reflecttypefor)
 
 <a id='shadow'></a>
 ## `shadow`: check for possible unintended shadowing of variables
@@ -3809,7 +3809,7 @@ If the expression for the target element has side effects, this transformation w
 
 Default: on.
 
-Package documentation: [slicescontains](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#slicescontains)
+Package documentation: [slicescontains](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#slicescontains)
 
 <a id='slicesdelete'></a>
 ## `slicesdelete`: replace append-based slice deletion with slices.Delete
@@ -3829,7 +3829,7 @@ This analyzer is disabled by default. The \`slices.Delete\` function zeros the e
 
 Default: off. Enable by setting `"analyses": {"slicesdelete": true}`.
 
-Package documentation: [slicesdelete](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#slicesdelete)
+Package documentation: [slicesdelete](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#slicesdelete)
 
 <a id='slicessort'></a>
 ## `slicessort`: replace sort.Slice with slices.Sort for basic types
@@ -3843,7 +3843,7 @@ with the simpler \`slices.Sort(s)\`, which was added in Go 1.21.
 
 Default: on.
 
-Package documentation: [slicessort](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#slicessort)
+Package documentation: [slicessort](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#slicessort)
 
 <a id='slog'></a>
 ## `slog`: check for invalid structured logging calls
@@ -3952,7 +3952,7 @@ The sole use of the finished string must be the last reference to the variable s
 
 Default: on.
 
-Package documentation: [stringsbuilder](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringbuilder)
+Package documentation: [stringsbuilder](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringbuilder)
 
 <a id='stringscutprefix'></a>
 ## `stringscutprefix`: replace HasPrefix/TrimPrefix with CutPrefix
@@ -3986,7 +3986,7 @@ is fixed to:
 
 Default: on.
 
-Package documentation: [stringscutprefix](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringscutprefix)
+Package documentation: [stringscutprefix](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringscutprefix)
 
 <a id='stringsseq'></a>
 ## `stringsseq`: replace ranging over Split/Fields with SplitSeq/FieldsSeq
@@ -4004,7 +4004,7 @@ which was added in Go 1.24 and avoids allocating a slice for the substrings. The
 
 Default: on.
 
-Package documentation: [stringsseq](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringsseq)
+Package documentation: [stringsseq](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringsseq)
 
 <a id='structtag'></a>
 ## `structtag`: check that struct field tags conform to reflect.StructTag.Get
@@ -4031,7 +4031,7 @@ This change is only suggested if the \`cancel\` function is not used for any oth
 
 Default: on.
 
-Package documentation: [testingcontext](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#testingcontext)
+Package documentation: [testingcontext](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#testingcontext)
 
 <a id='testinggoroutine'></a>
 ## `testinggoroutine`: report calls to (*testing.T).Fatal from goroutines started by a test
@@ -4254,7 +4254,7 @@ which was added in Go 1.25.
 
 Default: on.
 
-Package documentation: [waitgroup](https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#waitgroup)
+Package documentation: [waitgroup](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#waitgroup)
 
 <a id='yield'></a>
 ## `yield`: report calls to yield where the result is ignored

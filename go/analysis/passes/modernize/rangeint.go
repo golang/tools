@@ -31,7 +31,7 @@ var RangeIntAnalyzer = &analysis.Analyzer{
 		typeindexanalyzer.Analyzer,
 	},
 	Run: rangeint,
-	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#rangeint",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#rangeint",
 }
 
 // rangeint offers a fix to replace a 3-clause 'for' loop:
@@ -131,7 +131,8 @@ func rangeint(pass *analysis.Pass) (any, error) {
 
 						// Find references to i within the loop body.
 						v := info.ObjectOf(index).(*types.Var)
-						if v.Kind() == types.PackageVar {
+						// TODO(adonovan): use go1.25 v.Kind() == types.PackageVar
+						if typesinternal.IsPackageLevel(v) {
 							continue nextLoop
 						}
 						used := false

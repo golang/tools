@@ -26,7 +26,7 @@ var SlicesDeleteAnalyzer = &analysis.Analyzer{
 		inspect.Analyzer,
 	},
 	Run: slicesdelete,
-	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#slicesdelete",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#slicesdelete",
 }
 
 // The slicesdelete pass attempts to replace instances of append(s[:i], s[i+k:]...)

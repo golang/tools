@@ -6,11 +6,6 @@
 // clarify Go code by using more modern features.
 //
 // See [golang.org/x/tools/go/analysis/passes/modernize] for details.
-//
-// Deprecated: use 'go run
-// golang.org/x/tools/go/passes/modernize/cmd/modernize' instead. In
-// due course the modernizer suite will be accessed through "go fix";
-// see https://go.dev/issue/71859.
 package main
 
 import (

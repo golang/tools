@@ -26,7 +26,7 @@ var OmitZeroAnalyzer = &analysis.Analyzer{
 		inspect.Analyzer,
 	},
 	Run: omitzero,
-	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#omitzero",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#omitzero",
 }
 
 func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Field) {

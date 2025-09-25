@@ -22,7 +22,7 @@ var AnyAnalyzer = &analysis.Analyzer{
 		inspect.Analyzer,
 	},
 	Run: runAny,
-	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#any",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#any",
 }
 
 // The any pass replaces interface{} with go1.18's 'any'.

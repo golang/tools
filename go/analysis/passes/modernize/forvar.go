@@ -23,7 +23,7 @@ var ForVarAnalyzer = &analysis.Analyzer{
 		inspect.Analyzer,
 	},
 	Run: forvar,
-	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#forvar",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#forvar",
 }
 
 // forvar offers to fix unnecessary copying of a for variable

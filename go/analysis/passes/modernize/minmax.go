@@ -28,7 +28,7 @@ var MinMaxAnalyzer = &analysis.Analyzer{
 		inspect.Analyzer,
 	},
 	Run: minmax,
-	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#minmax",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#minmax",
 }
 
 // The minmax pass replaces if/else statements with calls to min or max.

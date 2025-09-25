@@ -28,7 +28,7 @@ var AppendClippedAnalyzer = &analysis.Analyzer{
 		inspect.Analyzer,
 	},
 	Run: appendclipped,
-	URL: "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#appendclipped",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#appendclipped",
 }
 
 // The appendclipped pass offers to simplify a tower of append calls:
