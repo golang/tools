@@ -432,6 +432,7 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 
 	var editMap map[protocol.DocumentURI][]diff.Edit
 	if inPackageName {
+		countRenamePackage.Inc()
 		editMap, err = renamePackageName(ctx, snapshot, f, PackageName(newName))
 	} else {
 		editMap, err = renameOrdinary(ctx, snapshot, f.URI(), pp, newName)
