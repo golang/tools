@@ -50,10 +50,11 @@ const _Foo_name = "fooXfooYfooZ"
 var _Foo_index = [...]uint8{0, 4, 8, 12}
 
 func (i Foo) String() string {
-	if i < 0 || i >= Foo(len(_Foo_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_Foo_index)-1 {
 		return "Foo(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _Foo_name[_Foo_index[i]:_Foo_index[i+1]]
+	return _Foo_name[_Foo_index[idx]:_Foo_index[idx+1]]
 }`, pkg)
 }
 
@@ -292,11 +293,11 @@ const _Foo_name = "fooX"
 var _Foo_index = [...]uint8{0, 4}
 
 func (i Foo) String() string {
-	i -= 1
-	if i < 0 || i >= Foo(len(_Foo_index)-1) {
-		return "Foo(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_Foo_index)-1 {
+		return "Foo(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _Foo_name[_Foo_index[i]:_Foo_index[i+1]]
+	return _Foo_name[_Foo_index[idx]:_Foo_index[idx+1]]
 }`),
 
 				"bar_string_test.go": []byte(`
@@ -318,11 +319,11 @@ const _Bar_name = "barX"
 var _Bar_index = [...]uint8{0, 4}
 
 func (i Bar) String() string {
-	i -= 1
-	if i < 0 || i >= Bar(len(_Bar_index)-1) {
-		return "Bar(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_Bar_index)-1 {
+		return "Bar(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _Bar_name[_Bar_index[i]:_Bar_index[i+1]]
+	return _Bar_name[_Bar_index[idx]:_Bar_index[idx+1]]
 }`),
 
 				"baz_string_test.go": []byte(`
@@ -344,11 +345,11 @@ const _Baz_name = "bazX"
 var _Baz_index = [...]uint8{0, 4}
 
 func (i Baz) String() string {
-	i -= 1
-	if i < 0 || i >= Baz(len(_Baz_index)-1) {
-		return "Baz(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_Baz_index)-1 {
+		return "Baz(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _Baz_name[_Baz_index[i]:_Baz_index[i+1]]
+	return _Baz_name[_Baz_index[idx]:_Baz_index[idx+1]]
 }`),
 			},
 		},
