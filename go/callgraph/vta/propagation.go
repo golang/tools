@@ -77,13 +77,6 @@ func scc(g *vtaGraph) (sccs [][]idx, idxToSccID []int) {
 	return sccs, idxToSccID
 }
 
-func min(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
-}
-
 // LastIndex returns the index of the last occurrence of v in s, or -1 if v is
 // not present in s.
 //
