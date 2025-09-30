@@ -17,7 +17,9 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
+	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 var MinMaxAnalyzer = &analysis.Analyzer{
@@ -26,14 +28,16 @@ var MinMaxAnalyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
 	},
 	Run: minmax,
 	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#minmax",
 }
 
-// The minmax pass replaces if/else statements with calls to min or max.
+// The minmax pass replaces if/else statements with calls to min or max,
+// and removes user-defined min/max functions that are equivalent to built-ins.
 //
-// Patterns:
+// If/else replacement patterns:
 //
 //  1. if a < b { x = a } else { x = b }        =>      x = min(a, b)
 //  2. x = a; if a < b { x = b }                =>      x = max(a, b)
@@ -42,12 +46,19 @@ var MinMaxAnalyzer = &analysis.Analyzer{
 // is not Nan. Since this is hard to prove, we reject floating-point
 // numbers.
 //
+// Function removal:
+// User-defined min/max functions are suggested for removal if they may
+// be safely replaced by their built-in namesake.
+//
 // Variants:
 // - all four ordered comparisons
 // - "x := a" or "x = a" or "var x = a" in pattern 2
 // - "x < b" or "a < b" in pattern 2
 func minmax(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
+
+	// Check for user-defined min/max functions that can be removed
+	checkUserDefinedMinMax(pass)
 
 	// check is called for all statements of this form:
 	//   if a < b { lhs = rhs }
@@ -275,6 +286,144 @@ func maybeNaN(t types.Type) bool {
 	return false
 }
 
+// checkUserDefinedMinMax looks for user-defined min/max functions that are
+// equivalent to the built-in functions and suggests removing them.
+func checkUserDefinedMinMax(pass *analysis.Pass) {
+	index := pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+
+	// Look up min and max functions by name in package scope
+	for _, funcName := range []string{"min", "max"} {
+		if fn, ok := pass.Pkg.Scope().Lookup(funcName).(*types.Func); ok {
+			// Use typeindex to get the FuncDecl directly
+			if def, ok := index.Def(fn); ok {
+				decl := def.Parent().Node().(*ast.FuncDecl)
+				// Check if this function matches the built-in min/max signature and behavior
+				if canUseBuiltinMinMax(fn, decl.Body) {
+					// Expand to include leading doc comment
+					pos := decl.Pos()
+					if docs := docComment(decl); docs != nil {
+						pos = docs.Pos()
+					}
+
+					pass.Report(analysis.Diagnostic{
+						Pos:     decl.Pos(),
+						End:     decl.End(),
+						Message: fmt.Sprintf("user-defined %s function is equivalent to built-in %s and can be removed", funcName, funcName),
+						SuggestedFixes: []analysis.SuggestedFix{{
+							Message: fmt.Sprintf("Remove user-defined %s function", funcName),
+							TextEdits: []analysis.TextEdit{{
+								Pos: pos,
+								End: decl.End(),
+							}},
+						}},
+					})
+				}
+			}
+		}
+	}
+}
+
+// canUseBuiltinMinMax reports whether it is safe to replace a call
+// to this min or max function by its built-in namesake.
+func canUseBuiltinMinMax(fn *types.Func, body *ast.BlockStmt) bool {
+	sig := fn.Type().(*types.Signature)
+
+	// Only consider the most common case: exactly 2 parameters
+	if sig.Params().Len() != 2 {
+		return false
+	}
+
+	// Check if any parameter might be floating-point
+	for param := range sig.Params().Variables() {
+		if maybeNaN(param.Type()) {
+			return false // Don't suggest removal for float types due to NaN handling
+		}
+	}
+
+	// Must have exactly one return value
+	if sig.Results().Len() != 1 {
+		return false
+	}
+
+	// Check that the function body implements the expected min/max logic
+	if body == nil {
+		return false
+	}
+
+	return hasMinMaxLogic(body, fn.Name())
+}
+
+// hasMinMaxLogic checks if the function body implements simple min/max logic.
+func hasMinMaxLogic(body *ast.BlockStmt, funcName string) bool {
+	// Pattern 1: Single if/else statement
+	if len(body.List) == 1 {
+		if ifStmt, ok := body.List[0].(*ast.IfStmt); ok {
+			// Get the "false" result from the else block
+			if elseBlock, ok := ifStmt.Else.(*ast.BlockStmt); ok && len(elseBlock.List) == 1 {
+				if elseRet, ok := elseBlock.List[0].(*ast.ReturnStmt); ok && len(elseRet.Results) == 1 {
+					return checkMinMaxPattern(ifStmt, elseRet.Results[0], funcName)
+				}
+			}
+		}
+	}
+
+	// Pattern 2: if statement followed by return
+	if len(body.List) == 2 {
+		if ifStmt, ok := body.List[0].(*ast.IfStmt); ok && ifStmt.Else == nil {
+			if retStmt, ok := body.List[1].(*ast.ReturnStmt); ok && len(retStmt.Results) == 1 {
+				return checkMinMaxPattern(ifStmt, retStmt.Results[0], funcName)
+			}
+		}
+	}
+
+	return false
+}
+
+// checkMinMaxPattern checks if an if statement implements min/max logic.
+// ifStmt: the if statement to check
+// falseResult: the expression returned when the condition is false
+// funcName: "min" or "max"
+func checkMinMaxPattern(ifStmt *ast.IfStmt, falseResult ast.Expr, funcName string) bool {
+	// Must have condition with comparison
+	cmp, ok := ifStmt.Cond.(*ast.BinaryExpr)
+	if !ok {
+		return false
+	}
+
+	// Check if then branch returns one of the compared values
+	if len(ifStmt.Body.List) != 1 {
+		return false
+	}
+
+	thenRet, ok := ifStmt.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(thenRet.Results) != 1 {
+		return false
+	}
+
+	// Use the same logic as the existing minmax analyzer
+	sign := isInequality(cmp.Op)
+	if sign == 0 {
+		return false // Not a comparison operator
+	}
+
+	t := thenRet.Results[0] // "true" result
+	f := falseResult        // "false" result
+	x := cmp.X              // left operand
+	y := cmp.Y              // right operand
+
+	// Check operand order and adjust sign accordingly
+	if equalSyntax(t, x) && equalSyntax(f, y) {
+		sign = +sign
+	} else if equalSyntax(t, y) && equalSyntax(f, x) {
+		sign = -sign
+	} else {
+		return false
+	}
+
+	// Check if the sign matches the function name
+	return cond(sign < 0, "min", "max") == funcName
+}
+
 // -- utils --
 
 func is[T any](x any) bool {
@@ -288,4 +437,19 @@ func cond[T any](cond bool, t, f T) T {
 	} else {
 		return f
 	}
+}
+
+// docComment returns the doc comment for a node, if any.
+func docComment(n ast.Node) *ast.CommentGroup {
+	switch n := n.(type) {
+	case *ast.FuncDecl:
+		return n.Doc
+	case *ast.GenDecl:
+		return n.Doc
+	case *ast.ValueSpec:
+		return n.Doc
+	case *ast.TypeSpec:
+		return n.Doc
+	}
+	return nil // includes File, ImportSpec, Field
 }
