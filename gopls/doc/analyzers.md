@@ -3298,7 +3298,7 @@ The proposal [https://go.dev/issue/32816](https://go.dev/issue/32816) introduces
 
 You can use this command to apply inline fixes en masse:
 
-	$ go run golang.org/x/tools/go/analysis/passes/inline/cmd/inline@latest -test ./...
+	$ go run golang.org/x/tools/go/analysis/passes/inline/cmd/inline@latest -fix ./...
 
 
 Default: on.

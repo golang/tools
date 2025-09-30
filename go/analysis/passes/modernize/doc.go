@@ -18,7 +18,7 @@ behavior to have a serious bug and will endeavor to fix it.
 To apply all modernization fixes en masse, you can use the
 following command:
 
-	$ go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix -test ./...
+	$ go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix ./...
 
 (Do not use "go get -tool" to add gopls as a dependency of your
 module; gopls commands must be built from their release branch.)
@@ -39,8 +39,8 @@ code review to apply fixes in two steps, the first consisting only of
 fixes from the "any" analyzer, the second consisting of all
 other analyzers. This can be achieved using flags, as in this example:
 
-	$ modernize -any=true  -fix -test ./...
-	$ modernize -any=false -fix -test ./...
+	$ modernize -any=true  -fix ./...
+	$ modernize -any=false -fix ./...
 
 # Analyzer appendclipped
 

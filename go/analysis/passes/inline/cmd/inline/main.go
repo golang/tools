@@ -11,9 +11,9 @@
 //
 //	$ go run ./go/analysis/passes/inline/cmd/inline -fix -diff packages...
 //
-// And run this command to apply them, including ones in test files:
+// And run this command to apply them:
 //
-//	$ go run ./go/analysis/passes/inline/cmd/inline -fix -test packages...
+//	$ go run ./go/analysis/passes/inline/cmd/inline -fix packages...
 //
 // This internal command is not officially supported. In the long
 // term, we plan to migrate this functionality into "go fix"; see Go
