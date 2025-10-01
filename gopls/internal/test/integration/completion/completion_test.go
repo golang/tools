@@ -7,6 +7,7 @@ package completion
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -1460,6 +1461,71 @@ func Join() {}
 					}
 				}
 			}
+		}
+	})
+}
+
+// when completing using the module cache, prefer things mentioned
+// in the go.mod file.
+func TestIssue61208(t *testing.T) {
+
+	const cache = `
+-- example.com@v1.2.3/go.mod --
+module example.com
+
+go 1.22
+-- example.com@v1.2.3/blah/blah.go --
+package blah
+
+const Name = "Blah"
+-- random.org@v1.2.3/go.mod --
+module random.org
+
+go 1.22
+-- random.org@v1.2.3/blah/blah.go --
+package blah
+
+const Name = "Hello"
+`
+	const files = `
+-- go.mod --
+module mod.com
+go 1.22
+require random.org v1.2.3
+-- main.go --
+package main
+var _ = blah.
+`
+	modcache := t.TempDir()
+	defer CleanModCache(t, modcache)
+	mx := fake.UnpackTxt(cache)
+	for k, v := range mx {
+		fname := filepath.Join(modcache, k)
+		dir := filepath.Dir(fname)
+		os.MkdirAll(dir, 0777) // ignore error
+		if err := os.WriteFile(fname, v, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	WithOptions(
+		EnvVars{"GOMODCACHE": modcache},
+		WriteGoSum("."),
+		Settings{"importsSource": settings.ImportsSourceGopls},
+		NoLogsOnError(),
+	).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("main.go")
+		env.Await(env.DoneWithOpen())
+		loc := env.RegexpSearch("main.go", "blah.()")
+		completions := env.Completion(loc)
+		if len(completions.Items) != 1 {
+			t.Errorf("got %d, expected 1", len(completions.Items))
+			for _, x := range completions.Items {
+				t.Logf("%#v", x.AdditionalTextEdits[0].NewText)
+			}
+		}
+		if got := completions.Items[0].AdditionalTextEdits[0].NewText; !strings.Contains(got, `"random.org`) {
+			t.Errorf("got %q, expected a `random.org`", got)
 		}
 	})
 }

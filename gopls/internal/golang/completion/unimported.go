@@ -72,11 +72,51 @@ func (c *completer) unimported(ctx context.Context, pkgname metadata.PackageName
 
 	// look in the module cache
 	items, err := c.modcacheMatches(pkgname, prefix)
+	items = c.filterGoMod(ctx, items)
 	if err == nil && c.scoreList(items) {
 		return
 	}
 
 	// out of things to do
+}
+
+// prefer completion items that are referenced in the go.mod file
+func (c *completer) filterGoMod(ctx context.Context, items []CompletionItem) []CompletionItem {
+	gomod := c.pkg.Metadata().Module.GoMod
+	uri := protocol.URIFromPath(gomod)
+	fh, err := c.snapshot.ReadFile(ctx, uri)
+	if err != nil {
+		return items
+	}
+	pm, err := c.snapshot.ParseMod(ctx, fh)
+	if err != nil || pm == nil {
+		return items
+	}
+	// if any of the items match any of the req, just return those
+	reqnames := []string{}
+	for _, req := range pm.File.Require {
+		reqnames = append(reqnames, req.Mod.Path)
+	}
+	better := []CompletionItem{}
+	for _, compl := range items {
+		if len(compl.AdditionalTextEdits) == 0 {
+			continue
+		}
+		// import "foof/pkg"
+		flds := strings.FieldsFunc(compl.AdditionalTextEdits[0].NewText, func(r rune) bool {
+			return r == '"' || r == '/'
+		})
+		if len(flds) < 3 {
+			continue
+		}
+		if slices.Contains(reqnames, flds[1]) {
+			better = append(better, compl)
+		}
+	}
+	if len(better) > 0 {
+		return better
+	}
+	return items
 }
 
 // see if some file in the current package satisfied a foo. import
