@@ -1,0 +1,14 @@
+This test verifies the behavior of textDocument/prepareRename when the experimental package move setting is enabled.
+
+-- settings.json --
+{
+	"packageMove": true
+}
+
+-- go.mod --
+module golang.org/lsptests
+
+go 1.20
+
+-- b/b.go --
+package b //@ preparerename("b", "golang.org/lsptests/b")

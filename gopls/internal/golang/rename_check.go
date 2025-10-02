@@ -914,6 +914,17 @@ func isValidIdentifier(id string) bool {
 	return token.Lookup(id) == token.IDENT
 }
 
+// isValidPackagePath reports whether newPath is a valid new path for the
+// package currently at oldPath. For now, we only support renames that
+// do not result in a package move.
+// TODO(mkalil): support package renames with arbitrary package paths, including
+// relative paths.
+func isValidPackagePath(oldPath, newPath string) bool {
+	// We prompt with the full package path, but some users may delete this and
+	// just enter a package identifier, which we should still support.
+	return isValidIdentifier(newPath) || filepath.Dir(oldPath) == filepath.Dir(newPath)
+}
+
 // isLocal reports whether obj is local to some function.
 // Precondition: not a struct field or interface method.
 func isLocal(obj types.Object) bool {

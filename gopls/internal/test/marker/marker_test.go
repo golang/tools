@@ -2091,17 +2091,43 @@ func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[
 
 		case change.RenameFile != nil:
 			old := change.RenameFile.OldURI
-			m, err := read(old)
-			if err != nil {
-				return nil, err // missing
-			}
-			write(old, nil)
-
 			new := change.RenameFile.NewURI
-			if _, err := read(old); err == nil {
-				return nil, fmt.Errorf("RenameFile: destination %s exists", new)
+			info, err := os.Stat(old.Path())
+			if err != nil {
+				return nil, err
 			}
-			write(new, m.Content)
+			if info.IsDir() {
+				// Walk through all the files in the old directory and copy
+				// their content to the new directory.
+				// TODO(mkalil): This currently only handles renaming the file's
+				// innermost directory. Need to handle renames of outer directories
+				// directories when implementing package move refactoring.
+				for _, file := range env.ListFiles(old.Path()) {
+					oldFile := protocol.URIFromPath(path.Join(old.Path(), path.Base(file)))
+					m, err := read(oldFile)
+					if err != nil {
+						return nil, err // missing
+					}
+					write(oldFile, nil)
+
+					newFile := protocol.URIFromPath(path.Join(new.Path(), path.Base(file)))
+					if _, err := read(oldFile); err == nil {
+						return nil, fmt.Errorf("RenameFile: destination %s exists", new)
+					}
+					write(newFile, m.Content)
+				}
+			} else {
+				m, err := read(old)
+				if err != nil {
+					return nil, err // missing
+				}
+				write(old, nil)
+
+				if _, err := read(old); err == nil {
+					return nil, fmt.Errorf("RenameFile: destination %s exists", new)
+				}
+				write(new, m.Content)
+			}
 
 		case change.CreateFile != nil:
 			uri := change.CreateFile.URI

@@ -2160,6 +2160,20 @@
 				"DeprecationMessage": ""
 			},
 			{
+				"Name": "packageMove",
+				"Type": "bool",
+				"Doc": "packageMove enables PrepareRename to send the full package path\nand allows users to move a package via renaming.\n",
+				"EnumKeys": {
+					"ValueType": "",
+					"Keys": null
+				},
+				"EnumValues": null,
+				"Default": "false",
+				"Status": "experimental",
+				"Hierarchy": "ui",
+				"DeprecationMessage": ""
+			},
+			{
 				"Name": "local",
 				"Type": "string",
 				"Doc": "local is the equivalent of the `goimports -local` flag, which puts\nimports beginning with this string after third-party packages. It should\nbe the prefix of the import path whose imports should be grouped\nseparately.\n\nIt is used when tidying imports (during an LSP Organize\nImports request) or when inserting new ones (for example,\nduring completion); an LSP Formatting request merely sorts the\nexisting imports.\n",

@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 
 	"golang.org/x/tools/gopls/internal/file"
@@ -52,7 +53,7 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 	if isPkgRenaming {
 		// Update the last component of the file's enclosing directory.
 		oldDir := fh.URI().DirPath()
-		newDir := filepath.Join(filepath.Dir(oldDir), params.NewName)
+		newDir := filepath.Join(filepath.Dir(oldDir), path.Base(params.NewName))
 		change := protocol.DocumentChangeRename(
 			protocol.URIFromPath(oldDir),
 			protocol.URIFromPath(newDir))

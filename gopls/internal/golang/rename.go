@@ -214,9 +214,14 @@ func prepareRenamePackageName(ctx context.Context, snapshot *cache.Snapshot, pgf
 	if err != nil {
 		return nil, err
 	}
+
+	text := string(meta.Name)
+	if snapshot.Options().PackageMove {
+		text = string(meta.PkgPath)
+	}
 	return &PrepareItem{
 		Range: rng,
-		Text:  string(meta.Name),
+		Text:  text,
 	}, nil
 }
 
@@ -420,10 +425,6 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 		return edits, false, nil
 	}
 
-	if !isValidIdentifier(newName) {
-		return nil, false, fmt.Errorf("invalid identifier to rename: %q", newName)
-	}
-
 	// Cursor within package name declaration?
 	_, inPackageName, err := parsePackageNameDecl(ctx, snapshot, f, pp)
 	if err != nil {
@@ -433,8 +434,16 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 	var editMap map[protocol.DocumentURI][]diff.Edit
 	if inPackageName {
 		countRenamePackage.Inc()
+		if !isValidPackagePath(pkg.String(), newName) {
+			return nil, false, fmt.Errorf("invalid package path: %q (package moves are not yet supported, see go.dev/issue/57171)", newName)
+		}
+		// Only the last element of the path is required as input for [renamePackageName].
+		newName = path.Base(newName)
 		editMap, err = renamePackageName(ctx, snapshot, f, PackageName(newName))
 	} else {
+		if !isValidIdentifier(newName) {
+			return nil, false, fmt.Errorf("invalid identifier to rename: %q", newName)
+		}
 		editMap, err = renameOrdinary(ctx, snapshot, f.URI(), pp, newName)
 	}
 	if err != nil {
@@ -884,7 +893,6 @@ func renamePackageName(ctx context.Context, s *cache.Snapshot, f file.Handle, ne
 		return nil, err
 	}
 
-	// Update the last component of the file's enclosing directory.
 	oldBase := f.URI().DirPath()
 	newPkgDir := filepath.Join(filepath.Dir(oldBase), string(newName))
 

@@ -1,0 +1,26 @@
+This test verifies the behavior of renaming a package declaration.
+
+-- settings.json --
+{
+	"packageMove": true
+}
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module golang.org/lsptests/rename
+
+go 1.20
+-- one/one.go --
+package one //@ rename("one", "golang.org/lsptests/rename/one", sameName), rename("one", "golang.org/lsptests/rename/two", newNameSameDir), renameerr("one", "golang.org/lsptests/otherdir/one", re"invalid package path")
+
+-- @newNameSameDir/one/one.go --
+@@ -1,2 +0,0 @@
+-package one //@ rename("one", "golang.org/lsptests/rename/one", sameName), rename("one", "golang.org/lsptests/rename/two", newNameSameDir), renameerr("one", "golang.org/lsptests/otherdir/one", re"invalid package path")
+-
+-- @newNameSameDir/two/one.go --
+@@ -0,0 +1,2 @@
++package two //@ rename("one", "golang.org/lsptests/rename/one", sameName), rename("one", "golang.org/lsptests/rename/two", newNameSameDir), renameerr("one", "golang.org/lsptests/otherdir/one", re"invalid package path")
++
+-- @sameName/one/one.go --
