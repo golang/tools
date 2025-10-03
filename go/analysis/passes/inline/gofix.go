@@ -300,7 +300,7 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 	//   pkg.Id[T]
 	//   pkg.Id[K, V]
 	var expr ast.Expr = id
-	if ek, _ := curId.ParentEdge(); ek == edge.SelectorExpr_Sel {
+	if analysisinternal.IsChildOf(curId, edge.SelectorExpr_Sel) {
 		curId = curId.Parent()
 		expr = curId.Node().(ast.Expr)
 	}
@@ -462,7 +462,7 @@ func (a *analyzer) inlineConst(con *types.Const, cur inspector.Cursor) {
 	}
 	// If n is qualified by a package identifier, we'll need the full selector expression.
 	var expr ast.Expr = n
-	if ek, _ := cur.ParentEdge(); ek == edge.SelectorExpr_Sel {
+	if analysisinternal.IsChildOf(cur, edge.SelectorExpr_Sel) {
 		expr = cur.Parent().Node().(ast.Expr)
 	}
 	a.reportInline("constant", "Constant", expr, edits, importPrefix+incon.RHSName)

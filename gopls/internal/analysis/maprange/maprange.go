@@ -49,10 +49,9 @@ func run(pass *analysis.Pass) (any, error) {
 	)
 	for _, callee := range []types.Object{mapsKeys, mapsValues, xmapsKeys, xmapsValues} {
 		for curCall := range index.Calls(callee) {
-			if ek, _ := curCall.ParentEdge(); ek != edge.RangeStmt_X {
-				continue
+			if analysisinternal.IsChildOf(curCall, edge.RangeStmt_X) {
+				analyzeRangeStmt(pass, callee, curCall)
 			}
-			analyzeRangeStmt(pass, callee, curCall)
 		}
 	}
 	return nil, nil

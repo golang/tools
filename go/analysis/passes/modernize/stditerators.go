@@ -174,52 +174,50 @@ func stditerators(pass *analysis.Pass) (any, error) {
 					curCmp = curLenCall.Parent()
 					cmp    = curCmp.Node().(*ast.BinaryExpr)
 				)
-				if cmp.Op != token.LSS {
+				if cmp.Op != token.LSS ||
+					!analysisinternal.IsChildOf(curCmp, edge.ForStmt_Cond) {
 					continue
 				}
-				if ek, _ := curCmp.ParentEdge(); ek == edge.ForStmt_Cond {
-					if id, ok := cmp.X.(*ast.Ident); ok {
-						// Have: for _; i < x.Len(); _ { ... }
-						var (
-							v      = info.Uses[id].(*types.Var)
-							curFor = curCmp.Parent()
-							loop   = curFor.Node().(*ast.ForStmt)
-						)
-						if v != isIncrementLoop(info, loop) {
-							continue
-						}
-						// Have: for i := 0; i < x.Len(); i++ { ... }.
-						//       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				if id, ok := cmp.X.(*ast.Ident); ok {
+					// Have: for _; i < x.Len(); _ { ... }
+					var (
+						v      = info.Uses[id].(*types.Var)
+						curFor = curCmp.Parent()
+						loop   = curFor.Node().(*ast.ForStmt)
+					)
+					if v != isIncrementLoop(info, loop) {
+						continue
+					}
+					// Have: for i := 0; i < x.Len(); i++ { ... }.
+					//       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+					rng = analysisinternal.Range(loop.For, loop.Post.End())
+					indexVar = v
+					curBody = curFor.ChildAt(edge.ForStmt_Body, -1)
+					elem, elemVar = chooseName(curBody, lenSel.X, indexVar)
 
-						rng = analysisinternal.Range(loop.For, loop.Post.End())
-						indexVar = v
-						curBody = curFor.ChildAt(edge.ForStmt_Body, -1)
-						elem, elemVar = chooseName(curBody, lenSel.X, indexVar)
-
-						//	for i    := 0; i < x.Len(); i++ {
-						//          ----    -------  ---  -----
-						//	for elem := range  x.All()      {
-						edits = []analysis.TextEdit{
-							{
-								Pos:     v.Pos(),
-								End:     v.Pos() + token.Pos(len(v.Name())),
-								NewText: []byte(elem),
-							},
-							{
-								Pos:     loop.Init.(*ast.AssignStmt).Rhs[0].Pos(),
-								End:     cmp.Y.Pos(),
-								NewText: []byte("range "),
-							},
-							{
-								Pos:     lenSel.Sel.Pos(),
-								End:     lenSel.Sel.End(),
-								NewText: []byte(row.itermethod),
-							},
-							{
-								Pos: curLenCall.Node().End(),
-								End: loop.Post.End(),
-							},
-						}
+					//	for i    := 0; i < x.Len(); i++ {
+					//          ----    -------  ---  -----
+					//	for elem := range  x.All()      {
+					edits = []analysis.TextEdit{
+						{
+							Pos:     v.Pos(),
+							End:     v.Pos() + token.Pos(len(v.Name())),
+							NewText: []byte(elem),
+						},
+						{
+							Pos:     loop.Init.(*ast.AssignStmt).Rhs[0].Pos(),
+							End:     cmp.Y.Pos(),
+							NewText: []byte("range "),
+						},
+						{
+							Pos:     lenSel.Sel.Pos(),
+							End:     lenSel.Sel.End(),
+							NewText: []byte(row.itermethod),
+						},
+						{
+							Pos: curLenCall.Node().End(),
+							End: loop.Post.End(),
+						},
 					}
 				}
 

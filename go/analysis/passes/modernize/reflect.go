@@ -58,9 +58,9 @@ func reflecttypefor(pass *analysis.Pass) (any, error) {
 
 		// Special case for TypeOf((*T)(nil)).Elem(),
 		// needed when T is an interface type.
-		if childOf(curCall, edge.SelectorExpr_X) {
+		if analysisinternal.IsChildOf(curCall, edge.SelectorExpr_X) {
 			curSel := unparenEnclosing(curCall).Parent()
-			if childOf(curSel, edge.CallExpr_Fun) {
+			if analysisinternal.IsChildOf(curSel, edge.CallExpr_Fun) {
 				call2 := unparenEnclosing(curSel).Parent().Node().(*ast.CallExpr)
 				obj := typeutil.Callee(info, call2)
 				if analysisinternal.IsMethodNamed(obj, "reflect", "Type", "Elem") {

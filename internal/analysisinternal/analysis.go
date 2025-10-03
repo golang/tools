@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
@@ -697,4 +698,12 @@ func EnclosingScope(info *types.Info, cur inspector.Cursor) *types.Scope {
 		}
 	}
 	panic("no Scope for *ast.File")
+}
+
+// IsChildOf reports whether cur.ParentEdge is ek.
+//
+// TODO(adonovan): promote to a method of Cursor.
+func IsChildOf(cur inspector.Cursor, ek edge.Kind) bool {
+	got, _ := cur.ParentEdge()
+	return got == ek
 }

@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/analysisinternal"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
@@ -207,13 +208,10 @@ func isLvalueUse(cur inspector.Cursor, info *types.Info) bool {
 // unparenEnclosing removes enclosing parens from cur in
 // preparation for a call to [Cursor.ParentEdge].
 func unparenEnclosing(cur inspector.Cursor) inspector.Cursor {
-	for {
-		ek, _ := cur.ParentEdge()
-		if ek != edge.ParenExpr_X {
-			return cur
-		}
+	for analysisinternal.IsChildOf(cur, edge.ParenExpr_X) {
 		cur = cur.Parent()
 	}
+	return cur
 }
 
 // inlineVariableOne computes a fix to replace the selected variable by
@@ -233,7 +231,7 @@ func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.P
 		scope = info.Scopes[pgf.File].Innermost(pos)
 	)
 	for curIdent := range curRHS.Preorder((*ast.Ident)(nil)) {
-		if ek, _ := curIdent.ParentEdge(); ek == edge.SelectorExpr_Sel {
+		if analysisinternal.IsChildOf(curIdent, edge.SelectorExpr_Sel) {
 			continue // ignore f in x.f
 		}
 		id := curIdent.Node().(*ast.Ident)

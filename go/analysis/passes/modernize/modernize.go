@@ -126,22 +126,13 @@ func within(pass *analysis.Pass, pkgs ...string) bool {
 		moreiters.Contains(stdlib.Dependencies(pkgs...), path)
 }
 
-// childOf reports whether cur.ParentEdge is ek.
-func childOf(cur inspector.Cursor, ek edge.Kind) bool {
-	got, _ := cur.ParentEdge()
-	return got == ek
-}
-
 // unparenEnclosing removes enclosing parens from cur in
 // preparation for a call to [Cursor.ParentEdge].
 func unparenEnclosing(cur inspector.Cursor) inspector.Cursor {
-	for {
-		ek, _ := cur.ParentEdge()
-		if ek != edge.ParenExpr_X {
-			return cur
-		}
+	for analysisinternal.IsChildOf(cur, edge.ParenExpr_X) {
 		cur = cur.Parent()
 	}
+	return cur
 }
 
 var (
