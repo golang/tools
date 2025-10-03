@@ -3092,12 +3092,35 @@ Package documentation: [embed](https://pkg.go.dev/golang.org/x/tools/gopls/inter
 <a id='errorsas'></a>
 ## `errorsas`: report passing non-pointer or non-error values to errors.As
 
-The errorsas analysis reports calls to errors.As where the type of the second argument is not a pointer to a type implementing error.
+The errorsas analyzer reports calls to errors.As where the type of the second argument is not a pointer to a type implementing error.
 
 
 Default: on.
 
 Package documentation: [errorsas](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/errorsas)
+
+<a id='errorsastype'></a>
+## `errorsastype`: replace errors.As with errors.AsType[T]
+
+This analyzer suggests fixes to simplify uses of [errors.As](/errors#As) of this form:
+
+	var myerr *MyErr
+	if errors.As(err, &myerr) {
+		handle(myerr)
+	}
+
+by using the less error-prone generic [errors.AsType](/errors#AsType) function, introduced in Go 1.26:
+
+	if myerr, ok := errors.AsType[*MyErr](err); ok {
+		handle(myerr)
+	}
+
+The fix is only offered if the var declaration has the form shown and there are no uses of myerr outside the if statement.
+
+
+Default: on.
+
+Package documentation: [errorsastype](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#errorsastype)
 
 <a id='fillreturns'></a>
 ## `fillreturns`: suggest fixes for errors due to an incorrect number of return values

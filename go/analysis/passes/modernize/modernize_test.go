@@ -24,6 +24,10 @@ func TestAny(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.AnyAnalyzer, "any")
 }
 
+func TestErrorsAsType(t *testing.T) {
+	RunWithSuggestedFixes(t, TestData(), goplsexport.ErrorsAsTypeModernizer, "errorsastype/...")
+}
+
 func TestFmtAppendf(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.FmtAppendfAnalyzer, "fmtappendf")
 }

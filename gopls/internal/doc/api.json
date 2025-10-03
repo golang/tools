@@ -1450,7 +1450,13 @@
 						},
 						{
 							"Name": "\"errorsas\"",
-							"Doc": "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analysis reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.",
+							"Doc": "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analyzer reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.",
+							"Default": "true",
+							"Status": ""
+						},
+						{
+							"Name": "\"errorsastype\"",
+							"Doc": "replace errors.As with errors.AsType[T]\n\nThis analyzer suggests fixes to simplify uses of [errors.As] of\nthis form:\n\n\tvar myerr *MyErr\n\tif errors.As(err, \u0026myerr) {\n\t\thandle(myerr)\n\t}\n\nby using the less error-prone generic [errors.AsType] function,\nintroduced in Go 1.26:\n\n\tif myerr, ok := errors.AsType[*MyErr](err); ok {\n\t\thandle(myerr)\n\t}\n\nThe fix is only offered if the var declaration has the form shown and\nthere are no uses of myerr outside the if statement.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3330,8 +3336,14 @@
 		},
 		{
 			"Name": "errorsas",
-			"Doc": "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analysis reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.",
+			"Doc": "report passing non-pointer or non-error values to errors.As\n\nThe errorsas analyzer reports calls to errors.As where the type\nof the second argument is not a pointer to a type implementing error.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/errorsas",
+			"Default": true
+		},
+		{
+			"Name": "errorsastype",
+			"Doc": "replace errors.As with errors.AsType[T]\n\nThis analyzer suggests fixes to simplify uses of [errors.As] of\nthis form:\n\n\tvar myerr *MyErr\n\tif errors.As(err, \u0026myerr) {\n\t\thandle(myerr)\n\t}\n\nby using the less error-prone generic [errors.AsType] function,\nintroduced in Go 1.26:\n\n\tif myerr, ok := errors.AsType[*MyErr](err); ok {\n\t\thandle(myerr)\n\t}\n\nThe fix is only offered if the var declaration has the form shown and\nthere are no uses of myerr outside the if statement.",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#errorsastype",
 			"Default": true
 		},
 		{

@@ -251,6 +251,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: modernize.AnyAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.AppendClippedAnalyzer, severity: protocol.SeverityHint, nonDefault: true}, // not nil-preserving
 	{analyzer: modernize.BLoopAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: goplsexport.ErrorsAsTypeModernizer, severity: protocol.SeverityHint},
 	{analyzer: modernize.FmtAppendfAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.ForVarAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: goplsexport.StdIteratorsModernizer, severity: protocol.SeverityHint},
