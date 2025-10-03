@@ -398,56 +398,69 @@ func checkRenamable(obj types.Object, node ast.Node) error {
 	return nil
 }
 
+// editsToDocChanges converts a map of uris to arrays of text edits to a list of document changes.
+func editsToDocChanges(ctx context.Context, snapshot *cache.Snapshot, edits map[protocol.DocumentURI][]protocol.TextEdit) ([]protocol.DocumentChange, error) {
+	var changes []protocol.DocumentChange
+	for uri, e := range edits {
+		fh, err := snapshot.ReadFile(ctx, uri)
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, protocol.DocumentChangeEdit(fh, e))
+	}
+	return changes, nil
+}
+
 // Rename returns a map of TextEdits for each file modified when renaming a
 // given identifier within a package and a boolean value of true for renaming
 // package and false otherwise.
-func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position, newName string) (map[protocol.DocumentURI][]protocol.TextEdit, bool, error) {
+func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position, newName string) ([]protocol.DocumentChange, error) {
 	ctx, done := event.Start(ctx, "golang.Rename")
 	defer done()
 
 	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, f.URI())
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	pos, err := pgf.PositionPos(pp)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	cur, ok := pgf.Cursor.FindByPos(pos, pos)
 	if !ok {
-		return nil, false, fmt.Errorf("can't find cursor for selection")
+		return nil, fmt.Errorf("can't find cursor for selection")
 	}
 
 	if edits, err := renameFuncSignature(ctx, pkg, pgf, pos, snapshot, cur, f, pp, newName); err != nil {
-		return nil, false, err
+		return nil, err
 	} else if edits != nil {
-		return edits, false, nil
+		return editsToDocChanges(ctx, snapshot, edits)
 	}
 
 	// Cursor within package name declaration?
 	_, inPackageName, err := parsePackageNameDecl(ctx, snapshot, f, pp)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	var editMap map[protocol.DocumentURI][]diff.Edit
 	if inPackageName {
 		countRenamePackage.Inc()
 		if !isValidPackagePath(pkg.String(), newName) {
-			return nil, false, fmt.Errorf("invalid package path: %q (package moves are not yet supported, see go.dev/issue/57171)", newName)
+			return nil, fmt.Errorf("invalid package path: %q (package moves are not yet supported, see go.dev/issue/57171)", newName)
 		}
 		// Only the last element of the path is required as input for [renamePackageName].
 		newName = path.Base(newName)
 		editMap, err = renamePackageName(ctx, snapshot, f, PackageName(newName))
 	} else {
 		if !isValidIdentifier(newName) {
-			return nil, false, fmt.Errorf("invalid identifier to rename: %q", newName)
+			return nil, fmt.Errorf("invalid identifier to rename: %q", newName)
 		}
 		editMap, err = renameOrdinary(ctx, snapshot, f.URI(), pp, newName)
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	// Convert edits to protocol form.
@@ -476,21 +489,33 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 		// vendor/k8s.io/kubectl -> ../../staging/src/k8s.io/kubectl.
 		fh, err := snapshot.ReadFile(ctx, uri)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		data, err := fh.Content()
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		m := protocol.NewMapper(uri, data)
 		textedits, err := protocol.EditsFromDiffEdits(m, edits)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		result[uri] = textedits
 	}
 
-	return result, inPackageName, nil
+	changes, err := editsToDocChanges(ctx, snapshot, result)
+	if err != nil {
+		return nil, err
+	}
+	// Update the last component of the file's enclosing directory.
+	if inPackageName {
+		oldDir := f.URI().DirPath()
+		newDir := filepath.Join(filepath.Dir(oldDir), path.Base(newName))
+		changes = append(changes, protocol.DocumentChangeRename(
+			protocol.URIFromPath(oldDir),
+			protocol.URIFromPath(newDir)))
+	}
+	return changes, nil
 }
 
 // renameOrdinary renames an ordinary (non-package) name throughout the workspace.

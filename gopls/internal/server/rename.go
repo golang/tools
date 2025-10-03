@@ -7,8 +7,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"path"
-	"path/filepath"
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
@@ -32,34 +30,10 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 		return nil, fmt.Errorf("cannot rename in file of type %s", kind)
 	}
 
-	// Because we don't handle directory renaming within golang.Rename, golang.Rename returns
-	// boolean value isPkgRenaming to determine whether any DocumentChanges of type RenameFile should
-	// be added to the return protocol.WorkspaceEdit value.
-	edits, isPkgRenaming, err := golang.Rename(ctx, snapshot, fh, params.Position, params.NewName)
+	changes, err := golang.Rename(ctx, snapshot, fh, params.Position, params.NewName)
 	if err != nil {
 		return nil, err
 	}
-
-	var changes []protocol.DocumentChange
-	for uri, e := range edits {
-		fh, err := snapshot.ReadFile(ctx, uri)
-		if err != nil {
-			return nil, err
-		}
-		change := protocol.DocumentChangeEdit(fh, e)
-		changes = append(changes, change)
-	}
-
-	if isPkgRenaming {
-		// Update the last component of the file's enclosing directory.
-		oldDir := fh.URI().DirPath()
-		newDir := filepath.Join(filepath.Dir(oldDir), path.Base(params.NewName))
-		change := protocol.DocumentChangeRename(
-			protocol.URIFromPath(oldDir),
-			protocol.URIFromPath(newDir))
-		changes = append(changes, change)
-	}
-
 	return protocol.NewWorkspaceEdit(changes...), nil
 }
 
