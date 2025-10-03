@@ -58,7 +58,7 @@ func run(pass *analysis.Pass) (any, error) {
 								pass.ExportObjectFact(fn, &newLike{})
 
 								// Check file version.
-								file := enclosingFile(curFuncDecl)
+								file := analysisinternal.EnclosingFile(curFuncDecl)
 								if !fileUses(info, file, "go1.26") {
 									continue // new(expr) not available in this file
 								}
@@ -138,7 +138,7 @@ func run(pass *analysis.Pass) (any, error) {
 			pass.ImportObjectFact(fn, &fact) {
 
 			// Check file version.
-			file := enclosingFile(curCall)
+			file := analysisinternal.EnclosingFile(curCall)
 			if !fileUses(info, file, "go1.26") {
 				continue // new(expr) not available in this file
 			}

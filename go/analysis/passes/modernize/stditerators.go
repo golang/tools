@@ -314,7 +314,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 			// may be somewhat expensive.)
 			if v, ok := methodGoVersion(row.pkgpath, row.typename, row.itermethod); !ok {
 				panic("no version found")
-			} else if file := enclosingFile(curLenCall); !fileUses(info, file, v.String()) {
+			} else if file := analysisinternal.EnclosingFile(curLenCall); !fileUses(info, file, v.String()) {
 				continue nextCall
 			}
 

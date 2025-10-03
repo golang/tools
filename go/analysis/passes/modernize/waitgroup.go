@@ -126,7 +126,7 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 			panic("can't find Cursor for 'done' statement")
 		}
 
-		file := enclosingFile(curAddCall)
+		file := analysisinternal.EnclosingFile(curAddCall)
 		if !fileUses(info, file, "go1.25") {
 			continue
 		}

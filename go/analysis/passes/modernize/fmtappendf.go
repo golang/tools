@@ -49,7 +49,7 @@ func fmtappendf(pass *analysis.Pass) (any, error) {
 				conv := curCall.Parent().Node().(*ast.CallExpr)
 				tv := pass.TypesInfo.Types[conv.Fun]
 				if tv.IsType() && types.Identical(tv.Type, byteSliceType) &&
-					fileUses(pass.TypesInfo, enclosingFile(curCall), "go1.19") {
+					fileUses(pass.TypesInfo, analysisinternal.EnclosingFile(curCall), "go1.19") {
 					// Have: []byte(fmt.SprintX(...))
 
 					// Find "Sprint" identifier.

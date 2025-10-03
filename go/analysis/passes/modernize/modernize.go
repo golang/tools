@@ -118,12 +118,6 @@ func fileUses(info *types.Info, file *ast.File, version string) bool {
 	return !versions.Before(info.FileVersions[file], version)
 }
 
-// enclosingFile returns the syntax tree for the file enclosing c.
-func enclosingFile(c inspector.Cursor) *ast.File {
-	c, _ = moreiters.First(c.Enclosing((*ast.File)(nil)))
-	return c.Node().(*ast.File)
-}
-
 // within reports whether the current pass is analyzing one of the
 // specified standard packages or their dependencies.
 func within(pass *analysis.Pass, pkgs ...string) bool {

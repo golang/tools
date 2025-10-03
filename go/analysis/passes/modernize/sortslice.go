@@ -84,7 +84,7 @@ func slicessort(pass *analysis.Pass) (any, error) {
 							is[*ast.Ident](index.Index) &&
 							info.Uses[index.Index.(*ast.Ident)] == v
 					}
-					file := enclosingFile(curCall)
+					file := analysisinternal.EnclosingFile(curCall)
 					if isIndex(compare.X, i) && isIndex(compare.Y, j) &&
 						fileUses(info, file, "go1.21") {
 						// Have: sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })

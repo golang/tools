@@ -101,7 +101,7 @@ nextcand:
 
 			// Add strings import.
 			_, prefix, importEdits := analysisinternal.AddImport(
-				pass.TypesInfo, enclosingFile(def), "strings", "strings", "Builder", v.Pos())
+				pass.TypesInfo, analysisinternal.EnclosingFile(def), "strings", "strings", "Builder", v.Pos())
 			edits = append(edits, importEdits...)
 
 			if isEmptyString(pass.TypesInfo, assign.Rhs[0]) {
@@ -140,7 +140,7 @@ nextcand:
 
 			// Add strings import.
 			_, prefix, importEdits := analysisinternal.AddImport(
-				pass.TypesInfo, enclosingFile(def), "strings", "strings", "Builder", v.Pos())
+				pass.TypesInfo, analysisinternal.EnclosingFile(def), "strings", "strings", "Builder", v.Pos())
 			edits = append(edits, importEdits...)
 
 			spec := def.Parent().Node().(*ast.ValueSpec)

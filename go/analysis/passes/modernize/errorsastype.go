@@ -94,7 +94,7 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 			continue
 		}
 
-		file := enclosingFile(curDeclStmt)
+		file := analysisinternal.EnclosingFile(curDeclStmt)
 		if !fileUses(info, file, "go1.26") {
 			continue // errors.AsType is too new
 		}

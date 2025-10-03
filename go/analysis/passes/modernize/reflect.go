@@ -87,7 +87,7 @@ func reflecttypefor(pass *analysis.Pass) (any, error) {
 			continue
 		}
 
-		file := enclosingFile(curCall)
+		file := analysisinternal.EnclosingFile(curCall)
 		if versions.Before(info.FileVersions[file], "go1.22") {
 			continue // TypeFor requires go1.22
 		}

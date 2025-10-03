@@ -585,7 +585,7 @@ func DeleteStmt(fset *token.FileSet, curStmt inspector.Cursor) []analysis.TextEd
 	}
 	// and now for the comments
 Outer:
-	for _, cg := range enclosingFile(curStmt).Comments {
+	for _, cg := range EnclosingFile(curStmt).Comments {
 		for _, co := range cg.List {
 			if lineOf(co.End()) < stmtStartLine {
 				continue
@@ -673,8 +673,10 @@ type tokenRange struct{ StartPos, EndPos token.Pos }
 func (r tokenRange) Pos() token.Pos { return r.StartPos }
 func (r tokenRange) End() token.Pos { return r.EndPos }
 
-// enclosingFile returns the syntax tree for the file enclosing c.
-func enclosingFile(c inspector.Cursor) *ast.File {
+// EnclosingFile returns the syntax tree for the file enclosing c.
+//
+// TODO(adonovan): promote this to a method of Cursor.
+func EnclosingFile(c inspector.Cursor) *ast.File {
 	c, _ = moreiters.First(c.Enclosing((*ast.File)(nil)))
 	return c.Node().(*ast.File)
 }
