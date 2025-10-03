@@ -67,6 +67,7 @@ import (
 	"golang.org/x/tools/gopls/internal/analysis/unusedvariable"
 	"golang.org/x/tools/gopls/internal/analysis/yield"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/goplsexport"
 	"honnef.co/go/tools/analysis/lint"
 )
 
@@ -252,6 +253,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: modernize.BLoopAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.FmtAppendfAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.ForVarAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: goplsexport.StdIteratorsModernizer, severity: protocol.SeverityHint},
 	{analyzer: modernize.MapsLoopAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.MinMaxAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.NewExprAnalyzer, severity: protocol.SeverityHint},

@@ -3895,6 +3895,28 @@ Default: on.
 
 Package documentation: [sortslice](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/sortslice)
 
+<a id='stditerators'></a>
+## `stditerators`: use iterators instead of Len/At-style APIs
+
+This analyzer suggests a fix to replace each loop of the form:
+
+	for i := 0; i < x.Len(); i++ {
+		use(x.At(i))
+	}
+
+or its "for elem := range x.Len()" equivalent by a range loop over an iterator offered by the same data type:
+
+	for elem := range x.All() {
+		use(x.At(i)
+	}
+
+where x is one of various well-known types in the standard library.
+
+
+Default: on.
+
+Package documentation: [stditerators](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stditerators)
+
 <a id='stdmethods'></a>
 ## `stdmethods`: check signature of methods of well-known interfaces
 

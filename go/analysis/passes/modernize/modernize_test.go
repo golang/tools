@@ -9,6 +9,7 @@ import (
 
 	. "golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/modernize"
+	"golang.org/x/tools/internal/goplsexport"
 )
 
 func TestAppendClipped(t *testing.T) {
@@ -29,6 +30,10 @@ func TestFmtAppendf(t *testing.T) {
 
 func TestForVar(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.ForVarAnalyzer, "forvar")
+}
+
+func TestStdIterators(t *testing.T) {
+	RunWithSuggestedFixes(t, TestData(), goplsexport.StdIteratorsModernizer, "stditerators")
 }
 
 func TestMapsLoop(t *testing.T) {

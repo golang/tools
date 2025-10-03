@@ -270,6 +270,25 @@ types. It replaces
 
 with the simpler `slices.Sort(s)`, which was added in Go 1.21.
 
+# Analyzer stditerators
+
+stditerators: use iterators instead of Len/At-style APIs
+
+This analyzer suggests a fix to replace each loop of the form:
+
+	for i := 0; i < x.Len(); i++ {
+		use(x.At(i))
+	}
+
+or its "for elem := range x.Len()" equivalent by a range loop over an
+iterator offered by the same data type:
+
+	for elem := range x.All() {
+		use(x.At(i)
+	}
+
+where x is one of various well-known types in the standard library.
+
 # Analyzer stringscutprefix
 
 stringscutprefix: replace HasPrefix/TrimPrefix with CutPrefix
