@@ -55,8 +55,10 @@ func sideEffects(cBool chan bool, cInt chan int) {
 	f := map[int]int{       // want `declared (and|but) not used`
 		fInt(): <-cInt,
 	}
-	g := []int{<-cInt}       // want `declared (and|but) not used`
-	h := func(s string) {}   // want `declared (and|but) not used`
+	g := []int{<-cInt}     // want `declared (and|but) not used`
+	h := func(s string) {} // want `declared (and|but) not used`
+
+	// (ill-typed)
 	i := func(s string) {}() // want `declared (and|but) not used`
 }
 

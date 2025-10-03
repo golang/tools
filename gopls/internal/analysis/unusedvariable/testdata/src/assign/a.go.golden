@@ -14,13 +14,17 @@ type A struct {
 }
 
 func singleAssignment() {
+	// want `declared (and|but) not used`
+
 	if 1 == 1 {
+		// want `declared (and|but) not used`
 	}
 
 	panic("I should survive")
 }
 
 func noOtherStmtsInBlock() {
+	// want `declared (and|but) not used`
 }
 
 func partOfMultiAssignment() {
@@ -29,32 +33,39 @@ func partOfMultiAssignment() {
 }
 
 func sideEffects(cBool chan bool, cInt chan int) {
-	<-c            // want `declared (and|but) not used`
-	fmt.Sprint("") // want `declared (and|but) not used`
-	A{             // want `declared (and|but) not used`
+	_ = <-c            // want `declared (and|but) not used`
+	_ = fmt.Sprint("") // want `declared (and|but) not used`
+	_ = A{             // want `declared (and|but) not used`
 		b: func() int {
 			return 1
 		}(),
 	}
-	A{<-cInt}          // want `declared (and|but) not used`
-	fInt() + <-cInt    // want `declared (and|but) not used`
-	fBool() && <-cBool // want `declared (and|but) not used`
-	map[int]int{       // want `declared (and|but) not used`
+	_ = A{<-cInt}          // want `declared (and|but) not used`
+	_ = fInt() + <-cInt    // want `declared (and|but) not used`
+	_ = fBool() && <-cBool // want `declared (and|but) not used`
+	_ = map[int]int{       // want `declared (and|but) not used`
 		fInt(): <-cInt,
 	}
-	[]int{<-cInt}       // want `declared (and|but) not used`
-	func(s string) {}() // want `declared (and|but) not used`
+	_ = []int{<-cInt} // want `declared (and|but) not used`
+	// want `declared (and|but) not used`
+
+	// (ill-typed)
+	_ = func(s string) {}() // want `declared (and|but) not used`
 }
 
 func commentAbove() {
 	// v is a variable
+	// want `declared (and|but) not used`
 }
 
 func commentBelow() {
+	// want `declared (and|but) not used`
 	// v is a variable
 }
 
 func commentSpaceBelow() {
+	// want `declared (and|but) not used`
+
 	// v is a variable
 }
 

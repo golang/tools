@@ -151,44 +151,6 @@ var (
 	omitemptyRegex = regexp.MustCompile(`(?:^json| json):"[^"]*(,omitempty)(?:"|,[^"]*")\s?`)
 )
 
-// noEffects reports whether the expression has no side effects, i.e., it
-// does not modify the memory state. This function is conservative: it may
-// return false even when the expression has no effect.
-func noEffects(info *types.Info, expr ast.Expr) bool {
-	noEffects := true
-	ast.Inspect(expr, func(n ast.Node) bool {
-		switch v := n.(type) {
-		case nil, *ast.Ident, *ast.BasicLit, *ast.BinaryExpr, *ast.ParenExpr,
-			*ast.SelectorExpr, *ast.IndexExpr, *ast.SliceExpr, *ast.TypeAssertExpr,
-			*ast.StarExpr, *ast.CompositeLit, *ast.ArrayType, *ast.StructType,
-			*ast.MapType, *ast.InterfaceType, *ast.KeyValueExpr:
-			// No effect
-		case *ast.UnaryExpr:
-			// Channel send <-ch has effects
-			if v.Op == token.ARROW {
-				noEffects = false
-			}
-		case *ast.CallExpr:
-			// Type conversion has no effects
-			if !info.Types[v.Fun].IsType() {
-				// TODO(adonovan): Add a case for built-in functions without side
-				// effects (by using callsPureBuiltin from tools/internal/refactor/inline)
-
-				noEffects = false
-			}
-		case *ast.FuncLit:
-			// A FuncLit has no effects, but do not descend into it.
-			return false
-		default:
-			// All other expressions have effects
-			noEffects = false
-		}
-
-		return noEffects
-	})
-	return noEffects
-}
-
 // lookup returns the symbol denoted by name at the position of the cursor.
 func lookup(info *types.Info, cur inspector.Cursor, name string) types.Object {
 	scope := analysisinternal.EnclosingScope(info, cur)

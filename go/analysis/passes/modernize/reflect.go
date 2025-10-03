@@ -49,7 +49,7 @@ func reflecttypefor(pass *analysis.Pass) (any, error) {
 		// Have: reflect.TypeOf(expr)
 
 		expr := call.Args[0]
-		if !noEffects(info, expr) {
+		if !typesinternal.NoEffects(info, expr) {
 			continue // don't eliminate operand: may have effects
 		}
 

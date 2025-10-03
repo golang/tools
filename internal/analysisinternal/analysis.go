@@ -527,6 +527,8 @@ func CanImport(from, to string) bool {
 // DeleteStmt returns the edits to remove the [ast.Stmt] identified by
 // curStmt, if it is contained within a BlockStmt, CaseClause,
 // CommClause, or is the STMT in switch STMT; ... {...}. It returns nil otherwise.
+//
+// TODO(adonovan): downgrade first param to a *token.File?
 func DeleteStmt(fset *token.FileSet, curStmt inspector.Cursor) []analysis.TextEdit {
 	stmt := curStmt.Node().(ast.Stmt)
 	// if the stmt is on a line by itself delete the whole line
