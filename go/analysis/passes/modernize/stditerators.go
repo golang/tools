@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/goplsexport"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
@@ -133,7 +134,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 					// call to x.At(i)?
 					if call, ok := assign.Rhs[0].(*ast.CallExpr); ok &&
 						typeutil.Callee(info, call) == atMethod &&
-						equalSyntax(ast.Unparen(call.Fun).(*ast.SelectorExpr).X, x) &&
+						astutil.EqualSyntax(ast.Unparen(call.Fun).(*ast.SelectorExpr).X, x) &&
 						is[*ast.Ident](call.Args[0]) &&
 						info.Uses[call.Args[0].(*ast.Ident)] == i {
 						// Have: { elem := x.At(i); ... }
@@ -282,7 +283,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 				atSel := ast.Unparen(atCall.Fun).(*ast.SelectorExpr)
 
 				// Check receivers of Len, At calls match (syntactically).
-				if !equalSyntax(lenSel.X, atSel.X) {
+				if !astutil.EqualSyntax(lenSel.X, atSel.X) {
 					continue nextCall
 				}
 

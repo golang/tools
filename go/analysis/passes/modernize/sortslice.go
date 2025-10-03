@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -79,7 +80,7 @@ func slicessort(pass *analysis.Pass) (any, error) {
 					isIndex := func(e ast.Expr, v *types.Var) bool {
 						index, ok := e.(*ast.IndexExpr)
 						return ok &&
-							equalSyntax(index.X, s) &&
+							astutil.EqualSyntax(index.X, s) &&
 							is[*ast.Ident](index.Index) &&
 							info.Uses[index.Index.(*ast.Ident)] == v
 					}

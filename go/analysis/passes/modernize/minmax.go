@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -92,10 +93,10 @@ func minmax(pass *analysis.Pass) (any, error) {
 			// For pattern 1, check that:
 			// - lhs = lhs2
 			// - {rhs,rhs2} = {a,b}
-			if equalSyntax(lhs, lhs2) {
-				if equalSyntax(rhs, a) && equalSyntax(rhs2, b) {
+			if astutil.EqualSyntax(lhs, lhs2) {
+				if astutil.EqualSyntax(rhs, a) && astutil.EqualSyntax(rhs2, b) {
 					sign = +sign
-				} else if equalSyntax(rhs2, a) && equalSyntax(rhs, b) {
+				} else if astutil.EqualSyntax(rhs2, a) && astutil.EqualSyntax(rhs, b) {
 					sign = -sign
 				} else {
 					return
@@ -149,10 +150,10 @@ func minmax(pass *analysis.Pass) (any, error) {
 			lhs0 := fassign.Lhs[0]
 			rhs0 := fassign.Rhs[0]
 
-			if equalSyntax(lhs, lhs0) {
-				if equalSyntax(rhs, a) && (equalSyntax(rhs0, b) || equalSyntax(lhs0, b)) {
+			if astutil.EqualSyntax(lhs, lhs0) {
+				if astutil.EqualSyntax(rhs, a) && (astutil.EqualSyntax(rhs0, b) || astutil.EqualSyntax(lhs0, b)) {
 					sign = +sign
-				} else if (equalSyntax(rhs0, a) || equalSyntax(lhs0, a)) && equalSyntax(rhs, b) {
+				} else if (astutil.EqualSyntax(rhs0, a) || astutil.EqualSyntax(lhs0, a)) && astutil.EqualSyntax(rhs, b) {
 					sign = -sign
 				} else {
 					return
@@ -166,9 +167,9 @@ func minmax(pass *analysis.Pass) (any, error) {
 				// Permit lhs0 to stand for rhs0 in the matching,
 				// but don't actually reduce to lhs0 = min(lhs0, rhs)
 				// since the "=" could be a ":=". Use min(rhs0, rhs).
-				if equalSyntax(lhs0, a) {
+				if astutil.EqualSyntax(lhs0, a) {
 					a = rhs0
-				} else if equalSyntax(lhs0, b) {
+				} else if astutil.EqualSyntax(lhs0, b) {
 					b = rhs0
 				}
 
@@ -411,9 +412,9 @@ func checkMinMaxPattern(ifStmt *ast.IfStmt, falseResult ast.Expr, funcName strin
 	y := cmp.Y              // right operand
 
 	// Check operand order and adjust sign accordingly
-	if equalSyntax(t, x) && equalSyntax(f, y) {
+	if astutil.EqualSyntax(t, x) && astutil.EqualSyntax(f, y) {
 		sign = +sign
-	} else if equalSyntax(t, y) && equalSyntax(f, x) {
+	} else if astutil.EqualSyntax(t, y) && astutil.EqualSyntax(f, x) {
 		sign = -sign
 	} else {
 		return false

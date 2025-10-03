@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -241,7 +242,7 @@ func isIncrementLoop(info *types.Info, loop *ast.ForStmt) *types.Var {
 		isZeroIntLiteral(info, assign.Rhs[0]) &&
 		is[*ast.IncDecStmt](loop.Post) &&
 		loop.Post.(*ast.IncDecStmt).Tok == token.INC &&
-		equalSyntax(loop.Post.(*ast.IncDecStmt).X, assign.Lhs[0]) {
+		astutil.EqualSyntax(loop.Post.(*ast.IncDecStmt).X, assign.Lhs[0]) {
 		return info.Defs[assign.Lhs[0].(*ast.Ident)].(*types.Var)
 	}
 	return nil

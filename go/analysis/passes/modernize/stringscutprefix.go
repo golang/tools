@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -123,7 +124,7 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 
 					// check whether the obj1 uses the exact the same argument with strings.HasPrefix
 					// shadow variables won't be valid because we only access the first statement (ditto Suffix).
-					if equalSyntax(s0, s) && equalSyntax(pre0, pre) {
+					if astutil.EqualSyntax(s0, s) && astutil.EqualSyntax(pre0, pre) {
 						after := analysisinternal.FreshName(info.Scopes[ifStmt], ifStmt.Pos(), varName)
 						_, prefix, importEdits := analysisinternal.AddImport(
 							info,
@@ -201,8 +202,8 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 						fixMessage = "Replace TrimSuffix with CutSuffix"
 					}
 
-					if equalSyntax(lhs, bin.X) && equalSyntax(call.Args[0], bin.Y) ||
-						(equalSyntax(lhs, bin.Y) && equalSyntax(call.Args[0], bin.X)) {
+					if astutil.EqualSyntax(lhs, bin.X) && astutil.EqualSyntax(call.Args[0], bin.Y) ||
+						(astutil.EqualSyntax(lhs, bin.Y) && astutil.EqualSyntax(call.Args[0], bin.X)) {
 						okVarName := analysisinternal.FreshName(info.Scopes[ifStmt], ifStmt.Pos(), "ok")
 						// Have one of:
 						//   if rest := TrimPrefix(s, prefix); rest != s { (ditto Suffix)

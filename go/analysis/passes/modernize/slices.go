@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
+	"golang.org/x/tools/internal/astutil"
 )
 
 // Warning: this analyzer is not safe to enable by default.
@@ -261,12 +262,12 @@ func clippedSlice(info *types.Info, e ast.Expr) (res ast.Expr, empty bool) {
 	switch e := e.(type) {
 	case *ast.SliceExpr:
 		// x[:0:0], x[:len(x):len(x)], x[:k:k]
-		if e.Slice3 && e.High != nil && e.Max != nil && equalSyntax(e.High, e.Max) { // x[:k:k]
+		if e.Slice3 && e.High != nil && e.Max != nil && astutil.EqualSyntax(e.High, e.Max) { // x[:k:k]
 			res = e
 			empty = isZeroIntLiteral(info, e.High) // x[:0:0]
 			if call, ok := e.High.(*ast.CallExpr); ok &&
 				typeutil.Callee(info, call) == builtinLen &&
-				equalSyntax(call.Args[0], e.X) {
+				astutil.EqualSyntax(call.Args[0], e.X) {
 				res = e.X // x[:len(x):len(x)] -> x
 			}
 			return

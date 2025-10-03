@@ -15,6 +15,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
+	"golang.org/x/tools/internal/astutil"
 )
 
 // Warning: this analyzer is not safe to enable by default (not nil-preserving).
@@ -140,7 +141,7 @@ func slicesdelete(pass *analysis.Pass) (any, error) {
 					slice2, ok2 := call.Args[1].(*ast.SliceExpr)
 					if ok1 && slice1.Low == nil && !slice1.Slice3 &&
 						ok2 && slice2.High == nil && !slice2.Slice3 &&
-						equalSyntax(slice1.X, slice2.X) && noEffects(info, slice1.X) &&
+						astutil.EqualSyntax(slice1.X, slice2.X) && noEffects(info, slice1.X) &&
 						increasingSliceIndices(info, slice1.High, slice2.Low) {
 						// Have append(s[:a], s[b:]...) where we can verify a < b.
 						report(file, call, slice1, slice2)
@@ -176,5 +177,5 @@ func increasingSliceIndices(info *types.Info, a, b ast.Expr) bool {
 
 	ai, ak := split(a)
 	bi, bk := split(b)
-	return equalSyntax(ai, bi) && constant.Compare(ak, token.LSS, bk)
+	return astutil.EqualSyntax(ai, bi) && constant.Compare(ak, token.LSS, bk)
 }

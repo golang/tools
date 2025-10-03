@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -87,12 +88,12 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 		// isSliceElem reports whether e denotes the
 		// current slice element (elem or s[i]).
 		isSliceElem := func(e ast.Expr) bool {
-			if rng.Value != nil && equalSyntax(e, rng.Value) {
+			if rng.Value != nil && astutil.EqualSyntax(e, rng.Value) {
 				return true // "elem"
 			}
 			if x, ok := e.(*ast.IndexExpr); ok &&
-				equalSyntax(x.X, rng.X) &&
-				equalSyntax(x.Index, rng.Key) {
+				astutil.EqualSyntax(x.X, rng.X) &&
+				astutil.EqualSyntax(x.Index, rng.Key) {
 				return true // "s[i]"
 			}
 			return false
@@ -322,7 +323,7 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 					if prevAssign, ok := prevStmt.(*ast.AssignStmt); ok &&
 						len(prevAssign.Lhs) == 1 &&
 						len(prevAssign.Rhs) == 1 &&
-						equalSyntax(prevAssign.Lhs[0], assign.Lhs[0]) &&
+						astutil.EqualSyntax(prevAssign.Lhs[0], assign.Lhs[0]) &&
 						is[*ast.Ident](assign.Rhs[0]) &&
 						info.Uses[assign.Rhs[0].(*ast.Ident)] == builtinTrue {
 

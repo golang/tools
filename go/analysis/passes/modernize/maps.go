@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -99,7 +100,7 @@ func mapsloop(pass *analysis.Pass) (any, error) {
 			if assign, ok := curPrev.Node().(*ast.AssignStmt); ok &&
 				len(assign.Lhs) == 1 &&
 				len(assign.Rhs) == 1 &&
-				equalSyntax(assign.Lhs[0], m) {
+				astutil.EqualSyntax(assign.Lhs[0], m) {
 
 				// Have: m = rhs; for k, v := range x { m[k] = v }
 				var newMap bool
@@ -235,8 +236,8 @@ func mapsloop(pass *analysis.Pass) (any, error) {
 
 				assign := rng.Body.List[0].(*ast.AssignStmt)
 				if index, ok := assign.Lhs[0].(*ast.IndexExpr); ok &&
-					equalSyntax(rng.Key, index.Index) &&
-					equalSyntax(rng.Value, assign.Rhs[0]) &&
+					astutil.EqualSyntax(rng.Key, index.Index) &&
+					astutil.EqualSyntax(rng.Value, assign.Rhs[0]) &&
 					is[*types.Map](typeparams.CoreType(info.TypeOf(index.X))) &&
 					types.Identical(info.TypeOf(index), info.TypeOf(rng.Value)) { // m[k], v
 

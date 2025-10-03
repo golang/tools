@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
-	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/versions"
@@ -65,12 +64,6 @@ func skipGenerated(pass *analysis.Pass) {
 		}
 		report(diag)
 	}
-}
-
-// equalSyntax reports whether x and y are syntactically equal (ignoring comments).
-func equalSyntax(x, y ast.Expr) bool {
-	sameName := func(x, y *ast.Ident) bool { return x.Name == y.Name }
-	return astutil.Equal(x, y, sameName)
 }
 
 // formatExprs formats a comma-separated list of expressions.

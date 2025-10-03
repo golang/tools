@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
+	"golang.org/x/tools/internal/astutil"
 )
 
 var ForVarAnalyzer = &analysis.Analyzer{
@@ -52,8 +53,8 @@ func forvar(pass *analysis.Pass) (any, error) {
 			}
 			isLoopVarRedecl := func(assign *ast.AssignStmt) bool {
 				for i, lhs := range assign.Lhs {
-					if !(equalSyntax(lhs, assign.Rhs[i]) &&
-						(equalSyntax(lhs, loop.Key) || equalSyntax(lhs, loop.Value))) {
+					if !(astutil.EqualSyntax(lhs, assign.Rhs[i]) &&
+						(astutil.EqualSyntax(lhs, loop.Key) || astutil.EqualSyntax(lhs, loop.Value))) {
 						return false
 					}
 				}

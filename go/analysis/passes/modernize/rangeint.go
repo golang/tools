@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -85,7 +86,7 @@ func rangeint(pass *analysis.Pass) (any, error) {
 
 				if compare, ok := loop.Cond.(*ast.BinaryExpr); ok &&
 					compare.Op == token.LSS &&
-					equalSyntax(compare.X, init.Lhs[0]) {
+					astutil.EqualSyntax(compare.X, init.Lhs[0]) {
 					// Have: for i = 0; i < limit; ... {}
 
 					limit := compare.Y
@@ -126,7 +127,7 @@ func rangeint(pass *analysis.Pass) (any, error) {
 
 					if inc, ok := loop.Post.(*ast.IncDecStmt); ok &&
 						inc.Tok == token.INC &&
-						equalSyntax(compare.X, inc.X) {
+						astutil.EqualSyntax(compare.X, inc.X) {
 						// Have: for i = 0; i < limit; i++ {}
 
 						// Find references to i within the loop body.
