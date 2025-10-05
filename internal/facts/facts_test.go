@@ -461,7 +461,7 @@ func TestFactFilter(t *testing.T) {
 	s.ExportPackageFact(&otherFact{"bad package fact"})
 
 	filter := map[reflect.Type]bool{
-		reflect.TypeOf(&myFact{}): true,
+		reflect.TypeFor[*myFact](): true,
 	}
 
 	pkgFacts := s.AllPackageFacts(filter)

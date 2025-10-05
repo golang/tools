@@ -43,7 +43,7 @@ var Analyzer = &analysis.Analyzer{
 	URL:        "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/printf",
 	Requires:   []*analysis.Analyzer{inspect.Analyzer},
 	Run:        run,
-	ResultType: reflect.TypeOf((*Result)(nil)),
+	ResultType: reflect.TypeFor[*Result](),
 	FactTypes:  []analysis.Fact{new(isWrapper)},
 }
 

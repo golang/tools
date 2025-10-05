@@ -3139,7 +3139,7 @@ func cleanNodes[T ast.Node](nodes []T) []T {
 //
 // TODO(adonovan): remove this horrendous workaround when #20744 is finally fixed.
 func clearPositions(root ast.Node) {
-	posType := reflect.TypeOf(token.NoPos)
+	posType := reflect.TypeFor[token.Pos]()
 	ast.Inspect(root, func(n ast.Node) bool {
 		if n != nil {
 			v := reflect.ValueOf(n).Elem() // deref the pointer to struct

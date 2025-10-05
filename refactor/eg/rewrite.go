@@ -158,12 +158,12 @@ var (
 	objectPtrNil = reflect.ValueOf((*ast.Object)(nil))
 	scopePtrNil  = reflect.ValueOf((*ast.Scope)(nil))
 
-	identType        = reflect.TypeOf((*ast.Ident)(nil))
-	selectorExprType = reflect.TypeOf((*ast.SelectorExpr)(nil))
-	objectPtrType    = reflect.TypeOf((*ast.Object)(nil))
-	statementType    = reflect.TypeOf((*ast.Stmt)(nil)).Elem()
-	positionType     = reflect.TypeOf(token.NoPos)
-	scopePtrType     = reflect.TypeOf((*ast.Scope)(nil))
+	identType        = reflect.TypeFor[*ast.Ident]()
+	selectorExprType = reflect.TypeFor[*ast.SelectorExpr]()
+	objectPtrType    = reflect.TypeFor[*ast.Object]()
+	statementType    = reflect.TypeFor[ast.Stmt]()
+	positionType     = reflect.TypeFor[token.Pos]()
+	scopePtrType     = reflect.TypeFor[*ast.Scope]()
 )
 
 // apply replaces each AST field x in val with f(x), returning val.

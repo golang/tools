@@ -41,7 +41,7 @@ var Analyzer = &analysis.Analyzer{
 	URL:        "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/pkgfact",
 	Run:        run,
 	FactTypes:  []analysis.Fact{new(pairsFact)},
-	ResultType: reflect.TypeOf(map[string]string{}),
+	ResultType: reflect.TypeFor[map[string]string](),
 }
 
 // A pairsFact is a package-level fact that records
