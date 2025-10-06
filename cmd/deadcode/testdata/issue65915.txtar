@@ -15,26 +15,27 @@ go 1.18
 
 -- main.go --
 package main
+import "fmt"
 
 type example struct{}
 
-func (e example) UnUsed() {}
+func (e example) UnUsed() {fmt.Println("a")}
 
-func (e example) Used() {}
+func (e example) Used() {fmt.Println("a")}
 
-func (e example) unUsed() {}
+func (e example) unUsed() {fmt.Println("a")}
 
-func (e example) used() {}
+func (e example) used() {fmt.Println("a")}
 
 type PublicExample struct{}
 
-func (p PublicExample) UnUsed() {}
+func (p PublicExample) UnUsed() {fmt.Println("a")}
 
-func (p PublicExample) Used() {}
+func (p PublicExample) Used() {fmt.Println("a")}
 
-func (p PublicExample) unUsed() {}
+func (p PublicExample) unUsed() {fmt.Println("a")}
 
-func (p PublicExample) used() {}
+func (p PublicExample) used() {fmt.Println("a")}
 
 func main() {
 	example{}.Used()

@@ -1,0 +1,23 @@
+# Test of basic functionality.
+
+ deadcode -marker -filter= example.com
+
+ want "T.isMarker"
+!want "T.Hello"
+
+-- go.mod --
+module example.com
+go 1.18
+
+-- main.go --
+package main
+import "fmt"
+
+type T struct{}
+func (t *T) isMarker() {}
+func (t *T) Hello() {fmt.Println("Hello world")}
+
+func main () {
+    var t T
+    t.Hello()
+}

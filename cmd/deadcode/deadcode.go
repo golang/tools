@@ -45,6 +45,7 @@ var (
 
 	filterFlag    = flag.String("filter", "<module>", "report only packages matching this regular expression (default: module of first package)")
 	generatedFlag = flag.Bool("generated", false, "include dead functions in generated Go files")
+	markerFlag    = flag.Bool("marker", false, "include marker interface methods in the report")
 	whyLiveFlag   = flag.String("whylive", "", "show a path from main to the named function")
 	formatFlag    = flag.String("f", "", "format output records using template")
 	jsonFlag      = flag.Bool("json", false, "output JSON records")
@@ -176,12 +177,16 @@ func main() {
 	// invariably because the parent is unreachable.
 	var sourceFuncs []*ssa.Function
 	generated := make(map[string]bool)
+	markers := make(map[*ssa.Function]bool)
 	packages.Visit(initial, nil, func(p *packages.Package) {
 		for _, file := range p.Syntax {
 			for _, decl := range file.Decls {
 				if decl, ok := decl.(*ast.FuncDecl); ok {
 					obj := p.TypesInfo.Defs[decl.Name].(*types.Func)
 					fn := prog.FuncValue(obj)
+					if ssautil.IsMarkerMethod(fn) {
+						markers[fn] = true
+					}
 					sourceFuncs = append(sourceFuncs, fn)
 				}
 			}
@@ -334,10 +339,18 @@ func main() {
 				continue
 			}
 
+			// If the -marker flag is not set to true,
+			// marker methods should not be reported
+			marker := markers[fn]
+			if marker && !*markerFlag {
+				continue
+			}
+
 			functions = append(functions, jsonFunction{
 				Name:      prettyName(fn, false),
 				Position:  toJSONPosition(posn),
 				Generated: gen,
+				Marker:    marker,
 			})
 		}
 		if len(functions) > 0 {
@@ -546,6 +559,7 @@ type jsonFunction struct {
 	Name      string       // name (sans package qualifier)
 	Position  jsonPosition // file/line/column of declaration
 	Generated bool         // function is declared in a generated .go file
+	Marker    bool         // function is a marker interface method
 }
 
 func (f jsonFunction) String() string { return f.Name }

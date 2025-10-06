@@ -43,6 +43,9 @@ By default, the tool does not report dead functions in generated files,
 as determined by the special comment described in
 https://go.dev/s/generatedcode. Use the -generated flag to include them.
 
+The tool also does not report marker interface methods by default.
+Use the -marker flag to include them.
+
 In any case, just because a function is reported as dead does not mean
 it is unconditionally safe to delete it. For example, a dead function
 may be referenced by another dead function, and a dead method may be
@@ -121,6 +124,7 @@ is static or dynamic, and its source line number. For example:
 		Name      string   // name (sans package qualifier)
 		Position  Position // file/line/column of function declaration
 		Generated bool     // function is declared in a generated .go file
+		Marker    bool     // function is a marker interface method
 	}
 
 	type Edge struct {
