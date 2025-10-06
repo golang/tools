@@ -566,7 +566,7 @@ window.addEventListener('load', function() {
 		// appear as separate decls. We should too.
 		var buf bytes.Buffer
 		for _, file := range pkg.CompiledGoFiles() {
-			if internalastutil.NodeContains(file.File, n.Pos()) {
+			if internalastutil.NodeContainsPos(file.File, n.Pos()) {
 				pos := n.Pos()
 
 				// emit emits source in the interval [pos:to] and updates pos.

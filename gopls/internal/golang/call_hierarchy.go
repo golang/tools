@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -21,6 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -38,7 +38,8 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 	if err != nil {
 		return nil, err
 	}
-	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, pos)
+	// TODO(hxjiang): replace PrepareCallHierarchy's input position with range.
+	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, internalastutil.RangeOf(pos, pos))
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +195,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if err != nil {
 		return nil, err
 	}
-	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, pos)
+	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, internalastutil.RangeOf(pos, pos))
 	if err != nil {
 		return nil, err
 	}
@@ -230,13 +231,9 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		// return nil, bug.Errorf("failed to find declaration for %v", obj)
 	}
 
-	type callRange struct {
-		start, end token.Pos
-	}
-
 	// Find calls to known functions/methods,
 	// including interface methods, and built-ins.
-	var callRanges []callRange
+	var callRanges []internalastutil.Range
 	for n := range ast.Preorder(declNode) {
 		if call, ok := n.(*ast.CallExpr); ok {
 			callee := typeutil.Callee(pkg.TypesInfo(), call)
@@ -248,17 +245,14 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 					continue
 				}
 				id := typesinternal.UsedIdent(pkg.TypesInfo(), call.Fun)
-				callRanges = append(callRanges, callRange{
-					start: id.NamePos,
-					end:   call.Lparen,
-				})
+				callRanges = append(callRanges, internalastutil.RangeOf(id.Pos(), id.End()))
 			}
 		}
 	}
 
 	outgoingCalls := make(map[protocol.Location]*protocol.CallHierarchyOutgoingCall)
 	for _, callRange := range callRanges {
-		obj, err := callHierarchyFuncAtPos(declPkg.TypesInfo(), declPGF, callRange.start)
+		obj, err := callHierarchyFuncAtPos(declPkg.TypesInfo(), declPGF, callRange)
 		if err != nil {
 			continue // ignore
 		}
@@ -284,7 +278,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 			outgoingCalls[loc] = outgoingCall
 		}
 
-		rng, err := declPGF.PosRange(callRange.start, callRange.end)
+		rng, err := declPGF.PosRange(callRange.Pos(), callRange.End())
 		if err != nil {
 			return nil, err
 		}
@@ -306,10 +300,10 @@ func callHierarchyItemDetail(obj types.Object, loc protocol.Location) string {
 	return detail
 }
 
-// callHierarchyFuncAtPos returns the function symbol (Func or
-// Builtin) referred to by the identifier at the specified position.
-func callHierarchyFuncAtPos(info *types.Info, pgf *parsego.File, pos token.Pos) (types.Object, error) {
-	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+// callHierarchyFuncAtPos returns the function symbol (Func or Builtin) referred
+// to by the identifier at the specified range.
+func callHierarchyFuncAtPos(info *types.Info, pgf *parsego.File, rng internalastutil.Range) (types.Object, error) {
+	cur, ok := pgf.Cursor.FindByPos(rng.Pos(), rng.End())
 	if !ok {
 		return nil, fmt.Errorf("no enclosing syntax") // can't happen
 	}

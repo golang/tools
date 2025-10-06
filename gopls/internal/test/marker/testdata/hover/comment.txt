@@ -14,7 +14,7 @@ import (
 	"mod.com/util" //@hover(`"mod.com/util"`, `"mod.com/util"`, strconv)
 )
 
-// [NumberBase] is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase)
+// [NumberBase] is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase),hover(re"()NumberBase", "NumberBase", NumberBase),hover(re"NumberBase()", "NumberBase", NumberBase)
 const NumberBase = 10
 
 // [Conv] converts s to an int. //@hover("Conv", "Conv", Conv)
@@ -64,7 +64,7 @@ const NumberBase untyped int = 10
 
 ---
 
-[NumberBase](file://$WORKDIR/a.go#10,7) is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase)
+[NumberBase](file://$WORKDIR/a.go#10,7) is the base to use for number parsing. //@hover("NumberBase", "NumberBase", NumberBase),hover(re"()NumberBase", "NumberBase", NumberBase),hover(re"NumberBase()", "NumberBase", NumberBase)
 
 
 ---

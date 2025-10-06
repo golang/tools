@@ -115,11 +115,11 @@ type hoverResult struct {
 // It may return nil even on success.
 //
 // If pkgURL is non-nil, it should be used to generate doc links.
-func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, position protocol.Position, pkgURL func(path PackagePath, fragment string) protocol.URI) (*protocol.Hover, error) {
+func Hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range, pkgURL func(path PackagePath, fragment string) protocol.URI) (*protocol.Hover, error) {
 	ctx, done := event.Start(ctx, "golang.Hover")
 	defer done()
 
-	rng, h, err := hover(ctx, snapshot, fh, position)
+	rng, h, err := hover(ctx, snapshot, fh, rng)
 	if err != nil {
 		return nil, err
 	}
@@ -163,12 +163,16 @@ func findRhsTypeDecl(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 	return "", nil
 }
 
-// hover computes hover information at the given position. If we do not support
-// hovering at the position, it returns _, nil, nil: an error is only returned
-// if the position is valid but we fail to compute hover information.
+// hover computes hover information at the given range. When hover over a single
+// point, the input range's start and end are the same.
+//
+// If we do not support hovering at the position, it returns _, nil, nil:
+// an error is only returned if the position is valid but we fail to compute
+// hover information.
 //
 // TODO(adonovan): strength-reduce file.Handle to protocol.DocumentURI.
-func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) (protocol.Range, *hoverResult, error) {
+// TODO(hxjiang): return the type of selected expression based on the range.
+func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (protocol.Range, *hoverResult, error) {
 	// Check for hover inside the builtin file before attempting type checking
 	// below. NarrowestPackageForFile may or may not succeed, depending on
 	// whether this is a GOROOT view, but even if it does succeed the resulting
@@ -180,11 +184,11 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		if err != nil {
 			return protocol.Range{}, nil, err
 		}
-		pos, err := pgf.PositionPos(pp)
+		start, end, err := pgf.RangePos(rng)
 		if err != nil {
 			return protocol.Range{}, nil, err
 		}
-		cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
+		cur, _ := pgf.Cursor.FindByPos(start, end) // can't fail
 		if id, ok := cur.Node().(*ast.Ident); ok {
 			rng, err := pgf.NodeRange(id)
 			if err != nil {
@@ -208,20 +212,24 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	if err != nil {
 		return protocol.Range{}, nil, err
 	}
-	pos, err := pgf.PositionPos(pp)
-	if err != nil {
-		return protocol.Range{}, nil, err
+	var posRange astutil.Range
+	{
+		start, end, err := pgf.RangePos(rng)
+		if err != nil {
+			return protocol.Range{}, nil, err
+		}
+		posRange = astutil.RangeOf(start, end)
 	}
 
 	// Handle hovering over the package name, which does not have an associated
 	// object.
 	// As with import paths, we allow hovering just after the package name.
-	if pgf.File.Name != nil && astutil.NodeContains(pgf.File.Name, pos) {
+	if pgf.File.Name != nil && astutil.NodeContains(pgf.File.Name, posRange) {
 		return hoverPackageName(pkg, pgf)
 	}
 
 	// Handle hovering over embed directive argument.
-	pattern, embedRng := parseEmbedDirective(pgf.Mapper, pp)
+	pattern, embedRng := parseEmbedDirective(pgf.Mapper, rng)
 	if pattern != "" {
 		return hoverEmbed(fh, embedRng, pattern)
 	}
@@ -231,7 +239,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// for instance when hovering over a linkname directive or doc link.
 	var hoverRange *protocol.Range
 	// Handle linkname directive by overriding what to look for.
-	if pkgPath, name, offset := parseLinkname(pgf.Mapper, pp); pkgPath != "" && name != "" {
+	if pkgPath, name, offset := parseLinkname(pgf.Mapper, rng); pkgPath != "" && name != "" {
 		// rng covering 2nd linkname argument: pkgPath.name.
 		rng, err := pgf.PosRange(pgf.Tok.Pos(offset), pgf.Tok.Pos(offset+len(pkgPath)+len(".")+len(name)))
 		if err != nil {
@@ -239,10 +247,14 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		}
 		hoverRange = &rng
 
+		var pos token.Pos
+		// Subtle: updates pkg, which defines the FileSet used to resolve (start, end),
+		// which were obtained from pkg.
 		pkg, pgf, pos, err = findLinkname(ctx, snapshot, PackagePath(pkgPath), name)
 		if err != nil {
 			return protocol.Range{}, nil, fmt.Errorf("find linkname: %w", err)
 		}
+		posRange = astutil.RangeOf(pos, pos) // move the range
 	}
 
 	// TODO(hxjiang): Hovering over a doc link like "[foo.Foo]" and a direct
@@ -251,7 +263,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// call hover is qualified relative to the current file where the call occurs.
 
 	// Handle hovering over a doc link
-	if obj, rng, _ := resolveDocLink(pkg, pgf, pos); obj != nil {
+	if obj, rng, err := resolveDocLink(pkg, pgf, posRange); obj != nil {
 		// Built-ins have no position.
 		if isBuiltin(obj) {
 			h, err := hoverBuiltin(ctx, snapshot, obj)
@@ -261,15 +273,19 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		// Find position in declaring file.
 		hoverRange = &rng
 		objURI := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
+
+		// Subtle: updates pkg, which defines the FileSet used to resolve (start, end),
+		// which were obtained from pkg.
 		pkg, pgf, err = NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(objURI.Filename))
 		if err != nil {
 			return protocol.Range{}, nil, err
 		}
-		pos = pgf.Tok.Pos(objURI.Offset)
+		pos := pgf.Tok.Pos(objURI.Offset)
+		posRange = astutil.RangeOf(pos, pos)
 	}
 
 	// Find cursor for selection.
-	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+	cur, ok := pgf.Cursor.FindByPos(posRange.Pos(), posRange.End())
 	if !ok {
 		return protocol.Range{}, nil, fmt.Errorf("hover position not within file")
 	}
@@ -277,7 +293,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// Handle hovering over import specs,
 	// which may not have an associated identifier.
 	for _, spec := range pgf.File.Imports {
-		if astutil.NodeContains(spec, pos) {
+		if astutil.NodeContains(spec, posRange) {
 			path := metadata.UnquoteImportPath(spec)
 			hoverRes, err := hoverPackageRef(ctx, snapshot, pkg, path)
 			if err != nil {
@@ -298,7 +314,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	switch node := cur.Node().(type) {
 	case *ast.BasicLit:
 		// (import paths were handled above)
-		return hoverLit(pgf, node, pos)
+		return hoverLit(pgf, node, posRange)
 	case *ast.ReturnStmt:
 		return hoverReturnStatement(pgf, cur)
 	}
@@ -975,13 +991,13 @@ func hoverPackageName(pkg *cache.Package, pgf *parsego.File) (protocol.Range, *h
 }
 
 // hoverLit computes hover information when hovering over the basic literal lit
-// in the file pgf. The provided pos must be the exact position of the cursor,
-// as it is used to extract the hovered rune in strings.
+// in the file pgf. The provided pos must be the exact position of the range as
+// it is used to extract the hovered rune in strings.
 //
 // For example, hovering over "\u2211" in "foo \u2211 bar" yields:
 //
 //	'∑', U+2211, N-ARY SUMMATION
-func hoverLit(pgf *parsego.File, lit *ast.BasicLit, pos token.Pos) (protocol.Range, *hoverResult, error) {
+func hoverLit(pgf *parsego.File, lit *ast.BasicLit, posRng astutil.Range) (protocol.Range, *hoverResult, error) {
 	var (
 		value      string    // if non-empty, a constant value to format in hover
 		r          rune      // if non-zero, format a description of this rune in hover
@@ -1031,13 +1047,13 @@ func hoverLit(pgf *parsego.File, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 		}
 
 	case token.STRING:
-		// It's a string, scan only if it contains a unicode escape sequence under or before the
-		// current cursor position.
+		// It's a string, scan only if it contains a unicode escape sequence
+		// at the current cursor position.
 		litOffset, err := safetoken.Offset(pgf.Tok, lit.Pos())
 		if err != nil {
 			return protocol.Range{}, nil, err
 		}
-		offset, err := safetoken.Offset(pgf.Tok, pos)
+		offset, err := safetoken.Offset(pgf.Tok, posRng.Start)
 		if err != nil {
 			return protocol.Range{}, nil, err
 		}
@@ -1049,17 +1065,24 @@ func hoverLit(pgf *parsego.File, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 			}
 			if rr == '\\' {
 				// Got the beginning, decode it.
-				var tail string
-				r, _, tail, err = strconv.UnquoteChar(lit.Value[i:], '"')
+				rr, _, tail, err := strconv.UnquoteChar(lit.Value[i:], '"')
 				if err != nil {
 					// If the conversion fails, it's because of an invalid syntax,
 					// therefore is no rune to be found.
 					return protocol.Range{}, nil, nil
 				}
-				// Only the rune escape sequence part of the string has to be highlighted, recompute the range.
+				// Only the rune escape sequence part of the string has to be
+				// highlighted, recompute the range.
 				runeLen := len(lit.Value) - (i + len(tail))
-				start = token.Pos(int(lit.Pos()) + i)
-				end = token.Pos(int(start) + runeLen)
+				rStart := token.Pos(int(lit.Pos()) + i)
+				rEnd := token.Pos(int(rStart) + runeLen)
+
+				// A rune is only valid if the range is inside it.
+				if rStart <= posRng.Pos() && posRng.End() <= rEnd {
+					r = rr
+					start = rStart
+					end = rEnd
+				}
 				break
 			}
 		}

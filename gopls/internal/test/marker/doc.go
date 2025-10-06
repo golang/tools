@@ -207,8 +207,8 @@ Here is the list of supported action markers:
     textDocument/highlight request at the given src location, which should
     highlight the provided dst locations and kinds.
 
-  - hover(src, dst location, sm stringMatcher): performs a textDocument/hover
-    at the src location, and checks that the result is the dst location, with
+  - hover(src, dst location, sm stringMatcher): performs a textDocument/hover at
+    the src location, and checks that the result is the dst location, with
     matching hover content.
 
   - hovererr(src, sm stringMatcher): performs a textDocument/hover at the src

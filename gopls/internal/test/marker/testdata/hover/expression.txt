@@ -1,0 +1,28 @@
+This test checks that hovering over a range reveals the expression type.
+
+-- a.go --
+package a
+
+import "time"
+
+func _() {
+    _ = time.Now().UTC().Add(10 * time.Minute)//@hover("time.Now().UTC()", _, utc)
+
+    root := node{}
+    _ = root.child(3).name//@hover("root.child(3)", _, child)
+}
+
+-- lib.go --
+package a
+
+type node struct {
+    name string
+    children []*node
+}
+
+func (n *node) child(i int) *node {
+    return n.children[i]
+}
+
+-- @utc --
+-- @child --

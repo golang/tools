@@ -12,6 +12,13 @@ import (
 // Empty reports whether the Range is an empty selection.
 func (rng Range) Empty() bool { return rng.Start == rng.End }
 
+// Contains reports whether the position is within the range, inclusive of the
+// start and end positions.
+func (rng Range) Contains(pos Position) bool {
+	return ComparePosition(rng.Start, pos) <= 0 &&
+		ComparePosition(pos, rng.End) <= 0
+}
+
 // Empty reports whether the Location is an empty selection.
 func (loc Location) Empty() bool { return loc.Range.Empty() }
 

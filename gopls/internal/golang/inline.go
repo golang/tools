@@ -23,7 +23,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
-	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/refactor/inline"
@@ -243,7 +242,7 @@ func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.P
 		if v, ok := obj1.(*types.Var); ok && v.IsField() {
 			continue // a field reference T{F: 0} is non-lexical
 		}
-		if internalastutil.NodeContains(curRHS.Node(), obj1.Pos()) {
+		if astutil.NodeContainsPos(curRHS.Node(), obj1.Pos()) {
 			continue // not free (id is defined within RHS)
 		}
 		_, obj2 := scope.LookupParent(id.Name, pos)

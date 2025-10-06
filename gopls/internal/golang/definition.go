@@ -21,7 +21,7 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -51,7 +51,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 
 	// Handle the case where the cursor is in the package name.
 	// We use "<= End" to accept a query immediately after the package name.
-	if pgf.File != nil && internalastutil.NodeContains(pgf.File.Name, pos) {
+	if pgf.File != nil && astutil.NodeContainsPos(pgf.File.Name, pos) {
 		// If there's no package documentation, just use current file.
 		declFile := pgf
 		for _, pgf := range pkg.CompiledGoFiles() {
@@ -192,7 +192,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	for _, decl := range pgf.File.Decls {
 		if decl, ok := decl.(*ast.FuncDecl); ok &&
 			decl.Body == nil &&
-			internalastutil.NodeContains(decl.Name, pos) {
+			astutil.NodeContainsPos(decl.Name, pos) {
 			return nonGoDefinition(ctx, snapshot, pkg, decl.Name.Name)
 		}
 	}
@@ -327,7 +327,7 @@ func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package
 	var imp *ast.ImportSpec
 	for _, spec := range pgf.File.Imports {
 		// We use "<= End" to accept a query immediately after an ImportSpec.
-		if internalastutil.NodeContains(spec.Path, pos) {
+		if astutil.NodeContainsPos(spec.Path, pos) {
 			imp = spec
 		}
 	}

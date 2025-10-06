@@ -1772,7 +1772,7 @@ func parsePackageNameDecl(ctx context.Context, snapshot *cache.Snapshot, fh file
 	// Careful: because we used parsego.Header,
 	// pgf.Pos(ppos) may be beyond EOF => (0, err).
 	pos, _ := pgf.PositionPos(ppos)
-	return pgf, internalastutil.NodeContains(pgf.File.Name, pos), nil
+	return pgf, internalastutil.NodeContainsPos(pgf.File.Name, pos), nil
 }
 
 // posEdit returns an edit to replace the (start, end) range of tf with 'new'.

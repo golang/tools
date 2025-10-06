@@ -74,7 +74,7 @@ func (c *completer) addKeywordCompletions() {
 	if len(c.path) > 2 {
 		// Offer "range" if we are in ast.ForStmt.Init. This is what the
 		// AST looks like before "range" is typed, e.g. "for i := r<>".
-		if loop, ok := c.path[2].(*ast.ForStmt); ok && loop.Init != nil && astutil.NodeContains(loop.Init, c.pos) {
+		if loop, ok := c.path[2].(*ast.ForStmt); ok && loop.Init != nil && astutil.NodeContainsPos(loop.Init, c.pos) {
 			c.addKeywordItems(seen, stdScore, RANGE)
 		}
 	}

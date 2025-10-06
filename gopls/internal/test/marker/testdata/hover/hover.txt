@@ -17,7 +17,7 @@ go 1.18
 // package comment
 package aa //@hover("aa", "aa", aa)
 
-const abc = 0x2a //@hover("b", "abc", abc),hover(" =", "abc", abc)
+const abc = 0x2a //@hover("b", "abc", abc),hover(re"() =", "abc", abc)
 
 -- a2.go --
 
@@ -32,7 +32,7 @@ func _() {
 	var y any
 	switch x := y.(type) { //@hover("x", "x", x)
 	case int:
-		println(x) //@hover("x", "x", xint),hover(")", "x", xint)
+		println(x) //@hover("x", "x", xint),hover(re"x()", "x", xint)
 	}
 }
 -- cmd/main.go --
@@ -52,7 +52,7 @@ const abc untyped int = 0x2a // 42
 
 ---
 
-@hover("b", "abc", abc),hover(" =", "abc", abc)
+@hover("b", "abc", abc),hover(re"() =", "abc", abc)
 -- @x --
 ```go
 var x any

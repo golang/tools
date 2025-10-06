@@ -50,7 +50,7 @@ func PreorderStack(root ast.Node, stack []ast.Node, f func(n ast.Node, stack []a
 }
 
 // NodeContains reports whether the Pos/End range of node n encloses
-// the given position pos.
+// the given range.
 //
 // It is inclusive of both end points, to allow hovering (etc) when
 // the cursor is immediately after a node.
@@ -64,14 +64,23 @@ func PreorderStack(root ast.Node, stack []ast.Node, f func(n ast.Node, stack []a
 // position lies anywhere within the file.
 //
 // Precondition: n must not be nil.
-func NodeContains(n ast.Node, pos token.Pos) bool {
+func NodeContains(n ast.Node, rng Range) bool {
 	var start, end token.Pos
 	if file, ok := n.(*ast.File); ok {
 		start, end = file.FileStart, file.FileEnd // entire file
 	} else {
 		start, end = n.Pos(), n.End()
 	}
-	return start <= pos && pos <= end
+
+	return start <= rng.Start && rng.EndPos <= end
+}
+
+// NodeContainPos reports whether the Pos/End range of node n encloses
+// the given pos.
+//
+// See [NodeContains] for details.
+func NodeContainsPos(n ast.Node, pos token.Pos) bool {
+	return NodeContains(n, RangeOf(pos, pos))
 }
 
 // IsChildOf reports whether cur.ParentEdge is ek.
@@ -139,7 +148,7 @@ func (r Range) End() token.Pos { return r.EndPos }
 
 // Contains reports whether the range (inclusive of both end points)
 // includes the specified position.
-func (r Range) Contains(pos token.Pos) bool { return NodeContains(r, pos) }
+func (r Range) Contains(pos token.Pos) bool { return NodeContainsPos(r, pos) }
 
 // IsValid reports whether the range is valid.
 func (r Range) IsValid() bool { return r.Start.IsValid() && r.Start <= r.EndPos }

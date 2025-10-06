@@ -6,6 +6,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
@@ -34,6 +35,23 @@ func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *pr
 	}
 	defer release()
 
+	// TODO(hxjiang): apply the range detection to all handler that accept
+	// TextDocumentPositionParams.
+	var rng protocol.Range
+	if params.Range == (protocol.Range{}) {
+		// No selection range was provided.
+		// Default to an empty range at the position.
+		rng = protocol.Range{
+			Start: params.Position,
+			End:   params.Position,
+		}
+	} else {
+		if !params.Range.Contains(params.Position) {
+			return nil, fmt.Errorf("illegal, position %v is outside the provided range %v.", params.Position, params.Range)
+		}
+		rng = params.Range
+	}
+
 	switch snapshot.FileKind(fh) {
 	case file.Mod:
 		return mod.Hover(ctx, snapshot, fh, params.Position)
@@ -49,7 +67,7 @@ func (s *server) Hover(ctx context.Context, params *protocol.HoverParams) (_ *pr
 				}
 			}
 		}
-		return golang.Hover(ctx, snapshot, fh, params.Position, pkgURL)
+		return golang.Hover(ctx, snapshot, fh, rng, pkgURL)
 	case file.Tmpl:
 		return template.Hover(ctx, snapshot, fh, params.Position)
 	case file.Work:

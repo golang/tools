@@ -126,7 +126,7 @@ func (p *Pos) Sum() int { //@loc(PosSum, "Sum")
 
 func _() {
 	var p Pos
-	_ = p.Sum() //@def("()", PosSum),hover("()", `Sum`, hoverSum)
+	_ = p.Sum() //@def("()", PosSum),hover(re"Sum()", `Sum`, hoverSum)
 }
 -- @aPackage --
 ```go

@@ -2531,7 +2531,7 @@ Nodes:
 			}
 			return inf
 		case *ast.RangeStmt:
-			if internalastutil.NodeContains(node.X, c.pos) {
+			if internalastutil.NodeContainsPos(node.X, c.pos) {
 				inf.objKind |= kindSlice | kindArray | kindMap | kindString
 				if node.Key == nil && node.Value == nil {
 					inf.objKind |= kindRange0Func | kindRange1Func | kindRange2Func
@@ -3015,11 +3015,11 @@ func breaksExpectedTypeInference(n ast.Node, pos token.Pos) bool {
 	case *ast.CompositeLit:
 		// Doesn't break inference if pos is in type name.
 		// For example: "Foo<>{Bar: 123}"
-		return n.Type == nil || !internalastutil.NodeContains(n.Type, pos)
+		return n.Type == nil || !internalastutil.NodeContainsPos(n.Type, pos)
 	case *ast.CallExpr:
 		// Doesn't break inference if pos is in func name.
 		// For example: "Foo<>(123)"
-		return !internalastutil.NodeContains(n.Fun, pos)
+		return !internalastutil.NodeContainsPos(n.Fun, pos)
 	case *ast.FuncLit, *ast.IndexExpr, *ast.SliceExpr:
 		return true
 	default:
@@ -3132,7 +3132,7 @@ Nodes:
 		case *ast.MapType:
 			inf.wantTypeName = true
 			if n.Key != nil {
-				inf.wantComparable = internalastutil.NodeContains(n.Key, c.pos)
+				inf.wantComparable = internalastutil.NodeContainsPos(n.Key, c.pos)
 			} else {
 				// If the key is empty, assume we are completing the key if
 				// pos is directly after the "map[".
@@ -3140,10 +3140,10 @@ Nodes:
 			}
 			break Nodes
 		case *ast.ValueSpec:
-			inf.wantTypeName = n.Type != nil && internalastutil.NodeContains(n.Type, c.pos)
+			inf.wantTypeName = n.Type != nil && internalastutil.NodeContainsPos(n.Type, c.pos)
 			break Nodes
 		case *ast.TypeSpec:
-			inf.wantTypeName = internalastutil.NodeContains(n.Type, c.pos)
+			inf.wantTypeName = internalastutil.NodeContainsPos(n.Type, c.pos)
 		default:
 			if breaksExpectedTypeInference(p, c.pos) {
 				return typeNameInference{}

@@ -111,36 +111,36 @@ const Hello = "Hello"
 		)
 
 		// First, check that we get the expected links via hover and documentLink.
-		content, _ := env.Hover(env.RegexpSearch("main.go", "pkg.Hello"))
+		content, _ := env.Hover(env.RegexpSearch("main.go", "()pkg.Hello"))
 		if content == nil || !strings.Contains(content.Value, pkgImportLink) {
 			t.Errorf("hover: got %v in main.go, want contains %q", content, pkgImportLink)
 		}
-		content, _ = env.Hover(env.RegexpSearch("main.go", "replace.Hello"))
+		content, _ = env.Hover(env.RegexpSearch("main.go", "()replace.Hello"))
 		if content == nil || !strings.Contains(content.Value, pkgReplaceLink) {
 			t.Errorf("hover: got %v in main.go, want contains %q", content, pkgReplaceLink)
 		}
-		content, _ = env.Hover(env.RegexpSearch("main.go", "fixed.Hello"))
+		content, _ = env.Hover(env.RegexpSearch("main.go", "()fixed.Hello"))
 		if content == nil || !strings.Contains(content.Value, pkgReplaceFixedLink) {
 			t.Errorf("hover: got %v in main.go, want contains %q", content, pkgReplaceFixedLink)
 		}
-		content, _ = env.Hover(env.RegexpSearch("main.go", "another.Hello"))
+		content, _ = env.Hover(env.RegexpSearch("main.go", "()another.Hello"))
 		if content == nil || !strings.Contains(content.Value, pkgAnotherLink) {
 			t.Errorf("hover: got %v in main.go, want contains %q", content, pkgAnotherLink)
 		}
 
-		content, _ = env.Hover(env.RegexpSearch("go.mod", "import.test"))
+		content, _ = env.Hover(env.RegexpSearch("go.mod", "()import.test"))
 		if content == nil || !strings.Contains(content.Value, pkgImportLink) {
 			t.Errorf("hover: got %v in main.go, want contains %q", content, pkgImportLink)
 		}
-		content, _ = env.Hover(env.RegexpSearch("go.mod", "replace.test"))
+		content, _ = env.Hover(env.RegexpSearch("go.mod", "()replace.test"))
 		if content == nil || !strings.Contains(content.Value, pkgReplaceLink) {
 			t.Errorf("hover: got %v in main.go, want contains %q", content, pkgReplaceLink)
 		}
-		content, _ = env.Hover(env.RegexpSearch("go.mod", "replace.fixed.test"))
+		content, _ = env.Hover(env.RegexpSearch("go.mod", "()replace.fixed.test"))
 		if content == nil || !strings.Contains(content.Value, pkgReplaceFixedLink) {
 			t.Errorf("hover: got %v in main.go, want contains %q", content, pkgReplaceFixedLink)
 		}
-		content, _ = env.Hover(env.RegexpSearch("go.mod", "replace.another.test"))
+		content, _ = env.Hover(env.RegexpSearch("go.mod", "()replace.another.test"))
 		if content == nil || !strings.Contains(content.Value, pkgAnotherLink) {
 			t.Errorf("hover: got %v in main.go, want contains %q", content, pkgAnotherLink)
 		}
@@ -182,11 +182,11 @@ const Hello = "Hello"
 		env.ChangeConfiguration(cfg)
 
 		// Finally, verify that the links are gone.
-		content, _ = env.Hover(env.RegexpSearch("main.go", "pkg.Hello"))
+		content, _ = env.Hover(env.RegexpSearch("main.go", "()pkg.Hello"))
 		if content == nil || strings.Contains(content.Value, pkgImportLink) {
 			t.Errorf("hover: got %v in main.go, want non-empty hover without %q", content, pkgImportLink)
 		}
-		content, _ = env.Hover(env.RegexpSearch("go.mod", "import.test"))
+		content, _ = env.Hover(env.RegexpSearch("go.mod", "()import.test"))
 		if content == nil || strings.Contains(content.Value, modImportLink) {
 			t.Errorf("hover: got %v in go.mod, want contains %q", content, modImportLink)
 		}

@@ -774,7 +774,7 @@ filterErrors:
 		// Suppress type errors in files with parse errors
 		// as parser recovery can be quite lossy (#59888).
 		for _, p := range ppkg.CompiledGoFiles() {
-			if p.ParseErr != nil && astutil.NodeContains(p.File, typeError.Pos) {
+			if p.ParseErr != nil && astutil.NodeContainsPos(p.File, typeError.Pos) {
 				continue filterErrors
 			}
 		}

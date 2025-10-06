@@ -25,7 +25,7 @@ var ErrNoLinkname = errors.New("no linkname directive found")
 // linknameDefinition finds the definition of the linkname directive in m at pos.
 // If there is no linkname directive at pos, returns ErrNoLinkname.
 func linknameDefinition(ctx context.Context, snapshot *cache.Snapshot, m *protocol.Mapper, from protocol.Position) ([]protocol.Location, error) {
-	pkgPath, name, _ := parseLinkname(m, from)
+	pkgPath, name, _ := parseLinkname(m, protocol.Range{Start: from, End: from})
 	if pkgPath == "" {
 		return nil, ErrNoLinkname
 	}
@@ -41,21 +41,25 @@ func linknameDefinition(ctx context.Context, snapshot *cache.Snapshot, m *protoc
 	return []protocol.Location{loc}, nil
 }
 
-// parseLinkname attempts to parse a go:linkname declaration at the given pos.
+// parseLinkname attempts to parse a go:linkname declaration at the given range.
 // If successful, it returns
 // - package path referenced
 // - object name referenced
 // - byte offset in mapped file of the start of the link target
 // of the linkname directives 2nd argument.
 //
-// If the position is not in the second argument of a go:linkname directive,
-// or parsing fails, it returns "", "", 0.
-func parseLinkname(m *protocol.Mapper, pos protocol.Position) (pkgPath, name string, targetOffset int) {
-	lineStart, err := m.PositionOffset(protocol.Position{Line: pos.Line, Character: 0})
+// If the range is not in the second argument of a go:linkname directive, or
+// parsing fails, it returns "", "", 0.
+func parseLinkname(m *protocol.Mapper, rng protocol.Range) (pkgPath, name string, targetOffset int) {
+	if rng.Start.Line != rng.End.Line {
+		return "", "", 0
+	}
+
+	lineStart, err := m.PositionOffset(protocol.Position{Line: rng.Start.Line, Character: 0})
 	if err != nil {
 		return "", "", 0
 	}
-	lineEnd, err := m.PositionOffset(protocol.Position{Line: pos.Line + 1, Character: 0})
+	lineEnd, err := m.PositionOffset(protocol.Position{Line: rng.Start.Line + 1, Character: 0})
 	if err != nil {
 		return "", "", 0
 	}
@@ -80,13 +84,13 @@ func parseLinkname(m *protocol.Mapper, pos protocol.Position) (pkgPath, name str
 
 	// Inside 2nd arg [start, end]?
 	// (Assumes no trailing spaces.)
-	offset, err := m.PositionOffset(pos)
+	startOffset, endOffset, err := m.RangeOffsets(rng)
 	if err != nil {
 		return "", "", 0
 	}
 	end := lineStart + len(directive)
 	start := end - len(parts[2])
-	if !(start <= offset && offset <= end) {
+	if !(start <= startOffset && endOffset <= end) {
 		return "", "", 0
 	}
 	linkname := parts[2]

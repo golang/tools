@@ -58,8 +58,10 @@ func DocCommentToMarkdown(text string, options *settings.Options) string {
 
 // docLinkDefinition finds the definition of the doc link in comments at pos.
 // If there is no reference at pos, returns errNoCommentReference.
+//
+// TODO(hxjiang): simplify the error handling.
 func docLinkDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol.Location, error) {
-	obj, _, err := resolveDocLink(pkg, pgf, pos)
+	obj, _, err := resolveDocLink(pkg, pgf, astutil.RangeOf(pos, pos))
 	if err != nil {
 		return nil, err
 	}
@@ -72,10 +74,10 @@ func docLinkDefinition(ctx context.Context, snapshot *cache.Snapshot, pkg *cache
 
 // resolveDocLink parses a doc link in a comment such as [fmt.Println]
 // and returns the symbol at pos, along with the link's range.
-func resolveDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types.Object, protocol.Range, error) {
+func resolveDocLink(pkg *cache.Package, pgf *parsego.File, rng astutil.Range) (types.Object, protocol.Range, error) {
 	var comment *ast.CommentGroup
 	for _, c := range pgf.File.Comments {
-		if astutil.NodeContains(c, pos) {
+		if astutil.NodeContains(c, rng) {
 			comment = c
 			break
 		}
@@ -86,7 +88,7 @@ func resolveDocLink(pkg *cache.Package, pgf *parsego.File, pos token.Pos) (types
 	}
 
 	for docLink := range commentDocLinks(comment) {
-		if docLink.partRange.Contains(pos) {
+		if astutil.NodeContains(docLink.partRange, rng) {
 			if obj := lookupDocLinkSymbol(pkg, pgf, docLink.nameText); obj != nil {
 				rng, err := pgf.NodeRange(docLink.partRange)
 				if err != nil {
@@ -261,7 +263,7 @@ func newDocCommentParser(pkg *cache.Package) func(fileNode ast.Node, text string
 				// Different files in the same package have
 				// different import mappings. Use the provided
 				// syntax node to find the correct file.
-				if astutil.NodeContains(f, currentFilePos) {
+				if astutil.NodeContainsPos(f, currentFilePos) {
 					// First try each actual imported package name.
 					for _, imp := range f.Imports {
 						pkgName := pkg.TypesInfo().PkgNameOf(imp)

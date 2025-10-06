@@ -1712,6 +1712,7 @@ func (e *Editor) Hover(ctx context.Context, loc protocol.Location) (*protocol.Ma
 	params := &protocol.HoverParams{}
 	params.TextDocument.URI = loc.URI
 	params.Position = loc.Range.Start
+	params.Range = loc.Range
 
 	resp, err := e.Server.Hover(ctx, params)
 	if err != nil {

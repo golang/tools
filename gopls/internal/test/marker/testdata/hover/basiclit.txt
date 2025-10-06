@@ -35,6 +35,9 @@ func _() {
 	_ = "foo\173bar\u2211baz" //@hover("\\173","\\173", leftCurly)
 	_ = "foo\173bar\u2211baz" //@hover("\\u2211","\\u2211", summation)
 
+	// incorrect position
+	_ = "foo\173bar\u2211baz" //@hover("az",_,_)
+
 	// search for runes in string only if there is an escaped sequence
 	_ = "hello" //@hover(`"hello"`, _, _)
 
@@ -58,7 +61,7 @@ func _() {
 	_ = 0x1234567890 //@hover("0x1234567890", "0x1234567890", hexNumber)
 	_ = 0X1234567890 //@hover("0X1234567890", "0X1234567890", hexNumber)
 	_ = 0x1000000000000000000 //@hover("0x1", "0x1000000000000000000", bigHex)
-)
+}
 -- @bigHex --
 4722366482869645213696
 -- @binaryNumber --

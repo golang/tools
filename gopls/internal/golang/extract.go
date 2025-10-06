@@ -159,7 +159,7 @@ Outer:
 		indentation string
 		stmtOK      bool // ok to use ":=" instead of var/const decl?
 	)
-	if funcDecl, ok := visiblePath[len(visiblePath)-2].(*ast.FuncDecl); ok && internalastutil.NodeContains(funcDecl.Body, start) {
+	if funcDecl, ok := visiblePath[len(visiblePath)-2].(*ast.FuncDecl); ok && internalastutil.NodeContainsPos(funcDecl.Body, start) {
 		before, err := stmtToInsertVarBefore(visiblePath, variables)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot find location to insert extraction: %v", err)
@@ -315,7 +315,7 @@ func stmtToInsertVarBefore(path []ast.Node, variables []*variable) (ast.Stmt, er
 			return false
 		}
 		for _, v := range variables {
-			if internalastutil.NodeContains(stmt, v.obj.Pos()) {
+			if internalastutil.NodeContainsPos(stmt, v.obj.Pos()) {
 				return true
 			}
 		}
@@ -435,8 +435,8 @@ func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end t
 					// or to a declaration within the candidate expression.
 					// (This allows two copies of "func (x int) { print(x) }"
 					// to match.)
-					if xobj != nil && internalastutil.NodeContains(e, xobj.Pos()) &&
-						yobj != nil && internalastutil.NodeContains(expr, yobj.Pos()) {
+					if xobj != nil && internalastutil.NodeContainsPos(e, xobj.Pos()) &&
+						yobj != nil && internalastutil.NodeContainsPos(expr, yobj.Pos()) {
 						return x.Name == y.Name
 					}
 					// Use info.Uses to avoid including declaration, for example,
