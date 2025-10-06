@@ -285,7 +285,7 @@ func compareCompletionLabels(want []string, gotItems []protocol.CompletionItem) 
 	// A 'want' item with a '?' suffix is optional, to ease
 	// migration across versions. Remove any that are not present
 	// in the 'got' set.
-	out := want[:0] // in-place compaction
+	var out []string
 	for _, item := range want {
 		item, optional := strings.CutSuffix(item, "?")
 		if optional && !slices.Contains(got, item) {
