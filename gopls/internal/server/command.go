@@ -65,6 +65,19 @@ func (s *server) ExecuteCommand(ctx context.Context, params *protocol.ExecuteCom
 		return nil, fmt.Errorf("%s is not a supported command", params.Command)
 	}
 
+	if len(params.Arguments) > 0 {
+		last := params.Arguments[len(params.Arguments)-1]
+		var meta struct {
+			Source string `json:"source"`
+		}
+		if err := json.Unmarshal(last, &meta); err == nil && meta.Source != "" {
+			commandName := strings.TrimPrefix(params.Command, "gopls.")
+			counterName := fmt.Sprintf("gopls/cmd/source:%s-%s", commandName, meta.Source)
+			counter.New(counterName).Inc()
+			params.Arguments = params.Arguments[:len(params.Arguments)-1]
+		}
+	}
+
 	handler := &commandHandler{
 		s:      s,
 		params: params,
