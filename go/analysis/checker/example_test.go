@@ -11,94 +11,148 @@ package checker_test
 import (
 	"fmt"
 	"log"
+	"maps"
+	"os"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/checker"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/txtar"
 )
 
+const testdata = `
+-- go.mod --
+module example.com
+go 1.21
+
+-- a/a.go --
+package a
+
+import _ "example.com/b"
+import _ "example.com/c"
+
+func A1()
+func A2()
+func A3()
+
+-- b/b.go --
+package b
+
+func B1()
+func B2()
+
+-- c/c.go --
+package c
+
+import _ "example.com/d"
+
+func C1()
+
+-- d/d.go --
+package d
+
+func D1()
+func D2()
+func D3()
+func D4()
+`
+
 func Example() {
-	// Load packages: just this one.
+	// Extract a tree of Go source files.
+	// (Avoid the standard library as it is always evolving.)
+	dir, err := os.MkdirTemp("", "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fs, err := txtar.FS(txtar.Parse([]byte(testdata)))
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := os.CopyFS(dir, fs); err != nil {
+		log.Fatal(err)
+	}
+
+	// Load packages: example.com/a + dependencies
 	//
+	cfg := &packages.Config{Mode: packages.LoadAllSyntax, Dir: dir}
+	initial, err := packages.Load(cfg, "example.com/a")
+	if err != nil {
+		log.Fatal(err) // failure to enumerate packages
+	}
+
 	// There may be parse or type errors among the
 	// initial packages or their dependencies,
 	// but the analysis driver can handle faulty inputs,
 	// as can some analyzers.
-	cfg := &packages.Config{Mode: packages.LoadAllSyntax}
-	initial, err := packages.Load(cfg, ".")
-	if err != nil {
-		log.Fatal(err) // failure to enumerate packages
-	}
+	packages.PrintErrors(initial)
+
 	if len(initial) == 0 {
 		log.Fatalf("no initial packages")
 	}
 
-	// Run analyzers (just one) on packages.
-	analyzers := []*analysis.Analyzer{minmaxpkg}
+	// Run analyzers (just one) on example.com packages.
+	analyzers := []*analysis.Analyzer{pkgdecls}
 	graph, err := checker.Analyze(analyzers, initial, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Print information about the results of each
-	// analysis action, including all dependencies.
+	// Inspect the result of each analysis action,
+	// including those for all dependencies.
 	//
-	// Clients using Go 1.23 can say:
-	//     for act := range graph.All() { ... }
-	graph.All()(func(act *checker.Action) bool {
-		// Print information about the Action, e.g.
-		//
-		//  act.String()
-		//  act.Result
-		//  act.Err
-		//  act.Diagnostics
-		//
-		// (We don't actually print anything here
-		// as the output would vary over time,
-		// which is unsuitable for a test.)
-		return true
-	})
-
-	// Print the minmaxpkg package fact computed for this package.
-	root := graph.Roots[0]
-	fact := new(minmaxpkgFact)
-	if root.PackageFact(root.Package.Types, fact) {
-		fmt.Printf("min=%s max=%s", fact.min, fact.max)
+	// A realistic client would use Result, Err, Diagnostics,
+	// but for test stability, we just print the action string
+	// ("analyzer@package").
+	for act := range graph.All() {
+		fmt.Println("printing", act)
 	}
-	// Output:
-	// min=bufio max=unsafe
-}
 
-// minmaxpkg is a trivial example analyzer that uses package facts to
-// compute information from the entire dependency graph.
-var minmaxpkg = &analysis.Analyzer{
-	Name:      "minmaxpkg",
-	Doc:       "Finds the min- and max-named packages among our dependencies.",
-	Run:       run,
-	FactTypes: []analysis.Fact{(*minmaxpkgFact)(nil)},
-}
-
-// A package fact that records the alphabetically min and max-named
-// packages among the dependencies of this package.
-// (This property was chosen because it is relatively stable
-// as the codebase evolves, avoiding frequent test breakage.)
-type minmaxpkgFact struct{ min, max string }
-
-func (*minmaxpkgFact) AFact() {}
-
-func run(pass *analysis.Pass) (any, error) {
-	// Compute the min and max of the facts from our direct imports.
-	f := &minmaxpkgFact{min: pass.Pkg.Path(), max: pass.Pkg.Path()}
-	for _, imp := range pass.Pkg.Imports() {
-		if f2 := new(minmaxpkgFact); pass.ImportPackageFact(imp, f2) {
-			if f2.min < f.min {
-				f.min = f2.min
-			}
-			if f2.max > f.max {
-				f.max = f2.max
-			}
+	// Print the package fact for the sole initial package.
+	root := graph.Roots[0]
+	fact := new(pkgdeclsFact)
+	if root.PackageFact(root.Package.Types, fact) {
+		for k, v := range fact.numdecls {
+			fmt.Printf("%s:\t%d decls\n", k, v)
 		}
 	}
-	pass.ExportPackageFact(f)
+
+	// Unordered Output:
+	// printing pkgdecls@example.com/a
+	// printing pkgdecls@example.com/b
+	// printing pkgdecls@example.com/c
+	// printing pkgdecls@example.com/d
+	// example.com/a:	3 decls
+	// example.com/b:	2 decls
+	// example.com/c:	1 decls
+	// example.com/d:	4 decls
+}
+
+// pkgdecls is a trivial example analyzer that uses package facts to
+// compute information from the entire dependency graph.
+var pkgdecls = &analysis.Analyzer{
+	Name:      "pkgdecls",
+	Doc:       "Computes a package fact mapping each package to its number of declarations.",
+	Run:       run,
+	FactTypes: []analysis.Fact{(*pkgdeclsFact)(nil)},
+}
+
+type pkgdeclsFact struct{ numdecls map[string]int }
+
+func (*pkgdeclsFact) AFact() {}
+
+func run(pass *analysis.Pass) (any, error) {
+	numdecls := map[string]int{
+		pass.Pkg.Path(): pass.Pkg.Scope().Len(),
+	}
+
+	// Compute the union across all dependencies.
+	for _, imp := range pass.Pkg.Imports() {
+		if depFact := new(pkgdeclsFact); pass.ImportPackageFact(imp, depFact) {
+			maps.Copy(numdecls, depFact.numdecls)
+		}
+	}
+
+	pass.ExportPackageFact(&pkgdeclsFact{numdecls})
+
 	return nil, nil
 }
