@@ -215,9 +215,16 @@ func prepareRenamePackageName(ctx context.Context, snapshot *cache.Snapshot, pgf
 		return nil, err
 	}
 
-	text := string(meta.Name)
-	if snapshot.Options().PackageMove {
-		text = string(meta.PkgPath)
+	pkgName := string(meta.Name)
+	fullPath := string(meta.PkgPath)
+	text := pkgName
+	// Before displaying the full package path, verify that the PackageMove
+	// setting is enabled and that the package name matches its directory
+	// basename. Checking the value of meta.Module above ensures that the
+	// current view is either a GoMod or a GoWork view, which are the only views
+	// for which we should enable package move.
+	if snapshot.Options().PackageMove && path.Base(fullPath) == pkgName {
+		text = fullPath
 	}
 	return &PrepareItem{
 		Range: rng,
