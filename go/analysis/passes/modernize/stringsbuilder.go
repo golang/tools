@@ -102,7 +102,7 @@ nextcand:
 			}
 
 			// Add strings import.
-			_, prefix, importEdits := refactor.AddImport(
+			prefix, importEdits := refactor.AddImport(
 				pass.TypesInfo, astutil.EnclosingFile(def), "strings", "strings", "Builder", v.Pos())
 			edits = append(edits, importEdits...)
 
@@ -141,7 +141,7 @@ nextcand:
 			// => var s strings.Builder; s.WriteString(expr)
 
 			// Add strings import.
-			_, prefix, importEdits := refactor.AddImport(
+			prefix, importEdits := refactor.AddImport(
 				pass.TypesInfo, astutil.EnclosingFile(def), "strings", "strings", "Builder", v.Pos())
 			edits = append(edits, importEdits...)
 

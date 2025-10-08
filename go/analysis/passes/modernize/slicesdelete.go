@@ -62,7 +62,7 @@ func slicesdelete(pass *analysis.Pass) (any, error) {
 			return false
 		}
 
-		_, prefix, edits := refactor.AddImport(info, file, "slices", "slices", "Delete", call.Pos())
+		prefix, edits := refactor.AddImport(info, file, "slices", "slices", "Delete", call.Pos())
 		// append's indices may be any integer type; slices.Delete requires int.
 		// Insert int conversions as needed (and if possible).
 		if isIntShadowed() && (!isIntExpr(slice1.High) || !isIntExpr(slice2.Low)) {

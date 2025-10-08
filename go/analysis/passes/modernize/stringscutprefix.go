@@ -128,7 +128,7 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 					// shadow variables won't be valid because we only access the first statement (ditto Suffix).
 					if astutil.EqualSyntax(s0, s) && astutil.EqualSyntax(pre0, pre) {
 						after := refactor.FreshName(info.Scopes[ifStmt], ifStmt.Pos(), varName)
-						_, prefix, importEdits := refactor.AddImport(
+						prefix, importEdits := refactor.AddImport(
 							info,
 							curFile.Node().(*ast.File),
 							obj1.Pkg().Name(),
@@ -213,7 +213,7 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 
 						// We use AddImport not to add an import (since it exists already)
 						// but to compute the correct prefix in the dot-import case.
-						_, prefix, importEdits := refactor.AddImport(
+						prefix, importEdits := refactor.AddImport(
 							info,
 							curFile.Node().(*ast.File),
 							obj.Pkg().Name(),

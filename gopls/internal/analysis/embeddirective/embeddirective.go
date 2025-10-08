@@ -47,7 +47,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 			if !hasEmbedImport {
 				// Add blank import of "embed".
-				_, _, edits := refactor.AddImport(pass.TypesInfo, f, "_", "embed", "", c.Pos())
+				_, edits := refactor.AddImport(pass.TypesInfo, f, "_", "embed", "", c.Pos())
 				if len(edits) > 0 {
 					pass.Report(analysis.Diagnostic{
 						Pos:     pos,

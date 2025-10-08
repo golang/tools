@@ -17,28 +17,25 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 )
 
-// AddImport checks whether this file already imports pkgpath and that
-// the import is in scope at pos. If so, it returns the name under
-// which it was imported and no edits. Otherwise, it adds a new import
-// of pkgpath, using a name derived from the preferred name, and
-// returns the chosen name, a prefix to be concatenated with member to
-// form a qualified name, and the edit for the new import.
+// AddImport returns the prefix (either "pkg." or "") that should be
+// used to qualify references to the desired symbol (member) imported
+// from the specified package, plus any necessary edits to the file's
+// import declaration to add a new import.
 //
-// The member argument indicates the name of the desired symbol within
-// the imported package. This is needed in the case when the existing
-// import is a dot import, because then it is possible that the
-// desired symbol is shadowed by other declarations in the current
-// package. If member is not shadowed at pos, AddImport returns (".",
-// "", nil). (AddImport accepts the caller's implicit claim that the
-// imported package declares member.)
+// If the import already exists, and is accessible at pos, AddImport
+// returns the existing name and no edits. (If the existing import is
+// a dot import, the prefix is "".)
 //
-// Use a preferredName of "_" to request a blank import;
-// member is ignored in this case.
+// Otherwise, it adds a new import, using a local name derived from
+// the preferred name. To request a blank import, use a preferredName
+// of "_", and discard the prefix result; member is ignored in this
+// case.
 //
-// It does not mutate its arguments.
+// AddImport accepts the caller's implicit claim that the imported
+// package declares member.
 //
-// TODO(adonovan): needs dedicated tests.
-func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member string, pos token.Pos) (name, prefix string, newImport []analysis.TextEdit) {
+// AddImport does not mutate its arguments.
+func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member string, pos token.Pos) (prefix string, edits []analysis.TextEdit) {
 	// Find innermost enclosing lexical block.
 	scope := info.Scopes[file].Innermost(pos)
 	if scope == nil {
@@ -50,18 +47,18 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 	for _, spec := range file.Imports {
 		pkgname := info.PkgNameOf(spec)
 		if pkgname != nil && pkgname.Imported().Path() == pkgpath {
-			name = pkgname.Name()
+			name := pkgname.Name()
 			if preferredName == "_" {
 				// Request for blank import; any existing import will do.
-				return name, "", nil
+				return "", nil
 			}
 			if name == "." {
 				// The scope of ident must be the file scope.
 				if s, _ := scope.LookupParent(member, pos); s == info.Scopes[file] {
-					return name, "", nil
+					return "", nil
 				}
 			} else if _, obj := scope.LookupParent(name, pos); obj == pkgname {
-				return name, name + ".", nil
+				return name + ".", nil
 			}
 		}
 	}
@@ -122,7 +119,7 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 		pos = before.Pos()
 		newText = "import " + newText + "\n\n"
 	}
-	return newName, newName + ".", []analysis.TextEdit{{
+	return newName + ".", []analysis.TextEdit{{
 		Pos:     pos,
 		End:     pos,
 		NewText: []byte(newText),

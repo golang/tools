@@ -90,7 +90,7 @@ func slicessort(pass *analysis.Pass) (any, error) {
 						fileUses(info, file, "go1.21") {
 						// Have: sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 
-						_, prefix, importEdits := refactor.AddImport(
+						prefix, importEdits := refactor.AddImport(
 							info, file, "slices", "slices", "Sort", call.Pos())
 
 						pass.Report(analysis.Diagnostic{

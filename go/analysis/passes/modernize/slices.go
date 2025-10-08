@@ -164,7 +164,7 @@ func appendclipped(pass *analysis.Pass) (any, error) {
 			//
 			// This is unsound if s is empty and its nilness
 			// differs from zerocap (#73557).
-			_, prefix, importEdits := refactor.AddImport(info, file, clonepkg, clonepkg, "Clone", call.Pos())
+			prefix, importEdits := refactor.AddImport(info, file, clonepkg, clonepkg, "Clone", call.Pos())
 			message := fmt.Sprintf("Replace append with %s.Clone", clonepkg)
 			pass.Report(analysis.Diagnostic{
 				Pos:     call.Pos(),
@@ -185,7 +185,7 @@ func appendclipped(pass *analysis.Pass) (any, error) {
 		// append(append(append(base, a...), b..., c...) -> slices.Concat(base, a, b, c)
 		//
 		// This is unsound if all slices are empty and base is non-nil (#73557).
-		_, prefix, importEdits := refactor.AddImport(info, file, "slices", "slices", "Concat", call.Pos())
+		prefix, importEdits := refactor.AddImport(info, file, "slices", "slices", "Concat", call.Pos())
 		pass.Report(analysis.Diagnostic{
 			Pos:     call.Pos(),
 			End:     call.End(),

@@ -202,7 +202,7 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 		}
 
 		// Prepare slices.Contains{,Func} call.
-		_, prefix, importEdits := refactor.AddImport(info, file, "slices", "slices", funcName, rng.Pos())
+		prefix, importEdits := refactor.AddImport(info, file, "slices", "slices", funcName, rng.Pos())
 		contains := fmt.Sprintf("%s%s(%s, %s)",
 			prefix,
 			funcName,

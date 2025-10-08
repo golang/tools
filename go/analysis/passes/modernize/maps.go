@@ -166,7 +166,7 @@ func mapsloop(pass *analysis.Pass) (any, error) {
 
 		// Report diagnostic, and suggest fix.
 		rng := curRange.Node()
-		_, prefix, importEdits := refactor.AddImport(info, file, "maps", "maps", funcName, rng.Pos())
+		prefix, importEdits := refactor.AddImport(info, file, "maps", "maps", funcName, rng.Pos())
 		var (
 			newText    []byte
 			start, end token.Pos

@@ -288,7 +288,7 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 		} else if _, ok := importPrefixes[pkgPath]; !ok {
 			// Use AddImport to add pkgPath if it's not there already. Associate the prefix it assigns
 			// with the package path for use by the TypeString qualifier below.
-			_, prefix, eds := refactor.AddImport(
+			prefix, eds := refactor.AddImport(
 				a.pass.TypesInfo, curFile, pkgName, pkgPath, tn.Name(), id.Pos())
 			importPrefixes[pkgPath] = strings.TrimSuffix(prefix, ".")
 			edits = append(edits, eds...)
@@ -459,7 +459,7 @@ func (a *analyzer) inlineConst(con *types.Const, cur inspector.Cursor) {
 		edits        []analysis.TextEdit
 	)
 	if incon.RHSPkgPath != a.pass.Pkg.Path() {
-		_, importPrefix, edits = refactor.AddImport(
+		importPrefix, edits = refactor.AddImport(
 			a.pass.TypesInfo, curFile, incon.RHSPkgName, incon.RHSPkgPath, incon.RHSName, n.Pos())
 	}
 	// If n is qualified by a package identifier, we'll need the full selector expression.

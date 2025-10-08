@@ -31,10 +31,9 @@ func TestAddImport(t *testing.T) {
 		panic("runtime.Caller failed")
 	}
 
-	// Each test case contains a «name pkgpath»
-	// section to be replaced with a reference
-	// to a valid import of pkgpath,
-	// ideally of the specified name.
+	// Each test case contains a «name pkgpath member»
+	// triple to be replaced with a valid qualified identifier
+	// to pkgpath.member, ideally of the specified name.
 	for _, test := range []struct {
 		descr, src, want string
 	}{
@@ -42,13 +41,13 @@ func TestAddImport(t *testing.T) {
 			descr: descr("simple add import"),
 			src: `package a
 func _() {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 import "fmt"
 
 func _() {
-	fmt
+	fmt.Print
 }`,
 		},
 		{
@@ -58,14 +57,14 @@ func _() {
 import "fmt"
 
 func _(fmt.Stringer) {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 
 import "fmt"
 
 func _(fmt.Stringer) {
-	fmt
+	fmt.Print
 }`,
 		},
 		{
@@ -75,7 +74,7 @@ func _(fmt.Stringer) {
 import _ "fmt"
 
 func _() {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 
@@ -84,7 +83,7 @@ import "fmt"
 import _ "fmt"
 
 func _() {
-	fmt
+	fmt.Print
 }`,
 		},
 		{
@@ -96,7 +95,7 @@ import fmtpkg "fmt"
 var fmt int
 
 func _(fmtpkg.Stringer) {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 
@@ -105,7 +104,7 @@ import fmtpkg "fmt"
 var fmt int
 
 func _(fmtpkg.Stringer) {
-	fmtpkg
+	fmtpkg.Print
 }`,
 		},
 		{
@@ -117,7 +116,7 @@ import "fmt"
 var _ fmt.Stringer
 
 func _(fmt int) {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 
@@ -128,7 +127,7 @@ import "fmt"
 var _ fmt.Stringer
 
 func _(fmt int) {
-	fmt0
+	fmt0.Print
 }`,
 		},
 		{
@@ -138,7 +137,7 @@ func _(fmt int) {
 import "fmt"
 
 func _(fmt fmt.Stringer) {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 
@@ -147,7 +146,7 @@ import fmt0 "fmt"
 import "fmt"
 
 func _(fmt fmt.Stringer) {
-	fmt0
+	fmt0.Print
 }`,
 		},
 		{
@@ -159,7 +158,7 @@ import ()
 
 // world
 func _() {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 
@@ -170,7 +169,7 @@ import ()
 
 // world
 func _() {
-	fmt
+	fmt.Print
 }`,
 		},
 		{
@@ -178,14 +177,14 @@ func _() {
 			src: `package a
 
 func _() {
-	«foo encoding/json»
+	«foo encoding/json Marshal»
 }`,
 			want: `package a
 
 import foo "encoding/json"
 
 func _() {
-	foo
+	foo.Marshal
 }`,
 		},
 		{
@@ -195,14 +194,14 @@ func _() {
 import . "fmt"
 
 func _() {
-	«. fmt»
+	«. fmt Print»
 }`,
 			want: `package a
 
 import . "fmt"
 
 func _() {
-	.
+	Print
 }`,
 		},
 		{
@@ -212,7 +211,7 @@ func _() {
 import . "fmt"
 
 func _(Print fmt.Stringer) {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 
@@ -221,7 +220,7 @@ import "fmt"
 import . "fmt"
 
 func _(Print fmt.Stringer) {
-	fmt
+	fmt.Print
 }`,
 		},
 		{
@@ -233,7 +232,7 @@ import (
 )
 
 func _(io.Reader) {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 
@@ -243,7 +242,7 @@ import (
 )
 
 func _(io.Reader) {
-	fmt
+	fmt.Print
 }`,
 		},
 		{
@@ -257,7 +256,7 @@ import (
 )
 
 func _(io.Reader) {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 
@@ -269,7 +268,7 @@ import (
 )
 
 func _(io.Reader) {
-	fmt
+	fmt.Print
 }`,
 		},
 		{
@@ -281,7 +280,7 @@ import "io"
 import "vendor/golang.org/x/net/dns/dnsmessage"
 
 func _(io.Reader) {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 
@@ -292,7 +291,7 @@ import "io"
 import "vendor/golang.org/x/net/dns/dnsmessage"
 
 func _(io.Reader) {
-	fmt
+	fmt.Print
 }`,
 		},
 		{
@@ -305,7 +304,7 @@ import (
 )
 
 func _(io.Reader) {
-	«fmt fmt»
+	«fmt fmt Print»
 }`,
 			want: `package a
 
@@ -317,19 +316,23 @@ import (
 )
 
 func _(io.Reader) {
-	fmt
+	fmt.Print
 }`,
 		},
 	} {
 		t.Run(test.descr, func(t *testing.T) {
-			// splice marker
+			// splice marker (name pkgpath member)
 			before, mid, ok1 := strings.Cut(test.src, "«")
 			mid, after, ok2 := strings.Cut(mid, "»")
 			if !ok1 || !ok2 {
-				t.Fatal("no «name path» marker")
+				t.Fatal("no «name path member» marker")
 			}
 			src := before + "/*!*/" + after
-			name, path, _ := strings.Cut(mid, " ")
+			fields := strings.Fields(mid)
+			if len(fields) != 3 {
+				t.Fatalf("splice marker needs 3 fields (got %q)", mid)
+			}
+			name, path, member := fields[0], fields[1], fields[2]
 
 			// parse
 			fset := token.NewFileSet()
@@ -355,9 +358,7 @@ func _(io.Reader) {
 			}
 			conf.Check(f.Name.Name, fset, []*ast.File{f}, info)
 
-			// add import
-			// The "Print" argument is only relevant for dot-import tests.
-			name, prefix, edits := refactor.AddImport(info, f, name, path, "Print", pos)
+			prefix, edits := refactor.AddImport(info, f, name, path, member, pos)
 
 			var edit analysis.TextEdit
 			switch len(edits) {
@@ -368,20 +369,11 @@ func _(io.Reader) {
 				t.Fatalf("expected at most one edit, got %d", len(edits))
 			}
 
-			// prefix is a simple function of name.
-			wantPrefix := name + "."
-			if name == "." {
-				wantPrefix = ""
-			}
-			if prefix != wantPrefix {
-				t.Errorf("got prefix %q, want %q", prefix, wantPrefix)
-			}
-
 			// apply patch
 			start := fset.Position(edit.Pos)
 			end := fset.Position(edit.End)
 			output := src[:start.Offset] + string(edit.NewText) + src[end.Offset:]
-			output = strings.ReplaceAll(output, "/*!*/", name)
+			output = strings.ReplaceAll(output, "/*!*/", prefix+member)
 			if output != test.want {
 				t.Errorf("\n--got--\n%s\n--want--\n%s\n--diff--\n%s",
 					output, test.want, cmp.Diff(test.want, output))
