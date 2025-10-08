@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package analysisinternal_test
+package refactor_test
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/testenv"
 )
 
@@ -357,7 +357,7 @@ func _(io.Reader) {
 
 			// add import
 			// The "Print" argument is only relevant for dot-import tests.
-			name, prefix, edits := analysisinternal.AddImport(info, f, name, path, "Print", pos)
+			name, prefix, edits := refactor.AddImport(info, f, name, path, "Print", pos)
 
 			var edit analysis.TextEdit
 			switch len(edits) {
@@ -385,28 +385,6 @@ func _(io.Reader) {
 			if output != test.want {
 				t.Errorf("\n--got--\n%s\n--want--\n%s\n--diff--\n%s",
 					output, test.want, cmp.Diff(test.want, output))
-			}
-		})
-	}
-}
-
-func TestIsStdPackage(t *testing.T) {
-	testCases := []struct {
-		pkgpath string
-		isStd   bool
-	}{
-		{pkgpath: "os", isStd: true},
-		{pkgpath: "net/http", isStd: true},
-		{pkgpath: "vendor/golang.org/x/net/dns/dnsmessage", isStd: true},
-		{pkgpath: "golang.org/x/net/dns/dnsmessage", isStd: false},
-		{pkgpath: "testdata", isStd: false},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.pkgpath, func(t *testing.T) {
-			got := analysisinternal.IsStdPackage(tc.pkgpath)
-			if got != tc.isStd {
-				t.Fatalf("got %t want %t", got, tc.isStd)
 			}
 		})
 	}

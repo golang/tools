@@ -18,6 +18,8 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -100,8 +102,8 @@ nextcand:
 			}
 
 			// Add strings import.
-			_, prefix, importEdits := analysisinternal.AddImport(
-				pass.TypesInfo, analysisinternal.EnclosingFile(def), "strings", "strings", "Builder", v.Pos())
+			_, prefix, importEdits := refactor.AddImport(
+				pass.TypesInfo, astutil.EnclosingFile(def), "strings", "strings", "Builder", v.Pos())
 			edits = append(edits, importEdits...)
 
 			if isEmptyString(pass.TypesInfo, assign.Rhs[0]) {
@@ -139,8 +141,8 @@ nextcand:
 			// => var s strings.Builder; s.WriteString(expr)
 
 			// Add strings import.
-			_, prefix, importEdits := analysisinternal.AddImport(
-				pass.TypesInfo, analysisinternal.EnclosingFile(def), "strings", "strings", "Builder", v.Pos())
+			_, prefix, importEdits := refactor.AddImport(
+				pass.TypesInfo, astutil.EnclosingFile(def), "strings", "strings", "Builder", v.Pos())
 			edits = append(edits, importEdits...)
 
 			spec := def.Parent().Node().(*ast.ValueSpec)

@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/refactor"
 )
 
 //go:embed doc.go
@@ -46,7 +47,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 			if !hasEmbedImport {
 				// Add blank import of "embed".
-				_, _, edits := analysisinternal.AddImport(pass.TypesInfo, f, "_", "embed", "", c.Pos())
+				_, _, edits := refactor.AddImport(pass.TypesInfo, f, "_", "embed", "", c.Pos())
 				if len(edits) > 0 {
 					pass.Report(analysis.Diagnostic{
 						Pos:     pos,

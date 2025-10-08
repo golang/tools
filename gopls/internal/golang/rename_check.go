@@ -47,7 +47,6 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/refactor/satisfy"
@@ -355,7 +354,7 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 		switch n := cur.Node().(type) {
 		case *ast.Ident:
 			if pkg.TypesInfo().Uses[n] == obj {
-				block := analysisinternal.EnclosingScope(pkg.TypesInfo(), cur)
+				block := typesinternal.EnclosingScope(pkg.TypesInfo(), cur)
 				if !fn(n, block) {
 					ok = false
 				}

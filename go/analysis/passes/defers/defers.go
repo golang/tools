@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -29,14 +29,14 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	if !analysisinternal.Imports(pass.Pkg, "time") {
+	if !typesinternal.Imports(pass.Pkg, "time") {
 		return nil, nil
 	}
 
 	checkDeferCall := func(node ast.Node) bool {
 		switch v := node.(type) {
 		case *ast.CallExpr:
-			if analysisinternal.IsFunctionNamed(typeutil.Callee(pass.TypesInfo, v), "time", "Since") {
+			if typesinternal.IsFunctionNamed(typeutil.Callee(pass.TypesInfo, v), "time", "Since") {
 				pass.Reportf(v.Pos(), "call to time.Since is not deferred")
 			}
 		case *ast.FuncLit:

@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/refactor"
 )
 
 const Doc = `check for unused variables and suggest fixes`
@@ -56,7 +56,7 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 
 			tokFile := pass.Fset.File(ident.Pos())
-			edits := analysisinternal.DeleteVar(tokFile, pass.TypesInfo, curId)
+			edits := refactor.DeleteVar(tokFile, pass.TypesInfo, curId)
 			if len(edits) > 0 {
 				pass.Report(analysis.Diagnostic{
 					Pos:     ident.Pos(),

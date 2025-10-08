@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -198,7 +198,7 @@ func run(pass *analysis.Pass) (any, error) {
 		// the type has methods, as some {String,GoString,Format}
 		// may change the behavior of fmt.Sprint.
 		if len(ttypes) == 1 && len(vtypes) == 1 && types.NewMethodSet(V0).Len() == 0 {
-			_, prefix, importEdits := analysisinternal.AddImport(pass.TypesInfo, file, "fmt", "fmt", "Sprint", arg.Pos())
+			_, prefix, importEdits := refactor.AddImport(pass.TypesInfo, file, "fmt", "fmt", "Sprint", arg.Pos())
 			if types.Identical(T0, types.Typ[types.String]) {
 				// string(x) -> fmt.Sprint(x)
 				addFix("Format the number as a decimal", append(importEdits,

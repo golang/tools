@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil"
 )
 
 var NewExprAnalyzer = &analysis.Analyzer{
@@ -58,7 +59,7 @@ func run(pass *analysis.Pass) (any, error) {
 								pass.ExportObjectFact(fn, &newLike{})
 
 								// Check file version.
-								file := analysisinternal.EnclosingFile(curFuncDecl)
+								file := astutil.EnclosingFile(curFuncDecl)
 								if !fileUses(info, file, "go1.26") {
 									continue // new(expr) not available in this file
 								}
@@ -138,7 +139,7 @@ func run(pass *analysis.Pass) (any, error) {
 			pass.ImportObjectFact(fn, &fact) {
 
 			// Check file version.
-			file := analysisinternal.EnclosingFile(curCall)
+			file := astutil.EnclosingFile(curCall)
 			if !fileUses(info, file, "go1.26") {
 				continue // new(expr) not available in this file
 			}

@@ -20,6 +20,7 @@ import (
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/moreiters"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -46,7 +47,7 @@ var BLoopAnalyzer = &analysis.Analyzer{
 func bloop(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
-	if !analysisinternal.Imports(pass.Pkg, "testing") {
+	if !typesinternal.Imports(pass.Pkg, "testing") {
 		return nil, nil
 	}
 
@@ -75,7 +76,7 @@ func bloop(pass *analysis.Pass) (any, error) {
 			}
 			if call, ok := stmt.X.(*ast.CallExpr); ok {
 				obj := typeutil.Callee(info, call)
-				if analysisinternal.IsMethodNamed(obj, "testing", "B", "StopTimer", "StartTimer", "ResetTimer") {
+				if typesinternal.IsMethodNamed(obj, "testing", "B", "StopTimer", "StartTimer", "ResetTimer") {
 					// Delete call statement.
 					// TODO(adonovan): delete following newline, or
 					// up to start of next stmt? (May delete a comment.)
@@ -92,7 +93,7 @@ func bloop(pass *analysis.Pass) (any, error) {
 		return append(edits, analysis.TextEdit{
 			Pos:     start,
 			End:     end,
-			NewText: fmt.Appendf(nil, "%s.Loop()", analysisinternal.Format(pass.Fset, b)),
+			NewText: fmt.Appendf(nil, "%s.Loop()", astutil.Format(pass.Fset, b)),
 		})
 	}
 
@@ -109,7 +110,7 @@ func bloop(pass *analysis.Pass) (any, error) {
 				if cmp, ok := n.Cond.(*ast.BinaryExpr); ok && cmp.Op == token.LSS {
 					if sel, ok := cmp.Y.(*ast.SelectorExpr); ok &&
 						sel.Sel.Name == "N" &&
-						analysisinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") && usesBenchmarkNOnce(curLoop, info) {
+						typesinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") && usesBenchmarkNOnce(curLoop, info) {
 
 						delStart, delEnd := n.Cond.Pos(), n.Cond.End()
 
@@ -144,7 +145,7 @@ func bloop(pass *analysis.Pass) (any, error) {
 					n.Key == nil &&
 					n.Value == nil &&
 					sel.Sel.Name == "N" &&
-					analysisinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") && usesBenchmarkNOnce(curLoop, info) {
+					typesinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") && usesBenchmarkNOnce(curLoop, info) {
 
 					pass.Report(analysis.Diagnostic{
 						// Highlight "range b.N".
@@ -212,7 +213,7 @@ func usesBenchmarkNOnce(c inspector.Cursor, info *types.Info) bool {
 		case *ast.FuncLit:
 			return false // don't descend into nested function literals
 		case *ast.SelectorExpr:
-			if n.Sel.Name == "N" && analysisinternal.IsPointerToNamed(info.TypeOf(n.X), "testing", "B") {
+			if n.Sel.Name == "N" && typesinternal.IsPointerToNamed(info.TypeOf(n.X), "testing", "B") {
 				bnRefCount++
 			}
 		}

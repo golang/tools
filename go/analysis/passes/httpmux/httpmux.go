@@ -17,7 +17,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -46,7 +45,7 @@ func run(pass *analysis.Pass) (any, error) {
 			return nil, nil
 		}
 	}
-	if !analysisinternal.Imports(pass.Pkg, "net/http") {
+	if !typesinternal.Imports(pass.Pkg, "net/http") {
 		return nil, nil
 	}
 	// Look for calls to ServeMux.Handle or ServeMux.HandleFunc.
@@ -79,7 +78,7 @@ func isServeMuxRegisterCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	if fn == nil {
 		return false
 	}
-	if analysisinternal.IsFunctionNamed(fn, "net/http", "Handle", "HandleFunc") {
+	if typesinternal.IsFunctionNamed(fn, "net/http", "Handle", "HandleFunc") {
 		return true
 	}
 	if !isMethodNamed(fn, "net/http", "Handle", "HandleFunc") {
@@ -87,7 +86,7 @@ func isServeMuxRegisterCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	}
 	recv := fn.Type().(*types.Signature).Recv() // isMethodNamed() -> non-nil
 	isPtr, named := typesinternal.ReceiverNamed(recv)
-	return isPtr && analysisinternal.IsTypeNamed(named, "net/http", "ServeMux")
+	return isPtr && typesinternal.IsTypeNamed(named, "net/http", "ServeMux")
 }
 
 // isMethodNamed reports when a function f is a method,

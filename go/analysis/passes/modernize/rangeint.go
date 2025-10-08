@@ -229,7 +229,7 @@ func rangeint(pass *analysis.Pass) (any, error) {
 							Message: "for loop can be modernized using range over int",
 							SuggestedFixes: []analysis.SuggestedFix{{
 								Message: fmt.Sprintf("Replace for loop with range %s",
-									analysisinternal.Format(pass.Fset, limit)),
+									astutil.Format(pass.Fset, limit)),
 								TextEdits: append(edits, []analysis.TextEdit{
 									// for i := 0; i < limit; i++ {}
 									//     -----              ---

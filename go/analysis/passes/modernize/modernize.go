@@ -20,8 +20,10 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/stdlib"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
 )
 
@@ -129,7 +131,7 @@ func within(pass *analysis.Pass, pkgs ...string) bool {
 // unparenEnclosing removes enclosing parens from cur in
 // preparation for a call to [Cursor.ParentEdge].
 func unparenEnclosing(cur inspector.Cursor) inspector.Cursor {
-	for analysisinternal.IsChildOf(cur, edge.ParenExpr_X) {
+	for astutil.IsChildOf(cur, edge.ParenExpr_X) {
 		cur = cur.Parent()
 	}
 	return cur
@@ -153,7 +155,7 @@ var (
 
 // lookup returns the symbol denoted by name at the position of the cursor.
 func lookup(info *types.Info, cur inspector.Cursor, name string) types.Object {
-	scope := analysisinternal.EnclosingScope(info, cur)
+	scope := typesinternal.EnclosingScope(info, cur)
 	_, obj := scope.LookupParent(name, cur.Node().Pos())
 	return obj
 }

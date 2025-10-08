@@ -19,7 +19,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const badFormat = "2006-02-01"
@@ -50,8 +50,8 @@ func run(pass *analysis.Pass) (any, error) {
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		call := n.(*ast.CallExpr)
 		obj := typeutil.Callee(pass.TypesInfo, call)
-		if !analysisinternal.IsMethodNamed(obj, "time", "Time", "Format") &&
-			!analysisinternal.IsFunctionNamed(obj, "time", "Parse") {
+		if !typesinternal.IsMethodNamed(obj, "time", "Time", "Format") &&
+			!typesinternal.IsFunctionNamed(obj, "time", "Parse") {
 			return
 		}
 		if len(call.Args) > 0 {

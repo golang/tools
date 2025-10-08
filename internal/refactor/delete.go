@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package analysisinternal
+package refactor
+
+// This file defines operations for computing deletion edits.
 
 import (
 	"fmt"
@@ -14,6 +16,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -278,7 +281,7 @@ func DeleteSpec(tokFile *token.File, curSpec inspector.Cursor) []analysis.TextEd
 
 // DeleteDecl returns edits to delete the ast.Decl identified by curDecl.
 //
-// TODO(adonovan): add test suite. Test for consts as well.
+// TODO(adonovan): add test suite.
 func DeleteDecl(tokFile *token.File, curDecl inspector.Cursor) []analysis.TextEdit {
 	decl := curDecl.Node().(ast.Decl)
 
@@ -289,7 +292,7 @@ func DeleteDecl(tokFile *token.File, curDecl inspector.Cursor) []analysis.TextEd
 
 	case edge.File_Decls:
 		pos, end := decl.Pos(), decl.End()
-		if doc := docComment(decl); doc != nil {
+		if doc := astutil.DocComment(decl); doc != nil {
 			pos = doc.Pos()
 		}
 
@@ -324,20 +327,107 @@ func DeleteDecl(tokFile *token.File, curDecl inspector.Cursor) []analysis.TextEd
 	}
 }
 
-// docComment returns the doc comment for a node, if any.
-//
-// TODO(adonovan): we have 5 copies of this in x/tools.
-// Share it in typesinternal.
-func docComment(n ast.Node) *ast.CommentGroup {
-	switch n := n.(type) {
-	case *ast.FuncDecl:
-		return n.Doc
-	case *ast.GenDecl:
-		return n.Doc
-	case *ast.ValueSpec:
-		return n.Doc
-	case *ast.TypeSpec:
-		return n.Doc
+// DeleteStmt returns the edits to remove the [ast.Stmt] identified by
+// curStmt, if it is contained within a BlockStmt, CaseClause,
+// CommClause, or is the STMT in switch STMT; ... {...}. It returns nil otherwise.
+func DeleteStmt(tokFile *token.File, curStmt inspector.Cursor) []analysis.TextEdit {
+	stmt := curStmt.Node().(ast.Stmt)
+	// if the stmt is on a line by itself delete the whole line
+	// otherwise just delete the statement.
+
+	// this logic would be a lot simpler with the file contents, and somewhat simpler
+	// if the cursors included the comments.
+
+	lineOf := tokFile.Line
+	stmtStartLine, stmtEndLine := lineOf(stmt.Pos()), lineOf(stmt.End())
+
+	var from, to token.Pos
+	// bounds of adjacent syntax/comments on same line, if any
+	limits := func(left, right token.Pos) {
+		if lineOf(left) == stmtStartLine {
+			from = left
+		}
+		if lineOf(right) == stmtEndLine {
+			to = right
+		}
 	}
-	return nil // includes File, ImportSpec, Field
+	// TODO(pjw): there are other places a statement might be removed:
+	// IfStmt = "if" [ SimpleStmt ";" ] Expression Block [ "else" ( IfStmt | Block ) ] .
+	// (removing the blocks requires more rewriting than this routine would do)
+	// CommCase   = "case" ( SendStmt | RecvStmt ) | "default" .
+	// (removing the stmt requires more rewriting, and it's unclear what the user means)
+	switch parent := curStmt.Parent().Node().(type) {
+	case *ast.SwitchStmt:
+		limits(parent.Switch, parent.Body.Lbrace)
+	case *ast.TypeSwitchStmt:
+		limits(parent.Switch, parent.Body.Lbrace)
+		if parent.Assign == stmt {
+			return nil // don't let the user break the type switch
+		}
+	case *ast.BlockStmt:
+		limits(parent.Lbrace, parent.Rbrace)
+	case *ast.CommClause:
+		limits(parent.Colon, curStmt.Parent().Parent().Node().(*ast.BlockStmt).Rbrace)
+		if parent.Comm == stmt {
+			return nil // maybe the user meant to remove the entire CommClause?
+		}
+	case *ast.CaseClause:
+		limits(parent.Colon, curStmt.Parent().Parent().Node().(*ast.BlockStmt).Rbrace)
+	case *ast.ForStmt:
+		limits(parent.For, parent.Body.Lbrace)
+
+	default:
+		return nil // not one of ours
+	}
+
+	if prev, found := curStmt.PrevSibling(); found && lineOf(prev.Node().End()) == stmtStartLine {
+		from = prev.Node().End() // preceding statement ends on same line
+	}
+	if next, found := curStmt.NextSibling(); found && lineOf(next.Node().Pos()) == stmtEndLine {
+		to = next.Node().Pos() // following statement begins on same line
+	}
+	// and now for the comments
+Outer:
+	for _, cg := range astutil.EnclosingFile(curStmt).Comments {
+		for _, co := range cg.List {
+			if lineOf(co.End()) < stmtStartLine {
+				continue
+			} else if lineOf(co.Pos()) > stmtEndLine {
+				break Outer // no more are possible
+			}
+			if lineOf(co.End()) == stmtStartLine && co.End() < stmt.Pos() {
+				if !from.IsValid() || co.End() > from {
+					from = co.End()
+					continue // maybe there are more
+				}
+			}
+			if lineOf(co.Pos()) == stmtEndLine && co.Pos() > stmt.End() {
+				if !to.IsValid() || co.Pos() < to {
+					to = co.Pos()
+					continue // maybe there are more
+				}
+			}
+		}
+	}
+	// if either from or to is valid, just remove the statement
+	// otherwise remove the line
+	edit := analysis.TextEdit{Pos: stmt.Pos(), End: stmt.End()}
+	if from.IsValid() || to.IsValid() {
+		// remove just the statement.
+		// we can't tell if there is a ; or whitespace right after the statement
+		// ideally we'd like to remove the former and leave the latter
+		// (if gofmt has run, there likely won't be a ;)
+		// In type switches we know there's a semicolon somewhere after the statement,
+		// but the extra work for this special case is not worth it, as gofmt will fix it.
+		return []analysis.TextEdit{edit}
+	}
+	// remove the whole line
+	for lineOf(edit.Pos) == stmtStartLine {
+		edit.Pos--
+	}
+	edit.Pos++ // get back tostmtStartLine
+	for lineOf(edit.End) == stmtEndLine {
+		edit.End++
+	}
+	return []analysis.TextEdit{edit}
 }

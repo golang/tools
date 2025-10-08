@@ -17,7 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil"
 )
 
 // TODO(golang/go#64335): we should have many more tests for fixed syntax.
@@ -122,7 +122,7 @@ func TestFixGoAndDefer(t *testing.T) {
 						return
 					}
 
-					if got := analysisinternal.Format(fset, call); got != tc.wantFix {
+					if got := astutil.Format(fset, call); got != tc.wantFix {
 						t.Fatalf("got %v want %v", got, tc.wantFix)
 					}
 				})
@@ -230,12 +230,12 @@ func TestFixInit(t *testing.T) {
 				fset := tokeninternal.FileSetFor(pgf.Tok)
 				inspect(t, pgf, func(n ast.Stmt) {
 					if init, cond, ok := info(n, keyword); ok {
-						if got := analysisinternal.Format(fset, init); got != tc.wantInitFix {
+						if got := astutil.Format(fset, init); got != tc.wantInitFix {
 							t.Fatalf("%s: Init got %v want %v", tc.source, got, tc.wantInitFix)
 						}
 
 						wantCond := getWantCond(keyword)
-						if got := analysisinternal.Format(fset, cond); got != wantCond {
+						if got := astutil.Format(fset, cond); got != wantCond {
 							t.Fatalf("%s: Cond got %v want %v", tc.source, got, wantCond)
 						}
 					}
@@ -307,7 +307,7 @@ func TestFixPhantomSelector(t *testing.T) {
 			fset := tokeninternal.FileSetFor(pgf.Tok)
 			inspect(t, pgf, func(sel *ast.SelectorExpr) {
 				// the fix should restore the selector as is.
-				if got, want := analysisinternal.Format(fset, sel), tc.source; got != want {
+				if got, want := astutil.Format(fset, sel), tc.source; got != want {
 					t.Fatalf("got %v want %v", got, want)
 				}
 			})

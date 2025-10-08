@@ -15,7 +15,7 @@ import (
 	"slices"
 	"strings"
 
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/analysis/fillstruct"
@@ -28,7 +28,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -535,7 +535,7 @@ func refactorExtractVariableAll(ctx context.Context, req *codeActionsRequest) er
 		}
 		desc := string(text)
 		if len(desc) >= 40 || strings.Contains(desc, "\n") {
-			desc = astutil.NodeDescription(exprs[0])
+			desc = goastutil.NodeDescription(exprs[0])
 		}
 		constant := info.Types[exprs[0]].Value != nil
 		if (req.kind == settings.RefactorExtractConstantAll) == constant {
@@ -569,7 +569,7 @@ func addTest(ctx context.Context, req *codeActionsRequest) error {
 		return nil
 	}
 
-	path, _ := astutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
+	path, _ := goastutil.PathEnclosingInterval(req.pgf.File, req.start, req.end)
 	if len(path) < 2 {
 		return nil
 	}
@@ -754,7 +754,7 @@ func refactorRewriteEliminateDotImport(ctx context.Context, req *codeActionsRequ
 		// that reference package-level symbols.
 		// All other references to a symbol imported from another package
 		// are nested within a select expression (pkg.Foo, v.Method, v.Field).
-		if analysisinternal.IsChildOf(curId, edge.SelectorExpr_Sel) {
+		if astutil.IsChildOf(curId, edge.SelectorExpr_Sel) {
 			continue // qualified identifier (pkg.X) or selector (T.X or e.X)
 		}
 		if !typesinternal.IsPackageLevel(use) {

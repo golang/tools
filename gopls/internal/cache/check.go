@@ -5,12 +5,14 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"go/ast"
 	"go/build"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"go/types"
 	"regexp"
@@ -36,7 +38,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
-	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/gcimporter"
 	"golang.org/x/tools/internal/packagesinternal"
@@ -2061,7 +2062,7 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 				//
 				// TODO(adonovan): It is the type checker's responsibility
 				// to ensure that (start, end) are meaningful; see #71803.
-				end = analysisinternal.TypeErrorEndPos(pgf.Tok, pgf.Src, start)
+				end = typeErrorEndPos(pgf.Tok, pgf.Src, start)
 
 				// debugging golang/go#65960
 				if _, err := safetoken.Offset(pgf.Tok, end); err != nil {
@@ -2159,6 +2160,51 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 	}
 
 	return result
+}
+
+// This heuristic is ill-defined.
+func typeErrorEndPos(tokFile *token.File, src []byte, start token.Pos) token.Pos {
+	// Get the end position for the type error.
+	offset, err := safetoken.Offset(tokFile, start)
+	if err != nil || offset > len(src) {
+		return start
+	}
+	src = src[offset:]
+
+	// Attempt to find a reasonable end position for the type error.
+	//
+	// TODO(rfindley): the heuristic implemented here is unclear. It looks like
+	// it seeks the end of the primary operand starting at start, but that is not
+	// quite implemented (for example, given a func literal this heuristic will
+	// return the range of the func keyword).
+	//
+	// We should formalize this heuristic, or deprecate it by finally proposing
+	// to add end position to all type checker errors.
+	//
+	// Nevertheless, ensure that the end position at least spans the current
+	// token at the cursor (this was golang/go#69505).
+	end := start
+	{
+		var s scanner.Scanner
+		fset := token.NewFileSet()
+		f := fset.AddFile("", fset.Base(), len(src))
+		s.Init(f, src, nil /* no error handler */, scanner.ScanComments)
+		pos, tok, lit := s.Scan()
+		if tok != token.SEMICOLON {
+			if off, err := safetoken.Offset(f, pos); err == nil {
+				off += len(lit)
+				src = src[off:]
+				end += token.Pos(off)
+			}
+		}
+	}
+
+	// Look for bytes that might terminate the current operand. See note above:
+	// this is imprecise.
+	if width := bytes.IndexAny(src, " \n,():;[]+-*/"); width > 0 {
+		end += token.Pos(width)
+	}
+	return end
 }
 
 // An importFunc is an implementation of the single-method

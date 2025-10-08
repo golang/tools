@@ -121,7 +121,7 @@ outer:
 				if t := info.TypeOf(val); t == nil || !matchingTypes(t, retTyp) {
 					continue
 				}
-				if !typesinternal.IsZeroExpr(val) {
+				if !isZeroExpr(val) {
 					match, idx = val, j
 					break
 				}
@@ -154,7 +154,7 @@ outer:
 		// Remove any non-matching "zero values" from the leftover values.
 		var nonZeroRemaining []ast.Expr
 		for _, expr := range remaining {
-			if !typesinternal.IsZeroExpr(expr) {
+			if !isZeroExpr(expr) {
 				nonZeroRemaining = append(nonZeroRemaining, expr)
 			}
 		}
@@ -227,4 +227,18 @@ func fixesError(err types.Error) bool {
 // that encloses c, if any.
 func enclosingFunc(c inspector.Cursor) (inspector.Cursor, bool) {
 	return moreiters.First(c.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)))
+}
+
+// isZeroExpr uses simple syntactic heuristics to report whether expr
+// is a obvious zero value, such as 0, "", nil, or false.
+// It cannot do better without type information.
+func isZeroExpr(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		return e.Value == "0" || e.Value == `""`
+	case *ast.Ident:
+		return e.Name == "nil" || e.Name == "false"
+	default:
+		return false
+	}
 }

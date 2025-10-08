@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
 )
@@ -49,7 +50,7 @@ func run(pass *analysis.Pass) (any, error) {
 	)
 	for _, callee := range []types.Object{mapsKeys, mapsValues, xmapsKeys, xmapsValues} {
 		for curCall := range index.Calls(callee) {
-			if analysisinternal.IsChildOf(curCall, edge.RangeStmt_X) {
+			if astutil.IsChildOf(curCall, edge.RangeStmt_X) {
 				analyzeRangeStmt(pass, callee, curCall)
 			}
 		}

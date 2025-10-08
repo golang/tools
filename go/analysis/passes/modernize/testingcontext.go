@@ -20,6 +20,8 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -72,7 +74,7 @@ calls:
 		if !ok {
 			continue
 		}
-		if !analysisinternal.IsFunctionNamed(typeutil.Callee(info, arg), "context", "Background", "TODO") {
+		if !typesinternal.IsFunctionNamed(typeutil.Callee(info, arg), "context", "Background", "TODO") {
 			continue
 		}
 		// Have: context.WithCancel(context.{Background,TODO}())
@@ -122,8 +124,8 @@ calls:
 				if ek, idx := curFunc.ParentEdge(); ek == edge.CallExpr_Args && idx == 1 {
 					// Have: call(..., func(...) { ...context.WithCancel(...)... })
 					obj := typeutil.Callee(info, curFunc.Parent().Node().(*ast.CallExpr))
-					if (analysisinternal.IsMethodNamed(obj, "testing", "T", "Run") ||
-						analysisinternal.IsMethodNamed(obj, "testing", "B", "Run")) &&
+					if (typesinternal.IsMethodNamed(obj, "testing", "T", "Run") ||
+						typesinternal.IsMethodNamed(obj, "testing", "B", "Run")) &&
 						len(n.Type.Params.List[0].Names) == 1 {
 
 						// Have tb.Run(..., func(..., tb *testing.[TB]) { ...context.WithCancel(...)... }
@@ -135,7 +137,7 @@ calls:
 				testObj = isTestFn(info, n)
 			}
 		}
-		if testObj != nil && fileUses(info, analysisinternal.EnclosingFile(cur), "go1.24") {
+		if testObj != nil && fileUses(info, astutil.EnclosingFile(cur), "go1.24") {
 			// Have a test function. Check that we can resolve the relevant
 			// testing.{T,B,F} at the current position.
 			if _, obj := lhs[0].Parent().LookupParent(testObj.Name(), lhs[0].Pos()); obj == testObj {
@@ -215,7 +217,7 @@ func isTestFn(info *types.Info, fn *ast.FuncDecl) types.Object {
 		name = "F"
 	}
 
-	if !analysisinternal.IsPointerToNamed(obj.Type(), "testing", name) {
+	if !typesinternal.IsPointerToNamed(obj.Type(), "testing", name) {
 		return nil
 	}
 	return obj

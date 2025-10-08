@@ -18,7 +18,9 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 var MapsLoopAnalyzer = &analysis.Analyzer{
@@ -164,7 +166,7 @@ func mapsloop(pass *analysis.Pass) (any, error) {
 
 		// Report diagnostic, and suggest fix.
 		rng := curRange.Node()
-		_, prefix, importEdits := analysisinternal.AddImport(info, file, "maps", "maps", funcName, rng.Pos())
+		_, prefix, importEdits := refactor.AddImport(info, file, "maps", "maps", funcName, rng.Pos())
 		var (
 			newText    []byte
 			start, end token.Pos
@@ -183,10 +185,10 @@ func mapsloop(pass *analysis.Pass) (any, error) {
 			start, end = curPrev.Node().Pos(), rng.End()
 			newText = fmt.Appendf(nil, "%s%s = %s%s(%s)",
 				allComments(file, start, end),
-				analysisinternal.Format(pass.Fset, m),
+				astutil.Format(pass.Fset, m),
 				prefix,
 				funcName,
-				analysisinternal.Format(pass.Fset, x))
+				astutil.Format(pass.Fset, x))
 		} else {
 			// Replace loop with call statement.
 			//
@@ -201,8 +203,8 @@ func mapsloop(pass *analysis.Pass) (any, error) {
 				allComments(file, start, end),
 				prefix,
 				funcName,
-				analysisinternal.Format(pass.Fset, m),
-				analysisinternal.Format(pass.Fset, x))
+				astutil.Format(pass.Fset, m),
+				astutil.Format(pass.Fset, x))
 		}
 		pass.Report(analysis.Diagnostic{
 			Pos:     assign.Lhs[0].Pos(),
@@ -256,7 +258,7 @@ func mapsloop(pass *analysis.Pass) (any, error) {
 func assignableToIterSeq2(t types.Type) (k, v types.Type, ok bool) {
 	// The only named type assignable to iter.Seq2 is iter.Seq2.
 	if is[*types.Named](t) {
-		if !analysisinternal.IsTypeNamed(t, "iter", "Seq2") {
+		if !typesinternal.IsTypeNamed(t, "iter", "Seq2") {
 			return
 		}
 		t = t.Underlying()

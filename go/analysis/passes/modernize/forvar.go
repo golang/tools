@@ -14,6 +14,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/refactor"
 )
 
 var ForVarAnalyzer = &analysis.Analyzer{
@@ -71,7 +72,7 @@ func forvar(pass *analysis.Pass) (any, error) {
 					isLoopVarRedecl(assign) {
 
 					curStmt, _ := curLoop.FindNode(stmt)
-					edits := analysisinternal.DeleteStmt(pass.Fset.File(stmt.Pos()), curStmt)
+					edits := refactor.DeleteStmt(pass.Fset.File(stmt.Pos()), curStmt)
 					if len(edits) > 0 {
 						pass.Report(analysis.Diagnostic{
 							Pos:     stmt.Pos(),

@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
@@ -58,12 +59,12 @@ func reflecttypefor(pass *analysis.Pass) (any, error) {
 
 		// Special case for TypeOf((*T)(nil)).Elem(),
 		// needed when T is an interface type.
-		if analysisinternal.IsChildOf(curCall, edge.SelectorExpr_X) {
+		if astutil.IsChildOf(curCall, edge.SelectorExpr_X) {
 			curSel := unparenEnclosing(curCall).Parent()
-			if analysisinternal.IsChildOf(curSel, edge.CallExpr_Fun) {
+			if astutil.IsChildOf(curSel, edge.CallExpr_Fun) {
 				call2 := unparenEnclosing(curSel).Parent().Node().(*ast.CallExpr)
 				obj := typeutil.Callee(info, call2)
-				if analysisinternal.IsMethodNamed(obj, "reflect", "Type", "Elem") {
+				if typesinternal.IsMethodNamed(obj, "reflect", "Type", "Elem") {
 					if ptr, ok := t.(*types.Pointer); ok {
 						// Have: reflect.TypeOf(...*T value...).Elem()
 						// => reflect.TypeFor[T]()
@@ -87,7 +88,7 @@ func reflecttypefor(pass *analysis.Pass) (any, error) {
 			continue
 		}
 
-		file := analysisinternal.EnclosingFile(curCall)
+		file := astutil.EnclosingFile(curCall)
 		if versions.Before(info.FileVersions[file], "go1.22") {
 			continue // TypeFor requires go1.22
 		}

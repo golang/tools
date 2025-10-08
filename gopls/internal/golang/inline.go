@@ -14,7 +14,7 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
@@ -22,7 +22,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
@@ -32,7 +32,8 @@ import (
 // enclosingStaticCall returns the innermost function call enclosing
 // the selected range, along with the callee.
 func enclosingStaticCall(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*ast.CallExpr, *types.Func, error) {
-	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	// TODO(adonovan): simplify using pgf.Cursor
+	path, _ := goastutil.PathEnclosingInterval(pgf.File, start, end)
 
 	var call *ast.CallExpr
 loop:
@@ -208,7 +209,7 @@ func isLvalueUse(cur inspector.Cursor, info *types.Info) bool {
 // unparenEnclosing removes enclosing parens from cur in
 // preparation for a call to [Cursor.ParentEdge].
 func unparenEnclosing(cur inspector.Cursor) inspector.Cursor {
-	for analysisinternal.IsChildOf(cur, edge.ParenExpr_X) {
+	for astutil.IsChildOf(cur, edge.ParenExpr_X) {
 		cur = cur.Parent()
 	}
 	return cur
@@ -231,7 +232,7 @@ func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.P
 		scope = info.Scopes[pgf.File].Innermost(pos)
 	)
 	for curIdent := range curRHS.Preorder((*ast.Ident)(nil)) {
-		if analysisinternal.IsChildOf(curIdent, edge.SelectorExpr_Sel) {
+		if astutil.IsChildOf(curIdent, edge.SelectorExpr_Sel) {
 			continue // ignore f in x.f
 		}
 		id := curIdent.Node().(*ast.Ident)

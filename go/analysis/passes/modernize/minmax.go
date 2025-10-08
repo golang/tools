@@ -79,7 +79,7 @@ func minmax(pass *analysis.Pass) (any, error) {
 				return cond(arg == b, ", ", "") + // second argument needs a comma
 					cond(comments != "", "\n", "") + // comments need their own line
 					comments +
-					analysisinternal.Format(pass.Fset, arg)
+					astutil.Format(pass.Fset, arg)
 			}
 		)
 
@@ -124,7 +124,7 @@ func minmax(pass *analysis.Pass) (any, error) {
 							Pos: ifStmt.Pos(),
 							End: ifStmt.End(),
 							NewText: fmt.Appendf(nil, "%s = %s(%s%s)",
-								analysisinternal.Format(pass.Fset, lhs),
+								astutil.Format(pass.Fset, lhs),
 								sym,
 								callArg(a, ifStmt.Pos(), ifStmt.Else.Pos()),
 								callArg(b, ifStmt.Else.Pos(), ifStmt.End()),
@@ -186,7 +186,7 @@ func minmax(pass *analysis.Pass) (any, error) {
 							End: ifStmt.End(),
 							// Replace "x := a; if ... {}" with "x = min(...)", preserving comments.
 							NewText: fmt.Appendf(nil, "%s %s %s(%s%s)",
-								analysisinternal.Format(pass.Fset, lhs),
+								astutil.Format(pass.Fset, lhs),
 								fassign.Tok.String(),
 								sym,
 								callArg(a, fassign.Pos(), ifStmt.Pos()),
@@ -213,7 +213,7 @@ func minmax(pass *analysis.Pass) (any, error) {
 			// (This case would require introducing another block
 			//    if cond { ... } else { if a < b { lhs = rhs } }
 			// and checking that there is no following "else".)
-			if analysisinternal.IsChildOf(curIfStmt, edge.IfStmt_Else) {
+			if astutil.IsChildOf(curIfStmt, edge.IfStmt_Else) {
 				continue
 			}
 
@@ -235,7 +235,7 @@ func minmax(pass *analysis.Pass) (any, error) {
 // allComments collects all the comments from start to end.
 func allComments(file *ast.File, start, end token.Pos) string {
 	var buf strings.Builder
-	for co := range analysisinternal.Comments(file, start, end) {
+	for co := range astutil.Comments(file, start, end) {
 		_, _ = fmt.Fprintf(&buf, "%s\n", co.Text)
 	}
 	return buf.String()
@@ -301,7 +301,7 @@ func checkUserDefinedMinMax(pass *analysis.Pass) {
 				if canUseBuiltinMinMax(fn, decl.Body) {
 					// Expand to include leading doc comment
 					pos := decl.Pos()
-					if docs := docComment(decl); docs != nil {
+					if docs := astutil.DocComment(decl); docs != nil {
 						pos = docs.Pos()
 					}
 
@@ -437,19 +437,4 @@ func cond[T any](cond bool, t, f T) T {
 	} else {
 		return f
 	}
-}
-
-// docComment returns the doc comment for a node, if any.
-func docComment(n ast.Node) *ast.CommentGroup {
-	switch n := n.(type) {
-	case *ast.FuncDecl:
-		return n.Doc
-	case *ast.GenDecl:
-		return n.Doc
-	case *ast.ValueSpec:
-		return n.Doc
-	case *ast.TypeSpec:
-		return n.Doc
-	}
-	return nil // includes File, ImportSpec, Field
 }

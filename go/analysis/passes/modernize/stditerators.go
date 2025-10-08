@@ -19,6 +19,7 @@ import (
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/goplsexport"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -145,7 +146,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 			}
 
 			loop := curBody.Parent().Node()
-			return analysisinternal.FreshName(info.Scopes[loop], loop.Pos(), row.elemname), nil
+			return refactor.FreshName(info.Scopes[loop], loop.Pos(), row.elemname), nil
 		}
 
 		// Process each call of x.Len().
@@ -175,7 +176,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 					cmp    = curCmp.Node().(*ast.BinaryExpr)
 				)
 				if cmp.Op != token.LSS ||
-					!analysisinternal.IsChildOf(curCmp, edge.ForStmt_Cond) {
+					!astutil.IsChildOf(curCmp, edge.ForStmt_Cond) {
 					continue
 				}
 				if id, ok := cmp.X.(*ast.Ident); ok {
@@ -312,7 +313,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 			// may be somewhat expensive.)
 			if v, ok := methodGoVersion(row.pkgpath, row.typename, row.itermethod); !ok {
 				panic("no version found")
-			} else if file := analysisinternal.EnclosingFile(curLenCall); !fileUses(info, file, v.String()) {
+			} else if file := astutil.EnclosingFile(curLenCall); !fileUses(info, file, v.String()) {
 				continue nextCall
 			}
 

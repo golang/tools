@@ -15,14 +15,14 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -57,7 +57,7 @@ func undeclaredFixTitle(curId inspector.Cursor, errMsg string) string {
 	}
 
 	// Offer a fix.
-	noun := cond(analysisinternal.IsChildOf(curId, edge.CallExpr_Fun), "function", "variable")
+	noun := cond(astutil.IsChildOf(curId, edge.CallExpr_Fun), "function", "variable")
 	return fmt.Sprintf("Create %s %s", noun, name)
 }
 
@@ -77,7 +77,7 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 
 	// Check for a possible call expression, in which case we should add a
 	// new function declaration.
-	if analysisinternal.IsChildOf(curId, edge.CallExpr_Fun) {
+	if astutil.IsChildOf(curId, edge.CallExpr_Fun) {
 		return newFunctionDeclaration(curId, file, pkg.Types(), info, fset)
 	}
 	var (
@@ -97,7 +97,7 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 		n := curRef.Node().(*ast.Ident)
 		if n.Name == ident.Name && info.ObjectOf(n) == nil {
 			firstRef = n
-			if analysisinternal.IsChildOf(curRef, edge.AssignStmt_Lhs) {
+			if astutil.IsChildOf(curRef, edge.AssignStmt_Lhs) {
 				assign := curRef.Parent().Node().(*ast.AssignStmt)
 				if assign.Tok == token.ASSIGN && !referencesIdent(info, assign, ident) {
 					assignTokPos = assign.TokPos
@@ -121,7 +121,8 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	if firstRef == nil {
 		return nil, nil, fmt.Errorf("no identifier found")
 	}
-	p, _ := astutil.PathEnclosingInterval(file, firstRef.Pos(), firstRef.Pos())
+	// TODO(adonovan): replace this with cursor.
+	p, _ := goastutil.PathEnclosingInterval(file, firstRef.Pos(), firstRef.Pos())
 	insertBeforeStmt, err := stmtToInsertVarBefore(p, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not locate insertion point: %v", err)

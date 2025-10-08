@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -201,12 +202,12 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 		}
 
 		// Prepare slices.Contains{,Func} call.
-		_, prefix, importEdits := analysisinternal.AddImport(info, file, "slices", "slices", funcName, rng.Pos())
+		_, prefix, importEdits := refactor.AddImport(info, file, "slices", "slices", funcName, rng.Pos())
 		contains := fmt.Sprintf("%s%s(%s, %s)",
 			prefix,
 			funcName,
-			analysisinternal.Format(pass.Fset, rng.X),
-			analysisinternal.Format(pass.Fset, arg2))
+			astutil.Format(pass.Fset, rng.X),
+			astutil.Format(pass.Fset, arg2))
 
 		report := func(edits []analysis.TextEdit) {
 			pass.Report(analysis.Diagnostic{

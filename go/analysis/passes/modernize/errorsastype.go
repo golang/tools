@@ -17,7 +17,9 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/goplsexport"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -94,7 +96,7 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 			continue
 		}
 
-		file := analysisinternal.EnclosingFile(curDeclStmt)
+		file := astutil.EnclosingFile(curDeclStmt)
 		if !fileUses(info, file, "go1.26") {
 			continue // errors.AsType is too new
 		}
@@ -134,7 +136,7 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 			for curUse := range index.Uses(okVar) {
 				if curIf.Contains(curUse) {
 					scope := info.Scopes[curIf.Node().(*ast.IfStmt)]
-					okName = analysisinternal.FreshName(scope, v.Pos(), "ok")
+					okName = refactor.FreshName(scope, v.Pos(), "ok")
 					break
 				}
 			}
@@ -148,7 +150,7 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 				Message: fmt.Sprintf("Replace errors.As with AsType[%s]", errtype),
 				TextEdits: append(
 					// delete "var myerr *MyErr"
-					analysisinternal.DeleteStmt(pass.Fset.File(call.Fun.Pos()), curDeclStmt),
+					refactor.DeleteStmt(pass.Fset.File(call.Fun.Pos()), curDeclStmt),
 					// if              errors.As            (err, &myerr)     { ... }
 					//    -------------       --------------    -------- ----
 					// if myerr, ok := errors.AsType[*MyErr](err        ); ok { ... }
@@ -187,7 +189,7 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 // declaration of the typed error var. The var must not be
 // used outside the if statement.
 func canUseErrorsAsType(info *types.Info, index *typeindex.Index, curCall inspector.Cursor) (_ *types.Var, _ inspector.Cursor) {
-	if !analysisinternal.IsChildOf(curCall, edge.IfStmt_Cond) {
+	if !astutil.IsChildOf(curCall, edge.IfStmt_Cond) {
 		return // not beneath if statement
 	}
 	var (
@@ -219,7 +221,7 @@ func canUseErrorsAsType(info *types.Info, index *typeindex.Index, curCall inspec
 			return // v used before/after if statement
 		}
 	}
-	if !analysisinternal.IsChildOf(curDef, edge.ValueSpec_Names) {
+	if !astutil.IsChildOf(curDef, edge.ValueSpec_Names) {
 		return // v not declared by "var v T"
 	}
 	var (

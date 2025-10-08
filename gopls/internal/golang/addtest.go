@@ -27,7 +27,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
-	"golang.org/x/tools/internal/analysisinternal"
 	internalastutil "golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/typesinternal"
@@ -484,7 +483,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 	}
 
 	isContextType := func(t types.Type) bool {
-		return analysisinternal.IsTypeNamed(t, "context", "Context")
+		return typesinternal.IsTypeNamed(t, "context", "Context")
 	}
 
 	for i := range sig.Params().Len() {

@@ -19,7 +19,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil"
 )
 
 //go:embed doc.go
@@ -66,8 +66,8 @@ func run(pass *analysis.Pass) (any, error) {
 				!isMapIndex(pass.TypesInfo, lhs) &&
 				reflect.TypeOf(lhs) == reflect.TypeOf(rhs) { // short-circuit the heavy-weight gofmt check
 
-				le = analysisinternal.Format(pass.Fset, lhs)
-				re := analysisinternal.Format(pass.Fset, rhs)
+				le = astutil.Format(pass.Fset, lhs)
+				re := astutil.Format(pass.Fset, rhs)
 				if le == re {
 					isSelfAssign = true
 				}

@@ -21,7 +21,9 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -286,7 +288,7 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 		} else if _, ok := importPrefixes[pkgPath]; !ok {
 			// Use AddImport to add pkgPath if it's not there already. Associate the prefix it assigns
 			// with the package path for use by the TypeString qualifier below.
-			_, prefix, eds := analysisinternal.AddImport(
+			_, prefix, eds := refactor.AddImport(
 				a.pass.TypesInfo, curFile, pkgName, pkgPath, tn.Name(), id.Pos())
 			importPrefixes[pkgPath] = strings.TrimSuffix(prefix, ".")
 			edits = append(edits, eds...)
@@ -300,7 +302,7 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 	//   pkg.Id[T]
 	//   pkg.Id[K, V]
 	var expr ast.Expr = id
-	if analysisinternal.IsChildOf(curId, edge.SelectorExpr_Sel) {
+	if astutil.IsChildOf(curId, edge.SelectorExpr_Sel) {
 		curId = curId.Parent()
 		expr = curId.Node().(ast.Expr)
 	}
@@ -457,12 +459,12 @@ func (a *analyzer) inlineConst(con *types.Const, cur inspector.Cursor) {
 		edits        []analysis.TextEdit
 	)
 	if incon.RHSPkgPath != a.pass.Pkg.Path() {
-		_, importPrefix, edits = analysisinternal.AddImport(
+		_, importPrefix, edits = refactor.AddImport(
 			a.pass.TypesInfo, curFile, incon.RHSPkgName, incon.RHSPkgPath, incon.RHSName, n.Pos())
 	}
 	// If n is qualified by a package identifier, we'll need the full selector expression.
 	var expr ast.Expr = n
-	if analysisinternal.IsChildOf(cur, edge.SelectorExpr_Sel) {
+	if astutil.IsChildOf(cur, edge.SelectorExpr_Sel) {
 		expr = cur.Parent().Node().(ast.Expr)
 	}
 	a.reportInline("constant", "Constant", expr, edits, importPrefix+incon.RHSName)
@@ -475,7 +477,7 @@ func (a *analyzer) reportInline(kind, capKind string, ident ast.Expr, edits []an
 		End:     ident.End(),
 		NewText: []byte(newText),
 	})
-	name := analysisinternal.Format(a.pass.Fset, ident)
+	name := astutil.Format(a.pass.Fset, ident)
 	a.pass.Report(analysis.Diagnostic{
 		Pos:     ident.Pos(),
 		End:     ident.End(),

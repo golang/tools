@@ -18,6 +18,8 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/refactor"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 // Warning: this analyzer is not safe to enable by default.
@@ -124,7 +126,7 @@ func appendclipped(pass *analysis.Pass) (any, error) {
 			// append(zerocap, os.Environ()...) -> os.Environ()
 			if scall, ok := s.(*ast.CallExpr); ok {
 				obj := typeutil.Callee(info, scall)
-				if analysisinternal.IsFunctionNamed(obj, "os", "Environ") {
+				if typesinternal.IsFunctionNamed(obj, "os", "Environ") {
 					pass.Report(analysis.Diagnostic{
 						Pos:     call.Pos(),
 						End:     call.End(),
@@ -134,7 +136,7 @@ func appendclipped(pass *analysis.Pass) (any, error) {
 							TextEdits: []analysis.TextEdit{{
 								Pos:     call.Pos(),
 								End:     call.End(),
-								NewText: []byte(analysisinternal.Format(pass.Fset, s)),
+								NewText: []byte(astutil.Format(pass.Fset, s)),
 							}},
 						}},
 					})
@@ -162,7 +164,7 @@ func appendclipped(pass *analysis.Pass) (any, error) {
 			//
 			// This is unsound if s is empty and its nilness
 			// differs from zerocap (#73557).
-			_, prefix, importEdits := analysisinternal.AddImport(info, file, clonepkg, clonepkg, "Clone", call.Pos())
+			_, prefix, importEdits := refactor.AddImport(info, file, clonepkg, clonepkg, "Clone", call.Pos())
 			message := fmt.Sprintf("Replace append with %s.Clone", clonepkg)
 			pass.Report(analysis.Diagnostic{
 				Pos:     call.Pos(),
@@ -173,7 +175,7 @@ func appendclipped(pass *analysis.Pass) (any, error) {
 					TextEdits: append(importEdits, []analysis.TextEdit{{
 						Pos:     call.Pos(),
 						End:     call.End(),
-						NewText: fmt.Appendf(nil, "%sClone(%s)", prefix, analysisinternal.Format(pass.Fset, s)),
+						NewText: fmt.Appendf(nil, "%sClone(%s)", prefix, astutil.Format(pass.Fset, s)),
 					}}...),
 				}},
 			})
@@ -183,7 +185,7 @@ func appendclipped(pass *analysis.Pass) (any, error) {
 		// append(append(append(base, a...), b..., c...) -> slices.Concat(base, a, b, c)
 		//
 		// This is unsound if all slices are empty and base is non-nil (#73557).
-		_, prefix, importEdits := analysisinternal.AddImport(info, file, "slices", "slices", "Concat", call.Pos())
+		_, prefix, importEdits := refactor.AddImport(info, file, "slices", "slices", "Concat", call.Pos())
 		pass.Report(analysis.Diagnostic{
 			Pos:     call.Pos(),
 			End:     call.End(),
@@ -284,7 +286,7 @@ func clippedSlice(info *types.Info, e ast.Expr) (res ast.Expr, empty bool) {
 
 		// slices.Clip(x)?
 		obj := typeutil.Callee(info, e)
-		if analysisinternal.IsFunctionNamed(obj, "slices", "Clip") {
+		if typesinternal.IsFunctionNamed(obj, "slices", "Clip") {
 			return e.Args[0], false // slices.Clip(x) -> x
 		}
 

@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
 )
@@ -369,5 +368,5 @@ func isMethodCall(info *types.Info, expr ast.Expr, pkgPath, typeName, method str
 	// Check that the receiver is a <pkgPath>.<typeName> or
 	// *<pkgPath>.<typeName>.
 	_, named := typesinternal.ReceiverNamed(recv)
-	return analysisinternal.IsTypeNamed(named, pkgPath, typeName)
+	return typesinternal.IsTypeNamed(named, pkgPath, typeName)
 }

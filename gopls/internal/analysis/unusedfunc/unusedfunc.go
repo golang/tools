@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -118,7 +119,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 		// Expand to include leading doc comment.
 		pos := node.Pos()
-		if doc := docComment(node); doc != nil {
+		if doc := astutil.DocComment(node); doc != nil {
 			pos = doc.Pos()
 		}
 
@@ -170,7 +171,7 @@ func run(pass *analysis.Pass) (any, error) {
 			// but it is bad style; and the directive may
 			// appear anywhere, not just on the preceding line,
 			// but again that is poor form.)
-			if doc := docComment(decl); doc != nil {
+			if doc := astutil.DocComment(decl); doc != nil {
 				for _, comment := range doc.List {
 					// TODO(adonovan): use ast.ParseDirective when #68021 lands.
 					if strings.HasPrefix(comment.Text, "//go:linkname ") {
@@ -236,20 +237,6 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 
 	return nil, nil
-}
-
-func docComment(n ast.Node) *ast.CommentGroup {
-	switch n := n.(type) {
-	case *ast.FuncDecl:
-		return n.Doc
-	case *ast.GenDecl:
-		return n.Doc
-	case *ast.ValueSpec:
-		return n.Doc
-	case *ast.TypeSpec:
-		return n.Doc
-	}
-	return nil // includes File, ImportSpec, Field
 }
 
 func eolComment(n ast.Node) *ast.CommentGroup {
