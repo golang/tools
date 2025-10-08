@@ -2061,7 +2061,7 @@ func typeErrorsToDiagnostics(pkg *syntaxPackage, inputs *typeCheckInputs, errs [
 				//
 				// TODO(adonovan): It is the type checker's responsibility
 				// to ensure that (start, end) are meaningful; see #71803.
-				end = analysisinternal.TypeErrorEndPos(e.Fset, pgf.Src, start)
+				end = analysisinternal.TypeErrorEndPos(pgf.Tok, pgf.Src, start)
 
 				// debugging golang/go#65960
 				if _, err := safetoken.Offset(pgf.Tok, end); err != nil {

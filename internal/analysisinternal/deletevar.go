@@ -28,13 +28,13 @@ import (
 //
 // If it cannot make the necessary edits, such as for a function
 // parameter or result, it returns nil.
-func DeleteVar(fset *token.FileSet, info *types.Info, curId inspector.Cursor) []analysis.TextEdit {
+func DeleteVar(tokFile *token.File, info *types.Info, curId inspector.Cursor) []analysis.TextEdit {
 	switch ek, _ := curId.ParentEdge(); ek {
 	case edge.ValueSpec_Names:
-		return deleteVarFromValueSpec(fset, info, curId)
+		return deleteVarFromValueSpec(tokFile, info, curId)
 
 	case edge.AssignStmt_Lhs:
-		return deleteVarFromAssignStmt(fset, info, curId)
+		return deleteVarFromAssignStmt(tokFile, info, curId)
 	}
 
 	// e.g. function receiver, parameter, or result,
@@ -45,7 +45,7 @@ func DeleteVar(fset *token.FileSet, info *types.Info, curId inspector.Cursor) []
 // Precondition: curId is Ident beneath ValueSpec.Names beneath GenDecl.
 //
 // See also [deleteVarFromAssignStmt], which has parallel structure.
-func deleteVarFromValueSpec(fset *token.FileSet, info *types.Info, curIdent inspector.Cursor) []analysis.TextEdit {
+func deleteVarFromValueSpec(tokFile *token.File, info *types.Info, curIdent inspector.Cursor) []analysis.TextEdit {
 	var (
 		id      = curIdent.Node().(*ast.Ident)
 		curSpec = curIdent.Parent()
@@ -61,7 +61,7 @@ func deleteVarFromValueSpec(fset *token.FileSet, info *types.Info, curIdent insp
 	if !declaresOtherNames && noRHSEffects {
 		// The spec is no longer needed, either to declare
 		// other variables, or for its side effects.
-		return DeleteSpec(fset, curSpec)
+		return DeleteSpec(tokFile, curSpec)
 	}
 
 	// The spec is still needed, either for
@@ -144,7 +144,7 @@ func deleteVarFromValueSpec(fset *token.FileSet, info *types.Info, curIdent insp
 // Precondition: curId is Ident beneath AssignStmt.Lhs.
 //
 // See also [deleteVarFromValueSpec], which has parallel structure.
-func deleteVarFromAssignStmt(fset *token.FileSet, info *types.Info, curIdent inspector.Cursor) []analysis.TextEdit {
+func deleteVarFromAssignStmt(tokFile *token.File, info *types.Info, curIdent inspector.Cursor) []analysis.TextEdit {
 	var (
 		id      = curIdent.Node().(*ast.Ident)
 		curStmt = curIdent.Parent()
@@ -161,7 +161,7 @@ func deleteVarFromAssignStmt(fset *token.FileSet, info *types.Info, curIdent ins
 	if !declaresOtherNames && noRHSEffects {
 		// The assignment is no longer needed, either to
 		// declare other variables, or for its side effects.
-		if edits := DeleteStmt(fset, curStmt); edits != nil {
+		if edits := DeleteStmt(tokFile, curStmt); edits != nil {
 			return edits
 		}
 		// Statement could not not be deleted in this context.
@@ -239,7 +239,7 @@ func deleteVarFromAssignStmt(fset *token.FileSet, info *types.Info, curIdent ins
 // DeleteSpec returns edits to delete the ValueSpec identified by curSpec.
 //
 // TODO(adonovan): add test suite. Test for consts as well.
-func DeleteSpec(fset *token.FileSet, curSpec inspector.Cursor) []analysis.TextEdit {
+func DeleteSpec(tokFile *token.File, curSpec inspector.Cursor) []analysis.TextEdit {
 	var (
 		spec    = curSpec.Node().(*ast.ValueSpec)
 		curDecl = curSpec.Parent()
@@ -249,7 +249,7 @@ func DeleteSpec(fset *token.FileSet, curSpec inspector.Cursor) []analysis.TextEd
 	// If it is the sole spec in the decl,
 	// delete the entire decl.
 	if len(decl.Specs) == 1 {
-		return DeleteDecl(fset, curDecl)
+		return DeleteDecl(tokFile, curDecl)
 	}
 
 	// Delete the spec and its comments.
@@ -279,13 +279,13 @@ func DeleteSpec(fset *token.FileSet, curSpec inspector.Cursor) []analysis.TextEd
 // DeleteDecl returns edits to delete the ast.Decl identified by curDecl.
 //
 // TODO(adonovan): add test suite. Test for consts as well.
-func DeleteDecl(fset *token.FileSet, curDecl inspector.Cursor) []analysis.TextEdit {
+func DeleteDecl(tokFile *token.File, curDecl inspector.Cursor) []analysis.TextEdit {
 	decl := curDecl.Node().(ast.Decl)
 
 	ek, _ := curDecl.ParentEdge()
 	switch ek {
 	case edge.DeclStmt_Decl:
-		return DeleteStmt(fset, curDecl.Parent())
+		return DeleteStmt(tokFile, curDecl.Parent())
 
 	case edge.File_Decls:
 		pos, end := decl.Pos(), decl.End()
@@ -297,7 +297,6 @@ func DeleteDecl(fset *token.FileSet, curDecl inspector.Cursor) []analysis.TextEd
 		//    var (...) // comment
 		var (
 			file        = curDecl.Parent().Node().(*ast.File)
-			tokFile     = fset.File(file.Pos())
 			lineOf      = tokFile.Line
 			declEndLine = lineOf(decl.End())
 		)

@@ -148,7 +148,7 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 				Message: fmt.Sprintf("Replace errors.As with AsType[%s]", errtype),
 				TextEdits: append(
 					// delete "var myerr *MyErr"
-					analysisinternal.DeleteStmt(pass.Fset, curDeclStmt),
+					analysisinternal.DeleteStmt(pass.Fset.File(call.Fun.Pos()), curDeclStmt),
 					// if              errors.As            (err, &myerr)     { ... }
 					//    -------------       --------------    -------- ----
 					// if myerr, ok := errors.AsType[*MyErr](err        ); ok { ... }

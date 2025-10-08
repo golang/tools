@@ -431,7 +431,7 @@ var markerAnalyzer = &analysis.Analyzer{
 			if err != nil {
 				return nil, err
 			}
-			notes, err := expect.ExtractGo(pass.Fset, file)
+			notes, err := expect.ExtractGo(tokFile, file)
 			if err != nil {
 				return nil, err
 			}

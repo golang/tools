@@ -295,7 +295,8 @@ func TestDeleteVar(t *testing.T) {
 				t.Fatalf("can't find Defs[v]")
 				panic("unreachable")
 			}()
-			edits := analysisinternal.DeleteVar(fset, info, curId)
+			tokFile := fset.File(f.Pos())
+			edits := analysisinternal.DeleteVar(tokFile, info, curId)
 
 			// TODO(adonovan): extract this helper for
 			// applying TextEdits and comparing against

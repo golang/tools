@@ -521,9 +521,10 @@ func TestGenericBodies(t *testing.T) {
 			t.Parallel()
 			ssapkg, ppkg := buildPackage(t, content, ssa.SanityCheckFunctions)
 			fset := ssapkg.Prog.Fset
+			file := ppkg.Syntax[0]
 
 			// Collect all notes in f, i.e. comments starting with "//@ types".
-			notes, err := expect.ExtractGo(fset, ppkg.Syntax[0])
+			notes, err := expect.ExtractGo(fset.File(file.Pos()), file)
 			if err != nil {
 				t.Errorf("expect.ExtractGo: %v", err)
 			}
@@ -759,7 +760,7 @@ func TestInstructionString(t *testing.T) {
 	p.Build()
 
 	// Collect all notes in f, i.e. comments starting with "//@ instr".
-	notes, err := expect.ExtractGo(prog.Fset, f)
+	notes, err := expect.ExtractGo(prog.Fset.File(f.Pos()), f)
 	if err != nil {
 		t.Errorf("expect.ExtractGo: %v", err)
 	}

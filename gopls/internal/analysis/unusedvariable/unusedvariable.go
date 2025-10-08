@@ -55,7 +55,8 @@ func run(pass *analysis.Pass) (any, error) {
 				continue // not the right identifier
 			}
 
-			edits := analysisinternal.DeleteVar(pass.Fset, pass.TypesInfo, curId)
+			tokFile := pass.Fset.File(ident.Pos())
+			edits := analysisinternal.DeleteVar(tokFile, pass.TypesInfo, curId)
 			if len(edits) > 0 {
 				pass.Report(analysis.Diagnostic{
 					Pos:     ident.Pos(),

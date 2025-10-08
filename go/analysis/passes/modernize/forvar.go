@@ -71,7 +71,7 @@ func forvar(pass *analysis.Pass) (any, error) {
 					isLoopVarRedecl(assign) {
 
 					curStmt, _ := curLoop.FindNode(stmt)
-					edits := analysisinternal.DeleteStmt(pass.Fset, curStmt)
+					edits := analysisinternal.DeleteStmt(pass.Fset.File(stmt.Pos()), curStmt)
 					if len(edits) > 0 {
 						pass.Report(analysis.Diagnostic{
 							Pos:     stmt.Pos(),

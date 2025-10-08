@@ -29,13 +29,9 @@ import (
 
 // Deprecated: this heuristic is ill-defined.
 // TODO(adonovan): move to sole use in gopls/internal/cache.
-func TypeErrorEndPos(fset *token.FileSet, src []byte, start token.Pos) token.Pos {
+func TypeErrorEndPos(tokFile *token.File, src []byte, start token.Pos) token.Pos {
 	// Get the end position for the type error.
-	file := fset.File(start)
-	if file == nil {
-		return start
-	}
-	if offset := file.PositionFor(start, false).Offset; offset > len(src) {
+	if offset := tokFile.PositionFor(start, false).Offset; offset > len(src) {
 		return start
 	} else {
 		src = src[offset:]
@@ -61,7 +57,7 @@ func TypeErrorEndPos(fset *token.FileSet, src []byte, start token.Pos) token.Pos
 		s.Init(f, src, nil /* no error handler */, scanner.ScanComments)
 		pos, tok, lit := s.Scan()
 		if tok != token.SEMICOLON && token.Pos(f.Base()) <= pos && pos <= token.Pos(f.Base()+f.Size()) {
-			off := file.Offset(pos) + len(lit)
+			off := tokFile.Offset(pos) + len(lit)
 			src = src[off:]
 			end += token.Pos(off)
 		}
@@ -527,9 +523,7 @@ func CanImport(from, to string) bool {
 // DeleteStmt returns the edits to remove the [ast.Stmt] identified by
 // curStmt, if it is contained within a BlockStmt, CaseClause,
 // CommClause, or is the STMT in switch STMT; ... {...}. It returns nil otherwise.
-//
-// TODO(adonovan): downgrade first param to a *token.File?
-func DeleteStmt(fset *token.FileSet, curStmt inspector.Cursor) []analysis.TextEdit {
+func DeleteStmt(tokFile *token.File, curStmt inspector.Cursor) []analysis.TextEdit {
 	stmt := curStmt.Node().(ast.Stmt)
 	// if the stmt is on a line by itself delete the whole line
 	// otherwise just delete the statement.
@@ -537,7 +531,6 @@ func DeleteStmt(fset *token.FileSet, curStmt inspector.Cursor) []analysis.TextEd
 	// this logic would be a lot simpler with the file contents, and somewhat simpler
 	// if the cursors included the comments.
 
-	tokFile := fset.File(stmt.Pos())
 	lineOf := tokFile.Line
 	stmtStartLine, stmtEndLine := lineOf(stmt.Pos()), lineOf(stmt.End())
 

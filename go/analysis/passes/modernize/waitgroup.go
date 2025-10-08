@@ -130,6 +130,7 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 		if !fileUses(info, file, "go1.25") {
 			continue
 		}
+		tokFile := pass.Fset.File(file.Pos())
 
 		var addCallRecvText bytes.Buffer
 		err := printer.Fprint(&addCallRecvText, pass.Fset, addCallRecv)
@@ -145,9 +146,9 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 				Message: "Simplify by using WaitGroup.Go",
 				TextEdits: slices.Concat(
 					// delete "wg.Add(1)"
-					analysisinternal.DeleteStmt(pass.Fset, curAddStmt),
+					analysisinternal.DeleteStmt(tokFile, curAddStmt),
 					// delete "wg.Done()" or "defer wg.Done()"
-					analysisinternal.DeleteStmt(pass.Fset, curDoneStmt),
+					analysisinternal.DeleteStmt(tokFile, curDoneStmt),
 					[]analysis.TextEdit{
 						// go    func()
 						// ------

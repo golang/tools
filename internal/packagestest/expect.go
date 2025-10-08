@@ -419,21 +419,21 @@ func (e *Exported) rangeConverter(n *expect.Note, args []any) (Range, []any, err
 			return mark, args, nil
 		}
 	case string:
-		start, end, err := expect.MatchBefore(e.ExpectFileSet, e.FileContents, n.Pos, arg)
+		start, end, err := expect.MatchBefore(tokFile, e.FileContents, n.Pos, arg)
 		if err != nil {
 			return Range{}, nil, err
 		}
 		if !start.IsValid() {
-			return Range{}, nil, fmt.Errorf("%v: pattern %s did not match", e.ExpectFileSet.Position(n.Pos), arg)
+			return Range{}, nil, fmt.Errorf("%v: pattern %s did not match", tokFile.Position(n.Pos), arg)
 		}
 		return newRange(tokFile, start, end), args, nil
 	case *regexp.Regexp:
-		start, end, err := expect.MatchBefore(e.ExpectFileSet, e.FileContents, n.Pos, arg)
+		start, end, err := expect.MatchBefore(tokFile, e.FileContents, n.Pos, arg)
 		if err != nil {
 			return Range{}, nil, err
 		}
 		if !start.IsValid() {
-			return Range{}, nil, fmt.Errorf("%v: pattern %s did not match", e.ExpectFileSet.Position(n.Pos), arg)
+			return Range{}, nil, fmt.Errorf("%v: pattern %s did not match", tokFile.Position(n.Pos), arg)
 		}
 		return newRange(tokFile, start, end), args, nil
 	default:

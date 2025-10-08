@@ -108,21 +108,22 @@ func TestData(t *testing.T) {
 			// Process @inline notes in comments in initial packages.
 			for _, pkg := range pkgs {
 				for _, file := range pkg.Syntax {
+					tokFile := pkg.Fset.File(file.FileStart)
 					// Read file content (for @inline regexp, and inliner).
-					content, err := os.ReadFile(pkg.Fset.File(file.FileStart).Name())
+					content, err := os.ReadFile(tokFile.Name())
 					if err != nil {
 						t.Error(err)
 						continue
 					}
 
 					// Read and process @inline notes.
-					notes, err := expect.ExtractGo(pkg.Fset, file)
+					notes, err := expect.ExtractGo(tokFile, file)
 					if err != nil {
-						t.Errorf("parsing notes in %q: %v", pkg.Fset.File(file.FileStart).Name(), err)
+						t.Errorf("parsing notes in %q: %v", tokFile.Name(), err)
 						continue
 					}
 					for _, note := range notes {
-						posn := pkg.Fset.PositionFor(note.Pos, false)
+						posn := tokFile.PositionFor(note.Pos, false)
 						if note.Name != "inline" {
 							t.Errorf("%s: invalid marker @%s", posn, note.Name)
 							continue

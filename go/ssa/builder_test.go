@@ -1368,7 +1368,7 @@ func TestRangeOverInt(t *testing.T) {
 	}
 
 	// Collect all notes in f, i.e. comments starting with "//@ types".
-	notes, err := expect.ExtractGo(fset, f)
+	notes, err := expect.ExtractGo(fset.File(f.Pos()), f)
 	if err != nil {
 		t.Fatal(err)
 	}

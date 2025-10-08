@@ -156,7 +156,7 @@ func TestMarker(t *testing.T) {
 }
 
 func checkMarker(t *testing.T, fset *token.FileSet, readFile expect.ReadFile, markers map[string]token.Pos, pos token.Pos, name string, pattern any) {
-	start, end, err := expect.MatchBefore(fset, readFile, pos, pattern)
+	start, end, err := expect.MatchBefore(fset.File(pos), readFile, pos, pattern)
 	if err != nil {
 		t.Errorf("%v: MatchBefore failed: %v", fset.Position(pos), err)
 		return

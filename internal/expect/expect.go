@@ -79,15 +79,14 @@ type Note struct {
 type ReadFile func(filename string) ([]byte, error)
 
 // MatchBefore attempts to match a pattern in the line before the supplied pos.
-// It uses the FileSet and the ReadFile to work out the contents of the line
+// It uses the token.File and the ReadFile to work out the contents of the line
 // that end is part of, and then matches the pattern against the content of the
 // start of that line up to the supplied position.
 // The pattern may be either a simple string, []byte or a *regexp.Regexp.
 // MatchBefore returns the range of the line that matched the pattern, and
 // invalid positions if there was no match, or an error if the line could not be
 // found.
-func MatchBefore(fset *token.FileSet, readFile ReadFile, end token.Pos, pattern any) (token.Pos, token.Pos, error) {
-	f := fset.File(end)
+func MatchBefore(f *token.File, readFile ReadFile, end token.Pos, pattern any) (token.Pos, token.Pos, error) {
 	content, err := readFile(f.Name())
 	if err != nil {
 		return token.NoPos, token.NoPos, fmt.Errorf("invalid file: %v", err)

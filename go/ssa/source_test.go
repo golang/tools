@@ -33,9 +33,12 @@ func TestObjValueLookup(t *testing.T) {
 	}
 	readFile := func(filename string) ([]byte, error) { return src, nil }
 
-	mode := ssa.GlobalDebug /*|ssa.PrintFunctions*/
-	mainPkg, ppkg := buildPackage(t, string(src), mode)
-	fset := ppkg.Fset
+	var (
+		mode          = ssa.GlobalDebug /*|ssa.PrintFunctions*/
+		mainPkg, ppkg = buildPackage(t, string(src), mode)
+		f             = ppkg.Syntax[0]
+		tokFile       = ppkg.Fset.File(f.Pos())
+	)
 
 	// Maps each var Ident (represented "name:linenum") to the
 	// kind of ssa.Value we expect (represented "Constant", "&Alloc").
@@ -44,35 +47,35 @@ func TestObjValueLookup(t *testing.T) {
 	// Each note of the form @ssa(x, "BinOp") in testdata/objlookup.go
 	// specifies an expectation that an object named x declared on the
 	// same line is associated with an ssa.Value of type *ssa.BinOp.
-	notes, err := expect.ExtractGo(fset, ppkg.Syntax[0])
+	notes, err := expect.ExtractGo(tokFile, f)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, n := range notes {
 		if n.Name != "ssa" {
-			t.Errorf("%v: unexpected note type %q, want \"ssa\"", fset.Position(n.Pos), n.Name)
+			t.Errorf("%v: unexpected note type %q, want \"ssa\"", tokFile.Position(n.Pos), n.Name)
 			continue
 		}
 		if len(n.Args) != 2 {
-			t.Errorf("%v: ssa has %d args, want 2", fset.Position(n.Pos), len(n.Args))
+			t.Errorf("%v: ssa has %d args, want 2", tokFile.Position(n.Pos), len(n.Args))
 			continue
 		}
 		ident, ok := n.Args[0].(expect.Identifier)
 		if !ok {
-			t.Errorf("%v: got %v for arg 1, want identifier", fset.Position(n.Pos), n.Args[0])
+			t.Errorf("%v: got %v for arg 1, want identifier", tokFile.Position(n.Pos), n.Args[0])
 			continue
 		}
 		exp, ok := n.Args[1].(string)
 		if !ok {
-			t.Errorf("%v: got %v for arg 2, want string", fset.Position(n.Pos), n.Args[1])
+			t.Errorf("%v: got %v for arg 2, want string", tokFile.Position(n.Pos), n.Args[1])
 			continue
 		}
-		p, _, err := expect.MatchBefore(fset, readFile, n.Pos, string(ident))
+		p, _, err := expect.MatchBefore(tokFile, readFile, n.Pos, string(ident))
 		if err != nil {
 			t.Error(err)
 			continue
 		}
-		pos := fset.Position(p)
+		pos := tokFile.Position(p)
 		key := fmt.Sprintf("%s:%d", ident, pos.Line)
 		expectations[key] = exp
 	}
@@ -107,8 +110,8 @@ func TestObjValueLookup(t *testing.T) {
 	// The result varies based on the specific Ident.
 	for i, id := range varIds {
 		obj := varObjs[i]
-		ref, _ := astutil.PathEnclosingInterval(ppkg.Syntax[0], id.Pos(), id.Pos())
-		pos := fset.Position(id.Pos())
+		ref, _ := astutil.PathEnclosingInterval(f, id.Pos(), id.Pos())
+		pos := tokFile.Position(id.Pos())
 		exp := expectations[fmt.Sprintf("%s:%d", id.Name, pos.Line)]
 		if exp == "" {
 			t.Errorf("%s: no expectation for var ident %s ", pos, id.Name)
@@ -222,9 +225,12 @@ func testValueForExpr(t *testing.T, testfile string) {
 		t.Fatal(err)
 	}
 
-	mode := ssa.GlobalDebug /*|ssa.PrintFunctions*/
-	mainPkg, ppkg := buildPackage(t, string(src), mode)
-	fset, file := ppkg.Fset, ppkg.Syntax[0]
+	var (
+		mode          = ssa.GlobalDebug /*|ssa.PrintFunctions*/
+		mainPkg, ppkg = buildPackage(t, string(src), mode)
+		file          = ppkg.Syntax[0]
+		tokFile       = ppkg.Fset.File(file.Pos())
+	)
 
 	if false {
 		// debugging
@@ -245,7 +251,7 @@ func testValueForExpr(t *testing.T, testfile string) {
 		return true
 	})
 
-	notes, err := expect.ExtractGo(fset, file)
+	notes, err := expect.ExtractGo(tokFile, file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +260,7 @@ func testValueForExpr(t *testing.T, testfile string) {
 		if want == "nil" {
 			want = "<nil>"
 		}
-		position := fset.Position(n.Pos)
+		position := tokFile.Position(n.Pos)
 		var e ast.Expr
 		for _, paren := range parenExprs {
 			if paren.Pos() > n.Pos {

@@ -62,7 +62,7 @@ func Parse(fset *token.FileSet, filename string, content []byte) ([]*Note, error
 				if text == "" {
 					continue
 				}
-				parsed, err := parse(fset, pos+token.Pos(adjust), text)
+				parsed, err := parse(file, pos+token.Pos(adjust), text)
 				if err != nil {
 					return nil, err
 				}
@@ -80,7 +80,7 @@ func Parse(fset *token.FileSet, filename string, content []byte) ([]*Note, error
 		if file == nil {
 			return nil, err
 		}
-		return ExtractGo(fset, file)
+		return ExtractGo(fset.File(file.Pos()), file)
 
 	case ".mod":
 		file, err := modfile.Parse(filename, content, nil)
@@ -143,7 +143,8 @@ func extractModWork(fset *token.FileSet, exprs []modfile.Expr) ([]*Note, error) 
 			if text == "" {
 				continue
 			}
-			parsed, err := parse(fset, token.Pos(int(cmt.Start.Byte)+adjust), text)
+			pos := token.Pos(int(cmt.Start.Byte) + adjust)
+			parsed, err := parse(fset.File(pos), pos, text)
 			if err != nil {
 				return nil, err
 			}
@@ -158,7 +159,7 @@ func extractModWork(fset *token.FileSet, exprs []modfile.Expr) ([]*Note, error) 
 // sequence of notes.
 // See the package documentation for details about the syntax of those
 // notes.
-func ExtractGo(fset *token.FileSet, file *ast.File) ([]*Note, error) {
+func ExtractGo(tokFile *token.File, file *ast.File) ([]*Note, error) {
 	var notes []*Note
 	for _, g := range file.Comments {
 		for _, c := range g.List {
@@ -166,7 +167,7 @@ func ExtractGo(fset *token.FileSet, file *ast.File) ([]*Note, error) {
 			if text == "" {
 				continue
 			}
-			parsed, err := parse(fset, token.Pos(int(c.Pos())+adjust), text)
+			parsed, err := parse(tokFile, token.Pos(int(c.Pos())+adjust), text)
 			if err != nil {
 				return nil, err
 			}
@@ -263,11 +264,11 @@ func (t *tokens) Errorf(msg string, args ...any) {
 	t.err = fmt.Errorf(msg, args...)
 }
 
-func parse(fset *token.FileSet, base token.Pos, text string) ([]*Note, error) {
+func parse(tokFile *token.File, base token.Pos, text string) ([]*Note, error) {
 	t := new(tokens).Init(base, text)
 	notes := parseComment(t)
 	if t.err != nil {
-		return nil, fmt.Errorf("%v: %s", fset.Position(t.Pos()), t.err)
+		return nil, fmt.Errorf("%v: %s", tokFile.Position(t.Pos()), t.err)
 	}
 	return notes, nil
 }

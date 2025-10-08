@@ -232,7 +232,8 @@ func TestDeleteStmt(t *testing.T) {
 			if cnt != tt.which {
 				t.Fatalf("test %s does not contain desired statement %d", tt.name, tt.which)
 			}
-			edits := DeleteStmt(fset, stmt)
+			tokFile := fset.File(f.Pos())
+			edits := DeleteStmt(tokFile, stmt)
 			if tt.want == tt.in {
 				if len(edits) != 0 {
 					t.Fatalf("%s: got %d edits, expected 0", tt.name, len(edits))
@@ -242,7 +243,6 @@ func TestDeleteStmt(t *testing.T) {
 			if len(edits) != 1 {
 				t.Fatalf("%s: got %d edits, expected 1", tt.name, len(edits))
 			}
-			tokFile := fset.File(f.Pos())
 
 			left := tokFile.Offset(edits[0].Pos)
 			right := tokFile.Offset(edits[0].End)
