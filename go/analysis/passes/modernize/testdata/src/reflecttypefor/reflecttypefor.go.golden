@@ -20,3 +20,11 @@ var (
 	_ = reflect.TypeFor[time.Duration]() // want "reflect.TypeOf call can be simplified using TypeFor"
 )
 
+// Eliminate local var if we deleted its last use.
+func _() {
+	_ = reflect.TypeFor[string]() // want "reflect.TypeOf call can be simplified using TypeFor"
+
+	var z2 string
+	_ = reflect.TypeFor[string]() // want "reflect.TypeOf call can be simplified using TypeFor"
+	_ = z2                 // z2 has multiple uses
+}

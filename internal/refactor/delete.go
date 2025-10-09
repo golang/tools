@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 // DeleteVar returns edits to delete the declaration of a variable
@@ -430,4 +431,35 @@ Outer:
 		edit.End++
 	}
 	return []analysis.TextEdit{edit}
+}
+
+// DeleteUnusedVars computes the edits required to delete the
+// declarations of any local variables whose last uses are in the
+// curDelend subtree, which is about to be deleted.
+func DeleteUnusedVars(index *typeindex.Index, info *types.Info, tokFile *token.File, curDelend inspector.Cursor) []analysis.TextEdit {
+	// TODO(adonovan): we might want to generalize this by
+	// splitting the two phases below, so that we can gather
+	// across a whole sequence of deletions then finally compute the
+	// set of variables that are no longer wanted.
+
+	// Count number of deletions of each var.
+	delcount := make(map[*types.Var]int)
+	for curId := range curDelend.Preorder((*ast.Ident)(nil)) {
+		id := curId.Node().(*ast.Ident)
+		if v, ok := info.Uses[id].(*types.Var); ok &&
+			typesinternal.GetVarKind(v) == typesinternal.LocalVar { // always false before go1.25
+			delcount[v]++
+		}
+	}
+
+	// Delete declaration of each var that became unused.
+	var edits []analysis.TextEdit
+	for v, count := range delcount {
+		if len(slices.Collect(index.Uses(v))) == count {
+			if curDefId, ok := index.Def(v); ok {
+				edits = append(edits, DeleteVar(tokFile, info, curDefId)...)
+			}
+		}
+	}
+	return edits
 }

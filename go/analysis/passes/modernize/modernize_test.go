@@ -10,6 +10,7 @@ import (
 	. "golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/go/analysis/passes/modernize"
 	"golang.org/x/tools/internal/goplsexport"
+	"golang.org/x/tools/internal/testenv"
 )
 
 func TestAppendClipped(t *testing.T) {
@@ -61,6 +62,7 @@ func TestRangeInt(t *testing.T) {
 }
 
 func TestReflectTypeFor(t *testing.T) {
+	testenv.NeedsGo1Point(t, 25) // requires go1.25 types.Var.Kind
 	RunWithSuggestedFixes(t, TestData(), modernize.ReflectTypeForAnalyzer, "reflecttypefor")
 }
 
