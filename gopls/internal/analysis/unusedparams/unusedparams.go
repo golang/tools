@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/util/moreslices"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -243,10 +244,8 @@ funcloop:
 
 		// Don't report diagnostics on generated files.
 		// (We can't skip analysis of generated files, though.)
-		for curFile := range c.Enclosing((*ast.File)(nil)) {
-			if ast.IsGenerated(curFile.Node().(*ast.File)) {
-				continue funcloop
-			}
+		if ast.IsGenerated(astutil.EnclosingFile(c)) {
+			continue funcloop
 		}
 
 		// Report each unused parameter.
