@@ -24,12 +24,12 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/gopls/internal/analysis/fillreturns"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/fuzzy"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -183,7 +183,7 @@ func SuggestedFix(cpkg *cache.Package, pgf *parsego.File, start, end token.Pos) 
 		}
 		fieldTyps = append(fieldTyps, field.Type())
 	}
-	matches := analysisinternal.MatchingIdents(fieldTyps, file, start, info, pkg)
+	matches := fillreturns.MatchingIdents(fieldTyps, file, start, info, pkg)
 	qual := typesinternal.FileQualifier(file, pkg)
 
 	for i, fieldTyp := range fieldTyps {

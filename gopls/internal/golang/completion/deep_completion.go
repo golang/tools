@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/util/typesutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/packagepath"
 )
 
 // MaxDeepCompletions limits deep completion results because in most cases
@@ -162,7 +162,7 @@ func (c *completer) deepSearch(ctx context.Context, minDepth int, deadline *time
 				continue
 			}
 
-			if cand.imp != nil && !analysisinternal.CanImport(string(c.pkg.Metadata().PkgPath), cand.imp.importPath) {
+			if cand.imp != nil && !packagepath.CanImport(string(c.pkg.Metadata().PkgPath), cand.imp.importPath) {
 				continue // inaccessible internal package
 			}
 

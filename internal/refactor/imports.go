@@ -14,7 +14,7 @@ import (
 	pathpkg "path"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/packagepath"
 )
 
 // AddImport returns the prefix (either "pkg." or "") that should be
@@ -97,13 +97,13 @@ func AddImport(info *types.Info, file *ast.File, preferredName, pkgpath, member 
 	}
 	if gd, ok := before.(*ast.GenDecl); ok && gd.Tok == token.IMPORT && gd.Rparen.IsValid() {
 		// Have existing grouped import ( ... ) decl.
-		if analysisinternal.IsStdPackage(pkgpath) && len(gd.Specs) > 0 {
+		if packagepath.IsStdPackage(pkgpath) && len(gd.Specs) > 0 {
 			// Add spec for a std package before
 			// first existing spec, followed by
 			// a blank line if the next one is non-std.
 			first := gd.Specs[0].(*ast.ImportSpec)
 			pos = first.Pos()
-			if !analysisinternal.IsStdPackage(first.Path.Value) {
+			if !packagepath.IsStdPackage(first.Path.Value) {
 				newText += "\n"
 			}
 			newText += "\n\t"

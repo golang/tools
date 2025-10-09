@@ -23,8 +23,8 @@ import (
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/packagepath"
 )
 
 type ContextParams struct {
@@ -108,7 +108,7 @@ func (h *handler) contextHandler(ctx context.Context, req *mcp.CallToolRequest, 
 			// Skip the standard library to reduce token usage, operating on
 			// the assumption that the LLM is already familiar with its
 			// symbols and documentation.
-			if analysisinternal.IsStdPackage(spec.Path.Value) {
+			if packagepath.IsStdPackage(spec.Path.Value) {
 				continue
 			}
 			toSummarize = append(toSummarize, spec)

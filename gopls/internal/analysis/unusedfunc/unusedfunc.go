@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -70,7 +71,7 @@ var Analyzer = &analysis.Analyzer{
 func run(pass *analysis.Pass) (any, error) {
 	// The standard library makes heavy use of intrinsics, linknames, etc,
 	// that confuse this algorithm; so skip it (#74130).
-	if analysisinternal.IsStdPackage(pass.Pkg.Path()) {
+	if packagepath.IsStdPackage(pass.Pkg.Path()) {
 		return nil, nil
 	}
 

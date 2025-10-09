@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package analysisinternal_test
+package packagepath_test
 
 import (
 	"testing"
 
-	"golang.org/x/tools/internal/analysisinternal"
+	. "golang.org/x/tools/internal/packagepath"
 )
 
 func TestCanImport(t *testing.T) {
@@ -32,7 +32,7 @@ func TestCanImport(t *testing.T) {
 		{"a.com/b", "a.com/c/internal/foo", false},
 		{"a.com/b", "a.com/c/xinternal/foo", true},
 	} {
-		got := analysisinternal.CanImport(tt.from, tt.to)
+		got := CanImport(tt.from, tt.to)
 		if got != tt.want {
 			t.Errorf("CanImport(%q, %q) = %v, want %v", tt.from, tt.to, got, tt.want)
 		}
@@ -53,7 +53,7 @@ func TestIsStdPackage(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.pkgpath, func(t *testing.T) {
-			got := analysisinternal.IsStdPackage(tc.pkgpath)
+			got := IsStdPackage(tc.pkgpath)
 			if got != tc.isStd {
 				t.Fatalf("got %t want %t", got, tc.isStd)
 			}

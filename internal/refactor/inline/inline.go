@@ -23,8 +23,8 @@ import (
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
 	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -342,7 +342,7 @@ func (st *state) inline() (*Result, error) {
 		for _, imp := range newImports {
 			// Check that the new imports are accessible.
 			path, _ := strconv.Unquote(imp.spec.Path.Value)
-			if !analysisinternal.CanImport(caller.Types.Path(), path) {
+			if !packagepath.CanImport(caller.Types.Path(), path) {
 				return nil, fmt.Errorf("can't inline function %v as its body refers to inaccessible package %q", callee, path)
 			}
 			if lastPos.IsValid() {

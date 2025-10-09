@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/typesinternal"
@@ -282,7 +283,7 @@ func (a *analyzer) inlineAlias(tn *types.TypeName, curId inspector.Cursor) {
 			if obj != tn {
 				return
 			}
-		} else if !analysisinternal.CanImport(a.pass.Pkg.Path(), pkgPath) {
+		} else if !packagepath.CanImport(a.pass.Pkg.Path(), pkgPath) {
 			// If this package can't see the package of this part of rhs, we can't inline.
 			return
 		} else if _, ok := importPrefixes[pkgPath]; !ok {
@@ -450,7 +451,7 @@ func (a *analyzer) inlineConst(con *types.Const, cur inspector.Cursor) {
 			// "B" means something different here than at the inlinable const's scope.
 			return
 		}
-	} else if !analysisinternal.CanImport(a.pass.Pkg.Path(), incon.RHSPkgPath) {
+	} else if !packagepath.CanImport(a.pass.Pkg.Path(), incon.RHSPkgPath) {
 		// If this package can't see the RHS's package, we can't inline.
 		return
 	}
