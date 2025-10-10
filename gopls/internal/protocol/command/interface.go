@@ -322,6 +322,9 @@ type Interface interface {
 
 	// ModifyTags: Add or remove struct tags on a given node.
 	ModifyTags(context.Context, ModifyTagsArgs) error
+
+	// GoToTest: Go to test declaration.
+	GoToTest(context.Context, protocol.Location) error
 }
 
 type RunTestsArgs struct {
