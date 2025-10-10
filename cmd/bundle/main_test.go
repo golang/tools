@@ -31,6 +31,7 @@ func testBundle(t *testing.T, x packagestest.Exporter) {
 				"a.go": load("testdata/src/initial/a.go"),
 				"b.go": load("testdata/src/initial/b.go"),
 				"c.go": load("testdata/src/initial/c.go"),
+				"d.go": load("testdata/src/initial/d.go"),
 			},
 		},
 		{
