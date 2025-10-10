@@ -7,12 +7,10 @@ import (
 
 func _() {
 	var wg sync1.WaitGroup
-	// want "Goroutine creation can be simplified using WaitGroup.Go"
 	wg.Go(func() {
 		fmt.Println()
 	})
 
-	// want "Goroutine creation can be simplified using WaitGroup.Go"
 	wg.Go(func() {
 		fmt.Println()
 	})

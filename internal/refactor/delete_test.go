@@ -28,6 +28,24 @@ func TestDeleteStmt(t *testing.T) {
 		name  string // should contain exactly one of [block,switch,case,comm,for,type]
 	}
 	tests := []testCase{
+		{
+			in:    "package p; func f() {/*a*/x := 12/*b*/}",
+			which: 1,
+			want:  "package p; func f() {}",
+			name:  "var0",
+		},
+		{
+			in:    "package p; func f() {\n/*a*/x := 12 //foo\n//keep\n}",
+			which: 1,
+			want:  "package p; func f() {\n//keep\n}",
+			name:  "var1",
+		},
+		{ // for code coverage
+			in:    "package p; func f() {/*a*/x:=12/*b*/; y:=11}",
+			which: 1,
+			want:  "package p; func f() {/*b*/; y:=11}",
+			name:  "var2",
+		},
 		{ // do nothing when asked to remove a function body
 			in:    "package p; func f() {  }",
 			which: 0,
@@ -40,34 +58,34 @@ func TestDeleteStmt(t *testing.T) {
 			want:  "package p; func f() { }",
 			name:  "block1",
 		},
-		{
+		{ // keep white space
 			in:    "package p; func f() { a() }",
 			which: 1,
 			want:  "package p; func f() {  }",
 			name:  "block2",
 		},
-		{
+		{ // keep semicolon
 			in:    "package p; func f() { a();}",
 			which: 1,
 			want:  "package p; func f() { ;}",
 			name:  "block3",
 		},
-		{
+		{ // remove whole line
 			in:    "package p; func f() {\n a() \n\n}",
 			which: 1,
 			want:  "package p; func f() {\n\n}",
 			name:  "block4",
 		},
-		{
+		{ // preserve whitespace and remove comment
 			in:    "package p; func f() { a()// comment\n}",
 			which: 1,
-			want:  "package p; func f() { // comment\n}",
+			want:  "package p; func f() { \n}",
 			name:  "block5",
 		},
-		{
+		{ // preserve whitespace, remove preceding comment
 			in:    "package p; func f() { /*c*/a() \n}",
 			which: 1,
-			want:  "package p; func f() { /*c*/ \n}",
+			want:  "package p; func f() { \n}",
 			name:  "block6",
 		},
 		{
@@ -76,61 +94,61 @@ func TestDeleteStmt(t *testing.T) {
 			want:  "package p; func f() { a();;}",
 			name:  "block7",
 		},
-		{
+		{ // remove whole line
 			in:    "package p; func f() {\n\ta()\n\tb()\n}",
 			which: 2,
 			want:  "package p; func f() {\n\ta()\n}",
 			name:  "block8",
 		},
-		{
+		{ // remove whole line
 			in:    "package p; func f() {\n\ta()\n\tb()\n\tc()\n}",
 			which: 2,
 			want:  "package p; func f() {\n\ta()\n\tc()\n}",
 			name:  "block9",
 		},
-		{
+		{ // remove expression statement
 			in:    "package p\nfunc f() {a()+b()}",
 			which: 1,
 			want:  "package p\nfunc f() {}",
 			name:  "block10",
 		},
-		{
+		{ // even in parentheses
 			in:    "package p\nfunc f() {(a()+b())}",
 			which: 1,
 			want:  "package p\nfunc f() {}",
 			name:  "block11",
 		},
-		{
+		{ // should it also remove the semicolon? No, can't find it.
 			in:    "package p; func f() { switch a(); b() {}}",
 			which: 2, // 0 is the func body, 1 is the switch statement
 			want:  "package p; func f() { switch ; b() {}}",
 			name:  "switch0",
 		},
-		{
+		{ // remove preceding comment too
 			in:    "package p; func f() { switch /*c*/a(); {}}",
 			which: 2, // 0 is the func body, 1 is the switch statement
-			want:  "package p; func f() { switch /*c*/; {}}",
+			want:  "package p; func f() { switch ; {}}",
 			name:  "switch1",
 		},
-		{
+		{ // remove subsequent comment too
 			in:    "package p; func f() { switch a()/*c*/; {}}",
 			which: 2, // 0 is the func body, 1 is the switch statement
-			want:  "package p; func f() { switch /*c*/; {}}",
+			want:  "package p; func f() { switch ; {}}",
 			name:  "switch2",
 		},
-		{
+		{ // statement inside a case
 			in:    "package p; func f() { select {default: a()}}",
 			which: 4, // 0 is the func body, 1 is the select statement, 2 is its body, 3 is the comm clause
 			want:  "package p; func f() { select {default: }}",
 			name:  "comm0",
 		},
-		{
+		{ // statement in comm clause
 			in:    "package p; func f(x chan any) { select {case x <- a: a(x)}}",
 			which: 5, // 0 is the func body, 1 is the select statement, 2 is its body, 3 is the comm clause
 			want:  "package p; func f(x chan any) { select {case x <- a: }}",
 			name:  "comm1",
 		},
-		{
+		{ // don't remove whole clause
 			in:    "package p; func f(x chan any) { select {case x <- a: a(x)}}",
 			which: 4, // 0 is the func body, 1 is the select statement, 2 is its body, 3 is the comm clause
 			want:  "package p; func f(x chan any) { select {case x <- a: a(x)}}",
@@ -143,46 +161,58 @@ func TestDeleteStmt(t *testing.T) {
 			name:  "case0",
 		},
 		{
-			in:    "package p; func f() { switch {case 3: a()}}",
+			in:    "package p; func f() { switch {case 3: /*A*/ a() /*B*/}}",
 			which: 4, // 0 is the func body, 1 is the select statement, 2 is its body
 			want:  "package p; func f() { switch {case 3: }}",
 			name:  "case1",
 		},
-		{
-			in:    "package p; func f() {for a();;b() {}}",
+		{ // init in for statement
+			in:    "package p; func f() {for /*a*/ a();;b() {}}",
 			which: 2,
 			want:  "package p; func f() {for ;;b() {}}",
 			name:  "for0",
 		},
-		{
-			in:    "package p; func f() {for a();c();b() {}}",
+		{ // step in for statement
+			in:    "package p; func f() {for a();c();b() /*B*/ {}}",
 			which: 3,
 			want:  "package p; func f() {for a();c(); {}}",
 			name:  "for1",
 		},
-		{
+		{ // one of two func calls on. line
 			in:    "package p; func f() {for\na();c()\nb() {}}",
 			which: 2,
 			want:  "package p; func f() {for\n;c()\nb() {}}",
 			name:  "for2",
 		},
-		{
+		{ // step in for, with strange \n
 			in:    "package p; func f() {for a();\nc();b() {}}",
 			which: 3,
 			want:  "package p; func f() {for a();\nc(); {}}",
 			name:  "for3",
 		},
-		{
+		{ // in type switch
 			in:    "package p; func f() {switch a();b().(type){}}",
 			which: 2,
 			want:  "package p; func f() {switch ;b().(type){}}",
 			name:  "type0",
 		},
-		{
+		{ // but not the type cast
 			in:    "package p; func f() {switch a();b().(type){}}",
 			which: 3,
 			want:  "package p; func f() {switch a();b().(type){}}",
 			name:  "type1",
+		},
+		{ // if
+			in:    "package p; func f() {if a();b() {}}",
+			which: 2,
+			want:  "package p; func f() {if ;b() {}}",
+			name:  "if0",
+		},
+		{ // cannot remove the else
+			in:    "package p\nfunc _() { if a() {}  else {b()}}",
+			which: 3,
+			want:  "package p\nfunc _() { if a() {}  else {b()}}",
+			name:  "else0",
 		},
 	}
 	for _, tt := range tests {
@@ -394,15 +424,14 @@ func TestDeleteVar(t *testing.T) {
 			"package p; func _() { var ( v int // comment\n) }",
 			"package p; func _() {}",
 		},
-		// TODO(adonovan,pjw): change DeleteStmt's trailing comment handling.
-		// {
-		// 	"package p; func _() { var ( v int ) // comment\n }",
-		// 	"package p; func _() {}",
-		// },
-		// {
-		// 	"package p; func _() { var v int // comment\n }",
-		// 	"package p; func _() {}",
-		// },
+		{
+			"package p; func _() { var ( v int ) // comment\n }",
+			"package p; func _() { \n}",
+		},
+		{
+			"package p; func _() { var v int // comment\n }",
+			"package p; func _() { \n}",
+		},
 		// AssignStmt
 		{
 			"package p; func _() { v := 0 }",
@@ -436,18 +465,17 @@ func TestDeleteVar(t *testing.T) {
 			"package p; func _() { v := fx() }",
 			"package p; func _() { _ = fx() }",
 		},
-		// TODO(adonovan,pjw): change DeleteStmt's trailing comment handling.
-		// {
-		// 	"package p; func _() { v := 1 // comment\n }",
-		// 	"package p; func _() {}",
-		// },
+		{
+			"package p; func _() { v := 1 // comment\n }",
+			"package p; func _() { \n}",
+		},
 		{
 			"package p; func _() { v, x := 0, 1 // comment\n }",
 			"package p; func _() { x := 1 // comment\n }",
 		},
 		{
-			"package p; func _() { if v := 1; cond {} }", // (DeleteStmt fails within IfStmt)
-			"package p; func _() { if _ = 1; cond {} }",
+			"package p; func _() { if v := 1; cond {} }",
+			"package p; func _() { if ; cond {} }",
 		},
 		{
 			"package p; func _() { if v, x := 1, 2; cond {} }",

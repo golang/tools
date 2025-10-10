@@ -9,19 +9,17 @@ func a() {
 	panic(c)
 
 	if 1 == 1 {
-		// want `declared (and|but) not used`
 	}
 }
 
 func b() {
 	// b is a variable
-	// want `declared (and|but) not used`
 }
 
 func c() {
 	var (
 		d string
 	)
-
+	
 	panic(d)
 }

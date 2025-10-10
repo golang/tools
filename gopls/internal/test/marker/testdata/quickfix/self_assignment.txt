@@ -16,4 +16,3 @@ func _() {
 -- @fix/a.go --
 @@ -9 +9 @@
 -	s = s //@quickfix("s = s", re"self-assignment", fix)
-+	 //@quickfix("s = s", re"self-assignment", fix)

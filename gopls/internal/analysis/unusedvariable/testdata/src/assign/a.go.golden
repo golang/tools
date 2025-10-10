@@ -14,17 +14,16 @@ type A struct {
 }
 
 func singleAssignment() {
-	// want `declared (and|but) not used`
+
+
 
 	if 1 == 1 {
-		// want `declared (and|but) not used`
 	}
 
 	panic("I should survive")
 }
 
 func noOtherStmtsInBlock() {
-	// want `declared (and|but) not used`
 }
 
 func partOfMultiAssignment() {
@@ -46,8 +45,7 @@ func sideEffects(cBool chan bool, cInt chan int) {
 	_ = map[int]int{       // want `declared (and|but) not used`
 		fInt(): <-cInt,
 	}
-	_ = []int{<-cInt} // want `declared (and|but) not used`
-	// want `declared (and|but) not used`
+	_ = []int{<-cInt}       // want `declared (and|but) not used`
 
 	// (ill-typed)
 	_ = func(s string) {}() // want `declared (and|but) not used`
@@ -55,16 +53,13 @@ func sideEffects(cBool chan bool, cInt chan int) {
 
 func commentAbove() {
 	// v is a variable
-	// want `declared (and|but) not used`
 }
 
 func commentBelow() {
-	// want `declared (and|but) not used`
 	// v is a variable
 }
 
 func commentSpaceBelow() {
-	// want `declared (and|but) not used`
 
 	// v is a variable
 }

@@ -15,11 +15,8 @@ type ST[T interface{ ~int }] struct {
 
 func (s *ST[T]) SetX(x T, ch chan T) {
 	// Accidental self-assignment; it should be "s.x = x"
-	// want "self-assignment of x"
 	// Another mistake
-	// want "self-assignment of s.x"
 
-	// want "self-assignment of s.l.0."
 
 	// Bail on any potential side effects to avoid false positives
 	s.l[num()] = s.l[num()]
