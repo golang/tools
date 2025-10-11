@@ -44,6 +44,12 @@ as determined by the special comment described in
 https://go.dev/s/generatedcode. Use the -generated flag to include them.
 
 The tool also does not report marker interface methods by default.
+Marker interface methods are typically used to create compile-time constraints
+to ensure that only specific types can implement a particular interface.
+These methods have no other functionality (empty function body) and are never invoked.
+Although marker interface methods are technically unreachable, removing them would break
+the interface implementation.
+Hence, the default behavior is to exclude them from the report.
 Use the -marker flag to include them.
 
 In any case, just because a function is reported as dead does not mean
