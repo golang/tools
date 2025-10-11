@@ -167,7 +167,7 @@ func (c *Client) RemoveRoots(uris ...string) {
 		func() bool { return c.roots.remove(uris...) })
 }
 
-// changeAndNotifyClient is called when a feature is added or removed.
+// changeAndNotify is called when a feature is added or removed.
 // It calls change, which should do the work and report whether a change actually occurred.
 // If there was a change, it notifies a snapshot of the sessions.
 func (c *Client) changeAndNotify(notification string, params Params, change func() bool) {

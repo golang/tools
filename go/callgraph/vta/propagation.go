@@ -77,10 +77,10 @@ func scc(g *vtaGraph) (sccs [][]idx, idxToSccID []int) {
 	return sccs, idxToSccID
 }
 
-// LastIndex returns the index of the last occurrence of v in s, or -1 if v is
+// slicesLastIndex returns the index of the last occurrence of v in s, or -1 if v is
 // not present in s.
 //
-// LastIndex iterates backwards through the elements of s, stopping when the ==
+// slicesLastIndex iterates backwards through the elements of s, stopping when the ==
 // operator determines an element is equal to v.
 func slicesLastIndex[S ~[]E, E comparable](s S, v E) int {
 	// TODO: move to / dedup with slices.LastIndex

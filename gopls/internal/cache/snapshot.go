@@ -255,7 +255,7 @@ func (s *Snapshot) SequenceID() uint64 {
 	return s.sequenceID
 }
 
-// SnapshotLabels returns a new slice of labels that should be used for events
+// Labels returns a new slice of labels that should be used for events
 // related to a snapshot.
 func (s *Snapshot) Labels() []label.Label {
 	return []label.Label{
