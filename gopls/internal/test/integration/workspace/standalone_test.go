@@ -29,6 +29,7 @@ type I interface {
 }
 -- lib/ignore.go --
 //go:build ignore
+// +build ignore
 
 package main
 
@@ -163,6 +164,7 @@ go 1.18
 package lib // without this package, files are loaded as command-line-arguments
 -- ignore.go --
 //go:build ignore
+// +build ignore
 
 package main
 
@@ -171,6 +173,7 @@ package main
 func main() {}
 -- standalone.go --
 //go:build standalone
+// +build standalone
 
 package main
 

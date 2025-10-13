@@ -15,8 +15,6 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
-	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/versions"
 )
 
 const Doc = "check //go:build and // +build directives"
@@ -57,6 +55,7 @@ func runBuildTag(pass *analysis.Pass) (any, error) {
 func checkGoFile(pass *analysis.Pass, f *ast.File) {
 	var check checker
 	check.init(pass)
+	defer check.finish()
 
 	for _, group := range f.Comments {
 		// A +build comment is ignored after or adjoining the package declaration.
@@ -78,27 +77,6 @@ func checkGoFile(pass *analysis.Pass, f *ast.File) {
 			check.comment(c.Slash, c.Text)
 		}
 	}
-
-	check.finish()
-
-	// For Go 1.18+ files, offer a fix to remove the +build lines
-	// if they passed all consistency checks.
-	if check.crossCheck && !versions.Before(pass.TypesInfo.FileVersions[f], "go1.18") {
-		for _, rng := range check.plusBuildRanges {
-			check.pass.Report(analysis.Diagnostic{
-				Pos:     rng.Pos(),
-				End:     rng.End(),
-				Message: "+build line is no longer needed",
-				SuggestedFixes: []analysis.SuggestedFix{{
-					Message: "Remove obsolete +build line",
-					TextEdits: []analysis.TextEdit{{
-						Pos: rng.Pos(),
-						End: rng.End(),
-					}},
-				}},
-			})
-		}
-	}
 }
 
 func checkOtherFile(pass *analysis.Pass, filename string) error {
@@ -118,15 +96,15 @@ func checkOtherFile(pass *analysis.Pass, filename string) error {
 }
 
 type checker struct {
-	pass            *analysis.Pass
-	plusBuildOK     bool             // "+build" lines still OK
-	goBuildOK       bool             // "go:build" lines still OK
-	crossCheck      bool             // cross-check go:build and +build lines when done reading file
-	inStar          bool             // currently in a /* */ comment
-	goBuildPos      token.Pos        // position of first go:build line found
-	plusBuildRanges []analysis.Range // range of each "+build" line found
-	goBuild         constraint.Expr  // go:build constraint found
-	plusBuild       constraint.Expr  // AND of +build constraints found
+	pass         *analysis.Pass
+	plusBuildOK  bool            // "+build" lines still OK
+	goBuildOK    bool            // "go:build" lines still OK
+	crossCheck   bool            // cross-check go:build and +build lines when done reading file
+	inStar       bool            // currently in a /* */ comment
+	goBuildPos   token.Pos       // position of first go:build line found
+	plusBuildPos token.Pos       // position of first "+build" line found
+	goBuild      constraint.Expr // go:build constraint found
+	plusBuild    constraint.Expr // AND of +build constraints found
 }
 
 func (check *checker) init(pass *analysis.Pass) {
@@ -294,8 +272,6 @@ func (check *checker) goBuildLine(pos token.Pos, line string) {
 }
 
 func (check *checker) plusBuildLine(pos token.Pos, line string) {
-	plusBuildRange := analysisinternal.Range(pos, pos+token.Pos(len(line)))
-
 	line = strings.TrimSpace(line)
 	if !constraint.IsPlusBuild(line) {
 		// Comment with +build but not at beginning.
@@ -310,7 +286,9 @@ func (check *checker) plusBuildLine(pos token.Pos, line string) {
 		check.crossCheck = false
 	}
 
-	check.plusBuildRanges = append(check.plusBuildRanges, plusBuildRange)
+	if check.plusBuildPos == token.NoPos {
+		check.plusBuildPos = pos
+	}
 
 	// testing hack: stop at // ERROR
 	if i := strings.Index(line, " // ERROR "); i >= 0 {
@@ -358,19 +336,19 @@ func (check *checker) plusBuildLine(pos token.Pos, line string) {
 }
 
 func (check *checker) finish() {
-	if !check.crossCheck || len(check.plusBuildRanges) == 0 || check.goBuildPos == token.NoPos {
+	if !check.crossCheck || check.plusBuildPos == token.NoPos || check.goBuildPos == token.NoPos {
 		return
 	}
 
 	// Have both //go:build and // +build,
 	// with no errors found (crossCheck still true).
 	// Check they match.
+	var want constraint.Expr
 	lines, err := constraint.PlusBuildLines(check.goBuild)
 	if err != nil {
 		check.pass.Reportf(check.goBuildPos, "%v", err)
 		return
 	}
-	var want constraint.Expr
 	for _, line := range lines {
 		y, err := constraint.Parse(line)
 		if err != nil {
@@ -385,8 +363,7 @@ func (check *checker) finish() {
 		}
 	}
 	if want.String() != check.plusBuild.String() {
-		check.pass.ReportRangef(check.plusBuildRanges[0], "+build lines do not match //go:build condition")
-		check.crossCheck = false // don't offer fix to remove +build
+		check.pass.Reportf(check.plusBuildPos, "+build lines do not match //go:build condition")
 		return
 	}
 }
