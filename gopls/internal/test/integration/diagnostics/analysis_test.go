@@ -108,7 +108,7 @@ package main
 import _ "embed"
 
 //go:embed foo.txt
-var foo, bar string
+var foo, Bar string
 
 func main() {
 	_ = foo

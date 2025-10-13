@@ -21,8 +21,8 @@ import (
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
-// DeleteVar returns edits to delete the declaration of a variable
-// whose defining identifier is curId.
+// DeleteVar returns edits to delete the declaration of a variable or
+// constant whose defining identifier is curId.
 //
 // It handles variants including:
 // - GenDecl > ValueSpec versus AssignStmt;
@@ -46,6 +46,9 @@ func DeleteVar(tokFile *token.File, info *types.Info, curId inspector.Cursor) []
 	return nil
 }
 
+// deleteVarFromValueSpec returns edits to delete the declaration of a
+// variable or constant within a ValueSpec.
+//
 // Precondition: curId is Ident beneath ValueSpec.Names beneath GenDecl.
 //
 // See also [deleteVarFromAssignStmt], which has parallel structure.
@@ -98,7 +101,7 @@ func deleteVarFromValueSpec(tokFile *token.File, info *types.Info, curIdent insp
 		}}
 	}
 
-	// If the assignment is 1:1 and the RHS has no effects,
+	// If the assignment is n:n and the RHS has no effects,
 	// we can delete the LHS and its corresponding RHS.
 	if len(spec.Names) == len(spec.Values) &&
 		typesinternal.NoEffects(info, spec.Values[index]) {
@@ -240,12 +243,12 @@ func deleteVarFromAssignStmt(tokFile *token.File, info *types.Info, curIdent ins
 	return edits
 }
 
-// DeleteSpec returns edits to delete the ValueSpec identified by curSpec.
+// DeleteSpec returns edits to delete the {Type,Value}Spec identified by curSpec.
 //
 // TODO(adonovan): add test suite. Test for consts as well.
 func DeleteSpec(tokFile *token.File, curSpec inspector.Cursor) []analysis.TextEdit {
 	var (
-		spec    = curSpec.Node().(*ast.ValueSpec)
+		spec    = curSpec.Node().(ast.Spec)
 		curDecl = curSpec.Parent()
 		decl    = curDecl.Node().(*ast.GenDecl)
 	)
@@ -259,14 +262,14 @@ func DeleteSpec(tokFile *token.File, curSpec inspector.Cursor) []analysis.TextEd
 	// Delete the spec and its comments.
 	_, index := curSpec.ParentEdge() // index of ValueSpec within GenDecl.Specs
 	pos, end := spec.Pos(), spec.End()
-	if spec.Doc != nil {
-		pos = spec.Doc.Pos() // leading comment
+	if doc := astutil.DocComment(spec); doc != nil {
+		pos = doc.Pos() // leading comment
 	}
 	if index == len(decl.Specs)-1 {
 		// Delete final spec.
-		if spec.Comment != nil {
+		if c := eolComment(spec); c != nil {
 			//  var (v int // comment \n)
-			end = spec.Comment.End()
+			end = c.End()
 		}
 	} else {
 		// Delete non-final spec.
@@ -462,4 +465,20 @@ func DeleteUnusedVars(index *typeindex.Index, info *types.Info, tokFile *token.F
 		}
 	}
 	return edits
+}
+
+func eolComment(n ast.Node) *ast.CommentGroup {
+	// TODO(adonovan): support:
+	//    func f() {...} // comment
+	switch n := n.(type) {
+	case *ast.GenDecl:
+		if !n.TokPos.IsValid() && len(n.Specs) == 1 {
+			return eolComment(n.Specs[0])
+		}
+	case *ast.ValueSpec:
+		return n.Comment
+	case *ast.TypeSpec:
+		return n.Comment
+	}
+	return nil
 }

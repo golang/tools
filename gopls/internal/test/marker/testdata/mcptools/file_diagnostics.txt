@@ -29,7 +29,7 @@ Fix:
  package main
  
 -func foo() {} //@loc(foo, "foo")
-+ //@loc(foo, "foo")
++
  
  //@mcptool("go_file_diagnostics", `{"file":"$WORKDIR/a/main.go"}`, output=unused)
  //@diag(foo, re"unused")

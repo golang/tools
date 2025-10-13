@@ -20,6 +20,7 @@ import (
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/packagepath"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
@@ -98,7 +99,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 	// checkUnused reports a diagnostic if the object declared at id
 	// is unexported and unused. References within curSelf are ignored.
-	checkUnused := func(noun string, id *ast.Ident, node ast.Node, curSelf inspector.Cursor) {
+	checkUnused := func(noun string, id *ast.Ident, curSelf inspector.Cursor, delete func() []analysis.TextEdit) {
 		// Exported functions may be called from other packages.
 		if id.IsExported() {
 			return
@@ -118,28 +119,13 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 		}
 
-		// Expand to include leading doc comment.
-		pos := node.Pos()
-		if doc := astutil.DocComment(node); doc != nil {
-			pos = doc.Pos()
-		}
-
-		// Expand to include trailing line  comment.
-		end := node.End()
-		if doc := eolComment(node); doc != nil {
-			end = doc.End()
-		}
-
 		pass.Report(analysis.Diagnostic{
 			Pos:     id.Pos(),
 			End:     id.End(),
 			Message: fmt.Sprintf("%s %q is unused", noun, id.Name),
 			SuggestedFixes: []analysis.SuggestedFix{{
-				Message: fmt.Sprintf("Delete %s %q", noun, id.Name),
-				TextEdits: []analysis.TextEdit{{
-					Pos: pos,
-					End: end,
-				}},
+				Message:   fmt.Sprintf("Delete %s %q", noun, id.Name),
+				TextEdits: delete(),
 			}},
 		})
 	}
@@ -159,6 +145,7 @@ func run(pass *analysis.Pass) (any, error) {
 		if ast.IsGenerated(file) {
 			continue // skip generated files
 		}
+		tokFile := pass.Fset.File(file.Pos())
 
 	nextDecl:
 		for i := range file.Decls {
@@ -197,22 +184,22 @@ func run(pass *analysis.Pass) (any, error) {
 				}
 
 				noun := cond(decl.Recv == nil, "function", "method")
-				checkUnused(noun, decl.Name, decl, curDecl)
+				checkUnused(noun, decl.Name, curDecl, func() []analysis.TextEdit {
+					return refactor.DeleteDecl(tokFile, curDecl)
+				})
 
 			case *ast.GenDecl:
-				// Instead of deleting a spec in a singleton decl,
-				// delete the whole decl.
-				singleton := len(decl.Specs) == 1
-
 				switch decl.Tok {
 				case token.TYPE:
 					for i, spec := range decl.Specs {
 						var (
 							spec    = spec.(*ast.TypeSpec)
 							id      = spec.Name
-							curSelf = curDecl.ChildAt(edge.GenDecl_Specs, i)
+							curSpec = curDecl.ChildAt(edge.GenDecl_Specs, i)
 						)
-						checkUnused("type", id, cond[ast.Node](singleton, decl, spec), curSelf)
+						checkUnused("type", id, curSpec, func() []analysis.TextEdit {
+							return refactor.DeleteSpec(tokFile, curSpec)
+						})
 					}
 
 				case token.CONST, token.VAR:
@@ -224,13 +211,12 @@ func run(pass *analysis.Pass) (any, error) {
 						spec := spec.(*ast.ValueSpec)
 						curSpec := curDecl.ChildAt(edge.GenDecl_Specs, i)
 
-						// Ignore n:n and n:1 assignments for now.
-						// TODO(adonovan): support these cases.
-						if len(spec.Names) != 1 {
-							continue
+						for j, id := range spec.Names {
+							checkUnused(decl.Tok.String(), id, curSpec, func() []analysis.TextEdit {
+								curId := curSpec.ChildAt(edge.ValueSpec_Names, j)
+								return refactor.DeleteVar(tokFile, pass.TypesInfo, curId)
+							})
 						}
-						id := spec.Names[0]
-						checkUnused(decl.Tok.String(), id, cond[ast.Node](singleton, decl, spec), curSpec)
 					}
 				}
 			}
@@ -238,22 +224,6 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 
 	return nil, nil
-}
-
-func eolComment(n ast.Node) *ast.CommentGroup {
-	// TODO(adonovan): support:
-	//    func f() {...} // comment
-	switch n := n.(type) {
-	case *ast.GenDecl:
-		if !n.TokPos.IsValid() && len(n.Specs) == 1 {
-			return eolComment(n.Specs[0])
-		}
-	case *ast.ValueSpec:
-		return n.Comment
-	case *ast.TypeSpec:
-		return n.Comment
-	}
-	return nil
 }
 
 func cond[T any](cond bool, t, f T) T {

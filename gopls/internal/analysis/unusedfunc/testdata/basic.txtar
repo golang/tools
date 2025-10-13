@@ -77,7 +77,26 @@ const (
 const (
 	constOne       = 1
 	unusedConstTwo = constOne // want `const "unusedConstTwo" is unused`
+	_, unusedConstThree = 0, 3 // want `const "unusedConstThree" is unused`
+	unusedConstFour, _ = 4, 0 // want `const "unusedConstFour" is unused`
+	unusedConstFive, UsedConst6 = 4, 6 // want `const "unusedConstFive" is unused`
 )
+
+// -- vars --
+
+var unusedVar = 1 // want `var "unusedVar" is unused`
+
+var (
+	unusedVar2 = 1 // want `var "unusedVar2" is unused`
+)
+
+var (
+	usedVar int
+	unusedVar3 = usedVar // want `var "unusedVar3" is unused`
+	_, unusedVar4, _ = Triple() // want `var "unusedVar4" is unused`
+)
+
+func Triple() (int, int, int)
 
 -- a/a.go.golden --
 package a
@@ -112,8 +131,6 @@ type _ interface{ dynamic() }
 
 type ExportedType2 int
 
-// want `type "unusedUnexportedType2" is unused`
-
 type (
 	one int
 )
@@ -122,11 +139,7 @@ type (
 
 type g[T any] int
 
-// want `method "method" is unused`
-
 // -- constants --
-
-// want `const "unusedConst" is unused`
 
 const (
 	unusedEnum = iota
@@ -134,4 +147,14 @@ const (
 
 const (
 	constOne = 1
+	UsedConst6 = 6 // want `const "unusedConstFive" is unused`
 )
+
+// -- vars --
+
+var (
+	usedVar int
+	_, _, _ = Triple() // want `var "unusedVar4" is unused`
+)
+
+func Triple() (int, int, int)
