@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/refactor"
 )
 
 //go:embed doc.go
@@ -34,19 +35,19 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	var (
+		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+		info    = pass.TypesInfo
+	)
 
-	nodeFilter := []ast.Node{
-		(*ast.AssignStmt)(nil),
-	}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		stmt := n.(*ast.AssignStmt)
+	for curAssign := range inspect.Root().Preorder((*ast.AssignStmt)(nil)) {
+		stmt := curAssign.Node().(*ast.AssignStmt)
 		if stmt.Tok != token.ASSIGN {
-			return // ignore :=
+			continue // ignore :=
 		}
 		if len(stmt.Lhs) != len(stmt.Rhs) {
 			// If LHS and RHS have different cardinality, they can't be the same.
-			return
+			continue
 		}
 
 		// Delete redundant LHS, RHS pairs, taking care
@@ -61,9 +62,9 @@ func run(pass *analysis.Pass) (any, error) {
 			isSelfAssign := false
 			var le string
 
-			if !analysisutil.HasSideEffects(pass.TypesInfo, lhs) &&
-				!analysisutil.HasSideEffects(pass.TypesInfo, rhs) &&
-				!isMapIndex(pass.TypesInfo, lhs) &&
+			if !analysisutil.HasSideEffects(info, lhs) &&
+				!analysisutil.HasSideEffects(info, rhs) &&
+				!isMapIndex(info, lhs) &&
 				reflect.TypeOf(lhs) == reflect.TypeOf(rhs) { // short-circuit the heavy-weight gofmt check
 
 				le = astutil.Format(pass.Fset, lhs)
@@ -109,13 +110,14 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 
 		if len(exprs) == 0 {
-			return
+			continue
 		}
 
 		if len(exprs) == len(stmt.Lhs) {
 			// If every part of the statement is a self-assignment,
 			// remove the whole statement.
-			edits = []analysis.TextEdit{{Pos: stmt.Pos(), End: stmt.End()}}
+			tokFile := pass.Fset.File(stmt.Pos())
+			edits = refactor.DeleteStmt(tokFile, curAssign)
 		}
 
 		pass.Report(analysis.Diagnostic{
@@ -126,7 +128,7 @@ func run(pass *analysis.Pass) (any, error) {
 				TextEdits: edits,
 			}},
 		})
-	})
+	}
 
 	return nil, nil
 }
