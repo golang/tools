@@ -205,6 +205,22 @@ Replacing `omitempty` with `omitzero` is a change in behavior. The
 original code would always encode the struct field, whereas the
 modified code will omit it if it is a zero-value.
 
+# Analyzer plusbuild
+
+plusbuild: remove obsolete //+build comments
+
+The plusbuild analyzer suggests a fix to remove obsolete build tags
+of the form:
+
+	//+build linux,amd64
+
+in files that also contain a Go 1.18-style tag such as:
+
+	//go:build linux && amd64
+
+(It does not check that the old and new tags are consistent;
+that is the job of the 'buildtag' analyzer in the vet suite.)
+
 # Analyzer rangeint
 
 rangeint: replace 3-clause for loops with for-range over integers

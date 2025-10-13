@@ -3602,6 +3602,24 @@ Default: on.
 
 Package documentation: [omitzero](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#omitzero)
 
+<a id='plusbuild'></a>
+## `plusbuild`: remove obsolete //+build comments
+
+The plusbuild analyzer suggests a fix to remove obsolete build tags of the form:
+
+	//+build linux,amd64
+
+in files that also contain a Go 1.18-style tag such as:
+
+	//go:build linux && amd64
+
+(It does not check that the old and new tags are consistent; that is the job of the 'buildtag' analyzer in the vet suite.)
+
+
+Default: on.
+
+Package documentation: [plusbuild](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#plusbuild)
+
 <a id='printf'></a>
 ## `printf`: check consistency of Printf format strings and arguments
 

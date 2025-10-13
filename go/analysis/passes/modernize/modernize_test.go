@@ -61,6 +61,14 @@ func TestRangeInt(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.RangeIntAnalyzer, "rangeint")
 }
 
+func TestPlusBuild(t *testing.T) {
+	// This test has a dedicated hack in the analysistest package:
+	// Because it cares about IgnoredFiles, which most analyzers
+	// ignore, the test framework will consider expectations in
+	// ignore files too, but only for this analyzer.
+	RunWithSuggestedFixes(t, TestData(), goplsexport.PlusBuildModernizer, "plusbuild")
+}
+
 func TestReflectTypeFor(t *testing.T) {
 	testenv.NeedsGo1Point(t, 25) // requires go1.25 types.Var.Kind
 	RunWithSuggestedFixes(t, TestData(), modernize.ReflectTypeForAnalyzer, "reflecttypefor")

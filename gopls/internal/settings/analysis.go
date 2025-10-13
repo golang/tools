@@ -254,6 +254,7 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: goplsexport.ErrorsAsTypeModernizer, severity: protocol.SeverityHint},
 	{analyzer: modernize.FmtAppendfAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.ForVarAnalyzer, severity: protocol.SeverityHint},
+	{analyzer: goplsexport.PlusBuildModernizer, severity: protocol.SeverityHint},
 	{analyzer: goplsexport.StdIteratorsModernizer, severity: protocol.SeverityHint},
 	{analyzer: modernize.MapsLoopAnalyzer, severity: protocol.SeverityHint},
 	{analyzer: modernize.MinMaxAnalyzer, severity: protocol.SeverityHint},

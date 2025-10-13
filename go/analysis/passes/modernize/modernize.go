@@ -41,6 +41,7 @@ var Suite = []*analysis.Analyzer{
 	MinMaxAnalyzer,
 	NewExprAnalyzer,
 	OmitZeroAnalyzer,
+	plusBuildAnalyzer,
 	RangeIntAnalyzer,
 	ReflectTypeForAnalyzer,
 	SlicesContainsAnalyzer,

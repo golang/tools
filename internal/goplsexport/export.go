@@ -10,5 +10,6 @@ import "golang.org/x/tools/go/analysis"
 
 var (
 	ErrorsAsTypeModernizer *analysis.Analyzer // = modernize.errorsastypeAnalyzer
-	StdIteratorsModernizer *analysis.Analyzer // = modernize.stditeratorsAnalyer
+	StdIteratorsModernizer *analysis.Analyzer // = modernize.stditeratorsAnalyzer
+	PlusBuildModernizer    *analysis.Analyzer // = modernize.plusbuildAnalyzer
 )

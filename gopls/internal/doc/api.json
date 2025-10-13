@@ -1581,6 +1581,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"plusbuild\"",
+							"Doc": "remove obsolete //+build comments\n\nThe plusbuild analyzer suggests a fix to remove obsolete build tags\nof the form:\n\n\t//+build linux,amd64\n\nin files that also contain a Go 1.18-style tag such as:\n\n\t//go:build linux \u0026\u0026 amd64\n\n(It does not check that the old and new tags are consistent;\nthat is the job of the 'buildtag' analyzer in the vet suite.)",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"printf\"",
 							"Doc": "check consistency of Printf format strings and arguments\n\nThe check applies to calls of the formatting functions such as\n[fmt.Printf] and [fmt.Sprintf], as well as any detected wrappers of\nthose functions such as [log.Printf]. It reports a variety of\nmistakes such as syntax errors in the format string and mismatches\n(of number and type) between the verbs and their arguments.\n\nSee the documentation of the fmt package for the complete set of\nformat operators and their operand types.",
 							"Default": "true",
@@ -3464,6 +3470,12 @@
 			"Name": "omitzero",
 			"Doc": "suggest replacing omitempty with omitzero for struct fields\n\nThe omitzero analyzer identifies uses of the `omitempty` JSON struct tag on\nfields that are themselves structs. The `omitempty` tag has no effect on\nstruct-typed fields. The analyzer offers two suggestions: either remove the\ntag, or replace it with `omitzero` (added in Go 1.24), which correctly\nomits the field if the struct value is zero.\n\nReplacing `omitempty` with `omitzero` is a change in behavior. The\noriginal code would always encode the struct field, whereas the\nmodified code will omit it if it is a zero-value.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#omitzero",
+			"Default": true
+		},
+		{
+			"Name": "plusbuild",
+			"Doc": "remove obsolete //+build comments\n\nThe plusbuild analyzer suggests a fix to remove obsolete build tags\nof the form:\n\n\t//+build linux,amd64\n\nin files that also contain a Go 1.18-style tag such as:\n\n\t//go:build linux \u0026\u0026 amd64\n\n(It does not check that the old and new tags are consistent;\nthat is the job of the 'buildtag' analyzer in the vet suite.)",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#plusbuild",
 			"Default": true
 		},
 		{

@@ -574,11 +574,12 @@ func check(t Testing, gopath string, act *checker.Action) {
 	// TODO(adonovan): we may need to handle //line directives.
 	files := act.Package.OtherFiles
 
-	// Hack: these two analyzers need to extract expectations from
+	// Hack: these analyzers need to extract expectations from
 	// all configurations, so include the files are usually
 	// ignored. (This was previously a hack in the respective
 	// analyzers' tests.)
-	if act.Analyzer.Name == "buildtag" || act.Analyzer.Name == "directive" {
+	switch act.Analyzer.Name {
+	case "buildtag", "directive", "plusbuild":
 		files = slices.Concat(files, act.Package.IgnoredFiles)
 	}
 
