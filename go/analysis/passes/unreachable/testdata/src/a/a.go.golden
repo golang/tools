@@ -110,27 +110,23 @@ func _() int {
 func _() int {
 	print(1)
 	return 2
-
 }
 
 func _() int {
 L:
 	print(1)
 	goto L
-
 }
 
 func _() int {
 	print(1)
 	panic(2)
-
 }
 
 func _() int {
 	{
 		print(1)
 		return 2
-
 	}
 }
 
@@ -139,7 +135,6 @@ L:
 	{
 		print(1)
 		goto L
-
 	}
 }
 
@@ -147,7 +142,6 @@ func _() int {
 	print(1)
 	{
 		panic(2)
-
 	}
 }
 
@@ -156,7 +150,6 @@ func _() int {
 		print(1)
 		return 2
 	}
-
 }
 
 func _() int {
@@ -165,7 +158,6 @@ L:
 		print(1)
 		goto L
 	}
-
 }
 
 func _() int {
@@ -173,7 +165,6 @@ func _() int {
 	{
 		panic(2)
 	}
-
 }
 
 func _() int {
@@ -980,27 +971,23 @@ func _() int {
 
 func _() int {
 	return 2
-
 	println() // ok
 }
 
 func _() int {
 L:
 	goto L
-
 	println() // ok
 }
 
 func _() int {
 	panic(2)
-
 	println() // ok
 }
 
 func _() int {
 	{
 		return 2
-
 	}
 	println() // ok
 }
@@ -1009,7 +996,6 @@ func _() int {
 L:
 	{
 		goto L
-
 	}
 	println() // ok
 }
@@ -1017,7 +1003,6 @@ L:
 func _() int {
 	{
 		panic(2)
-
 	}
 	println() // ok
 }
@@ -1026,7 +1011,6 @@ func _() int {
 	{
 		return 2
 	}
-
 	println() // ok
 }
 
@@ -1035,7 +1019,6 @@ L:
 	{
 		goto L
 	}
-
 	println() // ok
 }
 
@@ -1043,7 +1026,6 @@ func _() int {
 	{
 		panic(2)
 	}
-
 	println() // ok
 }
 
@@ -1145,27 +1127,23 @@ var _ = func() int {
 var _ = func() int {
 	print(1)
 	return 2
-
 }
 
 var _ = func() int {
 L:
 	print(1)
 	goto L
-
 }
 
 var _ = func() int {
 	print(1)
 	panic(2)
-
 }
 
 var _ = func() int {
 	{
 		print(1)
 		return 2
-
 	}
 }
 
@@ -1174,7 +1152,6 @@ L:
 	{
 		print(1)
 		goto L
-
 	}
 }
 
@@ -1182,7 +1159,6 @@ var _ = func() int {
 	print(1)
 	{
 		panic(2)
-
 	}
 }
 
@@ -1191,7 +1167,6 @@ var _ = func() int {
 		print(1)
 		return 2
 	}
-
 }
 
 var _ = func() int {
@@ -1200,7 +1175,6 @@ L:
 		print(1)
 		goto L
 	}
-
 }
 
 var _ = func() int {
@@ -1208,7 +1182,6 @@ var _ = func() int {
 	{
 		panic(2)
 	}
-
 }
 
 var _ = func() int {
@@ -2015,27 +1988,23 @@ var _ = func() int {
 
 var _ = func() int {
 	return 2
-
 	println() // ok
 }
 
 var _ = func() int {
 L:
 	goto L
-
 	println() // ok
 }
 
 var _ = func() int {
 	panic(2)
-
 	println() // ok
 }
 
 var _ = func() int {
 	{
 		return 2
-
 	}
 	println() // ok
 }
@@ -2044,7 +2013,6 @@ var _ = func() int {
 L:
 	{
 		goto L
-
 	}
 	println() // ok
 }
@@ -2052,7 +2020,6 @@ L:
 var _ = func() int {
 	{
 		panic(2)
-
 	}
 	println() // ok
 }
@@ -2061,7 +2028,6 @@ var _ = func() int {
 	{
 		return 2
 	}
-
 	println() // ok
 }
 
@@ -2070,7 +2036,6 @@ L:
 	{
 		goto L
 	}
-
 	println() // ok
 }
 
@@ -2078,7 +2043,6 @@ var _ = func() int {
 	{
 		panic(2)
 	}
-
 	println() // ok
 }
 

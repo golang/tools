@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/refactor"
 )
 
 //go:embed doc.go
@@ -188,6 +189,11 @@ func (d *deadState) findDead(stmt ast.Stmt) {
 		case *ast.EmptyStmt:
 			// do not warn about unreachable empty statements
 		default:
+			var (
+				inspect    = d.pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+				curStmt, _ = inspect.Root().FindNode(stmt)
+				tokFile    = d.pass.Fset.File(stmt.Pos())
+			)
 			// (This call to pass.Report is a frequent source
 			// of diagnostics beyond EOF in a truncated file;
 			// see #71659.)
@@ -196,11 +202,8 @@ func (d *deadState) findDead(stmt ast.Stmt) {
 				End:     stmt.End(),
 				Message: "unreachable code",
 				SuggestedFixes: []analysis.SuggestedFix{{
-					Message: "Remove",
-					TextEdits: []analysis.TextEdit{{
-						Pos: stmt.Pos(),
-						End: stmt.End(),
-					}},
+					Message:   "Remove",
+					TextEdits: refactor.DeleteStmt(tokFile, curStmt),
 				}},
 			})
 			d.reachable = true // silence error about next statement
