@@ -641,7 +641,12 @@ func (g *Generator) buildOneRun(runs [][]Value, typeName string) {
 	values := runs[0]
 	g.Printf("\n")
 	g.declareIndexAndNameVar(values, typeName)
-	g.Printf(stringOneRun, typeName, values[0].String())
+
+	if values[0].signed || values[0].String() != "0" {
+		g.Printf(stringOneRun, typeName, values[0].String())
+	} else {
+		g.Printf(stringOneRunUnsigned, typeName, values[0].String())
+	}
 }
 
 // Arguments to format are:
@@ -651,6 +656,22 @@ func (g *Generator) buildOneRun(runs [][]Value, typeName string) {
 const stringOneRun = `func (i %[1]s) String() string {
 	idx := int(i) - %[2]s
 	if i < %[2]s || idx >= len(_%[1]s_index)-1 {
+		return "%[1]s(" + strconv.FormatInt(int64(i), 10) + ")"
+	}
+	return _%[1]s_name[_%[1]s_index[idx] : _%[1]s_index[idx+1]]
+}
+`
+
+// Arguments to format are:
+//
+//	[1]: type name
+//	[2]: lowest defined value for type, as a string
+//
+// This is the unsigned version of [stringOneRun] with the lower bound check
+// removed.
+const stringOneRunUnsigned = `func (i %[1]s) String() string {
+	idx := int(i) - %[2]s
+	if idx >= len(_%[1]s_index)-1 {
 		return "%[1]s(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
 	return _%[1]s_name[_%[1]s_index[idx] : _%[1]s_index[idx+1]]
