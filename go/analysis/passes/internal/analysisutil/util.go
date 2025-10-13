@@ -7,47 +7,12 @@
 package analysisutil
 
 import (
-	"go/ast"
 	"go/token"
-	"go/types"
 	"os"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/analysisinternal"
 )
-
-// HasSideEffects reports whether evaluation of e has side effects.
-func HasSideEffects(info *types.Info, e ast.Expr) bool {
-	safe := true
-	ast.Inspect(e, func(node ast.Node) bool {
-		switch n := node.(type) {
-		case *ast.CallExpr:
-			typVal := info.Types[n.Fun]
-			switch {
-			case typVal.IsType():
-				// Type conversion, which is safe.
-			case typVal.IsBuiltin():
-				// Builtin func, conservatively assumed to not
-				// be safe for now.
-				safe = false
-				return false
-			default:
-				// A non-builtin func or method call.
-				// Conservatively assume that all of them have
-				// side effects for now.
-				safe = false
-				return false
-			}
-		case *ast.UnaryExpr:
-			if n.Op == token.ARROW {
-				safe = false
-				return false
-			}
-		}
-		return true
-	})
-	return !safe
-}
 
 // ReadFile reads a file and adds it to the FileSet
 // so that we can report errors against it using lineStart.

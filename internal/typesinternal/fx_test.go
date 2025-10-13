@@ -1,8 +1,8 @@
-// Copyright 2021 The Go Authors. All rights reserved.
+// Copyright 2025 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package analysisutil_test
+package typesinternal_test
 
 import (
 	"go/ast"
@@ -11,10 +11,10 @@ import (
 	"go/types"
 	"testing"
 
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
-func TestHasSideEffects(t *testing.T) {
+func TestNoEffects(t *testing.T) {
 	src := `package p
 
 type T int
@@ -45,8 +45,8 @@ func _() {
 		if !ok {
 			return true
 		}
-		if got := analysisutil.HasSideEffects(info, call); got != false {
-			t.Errorf("HasSideEffects(%s) = true, want false", types.ExprString(call))
+		if !typesinternal.NoEffects(info, call) {
+			t.Errorf("NoEffects(%s) = false", types.ExprString(call))
 		}
 		return true
 	})

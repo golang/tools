@@ -10,6 +10,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const (
@@ -180,7 +182,7 @@ func calleefx(info *types.Info, body *ast.BlockStmt, paramInfos map[*types.Var]*
 				// The pure built-ins have no effects beyond
 				// those of their operands (not even memory reads).
 				// All other calls have unknown effects.
-				if !callsPureBuiltin(info, n) {
+				if !typesinternal.CallsPureBuiltin(info, n) {
 					unknown() // arbitrary effects
 				}
 			}

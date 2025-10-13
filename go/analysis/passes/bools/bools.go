@@ -13,9 +13,9 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/analysis/passes/internal/analysisutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 const Doc = "check for common mistakes involving boolean operators"
@@ -84,7 +84,7 @@ func (op boolOp) commutativeSets(info *types.Info, e *ast.BinaryExpr, seen map[*
 	i := 0
 	var sets [][]ast.Expr
 	for j := 0; j <= len(exprs); j++ {
-		if j == len(exprs) || analysisutil.HasSideEffects(info, exprs[j]) {
+		if j == len(exprs) || !typesinternal.NoEffects(info, exprs[j]) {
 			if i < j {
 				sets = append(sets, exprs[i:j])
 			}

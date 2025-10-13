@@ -2539,7 +2539,7 @@ func (st *state) effects(info *types.Info, expr ast.Expr) bool {
 		case *ast.CallExpr:
 			if info.Types[n.Fun].IsType() {
 				// A conversion T(x) has only the effect of its operand.
-			} else if !callsPureBuiltin(info, n) {
+			} else if !typesinternal.CallsPureBuiltin(info, n) {
 				// A handful of built-ins have no effect
 				// beyond those of their arguments.
 				// All other calls (including append, copy, recover)
@@ -2635,7 +2635,7 @@ func pure(info *types.Info, assign1 func(*types.Var) bool, e ast.Expr) bool {
 			}
 
 			// Calls to some built-ins are as pure as their arguments.
-			if callsPureBuiltin(info, e) {
+			if typesinternal.CallsPureBuiltin(info, e) {
 				for _, arg := range e.Args {
 					if !pure(arg) {
 						return false
@@ -2710,24 +2710,6 @@ func pure(info *types.Info, assign1 func(*types.Var) bool, e ast.Expr) bool {
 		}
 	}
 	return pure(e)
-}
-
-// callsPureBuiltin reports whether call is a call of a built-in
-// function that is a pure computation over its operands (analogous to
-// a + operator). Because it does not depend on program state, it may
-// be evaluated at any point--though not necessarily at multiple
-// points (consider new, make).
-func callsPureBuiltin(info *types.Info, call *ast.CallExpr) bool {
-	if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok {
-		if b, ok := info.ObjectOf(id).(*types.Builtin); ok {
-			switch b.Name() {
-			case "len", "cap", "complex", "imag", "real", "make", "new", "max", "min":
-				return true
-			}
-			// Not: append clear close copy delete panic print println recover
-		}
-	}
-	return false
 }
 
 // duplicable reports whether it is appropriate for the expression to

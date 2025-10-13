@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -62,8 +63,8 @@ func run(pass *analysis.Pass) (any, error) {
 			isSelfAssign := false
 			var le string
 
-			if !analysisutil.HasSideEffects(info, lhs) &&
-				!analysisutil.HasSideEffects(info, rhs) &&
+			if typesinternal.NoEffects(info, lhs) &&
+				typesinternal.NoEffects(info, rhs) &&
 				!isMapIndex(info, lhs) &&
 				reflect.TypeOf(lhs) == reflect.TypeOf(rhs) { // short-circuit the heavy-weight gofmt check
 
