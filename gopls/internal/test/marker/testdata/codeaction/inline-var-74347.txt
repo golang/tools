@@ -1,4 +1,4 @@
-This is a regressoon test of a crash in refactor.inline.variable.
+This is a regression test of a crash in refactor.inline.variable.
 
 -- go.mod --
 module example.com/a

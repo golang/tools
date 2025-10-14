@@ -240,10 +240,14 @@ func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.P
 		if obj1 == nil {
 			continue // undefined; or a def, not a use
 		}
+		if v, ok := obj1.(*types.Var); ok && v.IsField() {
+			continue // a field reference T{F: 0} is non-lexical
+		}
 		if internalastutil.NodeContains(curRHS.Node(), obj1.Pos()) {
 			continue // not free (id is defined within RHS)
 		}
 		_, obj2 := scope.LookupParent(id.Name, pos)
+		// Inv: obj2 is non-nil.
 		if obj1 != obj2 {
 			return nil, nil, fmt.Errorf("cannot inline variable: its initializer expression refers to %q, which is shadowed by the declaration at line %d", id.Name, safetoken.Position(pgf.Tok, obj2.Pos()).Line)
 		}
