@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/packagesinternal"
 	"golang.org/x/tools/internal/packagestest"
 	"golang.org/x/tools/internal/testenv"
@@ -3268,7 +3269,7 @@ func Foo() int { return a.Foo() }
 	type result struct{ Dir, ForTest string }
 	got := make(map[string]result)
 	for pkg := range packages.Postorder(pkgs) {
-		if strings.Contains(pkg.PkgPath, ".") { // ignore std
+		if !packagepath.IsStdPackage(pkg.PkgPath) {
 			rel, err := filepath.Rel(dir, pkg.Dir)
 			if err != nil {
 				t.Errorf("Rel(%q, %q) failed: %v", dir, pkg.Dir, err)
