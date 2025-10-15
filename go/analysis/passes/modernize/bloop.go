@@ -189,6 +189,7 @@ func enclosingFunc(c inspector.Cursor) (inspector.Cursor, bool) {
 // 2. The only b.N loop in that benchmark function
 //   - b.Loop() can only be called once per benchmark execution
 //   - Multiple calls result in "B.Loop called with timer stopped" error
+//   - Multiple loops may have complex interdependencies that are hard to analyze
 func usesBenchmarkNOnce(c inspector.Cursor, info *types.Info) bool {
 	// Find the enclosing benchmark function
 	curFunc, ok := enclosingFunc(c)
@@ -205,17 +206,14 @@ func usesBenchmarkNOnce(c inspector.Cursor, info *types.Info) bool {
 		return false
 	}
 
-	// Count b.N references in this benchmark function
+	// Count all b.N references in this benchmark function (including nested functions)
 	bnRefCount := 0
-	filter := []ast.Node{(*ast.SelectorExpr)(nil), (*ast.FuncLit)(nil)}
+	filter := []ast.Node{(*ast.SelectorExpr)(nil)}
 	curFunc.Inspect(filter, func(cur inspector.Cursor) bool {
-		switch n := cur.Node().(type) {
-		case *ast.FuncLit:
-			return false // don't descend into nested function literals
-		case *ast.SelectorExpr:
-			if n.Sel.Name == "N" && typesinternal.IsPointerToNamed(info.TypeOf(n.X), "testing", "B") {
-				bnRefCount++
-			}
+		sel := cur.Node().(*ast.SelectorExpr)
+		if sel.Sel.Name == "N" &&
+			typesinternal.IsPointerToNamed(info.TypeOf(sel.X), "testing", "B") {
+			bnRefCount++
 		}
 		return true
 	})

@@ -111,3 +111,21 @@ func BenchmarkI(b *testing.B) {
 	for i := 0; i < b.N; i++ { // nope: b.N accessed more than once in benchmark
 	}
 }
+
+func BenchmarkJ(b *testing.B) {
+	var wg sync.WaitGroup
+	ch := make(chan int, 10)
+	wg.Add(1)
+	go func() {
+		for i := 0; i < b.N; i++ {
+			<-ch
+		}
+		wg.Done()
+	}()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ { // nope: multiple b.N loops in same function
+		ch <- i
+	}
+	b.StopTimer()
+	wg.Wait()
+}
