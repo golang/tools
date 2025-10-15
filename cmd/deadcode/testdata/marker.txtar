@@ -1,15 +1,8 @@
-# Test of -marker functionality.
+# Test of marker suppression functionality.
+# Deadcode should not identify marker interface methods as unreachable
 
-# Suppresses marker methods by default
  deadcode -filter= example.com
 !want "T.isMarker"
-want "R.isNotMarker"
-!want "P.greet"
-want "Q.greet"
-
-# Includes marker methods if flag is on
- deadcode -marker -filter= example.com
-want "T.isMarker"
 want "R.isNotMarker"
 !want "P.greet"
 want "Q.greet"

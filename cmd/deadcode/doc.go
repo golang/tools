@@ -48,9 +48,7 @@ Marker interface methods are typically used to create compile-time constraints
 to ensure that only specific types can implement a particular interface.
 These methods have no other functionality (empty function body) and are never invoked.
 Although marker interface methods are technically unreachable, removing them would break
-the interface implementation.
-Hence, the default behavior is to exclude them from the report.
-Use the -marker flag to include them.
+the interface implementation. Hence, the tool excludes them from the report.
 
 In any case, just because a function is reported as dead does not mean
 it is unconditionally safe to delete it. For example, a dead function

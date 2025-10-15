@@ -45,7 +45,6 @@ var (
 
 	filterFlag    = flag.String("filter", "<module>", "report only packages matching this regular expression (default: module of first package)")
 	generatedFlag = flag.Bool("generated", false, "include dead functions in generated Go files")
-	markerFlag    = flag.Bool("marker", false, "include marker interface methods in the report")
 	whyLiveFlag   = flag.String("whylive", "", "show a path from main to the named function")
 	formatFlag    = flag.String("f", "", "format output records using template")
 	jsonFlag      = flag.Bool("json", false, "output JSON records")
@@ -345,10 +344,9 @@ func main() {
 				continue
 			}
 
-			// If the -marker flag is not set to true,
-			// marker methods should not be reported
+			// Marker methods should not be reported
 			marker := isMarkerMethod(fn, interfacesByPkg[fn.Package()])
-			if marker && !*markerFlag {
+			if marker {
 				continue
 			}
 
