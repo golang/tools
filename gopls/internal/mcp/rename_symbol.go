@@ -38,7 +38,7 @@ func (h *handler) renameSymbolHandler(ctx context.Context, req *mcp.CallToolRequ
 	if err != nil {
 		return nil, nil, err
 	}
-	changes, err := golang.Rename(ctx, snapshot, fh, loc.Range.Start, params.NewName)
+	changes, err := golang.Rename(ctx, snapshot, fh, loc.Range.Start, params.NewName, false)
 	if err != nil {
 		return nil, nil, err
 	}

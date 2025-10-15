@@ -1542,7 +1542,9 @@ func (e *Editor) applyWorkspaceEdit(ctx context.Context, wsedit *protocol.Worksp
 		case change.RenameFile != nil:
 			old := uriToPath(change.RenameFile.OldURI)
 			new := uriToPath(change.RenameFile.NewURI)
-			return e.RenameFile(ctx, old, new)
+			if err := e.RenameFile(ctx, old, new); err != nil {
+				return err
+			}
 
 		case change.CreateFile != nil:
 			path := uriToPath(change.CreateFile.URI)
@@ -1551,7 +1553,26 @@ func (e *Editor) applyWorkspaceEdit(ctx context.Context, wsedit *protocol.Worksp
 			}
 
 		case change.DeleteFile != nil:
-			path := uriToPath(change.CreateFile.URI)
+			path := uriToPath(change.DeleteFile.URI)
+			// The specified URI could be a file or a directory.
+			files, err := e.sandbox.Workdir.ListFiles(path)
+			if err != nil {
+				return err
+			}
+			if len(files) > 0 {
+				// Directory is not empty. If "Recursive" is true, we delete
+				// every file in the folder. Otherwise, we continue without
+				// deleting the directory.
+				if change.DeleteFile.Options != nil && change.DeleteFile.Options.Recursive {
+					for _, f := range files {
+						_ = e.CloseBuffer(ctx, f) // returns error if not open
+						if err := e.sandbox.Workdir.RemoveFile(ctx, f); err != nil {
+							return err // e.g. doesn't exist
+						}
+					}
+				}
+				continue
+			}
 			_ = e.CloseBuffer(ctx, path) // returns error if not open
 			if err := e.sandbox.Workdir.RemoveFile(ctx, path); err != nil {
 				return err // e.g. doesn't exist

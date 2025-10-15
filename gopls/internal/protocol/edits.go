@@ -140,6 +140,16 @@ func DocumentChangeCreate(uri DocumentURI) DocumentChange {
 	}
 }
 
+// DocumentChangeDelete constructs a DocumentChange that deletes a file.
+func DocumentChangeDelete(uri DocumentURI) DocumentChange {
+	return DocumentChange{
+		DeleteFile: &DeleteFile{
+			Kind: "delete",
+			URI:  uri,
+		},
+	}
+}
+
 // DocumentChangeRename constructs a DocumentChange that renames a file.
 func DocumentChangeRename(src, dst DocumentURI) DocumentChange {
 	return DocumentChange{

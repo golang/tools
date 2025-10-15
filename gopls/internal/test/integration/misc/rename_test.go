@@ -181,10 +181,14 @@ func main() {
 		env.Rename(env.RegexpSearch("lib/a.go", "lib"), "nested")
 
 		// Check if the new package name exists.
+		/// Don't rename subpackages.
+		// TODO(mkalil): update the test framework to handle variable input
+		// for renameSubpkgs.
 		env.RegexpSearch("nested/a.go", "package nested")
 		env.RegexpSearch("main.go", `nested2 "mod.com/nested"`)
-		env.RegexpSearch("main.go", "mod.com/nested/nested")
-		env.RegexpSearch("main.go", `nested1 "mod.com/nested/x"`)
+		env.RegexpSearch("main.go", "mod.com/nested")
+		env.RegexpSearch("main.go", "mod.com/lib/nested")
+		env.RegexpSearch("main.go", `nested1 "mod.com/lib/x"`)
 	})
 }
 
@@ -223,7 +227,7 @@ func main() {
 		// Check if the new package name exists.
 		env.RegexpSearch("nested/a.go", "package nested")
 		env.RegexpSearch("main.go", "mod.com/nested")
-		env.RegexpSearch("main.go", `lib1 "mod.com/nested/nested"`)
+		env.RegexpSearch("main.go", `lib1 "mod.com/lib/nested"`)
 	})
 }
 
@@ -262,7 +266,8 @@ func main() {
 		// Check if the new package name exists.
 		env.RegexpSearch("nested/a.go", "package nested")
 		env.RegexpSearch("main.go", "mod.com/nested")
-		env.RegexpSearch("main.go", `foo "mod.com/nested/nested"`)
+		// Don't rename subpackages.
+		env.RegexpSearch("main.go", `foo "mod.com/lib/nested"`)
 	})
 }
 
@@ -307,7 +312,7 @@ func main() {
 		env.RegexpSearch("lib1/a.go", "package lib1")
 		env.RegexpSearch("lib1/b.go", "package lib1")
 		env.RegexpSearch("main.go", "mod.com/lib1")
-		env.RegexpSearch("main.go", "mod.com/lib1/nested")
+		env.RegexpSearch("main.go", "mod.com/lib/nested")
 	})
 }
 
@@ -477,7 +482,7 @@ func main() {
 		env.RegexpSearch("lib1/a.go", "package lib1")
 		env.RegexpSearch("lib1/b.go", "package lib1")
 		env.RegexpSearch("main.go", "mod.com/lib1")
-		env.RegexpSearch("main.go", "mod.com/lib1/nested")
+		env.RegexpSearch("main.go", "mod.com/lib/nested")
 
 		// Check if the test package is renamed
 		env.RegexpSearch("lib1/a_test.go", "package lib1_test")
@@ -554,15 +559,16 @@ func main() {
 		env.Rename(env.RegexpSearch("foo/foo.go", "foo"), "foox")
 
 		env.RegexpSearch("foox/foo.go", "package foox")
-		env.OpenFile("foox/bar/bar.go")
-		env.OpenFile("foox/bar/go.mod")
+		// Don't rename subpackages.
+		env.OpenFile("foo/bar/bar.go")
+		env.OpenFile("foo/bar/go.mod")
 
 		env.RegexpSearch("main.go", "mod.com/foo/bar")
 		env.RegexpSearch("main.go", "mod.com/foox")
 		env.RegexpSearch("main.go", "foox.Bar()")
 
-		env.RegexpSearch("go.mod", "./foox/bar")
-		env.RegexpSearch("go.mod", "./foox/baz")
+		env.RegexpSearch("go.mod", "./foo/bar")
+		env.RegexpSearch("go.mod", "./foo/baz")
 	})
 }
 
@@ -603,7 +609,8 @@ func main() {
 		env.RegexpSearch("nested/a.go", "package nested")
 		env.RegexpSearch("main.go", "mod.com/nested")
 		env.RegexpSearch("main.go", `lib1 "mod.com/nested"`)
-		env.RegexpSearch("main.go", `lib2 "mod.com/nested/nested"`)
+		// Don't rename subpackages.
+		env.RegexpSearch("main.go", `lib2 "mod.com/lib/nested"`)
 	})
 }
 
@@ -644,7 +651,8 @@ func main() {
 		env.RegexpSearch("nested/a.go", "package nested")
 		env.RegexpSearch("main.go", "mod.com/nested")
 		env.RegexpSearch("main.go", `_ "mod.com/nested"`)
-		env.RegexpSearch("main.go", `lib1 "mod.com/nested/nested"`)
+		// Don't rename subpackages.
+		env.RegexpSearch("main.go", `lib1 "mod.com/lib/nested"`)
 	})
 }
 
@@ -799,7 +807,7 @@ const C = lib.A + nested.B
 -- testdata/libx/a.go --
 package libx
 
-import "mod.com/libx/nested"
+import "mod.com/lib/nested"
 
 const A = 1 + nested.B
 -- testdata/other/other.go --
@@ -807,7 +815,7 @@ package other
 
 import (
 	"mod.com/libx"
-	"mod.com/libx/nested"
+	"mod.com/lib/nested"
 )
 
 const C = libx.A + nested.B
@@ -896,9 +904,70 @@ func main() {
 
 		// Check if the new package name exists.
 		env.RegexpSearch("lib1/a.go", "package lib1")
-		env.RegexpSearch("lib1/a.go", "mod.com/lib1/internal/utils")
+		// Don't rename subpackages.
+		env.RegexpSearch("lib1/a.go", "mod.com/lib/internal/utils")
 		env.RegexpSearch("main.go", `import "mod.com/lib1"`)
 		env.RegexpSearch("main.go", "lib1.print()")
+	})
+}
+func TestRenamePackage_InvalidPackageMove(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.21
+-- test1/test1.go --
+package test1
+
+-- test2/test2.go --
+package test2
+
+`
+	WithOptions(Settings{"packageMove": true}).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("test1/test1.go")
+		loc := env.RegexpSearch("test1/test1.go", "test1")
+		badNames := []string{"test2", "mod.com/test2", "differentmod.com/test2",
+			"mod.com/$$$", "mod*.$+", "mod.commmm"}
+		expectedErrMatches := []string{"invalid package identifier", "already exists",
+			"cannot move package across module boundary", "invalid package name",
+			"invalid package path", "cannot move package across module boundary"}
+		for i, badName := range badNames {
+			err := env.Editor.Rename(env.Ctx, loc, badName)
+			if err == nil {
+				t.Errorf("Rename to %s succeeded, want non-nil error", badName)
+			} else if !strings.Contains(err.Error(), expectedErrMatches[i]) {
+				t.Errorf("Rename to %s produced incorrect error message, got %s, want %s", badName, err.Error(), expectedErrMatches[i])
+			}
+		}
+	})
+}
+
+func TestRenamePackage_PackageMoveDisabled(t *testing.T) {
+	const files = `
+-- go.mod --
+module mod.com
+
+go 1.21
+-- test1/test1.go --
+package test1
+
+-- test2/test2.go --
+package test2
+
+`
+	WithOptions(Settings{"packageMove": false}).Run(t, files, func(t *testing.T, env *Env) {
+		env.OpenFile("test1/test1.go")
+		loc := env.RegexpSearch("test1/test1.go", "test1")
+		badNames := []string{"test2", "mod.com/test3"}
+		expectedErrMatches := []string{"invalid package identifier", "setting 'packageMove' is not enabled"}
+		for i, badName := range badNames {
+			err := env.Editor.Rename(env.Ctx, loc, badName)
+			if err == nil {
+				t.Errorf("Rename to %s succeeded, want non-nil error", badName)
+			} else if !strings.Contains(err.Error(), expectedErrMatches[i]) {
+				t.Errorf("Rename to %s produced incorrect error message, got %s, want %s", badName, err.Error(), expectedErrMatches[i])
+			}
+		}
 	})
 }
 

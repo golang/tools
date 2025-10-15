@@ -35,8 +35,11 @@ package golang
 import (
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/token"
 	"go/types"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -46,6 +49,8 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/file"
+	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
@@ -913,15 +918,67 @@ func isValidIdentifier(id string) bool {
 	return token.Lookup(id) == token.IDENT
 }
 
-// isValidPackagePath reports whether newPath is a valid new path for the
-// package currently at oldPath. For now, we only support renames that
-// do not result in a package move.
-// TODO(mkalil): support package renames with arbitrary package paths, including
-// relative paths.
-func isValidPackagePath(oldPath, newPath string) bool {
-	// We prompt with the full package path, but some users may delete this and
-	// just enter a package identifier, which we should still support.
-	return isValidIdentifier(newPath) || filepath.Dir(oldPath) == filepath.Dir(newPath)
+// checkPackageRename returns the effective new package directory, path and name
+// resulting from renaming the current package to newName, which may be an
+// identifier or a package path. An error is returned if the renaming is
+// invalid.
+func checkPackageRename(opts *settings.Options, curPkg *cache.Package, f file.Handle, newName string) (newPkgDir string, newPkgName PackageName, newPkgPath PackagePath, err error) {
+	// Path unchanged
+	if newName == curPkg.String() || newName == string(curPkg.Metadata().Name) {
+		return f.URI().DirPath(), curPkg.Metadata().Name, curPkg.Metadata().PkgPath, nil
+	}
+	// TODO(mkalil): support relative paths
+	if build.IsLocalImport(newName) {
+		return "", "", "", fmt.Errorf("specifying relative paths in package rename not yet supported")
+	}
+	// When package move is enabled, we prompt with the full package path. Users
+	// can either submit a full package path or just provide the package
+	// identifier.
+	validIdent := isValidIdentifier(newName)
+	if validIdent {
+		// Not an attempted move. Check if a directory already exists at that
+		// path, in which case we should not allow renaming.
+		root := filepath.Dir(f.URI().DirPath())
+		newPkgDir = filepath.Join(root, newName)
+		_, err := os.Stat(newPkgDir)
+		if err == nil {
+			// Directory already exists, return an error.
+			return "", "", "", fmt.Errorf("invalid package identifier: %q already exists", newName)
+		}
+		parentPkgPath := strings.TrimSuffix(string(curPkg.Metadata().PkgPath), string(curPkg.Metadata().Name)) // leaves a trailing slash
+		newPkgPath = PackagePath(parentPkgPath + newName)
+		newPkgName = PackageName(newName)
+		return newPkgDir, newPkgName, newPkgPath, nil
+	}
+	if !opts.PackageMove {
+		return "", "", "", fmt.Errorf("a full package path is specified but internal setting 'packageMove' is not enabled")
+	}
+	// Don't allow moving packages across module boundaries.
+	curModPath := curPkg.Metadata().Module.Path
+	if !strings.HasPrefix(newName+"/", curModPath+"/") {
+		return "", "", "", fmt.Errorf("invalid package path %q; cannot move package across module boundary", newName)
+	}
+	// Don't support package merging. If a directory already exists
+	// at that path, we should not allow renaming.
+	newPathAfterMod := strings.TrimPrefix(newName, curModPath) //newName is a package path here.
+	modDir := curPkg.Metadata().Module.Dir
+	newPkgDir = filepath.Join(modDir, filepath.FromSlash(newPathAfterMod))
+	// Trim the starting slash, which is not considered valid in fs.ValidPath.
+	isValidDir := fs.ValidPath(strings.TrimPrefix(newPkgDir, string(filepath.Separator)))
+	if !isValidDir {
+		return "", "", "", fmt.Errorf("invalid package path %q", newName)
+	}
+	newPkgName = PackageName(filepath.Base(newPkgDir))
+	_, err = os.Stat(newPkgDir)
+	if err == nil {
+		// Directory or file already exists at this path; return an error.
+		return "", "", "", fmt.Errorf("invalid package path: %q already exists", newName)
+	}
+	// Verify that the new package name is a valid identifier.
+	if !isValidIdentifier(string(newPkgName)) {
+		return "", "", "", fmt.Errorf("invalid package name %q", newPkgName)
+	}
+	return newPkgDir, newPkgName, PackagePath(newName), nil
 }
 
 // isLocal reports whether obj is local to some function.

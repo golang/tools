@@ -52,6 +52,7 @@ import (
 	"go/token"
 	"go/types"
 	"maps"
+	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -72,6 +73,7 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
+	"golang.org/x/tools/gopls/internal/util/pathutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
@@ -417,9 +419,8 @@ func editsToDocChanges(ctx context.Context, snapshot *cache.Snapshot, edits map[
 }
 
 // Rename returns a map of TextEdits for each file modified when renaming a
-// given identifier within a package and a boolean value of true for renaming
-// package and false otherwise.
-func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position, newName string) ([]protocol.DocumentChange, error) {
+// given identifier within a package.
+func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp protocol.Position, newName string, renameSubpkgs bool) ([]protocol.DocumentChange, error) {
 	ctx, done := event.Start(ctx, "golang.Rename")
 	defer done()
 
@@ -449,23 +450,32 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 		return nil, err
 	}
 
-	var editMap map[protocol.DocumentURI][]diff.Edit
+	var (
+		editMap   map[protocol.DocumentURI][]diff.Edit
+		newPkgDir string // declared here so it can be used later to rename the package's enclosing directory
+	)
 	if inPackageName {
 		countRenamePackage.Inc()
-		if !isValidPackagePath(pkg.String(), newName) {
-			return nil, fmt.Errorf("invalid package path: %q (package moves are not yet supported, see go.dev/issue/57171)", newName)
+		var (
+			newPkgName PackageName
+			newPkgPath PackagePath
+			err        error
+		)
+		if newPkgDir, newPkgName, newPkgPath, err = checkPackageRename(snapshot.Options(), pkg, f, newName); err != nil {
+			return nil, err
 		}
-		// Only the last element of the path is required as input for [renamePackageName].
-		newName = path.Base(newName)
-		editMap, err = renamePackageName(ctx, snapshot, f, PackageName(newName))
+		editMap, err = renamePackage(ctx, snapshot, f, newPkgName, newPkgPath, newPkgDir, renameSubpkgs)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		if !isValidIdentifier(newName) {
 			return nil, fmt.Errorf("invalid identifier to rename: %q", newName)
 		}
 		editMap, err = renameOrdinary(ctx, snapshot, f.URI(), pp, newName)
-	}
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Convert edits to protocol form.
@@ -512,13 +522,49 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 	if err != nil {
 		return nil, err
 	}
-	// Update the last component of the file's enclosing directory.
 	if inPackageName {
 		oldDir := f.URI().DirPath()
-		newDir := filepath.Join(filepath.Dir(oldDir), path.Base(newName))
-		changes = append(changes, protocol.DocumentChangeRename(
-			protocol.URIFromPath(oldDir),
-			protocol.URIFromPath(newDir)))
+		if renameSubpkgs {
+			// Update the last component of the file's enclosing directory.
+			changes = append(changes, protocol.DocumentChangeRename(
+				protocol.URIFromPath(oldDir),
+				protocol.URIFromPath(newPkgDir)))
+		} else {
+			// Not moving subpackages, so we need to move the files individually
+			// Move each file from oldDir to newPkgDir
+			files, err := os.ReadDir(oldDir)
+			if err != nil {
+				return nil, err
+			}
+			hasNestedDir := false
+			for _, f := range files {
+				if !f.IsDir() {
+					changes = append(changes,
+						protocol.DocumentChangeRename(
+							protocol.URIFromPath(filepath.Join(oldDir, f.Name())),
+							protocol.URIFromPath(filepath.Join(newPkgDir, f.Name()))),
+					)
+				} else {
+					hasNestedDir = true
+				}
+			}
+			// Delete oldPkgDir if it is now empty and newPkgDir is not a subdirectory of oldPkgDir.
+			// protocol.DeleteFile, when used with a directory, will only delete the directory
+			// if it is empty as long as the "recursive" option is set to its default value, false.
+			// TODO(mkalil): The above should be true according to the LSP spec but in VSCode
+			// we could get "Renamed failed to apply edits" errors when we include the edit
+			// to delete a directory that can't be deleted. For now, check if the oldDir has
+			// any nested directories before trying to delete it.
+			// TODO(mkalil): We could be deleting more directories. For example, if
+			// we have a package at a/b/c/d and we move it to a/z, it only deletes
+			// directory d and would leave directories b and c even if they are now
+			// empty.
+			oldPkgDir := f.URI().DirPath()
+			if !pathutil.InDir(oldPkgDir, newPkgDir) && !hasNestedDir {
+				changes = append(changes,
+					protocol.DocumentChangeDelete(protocol.URIFromPath(oldPkgDir)))
+			}
+		}
 	}
 	return changes, nil
 }
@@ -912,32 +958,39 @@ func renameExported(pkgs []*cache.Package, declPkgPath PackagePath, declObjPath 
 	return allEdits, nil
 }
 
-// renamePackageName renames package declarations, imports, and go.mod files.
-func renamePackageName(ctx context.Context, s *cache.Snapshot, f file.Handle, newName PackageName) (map[protocol.DocumentURI][]diff.Edit, error) {
+// renamePackage renames package declarations, imports, and go.mod files.
+//
+// f is the file originating the rename, and therefore f.URI().Dir() is the
+// current package directory. newName, newPath, and newDir describe the renaming.
+func renamePackage(ctx context.Context, s *cache.Snapshot, f file.Handle, newName PackageName, newPath PackagePath, newDir string, renameSubpkgs bool) (map[protocol.DocumentURI][]diff.Edit, error) {
 	// Rename the package decl and all imports.
-	renamingEdits, err := renamePackage(ctx, s, f, newName)
+	renamingEdits := make(map[protocol.DocumentURI][]diff.Edit)
+	err := updatePackageDeclsAndImports(ctx, s, f, newName, newPath, renamingEdits, renameSubpkgs)
 	if err != nil {
 		return nil, err
 	}
 
-	oldBase := f.URI().DirPath()
-	newPkgDir := filepath.Join(filepath.Dir(oldBase), string(newName))
+	err = updateModFiles(ctx, s, f.URI().DirPath(), newDir, renamingEdits, renameSubpkgs)
+	if err != nil {
+		return nil, err
+	}
 
-	// Update any affected replace directives in go.mod files.
-	// TODO(adonovan): extract into its own function.
-	//
-	// Get all workspace modules.
-	// TODO(adonovan): should this operate on all go.mod files,
-	// irrespective of whether they are included in the workspace?
+	return renamingEdits, nil
+}
+
+// Update any affected replace directives in go.mod files.
+// TODO(adonovan): should this operate on all go.mod files,
+// irrespective of whether they are included in the workspace?
+func updateModFiles(ctx context.Context, s *cache.Snapshot, oldDir string, newPkgDir string, renamingEdits map[protocol.DocumentURI][]diff.Edit, renameSubpkgs bool) error {
 	modFiles := s.View().ModFiles()
 	for _, m := range modFiles {
 		fh, err := s.ReadFile(ctx, m)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		pm, err := s.ParseMod(ctx, fh)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		modFileDir := pm.URI.DirPath()
@@ -948,15 +1001,16 @@ func renamePackageName(ctx context.Context, s *cache.Snapshot, f file.Handle, ne
 			if !strings.HasPrefix(r.New.Path, "/") && !strings.HasPrefix(r.New.Path, "./") && !strings.HasPrefix(r.New.Path, "../") {
 				continue
 			}
-
-			replacedPath := r.New.Path
+			replacedDir := r.New.Path
 			if strings.HasPrefix(r.New.Path, "./") || strings.HasPrefix(r.New.Path, "../") {
-				replacedPath = filepath.Join(modFileDir, r.New.Path)
+				replacedDir = filepath.Join(modFileDir, r.New.Path)
 			}
 
 			// TODO: Is there a risk of converting a '\' delimited replacement to a '/' delimited replacement?
-			if !strings.HasPrefix(filepath.ToSlash(replacedPath)+"/", filepath.ToSlash(oldBase)+"/") {
-				continue // not affected by the package renaming
+
+			if renameSubpkgs && !strings.HasPrefix(filepath.ToSlash(replacedDir)+"/", filepath.ToSlash(oldDir)+"/") ||
+				!renameSubpkgs && !(filepath.ToSlash(replacedDir) == filepath.ToSlash(oldDir)) {
+				continue //not affected by the package renanming
 			}
 
 			affectedReplaces = append(affectedReplaces, r)
@@ -967,20 +1021,20 @@ func renamePackageName(ctx context.Context, s *cache.Snapshot, f file.Handle, ne
 		}
 		copied, err := modfile.Parse("", pm.Mapper.Content, nil)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		for _, r := range affectedReplaces {
-			replacedPath := r.New.Path
+			replacedDir := r.New.Path
 			if strings.HasPrefix(r.New.Path, "./") || strings.HasPrefix(r.New.Path, "../") {
-				replacedPath = filepath.Join(modFileDir, r.New.Path)
+				replacedDir = filepath.Join(modFileDir, r.New.Path)
 			}
 
-			suffix := strings.TrimPrefix(replacedPath, oldBase)
+			suffix := strings.TrimPrefix(replacedDir, oldDir)
 
 			newReplacedPath, err := filepath.Rel(modFileDir, newPkgDir+suffix)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			newReplacedPath = filepath.ToSlash(newReplacedPath)
@@ -990,72 +1044,67 @@ func renamePackageName(ctx context.Context, s *cache.Snapshot, f file.Handle, ne
 			}
 
 			if err := copied.AddReplace(r.Old.Path, "", newReplacedPath, ""); err != nil {
-				return nil, err
+				return err
 			}
 		}
 
 		copied.Cleanup()
 		newContent, err := copied.Format()
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		// Calculate the edits to be made due to the change.
 		edits := diff.Bytes(pm.Mapper.Content, newContent)
 		renamingEdits[pm.URI] = append(renamingEdits[pm.URI], edits...)
 	}
-
-	return renamingEdits, nil
+	return nil
 }
 
-// renamePackage computes all workspace edits required to rename the package
+// updatePackageDeclsAndImports computes all workspace edits required to rename the package
 // described by the given metadata, to newName, by renaming its package
 // directory.
 //
 // It updates package clauses and import paths for the renamed package as well
 // as any other packages affected by the directory renaming among all packages
 // known to the snapshot.
-func renamePackage(ctx context.Context, s *cache.Snapshot, f file.Handle, newName PackageName) (map[protocol.DocumentURI][]diff.Edit, error) {
+func updatePackageDeclsAndImports(ctx context.Context, s *cache.Snapshot, f file.Handle, newName PackageName, newPkgPath PackagePath, renamingEdits map[protocol.DocumentURI][]diff.Edit, renameSubpkgs bool) error {
 	if strings.HasSuffix(string(newName), "_test") {
-		return nil, fmt.Errorf("cannot rename to _test package")
+		return fmt.Errorf("cannot rename to _test package")
 	}
 
 	// We need metadata for the relevant package and module paths.
 	// These should be the same for all packages containing the file.
 	meta, err := s.NarrowestMetadataForFile(ctx, f.URI())
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	oldPkgPath := meta.PkgPath
 	if meta.Module == nil {
-		return nil, fmt.Errorf("cannot rename package: missing module information for package %q", meta.PkgPath)
+		return fmt.Errorf("cannot rename package: missing module information for package %q", meta.PkgPath)
 	}
 	modulePath := PackagePath(meta.Module.Path)
 	if modulePath == oldPkgPath {
-		return nil, fmt.Errorf("cannot rename package: module path %q is the same as the package path, so renaming the package directory would have no effect", modulePath)
+		return fmt.Errorf("cannot rename package: module path %q is the same as the package path, so renaming the package directory would have no effect", modulePath)
 	}
 
-	newPathPrefix := path.Join(path.Dir(string(oldPkgPath)), string(newName))
-
 	// We must inspect all packages, not just direct importers,
-	// because we also rename subpackages, which may be unrelated.
+	// because we might also rename subpackages, which may be unrelated.
 	// (If the renamed package imports a subpackage it may require
 	// edits to both its package and import decls.)
 	allMetadata, err := s.AllMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-
 	// Rename package and import declarations in all relevant packages.
-	edits := make(map[protocol.DocumentURI][]diff.Edit)
 	for _, mp := range allMetadata {
 		// Special case: x_test packages for the renamed package will not have the
 		// package path as a dir prefix, but still need their package clauses
 		// renamed.
 		if mp.PkgPath == oldPkgPath+"_test" {
-			if err := renamePackageClause(ctx, mp, s, newName+"_test", edits); err != nil {
-				return nil, err
+			if err := renamePackageClause(ctx, mp, s, newName+"_test", renamingEdits); err != nil {
+				return err
 			}
 			continue
 		}
@@ -1063,13 +1112,14 @@ func renamePackage(ctx context.Context, s *cache.Snapshot, f file.Handle, newNam
 		// Subtle: check this condition before checking for valid module info
 		// below, because we should not fail this operation if unrelated packages
 		// lack module info.
-		if !strings.HasPrefix(string(mp.PkgPath)+"/", string(oldPkgPath)+"/") {
+		if renameSubpkgs && !pathutil.InDir(string(oldPkgPath), string(mp.PkgPath)) ||
+			!renameSubpkgs && mp.PkgPath != oldPkgPath {
 			continue // not affected by the package renaming
 		}
 
 		if mp.Module == nil {
 			// This check will always fail under Bazel.
-			return nil, fmt.Errorf("cannot rename package: missing module information for package %q", mp.PkgPath)
+			return fmt.Errorf("cannot rename package: missing module information for package %q", mp.PkgPath)
 		}
 
 		if modulePath != PackagePath(mp.Module.Path) {
@@ -1078,24 +1128,24 @@ func renamePackage(ctx context.Context, s *cache.Snapshot, f file.Handle, newNam
 
 		// Renaming a package consists of changing its import path and package name.
 		suffix := strings.TrimPrefix(string(mp.PkgPath), string(oldPkgPath))
-		newPath := newPathPrefix + suffix
+		newImportPath := string(newPkgPath) + suffix
 
 		pkgName := mp.Name
 		if mp.PkgPath == oldPkgPath {
 			pkgName = newName
 
-			if err := renamePackageClause(ctx, mp, s, newName, edits); err != nil {
-				return nil, err
+			if err := renamePackageClause(ctx, mp, s, newName, renamingEdits); err != nil {
+				return err
 			}
 		}
 
-		imp := ImportPath(newPath) // TODO(adonovan): what if newPath has vendor/ prefix?
-		if err := renameImports(ctx, s, mp, imp, pkgName, edits); err != nil {
-			return nil, err
+		imp := ImportPath(newImportPath) // TODO(adonovan): what if newImportPath has vendor/ prefix?
+		if err := renameImports(ctx, s, mp, imp, pkgName, renamingEdits); err != nil {
+			return err
 		}
 	}
 
-	return edits, nil
+	return nil
 }
 
 // renamePackageClause computes edits renaming the package clause of files in
@@ -1160,6 +1210,16 @@ func renameImports(ctx context.Context, snapshot *cache.Snapshot, mp *metadata.P
 			for _, imp := range f.File.Imports {
 				if rdep.DepsByImpPath[metadata.UnquoteImportPath(imp)] != mp.ID {
 					continue // not the import we're looking for
+				}
+
+				// If we are moving a package from a non-internal directory to
+				// an internal directory, and there is an importer located in a
+				// different module, then it is an invalid import.
+				//
+				// We do not prevent moves from an internal directory to a
+				// non-internal directory.
+				if !metadata.IsValidImport(rdep.PkgPath, metadata.PackagePath(newPath), snapshot.View().Type() != cache.GoPackagesDriverView) {
+					return fmt.Errorf("invalid: package move would result in illegal internal import")
 				}
 
 				// If the import does not explicitly specify

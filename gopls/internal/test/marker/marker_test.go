@@ -2145,7 +2145,22 @@ func changedFiles(env *integration.Env, changes []protocol.DocumentChange) (map[
 		case change.DeleteFile != nil:
 			uri := change.DeleteFile.URI
 			if _, err := read(uri); err != nil {
-				return nil, fmt.Errorf("DeleteFile %s: file does not exist", uri)
+				// The specified URI could be a file or a directory.
+				files := env.ListFiles(uriToPath(uri))
+				if files == nil {
+					return nil, fmt.Errorf("DeleteFile %s: file does not exist", uri)
+				}
+				if len(files) > 0 {
+					// Directory is not empty. If "Recursive" is true, we delete
+					// every file in the folder. Otherwise, we continue without
+					// deleting the directory.
+					if change.DeleteFile.Options != nil && change.DeleteFile.Options.Recursive {
+						for _, f := range files {
+							write(protocol.URIFromPath(f), nil)
+						}
+					}
+					continue
+				}
 			}
 			write(uri, nil)
 
