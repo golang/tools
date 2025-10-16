@@ -7,9 +7,9 @@ package yield
 import (
 	"bufio"
 	"io"
+	"iter"
 )
 
-//
 //
 // Modify this block of comment lines as needed when changing imports
 // to avoid perturbing subsequent line numbers (and thus error messages).
@@ -105,16 +105,32 @@ func tricky2(yield func(int) bool) {
 	}
 }
 
-// This example is sound, but the analyzer reports a false positive.
-// TODO(adonovan): prune infeasible paths more carefully.
+// This case from issue #74136 is sound, and should produce no diagnostic.
 func tricky3(yield func(int) bool) {
 	cleanup := func() {}
-	ok := yield(1)           // want "yield may be called again .on L118"
-	stop := !ok || !yield(2) // want "yield may be called again .on L118"
+	ok := yield(1)
+	stop := !ok || !yield(2)
 	if stop {
 		cleanup()
 	} else {
 		// dominated by !stop => !(!ok || !yield(2)) => yield(1) && yield(2): good.
 		yield(3)
+	}
+}
+
+// So is this one, from issue #75924
+func tricky5(list []string, cond bool) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for _, s := range list {
+			var ok bool
+			if cond {
+				ok = yield(s)
+			} else {
+				ok = yield(s)
+			}
+			if !ok {
+				return
+			}
+		}
 	}
 }

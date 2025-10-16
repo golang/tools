@@ -23,6 +23,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"iter"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
@@ -89,6 +90,10 @@ func run(pass *analysis.Pass) (any, error) {
 				}
 			}
 		}
+		isYieldCall := func(v ssa.Value) bool {
+			call, ok := v.(*ssa.Call)
+			return ok && ssaYieldCalls[call] != nil
+		}
 
 		// Now search for a control path from the instruction after a
 		// yield call to another yield call--possible the same one,
@@ -115,96 +120,68 @@ func run(pass *analysis.Pass) (any, error) {
 			// visit visits the instructions of a block (or a suffix if start > 0).
 			var visit func(b *ssa.BasicBlock, start int)
 			visit = func(b *ssa.BasicBlock, start int) {
-				if !visited[b.Index] {
-					if start == 0 {
-						visited[b.Index] = true
-					}
-					for _, instr := range b.Instrs[start:] {
-						switch instr := instr.(type) {
-						case *ssa.Call:
+				if visited[b.Index] {
+					return
+				}
+				if start == 0 {
+					visited[b.Index] = true
+				}
+				for _, instr := range b.Instrs[start:] {
+					switch instr := instr.(type) {
+					case *ssa.Call:
 
-							// Precondition: v has a pos within a CallExpr.
-							enclosingCall := func(v ssa.Value) ast.Node {
-								pos := v.Pos()
-								cur, ok := inspector.Root().FindByPos(pos, pos)
-								if !ok {
-									panic(fmt.Sprintf("can't find node at %v", safetoken.StartPosition(pass.Fset, pos)))
-								}
-								call, ok := moreiters.First(cur.Enclosing((*ast.CallExpr)(nil)))
-								if !ok {
-									panic(fmt.Sprintf("no call enclosing %v", safetoken.StartPosition(pass.Fset, pos)))
-								}
-								return call.Node()
+						// Precondition: v has a pos within a CallExpr.
+						enclosingCall := func(v ssa.Value) ast.Node {
+							pos := v.Pos()
+							cur, ok := inspector.Root().FindByPos(pos, pos)
+							if !ok {
+								panic(fmt.Sprintf("can't find node at %v", safetoken.StartPosition(pass.Fset, pos)))
 							}
-
-							if !info.reported && ssaYieldCalls[instr] != nil {
-								info.reported = true
-								var (
-									where   = "" // "" => same yield call (a loop)
-									related []analysis.RelatedInformation
-								)
-								// Also report location of reached yield call, if distinct.
-								if instr != call {
-									otherLine := safetoken.StartPosition(pass.Fset, instr.Pos()).Line
-									where = fmt.Sprintf("(on L%d) ", otherLine)
-									otherCallExpr := enclosingCall(instr)
-									related = []analysis.RelatedInformation{{
-										Pos:     otherCallExpr.Pos(),
-										End:     otherCallExpr.End(),
-										Message: "other call here",
-									}}
-								}
-								callExpr := enclosingCall(call)
-								pass.Report(analysis.Diagnostic{
-									Pos:     callExpr.Pos(),
-									End:     callExpr.End(),
-									Message: fmt.Sprintf("yield may be called again %safter returning false", where),
-									Related: related,
-								})
+							call, ok := moreiters.First(cur.Enclosing((*ast.CallExpr)(nil)))
+							if !ok {
+								panic(fmt.Sprintf("no call enclosing %v", safetoken.StartPosition(pass.Fset, pos)))
 							}
-						case *ssa.If:
-							// Visit both successors, unless cond is yield() or its negation.
-							// In that case visit only the "if !yield()" block.
-							cond := instr.Cond
-							t, f := b.Succs[0], b.Succs[1]
+							return call.Node()
+						}
 
-							// Strip off any NOT operator.
-							cond, t, f = unnegate(cond, t, f)
-
-							// As a peephole optimization for this special case:
-							//   ok := yield()
-							//   ok = ok && yield()
-							//   ok = ok && yield()
-							// which in SSA becomes:
-							//   yield()
-							//   phi(false, yield())
-							//   phi(false, yield())
-							// we reduce a cond of phi(false, x) to just x.
-							if phi, ok := cond.(*ssa.Phi); ok {
-								var nonFalse []ssa.Value
-								for _, v := range phi.Edges {
-									if c, ok := v.(*ssa.Const); ok &&
-										!constant.BoolVal(c.Value) {
-										continue // constant false
-									}
-									nonFalse = append(nonFalse, v)
-								}
-								if len(nonFalse) == 1 {
-									cond = nonFalse[0]
-									cond, t, f = unnegate(cond, t, f)
-								}
+						if !info.reported && ssaYieldCalls[instr] != nil {
+							info.reported = true
+							var (
+								where   = "" // "" => same yield call (a loop)
+								related []analysis.RelatedInformation
+							)
+							// Also report location of reached yield call, if distinct.
+							if instr != call {
+								otherLine := safetoken.StartPosition(pass.Fset, instr.Pos()).Line
+								where = fmt.Sprintf("(on L%d) ", otherLine)
+								otherCallExpr := enclosingCall(instr)
+								related = []analysis.RelatedInformation{{
+									Pos:     otherCallExpr.Pos(),
+									End:     otherCallExpr.End(),
+									Message: "other call here",
+								}}
 							}
-
-							if cond, ok := cond.(*ssa.Call); ok && ssaYieldCalls[cond] != nil {
-								// Skip the successor reached by "if yield() { ... }".
-							} else {
-								visit(t, 0)
-							}
-							visit(f, 0)
-
-						case *ssa.Jump:
+							callExpr := enclosingCall(call)
+							pass.Report(analysis.Diagnostic{
+								Pos:     callExpr.Pos(),
+								End:     callExpr.End(),
+								Message: fmt.Sprintf("yield may be called again %safter returning false", where),
+								Related: related,
+							})
+						}
+					case *ssa.If:
+						// Visit both successors, unless cond is yield() or its negation.
+						// In that case visit only the "if !yield()" block.
+						t, f := reachableSuccs(instr.Cond, isYieldCall)
+						if t {
 							visit(b.Succs[0], 0)
 						}
+						if f {
+							visit(b.Succs[1], 0)
+						}
+
+					case *ssa.Jump:
+						visit(b.Succs[0], 0)
 					}
 				}
 			}
@@ -217,9 +194,129 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-func unnegate(cond ssa.Value, t, f *ssa.BasicBlock) (_ ssa.Value, _, _ *ssa.BasicBlock) {
-	if unop, ok := cond.(*ssa.UnOp); ok && unop.Op == token.NOT {
-		return unop.X, f, t
+// reachableSuccs reports whether the (true, false) outcomes of the
+// condition are possible.
+func reachableSuccs(cond ssa.Value, isYieldCall func(ssa.Value) bool) (_t, _f bool) {
+	// If the condition is...
+	//
+	// ...a constant, we know only one successor is reachable.
+	//
+	// ...a yield call, we assume that it returned false,
+	// and treat it like a constant.
+	//
+	// ...a negation !v, we strip the negation and flip the sense
+	// of the result.
+	//
+	// ...a phi node, we recursively find all non-phi leaves
+	// of the phi graph and treat them like a conjunction,
+	// e.g. if false || true || yield || yield { ... }.
+	//
+	// (We don't actually analyze || and && in this way,
+	// but we could do them too.)
+
+	// This logic addresses cases where conditions are
+	// materialized as booleans such as this
+	//
+	//   ok := yield()
+	//   ok = ok && yield()
+	//   ok = ok && yield()
+	//
+	// which in SSA becomes:
+	//
+	//   yield()
+	//   phi(false, yield())
+	//   phi(false, yield())
+	//
+	// and we can reduce each phi(false, x) to just x.
+	//
+	// Similarly this case:
+	//
+	//	var ok bool
+	//	if foo { ok = yield() }
+	//	else   { ok = yield() }
+	//	if ok { ... }
+	//
+	// can be analyzed as "if yield || yield".
+
+	// all[false] => all cases are false
+	// all[true]  => all cases are true
+	all := [2]bool{true, true}
+	for v := range unphi(cond) {
+		sense := 1 // 0=false 1=true
+
+		// Strip off any NOT operators.
+		for {
+			unop, ok := v.(*ssa.UnOp)
+			if !(ok && unop.Op == token.NOT) {
+				break
+			}
+			v = unop.X
+			sense = 1 - sense
+		}
+
+		switch {
+		case is[*ssa.Const](v):
+			// "if false" means not all cases are true,
+			// and vice versa.
+			if constant.BoolVal(v.(*ssa.Const).Value) {
+				sense = 1 - sense
+			}
+			all[sense] = false
+
+		case isYieldCall(v):
+			// "if yield" is assumed to be false.
+			all[sense] = false // ¬ all cases are true
+
+		default:
+			// Unknown condition:
+			// ¬ all cases are false
+			// ¬ all cases are true
+			return true, true
+		}
 	}
-	return cond, t, f
+	if all[0] && all[1] {
+		panic("unphi returned empty sequence")
+	}
+	return !all[0], !all[1]
+}
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
+}
+
+// -- SSA helpers --
+
+// unphi returns the sequence of values formed by recursively
+// replacing phi nodes in v by their non-phi operands.
+func unphi(v ssa.Value) iter.Seq[ssa.Value] {
+	return func(yield func(ssa.Value) bool) {
+		_ = every(v, yield)
+	}
+}
+
+// every reports whether predicate f is true of each value in the
+// sequence formed by recursively replacing phi nodes in v by their
+// operands.
+func every(v ssa.Value, f func(ssa.Value) bool) bool {
+	var seen map[*ssa.Phi]bool
+	var visit func(v ssa.Value) bool
+	visit = func(v ssa.Value) bool {
+		if phi, ok := v.(*ssa.Phi); ok {
+			if !seen[phi] {
+				if seen == nil {
+					seen = make(map[*ssa.Phi]bool)
+				}
+				seen[phi] = true
+				for _, edge := range phi.Edges {
+					if !visit(edge) {
+						return false
+					}
+				}
+			}
+			return true
+		}
+		return f(v)
+	}
+	return visit(v)
 }
