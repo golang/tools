@@ -31,6 +31,7 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/moreiters"
 )
 
 //go:embed doc.go
@@ -121,14 +122,45 @@ func run(pass *analysis.Pass) (any, error) {
 					for _, instr := range b.Instrs[start:] {
 						switch instr := instr.(type) {
 						case *ssa.Call:
+
+							// Precondition: v has a pos within a CallExpr.
+							enclosingCall := func(v ssa.Value) ast.Node {
+								pos := v.Pos()
+								cur, ok := inspector.Root().FindByPos(pos, pos)
+								if !ok {
+									panic(fmt.Sprintf("can't find node at %v", safetoken.StartPosition(pass.Fset, pos)))
+								}
+								call, ok := moreiters.First(cur.Enclosing((*ast.CallExpr)(nil)))
+								if !ok {
+									panic(fmt.Sprintf("no call enclosing %v", safetoken.StartPosition(pass.Fset, pos)))
+								}
+								return call.Node()
+							}
+
 							if !info.reported && ssaYieldCalls[instr] != nil {
 								info.reported = true
-								where := "" // "" => same yield call (a loop)
+								var (
+									where   = "" // "" => same yield call (a loop)
+									related []analysis.RelatedInformation
+								)
+								// Also report location of reached yield call, if distinct.
 								if instr != call {
 									otherLine := safetoken.StartPosition(pass.Fset, instr.Pos()).Line
 									where = fmt.Sprintf("(on L%d) ", otherLine)
+									otherCallExpr := enclosingCall(instr)
+									related = []analysis.RelatedInformation{{
+										Pos:     otherCallExpr.Pos(),
+										End:     otherCallExpr.End(),
+										Message: "other call here",
+									}}
 								}
-								pass.Reportf(call.Pos(), "yield may be called again %safter returning false", where)
+								callExpr := enclosingCall(call)
+								pass.Report(analysis.Diagnostic{
+									Pos:     callExpr.Pos(),
+									End:     callExpr.End(),
+									Message: fmt.Sprintf("yield may be called again %safter returning false", where),
+									Related: related,
+								})
 							}
 						case *ssa.If:
 							// Visit both successors, unless cond is yield() or its negation.
