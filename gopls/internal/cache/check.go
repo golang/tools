@@ -1456,12 +1456,12 @@ type typeCheckInputs struct {
 	id PackageID
 
 	// Used for type checking:
-	pkgPath                  PackagePath
-	name                     PackageName
-	goFiles, compiledGoFiles []file.Handle
-	sizes                    types.Sizes
-	depsByImpPath            map[ImportPath]PackageID
-	goVersion                string // packages.Module.GoVersion, e.g. "1.18"
+	pkgPath                            PackagePath
+	name                               PackageName
+	goFiles, compiledGoFiles, asmFiles []file.Handle
+	sizes                              types.Sizes
+	depsByImpPath                      map[ImportPath]PackageID
+	goVersion                          string // packages.Module.GoVersion, e.g. "1.18"
 
 	// Used for type check diagnostics:
 	// TODO(rfindley): consider storing less data in gobDiagnostics, and
@@ -1491,6 +1491,10 @@ func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (*
 	if err != nil {
 		return nil, err
 	}
+	asmFiles, err := readFiles(ctx, s, mp.AsmFiles)
+	if err != nil {
+		return nil, err
+	}
 
 	goVersion := ""
 	if mp.Module != nil && mp.Module.GoVersion != "" {
@@ -1506,6 +1510,7 @@ func (s *Snapshot) typeCheckInputs(ctx context.Context, mp *metadata.Package) (*
 		name:            mp.Name,
 		goFiles:         goFiles,
 		compiledGoFiles: compiledGoFiles,
+		asmFiles:        asmFiles,
 		sizes:           mp.TypesSizes,
 		depsByImpPath:   mp.DepsByImpPath,
 		goVersion:       goVersion,
@@ -1556,6 +1561,10 @@ func localPackageKey(inputs *typeCheckInputs) file.Hash {
 	}
 	fmt.Fprintf(hasher, "goFiles: %d\n", len(inputs.goFiles))
 	for _, fh := range inputs.goFiles {
+		fmt.Fprintln(hasher, fh.Identity())
+	}
+	fmt.Fprintf(hasher, "asmFiles:%d\n", len(inputs.asmFiles))
+	for _, fh := range inputs.asmFiles {
 		fmt.Fprintln(hasher, fh.Identity())
 	}
 
@@ -1613,6 +1622,10 @@ func (b *typeCheckBatch) checkPackage(ctx context.Context, fset *token.FileSet, 
 		if pgf.ParseErr != nil {
 			pkg.parseErrors = append(pkg.parseErrors, pgf.ParseErr)
 		}
+	}
+	pkg.asmFiles, err = parseAsmFiles(ctx, inputs.asmFiles...)
+	if err != nil {
+		return nil, err
 	}
 
 	// Use the default type information for the unsafe package.
