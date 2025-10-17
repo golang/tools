@@ -184,7 +184,7 @@ func (s *goplsSource) resolveWorkspaceReferences(filename string, missing import
 		return nil, nil
 	}
 	mypkg := mypkgs[0] // narrowest package
-	// search the metadata graph for package ids correstponding to missing
+	// search the metadata graph for package ids corresponding to missing
 	g := s.snapshot.MetadataGraph()
 	var ids []metadata.PackageID
 	var pkgs []*metadata.Package

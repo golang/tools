@@ -262,7 +262,7 @@ fixloop:
 	// These numbers are potentially misleading:
 	// The denominator includes duplicate conflicting fixes due to
 	// common files in packages "p" and "p [p.test]", which may
-	// have been fixed fixed and won't appear in the re-run.
+	// have been fixed and won't appear in the re-run.
 	// TODO(adonovan): eliminate identical fixes as an initial
 	// filtering step.
 	//
