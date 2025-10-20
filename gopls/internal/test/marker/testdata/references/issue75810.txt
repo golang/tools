@@ -1,0 +1,58 @@
+-- go.work --
+go 1.22
+
+use ./a
+use ./b
+use ./c
+
+-- a/go.mod --
+module example.com/a
+
+go 1.22
+
+require example.com/b v0.0.1 //@ refs("/b", bmod, a_b, a2_b, a3_b)
+
+-- a/a.go --
+package a
+
+import "example.com/b" //@ loc(a_b, `"example.com/b"`)
+
+var _ = b.B
+
+-- a/a2.go --
+package a
+
+import "example.com/b" //@ loc(a2_b, `"example.com/b"`)
+
+var _ = b.B
+
+-- a/a3/a3.go --
+package a
+
+import "example.com/b" //@ loc(a3_b, `"example.com/b"`)
+
+var _ = b.B
+
+-- b/go.mod --
+module example.com/b //@ loc(bmod, re"^.*?b")
+
+go 1.22
+
+-- b/b.go --
+package b
+
+var B int
+
+-- c/go.mod --
+module example.com/c
+
+go 1.22
+
+require example.com/a v0.0.1
+require example.com/b v0.0.1 //@ refs("/b",bmod, c_b)
+-- c/c.go --
+package c
+
+import "example.com/b" //@ loc(c_b, `"example.com/b"`)
+
+var _ = b.B

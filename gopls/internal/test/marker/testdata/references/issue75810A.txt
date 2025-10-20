@@ -1,0 +1,74 @@
+Find references to example.com/b, but not to example.com/b/x
+-- go.work --
+go 1.22
+
+use ./a
+use ./b
+use ./b/x
+use ./c
+
+-- a/go.mod --
+module example.com/a
+
+go 1.22
+
+require example.com/b v0.0.1 //@ refs("/b", bmod, a_b, a2_b, a3_b)
+-- a/a.go --
+package a
+
+import "example.com/b" //@ loc(a_b, `"example.com/b"`)
+import "example.com/b/x" //@ loc(a4_x, `"example.com/b/x"`)
+
+var _ = b.B
+var _ = x.X
+
+-- a/a2.go --
+package a
+
+import "example.com/b" //@ loc(a2_b, `"example.com/b"`)
+
+var _ = b.B
+
+-- a/a3/a3.go --
+package a
+
+import "example.com/b" //@ loc(a3_b, `"example.com/b"`)
+import "example.com/b/x" //@ loc(a3_x, `"example.com/b/x"`)
+
+
+var _ = b.B
+var _ = x.X
+
+-- b/go.mod --
+module example.com/b //@ loc(bmod, re"^.*?b")
+
+go 1.22
+
+-- b/b.go --
+package b
+
+var B int
+
+-- b/x/go.mod --
+module example.com/b/x
+
+go 1.22
+
+-- b/x/x.go --
+package x
+
+var X int
+-- c/go.mod --
+module example.com/c
+
+go 1.22
+
+require example.com/a v0.0.1
+require example.com/b v0.0.1 //@ refs("/b", bmod, c_b)
+-- c/c.go --
+package c
+
+import "example.com/b" //@ loc(c_b, `"example.com/b"`)
+
+var _ = b.B
+

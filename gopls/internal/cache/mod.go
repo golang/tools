@@ -25,7 +25,7 @@ import (
 // A ParsedModule contains the results of parsing a go.mod file.
 type ParsedModule struct {
 	URI         protocol.DocumentURI
-	File        *modfile.File
+	File        *modfile.File // maybe absent in case of error
 	ReplaceMap  map[module.Version]module.Version
 	Mapper      *protocol.Mapper
 	ParseErrors []*Diagnostic

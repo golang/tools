@@ -66,6 +66,9 @@ The references algorithm handles various parts of syntax as follows:
   definition (of a field).
   The `references` operation reports only the references to it [as a field](https://go.dev/issue/63521).
   To find references to the type, jump to the type declararation first.
+- The references to a module in a **require** directive in a **go.mod** file are
+  the **import** statements in packages of the main module (defined by the go.mod file) that
+  import packages of the required module.
 
 Be aware that a references query returns information only about the
 build configuration used to analyze the selected file, so if you ask
