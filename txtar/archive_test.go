@@ -117,3 +117,30 @@ func shortArchive(a *Archive) string {
 	}
 	return buf.String()
 }
+
+func TestParseWithCommentAndUTF8(t *testing.T) {
+	data := []byte(`# This is a test comment
+-- hello.txt --
+Hello
+-- unicode.txt --
+Go语言
+`)
+
+	ar := Parse(data)
+
+	if len(ar.Files) != 2 {
+		t.Fatalf("expected 2 files, got %d", len(ar.Files))
+	}
+
+	if string(ar.Comment) != "# This is a test comment\n" {
+		t.Errorf("unexpected comment: %q", ar.Comment)
+	}
+
+	if ar.Files[1].Name != "unicode.txt" {
+		t.Errorf("expected unicode.txt, got %s", ar.Files[1].Name)
+	}
+
+	if string(ar.Files[1].Data) != "Go语言\n" {
+		t.Errorf("unexpected data for unicode.txt: %q", ar.Files[1].Data)
+	}
+}
