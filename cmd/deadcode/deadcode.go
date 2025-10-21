@@ -174,9 +174,23 @@ func main() {
 	// course address-taken and there exists a dynamic call of
 	// that signature, so when they are unreachable, it is
 	// invariably because the parent is unreachable.
-	var sourceFuncs []*ssa.Function
-	generated := make(map[string]bool)
+	var (
+		sourceFuncs    []*ssa.Function
+		generated      = make(map[string]bool)
+		interfaceTypes = make(map[*types.Package][]*types.Interface)
+	)
 	packages.Visit(initial, nil, func(p *packages.Package) {
+		// Collect interfaces by package for marker method identification.
+		var interfaces []*types.Interface
+		scope := p.Types.Scope()
+		for _, name := range scope.Names() {
+			if typeName, ok := scope.Lookup(name).(*types.TypeName); ok &&
+				types.IsInterface(typeName.Type()) {
+				interfaces = append(interfaces, typeName.Type().Underlying().(*types.Interface))
+			}
+		}
+		interfaceTypes[p.Types] = interfaces
+
 		for _, file := range p.Syntax {
 			for _, decl := range file.Decls {
 				if decl, ok := decl.(*ast.FuncDecl); ok {
@@ -334,10 +348,17 @@ func main() {
 				continue
 			}
 
+			// Marker methods should not be reported
+			marker := isMarkerMethod(fn, interfaceTypes[fn.Pkg.Pkg])
+			if marker {
+				continue
+			}
+
 			functions = append(functions, jsonFunction{
 				Name:      prettyName(fn, false),
 				Position:  toJSONPosition(posn),
 				Generated: gen,
+				Marker:    marker,
 			})
 		}
 		if len(functions) > 0 {
@@ -538,6 +559,30 @@ func cond[T any](cond bool, t, f T) T {
 	}
 }
 
+// isMarkerMethod reports whether fn is a marker method:
+// an unexported, empty-bodied method with no parameters or results
+// that implements some named interface type in the same package.
+func isMarkerMethod(fn *ssa.Function, interfaceTypes []*types.Interface) bool {
+	// Is it an unexported method of no params/results?
+	if !(fn.Signature.Recv() != nil &&
+		!ast.IsExported(fn.Name()) &&
+		fn.Signature.Params() == nil &&
+		fn.Signature.Results() == nil) {
+		return false
+	}
+
+	// Does the method have an empty body?
+	body := fn.Syntax().(*ast.FuncDecl).Body
+	if body == nil || len(body.List) > 0 {
+		return false
+	}
+
+	// Does it implement some named interface type in this package?
+	return slices.ContainsFunc(interfaceTypes, func(iface *types.Interface) bool {
+		return types.Implements(fn.Signature.Recv().Type(), iface)
+	})
+}
+
 // -- output protocol (for JSON or text/template) --
 
 // Keep in sync with doc comment!
@@ -546,6 +591,7 @@ type jsonFunction struct {
 	Name      string       // name (sans package qualifier)
 	Position  jsonPosition // file/line/column of declaration
 	Generated bool         // function is declared in a generated .go file
+	Marker    bool         // function is a marker interface method
 }
 
 func (f jsonFunction) String() string { return f.Name }
