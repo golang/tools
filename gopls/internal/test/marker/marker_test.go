@@ -1723,11 +1723,16 @@ func defMarker(mark marker, loc protocol.Location, want ...protocol.Location) {
 	}
 }
 
-func typedefMarker(mark marker, src, dst protocol.Location) {
-	got := mark.run.env.FirstTypeDefinition(src)
-	if got != dst {
-		mark.errorf("type definition location does not match:\n\tgot: %s\n\twant %s",
-			mark.run.fmtLoc(got), mark.run.fmtLoc(dst))
+func typedefMarker(mark marker, loc protocol.Location, want ...protocol.Location) {
+	env := mark.run.env
+	got, err := env.Editor.TypeDefinitions(env.Ctx, loc)
+	if err != nil {
+		mark.errorf("typeDefinition request failed: %v", err)
+		return
+	}
+
+	if err := compareLocations(mark, got, want); err != nil {
+		mark.errorf("typedef failed: %v", err)
 	}
 }
 

@@ -43,7 +43,7 @@ func PrepareTypeHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 	}
 
 	// For now, we require that the selection be a type name.
-	_, obj, _ := referencedObject(pkg, pgf, pos)
+	_, obj, _ := referencedObject(pkg.TypesInfo(), pgf, pos)
 	if obj == nil {
 		return nil, fmt.Errorf("not a symbol")
 	}

@@ -66,3 +66,28 @@ func _() {
 	var foo myFunc
 	_ = foo() //@typedef("foo", myFunc), diag(")", re"not enough arguments")
 }
+
+func _() {
+	// Any expression is fair game for typeDefinition;
+	// it needn't be a referring identifier.
+	// In this example it's the r-paren of a call expr.
+	func() Struct {
+		panic(0)
+	}() //@typedef(")", Struct)
+
+	// And in this one, it's the composite literal enclosing the
+	// KeyValueExpr denoted by the colon (which must not be adjacent
+	// to either they key or the value!).
+	_ = Struct{Field  :  ""} //@typedef(":", Struct)
+}
+
+// edge case: type-switch implicits.
+// y in "switch y" has no type; use x instead.
+func _(x any) {
+	switch y := x.(type) { //@typedef("y", BUILTIN)
+	case Int:
+		_ = y //@typedef("y", Int)
+	case Struct:
+		_ = y //@typedef("y", Struct)
+	}
+}

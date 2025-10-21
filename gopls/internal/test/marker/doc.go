@@ -301,6 +301,9 @@ Here is the list of supported action markers:
     request at the given location, and asserts that the result includes
     exactly one token with the given token type and modifier string.
 
+  - typedef(src, want ...location): performs a textDocument/typeDefinition request
+    at the src location, and checks that the results equals want.
+
   - workspacesymbol(query, golden): makes a workspace/symbol request for the
     given query, formats the response with one symbol per line, and compares
     against the named golden file. As workspace symbols are by definition a

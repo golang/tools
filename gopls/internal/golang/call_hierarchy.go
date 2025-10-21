@@ -39,7 +39,7 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 		return nil, err
 	}
 
-	_, obj, _ := referencedObject(pkg, pgf, pos)
+	_, obj, _ := referencedObject(pkg.TypesInfo(), pgf, pos)
 	if obj == nil {
 		return nil, nil
 	}
@@ -202,7 +202,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		return nil, err
 	}
 
-	_, obj, _ := referencedObject(pkg, pgf, pos)
+	_, obj, _ := referencedObject(pkg.TypesInfo(), pgf, pos)
 	if obj == nil {
 		return nil, nil
 	}
@@ -271,7 +271,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 
 	outgoingCalls := make(map[protocol.Location]*protocol.CallHierarchyOutgoingCall)
 	for _, callRange := range callRanges {
-		_, obj, _ := referencedObject(declPkg, declPGF, callRange.start)
+		_, obj, _ := referencedObject(declPkg.TypesInfo(), declPGF, callRange.start)
 		if obj == nil {
 			continue
 		}
