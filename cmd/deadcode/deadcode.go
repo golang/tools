@@ -174,9 +174,23 @@ func main() {
 	// course address-taken and there exists a dynamic call of
 	// that signature, so when they are unreachable, it is
 	// invariably because the parent is unreachable.
-	var sourceFuncs []*ssa.Function
-	generated := make(map[string]bool)
+	var (
+		sourceFuncs    []*ssa.Function
+		generated      = make(map[string]bool)
+		interfaceTypes = make(map[*types.Package][]*types.Interface)
+	)
 	packages.Visit(initial, nil, func(p *packages.Package) {
+		// Collect interfaces by package for marker method identification.
+		var interfaces []*types.Interface
+		scope := p.Types.Scope()
+		for _, name := range scope.Names() {
+			if typeName, ok := scope.Lookup(name).(*types.TypeName); ok &&
+				types.IsInterface(typeName.Type()) {
+				interfaces = append(interfaces, typeName.Type().Underlying().(*types.Interface))
+			}
+		}
+		interfaceTypes[p.Types] = interfaces
+
 		for _, file := range p.Syntax {
 			for _, decl := range file.Decls {
 				if decl, ok := decl.(*ast.FuncDecl); ok {
@@ -299,16 +313,6 @@ func main() {
 		}
 	}
 
-	// Collect interfaces by package for marker method identification
-	interfacesByPkg := make(map[*ssa.Package][]*types.Interface)
-	for _, fn := range sourceFuncs {
-		pkg := fn.Package()
-		if _, exists := interfacesByPkg[pkg]; exists {
-			continue
-		}
-		interfacesByPkg[pkg] = getTopLevelInterfaces(pkg)
-	}
-
 	// Build array of jsonPackage objects.
 	var packages []any
 	for _, pkgpath := range slices.Sorted(maps.Keys(byPkgPath)) {
@@ -345,7 +349,7 @@ func main() {
 			}
 
 			// Marker methods should not be reported
-			marker := isMarkerMethod(fn, interfacesByPkg[fn.Package()])
+			marker := isMarkerMethod(fn, interfaceTypes[fn.Pkg.Pkg])
 			if marker {
 				continue
 			}
@@ -555,77 +559,28 @@ func cond[T any](cond bool, t, f T) T {
 	}
 }
 
-func getTopLevelInterfaces(p *ssa.Package) []*types.Interface {
-	var interfaces []*types.Interface
-	for _, member := range p.Members {
-		if typ, ok := member.(*ssa.Type); ok {
-			if intf, ok := typ.Type().Underlying().(*types.Interface); ok {
-				interfaces = append(interfaces, intf)
-			}
-		}
-	}
-	return interfaces
-}
-
-// isMarkerMethod returns true if the function is a method that implements a marker interface.
-// A marker interface method is defined by the following properties:
-// - Is a method (i.e. has a receiver)
-// - Its receiver type implements one of the top-level interfaces in its package
-// - Is unexported
-// - Has no params (other than the receiver) and no results
-// - Has an empty function body
-func isMarkerMethod(fn *ssa.Function, interfaces []*types.Interface) bool {
-	var (
-		sig        = fn.Signature
-		implements = func(intf *types.Interface) bool {
-			return types.Implements(fn.Signature.Recv().Type(), intf)
-		}
-		isFunctionEmpty = func(fun *ssa.Function) bool {
-			// SSA analyzes the source code
-			// if blocks is nil, it means it's an external (imported) function.
-			// This shouldn't be flagged as a marker method
-			if fun.Blocks == nil {
-				return false
-			}
-
-			if len(fun.Blocks) != 1 {
-				return false
-			}
-
-			blk := fun.Blocks[0]
-			if len(blk.Instrs) > 1 {
-				return false
-			}
-
-			instr := blk.Instrs[0]
-			if _, ok := instr.(*ssa.Return); !ok {
-				return false
-			}
-
-			return true
-		}
-	)
-
-	if isMethod := sig.Recv() != nil; !isMethod {
-		return false
-	}
-	if implementsInterface := slices.ContainsFunc(interfaces, implements); !implementsInterface {
-		return false
-	}
-	if isUnexported := !ast.IsExported(fn.Name()); !isUnexported {
-		return false
-	}
-	if hasNoParams := sig.Params() == nil; !hasNoParams {
-		return false
-	}
-	if hasNoResults := sig.Results() == nil; !hasNoResults {
-		return false
-	}
-	if isEmpty := isFunctionEmpty(fn); !isEmpty {
+// isMarkerMethod reports whether fn is a marker method:
+// an unexported, empty-bodied method with no parameters or results
+// that implements some named interface type in the same package.
+func isMarkerMethod(fn *ssa.Function, interfaceTypes []*types.Interface) bool {
+	// Is it an unexported method of no params/results?
+	if !(fn.Signature.Recv() != nil &&
+		!ast.IsExported(fn.Name()) &&
+		fn.Signature.Params() == nil &&
+		fn.Signature.Results() == nil) {
 		return false
 	}
 
-	return true
+	// Does the method have an empty body?
+	body := fn.Syntax().(*ast.FuncDecl).Body
+	if body == nil || len(body.List) > 0 {
+		return false
+	}
+
+	// Does it implement some named interface type in this package?
+	return slices.ContainsFunc(interfaceTypes, func(iface *types.Interface) bool {
+		return types.Implements(fn.Signature.Recv().Type(), iface)
+	})
 }
 
 // -- output protocol (for JSON or text/template) --
