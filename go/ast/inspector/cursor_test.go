@@ -379,6 +379,116 @@ func TestCursor_Edge(t *testing.T) {
 	}
 }
 
+// Regression test for FuncDecl.Type irregularity in FindByPos (#75997).
+func TestCursor_FindByPos(t *testing.T) {
+	// Observe that the range of FuncType has a hole between
+	// the "func" token and the start of Type.Params.
+	// The hole contains FuncDecl.{Recv,Name}.
+	//
+	//                      ~~~~~~~~~~~~FuncDecl~~~~~~~~~~~~~~~~~~~~~~~~~
+	//                           ~Recv~ ~Name~
+	//                      ~~~~--------------~~~~FuncType~~~~~~
+	//                                        ~Params~ ~Results~
+	const src = `package a; func (recv) method(params) (results) { body }`
+	var (
+		fset    = token.NewFileSet()
+		f, _    = parser.ParseFile(fset, "a.go", src, 0) // ignore parse errors
+		tokFile = fset.File(f.FileStart)
+		inspect = inspector.New([]*ast.File{f})
+	)
+	format := func(start, end token.Pos) string {
+		var (
+			startOffset = tokFile.Offset(start)
+			endOffset   = tokFile.Offset(end)
+		)
+		return fmt.Sprintf("%s<<%s>>%s", src[:startOffset], src[startOffset:endOffset], src[endOffset:])
+	}
+
+	d := f.Decls[0].(*ast.FuncDecl)
+
+	// Each test case specifies a [pos-end) range for
+	// FindByPos and the syntax node it should find.
+	for _, test := range []struct {
+		start, end token.Pos
+		want       ast.Node
+	}{
+		// pure subtrees
+		{d.Pos(), d.End(), d},                // decl
+		{d.Recv.Pos(), d.Recv.End(), d.Recv}, // recv
+		{d.Name.Pos(), d.Name.End(), d.Name}, // name
+		// (A FuncDecl can't have both Recv and TypeParams, so skip this one.)
+		// {d.Type.TypeParams.Pos(), d.Type.TypeParams.End(), d.Type.TypeParams},
+		{d.Type.Params.Pos(), d.Type.Params.End(), d.Type.Params},    // params
+		{d.Type.Results.Pos(), d.Type.Results.End(), d.Type.Results}, // results
+		{d.Body.Pos(), d.Body.End(), d.Body},                         // body
+
+		// single tokens
+		{
+			// "func"
+			d.Type.Func, d.Type.Func + 4,
+			d, // arguably this should be d.Type
+		},
+		{
+			// "(" FieldList
+			d.Recv.Pos(), d.Recv.Pos() + 1,
+			d.Recv,
+		},
+		{
+			// "recv" Ident
+			d.Recv.List[0].Pos(), d.Recv.List[0].Pos() + 1,
+			d.Recv.List[0].Type,
+		},
+		{
+			// "name" Ident
+			d.Name.Pos(), d.Name.Pos() + 1,
+			d.Name,
+		},
+		{
+			// "(" FieldList
+			d.Type.Params.Pos(), d.Type.Params.Pos() + 1,
+			d.Type.Params,
+		},
+		{
+			// "params" Ident
+			d.Type.Params.List[0].Pos(), d.Type.Params.List[0].Pos() + 1,
+			d.Type.Params.List[0].Type,
+		},
+		{
+			// "(" FieldList
+			d.Type.Results.Pos(), d.Type.Results.Pos() + 1,
+			d.Type.Results,
+		},
+		{
+			// "results" Ident
+			d.Type.Results.List[0].Pos(), d.Type.Results.List[0].Pos() + 1,
+			d.Type.Results.List[0].Type,
+		},
+		{
+			// "{" BlockStmt
+			d.Body.Pos(), d.Body.Pos() + 1,
+			d.Body,
+		},
+		{
+			// "body" Ident
+			d.Body.List[0].Pos(), d.Body.List[0].Pos() + 1,
+			d.Body.List[0].(*ast.ExprStmt).X,
+		},
+	} {
+		cur, ok := inspect.Root().FindByPos(test.start, test.end)
+		if !ok || cur.Node() == nil {
+			t.Errorf("%s: FindByPos failed", format(test.start, test.end))
+			continue
+		}
+		got := cur.Node()
+		if got != test.want {
+			t.Errorf("FindByPos:\ninput:\t%s\ngot:\t%s (%T)\nwant:\t%s (%T)",
+				format(test.start, test.end),
+				format(got.Pos(), got.End()), got,
+				format(test.want.Pos(), test.want.End()), test.want)
+		}
+	}
+}
+
 func is[T any](x any) bool {
 	_, ok := x.(T)
 	return ok
