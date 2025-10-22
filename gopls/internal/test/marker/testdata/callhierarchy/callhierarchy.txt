@@ -53,8 +53,6 @@ func D() { //@ loc(hD, "D"), incomingcalls(hD, hA, hB, hC, hXGlobal, incomingA),
 	x()
 	F()
 	outgoing.B()
-	foo := func() {} //@ loc(hFoo, "foo"), incomingcalls(hFoo, hD), outgoingcalls(hFoo)
-	foo()
 
 	func() {
 		g()

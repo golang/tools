@@ -7,6 +7,7 @@ package golang
 import (
 	"context"
 	"fmt"
+	"go/ast"
 	"go/types"
 	"slices"
 	"strings"
@@ -29,7 +30,7 @@ import (
 //   spirit of TypeHierarchy but it would be useful and it's easy
 //   enough to support.
 //
-// FIXME: fix pkg=command-line-arguments problem with query initiated at "error" in builtins.go
+// - fix pkg=command-line-arguments problem with query initiated at "error" in builtins.go
 
 // PrepareTypeHierarchy returns the TypeHierarchyItems for the types at the selected position.
 func PrepareTypeHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp protocol.Position) ([]protocol.TypeHierarchyItem, error) {
@@ -43,11 +44,15 @@ func PrepareTypeHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 	}
 
 	// For now, we require that the selection be a type name.
-	_, obj, _ := referencedObject(pkg.TypesInfo(), pgf, pos)
-	if obj == nil {
-		return nil, fmt.Errorf("not a symbol")
+	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+	if !ok {
+		return nil, fmt.Errorf("no enclosing syntax") // can't happen
 	}
-	tname, ok := obj.(*types.TypeName)
+	id, ok := cur.Node().(*ast.Ident)
+	if !ok {
+		return nil, fmt.Errorf("not a type name")
+	}
+	tname, ok := pkg.TypesInfo().ObjectOf(id).(*types.TypeName)
 	if !ok {
 		return nil, fmt.Errorf("not a type name")
 	}

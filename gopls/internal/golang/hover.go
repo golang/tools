@@ -301,7 +301,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 
 	// The general case: compute hover information for the object referenced by
 	// the identifier at pos.
-	ident, obj, selectedType := referencedObject(pkg.TypesInfo(), pgf, pos)
+	ident, obj, selectedType := hoverDefinitionObjectAtPos(pkg.TypesInfo(), pgf, pos)
 	if obj == nil || ident == nil {
 		return protocol.Range{}, nil, nil // no object to hover
 	}

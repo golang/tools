@@ -38,23 +38,17 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 	if err != nil {
 		return nil, err
 	}
-
-	_, obj, _ := referencedObject(pkg.TypesInfo(), pgf, pos)
-	if obj == nil {
-		return nil, nil
+	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, pos)
+	if err != nil {
+		return nil, err
 	}
-
-	if _, ok := obj.Type().Underlying().(*types.Signature); !ok {
-		return nil, nil
-	}
-
 	declLoc, err := ObjectLocation(ctx, pkg.FileSet(), snapshot, obj)
 	if err != nil {
 		return nil, err
 	}
 	rng := declLoc.Range
 
-	callHierarchyItem := protocol.CallHierarchyItem{
+	return []protocol.CallHierarchyItem{{
 		Name:           obj.Name(),
 		Kind:           protocol.Function,
 		Tags:           []protocol.SymbolTag{},
@@ -62,8 +56,7 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 		URI:            declLoc.URI,
 		Range:          rng,
 		SelectionRange: rng,
-	}
-	return []protocol.CallHierarchyItem{callHierarchyItem}, nil
+	}}, nil
 }
 
 // IncomingCalls returns an array of CallHierarchyIncomingCall for a file and the position within the file.
@@ -201,18 +194,12 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if err != nil {
 		return nil, err
 	}
-
-	_, obj, _ := referencedObject(pkg.TypesInfo(), pgf, pos)
-	if obj == nil {
-		return nil, nil
+	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, pos)
+	if err != nil {
+		return nil, err
 	}
-
-	if _, ok := obj.Type().Underlying().(*types.Signature); !ok {
-		return nil, nil
-	}
-
 	if isBuiltin(obj) {
-		return nil, nil // built-ins have no position
+		return nil, nil // built-in functions have no outgoing calls
 	}
 
 	declFile := pkg.FileSet().File(obj.Pos())
@@ -271,9 +258,9 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 
 	outgoingCalls := make(map[protocol.Location]*protocol.CallHierarchyOutgoingCall)
 	for _, callRange := range callRanges {
-		_, obj, _ := referencedObject(declPkg.TypesInfo(), declPGF, callRange.start)
-		if obj == nil {
-			continue
+		obj, err := callHierarchyFuncAtPos(declPkg.TypesInfo(), declPGF, callRange.start)
+		if err != nil {
+			continue // ignore
 		}
 
 		loc, err := ObjectLocation(ctx, declPkg.FileSet(), snapshot, obj)
@@ -317,4 +304,25 @@ func callHierarchyItemDetail(obj types.Object, loc protocol.Location) string {
 		detail = fmt.Sprintf("%s • %s", obj.Pkg().Path(), detail)
 	}
 	return detail
+}
+
+// callHierarchyFuncAtPos returns the function symbol (Func or
+// Builtin) referred to by the identifier at the specified position.
+func callHierarchyFuncAtPos(info *types.Info, pgf *parsego.File, pos token.Pos) (types.Object, error) {
+	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+	if !ok {
+		return nil, fmt.Errorf("no enclosing syntax") // can't happen
+	}
+	id, ok := cur.Node().(*ast.Ident)
+	if !ok {
+		return nil, fmt.Errorf("identifier not found")
+	}
+	switch obj := info.ObjectOf(id).(type) {
+	case *types.Func, *types.Builtin:
+		return obj, nil
+	case nil:
+		return nil, fmt.Errorf("no symbol here")
+	default:
+		return nil, fmt.Errorf("%s is not a function", obj.Name())
+	}
 }
