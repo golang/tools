@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil"
 )
 
 //go:embed doc.go
@@ -153,7 +154,7 @@ func run(pass *analysis.Pass) (any, error) {
 			// method (e.g. foo.String())
 			if types.Identical(sig, sigNoArgsStringResult) {
 				if stringMethods[fn.Name()] {
-					pass.ReportRangef(analysisinternal.Range(call.Pos(), call.Lparen),
+					pass.ReportRangef(astutil.RangeOf(call.Pos(), call.Lparen),
 						"result of (%s).%s call not used",
 						sig.Recv().Type(), fn.Name())
 				}
@@ -161,7 +162,7 @@ func run(pass *analysis.Pass) (any, error) {
 		} else {
 			// package-level function (e.g. fmt.Errorf)
 			if pkgFuncs[[2]string{fn.Pkg().Path(), fn.Name()}] {
-				pass.ReportRangef(analysisinternal.Range(call.Pos(), call.Lparen),
+				pass.ReportRangef(astutil.RangeOf(call.Pos(), call.Lparen),
 					"result of %s.%s call not used",
 					fn.Pkg().Path(), fn.Name())
 			}

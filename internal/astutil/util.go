@@ -117,3 +117,29 @@ func Format(fset *token.FileSet, n ast.Node) string {
 	printer.Fprint(&buf, fset, n) // ignore errors
 	return buf.String()
 }
+
+// -- Range --
+
+// Range is a Pos interval.
+// It implements [analysis.Range] and [ast.Node].
+type Range struct{ Start, EndPos token.Pos }
+
+// RangeOf constructs a Range.
+//
+// RangeOf exists to pacify the "unkeyed literal" (composites) vet
+// check. It would be nice if there were a way for a type to add
+// itself to the allowlist.
+func RangeOf(start, end token.Pos) Range { return Range{start, end} }
+
+// NodeRange returns the extent of node n as a Range.
+func NodeRange(n ast.Node) Range { return Range{n.Pos(), n.End()} }
+
+func (r Range) Pos() token.Pos { return r.Start }
+func (r Range) End() token.Pos { return r.EndPos }
+
+// Contains reports whether the range (inclusive of both end points)
+// includes the specified position.
+func (r Range) Contains(pos token.Pos) bool { return NodeContains(r, pos) }
+
+// IsValid reports whether the range is valid.
+func (r Range) IsValid() bool { return r.Start.IsValid() && r.Start <= r.EndPos }

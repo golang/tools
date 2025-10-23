@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"testing"
 
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/expect"
 	"golang.org/x/tools/internal/packagestest"
 )
@@ -42,13 +43,13 @@ func TestExpect(t *testing.T) {
 			}
 		},
 		"directNote": func(n *expect.Note) {},
-		"range": func(r packagestest.Range) {
-			if r.Start == token.NoPos || r.Start == 0 {
+		"range": func(r astutil.Range) {
+			if r.Start == token.NoPos {
 				t.Errorf("Range had no valid starting position")
 			}
-			if r.End == token.NoPos || r.End == 0 {
+			if r.EndPos == token.NoPos {
 				t.Errorf("Range had no valid ending position")
-			} else if r.End <= r.Start {
+			} else if r.EndPos <= r.Start {
 				t.Errorf("Range ending was not greater than start")
 			}
 		},

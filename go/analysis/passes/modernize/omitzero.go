@@ -48,25 +48,20 @@ func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Fi
 		// No omitempty in json tag
 		return
 	}
-	omitEmptyPos, omitEmptyEnd, err := astutil.RangeInStringLiteral(curField.Tag, match[2], match[3])
+	omitEmpty, err := astutil.RangeInStringLiteral(curField.Tag, match[2], match[3])
 	if err != nil {
 		return
 	}
-	removePos, removeEnd := omitEmptyPos, omitEmptyEnd
+	var remove analysis.Range = omitEmpty
 
 	jsonTag := reflect.StructTag(tagconv).Get("json")
 	if jsonTag == ",omitempty" {
 		// Remove the entire struct tag if json is the only package used
 		if match[1]-match[0] == len(tagconv) {
-			removePos = curField.Tag.Pos()
-			removeEnd = curField.Tag.End()
+			remove = curField.Tag
 		} else {
 			// Remove the json tag if omitempty is the only field
-			removePos, err = astutil.PosInStringLiteral(curField.Tag, match[0])
-			if err != nil {
-				return
-			}
-			removeEnd, err = astutil.PosInStringLiteral(curField.Tag, match[1])
+			remove, err = astutil.RangeInStringLiteral(curField.Tag, match[0], match[1])
 			if err != nil {
 				return
 			}
@@ -81,8 +76,8 @@ func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Fi
 				Message: "Remove redundant omitempty tag",
 				TextEdits: []analysis.TextEdit{
 					{
-						Pos: removePos,
-						End: removeEnd,
+						Pos: remove.Pos(),
+						End: remove.End(),
 					},
 				},
 			},
@@ -90,8 +85,8 @@ func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Fi
 				Message: "Replace omitempty with omitzero (behavior change)",
 				TextEdits: []analysis.TextEdit{
 					{
-						Pos:     omitEmptyPos,
-						End:     omitEmptyEnd,
+						Pos:     omitEmpty.Pos(),
+						End:     omitEmpty.End(),
 						NewText: []byte(",omitzero"),
 					},
 				},

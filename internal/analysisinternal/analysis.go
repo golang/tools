@@ -167,14 +167,3 @@ func validateFix(fset *token.FileSet, fix *analysis.SuggestedFix) error {
 
 	return nil
 }
-
-// Range returns an [analysis.Range] for the specified start and end positions.
-func Range(pos, end token.Pos) analysis.Range {
-	return tokenRange{pos, end}
-}
-
-// tokenRange is an implementation of the [analysis.Range] interface.
-type tokenRange struct{ StartPos, EndPos token.Pos }
-
-func (r tokenRange) Pos() token.Pos { return r.StartPos }
-func (r tokenRange) End() token.Pos { return r.EndPos }

@@ -694,9 +694,9 @@ func checkPrintf(pass *analysis.Pass, fileVersion string, kind Kind, call *ast.C
 // such as the position of the %v substring of "...%v...".
 func opRange(formatArg ast.Expr, op *fmtstr.Operation) analysis.Range {
 	if lit, ok := formatArg.(*ast.BasicLit); ok {
-		start, end, err := astutil.RangeInStringLiteral(lit, op.Range.Start, op.Range.End)
+		rng, err := astutil.RangeInStringLiteral(lit, op.Range.Start, op.Range.End)
 		if err == nil {
-			return analysisinternal.Range(start, end) // position of "%v"
+			return rng // position of "%v"
 		}
 	}
 	return formatArg // entire format string

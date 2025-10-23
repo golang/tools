@@ -501,15 +501,15 @@ func (tv *tokenVisitor) formatString(lit *ast.BasicLit) bool {
 		if op.Verb.Verb == '%' {
 			continue
 		}
-		rangeStart, rangeEnd, err := astutil.RangeInStringLiteral(lit, op.Range.Start, op.Range.End)
+		rng, err := astutil.RangeInStringLiteral(lit, op.Range.Start, op.Range.End)
 		if err != nil {
 			return false
 		}
 		// Report literal substring.
-		tv.token(pos, int(rangeStart-pos), semtok.TokString)
+		tv.token(pos, int(rng.Start-pos), semtok.TokString)
 		// Report formatting directive.
-		tv.token(rangeStart, int(rangeEnd-rangeStart), semtok.TokString, semtok.ModFormat)
-		pos = rangeEnd
+		tv.token(rng.Start, int(rng.EndPos-rng.Start), semtok.TokString, semtok.ModFormat)
+		pos = rng.EndPos
 	}
 	// Report remaining literal substring.
 	tv.token(pos, int(lit.End()-pos), semtok.TokString)

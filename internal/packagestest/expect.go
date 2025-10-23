@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/expect"
 )
 
@@ -122,16 +123,10 @@ func (e *Exported) Expect(methods map[string]any) error {
 	return nil
 }
 
-// A Range represents an interval within a source file in go/token notation.
-type Range struct {
-	TokFile    *token.File // non-nil
-	Start, End token.Pos   // both valid and within range of TokFile
-}
-
 // Mark adds a new marker to the known set.
-func (e *Exported) Mark(name string, r Range) {
+func (e *Exported) Mark(name string, r astutil.Range) {
 	if e.markers == nil {
-		e.markers = make(map[string]Range)
+		e.markers = make(map[string]astutil.Range)
 	}
 	e.markers[name] = r
 }
@@ -221,7 +216,7 @@ func (e *Exported) getMarkers() error {
 		return nil
 	}
 	// set markers early so that we don't call getMarkers again from Expect
-	e.markers = make(map[string]Range)
+	e.markers = make(map[string]astutil.Range)
 	return e.Expect(map[string]any{
 		markMethod: e.Mark,
 	})
@@ -232,7 +227,7 @@ var (
 	identifierType = reflect.TypeFor[expect.Identifier]()
 	posType        = reflect.TypeFor[token.Pos]()
 	positionType   = reflect.TypeFor[token.Position]()
-	rangeType      = reflect.TypeFor[Range]()
+	rangeType      = reflect.TypeFor[astutil.Range]()
 	fsetType       = reflect.TypeFor[*token.FileSet]()
 	regexType      = reflect.TypeFor[*regexp.Regexp]()
 	exportedType   = reflect.TypeFor[*Exported]()
@@ -395,10 +390,10 @@ func (e *Exported) buildConverter(pt reflect.Type) (converter, error) {
 	}
 }
 
-func (e *Exported) rangeConverter(n *expect.Note, args []any) (Range, []any, error) {
+func (e *Exported) rangeConverter(n *expect.Note, args []any) (astutil.Range, []any, error) {
 	tokFile := e.ExpectFileSet.File(n.Pos)
 	if len(args) < 1 {
-		return Range{}, nil, fmt.Errorf("missing argument")
+		return astutil.Range{}, nil, fmt.Errorf("missing argument")
 	}
 	arg := args[0]
 	args = args[1:]
@@ -414,35 +409,35 @@ func (e *Exported) rangeConverter(n *expect.Note, args []any) (Range, []any, err
 			// look up a marker by name
 			mark, ok := e.markers[string(arg)]
 			if !ok {
-				return Range{}, nil, fmt.Errorf("cannot find marker %v", arg)
+				return astutil.Range{}, nil, fmt.Errorf("cannot find marker %v", arg)
 			}
 			return mark, args, nil
 		}
 	case string:
 		start, end, err := expect.MatchBefore(tokFile, e.FileContents, n.Pos, arg)
 		if err != nil {
-			return Range{}, nil, err
+			return astutil.Range{}, nil, err
 		}
 		if !start.IsValid() {
-			return Range{}, nil, fmt.Errorf("%v: pattern %s did not match", tokFile.Position(n.Pos), arg)
+			return astutil.Range{}, nil, fmt.Errorf("%v: pattern %s did not match", tokFile.Position(n.Pos), arg)
 		}
 		return newRange(tokFile, start, end), args, nil
 	case *regexp.Regexp:
 		start, end, err := expect.MatchBefore(tokFile, e.FileContents, n.Pos, arg)
 		if err != nil {
-			return Range{}, nil, err
+			return astutil.Range{}, nil, err
 		}
 		if !start.IsValid() {
-			return Range{}, nil, fmt.Errorf("%v: pattern %s did not match", tokFile.Position(n.Pos), arg)
+			return astutil.Range{}, nil, fmt.Errorf("%v: pattern %s did not match", tokFile.Position(n.Pos), arg)
 		}
 		return newRange(tokFile, start, end), args, nil
 	default:
-		return Range{}, nil, fmt.Errorf("cannot convert %v to pos", arg)
+		return astutil.Range{}, nil, fmt.Errorf("cannot convert %v to pos", arg)
 	}
 }
 
-// newRange creates a new Range from a token.File and two valid positions within it.
-func newRange(file *token.File, start, end token.Pos) Range {
+// newRange creates a new Range from two valid positions within the specified token.File.
+func newRange(file *token.File, start, end token.Pos) astutil.Range {
 	fileBase := file.Base()
 	fileEnd := fileBase + file.Size()
 	if !start.IsValid() {
@@ -460,9 +455,5 @@ func newRange(file *token.File, start, end token.Pos) Range {
 	if start > end {
 		panic("invalid start: greater than end")
 	}
-	return Range{
-		TokFile: file,
-		Start:   start,
-		End:     end,
-	}
+	return astutil.RangeOf(start, end)
 }

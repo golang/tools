@@ -191,7 +191,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 					}
 					// Have: for i := 0; i < x.Len(); i++ { ... }.
 					//       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-					rng = analysisinternal.Range(loop.For, loop.Post.End())
+					rng = astutil.RangeOf(loop.For, loop.Post.End())
 					indexVar = v
 					curBody = curFor.ChildAt(edge.ForStmt_Body, -1)
 					elem, elemVar = chooseName(curBody, lenSel.X, indexVar)
@@ -234,7 +234,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 					// Have: for i := range x.Len() { ... }
 					//                ~~~~~~~~~~~~~
 
-					rng = analysisinternal.Range(loop.Range, loop.X.End())
+					rng = astutil.RangeOf(loop.Range, loop.X.End())
 					indexVar = info.Defs[id].(*types.Var)
 					curBody = curRange.ChildAt(edge.RangeStmt_Body, -1)
 					elem, elemVar = chooseName(curBody, lenSel.X, indexVar)
