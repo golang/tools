@@ -98,12 +98,13 @@ func relatedTypes(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 	if err != nil {
 		return nil, err
 	}
+	cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
 
 	var (
 		itemsMu sync.Mutex
 		items   []protocol.TypeHierarchyItem
 	)
-	err = implementationsMsets(ctx, snapshot, pkg, pgf, pos, rel, func(pkgpath metadata.PackagePath, name string, abstract bool, loc protocol.Location) {
+	err = implementationsMsets(ctx, snapshot, pkg, cur, rel, func(pkgpath metadata.PackagePath, name string, abstract bool, loc protocol.Location) {
 		if pkgpath == "" {
 			pkgpath = "builtin"
 		}

@@ -9,6 +9,8 @@ import (
 	"go/ast"
 	"go/types"
 
+	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -31,33 +33,33 @@ func inferredSignature(info *types.Info, id *ast.Ident) *types.Signature {
 // For example, given "new(A).d" where this is (due to embedding) a
 // shorthand for "new(A).b.c.d", it returns the named type of c,
 // if it is exported, otherwise the type of b, or A.
-func searchForEnclosing(info *types.Info, path []ast.Node) *types.TypeName {
-	for _, n := range path {
-		switch n := n.(type) {
-		case *ast.SelectorExpr:
-			if sel, ok := info.Selections[n]; ok {
-				recv := typesinternal.Unpointer(sel.Recv())
+func searchForEnclosing(info *types.Info, curIdent inspector.Cursor) *types.TypeName {
+	selector, _ := cursorutil.FirstEnclosing[*ast.SelectorExpr](curIdent)
+	if selector == nil {
+		return nil
+	}
+	sel, ok := info.Selections[selector]
+	if !ok {
+		return nil
+	}
+	recv := typesinternal.Unpointer(sel.Recv())
 
-				// Keep track of the last exported type seen.
-				var exported *types.TypeName
-				if named, ok := types.Unalias(recv).(*types.Named); ok && named.Obj().Exported() {
-					exported = named.Obj()
-				}
-				// We don't want the last element, as that's the field or
-				// method itself.
-				for _, index := range sel.Index()[:len(sel.Index())-1] {
-					if r, ok := recv.Underlying().(*types.Struct); ok {
-						recv = typesinternal.Unpointer(r.Field(index).Type())
-						if named, ok := types.Unalias(recv).(*types.Named); ok && named.Obj().Exported() {
-							exported = named.Obj()
-						}
-					}
-				}
-				return exported
+	// Keep track of the last exported type seen.
+	var exported *types.TypeName
+	if named, ok := types.Unalias(recv).(*types.Named); ok && named.Obj().Exported() {
+		exported = named.Obj()
+	}
+	// We don't want the last element, as that's the field or
+	// method itself.
+	for _, index := range sel.Index()[:len(sel.Index())-1] {
+		if r, ok := recv.Underlying().(*types.Struct); ok {
+			recv = typesinternal.Unpointer(r.Field(index).Type())
+			if named, ok := types.Unalias(recv).(*types.Named); ok && named.Obj().Exported() {
+				exported = named.Obj()
 			}
 		}
 	}
-	return nil
+	return exported
 }
 
 // typeToObject returns the relevant type name for the given type, after
@@ -84,8 +86,8 @@ func typeToObject(typ types.Type) *types.TypeName {
 		var res *types.TypeName
 
 		results := typ.Results()
-		for i := 0; i < results.Len(); i++ {
-			obj := typeToObject(results.At(i).Type())
+		for v := range results.Variables() {
+			obj := typeToObject(v.Type())
 			if obj == nil || hasErrorType(obj) {
 				// Skip builtins. TODO(rfindley): should comparable be handled here as well?
 				continue
@@ -105,78 +107,4 @@ func typeToObject(typ types.Type) *types.TypeName {
 
 func hasErrorType(obj types.Object) bool {
 	return types.IsInterface(obj.Type()) && obj.Pkg() == nil && obj.Name() == "error"
-}
-
-// typeSwitchImplicits returns all the implicit type switch objects that
-// correspond to the leaf *ast.Ident. It also returns the original type
-// associated with the identifier (outside of a case clause).
-func typeSwitchImplicits(info *types.Info, path []ast.Node) ([]types.Object, types.Type) {
-	ident, _ := path[0].(*ast.Ident)
-	if ident == nil {
-		return nil, nil
-	}
-
-	var (
-		ts     *ast.TypeSwitchStmt
-		assign *ast.AssignStmt
-		cc     *ast.CaseClause
-		obj    = info.ObjectOf(ident)
-	)
-
-	// Walk our ancestors to determine if our leaf ident refers to a
-	// type switch variable, e.g. the "a" from "switch a := b.(type)".
-Outer:
-	for i := 1; i < len(path); i++ {
-		switch n := path[i].(type) {
-		case *ast.AssignStmt:
-			// Check if ident is the "a" in "a := foo.(type)". The "a" in
-			// this case has no types.Object, so check for ident equality.
-			if len(n.Lhs) == 1 && n.Lhs[0] == ident {
-				assign = n
-			}
-		case *ast.CaseClause:
-			// Check if ident is a use of "a" within a case clause. Each
-			// case clause implicitly maps "a" to a different types.Object,
-			// so check if ident's object is the case clause's implicit
-			// object.
-			if obj != nil && info.Implicits[n] == obj {
-				cc = n
-			}
-		case *ast.TypeSwitchStmt:
-			// Look for the type switch that owns our previously found
-			// *ast.AssignStmt or *ast.CaseClause.
-			if n.Assign == assign {
-				ts = n
-				break Outer
-			}
-
-			for _, stmt := range n.Body.List {
-				if stmt == cc {
-					ts = n
-					break Outer
-				}
-			}
-		}
-	}
-	if ts == nil {
-		return nil, nil
-	}
-	// Our leaf ident refers to a type switch variable. Fan out to the
-	// type switch's implicit case clause objects.
-	var objs []types.Object
-	for _, cc := range ts.Body.List {
-		if ccObj := info.Implicits[cc]; ccObj != nil {
-			objs = append(objs, ccObj)
-		}
-	}
-	// The right-hand side of a type switch should only have one
-	// element, and we need to track its type in order to generate
-	// hover information for implicit type switch variables.
-	var typ types.Type
-	if assign, ok := ts.Assign.(*ast.AssignStmt); ok && len(assign.Rhs) == 1 {
-		if rhs := assign.Rhs[0].(*ast.TypeAssertExpr); ok {
-			typ = info.TypeOf(rhs.X) // may be nil
-		}
-	}
-	return objs, typ
 }

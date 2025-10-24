@@ -228,7 +228,7 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.
 			highlightRange(result, rng, protocol.Write)
 			if arg != nil {
 				succeededArg = argIndex
-				highlightRange(result, astutil.NodeRange(arg), protocol.Read)
+				highlightNode(result, arg, protocol.Read)
 			}
 		}
 	}

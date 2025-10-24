@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"strings"
 
-	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -39,6 +38,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	if err != nil {
 		return nil, err
 	}
+	cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
 
 	// Handle the case where the cursor is in an import.
 	importLocations, err := importDefinition(ctx, snapshot, pkg, pgf, pos)
@@ -51,7 +51,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 
 	// Handle the case where the cursor is in the package name.
 	// We use "<= End" to accept a query immediately after the package name.
-	if pgf.File != nil && pgf.File.Name.Pos() <= pos && pos <= pgf.File.Name.End() {
+	if pgf.File != nil && internalastutil.NodeContains(pgf.File.Name, pos) {
 		// If there's no package documentation, just use current file.
 		declFile := pgf
 		for _, pgf := range pkg.CompiledGoFiles() {
@@ -86,14 +86,12 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 
 	// Handle definition requests for various special kinds of syntax node.
-	path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
-	ancestors := path[1:]
-	switch node := path[0].(type) {
+	switch node := cur.Node().(type) {
 	// Handle the case where the cursor is on a return statement by jumping to the result variables.
 	case *ast.ReturnStmt:
 		var funcType *ast.FuncType
-		for _, n := range ancestors {
-			switch n := n.(type) {
+		for c := range cur.Enclosing() {
+			switch n := c.Node().(type) {
 			case *ast.FuncLit:
 				funcType = n.Type
 			case *ast.FuncDecl:
@@ -128,14 +126,14 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 
 		case token.BREAK, token.CONTINUE:
 			// Find innermost relevant ancestor for break/continue.
-			for i, n := range ancestors {
-				if isLabeled && i+1 < len(ancestors) {
-					l, ok := ancestors[i+1].(*ast.LabeledStmt)
+			for c := range cur.Enclosing() {
+				if isLabeled {
+					l, ok := c.Parent().Node().(*ast.LabeledStmt)
 					if !(ok && l.Label.Name == label.Name()) {
 						continue
 					}
 				}
-				switch n.(type) {
+				switch n := c.Node().(type) {
 				case *ast.ForStmt, *ast.RangeStmt:
 					var start, end token.Pos
 					if node.Tok == token.BREAK {
@@ -164,10 +162,27 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		}
 	}
 
-	// The general case: the cursor is on an identifier.
-	_, obj, _ := hoverDefinitionObjectAtPos(pkg.TypesInfo(), pgf, pos)
-	if obj == nil {
+	// The general case: the cursor is on (or near) an identifier.
+	objects, err := objectsAt(pkg.TypesInfo(), cur)
+	if err != nil {
 		return nil, nil
+	}
+	obj := objects[0].obj
+	cur = objects[0].cur // nearby
+	id, ok := cur.Node().(*ast.Ident)
+	if !ok {
+		// objectsAt can return a non-Ident (e.g. ImportSpec),
+		// but we dealt with them earlier. Can't happen?
+		return nil, nil
+	}
+
+	// If the query position was an embedded field, we want to jump
+	// to the field's type definition, not the field's definition (#42254).
+	if v, ok := obj.(*types.Var); ok && v.Embedded() {
+		// types.Info.Uses contains the embedded field's *types.TypeName.
+		if typeName := pkg.TypesInfo().Uses[id]; typeName != nil {
+			obj = typeName
+		}
 	}
 
 	// Non-go (e.g. assembly) symbols
@@ -304,57 +319,6 @@ func builtinDecl(ctx context.Context, snapshot *cache.Snapshot, obj types.Object
 	return pgf, ident, nil
 }
 
-// hoverDefinitionObjectAtPos returns the identifier and object referenced at the
-// specified position, which must be within the file pgf, for the purposes of
-// hover and definition operations. It returns a nil object if no
-// object was found at the given position.
-//
-// If the returned identifier is a type-switch implicit (i.e. the x in x :=
-// e.(type)), the third result will be the type of the expression being
-// switched on (the type of e in the example). This facilitates workarounds for
-// limitations of the go/types API, which does not report an object for the
-// identifier x.
-//
-// For embedded fields, hoverDefinitionObjectAtPos returns the type name object rather
-// than the var (field) object.
-//
-// TODO(rfindley): this function exists to preserve the pre-existing behavior
-// of golang.Identifier. Eliminate this helper in favor of sharing
-// functionality with [objectsAt] and [pathEnclosingObjNode]
-// after choosing suitable primitives.
-func hoverDefinitionObjectAtPos(info *types.Info, pgf *parsego.File, pos token.Pos) (*ast.Ident, types.Object, types.Type) {
-	path := pathEnclosingObjNode(pgf.File, pos)
-	if len(path) == 0 {
-		return nil, nil, nil
-	}
-	if id, ok := path[0].(*ast.Ident); ok {
-		obj := info.ObjectOf(id)
-		// If n is the var's declaring ident in a type switch
-		// [i.e. the x in x := foo.(type)], it will not have an object. In this
-		// case, set obj to the first implicit object (if any), and return the type
-		// of the expression being switched on.
-		//
-		// The type switch may have no case clauses and thus no
-		// implicit objects; this is a type error ("unused x"),
-		if obj == nil {
-			if implicits, typ := typeSwitchImplicits(info, path); len(implicits) > 0 {
-				return id, implicits[0], typ
-			}
-		}
-
-		// If the original position was an embedded field, we want to jump
-		// to the field's type definition, not the field's definition.
-		if v, ok := obj.(*types.Var); ok && v.Embedded() {
-			// types.Info.Uses contains the embedded field's *types.TypeName.
-			if typeName := info.Uses[id]; typeName != nil {
-				obj = typeName
-			}
-		}
-		return id, obj, nil
-	}
-	return nil, nil, nil
-}
-
 // importDefinition returns locations defining a package referenced by the
 // import spec containing pos.
 //
@@ -363,7 +327,7 @@ func importDefinition(ctx context.Context, s *cache.Snapshot, pkg *cache.Package
 	var imp *ast.ImportSpec
 	for _, spec := range pgf.File.Imports {
 		// We use "<= End" to accept a query immediately after an ImportSpec.
-		if spec.Path.Pos() <= pos && pos <= spec.Path.End() {
+		if internalastutil.NodeContains(spec.Path, pos) {
 			imp = spec
 		}
 	}

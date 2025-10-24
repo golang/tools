@@ -24,7 +24,6 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/methodsets"
-	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
@@ -78,9 +77,10 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	if err != nil {
 		return nil, err
 	}
+	cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
 
 	// Find implementations based on func signatures.
-	if locs, err := implFuncs(pkg, pgf, pos); err != errNotHandled {
+	if locs, err := implFuncs(pkg, cur, pos); err != errNotHandled {
 		return locs, err
 	}
 
@@ -95,7 +95,7 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	// so that one could ask for, say, the superinterfaces of io.ReadCloser;
 	// see https://github.com/golang/go/issues/68641#issuecomment-2269293762.)
 	const relation = methodsets.TypeRelation(0)
-	err = implementationsMsets(ctx, snapshot, pkg, pgf, pos, relation, func(_ metadata.PackagePath, _ string, _ bool, loc protocol.Location) {
+	err = implementationsMsets(ctx, snapshot, pkg, cur, relation, func(_ metadata.PackagePath, _ string, _ bool, loc protocol.Location) {
 		locsMu.Lock()
 		locs = append(locs, loc)
 		locsMu.Unlock()
@@ -111,7 +111,7 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 type implYieldFunc func(pkgpath metadata.PackagePath, name string, abstract bool, loc protocol.Location)
 
 // implementationsMsets computes implementations of the type at the
-// specified position, by method sets.
+// position specifed by cur, by method sets.
 //
 // rel specifies the desired direction of the relation: Subtype,
 // Supertype, or both. As a special case, zero means infer the
@@ -119,10 +119,10 @@ type implYieldFunc func(pkgpath metadata.PackagePath, name string, abstract bool
 // a concrete type, Subtype for an interface.
 //
 // It is shared by Implementations and TypeHierarchy.
-func implementationsMsets(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, pgf *parsego.File, pos token.Pos, rel methodsets.TypeRelation, yield implYieldFunc) error {
+func implementationsMsets(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, cur inspector.Cursor, rel methodsets.TypeRelation, yield implYieldFunc) error {
 	// First, find the object referenced at the cursor.
 	// The object may be declared in a different package.
-	obj, err := implementsObj(pkg.TypesInfo(), pgf.File, pos)
+	obj, err := implementsObj(pkg.TypesInfo(), cur)
 	if err != nil {
 		return err
 	}
@@ -239,11 +239,11 @@ func implementationsMsets(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 			if err != nil {
 				return err // also "can't happen"
 			}
-			path := pathEnclosingObjNode(declFile.File, pos)
-			if path == nil {
-				return ErrNoIdentFound // checked earlier
+			curIdent, ok := declFile.Cursor.FindByPos(pos, pos)
+			if !ok {
+				return bug.Errorf("position not within file") // can't happen
 			}
-			id, ok := path[0].(*ast.Ident)
+			id, ok := curIdent.Node().(*ast.Ident)
 			if !ok {
 				return ErrNoIdentFound // checked earlier
 			}
@@ -311,7 +311,7 @@ func offsetToLocation(ctx context.Context, snapshot *cache.Snapshot, filename st
 
 // implementsObj returns the object to query for implementations,
 // which is a type name or method.
-func implementsObj(info *types.Info, file *ast.File, pos token.Pos) (types.Object, error) {
+func implementsObj(info *types.Info, cur inspector.Cursor) (types.Object, error) {
 	// This function inherits the limitation of its predecessor in
 	// requiring the selection to be an identifier (of a type or
 	// method). But there's no fundamental reason why one could
@@ -320,13 +320,8 @@ func implementsObj(info *types.Info, file *ast.File, pos token.Pos) (types.Objec
 	// (If LSP was more thorough about passing text selections as
 	// intervals to queries, you could ask about the method set of a
 	// subexpression such as x.f().)
-
-	// TODO(adonovan): simplify: use objectsAt?
-	path := pathEnclosingObjNode(file, pos)
-	if path == nil {
-		return nil, ErrNoIdentFound
-	}
-	id, ok := path[0].(*ast.Ident)
+	// [Note that this process has begun; see #69058.]
+	id, ok := cur.Node().(*ast.Ident)
 	if !ok {
 		return nil, ErrNoIdentFound
 	}
@@ -853,66 +848,6 @@ var (
 	errNoObjectFound = errors.New("no object found")
 )
 
-// pathEnclosingObjNode returns the AST path to the object-defining
-// node associated with pos. "Object-defining" means either an
-// *ast.Ident mapped directly to a types.Object or an ast.Node mapped
-// implicitly to a types.Object.
-func pathEnclosingObjNode(f *ast.File, pos token.Pos) []ast.Node {
-	var (
-		path  []ast.Node
-		found bool
-	)
-
-	ast.Inspect(f, func(n ast.Node) bool {
-		if found {
-			return false
-		}
-
-		if n == nil {
-			path = path[:len(path)-1]
-			return false
-		}
-
-		path = append(path, n)
-
-		switch n := n.(type) {
-		case *ast.Ident:
-			// Include the position directly after identifier. This handles
-			// the common case where the cursor is right after the
-			// identifier the user is currently typing. Previously we
-			// handled this by calling astutil.PathEnclosingInterval twice,
-			// once for "pos" and once for "pos-1".
-			found = n.Pos() <= pos && pos <= n.End()
-
-		case *ast.ImportSpec:
-			if n.Path.Pos() <= pos && pos < n.Path.End() {
-				found = true
-				// If import spec has a name, add name to path even though
-				// position isn't in the name.
-				if n.Name != nil {
-					path = append(path, n.Name)
-				}
-			}
-
-		case *ast.StarExpr:
-			// Follow star expressions to the inner identifier.
-			if pos == n.Star {
-				pos = n.X.Pos()
-			}
-		}
-
-		return !found
-	})
-
-	if len(path) == 0 {
-		return nil
-	}
-
-	// Reverse path so leaf is first element.
-	slices.Reverse(path)
-	return path
-}
-
 // --- Implementations based on signature types --
 
 // implFuncs finds Implementations based on func types.
@@ -950,14 +885,12 @@ func pathEnclosingObjNode(f *ast.File, pos token.Pos) []ast.Node {
 // An Implementations query on a location in set 1 returns set 2,
 // and vice versa.
 //
+// curSel denotes the selected syntax node whose type drives the
+// pos indicates the exact cursor position.
+//
 // implFuncs returns errNotHandled to indicate that we should try the
 // regular method-sets algorithm.
-func implFuncs(pkg *cache.Package, pgf *parsego.File, pos token.Pos) ([]protocol.Location, error) {
-	curSel, ok := pgf.Cursor.FindByPos(pos, pos)
-	if !ok {
-		return nil, fmt.Errorf("no code selected")
-	}
-
+func implFuncs(pkg *cache.Package, curSel inspector.Cursor, pos token.Pos) ([]protocol.Location, error) {
 	info := pkg.TypesInfo()
 	if info.Types == nil || info.Defs == nil || info.Uses == nil {
 		panic("one of info.Types, .Defs or .Uses is nil")

@@ -17,13 +17,14 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
-	"go/token"
 	"go/types"
 	"sort"
 	"strings"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/go/ast/edge"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -32,7 +33,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 )
 
@@ -235,21 +238,16 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	if err != nil {
 		return nil, err
 	}
-	candidates, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
+	cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
+
+	candidates, err := objectsAt(pkg.TypesInfo(), cur)
 	if err != nil {
 		return nil, err
 	}
-
 	// Pick first object arbitrarily.
 	// The case variables of a type switch have different
 	// types but that difference is immaterial here.
-	var obj types.Object
-	for obj = range candidates {
-		break
-	}
-	if obj == nil {
-		return nil, ErrNoIdentFound // can't happen
-	}
+	obj := candidates[0].obj
 
 	// nil, error, error.Error, iota, or other built-in?
 	if isBuiltin(obj) {
@@ -416,21 +414,23 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 			if err != nil {
 				return err
 			}
-			objects, _, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
+			cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
+
+			objects, err := objectsAt(pkg.TypesInfo(), cur)
 			if err != nil {
 				return err // unreachable? (probably caught earlier)
 			}
 
 			// Report the locations of the declaration(s).
 			// TODO(adonovan): what about for corresponding methods? Add tests.
-			for _, node := range objects {
-				report(mustLocation(pgf, node), true)
+			for _, o := range objects {
+				report(mustLocation(pgf, o.cur.Node()), true)
 			}
 
-			// Convert targets map to set.
+			// Convert objects list to targets set.
 			targets := make(map[types.Object]bool)
-			for obj := range objects {
-				targets[obj] = true
+			for _, o := range objects {
+				targets[o.obj] = true
 			}
 
 			return localReferences(pkg, targets, true, report)
@@ -622,57 +622,143 @@ func effectiveReceiver(obj types.Object) types.Type {
 	return nil
 }
 
-// objectsAt returns the non-empty set of objects denoted (def or use)
-// by the specified position within a file syntax tree, or an error if
-// none were found.
+type objectAt struct {
+	obj types.Object     // symbol
+	cur inspector.Cursor // associated syntax (Ident | ImportSpec)
+}
+
+// objectsAt returns the non-empty list of objects referenced (defined
+// or used) at or near the position specified by cur. It returns an
+// error if none were found.
+//
+// The implementation may look "nearby", for example at x when given
+// a cursor to an expression "*x", i.e. the cursor was at the star.
 //
 // The result may contain more than one element because all case
 // variables of a type switch appear to be declared at the same
-// position.
+// identifier.
 //
-// Each object is mapped to the syntax node that was treated as an
-// identifier, which is not always an ast.Ident. The second component
-// of the result is the innermost node enclosing pos.
+// Each object is paired with a cursor for the syntax node that was
+// treated as an identifier, which is not always an ast.Ident.
+func objectsAt(info *types.Info, cur inspector.Cursor) ([]objectAt, error) {
+
+	// Within an ImportSpec, return the PkgName
+	// and its .Name (if explicit) or the spec if not.
+	if astutil.IsChildOf(cur, edge.ImportSpec_Path) {
+		cur = cur.Parent() // ImportSpec
+		spec := cur.Node().(*ast.ImportSpec)
+		pkgname := info.PkgNameOf(spec)
+		if pkgname == nil {
+			return nil, fmt.Errorf("%w for import %s", errNoObjectFound, metadata.UnquoteImportPath(spec))
+		}
+		if spec.Name != nil { // explicit?
+			cur = cur.ChildAt(edge.ImportSpec_Name, -1) // Ident
+		}
+		return []objectAt{{pkgname, cur}}, nil
+	}
+
+	// If the selection is the * of *T or *ptr,
+	// nudge it to the T or ptr operand in the hope
+	// that it is an Ident. This makes (e.g.) Hover and
+	// Definition more flexible w.r.t selections:
+	if is[*ast.StarExpr](cur.Node()) {
+		cur, _ = cur.FirstChild() // can't fail
+	}
+
+	id, ok := cur.Node().(*ast.Ident)
+	if !ok {
+		return nil, ErrNoIdentFound
+	}
+
+	// If id is a reference to a special var v in
+	//  switch v := expr.(type) { case T: use(v); ... }
+	// then return all the implicit case vars.
+	objects, _ := typeSwitchVars(info, cur)
+	if len(objects) > 0 {
+		return objects, nil
+	}
+
+	// All other identifiers.
+	// For struct{T}, we prefer the defined field Var over the used TypeName.
+	obj := info.ObjectOf(id)
+	if obj == nil {
+		return nil, fmt.Errorf("%w for %q", errNoObjectFound, id.Name)
+	}
+	return []objectAt{{obj, cur}}, nil
+}
+
+// typeSwitchVars returns information about type switch local variables.
 //
-// TODO(adonovan): factor in common with referencedObject.
-func objectsAt(info *types.Info, file *ast.File, pos token.Pos) (map[types.Object]ast.Node, ast.Node, error) {
-	path := pathEnclosingObjNode(file, pos)
-	if path == nil {
-		return nil, nil, ErrNoIdentFound
+// Given the cursor for an identifier that refers to a variable v
+// declared by a type switch of this form:
+//
+//	switch v := expr.(type) {
+//	case T: use(v)
+//	...
+//	}
+//
+// it returns:
+//
+//   - the (possibly empty) list of variables implicitly declared for
+//     each case type; and
+//
+//   - the identifier's effective type, which is either the case type
+//     (for an occurrence in a case), or the type of 'expr' for the
+//     occurrence in "switch v".
+//
+// The identifier may be v in "switch v", or a use of it in one of the
+// cases. typeSwitchVars returns zero for all other identifiers.
+func typeSwitchVars(info *types.Info, curIdent inspector.Cursor) ([]objectAt, types.Type) {
+	sw, curSwitch := cursorutil.FirstEnclosing[*ast.TypeSwitchStmt](curIdent)
+	if sw == nil {
+		return nil, nil
+	}
+	assign, ok := sw.Assign.(*ast.AssignStmt)
+	if !(ok &&
+		len(assign.Lhs) == 1 &&
+		is[*ast.Ident](assign.Lhs[0]) &&
+		len(assign.Rhs) == 1 &&
+		is[*ast.TypeAssertExpr](assign.Rhs[0])) {
+		return nil, nil
+	}
+	// Have: switch v := expr.(type)
+
+	id := curIdent.Node().(*ast.Ident)
+
+	match := false
+
+	// Is selected ident "switch v" var?
+	// Since it has no object, use the type of 'expr'.
+	var t types.Type
+	if id == assign.Lhs[0] {
+		match = true
+		t = info.TypeOf(assign.Rhs[0].(*ast.TypeAssertExpr).X) // may be nil
 	}
 
-	targets := make(map[types.Object]ast.Node)
-
-	switch leaf := path[0].(type) {
-	case *ast.Ident:
-		// If leaf represents an implicit type switch object or the type
-		// switch "assign" variable, expand to all of the type switch's
-		// implicit objects.
-		if implicits, _ := typeSwitchImplicits(info, path); len(implicits) > 0 {
-			for _, obj := range implicits {
-				targets[obj] = leaf
+	// Gather the switch's implicit variables.
+	var objects []objectAt
+	for curCase := range curSwitch.ChildAt(edge.TypeSwitchStmt_Body, -1).Children() {
+		clause := curCase.Node().(*ast.CaseClause)
+		v, ok := info.Implicits[clause]
+		if ok {
+			if v == info.Uses[id] {
+				// Selected ident is one of the case vars.
+				t = v.Type()
+				match = true
 			}
-		} else {
-			// For struct{T}, we prefer the defined field Var over the used TypeName.
-			obj := info.ObjectOf(leaf)
-			if obj == nil {
-				return nil, nil, fmt.Errorf("%w for %q", errNoObjectFound, leaf.Name)
-			}
-			targets[obj] = leaf
+			objects = append(objects, objectAt{v, curIdent})
 		}
-	case *ast.ImportSpec:
-		// Look up the implicit *types.PkgName.
-		obj := info.Implicits[leaf]
-		if obj == nil {
-			return nil, nil, fmt.Errorf("%w for import %s", errNoObjectFound, metadata.UnquoteImportPath(leaf))
-		}
-		targets[obj] = leaf
 	}
 
-	if len(targets) == 0 {
-		return nil, nil, fmt.Errorf("objectAt: internal error: no targets") // can't happen
+	if !match {
+		// Type switch is unrelated to ident.
+		return nil, nil
 	}
-	return targets, path[0], nil
+
+	// Note: match does not imply t != nil,
+	// as type information may be incomplete.
+
+	return objects, t
 }
 
 // mustLocation reports the location interval a syntax node,

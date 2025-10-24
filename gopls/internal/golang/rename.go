@@ -134,11 +134,7 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 	if err != nil {
 		return nil, nil, err
 	}
-
-	cur, ok := pgf.Cursor.FindByPos(pos, pos)
-	if !ok {
-		return nil, nil, fmt.Errorf("can't find cursor for selection")
-	}
+	cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
 
 	// Check if we're in a 'func' keyword. If so, we hijack the renaming to
 	// change the function signature.
@@ -148,26 +144,28 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 		return item, nil, nil
 	}
 
-	targets, node, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
+	targets, err := objectsAt(pkg.TypesInfo(), cur)
 	if err != nil {
 		// Check if we are renaming an ident inside its doc comment. The call to
 		// objectsAt will have returned an error in this case.
-		id := docCommentPosToIdent(pgf, pos, cur)
-		if id == nil {
+		// TODO(adonovan): move this logic into objectsAt.
+		var ok bool
+		cur, ok = docCommentPosToIdent(pgf, pos, cur)
+		if !ok {
 			return nil, nil, err
 		}
+		id := cur.Node().(*ast.Ident)
 		obj := pkg.TypesInfo().Defs[id]
 		if obj == nil {
 			return nil, nil, fmt.Errorf("error fetching Object for ident %q", id.Name)
 		}
 		// Change rename target to the ident.
-		targets = map[types.Object]ast.Node{obj: id}
-		node = id
+		targets = []objectAt{{obj, cur}}
 	}
-	var obj types.Object
-	for obj = range targets {
-		break // pick one arbitrarily
-	}
+
+	// Pick a representative object arbitrarily.
+	// (All share the same name, pos, and kind.)
+	obj, node := targets[0].obj, targets[0].cur.Node()
 	if err := checkRenamable(obj, node); err != nil {
 		return nil, nil, err
 	}
@@ -555,33 +553,30 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 	if err != nil {
 		return nil, err
 	}
-	var ok bool
-	cur, ok := pgf.Cursor.FindByPos(pos, pos) // of selected Ident or ImportSpec
-	if !ok {
-		return nil, fmt.Errorf("can't find cursor for selection")
-	}
-	targets, node, err := objectsAt(pkg.TypesInfo(), pgf.File, pos)
+	cur, _ := pgf.Cursor.FindByPos(pos, pos) // cannot fail
+
+	targets, err := objectsAt(pkg.TypesInfo(), cur)
 	if err != nil {
 		// Check if we are renaming an ident inside its doc comment. The call to
 		// objectsAt will have returned an error in this case.
-		id := docCommentPosToIdent(pgf, pos, cur)
-		if id == nil {
+		// TODO(adonovan): move this logic into objectsAt.
+		var ok bool
+		cur, ok = docCommentPosToIdent(pgf, pos, cur)
+		if !ok {
 			return nil, err
 		}
+		id := cur.Node().(*ast.Ident)
 		obj := pkg.TypesInfo().Defs[id]
 		if obj == nil {
 			return nil, fmt.Errorf("error fetching types.Object for ident %q", id.Name)
 		}
 		// Change rename target to the ident.
-		targets = map[types.Object]ast.Node{obj: id}
+		targets = []objectAt{{obj, cur}}
 	}
 
 	// Pick a representative object arbitrarily.
 	// (All share the same name, pos, and kind.)
-	var obj types.Object
-	for obj = range targets {
-		break
-	}
+	obj, node := targets[0].obj, targets[0].cur.Node()
 	if obj.Name() == newName {
 		return nil, fmt.Errorf("old and new names are the same: %s", newName)
 	}
@@ -647,8 +642,8 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 	// Nonexported? Search locally.
 	if declObjPath == "" {
 		var objects []types.Object
-		for obj := range targets {
-			objects = append(objects, obj)
+		for _, o := range targets {
+			objects = append(objects, o.obj)
 		}
 
 		editMap, _, err := renameObjects(newName, pkg, objects...)
@@ -1413,7 +1408,8 @@ func (r *renamer) update() (map[protocol.DocumentURI][]diff.Edit, error) {
 			continue
 		}
 
-		doc := docComment(pgf, item.node.(*ast.Ident))
+		cur, _ := pgf.Cursor.FindNode(item.node) // can't fail
+		doc := docComment(pgf, cur)
 		if doc == nil {
 			continue
 		}
@@ -1653,10 +1649,11 @@ func (r *docLinkRenamer) update(pgf *parsego.File) (result []diff.Edit, err erro
 }
 
 // docComment returns the doc for an identifier within the specified file.
-func docComment(pgf *parsego.File, id *ast.Ident) *ast.CommentGroup {
-	nodes, _ := astutil.PathEnclosingInterval(pgf.File, id.Pos(), id.End())
-	for _, node := range nodes {
-		switch decl := node.(type) {
+func docComment(pgf *parsego.File, curId inspector.Cursor) *ast.CommentGroup {
+	// (Strictly it needn't be an identifier; only its Pos is used.)
+	id := curId.Node().(*ast.Ident)
+	for cur := range curId.Enclosing() {
+		switch decl := cur.Node().(type) {
 		case *ast.FuncDecl:
 			return decl.Doc
 		case *ast.Field:
@@ -1684,7 +1681,7 @@ func docComment(pgf *parsego.File, id *ast.Ident) *ast.CommentGroup {
 			}
 
 			identLine := safetoken.Line(pgf.Tok, id.Pos())
-			for _, comment := range nodes[len(nodes)-1].(*ast.File).Comments {
+			for _, comment := range pgf.File.Comments {
 				if comment.Pos() > id.Pos() {
 					// Comment is after the identifier.
 					continue
@@ -1702,15 +1699,16 @@ func docComment(pgf *parsego.File, id *ast.Ident) *ast.CommentGroup {
 	return nil
 }
 
-// docCommentPosToIdent returns the node whose doc comment contains pos, if any.
-// The pos must be within an occurrence of the identifier's name, otherwise it returns nil.
-func docCommentPosToIdent(pgf *parsego.File, pos token.Pos, cur inspector.Cursor) *ast.Ident {
+// docCommentPosToIdent returns a cursor for the identifier whose doc
+// comment contains pos, if any. The pos must be within an occurrence
+// of the identifier's name, otherwise it returns zero.
+func docCommentPosToIdent(pgf *parsego.File, pos token.Pos, cur inspector.Cursor) (inspector.Cursor, bool) {
 	for curId := range cur.Preorder((*ast.Ident)(nil)) {
 		id := curId.Node().(*ast.Ident)
 		if pos > id.Pos() {
 			continue // Doc comments are not located after an ident.
 		}
-		doc := docComment(pgf, id)
+		doc := docComment(pgf, curId)
 		if doc == nil || !(doc.Pos() <= pos && pos < doc.End()) {
 			continue
 		}
@@ -1723,18 +1721,18 @@ func docCommentPosToIdent(pgf *parsego.File, pos token.Pos, cur inspector.Cursor
 			start := comment.Pos()
 			text, err := pgf.NodeText(comment)
 			if err != nil {
-				return nil
+				return inspector.Cursor{}, false
 			}
 			for _, locs := range docRegexp.FindAllIndex(text, -1) {
 				matchStart := start + token.Pos(locs[0])
 				matchEnd := start + token.Pos(locs[1])
 				if matchStart <= pos && pos <= matchEnd {
-					return id
+					return curId, true
 				}
 			}
 		}
 	}
-	return nil
+	return inspector.Cursor{}, false
 }
 
 // updatePkgName returns the updates to rename a pkgName in the import spec by

@@ -30,9 +30,9 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/ssa"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/analysisinternal"
-	"golang.org/x/tools/internal/moreiters"
 )
 
 //go:embed doc.go
@@ -137,11 +137,11 @@ func run(pass *analysis.Pass) (any, error) {
 							if !ok {
 								panic(fmt.Sprintf("can't find node at %v", safetoken.StartPosition(pass.Fset, pos)))
 							}
-							call, ok := moreiters.First(cur.Enclosing((*ast.CallExpr)(nil)))
-							if !ok {
+							call, _ := cursorutil.FirstEnclosing[*ast.CallExpr](cur)
+							if call == nil {
 								panic(fmt.Sprintf("no call enclosing %v", safetoken.StartPosition(pass.Fset, pos)))
 							}
-							return call.Node()
+							return call
 						}
 
 						if !info.reported && ssaYieldCalls[instr] != nil {

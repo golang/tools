@@ -11,6 +11,8 @@ import (
 	"go/token"
 	"go/types"
 	"testing"
+
+	"golang.org/x/tools/go/ast/inspector"
 )
 
 func TestSearchForEnclosing(t *testing.T) {
@@ -47,17 +49,20 @@ func TestSearchForEnclosing(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			column := 1 + bytes.IndexRune([]byte(test.src), 'X')
-			pos := posAt(1, column, fset, "a.go")
-			path := pathEnclosingObjNode(file, pos)
-			if path == nil {
+			var (
+				files  = []*ast.File{file}
+				column = 1 + bytes.IndexRune([]byte(test.src), 'X')
+				pos    = posAt(1, column, fset, "a.go")
+			)
+			cur, ok := inspector.New(files).Root().FindByPos(pos, pos)
+			if !ok {
 				t.Fatalf("no ident found at (1, %d)", column)
 			}
 			info := newInfo()
-			if _, err = (*types.Config)(nil).Check("p", fset, []*ast.File{file}, info); err != nil {
+			if _, err = (*types.Config)(nil).Check("p", fset, files, info); err != nil {
 				t.Fatal(err)
 			}
-			obj := searchForEnclosing(info, path)
+			obj := searchForEnclosing(info, cur)
 			if obj == nil {
 				if test.wantTypeName != "" {
 					t.Errorf("searchForEnclosing(...) = <nil>, want %q", test.wantTypeName)

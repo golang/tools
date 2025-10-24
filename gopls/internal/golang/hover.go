@@ -27,7 +27,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/text/unicode/runenames"
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
@@ -36,9 +36,10 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
-	gastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typeparams"
@@ -183,8 +184,8 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		if err != nil {
 			return protocol.Range{}, nil, err
 		}
-		path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos)
-		if id, ok := path[0].(*ast.Ident); ok {
+		cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
+		if id, ok := cur.Node().(*ast.Ident); ok {
 			rng, err := pgf.NodeRange(id)
 			if err != nil {
 				return protocol.Range{}, nil, err
@@ -215,7 +216,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// Handle hovering over the package name, which does not have an associated
 	// object.
 	// As with import paths, we allow hovering just after the package name.
-	if pgf.File.Name != nil && gastutil.NodeContains(pgf.File.Name, pos) {
+	if pgf.File.Name != nil && astutil.NodeContains(pgf.File.Name, pos) {
 		return hoverPackageName(pkg, pgf)
 	}
 
@@ -267,10 +268,16 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		pos = pgf.Tok.Pos(objURI.Offset)
 	}
 
-	// Handle hovering over import paths, which do not have an associated
-	// identifier.
+	// Find cursor for selection.
+	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+	if !ok {
+		return protocol.Range{}, nil, fmt.Errorf("hover position not within file")
+	}
+
+	// Handle hovering over import specs,
+	// which may not have an associated identifier.
 	for _, spec := range pgf.File.Imports {
-		if gastutil.NodeContains(spec, pos) {
+		if astutil.NodeContains(spec, pos) {
 			path := metadata.UnquoteImportPath(spec)
 			hoverRes, err := hoverPackageRef(ctx, snapshot, pkg, path)
 			if err != nil {
@@ -280,7 +287,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			if err != nil {
 				return protocol.Range{}, nil, err
 			}
-			if hoverRange == nil {
+			if hoverRange == nil { // (may have already been set by a doc link)
 				hoverRange = &rng
 			}
 			return *hoverRange, hoverRes, nil // (hoverRes may be nil)
@@ -288,14 +295,12 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	}
 
 	// Handle hovering over various special kinds of syntax node.
-	if path, _ := astutil.PathEnclosingInterval(pgf.File, pos, pos); len(path) > 0 {
-		switch node := path[0].(type) {
-		// Handle hovering over (non-import-path) literals.
-		case *ast.BasicLit:
-			return hoverLit(pgf, node, pos)
-		case *ast.ReturnStmt:
-			return hoverReturnStatement(pgf, path, node)
-		}
+	switch node := cur.Node().(type) {
+	case *ast.BasicLit:
+		// (import paths were handled above)
+		return hoverLit(pgf, node, pos)
+	case *ast.ReturnStmt:
+		return hoverReturnStatement(pgf, cur)
 	}
 
 	// By convention, we qualify hover information relative to the package
@@ -305,10 +310,17 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	// Handle hover over identifier.
 
 	// The general case: compute hover information for the object referenced by
-	// the identifier at pos.
-	ident, obj, selectedType := hoverDefinitionObjectAtPos(pkg.TypesInfo(), pgf, pos)
-	if obj == nil || ident == nil {
+	// the identifier at (or near) pos.
+	objects, err := objectsAt(pkg.TypesInfo(), cur)
+	if err != nil {
 		return protocol.Range{}, nil, nil // no object to hover
+	}
+	// Pick first object arbitrarily.
+	// Update cursor to its identifier (perhaps nearby).
+	obj, cur := objects[0].obj, objects[0].cur
+	ident, ok := cur.Node().(*ast.Ident)
+	if !ok {
+		return protocol.Range{}, nil, nil // e.g. ImportSpec?
 	}
 
 	// Unless otherwise specified, rng covers the ident being hovered.
@@ -320,11 +332,21 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		hoverRange = &rng
 	}
 
-	// Handle type switch identifiers as a special case, since they don't have an
-	// object.
-	//
+	// If the original position was an embedded field, we want to show
+	// the field's type definition, not the field's definition.
+	// (This was the fix to #42254 in Definition, but it is the cause of #75975 in Hover.
+	// TODO(adonovan): a follow-up CL will delete this logic from Hover.)
+	if v, ok := obj.(*types.Var); ok && v.Embedded() {
+		// types.Info.Uses contains the embedded field's *types.TypeName.
+		if typeName := pkg.TypesInfo().Uses[ident]; typeName != nil {
+			obj = typeName
+		}
+	}
+
+	// Handle type switch identifiers as a special case,
+	// since they don't have a regular object.
 	// There's not much useful information to provide.
-	if selectedType != nil {
+	if _, selectedType := typeSwitchVars(pkg.TypesInfo(), cur); selectedType != nil {
 		v := types.NewVar(obj.Pos(), obj.Pkg(), obj.Name(), selectedType)
 		typesinternal.SetVarKind(v, typesinternal.LocalVar)
 		signature := types.ObjectString(v, qual)
@@ -409,10 +431,6 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 
 	// When hovering over a reference to a promoted struct field,
 	// show the implicitly selected intervening fields.
-	cur, ok := pgf.Cursor.FindByPos(pos, pos)
-	if !ok {
-		return protocol.Range{}, nil, fmt.Errorf("Invalid hover position, failed to get cursor")
-	}
 	if obj, ok := obj.(*types.Var); ok && obj.IsField() {
 		if selExpr, ok := cur.Parent().Node().(*ast.SelectorExpr); ok {
 			sel, ok := pkg.TypesInfo().Selections[selExpr]
@@ -481,7 +499,8 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 	if def, _ := pkg.TypesInfo().Defs[ident]; def != nil && ident.Pos() == def.Pos() {
 		// This is the declaring identifier.
 		// (We can't simply use ident.Pos() == obj.Pos() because
-		// referencedObject prefers the TypeName for an embedded field).
+		// objectAt prefers the TypeName for an embedded field).
+		// TODO(adonovan): fix as part of #75975.
 
 		// format returns the decimal and hex representation of x.
 		format := func(x int64) string {
@@ -491,10 +510,8 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			return fmt.Sprintf("%[1]d (%#[1]x)", x)
 		}
 
-		path := pathEnclosingObjNode(pgf.File, pos)
-
 		// Build string of form "size=... (X% wasted), class=..., offset=...".
-		size, wasted, offset := computeSizeOffsetInfo(pkg, path, obj)
+		size, wasted, offset := computeSizeOffsetInfo(pkg, cur, obj)
 		var buf strings.Builder
 		if size >= 0 {
 			fmt.Fprintf(&buf, "size=%s", format(size))
@@ -695,8 +712,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 			// TODO(rfindley): pkgsite doesn't document fields from embedding, just
 			// methods.
 			if recv == nil || !recv.Exported() {
-				path := pathEnclosingObjNode(pgf.File, pos)
-				if enclosing := searchForEnclosing(pkg.TypesInfo(), path); enclosing != nil {
+				if enclosing := searchForEnclosing(pkg.TypesInfo(), cur); enclosing != nil {
 					recv = enclosing
 				} else {
 					recv = nil // note: just recv = ... could result in a typed nil.
@@ -733,14 +749,10 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pp pro
 		if err != nil {
 			return protocol.Range{}, nil, err
 		}
-		hoverRange, err := pgf.NodeRange(ident)
-		if err != nil {
-			return protocol.Range{}, nil, err
-		}
 		hoverRes.LinkAnchor = anchor
 		hoverRes.LinkPath = linkPath
 		hoverRes.SymbolName = linkName
-		return hoverRange, hoverRes, nil // (hoverRes may be nil)
+		return *hoverRange, hoverRes, nil // (hoverRes may be nil)
 	}
 
 	var footer string
@@ -823,9 +835,9 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 		comment *ast.CommentGroup
 		decl    ast.Decl
 	)
-	path, _ := astutil.PathEnclosingInterval(pgf.File, ident.Pos(), ident.Pos())
-	for _, n := range path {
-		switch n := n.(type) {
+	curIdent, _ := pgf.Cursor.FindNode(ident) // can't fail
+	for cur := range curIdent.Enclosing() {
+		switch n := cur.Node().(type) {
 		case *ast.GenDecl:
 			// Separate documentation and signature.
 			comment = n.Doc
@@ -1088,11 +1100,11 @@ func hoverLit(pgf *parsego.File, lit *ast.BasicLit, pos token.Pos) (protocol.Ran
 	}, nil
 }
 
-func hoverReturnStatement(pgf *parsego.File, path []ast.Node, ret *ast.ReturnStmt) (protocol.Range, *hoverResult, error) {
+func hoverReturnStatement(pgf *parsego.File, curReturn inspector.Cursor) (protocol.Range, *hoverResult, error) {
 	var funcType *ast.FuncType
 	// Find innermost enclosing function.
-	for _, n := range path {
-		switch n := n.(type) {
+	for c := range curReturn.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
+		switch n := c.Node().(type) {
 		case *ast.FuncLit:
 			funcType = n.Type
 		case *ast.FuncDecl:
@@ -1106,7 +1118,7 @@ func hoverReturnStatement(pgf *parsego.File, path []ast.Node, ret *ast.ReturnStm
 	if funcType.Results == nil {
 		return protocol.Range{}, nil, nil // no result variables
 	}
-	rng, err := pgf.PosRange(ret.Pos(), ret.End())
+	rng, err := pgf.NodeRange(curReturn.Node())
 	if err != nil {
 		return protocol.Range{}, nil, err
 	}
@@ -1786,8 +1798,9 @@ func accessibleTo(obj types.Object, pkg *types.Package) bool {
 
 // computeSizeOffsetInfo reports the size of obj (if a type or struct
 // field), its wasted space percentage (if a struct type), and its
-// offset (if a struct field). It returns -1 for undefined components.
-func computeSizeOffsetInfo(pkg *cache.Package, path []ast.Node, obj types.Object) (size, wasted, offset int64) {
+// offset (if a struct field). curIdent is obj's declaring identifier.
+// It returns -1 for undefined components.
+func computeSizeOffsetInfo(pkg *cache.Package, curIdent inspector.Cursor, obj types.Object) (size, wasted, offset int64) {
 	size, wasted, offset = -1, -1, -1
 
 	var free typeparams.Free
@@ -1825,21 +1838,17 @@ func computeSizeOffsetInfo(pkg *cache.Package, path []ast.Node, obj types.Object
 	if v, ok := obj.(*types.Var); ok && v.IsField() {
 		// Find enclosing struct type.
 		var tStruct *types.Struct
-		for _, n := range path {
-			if n, ok := n.(*ast.StructType); ok {
-				t, ok := pkg.TypesInfo().TypeOf(n).(*types.Struct)
-				if ok {
-					// golang/go#69150: TypeOf(n) was observed not to be a Struct (likely
-					// nil) in some cases.
-					tStruct = t
-				}
-				break
+		if n, _ := cursorutil.FirstEnclosing[*ast.StructType](curIdent); n != nil {
+			t, ok := pkg.TypesInfo().TypeOf(n).(*types.Struct)
+			if ok {
+				// golang/go#69150: TypeOf(n) was observed not to be a Struct (likely
+				// nil) in some cases.
+				tStruct = t
 			}
 		}
 		if tStruct != nil {
 			var fields []*types.Var
-			for i := 0; i < tStruct.NumFields(); i++ {
-				f := tStruct.Field(i)
+			for f := range tStruct.Fields() {
 				// If any preceding field's type has free type parameters,
 				// its offset cannot be computed.
 				if free.Has(f.Type()) {

@@ -23,7 +23,6 @@ import (
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -51,8 +50,8 @@ func undeclaredFixTitle(curId inspector.Cursor, errMsg string) string {
 	}
 
 	// Undeclared quick fixes only work in function bodies.
-	_, inFunc := moreiters.First(curId.Enclosing((*ast.BlockStmt)(nil)))
-	if !inFunc {
+	block, _ := cursorutil.FirstEnclosing[*ast.BlockStmt](curId)
+	if block == nil {
 		return ""
 	}
 
@@ -84,7 +83,7 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 		firstRef     *ast.Ident // We should insert the new declaration before the first occurrence of the undefined ident.
 		assignTokPos token.Pos
 	)
-	curFuncDecl, _ := moreiters.First(curId.Enclosing((*ast.FuncDecl)(nil)))
+	_, curFuncDecl := cursorutil.FirstEnclosing[*ast.FuncDecl](curId)
 	// Search from enclosing FuncDecl to first use, since we can not use := syntax outside function.
 	// Adds the missing colon under the following conditions:
 	// 1) parent node must be an *ast.AssignStmt with Tok set to token.ASSIGN.
