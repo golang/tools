@@ -377,14 +377,6 @@ func (mark marker) mapper() *protocol.Mapper {
 	return mapper
 }
 
-// error reports an error with a prefix indicating the position of the marker
-// note.
-func (mark marker) error(args ...any) {
-	mark.T().Helper()
-	msg := fmt.Sprint(args...)
-	mark.T().Errorf("%s: %s", mark.run.fmtPos(mark.note.Pos), msg)
-}
-
 // errorf reports a formatted error with a prefix indicating the position of
 // the marker note.
 //
@@ -442,7 +434,7 @@ func valueMarkerFunc(fn any) func(marker) {
 		args := append([]any{mark}, mark.note.Args[1:]...)
 		argValues, err := convertArgs(mark, ftype, args)
 		if err != nil {
-			mark.error(err)
+			mark.errorf("%v", err)
 			return
 		}
 		results := reflect.ValueOf(fn).Call(argValues)
@@ -485,7 +477,7 @@ func actionMarkerFunc(fn any, allowedNames ...string) func(marker) {
 		args := append([]any{mark}, mark.note.Args...)
 		argValues, err := convertArgs(mark, ftype, args)
 		if err != nil {
-			mark.error(err)
+			mark.errorf("%v", err)
 			return
 		}
 		reflect.ValueOf(fn).Call(argValues)

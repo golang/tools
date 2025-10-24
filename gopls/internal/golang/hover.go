@@ -348,17 +348,6 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 		hoverRange = &rng
 	}
 
-	// If the original position was an embedded field, we want to show
-	// the field's type definition, not the field's definition.
-	// (This was the fix to #42254 in Definition, but it is the cause of #75975 in Hover.
-	// TODO(adonovan): a follow-up CL will delete this logic from Hover.)
-	if v, ok := obj.(*types.Var); ok && v.Embedded() {
-		// types.Info.Uses contains the embedded field's *types.TypeName.
-		if typeName := pkg.TypesInfo().Uses[ident]; typeName != nil {
-			obj = typeName
-		}
-	}
-
 	// Handle type switch identifiers as a special case,
 	// since they don't have a regular object.
 	// There's not much useful information to provide.
@@ -511,12 +500,8 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	//
 	var sizeOffset string
 
-	// As painfully learned in golang/go#69362, Defs can contain nil entries.
-	if def, _ := pkg.TypesInfo().Defs[ident]; def != nil && ident.Pos() == def.Pos() {
+	if ident.Pos() == obj.Pos() {
 		// This is the declaring identifier.
-		// (We can't simply use ident.Pos() == obj.Pos() because
-		// objectAt prefers the TypeName for an embedded field).
-		// TODO(adonovan): fix as part of #75975.
 
 		// format returns the decimal and hex representation of x.
 		format := func(x int64) string {

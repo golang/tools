@@ -1,0 +1,34 @@
+This test checks that hovering over an embedded field
+reports information about the field, not its type.
+
+We put backslash escapes in the hover expectation as the @hover marker
+appears on the same line as the declaration. Otherwise the hover doc
+content, which includes the comment containing the marker itself,
+would trivially satisfy itself no matter what text we expect!
+
+-- flags --
+-skip_goarch=386,arm
+
+-- go.mod --
+module mod.com
+go 1.18
+
+-- a/a.go --
+package a
+
+type A struct {
+	byte
+	S string //@ hover("S", "S", "field S string // size=16 (0x10), offset=8\n")
+}
+
+type B struct {
+	byte
+	S //@ hover("S", "S", "field S S // size=1, class=8, offset=1\n")
+}
+
+type C struct {
+	byte
+	*S // hover("S", "S", "field S S // size=1, class=8, offset=1\n")
+}
+
+type S byte

@@ -247,22 +247,17 @@ field S2 S2
 [`(b.S1).S2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S1.S2)
 -- @S2 --
 ```go
-type S2 struct { // size=32 (0x20)
-	F1   string //@loc(S2F1, "F1")
-	F2   int    //@loc(S2F2, "F2")
-	*a.A        //@def("A", AString),def("a",AImport)
-}
+field S2 S2 // size=32 (0x20), offset=8
 ```
 
 ---
 
-```go
-func (a.A) Hi()
-```
+@loc(S1S2, "S2"),def("S2", S2),hover("S2", "S2", S2)
+
 
 ---
 
-[`b.S2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S2)
+[`(b.S1).S2` on pkg.go.dev](https://pkg.go.dev/mod.com/b#S1.S2)
 -- @S2F1 --
 ```go
 field F1 string
@@ -304,33 +299,13 @@ field Field int // through S
 [`(a.S).Field` on pkg.go.dev](https://pkg.go.dev/mod.com/a#S.Field)
 -- @aA --
 ```go
-type A string // size=16 (0x10)
+field A a.A // size=16 (0x10), offset=40 (0x28)
 ```
-
----
-
-@loc(AString, "A")
-
-
-```go
-func (a.A) Hi()
-```
-
----
-
-[`a.A` on pkg.go.dev](https://pkg.go.dev/mod.com/a#A)
 -- @aAlias --
 ```go
-type aAlias = a.A // size=16 (0x10)
-
-type A string
+field aAlias aAlias // size=16 (0x10), offset=56 (0x38)
 ```
 
 ---
 
-@loc(aAlias, "aAlias")
-
-
-```go
-func (a.A) Hi()
-```
+@def("a", aAlias),hover("a", "aAlias", aAlias)
