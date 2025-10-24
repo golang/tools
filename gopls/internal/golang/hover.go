@@ -27,6 +27,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/text/unicode/runenames"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -310,18 +311,41 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 		}
 	}
 
-	// Handle hovering over various special kinds of syntax node.
-	switch node := cur.Node().(type) {
-	case *ast.BasicLit:
-		// (import paths were handled above)
-		return hoverLit(pgf, node, posRange)
-	case *ast.ReturnStmt:
-		return hoverReturnStatement(pgf, cur)
-	}
-
 	// By convention, we qualify hover information relative to the package
 	// from which the request originated.
 	qual := typesinternal.FileQualifier(pgf.File, pkg.Types())
+
+	// Handle hovering over various special kinds of syntax node.
+	switch node := cur.Node().(type) {
+	// (import paths were handled above)
+	case *ast.ReturnStmt:
+		return hoverReturnStatement(pgf, cur)
+	case *ast.Ident:
+		// fall through to rest of function
+	case ast.Expr:
+		tv, ok := pkg.TypesInfo().Types[node]
+		if !ok {
+			return protocol.Range{}, nil, nil
+		}
+		if tv.Value != nil {
+			// non-identifier constant expression
+			return hoverConstantExpr(pgf, node, tv, posRange)
+		}
+		// non-constant, non-identifier expression
+		// TODO(hxjiang): what info should we provide other than type of
+		// the selected expression.
+		// TODO(hxjiang): show method set of the given expression' type.
+		r := &hoverResult{
+			Synopsis:          goastutil.NodeDescription(node),
+			FullDocumentation: types.TypeString(pkg.TypesInfo().TypeOf(node), qual),
+		}
+
+		highlight, err := pgf.NodeRange(node)
+		if err != nil {
+			return protocol.Range{}, nil, err
+		}
+		return highlight, r, nil
+	}
 
 	// Handle hover over identifier.
 
@@ -975,102 +999,122 @@ func hoverPackageName(pkg *cache.Package, pgf *parsego.File) (protocol.Range, *h
 	}, nil
 }
 
-// hoverLit computes hover information when hovering over the basic literal lit
-// in the file pgf. The provided pos must be the exact position of the range as
-// it is used to extract the hovered rune in strings.
+// hoverConstantExpr computes information about the value of a constant expression.
 //
-// For example, hovering over "\u2211" in "foo \u2211 bar" yields:
-//
-//	'∑', U+2211, N-ARY SUMMATION
-func hoverLit(pgf *parsego.File, lit *ast.BasicLit, posRng astutil.Range) (protocol.Range, *hoverResult, error) {
+// The provided start and end positions must be precise. For example, when hovering
+// over a string literal, the exact cursor position is used to identify and display
+// the value of the rune under the cursor.
+func hoverConstantExpr(pgf *parsego.File, expr ast.Expr, tv types.TypeAndValue, posRange astutil.Range) (protocol.Range, *hoverResult, error) {
 	var (
 		value      string    // if non-empty, a constant value to format in hover
 		r          rune      // if non-zero, format a description of this rune in hover
 		start, end token.Pos // hover span
 	)
-	// Extract a rune from the current position.
-	// 'Ω', "...Ω...", or 0x03A9 => 'Ω', U+03A9, GREEK CAPITAL LETTER OMEGA
-	switch lit.Kind {
-	case token.CHAR:
-		s, err := strconv.Unquote(lit.Value)
-		if err != nil {
-			// If the conversion fails, it's because of an invalid syntax, therefore
-			// there is no rune to be found.
-			return protocol.Range{}, nil, nil
-		}
-		r, _ = utf8.DecodeRuneInString(s)
-		if r == utf8.RuneError {
-			return protocol.Range{}, nil, fmt.Errorf("rune error")
-		}
-		start, end = lit.Pos(), lit.End()
-
-	case token.INT:
-		// Short literals (e.g. 99 decimal, 07 octal) are uninteresting.
-		if len(lit.Value) < 3 {
-			return protocol.Range{}, nil, nil
-		}
-
-		v := constant.MakeFromLiteral(lit.Value, lit.Kind, 0)
-		if v.Kind() != constant.Int {
-			return protocol.Range{}, nil, nil
-		}
-
-		switch lit.Value[:2] {
-		case "0x", "0X":
-			// As a special case, try to recognize hexadecimal literals as runes if
-			// they are within the range of valid unicode values.
-			if v, ok := constant.Int64Val(v); ok && v > 0 && v <= utf8.MaxRune && utf8.ValidRune(rune(v)) {
-				r = rune(v)
-			}
+	if lit, ok := expr.(*ast.BasicLit); ok {
+		switch tv.Value.Kind() {
+		case constant.Bool:
 			fallthrough
-		case "0o", "0O", "0b", "0B":
-			// Format the decimal value of non-decimal literals.
-			value = v.ExactString()
-			start, end = lit.Pos(), lit.End()
-		default:
-			return protocol.Range{}, nil, nil
-		}
-
-	case token.STRING:
-		// It's a string, scan only if it contains a unicode escape sequence
-		// at the current cursor position.
-		litOffset, err := safetoken.Offset(pgf.Tok, lit.Pos())
-		if err != nil {
-			return protocol.Range{}, nil, err
-		}
-		offset, err := safetoken.Offset(pgf.Tok, posRng.Start)
-		if err != nil {
-			return protocol.Range{}, nil, err
-		}
-		for i := offset - litOffset; i > 0; i-- {
-			// Start at the cursor position and search backward for the beginning of a rune escape sequence.
-			rr, _ := utf8.DecodeRuneInString(lit.Value[i:])
-			if rr == utf8.RuneError {
-				return protocol.Range{}, nil, fmt.Errorf("rune error")
-			}
-			if rr == '\\' {
-				// Got the beginning, decode it.
-				rr, _, tail, err := strconv.UnquoteChar(lit.Value[i:], '"')
+		case constant.Float:
+			fallthrough
+		case constant.Complex:
+			fallthrough
+		case constant.Unknown:
+			// In most cases, basic literals are uninteresting.
+			break
+		case constant.Int:
+			switch lit.Kind {
+			case token.CHAR:
+				s, err := strconv.Unquote(lit.Value)
 				if err != nil {
-					// If the conversion fails, it's because of an invalid syntax,
-					// therefore is no rune to be found.
+					// If the conversion fails, it's because of an invalid syntax, therefore
+					// there is no rune to be found.
 					return protocol.Range{}, nil, nil
 				}
-				// Only the rune escape sequence part of the string has to be
-				// highlighted, recompute the range.
-				runeLen := len(lit.Value) - (i + len(tail))
-				rStart := token.Pos(int(lit.Pos()) + i)
-				rEnd := token.Pos(int(rStart) + runeLen)
-
-				// A rune is only valid if the range is inside it.
-				if rStart <= posRng.Pos() && posRng.End() <= rEnd {
-					r = rr
-					start = rStart
-					end = rEnd
+				r, _ = utf8.DecodeRuneInString(s)
+				if r == utf8.RuneError {
+					return protocol.Range{}, nil, fmt.Errorf("rune error")
 				}
-				break
+				start, end = lit.Pos(), lit.End()
+			case token.INT:
+				// Short literals (e.g. 99 decimal, 07 octal) are uninteresting.
+				if len(lit.Value) < 3 {
+					return protocol.Range{}, nil, nil
+				}
+
+				v := constant.MakeFromLiteral(lit.Value, lit.Kind, 0)
+				if v.Kind() != constant.Int {
+					return protocol.Range{}, nil, nil
+				}
+
+				switch lit.Value[:2] {
+				case "0x", "0X":
+					// As a special case, try to recognize hexadecimal literals as runes if
+					// they are within the range of valid unicode values.
+					if v, ok := constant.Int64Val(v); ok && v > 0 && v <= utf8.MaxRune && utf8.ValidRune(rune(v)) {
+						r = rune(v)
+					}
+					fallthrough
+				case "0o", "0O", "0b", "0B":
+					// Format the decimal value of non-decimal literals.
+					value = v.ExactString()
+					start, end = lit.Pos(), lit.End()
+				default:
+					return protocol.Range{}, nil, nil
+				}
 			}
+		case constant.String:
+			// Locate the unicode escape sequence under the current cursor
+			// position.
+			litOffset, err := safetoken.Offset(pgf.Tok, lit.Pos())
+			if err != nil {
+				return protocol.Range{}, nil, err
+			}
+			startOffset, err := safetoken.Offset(pgf.Tok, posRange.Pos())
+			if err != nil {
+				return protocol.Range{}, nil, err
+			}
+			for i := startOffset - litOffset; i > 0; i-- {
+				// Start at the cursor position and search backward for the beginning of a rune escape sequence.
+				rr, _ := utf8.DecodeRuneInString(lit.Value[i:])
+				if rr == utf8.RuneError {
+					return protocol.Range{}, nil, fmt.Errorf("rune error")
+				}
+				if rr == '\\' {
+					// Got the beginning, decode it.
+					rr, _, tail, err := strconv.UnquoteChar(lit.Value[i:], '"')
+					if err != nil {
+						// If the conversion fails, it's because of an invalid
+						// syntax, therefore is no rune to be found.
+						return protocol.Range{}, nil, nil
+					}
+					// Only the rune escape sequence part of the string has to
+					// be highlighted, recompute the range.
+					runeLen := len(lit.Value) - (i + len(tail))
+					pStart := token.Pos(int(lit.Pos()) + i)
+					pEnd := token.Pos(int(pStart) + runeLen)
+
+					if pEnd >= posRange.End() {
+						start, end = pStart, pEnd
+						r = rr
+					}
+					break
+				}
+			}
+		default:
+			panic("unexpected constant.Kind")
 		}
+	} else {
+		// By default, provide value information and the expression's range.
+		// It is possible evaluated value will give us the wrong number because
+		// type checker will perform error recovery.
+		// E.g. expression like '\u22111' + 1 is invalid but type checker
+		// will yield the value of `\u2211` + 1.
+
+		// We could be more smart about whether we want to evaluate an
+		// [ast.Expr] as a number or as a rune by evaluating the syntax of
+		// the expression. e.g. rune + int => rune, rune - int => rune.
+		value = tv.Value.String()
+		start, end = expr.Pos(), expr.End()
 	}
 
 	if value == "" && r == 0 { // nothing to format

@@ -32,7 +32,7 @@ func _() {
 	var y any
 	switch x := y.(type) { //@hover("x", "x", x)
 	case int:
-		println(x) //@hover("x", "x", xint),hover(re"x()", "x", xint)
+		println(x) //@hover("x", "x", xint)
 	}
 }
 -- cmd/main.go --
