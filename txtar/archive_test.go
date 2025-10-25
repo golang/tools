@@ -52,6 +52,22 @@ some content
 				Files:   []File{{"file", []byte("data\r\n")}},
 			},
 		},
+		{
+			name: "utf8 and comment",
+			text: `# This is a test comment
+-- hello.txt --
+Hello
+-- unicode.txt --
+Go语言
+`,
+			parsed: &Archive{
+				Comment: []byte("# This is a test comment\n"),
+				Files: []File{
+					{"hello.txt", []byte("Hello\n")},
+					{"unicode.txt", []byte("Go语言\n")},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -116,31 +132,4 @@ func shortArchive(a *Archive) string {
 		fmt.Fprintf(&buf, "file %q: %q\n", f.Name, f.Data)
 	}
 	return buf.String()
-}
-
-func TestParseWithCommentAndUTF8(t *testing.T) {
-	data := []byte(`# This is a test comment
--- hello.txt --
-Hello
--- unicode.txt --
-Go语言
-`)
-
-	ar := Parse(data)
-
-	if len(ar.Files) != 2 {
-		t.Fatalf("expected 2 files, got %d", len(ar.Files))
-	}
-
-	if string(ar.Comment) != "# This is a test comment\n" {
-		t.Errorf("unexpected comment: %q", ar.Comment)
-	}
-
-	if ar.Files[1].Name != "unicode.txt" {
-		t.Errorf("expected unicode.txt, got %s", ar.Files[1].Name)
-	}
-
-	if string(ar.Files[1].Data) != "Go语言\n" {
-		t.Errorf("unexpected data for unicode.txt: %q", ar.Files[1].Data)
-	}
 }
