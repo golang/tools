@@ -257,7 +257,7 @@ func diagnoseChangedFiles(ctx context.Context, snapshot *cache.Snapshot, uris []
 		}
 		// If the file is not known to the snapshot (e.g., if it was deleted),
 		// don't diagnose it.
-		if snapshot.FindFile(uri) == nil {
+		if fh, err := snapshot.ReadFile(ctx, uri); err != nil || fh == nil {
 			continue
 		}
 

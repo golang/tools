@@ -1078,17 +1078,6 @@ func (s *Snapshot) clearShouldLoad(scopes ...loadScope) {
 	}
 }
 
-// FindFile returns the FileHandle for the given URI, if it is already
-// in the given snapshot.
-// TODO(adonovan): delete this operation; use ReadFile instead.
-func (s *Snapshot) FindFile(uri protocol.DocumentURI) file.Handle {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	result, _ := s.files.get(uri)
-	return result
-}
-
 // ReadFile returns a File for the given URI. If the file is unknown it is added
 // to the managed set.
 //

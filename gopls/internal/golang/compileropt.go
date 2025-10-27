@@ -71,8 +71,8 @@ func CompilerOptDetails(ctx context.Context, snapshot *cache.Snapshot, pkgDir pr
 			// expect errors for all the files, save 1
 			parseError = err
 		}
-		fh := snapshot.FindFile(uri)
-		if fh == nil {
+		fh, err := snapshot.ReadFile(ctx, uri)
+		if err != nil || fh == nil {
 			continue
 		}
 		if pkgDir != fh.URI().Dir() {

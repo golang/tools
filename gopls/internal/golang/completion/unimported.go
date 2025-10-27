@@ -222,7 +222,7 @@ func (c *completer) pkgIDmatches(ctx context.Context, ids []metadata.PackageID, 
 				switch sym.Kind {
 				case protocol.Function:
 					foundURI := pkgsyms.Files[np]
-					fh := c.snapshot.FindFile(foundURI)
+					fh, _ := c.snapshot.ReadFile(ctx, foundURI)
 					pgf, err := c.snapshot.ParseGo(ctx, fh, 0)
 					if err == nil {
 						params = funcParams(pgf.File, sym.Name)
