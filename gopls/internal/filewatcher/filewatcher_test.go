@@ -306,10 +306,7 @@ package foo
 			matched := 0
 			foundAll := make(chan struct{})
 			var gots []protocol.FileEvent
-			handler := func(events []protocol.FileEvent, err error) {
-				if err != nil {
-					t.Errorf("error from watcher: %v", err)
-				}
+			eventHandler := func(events []protocol.FileEvent) {
 				gots = append(gots, events...)
 				// This verifies that the list of wanted events is a subsequence of
 				// the received events. It confirms not only that all wanted events
@@ -330,10 +327,19 @@ package foo
 					close(foundAll)
 				}
 			}
-			w, err := filewatcher.New(50*time.Millisecond, nil, handler)
+			errHandler := func(err error) {
+				t.Errorf("error from watcher: %v", err)
+			}
+			w, err := filewatcher.New(50*time.Millisecond, nil, eventHandler, errHandler)
 			if err != nil {
 				t.Fatal(err)
 			}
+
+			defer func() {
+				if err := w.Close(); err != nil {
+					t.Errorf("failed to close the file watcher: %v", err)
+				}
+			}()
 
 			if err := w.WatchDir(root); err != nil {
 				t.Fatal(err)
@@ -351,10 +357,6 @@ package foo
 				if matched < len(tt.expectedEvents) {
 					t.Errorf("found %v matching events\nall want: %#v\nall got: %#v", matched, tt.expectedEvents, gots)
 				}
-			}
-
-			if err := w.Close(); err != nil {
-				t.Errorf("failed to close the file watcher: %v", err)
 			}
 		})
 	}
@@ -423,21 +425,27 @@ func TestStress(t *testing.T) {
 	}
 
 	foundAll := make(chan struct{})
-	w, err := filewatcher.New(delay, nil, func(events []protocol.FileEvent, err error) {
-		if err != nil {
-			t.Errorf("error from watcher: %v", err)
-			return
-		}
+
+	eventsHandler := func(events []protocol.FileEvent) {
 		for _, e := range events {
 			delete(wants, e)
 		}
 		if len(wants) == 0 {
 			close(foundAll)
 		}
-	})
+	}
+	errHandler := func(err error) {
+		t.Errorf("error from watcher: %v", err)
+	}
+	w, err := filewatcher.New(delay, nil, eventsHandler, errHandler)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		if err := w.Close(); err != nil {
+			t.Errorf("failed to close the file watcher: %v", err)
+		}
+	}()
 
 	if err := w.WatchDir(root); err != nil {
 		t.Fatal(err)
@@ -471,9 +479,5 @@ func TestStress(t *testing.T) {
 		if len(wants) > 0 {
 			t.Errorf("missing expected events: %#v", moremaps.KeySlice(wants))
 		}
-	}
-
-	if err := w.Close(); err != nil {
-		t.Errorf("failed to close the file watcher: %v", err)
 	}
 }

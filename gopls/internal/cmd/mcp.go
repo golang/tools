@@ -106,12 +106,10 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 		}
 	}()
 
-	w, err := filewatcher.New(500*time.Millisecond, nil, func(events []protocol.FileEvent, err error) {
-		if err != nil {
-			log.Printf("watch error: %v", err)
-			return
-		}
-
+	errHandler := func(err error) {
+		log.Printf("watch error: %v", err)
+	}
+	w, err := filewatcher.New(500*time.Millisecond, nil, func(events []protocol.FileEvent) {
 		if len(events) == 0 {
 			return
 		}
@@ -127,7 +125,7 @@ func (m *headlessMCP) Run(ctx context.Context, args ...string) error {
 		case nonempty <- struct{}{}:
 		default:
 		}
-	})
+	}, errHandler)
 	if err != nil {
 		return err
 	}
