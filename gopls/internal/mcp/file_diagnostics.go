@@ -108,7 +108,7 @@ func summarizeDiagnostics(ctx context.Context, snapshot *cache.Snapshot, w io.Wr
 		fmt.Fprintf(w, "%d:%d-%d:%d: [%s] %s\n", d.Range.Start.Line, d.Range.Start.Character, d.Range.End.Line, d.Range.End.Character, d.Severity, d.Message)
 
 		fix, ok := fixes[d]
-		if ok {
+		if ok && fix.Edit != nil {
 			diff, err := toUnifiedDiff(ctx, snapshot, fix.Edit.DocumentChanges)
 			if err != nil {
 				return err
