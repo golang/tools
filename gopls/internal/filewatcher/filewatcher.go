@@ -181,12 +181,49 @@ func (w *Watcher) process(errHandler func(error)) {
 					continue
 				}
 
+				var synthesized []protocol.FileEvent // synthesized create events
+
 				if isDir {
 					switch e.Type {
 					case protocol.Created:
-						if err := w.watchDir(event.Name); err != nil {
-							errHandler(err)
-						}
+						// Walks the entire directory tree, synthesizes create events for its contents,
+						// and establishes watches for subdirectories. This recursive, pre-order
+						// traversal using filepath.WalkDir guarantees a logical event sequence:
+						// parent directory creation events always precede those of their children.
+						//
+						// For example, consider a creation event for directory a, and suppose
+						// a has contents [a/b, a/b/c, a/c, a/c/d]. The effective events will be:
+						//
+						//     CREATE a
+						//     CREATE a/b
+						//     CREATE a/b/c
+						//     CREATE a/c
+						//     CREATE a/c/d
+						filepath.WalkDir(event.Name, func(path string, d fs.DirEntry, err error) error {
+							if d.IsDir() && skipDir(d.Name()) {
+								return filepath.SkipDir
+							}
+							if !d.IsDir() && skipFile(d.Name()) {
+								return nil
+							}
+
+							if path != event.Name { // avoid duplicate create event for root
+								synthesized = append(synthesized, protocol.FileEvent{
+									URI:  protocol.URIFromPath(path),
+									Type: protocol.Created,
+								})
+							}
+
+							if d.IsDir() {
+								if err := w.watchDir(path); err != nil {
+									errHandler(err)
+									return filepath.SkipDir
+								}
+							}
+
+							return nil
+						})
+
 					case protocol.Deleted:
 						// Upon removal, we only need to remove the entries from
 						// the map. The [fsnotify.Watcher] removes the watch for
@@ -200,6 +237,11 @@ func (w *Watcher) process(errHandler func(error)) {
 					}
 				}
 
+				// Discovered events must be appended to the 'out' slice atomically.
+				// This ensures that at any point, the slice contains a logically
+				// correct (maybe slightly outdated) batch of file events that is
+				// ready to be flushed.
+				w.mu.Lock()
 				// Some systems emit duplicate change events in close
 				// succession upon file modification. While the current
 				// deduplication is naive and only handles immediate duplicates,
@@ -210,10 +252,10 @@ func (w *Watcher) process(errHandler func(error)) {
 				// events means all duplicates, regardless of proximity, should
 				// be removed. Consider checking the entire buffered slice or
 				// using a map for this.
-				w.mu.Lock()
 				if len(w.out) == 0 || w.out[len(w.out)-1] != e {
 					w.out = append(w.out, e)
 				}
+				w.out = append(w.out, synthesized...) // synthesized events are guaranteed to be unique
 				w.mu.Unlock()
 			}
 		}
@@ -242,6 +284,16 @@ func skipDir(dirName string) bool {
 	// to gopls register capability request with method
 	// "workspace/didChangeWatchedFiles" like a real LSP client.
 	return strings.HasPrefix(dirName, ".") || strings.HasPrefix(dirName, "_") || dirName == "testdata"
+}
+
+// skipFile reports whether the file should be skipped.
+func skipFile(fileName string) bool {
+	switch strings.TrimPrefix(filepath.Ext(fileName), ".") {
+	case "go", "mod", "sum", "work", "s":
+		return false
+	default:
+		return true
+	}
 }
 
 // WatchDir walks through the directory and all its subdirectories, adding
@@ -282,16 +334,11 @@ func (w *Watcher) convertEvent(event fsnotify.Event) (_ protocol.FileEvent, isDi
 	}
 
 	// Filter out events for directories and files that are not of interest.
-	if isDir {
-		if skipDir(filepath.Base(event.Name)) {
-			return protocol.FileEvent{}, true
-		}
-	} else {
-		switch strings.TrimPrefix(filepath.Ext(event.Name), ".") {
-		case "go", "mod", "sum", "work", "s":
-		default:
-			return protocol.FileEvent{}, false
-		}
+	if isDir && skipDir(filepath.Base(event.Name)) {
+		return protocol.FileEvent{}, true
+	}
+	if !isDir && skipFile(filepath.Base(event.Name)) {
+		return protocol.FileEvent{}, false
 	}
 
 	var t protocol.FileChangeType
@@ -338,15 +385,6 @@ func (w *Watcher) watchDir(path string) error {
 	// links. This state can occur temporarily during operations like a git
 	// branch switch. To handle this, we retry multiple times with exponential
 	// backoff, allowing time for the symbolic link's target to be created.
-
-	// TODO(hxjiang): Address a race condition where file or directory creations
-	// under current directory might be missed between the current directory
-	// creation and the establishment of the file watch.
-	//
-	// To fix this, we should:
-	// 1. Retrospectively check for and trigger creation events for any new
-	// files/directories.
-	// 2. Recursively add watches for any newly created subdirectories.
 	var (
 		delay = 500 * time.Millisecond
 		err   error

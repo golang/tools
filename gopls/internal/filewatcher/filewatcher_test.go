@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,13 +30,10 @@ func TestFileWatcher(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name string
-		goos []string // if not empty, only run in these OS.
-		// If set, sends watch errors for this path to an error channel
-		// passed to the 'changes' func.
-		watchErrorPath string
+		name           string
+		goos           []string // if not empty, only run in these OS.
 		initWorkspace  string
-		changes        func(root string, errs chan error) error
+		changes        func(root string) error
 		expectedEvents []protocol.FileEvent
 	}{
 		{
@@ -45,7 +43,7 @@ func TestFileWatcher(t *testing.T) {
 -- foo.go --
 package foo
 `,
-			changes: func(root string, errs chan error) error {
+			changes: func(root string) error {
 				return os.WriteFile(filepath.Join(root, "bar.go"), []byte("package main"), 0644)
 			},
 			expectedEvents: []protocol.FileEvent{
@@ -59,7 +57,7 @@ package foo
 -- foo.go --
 package foo
 `,
-			changes: func(root string, errs chan error) error {
+			changes: func(root string) error {
 				return os.WriteFile(filepath.Join(root, "bar.go"), []byte("package main"), 0644)
 			},
 			expectedEvents: []protocol.FileEvent{
@@ -73,7 +71,7 @@ package foo
 -- foo.go --
 package foo
 `,
-			changes: func(root string, errs chan error) error {
+			changes: func(root string) error {
 				return os.WriteFile(filepath.Join(root, "foo.go"), []byte("package main // modified"), 0644)
 			},
 			expectedEvents: []protocol.FileEvent{
@@ -88,7 +86,7 @@ package foo
 -- bar.go --
 package bar
 `,
-			changes: func(root string, errs chan error) error {
+			changes: func(root string) error {
 				return os.Remove(filepath.Join(root, "foo.go"))
 			},
 			expectedEvents: []protocol.FileEvent{
@@ -102,7 +100,7 @@ package bar
 -- foo.go --
 package foo
 `,
-			changes: func(root string, errs chan error) error {
+			changes: func(root string) error {
 				return os.Rename(filepath.Join(root, "foo.go"), filepath.Join(root, "bar.go"))
 			},
 			expectedEvents: []protocol.FileEvent{
@@ -117,7 +115,7 @@ package foo
 -- foo.go --
 package foo
 `,
-			changes: func(root string, errs chan error) error {
+			changes: func(root string) error {
 				return os.Rename(filepath.Join(root, "foo.go"), filepath.Join(root, "bar.go"))
 			},
 			expectedEvents: []protocol.FileEvent{
@@ -131,7 +129,7 @@ package foo
 -- foo.go --
 package foo
 `,
-			changes: func(root string, errs chan error) error {
+			changes: func(root string) error {
 				return os.Mkdir(filepath.Join(root, "bar"), 0755)
 			},
 			expectedEvents: []protocol.FileEvent{
@@ -144,7 +142,7 @@ package foo
 -- foo/bar.go --
 package foo
 `,
-			changes: func(root string, errs chan error) error {
+			changes: func(root string) error {
 				return os.RemoveAll(filepath.Join(root, "foo"))
 			},
 			expectedEvents: []protocol.FileEvent{
@@ -166,12 +164,13 @@ package foo
 -- foo/bar.go --
 package foo
 `,
-			changes: func(root string, errs chan error) error {
+			changes: func(root string) error {
 				return os.Rename(filepath.Join(root, "foo"), filepath.Join(root, "baz"))
 			},
 			expectedEvents: []protocol.FileEvent{
 				{URI: "foo", Type: protocol.Deleted},
 				{URI: "baz", Type: protocol.Created},
+				{URI: "baz/bar.go", Type: protocol.Created},
 			},
 		},
 		{
@@ -181,93 +180,16 @@ package foo
 -- foo/bar.go --
 package foo
 `,
-			changes: func(root string, errs chan error) error {
+			changes: func(root string) error {
 				return os.Rename(filepath.Join(root, "foo"), filepath.Join(root, "baz"))
 			},
 			expectedEvents: []protocol.FileEvent{
 				{URI: "baz", Type: protocol.Created},
+				{URI: "baz/bar.go", Type: protocol.Created},
 				{URI: "foo", Type: protocol.Deleted},
 			},
 		},
-		{
-			name:           "broken symlink in darwin",
-			goos:           []string{"darwin"},
-			watchErrorPath: "foo",
-			changes: func(root string, errs chan error) error {
-				// Prepare a dir with with broken symbolic link.
-				// foo                        <- 1st
-				// └── from.go -> root/to.go  <- 1st
-				tmp := filepath.Join(t.TempDir(), "foo")
-				if err := os.Mkdir(tmp, 0755); err != nil {
-					return err
-				}
-				from := filepath.Join(tmp, "from.go")
-
-				to := filepath.Join(root, "to.go")
-				// Create the symbolic link to a non-existing file. This would
-				// cause the watch registration to fail.
-				if err := os.Symlink(to, from); err != nil {
-					return err
-				}
-
-				// Move the directory containing the broken symlink into place
-				// to avoids a flaky test where the directory could be watched
-				// before the symlink is created. See golang/go#74782.
-				if err := os.Rename(tmp, filepath.Join(root, "foo")); err != nil {
-					return err
-				}
-
-				// root
-				// ├── foo                       <- 2nd (Move)
-				// │   ├── from.go -> ../to.go   <- 2nd (Move)
-				// │   └── foo.go                <- 4th (Create)
-				// └── to.go                     <- 3rd (Create)
-
-				// Should be able to capture an error from [fsnotify.Watcher.Add].
-				err := <-errs
-				if err == nil {
-					return fmt.Errorf("did not capture watch registration failure")
-				}
-
-				// The file watcher should retry watch registration and
-				// eventually succeed after the file got created.
-				if err := os.WriteFile(to, []byte("package main"), 0644); err != nil {
-					return err
-				}
-
-				timer := time.NewTimer(30 * time.Second)
-				for {
-					var (
-						err error
-						ok  bool
-					)
-					select {
-					case err, ok = <-errs:
-						if !ok {
-							return fmt.Errorf("can not register watch for foo")
-						}
-					case <-timer.C:
-						return fmt.Errorf("can not register watch for foo after 30 seconds")
-					}
-
-					if err == nil {
-						break // watch registration success
-					}
-				}
-
-				// Once the watch registration is done, file events under the
-				// dir should be captured.
-				return os.WriteFile(filepath.Join(root, "foo", "foo.go"), []byte("package main"), 0644)
-			},
-			expectedEvents: []protocol.FileEvent{
-				{URI: "foo", Type: protocol.Created},
-				// TODO(hxjiang): enable this after implementing retrospectively
-				// generate create events.
-				// {URI: "foo/from.go", Type: protocol.Created},
-				{URI: "to.go", Type: protocol.Created},
-				{URI: "foo/foo.go", Type: protocol.Created},
-			},
-		},
+		// TOOD(hxjiang): test for symlink to a dir.
 	}
 
 	for _, tt := range testCases {
@@ -277,20 +199,6 @@ package foo
 			}
 
 			root := t.TempDir()
-
-			var errs chan error
-			if tt.watchErrorPath != "" {
-				errs = make(chan error, 10)
-				filewatcher.SetAfterAddHook(func(path string, err error) {
-					if path == filepath.Join(root, tt.watchErrorPath) {
-						errs <- err
-						if err == nil {
-							close(errs)
-						}
-					}
-				})
-				defer filewatcher.SetAfterAddHook(nil)
-			}
 
 			archive := txtar.Parse([]byte(tt.initWorkspace))
 			for _, f := range archive.Files {
@@ -303,18 +211,21 @@ package foo
 				}
 			}
 
-			matched := 0
 			foundAll := make(chan struct{})
 			var gots []protocol.FileEvent
-			eventHandler := func(events []protocol.FileEvent) {
+
+			matched := 0
+			eventsHandler := func(events []protocol.FileEvent) {
 				gots = append(gots, events...)
+
+				if matched == len(tt.expectedEvents) {
+					return
+				}
+
 				// This verifies that the list of wanted events is a subsequence of
 				// the received events. It confirms not only that all wanted events
 				// are present, but also that their relative order is preserved.
 				for _, got := range events {
-					if matched == len(tt.expectedEvents) {
-						break
-					}
 					want := protocol.FileEvent{
 						URI:  protocol.URIFromPath(filepath.Join(root, string(tt.expectedEvents[matched].URI))),
 						Type: tt.expectedEvents[matched].Type,
@@ -322,19 +233,20 @@ package foo
 					if want == got {
 						matched++
 					}
+					if matched == len(tt.expectedEvents) {
+						close(foundAll)
+						return
+					}
 				}
-				if matched == len(tt.expectedEvents) {
-					close(foundAll)
-				}
+
 			}
 			errHandler := func(err error) {
 				t.Errorf("error from watcher: %v", err)
 			}
-			w, err := filewatcher.New(50*time.Millisecond, nil, eventHandler, errHandler)
+			w, err := filewatcher.New(50*time.Millisecond, nil, eventsHandler, errHandler)
 			if err != nil {
 				t.Fatal(err)
 			}
-
 			defer func() {
 				if err := w.Close(); err != nil {
 					t.Errorf("failed to close the file watcher: %v", err)
@@ -346,7 +258,7 @@ package foo
 			}
 
 			if tt.changes != nil {
-				if err := tt.changes(root, errs); err != nil {
+				if err := tt.changes(root); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -354,11 +266,202 @@ package foo
 			select {
 			case <-foundAll:
 			case <-time.After(30 * time.Second):
-				if matched < len(tt.expectedEvents) {
-					t.Errorf("found %v matching events\nall want: %#v\nall got: %#v", matched, tt.expectedEvents, gots)
+				if matched != len(tt.expectedEvents) {
+					var want strings.Builder
+					for _, e := range tt.expectedEvents {
+						want.WriteString(fmt.Sprintf("URI: %s type: %v\n", e.URI, e.Type))
+					}
+					var got strings.Builder
+					for _, e := range gots {
+						got.WriteString(fmt.Sprintf("URI: %s type: %v\n", strings.TrimPrefix(e.URI.Path(), root+"/"), e.Type))
+					}
+					t.Errorf("found %v matching events slice\nwant sequences:\n%s\nall got:\n%s", matched, want.String(), got.String())
 				}
+
 			}
 		})
+	}
+}
+
+func TestBrokenSymlink(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("unsupported OS")
+	}
+
+	root := t.TempDir()
+
+	// watchErrs is used to capture watch errors during directory monitoring.
+	// This mechanism allows the test to assert that specific directory watches
+	// initially fail and subsequently recover upon fixing the broken symlink.
+	watchErrs := make(chan error, 10)
+	filewatcher.SetAfterAddHook(func(path string, watchErr error) {
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return
+		}
+		if rel == "foo" {
+			if watchErr == nil {
+				close(watchErrs)
+			} else {
+				watchErrs <- watchErr
+			}
+		}
+	})
+	defer filewatcher.SetAfterAddHook(nil)
+
+	var (
+		gots     []protocol.FileEvent
+		matched  int
+		foundAll = make(chan struct{})
+	)
+	wants := []protocol.FileEvent{
+		// "foo" create event from fsnotify and synthesized create event
+		// for all entries under foo.
+		{URI: "foo", Type: protocol.Created},
+		{URI: "foo/a.go", Type: protocol.Created},
+		{URI: "foo/b.go", Type: protocol.Created},
+		{URI: "foo/from.go", Type: protocol.Created},
+		// "to.go" creation from fsnotify.
+		{URI: "to.go", Type: protocol.Created},
+		// file creation event after watch retry succeeded.
+		{URI: "foo/new.go", Type: protocol.Created},
+	}
+	eventsHandler := func(events []protocol.FileEvent) {
+		gots = append(gots, events...)
+
+		if matched == len(wants) {
+			return
+		}
+
+		for _, got := range events {
+			want := protocol.FileEvent{
+				URI:  protocol.URIFromPath(filepath.Join(root, string(wants[matched].URI))),
+				Type: wants[matched].Type,
+			}
+			if want == got {
+				matched++
+			}
+			if matched == len(wants) {
+				close(foundAll)
+				return
+			}
+		}
+
+	}
+	errHandler := func(err error) {
+		t.Errorf("error from watcher: %v", err)
+	}
+	w, err := filewatcher.New(50*time.Millisecond, nil, eventsHandler, errHandler)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := w.Close(); err != nil {
+			t.Errorf("failed to close the file watcher: %v", err)
+		}
+	}()
+
+	if err := w.WatchDir(root); err != nil {
+		t.Fatal(err)
+	}
+
+	{
+		// Prepare a dir with with broken symbolic link.
+		// foo                       <- 1st
+		// ├── from.go -> root/to.go <- 1st
+		// ├── a.go                  <- 1st
+		// └── b.go                  <- 1st
+
+		to := filepath.Join(root, "to.go")
+
+		archive := txtar.Parse([]byte(`
+-- a.go --
+package a
+-- b.go --
+package b
+`))
+		tmp := filepath.Join(t.TempDir(), "foo")
+		for _, f := range archive.Files {
+			path := filepath.Join(tmp, f.Name)
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				t.Fatalf("fail to create dir %v", err)
+			}
+			if err := os.WriteFile(path, f.Data, 0644); err != nil {
+				t.Fatalf("fail to write file %v", err)
+			}
+		}
+
+		// Create the symbolic link to a non-existing file. This would
+		// cause the watch registration for dir "foo" to fail.
+		if err := os.Symlink(to, filepath.Join(tmp, "from.go")); err != nil {
+			t.Fatalf("fail to create symlink file %v", err)
+		}
+
+		// Move the directory containing the broken symlink into place
+		// to avoids a flaky test where the directory could be watched
+		// before the symlink is created. See golang/go#74782.
+		if err := os.Rename(tmp, filepath.Join(root, "foo")); err != nil {
+			t.Fatalf("fail to rename file %v", err)
+		}
+
+		// root
+		// ├── foo                          <- 2nd (Move)
+		// │   ├── a.go                     <- 2nd (Move)
+		// │   ├── b.go                     <- 2nd (Move)
+		// │   ├── from.go -> ../../to.go   <- 2nd (Move)
+		// │   └── new.go                   <- 4th (Create)
+		// └── to.go                        <- 3rd (Create)
+
+		// Should be able to capture watch error while trying to watch dir "foo".
+		if err := <-watchErrs; err == nil {
+			t.Errorf("did not capture watch registration failure for dir foo")
+		}
+
+		// The file watcher should retry watch registration and eventually succeed
+		// watching for all dir under 'foo' after the file got created.
+		{
+			if err := os.WriteFile(to, []byte("package main"), 0644); err != nil {
+				t.Errorf("fail to write file %v", err)
+			}
+
+			timer := time.NewTimer(30 * time.Second)
+			defer timer.Stop()
+
+		outer:
+			for {
+				select {
+				case _, ok := <-watchErrs:
+					if !ok {
+						break outer
+					}
+				case <-timer.C:
+					t.Errorf("timed out after 30s waiting for watches on foo to be established")
+				}
+			}
+		}
+
+		// Once the watch registration is done, file events under the
+		// dir "foo" should be captured
+		if err := os.WriteFile(filepath.Join(root, "foo", "new.go"), []byte("package main"), 0644); err != nil {
+			t.Fatalf("fail to write file %v", err)
+		}
+	}
+
+	select {
+	case <-foundAll:
+	case <-time.After(30 * time.Second):
+		if matched != len(wants) {
+			var want strings.Builder
+			for _, e := range wants {
+				want.WriteString(fmt.Sprintf("URI: %s type: %v\n", e.URI, e.Type))
+			}
+			var got strings.Builder
+			for _, e := range gots {
+				got.WriteString(fmt.Sprintf("URI: %s type: %v\n", strings.TrimPrefix(e.URI.Path(), root+"/"), e.Type))
+			}
+			t.Errorf("found %v matching events slice\nwant sequences:\n%s\nall got:\n%s", matched, want.String(), got.String())
+		}
+
 	}
 }
 
@@ -427,6 +530,9 @@ func TestStress(t *testing.T) {
 	foundAll := make(chan struct{})
 
 	eventsHandler := func(events []protocol.FileEvent) {
+		if len(wants) == 0 { // avoid closing twice
+			return
+		}
 		for _, e := range events {
 			delete(wants, e)
 		}
