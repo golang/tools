@@ -43,12 +43,12 @@ import (
 	"slices"
 	"strings"
 
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
-	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -192,7 +192,7 @@ type thing struct {
 }
 
 func thingAtPoint(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) thing {
-	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	path, _ := goastutil.PathEnclosingInterval(pgf.File, start, end)
 
 	// In an import spec?
 	if len(path) >= 3 { // [...ImportSpec GenDecl File]
@@ -566,7 +566,7 @@ window.addEventListener('load', function() {
 		// appear as separate decls. We should too.
 		var buf bytes.Buffer
 		for _, file := range pkg.CompiledGoFiles() {
-			if internalastutil.NodeContainsPos(file.File, n.Pos()) {
+			if astutil.NodeContainsPos(file.File, n.Pos()) {
 				pos := n.Pos()
 
 				// emit emits source in the interval [pos:to] and updates pos.

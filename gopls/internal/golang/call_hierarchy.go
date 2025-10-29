@@ -11,7 +11,7 @@ import (
 	"go/ast"
 	"go/types"
 
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -20,7 +20,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -39,7 +39,7 @@ func PrepareCallHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 		return nil, err
 	}
 	// TODO(hxjiang): replace PrepareCallHierarchy's input position with range.
-	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, internalastutil.RangeOf(pos, pos))
+	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, astutil.RangeOf(pos, pos))
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func enclosingNodeCallItem(ctx context.Context, snapshot *cache.Snapshot, pkgPat
 	//
 	// If the selection is in a global var initializer,
 	// default to the file's package declaration.
-	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	path, _ := goastutil.PathEnclosingInterval(pgf.File, start, end)
 	var (
 		name = pgf.File.Name.Name
 		kind = protocol.Package
@@ -195,7 +195,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 	if err != nil {
 		return nil, err
 	}
-	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, internalastutil.RangeOf(pos, pos))
+	obj, err := callHierarchyFuncAtPos(pkg.TypesInfo(), pgf, astutil.RangeOf(pos, pos))
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +233,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 
 	// Find calls to known functions/methods,
 	// including interface methods, and built-ins.
-	var callRanges []internalastutil.Range
+	var callRanges []astutil.Range
 	for n := range ast.Preorder(declNode) {
 		if call, ok := n.(*ast.CallExpr); ok {
 			callee := typeutil.Callee(pkg.TypesInfo(), call)
@@ -245,7 +245,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 					continue
 				}
 				id := typesinternal.UsedIdent(pkg.TypesInfo(), call.Fun)
-				callRanges = append(callRanges, internalastutil.RangeOf(id.Pos(), id.End()))
+				callRanges = append(callRanges, astutil.RangeOf(id.Pos(), id.End()))
 			}
 		}
 	}
@@ -302,7 +302,7 @@ func callHierarchyItemDetail(obj types.Object, loc protocol.Location) string {
 
 // callHierarchyFuncAtPos returns the function symbol (Func or Builtin) referred
 // to by the identifier at the specified range.
-func callHierarchyFuncAtPos(info *types.Info, pgf *parsego.File, rng internalastutil.Range) (types.Object, error) {
+func callHierarchyFuncAtPos(info *types.Info, pgf *parsego.File, rng astutil.Range) (types.Object, error) {
 	cur, ok := pgf.Cursor.FindByPos(rng.Pos(), rng.End())
 	if !ok {
 		return nil, fmt.Errorf("no enclosing syntax") // can't happen

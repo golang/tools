@@ -36,7 +36,7 @@ import (
 	"time"
 	"unicode"
 
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/doc"
@@ -44,7 +44,7 @@ import (
 	"golang.org/x/tools/gopls/internal/mod"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil"
 )
 
 func main() {
@@ -218,7 +218,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 			opts = append(opts, options...)
 			continue
 		}
-		path, _ := astutil.PathEnclosingInterval(file, typesField.Pos(), typesField.Pos())
+		path, _ := goastutil.PathEnclosingInterval(file, typesField.Pos(), typesField.Pos())
 		if len(path) < 2 {
 			return nil, fmt.Errorf("could not find AST node for field %v", typesField)
 		}
@@ -228,7 +228,7 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 		if !ok {
 			return nil, fmt.Errorf("unexpected AST path %v", path)
 		}
-		description, deprecation := astField.Doc.Text(), internalastutil.Deprecation(astField.Doc)
+		description, deprecation := astField.Doc.Text(), astutil.Deprecation(astField.Doc)
 
 		// The reflect field gives us the default value.
 		reflectField := category.FieldByName(typesField.Name())
@@ -315,12 +315,12 @@ func loadEnums(pkg *packages.Package) (map[types.Type][]doc.EnumValue, error) {
 		if err != nil {
 			return nil, fmt.Errorf("finding file for %q: %v", cnst.Name(), err)
 		}
-		path, _ := astutil.PathEnclosingInterval(f, cnst.Pos(), cnst.Pos())
+		path, _ := goastutil.PathEnclosingInterval(f, cnst.Pos(), cnst.Pos())
 		spec := path[1].(*ast.ValueSpec)
 		value := cnst.Val().ExactString()
 		docstring := valueDoc(cnst.Name(), value, spec.Doc.Text())
 		var status string
-		for _, d := range internalastutil.Directives(spec.Doc) {
+		for _, d := range astutil.Directives(spec.Doc) {
 			if d.Tool == "gopls" && d.Name == "status" {
 				status = d.Args
 				break
@@ -467,7 +467,7 @@ func loadLenses(settingsPkg *packages.Package, defaults map[settings.CodeLensSou
 							return nil, fmt.Errorf("%s: %s lacks doc comment", posn, spec.Names[0].Name)
 						}
 						enumDoc[value] = spec.Doc.Text()
-						for _, d := range internalastutil.Directives(spec.Doc) {
+						for _, d := range astutil.Directives(spec.Doc) {
 							if d.Tool == "gopls" && d.Name == "status" {
 								enumStatus[value] = d.Args
 								break

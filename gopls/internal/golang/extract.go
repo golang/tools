@@ -20,13 +20,13 @@ import (
 	"text/scanner"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -134,10 +134,10 @@ Outer:
 			}
 			child = p
 		}
-		visiblePath, _ = astutil.PathEnclosingInterval(file, child.Pos(), child.End())
+		visiblePath, _ = goastutil.PathEnclosingInterval(file, child.Pos(), child.End())
 	} else {
 		// Insert newVar inside commonScope before the first occurrence of the expression.
-		visiblePath, _ = astutil.PathEnclosingInterval(file, exprs[0].Pos(), exprs[0].End())
+		visiblePath, _ = goastutil.PathEnclosingInterval(file, exprs[0].Pos(), exprs[0].End())
 	}
 	variables, err := collectFreeVars(info, file, exprs[0].Pos(), exprs[0].End(), exprs[0])
 	if err != nil {
@@ -159,7 +159,7 @@ Outer:
 		indentation string
 		stmtOK      bool // ok to use ":=" instead of var/const decl?
 	)
-	if funcDecl, ok := visiblePath[len(visiblePath)-2].(*ast.FuncDecl); ok && internalastutil.NodeContainsPos(funcDecl.Body, start) {
+	if funcDecl, ok := visiblePath[len(visiblePath)-2].(*ast.FuncDecl); ok && astutil.NodeContainsPos(funcDecl.Body, start) {
 		before, err := stmtToInsertVarBefore(visiblePath, variables)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot find location to insert extraction: %v", err)
@@ -315,7 +315,7 @@ func stmtToInsertVarBefore(path []ast.Node, variables []*variable) (ast.Stmt, er
 			return false
 		}
 		for _, v := range variables {
-			if internalastutil.NodeContainsPos(stmt, v.obj.Pos()) {
+			if astutil.NodeContainsPos(stmt, v.obj.Pos()) {
 				return true
 			}
 		}
@@ -400,7 +400,7 @@ func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end t
 	}
 	file := curFile.Node().(*ast.File)
 	// TODO(adonovan): simplify, using Cursor.
-	path, exact := astutil.PathEnclosingInterval(file, start, end)
+	path, exact := goastutil.PathEnclosingInterval(file, start, end)
 	if !exact {
 		return nil, fmt.Errorf("selection is not an expression")
 	}
@@ -429,14 +429,14 @@ func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end t
 		// are equal to the selected expression.
 		ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
 			if e, ok := n.(ast.Expr); ok {
-				if internalastutil.Equal(e, expr, func(x, y *ast.Ident) bool {
+				if astutil.Equal(e, expr, func(x, y *ast.Ident) bool {
 					xobj, yobj := info.ObjectOf(x), info.ObjectOf(y)
 					// The two identifiers must resolve to the same object,
 					// or to a declaration within the candidate expression.
 					// (This allows two copies of "func (x int) { print(x) }"
 					// to match.)
-					if xobj != nil && internalastutil.NodeContainsPos(e, xobj.Pos()) &&
-						yobj != nil && internalastutil.NodeContainsPos(expr, yobj.Pos()) {
+					if xobj != nil && astutil.NodeContainsPos(e, xobj.Pos()) &&
+						yobj != nil && astutil.NodeContainsPos(expr, yobj.Pos()) {
 						return x.Name == y.Name
 					}
 					// Use info.Uses to avoid including declaration, for example,
@@ -488,7 +488,7 @@ func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end t
 	//   x := *newVar + 1
 	//   *newVar = 2
 	for _, e := range exprs {
-		path, _ := astutil.PathEnclosingInterval(file, e.Pos(), e.End())
+		path, _ := goastutil.PathEnclosingInterval(file, e.Pos(), e.End())
 		for _, n := range path {
 			if assignment, ok := n.(*ast.AssignStmt); ok {
 				if slices.Contains(assignment.Lhs, e) {
@@ -1623,7 +1623,7 @@ func canExtractFunction(tok *token.File, start, end token.Pos, src []byte, curFi
 	if err != nil {
 		return nil, false, false, err
 	}
-	path, _ := astutil.PathEnclosingInterval(file, start, end)
+	path, _ := goastutil.PathEnclosingInterval(file, start, end)
 	if len(path) == 0 {
 		return nil, false, false, fmt.Errorf("no path enclosing interval")
 	}

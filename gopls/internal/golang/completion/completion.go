@@ -27,7 +27,7 @@ import (
 	"unicode"
 
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -39,7 +39,7 @@ import (
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/imports"
 	"golang.org/x/tools/internal/stdlib"
@@ -525,7 +525,7 @@ func Completion(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	}
 	// Completion is based on what precedes the cursor.
 	// Find the path to the position before pos.
-	path, _ := astutil.PathEnclosingInterval(pgf.File, pos-1, pos-1)
+	path, _ := goastutil.PathEnclosingInterval(pgf.File, pos-1, pos-1)
 	if path == nil {
 		return nil, nil, fmt.Errorf("cannot find node enclosing position")
 	}
@@ -2531,7 +2531,7 @@ Nodes:
 			}
 			return inf
 		case *ast.RangeStmt:
-			if internalastutil.NodeContainsPos(node.X, c.pos) {
+			if astutil.NodeContainsPos(node.X, c.pos) {
 				inf.objKind |= kindSlice | kindArray | kindMap | kindString
 				if node.Key == nil && node.Value == nil {
 					inf.objKind |= kindRange0Func | kindRange1Func | kindRange2Func
@@ -3015,11 +3015,11 @@ func breaksExpectedTypeInference(n ast.Node, pos token.Pos) bool {
 	case *ast.CompositeLit:
 		// Doesn't break inference if pos is in type name.
 		// For example: "Foo<>{Bar: 123}"
-		return n.Type == nil || !internalastutil.NodeContainsPos(n.Type, pos)
+		return n.Type == nil || !astutil.NodeContainsPos(n.Type, pos)
 	case *ast.CallExpr:
 		// Doesn't break inference if pos is in func name.
 		// For example: "Foo<>(123)"
-		return !internalastutil.NodeContainsPos(n.Fun, pos)
+		return !astutil.NodeContainsPos(n.Fun, pos)
 	case *ast.FuncLit, *ast.IndexExpr, *ast.SliceExpr:
 		return true
 	default:
@@ -3132,7 +3132,7 @@ Nodes:
 		case *ast.MapType:
 			inf.wantTypeName = true
 			if n.Key != nil {
-				inf.wantComparable = internalastutil.NodeContainsPos(n.Key, c.pos)
+				inf.wantComparable = astutil.NodeContainsPos(n.Key, c.pos)
 			} else {
 				// If the key is empty, assume we are completing the key if
 				// pos is directly after the "map[".
@@ -3140,10 +3140,10 @@ Nodes:
 			}
 			break Nodes
 		case *ast.ValueSpec:
-			inf.wantTypeName = n.Type != nil && internalastutil.NodeContainsPos(n.Type, c.pos)
+			inf.wantTypeName = n.Type != nil && astutil.NodeContainsPos(n.Type, c.pos)
 			break Nodes
 		case *ast.TypeSpec:
-			inf.wantTypeName = internalastutil.NodeContainsPos(n.Type, c.pos)
+			inf.wantTypeName = astutil.NodeContainsPos(n.Type, c.pos)
 		default:
 			if breaksExpectedTypeInference(p, c.pos) {
 				return typeNameInference{}
@@ -3742,7 +3742,7 @@ func isSlice(obj types.Object) bool {
 // quick partial parse. fn is non-nil only for function declarations.
 // The AST position information is garbage.
 func forEachPackageMember(content []byte, f func(tok token.Token, id *ast.Ident, fn *ast.FuncDecl)) {
-	purged := internalastutil.PurgeFuncBodies(content)
+	purged := astutil.PurgeFuncBodies(content)
 	file, _ := parser.ParseFile(token.NewFileSet(), "", purged, parser.SkipObjectResolution)
 	for _, decl := range file.Decls {
 		switch decl := decl.(type) {

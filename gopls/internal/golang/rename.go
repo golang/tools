@@ -61,7 +61,7 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/objectpath"
 	"golang.org/x/tools/go/types/typeutil"
@@ -73,7 +73,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typesinternal"
@@ -260,17 +260,17 @@ func prepareRenameFuncSignature(pgf *parsego.File, pos token.Pos, cursor inspect
 // nameBlankParams returns a copy of ftype with blank or unnamed params
 // assigned a unique name.
 func nameBlankParams(ftype *ast.FuncType) *ast.FuncType {
-	ftype = internalastutil.CloneNode(ftype)
+	ftype = astutil.CloneNode(ftype)
 
 	// First, collect existing names.
 	scope := make(map[string]bool)
-	for name := range internalastutil.FlatFields(ftype.Params) {
+	for name := range astutil.FlatFields(ftype.Params) {
 		if name != nil {
 			scope[name.Name] = true
 		}
 	}
 	blanks := 0
-	for name, field := range internalastutil.FlatFields(ftype.Params) {
+	for name, field := range astutil.FlatFields(ftype.Params) {
 		if name == nil {
 			name = ast.NewIdent("_")
 			field.Names = append(field.Names, name) // ok to append
@@ -313,11 +313,11 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 		return nil, fmt.Errorf("changing results not yet supported (got %d results, want %d)", got, want)
 	}
 	var resultTypes []string
-	for _, field := range internalastutil.FlatFields(ftyp.Results) {
+	for _, field := range astutil.FlatFields(ftyp.Results) {
 		resultTypes = append(resultTypes, FormatNode(token.NewFileSet(), field.Type))
 	}
 	resultIndex := 0
-	for _, field := range internalastutil.FlatFields(newType.Results) {
+	for _, field := range astutil.FlatFields(newType.Results) {
 		if FormatNode(token.NewFileSet(), field.Type) != resultTypes[resultIndex] {
 			return nil, fmt.Errorf("changing results not yet supported")
 		}
@@ -329,7 +329,7 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 		typ string
 	}
 	oldParams := make(map[string]paramInfo)
-	for name, field := range internalastutil.FlatFields(ftyp.Params) {
+	for name, field := range astutil.FlatFields(ftyp.Params) {
 		oldParams[name.Name] = paramInfo{
 			idx: len(oldParams),
 			typ: types.ExprString(field.Type),
@@ -337,7 +337,7 @@ func renameFuncSignature(ctx context.Context, pkg *cache.Package, pgf *parsego.F
 	}
 
 	var newParams []int
-	for name, field := range internalastutil.FlatFields(newType.Params) {
+	for name, field := range astutil.FlatFields(newType.Params) {
 		if name == nil {
 			return nil, fmt.Errorf("need named fields")
 		}
@@ -1392,7 +1392,7 @@ func (r *renamer) update() (map[protocol.DocumentURI][]diff.Edit, error) {
 		// the case clause to the switch ident.
 		// This may result in duplicate edits, but we de-dup later.
 		if _, ok := item.node.(*ast.CaseClause); ok {
-			path, _ := astutil.PathEnclosingInterval(pgf.File, item.obj.Pos(), item.obj.Pos())
+			path, _ := goastutil.PathEnclosingInterval(pgf.File, item.obj.Pos(), item.obj.Pos())
 			item.node = path[0].(*ast.Ident)
 		}
 
@@ -1739,7 +1739,7 @@ func docCommentPosToIdent(pgf *parsego.File, pos token.Pos, cur inspector.Cursor
 // only modifying the package name portion of the import declaration.
 func (r *renamer) updatePkgName(pgf *parsego.File, pkgName *types.PkgName) (diff.Edit, error) {
 	// Modify ImportSpec syntax to add or remove the Name as needed.
-	path, _ := astutil.PathEnclosingInterval(pgf.File, pkgName.Pos(), pkgName.Pos())
+	path, _ := goastutil.PathEnclosingInterval(pgf.File, pkgName.Pos(), pkgName.Pos())
 	if len(path) < 2 {
 		return diff.Edit{}, fmt.Errorf("no path enclosing interval for %s", pkgName.Name())
 	}
@@ -1772,7 +1772,7 @@ func parsePackageNameDecl(ctx context.Context, snapshot *cache.Snapshot, fh file
 	// Careful: because we used parsego.Header,
 	// pgf.Pos(ppos) may be beyond EOF => (0, err).
 	pos, _ := pgf.PositionPos(ppos)
-	return pgf, internalastutil.NodeContainsPos(pgf.File.Name, pos), nil
+	return pgf, astutil.NodeContainsPos(pgf.File.Name, pos), nil
 }
 
 // posEdit returns an edit to replace the (start, end) range of tf with 'new'.

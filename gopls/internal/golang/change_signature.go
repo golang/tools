@@ -15,7 +15,7 @@ import (
 	"go/types"
 	"regexp"
 
-	"golang.org/x/tools/go/ast/astutil"
+	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
@@ -24,7 +24,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/gopls/internal/util/tokeninternal"
 	"golang.org/x/tools/imports"
-	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/typesinternal"
@@ -175,7 +175,7 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 	}
 
 	var newParamFields []flatField
-	for id, field := range internalastutil.FlatFields(info.decl.Type.Params) {
+	for id, field := range astutil.FlatFields(info.decl.Type.Params) {
 		typ := pkg.TypesInfo().TypeOf(field.Type)
 		if typ == nil {
 			return nil, fmt.Errorf("missing field type for field #%d", len(newParamFields))
@@ -207,7 +207,7 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 			} else {
 				// Otherwise, create a new field.
 				field = &ast.Field{
-					Type: internalastutil.CloneNode(f.typeExpr),
+					Type: astutil.CloneNode(f.typeExpr),
 				}
 				list.List = append(list.List, field)
 			}
@@ -218,15 +218,15 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 		return list
 	}
 
-	newDecl := internalastutil.CloneNode(info.decl)
+	newDecl := astutil.CloneNode(info.decl)
 	newDecl.Type.Params = writeFields(newParamFields)
 
 	// Step 2: build a wrapper function calling the new declaration.
 
 	var (
-		params   = internalastutil.CloneNode(info.decl.Type.Params) // parameters of wrapper func: "_" names must be modified
-		args     = make([]ast.Expr, len(newParams))                 // arguments to the delegated call
-		variadic = false                                            // whether the signature is variadic
+		params   = astutil.CloneNode(info.decl.Type.Params) // parameters of wrapper func: "_" names must be modified
+		args     = make([]ast.Expr, len(newParams))         // arguments to the delegated call
+		variadic = false                                    // whether the signature is variadic
 	)
 	{
 		// Record names used by non-blank parameters, just in case the user had a
@@ -256,7 +256,7 @@ func ChangeSignature(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 		}
 		blanks := 0
 		paramIndex := 0 // global param index.
-		for id, field := range internalastutil.FlatFields(params) {
+		for id, field := range astutil.FlatFields(params) {
 			argIndex, ok := oldParams[paramIndex]
 			paramIndex++
 			if !ok {
@@ -418,7 +418,7 @@ func findParam(pgf *parsego.File, rng protocol.Range) *paramInfo {
 		return nil
 	}
 
-	path, _ := astutil.PathEnclosingInterval(pgf.File, start, end)
+	path, _ := goastutil.PathEnclosingInterval(pgf.File, start, end)
 	var (
 		id    *ast.Ident
 		field *ast.Field
@@ -538,13 +538,13 @@ func rewriteCalls(ctx context.Context, rw signatureRewrite) (map[protocol.Docume
 		modifiedDecl *ast.FuncDecl
 	)
 	{
-		delegate := internalastutil.CloneNode(rw.newDecl) // clone before modifying
+		delegate := astutil.CloneNode(rw.newDecl) // clone before modifying
 		delegate.Name.Name = tag + delegate.Name.Name
 		if obj := rw.pkg.Types().Scope().Lookup(delegate.Name.Name); obj != nil {
 			return nil, fmt.Errorf("synthetic name %q conflicts with an existing declaration", delegate.Name.Name)
 		}
 
-		wrapper := internalastutil.CloneNode(rw.origDecl)
+		wrapper := astutil.CloneNode(rw.origDecl)
 		wrapper.Type.Params = rw.params
 
 		// Get the receiver name, creating it if necessary.
