@@ -14,10 +14,8 @@ import (
 	"go/token"
 	"go/types"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
-	"text/scanner"
 
 	"golang.org/x/tools/go/analysis"
 	goastutil "golang.org/x/tools/go/ast/astutil"
@@ -25,6 +23,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
@@ -596,6 +595,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		pkg  = cpkg.Types()
 		info = cpkg.TypesInfo()
 		src  = pgf.Src
+		file = pgf.File
 	)
 
 	errorPrefix := "extractFunction"
@@ -603,31 +603,23 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		errorPrefix = "extractMethod"
 	}
 
-	file := pgf.Cursor.Node().(*ast.File)
-	// TODO(adonovan): simplify, using Cursor.
-	tok := fset.File(file.FileStart)
-	if tok == nil {
-		return nil, nil, bug.Errorf("no file for position")
-	}
-	p, ok, methodOk, err := canExtractFunction(tok, start, end, src, pgf.Cursor)
+	p, ok, methodOk, err := canExtractFunction(pgf.Cursor, start, end)
 	if (!ok && !isMethod) || (!methodOk && isMethod) {
 		return nil, nil, fmt.Errorf("%s: cannot extract %s: %v", errorPrefix,
 			safetoken.StartPosition(fset, start), err)
 	}
-	tok, path, start, end, outer, node := p.tok, p.path, p.start, p.end, p.outer, p.node
+	curEnclosing, curStart, curEnd, curFuncDecl := p.curEnclosing, p.curStart, p.curEnd, p.curFuncDecl
+
+	// Narrow (start, end) to the located nodes.
+	start, end = curStart.Node().Pos(), curEnd.Node().End()
+
+	outer := curFuncDecl.Node().(*ast.FuncDecl)
 
 	// A return statement is non-nested if its parent node is equal to the parent node
 	// of the first node in the selection. These cases must be handled separately because
 	// non-nested return statements are guaranteed to execute.
 	var hasNonNestedReturn bool
-	curStart, ok := pgf.Cursor.FindNode(node)
-	if !ok {
-		return nil, nil, bug.Errorf("cannot find Cursor for start Node")
-	}
-	curOuter, ok := pgf.Cursor.FindNode(outer)
-	if !ok {
-		return nil, nil, bug.Errorf("cannot find Cursor for start Node")
-	}
+
 	// Determine whether all return statements in the selection are
 	// error-handling return statements. They must be of the form:
 	// if err != nil {
@@ -636,10 +628,12 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// If all return statements in the extracted block have a non-nil error, we
 	// can replace the "shouldReturn" check with an error check to produce a
 	// more concise output.
-	allReturnsFinalErr := true // all ReturnStmts have final 'err' expression
-	hasReturn := false         // selection contains a ReturnStmt
-	filter := []ast.Node{(*ast.ReturnStmt)(nil), (*ast.FuncLit)(nil)}
-	curOuter.Inspect(filter, func(cur inspector.Cursor) (descend bool) {
+	var (
+		allReturnsFinalErr = true  // all ReturnStmts have final 'err' expression
+		hasReturn          = false // selection contains a ReturnStmt
+		filter             = []ast.Node{(*ast.ReturnStmt)(nil), (*ast.FuncLit)(nil)}
+	)
+	curEnclosing.Inspect(filter, func(cur inspector.Cursor) (descend bool) {
 		if funcLit, ok := cur.Node().(*ast.FuncLit); ok {
 			// Exclude return statements in function literals because they don't affect the refactor.
 			// Keep descending into func lits whose declaration is not included in the extracted block.
@@ -693,7 +687,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// we must determine the signature of the extracted function. We will then replace
 	// the block with an assignment statement that calls the extracted function with
 	// the appropriate parameters and return values.
-	variables, err := collectFreeVars(info, file, start, end, path[0])
+	variables, err := collectFreeVars(info, file, start, end, curEnclosing.Node())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -705,7 +699,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		receiverObj  types.Object
 	)
 	if isMethod {
-		if outer == nil || outer.Recv == nil || len(outer.Recv.List) == 0 {
+		if outer.Recv == nil || len(outer.Recv.List) == 0 {
 			return nil, nil, fmt.Errorf("%s: cannot extract need method receiver", errorPrefix)
 		}
 		receiver = outer.Recv.List[0]
@@ -835,19 +829,13 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// the top-level declaration. We inspect the top-level declaration to look for variables
 	// as well as for code replacement.
 	enclosing := outer.Type
-	for _, p := range path {
-		if p == enclosing {
-			break
-		}
-		if fl, ok := p.(*ast.FuncLit); ok {
-			enclosing = fl.Type
-			break
-		}
+	if funcLit, _ := cursorutil.FirstEnclosing[*ast.FuncLit](curEnclosing); funcLit != nil {
+		enclosing = funcLit.Type
 	}
 
 	// We put the selection in a constructed file. We can then traverse and edit
 	// the extracted selection without modifying the original AST.
-	startOffset, endOffset, err := safetoken.Offsets(tok, start, end)
+	startOffset, endOffset, err := safetoken.Offsets(pgf.Tok, start, end)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -959,7 +947,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		// statements in the selection. Update the type signature of the extracted
 		// function and construct the if statement that will be inserted in the enclosing
 		// function.
-		retVars, ifReturn, err = generateReturnInfo(enclosing, pkg, path, file, info, start, end, hasNonNestedReturn, isErrHandlingReturnsCase)
+		retVars, ifReturn, err = generateReturnInfo(enclosing, pkg, curEnclosing.Node().Pos(), file, info, start, end, hasNonNestedReturn, isErrHandlingReturnsCase)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1181,13 +1169,13 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 
 	// We're going to replace the whole enclosing function,
 	// so preserve the text before and after the selected block.
-	outerStart, outerEnd, err := safetoken.Offsets(tok, outer.Pos(), outer.End())
+	outerStart, outerEnd, err := pgf.NodeOffsets(outer)
 	if err != nil {
 		return nil, nil, err
 	}
 	before := src[outerStart:startOffset]
 	after := src[endOffset:outerEnd]
-	indent, err := pgf.Indentation(node.Pos())
+	indent, err := pgf.Indentation(start)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1216,7 +1204,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		fmt.Fprintf(&fullReplacement, "%[1]sswitch %[2]s {%[1]s", newLineIndent, ctrlVar)
 		for i, br := range freeBranches {
 			// Preserve spacing at the beginning of the line containing the branch statement.
-			startPos := tok.LineStart(safetoken.Line(tok, br.Pos()))
+			startPos := pgf.Tok.LineStart(safetoken.Line(pgf.Tok, br.Pos()))
 			text, err := pgf.PosText(startPos, br.End())
 			if err != nil {
 				return nil, nil, err
@@ -1274,88 +1262,6 @@ func moveParamToFrontIfFound(params []ast.Expr, paramTypes []*ast.Field, x, sel 
 			break
 		}
 	}
-}
-
-// adjustRangeForCommentsAndWhiteSpace adjusts the given range to exclude unnecessary leading or
-// trailing whitespace characters from selection as well as leading or trailing comments.
-// In the following example, each line of the if statement is indented once. There are also two
-// extra spaces after the sclosing bracket before the line break and a comment.
-//
-// \tif (true) {
-// \t    _ = 1
-// \t} // hello \n
-//
-// By default, a valid range begins at 'if' and ends at the first whitespace character
-// after the '}'. But, users are likely to highlight full lines rather than adjusting
-// their cursors for whitespace. To support this use case, we must manually adjust the
-// ranges to match the correct AST node. In this particular example, we would adjust
-// rng.Start forward to the start of 'if' and rng.End backward to after '}'.
-func adjustRangeForCommentsAndWhiteSpace(tok *token.File, start, end token.Pos, content []byte, curFile inspector.Cursor) (token.Pos, token.Pos, error) {
-	file := curFile.Node().(*ast.File)
-	// TODO(adonovan): simplify, using Cursor.
-
-	// Adjust the end of the range to after leading whitespace and comments.
-	prevStart := token.NoPos
-	startComment := sort.Search(len(file.Comments), func(i int) bool {
-		// Find the index for the first comment that ends after range start.
-		return file.Comments[i].End() > start
-	})
-	for prevStart != start {
-		prevStart = start
-		// If start is within a comment, move start to the end
-		// of the comment group.
-		if startComment < len(file.Comments) && file.Comments[startComment].Pos() <= start && start < file.Comments[startComment].End() {
-			start = file.Comments[startComment].End()
-			startComment++
-		}
-		// Move forwards to find a non-whitespace character.
-		offset, err := safetoken.Offset(tok, start)
-		if err != nil {
-			return 0, 0, err
-		}
-		for offset < len(content) && isGoWhiteSpace(content[offset]) {
-			offset++
-		}
-		start = tok.Pos(offset)
-	}
-
-	// Adjust the end of the range to before trailing whitespace and comments.
-	prevEnd := token.NoPos
-	endComment := sort.Search(len(file.Comments), func(i int) bool {
-		// Find the index for the first comment that ends after the range end.
-		return file.Comments[i].End() >= end
-	})
-	// Search will return n if not found, so we need to adjust if there are no
-	// comments that would match.
-	if endComment == len(file.Comments) {
-		endComment = -1
-	}
-	for prevEnd != end {
-		prevEnd = end
-		// If end is within a comment, move end to the start
-		// of the comment group.
-		if endComment >= 0 && file.Comments[endComment].Pos() < end && end <= file.Comments[endComment].End() {
-			end = file.Comments[endComment].Pos()
-			endComment--
-		}
-		// Move backwards to find a non-whitespace character.
-		offset, err := safetoken.Offset(tok, end)
-		if err != nil {
-			return 0, 0, err
-		}
-		for offset > 0 && isGoWhiteSpace(content[offset-1]) {
-			offset--
-		}
-		end = tok.Pos(offset)
-	}
-
-	return start, end, nil
-}
-
-// isGoWhiteSpace returns true if b is a considered white space in
-// Go as defined by scanner.GoWhitespace.
-func isGoWhiteSpace(b byte) bool {
-	return uint64(scanner.GoWhitespace)&(1<<uint(b)) != 0
 }
 
 // variable describes the status of a variable within a selection.
@@ -1603,86 +1509,55 @@ func referencesObj(info *types.Info, expr ast.Expr, obj types.Object) bool {
 }
 
 type fnExtractParams struct {
-	tok        *token.File
-	start, end token.Pos
-	path       []ast.Node
-	outer      *ast.FuncDecl
-	node       ast.Node
+	curStart, curEnd inspector.Cursor // first and last nodes wholly enclosed by selection
+	curEnclosing     inspector.Cursor // node that encloses selection (e.g. a BlockStmt)
+	curFuncDecl      inspector.Cursor // enclosing *ast.FuncDecl
 }
 
 // canExtractFunction reports whether the code in the given range can be
 // extracted to a function.
-func canExtractFunction(tok *token.File, start, end token.Pos, src []byte, curFile inspector.Cursor) (*fnExtractParams, bool, bool, error) {
+func canExtractFunction(curFile inspector.Cursor, start, end token.Pos) (*fnExtractParams, bool, bool, error) {
 	if start == end {
 		return nil, false, false, fmt.Errorf("start and end are equal")
 	}
-	var err error
-	file := curFile.Node().(*ast.File)
-	// TODO(adonovan): simplify, using Cursor.
-	start, end, err = adjustRangeForCommentsAndWhiteSpace(tok, start, end, src, curFile)
+
+	curEnclosing, curStart, curEnd, err := astutil.Select(curFile, start, end)
 	if err != nil {
 		return nil, false, false, err
 	}
-	path, _ := goastutil.PathEnclosingInterval(file, start, end)
-	if len(path) == 0 {
-		return nil, false, false, fmt.Errorf("no path enclosing interval")
-	}
+
 	// Node that encloses the selection must be a statement.
 	// TODO: Support function extraction for an expression.
-	_, ok := path[0].(ast.Stmt)
-	if !ok {
+	if !is[ast.Stmt](curEnclosing.Node()) {
 		return nil, false, false, fmt.Errorf("node is not a statement")
 	}
 
 	// Find the function declaration that encloses the selection.
-	var outer *ast.FuncDecl
-	for _, p := range path {
-		if p, ok := p.(*ast.FuncDecl); ok {
-			outer = p
-			break
-		}
-	}
-	if outer == nil {
+	funcDecl, curFuncDecl := cursorutil.FirstEnclosing[*ast.FuncDecl](curEnclosing)
+	if funcDecl == nil {
 		return nil, false, false, fmt.Errorf("no enclosing function")
 	}
 
-	// Find the nodes at the start and end of the selection.
-	var startNode, endNode ast.Node
-	ast.Inspect(outer, func(n ast.Node) bool {
-		if n == nil {
-			return false
-		}
-		// Do not override 'start' with a node that begins at the same location
-		// but is nested further from 'outer'.
-		if startNode == nil && n.Pos() == start && n.End() <= end {
-			startNode = n
-		}
-		if endNode == nil && n.End() == end && n.Pos() >= start {
-			endNode = n
-		}
-		return n.Pos() <= end
-	})
-	if startNode == nil || endNode == nil {
-		return nil, false, false, fmt.Errorf("range does not map to AST nodes")
-	}
-	// If the region is a blockStmt, use the first and last nodes in the block
-	// statement.
-	// <rng.start>{ ... }<rng.end> => { <rng.start>...<rng.end> }
-	if blockStmt, ok := startNode.(*ast.BlockStmt); ok {
-		if len(blockStmt.List) == 0 {
+	// If the selection is a block statement, use its first and last statements.
+	// «{ ... }»  =>  { «...» }
+	if is[*ast.BlockStmt](curStart.Node()) && curStart == curEnd {
+		var (
+			first, ok1 = curStart.FirstChild()
+			last, ok2  = curStart.LastChild()
+		)
+		if !(ok1 && ok2) {
 			return nil, false, false, fmt.Errorf("range maps to empty block statement")
 		}
-		startNode, endNode = blockStmt.List[0], blockStmt.List[len(blockStmt.List)-1]
-		start, end = startNode.Pos(), endNode.End()
+		curStart = first
+		curEnd = last
 	}
+
 	return &fnExtractParams{
-		tok:   tok,
-		start: start,
-		end:   end,
-		path:  path,
-		outer: outer,
-		node:  startNode,
-	}, true, outer.Recv != nil, nil
+		curStart:     curStart,
+		curEnd:       curEnd,
+		curEnclosing: curEnclosing,
+		curFuncDecl:  curFuncDecl,
+	}, true, funcDecl.Recv != nil, nil
 }
 
 // objUsed checks if the object is used within the range. It returns the first
@@ -1778,7 +1653,7 @@ func parseStmts(fset *token.FileSet, src []byte) (*ast.BlockStmt, []*ast.Comment
 // signature of the extracted function. We prepare names, signatures, and "zero values" that
 // represent the new variables. We also use this information to construct the if statement that
 // is inserted below the call to the extracted function.
-func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.Node, file *ast.File, info *types.Info, start, end token.Pos, hasNonNestedReturns bool, isErrHandlingReturnsCase bool) ([]*returnVariable, *ast.IfStmt, error) {
+func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, at token.Pos, file *ast.File, info *types.Info, start, end token.Pos, hasNonNestedReturns bool, isErrHandlingReturnsCase bool) ([]*returnVariable, *ast.IfStmt, error) {
 	var retVars []*returnVariable
 	var cond *ast.Ident
 	// Generate information for the values in the return signature of the enclosing function.
@@ -1805,7 +1680,7 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 				} else if n, ok := varNameForType(typ); ok {
 					bestName = n
 				}
-				retName, idx := freshNameOutsideRange(info, file, path[0].Pos(), start, end, bestName, nameIdx[bestName])
+				retName, idx := freshNameOutsideRange(info, file, at, start, end, bestName, nameIdx[bestName])
 				nameIdx[bestName] = idx
 				z, isValid := typesinternal.ZeroExpr(typ, qual)
 				if !isValid {
@@ -1824,7 +1699,7 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 		results := getNames(retVars)
 		if !isErrHandlingReturnsCase {
 			// Generate information for the added bool value.
-			name, _ := freshNameOutsideRange(info, file, path[0].Pos(), start, end, "shouldReturn", 0)
+			name, _ := freshNameOutsideRange(info, file, at, start, end, "shouldReturn", 0)
 			cond = &ast.Ident{Name: name}
 			retVars = append(retVars, &returnVariable{
 				name:    cond,

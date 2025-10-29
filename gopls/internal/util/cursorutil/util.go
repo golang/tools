@@ -3,6 +3,10 @@
 // license that can be found in the LICENSE file.
 
 // Package cursorutil provides utility functions for working with [inspector.Cursor].
+//
+// It should create no additional dependencies beyond those of Cursor
+// itself, so that functions can be promoted to the public API of
+// Cursor in due course.
 package cursorutil
 
 import (

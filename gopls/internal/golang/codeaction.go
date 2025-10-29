@@ -483,7 +483,7 @@ func goDoc(ctx context.Context, req *codeActionsRequest) error {
 // refactorExtractFunction produces "Extract function" code actions.
 // See [extractFunction] for command implementation.
 func refactorExtractFunction(ctx context.Context, req *codeActionsRequest) error {
-	if _, ok, _, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.Cursor); ok {
+	if _, ok, _, _ := canExtractFunction(req.pgf.Cursor, req.start, req.end); ok {
 		req.addApplyFixAction("Extract function", fixExtractFunction, req.loc)
 	}
 	return nil
@@ -492,7 +492,7 @@ func refactorExtractFunction(ctx context.Context, req *codeActionsRequest) error
 // refactorExtractMethod produces "Extract method" code actions.
 // See [extractMethod] for command implementation.
 func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
-	if _, ok, methodOK, _ := canExtractFunction(req.pgf.Tok, req.start, req.end, req.pgf.Src, req.pgf.Cursor); ok && methodOK {
+	if _, ok, methodOK, _ := canExtractFunction(req.pgf.Cursor, req.start, req.end); ok && methodOK {
 		req.addApplyFixAction("Extract method", fixExtractMethod, req.loc)
 	}
 	return nil

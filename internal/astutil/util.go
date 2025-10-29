@@ -5,6 +5,7 @@
 package astutil
 
 import (
+	"fmt"
 	"go/ast"
 	"go/printer"
 	"go/token"
@@ -55,32 +56,21 @@ func PreorderStack(root ast.Node, stack []ast.Node, f func(n ast.Node, stack []a
 // It is inclusive of both end points, to allow hovering (etc) when
 // the cursor is immediately after a node.
 //
-// For unfortunate historical reasons, the Pos/End extent of an
-// ast.File runs from the start of its package declaration---excluding
-// copyright comments, build tags, and package documentation---to the
-// end of its last declaration, excluding any trailing comments. So,
-// as a special case, if n is an [ast.File], NodeContains uses
-// n.FileStart <= pos && pos <= n.FileEnd to report whether the
-// position lies anywhere within the file.
+// Like [NodeRange], it treats the range of an [ast.File] as the
+// file's complete extent.
 //
 // Precondition: n must not be nil.
 func NodeContains(n ast.Node, rng Range) bool {
-	var start, end token.Pos
-	if file, ok := n.(*ast.File); ok {
-		start, end = file.FileStart, file.FileEnd // entire file
-	} else {
-		start, end = n.Pos(), n.End()
-	}
-
-	return start <= rng.Start && rng.EndPos <= end
+	return NodeRange(n).Contains(rng)
 }
 
 // NodeContainPos reports whether the Pos/End range of node n encloses
 // the given pos.
 //
-// See [NodeContains] for details.
+// Like [NodeRange], it treats the range of an [ast.File] as the
+// file's complete extent.
 func NodeContainsPos(n ast.Node, pos token.Pos) bool {
-	return NodeContains(n, RangeOf(pos, pos))
+	return NodeRange(n).ContainsPos(pos)
 }
 
 // IsChildOf reports whether cur.ParentEdge is ek.
@@ -141,14 +131,99 @@ type Range struct{ Start, EndPos token.Pos }
 func RangeOf(start, end token.Pos) Range { return Range{start, end} }
 
 // NodeRange returns the extent of node n as a Range.
-func NodeRange(n ast.Node) Range { return Range{n.Pos(), n.End()} }
+//
+// For unfortunate historical reasons, the Pos/End extent of an
+// ast.File runs from the start of its package declaration---excluding
+// copyright comments, build tags, and package documentation---to the
+// end of its last declaration, excluding any trailing comments. So,
+// as a special case, if n is an [ast.File], NodeContains uses
+// n.FileStart <= pos && pos <= n.FileEnd to report whether the
+// position lies anywhere within the file.
+func NodeRange(n ast.Node) Range {
+	if file, ok := n.(*ast.File); ok {
+		return Range{file.FileStart, file.FileEnd} // entire file
+	}
+	return Range{n.Pos(), n.End()}
+}
 
 func (r Range) Pos() token.Pos { return r.Start }
 func (r Range) End() token.Pos { return r.EndPos }
 
-// Contains reports whether the range (inclusive of both end points)
+// ContainsPos reports whether the range (inclusive of both end points)
 // includes the specified position.
-func (r Range) Contains(pos token.Pos) bool { return NodeContainsPos(r, pos) }
+func (r Range) ContainsPos(pos token.Pos) bool {
+	return r.Contains(RangeOf(pos, pos))
+}
+
+// Contains reports whether the range (inclusive of both end points)
+// includes the specified range.
+func (r Range) Contains(rng Range) bool {
+	return r.Start <= rng.Start && rng.EndPos <= r.EndPos
+}
 
 // IsValid reports whether the range is valid.
 func (r Range) IsValid() bool { return r.Start.IsValid() && r.Start <= r.EndPos }
+
+// --
+
+// Select returns the syntax nodes identified by a user's text
+// selection. It returns three nodes: the innermost node that wholly
+// encloses the selection; and the first and last nodes that are
+// wholly enclosed by the selection.
+//
+// For example, given this selection:
+//
+//	{ f(); g(); /* comment */ }
+//	  ~~~~~~~~~~~
+//
+// Select returns the enclosing BlockStmt, the f() CallExpr, and the g() CallExpr.
+//
+// This function is intended to be called early in the handling of a
+// user's request, since it is tolerant of sloppy selection including
+// extraneous whitespace and comments. Use it in new code instead of
+// PathEnclosingInterval. When the exact extent of a node is known,
+// use [Cursor.FindByPos] instead.
+func Select(curFile inspector.Cursor, start, end token.Pos) (_enclosing, _start, _end inspector.Cursor, _ error) {
+	curEnclosing, ok := curFile.FindByPos(start, end)
+	if !ok {
+		return noCursor, noCursor, noCursor, fmt.Errorf("invalid selection")
+	}
+
+	// Find the first and last node wholly within the (start, end) range.
+	// We'll narrow the effective selection to them, to exclude whitespace.
+	// (This matches the functionality of PathEnclosingInterval.)
+	var curStart, curEnd inspector.Cursor
+	rng := RangeOf(start, end)
+	for cur := range curEnclosing.Preorder() {
+		if rng.Contains(NodeRange(cur.Node())) {
+			// The start node has the least Pos.
+			if !cursorValid(curStart) {
+				curStart = cur
+			}
+			// The end node has the greatest End.
+			// End positions do not change monotonically,
+			// so we must compute the max.
+			if !cursorValid(curEnd) ||
+				cur.Node().End() > curEnd.Node().End() {
+				curEnd = cur
+			}
+		}
+	}
+	if !cursorValid(curStart) {
+		return noCursor, noCursor, noCursor, fmt.Errorf("no syntax selected")
+	}
+	return curEnclosing, curStart, curEnd, nil
+}
+
+// cursorValid reports whether the cursor is valid.
+//
+// A valid cursor may yet be the virtual root node,
+// cur.Inspector.Root(), which has no [Cursor.Node].
+//
+// TODO(adonovan): move to cursorutil package, and move that package into x/tools.
+// Ultimately, make this a method of Cursor. Needs a proposal.
+func cursorValid(cur inspector.Cursor) bool {
+	return cur.Inspector() != nil
+}
+
+var noCursor inspector.Cursor

@@ -223,7 +223,7 @@ func highlightPrintf(call *ast.CallExpr, idx int, cursorPos token.Pos, lit *ast.
 
 		// cursorPos can't equal to end position, otherwise the two
 		// neighborhood such as (%[2]*d) are both highlighted if cursor in "d" (ending of [2]*).
-		if rng.Contains(cursorPos) && cursorPos < rng.End() ||
+		if rng.ContainsPos(cursorPos) && cursorPos < rng.End() ||
 			arg != nil && astutil.NodeContainsPos(arg, cursorPos) {
 			highlightRange(result, rng, protocol.Write)
 			if arg != nil {
