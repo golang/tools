@@ -87,25 +87,18 @@ func run(pass *analysis.Pass) (any, error) {
 									}
 								}
 
-								// Disabled until we resolve https://go.dev/issue/75726
-								// (Go version skew between caller and callee in inliner.)
-								// TODO(adonovan): fix and reenable.
+								// Add a //go:fix inline annotation, if not already present.
 								//
-								// Also, restore these lines to our section of doc.go:
-								// 	//go:fix inline
-								//	...
-								// 	(The directive comment causes the inline analyzer to suggest
-								// 	that calls to such functions are inlined.)
-								if false {
-									// Add a //go:fix inline annotation, if not already present.
-									// TODO(adonovan): use ast.ParseDirective when go1.26 is assured.
-									if !strings.Contains(decl.Doc.Text(), "go:fix inline") {
-										edits = append(edits, analysis.TextEdit{
-											Pos:     decl.Pos(),
-											End:     decl.Pos(),
-											NewText: []byte("//go:fix inline\n"),
-										})
-									}
+								// The inliner will not inline a newer callee body into an
+								// older Go file; see https://go.dev/issue/75726.
+								//
+								// TODO(adonovan): use ast.ParseDirective when go1.26 is assured.
+								if !strings.Contains(decl.Doc.Text(), "go:fix inline") {
+									edits = append(edits, analysis.TextEdit{
+										Pos:     decl.Pos(),
+										End:     decl.Pos(),
+										NewText: []byte("//go:fix inline\n"),
+									})
 								}
 
 								if len(edits) > 0 {

@@ -1546,7 +1546,7 @@
 						},
 						{
 							"Name": "\"newexpr\"",
-							"Doc": "simplify code by using go1.26's new(expr)\n\nThis analyzer finds declarations of functions of this form:\n\n\tfunc varOf(x int) *int { return \u0026x }\n\nand suggests a fix to turn them into inlinable wrappers around\ngo1.26's built-in new(expr) function:\n\n\tfunc varOf(x int) *int { return new(x) }\n\nIn addition, this analyzer suggests a fix for each call\nto one of the functions before it is transformed, so that\n\n\tuse(varOf(123))\n\nis replaced by:\n\n\tuse(new(123))\n\n(Wrapper functions such as varOf are common when working with Go\nserialization packages such as for JSON or protobuf, where pointers\nare often used to express optionality.)",
+							"Doc": "simplify code by using go1.26's new(expr)\n\nThis analyzer finds declarations of functions of this form:\n\n\tfunc varOf(x int) *int { return \u0026x }\n\nand suggests a fix to turn them into inlinable wrappers around\ngo1.26's built-in new(expr) function:\n\n\t//go:fix inline\n\tfunc varOf(x int) *int { return new(x) }\n\n(The directive comment causes the 'inline' analyzer to suggest\nthat calls to such functions are inlined.)\n\nIn addition, this analyzer suggests a fix for each call\nto one of the functions before it is transformed, so that\n\n\tuse(varOf(123))\n\nis replaced by:\n\n\tuse(new(123))\n\nWrapper functions such as varOf are common when working with Go\nserialization packages such as for JSON or protobuf, where pointers\nare often used to express optionality.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3449,7 +3449,7 @@
 		},
 		{
 			"Name": "newexpr",
-			"Doc": "simplify code by using go1.26's new(expr)\n\nThis analyzer finds declarations of functions of this form:\n\n\tfunc varOf(x int) *int { return \u0026x }\n\nand suggests a fix to turn them into inlinable wrappers around\ngo1.26's built-in new(expr) function:\n\n\tfunc varOf(x int) *int { return new(x) }\n\nIn addition, this analyzer suggests a fix for each call\nto one of the functions before it is transformed, so that\n\n\tuse(varOf(123))\n\nis replaced by:\n\n\tuse(new(123))\n\n(Wrapper functions such as varOf are common when working with Go\nserialization packages such as for JSON or protobuf, where pointers\nare often used to express optionality.)",
+			"Doc": "simplify code by using go1.26's new(expr)\n\nThis analyzer finds declarations of functions of this form:\n\n\tfunc varOf(x int) *int { return \u0026x }\n\nand suggests a fix to turn them into inlinable wrappers around\ngo1.26's built-in new(expr) function:\n\n\t//go:fix inline\n\tfunc varOf(x int) *int { return new(x) }\n\n(The directive comment causes the 'inline' analyzer to suggest\nthat calls to such functions are inlined.)\n\nIn addition, this analyzer suggests a fix for each call\nto one of the functions before it is transformed, so that\n\n\tuse(varOf(123))\n\nis replaced by:\n\n\tuse(new(123))\n\nWrapper functions such as varOf are common when working with Go\nserialization packages such as for JSON or protobuf, where pointers\nare often used to express optionality.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#newexpr",
 			"Default": true
 		},

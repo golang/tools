@@ -176,7 +176,11 @@ This analyzer finds declarations of functions of this form:
 and suggests a fix to turn them into inlinable wrappers around
 go1.26's built-in new(expr) function:
 
+	//go:fix inline
 	func varOf(x int) *int { return new(x) }
+
+(The directive comment causes the 'inline' analyzer to suggest
+that calls to such functions are inlined.)
 
 In addition, this analyzer suggests a fix for each call
 to one of the functions before it is transformed, so that
@@ -187,9 +191,9 @@ is replaced by:
 
 	use(new(123))
 
-(Wrapper functions such as varOf are common when working with Go
+Wrapper functions such as varOf are common when working with Go
 serialization packages such as for JSON or protobuf, where pointers
-are often used to express optionality.)
+are often used to express optionality.
 
 # Analyzer omitzero
 
