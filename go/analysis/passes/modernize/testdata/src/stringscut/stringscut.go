@@ -43,6 +43,19 @@ func basic_strings_byte(s string) bool {
 	return i >= 0
 }
 
+func basic_strings_byte_int(s string) bool {
+	i := strings.IndexByte(s, 55) // want "strings.IndexByte can be simplified using strings.Cut"
+	print(s[:i])
+	return i >= 0
+}
+
+func basic_strings_byte_var(s string) bool {
+	b := byte('b')
+	i := strings.IndexByte(s, b) // want "strings.IndexByte can be simplified using strings.Cut"
+	print(s[:i])
+	return i >= 0
+}
+
 func basic_bytes(b []byte) []byte {
 	i := bytes.Index(b, []byte("str")) // want "bytes.Index can be simplified using bytes.Cut"
 	if i >= 0 {

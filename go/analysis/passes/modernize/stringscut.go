@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"go/types"
 	"iter"
+	"strconv"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -227,6 +228,49 @@ func stringscut(pass *analysis.Pass) (any, error) {
 				End:     iIdent.End(),
 				NewText: fmt.Appendf(nil, "%s, %s, %s", beforeVarName, afterVarName, okVarName),
 			})
+			// Calls to IndexByte have a byte as their second arg, which
+			// must be converted to a string or []byte to be a valid arg for Cut.
+			if obj.Name() == "IndexByte" {
+				switch obj.Pkg().Name() {
+				case "strings":
+					searchByteVal := info.Types[substr].Value
+					if searchByteVal == nil {
+						// substr is a variable, e.g. substr := byte('b')
+						// use string(substr)
+						edits = append(edits, []analysis.TextEdit{
+							{
+								Pos:     substr.Pos(),
+								NewText: []byte("string("),
+							},
+							{
+								Pos:     substr.End(),
+								NewText: []byte(")"),
+							},
+						}...)
+					} else {
+						// substr is a byte constant
+						val, _ := constant.Int64Val(searchByteVal) // inv: must be a valid byte
+						// strings.Cut requires a string, so convert byte literal to string literal; e.g. 'a' -> "a", 55 -> "7"
+						edits = append(edits, analysis.TextEdit{
+							Pos:     substr.Pos(),
+							End:     substr.End(),
+							NewText: strconv.AppendQuote(nil, string(byte(val))),
+						})
+					}
+				case "bytes":
+					// bytes.Cut requires a []byte, so wrap substr in a []byte{}
+					edits = append(edits, []analysis.TextEdit{
+						{
+							Pos:     substr.Pos(),
+							NewText: []byte("[]byte{"),
+						},
+						{
+							Pos:     substr.End(),
+							NewText: []byte("}"),
+						},
+					}...)
+				}
+			}
 			pass.Report(analysis.Diagnostic{
 				Pos: indexCall.Fun.Pos(),
 				End: indexCall.Fun.End(),

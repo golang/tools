@@ -38,7 +38,20 @@ func wrong_len_arg(s string, substr string) bool {
 }
 
 func basic_strings_byte(s string) bool {
-	before, _, ok := strings.Cut(s, '+') // want "strings.IndexByte can be simplified using strings.Cut"
+	before, _, ok := strings.Cut(s, "+") // want "strings.IndexByte can be simplified using strings.Cut"
+	print(before)
+	return ok
+}
+
+func basic_strings_byte_int(s string) bool {
+	before, _, ok := strings.Cut(s, "7") // want "strings.IndexByte can be simplified using strings.Cut"
+	print(before)
+	return ok
+}
+
+func basic_strings_byte_var(s string) bool {
+	b := byte('b')
+	before, _, ok := strings.Cut(s, string(b)) // want "strings.IndexByte can be simplified using strings.Cut"
 	print(before)
 	return ok
 }
@@ -53,7 +66,7 @@ func basic_bytes(b []byte) []byte {
 }
 
 func basic_index_bytes(b []byte) string {
-	before, after, ok := bytes.Cut(b, 's') // want "bytes.IndexByte can be simplified using bytes.Cut"
+	before, after, ok := bytes.Cut(b, []byte{'s'}) // want "bytes.IndexByte can be simplified using bytes.Cut"
 	if ok {
 		return string(before)
 	} else {
