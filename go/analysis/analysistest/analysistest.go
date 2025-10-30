@@ -27,6 +27,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/checker"
 	"golang.org/x/tools/go/analysis/internal"
+	"golang.org/x/tools/go/analysis/internal/analysisflags"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/testenv"
@@ -226,7 +227,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 			// check checks that the accumulated edits applied
 			// to the original content yield the wanted content.
 			check := func(prefix string, accumulated []diff.Edit, want []byte) {
-				if err := applyDiffsAndCompare(filename, content, want, accumulated); err != nil {
+				if err := applyDiffsAndCompare(result.Pass.Pkg, filename, content, want, accumulated); err != nil {
 					t.Errorf("%s: %s", prefix, err)
 				}
 			}
@@ -281,7 +282,7 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 
 // applyDiffsAndCompare applies edits to original and compares the results against
 // want after formatting both. fileName is use solely for error reporting.
-func applyDiffsAndCompare(filename string, original, want []byte, edits []diff.Edit) error {
+func applyDiffsAndCompare(pkg *types.Package, filename string, original, want []byte, edits []diff.Edit) error {
 	// Relativize filename, for tidier errors.
 	if cwd, err := os.Getwd(); err == nil {
 		if rel, err := filepath.Rel(cwd, filename); err == nil {
@@ -296,7 +297,7 @@ func applyDiffsAndCompare(filename string, original, want []byte, edits []diff.E
 	if err != nil {
 		return fmt.Errorf("%s: error applying fixes: %v (see possible explanations at RunWithSuggestedFixes)", filename, err)
 	}
-	fixed, err := format.Source(fixedBytes)
+	fixed, err := analysisflags.FormatSourceRemoveImports(pkg, fixedBytes)
 	if err != nil {
 		return fmt.Errorf("%s: error formatting resulting source: %v\n%s", filename, err, fixedBytes)
 	}

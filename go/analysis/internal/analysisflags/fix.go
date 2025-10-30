@@ -7,24 +7,38 @@ package analysisflags
 // This file defines the -fix logic common to unitchecker and
 // {single,multi}checker.
 
+// TODO(adonovan): move this file, and most of the contents of
+// internal/analysisinternal, into a new package, internal/driverlib,
+// since the library is for the driver, not analyzer, side of the
+// analysis API. Turn any dependencies on analysisflags state (i.e.
+// diffFlag) into explicit parameters (of ApplyFix).
+
 import (
+	"bytes"
 	"fmt"
-	"go/format"
+	"go/ast"
+	"go/parser"
+	"go/printer"
 	"go/token"
+	"go/types"
 	"log"
 	"maps"
 	"os"
 	"sort"
+	"strconv"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/astutil/free"
 	"golang.org/x/tools/internal/diff"
 )
 
 // FixAction abstracts a checker action (running one analyzer on one
 // package) for the purposes of applying its diagnostics' fixes.
 type FixAction struct {
-	Name         string // e.g. "analyzer@package"
+	Name         string         // e.g. "analyzer@package"
+	Pkg          *types.Package // (for import removal)
 	FileSet      *token.FileSet
 	ReadFileFunc analysisinternal.ReadFileFunc
 	Diagnostics  []analysis.Diagnostic
@@ -58,15 +72,15 @@ type FixAction struct {
 // composition of the two fixes is semantically correct. Coalescing
 // identical edits is appropriate for imports, but not for, say,
 // increments to a counter variable; the correct resolution in that
-// case might be to increment it twice. Or consider two fixes that
-// each delete the penultimate reference to an import or local
-// variable: each fix is sound individually, and they may be textually
-// distant from each other, but when both are applied, the program is
-// no longer valid because it has an unreferenced import or local
-// variable.
-// TODO(adonovan): investigate replacing the final "gofmt" step with a
-// formatter that applies the unused-import deletion logic of
-// "goimports".
+// case might be to increment it twice.
+//
+// Or consider two fixes that each delete the penultimate reference to
+// a local variable: each fix is sound individually, and they may be
+// textually distant from each other, but when both are applied, the
+// program is no longer valid because it has an unreferenced local
+// variable. (ApplyFixes solves the analogous problem for imports by
+// eliminating imports whose name is unreferenced in the remainder of
+// the fixed file.)
 //
 // Merging depends on both the order of fixes and they order of edits
 // within them. For example, if three fixes add import "a" twice and
@@ -134,8 +148,11 @@ func ApplyFixes(actions []FixAction, verbose bool) error {
 
 	// Apply each fix, updating the current state
 	// only if the entire fix can be cleanly merged.
-	accumulatedEdits := make(map[string][]diff.Edit)
-	goodFixes := 0
+	var (
+		accumulatedEdits = make(map[string][]diff.Edit)
+		filePkgs         = make(map[string]*types.Package) // maps each file to an arbitrary package that includes it
+		goodFixes        = 0
+	)
 fixloop:
 	for _, fixact := range fixes {
 		// Convert analysis.TextEdits to diff.Edits, grouped by file.
@@ -143,6 +160,8 @@ fixloop:
 		fileEdits := make(map[string][]diff.Edit)
 		for _, edit := range fixact.fix.TextEdits {
 			file := fixact.act.FileSet.File(edit.Pos)
+
+			filePkgs[file.Name()] = fixact.act.Pkg
 
 			baseline, err := getBaseline(fixact.act.ReadFileFunc, file.Name())
 			if err != nil {
@@ -214,7 +233,7 @@ fixloop:
 		}
 
 		// Attempt to format each file.
-		if formatted, err := format.Source(final); err == nil {
+		if formatted, err := FormatSourceRemoveImports(filePkgs[file], final); err == nil {
 			final = formatted
 		}
 
@@ -281,4 +300,111 @@ fixloop:
 	}
 
 	return nil
+}
+
+// FormatSourceRemoveImports is a variant of [format.Source] that
+// removes imports that became redundant when fixes were applied.
+//
+// Import removal is necessarily heuristic since we do not have type
+// information for the fixed file and thus cannot accurately tell
+// whether k is among the free names of T{k: 0}, which requires
+// knowledge of whether T is a struct type.
+func FormatSourceRemoveImports(pkg *types.Package, src []byte) ([]byte, error) {
+	// This function was reduced from the "strict entire file"
+	// path through [format.Source].
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fixed.go", src, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		return nil, err
+	}
+
+	ast.SortImports(fset, file)
+
+	removeUnneededImports(fset, pkg, file)
+
+	// printerNormalizeNumbers means to canonicalize number literal prefixes
+	// and exponents while printing. See https://golang.org/doc/go1.13#gofmt.
+	//
+	// This value is defined in go/printer specifically for go/format and cmd/gofmt.
+	const printerNormalizeNumbers = 1 << 30
+	cfg := &printer.Config{
+		Mode:     printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers,
+		Tabwidth: 8,
+	}
+	var buf bytes.Buffer
+	if err := cfg.Fprint(&buf, fset, file); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// removeUnneededImports removes import specs that are not referenced
+// within the fixed file. It uses [free.Names] to heuristically
+// approximate the set of imported names needed by the body of the
+// file based only on syntax.
+//
+// pkg provides type information about the unmodified package, in
+// particular the name that would implicitly be declared by a
+// non-renaming import of a given existing dependency.
+func removeUnneededImports(fset *token.FileSet, pkg *types.Package, file *ast.File) {
+	// Map each existing dependency to its default import name.
+	// (We'll need this to interpret non-renaming imports.)
+	packageNames := make(map[string]string)
+	for _, imp := range pkg.Imports() {
+		packageNames[imp.Path()] = imp.Name()
+	}
+
+	// Compute the set of free names of the file,
+	// ignoring its import decls.
+	freenames := make(map[string]bool)
+	for _, decl := range file.Decls {
+		if decl, ok := decl.(*ast.GenDecl); ok && decl.Tok == token.IMPORT {
+			continue // skip import
+		}
+
+		// TODO(adonovan): we could do better than includeComplitIdents=false
+		// since we have type information about the unmodified package,
+		// which is a good source of heuristics.
+		const includeComplitIdents = false
+		maps.Copy(freenames, free.Names(decl, includeComplitIdents))
+	}
+
+	// Check whether each import's declared name is free (referenced) by the file.
+	var deletions []func()
+	for _, spec := range file.Imports {
+		path, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			continue //  malformed import; ignore
+		}
+		explicit := "" // explicit PkgName, if any
+		if spec.Name != nil {
+			explicit = spec.Name.Name
+		}
+		name := explicit // effective PkgName
+		if name == "" {
+			// Non-renaming import: use package's default name.
+			name = packageNames[path]
+		}
+		switch name {
+		case "":
+			continue // assume it's a new import
+		case ".":
+			continue // dot imports are tricky
+		case "_":
+			continue // keep blank imports
+		}
+		if !freenames[name] {
+			// Import's effective name is not free in (not used by) the file.
+			// Enqueue it for deletion after the loop.
+			deletions = append(deletions, func() {
+				astutil.DeleteNamedImport(fset, file, explicit, path)
+			})
+		}
+	}
+
+	// Apply the deletions.
+	for _, del := range deletions {
+		del()
+	}
 }

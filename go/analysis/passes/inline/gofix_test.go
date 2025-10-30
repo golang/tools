@@ -23,7 +23,7 @@ func TestAnalyzer(t *testing.T) {
 	if testenv.Go1Point() < 24 {
 		testenv.NeedsGoExperiment(t, "aliastypeparams")
 	}
-	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), Analyzer, "a", "b")
+	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), Analyzer, "a", "b", "rmimport")
 }
 
 func TestAllowBindingDeclFlag(t *testing.T) {

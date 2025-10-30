@@ -196,6 +196,7 @@ func Run(args []string, analyzers []*analysis.Analyzer) (exitcode int) {
 			if pass := internal.ActionPass(act); pass != nil {
 				fixActions[i] = analysisflags.FixAction{
 					Name:         act.String(),
+					Pkg:          act.Package.Types,
 					FileSet:      act.Package.Fset,
 					ReadFileFunc: pass.ReadFile,
 					Diagnostics:  act.Diagnostics,

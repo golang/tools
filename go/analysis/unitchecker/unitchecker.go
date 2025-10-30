@@ -187,6 +187,7 @@ func processResults(fset *token.FileSet, id string, results []result) (exit int)
 		for i, res := range results {
 			fixActions[i] = analysisflags.FixAction{
 				Name:         res.a.Name,
+				Pkg:          res.pkg,
 				FileSet:      fset,
 				ReadFileFunc: os.ReadFile,
 				Diagnostics:  res.diagnostics,
@@ -482,9 +483,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 	results := make([]result, len(analyzers))
 	for i, a := range analyzers {
 		act := actions[a]
-		results[i].a = a
-		results[i].err = act.err
-		results[i].diagnostics = act.diagnostics
+		results[i] = result{pkg, a, act.diagnostics, act.err}
 	}
 
 	data := facts.Encode()
@@ -499,6 +498,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 }
 
 type result struct {
+	pkg         *types.Package
 	a           *analysis.Analyzer
 	diagnostics []analysis.Diagnostic
 	err         error

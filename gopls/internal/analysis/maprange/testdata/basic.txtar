@@ -53,8 +53,6 @@ func _() {
 -- basic.go.golden --
 package basic
 
-import "maps"
-
 func _() {
 	m := make(map[int]int)
 
