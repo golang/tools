@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/internal/astutil"
 )
 
 const Doc = `find structs that would use less memory if their fields were sorted
@@ -102,6 +103,11 @@ func fieldalignment(pass *analysis.Pass, node *ast.StructType, typ *types.Struct
 		// Already optimal order.
 		return
 	}
+
+	// Analyzers borrow syntax tree; they do not own them and must modify them.
+	// This Clone operation is a quick fix to the data race introduced
+	// in CL 278872 by the clearing of the Comment and Doc fields below.
+	node = astutil.CloneNode(node)
 
 	// Flatten the ast node since it could have multiple field names per list item while
 	// *types.Struct only have one item per field.
