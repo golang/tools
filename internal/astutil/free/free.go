@@ -2,18 +2,22 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Copied, with considerable changes, from go/parser/resolver.go
-// at af53bd2c03.
-
-package inline
+// Package free defines utilities for computing the free variables of
+// a syntax tree without type information. This is inherently
+// heuristic because of the T{f: x} ambiguity, in which f may or may
+// not be a lexical reference depending on whether T is a struct type.
+package free
 
 import (
 	"go/ast"
 	"go/token"
 )
 
-// freeishNames computes an approximation to the free names of the AST
-// at node n based solely on syntax, inserting values into the map.
+// Copied, with considerable changes, from go/parser/resolver.go
+// at af53bd2c03.
+
+// Names computes an approximation to the set of free names of the AST
+// at node n based solely on syntax.
 //
 // In the absence of composite literals, the set of free names is exact. Composite
 // literals introduce an ambiguity that can only be resolved with type information:
@@ -33,8 +37,11 @@ import (
 //   - Labels are ignored: they do not refer to values.
 //   - This is never called on FuncDecls or ImportSpecs, so the function
 //     panics if it sees one.
-func freeishNames(free map[string]bool, n ast.Node, includeComplitIdents bool) {
-	v := &freeVisitor{free: free, includeComplitIdents: includeComplitIdents}
+func Names(n ast.Node, includeComplitIdents bool) map[string]bool {
+	v := &freeVisitor{
+		free:                 make(map[string]bool),
+		includeComplitIdents: includeComplitIdents,
+	}
 	// Begin with a scope, even though n might not be a form that establishes a scope.
 	// For example, n might be:
 	//    x := ...
@@ -42,7 +49,10 @@ func freeishNames(free map[string]bool, n ast.Node, includeComplitIdents bool) {
 	v.openScope()
 	ast.Walk(v, n)
 	v.closeScope()
-	assert(v.scope == nil, "unbalanced scopes")
+	if v.scope != nil {
+		panic("unbalanced scopes")
+	}
+	return v.free
 }
 
 // A freeVisitor holds state for a free-name analysis.

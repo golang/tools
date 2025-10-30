@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/types/typeutil"
 	internalastutil "golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/astutil/free"
 	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
@@ -575,9 +576,8 @@ func (i *importState) localName(pkgPath, pkgName string, shadow shadowMap) strin
 // Since they are not relevant to removing unused imports, we instruct
 // freeishNames to omit composite-literal keys that are identifiers.
 func trimNewImports(newImports []newImport, new ast.Node) []newImport {
-	free := map[string]bool{}
 	const omitComplitIdents = false
-	freeishNames(free, new, omitComplitIdents)
+	free := free.Names(new, omitComplitIdents)
 	var res []newImport
 	for _, ni := range newImports {
 		if free[ni.pkgName] {
@@ -2388,14 +2388,13 @@ func createBindingDecl(logf logger, caller *Caller, args []*argument, calleeDecl
 		// (caller syntax), so we can use type info.
 		// But Type is the untyped callee syntax,
 		// so we have to use a syntax-only algorithm.
-		free := make(map[string]bool)
+		const includeComplitIdents = true
+		free := free.Names(spec.Type, includeComplitIdents)
 		for _, value := range spec.Values {
 			for name := range freeVars(caller.Info, value) {
 				free[name] = true
 			}
 		}
-		const includeComplitIdents = true
-		freeishNames(free, spec.Type, includeComplitIdents)
 		for name := range free {
 			if names[name] {
 				logf("binding decl would shadow free name %q", name)
@@ -3456,7 +3455,7 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 			assert(callIdx == -1, "malformed (duplicative) AST")
 			callIdx = i
 			for j, returnOperand := range returnOperands {
-				freeishNames(freeNames, returnOperand, includeComplitIdents)
+				maps.Copy(freeNames, free.Names(returnOperand, includeComplitIdents))
 				rhs = append(rhs, returnOperand)
 				if resultInfo[j]&nonTrivialResult != 0 {
 					nonTrivial[i+j] = true
@@ -3469,7 +3468,7 @@ func (st *state) assignStmts(callerStmt *ast.AssignStmt, returnOperands []ast.Ex
 			// We must clone before clearing positions, since e came from the caller.
 			expr = internalastutil.CloneNode(expr)
 			clearPositions(expr)
-			freeishNames(freeNames, expr, includeComplitIdents)
+			maps.Copy(freeNames, free.Names(expr, includeComplitIdents))
 			rhs = append(rhs, expr)
 		}
 	}

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package inline
+package free_test
 
 import (
 	"fmt"
@@ -13,9 +13,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/internal/astutil/free"
 )
 
-func TestFreeishNames(t *testing.T) {
+func TestNames(t *testing.T) {
 	elems := func(m map[string]bool) string {
 		return strings.Join(slices.Sorted(maps.Keys(m)), " ")
 	}
@@ -213,13 +215,12 @@ func TestFreeishNames(t *testing.T) {
 			for _, test := range tc.cases {
 				_, f := mustParse(t, "free.go", `package p; func _() {`+test.code+`}`)
 				n := f.Decls[0].(*ast.FuncDecl).Body
-				got := map[string]bool{}
 				want := map[string]bool{}
 				for n := range strings.FieldsSeq(test.want) {
 					want[n] = true
 				}
 
-				freeishNames(got, n, tc.includeComplitIdents)
+				got := free.Names(n, tc.includeComplitIdents)
 
 				if !maps.Equal(got, want) {
 					t.Errorf("\ncode  %s\ngot   %v\nwant  %v", test.code, elems(got), elems(want))
@@ -229,12 +230,12 @@ func TestFreeishNames(t *testing.T) {
 	}
 }
 
-func TestFreeishNamesScope(t *testing.T) {
+func TestFreeNames_scope(t *testing.T) {
 	// Verify that inputs that don't start a scope don't crash.
 	_, f := mustParse(t, "free.go", `package p; func _() { x := 1; _ = x }`)
 	// Select the short var decl, not the entire function body.
 	n := f.Decls[0].(*ast.FuncDecl).Body.List[0]
-	freeishNames(map[string]bool{}, n, false)
+	_ = free.Names(n, false)
 }
 
 func mustParse(t *testing.T, filename string, content any) (*token.FileSet, *ast.File) {
