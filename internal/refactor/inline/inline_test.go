@@ -365,7 +365,7 @@ const funcName = "f"
 // strategy with the checklist of concerns enumerated in the package
 // doc comment.
 type testcase struct {
-	descr          string // description; substrings enable options (e.g. "IgnoreEffects")
+	descr          string // description; substrings enable test or inliner options (e.g. "IgnoreEffects", "NoPackageClause")
 	callee, caller string // Go source files (sans package decl) of caller, callee
 	want           string // expected new portion of caller file, or "error: regexp"
 }
@@ -383,6 +383,12 @@ func TestErrors(t *testing.T) {
 			`type G[T any] struct{}; func (G[T]) f(x T) T { return x }`,
 			`var _ = G[int]{}.f(0)`,
 			`error: generic methods not yet supported`,
+		},
+		{
+			"[NoPackageClause] Can't inline a callee using newer Go to a caller using older Go (#75726).",
+			"//go:build go1.23\n\npackage p\nfunc f() int { return 0 }",
+			"//go:build go1.22\n\npackage p\nvar _ = f()",
+			`error: cannot inline call to p.f \(declared using go1.23\) into a file using go1.22`,
 		},
 	})
 }
@@ -1818,8 +1824,15 @@ func runTests(t *testing.T, tests []testcase) {
 				return f
 			}
 
+			addPackageClause := func(src string) string {
+				if !strings.Contains(test.descr, "NoPackageClause") {
+					src = "package p\n" + src
+				}
+				return src
+			}
+
 			// Parse callee file and find first func decl named f.
-			calleeContent := "package p\n" + test.callee
+			calleeContent := addPackageClause(test.callee)
 			calleeFile := mustParse("callee.go", calleeContent)
 			var decl *ast.FuncDecl
 			for _, d := range calleeFile.Decls {
@@ -1833,7 +1846,7 @@ func runTests(t *testing.T, tests []testcase) {
 			}
 
 			// Parse caller file and find first call to f().
-			callerContent := "package p\n" + test.caller
+			callerContent := addPackageClause(test.caller)
 			callerFile := mustParse("caller.go", callerContent)
 			var call *ast.CallExpr
 			ast.Inspect(callerFile, func(n ast.Node) bool {
@@ -1865,12 +1878,13 @@ func runTests(t *testing.T, tests []testcase) {
 
 			// Type check both files as one package.
 			info := &types.Info{
-				Defs:       make(map[*ast.Ident]types.Object),
-				Uses:       make(map[*ast.Ident]types.Object),
-				Types:      make(map[ast.Expr]types.TypeAndValue),
-				Implicits:  make(map[ast.Node]types.Object),
-				Selections: make(map[*ast.SelectorExpr]*types.Selection),
-				Scopes:     make(map[ast.Node]*types.Scope),
+				Defs:         make(map[*ast.Ident]types.Object),
+				Uses:         make(map[*ast.Ident]types.Object),
+				Types:        make(map[ast.Expr]types.TypeAndValue),
+				Implicits:    make(map[ast.Node]types.Object),
+				Selections:   make(map[*ast.SelectorExpr]*types.Selection),
+				Scopes:       make(map[ast.Node]*types.Scope),
+				FileVersions: make(map[*ast.File]string),
 			}
 			conf := &types.Config{Error: func(err error) { t.Error(err) }}
 			pkg, err := conf.Check("p", fset, []*ast.File{callerFile, calleeFile}, info)

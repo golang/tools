@@ -28,6 +28,7 @@ import (
 	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/versions"
 )
 
 // A Caller describes the function call and its enclosing context.
@@ -675,6 +676,15 @@ func (st *state) inlineCall() (*inlineCallResult, error) {
 	if !samePkg && len(callee.Unexported) > 0 {
 		return nil, fmt.Errorf("cannot inline call to %s because body refers to non-exported %s",
 			callee.Name, callee.Unexported[0])
+	}
+
+	// Reject cross-file inlining if callee requires a newer dialect of Go (#75726).
+	// (Versions default to types.Config.GoVersion, which is unset in many tests,
+	// though should be populated by an analysis driver.)
+	callerGoVersion := caller.Info.FileVersions[caller.File]
+	if callerGoVersion != "" && callee.GoVersion != "" && versions.Before(callerGoVersion, callee.GoVersion) {
+		return nil, fmt.Errorf("cannot inline call to %s (declared using %s) into a file using %s",
+			callee.Name, callee.GoVersion, callerGoVersion)
 	}
 
 	// -- analyze callee's free references in caller context --
