@@ -15,7 +15,6 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
-	goastutil "golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
@@ -79,11 +78,10 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	if astutil.IsChildOf(curId, edge.CallExpr_Fun) {
 		return newFunctionDeclaration(curId, file, pkg.Types(), info, fset)
 	}
-	var (
-		firstRef     *ast.Ident // We should insert the new declaration before the first occurrence of the undefined ident.
-		assignTokPos token.Pos
-	)
-	_, curFuncDecl := cursorutil.FirstEnclosing[*ast.FuncDecl](curId)
+	// We should insert the new declaration before the
+	// first occurrence of the undefined ident.
+	var curFirstRef inspector.Cursor // *ast.Ident
+
 	// Search from enclosing FuncDecl to first use, since we can not use := syntax outside function.
 	// Adds the missing colon under the following conditions:
 	// 1) parent node must be an *ast.AssignStmt with Tok set to token.ASSIGN.
@@ -92,41 +90,38 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	// For example, we should not add a colon when
 	// a = a + 1
 	// ^   ^ cursor here
+	_, curFuncDecl := cursorutil.FirstEnclosing[*ast.FuncDecl](curId)
 	for curRef := range curFuncDecl.Preorder((*ast.Ident)(nil)) {
 		n := curRef.Node().(*ast.Ident)
 		if n.Name == ident.Name && info.ObjectOf(n) == nil {
-			firstRef = n
 			if astutil.IsChildOf(curRef, edge.AssignStmt_Lhs) {
 				assign := curRef.Parent().Node().(*ast.AssignStmt)
 				if assign.Tok == token.ASSIGN && !referencesIdent(info, assign, ident) {
-					assignTokPos = assign.TokPos
+					// replace = with :=
+					return fset, &analysis.SuggestedFix{
+						TextEdits: []analysis.TextEdit{{
+							Pos:     assign.TokPos,
+							End:     assign.TokPos,
+							NewText: []byte(":"),
+						}},
+					}, nil
 				}
 			}
+			curFirstRef = curRef
 			break
 		}
 	}
-	if assignTokPos.IsValid() {
-		return fset, &analysis.SuggestedFix{
-			TextEdits: []analysis.TextEdit{{
-				Pos:     assignTokPos,
-				End:     assignTokPos,
-				NewText: []byte(":"),
-			}},
-		}, nil
-	}
 
-	// firstRef should never be nil, at least one ident at cursor position should be found,
-	// but be defensive.
-	if firstRef == nil {
+	// firstRef should never be nil; at least one ident at cursor
+	// position should be found. But be defensive.
+	if !astutil.CursorValid(curFirstRef) {
 		return nil, nil, fmt.Errorf("no identifier found")
 	}
-	// TODO(adonovan): replace this with cursor.
-	p, _ := goastutil.PathEnclosingInterval(file, firstRef.Pos(), firstRef.Pos())
-	insertBeforeStmt, err := stmtToInsertVarBefore(p, nil)
+	insertPos, err := stmtToInsertVarBefore(curFirstRef, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not locate insertion point: %v", err)
 	}
-	indent, err := pgf.Indentation(insertBeforeStmt.Pos())
+	indent, err := pgf.Indentation(insertPos)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -151,8 +146,8 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 	return fset, &analysis.SuggestedFix{
 		TextEdits: []analysis.TextEdit{
 			{
-				Pos:     insertBeforeStmt.Pos(),
-				End:     insertBeforeStmt.Pos(),
+				Pos:     insertPos,
+				End:     insertPos,
 				NewText: []byte(assignment),
 			},
 		},

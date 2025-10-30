@@ -178,6 +178,10 @@ func (r Range) IsValid() bool { return r.Start.IsValid() && r.Start <= r.EndPos 
 //
 // Select returns the enclosing BlockStmt, the f() CallExpr, and the g() CallExpr.
 //
+// Callers that require exactly one syntax tree (e.g. just f() or just
+// g()) should check that the returned start and end nodes are
+// identical.
+//
 // This function is intended to be called early in the handling of a
 // user's request, since it is tolerant of sloppy selection including
 // extraneous whitespace and comments. Use it in new code instead of
@@ -197,32 +201,32 @@ func Select(curFile inspector.Cursor, start, end token.Pos) (_enclosing, _start,
 	for cur := range curEnclosing.Preorder() {
 		if rng.Contains(NodeRange(cur.Node())) {
 			// The start node has the least Pos.
-			if !cursorValid(curStart) {
+			if !CursorValid(curStart) {
 				curStart = cur
 			}
 			// The end node has the greatest End.
 			// End positions do not change monotonically,
 			// so we must compute the max.
-			if !cursorValid(curEnd) ||
+			if !CursorValid(curEnd) ||
 				cur.Node().End() > curEnd.Node().End() {
 				curEnd = cur
 			}
 		}
 	}
-	if !cursorValid(curStart) {
+	if !CursorValid(curStart) {
 		return noCursor, noCursor, noCursor, fmt.Errorf("no syntax selected")
 	}
 	return curEnclosing, curStart, curEnd, nil
 }
 
-// cursorValid reports whether the cursor is valid.
+// CursorValid reports whether the cursor is valid.
 //
 // A valid cursor may yet be the virtual root node,
 // cur.Inspector.Root(), which has no [Cursor.Node].
 //
 // TODO(adonovan): move to cursorutil package, and move that package into x/tools.
 // Ultimately, make this a method of Cursor. Needs a proposal.
-func cursorValid(cur inspector.Cursor) bool {
+func CursorValid(cur inspector.Cursor) bool {
 	return cur.Inspector() != nil
 }
 

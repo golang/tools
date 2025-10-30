@@ -33,3 +33,13 @@ func FirstEnclosing[N ast.Node](cur inspector.Cursor) (N, inspector.Cursor) {
 	}
 	return typ, inspector.Cursor{}
 }
+
+// Path returns the specified node followed by all its ancestors up to the file.
+// Use it as an adaptor between cursors and code that works with PathEnclosingInterval.
+// Ultimately all such code should be eliminated.
+func Path(cur inspector.Cursor) (path []ast.Node) {
+	for cur := range cur.Enclosing() {
+		path = append(path, cur.Node())
+	}
+	return
+}

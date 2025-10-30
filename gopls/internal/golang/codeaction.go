@@ -502,7 +502,7 @@ func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
 // See [extractVariable] for command implementation.
 func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error {
 	info := req.pkg.TypesInfo()
-	if exprs, err := canExtractVariable(info, req.pgf.Cursor, req.start, req.end, false); err == nil {
+	if curExprs, err := canExtractVariable(info, req.pgf.Cursor, req.start, req.end, false); err == nil && len(curExprs) > 0 {
 		// Offer one of refactor.extract.{constant,variable}
 		// based on the constness of the expression; this is a
 		// limitation of the codeActionProducers mechanism.
@@ -510,7 +510,8 @@ func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error
 		// may make them diverge to become non-complementary,
 		// for example because "if const x = ...; y {" is illegal.
 		// Same as [refactorExtractVariableAll].
-		constant := info.Types[exprs[0]].Value != nil
+		expr0 := curExprs[0].Node().(ast.Expr)
+		constant := info.Types[expr0].Value != nil
 		if (req.kind == settings.RefactorExtractConstant) == constant {
 			title := "Extract variable"
 			if constant {
@@ -528,22 +529,23 @@ func refactorExtractVariableAll(ctx context.Context, req *codeActionsRequest) er
 	info := req.pkg.TypesInfo()
 	// Don't suggest if only one expr is found,
 	// otherwise it will duplicate with [refactorExtractVariable]
-	if exprs, err := canExtractVariable(info, req.pgf.Cursor, req.start, req.end, true); err == nil && len(exprs) > 1 {
-		text, err := req.pgf.NodeText(exprs[0])
+	if curExprs, err := canExtractVariable(info, req.pgf.Cursor, req.start, req.end, true); err == nil && len(curExprs) > 1 {
+		expr0 := curExprs[0].Node().(ast.Expr)
+		text, err := req.pgf.NodeText(expr0)
 		if err != nil {
 			return err
 		}
 		desc := string(text)
 		if len(desc) >= 40 || strings.Contains(desc, "\n") {
-			desc = goastutil.NodeDescription(exprs[0])
+			desc = goastutil.NodeDescription(expr0)
 		}
-		constant := info.Types[exprs[0]].Value != nil
+		constant := info.Types[expr0].Value != nil
 		if (req.kind == settings.RefactorExtractConstantAll) == constant {
 			var title string
 			if constant {
-				title = fmt.Sprintf("Extract %d occurrences of const expression: %s", len(exprs), desc)
+				title = fmt.Sprintf("Extract %d occurrences of const expression: %s", len(curExprs), desc)
 			} else {
-				title = fmt.Sprintf("Extract %d occurrences of %s", len(exprs), desc)
+				title = fmt.Sprintf("Extract %d occurrences of %s", len(curExprs), desc)
 			}
 			req.addApplyFixAction(title, fixExtractVariableAll, req.loc)
 		}

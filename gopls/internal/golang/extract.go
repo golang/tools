@@ -18,7 +18,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	goastutil "golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
@@ -54,16 +54,16 @@ func extractVariable(pkg *cache.Package, pgf *parsego.File, start, end token.Pos
 		info = pkg.TypesInfo()
 		file = pgf.File
 	)
-	// TODO(adonovan): simplify, using Cursor.
-	exprs, err := canExtractVariable(info, pgf.Cursor, start, end, all)
+	curExprs, err := canExtractVariable(info, pgf.Cursor, start, end, all)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot extract: %v", err)
 	}
+	expr0 := curExprs[0].Node().(ast.Expr)
 
 	// innermost scope enclosing ith expression
-	exprScopes := make([]*types.Scope, len(exprs))
-	for i, e := range exprs {
-		exprScopes[i] = info.Scopes[file].Innermost(e.Pos())
+	exprScopes := make([]*types.Scope, len(curExprs))
+	for i, curExpr := range curExprs {
+		exprScopes[i] = info.Scopes[file].Innermost(curExpr.Node().Pos())
 	}
 
 	hasCollision := func(name string) bool {
@@ -74,12 +74,12 @@ func extractVariable(pkg *cache.Package, pgf *parsego.File, start, end token.Pos
 		}
 		return false
 	}
-	constant := info.Types[exprs[0]].Value != nil
+	constant := info.Types[expr0].Value != nil
 
 	// Generate name(s) for new declaration.
 	baseName := cond(constant, "newConst", "newVar")
 	var lhsNames []string
-	switch expr := exprs[0].(type) {
+	switch expr := expr0.(type) {
 	case *ast.CallExpr:
 		tup, ok := info.TypeOf(expr).(*types.Tuple)
 		if !ok {
@@ -121,7 +121,7 @@ Outer:
 		}
 	}
 
-	var visiblePath []ast.Node
+	visible := curExprs[0] // Insert newVar inside commonScope before the first occurrence of the expression.
 	if commonScope != exprScopes[0] {
 		// This means the first expr within function body is not the largest scope,
 		// we need to find the scope immediately follow the common
@@ -133,12 +133,9 @@ Outer:
 			}
 			child = p
 		}
-		visiblePath, _ = goastutil.PathEnclosingInterval(file, child.Pos(), child.End())
-	} else {
-		// Insert newVar inside commonScope before the first occurrence of the expression.
-		visiblePath, _ = goastutil.PathEnclosingInterval(file, exprs[0].Pos(), exprs[0].End())
+		visible, _ = pgf.Cursor.FindByPos(child.Pos(), child.End())
 	}
-	variables, err := collectFreeVars(info, file, exprs[0].Pos(), exprs[0].End(), exprs[0])
+	variables, err := collectFreeVars(info, file, expr0.Pos(), expr0.End(), expr0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -158,17 +155,19 @@ Outer:
 		indentation string
 		stmtOK      bool // ok to use ":=" instead of var/const decl?
 	)
-	if funcDecl, ok := visiblePath[len(visiblePath)-2].(*ast.FuncDecl); ok && astutil.NodeContainsPos(funcDecl.Body, start) {
-		before, err := stmtToInsertVarBefore(visiblePath, variables)
+	if funcDecl, _ := cursorutil.FirstEnclosing[*ast.FuncDecl](visible); funcDecl != nil &&
+		astutil.NodeContainsPos(funcDecl.Body, start) {
+
+		beforePos, err := stmtToInsertVarBefore(visible, variables)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot find location to insert extraction: %v", err)
 		}
 		// Within function: compute appropriate statement indentation.
-		indent, err := pgf.Indentation(before.Pos())
+		indent, err := pgf.Indentation(beforePos)
 		if err != nil {
 			return nil, nil, err
 		}
-		insertPos = before.Pos()
+		insertPos = beforePos
 		indentation = "\n" + indent
 
 		// Currently, we always extract a constant expression
@@ -184,9 +183,10 @@ Outer:
 		stmtOK = !constant
 	} else {
 		// Outside any statement: insert before the current
-		// declaration, without indentation.
-		currentDecl := visiblePath[len(visiblePath)-2]
-		insertPos = currentDecl.Pos()
+		// top-level declaration, without indentation.
+		for curDecl := range visible.Enclosing((*ast.FuncDecl)(nil), (*ast.GenDecl)(nil)) {
+			insertPos = curDecl.Node().Pos()
+		}
 		indentation = "\n"
 	}
 
@@ -221,7 +221,7 @@ Outer:
 			Specs: []ast.Spec{
 				&ast.ValueSpec{
 					Names:  names,
-					Values: []ast.Expr{exprs[0]},
+					Values: []ast.Expr{expr0},
 				},
 			},
 		}
@@ -235,7 +235,7 @@ Outer:
 		newNode = &ast.AssignStmt{
 			Tok: token.DEFINE,
 			Lhs: lhs,
-			Rhs: []ast.Expr{exprs[0]},
+			Rhs: []ast.Expr{expr0},
 		}
 	}
 
@@ -251,7 +251,8 @@ Outer:
 		End:     insertPos,
 		NewText: []byte(assignment),
 	}}
-	for _, e := range exprs {
+	for _, curExpr := range curExprs {
+		e := curExpr.Node()
 		textEdits = append(textEdits, analysis.TextEdit{
 			Pos:     e.Pos(),
 			End:     e.End(),
@@ -292,20 +293,21 @@ Outer:
 //
 // `x` is a free variable defined in the IfStmt, we should not insert
 // the extracted expression outside the IfStmt scope, instead, return an error.
-//
-// TODO(dmo): make this function take a Cursor and simplify
-func stmtToInsertVarBefore(path []ast.Node, variables []*variable) (ast.Stmt, error) {
-	enclosingIndex := -1 // index in path of enclosing stmt
-	for i, p := range path {
-		if _, ok := p.(ast.Stmt); ok {
-			enclosingIndex = i
-			break
+func stmtToInsertVarBefore(cur inspector.Cursor, variables []*variable) (token.Pos, error) {
+	// Walk up to enclosing statement.
+	{
+		var curStmt inspector.Cursor
+		for cur := range cur.Enclosing() {
+			if is[ast.Stmt](cur.Node()) {
+				curStmt = cur
+				break
+			}
 		}
+		if !astutil.CursorValid(curStmt) {
+			return 0, fmt.Errorf("no enclosing statement")
+		}
+		cur = curStmt
 	}
-	if enclosingIndex == -1 {
-		return nil, fmt.Errorf("no enclosing statement")
-	}
-	enclosingStmt := path[enclosingIndex].(ast.Stmt)
 
 	// hasFreeVar reports if any free variables is defined inside stmt (which may be nil).
 	// If true, indicates that the insertion point will sit before the variable declaration.
@@ -323,111 +325,106 @@ func stmtToInsertVarBefore(path []ast.Node, variables []*variable) (ast.Stmt, er
 
 	// baseIfStmt walks up the if/else-if chain until we get to
 	// the top of the current if chain.
-	baseIfStmt := func(index int) (ast.Stmt, error) {
-		stmt := path[index]
-		for _, node := range path[index+1:] {
-			ifStmt, ok := node.(*ast.IfStmt)
-			if !ok || ifStmt.Else != stmt {
-				break
+	baseIfStmt := func(curIf inspector.Cursor) (token.Pos, error) {
+		for astutil.IsChildOf(curIf, edge.IfStmt_Else) {
+			curIf = curIf.Parent()
+			if hasFreeVar(curIf.Node().(*ast.IfStmt).Init) {
+				return 0, fmt.Errorf("else-if's init has free variable")
 			}
-			if hasFreeVar(ifStmt.Init) {
-				return nil, fmt.Errorf("Else's init statement has free variable declaration")
-			}
-			stmt = ifStmt
 		}
-		return stmt.(ast.Stmt), nil
+		return curIf.Node().Pos(), nil
 	}
 
-	switch enclosingStmt := enclosingStmt.(type) {
+	stmt := cur.Node()
+	switch stmt := stmt.(type) {
 	case *ast.IfStmt:
-		if hasFreeVar(enclosingStmt.Init) {
-			return nil, fmt.Errorf("IfStmt's init statement has free variable declaration")
+		if hasFreeVar(stmt.Init) {
+			return 0, fmt.Errorf("if statement's init has free variable")
 		}
-		// The enclosingStmt is inside of the if declaration,
+		// stmt is inside of the if declaration.
 		// We need to check if we are in an else-if stmt and
 		// get the base if statement.
-		return baseIfStmt(enclosingIndex)
+		return baseIfStmt(cur)
+
 	case *ast.CaseClause:
-		// Get the enclosing switch stmt if the enclosingStmt is
-		// inside of the case statement.
-		for _, node := range path[enclosingIndex+1:] {
-			switch stmt := node.(type) {
+		for curSwitch := range cur.Enclosing((*ast.SwitchStmt)(nil), (*ast.TypeSwitchStmt)(nil)) {
+			swtch := curSwitch.Node()
+			var init ast.Stmt
+			switch swtch := swtch.(type) {
 			case *ast.SwitchStmt:
-				if hasFreeVar(stmt.Init) {
-					return nil, fmt.Errorf("SwitchStmt's init statement has free variable declaration")
-				}
-				return stmt, nil
+				init = swtch.Init
 			case *ast.TypeSwitchStmt:
-				if hasFreeVar(stmt.Init) {
-					return nil, fmt.Errorf("TypeSwitchStmt's init statement has free variable declaration")
-				}
-				return stmt, nil
+				init = swtch.Init
 			}
+			if hasFreeVar(init) {
+				return 0, fmt.Errorf("switch's init has free variable")
+			}
+			return swtch.Pos(), nil
 		}
 	}
+
 	// Check if the enclosing statement is inside another node.
-	switch parent := path[enclosingIndex+1].(type) {
+	switch parent := cur.Parent().Node().(type) {
 	case *ast.IfStmt:
 		if hasFreeVar(parent.Init) {
-			return nil, fmt.Errorf("IfStmt's init statement has free variable declaration")
+			return 0, fmt.Errorf("if-statement's init has free variable")
 		}
-		return baseIfStmt(enclosingIndex + 1)
+		return baseIfStmt(cur.Parent())
+
 	case *ast.ForStmt:
-		if parent.Init == enclosingStmt || parent.Post == enclosingStmt {
-			return parent, nil
+		switch cur.Node() {
+		case parent.Init, parent.Post:
+			return parent.Pos(), nil
 		}
+
 	case *ast.SwitchStmt:
 		if hasFreeVar(parent.Init) {
-			return nil, fmt.Errorf("SwitchStmt's init statement has free variable declaration")
+			return 0, fmt.Errorf("switch's init has free variable")
 		}
-		return parent, nil
+		return parent.Pos(), nil
+
 	case *ast.TypeSwitchStmt:
 		if hasFreeVar(parent.Init) {
-			return nil, fmt.Errorf("TypeSwitchStmt's init statement has free variable declaration")
+			return 0, fmt.Errorf("switch's init has free variable")
 		}
-		return parent, nil
+		return parent.Pos(), nil
 	}
-	return enclosingStmt, nil
+	return stmt.Pos(), nil
 }
 
-// canExtractVariable reports whether the code in the given range can be
-// extracted to a variable (or constant). It returns the selected expression or, if 'all',
-// all structurally equivalent expressions within the same function body, in lexical order.
-func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end token.Pos, all bool) ([]ast.Expr, error) {
+// canExtractVariable reports whether the code in the given range can
+// be extracted to a variable (or constant). It returns (cursors for)
+// the selected expression or, if 'all', all structurally equivalent
+// expressions within the same function body, in lexical order.
+func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end token.Pos, all bool) ([]inspector.Cursor, error) {
 	if start == end {
 		return nil, fmt.Errorf("empty selection")
 	}
-	file := curFile.Node().(*ast.File)
-	// TODO(adonovan): simplify, using Cursor.
-	path, exact := goastutil.PathEnclosingInterval(file, start, end)
-	if !exact {
+
+	_, curStart, curEnd, err := astutil.Select(curFile, start, end)
+	if err != nil {
+		return nil, err
+	}
+	expr, ok := curStart.Node().(ast.Expr)
+	if !ok || curEnd != curStart {
 		return nil, fmt.Errorf("selection is not an expression")
 	}
-	if len(path) == 0 {
-		return nil, bug.Errorf("no path enclosing interval")
-	}
-	for _, n := range path {
-		if _, ok := n.(*ast.ImportSpec); ok {
-			return nil, fmt.Errorf("cannot extract variable or constant in an import block")
-		}
-	}
-	expr, ok := path[0].(ast.Expr)
-	if !ok {
-		return nil, fmt.Errorf("selection is not an expression") // e.g. statement
+	if imp, _ := cursorutil.FirstEnclosing[*ast.ImportSpec](curStart); imp != nil {
+		return nil, fmt.Errorf("cannot extract variable or constant in an import block")
 	}
 	if tv, ok := info.Types[expr]; !ok || !tv.IsValue() || tv.Type == nil || tv.HasOk() {
 		// e.g. type, builtin, x.(type), 2-valued m[k], or ill-typed
 		return nil, fmt.Errorf("selection is not a single-valued expression")
 	}
 
-	var exprs []ast.Expr
+	var curExprs []inspector.Cursor
 	if !all {
-		exprs = append(exprs, expr)
-	} else if funcDecl, ok := path[len(path)-2].(*ast.FuncDecl); ok {
+		curExprs = append(curExprs, curStart)
+	} else if funcDecl, curFuncDecl := cursorutil.FirstEnclosing[*ast.FuncDecl](curStart); funcDecl != nil {
 		// Find all expressions in the same function body that
 		// are equal to the selected expression.
-		ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
-			if e, ok := n.(ast.Expr); ok {
+		for cur := range curFuncDecl.ChildAt(edge.FuncDecl_Body, -1).Preorder() {
+			if e, ok := cur.Node().(ast.Expr); ok {
 				if astutil.Equal(e, expr, func(x, y *ast.Ident) bool {
 					xobj, yobj := info.ObjectOf(x), info.ObjectOf(y)
 					// The two identifiers must resolve to the same object,
@@ -447,11 +444,10 @@ func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end t
 					xuse := info.Uses[x]
 					return xuse != nil && xuse == info.Uses[y]
 				}) {
-					exprs = append(exprs, e)
+					curExprs = append(curExprs, cur)
 				}
 			}
-			return true
-		})
+		}
 	} else {
 		return nil, fmt.Errorf("node %T is not inside a function", expr)
 	}
@@ -486,26 +482,16 @@ func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end t
 	//   newVar := &f.bar
 	//   x := *newVar + 1
 	//   *newVar = 2
-	for _, e := range exprs {
-		path, _ := goastutil.PathEnclosingInterval(file, e.Pos(), e.End())
-		for _, n := range path {
-			if assignment, ok := n.(*ast.AssignStmt); ok {
-				if slices.Contains(assignment.Lhs, e) {
-					return nil, fmt.Errorf("node %T is in LHS of an AssignStmt", expr)
-				}
-				break
-			}
-			if value, ok := n.(*ast.ValueSpec); ok {
-				for _, name := range value.Names {
-					if name == e {
-						return nil, fmt.Errorf("node %T is in LHS of a ValueSpec", expr)
-					}
-				}
-				break
-			}
+	for _, curExpr := range curExprs {
+		switch ek, _ := curExpr.ParentEdge(); ek {
+		case edge.AssignStmt_Lhs:
+			return nil, fmt.Errorf("node %T is in LHS of an AssignStmt", expr)
+		case edge.ValueSpec_Names:
+			return nil, fmt.Errorf("node %T is in LHS of a ValueSpec", expr)
 		}
 	}
-	return exprs, nil
+
+	return curExprs, nil
 }
 
 // freshName returns an identifier based on prefix (perhaps with a
