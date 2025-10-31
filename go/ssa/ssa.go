@@ -45,6 +45,8 @@ type Program struct {
 	// to avoid creation of duplicate methods from type information.
 	objectMethodsMu sync.Mutex
 	objectMethods   map[*types.Func]*Function
+
+	noReturn func(*types.Func) bool // (optional) predicate that decides whether a given call cannot return
 }
 
 // A Package is a single analyzed Go package containing Members for

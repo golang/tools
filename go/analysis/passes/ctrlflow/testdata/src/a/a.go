@@ -55,7 +55,6 @@ func (T) method2() { // (may return)
 
 // Checking for the noreturn fact associated with F ensures that
 // ctrlflow proved each of the listed functions was "noReturn".
-//
 func standardFunctions(x int) { // want standardFunctions:"noReturn"
 	t := new(testing.T)
 	switch x {
@@ -94,10 +93,7 @@ func standardFunctions(x int) { // want standardFunctions:"noReturn"
 	}
 }
 
-// False positives are possible.
-// This function is marked noReturn but in fact returns.
-//
-func spurious() { // want spurious:"noReturn"
+func panicRecover() {
 	defer func() { recover() }()
 	panic(nil)
 }
@@ -110,4 +106,89 @@ func g() {
 
 func h() { // want h:"noReturn"
 	lib.NoReturn()
+}
+
+func returns() {
+	print(1)
+	print(2)
+	print(3)
+}
+
+func nobody() // a function with no body is assumed to return
+
+func hasPanic() { // want hasPanic:"noReturn"
+	print(1)
+	panic(2)
+	print(3)
+}
+
+func hasSelect() { // want hasSelect:"noReturn"
+	print(1)
+	select {}
+	print(3)
+}
+
+func infiniteLoop() { // want infiniteLoop:"noReturn"
+	print(1)
+	for {
+	}
+	print(3)
+}
+
+func ifElse(cond bool) { // want ifElse:"noReturn"
+	print(1)
+	if cond {
+		hasSelect()
+	} else {
+		infiniteLoop()
+	}
+	print(3)
+}
+
+func swtch(x int) { // want swtch:"noReturn"
+	print(1)
+	switch x {
+	case 1:
+		hasSelect()
+	case 2:
+		goexit()
+	case 3:
+		logFatal()
+	case 4:
+		osexit()
+	default:
+		panic(3)
+	}
+}
+
+func _if(cond bool) {
+	print(1)
+	if cond {
+		hasSelect()
+	}
+	print(3)
+}
+
+func logFatal() { // want logFatal:"noReturn"
+	print(1)
+	log.Fatal("oops")
+	print(2)
+}
+
+func testFatal(t *testing.T) { // want testFatal:"noReturn"
+	print(1)
+	t.Fatal("oops")
+	print(2)
+}
+
+func goexit() { // want goexit:"noReturn"
+	print(1)
+	runtime.Goexit()
+	print(2)
+}
+
+func osexit() { // want osexit:"noReturn"
+	print(1)
+	os.Exit(0)
+	print(2)
 }

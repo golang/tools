@@ -488,7 +488,7 @@ func emitTailCall(f *Function, call *Call) {
 	} else {
 		call.typ = tresults
 	}
-	tuple := f.emit(call)
+	tuple := emitCall(f, call)
 	var ret Return
 	switch nr {
 	case 0:
@@ -507,6 +507,27 @@ func emitTailCall(f *Function, call *Call) {
 	}
 	f.emit(&ret)
 	f.currentBlock = nil
+}
+
+// emitCall emits a call instruction. If the callee is "no return",
+// it also emits a panic to eliminate infeasible CFG edges.
+func emitCall(fn *Function, call *Call) Value {
+	res := fn.emit(call)
+
+	callee := call.Call.StaticCallee()
+	if callee != nil &&
+		callee.object != nil &&
+		fn.Prog.noReturn != nil &&
+		fn.Prog.noReturn(callee.object) {
+		// Call cannot return. Insert a panic after it.
+		fn.emit(&Panic{
+			X:   emitConv(fn, vNoReturn, tEface),
+			pos: call.Pos(),
+		})
+		fn.currentBlock = fn.newBasicBlock("unreachable.noreturn")
+	}
+
+	return res
 }
 
 // emitImplicitSelections emits to f code to apply the sequence of

@@ -110,10 +110,11 @@ var (
 	tEface      = types.NewInterfaceType(nil, nil).Complete()
 
 	// SSA Value constants.
-	vZero  = intConst(0)
-	vOne   = intConst(1)
-	vTrue  = NewConst(constant.MakeBool(true), tBool)
-	vFalse = NewConst(constant.MakeBool(false), tBool)
+	vZero     = intConst(0)
+	vOne      = intConst(1)
+	vTrue     = NewConst(constant.MakeBool(true), tBool)
+	vFalse    = NewConst(constant.MakeBool(false), tBool)
+	vNoReturn = NewConst(constant.MakeString("noreturn"), tString)
 
 	jReady = intConst(0)  // range-over-func jump is READY
 	jBusy  = intConst(-1) // range-over-func jump is BUSY
@@ -291,7 +292,7 @@ func (b *builder) exprN(fn *Function, e ast.Expr) Value {
 		var c Call
 		b.setCall(fn, e, &c.Call)
 		c.typ = typ
-		return fn.emit(&c)
+		return emitCall(fn, &c)
 
 	case *ast.IndexExpr:
 		mapt := typeparams.CoreType(fn.typeOf(e.X)).(*types.Map) // ,ok must be a map.
@@ -723,7 +724,7 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 		var v Call
 		b.setCall(fn, e, &v.Call)
 		v.setType(fn.typ(tv.Type))
-		return fn.emit(&v)
+		return emitCall(fn, &v)
 
 	case *ast.UnaryExpr:
 		switch e.Op {

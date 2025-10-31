@@ -1,5 +1,10 @@
 package a
 
+import (
+	"log"
+	"os"
+)
+
 type X struct{ f, g int }
 
 func f(x, y *X) {
@@ -302,4 +307,15 @@ func f19(slice []int, array *[2]int, m map[string]int, ch chan int) {
 		<-ch    // want "receive from nil channel"
 		ch <- 0 // want "send to nil channel"
 	}
+}
+
+func f20() {
+	f, err := os.Open("")
+	if err != nil {
+		log.Fatal(err) // noreturn analysis proves this call doesn't return
+	}
+	if err != nil { // want "impossible condition"
+		log.Fatal(err)
+	}
+	f.Close()
 }

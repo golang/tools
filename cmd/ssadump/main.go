@@ -132,28 +132,30 @@ func doMain() error {
 		return fmt.Errorf("packages contain errors")
 	}
 
-	// Turn on instantiating generics during build if the program will be run.
-	if *runFlag {
-		mode |= ssa.InstantiateGenerics
-	}
-
-	// Create SSA-form program representation.
-	prog, pkgs := ssautil.AllPackages(initial, mode)
-
-	for i, p := range pkgs {
-		if p == nil {
-			return fmt.Errorf("cannot build SSA for package %s", initial[i])
-		}
-	}
-
 	if !*runFlag {
-		// Build and display only the initial packages
-		// (and synthetic wrappers).
-		for _, p := range pkgs {
+		// Create (and display) SSA only for initial packages and wrappers.
+		_, pkgs := ssautil.Packages(initial, mode)
+		for i, p := range pkgs {
+			if p == nil {
+				return fmt.Errorf("cannot build SSA for package %s", initial[i])
+			}
 			p.Build()
 		}
 
 	} else {
+		// Create SSA for initial packages and all dependencies, instantiating generics.
+		mode |= ssa.InstantiateGenerics
+
+		// TODO(adonovan): opt: use noreturn analysis over transitive
+		// dependencies to prune spurious control flow graph edges.
+
+		prog, pkgs := ssautil.AllPackages(initial, mode)
+		for i, p := range pkgs {
+			if p == nil {
+				return fmt.Errorf("cannot build SSA for package %s", initial[i])
+			}
+		}
+
 		// Run the interpreter.
 		// Build SSA for all packages.
 		prog.Build()

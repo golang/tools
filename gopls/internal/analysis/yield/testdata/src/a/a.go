@@ -8,9 +8,9 @@ import (
 	"bufio"
 	"io"
 	"iter"
+	"runtime"
 )
 
-//
 // Modify this block of comment lines as needed when changing imports
 // to avoid perturbing subsequent line numbers (and thus error messages).
 //
@@ -130,6 +130,17 @@ func tricky5(list []string, cond bool) iter.Seq[string] {
 			}
 			if !ok {
 				return
+			}
+		}
+	}
+}
+
+// This one is from the tests of the "iter" package.
+func tricky6() iter.Seq[int] {
+	return func(yield func(int) bool) {
+		for {
+			if !yield(55) { // nope
+				runtime.Goexit()
 			}
 		}
 	}
