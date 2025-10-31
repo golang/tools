@@ -327,12 +327,12 @@ func init():
 0:                                                                entry P:0 S:2
 	t0 = *init$guard                                                   bool
 	if t0 goto 2 else 1
-1:                                                           init.start P:1 S:1
+1:                                                    init.start P:1 S:1 idom:0
 	*init$guard = true:bool
 	t1 = errors.init()                                                   ()
 	*i = 42:int
 	jump 2
-2:                                                            init.done P:2 S:0
+2:                                                     init.done P:2 S:0 idom:0
 	return
 
 `},

@@ -668,7 +668,11 @@ func WriteFunction(buf *bytes.Buffer, f *Function) {
 			continue
 		}
 		n, _ := fmt.Fprintf(buf, "%d:", b.Index)
+		// (|predecessors|, |successors|, immediate dominator)
 		bmsg := fmt.Sprintf("%s P:%d S:%d", b.Comment, len(b.Preds), len(b.Succs))
+		if b.Idom() != nil {
+			bmsg = fmt.Sprintf("%s idom:%d", bmsg, b.Idom().Index)
+		}
 		fmt.Fprintf(buf, "%*s%s\n", punchcard-1-n-len(bmsg), "", bmsg)
 
 		if false { // CFG debugging
