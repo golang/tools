@@ -126,11 +126,11 @@ func _() {
 package a
 
 import (
-	"testdata/c"
-	c0 "testdata/c2"
+	c1 "testdata/c"
+	c2 "testdata/c2"
 )
 
 func _() {
-	x, y := c.C(0), c0.C(1) //@ inline(re"B", b4)
+	x, y := c1.C(0), c2.C(1) //@ inline(re"B", b4)
 	_, _ = x, y
 }
