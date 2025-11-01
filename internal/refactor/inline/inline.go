@@ -2019,7 +2019,7 @@ func checkFalconConstraints(logf logger, params []*parameter, args []*argument, 
 		pkg.Scope().Insert(types.NewTypeName(token.NoPos, pkg, typ.Name, types.Typ[typ.Kind]))
 	}
 
-	// Declared constants and variables for for parameters.
+	// Declared constants and variables for parameters.
 	nconst := 0
 	for i, param := range params {
 		name := param.info.Name

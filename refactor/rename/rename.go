@@ -265,7 +265,7 @@ func Main(ctxt *build.Context, offsetFlag, fromFlag, to string) error {
 	if requiresGlobalRename(fromObjects, to) {
 		// For a local refactoring, we needn't load more
 		// packages, but if the renaming affects the package's
-		// API, we we must load all packages that depend on the
+		// API, we must load all packages that depend on the
 		// package defining the object, plus their tests.
 
 		if Verbose {

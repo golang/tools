@@ -23,7 +23,7 @@ type ToolHandler func(context.Context, *ServerSession, *CallToolParamsFor[map[st
 // A ToolHandlerFor handles a call to tools/call with typed arguments and results.
 type ToolHandlerFor[In, Out any] func(context.Context, *ServerSession, *CallToolParamsFor[In]) (*CallToolResultFor[Out], error)
 
-// A rawToolHandler is like a ToolHandler, but takes the arguments as as json.RawMessage.
+// A rawToolHandler is like a ToolHandler, but takes the arguments as json.RawMessage.
 type rawToolHandler = func(context.Context, *ServerSession, *CallToolParamsFor[json.RawMessage]) (*CallToolResult, error)
 
 // A Tool is a tool definition that is bound to a tool handler.

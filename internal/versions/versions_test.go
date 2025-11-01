@@ -58,7 +58,7 @@ func TestVersionComparisons(t *testing.T) {
 		x, y string
 		want int
 	}{
-		// All comparisons of go2, go1.21.2, go1.21rc2, go1.21rc2, go1, go0.0, "", bad
+		// All comparisons of go2, go1.21.2, go1.21rc2, go1.21rc, go1, go0.0, "", bad
 		{"go2", "go2", 0},
 		{"go2", "go1.21.2", +1},
 		{"go2", "go1.21rc2", +1},

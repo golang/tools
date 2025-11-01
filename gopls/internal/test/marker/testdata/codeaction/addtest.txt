@@ -1062,7 +1062,7 @@ func (*ReturnPtrError) Method(in string) string {return in} //@codeaction("Metho
 -- constructorcomparison/constructorcomparison.go --
 package main
 
-// Foo have two constructors. NewFoo is prefered over others.
+// Foo have two constructors. NewFoo is preferred over others.
 func CreateAFoo() Foo {return Foo{}}
 func NewFoo() Foo {return Foo{}}
 
