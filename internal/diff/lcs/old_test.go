@@ -133,18 +133,13 @@ func TestRandOld(t *testing.T) {
 // to ensure at least minimal parity of the three representations.
 func TestDiffAPI(t *testing.T) {
 	for _, test := range []struct {
-		a, b                              string
-		wantStrings, wantBytes, wantRunes string
+		a, b                 string
+		wantBytes, wantRunes string
 	}{
-		{"abcXdef", "abcxdef", "[{3 4 3 4}]", "[{3 4 3 4}]", "[{3 4 3 4}]"}, // ASCII
-		{"abcωdef", "abcΩdef", "[{3 5 3 5}]", "[{3 5 3 5}]", "[{3 4 3 4}]"}, // non-ASCII
+		{"abcXdef", "abcxdef", "[{3 4 3 4}]", "[{3 4 3 4}]"}, // ASCII
+		{"abcωdef", "abcΩdef", "[{3 5 3 5}]", "[{3 4 3 4}]"}, // non-ASCII
 	} {
 
-		gotStrings := fmt.Sprint(DiffStrings(test.a, test.b))
-		if gotStrings != test.wantStrings {
-			t.Errorf("DiffStrings(%q, %q) = %v, want %v",
-				test.a, test.b, gotStrings, test.wantStrings)
-		}
 		gotBytes := fmt.Sprint(DiffBytes([]byte(test.a), []byte(test.b)))
 		if gotBytes != test.wantBytes {
 			t.Errorf("DiffBytes(%q, %q) = %v, want %v",
