@@ -1,6 +1,9 @@
 package stditerators
 
-import "go/types"
+import (
+	"go/types"
+	"reflect"
+)
 
 func _(tuple *types.Tuple) {
 	for v := range tuple.Variables() { // want "Len/At loop can simplified using Tuple.Variables iteration"
@@ -86,5 +89,33 @@ func _(tuple *types.Tuple) {
 		for v0 := range tuple.Variables() { // want "Len/At loop can simplified using Tuple.Variables iteration"
 			print(v0, v)
 		}
+	}
+}
+
+func _(t reflect.Type) {
+	for field := range t.Fields() { // want "NumField/Field loop can simplified using Type.Fields iteration"
+		print(field)
+	}
+	for method := range t.Methods() { // want "NumMethod/Method loop can simplified using Type.Methods iteration"
+		print(method)
+	}
+	for in := range t.Ins() { // want "NumIn/In loop can simplified using Type.Ins iteration"
+		print(in)
+	}
+	for out := range t.Outs() { // want "NumOut/Out loop can simplified using Type.Outs iteration"
+		print(out)
+	}
+}
+
+func _(v reflect.Value) {
+	for _, field := range v.Fields() { // want "NumField/Field loop can simplified using Value.Fields iteration"
+		print(field)
+	}
+	// Ideally we would use both parts of Value.Field's iter.Seq2 here.
+	for i := 0; i < v.NumField(); i++ {
+		print(v.Field(i), v.Type().Field(i)) // nope
+	}
+	for _, method := range v.Methods() { // want "NumMethod/Method loop can simplified using Value.Methods iteration"
+		print(method)
 	}
 }
