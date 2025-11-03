@@ -1,0 +1,32 @@
+Regression test for #76144, a panic in refactor.inline.variable.
+
+It was fixed by CL 683535, making it logically a dup of #74347.
+
+-- a/a.go --
+package main
+
+type A struct {
+	Name string
+}
+
+func F(m map[string]A) {
+	human := A{
+		Name: "foo",
+	}
+	m["foo"] = human //@codeaction("hu", "refactor.inline.variable", result=out)
+}
+-- @out/a/a.go --
+package main
+
+type A struct {
+	Name string
+}
+
+func F(m map[string]A) {
+	human := A{
+		Name: "foo",
+	}
+	m["foo"] = A{
+	Name: "foo",
+} //@codeaction("hu", "refactor.inline.variable", result=out)
+}
