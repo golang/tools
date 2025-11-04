@@ -188,6 +188,21 @@ func (c *CFGs) callMayReturn(call *ast.CallExpr) (r bool) {
 		return false // panic never returns
 	}
 
+	// "Some driver implementations (such as those based on Bazel and Blaze) do not
+	// currently apply analyzers to packages of the standard library. Therefore, for
+	// best results, analyzer authors should not rely on analysis facts being available
+	// for standard packages." [1].
+	// This means that we cannot rely on the noReturn fact being available for standard
+	// library functions.
+	// Therefore, here we check if the function is an intrinsic no-return function.
+	//
+	// [1]: https://pkg.go.dev/golang.org/x/tools/go/analysis
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		if fn, ok := c.pass.TypesInfo.ObjectOf(sel.Sel).(*types.Func); ok && isIntrinsicNoReturn(fn) {
+			return false // intrinsic no-return functions
+		}
+	}
+
 	// Is this a static call? Also includes static functions
 	// parameterized by a type. Such functions may or may not
 	// return depending on the parameter type, but in some
@@ -227,5 +242,12 @@ func isIntrinsicNoReturn(fn *types.Func) bool {
 	// Add functions here as the need arises, but don't allocate memory.
 	path, name := fn.Pkg().Path(), fn.Name()
 	return path == "syscall" && (name == "Exit" || name == "ExitProcess" || name == "ExitThread") ||
-		path == "runtime" && name == "Goexit"
+		(path == "runtime" && name == "Goexit") ||
+		// Ideally we should not need to list the following functions since they
+		// internally call the functions above. However, we will only know that _if_
+		// we also analyze the standard library. For some driver implementations like
+		// Bazel it would not do so currently. Therefore, we list them here.
+		(path == "log" && (name == "Fatal" || name == "Fatalf")) ||
+		(path == "os" && (name == "Exit")) ||
+		(path == "testing" && (name == "FailNow" || name == "Skip" || name == "Skipf" || name == "SkipNow"))
 }
