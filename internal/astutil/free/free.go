@@ -30,13 +30,17 @@ import (
 // a struct type, so freeishNames underapproximates: the resulting set
 // may omit names that are free lexical references.
 //
+// TODO(adonovan): includeComplitIdents is a crude hammer: the caller
+// may have partial or heuristic information about whether a given T
+// is struct type. Replace includeComplitIdents with a hook to query
+// the caller.
+//
 // The code is based on go/parser.resolveFile, but heavily simplified. Crucial
 // differences are:
 //   - Instead of resolving names to their objects, this function merely records
 //     whether they are free.
 //   - Labels are ignored: they do not refer to values.
-//   - This is never called on FuncDecls or ImportSpecs, so the function
-//     panics if it sees one.
+//   - This is never called on ImportSpecs, so the function panics if it sees one.
 func Names(n ast.Node, includeComplitIdents bool) map[string]bool {
 	v := &freeVisitor{
 		free:                 make(map[string]bool),
@@ -83,12 +87,12 @@ func (v *freeVisitor) Visit(n ast.Node) ast.Visitor {
 
 	// Expressions.
 	case *ast.Ident:
-		v.resolve(n)
+		v.use(n)
 
 	case *ast.FuncLit:
 		v.openScope()
 		defer v.closeScope()
-		v.walkFuncType(n.Type)
+		v.walkFuncType(nil, n.Type)
 		v.walkBody(n.Body)
 
 	case *ast.SelectorExpr:
@@ -103,7 +107,7 @@ func (v *freeVisitor) Visit(n ast.Node) ast.Visitor {
 	case *ast.FuncType:
 		v.openScope()
 		defer v.closeScope()
-		v.walkFuncType(n)
+		v.walkFuncType(nil, n)
 
 	case *ast.CompositeLit:
 		v.walk(n.Type)
@@ -117,7 +121,7 @@ func (v *freeVisitor) Visit(n ast.Node) ast.Visitor {
 					if v.includeComplitIdents {
 						// Over-approximate by treating both cases as potentially
 						// free names.
-						v.resolve(ident)
+						v.use(ident)
 					} else {
 						// Under-approximate by ignoring potentially free names.
 					}
@@ -145,13 +149,11 @@ func (v *freeVisitor) Visit(n ast.Node) ast.Visitor {
 		}
 
 	case *ast.LabeledStmt:
-		// ignore labels
-		// TODO(jba): consider labels?
+		// Ignore labels.
 		v.walk(n.Stmt)
 
 	case *ast.BranchStmt:
 		// Ignore labels.
-		// TODO(jba): consider labels?
 
 	case *ast.BlockStmt:
 		v.openScope()
@@ -180,13 +182,11 @@ func (v *freeVisitor) Visit(n ast.Node) ast.Visitor {
 		v.walkBody(n.Body)
 
 	case *ast.TypeSwitchStmt:
-		if n.Init != nil {
-			v.openScope()
-			defer v.closeScope()
-			v.walk(n.Init)
-		}
 		v.openScope()
 		defer v.closeScope()
+		if n.Init != nil {
+			v.walk(n.Init)
+		}
 		v.walk(n.Assign)
 		// We can use walkBody here because we don't track label scopes.
 		v.walkBody(n.Body)
@@ -235,11 +235,10 @@ func (v *freeVisitor) Visit(n ast.Node) ast.Visitor {
 			for _, spec := range n.Specs {
 				spec := spec.(*ast.ValueSpec)
 				walkSlice(v, spec.Values)
-				if spec.Type != nil {
-					v.walk(spec.Type)
-				}
+				v.walk(spec.Type)
 				v.declare(spec.Names...)
 			}
+
 		case token.TYPE:
 			for _, spec := range n.Specs {
 				spec := spec.(*ast.TypeSpec)
@@ -260,7 +259,14 @@ func (v *freeVisitor) Visit(n ast.Node) ast.Visitor {
 		}
 
 	case *ast.FuncDecl:
-		panic("encountered top-level function declaration in free analysis")
+		if n.Recv == nil { // package-level function
+			v.declare(n.Name)
+		}
+		v.openScope()
+		defer v.closeScope()
+		v.walkTypeParams(n.Type.TypeParams)
+		v.walkFuncType(n.Recv, n.Type)
+		v.walkBody(n.Body)
 
 	default:
 		return v
@@ -269,67 +275,60 @@ func (v *freeVisitor) Visit(n ast.Node) ast.Visitor {
 	return nil
 }
 
-func (r *freeVisitor) openScope() {
-	r.scope = &scope{map[string]bool{}, r.scope}
+func (v *freeVisitor) openScope() {
+	v.scope = &scope{map[string]bool{}, v.scope}
 }
 
-func (r *freeVisitor) closeScope() {
-	r.scope = r.scope.outer
+func (v *freeVisitor) closeScope() {
+	v.scope = v.scope.outer
 }
 
-func (r *freeVisitor) walk(n ast.Node) {
+func (v *freeVisitor) walk(n ast.Node) {
 	if n != nil {
-		ast.Walk(r, n)
+		ast.Walk(v, n)
 	}
 }
 
-// walkFuncType walks a function type. It is used for explicit
-// function types, like this:
-//
-//	type RunFunc func(context.Context) error
-//
-// and function literals, like this:
-//
-//	func(a, b int) int { return a + b}
-//
-// neither of which have type parameters.
-// Function declarations do involve type parameters, but we don't
-// handle them.
-func (r *freeVisitor) walkFuncType(typ *ast.FuncType) {
-	// The order here doesn't really matter, because names in
-	// a field list cannot appear in types.
-	// (The situation is different for type parameters, for which
-	// see [freeVisitor.walkTypeParams].)
-	r.resolveFieldList(typ.Params)
-	r.resolveFieldList(typ.Results)
-	r.declareFieldList(typ.Params)
-	r.declareFieldList(typ.Results)
+func (v *freeVisitor) walkFuncType(recv *ast.FieldList, typ *ast.FuncType) {
+	// First use field types...
+	if recv != nil {
+		v.walkFieldTypes(recv)
+	}
+	v.walkFieldTypes(typ.Params)
+	v.walkFieldTypes(typ.Results)
+
+	// ...then declare field names.
+	if recv != nil {
+		v.declareFieldNames(recv)
+	}
+	v.declareFieldNames(typ.Params)
+	v.declareFieldNames(typ.Results)
 }
 
 // walkTypeParams is like walkFieldList, but declares type parameters eagerly so
 // that they may be resolved in the constraint expressions held in the field
 // Type.
-func (r *freeVisitor) walkTypeParams(list *ast.FieldList) {
-	r.declareFieldList(list)
-	r.resolveFieldList(list)
+func (v *freeVisitor) walkTypeParams(list *ast.FieldList) {
+	v.declareFieldNames(list)
+	v.walkFieldTypes(list) // constraints
 }
 
-func (r *freeVisitor) walkBody(body *ast.BlockStmt) {
+func (v *freeVisitor) walkBody(body *ast.BlockStmt) {
 	if body == nil {
 		return
 	}
-	walkSlice(r, body.List)
+	walkSlice(v, body.List)
 }
 
-func (r *freeVisitor) walkFieldList(list *ast.FieldList) {
+func (v *freeVisitor) walkFieldList(list *ast.FieldList) {
 	if list == nil {
 		return
 	}
-	r.resolveFieldList(list) // .Type may contain references
-	r.declareFieldList(list) // .Names declares names
+	v.walkFieldTypes(list)    // .Type may contain references
+	v.declareFieldNames(list) // .Names declares names
 }
 
-func (r *freeVisitor) shortVarDecl(lhs []ast.Expr) {
+func (v *freeVisitor) shortVarDecl(lhs []ast.Expr) {
 	// Go spec: A short variable declaration may redeclare variables provided
 	// they were originally declared in the same block with the same type, and
 	// at least one of the non-blank variables is new.
@@ -340,7 +339,7 @@ func (r *freeVisitor) shortVarDecl(lhs []ast.Expr) {
 		// In a well-formed program each expr must be an identifier,
 		// but be forgiving.
 		if id, ok := x.(*ast.Ident); ok {
-			r.declare(id)
+			v.declare(id)
 		}
 	}
 }
@@ -351,42 +350,39 @@ func walkSlice[S ~[]E, E ast.Node](r *freeVisitor, list S) {
 	}
 }
 
-// resolveFieldList resolves the types of the fields in list.
-// The companion method declareFieldList declares the names of the fields.
-func (r *freeVisitor) resolveFieldList(list *ast.FieldList) {
-	if list == nil {
-		return
-	}
-	for _, f := range list.List {
-		r.walk(f.Type)
+// walkFieldTypes resolves the types of the walkFieldTypes in list.
+// The companion method declareFieldList declares the names of the walkFieldTypes.
+func (v *freeVisitor) walkFieldTypes(list *ast.FieldList) {
+	if list != nil {
+		for _, f := range list.List {
+			v.walk(f.Type)
+		}
 	}
 }
 
-// declareFieldList declares the names of the fields in list.
+// declareFieldNames declares the names of the fields in list.
 // (Names in a FieldList always establish new bindings.)
 // The companion method resolveFieldList resolves the types of the fields.
-func (r *freeVisitor) declareFieldList(list *ast.FieldList) {
-	if list == nil {
-		return
-	}
-	for _, f := range list.List {
-		r.declare(f.Names...)
+func (v *freeVisitor) declareFieldNames(list *ast.FieldList) {
+	if list != nil {
+		for _, f := range list.List {
+			v.declare(f.Names...)
+		}
 	}
 }
 
-// resolve marks ident as free if it is not in scope.
-// TODO(jba): rename: no resolution is happening.
-func (r *freeVisitor) resolve(ident *ast.Ident) {
-	if s := ident.Name; s != "_" && !r.scope.defined(s) {
-		r.free[s] = true
+// use marks ident as free if it is not in scope.
+func (v *freeVisitor) use(ident *ast.Ident) {
+	if s := ident.Name; s != "_" && !v.scope.defined(s) {
+		v.free[s] = true
 	}
 }
 
 // declare adds each non-blank ident to the current scope.
-func (r *freeVisitor) declare(idents ...*ast.Ident) {
+func (v *freeVisitor) declare(idents ...*ast.Ident) {
 	for _, id := range idents {
 		if id.Name != "_" {
-			r.scope.names[id.Name] = true
+			v.scope.names[id.Name] = true
 		}
 	}
 }
