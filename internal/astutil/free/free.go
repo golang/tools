@@ -259,7 +259,7 @@ func (v *freeVisitor) Visit(n ast.Node) ast.Visitor {
 		}
 
 	case *ast.FuncDecl:
-		if n.Recv == nil { // package-level function
+		if n.Recv == nil && n.Name.Name != "init" { // package-level function
 			v.declare(n.Name)
 		}
 		v.openScope()
@@ -291,18 +291,48 @@ func (v *freeVisitor) walk(n ast.Node) {
 
 func (v *freeVisitor) walkFuncType(recv *ast.FieldList, typ *ast.FuncType) {
 	// First use field types...
-	if recv != nil {
-		v.walkFieldTypes(recv)
-	}
+	v.walkRecvFieldType(recv)
 	v.walkFieldTypes(typ.Params)
 	v.walkFieldTypes(typ.Results)
 
 	// ...then declare field names.
-	if recv != nil {
-		v.declareFieldNames(recv)
-	}
+	v.declareFieldNames(recv)
 	v.declareFieldNames(typ.Params)
 	v.declareFieldNames(typ.Results)
+}
+
+// A receiver field is not like a param or result field because
+// "func (recv R[T]) method()" uses R but declares T.
+func (v *freeVisitor) walkRecvFieldType(list *ast.FieldList) {
+	if list == nil {
+		return
+	}
+	for _, f := range list.List { // valid => len=1
+		typ := f.Type
+		if ptr, ok := typ.(*ast.StarExpr); ok {
+			typ = ptr.X
+		}
+
+		// Analyze receiver type as Base[Index, ...]
+		var (
+			base    ast.Expr
+			indices []ast.Expr
+		)
+		switch typ := typ.(type) {
+		case *ast.IndexExpr: // B[T]
+			base, indices = typ.X, []ast.Expr{typ.Index}
+		case *ast.IndexListExpr: // B[K, V]
+			base, indices = typ.X, typ.Indices
+		default: // B
+			base = typ
+		}
+		for _, expr := range indices {
+			if id, ok := expr.(*ast.Ident); ok {
+				v.declare(id)
+			}
+		}
+		v.walk(base)
+	}
 }
 
 // walkTypeParams is like walkFieldList, but declares type parameters eagerly so

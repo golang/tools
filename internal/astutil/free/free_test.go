@@ -208,6 +208,18 @@ func TestNames(t *testing.T) {
 				`func (recv T) method(x int) { print(recv) }`,
 				"T int print",
 			},
+			{
+				`func (recv R[P]) method(x int) { var _ P }`,
+				"R int",
+			},
+			{
+				`func (recv R[P, P2]) method(x int) { var ( _ P; _ P2 ) }`,
+				"R int",
+			},
+			{
+				`func init() { print(init) }`,
+				"print init",
+			},
 		}},
 		{
 			false,
