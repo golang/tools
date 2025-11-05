@@ -17,6 +17,7 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/analysis/analysistest"
 	"golang.org/x/tools/internal/testenv"
+	"golang.org/x/tools/internal/testfiles"
 )
 
 func TestAnalyzer(t *testing.T) {
@@ -24,6 +25,9 @@ func TestAnalyzer(t *testing.T) {
 		testenv.NeedsGoExperiment(t, "aliastypeparams")
 	}
 	analysistest.RunWithSuggestedFixes(t, analysistest.TestData(), Analyzer, "a", "b", "rmimport")
+
+	dir := testfiles.ExtractTxtarFileToTmp(t, "testdata/src/issue76190.txtar")
+	analysistest.Run(t, dir, Analyzer, "example.com/a", "example.com/b")
 }
 
 func TestAllowBindingDeclFlag(t *testing.T) {

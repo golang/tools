@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/packagepath"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/refactor/inline"
@@ -132,8 +133,6 @@ func (a *analyzer) HandleConst(nameIdent, rhsIdent *ast.Ident) {
 
 // inline inlines each static call to an inlinable function
 // and each reference to an inlinable constant or type alias.
-//
-// TODO(adonovan):  handle multiple diffs that each add the same import.
 func (a *analyzer) inline() {
 	for cur := range a.root.Preorder((*ast.CallExpr)(nil), (*ast.Ident)(nil)) {
 		switch n := cur.Node().(type) {
@@ -165,6 +164,10 @@ func (a *analyzer) inlineCall(call *ast.CallExpr, cur inspector.Cursor) {
 		}
 		if callee == nil {
 			return // nope
+		}
+
+		if a.withinTestOf(cur, fn) {
+			return // don't inline a function from within its own test
 		}
 
 		// Inline the call.
@@ -227,6 +230,44 @@ func (a *analyzer) inlineCall(call *ast.CallExpr, cur inspector.Cursor) {
 			}},
 		})
 	}
+}
+
+// withinTestOf reports whether cur is within a dedicated test
+// function for the inlinable target function.
+// A call within its dedicated test should not be inlined.
+func (a *analyzer) withinTestOf(cur inspector.Cursor, target *types.Func) bool {
+	curFuncDecl, ok := moreiters.First(cur.Enclosing((*ast.FuncDecl)(nil)))
+	if !ok {
+		return false // not in a function
+	}
+	funcDecl := curFuncDecl.Node().(*ast.FuncDecl)
+	if funcDecl.Recv != nil {
+		return false // not a test func
+	}
+	if strings.TrimSuffix(a.pass.Pkg.Path(), "_test") != target.Pkg().Path() {
+		return false // different package
+	}
+	if !strings.HasSuffix(a.pass.Fset.File(funcDecl.Pos()).Name(), "_test.go") {
+		return false // not a test file
+	}
+
+	// Computed expected SYMBOL portion of "TestSYMBOL_comment"
+	// for the target symbol.
+	symbol := target.Name()
+	if recv := target.Signature().Recv(); recv != nil {
+		_, named := typesinternal.ReceiverNamed(recv)
+		symbol = named.Obj().Name() + "_" + symbol
+	}
+
+	// TODO(adonovan): use a proper Test function parser.
+	fname := funcDecl.Name.Name
+	for _, pre := range []string{"Test", "Example", "Bench"} {
+		if fname == pre+symbol || strings.HasPrefix(fname, pre+symbol+"_") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // If tn is the TypeName of an inlinable alias, suggest inlining its use at cur.

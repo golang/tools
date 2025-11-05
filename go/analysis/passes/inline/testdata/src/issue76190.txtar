@@ -1,0 +1,155 @@
+This test checks that calls are not inlined when the call appears in a specific
+test of the function. (Even deprecated functions deserve tests.)
+
+Variants:
+- functions (TestF) vs methods (TestT_F)
+- optional comment suffixes (TestSYMBOL_comment)
+- in-package test vs external test
+- test of same or different package from symbol
+
+-- go.mod --
+module example.com
+
+-- a/a.go --
+package a
+
+//go:fix inline
+func F() { print("F") } // want F:"goFixInline a.F"
+//go:fix inline
+func G() { print("G") } // want G:"goFixInline a.G"
+
+type T int
+//go:fix inline
+func (T) F() { print("T.F") } // want F:`goFixInline \(a.T\).F`
+//go:fix inline
+func (T) G() { print("T.G") } // want G:`goFixInline \(a.T\).G`
+
+-- a/a_test.go --
+package a
+
+import "testing"
+
+func TestF(t *testing.T) {
+	F() // not inlined
+	G() // want "Call of a.G should be inlined"
+}
+
+func TestG_comment(t *testing.T) {
+	F() // want "Call of a.F should be inlined"
+	G() // not inlined
+}
+
+func TestT_F(t *testing.T) {
+	T(0).F() // not inlined
+	T(0).G() // want `Call of \(a.T\).G should be inlined`
+}
+
+func TestT_G(t *testing.T) {
+	T(0).F() // want `Call of \(a.T\).F should be inlined`
+	T(0).G() // not inlined
+}
+
+-- a/a_test.go.golden --
+package a
+
+import "testing"
+
+func TestF(t *testing.T) {
+	F() // not inlined
+	G() // want "Call of a.G should be inlined"
+}
+
+func TestG_comment(t *testing.T) {
+	F() // want "Call of a.G should be inlined"
+	G() // not inlined
+}
+
+func TestT_F(t *testing.T) {
+	T(0).F() // not inlined
+	T(0).G() // want "Call of a.G should be inlined"
+}
+
+func TestT_G(t *testing.T) {
+	T(0).F() // want "Call of a.G should be inlined"
+	T(0).G() // not inlined
+}
+
+-- a/a_x_test.go --
+package a_test
+
+import (
+	"example.com/a"
+	"testing"
+)
+
+func TestF(t *testing.T) {
+	a.F() // not inlined
+	a.G() // want "Call of a.G should be inlined"
+}
+
+func TestG_comment(t *testing.T) {
+	a.F() // want "Call of a.F should be inlined"
+	a.G() // not inlined
+}
+
+func TestT_F(t *testing.T) {
+	a.T(0).F() // not inlined
+	a.T(0).G() // want `Call of \(a.T\).G should be inlined`
+}
+
+func TestT_G(t *testing.T) {
+	a.T(0).F() // want `Call of \(a.T\).F should be inlined`
+	a.T(0).G() // not inlined
+}
+
+-- a/a_x_test.go.golden --
+package a_test
+
+import (
+	"example.com/a"
+	"testing"
+)
+
+func TestF(t *testing.T) {
+	a.F() // not inlined
+	a.G() // want "Call of a.G should be inlined"
+}
+
+func TestG_comment(t *testing.T) {
+	a.F() // want "Call of a.G should be inlined"
+	a.G() // not inlined
+}
+
+func TestT_F(t *testing.T) {
+	a.T(0).F() // not inlined
+	a.T(0).G() // want "Call of a.G should be inlined"
+}
+
+func TestT_G(t *testing.T) {
+	a.T(0).F() // want "Call of a.G should be inlined"
+	a.T(0).G() // not inlined
+}
+
+-- b/b_test.go --
+package b_test
+
+import (
+	"example.com/a"
+	"testing"
+)
+
+func TestF(t *testing.T) {
+	a.F() // want "Call of a.F should be inlined"
+}
+
+-- b/b_test.go.golden --
+package b_test
+
+import (
+	"example.com/a"
+	"testing"
+)
+
+func TestF(t *testing.T) {
+	print() // want "Call of a.F should be inlined"
+}
