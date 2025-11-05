@@ -27,8 +27,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/checker"
 	"golang.org/x/tools/go/analysis/internal"
-	"golang.org/x/tools/go/analysis/internal/analysisflags"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/internal/analysisinternal/driverutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"
@@ -297,7 +297,7 @@ func applyDiffsAndCompare(pkg *types.Package, filename string, original, want []
 	if err != nil {
 		return fmt.Errorf("%s: error applying fixes: %v (see possible explanations at RunWithSuggestedFixes)", filename, err)
 	}
-	fixed, err := analysisflags.FormatSourceRemoveImports(pkg, fixedBytes)
+	fixed, err := driverutil.FormatSourceRemoveImports(pkg, fixedBytes)
 	if err != nil {
 		return fmt.Errorf("%s: error formatting resulting source: %v\n%s", filename, err, fixedBytes)
 	}

@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -22,7 +22,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "nilness",
-	Doc:      analysisinternal.MustExtractDoc(doc, "nilness"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "nilness"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/nilness",
 	Run:      run,
 	Requires: []*analysis.Analyzer{buildssa.Analyzer},

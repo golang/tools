@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
@@ -26,7 +26,7 @@ import (
 
 var MinMaxAnalyzer = &analysis.Analyzer{
 	Name: "minmax",
-	Doc:  analysisinternal.MustExtractDoc(doc, "minmax"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "minmax"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,

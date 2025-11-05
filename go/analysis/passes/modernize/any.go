@@ -9,14 +9,14 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/versions"
 )
 
 var AnyAnalyzer = &analysis.Analyzer{
 	Name: "any",
-	Doc:  analysisinternal.MustExtractDoc(doc, "any"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "any"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,

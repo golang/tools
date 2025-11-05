@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/util/moreslices"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -25,7 +25,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "unusedparams",
-	Doc:      analysisinternal.MustExtractDoc(doc, "unusedparams"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "unusedparams"),
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/unusedparams",

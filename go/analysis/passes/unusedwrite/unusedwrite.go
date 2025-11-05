@@ -11,7 +11,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/ssa"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/typeparams"
 )
 
@@ -22,7 +22,7 @@ var doc string
 // that are never read.
 var Analyzer = &analysis.Analyzer{
 	Name:     "unusedwrite",
-	Doc:      analysisinternal.MustExtractDoc(doc, "unusedwrite"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "unusedwrite"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unusedwrite",
 	Requires: []*analysis.Analyzer{buildssa.Analyzer},
 	Run:      run,

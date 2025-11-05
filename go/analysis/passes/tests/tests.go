@@ -15,7 +15,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -25,7 +25,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name: "tests",
-	Doc:  analysisinternal.MustExtractDoc(doc, "tests"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "tests"),
 	URL:  "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/tests",
 	Run:  run,
 }

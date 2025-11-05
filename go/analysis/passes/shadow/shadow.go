@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 )
 
 // NOTE: Experimental. Not part of the vet suite.
@@ -23,7 +23,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "shadow",
-	Doc:      analysisinternal.MustExtractDoc(doc, "shadow"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "shadow"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/shadow",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package analysisflags_test
+package driverutil_test
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/internal/analysisflags"
+	"golang.org/x/tools/internal/analysisinternal/driverutil"
 )
 
 func TestResolveURLs(t *testing.T) {
@@ -39,7 +39,7 @@ func TestResolveURLs(t *testing.T) {
 		{aURL, analysis.Diagnostic{Category: "category", URL: "https://absolute.diagnostic"}, "https://absolute.diagnostic"},
 	}
 	for _, c := range tests {
-		got, err := analysisflags.ResolveURL(c.analyzer, c.diagnostic)
+		got, err := driverutil.ResolveURL(c.analyzer, c.diagnostic)
 		if err != nil {
 			t.Errorf("Unexpected error from ResolveURL %s", err)
 		} else if got != c.want {
@@ -58,7 +58,7 @@ func TestResolveURLErrors(t *testing.T) {
 		{&analysis.Analyzer{URL: "https://analyzer.example"}, analysis.Diagnostic{Category: "", URL: ":not a URL"}, "invalid Diagnostic.URL"},
 	}
 	for _, c := range tests {
-		_, err := analysisflags.ResolveURL(c.analyzer, c.diagnostic)
+		_, err := driverutil.ResolveURL(c.analyzer, c.diagnostic)
 		if got := fmt.Sprint(err); !strings.HasPrefix(got, c.want) {
 			t.Errorf("ResolveURL(%q, %q) expected an error starting with %q. got %q", c.analyzer.URL, c.diagnostic.URL, c.want, got)
 		}

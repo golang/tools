@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/cfg"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -25,7 +25,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name: "lostcancel",
-	Doc:  analysisinternal.MustExtractDoc(doc, "lostcancel"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "lostcancel"),
 	URL:  "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/lostcancel",
 	Run:  run,
 	Requires: []*analysis.Analyzer{

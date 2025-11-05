@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/edge"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
@@ -23,7 +23,7 @@ import (
 
 var FmtAppendfAnalyzer = &analysis.Analyzer{
 	Name: "fmtappendf",
-	Doc:  analysisinternal.MustExtractDoc(doc, "fmtappendf"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "fmtappendf"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,

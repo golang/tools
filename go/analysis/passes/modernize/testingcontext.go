@@ -17,7 +17,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
@@ -28,7 +28,7 @@ import (
 
 var TestingContextAnalyzer = &analysis.Analyzer{
 	Name: "testingcontext",
-	Doc:  analysisinternal.MustExtractDoc(doc, "testingcontext"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "testingcontext"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,

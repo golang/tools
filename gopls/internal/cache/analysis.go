@@ -44,7 +44,7 @@ import (
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/gopls/internal/util/persistent"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/driverutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/facts"
@@ -1036,7 +1036,7 @@ func (act *action) exec(ctx context.Context) (any, *actionSummary, error) {
 			// ValidateFixes allows a fix.End to be slightly beyond
 			// EOF to avoid spurious assertions when reporting
 			// fixes as the end of truncated files; see #71659.
-			if err := analysisinternal.ValidateFixes(apkg.pkg.FileSet(), analyzer, d.SuggestedFixes); err != nil {
+			if err := driverutil.ValidateFixes(apkg.pkg.FileSet(), analyzer, d.SuggestedFixes); err != nil {
 				bug.Reportf("invalid SuggestedFixes: %v", err)
 				d.SuggestedFixes = nil
 			}
@@ -1067,7 +1067,7 @@ func (act *action) exec(ctx context.Context) (any, *actionSummary, error) {
 		// hashing a potentially large number of mostly irrelevant
 		// files; or (b) some kind of dynamic dependency discovery
 		// system like used in Bazel for C++ headers. Neither entices.
-		if err := analysisinternal.CheckReadable(pass, filename); err != nil {
+		if err := driverutil.CheckReadable(pass, filename); err != nil {
 			return nil, err
 		}
 		h, err := act.fsource.ReadFile(ctx, protocol.URIFromPath(filename))

@@ -18,7 +18,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	internalastutil "golang.org/x/tools/internal/astutil"
 )
 
@@ -27,7 +27,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "deprecated",
-	Doc:              analysisinternal.MustExtractDoc(doc, "deprecated"),
+	Doc:              analyzerutil.MustExtractDoc(doc, "deprecated"),
 	Requires:         []*analysis.Analyzer{inspect.Analyzer},
 	Run:              checkDeprecated,
 	FactTypes:        []analysis.Fact{(*deprecationFact)(nil)},

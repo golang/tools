@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
@@ -23,7 +23,7 @@ import (
 // Warning: this analyzer is not safe to enable by default (not nil-preserving).
 var SlicesDeleteAnalyzer = &analysis.Analyzer{
 	Name: "slicesdelete",
-	Doc:  analysisinternal.MustExtractDoc(doc, "slicesdelete"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "slicesdelete"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,

@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
@@ -25,7 +25,7 @@ import (
 
 var StringsCutPrefixAnalyzer = &analysis.Analyzer{
 	Name: "stringscutprefix",
-	Doc:  analysisinternal.MustExtractDoc(doc, "stringscutprefix"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "stringscutprefix"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,

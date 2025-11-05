@@ -19,7 +19,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
@@ -29,7 +29,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "slog",
-	Doc:      analysisinternal.MustExtractDoc(doc, "slog"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "slog"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/slog",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,

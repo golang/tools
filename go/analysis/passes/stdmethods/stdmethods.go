@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 )
 
 //go:embed doc.go
@@ -21,7 +21,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "stdmethods",
-	Doc:      analysisinternal.MustExtractDoc(doc, "stdmethods"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "stdmethods"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/stdmethods",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,

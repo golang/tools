@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/versions"
@@ -20,7 +20,7 @@ import (
 
 var OmitZeroAnalyzer = &analysis.Analyzer{
 	Name: "omitzero",
-	Doc:  analysisinternal.MustExtractDoc(doc, "omitzero"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "omitzero"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,

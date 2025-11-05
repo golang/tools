@@ -18,7 +18,7 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
@@ -31,7 +31,7 @@ import (
 
 var stringscutAnalyzer = &analysis.Analyzer{
 	Name: "stringscut",
-	Doc:  analysisinternal.MustExtractDoc(doc, "stringscut"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "stringscut"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,

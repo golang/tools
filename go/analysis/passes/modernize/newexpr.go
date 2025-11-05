@@ -17,14 +17,14 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/versions"
 )
 
 var NewExprAnalyzer = &analysis.Analyzer{
 	Name:      "newexpr",
-	Doc:       analysisinternal.MustExtractDoc(doc, "newexpr"),
+	Doc:       analyzerutil.MustExtractDoc(doc, "newexpr"),
 	URL:       "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#newexpr",
 	Requires:  []*analysis.Analyzer{inspect.Analyzer},
 	Run:       run,

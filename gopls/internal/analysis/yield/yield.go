@@ -32,7 +32,7 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 )
 
 //go:embed doc.go
@@ -40,7 +40,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "yield",
-	Doc:      analysisinternal.MustExtractDoc(doc, "yield"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "yield"),
 	Requires: []*analysis.Analyzer{inspect.Analyzer, buildssa.Analyzer},
 	Run:      run,
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/yield",

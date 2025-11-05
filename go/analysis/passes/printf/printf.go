@@ -21,7 +21,7 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/fmtstr"
 	"golang.org/x/tools/internal/typeparams"
@@ -38,7 +38,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:       "printf",
-	Doc:        analysisinternal.MustExtractDoc(doc, "printf"),
+	Doc:        analyzerutil.MustExtractDoc(doc, "printf"),
 	URL:        "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/printf",
 	Requires:   []*analysis.Analyzer{inspect.Analyzer},
 	Run:        run,

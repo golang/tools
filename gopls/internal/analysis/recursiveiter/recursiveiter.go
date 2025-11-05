@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
@@ -24,7 +24,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "recursiveiter",
-	Doc:      analysisinternal.MustExtractDoc(doc, "recursiveiter"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "recursiveiter"),
 	Requires: []*analysis.Analyzer{inspect.Analyzer, typeindexanalyzer.Analyzer},
 	Run:      run,
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/recursiveiter",

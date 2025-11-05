@@ -12,7 +12,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/analysis/passes/internal/gofixdirective"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 )
 
 //go:embed doc.go
@@ -20,7 +20,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "gofixdirective",
-	Doc:      analysisinternal.MustExtractDoc(doc, "gofixdirective"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "gofixdirective"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/gofix",
 	Run:      run,
 	Requires: []*analysis.Analyzer{inspect.Analyzer},

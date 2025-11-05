@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/refactor"
 )
 
@@ -21,7 +21,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "embed",
-	Doc:              analysisinternal.MustExtractDoc(doc, "embed"),
+	Doc:              analyzerutil.MustExtractDoc(doc, "embed"),
 	Run:              run,
 	RunDespiteErrors: true,
 	URL:              "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/embeddirective",

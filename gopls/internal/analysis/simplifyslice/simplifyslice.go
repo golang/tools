@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 )
 
 //go:embed doc.go
@@ -23,7 +23,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "simplifyslice",
-	Doc:      analysisinternal.MustExtractDoc(doc, "simplifyslice"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "simplifyslice"),
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
 	URL:      "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/simplifyslice",

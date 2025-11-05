@@ -18,7 +18,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -30,7 +30,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "timeformat",
-	Doc:      analysisinternal.MustExtractDoc(doc, "timeformat"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "timeformat"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/timeformat",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,

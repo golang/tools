@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
@@ -26,7 +26,7 @@ import (
 
 var MapsLoopAnalyzer = &analysis.Analyzer{
 	Name: "mapsloop",
-	Doc:  analysisinternal.MustExtractDoc(doc, "mapsloop"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "mapsloop"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,

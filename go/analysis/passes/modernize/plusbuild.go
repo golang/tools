@@ -10,14 +10,14 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/goplsexport"
 	"golang.org/x/tools/internal/versions"
 )
 
 var plusBuildAnalyzer = &analysis.Analyzer{
 	Name: "plusbuild",
-	Doc:  analysisinternal.MustExtractDoc(doc, "plusbuild"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "plusbuild"),
 	URL:  "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#plusbuild",
 	Run:  plusbuild,
 }

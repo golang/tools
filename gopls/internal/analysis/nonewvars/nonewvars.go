@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -24,7 +24,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:             "nonewvars",
-	Doc:              analysisinternal.MustExtractDoc(doc, "nonewvars"),
+	Doc:              analyzerutil.MustExtractDoc(doc, "nonewvars"),
 	Requires:         []*analysis.Analyzer{inspect.Analyzer},
 	Run:              run,
 	RunDespiteErrors: true,

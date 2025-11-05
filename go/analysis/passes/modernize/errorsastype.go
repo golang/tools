@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
@@ -27,7 +27,7 @@ import (
 
 var errorsastypeAnalyzer = &analysis.Analyzer{
 	Name:     "errorsastype",
-	Doc:      analysisinternal.MustExtractDoc(doc, "errorsastype"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "errorsastype"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#errorsastype",
 	Requires: []*analysis.Analyzer{generated.Analyzer, typeindexanalyzer.Analyzer},
 	Run:      errorsastype,

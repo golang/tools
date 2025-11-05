@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
@@ -23,7 +23,7 @@ import (
 
 var StringsSeqAnalyzer = &analysis.Analyzer{
 	Name: "stringsseq",
-	Doc:  analysisinternal.MustExtractDoc(doc, "stringsseq"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "stringsseq"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,

@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
@@ -25,7 +25,7 @@ import (
 // Warning: this analyzer is not safe to enable by default.
 var AppendClippedAnalyzer = &analysis.Analyzer{
 	Name: "appendclipped",
-	Doc:  analysisinternal.MustExtractDoc(doc, "appendclipped"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "appendclipped"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,

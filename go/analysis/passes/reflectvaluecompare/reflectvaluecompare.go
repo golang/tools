@@ -13,7 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/typesinternal"
 )
 
@@ -22,7 +22,7 @@ var doc string
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "reflectvaluecompare",
-	Doc:      analysisinternal.MustExtractDoc(doc, "reflectvaluecompare"),
+	Doc:      analyzerutil.MustExtractDoc(doc, "reflectvaluecompare"),
 	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/reflectvaluecompare",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,

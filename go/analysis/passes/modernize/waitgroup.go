@@ -14,7 +14,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/types/typeutil"
-	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
@@ -25,7 +25,7 @@ import (
 
 var WaitGroupAnalyzer = &analysis.Analyzer{
 	Name: "waitgroup",
-	Doc:  analysisinternal.MustExtractDoc(doc, "waitgroup"),
+	Doc:  analyzerutil.MustExtractDoc(doc, "waitgroup"),
 	Requires: []*analysis.Analyzer{
 		generated.Analyzer,
 		inspect.Analyzer,
