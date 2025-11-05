@@ -167,6 +167,7 @@ func newServer(session *cache.Session, lspServer protocol.Server) *mcp.Server {
 		"go_workspace",
 		"go_package_api",
 		"go_diagnostics",
+		"go_rename_symbol",
 		"go_symbol_references",
 		"go_search",
 		"go_file_context",
@@ -254,6 +255,15 @@ performed.
 			Name:        "go_references",
 			Description: "Provide the locations of references to a given object",
 		}, h.referencesHandler)
+	case "go_rename_symbol":
+		mcp.AddTool(mcpServer, &mcp.Tool{
+			Name: "go_rename_symbol",
+			Description: `Renames a symbol in the Go workspace
+
+For example, given arguments {"file": "/path/to/foo.go", "symbol": "Foo", "new_name": "Bar"},
+go_rename_symbol returns the edits necessary to rename the symbol "Foo" (located in the file foo.go) to
+"Bar" across the Go workspace.`,
+		}, h.renameSymbolHandler)
 	case "go_search":
 		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name: "go_search",

@@ -16,6 +16,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/golang"
+	"golang.org/x/tools/gopls/internal/protocol"
 )
 
 // symbolReferencesParams defines the parameters for the "go_symbol_references"
@@ -40,30 +41,9 @@ func (h *handler) symbolReferencesHandler(ctx context.Context, req *mcp.CallTool
 		return nil, nil, fmt.Errorf("can't provide references for non-Go files")
 	}
 
-	// Parse and extract names before type checking, to fail fast in the case of
-	// invalid inputs.
-	e, err := parser.ParseExpr(params.Symbol)
-	if err != nil {
-		return nil, nil, fmt.Errorf("\"symbol\" failed to parse: %v", err)
-	}
-	path, err := extractPath(e)
+	loc, err := symbolLocation(ctx, snapshot, fh.URI(), params.Symbol)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, fh.URI())
-	if err != nil {
-		return nil, nil, err
-	}
-
-	target, err := resolveSymbol(path, pkg, pgf)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	loc, err := golang.ObjectLocation(ctx, pkg.FileSet(), snapshot, target)
-	if err != nil {
-		return nil, nil, fmt.Errorf("finding symbol location: %v", err)
 	}
 	declFH, err := snapshot.ReadFile(ctx, loc.URI)
 	if err != nil {
@@ -75,6 +55,36 @@ func (h *handler) symbolReferencesHandler(ctx context.Context, req *mcp.CallTool
 	}
 	formatted, err := formatReferences(ctx, snapshot, refs)
 	return formatted, nil, err
+}
+
+// symbolLocation returns the protocol.Location of the given symbol within the file uri, or an error if it cannot be located.
+func symbolLocation(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, symbol string) (protocol.Location, error) {
+	// Parse and extract names before type checking, to fail fast in the case of
+	// invalid inputs.
+	e, err := parser.ParseExpr(symbol)
+	if err != nil {
+		return protocol.Location{}, fmt.Errorf("\"symbol\" failed to parse: %v", err)
+	}
+	path, err := extractPath(e)
+	if err != nil {
+		return protocol.Location{}, err
+	}
+
+	pkg, pgf, err := golang.NarrowestPackageForFile(ctx, snapshot, uri)
+	if err != nil {
+		return protocol.Location{}, err
+	}
+
+	target, err := resolveSymbol(path, pkg, pgf)
+	if err != nil {
+		return protocol.Location{}, err
+	}
+
+	loc, err := golang.ObjectLocation(ctx, pkg.FileSet(), snapshot, target)
+	if err != nil {
+		return protocol.Location{}, fmt.Errorf("finding symbol location: %v", err)
+	}
+	return loc, nil
 }
 
 // extractPath extracts the 'path' of names from e, which must be of the form
