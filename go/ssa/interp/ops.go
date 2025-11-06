@@ -918,7 +918,7 @@ func unop(instr *ssa.UnOp, x value) value {
 // typeAssert checks whether dynamic type of itf is instr.AssertedType.
 // It returns the extracted value on success, and panics on failure,
 // unless instr.CommaOk, in which case it always returns a "value,ok" tuple.
-func typeAssert(i *interpreter, instr *ssa.TypeAssert, itf iface) value {
+func typeAssert(instr *ssa.TypeAssert, itf iface) value {
 	var v value
 	err := ""
 	if itf.t == nil {
@@ -926,7 +926,7 @@ func typeAssert(i *interpreter, instr *ssa.TypeAssert, itf iface) value {
 
 	} else if idst, ok := instr.AssertedType.Underlying().(*types.Interface); ok {
 		v = itf
-		err = checkInterface(i, idst, itf)
+		err = checkInterface(idst, itf)
 
 	} else if types.Identical(itf.t, instr.AssertedType) {
 		v = itf.v // extract value
@@ -954,7 +954,7 @@ var CapturedOutput *bytes.Buffer
 
 // callBuiltin interprets a call to builtin fn with arguments args,
 // returning its result.
-func callBuiltin(caller *frame, callpos token.Pos, fn *ssa.Builtin, args []value) value {
+func callBuiltin(caller *frame, fn *ssa.Builtin, args []value) value {
 	switch fn.Name() {
 	case "append":
 		if len(args) == 1 {
@@ -1103,7 +1103,7 @@ func callBuiltin(caller *frame, callpos token.Pos, fn *ssa.Builtin, args []value
 	panic("unknown built-in: " + fn.Name())
 }
 
-func rangeIter(x value, t types.Type) iter {
+func rangeIter(x value) iter {
 	switch x := x.(type) {
 	case map[value]value:
 		return &mapIter{iter: reflect.ValueOf(x).MapRange()}
@@ -1407,7 +1407,7 @@ func sliceToArrayPointer(t_dst, t_src types.Type, x value) value {
 // checkInterface checks that the method set of x implements the
 // interface itype.
 // On success it returns "", on failure, an error message.
-func checkInterface(i *interpreter, itype *types.Interface, x iface) string {
+func checkInterface(itype *types.Interface, x iface) string {
 	if meth, _ := types.MissingMethod(x.t, itype, true); meth != nil {
 		return fmt.Sprintf("interface conversion: %v is not %v: missing method %s",
 			x.t, itype, meth.Name())

@@ -38,7 +38,7 @@ func TestList(t *testing.T) {
 			}
 		})
 		t.Run("iterator", func(t *testing.T) {
-			testIterator(ctx, t, clientSession.Tools(ctx, nil), wantTools)
+			testIterator(t, clientSession.Tools(ctx, nil), wantTools)
 		})
 	})
 
@@ -59,7 +59,7 @@ func TestList(t *testing.T) {
 			}
 		})
 		t.Run("iterator", func(t *testing.T) {
-			testIterator(ctx, t, clientSession.Resources(ctx, nil), wantResources)
+			testIterator(t, clientSession.Resources(ctx, nil), wantResources)
 		})
 	})
 
@@ -83,7 +83,7 @@ func TestList(t *testing.T) {
 			}
 		})
 		t.Run("ResourceTemplatesIterator", func(t *testing.T) {
-			testIterator(ctx, t, clientSession.ResourceTemplates(ctx, nil), wantResourceTemplates)
+			testIterator(t, clientSession.ResourceTemplates(ctx, nil), wantResourceTemplates)
 		})
 	})
 
@@ -104,12 +104,12 @@ func TestList(t *testing.T) {
 			}
 		})
 		t.Run("iterator", func(t *testing.T) {
-			testIterator(ctx, t, clientSession.Prompts(ctx, nil), wantPrompts)
+			testIterator(t, clientSession.Prompts(ctx, nil), wantPrompts)
 		})
 	})
 }
 
-func testIterator[T any](ctx context.Context, t *testing.T, seq iter.Seq2[*T, error], want []*T) {
+func testIterator[T any](t *testing.T, seq iter.Seq2[*T, error], want []*T) {
 	t.Helper()
 	var got []*T
 	for x, err := range seq {

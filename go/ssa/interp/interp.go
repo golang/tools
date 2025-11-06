@@ -319,7 +319,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 		fr.env[instr] = makeMap(instr.Type().Underlying().(*types.Map).Key(), reserve)
 
 	case *ssa.Range:
-		fr.env[instr] = rangeIter(fr.get(instr.X), instr.X.Type())
+		fr.env[instr] = rangeIter(fr.get(instr.X))
 
 	case *ssa.Next:
 		fr.env[instr] = fr.get(instr.Iter).(iter).next()
@@ -372,7 +372,7 @@ func visitInstr(fr *frame, instr ssa.Instruction) continuation {
 		}
 
 	case *ssa.TypeAssert:
-		fr.env[instr] = typeAssert(fr.i, instr, fr.get(instr.X).(iface))
+		fr.env[instr] = typeAssert(instr, fr.get(instr.X).(iface))
 
 	case *ssa.MakeClosure:
 		var bindings []value
@@ -479,7 +479,7 @@ func call(i *interpreter, caller *frame, callpos token.Pos, fn value, args []val
 	case *closure:
 		return callSSA(i, caller, callpos, fn.Fn, args, fn.Env)
 	case *ssa.Builtin:
-		return callBuiltin(caller, callpos, fn, args)
+		return callBuiltin(caller, fn, args)
 	}
 	panic(fmt.Sprintf("cannot call %T", fn))
 }

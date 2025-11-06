@@ -2344,7 +2344,7 @@ func (b *builder) rangeStmt(fn *Function, s *ast.RangeStmt, label *lblock) {
 		// 	for x := range f { ... }
 		// into
 		// 	f(func(x T) bool { ... })
-		b.rangeFunc(fn, x, tk, tv, s, label)
+		b.rangeFunc(fn, x, s, label)
 		return
 
 	default:
@@ -2390,7 +2390,7 @@ func (b *builder) rangeStmt(fn *Function, s *ast.RangeStmt, label *lblock) {
 // rangeFunc emits to fn code for the range-over-func rng.Body of the iterator
 // function x, optionally labelled by label. It creates a new anonymous function
 // yield for rng and builds the function.
-func (b *builder) rangeFunc(fn *Function, x Value, tk, tv types.Type, rng *ast.RangeStmt, label *lblock) {
+func (b *builder) rangeFunc(fn *Function, x Value, rng *ast.RangeStmt, label *lblock) {
 	// Consider the SSA code for the outermost range-over-func in fn:
 	//
 	//   func fn(...) (ret R) {

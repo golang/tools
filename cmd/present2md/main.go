@@ -126,9 +126,9 @@ func convert(r io.Reader, file string, writeBack bool) error {
 				continue
 			}
 			fmt.Fprintf(&md, "Summary:")
-			for i, line := range text.Lines {
+			for _, line := range text.Lines {
 				fmt.Fprintf(&md, " ")
-				printStyled(&md, line, i == 0)
+				printStyled(&md, line)
 			}
 			fmt.Fprintf(&md, "\n")
 			break
@@ -145,10 +145,10 @@ func convert(r io.Reader, file string, writeBack bool) error {
 				log.Fatalf("%s: unexpected author type %T", file, elem)
 			case present.Text:
 				for _, line := range elem.Lines {
-					fmt.Fprintf(&md, "%s\n", markdownEscape(line, true))
+					fmt.Fprintf(&md, "%s\n", markdownEscape(line))
 				}
 			case present.Link:
-				fmt.Fprintf(&md, "%s\n", markdownEscape(elem.Label, true))
+				fmt.Fprintf(&md, "%s\n", markdownEscape(elem.Label))
 			}
 		}
 	}
@@ -174,7 +174,7 @@ func convert(r io.Reader, file string, writeBack bool) error {
 	} else {
 		for _, s := range doc.Sections {
 			fmt.Fprintf(&md, "\n")
-			fmt.Fprintf(&md, "## %s\n", markdownEscape(s.Title, false))
+			fmt.Fprintf(&md, "## %s\n", markdownEscape(s.Title))
 			printSectionBody(file, 1, &md, s.Elem)
 		}
 	}
@@ -209,7 +209,7 @@ func printSectionBody(file string, depth int, w *bytes.Buffer, elems []present.E
 				}
 			} else {
 				for _, line := range elem.Lines {
-					printStyled(w, line, true)
+					printStyled(w, line)
 					fmt.Fprintf(w, "\n")
 				}
 			}
@@ -222,7 +222,7 @@ func printSectionBody(file string, depth int, w *bytes.Buffer, elems []present.E
 					if i > 0 {
 						fmt.Fprintf(w, "    ")
 					}
-					printStyled(w, line, false)
+					printStyled(w, line)
 					fmt.Fprintf(w, "\n")
 				}
 			}
@@ -233,7 +233,7 @@ func printSectionBody(file string, depth int, w *bytes.Buffer, elems []present.E
 			if elem.Title == "" {
 				sep = ""
 			}
-			fmt.Fprintf(w, "%s%s%s\n", strings.Repeat("#", depth+2), sep, markdownEscape(elem.Title, false))
+			fmt.Fprintf(w, "%s%s%s\n", strings.Repeat("#", depth+2), sep, markdownEscape(elem.Title))
 			printSectionBody(file, depth+1, w, elem.Elem)
 
 		case interface{ PresentCmd() string }:
@@ -251,7 +251,7 @@ func printSectionBody(file string, depth int, w *bytes.Buffer, elems []present.E
 	}
 }
 
-func markdownEscape(s string, startLine bool) string {
+func markdownEscape(s string) string {
 	var b strings.Builder
 	for i, r := range s {
 		switch {
@@ -282,20 +282,20 @@ func markdownEscape(s string, startLine bool) string {
 		<i>this is italic</i>!
 */
 
-func printStyled(w *bytes.Buffer, text string, startLine bool) {
-	w.WriteString(font(text, startLine))
+func printStyled(w *bytes.Buffer, text string) {
+	w.WriteString(font(text))
 }
 
 // font returns s with font indicators turned into HTML font tags.
-func font(s string, startLine bool) string {
+func font(s string) string {
 	if !strings.ContainsAny(s, "[`_*") {
-		return markdownEscape(s, startLine)
+		return markdownEscape(s)
 	}
 	words := split(s)
 	var b bytes.Buffer
 Word:
 	for w, word := range words {
-		words[w] = markdownEscape(word, startLine && w == 0) // for all the continue Word
+		words[w] = markdownEscape(word) // for all the continue Word
 		if len(word) < 2 {
 			continue Word
 		}
@@ -316,7 +316,7 @@ Word:
 				continue Word
 			}
 		}
-		open, word := markdownEscape(word[:first], startLine && w == 0), word[first:]
+		open, word := markdownEscape(word[:first]), word[first:]
 		char := word[0] // ASCII is OK.
 		close := ""
 		switch char {
@@ -371,7 +371,7 @@ Word:
 				close += "`"
 			}
 		} else {
-			text = markdownEscape(text, false)
+			text = markdownEscape(text)
 		}
 		words[w] = open + text + close + tail
 	}
@@ -463,9 +463,9 @@ func parseInlineLink(s string) (link string, length int) {
 }
 
 func renderLink(href, text string) string {
-	text = font(text, false)
+	text = font(text)
 	if text == "" {
-		text = markdownEscape(href, false)
+		text = markdownEscape(href)
 	}
 	return "[" + text + "](" + href + ")"
 }

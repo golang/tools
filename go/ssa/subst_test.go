@@ -103,7 +103,7 @@ var _ L[int] = Fn0[L[int]](nil)
 
 		T := tv.Type.(*types.Named)
 
-		subst := makeSubster(types.NewContext(), within, T.TypeParams(), targs, true)
+		subst := makeSubster(types.NewContext(), within, T.TypeParams(), targs)
 		sub := subst.typ(T.Underlying())
 		if got := sub.String(); got != test.want {
 			t.Errorf("subst{%v->%v}.typ(%s) = %v, want %v", test.expr, test.args, T.Underlying(), got, test.want)

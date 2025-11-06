@@ -70,7 +70,7 @@ func TestCall(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			ctx := eventtest.NewContext(ctx, t)
-			a, b, done := prepare(ctx, t, headers)
+			a, b, done := prepare(ctx, headers)
 			defer done()
 			for _, test := range callTests {
 				t.Run(test.method, func(t *testing.T) {
@@ -90,7 +90,7 @@ func TestCall(t *testing.T) {
 	}
 }
 
-func prepare(ctx context.Context, t *testing.T, withHeaders bool) (jsonrpc2.Conn, jsonrpc2.Conn, func()) {
+func prepare(ctx context.Context, withHeaders bool) (jsonrpc2.Conn, jsonrpc2.Conn, func()) {
 	// make a wait group that can be used to wait for the system to shut down
 	aPipe, bPipe := net.Pipe()
 	a := run(ctx, withHeaders, aPipe)
@@ -111,11 +111,11 @@ func run(ctx context.Context, withHeaders bool, nc net.Conn) jsonrpc2.Conn {
 		stream = jsonrpc2.NewRawStream(nc)
 	}
 	conn := jsonrpc2.NewConn(stream)
-	conn.Go(ctx, testHandler(*logRPC))
+	conn.Go(ctx, testHandler())
 	return conn
 }
 
-func testHandler(log bool) jsonrpc2.Handler {
+func testHandler() jsonrpc2.Handler {
 	return func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
 		switch req.Method() {
 		case "no_args":

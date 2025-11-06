@@ -45,7 +45,6 @@ func FormatTypeParams(tparams *types.TypeParamList) string {
 // the hole that must be filled by EXPR has type (string, int).
 //
 // It returns nil on failure.
-
 func TypesFromContext(info *types.Info, cur inspector.Cursor) []types.Type {
 	anyType := types.Universe.Lookup("any").Type()
 	var typs []types.Type

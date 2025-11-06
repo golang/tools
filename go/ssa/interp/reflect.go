@@ -437,7 +437,7 @@ func ext۰reflect۰Value۰Float(fr *frame, args []value) value {
 
 func ext۰reflect۰Value۰Interface(fr *frame, args []value) value {
 	// Signature: func (v reflect.Value) interface{}
-	return ext۰reflect۰valueInterface(fr, args)
+	return ext۰reflect۰valueInterface(args)
 }
 
 func ext۰reflect۰Value۰Int(fr *frame, args []value) value {
@@ -494,7 +494,7 @@ func ext۰reflect۰Value۰Set(fr *frame, args []value) value {
 	return nil
 }
 
-func ext۰reflect۰valueInterface(fr *frame, args []value) value {
+func ext۰reflect۰valueInterface(args []value) value {
 	// Signature: func (v reflect.Value, safe bool) interface{}
 	v := args[0].(structure)
 	return iface{rV2T(v).t, rV2V(v)}

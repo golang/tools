@@ -131,12 +131,12 @@ func canonicalMethod(pass *analysis.Pass, id *ast.Ident) {
 	}
 
 	// Do the =s (if any) all match?
-	if !matchParams(pass, expect.args, args, "=") || !matchParams(pass, expect.results, results, "=") {
+	if !matchParams(expect.args, args, "=") || !matchParams(expect.results, results, "=") {
 		return
 	}
 
 	// Everything must match.
-	if !matchParams(pass, expect.args, args, "") || !matchParams(pass, expect.results, results, "") {
+	if !matchParams(expect.args, args, "") || !matchParams(expect.results, results, "") {
 		expectFmt := id.Name + "(" + argjoin(expect.args) + ")"
 		if len(expect.results) == 1 {
 			expectFmt += " " + argjoin(expect.results)
@@ -168,7 +168,7 @@ func argjoin(x []string) string {
 }
 
 // Does each type in expect with the given prefix match the corresponding type in actual?
-func matchParams(pass *analysis.Pass, expect []string, actual *types.Tuple, prefix string) bool {
+func matchParams(expect []string, actual *types.Tuple, prefix string) bool {
 	for i, x := range expect {
 		if !strings.HasPrefix(x, prefix) {
 			continue
