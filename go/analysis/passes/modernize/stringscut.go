@@ -19,7 +19,6 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/goplsexport"
@@ -33,7 +32,6 @@ var stringscutAnalyzer = &analysis.Analyzer{
 	Name: "stringscut",
 	Doc:  analyzerutil.MustExtractDoc(doc, "stringscut"),
 	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
@@ -111,7 +109,6 @@ func init() {
 //		return
 //	}
 func stringscut(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
 	var (
 		index = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info  = pass.TypesInfo

@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
@@ -28,7 +27,6 @@ var SlicesContainsAnalyzer = &analysis.Analyzer{
 	Name: "slicescontains",
 	Doc:  analyzerutil.MustExtractDoc(doc, "slicescontains"),
 	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
@@ -67,8 +65,6 @@ var SlicesContainsAnalyzer = &analysis.Analyzer{
 // TODO(adonovan): Add a check that needle/predicate expression from
 // if-statement has no effects. Now the program behavior may change.
 func slicescontains(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
 	if within(pass, "slices", "runtime") {

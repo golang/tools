@@ -8,6 +8,7 @@ package analysistest
 import (
 	"bytes"
 	"fmt"
+	"go/ast"
 	"go/format"
 	"go/token"
 	"go/types"
@@ -157,6 +158,8 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 		}
 	}
 
+	generated := make(map[*token.File]bool)
+
 	// Process each result (package) separately, matching up the suggested
 	// fixes into a diff, which we will compare to the .golden file.  We have
 	// to do this per-result in case a file appears in two packages, such as in
@@ -170,6 +173,16 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 	for _, result := range results {
 		act := result.Action
 
+		// Compute set of generated files.
+		for _, file := range internal.ActionPass(act).Files {
+			// Memoize, since there may be many actions
+			// for the same package (list of files).
+			tokFile := act.Package.Fset.File(file.Pos())
+			if _, seen := generated[tokFile]; !seen {
+				generated[tokFile] = ast.IsGenerated(file)
+			}
+		}
+
 		// For each fix, split its edits by file and convert to diff form.
 		var (
 			// fixEdits: message -> fixes -> filename -> edits
@@ -182,10 +195,19 @@ func RunWithSuggestedFixes(t Testing, dir string, a *analysis.Analyzer, patterns
 		)
 		for _, diag := range act.Diagnostics {
 			// Fixes are validated upon creation in Pass.Report.
+		fixloop:
 			for _, fix := range diag.SuggestedFixes {
 				// Assert that lazy fixes have a Category (#65578, #65087).
 				if inTools && len(fix.TextEdits) == 0 && diag.Category == "" {
 					t.Errorf("missing Diagnostic.Category for SuggestedFix without TextEdits (gopls requires the category for the name of the fix command")
+				}
+
+				// Skip any fix that edits a generated file.
+				for _, edit := range fix.TextEdits {
+					file := act.Package.Fset.File(edit.Pos)
+					if generated[file] {
+						continue fixloop
+					}
 				}
 
 				// Convert edits to diff form.

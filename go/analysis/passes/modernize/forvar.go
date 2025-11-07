@@ -11,21 +11,17 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/versions"
 )
 
 var ForVarAnalyzer = &analysis.Analyzer{
-	Name: "forvar",
-	Doc:  analyzerutil.MustExtractDoc(doc, "forvar"),
-	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
-		inspect.Analyzer,
-	},
-	Run: forvar,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#forvar",
+	Name:     "forvar",
+	Doc:      analyzerutil.MustExtractDoc(doc, "forvar"),
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run:      forvar,
+	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#forvar",
 }
 
 // forvar offers to fix unnecessary copying of a for variable
@@ -43,8 +39,6 @@ var ForVarAnalyzer = &analysis.Analyzer{
 // is declared implicitly before executing the post statement and initialized to the
 // value of the previous iteration's variable at that moment.")
 func forvar(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	for curFile := range filesUsingGoVersion(pass, versions.Go1_22) {
 		for curLoop := range curFile.Preorder((*ast.RangeStmt)(nil)) {
 			loop := curLoop.Node().(*ast.RangeStmt)

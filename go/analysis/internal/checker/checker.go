@@ -198,6 +198,7 @@ func Run(args []string, analyzers []*analysis.Analyzer) (exitcode int) {
 				fixActions[i] = driverutil.FixAction{
 					Name:         act.String(),
 					Pkg:          act.Package.Types,
+					Files:        act.Package.Syntax,
 					FileSet:      act.Package.Fset,
 					ReadFileFunc: pass.ReadFile,
 					Diagnostics:  act.Diagnostics,

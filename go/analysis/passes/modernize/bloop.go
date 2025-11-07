@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/moreiters"
@@ -29,7 +28,6 @@ var BLoopAnalyzer = &analysis.Analyzer{
 	Name: "bloop",
 	Doc:  analyzerutil.MustExtractDoc(doc, "bloop"),
 	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
@@ -46,8 +44,6 @@ var BLoopAnalyzer = &analysis.Analyzer{
 //	for i := 0; i < b.N; i++ {}  =>   for b.Loop() {}
 //	for range b.N {}
 func bloop(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	if !typesinternal.Imports(pass.Pkg, "testing") {
 		return nil, nil
 	}

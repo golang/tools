@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/packagepath"
@@ -58,18 +57,6 @@ var Suite = []*analysis.Analyzer{
 }
 
 // -- helpers --
-
-// skipGenerated decorates pass.Report to suppress diagnostics in generated files.
-func skipGenerated(pass *analysis.Pass) {
-	report := pass.Report
-	pass.Report = func(diag analysis.Diagnostic) {
-		generated := pass.ResultOf[generated.Analyzer].(*generated.Result)
-		if generated.IsGenerated(diag.Pos) {
-			return // skip
-		}
-		report(diag)
-	}
-}
 
 // formatExprs formats a comma-separated list of expressions.
 func formatExprs(fset *token.FileSet, exprs []ast.Expr) string {

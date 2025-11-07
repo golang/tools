@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
@@ -24,14 +23,11 @@ import (
 
 // Warning: this analyzer is not safe to enable by default.
 var AppendClippedAnalyzer = &analysis.Analyzer{
-	Name: "appendclipped",
-	Doc:  analyzerutil.MustExtractDoc(doc, "appendclipped"),
-	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
-		inspect.Analyzer,
-	},
-	Run: appendclipped,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#appendclipped",
+	Name:     "appendclipped",
+	Doc:      analyzerutil.MustExtractDoc(doc, "appendclipped"),
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run:      appendclipped,
+	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#appendclipped",
 }
 
 // The appendclipped pass offers to simplify a tower of append calls:
@@ -59,8 +55,6 @@ var AppendClippedAnalyzer = &analysis.Analyzer{
 // The fix does not always preserve nilness the of base slice when the
 // addends (a, b, c) are all empty (see #73557).
 func appendclipped(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
 	if within(pass, "slices", "bytes", "runtime") {

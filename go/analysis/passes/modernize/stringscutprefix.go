@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
@@ -27,7 +26,6 @@ var StringsCutPrefixAnalyzer = &analysis.Analyzer{
 	Name: "stringscutprefix",
 	Doc:  analyzerutil.MustExtractDoc(doc, "stringscutprefix"),
 	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
@@ -56,8 +54,6 @@ var StringsCutPrefixAnalyzer = &analysis.Analyzer{
 // Variants:
 // - bytes.HasPrefix/HasSuffix usage as pattern 1.
 func stringscutprefix(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	var (
 		index = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info  = pass.TypesInfo

@@ -18,7 +18,6 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
@@ -30,7 +29,6 @@ var TestingContextAnalyzer = &analysis.Analyzer{
 	Name: "testingcontext",
 	Doc:  analyzerutil.MustExtractDoc(doc, "testingcontext"),
 	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
@@ -57,8 +55,6 @@ var TestingContextAnalyzer = &analysis.Analyzer{
 //   - the call is within a test or subtest function
 //   - the relevant testing.{T,B,F} is named and not shadowed at the call
 func testingContext(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	var (
 		index = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info  = pass.TypesInfo

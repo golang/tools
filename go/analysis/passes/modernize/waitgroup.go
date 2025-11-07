@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
@@ -27,7 +26,6 @@ var WaitGroupAnalyzer = &analysis.Analyzer{
 	Name: "waitgroup",
 	Doc:  analyzerutil.MustExtractDoc(doc, "waitgroup"),
 	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
@@ -62,8 +60,6 @@ var WaitGroupAnalyzer = &analysis.Analyzer{
 // other effects, or blocked, or if WaitGroup.Go propagated panics
 // from child to parent goroutine, the argument would be different.)
 func waitgroup(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	var (
 		index             = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info              = pass.TypesInfo

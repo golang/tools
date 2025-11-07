@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
@@ -28,7 +27,6 @@ var RangeIntAnalyzer = &analysis.Analyzer{
 	Name: "rangeint",
 	Doc:  analyzerutil.MustExtractDoc(doc, "rangeint"),
 	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
@@ -67,8 +65,6 @@ var RangeIntAnalyzer = &analysis.Analyzer{
 //   - a constant; or
 //   - len(s), where s has the above properties.
 func rangeint(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	var (
 		info      = pass.TypesInfo
 		typeindex = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)

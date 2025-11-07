@@ -22,6 +22,7 @@ func TestBloop(t *testing.T) {
 }
 
 func TestAny(t *testing.T) {
+	// The 'any' tests also exercise that fixes are not applied to generated files.
 	RunWithSuggestedFixes(t, TestData(), modernize.AnyAnalyzer, "any")
 }
 

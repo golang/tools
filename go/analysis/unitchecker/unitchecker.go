@@ -188,8 +188,9 @@ func processResults(fset *token.FileSet, id string, results []result) (exit int)
 			fixActions[i] = driverutil.FixAction{
 				Name:         res.a.Name,
 				Pkg:          res.pkg,
+				Files:        res.files,
 				FileSet:      fset,
-				ReadFileFunc: os.ReadFile,
+				ReadFileFunc: os.ReadFile, // TODO(adonovan): respect overlays
 				Diagnostics:  res.diagnostics,
 			}
 		}
@@ -483,7 +484,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 	results := make([]result, len(analyzers))
 	for i, a := range analyzers {
 		act := actions[a]
-		results[i] = result{pkg, a, act.diagnostics, act.err}
+		results[i] = result{pkg, files, a, act.diagnostics, act.err}
 	}
 
 	data := facts.Encode()
@@ -499,6 +500,7 @@ func run(fset *token.FileSet, cfg *Config, analyzers []*analysis.Analyzer) ([]re
 
 type result struct {
 	pkg         *types.Package
+	files       []*ast.File
 	a           *analysis.Analyzer
 	diagnostics []analysis.Diagnostic
 	err         error

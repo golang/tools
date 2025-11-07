@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
@@ -28,7 +27,6 @@ var MinMaxAnalyzer = &analysis.Analyzer{
 	Name: "minmax",
 	Doc:  analyzerutil.MustExtractDoc(doc, "minmax"),
 	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
@@ -57,8 +55,6 @@ var MinMaxAnalyzer = &analysis.Analyzer{
 // - "x := a" or "x = a" or "var x = a" in pattern 2
 // - "x < b" or "a < b" in pattern 2
 func minmax(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	// Check for user-defined min/max functions that can be removed
 	checkUserDefinedMinMax(pass)
 

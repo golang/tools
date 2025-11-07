@@ -35,6 +35,7 @@ import (
 type FixAction struct {
 	Name         string         // e.g. "analyzer@package"
 	Pkg          *types.Package // (for import removal)
+	Files        []*ast.File
 	FileSet      *token.FileSet
 	ReadFileFunc ReadFileFunc
 	Diagnostics  []analysis.Diagnostic
@@ -97,6 +98,8 @@ type FixAction struct {
 // TODO(adonovan): handle file-system level aliases such as symbolic
 // links using robustio.FileID.
 func ApplyFixes(actions []FixAction, printDiff, verbose bool) error {
+	generated := make(map[*token.File]bool)
+
 	// Select fixes to apply.
 	//
 	// If there are several for a given Diagnostic, choose the first.
@@ -107,6 +110,15 @@ func ApplyFixes(actions []FixAction, printDiff, verbose bool) error {
 	}
 	var fixes []*fixact
 	for _, act := range actions {
+		for _, file := range act.Files {
+			tokFile := act.FileSet.File(file.FileStart)
+			// Memoize, since there may be many actions
+			// for the same package (list of files).
+			if _, seen := generated[tokFile]; !seen {
+				generated[tokFile] = ast.IsGenerated(file)
+			}
+		}
+
 		for _, diag := range act.Diagnostics {
 			for i := range diag.SuggestedFixes {
 				fix := &diag.SuggestedFixes[i]
@@ -152,6 +164,14 @@ func ApplyFixes(actions []FixAction, printDiff, verbose bool) error {
 	)
 fixloop:
 	for _, fixact := range fixes {
+		// Skip a fix if any of its edits touch a generated file.
+		for _, edit := range fixact.fix.TextEdits {
+			file := fixact.act.FileSet.File(edit.Pos)
+			if generated[file] {
+				continue fixloop
+			}
+		}
+
 		// Convert analysis.TextEdits to diff.Edits, grouped by file.
 		// Precondition: a prior call to validateFix succeeded.
 		fileEdits := make(map[string][]diff.Edit)

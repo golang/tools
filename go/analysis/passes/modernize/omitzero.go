@@ -13,20 +13,16 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/versions"
 )
 
 var OmitZeroAnalyzer = &analysis.Analyzer{
-	Name: "omitzero",
-	Doc:  analyzerutil.MustExtractDoc(doc, "omitzero"),
-	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
-		inspect.Analyzer,
-	},
-	Run: omitzero,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#omitzero",
+	Name:     "omitzero",
+	Doc:      analyzerutil.MustExtractDoc(doc, "omitzero"),
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run:      omitzero,
+	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#omitzero",
 }
 
 func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Field) {
@@ -99,8 +95,6 @@ func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Fi
 // it suggests either deleting "omitempty" or replacing it with "omitzero", which
 // correctly excludes structs from a json encoding.
 func omitzero(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	for curFile := range filesUsingGoVersion(pass, versions.Go1_24) {
 		for curStruct := range curFile.Preorder((*ast.StructType)(nil)) {
 			for _, curField := range curStruct.Node().(*ast.StructType).Fields.List {

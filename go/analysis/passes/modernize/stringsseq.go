@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
@@ -25,7 +24,6 @@ var StringsSeqAnalyzer = &analysis.Analyzer{
 	Name: "stringsseq",
 	Doc:  analyzerutil.MustExtractDoc(doc, "stringsseq"),
 	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
@@ -48,8 +46,6 @@ var StringsSeqAnalyzer = &analysis.Analyzer{
 // - bytes.SplitSeq
 // - bytes.FieldsSeq
 func stringsseq(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	var (
 		index = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info  = pass.TypesInfo

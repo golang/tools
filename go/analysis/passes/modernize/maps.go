@@ -16,7 +16,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typeparams"
@@ -25,14 +24,11 @@ import (
 )
 
 var MapsLoopAnalyzer = &analysis.Analyzer{
-	Name: "mapsloop",
-	Doc:  analyzerutil.MustExtractDoc(doc, "mapsloop"),
-	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
-		inspect.Analyzer,
-	},
-	Run: mapsloop,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#mapsloop",
+	Name:     "mapsloop",
+	Doc:      analyzerutil.MustExtractDoc(doc, "mapsloop"),
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run:      mapsloop,
+	URL:      "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#mapsloop",
 }
 
 // The mapsloop pass offers to simplify a loop of map insertions:
@@ -56,8 +52,6 @@ var MapsLoopAnalyzer = &analysis.Analyzer{
 //	m = make(M)
 //	m = M{}
 func mapsloop(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
 	if within(pass, "maps", "bytes", "runtime") {

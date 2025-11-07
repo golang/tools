@@ -14,7 +14,6 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
@@ -25,7 +24,6 @@ var FmtAppendfAnalyzer = &analysis.Analyzer{
 	Name: "fmtappendf",
 	Doc:  analyzerutil.MustExtractDoc(doc, "fmtappendf"),
 	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
@@ -36,8 +34,6 @@ var FmtAppendfAnalyzer = &analysis.Analyzer{
 // The fmtappend function replaces []byte(fmt.Sprintf(...)) by
 // fmt.Appendf(nil, ...), and similarly for Sprint, Sprintln.
 func fmtappendf(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	index := pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 	for _, fn := range []types.Object{
 		index.Object("fmt", "Sprintf"),

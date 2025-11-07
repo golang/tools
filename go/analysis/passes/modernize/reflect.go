@@ -15,7 +15,6 @@ import (
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
-	"golang.org/x/tools/internal/analysis/generated"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
@@ -28,7 +27,6 @@ var ReflectTypeForAnalyzer = &analysis.Analyzer{
 	Name: "reflecttypefor",
 	Doc:  analyzerutil.MustExtractDoc(doc, "reflecttypefor"),
 	Requires: []*analysis.Analyzer{
-		generated.Analyzer,
 		inspect.Analyzer,
 		typeindexanalyzer.Analyzer,
 	},
@@ -37,8 +35,6 @@ var ReflectTypeForAnalyzer = &analysis.Analyzer{
 }
 
 func reflecttypefor(pass *analysis.Pass) (any, error) {
-	skipGenerated(pass)
-
 	var (
 		index = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info  = pass.TypesInfo
