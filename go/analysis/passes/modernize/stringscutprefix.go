@@ -12,7 +12,6 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
@@ -21,6 +20,7 @@ import (
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/internal/versions"
 )
 
 var StringsCutPrefixAnalyzer = &analysis.Analyzer{
@@ -59,9 +59,8 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
 	var (
-		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
-		info    = pass.TypesInfo
+		index = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+		info  = pass.TypesInfo
 
 		stringsTrimPrefix = index.Object("strings", "TrimPrefix")
 		bytesTrimPrefix   = index.Object("bytes", "TrimPrefix")
@@ -72,7 +71,7 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 
-	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.20") {
+	for curFile := range filesUsing(pass, versions.Go1_20) {
 		for curIfStmt := range curFile.Preorder((*ast.IfStmt)(nil)) {
 			ifStmt := curIfStmt.Node().(*ast.IfStmt)
 

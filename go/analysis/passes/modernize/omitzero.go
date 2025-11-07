@@ -12,10 +12,10 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/versions"
 )
 
 var OmitZeroAnalyzer = &analysis.Analyzer{
@@ -101,12 +101,10 @@ func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Fi
 func omitzero(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	info := pass.TypesInfo
-	for curFile := range filesUsing(inspect, info, "go1.24") {
+	for curFile := range filesUsing(pass, versions.Go1_24) {
 		for curStruct := range curFile.Preorder((*ast.StructType)(nil)) {
 			for _, curField := range curStruct.Node().(*ast.StructType).Fields.List {
-				checkOmitEmptyField(pass, info, curField)
+				checkOmitEmptyField(pass, pass.TypesInfo, curField)
 			}
 		}
 	}

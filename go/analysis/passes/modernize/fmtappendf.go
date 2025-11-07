@@ -18,6 +18,7 @@ import (
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/internal/versions"
 )
 
 var FmtAppendfAnalyzer = &analysis.Analyzer{
@@ -50,7 +51,7 @@ func fmtappendf(pass *analysis.Pass) (any, error) {
 				conv := curCall.Parent().Node().(*ast.CallExpr)
 				tv := pass.TypesInfo.Types[conv.Fun]
 				if tv.IsType() && types.Identical(tv.Type, byteSliceType) &&
-					fileUses(pass.TypesInfo, astutil.EnclosingFile(curCall), "go1.19") {
+					fileUsesVersion(pass, astutil.EnclosingFile(curCall), versions.Go1_19) {
 					// Have: []byte(fmt.SprintX(...))
 
 					// Find "Sprint" identifier.

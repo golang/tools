@@ -12,6 +12,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/goplsexport"
+	"golang.org/x/tools/internal/versions"
 )
 
 var plusBuildAnalyzer = &analysis.Analyzer{
@@ -28,7 +29,7 @@ func init() {
 
 func plusbuild(pass *analysis.Pass) (any, error) {
 	check := func(f *ast.File) {
-		if !fileUses(pass.TypesInfo, f, "go1.18") {
+		if !fileUsesVersion(pass, f, versions.Go1_18) {
 			return
 		}
 

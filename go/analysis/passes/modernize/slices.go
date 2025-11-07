@@ -13,13 +13,13 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/versions"
 )
 
 // Warning: this analyzer is not safe to enable by default.
@@ -205,8 +205,7 @@ func appendclipped(pass *analysis.Pass) (any, error) {
 	skip := make(map[*ast.CallExpr]bool)
 
 	// Visit calls of form append(x, y...).
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	for curFile := range filesUsing(inspect, info, "go1.21") {
+	for curFile := range filesUsing(pass, versions.Go1_21) {
 		file := curFile.Node().(*ast.File)
 
 		for curCall := range curFile.Preorder((*ast.CallExpr)(nil)) {

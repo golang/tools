@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/internal/versions"
 )
 
 var SlicesContainsAnalyzer = &analysis.Analyzer{
@@ -75,9 +76,8 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 	}
 
 	var (
-		inspect = pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-		index   = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
-		info    = pass.TypesInfo
+		index = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+		info  = pass.TypesInfo
 	)
 
 	// check is called for each RangeStmt of this form:
@@ -386,7 +386,7 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 		}
 	}
 
-	for curFile := range filesUsing(inspect, info, "go1.21") {
+	for curFile := range filesUsing(pass, versions.Go1_21) {
 		file := curFile.Node().(*ast.File)
 
 		for curRange := range curFile.Preorder((*ast.RangeStmt)(nil)) {

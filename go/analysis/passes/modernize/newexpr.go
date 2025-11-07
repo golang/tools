@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/versions"
 )
 
 var NewExprAnalyzer = &analysis.Analyzer{
@@ -60,7 +61,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 								// Check file version.
 								file := astutil.EnclosingFile(curFuncDecl)
-								if !fileUses(info, file, "go1.26") {
+								if !fileUsesVersion(pass, file, versions.Go1_26) {
 									continue // new(expr) not available in this file
 								}
 
@@ -133,7 +134,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 			// Check file version.
 			file := astutil.EnclosingFile(curCall)
-			if !fileUses(info, file, "go1.26") {
+			if !fileUsesVersion(pass, file, versions.Go1_26) {
 				continue // new(expr) not available in this file
 			}
 

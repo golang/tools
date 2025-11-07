@@ -26,6 +26,7 @@ import (
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/internal/versions"
 )
 
 var stringscutAnalyzer = &analysis.Analyzer{
@@ -131,8 +132,7 @@ func stringscut(pass *analysis.Pass) (any, error) {
 	nextcall:
 		for curCall := range index.Calls(obj) {
 			// Check file version.
-			file := astutil.EnclosingFile(curCall)
-			if !fileUses(info, file, "go1.18") {
+			if !fileUsesVersion(pass, astutil.EnclosingFile(curCall), versions.Go1_18) {
 				continue // strings.Index not available in this file
 			}
 			indexCall := curCall.Node().(*ast.CallExpr) // the call to strings.Index, etc.

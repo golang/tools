@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/internal/versions"
 )
 
 var MinMaxAnalyzer = &analysis.Analyzer{
@@ -201,8 +202,7 @@ func minmax(pass *analysis.Pass) (any, error) {
 
 	// Find all "if a < b { lhs = rhs }" statements.
 	info := pass.TypesInfo
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	for curFile := range filesUsing(inspect, info, "go1.21") {
+	for curFile := range filesUsing(pass, versions.Go1_21) {
 		astFile := curFile.Node().(*ast.File)
 		for curIfStmt := range curFile.Preorder((*ast.IfStmt)(nil)) {
 			ifStmt := curIfStmt.Node().(*ast.IfStmt)

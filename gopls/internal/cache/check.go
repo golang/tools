@@ -17,7 +17,6 @@ import (
 	"go/types"
 	"regexp"
 	"runtime"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1787,12 +1786,6 @@ func validGoVersion(goVersion string) bool {
 
 	if relVer := releaseVersion(); relVer != "" && versions.Before(versions.Lang(relVer), versions.Lang(goVersion)) {
 		return false // 'go list' is too new for go/types
-	}
-
-	// TODO(rfindley): remove once we no longer support building gopls with Go
-	// 1.20 or earlier.
-	if !slices.Contains(build.Default.ReleaseTags, "go1.21") && strings.Count(goVersion, ".") >= 2 {
-		return false // unsupported patch version
 	}
 
 	return true

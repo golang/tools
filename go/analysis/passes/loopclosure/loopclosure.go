@@ -14,6 +14,8 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysisinternal"
+	"golang.org/x/tools/internal/packagepath"
+	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/versions"
 )
@@ -55,8 +57,8 @@ func run(pass *analysis.Pass) (any, error) {
 		switch n := n.(type) {
 		case *ast.File:
 			// Only traverse the file if its goversion is strictly before go1.22.
-			goversion := versions.FileVersion(pass.TypesInfo, n)
-			return versions.Before(goversion, versions.Go1_22)
+			return !fileUsesVersion(pass, n, versions.Go1_22)
+
 		case *ast.RangeStmt:
 			body = n.Body
 			addVar(n.Key)
@@ -356,6 +358,7 @@ func isMethodCall(info *types.Info, expr ast.Expr, pkgPath, typeName, method str
 	}
 
 	// Check that we are calling a method <method>
+	// TODO(adonovan): use [typesinternal.IsMethodNamed].
 	f := typeutil.StaticCallee(info, call)
 	if f == nil || f.Name() != method {
 		return false
@@ -369,4 +372,31 @@ func isMethodCall(info *types.Info, expr ast.Expr, pkgPath, typeName, method str
 	// *<pkgPath>.<typeName>.
 	_, named := typesinternal.ReceiverNamed(recv)
 	return typesinternal.IsTypeNamed(named, pkgPath, typeName)
+}
+
+// fileUsesVersion reports whether the specified file may use
+// features of the specified version of Go (e.g. "go1.24").
+//
+// Tip: we recommend using this check "late", just before calling
+// pass.Report, rather than "early" (when entering each ast.File, or
+// each candidate node of interest, during the traversal), because the
+// operation is not free, yet is not a highly selective filter: the
+// fraction of files that pass most version checks is high and
+// increases over time.
+//
+// TODO(adonovan): move to analyzer library.
+func fileUsesVersion(pass *analysis.Pass, file *ast.File, version string) bool {
+	// Standard packages that are part of toolchain bootstrapping
+	// are not considered to use a version of Go later than the
+	// current bootstrap toolchain version.
+	pkgpath := pass.Pkg.Path()
+	if packagepath.IsStdPackage(pkgpath) &&
+		stdlib.IsBootstrapPackage(pkgpath) &&
+		versions.Before(version, stdlib.BootstrapVersion.String()) {
+		return false // package must bootstrap
+	}
+	if versions.Before(pass.TypesInfo.FileVersions[file], version) {
+		return false // file version is too old
+	}
+	return true // ok
 }

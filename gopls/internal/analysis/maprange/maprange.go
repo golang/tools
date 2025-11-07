@@ -13,10 +13,11 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/internal/analysisinternal"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
+	"golang.org/x/tools/internal/packagepath"
+	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
 )
@@ -90,9 +91,9 @@ func analyzeRangeStmt(pass *analysis.Pass, callee types.Object, curCall inspecto
 	if pkg == xmaps && isSet(rangeStmt.Key) && rangeStmt.Value == nil {
 		// If we have:   for i := range maps.Keys(m) (using x/exp/maps),
 		// Replace with: for i := range len(m)
+		// (This requires Go 1.22.)
 		replace = "len"
-		canRangeOverInt := fileUses(pass.TypesInfo, curCall, "go1.22")
-		if !canRangeOverInt {
+		if !fileUsesVersion(pass, astutil.EnclosingFile(curCall), versions.Go1_22) {
 			pass.Report(analysis.Diagnostic{
 				Pos:     call.Pos(),
 				End:     call.End(),
@@ -150,9 +151,29 @@ func isSet(expr ast.Expr) bool {
 	return expr != nil && (!ok || ident.Name != "_")
 }
 
-// fileUses reports whether the file containing the specified cursor
-// uses at least the specified version of Go (e.g. "go1.24").
-func fileUses(info *types.Info, c inspector.Cursor, version string) bool {
-	file, _ := cursorutil.FirstEnclosing[*ast.File](c)
-	return !versions.Before(info.FileVersions[file], version)
+// fileUsesVersion reports whether the specified file may use
+// features of the specified version of Go (e.g. "go1.24").
+//
+// Tip: we recommend using this check "late", just before calling
+// pass.Report, rather than "early" (when entering each ast.File, or
+// each candidate node of interest, during the traversal), because the
+// operation is not free, yet is not a highly selective filter: the
+// fraction of files that pass most version checks is high and
+// increases over time.
+//
+// TODO(adonovan): move to analyzer library.
+func fileUsesVersion(pass *analysis.Pass, file *ast.File, version string) bool {
+	// Standard packages that are part of toolchain bootstrapping
+	// are not considered to use a version of Go later than the
+	// current bootstrap toolchain version.
+	pkgpath := pass.Pkg.Path()
+	if packagepath.IsStdPackage(pkgpath) &&
+		stdlib.IsBootstrapPackage(pkgpath) &&
+		versions.Before(version, stdlib.BootstrapVersion.String()) {
+		return false // package must bootstrap
+	}
+	if versions.Before(pass.TypesInfo.FileVersions[file], version) {
+		return false // file version is too old
+	}
+	return true // ok
 }

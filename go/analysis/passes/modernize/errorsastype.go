@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/internal/versions"
 )
 
 var errorsastypeAnalyzer = &analysis.Analyzer{
@@ -97,7 +98,7 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 		}
 
 		file := astutil.EnclosingFile(curDeclStmt)
-		if !fileUses(info, file, "go1.26") {
+		if !fileUsesVersion(pass, file, versions.Go1_26) {
 			continue // errors.AsType is too new
 		}
 

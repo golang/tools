@@ -9,9 +9,9 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
+	"golang.org/x/tools/internal/versions"
 )
 
 var AnyAnalyzer = &analysis.Analyzer{
@@ -29,9 +29,7 @@ var AnyAnalyzer = &analysis.Analyzer{
 func runAny(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-
-	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.18") {
+	for curFile := range filesUsing(pass, versions.Go1_18) {
 		for curIface := range curFile.Preorder((*ast.InterfaceType)(nil)) {
 			iface := curIface.Node().(*ast.InterfaceType)
 

@@ -10,11 +10,11 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
+	"golang.org/x/tools/internal/versions"
 )
 
 var ForVarAnalyzer = &analysis.Analyzer{
@@ -45,8 +45,7 @@ var ForVarAnalyzer = &analysis.Analyzer{
 func forvar(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.22") {
+	for curFile := range filesUsing(pass, versions.Go1_22) {
 		for curLoop := range curFile.Preorder((*ast.RangeStmt)(nil)) {
 			loop := curLoop.Node().(*ast.RangeStmt)
 			if loop.Tok != token.DEFINE {

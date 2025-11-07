@@ -23,6 +23,7 @@ import (
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/internal/versions"
 )
 
 var TestingContextAnalyzer = &analysis.Analyzer{
@@ -137,7 +138,7 @@ calls:
 				testObj = isTestFn(info, n)
 			}
 		}
-		if testObj != nil && fileUses(info, astutil.EnclosingFile(cur), "go1.24") {
+		if testObj != nil && fileUsesVersion(pass, astutil.EnclosingFile(cur), versions.Go1_24) {
 			// Have a test function. Check that we can resolve the relevant
 			// testing.{T,B,F} at the current position.
 			if _, obj := lhs[0].Parent().LookupParent(testObj.Name(), lhs[0].Pos()); obj == testObj {

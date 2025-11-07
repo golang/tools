@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typeparams"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/versions"
 )
 
 var MapsLoopAnalyzer = &analysis.Analyzer{
@@ -223,8 +224,7 @@ func mapsloop(pass *analysis.Pass) (any, error) {
 	}
 
 	// Find all range loops around m[k] = v.
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	for curFile := range filesUsing(inspect, pass.TypesInfo, "go1.23") {
+	for curFile := range filesUsing(pass, versions.Go1_23) {
 		file := curFile.Node().(*ast.File)
 
 		for curRange := range curFile.Preorder((*ast.RangeStmt)(nil)) {

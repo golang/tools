@@ -20,6 +20,7 @@ import (
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/internal/versions"
 )
 
 var WaitGroupAnalyzer = &analysis.Analyzer{
@@ -128,7 +129,7 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 		}
 
 		file := astutil.EnclosingFile(curAddCall)
-		if !fileUses(info, file, "go1.25") {
+		if !fileUsesVersion(pass, file, versions.Go1_25) {
 			continue
 		}
 		tokFile := pass.Fset.File(file.Pos())

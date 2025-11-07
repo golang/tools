@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
+	"golang.org/x/tools/internal/versions"
 )
 
 var RangeIntAnalyzer = &analysis.Analyzer{
@@ -68,12 +69,12 @@ var RangeIntAnalyzer = &analysis.Analyzer{
 func rangeint(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
-	info := pass.TypesInfo
+	var (
+		info      = pass.TypesInfo
+		typeindex = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
+	)
 
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	typeindex := pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
-
-	for curFile := range filesUsing(inspect, info, "go1.22") {
+	for curFile := range filesUsing(pass, versions.Go1_22) {
 	nextLoop:
 		for curLoop := range curFile.Preorder((*ast.ForStmt)(nil)) {
 			loop := curLoop.Node().(*ast.ForStmt)

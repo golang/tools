@@ -12,12 +12,12 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/analysisinternal/generated"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/versions"
 )
 
 // Warning: this analyzer is not safe to enable by default (not nil-preserving).
@@ -45,7 +45,6 @@ func slicesdelete(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	info := pass.TypesInfo
 	report := func(file *ast.File, call *ast.CallExpr, slice1, slice2 *ast.SliceExpr) {
 		insert := func(pos token.Pos, text string) analysis.TextEdit {
@@ -55,7 +54,7 @@ func slicesdelete(pass *analysis.Pass) (any, error) {
 			return types.Identical(types.Default(info.TypeOf(e)), builtinInt.Type())
 		}
 		isIntShadowed := func() bool {
-			scope := pass.TypesInfo.Scopes[file].Innermost(call.Lparen)
+			scope := info.Scopes[file].Innermost(call.Lparen)
 			if _, obj := scope.LookupParent("int", call.Lparen); obj != builtinInt {
 				return true // int type is shadowed
 			}
@@ -130,7 +129,7 @@ func slicesdelete(pass *analysis.Pass) (any, error) {
 			}},
 		})
 	}
-	for curFile := range filesUsing(inspect, info, "go1.21") {
+	for curFile := range filesUsing(pass, versions.Go1_21) {
 		file := curFile.Node().(*ast.File)
 		for curCall := range curFile.Preorder((*ast.CallExpr)(nil)) {
 			call := curCall.Node().(*ast.CallExpr)
