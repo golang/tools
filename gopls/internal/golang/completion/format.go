@@ -398,33 +398,33 @@ func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
 		case *types.Slice:
 			visit(t.Elem())
 		case *types.Interface:
-			for i := range t.NumExplicitMethods() {
-				visit(t.ExplicitMethod(i).Type())
+			for method := range t.ExplicitMethods() {
+				visit(method.Type())
 			}
-			for i := range t.NumEmbeddeds() {
-				visit(t.EmbeddedType(i))
+			for etyp := range t.EmbeddedTypes() {
+				visit(etyp)
 			}
 		case *types.Union:
-			for i := range t.Len() {
-				visit(t.Term(i).Type())
+			for term := range t.Terms() {
+				visit(term.Type())
 			}
 		case *types.Signature:
 			if tp := t.TypeParams(); tp != nil {
 				// Generic signatures only appear as the type of generic
 				// function declarations, so this isn't really reachable.
-				for i := range tp.Len() {
-					visit(tp.At(i).Constraint())
+				for tparam := range tp.TypeParams() {
+					visit(tparam.Constraint())
 				}
 			}
 			visit(t.Params())
 			visit(t.Results())
 		case *types.Tuple:
-			for i := range t.Len() {
-				visit(t.At(i).Type())
+			for v := range t.Variables() {
+				visit(v.Type())
 			}
 		case *types.Struct:
-			for i := range t.NumFields() {
-				visit(t.Field(i).Type())
+			for field := range t.Fields() {
+				visit(field.Type())
 			}
 		case *types.TypeParam:
 			free[t] = true
@@ -432,8 +432,8 @@ func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
 			visit(types.Unalias(t))
 		case *types.Named:
 			targs := t.TypeArgs()
-			for i := range targs.Len() {
-				visit(targs.At(i))
+			for t0 := range targs.Types() {
+				visit(t0)
 			}
 		case *types.Basic:
 			// nop
@@ -446,8 +446,7 @@ func inferableTypeParams(sig *types.Signature) map[*types.TypeParam]bool {
 
 	// Perform induction through constraints.
 restart:
-	for i := range sig.TypeParams().Len() {
-		tp := sig.TypeParams().At(i)
+	for tp := range sig.TypeParams().TypeParams() {
 		if free[tp] {
 			n := len(free)
 			visit(tp.Constraint())

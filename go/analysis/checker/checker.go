@@ -490,7 +490,7 @@ func exportedFrom(obj types.Object, pkg *types.Package) bool {
 	switch obj := obj.(type) {
 	case *types.Func:
 		return obj.Exported() && obj.Pkg() == pkg ||
-			obj.Type().(*types.Signature).Recv() != nil
+			obj.Signature().Recv() != nil
 	case *types.Var:
 		if obj.IsField() {
 			return true

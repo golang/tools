@@ -26,7 +26,7 @@ func objectKind(obj types.Object) string {
 			return "field"
 		}
 	case *types.Func:
-		if obj.Type().(*types.Signature).Recv() != nil {
+		if obj.Signature().Recv() != nil {
 			return "method"
 		}
 	}

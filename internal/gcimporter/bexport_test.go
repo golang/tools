@@ -259,8 +259,8 @@ func makeExplicit(typ types.Type) types.Type {
 			methods = append(methods, iface.Method(i))
 		}
 		var embeddeds []types.Type
-		for i := 0; i < iface.NumEmbeddeds(); i++ {
-			embeddeds = append(embeddeds, iface.EmbeddedType(i))
+		for etyp := range iface.EmbeddedTypes() {
+			embeddeds = append(embeddeds, etyp)
 		}
 		return types.NewInterfaceType(methods, embeddeds)
 	}

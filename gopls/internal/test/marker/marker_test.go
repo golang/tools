@@ -1201,9 +1201,9 @@ func summarizeLoc(name string, startLine, startCol, endLine, endCol int) string 
 
 // Types with special handling.
 var (
-	goldenType        = reflect.TypeOf(&Golden{})
-	markerType        = reflect.TypeOf(marker{})
-	stringMatcherType = reflect.TypeOf(stringMatcher{})
+	goldenType        = reflect.TypeFor[*Golden]()
+	markerType        = reflect.TypeFor[marker]()
+	stringMatcherType = reflect.TypeFor[stringMatcher]()
 )
 
 // Custom conversions.
@@ -1213,8 +1213,8 @@ var (
 //
 // Converters should return an error rather than calling marker.errorf().
 var customConverters = map[reflect.Type]func(marker, any) (any, error){
-	reflect.TypeOf(protocol.Location{}): converter(convertLocation),
-	reflect.TypeOf(completionLabel("")): converter(convertCompletionLabel),
+	reflect.TypeFor[protocol.Location](): converter(convertLocation),
+	reflect.TypeFor[completionLabel]():   converter(convertCompletionLabel),
 }
 
 // converter transforms a typed argument conversion function to an untyped

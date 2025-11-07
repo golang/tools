@@ -45,7 +45,7 @@ type Codec[T any] struct{ frob *frob }
 func CodecFor[T any]() Codec[T] {
 	frobsMu.Lock()
 	defer frobsMu.Unlock()
-	return Codec[T]{frobFor(reflect.TypeOf((*T)(nil)).Elem())}
+	return Codec[T]{frobFor(reflect.TypeFor[T]())}
 }
 
 func (codec Codec[T]) Encode(v T) []byte          { return codec.frob.Encode(v) }

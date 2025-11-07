@@ -488,7 +488,7 @@ bzz baz.Baz
 			t.Fatalf("got %v, want 2 quick fixes", fixes)
 		}
 		good := 0
-		failures := ""
+		var failures strings.Builder
 		for _, f := range fixes {
 			ti := f.Title
 			// these may be overly white-space sensitive
@@ -496,11 +496,11 @@ bzz baz.Baz
 				ti == "Add import:  \"failure.com/baz\"" {
 				good++
 			} else {
-				failures += ti
+				failures.WriteString(ti)
 			}
 		}
 		if good != 2 {
-			t.Errorf("failed to find\n%q, got\n%q\n%q", failures, fixes[0].Title,
+			t.Errorf("failed to find\n%q, got\n%q\n%q", failures.String(), fixes[0].Title,
 				fixes[1].Title)
 		}
 

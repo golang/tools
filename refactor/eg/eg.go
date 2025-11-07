@@ -210,8 +210,8 @@ func NewTransformer(fset *token.FileSet, tmplPkg *types.Package, tmplFile *ast.F
 	}
 
 	wildcards := make(map[*types.Var]bool)
-	for i := 0; i < beforeSig.Params().Len(); i++ {
-		wildcards[beforeSig.Params().At(i)] = true
+	for v := range beforeSig.Params().Variables() {
+		wildcards[v] = true
 	}
 
 	// checkExprTypes returns an error if Tb (type of before()) is not

@@ -200,13 +200,12 @@ func loadOptions(category reflect.Value, optsType types.Object, pkg *packages.Pa
 
 	var opts []*doc.Option
 	optsStruct := optsType.Type().Underlying().(*types.Struct)
-	for i := 0; i < optsStruct.NumFields(); i++ {
+	for typesField := range optsStruct.Fields() {
 		// The types field gives us the type.
-		typesField := optsStruct.Field(i)
 
 		// If the field name ends with "Options", assume it is a struct with
 		// additional options and process it recursively.
-		if h := strings.TrimSuffix(typesField.Name(), "Options"); h != typesField.Name() {
+		if h, ok := strings.CutSuffix(typesField.Name(), "Options"); ok {
 			// Keep track of the parent structs.
 			if hierarchy != "" {
 				h = hierarchy + "." + h

@@ -168,7 +168,7 @@ func isAttr(t types.Type) bool {
 //	"slog.Logger.With" (instead of "(*log/slog.Logger).With")
 func shortName(fn *types.Func) string {
 	var r string
-	if recv := fn.Type().(*types.Signature).Recv(); recv != nil {
+	if recv := fn.Signature().Recv(); recv != nil {
 		if _, named := typesinternal.ReceiverNamed(recv); named != nil {
 			r = named.Obj().Name()
 		} else {
@@ -188,7 +188,7 @@ func kvFuncSkipArgs(fn *types.Func) (int, bool) {
 		return 0, false
 	}
 	var recvName string // by default a slog package function
-	if recv := fn.Type().(*types.Signature).Recv(); recv != nil {
+	if recv := fn.Signature().Recv(); recv != nil {
 		_, named := typesinternal.ReceiverNamed(recv)
 		if named == nil {
 			return 0, false // anon struct/interface

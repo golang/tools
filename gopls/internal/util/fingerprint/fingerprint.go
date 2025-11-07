@@ -113,9 +113,9 @@ func fingerprint(t types.Type) (string, bool) {
 				buf.WriteString(tname.Name())
 			}
 			if targs != nil {
-				for i := range targs.Len() {
+				for t0 := range targs.Types() {
 					buf.WriteByte(' ')
-					print(targs.At(i))
+					print(t0)
 				}
 				buf.WriteString(")")
 			}
@@ -149,9 +149,9 @@ func fingerprint(t types.Type) (string, bool) {
 
 		case *types.Tuple:
 			buf.WriteString("(tuple")
-			for i := range t.Len() {
+			for v := range t.Variables() {
 				buf.WriteByte(' ')
-				print(t.At(i).Type())
+				print(v.Type())
 			}
 			buf.WriteByte(')')
 

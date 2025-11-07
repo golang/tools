@@ -207,8 +207,8 @@ func entry(i int, a A) int {
 func tparams(f *ssa.Function) string {
 	tplist := f.TypeParams()
 	var tps []string
-	for i := 0; i < tplist.Len(); i++ {
-		tps = append(tps, tplist.At(i).String())
+	for tparam := range tplist.TypeParams() {
+		tps = append(tps, tparam.String())
 	}
 	return fmt.Sprint(tps)
 }

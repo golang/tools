@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build go1.21 && !openbsd && !js && !wasip1 && !solaris && !android && !386
-// +build go1.21,!openbsd,!js,!wasip1,!solaris,!android,!386
 
 package telemetry_test
 

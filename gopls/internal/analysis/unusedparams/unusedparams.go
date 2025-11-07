@@ -96,8 +96,7 @@ func run(pass *analysis.Pass) (any, error) {
 				// generics makes it tricky, and this conservative
 				// heuristic is close enough.)
 				t := pass.TypesInfo.TypeOf(n).(*types.Interface)
-				for i := 0; i < t.NumExplicitMethods(); i++ {
-					m := t.ExplicitMethod(i)
+				for m := range t.ExplicitMethods() {
 					if !m.Exported() && m.Name() != "_" {
 						unexportedIMethodNames[m.Name()] = true
 					}

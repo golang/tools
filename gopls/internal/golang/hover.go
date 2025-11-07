@@ -19,6 +19,7 @@ import (
 	"go/version"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -719,8 +720,8 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 						scopeObj, _ := obj.Pkg().Scope().Lookup(typeName.Name).(*types.TypeName)
 						if scopeObj != nil {
 							if st, _ := scopeObj.Type().Underlying().(*types.Struct); st != nil {
-								for i := 0; i < st.NumFields(); i++ {
-									if obj == st.Field(i) {
+								for field := range st.Fields() {
+									if obj == field {
 										recv = scopeObj
 									}
 								}
@@ -1806,8 +1807,7 @@ func promotedFields(t types.Type, from *types.Package) []promotedField {
 			return
 		}
 	fieldloop:
-		for i := 0; i < tStruct.NumFields(); i++ {
-			f := tStruct.Field(i)
+		for f := range tStruct.Fields() {
 
 			// Handle recursion through anonymous fields.
 			if f.Anonymous() {
@@ -1868,10 +1868,7 @@ func computeSizeOffsetInfo(pkg *cache.Package, curIdent inspector.Cursor, obj ty
 
 		// wasted space (struct types)
 		if tStruct, ok := obj.Type().Underlying().(*types.Struct); ok && is[*types.TypeName](obj) && size > 0 {
-			var fields []*types.Var
-			for i := 0; i < tStruct.NumFields(); i++ {
-				fields = append(fields, tStruct.Field(i))
-			}
+			fields := slices.Collect(tStruct.Fields())
 			if len(fields) > 0 {
 				// Sort into descending (most compact) order
 				// and recompute size of entire struct.

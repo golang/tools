@@ -431,13 +431,9 @@ func (a *postfixTmplArgs) KeyType() types.Type {
 // Tuple returns the tuple result vars if the type of X is tuple.
 func (a *postfixTmplArgs) Tuple() []*types.Var {
 	tuple, _ := a.Type.(*types.Tuple)
-	if tuple == nil {
-		return nil
-	}
-
-	typs := make([]*types.Var, 0, tuple.Len())
-	for i := range tuple.Len() {
-		typs = append(typs, tuple.At(i))
+	typs := make([]*types.Var, tuple.Len())
+	for i := range typs {
+		typs[i] = tuple.At(i)
 	}
 	return typs
 }
@@ -445,9 +441,6 @@ func (a *postfixTmplArgs) Tuple() []*types.Var {
 // TupleLast returns the last tuple result vars if the type of X is tuple.
 func (a *postfixTmplArgs) TupleLast() *types.Var {
 	tuple, _ := a.Type.(*types.Tuple)
-	if tuple == nil {
-		return nil
-	}
 	if tuple.Len() == 0 {
 		return nil
 	}

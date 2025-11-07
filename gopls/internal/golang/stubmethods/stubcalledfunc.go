@@ -106,8 +106,8 @@ func (si *CallStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	// Otherwise, use lowercase for the first letter of the object.
 	recvName := strings.ToLower(fmt.Sprintf("%.1s", recv.Name()))
 	if named, ok := types.Unalias(si.Receiver).(*types.Named); ok {
-		for i := 0; i < named.NumMethods(); i++ {
-			if recv := named.Method(i).Type().(*types.Signature).Recv(); recv.Name() != "" {
+		for method := range named.Methods() {
+			if recv := method.Signature().Recv(); recv.Name() != "" {
 				recvName = recv.Name()
 				break
 			}
@@ -185,8 +185,8 @@ func (si *CallStubInfo) collectParams() []param {
 		// This is the case where another function call returning multiple
 		// results is used as an argument.
 		case *types.Tuple:
-			for ti := 0; ti < t.Len(); ti++ {
-				appendParam(arg, t.At(ti).Type())
+			for v := range t.Variables() {
+				appendParam(arg, v.Type())
 			}
 		default:
 			appendParam(arg, t)

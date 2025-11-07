@@ -110,8 +110,8 @@ func TypesFromContext(info *types.Info, cur inspector.Cursor) []types.Type {
 		retsig := sig.Results()
 		// Append all return declarations' type
 		if len(returnstmt.Results) == 1 {
-			for i := 0; i < retsig.Len(); i++ {
-				t := retsig.At(i).Type()
+			for v := range retsig.Variables() {
+				t := v.Type()
 				typs = append(typs, validType(t))
 			}
 			break

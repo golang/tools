@@ -434,8 +434,8 @@ func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 			// the methodID's types.Package, which we don't know.
 			// We could recursively search pkg.Imports for it,
 			// but it's easier to walk the method set.
-			for i := 0; i < mset.Len(); i++ {
-				m := mset.At(i).Obj()
+			for method := range mset.Methods() {
+				m := method.Obj()
 				if m.Pos() == id.Pos() {
 					continue // avoid self-comparison of query method
 				}
@@ -505,8 +505,8 @@ func implements(msets *typeutil.MethodSetCache, x, y types.Type) bool {
 	// would lead to divergence with the global (fingerprint-based)
 	// algorithm, which operates only on methodsets.
 	ymset := msets.MethodSet(y)
-	for i := range ymset.Len() {
-		ym := ymset.At(i).Obj().(*types.Func)
+	for method := range ymset.Methods() {
+		ym := method.Obj().(*types.Func)
 
 		xobj, _, _ := types.LookupFieldOrMethod(x, false, ym.Pkg(), ym.Name())
 		xm, ok := xobj.(*types.Func)

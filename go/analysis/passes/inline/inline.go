@@ -416,8 +416,8 @@ func typenames(t types.Type) []*types.TypeName {
 			visit(t.Key())
 			visit(t.Elem())
 		case *types.Struct:
-			for i := range t.NumFields() {
-				visit(t.Field(i).Type())
+			for field := range t.Fields() {
+				visit(field.Type())
 			}
 		case *types.Signature:
 			// Ignore the receiver: although it may be present, it has no meaning
@@ -430,11 +430,11 @@ func typenames(t types.Type) []*types.TypeName {
 			visit(t.Params())
 			visit(t.Results())
 		case *types.Interface:
-			for i := range t.NumEmbeddeds() {
-				visit(t.EmbeddedType(i))
+			for etyp := range t.EmbeddedTypes() {
+				visit(etyp)
 			}
-			for i := range t.NumExplicitMethods() {
-				visit(t.ExplicitMethod(i).Type())
+			for method := range t.ExplicitMethods() {
+				visit(method.Type())
 			}
 		case *types.Tuple:
 			for v := range t.Variables() {

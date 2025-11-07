@@ -445,8 +445,8 @@ func (r *renamer) checkStructField(from *types.Var) {
 		// This struct is not a defined type. (It may be an alias.)
 		// We need only check for direct (non-promoted) field/field conflicts.
 		T := info.Types[tStruct].Type.Underlying().(*types.Struct)
-		for i := 0; i < T.NumFields(); i++ {
-			if prev := T.Field(i); prev.Name() == r.to {
+		for field := range T.Fields() {
+			if prev := field; prev.Name() == r.to {
 				r.errorf(from.Pos(), "renaming this field %q to %q",
 					from.Name(), r.to)
 				r.errorf(prev.Pos(), "\twould conflict with this field")
@@ -828,7 +828,7 @@ func (r *renamer) satisfy() map[satisfy.Constraint]bool {
 
 // recv returns the method's receiver.
 func recv(meth *types.Func) *types.Var {
-	return meth.Type().(*types.Signature).Recv()
+	return meth.Signature().Recv()
 }
 
 // someUse returns an arbitrary use of obj within info.

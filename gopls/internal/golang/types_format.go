@@ -181,8 +181,7 @@ func formatFieldList(ctx context.Context, fset *token.FileSet, list *ast.FieldLi
 func NewSignature(ctx context.Context, s *cache.Snapshot, pkg *cache.Package, sig *types.Signature, comment *ast.CommentGroup, qual types.Qualifier, mq MetadataQualifier) (*signature, error) {
 	var tparams []string
 	tpList := sig.TypeParams()
-	for i := 0; i < tpList.Len(); i++ {
-		tparam := tpList.At(i)
+	for tparam := range tpList.TypeParams() {
 		// TODO: is it possible to reuse the logic from FormatVarType here?
 		s := tparam.Obj().Name() + " " + tparam.Constraint().String()
 		tparams = append(tparams, s)

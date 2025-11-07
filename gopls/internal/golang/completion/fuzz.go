@@ -50,8 +50,8 @@ Loop:
 		}
 	}
 	if inside {
-		for i := range mset.Len() {
-			o := mset.At(i).Obj()
+		for method := range mset.Methods() {
+			o := method.Obj()
 			if o.Name() == "Failed" || o.Name() == "Name" {
 				cb(candidate{
 					obj:         o,
@@ -125,8 +125,8 @@ Loop:
 			isSlice:       false,
 		}
 		c.items = append(c.items, xx)
-		for i := range mset.Len() {
-			o := mset.At(i).Obj()
+		for method := range mset.Methods() {
+			o := method.Obj()
 			if o.Name() != "Fuzz" {
 				cb(candidate{
 					obj:         o,

@@ -78,7 +78,7 @@ func DocFragment(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (p
 		// External test packages don't have /pkg doc pages,
 		// so instead show the doc for the package under test.
 		// (This named-based heuristic is imperfect.)
-		if forTest := strings.TrimSuffix(pkg.Path(), "_test"); forTest != pkg.Path() {
+		if forTest, ok := strings.CutSuffix(pkg.Path(), "_test"); ok {
 			return PackagePath(forTest), "", makeTitle("package", nil, filepath.Base(forTest))
 		}
 

@@ -89,8 +89,8 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	// Record all direct methods of the current object
 	concreteFuncs := make(map[string]struct{})
 	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
-		for i := 0; i < named.NumMethods(); i++ {
-			concreteFuncs[named.Method(i).Name()] = struct{}{}
+		for method := range named.Methods() {
+			concreteFuncs[method.Name()] = struct{}{}
 		}
 	}
 
@@ -107,8 +107,7 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 		concreteStruct, isStruct = typesinternal.Origin(si.Concrete).Underlying().(*types.Struct)
 	)
 
-	for i := 0; i < ifaceType.NumMethods(); i++ {
-		imethod := ifaceType.Method(i)
+	for imethod := range ifaceType.Methods() {
 		cmethod, index, _ := types.LookupFieldOrMethod(si.Concrete, si.pointer, imethod.Pkg(), imethod.Name())
 		if cmethod == nil {
 			missing = append(missing, missingFn{fn: imethod})
@@ -163,8 +162,8 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 	// Otherwise, use lowercase for the first letter of the object.
 	rn := strings.ToLower(si.Concrete.Obj().Name()[0:1])
 	if named, ok := types.Unalias(si.Concrete).(*types.Named); ok {
-		for i := 0; i < named.NumMethods(); i++ {
-			if recv := named.Method(i).Type().(*types.Signature).Recv(); recv.Name() != "" {
+		for method := range named.Methods() {
+			if recv := method.Signature().Recv(); recv.Name() != "" {
 				rn = recv.Name()
 				break
 			}
@@ -173,8 +172,8 @@ func (si *IfaceStubInfo) Emit(out *bytes.Buffer, qual types.Qualifier) error {
 
 	// Check for receiver name conflicts
 	checkRecvName := func(tuple *types.Tuple) bool {
-		for i := 0; i < tuple.Len(); i++ {
-			if rn == tuple.At(i).Name() {
+		for v := range tuple.Variables() {
+			if rn == v.Name() {
 				return true
 			}
 		}

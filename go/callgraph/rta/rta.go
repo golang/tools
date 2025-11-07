@@ -469,9 +469,9 @@ func (r *rta) addRuntimeType(T types.Type, skip bool) {
 	}
 
 	// Recursion over signatures of each exported method.
-	for i := 0; i < mset.Len(); i++ {
-		if mset.At(i).Obj().Exported() {
-			sig := mset.At(i).Type().(*types.Signature)
+	for method := range mset.Methods() {
+		if method.Obj().Exported() {
+			sig := method.Type().(*types.Signature)
 			r.addRuntimeType(sig.Params(), true)  // skip the Tuple itself
 			r.addRuntimeType(sig.Results(), true) // skip the Tuple itself
 		}
@@ -541,8 +541,8 @@ func (r *rta) addRuntimeType(T types.Type, skip bool) {
 func fingerprint(mset *types.MethodSet) uint64 {
 	var space [64]byte
 	var mask uint64
-	for i := 0; i < mset.Len(); i++ {
-		method := mset.At(i).Obj()
+	for method := range mset.Methods() {
+		method := method.Obj()
 		sig := method.Type().(*types.Signature)
 		sum := crc32.ChecksumIEEE(fmt.Appendf(space[:], "%s/%d/%d",
 			method.Id(),

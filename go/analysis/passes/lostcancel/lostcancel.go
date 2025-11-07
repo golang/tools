@@ -316,8 +316,8 @@ outer:
 }
 
 func tupleContains(tuple *types.Tuple, v *types.Var) bool {
-	for i := 0; i < tuple.Len(); i++ {
-		if tuple.At(i) == v {
+	for v0 := range tuple.Variables() {
+		if v0 == v {
 			return true
 		}
 	}

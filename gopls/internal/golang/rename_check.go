@@ -460,8 +460,8 @@ func (r *renamer) checkStructField(from *types.Var) {
 			// This struct is not a named type.
 			// We need only check for direct (non-promoted) field/field conflicts.
 			T := r.pkg.TypesInfo().Types[tStruct].Type.Underlying().(*types.Struct)
-			for i := 0; i < T.NumFields(); i++ {
-				if prev := T.Field(i); prev.Name() == r.to {
+			for prev := range T.Fields() {
+				if prev.Name() == r.to {
 					r.errorf(from.Pos(), "renaming this field %q to %q",
 						from.Name(), r.to)
 					r.errorf(prev.Pos(), "\twould conflict with this field")

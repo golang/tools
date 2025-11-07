@@ -351,8 +351,7 @@ func getTestVar(enclosingFunc *funcInfo, pkg *cache.Package) string {
 	}
 
 	sig := enclosingFunc.sig
-	for i := range sig.Params().Len() {
-		param := sig.Params().At(i)
+	for param := range sig.Params().Variables() {
 		if param.Name() == "_" {
 			continue
 		}

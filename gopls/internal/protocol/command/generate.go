@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build ignore
-// +build ignore
 
 // The generate command generates command_gen.go from a combination of
 // static and dynamic analysis of the command package.

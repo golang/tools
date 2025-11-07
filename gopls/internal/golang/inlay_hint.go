@@ -212,8 +212,8 @@ func funcTypeParams(info *types.Info, pgf *parsego.File, qual types.Qualifier, c
 			continue
 		}
 		var args []string
-		for i := 0; i < inst.TypeArgs.Len(); i++ {
-			args = append(args, inst.TypeArgs.At(i).String())
+		for t := range inst.TypeArgs.Types() {
+			args = append(args, t.String())
 		}
 		if len(args) == 0 {
 			continue

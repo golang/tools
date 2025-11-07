@@ -150,7 +150,7 @@ func run(pass *analysis.Pass) (any, error) {
 		if !ok {
 			return // e.g. var or builtin
 		}
-		if sig := fn.Type().(*types.Signature); sig.Recv() != nil {
+		if sig := fn.Signature(); sig.Recv() != nil {
 			// method (e.g. foo.String())
 			if types.Identical(sig, sigNoArgsStringResult) {
 				if stringMethods[fn.Name()] {

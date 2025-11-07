@@ -72,8 +72,8 @@ func CallGraph(prog *ssa.Program) *callgraph.Graph {
 	methodsOf := func(T types.Type) {
 		if !types.IsInterface(T) {
 			mset := prog.MethodSets.MethodSet(T)
-			for i := 0; i < mset.Len(); i++ {
-				visit(cg.CreateNode(prog.MethodValue(mset.At(i))))
+			for method := range mset.Methods() {
+				visit(cg.CreateNode(prog.MethodValue(method)))
 			}
 		}
 	}

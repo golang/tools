@@ -331,8 +331,8 @@ func (c *completer) functionLiteral(ctx context.Context, sig *types.Signature, m
 		results.Len() == 1 && results.At(0).Name() != ""
 
 	var resultHasTypeParams bool
-	for i := range results.Len() {
-		if tp, ok := types.Unalias(results.At(i).Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
+	for v := range results.Variables() {
+		if tp, ok := types.Unalias(v.Type()).(*types.TypeParam); ok && !c.typeParamInScope(tp) {
 			resultHasTypeParams = true
 		}
 	}
@@ -570,8 +570,7 @@ func (c *completer) fullyInstantiated(t typesinternal.NamedOrAlias) bool {
 		return false
 	}
 
-	for i := range targs.Len() {
-		targ := targs.At(i)
+	for targ := range targs.Types() {
 
 		// The expansion of an alias can have free type parameters,
 		// whether or not the alias itself has type parameters:

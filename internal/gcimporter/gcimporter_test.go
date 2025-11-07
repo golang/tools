@@ -502,8 +502,7 @@ func verifyInterfaceMethodRecvs(t *testing.T, named *types.Named, level int) {
 	}
 
 	// check explicitly declared methods
-	for i := 0; i < iface.NumExplicitMethods(); i++ {
-		m := iface.ExplicitMethod(i)
+	for m := range iface.ExplicitMethods() {
 		recv := m.Type().(*types.Signature).Recv()
 		if recv == nil {
 			t.Errorf("%s: missing receiver type", m)
@@ -515,9 +514,9 @@ func verifyInterfaceMethodRecvs(t *testing.T, named *types.Named, level int) {
 	}
 
 	// check embedded interfaces (if they are named, too)
-	for i := 0; i < iface.NumEmbeddeds(); i++ {
+	for etyp := range iface.EmbeddedTypes() {
 		// embedding of interfaces cannot have cycles; recursion will terminate
-		if etype, _ := types.Unalias(iface.EmbeddedType(i)).(*types.Named); etype != nil {
+		if etype, _ := types.Unalias(etyp).(*types.Named); etype != nil {
 			verifyInterfaceMethodRecvs(t, etype, level+1)
 		}
 	}
@@ -538,8 +537,7 @@ func TestIssue5815(t *testing.T) {
 		}
 		if tname, _ := obj.(*types.TypeName); tname != nil {
 			named := types.Unalias(tname.Type()).(*types.Named)
-			for i := 0; i < named.NumMethods(); i++ {
-				m := named.Method(i)
+			for m := range named.Methods() {
 				if m.Pkg() == nil {
 					t.Errorf("no pkg for %s", m)
 				}

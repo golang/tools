@@ -185,8 +185,7 @@ func TestFuncOrigin60628(t *testing.T) {
 	if mset.Len() == 0 {
 		t.Errorf("NewMethodSet(*T) is empty")
 	}
-	for i := 0; i < mset.Len(); i++ {
-		sel := mset.At(i)
+	for sel := range mset.Methods() {
 		m := sel.Obj().(*types.Func)
 
 		// TODO(adonovan): check the consistency property required to fix #60634.

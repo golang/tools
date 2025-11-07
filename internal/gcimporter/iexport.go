@@ -829,8 +829,7 @@ func (p *iexporter) doDecl(obj types.Object) {
 			// their name must be qualified before exporting recv.
 			if rparams := sig.RecvTypeParams(); rparams.Len() > 0 {
 				prefix := obj.Name() + "." + m.Name()
-				for i := 0; i < rparams.Len(); i++ {
-					rparam := rparams.At(i)
+				for rparam := range rparams.TypeParams() {
 					name := tparamExportName(prefix, rparam)
 					w.p.tparamNames[rparam.Obj()] = name
 				}
@@ -1223,20 +1222,19 @@ func (w *exportWriter) signature(sig *types.Signature) {
 
 func (w *exportWriter) typeList(ts *types.TypeList, pkg *types.Package) {
 	w.uint64(uint64(ts.Len()))
-	for i := 0; i < ts.Len(); i++ {
-		w.typ(ts.At(i), pkg)
+	for t := range ts.Types() {
+		w.typ(t, pkg)
 	}
 }
 
 func (w *exportWriter) tparamList(prefix string, list *types.TypeParamList, pkg *types.Package) {
 	ll := uint64(list.Len())
 	w.uint64(ll)
-	for i := 0; i < list.Len(); i++ {
-		tparam := list.At(i)
+	for tparam := range list.TypeParams() {
 		// Set the type parameter exportName before exporting its type.
 		exportName := tparamExportName(prefix, tparam)
 		w.p.tparamNames[tparam.Obj()] = exportName
-		w.typ(list.At(i), pkg)
+		w.typ(tparam, pkg)
 	}
 }
 

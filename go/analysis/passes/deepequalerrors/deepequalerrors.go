@@ -96,8 +96,8 @@ func containsError(typ types.Type) bool {
 		case *types.Map:
 			return check(t.Key()) || check(t.Elem())
 		case *types.Struct:
-			for i := 0; i < t.NumFields(); i++ {
-				if check(t.Field(i).Type()) {
+			for field := range t.Fields() {
+				if check(field.Type()) {
 					return true
 				}
 			}

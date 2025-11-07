@@ -130,8 +130,8 @@ func Generate() ([]byte, error) {
 				case *types.Slice:
 					return fallible(t.Elem())
 				case *types.Struct:
-					for i := 0; i < t.NumFields(); i++ {
-						if fallible(t.Field(i).Type()) {
+					for field := range t.Fields() {
+						if fallible(field.Type()) {
 							return true
 						}
 					}

@@ -325,7 +325,7 @@ func Main(ctxt *build.Context, offsetFlag, fromFlag, to string) error {
 	// to preserve assignability.
 	for _, obj := range fromObjects {
 		if obj, ok := obj.(*types.Func); ok {
-			recv := obj.Type().(*types.Signature).Recv()
+			recv := obj.Signature().Recv()
 			if recv != nil && types.IsInterface(recv.Type()) {
 				r.changeMethods = true
 				break

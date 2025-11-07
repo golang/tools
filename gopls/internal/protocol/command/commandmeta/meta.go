@@ -68,8 +68,7 @@ func Load() ([]*Command, error) {
 	// Load command metadata corresponding to each interface method.
 	var commands []*Command
 	loader := fieldLoader{make(map[types.Object]*Field)}
-	for i := 0; i < obj.NumMethods(); i++ {
-		m := obj.Method(i)
+	for m := range obj.Methods() {
 		c, err := loader.loadMethod(pkg, m)
 		if err != nil {
 			return nil, fmt.Errorf("loading %s: %v", m.Name(), err)

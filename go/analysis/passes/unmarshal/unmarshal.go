@@ -57,7 +57,7 @@ func run(pass *analysis.Pass) (any, error) {
 		// Classify the callee (without allocating memory).
 		argidx := -1
 
-		recv := fn.Type().(*types.Signature).Recv()
+		recv := fn.Signature().Recv()
 		if fn.Name() == "Unmarshal" && recv == nil {
 			// "encoding/json".Unmarshal
 			// "encoding/xml".Unmarshal

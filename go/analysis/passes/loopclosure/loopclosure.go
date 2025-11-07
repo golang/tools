@@ -363,7 +363,7 @@ func isMethodCall(info *types.Info, expr ast.Expr, pkgPath, typeName, method str
 	if f == nil || f.Name() != method {
 		return false
 	}
-	recv := f.Type().(*types.Signature).Recv()
+	recv := f.Signature().Recv()
 	if recv == nil {
 		return false
 	}

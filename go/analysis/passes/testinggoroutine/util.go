@@ -44,7 +44,7 @@ func isMethodNamed(f *types.Func, pkgPath string, names ...string) bool {
 	if f.Pkg() == nil || f.Pkg().Path() != pkgPath {
 		return false
 	}
-	if f.Type().(*types.Signature).Recv() == nil {
+	if f.Signature().Recv() == nil {
 		return false
 	}
 	return slices.Contains(names, f.Name())

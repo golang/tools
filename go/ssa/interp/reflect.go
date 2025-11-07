@@ -542,8 +542,8 @@ func initReflect(i *interpreter) {
 
 		// delete bodies of the old methods
 		mset := i.prog.MethodSets.MethodSet(rV)
-		for j := 0; j < mset.Len(); j++ {
-			i.prog.MethodValue(mset.At(j)).Blocks = nil
+		for method := range mset.Methods() {
+			i.prog.MethodValue(method).Blocks = nil
 		}
 
 		tEface := types.NewInterface(nil, nil).Complete()

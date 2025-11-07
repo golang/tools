@@ -441,11 +441,11 @@ func analyzeParams(logf func(string, ...any), fset *token.FileSet, info *types.I
 		if sig.Recv() != nil {
 			params = append(params, newParamInfo(sig.Recv(), false))
 		}
-		for i := 0; i < sig.Params().Len(); i++ {
-			params = append(params, newParamInfo(sig.Params().At(i), false))
+		for v := range sig.Params().Variables() {
+			params = append(params, newParamInfo(v, false))
 		}
-		for i := 0; i < sig.Results().Len(); i++ {
-			results = append(results, newParamInfo(sig.Results().At(i), true))
+		for v := range sig.Results().Variables() {
+			results = append(results, newParamInfo(v, true))
 		}
 	}
 
@@ -517,8 +517,8 @@ func analyzeTypeParams(_ logger, fset *token.FileSet, info *types.Info, decl *as
 	paramInfos := make(map[*types.TypeName]*paramInfo)
 	var params []*paramInfo
 	collect := func(tpl *types.TypeParamList) {
-		for i := range tpl.Len() {
-			typeName := tpl.At(i).Obj()
+		for tparam := range tpl.TypeParams() {
+			typeName := tparam.Obj()
 			info := &paramInfo{Name: typeName.Name()}
 			params = append(params, info)
 			paramInfos[typeName] = info
@@ -659,8 +659,7 @@ func analyzeAssignment(info *types.Info, stack []ast.Node) (assignable, ifaceAss
 				return true, types.IsInterface(under.Elem()), false
 			case *types.Struct: // Struct{k: expr}
 				if id, _ := kv.Key.(*ast.Ident); id != nil {
-					for fi := range under.NumFields() {
-						field := under.Field(fi)
+					for field := range under.Fields() {
 						if info.Uses[id] == field {
 							return true, types.IsInterface(field.Type()), false
 						}

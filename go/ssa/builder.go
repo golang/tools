@@ -2994,8 +2994,8 @@ func (b *builder) buildYieldFunc(fn *Function) {
 	fn.source = fn.parent.source
 	fn.startBody()
 	params := fn.Signature.Params()
-	for i := 0; i < params.Len(); i++ {
-		fn.addParamVar(params.At(i))
+	for v := range params.Variables() {
+		fn.addParamVar(v)
 	}
 
 	// Initial targets

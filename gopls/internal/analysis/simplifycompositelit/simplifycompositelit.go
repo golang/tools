@@ -198,8 +198,8 @@ func match(pattern, val reflect.Value) bool {
 
 // Values/types for special cases.
 var (
-	identType     = reflect.TypeOf((*ast.Ident)(nil))
-	objectPtrType = reflect.TypeOf((*ast.Object)(nil))
-	positionType  = reflect.TypeOf(token.NoPos)
-	callExprType  = reflect.TypeOf((*ast.CallExpr)(nil))
+	identType     = reflect.TypeFor[*ast.Ident]()
+	objectPtrType = reflect.TypeFor[*ast.Object]()
+	positionType  = reflect.TypeFor[token.Pos]()
+	callExprType  = reflect.TypeFor[*ast.CallExpr]()
 )

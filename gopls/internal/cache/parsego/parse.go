@@ -840,7 +840,7 @@ func parseExpr(tok *token.File, pos token.Pos, src []byte) (ast.Expr, error) {
 	return exprStmt.X, nil
 }
 
-var tokenPosType = reflect.TypeOf(token.NoPos)
+var tokenPosType = reflect.TypeFor[token.Pos]()
 
 // offsetPositions applies an offset to the positions in an ast.Node.
 func offsetPositions(tok *token.File, n ast.Node, offset token.Pos) {

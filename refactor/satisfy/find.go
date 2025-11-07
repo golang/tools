@@ -172,8 +172,8 @@ func (f *Finder) call(sig *types.Signature, args []ast.Expr) {
 		// f(g()) call where g has multiple results?
 		f.expr(args[0])
 		// unpack the tuple
-		for i := 0; i < tuple.Len(); i++ {
-			argtypes = append(argtypes, tuple.At(i).Type())
+		for v := range tuple.Variables() {
+			argtypes = append(argtypes, v.Type())
 		}
 	} else {
 		for _, arg := range args {
