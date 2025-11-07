@@ -45,9 +45,10 @@ func init() {
 	goplsexport.StringsCutModernizer = stringscutAnalyzer
 }
 
-// stringscut offers a fix to replace an occurrence of strings.Index, strings.IndexByte, bytes.Index,
-// or bytes.IndexByte with strings.Cut or bytes.Cut.
-// Consider some candidate for replacement i := strings.Index(s, substr). The following must hold for a replacement to occur:
+// stringscut offers a fix to replace an occurrence of strings.Index{,Byte} with
+// strings.{Cut,Contains}, and similar fixes for functions in the bytes package.
+// Consider some candidate for replacement i := strings.Index(s, substr).
+// The following must hold for a replacement to occur:
 //
 //  1. All instances of i and s must be in one of these forms.
 //     Binary expressions:
@@ -91,6 +92,23 @@ func init() {
 // If the condition is negated (e.g. establishes `i < 0`), we use `if !ok` instead.
 // If the slices of `s` match `s[:i]` or `s[i+len(substr):]` or their variants listed above,
 // then we replace them with before and after.
+//
+// When the index `i` is used only to check for the presence of the substring or byte slice,
+// the suggested fix uses Contains() instead of Cut.
+//
+// For example:
+//
+//	i := strings.Index(s, substr)
+//	if i >= 0 {
+//		return
+//	}
+//
+// Would become:
+//
+//	found := strings.Contains(s, substr)
+//	if found {
+//		return
+//	}
 func stringscut(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 	var (
@@ -172,16 +190,14 @@ func stringscut(pass *analysis.Pass) (any, error) {
 			}
 
 			// If the only uses are ok and !ok, don't suggest a Cut() fix - these should be using Contains()
-			// TODO(mkalil): implement text edits for strings.Contains
-			if (len(lessZero) > 0 || len(greaterNegOne) > 0) && len(beforeSlice) == 0 && len(afterSlice) == 0 {
-				continue
-			}
+			isContains := (len(lessZero) > 0 || len(greaterNegOne) > 0) && len(beforeSlice) == 0 && len(afterSlice) == 0
 
 			scope := iObj.Parent()
 			var (
 				okVarName     = refactor.FreshName(scope, iIdent.Pos(), "ok")
 				beforeVarName = refactor.FreshName(scope, iIdent.Pos(), "before")
 				afterVarName  = refactor.FreshName(scope, iIdent.Pos(), "after")
+				foundVarName  = refactor.FreshName(scope, iIdent.Pos(), "found") // for Contains()
 			)
 
 			// If there will be no uses of ok, before, or after, use the
@@ -206,30 +222,53 @@ func stringscut(pass *analysis.Pass) (any, error) {
 					})
 				}
 			}
-
-			replace(lessZero, "!"+okVarName)    // idx < 0   ->  !ok
-			replace(greaterNegOne, okVarName)   // idx > -1  ->   ok
-			replace(beforeSlice, beforeVarName) // s[:idx]   ->   before
-			replace(afterSlice, afterVarName)   // s[idx+k:] ->   after
-
 			// Get the ident for the call to strings.Index, which could just be
 			// "Index" if the strings package is dot imported.
 			indexCallId := typesinternal.UsedIdent(info, indexCall.Fun)
-			// Replace the call to Index or IndexByte with a call to Cut.
-			edits = append(edits, analysis.TextEdit{
-				Pos:     indexCallId.Pos(),
-				End:     indexCallId.End(),
-				NewText: []byte("Cut"),
-			})
+			replacedFunc := "Cut"
+			if isContains {
+				replacedFunc = "Contains"
+				replace(lessZero, "!"+foundVarName)  // idx < 0   ->  !found
+				replace(greaterNegOne, foundVarName) // idx > -1  ->   found
 
-			// Replace the assignment with before, after, ok.
-			edits = append(edits, analysis.TextEdit{
-				Pos:     iIdent.Pos(),
-				End:     iIdent.End(),
-				NewText: fmt.Appendf(nil, "%s, %s, %s", beforeVarName, afterVarName, okVarName),
-			})
+				// Replace the assignment with found, and replace the call to
+				// Index or IndexByte with a call to Contains.
+				// i     := strings.Index   (...)
+				// -----            --------
+				// found := strings.Contains(...)
+				edits = append(edits, analysis.TextEdit{
+					Pos:     iIdent.Pos(),
+					End:     iIdent.End(),
+					NewText: []byte(foundVarName),
+				}, analysis.TextEdit{
+					Pos:     indexCallId.Pos(),
+					End:     indexCallId.End(),
+					NewText: []byte("Contains"),
+				})
+			} else {
+				replace(lessZero, "!"+okVarName)    // idx < 0   ->  !ok
+				replace(greaterNegOne, okVarName)   // idx > -1  ->   ok
+				replace(beforeSlice, beforeVarName) // s[:idx]   ->   before
+				replace(afterSlice, afterVarName)   // s[idx+k:] ->   after
+
+				// Replace the assignment with before, after, ok, and replace
+				// the call to Index or IndexByte with a call to Cut.
+				// i     			 := strings.Index(...)
+				// -----------------            -----
+				// before, after, ok := strings.Cut  (...)
+				edits = append(edits, analysis.TextEdit{
+					Pos:     iIdent.Pos(),
+					End:     iIdent.End(),
+					NewText: fmt.Appendf(nil, "%s, %s, %s", beforeVarName, afterVarName, okVarName),
+				}, analysis.TextEdit{
+					Pos:     indexCallId.Pos(),
+					End:     indexCallId.End(),
+					NewText: []byte("Cut"),
+				})
+			}
+
 			// Calls to IndexByte have a byte as their second arg, which
-			// must be converted to a string or []byte to be a valid arg for Cut.
+			// must be converted to a string or []byte to be a valid arg for Cut/Contains.
 			if obj.Name() == "IndexByte" {
 				switch obj.Pkg().Name() {
 				case "strings":
@@ -250,7 +289,7 @@ func stringscut(pass *analysis.Pass) (any, error) {
 					} else {
 						// substr is a byte constant
 						val, _ := constant.Int64Val(searchByteVal) // inv: must be a valid byte
-						// strings.Cut requires a string, so convert byte literal to string literal; e.g. 'a' -> "a", 55 -> "7"
+						// strings.Cut/Contains requires a string, so convert byte literal to string literal; e.g. 'a' -> "a", 55 -> "7"
 						edits = append(edits, analysis.TextEdit{
 							Pos:     substr.Pos(),
 							End:     substr.End(),
@@ -258,7 +297,7 @@ func stringscut(pass *analysis.Pass) (any, error) {
 						})
 					}
 				case "bytes":
-					// bytes.Cut requires a []byte, so wrap substr in a []byte{}
+					// bytes.Cut/Contains requires a []byte, so wrap substr in a []byte{}
 					edits = append(edits, []analysis.TextEdit{
 						{
 							Pos:     substr.Pos(),
@@ -274,11 +313,11 @@ func stringscut(pass *analysis.Pass) (any, error) {
 			pass.Report(analysis.Diagnostic{
 				Pos: indexCall.Fun.Pos(),
 				End: indexCall.Fun.End(),
-				Message: fmt.Sprintf("%s.%s can be simplified using %s.Cut",
-					obj.Pkg().Name(), obj.Name(), obj.Pkg().Name()),
+				Message: fmt.Sprintf("%s.%s can be simplified using %s.%s",
+					obj.Pkg().Name(), obj.Name(), obj.Pkg().Name(), replacedFunc),
 				Category: "stringscut",
 				SuggestedFixes: []analysis.SuggestedFix{{
-					Message:   fmt.Sprintf("Simplify %s.%s call using %s.Cut", obj.Pkg().Name(), obj.Name(), obj.Pkg().Name()),
+					Message:   fmt.Sprintf("Simplify %s.%s call using %s.%s", obj.Pkg().Name(), obj.Name(), obj.Pkg().Name(), replacedFunc),
 					TextEdits: edits,
 				}},
 			})

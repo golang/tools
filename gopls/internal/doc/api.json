@@ -1708,7 +1708,7 @@
 						},
 						{
 							"Name": "\"stringscut\"",
-							"Doc": "replace strings.Index etc. with strings.Cut\n\nThis analyzer replaces certain patterns of use of [strings.Index] and string slicing by [strings.Cut], added in go1.18.\n\nFor example:\n\n\tidx := strings.Index(s, substr)\n\tif idx \u003e= 0 {\n\t    return s[:idx]\n\t}\n\nis replaced by:\n\n\tbefore, _, ok := strings.Cut(s, substr)\n\tif ok {\n\t    return before\n\t}\n\nIt also handles variants using [strings.IndexByte] instead of Index, or the bytes package instead of strings.\n\nFixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.",
+							"Doc": "replace strings.Index etc. with strings.Cut\n\nThis analyzer replaces certain patterns of use of [strings.Index] and string slicing by [strings.Cut], added in go1.18.\n\nFor example:\n\n\tidx := strings.Index(s, substr)\n\tif idx \u003e= 0 {\n\t    return s[:idx]\n\t}\n\nis replaced by:\n\n\tbefore, _, ok := strings.Cut(s, substr)\n\tif ok {\n\t    return before\n\t}\n\nAnd:\n\n\tidx := strings.Index(s, substr)\n\tif idx \u003e= 0 {\n\t    return\n\t}\n\nis replaced by:\n\n\tfound := strings.Contains(s, substr)\n\tif found {\n\t    return\n\t}\n\nIt also handles variants using [strings.IndexByte] instead of Index, or the bytes package instead of strings.\n\nFixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3611,7 +3611,7 @@
 		},
 		{
 			"Name": "stringscut",
-			"Doc": "replace strings.Index etc. with strings.Cut\n\nThis analyzer replaces certain patterns of use of [strings.Index] and string slicing by [strings.Cut], added in go1.18.\n\nFor example:\n\n\tidx := strings.Index(s, substr)\n\tif idx \u003e= 0 {\n\t    return s[:idx]\n\t}\n\nis replaced by:\n\n\tbefore, _, ok := strings.Cut(s, substr)\n\tif ok {\n\t    return before\n\t}\n\nIt also handles variants using [strings.IndexByte] instead of Index, or the bytes package instead of strings.\n\nFixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.",
+			"Doc": "replace strings.Index etc. with strings.Cut\n\nThis analyzer replaces certain patterns of use of [strings.Index] and string slicing by [strings.Cut], added in go1.18.\n\nFor example:\n\n\tidx := strings.Index(s, substr)\n\tif idx \u003e= 0 {\n\t    return s[:idx]\n\t}\n\nis replaced by:\n\n\tbefore, _, ok := strings.Cut(s, substr)\n\tif ok {\n\t    return before\n\t}\n\nAnd:\n\n\tidx := strings.Index(s, substr)\n\tif idx \u003e= 0 {\n\t    return\n\t}\n\nis replaced by:\n\n\tfound := strings.Contains(s, substr)\n\tif found {\n\t    return\n\t}\n\nIt also handles variants using [strings.IndexByte] instead of Index, or the bytes package instead of strings.\n\nFixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/gopls/internal/analysis/modernize#stringscut",
 			"Default": true
 		},

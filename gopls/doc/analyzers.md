@@ -4063,6 +4063,20 @@ is replaced by:
 	    return before
 	}
 
+And:
+
+	idx := strings.Index(s, substr)
+	if idx >= 0 {
+	    return
+	}
+
+is replaced by:
+
+	found := strings.Contains(s, substr)
+	if found {
+	    return
+	}
+
 It also handles variants using [strings.IndexByte](/strings#IndexByte) instead of Index, or the bytes package instead of strings.
 
 Fixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.

@@ -14,8 +14,31 @@ func basic(s string) bool {
 
 func basic_contains(s string) bool {
 	s = "reassigned"
-	i := strings.Index(s, "=") // don't modernize for now - since only use is "ok", this should be strings.Contains
-	return i >= 0
+	found := strings.Contains(s, "=") // want "strings.Index can be simplified using strings.Contains"
+	return found
+}
+
+func contains_variety(s, sub string) {
+	found := strings.Contains(s, sub) // want "strings.Index can be simplified using strings.Contains"
+	if found {
+		print("found")
+	}
+	if !found {
+		print("not found")
+	}
+	if !found {
+		print("not found")
+	}
+}
+
+func basic_contains_bytes(s string) bool {
+	found := strings.Contains(s, "=") // want "strings.IndexByte can be simplified using strings.Contains"
+	return !found
+}
+
+func basic_contains_bytes_byte(s []byte) bool {
+	found := bytes.Contains(s, []byte{22}) // want "bytes.IndexByte can be simplified using bytes.Contains"
+	return !found
 }
 
 func skip_var_decl(s string) bool {
