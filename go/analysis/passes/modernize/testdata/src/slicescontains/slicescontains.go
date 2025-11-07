@@ -50,7 +50,7 @@ func assignTrueBreak(slice []int, needle int) {
 	print(found)
 }
 
-func assignFalseBreak(slice []int, needle int) { // TODO: treat this specially like booleanTrue
+func assignFalseBreak(slice []int, needle int) {
 	found := true
 	for _, elem := range slice { // want "Loop can be simplified using slices.Contains"
 		if elem == needle {
@@ -201,4 +201,26 @@ func nopeTypeParamWidening[T any](slice []T, f func(any) bool) bool {
 		}
 	}
 	return false
+}
+
+func issue76210(haystack []string, needle string) bool {
+	res := len(haystack) == 0
+	for _, elem := range haystack { // want "Loop can be simplified using slices.Contains"
+		if needle == elem {
+			res = true
+			break
+		}
+	}
+	return res
+}
+
+func issue76210negation(haystack []string, needle string) bool {
+	res := len(haystack) != 0
+	for _, elem := range haystack { // want "Loop can be simplified using slices.Contains"
+		if needle == elem {
+			res = false
+			break
+		}
+	}
+	return res
 }

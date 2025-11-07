@@ -36,11 +36,8 @@ func assignTrueBreak(slice []int, needle int) {
 	print(found)
 }
 
-func assignFalseBreak(slice []int, needle int) { // TODO: treat this specially like booleanTrue
-	found := true
-	if slices.Contains(slice, needle) {
-		found = false
-	}
+func assignFalseBreak(slice []int, needle int) {
+	found := !slices.Contains(slice, needle)
 	print(found)
 }
 
@@ -152,4 +149,20 @@ func nopeTypeParamWidening[T any](slice []T, f func(any) bool) bool {
 		}
 	}
 	return false
+}
+
+func issue76210(haystack []string, needle string) bool {
+	res := len(haystack) == 0
+	if slices.Contains(haystack, needle) {
+		res = true
+	}
+	return res
+}
+
+func issue76210negation(haystack []string, needle string) bool {
+	res := len(haystack) != 0
+	if slices.Contains(haystack, needle) {
+		res = false
+	}
+	return res
 }
