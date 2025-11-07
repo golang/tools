@@ -1,5 +1,6 @@
 bufio
 bytes
+compress/flate
 compress/gzip
 container/list
 context

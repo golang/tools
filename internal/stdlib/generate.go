@@ -21,7 +21,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
 	"go/format"
+	"go/parser"
+	"go/token"
 	"go/types"
 	"io/fs"
 	"log"
@@ -30,6 +33,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -327,15 +331,6 @@ func removeTypeParam(s string) string {
 // -- generate dependency graph --
 
 func deps() {
-	stdout := new(bytes.Buffer)
-	cmd := exec.Command("go", "list", "-deps", "-json", "std")
-	cmd.Stdout = stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
-	if err := cmd.Run(); err != nil {
-		log.Fatal(err)
-	}
-
 	type Package struct {
 		// go list JSON output
 		ImportPath string   // import path of package in dir
@@ -347,7 +342,7 @@ func deps() {
 	}
 	pkgs := make(map[string]*Package)
 	var keys []string
-	for dec := json.NewDecoder(stdout); dec.More(); {
+	for dec := json.NewDecoder(runGo("list", "-deps", "-json", "std")); dec.More(); {
 		var pkg Package
 		if err := dec.Decode(&pkg); err != nil {
 			log.Fatal(err)
@@ -405,6 +400,26 @@ var deps = [...]pkginfo{
 	}
 	fmt.Fprintln(&buf, "}")
 
+	// Also write the list of bootstrap packages.
+	// (We can't use indices because it is not a subset of std.)
+	bootstrap, version := bootstrap()
+	minor := strings.Split(version, ".")[1] // "go1.2.3" -> "2"
+	buf.WriteString(`
+// bootstrap is the list of bootstrap packages extracted from cmd/dist.
+var bootstrap = map[string]bool{
+`)
+	for _, pkg := range bootstrap {
+		fmt.Fprintf(&buf, "\t%q: true,\n", pkg)
+	}
+	fmt.Fprintf(&buf, `}
+
+// BootstrapVersion is the minor version of Go used during toolchain
+// bootstrapping. Packages for which [IsBootstrapPackage] must not use
+// features of Go newer than this version.
+const BootstrapVersion = Version(%s) // %s
+`, minor, version)
+
+	// Format and update the dependencies file.
 	fmtbuf, err := format.Source(buf.Bytes())
 	if err != nil {
 		log.Fatal(err)
@@ -430,4 +445,93 @@ var deps = [...]pkginfo{
 			log.Fatal(err)
 		}
 	}
+}
+
+// bootstrap returns the list of bootstrap packages out of the
+// source of the dist command, along with the minimum toolchain
+// version.
+//
+// We assume it is "var bootstrapDirs []string" in buildtool.go, and
+// is a list of string literals, either package names or "dir/...".
+// TODO(adonovan): find a more robust solution.
+func bootstrap() ([]string, string) {
+	fset := token.NewFileSet()
+	filename := strings.TrimSpace(runGo("list", "-f={{.Dir}}/buildtool.go", "cmd/dist").String())
+	f, err := parser.ParseFile(fset, filename, nil, 0)
+	if err != nil {
+		log.Fatalf("can't parse buildtool.go file in cmd/dist package: %v", err)
+	}
+
+	const bootstrapVarName = "bootstrapDirs"
+	var (
+		args    = []string{"list"} // go list command to expand bootstrap packages
+		version string
+	)
+	for _, decl := range f.Decls {
+		decl, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range decl.Specs {
+			spec, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			if len(spec.Names) != 1 {
+				continue
+			}
+			switch spec.Names[0].Name {
+			case bootstrapVarName:
+				// var bootstrapDirs = []string{ ... }
+				if len(spec.Values) != 1 {
+					log.Fatalf("%s: %s var spec has %d values, want 1",
+						fset.Position(spec.Pos()), len(spec.Values))
+				}
+				value0 := spec.Values[0]
+				lit, ok := value0.(*ast.CompositeLit)
+				if !ok {
+					log.Fatalf("%s: %s assigned from %T, want slice literal",
+						fset.Position(value0.Pos()), value0)
+				}
+				// Construct a go list command from the package patterns.
+				for _, elt := range lit.Elts {
+					lit, ok := elt.(*ast.BasicLit)
+					if !ok {
+						log.Fatalf("%s: element is %T, want string literal",
+							fset.Position(elt.Pos()), elt)
+					}
+					pattern, err := strconv.Unquote(lit.Value)
+					if err != nil {
+						log.Fatalf("%s: %v", fset.Position(elt.Pos()), err)
+					}
+					args = append(args, pattern)
+				}
+
+			case "minBootstrap":
+				// const minBootstrap = "go1.2.3"
+				lit := spec.Values[0].(*ast.BasicLit)
+				version, _ = strconv.Unquote(lit.Value)
+			}
+		}
+	}
+	if len(args) < 2 {
+		log.Fatalf("can't find var %s in buildtool.go file in cmd/dist package: %v",
+			bootstrapVarName, err)
+	}
+	if version == "" {
+		log.Fatalf("can't find const minBootstrap version in buildtool.go file in cmd/dist package: %v",
+			err)
+	}
+
+	return strings.Split(strings.TrimSpace(runGo(args...).String()), "\n"), version
+}
+
+func runGo(args ...string) *bytes.Buffer {
+	cmd := exec.Command("go", args...)
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
+	stdout, err := cmd.Output()
+	if err != nil {
+		log.Fatalf("%s: failed: %v", cmd, err)
+	}
+	return bytes.NewBuffer(stdout)
 }

@@ -34,3 +34,22 @@ func testDepsFunc(t *testing.T, filename string, depsFunc func(pkgs ...string) i
 		t.Fatalf("Deps mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestIsBootstrapPackage(t *testing.T) {
+	for pkg, want := range map[string]bool{
+		"cmd/internal/obj/arm64":             true,
+		"sort":                               true,
+		"encoding/json":                      false,
+		"golang.org/x/tools/internal/stdlib": false,
+		"":                                   false,
+	} {
+		got := stdlib.IsBootstrapPackage(pkg)
+		if got != want {
+			t.Errorf("IsBootstrapPackage(%q) = %t", pkg, got)
+		}
+	}
+
+	if stdlib.BootstrapVersion < 24 {
+		t.Errorf("BootstrapVersion = %v, want at least go1.24", stdlib.BootstrapVersion)
+	}
+}
