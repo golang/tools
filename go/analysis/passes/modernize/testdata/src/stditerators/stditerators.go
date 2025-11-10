@@ -56,3 +56,13 @@ func _(union, union2 *types.Union) {
 		print(i, union2.Term(i))
 	}
 }
+
+func _(tuple *types.Tuple) {
+	for i := 0; i < tuple.Len(); i++ { // want "Len/At loop can simplified using Tuple.Variables iteration"
+		if foo := tuple.At(i); true { // => preferred name = "foo"
+			print(foo)
+		}
+		bar := tuple.At(i)
+		print(bar)
+	}
+}

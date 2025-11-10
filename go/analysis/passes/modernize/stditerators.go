@@ -112,6 +112,10 @@ func stditerators(pass *analysis.Pass) (any, error) {
 		//
 		//     for ... { e := x.At(i); use(e) }
 		//
+		// or
+		//
+		//     for ... { if e := x.At(i); cond { use(e) } }
+		//
 		// then chooseName prefers the name e and additionally
 		// returns the var's symbol. We'll transform this to:
 		//
@@ -120,10 +124,11 @@ func stditerators(pass *analysis.Pass) (any, error) {
 		// which leaves a redundant assignment that a
 		// subsequent 'forvar' pass will eliminate.
 		chooseName := func(curBody inspector.Cursor, x ast.Expr, i *types.Var) (string, *types.Var) {
-			// Is body { elem := x.At(i); ... } ?
-			body := curBody.Node().(*ast.BlockStmt)
-			if len(body.List) > 0 {
-				if assign, ok := body.List[0].(*ast.AssignStmt); ok &&
+
+			// isVarAssign reports whether stmt has the form v := x.At(i)
+			// and returns the variable if so.
+			isVarAssign := func(stmt ast.Stmt) *types.Var {
+				if assign, ok := stmt.(*ast.AssignStmt); ok &&
 					assign.Tok == token.DEFINE &&
 					len(assign.Lhs) == 1 &&
 					len(assign.Rhs) == 1 &&
@@ -134,9 +139,25 @@ func stditerators(pass *analysis.Pass) (any, error) {
 						astutil.EqualSyntax(ast.Unparen(call.Fun).(*ast.SelectorExpr).X, x) &&
 						is[*ast.Ident](call.Args[0]) &&
 						info.Uses[call.Args[0].(*ast.Ident)] == i {
-						// Have: { elem := x.At(i); ... }
+						// Have: elem := x.At(i)
 						id := assign.Lhs[0].(*ast.Ident)
-						return id.Name, info.Defs[id].(*types.Var)
+						return info.Defs[id].(*types.Var)
+					}
+				}
+				return nil
+			}
+
+			body := curBody.Node().(*ast.BlockStmt)
+			if len(body.List) > 0 {
+				// Is body { elem := x.At(i); ... } ?
+				if v := isVarAssign(body.List[0]); v != nil {
+					return v.Name(), v
+				}
+
+				// Or { if elem := x.At(i); cond { ... } } ?
+				if ifstmt, ok := body.List[0].(*ast.IfStmt); ok && ifstmt.Init != nil {
+					if v := isVarAssign(ifstmt.Init); v != nil {
+						return v.Name(), v
 					}
 				}
 			}
