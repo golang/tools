@@ -420,7 +420,7 @@ func canExtractVariable(info *types.Info, curFile inspector.Cursor, start, end t
 	var curExprs []inspector.Cursor
 	if !all {
 		curExprs = append(curExprs, curStart)
-	} else if funcDecl, curFuncDecl := cursorutil.FirstEnclosing[*ast.FuncDecl](curStart); funcDecl != nil {
+	} else if funcDecl, curFuncDecl := cursorutil.FirstEnclosing[*ast.FuncDecl](curStart); funcDecl != nil && funcDecl.Body != nil {
 		// Find all expressions in the same function body that
 		// are equal to the selected expression.
 		for cur := range curFuncDecl.ChildAt(edge.FuncDecl_Body, -1).Preorder() {

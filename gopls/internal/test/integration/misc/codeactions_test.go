@@ -175,3 +175,18 @@ package a
 		}
 	})
 }
+
+// TestIssue76235 is a regression test for a crash in CodeAction
+// (refactor.extract.variable-all). It can't be a marker test since
+// the fixed behavior is a no-op: no code actions, no crash.
+func TestIssue76235(t *testing.T) {
+	const src = `
+-- a/a.go --
+package a; func f([3]int)
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a/a.go")
+		loc := env.RegexpSearch("a/a.go", "3")
+		env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger) // ignore error
+	})
+}
