@@ -125,6 +125,8 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 		errtype := types.TypeString(v.Type(), qual)
 
 		// Choose a name for the "ok" variable.
+		// TODO(adonovan): this pattern also appears in stditerators,
+		// and is wanted elsewhere; factor.
 		okName := "ok"
 		if okVar := lookup(info, curCall, "ok"); okVar != nil {
 			// The name 'ok' is already declared, but

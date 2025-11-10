@@ -13,9 +13,13 @@ func _(scope *types.Scope) {
 		print(child)
 	}
 	{
-		const child = 0                        // shadowing of preferred name at def
+		// tests of shadowing of preferred name at def
+		const child = 0
+		for child := range scope.Children() { // want "NumChildren/Child loop can simplified using Scope.Children iteration"
+			print(child)
+		}
 		for child0 := range scope.Children() { // want "NumChildren/Child loop can simplified using Scope.Children iteration"
-			print(child0)
+			print(child0, child)
 		}
 	}
 	{
@@ -64,5 +68,23 @@ func _(tuple *types.Tuple) {
 		}
 		bar := foo
 		print(bar)
+	}
+	{
+		// The name v is already declared, but not
+		// used in the loop, so we can use it again.
+		v := 1
+		print(v)
+
+		for v := range tuple.Variables() { // want "Len/At loop can simplified using Tuple.Variables iteration"
+			print(v)
+		}
+	}
+	{
+		// The name v is used from the loop, so
+		// we must choose a fresh name.
+		v := 1
+		for v0 := range tuple.Variables() { // want "Len/At loop can simplified using Tuple.Variables iteration"
+			print(v0, v)
+		}
 	}
 }

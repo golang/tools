@@ -163,7 +163,23 @@ func stditerators(pass *analysis.Pass) (any, error) {
 			}
 
 			loop := curBody.Parent().Node()
-			return refactor.FreshName(info.Scopes[loop], loop.Pos(), row.elemname), nil
+
+			// Choose a fresh name only if
+			// (a) the preferred name is already declared here, and
+			// (b) there are references to it from the loop body.
+			// TODO(adonovan): this pattern also appears in errorsastype,
+			// and is wanted elsewhere; factor.
+			name := row.elemname
+			if v := lookup(info, curBody, name); v != nil {
+				// is it free in body?
+				for curUse := range index.Uses(v) {
+					if curBody.Contains(curUse) {
+						name = refactor.FreshName(info.Scopes[loop], loop.Pos(), name)
+						break
+					}
+				}
+			}
+			return name, nil
 		}
 
 		// Process each call of x.Len().

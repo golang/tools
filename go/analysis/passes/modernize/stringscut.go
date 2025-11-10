@@ -191,6 +191,7 @@ func stringscut(pass *analysis.Pass) (any, error) {
 
 			scope := iObj.Parent()
 			var (
+				// TODO(adonovan): avoid FreshName when not needed; see errorsastype.
 				okVarName     = refactor.FreshName(scope, iIdent.Pos(), "ok")
 				beforeVarName = refactor.FreshName(scope, iIdent.Pos(), "before")
 				afterVarName  = refactor.FreshName(scope, iIdent.Pos(), "after")
