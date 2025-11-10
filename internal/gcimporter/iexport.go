@@ -943,6 +943,13 @@ func (w *exportWriter) posV0(pos token.Pos) {
 }
 
 func (w *exportWriter) pkg(pkg *types.Package) {
+	if pkg == nil {
+		// [exportWriter.typ] accepts a nil pkg only for types
+		// of constants, which cannot contain named objects
+		// such as fields or methods and thus should never
+		// reach this method (#76222).
+		panic("nil package")
+	}
 	// Ensure any referenced packages are declared in the main index.
 	w.p.allPkgs[pkg] = true
 
@@ -958,9 +965,11 @@ func (w *exportWriter) qualifiedType(obj *types.TypeName) {
 	w.pkg(obj.Pkg())
 }
 
-// TODO(rfindley): what does 'pkg' even mean here? It would be better to pass
-// it in explicitly into signatures and structs that may use it for
-// constructing fields.
+// typ emits the specified type.
+//
+// Objects within the type (struct fields and interface methods) are
+// qualified by pkg. It may be nil if the type cannot contain objects,
+// such as the type of a constant.
 func (w *exportWriter) typ(t types.Type, pkg *types.Package) {
 	w.data.uint64(w.p.typOff(t, pkg))
 }
@@ -990,6 +999,7 @@ func (w *exportWriter) startType(k itag) {
 	w.data.uint64(uint64(k))
 }
 
+// doTyp is the implementation of [exportWriter.typ].
 func (w *exportWriter) doTyp(t types.Type, pkg *types.Package) {
 	if trace {
 		w.p.trace("exporting type %s (%T)", t, t)
@@ -1063,7 +1073,7 @@ func (w *exportWriter) doTyp(t types.Type, pkg *types.Package) {
 
 	case *types.Signature:
 		w.startType(signatureType)
-		w.pkg(pkg)
+		w.pkg(pkg) // qualifies param/result vars
 		w.signature(t)
 
 	case *types.Struct:
@@ -1109,19 +1119,19 @@ func (w *exportWriter) doTyp(t types.Type, pkg *types.Package) {
 
 	case *types.Interface:
 		w.startType(interfaceType)
-		w.pkg(pkg)
+		w.pkg(pkg) // qualifies unexported method funcs
 
 		n := t.NumEmbeddeds()
 		w.uint64(uint64(n))
 		for i := 0; i < n; i++ {
 			ft := t.EmbeddedType(i)
-			tPkg := pkg
 			if named, _ := types.Unalias(ft).(*types.Named); named != nil {
 				w.pos(named.Obj().Pos())
 			} else {
+				// e.g. ~int
 				w.pos(token.NoPos)
 			}
-			w.typ(ft, tPkg)
+			w.typ(ft, pkg)
 		}
 
 		// See comment for struct fields. In shallow mode we change the encoding
