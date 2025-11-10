@@ -32,7 +32,7 @@ import (
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
-	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
 )
 
 //go:embed doc.go

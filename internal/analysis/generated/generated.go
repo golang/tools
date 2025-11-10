@@ -17,7 +17,7 @@ import (
 var Analyzer = &analysis.Analyzer{
 	Name:       "generated",
 	Doc:        "detect which Go files are generated",
-	URL:        "https://pkg.go.dev/golang.org/x/tools/internal/analysisinternal/generated",
+	URL:        "https://pkg.go.dev/golang.org/x/tools/internal/analysis/generated",
 	ResultType: reflect.TypeFor[*Result](),
 	Run: func(pass *analysis.Pass) (any, error) {
 		set := make(map[*token.File]bool)

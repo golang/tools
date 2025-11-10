@@ -28,7 +28,7 @@ import (
 	"golang.org/x/tools/go/analysis/checker"
 	"golang.org/x/tools/go/analysis/internal"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/analysisinternal/driverutil"
+	"golang.org/x/tools/internal/analysis/driverutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/txtar"

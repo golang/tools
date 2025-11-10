@@ -13,7 +13,7 @@ import (
 	"unicode"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
 )
 
 const Doc = "report assembly that clobbers the frame pointer before saving it"

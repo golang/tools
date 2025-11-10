@@ -22,7 +22,7 @@ import (
 var Analyzer = &analysis.Analyzer{
 	Name: "typeindex",
 	Doc:  "indexes of type information for later passes",
-	URL:  "https://pkg.go.dev/golang.org/x/tools/internal/analysisinternal/typeindex",
+	URL:  "https://pkg.go.dev/golang.org/x/tools/internal/analysis/typeindex",
 	Run: func(pass *analysis.Pass) (any, error) {
 		inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 		return typeindex.New(inspect, pass.Pkg, pass.TypesInfo), nil

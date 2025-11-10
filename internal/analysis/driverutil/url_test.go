@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/internal/analysisinternal/driverutil"
+	"golang.org/x/tools/internal/analysis/driverutil"
 )
 
 func TestResolveURLs(t *testing.T) {

@@ -32,7 +32,7 @@ import (
 	"golang.org/x/tools/go/analysis/internal"
 	"golang.org/x/tools/go/analysis/internal/analysisflags"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/internal/analysisinternal/driverutil"
+	"golang.org/x/tools/internal/analysis/driverutil"
 )
 
 var (

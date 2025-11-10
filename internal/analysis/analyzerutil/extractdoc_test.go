@@ -7,7 +7,7 @@ package analyzerutil_test
 import (
 	"testing"
 
-	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
+	"golang.org/x/tools/internal/analysis/analyzerutil"
 )
 
 func TestExtractDoc(t *testing.T) {

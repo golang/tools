@@ -46,7 +46,7 @@ func TestAllowBindingDeclFlag(t *testing.T) {
 }
 
 func TestTypesWithNames(t *testing.T) {
-	// Test setup inspired by internal/analysisinternal/addimport_test.go.
+	// Test setup inspired by internal/analysis/addimport_test.go.
 	testenv.NeedsDefaultImporter(t)
 
 	for _, test := range []struct {

@@ -92,7 +92,7 @@ func isServeMuxRegisterCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 // isMethodNamed reports when a function f is a method,
 // in a package with the path pkgPath and the name of f is in names.
 //
-// (Unlike [analysisinternal.IsMethodNamed], it ignores the receiver type name.)
+// (Unlike [analysis.IsMethodNamed], it ignores the receiver type name.)
 func isMethodNamed(f *types.Func, pkgPath string, names ...string) bool {
 	if f == nil {
 		return false
