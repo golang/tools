@@ -16,6 +16,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/internal/robustio"
 )
 
 // ErrClosed is used when trying to operate on a closed Watcher.
@@ -186,42 +187,34 @@ func (w *Watcher) process(errHandler func(error)) {
 				if isDir {
 					switch e.Type {
 					case protocol.Created:
-						// Walks the entire directory tree, synthesizes create events for its contents,
-						// and establishes watches for subdirectories. This recursive, pre-order
-						// traversal using filepath.WalkDir guarantees a logical event sequence:
-						// parent directory creation events always precede those of their children.
+						// Walks the entire directory tree, synthesizes create
+						// events for its contents, and establishes watches for
+						// subdirectories. This recursive, pre-order traversal
+						// guarantees a logical event sequence: parent directory
+						// creation events always precede those of their children.
 						//
-						// For example, consider a creation event for directory a, and suppose
-						// a has contents [a/b, a/b/c, a/c, a/c/d]. The effective events will be:
+						// For example, consider a creation event for directory
+						// a, and suppose a has contents [a/b, a/b/c, a/c, a/c/d].
+						// The effective events will be:
 						//
 						//     CREATE a
 						//     CREATE a/b
 						//     CREATE a/b/c
 						//     CREATE a/c
 						//     CREATE a/c/d
-						filepath.WalkDir(event.Name, func(path string, d fs.DirEntry, err error) error {
-							if d.IsDir() && skipDir(d.Name()) {
-								return filepath.SkipDir
-							}
-							if !d.IsDir() && skipFile(d.Name()) {
-								return nil
-							}
-
-							if path != event.Name { // avoid duplicate create event for root
+						w.walkDirWithRetry(event.Name, errHandler, func(path string, isDir bool) error {
+							if path != event.Name {
 								synthesized = append(synthesized, protocol.FileEvent{
 									URI:  protocol.URIFromPath(path),
 									Type: protocol.Created,
 								})
 							}
 
-							if d.IsDir() {
-								if err := w.watchDir(path); err != nil {
-									errHandler(err)
-									return filepath.SkipDir
-								}
+							if isDir {
+								return w.watchDir(path)
+							} else {
+								return nil
 							}
-
-							return nil
 						})
 
 					case protocol.Deleted:
@@ -441,4 +434,106 @@ func (w *Watcher) Close() error {
 	w.wg.Wait()
 
 	return err
+}
+
+// walkDir calls fn against current path and recursively descends path for each
+// file or directory of our interest.
+func (w *Watcher) walkDir(path string, isDir bool, errHandler func(error), fn func(path string, isDir bool) error) {
+	if err := fn(path, isDir); err != nil {
+		errHandler(err)
+		return
+	}
+
+	if !isDir {
+		return
+	}
+
+	entries, err := tryFSOperation(w.stop, func() ([]fs.DirEntry, error) {
+		// ReadDir may fail due because other processes may be actively
+		// modifying the watched dir see golang/go#74820.
+		// TODO(hxjiang): consider adding robustio.ReadDir.
+		return os.ReadDir(path)
+	})
+	if err != nil {
+		if err != ErrClosed {
+			errHandler(err)
+		}
+		return
+	}
+
+	for _, e := range entries {
+		if e.IsDir() && skipDir(e.Name()) {
+			continue
+		}
+		if !e.IsDir() && skipFile(e.Name()) {
+			continue
+		}
+
+		w.walkDir(filepath.Join(path, e.Name()), e.IsDir(), errHandler, fn)
+	}
+}
+
+// walkDirWithRetry walks the file tree rooted at root, calling fn for each
+// file or directory of our interest in the tree, including root.
+//
+// All errors that arise visiting directories or files will be reported to the
+// provided error handler function. If an error is encountered visiting a
+// directory, that entire subtree will be skipped.
+//
+// walkDirWithRetry does not follow symbolic links.
+//
+// It is used instead of [filepath.WalkDir] because it provides control over
+// retry behavior when reading a directory fails. If [os.ReadDir] fails with an
+// ephemeral error, it is retried multiple times with exponential backoff.
+//
+// TODO(hxjiang): call walkDirWithRetry in WalkDir.
+func (w *Watcher) walkDirWithRetry(root string, errHandler func(error), fn func(path string, isDir bool) error) {
+	info, err := tryFSOperation(w.stop, func() (os.FileInfo, error) {
+		return os.Lstat(root) // [os.Lstat] does not follow symlink.
+	})
+	if err != nil {
+		if err != ErrClosed {
+			errHandler(err)
+		}
+		return
+	}
+
+	w.walkDir(root, info.IsDir(), errHandler, fn)
+}
+
+// tryFSOperation executes a function `op` with retry logic, making it resilient
+// to transient errors. It attempts the operation up to 5 times with exponential
+// backoff. Retries occur only if the error is ephemeral.
+//
+// The operation can be interrupted by closing the `stop` channel, in which case
+// it returns [ErrClosed].
+func tryFSOperation[Result any](stop <-chan struct{}, op func() (Result, error)) (Result, error) {
+	var (
+		delay = 50 * time.Millisecond
+		err   error
+	)
+
+	for i := range 5 {
+		if i > 0 {
+			select {
+			case <-time.After(delay):
+				delay *= 2
+			case <-stop:
+				var zero Result
+				return zero, ErrClosed
+			}
+		}
+
+		var res Result
+		res, err = op()
+
+		if robustio.IsEphemeralError(err) {
+			continue
+		} else {
+			return res, err
+		}
+	}
+
+	var zero Result
+	return zero, err // return last error encountered
 }
