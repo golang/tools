@@ -63,7 +63,7 @@ func stringsseq(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 
-	for curFile := range filesUsing(pass, versions.Go1_24) {
+	for curFile := range filesUsingGoVersion(pass, versions.Go1_24) {
 		for curRange := range curFile.Preorder((*ast.RangeStmt)(nil)) {
 			rng := curRange.Node().(*ast.RangeStmt)
 

@@ -16,8 +16,6 @@ import (
 	"golang.org/x/tools/internal/analysisinternal/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysisinternal/typeindex"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/packagepath"
-	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
 )
@@ -93,7 +91,7 @@ func analyzeRangeStmt(pass *analysis.Pass, callee types.Object, curCall inspecto
 		// Replace with: for i := range len(m)
 		// (This requires Go 1.22.)
 		replace = "len"
-		if !fileUsesVersion(pass, astutil.EnclosingFile(curCall), versions.Go1_22) {
+		if !analyzerutil.FileUsesGoVersion(pass, astutil.EnclosingFile(curCall), versions.Go1_22) {
 			pass.Report(analysis.Diagnostic{
 				Pos:     call.Pos(),
 				End:     call.End(),
@@ -149,31 +147,4 @@ func analyzeRangeStmt(pass *analysis.Pass, callee types.Object, curCall inspecto
 func isSet(expr ast.Expr) bool {
 	ident, ok := expr.(*ast.Ident)
 	return expr != nil && (!ok || ident.Name != "_")
-}
-
-// fileUsesVersion reports whether the specified file may use
-// features of the specified version of Go (e.g. "go1.24").
-//
-// Tip: we recommend using this check "late", just before calling
-// pass.Report, rather than "early" (when entering each ast.File, or
-// each candidate node of interest, during the traversal), because the
-// operation is not free, yet is not a highly selective filter: the
-// fraction of files that pass most version checks is high and
-// increases over time.
-//
-// TODO(adonovan): move to analyzer library.
-func fileUsesVersion(pass *analysis.Pass, file *ast.File, version string) bool {
-	// Standard packages that are part of toolchain bootstrapping
-	// are not considered to use a version of Go later than the
-	// current bootstrap toolchain version.
-	pkgpath := pass.Pkg.Path()
-	if packagepath.IsStdPackage(pkgpath) &&
-		stdlib.IsBootstrapPackage(pkgpath) &&
-		versions.Before(version, stdlib.BootstrapVersion.String()) {
-		return false // package must bootstrap
-	}
-	if versions.Before(pass.TypesInfo.FileVersions[file], version) {
-		return false // file version is too old
-	}
-	return true // ok
 }

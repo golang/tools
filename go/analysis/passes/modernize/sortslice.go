@@ -88,7 +88,7 @@ func slicessort(pass *analysis.Pass) (any, error) {
 					}
 					file := astutil.EnclosingFile(curCall)
 					if isIndex(compare.X, i) && isIndex(compare.Y, j) &&
-						fileUsesVersion(pass, file, versions.Go1_21) {
+						analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_21) {
 						// Have: sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 
 						prefix, importEdits := refactor.AddImport(

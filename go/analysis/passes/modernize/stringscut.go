@@ -132,7 +132,7 @@ func stringscut(pass *analysis.Pass) (any, error) {
 	nextcall:
 		for curCall := range index.Calls(obj) {
 			// Check file version.
-			if !fileUsesVersion(pass, astutil.EnclosingFile(curCall), versions.Go1_18) {
+			if !analyzerutil.FileUsesGoVersion(pass, astutil.EnclosingFile(curCall), versions.Go1_18) {
 				continue // strings.Index not available in this file
 			}
 			indexCall := curCall.Node().(*ast.CallExpr) // the call to strings.Index, etc.

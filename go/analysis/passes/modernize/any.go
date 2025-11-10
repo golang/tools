@@ -29,7 +29,7 @@ var AnyAnalyzer = &analysis.Analyzer{
 func runAny(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
-	for curFile := range filesUsing(pass, versions.Go1_18) {
+	for curFile := range filesUsingGoVersion(pass, versions.Go1_18) {
 		for curIface := range curFile.Preorder((*ast.InterfaceType)(nil)) {
 			iface := curIface.Node().(*ast.InterfaceType)
 

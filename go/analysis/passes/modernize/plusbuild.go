@@ -29,7 +29,7 @@ func init() {
 
 func plusbuild(pass *analysis.Pass) (any, error) {
 	check := func(f *ast.File) {
-		if !fileUsesVersion(pass, f, versions.Go1_18) {
+		if !analyzerutil.FileUsesGoVersion(pass, f, versions.Go1_18) {
 			return
 		}
 

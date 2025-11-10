@@ -129,7 +129,7 @@ func waitgroup(pass *analysis.Pass) (any, error) {
 		}
 
 		file := astutil.EnclosingFile(curAddCall)
-		if !fileUsesVersion(pass, file, versions.Go1_25) {
+		if !analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_25) {
 			continue
 		}
 		tokFile := pass.Fset.File(file.Pos())

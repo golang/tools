@@ -313,7 +313,7 @@ func stditerators(pass *analysis.Pass) (any, error) {
 			// may be somewhat expensive.)
 			if v, ok := methodGoVersion(row.pkgpath, row.typename, row.itermethod); !ok {
 				panic("no version found")
-			} else if !fileUsesVersion(pass, astutil.EnclosingFile(curLenCall), v.String()) {
+			} else if !analyzerutil.FileUsesGoVersion(pass, astutil.EnclosingFile(curLenCall), v.String()) {
 				continue nextCall
 			}
 

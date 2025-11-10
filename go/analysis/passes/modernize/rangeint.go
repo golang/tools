@@ -74,7 +74,7 @@ func rangeint(pass *analysis.Pass) (any, error) {
 		typeindex = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 	)
 
-	for curFile := range filesUsing(pass, versions.Go1_22) {
+	for curFile := range filesUsingGoVersion(pass, versions.Go1_22) {
 	nextLoop:
 		for curLoop := range curFile.Preorder((*ast.ForStmt)(nil)) {
 			loop := curLoop.Node().(*ast.ForStmt)

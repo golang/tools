@@ -138,7 +138,7 @@ calls:
 				testObj = isTestFn(info, n)
 			}
 		}
-		if testObj != nil && fileUsesVersion(pass, astutil.EnclosingFile(cur), versions.Go1_24) {
+		if testObj != nil && analyzerutil.FileUsesGoVersion(pass, astutil.EnclosingFile(cur), versions.Go1_24) {
 			// Have a test function. Check that we can resolve the relevant
 			// testing.{T,B,F} at the current position.
 			if _, obj := lhs[0].Parent().LookupParent(testObj.Name(), lhs[0].Pos()); obj == testObj {

@@ -102,7 +102,7 @@ func bloop(pass *analysis.Pass) (any, error) {
 		(*ast.ForStmt)(nil),
 		(*ast.RangeStmt)(nil),
 	}
-	for curFile := range filesUsing(pass, versions.Go1_24) {
+	for curFile := range filesUsingGoVersion(pass, versions.Go1_24) {
 		for curLoop := range curFile.Preorder(loops...) {
 			switch n := curLoop.Node().(type) {
 			case *ast.ForStmt:

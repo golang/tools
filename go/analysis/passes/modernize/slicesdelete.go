@@ -129,7 +129,7 @@ func slicesdelete(pass *analysis.Pass) (any, error) {
 			}},
 		})
 	}
-	for curFile := range filesUsing(pass, versions.Go1_21) {
+	for curFile := range filesUsingGoVersion(pass, versions.Go1_21) {
 		file := curFile.Node().(*ast.File)
 		for curCall := range curFile.Preorder((*ast.CallExpr)(nil)) {
 			call := curCall.Node().(*ast.CallExpr)

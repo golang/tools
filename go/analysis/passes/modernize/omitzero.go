@@ -95,13 +95,13 @@ func checkOmitEmptyField(pass *analysis.Pass, info *types.Info, curField *ast.Fi
 }
 
 // The omitzero pass searches for instances of "omitempty" in a json field tag on a
-// struct. Since "omitempty" does not have any effect when applied to a struct field,
+// struct. Since "omitfilesUsingGoVersions not have any effect when applied to a struct field,
 // it suggests either deleting "omitempty" or replacing it with "omitzero", which
 // correctly excludes structs from a json encoding.
 func omitzero(pass *analysis.Pass) (any, error) {
 	skipGenerated(pass)
 
-	for curFile := range filesUsing(pass, versions.Go1_24) {
+	for curFile := range filesUsingGoVersion(pass, versions.Go1_24) {
 		for curStruct := range curFile.Preorder((*ast.StructType)(nil)) {
 			for _, curField := range curStruct.Node().(*ast.StructType).Fields.List {
 				checkOmitEmptyField(pass, pass.TypesInfo, curField)

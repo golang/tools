@@ -202,7 +202,7 @@ func minmax(pass *analysis.Pass) (any, error) {
 
 	// Find all "if a < b { lhs = rhs }" statements.
 	info := pass.TypesInfo
-	for curFile := range filesUsing(pass, versions.Go1_21) {
+	for curFile := range filesUsingGoVersion(pass, versions.Go1_21) {
 		astFile := curFile.Node().(*ast.File)
 		for curIfStmt := range curFile.Preorder((*ast.IfStmt)(nil)) {
 			ifStmt := curIfStmt.Node().(*ast.IfStmt)

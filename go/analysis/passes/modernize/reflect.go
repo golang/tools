@@ -89,7 +89,7 @@ func reflecttypefor(pass *analysis.Pass) (any, error) {
 		}
 
 		file := astutil.EnclosingFile(curCall)
-		if !fileUsesVersion(pass, file, versions.Go1_22) {
+		if !analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_22) {
 			continue // TypeFor requires go1.22
 		}
 		tokFile := pass.Fset.File(file.Pos())

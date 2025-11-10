@@ -61,7 +61,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 								// Check file version.
 								file := astutil.EnclosingFile(curFuncDecl)
-								if !fileUsesVersion(pass, file, versions.Go1_26) {
+								if !analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_26) {
 									continue // new(expr) not available in this file
 								}
 
@@ -134,7 +134,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 			// Check file version.
 			file := astutil.EnclosingFile(curCall)
-			if !fileUsesVersion(pass, file, versions.Go1_26) {
+			if !analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_26) {
 				continue // new(expr) not available in this file
 			}
 

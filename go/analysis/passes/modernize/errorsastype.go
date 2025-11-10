@@ -98,7 +98,7 @@ func errorsastype(pass *analysis.Pass) (any, error) {
 		}
 
 		file := astutil.EnclosingFile(curDeclStmt)
-		if !fileUsesVersion(pass, file, versions.Go1_26) {
+		if !analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_26) {
 			continue // errors.AsType is too new
 		}
 

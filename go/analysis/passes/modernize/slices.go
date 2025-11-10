@@ -205,7 +205,7 @@ func appendclipped(pass *analysis.Pass) (any, error) {
 	skip := make(map[*ast.CallExpr]bool)
 
 	// Visit calls of form append(x, y...).
-	for curFile := range filesUsing(pass, versions.Go1_21) {
+	for curFile := range filesUsingGoVersion(pass, versions.Go1_21) {
 		file := curFile.Node().(*ast.File)
 
 		for curCall := range curFile.Preorder((*ast.CallExpr)(nil)) {

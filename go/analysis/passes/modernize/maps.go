@@ -224,7 +224,7 @@ func mapsloop(pass *analysis.Pass) (any, error) {
 	}
 
 	// Find all range loops around m[k] = v.
-	for curFile := range filesUsing(pass, versions.Go1_23) {
+	for curFile := range filesUsingGoVersion(pass, versions.Go1_23) {
 		file := curFile.Node().(*ast.File)
 
 		for curRange := range curFile.Preorder((*ast.RangeStmt)(nil)) {

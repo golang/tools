@@ -71,7 +71,7 @@ func stringscutprefix(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 
-	for curFile := range filesUsing(pass, versions.Go1_20) {
+	for curFile := range filesUsingGoVersion(pass, versions.Go1_20) {
 		for curIfStmt := range curFile.Preorder((*ast.IfStmt)(nil)) {
 			ifStmt := curIfStmt.Node().(*ast.IfStmt)
 
