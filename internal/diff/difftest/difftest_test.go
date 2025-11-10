@@ -18,6 +18,7 @@ import (
 	"golang.org/x/tools/internal/testenv"
 )
 
+// check that the TestCases match diff -u output
 func TestVerifyUnified(t *testing.T) {
 	testenv.NeedsTool(t, "diff")
 	for _, test := range difftest.TestCases {

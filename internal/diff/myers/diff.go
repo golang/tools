@@ -25,6 +25,11 @@ import (
 // got==apply(orig, wantDiff) so that the notation of the diff
 // is immaterial.
 func ComputeEdits(before, after string) []diff.Edit {
+
+	// when CL https://go.dev/cl/724660
+	// is submitted, replace all uses of this routine with
+	// diff.Lines(before, after)
+
 	beforeLines := splitLines(before)
 	ops := operations(beforeLines, splitLines(after))
 

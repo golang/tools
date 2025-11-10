@@ -60,10 +60,10 @@ func TestNEdits(t *testing.T) {
 }
 
 func TestNRandom(t *testing.T) {
-	rand.Seed(1)
+	rnd := rand.New(rand.NewSource(1))
 	for i := range 1000 {
-		a := randstr("abω", 16)
-		b := randstr("abωc", 16)
+		a := randstr(rnd, "abω", 16)
+		b := randstr(rnd, "abωc", 16)
 		edits := diff.Strings(a, b)
 		got, err := diff.Apply(a, edits)
 		if err != nil {
@@ -123,11 +123,12 @@ func TestToUnified(t *testing.T) {
 	testenv.NeedsTool(t, "patch")
 	for _, tc := range difftest.TestCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			unified, err := diff.ToUnified(difftest.FileA, difftest.FileB, tc.In, tc.Edits, diff.DefaultContextLines)
+			nedits := diff.Lines(tc.In, tc.Out)
+			xunified, err := diff.ToUnified(difftest.FileA, difftest.FileB, tc.In, nedits, diff.DefaultContextLines)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if unified == "" {
+			if xunified == "" {
 				return
 			}
 			orig := filepath.Join(t.TempDir(), "original")
@@ -141,7 +142,7 @@ func TestToUnified(t *testing.T) {
 				t.Fatal(err)
 			}
 			cmd := exec.Command("patch", "-p0", "-u", "-s", "-o", temp, orig)
-			cmd.Stdin = strings.NewReader(unified)
+			cmd.Stdin = strings.NewReader(xunified)
 			cmd.Stdout = new(bytes.Buffer)
 			cmd.Stderr = new(bytes.Buffer)
 			if err = cmd.Run(); err != nil {
@@ -154,7 +155,7 @@ func TestToUnified(t *testing.T) {
 			}
 			if string(got) != tc.Out {
 				t.Errorf("applying unified failed: got\n%q, wanted\n%q unified\n%q",
-					got, tc.Out, unified)
+					got, tc.Out, xunified)
 			}
 
 		})
@@ -197,11 +198,11 @@ func TestRegressionOld002(t *testing.T) {
 }
 
 // return a random string of length n made of characters from s
-func randstr(s string, n int) string {
+func randstr(rnd *rand.Rand, s string, n int) string {
 	src := []rune(s)
 	x := make([]rune, n)
 	for i := range n {
-		x[i] = src[rand.Intn(len(src))]
+		x[i] = src[rnd.Intn(len(src))]
 	}
 	return string(x)
 }

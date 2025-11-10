@@ -116,7 +116,7 @@ func toUnified(fromName, toName string, content string, edits []Edit, contextLin
 	if err != nil {
 		return u, err
 	}
-	lines := splitLines(content)
+	lines, _ := splitLines(content)
 	var h *hunk
 	last := 0
 	toLine := 0
@@ -158,7 +158,8 @@ func toUnified(fromName, toName string, content string, edits []Edit, contextLin
 			last++
 		}
 		if edit.New != "" {
-			for _, content := range splitLines(edit.New) {
+			v, _ := splitLines(edit.New)
+			for _, content := range v {
 				h.lines = append(h.lines, line{kind: opInsert, content: content})
 				toLine++
 			}
@@ -172,12 +173,24 @@ func toUnified(fromName, toName string, content string, edits []Edit, contextLin
 	return u, nil
 }
 
-func splitLines(text string) []string {
-	lines := strings.SplitAfter(text, "\n")
-	if lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
+// split into lines removing a final empty line,
+// and also return the offsets of the line beginnings.
+func splitLines(text string) ([]string, []int) {
+	var lines []string
+	offsets := []int{0}
+	start := 0
+	for i, r := range text {
+		if r == '\n' {
+			lines = append(lines, text[start:i+1])
+			start = i + 1
+			offsets = append(offsets, start)
+		}
 	}
-	return lines
+	if start < len(text) {
+		lines = append(lines, text[start:])
+		offsets = append(offsets, len(text))
+	}
+	return lines, offsets
 }
 
 func addEqualLines(h *hunk, lines []string, start, end int) int {

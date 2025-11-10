@@ -251,4 +251,11 @@ func BenchmarkLargeFileSmallDiff(b *testing.B) {
 			compute(runesSeqs{srcRunes, dstRunes}, twosided, len(srcRunes)+len(dstRunes))
 		}
 	})
+	srcLines := strings.Split(src, "\n")
+	dstLines := strings.Split(dst, "\n")
+	b.Run("lines", func(b *testing.B) {
+		for b.Loop() {
+			compute(linesSeqs{srcLines, dstLines}, twosided, len(srcLines)+len(dstLines))
+		}
+	})
 }

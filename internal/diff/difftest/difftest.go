@@ -203,26 +203,26 @@ var TestCases = []struct {
 		Unified: UnifiedPrefix + `
 @@ -1,7 +1,6 @@
 -A
++C
+B
+-C
+A
 -B
- C
-+B
- A
- B
--B
- A
+B
+A
 +C
 `[1:],
 		NoDiff: true, // unified diff is different but valid
 		Edits: []diff.Edit{
-			{Start: 0, End: 4, New: ""},
-			{Start: 6, End: 6, New: "B\n"},
-			{Start: 10, End: 12, New: ""},
+			{Start: 0, End: 2, New: "C\n"},
+			{Start: 4, End: 6, New: ""},
+			{Start: 8, End: 10, New: ""},
 			{Start: 14, End: 14, New: "C\n"},
 		},
 		LineEdits: []diff.Edit{
-			{Start: 0, End: 4, New: ""},
-			{Start: 6, End: 6, New: "B\n"},
-			{Start: 10, End: 12, New: ""},
+			{Start: 0, End: 2, New: "C\n"},
+			{Start: 4, End: 6, New: ""},
+			{Start: 8, End: 10, New: ""},
 			{Start: 14, End: 14, New: "C\n"},
 		},
 	}, {
@@ -276,8 +276,8 @@ var TestCases = []struct {
 		Name:      "unified_lines",
 		In:        "aaa\nccc\n",
 		Out:       "aaa\nbbb\nccc\n",
-		Edits:     []diff.Edit{{Start: 3, End: 3, New: "\nbbb"}},
-		LineEdits: []diff.Edit{{Start: 0, End: 4, New: "aaa\nbbb\n"}},
+		Edits:     []diff.Edit{{Start: 4, End: 4, New: "bbb\n"}},
+		LineEdits: []diff.Edit{{Start: 4, End: 4, New: "bbb\n"}},
 		Unified:   UnifiedPrefix + "@@ -1,2 +1,3 @@\n aaa\n+bbb\n ccc\n",
 	}, {
 		Name: "60379",
