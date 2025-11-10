@@ -38,6 +38,19 @@ var ForVarAnalyzer = &analysis.Analyzer{
 // because the Go specfilesUsingGoVersionsays "The variable used by each subsequent iteration
 // is declared implicitly before executing the post statement and initialized to the
 // value of the previous iteration's variable at that moment.")
+//
+// Variant: same thing in an IfStmt.Init, when the IfStmt is the sole
+// loop body statement:
+//
+//	for _, x := range foo {
+//		if x := x; cond { ... }
+//	}
+//
+// (The restriction is necessary to avoid potential problems arising
+// from merging two distinct variables.)
+//
+// This analyzer is synergistic with stditerators,
+// which may create redundant "x := x" statements.
 func forvar(pass *analysis.Pass) (any, error) {
 	for curFile := range filesUsingGoVersion(pass, versions.Go1_22) {
 		for curLoop := range curFile.Preorder((*ast.RangeStmt)(nil)) {
@@ -45,40 +58,53 @@ func forvar(pass *analysis.Pass) (any, error) {
 			if loop.Tok != token.DEFINE {
 				continue
 			}
-			isLoopVarRedecl := func(assign *ast.AssignStmt) bool {
-				for i, lhs := range assign.Lhs {
-					if !(astutil.EqualSyntax(lhs, assign.Rhs[i]) &&
-						(astutil.EqualSyntax(lhs, loop.Key) || astutil.EqualSyntax(lhs, loop.Value))) {
-						return false
+			isLoopVarRedecl := func(stmt ast.Stmt) bool {
+				if assign, ok := stmt.(*ast.AssignStmt); ok &&
+					assign.Tok == token.DEFINE &&
+					len(assign.Lhs) == len(assign.Rhs) {
+
+					for i, lhs := range assign.Lhs {
+						if !(astutil.EqualSyntax(lhs, assign.Rhs[i]) &&
+							(astutil.EqualSyntax(lhs, loop.Key) ||
+								astutil.EqualSyntax(lhs, loop.Value))) {
+							return false
+						}
 					}
+					return true
 				}
-				return true
+				return false
 			}
 			// Have: for k, v := range x { stmts }
 			//
 			// Delete the prefix of stmts that are
 			// of the form k := k; v := v; k, v := k, v; v, k := v, k.
 			for _, stmt := range loop.Body.List {
-				if assign, ok := stmt.(*ast.AssignStmt); ok &&
-					assign.Tok == token.DEFINE &&
-					len(assign.Lhs) == len(assign.Rhs) &&
-					isLoopVarRedecl(assign) {
-
-					curStmt, _ := curLoop.FindNode(stmt)
-					edits := refactor.DeleteStmt(pass.Fset.File(stmt.Pos()), curStmt)
-					if len(edits) > 0 {
-						pass.Report(analysis.Diagnostic{
-							Pos:     stmt.Pos(),
-							End:     stmt.End(),
-							Message: "copying variable is unneeded",
-							SuggestedFixes: []analysis.SuggestedFix{{
-								Message:   "Remove unneeded redeclaration",
-								TextEdits: edits,
-							}},
-						})
-					}
+				if isLoopVarRedecl(stmt) {
+					// { x := x; ... }
+					//   ------
+				} else if ifstmt, ok := stmt.(*ast.IfStmt); ok &&
+					ifstmt.Init != nil &&
+					len(loop.Body.List) == 1 && // must be sole statement in loop body
+					isLoopVarRedecl(ifstmt.Init) {
+					// if x := x; cond {
+					//    ------
+					stmt = ifstmt.Init
 				} else {
 					break // stop at first other statement
+				}
+
+				curStmt, _ := curLoop.FindNode(stmt)
+				edits := refactor.DeleteStmt(pass.Fset.File(stmt.Pos()), curStmt)
+				if len(edits) > 0 {
+					pass.Report(analysis.Diagnostic{
+						Pos:     stmt.Pos(),
+						End:     stmt.End(),
+						Message: "copying variable is unneeded",
+						SuggestedFixes: []analysis.SuggestedFix{{
+							Message:   "Remove unneeded redeclaration",
+							TextEdits: edits,
+						}},
+					})
 				}
 			}
 		}

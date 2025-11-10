@@ -36,6 +36,12 @@ func _(m map[int]int, s []int) {
 		/* hi */ i := i // want "copying variable is unneeded"
 		go f(i)
 	}
+	for v := range m {
+		if v := v; true { // want "copying variable is unneeded"
+			print(v)
+		}
+	}
+
 	// nope
 	var i, k, v int
 
@@ -83,6 +89,12 @@ func _(m map[int]int, s []int) {
 	for i := range s { // nope, not a simple redecl
 		i := i + 1
 		go f(i)
+	}
+	for v := range m {
+		if v := v; true { // nope, would merge distinct outer and inner variables v
+			print(v)
+		}
+		print(v)
 	}
 }
 
