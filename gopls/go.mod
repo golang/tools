@@ -8,11 +8,11 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/jba/templatecheck v0.7.1
 	github.com/modelcontextprotocol/go-sdk v0.8.0
-	golang.org/x/mod v0.29.0
-	golang.org/x/sync v0.17.0
-	golang.org/x/telemetry v0.0.0-20251008203120-078029d740a8
-	golang.org/x/text v0.30.0
-	golang.org/x/tools v0.37.0
+	golang.org/x/mod v0.30.0
+	golang.org/x/sync v0.18.0
+	golang.org/x/telemetry v0.0.0-20251111182119-bc8e575c7b54
+	golang.org/x/text v0.31.0
+	golang.org/x/tools v0.38.0
 	golang.org/x/vuln v1.1.4
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.7.0-0.dev.0.20251022135355-8273271481d0
@@ -27,8 +27,8 @@ require (
 	github.com/google/jsonschema-go v0.3.0 // indirect
 	github.com/google/safehtml v0.1.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20251002181428-27f1f14c8bb9 // indirect
-	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20251023183803-a4bb9ffd2546 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
 	golang.org/x/tools/go/packages/packagestest v0.1.1-deprecated // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
