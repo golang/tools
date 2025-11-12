@@ -6,6 +6,7 @@ package analyzerutil
 
 import (
 	"go/ast"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/packagepath"
@@ -22,18 +23,20 @@ import (
 // operation is not free, yet is not a highly selective filter: the
 // fraction of files that pass most version checks is high and
 // increases over time.
-func FileUsesGoVersion(pass *analysis.Pass, file *ast.File, version string) bool {
+func FileUsesGoVersion(pass *analysis.Pass, file *ast.File, version string) (_res bool) {
+	fileVersion := pass.TypesInfo.FileVersions[file]
+
 	// Standard packages that are part of toolchain bootstrapping
 	// are not considered to use a version of Go later than the
 	// current bootstrap toolchain version.
+	// The bootstrap rule does not cover tests,
+	// and some tests (e.g. debug/elf/file_test.go) rely on this.
 	pkgpath := pass.Pkg.Path()
 	if packagepath.IsStdPackage(pkgpath) &&
-		stdlib.IsBootstrapPackage(pkgpath) &&
-		versions.Before(version, stdlib.BootstrapVersion.String()) {
-		return false // package must bootstrap
+		stdlib.IsBootstrapPackage(pkgpath) && // (excludes "*_test" external test packages)
+		!strings.HasSuffix(pass.Fset.File(file.Pos()).Name(), "_test.go") { // (excludes all tests)
+		fileVersion = stdlib.BootstrapVersion.String() // package must bootstrap
 	}
-	if versions.Before(pass.TypesInfo.FileVersions[file], version) {
-		return false // file version is too old
-	}
-	return true // ok
+
+	return !versions.Before(fileVersion, version)
 }
