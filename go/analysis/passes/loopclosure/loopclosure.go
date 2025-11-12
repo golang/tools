@@ -308,12 +308,11 @@ func parallelSubtest(info *types.Info, call *ast.CallExpr) []ast.Stmt {
 		if !ok {
 			continue
 		}
-		expr := exprStmt.X
-		if isMethodCall(info, expr, "testing", "T", "Parallel") {
-			call, _ := expr.(*ast.CallExpr)
-			if call == nil {
-				continue
-			}
+		call, ok := exprStmt.X.(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		if isMethodCall(info, call, "testing", "T", "Parallel") {
 			x, _ := call.Fun.(*ast.SelectorExpr)
 			if x == nil {
 				continue
@@ -347,27 +346,6 @@ func unlabel(stmt ast.Stmt) (ast.Stmt, bool) {
 	}
 }
 
-// isMethodCall reports whether expr is a method call of
-// <pkgPath>.<typeName>.<method>.
-func isMethodCall(info *types.Info, expr ast.Expr, pkgPath, typeName, method string) bool {
-	call, ok := expr.(*ast.CallExpr)
-	if !ok {
-		return false
-	}
-
-	// Check that we are calling a method <method>
-	// TODO(adonovan): use [typesinternal.IsMethodNamed].
-	f := typeutil.StaticCallee(info, call)
-	if f == nil || f.Name() != method {
-		return false
-	}
-	recv := f.Signature().Recv()
-	if recv == nil {
-		return false
-	}
-
-	// Check that the receiver is a <pkgPath>.<typeName> or
-	// *<pkgPath>.<typeName>.
-	_, named := typesinternal.ReceiverNamed(recv)
-	return typesinternal.IsTypeNamed(named, pkgPath, typeName)
+func isMethodCall(info *types.Info, call *ast.CallExpr, pkgPath, typeName, method string) bool {
+	return typesinternal.IsMethodNamed(typeutil.Callee(info, call), pkgPath, typeName, method)
 }
