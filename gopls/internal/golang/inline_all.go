@@ -224,12 +224,13 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 		currentCall := 0
 		for currentCall < len(calls) {
 			caller := &inline.Caller{
-				Fset:    fset,
-				Types:   tpkg,
-				Info:    tinfo,
-				File:    file,
-				Call:    calls[currentCall],
-				Content: content,
+				Fset:      fset,
+				Types:     tpkg,
+				Info:      tinfo,
+				File:      file,
+				Call:      calls[currentCall],
+				Content:   content,
+				CountUses: nil, // TODO(adonovan): opt: amortize across callInfo.pkg
 			}
 			res, err := inline.Inline(caller, callee, opts)
 			if err != nil {

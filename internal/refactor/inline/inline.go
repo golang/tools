@@ -42,6 +42,10 @@ type Caller struct {
 	Call    *ast.CallExpr
 	Content []byte // source of file containing
 
+	// CountUses is an optional optimized computation of
+	// the number of times pkgname appears in Info.Uses.
+	CountUses func(pkgname *types.PkgName) int
+
 	path          []ast.Node    // path from call to root of file syntax tree
 	enclosingFunc *ast.FuncDecl // top-level function/method enclosing the call, if any
 }
@@ -432,27 +436,19 @@ func newImportState(logf func(string, ...any), caller *Caller, callee *gobCallee
 		importMap: make(map[string][]string),
 	}
 
-	// Build an index of used-once PkgNames.
-	type pkgNameUse struct {
-		count int
-		id    *ast.Ident // an arbitrary use
-	}
-	pkgNameUses := make(map[*types.PkgName]pkgNameUse)
-	for id, obj := range caller.Info.Uses {
-		if pkgname, ok := obj.(*types.PkgName); ok {
-			u := pkgNameUses[pkgname]
-			u.id = id
-			u.count++
-			pkgNameUses[pkgname] = u
+	// Provide an inefficient default implementation of CountUses.
+	// (Ideally clients amortize this for the entire package.)
+	countUses := caller.CountUses
+	if countUses == nil {
+		uses := make(map[*types.PkgName]int)
+		for _, obj := range caller.Info.Uses {
+			if pkgname, ok := obj.(*types.PkgName); ok {
+				uses[pkgname]++
+			}
 		}
-	}
-	// soleUse returns the ident that refers to pkgname, if there is exactly one.
-	soleUse := func(pkgname *types.PkgName) *ast.Ident {
-		u := pkgNameUses[pkgname]
-		if u.count == 1 {
-			return u.id
+		countUses = func(pkgname *types.PkgName) int {
+			return uses[pkgname]
 		}
-		return nil
 	}
 
 	for _, imp := range caller.File.Imports {
@@ -472,8 +468,10 @@ func newImportState(logf func(string, ...any), caller *Caller, callee *gobCallee
 			// If that is the case, proactively check if any of the callee FreeObjs
 			// need this import. Doing so eagerly simplifies the resulting logic.
 			needed := true
-			sel, ok := ast.Unparen(caller.Call.Fun).(*ast.SelectorExpr)
-			if ok && soleUse(pkgName) == sel.X {
+			if sel, ok := ast.Unparen(caller.Call.Fun).(*ast.SelectorExpr); ok &&
+				is[*ast.Ident](sel.X) &&
+				caller.Info.Uses[sel.X.(*ast.Ident)] == pkgName &&
+				countUses(pkgName) == 1 {
 				needed = false // no longer needed by caller
 				// Check to see if any of the inlined free objects need this package.
 				for _, obj := range callee.FreeObjs {

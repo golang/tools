@@ -110,12 +110,13 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 
 	// Inline the call.
 	caller := &inline.Caller{
-		Fset:    callerPkg.FileSet(),
-		Types:   callerPkg.Types(),
-		Info:    callerPkg.TypesInfo(),
-		File:    callerPGF.File,
-		Call:    call,
-		Content: callerPGF.Src,
+		Fset:      callerPkg.FileSet(),
+		Types:     callerPkg.Types(),
+		Info:      callerPkg.TypesInfo(),
+		File:      callerPGF.File,
+		Call:      call,
+		Content:   callerPGF.Src,
+		CountUses: nil, // (use inefficient default implementation)
 	}
 
 	res, err := inline.Inline(caller, callee, &inline.Options{Logf: logf})

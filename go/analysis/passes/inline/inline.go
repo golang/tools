@@ -21,6 +21,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
+	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/moreiters"
@@ -28,6 +29,7 @@ import (
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/typesinternal"
+	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
 //go:embed doc.go
@@ -43,7 +45,10 @@ var Analyzer = &analysis.Analyzer{
 		(*goFixInlineConstFact)(nil),
 		(*goFixInlineAliasFact)(nil),
 	},
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Requires: []*analysis.Analyzer{
+		inspect.Analyzer,
+		typeindexanalyzer.Analyzer,
+	},
 }
 
 var allowBindingDecl bool
@@ -55,8 +60,9 @@ func init() {
 
 // analyzer holds the state for this analysis.
 type analyzer struct {
-	pass *analysis.Pass
-	root inspector.Cursor
+	pass  *analysis.Pass
+	root  inspector.Cursor
+	index *typeindex.Index
 	// memoization of repeated calls for same file.
 	fileContent map[string][]byte
 	// memoization of fact imports (nil => no fact)
@@ -69,6 +75,7 @@ func run(pass *analysis.Pass) (any, error) {
 	a := &analyzer{
 		pass:             pass,
 		root:             pass.ResultOf[inspect.Analyzer].(*inspector.Inspector).Root(),
+		index:            pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index),
 		fileContent:      make(map[string][]byte),
 		inlinableFuncs:   make(map[*types.Func]*inline.Callee),
 		inlinableConsts:  make(map[*types.Const]*goFixInlineConstFact),
@@ -184,6 +191,9 @@ func (a *analyzer) inlineCall(call *ast.CallExpr, cur inspector.Cursor) {
 			File:    curFile,
 			Call:    call,
 			Content: content,
+			CountUses: func(pkgname *types.PkgName) int {
+				return moreiters.Len(a.index.Uses(pkgname))
+			},
 		}
 		res, err := inline.Inline(caller, callee, &inline.Options{Logf: discard})
 		if err != nil {
