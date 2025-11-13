@@ -184,11 +184,11 @@ type pointerBuiltinStruct struct {
 
 var _ = pointerBuiltinStruct{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a33)
 
-var _ = []ast.BasicLit{
+var _ = []ast.UnaryExpr{
 	{}, //@codeaction("}", "refactor.rewrite.fillStruct", edit=a34)
 }
 
-var _ = []ast.BasicLit{{}} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a35)
+var _ = []ast.UnaryExpr{{}} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a35)
 -- @a31/a3.go --
 @@ -17 +17,4 @@
 -var _ = Bar{} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a31)
@@ -221,17 +221,17 @@ var _ = []ast.BasicLit{{}} //@codeaction("}", "refactor.rewrite.fillStruct", edi
 @@ -39 +39,5 @@
 -	{}, //@codeaction("}", "refactor.rewrite.fillStruct", edit=a34)
 +	{
-+		ValuePos: 0,
-+		Kind:     0,
-+		Value:    "",
++		OpPos: 0,
++		Op:    0,
++		X:     nil,
 +	}, //@codeaction("}", "refactor.rewrite.fillStruct", edit=a34)
 -- @a35/a3.go --
 @@ -42 +42,5 @@
--var _ = []ast.BasicLit{{}} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a35)
-+var _ = []ast.BasicLit{{
-+	ValuePos: 0,
-+	Kind:     0,
-+	Value:    "",
+-var _ = []ast.UnaryExpr{{}} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a35)
++var _ = []ast.UnaryExpr{{
++	OpPos: 0,
++	Op:    0,
++	X:     nil,
 +}} //@codeaction("}", "refactor.rewrite.fillStruct", edit=a35)
 -- a4.go --
 package fillstruct
