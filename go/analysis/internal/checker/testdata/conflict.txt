@@ -6,7 +6,7 @@
 
 checker -marker -fix example.com/a
 exit 1
-stderr applied 1 of 3 fixes; 1 files updated...Re-run
+stderr applied 1 of 3 fixes; 1 file updated...Re-run
 
 -- go.mod --
 module example.com

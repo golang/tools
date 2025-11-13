@@ -2,7 +2,7 @@
 # identical insertions--are coalesced.
 
 checker -marker -fix -v example.com/a
-stderr applied 2 fixes, updated 1 files
+stderr applied 2 fixes, updated 1 file
 exit 0
 
 -- go.mod --

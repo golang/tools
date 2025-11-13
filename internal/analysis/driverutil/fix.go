@@ -160,7 +160,9 @@ func ApplyFixes(actions []FixAction, printDiff, verbose bool) error {
 	var (
 		accumulatedEdits = make(map[string][]diff.Edit)
 		filePkgs         = make(map[string]*types.Package) // maps each file to an arbitrary package that includes it
-		goodFixes        = 0
+
+		goodFixes    = 0 // number of fixes cleanly applied
+		skippedFixes = 0 // number of fixes skipped (because e.g. edits a generated file)
 	)
 fixloop:
 	for _, fixact := range fixes {
@@ -168,6 +170,7 @@ fixloop:
 		for _, edit := range fixact.fix.TextEdits {
 			file := fixact.act.FileSet.File(edit.Pos)
 			if generated[file] {
+				skippedFixes++
 				continue fixloop
 			}
 		}
@@ -227,7 +230,7 @@ fixloop:
 			log.Printf("%s: fix %s applied", fixact.act.Name, fixact.fix.Message)
 		}
 	}
-	badFixes := len(fixes) - goodFixes
+	badFixes := len(fixes) - goodFixes - skippedFixes // number of fixes that could not be applied
 
 	// Show diff or update files to final state.
 	var files []string
@@ -305,15 +308,25 @@ fixloop:
 	// TODO(adonovan): should we log that n files were updated in case of total victory?
 	if badFixes > 0 || filesUpdated < totalFiles {
 		if printDiff {
-			return fmt.Errorf("%d of %d fixes skipped (e.g. due to conflicts)", badFixes, len(fixes))
+			return fmt.Errorf("%d of %s skipped (e.g. due to conflicts)",
+				badFixes,
+				plural(len(fixes), "fix", "fixes"))
 		} else {
-			return fmt.Errorf("applied %d of %d fixes; %d files updated. (Re-run the command to apply more.)",
-				goodFixes, len(fixes), filesUpdated)
+			return fmt.Errorf("applied %d of %s; %s updated. (Re-run the command to apply more.)",
+				goodFixes,
+				plural(len(fixes), "fix", "fixes"),
+				plural(filesUpdated, "file", "files"))
 		}
 	}
 
 	if verbose {
-		log.Printf("applied %d fixes, updated %d files", len(fixes), filesUpdated)
+		if skippedFixes > 0 {
+			log.Printf("skipped %s that would edit generated files",
+				plural(skippedFixes, "fix", "fixes"))
+		}
+		log.Printf("applied %s, updated %s",
+			plural(len(fixes), "fix", "fixes"),
+			plural(filesUpdated, "file", "files"))
 	}
 
 	return nil
@@ -423,5 +436,14 @@ func removeUnneededImports(fset *token.FileSet, pkg *types.Package, file *ast.Fi
 	// Apply the deletions.
 	for _, del := range deletions {
 		del()
+	}
+}
+
+// plural returns "n nouns", selecting the plural form as approriate.
+func plural(n int, singular, plural string) string {
+	if n == 1 {
+		return "1 " + singular
+	} else {
+		return fmt.Sprintf("%d %s", n, plural)
 	}
 }
