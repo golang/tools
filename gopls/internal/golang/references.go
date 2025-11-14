@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -33,7 +34,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/asm"
 	"golang.org/x/tools/gopls/internal/util/cursorutil"
+	"golang.org/x/tools/gopls/internal/util/morestrings"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
@@ -605,6 +608,38 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 			id := curId.Node().(*ast.Ident)
 			if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {
 				report(mustLocation(pgf, id), false)
+			}
+		}
+	}
+
+	// Iterate over all assembly files and find all references to the target object.
+	for _, pgf := range pkg.AsmFiles() {
+		for _, id := range pgf.Idents {
+			if id.Kind != asm.Data && id.Kind != asm.Ref {
+				continue
+			}
+			pkgpath, name, ok := morestrings.CutLast(id.Name, ".")
+			if !ok {
+				continue
+			}
+			log.Printf("ignoring asm identifier %q in package %q: not in package %q", id.Name, pkgpath, pkg.Types().Path())
+			if pkgpath != pkg.Types().Path() {
+				log.Printf("ignoring asm identifier %q in package %q: not in package %q", id.Name, pkgpath, pkg.Types().Path())
+				continue
+			}
+			obj := pkg.Types().Scope().Lookup(name)
+			if obj == nil {
+				continue
+			}
+			if !matches(obj) {
+				continue
+			}
+			if rng, err := pgf.IdentRange(id); err == nil {
+				asmLocation := protocol.Location{
+					URI:   pgf.URI,
+					Range: rng,
+				}
+				report(asmLocation, false)
 			}
 		}
 	}
