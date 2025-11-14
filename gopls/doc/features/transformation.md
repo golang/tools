@@ -339,8 +339,19 @@ Special cases:
     Rename here to affect all methods
   ```
 
-- Renaming a package declaration additionally causes the package's
-  directory to be renamed.
+Using Rename to move a package:
+- When initiating a rename request on a package identifier, users can specify
+a new package name which will result in the package's contents moving to a new
+directory at the same directory level. Subpackages are not affected.
+- When the setting "packageMove" is set to true, users are prompted with
+the package path instead of the package name but can specify either an arbitrary
+package path or a package name. Subpackages are not affected.
+
+Package moves are rejected if they would break the build. For example:
+- Packages cannot move across a module boundary
+- Packages cannot be moved into existing packages; gopls does not support package merging
+- Packages cannot be moved to internal directories that would make them inaccessible to any of their current importers
+
 
 Some tips for best results:
 
