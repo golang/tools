@@ -27,10 +27,11 @@ import (
 
 var (
 	// main operation modes
-	list   = flag.Bool("l", false, "list files whose formatting differs from goimport's")
-	write  = flag.Bool("w", false, "write result to (source) file instead of stdout")
-	doDiff = flag.Bool("d", false, "display diffs instead of rewriting files")
-	srcdir = flag.String("srcdir", "", "choose imports as if source code is from `dir`. When operating on a single file, dir may instead be the complete file name.")
+	list      = flag.Bool("l", false, "list files whose formatting differs from goimport's")
+	write     = flag.Bool("w", false, "write result to (source) file instead of stdout")
+	doDiff    = flag.Bool("d", false, "display diffs instead of rewriting files")
+	generated = flag.Bool("g", false, "process generated files")
+	srcdir    = flag.String("srcdir", "", "choose imports as if source code is from `dir`. When operating on a single file, dir may instead be the complete file name.")
 
 	verbose bool // verbose logging
 
@@ -89,6 +90,28 @@ const (
 	multipleArg
 )
 
+func isGenerated(source []byte) bool {
+	// https://pkg.go.dev/cmd/go#hdr-Generate_Go_files_by_processing_source
+	const linePrefix = "// Code generated "
+	const lineSuffix = " DO NOT EDIT."
+
+	reader := bufio.NewReader(bytes.NewReader(source))
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			// e.g. io.EOF
+			return false
+		}
+		if !strings.HasPrefix(line, linePrefix) {
+			continue
+		}
+		line = strings.TrimSuffix(line, "\n")
+		if strings.HasSuffix(line, lineSuffix) {
+			return true
+		}
+	}
+}
+
 func processFile(filename string, in io.Reader, out io.Writer, argType argumentType) error {
 	opt := options
 	if argType == fromStdin {
@@ -109,6 +132,10 @@ func processFile(filename string, in io.Reader, out io.Writer, argType argumentT
 	src, err := io.ReadAll(in)
 	if err != nil {
 		return err
+	}
+
+	if !*generated && isGenerated(src) {
+		return nil
 	}
 
 	target := filename
