@@ -514,14 +514,10 @@ func (i *importState) importName(pkgPath string, shadow shadowMap) string {
 	return ""
 }
 
-// localName returns the local name for a given imported package path,
-// adding one if it doesn't exists.
-func (i *importState) localName(pkgPath, pkgName string, shadow shadowMap) string {
-	// Does an import already exist that works in this shadowing context?
-	if name := i.importName(pkgPath, shadow); name != "" {
-		return name
-	}
-
+// findNewLocalName returns a new local name to use in a particular shadowing
+// context. It considers the existing package alias, or construct a new alias
+// based on the package name.
+func (i *importState) findNewLocalName(pkgName, pkgAlias string, shadow shadowMap) string {
 	newlyAdded := func(name string) bool {
 		return slices.ContainsFunc(i.newImports, func(n newImport) bool { return n.pkgName == name })
 	}
@@ -539,20 +535,35 @@ func (i *importState) localName(pkgPath, pkgName string, shadow shadowMap) strin
 
 	// import added by callee
 	//
-	// Choose local PkgName based on last segment of
+	// Try to preserve the package alias first.
+	//
+	// If that is shadowed, choose local PkgName based on last segment of
 	// package path plus, if needed, a numeric suffix to
 	// ensure uniqueness.
 	//
 	// "init" is not a legal PkgName.
-	//
-	// TODO(rfindley): is it worth preserving local package names for callee
-	// imports? Are they likely to be better or worse than the name we choose
-	// here?
+	if shadow[pkgAlias] == 0 && !shadowedInCaller(pkgAlias) && !newlyAdded(pkgAlias) && pkgAlias != "init" {
+		return pkgAlias
+	}
+
 	base := pkgName
 	name := base
 	for n := 0; shadow[name] != 0 || shadowedInCaller(name) || newlyAdded(name) || name == "init"; n++ {
 		name = fmt.Sprintf("%s%d", base, n)
 	}
+
+	return name
+}
+
+// localName returns the local name for a given imported package path,
+// adding one if it doesn't exists.
+func (i *importState) localName(pkgPath, pkgName, pkgAlias string, shadow shadowMap) string {
+	// Does an import already exist that works in this shadowing context?
+	if name := i.importName(pkgPath, shadow); name != "" {
+		return name
+	}
+
+	name := i.findNewLocalName(pkgName, pkgAlias, shadow)
 	i.logf("adding import %s %q", name, pkgPath)
 	spec := &ast.ImportSpec{
 		Path: &ast.BasicLit{
@@ -1369,7 +1380,7 @@ func (st *state) renameFreeObjs(istate *importState) ([]ast.Expr, error) {
 		var newName ast.Expr
 		if obj.Kind == "pkgname" {
 			// Use locally appropriate import, creating as needed.
-			n := istate.localName(obj.PkgPath, obj.PkgName, obj.Shadow)
+			n := istate.localName(obj.PkgPath, obj.PkgName, obj.Name, obj.Shadow)
 			newName = makeIdent(n) // imported package
 		} else if !obj.ValidPos {
 			// Built-in function, type, or value (e.g. nil, zero):
@@ -1414,7 +1425,7 @@ func (st *state) renameFreeObjs(istate *importState) ([]ast.Expr, error) {
 
 			// Form a qualified identifier, pkg.Name.
 			if qualify {
-				pkgName := istate.localName(obj.PkgPath, obj.PkgName, obj.Shadow)
+				pkgName := istate.localName(obj.PkgPath, obj.PkgName, obj.PkgName, obj.Shadow)
 				newName = &ast.SelectorExpr{
 					X:   makeIdent(pkgName),
 					Sel: makeIdent(obj.Name),
