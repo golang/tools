@@ -603,7 +603,7 @@ type BinOp struct {
 	// One of:
 	// ADD SUB MUL QUO REM          + - * / %
 	// AND OR XOR SHL SHR AND_NOT   & | ^ << >> &^
-	// EQL NEQ LSS LEQ GTR GEQ      == != < <= < >=
+	// EQL NEQ LSS LEQ GTR GEQ      == != < <= > >=
 	Op   token.Token
 	X, Y Value
 }
