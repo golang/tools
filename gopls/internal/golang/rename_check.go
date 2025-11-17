@@ -927,6 +927,14 @@ func checkPackageRename(opts *settings.Options, curPkg *cache.Package, f file.Ha
 	if newName == curPkg.String() || newName == string(curPkg.Metadata().Name) {
 		return f.URI().DirPath(), curPkg.Metadata().Name, curPkg.Metadata().PkgPath, nil
 	}
+
+	// If there are any Go files in the package that are not in the compiled package
+	// with the current build config, we should not allow a package move.
+	ignored := hasIgnoredGoFiles(curPkg)
+	if ignored {
+		return "", "", "", fmt.Errorf("moving a package with ignored files is not supported")
+	}
+
 	// TODO(mkalil): support relative paths
 	if build.IsLocalImport(newName) {
 		return "", "", "", fmt.Errorf("specifying relative paths in package rename not yet supported")
@@ -979,6 +987,18 @@ func checkPackageRename(opts *settings.Options, curPkg *cache.Package, f file.Ha
 		return "", "", "", fmt.Errorf("invalid package name %q", newPkgName)
 	}
 	return newPkgDir, newPkgName, PackagePath(newName), nil
+}
+
+// hasIgnoredGoFiles returns true if the input pkg contains any Go files that
+// are not part of package pkg with the current build configuration.
+func hasIgnoredGoFiles(pkg *cache.Package) bool {
+	// If any ignored files are Go files, don't allow a package move.
+	for _, f := range pkg.Metadata().IgnoredFiles {
+		if strings.HasSuffix(f.Path(), ".go") {
+			return true
+		}
+	}
+	return false
 }
 
 // isLocal reports whether obj is local to some function.

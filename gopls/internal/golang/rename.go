@@ -452,7 +452,7 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 
 	var (
 		editMap   map[protocol.DocumentURI][]diff.Edit
-		newPkgDir string // declared here so it can be used later to rename the package's enclosing directory
+		newPkgDir string // declared here so it can be used later to move the package's contents to the new directory
 	)
 	if inPackageName {
 		countRenamePackage.Inc()

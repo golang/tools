@@ -102,6 +102,13 @@ import "golang.org/lsptests/rename/nine/nine/nine"
 -- othermoddir/go.mod --
 module mod.com/other
 
+-- foo/windows.go --
+//go:build windows
+package foo
+
+-- foo/default.go --
+//go:build !windows
+package foo //@ renameerr("foo", "golang.org/lsptests/rename/foo2", re"ignored files")
 
 -- @moveDownTwoDirs/nine/nine/nine/eight/eight.go --
 @@ -0,0 +1 @@
