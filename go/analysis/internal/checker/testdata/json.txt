@@ -1,8 +1,8 @@
 # Test basic JSON output.
-#
-# File slashes assume non-Windows.
 
+# File slashes assume non-Windows.
 skip GOOS=windows
+
 checker -rename -json example.com/p
 exit 0
 
@@ -21,6 +21,7 @@ func f(bar int) {}
 		"rename": [
 			{
 				"posn": "/TMP/p/p.go:3:8",
+				"end": "/TMP/p/p.go:3:11",
 				"message": "renaming \"bar\" to \"baz\"",
 				"suggested_fixes": [
 					{
