@@ -21,7 +21,6 @@ import (
 	"github.com/jba/templatecheck"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/gopls/internal/cache"
-	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/debug"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
 	"golang.org/x/tools/internal/testenv"
@@ -40,7 +39,8 @@ var templates = map[string]struct {
 	"ClientTmpl":   {debug.ClientTmpl, &debug.Client{}},
 	"ServerTmpl":   {debug.ServerTmpl, &debug.Server{}},
 	"FileTmpl":     {debug.FileTmpl, *new(debug.FileWithKind)},
-	"MetadataTmpl": {debug.MetadataTmpl, &metadata.Graph{}},
+	"MetadataTmpl": {debug.MetadataTmpl, new(debug.MetadataInfo)},
+	"PackageTmpl":  {debug.PackageTmpl, new(debug.PackageInfo)},
 	"InfoTmpl":     {debug.InfoTmpl, "something"},
 	"MemoryTmpl":   {debug.MemoryTmpl, runtime.MemStats{}},
 	"AnalysisTmpl": {debug.AnalysisTmpl, new(debug.State).Analysis()},

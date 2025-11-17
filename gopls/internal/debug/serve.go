@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"golang.org/x/tools/gopls/internal/cache"
+	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/debug/log"
 	"golang.org/x/tools/gopls/internal/file"
 	label1 "golang.org/x/tools/gopls/internal/label"
@@ -327,7 +328,13 @@ func (i *Instance) getFile(r *http.Request) any {
 	return nil
 }
 
-// /metadata/{session}/{view}. Returns a [*metadata.Graph].
+type MetadataInfo struct {
+	SessionID string
+	ViewID    string
+	Graph     *metadata.Graph
+}
+
+// /metadata/{session}/{view}. Returns a [*MetadataInfo].
 func (i *Instance) getMetadata(r *http.Request) any {
 	session := i.State.Session(r.PathValue("session"))
 	if session == nil {
@@ -346,7 +353,64 @@ func (i *Instance) getMetadata(r *http.Request) any {
 		return nil
 	}
 	defer release()
-	return snapshot.MetadataGraph()
+	return &MetadataInfo{
+		SessionID: session.ID(),
+		ViewID:    v.ID(),
+		Graph:     snapshot.MetadataGraph(),
+	}
+}
+
+type PackageInfo struct {
+	SessionID   string
+	ViewID      string
+	Package     *cache.Package
+	Diagnostics map[protocol.DocumentURI][]*cache.Diagnostic
+}
+
+// /package/{session}/{view}/{id...}. Returns a [*PackageInfo].
+func (i *Instance) getPackage(r *http.Request) any {
+	// TODO(adonovan): shouldn't we report an HTTP error in all
+	// these early returns? Same for getMetadata.
+	session := i.State.Session(r.PathValue("session"))
+	if session == nil {
+		return nil // not found
+	}
+
+	v, err := session.View(r.PathValue("view"))
+	if err != nil {
+		stdlog.Printf("/package: %v", err)
+		return nil // not found
+	}
+
+	id := r.PathValue("id")
+
+	snapshot, release, err := v.Snapshot()
+	if err != nil {
+		stdlog.Printf("/package: failed to get latest snapshot: %v", err)
+		return nil
+	}
+	defer release()
+
+	pkgs, err := snapshot.TypeCheck(r.Context(), cache.PackageID(id))
+	if err != nil {
+		stdlog.Printf("/package: failed to typecheck package %q: %v", id, err)
+		return nil
+	}
+
+	// (PackageDiagnostics is redundant w.r.t. TypeCheck but it's
+	// the only way to access type errors in cache.Diagnostic form.)
+	diags, err := snapshot.PackageDiagnostics(r.Context(), cache.PackageID(id))
+	if err != nil {
+		stdlog.Printf("/package: failed to typecheck package %q: %v", id, err)
+		return nil
+	}
+
+	return &PackageInfo{
+		SessionID:   session.ID(),
+		ViewID:      v.ID(),
+		Package:     pkgs[0],
+		Diagnostics: diags,
+	}
 }
 
 func (i *Instance) getInfo(r *http.Request) any {
@@ -489,6 +553,7 @@ func (i *Instance) Serve(ctx context.Context, addr string) (string, error) {
 		mux.HandleFunc("/server/", render(ServerTmpl, i.getServer))
 		mux.HandleFunc("/file/{session}/{identifier}", render(FileTmpl, i.getFile))
 		mux.HandleFunc("/metadata/{session}/{view}/", render(MetadataTmpl, i.getMetadata))
+		mux.HandleFunc("/package/{session}/{view}/{id...}", render(PackageTmpl, i.getPackage))
 		mux.HandleFunc("/info", render(InfoTmpl, i.getInfo))
 		mux.HandleFunc("/memory", render(MemoryTmpl, getMemory))
 
@@ -880,22 +945,23 @@ var FileTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{end}}
 `))
 
-// For /metadata endpoint; operand is [*metadata.Graph].
+// For /metadata endpoint; operand is [*MetadataInfo].
 var MetadataTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 {{define "title"}}Metadata graph{{end}}
 {{define "body"}}
 
 <p><a href='#hdr-Files'>↓ Index by file</a></p>
 
-<h3>Packages ({{len .Packages}})</h3>
+<h3>Packages ({{len .Graph.Packages}})</h3>
 <ul>
-{{range $id, $pkg := .Packages}}
+{{range $id, $pkg := .Graph.Packages}}
 <li id='{{$id}}'><b>{{$id}}</b>
 {{with $pkg}}
 <ul>
  <li>Name: {{.Name}}</li>
  <li>PkgPath: {{printf "%q" .PkgPath}}</li>
  {{if .Module}}<li>Module: {{printf "%#v" .Module}}</li>{{end}}
+ <li><a href="/package/{{$.SessionID}}/{{$.ViewID}}/{{$id}}">Type information</a></li>
  {{if .ForTest}}<li>ForTest: {{.ForTest}}</li>{{end}}
  {{if .Standalone}}<li>Standalone</li>{{end}}
  {{if .Errors}}<li>Errors: {{.Errors}}</li>{{end}}
@@ -921,8 +987,48 @@ var MetadataTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
 
 <h3 id='hdr-Files'>Files</h3>
 <ul>
-{{range $uri, $pkgs := .ForFile}}<li>{{$uri}} →{{range $pkgs}} <a href='#{{.ID}}'>{{.ID}}</a>{{end}}</li>{{end}}
+{{range $uri, $pkgs := .Graph.ForFile}}<li>{{$uri}} →{{range $pkgs}} <a href='#{{.ID}}'>{{.ID}}</a>{{end}}</li>{{end}}
 </ul>
 
 {{end}}
+`))
+
+// For /package endpoint; operand is [*PackageInfo].
+var PackageTmpl = template.Must(template.Must(BaseTemplate.Clone()).Parse(`
+{{define "title"}}Package {{.Package.Metadata.ID}}{{end}}
+{{define "body"}}
+
+<ul>
+<li><a href="/metadata/{{.SessionID}}/{{.ViewID}}#{{.Package.Metadata.ID}}">Metadata</a></li>
+</ul>
+
+<h2>Diagnostics for syntax and type (but not analysis) errors</h2>
+<ul>
+ {{range $url, $diags := .Diagnostics}}
+ <li>{{$url}}
+  <ul>
+  {{range $diag := $diags}}
+  <li>{{$diag.Range}}: [{{$diag.Severity}}] {{$diag.Message}}<br/>
+  <ul>
+    <li>code {{$diag.Code}}</li>
+    <li>code href {{$diag.CodeHref}}</li>
+    <li>source {{$diag.Source}}</li>
+    <li>tags {{$diag.Tags}}</li>
+    <li>related {{$diag.Related}}</li> {{/*TODO: improve*/}}
+    <li>bundled fixes {{$diag.BundledFixes}}</li> {{/*TODO: improve*/}}
+    <li>fixes {{$diag.SuggestedFixes}}</li> {{/*TODO: improve*/}}
+  </ul>
+  {{end}}
+ </ul>
+ {{end}}
+</ul>
+
+{{end}}
+{{/*
+TODO:
+ - link to godoc (tricky: in server package)
+ - show Object inventory of types.Package.Scope
+ - show index info (xrefs, methodsets, tests)
+ - call DiagnoseFile on each file?
+*/}}
 `))
