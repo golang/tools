@@ -1,7 +1,13 @@
 This test exercises the "go_file_diagnostics" MCP tool.
 
+Some diagnostics from the "printf" analyzer carry fixes, and those fixes have edits.
+(Not all fixes have edits; some analyzers rely on gopls to compute them lazily.)
+
+The printf analyzer only reports a fix in files using >= go1.24.
+
 -- flags --
 -mcp
+-min_go_command=go1.24
 
 -- settings.json --
 {
@@ -12,6 +18,7 @@ This test exercises the "go_file_diagnostics" MCP tool.
 
 -- go.mod --
 module example.com
+go 1.24
 
 -- a/main.go --
 package main
@@ -38,52 +45,33 @@ Fix:
 -- b/main.go --
 package main
 
-func _() {
-	_ = deprecated([]string{"a"}, "a") //@loc(inline, "deprecated")
+import "fmt"
 
-	_ = deprecated([]string{"a"}, "a") //@loc(inline2, "deprecated")
-}
+// (diagnostic with fix)
+var (
+	msg string
+	_ = fmt.Sprintf(msg) //@ diag("msg", re"non-constant format string")
+)
 
-//go:fix inline
-func deprecated(slice []string, s string) bool {
-	return proposed(slice, s, true)
-}
+// (diagnostic without fix)
+var _ = fmt.Sprintf("%d", "hello") //@ diag("%d", re"%d .* wrong type string")
 
-func proposed(_ []string, _ string, _ bool) bool {
-	return false // fake
-}
+//@ mcptool("go_file_diagnostics", `{"file":"$WORKDIR/b/main.go"}`, output=diagnosePrintf)
 
-//@mcptool("go_file_diagnostics", `{"file":"$WORKDIR/b/main.go"}`, output=diagnoseInline)
-//@diag(inline, re"inline")
-//@diag(inline2, re"inline")
--- @diagnoseInline --
-3:5-3:35: [Hint] Call of main.deprecated should be inlined
+-- @diagnosePrintf --
+7:17-7:20: [Warning] non-constant format string in call to fmt.Sprintf
 Fix:
 --- $WORKDIR/b/main.go
 +++ $WORKDIR/b/main.go
-@@ -1,7 +1,7 @@
- package main
+@@ -5,7 +5,7 @@
+ // (diagnostic with fix)
+ var (
+ 	msg string
+-	_ = fmt.Sprintf(msg) //@ diag("msg", re"non-constant format string")
++	_ = fmt.Sprintf("%s", msg) //@ diag("msg", re"non-constant format string")
+ )
  
- func _() {
--	_ = deprecated([]string{"a"}, "a") //@loc(inline, "deprecated")
-+	_ = proposed([]string{"a"}, "a", true) //@loc(inline, "deprecated")
- 
- 	_ = deprecated([]string{"a"}, "a") //@loc(inline2, "deprecated")
- }
+ // (diagnostic without fix)
 
 
-5:5-5:35: [Hint] Call of main.deprecated should be inlined
-Fix:
---- $WORKDIR/b/main.go
-+++ $WORKDIR/b/main.go
-@@ -3,7 +3,7 @@
- func _() {
- 	_ = deprecated([]string{"a"}, "a") //@loc(inline, "deprecated")
- 
--	_ = deprecated([]string{"a"}, "a") //@loc(inline2, "deprecated")
-+	_ = proposed([]string{"a"}, "a", true) //@loc(inline2, "deprecated")
- }
- 
- //go:fix inline
-
-
+11:21-11:23: [Warning] fmt.Sprintf format %d has arg "hello" of wrong type string

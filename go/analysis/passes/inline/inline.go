@@ -51,11 +51,16 @@ var Analyzer = &analysis.Analyzer{
 	},
 }
 
-var allowBindingDecl bool
+var (
+	allowBindingDecl bool
+	lazyEdits        bool
+)
 
 func init() {
 	Analyzer.Flags.BoolVar(&allowBindingDecl, "allow_binding_decl", false,
 		"permit inlinings that require a 'var params = args' declaration")
+	Analyzer.Flags.BoolVar(&lazyEdits, "lazy_edits", false,
+		"compute edits lazily (only meaningful to gopls driver)")
 }
 
 // analyzer holds the state for this analysis.
@@ -177,66 +182,88 @@ func (a *analyzer) inlineCall(call *ast.CallExpr, cur inspector.Cursor) {
 			return // don't inline a function from within its own test
 		}
 
-		// Inline the call.
-		content, err := a.readFile(call)
-		if err != nil {
-			a.pass.Reportf(call.Lparen, "invalid inlining candidate: cannot read source file: %v", err)
-			return
-		}
-		curFile := astutil.EnclosingFile(cur)
-		caller := &inline.Caller{
-			Fset:    a.pass.Fset,
-			Types:   a.pass.Pkg,
-			Info:    a.pass.TypesInfo,
-			File:    curFile,
-			Call:    call,
-			Content: content,
-			CountUses: func(pkgname *types.PkgName) int {
-				return moreiters.Len(a.index.Uses(pkgname))
-			},
-		}
-		res, err := inline.Inline(caller, callee, &inline.Options{Logf: discard})
-		if err != nil {
-			a.pass.Reportf(call.Lparen, "%v", err)
-			return
+		// Compute the edits.
+		//
+		// Ordinarily the analyzer reports a fix containing
+		// edits. However, the algorithm is somewhat expensive
+		// (unnecessarily so: see go.dev/issue/75773) so
+		// to reduce costs in gopls, we omit the edits,
+		// meaning that gopls must compute them on demand
+		// (based on the Diagnostic.Category) when they are
+		// requested via a code action.
+		//
+		// This does mean that the following categories of
+		// caller-dependent obstacles to inlining will be
+		// reported when the gopls user requests the fix,
+		// rather than by quietly suppressing the diagnostic:
+		// - shadowing problems
+		// - callee imports inaccessible "internal" packages
+		// - callee refers to nonexported symbols
+		// - callee uses too-new Go features
+		// - inlining call from a cgo file
+		var edits []analysis.TextEdit
+		if !lazyEdits {
+			// Inline the call.
+			content, err := a.readFile(call)
+			if err != nil {
+				a.pass.Reportf(call.Lparen, "invalid inlining candidate: cannot read source file: %v", err)
+				return
+			}
+			curFile := astutil.EnclosingFile(cur)
+			caller := &inline.Caller{
+				Fset:    a.pass.Fset,
+				Types:   a.pass.Pkg,
+				Info:    a.pass.TypesInfo,
+				File:    curFile,
+				Call:    call,
+				Content: content,
+				CountUses: func(pkgname *types.PkgName) int {
+					return moreiters.Len(a.index.Uses(pkgname))
+				},
+			}
+			res, err := inline.Inline(caller, callee, &inline.Options{Logf: discard})
+			if err != nil {
+				a.pass.Reportf(call.Lparen, "%v", err)
+				return
+			}
+
+			if res.Literalized {
+				// Users are not fond of inlinings that literalize
+				// f(x) to func() { ... }(), so avoid them.
+				//
+				// (Unfortunately the inliner is very timid,
+				// and often literalizes when it cannot prove that
+				// reducing the call is safe; the user of this tool
+				// has no indication of what the problem is.)
+				return
+			}
+			if res.BindingDecl && !allowBindingDecl {
+				// When applying fix en masse, users are similarly
+				// unenthusiastic about inlinings that cannot
+				// entirely eliminate the parameters and
+				// insert a 'var params = args' declaration.
+				// The flag allows them to decline such fixes.
+				return
+			}
+			got := res.Content
+
+			for _, edit := range diff.Bytes(content, got) {
+				edits = append(edits, analysis.TextEdit{
+					Pos:     curFile.FileStart + token.Pos(edit.Start),
+					End:     curFile.FileStart + token.Pos(edit.End),
+					NewText: []byte(edit.New),
+				})
+			}
 		}
 
-		if res.Literalized {
-			// Users are not fond of inlinings that literalize
-			// f(x) to func() { ... }(), so avoid them.
-			//
-			// (Unfortunately the inliner is very timid,
-			// and often literalizes when it cannot prove that
-			// reducing the call is safe; the user of this tool
-			// has no indication of what the problem is.)
-			return
-		}
-		if res.BindingDecl && !allowBindingDecl {
-			// When applying fix en masse, users are similarly
-			// unenthusiastic about inlinings that cannot
-			// entirely eliminate the parameters and
-			// insert a 'var params = args' declaration.
-			// The flag allows them to decline such fixes.
-			return
-		}
-		got := res.Content
-
-		// Suggest the "fix".
-		var textEdits []analysis.TextEdit
-		for _, edit := range diff.Bytes(content, got) {
-			textEdits = append(textEdits, analysis.TextEdit{
-				Pos:     curFile.FileStart + token.Pos(edit.Start),
-				End:     curFile.FileStart + token.Pos(edit.End),
-				NewText: []byte(edit.New),
-			})
-		}
 		a.pass.Report(analysis.Diagnostic{
-			Pos:     call.Pos(),
-			End:     call.End(),
-			Message: fmt.Sprintf("Call of %v should be inlined", callee),
+			Pos:      call.Pos(),
+			End:      call.End(),
+			Message:  fmt.Sprintf("Call of %v should be inlined", callee),
+			Category: "inline_call", // keep consistent with gopls/internal/golang.fixInlineCall
 			SuggestedFixes: []analysis.SuggestedFix{{
 				Message:   fmt.Sprintf("Inline call of %v", callee),
-				TextEdits: textEdits,
+				TextEdits: edits, // within gopls, this is nil => compute fix's edits lazily
 			}},
 		})
 	}

@@ -54,7 +54,7 @@ const (
 	fixExtractVariableAll      = "extract_variable_all"
 	fixExtractFunction         = "extract_function"
 	fixExtractMethod           = "extract_method"
-	fixInlineCall              = "inline_call"
+	fixInlineCall              = "inline_call" // keep consistent with go/analysis/passes/inline Diagnostic.Category
 	fixInlineVariable          = "inline_variable"
 	fixInvertIfCondition       = "invert_if_condition"
 	fixSplitLines              = "split_lines"

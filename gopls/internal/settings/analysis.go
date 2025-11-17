@@ -5,6 +5,7 @@
 package settings
 
 import (
+	"log"
 	"slices"
 
 	"golang.org/x/tools/go/analysis"
@@ -241,7 +242,7 @@ var DefaultAnalyzers = []*Analyzer{
 		severity:    protocol.SeverityInformation,
 	},
 	// other simplifiers
-	{analyzer: inline.Analyzer, severity: protocol.SeverityHint},
+	{analyzer: inline.Analyzer, severity: protocol.SeverityHint}, // (in -lazy_edit mode)
 	{analyzer: infertypeargs.Analyzer, severity: protocol.SeverityInformation},
 	{analyzer: maprange.Analyzer, severity: protocol.SeverityHint},
 	{analyzer: unusedparams.Analyzer, severity: protocol.SeverityInformation},
@@ -280,4 +281,10 @@ var DefaultAnalyzers = []*Analyzer{
 	{analyzer: nonewvars.Analyzer},
 	{analyzer: noresultvalues.Analyzer},
 	{analyzer: unusedvariable.Analyzer},
+}
+
+func init() {
+	if err := inline.Analyzer.Flags.Set("lazy_edits", "true"); err != nil {
+		log.Fatalf("setting inline -lazy_edits flag: %v", err)
+	}
 }

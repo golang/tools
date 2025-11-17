@@ -40,7 +40,7 @@ type Caller struct {
 	Info    *types.Info
 	File    *ast.File
 	Call    *ast.CallExpr
-	Content []byte // source of file containing
+	Content []byte // source of file containing (TODO(adonovan): see comment at Result.Content)
 
 	// CountUses is an optional optimized computation of
 	// the number of times pkgname appears in Info.Uses.
@@ -61,6 +61,18 @@ type Options struct {
 
 // Result holds the result of code transformation.
 type Result struct {
+	// TODO(adonovan): the only textual results that should be
+	// needed are (1) an edit in the vicinity of the call (either
+	// to the CallExpr or one of its ancestors), and optionally
+	// (2) an edit to the import declaration.
+	// Change the inliner API to return a list of edits,
+	// and not to accept a Caller.Content, as it is only
+	// temptation to use such algorithmically expensive
+	// operations as reformatting the entire file, which is
+	// a significant source of non-linear dynamic behavior;
+	// see https://go.dev/issue/75773.
+	// This will require a sequence of changes to the tests
+	// and the inliner algorithm itself.
 	Content     []byte // formatted, transformed content of caller file
 	Literalized bool   // chosen strategy replaced callee() with func(){...}()
 	BindingDecl bool   // transformation added "var params = args" declaration
