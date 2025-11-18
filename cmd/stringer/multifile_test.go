@@ -142,7 +142,7 @@ const (
 			},
 		},
 		{
-			// Re-declaring the type in a less prioritized package does not change our output.
+			// Redeclaring the type in a less prioritized package does not change our output.
 			name: "package over test package",
 			args: []string{"-type=Foo"},
 			archive: []byte(`
@@ -176,7 +176,7 @@ const (
 			},
 		},
 		{
-			// Re-declaring the type in a less prioritized package does not change our output.
+			// Redeclaring the type in a less prioritized package does not change our output.
 			name: "package over x_test package",
 			args: []string{"-type=Foo"},
 			archive: []byte(`
@@ -210,7 +210,7 @@ const (
 			},
 		},
 		{
-			// Re-declaring the type in a less prioritized package does not change our output.
+			// Redeclaring the type in a less prioritized package does not change our output.
 			name: "test package over x_test package",
 			args: []string{"-type=Foo"},
 			archive: []byte(`
