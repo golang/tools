@@ -848,7 +848,7 @@ const A = 1 + nested.B
 
 		for _, badName := range []string{"$$$", "lib_test"} {
 			if err := env.Editor.Rename(env.Ctx, loc, badName); err == nil {
-				t.Errorf("Rename(lib, libx) succeeded, want non-nil error")
+				t.Errorf("Rename(lib, libx) succeeded unexpectedly")
 			}
 		}
 	})
@@ -926,17 +926,19 @@ package test2
 	WithOptions(Settings{"packageMove": true}).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("test1/test1.go")
 		loc := env.RegexpSearch("test1/test1.go", "test1")
-		badNames := []string{"test2", "mod.com/test2", "differentmod.com/test2",
-			"mod.com/$$$", "mod*.$+", "mod.commmm"}
-		expectedErrMatches := []string{"invalid package identifier", "already exists",
-			"cannot move package across module boundary", "invalid package name",
-			"invalid package path", "cannot move package across module boundary"}
-		for i, badName := range badNames {
-			err := env.Editor.Rename(env.Ctx, loc, badName)
+		for _, test := range []struct{ badName, expectedErrMatch string }{
+			{"test2", "invalid package identifier"},
+			{"mod.com/test2", "not empty"},
+			{"differentmod.com/test2", "cannot move package across module boundary"},
+			{"mod.com/$$$", "invalid package name"},
+			{"mod*.$+", "invalid package path"},
+			{"mod.commmm", "cannot move package across module boundary"},
+		} {
+			err := env.Editor.Rename(env.Ctx, loc, test.badName)
 			if err == nil {
-				t.Errorf("Rename to %s succeeded, want non-nil error", badName)
-			} else if !strings.Contains(err.Error(), expectedErrMatches[i]) {
-				t.Errorf("Rename to %s produced incorrect error message, got %s, want %s", badName, err.Error(), expectedErrMatches[i])
+				t.Errorf("Rename to %s succeeded unexpectedly", test.badName)
+			} else if !strings.Contains(err.Error(), test.expectedErrMatch) {
+				t.Errorf("Rename to %s produced incorrect error message, got %s, want %s", test.badName, err.Error(), test.expectedErrMatch)
 			}
 		}
 	})
@@ -958,15 +960,18 @@ package test2
 	WithOptions(Settings{"packageMove": false}).Run(t, files, func(t *testing.T, env *Env) {
 		env.OpenFile("test1/test1.go")
 		loc := env.RegexpSearch("test1/test1.go", "test1")
-		badNames := []string{"test2", "mod.com/test3"}
-		expectedErrMatches := []string{"invalid package identifier", "setting 'packageMove' is not enabled"}
-		for i, badName := range badNames {
-			err := env.Editor.Rename(env.Ctx, loc, badName)
+
+		for _, test := range []struct{ badName, expectedErrMatch string }{
+			{"test2", "invalid package identifier"},
+			{"mod.com/test3", "setting 'packageMove' is not enabled"},
+		} {
+			err := env.Editor.Rename(env.Ctx, loc, test.badName)
 			if err == nil {
-				t.Errorf("Rename to %s succeeded, want non-nil error", badName)
-			} else if !strings.Contains(err.Error(), expectedErrMatches[i]) {
-				t.Errorf("Rename to %s produced incorrect error message, got %s, want %s", badName, err.Error(), expectedErrMatches[i])
+				t.Errorf("Rename to %s succeeded unexpectedly", test.badName)
+			} else if !strings.Contains(err.Error(), test.expectedErrMatch) {
+				t.Errorf("Rename to %s produced incorrect error message, got %s, want %s", test.badName, err.Error(), test.expectedErrMatch)
 			}
+
 		}
 	})
 }

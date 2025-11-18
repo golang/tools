@@ -34,7 +34,7 @@ go 1.20
 package one //@ rename("one", "golang.org/lsptests/rename/one", sameName), rename("one", "golang.org/lsptests/rename/two", newNameSameDir), renameerr("one", "golang.org/lsptests/otherdir/one", re"cannot move package across module boundary")
 
 -- three/three.go --
-package three //@ renameerr("three", "golang.org/lsptests/othermod/three", re"cannot move package across module boundary"), renameerr("three", "golang.org/lsptests/rename/one", re"already exists")
+package three //@ renameerr("three", "golang.org/lsptests/othermod/three", re"cannot move package across module boundary"), renameerr("three", "golang.org/lsptests/rename/one", re"not empty")
 
 
 -- six/six.go --
@@ -90,6 +90,9 @@ import (
 
 -- seven/eight/other/other.go --
 package other //@ rename("other", "golang.org/lsptests/rename/seven/eight/other/newDir1/newDir2", createNewDir)
+
+-- seven/eight/other/newDir1/newDir2/newDir3/test.go --
+package newDir3 // verifies that we can move the package above into a directory that already exists but is empty
 
 -- fix/fix_test.go --
 package fix_test

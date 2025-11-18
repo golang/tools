@@ -33,6 +33,7 @@ package golang
 //   method, not the concrete method.
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -948,10 +949,12 @@ func checkPackageRename(opts *settings.Options, curPkg *cache.Package, f file.Ha
 		// path, in which case we should not allow renaming.
 		root := filepath.Dir(f.URI().DirPath())
 		newPkgDir = filepath.Join(root, newName)
-		_, err := os.Stat(newPkgDir)
-		if err == nil {
-			// Directory already exists, return an error.
-			return "", "", "", fmt.Errorf("invalid package identifier: %q already exists", newName)
+		empty, err := dirIsEmpty(newPkgDir)
+		if err != nil {
+			return "", "", "", err
+		}
+		if !empty {
+			return "", "", "", fmt.Errorf("invalid package identifier: %q is not empty", newName)
 		}
 		parentPkgPath := strings.TrimSuffix(string(curPkg.Metadata().PkgPath), string(curPkg.Metadata().Name)) // leaves a trailing slash
 		newPkgPath = PackagePath(parentPkgPath + newName)
@@ -977,10 +980,12 @@ func checkPackageRename(opts *settings.Options, curPkg *cache.Package, f file.Ha
 		return "", "", "", fmt.Errorf("invalid package path %q", newName)
 	}
 	newPkgName = PackageName(filepath.Base(newPkgDir))
-	_, err = os.Stat(newPkgDir)
-	if err == nil {
-		// Directory or file already exists at this path; return an error.
-		return "", "", "", fmt.Errorf("invalid package path: %q already exists", newName)
+	empty, err := dirIsEmpty(newPkgDir)
+	if err != nil {
+		return "", "", "", err
+	}
+	if !empty {
+		return "", "", "", fmt.Errorf("invalid package path: %q is not empty", newName)
 	}
 	// Verify that the new package name is a valid identifier.
 	if !isValidIdentifier(string(newPkgName)) {
@@ -999,6 +1004,25 @@ func hasIgnoredGoFiles(pkg *cache.Package) bool {
 		}
 	}
 	return false
+}
+
+// dirIsEmpty returns true if the directory does not exist or if the entries in
+// dir consist of only directories.
+func dirIsEmpty(dir string) (bool, error) {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return true, nil
+		} else {
+			return false, err
+		}
+	}
+	for _, f := range files {
+		if !f.IsDir() {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // isLocal reports whether obj is local to some function.
