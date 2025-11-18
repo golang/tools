@@ -30,10 +30,7 @@ func (s *server) Rename(ctx context.Context, params *protocol.RenameParams) (*pr
 		return nil, fmt.Errorf("cannot rename in file of type %s", kind)
 	}
 
-	// TODO(mkalil): By default, we don't move subpackages on a package rename.
-	// When dialog support is enabled, the user will be able to specify whether
-	// they do want to move subpackages.
-	changes, err := golang.Rename(ctx, snapshot, fh, params.Position, params.NewName, false)
+	changes, err := golang.Rename(ctx, snapshot, fh, params.Position, params.NewName)
 	if err != nil {
 		return nil, err
 	}

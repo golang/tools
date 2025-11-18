@@ -2189,9 +2189,9 @@
 				"DeprecationMessage": ""
 			},
 			{
-				"Name": "packageMove",
+				"Name": "renameMovesSubpackages",
 				"Type": "bool",
-				"Doc": "packageMove enables PrepareRename to send the full package path\nand allows users to move a package via renaming.\n",
+				"Doc": "renameMovesSubpackages enables Rename operations on packages to\nmove subdirectories of the target package.\n",
 				"EnumKeys": {
 					"ValueType": "",
 					"Keys": null

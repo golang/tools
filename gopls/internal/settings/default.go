@@ -132,7 +132,8 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						CodeLensVendor:            true,
 						CodeLensRunGovulncheck:    true,
 					},
-					NewGoFileHeader: true,
+					NewGoFileHeader:        true,
+					RenameMovesSubpackages: false,
 				},
 			},
 			InternalOptions: InternalOptions{

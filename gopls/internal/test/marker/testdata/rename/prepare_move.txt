@@ -1,9 +1,4 @@
-This test verifies the behavior of textDocument/prepareRename when the experimental package move setting is enabled.
-
--- settings.json --
-{
-	"packageMove": true
-}
+This test verifies the behavior of textDocument/prepareRename - we prompt with the full package path.
 
 -- go.mod --
 module golang.org/lsptests
@@ -14,4 +9,5 @@ go 1.20
 package b //@ preparerename("b", "golang.org/lsptests/b")
 
 -- a/other.go --
-package other //@ preparerename("other", "other") // package move disabled when the package name does not match its directory base name
+// We prompt with the full package path, but changing a package directory is disabled when the package name does not match its directory base name. 
+package other //@ preparerename("other", "golang.org/lsptests/a")

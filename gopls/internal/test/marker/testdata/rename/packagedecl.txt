@@ -12,11 +12,6 @@ It tests the following:
 	- Impact of renaming on _test packages
 	- Renaming with the exact same path - no edits produced
 
--- settings.json --
-{
-	"packageMove": true
-}
-
 -- flags --
 -ignore_extra_diags
 
@@ -112,6 +107,9 @@ package foo
 -- foo/default.go --
 //go:build !windows
 package foo //@ renameerr("foo", "golang.org/lsptests/rename/foo2", re"ignored files")
+
+-- bar/bar.go --
+package foobar //@ renameerr("foobar", "golang.org/lsptests/rename/otherpath", re"does not match directory base name")
 
 -- @moveDownTwoDirs/nine/nine/nine/eight/eight.go --
 @@ -0,0 +1 @@

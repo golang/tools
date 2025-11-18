@@ -251,9 +251,9 @@ type UIOptions struct {
 	// and package declaration in a newly created Go file.
 	NewGoFileHeader bool
 
-	// PackageMove enables PrepareRename to send the full package path
-	// and allows users to move a package via renaming.
-	PackageMove bool `status:"experimental"`
+	// RenameMovesSubpackages enables Rename operations on packages to
+	// move subdirectories of the target package.
+	RenameMovesSubpackages bool `status:"experimental"`
 }
 
 // A CodeLensSource identifies an (algorithmic) source of code lenses.
@@ -1368,8 +1368,8 @@ func (o *Options) setOne(name string, value any) (applied []CounterPath, _ error
 	case "mcpTools":
 		return setBoolMap(&o.MCPTools, value)
 
-	case "packageMove":
-		return setBool(&o.PackageMove, value)
+	case "renameMovesSubpackages":
+		return setBool(&o.RenameMovesSubpackages, value)
 
 	// deprecated and renamed settings
 	//

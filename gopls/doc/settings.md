@@ -269,13 +269,13 @@ and package declaration in a newly created Go file.
 
 Default: `true`.
 
-<a id='packageMove'></a>
-### `packageMove bool`
+<a id='renameMovesSubpackages'></a>
+### `renameMovesSubpackages bool`
 
 **This setting is experimental and may be deleted.**
 
-packageMove enables PrepareRename to send the full package path
-and allows users to move a package via renaming.
+renameMovesSubpackages enables Rename operations on packages to
+move subdirectories of the target package.
 
 Default: `false`.
 
