@@ -254,6 +254,15 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 	// to their files.
 	modifications = s.session.ExpandModificationsToDirectories(ctx, modifications)
 
+	for _, m := range modifications {
+		// TODO: also handle go.work changes as well.
+		if strings.HasSuffix(m.URI.Path(), "go.mod") {
+			if m.Action == file.Create || m.Action == file.Change {
+				s.checkGoModDeps(ctx, m.URI)
+			}
+		}
+	}
+
 	viewsToDiagnose, err := s.session.DidModifyFiles(ctx, modifications)
 	if err != nil {
 		return err
