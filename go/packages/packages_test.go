@@ -3405,3 +3405,22 @@ func TestLoadFileRelativePath(t *testing.T) {
 		t.Fatalf(`pkgs[0].Id = %q; want "fake/pkg"`, pkgs[0].ID)
 	}
 }
+
+func TestLoad_populatesInfoMapsForUnsafePackage(t *testing.T) {
+	pkgs, err := packages.Load(&packages.Config{Mode: packages.LoadAllSyntax}, "unsafe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := pkgs[0].TypesInfo
+
+	if info.Defs == nil ||
+		info.Uses == nil ||
+		info.Selections == nil ||
+		info.Types == nil ||
+		info.FileVersions == nil ||
+		info.Implicits == nil ||
+		info.Instances == nil ||
+		info.Scopes == nil {
+		t.Errorf("types.Info for package unsafe has one or more nil maps: %#v", *info)
+	}
+}
