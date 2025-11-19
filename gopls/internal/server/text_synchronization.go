@@ -257,12 +257,12 @@ func (s *server) didModifyFiles(ctx context.Context, modifications []file.Modifi
 	// TODO: also handle go.work changes as well.
 	uris := make(map[protocol.DocumentURI]struct{})
 	for _, m := range modifications {
-		if strings.HasSuffix(m.URI.Path(), "go.mod") && (m.Action == file.Create || m.Action == file.Change) {
+		if strings.HasSuffix(m.URI.Path(), "go.mod") && (m.Action == file.Create || m.Action == file.Save) {
 			uris[m.URI] = struct{}{}
 		}
 	}
 	for uri := range uris {
-		s.checkGoModDeps(ctx, uri)
+		go s.checkGoModDeps(ctx, uri)
 	}
 
 	viewsToDiagnose, err := s.session.DidModifyFiles(ctx, modifications)

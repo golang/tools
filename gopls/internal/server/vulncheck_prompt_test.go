@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"golang.org/x/mod/modfile"
@@ -207,16 +206,21 @@ func TestCheckGoModDeps(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				configDir, err := os.UserConfigDir()
+				if err != nil {
+					t.Fatalf("os.UserConfigDir() failed: %v", err)
+				}
+				if err := os.RemoveAll(filepath.Join(configDir, "gopls")); err != nil && !os.IsNotExist(err) {
+					t.Fatalf("failed to clear user config: %v", err)
+				}
+			})
+			t.Setenv("HOME", t.TempDir())
 			ctx := context.Background()
 			var promptShown bool
-			var wg sync.WaitGroup
-			if tt.wantPrompt {
-				wg.Add(1)
-			}
 			client := &mockClient{
 				showMessageRequest: func(ctx context.Context, params *protocol.ShowMessageRequestParams) (*protocol.MessageActionItem, error) {
 					promptShown = true
-					defer wg.Done()
 					if tt.userAction == "" {
 						return nil, nil
 					}
@@ -263,8 +267,6 @@ func TestCheckGoModDeps(t *testing.T) {
 
 			s.checkGoModDeps(ctx, uri)
 
-			wg.Wait()
-
 			if promptShown != tt.wantPrompt {
 				t.Errorf("promptShown = %v, want %v", promptShown, tt.wantPrompt)
 			}
@@ -295,5 +297,40 @@ func TestCheckGoModDeps(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestVulncheckPreference(t *testing.T) {
+	t.Cleanup(func() {
+		configDir, err := os.UserConfigDir()
+		if err != nil {
+			t.Fatalf("os.UserConfigDir() failed: %v", err)
+		}
+		if err := os.RemoveAll(filepath.Join(configDir, "gopls")); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("failed to clear user config: %v", err)
+		}
+	})
+	t.Setenv("HOME", t.TempDir())
+
+	pref, err := getVulncheckPreference()
+	if err != nil {
+		t.Fatalf("getVulncheckPreference() failed: %v", err)
+	}
+	if pref != "" {
+		t.Errorf("got %q, want empty string", pref)
+	}
+
+	want := "Always"
+	if err := setVulncheckPreference(want); err != nil {
+		t.Fatalf("setVulncheckPreference() failed: %v", err)
+	}
+
+	got, err := getVulncheckPreference()
+	if err != nil {
+		t.Fatalf("getVulncheckPreference() failed: %v", err)
+	}
+
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

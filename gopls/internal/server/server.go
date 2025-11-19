@@ -53,7 +53,6 @@ func New(session *cache.Session, client protocol.ClientCloser, options *settings
 		progress:            progress.NewTracker(client),
 		options:             options,
 		viewsToDiagnose:     make(map[*cache.View]uint64),
-		// checkingGoMod:       make(map[protocol.DocumentURI]struct{}),
 	}
 }
 
@@ -187,9 +186,6 @@ type server struct {
 	lastModificationID    uint64                 // incrementing clock
 
 	runGovulncheckInProgress atomic.Bool
-
-	// goModCheckInProgress is used to serialize calls to checkGoModDeps
-	goModCheckInProgress atomic.Bool
 }
 
 func (s *server) WorkDoneProgressCancel(ctx context.Context, params *protocol.WorkDoneProgressCancelParams) error {
