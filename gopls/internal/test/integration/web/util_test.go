@@ -80,6 +80,10 @@ func codeActionWebPage(t *testing.T, env *integration.Env, kind protocol.CodeAct
 	if err != nil {
 		t.Fatal(err)
 	}
+	action, err = env.Editor.ResolveCodeAction(env.Ctx, action)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Execute the command.
 	// Its side effect should be a single showDocument request.

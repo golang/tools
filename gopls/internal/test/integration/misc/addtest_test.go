@@ -80,6 +80,10 @@ func TestFoo(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		action, err = env.Editor.ResolveCodeAction(env.Ctx, action)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		// Execute the command.
 		// Its side effect should be a single showDocument request.

@@ -1685,6 +1685,14 @@ func (e *Editor) ChangeWorkspaceFolders(ctx context.Context, folders []string) e
 	return e.Server.DidChangeWorkspaceFolders(ctx, &params)
 }
 
+// ResolveCodeAction executes a codeAction/resolve request on the server.
+func (e *Editor) ResolveCodeAction(ctx context.Context, action *protocol.CodeAction) (*protocol.CodeAction, error) {
+	if e.Server == nil {
+		return nil, nil
+	}
+	return e.Server.ResolveCodeAction(ctx, action)
+}
+
 // CodeAction executes a codeAction request on the server.
 // If loc.Range is zero, the whole file is implied.
 // To reduce distraction, the trigger action (unknown, automatic, invoked)
