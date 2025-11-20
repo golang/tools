@@ -3407,6 +3407,8 @@ func TestLoadFileRelativePath(t *testing.T) {
 }
 
 func TestLoad_populatesInfoMapsForUnsafePackage(t *testing.T) {
+	testenv.NeedsGoPackages(t)
+
 	pkgs, err := packages.Load(&packages.Config{Mode: packages.LoadAllSyntax}, "unsafe")
 	if err != nil {
 		t.Fatal(err)
