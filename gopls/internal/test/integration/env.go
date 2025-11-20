@@ -397,3 +397,13 @@ func CleanModCache(t *testing.T, modcache string) {
 		t.Errorf("cleaning modcache: %v\noutput:\n%s", err, string(output))
 	}
 }
+
+// CodeActionByKind returns the first action of (exactly) the specified kind, or an error.
+func CodeActionByKind(actions []protocol.CodeAction, kind protocol.CodeActionKind) (*protocol.CodeAction, error) {
+	for _, act := range actions {
+		if act.Kind == kind {
+			return &act, nil
+		}
+	}
+	return nil, fmt.Errorf("can't find action with kind %s, only %#v", kind, actions)
+}

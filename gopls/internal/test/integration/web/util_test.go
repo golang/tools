@@ -7,7 +7,6 @@ package web_test
 // This file defines web server testing utilities.
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -71,23 +70,13 @@ func checkMatch(t *testing.T, want bool, got []byte, pattern string) {
 	}
 }
 
-// codeActionByKind returns the first action of (exactly) the specified kind, or an error.
-func codeActionByKind(actions []protocol.CodeAction, kind protocol.CodeActionKind) (*protocol.CodeAction, error) {
-	for _, act := range actions {
-		if act.Kind == kind {
-			return &act, nil
-		}
-	}
-	return nil, fmt.Errorf("can't find action with kind %s, only %#v", kind, actions)
-}
-
 // codeActionWebPage returns the URL and content of the page opened by the specified code action.
 func codeActionWebPage(t *testing.T, env *integration.Env, kind protocol.CodeActionKind, loc protocol.Location) (string, []byte) {
 	actions, err := env.Editor.CodeAction(env.Ctx, loc, nil, protocol.CodeActionUnknownTrigger)
 	if err != nil {
 		t.Fatalf("CodeAction: %v", err)
 	}
-	action, err := codeActionByKind(actions, kind)
+	action, err := integration.CodeActionByKind(actions, kind)
 	if err != nil {
 		t.Fatal(err)
 	}
