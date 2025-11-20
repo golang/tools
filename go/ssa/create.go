@@ -314,7 +314,7 @@ func (prog *Program) ImportedPackage(path string) *Package {
 	return prog.imported[path]
 }
 
-// setNoReturns sets the predicate used by the SSA builder to decide
+// setNoReturn sets the predicate used by the SSA builder to decide
 // whether a call to the specified named function cannot return,
 // allowing the builder to prune control-flow edges following the
 // call, thus improving the precision of downstream analysis.

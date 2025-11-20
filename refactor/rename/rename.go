@@ -335,7 +335,7 @@ func Main(ctxt *build.Context, offsetFlag, fromFlag, to string) error {
 
 	// Only the initially imported packages (iprog.Imported) and
 	// their external tests (iprog.Created) should be inspected or
-	// modified, as only they have type-checked functions bodies.
+	// modified, as only they have type-checked function bodies.
 	// The rest are just dependencies, needed only for package-level
 	// type information.
 	for _, info := range iprog.Imported {

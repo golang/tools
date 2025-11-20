@@ -259,7 +259,7 @@ var wd = func() string {
 }()
 
 // For source trees built with 'go build', the -from or -offset
-// spec identifies exactly one initial 'from' object to rename ,
+// spec identifies exactly one initial 'from' object to rename,
 // but certain proprietary build systems allow a single file to
 // appear in multiple packages (e.g. the test package contains a
 // copy of its library), so there may be multiple objects for

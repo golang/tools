@@ -250,7 +250,7 @@ func (tr *Transformer) apply(f func(reflect.Value) (reflect.Value, bool, map[str
 
 // subst returns a copy of (replacement) pattern with values from env
 // substituted in place of wildcards and pos used as the position of
-// tokens from the pattern.  if env == nil, subst returns a copy of
+// tokens from the pattern. If env == nil, subst returns a copy of
 // pattern and doesn't change the line number information.
 func (tr *Transformer) subst(env map[string]ast.Expr, pattern, pos reflect.Value) reflect.Value {
 	if !pattern.IsValid() {
