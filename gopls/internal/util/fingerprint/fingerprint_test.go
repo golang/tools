@@ -96,9 +96,6 @@ func (casefold) Equal(x, y string) bool
 type A[T any] = struct { x T }
 type AString = struct { x string }
 
-// B matches anything!
-type B[T any] = T
-
 func C1[T any](int, T, ...string) T { panic(0) }
 func C2[U any](int, int, ...U) bool { panic(0) }
 func C3(int, bool, ...string) rune
@@ -137,9 +134,6 @@ func F9[V any](V, *V, V) { panic(0) }
 		{"Eq", "casefold", "Equal", true},
 		{"A", "AString", "", true},
 		{"A", "Eq", "", false}, // completely unrelated
-		{"B", "String", "", true},
-		{"B", "Int", "", true},
-		{"B", "A", "", true},
 		{"C1", "C2", "", false},
 		{"C1", "C3", "", false},
 		{"C1", "C4", "", false},
