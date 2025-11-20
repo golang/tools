@@ -14,7 +14,9 @@ import (
 	"testing"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/filecache"
+	"golang.org/x/tools/gopls/internal/progress"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/testenv"
@@ -107,6 +109,10 @@ func (c *mockClient) ShowMessageRequest(ctx context.Context, params *protocol.Sh
 	return nil, nil
 }
 
+func (c *mockClient) ShowMessage(ctx context.Context, params *protocol.ShowMessageParams) error {
+	return nil
+}
+
 func (c *mockClient) Close() error {
 	return nil
 }
@@ -166,8 +172,9 @@ func TestCheckGoModDeps(t *testing.T) {
 			module example.com
 			require golang.org/x/tools v0.1.0
 			`,
-			userAction: no,
-			wantPrompt: true,
+			userAction:      no,
+			wantPrompt:      true,
+			wantHashUpdated: true,
 		},
 		{
 			name:          "user says always",
@@ -189,8 +196,9 @@ func TestCheckGoModDeps(t *testing.T) {
 			module example.com
 			require golang.org/x/tools v0.1.0
 			`,
-			userAction: never,
-			wantPrompt: true,
+			userAction:      never,
+			wantPrompt:      true,
+			wantHashUpdated: true,
 		},
 		{
 			name:          "user dismisses prompt",
@@ -229,7 +237,9 @@ func TestCheckGoModDeps(t *testing.T) {
 				},
 			}
 			s := &server{
-				client: client,
+				client:   client,
+				session:  cache.NewSession(ctx, cache.New(nil)),
+				progress: progress.NewTracker(client),
 				options: &settings.Options{
 					UserOptions: settings.UserOptions{
 						UIOptions: settings.UIOptions{

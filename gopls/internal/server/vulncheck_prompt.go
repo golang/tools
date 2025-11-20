@@ -16,6 +16,7 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/filecache"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/protocol/command"
 	"golang.org/x/tools/gopls/internal/settings"
 	"golang.org/x/tools/internal/event"
 )
@@ -90,33 +91,48 @@ func (s *server) checkGoModDeps(ctx context.Context, uri protocol.DocumentURI) {
 		govulncheckLink := "[govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck)"
 		message := fmt.Sprintf("Dependencies have changed in %s, would you like to run %s to check for vulnerabilities?", fileLink, govulncheckLink)
 
-		preference, err := getVulncheckPreference()
+		action, err := getVulncheckPreference()
 		if err != nil {
 			event.Error(ctx, "reading vulncheck preference failed", err)
 		}
-		if preference == "Never" {
-			return
+		args := command.VulncheckArgs{
+			URI:     uri,
+			Pattern: "./...",
 		}
-		if preference == "Always" {
-			// TODO: Update this so that we run vulncheck when Always is set.
-			return
-		}
-		action, err := showMessageRequest(ctx, s.client, protocol.Info, message, "Yes", "No", "Always", "Never")
-		if err != nil {
-			event.Error(ctx, "showing go.mod changed notification", err)
-			return
-		}
+		cmd := command.NewRunGovulncheckCommand("Run govulncheck", args)
 
-		if action == "Always" || action == "Never" {
-			if err := setVulncheckPreference(action); err != nil {
-				event.Error(ctx, "writing vulncheck preference failed", err)
-				showMessage(ctx, s.client, protocol.Error, fmt.Sprintf("Failed to save vulncheck preference: %v", err))
+		switch action {
+		case "Always":
+			if _, err := s.executeCommand(ctx, cmd); err != nil {
+				event.Error(ctx, "executing govulncheck command failed", err)
 			}
-		}
-
-		// TODO: Implement the logic to run govulncheck when action is "Yes" or "Always".
-		if action == "No" || action == "Never" || action == "" {
-			return // Skip the check and don't update the hash.
+		case "Never":
+			return
+		case "":
+			// no previous preference stored, prompt the user.
+			fallthrough
+		default:
+			// invalid value, clear preference and prompt the user again.
+			action, err = showMessageRequest(ctx, s.client, protocol.Info, message, "Yes", "No", "Always", "Never")
+			if err != nil {
+				event.Error(ctx, "showing go.mod changed notification failed", err)
+				return
+			}
+			if action == "Always" || action == "Never" {
+				if err := setVulncheckPreference(action); err != nil {
+					event.Error(ctx, "writing vulncheck preference failed", err)
+					showMessage(ctx, s.client, protocol.Error, fmt.Sprintf("Failed to save vulncheck preference: %v", err))
+				}
+			}
+			if action == "Yes" || action == "Always" {
+				if _, err := s.executeCommand(ctx, cmd); err != nil {
+					event.Error(ctx, "executing govulncheck command failed", err)
+				}
+			}
+			if action == "" {
+				// No user input gathered from prompt.
+				return
+			}
 		}
 
 		if err := filecache.Set(goModHashKind, pathHash, []byte(newHash)); err != nil {
@@ -124,6 +140,14 @@ func (s *server) checkGoModDeps(ctx context.Context, uri protocol.DocumentURI) {
 			return
 		}
 	}
+}
+
+func (s *server) executeCommand(ctx context.Context, cmd *protocol.Command) (any, error) {
+	params := &protocol.ExecuteCommandParams{
+		Command:   cmd.Command,
+		Arguments: cmd.Arguments,
+	}
+	return s.ExecuteCommand(ctx, params)
 }
 
 type vulncheckConfig struct {
