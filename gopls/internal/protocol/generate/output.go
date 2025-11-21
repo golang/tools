@@ -74,6 +74,9 @@ func genDecl(model *Model, method string, param, result *Type, dir string) {
 	}
 	fragment := strings.ReplaceAll(strings.TrimPrefix(method, "$/"), "/", "_")
 	msg := fmt.Sprintf("\t%s\t%s(context.Context%s) %s\n", lspLink(model, fragment), fname, p, ret)
+	if doc, ok := prependMethodDocComments[fname]; ok {
+		msg = doc + "\n\t//\n" + msg
+	}
 	switch dir {
 	case "clientToServer":
 		sdecls[method] = msg
@@ -293,6 +296,10 @@ func genProps(out *bytes.Buffer, props []NameType, name string) {
 		} else {
 			fmt.Fprintf(out, "\t%s %s %s\n", goName(p.Name), tp, json)
 		}
+	}
+
+	if block, ok := appendTypeProp[name]; ok {
+		out.WriteString(block)
 	}
 }
 

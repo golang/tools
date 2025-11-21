@@ -147,23 +147,6 @@ func writeserver() {
 `)
 	out.WriteString("type Server interface {\n")
 	for _, k := range sdecls.keys() {
-		if k == "codeAction/resolve" {
-			sdecls[k] = `// To support microsoft/language-server-protocol#1164, the language server
-// need to read the client-supplied form answers and either returns a
-// CodeAction with errors in the form fields surfacing the error to the
-// client, or a CodeAction with properties the language client is waiting
-// for (e.g. edits, commands).
-//
-// The language client may call "codeAction/resolve" if the language server
-// returns a CodeAction with errors or try asking the user for completing the
-// form again.
-//
-// The language client may call "codeAction/resolve" multiple times with user
-// filled (re-filled) answers in the form until it obtains a CodeAction with
-// properties (e.g. edits, commands) it's waiting for.
-//
-` + sdecls[k]
-		}
 		out.WriteString(sdecls[k])
 	}
 	out.WriteString(`
@@ -211,50 +194,6 @@ func writeprotocol() {
 	hack("PreviousResultId", "PreviousResultID")
 	hack("WorkspaceFoldersServerCapabilities", "WorkspaceFolders5Gn")
 	hack("_InitializeParams", "XInitializeParams")
-
-	// Insert a block of content into a type.
-	insert := func(key, content string) {
-		if _, ok := types[key]; !ok {
-			log.Fatalf("types[%q] not found", key)
-		}
-		idx := strings.LastIndex(types[key], "}")
-		if idx == -1 {
-			log.Fatalf("could not find '}' in type %q", key)
-		}
-		types[key] = types[key][:idx] + content + types[key][idx:]
-	}
-
-	// TODO(hxjiang): extend form resolve to codelens resolve.
-	insert("CodeAction", `
-// FormFields and FormAnswers allow the server and client to exchange
-// interactive questions and answers during a resolveCodeAction request.
-//
-// The server populates FormFields to define the schema. The server may
-// optionally populate FormAnswers to preserve previous user input; if
-// provided, the client may present these as default values.
-//
-// When the client responds, it must provide FormAnswers. The client is not
-// required to send FormFields back to the server.
-
-// FormFields defines the questions and validation errors.
-//
-// This is a server-to-client field. The language server defines these, and
-// the client uses them to render the form.
-//
-// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
-FormFields []FormField `+"`json:\"formFields,omitempty\"`")
-	insert("CodeAction", `
-// FormAnswers contains the values for the form questions.
-//
-// When sent by the language server, this field is optional but recommended
-// to support editing previous values.
-//
-// When sent by the language client, this field is required. The slice must
-// have the same length as FormFields (one answer per question), where the
-// answer at index i corresponds to the field at index i.
-//
-// Note: This is a non-standard protocol extension. See microsoft/language-server-protocol#1164.
-FormAnswers []any `+"`json:\"formAnswers,omitempty\"`")
 
 	for _, k := range types.keys() {
 		if k == "WatchKind" {
