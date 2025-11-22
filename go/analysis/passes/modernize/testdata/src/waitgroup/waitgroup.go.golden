@@ -8,15 +8,15 @@ import (
 // supported case for pattern 1.
 func _() {
 	var wg sync.WaitGroup
-	wg.Go(func() {
+	wg.Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		fmt.Println()
 	})
 
-	wg.Go(func() {
+	wg.Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 	})
 
 	for range 10 {
-		wg.Go(func() {
+		wg.Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 			fmt.Println()
 		})
 	}
@@ -25,15 +25,15 @@ func _() {
 // supported case for pattern 2.
 func _() {
 	var wg sync.WaitGroup
-	wg.Go(func() {
+	wg.Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		fmt.Println()
 	})
 
-	wg.Go(func() {
+	wg.Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 	})
 
 	for range 10 {
-		wg.Go(func() {
+		wg.Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 			fmt.Println()
 		})
 	}
@@ -42,17 +42,17 @@ func _() {
 // this function puts some wrong usages but waitgroup modernizer will still offer fixes.
 func _() {
 	var wg sync.WaitGroup
-	wg.Go(func() {
+	wg.Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		defer wg.Done()
 		fmt.Println()
 	})
 
-	wg.Go(func() {
+	wg.Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		fmt.Println()
 		wg.Done()
 	})
 
-	wg.Go(func() {
+	wg.Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		fmt.Println()
 		wg.Done()
 	})
@@ -143,18 +143,18 @@ type ServerContainer struct {
 
 func _() {
 	var s Server
-	s.wg.Go(func() {
+	s.wg.Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		print()
 	})
 
 	var sc ServerContainer
-	sc.serv.wg.Go(func() {
+	sc.serv.wg.Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		print()
 	})
 
 	var wg sync.WaitGroup
 	arr := [1]*sync.WaitGroup{&wg}
-	arr[0].Go(func() {
+	arr[0].Go(func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		print()
 	})
 }
