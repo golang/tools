@@ -23,7 +23,6 @@ import (
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/refactor/inline"
 )
@@ -115,7 +114,6 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 		Info:      callerPkg.TypesInfo(),
 		File:      callerPGF.File,
 		Call:      call,
-		Content:   callerPGF.Src,
 		CountUses: nil, // (use inefficient default implementation)
 	}
 
@@ -126,7 +124,7 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 
 	return callerPkg.FileSet(), &analysis.SuggestedFix{
 		Message:   fmt.Sprintf("inline call of %v", callee),
-		TextEdits: diffToTextEdits(callerPGF.Tok, diff.Bytes(callerPGF.Src, res.Content)),
+		TextEdits: res.Edits,
 	}, nil
 }
 

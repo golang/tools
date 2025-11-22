@@ -1,5 +1,5 @@
 Test that attempts to inline with caller or callee in a cgo-generated
-file are rejected.
+file are rejected. (This is just a special case of rejecting generated files.)
 
 -- go.mod --
 module testdata
@@ -15,7 +15,7 @@ import "C"
 
 func a() {
 	C.f() //@ inline(re"f", re"cannot inline cgo-generated functions")
-	g()   //@ inline(re"g", re`cannot inline calls from files that import "C"`)
+	g()   //@ inline(re"g", re`cannot inline calls from generated files`)
 }
 
 func g() {

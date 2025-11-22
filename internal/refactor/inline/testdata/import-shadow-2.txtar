@@ -31,10 +31,9 @@ func Two() {}
 -- fresult --
 package a
 
-import (
-	"testdata/b"
-	b0 "testdata/b"
-)
+import b0 "testdata/b"
+
+import "testdata/b"
 
 var x b.T
 
@@ -65,9 +64,7 @@ func E() {
 -- eresult --
 package d
 
-import (
-	log0 "log"
-)
+import log0 "log"
 
 func D() {
 	const log = "shadow"

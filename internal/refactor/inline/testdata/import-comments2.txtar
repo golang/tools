@@ -1,0 +1,71 @@
+Regression test for migration of comments in deleted imports (#67336).
+
+-- go.mod --
+module testdata
+go 1.20
+
+-- define/my/typ/foo.go --
+package typ
+type T int
+
+-- some/other/pkg/foo.go --
+package pkg
+import "context"
+import "testdata/define/my/typ"
+func Foo(typ.T) context.Context{ return nil }
+
+-- one/more/pkg/foo.go --
+package pkg
+func Bar() {}
+
+-- to/be/inlined/foo.go --
+package inlined
+
+import "context"
+import "testdata/some/other/pkg"
+import "testdata/define/my/typ"
+
+// inlineme
+func Baz(ctx context.Context) context.Context {
+	return pkg.Foo(typ.T(5))
+}
+
+-- b/c/foo.go --
+package c
+import (
+	"context"
+	"testdata/to/be/inlined"
+	"testdata/one/more/pkg"
+)
+
+const (
+	// This is a constant
+	someConst = 5
+)
+
+func foo() {
+	inlined.Baz(context.TODO()) //@inline(re"Baz", out)
+	pkg.Bar()
+}
+
+-- out --
+package c
+
+import (
+	"context"
+	"testdata/define/my/typ"
+	pkg0 "testdata/some/other/pkg"
+
+	"testdata/one/more/pkg"
+)
+
+const (
+	// This is a constant
+	someConst = 5
+)
+
+func foo() {
+	var _ context.Context = context.TODO()
+	pkg0.Foo(typ.T(5)) //@inline(re"Baz", out)
+	pkg.Bar()
+}

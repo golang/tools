@@ -49,9 +49,9 @@ package a // This is package a.
 import (
 	// This is an import of io.
 	"io"
+	"testdata/b"
 
 	// This is an import of c.
-	"testdata/b"
 	"testdata/c" // yes, of c
 )
 
@@ -80,11 +80,10 @@ func _() {
 -- noparens --
 package a // This is package a.
 
+import "testdata/b"
+
 // This is an import of c.
-import (
-	"testdata/b"
-	"testdata/c"
-)
+import "testdata/c"
 
 func _() {
 	var _ c.C

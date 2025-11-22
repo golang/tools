@@ -37,10 +37,9 @@ func B() {}
 -- result --
 package a
 
-import (
-	anotherb "testdata/another/b"
-	"testdata/b"
-)
+import "testdata/b"
+
+import anotherb "testdata/another/b"
 
 func _() {
 	b.B()

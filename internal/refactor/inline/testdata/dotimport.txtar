@@ -28,9 +28,7 @@ func _() {
 -- result --
 package c
 
-import (
-	"testdata/a"
-)
+import "testdata/a"
 
 func _() {
 	a.A() //@ inline(re"B", result)

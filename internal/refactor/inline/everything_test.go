@@ -115,12 +115,11 @@ func TestEverything(t *testing.T) {
 					t.Fatal(err)
 				}
 				caller := &inline.Caller{
-					Fset:    callerPkg.Fset,
-					Types:   callerPkg.Types,
-					Info:    callerPkg.TypesInfo,
-					File:    callerFile,
-					Call:    call,
-					Content: callerContent,
+					Fset:  callerPkg.Fset,
+					Types: callerPkg.Types,
+					Info:  callerPkg.TypesInfo,
+					File:  callerFile,
+					Call:  call,
 				}
 
 				// Analyze callee.
@@ -182,11 +181,15 @@ func TestEverything(t *testing.T) {
 						t.Log(err)
 						return
 					}
-					got := res.Content
+
+					got, err := applyEdits(caller.Types, caller.File.FileStart, callerContent, res.Edits)
+					if err != nil {
+						t.Fatalf("can't apply inliner edits: %v", err)
+					}
 
 					// Print the diff.
 					t.Logf("Got diff:\n%s",
-						diff.Unified("old", "new", string(callerContent), string(res.Content)))
+						diff.Unified("old", "new", string(callerContent), string(got)))
 
 					// Parse and type-check the transformed source.
 					f, err := parser.ParseFile(caller.Fset, callPosn.Filename, got, parser.SkipObjectResolution)

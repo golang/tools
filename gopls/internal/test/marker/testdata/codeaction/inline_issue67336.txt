@@ -1,6 +1,8 @@
 This is the test case from golang/go#67335, where the inlining resulted in bad
 formatting.
 
+The __unused__ import results in removal after a subsequent "organize imports" step.
+
 -- go.mod --
 module example.com
 
@@ -51,12 +53,12 @@ func _() {
 
 -- @inline/b/c/foo.go --
 package c
-
 import (
 	"context"
-	"example.com/define/my/typ"
+	
 	"example.com/one/more/pkg"
 	pkg0 "example.com/some/other/pkg"
+	"example.com/define/my/typ"
 )
 
 const (
@@ -66,6 +68,7 @@ const (
 
 func _() {
 	var _ context.Context = context.TODO()
-	pkg0.Foo(typ.T(5)) //@ codeaction("Baz", "refactor.inline.call", result=inline)
+pkg0.Foo(typ.T(5)) //@ codeaction("Baz", "refactor.inline.call", result=inline)
 	pkg.Bar()
 }
+

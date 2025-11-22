@@ -25,8 +25,10 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
+	"golang.org/x/tools/internal/analysis/driverutil"
 	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/expect"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/refactor/inline"
 	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/internal/testfiles"
@@ -101,7 +103,7 @@ func TestData(t *testing.T) {
 			// Report parse/type errors; they may be benign.
 			packages.Visit(pkgs, nil, func(pkg *packages.Package) {
 				for _, err := range pkg.Errors {
-					t.Log(err)
+					t.Logf("warning: %v", err)
 				}
 			})
 
@@ -212,12 +214,11 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 		for _, n := range path {
 			if call, ok := n.(*ast.CallExpr); ok {
 				caller = &inline.Caller{
-					Fset:    pkg.Fset,
-					Types:   pkg.Types,
-					Info:    pkg.TypesInfo,
-					File:    file,
-					Call:    call,
-					Content: content,
+					Fset:  pkg.Fset,
+					Types: pkg.Types,
+					Info:  pkg.TypesInfo,
+					File:  file,
+					Call:  call,
 				}
 				break
 			}
@@ -305,7 +306,10 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 	}
 
 	// Inline succeeded.
-	got := res.Content
+	got, err := applyEdits(caller.Types, caller.File.FileStart, content, res.Edits)
+	if err != nil {
+		return err
+	}
 	if want, ok := want.([]byte); ok {
 		got = append(bytes.TrimSpace(got), '\n')
 		want = append(bytes.TrimSpace(want), '\n')
@@ -318,7 +322,7 @@ func doInlineNote(logf func(string, ...any), pkg *packages.Package, file *ast.Fi
 			}
 		} else {
 			if diff := diff.Unified("want", "got", string(want), string(got)); diff != "" {
-				return fmt.Errorf("Inline returned wrong output:\n%s\nWant:\n%s\nDiff:\n%s",
+				return fmt.Errorf("Inline returned wrong output:\n-- got --\n%s\n-- want --\n%s\n-- diff --\n%s",
 					got, want, diff)
 			}
 		}
@@ -1903,12 +1907,11 @@ func runTests(t *testing.T, tests []testcase) {
 				}
 
 				caller := &inline.Caller{
-					Fset:    fset,
-					Types:   pkg,
-					Info:    info,
-					File:    callerFile,
-					Call:    call,
-					Content: []byte(callerContent),
+					Fset:  fset,
+					Types: pkg,
+					Info:  info,
+					File:  callerFile,
+					Call:  call,
 				}
 				check := checkNoMutation(caller.File)
 				defer check()
@@ -1938,7 +1941,10 @@ func runTests(t *testing.T, tests []testcase) {
 				t.Fatal(err)
 			}
 
-			gotContent := res.Content
+			gotContent, err := applyEdits(pkg, callerFile.FileStart, []byte(callerContent), res.Edits)
+			if err != nil {
+				t.Fatal(err)
+			}
 
 			// Compute a single-hunk line-based diff.
 			srcLines := strings.Split(callerContent, "\n")
@@ -2107,4 +2113,27 @@ func TestDeepHash(t *testing.T) {
 	if h1 == h2 {
 		t.Fatal("bad")
 	}
+}
+
+// applyEdits transforms content by applying the specified edits
+// to the file whose positions are defined by fset), reformatting the file, and
+// removing unused imports (using pkg for names of imported packages).
+func applyEdits(pkg *types.Package, fileStart token.Pos, content []byte, edits []refactor.Edit) ([]byte, error) {
+	dedits := make([]diff.Edit, len(edits))
+	for i, edit := range edits {
+		dedits[i] = diff.Edit{
+			Start: int(edit.Pos - fileStart),
+			End:   int(edit.End - fileStart),
+			New:   string(edit.NewText),
+		}
+	}
+	got, err := diff.ApplyBytes(content, dedits)
+	if err != nil {
+		return nil, err
+	}
+	got, err = driverutil.FormatSourceRemoveImports(pkg, got)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(got), nil
 }

@@ -45,10 +45,9 @@ func A() {
 -- result --
 package main
 
-import (
-	stringutil "example.com/string/util"
-	urlutil "example.com/url/util"
-)
+import urlutil "example.com/url/util"
+
+import stringutil "example.com/string/util"
 
 func main() {
 	stringutil.A()
