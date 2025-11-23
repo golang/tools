@@ -27,7 +27,7 @@ type titem struct {
 }
 
 var thedata = tdata{
-	fname: "cloud.google.com/go/longrunning@v0.4.1/foo.go",
+	fname: "cloud.google.com/go/!longrunning@v0.4.1/foo.go",
 	pkg:   "foo",
 	items: []titem{
 		// these need to be in alphabetical order
@@ -84,6 +84,9 @@ func TestLookup(t *testing.T) {
 	}
 	// get all the symbols
 	p := ix.Lookup("foo", "", true)
+	if len(p) > 0 && !strings.Contains(p[0].ImportPath, "Longrunning") {
+		t.Errorf("Failed to convert escaped path: %s", p[0].ImportPath)
+	}
 	if len(p) != len(thedata.items) {
 		t.Errorf("got %d possibilities for pkg foo, expected %d", len(p), len(thedata.items))
 	}
