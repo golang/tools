@@ -56,7 +56,7 @@ type Package struct {
 	Errors        []packages.Error          // must be set for packages in import cycles
 	DepsByImpPath map[ImportPath]PackageID  // may contain dups; empty ID => missing
 	DepsByPkgPath map[PackagePath]PackageID // values are unique and non-empty
-	Module        *packages.Module
+	Module        *packages.Module          // may be missing for std and cmd; see Go issue #65816.
 	DepsErrors    []*packagesinternal.PackageError
 	LoadDir       string // directory from which go/packages was run
 	Standalone    bool   // package synthesized for a standalone file (e.g. ignore-tagged)
