@@ -36,6 +36,24 @@ const (
 	maxVulnsToShow = 10
 )
 
+type vulncheckAction string
+
+const (
+	vulncheckActionYes    vulncheckAction = "Yes"
+	vulncheckActionNo     vulncheckAction = "No"
+	vulncheckActionAlways vulncheckAction = "Always"
+	vulncheckActionNever  vulncheckAction = "Never"
+	vulncheckActionEmpty  vulncheckAction = ""
+)
+
+type vulnupgradeAction string
+
+const (
+	vulnupgradeActionUpgradeAll vulnupgradeAction = "Upgrade All"
+	vulnupgradeActionIgnore     vulnupgradeAction = "Ignore"
+	vulnupgradeActionEmpty      vulnupgradeAction = ""
+)
+
 // computeGoModHash computes the SHA256 hash of the go.mod file's dependencies.
 // It only considers the Require, Exclude, and Replace directives and ignores
 // other parts of the file.
@@ -107,30 +125,32 @@ func (s *server) checkGoModDeps(ctx context.Context, uri protocol.DocumentURI) {
 		}
 
 		switch action {
-		case "Always":
+		case vulncheckActionAlways:
 			go s.handleVulncheck(ctx, uri)
-		case "Never":
+		case vulncheckActionNever:
 			return
-		case "":
+		case vulncheckActionEmpty:
 			// no previous preference stored, prompt the user.
 			fallthrough
 		default:
 			// invalid value, clear preference and prompt the user again.
-			action, err = showMessageRequest(ctx, s.client, protocol.Info, message, "Yes", "No", "Always", "Never")
+			choice, err := showMessageRequest(ctx, s.client, protocol.Info, message, string(vulncheckActionYes), string(vulncheckActionNo), string(vulncheckActionAlways), string(vulncheckActionNever))
 			if err != nil {
 				event.Error(ctx, "showing go.mod changed notification failed", err)
 				return
 			}
-			if action == "Always" || action == "Never" {
+			action = vulncheckAction(choice)
+			recordVulncheckAction(action)
+			if action == vulncheckActionAlways || action == vulncheckActionNever {
 				if err := setVulncheckPreference(action); err != nil {
 					event.Error(ctx, "writing vulncheck preference failed", err)
 					showMessage(ctx, s.client, protocol.Error, fmt.Sprintf("Failed to save vulncheck preference: %v", err))
 				}
 			}
-			if action == "Yes" || action == "Always" {
+			if action == vulncheckActionYes || action == vulncheckActionAlways {
 				go s.handleVulncheck(ctx, uri)
 			}
-			if action == "" {
+			if action == vulncheckActionEmpty {
 				// No user input gathered from prompt.
 				return
 			}
@@ -140,6 +160,28 @@ func (s *server) checkGoModDeps(ctx context.Context, uri protocol.DocumentURI) {
 			event.Error(ctx, "writing new go.mod hash to filecache failed", err)
 			return
 		}
+	}
+}
+
+func recordVulncheckAction(action vulncheckAction) {
+	switch action {
+	case vulncheckActionYes:
+		countVulncheckPromptYes.Inc()
+	case vulncheckActionNo:
+		countVulncheckPromptNo.Inc()
+	case vulncheckActionAlways:
+		countVulncheckPromptAlways.Inc()
+	case vulncheckActionNever:
+		countVulncheckPromptNever.Inc()
+	}
+}
+
+func recordVulncheckupgradeAction(action vulnupgradeAction) {
+	switch action {
+	case vulnupgradeActionUpgradeAll:
+		countVulncheckUpgradeAll.Inc()
+	case vulnupgradeActionIgnore:
+		countVulncheckUpgradeIgnore.Inc()
 	}
 }
 
@@ -200,9 +242,9 @@ func (s *server) handleVulncheck(ctx context.Context, uri protocol.DocumentURI) 
 		b.WriteString("Upgrading your Go version may address vulnerabilities in the standard library.")
 	}
 
-	actions := []string{"Ignore"}
+	actions := []string{string(vulnupgradeActionIgnore)}
 	if len(modulesToUpgrade) > 0 {
-		actions = append([]string{"Upgrade All"}, actions...)
+		actions = append([]string{string(vulnupgradeActionUpgradeAll)}, actions...)
 	}
 
 	action, err := showMessageRequest(ctx, s.client, protocol.Warning, b.String(), actions...)
@@ -210,8 +252,10 @@ func (s *server) handleVulncheck(ctx context.Context, uri protocol.DocumentURI) 
 		event.Error(ctx, "vulncheck remediation failed", err)
 		return
 	}
+	upgradeAction := vulnupgradeAction(action)
+	recordVulncheckupgradeAction(upgradeAction)
 
-	if action == "Upgrade All" {
+	if upgradeAction == vulnupgradeActionUpgradeAll {
 		if err := s.upgradeModules(ctx, snapshot, uri, modulesToUpgrade); err != nil {
 			event.Error(ctx, "upgrading modules failed", err)
 		}
@@ -325,7 +369,7 @@ type vulncheckConfig struct {
 	VulncheckMode string `json:"vulncheck"`
 }
 
-func getVulncheckPreference() (string, error) {
+func getVulncheckPreference() (vulncheckAction, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
@@ -342,10 +386,10 @@ func getVulncheckPreference() (string, error) {
 	if err := json.Unmarshal(content, &config); err != nil {
 		return "", err
 	}
-	return config.VulncheckMode, nil
+	return vulncheckAction(config.VulncheckMode), nil
 }
 
-func setVulncheckPreference(preference string) error {
+func setVulncheckPreference(preference vulncheckAction) error {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return err
@@ -355,7 +399,7 @@ func setVulncheckPreference(preference string) error {
 		return err
 	}
 	path := filepath.Join(goplsDir, "settings.json")
-	config := vulncheckConfig{VulncheckMode: preference}
+	config := vulncheckConfig{VulncheckMode: string(preference)}
 	content, err := json.Marshal(config)
 	if err != nil {
 		return err

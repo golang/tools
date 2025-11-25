@@ -334,7 +334,7 @@ func TestVulncheckPreference(t *testing.T) {
 		t.Errorf("got %q, want empty string", pref)
 	}
 
-	want := "Always"
+	want := vulncheckActionAlways
 	if err := setVulncheckPreference(want); err != nil {
 		t.Fatalf("setVulncheckPreference() failed: %v", err)
 	}

@@ -43,3 +43,16 @@ var (
 
 	countRemoveStructTags = counter.New("gopls/structtags:remove")
 )
+
+// Proposed counters to evaluate vulncheck_prompt usage patterns.
+var (
+	// Vulncheck prompt user choices.
+	countVulncheckPromptYes    = counter.New("gopls/vulncheck-prompt/choice:yes")
+	countVulncheckPromptNo     = counter.New("gopls/vulncheck-prompt/choice:no")
+	countVulncheckPromptAlways = counter.New("gopls/vulncheck-prompt/choice:always")
+	countVulncheckPromptNever  = counter.New("gopls/vulncheck-prompt/choice:never")
+
+	// Vulncheck prompt upgrade choice.
+	countVulncheckUpgradeAll    = counter.New("gopls/vulncheck-prompt/upgrade:yes")
+	countVulncheckUpgradeIgnore = counter.New("gopls/vulncheck-prompt/upgrade:no")
+)
