@@ -7,6 +7,7 @@ package a
 // This file tests facts produced by ctrlflow.
 
 import (
+	"hash/maphash"
 	"log"
 	"os"
 	"runtime"
@@ -191,4 +192,12 @@ func osexit() { // want osexit:"noReturn"
 	print(1)
 	os.Exit(0)
 	print(2)
+}
+
+func intrinsic() { // (no fact)
+
+	// Comparable calls abi.EscapeNonString, whose body appears to panic;
+	// but that's a lie, as EscapeNonString is a compiler intrinsic.
+	// (go1.24 used a different intrinsic, maphash.escapeForHash.)
+	maphash.Comparable[int](maphash.Seed{}, 0)
 }
