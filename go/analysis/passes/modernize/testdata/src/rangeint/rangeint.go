@@ -271,3 +271,19 @@ func issue74687() {
 		println(i)
 	}
 }
+
+func issue76470() {
+	var i, j int
+UsedAfter:
+	for i = 0; i < 10; i++ { // nope: i is accessed after the loop
+		break UsedAfter
+	}
+	if i == 9 {
+		panic("Modernizer changes behavior")
+	}
+
+NotUsedAfter:
+	for j = 0; j < 10; j++ { // want "for loop can be modernized using range over int"
+		break NotUsedAfter
+	}
+}
