@@ -7,6 +7,8 @@ package diff
 import (
 	"fmt"
 	"log"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -249,3 +251,51 @@ func (u unified) String() string {
 	}
 	return b.String()
 }
+
+// ApplyUnified applies the unified diffs.
+func ApplyUnified(udiffs, bef string) (string, error) {
+	before := strings.Split(bef, "\n")
+	unif := strings.Split(udiffs, "\n")
+	var got []string
+	left := 0
+	// parse and apply the unified diffs
+	for _, l := range unif {
+		if len(l) == 0 {
+			continue // probably the last line (from Split)
+		}
+		switch l[0] {
+		case '@': // The @@ line
+			m := atregexp.FindStringSubmatch(l)
+			fromLine, err := strconv.Atoi(m[1])
+			if err != nil {
+				return "", fmt.Errorf("missing line number in %q", l)
+			}
+			// before is a slice, so0-based; fromLine is 1-based
+			for ; left < fromLine-1; left++ {
+				got = append(got, before[left])
+			}
+		case '+': // add this line
+			if strings.HasPrefix(l, "+++ ") {
+				continue
+			}
+			got = append(got, l[1:])
+		case '-': // delete this line
+			if strings.HasPrefix(l, "--- ") {
+				continue
+			}
+			left++
+		case ' ':
+			return "", fmt.Errorf("unexpected line %q", l)
+		default:
+			return "", fmt.Errorf("impossible unified %q", udiffs)
+		}
+	}
+	// copy any remaining lines
+	for ; left < len(before); left++ {
+		got = append(got, before[left])
+	}
+	return strings.Join(got, "\n"), nil
+}
+
+// The first number in the @@ lines is the line number in the 'before' data
+var atregexp = regexp.MustCompile(`@@ -(\d+).* @@`)

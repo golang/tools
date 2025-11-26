@@ -1458,22 +1458,13 @@ func checkChangedFiles(mark marker, changed map[string][]byte, golden *Golden) {
 	}
 }
 
-// checkDiffs computes unified diffs for each changed file, and compares with
-// the diff content stored in the given golden directory.
+// checkDiffs checks that the diff content stored in the given golden directory
+// converts the orginal contents into the changed contents.
+// (This logic is strange because hundreds of existing marker tests were created
+// containing a modified version of unified diffs.)
 func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
-	diffs := make(map[string]string)
 	for name, after := range changed {
 		before := mark.run.env.FileContent(name)
-		// TODO(golang/go#64023): switch back to diff.Strings.
-		// The attached issue is only one obstacle to switching.
-		// Another is that different diff algorithms produce
-		// different results, so if we commit diffs in test
-		// expectations, then we need to either (1) state
-		// which diff implementation they use and never change
-		// it, or (2) don't compare diffs, but instead apply
-		// the "want" diff and check that it produces the
-		// "got" output. Option 2 is more robust, as it allows
-		// the test expectation to use any valid diff.
 		edits := myers.ComputeEdits(before, string(after))
 		d, err := diff.ToUnified("before", "after", before, edits, 0)
 		if err != nil {
@@ -1481,23 +1472,36 @@ func checkDiffs(mark marker, changed map[string][]byte, golden *Golden) {
 			log.Fatalf("internal error in diff.ToUnified: %v", err)
 		}
 		// Trim the unified header from diffs, as it is unnecessary and repetitive.
+		// (an artifact of ToUnified, but not stored in the marker files)
 		difflines := strings.Split(d, "\n")
+		var got string
 		if len(difflines) >= 2 && strings.HasPrefix(difflines[1], "+++") {
-			diffs[name] = strings.Join(difflines[2:], "\n")
+			got = strings.Join(difflines[2:], "\n")
 		} else {
-			diffs[name] = d
+			got = d // "" in packagedecl.txt:147
 		}
-	}
-	// Check changed files match expectations.
-	for filename, got := range diffs {
-		if want, ok := golden.Get(mark.T(), filename, []byte(got)); !ok {
+		// the call to Get is so that the -update flag will update the test.
+		// normally it just returns 'got'.
+		if tdiffs, ok := golden.Get(mark.T(), name, []byte(got)); !ok {
 			mark.errorf("%s: unexpected change to file %s; got diff:\n%s",
-				mark.note.Name, filename, got)
-		} else if got != string(want) {
-			mark.errorf("%s: wrong diff for %s:\n\ngot:\n%s\n\nwant:\n%s\n",
-				mark.note.Name, filename, got, want)
+				mark.note.Name, name, got)
+			return
+		} else {
+			// restore the ToUnifed header lines deleted above
+			// before calling ApplyUnified
+			diffsFromTest := "--- \n+++ \n" + string(tdiffs)
+			want, err := diff.ApplyUnified(diffsFromTest, before)
+			if err != nil {
+				mark.errorf("%s: ApplyUnified(%q,%q) failed: %v",
+					mark.note.Name, before, after, err)
+			}
+			if want != string(after) {
+				mark.errorf("%s: got\n%q expected\n%q",
+					mark.note.Name, want, string(after))
+			}
 		}
 	}
+
 	// Report unmet expectations.
 	for filename := range golden.data {
 		if _, ok := changed[filename]; !ok {
