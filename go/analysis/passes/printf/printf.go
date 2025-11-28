@@ -247,7 +247,7 @@ func findPrintLike(pass *analysis.Pass, res *Result) {
 			switch lhs := lhs.(type) {
 			case *ast.Ident:
 				// variable: wrapf = func(...)
-				v = info.ObjectOf(lhs).(*types.Var)
+				v, _ = info.ObjectOf(lhs).(*types.Var)
 			case *ast.SelectorExpr:
 				if sel, ok := info.Selections[lhs]; ok {
 					// struct field: x.wrapf = func(...)
