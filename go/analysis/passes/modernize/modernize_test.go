@@ -55,7 +55,7 @@ func TestNewExpr(t *testing.T) {
 }
 
 func TestOmitZero(t *testing.T) {
-	RunWithSuggestedFixes(t, TestData(), modernize.OmitZeroAnalyzer, "omitzero")
+	RunWithSuggestedFixes(t, TestData(), modernize.OmitZeroAnalyzer, "omitzero/...")
 }
 
 func TestRangeInt(t *testing.T) {

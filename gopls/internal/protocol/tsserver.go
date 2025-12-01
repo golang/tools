@@ -28,15 +28,14 @@ type Server interface {
 	// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#callHierarchy_outgoingCalls
 	OutgoingCalls(context.Context, *CallHierarchyOutgoingCallsParams) ([]CallHierarchyOutgoingCall, error)
 	// To support microsoft/language-server-protocol#1164, the language server
-	// need to read the client-supplied form answers and either returns a
-	// CodeAction with errors in the form fields surfacing the error to the
-	// client, or a CodeAction with properties the language client is waiting
-	// for (e.g. edits, commands).
+	// need to read the form with client-supplied answers and either returns a
+	// CodeAction with errors in the form surfacing the error to the client, or a
+	// CodeAction with properties the language client is waiting for (e.g. edits,
+	// commands).
 	//
 	// The language client may call "codeAction/resolve" if the language server
 	// returns a CodeAction with errors or try asking the user for completing the
 	// form again.
-	//
 	// The language client may call "codeAction/resolve" multiple times with user
 	// filled (re-filled) answers in the form until it obtains a CodeAction with
 	// properties (e.g. edits, commands) it's waiting for.
