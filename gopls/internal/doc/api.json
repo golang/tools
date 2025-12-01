@@ -1576,7 +1576,7 @@
 						},
 						{
 							"Name": "\"omitzero\"",
-							"Doc": "suggest replacing omitempty with omitzero for struct fields\n\nThe omitzero analyzer identifies uses of the `omitempty` JSON struct tag on\nfields that are themselves structs. The `omitempty` tag has no effect on\nstruct-typed fields. The analyzer offers two suggestions: either remove the\ntag, or replace it with `omitzero` (added in Go 1.24), which correctly\nomits the field if the struct value is zero.\n\nReplacing `omitempty` with `omitzero` is a change in behavior. The\noriginal code would always encode the struct field, whereas the\nmodified code will omit it if it is a zero-value.",
+							"Doc": "suggest replacing omitempty with omitzero for struct fields\n\nThe omitzero analyzer identifies uses of the `omitempty` JSON struct\ntag on fields that are themselves structs. For struct-typed fields,\nthe `omitempty` tag has no effect on the behavior of json.Marshal and\njson.Unmarshal. The analyzer offers two suggestions: either remove the\ntag, or replace it with `omitzero` (added in Go 1.24), which correctly\nomits the field if the struct value is zero.\n\nHowever, some other serialization packages (notably kubebuilder, see\nhttps://book.kubebuilder.io/reference/markers.html) may have their own\ninterpretation of the `json:\",omitzero\"` tag, so removing it may affect\nprogram behavior. For this reason, the omitzero modernizer will not\nmake changes in any package that contains +kubebuilder annotations.\n\nReplacing `omitempty` with `omitzero` is a change in behavior. The\noriginal code would always encode the struct field, whereas the\nmodified code will omit it if it is a zero-value.",
 							"Default": "true",
 							"Status": ""
 						},
@@ -3479,7 +3479,7 @@
 		},
 		{
 			"Name": "omitzero",
-			"Doc": "suggest replacing omitempty with omitzero for struct fields\n\nThe omitzero analyzer identifies uses of the `omitempty` JSON struct tag on\nfields that are themselves structs. The `omitempty` tag has no effect on\nstruct-typed fields. The analyzer offers two suggestions: either remove the\ntag, or replace it with `omitzero` (added in Go 1.24), which correctly\nomits the field if the struct value is zero.\n\nReplacing `omitempty` with `omitzero` is a change in behavior. The\noriginal code would always encode the struct field, whereas the\nmodified code will omit it if it is a zero-value.",
+			"Doc": "suggest replacing omitempty with omitzero for struct fields\n\nThe omitzero analyzer identifies uses of the `omitempty` JSON struct\ntag on fields that are themselves structs. For struct-typed fields,\nthe `omitempty` tag has no effect on the behavior of json.Marshal and\njson.Unmarshal. The analyzer offers two suggestions: either remove the\ntag, or replace it with `omitzero` (added in Go 1.24), which correctly\nomits the field if the struct value is zero.\n\nHowever, some other serialization packages (notably kubebuilder, see\nhttps://book.kubebuilder.io/reference/markers.html) may have their own\ninterpretation of the `json:\",omitzero\"` tag, so removing it may affect\nprogram behavior. For this reason, the omitzero modernizer will not\nmake changes in any package that contains +kubebuilder annotations.\n\nReplacing `omitempty` with `omitzero` is a change in behavior. The\noriginal code would always encode the struct field, whereas the\nmodified code will omit it if it is a zero-value.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#omitzero",
 			"Default": true
 		},
