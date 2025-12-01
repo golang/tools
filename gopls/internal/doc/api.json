@@ -1767,6 +1767,12 @@
 							"Status": ""
 						},
 						{
+							"Name": "\"unsafefuncs\"",
+							"Doc": "replace unsafe pointer arithmetic with function calls\n\nThe unsafefuncs analyzer simplifies pointer arithmetic expressions by\nreplacing them with calls to helper functions such as unsafe.Add,\nadded in Go 1.17.\n\nExample:\n\n\tunsafe.Pointer(uintptr(ptr) + uintptr(n))\n\nwhere ptr is an unsafe.Pointer, is replaced by:\n\n\tunsafe.Add(ptr, n)",
+							"Default": "true",
+							"Status": ""
+						},
+						{
 							"Name": "\"unsafeptr\"",
 							"Doc": "check for invalid conversions of uintptr to unsafe.Pointer\n\nThe unsafeptr analyzer reports likely incorrect uses of unsafe.Pointer\nto convert integers to pointers. A conversion from uintptr to\nunsafe.Pointer is invalid if it implies that there is a uintptr-typed\nword in memory that holds a pointer value, because that word will be\ninvisible to stack copying and to the garbage collector.",
 							"Default": "true",
@@ -3667,6 +3673,12 @@
 			"Name": "unreachable",
 			"Doc": "check for unreachable code\n\nThe unreachable analyzer finds statements that execution can never reach\nbecause they are preceded by a return statement, a call to panic, an\ninfinite loop, or similar constructs.",
 			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unreachable",
+			"Default": true
+		},
+		{
+			"Name": "unsafefuncs",
+			"Doc": "replace unsafe pointer arithmetic with function calls\n\nThe unsafefuncs analyzer simplifies pointer arithmetic expressions by\nreplacing them with calls to helper functions such as unsafe.Add,\nadded in Go 1.17.\n\nExample:\n\n\tunsafe.Pointer(uintptr(ptr) + uintptr(n))\n\nwhere ptr is an unsafe.Pointer, is replaced by:\n\n\tunsafe.Add(ptr, n)",
+			"URL": "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#unsafefuncs",
 			"Default": true
 		},
 		{

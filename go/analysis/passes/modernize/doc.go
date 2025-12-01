@@ -482,6 +482,22 @@ with a single call to t.Context(), which was added in Go 1.24.
 This change is only suggested if the `cancel` function is not used
 for any other purpose.
 
+# Analyzer unsafefuncs
+
+unsafefuncs: replace unsafe pointer arithmetic with function calls
+
+The unsafefuncs analyzer simplifies pointer arithmetic expressions by
+replacing them with calls to helper functions such as unsafe.Add,
+added in Go 1.17.
+
+Example:
+
+	unsafe.Pointer(uintptr(ptr) + uintptr(n))
+
+where ptr is an unsafe.Pointer, is replaced by:
+
+	unsafe.Add(ptr, n)
+
 # Analyzer waitgroup
 
 waitgroup: replace wg.Add(1)/go/wg.Done() with wg.Go

@@ -4225,6 +4225,24 @@ Default: on.
 
 Package documentation: [unreachable](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/unreachable)
 
+<a id='unsafefuncs'></a>
+## `unsafefuncs`: replace unsafe pointer arithmetic with function calls
+
+The unsafefuncs analyzer simplifies pointer arithmetic expressions by replacing them with calls to helper functions such as unsafe.Add, added in Go 1.17.
+
+Example:
+
+	unsafe.Pointer(uintptr(ptr) + uintptr(n))
+
+where ptr is an unsafe.Pointer, is replaced by:
+
+	unsafe.Add(ptr, n)
+
+
+Default: on.
+
+Package documentation: [unsafefuncs](https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#unsafefuncs)
+
 <a id='unsafeptr'></a>
 ## `unsafeptr`: check for invalid conversions of uintptr to unsafe.Pointer
 

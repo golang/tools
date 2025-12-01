@@ -109,6 +109,10 @@ func TestTestingContext(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.TestingContextAnalyzer, "testingcontext")
 }
 
+func TestUnsafeFuncs(t *testing.T) {
+	RunWithSuggestedFixes(t, TestData(), goplsexport.UnsafeFuncsModernizer, "unsafefuncs")
+}
+
 func TestWaitGroup(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.WaitGroupAnalyzer, "waitgroup")
 }

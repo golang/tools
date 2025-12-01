@@ -53,6 +53,7 @@ var Suite = []*analysis.Analyzer{
 	StringsSeqAnalyzer,
 	StringsBuilderAnalyzer,
 	TestingContextAnalyzer,
+	unsafeFuncsAnalyzer,
 	WaitGroupAnalyzer,
 }
 
