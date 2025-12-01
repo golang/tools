@@ -750,3 +750,34 @@ func Bar() {}
 			env.RegexpSearch(unsafePath, `\[()Sizeof\]`))
 	})
 }
+func TestUndefinedLabel_Issue76625(t *testing.T) {
+	const src = `
+-- go.mod --
+module mod.com
+
+go 1.22
+-- a.go --
+package a
+
+func UndefinedLabel() {
+	for i := range 10 {
+		if i > 2 {
+			goto undefinedLabel
+		}
+	}
+}
+`
+	Run(t, src, func(t *testing.T, env *Env) {
+		env.OpenFile("a.go")
+		expectedErr := "undefined label"
+		gotoUndefined := env.RegexpSearch("a.go", `goto`)
+		_, err := env.Editor.Definitions(env.Ctx, gotoUndefined)
+		if err == nil {
+			t.Fatalf("request succeeded unexpectedly, want error %s", err)
+		}
+		if !strings.Contains(err.Error(), expectedErr) {
+			t.Fatalf("received unexpected error message %s, want %s", err, expectedErr)
+		}
+	})
+
+}
