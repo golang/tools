@@ -700,9 +700,9 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 			case *types.Func:
 				sig := obj.Signature()
 				if sig.Recv() != nil {
-					tname := typeToObject(sig.Recv().Type())
-					if tname != nil { // beware typed nil
-						recv = tname
+					tnames := typeToObjects(sig.Recv().Type())
+					if len(tnames) == 1 { // beware empty slice
+						recv = tnames[0]
 					}
 				}
 			case *types.Var:

@@ -387,6 +387,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
+		}
 		resp, err := server.Completion(ctx, &params)
 		if err != nil {
 			return nil, true, err
@@ -398,6 +403,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
+		}
 		resp, err := server.Declaration(ctx, &params)
 		if err != nil {
 			return nil, true, err
@@ -408,6 +418,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		var params DefinitionParams
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
+		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
 		}
 		resp, err := server.Definition(ctx, &params)
 		if err != nil {
@@ -474,6 +489,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
+		}
 		resp, err := server.DocumentHighlight(ctx, &params)
 		if err != nil {
 			return nil, true, err
@@ -529,6 +549,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
+		}
 		resp, err := server.Hover(ctx, &params)
 		if err != nil {
 			return nil, true, err
@@ -539,6 +564,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		var params ImplementationParams
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
+		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
 		}
 		resp, err := server.Implementation(ctx, &params)
 		if err != nil {
@@ -562,6 +592,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
+		}
 		resp, err := server.InlineCompletion(ctx, &params)
 		if err != nil {
 			return nil, true, err
@@ -584,6 +619,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
+		}
 		resp, err := server.LinkedEditingRange(ctx, &params)
 		if err != nil {
 			return nil, true, err
@@ -594,6 +634,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		var params MonikerParams
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
+		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
 		}
 		resp, err := server.Moniker(ctx, &params)
 		if err != nil {
@@ -617,6 +662,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
+		}
 		resp, err := server.PrepareCallHierarchy(ctx, &params)
 		if err != nil {
 			return nil, true, err
@@ -628,6 +678,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
+		}
 		resp, err := server.PrepareRename(ctx, &params)
 		if err != nil {
 			return nil, true, err
@@ -638,6 +693,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		var params TypeHierarchyPrepareParams
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
+		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
 		}
 		resp, err := server.PrepareTypeHierarchy(ctx, &params)
 		if err != nil {
@@ -671,6 +731,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		var params ReferenceParams
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
+		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
 		}
 		resp, err := server.References(ctx, &params)
 		if err != nil {
@@ -738,6 +803,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
 		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
+		}
 		resp, err := server.SignatureHelp(ctx, &params)
 		if err != nil {
 			return nil, true, err
@@ -748,6 +818,11 @@ func ServerDispatchCall(ctx context.Context, server Server, method string, raw j
 		var params TypeDefinitionParams
 		if err := UnmarshalJSON(raw, &params); err != nil {
 			return nil, true, fmt.Errorf("%w: %s", jsonrpc2.ErrParse, err)
+		}
+		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %v is outside the provided range %v.", params.Position, params.Range)
+			}
 		}
 		resp, err := server.TypeDefinition(ctx, &params)
 		if err != nil {

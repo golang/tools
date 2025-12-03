@@ -950,6 +950,7 @@ func (e *Editor) TypeDefinitions(ctx context.Context, loc protocol.Location) ([]
 	params := &protocol.TypeDefinitionParams{}
 	params.TextDocument.URI = loc.URI
 	params.Position = loc.Range.Start
+	params.Range = loc.Range
 
 	return e.Server.TypeDefinition(ctx, params)
 }

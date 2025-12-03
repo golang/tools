@@ -14,8 +14,8 @@ func _() {
 		value Struct
 		point *Struct
 	)
-	_ = value //@typedef("value", Struct)
-	_ = point //@typedef("point", Struct)
+	_ = value //@typedef(re"value()", Struct)
+	_ = point //@typedef(re"point()", Struct)
 
 	var (
 		array   [3]Struct
@@ -23,10 +23,10 @@ func _() {
 		ch      chan Struct
 		complex [3]chan *[5][]Int
 	)
-	_ = array   //@typedef("array", Struct)
-	_ = slice   //@typedef("slice", Struct)
-	_ = ch      //@typedef("ch", Struct)
-	_ = complex //@typedef("complex", Int)
+	_ = array   //@typedef(re"array()", Struct)
+	_ = slice   //@typedef(re"slice()", Struct)
+	_ = ch      //@typedef(re"ch()", Struct)
+	_ = complex //@typedef(re"complex()", Int)
 
 	var s struct {
 		x struct {
@@ -36,8 +36,8 @@ func _() {
 			}
 		}
 	}
-	_ = s.x.xx.field1 //@typedef("field1", Struct)
-	_ = s.x.xx.field2 //@typedef("field2", Int)
+	_ = s.x.xx.field1 //@typedef(re"field1()", Struct)
+	_ = s.x.xx.field2 //@typedef(re"field2()", Int)
 }
 
 func F1() Int                              { return 0 }
@@ -48,15 +48,15 @@ func F5() (int, float64, error, Struct)    { return 0, 0, nil, Struct{} }
 func F6() (int, float64, ***Struct, error) { return 0, 0, nil, nil }
 
 func _() {
-	F1() //@typedef("F1", Int)
-	F2() //@typedef("F2", Int)
-	F3() //@typedef("F3", Struct)
-	F4() //@typedef("F4", Int)
-	F5() //@typedef("F5", Struct)
-	F6() //@typedef("F6", Struct)
+	F1() //@typedef(re"F1()", Int)
+	F2() //@typedef(re"F2()", Int)
+	F3() //@typedef(re"F3()", BUILTIN, Struct)
+	F4() //@typedef(re"F4()", BUILTIN, Int)
+	F5() //@typedef(re"F5()", BUILTIN, Struct)
+	F6() //@typedef(re"F6()", BUILTIN, Struct)
 
 	f := func() Int { return 0 }
-	f() //@typedef("f", Int)
+	f() //@typedef(re"f()", Int)
 }
 
 // https://github.com/golang/go/issues/38589#issuecomment-620350922
@@ -64,7 +64,7 @@ func _() {
 	type myFunc func(int) Int //@loc(myFunc, "myFunc")
 
 	var foo myFunc
-	_ = foo() //@typedef("foo", myFunc), diag(")", re"not enough arguments")
+	_ = foo() //@typedef(re"foo()", myFunc), diag(")", re"not enough arguments")
 }
 
 func _() {
@@ -73,21 +73,21 @@ func _() {
 	// In this example it's the r-paren of a call expr.
 	func() Struct {
 		panic(0)
-	}() //@typedef(")", Struct)
+	}() //@typedef(re"\\)()", Struct)
 
 	// And in this one, it's the composite literal enclosing the
 	// KeyValueExpr denoted by the colon (which must not be adjacent
 	// to either they key or the value!).
-	_ = Struct{Field  :  ""} //@typedef(":", Struct)
+	_ = Struct{Field  :  ""} //@typedef(re":", Struct)
 }
 
 // edge case: type-switch implicits.
 // y in "switch y" has no type; use x instead.
 func _(x any) {
-	switch y := x.(type) { //@typedef("y", BUILTIN)
+	switch y := x.(type) { //@typedef(re"y()", BUILTIN)
 	case Int:
-		_ = y //@typedef("y", Int)
+		_ = y //@typedef(re"y()", Int)
 	case Struct:
-		_ = y //@typedef("y", Struct)
+		_ = y //@typedef(re"y()", Struct)
 	}
 }

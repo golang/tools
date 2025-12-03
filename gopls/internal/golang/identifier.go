@@ -62,49 +62,32 @@ func searchForEnclosing(info *types.Info, curIdent inspector.Cursor) *types.Type
 	return exported
 }
 
-// typeToObject returns the relevant type name for the given type, after
-// unwrapping pointers, arrays, slices, channels, and function signatures with
-// a single non-error result, and ignoring built-in named types.
-func typeToObject(typ types.Type) *types.TypeName {
+// typeToObjects returns the underlying type name objects for the given type.
+// It unwraps composite types (pointers, slices, etc), and accumulates names
+// from each parameter of a function type
+func typeToObjects(typ types.Type) []*types.TypeName {
 	switch typ := typ.(type) {
 	case *types.Alias:
-		return typ.Obj()
+		return []*types.TypeName{typ.Origin().Obj()}
 	case *types.Named:
-		// TODO(rfindley): this should use typeparams.NamedTypeOrigin.
-		return typ.Obj()
+		return []*types.TypeName{typ.Origin().Obj()}
 	case *types.Pointer:
-		return typeToObject(typ.Elem())
+		return typeToObjects(typ.Elem())
 	case *types.Array:
-		return typeToObject(typ.Elem())
+		return typeToObjects(typ.Elem())
 	case *types.Slice:
-		return typeToObject(typ.Elem())
+		return typeToObjects(typ.Elem())
 	case *types.Chan:
-		return typeToObject(typ.Elem())
-	case *types.Signature:
-		// Try to find a return value of a named type. If there's only one
-		// such value, jump to its type definition.
-		var res *types.TypeName
-
-		results := typ.Results()
-		for v := range results.Variables() {
-			obj := typeToObject(v.Type())
-			if obj == nil || hasErrorType(obj) {
-				// Skip builtins. TODO(rfindley): should comparable be handled here as well?
-				continue
-			}
-			if res != nil {
-				// The function/method must have only one return value of a named type.
-				return nil
-			}
-
-			res = obj
+		return typeToObjects(typ.Elem())
+	case *types.Tuple:
+		var res []*types.TypeName
+		for v := range typ.Variables() {
+			res = append(res, typeToObjects(v.Type())...)
 		}
 		return res
+	case *types.Signature:
+		return typeToObjects(typ.Results())
 	default:
 		return nil
 	}
-}
-
-func hasErrorType(obj types.Object) bool {
-	return types.IsInterface(obj.Type()) && obj.Pkg() == nil && obj.Name() == "error"
 }

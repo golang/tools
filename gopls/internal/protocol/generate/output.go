@@ -90,7 +90,19 @@ func genDecl(model *Model, method string, param, result *Type, dir string) {
 	}
 }
 
-func genCase(_ *Model, method string, param, result *Type, dir string) {
+func genCase(model *Model, method string, param, result *Type, dir string) {
+	extends := func(x, y string) bool {
+		for _, struc := range model.Structures {
+			if struc.Name == x {
+				if contains := slices.ContainsFunc(struc.Extends, func(t *Type) bool {
+					return t.Name == y
+				}); contains {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	out := new(bytes.Buffer)
 	fmt.Fprintf(out, "\tcase %q:\n", method)
 	var p string
@@ -106,6 +118,19 @@ func genCase(_ *Model, method string, param, result *Type, dir string) {
 		out.WriteString("\t\tif err := UnmarshalJSON(raw, &params); err != nil {\n")
 		out.WriteString("\t\t\treturn nil, true, fmt.Errorf(\"%%w: %%s\", jsonrpc2.ErrParse, err)\n\t\t}\n")
 		p = ", &params"
+
+		// If the parameter extends the TextDocumentPositionParam, verify the
+		// position is within the provided range.
+		if extends(nm, "TextDocumentPositionParams") {
+			out.WriteString(`		if params.Range != (Range{}) {
+			if !params.Range.Contains(params.Position) {
+				return nil, true, fmt.Errorf("position %%v is outside the provided range %%v.", params.Position, params.Range)
+			}
+		}
+`)
+
+		}
+
 	}
 	if notNil(result) {
 		fmt.Fprintf(out, "\t\tresp, err := %%s.%s(ctx%s)\n", fname, p)

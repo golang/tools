@@ -54,10 +54,23 @@ func (s *server) TypeDefinition(ctx context.Context, params *protocol.TypeDefini
 	if err != nil {
 		return nil, err
 	}
+
+	var rng protocol.Range
+	if params.Range == (protocol.Range{}) {
+		// No selection range was provided.
+		// Default to an empty range at the position.
+		rng = protocol.Range{
+			Start: params.Position,
+			End:   params.Position,
+		}
+	} else {
+		rng = params.Range
+	}
+
 	defer release()
 	switch kind := snapshot.FileKind(fh); kind {
 	case file.Go:
-		return golang.TypeDefinition(ctx, snapshot, fh, params.Position)
+		return golang.TypeDefinition(ctx, snapshot, fh, rng)
 	default:
 		return nil, fmt.Errorf("can't find type definitions for file type %s", kind)
 	}

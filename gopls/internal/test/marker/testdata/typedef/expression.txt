@@ -1,0 +1,26 @@
+This test checks textDocument/typeDefinition over a range reveals the expression type.
+
+-- go.mod --
+module mod.com
+
+go 1.19
+
+-- a/a.go --
+package a
+
+import "mod.com/b"
+
+func foo() (b.Bar, b.Baz, error) {
+    return b.Bar{}, "", nil
+}
+
+func main() {
+    _, _, _ = foo()//@typedef("foo()", Bar, Baz, BUILTIN)
+}
+
+-- b/b.go --
+package b
+
+type Bar struct {}//@loc(Bar, "Bar")
+
+type Baz string//@loc(Baz, "Baz")
