@@ -75,6 +75,12 @@ func TestData(t *testing.T) {
 				testenv.NeedsTool(t, "cgo")
 			}
 
+			// Some tests need specific Go versions.
+			// TODO(adonovan): remove when go1.26 is assured.
+			if strings.HasSuffix(t.Name(), "newexpr.txtar") {
+				testenv.NeedsGo1Point(t, 26)
+			}
+
 			// Extract archive to temporary tree.
 			ar, err := txtar.ParseFile(file)
 			if err != nil {
