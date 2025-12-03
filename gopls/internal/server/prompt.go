@@ -304,20 +304,9 @@ Would you like to enable Go telemetry?
 `
 	}
 	// TODO(rfindley): investigate a "tell me more" action in combination with ShowDocument.
-	params := &protocol.ShowMessageRequestParams{
-		Type:    protocol.Info,
-		Message: prompt,
-		Actions: []protocol.MessageActionItem{
-			{Title: TelemetryYes},
-			{Title: TelemetryNo},
-		},
-	}
-
-	item, err := s.client.ShowMessageRequest(ctx, params)
+	action, err := showMessageRequest(ctx, s.client, protocol.Info, prompt, TelemetryYes, TelemetryNo)
 	if err != nil {
 		errorf("ShowMessageRequest failed: %v", err)
-		// Defensive: ensure item == nil for the logic below.
-		item = nil
 	}
 
 	message := func(typ protocol.MessageType, msg string) {
@@ -328,12 +317,12 @@ Would you like to enable Go telemetry?
 	}
 
 	result := pFailed
-	if item == nil {
+	if action == "" {
 		// e.g. dialog was dismissed
 		errorf("no response")
 	} else {
 		// Response matches MessageActionItem.Title.
-		switch item.Title {
+		switch action {
 		case TelemetryYes:
 			result = pYes
 			if err := s.setTelemetryMode("on"); err == nil {
@@ -347,14 +336,45 @@ Would you like to enable Go telemetry?
 		case TelemetryNo:
 			result = pNo
 		default:
-			errorf("unrecognized response %q", item.Title)
-			message(protocol.Error, fmt.Sprintf("Unrecognized response %q", item.Title))
+			errorf("unrecognized response %q", action)
+			message(protocol.Error, fmt.Sprintf("Unrecognized response %q", action))
 		}
 	}
 	resultContent := fmt.Appendf(nil, "%s %d %d %d", result, attempts, creationTime, token)
 	if err := os.WriteFile(promptFile, resultContent, 0666); err != nil {
 		errorf("error writing result state to prompt file: %v", err)
 	}
+}
+
+// showMessageRequest causes the client to show a prompt that the user can respond to.
+// It returns the title of the action the user selected, or "" if the user dismissed the prompt.
+func showMessageRequest(ctx context.Context, cli protocol.Client, typ protocol.MessageType, message string, actions ...string) (string, error) {
+	var actionItems []protocol.MessageActionItem
+	for _, action := range actions {
+		actionItems = append(actionItems, protocol.MessageActionItem{Title: action})
+	}
+	params := &protocol.ShowMessageRequestParams{
+		Type:    typ,
+		Message: message,
+		Actions: actionItems,
+	}
+	// Timeout used to wait for the user to respond to a message request.
+	const timeout = 15 * time.Second
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	result, err := cli.ShowMessageRequest(ctx, params)
+
+	if err != nil {
+		if cause := context.Cause(ctx); cause == context.DeadlineExceeded || cause == context.Canceled {
+			return "", nil
+		}
+		return "", err
+	}
+	if result == nil {
+		return "", nil // User dismissed the notification
+	}
+	return result.Title, nil
 }
 
 func telemetryOnMessage(linkify bool) string {

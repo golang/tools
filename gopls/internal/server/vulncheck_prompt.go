@@ -8,10 +8,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/gopls/internal/filecache"
@@ -46,36 +44,6 @@ func computeGoModHash(file *modfile.File) (string, error) {
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-// showMessageRequest causes the client to show a prompt that the user can respond to.
-func showMessageRequest(ctx context.Context, cli protocol.Client, typ protocol.MessageType, message string, actions ...string) (string, error) {
-	var actionItems []protocol.MessageActionItem
-	for _, action := range actions {
-		actionItems = append(actionItems, protocol.MessageActionItem{Title: action})
-	}
-	params := &protocol.ShowMessageRequestParams{
-		Type:    typ,
-		Message: message,
-		Actions: actionItems,
-	}
-	// Timeout used to wait for the user to respond to a message request.
-	const timeout = 15 * time.Second
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	result, err := cli.ShowMessageRequest(ctx, params)
-
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return "", nil
-		}
-		return "", err
-	}
-	if result == nil {
-		return "", nil // User dismissed the notification
-	}
-	return result.Title, nil
 }
 
 func (s *server) checkGoModDeps(ctx context.Context, uri protocol.DocumentURI) {
