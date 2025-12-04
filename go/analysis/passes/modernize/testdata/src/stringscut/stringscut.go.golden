@@ -262,6 +262,33 @@ func idx_used_other_substr(s string, sub string) string {
 	}
 }
 
+func idx_gtr_zero_invalid(s string, sub string) string {
+	i := strings.Index(s, sub)
+	if i > 0 { // don't modernize since this is a stronger claim than i >= 0
+		return s[:i]
+	}
+	return ""
+}
+
+func idx_gtreq_one_invalid(s string, sub string) string {
+	i := strings.Index(s, sub)
+	if i >= 1 { // don't modernize since this is a stronger claim than i >= 0
+		return s[:i]
+	}
+	return ""
+}
+
+func idx_gtr_negone(s string, sub string) string {
+	before, _, ok := strings.Cut(s, sub) // want "strings.Index can be simplified using strings.Cut"
+	if ok {
+		return before
+	}
+	if ok {
+		return s
+	}
+	return ""
+}
+
 func function(s string) {}
 
 func reference_str(s *string) {}
