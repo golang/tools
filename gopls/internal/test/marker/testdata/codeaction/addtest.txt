@@ -1540,3 +1540,182 @@ type Foo struct {}
 func NewFoo()
 
 func (*Foo) Method[T any]() {} // no suggested fix
+-- varargsinput/varargsinput.go --
+package main
+
+func Function(args ...string) (out, out1, out2 string) {return args[0], "", ""} //@codeaction("Function", "source.addTest", edit=function_varargsinput)
+
+type Foo struct {}
+
+func NewFoo(args ...string) (*Foo, error) { 
+    _ = args
+    return nil, nil 
+}
+
+func (*Foo) Method(args ...string)  (out, out1, out2 string) {return args[0], "", ""} //@codeaction("Method", "source.addTest", edit=method_varargsinput)
+-- varargsinput/varargsinput_test.go --
+package main_test
+-- @function_varargsinput/varargsinput/varargsinput_test.go --
+@@ -2 +2,34 @@
++
++import (
++	"testing"
++
++	"golang.org/lsptests/addtest/varargsinput"
++)
++
++func TestFunction(t *testing.T) {
++	tests := []struct {
++		name string // description of this test case
++		// Named input parameters for target function.
++		args  []string
++		want  string
++		want2 string
++		want3 string
++	}{
++		// TODO: Add test cases.
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			got, got2, got3 := main.Function(tt.args...)
++			// TODO: update the condition below to compare got with tt.want.
++			if true {
++				t.Errorf("Function() = %v, want %v", got, tt.want)
++			}
++			if true {
++				t.Errorf("Function() = %v, want %v", got2, tt.want2)
++			}
++			if true {
++				t.Errorf("Function() = %v, want %v", got3, tt.want3)
++			}
++		})
++	}
++}
+-- @method_varargsinput/varargsinput/varargsinput_test.go --
+@@ -2 +2,40 @@
++
++import (
++	"testing"
++
++	"golang.org/lsptests/addtest/varargsinput"
++)
++
++func TestFoo_Method(t *testing.T) {
++	tests := []struct {
++		name string // description of this test case
++		// Named input parameters for receiver constructor.
++		cargs []string
++		// Named input parameters for target function.
++		args  []string
++		want  string
++		want2 string
++		want3 string
++	}{
++		// TODO: Add test cases.
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			f, err := main.NewFoo(tt.cargs...)
++			if err != nil {
++				t.Fatalf("could not construct receiver type: %v", err)
++			}
++			got, got2, got3 := f.Method(tt.args...)
++			// TODO: update the condition below to compare got with tt.want.
++			if true {
++				t.Errorf("Method() = %v, want %v", got, tt.want)
++			}
++			if true {
++				t.Errorf("Method() = %v, want %v", got2, tt.want2)
++			}
++			if true {
++				t.Errorf("Method() = %v, want %v", got3, tt.want3)
++			}
++		})
++	}
++}
+-- unusedvarargsinput/unusedvarargsinput.go --
+package main
+
+func Function(_ ...string) (out, out1, out2 string) {return "", "", ""} //@codeaction("Function", "source.addTest", edit=function_unusedvarargsinput)
+
+type Foo struct {}
+
+func NewFoo(_ ...string) (*Foo, error) { 
+    return nil, nil 
+}
+
+func (*Foo) Method(_ ...string)  (out, out1, out2 string) {return "", "", ""} //@codeaction("Method", "source.addTest", edit=method_unusedvarargsinput)
+-- unusedvarargsinput/unusedvarargsinput_test.go --
+package main_test
+-- @function_unusedvarargsinput/unusedvarargsinput/unusedvarargsinput_test.go --
+@@ -2 +2,32 @@
++
++import (
++	"testing"
++
++	"golang.org/lsptests/addtest/unusedvarargsinput"
++)
++
++func TestFunction(t *testing.T) {
++	tests := []struct {
++		name  string // description of this test case
++		want  string
++		want2 string
++		want3 string
++	}{
++		// TODO: Add test cases.
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			got, got2, got3 := main.Function()
++			// TODO: update the condition below to compare got with tt.want.
++			if true {
++				t.Errorf("Function() = %v, want %v", got, tt.want)
++			}
++			if true {
++				t.Errorf("Function() = %v, want %v", got2, tt.want2)
++			}
++			if true {
++				t.Errorf("Function() = %v, want %v", got3, tt.want3)
++			}
++		})
++	}
++}
+-- @method_unusedvarargsinput/unusedvarargsinput/unusedvarargsinput_test.go --
+@@ -2 +2,36 @@
++
++import (
++	"testing"
++
++	"golang.org/lsptests/addtest/unusedvarargsinput"
++)
++
++func TestFoo_Method(t *testing.T) {
++	tests := []struct {
++		name  string // description of this test case
++		want  string
++		want2 string
++		want3 string
++	}{
++		// TODO: Add test cases.
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			f, err := main.NewFoo()
++			if err != nil {
++				t.Fatalf("could not construct receiver type: %v", err)
++			}
++			got, got2, got3 := f.Method()
++			// TODO: update the condition below to compare got with tt.want.
++			if true {
++				t.Errorf("Method() = %v, want %v", got, tt.want)
++			}
++			if true {
++				t.Errorf("Method() = %v, want %v", got2, tt.want2)
++			}
++			if true {
++				t.Errorf("Method() = %v, want %v", got3, tt.want3)
++			}
++		})
++	}
++}
