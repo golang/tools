@@ -44,7 +44,7 @@ func f(buf bytes.Buffer, greeting string) {
 		if err != nil {
 			t.Fatalf("CodeAction: %v", err)
 		}
-		action, err := codeActionByKind(actions, settings.GoFreeSymbols)
+		action, err := CodeActionByKind(actions, settings.GoFreeSymbols)
 		if err != nil {
 			t.Fatal(err)
 		}

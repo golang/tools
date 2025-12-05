@@ -8,20 +8,20 @@ import (
 // supported case for pattern 1.
 func _() {
 	var wg sync.WaitGroup
-	wg.Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-	go func() {
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		defer wg.Done()
 		fmt.Println()
 	}()
 
-	wg.Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-	go func() {
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		defer wg.Done()
 	}()
 
 	for range 10 {
-		wg.Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-		go func() {
+		wg.Add(1)
+		go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 			defer wg.Done()
 			fmt.Println()
 		}()
@@ -31,20 +31,20 @@ func _() {
 // supported case for pattern 2.
 func _() {
 	var wg sync.WaitGroup
-	wg.Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-	go func() {
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		fmt.Println()
 		wg.Done()
 	}()
 
-	wg.Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-	go func() {
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		wg.Done()
 	}()
 
 	for range 10 {
-		wg.Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-		go func() {
+		wg.Add(1)
+		go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 			fmt.Println()
 			wg.Done()
 		}()
@@ -54,22 +54,22 @@ func _() {
 // this function puts some wrong usages but waitgroup modernizer will still offer fixes.
 func _() {
 	var wg sync.WaitGroup
-	wg.Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-	go func() {
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		defer wg.Done()
 		defer wg.Done()
 		fmt.Println()
 	}()
 
-	wg.Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-	go func() {
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		defer wg.Done()
 		fmt.Println()
 		wg.Done()
 	}()
 
-	wg.Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-	go func() {
+	wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		fmt.Println()
 		wg.Done()
 		wg.Done()
@@ -161,23 +161,23 @@ type ServerContainer struct {
 
 func _() {
 	var s Server
-	s.wg.Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-	go func() {
+	s.wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		print()
 		s.wg.Done()
 	}()
 
 	var sc ServerContainer
-	sc.serv.wg.Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-	go func() {
+	sc.serv.wg.Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		print()
 		sc.serv.wg.Done()
 	}()
 
 	var wg sync.WaitGroup
 	arr := [1]*sync.WaitGroup{&wg}
-	arr[0].Add(1) // want "Goroutine creation can be simplified using WaitGroup.Go"
-	go func() {
+	arr[0].Add(1)
+	go func() { // want "Goroutine creation can be simplified using WaitGroup.Go"
 		print()
 		arr[0].Done()
 	}()

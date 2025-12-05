@@ -32,7 +32,5 @@ func _(d discard) {
 func g(w io.Writer) { fmt.Println(w) }
 
 var _ discard
-
 type discard struct{}
-
 func (discard) Write(p []byte) (int, error) { return len(p), nil }

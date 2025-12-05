@@ -25,6 +25,7 @@ internal/msan
 internal/race
 internal/runtime/math
 internal/runtime/maps
+internal/runtime/pprof/label
 internal/stringslite
 internal/trace/tracev2
 runtime
@@ -130,6 +131,8 @@ crypto/hmac
 crypto/internal/fips140/mlkem
 crypto/internal/fips140/tls12
 crypto/internal/fips140/tls13
+crypto/mlkem
+crypto/sha256
 vendor/golang.org/x/crypto/internal/alias
 vendor/golang.org/x/crypto/chacha20
 vendor/golang.org/x/crypto/internal/poly1305
@@ -141,7 +144,6 @@ crypto/rc4
 crypto/internal/fips140/rsa
 crypto/rsa
 crypto/sha1
-crypto/sha256
 crypto/fips140
 crypto/tls/internal/fips140tls
 crypto/dsa

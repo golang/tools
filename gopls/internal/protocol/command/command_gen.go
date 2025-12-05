@@ -49,6 +49,7 @@ const (
 	MemStats                Command = "gopls.mem_stats"
 	ModifyTags              Command = "gopls.modify_tags"
 	Modules                 Command = "gopls.modules"
+	MoveType                Command = "gopls.move_type"
 	PackageSymbols          Command = "gopls.package_symbols"
 	Packages                Command = "gopls.packages"
 	RegenerateCgo           Command = "gopls.regenerate_cgo"
@@ -97,6 +98,7 @@ var Commands = []Command{
 	MemStats,
 	ModifyTags,
 	Modules,
+	MoveType,
 	PackageSymbols,
 	Packages,
 	RegenerateCgo,
@@ -266,6 +268,12 @@ func Dispatch(ctx context.Context, params *protocol.ExecuteCommandParams, s Inte
 			return nil, err
 		}
 		return s.Modules(ctx, a0)
+	case MoveType:
+		var a0 MoveTypeArgs
+		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
+			return nil, err
+		}
+		return nil, s.MoveType(ctx, a0)
 	case PackageSymbols:
 		var a0 PackageSymbolsArgs
 		if err := UnmarshalArgs(params.Arguments, &a0); err != nil {
@@ -575,6 +583,14 @@ func NewModulesCommand(title string, a0 ModulesArgs) *protocol.Command {
 	return &protocol.Command{
 		Title:     title,
 		Command:   Modules.String(),
+		Arguments: MustMarshalArgs(a0),
+	}
+}
+
+func NewMoveTypeCommand(title string, a0 MoveTypeArgs) *protocol.Command {
+	return &protocol.Command{
+		Title:     title,
+		Command:   MoveType.String(),
 		Arguments: MustMarshalArgs(a0),
 	}
 }

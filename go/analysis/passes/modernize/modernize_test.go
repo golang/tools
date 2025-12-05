@@ -55,7 +55,7 @@ func TestNewExpr(t *testing.T) {
 }
 
 func TestOmitZero(t *testing.T) {
-	RunWithSuggestedFixes(t, TestData(), modernize.OmitZeroAnalyzer, "omitzero")
+	RunWithSuggestedFixes(t, TestData(), modernize.OmitZeroAnalyzer, "omitzero/...")
 }
 
 func TestRangeInt(t *testing.T) {
@@ -107,6 +107,10 @@ func TestStringsSeq(t *testing.T) {
 
 func TestTestingContext(t *testing.T) {
 	RunWithSuggestedFixes(t, TestData(), modernize.TestingContextAnalyzer, "testingcontext")
+}
+
+func TestUnsafeFuncs(t *testing.T) {
+	RunWithSuggestedFixes(t, TestData(), goplsexport.UnsafeFuncsModernizer, "unsafefuncs")
 }
 
 func TestWaitGroup(t *testing.T) {

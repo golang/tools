@@ -114,6 +114,9 @@ const (
 	RefactorExtractVariableAll protocol.CodeActionKind = "refactor.extract.variable-all"
 	RefactorExtractToNewFile   protocol.CodeActionKind = "refactor.extract.toNewFile"
 
+	// refactor.move
+	RefactorMoveType protocol.CodeActionKind = "refactor.move.moveType"
+
 	// Note: add new kinds to:
 	// - the SupportedCodeActions map in default.go
 	// - the codeActionProducers table in ../golang/codeaction.go

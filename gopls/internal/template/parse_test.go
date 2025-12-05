@@ -95,13 +95,13 @@ func TestQuotes(t *testing.T) {
 	} {
 		p := parseBuffer("", []byte(s.tmpl))
 		if len(p.tokens) != s.tokCnt {
-			t.Errorf("%q: got %d tokens, expected %d", s, len(p.tokens), s.tokCnt)
+			t.Errorf("%#v: got %d tokens, expected %d", s, len(p.tokens), s.tokCnt)
 		}
 		if p.parseErr != nil {
 			t.Errorf("%q: %v", string(p.buf), p.parseErr)
 		}
 		if len(p.elided) != int(s.elidedCnt) {
-			t.Errorf("%q: elided %d, expected %d", s, len(p.elided), s.elidedCnt)
+			t.Errorf("%#v: elided %d, expected %d", s, len(p.elided), s.elidedCnt)
 		}
 	}
 }

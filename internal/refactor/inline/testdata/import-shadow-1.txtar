@@ -35,9 +35,8 @@ func B() {
 -- bresult --
 package a
 
-import (
-	log0 "log"
-)
+import log0 "log"
+
 import "log"
 
 func A() {

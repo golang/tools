@@ -119,13 +119,32 @@ func manifest(apidir string) {
 
 			if _, recv, ok := strings.Cut(kind, "method "); ok {
 				// e.g. "method (*Func) Pos() token.Pos"
-				kind = "method"
+				kind = "method" // (concrete)
 
 				recv := removeTypeParam(recv) // (*Foo[T]) -> (*Foo)
 
 				sym = recv + "." + sym // (*T).m
 
-			} else if _, field, ok := strings.Cut(rest, " struct, "); ok && kind == "type" {
+			} else if method, ok := strings.CutPrefix(rest, " interface, "); ok && kind == "type" {
+				// e.g. "pkg reflect, type Type interface, Comparable() bool"
+				// or   "pkg net, type Error interface, Temporary //deprecated"
+
+				kind = "method" // (abstract)
+
+				if strings.HasPrefix(method, "unexported methods") {
+					continue
+				}
+				if strings.Contains(method, " //deprecated") {
+					continue
+				}
+				name, _, ok := strings.Cut(method, "(")
+				if !ok {
+					log.Printf("unexpected: %s", line)
+					continue
+				}
+				sym = fmt.Sprintf("(%s).%s", sym, name) // (T).m
+
+			} else if field, ok := strings.CutPrefix(rest, " struct, "); ok && kind == "type" {
 				// e.g. "type ParenExpr struct, Lparen token.Pos"
 				kind = "field"
 				name, typ, _ := strings.Cut(field, " ")
@@ -156,6 +175,9 @@ func manifest(apidir string) {
 			// enums are redeclared in later versions
 			// as their encoding changes;
 			// deprecations count as updates too.
+			// TODO(adonovan): it would be better to mark
+			// deprecated as a boolean without changing the
+			// version.
 			if _, ok := symbols[sym]; !ok {
 				var sig string
 				if kind == "func" {

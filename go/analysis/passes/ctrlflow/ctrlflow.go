@@ -179,12 +179,13 @@ func (c *CFGs) buildDecl(fn *types.Func, di *declInfo) {
 	}
 	di.started = true
 
-	noreturn := isIntrinsicNoReturn(fn)
-
-	if di.decl.Body != nil {
-		di.cfg = cfg.New(di.decl.Body, c.callMayReturn)
-		if cfginternal.IsNoReturn(di.cfg) {
-			noreturn = true
+	noreturn, known := knownIntrinsic(fn)
+	if !known {
+		if di.decl.Body != nil {
+			di.cfg = cfg.New(di.decl.Body, c.callMayReturn)
+			if cfginternal.IsNoReturn(di.cfg) {
+				noreturn = true
+			}
 		}
 	}
 	if noreturn {
@@ -233,11 +234,36 @@ func (c *CFGs) callMayReturn(call *ast.CallExpr) (r bool) {
 
 var panicBuiltin = types.Universe.Lookup("panic").(*types.Builtin)
 
-// isIntrinsicNoReturn reports whether a function intrinsically never
-// returns because it stops execution of the calling thread.
+// knownIntrinsic reports whether a function intrinsically never
+// returns because it stops execution of the calling thread, or does
+// in fact return, contrary to its apparent body, because it is
+// handled specially by the compiler.
+//
 // It is the base case in the recursion.
-func isIntrinsicNoReturn(fn *types.Func) bool {
+func knownIntrinsic(fn *types.Func) (noreturn, known bool) {
 	// Add functions here as the need arises, but don't allocate memory.
-	return typesinternal.IsFunctionNamed(fn, "syscall", "Exit", "ExitProcess", "ExitThread") ||
-		typesinternal.IsFunctionNamed(fn, "runtime", "Goexit")
+
+	// Functions known intrinsically never to return.
+	if typesinternal.IsFunctionNamed(fn, "syscall", "Exit", "ExitProcess", "ExitThread") ||
+		typesinternal.IsFunctionNamed(fn, "runtime", "Goexit") {
+		return true, true
+	}
+
+	// Compiler intrinsics known to return, contrary to
+	// what analysis of the function body would conclude.
+	//
+	// Not all such intrinsics must be listed here: ctrlflow
+	// considers any function called for its value--such as
+	// crypto/internal/constanttime.bool2Uint8--to potentially
+	// return; only functions called as a statement, for effects,
+	// are no-return candidates.
+	//
+	// Unfortunately this does sometimes mean peering into internals.
+	// Where possible, use the nearest enclosing public API function.
+	if typesinternal.IsFunctionNamed(fn, "internal/abi", "EscapeNonString") ||
+		typesinternal.IsFunctionNamed(fn, "hash/maphash", "Comparable") {
+		return false, true
+	}
+
+	return // unknown
 }

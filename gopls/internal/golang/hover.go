@@ -173,7 +173,6 @@ func findRhsTypeDecl(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.P
 // hover information.
 //
 // TODO(adonovan): strength-reduce file.Handle to protocol.DocumentURI.
-// TODO(hxjiang): return the type of selected expression based on the range.
 func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng protocol.Range) (protocol.Range, *hoverResult, error) {
 	// Check for hover inside the builtin file before attempting type checking
 	// below. NarrowestPackageForFile may or may not succeed, depending on
@@ -274,15 +273,14 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 
 		// Find position in declaring file.
 		hoverRange = &rng
-		objURI := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
 
+		var pos token.Pos
 		// Subtle: updates pkg, which defines the FileSet used to resolve (start, end),
 		// which were obtained from pkg.
-		pkg, pgf, err = NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(objURI.Filename))
+		pkg, pgf, pos, err = NarrowestDeclaringPackage(ctx, snapshot, pkg, obj)
 		if err != nil {
 			return protocol.Range{}, nil, err
 		}
-		pos := pgf.Tok.Pos(objURI.Offset)
 		posRange = astutil.RangeOf(pos, pos)
 	}
 
@@ -394,21 +392,15 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	}
 
 	// For all other objects, load type information for their declaring package
-	// in order to correctly compute their documentation, signature,  and link.
+	// in order to correctly compute their documentation, signature, and link.
 	//
 	// Beware: positions derived from decl{Obj,Pkg,PGF,Pos} should be resolve
 	// using declPkg.FileSet; other positions should use pkg.FileSet().
-	objURI := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
-
-	// TODO(hxjiang): create a helper function NarrowestDeclaringPackage
-	// which type-checks a second package that declares a symbol of interest
-	// found in current package.
-	declPkg, declPGF, err := NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(objURI.Filename))
+	declPkg, declPGF, declPos, err := NarrowestDeclaringPackage(ctx, snapshot, pkg, obj)
 	if err != nil {
 		return protocol.Range{}, nil, err
 	}
 
-	declPos := declPGF.Tok.Pos(objURI.Offset)
 	decl, spec, field := findDeclInfo([]*ast.File{declPGF.File}, declPos) // may be nil^3
 
 	var docText string

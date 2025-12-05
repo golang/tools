@@ -16,7 +16,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/testenv"
 )
@@ -154,7 +153,7 @@ func _(fmt fmt.Stringer) {
 			src: `package a
 
 // hello
-import ()
+import "os"
 
 // world
 func _() {
@@ -165,7 +164,7 @@ func _() {
 import "fmt"
 
 // hello
-import ()
+import "os"
 
 // world
 func _() {
@@ -360,7 +359,7 @@ func _(io.Reader) {
 
 			prefix, edits := refactor.AddImport(info, f, name, path, member, pos)
 
-			var edit analysis.TextEdit
+			var edit refactor.Edit
 			switch len(edits) {
 			case 0:
 			case 1:

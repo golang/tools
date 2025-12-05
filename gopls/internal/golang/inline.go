@@ -20,10 +20,8 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
-	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/diff"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/refactor/inline"
 )
@@ -66,20 +64,20 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 		return nil, nil, err
 	}
 
-	// Locate callee by file/line and analyze it.
-	calleePosn := safetoken.StartPosition(callerPkg.FileSet(), fn.Pos())
-	calleePkg, calleePGF, err := NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(calleePosn.Filename))
+	calleePkg, calleePGF, calleePos, err := NarrowestDeclaringPackage(ctx, snapshot, callerPkg, fn)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	var calleeDecl *ast.FuncDecl
 	for _, decl := range calleePGF.File.Decls {
-		if decl, ok := decl.(*ast.FuncDecl); ok {
-			posn := safetoken.StartPosition(calleePkg.FileSet(), decl.Name.Pos())
-			if posn.Line == calleePosn.Line && posn.Column == calleePosn.Column {
-				calleeDecl = decl
-				break
-			}
+		funcDecl, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		if funcDecl.Name.Pos() == calleePos {
+			calleeDecl = funcDecl
+			break
 		}
 	}
 	if calleeDecl == nil {
@@ -115,7 +113,6 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 		Info:      callerPkg.TypesInfo(),
 		File:      callerPGF.File,
 		Call:      call,
-		Content:   callerPGF.Src,
 		CountUses: nil, // (use inefficient default implementation)
 	}
 
@@ -126,7 +123,7 @@ func inlineCall(ctx context.Context, snapshot *cache.Snapshot, callerPkg *cache.
 
 	return callerPkg.FileSet(), &analysis.SuggestedFix{
 		Message:   fmt.Sprintf("inline call of %v", callee),
-		TextEdits: diffToTextEdits(callerPGF.Tok, diff.Bytes(callerPGF.Src, res.Content)),
+		TextEdits: res.Edits,
 	}, nil
 }
 

@@ -1,0 +1,27 @@
+package unsafefuncs
+
+import "unsafe"
+
+func _(ptr unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Add(ptr, 1) // want `pointer \+ integer can be simplified using unsafe.Add`
+}
+
+type uP = unsafe.Pointer
+
+func _(ptr uP) uP {
+	return unsafe.Add(ptr, 1) // want `pointer \+ integer can be simplified using unsafe.Add`
+}
+
+func _(ptr unsafe.Pointer, n int) unsafe.Pointer {
+	return unsafe.Add(ptr, n) // want `pointer \+ integer can be simplified using unsafe.Add`
+}
+
+func _(ptr *byte, len int) *byte {
+	return (*byte)(unsafe.Add(unsafe.Pointer(ptr), len)) // want `pointer \+ integer can be simplified using unsafe.Add`
+}
+
+type namedUP unsafe.Pointer
+
+func _(ptr namedUP) namedUP {
+	return namedUP(uintptr(ptr) + 1) // nope: Add does not accept named unsafe.Pointer types
+}

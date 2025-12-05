@@ -17,6 +17,9 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
 	"golang.org/x/tools/gopls/internal/util/bug"
+	"golang.org/x/tools/internal/analysis/driverutil"
+	"golang.org/x/tools/internal/diff"
+	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/refactor/inline"
 )
 
@@ -229,14 +232,42 @@ func inlineAllCalls(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Pa
 				Info:      tinfo,
 				File:      file,
 				Call:      calls[currentCall],
-				Content:   content,
 				CountUses: nil, // TODO(adonovan): opt: amortize across callInfo.pkg
 			}
 			res, err := inline.Inline(caller, callee, opts)
 			if err != nil {
 				return nil, fmt.Errorf("inlining failed: %v", err)
 			}
-			content = res.Content
+
+			// applyEdits transforms content by applying the specified edits
+			// (whose positions are defined by fset), reformatting the file, and
+			// removing unused imports (using pkg for names of imported packages).
+			// (Adapted from inline_test.applyEdits.)
+			applyEdits := func(content []byte, edits []refactor.Edit) ([]byte, error) {
+				dedits := make([]diff.Edit, len(edits))
+				for i, edit := range edits {
+					dedits[i] = diff.Edit{
+						Start: int(edit.Pos - file.FileStart),
+						End:   int(edit.End - file.FileStart),
+						New:   string(edit.NewText),
+					}
+				}
+				got, err := diff.ApplyBytes(content, dedits)
+				if err != nil {
+					return nil, err // inliner produced invalid edits
+				}
+				got, err = driverutil.FormatSourceRemoveImports(tpkg, got)
+				if err != nil {
+					return nil, err // failed to parse+print
+				}
+				return []byte(got), nil
+			}
+
+			content, err = applyEdits(content, res.Edits)
+			if err != nil {
+				return nil, fmt.Errorf("applying inliner edits failed: %v", err)
+			}
+
 			if post != nil {
 				content = post(content)
 			}

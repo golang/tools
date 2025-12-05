@@ -114,7 +114,7 @@ const A = 1
 				// Invoke the "Browse package documentation" code
 				// action to start the server.
 				actions := env.CodeAction(env.Sandbox.Workdir.EntireFile("a.go"), nil, 0)
-				docAction, err := codeActionByKind(actions, settings.GoDoc)
+				docAction, err := CodeActionByKind(actions, settings.GoDoc)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -459,7 +459,7 @@ func viewPkgDoc(t *testing.T, env *Env, loc protocol.Location) protocol.URI {
 	// Invoke the "Browse package documentation" code
 	// action to start the server.
 	actions := env.CodeAction(loc, nil, 0)
-	docAction, err := codeActionByKind(actions, settings.GoDoc)
+	docAction, err := CodeActionByKind(actions, settings.GoDoc)
 	if err != nil {
 		t.Fatal(err)
 	}

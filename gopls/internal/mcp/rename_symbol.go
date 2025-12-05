@@ -24,7 +24,7 @@ type renameSymbolParams struct {
 }
 
 func (h *handler) renameSymbolHandler(ctx context.Context, req *mcp.CallToolRequest, params renameSymbolParams) (*mcp.CallToolResult, any, error) {
-	// TODO(mkalil): Add telemetry for this tool.
+	countGoRenameSymbolMCP.Inc()
 	fh, snapshot, release, err := h.fileOf(ctx, params.File)
 	if err != nil {
 		return nil, nil, err

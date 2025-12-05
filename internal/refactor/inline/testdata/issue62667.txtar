@@ -33,9 +33,7 @@ func Split(string) {}
 -- result --
 package a
 
-import (
-	path0 "testdata/path"
-)
+import path0 "testdata/path"
 
 func A() {
 	func() { var path string = g(); defer func() {}(); path0.Split(path) }() //@ inline(re"Dir", result)

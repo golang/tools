@@ -37,12 +37,11 @@ func B() {}
 -- result --
 package a
 
-import (
-	b0 "testdata/another/b"
-	"testdata/b"
-)
+import "testdata/b"
+
+import anotherb "testdata/another/b"
 
 func _() {
 	b.B()
-	b0.B() //@ inline(re"a2", result)
+	anotherb.B() //@ inline(re"a2", result)
 }

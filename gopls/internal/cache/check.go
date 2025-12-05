@@ -1323,7 +1323,7 @@ func (b *packageHandleBuilder) evaluatePackageHandle(ctx context.Context, n *han
 			dh := b.nodes[id]
 			if dh == nil {
 				// Previous code reported an error (not a bug) here.
-				bug.Reportf("missing reachable node for %q", id)
+				bug.Reportf("missing reachable node for %v", id)
 			} else {
 				reachableNodes = append(reachableNodes, dh)
 			}

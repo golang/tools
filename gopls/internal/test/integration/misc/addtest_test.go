@@ -76,7 +76,11 @@ func TestFoo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CodeAction: %v", err)
 		}
-		action, err := codeActionByKind(actions, settings.AddTest)
+		action, err := CodeActionByKind(actions, settings.AddTest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		action, err = env.Editor.ResolveCodeAction(env.Ctx, action)
 		if err != nil {
 			t.Fatal(err)
 		}

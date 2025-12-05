@@ -1892,3 +1892,16 @@ func parseTransform(input string) (modifytags.Transform, error) {
 		return modifytags.SnakeCase, fmt.Errorf("invalid Transform value")
 	}
 }
+
+func (c *commandHandler) MoveType(ctx context.Context, args command.MoveTypeArgs) error {
+	err := c.run(ctx, commandConfig{
+		forURI: args.Location.URI,
+	}, func(ctx context.Context, deps commandDeps) error {
+		changes, err := golang.MoveType(ctx, deps.fh, deps.snapshot, args.Location, "newpkg/new.go")
+		if err != nil {
+			return err
+		}
+		return applyChanges(ctx, c.s.client, changes)
+	})
+	return err
+}

@@ -71,9 +71,13 @@ func (s *goplsSource) ResolveReferences(ctx context.Context, filename string, mi
 		if err != nil {
 			return nil, err
 		}
-		// trim cans to one per missing package.
+		// trim candidates to one per missing package.
 		byPkgNm := make(map[string][]*result)
 		for _, c := range fromCache {
+			// avoid internal and vendor
+			if !imports.CanUse(filename, c.res.Import.ImportPath) {
+				continue
+			}
 			byPkgNm[c.res.Package.Name] = append(byPkgNm[c.res.Package.Name], c)
 		}
 		for k, v := range byPkgNm {
@@ -166,7 +170,12 @@ func (s *goplsSource) resolveCacheReferences(missing imports.References) ([]*res
 		}
 
 	}
-	return moremaps.ValueSlice(found), nil
+	// return results in some deterministic order
+	got := moremaps.ValueSlice(found)
+	slices.SortFunc(got, func(a, b *result) int {
+		return strings.Compare(a.res.Import.ImportPath, b.res.Import.ImportPath)
+	})
+	return got, nil
 }
 
 type found struct {

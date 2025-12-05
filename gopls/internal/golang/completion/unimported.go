@@ -82,6 +82,10 @@ func (c *completer) unimported(ctx context.Context, pkgname metadata.PackageName
 
 // prefer completion items that are referenced in the go.mod file
 func (c *completer) filterGoMod(ctx context.Context, items []CompletionItem) []CompletionItem {
+	if c.pkg.Metadata().Module == nil {
+		// for std or GOROOT mode
+		return items
+	}
 	gomod := c.pkg.Metadata().Module.GoMod
 	uri := protocol.URIFromPath(gomod)
 	fh, err := c.snapshot.ReadFile(ctx, uri)

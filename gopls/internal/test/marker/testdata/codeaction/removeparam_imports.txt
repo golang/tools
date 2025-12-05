@@ -1,6 +1,9 @@
 This test checks the behavior of removing a parameter with respect to various
 import scenarios.
 
+Wholly unused imports are expected to be removed by a subsequent
+"organize imports" step.
+
 -- go.mod --
 module mod.test
 
@@ -86,6 +89,8 @@ func _() {
 -- @b/a/a1.go --
 package a
 
+import "mod.test/c"
+
 import "mod.test/b"
 
 func _() {
@@ -99,6 +104,7 @@ package a
 import (
 	"mod.test/b"
 	. "mod.test/b"
+	"mod.test/c"
 )
 
 func _() {

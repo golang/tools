@@ -7,11 +7,14 @@ package golang
 import (
 	"context"
 	"fmt"
+	"go/token"
+	"go/types"
 
 	"golang.org/x/tools/gopls/internal/cache"
 	"golang.org/x/tools/gopls/internal/cache/metadata"
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/protocol"
+	"golang.org/x/tools/gopls/internal/util/safetoken"
 )
 
 // NarrowestPackageForFile is a convenience function that selects the narrowest
@@ -49,6 +52,27 @@ func NarrowestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri 
 // tree, or snapshot.MetadataForFile if you only need metadata.
 func WidestPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI) (*cache.Package, *parsego.File, error) {
 	return selectPackageForFile(ctx, snapshot, uri, func(metas []*metadata.Package) *metadata.Package { return metas[len(metas)-1] })
+}
+
+// NarrowestDeclaringPackage facilitates cross-package analysis by "jumping"
+// from the current package context to the package that declares the given object.
+//
+// This is essential when the object of interest is defined in a different
+// package than the one currently being type-checked.
+//
+// This function performs the context switch: it locates the file declaring
+// the object, loads its narrowest package (see [NarrowestPackageForFile]),
+// and returns the type-checked result.
+//
+// It returns the new package, the file, and the object's position translated
+// to be valid within the new package's file set.
+func NarrowestDeclaringPackage(ctx context.Context, snapshot *cache.Snapshot, pkg *cache.Package, obj types.Object) (*cache.Package, *parsego.File, token.Pos, error) {
+	posn := safetoken.StartPosition(pkg.FileSet(), obj.Pos())
+	pkg, pgf, err := NarrowestPackageForFile(ctx, snapshot, protocol.URIFromPath(posn.Filename))
+	if err != nil {
+		return nil, nil, token.NoPos, err
+	}
+	return pkg, pgf, pgf.Tok.Pos(posn.Offset), nil
 }
 
 func selectPackageForFile(ctx context.Context, snapshot *cache.Snapshot, uri protocol.DocumentURI, selector func([]*metadata.Package) *metadata.Package) (*cache.Package, *parsego.File, error) {

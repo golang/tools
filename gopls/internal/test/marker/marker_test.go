@@ -1442,7 +1442,7 @@ func checkChangedFiles(mark marker, changed map[string][]byte, golden *Golden) {
 			mark.errorf("%s: unexpected change to file %s; got:\n%s",
 				mark.note.Name, filename, got)
 		} else if string(got) != string(want) {
-			mark.errorf("%s: wrong file content for %s: got:\n%s\nwant:\n%s\ndiff:\n%s",
+			mark.errorf("%s: wrong file content for %s:\n-- got --\n%s\n-- want --\n%s\n-- diff --\n%s",
 				mark.note.Name, filename, got, want,
 				compare.Bytes(want, got))
 		}

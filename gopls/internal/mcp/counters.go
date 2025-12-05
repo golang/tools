@@ -16,6 +16,7 @@ var (
 	countGoFileMetadataMCP     = counter.New("gopls/mcp-tool:go_file_metadata")
 	countGoPackageAPIMCP       = counter.New("gopls/mcp-tool:go_package_api")
 	countGoReferencesMCP       = counter.New("gopls/mcp-tool:go_references")
+	countGoRenameSymbolMCP     = counter.New("gopls/mcp-tool:go_rename_symbol")
 	countGoSearchMCP           = counter.New("gopls/mcp-tool:go_search")
 	countGoSymbolReferencesMCP = counter.New("gopls/mcp-tool:go_symbol_references")
 	countGoWorkspaceMCP        = counter.New("gopls/mcp-tool:go_workspace")

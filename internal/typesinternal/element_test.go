@@ -78,7 +78,7 @@ func TestForEachElement(t *testing.T) {
 		// defined struct type with methods, incl. pointer methods.
 		// Observe that it descends into the field type, but
 		// the result does not include the struct type itself.
-		// (This follows the Go toolchain behavior , and finesses the need
+		// (This follows the Go toolchain behavior, and finesses the need
 		// to create wrapper methods for that struct type.)
 		{"C", []string{"T", "*T", "int", "uint", "complex128", "!struct{x int}"}},
 

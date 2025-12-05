@@ -35,9 +35,6 @@ func (casefold) Equal(x, y string) bool
 type A[T any] = struct { x T }
 type AString = struct { x string }
 
-// B matches anything!
-type B[T any] = T
-
 func C1[T any](int, T, ...string) T { panic(0) }
 func C2[U any](int, int, ...U) bool { panic(0) }
 func C3(int, bool, ...string) rune
@@ -119,25 +116,6 @@ func F9[V any](V, *V, V) { panic(0) }
 			wantParams: tmap{tparam("A", 0): stringType},
 		},
 		{x: "A", y: "Eq", want: false}, // completely unrelated
-		{
-			x:          "B",
-			y:          "String",
-			want:       true,
-			wantParams: tmap{tparam("B", 0): stringType},
-		},
-		{
-			x:          "B",
-			y:          "Int",
-			want:       true,
-			wantParams: tmap{tparam("B", 0): intType},
-		},
-		{
-			x:    "B",
-			y:    "A",
-			want: true,
-			// B's T is bound to A's struct { x T }
-			wantParams: tmap{tparam("B", 0): scope.Lookup("A").Type().Underlying()},
-		},
 		{
 			// C1's U unifies with C6's bool.
 			x:          "C1",

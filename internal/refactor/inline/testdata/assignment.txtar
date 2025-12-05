@@ -91,9 +91,7 @@ type C int
 -- b1 --
 package a
 
-import (
-	"testdata/c"
-)
+import "testdata/c"
 
 func _() {
 	var y int
@@ -102,6 +100,8 @@ func _() {
 }
 -- b2 --
 package a
+
+import "testdata/c"
 
 import "testdata/b"
 
@@ -113,9 +113,7 @@ func _() {
 -- b3 --
 package a
 
-import (
-	"testdata/c"
-)
+import "testdata/c"
 
 func _() {
 	x, y := c.C(0), c.C(1) //@ inline(re"B", b3)
@@ -125,12 +123,11 @@ func _() {
 -- b4 --
 package a
 
-import (
-	"testdata/c"
-	c0 "testdata/c2"
-)
+import c1 "testdata/c"
+
+import c2 "testdata/c2"
 
 func _() {
-	x, y := c.C(0), c0.C(1) //@ inline(re"B", b4)
+	x, y := c1.C(0), c2.C(1) //@ inline(re"B", b4)
 	_, _ = x, y
 }

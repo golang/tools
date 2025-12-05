@@ -167,12 +167,12 @@ func TestOrigin(t *testing.T) {
 	for _, src := range []string{
 		`
 package alias
-type A[T any] = T
+type A[T any] = *T
 var _ A[int]`,
 		`
 package localalias
 func _[T any]() {
-	type A[U any] = U
+	type A[U any] = *U
 	var _ A[T]
 }`,
 		`

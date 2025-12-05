@@ -118,6 +118,9 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		label, isLabeled := pkg.TypesInfo().Uses[node.Label].(*types.Label)
 		switch node.Tok {
 		case token.GOTO:
+			if !isLabeled {
+				return nil, fmt.Errorf("undefined label")
+			}
 			loc, err := pgf.PosLocation(label.Pos(), label.Pos()+token.Pos(len(label.Name())))
 			if err != nil {
 				return nil, err

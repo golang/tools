@@ -193,8 +193,15 @@ func nopeNotAMapGeneric[E any, M ~map[int]E, S ~[]E](src M) {
 	}
 }
 
-func nopeHasImplicitWidening(src map[string]int) {
+func nopeHasImplicitValueWidening(src map[string]int) {
 	dst := make(map[string]any)
+	for k, v := range src {
+		dst[k] = v
+	}
+}
+
+func nopeHasImplicitKeyWidening(src map[string]string) {
+	dst := make(map[any]string)
 	for k, v := range src {
 		dst[k] = v
 	}

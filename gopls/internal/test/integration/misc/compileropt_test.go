@@ -5,7 +5,6 @@
 package misc
 
 import (
-	"fmt"
 	"runtime"
 	"testing"
 
@@ -41,7 +40,7 @@ func main() {
 		actions := env.CodeActionForFile("main.go", nil)
 
 		// Execute the "Show compiler optimization details" command.
-		docAction, err := codeActionByKind(actions, settings.GoToggleCompilerOptDetails)
+		docAction, err := CodeActionByKind(actions, settings.GoToggleCompilerOptDetails)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -118,7 +117,7 @@ func H(x int) any { return &x }
 			env.OpenFile(filename)
 			actions := env.CodeActionForFile(filename, nil)
 
-			docAction, err := codeActionByKind(actions, settings.GoToggleCompilerOptDetails)
+			docAction, err := CodeActionByKind(actions, settings.GoToggleCompilerOptDetails)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -195,7 +194,7 @@ func G()          { defer func(){} () } // cannotInlineFunction(unhandled op DEF
 			env.OpenFile("a/a.go")
 			actions := env.CodeActionForFile("a/a.go", nil)
 
-			docAction, err := codeActionByKind(actions, settings.GoToggleCompilerOptDetails)
+			docAction, err := CodeActionByKind(actions, settings.GoToggleCompilerOptDetails)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -230,14 +229,4 @@ func cond[T any](cond bool, x, y T) T {
 	} else {
 		return y
 	}
-}
-
-// codeActionByKind returns the first action of (exactly) the specified kind, or an error.
-func codeActionByKind(actions []protocol.CodeAction, kind protocol.CodeActionKind) (*protocol.CodeAction, error) {
-	for _, act := range actions {
-		if act.Kind == kind {
-			return &act, nil
-		}
-	}
-	return nil, fmt.Errorf("can't find action with kind %s, only %#v", kind, actions)
 }

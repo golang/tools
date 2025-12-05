@@ -17,9 +17,7 @@ import (
 	"golang.org/x/tools/gopls/internal/cache/parsego"
 	"golang.org/x/tools/gopls/internal/file"
 	"golang.org/x/tools/gopls/internal/protocol"
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/moremaps"
-	"golang.org/x/tools/gopls/internal/util/safetoken"
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/event"
 	"golang.org/x/tools/internal/typesinternal"
@@ -203,23 +201,7 @@ func OutgoingCalls(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle
 		return nil, nil // built-in functions have no outgoing calls
 	}
 
-	declFile := pkg.FileSet().File(obj.Pos())
-	if declFile == nil {
-		return nil, bug.Errorf("file not found for %d", obj.Pos())
-	}
-
-	uri := protocol.URIFromPath(declFile.Name())
-	offset, err := safetoken.Offset(declFile, obj.Pos())
-	if err != nil {
-		return nil, err
-	}
-
-	declPkg, declPGF, err := NarrowestPackageForFile(ctx, snapshot, uri)
-	if err != nil {
-		return nil, err
-	}
-
-	declPos, err := safetoken.Pos(declPGF.Tok, offset)
+	declPkg, declPGF, declPos, err := NarrowestDeclaringPackage(ctx, snapshot, pkg, obj)
 	if err != nil {
 		return nil, err
 	}

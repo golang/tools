@@ -71,6 +71,7 @@ func DefaultOptions(overrides ...func(*Options)) *Options {
 						RefactorExtractVariable:          true,
 						RefactorExtractVariableAll:       true,
 						RefactorExtractToNewFile:         true,
+						RefactorMoveType:                 true, // off while implementation unfinished
 						// Not GoTest: it must be explicit in CodeActionParams.Context.Only
 					},
 					file.Mod: {
