@@ -78,6 +78,9 @@ func TestSource(t *testing.T) {
 	opts := imports.Options{}
 	// ApplyFixes needs a non-nil opts
 	got, err := imports.ApplyFixes(fixes, "tfile.go", []byte(fx), &opts, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	fxwant := "package main\n\nimport \"bar.com/foo\"\n\nvar _ = foo.Foo\nvar _ = foo.Bar\n"
 	if diff := cmp.Diff(string(got), fxwant); diff != "" {
