@@ -495,18 +495,22 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		return typesinternal.IsTypeNamed(t, "context", "Context")
 	}
 
+	isUnusedParameter := func(name string) bool {
+		return name == "" || name == "_"
+	}
+
 	for i := range sig.Params().Len() {
 		param := sig.Params().At(i)
 		name, typ := param.Name(), param.Type()
 		f := field{Type: types.TypeString(typ, qual)}
 		if i == 0 && isContextType(typ) {
 			f.Value = qual(types.NewPackage("context", "context")) + ".Background()"
-		} else if name == "" || name == "_" {
-			if data.Func.IsVariadic && sig.Params().Len()-1 == i {
-				// skip the last argument, don't need to render it.
-				data.Func.IsUnusedVariadic = true
-				continue
-			}
+		} else if isUnusedParameter(name) && data.Func.IsVariadic && sig.Params().Len()-1 == i {
+			// The last argument is the variadic argument, and it's not used in the function body,
+			// so we don't need to render it in the test case struct.
+			data.Func.IsUnusedVariadic = true
+			continue
+		} else if isUnusedParameter(name) {
 			f.Value, _ = typesinternal.ZeroString(typ, qual)
 		} else {
 			f.Name = name
@@ -643,12 +647,12 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 				f := field{Type: types.TypeString(typ, qual)}
 				if i == 0 && isContextType(typ) {
 					f.Value = qual(types.NewPackage("context", "context")) + ".Background()"
-				} else if name == "" || name == "_" {
-					if data.Receiver.Constructor.IsVariadic && sig.Params().Len()-1 == i {
-						// skip the last argument, don't need to render it.
-						data.Receiver.Constructor.IsUnusedVariadic = true
-						continue
-					}
+				} else if isUnusedParameter(name) && data.Receiver.Constructor.IsVariadic && constructor.Signature().Params().Len()-1 == i {
+					// The last argument is the variadic argument, and it's not used in the function body,
+					// so we don't need to render it in the test case struct.
+					data.Receiver.Constructor.IsUnusedVariadic = true
+					continue
+				} else if isUnusedParameter(name) {
 					f.Value, _ = typesinternal.ZeroString(typ, qual)
 				} else {
 					f.Name = name
