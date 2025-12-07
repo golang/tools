@@ -91,6 +91,7 @@ func {{.TestFuncName}}(t *{{.TestingPackageName}}.T) {
 				{{- if ne $index 0}}, {{end}}
 				{{- if .Name}}tt.{{.Name}}{{else}}{{.Value}}{{end}}
 				{{- end -}}
+				{{- if and .Receiver.Constructor.IsVariadic (not .Receiver.Constructor.IsUnusedVariadic) }}...{{- end -}}
 			)
 
 			{{- /* Handles the error return from constructor. */}}
@@ -123,6 +124,7 @@ func {{.TestFuncName}}(t *{{.TestingPackageName}}.T) {
 				{{- if ne $index 0}}, {{end}}
 				{{- if .Name}}tt.{{.Name}}{{else}}{{.Value}}{{end}}
 				{{- end -}}
+				{{- if and .Func.IsVariadic (not .Func.IsUnusedVariadic) }}...{{- end -}}
 			)
 
 			{{- /* Handles the returned error before the rest of return value. */}}
@@ -167,6 +169,12 @@ type function struct {
 	Name    string
 	Args    []field
 	Results []field
+	// IsVariadic holds information if the function is variadic.
+	// In case of the IsVariadic=true must expand it in the function-under-test call.
+	IsVariadic bool
+	// IsUnusedVariadic holds information if the function's variadic args is not used.
+	// In this case ... must be skipped.
+	IsUnusedVariadic bool
 }
 
 type receiver struct {
@@ -238,7 +246,7 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		extraImports = make(map[string]string) // imports to add to test file
 	)
 
-	var collectImports = func(file *ast.File) (map[string]string, error) {
+	collectImports := func(file *ast.File) (map[string]string, error) {
 		imps := make(map[string]string)
 		for _, spec := range file.Imports {
 			// TODO(hxjiang): support dot imports.
@@ -478,12 +486,17 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		PackageName:        qual(pkg.Types()),
 		TestFuncName:       testName,
 		Func: function{
-			Name: fn.Name(),
+			Name:       fn.Name(),
+			IsVariadic: sig.Variadic(),
 		},
 	}
 
 	isContextType := func(t types.Type) bool {
 		return typesinternal.IsTypeNamed(t, "context", "Context")
+	}
+
+	isUnusedParameter := func(name string) bool {
+		return name == "" || name == "_"
 	}
 
 	for i := range sig.Params().Len() {
@@ -492,7 +505,12 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		f := field{Type: types.TypeString(typ, qual)}
 		if i == 0 && isContextType(typ) {
 			f.Value = qual(types.NewPackage("context", "context")) + ".Background()"
-		} else if name == "" || name == "_" {
+		} else if isUnusedParameter(name) && data.Func.IsVariadic && sig.Params().Len()-1 == i {
+			// The last argument is the variadic argument, and it's not used in the function body,
+			// so we don't need to render it in the test case struct.
+			data.Func.IsUnusedVariadic = true
+			continue
+		} else if isUnusedParameter(name) {
 			f.Value, _ = typesinternal.ZeroString(typ, qual)
 		} else {
 			f.Name = name
@@ -619,14 +637,22 @@ func AddTestForFunc(ctx context.Context, snapshot *cache.Snapshot, loc protocol.
 		}
 
 		if constructor != nil {
-			data.Receiver.Constructor = &function{Name: constructor.Name()}
+			data.Receiver.Constructor = &function{
+				Name:       constructor.Name(),
+				IsVariadic: constructor.Signature().Variadic(),
+			}
 			for i := range constructor.Signature().Params().Len() {
 				param := constructor.Signature().Params().At(i)
 				name, typ := param.Name(), param.Type()
 				f := field{Type: types.TypeString(typ, qual)}
 				if i == 0 && isContextType(typ) {
 					f.Value = qual(types.NewPackage("context", "context")) + ".Background()"
-				} else if name == "" || name == "_" {
+				} else if isUnusedParameter(name) && data.Receiver.Constructor.IsVariadic && constructor.Signature().Params().Len()-1 == i {
+					// The last argument is the variadic argument, and it's not used in the function body,
+					// so we don't need to render it in the test case struct.
+					data.Receiver.Constructor.IsUnusedVariadic = true
+					continue
+				} else if isUnusedParameter(name) {
 					f.Value, _ = typesinternal.ZeroString(typ, qual)
 				} else {
 					f.Name = name
