@@ -20,7 +20,6 @@ import (
 	"golang.org/x/tools/internal/typesinternal"
 
 	"golang.org/x/tools/gopls/internal/cache/parsego"
-	"golang.org/x/tools/gopls/internal/util/bug"
 	"golang.org/x/tools/gopls/internal/util/typesutil"
 )
 
@@ -270,8 +269,12 @@ func fromReturnStmt(fset *token.FileSet, info *types.Info, curResult inspector.C
 
 	sig := typesutil.EnclosingSignature(curResult, info)
 	if sig == nil {
-		// golang/go#70666: this bug may be reached in practice.
-		return nil, bug.Errorf("could not find the enclosing function of the return statement")
+		// Either curResult is not within a function (incontheivable?),
+		// or the function's type information is missing (in which case
+		// EnclosingSignature will have called bug.Report).
+		// Don't report a second bug here.
+		// See https://go.dev/issue/70666.
+		return nil, fmt.Errorf("internal error: return statement lacks type information or enclosing function (issue 70666)")
 	}
 	rets := sig.Results()
 	// The return operands and function results must match.

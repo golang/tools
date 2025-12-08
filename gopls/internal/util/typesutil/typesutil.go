@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
+	"golang.org/x/tools/gopls/internal/util/bug"
 )
 
 // FormatTypeParams turns TypeParamList into its Go representation, such as:
@@ -188,21 +189,25 @@ func containsInvalid(t types.Type) bool {
 }
 
 // EnclosingSignature returns the signature of the innermost
-// function enclosing the syntax node denoted by cur
-// or nil if the node is not within a function.
+// function enclosing the syntax node denoted by cur.
+// It returns nil if the node is not within a function,
+// or the function's type information is missing.
 func EnclosingSignature(cur inspector.Cursor, info *types.Info) *types.Signature {
+loop:
 	for c := range cur.Enclosing((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
 		switch n := c.Node().(type) {
 		case *ast.FuncDecl:
 			if f, ok := info.Defs[n.Name]; ok {
 				return f.Type().(*types.Signature)
 			}
-			return nil
+			bug.Reportf("FuncDecl defines no types.Func (#70666)")
+			break loop
 		case *ast.FuncLit:
 			if f, ok := info.Types[n]; ok {
 				return f.Type.(*types.Signature)
 			}
-			return nil
+			bug.Reportf("FuncLit has no type (#70666)")
+			break loop
 		}
 	}
 	return nil
