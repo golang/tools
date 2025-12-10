@@ -618,7 +618,7 @@ var actionMarkerFuncs = map[string]func(marker){
 	"quickfixerr":      actionMarkerFunc(quickfixErrMarker),
 	"symbol":           actionMarkerFunc(symbolMarker),
 	"token":            actionMarkerFunc(tokenMarker),
-	"typedef":          actionMarkerFunc(typedefMarker),
+	"typedef":          actionMarkerFunc(typedefMarker, "err"),
 	"workspacesymbol":  actionMarkerFunc(workspaceSymbolMarker),
 	"mcptool":          actionMarkerFunc(mcpToolMarker, "location", "output"),
 }
@@ -1719,11 +1719,18 @@ func defMarker(mark marker, loc protocol.Location, want ...protocol.Location) {
 	}
 }
 
+// typedefMarker implements the @typedef marker.
 func typedefMarker(mark marker, loc protocol.Location, want ...protocol.Location) {
+	wantErr := namedArgFunc(mark, "err", convertStringMatcher, stringMatcher{})
+
 	env := mark.run.env
 	got, err := env.Editor.TypeDefinitions(env.Ctx, loc)
-	if err != nil {
-		mark.errorf("typeDefinition request failed: %v", err)
+	if err != nil && wantErr.empty() {
+		mark.errorf("typeDefinition at %s failed: %v", loc, err)
+		return
+	}
+	if !wantErr.empty() {
+		wantErr.checkErr(mark, err)
 		return
 	}
 

@@ -40,20 +40,34 @@ func _() {
 	_ = s.x.xx.field2 //@typedef(re"field2()", Int)
 }
 
+// type def returns function return types' location.
+
 func F1() Int                              { return 0 }
-func F2() (Int, float64)                   { return 0, 0 }
-func F3() (Struct, int, bool, error)       { return Struct{}, 0, false, nil }
-func F4() (**int, Int, bool, *error)       { return nil, 0, false, nil }
-func F5() (int, float64, error, Struct)    { return 0, 0, nil, Struct{} }
-func F6() (int, float64, ***Struct, error) { return 0, 0, nil, nil }
+func F2() error                            { return nil }
+func F3() (Int, float64)                   { return 0, 0 }
+func F4() (Int, error)                     { return 0, nil }
+func F5() (Struct, int, bool, error)       { return Struct{}, 0, false, nil }
+func F6() (**int, Int, bool, *error)       { return nil, 0, false, nil }
+func F7() (int, float64, error, Struct)    { return 0, 0, nil, Struct{} }
+func F8() (int, float64, ***Struct, error) { return 0, 0, nil, nil }
+
+// type def returns error.
+
+func E1() {}
+func E2() (int, bool) { return 0, true }
 
 func _() {
 	F1() //@typedef(re"F1()", Int)
-	F2() //@typedef(re"F2()", Int)
-	F3() //@typedef(re"F3()", BUILTIN, Struct)
-	F4() //@typedef(re"F4()", BUILTIN, Int)
-	F5() //@typedef(re"F5()", BUILTIN, Struct)
-	F6() //@typedef(re"F6()", BUILTIN, Struct)
+	F2() //@typedef(re"F2()", BUILTIN)
+	F3() //@typedef(re"F3()", Int)
+	F4() //@typedef(re"F4()", Int, BUILTIN)
+	F5() //@typedef(re"F5()", Struct, BUILTIN)
+	F6() //@typedef(re"F6()", Int, BUILTIN)
+	F7() //@typedef(re"F7()", Struct, BUILTIN)
+	F8() //@typedef(re"F8()", Struct, BUILTIN)
+
+	E1() //@typedef(re"E1()", err="cannot find type name(s)")
+	E2() //@typedef(re"E2()", err="cannot find type name(s)")
 
 	f := func() Int { return 0 }
 	f() //@typedef(re"f()", Int)

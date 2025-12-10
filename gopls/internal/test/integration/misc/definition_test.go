@@ -321,37 +321,6 @@ func main() {}
 	}
 }
 
-func TestGoToTypeDefinition_Issue60544(t *testing.T) {
-	const mod = `
--- go.mod --
-module mod.com
-
-go 1.19
--- main.go --
-package main
-
-func F[T comparable]() {}
-`
-
-	Run(t, mod, func(t *testing.T, env *Env) {
-		env.OpenFile("main.go")
-
-		// TypeDefinition of comparable should not panic.
-		loc := env.RegexpSearch("main.go", "comparable")
-		locs, err := env.Editor.TypeDefinitions(env.Ctx, loc) // doesn't panic
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// For extra credit, check the actual location.
-		got := fmt.Sprint(locs)
-		wantSubstr := "builtin.go"
-		if !strings.Contains(got, wantSubstr) {
-			t.Errorf("TypeDefinitions('comparable') = %v, want substring %q", got, wantSubstr)
-		}
-	})
-}
-
 // Test for golang/go#47825.
 func TestImportTestVariant(t *testing.T) {
 	const mod = `
