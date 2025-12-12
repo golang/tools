@@ -38,6 +38,8 @@ var golden = []Golden{
 	{"prefix", "Type", false, prefix_in, prefix_out},
 	{"tokens", "", true, tokens_in, tokens_out},
 	{"overflow8", "", false, overflow8_in, overflow8_out},
+	{"ubounds0", "", false, ubounds0_in, ubounds0_out},
+	{"ubounds1", "", false, ubounds1_in, ubounds1_out},
 }
 
 // Each example starts with "type XXX [u]int", with a single space separating them.
@@ -985,6 +987,57 @@ func (i Overflow8) String() string {
 		return "Overflow8(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
 	return _Overflow8_name[_Overflow8_index[idx]:_Overflow8_index[idx+1]]
+}
+`
+
+const ubounds0_in = `type UBounds uint8
+const (
+	B0 UBounds = 0
+)
+`
+
+const ubounds0_out = `func _() {
+	// An "invalid array index" compiler error signifies that the constant values have changed.
+	// Re-run the stringer command to generate them again.
+	var x [1]struct{}
+	_ = x[B0-0]
+}
+
+const _UBounds_name = "B0"
+
+var _UBounds_index = [...]uint8{0, 2}
+
+func (i UBounds) String() string {
+	idx := int(i) - 0
+	if idx >= len(_UBounds_index)-1 {
+		return "UBounds(" + strconv.FormatInt(int64(i), 10) + ")"
+	}
+	return _UBounds_name[_UBounds_index[idx]:_UBounds_index[idx+1]]
+}
+`
+
+const ubounds1_in = `type UBounds uint8
+const (
+	B1 UBounds = 1
+)
+`
+const ubounds1_out = `func _() {
+	// An "invalid array index" compiler error signifies that the constant values have changed.
+	// Re-run the stringer command to generate them again.
+	var x [1]struct{}
+	_ = x[B1-1]
+}
+
+const _UBounds_name = "B1"
+
+var _UBounds_index = [...]uint8{0, 2}
+
+func (i UBounds) String() string {
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_UBounds_index)-1 {
+		return "UBounds(" + strconv.FormatInt(int64(i), 10) + ")"
+	}
+	return _UBounds_name[_UBounds_index[idx]:_UBounds_index[idx+1]]
 }
 `
 
