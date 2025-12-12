@@ -69,8 +69,6 @@ func TypeDefinition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 	if t == nil {
 		return nil, fmt.Errorf("no enclosing expression has a type")
 	}
-	// TODO(hxjiang, adnonvan): check the ergonomics in language clients (VSCode,
-	// vim, emacs) and support basic types.
 	tnames := typeToObjects(t)
 	if len(tnames) == 0 {
 		return nil, fmt.Errorf("cannot find type name(s) from type %s", t)

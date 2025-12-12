@@ -59,15 +59,15 @@ func E2() (int, bool) { return 0, true }
 func _() {
 	F1() //@typedef(re"F1()", Int)
 	F2() //@typedef(re"F2()", BUILTIN)
-	F3() //@typedef(re"F3()", Int)
+	F3() //@typedef(re"F3()", Int, BUILTIN)
 	F4() //@typedef(re"F4()", Int, BUILTIN)
-	F5() //@typedef(re"F5()", Struct, BUILTIN)
-	F6() //@typedef(re"F6()", Int, BUILTIN)
-	F7() //@typedef(re"F7()", Struct, BUILTIN)
-	F8() //@typedef(re"F8()", Struct, BUILTIN)
+	F5() //@typedef(re"F5()", Struct, BUILTIN, BUILTIN, BUILTIN)
+	F6() //@typedef(re"F6()", BUILTIN, Int, BUILTIN, BUILTIN)
+	F7() //@typedef(re"F7()", BUILTIN, BUILTIN, BUILTIN, Struct)
+	F8() //@typedef(re"F8()", BUILTIN, BUILTIN, Struct, BUILTIN)
 
 	E1() //@typedef(re"E1()", err="cannot find type name(s)")
-	E2() //@typedef(re"E2()", err="cannot find type name(s)")
+	E2() //@typedef(re"E2()", BUILTIN, BUILTIN)
 
 	f := func() Int { return 0 }
 	f() //@typedef(re"f()", Int)

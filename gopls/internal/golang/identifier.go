@@ -87,6 +87,12 @@ func typeToObjects(typ types.Type) []*types.TypeName {
 		return res
 	case *types.Signature:
 		return typeToObjects(typ.Results())
+	case *types.Basic:
+		tname, ok := types.Universe.Lookup(typ.Name()).(*types.TypeName)
+		if !ok {
+			return nil
+		}
+		return []*types.TypeName{tname}
 	default:
 		return nil
 	}

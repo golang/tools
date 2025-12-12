@@ -186,7 +186,7 @@ Here is the list of supported action markers:
     optional named arguments.
 
   - def(src, want ...location): performs a textDocument/definition request at
-    the src location, and checks that the results equals want.
+    the src location, and checks that the resulting set of locations matches want.
 
   - documentLink(golden): asserts that textDocument/documentLink returns
     links as described by the golden file.
@@ -264,10 +264,10 @@ Here is the list of supported action markers:
     are ignored. A "!" prefix on a label asserts that the symbol is not a
     completion candidate.
 
-  - refs(location, want ...location): executes a textDocument/references
-    request at the first location and asserts that the result is the set of
-    'want' locations. The first want location must be the declaration
-    (assumedly unique).
+  - refs(location, want ...location): executes a textDocument/references request
+    at the first location and asserts that the resulting set of locations
+    matches want. The first want location must be the declaration (assumedly
+    unique).
 
   - rename(location, new, golden): specifies a renaming of the
     identifier at the specified location to the new name.
@@ -312,8 +312,8 @@ Here is the list of supported action markers:
 
   - typedef(src, want ...location, err=stringMatcher): performs a
     textDocument/typeDefinition request at the src location, and checks that the
-    results equals want. If err is set, the type definition query must fail with
-    the expected error.
+    resulting set of locations matches want. If err is set, the type definition
+    query must fail with the expected error.
 
   - workspacesymbol(query, golden): makes a workspace/symbol request for the
     given query, formats the response with one symbol per line, and compares
@@ -333,6 +333,12 @@ Here is the list of supported action markers:
     matches the content of the golden file identified by output. For
     portability, all filepath separators in the output are normalized to '/',
     even if they occur outside of a path context.
+
+# Expected locations
+Marker tests that compare expected sets of locations (e.g. def, refs) only check
+for set equality, so the order and cardinality of locations does not matter. Of
+all markers that specify expected locations, only subtypes and supertypes check
+for order.
 
 # Argument conversion
 
