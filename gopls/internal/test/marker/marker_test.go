@@ -2043,9 +2043,8 @@ func rename(env *integration.Env, loc protocol.Location, newName string) (map[st
 	// @rename markers.
 
 	wsedit, err := env.Editor.Server.Rename(env.Ctx, &protocol.RenameParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
-		Position:     loc.Range.Start,
-		NewName:      newName,
+		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
+		NewName:                    newName,
 	})
 	if err != nil {
 		return nil, err

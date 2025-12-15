@@ -61,9 +61,8 @@ func (r *rename) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 	p := protocol.RenameParams{
-		TextDocument: protocol.TextDocumentIdentifier{URI: loc.URI},
-		Position:     loc.Range.Start,
-		NewName:      args[1],
+		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
+		NewName:                    args[1],
 	}
 	edit, err := cli.server.Rename(ctx, &p)
 	if err != nil {

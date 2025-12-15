@@ -4523,14 +4523,11 @@ type RenameOptions struct {
 //
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification#renameParams
 type RenameParams struct {
-	// The document to rename.
-	TextDocument TextDocumentIdentifier `json:"textDocument"`
-	// The position at which this request was sent.
-	Position Position `json:"position"`
 	// The new name of the symbol. If the given name is not valid the
 	// request must return a {@link ResponseError} with an
 	// appropriate message set.
 	NewName string `json:"newName"`
+	TextDocumentPositionParams
 	WorkDoneProgressParams
 }
 

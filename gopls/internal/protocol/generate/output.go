@@ -122,10 +122,8 @@ func genCase(model *Model, method string, param, result *Type, dir string) {
 		// If the parameter extends the TextDocumentPositionParam, verify the
 		// position is within the provided range.
 		if extends(nm, "TextDocumentPositionParams") {
-			out.WriteString(`		if params.Range != (Range{}) {
-			if !params.Range.Contains(params.Position) {
-				return nil, true, fmt.Errorf("position %%v is outside the provided range %%v.", params.Position, params.Range)
-			}
+			out.WriteString(`		if !params.Range.Empty() && !params.Range.Contains(params.Position) {
+			return nil, true, fmt.Errorf("position %%v is outside the provided range %%v.", params.Position, params.Range)
 		}
 `)
 

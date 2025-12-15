@@ -1396,20 +1396,18 @@ func (e *Editor) Rename(ctx context.Context, loc protocol.Location, newName stri
 	if e.Server == nil {
 		return nil
 	}
-	path := e.sandbox.Workdir.URIToPath(loc.URI)
 
 	// Verify that PrepareRename succeeds.
-	prepareParams := &protocol.PrepareRenameParams{}
-	prepareParams.TextDocument = e.TextDocumentIdentifier(path)
-	prepareParams.Position = loc.Range.Start
+	prepareParams := &protocol.PrepareRenameParams{
+		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
+	}
 	if _, err := e.Server.PrepareRename(ctx, prepareParams); err != nil {
 		return fmt.Errorf("preparing rename: %v", err)
 	}
 
 	params := &protocol.RenameParams{
-		TextDocument: e.TextDocumentIdentifier(path),
-		Position:     loc.Range.Start,
-		NewName:      newName,
+		TextDocumentPositionParams: protocol.LocationTextDocumentPositionParams(loc),
+		NewName:                    newName,
 	}
 	wsedit, err := e.Server.Rename(ctx, params)
 	if err != nil {
