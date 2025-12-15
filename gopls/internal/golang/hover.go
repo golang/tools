@@ -189,7 +189,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 		if err != nil {
 			return protocol.Range{}, nil, err
 		}
-		cur, _ := pgf.Cursor.FindByPos(start, end) // can't fail
+		cur, _ := pgf.Cursor().FindByPos(start, end) // can't fail
 		if id, ok := cur.Node().(*ast.Ident); ok {
 			rng, err := pgf.NodeRange(id)
 			if err != nil {
@@ -285,7 +285,7 @@ func hover(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, rng pr
 	}
 
 	// Find cursor for selection.
-	cur, ok := pgf.Cursor.FindByPos(posRange.Pos(), posRange.End())
+	cur, ok := pgf.Cursor().FindByPos(posRange.Pos(), posRange.End())
 	if !ok {
 		return protocol.Range{}, nil, fmt.Errorf("hover position not within file")
 	}
@@ -853,7 +853,7 @@ func hoverBuiltin(ctx context.Context, snapshot *cache.Snapshot, obj types.Objec
 		comment *ast.CommentGroup
 		decl    ast.Decl
 	)
-	curIdent, _ := pgf.Cursor.FindNode(ident) // can't fail
+	curIdent, _ := pgf.Cursor().FindNode(ident) // can't fail
 	for cur := range curIdent.Enclosing() {
 		switch n := cur.Node().(type) {
 		case *ast.GenDecl:

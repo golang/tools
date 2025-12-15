@@ -69,7 +69,7 @@ func InlayHint(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, pR
 	}
 
 	var hints []protocol.InlayHint
-	if curSubrange, ok := pgf.Cursor.FindByPos(start, end); ok {
+	if curSubrange, ok := pgf.Cursor().FindByPos(start, end); ok {
 		add := func(hint protocol.InlayHint) { hints = append(hints, hint) }
 		for _, fn := range enabledHints {
 			fn(info, pgf, qual, curSubrange, add)

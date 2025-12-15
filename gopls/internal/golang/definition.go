@@ -38,7 +38,7 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 	if err != nil {
 		return nil, err
 	}
-	cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
+	cur, _ := pgf.Cursor().FindByPos(pos, pos) // can't fail
 
 	// Handle the case where the cursor is in an import.
 	importLocations, err := importDefinition(ctx, snapshot, pkg, pgf, pos)

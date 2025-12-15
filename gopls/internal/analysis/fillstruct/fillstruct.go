@@ -139,7 +139,7 @@ func SuggestedFix(cpkg *cache.Package, pgf *parsego.File, start, end token.Pos) 
 		info = cpkg.TypesInfo()
 		pos  = start // don't use end
 	)
-	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+	cur, ok := pgf.Cursor().FindByPos(pos, pos)
 	if !ok {
 		return nil, nil, fmt.Errorf("no enclosing ast.Node")
 	}

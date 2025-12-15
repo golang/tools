@@ -217,7 +217,7 @@ func unparenEnclosing(cur inspector.Cursor) inspector.Cursor {
 func inlineVariableOne(pkg *cache.Package, pgf *parsego.File, start, end token.Pos) (*token.FileSet, *analysis.SuggestedFix, error) {
 	countInlineVariable.Inc()
 	info := pkg.TypesInfo()
-	curUse, curRHS, ok := canInlineVariable(info, pgf.Cursor, start, end)
+	curUse, curRHS, ok := canInlineVariable(info, pgf.Cursor(), start, end)
 	if !ok {
 		return nil, nil, fmt.Errorf("cannot inline variable here")
 	}

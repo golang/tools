@@ -38,7 +38,7 @@ type CallStubInfo struct {
 // GetCallStubInfo extracts necessary information to generate a method definition from
 // a CallExpr.
 func GetCallStubInfo(fset *token.FileSet, info *types.Info, pgf *parsego.File, start, end token.Pos) *CallStubInfo {
-	callCur, _ := pgf.Cursor.FindByPos(start, end)
+	callCur, _ := pgf.Cursor().FindByPos(start, end)
 	call, callCur := cursorutil.FirstEnclosing[*ast.CallExpr](callCur)
 	if call == nil {
 		return nil

@@ -135,7 +135,7 @@ func PrepareRename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle,
 	if err != nil {
 		return nil, nil, err
 	}
-	cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
+	cur, _ := pgf.Cursor().FindByPos(pos, pos) // can't fail
 
 	// Check if we're in a 'func' keyword. If so, we hijack the renaming to
 	// change the function signature.
@@ -423,7 +423,7 @@ func Rename(ctx context.Context, snapshot *cache.Snapshot, f file.Handle, pp pro
 		return nil, err
 	}
 
-	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+	cur, ok := pgf.Cursor().FindByPos(pos, pos)
 	if !ok {
 		return nil, fmt.Errorf("can't find cursor for selection")
 	}
@@ -590,7 +590,7 @@ func renameOrdinary(ctx context.Context, snapshot *cache.Snapshot, uri protocol.
 	if err != nil {
 		return nil, err
 	}
-	cur, _ := pgf.Cursor.FindByPos(pos, pos) // cannot fail
+	cur, _ := pgf.Cursor().FindByPos(pos, pos) // cannot fail
 
 	targets, err := objectsAt(pkg.TypesInfo(), cur)
 	if err != nil {
@@ -1458,7 +1458,7 @@ func (r *renamer) update() (map[protocol.DocumentURI][]diff.Edit, error) {
 			continue
 		}
 
-		cur, _ := pgf.Cursor.FindNode(item.node) // can't fail
+		cur, _ := pgf.Cursor().FindNode(item.node) // can't fail
 		doc := docComment(pgf, cur)
 		if doc == nil {
 			continue

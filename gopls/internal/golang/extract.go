@@ -54,7 +54,7 @@ func extractVariable(pkg *cache.Package, pgf *parsego.File, start, end token.Pos
 		info = pkg.TypesInfo()
 		file = pgf.File
 	)
-	curExprs, err := canExtractVariable(info, pgf.Cursor, start, end, all)
+	curExprs, err := canExtractVariable(info, pgf.Cursor(), start, end, all)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot extract: %v", err)
 	}
@@ -133,7 +133,7 @@ Outer:
 			}
 			child = p
 		}
-		visible, _ = pgf.Cursor.FindByPos(child.Pos(), child.End())
+		visible, _ = pgf.Cursor().FindByPos(child.Pos(), child.End())
 	}
 	variables, err := collectFreeVars(info, file, expr0.Pos(), expr0.End(), expr0)
 	if err != nil {
@@ -589,7 +589,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		errorPrefix = "extractMethod"
 	}
 
-	p, ok, methodOk, err := canExtractFunction(pgf.Cursor, start, end)
+	p, ok, methodOk, err := canExtractFunction(pgf.Cursor(), start, end)
 	if (!ok && !isMethod) || (!methodOk && isMethod) {
 		return nil, nil, fmt.Errorf("%s: cannot extract %s: %v", errorPrefix,
 			safetoken.StartPosition(fset, start), err)
@@ -913,7 +913,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// statement is declared outside of the extracted block. These will be
 	// handled below, after adjusting return statements and generating return
 	// info.
-	curSel, _ := pgf.Cursor.FindByPos(start, end) // since canExtractFunction succeeded, this will always return a valid cursor
+	curSel, _ := pgf.Cursor().FindByPos(start, end) // since canExtractFunction succeeded, this will always return a valid cursor
 	freeBranches := freeBranches(info, curSel, start, end)
 
 	// All return statements in the extracted block are error handling returns, and there are no free control statements.

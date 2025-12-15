@@ -238,7 +238,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 	if err != nil {
 		return nil, err
 	}
-	cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
+	cur, _ := pgf.Cursor().FindByPos(pos, pos) // can't fail
 
 	candidates, err := objectsAt(pkg.TypesInfo(), cur)
 	if err != nil {
@@ -414,7 +414,7 @@ func ordinaryReferences(ctx context.Context, snapshot *cache.Snapshot, uri proto
 			if err != nil {
 				return err
 			}
-			cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
+			cur, _ := pgf.Cursor().FindByPos(pos, pos) // can't fail
 
 			objects, err := objectsAt(pkg.TypesInfo(), cur)
 			if err != nil {
@@ -601,7 +601,7 @@ func localReferences(pkg *cache.Package, targets map[types.Object]bool, correspo
 
 	// Scan through syntax looking for uses of one of the target objects.
 	for _, pgf := range pkg.CompiledGoFiles() {
-		for curId := range pgf.Cursor.Preorder((*ast.Ident)(nil)) {
+		for curId := range pgf.Cursor().Preorder((*ast.Ident)(nil)) {
 			id := curId.Node().(*ast.Ident)
 			if obj, ok := pkg.TypesInfo().Uses[id]; ok && matches(obj) {
 				report(mustLocation(pgf, id), false)

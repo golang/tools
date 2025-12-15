@@ -357,7 +357,7 @@ func quickFix(ctx context.Context, req *codeActionsRequest) error {
 		// See [createUndeclared] for command implementation.
 		case strings.HasPrefix(msg, "undeclared name: "),
 			strings.HasPrefix(msg, "undefined: "):
-			cur, _ := req.pgf.Cursor.FindByPos(start, end)
+			cur, _ := req.pgf.Cursor().FindByPos(start, end)
 			title := undeclaredFixTitle(cur, msg)
 			if title != "" {
 				req.addApplyFixAction(title, fixCreateUndeclared, req.loc)
@@ -484,7 +484,7 @@ func goDoc(ctx context.Context, req *codeActionsRequest) error {
 // refactorExtractFunction produces "Extract function" code actions.
 // See [extractFunction] for command implementation.
 func refactorExtractFunction(ctx context.Context, req *codeActionsRequest) error {
-	if _, ok, _, _ := canExtractFunction(req.pgf.Cursor, req.start, req.end); ok {
+	if _, ok, _, _ := canExtractFunction(req.pgf.Cursor(), req.start, req.end); ok {
 		req.addApplyFixAction("Extract function", fixExtractFunction, req.loc)
 	}
 	return nil
@@ -493,7 +493,7 @@ func refactorExtractFunction(ctx context.Context, req *codeActionsRequest) error
 // refactorExtractMethod produces "Extract method" code actions.
 // See [extractMethod] for command implementation.
 func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
-	if _, ok, methodOK, _ := canExtractFunction(req.pgf.Cursor, req.start, req.end); ok && methodOK {
+	if _, ok, methodOK, _ := canExtractFunction(req.pgf.Cursor(), req.start, req.end); ok && methodOK {
 		req.addApplyFixAction("Extract method", fixExtractMethod, req.loc)
 	}
 	return nil
@@ -503,7 +503,7 @@ func refactorExtractMethod(ctx context.Context, req *codeActionsRequest) error {
 // See [extractVariable] for command implementation.
 func refactorExtractVariable(ctx context.Context, req *codeActionsRequest) error {
 	info := req.pkg.TypesInfo()
-	if curExprs, err := canExtractVariable(info, req.pgf.Cursor, req.start, req.end, false); err == nil && len(curExprs) > 0 {
+	if curExprs, err := canExtractVariable(info, req.pgf.Cursor(), req.start, req.end, false); err == nil && len(curExprs) > 0 {
 		// Offer one of refactor.extract.{constant,variable}
 		// based on the constness of the expression; this is a
 		// limitation of the codeActionProducers mechanism.
@@ -530,7 +530,7 @@ func refactorExtractVariableAll(ctx context.Context, req *codeActionsRequest) er
 	info := req.pkg.TypesInfo()
 	// Don't suggest if only one expr is found,
 	// otherwise it will duplicate with [refactorExtractVariable]
-	if curExprs, err := canExtractVariable(info, req.pgf.Cursor, req.start, req.end, true); err == nil && len(curExprs) > 1 {
+	if curExprs, err := canExtractVariable(info, req.pgf.Cursor(), req.start, req.end, true); err == nil && len(curExprs) > 1 {
 		expr0 := curExprs[0].Node().(ast.Expr)
 		text, err := req.pgf.NodeText(expr0)
 		if err != nil {
@@ -688,7 +688,7 @@ func refactorRewriteChangeQuote(ctx context.Context, req *codeActionsRequest) er
 // refactorRewriteInvertIf produces "Invert 'if' condition" code actions.
 // See [invertIfCondition] for command implementation.
 func refactorRewriteInvertIf(ctx context.Context, req *codeActionsRequest) error {
-	if _, ok, _ := canInvertIfCondition(req.pgf.Cursor, req.start, req.end); ok {
+	if _, ok, _ := canInvertIfCondition(req.pgf.Cursor(), req.start, req.end); ok {
 		req.addApplyFixAction("Invert 'if' condition", fixInvertIfCondition, req.loc)
 	}
 	return nil
@@ -698,7 +698,7 @@ func refactorRewriteInvertIf(ctx context.Context, req *codeActionsRequest) error
 // See [splitLines] for command implementation.
 func refactorRewriteSplitLines(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): opt: don't set needPkg just for FileSet.
-	if msg, ok, _ := canSplitLines(req.pgf.Cursor, req.pkg.FileSet(), req.start, req.end); ok {
+	if msg, ok, _ := canSplitLines(req.pgf.Cursor(), req.pkg.FileSet(), req.start, req.end); ok {
 		req.addApplyFixAction(msg, fixSplitLines, req.loc)
 	}
 	return nil
@@ -740,7 +740,7 @@ func refactorRewriteEliminateDotImport(ctx context.Context, req *codeActionsRequ
 
 	// Go through each use of the dot imported package, checking its scope for
 	// shadowing and calculating an edit to qualify the identifier.
-	for curId := range req.pgf.Cursor.Preorder((*ast.Ident)(nil)) {
+	for curId := range req.pgf.Cursor().Preorder((*ast.Ident)(nil)) {
 		ident := curId.Node().(*ast.Ident)
 
 		// Only keep identifiers that use a symbol from the
@@ -800,7 +800,7 @@ func refactorRewriteEliminateDotImport(ctx context.Context, req *codeActionsRequ
 // See [joinLines] for command implementation.
 func refactorRewriteJoinLines(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): opt: don't set needPkg just for FileSet.
-	if msg, ok, _ := canJoinLines(req.pgf.Cursor, req.pkg.FileSet(), req.start, req.end); ok {
+	if msg, ok, _ := canJoinLines(req.pgf.Cursor(), req.pkg.FileSet(), req.start, req.end); ok {
 		req.addApplyFixAction(msg, fixJoinLines, req.loc)
 	}
 	return nil
@@ -886,7 +886,7 @@ func selectionContainsStruct(cursor inspector.Cursor, start, end token.Pos, remo
 // refactorRewriteAddStructTags produces "Add struct tags" code actions.
 // See [server.commandHandler.ModifyTags] for command implementation.
 func refactorRewriteAddStructTags(ctx context.Context, req *codeActionsRequest) error {
-	if selectionContainsStruct(req.pgf.Cursor, req.start, req.end, false) {
+	if selectionContainsStruct(req.pgf.Cursor(), req.start, req.end, false) {
 		// TODO(mkalil): Prompt user for modification args once we have dialogue capabilities.
 		cmdAdd := command.NewModifyTagsCommand("Add struct tags", command.ModifyTagsArgs{
 			URI:   req.loc.URI,
@@ -902,7 +902,7 @@ func refactorRewriteAddStructTags(ctx context.Context, req *codeActionsRequest) 
 // See [server.commandHandler.ModifyTags] for command implementation.
 func refactorRewriteRemoveStructTags(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(mkalil): Prompt user for modification args once we have dialogue capabilities.
-	if selectionContainsStruct(req.pgf.Cursor, req.start, req.end, true) {
+	if selectionContainsStruct(req.pgf.Cursor(), req.start, req.end, true) {
 		cmdRemove := command.NewModifyTagsCommand("Remove struct tags", command.ModifyTagsArgs{
 			URI:   req.loc.URI,
 			Range: req.loc.Range,
@@ -985,7 +985,7 @@ func refactorInlineCall(ctx context.Context, req *codeActionsRequest) error {
 // See [inlineVariableOne] for command implementation.
 func refactorInlineVariable(ctx context.Context, req *codeActionsRequest) error {
 	// TODO(adonovan): offer "inline all" variant that eliminates the var (see #70085).
-	if curUse, _, ok := canInlineVariable(req.pkg.TypesInfo(), req.pgf.Cursor, req.start, req.end); ok {
+	if curUse, _, ok := canInlineVariable(req.pkg.TypesInfo(), req.pgf.Cursor(), req.start, req.end); ok {
 		title := fmt.Sprintf("Inline variable %q", curUse.Node().(*ast.Ident).Name)
 		req.addApplyFixAction(title, fixInlineVariable, req.loc)
 	}
@@ -1060,7 +1060,7 @@ func goAssembly(ctx context.Context, req *codeActionsRequest) error {
 	}
 	sym.WriteString(".")
 
-	curSel, _ := req.pgf.Cursor.FindByPos(req.start, req.end)
+	curSel, _ := req.pgf.Cursor().FindByPos(req.start, req.end)
 	for cur := range curSel.Enclosing((*ast.FuncDecl)(nil), (*ast.ValueSpec)(nil)) {
 		var name string // in command title
 		switch node := cur.Node().(type) {
@@ -1135,7 +1135,7 @@ func toggleCompilerOptDetails(ctx context.Context, req *codeActionsRequest) erro
 }
 
 func refactorMoveType(ctx context.Context, req *codeActionsRequest) error {
-	curSel, _ := req.pgf.Cursor.FindByPos(req.start, req.end)
+	curSel, _ := req.pgf.Cursor().FindByPos(req.start, req.end)
 	if _, _, _, typeName, ok := selectionContainsType(curSel); ok {
 		cmd := command.NewMoveTypeCommand(fmt.Sprintf("Move type %s", typeName), command.MoveTypeArgs{Location: req.loc})
 		req.addCommandAction(cmd, false)

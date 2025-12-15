@@ -62,7 +62,7 @@ func (h *handler) fileContextHandler(ctx context.Context, req *mcp.CallToolReque
 		otherFiles[uri][obj.Name()] = true
 	}
 
-	for cur := range pgf.Cursor.Preorder((*ast.Ident)(nil)) {
+	for cur := range pgf.Cursor().Preorder((*ast.Ident)(nil)) {
 		id := cur.Node().(*ast.Ident)
 		addObj(info.Uses[id])
 		addObj(info.Defs[id])

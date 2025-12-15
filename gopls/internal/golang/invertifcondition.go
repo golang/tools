@@ -25,7 +25,7 @@ func invertIfCondition(pkg *cache.Package, pgf *parsego.File, start, end token.P
 		src  = pgf.Src
 	)
 
-	ifStatement, _, err := canInvertIfCondition(pgf.Cursor, start, end)
+	ifStatement, _, err := canInvertIfCondition(pgf.Cursor(), start, end)
 	if err != nil {
 		return nil, nil, err
 	}

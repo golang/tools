@@ -396,7 +396,7 @@ func forEachLexicalRef(pkg *cache.Package, obj types.Object, fn func(id *ast.Ide
 	}
 
 	for _, pgf := range pkg.CompiledGoFiles() {
-		pgf.Cursor.Inspect(filter, visit)
+		pgf.Cursor().Inspect(filter, visit)
 		if !ok {
 			break
 		}

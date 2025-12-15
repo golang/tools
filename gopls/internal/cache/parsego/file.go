@@ -34,7 +34,8 @@ type File struct {
 	// actual content of the file if we have fixed the AST.
 	Src []byte
 
-	Cursor inspector.Cursor // cursor of *ast.File, sans sibling files
+	cursor     inspector.Cursor // cursor of *ast.File, sans sibling files
+	cursorOnce sync.Once
 
 	// fixedSrc and fixedAST report on "fixing" that occurred during parsing of
 	// this file.
@@ -57,6 +58,16 @@ type File struct {
 }
 
 func (pgf *File) String() string { return string(pgf.URI) }
+
+// Cursor returns a cursor for pgf.File, for fast and convenient navigation.
+func (pgf *File) Cursor() inspector.Cursor {
+	pgf.cursorOnce.Do(func() {
+		inspect := inspector.New([]*ast.File{pgf.File})
+		pgf.cursor, _ = inspect.Root().FirstChild()
+		_ = pgf.cursor.Node().(*ast.File)
+	})
+	return pgf.cursor
+}
 
 // Fixed reports whether p was "Fixed", meaning that its source or positions
 // may not correlate with the original file.

@@ -285,7 +285,7 @@ func callHierarchyItemDetail(obj types.Object, loc protocol.Location) string {
 // callHierarchyFuncAtPos returns the function symbol (Func or Builtin) referred
 // to by the identifier at the specified range.
 func callHierarchyFuncAtPos(info *types.Info, pgf *parsego.File, rng astutil.Range) (types.Object, error) {
-	cur, ok := pgf.Cursor.FindByPos(rng.Pos(), rng.End())
+	cur, ok := pgf.Cursor().FindByPos(rng.Pos(), rng.End())
 	if !ok {
 		return nil, fmt.Errorf("no enclosing syntax") // can't happen
 	}

@@ -55,7 +55,7 @@ func FoldingRange(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 		(*ast.FieldList)(nil),
 		(*ast.GenDecl)(nil),
 	}
-	for cur := range pgf.Cursor.Preorder(filter...) {
+	for cur := range pgf.Cursor().Preorder(filter...) {
 		var kind protocol.FoldingRangeKind
 		// start and end define the range of content to fold away.
 		var start, end token.Pos

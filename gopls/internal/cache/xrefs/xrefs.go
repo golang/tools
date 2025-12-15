@@ -44,7 +44,7 @@ func Index(files []*parsego.File, pkg *types.Package, info *types.Info) []byte {
 	objectpathFor := new(objectpath.Encoder).For
 
 	for fileIndex, pgf := range files {
-		for cur := range pgf.Cursor.Preorder((*ast.Ident)(nil), (*ast.ImportSpec)(nil)) {
+		for cur := range pgf.Cursor().Preorder((*ast.Ident)(nil), (*ast.ImportSpec)(nil)) {
 			switch n := cur.Node().(type) {
 			case *ast.Ident:
 				// Report a reference for each identifier that

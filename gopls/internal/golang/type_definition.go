@@ -31,7 +31,7 @@ func TypeDefinition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handl
 	if err != nil {
 		return nil, err
 	}
-	cur, ok := pgf.Cursor.FindByPos(start, end)
+	cur, ok := pgf.Cursor().FindByPos(start, end)
 	if !ok {
 		return nil, fmt.Errorf("no enclosing syntax") // can't happen
 	}

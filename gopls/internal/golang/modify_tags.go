@@ -35,7 +35,7 @@ func ModifyTags(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, a
 	}
 	// If the cursor is at a point and not a selection, we should use the entire enclosing struct.
 	if start == end {
-		cur, ok := pgf.Cursor.FindByPos(start, end)
+		cur, ok := pgf.Cursor().FindByPos(start, end)
 		if !ok {
 			return nil, fmt.Errorf("error finding start and end positions: %v", err)
 		}

@@ -77,7 +77,7 @@ func implementations(ctx context.Context, snapshot *cache.Snapshot, fh file.Hand
 	if err != nil {
 		return nil, err
 	}
-	cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
+	cur, _ := pgf.Cursor().FindByPos(pos, pos) // can't fail
 
 	// Find implementations based on func signatures.
 	if locs, err := implFuncs(pkg, cur, pos); err != errNotHandled {
@@ -239,7 +239,7 @@ func implementationsMsets(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 			if err != nil {
 				return err // also "can't happen"
 			}
-			curIdent, ok := declFile.Cursor.FindByPos(pos, pos)
+			curIdent, ok := declFile.Cursor().FindByPos(pos, pos)
 			if !ok {
 				return bug.Errorf("position not within file") // can't happen
 			}
@@ -395,7 +395,7 @@ func localImplementations(ctx context.Context, snapshot *cache.Snapshot, pkg *ca
 
 	// Scan through all type declarations in the syntax.
 	for _, pgf := range pkg.CompiledGoFiles() {
-		for cur := range pgf.Cursor.Preorder((*ast.TypeSpec)(nil)) {
+		for cur := range pgf.Cursor().Preorder((*ast.TypeSpec)(nil)) {
 			spec := cur.Node().(*ast.TypeSpec)
 			if spec.Name == id {
 				continue // avoid self-comparison of query type
@@ -963,7 +963,7 @@ func funcUses(pkg *cache.Package, t types.Type) ([]protocol.Location, error) {
 
 	// local search
 	for _, pgf := range pkg.CompiledGoFiles() {
-		for cur := range pgf.Cursor.Preorder((*ast.CallExpr)(nil), (*ast.FuncType)(nil)) {
+		for cur := range pgf.Cursor().Preorder((*ast.CallExpr)(nil), (*ast.FuncType)(nil)) {
 			var pos, end token.Pos
 			var ftyp types.Type
 			switch n := cur.Node().(type) {
@@ -1003,7 +1003,7 @@ func funcDefs(pkg *cache.Package, t types.Type) ([]protocol.Location, error) {
 
 	// local search
 	for _, pgf := range pkg.CompiledGoFiles() {
-		for curFn := range pgf.Cursor.Preorder((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
+		for curFn := range pgf.Cursor().Preorder((*ast.FuncDecl)(nil), (*ast.FuncLit)(nil)) {
 			fn := curFn.Node()
 			var ftyp types.Type
 			switch fn := fn.(type) {

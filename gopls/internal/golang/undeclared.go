@@ -67,7 +67,7 @@ func createUndeclared(pkg *cache.Package, pgf *parsego.File, start, end token.Po
 		file = pgf.File
 		pos  = start // don't use end
 	)
-	curId, _ := pgf.Cursor.FindByPos(pos, pos)
+	curId, _ := pgf.Cursor().FindByPos(pos, pos)
 	ident, ok := curId.Node().(*ast.Ident)
 	if !ok {
 		return nil, nil, fmt.Errorf("no identifier found")

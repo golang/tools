@@ -44,7 +44,7 @@ func PrepareTypeHierarchy(ctx context.Context, snapshot *cache.Snapshot, fh file
 	}
 
 	// For now, we require that the selection be a type name.
-	cur, ok := pgf.Cursor.FindByPos(pos, pos)
+	cur, ok := pgf.Cursor().FindByPos(pos, pos)
 	if !ok {
 		return nil, fmt.Errorf("no enclosing syntax") // can't happen
 	}
@@ -98,7 +98,7 @@ func relatedTypes(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle,
 	if err != nil {
 		return nil, err
 	}
-	cur, _ := pgf.Cursor.FindByPos(pos, pos) // can't fail
+	cur, _ := pgf.Cursor().FindByPos(pos, pos) // can't fail
 
 	var (
 		itemsMu sync.Mutex
