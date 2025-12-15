@@ -1999,6 +1999,16 @@ func invalidatedPackageIDs(uri protocol.DocumentURI, known map[protocol.Document
 // are both overlays, and if the current FileHandle is saved while the original
 // FileHandle was not saved.
 func fileWasSaved(originalFH, currentFH file.Handle) bool {
+	if originalFH == nil || currentFH == nil {
+		return true // should not happen for valid file handles
+	}
+
+	// If the file identity has not changed, the content has not changed.
+	// Therefore, the "saved" state (from the perspective of go mod tidy)
+	// has not changed.
+	if originalFH.Identity() == currentFH.Identity() {
+		return false
+	}
 	c, ok := currentFH.(*overlay)
 	if !ok || c == nil {
 		return true
